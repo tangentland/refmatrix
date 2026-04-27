@@ -37,8 +37,9 @@ CREATE TABLE IF NOT EXISTS entities (
 );
 CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(kind);
 CREATE INDEX IF NOT EXISTS idx_entities_path ON entities(path);
-CREATE INDEX IF NOT EXISTS idx_entities_protected ON entities(protected);
-CREATE INDEX IF NOT EXISTS idx_entities_noise ON entities(noise);
+-- protected/noise indexes are created in _connect() after the conditional
+-- ALTER TABLE; CREATE INDEX here would fail on legacy schemas where the
+-- columns don't yet exist (executescript runs all statements top-to-bottom).
 
 CREATE TABLE IF NOT EXISTS concepts (
     id          INTEGER PRIMARY KEY,            -- equals entities.id where kind='concept'
@@ -179,21 +180,27 @@ class Store:
             # entity_links).
             con.executescript(CATALOG_DDL)
             # ALTER TABLE isn't idempotent — add post-DDL columns conditionally.
+            # CATALOG_DDL deliberately omits the indexes for these columns
+            # because executescript runs top-to-bottom and would fail on a
+            # legacy schema before the ALTER below has a chance to add them.
             cols = {r[1] for r in con.execute("PRAGMA table_info(entities)")}
             if "protected" not in cols:
                 con.execute(
                     "ALTER TABLE entities ADD COLUMN protected INTEGER NOT NULL DEFAULT 0"
                 )
-                con.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_entities_protected ON entities(protected)"
-                )
             if "noise" not in cols:
                 con.execute(
                     "ALTER TABLE entities ADD COLUMN noise INTEGER NOT NULL DEFAULT 0"
                 )
-                con.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_entities_noise ON entities(noise)"
-                )
+            # Indexes are unconditional (and IF NOT EXISTS): both the
+            # alter-table path above and the fresh-schema path leave us
+            # with the columns present, so this is now safe.
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_entities_protected ON entities(protected)"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_entities_noise ON entities(noise)"
+            )
             con.commit()
             self._conn = con
         return self._conn

@@ -293,6 +293,57 @@ def test_existing_catalog_auto_heals_missing_tables(tmp_path):
     s2.close()
 
 
+def test_legacy_catalog_without_protected_noise_self_heals(tmp_path):
+    """Simulate a catalog created before protected/noise existed: drop the
+    columns, reopen, verify the migration adds them and indexes work."""
+    import sqlite3 as _sql
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    cid = s.add_concept("legacy_concept", protected=True)
+    s.close()
+
+    # Rebuild the entities table without the new columns, exactly as it
+    # would have looked before this migration shipped.
+    con = _sql.connect(s.db_path)
+    con.executescript("""
+        CREATE TABLE entities_legacy (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL,
+            path TEXT,
+            name TEXT NOT NULL,
+            tldr TEXT,
+            meta TEXT,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            UNIQUE(kind, name)
+        );
+        INSERT INTO entities_legacy (id, kind, path, name, tldr, meta, created_at, updated_at)
+            SELECT id, kind, path, name, tldr, meta, created_at, updated_at FROM entities;
+        DROP INDEX IF EXISTS idx_entities_protected;
+        DROP INDEX IF EXISTS idx_entities_noise;
+        DROP TABLE entities;
+        ALTER TABLE entities_legacy RENAME TO entities;
+        CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(kind);
+        CREATE INDEX IF NOT EXISTS idx_entities_path ON entities(path);
+    """)
+    con.commit()
+    con.close()
+
+    # Reopen — should ALTER in the missing columns and indexes.
+    s2 = Store(tmp_path / ".refmatrix")
+    e = s2.get_entity_by_id(cid)
+    assert e is not None
+    # protected was lost in the legacy round-trip (column didn't exist), but
+    # the new column should default to 0 — that's the documented behavior.
+    assert e.protected is False
+    assert e.noise is False
+    # And the column is real now: re-set protected and verify it sticks.
+    s2.upsert_entity(kind="concept", name="legacy_concept", protected=True)
+    assert s2.get_entity_by_id(cid).protected is True
+    s2.close()
+
+
 def test_telemetry_logs_record(tmp_path):
     from refmatrix.telemetry import log_query, read_log, summarize
 
