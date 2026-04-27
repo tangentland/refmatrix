@@ -262,10 +262,18 @@ cat .refmatrix/sync.log                    # append-only log of every sync run
 rmx vacuum                                 # drop empty-bitmap concepts and
                                            # missing-file tracked rows
 
-rmx prune-noise                            # default: drop concepts in
-                                           # `keyword/` with df<2 or df/total>0.25
-rmx prune-noise --max-df-ratio 0.10        # tighter — drops "get", "name", etc.
-rmx prune-noise -n keyword -n import       # also prune obscure imports
+rmx prune-noise                            # MARK concepts in `keyword/` with
+                                           # df<2 or df/total>0.25 as noise
+                                           # (non-destructive — queries hide them
+                                           # by default; --full reveals them)
+rmx prune-noise --max-df-ratio 0.10        # tighter — marks "get", "name", etc.
+rmx prune-noise -n keyword -n import       # also mark obscure imports
+rmx prune-noise --drop                     # actually DELETE marked concepts
+                                           # (irrecoverable — use with care)
+
+# query both views:
+rmx query "mentions:foo"                   # cleaned graph (default)
+rmx query "mentions:foo" --full            # raw — find/grep parity
 ```
 
 ## Custom linkage types
@@ -402,10 +410,21 @@ every bitmap.
 
 ## Relationship to llm-tldr
 
-refmatrix consumes [llm-tldr](https://github.com/parcadei/llm-tldr)'s
-`.tldr/cache/call_graph.json` when present — tldr is the extractor, refmatrix
-is the indexer/query layer. They compose; neither is bundled inside the other.
-Run `rmx tldr-warm <path>` to do both in one shot.
+refmatrix consumes [llm-tldr](https://github.com/parcadei/llm-tldr) output —
+tldr is the extractor, refmatrix is the indexer/query layer. They compose;
+neither is bundled inside the other.
+
+Source priority (auto):
+1. `.tldr/cache/semantic/metadata.json` — per-unit semantic dump with
+   `signature`, `unit_type` (function/class/method/...), per-unit
+   `calls`/`called_by`, `dependencies`, CFG/DFG summaries. Yields a
+   `kind/<unit_type>` namespace queryable as `is_a:kind/class`.
+2. `.tldr/cache/call_graph.json` — leaner: just `(from_file, from_func) →
+   (to_file, to_func)` edges.
+3. `tree` — last-resort directory walk; per-file entities only.
+
+Force a source explicitly: `rmx ingest . --source metadata|tldr|tree`.
+Run `rmx tldr-warm <path>` to extract + ingest in one shot.
 
 ## Development
 

@@ -197,6 +197,8 @@ on every Edit/Write tool call. **Trust the index.**
 | "give me everything about X for an LLM" | `rmx context X` (token-budgeted) |
 | "what changed since this branch diverged" | `rmx context --since main` |
 | "find docs and code mentioning X" | `rmx query "mentions:X OR defines:X"` |
+| "all classes" / "all functions" | `rmx query "is_a:kind/class"` (when ingested via metadata) |
+| "every call site of X, including noisy stuff" | `rmx query "calls:X" --full` |
 | "explain why an entity matched a query" | `rmx query "<dsl>" --explain` |
 | "concepts that co-occur with X" | `rmx co-occur X --type mentions` |
 | "rank entities by mention frequency" | `rmx top X --type mentions -k 10` |
@@ -241,11 +243,38 @@ Defaults: `defines`, `called_by`, `calls`, `mentions`, `imports`, `is_a`,
 Auto-generated concepts are namespaced so they don't collide with your own:
 - `keyword/<word>` — extracted from docstrings (noisy by design; mostly
   filtered out of the primer and `scan-prompt`)
-- `import/<module>` — Python imports detected by the ast walker
-- bare names — function-name concepts (from `tldr-warm`) and any concepts
-  you added with `rmx add-concept`
+- `import/<module>` — module dependencies (from metadata.json `dependencies`
+  field, or the ast walker as fallback)
+- `kind/<unit_type>` — categorical (function/class/method/...) from
+  llm-tldr's per-unit metadata. Query with `is_a:kind/class`.
+- bare names — symbol concepts (function/class names) and anything you
+  added with `rmx add-concept`
 
-To query a namespaced concept: `mentions:keyword/foo`, `imports:import/json`.
+To query a namespaced concept: `mentions:keyword/foo`, `imports:import/json`,
+`is_a:kind/function`.
+
+## Cleaned vs full graph
+
+`rmx prune-noise` is non-destructive by default — it MARKS concepts as noise
+(in `keyword/` namespace, df<2 or df>25%) instead of deleting them. Queries
+hide noise concepts so the cleaned graph is what you see normally.
+
+When you need find/grep-style completeness — every match, including
+auto-generated noise — pass `--full`:
+- `rmx query "mentions:foo" --full`
+- `rmx neighbors X --full`
+- `rmx co-occur X --full`
+- `rmx primer --full`
+- `rmx scan-prompt --full`
+
+Pass `rmx prune-noise --drop` to actually delete (irrecoverable).
+
+## Manual additions are protected
+
+`rmx add-entity`, `rmx add-concept`, and `rmx link` mark their entities
+`protected` by default — vacuum and prune-noise will never touch them.
+This is the durable layer for human-curated knowledge that should outlive
+ingester re-runs. Pass `--no-protect` to opt out.
 
 ## Freshness contract
 
@@ -266,17 +295,22 @@ Diagnostics:
 Repair:
 - `rmx sync --flush-queue` — force the pending flush
 - `rmx vacuum` — drop empty-bitmap concepts and missing-file tracked rows
-- `rmx prune-noise` — drop noise concepts by document-frequency
-  (default: drop `keyword/X` with df<2 or df>25% of entities)
+  (skips protected concepts)
+- `rmx prune-noise` — MARK noise concepts (non-destructive); add `--drop`
+  to actually delete. Skips protected concepts.
 - `rmx ingest . --semantic` — full rebuild
 - `rmx tldr-warm . --semantic` — fresh call graph from llm-tldr + rebuild
 
 ## What you can trust
 
 - Bitmap membership reflects state as of the last hook flush.
-- `tldr` blobs on entities come from `--semantic` enrichment (Python imports
-  + docstring keywords) or manual `rmx add-entity --tldr ...`.
-- Function-name concepts come from `.tldr/cache/call_graph.json` if present.
+- `tldr` blobs on entities come from llm-tldr's `signature` (when
+  metadata.json was ingested), `--semantic` enrichment, or manual
+  `rmx add-entity --tldr ...`.
+- Symbol concepts come from llm-tldr (preferred:
+  `.tldr/cache/semantic/metadata.json` for per-unit data including
+  `unit_type`, `signature`, dependencies; fallback:
+  `.tldr/cache/call_graph.json` for just the call graph).
 - `linkage_evidence` table records file:line for every semantic linkage —
   shown by `rmx query --explain`.
 
