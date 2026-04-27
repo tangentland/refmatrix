@@ -150,8 +150,20 @@ class Op(Node):
 
 
 class QueryEngine:
-    def __init__(self, store: Store):
+    def __init__(self, store: Store, include_noise: bool = False):
         self.s = store
+        # When False (default), enumeration paths (neighbors, co_occurrence,
+        # topn, density) skip concepts marked noise. Explicit name lookups via
+        # _row() always resolve — typing the name is intent enough.
+        self.include_noise = include_noise
+        self._noise_cache: set[int] | None = None
+
+    def _noise_ids(self) -> set[int]:
+        if self.include_noise:
+            return set()
+        if self._noise_cache is None:
+            self._noise_cache = self.s.noise_concept_ids()
+        return self._noise_cache
 
     # --- DSL entry point ---
     def run(self, dsl: str) -> BitMap:
@@ -222,6 +234,7 @@ class QueryEngine:
         if c is None or c.kind != "concept":
             return BitMap()
         link_names = linkages or [lk["name"] for lk in self.s.list_linkages()]
+        noise = self._noise_ids()
         frontier = BitMap([c.id])
         seen = BitMap([c.id])
         for _ in range(depth):
@@ -230,6 +243,8 @@ class QueryEngine:
                 for ln in link_names:
                     next_frontier |= self.s.load_bitmap(ln, cid)
             next_frontier -= seen
+            if noise:
+                next_frontier -= BitMap(noise)
             if len(next_frontier) == 0:
                 break
             seen |= next_frontier
@@ -239,9 +254,12 @@ class QueryEngine:
 
     def topn(self, bm: BitMap, n: int = 10) -> list[tuple[int, int]]:
         """Top-N entities in `bm` ranked by co-occurrence count across all linkages."""
+        noise = self._noise_ids()
         weights: dict[int, int] = {}
         for lk in self.s.list_linkages():
             for cid in self.s.iter_concept_ids_for_linkage(lk["name"]):
+                if cid in noise:
+                    continue
                 row = self.s.load_bitmap(lk["name"], cid)
                 hit = row & bm
                 for eid in hit:
@@ -257,9 +275,10 @@ class QueryEngine:
         anchor = self.s.load_bitmap(linkage, c.id)
         if len(anchor) == 0:
             return []
+        noise = self._noise_ids()
         out: list[tuple[str, int]] = []
         for cid in self.s.iter_concept_ids_for_linkage(linkage):
-            if cid == c.id:
+            if cid == c.id or cid in noise:
                 continue
             other = self.s.load_bitmap(linkage, cid)
             overlap = len(anchor & other)

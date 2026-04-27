@@ -31,10 +31,14 @@ CREATE TABLE IF NOT EXISTS entities (
     meta        TEXT,
     created_at  REAL NOT NULL,
     updated_at  REAL NOT NULL,
+    protected   INTEGER NOT NULL DEFAULT 0,
+    noise       INTEGER NOT NULL DEFAULT 0,
     UNIQUE(kind, name)
 );
 CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(kind);
 CREATE INDEX IF NOT EXISTS idx_entities_path ON entities(path);
+CREATE INDEX IF NOT EXISTS idx_entities_protected ON entities(protected);
+CREATE INDEX IF NOT EXISTS idx_entities_noise ON entities(noise);
 
 CREATE TABLE IF NOT EXISTS concepts (
     id          INTEGER PRIMARY KEY,            -- equals entities.id where kind='concept'
@@ -123,6 +127,8 @@ class Entity:
     path: str | None
     tldr: str | None
     meta: dict
+    protected: bool = False
+    noise: bool = False
 
 
 class Store:
@@ -172,6 +178,23 @@ class Store:
             # gain the new tables (e.g. linkage_evidence, tracked_files,
             # entity_links).
             con.executescript(CATALOG_DDL)
+            # ALTER TABLE isn't idempotent — add post-DDL columns conditionally.
+            cols = {r[1] for r in con.execute("PRAGMA table_info(entities)")}
+            if "protected" not in cols:
+                con.execute(
+                    "ALTER TABLE entities ADD COLUMN protected INTEGER NOT NULL DEFAULT 0"
+                )
+                con.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_entities_protected ON entities(protected)"
+                )
+            if "noise" not in cols:
+                con.execute(
+                    "ALTER TABLE entities ADD COLUMN noise INTEGER NOT NULL DEFAULT 0"
+                )
+                con.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_entities_noise ON entities(noise)"
+                )
+            con.commit()
             self._conn = con
         return self._conn
 
@@ -189,24 +212,29 @@ class Store:
         path: str | None = None,
         tldr: str | None = None,
         meta: dict | None = None,
+        protected: bool = False,
     ) -> int:
         if kind not in ("doc", "code", "concept"):
             raise ValueError(f"unknown kind: {kind}")
         now = time.time()
         meta_json = json.dumps(meta) if meta else None
+        prot = 1 if protected else 0
         con = self._connect()
+        # On conflict: only ratchet protected upward — re-ingestion by an
+        # auto-source must never clear a flag the user set manually.
         cur = con.execute(
             """
-            INSERT INTO entities(kind, name, path, tldr, meta, created_at, updated_at)
-            VALUES (?,?,?,?,?,?,?)
+            INSERT INTO entities(kind, name, path, tldr, meta, created_at, updated_at, protected)
+            VALUES (?,?,?,?,?,?,?,?)
             ON CONFLICT(kind, name) DO UPDATE SET
                 path = COALESCE(excluded.path, entities.path),
                 tldr = COALESCE(excluded.tldr, entities.tldr),
                 meta = COALESCE(excluded.meta, entities.meta),
-                updated_at = excluded.updated_at
+                updated_at = excluded.updated_at,
+                protected = MAX(entities.protected, excluded.protected)
             RETURNING id
             """,
-            (kind, name, path, tldr, meta_json, now, now),
+            (kind, name, path, tldr, meta_json, now, now, prot),
         )
         eid = cur.fetchone()[0]
         if kind == "concept":
@@ -217,11 +245,17 @@ class Store:
         con.commit()
         return eid
 
-    def add_concept(self, name: str, description: str | None = None) -> int:
+    def add_concept(
+        self,
+        name: str,
+        description: str | None = None,
+        protected: bool = False,
+    ) -> int:
         return self.upsert_entity(
             kind="concept",
             name=name,
             meta={"description": description} if description else None,
+            protected=protected,
         )
 
     def get_entity(self, kind: str, name: str) -> Entity | None:
@@ -258,6 +292,7 @@ class Store:
 
     @staticmethod
     def _row_to_entity(row: sqlite3.Row) -> Entity:
+        keys = row.keys()
         return Entity(
             id=row["id"],
             kind=row["kind"],
@@ -265,6 +300,8 @@ class Store:
             path=row["path"],
             tldr=row["tldr"],
             meta=json.loads(row["meta"]) if row["meta"] else {},
+            protected=bool(row["protected"]) if "protected" in keys else False,
+            noise=bool(row["noise"]) if "noise" in keys else False,
         )
 
     # ---- linkage types -----------------------------------------------------
@@ -326,6 +363,7 @@ class Store:
         concept_id: int,
         entity_id: int,
         weight: float | None = None,
+        protect: bool = False,
     ) -> bool:
         lid = self.get_linkage_id(linkage)
         bm = self.load_bitmap(linkage, concept_id)
@@ -342,6 +380,11 @@ class Store:
             "  CASE WHEN excluded.weight IS NULL THEN entity_links.weight ELSE excluded.weight END",
             (entity_id, lid, concept_id, weight),
         )
+        if protect:
+            con.execute(
+                "UPDATE entities SET protected = 1 WHERE id IN (?, ?)",
+                (concept_id, entity_id),
+            )
         con.commit()
         return not already
 
@@ -597,13 +640,17 @@ class Store:
         from os.path import exists as _exists
         con = self._connect()
 
-        # 1. concepts whose every bitmap is empty == no rows in entity_links
+        # 1. concepts whose every bitmap is empty == no rows in entity_links.
+        # Skip protected concepts — those are user-asserted and survive vacuum
+        # even when they have no links (e.g. a freshly-added bare concept).
         empty_concepts = [
             r[0] for r in con.execute(
                 """
                 SELECT e.id FROM entities e
                 LEFT JOIN entity_links el ON el.concept_id = e.id
-                WHERE e.kind = 'concept' AND el.entity_id IS NULL
+                WHERE e.kind = 'concept'
+                  AND el.entity_id IS NULL
+                  AND e.protected = 0
                 """
             )
         ]
@@ -638,26 +685,38 @@ class Store:
         namespaces: tuple[str, ...] = ("keyword",),
         min_df: int = 2,
         max_df_ratio: float = 0.25,
+        drop: bool = False,
     ) -> dict:
-        """Drop noise concepts under the given namespaces by document-frequency.
+        """Mark (or, with drop=True, delete) noise concepts in the given namespaces.
 
         DF = number of distinct entities the concept is linked to (across all
         linkages). Concepts with DF < min_df are too rare to matter; concepts
         with DF / total_entities > max_df_ratio are too generic.
+
+        Default behavior is non-destructive: sets `noise=1` on offending
+        concepts and clears it on concepts that no longer offend. Queries hide
+        noise=1 concepts by default, but `--full` can resurrect them so the
+        full graph remains available to find/grep-style use. Pass drop=True
+        to actually purge marked concepts.
+
+        Protected concepts are skipped entirely (they're never marked, never
+        dropped).
         """
         con = self._connect()
         total = con.execute(
             "SELECT COUNT(*) FROM entities WHERE kind != 'concept'"
         ).fetchone()[0]
         if total == 0:
-            return {"dropped": 0, "kept": 0, "total_seen": 0}
+            return {"marked": 0, "unmarked": 0, "kept": 0, "total_seen": 0,
+                    "dropped": 0}
 
         max_df = max(min_df, int(total * max_df_ratio))
-        seen = dropped = 0
+        seen = marked = unmarked = dropped = 0
         for ns in namespaces:
             prefix = f"{ns}/"
-            for cid, name in con.execute(
-                "SELECT id, name FROM entities WHERE kind='concept' AND name LIKE ? || '%'",
+            for cid, _name, prev_noise in con.execute(
+                "SELECT id, name, noise FROM entities "
+                "WHERE kind='concept' AND protected=0 AND name LIKE ? || '%'",
                 (prefix,),
             ).fetchall():
                 seen += 1
@@ -665,11 +724,49 @@ class Store:
                     "SELECT COUNT(DISTINCT entity_id) FROM entity_links WHERE concept_id = ?",
                     (cid,),
                 ).fetchone()[0]
-                if df < min_df or df > max_df:
-                    self.purge_entity(cid)
-                    dropped += 1
-        return {"dropped": dropped, "kept": seen - dropped, "total_seen": seen,
-                "min_df": min_df, "max_df": max_df, "total_entities": total}
+                is_noise = df < min_df or df > max_df
+                if is_noise:
+                    if drop:
+                        self.purge_entity(cid)
+                        dropped += 1
+                        continue
+                    if not prev_noise:
+                        con.execute(
+                            "UPDATE entities SET noise=1 WHERE id=?", (cid,)
+                        )
+                    marked += 1
+                else:
+                    if prev_noise:
+                        con.execute(
+                            "UPDATE entities SET noise=0 WHERE id=?", (cid,)
+                        )
+                        unmarked += 1
+        con.commit()
+        return {
+            "marked": marked,
+            "unmarked": unmarked,
+            "dropped": dropped,
+            "kept": seen - marked - dropped,
+            "total_seen": seen,
+            "min_df": min_df,
+            "max_df": max_df,
+            "total_entities": total,
+        }
+
+    def is_noise(self, concept_id: int) -> bool:
+        """Cheap lookup so the query engine can short-circuit noise rows."""
+        row = self._connect().execute(
+            "SELECT noise FROM entities WHERE id=?", (concept_id,)
+        ).fetchone()
+        return bool(row[0]) if row else False
+
+    def noise_concept_ids(self) -> set[int]:
+        """All concept ids currently marked as noise."""
+        return {
+            r[0] for r in self._connect().execute(
+                "SELECT id FROM entities WHERE kind='concept' AND noise=1"
+            )
+        }
 
     # ---- sync log ----------------------------------------------------------
 

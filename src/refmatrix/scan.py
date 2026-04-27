@@ -39,6 +39,7 @@ def match_concepts(
     *,
     exclude_namespaces: tuple[str, ...] = ("keyword",),
     case_insensitive: bool = True,
+    include_noise: bool = False,
 ) -> list[str]:
     """Resolve candidate tokens to concept names that exist in the index.
 
@@ -52,6 +53,7 @@ def match_concepts(
     out: list[str] = []
     seen: set[str] = set()
     con = s._connect()
+    noise_clause = "" if include_noise else " AND noise=0"
 
     def consider(name: str) -> None:
         if name in seen:
@@ -65,12 +67,12 @@ def match_concepts(
     for cand in candidates:
         # exact (case-preserving)
         e = s.resolve_entity(cand)
-        if e is not None and e.kind == "concept":
+        if e is not None and e.kind == "concept" and (include_noise or not e.noise):
             consider(e.name)
             continue
         if case_insensitive:
             row = con.execute(
-                "SELECT name FROM entities WHERE kind='concept' "
+                f"SELECT name FROM entities WHERE kind='concept'{noise_clause} "
                 "AND lower(name) = lower(?) LIMIT 1",
                 (cand,),
             ).fetchone()
@@ -79,7 +81,8 @@ def match_concepts(
                 continue
         # namespaced suffix: match anything */<cand>
         rows = con.execute(
-            "SELECT name FROM entities WHERE kind='concept' AND name LIKE ?",
+            f"SELECT name FROM entities WHERE kind='concept'{noise_clause} "
+            "AND name LIKE ?",
             (f"%/{cand}",),
         ).fetchall()
         for r in rows:
@@ -96,9 +99,14 @@ def scan_prompt(
     max_concepts: int = 5,
     exclude_namespaces: tuple[str, ...] = ("keyword",),
     fmt: str = "text",
+    include_noise: bool = False,
 ) -> str:
     cands = extract_candidates(prompt)
-    matches = match_concepts(s, cands, exclude_namespaces=exclude_namespaces)
+    matches = match_concepts(
+        s, cands,
+        exclude_namespaces=exclude_namespaces,
+        include_noise=include_noise,
+    )
     if not matches:
         return ""
     matches = matches[:max_concepts]

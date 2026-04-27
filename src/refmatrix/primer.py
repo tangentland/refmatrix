@@ -34,9 +34,14 @@ def is_symbol_like(name: str) -> bool:
     return bool(_SYMBOL_RE.search(name))
 
 
-def concept_density(s: Store, kinds: tuple[str, ...] = ("concept",)) -> list[dict]:
+def concept_density(
+    s: Store,
+    kinds: tuple[str, ...] = ("concept",),
+    include_noise: bool = False,
+) -> list[dict]:
     """Aggregate (concept, total_refs, per-linkage counts) sorted by total desc."""
     placeholders = ",".join("?" * len(kinds))
+    noise_clause = "" if include_noise else " AND c.noise = 0"
     rows = s._connect().execute(
         f"""
         SELECT el.concept_id   AS cid,
@@ -46,7 +51,7 @@ def concept_density(s: Store, kinds: tuple[str, ...] = ("concept",)) -> list[dic
         FROM entity_links el
         JOIN linkage_types lt ON lt.id = el.linkage_id
         JOIN entities c       ON c.id = el.concept_id
-        WHERE c.kind IN ({placeholders})
+        WHERE c.kind IN ({placeholders}){noise_clause}
         GROUP BY el.concept_id, lt.name
         """,
         kinds,
@@ -72,8 +77,9 @@ def build_primer(
     exclude_namespaces: tuple[str, ...] = ("keyword",),
     min_refs: int = 2,
     max_tokens: int = 2000,
+    include_noise: bool = False,
 ) -> str:
-    rows = concept_density(s)
+    rows = concept_density(s, include_noise=include_noise)
     excluded = set(exclude_namespaces)
 
     selected: list[dict] = []

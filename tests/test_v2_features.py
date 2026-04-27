@@ -124,10 +124,10 @@ def test_vacuum_drops_empty_concepts_and_missing_files(tmp_path, store):
 # --- prune-noise ------------------------------------------------------------
 
 
-def test_prune_noise_drops_singletons_and_too_common(store):
+def test_prune_noise_marks_singletons_and_too_common_by_default(store):
     entities = [store.upsert_entity(kind="code", name=f"f{i}.py") for i in range(20)]
-    rare = store.add_namespaced_concept("keyword", "rare")        # df=1 → drop
-    common = store.add_namespaced_concept("keyword", "common")     # df=20 → drop
+    rare = store.add_namespaced_concept("keyword", "rare")        # df=1 → mark
+    common = store.add_namespaced_concept("keyword", "common")     # df=20 → mark
     just_right = store.add_namespaced_concept("keyword", "okay")   # df=3 → keep
     store.link("mentions", rare, entities[0])
     for e in entities:
@@ -135,10 +135,51 @@ def test_prune_noise_drops_singletons_and_too_common(store):
     for e in entities[:3]:
         store.link("mentions", just_right, e)
     out = store.prune_noise(min_df=2, max_df_ratio=0.25)
-    assert out["dropped"] == 2
-    assert store.get_entity_by_id(rare) is None
-    assert store.get_entity_by_id(common) is None
+    assert out["marked"] == 2
+    assert out["dropped"] == 0
+    # Concepts still exist — they're flagged, not deleted.
+    assert store.get_entity_by_id(rare) is not None
+    assert store.get_entity_by_id(common) is not None
     assert store.get_entity_by_id(just_right) is not None
+    assert store.is_noise(rare)
+    assert store.is_noise(common)
+    assert not store.is_noise(just_right)
+
+
+def test_prune_noise_drop_actually_deletes(store):
+    entities = [store.upsert_entity(kind="code", name=f"f{i}.py") for i in range(20)]
+    rare = store.add_namespaced_concept("keyword", "rare")
+    store.link("mentions", rare, entities[0])
+    out = store.prune_noise(min_df=2, max_df_ratio=0.25, drop=True)
+    assert out["dropped"] == 1
+    assert out["marked"] == 0
+    assert store.get_entity_by_id(rare) is None
+
+
+def test_prune_noise_unmarks_when_threshold_passed(store):
+    entities = [store.upsert_entity(kind="code", name=f"f{i}.py") for i in range(20)]
+    cid = store.add_namespaced_concept("keyword", "borderline")
+    store.link("mentions", cid, entities[0])  # df=1 → noise
+    store.prune_noise(min_df=2, max_df_ratio=0.25)
+    assert store.is_noise(cid)
+    # Add another link → df=2, should clear noise on next pass.
+    store.link("mentions", cid, entities[1])
+    out = store.prune_noise(min_df=2, max_df_ratio=0.25)
+    assert out["unmarked"] == 1
+    assert not store.is_noise(cid)
+
+
+def test_prune_noise_skips_protected(store):
+    entities = [store.upsert_entity(kind="code", name=f"f{i}.py") for i in range(20)]
+    pinned = store.add_namespaced_concept("keyword", "pinned")
+    # Manually re-upsert with protected=True (or use add_concept with the flag).
+    store.upsert_entity(kind="concept", name="keyword/pinned", protected=True)
+    store.link("mentions", pinned, entities[0])  # df=1 — would normally be noise
+    out = store.prune_noise(min_df=2, max_df_ratio=0.25)
+    # Protected concept never enters the loop.
+    assert out["marked"] == 0
+    assert not store.is_noise(pinned)
+    assert store.get_entity_by_id(pinned) is not None
 
 
 # --- --explain --------------------------------------------------------------
@@ -338,3 +379,116 @@ def test_sync_writes_log_line(tmp_path):
     assert "+1" in log
     assert "paths=1" in log
     s.close()
+
+
+# --- protected & noise round-trip ------------------------------------------
+
+
+def test_add_concept_protected_survives_vacuum(store):
+    pinned = store.add_concept("pinned_thing", protected=True)
+    floats = store.add_concept("just_added")
+    out = store.vacuum()
+    assert out["concepts_dropped"] >= 1
+    assert store.get_entity_by_id(pinned) is not None
+    assert store.get_entity_by_id(floats) is None
+
+
+def test_link_protect_pins_both_endpoints(store):
+    cid = store.add_concept("auto", protected=False)
+    eid = store.upsert_entity(kind="code", name="auto.py", protected=False)
+    store.link("defines", cid, eid, protect=True)
+    assert store.get_entity_by_id(cid).protected
+    assert store.get_entity_by_id(eid).protected
+
+
+def test_auto_ingest_does_not_lower_protected_flag(store):
+    cid = store.add_concept("user_marked", protected=True)
+    # Auto-ingester re-touches by calling add_concept with default protected=False.
+    store.add_concept("user_marked", description="re-described", protected=False)
+    assert store.get_entity_by_id(cid).protected
+
+
+def test_query_excludes_noise_concepts_by_default(store):
+    from refmatrix.query import QueryEngine
+    entities = [store.upsert_entity(kind="code", name=f"f{i}.py") for i in range(3)]
+    rare = store.add_concept("noisy_thing")
+    store.link("mentions", rare, entities[0])
+    # Manually flag as noise (skip prune_noise namespace gating).
+    store._connect().execute("UPDATE entities SET noise=1 WHERE id=?", (rare,))
+    store._connect().commit()
+
+    cleaned = QueryEngine(store, include_noise=False)
+    full = QueryEngine(store, include_noise=True)
+    # neighbors() should skip the noise concept in expansion. The frontier walk
+    # starts from a non-noise concept; we add a non-noise sibling for the test.
+    other = store.add_concept("clean_thing")
+    store.link("mentions", other, entities[0])
+    # co_occurrence: cleaned should drop noisy_thing from the candidates.
+    co_clean = cleaned.co_occurrence("clean_thing", linkage="mentions")
+    co_full = full.co_occurrence("clean_thing", linkage="mentions")
+    co_clean_names = {n for n, _ in co_clean}
+    co_full_names = {n for n, _ in co_full}
+    assert "noisy_thing" not in co_clean_names
+    assert "noisy_thing" in co_full_names
+
+
+def test_primer_excludes_noise_by_default(store):
+    e = store.upsert_entity(kind="code", name="x.py")
+    sym = store.add_concept("good_symbol_name")
+    noisy = store.add_concept("bad_symbol_name")
+    store.link("mentions", sym, e)
+    store.link("mentions", noisy, e)
+    store._connect().execute("UPDATE entities SET noise=1 WHERE id=?", (noisy,))
+    store._connect().commit()
+    cleaned = build_primer(store, top_n=10, max_tokens=500, min_refs=1)
+    full = build_primer(store, top_n=10, max_tokens=500, min_refs=1,
+                        include_noise=True)
+    assert "good_symbol_name" in cleaned
+    assert "bad_symbol_name" not in cleaned
+    assert "bad_symbol_name" in full
+
+
+def test_match_concepts_skips_noise_by_default(store):
+    store.add_concept("Foo")
+    noisy = store.add_concept("Bar")
+    store._connect().execute("UPDATE entities SET noise=1 WHERE id=?", (noisy,))
+    store._connect().commit()
+    cleaned = match_concepts(store, ["Foo", "Bar"])
+    full = match_concepts(store, ["Foo", "Bar"], include_noise=True)
+    assert "Foo" in cleaned
+    assert "Bar" not in cleaned
+    assert "Bar" in full
+
+
+def test_export_import_roundtrips_protected_and_noise(tmp_path, store):
+    cid = store.add_concept("pinned", protected=True)
+    e = store.upsert_entity(kind="code", name="x.py")
+    store.link("mentions", cid, e)
+    noisy = store.add_concept("flagged")
+    store._connect().execute("UPDATE entities SET noise=1 WHERE id=?", (noisy,))
+    store._connect().commit()
+    store.close()
+
+    monkey_root = tmp_path / "out.json"
+    runner = CliRunner()
+    import os
+    os.environ["REFMATRIX_ROOT"] = str(store.root)
+    try:
+        r1 = runner.invoke(cli_main, ["export", "-o", str(monkey_root)])
+        assert r1.exit_code == 0, r1.output
+
+        # Import into a fresh store.
+        new_root = tmp_path / "new.refmatrix"
+        Store(new_root).init()
+        os.environ["REFMATRIX_ROOT"] = str(new_root)
+        r2 = runner.invoke(cli_main, ["import", str(monkey_root)])
+        assert r2.exit_code == 0, r2.output
+
+        s2 = Store(new_root)
+        pin2 = s2.get_entity("concept", "pinned")
+        flag2 = s2.get_entity("concept", "flagged")
+        assert pin2 is not None and pin2.protected
+        assert flag2 is not None and flag2.noise
+        s2.close()
+    finally:
+        os.environ.pop("REFMATRIX_ROOT", None)

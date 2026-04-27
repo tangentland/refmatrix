@@ -73,22 +73,30 @@ def info():
 @click.option("--path", default=None, help="Optional filesystem path.")
 @click.option("--tldr", default=None, help="Hyper-tldr summary blob.")
 @click.option("--meta", default=None, help="JSON metadata.")
-def add_entity(kind, name, path, tldr, meta):
-    """Insert or update an entity."""
+@click.option("--no-protect", is_flag=True,
+              help="Don't pin this entity. By default manual adds are protected "
+                   "from vacuum and prune-noise.")
+def add_entity(kind, name, path, tldr, meta, no_protect):
+    """Insert or update an entity. Manual adds are protected by default."""
     s = _store()
     meta_d = json.loads(meta) if meta else None
-    eid = s.upsert_entity(kind=kind, name=name, path=path, tldr=tldr, meta=meta_d)
-    console.print(f"[green]upserted[/] {kind}:{name} (id={eid})")
+    eid = s.upsert_entity(kind=kind, name=name, path=path, tldr=tldr,
+                          meta=meta_d, protected=not no_protect)
+    pinned = "" if no_protect else " (pinned)"
+    console.print(f"[green]upserted[/] {kind}:{name} (id={eid}){pinned}")
 
 
 @main.command("add-concept")
 @click.argument("name")
 @click.option("--description", "-d", default=None)
-def add_concept(name, description):
-    """Add a concept (= entity of kind 'concept')."""
+@click.option("--no-protect", is_flag=True,
+              help="Don't pin this concept. By default manual adds are protected.")
+def add_concept(name, description, no_protect):
+    """Add a concept (= entity of kind 'concept'). Pinned by default."""
     s = _store()
-    cid = s.add_concept(name, description=description)
-    console.print(f"[green]added concept[/] {name} (id={cid})")
+    cid = s.add_concept(name, description=description, protected=not no_protect)
+    pinned = "" if no_protect else " (pinned)"
+    console.print(f"[green]added concept[/] {name} (id={cid}){pinned}")
 
 
 @main.command("list-entities")
@@ -148,14 +156,18 @@ def _resolve_entity_id(s: Store, ref: str) -> int:
 @click.argument("entity")
 @click.option("--type", "linkage", default="mentions",
               help="Linkage type (default: mentions).")
-def link(concept, entity, linkage):
-    """Set bit (linkage, concept, entity)."""
+@click.option("--no-protect", is_flag=True,
+              help="Don't pin the endpoints. By default a manual link protects "
+                   "both the concept and entity from vacuum/prune-noise.")
+def link(concept, entity, linkage, no_protect):
+    """Set bit (linkage, concept, entity). Pins both endpoints by default."""
     s = _store()
     cid = _resolve_concept(s, concept)
     eid = _resolve_entity_id(s, entity)
-    added = s.link(linkage, cid, eid)
+    added = s.link(linkage, cid, eid, protect=not no_protect)
     msg = "linked" if added else "already linked"
-    console.print(f"[green]{msg}[/] {linkage}: {concept} -> {entity}")
+    pinned = "" if no_protect else " (pinned)"
+    console.print(f"[green]{msg}[/] {linkage}: {concept} -> {entity}{pinned}")
 
 
 @main.command()
@@ -195,10 +207,14 @@ def _print_bitmap(s: Store, bm, limit: int = 50):
 @click.option("--limit", default=50, type=int)
 @click.option("--explain", is_flag=True,
               help="For each result entity, show which (linkage, concept) memberships it has.")
-def query(expr, is_pql, ids_only, limit, explain):
+@click.option("--full", "include_noise", is_flag=True,
+              help="Include concepts marked noise by prune-noise. Default uses "
+                   "the cleaned graph; --full restores the raw index for find/grep "
+                   "replacement.")
+def query(expr, is_pql, ids_only, limit, explain, include_noise):
     """Run a query. DSL: `mentions:parser AND defines:parser`. PQL: `Row(calls,foo)`."""
     s = _store()
-    qe = QueryEngine(s)
+    qe = QueryEngine(s, include_noise=include_noise)
     with log_query(s, kind="pql" if is_pql else "dsl", body=expr, source="query") as t:
         result = qe.run_pql(expr) if is_pql else qe.run(expr)
         try:
@@ -247,10 +263,12 @@ def query(expr, is_pql, ids_only, limit, explain):
 @click.option("--depth", default=1, type=int)
 @click.option("--linkage", multiple=True, help="Restrict to these linkage types.")
 @click.option("--limit", default=50, type=int)
-def neighbors(concept, depth, linkage, limit):
+@click.option("--full", "include_noise", is_flag=True,
+              help="Include noise-marked concepts in the walk.")
+def neighbors(concept, depth, linkage, limit, include_noise):
     """Walk linkages from a concept (depth-N closure)."""
     s = _store()
-    qe = QueryEngine(s)
+    qe = QueryEngine(s, include_noise=include_noise)
     with log_query(s, kind="neighbors", body=concept, source="neighbors") as t:
         bm = qe.neighbors(concept, depth=depth, linkages=list(linkage) or None)
         t.cardinality = len(bm)
@@ -347,10 +365,12 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since):
 @click.argument("concept")
 @click.option("--type", "linkage", default="mentions")
 @click.option("--limit", default=20, type=int)
-def co_occur(concept, linkage, limit):
+@click.option("--full", "include_noise", is_flag=True,
+              help="Include noise-marked concepts.")
+def co_occur(concept, linkage, limit, include_noise):
     """Concepts that share entities with the given concept under a linkage."""
     s = _store()
-    qe = QueryEngine(s)
+    qe = QueryEngine(s, include_noise=include_noise)
     with log_query(s, kind="co-occur", body=concept, source="co-occur") as t:
         rows = qe.co_occurrence(concept, linkage=linkage)[:limit]
         t.cardinality = len(rows)
@@ -520,20 +540,42 @@ def vacuum():
 @click.option("--namespace", "-n", multiple=True, default=("keyword",),
               help="Namespaces to filter (default: keyword).")
 @click.option("--min-df", default=2, type=int,
-              help="Drop concepts with document-frequency below this.")
+              help="Mark concepts with document-frequency below this.")
 @click.option("--max-df-ratio", default=0.25, type=float,
-              help="Drop concepts whose DF/total > this ratio.")
-def prune_noise(namespace, min_df, max_df_ratio):
-    """Drop noisy auto-generated concepts by document-frequency thresholds."""
+              help="Mark concepts whose DF/total > this ratio.")
+@click.option("--drop", is_flag=True,
+              help="Actually delete marked concepts instead of just flagging "
+                   "them. Default is non-destructive: queries hide noise but "
+                   "--full restores the raw graph.")
+def prune_noise(namespace, min_df, max_df_ratio, drop):
+    """Mark (or with --drop, delete) noisy auto-generated concepts.
+
+    Default behavior is non-destructive — concepts are flagged so queries can
+    hide them by default, while `--full` on query/neighbors/co-occur/primer/
+    scan-prompt restores the full graph for find/grep-style use. Protected
+    concepts (added via add-entity/add-concept/link) are never touched.
+    """
     s = _store()
     out = s.prune_noise(
-        namespaces=tuple(namespace), min_df=min_df, max_df_ratio=max_df_ratio,
+        namespaces=tuple(namespace), min_df=min_df,
+        max_df_ratio=max_df_ratio, drop=drop,
     )
-    console.print(
-        f"[green]pruned[/] {out['dropped']} concepts "
-        f"(kept {out['kept']} of {out['total_seen']} in {','.join(namespace)} "
-        f"namespaces) | min_df={out['min_df']} max_df={out['max_df']}"
-    )
+    if drop:
+        console.print(
+            f"[green]dropped[/] {out['dropped']} concepts "
+            f"(kept {out['kept']} of {out['total_seen']} in "
+            f"{','.join(namespace)} namespaces) | "
+            f"min_df={out['min_df']} max_df={out['max_df']}"
+        )
+    else:
+        console.print(
+            f"[green]marked[/] {out['marked']} noise / "
+            f"[yellow]unmarked[/] {out['unmarked']} "
+            f"(kept {out['kept']} of {out['total_seen']} in "
+            f"{','.join(namespace)} namespaces) | "
+            f"min_df={out['min_df']} max_df={out['max_df']} | "
+            f"queries hide these by default; pass --full to include"
+        )
 
 
 @main.command()
@@ -545,7 +587,8 @@ def export(out):
         "version": __version__,
         "entities": [
             {"id": e.id, "kind": e.kind, "name": e.name, "path": e.path,
-             "tldr": e.tldr, "meta": e.meta}
+             "tldr": e.tldr, "meta": e.meta,
+             "protected": e.protected, "noise": e.noise}
             for e in s.iter_entities()
         ],
         "linkage_types": s.list_linkages(),
@@ -573,8 +616,14 @@ def import_(path, merge):
         new_id = s.upsert_entity(
             kind=e["kind"], name=e["name"], path=e.get("path"),
             tldr=e.get("tldr"), meta=e.get("meta"),
+            protected=bool(e.get("protected", False)),
         )
+        if e.get("noise"):
+            s._connect().execute(
+                "UPDATE entities SET noise=1 WHERE id=?", (new_id,)
+            )
         id_remap[e["id"]] = new_id
+    s._connect().commit()
     for lk in payload.get("linkage_types", []):
         s.add_linkage_type(name=lk["name"], directed=bool(lk["directed"]),
                            description=lk.get("description"))
@@ -742,9 +791,12 @@ def queue_cmd():
                    "dependency signal for orientation.")
 @click.option("--min-refs", default=2, type=int)
 @click.option("--max-tokens", default=2000, type=int)
+@click.option("--full", "include_noise", is_flag=True,
+              help="Include noise-marked concepts.")
 @click.option("--out", "-o", type=click.Path(path_type=Path), default=None,
               help="Write to file instead of stdout. Suggested: .refmatrix/PRIMER.md")
-def primer(top, symbol_like, exclude_namespace, min_refs, max_tokens, out):
+def primer(top, symbol_like, exclude_namespace, min_refs, max_tokens,
+           include_noise, out):
     """Density-ranked map of the top-N reference-dense symbols. CLAUDE.md-friendly."""
     from refmatrix.primer import build_primer
 
@@ -756,6 +808,7 @@ def primer(top, symbol_like, exclude_namespace, min_refs, max_tokens, out):
         exclude_namespaces=tuple(exclude_namespace),
         min_refs=min_refs,
         max_tokens=max_tokens,
+        include_noise=include_noise,
     )
     if out:
         Path(out).parent.mkdir(parents=True, exist_ok=True)
@@ -773,9 +826,11 @@ def primer(top, symbol_like, exclude_namespace, min_refs, max_tokens, out):
 @click.option("--exclude-namespace", multiple=True, default=("keyword",),
               help="Drop noise namespaces (default: keyword). import/ is kept "
                    "so prompts mentioning module names get useful bundles.")
+@click.option("--full", "include_noise", is_flag=True,
+              help="Include noise-marked concepts when matching.")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
 def scan_prompt_cmd(text, max_tokens, per_concept_tokens, max_concepts,
-                    exclude_namespace, fmt):
+                    exclude_namespace, include_noise, fmt):
     """Read a prompt; emit context bundles for symbols it mentions.
 
     Designed for the Claude Code UserPromptSubmit hook. Output goes to stdout,
@@ -794,6 +849,7 @@ def scan_prompt_cmd(text, max_tokens, per_concept_tokens, max_concepts,
             per_concept_tokens=per_concept_tokens,
             max_concepts=max_concepts,
             exclude_namespaces=tuple(exclude_namespace),
+            include_noise=include_noise,
             fmt=fmt,
         )
         tlog.cardinality = out.count("=== context for") if out else 0
