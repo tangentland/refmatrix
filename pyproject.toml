@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "refmatrix"
+version = "0.1.0"
+description = "Roaring-bitmap reference matrix for documents, code, and concepts. Hyper-tldr index."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "tholley"}]
+dependencies = [
+    "pyroaring>=1.0",
+    "click>=8.1",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+tldr = ["llm-tldr>=1.5"]
+watch = ["watchdog>=4.0"]
+dev = ["pytest>=8.0", "watchdog>=4.0"]
+
+[project.scripts]
+refmatrix = "refmatrix.cli:main"
+rmx = "refmatrix.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

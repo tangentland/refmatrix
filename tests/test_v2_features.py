@@ -1,0 +1,340 @@
+"""Tests for primer, scan-prompt, vacuum, prune-noise, --explain, --since, evidence."""
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+from click.testing import CliRunner
+
+from refmatrix.cli import main as cli_main
+from refmatrix.primer import build_primer, is_symbol_like
+from refmatrix.scan import extract_candidates, match_concepts, scan_prompt
+from refmatrix.store import Store
+
+
+@pytest.fixture
+def store(tmp_path):
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    yield s
+    s.close()
+
+
+# --- primer -----------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name,want", [
+    ("register_graph_object", True),
+    ("channel_aid", True),
+    ("foo.bar.baz", True),
+    ("Module::method", True),
+    ("camelCase", True),
+    ("data", False),
+    ("value", False),
+    ("input", False),
+])
+def test_is_symbol_like(name, want):
+    assert is_symbol_like(name) is want
+
+
+def test_build_primer_filters_symbols_and_namespaces(store):
+    sym = store.add_concept("register_graph_object")
+    nope = store.add_concept("data")
+    noise = store.add_namespaced_concept("keyword", "data")
+    e = store.upsert_entity(kind="code", name="x.py")
+    for cid in (sym, nope, noise):
+        store.link("mentions", cid, e)
+    out = build_primer(store, top_n=10, max_tokens=500, min_refs=1)
+    assert "register_graph_object" in out
+    assert "\ndata(" not in out          # English noun — filtered
+    assert "keyword/data" not in out     # namespace excluded
+
+
+def test_build_primer_min_refs_threshold(store):
+    cid = store.add_concept("foo_bar")
+    e = store.upsert_entity(kind="code", name="x.py")
+    store.link("mentions", cid, e)            # df = 1
+    out = build_primer(store, min_refs=2, max_tokens=500)
+    assert "foo_bar" not in out
+
+
+# --- scan-prompt ------------------------------------------------------------
+
+
+def test_extract_candidates_picks_identifier_shapes():
+    cands = extract_candidates(
+        "please fix register_graph_object and channel.aid; "
+        "ignore plain words like the and of"
+    )
+    assert "register_graph_object" in cands
+    assert "channel.aid" in cands
+
+
+def test_match_concepts_excludes_noise_namespace(store):
+    store.add_concept("register_graph_object")
+    store.add_namespaced_concept("keyword", "register_graph_object")
+    matches = match_concepts(store, ["register_graph_object"])
+    # only the bare concept, never the keyword/ one
+    assert matches == ["register_graph_object"]
+
+
+def test_primer_keeps_import_namespace_by_default(store):
+    cid = store.add_namespaced_concept("import", "requests")
+    e = store.upsert_entity(kind="code", name="x.py")
+    store.link("imports", cid, e)
+    out = build_primer(store, top_n=10, max_tokens=500, min_refs=1)
+    assert "import/requests" in out
+
+
+def test_scan_prompt_emits_bundle_for_known_symbol(store):
+    cid = store.add_concept("register_graph_object")
+    e = store.upsert_entity(kind="code", name="src/a.py", tldr="implementation")
+    store.link("defines", cid, e)
+    out = scan_prompt(store, "fix register_graph_object please")
+    assert "register_graph_object" in out
+    assert "src/a.py" in out
+
+
+def test_scan_prompt_silent_for_unknown_prompt(store):
+    assert scan_prompt(store, "what is the weather") == ""
+
+
+# --- vacuum -----------------------------------------------------------------
+
+
+def test_vacuum_drops_empty_concepts_and_missing_files(tmp_path, store):
+    used = store.add_concept("used")
+    empty = store.add_concept("empty")
+    e = store.upsert_entity(kind="code", name="present.py",
+                            path=str(tmp_path / "present.py"))
+    (tmp_path / "present.py").write_text("x")
+    store.link("defines", used, e)
+    store.mark_tracked(str(tmp_path / "present.py"),
+                       (tmp_path / "present.py").stat().st_mtime)
+    store.mark_tracked(str(tmp_path / "gone.py"), 0.0)
+    out = store.vacuum()
+    assert out["concepts_dropped"] >= 1
+    assert out["files_purged"] >= 1
+    assert store.get_entity_by_id(used) is not None
+    assert store.get_entity_by_id(empty) is None
+
+
+# --- prune-noise ------------------------------------------------------------
+
+
+def test_prune_noise_drops_singletons_and_too_common(store):
+    entities = [store.upsert_entity(kind="code", name=f"f{i}.py") for i in range(20)]
+    rare = store.add_namespaced_concept("keyword", "rare")        # df=1 → drop
+    common = store.add_namespaced_concept("keyword", "common")     # df=20 → drop
+    just_right = store.add_namespaced_concept("keyword", "okay")   # df=3 → keep
+    store.link("mentions", rare, entities[0])
+    for e in entities:
+        store.link("mentions", common, e)
+    for e in entities[:3]:
+        store.link("mentions", just_right, e)
+    out = store.prune_noise(min_df=2, max_df_ratio=0.25)
+    assert out["dropped"] == 2
+    assert store.get_entity_by_id(rare) is None
+    assert store.get_entity_by_id(common) is None
+    assert store.get_entity_by_id(just_right) is not None
+
+
+# --- --explain --------------------------------------------------------------
+
+
+def test_explain_entity_returns_linkages_with_evidence(store):
+    cid = store.add_concept("auth")
+    e = store.upsert_entity(kind="code", name="auth.py")
+    store.link("defines", cid, e)
+    store.add_evidence("defines", cid, e, file="auth.py", line=10, detail="def login")
+    rows = store.explain_entity(e)
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["linkage"] == "defines"
+    assert r["concept_name"] == "auth"
+    assert r["evidence"][0]["line"] == 10
+
+
+# --- --since ----------------------------------------------------------------
+
+
+def test_context_since_finds_concepts_for_changed_files(tmp_path, monkeypatch):
+    if subprocess.run(["git", "--version"], capture_output=True).returncode != 0:
+        pytest.skip("git not available")
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+
+    def run(*args):
+        subprocess.run(["git", "-C", str(proj), *args], env={**__import__("os").environ, **env},
+                       check=True, capture_output=True)
+    run("init", "-q", "-b", "main")
+    (proj / "a.py").write_text("# a\n")
+    run("add", "a.py")
+    run("commit", "-q", "-m", "init")
+
+    rmx_root = proj / ".refmatrix"
+    rmx_root.mkdir()
+    s = Store(rmx_root)
+    s.init()
+    cid = s.add_concept("parser")
+    e = s.upsert_entity(kind="code", name="b.py", path=str(proj / "b.py"))
+    s.link("defines", cid, e)
+    s.close()
+
+    (proj / "b.py").write_text("# b\n")
+    run("add", "b.py")
+    run("commit", "-q", "-m", "add b")
+
+    monkeypatch.setenv("REFMATRIX_ROOT", str(rmx_root))
+    runner = CliRunner()
+    result = runner.invoke(cli_main, ["context", "--since", "HEAD~1"])
+    assert result.exit_code == 0, result.output
+    assert "parser" in result.output
+
+
+# --- query --explain --------------------------------------------------------
+
+
+def test_query_explain_flag(tmp_path, monkeypatch):
+    rmx_root = tmp_path / ".refmatrix"
+    s = Store(rmx_root)
+    s.init()
+    cid = s.add_concept("auth")
+    e = s.upsert_entity(kind="code", name="auth.py")
+    s.link("defines", cid, e)
+    s.add_evidence("defines", cid, e, file="auth.py", line=42)
+    s.close()
+
+    monkeypatch.setenv("REFMATRIX_ROOT", str(rmx_root))
+    runner = CliRunner()
+    result = runner.invoke(cli_main, ["query", "defines:auth", "--explain"])
+    assert result.exit_code == 0, result.output
+    assert "auth.py" in result.output
+    # explain-table contains the linkage column header and the line evidence
+    assert "linkage" in result.output.lower() or "defines" in result.output
+    assert "42" in result.output
+
+
+# --- sync.log ---------------------------------------------------------------
+
+
+def test_existing_catalog_auto_heals_missing_tables(tmp_path):
+    """Simulate viascope-style catalog created before linkage_evidence existed:
+    drop the table, close, reopen, verify it's recreated and add_evidence works.
+    """
+    import sqlite3 as _sql
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    cid = s.add_concept("auth")
+    e = s.upsert_entity(kind="code", name="auth.py")
+    s.link("defines", cid, e)
+
+    # Drop the linkage_evidence table (and tracked_files for good measure) —
+    # mimicking an older catalog version.
+    con = s._connect()
+    con.execute("DROP TABLE IF EXISTS linkage_evidence")
+    con.execute("DROP TABLE IF EXISTS tracked_files")
+    con.commit()
+    s.close()
+
+    # Reopen — _connect() should self-heal via CATALOG_DDL.
+    s2 = Store(tmp_path / ".refmatrix")
+    # No init() call — exactly what `rmx ingest` etc. do.
+    s2.add_evidence("defines", cid, e, file="auth.py", line=1, detail="ok")
+    rows = s2.get_evidence(e)
+    assert len(rows) == 1 and rows[0]["line"] == 1
+    s2.close()
+
+
+def test_telemetry_logs_record(tmp_path):
+    from refmatrix.telemetry import log_query, read_log, summarize
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    with log_query(s, kind="dsl", body="defines:foo", source="query") as t:
+        t.cardinality = 3
+    rows = read_log(s)
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["kind"] == "dsl"
+    assert r["body"] == "defines:foo"
+    assert r["cardinality"] == 3
+    assert r["error"] is None
+    assert isinstance(r["latency_ms"], int)
+    summary = summarize(s)
+    assert summary["total"] == 1
+    assert summary["zero_result_count"] == 0
+    s.close()
+
+
+def test_telemetry_records_errors(tmp_path):
+    from refmatrix.telemetry import log_query, read_log
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    try:
+        with log_query(s, kind="dsl", body="bad query", source="query"):
+            raise ValueError("simulated parse error")
+    except ValueError:
+        pass
+    rows = read_log(s)
+    assert len(rows) == 1
+    assert "ValueError" in rows[0]["error"]
+    s.close()
+
+
+def test_telemetry_disabled_by_env(tmp_path, monkeypatch):
+    from refmatrix.telemetry import log_query, read_log
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    monkeypatch.setenv("REFMATRIX_NO_TELEMETRY", "1")
+    with log_query(s, kind="dsl", body="x", source="query") as t:
+        t.cardinality = 0
+    assert read_log(s) == []
+    s.close()
+
+
+def test_telemetry_top_queried_skips_dsl_bodies(tmp_path):
+    from refmatrix.telemetry import log_query, top_queried_concepts
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    # `context` calls — counted
+    with log_query(s, kind="context", body="parser", source="context") as t:
+        t.cardinality = 5
+    with log_query(s, kind="context", body="parser", source="context") as t:
+        t.cardinality = 5
+    with log_query(s, kind="neighbors", body="parser", source="neighbors") as t:
+        t.cardinality = 7
+    # DSL — should be skipped
+    with log_query(s, kind="dsl", body="defines:parser AND mentions:parser",
+                   source="query") as t:
+        t.cardinality = 0
+    rows = top_queried_concepts(s)
+    assert ("parser", 3) in rows
+    bodies = [b for b, _ in rows]
+    assert "defines:parser AND mentions:parser" not in bodies
+    s.close()
+
+
+def test_sync_writes_log_line(tmp_path):
+    from refmatrix.sync import sync_files
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    f = proj / "a.py"
+    f.write_text("x")
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    sync_files(s, [str(f)], project_root=proj)
+    log = (s.root / "sync.log").read_text()
+    assert "+1" in log
+    assert "paths=1" in log
+    s.close()

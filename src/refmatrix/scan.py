@@ -1,0 +1,154 @@
+"""
+`rmx scan-prompt` — dynamic context for `UserPromptSubmit` hooks.
+
+Reads a prompt (stdin or argv), tokenizes it, matches tokens against the
+concept set, and emits a token-budgeted concatenation of `rmx context`
+bundles for the top-K matches. Exit code 0 always so the hook never blocks
+the user prompt.
+"""
+from __future__ import annotations
+
+import json
+import re
+import sys
+
+from refmatrix.context import build_context, render_text
+from refmatrix.store import Store
+
+
+# Tokenization: identifier-shaped runs only. Skip pure-English noise.
+_IDENT_RE = re.compile(r"[A-Za-z_][\w\-./]*(?:::[\w\-./]+)*")
+
+
+def extract_candidates(text: str) -> list[str]:
+    """Return distinct identifier-shaped tokens from a prompt, in first-seen order."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for m in _IDENT_RE.finditer(text):
+        tok = m.group(0)
+        if tok in seen:
+            continue
+        seen.add(tok)
+        out.append(tok)
+    return out
+
+
+def match_concepts(
+    s: Store,
+    candidates: list[str],
+    *,
+    exclude_namespaces: tuple[str, ...] = ("keyword",),
+    case_insensitive: bool = True,
+) -> list[str]:
+    """Resolve candidate tokens to concept names that exist in the index.
+
+    Tries, in order:
+    1. exact bare-name match
+    2. case-insensitive bare-name match
+    3. namespaced suffix match — `tree_sitter` matches `import/tree_sitter`
+       (excluding namespaces in `exclude_namespaces`)
+    """
+    excluded = set(exclude_namespaces)
+    out: list[str] = []
+    seen: set[str] = set()
+    con = s._connect()
+
+    def consider(name: str) -> None:
+        if name in seen:
+            return
+        ns = name.split("/", 1)[0] if "/" in name else None
+        if ns and ns in excluded:
+            return
+        seen.add(name)
+        out.append(name)
+
+    for cand in candidates:
+        # exact (case-preserving)
+        e = s.resolve_entity(cand)
+        if e is not None and e.kind == "concept":
+            consider(e.name)
+            continue
+        if case_insensitive:
+            row = con.execute(
+                "SELECT name FROM entities WHERE kind='concept' "
+                "AND lower(name) = lower(?) LIMIT 1",
+                (cand,),
+            ).fetchone()
+            if row:
+                consider(row[0])
+                continue
+        # namespaced suffix: match anything */<cand>
+        rows = con.execute(
+            "SELECT name FROM entities WHERE kind='concept' AND name LIKE ?",
+            (f"%/{cand}",),
+        ).fetchall()
+        for r in rows:
+            consider(r[0])
+    return out
+
+
+def scan_prompt(
+    s: Store,
+    prompt: str,
+    *,
+    max_tokens: int = 2000,
+    per_concept_tokens: int = 600,
+    max_concepts: int = 5,
+    exclude_namespaces: tuple[str, ...] = ("keyword",),
+    fmt: str = "text",
+) -> str:
+    cands = extract_candidates(prompt)
+    matches = match_concepts(s, cands, exclude_namespaces=exclude_namespaces)
+    if not matches:
+        return ""
+    matches = matches[:max_concepts]
+
+    if fmt == "json":
+        bundles = [
+            build_context(s, name, max_tokens=per_concept_tokens, max_entities=10)
+            for name in matches
+        ]
+        from refmatrix.context import render_json
+        return json.dumps(
+            [json.loads(render_json(b)) for b in bundles],
+            indent=2,
+        )
+
+    parts: list[str] = []
+    used = 0
+    parts.append(f"# refmatrix context for prompt-mentioned symbols: {', '.join(matches)}")
+    used += len(parts[-1]) // 4
+    for name in matches:
+        b = build_context(s, name, max_tokens=per_concept_tokens, max_entities=10)
+        if b.anchor is None or not b.groups:
+            continue
+        rendered = render_text(b)
+        cost = len(rendered) // 4
+        if used + cost > max_tokens:
+            parts.append("# [truncated by --max-tokens]")
+            break
+        parts.append("")
+        parts.append(rendered)
+        used += cost
+    return "\n".join(parts)
+
+
+def read_stdin_prompt() -> str:
+    """Read the user prompt from stdin.
+
+    Claude Code's UserPromptSubmit hook receives a JSON envelope on stdin
+    with a `prompt` field. We accept either the envelope or raw text and
+    do the right thing.
+    """
+    raw = sys.stdin.read()
+    if not raw.strip():
+        return ""
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            for key in ("prompt", "user_prompt", "text", "message"):
+                if key in data and isinstance(data[key], str):
+                    return data[key]
+    except json.JSONDecodeError:
+        pass
+    return raw

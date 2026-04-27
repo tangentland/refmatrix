@@ -1,0 +1,389 @@
+"""
+Hook installer. Two surfaces:
+
+- git hooks (post-commit, post-merge, post-checkout, post-rewrite) that fire
+  `rmx sync --since <ref>` after history-changing operations.
+- Claude Code hook config: a JSON block adding PostToolUse enqueue and Stop
+  flush. Written to `.claude/settings.local.json` for project scope, or
+  printed for the user to merge into `~/.claude/settings.json`.
+
+Default mode is dry-run. Pass `apply=True` to actually write. Refuses to
+overwrite an existing file unless `force=True`.
+
+The git hook scripts are intentionally minimal: they just `cd` to the project
+root and shell out to `rmx`. They background the call so commits stay snappy.
+"""
+from __future__ import annotations
+
+import json
+import os
+import stat
+from pathlib import Path
+
+GIT_HOOK_SCRIPTS: dict[str, str] = {
+    "post-commit": r"""#!/usr/bin/env bash
+# refmatrix: refresh after each commit
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+[ -d "$ROOT/.refmatrix" ] || exit 0
+( cd "$ROOT" && rmx sync --since HEAD~1 >/dev/null 2>&1 || true ) &
+disown
+""",
+    "post-merge": r"""#!/usr/bin/env bash
+# refmatrix: refresh after merge
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+[ -d "$ROOT/.refmatrix" ] || exit 0
+( cd "$ROOT" && rmx sync --since ORIG_HEAD >/dev/null 2>&1 || true ) &
+disown
+""",
+    "post-checkout": r"""#!/usr/bin/env bash
+# refmatrix: refresh after checkout (only branch switches, $3==1)
+set -e
+[ "$3" = "1" ] || exit 0
+ROOT="$(git rev-parse --show-toplevel)"
+[ -d "$ROOT/.refmatrix" ] || exit 0
+( cd "$ROOT" && rmx sync --since "$1..$2" >/dev/null 2>&1 || true ) &
+disown
+""",
+    "post-rewrite": r"""#!/usr/bin/env bash
+# refmatrix: refresh after rebase/amend
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+[ -d "$ROOT/.refmatrix" ] || exit 0
+# Read rewritten oid pairs from stdin; sync from the oldest old-oid.
+OLD=$(awk '{print $1; exit}')
+[ -z "$OLD" ] && exit 0
+( cd "$ROOT" && rmx sync --since "$OLD" >/dev/null 2>&1 || true ) &
+disown
+""",
+}
+
+
+def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
+                       scan_prompt: bool = True) -> dict:
+    """A merge-ready hooks block for Claude Code settings.json.
+
+    Uses python -c instead of jq so the hook works on a fresh box without
+    extra deps.
+    """
+    # PostToolUse: read tool_input JSON from stdin, extract file_path(s),
+    # enqueue them. Single-line python so it stays one shell command.
+    enqueue_py = (
+        "import json,sys,subprocess;"
+        "d=json.load(sys.stdin);"
+        "ti=d.get('tool_input') or {};"
+        "paths=set();"
+        "fp=ti.get('file_path');"
+        "paths.add(fp) if isinstance(fp,str) else None;"
+        "[paths.add(e.get('file_path')) for e in (ti.get('edits') or []) "
+        "if isinstance(e,dict) and isinstance(e.get('file_path'),str)];"
+        "[subprocess.run(['rmx','sync','--enqueue-only','-f',p],check=False) "
+        "for p in paths if p]"
+    )
+    enqueue_cmd = f"python3 -c \"{enqueue_py}\" 2>/dev/null || true"
+
+    flush_cmd = "rmx sync --flush-queue >/dev/null 2>&1 || true"
+
+    # SessionStart: flush + (optionally) regenerate primer.
+    sess_parts = ["rmx sync --flush-queue >/dev/null 2>&1 || true"]
+    if primer:
+        sess_parts.append(
+            "rmx primer --out '"
+            + str(refmatrix_root / "PRIMER.md")
+            + "' >/dev/null 2>&1 || true"
+        )
+    sess_cmd = " ; ".join(sess_parts)
+
+    block = {
+        "hooks": {
+            "PostToolUse": [
+                {
+                    "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+                    "hooks": [{"type": "command", "command": enqueue_cmd}],
+                }
+            ],
+            "Stop": [
+                {"hooks": [{"type": "command", "command": flush_cmd}]}
+            ],
+            "SubagentStop": [
+                {"hooks": [{"type": "command", "command": flush_cmd}]}
+            ],
+            "SessionStart": [
+                {
+                    "matcher": "startup|resume",
+                    "hooks": [{"type": "command", "command": sess_cmd}],
+                }
+            ],
+        }
+    }
+
+    if scan_prompt:
+        # UserPromptSubmit: pipe the JSON envelope through `rmx scan-prompt`
+        # so Claude sees context for symbols mentioned in the user's prompt.
+        block["hooks"]["UserPromptSubmit"] = [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "rmx scan-prompt --max-tokens 2000 2>/dev/null || true",
+                    }
+                ],
+            }
+        ]
+    return block
+
+
+def install(
+    project_root: Path,
+    refmatrix_root: Path,
+    git: bool = True,
+    claude: bool = True,
+    briefing: bool = True,
+    scope: str = "project",
+    apply: bool = False,
+    force: bool = False,
+) -> list[str]:
+    """Return a list of human-readable plan lines. Performs writes if apply=True."""
+    out: list[str] = []
+    project_root = project_root.resolve()
+
+    if git:
+        out.extend(_install_git_hooks(project_root, apply=apply, force=force))
+    if claude:
+        out.extend(_install_claude_hooks(project_root, refmatrix_root,
+                                         scope=scope, apply=apply, force=force,
+                                         primer=True, scan_prompt=True))
+    if briefing:
+        out.extend(_install_briefing(project_root, refmatrix_root,
+                                     apply=apply, force=force))
+    if not apply:
+        out.append("[dim]dry-run — pass --apply to write[/]")
+    return out
+
+
+def _install_git_hooks(project_root: Path, apply: bool, force: bool) -> list[str]:
+    out: list[str] = []
+    git_dir = project_root / ".git"
+    if not git_dir.is_dir():
+        out.append(f"[yellow]skip git hooks:[/] no .git in {project_root}")
+        return out
+    hooks_dir = git_dir / "hooks"
+    hooks_dir.mkdir(exist_ok=True)
+    for name, script in GIT_HOOK_SCRIPTS.items():
+        target = hooks_dir / name
+        if target.exists() and not force:
+            out.append(f"[yellow]skip[/] {target} (exists; pass --force to overwrite)")
+            continue
+        out.append(f"[green]write[/] {target}")
+        if apply:
+            target.write_text(script)
+            target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return out
+
+
+CLAUDE_BRIEFING = """\
+# refmatrix briefing for Claude
+
+This project has a refmatrix index at `.refmatrix/` — a roaring-bitmap-backed
+graph of docs, code, and concepts. Hooks keep it fresh on git operations and
+on every Edit/Write tool call. **Trust the index.**
+
+## When to reach for `rmx` instead of grep/Read
+
+| Question | Command |
+|---|---|
+| "what calls X" / "where is X used" | `rmx neighbors X --depth 2` |
+| "give me everything about X for an LLM" | `rmx context X` (token-budgeted) |
+| "what changed since this branch diverged" | `rmx context --since main` |
+| "find docs and code mentioning X" | `rmx query "mentions:X OR defines:X"` |
+| "explain why an entity matched a query" | `rmx query "<dsl>" --explain` |
+| "concepts that co-occur with X" | `rmx co-occur X --type mentions` |
+| "rank entities by mention frequency" | `rmx top X --type mentions -k 10` |
+| "what does this prompt's symbols touch" | (auto via `UserPromptSubmit` hook) |
+
+`rmx context <symbol>` is the most token-efficient way to understand a symbol's
+role — it bundles the symbol's tldr plus immediate neighbors per linkage with
+their tldrs, capped by token budget. Prefer it over reading 5 files. For
+programmatic use, `rmx context X --format json`.
+
+When a query result surprises you, **always re-run with `--explain`** — it
+shows file:line evidence for each (linkage, concept) membership that qualified
+the entity. That's the trust mechanism.
+
+## Query syntax
+
+**DSL (infix set algebra):**
+```
+mentions:parser AND defines:parser
+calls:foo OR (mentions:bar AND NOT imports:legacy)
+mentions:keyword/data            # namespaced concept (auto-emitted by ingester)
+imports:import/json              # python module concept
+parser                            # bare term: union across all linkages
+```
+
+**PQL (Pilosa-style functions):**
+```
+Row(defines, parser)
+Intersect(Row(calls, foo), Row(mentions, bar))
+Union(...)  Difference(A, B)  Xor(...)  TopN(<bm>, n)  Count(<bm>)
+```
+
+## Linkage taxonomy
+
+Defaults: `defines`, `called_by`, `calls`, `mentions`, `imports`, `is_a`,
+`related_to`. Plus any custom types added with `rmx add-linkage-type`.
+
+`rmx list-linkages` shows what's actually defined in this project.
+
+## Concept namespacing
+
+Auto-generated concepts are namespaced so they don't collide with your own:
+- `keyword/<word>` — extracted from docstrings (noisy by design; mostly
+  filtered out of the primer and `scan-prompt`)
+- `import/<module>` — Python imports detected by the ast walker
+- bare names — function-name concepts (from `tldr-warm`) and any concepts
+  you added with `rmx add-concept`
+
+To query a namespaced concept: `mentions:keyword/foo`, `imports:import/json`.
+
+## Freshness contract
+
+Hooks installed by `rmx install-hooks --apply`:
+- `PostToolUse` on Edit/Write/MultiEdit/NotebookEdit → enqueues touched paths
+- `Stop` / `SubagentStop` → flushes via `rmx sync --flush-queue`
+- `SessionStart` (startup|resume) → flushes + regenerates `.refmatrix/PRIMER.md`
+- `UserPromptSubmit` → `rmx scan-prompt` injects bundles for symbols you mention
+- git `post-commit` / `post-merge` / `post-checkout` / `post-rewrite` → syncs
+  paths changed since the relevant ref
+
+Diagnostics:
+- `rmx queue` — pending paths waiting to flush
+- `rmx stats --stale` — tracked files where on-disk mtime > last_synced
+- `cat .refmatrix/sync.log` — append-only log of every sync, with timestamps
+  and `+added ~updated -purged` counts
+
+Repair:
+- `rmx sync --flush-queue` — force the pending flush
+- `rmx vacuum` — drop empty-bitmap concepts and missing-file tracked rows
+- `rmx prune-noise` — drop noise concepts by document-frequency
+  (default: drop `keyword/X` with df<2 or df>25% of entities)
+- `rmx ingest . --semantic` — full rebuild
+- `rmx tldr-warm . --semantic` — fresh call graph from llm-tldr + rebuild
+
+## What you can trust
+
+- Bitmap membership reflects state as of the last hook flush.
+- `tldr` blobs on entities come from `--semantic` enrichment (Python imports
+  + docstring keywords) or manual `rmx add-entity --tldr ...`.
+- Function-name concepts come from `.tldr/cache/call_graph.json` if present.
+- `linkage_evidence` table records file:line for every semantic linkage —
+  shown by `rmx query --explain`.
+
+## Quick reference
+
+```
+rmx info                            # active .refmatrix root
+rmx stats                           # cardinalities per linkage
+rmx stats --stale                   # ... plus drift detection
+rmx list-entities --kind concept    # all concepts
+rmx list-linkages                   # all linkage types
+rmx context <symbol> --format json  # LLM-friendly bundle
+rmx context --since <git-ref>       # branch-scoped bundle
+rmx query "<dsl>" --explain         # results + linkage chains with file:line
+rmx query "<dsl>" --ids-only        # raw entity ids for piping
+rmx primer --top 50 --max-tokens 1500    # density-ranked symbol map
+rmx scan-prompt --text "<prompt>"        # context for symbols in a prompt
+```
+
+## Auto-generated context
+
+- `.refmatrix/PRIMER.md` — top reference-dense symbols, regenerated on
+  `SessionStart`. Add `@.refmatrix/PRIMER.md` to your project CLAUDE.md
+  for cheap orientation. (~2K tokens, 150 symbols, no English noise.)
+- `UserPromptSubmit` hook runs `rmx scan-prompt` so any symbol mentioned
+  in your prompt gets a `rmx context` bundle injected before the turn.
+  Token-shaped names match exactly; bare module names (e.g. `tree_sitter`
+  in your prompt) match `import/tree_sitter` via suffix matching.
+
+If you're handed a symbol you've never seen, run `rmx context <name>`
+explicitly — the hook only kicks in when the symbol appears verbatim.
+
+## To remove
+
+Delete `.refmatrix/`, the `rmx` lines from `.git/hooks/*`, and the rmx
+entries from `.claude/settings.local.json`.
+"""
+
+
+def _install_briefing(
+    project_root: Path,
+    refmatrix_root: Path,
+    apply: bool,
+    force: bool,
+) -> list[str]:
+    """Write .refmatrix/CLAUDE.md and print the import suggestion."""
+    out: list[str] = []
+    target = refmatrix_root / "CLAUDE.md"
+    if target.exists() and not force:
+        out.append(f"[yellow]skip[/] {target} (exists; pass --force to overwrite)")
+    else:
+        out.append(f"[green]write[/] {target}")
+        if apply:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(CLAUDE_BRIEFING)
+
+    # Suggest (don't write) an import line for the project's main CLAUDE.md.
+    try:
+        rel = (refmatrix_root / "CLAUDE.md").resolve().relative_to(project_root.resolve())
+        rel_path = rel.as_posix()
+    except ValueError:
+        rel_path = str(refmatrix_root / "CLAUDE.md")
+    project_md = project_root / "CLAUDE.md"
+    out.append(
+        "[dim]Suggestion (not auto-applied):[/] add this line to "
+        f"{project_md} so Claude loads the briefing:"
+    )
+    out.append(f"    @{rel_path}")
+    return out
+
+
+def _install_claude_hooks(
+    project_root: Path,
+    refmatrix_root: Path,
+    scope: str,
+    apply: bool,
+    force: bool,
+    primer: bool = True,
+    scan_prompt: bool = True,
+) -> list[str]:
+    out: list[str] = []
+    block = _claude_hook_block(refmatrix_root, primer=primer, scan_prompt=scan_prompt)
+    if scope == "user":
+        # Always print — never silently merge into the user's global config.
+        out.append("[bold]Claude Code (user scope)[/] — merge into ~/.claude/settings.json:")
+        out.append(json.dumps(block, indent=2))
+        return out
+
+    target = project_root / ".claude" / "settings.local.json"
+    target.parent.mkdir(exist_ok=True)
+    existing: dict = {}
+    if target.exists():
+        try:
+            existing = json.loads(target.read_text())
+        except json.JSONDecodeError:
+            out.append(f"[red]warn[/] {target} is not valid JSON; aborting claude install")
+            return out
+        if "hooks" in existing and not force:
+            out.append(f"[yellow]skip[/] {target} (already has 'hooks'; pass --force to merge)")
+            return out
+
+    merged = {**existing}
+    merged.setdefault("hooks", {})
+    for event, entries in block["hooks"].items():
+        merged["hooks"].setdefault(event, [])
+        merged["hooks"][event].extend(entries)
+    out.append(f"[green]write[/] {target}")
+    if apply:
+        target.write_text(json.dumps(merged, indent=2))
+    return out
