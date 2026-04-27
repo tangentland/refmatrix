@@ -3,21 +3,17 @@ Ingestion: turn a project directory into entities + linkages.
 
 Sources, in order of preference:
 
-1. **tldr** — read `.tldr/cache/call_graph.json` produced by `tldr warm <path>`.
-   Each edge `(from_file, from_func) -> (to_file, to_func)` becomes:
-       - file entity (kind=code) per from_file/to_file
-       - function entity (kind=code, name=`<file>::<func>`)
-       - concept entity (one per function name) — collapses overloads
-       - linkage `defines`: function-name-concept -> function entity
-       - linkage `calls`: from-function-entity bit-set on `calls` row of to-function-name-concept
-       - linkage `called_by` mirrors calls
-2. **tree** — walk the directory, register every text file as a `doc` (markdown,
-   txt, rst) or `code` (rest). No call graph, but you still get an entity for
-   every file and can `link` manually.
-3. **semantic** (Python only, opt-in via --semantic) — uses stdlib ast to add:
-       - linkage `imports`: file entity -> module-name concept
-       - linkage `mentions`: function entity -> identifier concepts mined
-         from the function's docstring
+1. **metadata** — `.tldr/cache/semantic/metadata.json` (llm-tldr's per-unit
+   semantic dump). Strictly richer than call_graph.json: signature, unit_type
+   (function/class/method/...), per-unit calls/called_by, dependencies, CFG
+   and DFG summaries. Preferred when present.
+2. **tldr** — `.tldr/cache/call_graph.json`. Just (from_file, from_func) ->
+   (to_file, to_func) edges. Used when metadata.json isn't there.
+3. **tree** — walk the directory, register every text file as a `doc` or
+   `code`. No call graph; you still get a per-file entity to `link` against.
+4. **semantic** (Python only, opt-in via --semantic) — stdlib ast pass that
+   adds `imports` and docstring-keyword `mentions` linkages. Redundant when
+   metadata.json is available, but harmless and cross-source-additive.
 """
 from __future__ import annotations
 
@@ -41,8 +37,12 @@ def ingest_path(
     s: Store, path: Path, source: str = "auto", semantic: bool = False
 ) -> int:
     path = path.resolve()
+    metadata_path = path / ".tldr" / "cache" / "semantic" / "metadata.json"
+    call_graph_path = path / ".tldr" / "cache" / "call_graph.json"
     n = 0
-    if source in ("auto", "tldr") and (path / ".tldr" / "cache" / "call_graph.json").exists():
+    if source in ("auto", "metadata") and metadata_path.exists():
+        n = _ingest_tldr_metadata(s, path)
+    if n == 0 and source in ("auto", "tldr") and call_graph_path.exists():
         n = _ingest_tldr(s, path)
     if source in ("auto", "tree") and n == 0:
         n = _ingest_tree(s, path)
@@ -54,6 +54,145 @@ def ingest_path(
                 continue
             _ingest_python_semantics(s, p, path)
     return n
+
+
+# --- tldr metadata.json (richest source) ------------------------------------
+
+
+# Fields kept on each unit's `meta` blob. Anything bulky (code_preview, full
+# docstring) is stored when present; querying paths can ignore it.
+_UNIT_META_FIELDS = (
+    "language", "unit_type", "name", "line",
+    "cfg_summary", "dfg_summary", "docstring", "code_preview", "signature",
+)
+
+# What counts as a "trivial" callee. These would explode `calls`-bitmap
+# cardinality without adding signal — every test has __init__, every async
+# class has __aexit__, etc. Keep them out of the concept layer entirely.
+_CALLEE_BLOCKLIST = frozenset({
+    "__init__", "__new__", "__call__", "__enter__", "__exit__",
+    "__aenter__", "__aexit__", "__repr__", "__str__", "__hash__",
+    "__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__",
+})
+
+
+def _ingest_tldr_metadata(s: Store, project: Path) -> int:
+    """Ingest llm-tldr's per-unit semantic dump. Returns the number of units
+    processed (not linkages). See the module docstring for source priority."""
+    cache = project / ".tldr" / "cache" / "semantic" / "metadata.json"
+    payload = json.loads(cache.read_text())
+    units = payload.get("units") or []
+    if not units:
+        return 0
+
+    # Pre-pass: dedup file paths so we make one entity per file (used both for
+    # tracked_files and as the target of file-level imports linkage).
+    file_ids: dict[str, int] = {}
+    for u in units:
+        rel = u.get("file")
+        if not rel or rel in file_ids:
+            continue
+        ap = project / rel
+        eid = s.upsert_entity(kind="code", name=rel, path=str(ap))
+        try:
+            s.mark_tracked(str(ap), ap.stat().st_mtime)
+        except OSError:
+            pass
+        file_ids[rel] = eid
+
+    # Concept caches — bare-name concepts collide naturally with user
+    # concepts (desired join behavior); namespaced ones don't.
+    bare_concept_ids: dict[str, int] = {}
+    kind_concept_ids: dict[str, int] = {}
+    import_concept_ids: dict[str, int] = {}
+
+    def bare_concept(name: str) -> int:
+        if name in bare_concept_ids:
+            return bare_concept_ids[name]
+        cid = s.add_concept(name, description=f"symbol '{name}'")
+        bare_concept_ids[name] = cid
+        return cid
+
+    def kind_concept(unit_type: str) -> int:
+        if unit_type in kind_concept_ids:
+            return kind_concept_ids[unit_type]
+        cid = s.add_namespaced_concept(
+            "kind", unit_type, description=f"unit_type '{unit_type}'"
+        )
+        kind_concept_ids[unit_type] = cid
+        return cid
+
+    def import_concept(mod: str) -> int:
+        if mod in import_concept_ids:
+            return import_concept_ids[mod]
+        cid = s.add_namespaced_concept(
+            "import", mod, description=f"module '{mod}'"
+        )
+        import_concept_ids[mod] = cid
+        return cid
+
+    # Per-unit pass: create the unit entity, plus its defines / is_a / calls.
+    # Aggregate file-level imports as we go so we can write them in batch.
+    file_imports: dict[int, set[int]] = {}
+    unit_count = 0
+    qname_to_eid: dict[str, int] = {}
+
+    for u in units:
+        qname = u.get("qualified_name")
+        rel = u.get("file")
+        bare = u.get("name")
+        if not qname or not rel or not bare:
+            continue
+
+        ap = project / rel
+        meta = {k: u[k] for k in _UNIT_META_FIELDS if u.get(k)}
+        signature = u.get("signature") or f"{u.get('unit_type', 'symbol')} {bare} in {rel}"
+        unit_eid = s.upsert_entity(
+            kind="code", name=qname, path=str(ap),
+            tldr=signature, meta=meta,
+        )
+        qname_to_eid[qname] = unit_eid
+        unit_count += 1
+
+        # bare-name concept defines this unit
+        s.link("defines", bare_concept(bare), unit_eid)
+
+        # kind/<unit_type> categorical concept
+        utype = u.get("unit_type")
+        if utype:
+            s.link("is_a", kind_concept(utype), unit_eid)
+
+        # calls / called_by — callees are bare names per llm-tldr's schema
+        for callee in u.get("calls") or ():
+            if not callee or callee in _CALLEE_BLOCKLIST:
+                continue
+            cc = bare_concept(callee)
+            # caller-unit-entity is in the `calls` bitmap of the callee concept
+            s.link("calls", cc, unit_eid)
+
+        for caller in u.get("called_by") or ():
+            if not caller or caller in _CALLEE_BLOCKLIST:
+                continue
+            cc = bare_concept(caller)
+            s.link("called_by", cc, unit_eid)
+
+        # dependencies: comma-separated module list. Aggregate to file-level
+        # so a 50-function file with 5 imports doesn't make 250 link rows.
+        deps = u.get("dependencies") or ""
+        if deps and rel in file_ids:
+            fid = file_ids[rel]
+            bucket = file_imports.setdefault(fid, set())
+            for raw in deps.split(","):
+                mod = raw.strip().split(".")[0]
+                if mod:
+                    bucket.add(import_concept(mod))
+
+    # Flush file-level imports in one batch per (concept, file) pair.
+    for fid, cids in file_imports.items():
+        for cid in cids:
+            s.link("imports", cid, fid)
+
+    return unit_count
 
 
 # --- tldr -------------------------------------------------------------------

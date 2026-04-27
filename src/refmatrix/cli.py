@@ -642,11 +642,16 @@ def import_(path, merge):
 
 @main.command()
 @click.argument("path", type=click.Path(exists=True, path_type=Path))
-@click.option("--source", type=click.Choice(["auto", "tldr", "tree"]), default="auto")
+@click.option("--source",
+              type=click.Choice(["auto", "metadata", "tldr", "tree"]),
+              default="auto",
+              help="auto picks metadata > tldr > tree. metadata reads "
+                   "llm-tldr's per-unit semantic dump for the richest graph; "
+                   "tldr falls back to call_graph.json.")
 @click.option("--semantic", is_flag=True,
               help="Also extract Python imports + docstring keywords (slow on big trees).")
 def ingest(path, source, semantic):
-    """Ingest a directory. Uses llm-tldr output if present, else falls back to file tree."""
+    """Ingest a directory. Prefers .tldr/cache/semantic/metadata.json when present."""
     from refmatrix.ingest import ingest_path
 
     s = _store()

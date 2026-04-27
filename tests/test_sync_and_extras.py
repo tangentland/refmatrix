@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from refmatrix.hooks import install
-from refmatrix.ingest import _ingest_python_semantics
+from refmatrix.ingest import _ingest_python_semantics, ingest_path
 from refmatrix.query import QueryEngine
 from refmatrix.store import Store
 from refmatrix.sync import enqueue, flush_queue, sync_files, sync_since
@@ -351,3 +351,190 @@ def test_install_hooks_no_overwrite_without_force(tmp_path):
     assert pc.read_text() == "# user's own hook"
     install(project_root=proj, refmatrix_root=rmx, apply=True, force=True)
     assert "rmx sync" in pc.read_text()
+
+
+# --- llm-tldr semantic metadata ingester -----------------------------------
+
+
+def _write_metadata(proj: Path, units: list[dict]) -> None:
+    cache = proj / ".tldr" / "cache" / "semantic"
+    cache.mkdir(parents=True)
+    (cache / "metadata.json").write_text(json.dumps({
+        "units": units, "model": "test", "dimension": 0, "count": len(units),
+    }))
+
+
+def test_ingest_metadata_creates_units_concepts_and_kind(tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "a.py").write_text("def foo():\n    bar()\n")
+    (proj / "b.py").write_text("def bar(): pass\n")
+    _write_metadata(proj, [
+        {
+            "name": "foo",
+            "qualified_name": "a.py.foo",
+            "file": "a.py",
+            "line": 1,
+            "language": "python",
+            "unit_type": "function",
+            "signature": "def foo() -> None",
+            "docstring": "",
+            "calls": ["bar"],
+            "called_by": [],
+            "dependencies": "",
+        },
+        {
+            "name": "bar",
+            "qualified_name": "b.py.bar",
+            "file": "b.py",
+            "line": 1,
+            "language": "python",
+            "unit_type": "function",
+            "signature": "def bar() -> None",
+            "docstring": "",
+            "calls": [],
+            "called_by": ["foo"],
+            "dependencies": "",
+        },
+    ])
+    s = Store(proj / ".refmatrix")
+    s.init()
+    n = ingest_path(s, proj)
+    assert n == 2
+
+    # qualified-name unit entities
+    foo_unit = s.get_entity("code", "a.py.foo")
+    bar_unit = s.get_entity("code", "b.py.bar")
+    assert foo_unit is not None and foo_unit.tldr == "def foo() -> None"
+    assert foo_unit.meta.get("unit_type") == "function"
+    assert bar_unit is not None
+
+    # bare-name concepts collide with what user concepts would use
+    foo_concept = s.get_entity("concept", "foo")
+    bar_concept = s.get_entity("concept", "bar")
+    assert foo_concept is not None and bar_concept is not None
+
+    # kind/function categorical concept exists and links to both units
+    qe = QueryEngine(s)
+    is_a_function = qe.run("is_a:kind/function")
+    assert foo_unit.id in is_a_function
+    assert bar_unit.id in is_a_function
+
+    # calls linkage: bar concept's `calls` bitmap holds foo (the caller)
+    calls_bar = s.load_bitmap("calls", bar_concept.id)
+    assert foo_unit.id in calls_bar
+
+
+def test_ingest_metadata_aggregates_dependencies_per_file(tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "x.py").write_text("import os\nimport sys\n")
+    _write_metadata(proj, [
+        {
+            "name": "alpha",
+            "qualified_name": "x.py.alpha",
+            "file": "x.py",
+            "line": 1,
+            "language": "python",
+            "unit_type": "function",
+            "signature": "def alpha()",
+            "docstring": "",
+            "calls": [],
+            "called_by": [],
+            "dependencies": "os, sys",
+        },
+        {
+            "name": "beta",
+            "qualified_name": "x.py.beta",
+            "file": "x.py",
+            "line": 5,
+            "language": "python",
+            "unit_type": "function",
+            "signature": "def beta()",
+            "docstring": "",
+            "calls": [],
+            "called_by": [],
+            "dependencies": "os, json",  # 'os' duplicated, 'json' new
+        },
+    ])
+    s = Store(proj / ".refmatrix")
+    s.init()
+    ingest_path(s, proj)
+
+    file_e = s.get_entity("code", "x.py")
+    assert file_e is not None
+
+    # Aggregated to file-level: os, sys, json all link the file once
+    for mod in ("os", "sys", "json"):
+        cid = s.get_entity("concept", f"import/{mod}")
+        assert cid is not None, f"missing import/{mod}"
+        bm = s.load_bitmap("imports", cid.id)
+        assert file_e.id in bm
+
+    # Dedup check: 'os' appears in two units but only once on the file
+    os_concept = s.get_entity("concept", "import/os")
+    bm = s.load_bitmap("imports", os_concept.id)
+    assert len(bm) == 1
+
+
+def test_ingest_metadata_skips_blocklisted_callees(tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "x.py").write_text("class Foo: ...\n")
+    _write_metadata(proj, [
+        {
+            "name": "Foo",
+            "qualified_name": "x.py.Foo",
+            "file": "x.py",
+            "line": 1,
+            "language": "python",
+            "unit_type": "class",
+            "signature": "class Foo",
+            "docstring": "",
+            "calls": ["__init__", "real_helper"],
+            "called_by": [],
+            "dependencies": "",
+        },
+    ])
+    s = Store(proj / ".refmatrix")
+    s.init()
+    ingest_path(s, proj)
+    # __init__ should NOT have created a concept
+    assert s.get_entity("concept", "__init__") is None
+    # real_helper should
+    assert s.get_entity("concept", "real_helper") is not None
+
+
+def test_ingest_auto_prefers_metadata_over_call_graph(tmp_path):
+    """When both metadata.json and call_graph.json exist, metadata wins."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    # Sentinel call_graph.json with a unique entity name we can detect.
+    cache = proj / ".tldr" / "cache"
+    cache.mkdir(parents=True)
+    (cache / "call_graph.json").write_text(json.dumps({
+        "edges": [{
+            "from_file": "legacy.py", "from_func": "from_callgraph",
+            "to_file": "legacy.py", "to_func": "to_callgraph",
+        }],
+    }))
+    # Metadata with a different sentinel
+    _write_metadata(proj, [{
+        "name": "from_metadata",
+        "qualified_name": "new.py.from_metadata",
+        "file": "new.py",
+        "line": 1,
+        "language": "python",
+        "unit_type": "function",
+        "signature": "def from_metadata()",
+        "docstring": "",
+        "calls": [],
+        "called_by": [],
+        "dependencies": "",
+    }])
+    s = Store(proj / ".refmatrix")
+    s.init()
+    ingest_path(s, proj, source="auto")
+    assert s.get_entity("code", "new.py.from_metadata") is not None
+    # Old call_graph entity must NOT have been created (auto stops at metadata)
+    assert s.get_entity("code", "legacy.py::from_callgraph") is None
