@@ -1,5 +1,5 @@
 """
-SQLite catalog + on-disk roaring bitmap store.
+SQLite catalog + Pilosa-style fragment files for bitmap storage.
 
 Mental model (mirrors Pilosa):
 - Index    -> the whole .refmatrix/ directory
@@ -7,8 +7,13 @@ Mental model (mirrors Pilosa):
 - Row      -> a concept id
 - Column   -> an entity id
 
-Bitmaps live at .refmatrix/bitmaps/<linkage>/<concept_id>.rb
-The catalog lives at .refmatrix/catalog.db.
+One fragment file per linkage at .refmatrix/fragments/<linkage>.rb64,
+storing a single BitMap64 with bit positions packed as
+`(concept_id << 32) | entity_id`. Slicing a bitmap row out is a
+range-mask intersection (Pilosa-style). The catalog lives at
+.refmatrix/catalog.db and holds the id<->name maps, linkage metadata, and
+the entity_links shadow (kept in sync; used by SQL-side queries like
+density/top-N where bitmap iteration would be the slow path).
 """
 from __future__ import annotations
 
@@ -19,7 +24,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator
 
-from pyroaring import BitMap
+from pyroaring import BitMap, BitMap64
+
+# Packing: concept_id occupies the high 32 bits, entity_id the low 32. Both
+# come from the same `entities.id` autoincrement so they share a counter; 32
+# bits each gives ~4B headroom on each side, well past anything realistic.
+_CONCEPT_SHIFT = 32
+_ENTITY_MASK = (1 << 32) - 1
 
 CATALOG_DDL = """
 CREATE TABLE IF NOT EXISTS entities (
@@ -136,15 +147,24 @@ class Store:
     def __init__(self, root: Path):
         self.root = Path(root).resolve()
         self.db_path = self.root / "catalog.db"
+        # bitmaps_dir is the legacy per-(linkage, concept) layout. Kept as an
+        # attribute so the migration path can find and convert it.
         self.bitmaps_dir = self.root / "bitmaps"
+        self.fragments_dir = self.root / "fragments"
         self.queries_dir = self.root / "queries"
         self._conn: sqlite3.Connection | None = None
+        # Lazy-loaded fragment cache: linkage_name -> BitMap64. Populated on
+        # first read/write of any concept under that linkage; flushed back to
+        # disk via flush_fragments() (called from close()).
+        self._fragments: dict[str, BitMap64] = {}
+        self._dirty_fragments: set[str] = set()
 
     # ---- lifecycle ---------------------------------------------------------
 
     def init(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         self.bitmaps_dir.mkdir(exist_ok=True)
+        self.fragments_dir.mkdir(exist_ok=True)
         self.queries_dir.mkdir(exist_ok=True)
         with self._connect() as con:
             con.executescript(CATALOG_DDL)
@@ -203,9 +223,63 @@ class Store:
             )
             con.commit()
             self._conn = con
+        # One-shot migration: collapse legacy per-(linkage, concept) .rb files
+        # into per-linkage BitMap64 fragments. Runs at most once per catalog.
+        self._migrate_legacy_bitmaps_if_needed()
         return self._conn
 
+    def _migrate_legacy_bitmaps_if_needed(self) -> None:
+        """If .refmatrix/bitmaps/ holds per-concept .rb files but
+        .refmatrix/fragments/ is empty (or missing fragment files for those
+        linkages), pack each linkage's per-concept bitmaps into a single
+        BitMap64 fragment, then delete the originals."""
+        if not self.bitmaps_dir.exists():
+            return
+        legacy_linkages = [
+            d for d in self.bitmaps_dir.iterdir()
+            if d.is_dir() and any(d.glob("*.rb"))
+        ]
+        if not legacy_linkages:
+            return
+        self.fragments_dir.mkdir(parents=True, exist_ok=True)
+        for ld in legacy_linkages:
+            linkage = ld.name
+            frag_path = self._fragment_path(linkage)
+            if frag_path.exists():
+                # Already migrated for this linkage; skip but still clean up
+                # the legacy directory so the migration is idempotent.
+                for rb in ld.glob("*.rb"):
+                    rb.unlink()
+                try:
+                    ld.rmdir()
+                except OSError:
+                    pass
+                continue
+            frag = BitMap64()
+            for rb in ld.glob("*.rb"):
+                try:
+                    cid = int(rb.stem)
+                except ValueError:
+                    continue
+                bm = BitMap.deserialize(rb.read_bytes())
+                base = cid << _CONCEPT_SHIFT
+                for eid in bm:
+                    frag.add(base | eid)
+            if len(frag) > 0:
+                tmp = frag_path.with_suffix(".rb64.tmp")
+                tmp.write_bytes(frag.serialize())
+                tmp.replace(frag_path)
+            for rb in ld.glob("*.rb"):
+                rb.unlink()
+            try:
+                ld.rmdir()
+            except OSError:
+                pass
+
     def close(self) -> None:
+        # Persist any in-memory fragment edits before tearing down the
+        # connection. Safe to call on a never-modified Store (no-op).
+        self.flush_fragments()
         if self._conn is not None:
             self._conn.close()
             self._conn = None
@@ -341,28 +415,81 @@ class Store:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    # ---- bitmaps -----------------------------------------------------------
+    # ---- bitmaps (Pilosa-style fragments) ---------------------------------
 
-    def _bitmap_path(self, linkage: str, concept_id: int) -> Path:
-        d = self.bitmaps_dir / linkage
-        d.mkdir(parents=True, exist_ok=True)
-        return d / f"{concept_id}.rb"
+    def _fragment_path(self, linkage: str) -> Path:
+        return self.fragments_dir / f"{linkage}.rb64"
+
+    def _load_fragment(self, linkage: str) -> BitMap64:
+        """Return the in-memory BitMap64 for a linkage, lazy-loading from disk
+        on first access. Mutating the returned object is fine — call
+        flush_fragments() (or close()) to persist."""
+        if linkage in self._fragments:
+            return self._fragments[linkage]
+        self.fragments_dir.mkdir(parents=True, exist_ok=True)
+        p = self._fragment_path(linkage)
+        if p.exists():
+            frag = BitMap64.deserialize(p.read_bytes())
+        else:
+            frag = BitMap64()
+        self._fragments[linkage] = frag
+        return frag
+
+    def flush_fragments(self) -> None:
+        """Write any dirty linkage fragments back to disk. Idempotent."""
+        if not self._dirty_fragments:
+            return
+        self.fragments_dir.mkdir(parents=True, exist_ok=True)
+        for linkage in list(self._dirty_fragments):
+            frag = self._fragments.get(linkage)
+            if frag is None:
+                self._dirty_fragments.discard(linkage)
+                continue
+            p = self._fragment_path(linkage)
+            if len(frag) == 0:
+                if p.exists():
+                    p.unlink()
+            else:
+                tmp = p.with_suffix(".rb64.tmp")
+                tmp.write_bytes(frag.serialize())
+                tmp.replace(p)
+            self._dirty_fragments.discard(linkage)
+
+    @staticmethod
+    def _pack(concept_id: int, entity_id: int) -> int:
+        return (concept_id << _CONCEPT_SHIFT) | entity_id
 
     def load_bitmap(self, linkage: str, concept_id: int) -> BitMap:
-        p = self._bitmap_path(linkage, concept_id)
-        if not p.exists():
+        """Extract the BitMap32 of entity_ids set under (linkage, concept).
+
+        Implementation: range-mask intersection on the linkage fragment,
+        then strip the high 32 bits. Pilosa does the same trick: rows are
+        slices of one fragment by row-id range, not separate files."""
+        frag = self._load_fragment(linkage)
+        if len(frag) == 0:
             return BitMap()
-        return BitMap.deserialize(p.read_bytes())
+        start = concept_id << _CONCEPT_SHIFT
+        end = (concept_id + 1) << _CONCEPT_SHIFT
+        mask = BitMap64()
+        mask.add_range(start, end)
+        sub = frag & mask
+        out = BitMap()
+        for v in sub:
+            out.add(v & _ENTITY_MASK)
+        return out
 
     def save_bitmap(self, linkage: str, concept_id: int, bm: BitMap) -> None:
-        p = self._bitmap_path(linkage, concept_id)
-        if len(bm) == 0:
-            if p.exists():
-                p.unlink()
-            return
-        tmp = p.with_suffix(".rb.tmp")
-        tmp.write_bytes(bm.serialize())
-        tmp.replace(p)
+        """Replace the row for (linkage, concept) with bm. Used by callers
+        that build a bitmap from scratch; link/unlink/link_many use the
+        targeted in-place ops below to avoid the extra clear-then-add."""
+        frag = self._load_fragment(linkage)
+        start = concept_id << _CONCEPT_SHIFT
+        end = (concept_id + 1) << _CONCEPT_SHIFT
+        # Clear any existing bits in this row, then set the new ones.
+        frag.remove_range(start, end)
+        for eid in bm:
+            frag.add(start | eid)
+        self._dirty_fragments.add(linkage)
 
     def link(
         self,
@@ -373,11 +500,12 @@ class Store:
         protect: bool = False,
     ) -> bool:
         lid = self.get_linkage_id(linkage)
-        bm = self.load_bitmap(linkage, concept_id)
-        already = entity_id in bm
+        frag = self._load_fragment(linkage)
+        bit = self._pack(concept_id, entity_id)
+        already = bit in frag
         if not already:
-            bm.add(entity_id)
-            self.save_bitmap(linkage, concept_id, bm)
+            frag.add(bit)
+            self._dirty_fragments.add(linkage)
         # maintain forward index + (re)set weight
         con = self._connect()
         con.execute(
@@ -397,11 +525,12 @@ class Store:
 
     def unlink(self, linkage: str, concept_id: int, entity_id: int) -> bool:
         lid = self.get_linkage_id(linkage)
-        bm = self.load_bitmap(linkage, concept_id)
-        present = entity_id in bm
+        frag = self._load_fragment(linkage)
+        bit = self._pack(concept_id, entity_id)
+        present = bit in frag
         if present:
-            bm.discard(entity_id)
-            self.save_bitmap(linkage, concept_id, bm)
+            frag.discard(bit)
+            self._dirty_fragments.add(linkage)
         con = self._connect()
         con.execute(
             "DELETE FROM entity_links WHERE entity_id=? AND linkage_id=? AND concept_id=?",
@@ -412,11 +541,14 @@ class Store:
 
     def link_many(self, linkage: str, concept_id: int, entity_ids: Iterable[int]) -> int:
         lid = self.get_linkage_id(linkage)
-        bm = self.load_bitmap(linkage, concept_id)
-        before = len(bm)
+        frag = self._load_fragment(linkage)
         ids = list(entity_ids)
-        bm.update(ids)
-        self.save_bitmap(linkage, concept_id, bm)
+        before = len(frag)
+        for eid in ids:
+            frag.add(self._pack(concept_id, eid))
+        added = len(frag) - before
+        if added:
+            self._dirty_fragments.add(linkage)
         con = self._connect()
         con.executemany(
             "INSERT OR IGNORE INTO entity_links(entity_id, linkage_id, concept_id) "
@@ -424,7 +556,7 @@ class Store:
             [(eid, lid, concept_id) for eid in ids],
         )
         con.commit()
-        return len(bm) - before
+        return added
 
     def weighted_link(
         self,
@@ -563,22 +695,29 @@ class Store:
             (entity_id,),
         ).fetchall()
         n = 0
+        # Drop the entity from every (linkage, concept) row it appears in.
         for r in rows:
             ln = r["name"]
             cid = r["concept_id"]
-            bm = self.load_bitmap(ln, cid)
-            if entity_id in bm:
-                bm.discard(entity_id)
-                self.save_bitmap(ln, cid, bm)
+            frag = self._load_fragment(ln)
+            bit = self._pack(cid, entity_id)
+            if bit in frag:
+                frag.discard(bit)
+                self._dirty_fragments.add(ln)
                 n += 1
         con.execute("DELETE FROM entity_links WHERE entity_id=?", (entity_id,))
-        # If the entity is referenced as a concept (i.e. has any rows in any
-        # linkage), wipe those bitmaps too so we don't leak stale rows.
+        # If the entity is also a concept (its id appears as the high-32-bit
+        # prefix of bits in any fragment), clear that whole row too.
+        prefix_start = entity_id << _CONCEPT_SHIFT
+        prefix_end = (entity_id + 1) << _CONCEPT_SHIFT
         for ln in (lk["name"] for lk in self.list_linkages()):
-            p = self.bitmaps_dir / ln / f"{entity_id}.rb"
-            if p.exists():
-                p.unlink()
+            frag = self._load_fragment(ln)
+            if frag.range_cardinality(prefix_start, prefix_end) > 0:
+                frag.remove_range(prefix_start, prefix_end)
+                self._dirty_fragments.add(ln)
                 n += 1
+        # Forward index rows where this id is the concept side also go.
+        con.execute("DELETE FROM entity_links WHERE concept_id=?", (entity_id,))
         con.execute("DELETE FROM entities WHERE id=?", (entity_id,))
         con.execute("DELETE FROM concepts WHERE id=?", (entity_id,))
         con.execute("DELETE FROM tracked_files WHERE path = "
@@ -786,14 +925,19 @@ class Store:
             pass
 
     def iter_concept_ids_for_linkage(self, linkage: str) -> Iterator[int]:
-        d = self.bitmaps_dir / linkage
-        if not d.exists():
+        """Yield distinct concept_ids that have at least one bit set in the
+        given linkage. Reads from the entity_links shadow (indexed) — much
+        faster than scanning the BitMap64 fragment for unique high-32 prefixes.
+        """
+        try:
+            lid = self.get_linkage_id(linkage)
+        except KeyError:
             return
-        for f in d.glob("*.rb"):
-            try:
-                yield int(f.stem)
-            except ValueError:
-                continue
+        for r in self._connect().execute(
+            "SELECT DISTINCT concept_id FROM entity_links WHERE linkage_id=?",
+            (lid,),
+        ):
+            yield r[0]
 
     # ---- saved queries -----------------------------------------------------
 
@@ -832,12 +976,13 @@ class Store:
         out["linkages"] = {}
         for lk in self.list_linkages():
             name = lk["name"]
-            d = self.bitmaps_dir / name
-            n_concepts = 0
-            n_bits = 0
-            if d.exists():
-                for f in d.glob("*.rb"):
-                    n_concepts += 1
-                    n_bits += len(BitMap.deserialize(f.read_bytes()))
-            out["linkages"][name] = {"concepts": n_concepts, "bits": n_bits}
+            row = con.execute(
+                "SELECT COUNT(DISTINCT concept_id) AS c, COUNT(*) AS b "
+                "FROM entity_links WHERE linkage_id=?",
+                (lk["id"],),
+            ).fetchone()
+            out["linkages"][name] = {
+                "concepts": row["c"] or 0,
+                "bits": row["b"] or 0,
+            }
         return out

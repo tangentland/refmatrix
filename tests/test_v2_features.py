@@ -261,6 +261,50 @@ def test_query_explain_flag(tmp_path, monkeypatch):
     assert "42" in result.output
 
 
+# --- legacy bitmap migration -----------------------------------------------
+
+
+def test_legacy_per_concept_bitmaps_migrate_to_fragments(tmp_path):
+    """Simulate a pre-fragment catalog: write some .rb files into
+    .refmatrix/bitmaps/<linkage>/<concept_id>.rb, open the Store, and verify
+    the migration packs them into fragments and deletes the originals."""
+    from pyroaring import BitMap as _BitMap
+
+    root = tmp_path / ".refmatrix"
+    root.mkdir()
+    s = Store(root)
+    s.init()
+    # Create concepts + an entity so there's something for linkage to point at.
+    cid_a = s.add_concept("alpha")
+    cid_b = s.add_concept("beta")
+    eid = s.upsert_entity(kind="code", name="x.py")
+    # Forge legacy .rb files (don't go through s.link — that'd write to
+    # fragments). Mirror the pre-migration on-disk layout exactly.
+    legacy_dir = root / "bitmaps" / "mentions"
+    legacy_dir.mkdir(parents=True, exist_ok=True)
+    bm_a = _BitMap()
+    bm_a.add(eid)
+    (legacy_dir / f"{cid_a}.rb").write_bytes(bm_a.serialize())
+    bm_b = _BitMap()
+    bm_b.add(eid)
+    (legacy_dir / f"{cid_b}.rb").write_bytes(bm_b.serialize())
+    s.close()
+
+    # Reopen — _connect() should run the migration.
+    s2 = Store(root)
+    # Force a connect so migration actually runs.
+    s2._connect()
+    assert (root / "fragments" / "mentions.rb64").exists()
+    # Legacy dir should be cleaned up.
+    assert not list(legacy_dir.glob("*.rb"))
+    # And load_bitmap should return the migrated rows.
+    out_a = s2.load_bitmap("mentions", cid_a)
+    out_b = s2.load_bitmap("mentions", cid_b)
+    assert eid in out_a
+    assert eid in out_b
+    s2.close()
+
+
 # --- sync.log ---------------------------------------------------------------
 
 

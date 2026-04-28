@@ -1,6 +1,7 @@
 """refmatrix CLI."""
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import sys
@@ -35,6 +36,10 @@ def _store() -> Store:
         raise click.ClickException(
             f"no refmatrix at {s.root}. Run `rmx init` first or set REFMATRIX_ROOT."
         )
+    # Register a flush-and-close on normal interpreter exit. CLI commands
+    # mutate the in-memory fragment cache and rely on close() to persist;
+    # without this, every command would lose its writes.
+    atexit.register(s.close)
     return s
 
 
@@ -55,6 +60,7 @@ def init(path: Path | None):
     target = (path or Path.cwd()) / ".refmatrix"
     s = Store(target)
     s.init()
+    atexit.register(s.close)
     console.print(f"[green]initialized[/] {s.root}")
 
 
