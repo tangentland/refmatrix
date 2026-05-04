@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.venv/
+
+# Test / coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS
+.DS_Store
+
+# Refmatrix runtime / derived state (not portable across branches — see store.py)
+.refmatrix/
+.memory.db
+.tldr/
