@@ -197,8 +197,14 @@ class QueryEngine:
         raise ValueError(f"bad node: {node}")
 
     def _universe(self) -> BitMap:
+        # Scoped to the active partition. Without this filter, `NOT mentions:foo`
+        # in partition A would treat partition B's entities as part of the
+        # complement set, leaking ids that don't exist in A's view at all.
         bm = BitMap()
-        for r in self.s._connect().execute("SELECT id FROM entities"):
+        for r in self.s._connect().execute(
+            "SELECT id FROM entities WHERE partition_id=?",
+            (self.s.partition_id,),
+        ):
             bm.add(r[0])
         return bm
 

@@ -226,3 +226,54 @@ def test_partition_auto_created_on_first_open(tmp_path):
     )]
     assert "brand-new" in rows
     fresh.close()
+
+
+def test_query_engine_universe_is_partition_scoped(tmp_path):
+    """A `NOT` query in partition A must not pull in entities that only exist
+    in partition B. Before _universe() was scoped, the complement set was
+    drawn from the entire entities table — so partition A would see partition
+    B's ids as part of its 'everything else' result."""
+    from refmatrix.query import QueryEngine
+
+    root = tmp_path / ".refmatrix"
+    Store(root).init()
+
+    sa = Store(root, partition="agent-a")
+    sb = Store(root, partition="agent-b")
+
+    # Partition A: one concept, one entity, linked.
+    cid_a = sa.add_concept("parser")
+    eid_a_linked = sa.upsert_entity(kind="code", name="src/lex.py")
+    sa.link("mentions", cid_a, eid_a_linked)
+    # Plus one *unlinked* entity in A — this is the only id that should
+    # appear in `NOT mentions:parser` from A's perspective.
+    eid_a_unlinked = sa.upsert_entity(kind="code", name="src/util.py")
+
+    # Partition B: shares the concept name but is otherwise entirely separate.
+    cid_b = sb.add_concept("parser")
+    eid_b1 = sb.upsert_entity(kind="code", name="src/foo.py")
+    eid_b2 = sb.upsert_entity(kind="code", name="src/bar.py")
+    sb.link("mentions", cid_b, eid_b1)
+    sb.link("mentions", cid_b, eid_b2)
+
+    # Run the complement query in partition A. Expected: just eid_a_unlinked
+    # (plus the concept itself, since `NOT` in this engine returns the active
+    # partition's universe minus the matched set, and concepts are entities).
+    qa = QueryEngine(sa)
+    result_a = qa.run("NOT mentions:parser")
+    assert eid_a_unlinked in result_a
+    # The two B-only entity ids must NOT appear in A's complement.
+    assert eid_b1 not in result_a
+    assert eid_b2 not in result_a
+    # cid_b (B's concept id) likewise must not appear.
+    assert cid_b not in result_a
+
+    # And nothing from the A-side mentioned set leaks into B's complement.
+    qb = QueryEngine(sb)
+    result_b = qb.run("NOT mentions:parser")
+    assert eid_a_linked not in result_b
+    assert eid_a_unlinked not in result_b
+    assert cid_a not in result_b
+
+    sa.close()
+    sb.close()

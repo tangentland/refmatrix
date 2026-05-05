@@ -873,13 +873,20 @@ class Store:
         self, linkage: str, concept_id: int, k: int = 10
     ) -> list[tuple[int, float]]:
         lid = self.get_linkage_id(linkage)
+        # JOIN entities so cross-partition entries don't surface here. In
+        # normal usage all entity_links rows for a given concept_id sit in the
+        # concept's home partition (because link() resolves both sides through
+        # get_entity, which is partition-scoped); the JOIN is defensive against
+        # programmatic cross-partition writes.
         return [
             (r[0], r[1])
             for r in self._connect().execute(
-                "SELECT entity_id, weight FROM entity_links "
-                "WHERE linkage_id=? AND concept_id=? AND weight IS NOT NULL "
-                "ORDER BY weight DESC, entity_id ASC LIMIT ?",
-                (lid, concept_id, k),
+                "SELECT el.entity_id, el.weight FROM entity_links el "
+                "JOIN entities e ON e.id = el.entity_id "
+                "WHERE el.linkage_id=? AND el.concept_id=? "
+                "  AND el.weight IS NOT NULL AND e.partition_id=? "
+                "ORDER BY el.weight DESC, el.entity_id ASC LIMIT ?",
+                (lid, concept_id, self._partition_id, k),
             )
         ]
 
@@ -1282,10 +1289,14 @@ class Store:
         return bool(row[0]) if row else False
 
     def noise_concept_ids(self) -> set[int]:
-        """All concept ids currently marked as noise."""
+        """All concept ids currently marked as noise in the active partition.
+        Used by the query engine to skip noise rows; scoping to the partition
+        means partition A's noise list never shadows partition B's concepts."""
         return {
             r[0] for r in self._connect().execute(
-                "SELECT id FROM entities WHERE kind='concept' AND noise=1"
+                "SELECT id FROM entities "
+                "WHERE partition_id=? AND kind='concept' AND noise=1",
+                (self._partition_id,),
             )
         }
 
