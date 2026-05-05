@@ -294,7 +294,8 @@ def test_legacy_per_concept_bitmaps_migrate_to_fragments(tmp_path):
     s2 = Store(root)
     # Force a connect so migration actually runs.
     s2._connect()
-    assert (root / "fragments" / "mentions.rb64").exists()
+    # Fragments live under fragments/<partition>/ since the partition split.
+    assert (root / "fragments" / "local" / "mentions.rb64").exists()
     # Legacy dir should be cleaned up.
     assert not list(legacy_dir.glob("*.rb"))
     # And load_bitmap should return the migrated rows.

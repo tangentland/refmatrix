@@ -30,8 +30,46 @@ def _root() -> Path:
     return cur / ".refmatrix"
 
 
+# Set by main()'s --partition flag, consumed by _store() and init. None means
+# "use the resolution chain below". A module-level variable keeps subcommand
+# signatures untouched; click's group callback always runs before any command.
+_partition_override: str | None = None
+
+
+def _resolve_partition() -> str:
+    """Resolution order:
+       1. --partition / -p flag on the rmx group
+       2. RMX_PARTITION env var
+       3. .refmatrix/partition file walked up from cwd (one-line partition
+          name — drop one inside a project's existing .refmatrix/ to bind
+          that tree to a named partition in a shared store)
+       4. 'local' (matches the default partition created at init)
+
+    Note: the .refmatrix/ that holds the `partition` file does NOT have to
+    be the active store root — REFMATRIX_ROOT can still point at a central
+    shared store while a per-project .refmatrix/partition file selects which
+    partition this project's CLI invocations write into.
+    """
+    if _partition_override:
+        return _partition_override
+    env = os.environ.get("RMX_PARTITION")
+    if env:
+        return env
+    cur = Path.cwd().resolve()
+    for p in [cur, *cur.parents]:
+        marker = p / ".refmatrix" / "partition"
+        if marker.is_file():
+            try:
+                name = marker.read_text(encoding="utf-8").strip().splitlines()[0].strip()
+            except (OSError, IndexError):
+                continue
+            if name:
+                return name
+    return "local"
+
+
 def _store() -> Store:
-    s = Store(_root())
+    s = Store(_root(), partition=_resolve_partition())
     if not s.db_path.exists():
         raise click.ClickException(
             f"no refmatrix at {s.root}. Run `rmx init` first or set REFMATRIX_ROOT."
@@ -45,8 +83,14 @@ def _store() -> Store:
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(__version__, "-V", "--version", prog_name="refmatrix")
-def main():
+@click.option(
+    "--partition", "-p", default=None,
+    help="Active partition name (overrides RMX_PARTITION and .refmatrix/partition).",
+)
+def main(partition: str | None):
     """Roaring-bitmap reference matrix for docs, code, concepts."""
+    global _partition_override
+    _partition_override = partition
 
 
 # ---- init / info ----------------------------------------------------------
@@ -58,16 +102,65 @@ def main():
 def init(path: Path | None):
     """Initialize a refmatrix in the given directory (default: cwd)."""
     target = (path or Path.cwd()) / ".refmatrix"
-    s = Store(target)
+    s = Store(target, partition=_resolve_partition())
     s.init()
     atexit.register(s.close)
-    console.print(f"[green]initialized[/] {s.root}")
+    console.print(f"[green]initialized[/] {s.root} (partition={s.partition_name})")
 
 
 @main.command()
 def info():
-    """Print the active refmatrix root."""
-    console.print(str(_root()))
+    """Print the active refmatrix root and partition."""
+    console.print(f"root:      {_root()}")
+    console.print(f"partition: {_resolve_partition()}")
+
+
+@main.group()
+def partition():
+    """Inspect and manage named partitions inside the active refmatrix."""
+
+
+@partition.command("list")
+def partition_list():
+    """List all partitions in the active refmatrix, marking the active one."""
+    s = _store()
+    active = s.partition_name
+    rows = s._connect().execute(
+        "SELECT id, name, kind, root_path, created_at "
+        "FROM partitions ORDER BY id"
+    ).fetchall()
+    table = Table(show_header=True)
+    table.add_column("active")
+    table.add_column("id", justify="right")
+    table.add_column("name")
+    table.add_column("kind")
+    table.add_column("root_path")
+    for r in rows:
+        table.add_row(
+            "*" if r["name"] == active else "",
+            str(r["id"]), r["name"], r["kind"], r["root_path"] or "",
+        )
+    console.print(table)
+
+
+@partition.command("add")
+@click.argument("name")
+@click.option("--kind", type=click.Choice(["repo", "canon", "agent-scratch"]),
+              default="repo")
+@click.option("--root-path", default=None, help="Optional source repo path.")
+def partition_add(name: str, kind: str, root_path: str | None):
+    """Register a partition explicitly. (Writes auto-create a partition by
+    name too, so this is mostly for the 'canon' or 'agent-scratch' kinds.)"""
+    import time as _time
+    s = _store()
+    con = s._connect()
+    con.execute(
+        "INSERT OR IGNORE INTO partitions(name, kind, root_path, created_at) "
+        "VALUES (?, ?, ?, ?)",
+        (name, kind, root_path, _time.time()),
+    )
+    con.commit()
+    console.print(f"[green]registered[/] partition={name} kind={kind}")
 
 
 # ---- entities & concepts --------------------------------------------------
@@ -943,6 +1036,51 @@ def install_hooks(git, claude, briefing, apply, force, scope):
                    apply=apply, force=force)
     for line in plan:
         console.print(line)
+
+
+# ---- merge-friendly fact log ---------------------------------------------
+
+
+@main.command("dump-log")
+def dump_log():
+    """Snapshot the catalog into .refmatrix/facts.log (overwrites existing).
+
+    The log is a name-keyed JSONL stream that's safe to commit and merge
+    across branches. Run once to bootstrap an existing repo, then commit
+    facts.log and gitignore catalog.db / fragments/."""
+    s = _store()
+    counts = s.dump_catalog_to_log()
+    console.print(f"[green]wrote[/] {s.log_path}")
+    for k, v in counts.items():
+        console.print(f"  {k}: {v}")
+
+
+@main.command("rebuild")
+@click.option("--from-log", "from_log", is_flag=True,
+              help="Replay facts.log into a fresh catalog. Wipes catalog.db "
+                   "and fragments/ first.")
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
+def rebuild(from_log: bool, yes: bool):
+    """Rebuild derived state. Currently only --from-log is supported."""
+    if not from_log:
+        raise click.ClickException(
+            "specify --from-log (the only supported source)"
+        )
+    s = _store()
+    if not s.log_path.exists():
+        raise click.ClickException(
+            f"no log at {s.log_path}. Run `rmx dump-log` first."
+        )
+    if not yes:
+        click.confirm(
+            f"This will delete {s.db_path} and every fragment file, then "
+            f"replay {s.log_path}. Proceed?",
+            abort=True,
+        )
+    result = s.rebuild_index_from_log()
+    console.print("[green]rebuilt[/]")
+    for k, v in result.items():
+        console.print(f"  {k}: {v}")
 
 
 if __name__ == "__main__":
