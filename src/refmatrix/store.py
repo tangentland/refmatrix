@@ -164,6 +164,12 @@ DEFAULT_LINKAGES = [
     ("imports",      1, None, "entity imports module/concept"),
     ("is_a",         1, None, "concept is a subtype of concept"),
     ("related_to",   0, None, "undirected association"),
+    # Cross-partition canonicalization: a per-partition concept points at a
+    # canonical concept (typically in a 'canon' partition) so queries in one
+    # repo's partition can find sibling concepts in another repo's partition
+    # via the canon hub. Stored in entity_links (partition-blind) so traversal
+    # works without enumerating partitions.
+    ("same_as",      0, None, "concept is the same as a canonical concept"),
 ]
 
 
@@ -324,6 +330,17 @@ class Store:
             # time a Store is opened with a new name (matches how a fresh
             # `rmx init` lands you in 'local' without a register step).
             self._ensure_partition()
+            # Backfill any DEFAULT_LINKAGES that were introduced after this
+            # catalog was first init'd (e.g. 'same_as' for canon hops). Pure
+            # INSERT OR IGNORE — fresh catalogs see this as a no-op since
+            # init() already seeded the same set.
+            for name, directed, _inverse, desc in DEFAULT_LINKAGES:
+                con.execute(
+                    "INSERT OR IGNORE INTO linkage_types(name, directed, description) "
+                    "VALUES (?,?,?)",
+                    (name, directed, desc),
+                )
+            con.commit()
         # One-shot migration: collapse legacy per-(linkage, concept) .rb files
         # into per-linkage BitMap64 fragments. Runs at most once per catalog.
         self._migrate_legacy_bitmaps_if_needed()
@@ -986,6 +1003,95 @@ class Store:
                 (self._partition_id, prefix),
             )
         ]
+
+    # ---- canon (cross-partition concept matching) -------------------------
+
+    def link_canon(
+        self,
+        local_concept_id: int,
+        canon_partition: str,
+        canon_concept_name: str,
+    ) -> int:
+        """Wire the active partition's concept to a canonical concept living
+        in `canon_partition`. Auto-creates the canon concept if missing.
+        Returns the canon concept_id.
+
+        The same_as edge lands in entity_links (partition-blind), so siblings
+        are reachable from any partition's Store via siblings_via_canon().
+        The bitmap-fragment side accumulates the bit in the active partition's
+        same_as fragment — fine, since traversal uses entity_links and the
+        per-partition fragment isn't read for canon hops."""
+        local = self.get_entity_by_id(local_concept_id)
+        if local is None or local.kind != "concept":
+            raise ValueError(
+                f"local_concept_id={local_concept_id} is not a concept"
+            )
+        # Open the canon partition just long enough to ensure the canon
+        # concept row exists. This auto-registers the partition too if it's
+        # the first reference to that name; we then bump its kind to 'canon'
+        # since link_canon is the explicit signal that this is a canon hub.
+        canon_store = Store(self.root, partition=canon_partition)
+        try:
+            canon_id = canon_store.add_concept(canon_concept_name)
+            canon_store._connect().execute(
+                "UPDATE partitions SET kind='canon' WHERE name=? AND kind='repo'",
+                (canon_partition,),
+            )
+            canon_store._connect().commit()
+        finally:
+            canon_store.close()
+        # Record the same_as edge from the active Store. The link API treats
+        # concept_id as the row anchor and entity_id as the member — for a
+        # concept-to-concept edge we use the canon as the anchor and the
+        # local as the member, so loading bitmap(same_as, canon_id) yields
+        # all per-partition concepts that point at this canon.
+        self.link("same_as", canon_id, local_concept_id)
+        return canon_id
+
+    def siblings_via_canon(self, concept_id: int) -> list[dict]:
+        """Concepts in any partition that share at least one canon hub with
+        the given concept_id. Returns [{id, name, partition_id, partition_name,
+        canon_id, canon_name, canon_partition}, ...]. Excludes the input
+        concept itself."""
+        con = self._connect()
+        canon_rows = con.execute(
+            "SELECT el.concept_id, c.name, c.partition_id, p.name AS partition_name "
+            "FROM entity_links el "
+            "JOIN linkage_types lt ON lt.id = el.linkage_id "
+            "JOIN entities c ON c.id = el.concept_id "
+            "JOIN partitions p ON p.id = c.partition_id "
+            "WHERE el.entity_id = ? AND lt.name = 'same_as'",
+            (concept_id,),
+        ).fetchall()
+        if not canon_rows:
+            return []
+        out: list[dict] = []
+        seen: set[int] = set()
+        for canon in canon_rows:
+            siblings = con.execute(
+                "SELECT e.id, e.name, e.partition_id, p.name AS partition_name "
+                "FROM entity_links el "
+                "JOIN linkage_types lt ON lt.id = el.linkage_id "
+                "JOIN entities e ON e.id = el.entity_id "
+                "JOIN partitions p ON p.id = e.partition_id "
+                "WHERE el.concept_id = ? AND lt.name = 'same_as' "
+                "  AND e.id != ?",
+                (canon["concept_id"], concept_id),
+            ).fetchall()
+            for s in siblings:
+                if s["id"] in seen:
+                    continue
+                seen.add(s["id"])
+                out.append({
+                    "id": s["id"],
+                    "name": s["name"],
+                    "partition_id": s["partition_id"],
+                    "partition_name": s["partition_name"],
+                    "canon_id": canon["concept_id"],
+                    "canon_name": canon["name"],
+                    "canon_partition": canon["partition_name"],
+                })
+        return out
 
     # ---- purge / track files -----------------------------------------------
 

@@ -228,6 +228,59 @@ def test_partition_auto_created_on_first_open(tmp_path):
     fresh.close()
 
 
+def test_canon_links_make_concepts_siblings_across_partitions(tmp_path):
+    """Two repo partitions each have their own 'parser' concept. After both
+    point at the same canon concept via same_as, siblings_via_canon() in one
+    repo surfaces the other repo's concept — that's the foundation for
+    cross-codebase concept matching."""
+    root = tmp_path / ".refmatrix"
+    Store(root).init()
+
+    sa = Store(root, partition="repo-a")
+    sb = Store(root, partition="repo-b")
+    sc = Store(root, partition="repo-c")  # third partition that doesn't link
+
+    parser_a = sa.add_concept("parser")
+    parser_b = sb.add_concept("parser")
+    parser_c = sc.add_concept("parser")
+
+    # Wire repo-a and repo-b to the same canon concept. repo-c stays untethered.
+    canon_a_id = sa.link_canon(parser_a, "canon", "parser")
+    canon_b_id = sb.link_canon(parser_b, "canon", "parser")
+    # Both link_canon calls resolve to the SAME canon concept (one row in the
+    # canon partition's entities table) — that's how the hub works.
+    assert canon_a_id == canon_b_id
+
+    # From repo-a's view, the only sibling is repo-b's parser (not repo-c's,
+    # which never linked, and not repo-a's own concept).
+    siblings_a = sa.siblings_via_canon(parser_a)
+    sibling_keys = {(s["partition_name"], s["name"]) for s in siblings_a}
+    assert sibling_keys == {("repo-b", "parser")}
+
+    # The same query from repo-b mirrors back to repo-a.
+    siblings_b = sb.siblings_via_canon(parser_b)
+    assert {(s["partition_name"], s["name"]) for s in siblings_b} == {
+        ("repo-a", "parser"),
+    }
+
+    # repo-c never linked, so it has no siblings.
+    assert sc.siblings_via_canon(parser_c) == []
+
+    # The canon partition itself was auto-created and contains exactly one
+    # parser concept (idempotent under re-link).
+    sa.link_canon(parser_a, "canon", "parser")
+    canon_store = Store(root, partition="canon")
+    parsers_in_canon = [
+        e for e in canon_store.iter_entities(kind="concept") if e.name == "parser"
+    ]
+    assert len(parsers_in_canon) == 1
+    canon_store.close()
+
+    sa.close()
+    sb.close()
+    sc.close()
+
+
 def test_query_engine_universe_is_partition_scoped(tmp_path):
     """A `NOT` query in partition A must not pull in entities that only exist
     in partition B. Before _universe() was scoped, the complement set was

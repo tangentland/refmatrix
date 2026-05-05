@@ -163,6 +163,81 @@ def partition_add(name: str, kind: str, root_path: str | None):
     console.print(f"[green]registered[/] partition={name} kind={kind}")
 
 
+# ---- canon (cross-codebase concept matching) -----------------------------
+
+
+@main.group()
+def canon():
+    """Wire concepts across partitions through a canonical hub.
+
+    Each partition stores its own `parser` (or whatever) concept independently.
+    Use `rmx canon link parser` to wire your active partition's concept to a
+    canonical concept in a separate partition (default: 'canon'). Other
+    partitions doing the same become siblings — `rmx canon siblings parser`
+    surfaces them, so you can see which repos talk about the same thing.
+    """
+
+
+@canon.command("link")
+@click.argument("concept")
+@click.option(
+    "--canon-name", default=None,
+    help="Name for the canon concept (default: same as <concept>).",
+)
+@click.option(
+    "--canon-partition", default="canon",
+    help="Partition where the canon concept lives (default: 'canon').",
+)
+def canon_link(concept: str, canon_name: str | None, canon_partition: str):
+    """Wire the active partition's CONCEPT to a canonical concept.
+
+    Auto-creates the canon concept if it doesn't exist yet. Re-running is
+    idempotent — a second invocation re-asserts the same_as edge."""
+    s = _store()
+    local = s.get_entity("concept", concept)
+    if local is None:
+        raise click.ClickException(
+            f"no concept '{concept}' in partition '{s.partition_name}'. "
+            f"Run `rmx add-concept {concept}` first."
+        )
+    name = canon_name or concept
+    canon_id = s.link_canon(local.id, canon_partition, name)
+    console.print(
+        f"[green]linked[/] {s.partition_name}/{concept} "
+        f"-> {canon_partition}/{name} (canon_id={canon_id})"
+    )
+
+
+@canon.command("siblings")
+@click.argument("concept")
+def canon_siblings(concept: str):
+    """List concepts in other partitions that share a canon hub with CONCEPT."""
+    s = _store()
+    local = s.get_entity("concept", concept)
+    if local is None:
+        raise click.ClickException(
+            f"no concept '{concept}' in partition '{s.partition_name}'."
+        )
+    rows = s.siblings_via_canon(local.id)
+    if not rows:
+        console.print(
+            f"[yellow]no siblings[/] for {s.partition_name}/{concept} "
+            f"(run `rmx canon link {concept}` here and in the other partition first)"
+        )
+        return
+    table = Table(show_header=True, title=f"siblings of {s.partition_name}/{concept}")
+    table.add_column("partition")
+    table.add_column("concept")
+    table.add_column("via canon")
+    for r in rows:
+        table.add_row(
+            r["partition_name"],
+            r["name"],
+            f"{r['canon_partition']}/{r['canon_name']}",
+        )
+    console.print(table)
+
+
 # ---- entities & concepts --------------------------------------------------
 
 
