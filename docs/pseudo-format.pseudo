@@ -1,0 +1,234 @@
+# Pseudocode Format Reference — .pseudo
+#
+# A type-first design language for specifying system behavior, data
+# structures, APIs, and contracts before implementation. Not algorithm
+# description — architectural specification with enough precision to
+# generate code, validate designs, and index cross-references.
+#
+# Intent: bridge the gap between prose design docs (too vague to implement)
+# and real code (too coupled to runtime concerns). A .pseudo file is the
+# single source of truth for WHAT a subsystem does and what data shapes
+# flow through it — decoupled from language, framework, and deployment.
+
+# ===========================================================================
+# File Structure
+# ===========================================================================
+#
+# Each .pseudo file covers one domain or subsystem:
+#
+#   module-header.pseudo
+#   ├── Module comment block (# lines at top)
+#   ├── Section headers (# --- or # ===)
+#   ├── Type definitions (PascalCase:)
+#   ├── Enum definitions (PascalCase: with UPPER values)
+#   ├── Function definitions (snake_case(...) -> Type:)
+#   ├── Constants (UPPER_CASE: type)
+#   └── Import statements (from module import ...)
+
+# ===========================================================================
+# Module Header
+# ===========================================================================
+#
+# First lines of every file. Title, one-line purpose, then context paragraph.
+
+# Example:
+#   # Queue — Async Work Distribution and Backpressure
+#   #
+#   # All compute-bound work flows through typed queues. Each queue has a
+#   # declared capacity, backpressure strategy, and dead-letter policy.
+#   # Queues are the ONLY path for async work — no ad-hoc goroutines.
+
+# ===========================================================================
+# Section Headers
+# ===========================================================================
+#
+# Visually separate major subsections within a file. Two styles:
+
+# --- Short Section Title ---
+
+# ===========================================================================
+# Long Section Title (for major boundaries)
+# ===========================================================================
+
+# ===========================================================================
+# Type Definitions
+# ===========================================================================
+#
+# The primary construct. PascalCase name at column 0, colon, then indented
+# fields. Each field has name, type annotation, and optional comment.
+
+TypeDefinitionExample:
+    required_field: string                   # always present
+    optional_field: int?                     # nullable (? suffix)
+    typed_collection: list[ItemType]         # generic container
+    keyed_map: dict[string -> ValueType]     # key -> value mapping
+    nested_ref: OtherType                    # reference to another type
+    enum_field: StatusEnum                   # reference to an enum
+    timestamp: int64                         # epoch_ns by convention
+    flags: set[string]                       # unordered unique values
+
+# Field type annotations:
+#
+# Primitives:     string, int, int32, int64, uint32, uint64, float, double, bool, bytes, UUID
+# Nullable:       Type?              (may be null/absent)
+# Collections:    list[T], set[T], dict[K -> V], map[K, V], tuple[A, B]
+# References:     PascalCaseTypeName (cross-reference to another defined type)
+# Inline union:   TypeA | TypeB      (rare; prefer enum discriminator)
+
+# ===========================================================================
+# Enum Definitions
+# ===========================================================================
+#
+# Same header syntax as types but body is UPPER_CASE values. Optionally
+# with = assignment for explicit numeric or string values.
+
+StatusEnum:
+    ACTIVE                                   # default state
+    PAUSED                                   # temporarily suspended
+    FAILED                                   # terminal failure
+    RETIRED                                  # gracefully decommissioned
+
+StreamType:
+    FRAME = 0                                # single image
+    CLIP = 1                                 # N-frame window
+    CONTINUOUS = 2                           # unbounded stream
+    EVENT = 3                                # discrete occurrence
+
+# Enums are exhaustive. Adding a value is a schema migration.
+# Removing a value requires deprecation cycle (see schema-evolution.pseudo).
+
+# ===========================================================================
+# Function Definitions
+# ===========================================================================
+#
+# snake_case name, parenthesized params, optional return type, colon.
+# Body is indented pseudocode — reads like Python but isn't Python.
+
+register_entity(
+    name: string,
+    entity_type: VSDTN,
+    namespace: UUID,
+    attributes: dict[string -> JSON]? = None,
+    parent_aid: UUID? = None,
+) -> Entity:
+    # Validate type exists in registry
+    type_def = TYPE_REGISTRY.get(entity_type)
+    assert type_def is not None, f"unknown type: {entity_type}"
+
+    # Allocate identifiers
+    aid = uuid7()
+    vspn = build_vspn(entity_type, namespace, name)
+
+    # Persist
+    entity = Entity(
+        aid=aid,
+        vspn=vspn,
+        vsdtn=entity_type,
+        name=name,
+        attributes=attributes or {},
+        parent_aid=parent_aid,
+        created_at=now_ns(),
+    )
+    lance_write("entities", entity)
+    emit_event("entity.created", entity)
+    return entity
+
+# Function body conventions:
+#
+# - assert for preconditions (these become runtime checks)
+# - emit_event() / emit_alert() for side effects
+# - lance_read() / lance_write() for persistence
+# - Comments explain WHY, not WHAT
+# - No error handling boilerplate — happy path only; error contracts
+#   belong in contracts.pseudo
+
+# Short functions (one-liners or trivial):
+
+is_spatial(entity_type: VSDTN) -> bool:
+    return TYPE_REGISTRY[entity_type].is_spatial
+
+# ===========================================================================
+# Constants and Registries
+# ===========================================================================
+#
+# Module-level typed declarations. UPPER_CASE for true constants,
+# PascalCase with annotation for singleton registries.
+
+MAX_QUEUE_DEPTH: int = 10000
+DEFAULT_BACKPRESSURE: BackpressureStrategy = BLOCK
+
+# Write-through cache pattern (common):
+TYPE_REGISTRY: dict[VSDTN -> TypeTrait]      # in-memory; backed by _system.types.lance
+
+# ===========================================================================
+# Import Statements
+# ===========================================================================
+#
+# Cross-file references. Establishes module dependency graph.
+
+from identifiers import uuid7, build_vspn, function_aid_of
+from type-system import TypeTrait, VSDTN, Domain
+
+# Import means "this file depends on symbols defined in that file."
+# Not runtime loading — design-time dependency declaration.
+
+# ===========================================================================
+# Comments
+# ===========================================================================
+#
+# Two styles, same semantics:
+
+# Hash comments (preferred) — for documentation, context, rationale
+// Double-slash — for inline annotations within code-like blocks
+
+# Comment conventions:
+#
+# - Module header: what this subsystem IS and its invariants
+# - Section header comments: scope and purpose of the section
+# - Pre-function comments: constraints, ADR references, plan references
+# - Inline comments on fields: what the field means, not its type
+# - Body comments: WHY this step exists, not WHAT it does
+#
+# Reference format for traceability:
+#   (ADR-0078)          — architecture decision record
+#   (Plan 27)           — implementation plan number
+#   (Plan 27 Q2)        — plan + quarter milestone
+#   §14.1               — spec section reference
+
+# ===========================================================================
+# Cross-References and Traceability
+# ===========================================================================
+#
+# Types reference other types through field annotations. Functions reference
+# types through params and return types, and other functions through calls
+# in their body. This creates a navigable graph:
+#
+#   TypeA.field: TypeB       -> TypeA mentions TypeB
+#   func(x: TypeA) -> TypeB  -> func mentions TypeA, TypeB
+#   func body calls other()  -> func calls other
+#   from module import X     -> file imports module
+#
+# The refmatrix pseudo parser extracts this graph automatically.
+# Run: rmx ingest <path> --source tree
+
+# ===========================================================================
+# Design Principles
+# ===========================================================================
+#
+# 1. TYPES ARE DATA, NOT CODE — every type is a data definition that could
+#    be serialized to JSON Schema, protobuf, or any IDL.
+#
+# 2. SINGLE SOURCE OF TRUTH — if it's in .pseudo, it's canonical. Code
+#    implements the spec; the spec doesn't describe the code.
+#
+# 3. HAPPY PATH ONLY — error handling, retries, timeouts belong in
+#    contracts.pseudo or the implementation. Functions show intent.
+#
+# 4. NAMES ARE CONTRACTS — PascalCase types and snake_case functions are
+#    the vocabulary of the system. Renaming here means renaming everywhere.
+#
+# 5. COMMENTS EXPLAIN WHY — the pseudocode itself explains what. Comments
+#    provide rationale, constraints, traceability to decisions.
+#
+# 6. ONE FILE PER DOMAIN — each .pseudo file owns a coherent subsystem.
+#    Cross-domain references use imports, not inline definitions.
