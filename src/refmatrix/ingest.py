@@ -53,6 +53,12 @@ def ingest_path(
                                             ".tldr", ".refmatrix")):
                 continue
             _ingest_python_semantics(s, p, path)
+    for p in path.rglob("*.pseudo"):
+        parts = set(p.parts)
+        if any(seg in parts for seg in (".git", ".venv", "node_modules",
+                                        ".tldr", ".refmatrix")):
+            continue
+        _ingest_pseudo_semantics(s, p, path)
     return n
 
 
@@ -380,4 +386,179 @@ def _ingest_python_semantics(s: Store, file_path: Path, project_root: Path) -> i
                 s.add_evidence("mentions", cid, f_id, file=rel, line=line,
                                detail=f"docstring keyword (×{count})")
                 n += 1
+    return n
+
+
+# --- .pseudo pseudocode semantic enrichment --------------------------------
+
+_PSEUDO_TYPE_RE = re.compile(r'^([A-Z][A-Za-z0-9]+):\s*(?:#.*)?$')
+_PSEUDO_FUNC_RE = re.compile(
+    r'^([a-z_][a-z0-9_]*)\s*\(([^)]*)\)(?:\s*->\s*(.+?))?\s*:\s*(?:#.*)?$'
+)
+_PSEUDO_FUNC_MULTILINE_RE = re.compile(r'^([a-z_][a-z0-9_]*)\s*\(')
+_PSEUDO_FIELD_RE = re.compile(r'^\s+([a-z_][a-z0-9_]*)\s*:\s*(.+?)(?:\s*#.*)?$')
+_PSEUDO_ENUM_VALUE_RE = re.compile(r'^\s+([A-Z][A-Z_0-9]+)(?:\s*=\s*.+)?\s*(?:#.*)?$')
+_PSEUDO_IMPORT_RE = re.compile(r'^from\s+(\w+)\s+import\s+(.+)')
+_PSEUDO_TYPE_REF_RE = re.compile(r'[A-Z][A-Za-z0-9]{2,}')
+_PSEUDO_CALL_RE = re.compile(r'\b([a-z_][a-z0-9_]{2,})\s*\(')
+
+_PSEUDO_BUILTIN_TYPES = frozenset({
+    "None", "True", "False", "int", "int32", "int64", "uint32", "uint64",
+    "float", "double", "string", "bool", "bytes", "UUID", "JSON",
+    "list", "dict", "map", "set", "tuple", "optional",
+})
+
+
+def _ingest_pseudo_semantics(s: Store, file_path: Path, project_root: Path) -> int:
+    """Extract types, enums, functions, and their cross-references from .pseudo files."""
+    try:
+        lines = file_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except OSError:
+        return 0
+
+    rel = (
+        file_path.relative_to(project_root).as_posix()
+        if file_path.is_relative_to(project_root)
+        else str(file_path)
+    )
+    file_id = s.upsert_entity(kind="code", name=rel, path=str(file_path))
+    s.mark_tracked(str(file_path), file_path.stat().st_mtime)
+    n = 0
+
+    STATE_TOP, STATE_TYPE, STATE_ENUM, STATE_FUNC = range(4)
+    state = STATE_TOP
+    cur_eid: int | None = None
+    cur_name: str | None = None
+
+    concept_cache: dict[str, int] = {}
+
+    def get_concept(name: str) -> int:
+        if name in concept_cache:
+            return concept_cache[name]
+        cid = s.add_concept(name, description=f"pseudo symbol '{name}'")
+        concept_cache[name] = cid
+        return cid
+
+    def extract_type_refs(annotation: str) -> list[str]:
+        return [
+            t for t in _PSEUDO_TYPE_REF_RE.findall(annotation)
+            if t not in _PSEUDO_BUILTIN_TYPES
+        ]
+
+    for lineno, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            continue
+
+        indent = len(line) - len(line.lstrip())
+
+        # Top-level definitions (col 0)
+        if indent == 0:
+            # Import statement
+            m = _PSEUDO_IMPORT_RE.match(line)
+            if m:
+                mod = m.group(1)
+                cid = s.add_namespaced_concept(
+                    "import", mod, description=f"pseudo module '{mod}'")
+                s.link("imports", cid, file_id)
+                s.add_evidence("imports", cid, file_id, file=rel, line=lineno,
+                               detail=f"from {mod} import {m.group(2).strip()}")
+                n += 1
+                state = STATE_TOP
+                continue
+
+            # Type/struct/enum definition
+            m = _PSEUDO_TYPE_RE.match(line)
+            if m:
+                name = m.group(1)
+                qname = f"{rel}::{name}"
+                cur_eid = s.upsert_entity(
+                    kind="code", name=qname, path=str(file_path),
+                    meta={"file": rel, "func": name, "kind": "type", "line": lineno},
+                )
+                cur_name = name
+                cid = get_concept(name)
+                s.link("defines", cid, cur_eid)
+                s.add_evidence("defines", cid, cur_eid, file=rel, line=lineno,
+                               detail=f"type {name}")
+                n += 1
+                state = STATE_TYPE
+                continue
+
+            # Function definition
+            m = _PSEUDO_FUNC_RE.match(line)
+            if not m:
+                m = _PSEUDO_FUNC_MULTILINE_RE.match(line)
+            if m:
+                name = m.group(1)
+                qname = f"{rel}::{name}"
+                cur_eid = s.upsert_entity(
+                    kind="code", name=qname, path=str(file_path),
+                    meta={"file": rel, "func": name, "kind": "function", "line": lineno},
+                )
+                cur_name = name
+                cid = get_concept(name)
+                s.link("defines", cid, cur_eid)
+                s.add_evidence("defines", cid, cur_eid, file=rel, line=lineno,
+                               detail=f"function {name}")
+                n += 1
+                # Extract type refs from params and return type
+                if hasattr(m, 'group') and m.lastindex and m.lastindex >= 2:
+                    params = m.group(2) or ""
+                    ret = m.group(3) if m.lastindex >= 3 else None
+                    for tref in extract_type_refs(params):
+                        tc = get_concept(tref)
+                        s.link("mentions", tc, cur_eid)
+                        n += 1
+                    if ret:
+                        for tref in extract_type_refs(ret):
+                            tc = get_concept(tref)
+                            s.link("mentions", tc, cur_eid)
+                            n += 1
+                state = STATE_FUNC
+                continue
+
+            # Anything else at col 0 resets state
+            state = STATE_TOP
+            cur_eid = None
+            continue
+
+        # Indented lines — context-dependent
+        if cur_eid is None:
+            continue
+
+        if state == STATE_TYPE:
+            # Check if this is actually an enum
+            if _PSEUDO_ENUM_VALUE_RE.match(line):
+                state = STATE_ENUM
+                continue
+            # Field: extract type references
+            m = _PSEUDO_FIELD_RE.match(line)
+            if m:
+                annotation = m.group(2)
+                for tref in extract_type_refs(annotation):
+                    tc = get_concept(tref)
+                    s.link("mentions", tc, cur_eid)
+                    s.add_evidence("mentions", tc, cur_eid, file=rel, line=lineno,
+                                   detail=f"field type ref {tref}")
+                    n += 1
+
+        elif state == STATE_ENUM:
+            pass  # enum values don't generate linkages
+
+        elif state == STATE_FUNC:
+            # Scan for function calls
+            for call_match in _PSEUDO_CALL_RE.finditer(line):
+                callee = call_match.group(1)
+                if callee == cur_name:
+                    continue
+                cc = get_concept(callee)
+                s.link("calls", cc, cur_eid)
+                n += 1
+            # Scan for type references
+            for tref in extract_type_refs(line):
+                tc = get_concept(tref)
+                s.link("mentions", tc, cur_eid)
+                n += 1
+
     return n
