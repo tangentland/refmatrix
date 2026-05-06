@@ -281,6 +281,7 @@ class Store:
             con = sqlite3.connect(self.db_path, check_same_thread=False)
             con.execute("PRAGMA foreign_keys = ON")
             con.execute("PRAGMA journal_mode = WAL")
+            con.execute("PRAGMA busy_timeout = 5000")
             con.row_factory = sqlite3.Row
             # Self-heal schema on first connect. CATALOG_DDL is fully
             # idempotent (all CREATE TABLE/INDEX IF NOT EXISTS), so existing
@@ -357,8 +358,9 @@ class Store:
         (the default 'local' partition)."""
         assert self._conn is not None
         con = self._conn
-        cols = {r[1] for r in con.execute("PRAGMA table_info(entities)")}
-        if "partition_id" in cols:
+        ent_cols = {r[1] for r in con.execute("PRAGMA table_info(entities)")}
+        tf_cols = {r[1] for r in con.execute("PRAGMA table_info(tracked_files)")}
+        if "partition_id" in ent_cols and "partition_id" in tf_cols:
             return
         # Insert default partition before any FK-bearing rebuild references it.
         con.execute(
@@ -366,64 +368,76 @@ class Store:
             "VALUES (1, ?, 'repo', ?)",
             (DEFAULT_PARTITION, time.time()),
         )
+        # Must commit before PRAGMA foreign_keys = OFF — the pragma is
+        # silently ignored while a transaction is open.
+        con.commit()
         con.execute("PRAGMA foreign_keys = OFF")
         try:
-            con.executescript("""
-                CREATE TABLE entities_new (
-                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                    partition_id INTEGER NOT NULL DEFAULT 1
-                                   REFERENCES partitions(id),
-                    kind         TEXT NOT NULL CHECK (kind IN ('doc','code','concept')),
-                    path         TEXT,
-                    name         TEXT NOT NULL,
-                    tldr         TEXT,
-                    meta         TEXT,
-                    created_at   REAL NOT NULL,
-                    updated_at   REAL NOT NULL,
-                    protected    INTEGER NOT NULL DEFAULT 0,
-                    noise        INTEGER NOT NULL DEFAULT 0,
-                    UNIQUE(partition_id, kind, name)
-                );
-                INSERT INTO entities_new
-                    (id, partition_id, kind, path, name, tldr, meta,
-                     created_at, updated_at, protected, noise)
-                SELECT id, 1, kind, path, name, tldr, meta,
-                       created_at, updated_at, protected, noise
-                FROM entities;
-                DROP TABLE entities;
-                ALTER TABLE entities_new RENAME TO entities;
-                CREATE INDEX idx_entities_kind ON entities(kind);
-                CREATE INDEX idx_entities_path ON entities(path);
-                CREATE INDEX idx_entities_partition ON entities(partition_id);
-                CREATE INDEX idx_entities_protected ON entities(protected);
-                CREATE INDEX idx_entities_noise ON entities(noise);
-
-                CREATE TABLE tracked_files_new (
-                    partition_id INTEGER NOT NULL DEFAULT 1
-                                   REFERENCES partitions(id),
-                    path         TEXT NOT NULL,
-                    mtime        REAL NOT NULL,
-                    last_synced  REAL NOT NULL,
-                    PRIMARY KEY (partition_id, path)
-                );
-                INSERT INTO tracked_files_new (partition_id, path, mtime, last_synced)
-                SELECT 1, path, mtime, last_synced FROM tracked_files;
-                DROP TABLE tracked_files;
-                ALTER TABLE tracked_files_new RENAME TO tracked_files;
-
-                CREATE TABLE saved_queries_new (
-                    partition_id INTEGER NOT NULL DEFAULT 1
-                                   REFERENCES partitions(id),
-                    name TEXT NOT NULL,
-                    body TEXT NOT NULL,
-                    created_at REAL NOT NULL,
-                    PRIMARY KEY (partition_id, name)
-                );
-                INSERT INTO saved_queries_new (partition_id, name, body, created_at)
-                SELECT 1, name, body, created_at FROM saved_queries;
-                DROP TABLE saved_queries;
-                ALTER TABLE saved_queries_new RENAME TO saved_queries;
-            """)
+            if "partition_id" not in ent_cols:
+                con.executescript("""
+                    DROP TABLE IF EXISTS entities_new;
+                    CREATE TABLE entities_new (
+                        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                        partition_id INTEGER NOT NULL DEFAULT 1
+                                       REFERENCES partitions(id),
+                        kind         TEXT NOT NULL CHECK (kind IN ('doc','code','concept')),
+                        path         TEXT,
+                        name         TEXT NOT NULL,
+                        tldr         TEXT,
+                        meta         TEXT,
+                        created_at   REAL NOT NULL,
+                        updated_at   REAL NOT NULL,
+                        protected    INTEGER NOT NULL DEFAULT 0,
+                        noise        INTEGER NOT NULL DEFAULT 0,
+                        UNIQUE(partition_id, kind, name)
+                    );
+                    INSERT INTO entities_new
+                        (id, partition_id, kind, path, name, tldr, meta,
+                         created_at, updated_at, protected, noise)
+                    SELECT id, 1, kind, path, name, tldr, meta,
+                           created_at, updated_at, protected, noise
+                    FROM entities;
+                    DROP TABLE entities;
+                    ALTER TABLE entities_new RENAME TO entities;
+                    CREATE INDEX idx_entities_kind ON entities(kind);
+                    CREATE INDEX idx_entities_path ON entities(path);
+                    CREATE INDEX idx_entities_partition ON entities(partition_id);
+                    CREATE INDEX idx_entities_protected ON entities(protected);
+                    CREATE INDEX idx_entities_noise ON entities(noise);
+                """)
+            if "partition_id" not in tf_cols:
+                con.executescript("""
+                    DROP TABLE IF EXISTS tracked_files_new;
+                    CREATE TABLE tracked_files_new (
+                        partition_id INTEGER NOT NULL DEFAULT 1
+                                       REFERENCES partitions(id),
+                        path         TEXT NOT NULL,
+                        mtime        REAL NOT NULL,
+                        last_synced  REAL NOT NULL,
+                        PRIMARY KEY (partition_id, path)
+                    );
+                    INSERT INTO tracked_files_new (partition_id, path, mtime, last_synced)
+                    SELECT 1, path, mtime, last_synced FROM tracked_files;
+                    DROP TABLE tracked_files;
+                    ALTER TABLE tracked_files_new RENAME TO tracked_files;
+                """)
+            sq_cols = {r[1] for r in con.execute("PRAGMA table_info(saved_queries)")}
+            if "partition_id" not in sq_cols:
+                con.executescript("""
+                    DROP TABLE IF EXISTS saved_queries_new;
+                    CREATE TABLE saved_queries_new (
+                        partition_id INTEGER NOT NULL DEFAULT 1
+                                       REFERENCES partitions(id),
+                        name TEXT NOT NULL,
+                        body TEXT NOT NULL,
+                        created_at REAL NOT NULL,
+                        PRIMARY KEY (partition_id, name)
+                    );
+                    INSERT INTO saved_queries_new (partition_id, name, body, created_at)
+                    SELECT 1, name, body, created_at FROM saved_queries;
+                    DROP TABLE saved_queries;
+                    ALTER TABLE saved_queries_new RENAME TO saved_queries;
+                """)
             con.commit()
         finally:
             con.execute("PRAGMA foreign_keys = ON")
