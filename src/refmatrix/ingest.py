@@ -28,7 +28,7 @@ from refmatrix.store import Store
 CODE_EXTS = {
     ".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java",
     ".kt", ".swift", ".c", ".cc", ".cpp", ".h", ".hpp", ".rb", ".php",
-    ".cs", ".scala", ".sh", ".bash", ".zsh", ".sql", ".lua",
+    ".cs", ".scala", ".sh", ".bash", ".zsh", ".sql", ".lua", ".pseudo",
 }
 DOC_EXTS = {".md", ".markdown", ".rst", ".txt", ".adoc"}
 
