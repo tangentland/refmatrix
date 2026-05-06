@@ -385,7 +385,9 @@ def _print_bitmap(s: Store, bm, limit: int = 50):
               help="Include concepts marked noise by prune-noise. Default uses "
                    "the cleaned graph; --full restores the raw index for find/grep "
                    "replacement.")
-def query(expr, is_pql, ids_only, limit, explain, include_noise):
+@click.option("--filter", "name_filter", default=None,
+              help="SQL LIKE pattern to filter result entities by name (e.g. '%.pseudo::%').")
+def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter):
     """Run a query. DSL: `mentions:parser AND defines:parser`. PQL: `Row(calls,foo)`."""
     s = _store()
     qe = QueryEngine(s, include_noise=include_noise)
@@ -395,6 +397,17 @@ def query(expr, is_pql, ids_only, limit, explain, include_noise):
             t.cardinality = len(result) if hasattr(result, "__len__") else None
         except TypeError:
             t.cardinality = None
+    if name_filter:
+        from pyroaring import BitMap
+        matching = BitMap(
+            r[0] for r in s._connect().execute(
+                "SELECT id FROM entities WHERE name LIKE ?", (name_filter,)
+            )
+        )
+        if isinstance(result, list):
+            result = [(eid, w) for eid, w in result if eid in matching]
+        elif hasattr(result, '__iter__') and not isinstance(result, int):
+            result = result & matching
     if isinstance(result, list):
         t = Table("entity", "weight")
         for eid, w in result:
