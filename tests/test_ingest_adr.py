@@ -148,6 +148,44 @@ Stuff.
     assert any("0087" in n for n in names), f"ADR not in mentions:Zone: {names}"
 
 
+def test_class_keyword_prefix_and_extends_form(store, tmp_path):
+    """Class regex accepts keyword prefixes (class/enum/struct/interface)
+    and both inheritance forms: Foo(Bar) and Foo extends Bar."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    _make_adr(project, "0090", "shapes", """\
+# ADR-0090
+
+Status: Accepted
+
+## Decision
+
+```
+class Shape:
+  area -> float
+
+struct Rectangle extends Shape:
+  width: float
+  height: float
+
+enum ColorEnum:
+  RED
+  BLUE
+
+interface Drawable:
+  draw() -> None
+```
+""")
+    ingest_path(store, project)
+    qe = QueryEngine(store)
+    for c in ("Shape", "Rectangle", "ColorEnum", "Drawable"):
+        names = _names_of_helper(store, list(qe.run(f"defines:{c}")))
+        assert any(f"::{c}" in n for n in names), f"missing {c}: {names}"
+    # Rectangle is_a Shape via "extends" form
+    is_a_shape = _names_of_helper(store, list(qe.run("is_a:Shape")))
+    assert any("::Rectangle" in n for n in is_a_shape), is_a_shape
+
+
 def test_bold_wrapped_header_fields(store, tmp_path):
     """ADR headers in the wild often use bold-wrapped labels like
     **Status:** Accepted (from copy-paste of rendered markdown).

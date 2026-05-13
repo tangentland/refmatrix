@@ -610,7 +610,7 @@ _ADR_HEADER_FIELD_RE = re.compile(
 )
 _ADR_REF_RE = re.compile(r'\bADR-(\d{4})\b')
 _ADR_CLASS_RE = re.compile(
-    r'^([A-Z][A-Za-z0-9_]+)\s*(?:\(([A-Za-z0-9_,\s]+)\))?\s*:\s*(?:#.*)?$'
+    r'^(?:(?:class|enum|struct|interface)\s+)?([A-Z][A-Za-z0-9_]+)\s*(?:(?:\(|extends\s+)([A-Za-z0-9_,\s]+)\)?)?\s*:\s*(?:#.*)?$'
 )
 _ADR_TREE_CHILD_RE = re.compile(
     r'^\s*[+\-|]+--\s*([A-Z][A-Za-z0-9_]+)'
