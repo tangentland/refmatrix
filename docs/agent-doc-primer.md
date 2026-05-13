@@ -1,0 +1,361 @@
+# rmx Doc-Authoring Primer (for Agents)
+
+You are an agent authoring documentation in a project that uses rmx
+to index code, concepts, and architecture. The primary failure mode
+this primer prevents: writing docs that are *file-system visible*
+but *semantically invisible* — they exist on disk but no concept
+search will surface them.
+
+Before authoring any technical doc, decide which of these forms
+rmx already understands. Match your doc to the form; the indexer
+does the rest.
+
+## Why this matters — the discovery ladder
+
+Other agents (and you, in future sessions) find authoritative
+design via:
+
+```
+rmx context <Concept>  →  rmx query <linkage>:<concept>  →  tldr  →  grep
+```
+
+The ladder favors *structured* sources over *free prose*. A doc
+that doesn't fit a structured form sits below grep, only findable
+by full-text search of its file content. If the project's authority
+hierarchy is `ADR > concept doc > pseudocode > code`, an unstructured
+markdown file effectively ranks *below code* — opposite of intent.
+
+Authoring a doc in the right shape promotes it up the ladder.
+
+## Decision tree — which form do I write?
+
+Answer the first matching question:
+
+| Question | Form | Location |
+|---|---|---|
+| "Is this a binding architecture decision?" | **ADR** | `docs/architecture/adr/NNNN-title.md` |
+| "Am I defining one or more named concepts canonically?" | **Concept doc** | `docs/.../concepts/<concept>.md` |
+| "Am I specifying types, interfaces, or contracts for implementation?" | **`.pseudo` file** | Anywhere; conventional `pseudo/` |
+| "Am I exploring, proposing, or recording context that isn't a decision yet?" | **Design doc** | `docs/design/<topic>.md` |
+| "Is this transient (a plan, a session note, a retro)?" | Plain markdown | `docs/plans/`, `docs/sessions/` (will be indexed as opaque) |
+
+If multiple forms could fit, prefer the form *higher* in the table —
+it ranks higher on the discovery ladder.
+
+## Form 1 — ADR (Architecture Decision Record)
+
+Full reference: `docs/adr-format.md`. The contract in brief:
+
+**File path:** must match `<some-dir>/adr/NNNN-kebab-title.md` where
+`NNNN` is zero-padded.
+
+**Required header** (before first `## ` section):
+
+```markdown
+# ADR-0087: Spatial Zone Geometry Standard
+
+Status: Accepted
+Governs: Zone, BBOX, POLYGON, geometry operations
+Cross-references: ADR-0043, ADR-0066
+
+## Context
+...
+```
+
+**What rmx extracts:**
+
+| Header field | Linkage emitted | Notes |
+|---|---|---|
+| `Status` | (weight only) | `Accepted=1.0`, `Proposed=0.3`, `Superseded=0` (silent) |
+| `Governs: A, B` | `mentions:A→ADR`, `mentions:B→ADR` | only CamelCase tokens; prose is ignored |
+| `ADR-NNNN` anywhere | `related_to` between ADRs | mediated by `adr/NNNN` namespaced concept |
+| Fenced class spec | `defines:ClassName→child entity` | see below |
+| Subclass tree | `is_a:Parent→Child entity` | see below |
+
+**Class spec pattern** (use fenced code blocks):
+
+````markdown
+```
+Zone:
+  type: BBOX | POLYGON
+  area -> float
+  centroid -> Point
+  contains_point(point) -> bool
+  overlaps(other, threshold=0.5) -> bool
+```
+````
+
+**Subclass tree pattern:**
+
+```
+Zone (base)
+  +-- AnnotatedZone(Zone)
+  +-- ScoredZone(Zone)
+  +-- DetectionZone(ScoredZone, AnnotatedZone)
+```
+
+**Authoring rules:**
+
+1. Set `Status: Accepted` only when the decision is binding. Use
+   `Proposed` while in review; rmx weights it lower so it doesn't
+   outrank Accepted ADRs in concept search.
+2. List every authoritative concept in `Governs:` using CamelCase.
+   "Zone geometry operations" → write `Governs: Zone, BBOX, POLYGON`
+   not `Governs: Zone geometry operations`.
+3. Reference related ADRs as literal `ADR-NNNN`, not "ADR 87" or
+   "the spatial ADR". The regex is `\bADR-\d{4}\b`.
+4. Put class specs in fenced code blocks. Indented blocks under a
+   heading also work but are easier to break.
+5. Use `Child(Parent)` form for inheritance, not English prose.
+6. To retire an ADR: set `Status: Superseded`. rmx zeros all its
+   linkages on the next ingest — no need to delete the file.
+
+**Template:** `docs/templates/adr-template.md` (when created).
+
+## Form 2 — Concept doc
+
+A concept doc canonically *defines* one or more named concepts.
+Filename and structure carry the meaning.
+
+**File path:** prefer `docs/architecture/concepts/<concept>.md`
+(case-sensitive `concepts/` directory). Filename = primary concept
+in kebab-case (`spatial-zone.md` defines `SpatialZone`).
+
+**Structure rmx will extract** (parser implementation pending — see
+*Indexing status* below):
+
+```markdown
+# Spatial — Entities, Hierarchy, Containment
+
+Brief one-paragraph definition of the primary concept.
+
+## Some narrative section (H2 — prose, not indexed)
+
+### World
+
+Definition of World. Each H3 with a single CamelCase title is a
+sub-concept and becomes `defines:World → this-doc::World`.
+
+### Zone
+
+A Zone **subclasses** Area, adding reactive behavior. The word
+"subclasses" between two CamelCase tokens is a recognized
+inheritance signal: `is_a:Area → this-doc::Zone`.
+
+### Place
+
+A Place subclasses Zone, adding domain activity context.
+```
+
+**Authoring rules:**
+
+1. One canonical concept per H3. Don't pack multiple definitions
+   under one H3.
+2. H3 titles: single CamelCase word for the primary concept.
+   Subtitles or commas in the H3 hurt extraction.
+   - Good: `### Zone`
+   - Tolerable: `### Zone (reactive area)` — first CamelCase token wins
+   - Bad: `### Zones, Places, and Stations` — multiple concepts in one H3
+3. To declare inheritance, use the literal word `subclasses` or
+   `extends` between two CamelCase tokens in the first sentence of
+   the H3. Avoid synonyms ("is a kind of", "specializes").
+4. H1 = the doc's top-level concept. Filename should match. If they
+   differ, filename wins for indexing.
+5. Cross-reference other concept docs by their concept name, not by
+   relative path. rmx joins on the concept, not the path.
+
+**Self-check after writing:**
+
+```bash
+rmx ingest .
+rmx context <YourConcept>     # should return your doc
+rmx neighbors <docs/.../yourdoc.md>   # non-zero
+```
+
+## Form 3 — Design doc
+
+A design doc records context, exploration, or proposals that aren't
+binding decisions. Less structured than ADRs, less canonical than
+concept docs, but still indexable if you follow conventions.
+
+**File path:** `docs/design/<topic>.md`.
+
+**Recommended header** (immediately under H1):
+
+```markdown
+# Architecture Tenets Catalog
+
+**Created:** 2026-02-22
+**Source:** docs/architecture/rewrite-principles.md
+**Referenced by:** CLAUDE.md, MEMORY.md
+**Companion:** docs/architecture/bedrock.md
+
+Brief paragraph summarizing the doc's purpose.
+```
+
+**What rmx will extract** (parser pending):
+
+| Bold-labeled line | Linkage emitted |
+|---|---|
+| `**Source:** path/to/x.md` | `related_to` between this doc and target file |
+| `**Referenced by:** path.md, other.md` | `related_to` to each target |
+| `**Companion:** path.md` | `related_to` |
+| `**Implements:** ADR-NNNN` | `related_to` via `adr/NNNN` concept |
+| `**Supersedes:** path.md` | `related_to` (semantic intent: replacement) |
+
+**Authoring rules:**
+
+1. Put bold-labeled metadata in the first 30 lines of the doc.
+   rmx stops scanning for header refs after the first `## ` section.
+2. Target paths in metadata are project-relative, not URLs.
+3. Comma-separated lists are split.
+4. If you reference an ADR, use the literal `ADR-NNNN` form —
+   it auto-links to the ADR entity if indexed.
+5. Concept references inside design-doc *prose* are not extracted.
+   If a design doc is the authoritative definition of a concept,
+   promote it to a concept doc (move to `concepts/`).
+
+## Form 4 — `.pseudo` file
+
+Type-first specification of system behavior, data structures, APIs.
+Full reference: `docs/pseudo-format.pseudo`. Brief contract:
+
+```pseudo
+# Title — One-Line Purpose
+
+TypeName:
+    field_name: type
+    other_field: list[OtherType]
+
+EnumName:
+    VALUE_ONE
+    VALUE_TWO
+
+function_name(param: Type) -> ReturnType:
+    body_pseudocode
+```
+
+**What rmx extracts** (already wired):
+
+- `defines:<TypeName>` and `defines:<function_name>` for every
+  top-level declaration.
+- `mentions:<OtherType>` for type references in fields, params,
+  return types.
+- `calls:<other_function>` for function calls inside bodies.
+- `imports:<module>` for `from module import ...` lines.
+
+**Authoring rules:**
+
+1. Types are `PascalCase`, functions are `snake_case`, enum values
+   are `UPPER_CASE`. The regexes depend on case.
+2. Top-level definitions live at column 0. Fields and body are
+   indented (any consistent indent — 2 or 4 spaces).
+3. Builtin types (`string`, `int`, `bool`, `list`, `dict`, etc.)
+   are filtered out — they don't pollute the concept graph.
+4. Prefer happy-path bodies. Error handling belongs in
+   `contracts.pseudo` or implementation code.
+
+## Universal conventions (apply to every doc form)
+
+These work everywhere — ADR, concept doc, design doc, even plain
+markdown — and are recommended whenever the situation fits.
+
+### 1. Class specs in fenced code blocks
+
+Any fenced code block at any indent containing a `Name:` line at
+column 0 followed by an indented body is parsed as a class spec
+(currently in ADRs; extending to all markdown). Use it whenever
+you want a concept to be `defined` by your doc.
+
+````markdown
+```
+Region:
+  bounds: BBOX
+  refine(point) -> Point
+```
+````
+
+### 2. ADR cross-references
+
+`ADR-NNNN` anywhere in any doc creates a `related_to` link if the
+target ADR is indexed. Use the exact form — not `ADR 87`, not
+`ADR.0087`, not `#0087`.
+
+### 3. Subclass tree notation
+
+`+-- Child(Parent)` in any code block or indented region produces
+`is_a:Parent → Child`. Works in ADRs today; extending to all docs.
+
+### 4. Use the concept's canonical name
+
+If the project defines a concept named `Zone`, write `Zone`, not
+"zone", "zones", `Zone (in spatial)`, or "the zone construct". The
+indexer matches case-sensitive exact tokens; variants don't join.
+
+### 5. Don't redefine concepts in prose
+
+If a concept already has a canonical concept-doc or ADR, *reference*
+it, don't redefine it inline. Redefinition fragments the graph: two
+"Zone"s with conflicting definitions and no `same_as` link.
+
+## Anti-patterns — do not do these
+
+| Anti-pattern | Why it breaks indexing |
+|---|---|
+| Italic concept names: `*Zone*` instead of `` `Zone` `` | Won't match parser regexes; reads as prose. |
+| Plural concept refs: `Zones`, `zones` | Indexer is case- and exact-token sensitive. |
+| Concept defs inside long prose paragraphs | No structural anchor for the parser. |
+| Mixing concepts in one H3: `### Zone, Place, and Station` | Only first token extracts; others are lost. |
+| ADR refs as text: "see ADR 87" or "ADR #0087" | Regex won't match. |
+| Inheritance as prose: "Zone is a kind of Area" | Parser only recognizes `subclasses`, `extends`, or `Child(Parent)` form. |
+| Filename mismatch: doc `regions.md` defines `Region` | Filename drives concept-doc indexing; rename or use H1 override. |
+| Forgetting `Status:` in an ADR | Defaults to weight 0.3 — won't win against Accepted ADRs. |
+| Using `Status: Superseded` to "soft delete" | rmx zeros all linkages. The doc is silent. (This is intended — confirm before using.) |
+| Mass concept dumps in tables without structure | Tables aren't yet parsed; convert to H3 sections. |
+
+## Self-verification — confirm your doc is indexed
+
+After authoring a doc and running `rmx ingest .`:
+
+```bash
+# 1. Is the doc registered as an entity?
+rmx list-entities --filter "<your-filename>"
+
+# 2. Does concept search surface it?
+rmx context <YourPrimaryConcept>
+
+# 3. Does it have outbound linkages?
+rmx neighbors <relative/path/to/your/doc.md>
+
+# 4. Walk the evidence for one linkage:
+rmx explain <entity-id>
+```
+
+If `neighbors` returns zero edges and `context` doesn't surface
+the doc, the parser found no structure to extract from. Re-read
+the relevant Form section above and fix the shape.
+
+## Indexing status (as of writing)
+
+| Form | Status |
+|---|---|
+| ADR markdown | **Indexed** — header fields, class specs, subclass trees, cross-refs |
+| `.pseudo` files | **Indexed** — types, functions, calls, imports, type refs |
+| Concept docs | **File-level only** — H3/subclass extraction planned; following conventions above future-proofs your doc |
+| Design docs | **File-level only** — bold-labeled metadata extraction planned; following conventions future-proofs |
+| Plain markdown | **File-level only** — fenced class specs may extract in future |
+
+Concept-doc and design-doc parsers will land in a follow-up. Docs
+authored to the conventions above will index automatically when
+that lands; docs authored without these conventions will need to
+be rewritten.
+
+## When in doubt
+
+1. Read the form-specific reference (`adr-format.md`,
+   `pseudo-format.pseudo`).
+2. Copy from a template (`docs/templates/`).
+3. Inspect a known-good example with `rmx explain <entity-id>` to
+   see what linkages it produced.
+4. If a concept isn't surfacing where you expect, the doc is
+   probably wrong — not the indexer. Fix the doc shape.
