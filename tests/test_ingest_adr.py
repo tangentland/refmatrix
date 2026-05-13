@@ -148,10 +148,12 @@ Stuff.
     assert any("0087" in n for n in names), f"ADR not in mentions:Zone: {names}"
 
 
-def test_non_adr_markdown_ignored(store, tmp_path):
+def test_non_adr_markdown_no_adr_namespace(store, tmp_path):
+    """A markdown file outside adr/ is NOT treated as an ADR even with an
+    ADR-like header. Status weighting and adr/NNNN namespacing don't apply;
+    it goes through the general markdown extractor instead."""
     project = tmp_path / "proj"
     project.mkdir()
-    # NOT in adr/ dir
     (project / "docs").mkdir()
     p = project / "docs" / "0001-not-an-adr.md"
     p.write_text("""\
@@ -166,4 +168,11 @@ NotAClass:
 """)
     ingest_path(store, project)
     qe = QueryEngine(store)
-    assert list(qe.run("defines:NotAClass")) == []
+    # File is registered, fenced class spec extracts (universal behavior)
+    hits = list(qe.run("defines:NotAClass"))
+    assert hits, "fenced class spec should still extract from general markdown"
+    # But the file does NOT register as an ADR — no adr_number metadata
+    ent = store.get_entity("doc", "docs/0001-not-an-adr.md")
+    assert ent is not None
+    meta = ent.meta or {}
+    assert "adr_number" not in meta, f"non-ADR file got adr_number: {meta}"

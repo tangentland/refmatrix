@@ -1,0 +1,118 @@
+# Module Name — One-Line Purpose
+#
+# Two-to-four-line context paragraph. What subsystem does this file own?
+# What invariants does it enforce? What other modules does it depend on?
+# Reference relevant ADRs and concept docs by name.
+
+# ===========================================================================
+# Imports
+# ===========================================================================
+
+from other-module import OtherType, helper_function
+from shared-types import UUID, JSON, Timestamp
+
+# ===========================================================================
+# Types
+# ===========================================================================
+
+# PascalCase at column 0, fields indented. Each field has a type
+# annotation and an optional inline comment.
+
+PrimaryType:
+    id: UUID                                 # unique identifier
+    name: string                             # human-readable label
+    parent_id: UUID?                         # nullable (? suffix)
+    children: list[ChildType]                # generic container
+    attributes: dict[string -> JSON]         # arbitrary metadata
+    created_at: Timestamp                    # epoch_ns by convention
+    status: StatusEnum                       # discriminator enum
+
+ChildType:
+    id: UUID
+    parent: PrimaryType                      # back-reference
+    value: float
+
+# ===========================================================================
+# Enums
+# ===========================================================================
+#
+# PascalCase header, UPPER_CASE values. Optional explicit numeric values
+# with = assignment.
+
+StatusEnum:
+    ACTIVE                                   # default state
+    PAUSED                                   # temporarily suspended
+    FAILED                                   # terminal failure
+    RETIRED                                  # gracefully decommissioned
+
+PriorityEnum:
+    LOW = 0
+    MEDIUM = 1
+    HIGH = 2
+    URGENT = 3
+
+# ===========================================================================
+# Constants and Registries
+# ===========================================================================
+
+MAX_BATCH_SIZE: int = 1000
+DEFAULT_TIMEOUT_MS: int = 5000
+
+# Singleton registry pattern — in-memory cache backed by persistent store
+TYPE_REGISTRY: dict[string -> PrimaryType]
+
+# ===========================================================================
+# Functions
+# ===========================================================================
+#
+# snake_case name, parenthesized params, optional return type, colon, body.
+# Body is happy-path pseudocode. Comments explain WHY.
+
+create_entity(
+    name: string,
+    parent_id: UUID? = None,
+    attributes: dict[string -> JSON]? = None,
+) -> PrimaryType:
+    # Validate parent if specified
+    assert parent_id is None or TYPE_REGISTRY.has(parent_id), "unknown parent"
+
+    # Allocate
+    id = uuid7()
+    entity = PrimaryType(
+        id=id,
+        name=name,
+        parent_id=parent_id,
+        children=[],
+        attributes=attributes or {},
+        created_at=now_ns(),
+        status=ACTIVE,
+    )
+
+    # Persist + notify
+    TYPE_REGISTRY[id] = entity
+    emit_event("entity.created", entity)
+    return entity
+
+# Short functions can be one-liners
+
+is_active(entity: PrimaryType) -> bool:
+    return entity.status == ACTIVE
+
+# ===========================================================================
+# How to use this template
+# ===========================================================================
+#
+# 1. Save as <subsystem>.pseudo somewhere in the project.
+# 2. Rename PrimaryType, ChildType, StatusEnum, etc. to your real
+#    concept names (PascalCase types, snake_case functions, UPPER_CASE
+#    enum values). The case patterns are how the parser recognizes them.
+# 3. Top-level types/functions live at column 0. Bodies are indented.
+# 4. Reference other types via field annotations and param types —
+#    those become `mentions` linkages automatically.
+# 5. Function calls inside bodies become `calls` linkages.
+# 6. Run `rmx ingest .` and verify with:
+#       rmx context <YourTypeName>
+#       rmx neighbors path/to/file.pseudo
+#
+# For the full pseudocode format reference: docs/pseudo-format.pseudo.
+# For authoring conventions across all doc forms: docs/agent-doc-primer.md.

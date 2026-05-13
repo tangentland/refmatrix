@@ -157,8 +157,13 @@ A Place subclasses Zone, adding domain activity context.
    - Tolerable: `### Zone (reactive area)` — first CamelCase token wins
    - Bad: `### Zones, Places, and Stations` — multiple concepts in one H3
 3. To declare inheritance, use the literal word `subclasses` or
-   `extends` between two CamelCase tokens in the first sentence of
-   the H3. Avoid synonyms ("is a kind of", "specializes").
+   `extends` followed by a CamelCase parent name anywhere in the H3
+   body. The child is the H3 concept. Both of these work:
+   - `Zone subclasses Area, adding reactive behavior.`
+   - `A zone subclasses Area, adding reactive behavior.` (lowercase
+     subject — child is taken from the H3 title)
+   Avoid synonyms ("is a kind of", "specializes") — the parser only
+   recognizes the literal `subclasses` and `extends` verbs.
 4. H1 = the doc's top-level concept. Filename should match. If they
    differ, filename wins for indexing.
 5. Cross-reference other concept docs by their concept name, not by
@@ -335,20 +340,20 @@ If `neighbors` returns zero edges and `context` doesn't surface
 the doc, the parser found no structure to extract from. Re-read
 the relevant Form section above and fix the shape.
 
-## Indexing status (as of writing)
+## Indexing status
 
 | Form | Status |
 |---|---|
-| ADR markdown | **Indexed** — header fields, class specs, subclass trees, cross-refs |
+| ADR markdown | **Indexed** — header fields, class specs, subclass trees, cross-refs (weight by Status) |
 | `.pseudo` files | **Indexed** — types, functions, calls, imports, type refs |
-| Concept docs | **File-level only** — H3/subclass extraction planned; following conventions above future-proofs your doc |
-| Design docs | **File-level only** — bold-labeled metadata extraction planned; following conventions future-proofs |
-| Plain markdown | **File-level only** — fenced class specs may extract in future |
+| Concept docs | **Indexed** — filename, H1, H3 sub-concepts, subclass/extends prose, ADR refs |
+| Design docs | **Indexed** — bold-labeled metadata refs, ADR refs, fenced class specs (weight 0.5) |
+| Plain markdown | **Universal extractors apply** — ADR refs and fenced class specs extract from any markdown |
 
-Concept-doc and design-doc parsers will land in a follow-up. Docs
-authored to the conventions above will index automatically when
-that lands; docs authored without these conventions will need to
-be rewritten.
+All four forms are now indexed. The universal extractors (fenced
+class specs, ADR-NNNN refs) run on every markdown file regardless
+of location, so even a plain prose doc gets some signal if it
+contains a fenced `Name:` block or references an ADR.
 
 ## When in doubt
 

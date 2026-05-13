@@ -86,6 +86,17 @@ def ingest_path(
         adr_files.append((p, adr_num))
     for p, _ in adr_files:
         _ingest_adr_semantics(s, p, path, adr_num_to_eid)
+
+    # General markdown semantic extraction (non-ADR). Runs after ADR pass so
+    # ADR-NNNN cross-references from generic docs can resolve via adr_num_to_eid.
+    for p in path.rglob("*.md"):
+        parts = set(p.parts)
+        if any(seg in parts for seg in (".git", ".venv", "node_modules",
+                                        ".tldr", ".refmatrix")):
+            continue
+        if _is_adr_file(p) is not None:
+            continue
+        _ingest_markdown_semantics(s, p, path, adr_num_to_eid)
     return n
 
 
@@ -868,3 +879,467 @@ def _looks_like_class_block(lines: list[str], lineno_1based: int) -> bool:
             continue
         return nxt.startswith(" ") or nxt.startswith("\t")
     return False
+
+
+# --- General markdown semantic enrichment ----------------------------------
+
+# Concept-doc detection: a markdown file is a concept doc if any of these dir
+# names appears in its path. Concept docs get H1 + H3 extraction.
+_CONCEPT_DOC_DIRS = frozenset({"concepts", "concept", "glossary"})
+
+# Bold-labeled metadata refs in design-doc headers.
+# Matches: **Source:** path.md  /  **Referenced by:** a.md, b.md
+_MD_BOLD_LABEL_RE = re.compile(
+    r'^\*\*([A-Za-z][A-Za-z \-]*?):\*\*\s*(.+?)\s*$'
+)
+
+# Labels that point at other docs/ADRs. Other bold labels (Created, Authors,
+# Date, Tags) are ignored — they're metadata about this doc, not refs.
+_MD_REF_LABELS = frozenset({
+    "Source", "Referenced by", "Companion", "Implements",
+    "Supersedes", "Replaces", "See also", "Related", "Related to",
+    "Depends on", "Extends", "Builds on",
+})
+
+# H3 with a single CamelCase token (optionally followed by parenthetical or
+# em-dash continuation). The captured group is the concept name.
+_MD_H3_CONCEPT_RE = re.compile(
+    r'^###\s+([A-Z][A-Za-z0-9]+)(?:\s*[\(\-—–:].*)?$'
+)
+_MD_H1_RE = re.compile(r'^#\s+(.+?)\s*$')
+_MD_FIRST_CAMEL_RE = re.compile(r'\b([A-Z][A-Za-z0-9]{2,})\b')
+
+# Inheritance prose inside an H3 body. Two forms:
+#   "X subclasses Y"  /  "X extends Y"            (both CamelCase)
+#   "...subclasses Y" / "...extends Y"            (use H3 title as child)
+_MD_SUBCLASS_RE = re.compile(
+    r'\b(?:subclasses|extends)\s+([A-Z][A-Za-z0-9]+)\b'
+)
+_MD_SUBCLASS_BOTH_RE = re.compile(
+    r'\b([A-Z][A-Za-z0-9]+)\s+(?:subclasses|extends)\s+([A-Z][A-Za-z0-9]+)\b'
+)
+
+
+def _is_concept_doc(file_path: Path) -> bool:
+    return any(part.lower() in _CONCEPT_DOC_DIRS for part in file_path.parts)
+
+
+def _kebab_to_pascal(stem: str) -> str:
+    """Convert kebab-case filename stem to PascalCase concept name."""
+    parts = re.split(r'[-_]', stem)
+    return "".join(p[:1].upper() + p[1:] for p in parts if p)
+
+
+def _resolve_ref_target(
+    s: Store,
+    raw: str,
+    project_root: Path,
+    source_dir: Path,
+) -> int | None:
+    """Resolve a bold-metadata value to an existing doc/code entity.
+
+    Tries the value as project-relative path, source-relative path, and bare
+    basename. Returns the entity id or None if no match.
+    """
+    raw = raw.strip().strip("`").strip()
+    if not raw:
+        return None
+    candidates: list[str] = []
+    # Treat as project-relative path
+    candidates.append(raw)
+    # Source-relative
+    try:
+        sr = (source_dir / raw).resolve().relative_to(project_root).as_posix()
+        candidates.append(sr)
+    except (ValueError, OSError):
+        pass
+    # As-is interpreted from project root
+    try:
+        pr = (project_root / raw).resolve().relative_to(project_root).as_posix()
+        candidates.append(pr)
+    except (ValueError, OSError):
+        pass
+    for cand in candidates:
+        for kind in ("doc", "code"):
+            ent = s.get_entity(kind, cand)
+            if ent is not None:
+                return ent.id
+    return None
+
+
+def _ingest_markdown_semantics(
+    s: Store,
+    file_path: Path,
+    project_root: Path,
+    adr_num_to_eid: dict[str, int],
+) -> int:
+    """Extract semantic linkages from a non-ADR markdown file.
+
+    Always-on extractors:
+      - bold-labeled metadata refs in the first 50 non-blank lines
+      - ADR-NNNN cross-references anywhere in the body
+      - fenced code blocks containing class-spec pseudocode
+
+    Concept-doc-only extractors (path contains 'concepts/' or 'glossary/'):
+      - H1 first CamelCase token → defines this doc
+      - filename PascalCase'd → defines this doc
+      - each H3 with single CamelCase title → sub-entity, defines linkage
+      - subclass/extends prose in H3 body → is_a linkage
+    """
+    try:
+        text = file_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return 0
+    lines = text.splitlines()
+
+    rel = (
+        file_path.relative_to(project_root).as_posix()
+        if file_path.is_relative_to(project_root)
+        else str(file_path)
+    )
+    doc_eid = s.upsert_entity(kind="doc", name=rel, path=str(file_path))
+    try:
+        s.mark_tracked(str(file_path), file_path.stat().st_mtime)
+    except OSError:
+        pass
+
+    n = 0
+    concept_cache: dict[str, int] = {}
+
+    def get_concept(name: str) -> int:
+        if name in concept_cache:
+            return concept_cache[name]
+        cid = s.add_concept(name, description=f"symbol '{name}'")
+        concept_cache[name] = cid
+        return cid
+
+    # 1. Bold-labeled metadata refs (universal — any markdown header)
+    n += _emit_bold_metadata_refs(
+        s, lines, rel, doc_eid, file_path, project_root,
+        adr_num_to_eid, get_concept,
+    )
+
+    # 2. ADR-NNNN cross-references (universal — any prose)
+    seen_adr_refs: set[str] = set()
+    for m in _ADR_REF_RE.finditer(text):
+        ref_num = m.group(1)
+        if ref_num in seen_adr_refs:
+            continue
+        seen_adr_refs.add(ref_num)
+        target_eid = adr_num_to_eid.get(ref_num)
+        if target_eid is None:
+            continue
+        ref_concept = s.add_namespaced_concept(
+            "adr", ref_num, description=f"ADR-{ref_num}"
+        )
+        s.link("related_to", ref_concept, doc_eid)
+        s.link("related_to", ref_concept, target_eid)
+        s.add_evidence("related_to", ref_concept, doc_eid,
+                       file=rel, detail=f"references ADR-{ref_num}")
+        n += 1
+
+    # 3. Concept-doc heuristic
+    if _is_concept_doc(file_path):
+        n += _emit_concept_doc_linkages(
+            s, lines, rel, doc_eid, file_path, get_concept,
+        )
+
+    # 4. Fenced code-block class specs (universal). Weight 0.5 since the
+    # source isn't a binding decision like an ADR.
+    n += _emit_md_fenced_class_specs(
+        s, lines, rel, doc_eid, file_path, get_concept, weight=0.5,
+    )
+
+    return n
+
+
+def _emit_bold_metadata_refs(
+    s: Store,
+    lines: list[str],
+    rel: str,
+    doc_eid: int,
+    file_path: Path,
+    project_root: Path,
+    adr_num_to_eid: dict[str, int],
+    get_concept,
+) -> int:
+    """Scan first 50 non-blank lines for **Label:** value refs."""
+    n = 0
+    scanned = 0
+    source_dir = file_path.parent
+    for lineno, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("## "):
+            break
+        scanned += 1
+        if scanned > 50:
+            break
+        m = _MD_BOLD_LABEL_RE.match(stripped)
+        if not m:
+            continue
+        label = m.group(1).strip()
+        value = m.group(2).strip()
+        if label not in _MD_REF_LABELS:
+            continue
+        # Split on commas; values may be paths or ADR-NNNN refs
+        for raw in value.split(","):
+            tok = raw.strip().strip("`").strip()
+            if not tok:
+                continue
+            # ADR ref?
+            adr_m = _ADR_REF_RE.search(tok)
+            if adr_m:
+                ref_num = adr_m.group(1)
+                target_eid = adr_num_to_eid.get(ref_num)
+                if target_eid is not None:
+                    ref_concept = s.add_namespaced_concept(
+                        "adr", ref_num, description=f"ADR-{ref_num}"
+                    )
+                    s.link("related_to", ref_concept, doc_eid)
+                    s.link("related_to", ref_concept, target_eid)
+                    s.add_evidence("related_to", ref_concept, doc_eid,
+                                   file=rel, line=lineno,
+                                   detail=f"{label}: ADR-{ref_num}")
+                    n += 1
+                continue
+            # Path ref?
+            target_eid = _resolve_ref_target(s, tok, project_root, source_dir)
+            if target_eid is not None and target_eid != doc_eid:
+                path_concept = s.add_namespaced_concept(
+                    "ref", tok, description=f"reference to {tok}"
+                )
+                s.link("related_to", path_concept, doc_eid)
+                s.link("related_to", path_concept, target_eid)
+                s.add_evidence("related_to", path_concept, doc_eid,
+                               file=rel, line=lineno,
+                               detail=f"{label}: {tok}")
+                n += 1
+    return n
+
+
+def _emit_concept_doc_linkages(
+    s: Store,
+    lines: list[str],
+    rel: str,
+    doc_eid: int,
+    file_path: Path,
+    get_concept,
+) -> int:
+    """Concept-doc-only: filename + H1 → defines this doc; H3 PascalCase →
+    sub-entity with defines + is_a-from-prose."""
+    n = 0
+
+    # Filename stem → PascalCase concept defines this doc
+    stem = file_path.stem
+    fname_concept = _kebab_to_pascal(stem)
+    if fname_concept:
+        cid = get_concept(fname_concept)
+        s.link("defines", cid, doc_eid)
+        s.add_evidence("defines", cid, doc_eid, file=rel,
+                       detail=f"concept doc filename: {stem}")
+        n += 1
+
+    # H1 first CamelCase token defines this doc
+    for line in lines:
+        h1 = _MD_H1_RE.match(line)
+        if h1:
+            first = _MD_FIRST_CAMEL_RE.search(h1.group(1))
+            if first:
+                cid = get_concept(first.group(1))
+                s.link("defines", cid, doc_eid)
+                s.add_evidence("defines", cid, doc_eid, file=rel, line=1,
+                               detail=f"H1 concept: {first.group(1)}")
+                n += 1
+            break
+
+    # H3 sections: each single-CamelCase H3 defines a sub-concept entity.
+    # Collect H3 ranges so we can scan body for subclass/extends.
+    h3_ranges: list[tuple[str, int, int]] = []  # (concept_name, start, end)
+    cur_h3: str | None = None
+    cur_start: int = -1
+    for i, line in enumerate(lines):
+        if line.startswith("###"):
+            if cur_h3 is not None:
+                h3_ranges.append((cur_h3, cur_start, i))
+            m = _MD_H3_CONCEPT_RE.match(line)
+            if m:
+                cur_h3 = m.group(1)
+                cur_start = i + 1
+            else:
+                cur_h3 = None
+        elif line.startswith("## ") or line.startswith("# "):
+            if cur_h3 is not None:
+                h3_ranges.append((cur_h3, cur_start, i))
+            cur_h3 = None
+    if cur_h3 is not None:
+        h3_ranges.append((cur_h3, cur_start, len(lines)))
+
+    for name, start, end in h3_ranges:
+        qname = f"{rel}::{name}"
+        sub_eid = s.upsert_entity(
+            kind="doc", name=qname, path=str(file_path),
+            meta={"file": rel, "func": name, "kind": "concept",
+                  "line": start},
+        )
+        cc = get_concept(name)
+        s.link("defines", cc, sub_eid)
+        s.add_evidence("defines", cc, sub_eid, file=rel, line=start,
+                       detail=f"H3 concept: {name}")
+        n += 1
+
+        # Subclass/extends prose in this H3's body
+        body = "\n".join(lines[start:end])
+        seen_parents: set[str] = set()
+        # Form 1: "X subclasses Y" (both CamelCase) — emit both directions
+        for cm in _MD_SUBCLASS_BOTH_RE.finditer(body):
+            child = cm.group(1)
+            parent = cm.group(2)
+            if parent in _PSEUDO_BUILTIN_TYPES or parent == child:
+                continue
+            key = f"{child}<{parent}"
+            if key in seen_parents:
+                continue
+            seen_parents.add(key)
+            # If the child matches the H3 name, link to sub_eid; else create child sub-entity
+            if child == name:
+                target_eid = sub_eid
+            else:
+                child_qname = f"{rel}::{child}"
+                target_eid = s.upsert_entity(
+                    kind="doc", name=child_qname, path=str(file_path),
+                    meta={"file": rel, "func": child, "kind": "concept",
+                          "line": start},
+                )
+                cc2 = get_concept(child)
+                s.link("defines", cc2, target_eid)
+                n += 1
+            pc = get_concept(parent)
+            s.link("is_a", pc, target_eid)
+            s.add_evidence("is_a", pc, target_eid, file=rel, line=start,
+                           detail=f"{child} subclasses {parent}")
+            n += 1
+        # Form 2: bare "subclasses Y" / "extends Y" — child is the H3 concept
+        for cm in _MD_SUBCLASS_RE.finditer(body):
+            parent = cm.group(1)
+            if parent in _PSEUDO_BUILTIN_TYPES or parent == name:
+                continue
+            key = f"{name}<{parent}"
+            if key in seen_parents:
+                continue
+            seen_parents.add(key)
+            pc = get_concept(parent)
+            s.link("is_a", pc, sub_eid)
+            s.add_evidence("is_a", pc, sub_eid, file=rel, line=start,
+                           detail=f"{name} subclasses {parent}")
+            n += 1
+    return n
+
+
+def _emit_md_fenced_class_specs(
+    s: Store,
+    lines: list[str],
+    rel: str,
+    doc_eid: int,
+    file_path: Path,
+    get_concept,
+    weight: float,
+) -> int:
+    """Universal: parse fenced code blocks for class specs (Name: + indented
+    body). Mirrors the ADR class-spec parser but only handles fenced blocks
+    (no indented-pseudocode case — that's too noisy outside ADRs).
+    """
+    n = 0
+    in_fence = False
+    cur_class_eid: int | None = None
+    cur_class_name: str | None = None
+
+    for lineno, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            cur_class_eid = None
+            cur_class_name = None
+            continue
+        if not in_fence:
+            continue
+        if not stripped or stripped.startswith("#") or stripped.startswith("//"):
+            continue
+
+        indent = len(line) - len(line.lstrip())
+
+        # Subclass tree line e.g. "+-- Child(Parent)"
+        tm = _ADR_TREE_CHILD_RE.match(line)
+        if tm:
+            child = tm.group(1)
+            parents_str = tm.group(2) or ""
+            child_qname = f"{rel}::{child}"
+            child_eid = s.upsert_entity(
+                kind="doc", name=child_qname, path=str(file_path),
+                meta={"file": rel, "func": child, "kind": "class",
+                      "line": lineno},
+            )
+            cc = get_concept(child)
+            s.weighted_link("defines", cc, child_eid, weight=weight)
+            s.add_evidence("defines", cc, child_eid, file=rel, line=lineno,
+                           detail=f"subclass tree {child}")
+            n += 1
+            for parent in (p.strip() for p in parents_str.split(",")):
+                if not parent or parent in _PSEUDO_BUILTIN_TYPES:
+                    continue
+                pc = get_concept(parent)
+                s.weighted_link("is_a", pc, child_eid, weight=weight)
+                n += 1
+            cur_class_eid = None
+            cur_class_name = None
+            continue
+
+        # Class header at col 0
+        cm = _ADR_CLASS_RE.match(line) if indent == 0 else None
+        if cm:
+            name = cm.group(1)
+            parents_str = cm.group(2) or ""
+            qname = f"{rel}::{name}"
+            cur_class_eid = s.upsert_entity(
+                kind="doc", name=qname, path=str(file_path),
+                meta={"file": rel, "func": name, "kind": "class",
+                      "line": lineno},
+            )
+            cur_class_name = name
+            cid = get_concept(name)
+            s.weighted_link("defines", cid, cur_class_eid, weight=weight)
+            s.add_evidence("defines", cid, cur_class_eid, file=rel, line=lineno,
+                           detail=f"fenced class spec {name}")
+            n += 1
+            for parent in (p.strip() for p in parents_str.split(",")):
+                if not parent or parent in _PSEUDO_BUILTIN_TYPES:
+                    continue
+                pc = get_concept(parent)
+                s.weighted_link("is_a", pc, cur_class_eid, weight=weight)
+                n += 1
+            continue
+
+        # Body: methods + type refs
+        if cur_class_eid is not None and indent > 0:
+            mm = _ADR_METHOD_RE.match(line)
+            if mm:
+                method = mm.group(1)
+                mc = get_concept(method)
+                s.weighted_link("mentions", mc, cur_class_eid, weight=weight)
+                n += 1
+                for blob in (mm.group(2) or "", mm.group(3) or ""):
+                    for tref in _PSEUDO_TYPE_REF_RE.findall(blob):
+                        if tref in _PSEUDO_BUILTIN_TYPES or tref == cur_class_name:
+                            continue
+                        tc = get_concept(tref)
+                        s.weighted_link("mentions", tc, cur_class_eid, weight=weight)
+                        n += 1
+            else:
+                for tref in _PSEUDO_TYPE_REF_RE.findall(line):
+                    if tref in _PSEUDO_BUILTIN_TYPES or tref == cur_class_name:
+                        continue
+                    tc = get_concept(tref)
+                    s.weighted_link("mentions", tc, cur_class_eid, weight=weight)
+                    n += 1
+    return n
