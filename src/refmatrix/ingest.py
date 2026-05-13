@@ -59,6 +59,33 @@ def ingest_path(
                                         ".tldr", ".refmatrix")):
             continue
         _ingest_pseudo_semantics(s, p, path)
+
+    # ADR semantic extraction — two-pass so cross-references resolve.
+    adr_files: list[tuple[Path, str]] = []
+    adr_num_to_eid: dict[str, int] = {}
+    for p in path.rglob("*.md"):
+        parts = set(p.parts)
+        if any(seg in parts for seg in (".git", ".venv", "node_modules",
+                                        ".tldr", ".refmatrix")):
+            continue
+        adr_num = _is_adr_file(p)
+        if adr_num is None:
+            continue
+        rel = (
+            p.relative_to(path).as_posix() if p.is_relative_to(path) else str(p)
+        )
+        eid = s.upsert_entity(
+            kind="doc", name=rel, path=str(p),
+            meta={"adr_number": adr_num},
+        )
+        try:
+            s.mark_tracked(str(p), p.stat().st_mtime)
+        except OSError:
+            pass
+        adr_num_to_eid[adr_num] = eid
+        adr_files.append((p, adr_num))
+    for p, _ in adr_files:
+        _ingest_adr_semantics(s, p, path, adr_num_to_eid)
     return n
 
 
@@ -562,3 +589,282 @@ def _ingest_pseudo_semantics(s: Store, file_path: Path, project_root: Path) -> i
                 n += 1
 
     return n
+
+
+# --- ADR markdown semantic enrichment --------------------------------------
+
+_ADR_FILENAME_RE = re.compile(r'^(\d{4})-.*\.md$')
+_ADR_HEADER_FIELD_RE = re.compile(r'^([A-Z][A-Za-z-]+):\s*(.+?)\s*$')
+_ADR_REF_RE = re.compile(r'\bADR-(\d{4})\b')
+_ADR_CLASS_RE = re.compile(
+    r'^([A-Z][A-Za-z0-9_]+)\s*(?:\(([A-Za-z0-9_,\s]+)\))?\s*:\s*(?:#.*)?$'
+)
+_ADR_TREE_CHILD_RE = re.compile(
+    r'^\s*[+\-|]+--\s*([A-Z][A-Za-z0-9_]+)'
+    r'(?:\s*\(([A-Za-z0-9_,\s]+)\))?'
+)
+_ADR_METHOD_RE = re.compile(
+    r'^\s+([a-z_][a-z0-9_]*)\s*\(([^)]*)\)\s*(?:->\s*([^#]+?))?\s*(?:#.*)?$'
+)
+_ADR_GOVERNS_TOKEN_RE = re.compile(r'\b([A-Z][A-Za-z0-9_]{2,})\b')
+
+_ADR_STATUS_WEIGHT = {
+    "Accepted": 1.0,
+    "Proposed": 0.3,
+    "Draft": 0.2,
+    "Superseded": 0.0,
+    "Deprecated": 0.0,
+    "Rejected": 0.0,
+}
+
+
+def _is_adr_file(p: Path) -> str | None:
+    """Return zero-padded ADR number if p looks like an ADR markdown, else None."""
+    if p.suffix.lower() != ".md":
+        return None
+    if not any(part.lower() == "adr" for part in p.parts):
+        return None
+    m = _ADR_FILENAME_RE.match(p.name)
+    return m.group(1) if m else None
+
+
+def _parse_adr_header(lines: list[str]) -> dict[str, str]:
+    """Pull YAML-ish header fields from the top of an ADR.
+
+    Stops at the first ## section heading. Tolerates a leading '# Title' line
+    and blank lines. Continuation lines (indented under a field) are joined
+    with a space so multi-line Governs/Cross-references survive.
+    """
+    header: dict[str, str] = {}
+    last_key: str | None = None
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            break
+        if not stripped:
+            last_key = None
+            continue
+        if stripped.startswith("# ") and last_key is None:
+            continue
+        m = _ADR_HEADER_FIELD_RE.match(stripped)
+        if m:
+            last_key = m.group(1)
+            header[last_key] = m.group(2).strip()
+        elif last_key and (line.startswith(" ") or line.startswith("\t")):
+            header[last_key] = (header[last_key] + " " + stripped).strip()
+        else:
+            last_key = None
+    return header
+
+
+def _ingest_adr_semantics(
+    s: Store,
+    file_path: Path,
+    project_root: Path,
+    adr_num_to_eid: dict[str, int],
+) -> int:
+    """Extract semantic linkages from an ADR markdown file.
+
+    Emits, weighted by Status (Accepted=1.0, Proposed=0.3, Superseded=0):
+      - defines:<ClassName> for class/struct specs (fenced or indented blocks)
+      - is_a from parent class concept to child class entity
+      - mentions for type refs inside class bodies and Governs-line concepts
+      - related_to between ADR entities for ADR-NNNN cross-references
+        (mediated by adr/NNNN namespaced concept)
+    """
+    adr_num = _is_adr_file(file_path)
+    if adr_num is None:
+        return 0
+    adr_eid = adr_num_to_eid.get(adr_num)
+    if adr_eid is None:
+        return 0
+
+    try:
+        text = file_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return 0
+    lines = text.splitlines()
+
+    rel = (
+        file_path.relative_to(project_root).as_posix()
+        if file_path.is_relative_to(project_root)
+        else str(file_path)
+    )
+
+    header = _parse_adr_header(lines)
+    status_raw = header.get("Status", "Proposed")
+    status = status_raw.split()[0] if status_raw else "Proposed"
+    weight = _ADR_STATUS_WEIGHT.get(status, 0.3)
+    if weight == 0.0:
+        return 0
+
+    n = 0
+    concept_cache: dict[str, int] = {}
+
+    def get_concept(name: str) -> int:
+        if name in concept_cache:
+            return concept_cache[name]
+        cid = s.add_concept(name, description=f"symbol '{name}'")
+        concept_cache[name] = cid
+        return cid
+
+    # Governs line → mentions linkage on CamelCase tokens
+    governs = header.get("Governs", "")
+    for tok in _ADR_GOVERNS_TOKEN_RE.findall(governs):
+        if tok in _PSEUDO_BUILTIN_TYPES:
+            continue
+        cid = get_concept(tok)
+        s.weighted_link("mentions", cid, adr_eid, weight=weight)
+        s.add_evidence("mentions", cid, adr_eid, file=rel, line=1,
+                       detail=f"Governs: {tok}")
+        n += 1
+
+    # Cross-references → related_to via adr/NNNN namespaced concept hub
+    seen_refs: set[str] = set()
+    for m in _ADR_REF_RE.finditer(text):
+        ref_num = m.group(1)
+        if ref_num == adr_num or ref_num in seen_refs:
+            continue
+        seen_refs.add(ref_num)
+        target_eid = adr_num_to_eid.get(ref_num)
+        if target_eid is None:
+            continue
+        ref_concept = s.add_namespaced_concept(
+            "adr", ref_num, description=f"ADR-{ref_num}"
+        )
+        s.link("related_to", ref_concept, adr_eid)
+        s.link("related_to", ref_concept, target_eid)
+        s.add_evidence("related_to", ref_concept, adr_eid,
+                       file=rel, detail=f"references ADR-{ref_num}")
+        n += 1
+
+    # Class / struct specs + subclass trees
+    in_fence = False
+    cur_class_eid: int | None = None
+    cur_class_name: str | None = None
+    class_block_indent: int = -1
+
+    for lineno, line in enumerate(lines, 1):
+        stripped = line.strip()
+
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            cur_class_eid = None
+            cur_class_name = None
+            class_block_indent = -1
+            continue
+
+        if not stripped:
+            continue
+
+        if not in_fence and stripped.startswith("#"):
+            cur_class_eid = None
+            cur_class_name = None
+            class_block_indent = -1
+            continue
+
+        indent = len(line) - len(line.lstrip())
+
+        # Subclass tree line e.g. "+-- AnnotatedZone(Zone)"
+        tm = _ADR_TREE_CHILD_RE.match(line)
+        if tm:
+            child = tm.group(1)
+            parents_str = tm.group(2) or ""
+            child_qname = f"{rel}::{child}"
+            child_eid = s.upsert_entity(
+                kind="doc", name=child_qname, path=str(file_path),
+                meta={"file": rel, "func": child, "kind": "class",
+                      "adr": adr_num, "line": lineno},
+            )
+            cc = get_concept(child)
+            s.weighted_link("defines", cc, child_eid, weight=weight)
+            s.add_evidence("defines", cc, child_eid, file=rel, line=lineno,
+                           detail=f"ADR-{adr_num} subclass {child}")
+            n += 1
+            for parent in (p.strip() for p in parents_str.split(",")):
+                if not parent or parent in _PSEUDO_BUILTIN_TYPES:
+                    continue
+                pc = get_concept(parent)
+                s.weighted_link("is_a", pc, child_eid, weight=weight)
+                s.add_evidence("is_a", pc, child_eid, file=rel, line=lineno,
+                               detail=f"{child} subclass of {parent}")
+                n += 1
+            cur_class_eid = None
+            cur_class_name = None
+            class_block_indent = -1
+            continue
+
+        # Class definition: CamelCase at col 0 inside fence, OR CamelCase at
+        # col 0 outside fence (indented pseudocode block under a heading)
+        cm = _ADR_CLASS_RE.match(line) if indent == 0 else None
+        if cm and (in_fence or _looks_like_class_block(lines, lineno)):
+            name = cm.group(1)
+            parents_str = cm.group(2) or ""
+            qname = f"{rel}::{name}"
+            cur_class_eid = s.upsert_entity(
+                kind="doc", name=qname, path=str(file_path),
+                meta={"file": rel, "func": name, "kind": "class",
+                      "adr": adr_num, "line": lineno},
+            )
+            cur_class_name = name
+            class_block_indent = 0
+            cid = get_concept(name)
+            s.weighted_link("defines", cid, cur_class_eid, weight=weight)
+            s.add_evidence("defines", cid, cur_class_eid, file=rel, line=lineno,
+                           detail=f"ADR-{adr_num} class {name}")
+            n += 1
+            for parent in (p.strip() for p in parents_str.split(",")):
+                if not parent or parent in _PSEUDO_BUILTIN_TYPES:
+                    continue
+                pc = get_concept(parent)
+                s.weighted_link("is_a", pc, cur_class_eid, weight=weight)
+                s.add_evidence("is_a", pc, cur_class_eid, file=rel, line=lineno,
+                               detail=f"{name} subclass of {parent}")
+                n += 1
+            continue
+
+        # Body of an open class block: methods + type refs
+        if cur_class_eid is not None and indent > class_block_indent:
+            mm = _ADR_METHOD_RE.match(line)
+            if mm:
+                method = mm.group(1)
+                mc = get_concept(method)
+                s.weighted_link("mentions", mc, cur_class_eid, weight=weight)
+                n += 1
+                # Type refs in params + return
+                for blob in (mm.group(2) or "", mm.group(3) or ""):
+                    for tref in _PSEUDO_TYPE_REF_RE.findall(blob):
+                        if tref in _PSEUDO_BUILTIN_TYPES or tref == cur_class_name:
+                            continue
+                        tc = get_concept(tref)
+                        s.weighted_link("mentions", tc, cur_class_eid, weight=weight)
+                        n += 1
+            else:
+                for tref in _PSEUDO_TYPE_REF_RE.findall(line):
+                    if tref in _PSEUDO_BUILTIN_TYPES or tref == cur_class_name:
+                        continue
+                    tc = get_concept(tref)
+                    s.weighted_link("mentions", tc, cur_class_eid, weight=weight)
+                    n += 1
+        elif cur_class_eid is not None and indent <= class_block_indent:
+            # Dedent back to col 0 with non-class content closes the block
+            cur_class_eid = None
+            cur_class_name = None
+            class_block_indent = -1
+
+    return n
+
+
+def _looks_like_class_block(lines: list[str], lineno_1based: int) -> bool:
+    """Heuristic: a 'Name:' line outside a fence opens a class block only if
+    the next non-blank line is indented. Avoids treating markdown labels like
+    'Status:' or 'Decision:' as class definitions (they're caught by header
+    parser, but also appear in prose)."""
+    idx = lineno_1based  # next line index in 0-based
+    while idx < len(lines):
+        nxt = lines[idx]
+        if not nxt.strip():
+            idx += 1
+            continue
+        return nxt.startswith(" ") or nxt.startswith("\t")
+    return False
