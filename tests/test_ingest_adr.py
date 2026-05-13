@@ -148,6 +148,51 @@ Stuff.
     assert any("0087" in n for n in names), f"ADR not in mentions:Zone: {names}"
 
 
+def test_bold_wrapped_header_fields(store, tmp_path):
+    """ADR headers in the wild often use bold-wrapped labels like
+    **Status:** Accepted (from copy-paste of rendered markdown).
+    Both forms must parse the same."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    _make_adr(project, "0087", "zone", """\
+# ADR-0087
+
+**Status:** Accepted
+**Governs:** Zone, BBOX
+**Cross-references:** ADR-0043
+
+## Decision
+
+```
+Zone:
+  field: int
+```
+""")
+    _make_adr(project, "0043", "prior", """\
+# ADR-0043
+
+**Status:** Accepted
+""")
+    ingest_path(store, project)
+    qe = QueryEngine(store)
+
+    # Status was parsed → linkages emitted at Accepted weight (not skipped)
+    defines_hits = _names_of_helper(store, list(qe.run("defines:Zone")))
+    assert any("0087" in n for n in defines_hits), defines_hits
+
+    # Governs parsed
+    mentions_hits = _names_of_helper(store, list(qe.run("mentions:Zone")))
+    assert any("0087" in n for n in mentions_hits), mentions_hits
+
+    # Cross-references parsed
+    rel_hits = _names_of_helper(store, list(qe.run("related_to:adr/0043")))
+    assert any("0087" in n for n in rel_hits), rel_hits
+
+
+def _names_of_helper(store, hits):
+    return {store.get_entity_by_id(h).name for h in hits}
+
+
 def test_non_adr_markdown_no_adr_namespace(store, tmp_path):
     """A markdown file outside adr/ is NOT treated as an ADR even with an
     ADR-like header. Status weighting and adr/NNNN namespacing don't apply;

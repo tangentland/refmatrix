@@ -605,7 +605,9 @@ def _ingest_pseudo_semantics(s: Store, file_path: Path, project_root: Path) -> i
 # --- ADR markdown semantic enrichment --------------------------------------
 
 _ADR_FILENAME_RE = re.compile(r'^(\d{4})-.*\.md$')
-_ADR_HEADER_FIELD_RE = re.compile(r'^([A-Z][A-Za-z-]+):\s*(.+?)\s*$')
+_ADR_HEADER_FIELD_RE = re.compile(
+    r'^\*{0,2}([A-Z][A-Za-z-]+):\*{0,2}\s*(.+?)\s*$'
+)
 _ADR_REF_RE = re.compile(r'\bADR-(\d{4})\b')
 _ADR_CLASS_RE = re.compile(
     r'^([A-Z][A-Za-z0-9_]+)\s*(?:\(([A-Za-z0-9_,\s]+)\))?\s*:\s*(?:#.*)?$'
