@@ -22,6 +22,7 @@ class CodeRankEmbedRetriever:
         device: str = "cpu",
         batch_size: int = 32,
         bf16: bool = False,
+        max_seq_length: int = 512,
     ):
         try:
             from sentence_transformers import SentenceTransformer
@@ -32,6 +33,7 @@ class CodeRankEmbedRetriever:
             ) from exc
 
         model = SentenceTransformer(model_name, trust_remote_code=True).to(device)
+        model.max_seq_length = max_seq_length
         if bf16:
             import torch
             model = model.to(torch.bfloat16)
