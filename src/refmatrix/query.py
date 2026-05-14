@@ -27,6 +27,28 @@ from pyroaring import BitMap
 from refmatrix.store import Store
 
 
+# ----------------------------- Reciprocal Rank Fusion ----------------------
+
+
+def fuse_rrf(
+    ranked_lists: list[list[int]],
+    k: int = 60,
+) -> list[tuple[int, float]]:
+    """Reciprocal Rank Fusion across ranked id lists.
+
+    Each input is an ordered list of entity ids (rank 0 = best). Score for an
+    id is the sum over lists of 1/(k + rank). k=60 is the value from the
+    original Cormack/Clarke/Buettcher paper; it dampens contributions from
+    items deep in any single list so a unanimous top-5 beats one list's #1.
+    Returns descending by score, ascending id on ties.
+    """
+    scores: dict[int, float] = {}
+    for lst in ranked_lists:
+        for rank, eid in enumerate(lst):
+            scores[eid] = scores.get(eid, 0.0) + 1.0 / (k + rank)
+    return sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))
+
+
 # ----------------------------- DSL parser ----------------------------------
 
 _TOKEN_RE = re.compile(

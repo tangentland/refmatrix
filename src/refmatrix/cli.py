@@ -471,7 +471,9 @@ def neighbors(concept, depth, linkage, limit, include_noise):
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
 @click.option("--since", default=None,
               help="Branch-scoped: bundle for concepts touched by `git diff --name-only <ref>`.")
-def context(symbol, linkage, max_entities, max_tokens, fmt, since):
+@click.option("--fuse", is_flag=True,
+              help="Reciprocal Rank Fusion across linkages. Avoids biasing truncation toward early linkage order.")
+def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse):
     """Token-budgeted context bundle: anchor + neighbors + their tldr blobs."""
     from refmatrix.context import build_context, render_json, render_text
 
@@ -518,7 +520,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since):
         used = 0
         for name in sorted(concept_names)[:8]:
             b = build_context(s, name, max_tokens=per, max_entities=10,
-                              linkages=list(linkage) or None)
+                              linkages=list(linkage) or None, fuse=fuse)
             if b.anchor is None or not b.groups:
                 continue
             block = render_json(b) if fmt == "json" else render_text(b)
@@ -540,6 +542,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since):
             linkages=list(linkage) or None,
             max_entities=max_entities,
             max_tokens=max_tokens,
+            fuse=fuse,
         )
         t.cardinality = bundle.total_entities() if bundle.anchor else 0
     if fmt == "json":

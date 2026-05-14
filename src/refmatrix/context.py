@@ -69,6 +69,7 @@ def build_context(
     linkages: list[str] | None = None,
     max_entities: int = 20,
     max_tokens: int = 4000,
+    fuse: bool = False,
 ) -> ContextBundle:
     """Build a context bundle anchored on `ref` (concept name or entity name)."""
     bundle = ContextBundle(ref=ref)
@@ -90,7 +91,9 @@ def build_context(
     if e.tldr:
         used += estimate_tokens(e.tldr)
 
-    if e.kind == "concept":
+    if fuse:
+        rows_iter = _fused_rows(s, e, ordered, max_entities)
+    elif e.kind == "concept":
         rows_iter = _concept_rows(s, e.id, ordered, max_entities)
     else:
         rows_iter = _entity_anchored_rows(s, e.id, ordered, max_entities)
@@ -112,6 +115,54 @@ def build_context(
 
     bundle.estimated_tokens = used
     return bundle
+
+
+def _fused_rows(s: Store, anchor: Entity, linkages: list[str], cap: int):
+    """RRF across per-linkage rankings.
+
+    Each linkage produces a ranked candidate list (top_weighted first, then
+    bitmap-order fallback for unweighted linkages). fuse_rrf merges them into
+    one global ranking; entity attribution goes to the first linkage that
+    ranked it. Caller still groups by linkage for output, but truncation now
+    sees globally-best entities first instead of being biased by linkage order.
+
+    Entity-anchored bundles defer to the regular walk — that path mixes
+    concepts and sibling entities, which is not a homogeneous candidate set
+    suitable for RRF.
+    """
+    from refmatrix.query import fuse_rrf
+
+    if anchor.kind != "concept":
+        yield from _entity_anchored_rows(s, anchor.id, linkages, cap)
+        return
+
+    per_linkage: dict[str, list[int]] = {}
+    weights: dict[tuple[str, int], float | None] = {}
+    for ln in linkages:
+        ranked: list[int] = []
+        weighted = s.top_weighted(ln, anchor.id, k=cap)
+        if weighted:
+            for eid, w in weighted:
+                ranked.append(eid)
+                weights[(ln, eid)] = w
+        else:
+            for eid in list(s.load_bitmap(ln, anchor.id))[:cap]:
+                ranked.append(eid)
+                weights[(ln, eid)] = None
+        if ranked:
+            per_linkage[ln] = ranked
+
+    fused = fuse_rrf(list(per_linkage.values()))
+    first_linkage: dict[int, str] = {}
+    for ln, ids in per_linkage.items():
+        for eid in ids:
+            first_linkage.setdefault(eid, ln)
+
+    for eid, _score in fused:
+        ln = first_linkage.get(eid)
+        if ln is None:
+            continue
+        yield ln, eid, weights.get((ln, eid))
 
 
 def _concept_rows(s: Store, concept_id: int, linkages: list[str], cap: int):
