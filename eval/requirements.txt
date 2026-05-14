@@ -1,0 +1,9 @@
+# Eval-only deps. Install into a separate venv from rmx core.
+#
+#   python -m venv .venv-eval
+#   . .venv-eval/bin/activate
+#   pip install -e .
+#   pip install -r eval/requirements.txt
+sentence-transformers>=3.0
+torch>=2.2
+numpy>=1.26

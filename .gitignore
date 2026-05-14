@@ -18,3 +18,8 @@ __pycache__/
 .refmatrix/
 .memory.db
 .tldr/
+
+# Eval — large downloads + generated runs
+eval/datasets/
+eval/results/
+.venv-eval/
