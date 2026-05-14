@@ -24,7 +24,11 @@ def collect(root: Path) -> dict[str, dict[str, dict]]:
 
 def render(results: dict[str, dict[str, dict]]) -> str:
     lines = ["# rmx vs CodeRankEmbed", ""]
-    metric_keys = ["MRR@10", "MRR@1000", "Recall@1", "Recall@10", "Recall@100", "nDCG@10"]
+    metric_keys = [
+        "MRR@10", "MRR@1000",
+        "Recall@1", "Recall@10", "Recall@100", "Recall@200", "Recall@500", "Recall@1000",
+        "nDCG@10",
+    ]
     for ds, models in results.items():
         lines.append(f"## {ds}")
         lines.append("")

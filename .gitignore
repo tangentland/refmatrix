@@ -19,7 +19,13 @@ __pycache__/
 .memory.db
 .tldr/
 
-# Eval — large downloads + generated runs
+# Eval — large downloads + generated runs (keep metrics.json + REPORT.md trackable)
 eval/datasets/
-eval/results/
+eval/results/csn_python/*/run.tsv
+eval/results/*_run.log
 .venv-eval/
+
+# Tooling / local
+.claude/
+.tldrignore
+graphify-out/

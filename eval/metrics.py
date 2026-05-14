@@ -70,5 +70,8 @@ def all_metrics(run: dict[str, dict[str, float]], qrels: dict[str, dict[str, int
         "Recall@1": recall_at_k(run, qrels, 1),
         "Recall@10": recall_at_k(run, qrels, 10),
         "Recall@100": recall_at_k(run, qrels, 100),
+        "Recall@200": recall_at_k(run, qrels, 200),
+        "Recall@500": recall_at_k(run, qrels, 500),
+        "Recall@1000": recall_at_k(run, qrels, 1000),
         "nDCG@10": ndcg_at_k(run, qrels, 10),
     }

@@ -43,27 +43,60 @@ def _save_metrics(metrics: dict[str, float], path: Path, *, model: str, dataset:
     path.write_text(json.dumps(payload, indent=2) + "\n")
 
 
-def run_rmx(dataset_dir: Path, out_dir: Path) -> dict[str, float]:
+def run_rmx(dataset_dir: Path, out_dir: Path, *, variant: str = "baseline", workers: int = 1) -> dict[str, float]:
     from retrievers.rmx_retriever import RmxRetriever
 
     ds = load_beir(dataset_dir)
     print(f"loaded {ds!r}")
 
-    r = RmxRetriever()
+    variant_config = {
+        "baseline":           {"scorer": "tf_rrf"},
+        "bm25":               {"scorer": "bm25"},
+        "bm25_stem":          {"scorer": "bm25", "stem": True},
+        "bm25_freqstop50":    {"scorer": "bm25", "freq_stop_threshold": 0.50},
+        "bm25_freqstop30":    {"scorer": "bm25", "freq_stop_threshold": 0.30},
+        "bm25_freqstop10":    {"scorer": "bm25", "freq_stop_threshold": 0.10},
+        "bm25_idfpow15":      {"scorer": "bm25", "idf_power": 1.5},
+        "bm25_idfpow20":      {"scorer": "bm25", "idf_power": 2.0},
+        "bm25_docstring":     {"scorer": "bm25_multi", "linkage_weights": {"docstring": 2.0, "code": 1.0}},
+        "bm25_docstring30":   {"scorer": "bm25_multi", "linkage_weights": {"docstring": 3.0, "code": 1.0}},
+        "bm25_docstring_eq":  {"scorer": "bm25_multi", "linkage_weights": {"docstring": 1.0, "code": 1.0}},
+        "bm25_docstring30_cov05": {"scorer": "bm25_multi", "linkage_weights": {"docstring": 3.0, "code": 1.0}, "coverage_alpha": 0.5},
+        "bm25_docstring30_cov10": {"scorer": "bm25_multi", "linkage_weights": {"docstring": 3.0, "code": 1.0}, "coverage_alpha": 1.0},
+        "bm25_docstring30_cov20": {"scorer": "bm25_multi", "linkage_weights": {"docstring": 3.0, "code": 1.0}, "coverage_alpha": 2.0},
+        "bm25_docstring30_cov30": {"scorer": "bm25_multi", "linkage_weights": {"docstring": 3.0, "code": 1.0}, "coverage_alpha": 3.0},
+        "bm25_docstring30_canon":            {"scorer": "bm25_multi", "linkage_weights": {"docstring": 3.0, "code": 1.0}, "canon_expand": True},
+        "bm25_docstring30_cov20_canon":      {"scorer": "bm25_multi", "linkage_weights": {"docstring": 3.0, "code": 1.0}, "coverage_alpha": 2.0, "canon_expand": True},
+        "bm25_docstring30_cov30_cm10":       {"scorer": "bm25_multi", "linkage_weights": {"docstring": 3.0, "code": 1.0}, "coverage_alpha": 3.0, "comention_alpha": 1.0},
+        "bm25_docstring30_cov30_cm20":       {"scorer": "bm25_multi", "linkage_weights": {"docstring": 3.0, "code": 1.0}, "coverage_alpha": 3.0, "comention_alpha": 2.0},
+        "bm25_docstring30_cm20":             {"scorer": "bm25_multi", "linkage_weights": {"docstring": 3.0, "code": 1.0}, "comention_alpha": 2.0},
+        "bm25_ast":             {"scorer": "bm25_multi", "linkage_weights": {"docstring": 3.0, "defines": 5.0, "params": 2.0, "calls": 2.0, "code": 1.0}},
+        "bm25_ast_cov30_cm20":  {"scorer": "bm25_multi", "linkage_weights": {"docstring": 3.0, "defines": 5.0, "params": 2.0, "calls": 2.0, "code": 1.0}, "coverage_alpha": 3.0, "comention_alpha": 2.0},
+        "bm25_ast_v2_cov30_cm20": {"scorer": "bm25_multi", "linkage_weights": {"docstring": 3.0, "defines": 3.0, "params": 1.5, "calls": 1.5, "code": 1.0}, "coverage_alpha": 3.0, "comention_alpha": 2.0},
+        # Bigram bonuses on top of current best (docstring30 + cov30 + cm20).
+        "bm25_best_bg_ds3":  {"scorer": "bm25_multi", "linkage_weights": {"docstring": 3.0, "code": 1.0}, "coverage_alpha": 3.0, "comention_alpha": 2.0, "bigram_source": "docstring", "bigram_weight": 3.0},
+        "bm25_best_bg_ds5":  {"scorer": "bm25_multi", "linkage_weights": {"docstring": 3.0, "code": 1.0}, "coverage_alpha": 3.0, "comention_alpha": 2.0, "bigram_source": "docstring", "bigram_weight": 5.0},
+        "bm25_best_bg_code3": {"scorer": "bm25_multi", "linkage_weights": {"docstring": 3.0, "code": 1.0}, "coverage_alpha": 3.0, "comention_alpha": 2.0, "bigram_source": "code", "bigram_weight": 3.0},
+    }
+    if variant not in variant_config:
+        raise SystemExit(f"unknown rmx variant: {variant}")
+    r = RmxRetriever(**variant_config[variant])
+    label = "rmx" if variant == "baseline" else f"rmx_{variant}"
+
     t0 = time.time()
-    print("ingesting corpus into rmx store...")
+    print(f"ingesting corpus into rmx store (variant={variant})...")
     r.ingest_corpus(ds.corpus)
     print(f"  ingest done in {time.time()-t0:.1f}s")
 
-    print("retrieving...")
+    print(f"retrieving (workers={workers})...")
     t1 = time.time()
-    run = r.run(ds.queries, top_k=1000)
+    run = r.run(ds.queries, top_k=1000, workers=workers)
     elapsed = time.time() - t1
     print(f"  retrieve done in {elapsed:.1f}s")
 
     metrics = all_metrics(run, ds.qrels)
     _save_run(run, out_dir / "run.tsv")
-    _save_metrics(metrics, out_dir / "metrics.json", model="rmx", dataset=ds.name, elapsed=elapsed)
+    _save_metrics(metrics, out_dir / "metrics.json", model=label, dataset=ds.name, elapsed=elapsed)
     r.close()
     return metrics
 
@@ -101,6 +134,14 @@ def main() -> int:
     p.add_argument("--device", default="cpu", help="CodeRankEmbed device (cpu / cuda / mps)")
     p.add_argument("--batch-size", type=int, default=32, help="CodeRankEmbed batch size")
     p.add_argument("--bf16", action="store_true", help="Use bf16 for CodeRankEmbed (needs CUDA)")
+    p.add_argument(
+        "--variant", default="baseline",
+        help="rmx variant: baseline | bm25 | ... (each writes to results/<ds>/rmx_<variant>/)",
+    )
+    p.add_argument(
+        "--workers", type=int, default=1,
+        help="Parallel workers for rmx retrieve (fork-pool; bm25/bm25_multi only).",
+    )
     args = p.parse_args()
 
     if not args.dataset.exists():
@@ -112,9 +153,10 @@ def main() -> int:
     args.out.mkdir(parents=True, exist_ok=True)
 
     if args.model in ("rmx", "both"):
-        out = _run_dir(args.out, "rmx", dataset_name)
-        m = run_rmx(args.dataset, out)
-        print(f"\n[rmx] {dataset_name}: {m}\n")
+        rmx_label = "rmx" if args.variant == "baseline" else f"rmx_{args.variant}"
+        out = _run_dir(args.out, rmx_label, dataset_name)
+        m = run_rmx(args.dataset, out, variant=args.variant, workers=args.workers)
+        print(f"\n[{rmx_label}] {dataset_name}: {m}\n")
 
     if args.model in ("coderankembed", "both"):
         out = _run_dir(args.out, "coderankembed", dataset_name)
