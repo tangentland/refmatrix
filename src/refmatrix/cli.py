@@ -123,7 +123,26 @@ def daemon():
 
 
 @daemon.command("start")
-def daemon_start():
+@click.option(
+    "--watch/--no-watch", default=True,
+    help="Spawn a watchdog thread that debounces fs events and syncs "
+         "changed files automatically. Default on when watchdog is installed.",
+)
+@click.option(
+    "--watch-root", type=click.Path(path_type=Path), default=None,
+    help="Directory to watch. Defaults to the parent of the active "
+         "`.refmatrix/` (the project root).",
+)
+@click.option(
+    "--debounce-ms", type=int, default=500,
+    help="Quiet period before flushing a batch of fs events (ms).",
+)
+@click.option(
+    "--semantic", is_flag=True,
+    help="Also extract Python semantics on watcher-driven syncs (slow).",
+)
+def daemon_start(watch: bool, watch_root: Path | None, debounce_ms: int,
+                 semantic: bool):
     """Start the rmx daemon for the active store. Idempotent: re-running
     while a daemon is already up is a fast no-op (returns its pid)."""
     from refmatrix import daemon as daemon_mod
@@ -132,8 +151,21 @@ def daemon_start():
         raise click.ClickException(
             f"no refmatrix at {root}. Run `rmx init` first."
         )
-    pid = daemon_mod.spawn_daemon(root, partition=_resolve_partition())
-    console.print(f"[green]daemon running[/] pid={pid} root={root}")
+    resolved_watch_root: Path | None = None
+    if watch:
+        resolved_watch_root = (watch_root or root.parent).resolve()
+    pid = daemon_mod.spawn_daemon(
+        root,
+        partition=_resolve_partition(),
+        watch_root=resolved_watch_root,
+        watch_debounce_ms=debounce_ms,
+        watch_semantic=semantic,
+    )
+    extra = (
+        f" watching={resolved_watch_root} (debounce={debounce_ms}ms)"
+        if resolved_watch_root else ""
+    )
+    console.print(f"[green]daemon running[/] pid={pid} root={root}{extra}")
 
 
 @daemon.command("stop")

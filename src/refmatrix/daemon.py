@@ -118,9 +118,18 @@ def _recv_line(s: socket.socket, timeout: float) -> bytes:
 
 
 class Daemon:
-    def __init__(self, root: Path, *, partition: str | None = None):
+    def __init__(self, root: Path, *, partition: str | None = None,
+                 watch_root: Path | None = None,
+                 watch_debounce_ms: int = 500,
+                 watch_semantic: bool = False):
         self.root = Path(root).resolve()
         self.partition = partition
+        # Filesystem watcher config. If `watch_root` is set, serve_forever
+        # spawns a watchdog thread that debounces fs events and syncs the
+        # changed files through the daemon's Store. None = no watcher.
+        self.watch_root = Path(watch_root).resolve() if watch_root else None
+        self.watch_debounce_ms = watch_debounce_ms
+        self.watch_semantic = watch_semantic
         self.store: Store | None = None
         self._stop = False
         self.log_fh = None
@@ -132,6 +141,8 @@ class Daemon:
         self._store_lock = threading.Lock()
         self._async_flush_pending = False
         self._async_lock = threading.Lock()
+        self._watch_stop: "threading.Event | None" = None
+        self._watch_thread: "threading.Thread | None" = None
 
     def _log(self, msg: str) -> None:
         if self.log_fh is None:
@@ -161,6 +172,9 @@ class Daemon:
         self.store.init()
         self._log(f"store opened backend={self.store._backend.kind}")
 
+        if self.watch_root is not None:
+            self._start_watcher()
+
         srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         srv.bind(str(sock_path))
         os.chmod(sock_path, 0o600)
@@ -181,6 +195,10 @@ class Daemon:
                 with conn:
                     self._handle(conn)
         finally:
+            if self._watch_stop is not None:
+                self._watch_stop.set()
+            if self._watch_thread is not None:
+                self._watch_thread.join(timeout=3.0)
             srv.close()
             if sock_path.exists():
                 sock_path.unlink()
@@ -193,6 +211,88 @@ class Daemon:
             if self.log_fh is not None:
                 self.log_fh.close()
         return 0
+
+    def _start_watcher(self) -> None:
+        """Spawn a watchdog thread that debounces fs events and syncs the
+        changed files through the daemon's Store. The flush callback grabs
+        `_store_lock` so it never races synchronous request handlers."""
+        import threading
+        try:
+            from watchdog.events import FileSystemEventHandler
+            from watchdog.observers import Observer
+        except ImportError as exc:
+            self._log(f"watchdog not installed; watcher disabled: {exc}")
+            return
+        from refmatrix.watch import Debouncer, is_relevant
+        from refmatrix.sync import sync_files
+
+        self._watch_stop = threading.Event()
+
+        def _flush(paths: list[str]) -> None:
+            # Take the store_lock so the watcher and the socket request
+            # handler never touch the shared Store concurrently.
+            try:
+                with self._store_lock:
+                    report = sync_files(
+                        self.store, paths,
+                        project_root=self.watch_root,
+                        semantic=self.watch_semantic,
+                    )
+                self._log(
+                    f"watch flush: paths={len(paths)} +{report['added']} "
+                    f"~{report['updated']} -{report['purged']}"
+                )
+            except Exception as exc:
+                self._log(f"watch flush failed: {exc!r}")
+
+        debouncer = Debouncer(self.watch_debounce_ms, _flush)
+
+        class _Handler(FileSystemEventHandler):
+            def _maybe(self_inner, raw_path: str) -> None:
+                p = Path(raw_path)
+                if is_relevant(p):
+                    debouncer.add(str(p))
+
+            def on_created(self_inner, event) -> None:
+                if not event.is_directory:
+                    self_inner._maybe(event.src_path)
+
+            def on_modified(self_inner, event) -> None:
+                if not event.is_directory:
+                    self_inner._maybe(event.src_path)
+
+            def on_deleted(self_inner, event) -> None:
+                if not event.is_directory:
+                    self_inner._maybe(event.src_path)
+
+            def on_moved(self_inner, event) -> None:
+                if event.is_directory:
+                    return
+                self_inner._maybe(event.src_path)
+                self_inner._maybe(event.dest_path)
+
+        observer = Observer()
+        observer.schedule(_Handler(), str(self.watch_root), recursive=True)
+        observer.start()
+        debouncer.start()
+
+        def _runner():
+            try:
+                while not self._watch_stop.is_set():
+                    self._watch_stop.wait(1.0)
+            finally:
+                debouncer.stop()
+                observer.stop()
+                observer.join(timeout=2.0)
+
+        self._watch_thread = threading.Thread(
+            target=_runner, name="rmxd-watcher", daemon=True,
+        )
+        self._watch_thread.start()
+        self._log(
+            f"watcher started root={self.watch_root} "
+            f"debounce={self.watch_debounce_ms}ms"
+        )
 
     def _handle(self, conn: socket.socket) -> None:
         try:
@@ -332,7 +432,10 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
 
 
 def spawn_daemon(root: Path, *, partition: str | None = None,
-                 wait_for_ready: float = 5.0) -> int:
+                 wait_for_ready: float = 5.0,
+                 watch_root: Path | None = None,
+                 watch_debounce_ms: int = 500,
+                 watch_semantic: bool = False) -> int:
     """Fork a background daemon for `root` and return when it's accepting
     connections. Idempotent: if a daemon is already running for `root`,
     returns its PID immediately. Safe under concurrent calls — uses an
@@ -415,7 +518,12 @@ def spawn_daemon(root: Path, *, partition: str | None = None,
         os.dup2(devnull, 2)
         os.close(devnull)
         try:
-            Daemon(root, partition=partition).serve_forever()
+            Daemon(
+                root, partition=partition,
+                watch_root=watch_root,
+                watch_debounce_ms=watch_debounce_ms,
+                watch_semantic=watch_semantic,
+            ).serve_forever()
         finally:
             os._exit(0)
     finally:
