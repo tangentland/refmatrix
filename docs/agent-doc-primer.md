@@ -45,7 +45,8 @@ Answer the first matching question:
 | "Am I defining one or more named concepts canonically?" | **Concept doc** | `docs/.../concepts/<concept>.md` |
 | "Am I specifying types, interfaces, or contracts for implementation?" | **`.pseudo` file** | Anywhere; conventional `pseudo/` |
 | "Am I exploring, proposing, or recording context that isn't a decision yet?" | **Design doc** | `docs/design/<topic>.md` |
-| "Is this transient (a plan, a session note, a retro)?" | Plain markdown | `docs/plans/`, `docs/sessions/` (will be indexed as opaque) |
+| "Am I declaring intent for code that should exist (a plan, spec, or issue)?" | **Plan / spec / issue doc** | `PLAN-*.md`, `ISSUE-*.md`, `SPEC-*.md`, `ROADMAP-*.md`, or anything under `plans/`, `specs/`, `issues/`, `roadmap/` |
+| "Is this transient (a session note, a retro)?" | Plain markdown | `docs/sessions/` (indexed via universal extractors only) |
 
 If multiple forms could fit, prefer the form *higher* in the table —
 it ranks higher on the discovery ladder.
@@ -361,6 +362,89 @@ rmx context <doc-id>#<node-id>     # should return your node + neighbors
 rmx neighbors <doc-id>#<node-id>   # walks the typed rels you declared
 ```
 
+## Form 6 — Plan / spec / issue doc
+
+A markdown doc that **declares intent** for code or design that should
+exist but may not exist yet. Plans, specs, issues, and roadmap items
+behave identically to concept docs structurally — H1 + H3 headings and
+fenced class specs all extract — but the **verb flips from `defines`
+to `specifies`**, with inverse `specified_by`.
+
+This closes a critical authority-hierarchy gap: a plan that names a
+concept *before* code exists for it now becomes discoverable via
+`rmx query "specifies:Foo"`, so an agent doesn't reimplement what was
+already designed (the failure mode that motivated this edge type:
+ADR-0087 specified `Zone` across 52 sessions; agents never found the
+spec and built five fragmented alternatives instead).
+
+**Trigger conditions** (either matches → plan-doc path):
+
+| Trigger        | Matches                                                  |
+|----------------|----------------------------------------------------------|
+| Filename       | `^(PLAN\|ISSUE\|SPEC\|ROADMAP)([-_].*)?\.md$` (case-insensitive) |
+| Path segment   | any of `plans/`, `plan/`, `specs/`, `spec/`, `issues/`, `issue/`, `roadmap/` |
+
+**Minimal example:**
+
+```markdown
+# ZoneOverhaul
+
+Replace the legacy region machinery with first-class Zone classes.
+
+## Components
+
+### Zone
+
+The base class with BBOX + POLYGON support.
+
+### AnnotatedZone
+
+A Zone that carries attribute metadata.
+
+A place subclasses Zone.
+
+## Class shape
+
+```
+Zone:
+  type: BBOX | POLYGON
+  area -> float
+  contains_point(point) -> bool
+```
+```
+
+**What rmx extracts:**
+
+| Construct                                  | Linkage emitted                              |
+|--------------------------------------------|----------------------------------------------|
+| Filename stem (kebab → PascalCase)         | `specifies:<Concept> → doc entity`           |
+| H1 first CamelCase token                   | `specifies:<Concept> → doc entity`           |
+| H3 PascalCase headings                     | `specifies:<Concept> → child entity` per H3  |
+| `Foo subclasses Bar` in H3 prose           | `is_a:Bar → Foo` (cross-spec inheritance)    |
+| Fenced class spec (`Name:` + indented body)| `specifies:<Concept>` (weight 0.5)           |
+
+**Authoring rules:**
+
+1. Use one of the trigger names/dirs above. A markdown file outside
+   them stays in the concept-doc path (`defines`, not `specifies`).
+2. Plan-docs ARE concept docs structurally — same H1+H3+fenced-class
+   extraction. Just the verb changes.
+3. If the plan is GMD-formatted (with `gmd:` frontmatter), use
+   author-declared `rel: specifies -> [[#Concept]]` instead — both
+   paths emit the same `specifies` linkage type.
+4. A plan that gets implemented should leave the plan-doc in place;
+   the `specifies:Foo` edge stays valid and is now joined by
+   `defines:Foo` from the code. Queries like
+   `defines:Foo AND specifies:Foo` then surface intent + impl together.
+
+**Self-check after writing:**
+
+```bash
+rmx query "specifies:<Concept>"      # should return your plan doc
+rmx neighbors <plan-doc-path>        # should list the specified concepts
+rmx query "specifies:<X> AND NOT defines:<X>"   # finds unimplemented specs
+```
+
 ## Universal conventions (apply to every doc form)
 
 These work everywhere — ADR, concept doc, design doc, even plain
@@ -450,6 +534,7 @@ the relevant Form section above and fix the shape.
 | Concept docs | **Indexed** — filename, H1, H3 sub-concepts, subclass/extends prose, ADR refs |
 | Design docs | **Indexed** — bold-labeled metadata refs, ADR refs, fenced class specs (weight 0.5) |
 | GMD (`.gmd` / `.md` with `gmd:` frontmatter) | **Indexed** — `{#id}` nodes, `rel:` typed verbs, heading `part-of`, wikilinks, alias mentions, frontmatter `imports:` |
+| Plan / spec / issue (`PLAN-*.md`, `ISSUE-*.md`, `SPEC-*.md`, `ROADMAP-*.md`, or under `plans/`, `specs/`, `issues/`, `roadmap/`) | **Indexed** — same H1+H3+fenced-class shape as concept docs, but emits `specifies` (+ inverse `specified_by`) instead of `defines`; agent can query `specifies:X AND NOT defines:X` for unimplemented specs |
 | JavaScript / TypeScript (`.js`, `.ts`) | **Indexed** — JSDoc as docstring; function / arrow / class / object-method names; param + callee identifiers via the eval-side `js_extract` (regex-first cut, no tree-sitter) |
 | Plain markdown | **Universal extractors apply** — ADR refs and fenced class specs extract from any markdown |
 
