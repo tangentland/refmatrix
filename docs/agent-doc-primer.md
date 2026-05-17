@@ -34,6 +34,7 @@ Answer the first matching question:
 | Question | Form | Location |
 |---|---|---|
 | "Is this a binding architecture decision?" | **ADR** | `docs/architecture/adr/NNNN-title.md` |
+| "Am I authoring a graph of typed nodes I want walkable with first-class verbs?" | **GMD (Graph Markdown)** | Anywhere; `.gmd` or `.md` with `gmd:` frontmatter |
 | "Am I defining one or more named concepts canonically?" | **Concept doc** | `docs/.../concepts/<concept>.md` |
 | "Am I specifying types, interfaces, or contracts for implementation?" | **`.pseudo` file** | Anywhere; conventional `pseudo/` |
 | "Am I exploring, proposing, or recording context that isn't a decision yet?" | **Design doc** | `docs/design/<topic>.md` |
@@ -260,6 +261,99 @@ function_name(param: Type) -> ReturnType:
 4. Prefer happy-path bodies. Error handling belongs in
    `contracts.pseudo` or implementation code.
 
+## Form 5 — GMD (Graph Markdown)
+
+A doc-as-graph format. Each `{#id}` heading becomes its own walkable
+node; `rel:` lines emit typed linkages between nodes. Use it when the
+content is a graph of small pieces that should be retrievable
+individually — e.g. an architecture knowledge base, a decision graph
+with `supports` / `contradicts` / `supersedes` edges, a checklist
+where each step depends-on another.
+
+**File path:** either a `.gmd` extension, or a `.md` file with
+`gmd:` in the YAML frontmatter. Sync sniffs the first 512 bytes for
+`gmd:` so a .md file lit up via frontmatter is dispatched to the
+GMD ingester instead of the generic doc path.
+
+**Minimal example:**
+
+```markdown
+---
+gmd: "0.1"
+id: spatial-zone-thinking
+title: "Spatial Zone — Design Reasoning"
+imports: [adr/0087]
+---
+
+# Zone Geometry — Reasoning Trail {#root}
+
+## Why polygons over rectangles {#polygon-choice}
+
+rel: derives-from -> adr/0087
+rel: supports -> [[polygon-implementation]]
+
+Polygons capture occlusion better than BBOXes. See [[bbox-trade]] for
+the rejected alternative.
+
+## BBOX trade-off {#bbox-trade}
+
+rel: contradicts -> [[polygon-choice]]
+rel: instance-of -> #rejected-alternative
+
+BBOXes pack denser but lose precision at polygon corners.
+
+## Polygon implementation notes {#polygon-implementation}
+
+rel: defined-in -> src/viascope/spatial/shapes.py
+rel: depends-on -> adr/0087 {weight=0.8}
+```
+
+**What rmx extracts:**
+
+| Construct | Linkage emitted |
+|---|---|
+| `{#node-id}` after a heading | `doc` entity, name `<doc-id>#<node-id>` |
+| Heading hierarchy | implicit `part-of` from child to direct parent |
+| `rel: <verb> -> <target>` | linkage `<verb>` from current node to target; auto-creates the linkage type if new |
+| `rel: <verb> -> [[ref]]` | same, resolving `[[ref]]` to an indexed node id or wikilink target |
+| `{weight=0.8}` attribute on a rel line | sets the link weight |
+| `alias=[foo, bar]` attribute on heading | each alias → `mentions:<alias>` concept |
+| `[[ref]]` outside `rel:` lines | `mentions` linkage to the referenced node |
+| Frontmatter `imports: [a, b]` | `imports` linkage on the doc-level entity |
+| Title tokens (CamelCase / multi-char identifiers) | `mentions` concepts for retrieval |
+
+**Recommended verbs** (auto-registered; use these before inventing new ones):
+`supports`, `contradicts`, `derives-from`, `supersedes`, `depends-on`,
+`instance-of`, `part-of`, `mentions`, `defines`, `example-of`,
+`parent`, `defined-in`, `evidence-for`, `motivates`, `solves`.
+
+**Authoring rules:**
+
+1. One `{#id}` per heading you want walkable. Skip the marker on
+   headings that are only structural.
+2. Node ids are kebab-case; lowercase + digits + `._/-`. Don't
+   namespace by hand (`zone/origin` is fine, `spatial/zone/origin` is
+   also fine — paths inside the doc are free-form).
+3. `rel:` must be at the start of a line, no leading spaces, no
+   indent — it's parsed line-by-line, not as Markdown.
+4. Prefer the recommended verbs. Custom verbs work (auto-registered)
+   but reduce cross-doc traversal payoff.
+5. `[[ref]]` resolves first as a node id within the current doc, then
+   as `<other-doc>#<node>` if `imports:` declares it. Unresolved refs
+   become `mentions` concepts so they're at least retrievable.
+6. Re-ingest is destructive per file — sync purges the doc's previous
+   entities before re-walking it. Cross-doc refs in the same sync
+   batch resolve correctly because GMD paths are batched and ingested
+   together (see `sync.py`).
+
+**Self-check after writing:**
+
+```bash
+rmx ingest-gmd <path-to-doc.gmd>
+rmx context <doc-id>#<node-id>     # should return your node + neighbors
+rmx neighbors <doc-id>#<node-id>   # walks the typed rels you declared
+```
+
 ## Universal conventions (apply to every doc form)
 
 These work everywhere — ADR, concept doc, design doc, even plain
@@ -348,12 +442,36 @@ the relevant Form section above and fix the shape.
 | `.pseudo` files | **Indexed** — types, functions, calls, imports, type refs |
 | Concept docs | **Indexed** — filename, H1, H3 sub-concepts, subclass/extends prose, ADR refs |
 | Design docs | **Indexed** — bold-labeled metadata refs, ADR refs, fenced class specs (weight 0.5) |
+| GMD (`.gmd` / `.md` with `gmd:` frontmatter) | **Indexed** — `{#id}` nodes, `rel:` typed verbs, heading `part-of`, wikilinks, alias mentions, frontmatter `imports:` |
+| JavaScript / TypeScript (`.js`, `.ts`) | **Indexed** — JSDoc as docstring; function / arrow / class / object-method names; param + callee identifiers via the eval-side `js_extract` (regex-first cut, no tree-sitter) |
 | Plain markdown | **Universal extractors apply** — ADR refs and fenced class specs extract from any markdown |
 
-All four forms are now indexed. The universal extractors (fenced
-class specs, ADR-NNNN refs) run on every markdown file regardless
-of location, so even a plain prose doc gets some signal if it
-contains a fenced `Name:` block or references an ADR.
+All forms now indexed. Universal extractors (fenced class specs,
+ADR-NNNN refs) run on every markdown file regardless of location, so
+even a plain prose doc gets some signal if it contains a fenced
+`Name:` block or references an ADR.
+
+## Storage backend (operational note for hooks / CI)
+
+The catalog backend defaults to **DuckDB** as of 2026-05-16. Auto-
+detection at `Store.__init__`:
+
+- `.refmatrix/catalog.duckdb` present → DuckDB.
+- only `.refmatrix/catalog.db` present → SQLite (legacy stores keep working).
+- empty directory → DuckDB (fresh stores).
+
+Override explicitly with `RMX_BACKEND=duckdb|sqlite` or
+`Store(..., backend=...)`. Use `rmx migrate-to-duckdb` to one-shot
+copy a SQLite catalog (catalog tables + on-disk fragment files) into
+a native DuckDB catalog alongside the SQLite one. The SQLite file is
+not deleted — verify reads against the new catalog before removing.
+
+Ingest performance: hot loops in `_ingest_python_semantics` flush
+links via `Store.bulk_link(items)`, which uses an Arrow batch under
+DuckDB and `executemany INSERT OR IGNORE` under SQLite. Measured
+speedup vs per-row `link()`: 600-1000× on DuckDB at N=5000 links,
+80× on SQLite. Doc-authoring rules don't change — this is just why
+ingest got fast.
 
 ## When in doubt
 
