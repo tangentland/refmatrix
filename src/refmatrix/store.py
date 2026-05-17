@@ -194,7 +194,7 @@ class Store:
     ):
         from refmatrix.backend import select_backend
         self.root = Path(root).resolve()
-        self._backend = select_backend(backend)
+        self._backend = select_backend(backend, root=self.root)
         # `db_path` historically pointed at catalog.db. Backend chooses the
         # filename now; legacy SQLite stores stay at catalog.db, DuckDB-native
         # stores use catalog.duckdb so the two can coexist during migration.

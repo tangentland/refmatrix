@@ -27,10 +27,36 @@ import duckdb
 from refmatrix.duckdb_catalog import init_catalog as init_duckdb_catalog
 
 
-def select_backend(name: str | None = None) -> "Backend":
-    """Resolve which backend to use. Explicit `name` wins; otherwise check
-    `RMX_BACKEND` env; otherwise SQLite."""
-    kind = (name or os.environ.get("RMX_BACKEND") or "sqlite").lower()
+def select_backend(
+    name: str | None = None,
+    *,
+    root: "os.PathLike | str | None" = None,
+) -> "Backend":
+    """Resolve which backend to use.
+
+    Resolution order:
+        1. Explicit `name` kwarg (constructor arg).
+        2. `RMX_BACKEND` env var.
+        3. Autodetect from `root` if provided:
+              .refmatrix/catalog.duckdb exists -> duckdb
+              .refmatrix/catalog.db      exists -> sqlite  (keeps legacy stores working)
+        4. Default: duckdb (DuckDB became the default 2026-05-16; SQLite
+           stays opt-in via env or constructor for legacy callers).
+    """
+    explicit = name or os.environ.get("RMX_BACKEND")
+    if explicit:
+        kind = explicit.lower()
+    elif root is not None:
+        from pathlib import Path
+        r = Path(root)
+        if (r / "catalog.duckdb").exists():
+            kind = "duckdb"
+        elif (r / "catalog.db").exists():
+            kind = "sqlite"
+        else:
+            kind = "duckdb"
+    else:
+        kind = "duckdb"
     if kind == "sqlite":
         return SQLiteBackend()
     if kind == "duckdb":
