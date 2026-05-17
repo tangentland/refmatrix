@@ -227,6 +227,9 @@ class Store:
         # buffering link/weighted_link calls for one bulk_link flush.
         self._link_buffer: list[tuple[str, int, int, float | None]] | None = None
         self._link_protect_buffer: list[tuple[int, int]] | None = None
+        # See `transaction()`. True = we've issued BEGIN; subsequent
+        # nested scopes are no-ops.
+        self._in_transaction: bool = False
         # Lazy-loaded fragment cache: linkage_name -> BitMap64. Populated on
         # first read/write of any concept under that linkage; flushed back to
         # disk via flush_fragments() (called from close()). The Store is bound
@@ -890,6 +893,34 @@ class Store:
             frag.add(start | eid)
         self._dirty_fragments.add(linkage)
 
+    def transaction(self):
+        """Context manager that wraps the body in BEGIN/COMMIT. DuckDB
+        otherwise autocommits each statement; bundling many writes into
+        one transaction skips the per-statement WAL fsync and is the
+        single biggest win on bulk sync paths.
+
+        Re-entry safe: nested `with s.transaction():` blocks share the
+        outermost transaction. Rolls back on exception."""
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _scope():
+            if self._in_transaction:
+                yield
+                return
+            con = self._connect()
+            con.execute("BEGIN TRANSACTION")
+            self._in_transaction = True
+            try:
+                yield
+            except Exception:
+                con.execute("ROLLBACK")
+                self._in_transaction = False
+                raise
+            con.execute("COMMIT")
+            self._in_transaction = False
+        return _scope()
+
     def deferred_links(self):
         """Context manager that buffers `link()` / `weighted_link()` calls
         and flushes them via one `bulk_link` at scope exit. Targets the
@@ -1499,6 +1530,17 @@ class Store:
         )
         con.commit()
         self._log_event("track", path=abs_path, mtime=mtime)
+
+    def get_tracked_mtime(self, abs_path: str) -> float | None:
+        """Return the tracked mtime for `abs_path` in the active partition,
+        or None if the file isn't tracked. Used by sync to skip files whose
+        on-disk mtime matches the indexed copy."""
+        row = self._connect().execute(
+            "SELECT mtime FROM tracked_files "
+            "WHERE partition_id=? AND path=?",
+            (self._partition_id, abs_path),
+        ).fetchone()
+        return float(row[0]) if row else None
 
     def list_tracked(self) -> list[tuple[str, float]]:
         return [
