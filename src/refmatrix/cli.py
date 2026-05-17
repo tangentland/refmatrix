@@ -854,6 +854,97 @@ def co_occur(concept, linkage, limit, include_noise):
     console.print(t)
 
 
+@main.command()
+@click.argument("pattern")
+@click.option("--regex/--substring", default=False,
+              help="Treat PATTERN as a regex matched against concept names. "
+                   "Default is case-insensitive substring.")
+@click.option("--linkage", "-l", default=None,
+              help="Restrict to one linkage type (e.g. defines, mentions).")
+@click.option("--kind", "-k", type=click.Choice(["doc", "code"]), default=None,
+              help="Restrict to entities of this kind.")
+@click.option("--limit", "-n", default=100, type=int)
+@click.option("--fallback/--no-fallback", default=True,
+              help="Fall through to `rg` (then `grep -rn`) when the indexed "
+                   "lookup returns zero matches.")
+def grep(pattern, regex, linkage, kind, limit, fallback):
+    """Index-backed grep: find concepts whose name matches PATTERN and
+    print file:line for every recorded reference. Falls back to `rg` /
+    `grep -rn` under the project root when the index has no hits."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    rows: list[dict] = []
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "grep_indexed", {
+            "pattern": pattern, "regex": regex,
+            "linkage": linkage, "kind": kind, "limit": limit,
+        }, timeout=60.0)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        rows = resp["result"]["rows"]
+    else:
+        # Direct path: only used when daemon is down. Mirror the SQL.
+        s = _store()
+        like = f"%{pattern}%"
+        sql = (
+            "SELECT e.path, e.name, ev.line, lt.name, c.name "
+            "FROM linkage_evidence ev "
+            "JOIN entities e ON e.id = ev.entity_id "
+            "JOIN entities c ON c.id = ev.concept_id "
+            "JOIN linkage_types lt ON lt.id = ev.linkage_id "
+            "WHERE c.name "
+            + ("ILIKE" if not regex else "~") + " ? "
+        )
+        params: list = [pattern if regex else like]
+        if linkage:
+            sql += "AND lt.name = ? "
+            params.append(linkage)
+        if kind:
+            sql += "AND e.kind = ? "
+            params.append(kind)
+        sql += "ORDER BY e.path, ev.line LIMIT ?"
+        params.append(limit)
+        for r in s._connect().execute(sql, params).fetchall():
+            rows.append({"path": r[0], "entity": r[1], "line": r[2],
+                         "linkage": r[3], "concept": r[4]})
+
+    if rows:
+        for r in rows:
+            loc = r["path"] or r["entity"]
+            line = f":{r['line']}" if r["line"] is not None else ""
+            click.echo(
+                f"{loc}{line}  [idx {r['linkage']}]  {r['concept']}"
+            )
+        return
+
+    if not fallback:
+        console.print("[dim]no indexed matches[/]")
+        return
+
+    # Fall through to a real grep under the project root.
+    import shutil
+    import subprocess
+    project_root = root.parent
+    tool = shutil.which("rg")
+    if tool:
+        # rg: -n line numbers, -H force filenames, -S smart-case, --no-heading
+        # Use --regexp so `pattern` is consumed even if it starts with -.
+        cmd = ["rg", "-nHS", "--no-heading", "--regexp", pattern, str(project_root)]
+    else:
+        tool = shutil.which("grep")
+        if not tool:
+            raise click.ClickException("no indexed match and neither rg nor grep on PATH")
+        flags = "-rnHE" if regex else "-rnHF"
+        cmd = [tool, flags, pattern, str(project_root)]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if not res.stdout.strip():
+        console.print("[dim]no matches[/]")
+        return
+    prefix = "[rg] " if tool.endswith("/rg") else "[grep] "
+    for line in res.stdout.splitlines()[:limit]:
+        click.echo(prefix + line)
+
+
 # ---- saved queries --------------------------------------------------------
 
 

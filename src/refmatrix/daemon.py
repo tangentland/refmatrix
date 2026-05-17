@@ -508,6 +508,63 @@ def _op_list_saved_queries(d: Daemon, args: dict) -> dict:
         return {"rows": list(d.store.list_saved_queries())}
 
 
+def _op_grep_indexed(d: Daemon, args: dict) -> dict:
+    """Index-backed grep: find concepts whose name matches PATTERN (LIKE
+    or REGEXP) and return their `linkage_evidence` rows. The CLI may
+    follow up with a real `rg` fallback when this returns zero.
+    """
+    pattern = args["pattern"]
+    is_regex = bool(args.get("regex", False))
+    linkage_filter = args.get("linkage")
+    kind_filter = args.get("kind")  # 'doc' | 'code' | None
+    limit = int(args.get("limit", 100))
+
+    if is_regex:
+        concept_pred = "regexp_matches(c.name, ?)"
+        concept_args = [pattern]
+    else:
+        # Treat bare pattern as case-insensitive substring; users who want
+        # exact match can pass an exact name (LIKE % wrapping still matches).
+        concept_pred = "c.name ILIKE ?"
+        concept_args = [f"%{pattern}%"]
+
+    where_extra = []
+    extra_args: list = []
+    if linkage_filter:
+        where_extra.append("lt.name = ?")
+        extra_args.append(linkage_filter)
+    if kind_filter:
+        where_extra.append("e.kind = ?")
+        extra_args.append(kind_filter)
+
+    extra_sql = (" AND " + " AND ".join(where_extra)) if where_extra else ""
+
+    sql = (
+        "SELECT e.path AS path, e.name AS entity_name, ev.line AS line, "
+        "       lt.name AS linkage, c.name AS concept_name "
+        "FROM linkage_evidence ev "
+        "JOIN entities e ON e.id = ev.entity_id "
+        "JOIN entities c ON c.id = ev.concept_id "
+        "JOIN linkage_types lt ON lt.id = ev.linkage_id "
+        f"WHERE {concept_pred}{extra_sql} "
+        "ORDER BY e.path, ev.line "
+        "LIMIT ?"
+    )
+    with d._store_lock:
+        rows = d.store._connect()._duck.execute(
+            sql, concept_args + extra_args + [limit],
+        ).fetchall()
+    return {
+        "rows": [
+            {
+                "path": r[0], "entity": r[1], "line": r[2],
+                "linkage": r[3], "concept": r[4],
+            }
+            for r in rows
+        ],
+    }
+
+
 def _op_query(d: Daemon, args: dict) -> dict:
     """Run a DSL or PQL expression and return result ids + names rendered
     as text or json. Routes through the daemon so reads work while the
@@ -620,6 +677,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "sync_since": _op_sync_since,
     "context": _op_context,
     "query": _op_query,
+    "grep_indexed": _op_grep_indexed,
     "upsert_entity": _op_upsert_entity,
     "add_concept": _op_add_concept,
     "add_linkage_type": _op_add_linkage_type,
