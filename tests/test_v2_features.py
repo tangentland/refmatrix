@@ -264,7 +264,9 @@ def test_query_explain_flag(tmp_path, monkeypatch):
 # --- legacy bitmap migration -----------------------------------------------
 
 
-def test_legacy_per_concept_bitmaps_migrate_to_fragments(tmp_path):
+def test_legacy_per_concept_bitmaps_migrate_to_fragments(tmp_path, monkeypatch):
+    # SQLite-only legacy migration: DuckDB has no equivalent on-disk legacy.
+    monkeypatch.setenv("RMX_BACKEND", "sqlite")
     """Simulate a pre-fragment catalog: write some .rb files into
     .refmatrix/bitmaps/<linkage>/<concept_id>.rb, open the Store, and verify
     the migration packs them into fragments and deletes the originals."""
@@ -338,11 +340,14 @@ def test_existing_catalog_auto_heals_missing_tables(tmp_path):
     s2.close()
 
 
-def test_legacy_catalog_without_protected_noise_self_heals(tmp_path):
+def test_legacy_catalog_without_protected_noise_self_heals(tmp_path, monkeypatch):
     """Simulate a catalog created before protected/noise existed: drop the
     columns, reopen, verify the migration adds them and indexes work."""
     import sqlite3 as _sql
 
+    # SQLite-only path: DuckDB schema starts with these columns and has no
+    # equivalent self-heal migration.
+    monkeypatch.setenv("RMX_BACKEND", "sqlite")
     s = Store(tmp_path / ".refmatrix")
     s.init()
     cid = s.add_concept("legacy_concept", protected=True)

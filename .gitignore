@@ -21,7 +21,7 @@ __pycache__/
 
 # Eval — large downloads + generated runs (keep metrics.json + REPORT.md trackable)
 eval/datasets/
-eval/results/csn_python/*/run.tsv
+eval/results/*/*/run.tsv
 eval/results/*_run.log
 .venv-eval/
 

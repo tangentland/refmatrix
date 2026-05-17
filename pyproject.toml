@@ -14,6 +14,8 @@ dependencies = [
     "pyroaring>=1.0",
     "click>=8.1",
     "rich>=13.7",
+    "duckdb>=1.5",
+    "pyarrow>=14.0",
 ]
 
 [project.optional-dependencies]

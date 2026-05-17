@@ -186,9 +186,19 @@ class Entity:
 
 
 class Store:
-    def __init__(self, root: Path, partition: str | None = None):
+    def __init__(
+        self,
+        root: Path,
+        partition: str | None = None,
+        backend: str | None = None,
+    ):
+        from refmatrix.backend import select_backend
         self.root = Path(root).resolve()
-        self.db_path = self.root / "catalog.db"
+        self._backend = select_backend(backend)
+        # `db_path` historically pointed at catalog.db. Backend chooses the
+        # filename now; legacy SQLite stores stay at catalog.db, DuckDB-native
+        # stores use catalog.duckdb so the two can coexist during migration.
+        self.db_path = self.root / self._backend.db_filename
         # bitmaps_dir is the legacy per-(linkage, concept) layout. Kept as an
         # attribute so the migration path can find and convert it.
         self.bitmaps_dir = self.root / "bitmaps"
@@ -204,6 +214,15 @@ class Store:
         )
         self._partition_id: int | None = None
         self._conn: sqlite3.Connection | None = None
+        # Phase-1 of the DuckDB migration: when RMX_READ_VIA_DUCKDB is set,
+        # SELECTs on this Store are routed through a DuckDB sqlite_scanner
+        # view of catalog.db. Writes still go through SQLite. The DuckDB view
+        # and read shim are constructed lazily on first read.
+        self._read_via_duckdb: bool = os.environ.get("RMX_READ_VIA_DUCKDB") in (
+            "1", "true", "True",
+        )
+        self._duck_view = None
+        self._read_conn = None
         # Lazy-loaded fragment cache: linkage_name -> BitMap64. Populated on
         # first read/write of any concept under that linkage; flushed back to
         # disk via flush_fragments() (called from close()). The Store is bound
@@ -256,7 +275,10 @@ class Store:
         self._partition_fragments_dir().mkdir(parents=True, exist_ok=True)
         self.queries_dir.mkdir(exist_ok=True)
         with self._connect() as con:
-            con.executescript(CATALOG_DDL)
+            if self._backend.kind == "sqlite":
+                # SQLite-only: ensure schema. DuckDB backend already ran the
+                # native DDL inside _connect()'s init_catalog path.
+                con.executescript(CATALOG_DDL)
             existing = {r[0] for r in con.execute("SELECT name FROM linkage_types")}
             for name, directed, inverse_name, desc in DEFAULT_LINKAGES:
                 if name in existing:
@@ -273,59 +295,61 @@ class Store:
                     (inverse_name, name),
                 )
 
-    def _connect(self) -> sqlite3.Connection:
+    def _connect(self):
         if self._conn is None:
-            # check_same_thread=False so the watcher daemon (debounce thread)
-            # can flush via sync_files. WAL + our single-writer pattern keeps
-            # this safe.
-            con = sqlite3.connect(self.db_path, check_same_thread=False)
-            con.execute("PRAGMA foreign_keys = ON")
-            con.execute("PRAGMA journal_mode = WAL")
-            con.execute("PRAGMA busy_timeout = 5000")
-            con.row_factory = sqlite3.Row
-            # Self-heal schema on first connect. CATALOG_DDL is fully
-            # idempotent (all CREATE TABLE/INDEX IF NOT EXISTS), so existing
-            # catalogs created before later schema additions transparently
-            # gain the new tables (e.g. linkage_evidence, tracked_files,
-            # entity_links).
-            con.executescript(CATALOG_DDL)
-            # ALTER TABLE isn't idempotent — add post-DDL columns conditionally.
-            # CATALOG_DDL deliberately omits the indexes for these columns
-            # because executescript runs top-to-bottom and would fail on a
-            # legacy schema before the ALTER below has a chance to add them.
-            cols = {r[1] for r in con.execute("PRAGMA table_info(entities)")}
-            if "protected" not in cols:
+            con = self._backend.connect(self.db_path)
+            if self._backend.kind == "sqlite":
+                # Self-heal schema on first connect. CATALOG_DDL is fully
+                # idempotent (all CREATE TABLE/INDEX IF NOT EXISTS), so existing
+                # catalogs created before later schema additions transparently
+                # gain the new tables (e.g. linkage_evidence, tracked_files,
+                # entity_links).
+                con.executescript(CATALOG_DDL)
+                # ALTER TABLE isn't idempotent — add post-DDL columns conditionally.
+                # CATALOG_DDL deliberately omits the indexes for these columns
+                # because executescript runs top-to-bottom and would fail on a
+                # legacy schema before the ALTER below has a chance to add them.
+                cols = {r[1] for r in con.execute("PRAGMA table_info(entities)")}
+                if "protected" not in cols:
+                    con.execute(
+                        "ALTER TABLE entities ADD COLUMN protected INTEGER NOT NULL DEFAULT 0"
+                    )
+                if "noise" not in cols:
+                    con.execute(
+                        "ALTER TABLE entities ADD COLUMN noise INTEGER NOT NULL DEFAULT 0"
+                    )
+                # Indexes are unconditional (and IF NOT EXISTS): both the
+                # alter-table path above and the fresh-schema path leave us
+                # with the columns present, so this is now safe.
                 con.execute(
-                    "ALTER TABLE entities ADD COLUMN protected INTEGER NOT NULL DEFAULT 0"
+                    "CREATE INDEX IF NOT EXISTS idx_entities_protected ON entities(protected)"
                 )
-            if "noise" not in cols:
                 con.execute(
-                    "ALTER TABLE entities ADD COLUMN noise INTEGER NOT NULL DEFAULT 0"
+                    "CREATE INDEX IF NOT EXISTS idx_entities_noise ON entities(noise)"
                 )
-            # Indexes are unconditional (and IF NOT EXISTS): both the
-            # alter-table path above and the fresh-schema path leave us
-            # with the columns present, so this is now safe.
-            con.execute(
-                "CREATE INDEX IF NOT EXISTS idx_entities_protected ON entities(protected)"
-            )
-            con.execute(
-                "CREATE INDEX IF NOT EXISTS idx_entities_noise ON entities(noise)"
-            )
-            con.commit()
-            self._conn = con
-            # Schema migration: pre-partition catalogs need partition_id added
-            # plus a table rebuild to swap UNIQUE/PK constraints. Runs at most
-            # once per catalog. Must come before the fragments migration so
-            # the resolved partition_id is stable.
-            self._migrate_to_partitions_if_needed()
-            # Now that partition_id is guaranteed to exist on entities (via the
-            # CATALOG_DDL fresh-schema path or the migration above), the
-            # partition index is safe to create unconditionally.
-            con.execute(
-                "CREATE INDEX IF NOT EXISTS idx_entities_partition "
-                "ON entities(partition_id)"
-            )
-            con.commit()
+                con.commit()
+                self._conn = con
+                # Schema migration: pre-partition catalogs need partition_id added
+                # plus a table rebuild to swap UNIQUE/PK constraints. Runs at most
+                # once per catalog. Must come before the fragments migration so
+                # the resolved partition_id is stable.
+                self._migrate_to_partitions_if_needed()
+                # Now that partition_id is guaranteed to exist on entities (via the
+                # CATALOG_DDL fresh-schema path or the migration above), the
+                # partition index is safe to create unconditionally.
+                con.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_entities_partition "
+                    "ON entities(partition_id)"
+                )
+                con.commit()
+            else:
+                # DuckDB native catalog: schema is created up-front via the
+                # native DDL (refmatrix.duckdb_catalog). All tables/indexes/
+                # columns are present from the start, so the SQLite legacy
+                # migration paths (partitions backfill, ALTER ADD COLUMN,
+                # post-DDL CREATE INDEX) are not needed.
+                self._backend.init_catalog(con)
+                self._conn = con
             # Ensure the default + active partition rows exist and resolve the
             # active partition_id. Auto-creates the active partition the first
             # time a Store is opened with a new name (matches how a fresh
@@ -535,10 +559,32 @@ class Store:
             except OSError:
                 pass
 
+    def _read(self):
+        """Return the connection used for SELECTs. Defaults to the SQLite
+        write connection. When RMX_READ_VIA_DUCKDB is set, returns a DuckDB
+        sqlite_scanner view that exposes the same `con.execute(sql, params)`
+        cursor surface (see refmatrix.duckdb_view.ReadConnection)."""
+        if not self._read_via_duckdb:
+            return self._connect()
+        if self._read_conn is None:
+            # Force the SQLite catalog into existence (schema, migrations,
+            # default linkages, partition row) before DuckDB attaches it —
+            # DuckDB opens read-only and won't trigger our self-heal.
+            self._connect()
+            from refmatrix.duckdb_view import DuckCatalogView
+
+            self._duck_view = DuckCatalogView(self.db_path)
+            self._read_conn = self._duck_view.read_connection()
+        return self._read_conn
+
     def close(self) -> None:
         # Persist any in-memory fragment edits before tearing down the
         # connection. Safe to call on a never-modified Store (no-op).
         self.flush_fragments()
+        if self._duck_view is not None:
+            self._duck_view.close()
+            self._duck_view = None
+            self._read_conn = None
         if self._conn is not None:
             self._conn.close()
             self._conn = None
@@ -573,7 +619,7 @@ class Store:
                 tldr = COALESCE(excluded.tldr, entities.tldr),
                 meta = COALESCE(excluded.meta, entities.meta),
                 updated_at = excluded.updated_at,
-                protected = MAX(entities.protected, excluded.protected)
+                protected = GREATEST(entities.protected, excluded.protected)
             RETURNING id
             """,
             (pid, kind, name, path, tldr, meta_json, now, now, prot),
@@ -607,9 +653,11 @@ class Store:
         )
 
     def get_entity(self, kind: str, name: str) -> Entity | None:
-        con = self._connect()
-        row = con.execute(
-            "SELECT * FROM entities WHERE partition_id=? AND kind=? AND name=?",
+        # Ensure schema/partition migration before going through the read path.
+        self._connect()
+        row = self._read().execute(
+            "SELECT id, kind, name, path, tldr, meta, protected, noise "
+            "FROM entities WHERE partition_id=? AND kind=? AND name=?",
             (self._partition_id, kind, name),
         ).fetchone()
         return self._row_to_entity(row) if row else None
@@ -618,8 +666,10 @@ class Store:
         # By-id lookup is intentionally cross-partition: entity ids are
         # globally unique, and call sites (logs, evidence, _name_of) need to
         # resolve any id they observe regardless of the active partition.
-        row = self._connect().execute(
-            "SELECT * FROM entities WHERE id=?", (eid,)
+        self._connect()
+        row = self._read().execute(
+            "SELECT id, kind, name, path, tldr, meta, protected, noise "
+            "FROM entities WHERE id=?", (eid,)
         ).fetchone()
         return self._row_to_entity(row) if row else None
 
@@ -635,19 +685,23 @@ class Store:
         return None
 
     def iter_entities(self, kind: str | None = None) -> Iterator[Entity]:
-        con = self._connect()
-        sql = "SELECT * FROM entities WHERE partition_id=?"
+        self._connect()
+        sql = (
+            "SELECT id, kind, name, path, tldr, meta, protected, noise "
+            "FROM entities WHERE partition_id=?"
+        )
         params: tuple = (self._partition_id,)
         if kind:
             sql += " AND kind=?"
             params = (self._partition_id, kind)
-        for row in con.execute(sql, params):
+        for row in self._read().execute(sql, params):
             yield self._row_to_entity(row)
 
     def _name_of(self, eid: int) -> tuple[str, str] | None:
         """Look up (kind, name) for an entity id. Used by the logger to write
         name-keyed events instead of branch-local IDs."""
-        row = self._connect().execute(
+        self._connect()
+        row = self._read().execute(
             "SELECT kind, name FROM entities WHERE id=?", (eid,)
         ).fetchone()
         return (row["kind"], row["name"]) if row else None
@@ -683,7 +737,8 @@ class Store:
         return row[0]
 
     def get_linkage_id(self, name: str) -> int:
-        row = self._connect().execute(
+        self._connect()
+        row = self._read().execute(
             "SELECT id FROM linkage_types WHERE name=?", (name,)
         ).fetchone()
         if row is None:
@@ -691,7 +746,8 @@ class Store:
         return row[0]
 
     def list_linkages(self) -> list[dict]:
-        rows = self._connect().execute(
+        self._connect()
+        rows = self._read().execute(
             "SELECT id, name, directed, description FROM linkage_types ORDER BY name"
         ).fetchall()
         return [dict(r) for r in rows]
@@ -702,23 +758,55 @@ class Store:
         return self._partition_fragments_dir() / f"{linkage}.rb64"
 
     def _load_fragment(self, linkage: str) -> BitMap64:
-        """Return the in-memory BitMap64 for a linkage, lazy-loading from disk
-        on first access. Mutating the returned object is fine — call
-        flush_fragments() (or close()) to persist."""
+        """Return the in-memory BitMap64 for a linkage, lazy-loading on first
+        access. Mutating the returned object is fine — call flush_fragments()
+        (or close()) to persist.
+
+        Backend differences:
+        - SQLite: fragment persists as `fragments/<partition>/<linkage>.rb64`
+          on disk; lazy-loaded by file read.
+        - DuckDB: fragment persists as a BLOB row in `bitmap_fragments`
+          keyed by (partition_id, linkage); lazy-loaded by SELECT.
+        """
         if linkage in self._fragments:
             return self._fragments[linkage]
-        self._partition_fragments_dir().mkdir(parents=True, exist_ok=True)
-        p = self._fragment_path(linkage)
-        if p.exists():
-            frag = BitMap64.deserialize(p.read_bytes())
+        if self._backend.kind == "duckdb":
+            self._connect()  # ensures partition_id is resolved
+            row = self._read_raw_blob(linkage)
+            frag = BitMap64.deserialize(row) if row else BitMap64()
         else:
-            frag = BitMap64()
+            self._partition_fragments_dir().mkdir(parents=True, exist_ok=True)
+            p = self._fragment_path(linkage)
+            if p.exists():
+                frag = BitMap64.deserialize(p.read_bytes())
+            else:
+                frag = BitMap64()
         self._fragments[linkage] = frag
         return frag
 
+    def _read_raw_blob(self, linkage: str) -> bytes | None:
+        """DuckDB-only: fetch the raw bitmap blob for (active partition,
+        linkage), or None if no row exists. Split out so the deserialization
+        and BitMap64() fallback live in _load_fragment."""
+        con = self._connect()
+        row = con._duck.execute(
+            "SELECT blob FROM bitmap_fragments "
+            "WHERE partition_id = ? AND linkage = ?",
+            [self._partition_id, linkage],
+        ).fetchone()
+        return bytes(row[0]) if row and row[0] is not None else None
+
     def flush_fragments(self) -> None:
-        """Write any dirty linkage fragments back to disk. Idempotent."""
+        """Write any dirty linkage fragments to their backing store. Idempotent.
+
+        SQLite path writes to `fragments/<partition>/<linkage>.rb64` on disk
+        (atomic via tmp + rename); DuckDB path UPSERTs the BLOB into the
+        `bitmap_fragments` table. Empty fragments are removed in both modes.
+        """
         if not self._dirty_fragments:
+            return
+        if self._backend.kind == "duckdb":
+            self._flush_fragments_duckdb()
             return
         self._partition_fragments_dir().mkdir(parents=True, exist_ok=True)
         for linkage in list(self._dirty_fragments):
@@ -734,6 +822,32 @@ class Store:
                 tmp = p.with_suffix(".rb64.tmp")
                 tmp.write_bytes(frag.serialize())
                 tmp.replace(p)
+            self._dirty_fragments.discard(linkage)
+
+    def _flush_fragments_duckdb(self) -> None:
+        """DuckDB persistence path for flush_fragments: UPSERT (or DELETE on
+        empty) the BLOB row for each dirty linkage in the active partition."""
+        con = self._connect()
+        pid = self._partition_id
+        for linkage in list(self._dirty_fragments):
+            frag = self._fragments.get(linkage)
+            if frag is None:
+                self._dirty_fragments.discard(linkage)
+                continue
+            if len(frag) == 0:
+                con._duck.execute(
+                    "DELETE FROM bitmap_fragments "
+                    "WHERE partition_id = ? AND linkage = ?",
+                    [pid, linkage],
+                )
+            else:
+                con._duck.execute(
+                    "INSERT INTO bitmap_fragments(partition_id, linkage, blob) "
+                    "VALUES (?, ?, ?) "
+                    "ON CONFLICT(partition_id, linkage) DO UPDATE "
+                    "SET blob = excluded.blob",
+                    [pid, linkage, frag.serialize()],
+                )
             self._dirty_fragments.discard(linkage)
 
     @staticmethod
@@ -842,6 +956,102 @@ class Store:
                 linkage=linkage, c=cn[1], e_kind=en[0], e=en[1],
             )
         return present
+
+    def bulk_link(
+        self,
+        items: list[tuple[str, int, int, float | None]],
+    ) -> int:
+        """Insert many links at once, amortizing per-row INSERT overhead.
+
+        `items` is a list of `(linkage_name, concept_id, entity_id, weight)`
+        tuples. Bitmap fragments are updated in-process (one pass); the
+        relational `entity_links` shadow is written in a single SQL
+        statement — Arrow batch under DuckDB, `executemany` under SQLite.
+        Returns the number of bitmap bits newly added.
+
+        Weight policy matches `link()`: on conflict the existing row's
+        weight is preserved unless the new weight is non-NULL. SQLite's
+        `INSERT OR IGNORE` skips the weight update entirely on conflict,
+        so callers updating weights for already-linked pairs should stick
+        with `link()`; bulk_link is for the ingest-time path where the
+        common case is fresh links.
+        """
+        if not items:
+            return 0
+        # Resolve linkage names once. The cache hit on _connect() at the
+        # bottom also serves the bitmap fragment loads.
+        linkage_ids: dict[str, int] = {}
+        for linkage, _c, _e, _w in items:
+            if linkage not in linkage_ids:
+                linkage_ids[linkage] = self.get_linkage_id(linkage)
+
+        # In-process bitmap updates. Track newly added per linkage for the
+        # log + the return value.
+        added_total = 0
+        newly_added_for_log: list[tuple[str, int, int, float | None]] = []
+        for linkage, concept_id, entity_id, weight in items:
+            frag = self._load_fragment(linkage)
+            bit = self._pack(concept_id, entity_id)
+            if bit not in frag:
+                added_total += 1
+                frag.add(bit)
+                self._dirty_fragments.add(linkage)
+                newly_added_for_log.append(
+                    (linkage, concept_id, entity_id, weight)
+                )
+
+        con = self._connect()
+        if self._backend.kind == "duckdb":
+            # Arrow batch path. DuckDB ingests an Arrow table in one shot,
+            # avoiding the per-row binder overhead of executemany.
+            import pyarrow as pa
+
+            tbl = pa.table({
+                "entity_id":  [it[2] for it in items],
+                "linkage_id": [linkage_ids[it[0]] for it in items],
+                "concept_id": [it[1] for it in items],
+                "weight":     [it[3] for it in items],
+            })
+            con._duck.register("_rmx_bulk_links", tbl)
+            try:
+                con._duck.execute(
+                    "INSERT INTO entity_links"
+                    "(entity_id, linkage_id, concept_id, weight) "
+                    "SELECT entity_id, linkage_id, concept_id, weight "
+                    "FROM _rmx_bulk_links "
+                    "ON CONFLICT(entity_id, linkage_id, concept_id) DO NOTHING"
+                )
+            finally:
+                con._duck.unregister("_rmx_bulk_links")
+        else:
+            con.executemany(
+                "INSERT OR IGNORE INTO entity_links"
+                "(entity_id, linkage_id, concept_id, weight) "
+                "VALUES (?,?,?,?)",
+                [
+                    (it[2], linkage_ids[it[0]], it[1], it[3])
+                    for it in items
+                ],
+            )
+        con.commit()
+
+        if newly_added_for_log and _log_enabled() and not self._replay_mode:
+            # Resolve names once per concept/entity rather than per link.
+            name_cache: dict[int, tuple[str, str] | None] = {}
+            def _name(eid: int):
+                if eid not in name_cache:
+                    name_cache[eid] = self._name_of(eid)
+                return name_cache[eid]
+            for linkage, concept_id, entity_id, weight in newly_added_for_log:
+                cn = _name(concept_id)
+                en = _name(entity_id)
+                if cn and en:
+                    self._log_event(
+                        "link",
+                        linkage=linkage, c=cn[1],
+                        e_kind=en[0], e=en[1], weight=weight,
+                    )
+        return added_total
 
     def link_many(self, linkage: str, concept_id: int, entity_ids: Iterable[int]) -> int:
         lid = self.get_linkage_id(linkage)
@@ -1567,7 +1777,7 @@ class Store:
                        c.name AS c_name,
                        e.kind AS e_kind, e.name AS e_name,
                        el.weight AS weight,
-                       MAX(c.updated_at, e.updated_at) AS ts
+                       GREATEST(c.updated_at, e.updated_at) AS ts
                 FROM entity_links el
                 JOIN linkage_types lt ON lt.id = el.linkage_id
                 JOIN entities c ON c.id = el.concept_id
@@ -1590,7 +1800,7 @@ class Store:
                 SELECT lt.name AS linkage, c.name AS c_name,
                        e.kind AS e_kind, e.name AS e_name,
                        ev.file, ev.line, ev.span_end, ev.detail,
-                       MAX(c.updated_at, e.updated_at) AS ts
+                       GREATEST(c.updated_at, e.updated_at) AS ts
                 FROM linkage_evidence ev
                 JOIN linkage_types lt ON lt.id = ev.linkage_id
                 JOIN entities c ON c.id = ev.concept_id

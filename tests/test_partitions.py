@@ -11,10 +11,15 @@ from refmatrix.store import DEFAULT_PARTITION, Store
 # --- fresh init ------------------------------------------------------------
 
 
-def test_fresh_init_creates_default_partition(tmp_path):
+def test_fresh_init_creates_default_partition(tmp_path, monkeypatch):
     """A brand-new Store starts with a single 'local' partition (id=1) and
     fragments live under fragments/local/. Existing read/write APIs work
-    unchanged because the default partition is implicit."""
+    unchanged because the default partition is implicit.
+
+    Pinned to SQLite: the per-partition fragment file layout is
+    SQLite-only. DuckDB persists fragments as BLOB rows (see the BLOB
+    persistence tests in test_duckdb_fragments.py)."""
+    monkeypatch.setenv("RMX_BACKEND", "sqlite")
     s = Store(tmp_path / ".refmatrix")
     s.init()
     assert s.partition_name == DEFAULT_PARTITION
@@ -39,12 +44,15 @@ def test_fresh_init_creates_default_partition(tmp_path):
 # --- legacy migration ------------------------------------------------------
 
 
-def test_legacy_catalog_migrates_into_default_partition(tmp_path):
+def test_legacy_catalog_migrates_into_default_partition(tmp_path, monkeypatch):
     """Forge a pre-partition catalog: an entities/tracked_files/saved_queries
     schema without partition_id, plus a loose fragments/<linkage>.rb64. After
     opening the Store, the rebuilt schema should carry partition_id columns
     (all rows backfilled to id=1) and the loose fragment should have moved
     into fragments/local/."""
+    # Pin the SQLite backend: this test exercises the SQLite-specific legacy
+    # migration path (the pre-partition catalog never existed under DuckDB).
+    monkeypatch.setenv("RMX_BACKEND", "sqlite")
     root = tmp_path / ".refmatrix"
     root.mkdir()
     (root / "fragments").mkdir()
@@ -158,10 +166,15 @@ def test_legacy_catalog_migrates_into_default_partition(tmp_path):
 # --- two-partition isolation ----------------------------------------------
 
 
-def test_two_partitions_stay_isolated(tmp_path):
+def test_two_partitions_stay_isolated(tmp_path, monkeypatch):
     """Two Stores rooted at the same .refmatrix/ but bound to different
     partitions can hold entities with the same (kind, name) and never see
-    each other's data through the partition-scoped APIs."""
+    each other's data through the partition-scoped APIs.
+
+    Pinned to SQLite: the final fragments/<partition>/ on-disk assertion
+    is SQLite-layout-specific. DuckDB stores both partitions as BLOB rows
+    in `bitmap_fragments`, which the DuckDB-specific tests cover."""
+    monkeypatch.setenv("RMX_BACKEND", "sqlite")
     root = tmp_path / ".refmatrix"
     Store(root).init()
 

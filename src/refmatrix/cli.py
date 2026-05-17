@@ -115,6 +115,48 @@ def info():
     console.print(f"partition: {_resolve_partition()}")
 
 
+@main.command("migrate-to-duckdb")
+@click.option(
+    "--out", "out_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Destination DuckDB file (defaults to <root>/catalog.duckdb).",
+)
+@click.option(
+    "--overwrite", is_flag=True,
+    help="Replace the destination if it already exists.",
+)
+def migrate_to_duckdb(out_path: Path | None, overwrite: bool):
+    """One-shot copy of the SQLite catalog into a native DuckDB catalog.
+
+    Phase-2 of the DuckDB migration: makes a `.refmatrix/catalog.duckdb`
+    alongside the existing `catalog.db`. The SQLite catalog is unchanged
+    and remains the system of record until phase-2b flips writes over.
+    """
+    from refmatrix.migrate import migrate_catalog
+
+    root = _root()
+    src = root / "catalog.db"
+    if not src.exists():
+        raise click.ClickException(
+            f"no SQLite catalog at {src}. Run `rmx init` first."
+        )
+    dst = out_path or (root / "catalog.duckdb")
+    fragments_dir = root / "fragments"
+    counts = migrate_catalog(
+        src, dst,
+        overwrite=overwrite,
+        fragments_dir=fragments_dir if fragments_dir.is_dir() else None,
+    )
+    table = Table(show_header=True)
+    table.add_column("table")
+    table.add_column("rows", justify="right")
+    for name, n in counts.items():
+        table.add_row(name, str(n))
+    console.print(table)
+    console.print(f"[green]wrote[/] {dst}")
+
+
 @main.group()
 def partition():
     """Inspect and manage named partitions inside the active refmatrix."""
@@ -1172,6 +1214,26 @@ def rebuild(from_log: bool, yes: bool):
     console.print("[green]rebuilt[/]")
     for k, v in result.items():
         console.print(f"  {k}: {v}")
+
+
+@main.command("ingest-gmd")
+@click.argument("targets", nargs=-1, required=True,
+                type=click.Path(exists=True, path_type=Path))
+@click.option("--verbose", "-v", is_flag=True, help="Print per-file progress.")
+def ingest_gmd(targets: tuple[Path, ...], verbose: bool):
+    """Ingest Graph Markdown (GMD) docs. Walks dirs for *.gmd/*.md files
+    that carry `gmd:` frontmatter; non-GMD files are skipped."""
+    from refmatrix.ingest_gmd import collect_gmd_files, ingest_gmd_paths
+    s = _store()
+    files = collect_gmd_files(list(targets))
+    if not files:
+        console.print("[yellow]no candidate files found[/]")
+        return
+    if verbose:
+        for f in files:
+            console.print(f"  scan {f}")
+    stats = ingest_gmd_paths(s, files, verbose=verbose)
+    console.print(stats.report())
 
 
 if __name__ == "__main__":

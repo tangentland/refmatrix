@@ -1,0 +1,166 @@
+"""Native DuckDB catalog schema (phase-2 of the DuckDB migration).
+
+Mirrors the SQLite `CATALOG_DDL` from refmatrix.store, with a few mechanical
+adjustments DuckDB requires:
+
+- `INTEGER PRIMARY KEY AUTOINCREMENT` → an explicit `SEQUENCE` plus
+  `DEFAULT nextval('<seq>')` on the column. DuckDB has no AUTOINCREMENT.
+- `ON DELETE CASCADE` is dropped from FOREIGN KEY constraints. DuckDB does
+  not support cascade actions; the Store already issues the matching
+  DELETEs manually (see store.py — every entity-delete path also deletes
+  from entity_links, concepts, tracked_files, etc.).
+
+Everything else (CHECK, UNIQUE, FOREIGN KEY, indexes, ON CONFLICT, RETURNING,
+INSERT OR IGNORE, PRAGMA table_info) works the same in DuckDB as in SQLite,
+so the surrounding query code can stay unchanged.
+"""
+from __future__ import annotations
+
+# Default linkage rows — kept in sync with refmatrix.store.DEFAULT_LINKAGES.
+# Re-imported there rather than duplicated to avoid drift; this module just
+# owns the schema.
+
+SEQUENCES = (
+    ("partitions", "id", "seq_partitions_id"),
+    ("entities", "id", "seq_entities_id"),
+    ("linkage_types", "id", "seq_linkage_types_id"),
+)
+
+CATALOG_DDL = """
+-- DuckDB-specific note: FOREIGN KEY clauses are intentionally omitted on
+-- this schema. DuckDB enforces FKs conservatively — UPDATEs on a parent
+-- row trigger the check even when the FK column isn't being modified, and
+-- bulk INSERTs into self-referential tables fail per-row before the parent
+-- is visible. SQLite-side store.py already issues every cascade DELETE
+-- explicitly (delete_entity, prune_noise, vacuum, etc.), so app-level
+-- enforcement is unchanged. The constraints are documented in store.py
+-- alongside the SQLite CATALOG_DDL.
+
+CREATE TABLE IF NOT EXISTS partitions (
+    id          INTEGER PRIMARY KEY DEFAULT nextval('seq_partitions_id'),
+    name        TEXT NOT NULL UNIQUE,
+    root_path   TEXT,
+    kind        TEXT NOT NULL DEFAULT 'repo'
+                CHECK (kind IN ('repo','canon','agent-scratch')),
+    created_at  DOUBLE NOT NULL,
+    meta        TEXT
+);
+
+CREATE TABLE IF NOT EXISTS entities (
+    id           INTEGER PRIMARY KEY DEFAULT nextval('seq_entities_id'),
+    partition_id INTEGER NOT NULL DEFAULT 1,
+    kind         TEXT NOT NULL CHECK (kind IN ('doc', 'code', 'concept')),
+    path         TEXT,
+    name         TEXT NOT NULL,
+    tldr         TEXT,
+    meta         TEXT,
+    created_at   DOUBLE NOT NULL,
+    updated_at   DOUBLE NOT NULL,
+    protected    INTEGER NOT NULL DEFAULT 0,
+    noise        INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(partition_id, kind, name)
+);
+CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(kind);
+CREATE INDEX IF NOT EXISTS idx_entities_path ON entities(path);
+CREATE INDEX IF NOT EXISTS idx_entities_partition ON entities(partition_id);
+CREATE INDEX IF NOT EXISTS idx_entities_protected ON entities(protected);
+CREATE INDEX IF NOT EXISTS idx_entities_noise ON entities(noise);
+
+CREATE TABLE IF NOT EXISTS concepts (
+    id          INTEGER PRIMARY KEY,
+    description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS linkage_types (
+    id          INTEGER PRIMARY KEY DEFAULT nextval('seq_linkage_types_id'),
+    name        TEXT NOT NULL UNIQUE,
+    directed    INTEGER NOT NULL DEFAULT 1,
+    inverse_of  INTEGER,
+    description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS saved_queries (
+    partition_id INTEGER NOT NULL DEFAULT 1,
+    name TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at DOUBLE NOT NULL,
+    PRIMARY KEY (partition_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS entity_links (
+    entity_id   INTEGER NOT NULL,
+    linkage_id  INTEGER NOT NULL,
+    concept_id  INTEGER NOT NULL,
+    weight      DOUBLE,
+    PRIMARY KEY (entity_id, linkage_id, concept_id)
+);
+CREATE INDEX IF NOT EXISTS idx_entity_links_lk_concept
+    ON entity_links(linkage_id, concept_id);
+
+CREATE TABLE IF NOT EXISTS tracked_files (
+    partition_id INTEGER NOT NULL DEFAULT 1,
+    path         TEXT NOT NULL,
+    mtime        DOUBLE NOT NULL,
+    last_synced  DOUBLE NOT NULL,
+    PRIMARY KEY (partition_id, path)
+);
+
+CREATE TABLE IF NOT EXISTS linkage_evidence (
+    entity_id   INTEGER NOT NULL,
+    linkage_id  INTEGER NOT NULL,
+    concept_id  INTEGER NOT NULL,
+    file        TEXT,
+    line        INTEGER,
+    span_end    INTEGER,
+    detail      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_evidence_entity
+    ON linkage_evidence(entity_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_lookup
+    ON linkage_evidence(linkage_id, concept_id, entity_id);
+
+-- Phase-3: bitmap fragments live as BLOB rows instead of per-partition
+-- files on disk. Serialized BitMap64 (pyroaring) bytes go in `blob`. The
+-- SQLite backend still uses fragments/<partition>/<linkage>.rb64 files;
+-- this table is DuckDB-only. Empty bitmaps are not stored — the row is
+-- DELETEd on flush when the fragment becomes empty (matches the file
+-- backend's behavior of unlinking the file).
+CREATE TABLE IF NOT EXISTS bitmap_fragments (
+    partition_id INTEGER NOT NULL,
+    linkage      TEXT NOT NULL,
+    blob         BLOB NOT NULL,
+    PRIMARY KEY (partition_id, linkage)
+);
+"""
+
+# Tables in the order they need to be (re-)populated so foreign keys resolve.
+TABLE_LOAD_ORDER = (
+    "partitions",
+    "linkage_types",
+    "entities",
+    "concepts",
+    "entity_links",
+    "tracked_files",
+    "linkage_evidence",
+    "saved_queries",
+)
+
+
+def init_catalog(con, *, sequence_starts: dict[str, int] | None = None) -> None:
+    """Create sequences + tables on a fresh DuckDB connection.
+
+    `sequence_starts` lets a migration pre-position each sequence at the
+    next free id (max(id_in_source) + 1) so that bulk-loaded rows with
+    explicit ids and post-migration `nextval` calls never collide. DuckDB
+    can't `ALTER SEQUENCE ... RESTART` once a table column DEFAULTs to it,
+    and `DROP SEQUENCE` is blocked by the dependency, so we have to set the
+    start at create time.
+
+    Re-running on the same connection is safe — sequences and tables use
+    `IF NOT EXISTS`. Migration callers should ensure the file is fresh.
+    """
+    starts = sequence_starts or {}
+    for _table, _col, seq in SEQUENCES:
+        start = starts.get(seq, 1)
+        con.execute(f"CREATE SEQUENCE IF NOT EXISTS {seq} START {start}")
+    con.execute(CATALOG_DDL)

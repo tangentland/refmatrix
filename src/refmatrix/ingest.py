@@ -383,6 +383,10 @@ def _ingest_python_semantics(s: Store, file_path: Path, project_root: Path) -> i
     file_id = s.upsert_entity(kind="code", name=rel, path=str(file_path))
     s.mark_tracked(str(file_path), file_path.stat().st_mtime)
     n = 0
+    # Buffer (linkage, concept_id, entity_id, weight) tuples so the entity_links
+    # writes flush as one Arrow batch (DuckDB) or one executemany (SQLite).
+    # Saves orders of magnitude on per-row binder overhead in large files.
+    pending_links: list[tuple[str, int, int, float | None]] = []
 
     for node in ast.walk(tree):
         line = getattr(node, "lineno", None)
@@ -391,7 +395,7 @@ def _ingest_python_semantics(s: Store, file_path: Path, project_root: Path) -> i
                 mod = alias.name.split(".")[0]
                 cid = s.add_namespaced_concept("import", mod,
                                                description=f"Python module '{mod}'")
-                s.link("imports", cid, file_id)
+                pending_links.append(("imports", cid, file_id, None))
                 s.add_evidence("imports", cid, file_id, file=rel, line=line,
                                detail=f"import {alias.name}")
                 n += 1
@@ -400,7 +404,7 @@ def _ingest_python_semantics(s: Store, file_path: Path, project_root: Path) -> i
             if mod:
                 cid = s.add_namespaced_concept("import", mod,
                                                description=f"Python module '{mod}'")
-                s.link("imports", cid, file_id)
+                pending_links.append(("imports", cid, file_id, None))
                 s.add_evidence("imports", cid, file_id, file=rel, line=line,
                                detail=f"from {node.module} import ...")
                 n += 1
@@ -420,10 +424,12 @@ def _ingest_python_semantics(s: Store, file_path: Path, project_root: Path) -> i
             for word, count in Counter(words).items():
                 cid = s.add_namespaced_concept("keyword", word,
                                                description=f"keyword '{word}'")
-                s.weighted_link("mentions", cid, f_id, weight=float(count))
+                pending_links.append(("mentions", cid, f_id, float(count)))
                 s.add_evidence("mentions", cid, f_id, file=rel, line=line,
                                detail=f"docstring keyword (×{count})")
                 n += 1
+    if pending_links:
+        s.bulk_link(pending_links)
     return n
 
 

@@ -52,7 +52,7 @@ def concept_density(
         JOIN linkage_types lt ON lt.id = el.linkage_id
         JOIN entities c       ON c.id = el.concept_id
         WHERE c.kind IN ({placeholders}){noise_clause}
-        GROUP BY el.concept_id, lt.name
+        GROUP BY el.concept_id, c.name, lt.name
         """,
         kinds,
     ).fetchall()
