@@ -536,21 +536,49 @@ def spawn_daemon(root: Path, *, partition: str | None = None,
 
 def stop_daemon(root: Path, *, timeout: float = 5.0) -> bool:
     """Send a stop op, then wait for the pid to exit. Returns True if the
-    daemon stopped within the timeout."""
+    daemon stopped within the timeout (or if no daemon was running)."""
+    # Use ping as the readiness signal — pidfile can be stale (orphaned
+    # daemon survived a losing concurrent spawn that overwrote it).
     pid = read_pid(root)
-    if pid is None:
+    socket_alive = ping(root, timeout=0.5)
+    if pid is None and not socket_alive:
         return True
+
+    # If ping works, ask the daemon to stop via its protocol so it can
+    # cleanly join its watcher thread and unlink its socket.
     try:
-        call(root, "stop")
+        if socket_alive:
+            call(root, "stop", timeout=2.0)
     except Exception:
-        # Socket gone or unresponsive — fall back to SIGTERM.
+        pass
+
+    # Discover the real pid if pidfile was stale: ping result carries it.
+    if pid is None and socket_alive:
+        try:
+            resp = call(root, "ping", timeout=0.5)
+            pid_candidate = (resp.get("result") or {}).get("pid")
+            if isinstance(pid_candidate, int):
+                pid = pid_candidate
+        except Exception:
+            pass
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if pid is None or not is_alive(pid):
+            return True
+        if not ping(root, timeout=0.2) and not socket_path(root).exists():
+            return True
+        time.sleep(0.05)
+
+    # Timed out — SIGTERM the pid we have (if any) for one last try.
+    if pid is not None:
         try:
             os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
             return True
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if not is_alive(pid):
-            return True
-        time.sleep(0.05)
+        deadline2 = time.time() + 2.0
+        while time.time() < deadline2:
+            if not is_alive(pid):
+                return True
+            time.sleep(0.05)
     return False
