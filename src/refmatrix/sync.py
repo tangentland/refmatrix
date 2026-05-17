@@ -24,6 +24,21 @@ from refmatrix.ingest import (
 from refmatrix.store import Store
 
 
+_GMD_SNIFF_BYTES = 512
+
+
+def _is_gmd_file(path: Path) -> bool:
+    """Cheap sniff: file opens with `---` and has `gmd:` in first ~512 bytes."""
+    try:
+        with path.open("rb") as f:
+            head = f.read(_GMD_SNIFF_BYTES)
+    except OSError:
+        return False
+    if not head.startswith(b"---"):
+        return False
+    return b"\ngmd:" in head or b"\ngmd :" in head
+
+
 QUEUE_FILE = "dirty.queue"
 
 
@@ -86,17 +101,26 @@ def _sync_paths(
     project_root = (project_root or Path.cwd()).resolve()
     added = updated = purged = 0
     touched_existing: list[Path] = []
+    gmd_paths: list[Path] = []
 
     for p in paths:
         # Always resolve so symlinked roots like /tmp -> /private/tmp on macOS
         # don't break relative_to() against the (already-resolved) project_root.
         ap = (p if p.is_absolute() else project_root / p).resolve()
         ext = ap.suffix.lower()
-        is_supported = ext in CODE_EXTS or ext in DOC_EXTS
+        is_supported = ext in CODE_EXTS or ext in DOC_EXTS or ext == ".gmd"
         if not ap.exists() or not is_supported:
             n = s.purge_path(str(ap))
             if n > 0:
                 purged += 1
+            continue
+
+        # GMD dispatch: .gmd extension, or .md with gmd: frontmatter
+        if ext == ".gmd" or (ext == ".md" and _is_gmd_file(ap)):
+            # Purge previous GMD state for this file, then re-ingest fully.
+            if s.get_entity("doc", _relpath(ap, project_root)) is not None:
+                s.purge_path(str(ap))
+            gmd_paths.append(ap)
             continue
 
         kind = "code" if ext in CODE_EXTS else "doc"
@@ -116,6 +140,13 @@ def _sync_paths(
         else:
             added += 1
         touched_existing.append(ap)
+
+    # Batch GMD ingest so cross-doc refs in the same sync resolve correctly.
+    if gmd_paths:
+        from refmatrix.ingest_gmd import ingest_gmd_paths
+        gmd_stats = ingest_gmd_paths(s, gmd_paths)
+        added += gmd_stats.docs  # rough — ingest_gmd doesn't distinguish add/update
+        touched_existing.extend(gmd_paths)
 
     # Refresh tldr-derived linkages for touched files when the call graph cache exists.
     cache = project_root / ".tldr" / "cache" / "call_graph.json"
