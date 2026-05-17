@@ -115,6 +115,53 @@ def info():
     console.print(f"partition: {_resolve_partition()}")
 
 
+@main.group()
+def daemon():
+    """Per-store background process that holds the catalog open and
+    serializes writes — bypasses DuckDB's single-writer lock contention
+    when many hooks fire concurrently."""
+
+
+@daemon.command("start")
+def daemon_start():
+    """Start the rmx daemon for the active store. Idempotent: re-running
+    while a daemon is already up is a fast no-op (returns its pid)."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if not root.is_dir():
+        raise click.ClickException(
+            f"no refmatrix at {root}. Run `rmx init` first."
+        )
+    pid = daemon_mod.spawn_daemon(root, partition=_resolve_partition())
+    console.print(f"[green]daemon running[/] pid={pid} root={root}")
+
+
+@daemon.command("stop")
+def daemon_stop():
+    """Stop the daemon for the active store, if any. Idempotent."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.stop_daemon(root):
+        console.print("[green]daemon stopped[/]")
+    else:
+        raise click.ClickException("daemon did not stop within timeout")
+
+
+@daemon.command("status")
+def daemon_status():
+    """Report whether the daemon is running for the active store."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    pid = daemon_mod.read_pid(root)
+    healthy = daemon_mod.ping(root) if pid else False
+    if pid and healthy:
+        console.print(f"[green]running[/] pid={pid} root={root}")
+    elif pid:
+        console.print(f"[yellow]stale pid[/] {pid} (socket unreachable)")
+    else:
+        console.print("[dim]not running[/]")
+
+
 @main.command("migrate-to-duckdb")
 @click.option(
     "--out", "out_path",
@@ -968,15 +1015,49 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
     """Incrementally update the matrix for given files / git changes / queued paths."""
     from refmatrix import sync as syncmod
 
-    s = _store()
-    proot = (project_root or Path.cwd()).resolve()
-
+    # --enqueue-only is the hottest hook path (fires on every Edit/Write).
+    # Don't open the DuckDB catalog just to append to a text queue file —
+    # that triggers a write-lock acquisition that contends with concurrent
+    # rmx invocations from other hooks.
     if enqueue_only:
         if not files:
             raise click.ClickException("--enqueue-only requires --files")
-        syncmod.enqueue(s.root, [str(p) for p in files])
+        root = _root()
+        if not root.is_dir():
+            # No .refmatrix in this tree — nothing to enqueue against. Treat
+            # as a silent no-op so hook callers don't fail when they fire on
+            # edits outside any indexed project.
+            return
+        syncmod.enqueue(root, [str(p) for p in files])
         console.print(f"[green]enqueued[/] {len(files)} paths")
         return
+
+    # Try the daemon for flush-queue / sync_files paths first — it holds
+    # the Store open across many calls so we skip DuckDB lock acquisition.
+    # Falls back to in-process when no daemon is running.
+    if flush_queue or (files and not since and not invalidate):
+        from refmatrix import daemon as daemon_mod
+        root = _root()
+        if daemon_mod.ping(root):
+            proot = (project_root or Path.cwd()).resolve()
+            op = "flush_queue" if flush_queue else "sync_files"
+            args: dict = {"project_root": str(proot), "semantic": semantic}
+            if not flush_queue:
+                args["files"] = [str(p) for p in files]
+            resp = daemon_mod.call(root, op, args)
+            if not resp.get("ok"):
+                raise click.ClickException(
+                    f"daemon {op} failed: {resp.get('error')}"
+                )
+            r = resp["result"]
+            console.print(
+                f"[green]synced[/] +{r['added']} ~{r['updated']} "
+                f"-{r['purged']} (touched={r['touched']}) [daemon]"
+            )
+            return
+
+    s = _store()
+    proot = (project_root or Path.cwd()).resolve()
 
     for p in invalidate:
         s.purge_path(str(Path(p).resolve()))
