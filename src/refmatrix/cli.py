@@ -867,7 +867,10 @@ def co_occur(concept, linkage, limit, include_noise):
 @click.option("--fallback/--no-fallback", default=True,
               help="Fall through to `rg` (then `grep -rn`) when the indexed "
                    "lookup returns zero matches.")
-def grep(pattern, regex, linkage, kind, limit, fallback):
+@click.option("--learn/--no-learn", default=True,
+              help="When fallback finds hits, fold them into the index as a "
+                   "`query/PATTERN` concept so future searches hit the index.")
+def grep(pattern, regex, linkage, kind, limit, fallback, learn):
     """Index-backed grep: find concepts whose name matches PATTERN and
     print file:line for every recorded reference. Falls back to `rg` /
     `grep -rn` under the project root when the index has no hits."""
@@ -941,8 +944,33 @@ def grep(pattern, regex, linkage, kind, limit, fallback):
         console.print("[dim]no matches[/]")
         return
     prefix = "[rg] " if tool.endswith("/rg") else "[grep] "
-    for line in res.stdout.splitlines()[:limit]:
-        click.echo(prefix + line)
+    # Both rg --no-heading and grep -H emit `path:line:rest` lines.
+    parsed_hits: list[dict] = []
+    shown = 0
+    for raw in res.stdout.splitlines():
+        if shown < limit:
+            click.echo(prefix + raw)
+            shown += 1
+        parts = raw.split(":", 2)
+        if len(parts) >= 2:
+            try:
+                line_no = int(parts[1])
+            except ValueError:
+                continue
+            parsed_hits.append({"file": parts[0], "line": line_no})
+
+    if learn and parsed_hits and daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "learn_from_grep", {
+            "pattern": pattern,
+            "hits": parsed_hits,
+            "project_root": str(project_root),
+        }, timeout=60.0)
+        if resp.get("ok"):
+            r = resp["result"]
+            console.print(
+                f"[dim]learned: concept '{r['concept']}' "
+                f"with {r['added']} file(s) — future searches hit the index[/]"
+            )
 
 
 # ---- saved queries --------------------------------------------------------

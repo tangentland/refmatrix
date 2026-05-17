@@ -565,6 +565,59 @@ def _op_grep_indexed(d: Daemon, args: dict) -> dict:
     }
 
 
+def _op_learn_from_grep(d: Daemon, args: dict) -> dict:
+    """Promote rg fallback hits into the index. A search miss + a grep hit
+    is a strong signal that PATTERN is something the user cares about;
+    fold the hits into a `query/PATTERN` namespaced concept with one
+    `mentions` linkage per matched file and `linkage_evidence` carrying
+    the line. Future `rmx grep`/`context` calls hit the index.
+    """
+    pattern = args["pattern"]
+    hits = args.get("hits") or []  # [{file, line}]
+    project_root = Path(args.get("project_root") or Path.cwd()).resolve()
+    if not pattern or not hits:
+        return {"added": 0}
+
+    name = f"query/{pattern}"
+    with d._store_lock, d.store.transaction(), d.store.deferred_links():
+        cid = d.store.add_concept(
+            name, description=f"learned from grep query {pattern!r}",
+            protected=False,
+        )
+        # Group hits by file so we add one entity + one link per file,
+        # then evidence rows per line.
+        per_file: dict[str, list[int]] = {}
+        for h in hits:
+            f = h.get("file")
+            ln = h.get("line")
+            if not f:
+                continue
+            per_file.setdefault(f, []).append(ln if ln is not None else 0)
+
+        added = 0
+        for abs_path, lines in per_file.items():
+            ap = Path(abs_path)
+            try:
+                rel = ap.relative_to(project_root).as_posix()
+            except ValueError:
+                rel = str(ap)
+            kind = "code" if ap.suffix.lower() in {
+                ".py", ".js", ".ts", ".go", ".rs", ".java", ".rb", ".php",
+                ".cpp", ".c", ".h", ".hpp", ".pseudo",
+            } else "doc"
+            eid = d.store.upsert_entity(
+                kind=kind, name=rel, path=str(ap),
+            )
+            d.store.link("mentions", cid, eid)
+            for line in lines:
+                d.store.add_evidence(
+                    "mentions", cid, eid, file=rel, line=line,
+                    detail=f"learned from grep {pattern!r}",
+                )
+            added += 1
+    return {"added": added, "concept": name, "concept_id": cid}
+
+
 def _op_query(d: Daemon, args: dict) -> dict:
     """Run a DSL or PQL expression and return result ids + names rendered
     as text or json. Routes through the daemon so reads work while the
@@ -678,6 +731,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "context": _op_context,
     "query": _op_query,
     "grep_indexed": _op_grep_indexed,
+    "learn_from_grep": _op_learn_from_grep,
     "upsert_entity": _op_upsert_entity,
     "add_concept": _op_add_concept,
     "add_linkage_type": _op_add_linkage_type,
