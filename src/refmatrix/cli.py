@@ -362,7 +362,37 @@ def canon_siblings(concept: str):
 # ---- entities & concepts --------------------------------------------------
 
 
-@main.command("add-entity")
+# ---- add / list subgroups -------------------------------------------------
+#
+# Flat hyphenated verbs (`rmx add-concept`, `rmx list-entities`, …) were
+# adoption-blocking: no `rmx add <TAB>` discovery, history-search noise, and
+# the hyphen forces composing the full verb. Subgroups give discoverability
+# without breaking existing callers — the old hyphenated names stay as
+# hidden aliases.
+
+
+def _alias(src_cmd: click.Command, name: str) -> click.Command:
+    """Return a hidden copy of `src_cmd` to register under `name` on the
+    main group so old call sites (`rmx add-concept …`) keep working without
+    cluttering `rmx --help` with both forms."""
+    import copy
+    cmd = copy.copy(src_cmd)
+    cmd.hidden = True
+    cmd.name = name
+    return cmd
+
+
+@main.group()
+def add():
+    """Add concepts, entities, and linkage types."""
+
+
+@main.group("list")
+def list_grp():
+    """List entities, linkages, saved queries."""
+
+
+@add.command("entity")
 @click.option("--kind", required=True, type=click.Choice(["doc", "code", "concept"]))
 @click.argument("name")
 @click.option("--path", default=None, help="Optional filesystem path.")
@@ -381,7 +411,10 @@ def add_entity(kind, name, path, tldr, meta, no_protect):
     console.print(f"[green]upserted[/] {kind}:{name} (id={eid}){pinned}")
 
 
-@main.command("add-concept")
+main.add_command(_alias(add_entity, "add-entity"))
+
+
+@add.command("concept")
 @click.argument("name")
 @click.option("--description", "-d", default=None)
 @click.option("--no-protect", is_flag=True,
@@ -394,7 +427,10 @@ def add_concept(name, description, no_protect):
     console.print(f"[green]added concept[/] {name} (id={cid}){pinned}")
 
 
-@main.command("list-entities")
+main.add_command(_alias(add_concept, "add-concept"))
+
+
+@list_grp.command("entities")
 @click.option("--kind", type=click.Choice(["doc", "code", "concept"]), default=None)
 def list_entities(kind):
     """List entities."""
@@ -405,10 +441,13 @@ def list_entities(kind):
     console.print(t)
 
 
+main.add_command(_alias(list_entities, "list-entities"))
+
+
 # ---- linkage types --------------------------------------------------------
 
 
-@main.command("add-linkage-type")
+@add.command("linkage-type")
 @click.argument("name")
 @click.option("--directed/--undirected", default=True)
 @click.option("--description", "-d", default=None)
@@ -419,7 +458,10 @@ def add_linkage_type(name, directed, description):
     console.print(f"[green]linkage type[/] {name} (id={lid})")
 
 
-@main.command("list-linkages")
+main.add_command(_alias(add_linkage_type, "add-linkage-type"))
+
+
+@list_grp.command("linkages")
 def list_linkages():
     """List linkage types."""
     s = _store()
@@ -427,6 +469,9 @@ def list_linkages():
     for lk in s.list_linkages():
         t.add_row(str(lk["id"]), lk["name"], "yes" if lk["directed"] else "no", lk["description"] or "")
     console.print(t)
+
+
+main.add_command(_alias(list_linkages, "list-linkages"))
 
 
 # ---- linking --------------------------------------------------------------
@@ -510,6 +555,48 @@ def _print_bitmap(s: Store, bm, limit: int = 50):
               help="SQL LIKE pattern to filter result entities by name (e.g. '%.pseudo::%').")
 def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter):
     """Run a query. DSL: `mentions:parser AND defines:parser`. PQL: `Row(calls,foo)`."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "query", {
+            "expr": expr, "pql": is_pql, "include_noise": include_noise,
+            "limit": limit, "name_filter": name_filter, "explain": explain,
+        }, timeout=120.0)
+        if not resp.get("ok"):
+            raise click.ClickException(f"daemon query failed: {resp.get('error')}")
+        r = resp["result"]
+        if r["shape"] == "int":
+            console.print(str(r["value"]))
+            return
+        if r["shape"] == "weighted":
+            t = Table("entity", "weight")
+            for row in r["rows"]:
+                t.add_row(row["name"] or str(row["id"]), str(row["weight"]))
+            console.print(t)
+            console.print(f"[dim]cardinality={r['cardinality']}[/]")
+            return
+        if ids_only:
+            for row in r["rows"]:
+                print(row["id"])
+            return
+        t = Table("id", "kind", "name", "path")
+        for row in r["rows"]:
+            t.add_row(str(row["id"]), row["kind"] or "", row["name"] or "",
+                      row["path"] or "")
+        console.print(t)
+        console.print(f"[dim]cardinality={r['cardinality']}[/]")
+        if explain and "evidence" in r:
+            for eid_s, ev in r["evidence"].items():
+                if not ev:
+                    continue
+                console.print(f"\n[bold]entity {eid_s}[/]")
+                for x in ev:
+                    loc = f" {x['file']}:{x['line']}" if x.get("line") else ""
+                    console.print(
+                        f"  {x['linkage']}:{x['concept']}{loc}"
+                    )
+        return
+
     s = _store()
     qe = QueryEngine(s, include_noise=include_noise)
     with log_query(s, kind="pql" if is_pql else "dsl", body=expr, source="query") as t:

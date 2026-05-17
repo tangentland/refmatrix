@@ -453,6 +453,81 @@ def _op_vacuum(d: Daemon, args: dict) -> dict:
         return d.store.vacuum()
 
 
+def _op_query(d: Daemon, args: dict) -> dict:
+    """Run a DSL or PQL expression and return result ids + names rendered
+    as text or json. Routes through the daemon so reads work while the
+    daemon holds the catalog write lock."""
+    from refmatrix.query import QueryEngine
+    expr = args["expr"]
+    is_pql = bool(args.get("pql", False))
+    include_noise = bool(args.get("include_noise", False))
+    limit = int(args.get("limit", 50))
+    name_filter = args.get("name_filter")
+    explain = bool(args.get("explain", False))
+    with d._store_lock:
+        qe = QueryEngine(d.store, include_noise=include_noise)
+        result = qe.run_pql(expr) if is_pql else qe.run(expr)
+        if name_filter:
+            from pyroaring import BitMap
+            matching = BitMap(
+                r[0] for r in d.store._connect().execute(
+                    "SELECT id FROM entities WHERE name LIKE ?", (name_filter,)
+                )
+            )
+            if isinstance(result, list):
+                result = [(eid, w) for eid, w in result if eid in matching]
+            elif hasattr(result, "__iter__") and not isinstance(result, int):
+                result = result & matching
+
+        if isinstance(result, int):
+            return {"shape": "int", "value": result}
+        if isinstance(result, list):
+            rows = []
+            for eid, w in result[:limit]:
+                e = d.store.get_entity_by_id(eid)
+                rows.append({
+                    "id": eid,
+                    "weight": w,
+                    "name": e.name if e else None,
+                    "kind": e.kind if e else None,
+                    "path": e.path if e else None,
+                })
+            return {"shape": "weighted", "rows": rows, "cardinality": len(result)}
+
+        ids = list(result)
+        rows = []
+        for eid in ids[:limit]:
+            e = d.store.get_entity_by_id(eid)
+            rows.append({
+                "id": eid,
+                "name": e.name if e else None,
+                "kind": e.kind if e else None,
+                "path": e.path if e else None,
+            })
+        out = {"shape": "bitmap", "rows": rows, "cardinality": len(ids)}
+        if explain:
+            evidence = {}
+            for eid in ids[:limit]:
+                ev_rows = d.store._connect().execute(
+                    """
+                    SELECT lt.name AS linkage, c.name AS concept_name,
+                           ev.file, ev.line
+                    FROM linkage_evidence ev
+                    JOIN linkage_types lt ON lt.id = ev.linkage_id
+                    JOIN entities c ON c.id = ev.concept_id
+                    WHERE ev.entity_id = ?
+                    """,
+                    (eid,),
+                ).fetchall()
+                evidence[str(eid)] = [
+                    {"linkage": r["linkage"], "concept": r["concept_name"],
+                     "file": r["file"], "line": r["line"]}
+                    for r in ev_rows
+                ]
+            out["evidence"] = evidence
+        return out
+
+
 def _op_context(d: Daemon, args: dict) -> dict:
     """Build a context bundle and return its rendered form. Read-side
     operations have to route through the daemon too because DuckDB blocks
@@ -489,6 +564,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "sync_files": _op_sync_files,
     "sync_since": _op_sync_since,
     "context": _op_context,
+    "query": _op_query,
     "prune_noise": _op_prune_noise,
     "vacuum": _op_vacuum,
     "stats": _op_stats,
