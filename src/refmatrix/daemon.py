@@ -412,6 +412,23 @@ def _op_sync_since(d: Daemon, args: dict) -> dict:
     return report
 
 
+def _op_prune_noise(d: Daemon, args: dict) -> dict:
+    namespaces = tuple(args.get("namespaces") or ("keyword",))
+    min_df = int(args.get("min_df", 2))
+    max_df_ratio = float(args.get("max_df_ratio", 0.25))
+    drop = bool(args.get("drop", False))
+    with d._store_lock:
+        return d.store.prune_noise(
+            namespaces=namespaces, min_df=min_df,
+            max_df_ratio=max_df_ratio, drop=drop,
+        )
+
+
+def _op_vacuum(d: Daemon, args: dict) -> dict:
+    with d._store_lock:
+        return d.store.vacuum()
+
+
 def _op_context(d: Daemon, args: dict) -> dict:
     """Build a context bundle and return its rendered form. Read-side
     operations have to route through the daemon too because DuckDB blocks
@@ -448,6 +465,8 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "sync_files": _op_sync_files,
     "sync_since": _op_sync_since,
     "context": _op_context,
+    "prune_noise": _op_prune_noise,
+    "vacuum": _op_vacuum,
     "stop": _op_stop,
 }
 

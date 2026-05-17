@@ -861,8 +861,15 @@ def telemetry(since, top_queried, zero_results, fmt):
 @main.command()
 def vacuum():
     """Drop empty concepts and tracked files that no longer exist."""
-    s = _store()
-    out = s.vacuum()
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "vacuum", {}, timeout=300.0)
+        if not resp.get("ok"):
+            raise click.ClickException(f"daemon vacuum failed: {resp.get('error')}")
+        out = resp["result"]
+    else:
+        out = _store().vacuum()
     console.print(
         f"[green]vacuumed[/] dropped {out['concepts_dropped']} empty concepts, "
         f"purged {out['files_purged']} missing files"
@@ -888,11 +895,26 @@ def prune_noise(namespace, min_df, max_df_ratio, drop):
     scan-prompt restores the full graph for find/grep-style use. Protected
     concepts (added via add-entity/add-concept/link) are never touched.
     """
-    s = _store()
-    out = s.prune_noise(
-        namespaces=tuple(namespace), min_df=min_df,
-        max_df_ratio=max_df_ratio, drop=drop,
-    )
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "prune_noise", {
+            "namespaces": list(namespace),
+            "min_df": min_df,
+            "max_df_ratio": max_df_ratio,
+            "drop": drop,
+        }, timeout=300.0)
+        if not resp.get("ok"):
+            raise click.ClickException(
+                f"daemon prune_noise failed: {resp.get('error')}"
+            )
+        out = resp["result"]
+    else:
+        s = _store()
+        out = s.prune_noise(
+            namespaces=tuple(namespace), min_df=min_df,
+            max_df_ratio=max_df_ratio, drop=drop,
+        )
     if drop:
         console.print(
             f"[green]dropped[/] {out['dropped']} concepts "
