@@ -418,11 +418,22 @@ def _op_stats(d: Daemon, args: dict) -> dict:
 
 
 def _op_checkpoint(d: Daemon, args: dict) -> dict:
-    """DuckDB CHECKPOINT: flush WAL into the main file and compact. Reduces
-    .duckdb file growth after long churn."""
+    """DuckDB CHECKPOINT: flush WAL into the main file. Also rebuilds the
+    `entity_links` secondary index, which can get out of sync with the
+    table after `prune-noise --drop` (DuckDB FATAL during the next
+    DELETE — "Failed to delete all rows from index"). Drop+recreate
+    self-heals without losing data."""
+    if d.store._backend.kind != "duckdb":
+        return {"checkpointed": False, "reason": "not a duckdb backend"}
     with d._store_lock:
-        d.store._connect()._duck.execute("CHECKPOINT")
-    return {"checkpointed": True}
+        con = d.store._connect()._duck
+        con.execute("DROP INDEX IF EXISTS idx_entity_links_lk_concept")
+        con.execute(
+            "CREATE INDEX idx_entity_links_lk_concept "
+            "ON entity_links(linkage_id, concept_id)"
+        )
+        con.execute("CHECKPOINT")
+    return {"checkpointed": True, "index_rebuilt": True}
 
 
 def _op_prune_noise(d: Daemon, args: dict) -> dict:

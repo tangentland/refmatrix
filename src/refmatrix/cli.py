@@ -868,6 +868,79 @@ def telemetry(since, top_queried, zero_results, fmt):
 
 
 @main.command()
+@click.option(
+    "--keep-backup/--no-keep-backup", default=True,
+    help="Keep the pre-compact catalog as catalog.duckdb.bloat for safety.",
+)
+def compact(keep_backup: bool):
+    """Compact catalog.duckdb via EXPORT/IMPORT round-trip.
+
+    DuckDB doesn't reclaim space from deleted rows or churn — the data file
+    keeps growing until you re-import. This stops the daemon, EXPORTs the
+    database as PARQUET, IMPORTs into a fresh file, swaps it in, and
+    restarts the daemon. Typical reduction: 3-4x on a churn-heavy catalog.
+    """
+    from refmatrix import daemon as daemon_mod
+    import shutil
+    import duckdb as _duckdb
+
+    root = _root()
+    src = root / "catalog.duckdb"
+    if not src.exists():
+        raise click.ClickException(f"no catalog at {src}")
+
+    # Stop daemon so we can hold the write lock ourselves.
+    daemon_was_up = daemon_mod.ping(root)
+    if daemon_was_up:
+        if not daemon_mod.stop_daemon(root):
+            raise click.ClickException("daemon did not stop within timeout")
+
+    export_dir = root / "catalog-export"
+    new_path = root / "catalog.new.duckdb"
+    backup = root / "catalog.duckdb.bloat"
+
+    if export_dir.exists():
+        shutil.rmtree(export_dir)
+    if new_path.exists():
+        new_path.unlink()
+
+    try:
+        before = src.stat().st_size
+        console.print(f"[dim]exporting (was {before / 1024 / 1024:.1f} MB)…[/]")
+        con = _duckdb.connect(str(src))
+        con.execute(f"EXPORT DATABASE '{export_dir}' (FORMAT PARQUET)")
+        con.close()
+
+        console.print("[dim]importing into fresh catalog…[/]")
+        ncon = _duckdb.connect(str(new_path))
+        ncon.execute(f"IMPORT DATABASE '{export_dir}'")
+        ncon.execute("CHECKPOINT")
+        ncon.close()
+
+        # Atomic-ish swap.
+        if backup.exists():
+            backup.unlink()
+        src.rename(backup)
+        new_path.rename(src)
+        after = src.stat().st_size
+
+        if not keep_backup:
+            backup.unlink()
+        shutil.rmtree(export_dir, ignore_errors=True)
+
+        console.print(
+            f"[green]compacted[/] {before / 1024 / 1024:.1f} MB → "
+            f"{after / 1024 / 1024:.1f} MB "
+            f"({100 * (1 - after / before):.0f}% smaller)"
+        )
+        if keep_backup:
+            console.print(f"  pre-compact backup: {backup}")
+    finally:
+        if daemon_was_up:
+            daemon_mod.spawn_daemon(root, partition=_resolve_partition())
+
+
+@main.command()
 def checkpoint():
     """DuckDB CHECKPOINT: flush WAL and compact the catalog file. Run after
     big churn to shrink `.refmatrix/catalog.duckdb`."""
