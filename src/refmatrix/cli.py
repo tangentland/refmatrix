@@ -854,32 +854,162 @@ def co_occur(concept, linkage, limit, include_noise):
     console.print(t)
 
 
+_GREP_FLAGS_HELP = (
+    "Grep-style flag bundle, quoted. Accepts spaces or bundled letters: "
+    "`-f '-i -n -l'`, `-f '-inl'`, `-f -i`. Recognized: "
+    "-i ignore-case (default ON; -I forces case-sensitive), "
+    "-r recursive (no-op — always recursive over the index), "
+    "-n line numbers (no-op — always shown), "
+    "-l files only (one line per unique file, suppress per-hit detail), "
+    "-c count matches per file, "
+    "-v invert match (entities/files with NO match), "
+    "-w word-boundary match, "
+    "-F fixed-string (substring) — same as --substring, "
+    "-E extended regex — same as --regex, "
+    "-H print filename (no-op — always shown)."
+)
+
+
+def _parse_grep_flags(s: str | None) -> dict:
+    """Parse a grep-style flag bundle string into a dict of bool flags.
+    Accepts space-separated or bundled forms: '-il', '-i -l', '-inl', '-i'.
+    Unknown letters raise click.UsageError."""
+    f = {
+        "ignore_case": None, "files_only": False, "count": False,
+        "invert": False, "word": False, "force_substring": False,
+        "force_regex": False,
+    }
+    if not s:
+        return f
+    valid = "irIRnlcvwFEH"
+    for chunk in s.split():
+        if not chunk.startswith("-") or len(chunk) < 2:
+            raise click.UsageError(
+                f"--flags: '{chunk}' is not a grep-style flag (need leading dash)"
+            )
+        for ch in chunk[1:]:
+            if ch not in valid:
+                raise click.UsageError(
+                    f"--flags: unknown letter '-{ch}'. Recognized: {valid}"
+                )
+            if ch == "i":
+                f["ignore_case"] = True
+            elif ch == "I":
+                f["ignore_case"] = False
+            elif ch == "l":
+                f["files_only"] = True
+            elif ch == "c":
+                f["count"] = True
+            elif ch == "v":
+                f["invert"] = True
+            elif ch == "w":
+                f["word"] = True
+            elif ch == "F":
+                f["force_substring"] = True
+            elif ch == "E":
+                f["force_regex"] = True
+            # r, n, H are accepted but no-op
+    if f["force_substring"] and f["force_regex"]:
+        raise click.UsageError("--flags: -F and -E are mutually exclusive")
+    return f
+
+
+def _render_grep_rows(rows, gf, limit, source_tag="idx"):
+    """Render index-backed rows respecting the gf flag bundle:
+      -l files-only  → one line per unique file path
+      -c count       → `path: N` per file
+      -v invert      → printed in caller (needs a full entity universe);
+                       for now we honor it as a no-op on the indexed path
+      default        → `path:line  [src linkage]  concept` per row
+    """
+    if gf["invert"]:
+        # Honest behavior: -v on the indexed path would require enumerating
+        # all entities and subtracting matches — possible but heavy. Tell
+        # the user to drop --no-fallback so the rg path can handle it.
+        console.print(
+            "[yellow]-v (invert) is not implemented on the indexed path; "
+            "drop --no-fallback to use rg's -v.[/]"
+        )
+        return
+    if gf["files_only"]:
+        seen: list[str] = []
+        seen_set: set[str] = set()
+        for r in rows:
+            loc = r["path"] or r["entity"]
+            if loc and loc not in seen_set:
+                seen_set.add(loc)
+                seen.append(loc)
+                if len(seen) >= limit:
+                    break
+        for loc in seen:
+            click.echo(loc)
+        return
+    if gf["count"]:
+        from collections import Counter
+        c: Counter = Counter()
+        for r in rows:
+            loc = r["path"] or r["entity"]
+            if loc:
+                c[loc] += 1
+        for loc, n in c.most_common(limit):
+            click.echo(f"{loc}: {n}")
+        return
+    # Default rendering — file:line  [src linkage]  concept
+    for r in rows:
+        loc = r["path"] or r["entity"]
+        line = f":{r['line']}" if r["line"] is not None else ""
+        click.echo(
+            f"{loc}{line}  [{source_tag} {r['linkage']}]  {r['concept']}"
+        )
+
+
 @main.command()
 @click.argument("pattern")
 @click.option("--regex/--substring", default=False,
               help="Treat PATTERN as a regex matched against concept names. "
                    "Default is case-insensitive substring.")
-@click.option("--linkage", "-l", default=None,
+@click.option("--flags", "-f", "flags", default=None, help=_GREP_FLAGS_HELP)
+@click.option("--linkage", default=None,
               help="Restrict to one linkage type (e.g. defines, mentions).")
 @click.option("--kind", "-k", type=click.Choice(["doc", "code"]), default=None,
               help="Restrict to entities of this kind.")
-@click.option("--limit", "-n", default=100, type=int)
+@click.option("--limit", default=100, type=int,
+              help="Cap the number of result rows (or files in -l mode).")
 @click.option("--fallback/--no-fallback", default=True,
               help="Fall through to `rg` (then `grep -rn`) when the indexed "
                    "lookup returns zero matches.")
 @click.option("--learn/--no-learn", default=True,
               help="When fallback finds hits, fold them into the index as a "
                    "`query/PATTERN` concept so future searches hit the index.")
-def grep(pattern, regex, linkage, kind, limit, fallback, learn):
+def grep(pattern, regex, flags, linkage, kind, limit, fallback, learn):
     """Index-backed grep: find concepts whose name matches PATTERN and
     print file:line for every recorded reference. Falls back to `rg` /
-    `grep -rn` under the project root when the index has no hits."""
+    `grep -rn` under the project root when the index has no hits.
+
+    Grep-style flags can be passed as a quoted bundle via --flags / -f:
+
+        rmx grep -f '-i -l'   "daemon"      # case-insens, files only
+        rmx grep -f '-inl'    "Daemon"      # same, bundled letters
+        rmx grep -f '-c'      "linkage"     # count per file
+        rmx grep -f '-v'      "noise"       # entities/files with NO match
+    """
+    gf = _parse_grep_flags(flags)
+    # --regex/--substring is the canonical control; -F / -E in --flags can
+    # override it for convenience.
+    if gf["force_substring"]:
+        regex = False
+    if gf["force_regex"]:
+        regex = True
+    # Word-boundary wrapping when regex mode is on.
+    effective_pattern = pattern
+    if gf["word"] and regex:
+        effective_pattern = rf"\b{pattern}\b"
     from refmatrix import daemon as daemon_mod
     root = _root()
     rows: list[dict] = []
     if daemon_mod.ping(root):
         resp = daemon_mod.call(root, "grep_indexed", {
-            "pattern": pattern, "regex": regex,
+            "pattern": effective_pattern, "regex": regex,
             "linkage": linkage, "kind": kind, "limit": limit,
         }, timeout=60.0)
         if not resp.get("ok"):
@@ -888,7 +1018,7 @@ def grep(pattern, regex, linkage, kind, limit, fallback, learn):
     else:
         # Direct path: only used when daemon is down. Mirror the SQL.
         s = _store()
-        like = f"%{pattern}%"
+        like = f"%{effective_pattern}%"
         sql = (
             "SELECT e.path, e.name, ev.line, lt.name, c.name "
             "FROM linkage_evidence ev "
@@ -898,7 +1028,7 @@ def grep(pattern, regex, linkage, kind, limit, fallback, learn):
             "WHERE c.name "
             + ("ILIKE" if not regex else "~") + " ? "
         )
-        params: list = [pattern if regex else like]
+        params: list = [effective_pattern if regex else like]
         if linkage:
             sql += "AND lt.name = ? "
             params.append(linkage)
@@ -912,12 +1042,7 @@ def grep(pattern, regex, linkage, kind, limit, fallback, learn):
                          "linkage": r[3], "concept": r[4]})
 
     if rows:
-        for r in rows:
-            loc = r["path"] or r["entity"]
-            line = f":{r['line']}" if r["line"] is not None else ""
-            click.echo(
-                f"{loc}{line}  [idx {r['linkage']}]  {r['concept']}"
-            )
+        _render_grep_rows(rows, gf, limit, source_tag="idx")
         return
 
     if not fallback:
@@ -930,21 +1055,59 @@ def grep(pattern, regex, linkage, kind, limit, fallback, learn):
     project_root = root.parent
     tool = shutil.which("rg")
     if tool:
-        # rg: -n line numbers, -H force filenames, -S smart-case, --no-heading
-        # Use --regexp so `pattern` is consumed even if it starts with -.
-        cmd = ["rg", "-nHS", "--no-heading", "--regexp", pattern, str(project_root)]
+        # rg: -n line numbers, -H force filenames, --no-heading.
+        # -S smart-case is overridden when --flags forces case.
+        case_flag = (
+            "-i" if gf["ignore_case"] is True
+            else ("-s" if gf["ignore_case"] is False else "-S")
+        )
+        rg_cmd = ["rg", "-nH", case_flag, "--no-heading"]
+        if gf["word"]:
+            rg_cmd.append("-w")
+        if gf["invert"]:
+            rg_cmd.append("-v")
+        if gf["count"]:
+            rg_cmd.append("-c")
+        if gf["files_only"]:
+            rg_cmd.append("-l")
+        rg_cmd += ["--regexp", pattern, str(project_root)]
+        cmd = rg_cmd
     else:
         tool = shutil.which("grep")
         if not tool:
             raise click.ClickException("no indexed match and neither rg nor grep on PATH")
-        flags = "-rnHE" if regex else "-rnHF"
-        cmd = [tool, flags, pattern, str(project_root)]
+        # Build grep flags from gf bundle. Always recursive + filename.
+        g_letters = "rH"
+        if not (gf["count"] or gf["files_only"]):
+            g_letters += "n"
+        if gf["ignore_case"] is not False:
+            g_letters += "i"
+        if gf["word"]:
+            g_letters += "w"
+        if gf["invert"]:
+            g_letters += "v"
+        if gf["count"]:
+            g_letters += "c"
+        if gf["files_only"]:
+            g_letters += "l"
+        g_letters += "E" if regex else "F"
+        cmd = [tool, f"-{g_letters}", pattern, str(project_root)]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if not res.stdout.strip():
         console.print("[dim]no matches[/]")
         return
     prefix = "[rg] " if tool.endswith("/rg") else "[grep] "
-    # Both rg --no-heading and grep -H emit `path:line:rest` lines.
+    # In -l (files-only) mode tool emits bare paths; in -c (count) mode it
+    # emits `path:N`. Skip the line-number parsing for those.
+    if gf["files_only"] or gf["count"]:
+        shown = 0
+        for raw in res.stdout.splitlines():
+            if shown >= limit:
+                break
+            click.echo(prefix + raw)
+            shown += 1
+        return
+    # Default rendering: rg --no-heading / grep -H emit `path:line:rest`.
     parsed_hits: list[dict] = []
     shown = 0
     for raw in res.stdout.splitlines():
@@ -1367,11 +1530,13 @@ def import_(path, merge):
 @main.command()
 @click.argument("path", type=click.Path(exists=True, path_type=Path))
 @click.option("--source",
-              type=click.Choice(["auto", "metadata", "tldr", "tree"]),
+              type=click.Choice(["auto", "metadata", "tldr", "tree", "graphify"]),
               default="auto",
-              help="auto picks metadata > tldr > tree. metadata reads "
-                   "llm-tldr's per-unit semantic dump for the richest graph; "
-                   "tldr falls back to call_graph.json.")
+              help="auto picks metadata > tldr > tree (with graphify layered "
+                   "additively if graphify-out/graph.json exists). metadata "
+                   "reads llm-tldr's per-unit semantic dump for the richest "
+                   "graph; tldr falls back to call_graph.json; graphify forces "
+                   "the knowledge-graph JSON to be the only ingest.")
 @click.option("--semantic", is_flag=True,
               help="Also extract Python imports + docstring keywords (slow on big trees).")
 def ingest(path, source, semantic):
@@ -1436,6 +1601,64 @@ def tldr_warm(path, tldr_bin, semantic, lang):
 
     n = ingest_path(s, proj, source="tldr", semantic=semantic)
     console.print(f"[green]ingested[/] {n} entities from {proj}")
+
+
+@main.command("graphify-warm")
+@click.argument("path", type=click.Path(exists=True, path_type=Path), default=".")
+@click.option("--graphify-bin", default=None, type=click.Path(path_type=Path),
+              help="Path to the `graphify` binary. Default: search PATH "
+                   "(env REFMATRIX_GRAPHIFY_BIN also honored).")
+@click.option("--mode", type=click.Choice(["fast", "deep"]), default=None,
+              help="Pass --mode to graphify (deep = richer INFERRED edges).")
+@click.option("--update", is_flag=True,
+              help="Pass --update to graphify for incremental re-extract.")
+def graphify_warm(path, graphify_bin, mode, update):
+    """Run `graphify <path>`, then ingest the resulting graph.json into rmx.
+
+    Mirrors `rmx tldr-warm` — single-step UX so you don't have to drive both
+    tools. The rmx ingest runs against the freshly-built
+    `graphify-out/graph.json`. Graphify edges (rationale_for,
+    semantically_similar_to, conceptually_related_to, etc.) layer additively
+    on top of any existing tldr-derived index.
+    """
+    import shutil
+    import subprocess
+
+    from refmatrix.ingest import ingest_path
+
+    s = _store()
+    proj = Path(path).resolve()
+
+    binpath = (
+        str(graphify_bin)
+        if graphify_bin
+        else os.environ.get("REFMATRIX_GRAPHIFY_BIN")
+        or shutil.which("graphify")
+    )
+    if not binpath:
+        raise click.ClickException(
+            "no `graphify` binary on PATH. Install it or pass "
+            "--graphify-bin /path/to/graphify."
+        )
+
+    cmd: list[str] = [binpath, str(proj)]
+    if mode:
+        cmd += ["--mode", mode]
+    if update:
+        cmd += ["--update"]
+    console.print(f"[dim]$ {' '.join(cmd)}[/]")
+    rv = subprocess.run(cmd)
+    if rv.returncode != 0:
+        raise click.ClickException(f"`graphify` failed (rc={rv.returncode})")
+
+    cache = proj / "graphify-out" / "graph.json"
+    if not cache.exists():
+        raise click.ClickException(
+            f"expected {cache} after graphify run; not found."
+        )
+
+    n = ingest_path(s, proj, source="graphify")
+    console.print(f"[green]ingested[/] {n} graphify edges from {proj}")
 
 
 # ---- incremental sync -----------------------------------------------------

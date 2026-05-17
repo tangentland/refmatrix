@@ -39,6 +39,7 @@ def ingest_path(
     path = path.resolve()
     metadata_path = path / ".tldr" / "cache" / "semantic" / "metadata.json"
     call_graph_path = path / ".tldr" / "cache" / "call_graph.json"
+    graphify_path = path / "graphify-out" / "graph.json"
     n = 0
     if source in ("auto", "metadata") and metadata_path.exists():
         n = _ingest_tldr_metadata(s, path)
@@ -46,6 +47,14 @@ def ingest_path(
         n = _ingest_tldr(s, path)
     if source in ("auto", "tree") and n == 0:
         n = _ingest_tree(s, path)
+    # Graphify is additive — when source=auto and the cache is present, layer
+    # its cross-modal edges (rationale_for, semantically_similar_to, etc.) on
+    # top of whatever the primary source produced. source=graphify forces it
+    # to be the only ingest.
+    if source == "graphify":
+        n = _ingest_graphify(s, path)
+    elif source == "auto" and graphify_path.exists():
+        _ingest_graphify(s, path)
     if semantic:
         for p in path.rglob("*.py"):
             parts = set(p.parts)
@@ -320,6 +329,148 @@ def _ingest_tldr(s: Store, project: Path) -> int:
                 tf_id = func_id(to_file, to_func)
                 from_concept = concept_id(from_func)
                 s.link("called_by", from_concept, tf_id)
+            n += 1
+    return n
+
+
+# --- graphify (knowledge-graph JSON) ---------------------------------------
+
+
+# Graphify edge `relation` → rmx linkage type. Verbs not listed here are
+# auto-created via store.add_linkage_type() so custom graphify schemas still
+# work — they just won't inherit any predefined inverse or weight semantics.
+_GRAPHIFY_VERB_MAP = {
+    "calls":                     "calls",
+    "called_by":                 "called_by",
+    "contains":                  "has-part",
+    "inherits":                  "is_a",
+    "implements":                "defines",
+    "references":                "mentions",
+    "uses":                      "depends-on",
+    "cites":                     "related_to",
+    "method":                    "has-part",
+    "rationale_for":             "specifies",
+    "conceptually_related_to":   "related_to",
+    "semantically_similar_to":   "similar_to",
+    "shares_data_with":          "shares_data_with",
+}
+
+# Graphify confidence labels → multiplier applied to edge weight. INFERRED
+# and AMBIGUOUS edges are still ingested but down-weighted so the bitmap
+# scorer can distinguish them from EXTRACTED ground-truth edges.
+_GRAPHIFY_CONFIDENCE_W = {
+    "EXTRACTED": 1.0,
+    "INFERRED":  0.5,
+    "AMBIGUOUS": 0.3,
+}
+
+
+def _graphify_kind(file_type: str | None) -> str:
+    """Map graphify's file_type → rmx entity kind."""
+    if file_type in ("doc", "web", "paper"):
+        return "doc"
+    return "code"
+
+
+def _parse_source_line(loc: str | None) -> int | None:
+    """Graphify writes line numbers as 'L<n>' or 'L<n>-<m>'. Pull the start."""
+    if not loc or not loc.startswith("L"):
+        return None
+    try:
+        return int(loc[1:].split("-", 1)[0])
+    except ValueError:
+        return None
+
+
+def _ingest_graphify(s: Store, project: Path) -> int:
+    """Ingest a graphify knowledge graph (graphify-out/graph.json).
+
+    Two-pass: nodes → entities + concept handles, then edges → linkages
+    with file:line evidence. Returns the number of edges processed.
+    """
+    cache = project / "graphify-out" / "graph.json"
+    if not cache.exists():
+        return 0
+    data = json.loads(cache.read_text())
+    nodes = data.get("nodes") or []
+    edges = data.get("links") or data.get("edges") or []
+    if not nodes:
+        return 0
+
+    # Pass 1: register every node as both an entity (so it has a column id
+    # for bitmap membership) and a concept (so it has a row id for the
+    # source side of edges). Build id → (eid, cid) so pass 2 can resolve
+    # both ends of each edge.
+    nid_to_eid: dict[str, int] = {}
+    nid_to_cid: dict[str, int] = {}
+    for node in nodes:
+        nid = node.get("id")
+        if not nid:
+            continue
+        label = node.get("label") or nid
+        src_file = node.get("source_file")
+        meta: dict = {}
+        for k in ("community", "file_type", "source_url",
+                  "captured_at", "author", "contributor", "norm_label"):
+            v = node.get(k)
+            if v is not None:
+                meta[k] = v
+        eid = s.upsert_entity(
+            kind=_graphify_kind(node.get("file_type")),
+            name=f"graphify::{nid}",
+            path=str(project / src_file) if src_file else None,
+            tldr=label,
+            meta=meta,
+        )
+        nid_to_eid[nid] = eid
+        cid = s.add_concept(
+            f"gf/{nid}",
+            description=f"graphify node '{label}'",
+        )
+        nid_to_cid[nid] = cid
+
+    # Track verbs we've already ensured to avoid per-edge linkage lookups.
+    verbs_seen: set[str] = set()
+
+    def ensure_verb(verb: str) -> None:
+        if verb in verbs_seen:
+            return
+        try:
+            s.get_linkage_id(verb)
+        except KeyError:
+            s.add_linkage_type(
+                verb, directed=True,
+                description=f"graphify relation '{verb}'",
+            )
+        verbs_seen.add(verb)
+
+    # Pass 2: edges → linkages with weighted evidence.
+    n = 0
+    with s.deferred_links():
+        for edge in edges:
+            src = edge.get("source")
+            tgt = edge.get("target")
+            relation = edge.get("relation")
+            if not src or not tgt or not relation:
+                continue
+            if src not in nid_to_cid or tgt not in nid_to_eid:
+                continue
+            verb = _GRAPHIFY_VERB_MAP.get(relation, relation)
+            ensure_verb(verb)
+            confidence = edge.get("confidence") or "EXTRACTED"
+            cw = _GRAPHIFY_CONFIDENCE_W.get(confidence, 1.0)
+            weight = float(edge.get("weight") or 1.0) * cw * float(
+                edge.get("confidence_score") or 1.0
+            )
+            src_cid = nid_to_cid[src]
+            tgt_eid = nid_to_eid[tgt]
+            s.weighted_link(verb, src_cid, tgt_eid, weight=weight)
+            s.add_evidence(
+                verb, src_cid, tgt_eid,
+                file=edge.get("source_file"),
+                line=_parse_source_line(edge.get("source_location")),
+                detail=edge.get("context") or f"graphify:{confidence}",
+            )
             n += 1
     return n
 

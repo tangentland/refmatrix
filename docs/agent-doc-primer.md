@@ -47,6 +47,7 @@ Answer the first matching question:
 | "Am I exploring, proposing, or recording context that isn't a decision yet?" | **Design doc** | `docs/design/<topic>.md` |
 | "Am I declaring intent for code that should exist (a plan, spec, or issue)?" | **Plan / spec / issue doc** | `PLAN-*.md`, `ISSUE-*.md`, `SPEC-*.md`, `ROADMAP-*.md`, or anything under `plans/`, `specs/`, `issues/`, `roadmap/` |
 | "Is this transient (a session note, a retro)?" | Plain markdown | `docs/sessions/` (indexed via universal extractors only) |
+| "Do I want cross-modal edges (design↔code rationale, semantic similarity, community clusters) that no other ingest pass produces?" | **External graph cache** (see Form 7) | Run `graphify .` then `rmx graphify-warm .` |
 
 If multiple forms could fit, prefer the form *higher* in the table —
 it ranks higher on the discovery ladder.
@@ -445,6 +446,68 @@ rmx neighbors <plan-doc-path>        # should list the specified concepts
 rmx query "specifies:<X> AND NOT defines:<X>"   # finds unimplemented specs
 ```
 
+## Form 7 — Graphify knowledge graph
+
+Not a doc form you author — a *cache* refmatrix consumes. Graphify is an
+external tool that walks any folder of files and produces a community-
+detected NetworkX graph at `graphify-out/graph.json`. rmx reads that
+graph as a third ingest source (alongside llm-tldr's `metadata.json` and
+`call_graph.json`), layered additively on top of whatever the primary
+source produced.
+
+**Why it matters:** graphify extracts edges no other rmx pass can —
+`rationale_for` (design→code), `semantically_similar_to`,
+`conceptually_related_to`, `shares_data_with`, plus community clusters.
+On the refmatrix self-eval (20 NL queries, see
+`eval/run_graphify_eval.py`), graphify takes coverage from 19/20 →
+**20/20**: it catches the one query baseline can't.
+
+**Workflow:**
+
+```bash
+graphify .                       # produces graphify-out/graph.json
+rmx graphify-warm .              # ingests it
+# or in one shot, source=auto layers graphify on top:
+rmx tldr-warm . --semantic       # primary ingest
+rmx ingest . --source graphify   # additive graphify pass
+```
+
+**Verb mapping** (graphify relation → rmx linkage type):
+
+| Graphify relation         | rmx linkage type    | Notes                                |
+|---------------------------|---------------------|--------------------------------------|
+| `calls`                   | `calls`             |                                      |
+| `contains`                | `has-part`          | inverted from graphify's direction   |
+| `inherits`                | `is_a`              |                                      |
+| `implements`              | `defines`           |                                      |
+| `references`              | `mentions`          |                                      |
+| `uses`                    | `depends-on`        |                                      |
+| `cites`                   | `related_to`        |                                      |
+| `method`                  | `has-part`          |                                      |
+| `rationale_for`           | `specifies`         | **key alignment** — design→code intent |
+| `conceptually_related_to` | `related_to`        |                                      |
+| `semantically_similar_to` | `similar_to`        | auto-registered on first encounter   |
+| `shares_data_with`        | `shares_data_with`  | auto-registered                      |
+
+**Confidence weighting:** graphify tags each edge `EXTRACTED` (1.0×),
+`INFERRED` (0.5×), or `AMBIGUOUS` (0.3×). The multiplier composes with
+the edge's own `weight` × `confidence_score`, so INFERRED edges land in
+the index but are down-weighted in the scorer.
+
+**Entity naming:** graphify nodes become entities prefixed `graphify::`
+(e.g., `graphify::daemon_py`) so they don't collide with tree-walked
+entities (`src/refmatrix/daemon.py`). Both surface in `rmx grep`
+results; the discovery ladder treats them as different evidence routes
+to the same underlying file.
+
+**Self-check after warming:**
+
+```bash
+rmx stats                              # entity count should jump by ~graphify's node count
+rmx query "specifies:gf/<some-node>"   # walks rationale_for edges
+rmx query "calls:gf/<func>"            # graphify-derived call graph
+```
+
 ## Universal conventions (apply to every doc form)
 
 These work everywhere — ADR, concept doc, design doc, even plain
@@ -536,6 +599,7 @@ the relevant Form section above and fix the shape.
 | GMD (`.gmd` / `.md` with `gmd:` frontmatter) | **Indexed** — `{#id}` nodes, `rel:` typed verbs, heading `part-of`, wikilinks, alias mentions, frontmatter `imports:` |
 | Plan / spec / issue (`PLAN-*.md`, `ISSUE-*.md`, `SPEC-*.md`, `ROADMAP-*.md`, or under `plans/`, `specs/`, `issues/`, `roadmap/`) | **Indexed** — same H1+H3+fenced-class shape as concept docs, but emits `specifies` (+ inverse `specified_by`) instead of `defines`; agent can query `specifies:X AND NOT defines:X` for unimplemented specs |
 | JavaScript / TypeScript (`.js`, `.ts`) | **Indexed** — JSDoc as docstring; function / arrow / class / object-method names; param + callee identifiers via the eval-side `js_extract` (regex-first cut, no tree-sitter) |
+| Graphify cache (`graphify-out/graph.json`) | **Indexed** — nodes → `graphify::<id>` entities + `gf/<id>` concepts; edges → linkages with file:line evidence; `rationale_for` → `specifies`, `inherits` → `is_a`, `implements` → `defines`, `semantically_similar_to` → `similar_to`, etc. Confidence-weighted (`EXTRACTED` 1.0, `INFERRED` 0.5, `AMBIGUOUS` 0.3). Layered additively on top of the primary tldr/tree ingest |
 | Plain markdown | **Universal extractors apply** — ADR refs and fenced class specs extract from any markdown |
 
 All forms now indexed. Universal extractors (fenced class specs,
