@@ -453,6 +453,61 @@ def _op_vacuum(d: Daemon, args: dict) -> dict:
         return d.store.vacuum()
 
 
+def _op_upsert_entity(d: Daemon, args: dict) -> dict:
+    import json as _json
+    meta = args.get("meta")
+    if isinstance(meta, str):
+        meta = _json.loads(meta)
+    with d._store_lock:
+        eid = d.store.upsert_entity(
+            kind=args["kind"], name=args["name"],
+            path=args.get("path"), tldr=args.get("tldr"),
+            meta=meta, protected=bool(args.get("protected", True)),
+        )
+    return {"id": eid}
+
+
+def _op_add_concept(d: Daemon, args: dict) -> dict:
+    with d._store_lock:
+        cid = d.store.add_concept(
+            args["name"],
+            description=args.get("description"),
+            protected=bool(args.get("protected", True)),
+        )
+    return {"id": cid}
+
+
+def _op_add_linkage_type(d: Daemon, args: dict) -> dict:
+    with d._store_lock:
+        lid = d.store.add_linkage_type(
+            name=args["name"],
+            directed=bool(args.get("directed", True)),
+            description=args.get("description"),
+        )
+    return {"id": lid}
+
+
+def _op_iter_entities(d: Daemon, args: dict) -> dict:
+    kind = args.get("kind")
+    with d._store_lock:
+        rows = [
+            {"id": e.id, "kind": e.kind, "name": e.name,
+             "path": e.path, "tldr": e.tldr}
+            for e in d.store.iter_entities(kind)
+        ]
+    return {"rows": rows}
+
+
+def _op_list_linkages(d: Daemon, args: dict) -> dict:
+    with d._store_lock:
+        return {"rows": d.store.list_linkages()}
+
+
+def _op_list_saved_queries(d: Daemon, args: dict) -> dict:
+    with d._store_lock:
+        return {"rows": list(d.store.list_saved_queries())}
+
+
 def _op_query(d: Daemon, args: dict) -> dict:
     """Run a DSL or PQL expression and return result ids + names rendered
     as text or json. Routes through the daemon so reads work while the
@@ -565,6 +620,12 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "sync_since": _op_sync_since,
     "context": _op_context,
     "query": _op_query,
+    "upsert_entity": _op_upsert_entity,
+    "add_concept": _op_add_concept,
+    "add_linkage_type": _op_add_linkage_type,
+    "iter_entities": _op_iter_entities,
+    "list_linkages": _op_list_linkages,
+    "list_saved_queries": _op_list_saved_queries,
     "prune_noise": _op_prune_noise,
     "vacuum": _op_vacuum,
     "stats": _op_stats,

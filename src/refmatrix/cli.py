@@ -403,10 +403,21 @@ def list_grp():
                    "from vacuum and prune-noise.")
 def add_entity(kind, name, path, tldr, meta, no_protect):
     """Insert or update an entity. Manual adds are protected by default."""
-    s = _store()
-    meta_d = json.loads(meta) if meta else None
-    eid = s.upsert_entity(kind=kind, name=name, path=path, tldr=tldr,
-                          meta=meta_d, protected=not no_protect)
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "upsert_entity", {
+            "kind": kind, "name": name, "path": path, "tldr": tldr,
+            "meta": meta, "protected": not no_protect,
+        })
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        eid = resp["result"]["id"]
+    else:
+        s = _store()
+        meta_d = json.loads(meta) if meta else None
+        eid = s.upsert_entity(kind=kind, name=name, path=path, tldr=tldr,
+                              meta=meta_d, protected=not no_protect)
     pinned = "" if no_protect else " (pinned)"
     console.print(f"[green]upserted[/] {kind}:{name} (id={eid}){pinned}")
 
@@ -421,8 +432,19 @@ main.add_command(_alias(add_entity, "add-entity"))
               help="Don't pin this concept. By default manual adds are protected.")
 def add_concept(name, description, no_protect):
     """Add a concept (= entity of kind 'concept'). Pinned by default."""
-    s = _store()
-    cid = s.add_concept(name, description=description, protected=not no_protect)
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "add_concept", {
+            "name": name, "description": description,
+            "protected": not no_protect,
+        })
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        cid = resp["result"]["id"]
+    else:
+        s = _store()
+        cid = s.add_concept(name, description=description, protected=not no_protect)
     pinned = "" if no_protect else " (pinned)"
     console.print(f"[green]added concept[/] {name} (id={cid}){pinned}")
 
@@ -434,10 +456,21 @@ main.add_command(_alias(add_concept, "add-concept"))
 @click.option("--kind", type=click.Choice(["doc", "code", "concept"]), default=None)
 def list_entities(kind):
     """List entities."""
-    s = _store()
+    from refmatrix import daemon as daemon_mod
+    root = _root()
     t = Table("id", "kind", "name", "path", "tldr")
-    for e in s.iter_entities(kind):
-        t.add_row(str(e.id), e.kind, e.name, e.path or "", (e.tldr or "")[:80])
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "iter_entities", {"kind": kind})
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        for r in resp["result"]["rows"]:
+            t.add_row(str(r["id"]), r["kind"], r["name"], r["path"] or "",
+                      (r["tldr"] or "")[:80])
+    else:
+        s = _store()
+        for e in s.iter_entities(kind):
+            t.add_row(str(e.id), e.kind, e.name, e.path or "",
+                      (e.tldr or "")[:80])
     console.print(t)
 
 
@@ -453,8 +486,19 @@ main.add_command(_alias(list_entities, "list-entities"))
 @click.option("--description", "-d", default=None)
 def add_linkage_type(name, directed, description):
     """Define a custom linkage type."""
-    s = _store()
-    lid = s.add_linkage_type(name=name, directed=directed, description=description)
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "add_linkage_type", {
+            "name": name, "directed": directed, "description": description,
+        })
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        lid = resp["result"]["id"]
+    else:
+        s = _store()
+        lid = s.add_linkage_type(name=name, directed=directed,
+                                 description=description)
     console.print(f"[green]linkage type[/] {name} (id={lid})")
 
 
@@ -464,10 +508,20 @@ main.add_command(_alias(add_linkage_type, "add-linkage-type"))
 @list_grp.command("linkages")
 def list_linkages():
     """List linkage types."""
-    s = _store()
+    from refmatrix import daemon as daemon_mod
+    root = _root()
     t = Table("id", "name", "directed", "description")
-    for lk in s.list_linkages():
-        t.add_row(str(lk["id"]), lk["name"], "yes" if lk["directed"] else "no", lk["description"] or "")
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "list_linkages", {})
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        rows = resp["result"]["rows"]
+    else:
+        rows = _store().list_linkages()
+    for lk in rows:
+        t.add_row(str(lk["id"]), lk["name"],
+                  "yes" if lk["directed"] else "no",
+                  lk["description"] or "")
     console.print(t)
 
 
@@ -841,9 +895,17 @@ def run(name, is_pql, ids_only, limit):
 @list_grp.command("queries")
 def list_queries():
     """List saved queries."""
-    s = _store()
+    from refmatrix import daemon as daemon_mod
+    root = _root()
     t = Table("name", "body")
-    for n, b in s.list_saved_queries():
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "list_saved_queries", {})
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        rows = resp["result"]["rows"]
+    else:
+        rows = list(_store().list_saved_queries())
+    for n, b in rows:
         t.add_row(n, b)
     console.print(t)
 
