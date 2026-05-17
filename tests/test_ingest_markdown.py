@@ -231,6 +231,64 @@ The contract.
     assert any("binding-result-contract.md" in n for n in names), names
 
 
+def test_plan_file_emits_specifies_from_h1(store, tmp_path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    _make(project, "PLAN-zone-overhaul.md", """\
+# ZoneOverhaul
+
+Plan body.
+""")
+    ingest_path(store, project)
+    qe = QueryEngine(store)
+    names = _names_of(store, qe.run("specifies:ZoneOverhaul"))
+    assert any("PLAN-zone-overhaul.md" in n for n in names), names
+    # Sanity: should NOT emit defines for plan content
+    assert list(qe.run("defines:ZoneOverhaul")) == []
+
+
+def test_plan_file_h3_emits_specifies_subentity(store, tmp_path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    _make(project, "ISSUE-spatial-fix.md", """\
+# SpatialFix
+
+## Components
+
+### Zone
+
+The zone needs reactive behavior.
+
+### Place
+
+A place subclasses Zone.
+""")
+    ingest_path(store, project)
+    qe = QueryEngine(store)
+    for concept in ("Zone", "Place"):
+        names = _names_of(store, qe.run(f"specifies:{concept}"))
+        assert any(f"::{concept}" in n for n in names), (
+            f"missing specifies sub-entity for {concept}: {names}"
+        )
+    # is_a still flows from prose
+    zone_children = _names_of(store, qe.run("is_a:Zone"))
+    assert any("::Place" in n for n in zone_children), zone_children
+
+
+def test_plan_file_dir_match(store, tmp_path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    _make(project, "docs/plans/migration.md", """\
+# Migration
+
+Plan body.
+""")
+    ingest_path(store, project)
+    qe = QueryEngine(store)
+    names = _names_of(store, qe.run("specifies:Migration"))
+    assert any("migration.md" in n for n in names), names
+
+
 def test_fenced_class_spec_in_design_doc(store, tmp_path):
     project = tmp_path / "proj"
     project.mkdir()

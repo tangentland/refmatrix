@@ -24,7 +24,7 @@ from refmatrix.store import Store
 
 # ---- spec syntax patterns -------------------------------------------------
 
-_ID_RE = re.compile(r"\{#([a-z0-9][a-z0-9._-]*)([^}]*)\}")
+_ID_RE = re.compile(r"\{#([a-z0-9][a-z0-9._/-]*)([^}]*)\}")
 _WIKILINK_RE = re.compile(r"\[\[([^\[\]]+)\]\]")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _REL_RE = re.compile(

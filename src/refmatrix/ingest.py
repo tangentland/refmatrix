@@ -898,6 +898,18 @@ def _looks_like_class_block(lines: list[str], lineno_1based: int) -> bool:
 # names appears in its path. Concept docs get H1 + H3 extraction.
 _CONCEPT_DOC_DIRS = frozenset({"concepts", "concept", "glossary"})
 
+# Plan-doc detection: a markdown file is a plan/spec/issue if filename or any
+# path segment matches. Plan docs get the same H1+H3 extraction as concept
+# docs but emit `specifies` (not `defines`) so provenance back to the spec
+# survives queries on the produced concept.
+_PLAN_DOC_DIRS = frozenset({
+    "plans", "plan", "specs", "spec", "issues", "issue", "roadmap",
+})
+_PLAN_FILENAME_RE = re.compile(
+    r"^(?:PLAN|ISSUE|SPEC|ROADMAP)(?:[-_][\w.\-]+)?\.md$",
+    re.IGNORECASE,
+)
+
 # Bold-labeled metadata refs in design-doc headers.
 # Matches: **Source:** path.md  /  **Referenced by:** a.md, b.md
 _MD_BOLD_LABEL_RE = re.compile(
@@ -933,6 +945,14 @@ _MD_SUBCLASS_BOTH_RE = re.compile(
 
 def _is_concept_doc(file_path: Path) -> bool:
     return any(part.lower() in _CONCEPT_DOC_DIRS for part in file_path.parts)
+
+
+def _is_plan_file(file_path: Path) -> bool:
+    if file_path.suffix.lower() != ".md":
+        return False
+    if _PLAN_FILENAME_RE.match(file_path.name):
+        return True
+    return any(part.lower() in _PLAN_DOC_DIRS for part in file_path.parts)
 
 
 def _kebab_to_pascal(stem: str) -> str:
@@ -1049,16 +1069,26 @@ def _ingest_markdown_semantics(
                        file=rel, detail=f"references ADR-{ref_num}")
         n += 1
 
-    # 3. Concept-doc heuristic
+    # 3. Concept-doc / plan-doc heuristic. Both share the H1+H3 emitter; the
+    # verb differs: concept docs `define`, plans/specs/issues `specify` (so a
+    # query for the produced concept can trace back to the spec that drove it).
+    is_plan = _is_plan_file(file_path)
     if _is_concept_doc(file_path):
         n += _emit_concept_doc_linkages(
             s, lines, rel, doc_eid, file_path, get_concept,
         )
+    elif is_plan:
+        n += _emit_concept_doc_linkages(
+            s, lines, rel, doc_eid, file_path, get_concept,
+            verb="specifies",
+        )
 
-    # 4. Fenced code-block class specs (universal). Weight 0.5 since the
-    # source isn't a binding decision like an ADR.
+    # 4. Fenced code-block class specs (universal). Plans emit `specifies`,
+    # other docs `defines`. Weight 0.5 since the source isn't a binding
+    # decision like an ADR.
     n += _emit_md_fenced_class_specs(
         s, lines, rel, doc_eid, file_path, get_concept, weight=0.5,
+        verb="specifies" if is_plan else "defines",
     )
 
     return n
@@ -1137,30 +1167,33 @@ def _emit_concept_doc_linkages(
     doc_eid: int,
     file_path: Path,
     get_concept,
+    verb: str = "defines",
 ) -> int:
-    """Concept-doc-only: filename + H1 → defines this doc; H3 PascalCase →
-    sub-entity with defines + is_a-from-prose."""
+    """Concept-doc shape: filename + H1 → <verb> this doc; H3 PascalCase →
+    sub-entity with <verb> + is_a-from-prose. `verb` is "defines" for concept
+    docs / glossary entries, "specifies" for plan / issue / spec files (where
+    the doc declares intent for code that should exist)."""
     n = 0
 
-    # Filename stem → PascalCase concept defines this doc
+    # Filename stem → PascalCase concept linked to this doc
     stem = file_path.stem
     fname_concept = _kebab_to_pascal(stem)
     if fname_concept:
         cid = get_concept(fname_concept)
-        s.link("defines", cid, doc_eid)
-        s.add_evidence("defines", cid, doc_eid, file=rel,
+        s.link(verb, cid, doc_eid)
+        s.add_evidence(verb, cid, doc_eid, file=rel,
                        detail=f"concept doc filename: {stem}")
         n += 1
 
-    # H1 first CamelCase token defines this doc
+    # H1 first CamelCase token linked to this doc
     for line in lines:
         h1 = _MD_H1_RE.match(line)
         if h1:
             first = _MD_FIRST_CAMEL_RE.search(h1.group(1))
             if first:
                 cid = get_concept(first.group(1))
-                s.link("defines", cid, doc_eid)
-                s.add_evidence("defines", cid, doc_eid, file=rel, line=1,
+                s.link(verb, cid, doc_eid)
+                s.add_evidence(verb, cid, doc_eid, file=rel, line=1,
                                detail=f"H1 concept: {first.group(1)}")
                 n += 1
             break
@@ -1195,8 +1228,8 @@ def _emit_concept_doc_linkages(
                   "line": start},
         )
         cc = get_concept(name)
-        s.link("defines", cc, sub_eid)
-        s.add_evidence("defines", cc, sub_eid, file=rel, line=start,
+        s.link(verb, cc, sub_eid)
+        s.add_evidence(verb, cc, sub_eid, file=rel, line=start,
                        detail=f"H3 concept: {name}")
         n += 1
 
@@ -1224,7 +1257,7 @@ def _emit_concept_doc_linkages(
                           "line": start},
                 )
                 cc2 = get_concept(child)
-                s.link("defines", cc2, target_eid)
+                s.link(verb, cc2, target_eid)
                 n += 1
             pc = get_concept(parent)
             s.link("is_a", pc, target_eid)
@@ -1256,10 +1289,12 @@ def _emit_md_fenced_class_specs(
     file_path: Path,
     get_concept,
     weight: float,
+    verb: str = "defines",
 ) -> int:
     """Universal: parse fenced code blocks for class specs (Name: + indented
     body). Mirrors the ADR class-spec parser but only handles fenced blocks
-    (no indented-pseudocode case — that's too noisy outside ADRs).
+    (no indented-pseudocode case — that's too noisy outside ADRs). `verb` is
+    "defines" by default; plan/spec files pass "specifies".
     """
     n = 0
     in_fence = False
@@ -1292,8 +1327,8 @@ def _emit_md_fenced_class_specs(
                       "line": lineno},
             )
             cc = get_concept(child)
-            s.weighted_link("defines", cc, child_eid, weight=weight)
-            s.add_evidence("defines", cc, child_eid, file=rel, line=lineno,
+            s.weighted_link(verb, cc, child_eid, weight=weight)
+            s.add_evidence(verb, cc, child_eid, file=rel, line=lineno,
                            detail=f"subclass tree {child}")
             n += 1
             for parent in (p.strip() for p in parents_str.split(",")):
@@ -1319,8 +1354,8 @@ def _emit_md_fenced_class_specs(
             )
             cur_class_name = name
             cid = get_concept(name)
-            s.weighted_link("defines", cid, cur_class_eid, weight=weight)
-            s.add_evidence("defines", cid, cur_class_eid, file=rel, line=lineno,
+            s.weighted_link(verb, cid, cur_class_eid, weight=weight)
+            s.add_evidence(verb, cid, cur_class_eid, file=rel, line=lineno,
                            detail=f"fenced class spec {name}")
             n += 1
             for parent in (p.strip() for p in parents_str.split(",")):

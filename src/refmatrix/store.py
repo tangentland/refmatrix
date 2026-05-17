@@ -164,6 +164,11 @@ DEFAULT_LINKAGES = [
     ("imports",      1, None, "entity imports module/concept"),
     ("is_a",         1, None, "concept is a subtype of concept"),
     ("related_to",   0, None, "undirected association"),
+    # Provenance: a plan / spec / issue entity specifies a concept that some
+    # downstream code is meant to realize. Lets queries trace "what produced
+    # this class?" back through the spec that drove it.
+    ("specifies",    1, None, "plan/spec entity specifies concept"),
+    ("specified_by", 1, "specifies", "inverse of specifies"),
     # Cross-partition canonicalization: a per-partition concept points at a
     # canonical concept (typically in a 'canon' partition) so queries in one
     # repo's partition can find sibling concepts in another repo's partition
