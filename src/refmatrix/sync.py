@@ -18,8 +18,12 @@ from pathlib import Path
 from refmatrix.ingest import (
     CODE_EXTS,
     DOC_EXTS,
-    _ingest_tldr,
+    _ingest_adr_semantics,
+    _ingest_markdown_semantics,
+    _ingest_pseudo_semantics,
     _ingest_python_semantics,
+    _ingest_tldr,
+    _is_adr_file,
 )
 from refmatrix.store import Store
 
@@ -155,6 +159,52 @@ def _sync_paths(
         # idempotent because of the upsert + idempotent link semantics. The
         # forward index keeps deletes correct already (handled above).
         _ingest_tldr(s, project_root)
+
+    # Per-file semantic extraction for markdown + pseudocode. `ingest_path`
+    # runs these as part of the full tree walk; without this branch, sync
+    # only upserts the file entity and the structural extractors (ADR
+    # header fields, fenced class specs, concept-doc H3 sub-entities, etc.)
+    # never run on edited files — so an edited .md silently loses its
+    # ::Section / defines:Concept linkages until the next full ingest.
+    md_touched = [ap for ap in touched_existing if ap.suffix.lower() == ".md"]
+    pseudo_touched = [ap for ap in touched_existing if ap.suffix.lower() == ".pseudo"]
+
+    for ap in pseudo_touched:
+        _ingest_pseudo_semantics(s, ap, project_root)
+
+    if md_touched:
+        # ADR cross-references resolve via adr_num_to_eid: map ADR number
+        # (e.g. "0087") -> entity id. Touched ADR files contribute current
+        # state; pre-existing ADR entities in the catalog cover refs from
+        # newly edited generic docs to ADRs that weren't part of this sync.
+        adr_num_to_eid: dict[str, int] = {}
+        adr_touched: list[Path] = []
+        for ap in md_touched:
+            adr_num = _is_adr_file(ap)
+            if adr_num is not None:
+                adr_touched.append(ap)
+                e = s.get_entity("doc", _relpath(ap, project_root))
+                if e is not None:
+                    adr_num_to_eid[adr_num] = e.id
+
+        # Backfill ADR map from existing catalog so non-touched ADRs are
+        # still resolvable from a touched generic-doc's cross-references.
+        import re as _re
+        adr_fn_re = _re.compile(r"/adr/(\d{4})-")
+        for row in s._connect().execute(
+            "SELECT id, name FROM entities WHERE kind='doc' AND name LIKE '%/adr/%'"
+        ).fetchall():
+            m = adr_fn_re.search(row["name"])
+            if m:
+                adr_num_to_eid.setdefault(m.group(1), row["id"])
+
+        for ap in adr_touched:
+            _ingest_adr_semantics(s, ap, project_root, adr_num_to_eid)
+
+        for ap in md_touched:
+            if _is_adr_file(ap) is not None:
+                continue
+            _ingest_markdown_semantics(s, ap, project_root, adr_num_to_eid)
 
     if semantic:
         for ap in touched_existing:
