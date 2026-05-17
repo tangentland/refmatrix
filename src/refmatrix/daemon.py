@@ -141,8 +141,12 @@ class Daemon:
 
     def serve_forever(self) -> int:
         sock_path = socket_path(self.root)
-        # Clean up any stale socket left from a crashed daemon. We've
-        # already verified upstream that no live daemon is using it.
+        # Defensive: if another daemon is somehow alive on this socket
+        # (concurrent spawn that slipped past the parent's flock), bail
+        # instead of unlinking and stomping it.
+        if sock_path.exists() and ping(self.root, timeout=0.2):
+            return 0
+        # Clean up any stale socket left from a crashed daemon.
         if sock_path.exists():
             sock_path.unlink()
 
@@ -339,10 +343,14 @@ def spawn_daemon(root: Path, *, partition: str | None = None,
     root = Path(root).resolve()
     root.mkdir(parents=True, exist_ok=True)
 
-    # Fast path before locking.
-    existing = read_pid(root)
-    if existing is not None and ping(root):
-        return existing
+    # Fast path before locking. Trust ping(): a healthy socket means a
+    # daemon is up even if `rmxd.pid` is missing or stale (an orphaned
+    # daemon whose pid file was overwritten by a losing concurrent
+    # spawn — see the bind-race below).
+    if ping(root):
+        existing = read_pid(root)
+        if existing is not None:
+            return existing
 
     lock_path = root / "daemon.lock"
     lockf = lock_path.open("w")
@@ -353,9 +361,28 @@ def spawn_daemon(root: Path, *, partition: str | None = None,
         # then re-check and return the now-running pid.
         fcntl.flock(lockf.fileno(), fcntl.LOCK_EX)
 
-        existing = read_pid(root)
-        if existing is not None and ping(root):
-            return existing
+        # Re-check under the lock. Use ping() as the authoritative signal:
+        # the previous daemon's serve_forever() unlinks any prior socket
+        # file before binding (so a losing concurrent spawn would have
+        # stomped the original socket path with a now-dead bind). If ping
+        # answers, *someone* is alive on the socket; treat it as the
+        # daemon and don't start another that would just re-race.
+        if ping(root):
+            existing = read_pid(root)
+            if existing is not None:
+                return existing
+            # ping ok but pid file gone — orphaned-but-functional daemon.
+            # Return its pid via the ping reply.
+            try:
+                resp = call(root, "ping", timeout=0.5)
+                pid = (resp.get("result") or {}).get("pid")
+                if isinstance(pid, int):
+                    return pid
+            except Exception:
+                pass
+            # Couldn't get a pid, but it's serving — caller doesn't strictly
+            # need one. Return -1 as a sentinel.
+            return -1
 
         # Two-stage fork so the daemon becomes session leader, untied from
         # the parent shell. Standard double-fork incantation. The child
