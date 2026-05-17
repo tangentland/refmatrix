@@ -1010,8 +1010,11 @@ def tldr_warm(path, tldr_bin, semantic, lang):
               help="Re-run Python semantic enrichment for touched files.")
 @click.option("--enqueue-only", is_flag=True,
               help="Just append paths to dirty.queue and return; don't sync.")
+@click.option("--async", "async_flag", is_flag=True,
+              help="Fire-and-forget: hand the flush to the daemon and return "
+                   "immediately. Hook-friendly. No-op without a running daemon.")
 def sync(files, since, flush_queue, invalidate, project_root, semantic,
-         enqueue_only):
+         enqueue_only, async_flag):
     """Incrementally update the matrix for given files / git changes / queued paths."""
     from refmatrix import sync as syncmod
 
@@ -1040,9 +1043,13 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
         root = _root()
         if daemon_mod.ping(root):
             proot = (project_root or Path.cwd()).resolve()
-            op = "flush_queue" if flush_queue else "sync_files"
             args: dict = {"project_root": str(proot), "semantic": semantic}
-            if not flush_queue:
+            if async_flag and flush_queue:
+                op = "flush_queue_async"
+            elif flush_queue:
+                op = "flush_queue"
+            else:
+                op = "sync_files"
                 args["files"] = [str(p) for p in files]
             resp = daemon_mod.call(root, op, args)
             if not resp.get("ok"):
@@ -1050,11 +1057,20 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
                     f"daemon {op} failed: {resp.get('error')}"
                 )
             r = resp["result"]
-            console.print(
-                f"[green]synced[/] +{r['added']} ~{r['updated']} "
-                f"-{r['purged']} (touched={r['touched']}) [daemon]"
-            )
+            if op == "flush_queue_async":
+                tag = "queued" if r.get("queued") else "coalesced"
+                console.print(f"[green]flush {tag}[/] [daemon]")
+            else:
+                console.print(
+                    f"[green]synced[/] +{r['added']} ~{r['updated']} "
+                    f"-{r['purged']} (touched={r['touched']}) [daemon]"
+                )
             return
+        if async_flag and flush_queue:
+            # --async only buys you the daemon's fire-and-forget. Without a
+            # daemon, fall through to the in-process synchronous flush —
+            # at least the work gets done.
+            pass
 
     s = _store()
     proot = (project_root or Path.cwd()).resolve()

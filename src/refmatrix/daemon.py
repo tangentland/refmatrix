@@ -124,6 +124,14 @@ class Daemon:
         self.store: Store | None = None
         self._stop = False
         self.log_fh = None
+        # Async flush worker — single thread, serialized via a lock so it
+        # never races the synchronous request handler on the shared Store.
+        # Coalesces multiple fire-and-forget flush requests: if a flush is
+        # already pending, additional `flush_async` calls are no-ops.
+        import threading
+        self._store_lock = threading.Lock()
+        self._async_flush_pending = False
+        self._async_lock = threading.Lock()
 
     def _log(self, msg: str) -> None:
         if self.log_fh is None:
@@ -233,8 +241,42 @@ def _op_flush_queue(d: Daemon, args: dict) -> dict:
     from refmatrix import sync as syncmod
     proot = Path(args.get("project_root") or Path.cwd()).resolve()
     semantic = bool(args.get("semantic"))
-    report = syncmod.flush_queue(d.store, project_root=proot, semantic=semantic)
+    with d._store_lock:
+        report = syncmod.flush_queue(
+            d.store, project_root=proot, semantic=semantic,
+        )
     return report
+
+
+def _op_flush_queue_async(d: Daemon, args: dict) -> dict:
+    """Fire-and-forget flush: ACK immediately, run the flush on a
+    background thread. Coalesces — if a flush is already pending, this
+    becomes a no-op so a burst of Edit hooks doesn't spawn N threads."""
+    import threading
+    from refmatrix import sync as syncmod
+    proot = Path(args.get("project_root") or Path.cwd()).resolve()
+    semantic = bool(args.get("semantic"))
+
+    with d._async_lock:
+        if d._async_flush_pending:
+            return {"queued": False, "reason": "flush already pending"}
+        d._async_flush_pending = True
+
+    def _runner():
+        try:
+            with d._store_lock:
+                syncmod.flush_queue(
+                    d.store, project_root=proot, semantic=semantic,
+                )
+        except Exception as exc:
+            d._log(f"async flush failed: {exc!r}")
+        finally:
+            with d._async_lock:
+                d._async_flush_pending = False
+
+    t = threading.Thread(target=_runner, name="rmxd-async-flush", daemon=True)
+    t.start()
+    return {"queued": True}
 
 
 def _op_sync_files(d: Daemon, args: dict) -> dict:
@@ -242,10 +284,11 @@ def _op_sync_files(d: Daemon, args: dict) -> dict:
     proot = Path(args.get("project_root") or Path.cwd()).resolve()
     files = args.get("files") or []
     semantic = bool(args.get("semantic"))
-    report = syncmod.sync_files(
-        d.store, [str(p) for p in files],
-        project_root=proot, semantic=semantic,
-    )
+    with d._store_lock:
+        report = syncmod.sync_files(
+            d.store, [str(p) for p in files],
+            project_root=proot, semantic=semantic,
+        )
     return report
 
 
@@ -258,6 +301,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "ping": _op_ping,
     "enqueue": _op_enqueue,
     "flush_queue": _op_flush_queue,
+    "flush_queue_async": _op_flush_queue_async,
     "sync_files": _op_sync_files,
     "stop": _op_stop,
 }
