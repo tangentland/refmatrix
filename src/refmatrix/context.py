@@ -48,6 +48,11 @@ class ContextEntry:
     entity: Entity
     linkage: str
     weight: float | None = None
+    # Where in the source the linkage was first emitted. Populated from
+    # `linkage_evidence` when available — text/JSON renderers print it as
+    # `file:line` so callers can jump straight to the line.
+    file: str | None = None
+    line: int | None = None
 
 
 @dataclass
@@ -98,11 +103,21 @@ def build_context(
     else:
         rows_iter = _entity_anchored_rows(s, e.id, ordered, max_entities)
 
+    # Pull evidence rows for the anchor concept up front so we don't issue
+    # one SELECT per entry. Keyed by (entity_id, linkage_name); when an
+    # extractor wrote multiple evidence rows for the same (entity, linkage,
+    # concept) triple we keep the lowest line — that's the most useful
+    # "jump to here" target.
+    evidence = _evidence_index(s, e) if e.kind == "concept" else {}
+
     for linkage, eid, weight in rows_iter:
         ent = s.get_entity_by_id(eid)
         if ent is None or ent.id == e.id:
             continue
         entry = ContextEntry(entity=ent, linkage=linkage, weight=weight)
+        file_line = evidence.get((eid, linkage))
+        if file_line is not None:
+            entry.file, entry.line = file_line
         cost = estimate_tokens(_render_entry(entry))
         if used + cost > max_tokens:
             bundle.truncated = True
@@ -115,6 +130,35 @@ def build_context(
 
     bundle.estimated_tokens = used
     return bundle
+
+
+def _evidence_index(
+    s: Store, anchor: Entity
+) -> dict[tuple[int, str], tuple[str | None, int | None]]:
+    """Return {(entity_id, linkage_name): (file, line)} for every evidence
+    row pointing at `anchor` (a concept). Picks the lowest line per group
+    so the printed target is the first occurrence in the source."""
+    con = s._connect()
+    rows = con.execute(
+        """
+        SELECT ev.entity_id, lt.name AS linkage,
+               ev.file, MIN(ev.line) AS line
+        FROM linkage_evidence ev
+        JOIN linkage_types lt ON lt.id = ev.linkage_id
+        WHERE ev.concept_id = ?
+        GROUP BY ev.entity_id, lt.name, ev.file
+        """,
+        (anchor.id,),
+    ).fetchall()
+    out: dict[tuple[int, str], tuple[str | None, int | None]] = {}
+    for r in rows:
+        key = (r["entity_id"], r["linkage"])
+        # If multiple files recorded evidence for the same (entity, linkage),
+        # the first one we see wins. They're typically the same file anyway
+        # (the entity's own source).
+        if key not in out:
+            out[key] = (r["file"], r["line"])
+    return out
 
 
 def _fused_rows(s: Store, anchor: Entity, linkages: list[str], cap: int):
@@ -228,7 +272,12 @@ def _render_entry(e: ContextEntry) -> str:
     if e.entity.tldr:
         line += f"\n    {e.entity.tldr}"
     elif e.entity.path:
-        line += f"\n    {e.entity.path}"
+        # Append :line when we have one from linkage_evidence so editors
+        # / readers can jump straight to the relevant source location.
+        location = e.entity.path
+        if e.line is not None:
+            location = f"{location}:{e.line}"
+        line += f"\n    {location}"
     return line
 
 
@@ -280,6 +329,8 @@ def render_json(b: ContextBundle) -> str:
                         "tldr": e.entity.tldr,
                         "weight": e.weight,
                         "linkage": e.linkage,
+                        "file": e.file,
+                        "line": e.line,
                     }
                     for e in entries
                 ]
