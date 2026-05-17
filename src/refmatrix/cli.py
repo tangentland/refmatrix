@@ -1035,10 +1035,12 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
         console.print(f"[green]enqueued[/] {len(files)} paths")
         return
 
-    # Try the daemon for flush-queue / sync_files paths first — it holds
-    # the Store open across many calls so we skip DuckDB lock acquisition.
-    # Falls back to in-process when no daemon is running.
-    if flush_queue or (files and not since and not invalidate):
+    # Try the daemon for sync paths first — it holds the Store open across
+    # many calls so we skip DuckDB lock acquisition. Falls back to
+    # in-process when no daemon is running.
+    if (flush_queue
+            or (files and not since and not invalidate)
+            or (since and not invalidate)):
         from refmatrix import daemon as daemon_mod
         root = _root()
         if daemon_mod.ping(root):
@@ -1048,10 +1050,16 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
                 op = "flush_queue_async"
             elif flush_queue:
                 op = "flush_queue"
+            elif since:
+                op = "sync_since"
+                args["git_ref"] = since
             else:
                 op = "sync_files"
                 args["files"] = [str(p) for p in files]
-            resp = daemon_mod.call(root, op, args)
+            # `--since` over a big diff can take real time; bump the client
+            # socket timeout to match. Async path stays sub-second.
+            timeout = 60.0 if op == "flush_queue_async" else 600.0
+            resp = daemon_mod.call(root, op, args, timeout=timeout)
             if not resp.get("ok"):
                 raise click.ClickException(
                     f"daemon {op} failed: {resp.get('error')}"

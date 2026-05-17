@@ -292,6 +292,22 @@ def _op_sync_files(d: Daemon, args: dict) -> dict:
     return report
 
 
+def _op_sync_since(d: Daemon, args: dict) -> dict:
+    """Run `sync_since` through the daemon's long-lived Store. Targets the
+    git post-commit hook (`rmx sync --since HEAD~1`), which used to grab
+    the catalog write lock outside the daemon and block every other
+    flush for the duration of a 100+ file diff."""
+    from refmatrix import sync as syncmod
+    proot = Path(args.get("project_root") or Path.cwd()).resolve()
+    git_ref = args["git_ref"]
+    semantic = bool(args.get("semantic"))
+    with d._store_lock:
+        report = syncmod.sync_since(
+            d.store, git_ref, project_root=proot, semantic=semantic,
+        )
+    return report
+
+
 def _op_stop(d: Daemon, args: dict) -> dict:
     d._stop = True
     return {"stopping": True}
@@ -303,6 +319,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "flush_queue": _op_flush_queue,
     "flush_queue_async": _op_flush_queue_async,
     "sync_files": _op_sync_files,
+    "sync_since": _op_sync_since,
     "stop": _op_stop,
 }
 
