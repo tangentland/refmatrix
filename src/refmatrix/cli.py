@@ -597,6 +597,28 @@ def neighbors(concept, depth, linkage, limit, include_noise):
 def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse):
     """Token-budgeted context bundle: anchor + neighbors + their tldr blobs."""
     from refmatrix.context import build_context, render_json, render_text
+    from refmatrix import daemon as daemon_mod
+
+    # If a daemon is up, route the simple `context <symbol>` path through
+    # the socket before trying to open the catalog ourselves — DuckDB
+    # blocks cross-process reads while the daemon holds the write lock.
+    if symbol and not since:
+        root = _root()
+        if daemon_mod.ping(root):
+            resp = daemon_mod.call(root, "context", {
+                "ref": symbol,
+                "format": fmt,
+                "linkages": list(linkage) or None,
+                "max_entities": max_entities,
+                "max_tokens": max_tokens,
+                "fuse": fuse,
+            }, timeout=120.0)
+            if not resp.get("ok"):
+                raise click.ClickException(
+                    f"daemon context failed: {resp.get('error')}"
+                )
+            click.echo(resp["result"]["body"])
+            return
 
     s = _store()
 

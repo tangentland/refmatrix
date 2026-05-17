@@ -412,6 +412,29 @@ def _op_sync_since(d: Daemon, args: dict) -> dict:
     return report
 
 
+def _op_context(d: Daemon, args: dict) -> dict:
+    """Build a context bundle and return its rendered form. Read-side
+    operations have to route through the daemon too because DuckDB blocks
+    cross-process reads while another process holds the write lock."""
+    from refmatrix.context import build_context, render_json, render_text
+    ref = args["ref"]
+    fmt = args.get("format", "text")
+    linkages = args.get("linkages") or None
+    max_entities = int(args.get("max_entities", 20))
+    max_tokens = int(args.get("max_tokens", 4000))
+    fuse = bool(args.get("fuse", False))
+    with d._store_lock:
+        bundle = build_context(
+            d.store, ref,
+            linkages=linkages,
+            max_entities=max_entities,
+            max_tokens=max_tokens,
+            fuse=fuse,
+        )
+    body = render_json(bundle) if fmt == "json" else render_text(bundle)
+    return {"body": body}
+
+
 def _op_stop(d: Daemon, args: dict) -> dict:
     d._stop = True
     return {"stopping": True}
@@ -424,6 +447,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "flush_queue_async": _op_flush_queue_async,
     "sync_files": _op_sync_files,
     "sync_since": _op_sync_since,
+    "context": _op_context,
     "stop": _op_stop,
 }
 
