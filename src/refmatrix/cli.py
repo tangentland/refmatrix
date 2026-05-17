@@ -986,7 +986,23 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
     if since:
         report = syncmod.sync_since(s, since, project_root=proot, semantic=semantic)
     elif flush_queue:
-        report = syncmod.flush_queue(s, project_root=proot, semantic=semantic)
+        # Single-flight: hook setups commonly fire `rmx sync --flush-queue`
+        # from Stop, SubagentStop, SessionStart, etc. With the DuckDB
+        # backend each invocation needs an exclusive write lock on
+        # catalog.duckdb, so concurrent invocations pile up. The queue is
+        # shared anyway — if another flush is already running it will drain
+        # whatever this call would have. Skip the duplicate silently.
+        import fcntl
+        lock_path = s.root / "flush.lock"
+        with lock_path.open("w") as lockf:
+            try:
+                fcntl.flock(lockf.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                console.print("[dim]flush already running — skipping[/]")
+                return
+            report = syncmod.flush_queue(
+                s, project_root=proot, semantic=semantic,
+            )
     elif files:
         report = syncmod.sync_files(s, [str(p) for p in files],
                                     project_root=proot, semantic=semantic)
