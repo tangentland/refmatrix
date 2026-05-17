@@ -838,7 +838,7 @@ def run(name, is_pql, ids_only, limit):
     _print_bitmap(s, result, limit=limit)
 
 
-@main.command("list-queries")
+@list_grp.command("queries")
 def list_queries():
     """List saved queries."""
     s = _store()
@@ -846,6 +846,9 @@ def list_queries():
     for n, b in s.list_saved_queries():
         t.add_row(n, b)
     console.print(t)
+
+
+main.add_command(_alias(list_queries, "list-queries"))
 
 
 # ---- stats / export -------------------------------------------------------
