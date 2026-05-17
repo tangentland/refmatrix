@@ -44,7 +44,11 @@ def _read_jsonl(path: Path) -> list[dict]:
 def load_beir(root: Path | str, name: str | None = None) -> BeirDataset:
     root = Path(root)
     corpus = {
-        d["_id"]: {"text": d.get("text", ""), "title": d.get("title", "")}
+        d["_id"]: {
+            "text": d.get("text", ""),
+            "title": d.get("title", ""),
+            "metadata": d.get("metadata") or {},
+        }
         for d in _read_jsonl(root / "corpus.jsonl")
     }
     queries = {q["_id"]: q.get("text", "") for q in _read_jsonl(root / "queries.jsonl")}

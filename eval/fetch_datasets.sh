@@ -1,77 +1,110 @@
 #!/usr/bin/env bash
-# Fetch BEIR-format CodeSearchNet (Python only) for the rmx vs CodeRankEmbed eval.
+# Fetch BEIR-format CodeSearchNet splits for the rmx eval.
 #
-# Source: same pipeline cornstack uses — GraphCodeBERT's CSN release, then
-# convert to BEIR shape (corpus.jsonl / queries.jsonl / qrels/test.tsv).
+# Pulls per-language Parquet files directly from the HuggingFace mirror of
+# CodeSearchNet (code-search-net/code_search_net) and converts each requested
+# language's test split to BEIR shape under
+# eval/datasets/csn_<lang>/{corpus.jsonl, queries.jsonl, qrels/test.tsv}.
 #
-# Output: eval/datasets/csn_python/
+# History note: csn_python in this repo was originally produced via
+# GraphCodeBERT's `dataset.zip` + `run.sh` pipeline, which downloads ALL six
+# CSN languages plus model checkpoints. The CodeSearchNet S3 bucket
+# (s3.amazonaws.com/code-search-net/...) now returns 403, so we use the HF
+# mirror instead — per-language Parquet, no shell-script Russian roulette.
+# Existing csn_python is preserved by the per-language skip-if-present check.
+#
+# Languages controlled by LANGS env var (default: "python javascript").
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEST="${HERE}/datasets"
+LANGS="${LANGS:-python javascript}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+# Pick a python that has pyarrow. The repo's eval venv has it; system python3
+# usually doesn't. PYTHON env var overrides.
+if [[ -z "${PYTHON:-}" ]]; then
+  if [[ -x "${HERE}/../.venv-eval/bin/python" ]]; then
+    PYTHON="${HERE}/../.venv-eval/bin/python"
+  else
+    PYTHON="python3"
+  fi
+fi
+echo "==> using python: $PYTHON"
+
 mkdir -p "$DEST"
 
-if [[ -d "$DEST/csn_python" ]]; then
-  echo "csn_python already present at $DEST/csn_python — skipping fetch."
-  exit 0
-fi
+# HuggingFace dataset layout: code-search-net/code_search_net/<lang>/<split>-00000-of-00001.parquet
+HF_BASE_URL="https://huggingface.co/datasets/code-search-net/code_search_net/resolve/main"
 
-echo "==> downloading GraphCodeBERT CSN bundle"
-cd "$WORK"
-curl -L -o dataset.zip \
-  https://github.com/microsoft/CodeBERT/raw/master/GraphCodeBERT/codesearch/dataset.zip
-unzip -q dataset.zip
-mv dataset CSN
-echo "==> running CSN run.sh (Python language only)"
-cd CSN
-# run.sh prepares all languages; we only need python. Run and ignore non-python noise.
-bash run.sh || true
+for lang in $LANGS; do
+  out_dir="$DEST/csn_${lang}"
+  if [[ -d "$out_dir" ]]; then
+    echo "==> csn_${lang} already present at $out_dir — skipping"
+    continue
+  fi
 
-echo "==> converting to BEIR format (csn_python)"
-python3 - <<'PY'
-import json, os
+  parquet_path="$WORK/${lang}-test.parquet"
+  parquet_url="$HF_BASE_URL/${lang}/test-00000-of-00001.parquet"
+  echo "==> downloading csn_${lang} test parquet ($parquet_url)"
+  curl -L --fail -o "$parquet_path" "$parquet_url"
+
+  echo "==> converting csn_${lang} → BEIR format"
+  LANG="$lang" DEST="$DEST" PARQUET="$parquet_path" "$PYTHON" - <<'PY'
+import json
+import os
 from pathlib import Path
 
-src = Path("python")
-out = Path(os.environ["DEST"]) / "csn_python"
+import pyarrow.parquet as pq
+
+lang = os.environ["LANG"]
+parquet_path = Path(os.environ["PARQUET"])
+out = Path(os.environ["DEST"]) / f"csn_{lang}"
 (out / "qrels").mkdir(parents=True, exist_ok=True)
 
-# CSN files: codebase.jsonl (docs), test.jsonl (queries). Pair by url.
-def load(p):
-    with open(p) as f:
-        return [json.loads(l) for l in f if l.strip()]
+tbl = pq.read_table(parquet_path)
+# Columns on the HF mirror: repository_name, func_path_in_repository,
+# func_name, whole_func_string, func_code_string, func_code_tokens,
+# language, func_documentation_string, func_documentation_tokens,
+# split_name, func_code_url.
+def col(name):
+    return tbl.column(name).to_pylist() if name in tbl.column_names else [None] * tbl.num_rows
 
-code = load(src / "codebase.jsonl")
-test = load(src / "test.jsonl")
+codes = col("whole_func_string") or col("func_code_string")
+docs = col("func_documentation_string")
+urls = col("func_code_url")
 
-url2id = {}
-with open(out / "corpus.jsonl", "w") as f:
-    for i, doc in enumerate(code):
-        url = doc.get("url") or doc.get("path") or f"doc_{i}"
-        url2id[url] = f"{i}_code"
-        f.write(json.dumps({
-            "_id": url2id[url],
-            "text": doc.get("code") or doc.get("function") or "",
-            "title": doc.get("docstring") or doc.get("title") or "",
-            "metadata": {},
-        }) + "\n")
-
-with open(out / "queries.jsonl", "w") as f, \
-     open(out / "qrels" / "test.tsv", "w") as q:
-    q.write("query-id\tcorpus-id\tscore\n")
-    for i, ex in enumerate(test):
-        url = ex.get("url") or ex.get("path")
-        if url not in url2id:
+n_corpus = 0
+n_queries = 0
+with open(out / "corpus.jsonl", "w") as f_corp, \
+     open(out / "queries.jsonl", "w") as f_q, \
+     open(out / "qrels" / "test.tsv", "w") as f_qrel:
+    f_qrel.write("query-id\tcorpus-id\tscore\n")
+    for i, (code, docstring, url) in enumerate(zip(codes, docs, urls)):
+        if not code:
             continue
-        qid = f"{i}_query"
-        nl = ex.get("docstring") or ex.get("nl") or ex.get("query") or ""
-        f.write(json.dumps({"_id": qid, "text": nl, "metadata": {}}) + "\n")
-        q.write(f"{qid}\t{url2id[url]}\t1\n")
+        cid = f"{i}_code"
+        f_corp.write(json.dumps({
+            "_id": cid,
+            "text": code,
+            "title": docstring or "",
+            "metadata": {"lang": lang, "url": url or ""},
+        }) + "\n")
+        n_corpus += 1
 
-print(f"wrote {out}")
+        if docstring and docstring.strip():
+            qid = f"{i}_query"
+            f_q.write(json.dumps({
+                "_id": qid,
+                "text": docstring,
+                "metadata": {"lang": lang},
+            }) + "\n")
+            f_qrel.write(f"{qid}\t{cid}\t1\n")
+            n_queries += 1
+
+print(f"  wrote {n_corpus} corpus rows, {n_queries} queries → {out}")
 PY
+done
 
-echo "==> done. dataset at $DEST/csn_python"
+echo "==> done. datasets under $DEST"

@@ -131,6 +131,114 @@ def _camel_split(token: str) -> Iterable[str]:
 
 _DOCSTRING_RE = re.compile(r'("""(.*?)"""|\'\'\'(.*?)\'\'\')', re.DOTALL)
 
+# JS/TS extraction (regex-first cut — tree-sitter would be the upgrade path).
+_JSDOC_RE = re.compile(r'/\*\*(.*?)\*/', re.DOTALL)
+_JSDOC_TAG_RE = re.compile(r'@\w+\s*(?:\{[^}]*\})?\s*([A-Za-z_$][\w$]*)?')
+# Function/method declarations:
+#   function name(...)         classic
+#   name = function(...)       expression
+#   name = (...) =>            arrow
+#   name: function(...)        object literal
+#   class Name                 class
+#   methodName(...) {          class method (heuristic: identifier then ( ... ) {)
+# Function/method declarations. Each variant captures BOTH the name and the
+# raw parameter source in one match, so we don't have to re-scan and risk
+# picking up the next non-declaration paren block (e.g. an `if (...)`).
+_JS_FUNC_RE = re.compile(
+    r"""
+    (?:\bfunction\s+(?P<f1>[A-Za-z_$][\w$]*)\s*\((?P<p1>[^()]*)\)) |
+    (?:\bconst\s+(?P<f2>[A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?\((?P<p2>[^()]*)\)\s*=>) |
+    (?:\bconst\s+(?P<f3>[A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\s*\((?P<p3>[^()]*)\)) |
+    (?:\blet\s+(?P<f4>[A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\s*\((?P<p4>[^()]*)\)) |
+    (?:\bvar\s+(?P<f5>[A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\s*\((?P<p5>[^()]*)\)) |
+    (?:^\s*(?P<f6>[A-Za-z_$][\w$]*)\s*:\s*(?:async\s+)?function\s*\((?P<p6>[^()]*)\)) |
+    (?:\bclass\s+(?P<c1>[A-Za-z_$][\w$]*))
+    """,
+    re.MULTILINE | re.VERBOSE,
+)
+_JS_FUNC_NAME_KEYS = ("f1", "f2", "f3", "f4", "f5", "f6", "c1")
+_JS_FUNC_PARAM_KEYS = ("p1", "p2", "p3", "p4", "p5", "p6")
+# Callee detection: NAME(  but exclude reserved-word callers.
+_JS_CALL_RE = re.compile(r"\b([A-Za-z_$][\w$]*)\s*\(")
+_JS_RESERVED = frozenset({
+    "if", "for", "while", "switch", "catch", "return", "function", "typeof",
+    "new", "delete", "void", "throw", "in", "of", "do", "else", "case",
+    "instanceof", "yield", "await", "async", "class", "extends", "import",
+    "export", "default", "from", "as", "this", "super",
+})
+_JS_PARAM_NAME_RE = re.compile(r"\b([A-Za-z_$][\w$]*)\b")
+
+
+def js_extract(text: str) -> dict[str, str]:
+    """JS/TS analogue of ast_extract. Regex-first cut; no tree-sitter dep.
+
+    Identifies defines (function/class names), params (formal arg names of
+    the first declared function), calls (callee identifiers), docstring
+    (first JSDoc block), and code (body with the first JSDoc stripped).
+    Falls back to ('', text) when nothing matches — same shape as the
+    Python path's SyntaxError fallback.
+    """
+    out = {"defines": "", "params": "", "calls": "", "docstring": "", "code": ""}
+    if not text:
+        return out
+
+    # Docstring: first JSDoc block.
+    ds = ""
+    body = text
+    m = _JSDOC_RE.search(text)
+    if m:
+        raw = m.group(1)
+        # Strip leading `* ` per line and trim @tag punctuation; keep
+        # identifier-bearing content for tokenization.
+        lines = []
+        for line in raw.splitlines():
+            stripped = line.strip().lstrip("*").strip()
+            if stripped:
+                lines.append(stripped)
+        ds = "\n".join(lines)
+        body = text[:m.start()] + text[m.end():]
+    out["docstring"] = ds
+    out["code"] = body
+
+    defines: list[str] = []
+    params: list[str] = []
+    for fm in _JS_FUNC_RE.finditer(text):
+        for key in _JS_FUNC_NAME_KEYS:
+            v = fm.group(key)
+            if v:
+                defines.append(v)
+                break
+        for key in _JS_FUNC_PARAM_KEYS:
+            raw = fm.group(key)
+            if raw:
+                for p in _JS_PARAM_NAME_RE.findall(raw):
+                    if p not in _JS_RESERVED:
+                        params.append(p)
+                break
+    out["defines"] = " ".join(defines)
+    out["params"] = " ".join(params)
+
+    # Callees: identifiers immediately followed by `(`, minus reserved words
+    # and the declared functions themselves (so a function doesn't count as
+    # calling itself).
+    defined_set = set(defines)
+    calls: list[str] = []
+    for cm in _JS_CALL_RE.finditer(body):
+        ident = cm.group(1)
+        if ident in _JS_RESERVED or ident in defined_set:
+            continue
+        calls.append(ident)
+    out["calls"] = " ".join(calls)
+    return out
+
+
+def extract_for_lang(text: str, lang: str) -> dict[str, str]:
+    """Dispatch to the right per-language extractor. Default falls back to
+    the Python ast path (back-compat with the csn_python eval)."""
+    if lang in ("javascript", "js", "typescript", "ts"):
+        return js_extract(text)
+    return ast_extract(text)
+
 
 def ast_extract(text: str) -> dict[str, str]:
     """Return raw per-linkage *text* slices via Python ast. The caller still
@@ -387,17 +495,39 @@ class RmxRetriever:
         use_ast = bool(wanted & {"defines", "params", "calls"})
 
         for did, doc in corpus.items():
-            text = (doc.get("title", "") + "\n" + doc.get("text", "")).strip()
+            title = (doc.get("title") or "").strip()
+            body_text = (doc.get("text") or "").strip()
+            text = (title + "\n" + body_text).strip() if (title or body_text) else ""
             if not text:
                 continue
+            # Per-doc lang dispatch. The BEIR conversion script writes
+            # metadata.lang; older corpora may omit it (csn_python predates
+            # the field), in which case we default to Python — matches the
+            # legacy ingest behavior.
+            lang = (doc.get("metadata") or {}).get("lang", "python")
+            is_js = lang in ("javascript", "js", "typescript", "ts")
             if use_ast:
-                slices = ast_extract(text)
+                if is_js:
+                    # JS corpus already separates docstring (title) from code
+                    # (text). Run js_extract on the code body for the
+                    # structural buckets (defines/params/calls/code) and
+                    # take the plain-text title as the docstring directly —
+                    # js_extract's /** */ regex won't match a docstring
+                    # that's already been stripped to plain text.
+                    slices = js_extract(body_text)
+                    slices["docstring"] = title
+                    slices["code"] = body_text
+                else:
+                    slices = extract_for_lang(text, lang)
                 tokens_per_linkage = {
                     L: expand_token(slices.get(L, ""), stem=self._stem_fn)
                     for L in wanted
                 }
             else:
-                ds, body = split_docstring(text)
+                if is_js:
+                    ds, body = title, body_text
+                else:
+                    ds, body = split_docstring(text)
                 tokens_per_linkage = {
                     "docstring": expand_token(ds, stem=self._stem_fn) if ds else [],
                     "code":      expand_token(body, stem=self._stem_fn) if body else [],
