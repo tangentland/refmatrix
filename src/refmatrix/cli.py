@@ -769,8 +769,17 @@ def list_queries():
               help="Also list tracked files where on-disk mtime > last_synced.")
 def stats(stale):
     """Print catalog and bitmap stats."""
-    s = _store()
-    out = s.stats()
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.ping(root) and not stale:
+        resp = daemon_mod.call(root, "stats", {})
+        if not resp.get("ok"):
+            raise click.ClickException(f"daemon stats failed: {resp.get('error')}")
+        out = resp["result"]
+        s = None
+    else:
+        s = _store()
+        out = s.stats()
     t1 = Table("kind", "count", title="entities")
     for k, v in out["entities"].items():
         t1.add_row(k, str(v))
@@ -779,7 +788,7 @@ def stats(stale):
     for name, d in out["linkages"].items():
         t2.add_row(name, str(d["concepts"]), str(d["bits"]))
     console.print(t2)
-    if stale:
+    if stale and s is not None:
         rows = s.stale_files()
         if not rows:
             console.print("[green]no stale files[/]")
@@ -856,6 +865,22 @@ def telemetry(since, top_queried, zero_results, fmt):
         console.print("\n[bold]recent zero-result queries:[/]")
         for body in out["zero_result_examples"]:
             console.print(f"  {body}")
+
+
+@main.command()
+def checkpoint():
+    """DuckDB CHECKPOINT: flush WAL and compact the catalog file. Run after
+    big churn to shrink `.refmatrix/catalog.duckdb`."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if not daemon_mod.ping(root):
+        raise click.ClickException(
+            "checkpoint requires a running daemon (only it holds the catalog open)"
+        )
+    resp = daemon_mod.call(root, "checkpoint", {}, timeout=120.0)
+    if not resp.get("ok"):
+        raise click.ClickException(f"daemon checkpoint failed: {resp.get('error')}")
+    console.print("[green]checkpointed[/]")
 
 
 @main.command()

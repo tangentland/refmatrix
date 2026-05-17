@@ -412,6 +412,19 @@ def _op_sync_since(d: Daemon, args: dict) -> dict:
     return report
 
 
+def _op_stats(d: Daemon, args: dict) -> dict:
+    with d._store_lock:
+        return d.store.stats()
+
+
+def _op_checkpoint(d: Daemon, args: dict) -> dict:
+    """DuckDB CHECKPOINT: flush WAL into the main file and compact. Reduces
+    .duckdb file growth after long churn."""
+    with d._store_lock:
+        d.store._connect()._duck.execute("CHECKPOINT")
+    return {"checkpointed": True}
+
+
 def _op_prune_noise(d: Daemon, args: dict) -> dict:
     namespaces = tuple(args.get("namespaces") or ("keyword",))
     min_df = int(args.get("min_df", 2))
@@ -467,6 +480,8 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "context": _op_context,
     "prune_noise": _op_prune_noise,
     "vacuum": _op_vacuum,
+    "stats": _op_stats,
+    "checkpoint": _op_checkpoint,
     "stop": _op_stop,
 }
 
