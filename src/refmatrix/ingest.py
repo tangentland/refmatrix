@@ -58,7 +58,8 @@ def ingest_path(
         if any(seg in parts for seg in (".git", ".venv", "node_modules",
                                         ".tldr", ".refmatrix")):
             continue
-        _ingest_pseudo_semantics(s, p, path)
+        with s.deferred_links():
+            _ingest_pseudo_semantics(s, p, path)
 
     # ADR semantic extraction — two-pass so cross-references resolve.
     adr_files: list[tuple[Path, str]] = []
@@ -85,7 +86,8 @@ def ingest_path(
         adr_num_to_eid[adr_num] = eid
         adr_files.append((p, adr_num))
     for p, _ in adr_files:
-        _ingest_adr_semantics(s, p, path, adr_num_to_eid)
+        with s.deferred_links():
+            _ingest_adr_semantics(s, p, path, adr_num_to_eid)
 
     # General markdown semantic extraction (non-ADR). Runs after ADR pass so
     # ADR-NNNN cross-references from generic docs can resolve via adr_num_to_eid.
@@ -96,7 +98,8 @@ def ingest_path(
             continue
         if _is_adr_file(p) is not None:
             continue
-        _ingest_markdown_semantics(s, p, path, adr_num_to_eid)
+        with s.deferred_links():
+            _ingest_markdown_semantics(s, p, path, adr_num_to_eid)
     return n
 
 

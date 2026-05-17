@@ -223,6 +223,10 @@ class Store:
         )
         self._duck_view = None
         self._read_conn = None
+        # See `deferred_links()`. None = direct mode (default); list =
+        # buffering link/weighted_link calls for one bulk_link flush.
+        self._link_buffer: list[tuple[str, int, int, float | None]] | None = None
+        self._link_protect_buffer: list[tuple[int, int]] | None = None
         # Lazy-loaded fragment cache: linkage_name -> BitMap64. Populated on
         # first read/write of any concept under that linkage; flushed back to
         # disk via flush_fragments() (called from close()). The Store is bound
@@ -886,6 +890,52 @@ class Store:
             frag.add(start | eid)
         self._dirty_fragments.add(linkage)
 
+    def deferred_links(self):
+        """Context manager that buffers `link()` / `weighted_link()` calls
+        and flushes them via one `bulk_link` at scope exit. Targets the
+        markdown semantic extractors, which emit hundreds of small links
+        per file — each one is a DuckDB write transaction in the default
+        path; the buffered flush is one Arrow batch.
+
+        Within the scope, the bitmap fragment is NOT updated until flush —
+        callers that query their own writes mid-scope would miss them.
+        Extractors don't, but the constraint is real.
+
+        Re-entry safe: nested `with s.deferred_links():` blocks all
+        contribute to the same buffer and only the outermost scope
+        flushes.
+        """
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _scope():
+            if self._link_buffer is not None:
+                # Nested — outer scope owns the flush.
+                yield
+                return
+            self._link_buffer = []
+            self._link_protect_buffer = []
+            try:
+                yield
+            finally:
+                items = self._link_buffer
+                protects = self._link_protect_buffer
+                self._link_buffer = None
+                self._link_protect_buffer = None
+                if items:
+                    self.bulk_link(items)
+                if protects:
+                    con = self._connect()
+                    ids = sorted({i for pair in protects for i in pair})
+                    placeholders = ",".join("?" * len(ids))
+                    con.execute(
+                        f"UPDATE entities SET protected = 1 "
+                        f"WHERE id IN ({placeholders})",
+                        ids,
+                    )
+                    con.commit()
+        return _scope()
+
     def link(
         self,
         linkage: str,
@@ -894,6 +944,12 @@ class Store:
         weight: float | None = None,
         protect: bool = False,
     ) -> bool:
+        if self._link_buffer is not None:
+            self._link_buffer.append((linkage, concept_id, entity_id, weight))
+            if protect:
+                self._link_protect_buffer.append((concept_id, entity_id))
+            # Optimistic return: extractors don't check this.
+            return True
         lid = self.get_linkage_id(linkage)
         frag = self._load_fragment(linkage)
         bit = self._pack(concept_id, entity_id)

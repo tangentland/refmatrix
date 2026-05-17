@@ -170,7 +170,8 @@ def _sync_paths(
     pseudo_touched = [ap for ap in touched_existing if ap.suffix.lower() == ".pseudo"]
 
     for ap in pseudo_touched:
-        _ingest_pseudo_semantics(s, ap, project_root)
+        with s.deferred_links():
+            _ingest_pseudo_semantics(s, ap, project_root)
 
     if md_touched:
         # ADR cross-references resolve via adr_num_to_eid: map ADR number
@@ -199,12 +200,14 @@ def _sync_paths(
                 adr_num_to_eid.setdefault(m.group(1), row["id"])
 
         for ap in adr_touched:
-            _ingest_adr_semantics(s, ap, project_root, adr_num_to_eid)
+            with s.deferred_links():
+                _ingest_adr_semantics(s, ap, project_root, adr_num_to_eid)
 
         for ap in md_touched:
             if _is_adr_file(ap) is not None:
                 continue
-            _ingest_markdown_semantics(s, ap, project_root, adr_num_to_eid)
+            with s.deferred_links():
+                _ingest_markdown_semantics(s, ap, project_root, adr_num_to_eid)
 
     if semantic:
         for ap in touched_existing:
