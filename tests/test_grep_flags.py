@@ -1,9 +1,15 @@
-"""Tests for `rmx grep` grep-style flag parsing and output rendering."""
+"""Tests for `rmx grep` grep-style flag parsing, output rendering, stdin
+mode, and PATHS filtering."""
 from __future__ import annotations
+
+import io
+from pathlib import Path
 
 import pytest
 
-from refmatrix.cli import _parse_grep_flags, _render_grep_rows
+from refmatrix.cli import (
+    _filter_rows_by_paths, _grep_stdin, _parse_grep_flags, _render_grep_rows,
+)
 
 
 def test_parse_empty():
@@ -129,3 +135,151 @@ def test_render_limit_applies_to_files_only(capsys):
     _render_grep_rows(rows, gf, limit=2)
     out = capsys.readouterr().out.splitlines()
     assert out == ["src/f0.py", "src/f1.py"]
+
+
+# ---- stdin pipe mode ------------------------------------------------------
+
+
+def test_grep_stdin_substring(capsys, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO("alpha\nbeta\nalphabet\n"))
+    _grep_stdin("alpha", regex=False, gf=_parse_grep_flags(None), limit=100)
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["<stdin>:1:alpha", "<stdin>:3:alphabet"]
+
+
+def test_grep_stdin_case_sensitive(capsys, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO("Alpha\nalpha\nALPHA\n"))
+    _grep_stdin("alpha", regex=False, gf=_parse_grep_flags("-I"), limit=100)
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["<stdin>:2:alpha"]
+
+
+def test_grep_stdin_default_case_insensitive(capsys, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO("Alpha\nalpha\nALPHA\n"))
+    _grep_stdin("alpha", regex=False, gf=_parse_grep_flags(None), limit=100)
+    out = capsys.readouterr().out.splitlines()
+    assert len(out) == 3
+
+
+def test_grep_stdin_regex(capsys, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO("foo123\nfoo\nfoobar\n"))
+    _grep_stdin(r"foo\d+", regex=True, gf=_parse_grep_flags(None), limit=100)
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["<stdin>:1:foo123"]
+
+
+def test_grep_stdin_word_boundary(capsys, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO("cat\ncategory\nconcat\n"))
+    _grep_stdin("cat", regex=False, gf=_parse_grep_flags("-w"), limit=100)
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["<stdin>:1:cat"]
+
+
+def test_grep_stdin_invert(capsys, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO("alpha\nbeta\ngamma\n"))
+    _grep_stdin("alpha", regex=False, gf=_parse_grep_flags("-v"), limit=100)
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["<stdin>:2:beta", "<stdin>:3:gamma"]
+
+
+def test_grep_stdin_count(capsys, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO("hit\nmiss\nhit\nhit\n"))
+    _grep_stdin("hit", regex=False, gf=_parse_grep_flags("-c"), limit=100)
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["3"]
+
+
+def test_grep_stdin_files_only_emits_stdin_label(capsys, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO("hit\nhit\nhit\n"))
+    _grep_stdin("hit", regex=False, gf=_parse_grep_flags("-l"), limit=100)
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["<stdin>"]
+
+
+def test_grep_stdin_files_only_no_hit_silent(capsys, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO("alpha\nbeta\n"))
+    _grep_stdin("missing", regex=False, gf=_parse_grep_flags("-l"), limit=100)
+    out = capsys.readouterr().out
+    assert out == ""
+
+
+def test_grep_stdin_limit(capsys, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO("hit\nhit\nhit\nhit\n"))
+    _grep_stdin("hit", regex=False, gf=_parse_grep_flags(None), limit=2)
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["<stdin>:1:hit", "<stdin>:2:hit"]
+
+
+def test_grep_stdin_invalid_regex_raises(monkeypatch):
+    import click as _click
+    monkeypatch.setattr("sys.stdin", io.StringIO("anything\n"))
+    with pytest.raises(_click.ClickException):
+        _grep_stdin("(unclosed", regex=True, gf=_parse_grep_flags(None), limit=100)
+
+
+# ---- PATHS filter ---------------------------------------------------------
+
+
+def test_filter_rows_by_paths_empty_paths_returns_all():
+    rows = [{"path": "/tmp/a.py", "entity": "a", "line": 1,
+             "linkage": "defines", "concept": "x"}]
+    assert _filter_rows_by_paths(rows, ()) == rows
+
+
+def test_filter_rows_by_paths_restricts_to_subtree(tmp_path):
+    sub = tmp_path / "src"
+    sub.mkdir()
+    f1 = sub / "a.py"
+    f1.write_text("")
+    f2 = tmp_path / "outside.py"
+    f2.write_text("")
+    rows = [
+        {"path": str(f1), "entity": "a", "line": 1,
+         "linkage": "defines", "concept": "x"},
+        {"path": str(f2), "entity": "outside", "line": 1,
+         "linkage": "defines", "concept": "y"},
+    ]
+    kept = _filter_rows_by_paths(rows, (sub,))
+    assert len(kept) == 1
+    assert kept[0]["entity"] == "a"
+
+
+def test_filter_rows_by_paths_multiple_targets(tmp_path):
+    a_dir = tmp_path / "a"
+    b_dir = tmp_path / "b"
+    c_dir = tmp_path / "c"
+    for d in (a_dir, b_dir, c_dir):
+        d.mkdir()
+    fa = a_dir / "x.py"; fa.write_text("")
+    fb = b_dir / "y.py"; fb.write_text("")
+    fc = c_dir / "z.py"; fc.write_text("")
+    rows = [
+        {"path": str(fa), "entity": "x", "line": 1, "linkage": "l", "concept": "c"},
+        {"path": str(fb), "entity": "y", "line": 1, "linkage": "l", "concept": "c"},
+        {"path": str(fc), "entity": "z", "line": 1, "linkage": "l", "concept": "c"},
+    ]
+    kept = _filter_rows_by_paths(rows, (a_dir, b_dir))
+    names = {r["entity"] for r in kept}
+    assert names == {"x", "y"}
+
+
+def test_filter_rows_by_paths_exact_file_match(tmp_path):
+    f = tmp_path / "exact.py"
+    f.write_text("")
+    rows = [
+        {"path": str(f), "entity": "exact", "line": 1, "linkage": "l", "concept": "c"},
+        {"path": str(tmp_path / "other.py"), "entity": "other", "line": 1,
+         "linkage": "l", "concept": "c"},
+    ]
+    kept = _filter_rows_by_paths(rows, (f,))
+    assert len(kept) == 1
+    assert kept[0]["entity"] == "exact"
+
+
+def test_filter_rows_by_paths_drops_pathless_rows(tmp_path):
+    rows = [
+        {"path": None, "entity": "x", "line": 1, "linkage": "l", "concept": "c"},
+        {"path": "", "entity": "y", "line": 1, "linkage": "l", "concept": "c"},
+    ]
+    kept = _filter_rows_by_paths(rows, (tmp_path,))
+    assert kept == []

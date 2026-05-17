@@ -27,12 +27,29 @@ markdown file effectively ranks *below code* — opposite of intent.
 
 Authoring a doc in the right shape promotes it up the ladder.
 
-`rmx grep PATTERN` is the bottom rung of the structured side: it
-walks `linkage_evidence` for concepts whose name matches PATTERN and
-emits `path:line` per hit. If the index has nothing, it falls through
-to `rg` and folds any rg hits back into a `query/PATTERN` concept so
-the second call lands in the index. Reach for it instead of `rg` when
-you can — the index already knows where every named concept is referenced.
+`rmx grep PATTERN [PATHS...]` is the bottom rung of the structured
+side: it walks `linkage_evidence` for concepts whose name matches
+PATTERN and emits `path:line` per hit. If the index has nothing, it
+falls through to `rg` and folds any rg hits back into a
+`query/PATTERN` concept so the second call lands in the index. Reach
+for it instead of `rg` when you can — the index already knows where
+every named concept is referenced.
+
+`rmx grep` is also a drop-in `grep` for pipes and scoped searches:
+
+```bash
+rmx grep "FIXME"                          # whole project, index-first
+rmx grep "FIXME" src/ tests/              # restrict to subdirs
+rmx grep -f '-il' "daemon"                # grep-style flag bundle
+rg -l TODO | rmx grep "FIXME"             # stdin pipe (bypasses index)
+git diff | rmx grep -f '-c' "^+"          # pipe + count
+```
+
+Grep-style flag bundle `-f '<flags>'` accepts: `-i` (ignore-case,
+default ON), `-I` (case-sensitive), `-l` (files only), `-c` (count),
+`-v` (invert), `-w` (word boundary), `-F` (substring), `-E` (regex).
+PATHS narrow both the indexed-row filter and the fall-through target.
+Stdin data bypasses the index entirely and greps the pipe.
 
 ## Decision tree — which form do I write?
 

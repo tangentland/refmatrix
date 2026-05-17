@@ -963,8 +963,70 @@ def _render_grep_rows(rows, gf, limit, source_tag="idx"):
         )
 
 
+def _grep_stdin(pattern: str, regex: bool, gf: dict, limit: int) -> None:
+    """Pipe-mode grep: search lines from sys.stdin, ignore the index.
+    Honors -i / -I / -w / -l / -c / -v / -F / -E from the flag bundle."""
+    import re as _re
+    import sys as _sys
+    if regex:
+        rx_pattern = pattern
+    else:
+        rx_pattern = _re.escape(pattern)
+    if gf["word"]:
+        rx_pattern = rf"\b{rx_pattern}\b"
+    flags_re = _re.IGNORECASE if gf["ignore_case"] is not False else 0
+    try:
+        rx = _re.compile(rx_pattern, flags_re)
+    except _re.error as exc:
+        raise click.ClickException(f"invalid regex: {exc}")
+    matched = 0
+    total = 0
+    lines_out: list[tuple[int, str]] = []
+    for n, raw in enumerate(_sys.stdin, start=1):
+        line = raw.rstrip("\n")
+        hit = bool(rx.search(line))
+        if gf["invert"]:
+            hit = not hit
+        if not hit:
+            continue
+        total += 1
+        if matched < limit:
+            lines_out.append((n, line))
+            matched += 1
+    if gf["count"]:
+        click.echo(str(total))
+        return
+    if gf["files_only"]:
+        # `<stdin>` is the one file; emit once if any match.
+        if lines_out:
+            click.echo("<stdin>")
+        return
+    for n, line in lines_out:
+        click.echo(f"<stdin>:{n}:{line}")
+
+
+def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
+    """Keep only index rows whose `path` lies under any of the given paths."""
+    if not paths:
+        return rows
+    resolved = [Path(p).resolve() for p in paths]
+    out: list[dict] = []
+    for r in rows:
+        rp = r.get("path")
+        if not rp:
+            continue
+        try:
+            rp_abs = Path(rp).resolve()
+        except (OSError, ValueError):
+            continue
+        if any(rp_abs == base or rp_abs.is_relative_to(base) for base in resolved):
+            out.append(r)
+    return out
+
+
 @main.command()
 @click.argument("pattern")
+@click.argument("paths", nargs=-1, type=click.Path(path_type=Path))
 @click.option("--regex/--substring", default=False,
               help="Treat PATTERN as a regex matched against concept names. "
                    "Default is case-insensitive substring.")
@@ -981,10 +1043,18 @@ def _render_grep_rows(rows, gf, limit, source_tag="idx"):
 @click.option("--learn/--no-learn", default=True,
               help="When fallback finds hits, fold them into the index as a "
                    "`query/PATTERN` concept so future searches hit the index.")
-def grep(pattern, regex, flags, linkage, kind, limit, fallback, learn):
+def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn):
     """Index-backed grep: find concepts whose name matches PATTERN and
     print file:line for every recorded reference. Falls back to `rg` /
     `grep -rn` under the project root when the index has no hits.
+
+    PATHS (optional, variadic) restrict both the indexed-row filter and the
+    fall-through grep target. Pipe data into stdin to bypass the index
+    entirely and grep the pipe.
+
+        rmx grep "daemon" src/refmatrix/        # only entities under src/
+        rmx grep "daemon" src/ tests/           # multiple targets
+        rg -l TODO | rmx grep "FIXME"           # pipe mode (no index)
 
     Grep-style flags can be passed as a quoted bundle via --flags / -f:
 
@@ -993,6 +1063,7 @@ def grep(pattern, regex, flags, linkage, kind, limit, fallback, learn):
         rmx grep -f '-c'      "linkage"     # count per file
         rmx grep -f '-v'      "noise"       # entities/files with NO match
     """
+    import sys as _sys
     gf = _parse_grep_flags(flags)
     # --regex/--substring is the canonical control; -F / -E in --flags can
     # override it for convenience.
@@ -1000,6 +1071,13 @@ def grep(pattern, regex, flags, linkage, kind, limit, fallback, learn):
         regex = False
     if gf["force_regex"]:
         regex = True
+
+    # Stdin mode: data piped in → grep the pipe, ignore the index entirely.
+    # The index has no bearing on ephemeral piped content.
+    if not _sys.stdin.isatty():
+        _grep_stdin(pattern, regex, gf, limit)
+        return
+
     # Word-boundary wrapping when regex mode is on.
     effective_pattern = pattern
     if gf["word"] and regex:
@@ -1041,6 +1119,10 @@ def grep(pattern, regex, flags, linkage, kind, limit, fallback, learn):
             rows.append({"path": r[0], "entity": r[1], "line": r[2],
                          "linkage": r[3], "concept": r[4]})
 
+    # PATHS filter: drop rows whose entity path is outside the given targets.
+    if paths:
+        rows = _filter_rows_by_paths(rows, paths)
+
     if rows:
         _render_grep_rows(rows, gf, limit, source_tag="idx")
         return
@@ -1049,10 +1131,11 @@ def grep(pattern, regex, flags, linkage, kind, limit, fallback, learn):
         console.print("[dim]no indexed matches[/]")
         return
 
-    # Fall through to a real grep under the project root.
+    # Fall through to a real grep. Targets are the given PATHS if any,
+    # otherwise the project root (existing behavior).
     import shutil
     import subprocess
-    project_root = root.parent
+    targets = [str(p) for p in paths] if paths else [str(root.parent)]
     tool = shutil.which("rg")
     if tool:
         # rg: -n line numbers, -H force filenames, --no-heading.
@@ -1070,7 +1153,7 @@ def grep(pattern, regex, flags, linkage, kind, limit, fallback, learn):
             rg_cmd.append("-c")
         if gf["files_only"]:
             rg_cmd.append("-l")
-        rg_cmd += ["--regexp", pattern, str(project_root)]
+        rg_cmd += ["--regexp", pattern] + targets
         cmd = rg_cmd
     else:
         tool = shutil.which("grep")
@@ -1091,7 +1174,7 @@ def grep(pattern, regex, flags, linkage, kind, limit, fallback, learn):
         if gf["files_only"]:
             g_letters += "l"
         g_letters += "E" if regex else "F"
-        cmd = [tool, f"-{g_letters}", pattern, str(project_root)]
+        cmd = [tool, f"-{g_letters}", pattern] + targets
     res = subprocess.run(cmd, capture_output=True, text=True)
     if not res.stdout.strip():
         console.print("[dim]no matches[/]")
@@ -1126,7 +1209,7 @@ def grep(pattern, regex, flags, linkage, kind, limit, fallback, learn):
         resp = daemon_mod.call(root, "learn_from_grep", {
             "pattern": pattern,
             "hits": parsed_hits,
-            "project_root": str(project_root),
+            "project_root": str(root.parent),
         }, timeout=60.0)
         if resp.get("ok"):
             r = resp["result"]
