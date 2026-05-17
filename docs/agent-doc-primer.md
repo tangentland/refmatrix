@@ -16,7 +16,7 @@ Other agents (and you, in future sessions) find authoritative
 design via:
 
 ```
-rmx context <Concept>  →  rmx query <linkage>:<concept>  →  tldr  →  grep
+rmx context <Concept>  →  rmx query <linkage>:<concept>  →  rmx grep <term>  →  rg/grep
 ```
 
 The ladder favors *structured* sources over *free prose*. A doc
@@ -26,6 +26,13 @@ hierarchy is `ADR > concept doc > pseudocode > code`, an unstructured
 markdown file effectively ranks *below code* — opposite of intent.
 
 Authoring a doc in the right shape promotes it up the ladder.
+
+`rmx grep PATTERN` is the bottom rung of the structured side: it
+walks `linkage_evidence` for concepts whose name matches PATTERN and
+emits `path:line` per hit. If the index has nothing, it falls through
+to `rg` and folds any rg hits back into a `query/PATTERN` concept so
+the second call lands in the index. Reach for it instead of `rg` when
+you can — the index already knows where every named concept is referenced.
 
 ## Decision tree — which form do I write?
 
