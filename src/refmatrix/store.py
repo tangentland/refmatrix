@@ -774,6 +774,12 @@ class Store:
             (name, 1 if directed else 0, description),
         )
         con.commit()
+        # Log the registration so `rmx rebuild --from-log` can replay
+        # custom linkage types before any link events that reference
+        # them. Without this, a fresh-DB replay fails the moment it
+        # hits a link for a non-default verb (e.g. GMD's part-of).
+        self._log_event("linkage_type", name=name, directed=1 if directed else 0,
+                        description=description or "")
         if cur.lastrowid:
             return cur.lastrowid
         row = con.execute("SELECT id FROM linkage_types WHERE name=?", (name,)).fetchone()
@@ -2021,10 +2027,31 @@ class Store:
         link_state: dict[tuple, tuple[float, str, float | None]] = {}
         track_state: dict[str, tuple[float, str, float | None]] = {}
         evidence_events: list[dict] = []
+        # Linkage types referenced anywhere in the log. Pre-2.0 logs don't
+        # carry `linkage_type` events, so we have to derive the set from
+        # link/unlink/evidence events and register the missing ones before
+        # replay or `get_linkage_id` blows up mid-replay.
+        linkage_types_seen: dict[str, dict] = {}
 
         for ev in events:
             op = ev.get("op")
             ts = ev.get("ts", 0)
+            if op == "linkage_type":
+                name = ev["name"]
+                cur = linkage_types_seen.setdefault(name, {
+                    "directed": 1, "description": "",
+                })
+                cur["directed"] = int(ev.get("directed", cur["directed"]))
+                desc = ev.get("description")
+                if desc:
+                    cur["description"] = desc
+                continue
+            if op in ("link", "unlink", "evidence"):
+                lname = ev.get("linkage")
+                if lname:
+                    linkage_types_seen.setdefault(
+                        lname, {"directed": 1, "description": ""},
+                    )
             if op == "entity":
                 key = (ev["kind"], ev["name"])
                 cur = entity_state.setdefault(key, {})
@@ -2072,6 +2099,15 @@ class Store:
         # appending duplicate events to the same log we're replaying.
         self._replay_mode = True
         try:
+            # Register every linkage type seen in the log before any
+            # link/evidence replay touches them. add_linkage_type is
+            # idempotent via INSERT OR IGNORE.
+            for lname, props in linkage_types_seen.items():
+                self.add_linkage_type(
+                    lname, directed=bool(props.get("directed", 1)),
+                    description=props.get("description") or None,
+                )
+
             name_to_id: dict[tuple[str, str], int] = {}
             for key, state in entity_state.items():
                 kind, name = key
