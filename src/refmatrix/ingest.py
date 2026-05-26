@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 from collections import Counter
 from pathlib import Path
@@ -77,13 +78,27 @@ def _ingest_path_inner(
                                             ".tldr", ".refmatrix")):
                 continue
             _ingest_python_semantics(s, p, path)
+    pseudo_files: list[Path] = []
     for p in path.rglob("*.pseudo"):
         parts = set(p.parts)
         if any(seg in parts for seg in (".git", ".venv", "node_modules",
                                         ".tldr", ".refmatrix")):
             continue
-        with s.deferred_links():
-            _ingest_pseudo_semantics(s, p, path)
+        pseudo_files.append(p)
+    if pseudo_files:
+        from concurrent.futures import ThreadPoolExecutor
+        from refmatrix.ingest_records import apply_record
+        pworkers = int(os.environ.get("RMX_INGEST_WORKERS", "8") or "8")
+        with ThreadPoolExecutor(max_workers=pworkers,
+                                thread_name_prefix="rmx-ps-parse") as ex:
+            ps_records = list(ex.map(
+                lambda fp: _build_pseudo_record(fp, path),
+                pseudo_files,
+            ))
+        for rec in ps_records:
+            if rec is None:
+                continue
+            apply_record(s, rec)
 
     # ADR semantic extraction — two-pass so cross-references resolve.
     adr_files: list[tuple[Path, str]] = []
@@ -109,12 +124,27 @@ def _ingest_path_inner(
             pass
         adr_num_to_eid[adr_num] = eid
         adr_files.append((p, adr_num))
-    for p, _ in adr_files:
-        with s.deferred_links():
-            _ingest_adr_semantics(s, p, path, adr_num_to_eid)
+    if adr_files:
+        from concurrent.futures import ThreadPoolExecutor
+        from refmatrix.ingest_records import apply_record
+        adr_workers = int(os.environ.get("RMX_INGEST_WORKERS", "8") or "8")
+        with ThreadPoolExecutor(max_workers=adr_workers,
+                                thread_name_prefix="rmx-adr-parse") as ex:
+            adr_records = list(ex.map(
+                lambda fp: _build_adr_record(fp, path, adr_num_to_eid),
+                [p for p, _ in adr_files],
+            ))
+        for rec in adr_records:
+            if rec is None:
+                continue
+            apply_record(s, rec, adr_num_to_eid=adr_num_to_eid)
 
     # General markdown semantic extraction (non-ADR). Runs after ADR pass so
-    # ADR-NNNN cross-references from generic docs can resolve via adr_num_to_eid.
+    # ADR-NNNN cross-references from generic docs can resolve via
+    # adr_num_to_eid. Parsed in parallel via ThreadPoolExecutor so the
+    # regex+walk work no longer pins one CPU core; applied sequentially
+    # against the daemon-owned Store under the active transaction.
+    md_files: list[Path] = []
     for p in path.rglob("*.md"):
         parts = set(p.parts)
         if any(seg in parts for seg in (".git", ".venv", "node_modules",
@@ -122,8 +152,21 @@ def _ingest_path_inner(
             continue
         if _is_adr_file(p) is not None:
             continue
-        with s.deferred_links():
-            _ingest_markdown_semantics(s, p, path, adr_num_to_eid)
+        md_files.append(p)
+    if md_files:
+        from concurrent.futures import ThreadPoolExecutor
+        from refmatrix.ingest_records import apply_record
+        workers = int(os.environ.get("RMX_INGEST_WORKERS", "8") or "8")
+        with ThreadPoolExecutor(max_workers=workers,
+                                thread_name_prefix="rmx-md-parse") as ex:
+            records = list(ex.map(
+                lambda fp: _build_markdown_record(fp, path, adr_num_to_eid),
+                md_files,
+            ))
+        for rec in records:
+            if rec is None:
+                continue
+            apply_record(s, rec, adr_num_to_eid=adr_num_to_eid)
     return n
 
 
@@ -649,20 +692,57 @@ _PSEUDO_BUILTIN_TYPES = frozenset({
 })
 
 
-def _ingest_pseudo_semantics(s: Store, file_path: Path, project_root: Path) -> int:
-    """Extract types, enums, functions, and their cross-references from .pseudo files."""
+def _build_pseudo_record(
+    file_path: Path,
+    project_root: Path,
+) -> "IngestRecord | None":
+    """Pure-parse builder for a .pseudo file -- worker-thread safe."""
+    from refmatrix.ingest_records import RecordingStore
     try:
         lines = file_path.read_text(encoding="utf-8", errors="ignore").splitlines()
     except OSError:
-        return 0
-
+        return None
     rel = (
         file_path.relative_to(project_root).as_posix()
         if file_path.is_relative_to(project_root)
         else str(file_path)
     )
+    try:
+        mtime: float | None = file_path.stat().st_mtime
+    except OSError:
+        mtime = None
+    rb = RecordingStore(
+        rel=rel, file_path=str(file_path), mtime=mtime, doc_kind="code",
+    )
+    _pseudo_emit_body(rb, lines, rel, file_path)
+    return rb.record
+
+
+def _ingest_pseudo_semantics(s: Store, file_path: Path, project_root: Path) -> int:
+    """Extract types, enums, functions, and cross-references from .pseudo files.
+
+    Delegates to _pseudo_emit_body so the same body runs against either a
+    real Store (direct path) or a RecordingStore (parallel-parse path)."""
+    try:
+        lines = file_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except OSError:
+        return 0
+    rel = (
+        file_path.relative_to(project_root).as_posix()
+        if file_path.is_relative_to(project_root)
+        else str(file_path)
+    )
+    return _pseudo_emit_body(s, lines, rel, file_path)
+
+
+def _pseudo_emit_body(
+    s, lines: list[str], rel: str, file_path: Path,
+) -> int:
     file_id = s.upsert_entity(kind="code", name=rel, path=str(file_path))
-    s.mark_tracked(str(file_path), file_path.stat().st_mtime)
+    try:
+        s.mark_tracked(str(file_path), file_path.stat().st_mtime)
+    except OSError:
+        pass
     n = 0
 
     STATE_TOP, STATE_TYPE, STATE_ENUM, STATE_FUNC = range(4)
@@ -872,56 +952,99 @@ def _parse_adr_header(lines: list[str]) -> dict[str, str]:
     return header
 
 
+def _build_adr_record(
+    file_path: Path,
+    project_root: Path,
+    adr_num_to_eid: dict[str, int],
+) -> "IngestRecord | None":
+    """Pure-parse builder for an ADR markdown file. Returns a record that
+    apply_record materializes against the real Store. Mirrors the legacy
+    _ingest_adr_semantics logic but writes through a RecordingStore so
+    workers can parse in parallel without touching the catalog.
+    """
+    from refmatrix.ingest_records import RecordingStore
+    adr_num = _is_adr_file(file_path)
+    if adr_num is None or adr_num not in adr_num_to_eid:
+        return None
+    try:
+        text = file_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+    lines = text.splitlines()
+    rel = (
+        file_path.relative_to(project_root).as_posix()
+        if file_path.is_relative_to(project_root)
+        else str(file_path)
+    )
+    try:
+        mtime: float | None = file_path.stat().st_mtime
+    except OSError:
+        mtime = None
+    header = _parse_adr_header(lines)
+    status_raw = header.get("Status", "Proposed")
+    status = status_raw.split()[0] if status_raw else "Proposed"
+    weight = _ADR_STATUS_WEIGHT.get(status, 0.3)
+    if weight == 0.0:
+        return None
+
+    rb = RecordingStore(
+        rel=rel, file_path=str(file_path), mtime=mtime,
+        doc_kind="doc", doc_meta={"adr_number": adr_num},
+    )
+    adr_eid = rb.upsert_entity(
+        kind="doc", name=rel, path=str(file_path),
+        meta={"adr_number": adr_num},
+    )
+
+    concept_cache: dict[str, str] = {}
+
+    def get_concept(name: str) -> str:
+        if name in concept_cache:
+            return concept_cache[name]
+        cid = rb.add_concept(name, description=f"symbol '{name}'")
+        concept_cache[name] = cid
+        return cid
+
+    _adr_emit_body(
+        rb, lines, text, rel, file_path, adr_num, adr_eid,
+        adr_num_to_eid, weight, get_concept,
+    )
+    return rb.record
+
+
 def _ingest_adr_semantics(
     s: Store,
     file_path: Path,
     project_root: Path,
     adr_num_to_eid: dict[str, int],
 ) -> int:
-    """Extract semantic linkages from an ADR markdown file.
-
-    Emits, weighted by Status (Accepted=1.0, Proposed=0.3, Superseded=0):
-      - defines:<ClassName> for class/struct specs (fenced or indented blocks)
-      - is_a from parent class concept to child class entity
-      - mentions for type refs inside class bodies and Governs-line concepts
-      - related_to between ADR entities for ADR-NNNN cross-references
-        (mediated by adr/NNNN namespaced concept)
-    """
-    adr_num = _is_adr_file(file_path)
-    if adr_num is None:
+    """Compatibility wrapper around _build_adr_record + apply_record so
+    direct callers (sync.py, tests) keep working. The parallel ingest
+    path bypasses this and calls the builder directly."""
+    from refmatrix.ingest_records import apply_record
+    rec = _build_adr_record(file_path, project_root, adr_num_to_eid)
+    if rec is None:
         return 0
-    adr_eid = adr_num_to_eid.get(adr_num)
-    if adr_eid is None:
-        return 0
+    return apply_record(s, rec, adr_num_to_eid=adr_num_to_eid)
 
-    try:
-        text = file_path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return 0
-    lines = text.splitlines()
 
-    rel = (
-        file_path.relative_to(project_root).as_posix()
-        if file_path.is_relative_to(project_root)
-        else str(file_path)
-    )
-
+def _adr_emit_body(
+    s,
+    lines: list[str],
+    text: str,
+    rel: str,
+    file_path: Path,
+    adr_num: str,
+    adr_eid,
+    adr_num_to_eid: dict[str, int],
+    weight: float,
+    get_concept,
+) -> int:
+    """Body extraction shared between the legacy single-call path and the
+    record-builder. `s` is either a real Store or a RecordingStore; this
+    fn never branches on the type."""
     header = _parse_adr_header(lines)
-    status_raw = header.get("Status", "Proposed")
-    status = status_raw.split()[0] if status_raw else "Proposed"
-    weight = _ADR_STATUS_WEIGHT.get(status, 0.3)
-    if weight == 0.0:
-        return 0
-
     n = 0
-    concept_cache: dict[str, int] = {}
-
-    def get_concept(name: str) -> int:
-        if name in concept_cache:
-            return concept_cache[name]
-        cid = s.add_concept(name, description=f"symbol '{name}'")
-        concept_cache[name] = cid
-        return cid
 
     # Governs line → mentions linkage on CamelCase tokens
     governs = header.get("Governs", "")
@@ -941,9 +1064,14 @@ def _ingest_adr_semantics(
         if ref_num == adr_num or ref_num in seen_refs:
             continue
         seen_refs.add(ref_num)
-        target_eid = adr_num_to_eid.get(ref_num)
-        if target_eid is None:
-            continue
+        if hasattr(s, "register_ref_resolve"):
+            if ref_num not in adr_num_to_eid:
+                continue
+            target_eid = f"@adr:{ref_num}"
+        else:
+            target_eid = adr_num_to_eid.get(ref_num)
+            if target_eid is None:
+                continue
         ref_concept = s.add_namespaced_concept(
             "adr", ref_num, description=f"ADR-{ref_num}"
         )
@@ -1155,40 +1283,134 @@ def _kebab_to_pascal(stem: str) -> str:
 
 
 def _resolve_ref_target(
-    s: Store,
+    s,
     raw: str,
     project_root: Path,
     source_dir: Path,
-) -> int | None:
-    """Resolve a bold-metadata value to an existing doc/code entity.
+):
+    """Resolve a bold-metadata value to a doc/code entity.
 
-    Tries the value as project-relative path, source-relative path, and bare
-    basename. Returns the entity id or None if no match.
+    Tries the value as project-relative path, source-relative path, and
+    bare basename. Returns the entity id (real Store mode) or a symbolic
+    @ref handle (RecordingStore mode -- resolved by the applier later)
+    or None if no candidate could be built.
     """
     raw = raw.strip().strip("`").strip()
     if not raw:
         return None
-    candidates: list[str] = []
-    # Treat as project-relative path
-    candidates.append(raw)
-    # Source-relative
+    candidate_names: list[str] = []
+    candidate_names.append(raw)
     try:
         sr = (source_dir / raw).resolve().relative_to(project_root).as_posix()
-        candidates.append(sr)
+        candidate_names.append(sr)
     except (ValueError, OSError):
         pass
-    # As-is interpreted from project root
     try:
         pr = (project_root / raw).resolve().relative_to(project_root).as_posix()
-        candidates.append(pr)
+        candidate_names.append(pr)
     except (ValueError, OSError):
         pass
-    for cand in candidates:
+    if not candidate_names:
+        return None
+    # RecordingStore mode -- defer resolution to apply phase
+    if hasattr(s, "register_ref_resolve"):
+        candidates = [
+            (kind, name)
+            for name in candidate_names
+            for kind in ("doc", "code")
+        ]
+        return s.register_ref_resolve(candidates)
+    # Real Store -- resolve immediately
+    for cand in candidate_names:
         for kind in ("doc", "code"):
             ent = s.get_entity(kind, cand)
             if ent is not None:
                 return ent.id
     return None
+
+
+def _build_markdown_record(
+    file_path: Path,
+    project_root: Path,
+    adr_num_to_eid: dict[str, int],
+) -> "IngestRecord | None":
+    """Pure-parse build of an IngestRecord for a non-ADR markdown file.
+
+    No Store access. Safe to call from worker threads in parallel; the
+    returned record is replayed sequentially against the real Store via
+    ingest_records.apply_record. Mirrors the semantics of the old
+    _ingest_markdown_semantics path -- helpers below accept a
+    RecordingStore in place of a real Store and emit the same calls.
+    """
+    from refmatrix.ingest_records import RecordingStore
+    try:
+        text = file_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+    lines = text.splitlines()
+
+    rel = (
+        file_path.relative_to(project_root).as_posix()
+        if file_path.is_relative_to(project_root)
+        else str(file_path)
+    )
+    try:
+        mtime: float | None = file_path.stat().st_mtime
+    except OSError:
+        mtime = None
+
+    rb = RecordingStore(
+        rel=rel, file_path=str(file_path), mtime=mtime, doc_kind="doc",
+    )
+    doc_eid = rb.upsert_entity(kind="doc", name=rel, path=str(file_path))
+
+    concept_cache: dict[str, str] = {}
+
+    def get_concept(name: str) -> str:
+        if name in concept_cache:
+            return concept_cache[name]
+        cid = rb.add_concept(name, description=f"symbol '{name}'")
+        concept_cache[name] = cid
+        return cid
+
+    _emit_bold_metadata_refs(
+        rb, lines, rel, doc_eid, file_path, project_root,
+        adr_num_to_eid, get_concept,
+    )
+
+    seen_adr_refs: set[str] = set()
+    for m in _ADR_REF_RE.finditer(text):
+        ref_num = m.group(1)
+        if ref_num in seen_adr_refs:
+            continue
+        seen_adr_refs.add(ref_num)
+        if ref_num not in adr_num_to_eid:
+            continue
+        ref_concept = rb.add_namespaced_concept(
+            "adr", ref_num, description=f"ADR-{ref_num}"
+        )
+        rb.link("related_to", ref_concept, doc_eid)
+        rb.link("related_to", ref_concept, f"@adr:{ref_num}")
+        rb.add_evidence("related_to", ref_concept, doc_eid,
+                        file=rel, detail=f"references ADR-{ref_num}")
+
+    is_plan = _is_plan_file(file_path)
+    if _is_concept_doc(file_path):
+        _emit_concept_doc_linkages(
+            rb, lines, rel, doc_eid, file_path, get_concept,
+        )
+    elif is_plan:
+        _emit_concept_doc_linkages(
+            rb, lines, rel, doc_eid, file_path, get_concept,
+            verb="specifies",
+        )
+
+    _emit_md_fenced_class_specs(
+        rb, lines, rel, doc_eid, file_path, get_concept, weight=0.5,
+        verb="specifies" if is_plan else "defines",
+    )
+
+    return rb.record
 
 
 def _ingest_markdown_semantics(
@@ -1197,94 +1419,15 @@ def _ingest_markdown_semantics(
     project_root: Path,
     adr_num_to_eid: dict[str, int],
 ) -> int:
-    """Extract semantic linkages from a non-ADR markdown file.
-
-    Always-on extractors:
-      - bold-labeled metadata refs in the first 50 non-blank lines
-      - ADR-NNNN cross-references anywhere in the body
-      - fenced code blocks containing class-spec pseudocode
-
-    Concept-doc-only extractors (path contains 'concepts/' or 'glossary/'):
-      - H1 first CamelCase token → defines this doc
-      - filename PascalCase'd → defines this doc
-      - each H3 with single CamelCase title → sub-entity, defines linkage
-      - subclass/extends prose in H3 body → is_a linkage
-    """
-    try:
-        text = file_path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
+    """Compatibility wrapper: build a record, apply it. Preserves the
+    old single-call entry point for any direct callers (sync.py, tests).
+    The parallel ingest path bypasses this and calls
+    _build_markdown_record + apply_record directly."""
+    from refmatrix.ingest_records import apply_record
+    rec = _build_markdown_record(file_path, project_root, adr_num_to_eid)
+    if rec is None:
         return 0
-    lines = text.splitlines()
-
-    rel = (
-        file_path.relative_to(project_root).as_posix()
-        if file_path.is_relative_to(project_root)
-        else str(file_path)
-    )
-    doc_eid = s.upsert_entity(kind="doc", name=rel, path=str(file_path))
-    try:
-        s.mark_tracked(str(file_path), file_path.stat().st_mtime)
-    except OSError:
-        pass
-
-    n = 0
-    concept_cache: dict[str, int] = {}
-
-    def get_concept(name: str) -> int:
-        if name in concept_cache:
-            return concept_cache[name]
-        cid = s.add_concept(name, description=f"symbol '{name}'")
-        concept_cache[name] = cid
-        return cid
-
-    # 1. Bold-labeled metadata refs (universal — any markdown header)
-    n += _emit_bold_metadata_refs(
-        s, lines, rel, doc_eid, file_path, project_root,
-        adr_num_to_eid, get_concept,
-    )
-
-    # 2. ADR-NNNN cross-references (universal — any prose)
-    seen_adr_refs: set[str] = set()
-    for m in _ADR_REF_RE.finditer(text):
-        ref_num = m.group(1)
-        if ref_num in seen_adr_refs:
-            continue
-        seen_adr_refs.add(ref_num)
-        target_eid = adr_num_to_eid.get(ref_num)
-        if target_eid is None:
-            continue
-        ref_concept = s.add_namespaced_concept(
-            "adr", ref_num, description=f"ADR-{ref_num}"
-        )
-        s.link("related_to", ref_concept, doc_eid)
-        s.link("related_to", ref_concept, target_eid)
-        s.add_evidence("related_to", ref_concept, doc_eid,
-                       file=rel, detail=f"references ADR-{ref_num}")
-        n += 1
-
-    # 3. Concept-doc / plan-doc heuristic. Both share the H1+H3 emitter; the
-    # verb differs: concept docs `define`, plans/specs/issues `specify` (so a
-    # query for the produced concept can trace back to the spec that drove it).
-    is_plan = _is_plan_file(file_path)
-    if _is_concept_doc(file_path):
-        n += _emit_concept_doc_linkages(
-            s, lines, rel, doc_eid, file_path, get_concept,
-        )
-    elif is_plan:
-        n += _emit_concept_doc_linkages(
-            s, lines, rel, doc_eid, file_path, get_concept,
-            verb="specifies",
-        )
-
-    # 4. Fenced code-block class specs (universal). Plans emit `specifies`,
-    # other docs `defines`. Weight 0.5 since the source isn't a binding
-    # decision like an ADR.
-    n += _emit_md_fenced_class_specs(
-        s, lines, rel, doc_eid, file_path, get_concept, weight=0.5,
-        verb="specifies" if is_plan else "defines",
-    )
-
-    return n
+    return apply_record(s, rec, adr_num_to_eid=adr_num_to_eid)
 
 
 def _emit_bold_metadata_refs(
@@ -1326,17 +1469,27 @@ def _emit_bold_metadata_refs(
             adr_m = _ADR_REF_RE.search(tok)
             if adr_m:
                 ref_num = adr_m.group(1)
-                target_eid = adr_num_to_eid.get(ref_num)
-                if target_eid is not None:
-                    ref_concept = s.add_namespaced_concept(
-                        "adr", ref_num, description=f"ADR-{ref_num}"
-                    )
-                    s.link("related_to", ref_concept, doc_eid)
-                    s.link("related_to", ref_concept, target_eid)
-                    s.add_evidence("related_to", ref_concept, doc_eid,
-                                   file=rel, line=lineno,
-                                   detail=f"{label}: ADR-{ref_num}")
-                    n += 1
+                # In record-build mode we can't reference the real id by
+                # int; use the symbolic @adr:NNNN handle so the applier
+                # binds it via adr_num_to_eid at apply time. In direct
+                # mode the dict carries real ids, so look it up.
+                if hasattr(s, "register_ref_resolve"):
+                    if ref_num not in adr_num_to_eid:
+                        continue
+                    target_eid = f"@adr:{ref_num}"
+                else:
+                    target_eid = adr_num_to_eid.get(ref_num)
+                    if target_eid is None:
+                        continue
+                ref_concept = s.add_namespaced_concept(
+                    "adr", ref_num, description=f"ADR-{ref_num}"
+                )
+                s.link("related_to", ref_concept, doc_eid)
+                s.link("related_to", ref_concept, target_eid)
+                s.add_evidence("related_to", ref_concept, doc_eid,
+                               file=rel, line=lineno,
+                               detail=f"{label}: ADR-{ref_num}")
+                n += 1
                 continue
             # Path ref?
             target_eid = _resolve_ref_target(s, tok, project_root, source_dir)
