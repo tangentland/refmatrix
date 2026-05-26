@@ -17,7 +17,7 @@ def log_on(monkeypatch):
 
 @pytest.fixture
 def log_off(monkeypatch):
-    monkeypatch.delenv("RMX_LOG", raising=False)
+    monkeypatch.setenv("RMX_LOG", "0")
     yield
 
 

@@ -54,17 +54,17 @@ def _concept_variants(name: str) -> tuple[str, list[str]]:
 _CONCEPT_SHIFT = 32
 _ENTITY_MASK = (1 << 32) - 1
 
-# Append-only fact log. Source-of-truth-in-progress: when RMX_LOG=1, every
-# mutation also writes a JSON line to .refmatrix/facts.log. The log is keyed
-# by names (not auto-IDs), so two branches that ingest disjoint material can
-# be merged with a plain text-line merge and rebuilt via
+# Append-only fact log. Source-of-truth-in-progress: every mutation also
+# writes a JSON line to .refmatrix/facts.log unless RMX_LOG=0. The log is
+# keyed by names (not auto-IDs), so two branches that ingest disjoint
+# material can be merged with a plain text-line merge and rebuilt via
 # rebuild_index_from_log(). The catalog and fragments stay authoritative for
 # reads; phase-2 will flip that.
 LOG_FILENAME = "facts.log"
 
 
 def _log_enabled() -> bool:
-    return os.environ.get("RMX_LOG") in ("1", "true", "True")
+    return os.environ.get("RMX_LOG", "1") not in ("0", "false", "False")
 
 # A single .refmatrix/ root can host multiple named partitions so several agents
 # can write to a shared store without colliding on (kind, name). Each entity

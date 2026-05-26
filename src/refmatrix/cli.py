@@ -1084,6 +1084,16 @@ def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn):
         effective_pattern = rf"\b{pattern}\b"
     from refmatrix import daemon as daemon_mod
     root = _root()
+    s = _store()
+    with log_query(s, kind="grep", body=pattern, source="grep") as _tlog:
+        _grep_run(
+            s, root, daemon_mod, pattern, effective_pattern, regex,
+            linkage, kind, limit, fallback, learn, gf, paths, _tlog,
+        )
+
+
+def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
+              linkage, kind, limit, fallback, learn, gf, paths, _tlog):
     rows: list[dict] = []
     if daemon_mod.ping(root):
         resp = daemon_mod.call(root, "grep_indexed", {
@@ -1095,7 +1105,6 @@ def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn):
         rows = resp["result"]["rows"]
     else:
         # Direct path: only used when daemon is down. Mirror the SQL.
-        s = _store()
         like = f"%{effective_pattern}%"
         sql = (
             "SELECT e.path, e.name, ev.line, lt.name, c.name "
@@ -1124,10 +1133,12 @@ def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn):
         rows = _filter_rows_by_paths(rows, paths)
 
     if rows:
+        _tlog.cardinality = len(rows)
         _render_grep_rows(rows, gf, limit, source_tag="idx")
         return
 
     if not fallback:
+        _tlog.cardinality = 0
         console.print("[dim]no indexed matches[/]")
         return
 
@@ -1177,6 +1188,7 @@ def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn):
         cmd = [tool, f"-{g_letters}", pattern] + targets
     res = subprocess.run(cmd, capture_output=True, text=True)
     if not res.stdout.strip():
+        _tlog.cardinality = 0
         console.print("[dim]no matches[/]")
         return
     prefix = "[rg] " if tool.endswith("/rg") else "[grep] "
@@ -1189,6 +1201,7 @@ def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn):
                 break
             click.echo(prefix + raw)
             shown += 1
+        _tlog.cardinality = shown
         return
     # Default rendering: rg --no-heading / grep -H emit `path:line:rest`.
     parsed_hits: list[dict] = []
@@ -1204,6 +1217,7 @@ def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn):
             except ValueError:
                 continue
             parsed_hits.append({"file": parts[0], "line": line_no})
+    _tlog.cardinality = len(parsed_hits)
 
     if learn and parsed_hits and daemon_mod.ping(root):
         resp = daemon_mod.call(root, "learn_from_grep", {
