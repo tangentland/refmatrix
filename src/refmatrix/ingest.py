@@ -494,6 +494,26 @@ def _ingest_graphify(s: Store, project: Path) -> int:
 
 
 def _ingest_tree(s: Store, root: Path) -> int:
+    """Walk the tree, batching entity upserts.
+
+    Per-row upsert_entity was O(N) cursor + (pre-transaction-wrap) commit
+    calls. Batching via bulk_upsert_entity reduces it to a handful of
+    executemany batches, which under the outer ingest transaction land
+    in one final WAL flush.
+    """
+    BATCH = 1000
+    batch: list[tuple[str, str, str | None, str | None, dict | None]] = []
+    track_payload: list[tuple[str, float]] = []
+
+    def _flush() -> None:
+        if not batch:
+            return
+        s.bulk_upsert_entity(batch)
+        for tpath, tmtime in track_payload:
+            s.mark_tracked(tpath, tmtime)
+        batch.clear()
+        track_payload.clear()
+
     n = 0
     for p in root.rglob("*"):
         if not p.is_file():
@@ -509,9 +529,16 @@ def _ingest_tree(s: Store, root: Path) -> int:
             kind = "code"
         else:
             continue
-        s.upsert_entity(kind=kind, name=rel, path=str(p))
-        s.mark_tracked(str(p), p.stat().st_mtime)
+        try:
+            mtime = p.stat().st_mtime
+        except OSError:
+            continue
+        batch.append((kind, rel, str(p), None, None))
+        track_payload.append((str(p), mtime))
         n += 1
+        if len(batch) >= BATCH:
+            _flush()
+    _flush()
     return n
 
 

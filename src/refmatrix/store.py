@@ -672,6 +672,81 @@ class Store:
             self._log_event("protect", kind=kind, name=name, value=1)
         return eid
 
+    def bulk_upsert_entity(
+        self,
+        rows: list[tuple[str, str, str | None, str | None, dict | None]],
+    ) -> list[int]:
+        """Upsert many entities in one prepared statement, returning the
+        resulting ids in input order.
+
+        Each input row is `(kind, name, path, tldr, meta)`. Same on-conflict
+        semantics as `upsert_entity` (path/tldr/meta COALESCE, protected
+        ratchets up only). Logging emits one entity event per row so the
+        fact log remains replayable.
+
+        Intended for the file-walk + metadata passes where N is in the
+        thousands -- a single transaction-wrapped executemany cuts per-row
+        cursor + COMMIT overhead.
+        """
+        if not rows:
+            return []
+        now = time.time()
+        pid = self._partition_id
+        con = self._connect()
+        payload = [
+            (pid, kind, name, path, tldr,
+             json.dumps(meta) if meta else None, now, now, 0)
+            for (kind, name, path, tldr, meta) in rows
+        ]
+        # DuckDB does not support RETURNING from executemany, so the upsert
+        # is followed by a single SELECT against the (partition_id, kind,
+        # name) unique index. Cheaper than N round-trips.
+        con.executemany(
+            """
+            INSERT INTO entities(partition_id, kind, name, path, tldr, meta,
+                                 created_at, updated_at, protected)
+            VALUES (?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(partition_id, kind, name) DO UPDATE SET
+                path = COALESCE(excluded.path, entities.path),
+                tldr = COALESCE(excluded.tldr, entities.tldr),
+                meta = COALESCE(excluded.meta, entities.meta),
+                updated_at = excluded.updated_at,
+                protected = GREATEST(entities.protected, excluded.protected)
+            """,
+            payload,
+        )
+        # Look up the ids in one query keyed by (kind, name).
+        keys = [(kind, name) for (kind, name, *_rest) in rows]
+        placeholders = ",".join("(?,?)" for _ in keys)
+        flat: list = [pid]
+        for kind, name in keys:
+            flat.extend([kind, name])
+        id_rows = con.execute(
+            f"SELECT kind, name, id FROM entities "
+            f"WHERE partition_id=? AND (kind, name) IN ({placeholders})",
+            flat,
+        ).fetchall()
+        id_by_key = {(r[0], r[1]): r[2] for r in id_rows}
+        ids: list[int] = [id_by_key[(k, n)] for (k, n) in keys]
+        # Concepts need a row in the concepts table; insert any missing.
+        concept_payload = [
+            (ids[i], (rows[i][4] or {}).get("description"))
+            for i in range(len(rows))
+            if rows[i][0] == "concept"
+        ]
+        if concept_payload:
+            con.executemany(
+                "INSERT OR IGNORE INTO concepts(id, description) VALUES (?, ?)",
+                concept_payload,
+            )
+        self._maybe_commit(con)
+        for (kind, name, path, tldr, meta) in rows:
+            self._log_event(
+                "entity",
+                kind=kind, name=name, path=path, tldr=tldr, meta=meta,
+            )
+        return ids
+
     def add_concept(
         self,
         name: str,
