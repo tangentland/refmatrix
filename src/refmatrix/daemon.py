@@ -408,6 +408,25 @@ def _op_ingest_path(d: Daemon, args: dict) -> dict:
     return {"entities": n, "path": str(path)}
 
 
+def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
+    """Run GMD ingest against the daemon-owned store. Same rationale as
+    `_op_ingest_path`: avoid catalog-lock contention with the watcher."""
+    from refmatrix.ingest_gmd import collect_gmd_files, ingest_gmd_paths
+    targets = [Path(p).resolve() for p in (args.get("targets") or [])]
+    verbose = bool(args.get("verbose"))
+    files = collect_gmd_files(targets)
+    if not files:
+        return {"files": 0, "report": "no candidate files found"}
+    with d._store_lock:
+        stats = ingest_gmd_paths(d.store, files, verbose=verbose)
+    return {
+        "files": len(files), "report": stats.report(),
+        "docs": stats.docs, "nodes": stats.nodes,
+        "rels": stats.rels, "mentions": stats.mentions,
+        "unresolved": len(stats.unresolved),
+    }
+
+
 def _op_sync_since(d: Daemon, args: dict) -> dict:
     """Run `sync_since` through the daemon's long-lived Store. Targets the
     git post-commit hook (`rmx sync --since HEAD~1`), which used to grab
@@ -741,6 +760,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "sync_files": _op_sync_files,
     "sync_since": _op_sync_since,
     "ingest_path": _op_ingest_path,
+    "ingest_gmd": _op_ingest_gmd,
     "context": _op_context,
     "query": _op_query,
     "grep_indexed": _op_grep_indexed,

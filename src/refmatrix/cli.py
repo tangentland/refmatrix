@@ -2124,9 +2124,22 @@ def rebuild(from_log: bool, yes: bool):
 def ingest_gmd(targets: tuple[Path, ...], verbose: bool):
     """Ingest Graph Markdown (GMD) docs. Walks dirs for *.gmd/*.md files
     that carry `gmd:` frontmatter; non-GMD files are skipped."""
+    from refmatrix import daemon as daemon_mod
     from refmatrix.ingest_gmd import collect_gmd_files, ingest_gmd_paths
+
+    root = _root()
+    resolved = [Path(t).resolve() for t in targets]
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "ingest_gmd", {
+            "targets": [str(p) for p in resolved],
+            "verbose": verbose,
+        }, timeout=24 * 3600.0)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        console.print(resp["result"]["report"])
+        return
     s = _store()
-    files = collect_gmd_files(list(targets))
+    files = collect_gmd_files(resolved)
     if not files:
         console.print("[yellow]no candidate files found[/]")
         return
