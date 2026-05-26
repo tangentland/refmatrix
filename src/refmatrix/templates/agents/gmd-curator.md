@@ -373,32 +373,74 @@ The user asked a substantive question the graph might answer.
 
 ## rmx playbook (your standard moves)
 
+### Sync (fast — block + read result)
+
 ```bash
-# State of the union
 rmx info                              # which root, partition
 rmx primer                            # density-ranked top concepts
 rmx daemon status                     # daemon running?
 rmx stats                             # entity/link counts
-
-# Ingest
-rmx ingest <path>                     # full ingest, daemon-routed
-rmx ingest-gmd <path>                 # GMD-only, daemon-routed
-rmx ingest . --source graphify        # additive graphify layer
-
-# Walk
 rmx context <Concept>                 # token-budgeted bundle
 rmx context <doc-id>#<anchor>         # specific GMD node
 rmx neighbors <Concept> --depth 2     # graph walk
 rmx query "defines:X AND mentions:Y"  # DSL
 rmx co-occur <X>                      # what shares context with X
 rmx top mentions -k 20                # most-mentioned
-
-# Maintenance
 rmx grep <Pattern>                    # index-backed grep, learn-on-miss
+```
+
+These are reads or sub-second writes. Run synchronously, parse stdout.
+
+### Async (slow — fire-and-forget; never block on these)
+
+**All ingest, sync, and primer-rebuild operations MUST be backgrounded.**
+The user's session should not stall waiting for a multi-minute ingest.
+
+```bash
+# Pattern: detached subshell + redirect to a log + disown.
+( rmx ingest-gmd docs/ >.refmatrix/curator.last-ingest.log 2>&1 ) & disown
+( rmx ingest .         >.refmatrix/curator.last-ingest.log 2>&1 ) & disown
+( rmx sync --flush-queue --async >/dev/null 2>&1 ) & disown
+( rmx primer --out .refmatrix/PRIMER.md >/dev/null 2>&1 ) & disown
+```
+
+`rmx sync --flush-queue --async` is the daemon-native async path —
+the daemon enqueues + returns immediately, no shell backgrounding
+needed. Use it when files are already in `.refmatrix/dirty.queue`.
+
+For `rmx ingest` / `rmx ingest-gmd` there is no built-in --async flag
+yet — wrap them with `( ... ) & disown` as shown.
+
+### Verifying async work without blocking
+
+When you need to confirm an ingest finished (e.g. before validating
+unresolved refs), do NOT `wait` on the backgrounded PID — that
+reintroduces the block. Instead:
+
+1. Return control to the user. Report "ingest dispatched, monitoring."
+2. Poll the log file on a later turn:
+   ```bash
+   tail -5 .refmatrix/curator.last-ingest.log
+   ```
+3. Re-query rmx for the post-ingest state:
+   ```bash
+   rmx stats
+   rmx ingest-gmd docs/ --dry-run 2>&1 | grep unresolved   # if supported
+   ```
+
+If the user is waiting interactively for results, give them a status
+update and let them choose whether to wait.
+
+### Maintenance (explicit, blocking is fine)
+
+These are user-confirmed maintenance ops — they're the point of the
+operation, not a side effect. Run synchronously and report.
+
+```bash
 rmx prune-noise <Concept>             # mark noise
 rmx checkpoint                        # flush DuckDB WAL
 rmx dump-log                          # snapshot catalog → facts.log
-rmx rebuild --from-log                # rebuild from facts.log (confirm first)
+rmx rebuild --from-log                # rebuild (always confirm first)
 ```
 
 If daemon is down: `rmx daemon start` (idempotent, safe). If wedged

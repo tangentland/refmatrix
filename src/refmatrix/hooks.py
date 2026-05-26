@@ -81,19 +81,33 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
         "[subprocess.run(['rmx','sync','--enqueue-only','-f',p],check=False) "
         "for p in paths if p]"
     )
-    enqueue_cmd = f"python3 -c \"{enqueue_py}\" 2>/dev/null || true"
+    # Run enqueue in a backgrounded subshell so the PostToolUse hook never
+    # blocks the agent's next tool call. The queue write is fast (text-file
+    # append, no DuckDB lock), but a slow Python startup can still chew
+    # 50-100ms per Edit/Write; multiplied by burst hooks it adds up.
+    enqueue_cmd = (
+        f"( python3 -c \"{enqueue_py}\" 2>/dev/null || true ) & disown"
+    )
 
-    flush_cmd = "rmx sync --flush-queue >/dev/null 2>&1 || true"
+    # --async hands the actual sync work to the daemon and returns
+    # immediately. With no daemon up, the flag is a silent no-op so the
+    # hook stays cheap.
+    flush_cmd = (
+        "( rmx sync --flush-queue --async >/dev/null 2>&1 || true ) & disown"
+    )
 
-    # SessionStart: flush + (optionally) regenerate primer.
-    sess_parts = ["rmx sync --flush-queue >/dev/null 2>&1 || true"]
+    # SessionStart: flush + (optionally) regenerate primer. Backgrounded;
+    # session start should not stall on rmx work.
+    sess_parts = [
+        "rmx sync --flush-queue --async >/dev/null 2>&1 || true"
+    ]
     if primer:
         sess_parts.append(
             "rmx primer --out '"
             + str(refmatrix_root / "PRIMER.md")
             + "' >/dev/null 2>&1 || true"
         )
-    sess_cmd = " ; ".join(sess_parts)
+    sess_cmd = "( " + " ; ".join(sess_parts) + " ) & disown"
 
     block = {
         "hooks": {
