@@ -303,9 +303,17 @@ class Store:
 
     def init(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
-        self.bitmaps_dir.mkdir(exist_ok=True)
-        self.fragments_dir.mkdir(exist_ok=True)
-        self._partition_fragments_dir().mkdir(parents=True, exist_ok=True)
+        # Legacy `bitmaps/` dir is only read for migration off the
+        # historical per-(linkage, concept) layout. Stop creating it
+        # on fresh inits -- nothing writes there, and an empty dir
+        # next to fragments/ confuses operators looking for state.
+        # `bitmaps_dir` attribute stays so migration code can still
+        # find an existing one if a legacy store is upgraded.
+        # `fragments/` is also DuckDB-irrelevant (BLOBs in catalog),
+        # but the SQLite backend writes there.
+        if self._backend.kind == "sqlite":
+            self.fragments_dir.mkdir(exist_ok=True)
+            self._partition_fragments_dir().mkdir(parents=True, exist_ok=True)
         self.queries_dir.mkdir(exist_ok=True)
         with self._connect() as con:
             if self._backend.kind == "sqlite":

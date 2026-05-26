@@ -35,8 +35,9 @@ def test_init_creates_layout(tmp_path):
     s = Store(tmp_path / ".refmatrix")
     s.init()
     assert s.db_path.exists()
-    assert s.bitmaps_dir.is_dir()
     assert s.queries_dir.is_dir()
+    # bitmaps/ is the legacy on-disk fragment layout; we no longer create
+    # it on fresh inits. fragments/ only materializes on SQLite backend.
     # default linkages exist
     names = {lk["name"] for lk in s.list_linkages()}
     assert {"mentions", "defines", "calls", "called_by", "imports", "is_a", "related_to"} <= names
