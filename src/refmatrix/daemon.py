@@ -175,6 +175,14 @@ class Daemon:
         if self.watch_root is not None:
             self._start_watcher()
 
+        # Periodic bitmap-fragment flush. Fragments live in-memory in the
+        # Store and only persist on close() -- so a daemon crash, SIGKILL,
+        # or power loss between explicit checkpoints leaves the relational
+        # tables ahead of the on-disk bitmaps. Walk every 30s and flush
+        # any dirty fragments under _store_lock so we never grow more than
+        # 30 seconds of unrecoverable bitmap drift.
+        self._start_periodic_flush()
+
         srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         srv.bind(str(sock_path))
         os.chmod(sock_path, 0o600)
@@ -225,6 +233,20 @@ class Daemon:
             # tear down the socket out from under a request that was
             # almost done. Hard cap so a stuck handler can't pin shutdown.
             pool.shutdown(wait=True, cancel_futures=True)
+            if getattr(self, "_flush_stop", None) is not None:
+                self._flush_stop.set()
+            if getattr(self, "_flush_thread", None) is not None:
+                self._flush_thread.join(timeout=3.0)
+            # Final flush before close() so anything queued in the last
+            # interval lands. close() also flushes, but doing it explicitly
+            # under _store_lock keeps the on-disk state consistent if
+            # close() races with a late handler.
+            try:
+                with self._store_lock:
+                    if self.store is not None:
+                        self.store.flush_fragments()
+            except Exception as exc:
+                self._log(f"final flush failed: {exc!r}")
             if self._watch_stop is not None:
                 self._watch_stop.set()
             if self._watch_thread is not None:
@@ -241,6 +263,45 @@ class Daemon:
             if self.log_fh is not None:
                 self.log_fh.close()
         return 0
+
+    def _start_periodic_flush(self, interval_s: float | None = None) -> None:
+        """Spawn a daemon thread that periodically calls
+        store.flush_fragments() so in-memory bitmap state lands on disk
+        even when no explicit close() / transaction() runs.
+
+        Without this, fragments only persist at scope exit of an outer
+        s.transaction() (added in the same series) or at Store.close().
+        A SIGKILL between flushes leaves the relational tables ahead of
+        the bitmaps -- exactly the corruption surface that wedged
+        viascope earlier today.
+
+        Interval defaults to 30s; override via RMX_DAEMON_FLUSH_S env."""
+        import threading as _t
+        if interval_s is None:
+            interval_s = float(os.environ.get("RMX_DAEMON_FLUSH_S", "30") or "30")
+        self._flush_stop = _t.Event()
+
+        def _runner():
+            while not self._flush_stop.is_set():
+                # wait first so we don't immediately race the initial
+                # transaction.flush at startup
+                if self._flush_stop.wait(interval_s):
+                    return
+                if self.store is None:
+                    continue
+                try:
+                    with self._store_lock:
+                        if self.store._dirty_fragments:
+                            n = len(self.store._dirty_fragments)
+                            self.store.flush_fragments()
+                            self._log(f"periodic flush: {n} fragment(s)")
+                except Exception as exc:
+                    self._log(f"periodic flush failed: {exc!r}")
+
+        self._flush_thread = _t.Thread(
+            target=_runner, name="rmxd-flush", daemon=True,
+        )
+        self._flush_thread.start()
 
     def _start_watcher(self) -> None:
         """Spawn a watchdog thread that debounces fs events and syncs the

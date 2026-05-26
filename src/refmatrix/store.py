@@ -1048,6 +1048,21 @@ class Store:
                 raise
             con.execute("COMMIT")
             self._in_transaction = False
+            # Persist any dirty bitmap fragments alongside the relational
+            # commit. Without this, fragments only flushed in Store.close()
+            # and a daemon SIGKILL between ingests left the relational
+            # tables ahead of the on-disk bitmaps -- the exact corruption
+            # surface that hit viascope earlier.
+            if self._dirty_fragments:
+                try:
+                    self.flush_fragments()
+                except Exception as exc:
+                    # Don't roll the transaction back -- the relational
+                    # write already landed. Surface the error so the next
+                    # explicit flush retries.
+                    import sys
+                    print(f"[rmx] fragment flush failed: {exc!r}",
+                          file=sys.stderr)
         return _scope()
 
     def deferred_links(self):
