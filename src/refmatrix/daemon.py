@@ -223,10 +223,32 @@ class Daemon:
         except ImportError as exc:
             self._log(f"watchdog not installed; watcher disabled: {exc}")
             return
-        from refmatrix.watch import Debouncer, is_relevant
+        from refmatrix.watch import Debouncer, is_relevant, is_curator_relevant
         from refmatrix.sync import sync_files
 
         self._watch_stop = threading.Event()
+        curator_queue_path = self.root / "curator.queue"
+
+        def _enqueue_curator(paths: list[str]) -> int:
+            """Append curator-relevant paths to .refmatrix/curator.queue.
+
+            Format: one JSON object per line — {ts, path, reason}. A
+            SessionStart hook reads + drains this so Claude knows to
+            dispatch the gmd-curator subagent."""
+            import json as _json
+            keep = [p for p in paths if is_curator_relevant(Path(p))]
+            if not keep:
+                return 0
+            now = time.time()
+            try:
+                with curator_queue_path.open("a", encoding="utf-8") as fh:
+                    for p in keep:
+                        fh.write(_json.dumps({
+                            "ts": now, "path": p, "reason": "fs-change",
+                        }, ensure_ascii=False) + "\n")
+            except OSError as exc:
+                self._log(f"curator queue write failed: {exc!r}")
+            return len(keep)
 
         def _flush(paths: list[str]) -> None:
             # Take the store_lock so the watcher and the socket request
@@ -238,9 +260,11 @@ class Daemon:
                         project_root=self.watch_root,
                         semantic=self.watch_semantic,
                     )
+                queued = _enqueue_curator(paths)
+                tail = f" curator+{queued}" if queued else ""
                 self._log(
                     f"watch flush: paths={len(paths)} +{report['added']} "
-                    f"~{report['updated']} -{report['purged']}"
+                    f"~{report['updated']} -{report['purged']}{tail}"
                 )
             except Exception as exc:
                 self._log(f"watch flush failed: {exc!r}")

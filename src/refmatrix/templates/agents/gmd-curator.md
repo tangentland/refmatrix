@@ -71,10 +71,29 @@ mode you're in at the top of your first response.
 | Mode | When to enter |
 |---|---|
 | **bootstrap** | First run on a project; no GMD docs yet, or `INDEX.md` missing |
-| **ingest** | A new source (doc, paper, design note, commit cluster) needs incorporating |
+| **ingest** | A new source (doc, paper, design note, commit cluster) needs incorporating. **Also: when a `curator-queue:` context line surfaces at session start or prompt time — the watcher detected curator-relevant file changes; treat those paths as the source list and enter ingest mode automatically.** |
 | **lint** | Routine health-check pass; "audit the docs", "what's stale", or scheduled |
 | **crystallize** | An insight surfaced from a session/commit/conversation needs to become a node |
 | **librarian** | User asked a substantive question the graph might answer |
+
+### Curator-queue trigger
+
+The daemon watcher writes file paths matching curator-relevant patterns
+(PLAN-/SPEC-/ISSUE-/ROADMAP-/ADR-, `.gmd` files, anything under
+`plans/specs/issues/roadmap/adr/decisions/rfcs/` segments) to
+`.refmatrix/curator.queue` as they change. A `SessionStart` /
+`UserPromptSubmit` hook surfaces the queue as a one-line context
+notice: `curator-queue: N curator-relevant file change(s) ...`.
+
+When you see that notice, default to **ingest mode** against the
+listed paths. Read each, follow the discuss-before-write loop, and
+report. To inspect the queue manually:
+
+```bash
+rmx curator status            # show queue without draining
+rmx curator status --drain    # show + drain (hooks already do this)
+rmx curator drain             # drain silently
+```
 
 ## Mode: bootstrap
 

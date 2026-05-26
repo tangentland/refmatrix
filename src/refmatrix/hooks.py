@@ -96,18 +96,24 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
         "( rmx sync --flush-queue --async >/dev/null 2>&1 || true ) & disown"
     )
 
-    # SessionStart: flush + (optionally) regenerate primer. Backgrounded;
-    # session start should not stall on rmx work.
-    sess_parts = [
+    # SessionStart: flush + (optionally) regenerate primer in the
+    # background, then EMIT (synchronously, foreground) the curator-queue
+    # status so any pending curator-relevant changes surface as context
+    # for Claude to act on. The status command is sub-second and silent
+    # when the queue is empty, so it doesn't slow down session startup.
+    bg_parts = [
         "rmx sync --flush-queue --async >/dev/null 2>&1 || true"
     ]
     if primer:
-        sess_parts.append(
+        bg_parts.append(
             "rmx primer --out '"
             + str(refmatrix_root / "PRIMER.md")
             + "' >/dev/null 2>&1 || true"
         )
-    sess_cmd = "( " + " ; ".join(sess_parts) + " ) & disown"
+    sess_cmd = (
+        "( " + " ; ".join(bg_parts) + " ) & disown ; "
+        "rmx curator status --drain 2>/dev/null || true"
+    )
 
     block = {
         "hooks": {
@@ -135,13 +141,17 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
     if scan_prompt:
         # UserPromptSubmit: pipe the JSON envelope through `rmx scan-prompt`
         # so Claude sees context for symbols mentioned in the user's prompt.
+        # Also surface any pending curator queue so the user's next prompt
+        # arrives alongside the curator-dispatch signal (subsecond, silent
+        # when empty, drains on read).
+        scan_cmd = (
+            "rmx scan-prompt --max-tokens 2000 2>/dev/null || true ; "
+            "rmx curator status --drain 2>/dev/null || true"
+        )
         block["hooks"]["UserPromptSubmit"] = [
             {
                 "hooks": [
-                    {
-                        "type": "command",
-                        "command": "rmx scan-prompt --max-tokens 2000 2>/dev/null || true",
-                    }
+                    {"type": "command", "command": scan_cmd}
                 ],
             }
         ]

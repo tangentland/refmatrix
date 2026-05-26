@@ -1955,6 +1955,96 @@ def queue_cmd():
             console.print(line)
 
 
+@main.group()
+def curator():
+    """gmd-curator coordination — watcher-populated queue + dispatch
+    signals. Wired into SessionStart so Claude knows when the
+    documentation graph needs the curator's attention.
+    """
+
+
+@curator.command("status")
+@click.option("--drain", is_flag=True,
+              help="Empty the queue after reading it. Use from hooks "
+                   "that only need to fire once per pending change.")
+@click.option("--quiet-when-empty", is_flag=True, default=True,
+              help="Print nothing if the queue is empty (default on). "
+                   "Useful from SessionStart so the hook is silent on "
+                   "fresh repos.")
+@click.option("--limit", default=10, type=int,
+              help="Cap the path list shown in the summary.")
+def curator_status(drain: bool, quiet_when_empty: bool, limit: int):
+    """Summarize the curator queue for hook injection.
+
+    Prints a single short paragraph suitable for SessionStart /
+    UserPromptSubmit hook stdout so Claude sees pending curator work
+    without paging through full file lists.
+    """
+    import json as _json
+    root = _root()
+    qpath = root / "curator.queue"
+    if not qpath.exists() or qpath.stat().st_size == 0:
+        if not quiet_when_empty:
+            console.print("curator queue: empty")
+        return
+    entries: list[dict] = []
+    try:
+        for line in qpath.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(_json.loads(line))
+            except _json.JSONDecodeError:
+                continue
+    except OSError:
+        return
+    if not entries:
+        if drain:
+            try:
+                qpath.unlink()
+            except OSError:
+                pass
+        return
+    paths = sorted({e.get("path", "") for e in entries if e.get("path")})
+    project_root = root.parent
+    rels: list[str] = []
+    for p in paths:
+        try:
+            rels.append(str(Path(p).resolve().relative_to(project_root)))
+        except ValueError:
+            rels.append(p)
+    sample = rels[:limit]
+    overflow = max(0, len(rels) - limit)
+    # Plain stdout — hook surfaces this as additional Claude context.
+    click.echo(
+        f"curator-queue: {len(rels)} curator-relevant file change(s) since "
+        f"last drain. Spawn `gmd-curator` (ingest mode) to cross-link, "
+        f"surface drift, and crystallize. Paths: "
+        + ", ".join(sample)
+        + (f", +{overflow} more" if overflow else "")
+    )
+    if drain:
+        try:
+            qpath.unlink()
+        except OSError:
+            pass
+
+
+@curator.command("drain")
+def curator_drain():
+    """Empty the curator queue without printing anything."""
+    qpath = _root() / "curator.queue"
+    if qpath.exists():
+        try:
+            qpath.unlink()
+            console.print("[green]curator queue drained[/]")
+        except OSError as exc:
+            raise click.ClickException(f"drain failed: {exc}")
+    else:
+        console.print("[dim]curator queue already empty[/]")
+
+
 # ---- weighted ranking -----------------------------------------------------
 
 

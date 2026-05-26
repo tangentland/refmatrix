@@ -40,6 +40,40 @@ def is_relevant(p: Path) -> bool:
     return True
 
 
+# Filename + path-segment patterns that signal "this change is curator-
+# relevant" — i.e. it touches the documentation graph in a way the
+# gmd-curator subagent should review (cross-link, surface drift,
+# crystallize, contradict). Watcher routes matching paths to
+# .refmatrix/curator.queue; a SessionStart hook surfaces the queue to
+# Claude so the curator gets dispatched.
+_CURATOR_FILENAME_PREFIXES = ("PLAN-", "SPEC-", "ISSUE-", "ROADMAP-",
+                              "ADR-")
+_CURATOR_PATH_SEGMENTS = {
+    "plans", "plan", "specs", "spec", "issues", "issue", "roadmap",
+    "adr", "decisions", "rfcs", "rfc",
+}
+
+
+def is_curator_relevant(p: Path) -> bool:
+    """True if a change in this path should signal the gmd-curator.
+
+    Matches: GMD docs (`.gmd` or `.md` under a `gmd:`-frontmatter path —
+    cheaply approximated by extension here, content sniff happens at
+    ingest time), plan/spec/issue/roadmap/ADR docs by filename prefix,
+    and anything under a curator-relevant path segment.
+    """
+    name = p.name
+    ext = p.suffix.lower()
+    if ext == ".gmd":
+        return True
+    if ext == ".md":
+        if any(name.startswith(pref) for pref in _CURATOR_FILENAME_PREFIXES):
+            return True
+        if any(seg in _CURATOR_PATH_SEGMENTS for seg in p.parts):
+            return True
+    return False
+
+
 class Debouncer:
     """Coalesces fs events into batches; fires callback after a quiet period."""
 
