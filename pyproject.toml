@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "refmatrix"
-version = "0.3.1"
+version = "0.3.2"
 description = "Roaring-bitmap reference matrix for documents, code, and concepts. Hyper-tldr index."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,8 +24,8 @@ watch = ["watchdog>=4.0"]
 dev = ["pytest>=8.0", "watchdog>=4.0"]
 
 [project.scripts]
-refmatrix = "refmatrix.cli:main"
-rmx = "refmatrix.cli:main"
+refmatrix = "refmatrix.cli:cli_entry"
+rmx = "refmatrix.cli:cli_entry"
 
 [tool.setuptools.packages.find]
 where = ["src"]

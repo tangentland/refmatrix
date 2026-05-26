@@ -31,10 +31,46 @@ from refmatrix.store import Store
 
 
 LOG_NAME = "query.log"
+CLI_LOG_NAME = "cli.log"
 
 
 def _disabled() -> bool:
     return os.environ.get("REFMATRIX_NO_TELEMETRY") in ("1", "true", "yes")
+
+
+def log_cli_invocation(
+    root: Path,
+    *,
+    argv: list[str],
+    cwd: str,
+    exit_code: int,
+    latency_ms: int,
+    error: str | None,
+    pid: int,
+) -> None:
+    """Append one JSONL record for an `rmx` CLI invocation to .refmatrix/cli.log.
+
+    Best-effort: silently skips if .refmatrix/ doesn't exist (e.g. `rmx init`
+    invoked outside any project) or if write fails.
+    """
+    if _disabled():
+        return
+    if not root.is_dir():
+        return
+    record: dict[str, Any] = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "argv": argv,
+        "cwd": cwd,
+        "exit_code": exit_code,
+        "latency_ms": latency_ms,
+        "error": error,
+        "pid": pid,
+    }
+    try:
+        with (root / CLI_LOG_NAME).open("a") as f:
+            f.write(json.dumps(record) + "\n")
+    except OSError:
+        pass
 
 
 class log_query:
@@ -138,6 +174,85 @@ def summarize(store: Store, since: str | None = None) -> dict:
         "latency_p50_ms": pct(0.50),
         "latency_p95_ms": pct(0.95),
         "latency_p99_ms": pct(0.99),
+    }
+
+
+def read_cli_log(root: Path, since: str | None = None) -> list[dict]:
+    """Read .refmatrix/cli.log JSONL, oldest first. `since` filters by ISO ts prefix."""
+    p = root / CLI_LOG_NAME
+    if not p.exists():
+        return []
+    out: list[dict] = []
+    for line in p.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if since and r.get("ts", "") < since:
+            continue
+        out.append(r)
+    return out
+
+
+def summarize_cli_log(root: Path, since: str | None = None) -> dict:
+    """Headline stats for cli.log: invocation counts by subcommand, error
+    rate, latency percentiles, top exact-argv invocations, error examples."""
+    rows = read_cli_log(root, since=since)
+    if not rows:
+        return {"total": 0}
+
+    total = len(rows)
+    sub_counter: Counter[str] = Counter()
+    argv_counter: Counter[str] = Counter()
+    cwd_counter: Counter[str] = Counter()
+    exit_counter: Counter[int] = Counter()
+    errors: list[dict] = []
+    latencies: list[int] = []
+
+    for r in rows:
+        argv = r.get("argv") or []
+        sub = argv[0] if argv else "<no-args>"
+        # Skip click's global flags when computing subcommand bucket.
+        if sub in ("--version", "-V", "-h", "--help") and len(argv) > 1:
+            sub = argv[1]
+        sub_counter[sub] += 1
+        argv_counter[" ".join(argv) if argv else "<no-args>"] += 1
+        cwd_counter[r.get("cwd") or "?"] += 1
+        code = r.get("exit_code", 0)
+        if isinstance(code, int):
+            exit_counter[code] += 1
+        if r.get("error"):
+            errors.append({"argv": argv, "error": r["error"], "ts": r.get("ts")})
+        lat = r.get("latency_ms")
+        if isinstance(lat, int):
+            latencies.append(lat)
+
+    latencies.sort()
+
+    def pct(p: float) -> int:
+        if not latencies:
+            return 0
+        idx = min(len(latencies) - 1, int(p * len(latencies)))
+        return latencies[idx]
+
+    nonzero_exits = sum(c for code, c in exit_counter.items() if code != 0)
+
+    return {
+        "total": total,
+        "by_subcommand": dict(sub_counter.most_common()),
+        "top_invocations": argv_counter.most_common(20),
+        "by_cwd": cwd_counter.most_common(10),
+        "exit_codes": dict(exit_counter),
+        "error_count": len(errors),
+        "error_rate": (nonzero_exits / total) if total else 0.0,
+        "error_examples": errors[-5:],
+        "latency_p50_ms": pct(0.50),
+        "latency_p95_ms": pct(0.95),
+        "latency_p99_ms": pct(0.99),
+        "latency_max_ms": latencies[-1] if latencies else 0,
     }
 
 

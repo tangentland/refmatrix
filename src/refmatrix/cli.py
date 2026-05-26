@@ -2230,6 +2230,99 @@ def install_hooks(git, claude, briefing, apply, force, scope):
         console.print(line)
 
 
+# ---- cli invocation log ---------------------------------------------------
+
+
+@main.command("cli-log")
+@click.option("--tail", "-n", type=int, default=20,
+              help="Show last N invocations (default 20). Ignored with --summary.")
+@click.option("--grep", "-g", "pattern", default=None,
+              help="Substring match against the joined argv.")
+@click.option("--summary", "-s", is_flag=True,
+              help="Print aggregate stats instead of records.")
+@click.option("--since", default=None,
+              help="ISO timestamp prefix filter, e.g. 2026-05-26 or 2026-05-26T10.")
+@click.option("--errors", "errors_only", is_flag=True,
+              help="Only show invocations with non-zero exit_code.")
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit raw JSONL instead of formatted output.")
+def cli_log(tail: int, pattern: str | None, summary: bool, since: str | None,
+            errors_only: bool, as_json: bool):
+    """Inspect the rmx CLI invocation log (.refmatrix/cli.log).
+
+    Each line records: ts, argv, cwd, exit_code, latency_ms, error, pid.
+    Disable logging with REFMATRIX_NO_TELEMETRY=1."""
+    from refmatrix.telemetry import read_cli_log, summarize_cli_log
+
+    root = _root()
+
+    if summary:
+        stats = summarize_cli_log(root, since=since)
+        if as_json:
+            console.print(json.dumps(stats, indent=2))
+            return
+        if stats.get("total", 0) == 0:
+            console.print("[yellow]no cli.log entries[/]")
+            return
+        console.print(f"[bold]total:[/] {stats['total']}  "
+                      f"[bold]errors:[/] {stats['error_count']} "
+                      f"({stats['error_rate']*100:.1f}%)")
+        console.print(f"[bold]latency ms:[/] p50={stats['latency_p50_ms']} "
+                      f"p95={stats['latency_p95_ms']} "
+                      f"p99={stats['latency_p99_ms']} "
+                      f"max={stats['latency_max_ms']}")
+        t = Table(title="by subcommand", show_header=True)
+        t.add_column("subcommand"); t.add_column("count", justify="right")
+        for sub, c in list(stats["by_subcommand"].items())[:20]:
+            t.add_row(sub, str(c))
+        console.print(t)
+        t = Table(title="top invocations", show_header=True)
+        t.add_column("argv"); t.add_column("count", justify="right")
+        for argv_str, c in stats["top_invocations"]:
+            t.add_row(argv_str, str(c))
+        console.print(t)
+        if stats["error_examples"]:
+            t = Table(title="recent errors", show_header=True)
+            t.add_column("ts"); t.add_column("argv"); t.add_column("error")
+            for e in stats["error_examples"]:
+                t.add_row(e.get("ts") or "", " ".join(e.get("argv") or []),
+                          e.get("error") or "")
+            console.print(t)
+        return
+
+    rows = read_cli_log(root, since=since)
+    if pattern:
+        rows = [r for r in rows if pattern in " ".join(r.get("argv") or [])]
+    if errors_only:
+        rows = [r for r in rows if r.get("exit_code", 0) != 0]
+    rows = rows[-tail:] if tail > 0 else rows
+
+    if as_json:
+        for r in rows:
+            console.print(json.dumps(r))
+        return
+
+    if not rows:
+        console.print("[yellow]no matching entries[/]")
+        return
+
+    t = Table(show_header=True)
+    t.add_column("ts"); t.add_column("argv"); t.add_column("exit", justify="right")
+    t.add_column("ms", justify="right"); t.add_column("error")
+    for r in rows:
+        argv = " ".join(r.get("argv") or [])
+        code = r.get("exit_code", 0)
+        code_str = f"[red]{code}[/]" if code else str(code)
+        t.add_row(
+            r.get("ts") or "",
+            argv,
+            code_str,
+            str(r.get("latency_ms") or 0),
+            r.get("error") or "",
+        )
+    console.print(t)
+
+
 # ---- merge-friendly fact log ---------------------------------------------
 
 
@@ -2308,5 +2401,47 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool):
     console.print(stats.report())
 
 
+def cli_entry() -> None:
+    """Console-script entrypoint. Wraps `main()` with invocation logging.
+
+    Captures argv, cwd, exit code, latency, and any exception, then appends
+    one JSONL record to .refmatrix/cli.log via telemetry. Preserves Click's
+    exit semantics by re-raising SystemExit.
+    """
+    import time as _time
+    from refmatrix.telemetry import log_cli_invocation
+
+    t0 = _time.monotonic()
+    argv = list(sys.argv[1:])
+    cwd = str(Path.cwd())
+    pid = os.getpid()
+    exit_code = 0
+    error: str | None = None
+    try:
+        main()
+    except SystemExit as e:
+        code = e.code
+        exit_code = int(code) if isinstance(code, int) else (0 if code is None else 1)
+        raise
+    except BaseException as e:
+        exit_code = 1
+        error = f"{type(e).__name__}: {e}"
+        raise
+    finally:
+        latency_ms = int((_time.monotonic() - t0) * 1000)
+        try:
+            log_cli_invocation(
+                _root(),
+                argv=argv,
+                cwd=cwd,
+                exit_code=exit_code,
+                latency_ms=latency_ms,
+                error=error,
+                pid=pid,
+            )
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
-    main()
+    cli_entry()
