@@ -663,7 +663,7 @@ class Store:
                 "INSERT OR IGNORE INTO concepts(id, description) VALUES (?, ?)",
                 (eid, (meta or {}).get("description")),
             )
-        con.commit()
+        self._maybe_commit(con)
         self._log_event(
             "entity",
             kind=kind, name=name, path=path, tldr=tldr, meta=meta,
@@ -773,7 +773,7 @@ class Store:
             "INSERT OR IGNORE INTO linkage_types(name, directed, description) VALUES (?,?,?)",
             (name, 1 if directed else 0, description),
         )
-        con.commit()
+        self._maybe_commit(con)
         # Log the registration so `rmx rebuild --from-log` can replay
         # custom linkage types before any link events that reference
         # them. Without this, a fresh-DB replay fails the moment it
@@ -935,6 +935,18 @@ class Store:
             frag.add(start | eid)
         self._dirty_fragments.add(linkage)
 
+    def _maybe_commit(self, con) -> None:
+        """Commit only if not inside an outer `transaction()` scope.
+
+        Per-mutation commits inside a `BEGIN TRANSACTION` block silently
+        end the transaction (DuckDB's commit() is a real COMMIT, not a
+        no-op) and switch the connection back to autocommit -- so callers
+        that wrap many writes in s.transaction() get one commit-per-call
+        anyway unless individual writes opt out. This helper makes the
+        opt-out automatic."""
+        if not self._in_transaction:
+            con.commit()
+
     def transaction(self):
         """Context manager that wraps the body in BEGIN/COMMIT. DuckDB
         otherwise autocommits each statement; bundling many writes into
@@ -1006,7 +1018,7 @@ class Store:
                         f"WHERE id IN ({placeholders})",
                         ids,
                     )
-                    con.commit()
+                    self._maybe_commit(con)
         return _scope()
 
     def link(
@@ -1044,7 +1056,7 @@ class Store:
                 "UPDATE entities SET protected = 1 WHERE id IN (?, ?)",
                 (concept_id, entity_id),
             )
-        con.commit()
+        self._maybe_commit(con)
         if _log_enabled() and not self._replay_mode:
             cn = self._name_of(concept_id)
             en = self._name_of(entity_id)
@@ -1078,7 +1090,7 @@ class Store:
             "DELETE FROM entity_links WHERE entity_id=? AND linkage_id=? AND concept_id=?",
             (entity_id, lid, concept_id),
         )
-        con.commit()
+        self._maybe_commit(con)
         if present and cn and en:
             self._log_event(
                 "unlink",
@@ -1162,7 +1174,7 @@ class Store:
                     for it in items
                 ],
             )
-        con.commit()
+        self._maybe_commit(con)
 
         if newly_added_for_log and _log_enabled() and not self._replay_mode:
             # Resolve names once per concept/entity rather than per link.
@@ -1204,7 +1216,7 @@ class Store:
             "VALUES (?,?,?)",
             [(eid, lid, concept_id) for eid in ids],
         )
-        con.commit()
+        self._maybe_commit(con)
         if newly_added and _log_enabled() and not self._replay_mode:
             cn = self._name_of(concept_id)
             if cn:
@@ -1279,7 +1291,7 @@ class Store:
             "file, line, span_end, detail) VALUES (?,?,?,?,?,?,?)",
             (entity_id, lid, concept_id, file, line, span_end, detail),
         )
-        con.commit()
+        self._maybe_commit(con)
         if _log_enabled() and not self._replay_mode:
             cn = self._name_of(concept_id)
             en = self._name_of(entity_id)

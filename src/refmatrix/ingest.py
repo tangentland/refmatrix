@@ -36,6 +36,21 @@ DOC_EXTS = {".md", ".markdown", ".rst", ".txt", ".adoc"}
 def ingest_path(
     s: Store, path: Path, source: str = "auto", semantic: bool = False
 ) -> int:
+    """Run a full ingest under a single outer transaction.
+
+    Wrapping the entire body in `s.transaction()` collapses every inner
+    mutation's commit into one final commit, which historically was the
+    single dominant cost (per-INSERT WAL fsync). Inner `deferred_links()`
+    blocks still buffer + bulk-flush their link buffers, and bitmap
+    fragments accumulate in memory; both are written once at scope exit.
+    """
+    with s.transaction():
+        return _ingest_path_inner(s, path, source=source, semantic=semantic)
+
+
+def _ingest_path_inner(
+    s: Store, path: Path, source: str = "auto", semantic: bool = False
+) -> int:
     path = path.resolve()
     metadata_path = path / ".tldr" / "cache" / "semantic" / "metadata.json"
     call_graph_path = path / ".tldr" / "cache" / "call_graph.json"
