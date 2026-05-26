@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -26,6 +27,26 @@ from pathlib import Path
 from typing import Iterable, Iterator
 
 from pyroaring import BitMap, BitMap64
+
+_CONCEPT_WORD_SPLIT_RE = re.compile(r"[\s_\-]+")
+
+
+def _concept_variants(name: str) -> tuple[str, list[str]]:
+    """For a multi-word concept name, return (canonical, alias_variants).
+
+    Canonical is the underscore form. Aliases are the space and dash forms
+    that differ from canonical. Single-token names return (name, []).
+    """
+    stripped = name.strip()
+    parts = [p for p in _CONCEPT_WORD_SPLIT_RE.split(stripped) if p]
+    if len(parts) < 2:
+        return stripped, []
+    canonical = "_".join(parts)
+    variants: list[str] = []
+    for v in (" ".join(parts), "-".join(parts)):
+        if v != canonical and v not in variants:
+            variants.append(v)
+    return canonical, variants
 
 # Packing: concept_id occupies the high 32 bits, entity_id the low 32. Both
 # come from the same `entities.id` autoincrement so they share a counter; 32
@@ -657,12 +678,22 @@ class Store:
         description: str | None = None,
         protected: bool = False,
     ) -> int:
-        return self.upsert_entity(
+        canonical, variants = _concept_variants(name)
+        cid = self.upsert_entity(
             kind="concept",
-            name=name,
+            name=canonical,
             meta={"description": description} if description else None,
             protected=protected,
         )
+        for variant in variants:
+            vid = self.upsert_entity(
+                kind="concept",
+                name=variant,
+                meta={"description": f"alias of '{canonical}'"},
+            )
+            if vid != cid:
+                self.link("same_as", vid, cid)
+        return cid
 
     def get_entity(self, kind: str, name: str) -> Entity | None:
         # Ensure schema/partition migration before going through the read path.
