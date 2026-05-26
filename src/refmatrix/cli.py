@@ -1638,10 +1638,25 @@ def import_(path, merge):
               help="Also extract Python imports + docstring keywords (slow on big trees).")
 def ingest(path, source, semantic):
     """Ingest a directory. Prefers .tldr/cache/semantic/metadata.json when present."""
+    from refmatrix import daemon as daemon_mod
     from refmatrix.ingest import ingest_path
 
-    s = _store()
-    n = ingest_path(s, Path(path), source=source, semantic=semantic)
+    root = _root()
+    resolved = Path(path).resolve()
+    if daemon_mod.ping(root):
+        # Route through the daemon so the catalog write lock stays single-
+        # owner. Long ingests can run minutes — give the socket headroom.
+        resp = daemon_mod.call(root, "ingest_path", {
+            "path": str(resolved),
+            "source": source,
+            "semantic": semantic,
+        }, timeout=24 * 3600.0)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        n = resp["result"]["entities"]
+    else:
+        s = _store()
+        n = ingest_path(s, resolved, source=source, semantic=semantic)
     console.print(f"[green]ingested[/] {n} entities from {path}")
 
 

@@ -396,6 +396,18 @@ def _op_sync_files(d: Daemon, args: dict) -> dict:
     return report
 
 
+def _op_ingest_path(d: Daemon, args: dict) -> dict:
+    """Run a full ingest against the daemon-owned store. CLI routes here
+    when the daemon is up so the catalog write lock stays single-owner."""
+    from refmatrix.ingest import ingest_path
+    path = Path(args["path"]).resolve()
+    source = args.get("source") or "auto"
+    semantic = bool(args.get("semantic"))
+    with d._store_lock:
+        n = ingest_path(d.store, path, source=source, semantic=semantic)
+    return {"entities": n, "path": str(path)}
+
+
 def _op_sync_since(d: Daemon, args: dict) -> dict:
     """Run `sync_since` through the daemon's long-lived Store. Targets the
     git post-commit hook (`rmx sync --since HEAD~1`), which used to grab
@@ -728,6 +740,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "flush_queue_async": _op_flush_queue_async,
     "sync_files": _op_sync_files,
     "sync_since": _op_sync_since,
+    "ingest_path": _op_ingest_path,
     "context": _op_context,
     "query": _op_query,
     "grep_indexed": _op_grep_indexed,
