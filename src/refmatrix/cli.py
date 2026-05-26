@@ -1002,6 +1002,32 @@ def _render_grep_rows(rows, gf, limit, source_tag="idx"):
         )
 
 
+def _is_stdin_piped() -> bool:
+    """True if stdin has bytes ready (true pipe input). False for a
+    tty, for a closed-or-empty pipe (Bash tool invocations), or for
+    /dev/null. select() with timeout=0 peeks without blocking."""
+    import sys as _sys
+    if _sys.stdin.isatty():
+        return False
+    try:
+        import select as _select
+        ready, _, _ = _select.select([_sys.stdin], [], [], 0)
+        if not ready:
+            return False
+        # On macOS, regular files always show ready in select(); check
+        # the fstat to differentiate a fed-pipe from /dev/null.
+        import os as _os
+        import stat as _stat
+        st = _os.fstat(_sys.stdin.fileno())
+        if _stat.S_ISFIFO(st.st_mode):
+            return True
+        if _stat.S_ISREG(st.st_mode):
+            return st.st_size > 0
+        return False
+    except Exception:
+        return False
+
+
 def _grep_stdin(pattern: str, regex: bool, gf: dict, limit: int) -> None:
     """Pipe-mode grep: search lines from sys.stdin, ignore the index.
     Honors -i / -I / -w / -l / -c / -v / -F / -E from the flag bundle."""
@@ -1112,8 +1138,11 @@ def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn):
         regex = True
 
     # Stdin mode: data piped in → grep the pipe, ignore the index entirely.
-    # The index has no bearing on ephemeral piped content.
-    if not _sys.stdin.isatty():
+    # isatty() alone is not enough -- subprocess invocations (Bash tool,
+    # post-commit hooks) have a non-tty stdin even when no data is being
+    # piped, which used to silently swallow the request. Peek with select
+    # to confirm there is actually a byte ready before switching modes.
+    if _is_stdin_piped():
         _grep_stdin(pattern, regex, gf, limit)
         return
 
