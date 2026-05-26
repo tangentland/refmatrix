@@ -99,13 +99,41 @@ def main(partition: str | None):
 @main.command()
 @click.option("--path", type=click.Path(file_okay=False, path_type=Path), default=None,
               help="Where to create .refmatrix/ (defaults to ./.refmatrix)")
-def init(path: Path | None):
-    """Initialize a refmatrix in the given directory (default: cwd)."""
-    target = (path or Path.cwd()) / ".refmatrix"
+@click.option("--hooks/--no-hooks", default=True,
+              help="Install git + Claude Code hooks so the index stays "
+                   "fresh on every commit and Edit/Write call.")
+@click.option("--agents/--no-agents", default=True,
+              help="Place packaged subagent descriptions (e.g. gmd-curator) "
+                   "into .claude/agents/ for project-local invocation.")
+@click.option("--force", is_flag=True,
+              help="Overwrite existing hook / agent / briefing files.")
+def init(path: Path | None, hooks: bool, agents: bool, force: bool):
+    """Initialize a refmatrix in the given directory (default: cwd).
+
+    By default also installs hooks and packaged subagent descriptions so
+    the project is fully wired on first run. Pass --no-hooks / --no-agents
+    to opt out.
+    """
+    project_root = (path or Path.cwd()).resolve()
+    target = project_root / ".refmatrix"
     s = Store(target, partition=_resolve_partition())
     s.init()
     atexit.register(s.close)
     console.print(f"[green]initialized[/] {s.root} (partition={s.partition_name})")
+
+    if hooks:
+        from refmatrix.hooks import install
+        for line in install(
+            project_root=project_root, refmatrix_root=s.root,
+            git=True, claude=True, briefing=True, scope="project",
+            apply=True, force=force,
+        ):
+            console.print(line)
+
+    if agents:
+        from refmatrix.init_agents import install_agents
+        for line in install_agents(project_root=project_root, force=force):
+            console.print(line)
 
 
 @main.command()

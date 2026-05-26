@@ -29,3 +29,6 @@ rmx = "refmatrix.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+refmatrix = ["templates/agents/*.md"]
