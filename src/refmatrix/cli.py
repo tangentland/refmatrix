@@ -117,9 +117,20 @@ def init(path: Path | None, hooks: bool, agents: bool, force: bool):
     project_root = (path or Path.cwd()).resolve()
     target = project_root / ".refmatrix"
     s = Store(target, partition=_resolve_partition())
-    s.init()
-    atexit.register(s.close)
-    console.print(f"[green]initialized[/] {s.root} (partition={s.partition_name})")
+    # If a daemon already owns this catalog, skip Store.init() — it would
+    # try to acquire the DuckDB write lock and crash. The store is already
+    # initialized (the daemon proves it). We only need the Store object to
+    # report root/partition; no _connect() call is required for that.
+    from refmatrix import daemon as daemon_mod
+    if daemon_mod.ping(s.root):
+        console.print(
+            f"[yellow]reusing[/] existing {s.root} (daemon pid present; "
+            f"skipped catalog reinit)"
+        )
+    else:
+        s.init()
+        atexit.register(s.close)
+        console.print(f"[green]initialized[/] {s.root} (partition={s.partition_name})")
 
     if hooks:
         from refmatrix.hooks import install
