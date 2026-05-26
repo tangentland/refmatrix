@@ -186,15 +186,45 @@ class Daemon:
         signal.signal(signal.SIGTERM, _shutdown)
         signal.signal(signal.SIGINT, _shutdown)
 
+        # Bounded thread pool for per-connection handlers so a long-running
+        # op (e.g. a multi-minute ingest holding _store_lock) does not
+        # block the accept loop. Without this, `rmx daemon stop` and every
+        # other client call queue behind the slow op and the only escape
+        # is SIGKILL -- which risks DuckDB WAL corruption.
+        #
+        # _store_lock continues to serialize mutations; the pool exists
+        # purely to keep the accept loop hot and to let independent reads
+        # run while writes are in flight. Pool size is small (16) because
+        # the work is either lock-bound (waiting on _store_lock) or
+        # IO-bound (waiting on DuckDB); a larger pool just produces more
+        # contention without throughput.
+        from concurrent.futures import ThreadPoolExecutor
+
+        pool_workers = int(os.environ.get("RMX_DAEMON_WORKERS", "16") or "16")
+        pool = ThreadPoolExecutor(
+            max_workers=pool_workers,
+            thread_name_prefix="rmxd-handler",
+        )
+
+        def _run_handler(c) -> None:
+            try:
+                with c:
+                    self._handle(c)
+            except Exception as exc:
+                self._log(f"handler thread crashed: {exc!r}")
+
         try:
             while not self._stop:
                 try:
                     conn, _ = srv.accept()
                 except socket.timeout:
                     continue
-                with conn:
-                    self._handle(conn)
+                pool.submit(_run_handler, conn)
         finally:
+            # Wait briefly for in-flight handlers to drain so we don't
+            # tear down the socket out from under a request that was
+            # almost done. Hard cap so a stuck handler can't pin shutdown.
+            pool.shutdown(wait=True, cancel_futures=True)
             if self._watch_stop is not None:
                 self._watch_stop.set()
             if self._watch_thread is not None:
