@@ -15,7 +15,7 @@ store somewhere in scope (the memory partition defaults to
 | Event | Shell call | Purpose |
 |---|---|---|
 | `SessionStart` | `rmx -p intuition memory recall --session-start --json` | Inject the top-k recent memories at session boot |
-| `UserPromptSubmit` | `rmx -p intuition memory recall --prompt "$PROMPT" --k 5 --json` | Pull memories matching the user's prompt |
+| `UserPromptSubmit` | `rmx memory recall --stdin-json --k 5 --json` | Pull memories matching the user's prompt (reads the hook's stdin JSON envelope natively) |
 | `PreCompact` | `rmx -p intuition memory recall --recent --since 1h --json` | Surface this session's recent observations before compaction |
 | `Stop` | (out of scope — Phase C4) | Auto-capture session observations as memories |
 
@@ -70,7 +70,7 @@ installed, falls back to symbolic).
         "hooks": [
           {
             "type": "command",
-            "command": "rmx -p intuition memory recall --prompt \"$CLAUDE_USER_PROMPT\" --k 5 --json",
+            "command": "rmx memory recall --stdin-json --k 5 --json",
             "timeout": 5
           }
         ]
@@ -80,9 +80,13 @@ installed, falls back to symbolic).
 }
 ```
 
-`$CLAUDE_USER_PROMPT` is the env var Claude Code sets on the
-UserPromptSubmit hook. Confirm your harness exports it; some
-versions use a different name.
+Claude Code passes the UserPromptSubmit envelope on stdin as JSON
+(`{"prompt": "...", "session_id": "...", ...}`). `--stdin-json`
+parses it natively, so the hook is one line with no `jq` or
+`python -c` dependency. An empty prompt (e.g. /clear or /resume
+events that fire UserPromptSubmit with no user-typed text) is a
+no-op exit 0 — only genuine failures (broken store, daemon
+mismatch) surface.
 
 ## PreCompact — surface this session's observations
 

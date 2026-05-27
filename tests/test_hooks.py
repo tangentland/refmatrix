@@ -22,8 +22,11 @@ def test_memory_hooks_default_on(tmp_path):
     # Memory commands explicitly route to the intuition partition;
     # the bound daemon partition shouldn't determine where recall
     # looks.
-    assert "rmx -p intuition memory recall --session-start" in cmds["SessionStart"]
-    assert "rmx -p intuition memory recall --prompt" in cmds["UserPromptSubmit"]
+    assert "rmx memory recall --session-start" in cmds["SessionStart"]
+    # UserPromptSubmit reads the prompt from stdin (Claude Code's hook
+    # envelope), not from an env var -- the old `--prompt $ENV` pattern
+    # was broken because the env var doesn't exist in the hook context.
+    assert "rmx memory recall --stdin-json" in cmds["UserPromptSubmit"]
     assert "PreCompact" in block["hooks"]
     assert "--recent --since 1h" in cmds["PreCompact"]
     # Memory hooks must NOT silently swallow errors -- per-project
@@ -70,8 +73,8 @@ def test_install_writes_memory_hooks_into_settings(tmp_path):
             apply=True, force=True, memory_hooks=True)
     settings = json.loads((project / ".claude" / "settings.local.json").read_text())
     rendered = json.dumps(settings)
-    assert "rmx -p intuition memory recall --session-start" in rendered
-    assert "rmx -p intuition memory recall --prompt" in rendered
+    assert "rmx memory recall --session-start" in rendered
+    assert "rmx memory recall --stdin-json" in rendered
     assert "PreCompact" in settings["hooks"]
 
 

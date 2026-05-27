@@ -3436,7 +3436,11 @@ def _parse_duration(text: str) -> float:
 @click.argument("query", required=False)
 @click.option("--prompt", "prompt_query", default=None,
               help="Alias for the positional query. Convenience for "
-                   "hook payloads that pipe in $PROMPT.")
+                   "hook payloads that resolve the prompt themselves.")
+@click.option("--stdin-json", "stdin_json", is_flag=True,
+              help="Read a Claude Code UserPromptSubmit JSON envelope "
+                   "from stdin and use its `.prompt` field as the "
+                   "query. Drop-in for the UserPromptSubmit hook.")
 @click.option("--k", "-k", type=int, default=10, show_default=True)
 @click.option("--recent", is_flag=True,
               help="Phase C2: return the most recent memories by "
@@ -3452,8 +3456,8 @@ def _parse_duration(text: str) -> float:
 @click.option("--json", "as_json", is_flag=True,
               help="Emit JSON instead of a Rich table — friendlier "
                    "for hook scripts piping the output into a prompt.")
-def memory_recall(query, prompt_query, k, recent, since, session_start,
-                  as_json):
+def memory_recall(query, prompt_query, stdin_json, k, recent, since,
+                  session_start, as_json):
     """Memory retrieval. Three modes:
 
     Hybrid (default): dense ANN over memory.lance fused with the
@@ -3470,11 +3474,30 @@ def memory_recall(query, prompt_query, k, recent, since, session_start,
         recent = True
         if since is None:
             since = "7d"
+    if stdin_json:
+        # UserPromptSubmit hook envelope: {"prompt": "...", ...}.
+        # An empty prompt is a normal case (slash commands, /clear,
+        # /resume etc fire UserPromptSubmit with no user-typed text) —
+        # exit 0 silently rather than erroring, so the hook stays
+        # non-fatal for those events. A broken store still surfaces
+        # via the daemon RPC path further down.
+        import json as _json
+        try:
+            envelope = _json.load(sys.stdin)
+        except Exception as e:
+            raise click.ClickException(
+                f"--stdin-json: invalid JSON on stdin: {e}"
+            )
+        prompt_query = (envelope.get("prompt") or "").strip()
+        if not prompt_query:
+            if as_json:
+                click.echo("[]")
+            return
     q = prompt_query or query
     if not recent and not q:
         raise click.ClickException(
-            "rmx memory recall needs a QUERY (or --prompt), --recent, "
-            "or --session-start"
+            "rmx memory recall needs a QUERY (or --prompt / --stdin-json), "
+            "--recent, or --session-start"
         )
 
     if recent:

@@ -171,7 +171,7 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
             "hooks": [{
                 "type": "command",
                 "command": (
-                    "rmx -p intuition memory recall --session-start "
+                    "rmx memory recall --session-start "
                     "--k 10 --json"
                 ),
             }],
@@ -179,9 +179,12 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
         block["hooks"].setdefault("UserPromptSubmit", []).append({
             "hooks": [{
                 "type": "command",
+                # Claude Code passes the UserPromptSubmit envelope on
+                # stdin as JSON ({"prompt": "...", ...}); --stdin-json
+                # parses it natively so the hook is one line with no
+                # jq/python dependency. Empty prompt = no-op exit 0.
                 "command": (
-                    "rmx -p intuition memory recall --prompt "
-                    "\"$CLAUDE_USER_PROMPT\" --k 5 --json"
+                    "rmx memory recall --stdin-json --k 5 --json"
                 ),
             }],
         })
@@ -189,7 +192,7 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
             "hooks": [{
                 "type": "command",
                 "command": (
-                    "rmx -p intuition memory recall --recent --since 1h "
+                    "rmx memory recall --recent --since 1h "
                     "--k 20 --json"
                 ),
             }],
