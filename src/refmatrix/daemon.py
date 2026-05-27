@@ -151,12 +151,71 @@ class Daemon:
         self._replica_stop: "threading.Event | None" = None
         self._replica_thread: "threading.Thread | None" = None
         self._replica_last: dict | None = None
+        # Index-repair tick (option B). See `_start_index_repair_tick`.
+        self._repair_stop: "threading.Event | None" = None
+        self._repair_thread: "threading.Thread | None" = None
+        # Guard against re-entering fast-exit from multiple threads racing
+        # the same FatalException.
+        self._fast_exit_armed = False
+        self._fast_exit_lock = threading.Lock()
 
     def _log(self, msg: str) -> None:
         if self.log_fh is None:
             return
         self.log_fh.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {msg}\n")
         self.log_fh.flush()
+
+    # ---- option D: SIGABRT/index-drift defense ----------------------------
+    #
+    # DuckDB secondary index drift on `idx_entity_links_lk_concept` after
+    # bulk DELETEs can throw a fatal "Failed to delete all rows from index"
+    # error. Once that fires DuckDB invalidates the database; any
+    # subsequent op against that connection -- including from DuckDB's
+    # own internal worker threads -- can throw a C++ exception that
+    # bypasses Python's try/except and lands at std::terminate -> SIGABRT.
+    #
+    # Defense in depth:
+    #   A. Pre-repair burst flushes (large path counts).
+    #   B. Periodic index-repair tick.
+    #   C. Fast-exit when invalidation is detected so we don't keep
+    #      running against a poisoned connection long enough for an
+    #      internal worker to crash the process.
+    _FAST_EXIT_NEEDLES = (
+        "Failed to delete all rows from index",
+        "database has been invalidated",
+    )
+
+    @classmethod
+    def _is_fatal_invalidation(cls, exc: BaseException) -> bool:
+        msg = str(exc)
+        return any(n in msg for n in cls._FAST_EXIT_NEEDLES)
+
+    def _fast_exit_if_invalidated(self, exc: BaseException, where: str) -> None:
+        """If `exc` looks like DuckDB index-drift / DB-invalidation,
+        log + exit hard so the supervisor can spawn a fresh daemon
+        before a DuckDB internal worker crashes us via std::terminate."""
+        if not self._is_fatal_invalidation(exc):
+            return
+        with self._fast_exit_lock:
+            if self._fast_exit_armed:
+                return
+            self._fast_exit_armed = True
+        self._shutdown_event.set()
+        self._stop = True
+        try:
+            self._log(
+                f"fast-exit: {where}: detected DuckDB invalidation; "
+                f"daemon exiting so supervisor can restart. exc={exc!r}"
+            )
+        except Exception:
+            pass
+        # Flush log fh before _exit so the message lands on disk.
+        try:
+            if self.log_fh is not None:
+                self.log_fh.flush()
+        except Exception:
+            pass
+        os._exit(2)
 
     def _drain_pool(self, name: str, pool, timeout_s: float) -> None:
         """Bounded ThreadPoolExecutor shutdown. ThreadPoolExecutor.shutdown
@@ -237,6 +296,8 @@ class Daemon:
         # any dirty fragments under _store_lock so we never grow more than
         # 30 seconds of unrecoverable bitmap drift.
         self._start_periodic_flush()
+        # Option B: periodic index repair (DuckDB-only) -- see method docs.
+        self._start_index_repair_tick()
 
         # Read replica via two-file rotation. Files: catalog.A.duckdb,
         # catalog.B.duckdb. A marker `.refmatrix/active` stores which
@@ -367,6 +428,10 @@ class Daemon:
                 self._flush_stop.set()
             if getattr(self, "_flush_thread", None) is not None:
                 self._flush_thread.join(timeout=3.0)
+            if getattr(self, "_repair_stop", None) is not None:
+                self._repair_stop.set()
+            if getattr(self, "_repair_thread", None) is not None:
+                self._repair_thread.join(timeout=3.0)
             if getattr(self, "_replica_stop", None) is not None:
                 self._replica_stop.set()
             if getattr(self, "_replica_thread", None) is not None:
@@ -427,11 +492,53 @@ class Daemon:
                             self._log(f"periodic flush: {n} fragment(s)")
                 except Exception as exc:
                     self._log(f"periodic flush failed: {exc!r}")
+                    self._fast_exit_if_invalidated(exc, "periodic flush")
 
         self._flush_thread = _t.Thread(
             target=_runner, name="rmxd-flush", daemon=True,
         )
         self._flush_thread.start()
+
+    def _start_index_repair_tick(self, interval_s: float | None = None) -> None:
+        """Option B: periodically DROP+CREATE idx_entity_links_lk_concept
+        so secondary-index drift (which compounds across DELETE bursts)
+        never accumulates past the tick window. Cheap (~1-3s on 100k-400k
+        entity_links rows). Defaults to 60s; override via
+        RMX_INDEX_REPAIR_S env. Set RMX_INDEX_REPAIR_S=0 to disable.
+
+        DuckDB backend only -- SQLite has no equivalent drift.
+        """
+        if self.store is None or self.store._backend.kind != "duckdb":
+            return
+        if interval_s is None:
+            interval_s = float(
+                os.environ.get("RMX_INDEX_REPAIR_S", "60") or "60"
+            )
+        if interval_s <= 0:
+            return
+        import threading as _t
+        self._repair_stop = _t.Event()
+
+        def _runner():
+            while not self._repair_stop.is_set():
+                if self._repair_stop.wait(interval_s):
+                    return
+                if self.store is None:
+                    continue
+                try:
+                    with self._store_lock:
+                        r = self.store.repair_entity_links_index()
+                    self._log(
+                        f"periodic index repair: rows={r.get('row_count','?')}"
+                    )
+                except Exception as exc:
+                    self._log(f"periodic index repair failed: {exc!r}")
+                    self._fast_exit_if_invalidated(exc, "index repair")
+
+        self._repair_thread = _t.Thread(
+            target=_runner, name="rmxd-repair", daemon=True,
+        )
+        self._repair_thread.start()
 
     # ---- read replica (rotation) ----------------------------------------
 
@@ -706,6 +813,7 @@ class Daemon:
                     self._refresh_replica_now()
                 except Exception as exc:
                     self._log(f"replica refresh failed: {exc!r}")
+                    self._fast_exit_if_invalidated(exc, "replica refresh")
 
         self._replica_thread = _t.Thread(
             target=_runner, name="rmxd-replica", daemon=True,
@@ -750,6 +858,14 @@ class Daemon:
                 self._log(f"curator queue write failed: {exc!r}")
             return len(keep)
 
+        # Option A: pre-repair the entity_links secondary index when the
+        # flush batch is big enough that an in-flight DELETE burst is
+        # likely to trip index drift. Threshold gates the cost (~1-3s).
+        # RMX_PRE_REPAIR_THRESHOLD=0 disables.
+        pre_repair_threshold = int(
+            os.environ.get("RMX_PRE_REPAIR_THRESHOLD", "5") or "5"
+        )
+
         def _flush(paths: list[str]) -> None:
             # Skip entirely if shutdown was requested while debounce window
             # was open. Avoids grabbing _store_lock just to be cancelled.
@@ -759,6 +875,16 @@ class Daemon:
             # handler never touch the shared Store concurrently.
             try:
                 with self._store_lock:
+                    repaired = False
+                    if (pre_repair_threshold > 0
+                            and len(paths) >= pre_repair_threshold
+                            and self.store._backend.kind == "duckdb"):
+                        try:
+                            self.store.repair_entity_links_index()
+                            repaired = True
+                        except Exception as rexc:
+                            self._log(f"pre-flush repair failed: {rexc!r}")
+                            self._fast_exit_if_invalidated(rexc, "pre-flush repair")
                     report = sync_files(
                         self.store, paths,
                         project_root=self.watch_root,
@@ -768,12 +894,15 @@ class Daemon:
                 queued = _enqueue_curator(paths)
                 tail = f" curator+{queued}" if queued else ""
                 cancel_tail = " cancelled" if report.get("cancelled") else ""
+                repair_tail = " pre-repaired" if repaired else ""
                 self._log(
                     f"watch flush: paths={len(paths)} +{report['added']} "
-                    f"~{report['updated']} -{report['purged']}{tail}{cancel_tail}"
+                    f"~{report['updated']} -{report['purged']}"
+                    f"{tail}{cancel_tail}{repair_tail}"
                 )
             except Exception as exc:
                 self._log(f"watch flush failed: {exc!r}")
+                self._fast_exit_if_invalidated(exc, "watch flush")
 
         debouncer = Debouncer(self.watch_debounce_ms, _flush)
 
@@ -852,6 +981,7 @@ class Daemon:
                 except Exception as exc:
                     self._log(f"op {op} raised: {exc!r}")
                     resp = {"ok": False, "error": str(exc)}
+                    self._fast_exit_if_invalidated(exc, f"op {op}")
         except Exception as exc:
             resp = {"ok": False, "error": f"protocol error: {exc!r}"}
         try:

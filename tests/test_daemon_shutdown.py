@@ -92,3 +92,63 @@ def test_shutdown_event_flips_on_signal_path(tmp_path):
     assert d._shutdown_event.is_set() is False
     d._shutdown_event.set()
     assert d._shutdown_event.is_set() is True
+
+
+# --- option D: index-drift / DB-invalidation defense -----------------------
+
+
+def test_is_fatal_invalidation_matches_index_drift_strings():
+    """The predicate must catch both the ART/index drift string and the
+    follow-up `database has been invalidated` message that DuckDB emits
+    once it poisons the connection."""
+    drift = RuntimeError(
+        "FATAL Error: Invalid Input Error: Failed to delete all rows "
+        "from index. Only deleted 1 out of 54 rows."
+    )
+    invalidated = RuntimeError(
+        "FATAL Error: Failed: database has been invalidated because of "
+        "a previous fatal error. The database must be restarted prior "
+        "to being used again."
+    )
+    benign = RuntimeError("table does not exist")
+
+    assert Daemon._is_fatal_invalidation(drift) is True
+    assert Daemon._is_fatal_invalidation(invalidated) is True
+    assert Daemon._is_fatal_invalidation(benign) is False
+
+
+def test_fast_exit_skips_when_exception_is_benign(tmp_path):
+    """`_fast_exit_if_invalidated` must NOT exit the test process on a
+    benign error. If it bailed, this test would never finish."""
+    d = _make_daemon(tmp_path)
+    # No log_fh set; the helper tolerates that.
+    d._fast_exit_if_invalidated(RuntimeError("unrelated bug"), "test")
+    # If we got here, no os._exit happened. Also: armed flag stays clear.
+    assert d._fast_exit_armed is False
+
+
+def test_fast_exit_armed_flag_is_thread_idempotent(tmp_path, monkeypatch):
+    """When the helper does decide to exit, it must arm exactly once even
+    if many threads race the same FatalException. We patch os._exit to
+    raise SystemExit so we can observe the call without killing pytest."""
+    d = _make_daemon(tmp_path)
+
+    calls = []
+
+    def _fake_exit(code: int) -> None:  # type: ignore[no-redef]
+        calls.append(code)
+        raise SystemExit(code)
+
+    monkeypatch.setattr("os._exit", _fake_exit)
+    exc = RuntimeError(
+        "FATAL Error: Failed: database has been invalidated"
+    )
+    try:
+        d._fast_exit_if_invalidated(exc, "test")
+    except SystemExit:
+        pass
+    assert d._fast_exit_armed is True
+    assert calls == [2]
+    # Second call from a sibling thread is a no-op (armed gate).
+    d._fast_exit_if_invalidated(exc, "test-second")
+    assert calls == [2]
