@@ -1603,6 +1603,15 @@ def _op_context(d: Daemon, args: dict) -> dict:
     return {"body": body}
 
 
+def _memory_partition(d: "Daemon", args: dict) -> str:
+    """Resolve which partition this memory op targets. Caller passes
+    `partition` explicitly; absent, we fall back to the daemon's bound
+    partition. The daemon binds for code-sync writes; memory ops
+    normally land in `intuition` via explicit pass-through from the
+    CLI, but we honor whatever the caller asked for."""
+    return args.get("partition") or d.store._partition_name
+
+
 def _op_memory_add(d: Daemon, args: dict) -> dict:
     """Upsert a memory entity + its sidecar content. ADR-0001 Phase B."""
     name = args["name"]
@@ -1611,7 +1620,7 @@ def _op_memory_add(d: Daemon, args: dict) -> dict:
     tags = args.get("tags")
     metadata = args.get("metadata")
     protected = bool(args.get("protected", False))
-    with d._store_lock:
+    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
         eid = d.store.add_memory(
             name=name, content=content, mtype=mtype,
             tags=tags, metadata=metadata, protected=protected,
@@ -1624,7 +1633,8 @@ def _op_memory_get(d: Daemon, args: dict) -> dict:
     target = args.get("name") if args.get("name") is not None else args.get("id")
     if target is None:
         raise ValueError("memory_get requires 'name' or 'id'")
-    m = d.store.get_memory(target)
+    with d.store.with_partition(_memory_partition(d, args)):
+        m = d.store.get_memory(target)
     return {"memory": m}
 
 
@@ -1632,7 +1642,8 @@ def _op_memory_iter(d: Daemon, args: dict) -> dict:
     """Stream memories in the active partition. Optional mtype filter."""
     mtype = args.get("mtype")
     limit = args.get("limit")
-    rows = list(d.store.iter_memories(mtype=mtype, limit=limit))
+    with d.store.with_partition(_memory_partition(d, args)):
+        rows = list(d.store.iter_memories(mtype=mtype, limit=limit))
     return {"rows": rows}
 
 
@@ -1641,7 +1652,19 @@ def _op_memory_search(d: Daemon, args: dict) -> dict:
     `limit` rows newest-first."""
     query = args["query"]
     limit = int(args.get("limit", 20))
-    rows = d.store.search_memories(query, limit=limit)
+    with d.store.with_partition(_memory_partition(d, args)):
+        rows = d.store.search_memories(query, limit=limit)
+    return {"rows": rows}
+
+
+def _op_memory_recent(d: Daemon, args: dict) -> dict:
+    """Phase C2: most recent memories within an optional `since_seconds`
+    window, newest first. Routed through the daemon so the in-process
+    Store can't deadlock against the daemon's DuckDB write lock."""
+    since = args.get("since_seconds")
+    limit = int(args.get("limit", 20))
+    with d.store.with_partition(_memory_partition(d, args)):
+        rows = d.store.recent_memories(since_seconds=since, limit=limit)
     return {"rows": rows}
 
 
@@ -1650,7 +1673,7 @@ def _op_memory_forget(d: Daemon, args: dict) -> dict:
     target = args.get("name") if args.get("name") is not None else args.get("id")
     if target is None:
         raise ValueError("memory_forget requires 'name' or 'id'")
-    with d._store_lock:
+    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
         ok = d.store.forget_memory(target)
     return {"forgotten": ok}
 
@@ -1663,22 +1686,23 @@ def _op_memory_score(d: Daemon, args: dict) -> dict:
     halflife = args.get("halflife_days")
     cap = args.get("cap")
     explain = bool(args.get("explain", False))
-    cids = d.store.resolve_concept_ids(name, strict=False)
-    if not cids:
-        return {"concept": name, "concept_ids": [], "signal": 0.0,
-                "components": []}
-    scores = d.store.reinforcement_scores(
-        cids, halflife_days=halflife, cap=cap,
-    )
-    components: list[dict] = []
-    if explain:
-        for cid in cids:
-            components.extend({
-                "concept_id": cid,
-                **row,
-            } for row in d.store.reinforcement_components(
-                cid, halflife_days=halflife,
-            ))
+    with d.store.with_partition(_memory_partition(d, args)):
+        cids = d.store.resolve_concept_ids(name, strict=False)
+        if not cids:
+            return {"concept": name, "concept_ids": [], "signal": 0.0,
+                    "components": []}
+        scores = d.store.reinforcement_scores(
+            cids, halflife_days=halflife, cap=cap,
+        )
+        components: list[dict] = []
+        if explain:
+            for cid in cids:
+                components.extend({
+                    "concept_id": cid,
+                    **row,
+                } for row in d.store.reinforcement_components(
+                    cid, halflife_days=halflife,
+                ))
     return {
         "concept": name,
         "concept_ids": cids,
@@ -1699,7 +1723,7 @@ def _op_memory_link(d: Daemon, args: dict) -> dict:
     linkage = args["linkage"]
     concept_name = args["concept"]
     weight = args.get("weight")
-    with d._store_lock:
+    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
         m = d.store.get_memory(src)
         if m is None:
             raise ValueError(f"no memory matching {src!r}")
@@ -1902,6 +1926,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "memory_get": _op_memory_get,
     "memory_iter": _op_memory_iter,
     "memory_search": _op_memory_search,
+    "memory_recent": _op_memory_recent,
     "memory_forget": _op_memory_forget,
     "memory_link": _op_memory_link,
     "memory_score": _op_memory_score,
@@ -1927,6 +1952,7 @@ CLI_OPS: set[str] = {
     "memory_get",
     "memory_iter",
     "memory_search",
+    "memory_recent",
     "memory_score",
     "stop",
 }

@@ -746,6 +746,51 @@ class Store:
                 pass
             raise
 
+    def with_partition(self, name: str):
+        """Context manager: temporarily switch self._partition_id to the
+        partition row matching `name` for the duration of the block, then
+        restore. Auto-creates the partition row if new. The daemon binds
+        to one partition for writes, but memory ops need to land in
+        whichever partition the CLI requested; this lets the daemon
+        re-target per call without re-binding the Store.
+
+        Not safe under concurrent ops on the same Store — wrap with
+        d._store_lock at the daemon op layer."""
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _scope():
+            self._connect()
+            prev_id = self._partition_id
+            prev_name = self._partition_name
+            if name == prev_name:
+                yield self
+                return
+            con = self._conn
+            con.execute(
+                "INSERT OR IGNORE INTO partitions(name, kind, created_at) "
+                "VALUES (?, 'repo', ?)",
+                (name, time.time()),
+            )
+            con.commit()
+            row = con.execute(
+                "SELECT id FROM partitions WHERE name=?", (name,)
+            ).fetchone()
+            self._partition_id = row[0]
+            self._partition_name = name
+            # Drop the cached vector store too — its bound partition
+            # would mismatch if we don't.
+            old_vs = getattr(self, "_vs", None)
+            self._vs = None
+            try:
+                yield self
+            finally:
+                self._partition_id = prev_id
+                self._partition_name = prev_name
+                self._vs = old_vs
+
+        return _scope()
+
     def _ensure_partition(self) -> None:
         """Resolve self._partition_id, auto-creating the partition row if the
         configured name is new. Always runs after _migrate_to_partitions_if_needed

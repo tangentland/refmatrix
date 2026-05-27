@@ -43,7 +43,11 @@ def _resolve_partition() -> str:
        3. .refmatrix/partition file walked up from cwd (one-line partition
           name — drop one inside a project's existing .refmatrix/ to bind
           that tree to a named partition in a shared store)
-       4. 'local' (matches the default partition created at init)
+       4. The project name (basename of the .refmatrix root's parent
+          directory). Used to default per-project, e.g. `viascope` for
+          /path/to/viascope/.refmatrix/. Falls back to `local` if the
+          basename can't be inferred (typically when no .refmatrix exists
+          yet — `rmx init` then creates a `local` partition).
 
     Note: the .refmatrix/ that holds the `partition` file does NOT have to
     be the active store root — REFMATRIX_ROOT can still point at a central
@@ -65,6 +69,14 @@ def _resolve_partition() -> str:
                 continue
             if name:
                 return name
+    # Project-name default: basename of <root>/../ . For
+    # /home/me/myproj/.refmatrix the project is `myproj`.
+    try:
+        proj = _root().resolve().parent.name
+        if proj:
+            return proj
+    except Exception:
+        pass
     return "local"
 
 
@@ -3197,31 +3209,60 @@ def _memory_intent(op: str) -> None:
     _apply_memory_partition_default()
 
 
-# ADR-0001 line 148-149: memory commands default to the 'intuition'
-# partition so memories aren't co-mingled with whatever project's local
-# code/doc index this rmx invocation happens to land in. The auto-create
-# in Store._ensure_partition handles first-touch — no rmx partition add
-# needed. User-supplied -p / RMX_PARTITION / .refmatrix/partition file
-# all still win, matching _resolve_partition's chain.
-MEMORY_PARTITION_DEFAULT = "intuition"
+# Memory commands default to a project-scoped partition
+# `memory-<project>` so each project's observations stay isolated
+# from other projects'. ADR-0001 originally landed everything in a
+# shared `intuition` partition but per-project memory turned out to
+# be the saner default — co-mingling 866 viascope memories with rmx
+# work was already producing recall noise.
+#
+# Project name = the basename of the .refmatrix root's parent dir
+# (so `<project>/.refmatrix/` -> partition `memory-<project>`).
+# User-supplied -p / RMX_PARTITION / .refmatrix/partition still win,
+# matching _resolve_partition's chain.
+MEMORY_PARTITION_PREFIX = "memory-"
+
+
+def _memory_partition_default() -> str:
+    """Resolve `memory-<project_name>` for the active CLI invocation.
+    Falls back to `memory-default` if the project name can't be
+    inferred (e.g. .refmatrix lives at the filesystem root)."""
+    try:
+        project = _root().resolve().parent.name or "default"
+    except Exception:
+        project = "default"
+    return f"{MEMORY_PARTITION_PREFIX}{project}"
+
+
+def _memory_daemon_call(op: str, args: dict, *, timeout: float = 60.0):
+    """Daemon call helper for memory ops. Auto-injects the active
+    partition so memory commands don't have to know that the daemon
+    might be bound to a different partition than the one we're
+    writing/reading. Special-case callers can still override by
+    setting `args['partition']` explicitly before the call."""
+    from refmatrix import daemon as daemon_mod
+    if "partition" not in args:
+        args = {**args, "partition": _resolve_partition()}
+    return daemon_mod.call(_root(), op, args, timeout=timeout)
 
 
 def _apply_memory_partition_default() -> None:
     """If the user did not explicitly pick a partition (no -p on the rmx
-    group, no RMX_PARTITION env var), pin this invocation to the
-    intuition partition for the duration of the memory subcommand.
+    group, no RMX_PARTITION env var), pin this invocation to a project-
+    scoped memory partition (`memory-<project>`) for the duration of
+    the memory subcommand.
 
-    Skips the .refmatrix/partition file check: that file binds a project
-    tree to its own partition, but memories are project-independent —
-    landing them in `intuition` is the whole point of the partition
-    convention. If a project wants project-scoped memories, pass
+    Skips the .refmatrix/partition file check: that file binds the
+    code/doc tree to its own partition, but memories deserve their own
+    partition so they don't pollute the symbolic index. If a project
+    wants memories in a different partition, pass
     `rmx -p <name> memory add ...` explicitly."""
     global _partition_override
     if _partition_override:
         return
     if os.environ.get("RMX_PARTITION"):
         return
-    _partition_override = MEMORY_PARTITION_DEFAULT
+    _partition_override = _memory_partition_default()
 
 
 @main.group("memory")
@@ -3255,7 +3296,7 @@ def memory_add(name, content, mtype, tags, meta, protect):
         "tags": tags_l, "metadata": meta_d, "protected": protect,
     }
     if daemon_mod.ping(root):
-        resp = daemon_mod.call(root, "memory_add", args)
+        resp = _memory_daemon_call("memory_add", args)
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         eid = resp["result"]["id"]
@@ -3277,7 +3318,7 @@ def memory_get(name_or_id):
         else {"name": name_or_id}
     )
     if daemon_mod.ping(root):
-        resp = daemon_mod.call(root, "memory_get", args)
+        resp = _memory_daemon_call("memory_get", args)
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         m = resp["result"]["memory"]
@@ -3306,7 +3347,7 @@ def memory_list(mtype, limit):
     root = _root()
     args = {"mtype": mtype, "limit": limit}
     if daemon_mod.ping(root):
-        resp = daemon_mod.call(root, "memory_iter", args)
+        resp = _memory_daemon_call("memory_iter", args)
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         rows = resp["result"]["rows"]
@@ -3338,7 +3379,7 @@ def memory_search(query, limit):
     root = _root()
     args = {"query": query, "limit": limit}
     if daemon_mod.ping(root):
-        resp = daemon_mod.call(root, "memory_search", args)
+        resp = _memory_daemon_call("memory_search", args)
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         rows = resp["result"]["rows"]
@@ -3426,8 +3467,18 @@ def memory_recall(query, prompt_query, k, recent, since, session_start,
 
     if recent:
         since_s = _parse_duration(since) if since else None
-        s = _store()
-        rows = s.recent_memories(since_seconds=since_s, limit=k)
+        from refmatrix import daemon as daemon_mod
+        if daemon_mod.ping(_root()):
+            resp = _memory_daemon_call(
+                "memory_recent",
+                {"since_seconds": since_s, "limit": k},
+            )
+            if not resp.get("ok"):
+                raise click.ClickException(resp.get("error", "daemon error"))
+            rows = resp["result"]["rows"]
+        else:
+            s = _store()
+            rows = s.recent_memories(since_seconds=since_s, limit=k)
         if as_json:
             import json as _json
             click.echo(_json.dumps(rows, indent=2))
@@ -3442,20 +3493,17 @@ def memory_recall(query, prompt_query, k, recent, since, session_start,
         console.print(t)
         return
 
-    # Hybrid path. The daemon binds to ONE partition for writes; we
-    # pass the CLI's active partition so the Lance read crosses to
-    # `intuition` (or wherever the memories live) without re-binding.
+    # Hybrid path. _memory_daemon_call injects the active partition so
+    # the daemon (bound to whatever partition it was started on) can
+    # still serve recall against the project's memory partition.
     from refmatrix import daemon as daemon_mod
     root = _root()
-    args = {
-        "query": q, "k": k, "kinds": ["memory"],
-        "partition": _resolve_partition(),
-    }
+    args = {"query": q, "k": k, "kinds": ["memory"]}
     if not daemon_mod.ping(root):
         raise click.ClickException(
             "rmx memory recall needs the daemon up (dense embedder lives there)"
         )
-    resp = daemon_mod.call(root, "ann_search", args, timeout=60.0)
+    resp = _memory_daemon_call("ann_search", args)
     if not resp.get("ok"):
         raise click.ClickException(resp.get("error", "daemon error"))
     hits = resp["result"].get("hits", [])
@@ -3509,7 +3557,7 @@ def memory_link(src, linkage, concept, weight):
     args = {**src_arg, "linkage": linkage, "concept": concept,
             "weight": weight}
     if daemon_mod.ping(root):
-        resp = daemon_mod.call(root, "memory_link", args)
+        resp = _memory_daemon_call("memory_link", args)
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         result = resp["result"]
@@ -3551,7 +3599,7 @@ def memory_score(concept, explain, halflife_days, cap):
     from refmatrix import reinforcement as rein
     root = _root()
     if daemon_mod.ping(root):
-        resp = daemon_mod.call(root, "memory_score", {
+        resp = _memory_daemon_call("memory_score", {
             "concept": concept, "halflife_days": halflife_days,
             "cap": cap, "explain": explain,
         })
@@ -3687,7 +3735,7 @@ def memory_forget(name_or_id):
         else {"name": name_or_id}
     )
     if daemon_mod.ping(root):
-        resp = daemon_mod.call(root, "memory_forget", args)
+        resp = _memory_daemon_call("memory_forget", args)
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         ok = resp["result"]["forgotten"]

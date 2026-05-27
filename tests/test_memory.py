@@ -267,18 +267,24 @@ def test_duckdb_check_rebuild_accepts_memory_after_open(tmp_path, monkeypatch):
     s.close()
 
 
-def test_memory_partition_default_resolves_to_intuition(tmp_path, monkeypatch):
-    """ADR-0001 B4: memory commands default to partition='intuition'
-    when no -p / RMX_PARTITION is set, regardless of cwd or any
-    `.refmatrix/partition` file alongside. _apply_memory_partition_default
-    is the single source of truth — exercise it directly so the
-    behavior is asserted at the unit level too."""
+def test_memory_partition_default_resolves_to_project_scoped(
+    tmp_path, monkeypatch,
+):
+    """Memory commands default to `memory-<project>` when no -p /
+    RMX_PARTITION is set. Project = basename of .refmatrix root's
+    parent dir. _apply_memory_partition_default is the single source
+    of truth — exercise it directly so the behavior is asserted at
+    the unit level too."""
     from refmatrix import cli as cli_mod
+    # Point _root() at tmp_path/.refmatrix so the project name is
+    # deterministic (tmp_path basename).
+    monkeypatch.setattr(cli_mod, "_root",
+                        lambda: tmp_path / ".refmatrix", raising=False)
     # No env var, no override.
     monkeypatch.delenv("RMX_PARTITION", raising=False)
     monkeypatch.setattr(cli_mod, "_partition_override", None, raising=False)
     cli_mod._apply_memory_partition_default()
-    assert cli_mod._partition_override == "intuition"
+    assert cli_mod._partition_override == f"memory-{tmp_path.name}"
     # Reset and verify explicit override wins.
     monkeypatch.setattr(cli_mod, "_partition_override", "myproject", raising=False)
     cli_mod._apply_memory_partition_default()
