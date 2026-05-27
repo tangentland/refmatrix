@@ -592,15 +592,37 @@ def _op_ingest_path(d: Daemon, args: dict) -> dict:
 
 def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
     """Run GMD ingest against the daemon-owned store. Same rationale as
-    `_op_ingest_path`: avoid catalog-lock contention with the watcher."""
+    `_op_ingest_path`: avoid catalog-lock contention with the watcher.
+
+    Passes a `yield_lock` callback to `ingest_gmd_paths` that releases +
+    reacquires `_store_lock` periodically so CLI ops queued behind a
+    long ingest get a turn at the lock. Without this, a multi-thousand-
+    file ingest blocks every `rmx query`/`rmx stats`/etc. until done.
+    """
     from refmatrix.ingest_gmd import collect_gmd_files, ingest_gmd_paths
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
     verbose = bool(args.get("verbose"))
     files = collect_gmd_files(targets)
     if not files:
         return {"files": 0, "report": "no candidate files found"}
-    with d._store_lock:
-        stats = ingest_gmd_paths(d.store, files, verbose=verbose)
+    yield_every = int(os.environ.get("RMX_INGEST_YIELD_EVERY", "1") or "1")
+    # 1ms sleep is enough for the OS scheduler to wake a cli waiter blocked
+    # on _store_lock — Python's threading.Lock is not strict FIFO and a
+    # bare sleep(0) lets the bg thread immediately re-grab. 1ms loses ~1%
+    # of bg throughput per yield, negligible against the responsiveness win.
+    yield_sleep_s = float(os.environ.get("RMX_INGEST_YIELD_SLEEP_S", "0.001") or "0.001")
+    d._store_lock.acquire()
+    try:
+        def _yield() -> None:
+            d._store_lock.release()
+            time.sleep(yield_sleep_s)
+            d._store_lock.acquire()
+        stats = ingest_gmd_paths(
+            d.store, files, verbose=verbose,
+            yield_lock=_yield, yield_every=yield_every,
+        )
+    finally:
+        d._store_lock.release()
     return {
         "files": len(files), "report": stats.report(),
         "docs": stats.docs, "nodes": stats.nodes,

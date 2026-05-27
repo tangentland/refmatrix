@@ -19,6 +19,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from refmatrix.store import Store
 
@@ -336,17 +337,27 @@ def _body_term_frequencies(body_lines: list[str]) -> dict[str, int]:
 
 def ingest_gmd_paths(
     store: Store, paths: list[Path], verbose: bool = False,
+    yield_lock: Callable[[], None] | None = None,
+    yield_every: int = 10,
 ) -> IngestStats:
     """Two-pass ingest: parse all docs first (build id table), then link.
 
     Two-pass so cross-doc `[[doc-id#anchor]]` references resolve against the
     full set being ingested in this call, not just docs seen earlier.
+
+    `yield_lock`: optional callable invoked every `yield_every` docs in
+    each pass. The daemon passes a callback that releases + reacquires its
+    `_store_lock` so CLI ops can interleave during a long ingest. Without
+    this, a multi-thousand-file ingest holds the lock the entire time and
+    `rmx query`, `rmx stats`, etc. queue behind it until completion. See
+    daemon `_op_ingest_gmd` for the standard daemon callback.
     """
     stats = IngestStats()
 
     # ---- pass 1: parse + register entities -------------------------------
     docs: list[GmdDoc] = []
     eid_by_name: dict[str, int] = {}
+    pass1_processed = 0
 
     for path in paths:
         try:
@@ -406,11 +417,18 @@ def ingest_gmd_paths(
             eid_by_name[name] = eid
             stats.nodes += 1
 
+        pass1_processed += 1
+        if yield_lock and pass1_processed % yield_every == 0:
+            # Lock-yield window: daemon releases + reacquires _store_lock so
+            # CLI ops queued behind us get a turn. See module docstring.
+            yield_lock()
+
     # ---- pass 2: hierarchy + rel: + mentions ----------------------------
     _ensure_linkage(store, "part-of", stats)
     _ensure_linkage(store, "mentions", stats)
     _ensure_linkage(store, "imports", stats)
 
+    pass2_processed = 0
     for doc in docs:
         doc_eid = eid_by_name[doc.doc_id]
 
@@ -532,6 +550,10 @@ def ingest_gmd_paths(
                     )
                     store.link("mentions", cid, src_eid)
                     stats.mentions += 1
+
+        pass2_processed += 1
+        if yield_lock and pass2_processed % yield_every == 0:
+            yield_lock()
 
     return stats
 
