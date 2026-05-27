@@ -380,6 +380,9 @@ class RmxRetriever:
         comention_alpha: float = 0.0,
         bigram_source: str | None = None,
         bigram_weight: float = 0.0,
+        reinforce_alpha: float = 0.0,
+        reinforce_halflife_days: float | None = None,
+        reinforce_cap: float | None = None,
     ):
         if scorer not in {"tf_rrf", "bm25", "bm25_multi"}:
             raise ValueError(f"unknown scorer: {scorer!r}")
@@ -409,6 +412,18 @@ class RmxRetriever:
         self.comention_alpha = comention_alpha
         self.bigram_source = bigram_source  # None | 'docstring' | 'code'
         self.bigram_weight = bigram_weight
+        # Phase B5 reinforcement: per-concept rescore multiplier
+        # 1 + alpha · tanh(signal/cap). 0.0 = symbolic baseline, ADR-safe
+        # default. Per-instance overrides for halflife/cap fall back to
+        # env defaults inside refmatrix.reinforcement.
+        self.reinforce_alpha = reinforce_alpha
+        self.reinforce_halflife_days = reinforce_halflife_days
+        self.reinforce_cap = reinforce_cap
+        # Cached signals keyed by cid; cleared per ingest. Looked up via
+        # the store join in refmatrix.reinforcement, so adding memories
+        # after ingest invalidates these without us noticing — flush via
+        # `clear_reinforcement_cache()` if you mutate during a run.
+        self._reinforce_cache: dict[int, float] = {}
 
         # Bigram-specific stores (positional, source-linkage-relative).
         self._bigram_postings: dict[int, dict[int, int]] = {}
@@ -690,9 +705,62 @@ class RmxRetriever:
                 cov = coverage.get(eid, 0) / n_units
                 scores[eid] *= cov ** alpha
 
+        scores = self._apply_reinforcement(scores)
+
         ranked = sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))[:top_k]
         eid_to_did = {v: k for k, v in self._doc_eid.items()}
         return {eid_to_did[eid]: s for eid, s in ranked if eid in eid_to_did}
+
+    def clear_reinforcement_cache(self) -> None:
+        self._reinforce_cache.clear()
+        self._doc_concepts_cache = None
+
+    _doc_concepts_cache: dict[int, set[int]] | None = None
+
+    def _doc_concepts(self) -> dict[int, set[int]]:
+        """{eid: {cid, ...}} across all bm25_multi linkages. Computed
+        once and cached; the bench calls `clear_reinforcement_cache`
+        after seeding memories (which only adds new entities, leaving
+        the doc/cid map valid)."""
+        if self._doc_concepts_cache is not None:
+            return self._doc_concepts_cache
+        out: dict[int, set[int]] = {}
+        for postings in self._postings_l.values():
+            for cid, post in postings.items():
+                for eid in post:
+                    out.setdefault(eid, set()).add(cid)
+        # bm25 single-scorer falls back to the flat postings store.
+        for cid, post in self._postings.items():
+            for eid in post:
+                out.setdefault(eid, set()).add(cid)
+        self._doc_concepts_cache = out
+        return out
+
+    def _apply_reinforcement(self, scores: dict[int, float]) -> dict[int, float]:
+        """Per-doc rescore by summed concept signals. See
+        `refmatrix.reinforcement.per_doc_rescore`. No-op at alpha=0."""
+        if self.reinforce_alpha == 0.0 or not scores:
+            return scores
+        from refmatrix.reinforcement import per_doc_rescore
+        doc_concepts = self._doc_concepts()
+        all_cids: set[int] = set()
+        for eid in scores:
+            all_cids.update(doc_concepts.get(eid, ()))
+        if not all_cids:
+            return scores
+        # Reuse signal cache across queries in one run() invocation.
+        missing = [c for c in all_cids if c not in self._reinforce_cache]
+        if missing:
+            sigs = self.store.reinforcement_scores(
+                missing,
+                halflife_days=self.reinforce_halflife_days,
+                cap=self.reinforce_cap,
+            )
+            self._reinforce_cache.update(sigs)
+        return per_doc_rescore(
+            scores, doc_concepts, self._reinforce_cache,
+            alpha=self.reinforce_alpha, cap=self.reinforce_cap,
+        )
 
     def _retrieve_bm25_multi(self, query: str, top_k: int) -> dict[str, float]:
         tokens = expand_token(query, stem=self._stem_fn)
@@ -789,6 +857,8 @@ class RmxRetriever:
                     norm = 1.0 - b + b * dl / avgdl_bg
                     contrib = self.bigram_weight * idf * (tf * (k1 + 1.0)) / (tf + k1 * norm)
                     scores[eid] = scores.get(eid, 0.0) + contrib
+
+        scores = self._apply_reinforcement(scores)
 
         ranked = sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))[:top_k]
         eid_to_did = {v: k for k, v in self._doc_eid.items()}

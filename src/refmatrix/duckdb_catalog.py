@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS partitions (
 CREATE TABLE IF NOT EXISTS entities (
     id             INTEGER PRIMARY KEY DEFAULT nextval('seq_entities_id'),
     partition_id   INTEGER NOT NULL DEFAULT 1,
-    kind           TEXT NOT NULL CHECK (kind IN ('doc', 'code', 'concept')),
+    kind           TEXT NOT NULL CHECK (kind IN ('doc', 'code', 'concept', 'memory')),
     path           TEXT,
     name           TEXT NOT NULL,
     tldr           TEXT,
@@ -63,6 +63,10 @@ CREATE TABLE IF NOT EXISTS entities (
     -- acronym / dash / digit boundary) resolve via a single indexed SELECT
     -- rather than N point lookups. NULL for kind='doc'/'code'.
     canonical_name TEXT,
+    -- POSIX-epoch seconds (DOUBLE). When the Lance vector for this row
+    -- was last refreshed. NULL = never embedded. Read by `rmx embed`
+    -- to decide which entities need (re-)embedding.
+    vectors_updated_at DOUBLE,
     UNIQUE(partition_id, kind, name)
 );
 CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(kind);
@@ -78,6 +82,18 @@ CREATE INDEX IF NOT EXISTS idx_entities_noise ON entities(noise);
 CREATE TABLE IF NOT EXISTS concepts (
     id          INTEGER PRIMARY KEY,
     description TEXT
+);
+
+-- Intuition memory layer (ADR-0001). Sidecar for entities with
+-- kind='memory'. See sqlite CATALOG_DDL for full rationale.
+CREATE TABLE IF NOT EXISTS memory_content (
+    entity_id   INTEGER PRIMARY KEY,
+    content     TEXT NOT NULL,
+    mtype       TEXT NOT NULL DEFAULT 'observation',
+    tags        TEXT,
+    metadata    TEXT,
+    created_at  DOUBLE NOT NULL,
+    updated_at  DOUBLE NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS linkage_types (
@@ -148,6 +164,7 @@ TABLE_LOAD_ORDER = (
     "linkage_types",
     "entities",
     "concepts",
+    "memory_content",
     "entity_links",
     "tracked_files",
     "linkage_evidence",

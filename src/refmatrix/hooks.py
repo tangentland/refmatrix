@@ -61,7 +61,8 @@ disown
 
 
 def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
-                       scan_prompt: bool = True) -> dict:
+                       scan_prompt: bool = True,
+                       memory_hooks: bool = True) -> dict:
     """A merge-ready hooks block for Claude Code settings.json.
 
     Uses python -c instead of jq so the hook works on a fresh box without
@@ -155,6 +156,40 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                 ],
             }
         ]
+
+    if memory_hooks:
+        # Phase C3: intuition-style memory hooks. Each event gets its
+        # OWN matcher block so the file-sync hooks above stay untouched
+        # — Claude Code merges multiple matchers per event without
+        # squashing either side.
+        block["hooks"].setdefault("SessionStart", []).append({
+            "matcher": "startup|resume|clear",
+            "hooks": [{
+                "type": "command",
+                "command": (
+                    "rmx memory recall --session-start --k 10 --json "
+                    "2>/dev/null || true"
+                ),
+            }],
+        })
+        block["hooks"].setdefault("UserPromptSubmit", []).append({
+            "hooks": [{
+                "type": "command",
+                "command": (
+                    "rmx memory recall --prompt \"$CLAUDE_USER_PROMPT\" "
+                    "--k 5 --json 2>/dev/null || true"
+                ),
+            }],
+        })
+        block["hooks"]["PreCompact"] = [{
+            "hooks": [{
+                "type": "command",
+                "command": (
+                    "rmx memory recall --recent --since 1h --k 20 --json "
+                    "2>/dev/null || true"
+                ),
+            }],
+        }]
     return block
 
 
@@ -167,6 +202,7 @@ def install(
     scope: str = "project",
     apply: bool = False,
     force: bool = False,
+    memory_hooks: bool = True,
 ) -> list[str]:
     """Return a list of human-readable plan lines. Performs writes if apply=True."""
     out: list[str] = []
@@ -177,7 +213,8 @@ def install(
     if claude:
         out.extend(_install_claude_hooks(project_root, refmatrix_root,
                                          scope=scope, apply=apply, force=force,
-                                         primer=True, scan_prompt=True))
+                                         primer=True, scan_prompt=True,
+                                         memory_hooks=memory_hooks))
     if briefing:
         out.extend(_install_briefing(project_root, refmatrix_root,
                                      apply=apply, force=force))
@@ -414,9 +451,13 @@ def _install_claude_hooks(
     force: bool,
     primer: bool = True,
     scan_prompt: bool = True,
+    memory_hooks: bool = True,
 ) -> list[str]:
     out: list[str] = []
-    block = _claude_hook_block(refmatrix_root, primer=primer, scan_prompt=scan_prompt)
+    block = _claude_hook_block(
+        refmatrix_root, primer=primer, scan_prompt=scan_prompt,
+        memory_hooks=memory_hooks,
+    )
     if scope == "user":
         # Always print — never silently merge into the user's global config.
         out.append("[bold]Claude Code (user scope)[/] — merge into ~/.claude/settings.json:")

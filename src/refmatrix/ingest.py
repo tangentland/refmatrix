@@ -33,6 +33,24 @@ CODE_EXTS = {
 }
 DOC_EXTS = {".md", ".markdown", ".rst", ".txt", ".adoc"}
 
+# Non-dot directory segments excluded from rglob walks. Dotfile dirs
+# (anything starting with `.`) are excluded via _is_ignored() below —
+# enumerating them was unsustainable and missed tooling dirs like
+# .wolf / .claude / .cursor / .idea that get appended to repos all the
+# time. Kept separate from watch.IGNORE_DIRS (broader, includes caches)
+# to avoid a circular import: watch.py imports from this module.
+INGEST_IGNORE_DIRS = ("node_modules", "venv")
+
+
+def _is_ignored(parts: set[str]) -> bool:
+    """True if any path segment is a non-dot ignore-listed dir
+    (node_modules, venv) or a hidden directory (starts with `.`).
+    The `seg != "."` guard keeps a leading `.` in relative paths
+    (Path(".").parts == ('.',)) from excluding the cwd itself."""
+    if any(seg in parts for seg in INGEST_IGNORE_DIRS):
+        return True
+    return any(seg.startswith(".") and seg != "." for seg in parts)
+
 
 def ingest_path(
     s: Store, path: Path, source: str = "auto", semantic: bool = False
@@ -74,15 +92,13 @@ def _ingest_path_inner(
     if semantic:
         for p in path.rglob("*.py"):
             parts = set(p.parts)
-            if any(seg in parts for seg in (".git", ".venv", "node_modules",
-                                            ".tldr", ".refmatrix")):
+            if any(seg in parts for seg in INGEST_IGNORE_DIRS):
                 continue
             _ingest_python_semantics(s, p, path)
     pseudo_files: list[Path] = []
     for p in path.rglob("*.pseudo"):
         parts = set(p.parts)
-        if any(seg in parts for seg in (".git", ".venv", "node_modules",
-                                        ".tldr", ".refmatrix")):
+        if _is_ignored(parts):
             continue
         pseudo_files.append(p)
     if pseudo_files:
@@ -105,8 +121,7 @@ def _ingest_path_inner(
     adr_num_to_eid: dict[str, int] = {}
     for p in path.rglob("*.md"):
         parts = set(p.parts)
-        if any(seg in parts for seg in (".git", ".venv", "node_modules",
-                                        ".tldr", ".refmatrix")):
+        if _is_ignored(parts):
             continue
         adr_num = _is_adr_file(p)
         if adr_num is None:
@@ -147,8 +162,7 @@ def _ingest_path_inner(
     md_files: list[Path] = []
     for p in path.rglob("*.md"):
         parts = set(p.parts)
-        if any(seg in parts for seg in (".git", ".venv", "node_modules",
-                                        ".tldr", ".refmatrix")):
+        if _is_ignored(parts):
             continue
         if _is_adr_file(p) is not None:
             continue
@@ -562,7 +576,7 @@ def _ingest_tree(s: Store, root: Path) -> int:
         if not p.is_file():
             continue
         parts = set(p.parts)
-        if any(seg in parts for seg in (".git", ".venv", "node_modules", ".tldr", ".refmatrix")):
+        if _is_ignored(parts):
             continue
         rel = p.relative_to(root).as_posix()
         ext = p.suffix.lower()

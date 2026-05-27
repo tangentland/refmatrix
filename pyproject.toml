@@ -21,6 +21,11 @@ dependencies = [
 [project.optional-dependencies]
 tldr = ["llm-tldr>=1.5"]
 watch = ["watchdog>=4.0"]
+dense = [
+    "pylance>=0.20",
+    "sentence-transformers>=3.0",
+    "numpy>=1.26",
+]
 dev = ["pytest>=8.0", "watchdog>=4.0"]
 
 [project.scripts]

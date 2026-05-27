@@ -101,6 +101,27 @@ def _replica_reader_path() -> Path:
     return root / "catalog.duckdb"
 
 
+def _should_via_replica(explicit_flag: bool) -> bool:
+    """CLI prioritization: prefer the read replica by default so reads
+    bypass the daemon's `_store_lock` entirely (zero contention with
+    bg watch flushes / ingest / writers).
+
+    Resolution order:
+      1. Explicit `--via-replica` flag wins.
+      2. Env `RMX_VIA_REPLICA_DEFAULT=0` -> always use the daemon path.
+         Default `1` -> use replica when the file is present.
+      3. Replica file must exist (post-rotation-bootstrap stores only).
+    """
+    if explicit_flag:
+        return True
+    if os.environ.get("RMX_VIA_REPLICA_DEFAULT", "1") == "0":
+        return False
+    try:
+        return _replica_reader_path().exists()
+    except Exception:
+        return False
+
+
 def _replica_store() -> Store:
     """Open the reader-slot catalog in read-only mode.
 
@@ -142,12 +163,18 @@ def main(partition: str | None):
 @click.option("--hooks/--no-hooks", default=True,
               help="Install git + Claude Code hooks so the index stays "
                    "fresh on every commit and Edit/Write call.")
+@click.option("--memory-hooks/--no-memory-hooks", default=True,
+              help="Also install ADR-0001 Phase C memory hooks: "
+                   "SessionStart recall, UserPromptSubmit recall, "
+                   "PreCompact recent-recall. Templates documented at "
+                   "docs/hooks/intuition-style-hooks.md.")
 @click.option("--agents/--no-agents", default=True,
               help="Place packaged subagent descriptions (e.g. gmd-curator) "
                    "into .claude/agents/ for project-local invocation.")
 @click.option("--force", is_flag=True,
               help="Overwrite existing hook / agent / briefing files.")
-def init(path: Path | None, hooks: bool, agents: bool, force: bool):
+def init(path: Path | None, hooks: bool, memory_hooks: bool, agents: bool,
+         force: bool):
     """Initialize a refmatrix in the given directory (default: cwd).
 
     By default also installs hooks and packaged subagent descriptions so
@@ -177,7 +204,7 @@ def init(path: Path | None, hooks: bool, agents: bool, force: bool):
         for line in install(
             project_root=project_root, refmatrix_root=s.root,
             git=True, claude=True, briefing=True, scope="project",
-            apply=True, force=force,
+            apply=True, force=force, memory_hooks=memory_hooks,
         ):
             console.print(line)
 
@@ -698,6 +725,12 @@ def _print_bitmap(s: Store, bm, limit: int = 50):
                    "(N = RMX_REPLICA_REFRESH_S, default 5).")
 def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter, strict, via_replica):
     """Run a query. DSL: `mentions:parser AND defines:parser`. PQL: `Row(calls,foo)`."""
+    # --explain renders evidence via the daemon's writer-slot path; the
+    # replica fast path doesn't (yet) carry the evidence join. Force
+    # the daemon route when --explain is set so we don't silently drop
+    # the explain output under the new RMX_VIA_REPLICA_DEFAULT=1 default.
+    if not explain:
+        via_replica = _should_via_replica(via_replica)
     if via_replica:
         s = _replica_store()
         qe = QueryEngine(s, include_noise=include_noise, strict=strict)
@@ -849,6 +882,7 @@ def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter, st
                    "Lock-free; sees stale-by-N-seconds data.")
 def neighbors(concept, depth, linkage, limit, include_noise, strict, via_replica):
     """Walk linkages from a concept (depth-N closure)."""
+    via_replica = _should_via_replica(via_replica)
     s = _replica_store() if via_replica else _store()
     qe = QueryEngine(s, include_noise=include_noise, strict=strict)
     with log_query(s, kind="neighbors", body=concept, source="neighbors") as t:
@@ -879,6 +913,13 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
     """Token-budgeted context bundle: anchor + neighbors + their tldr blobs."""
     from refmatrix.context import build_context, render_json, render_text
     from refmatrix import daemon as daemon_mod
+
+    # `--since` requires a writer-slot connection (the diff lookup hits
+    # path metadata that the replica may not cover yet); honor that case
+    # below by leaving via_replica False. Same for the no-symbol path
+    # which streams from the writer.
+    if not since and symbol:
+        via_replica = _should_via_replica(via_replica)
 
     if via_replica:
         if since:
@@ -1234,7 +1275,12 @@ def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
 @click.option("--learn/--no-learn", default=True,
               help="When fallback finds hits, fold them into the index as a "
                    "`query/PATTERN` concept so future searches hit the index.")
-def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn):
+@click.option("--via-replica", is_flag=True,
+              help="Read from the rotation reader slot instead of the daemon. "
+                   "Lock-free; default ON when replica file exists (see "
+                   "RMX_VIA_REPLICA_DEFAULT). Skips --learn (writes need the "
+                   "daemon).")
+def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn, via_replica):
     """Index-backed grep: find concepts whose name matches PATTERN and
     print file:line for every recorded reference. Falls back to `rg` /
     `grep -rn` under the project root when the index has no hits.
@@ -1278,12 +1324,152 @@ def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn):
         effective_pattern = rf"\b{pattern}\b"
     from refmatrix import daemon as daemon_mod
     root = _root()
+    via_replica = _should_via_replica(via_replica)
+    if via_replica:
+        # Read-only replica path. Skip the daemon entirely so a busy
+        # writer can't make us wait. `--learn` is implicitly disabled
+        # because writes require the daemon's write connection.
+        s = _replica_store()
+        if learn:
+            console.print("[dim]learn=off under --via-replica (read-only).[/]")
+            learn = False
+        with log_query(s, kind="grep", body=pattern, source="grep-replica") as _tlog:
+            _grep_run_direct(
+                s, pattern, effective_pattern, regex,
+                linkage, kind, limit, fallback, learn, gf, paths, _tlog,
+            )
+        return
     s = _store()
     with log_query(s, kind="grep", body=pattern, source="grep") as _tlog:
         _grep_run(
             s, root, daemon_mod, pattern, effective_pattern, regex,
             linkage, kind, limit, fallback, learn, gf, paths, _tlog,
         )
+
+
+def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root):
+    """Run `rg` then `grep -rn` as a fallback when the index returns
+    zero rows. Extracted from `_grep_run` so the replica-read path can
+    reuse it without re-implementing the rg/grep arg construction."""
+    import shutil
+    import subprocess
+
+    targets = [str(p) for p in paths] if paths else [str(project_root)]
+    tool = shutil.which("rg")
+    if tool:
+        case_flag = (
+            "-i" if gf["ignore_case"] is True
+            else ("-s" if gf["ignore_case"] is False else "-S")
+        )
+        cmd = ["rg", "-nH", case_flag, "--no-heading"]
+        if gf["word"]:
+            cmd.append("-w")
+        if gf["invert"]:
+            cmd.append("-v")
+        if gf["count"]:
+            cmd.append("-c")
+        if gf["files_only"]:
+            cmd.append("-l")
+        cmd += ["--regexp", pattern] + targets
+    else:
+        tool = shutil.which("grep")
+        if not tool:
+            raise click.ClickException(
+                "no indexed match and neither rg nor grep on PATH"
+            )
+        g_letters = "rH"
+        if not (gf["count"] or gf["files_only"]):
+            g_letters += "n"
+        if gf["ignore_case"] is not False:
+            g_letters += "i"
+        if gf["word"]:
+            g_letters += "w"
+        if gf["invert"]:
+            g_letters += "v"
+        if gf["count"]:
+            g_letters += "c"
+        if gf["files_only"]:
+            g_letters += "l"
+        g_letters += "E" if regex else "F"
+        cmd = [tool, f"-{g_letters}", pattern] + targets
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if not res.stdout.strip():
+        _tlog.cardinality = 0
+        console.print("[dim]no matches[/]")
+        return
+    prefix = "[rg] " if tool.endswith("/rg") else "[grep] "
+    shown = 0
+    if gf["files_only"] or gf["count"]:
+        for raw in res.stdout.splitlines():
+            if shown >= limit:
+                break
+            click.echo(prefix + raw)
+            shown += 1
+        _tlog.cardinality = shown
+        return
+    parsed = 0
+    for raw in res.stdout.splitlines():
+        if shown < limit:
+            click.echo(prefix + raw)
+            shown += 1
+        parts = raw.split(":", 2)
+        if len(parts) >= 2:
+            try:
+                int(parts[1])
+                parsed += 1
+            except ValueError:
+                pass
+    _tlog.cardinality = parsed
+
+
+def _grep_run_direct(s, pattern, effective_pattern, regex,
+                     linkage, kind, limit, fallback, learn, gf, paths, _tlog):
+    """Read-only path: no daemon, no _store_lock. Mirrors the SQL the
+    daemon's `_op_grep_indexed` runs but against the replica reader
+    slot. `--learn` is no-op here (writes need the daemon)."""
+    rows: list[dict] = []
+    like = f"%{effective_pattern}%"
+    sql = (
+        "SELECT e.path, e.name, ev.line, lt.name, c.name "
+        "FROM linkage_evidence ev "
+        "JOIN entities e ON e.id = ev.entity_id "
+        "JOIN entities c ON c.id = ev.concept_id "
+        "JOIN linkage_types lt ON lt.id = ev.linkage_id "
+        "WHERE c.name "
+        + ("ILIKE" if not regex else "~") + " ? "
+    )
+    params: list = [effective_pattern if regex else like]
+    if linkage:
+        sql += "AND lt.name = ? "
+        params.append(linkage)
+    if kind:
+        sql += "AND e.kind = ? "
+        params.append(kind)
+    sql += "ORDER BY e.path, ev.line LIMIT ?"
+    params.append(limit)
+    for r in s._connect().execute(sql, params).fetchall():
+        rows.append({"path": r[0], "entity": r[1], "line": r[2],
+                     "linkage": r[3], "concept": r[4]})
+
+    if paths:
+        rows = _filter_rows_by_paths(rows, paths)
+
+    if rows:
+        _tlog.cardinality = len(rows)
+        _render_grep_rows(rows, gf, limit, source_tag="idx-replica")
+        return
+
+    if not fallback:
+        _tlog.cardinality = 0
+        console.print("[dim]no indexed matches[/]")
+        return
+
+    # Replica path: rg fallback without learn-on-miss (writes need
+    # the daemon; user can re-run without --via-replica to learn).
+    _grep_rg_fallback(
+        pattern=pattern, regex=regex, gf=gf, limit=limit,
+        paths=paths, _tlog=_tlog, project_root=Path.cwd(),
+    )
 
 
 def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
@@ -1681,6 +1867,27 @@ def compact(keep_backup: bool):
         if not keep_backup:
             backup.unlink()
         shutil.rmtree(export_dir, ignore_errors=True)
+
+        # Remove the legacy `catalog.duckdb` once rotation is in use.
+        # Leaving it behind is dangerous: `_bootstrap_rotation_if_needed`
+        # treats it as the source-of-truth seed if either slot is later
+        # missing, and would overwrite the compacted writer with the
+        # stale pre-rotation snapshot. The rotation slots are the new
+        # source of truth.
+        if slot is not None:
+            legacy = root / "catalog.duckdb"
+            if legacy.exists():
+                if keep_backup:
+                    legacy_backup = root / "catalog.duckdb.legacy-bloat"
+                    if legacy_backup.exists():
+                        legacy_backup.unlink()
+                    legacy.rename(legacy_backup)
+                    console.print(
+                        f"  legacy pre-rotation catalog moved to "
+                        f"{legacy_backup}"
+                    )
+                else:
+                    legacy.unlink()
 
         console.print(
             f"[green]compacted[/] {before / 1024 / 1024:.1f} MB → "
@@ -2697,6 +2904,961 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool):
             console.print(f"  scan {f}")
     stats = ingest_gmd_paths(s, files, verbose=verbose)
     console.print(stats.report())
+
+
+# ---- dense / Lance --------------------------------------------------------
+
+
+_DEFAULT_EMBED_KINDS = ("code", "doc", "concept", "memory")
+
+
+@main.command("embed")
+@click.option(
+    "--kinds", "-k", multiple=True,
+    type=click.Choice(["code", "doc", "concept", "memory"]),
+    help="Entity kinds to embed. Repeat the flag for multiple. "
+         "Default: all four.",
+)
+@click.option(
+    "--batch", default=256, show_default=True,
+    help="Rows per daemon round-trip; daemon stays responsive between batches.",
+)
+@click.option(
+    "--rebuild", is_flag=True,
+    help="Re-embed every row of the selected kinds, ignoring "
+         "vectors_updated_at. Use after switching embedding models.",
+)
+@click.option(
+    "--max-batches", default=0, show_default=True,
+    help="Cap on iterations (0 = unlimited). Useful for partial runs.",
+)
+def embed_cmd(kinds, batch, rebuild, max_batches):
+    """Embed entities into Lance for dense ANN retrieval.
+
+    Walks `entities.vectors_updated_at` for the active partition, runs
+    per-kind text extractors, sends them through the sentence-
+    transformers model, and upserts the float32 vectors into
+    `.refmatrix/vectors/<partition>/<kind>.lance`.
+
+    Incremental by default: rows whose `vectors_updated_at >=
+    updated_at` are skipped. `--rebuild` forces full re-embed.
+
+    Requires the [dense] extra (pylance + sentence-transformers).
+    Operates through the daemon when one is up so the model stays
+    loaded across calls; falls back to direct in-process work
+    otherwise.
+    """
+    from refmatrix import daemon as daemon_mod
+
+    root = _root()
+    selected = list(kinds) if kinds else list(_DEFAULT_EMBED_KINDS)
+
+    total_embedded = 0
+    iters = 0
+    if not daemon_mod.ping(root):
+        console.print(
+            "[yellow]no daemon up — embed runs faster through `rmx daemon start` "
+            "so the model stays loaded between calls.[/]"
+        )
+    while True:
+        iters += 1
+        args = {
+            "kinds": selected, "limit": batch,
+            "rebuild": rebuild and iters == 1,
+        }
+        if daemon_mod.ping(root):
+            resp = daemon_mod.call(root, "embed", args, timeout=600.0)
+            if not resp.get("ok"):
+                raise click.ClickException(resp.get("error", "daemon error"))
+            result = resp["result"]
+        else:
+            # Direct path: open the Store ourselves and run the same
+            # logic the op handler runs. Worse latency (cold model
+            # each call), but works without a daemon.
+            from refmatrix.daemon import _op_embed, Daemon
+            d = Daemon(root)
+            d.store = _store()
+            result = _op_embed(d, args)
+        if result.get("ok") is False:
+            raise click.ClickException(result.get("error", "embed failed"))
+        embedded = int(result.get("embedded", 0))
+        remaining = int(result.get("remaining", 0))
+        total_embedded += embedded
+        console.print(
+            f"  batch {iters}: embedded={embedded} remaining={remaining}"
+        )
+        if embedded == 0 or remaining == 0:
+            break
+        if max_batches and iters >= max_batches:
+            break
+
+    console.print(
+        f"[green]done[/] embedded={total_embedded} kinds={','.join(selected)}"
+    )
+
+
+@main.command("search-dense")
+@click.argument("query")
+@click.option("-k", "--k", default=10, show_default=True, help="Top-k hits.")
+@click.option(
+    "--kinds", "-K", multiple=True,
+    type=click.Choice(["code", "doc", "concept", "memory"]),
+    help="Restrict to kinds. Default: all kinds with vectors.",
+)
+def search_dense_cmd(query, k, kinds):
+    """Dense ANN search via Lance. Embeds QUERY with the same model
+    used at index time, then returns top-k entities sorted by L2
+    distance ascending."""
+    from refmatrix import daemon as daemon_mod
+    from rich.table import Table
+
+    root = _root()
+    args: dict = {"query": query, "k": k}
+    if kinds:
+        args["kinds"] = list(kinds)
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "ann_search", args, timeout=60.0)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        result = resp["result"]
+    else:
+        from refmatrix.daemon import _op_ann_search, Daemon
+        d = Daemon(root)
+        d.store = _store()
+        result = _op_ann_search(d, args)
+    if result.get("ok") is False:
+        raise click.ClickException(result.get("error", "ann_search failed"))
+
+    hits = result.get("hits", [])
+    if not hits:
+        console.print("[yellow]no hits[/]")
+        return
+
+    # Resolve ids to (kind, name) via the Store for a readable table.
+    s = _store()
+    con = s._connect()
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("rank", justify="right")
+    table.add_column("distance", justify="right")
+    table.add_column("id", justify="right")
+    table.add_column("kind")
+    table.add_column("name")
+    for rank, h in enumerate(hits, 1):
+        eid = h["id"]
+        dist = h["distance"]
+        row = con.execute(
+            "SELECT kind, name FROM entities WHERE id = ?", [eid]
+        ).fetchone()
+        kind = row["kind"] if row else "?"
+        name = row["name"] if row else "?"
+        table.add_row(str(rank), f"{dist:.3f}", str(eid), kind, name)
+    console.print(table)
+
+
+@main.command("recall")
+@click.argument("query")
+@click.option("-k", "--k", default=10, show_default=True, help="Top-k hits.")
+@click.option(
+    "--kinds", "-K", multiple=True,
+    type=click.Choice(["code", "doc", "concept", "memory"]),
+    help="Restrict to kinds. Default: all kinds with vectors.",
+)
+@click.option(
+    "--concept", "-c", multiple=True,
+    help="Concept name(s) for bitmap pre-filter. Each concept's "
+         "`mentions` bitmap is OR'd to narrow the ANN candidate set.",
+)
+@click.option(
+    "--symbolic", "-s", multiple=True,
+    help="Symbolic-side ranked ids (best-first). Repeat the flag in "
+         "rank order. RRF-fuses with the dense side.",
+)
+@click.option(
+    "--no-dense", is_flag=True,
+    help="Skip the dense side entirely. Just returns the symbolic list "
+         "(or empty if no --symbolic given). Use when [dense] isn't "
+         "installed.",
+)
+def recall_cmd(query, k, kinds, concept, symbolic, no_dense):
+    """Hybrid retrieval: bitmap-prefiltered Lance ANN + RRF fusion
+    with an optional symbolic ranking.
+
+    Common shapes:
+        rmx recall "explain the parser"
+            -- pure dense ANN over every kind that has vectors.
+        rmx recall "parser entrypoint" -c parser -c lexer
+            -- bitmap-narrow to entities that mention either concept,
+               then ANN-rank within that subset.
+        rmx recall "parser" -s 42 -s 17 -s 88
+            -- fuse a symbolic top-3 with the dense side via RRF.
+
+    Requires the [dense] extra unless --no-dense is set.
+    """
+    from refmatrix.recall import (
+        bitmap_prefilter, dense_available, dense_recall, hybrid_recall,
+    )
+    from rich.table import Table
+
+    s = _store()
+    candidate_ids = None
+    if concept:
+        cids: list[int] = []
+        for name in concept:
+            e = s.get_entity("concept", name)
+            if e is None:
+                console.print(f"[yellow]unknown concept: {name}[/]")
+                continue
+            cids.append(e.id)
+        if cids:
+            candidate_ids = bitmap_prefilter(s, cids, linkage="mentions")
+            if not candidate_ids:
+                console.print(
+                    "[yellow]concept pre-filter produced empty candidate set "
+                    "— nothing matches the given concepts under 'mentions'.[/]"
+                )
+                return
+
+    symbolic_hits = [int(x) for x in symbolic] if symbolic else None
+
+    if no_dense or not dense_available():
+        if symbolic_hits is None:
+            console.print(
+                "[yellow]dense not available and no --symbolic given — "
+                "nothing to rank.[/]"
+            )
+            return
+        # Symbolic-only short-circuit (the caller already ranked).
+        ids = list(symbolic_hits)
+        if candidate_ids is not None:
+            allowed = set(candidate_ids)
+            ids = [i for i in ids if i in allowed]
+        ranked: list[tuple[int, float]] = [
+            (eid, 1.0 - i / max(1, len(ids))) for i, eid in enumerate(ids[:k])
+        ]
+    else:
+        from refmatrix.embedder import Embedder
+        embedder = Embedder()
+        if symbolic_hits is None and not query:
+            console.print("[yellow]no query and no --symbolic given.[/]")
+            return
+        if symbolic_hits is None:
+            ranked = dense_recall(
+                s, embedder, query, k=k,
+                kinds=list(kinds) if kinds else None,
+                candidate_ids=candidate_ids,
+            )
+        else:
+            ranked = hybrid_recall(
+                s, embedder, query, k=k,
+                kinds=list(kinds) if kinds else None,
+                symbolic_hits=symbolic_hits,
+                candidate_ids=candidate_ids,
+            )
+
+    if not ranked:
+        console.print("[yellow]no hits[/]")
+        return
+
+    con = s._connect()
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("rank", justify="right")
+    table.add_column("score", justify="right")
+    table.add_column("id", justify="right")
+    table.add_column("kind")
+    table.add_column("name")
+    for rank, (eid, score) in enumerate(ranked, 1):
+        row = con.execute(
+            "SELECT kind, name FROM entities WHERE id = ?", [eid]
+        ).fetchone()
+        kind = row["kind"] if row else "?"
+        name = row["name"] if row else "?"
+        table.add_row(str(rank), f"{score:.4f}", str(eid), kind, name)
+    console.print(table)
+
+
+# ---------- intuition memory layer (ADR-0001, Phase B) -----------------------
+#
+# Every `rmx memory` subcommand persists a "phase: start" record to
+# .refmatrix/cli.log BEFORE touching the daemon or the store. This survives
+# a daemon SIGABRT mid-op so we can always reconstruct what was attempted.
+# The existing cli_entry wrapper writes the matching end-of-run record in
+# its finally block.
+
+def _memory_intent(op: str) -> None:
+    """First-line setup for every rmx memory subcommand:
+    (1) Persist intent to cli.log BEFORE the store/daemon is touched so
+        a crash leaves a recoverable record of what was attempted.
+    (2) Pin the partition default to 'intuition' unless the user already
+        chose one explicitly (-p flag or RMX_PARTITION env var).
+    Order: intent first — _root() doesn't depend on partition, so the
+    log always lands even if partition resolution explodes later."""
+    from refmatrix.telemetry import log_cli_intent
+    log_cli_intent(_root(), op=op, argv=list(sys.argv[1:]), pid=os.getpid())
+    _apply_memory_partition_default()
+
+
+# ADR-0001 line 148-149: memory commands default to the 'intuition'
+# partition so memories aren't co-mingled with whatever project's local
+# code/doc index this rmx invocation happens to land in. The auto-create
+# in Store._ensure_partition handles first-touch — no rmx partition add
+# needed. User-supplied -p / RMX_PARTITION / .refmatrix/partition file
+# all still win, matching _resolve_partition's chain.
+MEMORY_PARTITION_DEFAULT = "intuition"
+
+
+def _apply_memory_partition_default() -> None:
+    """If the user did not explicitly pick a partition (no -p on the rmx
+    group, no RMX_PARTITION env var), pin this invocation to the
+    intuition partition for the duration of the memory subcommand.
+
+    Skips the .refmatrix/partition file check: that file binds a project
+    tree to its own partition, but memories are project-independent —
+    landing them in `intuition` is the whole point of the partition
+    convention. If a project wants project-scoped memories, pass
+    `rmx -p <name> memory add ...` explicitly."""
+    global _partition_override
+    if _partition_override:
+        return
+    if os.environ.get("RMX_PARTITION"):
+        return
+    _partition_override = MEMORY_PARTITION_DEFAULT
+
+
+@main.group("memory")
+def memory_grp():
+    """Intuition memory layer (ADR-0001). add / get / search / recall /
+    link / forget. All ops route through the daemon when one is up;
+    in-process fallback otherwise."""
+
+
+@memory_grp.command("add")
+@click.argument("name")
+@click.option("--content", "-c", required=True,
+              help="Memory body. Use - to read from stdin.")
+@click.option("--type", "mtype", default="observation", show_default=True,
+              help="Memory subtype: observation / note / decision / feedback / ...")
+@click.option("--tags", "-t", multiple=True, help="Repeatable.")
+@click.option("--meta", default=None, help="JSON metadata.")
+@click.option("--protect", is_flag=True,
+              help="Pin against vacuum/prune-noise.")
+def memory_add(name, content, mtype, tags, meta, protect):
+    """Add or update a memory entity."""
+    _memory_intent("memory_add")
+    if content == "-":
+        content = sys.stdin.read()
+    meta_d = json.loads(meta) if meta else None
+    tags_l = list(tags) if tags else None
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    args = {
+        "name": name, "content": content, "mtype": mtype,
+        "tags": tags_l, "metadata": meta_d, "protected": protect,
+    }
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "memory_add", args)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        eid = resp["result"]["id"]
+    else:
+        s = _store()
+        eid = s.add_memory(**args)
+    console.print(f"[green]memory[/] {name} (id={eid}) {mtype}")
+
+
+@memory_grp.command("get")
+@click.argument("name_or_id")
+def memory_get(name_or_id):
+    """Fetch a memory by name (current partition) or id (any partition)."""
+    _memory_intent("memory_get")
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    args: dict = (
+        {"id": int(name_or_id)} if name_or_id.isdigit()
+        else {"name": name_or_id}
+    )
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "memory_get", args)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        m = resp["result"]["memory"]
+    else:
+        s = _store()
+        m = s.get_memory(int(name_or_id) if name_or_id.isdigit() else name_or_id)
+    if m is None:
+        raise click.ClickException(f"no memory matching {name_or_id!r}")
+    console.print(f"[bold]{m['name']}[/]  id={m['id']}  mtype={m['mtype']}")
+    if m["tags"]:
+        console.print(f"  tags: {', '.join(m['tags'])}")
+    if m["metadata"]:
+        console.print(f"  meta: {m['metadata']}")
+    console.print()
+    console.print(m["content"] or "")
+
+
+@memory_grp.command("list")
+@click.option("--type", "mtype", default=None,
+              help="Filter by mtype.")
+@click.option("--limit", "-n", type=int, default=20, show_default=True)
+def memory_list(mtype, limit):
+    """List memories in the active partition."""
+    _memory_intent("memory_iter")
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    args = {"mtype": mtype, "limit": limit}
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "memory_iter", args)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        rows = resp["result"]["rows"]
+    else:
+        s = _store()
+        rows = list(s.iter_memories(mtype=mtype, limit=limit))
+    if not rows:
+        console.print("[yellow]no memories[/]")
+        return
+    t = Table("id", "name", "mtype", "content", "tags")
+    for m in rows:
+        t.add_row(
+            str(m["id"]), m["name"], m["mtype"] or "",
+            (m["content"] or "")[:60],
+            ", ".join(m["tags"]) if m["tags"] else "",
+        )
+    console.print(t)
+
+
+@memory_grp.command("search")
+@click.argument("query")
+@click.option("--limit", "-n", type=int, default=20, show_default=True)
+def memory_search(query, limit):
+    """Case-insensitive substring search over memory name + content.
+    Returns matching rows newest-first. For dense / hybrid retrieval,
+    use `rmx memory recall`."""
+    _memory_intent("memory_search")
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    args = {"query": query, "limit": limit}
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "memory_search", args)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        rows = resp["result"]["rows"]
+    else:
+        s = _store()
+        rows = s.search_memories(query, limit=limit)
+    if not rows:
+        console.print("[yellow]no matches[/]")
+        return
+    t = Table("id", "name", "mtype", "content")
+    for m in rows:
+        t.add_row(
+            str(m["id"]), m["name"], m["mtype"] or "",
+            (m["content"] or "")[:80],
+        )
+    console.print(t)
+
+
+_DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+
+
+def _parse_duration(text: str) -> float:
+    """Parse `30m`, `1h`, `7d`, `2w` (or bare seconds) → seconds."""
+    text = text.strip().lower()
+    if not text:
+        raise click.BadParameter("empty duration")
+    if text[-1] in _DURATION_UNITS:
+        try:
+            n = float(text[:-1])
+        except ValueError as e:
+            raise click.BadParameter(f"bad duration {text!r}") from e
+        return n * _DURATION_UNITS[text[-1]]
+    try:
+        return float(text)
+    except ValueError as e:
+        raise click.BadParameter(
+            f"bad duration {text!r}; use 30m / 1h / 7d / bare seconds"
+        ) from e
+
+
+@memory_grp.command("recall")
+@click.argument("query", required=False)
+@click.option("--prompt", "prompt_query", default=None,
+              help="Alias for the positional query. Convenience for "
+                   "hook payloads that pipe in $PROMPT.")
+@click.option("--k", "-k", type=int, default=10, show_default=True)
+@click.option("--recent", is_flag=True,
+              help="Phase C2: return the most recent memories by "
+                   "entities.created_at DESC (no dense embedder needed). "
+                   "Pair with --since to bound the window.")
+@click.option("--since", default=None,
+              help="With --recent, time window (e.g. 30m, 1h, 7d). "
+                   "Default: all memories.")
+@click.option("--session-start", "session_start", is_flag=True,
+              help="Phase C2: shorthand for `--recent --since 7d` — "
+                   "the top-k recent memories suitable for injecting "
+                   "into a fresh session's context.")
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit JSON instead of a Rich table — friendlier "
+                   "for hook scripts piping the output into a prompt.")
+def memory_recall(query, prompt_query, k, recent, since, session_start,
+                  as_json):
+    """Memory retrieval. Three modes:
+
+    Hybrid (default): dense ANN over memory.lance fused with the
+    symbolic graph. Requires the [dense] extra and embedded memories
+    (rmx embed --kinds memory).
+
+    Recent (--recent): newest-first ordering by created_at; no dense
+    embedder needed. Pair with --since 1h / 7d to bound the window.
+
+    Session-start (--session-start): shorthand for `--recent --since 7d`,
+    the SessionStart hook's preferred mode per ADR-0001 Phase C."""
+    _memory_intent("memory_recall")
+    if session_start:
+        recent = True
+        if since is None:
+            since = "7d"
+    q = prompt_query or query
+    if not recent and not q:
+        raise click.ClickException(
+            "rmx memory recall needs a QUERY (or --prompt), --recent, "
+            "or --session-start"
+        )
+
+    if recent:
+        since_s = _parse_duration(since) if since else None
+        s = _store()
+        rows = s.recent_memories(since_seconds=since_s, limit=k)
+        if as_json:
+            import json as _json
+            click.echo(_json.dumps(rows, indent=2))
+            return
+        if not rows:
+            console.print("[yellow]no memories in window[/]")
+            return
+        t = Table("rank", "id", "name", "mtype", "content")
+        for i, m in enumerate(rows, 1):
+            t.add_row(str(i), str(m["id"]), m["name"], m["mtype"] or "",
+                      (m["content"] or "")[:80])
+        console.print(t)
+        return
+
+    # Hybrid path (unchanged from Phase B, just q-substituted).
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    args = {"query": q, "k": k, "kinds": ["memory"]}
+    if not daemon_mod.ping(root):
+        raise click.ClickException(
+            "rmx memory recall needs the daemon up (dense embedder lives there)"
+        )
+    resp = daemon_mod.call(root, "ann_search", args, timeout=60.0)
+    if not resp.get("ok"):
+        raise click.ClickException(resp.get("error", "daemon error"))
+    hits = resp["result"].get("hits", [])
+    if not hits:
+        console.print("[yellow]no recall hits[/] (have memories been embedded? "
+                      "rmx embed --kinds memory)")
+        return
+    s = _store()
+    if as_json:
+        import json as _json
+        out = []
+        for h in hits:
+            eid = h.get("entity_id") or h.get("id")
+            m = s.get_memory(eid)
+            if m:
+                m["score"] = h.get("score") or h.get("distance")
+                out.append(m)
+        click.echo(_json.dumps(out, indent=2))
+        return
+    t = Table("rank", "score", "id", "name")
+    for r, h in enumerate(hits, 1):
+        eid = h.get("entity_id") or h.get("id")
+        score = h.get("score") or h.get("distance")
+        row = s._read().execute(
+            "SELECT name FROM entities WHERE id=?", (eid,),
+        ).fetchone()
+        name = row["name"] if row else "?"
+        t.add_row(str(r), f"{score:.4f}" if isinstance(score, float) else str(score),
+                  str(eid), name)
+    console.print(t)
+
+
+@memory_grp.command("link")
+@click.argument("src")
+@click.argument("linkage")
+@click.argument("concept")
+@click.option("--weight", "-w", type=float, default=None,
+              help="Signed weight. Positive for reinforces, negative "
+                   "for contradicts; default None lets the linkage "
+                   "convention pick the sign.")
+def memory_link(src, linkage, concept, weight):
+    """Link a memory to a concept. Auto-creates the concept if new.
+    Valid linkages: reinforces, contradicts, recalls, informs, plus
+    any DEFAULT_LINKAGES (mentions, defines, ...)."""
+    _memory_intent("memory_link")
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    src_arg = (
+        {"src_id": int(src)} if src.isdigit() else {"src_name": src}
+    )
+    args = {**src_arg, "linkage": linkage, "concept": concept,
+            "weight": weight}
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "memory_link", args)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        result = resp["result"]
+    else:
+        s = _store()
+        m = s.get_memory(int(src) if src.isdigit() else src)
+        if m is None:
+            raise click.ClickException(f"no memory matching {src!r}")
+        cid = s.add_concept(concept)
+        s.link(linkage, cid, m["id"], weight=weight)
+        result = {"src_id": m["id"], "concept_id": cid}
+    console.print(
+        f"[green]linked[/] memory:{src} --{linkage}--> concept:{concept} "
+        f"(memory_id={result['src_id']}, concept_id={result['concept_id']})"
+    )
+
+
+@memory_grp.command("score")
+@click.argument("concept")
+@click.option("--explain", is_flag=True,
+              help="List the contributing memory rows (decayed weights, "
+                   "ages) ordered by |contribution|.")
+@click.option("--halflife-days", type=float, default=None,
+              help="Override RMX_REINFORCE_HALFLIFE_DAYS for this call.")
+@click.option("--cap", type=float, default=None,
+              help="Override RMX_REINFORCE_CAP for this call.")
+def memory_score(concept, explain, halflife_days, cap):
+    """Phase B5: signed reinforcement score for a concept.
+
+    Computes Σ +|w(m)|·decay over `reinforces` plus Σ -|w(m)|·decay
+    over `contradicts`, clamped to ±CAP. Positive = the memory layer
+    has reinforced this concept; negative = contradicted; ~0 = no
+    signal yet.
+
+    With --explain, also prints the per-memory breakdown so you can
+    see which observations are driving the number."""
+    _memory_intent("memory_score")
+    from refmatrix import daemon as daemon_mod
+    from refmatrix import reinforcement as rein
+    root = _root()
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "memory_score", {
+            "concept": concept, "halflife_days": halflife_days,
+            "cap": cap, "explain": explain,
+        })
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        result = resp["result"]
+        cids = result["concept_ids"]
+        if not cids:
+            raise click.ClickException(f"no concept matching {concept!r}")
+        total = result["signal"]
+        components_by_cid: dict[int, list[dict]] = {}
+        for row in result.get("components") or []:
+            components_by_cid.setdefault(row["concept_id"], []).append(row)
+    else:
+        s = _store()
+        cids = s.resolve_concept_ids(concept, strict=False)
+        if not cids:
+            raise click.ClickException(f"no concept matching {concept!r}")
+        scores = s.reinforcement_scores(
+            cids, halflife_days=halflife_days, cap=cap,
+        )
+        total = sum(scores.values())
+        components_by_cid = {}
+        if explain:
+            for cid in cids:
+                components_by_cid[cid] = s.reinforcement_components(
+                    cid, halflife_days=halflife_days,
+                )
+    halflife = halflife_days if halflife_days is not None else rein.get_halflife_days()
+    cap_used = cap if cap is not None else rein.get_cap()
+    console.print(
+        f"[bold]{concept}[/]  signal={total:+.4f}  "
+        f"(concepts={len(cids)}, halflife={halflife:g}d, cap=±{cap_used:g})"
+    )
+    if explain:
+        s = _store()
+        for cid in cids:
+            rows = components_by_cid.get(cid, [])
+            if not rows:
+                continue
+            ent = s.get_entity_by_id(cid)
+            console.print(f"  [cyan]concept_id={cid}[/]  {ent.name if ent else '?'}")
+            t = Table("entity", "linkage", "weight", "age_d",
+                      "decay", "contrib")
+            for r in rows:
+                t.add_row(
+                    f"{r['entity_kind']}:{r['entity_name']}",
+                    r["linkage"],
+                    f"{r['weight']:.3f}" if r["weight"] is not None else "-",
+                    f"{r['age_days']:.1f}",
+                    f"{r['decay']:.3f}",
+                    f"{r['contribution']:+.4f}",
+                )
+            console.print(t)
+
+
+@memory_grp.command("import-sqlite")
+@click.argument("src", type=click.Path(exists=True, dir_okay=False,
+                                       path_type=Path))
+@click.option("--strict/--no-strict", default=False,
+              help="--strict re-raises per-row failures; default collects "
+                   "errors and continues so one bad row doesn't abort the "
+                   "whole import.")
+@click.option("--archive/--no-archive", default=True,
+              help="On success, move the source .memory.db family into a "
+                   "sibling .intuition-migrated/ directory so the original "
+                   "intuition process can't reopen it. --no-archive leaves "
+                   "the files in place (useful for dry-run / re-import).")
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit the stats dict as JSON instead of a table.")
+def memory_import_sqlite(src, strict, archive, as_json):
+    """Phase C1: import an intuition `.memory.db` into this rmx store.
+
+    Maps observations -> memory entities, observation_concepts.score ->
+    mentions weight, concept_relations -> typed linkages (auto-registered),
+    concept_aliases -> same_as variants. Idempotent on the
+    `imp-<dbname>-<orig_id>` memory naming scheme.
+
+    Goes through the local Store directly (not the daemon) because the
+    import is one big transaction and the daemon's RPC framing would
+    serialize every row individually.
+
+    By default, after a clean import (no errors), the source .memory.db
+    plus its FAISS sidecars and the WAL/SHM files are moved into a
+    sibling .intuition-migrated/ directory so the original intuition
+    process can't keep writing to a now-shadowed catalog."""
+    _memory_intent("memory_import_sqlite")
+    from refmatrix.import_intuition import import_intuition_db, archive_source
+    s = _store()
+    with s.transaction():
+        stats = import_intuition_db(s, src, strict=strict)
+    archived: list[Path] = []
+    if archive and not stats.errors:
+        archived = archive_source(src)
+    if as_json:
+        import json as _json
+        out = stats.as_dict()
+        out["archived"] = [str(p) for p in archived]
+        click.echo(_json.dumps(out, indent=2))
+        return
+    d = stats.as_dict()
+    t = Table("metric", "count")
+    for k, v in d.items():
+        if k == "errors":
+            continue
+        t.add_row(k, str(v))
+    console.print(t)
+    if d["errors"]:
+        console.print(f"[yellow]{len(d['errors'])} errors[/] "
+                      "(non-strict mode; run with --strict to abort on first):")
+        for line in d["errors"][:10]:
+            console.print(f"  - {line}")
+        if len(d["errors"]) > 10:
+            console.print(f"  ... ({len(d['errors']) - 10} more)")
+        console.print("[yellow]source files NOT archived[/] — fix and re-run.")
+    elif archive:
+        console.print(
+            f"[green]archived[/] {len(archived)} source file(s) -> "
+            f"{src.parent}/.intuition-migrated/"
+        )
+
+
+@memory_grp.command("forget")
+@click.argument("name_or_id")
+@click.confirmation_option(prompt="Delete this memory and all its linkages?")
+def memory_forget(name_or_id):
+    """Drop a memory: its entity row, sidecar, and every entity_link."""
+    _memory_intent("memory_forget")
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    args: dict = (
+        {"id": int(name_or_id)} if name_or_id.isdigit()
+        else {"name": name_or_id}
+    )
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "memory_forget", args)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        ok = resp["result"]["forgotten"]
+    else:
+        s = _store()
+        ok = s.forget_memory(int(name_or_id) if name_or_id.isdigit() else name_or_id)
+    if ok:
+        console.print(f"[green]forgot[/] {name_or_id}")
+    else:
+        console.print(f"[yellow]no memory matching[/] {name_or_id}")
+
+
+@main.command("tools-primer")
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit JSON instead of markdown.")
+@click.option("--group", "scope_group", default=None,
+              help="Restrict to one subgroup (e.g. 'memory').")
+@click.option("--include-options/--no-options", default=True,
+              help="Include per-command options + arguments.")
+def tools_primer(as_json, scope_group, as_options=None, include_options=True):
+    """Produce an agent-consumable primer describing the rmx CLI surface.
+
+    Same role an MCP `tools/list` response plays for an MCP-enabled agent:
+    one record per command with name, summary, arguments, options, and
+    when-to-use guidance, structured so an agent can plan invocations
+    without trial-and-error.
+
+    Markdown by default (CLAUDE.md-friendly). Pass --json for a machine-
+    readable structure suitable for piping into another tool.
+
+    Examples:
+        rmx tools-primer                       # all commands, markdown
+        rmx tools-primer --group memory        # just the memory subgroup
+        rmx tools-primer --json                # JSON for programmatic use
+        rmx tools-primer --no-options          # compact: names + summaries
+    """
+    import click as _click
+
+    def _summarize_command(cmd, full_name: str) -> dict:
+        # Help text: short_help when set, else first paragraph of the
+        # docstring, else the click-rendered help.
+        short = cmd.short_help or ""
+        long_help = (cmd.help or "").strip()
+        summary = short.strip() or long_help.split("\n\n", 1)[0].replace("\n", " ").strip()
+        details: list[str] = []
+        if long_help and long_help != summary:
+            for para in long_help.split("\n\n")[1:]:
+                clean = " ".join(p.strip() for p in para.splitlines() if p.strip())
+                if clean:
+                    details.append(clean)
+        args: list[dict] = []
+        opts: list[dict] = []
+        for p in cmd.params:
+            entry = {
+                "name": p.name,
+                "required": getattr(p, "required", False),
+                "help": getattr(p, "help", None),
+            }
+            ptype = getattr(p, "type", None)
+            choices = getattr(ptype, "choices", None)
+            if choices:
+                entry["choices"] = list(choices)
+            default = getattr(p, "default", None)
+            # Skip click's internal sentinel and other non-renderables.
+            if (
+                default not in (None, (), [], False)
+                and not callable(default)
+                and type(default).__name__ != "Sentinel"
+            ):
+                entry["default"] = default
+            if isinstance(p, _click.Argument):
+                args.append(entry)
+            elif isinstance(p, _click.Option):
+                opts.append({
+                    **entry,
+                    "flags": list(p.opts) + list(p.secondary_opts),
+                    "is_flag": bool(p.is_flag),
+                })
+        return {
+            "name": full_name,
+            "summary": summary,
+            "details": details,
+            "arguments": args,
+            "options": opts,
+        }
+
+    def _walk(group, prefix: str) -> list[dict]:
+        records: list[dict] = []
+        for sub_name, sub_cmd in sorted(group.commands.items()):
+            full = f"{prefix} {sub_name}".strip()
+            if isinstance(sub_cmd, _click.Group):
+                # Group header so agents can see the grouping shape.
+                records.append({
+                    "name": full,
+                    "kind": "group",
+                    "summary":
+                        (sub_cmd.short_help or "").strip()
+                        or (sub_cmd.help or "").strip().split("\n\n", 1)[0]
+                            .replace("\n", " "),
+                    "details": [],
+                    "arguments": [],
+                    "options": [],
+                })
+                records.extend(_walk(sub_cmd, full))
+            else:
+                rec = _summarize_command(sub_cmd, full)
+                rec["kind"] = "command"
+                records.append(rec)
+        return records
+
+    if scope_group is not None:
+        if scope_group not in main.commands:
+            raise click.ClickException(f"unknown group: {scope_group!r}")
+        target = main.commands[scope_group]
+        if not isinstance(target, _click.Group):
+            raise click.ClickException(
+                f"{scope_group!r} is a command, not a group; try without --group"
+            )
+        records = _walk(target, f"rmx {scope_group}")
+    else:
+        records = _walk(main, "rmx")
+
+    if as_json:
+        click.echo(json.dumps({"tool": "rmx", "commands": records}, indent=2))
+        return
+
+    # Markdown rendering, MCP-tools-list-shaped.
+    lines: list[str] = []
+    lines.append("# rmx CLI tools primer")
+    lines.append("")
+    lines.append(
+        "Agent-consumable description of the `rmx` CLI surface. Each entry "
+        "below mirrors the role an MCP `tools/list` record plays: name, "
+        "summary, arguments, options, when-to-use detail. Plan invocations "
+        "from this primer instead of `rmx <cmd> --help` trial-and-error."
+    )
+    lines.append("")
+    for rec in records:
+        if rec.get("kind") == "group":
+            lines.append(f"## `{rec['name']}` (group)")
+            if rec["summary"]:
+                lines.append("")
+                lines.append(rec["summary"])
+            lines.append("")
+            continue
+        lines.append(f"### `{rec['name']}`")
+        lines.append("")
+        if rec["summary"]:
+            lines.append(rec["summary"])
+            lines.append("")
+        for para in rec["details"]:
+            lines.append(para)
+            lines.append("")
+        if include_options and rec["arguments"]:
+            lines.append("**Arguments:**")
+            for a in rec["arguments"]:
+                req = " (required)" if a["required"] else ""
+                hlp = f" — {a['help']}" if a.get("help") else ""
+                lines.append(f"- `{a['name'].upper()}`{req}{hlp}")
+            lines.append("")
+        if include_options and rec["options"]:
+            lines.append("**Options:**")
+            for o in rec["options"]:
+                flags = ", ".join(f"`{f}`" for f in o["flags"])
+                hlp = f" — {o['help']}" if o.get("help") else ""
+                ch = (
+                    f" choices: {o['choices']}"
+                    if o.get("choices") else ""
+                )
+                dv = (
+                    f" default: `{o['default']}`"
+                    if "default" in o else ""
+                )
+                lines.append(f"- {flags}{hlp}{ch}{dv}")
+            lines.append("")
+    click.echo("\n".join(lines))
 
 
 def cli_entry() -> None:

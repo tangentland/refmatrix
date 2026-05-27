@@ -74,14 +74,19 @@ def drain_queue(root: Path) -> list[str]:
 
 def sync_files(s: Store, paths: list[str], project_root: Path | None = None,
                semantic: bool = False,
-               cancel_check: Callable[[], bool] | None = None) -> dict:
+               cancel_check: Callable[[], bool] | None = None,
+               yield_lock: Callable[[], None] | None = None,
+               yield_every: int = 1) -> dict:
     return _sync_paths(s, [Path(p) for p in paths], project_root, semantic,
-                       cancel_check=cancel_check)
+                       cancel_check=cancel_check,
+                       yield_lock=yield_lock, yield_every=yield_every)
 
 
 def sync_since(s: Store, git_ref: str, project_root: Path | None = None,
                semantic: bool = False,
-               cancel_check: Callable[[], bool] | None = None) -> dict:
+               cancel_check: Callable[[], bool] | None = None,
+               yield_lock: Callable[[], None] | None = None,
+               yield_every: int = 1) -> dict:
     project_root = (project_root or Path.cwd()).resolve()
     if shutil.which("git") is None:
         raise RuntimeError("git not on PATH")
@@ -91,16 +96,20 @@ def sync_since(s: Store, git_ref: str, project_root: Path | None = None,
     )
     files = [project_root / f for f in out.stdout.splitlines() if f.strip()]
     return _sync_paths(s, files, project_root, semantic,
-                       cancel_check=cancel_check)
+                       cancel_check=cancel_check,
+                       yield_lock=yield_lock, yield_every=yield_every)
 
 
 def flush_queue(s: Store, project_root: Path | None = None,
                 semantic: bool = False,
-                cancel_check: Callable[[], bool] | None = None) -> dict:
+                cancel_check: Callable[[], bool] | None = None,
+                yield_lock: Callable[[], None] | None = None,
+                yield_every: int = 1) -> dict:
     raws = drain_queue(s.root)
     paths = [Path(p) for p in raws]
     return _sync_paths(s, paths, project_root, semantic,
-                       cancel_check=cancel_check)
+                       cancel_check=cancel_check,
+                       yield_lock=yield_lock, yield_every=yield_every)
 
 
 def _sync_paths(
@@ -110,6 +119,8 @@ def _sync_paths(
     semantic: bool,
     *,
     cancel_check: Callable[[], bool] | None = None,
+    yield_lock: Callable[[], None] | None = None,
+    yield_every: int = 1,
 ) -> dict:
     project_root = (project_root or Path.cwd()).resolve()
     added = updated = purged = skipped_unchanged = 0
@@ -126,6 +137,15 @@ def _sync_paths(
     # bulk_link flush at the very end. Combined this turns a per-file
     # round-trip pattern into one batch round-trip — big wins on 100+ file
     # diffs (git post-commit `--since`).
+    #
+    # NB: yield_lock is plumbed through the signature for forward
+    # compatibility but is intentionally NOT invoked inside the per-file
+    # loop here. Releasing _store_lock mid-`s.transaction()` would let
+    # another daemon thread see the connection in a half-open state.
+    # Reads (via-replica) are the real CLI-priority lever -- they skip
+    # _store_lock entirely. Yielding for writes is only safe between
+    # transactions; ingest_gmd takes that path explicitly.
+    _ = yield_lock, yield_every  # unused for now; see note above
     with s.transaction(), s.deferred_links():
         for p in paths:
             if _cancelled():

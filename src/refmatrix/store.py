@@ -98,18 +98,19 @@ CREATE TABLE IF NOT EXISTS partitions (
 );
 
 CREATE TABLE IF NOT EXISTS entities (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    partition_id   INTEGER NOT NULL DEFAULT 1 REFERENCES partitions(id),
-    kind           TEXT NOT NULL CHECK (kind IN ('doc', 'code', 'concept')),
-    path           TEXT,
-    name           TEXT NOT NULL,
-    tldr           TEXT,
-    meta           TEXT,
-    created_at     REAL NOT NULL,
-    updated_at     REAL NOT NULL,
-    protected      INTEGER NOT NULL DEFAULT 0,
-    noise          INTEGER NOT NULL DEFAULT 0,
-    canonical_name TEXT,
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    partition_id       INTEGER NOT NULL DEFAULT 1 REFERENCES partitions(id),
+    kind               TEXT NOT NULL CHECK (kind IN ('doc', 'code', 'concept', 'memory')),
+    path               TEXT,
+    name               TEXT NOT NULL,
+    tldr               TEXT,
+    meta               TEXT,
+    created_at         REAL NOT NULL,
+    updated_at         REAL NOT NULL,
+    protected          INTEGER NOT NULL DEFAULT 0,
+    noise              INTEGER NOT NULL DEFAULT 0,
+    canonical_name     TEXT,
+    vectors_updated_at REAL,
     UNIQUE(partition_id, kind, name)
 );
 CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(kind);
@@ -123,6 +124,27 @@ CREATE TABLE IF NOT EXISTS concepts (
     id          INTEGER PRIMARY KEY,            -- equals entities.id where kind='concept'
     description TEXT,
     FOREIGN KEY (id) REFERENCES entities(id) ON DELETE CASCADE
+);
+
+-- Intuition memory layer (ADR-0001). Sidecar 1:1 with entities where
+-- kind='memory'. Keeps the raw observation/note body off of the
+-- entities row (which stays a thin metadata header consistent with
+-- doc/code/concept) so a recall doesn't have to read content unless
+-- explicitly asked, and so embedding extractors can pull content
+-- directly without parsing entities.meta.
+CREATE TABLE IF NOT EXISTS memory_content (
+    entity_id   INTEGER PRIMARY KEY,
+    content     TEXT NOT NULL,
+    -- Free-form type tag: 'observation' / 'note' / 'decision' / 'feedback'
+    -- / ... — not constrained at the DB layer to keep the surface flexible
+    -- as new memory subtypes appear. Default 'observation' matches the
+    -- intuition import path.
+    mtype       TEXT NOT NULL DEFAULT 'observation',
+    tags        TEXT,           -- JSON array
+    metadata    TEXT,           -- JSON object
+    created_at  REAL NOT NULL,
+    updated_at  REAL NOT NULL,
+    FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS linkage_types (
@@ -210,6 +232,14 @@ DEFAULT_LINKAGES = [
     # via the canon hub. Stored in entity_links (partition-blind) so traversal
     # works without enumerating partitions.
     ("same_as",      0, None, "concept is the same as a canonical concept"),
+    # Reinforcement semantics for the intuition memory layer (ADR-0001).
+    # Weighted: + reinforces / − contradicts feeds the signed-reinforcement
+    # scoring signal. recalls / informs carry zero default weight but mark
+    # provenance edges between memories and concepts.
+    ("reinforces",   1, None, "memory amplifies confidence in a concept"),
+    ("contradicts",  1, None, "memory undermines confidence in a concept"),
+    ("recalls",      1, None, "memory references / recalls a concept"),
+    ("informs",      1, None, "memory provides context informing a concept"),
 ]
 
 
@@ -405,18 +435,19 @@ class Store:
                     con.execute(
                         "ALTER TABLE entities ADD COLUMN canonical_name TEXT"
                     )
-                # Indexes are unconditional (and IF NOT EXISTS): both the
-                # alter-table path above and the fresh-schema path leave us
-                # with the columns present, so this is now safe.
+                if "vectors_updated_at" not in cols:
+                    con.execute(
+                        "ALTER TABLE entities ADD COLUMN vectors_updated_at REAL"
+                    )
+                # Indexes that don't depend on partition_id are safe before
+                # the legacy migration; the partition-aware index waits until
+                # after _migrate_to_partitions_if_needed() has added the
+                # column.
                 con.execute(
                     "CREATE INDEX IF NOT EXISTS idx_entities_protected ON entities(protected)"
                 )
                 con.execute(
                     "CREATE INDEX IF NOT EXISTS idx_entities_noise ON entities(noise)"
-                )
-                con.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_entities_canonical "
-                    "ON entities(partition_id, kind, canonical_name)"
                 )
                 con.commit()
                 self._conn = con
@@ -427,10 +458,14 @@ class Store:
                 self._migrate_to_partitions_if_needed()
                 # Now that partition_id is guaranteed to exist on entities (via the
                 # CATALOG_DDL fresh-schema path or the migration above), the
-                # partition index is safe to create unconditionally.
+                # partition-aware indexes are safe to create unconditionally.
                 con.execute(
                     "CREATE INDEX IF NOT EXISTS idx_entities_partition "
                     "ON entities(partition_id)"
+                )
+                con.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_entities_canonical "
+                    "ON entities(partition_id, kind, canonical_name)"
                 )
                 con.commit()
             else:
@@ -458,6 +493,18 @@ class Store:
                         "CREATE INDEX IF NOT EXISTS idx_entities_canonical "
                         "ON entities(partition_id, kind, canonical_name)"
                     )
+                if "vectors_updated_at" not in cols:
+                    con.execute(
+                        "ALTER TABLE entities ADD COLUMN vectors_updated_at DOUBLE"
+                    )
+                # ADR-0001 / Phase B: relax the kind CHECK constraint on
+                # pre-Phase-B catalogs so 'memory' rows can land. DuckDB
+                # auto-names CHECK constraints; query duckdb_constraints
+                # to find the one that mentions 'doc'/'code'/'concept'
+                # but not 'memory', drop it, leave Python-side validation
+                # in upsert_entity as the kind whitelist. Idempotent: a
+                # post-migration catalog returns no matching row.
+                self._migrate_entities_kind_check_if_needed()
             # Ensure the default + active partition rows exist and resolve the
             # active partition_id. Auto-creates the active partition the first
             # time a Store is opened with a new name (matches how a fresh
@@ -511,28 +558,35 @@ class Store:
         con.execute("PRAGMA foreign_keys = OFF")
         try:
             if "partition_id" not in ent_cols:
+                # Carry forward post-0.3.3 columns the legacy ALTER added
+                # to the old table (canonical_name, vectors_updated_at) so
+                # the rebuild doesn't drop them on the way through.
                 con.executescript("""
                     DROP TABLE IF EXISTS entities_new;
                     CREATE TABLE entities_new (
-                        id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                        partition_id INTEGER NOT NULL DEFAULT 1
-                                       REFERENCES partitions(id),
-                        kind         TEXT NOT NULL CHECK (kind IN ('doc','code','concept')),
-                        path         TEXT,
-                        name         TEXT NOT NULL,
-                        tldr         TEXT,
-                        meta         TEXT,
-                        created_at   REAL NOT NULL,
-                        updated_at   REAL NOT NULL,
-                        protected    INTEGER NOT NULL DEFAULT 0,
-                        noise        INTEGER NOT NULL DEFAULT 0,
+                        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                        partition_id       INTEGER NOT NULL DEFAULT 1
+                                             REFERENCES partitions(id),
+                        kind               TEXT NOT NULL CHECK (kind IN ('doc','code','concept','memory')),
+                        path               TEXT,
+                        name               TEXT NOT NULL,
+                        tldr               TEXT,
+                        meta               TEXT,
+                        created_at         REAL NOT NULL,
+                        updated_at         REAL NOT NULL,
+                        protected          INTEGER NOT NULL DEFAULT 0,
+                        noise              INTEGER NOT NULL DEFAULT 0,
+                        canonical_name     TEXT,
+                        vectors_updated_at REAL,
                         UNIQUE(partition_id, kind, name)
                     );
                     INSERT INTO entities_new
                         (id, partition_id, kind, path, name, tldr, meta,
-                         created_at, updated_at, protected, noise)
+                         created_at, updated_at, protected, noise,
+                         canonical_name, vectors_updated_at)
                     SELECT id, 1, kind, path, name, tldr, meta,
-                           created_at, updated_at, protected, noise
+                           created_at, updated_at, protected, noise,
+                           canonical_name, vectors_updated_at
                     FROM entities;
                     DROP TABLE entities;
                     ALTER TABLE entities_new RENAME TO entities;
@@ -578,6 +632,119 @@ class Store:
             con.commit()
         finally:
             con.execute("PRAGMA foreign_keys = ON")
+
+    def _migrate_entities_kind_check_if_needed(self) -> None:
+        """DuckDB-only: relax the kind CHECK constraint on `entities` so
+        pre-Phase-B catalogs accept 'memory' rows. The DDL was tightened
+        to allow 4 kinds in Phase B; existing stores baked the old 3-kind
+        constraint into their catalog at init time and DuckDB 1.5 does
+        not support `ALTER TABLE DROP CONSTRAINT` for CHECK constraints.
+
+        Strategy: detect the old CHECK via duckdb_constraints, then
+        rebuild the entities table — CREATE entities_new with the new
+        constraint, INSERT SELECT all rows, DROP old, RENAME. Sequence
+        binding survives because the column DEFAULT references the
+        named sequence rather than copying its current value.
+
+        Idempotent: a post-migration catalog returns no matching row
+        and the call is a no-op."""
+        assert self._conn is not None
+        if self._backend.kind != "duckdb":
+            return
+        con = self._conn
+        try:
+            rows = con.execute(
+                "SELECT constraint_name, constraint_text "
+                "FROM duckdb_constraints "
+                "WHERE table_name='entities' AND constraint_type='CHECK'"
+            ).fetchall()
+        except Exception:
+            # Older DuckDB releases may not expose duckdb_constraints.
+            # Without visibility we can't safely rebuild — leave the
+            # old CHECK in place and let upsert raise a Python-side
+            # ConstraintException for 'memory' rows.
+            return
+        needs_rebuild = False
+        for _cname, ctext in rows:
+            text = (ctext or "").lower()
+            if "memory" in text:
+                continue
+            if all(k in text for k in ("'doc'", "'code'", "'concept'")):
+                needs_rebuild = True
+                break
+        if not needs_rebuild:
+            return
+        # Resync the seq_entities_id default-sequence past the current max
+        # id so the rebuild's INSERT SELECT (which preserves ids) doesn't
+        # collide with future nextval() calls. The DEFAULT clause on the
+        # new column references the same named sequence so its state
+        # carries over implicitly; this select_setval is belt-and-
+        # suspenders against an empty table where the sequence was never
+        # advanced past 1.
+        max_id = con.execute(
+            "SELECT COALESCE(MAX(id), 0) FROM entities"
+        ).fetchone()[0]
+        try:
+            con.execute(
+                "SELECT setval('seq_entities_id', ?)",
+                (max(int(max_id), 1),),
+            )
+        except Exception:
+            # setval is supported on DuckDB sequences; if it fails we
+            # accept the risk — the rebuild itself still preserves ids.
+            pass
+        try:
+            con.execute("BEGIN")
+            con.execute("""
+                CREATE TABLE entities_kind_migrate (
+                    id                 INTEGER PRIMARY KEY
+                                         DEFAULT nextval('seq_entities_id'),
+                    partition_id       INTEGER NOT NULL DEFAULT 1,
+                    kind               TEXT NOT NULL
+                                         CHECK (kind IN ('doc','code','concept','memory')),
+                    path               TEXT,
+                    name               TEXT NOT NULL,
+                    tldr               TEXT,
+                    meta               TEXT,
+                    created_at         DOUBLE NOT NULL,
+                    updated_at         DOUBLE NOT NULL,
+                    protected          INTEGER NOT NULL DEFAULT 0,
+                    noise              INTEGER NOT NULL DEFAULT 0,
+                    canonical_name     TEXT,
+                    vectors_updated_at DOUBLE,
+                    UNIQUE(partition_id, kind, name)
+                )
+            """)
+            con.execute("""
+                INSERT INTO entities_kind_migrate
+                    (id, partition_id, kind, path, name, tldr, meta,
+                     created_at, updated_at, protected, noise,
+                     canonical_name, vectors_updated_at)
+                SELECT id, partition_id, kind, path, name, tldr, meta,
+                       created_at, updated_at, protected, noise,
+                       canonical_name, vectors_updated_at
+                FROM entities
+            """)
+            con.execute("DROP TABLE entities")
+            con.execute("ALTER TABLE entities_kind_migrate RENAME TO entities")
+            # Recreate the secondary indexes that lived on the old table.
+            for idx_sql in (
+                "CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(kind)",
+                "CREATE INDEX IF NOT EXISTS idx_entities_path ON entities(path)",
+                "CREATE INDEX IF NOT EXISTS idx_entities_partition ON entities(partition_id)",
+                "CREATE INDEX IF NOT EXISTS idx_entities_protected ON entities(protected)",
+                "CREATE INDEX IF NOT EXISTS idx_entities_noise ON entities(noise)",
+                "CREATE INDEX IF NOT EXISTS idx_entities_canonical "
+                "ON entities(partition_id, kind, canonical_name)",
+            ):
+                con.execute(idx_sql)
+            con.execute("COMMIT")
+        except Exception:
+            try:
+                con.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
 
     def _ensure_partition(self) -> None:
         """Resolve self._partition_id, auto-creating the partition row if the
@@ -713,7 +880,7 @@ class Store:
         meta: dict | None = None,
         protected: bool = False,
     ) -> int:
-        if kind not in ("doc", "code", "concept"):
+        if kind not in ("doc", "code", "concept", "memory"):
             raise ValueError(f"unknown kind: {kind}")
         now = time.time()
         meta_json = json.dumps(meta) if meta else None
@@ -860,6 +1027,241 @@ class Store:
                 self.link("same_as", vid, cid)
         return cid
 
+    # ---- intuition memory layer (ADR-0001, Phase B) -----------------------
+
+    def add_memory(
+        self,
+        name: str,
+        content: str,
+        mtype: str = "observation",
+        tags: list[str] | None = None,
+        metadata: dict | None = None,
+        protected: bool = False,
+    ) -> int:
+        """Upsert a memory entity + its memory_content sidecar in one shot.
+
+        Returns the entity id. Re-running with the same name updates the
+        content (preserving created_at, ratcheting updated_at). Tags and
+        metadata are stored as JSON text — readers parse them on the way
+        out via get_memory().
+        """
+        eid = self.upsert_entity(kind="memory", name=name, protected=protected)
+        now = time.time()
+        tags_json = json.dumps(tags) if tags else None
+        meta_json = json.dumps(metadata) if metadata else None
+        con = self._connect()
+        con.execute(
+            """
+            INSERT INTO memory_content
+                (entity_id, content, mtype, tags, metadata,
+                 created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?)
+            ON CONFLICT(entity_id) DO UPDATE SET
+                content    = excluded.content,
+                mtype      = excluded.mtype,
+                tags       = excluded.tags,
+                metadata   = excluded.metadata,
+                updated_at = excluded.updated_at
+            """,
+            (eid, content, mtype, tags_json, meta_json, now, now),
+        )
+        con.commit()
+        return eid
+
+    def get_memory(self, name_or_id: str | int) -> dict | None:
+        """Resolve a memory by name (current partition) or id (any partition)
+        and return entity + sidecar fields as a dict. Returns None if not
+        found or if the row exists but isn't kind='memory'."""
+        self._connect()
+        if isinstance(name_or_id, int) or (
+            isinstance(name_or_id, str) and name_or_id.isdigit()
+        ):
+            eid = int(name_or_id)
+            ent_row = self._read().execute(
+                "SELECT id, kind, name, partition_id FROM entities WHERE id=?",
+                (eid,),
+            ).fetchone()
+        else:
+            ent_row = self._read().execute(
+                "SELECT id, kind, name, partition_id FROM entities "
+                "WHERE partition_id=? AND kind='memory' AND name=?",
+                (self._partition_id, name_or_id),
+            ).fetchone()
+        if ent_row is None or ent_row["kind"] != "memory":
+            return None
+        mc_row = self._read().execute(
+            "SELECT content, mtype, tags, metadata, created_at, updated_at "
+            "FROM memory_content WHERE entity_id=?",
+            (ent_row["id"],),
+        ).fetchone()
+        return {
+            "id": ent_row["id"],
+            "name": ent_row["name"],
+            "partition_id": ent_row["partition_id"],
+            "content": mc_row["content"] if mc_row else None,
+            "mtype": mc_row["mtype"] if mc_row else None,
+            "tags": json.loads(mc_row["tags"]) if mc_row and mc_row["tags"] else [],
+            "metadata":
+                json.loads(mc_row["metadata"])
+                if mc_row and mc_row["metadata"] else {},
+            "created_at": mc_row["created_at"] if mc_row else None,
+            "updated_at": mc_row["updated_at"] if mc_row else None,
+        }
+
+    def iter_memories(
+        self, *, mtype: str | None = None, limit: int | None = None,
+    ) -> Iterator[dict]:
+        """Stream memories in the active partition (id ascending). mtype
+        filters by sidecar mtype; None returns all kinds."""
+        self._connect()
+        sql = (
+            "SELECT e.id, e.name, mc.content, mc.mtype, mc.tags, mc.metadata, "
+            "       mc.created_at, mc.updated_at "
+            "FROM entities e "
+            "LEFT JOIN memory_content mc ON mc.entity_id = e.id "
+            "WHERE e.partition_id=? AND e.kind='memory'"
+        )
+        params: list[Any] = [self._partition_id]
+        if mtype is not None:
+            sql += " AND mc.mtype = ?"
+            params.append(mtype)
+        sql += " ORDER BY e.id"
+        if limit is not None:
+            sql += f" LIMIT {int(limit)}"
+        for row in self._read().execute(sql, params).fetchall():
+            yield {
+                "id": row["id"],
+                "name": row["name"],
+                "content": row["content"],
+                "mtype": row["mtype"],
+                "tags": json.loads(row["tags"]) if row["tags"] else [],
+                "metadata":
+                    json.loads(row["metadata"]) if row["metadata"] else {},
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            }
+
+    def search_memories(
+        self, query: str, *, limit: int = 20,
+    ) -> list[dict]:
+        """Substring search over memory name + content (case-insensitive).
+        Returns rows newest-first. Intentionally lo-fi — the hybrid /
+        BM25-fused recall path lives in `rmx memory recall` (ann_search
+        op). This is the cheap symbolic fallback that works without the
+        [dense] extra installed."""
+        self._connect()
+        like = f"%{query}%"
+        sql = (
+            "SELECT e.id, e.name, mc.content, mc.mtype, mc.tags, mc.metadata, "
+            "       mc.created_at, mc.updated_at "
+            "FROM entities e "
+            "LEFT JOIN memory_content mc ON mc.entity_id = e.id "
+            "WHERE e.partition_id=? AND e.kind='memory' "
+            "  AND (lower(e.name) LIKE lower(?) OR lower(mc.content) LIKE lower(?)) "
+            "ORDER BY mc.updated_at DESC NULLS LAST "
+            "LIMIT ?"
+        )
+        rows = []
+        for r in self._read().execute(
+            sql, (self._partition_id, like, like, int(limit)),
+        ).fetchall():
+            rows.append({
+                "id": r["id"], "name": r["name"],
+                "content": r["content"], "mtype": r["mtype"],
+                "tags": json.loads(r["tags"]) if r["tags"] else [],
+                "metadata":
+                    json.loads(r["metadata"]) if r["metadata"] else {},
+                "created_at": r["created_at"],
+                "updated_at": r["updated_at"],
+            })
+        return rows
+
+    def recent_memories(
+        self, since_seconds: float | None = None, limit: int = 20,
+    ) -> list[dict]:
+        """Phase C2: return memories in the active partition ordered by
+        `entities.created_at` DESC. When `since_seconds` is set, only
+        include rows newer than `now - since_seconds`. Powers
+        `rmx memory recall --recent --since <duration>` and the
+        SessionStart / PreCompact hook templates."""
+        import time as _time
+        self._connect()
+        sql = (
+            "SELECT e.id, e.name, e.created_at AS entity_created_at, "
+            "       mc.content, mc.mtype, mc.tags, mc.metadata, "
+            "       mc.created_at, mc.updated_at "
+            "FROM entities e "
+            "LEFT JOIN memory_content mc ON mc.entity_id = e.id "
+            "WHERE e.partition_id=? AND e.kind='memory'"
+        )
+        params: list[Any] = [self._partition_id]
+        if since_seconds is not None and since_seconds > 0:
+            sql += " AND e.created_at >= ?"
+            params.append(_time.time() - since_seconds)
+        sql += " ORDER BY e.created_at DESC LIMIT ?"
+        params.append(int(limit))
+        rows = []
+        for r in self._read().execute(sql, params).fetchall():
+            rows.append({
+                "id": r["id"], "name": r["name"],
+                "content": r["content"], "mtype": r["mtype"],
+                "tags": json.loads(r["tags"]) if r["tags"] else [],
+                "metadata":
+                    json.loads(r["metadata"]) if r["metadata"] else {},
+                "created_at": r["created_at"] or r["entity_created_at"],
+                "updated_at": r["updated_at"],
+            })
+        return rows
+
+    def forget_memory(self, name_or_id: str | int) -> bool:
+        """Drop a memory entity + its sidecar + all entity_links it owns.
+        Returns True if a row was removed, False if nothing matched.
+        Defers all the bitmap/forward-index housekeeping to purge_entity;
+        purge_entity also drops the memory_content row via the explicit
+        DELETE we added in that path."""
+        m = self.get_memory(name_or_id)
+        if m is None:
+            return False
+        self.purge_entity(m["id"])
+        return True
+
+    def reinforcement_score(
+        self, concept_id: int, *, now: float | None = None,
+        halflife_days: float | None = None, cap: float | None = None,
+    ) -> float:
+        """Phase B5: signed per-concept reinforcement signal (decayed
+        Σ reinforces.weight − Σ contradicts.weight). See
+        `refmatrix.reinforcement` for the math and env-vars."""
+        from refmatrix.reinforcement import reinforcement_score
+        self._connect()
+        return reinforcement_score(
+            self, concept_id, now=now,
+            halflife_days=halflife_days, cap=cap,
+        )
+
+    def reinforcement_scores(
+        self, concept_ids: list[int], *, now: float | None = None,
+        halflife_days: float | None = None, cap: float | None = None,
+    ) -> dict[int, float]:
+        """Batched form of reinforcement_score."""
+        from refmatrix.reinforcement import reinforcement_scores
+        self._connect()
+        return reinforcement_scores(
+            self, concept_ids, now=now,
+            halflife_days=halflife_days, cap=cap,
+        )
+
+    def reinforcement_components(
+        self, concept_id: int, *, now: float | None = None,
+        halflife_days: float | None = None,
+    ) -> list[dict]:
+        """Per-row contribution breakdown for inspection / --explain."""
+        from refmatrix.reinforcement import reinforcement_components
+        self._connect()
+        return reinforcement_components(
+            self, concept_id, now=now, halflife_days=halflife_days,
+        )
+
     def get_entity(self, kind: str, name: str) -> Entity | None:
         # Ensure schema/partition migration before going through the read path.
         self._connect()
@@ -929,6 +1331,123 @@ class Store:
         exact = [r[0] for r in rows if r[1] == name]
         others = sorted(r[0] for r in rows if r[1] != name)
         return exact + others
+
+    # ---- dense vector wrappers (Lance-backed) -----------------------------
+    #
+    # The [dense] optional extra (pylance + numpy) is required for any of
+    # these to do real work. They lazy-import refmatrix.vectors so SQLite-
+    # only installs never pay the import cost. Calling without the extra
+    # raises ImportError with a clear message; the daemon catches that and
+    # surfaces it as a graceful "dense not installed" response.
+
+    def _vector_store(self, dim: int):
+        """Return a cached LanceVectorStore rooted at <root>/vectors. `dim`
+        must match the embedder's output dimension; mismatch raises."""
+        from refmatrix.vectors import LanceVectorStore
+
+        existing = getattr(self, "_vs", None)
+        if existing is not None:
+            if existing.dim != dim or existing.partition != self._partition_name:
+                raise ValueError(
+                    "LanceVectorStore re-init with different dim/partition "
+                    f"({existing.dim}/{existing.partition} -> {dim}/"
+                    f"{self._partition_name}); reopen Store first"
+                )
+            return existing
+        vroot = self.root / "vectors"
+        vs = LanceVectorStore(vroot, partition=self._partition_name, dim=dim)
+        self._vs = vs
+        return vs
+
+    def upsert_vector(
+        self,
+        entity_ids,
+        vectors,
+        *,
+        kind: str,
+        dim: int,
+        mark_embedded: bool = True,
+    ) -> None:
+        """Persist `vectors` (N x dim) for `entity_ids` into the Lance
+        dataset for this Store's partition + the given `kind`. When
+        `mark_embedded=True` (default) also stamps `entities.vectors_updated_at`
+        for those ids so `rmx embed --incremental` knows they're current.
+        """
+        vs = self._vector_store(dim)
+        vs.upsert_vectors(list(entity_ids), vectors, kind=kind)
+        if mark_embedded and len(entity_ids) > 0:
+            import time as _t
+            now = _t.time()
+            con = self._connect()
+            placeholders = ",".join("?" * len(entity_ids))
+            con.execute(
+                f"UPDATE entities SET vectors_updated_at = ? "
+                f"WHERE id IN ({placeholders})",
+                [now, *list(entity_ids)],
+            )
+            con.commit()
+
+    def ann_search(
+        self,
+        query_vec,
+        k: int,
+        *,
+        dim: int,
+        kinds=None,
+        candidate_ids=None,
+    ) -> list[tuple[int, float]]:
+        """Dense ANN search via Lance. Returns `[(entity_id, distance), ...]`
+        sorted by L2 distance ascending. `kinds=None` searches every
+        kind that has a Lance dataset under this partition.
+        `candidate_ids` (optional) narrows the ANN scan to those ids —
+        the hybrid retrieval pre-filter."""
+        vs = self._vector_store(dim)
+        return vs.ann_search(
+            query_vec, k=k, kinds=kinds, candidate_ids=candidate_ids,
+        )
+
+    def drop_vectors(self, entity_ids, *, kind: str, dim: int) -> int:
+        """Remove vectors for `entity_ids` from the kind's Lance dataset.
+        Used when purge_path / purge_entity drop the relational row."""
+        vs = self._vector_store(dim)
+        n = vs.drop_for(entity_ids, kind=kind)
+        # Clear the embedded timestamp so future `rmx embed` re-emits if
+        # the entity row still exists.
+        if n > 0:
+            con = self._connect()
+            placeholders = ",".join("?" * len(list(entity_ids)))
+            con.execute(
+                f"UPDATE entities SET vectors_updated_at = NULL "
+                f"WHERE id IN ({placeholders})",
+                list(entity_ids),
+            )
+            con.commit()
+        return n
+
+    def pending_embeddings(
+        self, *, kinds: list[str] | None = None, limit: int | None = None
+    ) -> list[tuple[int, str, str]]:
+        """Return `(id, kind, name)` for entities whose vector is missing or
+        stale: `vectors_updated_at` is NULL or older than `updated_at`.
+        Filtered to `kinds` when provided. `limit` caps the result.
+        """
+        con = self._connect()
+        sql = (
+            "SELECT id, kind, name FROM entities "
+            "WHERE partition_id = ? "
+            "AND (vectors_updated_at IS NULL "
+            "     OR vectors_updated_at < updated_at)"
+        )
+        params: list = [self._partition_id]
+        if kinds:
+            in_list = ",".join("?" * len(kinds))
+            sql += f" AND kind IN ({in_list})"
+            params.extend(kinds)
+        sql += " ORDER BY id"
+        if limit is not None:
+            sql += f" LIMIT {int(limit)}"
+        rows = con.execute(sql, params).fetchall()
+        return [(r[0], r[1], r[2]) for r in rows]
 
     def repair_entity_links_index(self) -> dict:
         """Drop + recreate `idx_entity_links_lk_concept` to defend against
@@ -1797,6 +2316,11 @@ class Store:
         con.execute("DELETE FROM entity_links WHERE concept_id=?", (entity_id,))
         con.execute("DELETE FROM entities WHERE id=?", (entity_id,))
         con.execute("DELETE FROM concepts WHERE id=?", (entity_id,))
+        # Memory sidecar (no-op for non-memory rows; sqlite has FK CASCADE
+        # set but the daemon does not turn PRAGMA foreign_keys on, and
+        # DuckDB's memory_content has no FK clause at all — so the explicit
+        # DELETE is what guarantees the sidecar row goes away).
+        con.execute("DELETE FROM memory_content WHERE entity_id=?", (entity_id,))
         con.execute(
             "DELETE FROM tracked_files WHERE partition_id=? AND path = "
             "(SELECT path FROM entities WHERE id=?)",

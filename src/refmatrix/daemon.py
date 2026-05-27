@@ -158,12 +158,36 @@ class Daemon:
         # the same FatalException.
         self._fast_exit_armed = False
         self._fast_exit_lock = threading.Lock()
+        # Dense embedder cache. Populated lazily by `_embedder()` on
+        # first `embed` / `ann_search` op so the daemon doesn't load
+        # ~134 MB of sentence-transformers state unless someone asks
+        # for it. None when [dense] extra isn't installed yet.
+        self._embedder_inst = None
 
     def _log(self, msg: str) -> None:
         if self.log_fh is None:
             return
         self.log_fh.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {msg}\n")
         self.log_fh.flush()
+
+    def _embedder(self):
+        """Lazy-cached Embedder. Loads sentence-transformers model on
+        first call (~134 MB for the default bge-small-en-v1.5).
+        Raises ImportError if the [dense] extra isn't installed —
+        the op handler catches that and surfaces a clean error to
+        the client instead of crashing the daemon."""
+        existing = getattr(self, "_embedder_inst", None)
+        if existing is not None:
+            return existing
+        from refmatrix.embedder import Embedder
+
+        e = Embedder()
+        # Trigger the model load so the first real call doesn't
+        # eat the latency. Subsequent calls are model.encode-only.
+        _ = e.dim
+        self._embedder_inst = e
+        self._log(f"embedder loaded model={e.model_name} dim={e.dim}")
+        return e
 
     # ---- option D: SIGABRT/index-drift defense ----------------------------
     #
@@ -261,6 +285,19 @@ class Daemon:
         self.log_fh = (self.root / LOG_NAME).open("a", encoding="utf-8")
         self._log(f"daemon starting pid={os.getpid()} root={self.root}")
         pid_path(self.root).write_text(str(os.getpid()))
+        # Banner the stderr stream too so an abort message landing there
+        # can be correlated back to a specific daemon launch in rmxd.log.
+        # Best-effort: stderr may be /dev/null when serve_forever is run
+        # outside _run_detached (tests, in-process), in which case the
+        # writes are silently dropped.
+        try:
+            sys.stderr.write(
+                f"=== {time.strftime('%Y-%m-%dT%H:%M:%S')} "
+                f"daemon starting pid={os.getpid()} ===\n"
+            )
+            sys.stderr.flush()
+        except Exception:
+            pass
 
         # Open Store once. All subsequent client ops reuse this connection,
         # so DuckDB's single-writer lock is held exactly once for the life
@@ -403,13 +440,26 @@ class Daemon:
             # handler (exception, explicit stop op). Workers polling this
             # event need to see it regardless of how we got here.
             self._shutdown_event.set()
+            # Set ALL stop events first, before any draining/joining. The
+            # periodic ticks (flush, repair, replica) each grab _store_lock
+            # for a multi-second DuckDB op; if a tick fires DURING the pool
+            # drain it can still be mid-call when we get to its join, leak
+            # its worker thread, and pin the daemon's DuckDB connection past
+            # store.close() — which is what stranded PID 79273 holding
+            # catalog.B's lock for 8 minutes after "daemon stopped".
+            if self._watch_stop is not None:
+                self._watch_stop.set()
+            if getattr(self, "_flush_stop", None) is not None:
+                self._flush_stop.set()
+            if getattr(self, "_repair_stop", None) is not None:
+                self._repair_stop.set()
+            if getattr(self, "_replica_stop", None) is not None:
+                self._replica_stop.set()
             # Step 1: stop the watcher BEFORE pool shutdowns. The watcher
             # debouncer fires _flush() outside the pools but grabs
             # _store_lock — if it kicks off a new flush while we're trying
             # to drain bg_pool, that flush can hold the lock for minutes
             # against a queued bg task and pin shutdown.
-            if self._watch_stop is not None:
-                self._watch_stop.set()
             if self._watch_thread is not None:
                 self._watch_thread.join(timeout=3.0)
             # Step 2: bounded pool drain. `wait=True` is unbounded — an
@@ -424,26 +474,37 @@ class Daemon:
             self._drain_pool("disp", disp_pool, shutdown_timeout)
             self._drain_pool("cli", cli_pool, shutdown_timeout)
             self._drain_pool("bg", bg_pool, shutdown_timeout)
-            if getattr(self, "_flush_stop", None) is not None:
-                self._flush_stop.set()
             if getattr(self, "_flush_thread", None) is not None:
                 self._flush_thread.join(timeout=3.0)
-            if getattr(self, "_repair_stop", None) is not None:
-                self._repair_stop.set()
             if getattr(self, "_repair_thread", None) is not None:
                 self._repair_thread.join(timeout=3.0)
-            if getattr(self, "_replica_stop", None) is not None:
-                self._replica_stop.set()
             if getattr(self, "_replica_thread", None) is not None:
                 self._replica_thread.join(timeout=3.0)
             # Final flush before close() so anything queued in the last
             # interval lands. close() also flushes, but doing it explicitly
             # under _store_lock keeps the on-disk state consistent if
             # close() races with a late handler.
+            #
+            # Bounded acquire: if a leaked drain-pool worker still holds
+            # _store_lock, blocking forever here turns the daemon into a
+            # zombie process that keeps the writer-slot file lock and
+            # stops the next spawn from refreshing the replica. 5s budget
+            # is generous; if we still can't get it, the worker is in a
+            # C-extension call we can't preempt -- skip the flush and let
+            # the process exit so a fresh daemon can take over.
             try:
-                with self._store_lock:
-                    if self.store is not None:
-                        self.store.flush_fragments()
+                if self.store is not None:
+                    if self._store_lock.acquire(timeout=5.0):
+                        try:
+                            self.store.flush_fragments()
+                        finally:
+                            self._store_lock.release()
+                    else:
+                        self._log(
+                            "final flush skipped: _store_lock contended "
+                            "(5s timeout) -- leaked worker likely holds it; "
+                            "exiting anyway so the next spawn isn't blocked"
+                        )
             except Exception as exc:
                 self._log(f"final flush failed: {exc!r}")
             srv.close()
@@ -453,11 +514,53 @@ class Daemon:
             if pid_p.exists():
                 pid_p.unlink()
             if self.store is not None:
-                self.store.close()
+                # Bounded close. A leaked pool/repair worker holding the
+                # DuckDB connection mid-statement makes self._conn.close()
+                # block forever -- which pins this process alive holding
+                # the catalog file lock, so the next daemon spawn can never
+                # open it (the exact stranding we saw with PID 79273).
+                # Run close() on a background thread and bail after a budget;
+                # the outer _run_detached finally calls os._exit(0) so the
+                # kernel releases all fcntl/duckdb locks regardless.
+                import threading as _t
+                close_done = _t.Event()
+                close_err: list[BaseException] = []
+                def _do_close():
+                    try:
+                        self.store.close()
+                    except BaseException as exc:
+                        close_err.append(exc)
+                    finally:
+                        close_done.set()
+                close_budget = float(
+                    os.environ.get("RMX_STORE_CLOSE_TIMEOUT_S", "5") or "5"
+                )
+                _t.Thread(
+                    target=_do_close, name="rmxd-close", daemon=True,
+                ).start()
+                if not close_done.wait(timeout=close_budget):
+                    self._log(
+                        f"store close timed out after {close_budget:.1f}s "
+                        "-- leaked worker holds the connection; relying on "
+                        "process exit to release file locks"
+                    )
+                elif close_err:
+                    self._log(f"store close failed: {close_err[0]!r}")
             self._log("daemon stopped")
             if self.log_fh is not None:
-                self.log_fh.close()
-        return 0
+                try:
+                    self.log_fh.close()
+                except Exception:
+                    pass
+            # Belt-and-suspenders force-exit. _run_detached's finally already
+            # calls os._exit(0), but: (a) serve_forever may be called outside
+            # _run_detached (rmxd entrypoint, tests) and (b) atexit handlers
+            # registered by concurrent.futures.thread join all worker threads
+            # before interpreter shutdown -- including the workers we just
+            # leaked in _drain_pool. Skip atexit; the kernel reaps the
+            # threads and releases all DuckDB file locks immediately.
+            os._exit(0)
+        return 0  # unreachable; satisfies `-> int` signature
 
     def _start_periodic_flush(self, interval_s: float | None = None) -> None:
         """Spawn a daemon thread that periodically calls
@@ -502,9 +605,14 @@ class Daemon:
     def _start_index_repair_tick(self, interval_s: float | None = None) -> None:
         """Option B: periodically DROP+CREATE idx_entity_links_lk_concept
         so secondary-index drift (which compounds across DELETE bursts)
-        never accumulates past the tick window. Cheap (~1-3s on 100k-400k
-        entity_links rows). Defaults to 60s; override via
-        RMX_INDEX_REPAIR_S env. Set RMX_INDEX_REPAIR_S=0 to disable.
+        never accumulates past the tick window.
+
+        Disabled by default since DuckDB 1.5.3 fixed the ART operator
+        bug that drove the original recurrence (PR #22591). Enable by
+        setting RMX_INDEX_REPAIR_S=60 (or any positive integer) if a
+        new drift surface appears. Cost: ~1-5s under _store_lock per
+        tick on a 100k-500k entity_links table -- non-trivial under
+        CLI-priority workloads.
 
         DuckDB backend only -- SQLite has no equivalent drift.
         """
@@ -512,7 +620,7 @@ class Daemon:
             return
         if interval_s is None:
             interval_s = float(
-                os.environ.get("RMX_INDEX_REPAIR_S", "60") or "60"
+                os.environ.get("RMX_INDEX_REPAIR_S", "0") or "0"
             )
         if interval_s <= 0:
             return
@@ -752,6 +860,54 @@ class Daemon:
             except Exception as exc:
                 self._log(f"offset seed failed: {exc!r}")
             return
+
+        # Asymmetric repair: exactly one slot exists. Common cause: the
+        # other slot's WAL got corrupted (a DuckDB SIGABRT-era artifact),
+        # operator deleted it, and now we re-enter bootstrap. Without
+        # this branch the legacy-copy path below would clobber the
+        # surviving slot with a STALER pre-rotation snapshot. Instead:
+        # copy the surviving slot into the missing one, preserve the
+        # active marker that picked the survivor (or default to the
+        # survivor itself), and skip the legacy seed entirely.
+        if a.exists() ^ b.exists():
+            survivor = "A" if a.exists() else "B"
+            missing = "B" if survivor == "A" else "A"
+            survivor_path = self._replica_file(survivor)
+            missing_path = self._replica_file(missing)
+            try:
+                with self._store_lock:
+                    if self.store is not None:
+                        try:
+                            self.store._connect().execute("CHECKPOINT")
+                            self.store.flush_fragments()
+                            self.store.close()
+                        except Exception:
+                            pass
+                    shutil.copy2(survivor_path, missing_path)
+                    marker = self._active_marker()
+                    current = (marker.read_text().strip()
+                               if marker.exists() else "")
+                    if current not in ("A", "B"):
+                        marker.write_text(survivor)
+                    self.store = Store(self.root, partition=self.partition)
+                    self.store.db_path = self._replica_file(
+                        marker.read_text().strip()
+                    )
+                    self.store.init()
+                    self._active_slot = marker.read_text().strip()
+                    log_size = self.store.log_path.stat().st_size \
+                        if self.store.log_path.exists() else 0
+                    self._write_slot_offset("A", log_size)
+                    self._write_slot_offset("B", log_size)
+                    self._log(
+                        f"rotation slot repair: cloned {survivor} -> "
+                        f"{missing}, active={self._active_slot}, "
+                        f"log_offset={log_size}"
+                    )
+            except Exception as exc:
+                self._log(f"rotation slot repair failed: {exc!r}")
+            return
+
         legacy = self.root / "catalog.duckdb"
         # The current Store opened catalog.duckdb. To bootstrap we close
         # it, copy the legacy file into both A and B, and reopen on A.
@@ -860,10 +1016,12 @@ class Daemon:
 
         # Option A: pre-repair the entity_links secondary index when the
         # flush batch is big enough that an in-flight DELETE burst is
-        # likely to trip index drift. Threshold gates the cost (~1-3s).
-        # RMX_PRE_REPAIR_THRESHOLD=0 disables.
+        # likely to trip index drift. Disabled by default now that DuckDB
+        # 1.5.3 fixes the ART bug at root (PR #22591); re-enable by
+        # setting RMX_PRE_REPAIR_THRESHOLD to a positive integer.
+        # Threshold gates the cost (~1-3s under _store_lock per flush).
         pre_repair_threshold = int(
-            os.environ.get("RMX_PRE_REPAIR_THRESHOLD", "5") or "5"
+            os.environ.get("RMX_PRE_REPAIR_THRESHOLD", "0") or "0"
         )
 
         def _flush(paths: list[str]) -> None:
@@ -1445,6 +1603,111 @@ def _op_context(d: Daemon, args: dict) -> dict:
     return {"body": body}
 
 
+def _op_memory_add(d: Daemon, args: dict) -> dict:
+    """Upsert a memory entity + its sidecar content. ADR-0001 Phase B."""
+    name = args["name"]
+    content = args["content"]
+    mtype = args.get("mtype") or "observation"
+    tags = args.get("tags")
+    metadata = args.get("metadata")
+    protected = bool(args.get("protected", False))
+    with d._store_lock:
+        eid = d.store.add_memory(
+            name=name, content=content, mtype=mtype,
+            tags=tags, metadata=metadata, protected=protected,
+        )
+    return {"id": eid}
+
+
+def _op_memory_get(d: Daemon, args: dict) -> dict:
+    """Fetch a memory by name (active partition) or id (any partition)."""
+    target = args.get("name") if args.get("name") is not None else args.get("id")
+    if target is None:
+        raise ValueError("memory_get requires 'name' or 'id'")
+    m = d.store.get_memory(target)
+    return {"memory": m}
+
+
+def _op_memory_iter(d: Daemon, args: dict) -> dict:
+    """Stream memories in the active partition. Optional mtype filter."""
+    mtype = args.get("mtype")
+    limit = args.get("limit")
+    rows = list(d.store.iter_memories(mtype=mtype, limit=limit))
+    return {"rows": rows}
+
+
+def _op_memory_search(d: Daemon, args: dict) -> dict:
+    """Substring search over memory name + content. Returns at most
+    `limit` rows newest-first."""
+    query = args["query"]
+    limit = int(args.get("limit", 20))
+    rows = d.store.search_memories(query, limit=limit)
+    return {"rows": rows}
+
+
+def _op_memory_forget(d: Daemon, args: dict) -> dict:
+    """Delete a memory entity, its sidecar, and every entity_link it owns."""
+    target = args.get("name") if args.get("name") is not None else args.get("id")
+    if target is None:
+        raise ValueError("memory_forget requires 'name' or 'id'")
+    with d._store_lock:
+        ok = d.store.forget_memory(target)
+    return {"forgotten": ok}
+
+
+def _op_memory_score(d: Daemon, args: dict) -> dict:
+    """Phase B5: per-concept reinforcement signal. Returns the signed
+    score (clamped to ±cap) plus the contributing concept_ids so the
+    caller can render --explain."""
+    name = args["concept"]
+    halflife = args.get("halflife_days")
+    cap = args.get("cap")
+    explain = bool(args.get("explain", False))
+    cids = d.store.resolve_concept_ids(name, strict=False)
+    if not cids:
+        return {"concept": name, "concept_ids": [], "signal": 0.0,
+                "components": []}
+    scores = d.store.reinforcement_scores(
+        cids, halflife_days=halflife, cap=cap,
+    )
+    components: list[dict] = []
+    if explain:
+        for cid in cids:
+            components.extend({
+                "concept_id": cid,
+                **row,
+            } for row in d.store.reinforcement_components(
+                cid, halflife_days=halflife,
+            ))
+    return {
+        "concept": name,
+        "concept_ids": cids,
+        "scores": scores,
+        "signal": sum(scores.values()),
+        "components": components,
+    }
+
+
+def _op_memory_link(d: Daemon, args: dict) -> dict:
+    """Create a reinforces/contradicts/recalls/informs (or arbitrary
+    DEFAULT_LINKAGES) edge from a memory entity to a concept entity.
+    Auto-creates the concept by name if not already present so the
+    typical add-memory + link flow stays single-step."""
+    src = args.get("src_name") if args.get("src_name") is not None else args.get("src_id")
+    if src is None:
+        raise ValueError("memory_link requires 'src_name' or 'src_id'")
+    linkage = args["linkage"]
+    concept_name = args["concept"]
+    weight = args.get("weight")
+    with d._store_lock:
+        m = d.store.get_memory(src)
+        if m is None:
+            raise ValueError(f"no memory matching {src!r}")
+        cid = d.store.add_concept(concept_name)
+        d.store.link(linkage, cid, m["id"], weight=weight)
+    return {"src_id": m["id"], "concept_id": cid}
+
+
 def _op_stop(d: Daemon, args: dict) -> dict:
     d._stop = True
     return {"stopping": True}
@@ -1481,6 +1744,124 @@ def _op_replica_status(d: Daemon, args: dict) -> dict:
     }
 
 
+def _op_embed(d: Daemon, args: dict) -> dict:
+    """Run a batch embedding pass. Walks `Store.pending_embeddings` for
+    the given kinds (or all if None), extracts text per kind, embeds in
+    a single sentence-transformers call, upserts vectors via Lance, and
+    stamps `entities.vectors_updated_at` for the touched rows.
+
+    Args:
+        kinds: optional list of entity kinds to embed.
+            Default: ["code", "doc", "concept", "memory"].
+        limit: cap rows per call so the daemon stays responsive
+            (default 256). Caller iterates if more pending.
+        rebuild: if True, ignore the `vectors_updated_at` filter and
+            re-embed every row of the selected kinds.
+
+    Routes through bg_pool (CPU-heavy under the model). Honors
+    cooperative shutdown via `d._shutdown_event`."""
+    try:
+        emb = d._embedder()
+    except ImportError as exc:
+        return {"ok": False, "error": f"dense extra not installed: {exc}"}
+    from refmatrix import embedder as embmod
+
+    kinds = args.get("kinds") or ["code", "doc", "concept", "memory"]
+    limit = int(args.get("limit") or 256)
+    rebuild = bool(args.get("rebuild"))
+
+    with d._store_lock:
+        if rebuild:
+            # `pending_embeddings` already skips current rows; for a
+            # rebuild we ask the catalog directly so the WHERE clause
+            # matches every row of the selected kinds.
+            con = d.store._connect()
+            in_list = ",".join("?" * len(kinds))
+            rows = con.execute(
+                f"SELECT id, kind, name FROM entities "
+                f"WHERE partition_id = ? AND kind IN ({in_list}) "
+                f"ORDER BY id LIMIT ?",
+                [d.store._partition_id, *kinds, limit],
+            ).fetchall()
+            rows = [(r[0], r[1], r[2]) for r in rows]
+        else:
+            rows = d.store.pending_embeddings(kinds=kinds, limit=limit)
+
+        if not rows:
+            return {"embedded": 0, "remaining": 0, "kinds": kinds}
+
+        # Per-kind grouping so we upsert into the right Lance dataset.
+        triples = embmod.extract_batch(d.store, rows)
+        if not triples:
+            return {"embedded": 0, "remaining": 0, "skipped_empty": len(rows)}
+
+        # Single batch encode keeps the model warm + amortizes the
+        # tokenizer cost. ST handles batching internally.
+        if d._shutdown_event.is_set():
+            return {"embedded": 0, "remaining": len(rows), "cancelled": True}
+        vectors = emb.embed_texts([t for (_eid, _k, t) in triples])
+
+        embedded = 0
+        by_kind: dict[str, list[int]] = {}
+        for (eid, kind, _t), idx in zip(triples, range(len(triples))):
+            by_kind.setdefault(kind, []).append(idx)
+        for kind, idxs in by_kind.items():
+            eids = [triples[i][0] for i in idxs]
+            sub = vectors[idxs]
+            d.store.upsert_vector(eids, sub, kind=kind, dim=emb.dim)
+            embedded += len(eids)
+
+    # Remaining pending after this batch — caller can loop until 0.
+    remaining = len(d.store.pending_embeddings(kinds=kinds, limit=1))
+    return {
+        "embedded": embedded,
+        "remaining": remaining,
+        "kinds": kinds,
+        "dim": emb.dim,
+        "model": emb.model_name,
+    }
+
+
+def _op_ann_search(d: Daemon, args: dict) -> dict:
+    """Dense ANN search via Lance. Accepts either a precomputed
+    `vector` (list of floats) or a `query` string that gets embedded
+    server-side. Returns `[{id, distance}, ...]` ascending by L2.
+
+    Args:
+        query: text to embed and search by.
+        vector: alternative — caller supplies the vector directly.
+        k: top-k (default 20).
+        kinds: optional filter (default: all kinds in the partition).
+    """
+    try:
+        emb = d._embedder()
+    except ImportError as exc:
+        return {"ok": False, "error": f"dense extra not installed: {exc}"}
+
+    k = int(args.get("k") or 20)
+    kinds = args.get("kinds")
+    query = args.get("query")
+    vector = args.get("vector")
+
+    if vector is None and not query:
+        return {"ok": False, "error": "need 'query' text or 'vector' list"}
+
+    if vector is None:
+        v = emb.embed_texts([query])[0]
+    else:
+        import numpy as np
+        v = np.asarray(vector, dtype="float32")
+        if v.shape[0] != emb.dim:
+            return {
+                "ok": False,
+                "error": f"vector dim {v.shape[0]} != model dim {emb.dim}",
+            }
+
+    with d._store_lock:
+        hits = d.store.ann_search(v, k=k, dim=emb.dim, kinds=kinds)
+    return {"hits": [{"id": eid, "distance": dist} for eid, dist in hits]}
+
+
 OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "ping": _op_ping,
     "enqueue": _op_enqueue,
@@ -1506,6 +1887,15 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "checkpoint": _op_checkpoint,
     "replica_refresh": _op_replica_refresh,
     "replica_status": _op_replica_status,
+    "embed": _op_embed,
+    "ann_search": _op_ann_search,
+    "memory_add": _op_memory_add,
+    "memory_get": _op_memory_get,
+    "memory_iter": _op_memory_iter,
+    "memory_search": _op_memory_search,
+    "memory_forget": _op_memory_forget,
+    "memory_link": _op_memory_link,
+    "memory_score": _op_memory_score,
     "stop": _op_stop,
 }
 
@@ -1524,6 +1914,11 @@ CLI_OPS: set[str] = {
     "list_saved_queries",
     "replica_refresh",
     "replica_status",
+    "ann_search",
+    "memory_get",
+    "memory_iter",
+    "memory_search",
+    "memory_score",
     "stop",
 }
 
@@ -1610,12 +2005,27 @@ def spawn_daemon(root: Path, *, partition: str | None = None,
         if pid > 0:
             os._exit(0)
 
-        # Child 2 — the actual daemon. Detach FDs.
+        # Child 2 — the actual daemon. Detach FDs. stdin -> /dev/null;
+        # stdout/stderr -> rmxd.stderr so DuckDB's abort message
+        # (printed to std::cerr right before std::terminate -> SIGABRT)
+        # is captured. Append, not truncate, so a tight crash loop
+        # leaves a full record. Falls back to /dev/null if the open
+        # fails (e.g. permission, full disk) so we never block startup.
         lockf.close()
         devnull = os.open(os.devnull, os.O_RDWR)
         os.dup2(devnull, 0)
-        os.dup2(devnull, 1)
-        os.dup2(devnull, 2)
+        try:
+            err_fd = os.open(
+                str(root / "rmxd.stderr"),
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                0o600,
+            )
+            os.dup2(err_fd, 1)
+            os.dup2(err_fd, 2)
+            os.close(err_fd)
+        except OSError:
+            os.dup2(devnull, 1)
+            os.dup2(devnull, 2)
         os.close(devnull)
         try:
             Daemon(
@@ -1678,6 +2088,21 @@ def stop_daemon(root: Path, *, timeout: float = 5.0) -> bool:
             return True
         deadline2 = time.time() + 2.0
         while time.time() < deadline2:
+            if not is_alive(pid):
+                return True
+            time.sleep(0.05)
+        # Final escalation: SIGKILL. A daemon that's ignored protocol-stop
+        # + SIGTERM is wedged (worker leaked in a C-extension call, etc.);
+        # leaving it alive holds the writer-slot DuckDB file lock and
+        # stops the next spawn from refreshing the replica. SIGKILL is
+        # safe under 0.3.1+ durability (WAL + fragment flush) and was
+        # already the documented escape hatch for this case.
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return True
+        deadline3 = time.time() + 1.0
+        while time.time() < deadline3:
             if not is_alive(pid):
                 return True
             time.sleep(0.05)

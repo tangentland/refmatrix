@@ -73,6 +73,42 @@ def log_cli_invocation(
         pass
 
 
+def log_cli_intent(
+    root: Path,
+    *,
+    op: str,
+    argv: list[str],
+    pid: int,
+) -> None:
+    """Persist the intent of an `rmx memory` invocation to cli.log BEFORE
+    the command body runs. Pairs with the end-of-run record written by
+    cli_entry's finally block. If the daemon crashes or the process is
+    killed mid-op (the failure mode that motivated this — DuckDB SIGABRT
+    under memory upsert), the start record survives and lets a recovery
+    pass reconstruct what was intended.
+
+    Schema: {"ts", "phase": "start", "op", "argv", "pid"}. The end-phase
+    record from log_cli_invocation has no `phase` key, so a reader can
+    pair (start, end) by pid + closest ts."""
+    if _disabled():
+        return
+    if not root.is_dir():
+        return
+    record: dict[str, Any] = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "phase": "start",
+        "op": op,
+        "argv": argv,
+        "pid": pid,
+    }
+    try:
+        with (root / CLI_LOG_NAME).open("a") as f:
+            f.write(json.dumps(record) + "\n")
+            f.flush()
+    except OSError:
+        pass
+
+
 class log_query:
     """Context manager that times its body and appends a JSONL telemetry record."""
 

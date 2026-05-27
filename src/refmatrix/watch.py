@@ -24,18 +24,24 @@ from refmatrix.store import Store
 from refmatrix.sync import sync_files
 
 IGNORE_DIRS = {
-    ".git", ".venv", "venv", "node_modules", ".tldr", ".refmatrix",
-    "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache",
-    "dist", "build", ".tox", ".nox",
+    "venv", "node_modules",
+    "__pycache__", "dist", "build",
 }
 SUPPORTED_EXTS = CODE_EXTS | DOC_EXTS
 
 
 def is_relevant(p: Path) -> bool:
-    """True if a path is worth syncing."""
+    """True if a path is worth syncing. Excludes hidden directories
+    (any segment starting with `.` — covers .git, .venv, .tldr,
+    .refmatrix, .wolf, .claude, .cursor, .idea, .mypy_cache, .pytest_cache,
+    .ruff_cache, .tox, .nox, ...), plus the non-dot tooling dirs in
+    IGNORE_DIRS."""
     if p.suffix.lower() not in SUPPORTED_EXTS:
         return False
-    if any(part in IGNORE_DIRS for part in p.parts):
+    parts = p.parts
+    if any(part in IGNORE_DIRS for part in parts):
+        return False
+    if any(part.startswith(".") and part != "." for part in parts):
         return False
     return True
 
