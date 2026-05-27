@@ -96,11 +96,20 @@ def _store() -> Store:
 def _replica_reader_path() -> Path:
     """Return the path to the current reader-slot catalog file.
 
-    Reads `.refmatrix/active` to identify the writer slot; the reader is
-    the other slot. Falls back to legacy `catalog.duckdb` when the
-    rotation hasn't been bootstrapped (pre-0.3.8). Doesn't query the
-    daemon — pure file-system lookup."""
+    Resolution order:
+      1. `<root>/read_only.duckdb` — daemon-maintained symlink at the
+         current inactive (reader) slot. Cheapest + most explicit; the
+         daemon updates it atomically on every rotation swap.
+      2. `<root>/active` marker + `catalog.{inactive}.duckdb` —
+         fallback for pre-symlink stores that the daemon hasn't
+         touched yet this run.
+      3. Legacy `catalog.duckdb` for pre-rotation (pre-0.3.8) stores.
+
+    Doesn't query the daemon — pure file-system lookup."""
     root = _root()
+    link = root / "read_only.duckdb"
+    if link.exists() or link.is_symlink():
+        return link
     marker = root / "active"
     if marker.exists():
         try:
@@ -3029,7 +3038,10 @@ def search_dense_cmd(query, k, kinds):
     if kinds:
         args["kinds"] = list(kinds)
     if daemon_mod.ping(root):
-        resp = daemon_mod.call(root, "ann_search", args, timeout=60.0)
+        # 180s covers embedder cold-start (sentence-transformers model
+        # load can take 30-90s on a busy CPU). Steady-state ANN search
+        # is sub-second.
+        resp = daemon_mod.call(root, "ann_search", args, timeout=180.0)
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         result = resp["result"]
@@ -3503,7 +3515,10 @@ def memory_recall(query, prompt_query, k, recent, since, session_start,
         raise click.ClickException(
             "rmx memory recall needs the daemon up (dense embedder lives there)"
         )
-    resp = _memory_daemon_call("ann_search", args)
+    # 180s covers worst-case embedder cold-start (sentence-transformers
+    # model load on a busy CPU takes 30-90s). Steady-state recall is
+    # sub-second once the daemon's _embedder cache warms.
+    resp = _memory_daemon_call("ann_search", args, timeout=180.0)
     if not resp.get("ok"):
         raise click.ClickException(resp.get("error", "daemon error"))
     hits = resp["result"].get("hits", [])

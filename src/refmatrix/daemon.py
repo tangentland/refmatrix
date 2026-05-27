@@ -345,6 +345,10 @@ class Daemon:
         # want a lock-free read connection.
         self._active_slot = self._read_active_slot()
         self._bootstrap_rotation_if_needed()
+        # Point read_only.duckdb at the inactive slot so in-process
+        # readers always have a lock-free path even before the first
+        # rotation cycle.
+        self._refresh_read_only_link()
         # Refresh thread: catches up the inactive slot every N seconds
         # (RMX_REPLICA_REFRESH_S, default 5).
         self._start_replica_refresh()
@@ -654,6 +658,32 @@ class Daemon:
         """Path to a rotation slot file (`A` or `B`)."""
         return self.root / f"catalog.{slot}.duckdb"
 
+    def _read_only_link(self) -> Path:
+        """Symlink the daemon maintains pointing at the current READER
+        (inactive) slot. In-process Stores that need to read while the
+        daemon holds the writer slot open with a lock prefer this link
+        over `catalog.duckdb` so they always land on a lock-free file.
+        Updated atomically on every rotation swap (and on startup).
+        """
+        return self.root / "read_only.duckdb"
+
+    def _refresh_read_only_link(self) -> None:
+        """Point `read_only.duckdb` at the current inactive slot.
+        Atomic via os.symlink-to-temp + os.replace. No-op if symlinks
+        aren't available (Windows w/o developer mode); the Store side
+        falls back to `catalog.duckdb` in that case."""
+        import os as _os
+        target = self._replica_file(self._inactive_slot()).name
+        link = self._read_only_link()
+        tmp = link.with_name(link.name + ".tmp")
+        try:
+            if tmp.exists() or tmp.is_symlink():
+                tmp.unlink()
+            _os.symlink(target, tmp)
+            _os.replace(tmp, link)
+        except OSError as exc:
+            self._log(f"read_only.duckdb symlink update failed: {exc!r}")
+
     def _active_marker(self) -> Path:
         """File storing the current writer-slot letter (A or B)."""
         return self.root / "active"
@@ -746,6 +776,7 @@ class Daemon:
                     self.store.db_path = self._replica_file(new_active)
                     self.store.init()
                     self._active_slot = new_active
+                    self._refresh_read_only_link()
                 except Exception as exc:
                     return {"enabled": True, "ok": False,
                             "error": f"pointer swap: {exc!r}"}
@@ -808,6 +839,7 @@ class Daemon:
                 self.store.db_path = self._replica_file(new_active)
                 self.store.init()
                 self._active_slot = new_active
+                self._refresh_read_only_link()
             except Exception as exc:
                 return {"enabled": True, "ok": False,
                         "error": f"pointer swap: {exc!r}"}
