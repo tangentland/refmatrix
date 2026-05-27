@@ -2245,6 +2245,43 @@ def install_hooks(git, claude, briefing, apply, force, scope):
         console.print(line)
 
 
+# ---- index repair ---------------------------------------------------------
+
+
+@main.command("repair-index")
+def repair_index():
+    """Drop + recreate idx_entity_links_lk_concept to fix DuckDB secondary
+    index drift. Daemon does this on every startup; this command is for
+    triage when the index drifts mid-session ('Failed to delete all rows
+    from index' fatals). Stops the daemon, repairs, restarts."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    daemon_was_up = daemon_mod.ping(root)
+    if daemon_was_up:
+        console.print("[yellow]stopping daemon...[/]")
+        try:
+            daemon_mod.call(root, "stop", {}, timeout=10.0)
+        except Exception:
+            pass
+        # Best-effort wait for daemon to actually go down.
+        import time as _time
+        for _ in range(30):
+            if not daemon_mod.ping(root):
+                break
+            _time.sleep(0.2)
+    s = _store()
+    r = s.repair_entity_links_index()
+    s.close()
+    console.print(
+        f"[green]repaired[/] idx_entity_links_lk_concept "
+        f"(rows={r.get('row_count', '?')})"
+    )
+    if daemon_was_up:
+        console.print("[yellow]restarting daemon...[/]")
+        pid = daemon_mod.spawn_daemon(root)
+        console.print(f"[green]daemon up pid={pid}[/]")
+
+
 # ---- cli invocation log ---------------------------------------------------
 
 

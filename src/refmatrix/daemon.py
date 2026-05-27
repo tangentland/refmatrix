@@ -172,6 +172,23 @@ class Daemon:
         self.store.init()
         self._log(f"store opened backend={self.store._backend.kind}")
 
+        # Defensive recreate of idx_entity_links_lk_concept. DuckDB
+        # secondary indexes drift after bulk DELETEs (prune_noise --drop,
+        # purge_entity on high-degree concepts) and especially after a
+        # SIGKILL'd daemon's WAL replays at next open. The fatal "Failed
+        # to delete all rows from index" surfaces on the next op that
+        # tries to touch entity_links — invalidating the database until
+        # restart. ~1s startup cost on a 100k-row table; cheap insurance.
+        if self.store._backend.kind == "duckdb":
+            try:
+                r = self.store.repair_entity_links_index()
+                self._log(
+                    f"repaired idx_entity_links_lk_concept "
+                    f"rows={r.get('row_count', '?')}"
+                )
+            except Exception as e:
+                self._log(f"repair_entity_links_index failed: {e}")
+
         if self.watch_root is not None:
             self._start_watcher()
 

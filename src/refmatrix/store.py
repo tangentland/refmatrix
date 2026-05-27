@@ -902,6 +902,31 @@ class Store:
         others = sorted(r[0] for r in rows if r[1] != name)
         return exact + others
 
+    def repair_entity_links_index(self) -> dict:
+        """Drop + recreate `idx_entity_links_lk_concept` to defend against
+        DuckDB secondary-index drift after bulk DELETEs (prune_noise --drop,
+        purge_entity on high-degree concepts, SIGKILL+WAL replay).
+
+        Returns `{"recreated": True, "row_count": N}` on success. Cheap (~1s
+        on a 100k-entity_links table). Idempotent — safe to run repeatedly.
+
+        Background: DuckDB's b-tree secondary indexes can disagree with the
+        underlying table after a multi-row DELETE. Symptom is a fatal error
+        on the next op that touches the index: 'Failed to delete all rows
+        from index. Only deleted X out of N rows'. Once that fires, the
+        database is invalidated until restart. This method is the
+        documented self-heal and is wired into `Daemon` startup so every
+        daemon spawn has a clean index."""
+        con = self._connect()
+        n = con.execute("SELECT COUNT(*) FROM entity_links").fetchone()[0]
+        con.execute("DROP INDEX IF EXISTS idx_entity_links_lk_concept")
+        con.execute(
+            "CREATE INDEX idx_entity_links_lk_concept "
+            "ON entity_links(linkage_id, concept_id)"
+        )
+        con.commit()
+        return {"recreated": True, "row_count": n}
+
     def _backfill_canonical_name_if_needed(self) -> None:
         """Populate canonical_name for any concept rows where it's NULL.
 
