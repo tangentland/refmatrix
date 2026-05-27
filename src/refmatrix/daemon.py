@@ -217,24 +217,63 @@ class Daemon:
         # other client call queue behind the slow op and the only escape
         # is SIGKILL -- which risks DuckDB WAL corruption.
         #
-        # _store_lock continues to serialize mutations; the pool exists
-        # purely to keep the accept loop hot and to let independent reads
-        # run while writes are in flight. Pool size is small (16) because
-        # the work is either lock-bound (waiting on _store_lock) or
-        # IO-bound (waiting on DuckDB); a larger pool just produces more
-        # contention without throughput.
+        # Two-pool design — separates interactive CLI ops from bulk
+        # background work so a long-running ingest can't starve `rmx
+        # query`, `rmx stats`, etc. queued behind it.
+        #
+        #   cli_pool  — small. Latency-sensitive reads (query, context,
+        #               neighbors, stats, ping, etc.).
+        #   bg_pool   — bigger. Bulk + mutating ops (ingest_path,
+        #               ingest_gmd, sync_*, prune_noise, vacuum,
+        #               checkpoint, flush_queue, learn_from_grep, etc.).
+        #   disp_pool — accept-loop handoff. Reads the request, classifies
+        #               by op name, hands off to the right backend pool.
+        #               Sized to cli + bg + slack so it never becomes the
+        #               bottleneck.
+        #
+        # `_store_lock` still serializes mutations — pools shape
+        # *scheduling*, not lock semantics. The win is that a cli request
+        # arriving while bg_pool is saturated lands directly in cli_pool's
+        # own queue at position 0, instead of behind N bg tasks in a
+        # single shared pool.
+        #
+        # Sizing: `RMX_DAEMON_CLI_WORKERS` (default 4),
+        # `RMX_DAEMON_BG_WORKERS` (default 12). Legacy
+        # `RMX_DAEMON_WORKERS` is honored as a total budget when set —
+        # split 1:3 cli:bg.
         from concurrent.futures import ThreadPoolExecutor
 
-        pool_workers = int(os.environ.get("RMX_DAEMON_WORKERS", "16") or "16")
-        pool = ThreadPoolExecutor(
-            max_workers=pool_workers,
-            thread_name_prefix="rmxd-handler",
+        legacy = os.environ.get("RMX_DAEMON_WORKERS")
+        if legacy:
+            total = max(2, int(legacy))
+            cli_workers = max(1, total // 4)
+            bg_workers = max(1, total - cli_workers)
+        else:
+            cli_workers = int(os.environ.get("RMX_DAEMON_CLI_WORKERS", "4") or "4")
+            bg_workers = int(os.environ.get("RMX_DAEMON_BG_WORKERS", "12") or "12")
+        cli_pool = ThreadPoolExecutor(
+            max_workers=cli_workers, thread_name_prefix="rmxd-cli",
+        )
+        bg_pool = ThreadPoolExecutor(
+            max_workers=bg_workers, thread_name_prefix="rmxd-bg",
+        )
+        disp_pool = ThreadPoolExecutor(
+            max_workers=cli_workers + bg_workers + 4,
+            thread_name_prefix="rmxd-disp",
+        )
+        # Expose for handlers / introspection / shutdown.
+        self._cli_pool = cli_pool
+        self._bg_pool = bg_pool
+        self._disp_pool = disp_pool
+        self._log(
+            f"pools cli={cli_workers} bg={bg_workers} "
+            f"disp={cli_workers + bg_workers + 4}"
         )
 
         def _run_handler(c) -> None:
             try:
                 with c:
-                    self._handle(c)
+                    self._handle(c, cli_pool, bg_pool)
             except Exception as exc:
                 self._log(f"handler thread crashed: {exc!r}")
 
@@ -244,12 +283,14 @@ class Daemon:
                     conn, _ = srv.accept()
                 except socket.timeout:
                     continue
-                pool.submit(_run_handler, conn)
+                disp_pool.submit(_run_handler, conn)
         finally:
             # Wait briefly for in-flight handlers to drain so we don't
             # tear down the socket out from under a request that was
             # almost done. Hard cap so a stuck handler can't pin shutdown.
-            pool.shutdown(wait=True, cancel_futures=True)
+            disp_pool.shutdown(wait=True, cancel_futures=True)
+            cli_pool.shutdown(wait=True, cancel_futures=True)
+            bg_pool.shutdown(wait=True, cancel_futures=True)
             if getattr(self, "_flush_stop", None) is not None:
                 self._flush_stop.set()
             if getattr(self, "_flush_thread", None) is not None:
@@ -426,7 +467,14 @@ class Daemon:
             f"debounce={self.watch_debounce_ms}ms"
         )
 
-    def _handle(self, conn: socket.socket) -> None:
+    def _handle(self, conn: socket.socket, cli_pool, bg_pool) -> None:
+        """Read one request, route it to the right pool, return the response.
+
+        Runs on a dispatcher thread (disp_pool). Classifies the op via
+        `CLI_OPS`; sends interactive ops to `cli_pool` and bulk/mutating
+        ops to `bg_pool`. The dispatcher thread blocks on the future and
+        writes the response, which is why `disp_pool` is sized larger
+        than the sum of the two work pools."""
         try:
             conn.settimeout(30.0)
             req_bytes = _recv_line(conn, timeout=30.0)
@@ -439,8 +487,10 @@ class Daemon:
             if handler is None:
                 resp = {"ok": False, "error": f"unknown op: {op!r}"}
             else:
+                target_pool = cli_pool if op in CLI_OPS else bg_pool
                 try:
-                    result = handler(self, args)
+                    fut = target_pool.submit(handler, self, args)
+                    result = fut.result()
                     resp = {"ok": True, "result": result}
                 except Exception as exc:
                     self._log(f"op {op} raised: {exc!r}")
@@ -911,6 +961,22 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "stats": _op_stats,
     "checkpoint": _op_checkpoint,
     "stop": _op_stop,
+}
+
+# Ops dispatched to the small `cli_pool` — latency-sensitive, mostly
+# reads, expected to complete in milliseconds-to-low-seconds. Everything
+# else (ingest, sync, prune, vacuum, checkpoint, large list ops, learn-
+# on-miss writebacks) goes to `bg_pool`. `stop` is cli because we want
+# it to take effect immediately even while bg work is in flight.
+CLI_OPS: set[str] = {
+    "ping",
+    "stats",
+    "context",
+    "query",
+    "grep_indexed",
+    "list_linkages",
+    "list_saved_queries",
+    "stop",
 }
 
 

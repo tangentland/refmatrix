@@ -241,6 +241,38 @@ def _entity_name(doc_id: str, node_id: str) -> str:
     return f"{doc_id}#{node_id}"
 
 
+_ADR_GMD_ID_RE = re.compile(r"^adr-(\d{4})-")
+
+
+def _adr_slash_alias(doc_id: str) -> str | None:
+    """If `doc_id` is an ADR-style GMD id like `adr-0078-json-schema-as-type-
+    authority`, return the slash-form alias `adr/0078` used by the
+    non-GMD ADR ingester. Allows GMD rel: edges and prose searches to
+    resolve regardless of which form the caller used."""
+    m = _ADR_GMD_ID_RE.match(doc_id)
+    return f"adr/{m.group(1)}" if m else None
+
+
+def _resolve_target_eid(
+    store, eid_by_name: dict, target_name: str
+) -> int | None:
+    """Look up a wikilink target across this batch (`eid_by_name`) AND the
+    persistent store. The batch-only dict misses any target that was
+    ingested in a prior call — per-file watcher ingests and partial-tree
+    invocations would silently drop every cross-file rel: edge without
+    this DB fallback."""
+    eid = eid_by_name.get(target_name)
+    if eid is not None:
+        return eid
+    # Try concept (node anchors) then doc (file-level refs).
+    for kind in ("concept", "doc"):
+        e = store.get_entity(kind, target_name)
+        if e is not None:
+            eid_by_name[target_name] = e.id  # cache for the rest of this batch
+            return e.id
+    return None
+
+
 # ---- ingest ---------------------------------------------------------------
 
 @dataclass
@@ -335,6 +367,20 @@ def ingest_gmd_paths(
             meta={"gmd_version": doc.gmd_version, "tags": doc.tags},
         )
         eid_by_name[doc.doc_id] = doc_eid
+        # ADR same_as bridge: link the GMD-id form (adr-0078-foo-bar) to the
+        # non-GMD ADR ingester's slash-form (adr/0078) so wikilinks against
+        # either form resolve to a unified concept. The slash form is a
+        # `concept` entity created by ingest._ingest_adr; here we use
+        # upsert_entity to ensure it exists, then add a same_as edge.
+        slash = _adr_slash_alias(doc.doc_id)
+        if slash is not None:
+            slash_eid = store.upsert_entity(
+                kind="concept", name=slash,
+                meta={"description": f"ADR slug alias of '{doc.doc_id}'"},
+            )
+            _ensure_linkage(store, "same_as", stats)
+            store.link("same_as", doc_eid, slash_eid)
+            eid_by_name[slash] = slash_eid
 
         # node entities (one per {#id})
         # Registered as kind='concept' so they're queryable via the standard
@@ -431,7 +477,17 @@ def ingest_gmd_paths(
                             _entity_name(target_doc, anchor) if anchor
                             else target_doc
                         )
-                    target_eid = eid_by_name.get(target_name)
+                    target_eid = _resolve_target_eid(store, eid_by_name, target_name)
+                    if target_eid is None and target_doc:
+                        # ADR slug/slash bridge: a wikilink like
+                        # [[adr-0078-json-schema-as-type-authority]] also
+                        # resolves against the non-GMD ADR ingester's
+                        # `adr/0078` entity.
+                        slash = _adr_slash_alias(target_doc)
+                        if slash:
+                            target_eid = _resolve_target_eid(
+                                store, eid_by_name, slash
+                            )
                     if target_eid is None:
                         stats.unresolved.append((doc.path, line_no, ref))
                         continue
@@ -456,7 +512,13 @@ def ingest_gmd_paths(
                         _entity_name(target_doc, anchor) if anchor
                         else target_doc
                     )
-                target_eid = eid_by_name.get(target_name)
+                target_eid = _resolve_target_eid(store, eid_by_name, target_name)
+                if target_eid is None and target_doc:
+                    slash = _adr_slash_alias(target_doc)
+                    if slash:
+                        target_eid = _resolve_target_eid(
+                            store, eid_by_name, slash
+                        )
                 if target_eid is None:
                     stats.unresolved.append((doc.path, line_no, ref))
                     continue
