@@ -772,11 +772,12 @@ def _op_query(d: Daemon, args: dict) -> dict:
     expr = args["expr"]
     is_pql = bool(args.get("pql", False))
     include_noise = bool(args.get("include_noise", False))
+    strict = bool(args.get("strict", False))
     limit = int(args.get("limit", 50))
     name_filter = args.get("name_filter")
     explain = bool(args.get("explain", False))
     with d._store_lock:
-        qe = QueryEngine(d.store, include_noise=include_noise)
+        qe = QueryEngine(d.store, include_noise=include_noise, strict=strict)
         result = qe.run_pql(expr) if is_pql else qe.run(expr)
         if name_filter:
             from pyroaring import BitMap
@@ -850,6 +851,7 @@ def _op_context(d: Daemon, args: dict) -> dict:
     max_entities = int(args.get("max_entities", 20))
     max_tokens = int(args.get("max_tokens", 4000))
     fuse = bool(args.get("fuse", False))
+    strict = bool(args.get("strict", False))
     with d._store_lock:
         bundle = build_context(
             d.store, ref,
@@ -857,6 +859,7 @@ def _op_context(d: Daemon, args: dict) -> dict:
             max_entities=max_entities,
             max_tokens=max_tokens,
             fuse=fuse,
+            strict=strict,
         )
     body = render_json(bundle) if fmt == "json" else render_text(bundle)
     return {"body": body}

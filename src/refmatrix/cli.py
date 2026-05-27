@@ -646,7 +646,12 @@ def _print_bitmap(s: Store, bm, limit: int = 50):
                    "replacement.")
 @click.option("--filter", "name_filter", default=None,
               help="SQL LIKE pattern to filter result entities by name (e.g. '%.pseudo::%').")
-def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter):
+@click.option("--strict", is_flag=True,
+              help="Disable surface-form variant expansion for concept names. "
+                   "By default `mentions:JSONParser` matches concepts canonicalized "
+                   "to json_parser too (camelCase/PascalCase/dash/space variants); "
+                   "--strict requires an exact name match.")
+def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter, strict):
     """Run a query. DSL: `mentions:parser AND defines:parser`. PQL: `Row(calls,foo)`."""
     from refmatrix import daemon as daemon_mod
     root = _root()
@@ -654,6 +659,7 @@ def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter):
         resp = daemon_mod.call(root, "query", {
             "expr": expr, "pql": is_pql, "include_noise": include_noise,
             "limit": limit, "name_filter": name_filter, "explain": explain,
+            "strict": strict,
         }, timeout=120.0)
         if not resp.get("ok"):
             raise click.ClickException(f"daemon query failed: {resp.get('error')}")
@@ -691,7 +697,7 @@ def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter):
         return
 
     s = _store()
-    qe = QueryEngine(s, include_noise=include_noise)
+    qe = QueryEngine(s, include_noise=include_noise, strict=strict)
     with log_query(s, kind="pql" if is_pql else "dsl", body=expr, source="query") as t:
         result = qe.run_pql(expr) if is_pql else qe.run(expr)
         try:
@@ -753,10 +759,12 @@ def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter):
 @click.option("--limit", default=50, type=int)
 @click.option("--full", "include_noise", is_flag=True,
               help="Include noise-marked concepts in the walk.")
-def neighbors(concept, depth, linkage, limit, include_noise):
+@click.option("--strict", is_flag=True,
+              help="Disable surface-form variant expansion for the seed concept.")
+def neighbors(concept, depth, linkage, limit, include_noise, strict):
     """Walk linkages from a concept (depth-N closure)."""
     s = _store()
-    qe = QueryEngine(s, include_noise=include_noise)
+    qe = QueryEngine(s, include_noise=include_noise, strict=strict)
     with log_query(s, kind="neighbors", body=concept, source="neighbors") as t:
         bm = qe.neighbors(concept, depth=depth, linkages=list(linkage) or None)
         t.cardinality = len(bm)
@@ -774,7 +782,11 @@ def neighbors(concept, depth, linkage, limit, include_noise):
               help="Branch-scoped: bundle for concepts touched by `git diff --name-only <ref>`.")
 @click.option("--fuse", is_flag=True,
               help="Reciprocal Rank Fusion across linkages. Avoids biasing truncation toward early linkage order.")
-def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse):
+@click.option("--strict", is_flag=True,
+              help="Disable surface-form variant expansion. By default `JSONParser`, "
+                   "`json_parser`, `json-parser`, and `json parser` resolve to the "
+                   "same canonical concept; --strict requires exact-name match.")
+def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict):
     """Token-budgeted context bundle: anchor + neighbors + their tldr blobs."""
     from refmatrix.context import build_context, render_json, render_text
     from refmatrix import daemon as daemon_mod
@@ -792,6 +804,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse):
                 "max_entities": max_entities,
                 "max_tokens": max_tokens,
                 "fuse": fuse,
+                "strict": strict,
             }, timeout=120.0)
             if not resp.get("ok"):
                 raise click.ClickException(
@@ -843,7 +856,8 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse):
         used = 0
         for name in sorted(concept_names)[:8]:
             b = build_context(s, name, max_tokens=per, max_entities=10,
-                              linkages=list(linkage) or None, fuse=fuse)
+                              linkages=list(linkage) or None, fuse=fuse,
+                              strict=strict)
             if b.anchor is None or not b.groups:
                 continue
             block = render_json(b) if fmt == "json" else render_text(b)
@@ -866,6 +880,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse):
             max_entities=max_entities,
             max_tokens=max_tokens,
             fuse=fuse,
+            strict=strict,
         )
         t.cardinality = bundle.total_entities() if bundle.anchor else 0
     if fmt == "json":

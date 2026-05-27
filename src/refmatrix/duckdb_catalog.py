@@ -47,17 +47,22 @@ CREATE TABLE IF NOT EXISTS partitions (
 );
 
 CREATE TABLE IF NOT EXISTS entities (
-    id           INTEGER PRIMARY KEY DEFAULT nextval('seq_entities_id'),
-    partition_id INTEGER NOT NULL DEFAULT 1,
-    kind         TEXT NOT NULL CHECK (kind IN ('doc', 'code', 'concept')),
-    path         TEXT,
-    name         TEXT NOT NULL,
-    tldr         TEXT,
-    meta         TEXT,
-    created_at   DOUBLE NOT NULL,
-    updated_at   DOUBLE NOT NULL,
-    protected    INTEGER NOT NULL DEFAULT 0,
-    noise        INTEGER NOT NULL DEFAULT 0,
+    id             INTEGER PRIMARY KEY DEFAULT nextval('seq_entities_id'),
+    partition_id   INTEGER NOT NULL DEFAULT 1,
+    kind           TEXT NOT NULL CHECK (kind IN ('doc', 'code', 'concept')),
+    path           TEXT,
+    name           TEXT NOT NULL,
+    tldr           TEXT,
+    meta           TEXT,
+    created_at     DOUBLE NOT NULL,
+    updated_at     DOUBLE NOT NULL,
+    protected      INTEGER NOT NULL DEFAULT 0,
+    noise          INTEGER NOT NULL DEFAULT 0,
+    -- Lowercase underscore-joined identifier form. Populated for kind='concept'
+    -- rows so variant-expanded lookups (snake / camelCase / PascalCase-with-
+    -- acronym / dash / digit boundary) resolve via a single indexed SELECT
+    -- rather than N point lookups. NULL for kind='doc'/'code'.
+    canonical_name TEXT,
     UNIQUE(partition_id, kind, name)
 );
 CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(kind);
@@ -65,6 +70,10 @@ CREATE INDEX IF NOT EXISTS idx_entities_path ON entities(path);
 CREATE INDEX IF NOT EXISTS idx_entities_partition ON entities(partition_id);
 CREATE INDEX IF NOT EXISTS idx_entities_protected ON entities(protected);
 CREATE INDEX IF NOT EXISTS idx_entities_noise ON entities(noise);
+-- idx_entities_canonical is created post-init by Store._connect() so the
+-- ALTER TABLE ADD COLUMN canonical_name path for legacy catalogs has a
+-- chance to run before the index references it. CATALOG_DDL runs on every
+-- open, including catalogs created pre-0.3.3.
 
 CREATE TABLE IF NOT EXISTS concepts (
     id          INTEGER PRIMARY KEY,

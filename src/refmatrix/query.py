@@ -172,12 +172,23 @@ class Op(Node):
 
 
 class QueryEngine:
-    def __init__(self, store: Store, include_noise: bool = False):
+    def __init__(
+        self,
+        store: Store,
+        include_noise: bool = False,
+        strict: bool = False,
+    ):
         self.s = store
         # When False (default), enumeration paths (neighbors, co_occurrence,
         # topn, density) skip concepts marked noise. Explicit name lookups via
         # _row() always resolve — typing the name is intent enough.
         self.include_noise = include_noise
+        # When False (default), concept-name lookups expand across surface-
+        # form variants (snake / camelCase / PascalCase-w-acronym / dash /
+        # space / digit boundary) and union the resulting bitmaps. Widens the
+        # net for LLM-driven queries where the case form is uncertain. When
+        # True, exact-name match only (one concept per lookup).
+        self.strict = strict
         self._noise_cache: set[int] | None = None
 
     def _noise_ids(self) -> set[int]:
@@ -234,21 +245,26 @@ class QueryEngine:
         if ":" in text:
             linkage, concept_name = text.split(":", 1)
             return self._row(linkage, concept_name)
-        # bare concept => union of every linkage row for that concept
-        c = self.s.resolve_entity(text)
-        if c is None or c.kind != "concept":
+        # bare concept => union of every linkage row across all matching
+        # concept ids (variant-expanded unless strict).
+        cids = self.s.resolve_concept_ids(text, strict=self.strict)
+        if not cids:
             return BitMap()
         out = BitMap()
         for lk in self.s.list_linkages():
-            out |= self.s.load_bitmap(lk["name"], c.id)
+            for cid in cids:
+                out |= self.s.load_bitmap(lk["name"], cid)
         return out
 
     def _row(self, linkage: str, concept_name: str) -> BitMap:
-        c = self.s.resolve_entity(concept_name)
-        if c is None or c.kind != "concept":
+        cids = self.s.resolve_concept_ids(concept_name, strict=self.strict)
+        if not cids:
             # auto-create-on-read? no — return empty so queries don't surprise.
             return BitMap()
-        return self.s.load_bitmap(linkage, c.id)
+        out = BitMap()
+        for cid in cids:
+            out |= self.s.load_bitmap(linkage, cid)
+        return out
 
     # --- higher-level ops ---
 
@@ -258,13 +274,14 @@ class QueryEngine:
         depth: int = 1,
         linkages: list[str] | None = None,
     ) -> BitMap:
-        c = self.s.resolve_entity(concept_name)
-        if c is None or c.kind != "concept":
+        cids = self.s.resolve_concept_ids(concept_name, strict=self.strict)
+        if not cids:
             return BitMap()
         link_names = linkages or [lk["name"] for lk in self.s.list_linkages()]
         noise = self._noise_ids()
-        frontier = BitMap([c.id])
-        seen = BitMap([c.id])
+        seed_ids = BitMap(cids)
+        frontier = BitMap(seed_ids)
+        seen = BitMap(seed_ids)
         for _ in range(depth):
             next_frontier = BitMap()
             for cid in frontier:
@@ -277,7 +294,7 @@ class QueryEngine:
                 break
             seen |= next_frontier
             frontier = next_frontier
-        seen.discard(c.id)
+        seen -= seed_ids
         return seen
 
     def topn(self, bm: BitMap, n: int = 10) -> list[tuple[int, int]]:
@@ -296,17 +313,24 @@ class QueryEngine:
         return ranked[:n]
 
     def co_occurrence(self, concept_name: str, linkage: str = "mentions") -> list[tuple[str, int]]:
-        """Concepts that share entities with `concept_name` under `linkage`."""
-        c = self.s.resolve_entity(concept_name)
-        if c is None:
+        """Concepts that share entities with `concept_name` under `linkage`.
+
+        Variant-expanded unless `self.strict`. The anchor bitmap unions
+        across all matching concept ids, and matching concepts are excluded
+        from the co-occurrence neighborhood."""
+        anchor_ids = self.s.resolve_concept_ids(concept_name, strict=self.strict)
+        if not anchor_ids:
             return []
-        anchor = self.s.load_bitmap(linkage, c.id)
+        anchor = BitMap()
+        for aid in anchor_ids:
+            anchor |= self.s.load_bitmap(linkage, aid)
         if len(anchor) == 0:
             return []
         noise = self._noise_ids()
+        anchor_set = set(anchor_ids)
         out: list[tuple[str, int]] = []
         for cid in self.s.iter_concept_ids_for_linkage(linkage):
-            if cid == c.id or cid in noise:
+            if cid in anchor_set or cid in noise:
                 continue
             other = self.s.load_bitmap(linkage, cid)
             overlap = len(anchor & other)

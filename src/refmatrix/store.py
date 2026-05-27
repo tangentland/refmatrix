@@ -31,6 +31,19 @@ from pyroaring import BitMap, BitMap64
 _CONCEPT_WORD_SPLIT_RE = re.compile(r"[\s_\-]+")
 
 
+def _canonical_for_kind(kind: str, name: str) -> str | None:
+    """Compute the canonical_name column value for an entities row.
+
+    Concept entities get the full identifier-aware canonical form (lowercase
+    underscore split on whitespace/_/-/camelCase/PascalCase-w-acronym/digit-
+    boundary). Doc/code entities get NULL — their literal name is the only
+    addressable form and canonicalization would collide unrelated paths."""
+    if kind != "concept":
+        return None
+    from refmatrix.identifier import canonicalize_name
+    return canonicalize_name(name)
+
+
 def _concept_variants(name: str) -> tuple[str, list[str]]:
     """For a multi-word concept name, return (canonical, alias_variants).
 
@@ -85,17 +98,18 @@ CREATE TABLE IF NOT EXISTS partitions (
 );
 
 CREATE TABLE IF NOT EXISTS entities (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    partition_id INTEGER NOT NULL DEFAULT 1 REFERENCES partitions(id),
-    kind         TEXT NOT NULL CHECK (kind IN ('doc', 'code', 'concept')),
-    path         TEXT,
-    name         TEXT NOT NULL,
-    tldr         TEXT,
-    meta         TEXT,
-    created_at   REAL NOT NULL,
-    updated_at   REAL NOT NULL,
-    protected    INTEGER NOT NULL DEFAULT 0,
-    noise        INTEGER NOT NULL DEFAULT 0,
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    partition_id   INTEGER NOT NULL DEFAULT 1 REFERENCES partitions(id),
+    kind           TEXT NOT NULL CHECK (kind IN ('doc', 'code', 'concept')),
+    path           TEXT,
+    name           TEXT NOT NULL,
+    tldr           TEXT,
+    meta           TEXT,
+    created_at     REAL NOT NULL,
+    updated_at     REAL NOT NULL,
+    protected      INTEGER NOT NULL DEFAULT 0,
+    noise          INTEGER NOT NULL DEFAULT 0,
+    canonical_name TEXT,
     UNIQUE(partition_id, kind, name)
 );
 CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(kind);
@@ -359,6 +373,10 @@ class Store:
                     con.execute(
                         "ALTER TABLE entities ADD COLUMN noise INTEGER NOT NULL DEFAULT 0"
                     )
+                if "canonical_name" not in cols:
+                    con.execute(
+                        "ALTER TABLE entities ADD COLUMN canonical_name TEXT"
+                    )
                 # Indexes are unconditional (and IF NOT EXISTS): both the
                 # alter-table path above and the fresh-schema path leave us
                 # with the columns present, so this is now safe.
@@ -367,6 +385,10 @@ class Store:
                 )
                 con.execute(
                     "CREATE INDEX IF NOT EXISTS idx_entities_noise ON entities(noise)"
+                )
+                con.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_entities_canonical "
+                    "ON entities(partition_id, kind, canonical_name)"
                 )
                 con.commit()
                 self._conn = con
@@ -387,10 +409,27 @@ class Store:
                 # DuckDB native catalog: schema is created up-front via the
                 # native DDL (refmatrix.duckdb_catalog). All tables/indexes/
                 # columns are present from the start, so the SQLite legacy
-                # migration paths (partitions backfill, ALTER ADD COLUMN,
-                # post-DDL CREATE INDEX) are not needed.
+                # migration paths (partitions backfill, post-DDL CREATE INDEX)
+                # are not needed.
                 self._backend.init_catalog(con)
                 self._conn = con
+                # ALTER ADD COLUMN for catalogs created before canonical_name
+                # was part of the schema (pre-0.3.3). DuckDB supports both
+                # ALTER TABLE ADD COLUMN IF NOT EXISTS and the conditional
+                # information_schema check below for portability across
+                # DuckDB versions.
+                cols = {
+                    r[0] for r in con.execute(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name='entities'"
+                    ).fetchall()
+                }
+                if "canonical_name" not in cols:
+                    con.execute("ALTER TABLE entities ADD COLUMN canonical_name TEXT")
+                    con.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_entities_canonical "
+                        "ON entities(partition_id, kind, canonical_name)"
+                    )
             # Ensure the default + active partition rows exist and resolve the
             # active partition_id. Auto-creates the active partition the first
             # time a Store is opened with a new name (matches how a fresh
@@ -407,6 +446,11 @@ class Store:
                     (name, directed, desc),
                 )
             con.commit()
+            # One-shot backfill of canonical_name for legacy concept rows. Runs
+            # exactly once per catalog (after the ALTER ADD COLUMN above
+            # populated the column as NULL). Safe to re-run: WHERE clause
+            # skips rows already populated.
+            self._backfill_canonical_name_if_needed()
         # One-shot migration: collapse legacy per-(linkage, concept) .rb files
         # into per-linkage BitMap64 fragments. Runs at most once per catalog.
         self._migrate_legacy_bitmaps_if_needed()
@@ -648,22 +692,28 @@ class Store:
         prot = 1 if protected else 0
         con = self._connect()
         pid = self._partition_id
+        # canonical_name is populated for concept rows only; doc/code retain
+        # their literal name as the only addressable form.
+        canon = _canonical_for_kind(kind, name)
         # On conflict: only ratchet protected upward — re-ingestion by an
         # auto-source must never clear a flag the user set manually.
         cur = con.execute(
             """
             INSERT INTO entities(partition_id, kind, name, path, tldr, meta,
-                                 created_at, updated_at, protected)
-            VALUES (?,?,?,?,?,?,?,?,?)
+                                 created_at, updated_at, protected,
+                                 canonical_name)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(partition_id, kind, name) DO UPDATE SET
                 path = COALESCE(excluded.path, entities.path),
                 tldr = COALESCE(excluded.tldr, entities.tldr),
                 meta = COALESCE(excluded.meta, entities.meta),
                 updated_at = excluded.updated_at,
-                protected = GREATEST(entities.protected, excluded.protected)
+                protected = GREATEST(entities.protected, excluded.protected),
+                canonical_name = COALESCE(entities.canonical_name,
+                                          excluded.canonical_name)
             RETURNING id
             """,
-            (pid, kind, name, path, tldr, meta_json, now, now, prot),
+            (pid, kind, name, path, tldr, meta_json, now, now, prot, canon),
         )
         eid = cur.fetchone()[0]
         if kind == "concept":
@@ -703,7 +753,8 @@ class Store:
         con = self._connect()
         payload = [
             (pid, kind, name, path, tldr,
-             json.dumps(meta) if meta else None, now, now, 0)
+             json.dumps(meta) if meta else None, now, now, 0,
+             _canonical_for_kind(kind, name))
             for (kind, name, path, tldr, meta) in rows
         ]
         # DuckDB does not support RETURNING from executemany, so the upsert
@@ -712,14 +763,17 @@ class Store:
         con.executemany(
             """
             INSERT INTO entities(partition_id, kind, name, path, tldr, meta,
-                                 created_at, updated_at, protected)
-            VALUES (?,?,?,?,?,?,?,?,?)
+                                 created_at, updated_at, protected,
+                                 canonical_name)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(partition_id, kind, name) DO UPDATE SET
                 path = COALESCE(excluded.path, entities.path),
                 tldr = COALESCE(excluded.tldr, entities.tldr),
                 meta = COALESCE(excluded.meta, entities.meta),
                 updated_at = excluded.updated_at,
-                protected = GREATEST(entities.protected, excluded.protected)
+                protected = GREATEST(entities.protected, excluded.protected),
+                canonical_name = COALESCE(entities.canonical_name,
+                                          excluded.canonical_name)
             """,
             payload,
         )
@@ -809,6 +863,68 @@ class Store:
             if e:
                 return e
         return None
+
+    def resolve_concept_ids(self, name: str, strict: bool = False) -> list[int]:
+        """Resolve a name to all matching concept entity ids.
+
+        Default (`strict=False`): lookup by canonical_name — every concept
+        whose canonicalized form equals canonicalize_name(`name`). Covers
+        camelCase / PascalCase-with-leading-acronym / dash / space /
+        digit-boundary variants in a single indexed SELECT against
+        idx_entities_canonical. Used by the query/context/neighbors path so
+        an LLM passing any surface form lands on the same set of mentions.
+
+        Strict (`strict=True`): exact-name lookup only. Returned list has at
+        most one id.
+
+        Ids returned in a stable order (exact-name match first if present,
+        then remaining canonical matches by entity id). Empty list if
+        nothing matches."""
+        from refmatrix.identifier import canonicalize_name
+
+        if strict:
+            e = self.get_entity("concept", name)
+            return [e.id] if e else []
+
+        self._connect()
+        canon = canonicalize_name(name)
+        rows = self._read().execute(
+            "SELECT id, name FROM entities "
+            "WHERE partition_id=? AND kind='concept' AND canonical_name=?",
+            (self._partition_id, canon),
+        ).fetchall()
+        if not rows:
+            return []
+        # Surface exact-name match first so callers that downstream-truncate
+        # still see the user's literal intent. Remaining ids in id order for
+        # determinism.
+        exact = [r[0] for r in rows if r[1] == name]
+        others = sorted(r[0] for r in rows if r[1] != name)
+        return exact + others
+
+    def _backfill_canonical_name_if_needed(self) -> None:
+        """Populate canonical_name for any concept rows where it's NULL.
+
+        Runs once after schema upgrade (the ALTER TABLE adds the column as
+        NULL). Idempotent: subsequent calls see no NULL rows and skip.
+        Pulls all matching rows into Python to compute canonicalize_name —
+        cheap because there's at most ~100k concept entities in a typical
+        repo and the computation is regex-only."""
+        from refmatrix.identifier import canonicalize_name
+
+        con = self._connect()
+        rows = con.execute(
+            "SELECT id, name FROM entities "
+            "WHERE kind='concept' AND canonical_name IS NULL"
+        ).fetchall()
+        if not rows:
+            return
+        payload = [(canonicalize_name(name), eid) for (eid, name) in rows]
+        con.executemany(
+            "UPDATE entities SET canonical_name=? WHERE id=?",
+            payload,
+        )
+        con.commit()
 
     def iter_entities(self, kind: str | None = None) -> Iterator[Entity]:
         self._connect()

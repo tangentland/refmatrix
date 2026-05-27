@@ -75,10 +75,25 @@ def build_context(
     max_entities: int = 20,
     max_tokens: int = 4000,
     fuse: bool = False,
+    strict: bool = False,
 ) -> ContextBundle:
-    """Build a context bundle anchored on `ref` (concept name or entity name)."""
+    """Build a context bundle anchored on `ref` (concept name or entity name).
+
+    When `strict=False` (default), a bare ref (no `kind:name` prefix) is
+    first variant-expanded via `Store.resolve_concept_ids(ref, strict=False)`
+    so an LLM passing `JSONParser` lands on the canonical `json_parser`
+    concept (or vice versa). The first matching concept id becomes the
+    anchor. Falls through to literal `resolve_entity` if no canonical
+    concept matches — preserves the existing kind:name and code/doc lookup
+    paths."""
     bundle = ContextBundle(ref=ref)
-    e = s.resolve_entity(ref)
+    e: object | None = None
+    if not strict and ":" not in ref:
+        cids = s.resolve_concept_ids(ref, strict=False)
+        if cids:
+            e = s.get_entity_by_id(cids[0])
+    if e is None:
+        e = s.resolve_entity(ref)
     if e is None:
         return bundle
     bundle.anchor = e
