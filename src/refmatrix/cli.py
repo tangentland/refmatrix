@@ -1484,22 +1484,42 @@ def telemetry(since, top_queried, zero_results, fmt):
 @main.command()
 @click.option(
     "--keep-backup/--no-keep-backup", default=True,
-    help="Keep the pre-compact catalog as catalog.duckdb.bloat for safety.",
+    help="Keep the pre-compact catalog as <slot>.bloat for safety.",
 )
 def compact(keep_backup: bool):
-    """Compact catalog.duckdb via EXPORT/IMPORT round-trip.
+    """Compact the writer-slot catalog via EXPORT/IMPORT round-trip.
 
     DuckDB doesn't reclaim space from deleted rows or churn — the data file
     keeps growing until you re-import. This stops the daemon, EXPORTs the
-    database as PARQUET, IMPORTs into a fresh file, swaps it in, and
-    restarts the daemon. Typical reduction: 3-4x on a churn-heavy catalog.
-    """
+    writer-slot database as PARQUET, IMPORTs into a fresh file, swaps it
+    in, and restarts the daemon. Typical reduction: 3-4x on a churn-heavy
+    catalog.
+
+    Rotation-aware (0.3.8+): operates on whichever slot is the current
+    writer (catalog.A.duckdb or catalog.B.duckdb) per the `active`
+    marker. Falls back to legacy catalog.duckdb if the rotation hasn't
+    been bootstrapped. The inactive slot is left untouched and will be
+    refreshed by the daemon on its next rotation cycle."""
     from refmatrix import daemon as daemon_mod
     import shutil
     import duckdb as _duckdb
 
     root = _root()
-    src = root / "catalog.duckdb"
+    # Determine the current writer slot. The daemon's `active` marker
+    # is the authoritative pointer; if missing, fall back to the legacy
+    # single-file path.
+    marker = root / "active"
+    if marker.exists():
+        try:
+            slot = marker.read_text().strip()
+        except OSError:
+            slot = "A"
+        if slot not in ("A", "B"):
+            slot = "A"
+        src = root / f"catalog.{slot}.duckdb"
+    else:
+        slot = None
+        src = root / "catalog.duckdb"
     if not src.exists():
         raise click.ClickException(f"no catalog at {src}")
 
@@ -1510,8 +1530,8 @@ def compact(keep_backup: bool):
             raise click.ClickException("daemon did not stop within timeout")
 
     export_dir = root / "catalog-export"
-    new_path = root / "catalog.new.duckdb"
-    backup = root / "catalog.duckdb.bloat"
+    new_path = src.with_suffix(".new.duckdb")
+    backup = src.with_suffix(".duckdb.bloat")
 
     if export_dir.exists():
         shutil.rmtree(export_dir)
@@ -1997,6 +2017,108 @@ def queue_cmd():
     for line in q.read_text().splitlines():
         if line.strip():
             console.print(line)
+
+
+@main.group()
+def replica():
+    """Read-replica rotation management.
+
+    The daemon maintains two persistent catalog files —
+    catalog.A.duckdb + catalog.B.duckdb — and an `active` marker that
+    names the current writer slot. Reads can be served by the frozen
+    inactive slot without contending on the writer's lock. Every
+    RMX_REPLICA_REFRESH_S seconds (default 5) the inactive slot is
+    caught up to the writer's state and the marker swaps, demoting the
+    old writer to reader. DuckDB backend only."""
+
+
+@replica.command("status")
+def replica_status():
+    """Show rotation state: writer + reader slots, file sizes, freshness."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if not daemon_mod.ping(root):
+        raise click.ClickException(
+            "daemon not running — replica is daemon-managed"
+        )
+    resp = daemon_mod.call(root, "replica_status", {}, timeout=10.0)
+    if not resp.get("ok"):
+        raise click.ClickException(resp.get("error", "daemon error"))
+    r = resp["result"]
+    if not r.get("enabled"):
+        console.print("[yellow]replica disabled[/] (non-duckdb backend)")
+        return
+    console.print(f"[bold]writer slot:[/] {r['writer_slot']}  "
+                  f"-> {r['writer_path']}")
+    console.print(f"[bold]reader slot:[/] {r['reader_slot']}  "
+                  f"-> {r['reader_path']}")
+    console.print(
+        f"[bold]A:[/] exists={r['a_exists']} "
+        f"size={r['a_size']:,}    "
+        f"[bold]B:[/] exists={r['b_exists']} "
+        f"size={r['b_size']:,}"
+    )
+    console.print(
+        f"[bold]refresh thread:[/] "
+        f"{'[green]running[/]' if r['refresh_thread'] else '[red]stopped[/]'}"
+    )
+    last = r.get("last")
+    if last:
+        console.print(
+            f"[bold]last refresh:[/] {last.get('refreshed_at', '?')} "
+            f"({last.get('elapsed_ms', '?')} ms, "
+            f"ok={last.get('ok', False)})"
+        )
+        if last.get("error"):
+            console.print(f"[red]error:[/] {last['error']}")
+    else:
+        console.print("[dim]no refresh recorded yet[/]")
+
+
+@replica.command("refresh")
+def replica_refresh():
+    """Force an immediate catch-up + slot swap. Returns size + latency."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if not daemon_mod.ping(root):
+        raise click.ClickException(
+            "daemon not running — replica is daemon-managed"
+        )
+    resp = daemon_mod.call(root, "replica_refresh", {}, timeout=120.0)
+    if not resp.get("ok"):
+        raise click.ClickException(resp.get("error", "daemon error"))
+    r = resp["result"]
+    if not r.get("enabled"):
+        console.print("[yellow]replica disabled[/] (non-duckdb backend)")
+        return
+    if not r.get("ok"):
+        raise click.ClickException(f"replica refresh failed: {r.get('error')}")
+    console.print(
+        f"[green]swapped[/] writer -> slot {r['writer_slot']} "
+        f"({r['size_bytes']:,} bytes, {r['elapsed_ms']} ms)"
+    )
+
+
+@replica.command("path")
+def replica_path():
+    """Print the absolute path of the *reader* slot file. CLI tools that
+    want a lock-free read can open this file in read-only DuckDB mode.
+
+    The reader slot may change after the next refresh (every
+    RMX_REPLICA_REFRESH_S seconds, default 5); re-call this command if
+    you need the current path."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "replica_status", {}, timeout=5.0)
+        if resp.get("ok") and resp["result"].get("enabled"):
+            print(resp["result"]["reader_path"])
+            return
+    # Daemon down — fall back to inferring from the active marker.
+    marker = root / "active"
+    active = marker.read_text().strip() if marker.exists() else "A"
+    inactive = "B" if active == "A" else "A"
+    print(str(root / f"catalog.{inactive}.duckdb"))
 
 
 @main.group()

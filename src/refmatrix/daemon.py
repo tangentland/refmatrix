@@ -143,6 +143,9 @@ class Daemon:
         self._async_lock = threading.Lock()
         self._watch_stop: "threading.Event | None" = None
         self._watch_thread: "threading.Thread | None" = None
+        self._replica_stop: "threading.Event | None" = None
+        self._replica_thread: "threading.Thread | None" = None
+        self._replica_last: dict | None = None
 
     def _log(self, msg: str) -> None:
         if self.log_fh is None:
@@ -199,6 +202,19 @@ class Daemon:
         # any dirty fragments under _store_lock so we never grow more than
         # 30 seconds of unrecoverable bitmap drift.
         self._start_periodic_flush()
+
+        # Read replica via two-file rotation. Files: catalog.A.duckdb,
+        # catalog.B.duckdb. A marker `.refmatrix/active` stores which
+        # slot is the current writer. Refresh = catch up the inactive
+        # slot then atomically swap the marker; the just-promoted slot
+        # becomes writer, the demoted slot becomes the frozen reader.
+        # `rmx replica path` reports the reader file for CLI tools that
+        # want a lock-free read connection.
+        self._active_slot = self._read_active_slot()
+        self._bootstrap_rotation_if_needed()
+        # Refresh thread: catches up the inactive slot every N seconds
+        # (RMX_REPLICA_REFRESH_S, default 5).
+        self._start_replica_refresh()
 
         srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         srv.bind(str(sock_path))
@@ -295,6 +311,10 @@ class Daemon:
                 self._flush_stop.set()
             if getattr(self, "_flush_thread", None) is not None:
                 self._flush_thread.join(timeout=3.0)
+            if getattr(self, "_replica_stop", None) is not None:
+                self._replica_stop.set()
+            if getattr(self, "_replica_thread", None) is not None:
+                self._replica_thread.join(timeout=3.0)
             # Final flush before close() so anything queued in the last
             # interval lands. close() also flushes, but doing it explicitly
             # under _store_lock keeps the on-disk state consistent if
@@ -360,6 +380,165 @@ class Daemon:
             target=_runner, name="rmxd-flush", daemon=True,
         )
         self._flush_thread.start()
+
+    # ---- read replica (rotation) ----------------------------------------
+
+    def _replica_file(self, slot: str) -> Path:
+        """Path to a rotation slot file (`A` or `B`)."""
+        return self.root / f"catalog.{slot}.duckdb"
+
+    def _active_marker(self) -> Path:
+        """File storing the current writer-slot letter (A or B)."""
+        return self.root / "active"
+
+    def _read_active_slot(self) -> str:
+        """Read the currently-active (writer) slot from disk. Defaults to A."""
+        m = self._active_marker()
+        if m.exists():
+            try:
+                val = m.read_text().strip()
+                if val in ("A", "B"):
+                    return val
+            except OSError:
+                pass
+        return "A"
+
+    def _inactive_slot(self, active: str | None = None) -> str:
+        active = active or getattr(self, "_active_slot", None) or self._read_active_slot()
+        return "B" if active == "A" else "A"
+
+    def _refresh_replica_now(self) -> dict:
+        """Rotate the read replica: full-copy writer → inactive slot, then
+        atomically swap the `active` marker.
+
+        Today the catch-up is a full file copy. Next iteration replaces it
+        with a facts.log delta replay (see _replica_seq tracking). The
+        two-file rotation itself is the durable architecture — only the
+        catch-up mechanism changes.
+
+        DuckDB only."""
+        import shutil
+        if self.store is None or self.store._backend.kind != "duckdb":
+            return {"enabled": False, "reason": "non-duckdb backend"}
+        active = self._active_slot
+        inactive = self._inactive_slot(active)
+        src = self._replica_file(active)
+        dst = self._replica_file(inactive)
+        tmp = dst.with_suffix(".duckdb.tmp")
+        t0 = time.monotonic()
+        with self._store_lock:
+            try:
+                self.store._connect().execute("CHECKPOINT")
+                self.store.flush_fragments()
+            except Exception as exc:
+                return {"enabled": True, "ok": False, "error": f"pre-copy: {exc!r}"}
+            try:
+                shutil.copy2(src, tmp)
+            except Exception as exc:
+                return {"enabled": True, "ok": False, "error": f"copy: {exc!r}"}
+            try:
+                os.replace(tmp, dst)
+            except Exception as exc:
+                return {"enabled": True, "ok": False, "error": f"rename: {exc!r}"}
+            # Pointer swap: the *just-refreshed* slot becomes the active
+            # writer; the previous writer becomes the reader. Both files
+            # are at the same logical state at this moment. Subsequent
+            # writes flow to the new active; the now-reader is frozen
+            # until the next refresh.
+            new_active = inactive
+            try:
+                self._active_marker().write_text(new_active)
+                # Switch the in-memory store handle to the new active file.
+                # Close + reopen so DuckDB releases its single-writer lock
+                # on the previous file. ~50-200ms cost on a hot catalog.
+                self.store.close()
+                self.store = Store(self.root, partition=self.partition)
+                self.store.db_path = self._replica_file(new_active)
+                self.store.init()
+                self._active_slot = new_active
+            except Exception as exc:
+                return {"enabled": True, "ok": False,
+                        "error": f"pointer swap: {exc!r}"}
+        size = dst.stat().st_size if dst.exists() else 0
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        result = {
+            "enabled": True, "ok": True,
+            "writer_slot": new_active,
+            "reader_slot": "B" if new_active == "A" else "A",
+            "writer_path": str(self._replica_file(new_active)),
+            "reader_path": str(self._replica_file("B" if new_active == "A" else "A")),
+            "size_bytes": size,
+            "elapsed_ms": elapsed_ms,
+            "refreshed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        self._replica_last = result
+        return result
+
+    def _bootstrap_rotation_if_needed(self) -> None:
+        """One-shot migration of legacy single-file `catalog.duckdb` into the
+        A/B rotation pair. Runs at most once per .refmatrix root."""
+        import shutil
+        if self.store is None or self.store._backend.kind != "duckdb":
+            return
+        a = self._replica_file("A")
+        b = self._replica_file("B")
+        if a.exists() and b.exists():
+            return  # already migrated
+        legacy = self.root / "catalog.duckdb"
+        # The current Store opened catalog.duckdb. To bootstrap we close
+        # it, copy the legacy file into both A and B, and reopen on A.
+        try:
+            with self._store_lock:
+                self.store._connect().execute("CHECKPOINT")
+                self.store.flush_fragments()
+                self.store.close()
+                if legacy.exists():
+                    shutil.copy2(legacy, a)
+                    shutil.copy2(legacy, b)
+                else:
+                    # Brand-new store with no legacy file. Just create an
+                    # empty A; B will be seeded on first refresh.
+                    a.touch()
+                    b.touch()
+                self._active_marker().write_text("A")
+                self.store = Store(self.root, partition=self.partition)
+                self.store.db_path = a
+                self.store.init()
+                self._active_slot = "A"
+                self._log(
+                    f"rotation bootstrapped: A={a.name} B={b.name} active=A"
+                )
+        except Exception as exc:
+            self._log(f"rotation bootstrap failed: {exc!r}")
+
+    def _start_replica_refresh(self, interval_s: float | None = None) -> None:
+        """Spawn a daemon thread that periodically rotates the replica.
+
+        Default interval 5s, override via RMX_REPLICA_REFRESH_S. Set
+        RMX_REPLICA_REFRESH_S=0 to disable the thread entirely. DuckDB
+        backend only."""
+        import threading as _t
+        if self.store is None or self.store._backend.kind != "duckdb":
+            return
+        if interval_s is None:
+            interval_s = float(os.environ.get("RMX_REPLICA_REFRESH_S", "5") or "5")
+        if interval_s <= 0:
+            return
+        self._replica_stop = _t.Event()
+
+        def _runner():
+            while not self._replica_stop.is_set():
+                if self._replica_stop.wait(interval_s):
+                    return
+                try:
+                    self._refresh_replica_now()
+                except Exception as exc:
+                    self._log(f"replica refresh failed: {exc!r}")
+
+        self._replica_thread = _t.Thread(
+            target=_runner, name="rmxd-replica", daemon=True,
+        )
+        self._replica_thread.start()
 
     def _start_watcher(self) -> None:
         """Spawn a watchdog thread that debounces fs events and syncs the
@@ -959,6 +1138,37 @@ def _op_stop(d: Daemon, args: dict) -> dict:
     return {"stopping": True}
 
 
+def _op_replica_refresh(d: Daemon, args: dict) -> dict:
+    """Force an immediate snapshot of primary → replica .duckdb file."""
+    return d._refresh_replica_now()
+
+
+def _op_replica_status(d: Daemon, args: dict) -> dict:
+    """Report rotation state: writer + reader slots, file paths + sizes,
+    last-refresh timestamp + latency, refresh-thread liveness."""
+    enabled = d.store is not None and d.store._backend.kind == "duckdb"
+    active = getattr(d, "_active_slot", None) or d._read_active_slot()
+    inactive = "B" if active == "A" else "A"
+    a_path = d._replica_file("A")
+    b_path = d._replica_file("B")
+    return {
+        "enabled": enabled,
+        "writer_slot": active,
+        "reader_slot": inactive,
+        "writer_path": str(d._replica_file(active)),
+        "reader_path": str(d._replica_file(inactive)),
+        "a_size": a_path.stat().st_size if a_path.exists() else 0,
+        "b_size": b_path.stat().st_size if b_path.exists() else 0,
+        "a_exists": a_path.exists(),
+        "b_exists": b_path.exists(),
+        "refresh_thread": (
+            getattr(d, "_replica_thread", None) is not None
+            and d._replica_thread.is_alive()
+        ),
+        "last": d._replica_last,
+    }
+
+
 OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "ping": _op_ping,
     "enqueue": _op_enqueue,
@@ -982,6 +1192,8 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "vacuum": _op_vacuum,
     "stats": _op_stats,
     "checkpoint": _op_checkpoint,
+    "replica_refresh": _op_replica_refresh,
+    "replica_status": _op_replica_status,
     "stop": _op_stop,
 }
 
@@ -998,6 +1210,8 @@ CLI_OPS: set[str] = {
     "grep_indexed",
     "list_linkages",
     "list_saved_queries",
+    "replica_refresh",
+    "replica_status",
     "stop",
 }
 
