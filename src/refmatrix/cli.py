@@ -81,6 +81,46 @@ def _store() -> Store:
     return s
 
 
+def _replica_reader_path() -> Path:
+    """Return the path to the current reader-slot catalog file.
+
+    Reads `.refmatrix/active` to identify the writer slot; the reader is
+    the other slot. Falls back to legacy `catalog.duckdb` when the
+    rotation hasn't been bootstrapped (pre-0.3.8). Doesn't query the
+    daemon — pure file-system lookup."""
+    root = _root()
+    marker = root / "active"
+    if marker.exists():
+        try:
+            active = marker.read_text().strip()
+            if active in ("A", "B"):
+                inactive = "B" if active == "A" else "A"
+                return root / f"catalog.{inactive}.duckdb"
+        except OSError:
+            pass
+    return root / "catalog.duckdb"
+
+
+def _replica_store() -> Store:
+    """Open the reader-slot catalog in read-only mode.
+
+    Skips migrations / writes / repair. Used by `--via-replica` CLI ops
+    so reads bypass the daemon's `_store_lock` entirely. The file is
+    refreshed by the daemon's rotation thread every
+    RMX_REPLICA_REFRESH_S seconds (default 5)."""
+    path = _replica_reader_path()
+    if not path.exists():
+        raise click.ClickException(
+            f"no replica file at {path}. Has the daemon bootstrapped "
+            f"rotation? Run `rmx daemon start` and wait one refresh "
+            f"cycle, or use `rmx replica refresh`."
+        )
+    s = Store(_root(), partition=_resolve_partition(), read_only=True)
+    s.db_path = path
+    atexit.register(s.close)
+    return s
+
+
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(__version__, "-V", "--version", prog_name="refmatrix")
 @click.option(
@@ -651,8 +691,51 @@ def _print_bitmap(s: Store, bm, limit: int = 50):
                    "By default `mentions:JSONParser` matches concepts canonicalized "
                    "to json_parser too (camelCase/PascalCase/dash/space variants); "
                    "--strict requires an exact name match.")
-def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter, strict):
+@click.option("--via-replica", is_flag=True,
+              help="Read from the rotation reader slot instead of the daemon. "
+                   "Bypasses _store_lock entirely; reads at native DuckDB speed "
+                   "even during heavy bg ingest. Sees stale-by-N-seconds data "
+                   "(N = RMX_REPLICA_REFRESH_S, default 5).")
+def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter, strict, via_replica):
     """Run a query. DSL: `mentions:parser AND defines:parser`. PQL: `Row(calls,foo)`."""
+    if via_replica:
+        s = _replica_store()
+        qe = QueryEngine(s, include_noise=include_noise, strict=strict)
+        with log_query(s, kind="pql" if is_pql else "dsl",
+                       body=expr, source="query-replica") as t:
+            result = qe.run_pql(expr) if is_pql else qe.run(expr)
+            try:
+                t.cardinality = len(result) if hasattr(result, "__len__") else None
+            except TypeError:
+                t.cardinality = None
+        if name_filter:
+            from pyroaring import BitMap
+            matching = BitMap(
+                r[0] for r in s._connect().execute(
+                    "SELECT id FROM entities WHERE name LIKE ?", (name_filter,)
+                )
+            )
+            if isinstance(result, list):
+                result = [(eid, w) for eid, w in result if eid in matching]
+            elif hasattr(result, '__iter__') and not isinstance(result, int):
+                result = result & matching
+        if isinstance(result, list):
+            t = Table("entity", "weight")
+            for eid, w in result:
+                e = s.get_entity_by_id(eid)
+                t.add_row(e.name if e else str(eid), str(w))
+            console.print(t)
+            return
+        if isinstance(result, int):
+            console.print(str(result))
+            return
+        if ids_only:
+            for eid in result:
+                print(eid)
+            return
+        _print_bitmap(s, result, limit=limit)
+        return
+
     from refmatrix import daemon as daemon_mod
     root = _root()
     if daemon_mod.ping(root):
@@ -761,9 +844,12 @@ def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter, st
               help="Include noise-marked concepts in the walk.")
 @click.option("--strict", is_flag=True,
               help="Disable surface-form variant expansion for the seed concept.")
-def neighbors(concept, depth, linkage, limit, include_noise, strict):
+@click.option("--via-replica", is_flag=True,
+              help="Read from the rotation reader slot instead of the daemon. "
+                   "Lock-free; sees stale-by-N-seconds data.")
+def neighbors(concept, depth, linkage, limit, include_noise, strict, via_replica):
     """Walk linkages from a concept (depth-N closure)."""
-    s = _store()
+    s = _replica_store() if via_replica else _store()
     qe = QueryEngine(s, include_noise=include_noise, strict=strict)
     with log_query(s, kind="neighbors", body=concept, source="neighbors") as t:
         bm = qe.neighbors(concept, depth=depth, linkages=list(linkage) or None)
@@ -786,10 +872,35 @@ def neighbors(concept, depth, linkage, limit, include_noise, strict):
               help="Disable surface-form variant expansion. By default `JSONParser`, "
                    "`json_parser`, `json-parser`, and `json parser` resolve to the "
                    "same canonical concept; --strict requires exact-name match.")
-def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict):
+@click.option("--via-replica", is_flag=True,
+              help="Read from the rotation reader slot instead of the daemon. "
+                   "Lock-free; sees stale-by-N-seconds data.")
+def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict, via_replica):
     """Token-budgeted context bundle: anchor + neighbors + their tldr blobs."""
     from refmatrix.context import build_context, render_json, render_text
     from refmatrix import daemon as daemon_mod
+
+    if via_replica:
+        if since:
+            raise click.ClickException("--via-replica does not support --since")
+        if not symbol:
+            raise click.ClickException("--via-replica requires a symbol")
+        s = _replica_store()
+        with log_query(s, kind="context", body=symbol, source="context-replica") as t:
+            bundle = build_context(
+                s, symbol,
+                linkages=list(linkage) or None,
+                max_entities=max_entities,
+                max_tokens=max_tokens,
+                fuse=fuse,
+                strict=strict,
+            )
+            t.cardinality = bundle.total_entities() if bundle.anchor else 0
+        if fmt == "json":
+            click.echo(render_json(bundle))
+        else:
+            click.echo(render_text(bundle))
+        return
 
     # If a daemon is up, route the simple `context <symbol>` path through
     # the socket before trying to open the catalog ourselves — DuckDB
@@ -1381,11 +1492,20 @@ main.add_command(_alias(list_queries, "list-queries"))
 @main.command()
 @click.option("--stale", is_flag=True,
               help="Also list tracked files where on-disk mtime > last_synced.")
-def stats(stale):
+@click.option("--via-replica", is_flag=True,
+              help="Read from the rotation reader slot instead of the daemon. "
+                   "Lock-free; sees stale-by-N-seconds data. Incompatible with "
+                   "--stale (tracked_files is not refreshed in the replica path).")
+def stats(stale, via_replica):
     """Print catalog and bitmap stats."""
     from refmatrix import daemon as daemon_mod
     root = _root()
-    if daemon_mod.ping(root) and not stale:
+    if via_replica:
+        if stale:
+            raise click.ClickException("--via-replica and --stale are incompatible")
+        s = _replica_store()
+        out = s.stats()
+    elif daemon_mod.ping(root) and not stale:
         resp = daemon_mod.call(root, "stats", {})
         if not resp.get("ok"):
             raise click.ClickException(f"daemon stats failed: {resp.get('error')}")

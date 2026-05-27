@@ -239,8 +239,8 @@ class DuckDBBackend(Backend):
     kind = "duckdb"
     db_filename = "catalog.duckdb"
 
-    def connect(self, db_path: Path) -> DuckDBConnection:
-        return DuckDBConnection(duckdb.connect(str(db_path)))
+    def connect(self, db_path: Path, read_only: bool = False) -> DuckDBConnection:
+        return DuckDBConnection(duckdb.connect(str(db_path), read_only=read_only))
 
     def init_catalog(self, con: DuckDBConnection) -> None:
         init_duckdb_catalog(con._duck)

@@ -231,10 +231,16 @@ class Store:
         root: Path,
         partition: str | None = None,
         backend: str | None = None,
+        read_only: bool = False,
     ):
         from refmatrix.backend import select_backend
         self.root = Path(root).resolve()
         self._backend = select_backend(backend, root=self.root)
+        # Read-only mode: open the backend connection in read-only mode and
+        # skip every migration / ALTER / repair / backfill path. Used by
+        # `--via-replica` CLI ops that open a frozen reader-slot file
+        # without disturbing it. Writes raise via the backend driver.
+        self._read_only: bool = bool(read_only)
         # `db_path` historically pointed at catalog.db. Backend chooses the
         # filename now; legacy SQLite stores stay at catalog.db, DuckDB-native
         # stores use catalog.duckdb so the two can coexist during migration.
@@ -352,6 +358,28 @@ class Store:
 
     def _connect(self):
         if self._conn is None:
+            if self._read_only:
+                # Fast path: replica reader. Open the backend in read-only
+                # mode, skip every migration / repair / backfill path, set
+                # the partition id from disk if present. The schema is
+                # assumed current (the replica file was just file-copied
+                # from a 0.3.3+ primary that already migrated). Writes via
+                # this connection will raise from the driver, which is
+                # exactly what we want.
+                con = self._backend.connect(self.db_path, read_only=True)
+                self._conn = con
+                # Resolve partition_id without writing.
+                try:
+                    row = con.execute(
+                        "SELECT id FROM partitions WHERE name=?",
+                        (self._partition_name,),
+                    ).fetchone()
+                    self._partition_id = (
+                        row[0] if row else 1  # 1 = default 'local' partition
+                    )
+                except Exception:
+                    self._partition_id = 1
+                return self._conn
             con = self._backend.connect(self.db_path)
             if self._backend.kind == "sqlite":
                 # Self-heal schema on first connect. CATALOG_DDL is fully
