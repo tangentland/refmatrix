@@ -538,3 +538,61 @@ def test_ingest_auto_prefers_metadata_over_call_graph(tmp_path):
     assert s.get_entity("code", "new.py.from_metadata") is not None
     # Old call_graph entity must NOT have been created (auto stops at metadata)
     assert s.get_entity("code", "legacy.py::from_callgraph") is None
+
+
+# --- cooperative shutdown ---------------------------------------------------
+
+
+def test_sync_files_cooperative_cancel(tmp_path):
+    """`sync_files(cancel_check=...)` aborts the per-file loop when the
+    check returns True. Files queued before the cancel point still
+    ingest; files after are skipped. Transaction commits the partial
+    batch cleanly (no rollback)."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    files = []
+    for i in range(8):
+        p = proj / f"f{i}.md"
+        p.write_text(f"# title {i}\n\nbody {i}\n")
+        files.append(p)
+
+    s = Store(proj / ".refmatrix")
+    s.init()
+
+    # Cancel after the 3rd file is processed.
+    seen = {"n": 0}
+
+    def cancel_after_three() -> bool:
+        seen["n"] += 1
+        return seen["n"] > 3
+
+    report = sync_files(
+        s, [str(p) for p in files],
+        project_root=proj,
+        cancel_check=cancel_after_three,
+    )
+    s.close()
+
+    assert report["cancelled"] is True
+    # First 3 files completed before cancel; remaining 5 skipped.
+    assert report["added"] == 3
+    assert report["touched"] == 3
+
+
+def test_sync_files_no_cancel_completes_full_batch(tmp_path):
+    """Default path (cancel_check=None) processes every file and reports
+    cancelled=False."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    files = []
+    for i in range(4):
+        p = proj / f"g{i}.md"
+        p.write_text(f"# g {i}\n")
+        files.append(p)
+
+    s = Store(proj / ".refmatrix")
+    s.init()
+    report = sync_files(s, [str(p) for p in files], project_root=proj)
+    s.close()
+    assert report["cancelled"] is False
+    assert report["added"] == 4

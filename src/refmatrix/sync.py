@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
+from typing import Callable
 
 from refmatrix.ingest import (
     CODE_EXTS,
@@ -72,12 +73,15 @@ def drain_queue(root: Path) -> list[str]:
 
 
 def sync_files(s: Store, paths: list[str], project_root: Path | None = None,
-               semantic: bool = False) -> dict:
-    return _sync_paths(s, [Path(p) for p in paths], project_root, semantic)
+               semantic: bool = False,
+               cancel_check: Callable[[], bool] | None = None) -> dict:
+    return _sync_paths(s, [Path(p) for p in paths], project_root, semantic,
+                       cancel_check=cancel_check)
 
 
 def sync_since(s: Store, git_ref: str, project_root: Path | None = None,
-               semantic: bool = False) -> dict:
+               semantic: bool = False,
+               cancel_check: Callable[[], bool] | None = None) -> dict:
     project_root = (project_root or Path.cwd()).resolve()
     if shutil.which("git") is None:
         raise RuntimeError("git not on PATH")
@@ -86,14 +90,17 @@ def sync_since(s: Store, git_ref: str, project_root: Path | None = None,
         capture_output=True, text=True, check=True,
     )
     files = [project_root / f for f in out.stdout.splitlines() if f.strip()]
-    return _sync_paths(s, files, project_root, semantic)
+    return _sync_paths(s, files, project_root, semantic,
+                       cancel_check=cancel_check)
 
 
 def flush_queue(s: Store, project_root: Path | None = None,
-                semantic: bool = False) -> dict:
+                semantic: bool = False,
+                cancel_check: Callable[[], bool] | None = None) -> dict:
     raws = drain_queue(s.root)
     paths = [Path(p) for p in raws]
-    return _sync_paths(s, paths, project_root, semantic)
+    return _sync_paths(s, paths, project_root, semantic,
+                       cancel_check=cancel_check)
 
 
 def _sync_paths(
@@ -101,11 +108,17 @@ def _sync_paths(
     paths: list[Path],
     project_root: Path | None,
     semantic: bool,
+    *,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> dict:
     project_root = (project_root or Path.cwd()).resolve()
     added = updated = purged = skipped_unchanged = 0
     touched_existing: list[Path] = []
     gmd_paths: list[Path] = []
+    cancelled = False
+
+    def _cancelled() -> bool:
+        return cancel_check is not None and cancel_check()
 
     # Whole-batch transaction + cross-file deferred-link buffer.
     # Bundles every write in this sync into one DuckDB transaction (skips
@@ -115,6 +128,9 @@ def _sync_paths(
     # diffs (git post-commit `--since`).
     with s.transaction(), s.deferred_links():
         for p in paths:
+            if _cancelled():
+                cancelled = True
+                break
             # Resolve so symlinked roots like /tmp -> /private/tmp on macOS
             # don't break relative_to() against the resolved project_root.
             ap = (p if p.is_absolute() else project_root / p).resolve()
@@ -162,11 +178,13 @@ def _sync_paths(
             touched_existing.append(ap)
 
         # Batch GMD ingest so cross-doc refs in the same sync resolve correctly.
-        if gmd_paths:
+        if gmd_paths and not _cancelled():
             from refmatrix.ingest_gmd import ingest_gmd_paths
             gmd_stats = ingest_gmd_paths(s, gmd_paths)
             added += gmd_stats.docs
             touched_existing.extend(gmd_paths)
+        elif gmd_paths:
+            cancelled = True
 
         # Refresh tldr-derived linkages only when at least one .py file
         # was touched. Doc-only commits (the common case for an ADR /
@@ -174,7 +192,7 @@ def _sync_paths(
         # entirely.
         py_touched = any(ap.suffix.lower() == ".py" for ap in touched_existing)
         cache = project_root / ".tldr" / "cache" / "call_graph.json"
-        if py_touched and cache.exists():
+        if py_touched and cache.exists() and not _cancelled():
             _ingest_tldr(s, project_root)
 
         # Per-file semantic extraction for markdown + pseudocode. All emitted
@@ -183,9 +201,12 @@ def _sync_paths(
         pseudo_touched = [ap for ap in touched_existing if ap.suffix.lower() == ".pseudo"]
 
         for ap in pseudo_touched:
+            if _cancelled():
+                cancelled = True
+                break
             _ingest_pseudo_semantics(s, ap, project_root)
 
-        if md_touched:
+        if md_touched and not _cancelled():
             adr_num_to_eid: dict[str, int] = {}
             adr_touched: list[Path] = []
             for ap in md_touched:
@@ -206,20 +227,29 @@ def _sync_paths(
                     adr_num_to_eid.setdefault(m.group(1), row["id"])
 
             for ap in adr_touched:
+                if _cancelled():
+                    cancelled = True
+                    break
                 _ingest_adr_semantics(s, ap, project_root, adr_num_to_eid)
 
             for ap in md_touched:
+                if _cancelled():
+                    cancelled = True
+                    break
                 if _is_adr_file(ap) is not None:
                     continue
                 _ingest_markdown_semantics(s, ap, project_root, adr_num_to_eid)
 
-        if semantic:
+        if semantic and not _cancelled():
             for ap in touched_existing:
+                if _cancelled():
+                    cancelled = True
+                    break
                 if ap.suffix.lower() == ".py":
                     _ingest_python_semantics(s, ap, project_root)
 
     report = {"added": added, "updated": updated, "purged": purged,
-              "touched": len(touched_existing)}
+              "touched": len(touched_existing), "cancelled": cancelled}
     s.append_sync_log(
         f"{time.strftime('%Y-%m-%dT%H:%M:%S')} "
         f"paths={len(paths)} +{added} ~{updated} -{purged} touched={len(touched_existing)} "

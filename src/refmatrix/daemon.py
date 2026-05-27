@@ -141,6 +141,11 @@ class Daemon:
         self._store_lock = threading.Lock()
         self._async_flush_pending = False
         self._async_lock = threading.Lock()
+        # Cooperative shutdown event. SIGTERM/SIGINT set this so long-running
+        # work (sync_files batch, ingest loop) can poll and early-exit
+        # cleanly instead of pinning pool.shutdown(wait=True) until the
+        # batch finishes minutes later.
+        self._shutdown_event = threading.Event()
         self._watch_stop: "threading.Event | None" = None
         self._watch_thread: "threading.Thread | None" = None
         self._replica_stop: "threading.Event | None" = None
@@ -152,6 +157,36 @@ class Daemon:
             return
         self.log_fh.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {msg}\n")
         self.log_fh.flush()
+
+    def _drain_pool(self, name: str, pool, timeout_s: float) -> None:
+        """Bounded ThreadPoolExecutor shutdown. ThreadPoolExecutor.shutdown
+        has no native timeout — `wait=True` is unbounded and `wait=False`
+        returns immediately without draining. Workaround: cancel queued
+        futures + initiate non-blocking shutdown, then join the worker
+        threads with a per-thread budget bounded by `timeout_s` total.
+
+        Leaks worker threads on timeout. Acceptable for shutdown — process
+        exit reaps them. Cooperative cancellation (_shutdown_event) in the
+        long-running ops should make the timeout rare."""
+        import time as _time
+        pool.shutdown(wait=False, cancel_futures=True)
+        deadline = _time.monotonic() + timeout_s
+        # Internal: ThreadPoolExecutor.shutdown(wait=False) leaves the
+        # worker threads referenced on `_threads`. Public API exposes no
+        # timed join. Reach through to the worker set; if the contract
+        # changes upstream we fall back to a single sleep-until-deadline.
+        workers = getattr(pool, "_threads", None)
+        if not workers:
+            return
+        for t in list(workers):
+            remaining = deadline - _time.monotonic()
+            if remaining <= 0:
+                self._log(
+                    f"pool drain {name}: timed out, {len(workers)} workers "
+                    f"may outlive shutdown"
+                )
+                return
+            t.join(timeout=remaining)
 
     def serve_forever(self) -> int:
         sock_path = socket_path(self.root)
@@ -224,6 +259,7 @@ class Daemon:
 
         def _shutdown(*_):
             self._stop = True
+            self._shutdown_event.set()
         signal.signal(signal.SIGTERM, _shutdown)
         signal.signal(signal.SIGINT, _shutdown)
 
@@ -301,12 +337,32 @@ class Daemon:
                     continue
                 disp_pool.submit(_run_handler, conn)
         finally:
-            # Wait briefly for in-flight handlers to drain so we don't
-            # tear down the socket out from under a request that was
-            # almost done. Hard cap so a stuck handler can't pin shutdown.
-            disp_pool.shutdown(wait=True, cancel_futures=True)
-            cli_pool.shutdown(wait=True, cancel_futures=True)
-            bg_pool.shutdown(wait=True, cancel_futures=True)
+            # Make absolutely sure the cooperative shutdown event is set:
+            # serve loop may have exited via something other than the signal
+            # handler (exception, explicit stop op). Workers polling this
+            # event need to see it regardless of how we got here.
+            self._shutdown_event.set()
+            # Step 1: stop the watcher BEFORE pool shutdowns. The watcher
+            # debouncer fires _flush() outside the pools but grabs
+            # _store_lock — if it kicks off a new flush while we're trying
+            # to drain bg_pool, that flush can hold the lock for minutes
+            # against a queued bg task and pin shutdown.
+            if self._watch_stop is not None:
+                self._watch_stop.set()
+            if self._watch_thread is not None:
+                self._watch_thread.join(timeout=3.0)
+            # Step 2: bounded pool drain. `wait=True` is unbounded — an
+            # in-flight ingest/sync (cancel_check now lets it early-exit)
+            # should finish within a couple seconds. Hard timeout caps
+            # the worst case; we accept leaking a worker thread (daemon=True
+            # via thread_name_prefix on the executor's threads are not
+            # daemon, so we live with the wait_for_workers ceiling).
+            shutdown_timeout = float(
+                os.environ.get("RMX_DAEMON_SHUTDOWN_TIMEOUT_S", "10") or "10"
+            )
+            self._drain_pool("disp", disp_pool, shutdown_timeout)
+            self._drain_pool("cli", cli_pool, shutdown_timeout)
+            self._drain_pool("bg", bg_pool, shutdown_timeout)
             if getattr(self, "_flush_stop", None) is not None:
                 self._flush_stop.set()
             if getattr(self, "_flush_thread", None) is not None:
@@ -325,10 +381,6 @@ class Daemon:
                         self.store.flush_fragments()
             except Exception as exc:
                 self._log(f"final flush failed: {exc!r}")
-            if self._watch_stop is not None:
-                self._watch_stop.set()
-            if self._watch_thread is not None:
-                self._watch_thread.join(timeout=3.0)
             srv.close()
             if sock_path.exists():
                 sock_path.unlink()
@@ -699,6 +751,10 @@ class Daemon:
             return len(keep)
 
         def _flush(paths: list[str]) -> None:
+            # Skip entirely if shutdown was requested while debounce window
+            # was open. Avoids grabbing _store_lock just to be cancelled.
+            if self._shutdown_event.is_set():
+                return
             # Take the store_lock so the watcher and the socket request
             # handler never touch the shared Store concurrently.
             try:
@@ -707,12 +763,14 @@ class Daemon:
                         self.store, paths,
                         project_root=self.watch_root,
                         semantic=self.watch_semantic,
+                        cancel_check=self._shutdown_event.is_set,
                     )
                 queued = _enqueue_curator(paths)
                 tail = f" curator+{queued}" if queued else ""
+                cancel_tail = " cancelled" if report.get("cancelled") else ""
                 self._log(
                     f"watch flush: paths={len(paths)} +{report['added']} "
-                    f"~{report['updated']} -{report['purged']}{tail}"
+                    f"~{report['updated']} -{report['purged']}{tail}{cancel_tail}"
                 )
             except Exception as exc:
                 self._log(f"watch flush failed: {exc!r}")
@@ -829,6 +887,7 @@ def _op_flush_queue(d: Daemon, args: dict) -> dict:
     with d._store_lock:
         report = syncmod.flush_queue(
             d.store, project_root=proot, semantic=semantic,
+            cancel_check=d._shutdown_event.is_set,
         )
     return report
 
@@ -852,6 +911,7 @@ def _op_flush_queue_async(d: Daemon, args: dict) -> dict:
             with d._store_lock:
                 syncmod.flush_queue(
                     d.store, project_root=proot, semantic=semantic,
+                    cancel_check=d._shutdown_event.is_set,
                 )
         except Exception as exc:
             d._log(f"async flush failed: {exc!r}")
@@ -873,6 +933,7 @@ def _op_sync_files(d: Daemon, args: dict) -> dict:
         report = syncmod.sync_files(
             d.store, [str(p) for p in files],
             project_root=proot, semantic=semantic,
+            cancel_check=d._shutdown_event.is_set,
         )
     return report
 
@@ -942,6 +1003,7 @@ def _op_sync_since(d: Daemon, args: dict) -> dict:
     with d._store_lock:
         report = syncmod.sync_since(
             d.store, git_ref, project_root=proot, semantic=semantic,
+            cancel_check=d._shutdown_event.is_set,
         )
     return report
 
