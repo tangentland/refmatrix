@@ -2213,9 +2213,13 @@ def replica_refresh():
         return
     if not r.get("ok"):
         raise click.ClickException(f"replica refresh failed: {r.get('error')}")
+    mode = r.get("mode", "delta")
+    applied = r.get("applied", 0)
+    size = r.get("size_bytes")
+    size_str = f", size={size:,} bytes" if size else ""
     console.print(
         f"[green]swapped[/] writer -> slot {r['writer_slot']} "
-        f"({r['size_bytes']:,} bytes, {r['elapsed_ms']} ms)"
+        f"(mode={mode}, applied={applied}, {r['elapsed_ms']} ms{size_str})"
     )
 
 

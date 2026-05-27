@@ -2252,6 +2252,170 @@ class Store:
         tmp.replace(self.log_path)
         return counts
 
+    def apply_log_delta(
+        self,
+        start_offset: int,
+        end_offset: int | None = None,
+    ) -> dict:
+        """Apply facts.log events from byte offset [start_offset..end_offset)
+        to this Store in order, suppressing re-logging.
+
+        Idempotent operations everywhere (upsert, link, INSERT OR IGNORE),
+        so re-running with the same range produces the same state.
+
+        Returns {"applied": N, "skipped_unresolved": M, "end_offset": pos}.
+        `end_offset` defaults to the current end-of-log byte position so
+        callers can capture a consistent snapshot range.
+
+        Used by the daemon's two-file rotation refresh path: instead of
+        copying the active slot to the inactive slot every cycle
+        (O(file_size)), we apply just the new log events to the inactive
+        slot (O(delta)). For typical 5-second refresh windows the delta
+        is small (often zero); the file copy was wasting most of that
+        budget on unchanged bytes."""
+        log_path = self.log_path
+        if not log_path.exists():
+            return {"applied": 0, "skipped_unresolved": 0, "end_offset": 0}
+        size = log_path.stat().st_size
+        if end_offset is None:
+            end_offset = size
+        if start_offset >= end_offset:
+            return {"applied": 0, "skipped_unresolved": 0,
+                    "end_offset": end_offset}
+
+        # The daemon always captures offsets at end-of-log-write boundaries
+        # (log_path.stat().st_size after the writer's commit), so
+        # start_offset is on a line boundary in the normal case. A naive
+        # readline() at a clean boundary reads a full valid event and
+        # consuming it would silently DROP the first event of the window.
+        # No partial-line discard here; if external rotation lands a non-
+        # boundary offset, the JSON parser will skip the malformed first
+        # line and continue with the rest.
+        applied = 0
+        unresolved = 0
+        self._replay_mode = True
+        try:
+            with log_path.open("r", encoding="utf-8") as fh:
+                fh.seek(start_offset)
+                while True:
+                    pos = fh.tell()
+                    if pos >= end_offset:
+                        break
+                    line = fh.readline()
+                    if not line:
+                        break
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        ev = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if self._apply_one_event(ev):
+                        applied += 1
+                    else:
+                        unresolved += 1
+        finally:
+            self._replay_mode = False
+
+        return {"applied": applied, "skipped_unresolved": unresolved,
+                "end_offset": end_offset}
+
+    def _apply_one_event(self, ev: dict) -> bool:
+        """Apply a single facts.log event to self. Returns True if applied,
+        False if the event couldn't be resolved (e.g. link referencing
+        an entity that doesn't exist yet — rare; can happen if events
+        arrive out of order from a concurrent writer)."""
+        op = ev.get("op")
+        try:
+            if op == "entity":
+                self.upsert_entity(
+                    kind=ev["kind"], name=ev["name"],
+                    path=ev.get("path"), tldr=ev.get("tldr"),
+                    meta=ev.get("meta"),
+                )
+                return True
+            if op == "protect":
+                e = self.get_entity(ev["kind"], ev["name"])
+                if e is None:
+                    return False
+                con = self._connect()
+                con.execute(
+                    "UPDATE entities SET protected=? WHERE id=?",
+                    (int(ev.get("value", 1)), e.id),
+                )
+                self._maybe_commit(con)
+                return True
+            if op == "noise":
+                e = self.get_entity(ev["kind"], ev["name"])
+                if e is None:
+                    return False
+                con = self._connect()
+                con.execute(
+                    "UPDATE entities SET noise=? WHERE id=?",
+                    (int(ev.get("value", 1)), e.id),
+                )
+                self._maybe_commit(con)
+                return True
+            if op == "tombstone":
+                e = self.get_entity(ev["kind"], ev["name"])
+                if e is None:
+                    return False
+                self.purge_entity(e.id)
+                return True
+            if op == "linkage_type":
+                self.add_linkage_type(
+                    ev["name"],
+                    directed=bool(ev.get("directed", 1)),
+                    description=ev.get("description") or None,
+                )
+                return True
+            if op == "link":
+                c = self.get_entity("concept", ev["c"])
+                e = self.get_entity(ev["e_kind"], ev["e"])
+                if c is None or e is None:
+                    return False
+                self.link(ev["linkage"], c.id, e.id, weight=ev.get("weight"))
+                return True
+            if op == "unlink":
+                c = self.get_entity("concept", ev["c"])
+                e = self.get_entity(ev["e_kind"], ev["e"])
+                if c is None or e is None:
+                    return False
+                self.unlink(ev["linkage"], c.id, e.id)
+                return True
+            if op == "evidence":
+                c = self.get_entity("concept", ev["c"])
+                e = self.get_entity(ev["e_kind"], ev["e"])
+                if c is None or e is None:
+                    return False
+                self.add_evidence(
+                    ev["linkage"], c.id, e.id,
+                    file=ev.get("file"), line=ev.get("line"),
+                    span_end=ev.get("span_end"), detail=ev.get("detail"),
+                )
+                return True
+            if op == "track":
+                mtime = ev.get("mtime")
+                if mtime is not None:
+                    self.mark_tracked(ev["path"], float(mtime))
+                return True
+            if op == "untrack":
+                # purge_path is the live API but also tombstones the
+                # entities; on replay those tombstones come as their own
+                # events. Untrack-the-tracking-row alone is the right
+                # operation here.
+                con = self._connect()
+                con.execute(
+                    "DELETE FROM tracked_files WHERE partition_id=? AND path=?",
+                    (self._partition_id, ev["path"]),
+                )
+                self._maybe_commit(con)
+                return True
+        except Exception:
+            return False
+        return False
+
     def rebuild_index_from_log(self) -> dict:
         """Wipe catalog.db + fragments and replay facts.log into a fresh
         catalog. Convergent: re-running yields the same final state.

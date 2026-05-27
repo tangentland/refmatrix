@@ -407,51 +407,136 @@ class Daemon:
         active = active or getattr(self, "_active_slot", None) or self._read_active_slot()
         return "B" if active == "A" else "A"
 
-    def _refresh_replica_now(self) -> dict:
-        """Rotate the read replica: full-copy writer → inactive slot, then
-        atomically swap the `active` marker.
+    def _slot_offset_path(self, slot: str) -> Path:
+        """Path to the byte-offset marker for a slot. The marker stores the
+        end-of-facts.log byte position up through which the slot is
+        current. Refresh applies log events [offset..end-of-log] to the
+        inactive slot, then writes the new offset alongside."""
+        return self.root / f"catalog.{slot}.offset"
 
-        Today the catch-up is a full file copy. Next iteration replaces it
-        with a facts.log delta replay (see _replica_seq tracking). The
-        two-file rotation itself is the durable architecture — only the
-        catch-up mechanism changes.
+    def _read_slot_offset(self, slot: str) -> int:
+        p = self._slot_offset_path(slot)
+        if not p.exists():
+            return 0
+        try:
+            return int(p.read_text().strip() or "0")
+        except (OSError, ValueError):
+            return 0
+
+    def _write_slot_offset(self, slot: str, offset: int) -> None:
+        p = self._slot_offset_path(slot)
+        try:
+            p.write_text(str(int(offset)))
+        except OSError as exc:
+            self._log(f"slot offset write failed for {slot}: {exc!r}")
+
+    def _refresh_replica_now(self) -> dict:
+        """Rotate the read replica via facts.log delta-replay.
+
+        Steps:
+          1. Read end-of-log byte offset.
+          2. If inactive slot is already at that offset, no-op.
+          3. Open inactive slot in normal write mode.
+          4. Replay log events [inactive_offset..end] into it.
+          5. Persist the new offset alongside the inactive slot.
+          6. Atomically swap the `active` marker — the just-caught-up
+             slot becomes the writer, the previous writer becomes the
+             frozen reader.
+
+        Cost: O(delta entries) instead of O(file size). For idle
+        catalogs the typical cycle is near-zero work.
 
         DuckDB only."""
-        import shutil
         if self.store is None or self.store._backend.kind != "duckdb":
             return {"enabled": False, "reason": "non-duckdb backend"}
         active = self._active_slot
         inactive = self._inactive_slot(active)
-        src = self._replica_file(active)
-        dst = self._replica_file(inactive)
-        tmp = dst.with_suffix(".duckdb.tmp")
         t0 = time.monotonic()
         with self._store_lock:
+            # 1. snapshot current log position
+            try:
+                end_offset = self.store.log_path.stat().st_size \
+                    if self.store.log_path.exists() else 0
+            except OSError:
+                end_offset = 0
+            inactive_offset = self._read_slot_offset(inactive)
+            if end_offset == inactive_offset:
+                # Inactive is already current at this log offset; just
+                # swap (active slot has the same logical state under our
+                # CHECKPOINT-on-quiesce invariant — but we still need to
+                # commit pending state to disk before promoting).
+                try:
+                    self.store._connect().execute("CHECKPOINT")
+                    self.store.flush_fragments()
+                except Exception:
+                    pass
+                self._write_slot_offset(active, end_offset)
+                new_active = inactive
+                try:
+                    self._active_marker().write_text(new_active)
+                    self.store.close()
+                    self.store = Store(self.root, partition=self.partition)
+                    self.store.db_path = self._replica_file(new_active)
+                    self.store.init()
+                    self._active_slot = new_active
+                except Exception as exc:
+                    return {"enabled": True, "ok": False,
+                            "error": f"pointer swap: {exc!r}"}
+                elapsed_ms = int((time.monotonic() - t0) * 1000)
+                result = {
+                    "enabled": True, "ok": True,
+                    "applied": 0, "skipped_unresolved": 0,
+                    "writer_slot": new_active,
+                    "reader_slot": "B" if new_active == "A" else "A",
+                    "writer_path": str(self._replica_file(new_active)),
+                    "reader_path": str(self._replica_file(
+                        "B" if new_active == "A" else "A")),
+                    "log_end_offset": end_offset,
+                    "elapsed_ms": elapsed_ms,
+                    "refreshed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "mode": "noop-delta",
+                }
+                self._replica_last = result
+                return result
+
+            # 2. CHECKPOINT + flush primary so its on-disk state equals
+            # its logical state (the log already captured the writes).
             try:
                 self.store._connect().execute("CHECKPOINT")
                 self.store.flush_fragments()
             except Exception as exc:
-                return {"enabled": True, "ok": False, "error": f"pre-copy: {exc!r}"}
+                return {"enabled": True, "ok": False,
+                        "error": f"pre-replay checkpoint: {exc!r}"}
+
+            # 3. open inactive slot, apply delta, close.
             try:
-                shutil.copy2(src, tmp)
-            except Exception as exc:
-                return {"enabled": True, "ok": False, "error": f"copy: {exc!r}"}
+                self.store.close()
+            except Exception:
+                pass
             try:
-                os.replace(tmp, dst)
+                inactive_store = Store(self.root, partition=self.partition)
+                inactive_store.db_path = self._replica_file(inactive)
+                inactive_store.init()
+                report = inactive_store.apply_log_delta(
+                    inactive_offset, end_offset,
+                )
+                inactive_store.flush_fragments()
+                inactive_store.close()
             except Exception as exc:
-                return {"enabled": True, "ok": False, "error": f"rename: {exc!r}"}
-            # Pointer swap: the *just-refreshed* slot becomes the active
-            # writer; the previous writer becomes the reader. Both files
-            # are at the same logical state at this moment. Subsequent
-            # writes flow to the new active; the now-reader is frozen
-            # until the next refresh.
+                # Reopen active so the daemon stays functional, then
+                # surface the error.
+                self.store = Store(self.root, partition=self.partition)
+                self.store.db_path = self._replica_file(active)
+                self.store.init()
+                return {"enabled": True, "ok": False,
+                        "error": f"delta-replay: {exc!r}"}
+
+            self._write_slot_offset(inactive, end_offset)
+
+            # 4. swap pointer. The newly-current slot becomes writer.
             new_active = inactive
             try:
                 self._active_marker().write_text(new_active)
-                # Switch the in-memory store handle to the new active file.
-                # Close + reopen so DuckDB releases its single-writer lock
-                # on the previous file. ~50-200ms cost on a hot catalog.
-                self.store.close()
                 self.store = Store(self.root, partition=self.partition)
                 self.store.db_path = self._replica_file(new_active)
                 self.store.init()
@@ -459,17 +544,25 @@ class Daemon:
             except Exception as exc:
                 return {"enabled": True, "ok": False,
                         "error": f"pointer swap: {exc!r}"}
-        size = dst.stat().st_size if dst.exists() else 0
+
+        size = self._replica_file(new_active).stat().st_size \
+            if self._replica_file(new_active).exists() else 0
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         result = {
             "enabled": True, "ok": True,
+            "applied": report.get("applied", 0),
+            "skipped_unresolved": report.get("skipped_unresolved", 0),
             "writer_slot": new_active,
             "reader_slot": "B" if new_active == "A" else "A",
             "writer_path": str(self._replica_file(new_active)),
-            "reader_path": str(self._replica_file("B" if new_active == "A" else "A")),
+            "reader_path": str(self._replica_file(
+                "B" if new_active == "A" else "A")),
             "size_bytes": size,
+            "log_start_offset": inactive_offset,
+            "log_end_offset": end_offset,
             "elapsed_ms": elapsed_ms,
             "refreshed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "mode": "delta",
         }
         self._replica_last = result
         return result
@@ -483,7 +576,23 @@ class Daemon:
         a = self._replica_file("A")
         b = self._replica_file("B")
         if a.exists() and b.exists():
-            return  # already migrated
+            # Already migrated. But pre-0.3.10 daemons didn't seed offset
+            # files — if they're missing, set both to current log end so
+            # the first delta-replay doesn't try to re-apply the whole log.
+            try:
+                if not self._slot_offset_path("A").exists() or \
+                   not self._slot_offset_path("B").exists():
+                    log_size = self.store.log_path.stat().st_size \
+                        if self.store.log_path.exists() else 0
+                    self._write_slot_offset("A", log_size)
+                    self._write_slot_offset("B", log_size)
+                    self._log(
+                        f"rotation offsets seeded at log_offset={log_size} "
+                        f"(0.3.10 upgrade)"
+                    )
+            except Exception as exc:
+                self._log(f"offset seed failed: {exc!r}")
+            return
         legacy = self.root / "catalog.duckdb"
         # The current Store opened catalog.duckdb. To bootstrap we close
         # it, copy the legacy file into both A and B, and reopen on A.
@@ -505,8 +614,19 @@ class Daemon:
                 self.store.db_path = a
                 self.store.init()
                 self._active_slot = "A"
+                # Seed both slots' offsets to current log position so the
+                # first refresh sees no delta to replay (both slots are
+                # already at the bootstrap snapshot point).
+                try:
+                    log_size = self.store.log_path.stat().st_size \
+                        if self.store.log_path.exists() else 0
+                except OSError:
+                    log_size = 0
+                self._write_slot_offset("A", log_size)
+                self._write_slot_offset("B", log_size)
                 self._log(
-                    f"rotation bootstrapped: A={a.name} B={b.name} active=A"
+                    f"rotation bootstrapped: A={a.name} B={b.name} "
+                    f"active=A log_offset={log_size}"
                 )
         except Exception as exc:
             self._log(f"rotation bootstrap failed: {exc!r}")
