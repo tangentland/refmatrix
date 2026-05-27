@@ -3442,10 +3442,15 @@ def memory_recall(query, prompt_query, k, recent, since, session_start,
         console.print(t)
         return
 
-    # Hybrid path (unchanged from Phase B, just q-substituted).
+    # Hybrid path. The daemon binds to ONE partition for writes; we
+    # pass the CLI's active partition so the Lance read crosses to
+    # `intuition` (or wherever the memories live) without re-binding.
     from refmatrix import daemon as daemon_mod
     root = _root()
-    args = {"query": q, "k": k, "kinds": ["memory"]}
+    args = {
+        "query": q, "k": k, "kinds": ["memory"],
+        "partition": _resolve_partition(),
+    }
     if not daemon_mod.ping(root):
         raise click.ClickException(
             "rmx memory recall needs the daemon up (dense embedder lives there)"

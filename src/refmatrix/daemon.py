@@ -1832,6 +1832,12 @@ def _op_ann_search(d: Daemon, args: dict) -> dict:
         vector: alternative — caller supplies the vector directly.
         k: top-k (default 20).
         kinds: optional filter (default: all kinds in the partition).
+        partition: override the daemon Store's bound partition for
+            this read. Memory recall sets partition='intuition' so a
+            daemon bound to 'local' can still serve hybrid memory
+            queries. Lance datasets live at
+            `<root>/vectors/<partition>/<kind>.lance` so the read
+            crosses partition without touching the bound store.
     """
     try:
         emb = d._embedder()
@@ -1842,6 +1848,7 @@ def _op_ann_search(d: Daemon, args: dict) -> dict:
     kinds = args.get("kinds")
     query = args.get("query")
     vector = args.get("vector")
+    partition = args.get("partition")
 
     if vector is None and not query:
         return {"ok": False, "error": "need 'query' text or 'vector' list"}
@@ -1858,7 +1865,9 @@ def _op_ann_search(d: Daemon, args: dict) -> dict:
             }
 
     with d._store_lock:
-        hits = d.store.ann_search(v, k=k, dim=emb.dim, kinds=kinds)
+        hits = d.store.ann_search(
+            v, k=k, dim=emb.dim, kinds=kinds, partition=partition,
+        )
     return {"hits": [{"id": eid, "distance": dist} for eid, dist in hits]}
 
 

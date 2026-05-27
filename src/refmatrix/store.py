@@ -1340,11 +1340,23 @@ class Store:
     # raises ImportError with a clear message; the daemon catches that and
     # surfaces it as a graceful "dense not installed" response.
 
-    def _vector_store(self, dim: int):
-        """Return a cached LanceVectorStore rooted at <root>/vectors. `dim`
-        must match the embedder's output dimension; mismatch raises."""
+    def _vector_store(self, dim: int, partition: str | None = None):
+        """Return a LanceVectorStore for <root>/vectors/<partition>/. `dim`
+        must match the embedder's output dimension; mismatch raises.
+
+        With `partition=None` (default) the Store's bound partition is
+        used and the handle is cached. With `partition` set and != bound,
+        a one-shot non-cached handle is returned — the daemon binds to
+        ONE partition for its writes, but Lance datasets are filesystem-
+        addressable so reads can reach any partition without re-binding.
+        The cache invariant only covers the bound-partition handle.
+        """
         from refmatrix.vectors import LanceVectorStore
 
+        if partition is not None and partition != self._partition_name:
+            return LanceVectorStore(
+                self.root / "vectors", partition=partition, dim=dim,
+            )
         existing = getattr(self, "_vs", None)
         if existing is not None:
             if existing.dim != dim or existing.partition != self._partition_name:
@@ -1395,13 +1407,19 @@ class Store:
         dim: int,
         kinds=None,
         candidate_ids=None,
+        partition: str | None = None,
     ) -> list[tuple[int, float]]:
         """Dense ANN search via Lance. Returns `[(entity_id, distance), ...]`
         sorted by L2 distance ascending. `kinds=None` searches every
-        kind that has a Lance dataset under this partition.
+        kind that has a Lance dataset under the target partition.
         `candidate_ids` (optional) narrows the ANN scan to those ids —
-        the hybrid retrieval pre-filter."""
-        vs = self._vector_store(dim)
+        the hybrid retrieval pre-filter.
+
+        `partition` overrides the Store's bound partition for this call so
+        a daemon bound to `local` can still serve memory recall against
+        `intuition` (paired-subsystem isolation lives at the partition
+        level, not at the daemon level)."""
+        vs = self._vector_store(dim, partition=partition)
         return vs.ann_search(
             query_vec, k=k, kinds=kinds, candidate_ids=candidate_ids,
         )

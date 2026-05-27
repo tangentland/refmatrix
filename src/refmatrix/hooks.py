@@ -161,14 +161,18 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
         # Phase C3: intuition-style memory hooks. Each event gets its
         # OWN matcher block so the file-sync hooks above stay untouched
         # — Claude Code merges multiple matchers per event without
-        # squashing either side.
+        # squashing either side. Routed explicitly to the `intuition`
+        # partition because memories live there by default. No
+        # 2>/dev/null and no `|| true` -- memory is critical, broken
+        # state must surface; mask the symptom and the data quietly
+        # rots.
         block["hooks"].setdefault("SessionStart", []).append({
             "matcher": "startup|resume|clear",
             "hooks": [{
                 "type": "command",
                 "command": (
-                    "rmx memory recall --session-start --k 10 --json "
-                    "2>/dev/null || true"
+                    "rmx -p intuition memory recall --session-start "
+                    "--k 10 --json"
                 ),
             }],
         })
@@ -176,8 +180,8 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
             "hooks": [{
                 "type": "command",
                 "command": (
-                    "rmx memory recall --prompt \"$CLAUDE_USER_PROMPT\" "
-                    "--k 5 --json 2>/dev/null || true"
+                    "rmx -p intuition memory recall --prompt "
+                    "\"$CLAUDE_USER_PROMPT\" --k 5 --json"
                 ),
             }],
         })
@@ -185,8 +189,8 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
             "hooks": [{
                 "type": "command",
                 "command": (
-                    "rmx memory recall --recent --since 1h --k 20 --json "
-                    "2>/dev/null || true"
+                    "rmx -p intuition memory recall --recent --since 1h "
+                    "--k 20 --json"
                 ),
             }],
         }]

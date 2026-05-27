@@ -19,10 +19,29 @@ def test_memory_hooks_default_on(tmp_path):
         )
         for ev, entries in block["hooks"].items()
     }
-    assert "rmx memory recall --session-start" in cmds["SessionStart"]
-    assert "rmx memory recall --prompt" in cmds["UserPromptSubmit"]
+    # Memory commands explicitly route to the intuition partition;
+    # the bound daemon partition shouldn't determine where recall
+    # looks.
+    assert "rmx -p intuition memory recall --session-start" in cmds["SessionStart"]
+    assert "rmx -p intuition memory recall --prompt" in cmds["UserPromptSubmit"]
     assert "PreCompact" in block["hooks"]
     assert "--recent --since 1h" in cmds["PreCompact"]
+    # Memory hooks must NOT silently swallow errors -- per-project
+    # convention is to surface failures so a broken store can't quietly
+    # rot. Check only the memory-recall commands (the file-sync SessionStart
+    # hook above intentionally uses 2>/dev/null on rmx sync because the
+    # sync queue is best-effort by design).
+    memory_cmds = []
+    for ev in ("SessionStart", "UserPromptSubmit", "PreCompact"):
+        for entry in block["hooks"].get(ev, []):
+            for h in entry.get("hooks", []):
+                cmd = h.get("command", "")
+                if "memory recall" in cmd:
+                    memory_cmds.append(cmd)
+    assert memory_cmds, "no memory hooks emitted"
+    for cmd in memory_cmds:
+        assert "2>/dev/null" not in cmd, f"memory hook masks stderr: {cmd}"
+        assert "|| true" not in cmd, f"memory hook suppresses exit: {cmd}"
 
 
 def test_memory_hooks_opt_out(tmp_path):
@@ -51,8 +70,8 @@ def test_install_writes_memory_hooks_into_settings(tmp_path):
             apply=True, force=True, memory_hooks=True)
     settings = json.loads((project / ".claude" / "settings.local.json").read_text())
     rendered = json.dumps(settings)
-    assert "rmx memory recall --session-start" in rendered
-    assert "rmx memory recall --prompt" in rendered
+    assert "rmx -p intuition memory recall --session-start" in rendered
+    assert "rmx -p intuition memory recall --prompt" in rendered
     assert "PreCompact" in settings["hooks"]
 
 

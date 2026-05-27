@@ -14,13 +14,21 @@ store somewhere in scope (the memory partition defaults to
 
 | Event | Shell call | Purpose |
 |---|---|---|
-| `SessionStart` | `rmx memory recall --session-start --json` | Inject the top-k recent memories at session boot |
-| `UserPromptSubmit` | `rmx memory recall --prompt "$PROMPT" --k 5 --json` | Pull memories matching the user's prompt |
-| `PreCompact` | `rmx memory recall --recent --since 1h --json` | Surface this session's recent observations before compaction |
+| `SessionStart` | `rmx -p intuition memory recall --session-start --json` | Inject the top-k recent memories at session boot |
+| `UserPromptSubmit` | `rmx -p intuition memory recall --prompt "$PROMPT" --k 5 --json` | Pull memories matching the user's prompt |
+| `PreCompact` | `rmx -p intuition memory recall --recent --since 1h --json` | Surface this session's recent observations before compaction |
 | `Stop` | (out of scope — Phase C4) | Auto-capture session observations as memories |
 
 `--json` makes the output friendlier for piping into your prompt
 context; drop it for human-readable Rich tables.
+
+**No silent failures.** These templates intentionally do NOT
+`2>/dev/null` or `|| true` — memory is critical and broken state
+must surface immediately. The trade-off is that a missing rmx
+binary or a down daemon will print errors into the hook output.
+That's the correct behavior; fix the cause, not the symptom. If
+you're shipping rmx-optional tooling, gate the hook on `command -v
+rmx` instead of masking failures.
 
 ## SessionStart — inject recent memories
 
@@ -37,7 +45,7 @@ Claude's context.
         "hooks": [
           {
             "type": "command",
-            "command": "rmx memory recall --session-start --k 10 --json 2>/dev/null || true",
+            "command": "rmx -p intuition memory recall --session-start --k 10 --json",
             "timeout": 10,
             "statusMessage": "Recalling recent memories..."
           }
@@ -47,9 +55,6 @@ Claude's context.
   }
 }
 ```
-
-The `|| true` keeps the hook non-fatal if rmx isn't installed or the
-store is empty.
 
 ## UserPromptSubmit — recall on every prompt
 
@@ -65,7 +70,7 @@ installed, falls back to symbolic).
         "hooks": [
           {
             "type": "command",
-            "command": "rmx memory recall --prompt \"$CLAUDE_USER_PROMPT\" --k 5 --json 2>/dev/null || true",
+            "command": "rmx -p intuition memory recall --prompt \"$CLAUDE_USER_PROMPT\" --k 5 --json",
             "timeout": 5
           }
         ]
@@ -93,7 +98,7 @@ observations intact.
         "hooks": [
           {
             "type": "command",
-            "command": "rmx memory recall --recent --since 1h --k 20 --json 2>/dev/null || true",
+            "command": "rmx -p intuition memory recall --recent --since 1h --k 20 --json",
             "timeout": 5
           }
         ]
