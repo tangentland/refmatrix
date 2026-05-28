@@ -834,14 +834,21 @@ class Daemon:
                 inactive_store.flush_fragments()
             except Exception as exc:
                 # Reopen active so the daemon stays functional, then
-                # surface the error. CRITICAL: close inactive_store
-                # explicitly here — letting Python GC drop the reference
-                # is not reliable on DuckDB FatalException paths (the
-                # C++ side may keep the file lock even after the Python
-                # exception unwinds), which leaves the inactive slot
-                # locked and blocks all subsequent --via-replica reads
-                # against the symlink.
+                # surface the error. CRITICAL: drop the inactive slot's
+                # DuckDB connection explicitly. Store.close() calls
+                # flush_fragments() first, which can itself re-raise on
+                # a FatalException-invalidated catalog and skip the real
+                # connection close — leaving the file lock held for the
+                # rest of the daemon's lifetime. Hit _conn directly to
+                # guarantee release.
                 if inactive_store is not None:
+                    conn = getattr(inactive_store, "_conn", None)
+                    if conn is not None:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        inactive_store._conn = None
                     try:
                         inactive_store.close()
                     except Exception:
