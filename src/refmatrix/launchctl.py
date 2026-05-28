@@ -12,6 +12,7 @@ import plistlib
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -45,8 +46,15 @@ def _rmx_path() -> str:
 
 def render_plist(root: Path, *, partition: str | None = None,
                  watch: bool = True, debounce_ms: int = 500,
-                 semantic: bool = False) -> bytes:
-    """Render the plist for `root` as bytes (XML)."""
+                 semantic: bool = False,
+                 watch_roots: "list[Path] | None" = None) -> bytes:
+    """Render the plist for `root` as bytes (XML).
+
+    `watch_roots` — optional list of dirs the daemon should watch. When
+    omitted, the daemon defaults to watching the parent of `.refmatrix/`
+    (the project root). Pass an explicit list to watch additional paths
+    such as the auto-memory dir alongside the project tree.
+    """
     root = Path(root).resolve()
     label = label_for_root(root)
     rmx = _rmx_path()
@@ -58,6 +66,9 @@ def render_plist(root: Path, *, partition: str | None = None,
         args += ["--debounce-ms", str(debounce_ms)]
     if semantic:
         args.append("--semantic")
+    if watch_roots:
+        for r in watch_roots:
+            args += ["--watch-root", str(Path(r).resolve())]
 
     env = {
         "REFMATRIX_ROOT": str(root),
@@ -132,9 +143,23 @@ def _require_darwin() -> None:
         )
 
 
+def _wait_loaded(root: Path, *, expected: bool, timeout: float = 3.0) -> bool:
+    """Poll `is_loaded` until it matches `expected` or `timeout` elapses.
+    launchctl bootout/bootstrap don't take effect synchronously — the
+    label can take a few hundred ms to enter or leave the domain.
+    Returns True if the expected state was observed within the window."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if is_loaded(root) == expected:
+            return True
+        time.sleep(0.1)
+    return is_loaded(root) == expected
+
+
 def install(root: Path, *, partition: str | None = None,
             watch: bool = True, debounce_ms: int = 500,
-            semantic: bool = False, force: bool = False) -> Path:
+            semantic: bool = False, force: bool = False,
+            watch_roots: "list[Path] | None" = None) -> Path:
     """Write the plist + bootstrap it into the user's gui domain.
     Returns the plist path. Idempotent unless `force=True`."""
     _require_darwin()
@@ -145,26 +170,39 @@ def install(root: Path, *, partition: str | None = None,
     if p.exists() and is_loaded(root) and not force:
         return p
 
+    # If already loaded, bootout and wait for the domain to release the
+    # label. Issuing bootstrap before the bootout settles silently no-ops
+    # on some macOS versions — bootstrap returns 0 but the agent never
+    # actually enters the domain.
     if is_loaded(root):
         subprocess.run(_bootout_cmd(label), capture_output=True)
+        _wait_loaded(root, expected=False, timeout=3.0)
 
     p.write_bytes(render_plist(
         root, partition=partition, watch=watch,
         debounce_ms=debounce_ms, semantic=semantic,
+        watch_roots=watch_roots,
     ))
     p.chmod(0o644)
 
+    # Bootstrap, then verify the label actually registered. Some races
+    # produce a zero exit code without loading the agent; the only
+    # reliable signal is `launchctl print` succeeding afterward.
     r = subprocess.run(_bootstrap_cmd(p), capture_output=True, text=True)
-    if r.returncode != 0:
+    bootstrap_err = (r.stderr.strip() or r.stdout.strip()
+                     if r.returncode != 0 else "")
+
+    if not _wait_loaded(root, expected=True, timeout=3.0):
         r2 = subprocess.run(
             ["launchctl", "load", str(p)],
             capture_output=True, text=True,
         )
-        if r2.returncode != 0:
+        if not _wait_loaded(root, expected=True, timeout=3.0):
+            load_err = r2.stderr.strip() or r2.stdout.strip() or "(silent)"
             raise RuntimeError(
-                f"launchctl bootstrap failed: {r.stderr.strip() or r.stdout.strip()}; "
-                f"load fallback also failed: "
-                f"{r2.stderr.strip() or r2.stdout.strip()}"
+                f"launchctl bootstrap did not load the agent "
+                f"(rc={r.returncode}, err={bootstrap_err!r}); "
+                f"load fallback also failed: {load_err}"
             )
     return p
 

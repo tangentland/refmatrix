@@ -256,9 +256,11 @@ def daemon():
          "changed files automatically. Default on when watchdog is installed.",
 )
 @click.option(
-    "--watch-root", type=click.Path(path_type=Path), default=None,
-    help="Directory to watch. Defaults to the parent of the active "
-         "`.refmatrix/` (the project root).",
+    "--watch-root", "watch_roots",
+    type=click.Path(path_type=Path), default=(), multiple=True,
+    help="Directory to watch. Repeat for multiple paths (e.g. project "
+         "tree plus the auto-memory dir). Defaults to the parent of the "
+         "active `.refmatrix/` (the project root) when omitted.",
 )
 @click.option(
     "--debounce-ms", type=int, default=500,
@@ -274,7 +276,7 @@ def daemon():
          "launching under a supervisor like launchd / systemd that owns "
          "the process lifecycle. Required by `rmx daemon launchctl install`.",
 )
-def daemon_start(watch: bool, watch_root: Path | None, debounce_ms: int,
+def daemon_start(watch: bool, watch_roots: tuple[Path, ...], debounce_ms: int,
                  semantic: bool, no_detach: bool):
     """Start the rmx daemon for the active store. Idempotent: re-running
     while a daemon is already up is a fast no-op (returns its pid)."""
@@ -284,16 +286,19 @@ def daemon_start(watch: bool, watch_root: Path | None, debounce_ms: int,
         raise click.ClickException(
             f"no refmatrix at {root}. Run `rmx init` first."
         )
-    resolved_watch_root: Path | None = None
+    resolved_watch_roots: list[Path] = []
     if watch:
-        resolved_watch_root = (watch_root or root.parent).resolve()
+        if watch_roots:
+            resolved_watch_roots = [Path(r).resolve() for r in watch_roots]
+        else:
+            resolved_watch_roots = [root.parent.resolve()]
     if no_detach:
         # Foreground mode for launchd / systemd. Blocks until SIGTERM.
         try:
             daemon_mod.serve_foreground(
                 root,
                 partition=_resolve_partition(),
-                watch_root=resolved_watch_root,
+                watch_root=resolved_watch_roots or None,
                 watch_debounce_ms=debounce_ms,
                 watch_semantic=semantic,
             )
@@ -303,14 +308,19 @@ def daemon_start(watch: bool, watch_root: Path | None, debounce_ms: int,
     pid = daemon_mod.spawn_daemon(
         root,
         partition=_resolve_partition(),
-        watch_root=resolved_watch_root,
+        watch_root=resolved_watch_roots or None,
         watch_debounce_ms=debounce_ms,
         watch_semantic=semantic,
     )
-    extra = (
-        f" watching={resolved_watch_root} (debounce={debounce_ms}ms)"
-        if resolved_watch_root else ""
-    )
+    if resolved_watch_roots:
+        roots_repr = (
+            str(resolved_watch_roots[0])
+            if len(resolved_watch_roots) == 1
+            else "[" + ", ".join(str(r) for r in resolved_watch_roots) + "]"
+        )
+        extra = f" watching={roots_repr} (debounce={debounce_ms}ms)"
+    else:
+        extra = ""
     console.print(f"[green]daemon running[/] pid={pid} root={root}{extra}")
 
 
@@ -354,6 +364,11 @@ def daemon_launchctl():
 @click.option("--watch/--no-watch", default=True,
               help="Embed --no-watch in the plist's ProgramArguments. "
                    "Default on.")
+@click.option("--watch-root", "watch_roots",
+              type=click.Path(path_type=Path), default=(), multiple=True,
+              help="Directory the supervised daemon should watch. "
+                   "Repeat for multiple. Defaults to the parent of the "
+                   "active `.refmatrix/`.")
 @click.option("--debounce-ms", type=int, default=500,
               help="Watcher debounce window passed to `daemon start`.")
 @click.option("--semantic", is_flag=True,
@@ -362,8 +377,8 @@ def daemon_launchctl():
 @click.option("--force", is_flag=True,
               help="Rewrite the plist and reload even if already "
                    "installed and loaded.")
-def daemon_launchctl_install(watch: bool, debounce_ms: int,
-                             semantic: bool, force: bool):
+def daemon_launchctl_install(watch: bool, watch_roots: tuple[Path, ...],
+                             debounce_ms: int, semantic: bool, force: bool):
     """Install + bootstrap the LaunchAgent plist for the active store."""
     from refmatrix import launchctl as lc
     root = _root()
@@ -371,11 +386,13 @@ def daemon_launchctl_install(watch: bool, debounce_ms: int,
         raise click.ClickException(
             f"no refmatrix at {root}. Run `rmx init` first."
         )
+    roots_list = [Path(r).resolve() for r in watch_roots] or None
     try:
         p = lc.install(
             root, partition=_resolve_partition(),
             watch=watch, debounce_ms=debounce_ms,
             semantic=semantic, force=force,
+            watch_roots=roots_list,
         )
     except (RuntimeError, FileNotFoundError) as e:
         raise click.ClickException(str(e))
@@ -422,18 +439,22 @@ def daemon_launchctl_status():
 
 @daemon_launchctl.command("print")
 @click.option("--watch/--no-watch", default=True)
+@click.option("--watch-root", "watch_roots",
+              type=click.Path(path_type=Path), default=(), multiple=True)
 @click.option("--debounce-ms", type=int, default=500)
 @click.option("--semantic", is_flag=True)
-def daemon_launchctl_print(watch: bool, debounce_ms: int, semantic: bool):
+def daemon_launchctl_print(watch: bool, watch_roots: tuple[Path, ...],
+                           debounce_ms: int, semantic: bool):
     """Render the plist to stdout without installing. Useful for review
     or piping into a different LaunchAgents directory."""
     from refmatrix import launchctl as lc
     root = _root()
+    roots_list = [Path(r).resolve() for r in watch_roots] or None
     try:
         data = lc.render_plist(
             root, partition=_resolve_partition(),
             watch=watch, debounce_ms=debounce_ms,
-            semantic=semantic,
+            semantic=semantic, watch_roots=roots_list,
         )
     except FileNotFoundError as e:
         raise click.ClickException(str(e))

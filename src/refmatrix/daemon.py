@@ -119,15 +119,27 @@ def _recv_line(s: socket.socket, timeout: float) -> bytes:
 
 class Daemon:
     def __init__(self, root: Path, *, partition: str | None = None,
-                 watch_root: Path | None = None,
+                 watch_root: "Path | list[Path] | None" = None,
                  watch_debounce_ms: int = 500,
                  watch_semantic: bool = False):
         self.root = Path(root).resolve()
         self.partition = partition
-        # Filesystem watcher config. If `watch_root` is set, serve_forever
-        # spawns a watchdog thread that debounces fs events and syncs the
-        # changed files through the daemon's Store. None = no watcher.
-        self.watch_root = Path(watch_root).resolve() if watch_root else None
+        # Filesystem watcher config. If `watch_roots` is non-empty,
+        # serve_forever spawns a watchdog thread that schedules one
+        # observer per root, debounces fs events across all of them,
+        # and syncs the changed files through the daemon's Store.
+        # Accepts a single Path (back-compat) or a list of Paths.
+        if watch_root is None:
+            self.watch_roots: list[Path] = []
+        elif isinstance(watch_root, (list, tuple)):
+            self.watch_roots = [Path(r).resolve() for r in watch_root]
+        else:
+            self.watch_roots = [Path(watch_root).resolve()]
+        # Convenience scalar — first root, for callers that only need one
+        # path (logs, sync_files default project_root). None if no watcher.
+        self.watch_root: Path | None = (
+            self.watch_roots[0] if self.watch_roots else None
+        )
         self.watch_debounce_ms = watch_debounce_ms
         self.watch_semantic = watch_semantic
         self.store: Store | None = None
@@ -1056,10 +1068,33 @@ class Daemon:
             os.environ.get("RMX_PRE_REPAIR_THRESHOLD", "0") or "0"
         )
 
+        def _owning_root(p: Path) -> Path | None:
+            """Return the watch_root that contains `p`, or None. Falls
+            back to the first root for events from unexpected sources
+            (shouldn't happen — observer only fires on scheduled paths)."""
+            for r in self.watch_roots:
+                try:
+                    if p == r or p.is_relative_to(r):
+                        return r
+                except (ValueError, OSError):
+                    continue
+            return self.watch_roots[0] if self.watch_roots else None
+
         def _flush(paths: list[str]) -> None:
             # Skip entirely if shutdown was requested while debounce window
             # was open. Avoids grabbing _store_lock just to be cancelled.
             if self._shutdown_event.is_set():
+                return
+            # Group paths by the watch root that owns them so each batch
+            # gets the right `project_root` for sync_files' relative-path
+            # resolution + curator-queue logic.
+            groups: dict[Path, list[str]] = {}
+            for raw in paths:
+                owner = _owning_root(Path(raw).resolve())
+                if owner is None:
+                    continue
+                groups.setdefault(owner, []).append(raw)
+            if not groups:
                 return
             # Take the store_lock so the watcher and the socket request
             # handler never touch the shared Store concurrently.
@@ -1075,20 +1110,31 @@ class Daemon:
                         except Exception as rexc:
                             self._log(f"pre-flush repair failed: {rexc!r}")
                             self._fast_exit_if_invalidated(rexc, "pre-flush repair")
-                    report = sync_files(
-                        self.store, paths,
-                        project_root=self.watch_root,
-                        semantic=self.watch_semantic,
-                        cancel_check=self._shutdown_event.is_set,
-                    )
+                    total_added = total_updated = total_purged = 0
+                    cancelled = False
+                    for owner, owner_paths in groups.items():
+                        report = sync_files(
+                            self.store, owner_paths,
+                            project_root=owner,
+                            semantic=self.watch_semantic,
+                            cancel_check=self._shutdown_event.is_set,
+                        )
+                        total_added += report["added"]
+                        total_updated += report["updated"]
+                        total_purged += report["purged"]
+                        if report.get("cancelled"):
+                            cancelled = True
                 queued = _enqueue_curator(paths)
                 tail = f" curator+{queued}" if queued else ""
-                cancel_tail = " cancelled" if report.get("cancelled") else ""
+                cancel_tail = " cancelled" if cancelled else ""
                 repair_tail = " pre-repaired" if repaired else ""
+                roots_tail = (
+                    f" roots={len(groups)}" if len(self.watch_roots) > 1 else ""
+                )
                 self._log(
-                    f"watch flush: paths={len(paths)} +{report['added']} "
-                    f"~{report['updated']} -{report['purged']}"
-                    f"{tail}{cancel_tail}{repair_tail}"
+                    f"watch flush: paths={len(paths)} +{total_added} "
+                    f"~{total_updated} -{total_purged}"
+                    f"{tail}{cancel_tail}{repair_tail}{roots_tail}"
                 )
             except Exception as exc:
                 self._log(f"watch flush failed: {exc!r}")
@@ -1121,7 +1167,8 @@ class Daemon:
                 self_inner._maybe(event.dest_path)
 
         observer = Observer()
-        observer.schedule(_Handler(), str(self.watch_root), recursive=True)
+        for r in self.watch_roots:
+            observer.schedule(_Handler(), str(r), recursive=True)
         observer.start()
         debouncer.start()
 
@@ -1138,8 +1185,13 @@ class Daemon:
             target=_runner, name="rmxd-watcher", daemon=True,
         )
         self._watch_thread.start()
+        roots_repr = (
+            str(self.watch_roots[0])
+            if len(self.watch_roots) == 1
+            else "[" + ", ".join(str(r) for r in self.watch_roots) + "]"
+        )
         self._log(
-            f"watcher started root={self.watch_root} "
+            f"watcher started roots={roots_repr} "
             f"debounce={self.watch_debounce_ms}ms"
         )
 
@@ -1995,7 +2047,7 @@ CLI_OPS: set[str] = {
 
 def spawn_daemon(root: Path, *, partition: str | None = None,
                  wait_for_ready: float = 5.0,
-                 watch_root: Path | None = None,
+                 watch_root: "Path | list[Path] | None" = None,
                  watch_debounce_ms: int = 500,
                  watch_semantic: bool = False) -> int:
     """Fork a background daemon for `root` and return when it's accepting
@@ -2003,6 +2055,10 @@ def spawn_daemon(root: Path, *, partition: str | None = None,
     returns its PID immediately. Safe under concurrent calls — uses an
     exclusive `daemon.lock` flock so only one fork wins; the loser polls
     until the winner is healthy.
+
+    `watch_root` accepts either a single Path or a list of Paths. With
+    multiple paths, the daemon schedules one observer per root and
+    groups path events back to their owning root for sync_files.
     """
     import fcntl
     root = Path(root).resolve()
@@ -2177,7 +2233,7 @@ def stop_daemon(root: Path, *, timeout: float = 5.0) -> bool:
 
 
 def serve_foreground(root: Path, *, partition: str | None = None,
-                     watch_root: Path | None = None,
+                     watch_root: "Path | list[Path] | None" = None,
                      watch_debounce_ms: int = 500,
                      watch_semantic: bool = False) -> int:
     """Run the daemon in the foreground (no fork). Used by supervisors
@@ -2186,6 +2242,8 @@ def serve_foreground(root: Path, *, partition: str | None = None,
 
     Stdout/stderr are NOT redirected — the supervisor handles that
     (`StandardOutPath` / `StandardErrorPath` in the plist).
+
+    `watch_root` accepts either a single Path or a list of Paths.
     """
     import fcntl
     root = Path(root).resolve()
