@@ -3106,14 +3106,37 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
 
 
 _DEFAULT_EMBED_KINDS = ("code", "doc", "concept", "memory")
+_VALID_EMBED_KINDS = frozenset(_DEFAULT_EMBED_KINDS)
+
+
+def _split_kinds(ctx, param, value):
+    """Click callback: accepts either repeated `--kinds X --kinds Y` or
+    comma-separated `--kinds X,Y` (or any mix). Strips whitespace, dedupes,
+    validates each token against the known entity kinds."""
+    if not value:
+        return ()
+    out: list[str] = []
+    for v in value:
+        for tok in str(v).split(","):
+            tok = tok.strip()
+            if not tok:
+                continue
+            if tok not in _VALID_EMBED_KINDS:
+                raise click.BadParameter(
+                    f"'{tok}' is not a valid kind; "
+                    f"expected one of {sorted(_VALID_EMBED_KINDS)}"
+                )
+            if tok not in out:
+                out.append(tok)
+    return tuple(out)
 
 
 @main.command("embed")
 @click.option(
-    "--kinds", "-k", multiple=True,
-    type=click.Choice(["code", "doc", "concept", "memory"]),
-    help="Entity kinds to embed. Repeat the flag for multiple. "
-         "Default: all four.",
+    "--kinds", "-k", multiple=True, callback=_split_kinds,
+    help="Entity kinds to embed. Repeat the flag (`-k a -k b`) or pass "
+         "a comma-separated list (`-k a,b`). Default: all four "
+         "(code / doc / concept / memory).",
 )
 @click.option(
     "--batch", default=256, show_default=True,
@@ -3197,9 +3220,9 @@ def embed_cmd(kinds, batch, rebuild, max_batches):
 @click.argument("query")
 @click.option("-k", "--k", default=10, show_default=True, help="Top-k hits.")
 @click.option(
-    "--kinds", "-K", multiple=True,
-    type=click.Choice(["code", "doc", "concept", "memory"]),
-    help="Restrict to kinds. Default: all kinds with vectors.",
+    "--kinds", "-K", multiple=True, callback=_split_kinds,
+    help="Restrict to kinds. Repeat the flag or pass a comma-separated "
+         "list (`-K memory,doc`). Default: all kinds with vectors.",
 )
 def search_dense_cmd(query, k, kinds):
     """Dense ANN search via Lance. Embeds QUERY with the same model
@@ -3258,9 +3281,9 @@ def search_dense_cmd(query, k, kinds):
 @click.argument("query")
 @click.option("-k", "--k", default=10, show_default=True, help="Top-k hits.")
 @click.option(
-    "--kinds", "-K", multiple=True,
-    type=click.Choice(["code", "doc", "concept", "memory"]),
-    help="Restrict to kinds. Default: all kinds with vectors.",
+    "--kinds", "-K", multiple=True, callback=_split_kinds,
+    help="Restrict to kinds. Repeat the flag or pass a comma-separated "
+         "list (`-K memory,doc`). Default: all kinds with vectors.",
 )
 @click.option(
     "--concept", "-c", multiple=True,
@@ -3727,8 +3750,14 @@ def _parse_duration(text: str) -> float:
                    "graph-shaped context for prompt injection — readers "
                    "can `[[memory-id]]` cite hits without grepping. "
                    "Mutually exclusive with --json.")
+@click.option("--kinds", "-K", "kinds", multiple=True, callback=_split_kinds,
+              help="Entity kinds to recall from. Repeat the flag or pass "
+                   "a comma-separated list (`-K memory,doc`). Use this to "
+                   "include curated `.md` memory files ingested as kind=doc "
+                   "alongside intuition observations (kind=memory). "
+                   "Default: memory.")
 def memory_recall(query, prompt_query, stdin_json, k, recent, since,
-                  session_start, as_json, as_gmd):
+                  session_start, as_json, as_gmd, kinds):
     """Memory retrieval. Three modes:
 
     Hybrid (default): dense ANN over memory.lance fused with the
@@ -3822,7 +3851,8 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
     # still serve recall against the project's memory partition.
     from refmatrix import daemon as daemon_mod
     root = _root()
-    args = {"query": q, "k": k, "kinds": ["memory"]}
+    kinds_list = list(kinds) if kinds else ["memory"]
+    args = {"query": q, "k": k, "kinds": kinds_list}
     if not daemon_mod.ping(root):
         raise click.ClickException(
             "rmx memory recall needs the daemon up (dense embedder lives there)"
@@ -3849,9 +3879,41 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
         rows: list[dict] = []
         for h in hits:
             eid = h.get("entity_id") or h.get("id")
+            score = h.get("score") or h.get("distance")
             m = s.get_memory(eid)
+            if m is None and "doc" in kinds_list:
+                # Non-memory hit (kind=doc/code/concept). Build a
+                # memory-shaped dict from the entity row + file body
+                # so the GMD/JSON output stays uniform across kinds.
+                ent = s._read().execute(
+                    "SELECT id, kind, name, path, tldr "
+                    "FROM entities WHERE id=?", (eid,),
+                ).fetchone()
+                if ent is not None:
+                    row_path = ent["path"] if "path" in ent.keys() else None
+                    body = ""
+                    if row_path:
+                        try:
+                            body = Path(row_path).read_text(
+                                encoding="utf-8", errors="replace"
+                            )
+                            if len(body) > 4000:
+                                body = body[:4000].rstrip() + " …"
+                        except OSError:
+                            body = ent["tldr"] or ""
+                    m = {
+                        "id": ent["id"],
+                        "name": ent["name"],
+                        "content": body or ent["tldr"] or "",
+                        "mtype": ent["kind"],
+                        "tags": [],
+                        "metadata": {"source_path": row_path or None},
+                        "partition_id": None,
+                        "created_at": None,
+                        "updated_at": None,
+                    }
             if m:
-                m["score"] = h.get("score") or h.get("distance")
+                m["score"] = score
                 rows.append(m)
         if as_gmd:
             click.echo(_render_memory_gmd(
