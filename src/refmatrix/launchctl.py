@@ -65,6 +65,17 @@ def render_plist(root: Path, *, partition: str | None = None,
             "PATH", "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
         ),
     }
+    # launchd starts agents with a minimal environment. Capture the
+    # caller's PYTHONPATH + PYTHONUSERBASE so the daemon's Python
+    # sees the same site-packages dirs the interactive shell does
+    # (some installs put big deps like torch / typing_extensions
+    # in framework-shared paths, not the venv).
+    pythonpath = os.environ.get("PYTHONPATH")
+    if pythonpath:
+        env["PYTHONPATH"] = pythonpath
+    pythonuserbase = os.environ.get("PYTHONUSERBASE")
+    if pythonuserbase:
+        env["PYTHONUSERBASE"] = pythonuserbase
     if partition:
         env["RMX_PARTITION"] = partition
 
