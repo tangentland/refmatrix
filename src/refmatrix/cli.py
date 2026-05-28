@@ -3055,7 +3055,20 @@ def rebuild(from_log: bool, yes: bool):
 @click.argument("targets", nargs=-1, required=True,
                 type=click.Path(exists=True, path_type=Path))
 @click.option("--verbose", "-v", is_flag=True, help="Print per-file progress.")
-def ingest_gmd(targets: tuple[Path, ...], verbose: bool):
+@click.option("--as-memory", "as_memory", is_flag=True,
+              help="Register each doc-level entity as kind=memory with a "
+                   "memory_content sidecar populated from the body + "
+                   "frontmatter. Required for the doc to surface in "
+                   "`rmx memory recall` (which filters on kind=memory). "
+                   "Use this when ingesting curated `.md` memory files "
+                   "rather than reference docs.")
+@click.option("--memory-mtype", "memory_mtype", default="curated",
+              show_default=True,
+              help="Default mtype assigned when --as-memory is set and "
+                   "the frontmatter does not carry an explicit "
+                   "`metadata.type`.")
+def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
+               as_memory: bool, memory_mtype: str):
     """Ingest Graph Markdown (GMD) docs. Walks dirs for *.gmd/*.md files
     that carry `gmd:` frontmatter; non-GMD files are skipped."""
     from refmatrix import daemon as daemon_mod
@@ -3067,6 +3080,8 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool):
         resp = daemon_mod.call(root, "ingest_gmd", {
             "targets": [str(p) for p in resolved],
             "verbose": verbose,
+            "as_memory": as_memory,
+            "memory_mtype": memory_mtype,
         }, timeout=24 * 3600.0)
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
@@ -3080,7 +3095,10 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool):
     if verbose:
         for f in files:
             console.print(f"  scan {f}")
-    stats = ingest_gmd_paths(s, files, verbose=verbose)
+    stats = ingest_gmd_paths(
+        s, files, verbose=verbose,
+        as_memory=as_memory, memory_mtype_default=memory_mtype,
+    )
     console.print(stats.report())
 
 

@@ -1490,6 +1490,8 @@ def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
         stats = ingest_gmd_paths(
             d.store, files, verbose=verbose,
             yield_lock=_yield, yield_every=yield_every,
+            as_memory=bool(args.get("as_memory")),
+            memory_mtype_default=args.get("memory_mtype") or "curated",
         )
     finally:
         d._store_lock.release()

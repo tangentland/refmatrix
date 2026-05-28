@@ -339,6 +339,8 @@ def ingest_gmd_paths(
     store: Store, paths: list[Path], verbose: bool = False,
     yield_lock: Callable[[], None] | None = None,
     yield_every: int = 10,
+    as_memory: bool = False,
+    memory_mtype_default: str = "curated",
 ) -> IngestStats:
     """Two-pass ingest: parse all docs first (build id table), then link.
 
@@ -351,6 +353,14 @@ def ingest_gmd_paths(
     this, a multi-thousand-file ingest holds the lock the entire time and
     `rmx query`, `rmx stats`, etc. queue behind it until completion. See
     daemon `_op_ingest_gmd` for the standard daemon callback.
+
+    `as_memory`: when True, each doc-level entity is registered as
+    `kind=memory` and a memory_content sidecar is upserted from the doc
+    body + frontmatter. This is the path curated `.md` memories take
+    so they participate in `rmx memory recall`. Node-level anchors stay
+    `kind=concept` regardless — they're still graph-citation points,
+    not memory bodies. The frontmatter's `metadata.type` becomes the
+    memory mtype (falls back to `memory_mtype_default`).
     """
     stats = IngestStats()
 
@@ -371,12 +381,75 @@ def ingest_gmd_paths(
         docs.append(doc)
         stats.docs += 1
 
-        # doc-level entity (represents the whole file)
-        doc_eid = store.upsert_entity(
-            kind="doc", name=doc.doc_id, path=str(path),
-            tldr=doc.title,
-            meta={"gmd_version": doc.gmd_version, "tags": doc.tags},
-        )
+        # doc-level entity (represents the whole file). When
+        # `as_memory`, route through add_memory so the entity lands in
+        # kind=memory + a memory_content sidecar gets populated. That
+        # is the path curated .md memory files need to participate in
+        # `rmx memory recall`'s kind-filtered ann_search.
+        if as_memory:
+            # Drop a prior kind=doc entity for this name if one exists
+            # (typical: a previous `rmx ingest-gmd` without --as-memory).
+            # Leaves the (partition, kind=memory, name) slot free for
+            # add_memory below. Idempotent — no-op when none exists.
+            try:
+                store._connect().execute(
+                    "DELETE FROM entities WHERE partition_id = ? "
+                    "AND kind = 'doc' AND name = ?",
+                    (store._partition_id, doc.doc_id),
+                )
+                store._connect().commit()
+            except Exception as exc:
+                if verbose:
+                    print(
+                        f"  warn: doc->memory cleanup failed for "
+                        f"{doc.doc_id}: {exc!r}"
+                    )
+            try:
+                raw_text = path.read_text(encoding="utf-8")
+                fm_lines = raw_text.splitlines()
+                fm_data, body_start = _parse_frontmatter(fm_lines)
+            except Exception:
+                fm_data, body_start, raw_text = {}, 0, ""
+            body = "\n".join(fm_lines[body_start:]).lstrip("\n") if raw_text else ""
+            # _parse_frontmatter doesn't unwrap nested `metadata:` blocks.
+            # Pull `metadata.type` directly off the raw frontmatter slice.
+            mtype = memory_mtype_default
+            raw_meta: dict[str, str] = {}
+            in_meta_block = False
+            for line in fm_lines[: body_start - 1] if body_start else []:
+                if line.strip() == "metadata:":
+                    in_meta_block = True
+                    continue
+                if in_meta_block:
+                    if line.startswith("  ") and ":" in line:
+                        k, _, v = line.strip().partition(":")
+                        raw_meta[k.strip()] = v.strip().strip("\"'")
+                    elif line.strip() and not line.startswith("  "):
+                        in_meta_block = False
+            if raw_meta.get("type"):
+                mtype = raw_meta["type"]
+            mem_metadata = {
+                "source": "ingest_gmd_as_memory",
+                "source_path": str(path),
+                "gmd_version": doc.gmd_version,
+                "title": doc.title,
+            }
+            for k, v in raw_meta.items():
+                if k not in mem_metadata:
+                    mem_metadata[k] = v
+            doc_eid = store.add_memory(
+                name=doc.doc_id,
+                content=body or raw_text,
+                mtype=mtype,
+                tags=list(doc.tags) if doc.tags else None,
+                metadata=mem_metadata,
+            )
+        else:
+            doc_eid = store.upsert_entity(
+                kind="doc", name=doc.doc_id, path=str(path),
+                tldr=doc.title,
+                meta={"gmd_version": doc.gmd_version, "tags": doc.tags},
+            )
         eid_by_name[doc.doc_id] = doc_eid
         # ADR same_as bridge: link the GMD-id form (adr-0078-foo-bar) to the
         # non-GMD ADR ingester's slash-form (adr/0078) so wikilinks against
