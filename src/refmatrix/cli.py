@@ -1244,11 +1244,11 @@ def _parse_grep_flags(s: str | None) -> dict:
     f = {
         "ignore_case": None, "files_only": False, "count": False,
         "invert": False, "word": False, "force_substring": False,
-        "force_regex": False,
+        "force_regex": False, "files_without_match": False,
     }
     if not s:
         return f
-    valid = "irIRnlcvwFEH"
+    valid = "irIRnLlcvwFEH"
     for chunk in s.split():
         if not chunk.startswith("-") or len(chunk) < 2:
             raise click.UsageError(
@@ -1265,6 +1265,8 @@ def _parse_grep_flags(s: str | None) -> dict:
                 f["ignore_case"] = False
             elif ch == "l":
                 f["files_only"] = True
+            elif ch == "L":
+                f["files_without_match"] = True
             elif ch == "c":
                 f["count"] = True
             elif ch == "v":
@@ -1278,24 +1280,29 @@ def _parse_grep_flags(s: str | None) -> dict:
             # r, n, H are accepted but no-op
     if f["force_substring"] and f["force_regex"]:
         raise click.UsageError("--flags: -F and -E are mutually exclusive")
+    if f["files_only"] and f["files_without_match"]:
+        raise click.UsageError("--flags: -l and -L are mutually exclusive")
     return f
 
 
 def _render_grep_rows(rows, gf, limit, source_tag="idx"):
     """Render index-backed rows respecting the gf flag bundle:
-      -l files-only  → one line per unique file path
-      -c count       → `path: N` per file
-      -v invert      → printed in caller (needs a full entity universe);
-                       for now we honor it as a no-op on the indexed path
-      default        → `path:line  [src linkage]  concept` per row
+      -l files-only          → one line per unique file path
+      -L files-without-match → routed through fallback (needs file universe)
+      -c count               → `path: N` per file
+      -v invert              → printed in caller (needs a full entity
+                               universe); for now we honor it as a no-op
+                               on the indexed path
+      default                → `path:line  [src linkage]  concept` per row
     """
-    if gf["invert"]:
-        # Honest behavior: -v on the indexed path would require enumerating
-        # all entities and subtracting matches — possible but heavy. Tell
-        # the user to drop --no-fallback so the rg path can handle it.
+    if gf["invert"] or gf["files_without_match"]:
+        # Both -v and -L need a complete file universe to subtract matches
+        # from. The indexed path only sees matched rows, so we can't
+        # express either honestly. Punt to the rg/grep fallback.
+        flag_name = "-L (files-without-match)" if gf["files_without_match"] else "-v (invert)"
         console.print(
-            "[yellow]-v (invert) is not implemented on the indexed path; "
-            "drop --no-fallback to use rg's -v.[/]"
+            f"[yellow]{flag_name} is not implemented on the indexed path; "
+            "drop --no-fallback to use rg's equivalent.[/]"
         )
         return
     if gf["files_only"]:
@@ -1531,6 +1538,8 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root):
             cmd.append("-c")
         if gf["files_only"]:
             cmd.append("-l")
+        if gf["files_without_match"]:
+            cmd.append("--files-without-match")
         cmd += ["--regexp", pattern] + targets
     else:
         tool = shutil.which("grep")
@@ -1539,7 +1548,7 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root):
                 "no indexed match and neither rg nor grep on PATH"
             )
         g_letters = "rH"
-        if not (gf["count"] or gf["files_only"]):
+        if not (gf["count"] or gf["files_only"] or gf["files_without_match"]):
             g_letters += "n"
         if gf["ignore_case"] is not False:
             g_letters += "i"
@@ -1551,6 +1560,8 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root):
             g_letters += "c"
         if gf["files_only"]:
             g_letters += "l"
+        if gf["files_without_match"]:
+            g_letters += "L"
         g_letters += "E" if regex else "F"
         cmd = [tool, f"-{g_letters}", pattern] + targets
     res = subprocess.run(cmd, capture_output=True, text=True)
@@ -1560,7 +1571,7 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root):
         return
     prefix = "[rg] " if tool.endswith("/rg") else "[grep] "
     shown = 0
-    if gf["files_only"] or gf["count"]:
+    if gf["files_only"] or gf["files_without_match"] or gf["count"]:
         for raw in res.stdout.splitlines():
             if shown >= limit:
                 break
@@ -1705,6 +1716,9 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
             rg_cmd.append("-c")
         if gf["files_only"]:
             rg_cmd.append("-l")
+        if gf["files_without_match"]:
+            # rg uses long form for files-without-match.
+            rg_cmd.append("--files-without-match")
         rg_cmd += ["--regexp", pattern] + targets
         cmd = rg_cmd
     else:
@@ -1713,7 +1727,7 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
             raise click.ClickException("no indexed match and neither rg nor grep on PATH")
         # Build grep flags from gf bundle. Always recursive + filename.
         g_letters = "rH"
-        if not (gf["count"] or gf["files_only"]):
+        if not (gf["count"] or gf["files_only"] or gf["files_without_match"]):
             g_letters += "n"
         if gf["ignore_case"] is not False:
             g_letters += "i"
@@ -1725,6 +1739,8 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
             g_letters += "c"
         if gf["files_only"]:
             g_letters += "l"
+        if gf["files_without_match"]:
+            g_letters += "L"
         g_letters += "E" if regex else "F"
         cmd = [tool, f"-{g_letters}", pattern] + targets
     res = subprocess.run(cmd, capture_output=True, text=True)
@@ -1733,9 +1749,10 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
         console.print("[dim]no matches[/]")
         return
     prefix = "[rg] " if tool.endswith("/rg") else "[grep] "
-    # In -l (files-only) mode tool emits bare paths; in -c (count) mode it
-    # emits `path:N`. Skip the line-number parsing for those.
-    if gf["files_only"] or gf["count"]:
+    # In -l (files-only) / -L (files-without-match) mode tool emits bare
+    # paths; in -c (count) mode it emits `path:N`. Skip the line-number
+    # parsing for those.
+    if gf["files_only"] or gf["files_without_match"] or gf["count"]:
         shown = 0
         for raw in res.stdout.splitlines():
             if shown >= limit:
