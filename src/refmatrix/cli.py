@@ -3570,6 +3570,96 @@ def memory_search(query, limit):
 _DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
 
 
+def _render_memory_gmd(rows, *, query: str | None = None,
+                       mode: str | None = None,
+                       partition: str | None = None) -> str:
+    """Render memory recall hits as a single GMD document.
+
+    Each row becomes an H2 node with `{#id}` anchor; the whole doc gets
+    a `gmd: "0.1"` frontmatter envelope with a deterministic doc id.
+    `rel:` edges are derived from row tags (session-id) and the
+    partition. Content is rendered as a markdown blockquote so newlines
+    inside the body don't break the GMD shape.
+    """
+    import hashlib as _h
+    import time as _t
+
+    ts_iso = _t.strftime("%Y-%m-%dT%H-%M-%S")
+    seed = f"{query or ''}|{mode or ''}|{ts_iso}"
+    doc_hash = _h.sha1(seed.encode()).hexdigest()[:8]
+    doc_id = f"recall-{ts_iso}-{doc_hash}"
+
+    title_q = (query or "").replace('"', "'")
+    if len(title_q) > 60:
+        title_q = title_q[:57] + "..."
+    title = (
+        f"recall: {title_q}" if query else f"recall: {mode or 'memory'}"
+    )
+
+    lines: list[str] = [
+        "---",
+        'gmd: "0.1"',
+        f"id: {doc_id}",
+        f'title: "{title}"',
+    ]
+    if query:
+        lines.append(f'query: "{title_q}"')
+    if mode:
+        lines.append(f"mode: {mode}")
+    if partition:
+        lines.append(f"partition: {partition}")
+    lines.append("tags: [recall, memory]")
+    lines.append("---")
+    lines.append("")
+    lines.append("# recall {#root}")
+    lines.append("")
+
+    for m in rows:
+        anchor = m.get("name") or f"memory-{m.get('id')}"
+        score = m.get("score")
+        mtype = m.get("mtype") or "memory"
+        created = m.get("created_at")
+        when = ""
+        if created:
+            try:
+                when = " · when: " + _t.strftime(
+                    "%Y-%m-%dT%H:%MZ", _t.gmtime(float(created))
+                )
+            except Exception:
+                pass
+        if isinstance(score, (int, float)):
+            score_str = f" · score: {score:.3f}"
+        else:
+            score_str = ""
+
+        lines.append(f"## {anchor} {{#{anchor}}}")
+        lines.append(f"mtype: {mtype}{score_str}{when}")
+
+        content = (m.get("content") or "").strip()
+        if content:
+            if len(content) > 2000:
+                content = content[:2000].rstrip() + " …"
+            for cl in content.splitlines():
+                lines.append(f"> {cl}")
+
+        # Provenance: session-derived memories point back via the
+        # standard GMD `derives-from` verb. `part-of` ties every hit
+        # to the synthesized root so a reader can enumerate the doc's
+        # contents as a single subgraph.
+        for t in (m.get("tags") or []):
+            if isinstance(t, str) and t.startswith("session:"):
+                sess = t[len("session:"):]
+                short = sess[:8] if sess else "unknown"
+                lines.append(
+                    f"rel: derives-from -> [[session-{short}]]"
+                )
+                break
+        lines.append("rel: part-of -> [[#root]]")
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _parse_duration(text: str) -> float:
     """Parse `30m`, `1h`, `7d`, `2w` (or bare seconds) → seconds."""
     text = text.strip().lower()
@@ -3613,8 +3703,14 @@ def _parse_duration(text: str) -> float:
 @click.option("--json", "as_json", is_flag=True,
               help="Emit JSON instead of a Rich table — friendlier "
                    "for hook scripts piping the output into a prompt.")
+@click.option("--gmd", "as_gmd", is_flag=True,
+              help="Emit a GMD document (gmd:\"0.1\" frontmatter + one "
+                   "H2 node per hit with rel: edges). Use as drop-in "
+                   "graph-shaped context for prompt injection — readers "
+                   "can `[[memory-id]]` cite hits without grepping. "
+                   "Mutually exclusive with --json.")
 def memory_recall(query, prompt_query, stdin_json, k, recent, since,
-                  session_start, as_json):
+                  session_start, as_json, as_gmd):
     """Memory retrieval. Three modes:
 
     Hybrid (default): dense ANN over memory.lance fused with the
@@ -3627,6 +3723,10 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
     Session-start (--session-start): shorthand for `--recent --since 7d`,
     the SessionStart hook's preferred mode per ADR-0001 Phase C."""
     _memory_intent("memory_recall")
+    if as_json and as_gmd:
+        raise click.ClickException(
+            "--json and --gmd are mutually exclusive"
+        )
     if session_start:
         recent = True
         if since is None:
@@ -3649,6 +3749,13 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
         if not prompt_query:
             if as_json:
                 click.echo("[]")
+            elif as_gmd:
+                # Empty-prompt path needs a parseable artifact so the
+                # hook caller can detect "no recall" deterministically.
+                click.echo(_render_memory_gmd(
+                    [], query=None,
+                    mode="empty", partition=_resolve_partition(),
+                ))
             return
     q = prompt_query or query
     if not recent and not q:
@@ -3674,6 +3781,13 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
         if as_json:
             import json as _json
             click.echo(_json.dumps(rows, indent=2))
+            return
+        if as_gmd:
+            mode_tag = "session-start" if session_start else "recent"
+            click.echo(_render_memory_gmd(
+                rows, query=None, mode=mode_tag,
+                partition=_resolve_partition(),
+            ))
             return
         if not rows:
             console.print("[yellow]no memories in window[/]")
@@ -3703,20 +3817,32 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
         raise click.ClickException(resp.get("error", "daemon error"))
     hits = resp["result"].get("hits", [])
     if not hits:
+        if as_gmd:
+            click.echo(_render_memory_gmd(
+                [], query=q, mode="hybrid",
+                partition=_resolve_partition(),
+            ))
+            return
         console.print("[yellow]no recall hits[/] (have memories been embedded? "
                       "rmx embed --kinds memory)")
         return
     s = _store()
-    if as_json:
-        import json as _json
-        out = []
+    if as_json or as_gmd:
+        rows: list[dict] = []
         for h in hits:
             eid = h.get("entity_id") or h.get("id")
             m = s.get_memory(eid)
             if m:
                 m["score"] = h.get("score") or h.get("distance")
-                out.append(m)
-        click.echo(_json.dumps(out, indent=2))
+                rows.append(m)
+        if as_gmd:
+            click.echo(_render_memory_gmd(
+                rows, query=q, mode="hybrid",
+                partition=_resolve_partition(),
+            ))
+        else:
+            import json as _json
+            click.echo(_json.dumps(rows, indent=2))
         return
     t = Table("rank", "score", "id", "name")
     for r, h in enumerate(hits, 1):
@@ -3849,6 +3975,227 @@ def memory_score(concept, explain, halflife_days, cap):
                     f"{r['contribution']:+.4f}",
                 )
             console.print(t)
+
+
+def _parse_memory_md_frontmatter(text: str) -> tuple[dict, str]:
+    """Parse the auto-memory / GMD frontmatter shape used by curated
+    `.md` memory files. Returns (frontmatter_dict, body_text).
+
+    Handles the shapes the auto-memory writer and gmd-curator emit:
+      - `key: value`
+      - `key: "quoted value"`
+      - `key: [a, b, c]`
+      - block mapping `metadata:` followed by indented `  type: foo`
+      - block list `tags:` followed by `- one` lines
+
+    Tolerant of pre-GMD files that lack `gmd:` — the caller (sync-disk)
+    treats any file with frontmatter + a usable name/id as a memory.
+    Returns ({}, raw_text) if no frontmatter delimiter is present.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}, text
+    fm: dict = {}
+    i = 1
+    cur_list_key: str | None = None
+    cur_map_key: str | None = None
+    while i < len(lines) and lines[i].strip() != "---":
+        raw = lines[i]
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            i += 1
+            continue
+        if raw.startswith("  ") and cur_map_key is not None:
+            if ":" in stripped:
+                k, _, v = stripped.partition(":")
+                fm[cur_map_key][k.strip()] = v.strip().strip("\"'")
+            i += 1
+            continue
+        if stripped.startswith("- ") and cur_list_key is not None:
+            fm[cur_list_key].append(stripped[2:].strip().strip("\"'"))
+            i += 1
+            continue
+        cur_list_key = None
+        cur_map_key = None
+        if ":" not in stripped:
+            i += 1
+            continue
+        key, _, val = stripped.partition(":")
+        key, val = key.strip(), val.strip()
+        if val == "":
+            # Could be list (`tags:`) or map (`metadata:`); peek next
+            # non-blank line.
+            j = i + 1
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            peek = lines[j].strip() if j < len(lines) else ""
+            if peek.startswith("- "):
+                fm[key] = []
+                cur_list_key = key
+            else:
+                fm[key] = {}
+                cur_map_key = key
+        elif val.startswith("[") and val.endswith("]"):
+            inner = val[1:-1].strip()
+            fm[key] = (
+                [x.strip().strip("\"'")
+                 for x in inner.split(",") if x.strip()]
+                if inner else []
+            )
+        else:
+            fm[key] = val.strip("\"'")
+        i += 1
+    body_start = i + 1 if i < len(lines) else i
+    body = "\n".join(lines[body_start:]).lstrip("\n")
+    return fm, body
+
+
+@memory_grp.command("sync-disk")
+@click.argument("paths", type=click.Path(exists=True, path_type=Path),
+                nargs=-1, required=True)
+@click.option("--mtype", "default_mtype", default="curated", show_default=True,
+              help="mtype assigned to memories whose frontmatter does "
+                   "not carry an explicit `metadata.type`.")
+@click.option("--dry-run", is_flag=True,
+              help="Walk and parse but don't upsert. Reports the set of "
+                   "files that would be synced.")
+def memory_sync_disk(paths: tuple[Path, ...], default_mtype: str,
+                     dry_run: bool):
+    """Ingest curated `.md` memory files into the rmx memory store.
+
+    Walks each path (file or dir) for `*.md` files, parses frontmatter,
+    and upserts each as a `kind=memory` entity using the frontmatter's
+    `id` (or `name`, or filename stem) as the memory name. The body
+    becomes the memory content. `metadata.type` -> mtype (default
+    `curated` when absent). The original source path + mtime are
+    stashed in metadata for round-trip diagnostics.
+
+    Designed to bridge the auto-memory `.md` index at
+    `~/.claude/projects/<project>/memory/` into rmx so SessionStart
+    and UserPromptSubmit hooks see curated memories alongside the
+    intuition observations imported from session JSONL.
+
+    Reads:
+      id | name | <filename-stem>   -> memory name
+      title | description           -> stashed in metadata.title
+      metadata.type                 -> mtype
+      tags                          -> tags
+    """
+    _memory_intent("memory_sync_disk")
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    daemon_up = daemon_mod.ping(root)
+
+    candidates: list[Path] = []
+    for p in paths:
+        if p.is_file() and p.suffix == ".md":
+            candidates.append(p.resolve())
+        elif p.is_dir():
+            for sub in sorted(p.rglob("*.md")):
+                if sub.is_file():
+                    candidates.append(sub.resolve())
+    if not candidates:
+        raise click.ClickException(
+            "no .md files found under the given path(s)"
+        )
+
+    added = 0
+    updated = 0
+    skipped = 0
+    skipped_reasons: list[tuple[str, str]] = []
+    for path in candidates:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            skipped += 1
+            skipped_reasons.append((str(path), f"read: {exc}"))
+            continue
+        fm, body = _parse_memory_md_frontmatter(text)
+        # The auto-memory index file (MEMORY.md) is a flat list, not a
+        # memory node itself — skip it explicitly.
+        if path.name == "MEMORY.md":
+            skipped += 1
+            skipped_reasons.append((str(path), "index file (MEMORY.md)"))
+            continue
+        name = (
+            (fm.get("id") if isinstance(fm.get("id"), str) else None)
+            or (fm.get("name") if isinstance(fm.get("name"), str) else None)
+            or path.stem
+        )
+        meta = fm.get("metadata") if isinstance(fm.get("metadata"), dict) else {}
+        mtype = (
+            meta.get("type") if isinstance(meta.get("type"), str) else None
+        ) or default_mtype
+        title = (
+            (fm.get("title") if isinstance(fm.get("title"), str) else None)
+            or (fm.get("description") if isinstance(fm.get("description"), str) else None)
+        )
+        tags = fm.get("tags") if isinstance(fm.get("tags"), list) else []
+        # Synthetic source-pointer metadata so a recall can locate the
+        # backing file. Round-trip safe; the writer never reads it
+        # back as truth, only the frontmatter on disk does.
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            mtime = None
+        metadata = {
+            "source": "memory_sync_disk",
+            "source_path": str(path),
+            "source_mtime": mtime,
+        }
+        if title:
+            metadata["title"] = title
+        if meta:
+            for k, v in meta.items():
+                if k not in metadata:
+                    metadata[k] = v
+
+        if dry_run:
+            added += 1
+            continue
+        existed: bool
+        if daemon_up:
+            get_resp = _memory_daemon_call("memory_get", {"name": name})
+            existed = (
+                get_resp.get("ok", False)
+                and bool(get_resp.get("result", {}).get("memory"))
+            )
+            resp = _memory_daemon_call("memory_add", {
+                "name": name,
+                "content": body or text,
+                "mtype": mtype,
+                "tags": list(tags) if tags else None,
+                "metadata": metadata,
+            })
+            if not resp.get("ok"):
+                skipped += 1
+                skipped_reasons.append(
+                    (str(path), resp.get("error", "daemon error"))
+                )
+                continue
+        else:
+            s = _store()
+            existed = s.get_memory(name) is not None
+            s.add_memory(
+                name=name, content=body or text,
+                mtype=mtype, tags=list(tags) if tags else None,
+                metadata=metadata,
+            )
+        if existed:
+            updated += 1
+        else:
+            added += 1
+
+    total = added + updated + skipped
+    console.print(
+        f"sync-disk: scanned={total} added={added} updated={updated} "
+        f"skipped={skipped}{' (dry-run)' if dry_run else ''}"
+    )
+    if skipped_reasons:
+        for p, reason in skipped_reasons[:10]:
+            console.print(f"  [yellow]skipped[/] {p}  ({reason})")
+        if len(skipped_reasons) > 10:
+            console.print(f"  ... and {len(skipped_reasons) - 10} more")
 
 
 @memory_grp.command("import-sqlite")
