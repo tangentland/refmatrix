@@ -905,13 +905,28 @@ class Store:
     def close(self) -> None:
         # Persist any in-memory fragment edits before tearing down the
         # connection. Safe to call on a never-modified Store (no-op).
-        self.flush_fragments()
+        # Each step is best-effort and isolated so a failure in one
+        # (e.g. flush_fragments raising on a DuckDB FatalException-
+        # invalidated catalog) does not skip the connection close that
+        # actually releases the file lock. Without this, a failed
+        # rotation/refresh leaves the slot file locked for the rest of
+        # the process's lifetime.
+        try:
+            self.flush_fragments()
+        except Exception:
+            pass
         if self._duck_view is not None:
-            self._duck_view.close()
+            try:
+                self._duck_view.close()
+            except Exception:
+                pass
             self._duck_view = None
             self._read_conn = None
         if self._conn is not None:
-            self._conn.close()
+            try:
+                self._conn.close()
+            except Exception:
+                pass
             self._conn = None
 
     # ---- entities / concepts ----------------------------------------------
