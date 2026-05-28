@@ -823,6 +823,7 @@ class Daemon:
                 self.store.close()
             except Exception:
                 pass
+            inactive_store = None
             try:
                 inactive_store = Store(self.root, partition=self.partition)
                 inactive_store.db_path = self._replica_file(inactive)
@@ -831,15 +832,30 @@ class Daemon:
                     inactive_offset, end_offset,
                 )
                 inactive_store.flush_fragments()
-                inactive_store.close()
             except Exception as exc:
                 # Reopen active so the daemon stays functional, then
-                # surface the error.
+                # surface the error. CRITICAL: close inactive_store
+                # explicitly here — letting Python GC drop the reference
+                # is not reliable on DuckDB FatalException paths (the
+                # C++ side may keep the file lock even after the Python
+                # exception unwinds), which leaves the inactive slot
+                # locked and blocks all subsequent --via-replica reads
+                # against the symlink.
+                if inactive_store is not None:
+                    try:
+                        inactive_store.close()
+                    except Exception:
+                        pass
                 self.store = Store(self.root, partition=self.partition)
                 self.store.db_path = self._replica_file(active)
                 self.store.init()
                 return {"enabled": True, "ok": False,
                         "error": f"delta-replay: {exc!r}"}
+            else:
+                try:
+                    inactive_store.close()
+                except Exception:
+                    pass
 
             self._write_slot_offset(inactive, end_offset)
 
