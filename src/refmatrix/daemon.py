@@ -670,6 +670,50 @@ class Daemon:
         """Path to a rotation slot file (`A` or `B`)."""
         return self.root / f"catalog.{slot}.duckdb"
 
+    @staticmethod
+    def _is_invalidated_error(exc: Exception) -> bool:
+        """True if `exc` indicates a DuckDB FATAL/invalidated catalog —
+        the slot file is poisoned and only a rebuild recovers it."""
+        msg = str(exc).lower()
+        return (
+            "has been invalidated" in msg
+            or "fatal error" in msg
+            or "internal error" in msg
+        )
+
+    def _rebuild_slot_from(self, source_slot: str, target_slot: str,
+                           log_offset: int) -> None:
+        """Overwrite `target_slot`'s catalog file with a fresh copy of
+        `source_slot`'s. Used to recover an invalidated reader slot.
+
+        Assumes no live DuckDB connection on either side at call time.
+        Resets both offset markers so the next refresh tick treats both
+        slots as caught up to `log_offset`.
+        """
+        import shutil as _shutil
+        source_path = self._replica_file(source_slot)
+        target_path = self._replica_file(target_slot)
+        # Drop stale target + its WAL so DuckDB sees a clean snapshot
+        # after the copy. Unlink is safe — the slot was already locked
+        # out of the rotation by the invalidation.
+        for p in (target_path,
+                  target_path.with_name(target_path.name + ".wal")):
+            try:
+                if p.exists() or p.is_symlink():
+                    p.unlink()
+            except OSError as exc:
+                self._log(f"rebuild unlink {p.name} failed: {exc!r}")
+        _shutil.copy2(source_path, target_path)
+        try:
+            self._write_slot_offset(source_slot, log_offset)
+            self._write_slot_offset(target_slot, log_offset)
+        except Exception as exc:
+            self._log(f"rebuild offset reset failed: {exc!r}")
+        self._log(
+            f"rebuilt slot {target_slot} from {source_slot} "
+            f"(log_offset={log_offset})"
+        )
+
     def _read_only_link(self) -> Path:
         """Symlink the daemon maintains pointing at the current READER
         (inactive) slot. In-process Stores that need to read while the
@@ -781,17 +825,61 @@ class Daemon:
                     pass
                 self._write_slot_offset(active, end_offset)
                 new_active = inactive
+                # Atomic-ish swap: do the reopen FIRST so we know it
+                # works before flipping the marker on disk. If we wrote
+                # the marker first and the reopen failed, the marker
+                # would lie about which slot is the writer for the rest
+                # of the daemon's life.
+                rebuilt = False
                 try:
-                    self._active_marker().write_text(new_active)
                     self.store.close()
+                except Exception:
+                    pass
+                try:
                     self.store = Store(self.root, partition=self.partition)
                     self.store.db_path = self._replica_file(new_active)
                     self.store.init()
+                except Exception as exc:
+                    if self._is_invalidated_error(exc):
+                        try:
+                            self._rebuild_slot_from(active, new_active,
+                                                    end_offset)
+                            rebuilt = True
+                            self.store = Store(self.root,
+                                               partition=self.partition)
+                            self.store.db_path = self._replica_file(new_active)
+                            self.store.init()
+                        except Exception as rexc:
+                            self._log(
+                                f"noop-swap rebuild failed: {rexc!r}"
+                            )
+                            try:
+                                self.store = Store(self.root,
+                                                   partition=self.partition)
+                                self.store.db_path = self._replica_file(active)
+                                self.store.init()
+                            except Exception:
+                                pass
+                            return {"enabled": True, "ok": False,
+                                    "error": f"noop-swap rebuild: {rexc!r}"}
+                    else:
+                        try:
+                            self.store = Store(self.root,
+                                               partition=self.partition)
+                            self.store.db_path = self._replica_file(active)
+                            self.store.init()
+                        except Exception:
+                            pass
+                        return {"enabled": True, "ok": False,
+                                "error": f"pointer swap: {exc!r}"}
+                # Reopen succeeded — commit the swap.
+                try:
+                    self._active_marker().write_text(new_active)
                     self._active_slot = new_active
                     self._refresh_read_only_link()
                 except Exception as exc:
                     return {"enabled": True, "ok": False,
-                            "error": f"pointer swap: {exc!r}"}
+                            "error": f"swap marker update: {exc!r}"}
                 elapsed_ms = int((time.monotonic() - t0) * 1000)
                 result = {
                     "enabled": True, "ok": True,
@@ -804,7 +892,8 @@ class Daemon:
                     "log_end_offset": end_offset,
                     "elapsed_ms": elapsed_ms,
                     "refreshed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                    "mode": "noop-delta",
+                    "mode": "noop-delta-rebuilt" if rebuilt else "noop-delta",
+                    "rebuilt_slot": new_active if rebuilt else None,
                 }
                 self._replica_last = result
                 return result
@@ -853,11 +942,22 @@ class Daemon:
                         inactive_store.close()
                     except Exception:
                         pass
+                rebuilt = False
+                if self._is_invalidated_error(exc):
+                    try:
+                        self._rebuild_slot_from(active, inactive, end_offset)
+                        rebuilt = True
+                    except Exception as rexc:
+                        self._log(
+                            f"delta-replay rebuild failed: {rexc!r}"
+                        )
                 self.store = Store(self.root, partition=self.partition)
                 self.store.db_path = self._replica_file(active)
                 self.store.init()
+                err_kind = "delta-replay-rebuilt" if rebuilt else "delta-replay"
                 return {"enabled": True, "ok": False,
-                        "error": f"delta-replay: {exc!r}"}
+                        "error": f"{err_kind}: {exc!r}",
+                        "rebuilt_slot": inactive if rebuilt else None}
             else:
                 try:
                     inactive_store.close()
@@ -867,17 +967,32 @@ class Daemon:
             self._write_slot_offset(inactive, end_offset)
 
             # 4. swap pointer. The newly-current slot becomes writer.
+            # Reopen FIRST so a failed open doesn't leave the on-disk
+            # marker pointing at a slot the daemon can't actually use.
             new_active = inactive
             try:
-                self._active_marker().write_text(new_active)
                 self.store = Store(self.root, partition=self.partition)
                 self.store.db_path = self._replica_file(new_active)
                 self.store.init()
+            except Exception as exc:
+                # Fall back to active so daemon stays functional. Do
+                # not write the marker — current marker still names
+                # the working slot.
+                try:
+                    self.store = Store(self.root, partition=self.partition)
+                    self.store.db_path = self._replica_file(active)
+                    self.store.init()
+                except Exception:
+                    pass
+                return {"enabled": True, "ok": False,
+                        "error": f"pointer swap: {exc!r}"}
+            try:
+                self._active_marker().write_text(new_active)
                 self._active_slot = new_active
                 self._refresh_read_only_link()
             except Exception as exc:
                 return {"enabled": True, "ok": False,
-                        "error": f"pointer swap: {exc!r}"}
+                        "error": f"swap marker update: {exc!r}"}
 
         size = self._replica_file(new_active).stat().st_size \
             if self._replica_file(new_active).exists() else 0
