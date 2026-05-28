@@ -2174,3 +2174,49 @@ def stop_daemon(root: Path, *, timeout: float = 5.0) -> bool:
                 return True
             time.sleep(0.05)
     return False
+
+
+def serve_foreground(root: Path, *, partition: str | None = None,
+                     watch_root: Path | None = None,
+                     watch_debounce_ms: int = 500,
+                     watch_semantic: bool = False) -> int:
+    """Run the daemon in the foreground (no fork). Used by supervisors
+    like launchd / systemd that own the process lifecycle and need the
+    daemon process to stay attached to them. Returns 0 on clean exit.
+
+    Stdout/stderr are NOT redirected — the supervisor handles that
+    (`StandardOutPath` / `StandardErrorPath` in the plist).
+    """
+    import fcntl
+    root = Path(root).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+
+    if ping(root):
+        raise RuntimeError(
+            f"daemon already running for {root}; stop it before "
+            f"launching under a supervisor (`rmx daemon stop`)"
+        )
+
+    lock_path = root / "daemon.lock"
+    lockf = lock_path.open("w")
+    try:
+        fcntl.flock(lockf.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as e:
+        lockf.close()
+        raise RuntimeError(
+            f"another daemon spawn holds {lock_path}; refusing to start"
+        ) from e
+
+    try:
+        Daemon(
+            root, partition=partition,
+            watch_root=watch_root,
+            watch_debounce_ms=watch_debounce_ms,
+            watch_semantic=watch_semantic,
+        ).serve_forever()
+    finally:
+        try:
+            lockf.close()
+        except Exception:
+            pass
+    return 0

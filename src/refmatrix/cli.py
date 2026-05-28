@@ -268,8 +268,14 @@ def daemon():
     "--semantic", is_flag=True,
     help="Also extract Python semantics on watcher-driven syncs (slow).",
 )
+@click.option(
+    "--no-detach", is_flag=True,
+    help="Run the daemon in the foreground (do not fork). Use this when "
+         "launching under a supervisor like launchd / systemd that owns "
+         "the process lifecycle. Required by `rmx daemon launchctl install`.",
+)
 def daemon_start(watch: bool, watch_root: Path | None, debounce_ms: int,
-                 semantic: bool):
+                 semantic: bool, no_detach: bool):
     """Start the rmx daemon for the active store. Idempotent: re-running
     while a daemon is already up is a fast no-op (returns its pid)."""
     from refmatrix import daemon as daemon_mod
@@ -281,6 +287,19 @@ def daemon_start(watch: bool, watch_root: Path | None, debounce_ms: int,
     resolved_watch_root: Path | None = None
     if watch:
         resolved_watch_root = (watch_root or root.parent).resolve()
+    if no_detach:
+        # Foreground mode for launchd / systemd. Blocks until SIGTERM.
+        try:
+            daemon_mod.serve_foreground(
+                root,
+                partition=_resolve_partition(),
+                watch_root=resolved_watch_root,
+                watch_debounce_ms=debounce_ms,
+                watch_semantic=semantic,
+            )
+        except RuntimeError as e:
+            raise click.ClickException(str(e))
+        return
     pid = daemon_mod.spawn_daemon(
         root,
         partition=_resolve_partition(),
@@ -319,6 +338,106 @@ def daemon_status():
         console.print(f"[yellow]stale pid[/] {pid} (socket unreachable)")
     else:
         console.print("[dim]not running[/]")
+
+
+@daemon.group("launchctl")
+def daemon_launchctl():
+    """Generate + manage a macOS launchd LaunchAgent for the active store.
+
+    Installs a per-store plist in `~/Library/LaunchAgents/` that runs
+    `rmx daemon start --no-detach` at login and restarts on crash.
+    User-domain only — no sudo required.
+    """
+
+
+@daemon_launchctl.command("install")
+@click.option("--watch/--no-watch", default=True,
+              help="Embed --no-watch in the plist's ProgramArguments. "
+                   "Default on.")
+@click.option("--debounce-ms", type=int, default=500,
+              help="Watcher debounce window passed to `daemon start`.")
+@click.option("--semantic", is_flag=True,
+              help="Pass --semantic to `daemon start` for Python "
+                   "semantic extraction on watcher syncs.")
+@click.option("--force", is_flag=True,
+              help="Rewrite the plist and reload even if already "
+                   "installed and loaded.")
+def daemon_launchctl_install(watch: bool, debounce_ms: int,
+                             semantic: bool, force: bool):
+    """Install + bootstrap the LaunchAgent plist for the active store."""
+    from refmatrix import launchctl as lc
+    root = _root()
+    if not root.is_dir():
+        raise click.ClickException(
+            f"no refmatrix at {root}. Run `rmx init` first."
+        )
+    try:
+        p = lc.install(
+            root, partition=_resolve_partition(),
+            watch=watch, debounce_ms=debounce_ms,
+            semantic=semantic, force=force,
+        )
+    except (RuntimeError, FileNotFoundError) as e:
+        raise click.ClickException(str(e))
+    console.print(f"[green]installed[/] {p}")
+    console.print(f"label: {lc.label_for_root(root)}")
+    console.print(
+        "logs:  "
+        f"{root / 'daemon.stdout.log'} / {root / 'daemon.stderr.log'}"
+    )
+
+
+@daemon_launchctl.command("uninstall")
+def daemon_launchctl_uninstall():
+    """Bootout the LaunchAgent and remove its plist file."""
+    from refmatrix import launchctl as lc
+    root = _root()
+    try:
+        removed = lc.uninstall(root)
+    except RuntimeError as e:
+        raise click.ClickException(str(e))
+    if removed:
+        console.print(f"[green]uninstalled[/] {lc.plist_path(root)}")
+    else:
+        console.print("[dim]no plist to remove[/]")
+
+
+@daemon_launchctl.command("status")
+def daemon_launchctl_status():
+    """Show plist path, label, and whether it is installed + loaded."""
+    from refmatrix import launchctl as lc
+    root = _root()
+    st = lc.status(root)
+    console.print(f"label:     {st['label']}")
+    console.print(f"plist:     {st['plist_path']}")
+    console.print(
+        "installed: "
+        f"{'[green]yes[/]' if st['installed'] else '[dim]no[/]'}"
+    )
+    console.print(
+        "loaded:    "
+        f"{'[green]yes[/]' if st['loaded'] else '[dim]no[/]'}"
+    )
+
+
+@daemon_launchctl.command("print")
+@click.option("--watch/--no-watch", default=True)
+@click.option("--debounce-ms", type=int, default=500)
+@click.option("--semantic", is_flag=True)
+def daemon_launchctl_print(watch: bool, debounce_ms: int, semantic: bool):
+    """Render the plist to stdout without installing. Useful for review
+    or piping into a different LaunchAgents directory."""
+    from refmatrix import launchctl as lc
+    root = _root()
+    try:
+        data = lc.render_plist(
+            root, partition=_resolve_partition(),
+            watch=watch, debounce_ms=debounce_ms,
+            semantic=semantic,
+        )
+    except FileNotFoundError as e:
+        raise click.ClickException(str(e))
+    click.echo(data.decode())
 
 
 @main.command("migrate-to-duckdb")
