@@ -2208,6 +2208,7 @@ def spawn_daemon(root: Path, *, partition: str | None = None,
     groups path events back to their owning root for sync_files.
     """
     import fcntl
+    _harden_fork_safety()
     root = Path(root).resolve()
     root.mkdir(parents=True, exist_ok=True)
 
@@ -2379,6 +2380,30 @@ def stop_daemon(root: Path, *, timeout: float = 5.0) -> bool:
     return False
 
 
+def _harden_fork_safety() -> None:
+    """Pre-set env vars that prevent macOS libsystem_c from SIGABRT-ing
+    forked children in the embedder's loky worker pool.
+
+    Symptom this fixes: daemon dies with `EXC_CRASH / SIGABRT` and the
+    crash report carries
+    `asi: libsystem_c.dylib: crashed on child side of fork pre-exec`.
+    sentence-transformers spawns loky workers via fork; on macOS the
+    Objective-C runtime aborts forked children if any framework was
+    touched in the parent. Setting these env vars before the embedder
+    is loaded is the standard bypass.
+
+    `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` — silences the ObjC
+    initialize-after-fork abort.
+    `TOKENIZERS_PARALLELISM=false` — Hugging Face tokenizers disables
+    its own fork warning + worker pool that triggers the same path.
+
+    Idempotent: only `setdefault`s, so a launchd plist override still
+    wins."""
+    import os as _os
+    _os.environ.setdefault("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES")
+    _os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
+
 def serve_foreground(root: Path, *, partition: str | None = None,
                      watch_root: "Path | list[Path] | None" = None,
                      watch_debounce_ms: int = 500,
@@ -2393,6 +2418,7 @@ def serve_foreground(root: Path, *, partition: str | None = None,
     `watch_root` accepts either a single Path or a list of Paths.
     """
     import fcntl
+    _harden_fork_safety()
     root = Path(root).resolve()
     root.mkdir(parents=True, exist_ok=True)
 
