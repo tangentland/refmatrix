@@ -163,28 +163,37 @@ def _replica_store() -> Store:
     return s
 
 
-def _reader_store() -> Store:
-    """Return a Store suitable for read-only CLI paths that routes their
-    writes through the daemon RPC.
+def _reader_store() -> Store | None:
+    """Return a replica-backed read-only Store, or None when no usable
+    replica is available.
 
-    Resolution order:
-      1. Replica reader slot when present — lock-free, no DuckDB lock.
-      2. Read-only attach against the active catalog — DuckDB allows a
-         read-only connection alongside the daemon's writer, no lock
-         conflict.
+    Resolution: replica reader slot only. The earlier fallback that
+    attached read-only against the active catalog was incorrect —
+    DuckDB's read-only open still acquires a shared file lock that
+    conflicts with the daemon's exclusive write lock, raising
+    `IOException: Could not set lock on file catalog.A.duckdb`.
 
-    The previous behavior was to call `_store()` (write-capable). When
-    the daemon held the exclusive write lock, that path raised
-    `IOException: Could not set lock on file catalog.A.duckdb` —
-    visible in `cli.log` on `rmx grep` and other read paths during
-    heavy ingest. The read_only attach sidesteps that without needing
-    the rotation replica to exist."""
+    If the replica symlink points at the same file the daemon currently
+    holds (a state seen during the bootstrap window or after certain
+    swap-failure paths), the read-only attach raises IOException too.
+    We catch it and return None so callers fall back to daemon RPC.
+
+    Callers route to the daemon RPC when this returns None. The
+    daemon-side read ops (`_op_memory_get/iter/search/recent`) hold
+    `_store_lock` to serialize against `_refresh_replica_now`'s swap,
+    so even the fallback path is race-free."""
     try:
-        return _replica_store()
+        s = _replica_store()
     except click.ClickException:
-        pass
-    s = Store(_root(), partition=_resolve_partition(), read_only=True)
-    atexit.register(s.close)
+        return None
+    try:
+        s._connect()  # surface IOException now, not at first query
+    except Exception:
+        try:
+            s.close()
+        except Exception:
+            pass
+        return None
     return s
 
 
@@ -3578,11 +3587,13 @@ def memory_get(name_or_id):
     from refmatrix import daemon as daemon_mod
     root = _root()
     target = int(name_or_id) if name_or_id.isdigit() else name_or_id
-    # Replica-first: read-only memory ops bypass the daemon's `_store_lock`
-    # entirely. CLI no longer queues behind a long-running ingest.
+    args: dict = ({"id": target} if isinstance(target, int)
+                  else {"name": target})
     if daemon_mod.ping(root):
-        s = _reader_store()
-        m = s.get_memory(target)
+        resp = _memory_daemon_call("memory_get", args)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        m = resp["result"]["memory"]
     else:
         s = _store()
         m = s.get_memory(target)
@@ -3606,12 +3617,15 @@ def memory_list(mtype, limit):
     _memory_intent("memory_iter")
     from refmatrix import daemon as daemon_mod
     root = _root()
-    # Replica-first read: bypass daemon `_store_lock`. See memory_get.
+    args = {"mtype": mtype, "limit": limit}
     if daemon_mod.ping(root):
-        s = _reader_store()
+        resp = _memory_daemon_call("memory_iter", args)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        rows = resp["result"]["rows"]
     else:
         s = _store()
-    rows = list(s.iter_memories(mtype=mtype, limit=limit))
+        rows = list(s.iter_memories(mtype=mtype, limit=limit))
     if not rows:
         console.print("[yellow]no memories[/]")
         return
@@ -3635,12 +3649,15 @@ def memory_search(query, limit):
     _memory_intent("memory_search")
     from refmatrix import daemon as daemon_mod
     root = _root()
-    # Replica-first read: bypass daemon `_store_lock`. See memory_get.
+    args = {"query": query, "limit": limit}
     if daemon_mod.ping(root):
-        s = _reader_store()
+        resp = _memory_daemon_call("memory_search", args)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        rows = resp["result"]["rows"]
     else:
         s = _store()
-    rows = s.search_memories(query, limit=limit)
+        rows = s.search_memories(query, limit=limit)
     if not rows:
         console.print("[yellow]no matches[/]")
         return

@@ -86,16 +86,42 @@ def ping(root: Path, timeout: float = 0.5) -> bool:
 
 
 def call(root: Path, op: str, args: dict | None = None,
-         timeout: float = 60.0) -> dict:
-    """Send a request to the daemon and return the parsed response."""
+         timeout: float = 60.0, retries: int = 2,
+         retry_backoff: float = 0.05) -> dict:
+    """Send a request to the daemon and return the parsed response.
+
+    Retries on transient errors that surface when the daemon is mid-
+    swap, mid-restart, or briefly socket-busy. Specifically:
+      * empty-line response (`JSONDecodeError`) — socket closed before
+        write, typical of a daemon restart racing the call.
+      * `ConnectionResetError` / `BrokenPipeError` — peer reset.
+      * `TimeoutError` from the socket — daemon held `_store_lock`
+        longer than the caller's patience.
+    Each retry doubles the backoff. Backoff is bounded: total wait
+    is `retry_backoff * (2^retries - 1)` (default ~150 ms across
+    2 retries). Long enough to absorb a swap window; short enough
+    not to compound CLI latency.
+    """
     sock = socket_path(root)
     payload = json.dumps({"op": op, "args": args or {}}).encode() + b"\n"
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-        s.settimeout(timeout)
-        s.connect(str(sock))
-        s.sendall(payload)
-        data = _recv_line(s, timeout)
-    return json.loads(data)
+    last_exc: Exception | None = None
+    backoff = retry_backoff
+    for attempt in range(retries + 1):
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                s.settimeout(timeout)
+                s.connect(str(sock))
+                s.sendall(payload)
+                data = _recv_line(s, timeout)
+            return json.loads(data)
+        except (json.JSONDecodeError, ConnectionResetError, BrokenPipeError,
+                socket.timeout, TimeoutError, ConnectionRefusedError) as exc:
+            last_exc = exc
+            if attempt >= retries:
+                break
+            time.sleep(backoff)
+            backoff *= 2
+    raise last_exc  # type: ignore[misc]
 
 
 def _recv_line(s: socket.socket, timeout: float) -> bytes:
@@ -362,7 +388,10 @@ class Daemon:
         # rotation cycle.
         self._refresh_read_only_link()
         # Refresh thread: catches up the inactive slot every N seconds
-        # (RMX_REPLICA_REFRESH_S, default 5).
+        # (RMX_REPLICA_REFRESH_S, default 60). 5s was too aggressive —
+        # every cycle is a window where a replica reader can hit the
+        # mid-swap lock state. 60s gives readers a long stable view
+        # without falling significantly behind.
         self._start_replica_refresh()
 
         srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -1131,14 +1160,14 @@ class Daemon:
     def _start_replica_refresh(self, interval_s: float | None = None) -> None:
         """Spawn a daemon thread that periodically rotates the replica.
 
-        Default interval 5s, override via RMX_REPLICA_REFRESH_S. Set
+        Default interval 60s, override via RMX_REPLICA_REFRESH_S. Set
         RMX_REPLICA_REFRESH_S=0 to disable the thread entirely. DuckDB
         backend only."""
         import threading as _t
         if self.store is None or self.store._backend.kind != "duckdb":
             return
         if interval_s is None:
-            interval_s = float(os.environ.get("RMX_REPLICA_REFRESH_S", "5") or "5")
+            interval_s = float(os.environ.get("RMX_REPLICA_REFRESH_S", "60") or "60")
         if interval_s <= 0:
             return
         self._replica_stop = _t.Event()
