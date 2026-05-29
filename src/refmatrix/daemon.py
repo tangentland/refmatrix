@@ -179,6 +179,15 @@ class Daemon:
         self._store_lock = threading.Lock()
         self._async_flush_pending = False
         self._async_lock = threading.Lock()
+        # Read-op refcount + gate. Each `_open_read_store` increments the
+        # count; the dedicated read store's wrapper decrements on close
+        # and notifies. `_refresh_replica_now` waits on this gate before
+        # closing connections so the swap never runs while a reader
+        # holds a cursor against the slot file. Prevents the
+        # "NoneType not subscriptable" / empty-row race observed in
+        # 0.3.23.
+        self._swap_gate = threading.Condition()
+        self._read_inflight = 0
         # Cooperative shutdown event. SIGTERM/SIGINT set this so long-running
         # work (sync_files batch, ingest loop) can poll and early-exit
         # cleanly instead of pinning pool.shutdown(wait=True) until the
@@ -699,6 +708,73 @@ class Daemon:
         """Path to a rotation slot file (`A` or `B`)."""
         return self.root / f"catalog.{slot}.duckdb"
 
+    def _open_read_store(self, partition: str | None = None) -> "Store | None":
+        """Open a short-lived, dedicated read-only Store for a single op.
+
+        DuckDB allows multiple connections to the same database file from
+        the same process as long as only one is writable. This gives
+        read ops a private cursor that does not share state with
+        `self.store._conn` — and therefore is not invalidated when the
+        replica swap closes the writer connection.
+
+        Refcounted: increments `_read_inflight` and decrements in the
+        returned store's `close()`. `_refresh_replica_now` waits on
+        `_swap_gate` for the count to reach zero before closing the
+        write connection. Read ops therefore drain ahead of the swap;
+        the swap never closes a slot file with a live reader cursor on
+        it.
+
+        Callers must `close()` the returned Store. The ~50ms connect
+        cost buys full concurrency with ingest and a clean swap window.
+
+        Returns None if the active slot file is missing (early
+        bootstrap window); callers fall back to the locked-shared
+        path."""
+        from refmatrix.store import Store
+        active = self._active_slot or self._read_active_slot()
+        slot_path = self._replica_file(active)
+        if not slot_path.exists():
+            return None
+        # Reserve the refcount BEFORE the connect attempt so a swap that
+        # races a failing connect can't sneak through between increment
+        # and the failure path. Released in `close()` (success) or
+        # immediately on failure below.
+        with self._swap_gate:
+            self._read_inflight += 1
+        try:
+            s = Store(
+                self.root,
+                partition=partition or self.store._partition_name,
+                read_only=True,
+            )
+            s.db_path = slot_path
+            s._connect()  # surface lock errors here, not at first query
+        except Exception as exc:
+            with self._swap_gate:
+                self._read_inflight -= 1
+                if self._read_inflight == 0:
+                    self._swap_gate.notify_all()
+            self._log(f"open_read_store({active}) failed: {exc!r}")
+            return None
+        # Patch close() so the refcount drops + notifies exactly once.
+        orig_close = s.close
+        already_closed = [False]
+        daemon_ref = self
+
+        def _wrapped_close() -> None:
+            if already_closed[0]:
+                return
+            already_closed[0] = True
+            try:
+                orig_close()
+            finally:
+                with daemon_ref._swap_gate:
+                    daemon_ref._read_inflight -= 1
+                    if daemon_ref._read_inflight == 0:
+                        daemon_ref._swap_gate.notify_all()
+        s.close = _wrapped_close  # type: ignore[assignment]
+        return s
+
     @staticmethod
     def _is_invalidated_error(exc: Exception) -> bool:
         """True if `exc` indicates a DuckDB FATAL/invalidated catalog —
@@ -834,6 +910,18 @@ class Daemon:
         active = self._active_slot
         inactive = self._inactive_slot(active)
         t0 = time.monotonic()
+        # Sentinel-driven swap: refuse to start while a read store is
+        # live. The refresh thread tries again next tick. The reader's
+        # close path also notifies the gate, so the next refresh fires
+        # promptly once readers drain. No thread blocks on read I/O.
+        with self._swap_gate:
+            if self._read_inflight > 0:
+                self._log(
+                    f"swap: deferred, read_inflight="
+                    f"{self._read_inflight}"
+                )
+                return {"enabled": True, "ok": False, "deferred": True,
+                        "reason": "read in flight"}
         with self._store_lock:
             # 1. snapshot current log position
             try:
@@ -1555,6 +1643,19 @@ def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
     }
 
 
+def _op_prestage_hashes(d: Daemon, args: dict) -> dict:
+    """Backfill `gmd_content_hash` on entities for files whose content
+    matches the current DB state. Bootstraps the auto-resume fast path
+    on older stores without re-running the full ingest pipeline."""
+    from refmatrix.ingest_gmd import collect_gmd_files, prestage_hashes
+    targets = [Path(p).resolve() for p in (args.get("targets") or [])]
+    files = collect_gmd_files(targets)
+    partition = args.get("partition") or d.store._partition_name
+    with d._store_lock, d.store.with_partition(partition):
+        report = prestage_hashes(d.store, files)
+    return report
+
+
 def _op_sync_since(d: Daemon, args: dict) -> dict:
     """Run `sync_since` through the daemon's long-lived Store. Targets the
     git post-commit hook (`rmx sync --since HEAD~1`), which used to grab
@@ -1904,41 +2005,70 @@ def _op_memory_add(d: Daemon, args: dict) -> dict:
     return {"id": eid}
 
 
+def _read_with_fallback(d: Daemon, partition: str, fn):
+    """Run `fn(store)` against a dedicated read-only Store opened with
+    `_open_read_store`. Falls back to the shared writer connection
+    under `_store_lock` if the read store can't be opened (early
+    bootstrap, slot file missing, lock surprise).
+
+    The dedicated read store has its own DuckDB connection, so reads
+    no longer queue behind ingest's `_store_lock` and no longer race
+    the replica swap that closes `d.store._conn`."""
+    rs = d._open_read_store(partition)
+    if rs is not None:
+        try:
+            return fn(rs)
+        finally:
+            try:
+                rs.close()
+            except Exception:
+                pass
+    # Fallback: serialize under the write lock so the swap can't close
+    # the connection mid-cursor.
+    with d._store_lock, d.store.with_partition(partition):
+        return fn(d.store)
+
+
 def _op_memory_get(d: Daemon, args: dict) -> dict:
     """Fetch a memory by name (active partition) or id (any partition).
 
-    Holds `_store_lock` to serialize against `_refresh_replica_now`'s
-    swap. Without it, the swap thread could close `d.store._conn`
-    mid-cursor and surface as an empty or partial result (observed:
-    `memory list` returning 0 rows mid-rotation while data is intact)."""
+    Routes through a dedicated read-only DuckDB connection
+    (`_open_read_store`) so reads run concurrently with ingest writes
+    AND with the periodic replica swap. The swap closes the WRITER
+    connection; the reader has its own connection at the same slot
+    and stays valid for the duration of the op."""
     target = args.get("name") if args.get("name") is not None else args.get("id")
     if target is None:
         raise ValueError("memory_get requires 'name' or 'id'")
-    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
-        m = d.store.get_memory(target)
+    m = _read_with_fallback(
+        d, _memory_partition(d, args),
+        lambda s: s.get_memory(target),
+    )
     return {"memory": m}
 
 
 def _op_memory_iter(d: Daemon, args: dict) -> dict:
     """Stream memories in the active partition. Optional mtype filter.
-
-    See `_op_memory_get` for the `_store_lock` rationale."""
+    See `_op_memory_get` for the read-isolation rationale."""
     mtype = args.get("mtype")
     limit = args.get("limit")
-    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
-        rows = list(d.store.iter_memories(mtype=mtype, limit=limit))
+    rows = _read_with_fallback(
+        d, _memory_partition(d, args),
+        lambda s: list(s.iter_memories(mtype=mtype, limit=limit)),
+    )
     return {"rows": rows}
 
 
 def _op_memory_search(d: Daemon, args: dict) -> dict:
     """Substring search over memory name + content. Returns at most
-    `limit` rows newest-first.
-
-    See `_op_memory_get` for the `_store_lock` rationale."""
+    `limit` rows newest-first. See `_op_memory_get` for the
+    read-isolation rationale."""
     query = args["query"]
     limit = int(args.get("limit", 20))
-    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
-        rows = d.store.search_memories(query, limit=limit)
+    rows = _read_with_fallback(
+        d, _memory_partition(d, args),
+        lambda s: s.search_memories(query, limit=limit),
+    )
     return {"rows": rows}
 
 
@@ -1946,12 +2076,13 @@ def _op_memory_recent(d: Daemon, args: dict) -> dict:
     """Phase C2: most recent memories within an optional `since_seconds`
     window, newest first. Routed through the daemon so the in-process
     Store can't deadlock against the daemon's DuckDB write lock.
-
-    See `_op_memory_get` for the `_store_lock` rationale."""
+    See `_op_memory_get` for the read-isolation rationale."""
     since = args.get("since_seconds")
     limit = int(args.get("limit", 20))
-    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
-        rows = d.store.recent_memories(since_seconds=since, limit=limit)
+    rows = _read_with_fallback(
+        d, _memory_partition(d, args),
+        lambda s: s.recent_memories(since_seconds=since, limit=limit),
+    )
     return {"rows": rows}
 
 
@@ -2191,6 +2322,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "sync_since": _op_sync_since,
     "ingest_path": _op_ingest_path,
     "ingest_gmd": _op_ingest_gmd,
+    "prestage_hashes": _op_prestage_hashes,
     "context": _op_context,
     "query": _op_query,
     "grep_indexed": _op_grep_indexed,

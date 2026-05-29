@@ -15,6 +15,8 @@ useful slice. Full BM25 over node body text is deferred to v1.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import time
 from dataclasses import dataclass, field
@@ -22,6 +24,121 @@ from pathlib import Path
 from typing import Callable
 
 from refmatrix.store import Store
+
+
+def _doc_content_hash(path: Path) -> str:
+    """SHA1 of file bytes. Used as the resume primitive — when a file's
+    hash matches the hash stored in its entity meta from a prior
+    fully-completed ingest, both passes are skipped. Hash is written
+    only at the END of pass2 so a crashed mid-pass2 file is re-ingested
+    cleanly on resume."""
+    try:
+        return hashlib.sha1(path.read_bytes()).hexdigest()
+    except OSError:
+        return ""
+
+
+def _existing_hash_for(store: Store, name: str, kinds: tuple[str, ...]) -> str | None:
+    """Read `gmd_content_hash` from an entity's meta. Returns None when
+    the entity doesn't exist, has no meta, or the hash key is absent.
+    Used by both the auto-resume skip path and `prestage_hashes`."""
+    con = store._connect()
+    placeholders = ",".join("?" * len(kinds))
+    row = con.execute(
+        f"SELECT meta FROM entities "
+        f"WHERE partition_id=? AND kind IN ({placeholders}) AND name=? "
+        f"LIMIT 1",
+        (store._partition_id, *kinds, name),
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    try:
+        meta = json.loads(row[0])
+    except (ValueError, TypeError):
+        return None
+    h = meta.get("gmd_content_hash")
+    return h if isinstance(h, str) and h else None
+
+
+def _write_content_hash(store: Store, eid: int, content_hash: str) -> None:
+    """Merge `gmd_content_hash` + `gmd_pass2_done=True` into an entity's
+    meta JSON. Called at the END of pass2 file processing so the hash
+    only marks fully-ingested state. Re-running ingest after a hash
+    write is fast: hash match -> skip both passes for this file."""
+    con = store._connect()
+    row = con.execute(
+        "SELECT meta FROM entities WHERE id=?", (eid,)
+    ).fetchone()
+    try:
+        existing = json.loads(row[0]) if row and row[0] else {}
+    except (ValueError, TypeError):
+        existing = {}
+    if not isinstance(existing, dict):
+        existing = {}
+    existing["gmd_content_hash"] = content_hash
+    existing["gmd_pass2_done"] = True
+    con.execute(
+        "UPDATE entities SET meta=?, updated_at=? WHERE id=?",
+        (json.dumps(existing), time.time(), eid),
+    )
+    con.commit()
+
+
+def prestage_hashes(store: Store, paths: list[Path], *,
+                    kinds: tuple[str, ...] = ("memory", "doc")) -> dict:
+    """Backfill `gmd_content_hash` for files whose entities are already
+    fully ingested in the active partition.
+
+    Bootstraps the resume feature without re-running the full pipeline:
+    walks `paths`, matches each file by doc-id (frontmatter `id:` or
+    filename stem) against the partition's `kind IN kinds` entities,
+    and writes the current file hash + `gmd_pass2_done=True` into the
+    entity meta. After this, the next `ingest_gmd_paths` call will
+    skip files whose content hasn't changed.
+
+    Assumes the current DB state reflects a successful ingest. If a
+    prior ingest was interrupted mid-pass2 for some file, prestaging
+    will mark that file as done — the file's stale rels won't be
+    refreshed. Run a full `ingest_gmd_paths` over the suspect files
+    instead.
+
+    Returns `{"considered": N, "written": M, "skipped": K, "missing": K}`.
+    """
+    considered = written = skipped = missing = 0
+    for path in paths:
+        considered += 1
+        try:
+            doc = parse_gmd(path)
+        except Exception:
+            doc = None
+        if doc is None:
+            skipped += 1
+            continue
+        eid_row = store._connect().execute(
+            "SELECT id, meta FROM entities "
+            "WHERE partition_id=? AND name=? AND kind IN " +
+            "(" + ",".join("?" * len(kinds)) + ") "
+            "LIMIT 1",
+            (store._partition_id, doc.doc_id, *kinds),
+        ).fetchone()
+        if eid_row is None:
+            missing += 1
+            continue
+        existing_hash = None
+        try:
+            meta = json.loads(eid_row[1]) if eid_row[1] else {}
+            if isinstance(meta, dict):
+                existing_hash = meta.get("gmd_content_hash")
+        except (ValueError, TypeError):
+            pass
+        current_hash = _doc_content_hash(path)
+        if existing_hash == current_hash and current_hash:
+            skipped += 1
+            continue
+        _write_content_hash(store, eid_row[0], current_hash)
+        written += 1
+    return {"considered": considered, "written": written,
+            "skipped": skipped, "missing": missing}
 
 # ---- spec syntax patterns -------------------------------------------------
 
@@ -368,9 +485,34 @@ def ingest_gmd_paths(
     # ---- pass 1: parse + register entities -------------------------------
     docs: list[GmdDoc] = []
     eid_by_name: dict[str, int] = {}
+    # Doc-level entity ids, indexed by doc_id. Kept separate from
+    # `eid_by_name` because that map is overwritten by the `__root__`
+    # anchor (its `_entity_name` collapses to the bare doc_id). Pass2's
+    # resume marker writes the file hash onto THIS eid — the
+    # memory/doc-kind row — not the concept eid that ends up under the
+    # same key in `eid_by_name`.
+    doc_level_eid: dict[str, int] = {}
     pass1_processed = 0
+    skip_lookup_kinds = ("memory", "doc")
+    # Map doc_id -> SHA1 of the file content captured at pass1 entry.
+    # Used by pass2's final per-file step to mark the entity as fully
+    # ingested with this content. Recorded once at the START so a
+    # concurrent file edit during ingest doesn't pollute the marker.
+    file_hashes: dict[str, str] = {}
+    # Files we recognize as "fully ingested with this content" — both
+    # passes skip work for these. Just register the entity id in
+    # `eid_by_name` so cross-doc wikilink resolution still finds them.
+    skip_docs: set[str] = set()
 
     for path in paths:
+        # Resume fast path: if an entity for this doc already exists
+        # with a matching gmd_content_hash, skip both passes. The hash
+        # is only set at the END of pass2, so a partial prior ingest
+        # leaves the hash unset and we re-process.
+        try:
+            current_hash = _doc_content_hash(path)
+        except Exception:
+            current_hash = ""
         try:
             doc = parse_gmd(path)
         except Exception as e:
@@ -379,6 +521,32 @@ def ingest_gmd_paths(
             continue
         if doc is None:
             continue
+        if current_hash:
+            file_hashes[doc.doc_id] = current_hash
+            existing_hash = _existing_hash_for(
+                store, doc.doc_id, skip_lookup_kinds,
+            )
+            if existing_hash == current_hash:
+                # Lookup the entity id once and stash it for pass2
+                # cross-ref resolution. Skip all writes for this file.
+                row = store._connect().execute(
+                    "SELECT id FROM entities "
+                    "WHERE partition_id=? AND name=? "
+                    "  AND kind IN ('memory','doc') LIMIT 1",
+                    (store._partition_id, doc.doc_id),
+                ).fetchone()
+                if row is not None:
+                    docs.append(doc)
+                    stats.docs += 1
+                    eid_by_name[doc.doc_id] = row[0]
+                    doc_level_eid[doc.doc_id] = row[0]
+                    skip_docs.add(doc.doc_id)
+                    pass1_processed += 1
+                    if progress_cb is not None:
+                        progress_cb(
+                            "pass1-skip", pass1_processed, len(paths), path,
+                        )
+                    continue
         docs.append(doc)
         stats.docs += 1
 
@@ -452,6 +620,7 @@ def ingest_gmd_paths(
                 meta={"gmd_version": doc.gmd_version, "tags": doc.tags},
             )
         eid_by_name[doc.doc_id] = doc_eid
+        doc_level_eid[doc.doc_id] = doc_eid
         # ADR same_as bridge: link the GMD-id form (adr-0078-foo-bar) to the
         # non-GMD ADR ingester's slash-form (adr/0078) so wikilinks against
         # either form resolve to a unified concept. The slash form is a
@@ -507,6 +676,18 @@ def ingest_gmd_paths(
     pass2_processed = 0
     for doc in docs:
         doc_eid = eid_by_name[doc.doc_id]
+        # Resume skip: pass1 found a matching gmd_content_hash. The
+        # file's rels were persisted in the prior ingest's pass2 (hash
+        # is only set after pass2 completes). Skip the whole rel loop.
+        if doc.doc_id in skip_docs:
+            pass2_processed += 1
+            if progress_cb is not None:
+                progress_cb(
+                    "pass2-skip", pass2_processed, len(docs), doc.path,
+                )
+            if yield_lock and pass2_processed % yield_every == 0:
+                yield_lock()
+            continue
 
         # frontmatter imports
         for imp in doc.imports:
@@ -626,6 +807,27 @@ def ingest_gmd_paths(
                     )
                     store.link("mentions", cid, src_eid)
                     stats.mentions += 1
+
+        # Mark file fully ingested for resume. The hash was captured at
+        # pass1 entry (before any writes), so this writes the snapshot
+        # of the source-of-truth at the time work began. Files modified
+        # mid-ingest will still match on the next run only if their
+        # mid-ingest hash equals the post-ingest hash — a rare benign
+        # case.
+        # Use `doc_level_eid` (NOT `doc_eid` / `eid_by_name`): the
+        # `__root__` concept node shares the bare doc_id name and
+        # overwrites `eid_by_name[doc.doc_id]` during pass1's node loop.
+        captured = file_hashes.get(doc.doc_id)
+        write_eid = doc_level_eid.get(doc.doc_id)
+        if captured and write_eid is not None:
+            try:
+                _write_content_hash(store, write_eid, captured)
+            except Exception as exc:
+                if verbose:
+                    print(
+                        f"  warn: hash write failed for {doc.doc_id}: "
+                        f"{exc!r}"
+                    )
 
         pass2_processed += 1
         if progress_cb is not None:

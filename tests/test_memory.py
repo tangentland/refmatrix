@@ -331,6 +331,91 @@ def test_recent_memories_since_filter_drops_old(tmp_path, monkeypatch):
     assert {r["name"] for r in rows} == {"recent"}
 
 
+def test_ingest_gmd_auto_resume_skips_unchanged(tmp_path, monkeypatch):
+    """A second ingest with the same file content must skip both passes.
+    Verified by spying on add_memory: it's called on the first run,
+    NOT on the second."""
+    from refmatrix.ingest_gmd import ingest_gmd_paths
+
+    s = _store(tmp_path, monkeypatch)
+    doc = tmp_path / "doc.md"
+    doc.write_text(
+        '---\ngmd: "0.1"\nid: resume-doc\ntitle: "Resume Doc"\ntags: [smoke]\n'
+        'metadata:\n  type: feedback\n---\n\n# Body {#root}\n\nfirst content\n',
+        encoding="utf-8",
+    )
+    with s.with_partition("memory-test"):
+        ingest_gmd_paths(s, [doc], as_memory=True)
+        # Re-run on unchanged file — should be a no-op for writes.
+        call_log: list[str] = []
+        orig_add_memory = s.add_memory
+        def _tracked_add_memory(*a, **kw):
+            call_log.append("add_memory")
+            return orig_add_memory(*a, **kw)
+        s.add_memory = _tracked_add_memory  # type: ignore[assignment]
+        try:
+            stats = ingest_gmd_paths(s, [doc], as_memory=True)
+        finally:
+            s.add_memory = orig_add_memory  # type: ignore[assignment]
+    assert call_log == []  # resume must skip add_memory
+    assert stats.docs == 1
+
+
+def test_ingest_gmd_auto_resume_runs_when_content_changed(tmp_path, monkeypatch):
+    """A second ingest with different file content must NOT skip — the
+    hash mismatch forces full re-processing so the new body lands."""
+    from refmatrix.ingest_gmd import ingest_gmd_paths
+
+    s = _store(tmp_path, monkeypatch)
+    doc = tmp_path / "doc.md"
+    doc.write_text(
+        '---\ngmd: "0.1"\nid: changing-doc\ntitle: "Changing"\ntags: []\n'
+        'metadata:\n  type: feedback\n---\n\n# T {#root}\n\noriginal\n',
+        encoding="utf-8",
+    )
+    with s.with_partition("memory-test"):
+        ingest_gmd_paths(s, [doc], as_memory=True)
+        doc.write_text(
+            '---\ngmd: "0.1"\nid: changing-doc\ntitle: "Changing"\ntags: []\n'
+            'metadata:\n  type: feedback\n---\n\n# T {#root}\n\nupdated\n',
+            encoding="utf-8",
+        )
+        ingest_gmd_paths(s, [doc], as_memory=True)
+        m = s.get_memory("changing-doc")
+    assert m is not None
+    assert "updated" in (m["content"] or "")
+
+
+def test_prestage_hashes_marks_existing_as_done(tmp_path, monkeypatch):
+    """prestage_hashes stamps the current file hash onto matching
+    entities so the next ingest treats them as already done."""
+    from refmatrix.ingest_gmd import (
+        ingest_gmd_paths, prestage_hashes, _existing_hash_for,
+        _doc_content_hash,
+    )
+
+    s = _store(tmp_path, monkeypatch)
+    doc = tmp_path / "p.md"
+    doc.write_text(
+        '---\ngmd: "0.1"\nid: pre-doc\ntitle: "Pre"\ntags: []\n'
+        'metadata:\n  type: feedback\n---\n\n# T {#root}\n\nbody\n',
+        encoding="utf-8",
+    )
+    with s.with_partition("memory-test"):
+        ingest_gmd_paths(s, [doc], as_memory=True)
+        # Clear the hash so the entity looks pre-resume.
+        eid = s.get_memory("pre-doc")["id"]
+        s._connect().execute(
+            "UPDATE entities SET meta=? WHERE id=?",
+            ('{"title":"Pre"}', eid),
+        )
+        s._connect().commit()
+        assert _existing_hash_for(s, "pre-doc", ("memory",)) is None
+        report = prestage_hashes(s, [doc])
+        assert report["written"] == 1
+        assert _existing_hash_for(s, "pre-doc", ("memory",)) == _doc_content_hash(doc)
+
+
 def test_ingest_gmd_as_memory_honors_with_partition(tmp_path, monkeypatch):
     """Regression: `ingest-gmd --as-memory` must land memory rows in the
     caller's partition (e.g. `memory-<project>`), not the store's bound

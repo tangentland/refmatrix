@@ -3115,12 +3115,20 @@ def rebuild(from_log: bool, yes: bool):
               help="Default mtype assigned when --as-memory is set and "
                    "the frontmatter does not carry an explicit "
                    "`metadata.type`.")
+@click.option("--prestage", is_flag=True,
+              help="Backfill gmd_content_hash on entities for files whose "
+                   "content already matches the live DB. Bootstraps the "
+                   "auto-resume fast path so the next ingest skips both "
+                   "passes for unchanged files. Does NOT ingest — pairs "
+                   "with a regular `ingest-gmd` invocation afterwards.")
 def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
-               as_memory: bool, memory_mtype: str):
+               as_memory: bool, memory_mtype: str, prestage: bool):
     """Ingest Graph Markdown (GMD) docs. Walks dirs for *.gmd/*.md files
     that carry `gmd:` frontmatter; non-GMD files are skipped."""
     from refmatrix import daemon as daemon_mod
-    from refmatrix.ingest_gmd import collect_gmd_files, ingest_gmd_paths
+    from refmatrix.ingest_gmd import (
+        collect_gmd_files, ingest_gmd_paths, prestage_hashes,
+    )
 
     root = _root()
     resolved = [Path(t).resolve() for t in targets]
@@ -3135,6 +3143,32 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
         ingest_partition = _memory_partition_default()
     else:
         ingest_partition = _resolve_partition()
+    # --prestage: walk files and stamp gmd_content_hash on existing
+    # entities. Does not ingest. Useful to bootstrap auto-resume on a
+    # store that was populated by older rmx versions (no hashes
+    # recorded).
+    if prestage:
+        if daemon_mod.ping(root):
+            resp = daemon_mod.call(root, "prestage_hashes", {
+                "targets": [str(p) for p in resolved],
+                "partition": ingest_partition,
+            }, timeout=600.0)
+            if not resp.get("ok"):
+                raise click.ClickException(
+                    resp.get("error", "daemon error")
+                )
+            report = resp["result"]
+        else:
+            s = _store()
+            files = collect_gmd_files(resolved)
+            with s.with_partition(ingest_partition):
+                report = prestage_hashes(s, files)
+        console.print(
+            f"prestaged: considered={report['considered']} "
+            f"written={report['written']} skipped={report['skipped']} "
+            f"missing={report['missing']}"
+        )
+        return
     if daemon_mod.ping(root):
         resp = daemon_mod.call(root, "ingest_gmd", {
             "targets": [str(p) for p in resolved],
