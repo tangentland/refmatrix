@@ -341,6 +341,7 @@ def ingest_gmd_paths(
     yield_every: int = 10,
     as_memory: bool = False,
     memory_mtype_default: str = "curated",
+    progress_cb: Callable[[str, int, int, Path], None] | None = None,
 ) -> IngestStats:
     """Two-pass ingest: parse all docs first (build id table), then link.
 
@@ -491,6 +492,8 @@ def ingest_gmd_paths(
             stats.nodes += 1
 
         pass1_processed += 1
+        if progress_cb is not None:
+            progress_cb("pass1", pass1_processed, len(paths), path)
         if yield_lock and pass1_processed % yield_every == 0:
             # Lock-yield window: daemon releases + reacquires _store_lock so
             # CLI ops queued behind us get a turn. See module docstring.
@@ -625,6 +628,8 @@ def ingest_gmd_paths(
                     stats.mentions += 1
 
         pass2_processed += 1
+        if progress_cb is not None:
+            progress_cb("pass2", pass2_processed, len(docs), doc.path)
         if yield_lock and pass2_processed % yield_every == 0:
             yield_lock()
 

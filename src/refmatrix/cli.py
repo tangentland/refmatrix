@@ -163,6 +163,31 @@ def _replica_store() -> Store:
     return s
 
 
+def _reader_store() -> Store:
+    """Return a Store suitable for read-only CLI paths that routes their
+    writes through the daemon RPC.
+
+    Resolution order:
+      1. Replica reader slot when present — lock-free, no DuckDB lock.
+      2. Read-only attach against the active catalog — DuckDB allows a
+         read-only connection alongside the daemon's writer, no lock
+         conflict.
+
+    The previous behavior was to call `_store()` (write-capable). When
+    the daemon held the exclusive write lock, that path raised
+    `IOException: Could not set lock on file catalog.A.duckdb` —
+    visible in `cli.log` on `rmx grep` and other read paths during
+    heavy ingest. The read_only attach sidesteps that without needing
+    the rotation replica to exist."""
+    try:
+        return _replica_store()
+    except click.ClickException:
+        pass
+    s = Store(_root(), partition=_resolve_partition(), read_only=True)
+    atexit.register(s.close)
+    return s
+
+
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(__version__, "-V", "--version", prog_name="refmatrix")
 @click.option(
@@ -1507,7 +1532,12 @@ def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn, vi
                 linkage, kind, limit, fallback, learn, gf, paths, _tlog,
             )
         return
-    s = _store()
+    # Read-only Store: prefer replica, else attach read-only against the
+    # active catalog. Avoids `IOException: Could not set lock on file
+    # catalog.A.duckdb` when the daemon holds the write lock during heavy
+    # ingest. Direct write paths (`--learn` on rg fallback) still flow
+    # through the daemon RPC inside `_grep_run`.
+    s = _reader_store() if daemon_mod.ping(root) else _store()
     with log_query(s, kind="grep", body=pattern, source="grep") as _tlog:
         _grep_run(
             s, root, daemon_mod, pattern, effective_pattern, regex,
@@ -1870,11 +1900,20 @@ def stats(stale, via_replica):
         s = _replica_store()
         out = s.stats()
     elif daemon_mod.ping(root) and not stale:
-        resp = daemon_mod.call(root, "stats", {})
-        if not resp.get("ok"):
-            raise click.ClickException(f"daemon stats failed: {resp.get('error')}")
-        out = resp["result"]
-        s = None
+        # Replica-first read: bypass daemon `_store_lock` so `stats`
+        # doesn't queue 60s behind a long-running ingest. Falls back to
+        # daemon RPC if replica isn't available.
+        try:
+            s = _reader_store()
+            out = s.stats()
+        except click.ClickException:
+            resp = daemon_mod.call(root, "stats", {})
+            if not resp.get("ok"):
+                raise click.ClickException(
+                    f"daemon stats failed: {resp.get('error')}"
+                )
+            out = resp["result"]
+            s = None
     else:
         s = _store()
         out = s.stats()
@@ -3538,18 +3577,15 @@ def memory_get(name_or_id):
     _memory_intent("memory_get")
     from refmatrix import daemon as daemon_mod
     root = _root()
-    args: dict = (
-        {"id": int(name_or_id)} if name_or_id.isdigit()
-        else {"name": name_or_id}
-    )
+    target = int(name_or_id) if name_or_id.isdigit() else name_or_id
+    # Replica-first: read-only memory ops bypass the daemon's `_store_lock`
+    # entirely. CLI no longer queues behind a long-running ingest.
     if daemon_mod.ping(root):
-        resp = _memory_daemon_call("memory_get", args)
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        m = resp["result"]["memory"]
+        s = _reader_store()
+        m = s.get_memory(target)
     else:
         s = _store()
-        m = s.get_memory(int(name_or_id) if name_or_id.isdigit() else name_or_id)
+        m = s.get_memory(target)
     if m is None:
         raise click.ClickException(f"no memory matching {name_or_id!r}")
     console.print(f"[bold]{m['name']}[/]  id={m['id']}  mtype={m['mtype']}")
@@ -3570,15 +3606,12 @@ def memory_list(mtype, limit):
     _memory_intent("memory_iter")
     from refmatrix import daemon as daemon_mod
     root = _root()
-    args = {"mtype": mtype, "limit": limit}
+    # Replica-first read: bypass daemon `_store_lock`. See memory_get.
     if daemon_mod.ping(root):
-        resp = _memory_daemon_call("memory_iter", args)
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        rows = resp["result"]["rows"]
+        s = _reader_store()
     else:
         s = _store()
-        rows = list(s.iter_memories(mtype=mtype, limit=limit))
+    rows = list(s.iter_memories(mtype=mtype, limit=limit))
     if not rows:
         console.print("[yellow]no memories[/]")
         return
@@ -3602,15 +3635,12 @@ def memory_search(query, limit):
     _memory_intent("memory_search")
     from refmatrix import daemon as daemon_mod
     root = _root()
-    args = {"query": query, "limit": limit}
+    # Replica-first read: bypass daemon `_store_lock`. See memory_get.
     if daemon_mod.ping(root):
-        resp = _memory_daemon_call("memory_search", args)
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        rows = resp["result"]["rows"]
+        s = _reader_store()
     else:
         s = _store()
-        rows = s.search_memories(query, limit=limit)
+    rows = s.search_memories(query, limit=limit)
     if not rows:
         console.print("[yellow]no matches[/]")
         return

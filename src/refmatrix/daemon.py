@@ -1487,6 +1487,21 @@ def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
     # of bg throughput per yield, negligible against the responsiveness win.
     yield_sleep_s = float(os.environ.get("RMX_INGEST_YIELD_SLEEP_S", "0.001") or "0.001")
     partition = args.get("partition") or d.store._partition_name
+    # Per-file progress log: writes one `ingest-progress` line per file in
+    # each pass to rmxd.log. Tail `.refmatrix/rmxd.log | grep ingest-progress`
+    # for live status of a long-running ingest. Throttled by `yield_every`
+    # so high-file-count runs don't drown the log.
+    log_every = max(1, yield_every)
+    t0 = time.monotonic()
+
+    def _progress(phase: str, i: int, n: int, p: Path) -> None:
+        if i == 1 or i == n or i % log_every == 0:
+            elapsed = time.monotonic() - t0
+            eta = (elapsed / max(i, 1)) * max(n - i, 0)
+            d._log(
+                f"ingest-progress {phase} {i}/{n} "
+                f"elapsed={elapsed:.0f}s eta={eta:.0f}s {p}"
+            )
     d._store_lock.acquire()
     try:
         def _yield() -> None:
@@ -1499,6 +1514,7 @@ def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
                 yield_lock=_yield, yield_every=yield_every,
                 as_memory=bool(args.get("as_memory")),
                 memory_mtype_default=args.get("memory_mtype") or "curated",
+                progress_cb=_progress,
             )
     finally:
         d._store_lock.release()
@@ -1860,30 +1876,39 @@ def _op_memory_add(d: Daemon, args: dict) -> dict:
 
 
 def _op_memory_get(d: Daemon, args: dict) -> dict:
-    """Fetch a memory by name (active partition) or id (any partition)."""
+    """Fetch a memory by name (active partition) or id (any partition).
+
+    Holds `_store_lock` to serialize against `_refresh_replica_now`'s
+    swap. Without it, the swap thread could close `d.store._conn`
+    mid-cursor and surface as an empty or partial result (observed:
+    `memory list` returning 0 rows mid-rotation while data is intact)."""
     target = args.get("name") if args.get("name") is not None else args.get("id")
     if target is None:
         raise ValueError("memory_get requires 'name' or 'id'")
-    with d.store.with_partition(_memory_partition(d, args)):
+    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
         m = d.store.get_memory(target)
     return {"memory": m}
 
 
 def _op_memory_iter(d: Daemon, args: dict) -> dict:
-    """Stream memories in the active partition. Optional mtype filter."""
+    """Stream memories in the active partition. Optional mtype filter.
+
+    See `_op_memory_get` for the `_store_lock` rationale."""
     mtype = args.get("mtype")
     limit = args.get("limit")
-    with d.store.with_partition(_memory_partition(d, args)):
+    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
         rows = list(d.store.iter_memories(mtype=mtype, limit=limit))
     return {"rows": rows}
 
 
 def _op_memory_search(d: Daemon, args: dict) -> dict:
     """Substring search over memory name + content. Returns at most
-    `limit` rows newest-first."""
+    `limit` rows newest-first.
+
+    See `_op_memory_get` for the `_store_lock` rationale."""
     query = args["query"]
     limit = int(args.get("limit", 20))
-    with d.store.with_partition(_memory_partition(d, args)):
+    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
         rows = d.store.search_memories(query, limit=limit)
     return {"rows": rows}
 
@@ -1891,10 +1916,12 @@ def _op_memory_search(d: Daemon, args: dict) -> dict:
 def _op_memory_recent(d: Daemon, args: dict) -> dict:
     """Phase C2: most recent memories within an optional `since_seconds`
     window, newest first. Routed through the daemon so the in-process
-    Store can't deadlock against the daemon's DuckDB write lock."""
+    Store can't deadlock against the daemon's DuckDB write lock.
+
+    See `_op_memory_get` for the `_store_lock` rationale."""
     since = args.get("since_seconds")
     limit = int(args.get("limit", 20))
-    with d.store.with_partition(_memory_partition(d, args)):
+    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
         rows = d.store.recent_memories(since_seconds=since, limit=limit)
     return {"rows": rows}
 
