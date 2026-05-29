@@ -392,6 +392,39 @@ class Daemon:
         # want a lock-free read connection.
         self._active_slot = self._read_active_slot()
         self._bootstrap_rotation_if_needed()
+        # Defensive rebind: `Store(self.root, ...)` opened the legacy
+        # `catalog.duckdb` by default. `_bootstrap_rotation_if_needed`
+        # rebinds to the active slot ONLY when it has to copy the
+        # legacy file into A/B. When both slots already exist, the
+        # bootstrap returns early and the store is still pointed at
+        # `catalog.duckdb` — writes leak into the legacy file until
+        # the first replica swap rebinds. Force the rebind here so
+        # every write from line one targets the rotation-tracked slot.
+        active_path = self._replica_file(self._active_slot)
+        if (self.store is not None
+                and self.store._backend.kind == "duckdb"
+                and active_path.exists()
+                and self.store.db_path != active_path):
+            try:
+                self.store._connect().execute("CHECKPOINT")
+                self.store.flush_fragments()
+                self.store.close()
+            except Exception as exc:
+                self._log(f"init slot rebind: close failed: {exc!r}")
+            try:
+                self.store = Store(self.root, partition=self.partition)
+                self.store.db_path = active_path
+                self.store.init()
+                self._log(
+                    f"init slot rebind: db_path -> {active_path.name}"
+                )
+            except Exception as exc:
+                # Fall back to the legacy file; daemon stays alive but
+                # writes will continue to land in catalog.duckdb. Log
+                # so the operator notices the drift.
+                self._log(f"init slot rebind FAILED: {exc!r}")
+                self.store = Store(self.root, partition=self.partition)
+                self.store.init()
         # Point read_only.duckdb at the inactive slot so in-process
         # readers always have a lock-free path even before the first
         # rotation cycle.
