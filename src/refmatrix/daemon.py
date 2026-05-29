@@ -1468,6 +1468,11 @@ def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
     reacquires `_store_lock` periodically so CLI ops queued behind a
     long ingest get a turn at the lock. Without this, a multi-thousand-
     file ingest blocks every `rmx query`/`rmx stats`/etc. until done.
+
+    Honors `args['partition']` so `--as-memory` rows land in the caller's
+    partition (e.g. `memory-<project>`) rather than the daemon's bound
+    partition. Without this, ingested memories were orphaned in the
+    code-sync partition and invisible to `rmx memory list/recall`.
     """
     from refmatrix.ingest_gmd import collect_gmd_files, ingest_gmd_paths
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
@@ -1481,18 +1486,20 @@ def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
     # bare sleep(0) lets the bg thread immediately re-grab. 1ms loses ~1%
     # of bg throughput per yield, negligible against the responsiveness win.
     yield_sleep_s = float(os.environ.get("RMX_INGEST_YIELD_SLEEP_S", "0.001") or "0.001")
+    partition = args.get("partition") or d.store._partition_name
     d._store_lock.acquire()
     try:
         def _yield() -> None:
             d._store_lock.release()
             time.sleep(yield_sleep_s)
             d._store_lock.acquire()
-        stats = ingest_gmd_paths(
-            d.store, files, verbose=verbose,
-            yield_lock=_yield, yield_every=yield_every,
-            as_memory=bool(args.get("as_memory")),
-            memory_mtype_default=args.get("memory_mtype") or "curated",
-        )
+        with d.store.with_partition(partition):
+            stats = ingest_gmd_paths(
+                d.store, files, verbose=verbose,
+                yield_lock=_yield, yield_every=yield_every,
+                as_memory=bool(args.get("as_memory")),
+                memory_mtype_default=args.get("memory_mtype") or "curated",
+            )
     finally:
         d._store_lock.release()
     return {

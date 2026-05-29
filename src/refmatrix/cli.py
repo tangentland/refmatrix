@@ -3076,12 +3076,24 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
 
     root = _root()
     resolved = [Path(t).resolve() for t in targets]
+    # Pin partition so --as-memory rows land where `rmx memory list/recall`
+    # will see them. The daemon's bound partition is the code-sync target
+    # and typically is NOT the caller's memory-<project> partition; without
+    # this, ingested memories are orphaned. With --as-memory we mirror
+    # `_apply_memory_partition_default`: explicit -p / RMX_PARTITION wins,
+    # otherwise default to `memory-<project>`.
+    if as_memory and not _partition_override \
+            and not os.environ.get("RMX_PARTITION"):
+        ingest_partition = _memory_partition_default()
+    else:
+        ingest_partition = _resolve_partition()
     if daemon_mod.ping(root):
         resp = daemon_mod.call(root, "ingest_gmd", {
             "targets": [str(p) for p in resolved],
             "verbose": verbose,
             "as_memory": as_memory,
             "memory_mtype": memory_mtype,
+            "partition": ingest_partition,
         }, timeout=24 * 3600.0)
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
@@ -3095,10 +3107,13 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
     if verbose:
         for f in files:
             console.print(f"  scan {f}")
-    stats = ingest_gmd_paths(
-        s, files, verbose=verbose,
-        as_memory=as_memory, memory_mtype_default=memory_mtype,
-    )
+    # In-process path: mirror the daemon partition routing so the
+    # no-daemon fallback also lands --as-memory rows in the right slot.
+    with s.with_partition(ingest_partition):
+        stats = ingest_gmd_paths(
+            s, files, verbose=verbose,
+            as_memory=as_memory, memory_mtype_default=memory_mtype,
+        )
     console.print(stats.report())
 
 

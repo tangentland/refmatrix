@@ -331,6 +331,31 @@ def test_recent_memories_since_filter_drops_old(tmp_path, monkeypatch):
     assert {r["name"] for r in rows} == {"recent"}
 
 
+def test_ingest_gmd_as_memory_honors_with_partition(tmp_path, monkeypatch):
+    """Regression: `ingest-gmd --as-memory` must land memory rows in the
+    caller's partition (e.g. `memory-<project>`), not the store's bound
+    partition. Before the fix, daemon `_op_ingest_gmd` ignored `args['partition']`
+    so 105 viascope memories were orphaned in the code-sync partition and
+    invisible to `rmx memory list/recall`."""
+    from refmatrix.ingest_gmd import ingest_gmd_paths
+
+    s = _store(tmp_path, monkeypatch)
+    doc = tmp_path / "doc.md"
+    doc.write_text(
+        '---\ngmd: "0.1"\nid: hello-doc\ntitle: "Hello Doc"\ntags: [smoke]\n'
+        'metadata:\n  type: feedback\n---\n\n# Hello {#root}\n\nbody text\n',
+        encoding="utf-8",
+    )
+    target_partition = "memory-target"
+    with s.with_partition(target_partition):
+        ingest_gmd_paths(s, [doc], as_memory=True)
+    with s.with_partition(target_partition):
+        names = [m["name"] for m in s.iter_memories()]
+    assert names == ["hello-doc"]
+    # Default partition must NOT see the memory — proves the routing.
+    assert [m["name"] for m in s.iter_memories()] == []
+
+
 def test_duckdb_kind_check_migration_idempotent(tmp_path, monkeypatch):
     """Opening a freshly-initialized DuckDB store twice in a row must
     leave the schema in the same state — the migration helper should
