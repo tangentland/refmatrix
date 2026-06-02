@@ -425,9 +425,24 @@ class Daemon:
                 self._log(f"init slot rebind FAILED: {exc!r}")
                 self.store = Store(self.root, partition=self.partition)
                 self.store.init()
-        # Point read_only.duckdb at the inactive slot so in-process
-        # readers always have a lock-free path even before the first
-        # rotation cycle.
+        # Reconcile the on-disk marker to the slot we actually opened.
+        # The rebind can land on a different slot than the marker named
+        # (e.g. the intended slot was lock-held by a lingering daemon
+        # during a supervised restart, or a prior swap drifted). Persist
+        # the truth so the next swap / `rmx replica status` don't trust a
+        # lying marker. No-op on the legacy fallback (real is None).
+        real = self._writer_slot_from_store()
+        if real is not None:
+            self._active_slot = real
+            if self._read_active_slot() != real:
+                try:
+                    self._active_marker().write_text(real)
+                    self._log(f"init marker reconcile: active -> {real}")
+                except OSError as exc:
+                    self._log(f"init marker reconcile failed: {exc!r}")
+        # Point read_only.duckdb at the reader (non-writer) slot so
+        # out-of-process readers always have a lock-free path even before
+        # the first rotation cycle. Derived from the real writer above.
         self._refresh_read_only_link()
         # Refresh thread: catches up the inactive slot every N seconds
         # (RMX_REPLICA_REFRESH_S, default 60). 5s was too aggressive —
@@ -741,6 +756,30 @@ class Daemon:
         """Path to a rotation slot file (`A` or `B`)."""
         return self.root / f"catalog.{slot}.duckdb"
 
+    def _writer_slot_from_store(self) -> str | None:
+        """The slot letter the store is ACTUALLY open on, read off
+        `store.db_path`. Authoritative over the `active` marker: a swap
+        reopens the store on the new slot before persisting the marker,
+        so if that persist fails (or an abrupt restart lands mid-swap)
+        the marker drifts while the store keeps writing the real slot.
+        Deriving the reader from this — not the marker — guarantees the
+        `read_only.duckdb` symlink never lands on the locked writer.
+
+        Returns None for the legacy `catalog.duckdb` (not a rotation
+        slot), in which case callers fall back to the marker."""
+        store = getattr(self, "store", None)
+        if store is None:
+            return None
+        try:
+            name = Path(store.db_path).name
+        except Exception:
+            return None
+        if name == self._replica_file("A").name:
+            return "A"
+        if name == self._replica_file("B").name:
+            return "B"
+        return None
+
     def _open_read_store(self, partition: str | None = None) -> "Store | None":
         """Open a short-lived, dedicated read-only Store for a single op.
 
@@ -861,13 +900,26 @@ class Daemon:
         """
         return self.root / "read_only.duckdb"
 
+    def _reader_slot(self) -> str:
+        """The slot the read replica should point at: the one the writer
+        is NOT on. Derived from the store's real db_path when it sits on a
+        rotation slot (drift-proof), else from the `active` marker."""
+        writer = self._writer_slot_from_store()
+        if writer is None:
+            writer = self._read_active_slot()
+        return "B" if writer == "A" else "A"
+
     def _refresh_read_only_link(self) -> None:
-        """Point `read_only.duckdb` at the current inactive slot.
-        Atomic via os.symlink-to-temp + os.replace. No-op if symlinks
-        aren't available (Windows w/o developer mode); the Store side
-        falls back to `catalog.duckdb` in that case."""
+        """Point `read_only.duckdb` at the current reader (non-writer)
+        slot. Atomic via os.symlink-to-temp + os.replace. No-op if
+        symlinks aren't available (Windows w/o developer mode); the Store
+        side falls back to `catalog.duckdb` in that case.
+
+        The target is computed from the slot the daemon ACTUALLY writes
+        (`_reader_slot`), so a drifted `active` marker can never make the
+        symlink point at the locked writer file."""
         import os as _os
-        target = self._replica_file(self._inactive_slot()).name
+        target = self._replica_file(self._reader_slot()).name
         link = self._read_only_link()
         tmp = link.with_name(link.name + ".tmp")
         try:
@@ -1022,14 +1074,22 @@ class Daemon:
                             pass
                         return {"enabled": True, "ok": False,
                                 "error": f"pointer swap: {exc!r}"}
-                # Reopen succeeded — commit the swap.
+                # Reopen succeeded — commit the swap. In-memory slot +
+                # symlink first (both derive from the store we just
+                # opened, so they're authoritative and consistent); the
+                # marker write is a best-effort persistence of that truth.
+                # A failed marker write must NOT fail the swap or skip the
+                # symlink refresh — that was the drift bug: store moved to
+                # the new slot while the symlink kept pointing at it.
+                self._active_slot = new_active
+                self._refresh_read_only_link()
                 try:
                     self._active_marker().write_text(new_active)
-                    self._active_slot = new_active
-                    self._refresh_read_only_link()
-                except Exception as exc:
-                    return {"enabled": True, "ok": False,
-                            "error": f"swap marker update: {exc!r}"}
+                except OSError as exc:
+                    self._log(
+                        f"swap marker persist failed (in-mem + symlink "
+                        f"already consistent on {new_active}): {exc!r}"
+                    )
                 elapsed_ms = int((time.monotonic() - t0) * 1000)
                 result = {
                     "enabled": True, "ok": True,
@@ -1127,22 +1187,31 @@ class Daemon:
             except Exception as exc:
                 # Fall back to active so daemon stays functional. Do
                 # not write the marker — current marker still names
-                # the working slot.
+                # the working slot. Refresh the symlink so it tracks the
+                # slot we fell back onto (derived from store.db_path).
                 try:
                     self.store = Store(self.root, partition=self.partition)
                     self.store.db_path = self._replica_file(active)
                     self.store.init()
+                    self._active_slot = active
+                    self._refresh_read_only_link()
                 except Exception:
                     pass
                 return {"enabled": True, "ok": False,
                         "error": f"pointer swap: {exc!r}"}
+            # Commit: in-memory slot + symlink first (authoritative,
+            # derived from the store we just opened), marker best-effort.
+            # A failed marker write must not fail the swap or skip the
+            # symlink refresh.
+            self._active_slot = new_active
+            self._refresh_read_only_link()
             try:
                 self._active_marker().write_text(new_active)
-                self._active_slot = new_active
-                self._refresh_read_only_link()
-            except Exception as exc:
-                return {"enabled": True, "ok": False,
-                        "error": f"swap marker update: {exc!r}"}
+            except OSError as exc:
+                self._log(
+                    f"swap marker persist failed (in-mem + symlink "
+                    f"already consistent on {new_active}): {exc!r}"
+                )
 
         size = self._replica_file(new_active).stat().st_size \
             if self._replica_file(new_active).exists() else 0
@@ -2193,11 +2262,29 @@ def _op_replica_refresh(d: Daemon, args: dict) -> dict:
     return d._refresh_replica_now()
 
 
+def _op_replica_relink(d: Daemon, args: dict) -> dict:
+    """Re-point `read_only.duckdb` at the true reader (non-writer) slot.
+
+    Deliberately does NOT take `_store_lock`: `_refresh_read_only_link`
+    only touches the symlink (derived from `store.db_path`), so this is
+    safe to run even while the daemon is mid-operation. It's the recovery
+    op a replica reader calls after hitting a lock conflict because the
+    symlink had transiently drifted onto the writer slot."""
+    d._refresh_read_only_link()
+    reader = d._reader_slot()
+    return {"ok": True, "reader_slot": reader,
+            "reader_path": str(d._replica_file(reader))}
+
+
 def _op_replica_status(d: Daemon, args: dict) -> dict:
     """Report rotation state: writer + reader slots, file paths + sizes,
     last-refresh timestamp + latency, refresh-thread liveness."""
     enabled = d.store is not None and d.store._backend.kind == "duckdb"
-    active = getattr(d, "_active_slot", None) or d._read_active_slot()
+    # Authoritative writer = the slot the store is actually open on;
+    # the `active` marker can drift behind a swap that failed to persist.
+    active = (d._writer_slot_from_store()
+              or getattr(d, "_active_slot", None)
+              or d._read_active_slot())
     inactive = "B" if active == "A" else "A"
     a_path = d._replica_file("A")
     b_path = d._replica_file("B")
@@ -2309,8 +2396,8 @@ def _op_ann_search(d: Daemon, args: dict) -> dict:
         kinds: optional filter (default: all kinds in the partition).
         partition: override the daemon Store's bound partition for
             this read. Memory recall sets partition='intuition' so a
-            daemon bound to 'local' can still serve hybrid memory
-            queries. Lance datasets live at
+            daemon bound to its project partition can still serve hybrid
+            memory queries. Lance datasets live at
             `<root>/vectors/<partition>/<kind>.lance` so the read
             crosses partition without touching the bound store.
     """
@@ -2372,6 +2459,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "checkpoint": _op_checkpoint,
     "replica_refresh": _op_replica_refresh,
     "replica_status": _op_replica_status,
+    "replica_relink": _op_replica_relink,
     "embed": _op_embed,
     "ann_search": _op_ann_search,
     "memory_add": _op_memory_add,
@@ -2400,6 +2488,7 @@ CLI_OPS: set[str] = {
     "list_saved_queries",
     "replica_refresh",
     "replica_status",
+    "replica_relink",
     "ann_search",
     "memory_get",
     "memory_iter",

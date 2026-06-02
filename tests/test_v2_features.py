@@ -11,7 +11,7 @@ from click.testing import CliRunner
 from refmatrix.cli import main as cli_main
 from refmatrix.primer import build_primer, is_symbol_like
 from refmatrix.scan import extract_candidates, match_concepts, scan_prompt
-from refmatrix.store import Store
+from refmatrix.store import Store, default_partition_name
 
 
 @pytest.fixture
@@ -297,7 +297,8 @@ def test_legacy_per_concept_bitmaps_migrate_to_fragments(tmp_path, monkeypatch):
     # Force a connect so migration actually runs.
     s2._connect()
     # Fragments live under fragments/<partition>/ since the partition split.
-    assert (root / "fragments" / "local" / "mentions.rb64").exists()
+    assert (root / "fragments" / default_partition_name(root)
+            / "mentions.rb64").exists()
     # Legacy dir should be cleaned up.
     assert not list(legacy_dir.glob("*.rb"))
     # And load_bitmap should return the migrated rows.

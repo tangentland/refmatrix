@@ -5,16 +5,17 @@ import sqlite3
 
 import pytest
 
-from refmatrix.store import DEFAULT_PARTITION, Store
+from refmatrix.store import Store, default_partition_name
 
 
 # --- fresh init ------------------------------------------------------------
 
 
 def test_fresh_init_creates_default_partition(tmp_path, monkeypatch):
-    """A brand-new Store starts with a single 'local' partition (id=1) and
-    fragments live under fragments/local/. Existing read/write APIs work
-    unchanged because the default partition is implicit.
+    """A brand-new Store starts with a single project-scoped partition
+    (id=1, named after the project dir) and fragments live under
+    fragments/<that-name>/. Existing read/write APIs work unchanged because
+    the default partition is implicit.
 
     Pinned to SQLite: the per-partition fragment file layout is
     SQLite-only. DuckDB persists fragments as BLOB rows (see the BLOB
@@ -22,14 +23,15 @@ def test_fresh_init_creates_default_partition(tmp_path, monkeypatch):
     monkeypatch.setenv("RMX_BACKEND", "sqlite")
     s = Store(tmp_path / ".refmatrix")
     s.init()
-    assert s.partition_name == DEFAULT_PARTITION
+    default = default_partition_name(tmp_path / ".refmatrix")
+    assert s.partition_name == default
     assert s.partition_id == 1
 
     # Default partition row materialized.
     rows = s._connect().execute(
         "SELECT id, name FROM partitions ORDER BY id"
     ).fetchall()
-    assert [(r["id"], r["name"]) for r in rows] == [(1, DEFAULT_PARTITION)]
+    assert [(r["id"], r["name"]) for r in rows] == [(1, default)]
 
     # Roundtrip a basic write/read.
     cid = s.add_concept("parser")
@@ -38,7 +40,7 @@ def test_fresh_init_creates_default_partition(tmp_path, monkeypatch):
     s.close()
 
     # Fragment file landed under the per-partition subdir.
-    assert (s.root / "fragments" / DEFAULT_PARTITION / "mentions.rb64").exists()
+    assert (s.root / "fragments" / default / "mentions.rb64").exists()
 
 
 # --- legacy migration ------------------------------------------------------
@@ -49,7 +51,7 @@ def test_legacy_catalog_migrates_into_default_partition(tmp_path, monkeypatch):
     schema without partition_id, plus a loose fragments/<linkage>.rb64. After
     opening the Store, the rebuilt schema should carry partition_id columns
     (all rows backfilled to id=1) and the loose fragment should have moved
-    into fragments/local/."""
+    into fragments/<default-partition>/."""
     # Pin the SQLite backend: this test exercises the SQLite-specific legacy
     # migration path (the pre-partition catalog never existed under DuckDB).
     monkeypatch.setenv("RMX_BACKEND", "sqlite")
@@ -124,7 +126,7 @@ def test_legacy_catalog_migrates_into_default_partition(tmp_path, monkeypatch):
     con.close()
 
     # Drop a loose fragment to verify the fragment migration moves it into
-    # fragments/local/ on first open.
+    # fragments/<default-partition>/ on first open.
     loose = root / "fragments" / "mentions.rb64"
     loose.write_bytes(b"\x00\x00\x00\x00")  # contents irrelevant; we test the move
 
@@ -156,7 +158,8 @@ def test_legacy_catalog_migrates_into_default_partition(tmp_path, monkeypatch):
 
     # Loose fragment moved to per-partition subdir.
     assert not loose.exists()
-    assert (root / "fragments" / DEFAULT_PARTITION / "mentions.rb64").exists()
+    assert (root / "fragments" / default_partition_name(root)
+            / "mentions.rb64").exists()
 
     # Migration is idempotent — closing and reopening doesn't touch anything.
     s.close()
@@ -224,6 +227,49 @@ def test_two_partitions_stay_isolated(tmp_path, monkeypatch):
     sb.close()
     assert (root / "fragments" / "agent-a" / "mentions.rb64").exists()
     assert (root / "fragments" / "agent-b" / "mentions.rb64").exists()
+
+
+def test_rename_partition_moves_rows_and_dirs(tmp_path, monkeypatch):
+    """rename_partition updates the catalog row, keeps entity data resolvable
+    (entities key off partition id, not name), and moves the fragment dir."""
+    monkeypatch.setenv("RMX_BACKEND", "sqlite")
+    root = tmp_path / ".refmatrix"
+    s = Store(root, partition="old-name")
+    s.init()
+    cid = s.add_concept("parser")
+    e = s.upsert_entity(kind="code", name="x.py")
+    s.link("mentions", cid, e)
+    s.close()
+    assert (root / "fragments" / "old-name").exists()
+
+    s2 = Store(root, partition="old-name")
+    s2.rename_partition("old-name", "new-name")
+    s2.close()
+
+    s3 = Store(root, partition="new-name")
+    names = [r["name"] for r in s3._connect().execute(
+        "SELECT name FROM partitions"
+    )]
+    assert "new-name" in names and "old-name" not in names
+    assert s3.get_entity("concept", "parser") is not None
+    assert (root / "fragments" / "new-name").exists()
+    assert not (root / "fragments" / "old-name").exists()
+    s3.close()
+
+
+def test_rename_partition_rejects_existing_target(tmp_path, monkeypatch):
+    monkeypatch.setenv("RMX_BACKEND", "sqlite")
+    root = tmp_path / ".refmatrix"
+    for name in ("a", "b"):
+        st = Store(root, partition=name)
+        st.init()
+        st.close()
+    s = Store(root, partition="a")
+    with pytest.raises(ValueError):
+        s.rename_partition("a", "b")
+    with pytest.raises(ValueError):
+        s.rename_partition("does-not-exist", "c")
+    s.close()
 
 
 def test_partition_auto_created_on_first_open(tmp_path):

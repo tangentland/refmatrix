@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from refmatrix.store import DEFAULT_LINKAGES, Store
+from refmatrix.store import DEFAULT_LINKAGES, Store, default_partition_name
 
 
 def _store(tmp_path, monkeypatch, backend="sqlite"):
@@ -209,7 +209,8 @@ def test_duckdb_check_rebuild_accepts_memory_after_open(tmp_path, monkeypatch):
         )
     """)
     con.execute(
-        "INSERT INTO partitions(id, name, kind, created_at) VALUES (1, 'local', 'repo', 0)"
+        "INSERT INTO partitions(id, name, kind, created_at) VALUES (1, ?, 'repo', 0)",
+        [default_partition_name(root)],
     )
     con.execute("""
         CREATE TABLE entities (

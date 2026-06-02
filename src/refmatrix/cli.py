@@ -13,7 +13,7 @@ from rich.table import Table
 
 from refmatrix import __version__
 from refmatrix.query import QueryEngine
-from refmatrix.store import Store
+from refmatrix.store import Store, default_partition_name
 from refmatrix.telemetry import log_query
 
 console = Console()
@@ -37,22 +37,22 @@ _partition_override: str | None = None
 
 
 def _resolve_partition() -> str:
-    """Resolution order:
+    """Resolution order (overrides first, then the default):
        1. --partition / -p flag on the rmx group
        2. RMX_PARTITION env var
        3. .refmatrix/partition file walked up from cwd (one-line partition
           name — drop one inside a project's existing .refmatrix/ to bind
           that tree to a named partition in a shared store)
-       4. The project name (basename of the .refmatrix root's parent
-          directory). Used to default per-project, e.g. `viascope` for
-          /path/to/viascope/.refmatrix/. Falls back to `local` if the
-          basename can't be inferred (typically when no .refmatrix exists
-          yet — `rmx init` then creates a `local` partition).
+       4. The project-scoped default (`default_partition_name`): basename of
+          the .refmatrix root's parent dir, e.g. `viascope` for
+          /path/to/viascope/.refmatrix/. This is the SAME default Store()
+          uses, so lib and CLI always agree on an unconfigured root.
 
-    Note: the .refmatrix/ that holds the `partition` file does NOT have to
-    be the active store root — REFMATRIX_ROOT can still point at a central
-    shared store while a per-project .refmatrix/partition file selects which
-    partition this project's CLI invocations write into.
+    Steps 1-3 are overrides; step 4 is the default. Note: the .refmatrix/
+    that holds the `partition` file does NOT have to be the active store
+    root — REFMATRIX_ROOT can still point at a central shared store while a
+    per-project .refmatrix/partition file selects which partition this
+    project's CLI invocations write into.
     """
     if _partition_override:
         return _partition_override
@@ -69,15 +69,7 @@ def _resolve_partition() -> str:
                 continue
             if name:
                 return name
-    # Project-name default: basename of <root>/../ . For
-    # /home/me/myproj/.refmatrix the project is `myproj`.
-    try:
-        proj = _root().resolve().parent.name
-        if proj:
-            return proj
-    except Exception:
-        pass
-    return "local"
+    return default_partition_name(_root())
 
 
 def _store() -> Store:
@@ -123,20 +115,21 @@ def _replica_reader_path() -> Path:
 
 
 def _should_via_replica(explicit_flag: bool) -> bool:
-    """CLI prioritization: prefer the read replica by default so reads
-    bypass the daemon's `_store_lock` entirely (zero contention with
-    bg watch flushes / ingest / writers).
+    """CLI prioritization: the read replica is the default for every read
+    so reads bypass the daemon's `_store_lock` entirely (zero contention
+    with bg watch flushes / ingest / writers).
 
-    Resolution order:
+    Resolution:
       1. Explicit `--via-replica` flag wins.
-      2. Env `RMX_VIA_REPLICA_DEFAULT=0` -> always use the daemon path.
-         Default `1` -> use replica when the file is present.
-      3. Replica file must exist (post-rotation-bootstrap stores only).
-    """
+      2. Otherwise use the replica whenever its reader file exists
+         (post-rotation-bootstrap stores). Falls back to the daemon /
+         direct path only when there is no replica file yet.
+
+    No environment-variable knob: the replica read path is self-healing
+    (`_replica_read` relinks + retries on a lock conflict), so there's no
+    reason to globally opt out of it."""
     if explicit_flag:
         return True
-    if os.environ.get("RMX_VIA_REPLICA_DEFAULT", "1") == "0":
-        return False
     try:
         return _replica_reader_path().exists()
     except Exception:
@@ -195,6 +188,61 @@ def _reader_store() -> Store | None:
             pass
         return None
     return s
+
+
+def _is_lock_conflict(e: BaseException) -> bool:
+    """True if `e` is a DuckDB cross-process file-lock conflict — the
+    error raised when a read-only attach lands on the slot the daemon
+    holds open read-write. Matched on message text (the driver raises a
+    bare `IOException` with no dedicated subclass)."""
+    msg = str(e)
+    return "Conflicting lock" in msg or "set lock on file" in msg
+
+
+def _replica_read(fn):
+    """Run `fn(replica_store)` against the lock-free reader slot, with a
+    self-healing retry.
+
+    If the read raises a DuckDB lock conflict, the `read_only.duckdb`
+    symlink has transiently drifted onto the slot the daemon is writing.
+    The daemon owns that symlink and knows its real writer, so we ask it
+    to re-point the link (`replica_relink`, lock-free on the daemon side)
+    and retry the read ONCE on a fresh reader store.
+
+    No daemon-RPC fallback: a lock conflict that survives a relink is a
+    genuine fault, surfaced as a clean ClickException rather than the raw
+    driver traceback. `fn` must do all work that touches the store
+    (connect + query + render) so the retry re-runs cleanly — the lock
+    error always fires at first connect, before any output is produced."""
+    s = _replica_store()
+    try:
+        return fn(s)
+    except Exception as e:
+        if not _is_lock_conflict(e):
+            raise
+        try:
+            s.close()
+        except Exception:
+            pass
+    # Drifted symlink: have the daemon re-point it, then retry once.
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.ping(root):
+        try:
+            daemon_mod.call(root, "replica_relink", {}, timeout=10.0)
+        except Exception:
+            pass
+    s = _replica_store()
+    try:
+        return fn(s)
+    except Exception as e:
+        if _is_lock_conflict(e):
+            raise click.ClickException(
+                "replica read hit a lock conflict that persisted after "
+                "relinking read_only.duckdb — the rotation reader slot may "
+                "be mis-pointed. Run `rmx replica refresh`."
+            ) from e
+        raise
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
@@ -438,6 +486,26 @@ def daemon_launchctl_install(watch: bool, watch_roots: tuple[Path, ...],
     )
 
 
+@daemon_launchctl.command("kickstart")
+@click.option("-k", "--restart", is_flag=True,
+              help="Force-restart the daemon if already running "
+                   "(launchctl kickstart -k).")
+def daemon_launchctl_kickstart(restart: bool):
+    """Ensure the supervised daemon for the active store is running.
+
+    Resolves the store's LaunchAgent label and `launchctl kickstart`s it —
+    starts it if down, no-ops if already up, or restarts with -k. Intended
+    for SessionStart hooks so a session always begins with a live,
+    supervised daemon under the current label naming."""
+    from refmatrix import launchctl as lc
+    root = _root()
+    try:
+        label = lc.kickstart(root, restart=restart)
+    except (RuntimeError, FileNotFoundError) as e:
+        raise click.ClickException(str(e))
+    console.print(f"[green]kickstarted[/] {label}")
+
+
 @daemon_launchctl.command("uninstall")
 def daemon_launchctl_uninstall():
     """Bootout the LaunchAgent and remove its plist file."""
@@ -583,6 +651,28 @@ def partition_add(name: str, kind: str, root_path: str | None):
     )
     con.commit()
     console.print(f"[green]registered[/] partition={name} kind={kind}")
+
+
+@partition.command("rename")
+@click.argument("old")
+@click.argument("new")
+def partition_rename(old: str, new: str):
+    """Rename partition OLD to NEW.
+
+    Updates the catalog row and moves the partition's fragment + vector
+    directories. Entity rows reference the partition by id, so their data is
+    untouched. Restart any daemon bound to OLD afterwards."""
+    s = _store()
+    try:
+        s.rename_partition(old, new)
+    except ValueError as e:
+        raise click.ClickException(str(e))
+    s.close()
+    console.print(f"[green]renamed[/] partition {old} -> {new}")
+    console.print(
+        "[dim]restart the daemon if it was bound to the old name "
+        "(`rmx daemon launchctl kickstart -k`).[/]"
+    )
 
 
 # ---- canon (cross-codebase concept matching) -----------------------------
@@ -921,47 +1011,48 @@ def _print_bitmap(s: Store, bm, limit: int = 50):
 def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter, strict, via_replica):
     """Run a query. DSL: `mentions:parser AND defines:parser`. PQL: `Row(calls,foo)`."""
     # --explain renders evidence via the daemon's writer-slot path; the
-    # replica fast path doesn't (yet) carry the evidence join. Force
-    # the daemon route when --explain is set so we don't silently drop
-    # the explain output under the new RMX_VIA_REPLICA_DEFAULT=1 default.
+    # replica fast path doesn't (yet) carry the evidence join. Force the
+    # daemon route when --explain is set so we don't silently drop the
+    # explain output now that the replica is the default read path.
     if not explain:
         via_replica = _should_via_replica(via_replica)
     if via_replica:
-        s = _replica_store()
-        qe = QueryEngine(s, include_noise=include_noise, strict=strict)
-        with log_query(s, kind="pql" if is_pql else "dsl",
-                       body=expr, source="query-replica") as t:
-            result = qe.run_pql(expr) if is_pql else qe.run(expr)
-            try:
-                t.cardinality = len(result) if hasattr(result, "__len__") else None
-            except TypeError:
-                t.cardinality = None
-        if name_filter:
-            from pyroaring import BitMap
-            matching = BitMap(
-                r[0] for r in s._connect().execute(
-                    "SELECT id FROM entities WHERE name LIKE ?", (name_filter,)
+        def _run(s):
+            qe = QueryEngine(s, include_noise=include_noise, strict=strict)
+            with log_query(s, kind="pql" if is_pql else "dsl",
+                           body=expr, source="query-replica") as t:
+                result = qe.run_pql(expr) if is_pql else qe.run(expr)
+                try:
+                    t.cardinality = len(result) if hasattr(result, "__len__") else None
+                except TypeError:
+                    t.cardinality = None
+            if name_filter:
+                from pyroaring import BitMap
+                matching = BitMap(
+                    r[0] for r in s._connect().execute(
+                        "SELECT id FROM entities WHERE name LIKE ?", (name_filter,)
+                    )
                 )
-            )
+                if isinstance(result, list):
+                    result = [(eid, w) for eid, w in result if eid in matching]
+                elif hasattr(result, '__iter__') and not isinstance(result, int):
+                    result = result & matching
             if isinstance(result, list):
-                result = [(eid, w) for eid, w in result if eid in matching]
-            elif hasattr(result, '__iter__') and not isinstance(result, int):
-                result = result & matching
-        if isinstance(result, list):
-            t = Table("entity", "weight")
-            for eid, w in result:
-                e = s.get_entity_by_id(eid)
-                t.add_row(e.name if e else str(eid), str(w))
-            console.print(t)
-            return
-        if isinstance(result, int):
-            console.print(str(result))
-            return
-        if ids_only:
-            for eid in result:
-                print(eid)
-            return
-        _print_bitmap(s, result, limit=limit)
+                t = Table("entity", "weight")
+                for eid, w in result:
+                    e = s.get_entity_by_id(eid)
+                    t.add_row(e.name if e else str(eid), str(w))
+                console.print(t)
+                return
+            if isinstance(result, int):
+                console.print(str(result))
+                return
+            if ids_only:
+                for eid in result:
+                    print(eid)
+                return
+            _print_bitmap(s, result, limit=limit)
+        _replica_read(_run)
         return
 
     from refmatrix import daemon as daemon_mod
@@ -1078,12 +1169,20 @@ def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter, st
 def neighbors(concept, depth, linkage, limit, include_noise, strict, via_replica):
     """Walk linkages from a concept (depth-N closure)."""
     via_replica = _should_via_replica(via_replica)
-    s = _replica_store() if via_replica else _store()
-    qe = QueryEngine(s, include_noise=include_noise, strict=strict)
-    with log_query(s, kind="neighbors", body=concept, source="neighbors") as t:
-        bm = qe.neighbors(concept, depth=depth, linkages=list(linkage) or None)
-        t.cardinality = len(bm)
-    _print_bitmap(s, bm, limit=limit)
+
+    def _run(s):
+        qe = QueryEngine(s, include_noise=include_noise, strict=strict)
+        with log_query(s, kind="neighbors", body=concept,
+                       source="neighbors") as t:
+            bm = qe.neighbors(concept, depth=depth,
+                              linkages=list(linkage) or None)
+            t.cardinality = len(bm)
+        _print_bitmap(s, bm, limit=limit)
+
+    if via_replica:
+        _replica_read(_run)
+    else:
+        _run(_store())
 
 
 @main.command()
@@ -1121,17 +1220,20 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
             raise click.ClickException("--via-replica does not support --since")
         if not symbol:
             raise click.ClickException("--via-replica requires a symbol")
-        s = _replica_store()
-        with log_query(s, kind="context", body=symbol, source="context-replica") as t:
-            bundle = build_context(
-                s, symbol,
-                linkages=list(linkage) or None,
-                max_entities=max_entities,
-                max_tokens=max_tokens,
-                fuse=fuse,
-                strict=strict,
-            )
-            t.cardinality = bundle.total_entities() if bundle.anchor else 0
+        def _run(s):
+            with log_query(s, kind="context", body=symbol,
+                           source="context-replica") as t:
+                b = build_context(
+                    s, symbol,
+                    linkages=list(linkage) or None,
+                    max_entities=max_entities,
+                    max_tokens=max_tokens,
+                    fuse=fuse,
+                    strict=strict,
+                )
+                t.cardinality = b.total_entities() if b.anchor else 0
+            return b
+        bundle = _replica_read(_run)
         if fmt == "json":
             click.echo(render_json(bundle))
         else:
@@ -1479,9 +1581,8 @@ def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
                    "`query/PATTERN` concept so future searches hit the index.")
 @click.option("--via-replica", is_flag=True,
               help="Read from the rotation reader slot instead of the daemon. "
-                   "Lock-free; default ON when replica file exists (see "
-                   "RMX_VIA_REPLICA_DEFAULT). Skips --learn (writes need the "
-                   "daemon).")
+                   "Lock-free; default ON when the replica file exists. "
+                   "Skips --learn (writes need the daemon).")
 def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn, via_replica):
     """Index-backed grep: find concepts whose name matches PATTERN and
     print file:line for every recorded reference. Falls back to `rg` /
@@ -1531,21 +1632,27 @@ def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn, vi
         # Read-only replica path. Skip the daemon entirely so a busy
         # writer can't make us wait. `--learn` is implicitly disabled
         # because writes require the daemon's write connection.
-        s = _replica_store()
         if learn:
             console.print("[dim]learn=off under --via-replica (read-only).[/]")
             learn = False
-        with log_query(s, kind="grep", body=pattern, source="grep-replica") as _tlog:
-            _grep_run_direct(
-                s, pattern, effective_pattern, regex,
-                linkage, kind, limit, fallback, learn, gf, paths, _tlog,
-            )
+
+        def _run(s):
+            with log_query(s, kind="grep", body=pattern,
+                           source="grep-replica") as _tlog:
+                _grep_run_direct(
+                    s, pattern, effective_pattern, regex,
+                    linkage, kind, limit, fallback, learn, gf, paths, _tlog,
+                )
+        _replica_read(_run)
         return
-    # Read-only Store: prefer replica, else attach read-only against the
-    # active catalog. Avoids `IOException: Could not set lock on file
-    # catalog.A.duckdb` when the daemon holds the write lock during heavy
-    # ingest. Direct write paths (`--learn` on rg fallback) still flow
-    # through the daemon RPC inside `_grep_run`.
+    # Read-only Store from the replica reader slot. A read-only attach
+    # against the ACTIVE catalog is impossible while the daemon holds it:
+    # DuckDB takes an exclusive cross-process lock, so even a read_only
+    # open raises `IOException: Could not set lock on file`. So when the
+    # daemon is up we use the replica (`_reader_store`, which returns None
+    # on a lock conflict / missing replica); `_grep_run` then serves the
+    # read over the daemon RPC (`grep_indexed`) and never touches `s`.
+    # Only with no daemon do we open the catalog directly via `_store()`.
     s = _reader_store() if daemon_mod.ping(root) else _store()
     with log_query(s, kind="grep", body=pattern, source="grep") as _tlog:
         _grep_run(
@@ -1906,8 +2013,8 @@ def stats(stale, via_replica):
     if via_replica:
         if stale:
             raise click.ClickException("--via-replica and --stale are incompatible")
-        s = _replica_store()
-        out = s.stats()
+        s = None  # stale is False here, so the s.stale_files() branch is skipped
+        out = _replica_read(lambda st: st.stats())
     elif daemon_mod.ping(root) and not stale:
         # Replica-first read: bypass daemon `_store_lock` so `stats`
         # doesn't queue 60s behind a long-running ingest. Falls back to

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "refmatrix"
-version = "0.3.27"
+version = "0.3.28"
 description = "Roaring-bitmap reference matrix for documents, code, and concepts. Hyper-tldr index."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -16,17 +16,23 @@ dependencies = [
     "rich>=13.7",
     "duckdb>=1.5.3",
     "pyarrow>=14.0",
+    # Embeddings + ANN: the daemon always embeds on sync, so these are
+    # core, not optional.
+    "pylance>=0.20",
+    "sentence-transformers>=3.0",
+    "numpy>=1.26",
+    # File watcher: the daemon watches by default (--no-watch opts out).
+    "watchdog>=4.0",
+    # Pulled transitively by transformers/lance/jinja2, but pinned here so a
+    # standalone venv install never lands them in a system/Framework path
+    # instead of the venv (the split that broke imports before).
+    "typing_extensions>=4.0",
+    "markupsafe>=2.0",
 ]
 
 [project.optional-dependencies]
 tldr = ["llm-tldr>=1.5"]
-watch = ["watchdog>=4.0"]
-dense = [
-    "pylance>=0.20",
-    "sentence-transformers>=3.0",
-    "numpy>=1.26",
-]
-dev = ["pytest>=8.0", "watchdog>=4.0"]
+dev = ["pytest>=8.0"]
 
 [project.scripts]
 refmatrix = "refmatrix.cli:cli_entry"

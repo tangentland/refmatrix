@@ -82,9 +82,19 @@ def _log_enabled() -> bool:
 # A single .refmatrix/ root can host multiple named partitions so several agents
 # can write to a shared store without colliding on (kind, name). Each entity
 # carries a partition_id; fragment files live under fragments/<partition>/.
-# Existing single-partition catalogs are migrated on open to a default 'local'
-# partition (id=1) — pre-partition data lands there with no behavior change.
-DEFAULT_PARTITION = "local"
+
+
+def default_partition_name(root: "Path") -> str:
+    """The default partition for an unconfigured store or CLI invocation:
+    the project name (basename of the directory that holds `.refmatrix/`).
+
+    This is THE default — there is no separate baked-in partition. An
+    explicit `partition=` argument or the `RMX_PARTITION` env var override
+    it; env vars are overrides only, never required to reach the default.
+    Store() and the CLI both resolve through here, so the same root always
+    maps to the same partition regardless of which layer opens it."""
+    p = Path(root).resolve()
+    return p.parent.name or "default"
 
 CATALOG_DDL = """
 CREATE TABLE IF NOT EXISTS partitions (
@@ -280,13 +290,15 @@ class Store:
         self.bitmaps_dir = self.root / "bitmaps"
         self.fragments_dir = self.root / "fragments"
         self.queries_dir = self.root / "queries"
-        # Active partition. Falls back to RMX_PARTITION env, then 'local'. The
-        # partition row is auto-created on first connect — passing a brand-new
-        # name from CLI flag or env "just works" without an explicit register.
+        # Active partition. Explicit arg wins, then the RMX_PARTITION env
+        # override, then the project-scoped default (basename of the
+        # project dir). The partition row is auto-created on first connect
+        # — passing a brand-new name "just works" without an explicit
+        # register.
         self._partition_name: str = (
             partition
             or os.environ.get("RMX_PARTITION")
-            or DEFAULT_PARTITION
+            or default_partition_name(self.root)
         )
         self._partition_id: int | None = None
         self._conn: sqlite3.Connection | None = None
@@ -405,7 +417,7 @@ class Store:
                         (self._partition_name,),
                     ).fetchone()
                     self._partition_id = (
-                        row[0] if row else 1  # 1 = default 'local' partition
+                        row[0] if row else 1  # 1 = the default partition (id 1)
                     )
                 except Exception:
                     self._partition_id = 1
@@ -505,10 +517,10 @@ class Store:
                 # in upsert_entity as the kind whitelist. Idempotent: a
                 # post-migration catalog returns no matching row.
                 self._migrate_entities_kind_check_if_needed()
-            # Ensure the default + active partition rows exist and resolve the
-            # active partition_id. Auto-creates the active partition the first
-            # time a Store is opened with a new name (matches how a fresh
-            # `rmx init` lands you in 'local' without a register step).
+            # Ensure the active partition row exists and resolve the active
+            # partition_id. Auto-creates the partition the first time a Store
+            # is opened with a new name (a fresh `rmx init` lands you in the
+            # project-scoped default without a register step).
             self._ensure_partition()
             # Backfill any DEFAULT_LINKAGES that were introduced after this
             # catalog was first init'd (e.g. 'same_as' for canon hops). Pure
@@ -539,7 +551,7 @@ class Store:
         for the new UNIQUE/PK constraints. SQLite can't ALTER a UNIQUE/PK
         constraint in place, so each affected table goes through the standard
         12-step rebuild dance. All pre-existing rows backfill to partition_id=1
-        (the default 'local' partition)."""
+        (the project-scoped default partition)."""
         assert self._conn is not None
         con = self._conn
         ent_cols = {r[1] for r in con.execute("PRAGMA table_info(entities)")}
@@ -547,10 +559,11 @@ class Store:
         if "partition_id" in ent_cols and "partition_id" in tf_cols:
             return
         # Insert default partition before any FK-bearing rebuild references it.
+        # Pre-partition rows backfill to id=1 = the project-scoped default.
         con.execute(
             "INSERT OR IGNORE INTO partitions(id, name, kind, created_at) "
             "VALUES (1, ?, 'repo', ?)",
-            (DEFAULT_PARTITION, time.time()),
+            (default_partition_name(self.root), time.time()),
         )
         # Must commit before PRAGMA foreign_keys = OFF — the pragma is
         # silently ignored while a transaction is open.
@@ -746,6 +759,50 @@ class Store:
                 pass
             raise
 
+    def rename_partition(self, old: str, new: str) -> None:
+        """Rename partition `old` to `new`: update the catalog row and move
+        its on-disk fragment + vector directories so partition-scoped paths
+        keep resolving. Idempotent-safe guards:
+
+          - raises ValueError if `old` doesn't exist or `new` already exists
+            (the `partitions.name` column is UNIQUE);
+          - refuses to overwrite an existing `new` fragment/vector dir.
+
+        Entity rows reference the partition by id, not name, so they need no
+        update. A daemon bound to `old` should be restarted afterwards."""
+        if old == new:
+            return
+        con = self._connect()
+        if con.execute(
+            "SELECT 1 FROM partitions WHERE name=?", (old,)
+        ).fetchone() is None:
+            raise ValueError(f"no partition named {old!r}")
+        if con.execute(
+            "SELECT 1 FROM partitions WHERE name=?", (new,)
+        ).fetchone() is not None:
+            raise ValueError(f"partition {new!r} already exists")
+        # Move dirs first: if a target dir already exists, bail before
+        # mutating the catalog so name and on-disk layout never diverge.
+        moves: list[tuple[Path, Path]] = []
+        for base in (self.fragments_dir, self.root / "vectors"):
+            src = base / old
+            if src.is_dir():
+                dst = base / new
+                if dst.exists():
+                    raise ValueError(
+                        f"{dst} already exists; refusing to overwrite"
+                    )
+                moves.append((src, dst))
+        for src, dst in moves:
+            src.rename(dst)
+        con.execute(
+            "UPDATE partitions SET name=? WHERE name=?", (new, old)
+        )
+        con.commit()
+        # Keep the in-memory binding correct if we renamed the active one.
+        if self._partition_name == old:
+            self._partition_name = new
+
     def with_partition(self, name: str):
         """Context manager: temporarily switch self._partition_id to the
         partition row matching `name` for the duration of the block, then
@@ -797,19 +854,15 @@ class Store:
         so the partitions table is guaranteed to exist."""
         assert self._conn is not None
         con = self._conn
-        # Default partition is also handled by the migration path; insert here
-        # too to cover fresh-schema callers (where the migration was a no-op).
+        # Ensure the active partition row exists. The active partition IS the
+        # default (project-scoped) unless an explicit arg/RMX_PARTITION
+        # overrode it — either way a brand-new name auto-registers on first
+        # connect, no separate baked-in default row needed.
         con.execute(
             "INSERT OR IGNORE INTO partitions(name, kind, created_at) "
             "VALUES (?, 'repo', ?)",
-            (DEFAULT_PARTITION, time.time()),
+            (self._partition_name, time.time()),
         )
-        if self._partition_name != DEFAULT_PARTITION:
-            con.execute(
-                "INSERT OR IGNORE INTO partitions(name, kind, created_at) "
-                "VALUES (?, 'repo', ?)",
-                (self._partition_name, time.time()),
-            )
         con.commit()
         row = con.execute(
             "SELECT id FROM partitions WHERE name=?", (self._partition_name,)
@@ -818,7 +871,7 @@ class Store:
 
     def _migrate_fragments_to_partitions_if_needed(self) -> None:
         """Move pre-partition fragment files (fragments/<linkage>.rb64) into
-        fragments/<DEFAULT_PARTITION>/ so they're visible to a Store opened on
+        fragments/<default-partition>/ so they're visible to a Store opened on
         the default partition. Idempotent — once moved, subsequent calls find
         nothing to do."""
         if not self.fragments_dir.exists():
@@ -826,7 +879,7 @@ class Store:
         loose = [p for p in self.fragments_dir.glob("*.rb64") if p.is_file()]
         if not loose:
             return
-        target_dir = self.fragments_dir / DEFAULT_PARTITION
+        target_dir = self.fragments_dir / default_partition_name(self.root)
         target_dir.mkdir(parents=True, exist_ok=True)
         for src in loose:
             dst = target_dir / src.name

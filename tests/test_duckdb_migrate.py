@@ -107,7 +107,7 @@ def test_migrate_packs_fragments_into_bitmap_blobs(seeded_catalog, tmp_path):
     can pack them into the DuckDB `bitmap_fragments` table. Round-trip a
     bitmap through migrate_catalog → load_bitmap and confirm the entity ids
     survive."""
-    from refmatrix.store import Store
+    from refmatrix.store import Store, default_partition_name
 
     src = seeded_catalog
     fragments_dir = src.parent / "fragments"
@@ -119,8 +119,11 @@ def test_migrate_packs_fragments_into_bitmap_blobs(seeded_catalog, tmp_path):
     assert counts["bitmap_fragments"] > 0
 
     # Open the migrated DuckDB store and verify load_bitmap returns the
-    # entity ids the SQLite seed had linked.
-    s = Store(dst.parent, backend="duckdb")
+    # entity ids the SQLite seed had linked. The default partition is
+    # path-derived, and dst sits at a different root than the seed, so open
+    # explicitly on the seed's partition (what migrate_catalog carried over).
+    s = Store(dst.parent, backend="duckdb",
+              partition=default_partition_name(src.parent))
     # The 'defines' linkage in the seed had parser → foo, tok → lex, lexer → lex.
     # Look up parser id by name and check load_bitmap.
     parser = s.get_entity("concept", "parser")

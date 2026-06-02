@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import os
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -18,16 +19,76 @@ from pathlib import Path
 
 LAUNCH_AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
 DEFAULT_THROTTLE_SECONDS = 10
+LABEL_PREFIX = "com.refmatrix.daemon"
+
+
+def _short_hash(root: Path) -> str:
+    return hashlib.sha1(str(Path(root).resolve()).encode()).hexdigest()[:12]
+
+
+def _slug_for_root(root: Path) -> str:
+    """Human-readable, reverse-DNS-safe project slug for `root`.
+
+    The project name is the parent of `.refmatrix/` (where REFMATRIX_ROOT
+    points). Non-alphanumerics collapse to single dashes so the slug is a
+    legal launchd label segment; empty results fall back to ``store``.
+    """
+    root = Path(root).resolve()
+    name = root.parent.name if root.name == ".refmatrix" else root.name
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", name).strip("-").lower()
+    return slug or "store"
 
 
 def label_for_root(root: Path) -> str:
-    """Stable, collision-free reverse-DNS label per refmatrix root."""
-    h = hashlib.sha1(str(Path(root).resolve()).encode()).hexdigest()[:12]
-    return f"com.refmatrix.daemon.{h}"
+    """Readable, collision-free reverse-DNS label per refmatrix root.
+
+    Shape: ``com.refmatrix.daemon.<slug>-<hash12>``. The slug makes the
+    label greppable (``com.refmatrix.daemon.viascope-…``); the path hash
+    suffix preserves the per-root uniqueness guarantee so two stores that
+    share a basename never collide.
+    """
+    return f"{LABEL_PREFIX}.{_slug_for_root(root)}-{_short_hash(root)}"
+
+
+def _legacy_label_for_root(root: Path) -> str:
+    """Pre-slug label (hash only). Retained so `install`/`uninstall` can
+    bootout + remove plists written by older refmatrix versions."""
+    return f"{LABEL_PREFIX}.{_short_hash(root)}"
 
 
 def plist_path(root: Path) -> Path:
     return LAUNCH_AGENTS_DIR / f"{label_for_root(root)}.plist"
+
+
+def _legacy_plist_path(root: Path) -> Path:
+    return LAUNCH_AGENTS_DIR / f"{_legacy_label_for_root(root)}.plist"
+
+
+def _migrate_legacy(root: Path) -> bool:
+    """Bootout + delete a legacy hash-only LaunchAgent for `root` if one
+    exists, so reinstalling adopts the new slugged label without leaving a
+    duplicate daemon running against the same store. Returns True if a
+    legacy plist was removed."""
+    legacy_label = _legacy_label_for_root(root)
+    legacy_plist = _legacy_plist_path(root)
+    if legacy_label == label_for_root(root):
+        return False  # nothing to migrate (shouldn't happen with a slug)
+    loaded = subprocess.run(
+        _print_cmd(legacy_label), capture_output=True
+    ).returncode == 0
+    if loaded:
+        subprocess.run(_bootout_cmd(legacy_label), capture_output=True)
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            if subprocess.run(
+                _print_cmd(legacy_label), capture_output=True
+            ).returncode != 0:
+                break
+            time.sleep(0.1)
+    if legacy_plist.exists():
+        legacy_plist.unlink()
+        return True
+    return False
 
 
 def _rmx_path() -> str:
@@ -76,18 +137,16 @@ def render_plist(root: Path, *, partition: str | None = None,
             "PATH", "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
         ),
     }
-    # launchd starts agents with a minimal environment. Capture the
-    # caller's PYTHONPATH + PYTHONUSERBASE so the daemon's Python
-    # sees the same site-packages dirs the interactive shell does
-    # (some installs put big deps like torch / typing_extensions
-    # in framework-shared paths, not the venv).
-    pythonpath = os.environ.get("PYTHONPATH")
-    if pythonpath:
-        env["PYTHONPATH"] = pythonpath
-    pythonuserbase = os.environ.get("PYTHONUSERBASE")
-    if pythonuserbase:
-        env["PYTHONUSERBASE"] = pythonuserbase
-    if partition:
+    # No PYTHONPATH / PYTHONUSERBASE capture: the daemon runs from a
+    # standalone venv (`rmx` resolves to .venv/bin/rmx) that carries every
+    # dependency itself. Bridging in framework/system site-packages was a
+    # crutch for an incomplete venv and is deliberately not done here.
+    #
+    # Only bake RMX_PARTITION when it OVERRIDES the project-scoped default —
+    # an env var that merely restates the default is noise (the daemon
+    # resolves the same value from the root on its own).
+    from refmatrix.store import default_partition_name
+    if partition and partition != default_partition_name(root):
         env["RMX_PARTITION"] = partition
 
     plist: dict = {
@@ -167,6 +226,10 @@ def install(root: Path, *, partition: str | None = None,
     p = plist_path(root)
     label = label_for_root(root)
 
+    # Adopt the slugged label over any legacy hash-only agent for this
+    # root before deciding whether we're already installed.
+    _migrate_legacy(root)
+
     if p.exists() and is_loaded(root) and not force:
         return p
 
@@ -215,6 +278,10 @@ def uninstall(root: Path) -> bool:
     p = plist_path(root)
     label = label_for_root(root)
 
+    # Clean up a legacy hash-only agent too, so uninstall fully removes a
+    # store that was installed under either naming scheme.
+    removed = _migrate_legacy(root)
+
     if is_loaded(root):
         r = subprocess.run(_bootout_cmd(label),
                            capture_output=True, text=True)
@@ -226,8 +293,37 @@ def uninstall(root: Path) -> bool:
 
     if p.exists():
         p.unlink()
-        return True
-    return False
+        removed = True
+    return removed
+
+
+def kickstart(root: Path, *, restart: bool = False) -> str:
+    """Start (or restart, when `restart`) the supervised LaunchAgent for
+    `root` via `launchctl kickstart`. Returns the label kicked.
+
+    `kickstart` starts the service if it is down and no-ops if it is
+    already running; `-k` (restart=True) force-restarts a running one.
+    Raises RuntimeError if the agent isn't loaded — callers that want a
+    best-effort path (e.g. a SessionStart hook) should fall back to
+    `rmx daemon start` on failure."""
+    _require_darwin()
+    if not is_loaded(root):
+        raise RuntimeError(
+            f"LaunchAgent for {root} not loaded. "
+            f"Run `rmx daemon launchctl install` first."
+        )
+    label = label_for_root(root)
+    args = ["launchctl", "kickstart"]
+    if restart:
+        args.append("-k")
+    args.append(f"{_domain()}/{label}")
+    r = subprocess.run(args, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(
+            f"launchctl kickstart failed (rc={r.returncode}): "
+            f"{r.stderr.strip() or r.stdout.strip() or '(silent)'}"
+        )
+    return label
 
 
 def status(root: Path) -> dict:
