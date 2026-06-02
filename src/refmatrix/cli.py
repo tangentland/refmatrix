@@ -201,48 +201,59 @@ def _is_lock_conflict(e: BaseException) -> bool:
 
 def _replica_read(fn):
     """Run `fn(replica_store)` against the lock-free reader slot, with a
-    self-healing retry.
+    self-healing bounded retry.
 
-    If the read raises a DuckDB lock conflict, the `read_only.duckdb`
-    symlink has transiently drifted onto the slot the daemon is writing.
-    The daemon owns that symlink and knows its real writer, so we ask it
-    to re-point the link (`replica_relink`, lock-free on the daemon side)
-    and retry the read ONCE on a fresh reader store.
+    The daemon's rotation keeps `read_only.duckdb` pointed at a slot it is
+    NOT writing, and during a refresh it moves readers onto the freed slot
+    BEFORE locking the one it catches up — so in steady state a reader
+    never lands on a write-locked file. This wrapper covers the residual
+    edges: a transiently drifted symlink, or the sub-millisecond window
+    around a swap.
 
-    No daemon-RPC fallback: a lock conflict that survives a relink is a
+    On a DuckDB lock conflict: ask the daemon to re-point the link
+    (`replica_relink`, lock-free on the daemon side) on the first miss,
+    then retry on a fresh reader store with a short backoff, re-reading the
+    (possibly just-swapped) symlink each attempt.
+
+    No daemon-RPC fallback: a conflict that survives every attempt is a
     genuine fault, surfaced as a clean ClickException rather than the raw
-    driver traceback. `fn` must do all work that touches the store
-    (connect + query + render) so the retry re-runs cleanly — the lock
-    error always fires at first connect, before any output is produced."""
-    s = _replica_store()
-    try:
-        return fn(s)
-    except Exception as e:
-        if not _is_lock_conflict(e):
-            raise
-        try:
-            s.close()
-        except Exception:
-            pass
-    # Drifted symlink: have the daemon re-point it, then retry once.
+    driver traceback. `fn` must do all work that touches the store (connect
+    + query + render) so a retry re-runs cleanly — the lock error always
+    fires at first connect, before any output is produced."""
+    import time as _time
     from refmatrix import daemon as daemon_mod
-    root = _root()
-    if daemon_mod.ping(root):
+
+    attempts = 5
+    last: Exception | None = None
+    for i in range(attempts):
+        s = _replica_store()
         try:
-            daemon_mod.call(root, "replica_relink", {}, timeout=10.0)
-        except Exception:
-            pass
-    s = _replica_store()
-    try:
-        return fn(s)
-    except Exception as e:
-        if _is_lock_conflict(e):
-            raise click.ClickException(
-                "replica read hit a lock conflict that persisted after "
-                "relinking read_only.duckdb — the rotation reader slot may "
-                "be mis-pointed. Run `rmx replica refresh`."
-            ) from e
-        raise
+            return fn(s)
+        except Exception as e:
+            if not _is_lock_conflict(e):
+                raise
+            last = e
+            try:
+                s.close()
+            except Exception:
+                pass
+        if i == 0:
+            # First miss → most likely a drifted symlink. Have the daemon
+            # re-point it (cheap, no _store_lock on the daemon side).
+            root = _root()
+            if daemon_mod.ping(root):
+                try:
+                    daemon_mod.call(root, "replica_relink", {}, timeout=10.0)
+                except Exception:
+                    pass
+        else:
+            # Subsequent misses → ride out a swap window (sub-second).
+            _time.sleep(0.1 * i)
+    raise click.ClickException(
+        "replica read hit a lock conflict that persisted after relinking "
+        "and retries — the rotation reader slot may be mis-pointed. "
+        "Run `rmx replica refresh`."
+    ) from last
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})

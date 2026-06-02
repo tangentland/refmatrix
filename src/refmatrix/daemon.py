@@ -909,17 +909,17 @@ class Daemon:
             writer = self._read_active_slot()
         return "B" if writer == "A" else "A"
 
-    def _refresh_read_only_link(self) -> None:
-        """Point `read_only.duckdb` at the current reader (non-writer)
-        slot. Atomic via os.symlink-to-temp + os.replace. No-op if
-        symlinks aren't available (Windows w/o developer mode); the Store
-        side falls back to `catalog.duckdb` in that case.
+    def _set_read_only_link(self, slot: str) -> None:
+        """Atomically point `read_only.duckdb` at a SPECIFIC slot file.
+        os.symlink-to-temp + os.replace. No-op if symlinks aren't available
+        (Windows w/o developer mode); the Store side falls back to
+        `catalog.duckdb` in that case.
 
-        The target is computed from the slot the daemon ACTUALLY writes
-        (`_reader_slot`), so a drifted `active` marker can never make the
-        symlink point at the locked writer file."""
+        Used both for the steady-state reader (`_refresh_read_only_link`)
+        and, mid-refresh, to move readers onto the just-freed old-writer
+        slot before the slot being caught up gets write-locked."""
         import os as _os
-        target = self._replica_file(self._reader_slot()).name
+        target = self._replica_file(slot).name
         link = self._read_only_link()
         tmp = link.with_name(link.name + ".tmp")
         try:
@@ -929,6 +929,35 @@ class Daemon:
             _os.replace(tmp, link)
         except OSError as exc:
             self._log(f"read_only.duckdb symlink update failed: {exc!r}")
+
+    def _refresh_read_only_link(self) -> None:
+        """Point `read_only.duckdb` at the current reader (non-writer) slot.
+
+        The target is computed from the slot the daemon ACTUALLY writes
+        (`_reader_slot`), so a drifted `active` marker can never make the
+        symlink point at the locked writer file."""
+        self._set_read_only_link(self._reader_slot())
+
+    @staticmethod
+    def _force_close_store(st) -> None:
+        """Guarantee a Store's DuckDB connection (and its file lock) is
+        released, even if flush_fragments() would re-raise on a poisoned
+        catalog. Drops `_conn` directly, then best-effort close(). Safe on
+        None. This is the no-leak backstop for every transient slot Store
+        the rotation opens."""
+        if st is None:
+            return
+        conn = getattr(st, "_conn", None)
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            st._conn = None
+        try:
+            st.close()
+        except Exception:
+            pass
 
     def _active_marker(self) -> Path:
         """File storing the current writer-slot letter (A or B)."""
@@ -1037,6 +1066,11 @@ class Daemon:
                     self.store.close()
                 except Exception:
                     pass
+                # `active` was just CHECKPOINTed and is now unlocked +
+                # current. Move readers onto it before reopening the writer
+                # on `new_active`, so the reopen never strands a reader on a
+                # write-locked slot.
+                self._set_read_only_link(active)
                 try:
                     self.store = Store(self.root, partition=self.partition)
                     self.store.db_path = self._replica_file(new_active)
@@ -1122,57 +1156,52 @@ class Daemon:
                 self.store.close()
             except Exception:
                 pass
+            # The active slot was just CHECKPOINTed and is now unlocked +
+            # current. Move readers onto it BEFORE we write-lock `inactive`
+            # for the delta apply. Without this, both slots are busy during
+            # the apply (old writer just closed, new one being written) and
+            # a cross-process reader on `inactive` hits a lock conflict.
+            # Pointing readers at the freed active slot gives them a
+            # lock-free, current file for the whole apply window.
+            self._set_read_only_link(active)
             inactive_store = None
             try:
-                inactive_store = Store(self.root, partition=self.partition)
-                inactive_store.db_path = self._replica_file(inactive)
-                inactive_store.init()
-                report = inactive_store.apply_log_delta(
-                    inactive_offset, end_offset,
-                )
-                inactive_store.flush_fragments()
-            except Exception as exc:
-                # Reopen active so the daemon stays functional, then
-                # surface the error. CRITICAL: drop the inactive slot's
-                # DuckDB connection explicitly. Store.close() calls
-                # flush_fragments() first, which can itself re-raise on
-                # a FatalException-invalidated catalog and skip the real
-                # connection close — leaving the file lock held for the
-                # rest of the daemon's lifetime. Hit _conn directly to
-                # guarantee release.
-                if inactive_store is not None:
-                    conn = getattr(inactive_store, "_conn", None)
-                    if conn is not None:
-                        try:
-                            conn.close()
-                        except Exception:
-                            pass
-                        inactive_store._conn = None
-                    try:
-                        inactive_store.close()
-                    except Exception:
-                        pass
-                rebuilt = False
-                if self._is_invalidated_error(exc):
-                    try:
-                        self._rebuild_slot_from(active, inactive, end_offset)
-                        rebuilt = True
-                    except Exception as rexc:
-                        self._log(
-                            f"delta-replay rebuild failed: {rexc!r}"
-                        )
-                self.store = Store(self.root, partition=self.partition)
-                self.store.db_path = self._replica_file(active)
-                self.store.init()
-                err_kind = "delta-replay-rebuilt" if rebuilt else "delta-replay"
-                return {"enabled": True, "ok": False,
-                        "error": f"{err_kind}: {exc!r}",
-                        "rebuilt_slot": inactive if rebuilt else None}
-            else:
                 try:
-                    inactive_store.close()
-                except Exception:
-                    pass
+                    inactive_store = Store(self.root, partition=self.partition)
+                    inactive_store.db_path = self._replica_file(inactive)
+                    inactive_store.init()
+                    report = inactive_store.apply_log_delta(
+                        inactive_offset, end_offset,
+                    )
+                    inactive_store.flush_fragments()
+                except Exception as exc:
+                    # Reopen active so the daemon stays functional (readers
+                    # are already pointed at it), then surface the error.
+                    rebuilt = False
+                    if self._is_invalidated_error(exc):
+                        try:
+                            self._rebuild_slot_from(active, inactive,
+                                                    end_offset)
+                            rebuilt = True
+                        except Exception as rexc:
+                            self._log(
+                                f"delta-replay rebuild failed: {rexc!r}"
+                            )
+                    self.store = Store(self.root, partition=self.partition)
+                    self.store.db_path = self._replica_file(active)
+                    self.store.init()
+                    self._active_slot = active
+                    err_kind = ("delta-replay-rebuilt" if rebuilt
+                                else "delta-replay")
+                    return {"enabled": True, "ok": False,
+                            "error": f"{err_kind}: {exc!r}",
+                            "rebuilt_slot": inactive if rebuilt else None}
+            finally:
+                # No-leak backstop: the inactive slot's write connection is
+                # ALWAYS released, even if close()'s flush re-raised. A
+                # leaked connection here would write-lock the reader slot
+                # for the daemon's lifetime.
+                self._force_close_store(inactive_store)
 
             self._write_slot_offset(inactive, end_offset)
 
