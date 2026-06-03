@@ -310,10 +310,16 @@ def top_queried_concepts(store: Store, limit: int = 20) -> list[tuple[str, int]]
 
 
 def zero_result_queries(store: Store, limit: int = 20) -> list[tuple[str, int]]:
-    """Queries that returned cardinality 0 — gaps to fill."""
+    """Queries that returned cardinality 0 — gaps to fill.
+
+    Excludes kind="scan" rows: those are raw UserPromptSubmit bodies logged
+    for provenance, not real lookups; their zero-result rate is meaningless.
+    """
     rows = read_log(store)
     counter: Counter[str] = Counter()
     for r in rows:
+        if r.get("kind") == "scan":
+            continue
         if r.get("cardinality") == 0:
             counter[r.get("body") or "?"] += 1
     return counter.most_common(limit)
