@@ -119,6 +119,36 @@ def test_queue_enqueue_and_flush(tmp_path):
     s.close()
 
 
+def test_sync_enqueues_when_daemon_down_on_managed_store(tmp_path, monkeypatch):
+    """A daemon-managed store with the daemon unreachable must NOT open the
+    catalog on `rmx sync` — it enqueues for the daemon instead. This breaks
+    the deadlock where a post-commit `rmx sync` grabbed catalog.duckdb and
+    blocked the daemon from (re)starting."""
+    from click.testing import CliRunner
+    from refmatrix.cli import main as cli_main
+    import refmatrix.daemon as daemon_mod
+    import refmatrix.launchctl as lc
+
+    root = tmp_path / ".refmatrix"
+    s = Store(root)
+    s.init()
+    s.close()
+    f = tmp_path / "foo.py"
+    f.write_text("# x\n")
+
+    # Daemon down, but the store is daemon-managed.
+    monkeypatch.setattr(daemon_mod, "ping", lambda *a, **k: False)
+    monkeypatch.setattr(lc, "is_installed", lambda *a, **k: True)
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+
+    r = CliRunner().invoke(cli_main, ["sync", "--files", str(f)])
+    assert r.exit_code == 0, r.output
+    assert "enqueued" in r.output and "daemon down" in r.output
+    # Path landed in the queue; the catalog was never opened for the sync.
+    queued = (root / "dirty.queue").read_text()
+    assert str(f.resolve()) in queued
+
+
 def test_sync_since_via_real_git(tmp_path):
     if subprocess.run(["git", "--version"], capture_output=True).returncode != 0:
         pytest.skip("git not available")

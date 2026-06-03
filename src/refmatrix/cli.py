@@ -2628,10 +2628,38 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
                     f"-{r['purged']} (touched={r['touched']}) [daemon]"
                 )
             return
+        # Daemon-managed store but the daemon isn't reachable (down or
+        # restarting). Do NOT open the catalog directly — a direct write
+        # grabs the exclusive lock and can block the daemon from starting
+        # (the deadlock where a post-commit `rmx sync` raced a daemon
+        # restart and held catalog.duckdb, crash-looping the daemon).
+        # Enqueue the work instead; the daemon drains dirty.queue on its
+        # next start / refresh tick.
+        from refmatrix import launchctl as _lc
+        if _lc.is_installed(root):
+            if flush_queue:
+                console.print(
+                    "[yellow]daemon down[/] — queued paths will flush when "
+                    "the daemon restarts"
+                )
+                return
+            proot = (project_root or Path.cwd()).resolve()
+            try:
+                paths = ([str(p) for p in files] if files
+                         else [str(p) for p in syncmod.changed_since(proot, since)])
+            except RuntimeError as e:
+                raise click.ClickException(str(e))
+            if paths:
+                syncmod.enqueue(root, paths)
+            console.print(
+                f"[yellow]daemon down[/] — enqueued {len(paths)} paths for "
+                f"the daemon (no direct catalog write)"
+            )
+            return
         if async_flag and flush_queue:
             # --async only buys you the daemon's fire-and-forget. Without a
-            # daemon, fall through to the in-process synchronous flush —
-            # at least the work gets done.
+            # daemon (and not a daemon-managed store), fall through to the
+            # in-process synchronous flush — at least the work gets done.
             pass
 
     s = _store()

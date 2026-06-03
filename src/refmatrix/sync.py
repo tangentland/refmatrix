@@ -82,19 +82,27 @@ def sync_files(s: Store, paths: list[str], project_root: Path | None = None,
                        yield_lock=yield_lock, yield_every=yield_every)
 
 
-def sync_since(s: Store, git_ref: str, project_root: Path | None = None,
-               semantic: bool = False,
-               cancel_check: Callable[[], bool] | None = None,
-               yield_lock: Callable[[], None] | None = None,
-               yield_every: int = 1) -> dict:
-    project_root = (project_root or Path.cwd()).resolve()
+def changed_since(project_root: Path, git_ref: str) -> list[Path]:
+    """Absolute paths of files changed since `git_ref`
+    (`git diff --name-only`). No Store needed, so the CLI can resolve a
+    `--since` set to enqueue for the daemon without opening the catalog."""
+    project_root = Path(project_root).resolve()
     if shutil.which("git") is None:
         raise RuntimeError("git not on PATH")
     out = subprocess.run(
         ["git", "-C", str(project_root), "diff", "--name-only", git_ref],
         capture_output=True, text=True, check=True,
     )
-    files = [project_root / f for f in out.stdout.splitlines() if f.strip()]
+    return [project_root / f for f in out.stdout.splitlines() if f.strip()]
+
+
+def sync_since(s: Store, git_ref: str, project_root: Path | None = None,
+               semantic: bool = False,
+               cancel_check: Callable[[], bool] | None = None,
+               yield_lock: Callable[[], None] | None = None,
+               yield_every: int = 1) -> dict:
+    project_root = (project_root or Path.cwd()).resolve()
+    files = changed_since(project_root, git_ref)
     return _sync_paths(s, files, project_root, semantic,
                        cancel_check=cancel_check,
                        yield_lock=yield_lock, yield_every=yield_every)
