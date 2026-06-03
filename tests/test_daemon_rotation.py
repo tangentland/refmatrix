@@ -116,3 +116,57 @@ def test_bootstrap_no_slots_falls_back_to_legacy(tmp_path):
     assert b.exists()
     # Both seeded from the same legacy file: identical bytes.
     assert a.read_bytes() == b.read_bytes()
+
+
+def _arm_rotation(d):
+    """Mirror the rotation init that serve_forever() does, so
+    _refresh_replica_now can run without starting the full server: seed the
+    slots, set the active marker/slot, and bind the store to the active
+    slot file."""
+    from refmatrix.store import Store
+    d._active_slot = d._read_active_slot()
+    d._bootstrap_rotation_if_needed()
+    active_path = d._replica_file(d._active_slot)
+    if d.store.db_path != active_path:
+        try:
+            d.store.close()
+        except Exception:
+            pass
+        d.store = Store(d.root)
+        d.store.db_path = active_path
+        d.store.init()
+
+
+def test_refresh_rebuilds_slot_on_large_delta(tmp_path, monkeypatch):
+    """When the inactive slot is far behind, the refresh rebuilds it by
+    copying the (current) active file — bounded — instead of the slow
+    per-event log replay that pegs CPU and never converges on a big
+    backlog."""
+    import refmatrix.daemon as dmod
+    d = _make_daemon(tmp_path)
+    d.store.add_concept("alpha")
+    d.store.upsert_entity(kind="code", name="x.py")
+    _arm_rotation(d)
+    # Force any delta to count as "large".
+    monkeypatch.setattr(dmod, "REPLICA_REBUILD_DELTA_BYTES", 1)
+    # Make the inactive slot look far behind so a delta exists.
+    d._write_slot_offset(d._inactive_slot(), 0)
+    res = d._refresh_replica_now()
+    assert res.get("ok"), res
+    assert res["mode"] == "delta-rebuilt-large", res
+    # Both offsets converged to log-end → the next refresh is a no-op.
+    assert d._read_slot_offset("A") == d._read_slot_offset("B")
+
+
+def test_refresh_replays_on_small_delta(tmp_path, monkeypatch):
+    """A small delta takes the cheap incremental log-replay path."""
+    import refmatrix.daemon as dmod
+    d = _make_daemon(tmp_path)
+    d.store.add_concept("beta")
+    _arm_rotation(d)
+    # Threshold so high nothing ever counts as large → always replay.
+    monkeypatch.setattr(dmod, "REPLICA_REBUILD_DELTA_BYTES", 10**12)
+    d._write_slot_offset(d._inactive_slot(), 0)
+    res = d._refresh_replica_now()
+    assert res.get("ok"), res
+    assert res["mode"] == "delta", res

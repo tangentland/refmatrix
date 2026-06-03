@@ -37,6 +37,16 @@ SOCKET_NAME = "rmxd.sock"
 PID_NAME = "rmxd.pid"
 LOG_NAME = "rmxd.log"
 
+# Replica refresh strategy switch. `apply_log_delta` replays log events
+# one-by-one through the Store API (~tens of KB/s on a large catalog), so a
+# multi-MB backlog can peg CPU for a very long time and never converge
+# across restarts. Once the inactive slot is this far behind, rebuild it by
+# copying the (already-current) writer file instead — O(file size), bounded,
+# seconds. Small deltas still take the cheap incremental replay path.
+REPLICA_REBUILD_DELTA_BYTES = int(
+    os.environ.get("RMX_REPLICA_REBUILD_DELTA_BYTES", str(16 * 1024 * 1024))
+)
+
 
 def socket_path(root: Path) -> Path:
     return root / SOCKET_NAME
@@ -1164,46 +1174,77 @@ class Daemon:
             # Pointing readers at the freed active slot gives them a
             # lock-free, current file for the whole apply window.
             self._set_read_only_link(active)
-            inactive_store = None
-            try:
+
+            # Bring `inactive` up to end_offset. Small delta -> cheap
+            # incremental log replay. Large delta -> rebuild by copying the
+            # (already-current) active file: O(file size), bounded, seconds
+            # — vs. log replay which is ~tens of KB/s and can never converge
+            # on a multi-MB backlog (the spin that pegged the daemon for
+            # hours and re-replayed from scratch on every restart).
+            report: dict = {}
+            mode = "delta"
+            delta = end_offset - inactive_offset
+            if delta >= REPLICA_REBUILD_DELTA_BYTES:
+                self._log(
+                    f"refresh: delta {delta}B >= "
+                    f"{REPLICA_REBUILD_DELTA_BYTES}B — rebuilding {inactive} "
+                    f"from {active} by file copy (skip slow log replay)"
+                )
                 try:
-                    inactive_store = Store(self.root, partition=self.partition)
-                    inactive_store.db_path = self._replica_file(inactive)
-                    inactive_store.init()
-                    report = inactive_store.apply_log_delta(
-                        inactive_offset, end_offset,
-                    )
-                    inactive_store.flush_fragments()
+                    # Copies active->inactive and resets BOTH offsets to
+                    # end_offset. Safe: active was just closed above and the
+                    # inactive slot has no live connection.
+                    self._rebuild_slot_from(active, inactive, end_offset)
+                    mode = "delta-rebuilt-large"
                 except Exception as exc:
-                    # Reopen active so the daemon stays functional (readers
-                    # are already pointed at it), then surface the error.
-                    rebuilt = False
-                    if self._is_invalidated_error(exc):
-                        try:
-                            self._rebuild_slot_from(active, inactive,
-                                                    end_offset)
-                            rebuilt = True
-                        except Exception as rexc:
-                            self._log(
-                                f"delta-replay rebuild failed: {rexc!r}"
-                            )
                     self.store = Store(self.root, partition=self.partition)
                     self.store.db_path = self._replica_file(active)
                     self.store.init()
                     self._active_slot = active
-                    err_kind = ("delta-replay-rebuilt" if rebuilt
-                                else "delta-replay")
+                    self._refresh_read_only_link()
                     return {"enabled": True, "ok": False,
-                            "error": f"{err_kind}: {exc!r}",
-                            "rebuilt_slot": inactive if rebuilt else None}
-            finally:
-                # No-leak backstop: the inactive slot's write connection is
-                # ALWAYS released, even if close()'s flush re-raised. A
-                # leaked connection here would write-lock the reader slot
-                # for the daemon's lifetime.
-                self._force_close_store(inactive_store)
+                            "error": f"large-delta rebuild: {exc!r}"}
+            else:
+                inactive_store = None
+                try:
+                    try:
+                        inactive_store = Store(self.root,
+                                               partition=self.partition)
+                        inactive_store.db_path = self._replica_file(inactive)
+                        inactive_store.init()
+                        report = inactive_store.apply_log_delta(
+                            inactive_offset, end_offset,
+                        )
+                        inactive_store.flush_fragments()
+                    except Exception as exc:
+                        # Reopen active so the daemon stays functional
+                        # (readers already point at it), then surface it.
+                        rebuilt = False
+                        if self._is_invalidated_error(exc):
+                            try:
+                                self._rebuild_slot_from(active, inactive,
+                                                        end_offset)
+                                rebuilt = True
+                            except Exception as rexc:
+                                self._log(
+                                    f"delta-replay rebuild failed: {rexc!r}"
+                                )
+                        self.store = Store(self.root,
+                                           partition=self.partition)
+                        self.store.db_path = self._replica_file(active)
+                        self.store.init()
+                        self._active_slot = active
+                        err_kind = ("delta-replay-rebuilt" if rebuilt
+                                    else "delta-replay")
+                        return {"enabled": True, "ok": False,
+                                "error": f"{err_kind}: {exc!r}",
+                                "rebuilt_slot": inactive if rebuilt else None}
+                finally:
+                    # No-leak backstop: always release the inactive slot's
+                    # write connection, even if close()'s flush re-raised.
+                    self._force_close_store(inactive_store)
 
-            self._write_slot_offset(inactive, end_offset)
+                self._write_slot_offset(inactive, end_offset)
 
             # 4. swap pointer. The newly-current slot becomes writer.
             # Reopen FIRST so a failed open doesn't leave the on-disk
@@ -1259,7 +1300,7 @@ class Daemon:
             "log_end_offset": end_offset,
             "elapsed_ms": elapsed_ms,
             "refreshed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "mode": "delta",
+            "mode": mode,
         }
         self._replica_last = result
         return result
