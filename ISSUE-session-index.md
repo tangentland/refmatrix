@@ -162,14 +162,14 @@ No schema migrations — cards are GMD docs ingested via existing `ingest_gmd_pa
 
 ## Phase plan
 
-**Phase A — card pipeline (no CLI, no daemon):**
+**Phase A — card pipeline (no CLI, no daemon):** ✅ SHIPPED (c8ece04)
 1. `session_ingest.py`: parse one JSONL → card markdown. Unit test on a fixture session.
 2. Filter rules + dedup pass. Snapshot test.
-3. Write card to `~/.refmatrix/sessions/<project>/<id>.md`.
+3. Write card to `<root>/sessions/<id>.md`.
 
-**Phase B — ingest into refmatrix:**
-4. Extend `ingest_gmd_paths()` with `as_session=True` (parallel to `as_memory`): routes to `sessions-<project>` partition, kind="session".
-5. `rmx session ingest PATH` CLI.
+**Phase B — ingest into refmatrix:** ✅ SHIPPED (0.3.33)
+4. Reused existing `ingest_gmd_paths(as_memory=True)` with `memory_mtype="session"` — no `ingest_gmd.py` changes needed. Cleaner than the originally-planned `as_session=True` flag.
+5. `rmx session ingest [PATH]` CLI: default scopes to cwd's matching Claude Code project dir; `--all-projects` for full walk; `--no-index` for card-only preview; `--force` for rebuild; hash-skip for unchanged sessions.
 
 **Phase C — retrieval:**
 6. `rmx session recall <query>` — BM25 over kind="session" with recency boost; filters (--branch, --commit, --touched).

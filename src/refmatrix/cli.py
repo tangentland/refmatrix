@@ -4612,6 +4612,176 @@ def memory_forget(name_or_id):
         console.print(f"[yellow]no memory matching[/] {name_or_id}")
 
 
+# --- session-index group (Phase B) ----------------------------------------
+#
+# Sessions live in a dedicated `sessions-<project>` partition so the
+# conversational, high-volume index doesn't pollute code/memory recall.
+# Reuses the existing `as_memory` ingest path entirely — sessions are
+# stored as kind=memory rows in the sessions partition, with mtype="session"
+# for cross-partition disambiguation.
+
+SESSIONS_PARTITION_PREFIX = "sessions-"
+
+
+def _sessions_partition_default() -> str:
+    """Resolve `sessions-<project_name>` for the active CLI invocation.
+    Parallels `_memory_partition_default()`."""
+    try:
+        project = _root().resolve().parent.name or "default"
+    except Exception:
+        project = "default"
+    return f"{SESSIONS_PARTITION_PREFIX}{project}"
+
+
+def _encode_claude_project_dir(cwd: Path) -> str:
+    """Replicate Claude Code's project-dir slug encoder. Used to find the
+    `~/.claude/projects/<slug>/` directory matching the current cwd.
+
+    Claude Code maps both `/` and `_` to `-` in the directory name, so the
+    encoding is lossy in reverse — but for lookups (cwd known) it's exact."""
+    return str(cwd).replace("/", "-").replace("_", "-")
+
+
+@main.group("session")
+def session_grp():
+    """Past Claude Code session index. ingest / (recall, show, list — Phase C).
+
+    Ingests session JSONLs from ~/.claude/projects/ into a dedicated
+    sessions-<project> partition. Cards are compressed (~2% of source) GMD
+    docs holding user prompts, assistant decisions, files touched, commits,
+    and tool counts. Raw JSONLs stay on disk; cards reference them by path."""
+
+
+@session_grp.command("ingest")
+@click.argument("targets", nargs=-1,
+                type=click.Path(exists=True, path_type=Path))
+@click.option("--all-projects", is_flag=True,
+              help="Walk every project under ~/.claude/projects/. Default "
+                   "(no targets, no flag) scopes to the project matching "
+                   "the current cwd.")
+@click.option("--force", is_flag=True,
+              help="Rebuild cards even if content_hash matches the existing "
+                   "card on disk. Default skips unchanged sessions.")
+@click.option("--verbose", "-v", is_flag=True,
+              help="Print per-session progress.")
+@click.option("--no-index", is_flag=True,
+              help="Build cards on disk but skip the ingest-gmd step. "
+                   "Useful for previewing card output without touching the "
+                   "store.")
+def session_ingest_cmd(targets, all_projects, force, verbose, no_index):
+    """Parse Claude Code session JSONLs into GMD cards + index them.
+
+    Default scope (no args): the ~/.claude/projects/ directory matching the
+    current rmx project's cwd. Pass explicit paths (file or dir) to override.
+    `--all-projects` walks every project under ~/.claude/projects/."""
+    from refmatrix import daemon as daemon_mod
+    from refmatrix.ingest_gmd import collect_gmd_files, ingest_gmd_paths
+    from refmatrix.session_ingest import ingest_session, parse_session_jsonl
+
+    root = _root()
+    cards_dir = root / "sessions"
+    claude_projects = Path.home() / ".claude" / "projects"
+
+    # Resolve which JSONL files to parse.
+    jsonls: list[Path] = []
+    if targets:
+        for t in targets:
+            tp = Path(t).resolve()
+            if tp.is_file() and tp.suffix == ".jsonl":
+                jsonls.append(tp)
+            elif tp.is_dir():
+                jsonls.extend(sorted(tp.glob("*.jsonl")))
+                jsonls.extend(sorted(tp.glob("**/*.jsonl")))
+    elif all_projects:
+        if not claude_projects.is_dir():
+            raise click.ClickException(f"no such dir: {claude_projects}")
+        jsonls.extend(sorted(claude_projects.glob("**/*.jsonl")))
+    else:
+        # Default: project matching current rmx root's cwd.
+        project_cwd = root.resolve().parent
+        slug = _encode_claude_project_dir(project_cwd)
+        proj_dir = claude_projects / slug
+        if not proj_dir.is_dir():
+            raise click.ClickException(
+                f"no Claude Code project dir for {project_cwd} "
+                f"(expected {proj_dir}). Pass an explicit path or "
+                f"use --all-projects."
+            )
+        jsonls.extend(sorted(proj_dir.glob("*.jsonl")))
+
+    # Dedup while preserving order.
+    seen: set[Path] = set()
+    jsonls = [p for p in jsonls if not (p in seen or seen.add(p))]
+
+    if not jsonls:
+        console.print("[yellow]no session JSONLs found[/]")
+        return
+
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    built: list[Path] = []
+    skipped = 0
+    for jp in jsonls:
+        session_id = jp.stem
+        card_path = cards_dir / f"{session_id}.md"
+        if card_path.exists() and not force:
+            try:
+                existing = card_path.read_text(encoding="utf-8")
+                new_data = parse_session_jsonl(jp)
+                if f"content_hash: {new_data.content_hash}" in existing:
+                    skipped += 1
+                    if verbose:
+                        console.print(f"  skip {session_id} (hash match)")
+                    continue
+            except Exception:
+                pass
+        out, data = ingest_session(jp, cards_dir)
+        built.append(out)
+        if verbose:
+            console.print(
+                f"  card {session_id}: {data.turn_count} turns, "
+                f"{data.user_prompt_count} prompts, "
+                f"{len(data.files_touched)} files"
+            )
+
+    console.print(
+        f"cards: built={len(built)} skipped={skipped} total_jsonl={len(jsonls)}"
+    )
+
+    if no_index or not built:
+        return
+
+    # Route through ingest_gmd with as_memory=True + sessions partition.
+    partition = (
+        _partition_override
+        or os.environ.get("RMX_PARTITION")
+        or _sessions_partition_default()
+    )
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "ingest_gmd", {
+            "targets": [str(p) for p in built],
+            "verbose": verbose,
+            "as_memory": True,
+            "memory_mtype": "session",
+            "partition": partition,
+        }, timeout=24 * 3600.0)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        console.print(resp["result"]["report"])
+        return
+
+    s = _store()
+    files = collect_gmd_files([cards_dir])
+    if not files:
+        console.print("[yellow]no cards to index[/]")
+        return
+    with s.with_partition(partition):
+        stats = ingest_gmd_paths(
+            s, files, verbose=verbose,
+            as_memory=True, memory_mtype_default="session",
+        )
+    console.print(stats.report())
+
+
 @main.command("tools-primer")
 @click.option("--json", "as_json", is_flag=True,
               help="Emit JSON instead of markdown.")
