@@ -2401,8 +2401,13 @@ def _op_embed(d: Daemon, args: dict) -> dict:
     kinds = args.get("kinds") or ["code", "doc", "concept", "memory"]
     limit = int(args.get("limit") or 256)
     rebuild = bool(args.get("rebuild"))
+    # Honor a caller-specified partition so embed lands in the same slot
+    # ann_search will later read from. Without this, vectors land in the
+    # daemon's bound startup partition regardless of `-p` and memory
+    # recall returns zero hits even after a "successful" rebuild.
+    partition = args.get("partition") or d.store._partition_name
 
-    with d._store_lock:
+    with d._store_lock, d.store.with_partition(partition):
         if rebuild:
             # `pending_embeddings` already skips current rows; for a
             # rebuild we ask the catalog directly so the WHERE clause
@@ -2442,9 +2447,8 @@ def _op_embed(d: Daemon, args: dict) -> dict:
             sub = vectors[idxs]
             d.store.upsert_vector(eids, sub, kind=kind, dim=emb.dim)
             embedded += len(eids)
+        remaining = len(d.store.pending_embeddings(kinds=kinds, limit=1))
 
-    # Remaining pending after this batch — caller can loop until 0.
-    remaining = len(d.store.pending_embeddings(kinds=kinds, limit=1))
     return {
         "embedded": embedded,
         "remaining": remaining,

@@ -3427,6 +3427,11 @@ def embed_cmd(kinds, batch, rebuild, max_batches):
         args = {
             "kinds": selected, "limit": batch,
             "rebuild": rebuild and iters == 1,
+            # Daemon is bound to its startup partition; without this
+            # the embed lands in `<root>/vectors/<daemon-partition>/...`
+            # regardless of -p, so memory recall against memory-<project>
+            # comes up empty even after a "successful" rebuild.
+            "partition": _resolve_partition(),
         }
         if daemon_mod.ping(root):
             resp = daemon_mod.call(root, "embed", args, timeout=600.0)
