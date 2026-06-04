@@ -3613,6 +3613,24 @@ _DEFAULT_EMBED_KINDS = ("code", "doc", "concept", "memory")
 _VALID_EMBED_KINDS = frozenset(_DEFAULT_EMBED_KINDS)
 
 
+def _split_csv(ctx, param, value):
+    """Click callback: accepts either repeated `--flag X --flag Y` or
+    comma-separated `--flag X,Y` (or any mix). Strips whitespace + dedupes.
+    Does NOT validate token values — use this for free-form lists like
+    mtype filters; `_split_kinds` is the validated form."""
+    if not value:
+        return ()
+    out: list[str] = []
+    for v in value:
+        for tok in str(v).split(","):
+            tok = tok.strip()
+            if not tok:
+                continue
+            if tok not in out:
+                out.append(tok)
+    return tuple(out)
+
+
 def _split_kinds(ctx, param, value):
     """Click callback: accepts either repeated `--kinds X --kinds Y` or
     comma-separated `--kinds X,Y` (or any mix). Strips whitespace, dedupes,
@@ -4315,8 +4333,16 @@ def _parse_duration(text: str) -> float:
                    "include curated `.md` memory files ingested as kind=doc "
                    "alongside intuition observations (kind=memory). "
                    "Default: memory.")
+@click.option("--exclude-mtype", "exclude_mtype", multiple=True,
+              callback=_split_csv,
+              help="Filter out memories whose mtype matches any of the "
+                   "given values. Repeat the flag or pass a comma-separated "
+                   "list (`--exclude-mtype session-request,session-milestone`). "
+                   "Useful for hiding legacy intuition-MCP import noise from "
+                   "recall output. Filter is applied client-side after the "
+                   "recall RPC returns.")
 def memory_recall(query, prompt_query, stdin_json, k, recent, since,
-                  session_start, as_json, as_gmd, kinds):
+                  session_start, as_json, as_gmd, kinds, exclude_mtype):
     """Memory retrieval. Three modes:
 
     Hybrid (default): dense ANN over memory.lance fused with the
@@ -4370,20 +4396,28 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
             "--recent, or --session-start"
         )
 
+    exclude_mtypes = set(exclude_mtype) if exclude_mtype else set()
+
     if recent:
         since_s = _parse_duration(since) if since else None
         from refmatrix import daemon as daemon_mod
+        # Over-fetch when filtering so the final list still has k rows.
+        # Cap at 10× to avoid pathological cases on heavily-polluted
+        # partitions.
+        effective_k = k * 10 if exclude_mtypes else k
         if daemon_mod.ping(_root()):
             resp = _memory_daemon_call(
                 "memory_recent",
-                {"since_seconds": since_s, "limit": k},
+                {"since_seconds": since_s, "limit": effective_k},
             )
             if not resp.get("ok"):
                 raise click.ClickException(resp.get("error", "daemon error"))
             rows = resp["result"]["rows"]
         else:
             s = _store()
-            rows = s.recent_memories(since_seconds=since_s, limit=k)
+            rows = s.recent_memories(since_seconds=since_s, limit=effective_k)
+        if exclude_mtypes:
+            rows = [r for r in rows if (r.get("mtype") or "") not in exclude_mtypes][:k]
         if as_json:
             import json as _json
             click.echo(_json.dumps(rows, indent=2))
@@ -4411,7 +4445,11 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
     from refmatrix import daemon as daemon_mod
     root = _root()
     kinds_list = list(kinds) if kinds else ["memory"]
-    args = {"query": q, "k": k, "kinds": kinds_list}
+    # Over-fetch when mtype filter is active so the surviving list still
+    # has k rows after exclusion. 3× covers most pollution levels; user
+    # can raise -k for partitions with denser noise.
+    ann_k = k * 3 if exclude_mtypes else k
+    args = {"query": q, "k": ann_k, "kinds": kinds_list}
     if not daemon_mod.ping(root):
         raise click.ClickException(
             "rmx memory recall needs the daemon up (dense embedder lives there)"
@@ -4448,6 +4486,8 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
     if as_json or as_gmd:
         rows: list[dict] = []
         for h in hits:
+            if len(rows) >= k:
+                break
             eid = h.get("entity_id") or h.get("id")
             score = h.get("score") or h.get("distance")
             m = _fetch_memory(eid)
@@ -4486,6 +4526,8 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
                         "updated_at": None,
                     }
             if m:
+                if exclude_mtypes and (m.get("mtype") or "") in exclude_mtypes:
+                    continue
                 m["score"] = score
                 rows.append(m)
         if as_gmd:
@@ -4498,13 +4540,22 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
             click.echo(_json.dumps(rows, indent=2))
         return
     t = Table("rank", "score", "id", "name")
-    for r, h in enumerate(hits, 1):
+    shown = 0
+    for h in hits:
+        if shown >= k:
+            break
         eid = h.get("entity_id") or h.get("id")
         score = h.get("score") or h.get("distance")
         m = _fetch_memory(eid)
+        if exclude_mtypes and m and (m.get("mtype") or "") in exclude_mtypes:
+            continue
         name = m["name"] if m else "?"
-        t.add_row(str(r), f"{score:.4f}" if isinstance(score, float) else str(score),
-                  str(eid), name)
+        shown += 1
+        t.add_row(
+            str(shown),
+            f"{score:.4f}" if isinstance(score, float) else str(score),
+            str(eid), name,
+        )
     console.print(t)
 
 
