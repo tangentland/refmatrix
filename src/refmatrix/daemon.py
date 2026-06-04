@@ -220,6 +220,16 @@ class Daemon:
         # ~134 MB of sentence-transformers state unless someone asks
         # for it. None when [dense] extra isn't installed yet.
         self._embedder_inst = None
+        # Snapshot-tier state. `_request_snapshot()` sets `_snapshot_dirty`
+        # + signals `_snapshot_event`; the snapshot tick thread debounces
+        # and produces `catalog.read.duckdb`. `_last_snapshot_ts` gates
+        # ad-hoc `_snapshot_catalog()` calls so a burst pays one copy.
+        self._snapshot_stop: "threading.Event | None" = None
+        self._snapshot_event: "threading.Event | None" = None
+        self._snapshot_thread: "threading.Thread | None" = None
+        self._snapshot_dirty = False
+        self._last_snapshot_ts: float = 0.0
+        self._snapshot_lock = threading.Lock()
 
     def _log(self, msg: str) -> None:
         if self.log_fh is None:
@@ -460,6 +470,19 @@ class Daemon:
         # mid-swap lock state. 60s gives readers a long stable view
         # without falling significantly behind.
         self._start_replica_refresh()
+        # Snapshot-tier: unidirectional copy of writer catalog into
+        # `catalog.read.duckdb`, regenerated within ~250ms after each
+        # write op. Supersedes A/B rotation as the read path; rotation
+        # files remain for back-compat until follow-up cleanup.
+        self._start_snapshot_tick()
+        # Materialize an initial snapshot at startup so readers spawning
+        # right after `daemon start` already have a lock-free file to
+        # open. Best-effort: a checkpoint failure here doesn't block
+        # serve_forever — the snapshot tick retries on the first write.
+        try:
+            self._snapshot_catalog(force=True)
+        except Exception as exc:
+            self._log(f"startup snapshot failed: {exc!r}")
 
         srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         srv.bind(str(sock_path))
@@ -567,6 +590,12 @@ class Daemon:
                 self._repair_stop.set()
             if getattr(self, "_replica_stop", None) is not None:
                 self._replica_stop.set()
+            if getattr(self, "_snapshot_stop", None) is not None:
+                self._snapshot_stop.set()
+                # Wake the snapshot tick out of its event.wait().
+                ev = getattr(self, "_snapshot_event", None)
+                if ev is not None:
+                    ev.set()
             # Step 1: stop the watcher BEFORE pool shutdowns. The watcher
             # debouncer fires _flush() outside the pools but grabs
             # _store_lock — if it kicks off a new flush while we're trying
@@ -941,12 +970,156 @@ class Daemon:
             self._log(f"read_only.duckdb symlink update failed: {exc!r}")
 
     def _refresh_read_only_link(self) -> None:
-        """Point `read_only.duckdb` at the current reader (non-writer) slot.
+        """Point `read_only.duckdb` at the lock-free reader.
 
-        The target is computed from the slot the daemon ACTUALLY writes
-        (`_reader_slot`), so a drifted `active` marker can never make the
-        symlink point at the locked writer file."""
+        Snapshot-tier wins when `catalog.read.duckdb` exists — readers land
+        on a file the writer is never attached to, so there's zero lock
+        contention even mid-rotation. Falls back to the rotation reader
+        slot (`_reader_slot`) when no snapshot has been taken yet, which
+        keeps the bootstrap window and SQLite-only deploys working."""
+        snap = self._snapshot_file()
+        if snap.exists():
+            self._set_read_only_link_to(snap.name)
+            return
         self._set_read_only_link(self._reader_slot())
+
+    def _snapshot_file(self) -> Path:
+        """Snapshot-tier reader file. Materialized by `_snapshot_catalog()`
+        as an atomic file-copy of the writer's current DuckDB catalog,
+        regenerated after every write op (debounced)."""
+        return self.root / "catalog.read.duckdb"
+
+    def _set_read_only_link_to(self, target_name: str) -> None:
+        """Atomically point `read_only.duckdb` at `target_name`. Same
+        primitive as `_set_read_only_link` but takes a filename instead
+        of a slot letter — used by snapshot-tier which targets
+        `catalog.read.duckdb` rather than a slot file."""
+        import os as _os
+        link = self._read_only_link()
+        tmp = link.with_name(link.name + ".tmp")
+        try:
+            if tmp.exists() or tmp.is_symlink():
+                tmp.unlink()
+            _os.symlink(target_name, tmp)
+            _os.replace(tmp, link)
+        except OSError as exc:
+            self._log(f"read_only.duckdb symlink update failed: {exc!r}")
+
+    def _snapshot_catalog(self, *, force: bool = False) -> dict:
+        """Materialize a frozen read-only copy of the writer's catalog at
+        `catalog.read.duckdb` and swing `read_only.duckdb` to it.
+
+        CHECKPOINT flushes WAL into the main file, then a file-level copy
+        produces a self-contained snapshot — no second DuckDB process,
+        no shared-lock attach. Atomic via tmp + os.replace.
+
+        Debounced by RMX_SNAPSHOT_DEBOUNCE_MS (default 250ms). The
+        background snapshot tick is the normal driver; ad-hoc calls
+        through `_op_snapshot(force=True)` bypass the debounce.
+
+        DuckDB-only. SQLite stores skip silently — SQLite WAL already
+        gives many-readers-one-writer concurrency without snapshotting."""
+        if self.store is None or self.store._backend.kind != "duckdb":
+            return {"skipped": "non-duckdb"}
+        now = time.monotonic()
+        debounce_s = float(
+            os.environ.get("RMX_SNAPSHOT_DEBOUNCE_MS", "250") or "250"
+        ) / 1000.0
+        with self._snapshot_lock:
+            if not force and (now - self._last_snapshot_ts) < debounce_s:
+                return {
+                    "skipped": "debounced",
+                    "since_last_s": now - self._last_snapshot_ts,
+                }
+            snap_path = self._snapshot_file()
+            tmp_path = snap_path.with_name(snap_path.name + ".tmp")
+            import shutil as _shutil
+            with self._store_lock:
+                try:
+                    self.store._connect().execute("CHECKPOINT")
+                except Exception as exc:
+                    self._log(f"snapshot CHECKPOINT failed: {exc!r}")
+                    return {"error": "checkpoint", "detail": str(exc)}
+                src = self.store.db_path
+                try:
+                    for p in (
+                        tmp_path,
+                        tmp_path.with_name(tmp_path.name + ".wal"),
+                    ):
+                        if p.exists() or p.is_symlink():
+                            p.unlink()
+                    _shutil.copy2(src, tmp_path)
+                    os.replace(tmp_path, snap_path)
+                except OSError as exc:
+                    self._log(f"snapshot copy failed: {exc!r}")
+                    return {"error": "copy", "detail": str(exc)}
+            self._set_read_only_link_to(snap_path.name)
+            self._last_snapshot_ts = now
+            try:
+                size = snap_path.stat().st_size
+            except OSError:
+                size = 0
+            return {
+                "snapshot_path": str(snap_path),
+                "size": size,
+                "source": str(src),
+            }
+
+    def _request_snapshot(self) -> None:
+        """Mark catalog as having an outstanding write that needs to land
+        in the snapshot. The snapshot tick picks this up within the
+        debounce window and runs `_snapshot_catalog()`.
+
+        Safe to call under `_store_lock` (sets a flag + signals an Event;
+        does no DuckDB work itself). Write-op handlers call this at the
+        tail of their handler so readers see fresh state within ~250ms."""
+        self._snapshot_dirty = True
+        ev = self._snapshot_event
+        if ev is not None:
+            ev.set()
+
+    def _start_snapshot_tick(self) -> None:
+        """Spawn the snapshot ticker. Sleeps on `_snapshot_event` until a
+        write op fires; on wake, sleeps `RMX_SNAPSHOT_DEBOUNCE_MS` to
+        coalesce burst writes, then runs `_snapshot_catalog(force=True)`.
+
+        Disabled on SQLite backend (no need). Disabled by setting
+        RMX_SNAPSHOT_DEBOUNCE_MS=0."""
+        if self.store is None or self.store._backend.kind != "duckdb":
+            return
+        debounce_ms = float(
+            os.environ.get("RMX_SNAPSHOT_DEBOUNCE_MS", "250") or "250"
+        )
+        if debounce_ms <= 0:
+            return
+        debounce_s = debounce_ms / 1000.0
+        import threading as _t
+        self._snapshot_stop = _t.Event()
+        self._snapshot_event = _t.Event()
+
+        def _runner():
+            stop = self._snapshot_stop
+            ev = self._snapshot_event
+            while not stop.is_set():
+                ev.wait()
+                if stop.is_set():
+                    return
+                ev.clear()
+                if stop.wait(debounce_s):
+                    return
+                if not self._snapshot_dirty:
+                    continue
+                self._snapshot_dirty = False
+                try:
+                    self._snapshot_catalog(force=True)
+                except Exception as exc:
+                    self._log(f"snapshot tick failed: {exc!r}")
+                    self._fast_exit_if_invalidated(exc, "snapshot tick")
+
+        self._snapshot_thread = _t.Thread(
+            target=_runner, name="rmxd-snapshot", daemon=True,
+        )
+        self._snapshot_thread.start()
 
     @staticmethod
     def _force_close_store(st) -> None:
@@ -1688,6 +1861,7 @@ def _op_flush_queue(d: Daemon, args: dict) -> dict:
             d.store, project_root=proot, semantic=semantic,
             cancel_check=d._shutdown_event.is_set,
         )
+    d._request_snapshot()
     return report
 
 
@@ -1712,6 +1886,7 @@ def _op_flush_queue_async(d: Daemon, args: dict) -> dict:
                     d.store, project_root=proot, semantic=semantic,
                     cancel_check=d._shutdown_event.is_set,
                 )
+            d._request_snapshot()
         except Exception as exc:
             d._log(f"async flush failed: {exc!r}")
         finally:
@@ -1734,6 +1909,7 @@ def _op_sync_files(d: Daemon, args: dict) -> dict:
             project_root=proot, semantic=semantic,
             cancel_check=d._shutdown_event.is_set,
         )
+    d._request_snapshot()
     return report
 
 
@@ -1746,6 +1922,7 @@ def _op_ingest_path(d: Daemon, args: dict) -> dict:
     semantic = bool(args.get("semantic"))
     with d._store_lock:
         n = ingest_path(d.store, path, source=source, semantic=semantic)
+    d._request_snapshot()
     return {"entities": n, "path": str(path)}
 
 
@@ -1807,6 +1984,7 @@ def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
             )
     finally:
         d._store_lock.release()
+    d._request_snapshot()
     return {
         "files": len(files), "report": stats.report(),
         "docs": stats.docs, "nodes": stats.nodes,
@@ -1825,6 +2003,7 @@ def _op_prestage_hashes(d: Daemon, args: dict) -> dict:
     partition = args.get("partition") or d.store._partition_name
     with d._store_lock, d.store.with_partition(partition):
         report = prestage_hashes(d.store, files)
+    d._request_snapshot()
     return report
 
 
@@ -1842,6 +2021,7 @@ def _op_sync_since(d: Daemon, args: dict) -> dict:
             d.store, git_ref, project_root=proot, semantic=semantic,
             cancel_check=d._shutdown_event.is_set,
         )
+    d._request_snapshot()
     return report
 
 
@@ -1866,6 +2046,7 @@ def _op_checkpoint(d: Daemon, args: dict) -> dict:
             "ON entity_links(linkage_id, concept_id)"
         )
         con.execute("CHECKPOINT")
+    d._request_snapshot()
     return {"checkpointed": True, "index_rebuilt": True}
 
 
@@ -1875,15 +2056,19 @@ def _op_prune_noise(d: Daemon, args: dict) -> dict:
     max_df_ratio = float(args.get("max_df_ratio", 0.25))
     drop = bool(args.get("drop", False))
     with d._store_lock:
-        return d.store.prune_noise(
+        result = d.store.prune_noise(
             namespaces=namespaces, min_df=min_df,
             max_df_ratio=max_df_ratio, drop=drop,
         )
+    d._request_snapshot()
+    return result
 
 
 def _op_vacuum(d: Daemon, args: dict) -> dict:
     with d._store_lock:
-        return d.store.vacuum()
+        result = d.store.vacuum()
+    d._request_snapshot()
+    return result
 
 
 def _op_upsert_entity(d: Daemon, args: dict) -> dict:
@@ -1897,6 +2082,7 @@ def _op_upsert_entity(d: Daemon, args: dict) -> dict:
             path=args.get("path"), tldr=args.get("tldr"),
             meta=meta, protected=bool(args.get("protected", True)),
         )
+    d._request_snapshot()
     return {"id": eid}
 
 
@@ -1907,6 +2093,7 @@ def _op_add_concept(d: Daemon, args: dict) -> dict:
             description=args.get("description"),
             protected=bool(args.get("protected", True)),
         )
+    d._request_snapshot()
     return {"id": cid}
 
 
@@ -1917,6 +2104,7 @@ def _op_add_linkage_type(d: Daemon, args: dict) -> dict:
             directed=bool(args.get("directed", True)),
             description=args.get("description"),
         )
+    d._request_snapshot()
     return {"id": lid}
 
 
@@ -1936,6 +2124,15 @@ def _op_list_linkages(d: Daemon, args: dict) -> dict:
         return {"rows": d.store.list_linkages()}
 
 
+def _op_snapshot(d: Daemon, args: dict) -> dict:
+    """Materialize a fresh `catalog.read.duckdb` and swing the
+    `read_only.duckdb` symlink onto it. Bypasses the debounce when
+    `force=True` (default) so CLI callers get a guaranteed-fresh
+    snapshot. Returns `{snapshot_path, size, source}` or `{skipped: ...}`
+    on SQLite backends / non-DuckDB stores."""
+    return d._snapshot_catalog(force=bool(args.get("force", True)))
+
+
 def _op_partition_add(d: Daemon, args: dict) -> dict:
     """Register a partition row in the catalog. Routed through the daemon
     so `rmx partition add` doesn't try to grab the writer lock from a
@@ -1952,6 +2149,7 @@ def _op_partition_add(d: Daemon, args: dict) -> dict:
             (name, kind, root_path, _time.time()),
         )
         con.commit()
+    d._request_snapshot()
     return {"name": name, "kind": kind}
 
 
@@ -1962,6 +2160,7 @@ def _op_partition_rename(d: Daemon, args: dict) -> dict:
     new = args["new"]
     with d._store_lock:
         d.store.rename_partition(old, new)
+    d._request_snapshot()
     return {"old": old, "new": new}
 
 
@@ -2101,6 +2300,7 @@ def _op_learn_from_grep(d: Daemon, args: dict) -> dict:
                     detail=f"learned from grep {pattern!r}",
                 )
             added += 1
+    d._request_snapshot()
     return {"added": added, "concept": name, "concept_id": cid}
 
 
@@ -2227,6 +2427,7 @@ def _op_memory_add(d: Daemon, args: dict) -> dict:
             name=name, content=content, mtype=mtype,
             tags=tags, metadata=metadata, protected=protected,
         )
+    d._request_snapshot()
     return {"id": eid}
 
 
@@ -2318,6 +2519,7 @@ def _op_memory_forget(d: Daemon, args: dict) -> dict:
         raise ValueError("memory_forget requires 'name' or 'id'")
     with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
         ok = d.store.forget_memory(target)
+    d._request_snapshot()
     return {"forgotten": ok}
 
 
@@ -2372,6 +2574,7 @@ def _op_memory_link(d: Daemon, args: dict) -> dict:
             raise ValueError(f"no memory matching {src!r}")
         cid = d.store.add_concept(concept_name)
         d.store.link(linkage, cid, m["id"], weight=weight)
+    d._request_snapshot()
     return {"src_id": m["id"], "concept_id": cid}
 
 
@@ -2382,7 +2585,9 @@ def _op_stop(d: Daemon, args: dict) -> dict:
 
 def _op_replica_refresh(d: Daemon, args: dict) -> dict:
     """Force an immediate snapshot of primary → replica .duckdb file."""
-    return d._refresh_replica_now()
+    result = d._refresh_replica_now()
+    d._request_snapshot()
+    return result
 
 
 def _op_replica_relink(d: Daemon, args: dict) -> dict:
@@ -2715,6 +2920,7 @@ def _op_embed(d: Daemon, args: dict) -> dict:
             embedded += len(eids)
         remaining = len(d.store.pending_embeddings(kinds=kinds, limit=1))
 
+    d._request_snapshot()
     return {
         "embedded": embedded,
         "remaining": remaining,
@@ -2743,6 +2949,8 @@ def _op_embed_gc(d: Daemon, args: dict) -> dict:
         result = d.store.gc_vectors(
             kinds=kinds, dim=emb.dim, dry_run=dry_run,
         )
+    if not dry_run:
+        d._request_snapshot()
     return {"by_kind": result, "partition": partition, "dim": emb.dim}
 
 
@@ -2822,6 +3030,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "vacuum": _op_vacuum,
     "stats": _op_stats,
     "checkpoint": _op_checkpoint,
+    "snapshot": _op_snapshot,
     "replica_refresh": _op_replica_refresh,
     "replica_status": _op_replica_status,
     "replica_relink": _op_replica_relink,
@@ -2861,6 +3070,7 @@ CLI_OPS: set[str] = {
     "replica_status",
     "replica_relink",
     "replica_audit",
+    "snapshot",
     "ann_search",
     "memory_get",
     "memory_iter",
