@@ -364,7 +364,9 @@ def init(path: Path | None, hooks: bool, memory_hooks: bool, agents: bool,
 
 @main.command()
 def info():
-    """Print the active refmatrix root and partition."""
+    """Print the active refmatrix version, root, and partition."""
+    from refmatrix import __version__
+    console.print(f"version:   {__version__}")
     console.print(f"root:      {_root()}")
     console.print(f"partition: {_resolve_partition()}")
 
