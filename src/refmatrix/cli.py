@@ -4125,7 +4125,12 @@ def memory_add(name, content, mtype, tags, meta, protect):
 
 @memory_grp.command("get")
 @click.argument("name_or_id")
-def memory_get(name_or_id):
+@click.option("--degree", default=0, type=int,
+              help="When >0, ALSO render the context bundle for this memory "
+                   "(anchor + one-hop neighbors + their bodies). Same shape "
+                   "as `rmx context`. Lets a single `memory get` call return "
+                   "body + graph instead of forcing two commands.")
+def memory_get(name_or_id, degree):
     """Fetch a memory by name (current partition) or id (any partition)."""
     _memory_intent("memory_get")
     from refmatrix import daemon as daemon_mod
@@ -4150,6 +4155,39 @@ def memory_get(name_or_id):
         console.print(f"  meta: {m['metadata']}")
     console.print()
     console.print(m["content"] or "")
+    if degree > 0:
+        # Render the context bundle alongside the body so a `memory get
+        # --degree 1` call covers both surfaces in one shot. Route
+        # through the same daemon path the `rmx context` CLI uses so
+        # callers see identical output.
+        from refmatrix.context import build_context, render_text
+        console.print()
+        console.print("[bold]--- context ---[/]")
+        if daemon_mod.ping(root):
+            ctx_args = {
+                "ref": m["name"], "format": "text",
+                "degree": degree,
+                "entities_explicit": False, "tokens_explicit": False,
+                "partition": _resolve_partition(),
+            }
+            ctx_resp = daemon_mod.call(
+                root, "context", ctx_args, timeout=120.0,
+            )
+            if ctx_resp.get("ok"):
+                click.echo(ctx_resp["result"]["body"])
+            else:
+                console.print(
+                    f"[yellow]context unavailable: "
+                    f"{ctx_resp.get('error')}[/]"
+                )
+        else:
+            s = _read_store()
+            click.echo(render_text(
+                build_context(
+                    s, m["name"], degree=degree,
+                    _entities_explicit=False, _tokens_explicit=False,
+                )
+            ))
 
 
 @memory_grp.command("list")
@@ -4289,6 +4327,18 @@ def _render_memory_gmd(rows, *, query: str | None = None,
             for cl in content.splitlines():
                 lines.append(f"> {cl}")
 
+        # When --degree>0 attached a context bundle to this row, fold
+        # it into the GMD as a fenced block so prompt-injection
+        # consumers see graph + body inline instead of having to
+        # re-fetch.
+        ctx = (m.get("context") or "").strip()
+        if ctx:
+            lines.append("")
+            lines.append("```")
+            for cl in ctx.splitlines():
+                lines.append(cl)
+            lines.append("```")
+
         # Provenance: session-derived memories point back via the
         # standard GMD `derives-from` verb. `part-of` ties every hit
         # to the synthesized root so a reader can enumerate the doc's
@@ -4370,8 +4420,15 @@ def _parse_duration(text: str) -> float:
                    "Useful for hiding legacy intuition-MCP import noise from "
                    "recall output. Filter is applied client-side after the "
                    "recall RPC returns.")
+@click.option("--degree", default=0, type=int,
+              help="When >0, attach a context bundle (body + one-hop "
+                   "neighbors with their bodies) to each hit. JSON output "
+                   "gains a `context` field per row; table output appends "
+                   "the rendered context block under each row. Cost is N "
+                   "extra daemon context calls; keep low for hook latency.")
 def memory_recall(query, prompt_query, stdin_json, k, recent, since,
-                  session_start, as_json, as_gmd, kinds, exclude_mtype):
+                  session_start, as_json, as_gmd, kinds, exclude_mtype,
+                  degree):
     """Memory retrieval. Three modes:
 
     Hybrid (default): dense ANN over memory.lance fused with the
@@ -4427,6 +4484,50 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
 
     exclude_mtypes = set(exclude_mtype) if exclude_mtype else set()
 
+    def _attach_context(rows: list[dict]) -> list[dict]:
+        """When --degree > 0, fetch a context bundle per row and stash
+        the rendered text on `row['context']`. Daemon-side: routes
+        through the same `_op_context` the `rmx context` CLI uses, so
+        the output shape matches. No-op for degree=0.
+        Best-effort: a per-row failure leaves `context` unset rather
+        than breaking the whole recall response."""
+        if degree <= 0:
+            return rows
+        from refmatrix import daemon as daemon_mod
+        root = _root()
+        if not daemon_mod.ping(root):
+            # Degraded mode: in-process build, no daemon.
+            from refmatrix.context import build_context, render_text
+            s = _read_store()
+            for row in rows:
+                try:
+                    b = build_context(
+                        s, row["name"], degree=degree,
+                        _entities_explicit=False, _tokens_explicit=False,
+                    )
+                    row["context"] = render_text(b)
+                except Exception:
+                    row["context"] = None
+            return rows
+        for row in rows:
+            try:
+                ctx_resp = daemon_mod.call(
+                    root, "context",
+                    {"ref": row["name"], "format": "text",
+                     "degree": degree,
+                     "entities_explicit": False,
+                     "tokens_explicit": False,
+                     "partition": _resolve_partition()},
+                    timeout=120.0,
+                )
+                row["context"] = (
+                    ctx_resp.get("result", {}).get("body")
+                    if ctx_resp.get("ok") else None
+                )
+            except Exception:
+                row["context"] = None
+        return rows
+
     if recent:
         since_s = _parse_duration(since) if since else None
         from refmatrix import daemon as daemon_mod
@@ -4447,6 +4548,7 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
             rows = s.recent_memories(since_seconds=since_s, limit=effective_k)
         if exclude_mtypes:
             rows = [r for r in rows if (r.get("mtype") or "") not in exclude_mtypes][:k]
+        rows = _attach_context(rows)
         if as_json:
             import json as _json
             click.echo(_json.dumps(rows, indent=2))
@@ -4466,6 +4568,17 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
             t.add_row(str(i), str(m["id"]), m["name"], m["mtype"] or "",
                       (m["content"] or "")[:80])
         console.print(t)
+        if degree > 0:
+            # Table mode: append the per-row context block under the
+            # table so the operator sees graph + body alongside the
+            # ranked list. JSON/GMD modes carry it inline via the
+            # `context` field set by `_attach_context`.
+            for i, m in enumerate(rows, 1):
+                ctx = m.get("context")
+                if ctx:
+                    console.print()
+                    console.print(f"[bold]#{i} {m['name']} — context[/]")
+                    click.echo(ctx)
         return
 
     # Hybrid path. _memory_daemon_call injects the active partition so
@@ -4559,6 +4672,7 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
                     continue
                 m["score"] = score
                 rows.append(m)
+        rows = _attach_context(rows)
         if as_gmd:
             click.echo(_render_memory_gmd(
                 rows, query=q, mode="hybrid",
@@ -4569,6 +4683,7 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
             click.echo(_json.dumps(rows, indent=2))
         return
     t = Table("rank", "score", "id", "name")
+    table_rows: list[dict] = []
     shown = 0
     for h in hits:
         if shown >= k:
@@ -4585,7 +4700,19 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
             f"{score:.4f}" if isinstance(score, float) else str(score),
             str(eid), name,
         )
+        if m is not None:
+            table_rows.append(m)
     console.print(t)
+    if degree > 0 and table_rows:
+        # Mirror the recent-mode behavior: render per-hit context blocks
+        # under the ranked table for table mode.
+        ctx_rows = _attach_context(table_rows)
+        for i, m in enumerate(ctx_rows, 1):
+            ctx = m.get("context")
+            if ctx:
+                console.print()
+                console.print(f"[bold]#{i} {m['name']} — context[/]")
+                click.echo(ctx)
 
 
 @memory_grp.command("link")
