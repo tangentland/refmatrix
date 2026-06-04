@@ -72,8 +72,42 @@ def _resolve_partition() -> str:
     return default_partition_name(_root())
 
 
+def _active_slot_path() -> Path | None:
+    """Resolve `<root>/catalog.<active>.duckdb` per the `active` marker, or
+    None if no rotation has bootstrapped. Reading the marker is cheap and
+    avoids opening a stale legacy `catalog.duckdb`."""
+    root = _root()
+    marker = root / "active"
+    if not marker.exists():
+        return None
+    try:
+        slot = marker.read_text().strip()
+    except OSError:
+        return None
+    if slot not in ("A", "B"):
+        return None
+    p = root / f"catalog.{slot}.duckdb"
+    return p if p.exists() else None
+
+
 def _store() -> Store:
+    """Open the active rotation-slot catalog. The legacy `catalog.duckdb`
+    is no longer touched by the daemon post-0.3.8: that file is FROZEN at
+    bootstrap, and any code opening it from there sees stale data.
+
+    Resolution:
+      1. `<root>/catalog.<active>.duckdb` per the `active` marker — what
+         the daemon writes to (or wrote to last). Source of truth.
+      2. Legacy `<root>/catalog.duckdb` for ancient pre-rotation stores.
+
+    With the daemon up, opening the active slot r/w from another process
+    will fail (DuckDB exclusive lock). Callers that want a read-only view
+    while the daemon is running should use `_reader_store()` or route
+    through the daemon's RPC."""
     s = Store(_root(), partition=_resolve_partition())
+    slot_path = _active_slot_path()
+    if slot_path is not None:
+        s.db_path = slot_path
     if not s.db_path.exists():
         raise click.ClickException(
             f"no refmatrix at {s.root}. Run `rmx init` first or set REFMATRIX_ROOT."
@@ -4188,11 +4222,11 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
             m = _fetch_memory(eid)
             if m is None and "doc" in kinds_list:
                 # Non-memory hit (kind=doc/code/concept). For these we
-                # still need a direct entity row + file body. Fall back
-                # to the local store reader; doc-kind hits aren't churned
-                # by rotation in the same way memories are (path-backed,
-                # not memory_content sidecar).
-                s = _store()
+                # still need a direct entity row + file body. Use the
+                # replica reader so the read bypasses the daemon's write
+                # lock on the active slot; fall back to _store() only if
+                # no replica is up yet.
+                s = _reader_store() or _store()
                 ent = s._read().execute(
                     "SELECT id, kind, name, path, tldr "
                     "FROM entities WHERE id=?", (eid,),
