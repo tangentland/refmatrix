@@ -657,7 +657,16 @@ def ingest_gmd_paths(
                 kind="concept", name=name, path=str(path),
                 tldr=tldr, meta=meta,
             )
-            eid_by_name[name] = eid
+            # `__root__` resolves to the doc-id, which is also the key
+            # we used for the doc-level entity above (add_memory under
+            # `as_memory=True`, upsert_entity(kind='doc') otherwise).
+            # Overwriting here clobbers the doc-level entity id in
+            # `eid_by_name` and forces every cross-doc rel: edge to
+            # land on the node-level concept duplicate instead of the
+            # doc-level memory — exactly the path the root-rel mirror
+            # tries to walk. Preserve the prior mapping; the concept
+            # entity is still queryable by id elsewhere.
+            eid_by_name.setdefault(name, eid)
             stats.nodes += 1
 
         pass1_processed += 1
@@ -774,6 +783,26 @@ def ingest_gmd_paths(
                     )
                     stats.rels += 1
                     resolved = True
+                    # Mirror root-level rels onto the doc-level entity.
+                    # The GMD primer puts most cross-doc edges on the H1
+                    # `{#root}` node, which lands the linkage on the
+                    # `<doc>#root` concept entity — invisible to
+                    # `rmx neighbors <doc>` and to the degree-walk that
+                    # starts from the doc-level memory. Mirror the edge
+                    # to the doc-level entity so memory→memory rel:
+                    # chains traverse naturally in build_context.
+                    if (
+                        as_memory
+                        and node.id == "root"
+                        and doc_eid != src_eid
+                        and doc_eid != target_eid
+                    ):
+                        store.link(verb, doc_eid, target_eid)
+                        store.add_evidence(
+                            verb, doc_eid, target_eid,
+                            file=str(doc.path), line=line_no,
+                            detail=f"rel: {verb} -> {ref} (root-mirror)",
+                        )
                 if not resolved and not target.startswith(("http://", "https://")):
                     stats.unresolved.append((doc.path, line_no, target))
 
