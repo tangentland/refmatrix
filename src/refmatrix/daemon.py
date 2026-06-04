@@ -2164,6 +2164,24 @@ def _op_partition_rename(d: Daemon, args: dict) -> dict:
     return {"old": old, "new": new}
 
 
+def _op_partition_merge(d: Daemon, args: dict) -> dict:
+    """Merge SRC partition into DST. Drops SRC on success. See
+    `Store.merge_partition` for the full semantics — collisions remap
+    child rows to DST and prefer the longer memory_content body.
+
+    Driven by the memory partition consolidation (memory-<project>
+    → <project>) that closes the cross-partition wikilink resolution
+    gap. `dry_run=True` returns the same shape minus the mutation."""
+    src = args["src"]
+    dst = args["dst"]
+    dry_run = bool(args.get("dry_run"))
+    with d._store_lock:
+        result = d.store.merge_partition(src, dst, dry_run=dry_run)
+    if not dry_run:
+        d._request_snapshot()
+    return result
+
+
 def _op_partition_list(d: Daemon, args: dict) -> dict:
     """List all partitions in the catalog. Routed through the daemon so
     `rmx partition list` doesn't try to grab the catalog lock the daemon
@@ -3072,6 +3090,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "partition_add": _op_partition_add,
     "partition_list": _op_partition_list,
     "partition_rename": _op_partition_rename,
+    "partition_merge": _op_partition_merge,
     "prune_noise": _op_prune_noise,
     "vacuum": _op_vacuum,
     "stats": _op_stats,

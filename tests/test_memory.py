@@ -271,11 +271,13 @@ def test_duckdb_check_rebuild_accepts_memory_after_open(tmp_path, monkeypatch):
 def test_memory_partition_default_resolves_to_project_scoped(
     tmp_path, monkeypatch,
 ):
-    """Memory commands default to `memory-<project>` when no -p /
-    RMX_PARTITION is set. Project = basename of .refmatrix root's
-    parent dir. _apply_memory_partition_default is the single source
-    of truth — exercise it directly so the behavior is asserted at
-    the unit level too."""
+    """Memory commands default to the project partition when no -p /
+    RMX_PARTITION is set. Pre-0.5.0 the default was `memory-<project>`;
+    that split made cross-partition wikilinks unresolvable so the
+    consolidated default is just `<project>`. Legacy auto-detect
+    still routes to `memory-<project>` when that row exists, so a
+    pre-merge host stays correct — but the bare default for a fresh
+    tree is the project name."""
     from refmatrix import cli as cli_mod
     # Point _root() at tmp_path/.refmatrix so the project name is
     # deterministic (tmp_path basename).
@@ -284,8 +286,30 @@ def test_memory_partition_default_resolves_to_project_scoped(
     # No env var, no override.
     monkeypatch.delenv("RMX_PARTITION", raising=False)
     monkeypatch.setattr(cli_mod, "_partition_override", None, raising=False)
+    # Make sure the legacy-detect cache doesn't carry state from a
+    # prior test in this module.
+    if hasattr(cli_mod._legacy_memory_partition_exists, "_cache"):
+        cli_mod._legacy_memory_partition_exists._cache = {}
+    # Daemon down + no legacy partition row → project default.
+    from refmatrix import daemon as daemon_mod
+    monkeypatch.setattr(daemon_mod, "ping", lambda *a, **kw: False)
+    monkeypatch.setattr(
+        cli_mod, "_reader_store", lambda: None, raising=False,
+    )
+    monkeypatch.setattr(
+        cli_mod, "_store",
+        lambda: type("S", (), {
+            "_connect": lambda self: type("C", (), {
+                "execute": lambda *a, **kw: type("R", (), {
+                    "fetchone": lambda self: None
+                })(),
+            })(),
+            "close": lambda self: None,
+        })(),
+        raising=False,
+    )
     cli_mod._apply_memory_partition_default()
-    assert cli_mod._partition_override == f"memory-{tmp_path.name}"
+    assert cli_mod._partition_override == tmp_path.name
     # Reset and verify explicit override wins.
     monkeypatch.setattr(cli_mod, "_partition_override", "myproject", raising=False)
     cli_mod._apply_memory_partition_default()

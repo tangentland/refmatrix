@@ -772,6 +772,95 @@ def partition_rename(old: str, new: str):
     )
 
 
+@partition.command("merge")
+@click.argument("src")
+@click.argument("dst")
+@click.option("--dry-run", is_flag=True,
+              help="Resolve the entity / saved-query / tracked-file "
+                   "counts without mutating. Prints what would be "
+                   "reparented + merged.")
+@click.option("--yes", "-y", is_flag=True,
+              help="Skip the confirmation prompt. Use after a --dry-run.")
+def partition_merge(src: str, dst: str, dry_run: bool, yes: bool):
+    """Merge SRC partition into DST. Drops SRC on success.
+
+    Built for the `memory-<project>` → `<project>` consolidation: the
+    memory partition split made cross-partition wikilinks fail to
+    resolve and produced orphan rows. Collisions remap child rows to
+    DST and prefer the longer memory_content body. Lance vectors +
+    bitmap fragments move filesystem-side.
+
+    Always run --dry-run first to see the impact.
+    """
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    args = {"src": src, "dst": dst, "dry_run": True}
+
+    if daemon_mod.ping(root):
+        preview = daemon_mod.call(
+            root, "partition_merge", args, timeout=300.0,
+        )
+        if not preview.get("ok"):
+            raise click.ClickException(
+                preview.get("error", "daemon error")
+            )
+        result = preview["result"]
+    else:
+        s = _store()
+        try:
+            result = s.merge_partition(src, dst, dry_run=True)
+        except ValueError as e:
+            raise click.ClickException(str(e))
+
+    console.print(
+        f"[bold]partition merge preview:[/] {src} -> {dst}"
+    )
+    console.print(f"  entities to reparent: {result['entities_reparented']}")
+    console.print(f"  entities to merge:    {result['entities_merged']}")
+    console.print(f"  saved queries:        {result['saved_queries']}")
+    console.print(f"  tracked files:        {result['tracked_files']}")
+    if dry_run:
+        return
+    total = (
+        result["entities_reparented"] + result["entities_merged"]
+        + result["saved_queries"] + result["tracked_files"]
+    )
+    if total == 0:
+        console.print(f"[yellow]nothing to merge[/]")
+        return
+    if not yes and not click.confirm(
+        f"Merge {src} into {dst} and drop {src}?", default=False,
+    ):
+        console.print("[yellow]aborted[/]")
+        return
+
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(
+            root, "partition_merge",
+            {"src": src, "dst": dst, "dry_run": False},
+            timeout=3600.0,
+        )
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        result = resp["result"]
+    else:
+        s = _store()
+        try:
+            result = s.merge_partition(src, dst, dry_run=False)
+        except ValueError as e:
+            raise click.ClickException(str(e))
+    console.print(
+        f"[green]merged[/] reparented={result['entities_reparented']} "
+        f"merged={result['entities_merged']} "
+        f"saved_queries={result['saved_queries']} "
+        f"tracked_files={result['tracked_files']}"
+    )
+    console.print(
+        "[dim]restart the daemon to drop any cached SRC partition "
+        "binding (`rmx daemon launchctl kickstart -k`).[/]"
+    )
+
+
 # ---- canon (cross-codebase concept matching) -----------------------------
 
 
@@ -4041,14 +4130,73 @@ MEMORY_PARTITION_PREFIX = "memory-"
 
 
 def _memory_partition_default() -> str:
-    """Resolve `memory-<project_name>` for the active CLI invocation.
-    Falls back to `memory-default` if the project name can't be
-    inferred (e.g. .refmatrix lives at the filesystem root)."""
+    """Resolve the memory partition for the active CLI invocation.
+
+    Post-0.5.0 default: project partition (`default_partition_name`),
+    NOT `memory-<project>`. The split that existed for ADR-0001 Phase
+    B → Phase C made cross-partition wikilinks unresolvable so
+    memory→memory rel: edges from sync-disk silently dropped. Recall's
+    existing kind=memory filter already separates memory results at
+    query time, so the noise concern the split addressed is handled
+    without the split.
+
+    Migration auto-detect: if the legacy `memory-<project>` partition
+    still exists (a host that hasn't run `rmx partition merge`), keep
+    routing to it so existing data stays reachable. After the operator
+    runs the merge (drops the legacy partition row), the default flips
+    to the project partition automatically.
+    """
+    from refmatrix.store import default_partition_name
     try:
-        project = _root().resolve().parent.name or "default"
+        root = _root()
+        project = root.resolve().parent.name or "default"
+        legacy = f"{MEMORY_PARTITION_PREFIX}{project}"
+        # Best-effort legacy detection: peek at partitions table without
+        # holding the writer lock. Daemon-up call is preferred so a CLI
+        # invocation while the daemon owns the lock doesn't crash on
+        # the read; daemon-down falls back to a lock-free reader.
+        if _legacy_memory_partition_exists(root, legacy):
+            return legacy
+        return default_partition_name(root)
     except Exception:
-        project = "default"
-    return f"{MEMORY_PARTITION_PREFIX}{project}"
+        return f"{MEMORY_PARTITION_PREFIX}default"
+
+
+def _legacy_memory_partition_exists(root: Path, legacy: str) -> bool:
+    """True when the `memory-<project>` partition row is still present
+    (pre-merge state). Caches per process so repeated `rmx memory`
+    invocations don't re-query."""
+    cache_key = (str(root), legacy)
+    cached = getattr(_legacy_memory_partition_exists, "_cache", {})
+    if cache_key in cached:
+        return cached[cache_key]
+    found = False
+    try:
+        from refmatrix import daemon as daemon_mod
+        if daemon_mod.ping(root):
+            resp = daemon_mod.call(
+                root, "partition_list", {}, timeout=10.0,
+            )
+            if resp.get("ok"):
+                rows = resp["result"].get("rows", [])
+                found = any(r.get("name") == legacy for r in rows)
+        else:
+            s = _reader_store() or _store()
+            try:
+                row = s._connect().execute(
+                    "SELECT 1 FROM partitions WHERE name=?", (legacy,),
+                ).fetchone()
+                found = row is not None
+            finally:
+                try:
+                    s.close()
+                except Exception:
+                    pass
+    except Exception:
+        found = False
+    cached[cache_key] = found
+    _legacy_memory_partition_exists._cache = cached  # type: ignore[attr-defined]
+    return found
 
 
 def _memory_daemon_call(op: str, args: dict, *, timeout: float = 60.0):
@@ -4154,7 +4302,11 @@ def memory_get(name_or_id, degree):
     if m["metadata"]:
         console.print(f"  meta: {m['metadata']}")
     console.print()
-    console.print(m["content"] or "")
+    # `click.echo` here, NOT `console.print`: Rich's markup parser
+    # consumes `[[name]]` patterns (interpreting `[name]` as a tag)
+    # and strips them to `[]`, mangling every GMD `rel:` wikilink in
+    # the body. `click.echo` writes the raw bytes verbatim.
+    click.echo(m["content"] or "")
     if degree > 0:
         # Render the context bundle alongside the body so a `memory get
         # --degree 1` call covers both surfaces in one shot. Route
