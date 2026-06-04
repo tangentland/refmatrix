@@ -1300,10 +1300,30 @@ def neighbors(concept, depth, linkage, limit, include_noise, strict, via_replica
 @click.option("--via-replica", is_flag=True,
               help="Read from the rotation reader slot instead of the daemon. "
                    "Lock-free; sees stale-by-N-seconds data.")
-def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict, via_replica):
+@click.option("--degree", default=0, type=int,
+              help="Hop-depth ON TOP of the existing one-hop walk. 0 (default) "
+                   "= current behavior with memory bodies attached for any "
+                   "kind='memory' entry. Higher values reserve scope for "
+                   "future multi-hop expansion; today they only auto-scale "
+                   "the --max-entities / --max-tokens budgets.")
+def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
+            via_replica, degree):
     """Token-budgeted context bundle: anchor + neighbors + their tldr blobs."""
     from refmatrix.context import build_context, render_json, render_text
     from refmatrix import daemon as daemon_mod
+    # Detect whether the user actually passed --max-entities / --max-tokens
+    # so the auto-scale (degree>0) knows whether to multiply or not. An
+    # explicit override always wins, even if it happens to match the
+    # default.
+    ctx = click.get_current_context()
+    entities_explicit = (
+        ctx.get_parameter_source("max_entities")
+        != click.core.ParameterSource.DEFAULT
+    )
+    tokens_explicit = (
+        ctx.get_parameter_source("max_tokens")
+        != click.core.ParameterSource.DEFAULT
+    )
 
     # `--since` requires a writer-slot connection (the diff lookup hits
     # path metadata that the replica may not cover yet); honor that case
@@ -1327,6 +1347,9 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
                     max_tokens=max_tokens,
                     fuse=fuse,
                     strict=strict,
+                    degree=degree,
+                    _entities_explicit=entities_explicit,
+                    _tokens_explicit=tokens_explicit,
                 )
                 t.cardinality = b.total_entities() if b.anchor else 0
             return b
@@ -1351,6 +1374,9 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
                 "max_tokens": max_tokens,
                 "fuse": fuse,
                 "strict": strict,
+                "degree": degree,
+                "entities_explicit": entities_explicit,
+                "tokens_explicit": tokens_explicit,
             }, timeout=120.0)
             if not resp.get("ok"):
                 raise click.ClickException(
@@ -1406,7 +1432,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
         for name in sorted(concept_names)[:8]:
             b = build_context(s, name, max_tokens=per, max_entities=10,
                               linkages=list(linkage) or None, fuse=fuse,
-                              strict=strict)
+                              strict=strict, degree=degree)
             if b.anchor is None or not b.groups:
                 continue
             block = render_json(b) if fmt == "json" else render_text(b)
@@ -1430,6 +1456,9 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
             max_tokens=max_tokens,
             fuse=fuse,
             strict=strict,
+            degree=degree,
+            _entities_explicit=entities_explicit,
+            _tokens_explicit=tokens_explicit,
         )
         t.cardinality = bundle.total_entities() if bundle.anchor else 0
     if fmt == "json":

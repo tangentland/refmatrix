@@ -53,6 +53,11 @@ class ContextEntry:
     # `file:line` so callers can jump straight to the line.
     file: str | None = None
     line: int | None = None
+    # Full memory content for kind='memory' entries. Lets `rmx context`
+    # at degree>=1 surface the BODY of linked memories alongside the
+    # graph view, closing the "get vs context two-surfaces" cliff.
+    # None on non-memory entries; the renderers skip it then.
+    body: str | None = None
 
 
 @dataclass
@@ -62,6 +67,13 @@ class ContextBundle:
     groups: dict[str, list[ContextEntry]] = field(default_factory=dict)
     truncated: bool = False
     estimated_tokens: int = 0
+    # Full memory body for the anchor when its kind is 'memory'. At
+    # degree=0 (anchor-only) this is the entire response payload; at
+    # degree>=1 it sits above the graph view.
+    anchor_body: str | None = None
+    # Hop-depth requested; preserved so renderers and callers can show
+    # which expansion shape produced the bundle.
+    degree: int = 0
 
     def total_entities(self) -> int:
         return sum(len(v) for v in self.groups.values())
@@ -76,8 +88,30 @@ def build_context(
     max_tokens: int = 4000,
     fuse: bool = False,
     strict: bool = False,
+    degree: int = 0,
+    _entities_explicit: bool = False,
+    _tokens_explicit: bool = False,
 ) -> ContextBundle:
     """Build a context bundle anchored on `ref` (concept name or entity name).
+
+    `degree` controls extra graph expansion ON TOP of the current
+    one-hop walk:
+
+    - `degree=0` (default): current behavior — one-hop linkage walk
+      from the anchor. Memory entities (anchor and neighbors) carry
+      their full body, so the bundle covers both "what does this say"
+      AND "what is it linked to" in one call. Closes the
+      `memory get` vs `memory context` two-surfaces cliff.
+    - `degree>=1`: reserved for multi-hop expansion (BFS to depth
+      degree+1). Not yet implemented as a true multi-hop walk; the
+      walk still caps at one hop but `max_entities` / `max_tokens`
+      auto-scale with degree so the budget is ready for the deeper
+      shape when the BFS lands.
+
+    Budget auto-adjustment: when `max_entities` / `max_tokens` were NOT
+    explicitly passed by the caller (i.e. the CLI defaults flowed
+    through), they scale with `degree>0` so a deeper request actually
+    fits more material. Explicit overrides win.
 
     When `strict=False` (default), a bare ref (no `kind:name` prefix) is
     first variant-expanded via `Store.resolve_concept_ids(ref, strict=False)`
@@ -86,7 +120,7 @@ def build_context(
     anchor. Falls through to literal `resolve_entity` if no canonical
     concept matches — preserves the existing kind:name and code/doc lookup
     paths."""
-    bundle = ContextBundle(ref=ref)
+    bundle = ContextBundle(ref=ref, degree=degree)
     e: object | None = None
     if not strict and ":" not in ref:
         cids = s.resolve_concept_ids(ref, strict=False)
@@ -97,6 +131,26 @@ def build_context(
     if e is None:
         return bundle
     bundle.anchor = e
+
+    # Attach the memory body to the bundle regardless of degree — at
+    # degree=0 it's the only payload; at degree>=1 it sits above the
+    # graph view.
+    if e.kind == "memory":
+        try:
+            mem = s.get_memory(e.id)
+        except Exception:
+            mem = None
+        if mem is not None:
+            bundle.anchor_body = mem.get("content")
+
+    # Auto-scale the budget when the caller did NOT explicitly set the
+    # flag and degree > 0 — a deeper request without an override should
+    # get a deeper budget too. Explicit values always win.
+    if degree > 0:
+        if not _entities_explicit:
+            max_entities = max_entities * (1 + degree)
+        if not _tokens_explicit:
+            max_tokens = max_tokens * (1 + degree)
 
     # Build the linkage iteration order: prioritized defaults first, then any
     # user-defined linkages, both filtered by the user's --linkage choice.
@@ -110,6 +164,8 @@ def build_context(
     used = estimate_tokens(_render_header(bundle))
     if e.tldr:
         used += estimate_tokens(e.tldr)
+    if bundle.anchor_body:
+        used += estimate_tokens(bundle.anchor_body)
 
     if fuse:
         rows_iter = _fused_rows(s, e, ordered, max_entities)
@@ -133,6 +189,15 @@ def build_context(
         file_line = evidence.get((eid, linkage))
         if file_line is not None:
             entry.file, entry.line = file_line
+        # Attach memory bodies to memory neighbors so a degree>=1 walk
+        # carries the actual content rather than just a graph edge.
+        if ent.kind == "memory":
+            try:
+                m = s.get_memory(ent.id)
+            except Exception:
+                m = None
+            if m is not None:
+                entry.body = m.get("content")
         cost = estimate_tokens(_render_entry(entry))
         if used + cost > max_tokens:
             bundle.truncated = True
@@ -293,6 +358,10 @@ def _render_entry(e: ContextEntry) -> str:
         if e.line is not None:
             location = f"{location}:{e.line}"
         line += f"\n    {location}"
+    if e.body:
+        # Indent body lines so they read as a block under the entry header.
+        body_block = "\n".join(f"    {ln}" for ln in e.body.splitlines())
+        line += f"\n{body_block}"
     return line
 
 
@@ -305,6 +374,10 @@ def render_text(b: ContextBundle) -> str:
     lines.append(f"anchor: {a.name}  [{a.kind}]")
     if a.tldr:
         lines.append(f"  {a.tldr}")
+    if b.anchor_body:
+        lines.append("")
+        lines.append("--- body ---")
+        lines.append(b.anchor_body)
     if not b.groups:
         lines.append("")
         lines.append("(no linkages found — try `rmx link` or `rmx ingest --semantic`)")
@@ -318,7 +391,10 @@ def render_text(b: ContextBundle) -> str:
         lines.append("")
         lines.append("[truncated by budget]")
     lines.append("")
-    lines.append(f"[~{b.estimated_tokens} tokens, {b.total_entities()} neighbors]")
+    lines.append(
+        f"[~{b.estimated_tokens} tokens, "
+        f"{b.total_entities()} neighbors, degree={b.degree}]"
+    )
     return "\n".join(lines)
 
 
@@ -326,12 +402,14 @@ def render_json(b: ContextBundle) -> str:
     return json.dumps(
         {
             "ref": b.ref,
+            "degree": b.degree,
             "anchor": (
                 {
                     "name": b.anchor.name,
                     "kind": b.anchor.kind,
                     "path": b.anchor.path,
                     "tldr": b.anchor.tldr,
+                    "body": b.anchor_body,
                 }
                 if b.anchor else None
             ),
@@ -342,6 +420,7 @@ def render_json(b: ContextBundle) -> str:
                         "kind": e.entity.kind,
                         "path": e.entity.path,
                         "tldr": e.entity.tldr,
+                        "body": e.body,
                         "weight": e.weight,
                         "linkage": e.linkage,
                         "file": e.file,

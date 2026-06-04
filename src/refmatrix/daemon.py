@@ -2392,6 +2392,9 @@ def _op_context(d: Daemon, args: dict) -> dict:
     max_tokens = int(args.get("max_tokens", 4000))
     fuse = bool(args.get("fuse", False))
     strict = bool(args.get("strict", False))
+    degree = int(args.get("degree", 0))
+    entities_explicit = bool(args.get("entities_explicit", False))
+    tokens_explicit = bool(args.get("tokens_explicit", False))
     with d._store_lock:
         bundle = build_context(
             d.store, ref,
@@ -2400,6 +2403,9 @@ def _op_context(d: Daemon, args: dict) -> dict:
             max_tokens=max_tokens,
             fuse=fuse,
             strict=strict,
+            degree=degree,
+            _entities_explicit=entities_explicit,
+            _tokens_explicit=tokens_explicit,
         )
     body = render_json(bundle) if fmt == "json" else render_text(bundle)
     return {"body": body}

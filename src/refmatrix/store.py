@@ -1509,11 +1509,14 @@ class Store:
         return self._row_to_entity(row) if row else None
 
     def resolve_entity(self, ref: str) -> Entity | None:
-        """Resolve a string ref to an entity. Tries 'kind:name', then 'name' across kinds."""
+        """Resolve a string ref to an entity. Tries 'kind:name', then 'name'
+        across kinds. The kind sweep includes 'memory' so `rmx context
+        <memory-name>` lands the memory entity (and its body) instead of
+        falling through to no-match."""
         if ":" in ref:
             kind, name = ref.split(":", 1)
             return self.get_entity(kind, name)
-        for kind in ("concept", "code", "doc"):
+        for kind in ("concept", "code", "doc", "memory"):
             e = self.get_entity(kind, ref)
             if e:
                 return e
