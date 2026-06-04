@@ -143,3 +143,103 @@ def test_session_ingest_empty_no_files(tmp_path, monkeypatch):
     r = runner.invoke(main, ["session", "ingest", "--no-index", str(empty)])
     assert r.exit_code == 0
     assert "no session JSONLs found" in r.output
+
+
+# --- Phase C: retrieval ---------------------------------------------------
+
+def _setup_indexed_store(tmp_path, monkeypatch) -> Path:
+    """Init a store + ingest one fixture session end-to-end. Returns the
+    JSONL source path so tests can re-reference it."""
+    monkeypatch.setenv("REFMATRIX_ROOT", str(tmp_path / ".refmatrix"))
+    src = tmp_path / "abc123.jsonl"
+    _write_fixture_jsonl(src)
+    runner = CliRunner()
+    # init resolves its target dir from cwd or --path, not REFMATRIX_ROOT.
+    # Point it at tmp_path so the resulting .refmatrix matches the env var.
+    r0 = runner.invoke(main, ["init", "--path", str(tmp_path),
+                              "--no-hooks", "--no-agents"])
+    assert r0.exit_code == 0, r0.output
+    r = runner.invoke(main, ["session", "ingest", str(src)])
+    assert r.exit_code == 0, r.output
+    return src
+
+
+def test_session_list_shows_ingested_session(tmp_path, monkeypatch):
+    _setup_indexed_store(tmp_path, monkeypatch)
+    runner = CliRunner()
+    r = runner.invoke(main, ["session", "list"])
+    assert r.exit_code == 0, r.output
+    assert "abc123" in r.output
+    assert "main" in r.output  # branch
+
+
+def test_session_list_json(tmp_path, monkeypatch):
+    _setup_indexed_store(tmp_path, monkeypatch)
+    runner = CliRunner()
+    r = runner.invoke(main, ["session", "list", "--json"])
+    assert r.exit_code == 0, r.output
+    data = json.loads(r.output)
+    assert len(data) == 1
+    assert data[0]["session_id"] == "abc123"
+    assert data[0]["branch"] == "main"
+
+
+def test_session_recall_finds_by_query(tmp_path, monkeypatch):
+    _setup_indexed_store(tmp_path, monkeypatch)
+    runner = CliRunner()
+    r = runner.invoke(main, ["session", "recall", "test prompt"])
+    assert r.exit_code == 0, r.output
+    assert "abc123" in r.output
+
+
+def test_session_recall_branch_filter_excludes(tmp_path, monkeypatch):
+    _setup_indexed_store(tmp_path, monkeypatch)
+    runner = CliRunner()
+    r = runner.invoke(
+        main, ["session", "recall", "test", "--branch", "nonexistent"]
+    )
+    assert r.exit_code == 0, r.output
+    assert "no matching sessions" in r.output
+
+
+def test_session_show_card(tmp_path, monkeypatch):
+    _setup_indexed_store(tmp_path, monkeypatch)
+    runner = CliRunner()
+    r = runner.invoke(main, ["session", "show", "abc123", "--card"])
+    assert r.exit_code == 0, r.output
+    assert "## User prompts {#prompts}" in r.output
+    assert "test prompt" in r.output
+
+
+def test_session_show_raw_returns_jsonl_path(tmp_path, monkeypatch):
+    src = _setup_indexed_store(tmp_path, monkeypatch)
+    runner = CliRunner()
+    r = runner.invoke(main, ["session", "show", "abc123", "--raw"])
+    assert r.exit_code == 0, r.output
+    assert str(src) in r.output
+
+
+def test_session_show_turns_reparses_jsonl(tmp_path, monkeypatch):
+    _setup_indexed_store(tmp_path, monkeypatch)
+    runner = CliRunner()
+    r = runner.invoke(main, ["session", "show", "abc123", "--turns"])
+    assert r.exit_code == 0, r.output
+    assert "test prompt" in r.output
+    assert "test reply" in r.output
+
+
+def test_session_show_unknown_id_errors(tmp_path, monkeypatch):
+    _setup_indexed_store(tmp_path, monkeypatch)
+    runner = CliRunner()
+    r = runner.invoke(main, ["session", "show", "zzzzzz"])
+    assert r.exit_code != 0
+    assert "no session matching" in (r.output + str(r.exception or ""))
+
+
+def test_session_stats(tmp_path, monkeypatch):
+    _setup_indexed_store(tmp_path, monkeypatch)
+    runner = CliRunner()
+    r = runner.invoke(main, ["session", "stats"])
+    assert r.exit_code == 0, r.output
+    assert "sessions: 1" in r.output
+    assert "claude-opus-4-7" in r.output

@@ -242,7 +242,7 @@ def build_card(data: SessionData) -> str:
         "  type: session",
         f"  session_id: {data.session_id}",
         f"  project: {data.project_slug}",
-        f"  source_path: {data.source_path}",
+        f"  jsonl_path: {data.source_path}",
         f"  started: {data.started}",
         f"  ended: {data.ended}",
         f"  turn_count: {data.turn_count}",

@@ -171,16 +171,18 @@ No schema migrations — cards are GMD docs ingested via existing `ingest_gmd_pa
 4. Reused existing `ingest_gmd_paths(as_memory=True)` with `memory_mtype="session"` — no `ingest_gmd.py` changes needed. Cleaner than the originally-planned `as_session=True` flag.
 5. `rmx session ingest [PATH]` CLI: default scopes to cwd's matching Claude Code project dir; `--all-projects` for full walk; `--no-index` for card-only preview; `--force` for rebuild; hash-skip for unchanged sessions.
 
-**Phase C — retrieval:**
-6. `rmx session recall <query>` — BM25 over kind="session" with recency boost; filters (--branch, --commit, --touched).
-7. `rmx session show <id>` — three modes (--card / --raw / --turns).
-8. `rmx session list` + `rmx session stats`.
+**Phase C — retrieval:** ✅ SHIPPED (0.3.34)
+6. `rmx session recall <query>` — BM25 over sessions partition with filters (--project, --branch, --commit, --touched, --since, --until). Recency-sorted when no query.
+7. `rmx session show <id>` — three modes (--card / --raw / --turns). Accepts full uuid or 8-char prefix.
+8. `rmx session list` + `rmx session stats` — paginated index + aggregate (turn count, top files, branches, models).
 
-**Phase D — automation:**
-9. launchd plist template + `rmx session install-launchd` installer.
-10. Cold-start backfill verified across `~/.claude/projects/*`.
+Implementation note: list-valued metadata (commits, files_touched, models_used) survives ingest as JSON-string blobs because the `--as-memory` ingest path's frontmatter parser doesn't unwrap nested YAML lists. Added `_session_meta_list()` helper to deserialize at read time. A cleaner long-term fix would be to teach `ingest_gmd.py:583` to JSON-decode list-shaped values, but that's a behaviour change for the existing memory ingest path and out of scope here.
 
-Ship A+B first (one release). Then C (one release). Then D.
+**Phase D — automation:** ✅ SHIPPED (0.3.34)
+9. `src/refmatrix/session_launchctl.py` + `rmx session launchctl install/uninstall/status` CLI. Per-store plist with StartInterval (default 600s), no KeepAlive (one-shot ingest tick). Distinct label prefix `com.refmatrix.session-indexer.<slug>-<hash>` so it coexists with the daemon LaunchAgent.
+10. Cold-start backfill: `rmx session ingest --all-projects` walks every project under `~/.claude/projects/`; hash-skips unchanged sessions. Available standalone or via the LaunchAgent's `--all-projects` flag.
+
+Ship A+B first (one release). Then C+D (one release combining retrieval + automation).
 
 ## Resolved decisions
 

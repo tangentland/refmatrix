@@ -4782,6 +4782,514 @@ def session_ingest_cmd(targets, all_projects, force, verbose, no_index):
     console.print(stats.report())
 
 
+# --- session-index retrieval (Phase C) ------------------------------------
+
+def _session_partition() -> str:
+    """Resolve the partition for session ops. Explicit -p / RMX_PARTITION
+    wins; otherwise default to sessions-<project>."""
+    return (
+        _partition_override
+        or os.environ.get("RMX_PARTITION")
+        or _sessions_partition_default()
+    )
+
+
+def _session_call(op: str, args: dict, *, timeout: float = 60.0):
+    """Daemon call helper for session ops. Auto-pins the sessions partition."""
+    from refmatrix import daemon as daemon_mod
+    if "partition" not in args:
+        args = {**args, "partition": _session_partition()}
+    return daemon_mod.call(_root(), op, args, timeout=timeout)
+
+
+def _iter_session_memories() -> list[dict]:
+    """Return all memory rows in the active sessions partition. Routes
+    through daemon when available; falls back to direct store read."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.ping(root):
+        resp = _session_call(
+            "memory_iter", {"mtype": "session", "limit": 100000},
+        )
+        if resp.get("ok"):
+            return resp["result"]["memories"]
+    s = Store(root, partition=_session_partition())
+    return list(s.iter_memories(mtype="session", limit=100000))
+
+
+def _session_meta_get(mem: dict, key: str, default=None):
+    """Reach into memory_content.metadata; handle daemon (already-parsed)
+    vs. direct-store (may be a JSON str) shapes."""
+    meta = mem.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+    return meta.get(key, default) if isinstance(meta, dict) else default
+
+
+def _session_meta_list(mem: dict, key: str) -> list[str]:
+    """List-valued metadata accessor. Frontmatter list values like
+    `files_touched: ["a", "b"]` survive ingest as JSON-encoded strings
+    (the YAML parser used by ingest-gmd's --as-memory path doesn't unwrap
+    nested metadata). Parse on read."""
+    v = _session_meta_get(mem, key)
+    if v is None:
+        return []
+    if isinstance(v, list):
+        return [str(x) for x in v]
+    if isinstance(v, str):
+        s = v.strip()
+        if s.startswith("[") and s.endswith("]"):
+            try:
+                parsed = json.loads(s)
+                if isinstance(parsed, list):
+                    return [str(x) for x in parsed]
+            except json.JSONDecodeError:
+                pass
+            # Fallback: split on commas, strip quotes
+            inner = s[1:-1].strip()
+            if not inner:
+                return []
+            return [
+                item.strip().strip("'\"") for item in inner.split(",")
+                if item.strip()
+            ]
+        return [s] if s else []
+    return []
+
+
+def _session_passes_filters(
+    mem: dict,
+    *,
+    project: str | None = None,
+    branch: str | None = None,
+    commit: str | None = None,
+    touched: str | None = None,
+    since_iso: str | None = None,
+    until_iso: str | None = None,
+) -> bool:
+    if project and project not in (_session_meta_get(mem, "project") or ""):
+        return False
+    if branch and _session_meta_get(mem, "branch") != branch:
+        return False
+    if commit:
+        commits = _session_meta_list(mem, "commits")
+        if not any(commit in c for c in commits):
+            return False
+    if touched:
+        files = _session_meta_list(mem, "files_touched")
+        if not any(touched in f for f in files):
+            return False
+    ended = _session_meta_get(mem, "ended") or ""
+    if since_iso and ended and ended < since_iso:
+        return False
+    if until_iso and ended and ended > until_iso:
+        return False
+    return True
+
+
+def _since_to_iso(since: str | None) -> str | None:
+    """Convert `7d`/`1h`/ISO-prefix to ISO timestamp string for comparison."""
+    if not since:
+        return None
+    # If looks like ISO date, pass through.
+    if since and (since[0:4].isdigit() and "-" in since):
+        return since
+    try:
+        secs = _parse_duration(since)
+    except click.BadParameter:
+        return since
+    import time
+    return (
+        __import__("datetime").datetime.fromtimestamp(
+            time.time() - secs, tz=__import__("datetime").timezone.utc,
+        ).isoformat().replace("+00:00", "Z")
+    )
+
+
+@session_grp.command("recall")
+@click.argument("query", required=False)
+@click.option("--project", default=None,
+              help="Filter to sessions whose metadata.project contains this "
+                   "substring.")
+@click.option("--branch", default=None,
+              help="Filter to sessions ended on this git branch.")
+@click.option("--commit", default=None,
+              help="Filter to sessions where this commit sha was authored.")
+@click.option("--touched", default=None,
+              help="Filter to sessions that edited a file containing this "
+                   "path substring.")
+@click.option("--since", default=None,
+              help="Only sessions ended on/after this point. Accepts `7d`, "
+                   "`1h`, `30m`, bare seconds, or ISO date prefix.")
+@click.option("--until", default=None,
+              help="Only sessions ended on/before this point. Same formats "
+                   "as --since.")
+@click.option("--k", default=20, type=int, show_default=True,
+              help="Result count.")
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit JSON instead of a table.")
+def session_recall_cmd(query, project, branch, commit, touched,
+                       since, until, k, as_json):
+    """BM25-style search over session cards with metadata filters.
+
+    Symbolic-only: no dense vectors. Score = body match (when QUERY given) +
+    recency tiebreak on metadata.ended. Without QUERY, lists most-recent
+    sessions matching the filters."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+
+    since_iso = _since_to_iso(since)
+    until_iso = _since_to_iso(until)
+
+    # Phase 1: get candidate rows. If query given, use search_memories;
+    # else iter the partition.
+    if query:
+        if daemon_mod.ping(root):
+            resp = _session_call(
+                "memory_search", {"query": query, "limit": max(k * 4, 100)},
+            )
+            if not resp.get("ok"):
+                raise click.ClickException(resp.get("error", "daemon error"))
+            mems = resp["result"]["memories"]
+        else:
+            s = Store(root, partition=_session_partition())
+            mems = list(s.search_memories(query, limit=max(k * 4, 100)))
+        # Only sessions
+        mems = [m for m in mems if m.get("mtype") == "session"]
+    else:
+        mems = _iter_session_memories()
+
+    # Phase 2: post-filter on metadata.
+    filtered = [
+        m for m in mems
+        if _session_passes_filters(
+            m, project=project, branch=branch, commit=commit,
+            touched=touched, since_iso=since_iso, until_iso=until_iso,
+        )
+    ]
+
+    # Phase 3: sort. With query, preserve search order (already relevance);
+    # without, sort by ended DESC.
+    if not query:
+        filtered.sort(
+            key=lambda m: _session_meta_get(m, "ended") or "",
+            reverse=True,
+        )
+    filtered = filtered[:k]
+
+    if as_json:
+        click.echo(json.dumps([
+            {
+                "id": m.get("id"),
+                "name": m.get("name"),
+                "session_id": _session_meta_get(m, "session_id"),
+                "project": _session_meta_get(m, "project"),
+                "branch": _session_meta_get(m, "branch"),
+                "started": _session_meta_get(m, "started"),
+                "ended": _session_meta_get(m, "ended"),
+                "turn_count": _session_meta_get(m, "turn_count"),
+                "title": (m.get("content") or "").split("\n", 2)[0].lstrip("# ").strip(),
+            }
+            for m in filtered
+        ], indent=2, default=str))
+        return
+
+    if not filtered:
+        console.print("[yellow]no matching sessions[/]")
+        return
+
+    from rich.table import Table
+    t = Table(show_lines=False)
+    t.add_column("session", style="cyan")
+    t.add_column("ended", style="dim")
+    t.add_column("branch")
+    t.add_column("project", style="dim")
+    t.add_column("title")
+    for m in filtered:
+        sid = _session_meta_get(m, "session_id") or m.get("name", "")
+        sid_short = sid[:8] if sid else "?"
+        title = (m.get("content") or "").split("\n", 2)[0].lstrip("# ").strip()
+        # strip {#root} suffix from title
+        title = title.split(" {#")[0]
+        ended = (_session_meta_get(m, "ended") or "")[:19]
+        branch_s = _session_meta_get(m, "branch") or ""
+        project_s = (_session_meta_get(m, "project") or "").split("/")[-1]
+        t.add_row(sid_short, ended, branch_s, project_s, title[:60])
+    console.print(t)
+
+
+def _resolve_session(prefix: str) -> dict | None:
+    """Resolve a session by id, short prefix, or full memory name."""
+    # Direct hit by memory name
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    candidate_names = [prefix]
+    if not prefix.startswith("session-"):
+        candidate_names.append(f"session-{prefix[:8]}")
+    for nm in candidate_names:
+        if daemon_mod.ping(root):
+            resp = _session_call("memory_get", {"name": nm})
+            if resp.get("ok") and resp["result"].get("memory"):
+                return resp["result"]["memory"]
+        else:
+            s = Store(root, partition=_session_partition())
+            row = s.get_memory(nm)
+            if row:
+                return row
+    # Prefix scan over session_id
+    for m in _iter_session_memories():
+        sid = _session_meta_get(m, "session_id") or ""
+        if sid.startswith(prefix) or m.get("name", "").endswith(prefix):
+            return m
+    return None
+
+
+@session_grp.command("show")
+@click.argument("session_id")
+@click.option("--card", "mode", flag_value="card", default=True,
+              help="Print the rendered card markdown (default).")
+@click.option("--raw", "mode", flag_value="raw",
+              help="Print the path to the source JSONL.")
+@click.option("--turns", "mode", flag_value="turns",
+              help="Re-parse the source JSONL and pretty-print filtered "
+                   "user prompts + assistant decisions.")
+def session_show_cmd(session_id, mode):
+    """Load a session by id (full uuid or 8-char prefix)."""
+    mem = _resolve_session(session_id)
+    if not mem:
+        raise click.ClickException(f"no session matching {session_id!r}")
+
+    if mode == "card":
+        click.echo(mem.get("content") or "")
+        return
+    if mode == "raw":
+        src = _session_meta_get(mem, "jsonl_path")
+        if not src:
+            raise click.ClickException("no jsonl_path in card metadata")
+        click.echo(src)
+        return
+    if mode == "turns":
+        from refmatrix.session_ingest import parse_session_jsonl
+        src = _session_meta_get(mem, "jsonl_path")
+        if not src or not Path(src).exists():
+            raise click.ClickException(f"source JSONL missing: {src}")
+        data = parse_session_jsonl(Path(src))
+        console.print(f"[bold cyan]Session {data.session_id}[/]")
+        console.print(
+            f"[dim]{data.started} → {data.ended}  "
+            f"branch={data.branch}  turns={data.turn_count}[/]"
+        )
+        console.print()
+        console.print("[bold]User prompts:[/]")
+        for p in data.user_prompts:
+            console.print(f"  • {p}")
+        console.print()
+        console.print("[bold]Assistant decisions:[/]")
+        for d in data.assistant_decisions:
+            console.print(d)
+            console.print()
+
+
+@session_grp.command("list")
+@click.option("--project", default=None,
+              help="Filter to sessions whose project metadata contains this "
+                   "substring.")
+@click.option("--branch", default=None)
+@click.option("--since", default=None,
+              help="Only sessions ended on/after this point. Same formats "
+                   "as recall --since.")
+@click.option("--limit", default=50, type=int, show_default=True)
+@click.option("--offset", default=0, type=int)
+@click.option("--json", "as_json", is_flag=True)
+def session_list_cmd(project, branch, since, limit, offset, as_json):
+    """Paginated index of sessions, sorted by ended DESC."""
+    since_iso = _since_to_iso(since)
+    mems = _iter_session_memories()
+    filtered = [
+        m for m in mems
+        if _session_passes_filters(
+            m, project=project, branch=branch, since_iso=since_iso,
+        )
+    ]
+    filtered.sort(
+        key=lambda m: _session_meta_get(m, "ended") or "", reverse=True,
+    )
+    page = filtered[offset : offset + limit]
+
+    if as_json:
+        click.echo(json.dumps([
+            {
+                "session_id": _session_meta_get(m, "session_id"),
+                "project": _session_meta_get(m, "project"),
+                "branch": _session_meta_get(m, "branch"),
+                "ended": _session_meta_get(m, "ended"),
+                "turn_count": _session_meta_get(m, "turn_count"),
+            }
+            for m in page
+        ], indent=2, default=str))
+        return
+
+    if not page:
+        console.print("[yellow]no sessions matching[/]")
+        return
+
+    from rich.table import Table
+    t = Table()
+    t.add_column("session", style="cyan")
+    t.add_column("ended", style="dim")
+    t.add_column("branch")
+    t.add_column("turns", justify="right")
+    t.add_column("title")
+    for m in page:
+        sid = _session_meta_get(m, "session_id") or m.get("name", "")
+        title = (m.get("content") or "").split("\n", 2)[0].lstrip("# ").strip()
+        title = title.split(" {#")[0]
+        ended = (_session_meta_get(m, "ended") or "")[:19]
+        branch_s = _session_meta_get(m, "branch") or ""
+        turns = str(_session_meta_get(m, "turn_count") or "")
+        t.add_row(sid[:8], ended, branch_s, turns, title[:60])
+    console.print(t)
+    console.print(
+        f"[dim]showing {offset + 1}-{offset + len(page)} of "
+        f"{len(filtered)} (limit={limit})[/]"
+    )
+
+
+@session_grp.command("stats")
+@click.option("--project", default=None,
+              help="Restrict aggregation to matching sessions.")
+@click.option("--since", default=None)
+def session_stats_cmd(project, since):
+    """Aggregate stats: session count, turns, tool usage, top files."""
+    from collections import Counter
+    since_iso = _since_to_iso(since)
+    mems = _iter_session_memories()
+    filtered = [
+        m for m in mems
+        if _session_passes_filters(m, project=project, since_iso=since_iso)
+    ]
+    if not filtered:
+        console.print("[yellow]no sessions matching[/]")
+        return
+    total_turns = 0
+    total_prompts = 0
+    files_counter: Counter = Counter()
+    branch_counter: Counter = Counter()
+    project_counter: Counter = Counter()
+    model_counter: Counter = Counter()
+    for m in filtered:
+        total_turns += int(_session_meta_get(m, "turn_count") or 0)
+        total_prompts += int(_session_meta_get(m, "user_prompt_count") or 0)
+        for f in _session_meta_list(m, "files_touched"):
+            files_counter[f] += 1
+        b = _session_meta_get(m, "branch")
+        if b:
+            branch_counter[b] += 1
+        p = _session_meta_get(m, "project")
+        if p:
+            project_counter[p] += 1
+        for md in _session_meta_list(m, "models_used"):
+            model_counter[md] += 1
+
+    console.print(f"[bold]sessions:[/] {len(filtered)}")
+    console.print(f"[bold]total turns:[/] {total_turns}")
+    console.print(f"[bold]total user prompts:[/] {total_prompts}")
+    if branch_counter:
+        console.print(
+            "[bold]branches:[/] "
+            + ", ".join(f"{b}({n})" for b, n in branch_counter.most_common(5))
+        )
+    if project_counter:
+        console.print(
+            "[bold]projects:[/] "
+            + ", ".join(
+                f"{p.split('/')[-1]}({n})"
+                for p, n in project_counter.most_common(5)
+            )
+        )
+    if model_counter:
+        console.print(
+            "[bold]models:[/] "
+            + ", ".join(f"{m}({n})" for m, n in model_counter.most_common())
+        )
+    if files_counter:
+        console.print("[bold]top files touched:[/]")
+        for f, n in files_counter.most_common(10):
+            console.print(f"  {n:>3} × {f}")
+
+
+# --- session-index launchd backfill (Phase D) -----------------------------
+
+@session_grp.group("launchctl")
+def session_launchctl_grp():
+    """macOS launchd integration for the session-index backfill ticker.
+
+    Installs a per-store LaunchAgent that periodically runs
+    `rmx session ingest`, keeping the sessions partition in sync with
+    ~/.claude/projects/ without any hook dependency."""
+
+
+@session_launchctl_grp.command("install")
+@click.option("--interval", "interval_seconds", default=600, type=int,
+              show_default=True,
+              help="Seconds between ingest runs.")
+@click.option("--all-projects", is_flag=True,
+              help="Walk every project under ~/.claude/projects/ on each "
+                   "tick (instead of the current project's matching dir).")
+@click.option("--force", is_flag=True,
+              help="Rewrite the plist + reload even if already installed.")
+def session_launchctl_install(interval_seconds, all_projects, force):
+    """Install + bootstrap the session-indexer LaunchAgent."""
+    from refmatrix import session_launchctl as sl
+    root = _root()
+    try:
+        p = sl.install(
+            root, partition=_session_partition(),
+            interval_seconds=interval_seconds,
+            all_projects=all_projects, force=force,
+        )
+    except (RuntimeError, FileNotFoundError) as e:
+        raise click.ClickException(str(e))
+    console.print(f"[green]installed[/] {p}")
+    console.print(
+        f"label: {sl.label_for_root(root)}  "
+        f"interval: {interval_seconds}s  "
+        f"all_projects: {all_projects}"
+    )
+
+
+@session_launchctl_grp.command("uninstall")
+def session_launchctl_uninstall():
+    """Bootout + remove the session-indexer LaunchAgent."""
+    from refmatrix import session_launchctl as sl
+    root = _root()
+    try:
+        removed = sl.uninstall(root)
+    except RuntimeError as e:
+        raise click.ClickException(str(e))
+    if removed:
+        console.print(f"[yellow]uninstalled[/] {sl.plist_path(root)}")
+    else:
+        console.print("[dim]no session-indexer agent to remove[/]")
+
+
+@session_launchctl_grp.command("status")
+def session_launchctl_status():
+    """Report whether the session-indexer agent is installed + loaded."""
+    from refmatrix import session_launchctl as sl
+    root = _root()
+    p = sl.plist_path(root)
+    inst = sl.is_installed(root)
+    loaded = sl.is_loaded(root) if inst else False
+    console.print(f"plist:     {p}")
+    console.print(f"label:     {sl.label_for_root(root)}")
+    console.print(f"installed: {'[green]yes[/]' if inst else '[red]no[/]'}")
+    console.print(f"loaded:    {'[green]yes[/]' if loaded else '[red]no[/]'}")
+
+
 @main.command("tools-primer")
 @click.option("--json", "as_json", is_flag=True,
               help="Emit JSON instead of markdown.")
