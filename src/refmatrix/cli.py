@@ -4168,17 +4168,31 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
         console.print("[yellow]no recall hits[/] (have memories been embedded? "
                       "rmx embed --kinds memory)")
         return
-    s = _store()
+    # Route name/content lookup through the daemon so we read the live
+    # rotation slot (catalog.A/B). _store() opens the legacy
+    # `catalog.duckdb` file, which the daemon does NOT keep in sync after
+    # rotation — looking ids up there returns None for valid memories and
+    # silently produces `[]` from the JSON branch. The daemon's own slot
+    # has the truth.
+    def _fetch_memory(eid: int) -> dict | None:
+        resp = _memory_daemon_call("memory_get", {"id": eid}, timeout=30.0)
+        if not resp.get("ok"):
+            return None
+        return resp["result"].get("memory")
+
     if as_json or as_gmd:
         rows: list[dict] = []
         for h in hits:
             eid = h.get("entity_id") or h.get("id")
             score = h.get("score") or h.get("distance")
-            m = s.get_memory(eid)
+            m = _fetch_memory(eid)
             if m is None and "doc" in kinds_list:
-                # Non-memory hit (kind=doc/code/concept). Build a
-                # memory-shaped dict from the entity row + file body
-                # so the GMD/JSON output stays uniform across kinds.
+                # Non-memory hit (kind=doc/code/concept). For these we
+                # still need a direct entity row + file body. Fall back
+                # to the local store reader; doc-kind hits aren't churned
+                # by rotation in the same way memories are (path-backed,
+                # not memory_content sidecar).
+                s = _store()
                 ent = s._read().execute(
                     "SELECT id, kind, name, path, tldr "
                     "FROM entities WHERE id=?", (eid,),
@@ -4222,10 +4236,8 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
     for r, h in enumerate(hits, 1):
         eid = h.get("entity_id") or h.get("id")
         score = h.get("score") or h.get("distance")
-        row = s._read().execute(
-            "SELECT name FROM entities WHERE id=?", (eid,),
-        ).fetchone()
-        name = row["name"] if row else "?"
+        m = _fetch_memory(eid)
+        name = m["name"] if m else "?"
         t.add_row(str(r), f"{score:.4f}" if isinstance(score, float) else str(score),
                   str(eid), name)
     console.print(t)
