@@ -2523,6 +2523,46 @@ def _op_memory_forget(d: Daemon, args: dict) -> dict:
     return {"forgotten": ok}
 
 
+def _op_memory_bulk_forget(d: Daemon, args: dict) -> dict:
+    """Bulk-delete memory rows by ids / names / mtypes (union semantics).
+
+    Args:
+        ids: list of entity-ids to forget (global; partition-agnostic).
+        names: list of memory names to resolve within the active partition.
+        mtypes: list of sidecar mtypes; every memory matching any of them
+            in the active partition is purged. Drives the 271-card
+            session-card cleanup on viascope (mtypes=[session-request,
+            session-milestone]).
+        dry_run: resolve the id set + per-mtype counts WITHOUT deleting.
+        partition: override the daemon's bound partition (memory ops are
+            usually scoped to `memory-<project>` even when the daemon
+            owns the code-sync partition).
+
+    Returns Store.bulk_forget_memories' shape: {forgotten, ids, by_mtype,
+    dry_run}.
+    """
+    if (
+        not args.get("ids")
+        and not args.get("names")
+        and not args.get("mtypes")
+    ):
+        raise ValueError(
+            "memory_bulk_forget requires at least one of "
+            "'ids', 'names', 'mtypes'"
+        )
+    dry_run = bool(args.get("dry_run"))
+    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
+        result = d.store.bulk_forget_memories(
+            ids=args.get("ids"),
+            names=args.get("names"),
+            mtypes=args.get("mtypes"),
+            dry_run=dry_run,
+        )
+    if not dry_run and result.get("forgotten", 0) > 0:
+        d._request_snapshot()
+    return result
+
+
 def _op_memory_score(d: Daemon, args: dict) -> dict:
     """Phase B5: per-concept reinforcement signal. Returns the signed
     score (clamped to ±cap) plus the contributing concept_ids so the
@@ -3045,6 +3085,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "memory_search": _op_memory_search,
     "memory_recent": _op_memory_recent,
     "memory_forget": _op_memory_forget,
+    "memory_bulk_forget": _op_memory_bulk_forget,
     "memory_link": _op_memory_link,
     "memory_score": _op_memory_score,
     "stop": _op_stop,

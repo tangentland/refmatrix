@@ -1352,6 +1352,91 @@ class Store:
         self.purge_entity(m["id"])
         return True
 
+    def bulk_forget_memories(
+        self,
+        *,
+        ids: "list[int] | None" = None,
+        names: "list[str] | None" = None,
+        mtypes: "list[str] | None" = None,
+        dry_run: bool = False,
+    ) -> dict:
+        """Bulk-delete memory rows + sidecars + linkages.
+
+        Selection is the UNION of any of:
+          - `ids`: explicit entity-id list
+          - `names`: explicit name list (resolved within the active partition)
+          - `mtypes`: every memory whose sidecar mtype is in this list
+
+        Resolution scope: name + mtype resolution is partition-scoped to
+        prevent a stray purge from crossing into another project's
+        memory rows. `ids` are global by entity-id (callers that want
+        partition safety should pre-filter with `iter_memories`).
+
+        `dry_run=True` returns the resolved id set + per-mtype counts
+        without touching the catalog — exactly the same shape as the
+        real run minus the row deletion.
+
+        Returns `{forgotten: N, ids: [...], by_mtype: {mtype: count, ...},
+        dry_run: bool}`.
+        """
+        con = self._connect()
+        resolved_ids: set[int] = set()
+        per_mtype: dict[str, int] = {}
+
+        if ids:
+            for eid in ids:
+                resolved_ids.add(int(eid))
+        if names:
+            placeholders = ",".join("?" * len(names))
+            for row in con.execute(
+                f"SELECT id FROM entities "
+                f"WHERE partition_id=? AND kind='memory' "
+                f"  AND name IN ({placeholders})",
+                [self._partition_id, *names],
+            ).fetchall():
+                resolved_ids.add(int(row["id"]))
+        if mtypes:
+            placeholders = ",".join("?" * len(mtypes))
+            for row in con.execute(
+                f"SELECT e.id FROM entities e "
+                f"JOIN memory_content mc ON mc.entity_id = e.id "
+                f"WHERE e.partition_id=? AND e.kind='memory' "
+                f"  AND mc.mtype IN ({placeholders})",
+                [self._partition_id, *mtypes],
+            ).fetchall():
+                resolved_ids.add(int(row["id"]))
+
+        if not resolved_ids:
+            return {
+                "forgotten": 0, "ids": [], "by_mtype": {},
+                "dry_run": dry_run,
+            }
+
+        id_list = sorted(resolved_ids)
+        id_placeholders = ",".join("?" * len(id_list))
+        for row in con.execute(
+            f"SELECT mc.mtype, COUNT(*) AS n "
+            f"FROM entities e "
+            f"LEFT JOIN memory_content mc ON mc.entity_id = e.id "
+            f"WHERE e.id IN ({id_placeholders}) "
+            f"GROUP BY mc.mtype",
+            id_list,
+        ).fetchall():
+            per_mtype[row["mtype"] or "(none)"] = int(row["n"])
+
+        if dry_run:
+            return {
+                "forgotten": 0, "ids": id_list, "by_mtype": per_mtype,
+                "dry_run": True,
+            }
+
+        for eid in id_list:
+            self.purge_entity(eid)
+        return {
+            "forgotten": len(id_list), "ids": id_list,
+            "by_mtype": per_mtype, "dry_run": False,
+        }
+
     def reinforcement_score(
         self, concept_id: int, *, now: float | None = None,
         halflife_days: float | None = None, cap: float | None = None,

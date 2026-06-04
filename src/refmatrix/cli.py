@@ -4992,6 +4992,96 @@ def memory_forget(name_or_id):
         console.print(f"[yellow]no memory matching[/] {name_or_id}")
 
 
+@memory_grp.command("bulk-forget")
+@click.option("--id", "ids", type=int, multiple=True,
+              help="Entity id to forget (repeatable).")
+@click.option("--name", "names", multiple=True,
+              help="Memory name to forget within the active partition (repeatable).")
+@click.option("--mtype", "mtypes", multiple=True,
+              help="Forget every memory whose mtype matches (repeatable).")
+@click.option("--dry-run", is_flag=True,
+              help="Resolve the id set + per-mtype counts without deleting.")
+@click.option("--yes", "-y", is_flag=True,
+              help="Skip confirmation prompt (use after a --dry-run).")
+def memory_bulk_forget(ids, names, mtypes, dry_run, yes):
+    """Bulk-delete memories by id / name / mtype.
+
+    Selection is the union of the supplied filters. The 271-card
+    viascope session-card cleanup runs as:
+
+        rmx memory bulk-forget \\
+            --mtype session-request --mtype session-milestone --dry-run
+
+    Then, after reviewing the count, repeat without --dry-run and
+    confirm.
+    """
+    _memory_intent("memory_bulk_forget")
+    if not ids and not names and not mtypes:
+        raise click.ClickException(
+            "at least one of --id, --name, --mtype is required"
+        )
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    args: dict = {"dry_run": dry_run}
+    if ids:
+        args["ids"] = list(ids)
+    if names:
+        args["names"] = list(names)
+    if mtypes:
+        args["mtypes"] = list(mtypes)
+
+    if daemon_mod.ping(root):
+        # Always run a dry-run first to drive the confirmation prompt;
+        # this both gives the user a real count and short-circuits the
+        # confirm when the filter matches nothing.
+        preview = _memory_daemon_call(
+            "memory_bulk_forget", {**args, "dry_run": True}, timeout=120.0,
+        )
+        if not preview.get("ok"):
+            raise click.ClickException(preview.get("error", "daemon error"))
+        result = preview["result"]
+    else:
+        s = _store()
+        result = s.bulk_forget_memories(
+            ids=args.get("ids"), names=args.get("names"),
+            mtypes=args.get("mtypes"), dry_run=True,
+        )
+
+    count = len(result.get("ids", []))
+    by_mtype = result.get("by_mtype", {})
+    console.print(
+        f"[bold]bulk-forget preview:[/] {count} memories selected"
+    )
+    for mt, n in sorted(by_mtype.items()):
+        console.print(f"  {mt}: {n}")
+
+    if count == 0 or dry_run:
+        return
+
+    if not yes and not click.confirm(
+        f"Delete {count} memories and all their linkages?", default=False,
+    ):
+        console.print("[yellow]aborted[/]")
+        return
+
+    if daemon_mod.ping(root):
+        resp = _memory_daemon_call(
+            "memory_bulk_forget", args, timeout=600.0,
+        )
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        result = resp["result"]
+    else:
+        s = _store()
+        result = s.bulk_forget_memories(
+            ids=args.get("ids"), names=args.get("names"),
+            mtypes=args.get("mtypes"), dry_run=False,
+        )
+    console.print(
+        f"[green]forgot[/] {result.get('forgotten', 0)} memories"
+    )
+
+
 # --- session-index group (Phase B) ----------------------------------------
 #
 # Sessions live in a dedicated `sessions-<project>` partition so the
