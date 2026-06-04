@@ -3394,7 +3394,20 @@ def _split_kinds(ctx, param, value):
     "--max-batches", default=0, show_default=True,
     help="Cap on iterations (0 = unlimited). Useful for partial runs.",
 )
-def embed_cmd(kinds, batch, rebuild, max_batches):
+@click.option(
+    "--gc", "gc_mode", is_flag=True,
+    help="GC-only mode: drop lance vectors whose entity_id is absent "
+         "from the catalog for the (partition, kind) pair. Pairs with "
+         "prior `memory forget` / `purge` ops that left orphans behind "
+         "in the dense layer (recall returns them with no resolvable "
+         "name and JSON output silently filters to empty). Does not "
+         "embed.",
+)
+@click.option(
+    "--dry-run", is_flag=True,
+    help="With --gc, report what would be dropped without writing.",
+)
+def embed_cmd(kinds, batch, rebuild, max_batches, gc_mode, dry_run):
     """Embed entities into Lance for dense ANN retrieval.
 
     Walks `entities.vectors_updated_at` for the active partition, runs
@@ -3414,6 +3427,40 @@ def embed_cmd(kinds, batch, rebuild, max_batches):
 
     root = _root()
     selected = list(kinds) if kinds else list(_DEFAULT_EMBED_KINDS)
+
+    if gc_mode:
+        args = {
+            "kinds": selected if kinds else None,
+            "dry_run": dry_run,
+            "partition": _resolve_partition(),
+        }
+        if daemon_mod.ping(root):
+            resp = daemon_mod.call(root, "embed_gc", args, timeout=300.0)
+            if not resp.get("ok"):
+                raise click.ClickException(resp.get("error", "daemon error"))
+            result = resp["result"]
+        else:
+            from refmatrix.daemon import _op_embed_gc, Daemon
+            d = Daemon(root)
+            d.store = _store()
+            result = _op_embed_gc(d, args)
+            if result.get("ok") is False:
+                raise click.ClickException(result.get("error", "gc failed"))
+        by_kind = result.get("by_kind", {})
+        if not by_kind:
+            console.print("[yellow]no lance datasets found[/]")
+            return
+        total_orphans = sum(r["orphans"] for r in by_kind.values())
+        tag = "would drop" if dry_run else "dropped"
+        for kind, r in sorted(by_kind.items()):
+            console.print(
+                f"  {kind}: {tag}={r['orphans']} kept={r['kept']}"
+            )
+        console.print(
+            f"[{'yellow' if dry_run else 'green'}]total {tag}: "
+            f"{total_orphans}[/]"
+        )
+        return
 
     total_embedded = 0
     iters = 0

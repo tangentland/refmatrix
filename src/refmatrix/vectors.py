@@ -134,6 +134,30 @@ class LanceVectorStore:
         ds.delete(f"id IN ({in_list})")
         return len(ids)
 
+    def list_ids(self, *, kind: str) -> list[int]:
+        """Return every entity_id present in the lance dataset for `kind`.
+        Empty list when the dataset doesn't exist. Used by gc to compute
+        the orphan set against the catalog."""
+        import lance
+
+        path = self._dataset_path(kind)
+        if not path.exists():
+            return []
+        ds = lance.dataset(str(path))
+        tbl = ds.to_table(columns=["id"])
+        return [int(x) for x in tbl["id"].to_pylist()]
+
+    def kinds_on_disk(self) -> list[str]:
+        """List kinds with a materialized lance dataset under this partition."""
+        base = self.root / self.partition
+        if not base.exists():
+            return []
+        return sorted(
+            p.name.removesuffix(".lance")
+            for p in base.iterdir()
+            if p.suffix == ".lance"
+        )
+
     # --- read ----------------------------------------------------------
     def ann_search(
         self,

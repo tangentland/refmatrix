@@ -1537,6 +1537,48 @@ class Store:
             query_vec, k=k, kinds=kinds, candidate_ids=candidate_ids,
         )
 
+    def gc_vectors(
+        self, *, kinds: list[str] | None = None, dim: int,
+        dry_run: bool = False,
+    ) -> dict[str, dict]:
+        """Remove vectors whose entity_id no longer exists in the catalog
+        for this Store's partition+kind.
+
+        Forget / purge ops drop catalog rows but leave vectors behind in
+        the per-kind lance dataset. Those orphans then surface in
+        `ann_search` top-k with score but no resolvable name — and the
+        JSON output of `memory recall` silently drops them, masquerading
+        as a "no recall hits" result.
+
+        Returns a `{kind: {"orphans": N, "kept": N, "dry_run": bool}}` map.
+        """
+        vs = self._vector_store(dim)
+        if kinds is None:
+            kinds = vs.kinds_on_disk()
+        out: dict[str, dict] = {}
+        con = self._connect()
+        for kind in kinds:
+            lance_ids = vs.list_ids(kind=kind)
+            if not lance_ids:
+                out[kind] = {"orphans": 0, "kept": 0, "dry_run": dry_run}
+                continue
+            # Catalog ids for this partition+kind.
+            rows = con.execute(
+                "SELECT id FROM entities "
+                "WHERE partition_id=? AND kind=?",
+                (self._partition_id, kind),
+            ).fetchall()
+            catalog_ids = {int(r[0]) for r in rows}
+            orphans = [i for i in lance_ids if i not in catalog_ids]
+            if orphans and not dry_run:
+                vs.drop_for(orphans, kind=kind)
+            out[kind] = {
+                "orphans": len(orphans),
+                "kept": len(lance_ids) - len(orphans),
+                "dry_run": dry_run,
+            }
+        return out
+
     def drop_vectors(self, entity_ids, *, kind: str, dim: int) -> int:
         """Remove vectors for `entity_ids` from the kind's Lance dataset.
         Used when purge_path / purge_entity drop the relational row."""

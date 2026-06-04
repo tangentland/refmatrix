@@ -2458,6 +2458,28 @@ def _op_embed(d: Daemon, args: dict) -> dict:
     }
 
 
+def _op_embed_gc(d: Daemon, args: dict) -> dict:
+    """Drop lance vectors whose entity_id is absent from the catalog for
+    the (partition, kind) pair. Pairs with `forget` / `purge` ops that
+    delete catalog rows without touching the dense layer."""
+    try:
+        emb = d._embedder()
+    except ImportError as exc:
+        return {"ok": False, "error": f"dense extra not installed: {exc}"}
+
+    kinds = args.get("kinds")
+    if kinds is not None and not isinstance(kinds, list):
+        kinds = list(kinds)
+    dry_run = bool(args.get("dry_run"))
+    partition = args.get("partition") or d.store._partition_name
+
+    with d._store_lock, d.store.with_partition(partition):
+        result = d.store.gc_vectors(
+            kinds=kinds, dim=emb.dim, dry_run=dry_run,
+        )
+    return {"by_kind": result, "partition": partition, "dim": emb.dim}
+
+
 def _op_ann_search(d: Daemon, args: dict) -> dict:
     """Dense ANN search via Lance. Accepts either a precomputed
     `vector` (list of floats) or a `query` string that gets embedded
@@ -2535,6 +2557,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "replica_status": _op_replica_status,
     "replica_relink": _op_replica_relink,
     "embed": _op_embed,
+    "embed_gc": _op_embed_gc,
     "ann_search": _op_ann_search,
     "memory_add": _op_memory_add,
     "memory_get": _op_memory_get,
