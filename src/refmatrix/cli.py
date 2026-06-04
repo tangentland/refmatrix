@@ -5072,7 +5072,7 @@ def _iter_session_memories() -> list[dict]:
             "memory_iter", {"mtype": "session", "limit": 100000},
         )
         if resp.get("ok"):
-            return resp["result"]["memories"]
+            return resp["result"]["rows"]
     s = Store(root, partition=_session_partition())
     return list(s.iter_memories(mtype="session", limit=100000))
 
@@ -5213,7 +5213,7 @@ def session_recall_cmd(query, project, branch, commit, touched,
             )
             if not resp.get("ok"):
                 raise click.ClickException(resp.get("error", "daemon error"))
-            mems = resp["result"]["memories"]
+            mems = resp["result"]["rows"]
         else:
             s = Store(root, partition=_session_partition())
             mems = list(s.search_memories(query, limit=max(k * 4, 100)))
