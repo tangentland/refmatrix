@@ -2346,6 +2346,219 @@ def _op_replica_relink(d: Daemon, args: dict) -> dict:
             "reader_path": str(d._replica_file(reader))}
 
 
+def _op_replica_audit(d: Daemon, args: dict) -> dict:
+    """Drift detector: per-table row diff + entity collision counts across
+    both rotation slots. Runs INSIDE the daemon because DuckDB refuses any
+    other in-process connection to the writer-locked slot file. We borrow
+    the store's existing writer connection (its main DB is the writer
+    slot) and ATTACH the other slot read-only on it for the comparison."""
+    from refmatrix import replica_merge as rm
+    if d.store is None or d.store._backend.kind != "duckdb":
+        return {"enabled": False, "reason": "non-duckdb backend"}
+    a_path = d._replica_file("A")
+    b_path = d._replica_file("B")
+    if not (a_path.exists() and b_path.exists()):
+        return {"enabled": True, "ok": False,
+                "error": f"missing slot file: a_exists={a_path.exists()} "
+                         f"b_exists={b_path.exists()}"}
+    # Hold the store lock so the refresh thread can't swap slots or
+    # close the reader file out from under our ATTACH mid-audit.
+    with d._store_lock:
+        writer_slot = d._writer_slot_from_store() or d._active_slot or "A"
+        reader_slot = "B" if writer_slot == "A" else "A"
+        reader_path = d._replica_file(reader_slot)
+        try:
+            report = rm.audit_via_writer(
+                d.store._connect()._duck,
+                writer_slot=writer_slot,
+                reader_path=reader_path,
+                reader_slot=reader_slot,
+            )
+        except Exception as exc:
+            return {"enabled": True, "ok": False, "error": f"audit: {exc!r}"}
+    report["enabled"] = True
+    report["ok"] = True
+    return report
+
+
+def _op_replica_merge(d: Daemon, args: dict) -> dict:
+    """Merge slots A and B into one canonical catalog and atomically install
+    it on both slots. Drift recovery for unlogged-write data loss.
+
+    Args:
+        dry_run: build the merge plan + counts without writing the catalog.
+
+    Holds `_store_lock` (writer + readers blocked) for the whole merge.
+    Drains in-flight read-replica connections via `_swap_gate` before
+    closing the writer. On success: writer reopens on slot A, reader
+    symlink repoints at slot B, both offset files point at the
+    end-of-log byte position the merge captured."""
+    from refmatrix import replica_merge as rm
+    import shutil as _shutil
+
+    if d.store is None or d.store._backend.kind != "duckdb":
+        return {"enabled": False, "reason": "non-duckdb backend"}
+    dry_run = bool(args.get("dry_run"))
+
+    a_path = d._replica_file("A")
+    b_path = d._replica_file("B")
+    if not (a_path.exists() and b_path.exists()):
+        return {"enabled": True, "ok": False,
+                "error": f"missing slot file: a_exists={a_path.exists()} "
+                         f"b_exists={b_path.exists()}"}
+
+    t0 = time.monotonic()
+
+    # Both dry-run and real merge have to close the writer first, because
+    # the merge SQL opens fresh connections to BOTH slot files and DuckDB
+    # refuses an in-process second connection (read-only or otherwise) to
+    # the file the writer's lock is held on.
+
+    # Drain readers via the swap gate, take the store lock for the
+    # duration, close the writer, do the merge on a temp file. For real
+    # merge: swap into both slots. For dry-run: discard temp.
+    with d._swap_gate:
+        wait_start = time.monotonic()
+        while d._read_inflight > 0 and (time.monotonic() - wait_start) < 30.0:
+            d._swap_gate.wait(timeout=5.0)
+        if d._read_inflight > 0:
+            return {"enabled": True, "ok": False,
+                    "error": f"readers still in flight ({d._read_inflight}) "
+                             f"after 30s; aborting merge"}
+
+    with d._store_lock:
+        # 1. Quiesce writer.
+        try:
+            d.store._connect().execute("CHECKPOINT")
+            d.store.flush_fragments()
+        except Exception as exc:
+            return {"enabled": True, "ok": False,
+                    "error": f"pre-merge checkpoint: {exc!r}"}
+
+        # Snapshot log end-offset BEFORE we close the writer so the post-
+        # merge offset reset reflects the on-disk state baked into the
+        # merged catalog.
+        try:
+            log_end_offset = (
+                d.store.log_path.stat().st_size
+                if d.store.log_path.exists() else 0
+            )
+        except OSError:
+            log_end_offset = 0
+
+        prev_writer = d._writer_slot_from_store() or d._active_slot or "A"
+
+        try:
+            Daemon._force_close_store(d.store)
+        except Exception:
+            pass
+
+        # Move any reader symlinks off the slots BEFORE we overwrite them.
+        # The merged file will sit on both slots; we re-link to B once the
+        # store has reopened on A.
+        tmp_link = d.root / "read_only.duckdb"
+        try:
+            if tmp_link.exists() or tmp_link.is_symlink():
+                tmp_link.unlink()
+        except OSError as exc:
+            d._log(f"merge: unlink read_only.duckdb: {exc!r}")
+
+        # 2. Build merged catalog at a temp path. dry_run still writes the
+        # file (it's the only way to get accurate counts) — we just delete
+        # it before reopening the writer.
+        tmp_target = d.root / "catalog.merge.tmp.duckdb"
+        try:
+            report = rm.merge_slots(a_path, b_path, tmp_target)
+        except Exception as exc:
+            try:
+                d.store = Store(d.root, partition=d.partition)
+                d.store.db_path = d._replica_file(prev_writer)
+                d.store.init()
+                d._active_slot = prev_writer
+                d._refresh_read_only_link()
+            except Exception as rexc:
+                d._log(f"merge: failed AND reopen failed: {rexc!r}")
+            return {"enabled": True, "ok": False,
+                    "error": f"merge build: {exc!r}"}
+
+        if dry_run:
+            # Throw away the merged file; reopen the prior writer slot.
+            try:
+                if tmp_target.exists():
+                    tmp_target.unlink()
+            except OSError as exc:
+                d._log(f"dry_run: unlink tmp_target: {exc!r}")
+            try:
+                d.store = Store(d.root, partition=d.partition)
+                d.store.db_path = d._replica_file(prev_writer)
+                d.store.init()
+                d._active_slot = prev_writer
+                d._refresh_read_only_link()
+            except Exception as exc:
+                return {"enabled": True, "ok": False,
+                        "error": f"dry_run reopen: {exc!r}"}
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            report["enabled"] = True
+            report["ok"] = True
+            report["dry_run"] = True
+            report["writer_slot"] = prev_writer
+            report["reader_slot"] = "B" if prev_writer == "A" else "A"
+            report["log_end_offset"] = log_end_offset
+            report["elapsed_ms_total"] = elapsed_ms
+            return report
+
+        # 3. Atomic swap: replace BOTH slots with the merged file. Use
+        # os.replace for atomicity within a filesystem. Drop stale .wal
+        # files on both slots so DuckDB sees a clean snapshot.
+        try:
+            for slot in ("A", "B"):
+                slot_path = d._replica_file(slot)
+                wal_path = slot_path.with_name(slot_path.name + ".wal")
+                if wal_path.exists():
+                    try:
+                        wal_path.unlink()
+                    except OSError as exc:
+                        d._log(f"merge: unlink {wal_path.name}: {exc!r}")
+                if slot == "A":
+                    # First slot uses os.replace from the temp file.
+                    os.replace(tmp_target, slot_path)
+                else:
+                    # Second slot gets a fresh copy of the now-installed A.
+                    _shutil.copy2(d._replica_file("A"), slot_path)
+            # Reset both offset markers to the post-merge log end-offset.
+            d._write_slot_offset("A", log_end_offset)
+            d._write_slot_offset("B", log_end_offset)
+            # Promote A as writer.
+            d._active_marker().write_text("A")
+            d._active_slot = "A"
+        except Exception as exc:
+            d._log(f"merge: swap failed: {exc!r}")
+            return {"enabled": True, "ok": False,
+                    "error": f"swap: {exc!r}"}
+
+        # 4. Reopen writer on slot A.
+        try:
+            d.store = Store(d.root, partition=d.partition)
+            d.store.db_path = d._replica_file("A")
+            d.store.init()
+        except Exception as exc:
+            return {"enabled": True, "ok": False,
+                    "error": f"post-merge reopen: {exc!r}"}
+
+        # 5. Point read replica at B.
+        d._refresh_read_only_link()
+
+    elapsed_ms = int((time.monotonic() - t0) * 1000)
+    report["enabled"] = True
+    report["ok"] = True
+    report["dry_run"] = False
+    report["writer_slot"] = "A"
+    report["reader_slot"] = "B"
+    report["log_end_offset"] = log_end_offset
+    report["elapsed_ms_total"] = elapsed_ms
+    return report
+
+
 def _op_replica_status(d: Daemon, args: dict) -> dict:
     """Report rotation state: writer + reader slots, file paths + sizes,
     last-refresh timestamp + latency, refresh-thread liveness."""
@@ -2556,6 +2769,8 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "replica_refresh": _op_replica_refresh,
     "replica_status": _op_replica_status,
     "replica_relink": _op_replica_relink,
+    "replica_audit": _op_replica_audit,
+    "replica_merge": _op_replica_merge,
     "embed": _op_embed,
     "embed_gc": _op_embed_gc,
     "ann_search": _op_ann_search,
@@ -2586,6 +2801,7 @@ CLI_OPS: set[str] = {
     "replica_refresh",
     "replica_status",
     "replica_relink",
+    "replica_audit",
     "ann_search",
     "memory_get",
     "memory_iter",

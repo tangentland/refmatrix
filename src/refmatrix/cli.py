@@ -2836,6 +2836,166 @@ def replica_refresh():
     )
 
 
+@replica.command("audit")
+@click.option("--json", "as_json", is_flag=True,
+              help="Print the raw report as JSON instead of a table.")
+def replica_audit(as_json):
+    """Detect drift between rotation slots: per-table row diffs + entity
+    (partition,kind,name) collisions across slots A and B. Read-only;
+    safe to run with or without the daemon up. Run periodically to catch
+    drift before it accumulates."""
+    import json as _json
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "replica_audit", {}, timeout=30.0)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        report = resp["result"]
+    else:
+        # Daemon down — audit catalog files directly. Pure read-only ATTACH
+        # is safe even when nobody owns the file lock.
+        from refmatrix import replica_merge as rm
+        a_path = root / "catalog.A.duckdb"
+        b_path = root / "catalog.B.duckdb"
+        if not (a_path.exists() and b_path.exists()):
+            raise click.ClickException(
+                f"missing slot file: a_exists={a_path.exists()} "
+                f"b_exists={b_path.exists()}"
+            )
+        report = rm.audit_slots(a_path, b_path)
+        report["enabled"] = True
+        report["ok"] = True
+
+    if as_json:
+        click.echo(_json.dumps(report, indent=2))
+        return
+    if not report.get("enabled"):
+        console.print("[yellow]replica disabled[/] (non-duckdb backend)")
+        return
+    drift = report.get("drift_detected")
+    color = "red" if drift else "green"
+    console.print(f"[{color}]drift_detected:[/] {drift}")
+    a = report["a_counts"]
+    b = report["b_counts"]
+    console.print("\n[bold]Per-table row counts:[/]")
+    for t in a:
+        delta = b[t] - a[t]
+        marker = "" if delta == 0 else f"  [yellow]Δ {delta:+d}[/]"
+        console.print(f"  {t:18s}  A={a[t]:>8}  B={b[t]:>8}{marker}")
+    e = report["entities"]
+    console.print("\n[bold]Entity drift:[/]")
+    console.print(f"  A-only ids:                  {e['a_only_ids']}")
+    console.print(f"  B-only ids:                  {e['b_only_ids']}")
+    console.print(f"  same-id, payload differs:    {e['same_id_diff_payload']}")
+    console.print(f"  (p,k,n) collisions (id≠):    {e['pkn_collisions_different_ids']}")
+    mc = report["memory_content"]
+    console.print("\n[bold]memory_content drift:[/]")
+    console.print(f"  A-only entity_ids:           {mc['a_only_entity_ids']}")
+    console.print(f"  B-only entity_ids:           {mc['b_only_entity_ids']}")
+    if drift:
+        console.print("\n[dim]Run `rmx replica merge --dry-run` to preview "
+                      "the recovery plan.[/]")
+
+
+@replica.command("merge")
+@click.option("--dry-run", is_flag=True,
+              help="Build the merge plan and report counts WITHOUT writing "
+                   "the merged catalog or touching the rotation.")
+@click.option("--json", "as_json", is_flag=True,
+              help="Print the raw report as JSON instead of a table.")
+@click.option("--yes", is_flag=True,
+              help="Skip the confirmation prompt. Required for non-dry-run "
+                   "from non-interactive contexts.")
+def replica_merge(dry_run, as_json, yes):
+    """Drift recovery: merge rotation slots A and B into one canonical
+    catalog and atomically install on both slots.
+
+    Use when `rmx replica audit` reports drift that the daemon's facts.log
+    replay can't heal — typically unlogged writes that landed only on the
+    writer slot at the time. The merge:
+
+      1. Drains in-flight read-replica connections.
+      2. Locks the writer; CHECKPOINT + flush.
+      3. Builds a merged catalog out-of-band.
+      4. os.replace's both slots with the merged file.
+      5. Resets both offset files to the post-merge log position.
+      6. Reopens the writer on slot A; points the read symlink at B.
+
+    Heavy operation: takes a few seconds for a multi-100-MB store. Block
+    on the daemon for the duration."""
+    import json as _json
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if not daemon_mod.ping(root):
+        raise click.ClickException(
+            "daemon not running — merge requires exclusive control of the "
+            "catalog files. Start the daemon first."
+        )
+
+    if not dry_run and not yes:
+        # Show a quick audit so the user has the drift in front of them.
+        resp = daemon_mod.call(root, "replica_audit", {}, timeout=30.0)
+        if resp.get("ok"):
+            r = resp["result"]
+            click.echo("About to merge slots. Current drift:")
+            click.echo(f"  entities: A={r['a_counts']['entities']:,} "
+                       f"B={r['b_counts']['entities']:,}")
+            click.echo(f"  memory_content: A={r['a_counts']['memory_content']:,} "
+                       f"B={r['b_counts']['memory_content']:,}")
+            click.echo(f"  (p,k,n) collisions: "
+                       f"{r['entities']['pkn_collisions_different_ids']}")
+        if not click.confirm("Proceed with merge?", default=False):
+            click.echo("aborted")
+            return
+
+    resp = daemon_mod.call(
+        root, "replica_merge", {"dry_run": dry_run}, timeout=600.0,
+    )
+    if not resp.get("ok"):
+        raise click.ClickException(resp.get("error", "daemon error"))
+    report = resp["result"]
+    if not report.get("enabled"):
+        console.print("[yellow]replica disabled[/] (non-duckdb backend)")
+        return
+    if not report.get("ok"):
+        raise click.ClickException(f"merge failed: {report.get('error')}")
+
+    if as_json:
+        click.echo(_json.dumps(report, indent=2))
+        return
+
+    elapsed = report.get("elapsed_ms_total", report.get("elapsed_ms", 0))
+    head = "DRY-RUN" if report.get("dry_run") else "MERGED"
+    console.print(f"\n[bold green]{head}[/] in {elapsed} ms")
+
+    a, b, m = report["a_counts"], report["b_counts"], report["merged_counts"]
+    console.print("\n[bold]Per-table counts (A / B → merged):[/]")
+    for t in a:
+        delta_a = m[t] - a[t]
+        delta_b = m[t] - b[t]
+        console.print(
+            f"  {t:18s}  {a[t]:>8} / {b[t]:>8} → {m[t]:>8}  "
+            f"(Δa {delta_a:+d}, Δb {delta_b:+d})"
+        )
+    rm = report["remap"]
+    console.print(
+        f"\n[bold]Remap:[/] A-loser={rm['a_loser_count']} "
+        f"B-loser={rm['b_loser_count']} "
+        f"edge_cases={rm['fresh_alloc_edge_cases']}"
+    )
+    if not report.get("dry_run"):
+        console.print(
+            f"\n[bold]writer:[/] slot {report['writer_slot']}, "
+            f"log_end_offset={report['log_end_offset']:,}"
+        )
+        if report.get("target_size_bytes"):
+            console.print(
+                f"[bold]merged size:[/] "
+                f"{report['target_size_bytes']:,} bytes"
+            )
+
+
 @replica.command("path")
 def replica_path():
     """Print the absolute path of the *reader* slot file. CLI tools that

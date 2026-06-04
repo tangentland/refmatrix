@@ -1,8 +1,18 @@
 # Slot Rotation Drift — A vs B Merge Recovery
 
-**Status**: open, blocked by lack of merge tool.
+**Status**: resolved 2026-06-03 by `rmx replica merge` in refmatrix 0.4.4.
 **Discovered**: 2026-06-03 session, while verifying `rmx memory recall` correctness against viascope hooks.
 **Severity**: data loss in front of users — `memory recall` silently misses 271 memory-viascope rows from any cwd that resolves to the writer slot.
+
+## Resolution
+
+Shipped in 0.4.4:
+- `rmx replica audit` — per-table row diff + entity collision detector, JSON/table output.
+- `rmx replica merge [--dry-run]` — id-remap-based union merge of slots A and B, atomic swap into both rotation slots, log-offset reset.
+- Daemon ops `_op_replica_audit` and `_op_replica_merge` in `daemon.py`; merge core in `src/refmatrix/replica_merge.py`.
+- 5 unit tests in `tests/test_replica_merge.py`.
+
+Viascope merge run results: A 116104→116792 entities, memory_content B 204→475 (full 271-row recovery), A==B on every table, drift_detected=False. Recall hits both pre-drift A-only ids (e.g. id=232xxx `project_session90_save_state`) and post-drift content. Acceptance criteria #1–#6 below all met.
 
 ## What we observed
 
