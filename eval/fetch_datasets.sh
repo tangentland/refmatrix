@@ -38,6 +38,11 @@ mkdir -p "$DEST"
 # HuggingFace dataset layout: code-search-net/code_search_net/<lang>/<split>-00000-of-00001.parquet
 HF_BASE_URL="https://huggingface.co/datasets/code-search-net/code_search_net/resolve/main"
 
+# TypeScript falls back to Shuu12121's tree-sitter-filtered mirror — CSN itself
+# never shipped a TS split. Schema is compatible (code, docstring, func_name,
+# url) so the BEIR conversion below works after a column-name remap.
+TS_PARQUET_URL="https://huggingface.co/datasets/Shuu12121/typescript-treesitter-filtered-datasetsV2/resolve/main/data/test-00000-of-00001.parquet"
+
 for lang in $LANGS; do
   out_dir="$DEST/csn_${lang}"
   if [[ -d "$out_dir" ]]; then
@@ -46,7 +51,11 @@ for lang in $LANGS; do
   fi
 
   parquet_path="$WORK/${lang}-test.parquet"
-  parquet_url="$HF_BASE_URL/${lang}/test-00000-of-00001.parquet"
+  if [[ "$lang" == "typescript" ]]; then
+    parquet_url="$TS_PARQUET_URL"
+  else
+    parquet_url="$HF_BASE_URL/${lang}/test-00000-of-00001.parquet"
+  fi
   echo "==> downloading csn_${lang} test parquet ($parquet_url)"
   curl -L --fail -o "$parquet_path" "$parquet_url"
 
@@ -64,16 +73,26 @@ out = Path(os.environ["DEST"]) / f"csn_{lang}"
 (out / "qrels").mkdir(parents=True, exist_ok=True)
 
 tbl = pq.read_table(parquet_path)
-# Columns on the HF mirror: repository_name, func_path_in_repository,
+# CSN columns (Python/JS): repository_name, func_path_in_repository,
 # func_name, whole_func_string, func_code_string, func_code_tokens,
 # language, func_documentation_string, func_documentation_tokens,
 # split_name, func_code_url.
+# Shuu12121 TS mirror columns: code, docstring, func_name, language,
+# repo, path, url, license. The col-fallback chain below covers both.
 def col(name):
     return tbl.column(name).to_pylist() if name in tbl.column_names else [None] * tbl.num_rows
 
-codes = col("whole_func_string") or col("func_code_string")
-docs = col("func_documentation_string")
-urls = col("func_code_url")
+def first_present(*names):
+    """Return the column whose name appears in the table, else a column
+    of Nones the same length as the table."""
+    for n in names:
+        if n in tbl.column_names:
+            return tbl.column(n).to_pylist()
+    return [None] * tbl.num_rows
+
+codes = first_present("whole_func_string", "func_code_string", "code")
+docs = first_present("func_documentation_string", "docstring")
+urls = first_present("func_code_url", "url")
 
 n_corpus = 0
 n_queries = 0

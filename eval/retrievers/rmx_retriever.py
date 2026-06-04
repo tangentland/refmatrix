@@ -165,8 +165,147 @@ _JS_RESERVED = frozenset({
     "new", "delete", "void", "throw", "in", "of", "do", "else", "case",
     "instanceof", "yield", "await", "async", "class", "extends", "import",
     "export", "default", "from", "as", "this", "super",
+    "try", "finally", "with", "interface", "type", "enum", "implements",
+    "declare", "namespace", "module", "abstract", "static", "public",
+    "private", "protected", "readonly", "override",
 })
 _JS_PARAM_NAME_RE = re.compile(r"\b([A-Za-z_$][\w$]*)\b")
+
+# Param-list body: matches one level of nested parens so TS callback types
+# like `(cb: (x: T) => U)` survive without aborting the outer match.
+_PARENS_INNER = r"(?:[^()]|\([^()]*\))*"
+
+# Class / object-literal method declarations. Shared by JS + TS. Heuristic:
+# line-start identifier (after optional visibility/modifier keywords and an
+# optional generic clause), then `(params)`, then optional `:ReturnType`
+# (TS-only — ignored on JS source), then `{`. Top-level `if(...) { ... }`
+# style control flow is filtered out by _JS_RESERVED.
+_TS_METHOD_RE = re.compile(
+    rf"""
+    ^\s*
+    (?:(?:public|private|protected|static|async|readonly|override|abstract|get|set)\s+)*
+    (?P<m>[A-Za-z_$][\w$]*)
+    (?:<[^<>]*>)?
+    \s*\(
+    (?P<mp>{_PARENS_INNER})
+    \)
+    (?:\s*\?)?
+    (?:\s*:[^{{;\n]+)?
+    \s*\{{
+    """,
+    re.MULTILINE | re.VERBOSE,
+)
+
+# Decorators: @Ident or @Ident(...). Neutralized to whitespace so they don't
+# shadow class / method patterns that follow on the next non-blank line.
+_TS_DECORATOR_RE = re.compile(r"@[A-Za-z_$][\w$]*\s*(?:\([^()]*\))?")
+
+# TS function/class/interface/type/enum declarations. Generics, return type
+# annotations, and (in arrow form) parenthesized return types tolerated.
+_TS_FUNC_RE = re.compile(
+    rf"""
+    (?:\bfunction\s+(?P<f1>[A-Za-z_$][\w$]*)(?:<[^<>]*>)?\s*\((?P<p1>{_PARENS_INNER})\)) |
+    (?:\bconst\s+(?P<f2>[A-Za-z_$][\w$]*)\s*(?::[^=;\n]+)?\s*=\s*(?:async\s+)?(?:<[^<>]*>)?\s*\((?P<p2>{_PARENS_INNER})\)\s*(?::[^=>;\n]+)?\s*=>) |
+    (?:\bconst\s+(?P<f3>[A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\s*(?:<[^<>]*>)?\s*\((?P<p3>{_PARENS_INNER})\)) |
+    (?:\blet\s+(?P<f4>[A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\s*(?:<[^<>]*>)?\s*\((?P<p4>{_PARENS_INNER})\)) |
+    (?:\bvar\s+(?P<f5>[A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\s*(?:<[^<>]*>)?\s*\((?P<p5>{_PARENS_INNER})\)) |
+    (?:^\s*(?P<f6>[A-Za-z_$][\w$]*)\s*:\s*(?:async\s+)?function\s*(?:<[^<>]*>)?\s*\((?P<p6>{_PARENS_INNER})\)) |
+    (?:\bclass\s+(?P<c1>[A-Za-z_$][\w$]*)) |
+    (?:\binterface\s+(?P<i1>[A-Za-z_$][\w$]*)) |
+    (?:\btype\s+(?P<t1>[A-Za-z_$][\w$]*)(?:<[^<>]*>)?\s*=) |
+    (?:\benum\s+(?P<e1>[A-Za-z_$][\w$]*))
+    """,
+    re.MULTILINE | re.VERBOSE,
+)
+_TS_FUNC_NAME_KEYS = ("f1", "f2", "f3", "f4", "f5", "f6", "c1", "i1", "t1", "e1")
+_TS_FUNC_PARAM_KEYS = ("p1", "p2", "p3", "p4", "p5", "p6")
+
+
+def _ts_param_names(params_src: str) -> list[str]:
+    """Extract formal parameter names from a TS param-list source, ignoring
+    type annotations, default values, optional markers, rest spreads,
+    visibility modifiers, and destructuring noise."""
+    if not params_src:
+        return []
+    # Split on top-level commas (respecting <> and {} nesting from inline
+    # generics / destructuring / object-type literals).
+    chunks: list[str] = []
+    buf = []
+    depth_b = 0  # <>
+    depth_c = 0  # {}
+    depth_d = 0  # []
+    for ch in params_src:
+        if ch == "<":
+            depth_b += 1
+        elif ch == ">":
+            depth_b = max(0, depth_b - 1)
+        elif ch == "{":
+            depth_c += 1
+        elif ch == "}":
+            depth_c = max(0, depth_c - 1)
+        elif ch == "[":
+            depth_d += 1
+        elif ch == "]":
+            depth_d = max(0, depth_d - 1)
+        if ch == "," and depth_b == 0 and depth_c == 0 and depth_d == 0:
+            chunks.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+    if buf:
+        chunks.append("".join(buf))
+
+    out: list[str] = []
+    _MOD_PREFIX = ("public ", "private ", "protected ", "readonly ", "static ")
+    for raw in chunks:
+        chunk = raw.strip()
+        if not chunk:
+            continue
+        # Rest spread.
+        chunk = chunk.lstrip(".")
+        # Visibility / readonly modifiers.
+        while True:
+            for mod in _MOD_PREFIX:
+                if chunk.startswith(mod):
+                    chunk = chunk[len(mod):].lstrip()
+                    break
+            else:
+                break
+        # Stop at first top-level `:`, `=`, or `?` (where the type / default
+        # starts). Track <>/{}/[] depth so generic args don't end early.
+        depth_b = depth_c = depth_d = 0
+        end = len(chunk)
+        for i, ch in enumerate(chunk):
+            if ch == "<":
+                depth_b += 1
+            elif ch == ">":
+                depth_b = max(0, depth_b - 1)
+            elif ch == "{":
+                depth_c += 1
+            elif ch == "}":
+                depth_c = max(0, depth_c - 1)
+            elif ch == "[":
+                depth_d += 1
+            elif ch == "]":
+                depth_d = max(0, depth_d - 1)
+            elif ch in (":", "=", "?") and depth_b == 0 and depth_c == 0 and depth_d == 0:
+                end = i
+                break
+        head = chunk[:end].strip()
+        if not head:
+            continue
+        # Destructuring: `{ x, y }` or `[a, b]` — take all idents inside.
+        if head.startswith("{") or head.startswith("["):
+            for ident in _JS_PARAM_NAME_RE.findall(head):
+                if ident not in _JS_RESERVED:
+                    out.append(ident)
+            continue
+        m = re.match(r"[A-Za-z_$][\w$]*", head)
+        if m:
+            name = m.group(0)
+            if name not in _JS_RESERVED:
+                out.append(name)
+    return out
 
 
 def js_extract(text: str) -> dict[str, str]:
@@ -202,19 +341,36 @@ def js_extract(text: str) -> dict[str, str]:
 
     defines: list[str] = []
     params: list[str] = []
+    seen_names: set[str] = set()
     for fm in _JS_FUNC_RE.finditer(text):
         for key in _JS_FUNC_NAME_KEYS:
             v = fm.group(key)
             if v:
-                defines.append(v)
+                if v not in seen_names:
+                    defines.append(v)
+                    seen_names.add(v)
                 break
         for key in _JS_FUNC_PARAM_KEYS:
             raw = fm.group(key)
-            if raw:
+            if raw is not None:
                 for p in _JS_PARAM_NAME_RE.findall(raw):
                     if p not in _JS_RESERVED:
                         params.append(p)
                 break
+
+    # Class / object-literal methods. Closes the "methods land in calls,
+    # not defines" gap from the first JS cut.
+    for mm in _TS_METHOD_RE.finditer(text):
+        name = mm.group("m")
+        if name in _JS_RESERVED:
+            continue
+        if name != "constructor" and name not in seen_names:
+            defines.append(name)
+            seen_names.add(name)
+        for p in _JS_PARAM_NAME_RE.findall(mm.group("mp") or ""):
+            if p not in _JS_RESERVED:
+                params.append(p)
+
     out["defines"] = " ".join(defines)
     out["params"] = " ".join(params)
 
@@ -232,10 +388,81 @@ def js_extract(text: str) -> dict[str, str]:
     return out
 
 
+def ts_extract(text: str) -> dict[str, str]:
+    """TypeScript-aware extractor. Handles generics, type annotations on
+    params, decorators, interfaces, type aliases, enums, and class methods
+    on top of the JS surface. Same return shape as ast_extract / js_extract.
+    """
+    out = {"defines": "", "params": "", "calls": "", "docstring": "", "code": ""}
+    if not text:
+        return out
+
+    ds = ""
+    body = text
+    m = _JSDOC_RE.search(text)
+    if m:
+        raw = m.group(1)
+        lines = []
+        for line in raw.splitlines():
+            stripped = line.strip().lstrip("*").strip()
+            if stripped:
+                lines.append(stripped)
+        ds = "\n".join(lines)
+        body = text[:m.start()] + text[m.end():]
+    out["docstring"] = ds
+    out["code"] = body
+
+    # Neutralize decorators so an @Component({...}) above a class doesn't
+    # confuse the class / method regex.
+    work = _TS_DECORATOR_RE.sub(" ", text)
+
+    defines: list[str] = []
+    params: list[str] = []
+    seen_names: set[str] = set()
+    for fm in _TS_FUNC_RE.finditer(work):
+        for key in _TS_FUNC_NAME_KEYS:
+            v = fm.group(key)
+            if v:
+                if v not in seen_names:
+                    defines.append(v)
+                    seen_names.add(v)
+                break
+        for key in _TS_FUNC_PARAM_KEYS:
+            raw = fm.group(key)
+            if raw is not None:
+                params.extend(_ts_param_names(raw))
+                break
+
+    for mm in _TS_METHOD_RE.finditer(work):
+        name = mm.group("m")
+        if name in _JS_RESERVED:
+            continue
+        if name != "constructor" and name not in seen_names:
+            defines.append(name)
+            seen_names.add(name)
+        params.extend(_ts_param_names(mm.group("mp") or ""))
+
+    out["defines"] = " ".join(defines)
+    out["params"] = " ".join(params)
+
+    body_work = _TS_DECORATOR_RE.sub(" ", body)
+    defined_set = set(defines)
+    calls: list[str] = []
+    for cm in _JS_CALL_RE.finditer(body_work):
+        ident = cm.group(1)
+        if ident in _JS_RESERVED or ident in defined_set:
+            continue
+        calls.append(ident)
+    out["calls"] = " ".join(calls)
+    return out
+
+
 def extract_for_lang(text: str, lang: str) -> dict[str, str]:
     """Dispatch to the right per-language extractor. Default falls back to
     the Python ast path (back-compat with the csn_python eval)."""
-    if lang in ("javascript", "js", "typescript", "ts"):
+    if lang in ("typescript", "ts", "tsx"):
+        return ts_extract(text)
+    if lang in ("javascript", "js", "jsx"):
         return js_extract(text)
     return ast_extract(text)
 
