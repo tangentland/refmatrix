@@ -660,12 +660,27 @@ def partition():
 @partition.command("list")
 def partition_list():
     """List all partitions in the active refmatrix, marking the active one."""
-    s = _store()
-    active = s.partition_name
-    rows = s._connect().execute(
-        "SELECT id, name, kind, root_path, created_at "
-        "FROM partitions ORDER BY id"
-    ).fetchall()
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    active = _resolve_partition()
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "partition_list", {})
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        rows = resp["result"]["rows"]
+    else:
+        s = _store()
+        active = s.partition_name
+        rows = [
+            {
+                "id": r["id"], "name": r["name"], "kind": r["kind"],
+                "root_path": r["root_path"], "created_at": r["created_at"],
+            }
+            for r in s._connect().execute(
+                "SELECT id, name, kind, root_path, created_at "
+                "FROM partitions ORDER BY id"
+            ).fetchall()
+        ]
     table = Table(show_header=True)
     table.add_column("active")
     table.add_column("id", justify="right")

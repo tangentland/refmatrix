@@ -1936,6 +1936,30 @@ def _op_list_linkages(d: Daemon, args: dict) -> dict:
         return {"rows": d.store.list_linkages()}
 
 
+def _op_partition_list(d: Daemon, args: dict) -> dict:
+    """List all partitions in the catalog. Routed through the daemon so
+    `rmx partition list` doesn't try to grab the catalog lock the daemon
+    already holds."""
+    with d._store_lock:
+        rows = d.store._connect().execute(
+            "SELECT id, name, kind, root_path, created_at "
+            "FROM partitions ORDER BY id"
+        ).fetchall()
+    return {
+        "rows": [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "kind": r["kind"],
+                "root_path": r["root_path"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ],
+        "daemon_partition": d.store.partition_name,
+    }
+
+
 def _op_list_saved_queries(d: Daemon, args: dict) -> dict:
     with d._store_lock:
         return {"rows": list(d.store.list_saved_queries())}
@@ -2762,6 +2786,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "iter_entities": _op_iter_entities,
     "list_linkages": _op_list_linkages,
     "list_saved_queries": _op_list_saved_queries,
+    "partition_list": _op_partition_list,
     "prune_noise": _op_prune_noise,
     "vacuum": _op_vacuum,
     "stats": _op_stats,
@@ -2798,6 +2823,7 @@ CLI_OPS: set[str] = {
     "grep_indexed",
     "list_linkages",
     "list_saved_queries",
+    "partition_list",
     "replica_refresh",
     "replica_status",
     "replica_relink",
