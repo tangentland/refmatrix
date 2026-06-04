@@ -190,6 +190,23 @@ def _replica_store() -> Store:
     return s
 
 
+def _read_store() -> Store:
+    """Snapshot-tier policy fix: return a Store usable for reads — prefers
+    the daemon-maintained read-only reader slot (lock-free against the
+    daemon's writer), falls back to the primary `_store()` only when the
+    replica file isn't there yet (daemon down / fresh install).
+
+    Use this in CLI read paths that previously did `s = _store();
+    s._connect().execute(...)` and crashed with `Could not set lock on
+    catalog.B.duckdb` when the daemon was up. Callers don't need to
+    branch on daemon state — both shapes return a Store that supports
+    read SQL through `._connect().execute(...)`."""
+    rs = _reader_store()
+    if rs is not None:
+        return rs
+    return _store()
+
+
 def _reader_store() -> Store | None:
     """Return a replica-backed read-only Store, or None when no usable
     replica is available.
@@ -703,15 +720,24 @@ def partition_list():
 def partition_add(name: str, kind: str, root_path: str | None):
     """Register a partition explicitly. (Writes auto-create a partition by
     name too, so this is mostly for the 'canon' or 'agent-scratch' kinds.)"""
-    import time as _time
-    s = _store()
-    con = s._connect()
-    con.execute(
-        "INSERT OR IGNORE INTO partitions(name, kind, root_path, created_at) "
-        "VALUES (?, ?, ?, ?)",
-        (name, kind, root_path, _time.time()),
-    )
-    con.commit()
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "partition_add", {
+            "name": name, "kind": kind, "root_path": root_path,
+        }, timeout=30.0)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+    else:
+        import time as _time
+        s = _store()
+        con = s._connect()
+        con.execute(
+            "INSERT OR IGNORE INTO partitions(name, kind, root_path, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (name, kind, root_path, _time.time()),
+        )
+        con.commit()
     console.print(f"[green]registered[/] partition={name} kind={kind}")
 
 
@@ -724,12 +750,21 @@ def partition_rename(old: str, new: str):
     Updates the catalog row and moves the partition's fragment + vector
     directories. Entity rows reference the partition by id, so their data is
     untouched. Restart any daemon bound to OLD afterwards."""
-    s = _store()
-    try:
-        s.rename_partition(old, new)
-    except ValueError as e:
-        raise click.ClickException(str(e))
-    s.close()
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "partition_rename", {
+            "old": old, "new": new,
+        }, timeout=60.0)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+    else:
+        s = _store()
+        try:
+            s.rename_partition(old, new)
+        except ValueError as e:
+            raise click.ClickException(str(e))
+        s.close()
     console.print(f"[green]renamed[/] partition {old} -> {new}")
     console.print(
         "[dim]restart the daemon if it was bound to the old name "
@@ -1324,7 +1359,10 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
             click.echo(resp["result"]["body"])
             return
 
-    s = _store()
+    # `--since` path + symbol fallback are read-only — entity / link
+    # lookups + build_context rendering. Use the lock-free reader so the
+    # command works while the daemon owns the writer slot.
+    s = _read_store()
 
     if since:
         import shutil
@@ -2418,6 +2456,18 @@ def export(out):
 @click.option("--merge", is_flag=True, help="Merge into existing matrix instead of failing on conflicts.")
 def import_(path, merge):
     """Import a JSON dump produced by `rmx export`."""
+    # `import` does a large write (entities + linkages + bitmaps + commit)
+    # straight against the catalog. Refuse to run while the daemon owns
+    # the writer lock — would crash with "Could not set lock on
+    # catalog.B.duckdb". Caller should stop the daemon, run the import,
+    # and restart.
+    from refmatrix import daemon as daemon_mod
+    if daemon_mod.ping(_root()):
+        raise click.ClickException(
+            "daemon is running — stop it first (`rmx daemon stop`), run "
+            "the import, then restart. The import bypasses the daemon's "
+            "write path and would deadlock on the catalog lock."
+        )
     s = _store()
     payload = json.loads(Path(path).read_text())
     id_remap: dict[int, int] = {}
@@ -3762,8 +3812,9 @@ def search_dense_cmd(query, k, kinds):
         console.print("[yellow]no hits[/]")
         return
 
-    # Resolve ids to (kind, name) via the Store for a readable table.
-    s = _store()
+    # Resolve ids to (kind, name) via a read-only Store for a readable
+    # table. Lock-free against the daemon's writer.
+    s = _read_store()
     con = s._connect()
     table = Table(show_header=True, header_style="bold")
     table.add_column("rank", justify="right")
@@ -3827,7 +3878,10 @@ def recall_cmd(query, k, kinds, concept, symbolic, no_dense):
     )
     from rich.table import Table
 
-    s = _store()
+    # Recall is read-only: bitmap prefilter, ANN ranking, then name
+    # lookup. Use the lock-free reader so we don't race the daemon's
+    # writer.
+    s = _read_store()
     candidate_ids = None
     if concept:
         cids: list[int] = []

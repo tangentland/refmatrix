@@ -1936,6 +1936,35 @@ def _op_list_linkages(d: Daemon, args: dict) -> dict:
         return {"rows": d.store.list_linkages()}
 
 
+def _op_partition_add(d: Daemon, args: dict) -> dict:
+    """Register a partition row in the catalog. Routed through the daemon
+    so `rmx partition add` doesn't try to grab the writer lock from a
+    second process."""
+    import time as _time
+    name = args["name"]
+    kind = args.get("kind", "repo")
+    root_path = args.get("root_path")
+    with d._store_lock:
+        con = d.store._connect()
+        con.execute(
+            "INSERT OR IGNORE INTO partitions(name, kind, root_path, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (name, kind, root_path, _time.time()),
+        )
+        con.commit()
+    return {"name": name, "kind": kind}
+
+
+def _op_partition_rename(d: Daemon, args: dict) -> dict:
+    """Rename a partition. Routed through the daemon so the writer-side
+    Store does the rename + directory moves under the held catalog lock."""
+    old = args["old"]
+    new = args["new"]
+    with d._store_lock:
+        d.store.rename_partition(old, new)
+    return {"old": old, "new": new}
+
+
 def _op_partition_list(d: Daemon, args: dict) -> dict:
     """List all partitions in the catalog. Routed through the daemon so
     `rmx partition list` doesn't try to grab the catalog lock the daemon
@@ -2786,7 +2815,9 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "iter_entities": _op_iter_entities,
     "list_linkages": _op_list_linkages,
     "list_saved_queries": _op_list_saved_queries,
+    "partition_add": _op_partition_add,
     "partition_list": _op_partition_list,
+    "partition_rename": _op_partition_rename,
     "prune_noise": _op_prune_noise,
     "vacuum": _op_vacuum,
     "stats": _op_stats,
@@ -2823,7 +2854,9 @@ CLI_OPS: set[str] = {
     "grep_indexed",
     "list_linkages",
     "list_saved_queries",
+    "partition_add",
     "partition_list",
+    "partition_rename",
     "replica_refresh",
     "replica_status",
     "replica_relink",

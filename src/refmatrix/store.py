@@ -285,6 +285,20 @@ class Store:
         # filename now; legacy SQLite stores stay at catalog.db, DuckDB-native
         # stores use catalog.duckdb so the two can coexist during migration.
         self.db_path = self.root / self._backend.db_filename
+        # Snapshot-tier policy fix: when opened read_only AND the daemon's
+        # `read_only.duckdb` symlink exists (pointing at the lock-free reader
+        # slot of the running rotation), prefer it over the primary catalog
+        # file. Eliminates the "Could not set lock on catalog.B.duckdb"
+        # class of crashes for CLI processes that pop up while the daemon
+        # owns the writer slot. Falls back to the primary file when the
+        # symlink is absent (daemon down / fresh install).
+        if self._read_only and self._backend.kind == "duckdb":
+            symlink = self.root / "read_only.duckdb"
+            try:
+                if symlink.exists() or symlink.is_symlink():
+                    self.db_path = symlink
+            except OSError:
+                pass
         # bitmaps_dir is the legacy per-(linkage, concept) layout. Kept as an
         # attribute so the migration path can find and convert it.
         self.bitmaps_dir = self.root / "bitmaps"
