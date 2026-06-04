@@ -1430,8 +1430,21 @@ class Store:
                 "dry_run": True,
             }
 
+        # Batch the Lance side BEFORE the per-id catalog purges so a
+        # 261-id forget pays one Lance open per kind (typically 1 — every
+        # memory row is kind='memory') instead of 261. `purge_entity` is
+        # then told to skip its per-id Lance drop via `_skip_lance=True`.
+        ids_by_kind: dict[str, list[int]] = {}
+        for row in con.execute(
+            f"SELECT id, kind FROM entities "
+            f"WHERE id IN ({id_placeholders})",
+            id_list,
+        ).fetchall():
+            ids_by_kind.setdefault(row["kind"], []).append(int(row["id"]))
+        self._drop_lance_for_purge_batch(ids_by_kind)
+
         for eid in id_list:
-            self.purge_entity(eid)
+            self.purge_entity(eid, _skip_lance=True)
         return {
             "forgotten": len(id_list), "ids": id_list,
             "by_mtype": per_mtype, "dry_run": False,
@@ -1695,6 +1708,68 @@ class Store:
             )
             con.commit()
         return n
+
+    def _drop_lance_for_purge(self, entity_id: int, kind: str) -> bool:
+        """Best-effort: drop entity_id's vector from its (partition, kind)
+        Lance dataset. Paired with `purge_entity` so a DuckDB row deletion
+        also clears the corresponding dense vector instead of leaving an
+        orphan for the next `embed --gc`.
+
+        Skips silently on:
+          - `lance` not importable (no [dense] extra installed)
+          - dataset directory absent (kind never embedded in this partition)
+          - any Lance-side exception (the catalog purge must still proceed
+            even if the vector side fails — worst case stays "orphan, GC
+            reaps later," never "user thinks the row is gone but it isn't")
+
+        Returns True when a delete was issued, False otherwise.
+        """
+        try:
+            import lance
+        except ImportError:
+            return False
+        path = self.root / "vectors" / self._partition_name / f"{kind}.lance"
+        if not path.exists():
+            return False
+        try:
+            ds = lance.dataset(str(path))
+            ds.delete(f"id = {int(entity_id)}")
+            return True
+        except Exception:
+            return False
+
+    def _drop_lance_for_purge_batch(
+        self, ids_by_kind: "dict[str, list[int]]",
+    ) -> int:
+        """Batched form of `_drop_lance_for_purge`: one Lance dataset open
+        per kind, one delete per kind. Used by `bulk_forget_memories` so
+        a 261-id purge pays N dataset opens (one per distinct kind) rather
+        than 261. Same failure semantics as the single-id variant.
+        Returns the number of ids whose Lance row was attempted (count is
+        per-kind input length when the dataset exists and lance is
+        importable; sum across kinds)."""
+        try:
+            import lance
+        except ImportError:
+            return 0
+        total = 0
+        for kind, ids in ids_by_kind.items():
+            if not ids:
+                continue
+            path = (
+                self.root / "vectors" / self._partition_name
+                / f"{kind}.lance"
+            )
+            if not path.exists():
+                continue
+            try:
+                ds = lance.dataset(str(path))
+                in_list = ",".join(str(int(i)) for i in ids)
+                ds.delete(f"id IN ({in_list})")
+                total += len(ids)
+            except Exception:
+                pass
+        return total
 
     def pending_embeddings(
         self, *, kinds: list[str] | None = None, limit: int | None = None
@@ -2518,12 +2593,32 @@ class Store:
 
     # ---- purge / track files -----------------------------------------------
 
-    def purge_entity(self, entity_id: int) -> int:
-        """Remove an entity from every bitmap it's a member of, then drop the row."""
+    def purge_entity(self, entity_id: int, *, _skip_lance: bool = False) -> int:
+        """Remove an entity from every bitmap it's a member of, drop the row,
+        and drop its dense vector from the matching Lance dataset.
+
+        `_skip_lance=True` lets a caller that has already issued a batched
+        Lance delete (e.g. `bulk_forget_memories`) suppress the redundant
+        per-id Lance open. Internal flag — not part of the public contract.
+        """
         con = self._connect()
         # Resolve names BEFORE deletion so log events can reference them.
         log_on = _log_enabled() and not self._replay_mode
         self_name = self._name_of(entity_id) if log_on else None
+        # Look up kind upfront so the Lance side can be dropped before the
+        # row goes away. `_name_of` returns (kind, name) — reuse it when
+        # the logger already needs the result; otherwise do a minimal
+        # single-column read. The kind is None for ids that don't exist;
+        # the Lance drop short-circuits in that case.
+        if self_name is not None:
+            kind = self_name[0]
+        else:
+            row = self._read().execute(
+                "SELECT kind FROM entities WHERE id=?", (entity_id,),
+            ).fetchone()
+            kind = row["kind"] if row else None
+        if kind is not None and not _skip_lance:
+            self._drop_lance_for_purge(entity_id, kind)
         es_pairs: list[tuple[str, str, str]] = []  # (linkage, c_kind, c_name)
         cs_pairs: list[tuple[str, str, str]] = []  # (linkage, e_kind, e_name)
         if log_on and self_name:
