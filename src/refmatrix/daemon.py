@@ -229,24 +229,29 @@ class _MemMirror:
         """Open an in-memory Store and populate every catalog table
         from the snapshot file. Tables are copied one at a time via
         `CREATE TABLE x AS SELECT * FROM src.x`, which preserves
-        schema + data without re-running migrations."""
+        schema + data without re-running migrations.
+
+        Uses the real `Store.__init__` so every lazily-checked attribute
+        (`_read_via_duckdb`, `_duck_view`, `_link_buffer`, `_fragments`,
+        etc.) is populated. Then overrides `db_path` to `:memory:` and
+        connects the in-memory backend manually, bypassing the snapshot/
+        symlink resolution from __init__ and the migration logic in
+        `_connect`.
+        """
         from refmatrix.store import Store
-        # Build a bare Store pointed at `:memory:`. Bypass __init__'s
-        # snapshot-resolution block by constructing manually — we need
-        # the in-memory db_path to win regardless of read_only flag.
-        s = object.__new__(Store)
-        s.root = self._daemon.root
-        s._read_only = True
-        s._partition_name = self._daemon.store._partition_name
-        s._partition_id = None
-        s._conn = None
-        s._backend = self._daemon.store._backend
-        s.db_path = Path(":memory:")
-        # Other Store attrs that read paths poke at; mirror writer's
-        # values where they matter.
         writer = self._daemon.store
-        for attr in ("bitmaps_dir", "fragments_dir", "queries_dir"):
-            setattr(s, attr, getattr(writer, attr, None))
+        # Build a fully-initialized read-only Store, then redirect it
+        # to the in-memory backend. read_only=True keeps __init__ off
+        # any write-paths and gives us the correct sentinel state.
+        s = Store(
+            writer.root,
+            partition=writer._partition_name,
+            read_only=True,
+        )
+        # Override db_path AFTER __init__ — the snapshot/symlink block
+        # in Store.__init__ pointed it at `catalog.read.duckdb`; we
+        # want the in-memory backend instead.
+        s.db_path = Path(":memory:")
         # Open the in-memory backend connection directly so we don't
         # trigger Store._connect's migration / schema-DDL paths.
         s._conn = s._backend.connect(s.db_path)
