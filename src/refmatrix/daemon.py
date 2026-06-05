@@ -26,7 +26,10 @@ import os
 import signal
 import socket
 import sys
+import threading
 import time
+import uuid
+from collections import deque
 from pathlib import Path
 from typing import Any, Callable
 
@@ -36,6 +39,91 @@ from refmatrix.store import Store
 SOCKET_NAME = "rmxd.sock"
 PID_NAME = "rmxd.pid"
 LOG_NAME = "rmxd.log"
+
+
+class _FairLock:
+    """Strict-FIFO mutex with the same surface as `threading.Lock`.
+
+    Python's `threading.Lock` is not FIFO: when `release()` happens, any
+    blocked waiter MAY win, but a thread that re-calls `acquire()`
+    immediately after releasing often wins the next lock cycle because
+    it's still hot on the same CPU and the OS hasn't yet woken the
+    blocked waiter. The `_op_ingest_gmd` yield (`release() + sleep(1ms)
+    + acquire()`) hits this directly — the ingest thread re-grabs the
+    lock most cycles and CLI ops queue for the whole ingest.
+
+    This lock hands ownership EXPLICITLY to the next queued waiter on
+    release, so a yield always lets a waiter in if one is present.
+
+    Surface compatible with `threading.Lock`:
+      - `acquire(blocking=True, timeout=None) -> bool`
+      - `release()`
+      - context-manager (`with lock: ...`)
+      - `locked() -> bool`
+    """
+
+    def __init__(self) -> None:
+        self._mu = threading.Lock()
+        self._held = False
+        self._waiters: deque[threading.Event] = deque()
+
+    def acquire(self, blocking: bool = True, timeout: float | None = None) -> bool:
+        with self._mu:
+            if not self._held and not self._waiters:
+                self._held = True
+                return True
+            if not blocking:
+                return False
+            ev = threading.Event()
+            self._waiters.append(ev)
+        # Wait OUTSIDE the meta-mutex so release() can hand us the lock.
+        # Use a finite poll if timeout is None to avoid lost-wake hangs;
+        # threading.Event.wait(None) is well-defined but we want the
+        # withdraw path on timeout below.
+        woken = ev.wait(timeout)
+        if woken:
+            # release() popped us off and handed us ownership (`_held`
+            # is already True). Done.
+            return True
+        # Timeout. Try to withdraw our ticket.
+        with self._mu:
+            try:
+                self._waiters.remove(ev)
+                return False
+            except ValueError:
+                # Race: release() handed ownership to us between the
+                # timeout firing and re-acquiring `_mu`. We hold the
+                # lock now. Pass it on to the next waiter (or release
+                # outright) and report timeout to the caller.
+                self._pass_or_release_locked()
+                return False
+
+    def release(self) -> None:
+        with self._mu:
+            if not self._held:
+                raise RuntimeError("_FairLock released when unlocked")
+            self._pass_or_release_locked()
+
+    def _pass_or_release_locked(self) -> None:
+        """Called with `_mu` held. Hands lock to next waiter or marks
+        free."""
+        if self._waiters:
+            ev = self._waiters.popleft()
+            # `_held` stays True — ownership transferred.
+            ev.set()
+        else:
+            self._held = False
+
+    def locked(self) -> bool:
+        with self._mu:
+            return self._held
+
+    def __enter__(self) -> "_FairLock":
+        self.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.release()
 
 # Replica refresh strategy switch. `apply_log_delta` replays log events
 # one-by-one through the Store API (~tens of KB/s on a large catalog), so a
@@ -186,7 +274,11 @@ class Daemon:
         # Coalesces multiple fire-and-forget flush requests: if a flush is
         # already pending, additional `flush_async` calls are no-ops.
         import threading
-        self._store_lock = threading.Lock()
+        # FIFO lock — see `_FairLock`. The ingest yield (release+sleep+
+        # acquire) is only useful if waiters are guaranteed a turn; the
+        # built-in `threading.Lock` doesn't promise that and the ingest
+        # thread re-grabs the lock most cycles, starving CLI ops.
+        self._store_lock = _FairLock()
         self._async_flush_pending = False
         self._async_lock = threading.Lock()
         # Read-op refcount + gate. Each `_open_read_store` increments the
@@ -230,6 +322,14 @@ class Daemon:
         self._snapshot_dirty = False
         self._last_snapshot_ts: float = 0.0
         self._snapshot_lock = threading.Lock()
+        # Ingest job registry. Single-active guard: an in-flight ingest
+        # blocks subsequent ingest starts (synchronous or detached) so
+        # two ingests never trample each other on the same store. State
+        # entries hold {id, status, files_total, files_done, started_at,
+        # ended_at, result, error}. Cleared on daemon restart — no
+        # cross-process persistence by design.
+        self._ingest_jobs: dict[str, dict] = {}
+        self._ingest_jobs_lock = threading.Lock()
 
     def _log(self, msg: str) -> None:
         if self.log_fh is None:
@@ -1926,71 +2026,208 @@ def _op_ingest_path(d: Daemon, args: dict) -> dict:
     return {"entities": n, "path": str(path)}
 
 
-def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
-    """Run GMD ingest against the daemon-owned store. Same rationale as
-    `_op_ingest_path`: avoid catalog-lock contention with the watcher.
+def _register_ingest_job(d: Daemon, *, files_total: int, args: dict) -> str:
+    """Reserve the ingest slot or raise if another job is already running.
 
-    Passes a `yield_lock` callback to `ingest_gmd_paths` that releases +
-    reacquires `_store_lock` periodically so CLI ops queued behind a
-    long ingest get a turn at the lock. Without this, a multi-thousand-
-    file ingest blocks every `rmx query`/`rmx stats`/etc. until done.
-
-    Honors `args['partition']` so `--as-memory` rows land in the caller's
-    partition (e.g. `memory-<project>`) rather than the daemon's bound
-    partition. Without this, ingested memories were orphaned in the
-    code-sync partition and invisible to `rmx memory list/recall`.
+    Single-active-ingest guard: two ingests against the same daemon would
+    fight over `_store_lock` AND interleave their two-pass parse/resolve
+    state. Forbid it. Caller proceeds with the returned `job_id` and
+    must eventually flip `status` to `done` or `error`.
     """
-    from refmatrix.ingest_gmd import collect_gmd_files, ingest_gmd_paths
-    targets = [Path(p).resolve() for p in (args.get("targets") or [])]
-    verbose = bool(args.get("verbose"))
-    files = collect_gmd_files(targets)
-    if not files:
-        return {"files": 0, "report": "no candidate files found"}
+    job_id = uuid.uuid4().hex[:12]
+    with d._ingest_jobs_lock:
+        for jid, js in d._ingest_jobs.items():
+            if js["status"] == "running":
+                raise RuntimeError(
+                    f"ingest already active: job {jid} "
+                    f"({js['files_done']}/{js['files_total']} files)"
+                )
+        d._ingest_jobs[job_id] = {
+            "id": job_id,
+            "status": "running",
+            "started_at": time.time(),
+            "ended_at": None,
+            "files_total": files_total,
+            "files_done": 0,
+            "current_file": None,
+            "events": deque(maxlen=2000),
+            "next_seq": 1,
+            "result": None,
+            "error": None,
+            "args": {
+                k: args.get(k) for k in
+                ("targets", "verbose", "as_memory", "memory_mtype", "partition")
+            },
+        }
+    return job_id
+
+
+def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict) -> dict:
+    """Execute one ingest against the daemon's Store. Mutates the job
+    record in `d._ingest_jobs` as it goes — `files_done`, `current_file`,
+    and an `events` deque every status query can stream from.
+
+    Yields `_store_lock` between files (best-effort with stdlib Lock, FIFO
+    with `_FairLock`) so cli-pool reads interleave. Triggers a snapshot
+    every `RMX_INGEST_SNAPSHOT_EVERY` yields so readers see partial
+    progress instead of an end-of-ingest cliff.
+    """
+    from refmatrix.ingest_gmd import ingest_gmd_paths
+    job = d._ingest_jobs[job_id]
     yield_every = int(os.environ.get("RMX_INGEST_YIELD_EVERY", "1") or "1")
-    # 1ms sleep is enough for the OS scheduler to wake a cli waiter blocked
-    # on _store_lock — Python's threading.Lock is not strict FIFO and a
-    # bare sleep(0) lets the bg thread immediately re-grab. 1ms loses ~1%
-    # of bg throughput per yield, negligible against the responsiveness win.
-    yield_sleep_s = float(os.environ.get("RMX_INGEST_YIELD_SLEEP_S", "0.001") or "0.001")
+    # Default sleep raised from 1ms to 5ms — paired with `_FairLock`,
+    # 5ms gives the OS scheduler plenty of margin to wake a waiter
+    # without measurably hurting ingest throughput on the bg side.
+    yield_sleep_s = float(
+        os.environ.get("RMX_INGEST_YIELD_SLEEP_S", "0.005") or "0.005"
+    )
+    # Mid-ingest snapshot cadence in yield-count units. 0 disables. The
+    # snapshot itself runs on the snapshot-tick thread, debounced; this
+    # only marks the catalog dirty + signals the ticker so readers see
+    # fresh state during a multi-thousand-file ingest instead of only
+    # at the tail.
+    snapshot_every = int(
+        os.environ.get("RMX_INGEST_SNAPSHOT_EVERY", "500") or "500"
+    )
     partition = args.get("partition") or d.store._partition_name
-    # Per-file progress log: writes one `ingest-progress` line per file in
-    # each pass to rmxd.log. Tail `.refmatrix/rmxd.log | grep ingest-progress`
-    # for live status of a long-running ingest. Throttled by `yield_every`
-    # so high-file-count runs don't drown the log.
     log_every = max(1, yield_every)
     t0 = time.monotonic()
+    yield_counter = [0]
 
     def _progress(phase: str, i: int, n: int, p: Path) -> None:
+        with d._ingest_jobs_lock:
+            job["files_done"] = i
+            job["files_total"] = n
+            job["current_file"] = str(p)
+            job["events"].append({
+                "seq": job["next_seq"],
+                "phase": phase, "i": i, "n": n,
+                "path": str(p), "ts": time.time(),
+            })
+            job["next_seq"] += 1
         if i == 1 or i == n or i % log_every == 0:
             elapsed = time.monotonic() - t0
             eta = (elapsed / max(i, 1)) * max(n - i, 0)
             d._log(
-                f"ingest-progress {phase} {i}/{n} "
+                f"ingest-progress {phase} {i}/{n} job={job_id} "
                 f"elapsed={elapsed:.0f}s eta={eta:.0f}s {p}"
             )
-    d._store_lock.acquire()
-    try:
-        def _yield() -> None:
-            d._store_lock.release()
-            time.sleep(yield_sleep_s)
-            d._store_lock.acquire()
-        with d.store.with_partition(partition):
-            stats = ingest_gmd_paths(
-                d.store, files, verbose=verbose,
-                yield_lock=_yield, yield_every=yield_every,
-                as_memory=bool(args.get("as_memory")),
-                memory_mtype_default=args.get("memory_mtype") or "curated",
-                progress_cb=_progress,
-            )
-    finally:
+
+    def _yield() -> None:
         d._store_lock.release()
+        time.sleep(yield_sleep_s)
+        yield_counter[0] += 1
+        if snapshot_every > 0 and yield_counter[0] % snapshot_every == 0:
+            d._request_snapshot()
+        d._store_lock.acquire()
+
+    try:
+        d._store_lock.acquire()
+        try:
+            with d.store.with_partition(partition):
+                stats = ingest_gmd_paths(
+                    d.store, files, verbose=bool(args.get("verbose")),
+                    yield_lock=_yield, yield_every=yield_every,
+                    as_memory=bool(args.get("as_memory")),
+                    memory_mtype_default=args.get("memory_mtype") or "curated",
+                    progress_cb=_progress,
+                )
+        finally:
+            d._store_lock.release()
+    except Exception as exc:
+        with d._ingest_jobs_lock:
+            job["status"] = "error"
+            job["error"] = repr(exc)
+            job["ended_at"] = time.time()
+        d._request_snapshot()
+        raise
     d._request_snapshot()
-    return {
+    result = {
         "files": len(files), "report": stats.report(),
         "docs": stats.docs, "nodes": stats.nodes,
         "rels": stats.rels, "mentions": stats.mentions,
         "unresolved": len(stats.unresolved),
+        "job_id": job_id,
     }
+    with d._ingest_jobs_lock:
+        job["status"] = "done"
+        job["result"] = result
+        job["ended_at"] = time.time()
+    return result
+
+
+def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
+    """Synchronous GMD ingest against the daemon-owned store. Errors if
+    another ingest is already in flight against the same daemon.
+
+    Honors `args['partition']` so `--as-memory` rows land in the caller's
+    partition (e.g. `memory-<project>`) rather than the daemon's bound
+    partition.
+    """
+    from refmatrix.ingest_gmd import collect_gmd_files
+    targets = [Path(p).resolve() for p in (args.get("targets") or [])]
+    files = collect_gmd_files(targets)
+    if not files:
+        return {"files": 0, "report": "no candidate files found"}
+    job_id = _register_ingest_job(d, files_total=len(files), args=args)
+    return _run_ingest_gmd_body(d, job_id, files, args)
+
+
+def _op_ingest_gmd_start(d: Daemon, args: dict) -> dict:
+    """Detached GMD ingest: register the job, dispatch onto `bg_pool`,
+    and return the job_id immediately. The client polls via
+    `ingest_gmd_status` (or tails events via the cursor) and disconnects
+    without holding a 24h socket open.
+    """
+    from refmatrix.ingest_gmd import collect_gmd_files
+    targets = [Path(p).resolve() for p in (args.get("targets") or [])]
+    files = collect_gmd_files(targets)
+    if not files:
+        return {"files": 0, "report": "no candidate files found"}
+    job_id = _register_ingest_job(d, files_total=len(files), args=args)
+
+    def _runner() -> None:
+        try:
+            _run_ingest_gmd_body(d, job_id, files, args)
+        except Exception as exc:
+            d._log(f"detached ingest job {job_id} failed: {exc!r}")
+
+    # Dispatched to bg_pool so it counts against bg worker budget like
+    # the synchronous path. Daemon shutdown drains bg_pool, so a clean
+    # `rmx daemon stop` still waits for in-flight ingest to finish.
+    d._bg_pool.submit(_runner)
+    return {
+        "job_id": job_id,
+        "files_total": len(files),
+        "status": "running",
+    }
+
+
+def _op_ingest_gmd_status(d: Daemon, args: dict) -> dict:
+    """Inspect ingest jobs. `args['job_id']` selects one job; omitted
+    returns all jobs (sans events for compactness). `args['since_seq']`
+    streams new per-file events with seq > since_seq, capped at
+    `args['limit']` (default 500).
+    """
+    job_id = args.get("job_id")
+    since_seq = int(args.get("since_seq", 0) or 0)
+    limit = int(args.get("limit", 500) or 500)
+    with d._ingest_jobs_lock:
+        if not job_id:
+            return {
+                "jobs": [
+                    {k: v for k, v in js.items() if k != "events"}
+                    for js in d._ingest_jobs.values()
+                ],
+            }
+        js = d._ingest_jobs.get(job_id)
+        if js is None:
+            raise KeyError(f"no such ingest job: {job_id}")
+        events = [
+            e for e in js["events"] if e["seq"] > since_seq
+        ][:limit]
+        job_summary = {k: v for k, v in js.items() if k != "events"}
+        return {"job": job_summary, "events": events}
 
 
 def _op_prestage_hashes(d: Daemon, args: dict) -> dict:
@@ -3076,6 +3313,8 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "sync_since": _op_sync_since,
     "ingest_path": _op_ingest_path,
     "ingest_gmd": _op_ingest_gmd,
+    "ingest_gmd_start": _op_ingest_gmd_start,
+    "ingest_gmd_status": _op_ingest_gmd_status,
     "prestage_hashes": _op_prestage_hashes,
     "context": _op_context,
     "query": _op_query,
@@ -3143,6 +3382,7 @@ CLI_OPS: set[str] = {
     "memory_search",
     "memory_recent",
     "memory_score",
+    "ingest_gmd_status",
     "stop",
 }
 

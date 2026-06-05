@@ -3624,6 +3624,123 @@ def rebuild(from_log: bool, yes: bool):
         console.print(f"  {k}: {v}")
 
 
+def _tail_ingest_progress(root: Path, job_id: str, files_total: int) -> None:
+    """Poll `ingest_gmd_status` and print one line per file event until
+    the job's status flips off `running`. Used by `ingest-gmd --progress`
+    and `ingest-status --follow`.
+    """
+    from refmatrix import daemon as daemon_mod
+    import time as _time
+    cursor = 0
+    poll_s = float(os.environ.get("RMX_INGEST_POLL_S", "0.25") or "0.25")
+    last_status = "running"
+    final_job: dict | None = None
+    while True:
+        resp = daemon_mod.call(
+            root, "ingest_gmd_status",
+            {"job_id": job_id, "since_seq": cursor, "limit": 500},
+            timeout=30.0,
+        )
+        if not resp.get("ok"):
+            raise click.ClickException(
+                resp.get("error", "daemon error")
+            )
+        job = resp["result"]["job"]
+        events = resp["result"].get("events") or []
+        for ev in events:
+            cursor = max(cursor, ev["seq"])
+            n = ev.get("n") or files_total or 0
+            click.echo(f"[{ev['phase']} {ev['i']}/{n}] {ev['path']}")
+        last_status = job.get("status", "running")
+        if last_status != "running":
+            final_job = job
+            break
+        _time.sleep(poll_s)
+    if final_job is None:
+        return
+    if last_status == "error":
+        raise click.ClickException(
+            f"ingest job {job_id} failed: {final_job.get('error')!r}"
+        )
+    result = final_job.get("result") or {}
+    if "report" in result:
+        console.print(result["report"])
+    else:
+        console.print(f"ingest job {job_id} completed")
+
+
+@main.command("ingest-status")
+@click.argument("job_id", required=False)
+@click.option("--follow", "-f", is_flag=True,
+              help="Tail per-file progress for a still-running job, "
+                   "same as `ingest-gmd --progress`.")
+def ingest_status(job_id: str | None, follow: bool):
+    """Inspect ingest job state. With no JOB_ID, lists all known jobs.
+    With a JOB_ID, prints the job summary; pass --follow to tail
+    per-file events until the job finishes."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if not daemon_mod.ping(root):
+        raise click.ClickException(
+            "daemon not running — ingest jobs are daemon-resident"
+        )
+    if follow:
+        if not job_id:
+            raise click.ClickException("--follow requires a JOB_ID")
+        # Probe once to learn files_total for the header line.
+        resp = daemon_mod.call(
+            root, "ingest_gmd_status", {"job_id": job_id}, timeout=30.0,
+        )
+        if not resp.get("ok"):
+            raise click.ClickException(
+                resp.get("error", "daemon error")
+            )
+        job = resp["result"]["job"]
+        _tail_ingest_progress(root, job_id, job.get("files_total", 0))
+        return
+    resp = daemon_mod.call(
+        root, "ingest_gmd_status",
+        {"job_id": job_id} if job_id else {},
+        timeout=30.0,
+    )
+    if not resp.get("ok"):
+        raise click.ClickException(resp.get("error", "daemon error"))
+    result = resp["result"]
+    if "jobs" in result:
+        jobs = result["jobs"]
+        if not jobs:
+            console.print("[yellow]no ingest jobs known[/]")
+            return
+        t = Table("job", "status", "progress", "started", "ended")
+        for j in jobs:
+            t.add_row(
+                j["id"], j["status"],
+                f"{j['files_done']}/{j['files_total']}",
+                _ts_short(j.get("started_at")),
+                _ts_short(j.get("ended_at")),
+            )
+        console.print(t)
+        return
+    job = result["job"]
+    console.print(
+        f"job {job['id']}  status={job['status']}  "
+        f"progress={job['files_done']}/{job['files_total']}"
+    )
+    if job.get("current_file"):
+        console.print(f"  current: {job['current_file']}")
+    if job.get("error"):
+        console.print(f"  error:   {job['error']}")
+    if job.get("result", {}).get("report"):
+        console.print(job["result"]["report"])
+
+
+def _ts_short(ts: float | None) -> str:
+    import datetime as _dt
+    if not ts:
+        return "-"
+    return _dt.datetime.fromtimestamp(ts).strftime("%H:%M:%S")
+
+
 @main.command("ingest-gmd")
 @click.argument("targets", nargs=-1, required=True,
                 type=click.Path(exists=True, path_type=Path))
@@ -3646,10 +3763,29 @@ def rebuild(from_log: bool, yes: bool):
                    "auto-resume fast path so the next ingest skips both "
                    "passes for unchanged files. Does NOT ingest — pairs "
                    "with a regular `ingest-gmd` invocation afterwards.")
+@click.option("--detach", is_flag=True,
+              help="Start the ingest as a background job and return the "
+                   "job id immediately. Use `rmx ingest-status <job_id>` "
+                   "to poll. Mutually exclusive with --progress.")
+@click.option("--progress", is_flag=True,
+              help="Run as a detached job but tail per-file progress in "
+                   "the foreground (one line per file: `[i/n] path`). "
+                   "Exits when the job finishes. Mutually exclusive with "
+                   "--detach.")
 def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
-               as_memory: bool, memory_mtype: str, prestage: bool):
+               as_memory: bool, memory_mtype: str, prestage: bool,
+               detach: bool, progress: bool):
     """Ingest Graph Markdown (GMD) docs. Walks dirs for *.gmd/*.md files
-    that carry `gmd:` frontmatter; non-GMD files are skipped."""
+    that carry `gmd:` frontmatter; non-GMD files are skipped.
+
+    Single-active-ingest: a second `ingest-gmd` against the same daemon
+    while one is in flight errors out — the two would fight over the
+    write lock and interleave their two-pass parse/resolve state.
+    """
+    if detach and progress:
+        raise click.ClickException(
+            "--detach and --progress are mutually exclusive"
+        )
     from refmatrix import daemon as daemon_mod
     from refmatrix.ingest_gmd import (
         collect_gmd_files, ingest_gmd_paths, prestage_hashes,
@@ -3695,13 +3831,39 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
         )
         return
     if daemon_mod.ping(root):
-        resp = daemon_mod.call(root, "ingest_gmd", {
+        op_args = {
             "targets": [str(p) for p in resolved],
             "verbose": verbose,
             "as_memory": as_memory,
             "memory_mtype": memory_mtype,
             "partition": ingest_partition,
-        }, timeout=24 * 3600.0)
+        }
+        if detach or progress:
+            resp = daemon_mod.call(
+                root, "ingest_gmd_start", op_args, timeout=60.0,
+            )
+            if not resp.get("ok"):
+                raise click.ClickException(
+                    resp.get("error", "daemon error")
+                )
+            job = resp["result"]
+            job_id = job["job_id"]
+            files_total = job.get("files_total", 0)
+            if detach:
+                console.print(
+                    f"ingest job {job_id} started "
+                    f"({files_total} files). "
+                    f"poll with: rmx ingest-status {job_id}"
+                )
+                return
+            # --progress: foreground poll loop. Tail events + print one
+            # line per file. Exit when job status flips off "running".
+            _tail_ingest_progress(root, job_id, files_total)
+            return
+        # Synchronous path (default). Daemon errors immediately if
+        # another ingest is already active.
+        resp = daemon_mod.call(root, "ingest_gmd", op_args,
+                               timeout=24 * 3600.0)
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         console.print(resp["result"]["report"])
