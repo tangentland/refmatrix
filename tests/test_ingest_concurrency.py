@@ -215,3 +215,64 @@ def test_ingest_ops_registered():
     # Status is a read → cli pool so polling stays responsive even
     # while bg_pool is saturated.
     assert "ingest_gmd_status" in CLI_OPS
+
+
+# ---- snapshot-direct read resolution --------------------------------------
+
+
+def _make_bare_store(tmp_path):
+    """Construct a bare Store shell with just enough state to exercise
+    the read_only resolution block in __init__."""
+    from refmatrix.store import Store
+    s = object.__new__(Store)
+    s.root = tmp_path
+    s._read_only = True
+
+    class _Backend:
+        kind = "duckdb"
+        db_filename = "catalog.duckdb"
+    s._backend = _Backend()
+    s.db_path = s.root / s._backend.db_filename
+    return s
+
+
+def _resolve_read_only_path(s, tmp_path):
+    """Replay the snapshot-first resolution block from Store.__init__
+    against the bare-store fixture."""
+    snap = tmp_path / "catalog.read.duckdb"
+    link = tmp_path / "read_only.duckdb"
+    if s._read_only and s._backend.kind == "duckdb":
+        if snap.exists():
+            s.db_path = snap
+        elif link.exists() or link.is_symlink():
+            s.db_path = link
+
+
+def test_read_only_store_lands_on_snapshot_not_symlink(tmp_path):
+    """Lock-free reads resolve `catalog.read.duckdb` DIRECTLY at open
+    time, not via the `read_only.duckdb` symlink. Rotation code in the
+    daemon swings the symlink at a writer slot on every rotation
+    cycle; chasing it lands a reader at the locked writer. Snapshot-
+    first resolution is self-correcting."""
+    import os as _os
+    snap = tmp_path / "catalog.read.duckdb"
+    snap.write_bytes(b"")
+    link = tmp_path / "read_only.duckdb"
+    _os.symlink("catalog.A.duckdb", link)
+    s = _make_bare_store(tmp_path)
+    _resolve_read_only_path(s, tmp_path)
+    assert s.db_path == snap, f"snapshot should win; got {s.db_path}"
+
+
+def test_read_only_store_falls_back_to_symlink_without_snapshot(tmp_path):
+    """Pre-snapshot-tier stores still resolve via the legacy symlink
+    when the snapshot file is absent (fresh install, daemon never
+    started)."""
+    import os as _os
+    link = tmp_path / "read_only.duckdb"
+    _os.symlink("catalog.B.duckdb", link)
+    s = _make_bare_store(tmp_path)
+    _resolve_read_only_path(s, tmp_path)
+    assert s.db_path == link, (
+        f"symlink fallback should fire; got {s.db_path}"
+    )

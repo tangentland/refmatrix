@@ -922,30 +922,34 @@ class Daemon:
     def _open_read_store(self, partition: str | None = None) -> "Store | None":
         """Open a short-lived, dedicated read-only Store for a single op.
 
-        DuckDB allows multiple connections to the same database file from
-        the same process as long as only one is writable. This gives
-        read ops a private cursor that does not share state with
-        `self.store._conn` — and therefore is not invalidated when the
-        replica swap closes the writer connection.
+        Targets the snapshot file `catalog.read.duckdb` rather than the
+        writer's rotation slot. The writer never holds the snapshot file
+        open, so a second DuckDB connection against it does not hit the
+        "Can't open a connection to same database file with a different
+        configuration than existing connections" same-process collision
+        that wrecks read-isolation against the writer slot. Lock-free,
+        config-independent, and immune to rotation-swap timing.
 
         Refcounted: increments `_read_inflight` and decrements in the
-        returned store's `close()`. `_refresh_replica_now` waits on
-        `_swap_gate` for the count to reach zero before closing the
-        write connection. Read ops therefore drain ahead of the swap;
-        the swap never closes a slot file with a live reader cursor on
-        it.
+        returned store's `close()`. The refcount stays in place even
+        though we no longer race the rotation swap — `_refresh_replica_now`
+        still uses the gate to know the reader pool is quiesced for any
+        ATTACH-style ops it adds later.
 
-        Callers must `close()` the returned Store. The ~50ms connect
-        cost buys full concurrency with ingest and a clean swap window.
-
-        Returns None if the active slot file is missing (early
-        bootstrap window); callers fall back to the locked-shared
-        path."""
+        Falls back to the writer slot when the snapshot file is missing
+        (very early bootstrap, before `_snapshot_catalog(force=True)` at
+        startup runs). Returns None on hard failure; callers fall back to
+        the `_store_lock` path.
+        """
         from refmatrix.store import Store
-        active = self._active_slot or self._read_active_slot()
-        slot_path = self._replica_file(active)
-        if not slot_path.exists():
-            return None
+        snap = self._snapshot_file()
+        if snap.exists():
+            target = snap
+        else:
+            active = self._active_slot or self._read_active_slot()
+            target = self._replica_file(active)
+            if not target.exists():
+                return None
         # Reserve the refcount BEFORE the connect attempt so a swap that
         # races a failing connect can't sneak through between increment
         # and the failure path. Released in `close()` (success) or
@@ -958,14 +962,14 @@ class Daemon:
                 partition=partition or self.store._partition_name,
                 read_only=True,
             )
-            s.db_path = slot_path
+            s.db_path = target
             s._connect()  # surface lock errors here, not at first query
         except Exception as exc:
             with self._swap_gate:
                 self._read_inflight -= 1
                 if self._read_inflight == 0:
                     self._swap_gate.notify_all()
-            self._log(f"open_read_store({active}) failed: {exc!r}")
+            self._log(f"open_read_store({target.name}) failed: {exc!r}")
             return None
         # Patch close() so the refcount drops + notifies exactly once.
         orig_close = s.close
@@ -2081,13 +2085,15 @@ def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict) -> dic
     yield_sleep_s = float(
         os.environ.get("RMX_INGEST_YIELD_SLEEP_S", "0.005") or "0.005"
     )
-    # Mid-ingest snapshot cadence in yield-count units. 0 disables. The
-    # snapshot itself runs on the snapshot-tick thread, debounced; this
-    # only marks the catalog dirty + signals the ticker so readers see
-    # fresh state during a multi-thousand-file ingest instead of only
-    # at the tail.
+    # Mid-ingest snapshot cadence in yield-count units. 0 disables.
+    # Default 1: request a snapshot on every yield. `_request_snapshot()`
+    # is cheap (sets a flag + signals an Event); the actual file copy
+    # runs on the snapshot-tick thread and is debounced by
+    # `RMX_SNAPSHOT_DEBOUNCE_MS`. So one-per-yield doesn't fan out into
+    # one-per-yield file copies — it just keeps the snapshot ticker
+    # warm so the snapshot file is always reasonably fresh.
     snapshot_every = int(
-        os.environ.get("RMX_INGEST_SNAPSHOT_EVERY", "500") or "500"
+        os.environ.get("RMX_INGEST_SNAPSHOT_EVERY", "1") or "1"
     )
     partition = args.get("partition") or d.store._partition_name
     log_every = max(1, yield_every)

@@ -120,19 +120,32 @@ def _store() -> Store:
 
 
 def _replica_reader_path() -> Path:
-    """Return the path to the current reader-slot catalog file.
+    """Return the path to the current lock-free reader file.
 
-    Resolution order:
-      1. `<root>/read_only.duckdb` — daemon-maintained symlink at the
-         current inactive (reader) slot. Cheapest + most explicit; the
-         daemon updates it atomically on every rotation swap.
-      2. `<root>/active` marker + `catalog.{inactive}.duckdb` —
+    Resolution order (snapshot-first, symlink-last):
+      1. `<root>/catalog.read.duckdb` — daemon-maintained snapshot
+         (atomic tmp+rename file copy of the writer's catalog).
+         Preferred — multi-process safe with no symlink indirection
+         drift. The writer never holds this file open exclusively, so
+         CLI processes can open it READ_ONLY without lock collision.
+      2. `<root>/read_only.duckdb` — legacy symlink at the current
+         inactive (reader) slot. Used only when the snapshot file is
+         missing (pre-snapshot-tier stores, daemon cold-start before
+         first write op).
+      3. `<root>/active` marker + `catalog.{inactive}.duckdb` —
          fallback for pre-symlink stores that the daemon hasn't
          touched yet this run.
-      3. Legacy `catalog.duckdb` for pre-rotation (pre-0.3.8) stores.
+      4. Legacy `catalog.duckdb` for pre-rotation (pre-0.3.8) stores.
 
-    Doesn't query the daemon — pure file-system lookup."""
+    Doesn't query the daemon — pure file-system lookup. Resolving the
+    snapshot file directly (rather than the symlink) is what makes
+    every read self-correcting: a stale symlink left over from a past
+    daemon state can no longer route reads at the writer slot.
+    """
     root = _root()
+    snap = root / "catalog.read.duckdb"
+    if snap.exists():
+        return snap
     link = root / "read_only.duckdb"
     if link.exists() or link.is_symlink():
         return link

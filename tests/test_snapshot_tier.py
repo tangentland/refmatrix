@@ -190,17 +190,19 @@ def test_op_snapshot_registered_in_ops_and_cli_ops():
 
 def test_reader_during_write_lands_on_snapshot(tmp_path):
     """A Store(read_only=True) opened after a snapshot was taken lands
-    on `catalog.read.duckdb` (via the daemon-maintained symlink), not
-    the primary writer file. That's the whole point of snapshot-tier —
-    the writer never has to surrender its file lock to give readers a
-    consistent view."""
+    on `catalog.read.duckdb` directly (snapshot file resolution at
+    open time), not on the legacy `read_only.duckdb` symlink and not
+    on the primary writer file. Resolving the snapshot at open time
+    rather than chasing the symlink eliminates an entire class of
+    stale-symlink bugs where rotation code swung the symlink back at a
+    writer slot."""
     s = _duck_store(tmp_path)
     try:
         d = _bare_daemon(tmp_path, s)
         d._snapshot_catalog(force=True)
         reader = Store(tmp_path, read_only=True)
         try:
-            assert reader.db_path == tmp_path / "read_only.duckdb"
+            assert reader.db_path == tmp_path / "catalog.read.duckdb"
         finally:
             reader.close()
     finally:

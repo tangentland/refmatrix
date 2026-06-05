@@ -285,18 +285,27 @@ class Store:
         # filename now; legacy SQLite stores stay at catalog.db, DuckDB-native
         # stores use catalog.duckdb so the two can coexist during migration.
         self.db_path = self.root / self._backend.db_filename
-        # Snapshot-tier policy fix: when opened read_only AND the daemon's
-        # `read_only.duckdb` symlink exists (pointing at the lock-free reader
-        # slot of the running rotation), prefer it over the primary catalog
-        # file. Eliminates the "Could not set lock on catalog.B.duckdb"
-        # class of crashes for CLI processes that pop up while the daemon
-        # owns the writer slot. Falls back to the primary file when the
-        # symlink is absent (daemon down / fresh install).
+        # Snapshot-tier policy: read_only Stores prefer the daemon-maintained
+        # snapshot file `catalog.read.duckdb` over the writer's primary file
+        # because the writer never holds the snapshot open exclusively,
+        # making it multi-process-safe to open READ_ONLY without the
+        # "Could not set lock on catalog.A.duckdb" collision.
+        #
+        # Resolution order: snapshot file → legacy `read_only.duckdb`
+        # symlink → primary catalog file. The legacy symlink path stays
+        # because pre-snapshot-tier stores still rely on it; once a
+        # snapshot has been materialized the symlink path never gets hit.
+        # Falls back to the primary file when neither exists (fresh
+        # install, daemon never started).
         if self._read_only and self._backend.kind == "duckdb":
-            symlink = self.root / "read_only.duckdb"
+            snap = self.root / "catalog.read.duckdb"
             try:
-                if symlink.exists() or symlink.is_symlink():
-                    self.db_path = symlink
+                if snap.exists():
+                    self.db_path = snap
+                else:
+                    symlink = self.root / "read_only.duckdb"
+                    if symlink.exists() or symlink.is_symlink():
+                        self.db_path = symlink
             except OSError:
                 pass
         # bitmaps_dir is the legacy per-(linkage, concept) layout. Kept as an
