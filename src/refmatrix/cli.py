@@ -4165,7 +4165,22 @@ def _memory_partition_default() -> str:
 def _legacy_memory_partition_exists(root: Path, legacy: str) -> bool:
     """True when the `memory-<project>` partition row is still present
     (pre-merge state). Caches per process so repeated `rmx memory`
-    invocations don't re-query."""
+    invocations don't re-query.
+
+    Read paths (in order of preference, all lock-free):
+      1. Daemon RPC `partition_list` when the daemon is up. The daemon
+         owns the writer slot; this is the safest read.
+      2. `Store(read_only=True)` opened against the snapshot symlink
+         (`read_only.duckdb`). Lock-free because the writer never
+         attaches to the snapshot file.
+      3. Snapshot/replica absent (bootstrap window) → return False.
+         A fresh tree has no legacy partition by definition; routing
+         to the project partition is the correct default.
+
+    NEVER opens the active rotation slot directly — that would crash
+    with `Could not set lock on catalog.B.duckdb` whenever the daemon
+    is alive but `ping()` momentarily failed (restart window, socket
+    hiccup), exactly the path that produced the 0.5.1 regression."""
     cache_key = (str(root), legacy)
     cached = getattr(_legacy_memory_partition_exists, "_cache", {})
     if cache_key in cached:
@@ -4181,17 +4196,19 @@ def _legacy_memory_partition_exists(root: Path, legacy: str) -> bool:
                 rows = resp["result"].get("rows", [])
                 found = any(r.get("name") == legacy for r in rows)
         else:
-            s = _reader_store() or _store()
-            try:
-                row = s._connect().execute(
-                    "SELECT 1 FROM partitions WHERE name=?", (legacy,),
-                ).fetchone()
-                found = row is not None
-            finally:
+            rs = _reader_store()
+            if rs is not None:
                 try:
-                    s.close()
-                except Exception:
-                    pass
+                    row = rs._connect().execute(
+                        "SELECT 1 FROM partitions WHERE name=?", (legacy,),
+                    ).fetchone()
+                    found = row is not None
+                finally:
+                    try:
+                        rs.close()
+                    except Exception:
+                        pass
+            # else: no snapshot yet → fresh tree → no legacy partition.
     except Exception:
         found = False
     cached[cache_key] = found
