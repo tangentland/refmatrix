@@ -276,3 +276,150 @@ def test_read_only_store_falls_back_to_symlink_without_snapshot(tmp_path):
     assert s.db_path == link, (
         f"symlink fallback should fire; got {s.db_path}"
     )
+
+
+# ---- in-memory mirror -----------------------------------------------------
+
+
+def _bare_daemon_with_store(tmp_path):
+    """Daemon shell with a real DuckDB writer Store. Mirrors the snapshot-
+    tier test helper shape so we can exercise mirror refresh end-to-end."""
+    from refmatrix.daemon import Daemon
+    from refmatrix.store import Store
+    s = Store(tmp_path, backend="duckdb")
+    s._connect()
+    d = object.__new__(Daemon)
+    d.root = tmp_path
+    d._log = lambda *a, **k: None
+    d.store = s
+    d._store_lock = threading.Lock()
+    d._snapshot_lock = threading.Lock()
+    d._last_snapshot_ts = 0.0
+    d._snapshot_dirty = False
+    d._snapshot_event = threading.Event()
+    d._snapshot_stop = threading.Event()
+    d._mem_mirror = None
+    return d, s
+
+
+def test_mem_mirror_refresh_loads_tables_from_snapshot(tmp_path):
+    """After a snapshot is materialized and the mirror refresh fires,
+    the in-memory Store can answer queries that touch the loaded data.
+    Concrete probe: insert a partition row, snapshot, refresh, then
+    SELECT the partition through the mirror Store."""
+    from refmatrix.daemon import _MemMirror
+    d, s = _bare_daemon_with_store(tmp_path)
+    try:
+        s._connect().execute(
+            "INSERT OR IGNORE INTO partitions(name, kind, root_path, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("mirror_probe", "repo", None, time.time()),
+        )
+        s._connect().commit()
+        d._snapshot_catalog(force=True)
+        mirror = _MemMirror(d)
+        d._mem_mirror = mirror
+        assert mirror.refresh() is True
+        assert mirror.ready
+        ms = mirror.borrow()
+        assert ms is not None
+        row = ms._conn._duck.execute(
+            "SELECT name FROM partitions WHERE name=?", ("mirror_probe",),
+        ).fetchone()
+        assert row == ("mirror_probe",)
+    finally:
+        s.close()
+
+
+def test_mem_mirror_refresh_returns_false_without_snapshot(tmp_path):
+    """No snapshot file → refresh is a no-op returning False, ready
+    stays False, mirror state preserved."""
+    from refmatrix.daemon import _MemMirror
+    d, s = _bare_daemon_with_store(tmp_path)
+    try:
+        mirror = _MemMirror(d)
+        d._mem_mirror = mirror
+        assert mirror.refresh() is False
+        assert mirror.ready is False
+        assert mirror.borrow() is None
+    finally:
+        s.close()
+
+
+def test_mem_mirror_borrow_close_is_noop(tmp_path):
+    """The borrowed mirror Store is shared. Callers `close()` it at
+    end of op (per `_read_with_fallback` convention) — that close MUST
+    be a no-op so the shared connection survives. Concrete: borrow,
+    close, borrow again, and assert the same Store + working
+    connection comes back."""
+    from refmatrix.daemon import _MemMirror
+    d, s = _bare_daemon_with_store(tmp_path)
+    try:
+        d._snapshot_catalog(force=True)
+        mirror = _MemMirror(d)
+        d._mem_mirror = mirror
+        mirror.refresh()
+        first = mirror.borrow()
+        assert first is not None
+        first.close()  # no-op
+        second = mirror.borrow()
+        assert second is first
+        # Connection is still functional.
+        row = second._conn._duck.execute("SELECT 1").fetchone()
+        assert row == (1,)
+    finally:
+        s.close()
+
+
+def test_open_read_store_prefers_mirror_when_ready(tmp_path):
+    """`Daemon._open_read_store` returns the mirror Store when it's
+    ready, ahead of the snapshot-file path. The two stores have
+    distinct `db_path` values — mirror is `:memory:`, snapshot is
+    `catalog.read.duckdb` — so we can distinguish them by that
+    attribute.
+    """
+    from refmatrix.daemon import _MemMirror
+    d, s = _bare_daemon_with_store(tmp_path)
+    try:
+        d._snapshot_catalog(force=True)
+        mirror = _MemMirror(d)
+        d._mem_mirror = mirror
+        assert mirror.refresh() is True
+        # Wire the swap-gate + read_inflight bookkeeping shape that
+        # `_open_read_store` peeks at on the file path. We won't hit
+        # the file path, but the wiring keeps the call safe.
+        d._swap_gate = threading.Condition()
+        d._read_inflight = 0
+        d._active_slot = None
+        rs = d._open_read_store()
+        assert rs is not None
+        assert str(rs.db_path) == ":memory:", (
+            f"expected mirror path, got {rs.db_path}"
+        )
+    finally:
+        s.close()
+
+
+def test_open_read_store_falls_back_to_snapshot_when_mirror_empty(tmp_path):
+    """When the mirror exists but has never been refreshed (no
+    snapshot yet, or refresh failed), `_open_read_store` falls
+    through to the snapshot-file Store. We don't have a snapshot
+    file in this test, so the result is None — proving the mirror
+    didn't short-circuit the resolution chain when it has nothing to
+    serve.
+    """
+    from refmatrix.daemon import _MemMirror
+    d, s = _bare_daemon_with_store(tmp_path)
+    try:
+        mirror = _MemMirror(d)
+        d._mem_mirror = mirror
+        # No refresh -> mirror.borrow() returns None.
+        d._swap_gate = threading.Condition()
+        d._read_inflight = 0
+        d._active_slot = None
+        rs = d._open_read_store()
+        # No snapshot file + no slot files in this bare daemon shell →
+        # falls through to None, NOT to a mirror Store.
+        assert rs is None
+    finally:
+        s.close()

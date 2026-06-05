@@ -125,6 +125,185 @@ class _FairLock:
     def __exit__(self, exc_type, exc, tb) -> None:
         self.release()
 
+
+class _MemMirror:
+    """In-memory DuckDB mirror of the on-disk snapshot.
+
+    Goal: serve daemon read ops from an uncompressed in-memory copy of
+    the catalog so reads cost ~1ms (memory cursor) instead of ~10ms
+    (open snapshot file + connect). Refreshes after every snapshot tick
+    so the mirror lags the writer by at most one debounce window
+    (`RMX_SNAPSHOT_DEBOUNCE_MS`, default 250ms).
+
+    State machine:
+      * `ready=False, store=None` — daemon just booted, no refresh yet.
+      * `ready=True, store=<Store>` — mirror loaded; `borrow()` returns
+        a Store usable for reads.
+      * `ready=False, store=<old Store>` — refresh in flight; callers
+        fall back to the on-disk snapshot Store via `_open_read_store`.
+
+    Concurrency model: a single in-memory DuckDB connection serves all
+    reads. DuckDB connections aren't thread-safe for concurrent
+    cursors, so `borrow()` returns a context manager that holds
+    `_use_lock` for the duration of one query. Reads are fast (no I/O)
+    so the lock window is small; if it becomes a bottleneck, switch to
+    one in-memory connection per thread (DuckDB `:memory:dbname`
+    pattern with one master + per-thread duplicates).
+
+    Memory cost: ~equal to snapshot file size. 64MB for a small project
+    catalog, ~150MB for viascope-scale. Disable via `RMX_MEM_MIRROR=0`
+    when running on memory-constrained hosts.
+    """
+
+    def __init__(self, daemon: "Daemon") -> None:
+        self._daemon = daemon
+        self._store: "Store | None" = None
+        self._ready = False
+        self._use_lock = threading.Lock()  # one reader at a time
+        self._refresh_lock = threading.Lock()  # serialize refreshes
+        self._last_refresh_ts: float = 0.0
+        self._refresh_count = 0
+        self._last_error: str | None = None
+
+    @property
+    def ready(self) -> bool:
+        return self._ready
+
+    def borrow(self) -> "Store | None":
+        """Return the in-memory Store if ready, else None. Caller must
+        NOT hold the returned Store across blocking ops — reads must
+        complete quickly so `_use_lock` doesn't gate everyone.
+        """
+        if not self._ready:
+            return None
+        return self._store
+
+    def acquire_use(self) -> threading.Lock:
+        """Returns the cursor-use lock. `with mem_mirror.acquire_use():`
+        gates concurrent cursors against the shared in-memory
+        connection."""
+        return self._use_lock
+
+    def refresh(self) -> bool:
+        """Rebuild the in-memory mirror from the current snapshot file.
+
+        Closes any old in-memory Store, opens a fresh one against
+        `:memory:`, ATTACHes the snapshot file, copies every catalog
+        table over, then DETACHes. The new Store is swapped in
+        atomically under `_refresh_lock`. Returns False if the
+        snapshot file is missing (cold start) or the load fails;
+        callers fall back to the on-disk path.
+
+        Cheap to call: ~100-300ms for a viascope-scale catalog. The
+        snapshot tick triggers this debounced by
+        RMX_SNAPSHOT_DEBOUNCE_MS so a burst of writes pays one refresh.
+        """
+        snap = self._daemon._snapshot_file()
+        if not snap.exists():
+            return False
+        with self._refresh_lock:
+            try:
+                new_store = self._load_from_snapshot(snap)
+            except Exception as exc:
+                self._last_error = repr(exc)
+                self._daemon._log(f"mem mirror refresh failed: {exc!r}")
+                return False
+            # Swap in atomically. Anyone holding `_use_lock` finishes
+            # their read against the old store; subsequent borrowers
+            # get the new one.
+            with self._use_lock:
+                old = self._store
+                self._store = new_store
+                self._ready = True
+                self._last_refresh_ts = time.time()
+                self._refresh_count += 1
+                self._last_error = None
+            if old is not None:
+                try:
+                    old.close()
+                except Exception:
+                    pass
+        return True
+
+    def _load_from_snapshot(self, snap: Path) -> "Store":
+        """Open an in-memory Store and populate every catalog table
+        from the snapshot file. Tables are copied one at a time via
+        `CREATE TABLE x AS SELECT * FROM src.x`, which preserves
+        schema + data without re-running migrations."""
+        from refmatrix.store import Store
+        # Build a bare Store pointed at `:memory:`. Bypass __init__'s
+        # snapshot-resolution block by constructing manually — we need
+        # the in-memory db_path to win regardless of read_only flag.
+        s = object.__new__(Store)
+        s.root = self._daemon.root
+        s._read_only = True
+        s._partition_name = self._daemon.store._partition_name
+        s._partition_id = None
+        s._conn = None
+        s._backend = self._daemon.store._backend
+        s.db_path = Path(":memory:")
+        # Other Store attrs that read paths poke at; mirror writer's
+        # values where they matter.
+        writer = self._daemon.store
+        for attr in ("bitmaps_dir", "fragments_dir", "queries_dir"):
+            setattr(s, attr, getattr(writer, attr, None))
+        # Open the in-memory backend connection directly so we don't
+        # trigger Store._connect's migration / schema-DDL paths.
+        s._conn = s._backend.connect(s.db_path)
+        mc = s._conn._duck
+        # ATTACH the snapshot in read-only mode and clone every table
+        # in `main` schema. Skip information_schema/system tables.
+        mc.execute(f"ATTACH '{snap}' AS src (READ_ONLY)")
+        try:
+            # `duckdb_tables()` enumerates tables across all attached DBs
+            # — information_schema views aren't reachable through an
+            # ATTACH alias in DuckDB ≥ 0.10, but duckdb_tables() always
+            # works.
+            rows = mc.execute(
+                "SELECT table_name FROM duckdb_tables() "
+                "WHERE database_name='src' AND schema_name='main'"
+            ).fetchall()
+            for (table,) in rows:
+                qt = table.replace('"', '""')
+                mc.execute(f'CREATE TABLE "{qt}" AS SELECT * FROM src."{qt}"')
+        finally:
+            mc.execute("DETACH src")
+        # Resolve partition_id off the freshly-loaded data.
+        try:
+            row = mc.execute(
+                "SELECT id FROM partitions WHERE name=?",
+                (s._partition_name,),
+            ).fetchone()
+            s._partition_id = row[0] if row else 1
+        except Exception:
+            s._partition_id = 1
+        # Callers `close()` the borrowed Store at end of op — but the
+        # mirror Store is shared, not per-op. Swap `close` for a no-op
+        # so the convention works without leaking the in-memory state.
+        # Real close happens only through `_MemMirror.close()` /
+        # `refresh()` swap.
+        s.close = lambda: None  # type: ignore[assignment]
+        return s
+
+    def close(self) -> None:
+        with self._refresh_lock:
+            old = self._store
+            self._store = None
+            self._ready = False
+        if old is not None:
+            try:
+                old.close()
+            except Exception:
+                pass
+
+    def stats(self) -> dict:
+        return {
+            "ready": self._ready,
+            "last_refresh_ts": self._last_refresh_ts,
+            "refresh_count": self._refresh_count,
+            "last_error": self._last_error,
+        }
+
 # Replica refresh strategy switch. `apply_log_delta` replays log events
 # one-by-one through the Store API (~tens of KB/s on a large catalog), so a
 # multi-MB backlog can peg CPU for a very long time and never converge
@@ -330,6 +509,11 @@ class Daemon:
         # cross-process persistence by design.
         self._ingest_jobs: dict[str, dict] = {}
         self._ingest_jobs_lock = threading.Lock()
+        # In-memory mirror. Refreshed from `catalog.read.duckdb` after
+        # every snapshot tick — reads served from here run against
+        # uncompressed in-memory data with no file-system contention.
+        # Disabled when `RMX_MEM_MIRROR=0`. See `_MemMirror`.
+        self._mem_mirror: "_MemMirror | None" = None
 
     def _log(self, msg: str) -> None:
         if self.log_fh is None:
@@ -583,6 +767,15 @@ class Daemon:
             self._snapshot_catalog(force=True)
         except Exception as exc:
             self._log(f"startup snapshot failed: {exc!r}")
+        # In-memory mirror. Constructed + warmed from the startup
+        # snapshot above. Disabled with RMX_MEM_MIRROR=0 on memory-
+        # constrained hosts. See `_MemMirror`.
+        if os.environ.get("RMX_MEM_MIRROR", "1") != "0":
+            self._mem_mirror = _MemMirror(self)
+            if self._mem_mirror.refresh():
+                self._log("mem mirror ready")
+            else:
+                self._log("mem mirror not ready (no snapshot yet)")
 
         srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         srv.bind(str(sock_path))
@@ -920,27 +1113,47 @@ class Daemon:
         return None
 
     def _open_read_store(self, partition: str | None = None) -> "Store | None":
-        """Open a short-lived, dedicated read-only Store for a single op.
+        """Return a Store usable for a single read op.
 
-        Targets the snapshot file `catalog.read.duckdb` rather than the
-        writer's rotation slot. The writer never holds the snapshot file
-        open, so a second DuckDB connection against it does not hit the
-        "Can't open a connection to same database file with a different
-        configuration than existing connections" same-process collision
-        that wrecks read-isolation against the writer slot. Lock-free,
-        config-independent, and immune to rotation-swap timing.
+        Resolution order (fastest → safest):
+          1. In-memory mirror (`_mem_mirror`). Zero file I/O, ~1ms reads.
+             Lagged by `RMX_SNAPSHOT_DEBOUNCE_MS` (default 250ms) behind
+             the writer.
+          2. Snapshot file `catalog.read.duckdb`. ~10ms per open. Lock-
+             free because the writer never holds the snapshot open
+             exclusively. Same lag as the mirror.
+          3. Writer rotation slot fallback. Used only when no snapshot
+             file exists yet (very early bootstrap).
 
-        Refcounted: increments `_read_inflight` and decrements in the
-        returned store's `close()`. The refcount stays in place even
-        though we no longer race the rotation swap — `_refresh_replica_now`
-        still uses the gate to know the reader pool is quiesced for any
-        ATTACH-style ops it adds later.
-
-        Falls back to the writer slot when the snapshot file is missing
-        (very early bootstrap, before `_snapshot_catalog(force=True)` at
-        startup runs). Returns None on hard failure; callers fall back to
-        the `_store_lock` path.
+        For the mirror path, the returned Store is the SHARED in-memory
+        Store — callers must NOT `close()` it. The refcount + close-
+        patch dance only applies to file-backed paths (which need to
+        coordinate with replica swap). The mirror's own `_use_lock`
+        already serializes concurrent cursors against the shared
+        connection.
         """
+        # Mirror path: zero-latency, no file I/O.
+        mirror = getattr(self, "_mem_mirror", None)
+        if mirror is not None:
+            mirror_store = mirror.borrow()
+            if mirror_store is not None:
+                # Repoint the partition if the caller wants a different
+                # one — partition_id resolution lives on the Store.
+                if partition is not None and \
+                        partition != mirror_store._partition_name:
+                    try:
+                        with mirror.acquire_use():
+                            row = mirror_store._conn._duck.execute(
+                                "SELECT id FROM partitions WHERE name=?",
+                                (partition,),
+                            ).fetchone()
+                        if row:
+                            mirror_store._partition_name = partition
+                            mirror_store._partition_id = row[0]
+                    except Exception:
+                        pass
+                return mirror_store
+        # File-snapshot or slot fallback path.
         from refmatrix.store import Store
         snap = self._snapshot_file()
         if snap.exists():
@@ -1163,6 +1376,16 @@ class Daemon:
                 size = snap_path.stat().st_size
             except OSError:
                 size = 0
+            # Refresh the in-memory mirror off the new snapshot so the
+            # next read sees fresh state. Best-effort: a refresh failure
+            # leaves the previous mirror in place and `_open_read_store`
+            # falls back to the snapshot file.
+            mirror = getattr(self, "_mem_mirror", None)
+            if mirror is not None:
+                try:
+                    mirror.refresh()
+                except Exception as exc:
+                    self._log(f"mem mirror refresh raised: {exc!r}")
             return {
                 "snapshot_path": str(snap_path),
                 "size": size,
@@ -2209,6 +2432,16 @@ def _op_ingest_gmd_start(d: Daemon, args: dict) -> dict:
     }
 
 
+def _op_mem_mirror_status(d: Daemon, args: dict) -> dict:
+    """Inspect the in-memory mirror: ready / last refresh / refresh
+    count / last error. Lets operators verify the mirror is keeping
+    up with the writer."""
+    mirror = getattr(d, "_mem_mirror", None)
+    if mirror is None:
+        return {"enabled": False, "reason": "disabled or pre-init"}
+    return {"enabled": True, **mirror.stats()}
+
+
 def _op_ingest_gmd_status(d: Daemon, args: dict) -> dict:
     """Inspect ingest jobs. `args['job_id']` selects one job; omitted
     returns all jobs (sans events for compactness). `args['since_seq']`
@@ -2699,17 +2932,27 @@ def _op_memory_add(d: Daemon, args: dict) -> dict:
 
 
 def _read_with_fallback(d: Daemon, partition: str, fn):
-    """Run `fn(store)` against a dedicated read-only Store opened with
-    `_open_read_store`. Falls back to the shared writer connection
-    under `_store_lock` if the read store can't be opened (early
-    bootstrap, slot file missing, lock surprise).
+    """Run `fn(store)` against the fastest available read path.
 
-    The dedicated read store has its own DuckDB connection, so reads
-    no longer queue behind ingest's `_store_lock` and no longer race
-    the replica swap that closes `d.store._conn`."""
+    Resolution (per `_open_read_store`): in-memory mirror → snapshot
+    file Store → shared writer connection under `_store_lock`.
+
+    When `_open_read_store` returns the in-memory mirror Store, the
+    DuckDB connection is shared across all callers, so `fn` must run
+    under the mirror's `_use_lock` to keep cursors serialized.
+    """
     rs = d._open_read_store(partition)
     if rs is not None:
+        mirror = getattr(d, "_mem_mirror", None)
+        use_lock = (
+            mirror.acquire_use()
+            if mirror is not None and mirror.borrow() is rs
+            else None
+        )
         try:
+            if use_lock is not None:
+                with use_lock:
+                    return fn(rs)
             return fn(rs)
         finally:
             try:
@@ -3321,6 +3564,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "ingest_gmd": _op_ingest_gmd,
     "ingest_gmd_start": _op_ingest_gmd_start,
     "ingest_gmd_status": _op_ingest_gmd_status,
+    "mem_mirror_status": _op_mem_mirror_status,
     "prestage_hashes": _op_prestage_hashes,
     "context": _op_context,
     "query": _op_query,
@@ -3389,6 +3633,7 @@ CLI_OPS: set[str] = {
     "memory_recent",
     "memory_score",
     "ingest_gmd_status",
+    "mem_mirror_status",
     "stop",
 }
 
