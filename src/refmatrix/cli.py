@@ -3328,16 +3328,18 @@ def primer(top, symbol_like, exclude_namespace, min_refs, max_tokens,
     """Density-ranked map of the top-N reference-dense symbols. CLAUDE.md-friendly."""
     from refmatrix.primer import build_primer
 
-    s = _store()
-    text = build_primer(
-        s,
-        top_n=top,
-        symbol_like_only=symbol_like,
-        exclude_namespaces=tuple(exclude_namespace),
-        min_refs=min_refs,
-        max_tokens=max_tokens,
-        include_noise=include_noise,
-    )
+    def _run(s):
+        return build_primer(
+            s,
+            top_n=top,
+            symbol_like_only=symbol_like,
+            exclude_namespaces=tuple(exclude_namespace),
+            min_refs=min_refs,
+            max_tokens=max_tokens,
+            include_noise=include_noise,
+        )
+
+    text = _replica_read(_run)
     if out:
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         Path(out).write_text(text)
@@ -3366,21 +3368,25 @@ def scan_prompt_cmd(text, max_tokens, per_concept_tokens, max_concepts,
     """
     from refmatrix.scan import read_stdin_prompt, scan_prompt
 
-    s = _store()
     prompt = text if text is not None else read_stdin_prompt()
     if not prompt.strip():
         return
-    with log_query(s, kind="scan", body=prompt[:200], source="scan-prompt") as tlog:
-        out = scan_prompt(
-            s, prompt,
-            max_tokens=max_tokens,
-            per_concept_tokens=per_concept_tokens,
-            max_concepts=max_concepts,
-            exclude_namespaces=tuple(exclude_namespace),
-            include_noise=include_noise,
-            fmt=fmt,
-        )
-        tlog.cardinality = out.count("=== context for") if out else 0
+
+    def _run(s):
+        with log_query(s, kind="scan", body=prompt[:200], source="scan-prompt") as tlog:
+            result = scan_prompt(
+                s, prompt,
+                max_tokens=max_tokens,
+                per_concept_tokens=per_concept_tokens,
+                max_concepts=max_concepts,
+                exclude_namespaces=tuple(exclude_namespace),
+                include_noise=include_noise,
+                fmt=fmt,
+            )
+            tlog.cardinality = result.count("=== context for") if result else 0
+        return result
+
+    out = _replica_read(_run)
     if out:
         click.echo(out)
 
