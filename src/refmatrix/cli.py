@@ -923,20 +923,21 @@ def canon_link(concept: str, canon_name: str | None, canon_partition: str):
 @click.argument("concept")
 def canon_siblings(concept: str):
     """List concepts in other partitions that share a canon hub with CONCEPT."""
-    s = _store()
-    local = s.get_entity("concept", concept)
-    if local is None:
-        raise click.ClickException(
-            f"no concept '{concept}' in partition '{s.partition_name}'."
-        )
-    rows = s.siblings_via_canon(local.id)
+    def _run(s):
+        local = s.get_entity("concept", concept)
+        if local is None:
+            raise click.ClickException(
+                f"no concept '{concept}' in partition '{s.partition_name}'."
+            )
+        return s.partition_name, s.siblings_via_canon(local.id)
+    part, rows = _replica_read(_run)
     if not rows:
         console.print(
-            f"[yellow]no siblings[/] for {s.partition_name}/{concept} "
+            f"[yellow]no siblings[/] for {part}/{concept} "
             f"(run `rmx canon link {concept}` here and in the other partition first)"
         )
         return
-    table = Table(show_header=True, title=f"siblings of {s.partition_name}/{concept}")
+    table = Table(show_header=True, title=f"siblings of {part}/{concept}")
     table.add_column("partition")
     table.add_column("concept")
     table.add_column("via canon")
@@ -1577,11 +1578,13 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
               help="Include noise-marked concepts.")
 def co_occur(concept, linkage, limit, include_noise):
     """Concepts that share entities with the given concept under a linkage."""
-    s = _store()
-    qe = QueryEngine(s, include_noise=include_noise)
-    with log_query(s, kind="co-occur", body=concept, source="co-occur") as t:
-        rows = qe.co_occurrence(concept, linkage=linkage)[:limit]
-        t.cardinality = len(rows)
+    def _run(s):
+        qe = QueryEngine(s, include_noise=include_noise)
+        with log_query(s, kind="co-occur", body=concept, source="co-occur") as t:
+            rows = qe.co_occurrence(concept, linkage=linkage)[:limit]
+            t.cardinality = len(rows)
+        return rows
+    rows = _replica_read(_run)
     t = Table("concept", "overlap")
     for name, n in rows:
         t.add_row(name, str(n))
@@ -2188,22 +2191,27 @@ def save_query(name, body):
 @click.option("--limit", default=50, type=int)
 def run(name, is_pql, ids_only, limit):
     """Run a saved query by name."""
-    s = _store()
-    body = s.get_saved_query(name)
-    if body is None:
-        raise click.ClickException(f"no saved query: {name}")
-    qe = QueryEngine(s)
-    result = qe.run_pql(body) if is_pql else qe.run(body)
-    if isinstance(result, list):
-        for eid, w in result:
-            e = s.get_entity_by_id(eid)
-            print(f"{e.name if e else eid}\t{w}")
-        return
-    if ids_only:
-        for eid in result:
+    def _run(s):
+        body = s.get_saved_query(name)
+        if body is None:
+            raise click.ClickException(f"no saved query: {name}")
+        qe = QueryEngine(s)
+        result = qe.run_pql(body) if is_pql else qe.run(body)
+        if isinstance(result, list):
+            return ("weighted", [(s.get_entity_by_id(eid), w) for eid, w in result])
+        if ids_only:
+            return ("ids", list(result))
+        return ("bitmap", s, result)
+    out = _replica_read(_run)
+    kind = out[0]
+    if kind == "weighted":
+        for ent, w in out[1]:
+            print(f"{ent.name if ent else '?'}\t{w}")
+    elif kind == "ids":
+        for eid in out[1]:
             print(eid)
-        return
-    _print_bitmap(s, result, limit=limit)
+    else:
+        _print_bitmap(out[1], out[2], limit=limit)
 
 
 @list_grp.command("queries")
@@ -2296,10 +2304,16 @@ def telemetry(since, top_queried, zero_results, fmt):
         summarize, top_queried_concepts, zero_result_queries,
     )
 
-    s = _store()
+    def _run(s):
+        if top_queried:
+            return ("top_queried", top_queried_concepts(s))
+        if zero_results:
+            return ("zero_results", zero_result_queries(s))
+        return ("summary", summarize(s, since=since))
+    kind, data = _replica_read(_run)
 
-    if top_queried:
-        rows = top_queried_concepts(s)
+    if kind == "top_queried":
+        rows = data
         if fmt == "json":
             click.echo(json.dumps(rows, indent=2))
         else:
@@ -2308,8 +2322,8 @@ def telemetry(since, top_queried, zero_results, fmt):
                 t.add_row(name, str(n))
             console.print(t)
         return
-    if zero_results:
-        rows = zero_result_queries(s)
+    if kind == "zero_results":
+        rows = data
         if fmt == "json":
             click.echo(json.dumps(rows, indent=2))
         else:
@@ -2319,7 +2333,7 @@ def telemetry(since, top_queried, zero_results, fmt):
             console.print(t)
         return
 
-    out = summarize(s, since=since)
+    out = data
     if fmt == "json":
         click.echo(json.dumps(out, indent=2))
         return
@@ -2560,24 +2574,26 @@ def prune_noise(namespace, min_df, max_df_ratio, drop):
 @click.option("--out", "-o", type=click.Path(path_type=Path), required=True)
 def export(out):
     """Export the entire matrix as a single JSON file (entities, linkages, bitmaps)."""
-    s = _store()
-    payload: dict = {
-        "version": __version__,
-        "entities": [
-            {"id": e.id, "kind": e.kind, "name": e.name, "path": e.path,
-             "tldr": e.tldr, "meta": e.meta,
-             "protected": e.protected, "noise": e.noise}
-            for e in s.iter_entities()
-        ],
-        "linkage_types": s.list_linkages(),
-        "bitmaps": {},
-    }
-    for lk in s.list_linkages():
-        ln = lk["name"]
-        payload["bitmaps"][ln] = {
-            str(cid): list(s.load_bitmap(ln, cid))
-            for cid in s.iter_concept_ids_for_linkage(ln)
+    def _run(s):
+        payload: dict = {
+            "version": __version__,
+            "entities": [
+                {"id": e.id, "kind": e.kind, "name": e.name, "path": e.path,
+                 "tldr": e.tldr, "meta": e.meta,
+                 "protected": e.protected, "noise": e.noise}
+                for e in s.iter_entities()
+            ],
+            "linkage_types": s.list_linkages(),
+            "bitmaps": {},
         }
+        for lk in s.list_linkages():
+            ln = lk["name"]
+            payload["bitmaps"][ln] = {
+                str(cid): list(s.load_bitmap(ln, cid))
+                for cid in s.iter_concept_ids_for_linkage(ln)
+            }
+        return payload
+    payload = _replica_read(_run)
     Path(out).write_text(json.dumps(payload, indent=2))
     console.print(f"[green]exported[/] {out}")
 
@@ -3397,17 +3413,18 @@ def scan_prompt_cmd(text, max_tokens, per_concept_tokens, max_concepts,
 @click.option("-k", default=10, type=int)
 def top(concept, linkage, k):
     """Top-K entities by weight under (linkage, concept)."""
-    s = _store()
-    e = s.resolve_entity(concept)
-    if e is None or e.kind != "concept":
-        raise click.ClickException(f"no concept: {concept}")
-    with log_query(s, kind="top", body=concept, source="top") as tlog:
-        rows = s.top_weighted(linkage, e.id, k=k)
-        tlog.cardinality = len(rows)
+    def _run(s):
+        e = s.resolve_entity(concept)
+        if e is None or e.kind != "concept":
+            raise click.ClickException(f"no concept: {concept}")
+        with log_query(s, kind="top", body=concept, source="top") as tlog:
+            rows = s.top_weighted(linkage, e.id, k=k)
+            tlog.cardinality = len(rows)
+        return [(s.get_entity_by_id(eid), w) for eid, w in rows]
+    pairs = _replica_read(_run)
     t = Table("entity", "kind", "weight")
-    for eid, w in rows:
-        ent = s.get_entity_by_id(eid)
-        t.add_row(ent.name if ent else str(eid), ent.kind if ent else "", f"{w:g}")
+    for ent, w in pairs:
+        t.add_row(ent.name if ent else "?", ent.kind if ent else "", f"{w:g}")
     console.print(t)
 
 
