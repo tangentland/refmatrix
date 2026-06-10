@@ -482,6 +482,26 @@ def ingest_gmd_paths(
     """
     stats = IngestStats()
 
+    # Intra-doc lock-yield cadence. `yield_lock` fires between DOCS, but a
+    # single huge doc (e.g. a live session transcript with thousands of
+    # nodes) would otherwise hold `_store_lock` for its entire node loop —
+    # long enough to time out CLI pings and stall every queued write. Tick
+    # the same yield callback every N node-ops so one giant file can't
+    # monopolize the writer. Same safety as the inter-doc yield (per-batch
+    # commits; no open transaction spans the release).
+    import os as _os
+    node_yield_every = max(1, int(
+        _os.environ.get("RMX_INGEST_NODE_YIELD_EVERY", "200") or "200"
+    ))
+    _node_ops = [0]
+
+    def _node_tick() -> None:
+        if yield_lock is None:
+            return
+        _node_ops[0] += 1
+        if _node_ops[0] % node_yield_every == 0:
+            yield_lock()
+
     # ---- pass 1: parse + register entities -------------------------------
     docs: list[GmdDoc] = []
     eid_by_name: dict[str, int] = {}
@@ -668,6 +688,7 @@ def ingest_gmd_paths(
             # entity is still queryable by id elsewhere.
             eid_by_name.setdefault(name, eid)
             stats.nodes += 1
+            _node_tick()
 
         pass1_processed += 1
         if progress_cb is not None:
@@ -836,6 +857,8 @@ def ingest_gmd_paths(
                     )
                     store.link("mentions", cid, src_eid)
                     stats.mentions += 1
+
+            _node_tick()
 
         # Mark file fully ingested for resume. The hash was captured at
         # pass1 entry (before any writes), so this writes the snapshot
