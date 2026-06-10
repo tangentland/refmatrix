@@ -19,6 +19,37 @@ from refmatrix.store import Store
 # Tokenization: identifier-shaped runs only. Skip pure-English noise.
 _IDENT_RE = re.compile(r"[A-Za-z_][\w\-./]*(?:::[\w\-./]+)*")
 
+# Function words that are never useful concept anchors. The graph sometimes
+# carries junk concepts for them (`THE`, `Does`, `How` from capitalized-word /
+# acronym extraction, noise=0); without this guard a prompt like "how does the
+# camera work" emits bundles for `the`/`does`/`how` and crowds out the real
+# concepts. Deliberately function-words-ONLY (articles, prepositions,
+# conjunctions, pronouns, interrogatives, auxiliaries/copula). Content words —
+# `user`, `get`, `make`, `use`, `work`, `show`, `go`, ... — are NOT here: they
+# can be legit domain concepts / method names and must stay matchable.
+_PROMPT_STOPWORDS = frozenset({
+    # articles / determiners
+    "a", "an", "the", "this", "that", "these", "those",
+    # conjunctions
+    "and", "or", "but", "nor", "if", "so", "yet",
+    # prepositions
+    "of", "to", "in", "on", "at", "by", "for", "with", "from", "into",
+    "onto", "off", "per", "via", "as", "about",
+    # pronouns
+    "i", "we", "me", "my", "us", "our", "you", "your", "he", "she", "it",
+    "they", "them", "their",
+    # interrogatives / relatives
+    "how", "why", "who", "whom", "whose", "what", "which", "when", "where",
+    "while",
+    # auxiliaries / copula
+    "is", "am", "are", "was", "were", "be", "been", "being",
+    "do", "does", "did", "doing", "done",
+    "have", "has", "had", "can", "could", "will", "would", "should",
+    "shall", "may", "might", "must",
+    # misc grammatical
+    "not", "no", "yes", "than", "then", "such",
+})
+
 
 def extract_candidates(text: str) -> list[str]:
     """Return distinct identifier-shaped tokens from a prompt, in first-seen order."""
@@ -65,6 +96,10 @@ def match_concepts(
         out.append(name)
 
     for cand in candidates:
+        # Drop function words before they can match junk concepts in the
+        # graph (THE / Does / How). Content words pass through untouched.
+        if cand.lower() in _PROMPT_STOPWORDS:
+            continue
         # exact (case-preserving)
         e = s.resolve_entity(cand)
         if e is not None and e.kind == "concept" and (include_noise or not e.noise):
