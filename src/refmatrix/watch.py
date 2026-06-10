@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from refmatrix.ingest import CODE_EXTS, DOC_EXTS
+from refmatrix.ingest import CODE_EXTS, DOC_EXTS, load_ignore_spec
 from refmatrix.store import Store
 from refmatrix.sync import sync_files
 
@@ -30,12 +30,13 @@ IGNORE_DIRS = {
 SUPPORTED_EXTS = CODE_EXTS | DOC_EXTS
 
 
-def is_relevant(p: Path) -> bool:
+def is_relevant(p: Path, root: Path | None = None) -> bool:
     """True if a path is worth syncing. Excludes hidden directories
     (any segment starting with `.` — covers .git, .venv, .tldr,
     .refmatrix, .wolf, .claude, .cursor, .idea, .mypy_cache, .pytest_cache,
-    .ruff_cache, .tox, .nox, ...), plus the non-dot tooling dirs in
-    IGNORE_DIRS."""
+    .ruff_cache, .tox, .nox, ...), the non-dot tooling dirs in IGNORE_DIRS,
+    and — when `root` is given — anything matched by that repo's
+    .refmatrix_ignore (e.g. a workflow/ dir of operational content)."""
     if p.suffix.lower() not in SUPPORTED_EXTS:
         return False
     parts = p.parts
@@ -43,6 +44,15 @@ def is_relevant(p: Path) -> bool:
         return False
     if any(part.startswith(".") and part != "." for part in parts):
         return False
+    if root is not None:
+        spec = load_ignore_spec(root)
+        if spec is not None:
+            try:
+                rel = p.relative_to(root)
+            except ValueError:
+                rel = Path(p.name)
+            if spec.match(rel):
+                return False
     return True
 
 
@@ -166,7 +176,7 @@ def run_watcher(
     class _Handler(FileSystemEventHandler):
         def _maybe(self, raw_path: str) -> None:
             p = Path(raw_path)
-            if is_relevant(p):
+            if is_relevant(p, project_root):
                 debouncer.add(str(p))
 
         def on_created(self, event) -> None:

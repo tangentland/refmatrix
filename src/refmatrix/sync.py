@@ -25,6 +25,7 @@ from refmatrix.ingest import (
     _ingest_python_semantics,
     _ingest_tldr,
     _is_adr_file,
+    should_ignore,
 )
 from refmatrix.store import Store
 
@@ -162,6 +163,14 @@ def _sync_paths(
             # Resolve so symlinked roots like /tmp -> /private/tmp on macOS
             # don't break relative_to() against the resolved project_root.
             ap = (p if p.is_absolute() else project_root / p).resolve()
+            # Honor .refmatrix_ignore (+ built-in dir rules). A path that is or
+            # became ignored — e.g. content moved under workflow/ — is purged
+            # from the index and skipped, so the concept graph self-cleans on
+            # the next sync rather than retaining stale operational nodes.
+            if should_ignore(ap, project_root):
+                if s.purge_path(str(ap)) > 0:
+                    purged += 1
+                continue
             ext = ap.suffix.lower()
             is_supported = ext in CODE_EXTS or ext in DOC_EXTS or ext == ".gmd"
             if not ap.exists() or not is_supported:

@@ -39,7 +39,83 @@ DOC_EXTS = {".md", ".markdown", ".rst", ".txt", ".adoc"}
 # .wolf / .claude / .cursor / .idea that get appended to repos all the
 # time. Kept separate from watch.IGNORE_DIRS (broader, includes caches)
 # to avoid a circular import: watch.py imports from this module.
+#
+# Per-repo extras live in `<project>/.refmatrix/.refmatrix_ignore`
+# (gitignore-ish, loaded by load_ignore_spec) — e.g. a `workflow/` dir of
+# Claude operational content that should stay out of the concept graph but
+# remain reachable via `rmx session`/`rmx memory` recall.
 INGEST_IGNORE_DIRS = ("node_modules", "venv")
+
+# Name of the per-repo ignore file, read from the project-local .refmatrix dir.
+IGNORE_FILE = ".refmatrix_ignore"
+_IGNORE_CACHE: dict[str, tuple[float, "IgnoreSpec | None"]] = {}
+
+
+class IgnoreSpec:
+    """A tiny gitignore-ish matcher for `.refmatrix_ignore`. Supports three
+    pattern shapes, one per line (blank lines and `#` comments skipped):
+
+    - bare name  (`workflow`, `node_modules`) -> matches that path SEGMENT
+      anywhere in the tree (a trailing `/` is allowed and stripped).
+    - basename glob  (`*.md`, `*.log`)        -> fnmatch against the filename.
+    - path with `/`  (`docs/bullshit`, `a/b`) -> anchored to the repo root:
+      matches that relative path or anything beneath it (and fnmatch).
+
+    Not full gitignore (no negation / `**`), but covers the dir- and
+    glob-exclusion cases refmatrix needs."""
+
+    def __init__(self, lines: list[str]):
+        self.names: list[str] = []
+        self.globs: list[str] = []
+        self.anchored: list[str] = []
+        for raw in lines:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            line = line.rstrip("/")
+            if not line:
+                continue
+            if "/" in line:
+                self.anchored.append(line)
+            elif any(ch in line for ch in "*?["):
+                self.globs.append(line)
+            else:
+                self.names.append(line)
+
+    def __bool__(self) -> bool:
+        return bool(self.names or self.globs or self.anchored)
+
+    def match(self, rel: Path) -> bool:
+        from fnmatch import fnmatch
+        segs = rel.parts
+        if any(n in segs for n in self.names):
+            return True
+        name = rel.name
+        if any(fnmatch(name, g) for g in self.globs):
+            return True
+        posix = rel.as_posix()
+        for pat in self.anchored:
+            if posix == pat or posix.startswith(pat + "/") or fnmatch(posix, pat):
+                return True
+        return False
+
+
+def load_ignore_spec(project_root: Path) -> "IgnoreSpec | None":
+    """Load `<project_root>/.refmatrix/.refmatrix_ignore` if present, cached by
+    (path, mtime) so a walk reads it once. Returns None when absent/empty."""
+    f = project_root / ".refmatrix" / IGNORE_FILE
+    try:
+        mtime = f.stat().st_mtime
+    except OSError:
+        _IGNORE_CACHE.pop(str(f), None)
+        return None
+    cached = _IGNORE_CACHE.get(str(f))
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
+    spec = IgnoreSpec(f.read_text().splitlines())
+    spec = spec if spec else None
+    _IGNORE_CACHE[str(f)] = (mtime, spec)
+    return spec
 
 
 def _is_ignored(parts: set[str]) -> bool:
@@ -50,6 +126,24 @@ def _is_ignored(parts: set[str]) -> bool:
     if any(seg in parts for seg in INGEST_IGNORE_DIRS):
         return True
     return any(seg.startswith(".") and seg != "." for seg in parts)
+
+
+def should_ignore(p: Path, root: Path | None = None) -> bool:
+    """Walk-filter predicate: the built-in `_is_ignored` segment rules PLUS the
+    per-repo `.refmatrix_ignore` spec (matched against the path relative to
+    `root`). `root` None falls back to the built-in rules only."""
+    if _is_ignored(set(p.parts)):
+        return True
+    if root is not None:
+        spec = load_ignore_spec(root)
+        if spec is not None:
+            try:
+                rel = p.relative_to(root)
+            except ValueError:
+                rel = Path(p.name)
+            if spec.match(rel):
+                return True
+    return False
 
 
 def ingest_path(
@@ -91,14 +185,12 @@ def _ingest_path_inner(
         _ingest_graphify(s, path)
     if semantic:
         for p in path.rglob("*.py"):
-            parts = set(p.parts)
-            if any(seg in parts for seg in INGEST_IGNORE_DIRS):
+            if should_ignore(p, path):
                 continue
             _ingest_python_semantics(s, p, path)
     pseudo_files: list[Path] = []
     for p in path.rglob("*.pseudo"):
-        parts = set(p.parts)
-        if _is_ignored(parts):
+        if should_ignore(p, path):
             continue
         pseudo_files.append(p)
     if pseudo_files:
@@ -120,8 +212,7 @@ def _ingest_path_inner(
     adr_files: list[tuple[Path, str]] = []
     adr_num_to_eid: dict[str, int] = {}
     for p in path.rglob("*.md"):
-        parts = set(p.parts)
-        if _is_ignored(parts):
+        if should_ignore(p, path):
             continue
         adr_num = _is_adr_file(p)
         if adr_num is None:
@@ -161,8 +252,7 @@ def _ingest_path_inner(
     # against the daemon-owned Store under the active transaction.
     md_files: list[Path] = []
     for p in path.rglob("*.md"):
-        parts = set(p.parts)
-        if _is_ignored(parts):
+        if should_ignore(p, path):
             continue
         if _is_adr_file(p) is not None:
             continue
@@ -575,8 +665,7 @@ def _ingest_tree(s: Store, root: Path) -> int:
     for p in root.rglob("*"):
         if not p.is_file():
             continue
-        parts = set(p.parts)
-        if _is_ignored(parts):
+        if should_ignore(p, root):
             continue
         rel = p.relative_to(root).as_posix()
         ext = p.suffix.lower()
