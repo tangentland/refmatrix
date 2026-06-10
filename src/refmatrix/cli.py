@@ -1409,8 +1409,13 @@ def neighbors(concept, depth, linkage, limit, include_noise, strict, via_replica
                    "kind='memory' entry. Higher values reserve scope for "
                    "future multi-hop expansion; today they only auto-scale "
                    "the --max-entities / --max-tokens budgets.")
+@click.option("--include-sessions", is_flag=True,
+              help="Include session-summary cards in the co-mention view. Off "
+                   "by default: session cards are transient activity logs that "
+                   "co-mention everything and drown out durable docs/code. Use "
+                   "`rmx session recall <term>` to search sessions instead.")
 def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
-            via_replica, degree):
+            via_replica, degree, include_sessions):
     """Token-budgeted context bundle: anchor + neighbors + their tldr blobs."""
     from refmatrix.context import build_context, render_json, render_text
     from refmatrix import daemon as daemon_mod
@@ -1451,6 +1456,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
                     fuse=fuse,
                     strict=strict,
                     degree=degree,
+                    include_sessions=include_sessions,
                     _entities_explicit=entities_explicit,
                     _tokens_explicit=tokens_explicit,
                 )
@@ -1478,6 +1484,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
                 "fuse": fuse,
                 "strict": strict,
                 "degree": degree,
+                "include_sessions": include_sessions,
                 "entities_explicit": entities_explicit,
                 "tokens_explicit": tokens_explicit,
             }, timeout=120.0)
@@ -5932,6 +5939,7 @@ def session_recall_cmd(query, project, branch, commit, touched,
     recency tiebreak on metadata.ended. Without QUERY, lists most-recent
     sessions matching the filters."""
     from refmatrix import daemon as daemon_mod
+    from refmatrix.kwic import kwic_one
     root = _root()
 
     since_iso = _since_to_iso(since)
@@ -5985,6 +5993,10 @@ def session_recall_cmd(query, project, branch, commit, touched,
                 "ended": _session_meta_get(m, "ended"),
                 "turn_count": _session_meta_get(m, "turn_count"),
                 "title": (m.get("content") or "").split("\n", 2)[0].lstrip("# ").strip(),
+                "snippet": (
+                    kwic_one(m.get("content") or "", query, width=160) or None
+                    if query else None
+                ),
             }
             for m in filtered
         ], indent=2, default=str))
@@ -5995,12 +6007,19 @@ def session_recall_cmd(query, project, branch, commit, touched,
         return
 
     from rich.table import Table
-    t = Table(show_lines=False)
+    from rich.text import Text
+    # When the user gave a query, show the line where it actually matched —
+    # otherwise the title alone (often "Recall state") says nothing about why
+    # the session ranked. Match column off for the bare-list path.
+    show_match = bool(query)
+    t = Table(show_lines=show_match)
     t.add_column("session", style="cyan")
     t.add_column("ended", style="dim")
     t.add_column("branch")
     t.add_column("project", style="dim")
     t.add_column("title")
+    if show_match:
+        t.add_column("match")
     for m in filtered:
         sid = _session_meta_get(m, "session_id") or m.get("name", "")
         sid_short = sid[:8] if sid else "?"
@@ -6010,7 +6029,13 @@ def session_recall_cmd(query, project, branch, commit, touched,
         ended = (_session_meta_get(m, "ended") or "")[:19]
         branch_s = _session_meta_get(m, "branch") or ""
         project_s = (_session_meta_get(m, "project") or "").split("/")[-1]
-        t.add_row(sid_short, ended, branch_s, project_s, title[:60])
+        row = [sid_short, ended, branch_s, project_s, title[:60]]
+        if show_match:
+            snip = kwic_one(m.get("content") or "", query, width=90)
+            # Wrap as literal Text so body markup like `[link]` is not parsed
+            # by rich; the «…» sentinels mark the matched term.
+            row.append(Text(snip) if snip else Text("—", style="dim"))
+        t.add_row(*row)
     console.print(t)
 
 

@@ -2892,6 +2892,7 @@ def _op_context(d: Daemon, args: dict) -> dict:
     fuse = bool(args.get("fuse", False))
     strict = bool(args.get("strict", False))
     degree = int(args.get("degree", 0))
+    include_sessions = bool(args.get("include_sessions", False))
     entities_explicit = bool(args.get("entities_explicit", False))
     tokens_explicit = bool(args.get("tokens_explicit", False))
     with d._store_lock:
@@ -2903,6 +2904,7 @@ def _op_context(d: Daemon, args: dict) -> dict:
             fuse=fuse,
             strict=strict,
             degree=degree,
+            include_sessions=include_sessions,
             _entities_explicit=entities_explicit,
             _tokens_explicit=tokens_explicit,
         )

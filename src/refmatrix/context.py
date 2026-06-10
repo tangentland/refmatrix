@@ -12,9 +12,17 @@ the goal is "stop bloating the context" not "exact accounting."
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 
+from refmatrix.kwic import kwic_one
 from refmatrix.store import Entity, Store
+
+# Co-mention linkages whose neighbors are sections/docs that merely *talk
+# about* the anchor (vs. defining it). For these we replace the whole-section
+# tldr with a KWIC window around the anchor term — the tldr is a section
+# summary that often does not even contain the term.
+_KWIC_LINKAGES = {"mentions", "related_to"}
 
 
 # Order linkages so output reads like a natural definition: what *is* this
@@ -58,6 +66,11 @@ class ContextEntry:
     # graph view, closing the "get vs context two-surfaces" cliff.
     # None on non-memory entries; the renderers skip it then.
     body: str | None = None
+    # KWIC window around the anchor term inside this entry's section/body.
+    # Populated for co-mention neighbors so the renderer shows the line where
+    # the term actually appears instead of a whole-section summary that often
+    # does not contain it. None → renderer falls back to tldr / body.
+    snippet: str | None = None
 
 
 @dataclass
@@ -89,6 +102,7 @@ def build_context(
     fuse: bool = False,
     strict: bool = False,
     degree: int = 0,
+    include_sessions: bool = False,
     _entities_explicit: bool = False,
     _tokens_explicit: bool = False,
 ) -> ContextBundle:
@@ -181,9 +195,20 @@ def build_context(
     # "jump to here" target.
     evidence = _evidence_index(s, e) if e.kind == "concept" else {}
 
-    for linkage, eid, weight in rows_iter:
+    # Pass 1: materialize entries (+ KWIC snippets) so ranking can see which
+    # are real hits. Parent-doc bodies are cached so a card with several
+    # mentioned sections is fetched once.
+    parent_cache: dict[str, str | None] = {}
+    built: list[ContextEntry] = []
+    for linkage, eid, weight in list(rows_iter):
         ent = s.get_entity_by_id(eid)
         if ent is None or ent.id == e.id:
+            continue
+        # Session summaries are transient activity logs that co-mention
+        # nearly everything; by default keep them out of the durable concept
+        # graph so specs / code / ADRs aren't drowned out. `rmx session
+        # recall <term>` is their home (with KWIC snippets of its own).
+        if not include_sessions and _is_session_card(ent.name):
             continue
         entry = ContextEntry(entity=ent, linkage=linkage, weight=weight)
         file_line = evidence.get((eid, linkage))
@@ -198,6 +223,17 @@ def build_context(
                 m = None
             if m is not None:
                 entry.body = m.get("content")
+        # For co-mention neighbors, surface a KWIC window around the anchor
+        # term instead of the whole-section tldr. Beats a plain
+        # `grep <term>`: ranked, deduped, centered on the match.
+        if linkage in _KWIC_LINKAGES:
+            entry.snippet = _mention_snippet(s, entry, e.name,
+                                             parent_cache=parent_cache)
+        built.append(entry)
+
+    # Pass 2: rank (hits-first, docs-before-sessions) then apply the budget so
+    # real hits and durable docs survive truncation.
+    for entry in _rank_entries(built):
         cost = estimate_tokens(_render_entry(entry))
         if used + cost > max_tokens:
             bundle.truncated = True
@@ -205,7 +241,7 @@ def build_context(
         if bundle.total_entities() >= max_entities:
             bundle.truncated = True
             break
-        bundle.groups.setdefault(linkage, []).append(entry)
+        bundle.groups.setdefault(entry.linkage, []).append(entry)
         used += cost
 
     bundle.estimated_tokens = used
@@ -338,6 +374,102 @@ def _entity_anchored_rows(s: Store, entity_id: int, linkages: list[str], cap: in
                     break
 
 
+def _section_text(body: str, anchor_id: str) -> str | None:
+    """Return the GMD section whose heading carries `{#anchor_id}` — from that
+    heading line to the next heading. None when the anchor is absent. Lets a
+    co-mention KWIC center on the right section of a multi-section card rather
+    than the first match anywhere in the parent doc."""
+    if not body or not anchor_id:
+        return None
+    idx = body.find("{#%s}" % anchor_id)
+    if idx == -1:
+        return None
+    line_start = body.rfind("\n", 0, idx) + 1
+    nl = body.find("\n", idx)
+    if nl == -1:
+        return body[line_start:]
+    nxt = re.search(r"^#", body[nl + 1:], re.M)
+    end = nl + 1 + nxt.start() if nxt else len(body)
+    return body[line_start:end]
+
+
+def _is_session_card(name: str) -> bool:
+    """True for session-summary nodes (`session-<hex>` cards and their
+    `session-<hex>#anchor` sections). These are transient activity logs; a
+    spec / plan / ADR that discusses the term is more durable knowledge and
+    should outrank them in a co-mention list."""
+    return name.startswith("session-")
+
+
+def _rank_entries(entries: list[ContextEntry]) -> list[ContextEntry]:
+    """Stable re-rank within each co-mention linkage: real hits (carry a KWIC
+    snippet) before non-hits, and durable docs before any session cards that
+    were opted back in. Linkage order and intra-class weight order are
+    preserved (stable sort). Definitional linkages are left untouched.
+
+    Done before the budget loop so hits and durable docs survive truncation
+    rather than being crowded out by weak or verbose co-mentions."""
+    by_link: dict[str, list[ContextEntry]] = {}
+    order: list[str] = []
+    for e in entries:
+        if e.linkage not in by_link:
+            by_link[e.linkage] = []
+            order.append(e.linkage)
+        by_link[e.linkage].append(e)
+    out: list[ContextEntry] = []
+    for ln in order:
+        rows = by_link[ln]
+        if ln in _KWIC_LINKAGES:
+            rows = sorted(rows, key=lambda e: (
+                0 if e.snippet else 1,                          # hits first
+                1 if _is_session_card(e.entity.name) else 0,    # docs first
+            ))
+        out.extend(rows)
+    return out
+
+
+def _mention_snippet(
+    s: Store, entry: ContextEntry, term: str,
+    *, parent_cache: dict[str, str | None] | None = None,
+) -> str | None:
+    """Best KWIC window of `term` for a co-mention neighbor, via a body ladder:
+    1. an already-attached memory body, 2. the parent doc/section fetched
+    cross-partition (sliced to the neighbor's anchor), 3. the entry tldr.
+    Returns None when the term occurs in none of them (renderer keeps tldr).
+
+    `parent_cache` memoizes parent-doc bodies by name across calls so a doc
+    with several mentioned sections is fetched once."""
+    ent = entry.entity
+    if entry.body:
+        snip = kwic_one(entry.body, term)
+        if snip:
+            return snip
+    if "#" in ent.name:
+        parent_name, anchor_id = ent.name.split("#", 1)
+        if parent_cache is not None and parent_name in parent_cache:
+            body = parent_cache[parent_name]
+        else:
+            try:
+                mem = s.find_memory_any_partition(parent_name)
+            except Exception:
+                mem = None
+            body = mem.get("content") if mem else None
+            if parent_cache is not None:
+                parent_cache[parent_name] = body
+        if body:
+            # Prefer the neighbor's own section; fall back to the whole card
+            # when the term lives in a different section of the same doc.
+            for src in (_section_text(body, anchor_id), body):
+                snip = kwic_one(src, term) if src else ""
+                if snip:
+                    return snip
+    if ent.tldr:
+        snip = kwic_one(ent.tldr, term)
+        if snip:
+            return snip
+    return None
+
+
 # ----------------------------- rendering ---------------------------------
 
 
@@ -349,8 +481,19 @@ def _render_entry(e: ContextEntry) -> str:
     line = f"  {e.entity.name}  [{e.entity.kind}]"
     if e.weight is not None:
         line += f"  (w={e.weight:g})"
+    # A KWIC snippet is the whole payload — it already shows the matched line,
+    # so we skip the whole-section tldr / full body dump that follows.
+    if e.snippet:
+        line += f"\n    {e.snippet}"
+        return line
     if e.entity.tldr:
-        line += f"\n    {e.entity.tldr}"
+        tldr = e.entity.tldr
+        # A co-mention node with no KWIC hit: the term isn't in its body, so
+        # the multi-line section summary is noise — show only its first line
+        # as a label. (Definitional linkages keep the full tldr.)
+        if e.linkage in _KWIC_LINKAGES:
+            tldr = tldr.splitlines()[0] if tldr.strip() else tldr
+        line += f"\n    {tldr}"
     elif e.entity.path:
         # Append :line when we have one from linkage_evidence so editors
         # / readers can jump straight to the relevant source location.
@@ -420,6 +563,7 @@ def render_json(b: ContextBundle) -> str:
                         "kind": e.entity.kind,
                         "path": e.entity.path,
                         "tldr": e.entity.tldr,
+                        "snippet": e.snippet,
                         "body": e.body,
                         "weight": e.weight,
                         "linkage": e.linkage,

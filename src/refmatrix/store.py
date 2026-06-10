@@ -1514,6 +1514,28 @@ class Store:
             "updated_at": mc_row["updated_at"] if mc_row else None,
         }
 
+    def find_memory_any_partition(self, name: str) -> dict | None:
+        """Resolve a memory by NAME across ALL partitions (not just the active
+        one) and return it via `get_memory(id)`. Used by `rmx context` to pull
+        a mention neighbor's parent-doc body when that body lives in a
+        different partition than the anchor (e.g. session cards live in
+        `sessions-<project>` while the co-mention concept resolves in the
+        project's memory/code partition). Read-only.
+
+        A name can exist as a content-less stub in one partition and the full
+        card in another (cross-partition mirrors of session/memory ids), so we
+        pick the row with the LONGEST content — the real body — rather than
+        the lowest partition_id, which can land on an empty mirror."""
+        row = self._read().execute(
+            "SELECT e.id FROM entities e "
+            "LEFT JOIN memory_content mc ON mc.entity_id = e.id "
+            "WHERE e.name=? AND e.kind='memory' "
+            "ORDER BY length(COALESCE(mc.content, '')) DESC, e.partition_id "
+            "LIMIT 1",
+            (name,),
+        ).fetchone()
+        return self.get_memory(int(row["id"])) if row else None
+
     def iter_memories(
         self, *, mtype: str | None = None, limit: int | None = None,
     ) -> Iterator[dict]:
