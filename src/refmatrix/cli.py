@@ -2118,7 +2118,13 @@ def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn, vi
     # on a lock conflict / missing replica); `_grep_run` then serves the
     # read over the daemon RPC (`grep_indexed`) and never touches `s`.
     # Only with no daemon do we open the catalog directly via `_store()`.
-    s = _reader_store() if daemon_mod.ping(root) else _store()
+    # Try the replica FIRST regardless of ping: a saturated daemon fails the
+    # 0.5s ping but the replica is still lock-free, so this avoids opening the
+    # writer slot (which would raise "Conflicting lock"). s stays None when
+    # there's no replica but a daemon is up -> `_grep_run` serves via RPC.
+    s = _reader_store()
+    if s is None and not daemon_mod.ping(root):
+        s = _store()
     with log_query(s, kind="grep", body=pattern, source="grep") as _tlog:
         _grep_run(
             s, root, daemon_mod, pattern, effective_pattern, regex,
@@ -2472,28 +2478,34 @@ def stats(stale, via_replica):
     """Print catalog and bitmap stats."""
     from refmatrix import daemon as daemon_mod
     root = _root()
-    if via_replica:
+    s = None
+    if via_replica or (not stale and _should_via_replica(False)):
+        # Replica-first, gated on the replica file EXISTING — not on ping.
+        # The replica (catalog.read.duckdb) is never write-locked, so this
+        # works even when the daemon is saturated and its ping times out.
+        # (Gating on ping was the bug: a busy daemon fails the 0.5s ping, the
+        # caller then opened the writer slot r/w -> "Conflicting lock".)
         if stale:
             raise click.ClickException("--via-replica and --stale are incompatible")
-        s = None  # stale is False here, so the s.stale_files() branch is skipped
         out = _replica_read(lambda st: st.stats())
-    elif daemon_mod.ping(root) and not stale:
-        # Replica-first read: bypass daemon `_store_lock` so `stats`
-        # doesn't queue 60s behind a long-running ingest. Falls back to
-        # daemon RPC if replica isn't available.
-        try:
-            s = _reader_store()
-            out = s.stats()
-        except click.ClickException:
-            resp = daemon_mod.call(root, "stats", {})
-            if not resp.get("ok"):
-                raise click.ClickException(
-                    f"daemon stats failed: {resp.get('error')}"
-                )
-            out = resp["result"]
-            s = None
+    elif not stale and daemon_mod.ping(root):
+        # No replica yet but daemon up -> RPC. Never open the writer slot
+        # directly while the daemon owns it.
+        resp = daemon_mod.call(root, "stats", {})
+        if not resp.get("ok"):
+            raise click.ClickException(f"daemon stats failed: {resp.get('error')}")
+        out = resp["result"]
+    elif stale and daemon_mod.ping(root):
+        # --stale needs the writer's tracked_files, which the daemon owns.
+        raise click.ClickException(
+            "--stale needs the writer slot, which the running daemon owns. "
+            "Stop the daemon (`rmx daemon stop`) to inspect stale files, or "
+            "run `rmx stats` without --stale (reads the lock-free replica)."
+        )
     else:
-        s = _store()
+        # No daemon (and no replica, or --stale): safe to read the live
+        # catalog directly.
+        s = _store_rw()
         out = s.stats()
     t1 = Table("kind", "count", title="entities")
     for k, v in out["entities"].items():
@@ -4316,7 +4328,7 @@ def search_dense_cmd(query, k, kinds):
     else:
         from refmatrix.daemon import _op_ann_search, Daemon
         d = Daemon(root)
-        d.store = _store()
+        d.store = _read_store()  # replica-first; never the writer slot
         result = _op_ann_search(d, args)
     if result.get("ok") is False:
         raise click.ClickException(result.get("error", "ann_search failed"))
@@ -4687,7 +4699,7 @@ def memory_get(name_or_id, degree):
             raise click.ClickException(resp.get("error", "daemon error"))
         m = resp["result"]["memory"]
     else:
-        s = _store()
+        s = _read_store()
         m = s.get_memory(target)
     if m is None:
         raise click.ClickException(f"no memory matching {name_or_id!r}")
@@ -4753,7 +4765,7 @@ def memory_list(mtype, limit):
             raise click.ClickException(resp.get("error", "daemon error"))
         rows = resp["result"]["rows"]
     else:
-        s = _store()
+        s = _read_store()
         rows = list(s.iter_memories(mtype=mtype, limit=limit))
     if not rows:
         console.print("[yellow]no memories[/]")
@@ -4785,7 +4797,7 @@ def memory_search(query, limit):
             raise click.ClickException(resp.get("error", "daemon error"))
         rows = resp["result"]["rows"]
     else:
-        s = _store()
+        s = _read_store()
         rows = s.search_memories(query, limit=limit)
     if not rows:
         console.print("[yellow]no matches[/]")
