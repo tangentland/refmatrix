@@ -1361,23 +1361,75 @@ class Store:
         # DuckDB does not support RETURNING from executemany, so the upsert
         # is followed by a single SELECT against the (partition_id, kind,
         # name) unique index. Cheaper than N round-trips.
-        con.executemany(
-            """
-            INSERT INTO entities(partition_id, kind, name, path, tldr, meta,
-                                 created_at, updated_at, protected,
-                                 canonical_name)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(partition_id, kind, name) DO UPDATE SET
-                path = COALESCE(excluded.path, entities.path),
-                tldr = COALESCE(excluded.tldr, entities.tldr),
-                meta = COALESCE(excluded.meta, entities.meta),
-                updated_at = excluded.updated_at,
-                protected = GREATEST(entities.protected, excluded.protected),
-                canonical_name = COALESCE(entities.canonical_name,
-                                          excluded.canonical_name)
-            """,
-            payload,
-        )
+        #
+        # DuckDB's `executemany` runs INSERT...ON CONFLICT row-by-row (no
+        # engine-level batching) — the dominant cost on big ingests (~1.3s
+        # per 1k-row chunk in profiling). So under DuckDB we push the rows as
+        # one Arrow batch and INSERT...SELECT, which IS vectorized (same trick
+        # as `bulk_link`). Falls back to executemany when the batch has
+        # intra-batch duplicate (kind, name) keys: DuckDB rejects two
+        # conflicting rows in a single ON CONFLICT DO UPDATE, whereas
+        # executemany merges them sequentially.
+        has_dups = len({(p[1], p[2]) for p in payload}) != len(payload)
+        if self._backend.kind == "duckdb" and not has_dups:
+            import pyarrow as pa
+            schema = pa.schema([
+                ("partition_id", pa.int64()), ("kind", pa.string()),
+                ("name", pa.string()), ("path", pa.string()),
+                ("tldr", pa.string()), ("meta", pa.string()),
+                ("created_at", pa.float64()), ("updated_at", pa.float64()),
+                ("protected", pa.int64()), ("canonical_name", pa.string()),
+            ])
+            tbl = pa.table({
+                "partition_id":   [p[0] for p in payload],
+                "kind":           [p[1] for p in payload],
+                "name":           [p[2] for p in payload],
+                "path":           [p[3] for p in payload],
+                "tldr":           [p[4] for p in payload],
+                "meta":           [p[5] for p in payload],
+                "created_at":     [p[6] for p in payload],
+                "updated_at":     [p[7] for p in payload],
+                "protected":      [p[8] for p in payload],
+                "canonical_name": [p[9] for p in payload],
+            }, schema=schema)
+            con._duck.register("_rmx_bulk_entities", tbl)
+            try:
+                con._duck.execute(
+                    "INSERT INTO entities(partition_id, kind, name, path, "
+                    "tldr, meta, created_at, updated_at, protected, "
+                    "canonical_name) SELECT partition_id, kind, name, path, "
+                    "tldr, meta, created_at, updated_at, protected, "
+                    "canonical_name FROM _rmx_bulk_entities "
+                    "ON CONFLICT(partition_id, kind, name) DO UPDATE SET "
+                    "path = COALESCE(excluded.path, entities.path), "
+                    "tldr = COALESCE(excluded.tldr, entities.tldr), "
+                    "meta = COALESCE(excluded.meta, entities.meta), "
+                    "updated_at = excluded.updated_at, "
+                    "protected = GREATEST(entities.protected, "
+                    "excluded.protected), "
+                    "canonical_name = COALESCE(entities.canonical_name, "
+                    "excluded.canonical_name)"
+                )
+            finally:
+                con._duck.unregister("_rmx_bulk_entities")
+        else:
+            con.executemany(
+                """
+                INSERT INTO entities(partition_id, kind, name, path, tldr, meta,
+                                     created_at, updated_at, protected,
+                                     canonical_name)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(partition_id, kind, name) DO UPDATE SET
+                    path = COALESCE(excluded.path, entities.path),
+                    tldr = COALESCE(excluded.tldr, entities.tldr),
+                    meta = COALESCE(excluded.meta, entities.meta),
+                    updated_at = excluded.updated_at,
+                    protected = GREATEST(entities.protected, excluded.protected),
+                    canonical_name = COALESCE(entities.canonical_name,
+                                              excluded.canonical_name)
+                """,
+                payload,
+            )
         # Look up the ids in one query keyed by (kind, name).
         keys = [(kind, name) for (kind, name, *_rest) in rows]
         placeholders = ",".join("(?,?)" for _ in keys)
@@ -1398,10 +1450,29 @@ class Store:
             if rows[i][0] == "concept"
         ]
         if concept_payload:
-            con.executemany(
-                "INSERT OR IGNORE INTO concepts(id, description) VALUES (?, ?)",
-                concept_payload,
-            )
+            if self._backend.kind == "duckdb":
+                import pyarrow as pa
+                ctbl = pa.table({
+                    "id": pa.array([c[0] for c in concept_payload],
+                                   type=pa.int64()),
+                    "description": pa.array([c[1] for c in concept_payload],
+                                            type=pa.string()),
+                })
+                con._duck.register("_rmx_bulk_concepts", ctbl)
+                try:
+                    con._duck.execute(
+                        "INSERT INTO concepts(id, description) "
+                        "SELECT id, description FROM _rmx_bulk_concepts "
+                        "ON CONFLICT(id) DO NOTHING"
+                    )
+                finally:
+                    con._duck.unregister("_rmx_bulk_concepts")
+            else:
+                con.executemany(
+                    "INSERT OR IGNORE INTO concepts(id, description) "
+                    "VALUES (?, ?)",
+                    concept_payload,
+                )
         self._maybe_commit(con)
         for (kind, name, path, tldr, meta) in rows:
             self._log_event(
