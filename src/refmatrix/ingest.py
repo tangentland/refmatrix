@@ -171,10 +171,22 @@ def ingest_path(
     if yield_lock is None:
         with s.transaction():
             return _ingest_path_inner(s, path, source=source, semantic=semantic)
-    return _ingest_path_inner(
-        s, path, source=source, semantic=semantic,
-        yield_lock=yield_lock, yield_every=yield_every,
-    )
+    # Cooperative path: drive windowed transactions so per-row WAL fsync
+    # collapses to one fsync per yield window. The inner loops call their
+    # yield hook (`_yield_flush`) every `yield_every` units; routing that hook
+    # through `_CommitWindow.boundary` makes each boundary a COMMIT + lock
+    # hand-off + fresh window. Without this the daemon ingest autocommits
+    # every row (~28k fsyncs / ~20 min on a viascope warm) — the elevated-RSS
+    # window that lets jetsam kill the daemon mid-warm.
+    win = _CommitWindow(s, yield_lock)
+    win.open()
+    try:
+        return _ingest_path_inner(
+            s, path, source=source, semantic=semantic,
+            yield_lock=win.boundary, yield_every=yield_every,
+        )
+    finally:
+        win.close()
 
 
 def _ingest_path_inner(
@@ -317,79 +329,100 @@ _CALLEE_BLOCKLIST = frozenset({
 
 
 def _yield_flush(s: Store, yield_lock) -> None:
-    """Persist dirty bitmap fragments, then release the writer lock briefly
-    so queued writes interleave (cooperative ingest path only). Relational
-    rows are already autocommitted in that mode, so once fragments are
-    flushed the on-disk state is consistent across the yield."""
-    try:
-        s.flush_fragments()
-    except Exception:
-        pass
+    """Cooperative yield point. `yield_lock` here is `_CommitWindow.boundary`
+    (the only cooperative caller, wired up in `ingest_path`): it COMMITs the
+    current window — atomically flushing dirty bitmap fragments alongside the
+    relational rows — then releases the writer lock briefly so queued writes
+    interleave, then opens the next window.
+
+    Fragments are deliberately NOT flushed here: a mid-window flush would push
+    bitmaps to disk ahead of their still-uncommitted relational rows — the
+    exact drift `Store.transaction()` guards against. The window COMMIT owns
+    the flush instead."""
     yield_lock()
+
+
+class _CommitWindow:
+    """Windowed transactions for the cooperative (daemon) ingest path.
+
+    The daemon can't wrap a whole warm in one transaction: it must yield the
+    writer lock periodically so latency-sensitive writes (memory hooks)
+    interleave. But autocommitting every mutation means one WAL fsync PER ROW
+    — ~28k fsyncs on a viascope warm, which is both ~20 min of wall time and
+    ~20 min of elevated daemon RSS, long enough for macOS jetsam to kill the
+    daemon mid-warm. This batches commits to one per `yield_every` window:
+    open a transaction, accumulate the window's writes, COMMIT (one fsync +
+    atomic fragment flush) at the boundary, hand off the lock, reopen the next
+    window. Collapses the fsync count by `yield_every`x while preserving the
+    bounded lock-hold the cooperative path exists for."""
+
+    def __init__(self, s: Store, real_yield) -> None:
+        self.s = s
+        self.real_yield = real_yield
+        self._cm = None
+
+    def open(self) -> None:
+        self._cm = self.s.transaction()
+        self._cm.__enter__()
+
+    def boundary(self) -> None:
+        # Close the window: COMMIT + atomic fragment flush (one fsync).
+        if self._cm is not None:
+            self._cm.__exit__(None, None, None)
+            self._cm = None
+        # Release the writer lock so queued writes interleave, then refresh
+        # the read snapshot. (The daemon's `_yield` does
+        # release -> sleep -> snapshot -> reacquire.)
+        if self.real_yield is not None:
+            self.real_yield()
+        # Begin the next window under the reacquired lock.
+        self.open()
+
+    def close(self) -> None:
+        if self._cm is not None:
+            self._cm.__exit__(None, None, None)
+            self._cm = None
 
 
 def _ingest_tldr_metadata(s: Store, project: Path, *, yield_lock=None,
                           yield_every: int = 200) -> int:
     """Ingest llm-tldr's per-unit semantic dump. Returns the number of units
-    processed (not linkages). See the module docstring for source priority."""
+    processed (not linkages). See the module docstring for source priority.
+
+    Bulk path: one scan collects unique files / units / concepts (bare,
+    `kind/<type>`, `import/<mod>`) and the planned links, then they're created
+    in batched statements (`bulk_upsert_entity` + deferred `bulk_link`) instead
+    of ~N single-row executes per unit. Same graph as the old per-row code;
+    only creation order differs. Mirror of `_ingest_tldr`."""
     cache = project / ".tldr" / "cache" / "semantic" / "metadata.json"
     payload = json.loads(cache.read_text())
     units = payload.get("units") or []
     if not units:
         return 0
 
-    # Pre-pass: dedup file paths so we make one entity per file (used both for
-    # tracked_files and as the target of file-level imports linkage).
-    file_ids: dict[str, int] = {}
+    # ---- Pass 1: scan units -> unique entities/concepts + planned links ----
+    # dicts-as-ordered-sets so bulk ids line up with insertion order.
+    file_rels: dict[str, None] = {}
     for u in units:
         rel = u.get("file")
-        if not rel or rel in file_ids:
-            continue
-        ap = project / rel
-        eid = s.upsert_entity(kind="code", name=rel, path=str(ap))
-        try:
-            s.mark_tracked(str(ap), ap.stat().st_mtime)
-        except OSError:
-            pass
-        file_ids[rel] = eid
+        if rel:
+            file_rels.setdefault(rel)
 
-    # Concept caches — bare-name concepts collide naturally with user
-    # concepts (desired join behavior); namespaced ones don't.
-    bare_concept_ids: dict[str, int] = {}
-    kind_concept_ids: dict[str, int] = {}
-    import_concept_ids: dict[str, int] = {}
+    # unit entity rows keyed by qname (last value wins — every field is
+    # non-null so this matches the old per-row COALESCE-on-conflict merge).
+    unit_rows: dict[str, tuple[str, str, dict]] = {}
+    # concept (name -> description); first description wins per distinct name.
+    concept_desc: dict[str, str] = {}
+    # planned unit links: (linkage, concept_name, qname).
+    unit_links: list[tuple[str, str, str]] = []
+    # planned file imports: rel -> set of `import/<mod>` concept names.
+    file_imports: dict[str, set[str]] = {}
 
-    def bare_concept(name: str) -> int:
-        if name in bare_concept_ids:
-            return bare_concept_ids[name]
-        cid = s.add_concept(name, description=f"symbol '{name}'")
-        bare_concept_ids[name] = cid
-        return cid
+    def _concept(name: str, desc: str) -> None:
+        if name and name not in concept_desc:
+            concept_desc[name] = desc
 
-    def kind_concept(unit_type: str) -> int:
-        if unit_type in kind_concept_ids:
-            return kind_concept_ids[unit_type]
-        cid = s.add_namespaced_concept(
-            "kind", unit_type, description=f"unit_type '{unit_type}'"
-        )
-        kind_concept_ids[unit_type] = cid
-        return cid
-
-    def import_concept(mod: str) -> int:
-        if mod in import_concept_ids:
-            return import_concept_ids[mod]
-        cid = s.add_namespaced_concept(
-            "import", mod, description=f"module '{mod}'"
-        )
-        import_concept_ids[mod] = cid
-        return cid
-
-    # Per-unit pass: create the unit entity, plus its defines / is_a / calls.
-    # Aggregate file-level imports as we go so we can write them in batch.
-    file_imports: dict[int, set[int]] = {}
     unit_count = 0
-    qname_to_eid: dict[str, int] = {}
-
     for u in units:
         qname = u.get("qualified_name")
         rel = u.get("file")
@@ -399,54 +432,78 @@ def _ingest_tldr_metadata(s: Store, project: Path, *, yield_lock=None,
 
         ap = project / rel
         meta = {k: u[k] for k in _UNIT_META_FIELDS if u.get(k)}
-        signature = u.get("signature") or f"{u.get('unit_type', 'symbol')} {bare} in {rel}"
-        unit_eid = s.upsert_entity(
-            kind="code", name=qname, path=str(ap),
-            tldr=signature, meta=meta,
-        )
-        qname_to_eid[qname] = unit_eid
+        signature = (u.get("signature")
+                     or f"{u.get('unit_type', 'symbol')} {bare} in {rel}")
+        unit_rows[qname] = (str(ap), signature, meta)
         unit_count += 1
 
-        # bare-name concept defines this unit
-        s.link("defines", bare_concept(bare), unit_eid)
+        _concept(bare, f"symbol '{bare}'")
+        unit_links.append(("defines", bare, qname))
 
-        # kind/<unit_type> categorical concept
         utype = u.get("unit_type")
         if utype:
-            s.link("is_a", kind_concept(utype), unit_eid)
+            kn = f"kind/{utype}"
+            _concept(kn, f"unit_type '{utype}'")
+            unit_links.append(("is_a", kn, qname))
 
-        # calls / called_by — callees are bare names per llm-tldr's schema
         for callee in u.get("calls") or ():
             if not callee or callee in _CALLEE_BLOCKLIST:
                 continue
-            cc = bare_concept(callee)
-            # caller-unit-entity is in the `calls` bitmap of the callee concept
-            s.link("calls", cc, unit_eid)
+            _concept(callee, f"symbol '{callee}'")
+            unit_links.append(("calls", callee, qname))
 
         for caller in u.get("called_by") or ():
             if not caller or caller in _CALLEE_BLOCKLIST:
                 continue
-            cc = bare_concept(caller)
-            s.link("called_by", cc, unit_eid)
+            _concept(caller, f"symbol '{caller}'")
+            unit_links.append(("called_by", caller, qname))
 
         # dependencies: comma-separated module list. Aggregate to file-level
         # so a 50-function file with 5 imports doesn't make 250 link rows.
         deps = u.get("dependencies") or ""
-        if deps and rel in file_ids:
-            fid = file_ids[rel]
-            bucket = file_imports.setdefault(fid, set())
+        if deps and rel in file_rels:
+            bucket = file_imports.setdefault(rel, set())
             for raw in deps.split(","):
                 mod = raw.strip().split(".")[0]
                 if mod:
-                    bucket.add(import_concept(mod))
+                    mn = f"import/{mod}"
+                    _concept(mn, f"module '{mod}'")
+                    bucket.add(mn)
 
-        if yield_lock is not None and unit_count % yield_every == 0:
-            _yield_flush(s, yield_lock)
+    # ---- Pass 2: bulk-create files, units, concepts ----
+    file_rows = [("code", rel, str(project / rel), None, None)
+                 for rel in file_rels]
+    file_id_list = _bulk_upsert_chunked(s, file_rows)
+    file_ids = dict(zip(file_rels, file_id_list))
+    for rel in file_ids:
+        ap = project / rel
+        try:
+            s.mark_tracked(str(ap), ap.stat().st_mtime)
+        except OSError:
+            pass
 
-    # Flush file-level imports in one batch per (concept, file) pair.
-    for fid, cids in file_imports.items():
-        for cid in cids:
-            s.link("imports", cid, fid)
+    qnames = list(unit_rows)
+    unit_entity_rows = [
+        ("code", q, unit_rows[q][0], unit_rows[q][1], unit_rows[q][2])
+        for q in qnames
+    ]
+    unit_id_list = _bulk_upsert_chunked(s, unit_entity_rows)
+    qname_to_eid = dict(zip(qnames, unit_id_list))
+
+    concept_ids = _bulk_add_concepts(s, concept_desc.items())
+
+    # Hand off the writer lock once entities exist, before the link flush.
+    if yield_lock is not None:
+        _yield_flush(s, yield_lock)
+
+    # ---- Pass 3: bulk-create links (one deferred Arrow batch) ----
+    with s.deferred_links():
+        for linkage, cname, qname in unit_links:
+            s.link(linkage, concept_ids[cname], qname_to_eid[qname])
+        for rel, mods in file_imports.items():
+            fid = file_ids[rel]
+            for mn in mods:
+                s.link("imports", concept_ids[mn], fid)
 
     return unit_count
 
@@ -454,49 +511,99 @@ def _ingest_tldr_metadata(s: Store, project: Path, *, yield_lock=None,
 # --- tldr -------------------------------------------------------------------
 
 
+def _bulk_upsert_chunked(s: Store, rows: list, chunk: int = 1000) -> list[int]:
+    """`Store.bulk_upsert_entity` over fixed-size chunks so the id-lookup
+    SELECT's `IN`-list stays bounded on big ingests. Returns ids in input
+    order."""
+    if not rows:
+        return []
+    ids: list[int] = []
+    for i in range(0, len(rows), chunk):
+        ids.extend(s.bulk_upsert_entity(rows[i:i + chunk]))
+    return ids
+
+
+def _bulk_add_concepts(s: Store, named_descs) -> dict[str, int]:
+    """Bulk equivalent of repeated `Store.add_concept` (and, since
+    `add_namespaced_concept` is just `add_concept('ns/name', ...)`, of that
+    too): upsert every canonical + variant concept in batched
+    `bulk_upsert_entity` calls, wire the `same_as` variant links in one
+    deferred-link flush, and return `{input_name: canonical_entity_id}`.
+
+    `named_descs` is an iterable of `(name, description)` — first description
+    wins per distinct name. Matches add_concept's per-row semantics exactly:
+    the canonical row carries the supplied description; each variant row
+    carries `alias of '<canonical>'`. Concept creation was the dominant cost
+    in the tldr ingest profile (~56% of wall time via per-name upsert +
+    variant expansion) — this collapses it to a handful of statements."""
+    from refmatrix.store import _concept_variants
+    seen: dict[str, str] = {}  # input name -> description (first wins)
+    for nm, desc in named_descs:
+        if nm and nm not in seen:
+            seen[nm] = desc
+    if not seen:
+        return {}
+    canon_of: dict[str, str] = {}
+    variants_of: dict[str, list[str]] = {}
+    desc_of: dict[str, str] = {}
+    order: list[str] = []
+
+    def _want(entity_name: str, desc: str) -> None:
+        # First writer wins the description, mirroring upsert's COALESCE-on-
+        # conflict when two source names canonicalize to the same entity.
+        if entity_name not in desc_of:
+            desc_of[entity_name] = desc
+            order.append(entity_name)
+
+    for name, desc in seen.items():
+        canonical, variants = _concept_variants(name)
+        canon_of[name] = canonical
+        variants_of[name] = variants
+        _want(canonical, desc)
+        for v in variants:
+            _want(v, f"alias of '{canonical}'")
+
+    rows = [("concept", nm, None, None, {"description": desc_of[nm]})
+            for nm in order]
+    ids = _bulk_upsert_chunked(s, rows)
+    id_by_name = {nm: i for nm, i in zip(order, ids)}
+
+    with s.deferred_links():
+        for name in seen:
+            cid = id_by_name[canon_of[name]]
+            for v in variants_of[name]:
+                vid = id_by_name[v]
+                if vid != cid:
+                    s.link("same_as", vid, cid)
+    return {name: id_by_name[canon_of[name]] for name in seen}
+
+
 def _ingest_tldr(s: Store, project: Path, *, yield_lock=None,
                  yield_every: int = 200) -> int:
+    """Ingest llm-tldr's `call_graph.json` (edge list).
+
+    Bulk path: one scan collects the unique files / functions / concepts and
+    the planned links, then they're created in batched statements
+    (`bulk_upsert_entity` + deferred `bulk_link`) instead of ~30 single-row
+    DuckDB executes per edge. The per-edge path was the dominant ingest cost
+    (profile: ~90% in `_duckdb.execute`, ~833k executes on a viascope warm) —
+    the slow, RSS-elevated window that made the daemon a jetsam target. The
+    produced graph is identical; only creation order differs (link existence
+    is order-independent)."""
     cache = project / ".tldr" / "cache" / "call_graph.json"
     data = json.loads(cache.read_text())
     edges = data.get("edges", [])
+    if not edges:
+        return 0
+
+    # ---- Pass 1: scan edges -> unique entities/concepts + planned links ----
+    # dicts-as-ordered-sets so bulk ids line up with insertion order.
+    file_rels: dict[str, None] = {}
+    func_keys: dict[tuple[str, str], None] = {}
+    concept_names: dict[str, None] = {}
+    # (linkage, concept_name, (rel, fn)) — ids resolved after bulk create.
+    link_plan: list[tuple[str, str, tuple[str, str]]] = []
     n = 0
-    _edge_i = 0
-
-    file_ids: dict[str, int] = {}
-    func_ids: dict[tuple[str, str], int] = {}
-    concept_ids: dict[str, int] = {}
-
-    def file_id(rel: str) -> int:
-        if rel in file_ids:
-            return file_ids[rel]
-        ap = project / rel
-        eid = s.upsert_entity(kind="code", name=rel, path=str(ap))
-        try:
-            s.mark_tracked(str(ap), ap.stat().st_mtime)
-        except OSError:
-            pass
-        file_ids[rel] = eid
-        return eid
-
-    def func_id(rel: str, fn: str) -> int:
-        key = (rel, fn)
-        if key in func_ids:
-            return func_ids[key]
-        name = f"{rel}::{fn}"
-        eid = s.upsert_entity(
-            kind="code", name=name, path=str(project / rel),
-            tldr=f"function {fn} in {rel}",
-            meta={"file": rel, "func": fn, "kind": "function"},
-        )
-        func_ids[key] = eid
-        return eid
-
-    def concept_id(fn: str) -> int:
-        if fn in concept_ids:
-            return concept_ids[fn]
-        cid = s.add_concept(fn, description=f"function name '{fn}'")
-        concept_ids[fn] = cid
-        return cid
 
     for e in edges:
         from_file = e.get("from_file") or ""
@@ -505,37 +612,65 @@ def _ingest_tldr(s: Store, project: Path, *, yield_lock=None,
         to_func = e.get("to_func") or ""
 
         if from_file:
-            file_id(from_file)
+            file_rels.setdefault(from_file)
         if to_file:
-            file_id(to_file)
+            file_rels.setdefault(to_file)
 
         if from_file and from_func:
-            ff_id = func_id(from_file, from_func)
-            from_concept = concept_id(from_func)
-            s.link("defines", from_concept, ff_id)
+            func_keys.setdefault((from_file, from_func))
+            concept_names.setdefault(from_func)
+            link_plan.append(("defines", from_func, (from_file, from_func)))
             n += 1
 
         if to_file and to_func:
-            tf_id = func_id(to_file, to_func)
-            to_concept = concept_id(to_func)
-            s.link("defines", to_concept, tf_id)
+            func_keys.setdefault((to_file, to_func))
+            concept_names.setdefault(to_func)
+            link_plan.append(("defines", to_func, (to_file, to_func)))
             n += 1
 
         if from_file and from_func and to_func:
-            ff_id = func_id(from_file, from_func)
-            tc = concept_id(to_func)
-            # function entity ff_id 'calls' the to_func concept
-            s.link("calls", tc, ff_id)
-            # inverse: to_concept's callers
+            concept_names.setdefault(to_func)
+            # function entity (from_file, from_func) 'calls' the to_func concept
+            link_plan.append(("calls", to_func, (from_file, from_func)))
             if to_file and to_func:
-                tf_id = func_id(to_file, to_func)
-                from_concept = concept_id(from_func)
-                s.link("called_by", from_concept, tf_id)
+                func_keys.setdefault((to_file, to_func))
+                concept_names.setdefault(from_func)
+                link_plan.append(
+                    ("called_by", from_func, (to_file, to_func)))
             n += 1
 
-        _edge_i += 1
-        if yield_lock is not None and _edge_i % yield_every == 0:
-            _yield_flush(s, yield_lock)
+    # ---- Pass 2: bulk-create file + function entities, then concepts ----
+    file_rows = [("code", rel, str(project / rel), None, None)
+                 for rel in file_rels]
+    file_id_list = _bulk_upsert_chunked(s, file_rows)
+    file_ids = dict(zip(file_rels, file_id_list))
+    for rel in file_ids:
+        ap = project / rel
+        try:
+            s.mark_tracked(str(ap), ap.stat().st_mtime)
+        except OSError:
+            pass
+
+    func_rows = [
+        ("code", f"{rel}::{fn}", str(project / rel),
+         f"function {fn} in {rel}",
+         {"file": rel, "func": fn, "kind": "function"})
+        for (rel, fn) in func_keys
+    ]
+    func_id_list = _bulk_upsert_chunked(s, func_rows)
+    func_ids = dict(zip(func_keys, func_id_list))
+
+    concept_ids = _bulk_add_concepts(
+        s, ((fn, f"function name '{fn}'") for fn in concept_names))
+
+    # Hand off the writer lock once entities exist, before the link flush.
+    if yield_lock is not None:
+        _yield_flush(s, yield_lock)
+
+    # ---- Pass 3: bulk-create links (one deferred Arrow batch) ----
+    with s.deferred_links():
+        for linkage, cname, fkey in link_plan:
+            s.link(linkage, concept_ids[cname], func_ids[fkey])
     return n
 
 
