@@ -5837,10 +5837,33 @@ def session_ingest_cmd(targets, all_projects, force, verbose, no_index):
         return
 
     cards_dir.mkdir(parents=True, exist_ok=True)
+    # Skip sessions still being actively written. The live session's JSONL
+    # changes every turn, so its content_hash never matches — without this it
+    # gets fully re-parsed + re-ingested on every indexer tick, and a long
+    # session's card grows until each GMD ingest holds the daemon's writer
+    # lock for minutes (the wedge that times out `rmx stats`). A session
+    # quiet for RMX_SESSION_INGEST_QUIET_S (default 300s) is treated as
+    # settled and ingested once; --force overrides.
+    import time as _time
+    quiet_s = float(os.environ.get("RMX_SESSION_INGEST_QUIET_S", "300") or "300")
+    now = _time.time()
     built: list[Path] = []
     skipped = 0
+    active_skipped = 0
     for jp in jsonls:
         session_id = jp.stem
+        if not force:
+            try:
+                age = now - jp.stat().st_mtime
+            except OSError:
+                age = quiet_s + 1.0
+            if age < quiet_s:
+                active_skipped += 1
+                if verbose:
+                    console.print(
+                        f"  skip {session_id} (active — modified {age:.0f}s ago)"
+                    )
+                continue
         card_path = cards_dir / f"{session_id}.md"
         if card_path.exists() and not force:
             try:
@@ -5863,7 +5886,8 @@ def session_ingest_cmd(targets, all_projects, force, verbose, no_index):
             )
 
     console.print(
-        f"cards: built={len(built)} skipped={skipped} total_jsonl={len(jsonls)}"
+        f"cards: built={len(built)} skipped={skipped} "
+        f"active-skipped={active_skipped} total_jsonl={len(jsonls)}"
     )
 
     if no_index or not built:
