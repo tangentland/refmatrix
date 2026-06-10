@@ -147,22 +147,39 @@ def should_ignore(p: Path, root: Path | None = None) -> bool:
 
 
 def ingest_path(
-    s: Store, path: Path, source: str = "auto", semantic: bool = False
+    s: Store, path: Path, source: str = "auto", semantic: bool = False,
+    *, yield_lock=None, yield_every: int = 200,
 ) -> int:
-    """Run a full ingest under a single outer transaction.
+    """Run a full ingest.
 
-    Wrapping the entire body in `s.transaction()` collapses every inner
-    mutation's commit into one final commit, which historically was the
-    single dominant cost (per-INSERT WAL fsync). Inner `deferred_links()`
-    blocks still buffer + bulk-flush their link buffers, and bitmap
-    fragments accumulate in memory; both are written once at scope exit.
+    Two modes:
+
+    * Direct (``yield_lock is None``): wrap the entire body in one
+      ``s.transaction()`` so every inner mutation's commit collapses into a
+      single final commit — historically the single dominant cost
+      (per-INSERT WAL fsync). This is the daemon-down / in-process fast path.
+
+    * Cooperative (``yield_lock`` provided): used when the daemon runs the
+      ingest, so a big warm doesn't hold the writer lock for minutes and
+      stall latency-sensitive writes (memory hooks). No single mega-
+      transaction; the dominant inner loops flush bitmap fragments and call
+      ``yield_lock`` every ``yield_every`` units, releasing ``_store_lock``
+      so queued writes interleave. Each yield lands on a consistent on-disk
+      state (relational autocommitted + fragments flushed). Trades the
+      single-commit batching for bounded lock-hold.
     """
-    with s.transaction():
-        return _ingest_path_inner(s, path, source=source, semantic=semantic)
+    if yield_lock is None:
+        with s.transaction():
+            return _ingest_path_inner(s, path, source=source, semantic=semantic)
+    return _ingest_path_inner(
+        s, path, source=source, semantic=semantic,
+        yield_lock=yield_lock, yield_every=yield_every,
+    )
 
 
 def _ingest_path_inner(
-    s: Store, path: Path, source: str = "auto", semantic: bool = False
+    s: Store, path: Path, source: str = "auto", semantic: bool = False,
+    *, yield_lock=None, yield_every: int = 200,
 ) -> int:
     path = path.resolve()
     metadata_path = path / ".tldr" / "cache" / "semantic" / "metadata.json"
@@ -170,9 +187,10 @@ def _ingest_path_inner(
     graphify_path = path / "graphify-out" / "graph.json"
     n = 0
     if source in ("auto", "metadata") and metadata_path.exists():
-        n = _ingest_tldr_metadata(s, path)
+        n = _ingest_tldr_metadata(s, path, yield_lock=yield_lock,
+                                  yield_every=yield_every)
     if n == 0 and source in ("auto", "tldr") and call_graph_path.exists():
-        n = _ingest_tldr(s, path)
+        n = _ingest_tldr(s, path, yield_lock=yield_lock, yield_every=yield_every)
     if source in ("auto", "tree") and n == 0:
         n = _ingest_tree(s, path)
     # Graphify is additive — when source=auto and the cache is present, layer
@@ -184,10 +202,14 @@ def _ingest_path_inner(
     elif source == "auto" and graphify_path.exists():
         _ingest_graphify(s, path)
     if semantic:
+        _sem_count = 0
         for p in path.rglob("*.py"):
             if should_ignore(p, path):
                 continue
             _ingest_python_semantics(s, p, path)
+            _sem_count += 1
+            if yield_lock is not None and _sem_count % yield_every == 0:
+                _yield_flush(s, yield_lock)
     pseudo_files: list[Path] = []
     for p in path.rglob("*.pseudo"):
         if should_ignore(p, path):
@@ -294,7 +316,20 @@ _CALLEE_BLOCKLIST = frozenset({
 })
 
 
-def _ingest_tldr_metadata(s: Store, project: Path) -> int:
+def _yield_flush(s: Store, yield_lock) -> None:
+    """Persist dirty bitmap fragments, then release the writer lock briefly
+    so queued writes interleave (cooperative ingest path only). Relational
+    rows are already autocommitted in that mode, so once fragments are
+    flushed the on-disk state is consistent across the yield."""
+    try:
+        s.flush_fragments()
+    except Exception:
+        pass
+    yield_lock()
+
+
+def _ingest_tldr_metadata(s: Store, project: Path, *, yield_lock=None,
+                          yield_every: int = 200) -> int:
     """Ingest llm-tldr's per-unit semantic dump. Returns the number of units
     processed (not linkages). See the module docstring for source priority."""
     cache = project / ".tldr" / "cache" / "semantic" / "metadata.json"
@@ -405,6 +440,9 @@ def _ingest_tldr_metadata(s: Store, project: Path) -> int:
                 if mod:
                     bucket.add(import_concept(mod))
 
+        if yield_lock is not None and unit_count % yield_every == 0:
+            _yield_flush(s, yield_lock)
+
     # Flush file-level imports in one batch per (concept, file) pair.
     for fid, cids in file_imports.items():
         for cid in cids:
@@ -416,11 +454,13 @@ def _ingest_tldr_metadata(s: Store, project: Path) -> int:
 # --- tldr -------------------------------------------------------------------
 
 
-def _ingest_tldr(s: Store, project: Path) -> int:
+def _ingest_tldr(s: Store, project: Path, *, yield_lock=None,
+                 yield_every: int = 200) -> int:
     cache = project / ".tldr" / "cache" / "call_graph.json"
     data = json.loads(cache.read_text())
     edges = data.get("edges", [])
     n = 0
+    _edge_i = 0
 
     file_ids: dict[str, int] = {}
     func_ids: dict[tuple[str, str], int] = {}
@@ -492,6 +532,10 @@ def _ingest_tldr(s: Store, project: Path) -> int:
                 from_concept = concept_id(from_func)
                 s.link("called_by", from_concept, tf_id)
             n += 1
+
+        _edge_i += 1
+        if yield_lock is not None and _edge_i % yield_every == 0:
+            _yield_flush(s, yield_lock)
     return n
 
 

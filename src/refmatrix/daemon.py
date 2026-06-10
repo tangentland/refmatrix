@@ -2247,13 +2247,45 @@ def _op_sync_files(d: Daemon, args: dict) -> dict:
 
 def _op_ingest_path(d: Daemon, args: dict) -> dict:
     """Run a full ingest against the daemon-owned store. CLI routes here
-    when the daemon is up so the catalog write lock stays single-owner."""
+    when the daemon is up so the catalog write lock stays single-owner.
+
+    Cooperative: instead of holding `_store_lock` for the whole ingest, the
+    dominant inner loops flush fragments and yield the lock every N units, so
+    a big `tldr-warm` doesn't stall latency-sensitive writes (memory hooks)
+    for minutes. Same machinery as `_run_ingest_gmd_body`."""
     from refmatrix.ingest import ingest_path
     path = Path(args["path"]).resolve()
     source = args.get("source") or "auto"
     semantic = bool(args.get("semantic"))
-    with d._store_lock:
-        n = ingest_path(d.store, path, source=source, semantic=semantic)
+    yield_every = int(
+        os.environ.get("RMX_INGEST_YIELD_EVERY_UNITS", "200") or "200"
+    )
+    yield_sleep_s = float(
+        os.environ.get("RMX_INGEST_YIELD_SLEEP_S", "0.005") or "0.005"
+    )
+
+    def _yield() -> None:
+        d._store_lock.release()
+        time.sleep(yield_sleep_s)
+        d._request_snapshot()
+        d._store_lock.acquire()
+
+    part = args.get("partition")
+    d._store_lock.acquire()
+    try:
+        if part:
+            with d.store.with_partition(part):
+                n = ingest_path(
+                    d.store, path, source=source, semantic=semantic,
+                    yield_lock=_yield, yield_every=yield_every,
+                )
+        else:
+            n = ingest_path(
+                d.store, path, source=source, semantic=semantic,
+                yield_lock=_yield, yield_every=yield_every,
+            )
+    finally:
+        d._store_lock.release()
     d._request_snapshot()
     return {"entities": n, "path": str(path)}
 
