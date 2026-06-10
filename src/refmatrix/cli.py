@@ -435,10 +435,24 @@ def daemon():
          "launching under a supervisor like launchd / systemd that owns "
          "the process lifecycle. Required by `rmx daemon launchctl install`.",
 )
+@click.option(
+    "--standalone", is_flag=True,
+    help="Always fork a standalone daemon, even if a launchd LaunchAgent "
+         "supervises this store. By default a supervised store defers to "
+         "launchd (kickstart) so it doesn't spawn an unsupervised orphan.",
+)
 def daemon_start(watch: bool, watch_roots: tuple[Path, ...], debounce_ms: int,
-                 semantic: bool, no_detach: bool):
+                 semantic: bool, no_detach: bool, standalone: bool):
     """Start the rmx daemon for the active store. Idempotent: re-running
-    while a daemon is already up is a fast no-op (returns its pid)."""
+    while a daemon is already up is a fast no-op (returns its pid).
+
+    Supervision-aware: if a launchd LaunchAgent is loaded for this store,
+    a detached start defers to launchd (`launchctl kickstart`) instead of
+    forking a standalone daemon, so it never spawns an unsupervised orphan
+    that races the supervisor during a crash window. Pass --standalone to
+    force a standalone fork anyway, or --no-detach for the foreground
+    entrypoint launchd itself invokes."""
+    import sys as _sys
     from refmatrix import daemon as daemon_mod
     root = _root()
     if not root.is_dir():
@@ -464,6 +478,50 @@ def daemon_start(watch: bool, watch_roots: tuple[Path, ...], debounce_ms: int,
         except RuntimeError as e:
             raise click.ClickException(str(e))
         return
+
+    # Detached start. If launchd actively supervises this store, hand the
+    # lifecycle to it rather than forking an orphan it doesn't own. macOS
+    # only; --standalone forces the fork regardless.
+    if not standalone and _sys.platform == "darwin":
+        from refmatrix import launchctl as lc
+        try:
+            loaded = lc.is_loaded(root)
+            installed = lc.is_installed(root)
+        except Exception:  # noqa: BLE001 — supervision probe is best-effort
+            loaded = installed = False
+        if loaded:
+            # A supervised daemon's watch config lives in the plist; flag
+            # start-time watch options that would be silently ignored.
+            if watch_roots or semantic or debounce_ms != 500 or not watch:
+                console.print(
+                    "[yellow]note:[/] store is launchd-supervised; "
+                    "--watch/--watch-root/--debounce-ms/--semantic here are "
+                    "ignored (the plist governs). Use `rmx daemon launchctl "
+                    "install --force ...` to change supervised watch config."
+                )
+            try:
+                label = lc.kickstart(root)
+            except Exception as e:  # noqa: BLE001 — fall back to a fork
+                console.print(
+                    f"[yellow]kickstart failed ({e}); starting standalone[/]"
+                )
+            else:
+                pid = daemon_mod.read_pid(root)
+                pid_part = f" pid={pid}" if pid else ""
+                console.print(
+                    f"[green]daemon supervised[/] (launchd kickstart "
+                    f"label={label}){pid_part} root={root}"
+                )
+                return
+        elif installed:
+            # Plist present but not loaded → half-configured supervision.
+            # Fork standalone this run, but surface the gap.
+            console.print(
+                "[yellow]note:[/] a LaunchAgent plist exists for this store "
+                "but isn't loaded; forking standalone. Run `rmx daemon "
+                "launchctl install --force` to supervise it."
+            )
+
     pid = daemon_mod.spawn_daemon(
         root,
         partition=_resolve_partition(),
@@ -496,7 +554,10 @@ def daemon_stop():
 
 @daemon.command("status")
 def daemon_status():
-    """Report whether the daemon is running for the active store."""
+    """Report whether the daemon is running for the active store, plus its
+    launchd supervision state (one view over both the process and
+    supervision layers)."""
+    import sys as _sys
     from refmatrix import daemon as daemon_mod
     root = _root()
     pid = daemon_mod.read_pid(root)
@@ -507,6 +568,25 @@ def daemon_status():
         console.print(f"[yellow]stale pid[/] {pid} (socket unreachable)")
     else:
         console.print("[dim]not running[/]")
+
+    # Supervision layer — best-effort; never let it break process status.
+    if _sys.platform != "darwin":
+        console.print("supervised: [dim]n/a (macOS only)[/]")
+        return
+    try:
+        from refmatrix import launchctl as lc
+        st = lc.status(root)
+    except Exception as e:  # noqa: BLE001 — diagnostic line, must not raise
+        console.print(f"supervised: [dim]unknown ({e})[/]")
+        return
+    if not st["installed"]:
+        console.print("supervised: [dim]no[/]")
+    elif st["loaded"]:
+        console.print(f"supervised: [green]yes[/] (loaded, label={st['label']})")
+    else:
+        console.print(
+            f"supervised: [yellow]installed, not loaded[/] (label={st['label']})"
+        )
 
 
 @daemon.group("launchctl")
