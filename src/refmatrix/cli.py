@@ -90,10 +90,10 @@ def _active_slot_path() -> Path | None:
     return p if p.exists() else None
 
 
-def _store() -> Store:
-    """Open the active rotation-slot catalog. The legacy `catalog.duckdb`
-    is no longer touched by the daemon post-0.3.8: that file is FROZEN at
-    bootstrap, and any code opening it from there sees stale data.
+def _store_rw() -> Store:
+    """Open the active rotation-slot catalog read-write (direct). The legacy
+    `catalog.duckdb` is no longer touched by the daemon post-0.3.8: that file
+    is FROZEN at bootstrap, and any code opening it from there sees stale data.
 
     Resolution:
       1. `<root>/catalog.<active>.duckdb` per the `active` marker — what
@@ -101,9 +101,9 @@ def _store() -> Store:
       2. Legacy `<root>/catalog.duckdb` for ancient pre-rotation stores.
 
     With the daemon up, opening the active slot r/w from another process
-    will fail (DuckDB exclusive lock). Callers that want a read-only view
-    while the daemon is running should use `_reader_store()` or route
-    through the daemon's RPC."""
+    will fail (DuckDB exclusive lock). This is the DAEMON-DOWN writer path;
+    when the daemon is up, `_store(write=True)` returns a `_DaemonWriter`
+    that routes mutations through RPC instead."""
     s = Store(_root(), partition=_resolve_partition())
     slot_path = _active_slot_path()
     if slot_path is not None:
@@ -117,6 +117,201 @@ def _store() -> Store:
     # without this, every command would lose its writes.
     atexit.register(s.close)
     return s
+
+
+class _DaemonWriter:
+    """The catalog writer returned by `_store(write=True)` when a daemon
+    owns the store.
+
+    Single control point for the lock: every mutation the CLI performs maps
+    to a typed daemon RPC op, so the DuckDB write-lock stays single-owner and
+    no command needs the daemon stopped. Read methods the CLI mixes in with
+    writes (`get_entity_by_id`, `resolve_concept_ids`, `siblings_via_canon`,
+    …) fall through `__getattr__` to a lock-free reader Store, so command
+    bodies that interleave reads and writes on one object work unchanged.
+
+    Mirrors the subset of the `Store` API the CLI calls. Each explicit method
+    here MUTATES (signals write intent); anything not defined is a read and is
+    delegated to the replica reader.
+    """
+
+    def __init__(self, root: Path, partition: str | None):
+        self._root = root
+        self._partition = partition
+        self._reader: Store | None = None
+
+    # -- routing core --------------------------------------------------------
+    def _call(self, op: str, args: dict, timeout: float = 60.0):
+        from refmatrix import daemon as daemon_mod
+        a = dict(args)
+        a.setdefault("partition", self._partition)
+        resp = daemon_mod.call(self._root, op, a, timeout=timeout)
+        if not isinstance(resp, dict) or not resp.get("ok"):
+            msg = (resp or {}).get("error", f"daemon {op} failed")
+            raise click.ClickException(msg)
+        return resp.get("result") or {}
+
+    def _get_reader(self) -> Store:
+        if self._reader is None:
+            rs = _reader_store()
+            if rs is None:
+                raise click.ClickException(
+                    "daemon is up but no lock-free reader is available yet "
+                    "(snapshot not built). Run `rmx replica refresh` and retry."
+                )
+            self._reader = rs
+        return self._reader
+
+    def __getattr__(self, name: str):
+        # Only reached for attributes not defined on the class/instance —
+        # i.e. read methods. Guard underscored names to avoid recursing on
+        # internal attrs before __init__ has set them.
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(self._get_reader(), name)
+
+    def with_partition(self, partition: str | None):
+        """Context manager mirroring Store.with_partition: scope subsequent
+        op routing (and reader reads) to `partition`."""
+        import contextlib
+
+        @contextlib.contextmanager
+        def _ctx():
+            prev = self._partition
+            self._partition = partition
+            prev_reader, self._reader = self._reader, None
+            try:
+                yield self
+            finally:
+                self._partition = prev
+                try:
+                    if self._reader is not None:
+                        self._reader.close()
+                except Exception:
+                    pass
+                self._reader = prev_reader
+
+        return _ctx()
+
+    def close(self) -> None:
+        if self._reader is not None:
+            try:
+                self._reader.close()
+            except Exception:
+                pass
+            self._reader = None
+
+    # -- mutations: each maps to a typed op ---------------------------------
+    def link(self, linkage, concept_id, entity_id, weight=None, protect=False):
+        return self._call("link", {
+            "linkage": linkage, "concept_id": concept_id,
+            "entity_id": entity_id, "weight": weight, "protect": protect,
+        }).get("created", False)
+
+    def unlink(self, linkage, concept_id, entity_id):
+        return self._call("unlink", {
+            "linkage": linkage, "concept_id": concept_id,
+            "entity_id": entity_id,
+        }).get("unlinked", False)
+
+    def link_canon(self, local_concept_id, canon_partition, canon_concept_name):
+        return self._call("link_canon", {
+            "local_concept_id": local_concept_id,
+            "canon_partition": canon_partition,
+            "canon_concept_name": canon_concept_name,
+        }).get("canon_id")
+
+    def save_query(self, name, body):
+        self._call("save_query", {"name": name, "body": body})
+
+    def add_concept(self, name, description=None, protected=True):
+        return self._call("add_concept", {
+            "name": name, "description": description, "protected": protected,
+        }).get("id")
+
+    def add_linkage_type(self, name, directed=True, description=None):
+        return self._call("add_linkage_type", {
+            "name": name, "directed": directed, "description": description,
+        }).get("id")
+
+    def upsert_entity(self, kind, name, path=None, tldr=None, meta=None,
+                      protected=True):
+        return self._call("upsert_entity", {
+            "kind": kind, "name": name, "path": path, "tldr": tldr,
+            "meta": meta, "protected": protected,
+        }).get("id")
+
+    def add_memory(self, name, content, mtype="observation", tags=None,
+                   metadata=None, protected=False):
+        return self._call("memory_add", {
+            "name": name, "content": content, "mtype": mtype,
+            "tags": tags, "metadata": metadata, "protected": protected,
+        }).get("id")
+
+    def forget_memory(self, target):
+        key = "id" if isinstance(target, int) else "name"
+        return self._call("memory_forget", {key: target}).get("forgotten", False)
+
+    def bulk_forget_memories(self, ids=None, names=None, mtypes=None,
+                             dry_run=False):
+        return self._call("memory_bulk_forget", {
+            "ids": ids, "names": names, "mtypes": mtypes, "dry_run": dry_run,
+        })
+
+    def vacuum(self):
+        return self._call("vacuum", {})
+
+    def prune_noise(self, namespaces=("keyword",), min_df=2,
+                    max_df_ratio=0.25, drop=False):
+        return self._call("prune_noise", {
+            "namespaces": list(namespaces), "min_df": min_df,
+            "max_df_ratio": max_df_ratio, "drop": drop,
+        })
+
+    def rebuild_index_from_log(self):
+        return self._call("rebuild_index", {}, timeout=600.0).get("result", {})
+
+    def ingest_path(self, path, source="auto", semantic=False):
+        """Whole-path ingest as ONE op (not per-entity), so a big ingest is
+        a single RPC, not thousands."""
+        return self._call("ingest_path", {
+            "path": str(path), "source": source, "semantic": semantic,
+        }, timeout=24 * 3600.0).get("entities", 0)
+
+
+def _store(write: bool = True) -> "Store | _DaemonWriter":
+    """THE catalog accessor. The `write` flag signals intent at the call site.
+
+    write=False -> a lock-free READER (replica/snapshot). Never opens the
+        writer slot, so it can't collide with the daemon's write-lock.
+    write=True  -> a WRITER. When a daemon owns the store, a `_DaemonWriter`
+        proxy that routes every mutation through RPC; otherwise a direct
+        read-write `Store` on the active slot.
+
+    Default is `write=True` for back-compat with un-migrated call sites: with
+    the daemon down (the common dev/test case) it returns the same direct
+    `Store` as before, so behavior is unchanged until a daemon is present."""
+    if not write:
+        return _read_store()
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.ping(root):
+        return _DaemonWriter(root, _resolve_partition())
+    return _store_rw()
+
+
+def _ingest(writer: "Store | _DaemonWriter", path, *,
+            source: str = "auto", semantic: bool = False) -> int:
+    """Uniform whole-path ingest through the write control point.
+
+    When `writer` is a `_DaemonWriter` the entire ingest runs as ONE daemon
+    op (never per-entity RPC); otherwise it runs in-process against the
+    direct Store. Returns the entity count. Lets `ingest` / `tldr-warm` /
+    `graphify-warm` share one call shape regardless of daemon state."""
+    if isinstance(writer, _DaemonWriter):
+        return writer.ingest_path(path, source=source, semantic=semantic)
+    from refmatrix.ingest import ingest_path as _ip
+    return _ip(writer, Path(path), source=source, semantic=semantic)
 
 
 def _replica_reader_path() -> Path:
@@ -2747,25 +2942,10 @@ def import_(path, merge):
               help="Also extract Python imports + docstring keywords (slow on big trees).")
 def ingest(path, source, semantic):
     """Ingest a directory. Prefers .tldr/cache/semantic/metadata.json when present."""
-    from refmatrix import daemon as daemon_mod
-    from refmatrix.ingest import ingest_path
-
-    root = _root()
     resolved = Path(path).resolve()
-    if daemon_mod.ping(root):
-        # Route through the daemon so the catalog write lock stays single-
-        # owner. Long ingests can run minutes — give the socket headroom.
-        resp = daemon_mod.call(root, "ingest_path", {
-            "path": str(resolved),
-            "source": source,
-            "semantic": semantic,
-        }, timeout=24 * 3600.0)
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        n = resp["result"]["entities"]
-    else:
-        s = _store()
-        n = ingest_path(s, resolved, source=source, semantic=semantic)
+    # Uniform write path: routes the whole ingest through the daemon (single
+    # op) when one owns the store, else runs in-process. Single-owner lock.
+    n = _ingest(_store(write=True), resolved, source=source, semantic=semantic)
     console.print(f"[green]ingested[/] {n} entities from {path}")
 
 
@@ -2787,9 +2967,6 @@ def tldr_warm(path, tldr_bin, semantic, lang):
     import shutil
     import subprocess
 
-    from refmatrix.ingest import ingest_path
-
-    s = _store()
     proj = Path(path).resolve()
 
     binpath = (
@@ -2820,7 +2997,8 @@ def tldr_warm(path, tldr_bin, semantic, lang):
             "Pass --tldr-bin to point at llm-tldr."
         )
 
-    n = ingest_path(s, proj, source="tldr", semantic=semantic)
+    # Uniform write path — single daemon op when supervised, else in-process.
+    n = _ingest(_store(write=True), proj, source="tldr", semantic=semantic)
     console.print(f"[green]ingested[/] {n} entities from {proj}")
 
 
@@ -2845,9 +3023,6 @@ def graphify_warm(path, graphify_bin, mode, update):
     import shutil
     import subprocess
 
-    from refmatrix.ingest import ingest_path
-
-    s = _store()
     proj = Path(path).resolve()
 
     binpath = (
@@ -2878,7 +3053,8 @@ def graphify_warm(path, graphify_bin, mode, update):
             f"expected {cache} after graphify run; not found."
         )
 
-    n = ingest_path(s, proj, source="graphify")
+    # Uniform write path — single daemon op when supervised, else in-process.
+    n = _ingest(_store(write=True), proj, source="graphify")
     console.print(f"[green]ingested[/] {n} graphify edges from {proj}")
 
 
