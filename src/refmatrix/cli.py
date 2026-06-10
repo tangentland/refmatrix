@@ -3807,6 +3807,119 @@ def cli_log(tail: int, pattern: str | None, summary: bool, since: str | None,
     console.print(t)
 
 
+# ---- unified log access --------------------------------------------------
+
+# name -> (filename, one-line description). Order = display order.
+_LOG_REGISTRY: "dict[str, tuple[str, str]]" = {
+    "cli":         ("cli.log", "CLI invocations (argv, exit, latency)"),
+    "query":       ("query.log", "query strings + result counts"),
+    "facts":       ("facts.log", "every mutation (entities/links) — append log, can be huge"),
+    "daemon":      ("daemon.stderr.log", "daemon stderr (crashes, tracebacks)"),
+    "daemon-out":  ("daemon.stdout.log", "daemon stdout"),
+    "rmxd":        ("rmxd.log", "daemon internal log (ingest progress, ops)"),
+    "sync":        ("sync.log", "sync / watcher activity"),
+    "session":     ("session-indexer.stderr.log", "session-indexer stderr"),
+    "session-out": ("session-indexer.stdout.log", "session-indexer stdout"),
+    "compact":     ("compact.log", "catalog compaction"),
+}
+
+
+def _fmt_bytes(n: int) -> str:
+    f = float(n)
+    for unit in ("B", "K", "M", "G"):
+        if f < 1024 or unit == "G":
+            return f"{f:.0f}{unit}" if unit == "B" else f"{f:.1f}{unit}"
+        f /= 1024
+    return f"{f:.1f}T"
+
+
+def _read_log_tail(path: Path, n: int, pattern: str | None,
+                   cap: int = 4_000_000) -> "list[str]":
+    """Last `n` lines of `path`, optionally filtered by substring `pattern`,
+    reading at most the trailing `cap` bytes so a multi-GB log is never loaded
+    whole. The filter therefore applies to the recent window, not the whole
+    file (use `--path` + your own tools for a full scan)."""
+    size = path.stat().st_size
+    with open(path, "rb") as f:
+        if size > cap:
+            f.seek(size - cap)
+            f.readline()  # drop the partial first line
+        raw = f.read()
+    lines = raw.decode("utf-8", "replace").splitlines()
+    if pattern:
+        lines = [ln for ln in lines if pattern in ln]
+    return lines[-n:] if n > 0 else lines
+
+
+@main.command("log")
+@click.argument("name", required=False)
+@click.argument("pattern", required=False)
+@click.option("--tail", "-n", type=int, default=40,
+              help="Show last N lines (default 40). 0 = whole read window.")
+@click.option("--follow", "-f", is_flag=True, help="Follow the log (tail -f).")
+@click.option("--path", "show_path", is_flag=True,
+              help="Print the log's file path and exit.")
+def log_cmd(name: "str | None", pattern: "str | None", tail: int,
+            follow: bool, show_path: bool):
+    """List or tail refmatrix's logs under .refmatrix/.
+
+    \b
+    rmx log                 list available logs with sizes
+    rmx log daemon          tail the daemon stderr log
+    rmx log cli foo         tail cli.log, only lines containing 'foo'
+    rmx log facts -n 100    last 100 facts.log lines
+    rmx log rmxd -f         follow the daemon log
+
+    Tailing reads only the end of the file, so the (potentially multi-GB)
+    facts.log is never loaded whole."""
+    root = _root()
+
+    if not name:
+        t = Table(title=f"logs under {root}", show_header=True)
+        t.add_column("name", style="bold")
+        t.add_column("file")
+        t.add_column("size", justify="right")
+        t.add_column("what")
+        for lname, (fn, desc) in _LOG_REGISTRY.items():
+            p = root / fn
+            size = _fmt_bytes(p.stat().st_size) if p.exists() else "[dim]-[/]"
+            t.add_row(lname, fn, size, desc)
+        console.print(t)
+        console.print("[dim]rmx log <name> [pattern] [-n N] [-f][/]")
+        return
+
+    if name not in _LOG_REGISTRY:
+        raise click.ClickException(
+            f"unknown log '{name}'. Known: {', '.join(_LOG_REGISTRY)}"
+        )
+    p = root / _LOG_REGISTRY[name][0]
+    if show_path:
+        console.print(str(p))
+        return
+    if not p.exists():
+        console.print(f"[yellow]{p} does not exist yet[/]")
+        return
+
+    if follow:
+        import shlex
+        import subprocess
+        cmd = f"tail -n {max(tail, 0)} -f {shlex.quote(str(p))}"
+        if pattern:
+            cmd += f" | grep --line-buffered -F -- {shlex.quote(pattern)}"
+        try:
+            subprocess.run(cmd, shell=True)
+        except KeyboardInterrupt:
+            pass
+        return
+
+    lines = _read_log_tail(p, tail, pattern)
+    if not lines:
+        console.print("[yellow]no matching lines in the read window[/]")
+        return
+    for ln in lines:
+        console.print(ln, markup=False, highlight=False)
+
+
 # ---- merge-friendly fact log ---------------------------------------------
 
 
