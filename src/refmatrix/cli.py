@@ -6474,6 +6474,222 @@ def tools_primer(as_json, scope_group, as_options=None, include_options=True):
     click.echo("\n".join(lines))
 
 
+@main.group("concept")
+def concept_grp():
+    """Concept-scoped cross-index queries.
+
+    Where `context` answers the spatial question (what defines / uses a
+    concept), this group answers temporal ones by JOINING the context graph
+    (concept -> its files) with the session index (files/commits -> when they
+    were worked on) and git (authoritative code-introduction commit)."""
+
+
+# Structural linkages whose neighbors carry the concept's file footprint.
+_TIMELINE_LINKAGES = [
+    "defines", "implements", "calls", "called_by", "imports", "mentions",
+]
+
+
+def _concept_files(s, cids, *, hops, cap=200):
+    """Resolve concept ids -> {abspath: relpath} for the code/doc files in the
+    concept's structural footprint, expanding `hops` concept-hops out. Also
+    returns the set of concept names visited (for the header)."""
+    from refmatrix.context import _concept_rows
+    # Only walk linkages that actually exist — top_weighted/load_bitmap raise
+    # on an unregistered linkage type (a fresh store has only what's linked).
+    existing = {lk["name"] for lk in s.list_linkages()}
+    linkages = [ln for ln in _TIMELINE_LINKAGES if ln in existing]
+    files: dict[str, str] = {}
+    seen: set[int] = set(cids)
+    names: dict[int, str] = {}
+    for cid in cids:
+        ent = s.get_entity_by_id(cid)
+        if ent is not None:
+            names[cid] = ent.name
+    frontier = list(cids)
+    depth = 0
+    while frontier and depth <= hops and len(files) < cap:
+        nxt: list[int] = []
+        for cid in frontier:
+            for _ln, eid, _w in _concept_rows(s, cid, linkages, cap):
+                e = s.get_entity_by_id(eid)
+                if e is None:
+                    continue
+                if e.kind in ("code", "doc") and e.path:
+                    files.setdefault(e.path, e.name or e.path)
+                elif e.kind == "concept" and depth < hops and e.id not in seen:
+                    seen.add(e.id)
+                    names[e.id] = e.name
+                    nxt.append(e.id)
+        frontier = nxt
+        depth += 1
+    return files, names
+
+
+@concept_grp.command("timeline")
+@click.argument("concept")
+@click.option("--hops", default=0, type=int, show_default=True,
+              help="Concept-hops out when collecting files. 0 = files that "
+                   "directly define/use/mention the concept; higher pulls in "
+                   "neighbor concepts' files (wider indirect footprint).")
+@click.option("--since", default=None,
+              help="Only events on/after this point (7d, 1h, ISO date).")
+@click.option("--until", default=None, help="Only events on/before this point.")
+@click.option("--k", default=40, type=int, show_default=True,
+              help="Max session rows to render.")
+@click.option("--no-git", is_flag=True,
+              help="Skip the git pickaxe for the code-introduction commit.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def concept_timeline_cmd(concept, hops, since, until, k, no_git, as_json):
+    """When was CONCEPT introduced / worked on, directly or indirectly.
+
+    Joins the context graph (concept -> its files) with the session index
+    (files/commits -> when touched) plus a git pickaxe for the authoritative
+    code-introduction commit. Direct = a session names the concept; indirect =
+    a session edited one of its files without naming it."""
+    import shutil
+    import subprocess
+    from refmatrix import daemon as daemon_mod
+
+    since_iso = _since_to_iso(since)
+    until_iso = _since_to_iso(until)
+
+    # 1. Graph: resolve concept -> its files.
+    s = _read_store()
+    cids = s.resolve_concept_ids(concept, strict=False)
+    if not cids:
+        e = s.resolve_entity(concept)
+        if e is not None and e.kind == "concept":
+            cids = [e.id]
+    if not cids:
+        raise click.ClickException(f"unknown concept: {concept!r}")
+    files, cnames = _concept_files(s, cids, hops=hops)
+    rel_keys = list(files.values())
+    proj = s.root.parent
+
+    events: list[dict] = []  # {date, type, ref, detail}
+
+    # 2. Git: first commit that introduced the concept string (pickaxe),
+    #    scoped to the resolved files when we have them.
+    if not no_git and shutil.which("git"):
+        pathspec = rel_keys or ["."]
+        try:
+            out = subprocess.run(
+                ["git", "-C", str(proj), "log", "--reverse", "-i",
+                 "-S", concept, "--pretty=%h%x09%aI%x09%s", "--", *pathspec],
+                capture_output=True, text=True, timeout=30,
+            )
+            first = next((ln for ln in out.stdout.splitlines() if ln.strip()),
+                         None)
+            if first:
+                parts = (first.split("\t") + ["", "", ""])[:3]
+                h, aiso, subj = parts
+                events.append({"date": aiso, "type": "git", "ref": h,
+                               "detail": f"introduced `{concept}` — {subj[:60]}"})
+        except Exception:
+            pass
+
+    # 3. Sessions: direct (names the concept) + indirect (touched a file).
+    sessions: dict[str, dict] = {}
+
+    def _record(m, how, via=None):
+        sid = _session_meta_get(m, "session_id") or m.get("name", "")
+        ended = _session_meta_get(m, "ended") or ""
+        if since_iso and ended and ended < since_iso:
+            return
+        if until_iso and ended and ended > until_iso:
+            return
+        title = (m.get("content") or "").split("\n", 2)[0].lstrip("# ").strip()
+        title = title.split(" {#")[0]
+        cur = sessions.get(sid)
+        if cur is None:
+            sessions[sid] = {"date": ended, "title": title[:56],
+                             "how": how, "via": via}
+        elif how == "direct" and cur["how"] != "direct":
+            cur["how"] = "direct"  # naming the concept outranks a file touch
+            cur["via"] = None
+
+    # Session collection is best-effort — a project with no session index
+    # still gets a useful git-only timeline.
+    try:
+        direct_rows: list[dict] = []
+        if daemon_mod.ping(_root()):
+            resp = _session_call("memory_search",
+                                 {"query": concept, "limit": max(k * 4, 100)})
+            if resp.get("ok"):
+                direct_rows = [r for r in resp["result"]["rows"]
+                               if r.get("mtype") == "session"]
+        else:
+            direct_rows = [m for m in _iter_session_memories()
+                           if concept.lower() in (m.get("content") or "").lower()]
+        for m in direct_rows:
+            _record(m, "direct")
+
+        if rel_keys:
+            for m in _iter_session_memories():
+                touched = _session_meta_list(m, "files_touched")
+                hit = next((rel for rel in rel_keys
+                            if any(rel in f for f in touched)), None)
+                if hit:
+                    _record(m, "indirect", via=hit)
+    except Exception:
+        pass
+
+    for sid, d in sessions.items():
+        via = f" via {d['via']}" if d.get("via") else ""
+        events.append({"date": d["date"], "type": "session", "ref": sid[:8],
+                       "detail": f"[{d['how']}{via}] {d['title']}"})
+
+    events = [e for e in events if e["date"]]
+    events.sort(key=lambda e: e["date"])
+    session_events = [e for e in events if e["type"] == "session"]
+    truncated = len(session_events) > k
+    if truncated:
+        # Keep the earliest k session rows; introduction is the point.
+        keep = set(id(e) for e in session_events[:k])
+        events = [e for e in events
+                  if e["type"] != "session" or id(e) in keep]
+
+    if as_json:
+        click.echo(json.dumps({
+            "concept": concept,
+            "resolved_files": len(files),
+            "resolved_concepts": len(cnames),
+            "hops": hops,
+            "events": events,
+            "session_count": len(session_events),
+            "truncated": truncated,
+        }, indent=2, default=str))
+        return
+
+    click.echo(f"=== timeline for `{concept}` ===")
+    click.echo(f"graph: {len(files)} files, {len(cnames)} concepts (hops={hops})")
+    if not events:
+        click.echo("(no events — concept resolved but no git/session hits)")
+        return
+    from rich.table import Table
+    from rich.text import Text
+    t = Table(show_lines=False)
+    t.add_column("date", style="dim")
+    t.add_column("type", style="cyan")
+    t.add_column("ref")
+    t.add_column("detail")
+    for e in events:
+        t.add_row((e["date"] or "")[:10], e["type"], e["ref"],
+                  Text(e["detail"]))
+    console.print(t)
+    if truncated:
+        console.print(f"[dim](+{len(session_events) - k} more sessions; "
+                      f"raise --k)[/]")
+    first = events[0]
+    click.echo(f"\nfirst seen: {(first['date'] or '')[:10]}  "
+               f"({first['type']} {first['ref']})")
+    if session_events:
+        lo = session_events[0]["date"][:10]
+        hi = session_events[-1]["date"][:10]
+        click.echo(f"worked on: {len(session_events)} sessions, {lo} → {hi}")
+
+
 def cli_entry() -> None:
     """Console-script entrypoint. Wraps `main()` with invocation logging.
 
