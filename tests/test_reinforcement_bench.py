@@ -21,7 +21,6 @@ import pytest
 
 _REPO = Path(__file__).resolve().parents[1]
 _EVAL = _REPO / "eval"
-sys.path.insert(0, str(_EVAL))
 
 
 @pytest.fixture
@@ -29,7 +28,22 @@ def bench():
     pytest.importorskip("duckdb")
     pytest.importorskip("Stemmer", reason="rmx_retriever optional stemmer")
     import importlib
-    mod = importlib.import_module("reinforcement_bench")
+    # eval/ uses bare-name sibling imports (`from metrics import ...`), so it
+    # must be on sys.path to import the bench. But eval/datasets.py SHADOWS the
+    # HuggingFace `datasets` package — leaving eval/ on sys.path permanently
+    # (as a module-level insert did) breaks sentence_transformers in every
+    # later test (embedder/recall/dense) with
+    # `ImportError: cannot import name 'Dataset' from 'datasets'`. Scope the
+    # path hack to the import and restore it — same pattern as the js/ts
+    # extractor fixtures.
+    sys.path.insert(0, str(_EVAL))
+    try:
+        mod = importlib.import_module("reinforcement_bench")
+    finally:
+        try:
+            sys.path.remove(str(_EVAL))
+        except ValueError:
+            pass
     return mod
 
 
