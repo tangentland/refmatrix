@@ -702,6 +702,9 @@ def ingest_gmd_paths(
     _ensure_linkage(store, "part-of", stats)
     _ensure_linkage(store, "mentions", stats)
     _ensure_linkage(store, "imports", stats)
+    # Bulk concept creation (mirrors add_concept, batched). Lazy import to
+    # avoid a circular import with refmatrix.ingest (which calls this module).
+    from refmatrix.ingest import _bulk_add_concepts
 
     pass2_processed = 0
     for doc in docs:
@@ -719,6 +722,35 @@ def ingest_gmd_paths(
                 yield_lock()
             continue
 
+        # Pre-collect this doc's UNCONDITIONAL concepts (tags + per-node title
+        # tokens / aliases / body terms) in add_concept order, then bulk-create
+        # them so the link pass below is a map lookup, not ~1 upsert per term
+        # (the dominant cost in the GMD ingest profile). First-description-wins
+        # is preserved by collection order. Conditional wikilink-anchor
+        # concepts stay inline -- they depend on link resolution.
+        concept_specs: list[tuple[str, str]] = []
+        for tag in doc.tags:
+            concept_specs.append((tag, f"tag '{tag}'"))
+        for node in doc.nodes:
+            _seen_tok: set[str] = set()
+            for tok in _title_concept_tokens(node.title):
+                if tok in _seen_tok:
+                    continue
+                _seen_tok.add(tok)
+                concept_specs.append((tok, f"title token '{tok}'"))
+            for alias in node.aliases:
+                concept_specs.append((alias, f"alias '{alias}'"))
+            for term in _body_term_frequencies(node.body_lines):
+                concept_specs.append((term, f"body term '{term}'"))
+        cids = _bulk_add_concepts(store, concept_specs)
+
+        # Links are written per-row (NOT via deferred_links/bulk_link): the
+        # weighted `mentions` edges rely on link()'s ON CONFLICT DO UPDATE
+        # (last-non-null weight wins) when the same concept mentions a node at
+        # several weights -- e.g. a word that is both a title token (2.0) and a
+        # body term (tf). bulk_link is DO NOTHING (first-wins) and would corrupt
+        # those BM25 weights. The big win here is the bulk concept creation
+        # above; the links stay correctness-first.
         # frontmatter imports
         for imp in doc.imports:
             target = eid_by_name.get(imp)
@@ -729,8 +761,7 @@ def ingest_gmd_paths(
 
         # tags as mentions
         for tag in doc.tags:
-            cid = store.add_concept(tag, description=f"tag '{tag}'")
-            store.link("mentions", cid, doc_eid)
+            store.link("mentions", cids[tag], doc_eid)
             stats.mentions += 1
 
         # per-node processing
@@ -751,20 +782,17 @@ def ingest_gmd_paths(
                 if tok in title_concepts:
                     continue
                 title_concepts.add(tok)
-                cid = store.add_concept(tok, description=f"title token '{tok}'")
-                store.link("mentions", cid, src_eid, weight=2.0)
+                store.link("mentions", cids[tok], src_eid, weight=2.0)
                 stats.mentions += 1
 
             # aliases → mentions with high weight
             for alias in node.aliases:
-                cid = store.add_concept(alias, description=f"alias '{alias}'")
-                store.link("mentions", cid, src_eid, weight=3.0)
+                store.link("mentions", cids[alias], src_eid, weight=3.0)
                 stats.mentions += 1
 
             # body terms → mentions with weight = tf (BM25 will normalize)
             for term, tf in _body_term_frequencies(node.body_lines).items():
-                cid = store.add_concept(term, description=f"body term '{term}'")
-                store.link("mentions", cid, src_eid, weight=float(tf))
+                store.link("mentions", cids[term], src_eid, weight=float(tf))
                 stats.mentions += 1
 
             # rel: edges
