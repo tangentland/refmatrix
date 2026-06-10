@@ -2448,16 +2448,8 @@ def run(name, is_pql, ids_only, limit):
 @list_grp.command("queries")
 def list_queries():
     """List saved queries."""
-    from refmatrix import daemon as daemon_mod
-    root = _root()
     t = Table("name", "body")
-    if daemon_mod.ping(root):
-        resp = daemon_mod.call(root, "list_saved_queries", {})
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        rows = resp["result"]["rows"]
-    else:
-        rows = list(_store().list_saved_queries())
+    rows = list(_store(write=False).list_saved_queries())
     for n, b in rows:
         t.add_row(n, b)
     console.print(t)
