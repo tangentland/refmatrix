@@ -1,3 +1,0 @@
-[console_scripts]
-refmatrix = refmatrix.cli:main
-rmx = refmatrix.cli:main
