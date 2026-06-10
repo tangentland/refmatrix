@@ -1430,17 +1430,40 @@ class Store:
                 """,
                 payload,
             )
-        # Look up the ids in one query keyed by (kind, name).
+        # Look up the ids keyed by (kind, name). Under DuckDB, register the
+        # keys as an Arrow table and JOIN: one scan of `entities` regardless
+        # of batch size. The old `(kind, name) IN (...)` list forced callers
+        # to chunk, and each chunk's IN-list scanned the table -- O(chunks)
+        # scans, pathological when re-ingesting into a large existing store.
+        # SQLite keeps the IN-list (no Arrow registration there).
         keys = [(kind, name) for (kind, name, *_rest) in rows]
-        placeholders = ",".join("(?,?)" for _ in keys)
-        flat: list = [pid]
-        for kind, name in keys:
-            flat.extend([kind, name])
-        id_rows = con.execute(
-            f"SELECT kind, name, id FROM entities "
-            f"WHERE partition_id=? AND (kind, name) IN ({placeholders})",
-            flat,
-        ).fetchall()
+        if self._backend.kind == "duckdb":
+            import pyarrow as pa
+            ktbl = pa.table({
+                "kind": pa.array([k for (k, _n) in keys], type=pa.string()),
+                "name": pa.array([n for (_k, n) in keys], type=pa.string()),
+            })
+            con._duck.register("_rmx_id_keys", ktbl)
+            try:
+                id_rows = con._duck.execute(
+                    "SELECT e.kind, e.name, e.id FROM entities e "
+                    "JOIN _rmx_id_keys k "
+                    "ON e.kind = k.kind AND e.name = k.name "
+                    "WHERE e.partition_id = ?",
+                    [pid],
+                ).fetchall()
+            finally:
+                con._duck.unregister("_rmx_id_keys")
+        else:
+            placeholders = ",".join("(?,?)" for _ in keys)
+            flat: list = [pid]
+            for kind, name in keys:
+                flat.extend([kind, name])
+            id_rows = con.execute(
+                f"SELECT kind, name, id FROM entities "
+                f"WHERE partition_id=? AND (kind, name) IN ({placeholders})",
+                flat,
+            ).fetchall()
         id_by_key = {(r[0], r[1]): r[2] for r in id_rows}
         ids: list[int] = [id_by_key[(k, n)] for (k, n) in keys]
         # Concepts need a row in the concepts table; insert any missing.

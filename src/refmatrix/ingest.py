@@ -511,16 +511,12 @@ def _ingest_tldr_metadata(s: Store, project: Path, *, yield_lock=None,
 # --- tldr -------------------------------------------------------------------
 
 
-def _bulk_upsert_chunked(s: Store, rows: list, chunk: int = 1000) -> list[int]:
-    """`Store.bulk_upsert_entity` over fixed-size chunks so the id-lookup
-    SELECT's `IN`-list stays bounded on big ingests. Returns ids in input
-    order."""
-    if not rows:
-        return []
-    ids: list[int] = []
-    for i in range(0, len(rows), chunk):
-        ids.extend(s.bulk_upsert_entity(rows[i:i + chunk]))
-    return ids
+def _bulk_upsert_chunked(s: Store, rows: list) -> list[int]:
+    """Thin wrapper over `Store.bulk_upsert_entity`. (It historically chunked
+    the id-lookup `IN`-list; bulk_upsert_entity now does a single Arrow-JOIN
+    id-lookup that scales to any batch in one table scan, so chunking is no
+    longer needed.) Returns ids in input order, [] for empty input."""
+    return s.bulk_upsert_entity(rows) if rows else []
 
 
 def _bulk_add_concepts(s: Store, named_descs) -> dict[str, int]:
