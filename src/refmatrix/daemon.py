@@ -3560,6 +3560,72 @@ def _op_ann_search(d: Daemon, args: dict) -> dict:
     return {"hits": [{"id": eid, "distance": dist} for eid, dist in hits]}
 
 
+def _op_part_ctx(d: "Daemon", args: dict):
+    """Optional per-op partition override, mirroring the memory ops.
+
+    Returns a context manager: the requested partition when `args` carries
+    one, else a no-op so the daemon's bound partition stands. Lets a CLI
+    process that resolved a different `-p` than the daemon's startup
+    partition route a write to the correct partition."""
+    import contextlib
+    p = args.get("partition")
+    return d.store.with_partition(p) if p else contextlib.nullcontext()
+
+
+def _op_link(d: Daemon, args: dict) -> dict:
+    """Create a typed concept->entity edge. Routes `rmx link` through the
+    daemon so the catalog write-lock stays single-owner."""
+    with d._store_lock, _op_part_ctx(d, args):
+        created = d.store.link(
+            args["linkage"], int(args["concept_id"]), int(args["entity_id"]),
+            weight=args.get("weight"), protect=bool(args.get("protect", False)),
+        )
+    d._request_snapshot()
+    return {"created": bool(created)}
+
+
+def _op_unlink(d: Daemon, args: dict) -> dict:
+    """Remove a typed concept->entity edge (`rmx unlink`)."""
+    with d._store_lock, _op_part_ctx(d, args):
+        removed = d.store.unlink(
+            args["linkage"], int(args["concept_id"]), int(args["entity_id"]),
+        )
+    d._request_snapshot()
+    return {"unlinked": bool(removed)}
+
+
+def _op_link_canon(d: Daemon, args: dict) -> dict:
+    """Wire a local concept to a canonical hub in another partition
+    (`rmx canon link`). The canon-partition Store opened inside link_canon
+    is same-process as the daemon, so DuckDB permits the second connection
+    (the lock conflict is only cross-process)."""
+    with d._store_lock, _op_part_ctx(d, args):
+        canon_id = d.store.link_canon(
+            int(args["local_concept_id"]),
+            args["canon_partition"], args["canon_concept_name"],
+        )
+    d._request_snapshot()
+    return {"canon_id": canon_id}
+
+
+def _op_save_query(d: Daemon, args: dict) -> dict:
+    """Persist a named saved query (`rmx save-query`)."""
+    with d._store_lock, _op_part_ctx(d, args):
+        d.store.save_query(args["name"], args["body"])
+    d._request_snapshot()
+    return {"saved": True, "name": args["name"]}
+
+
+def _op_rebuild_index(d: Daemon, args: dict) -> dict:
+    """Replay facts.log into the daemon's own catalog (wipe + rebuild) —
+    the same machinery the daemon runs on startup repair, held under the
+    write lock so nothing races the rebuild."""
+    with d._store_lock:
+        result = d.store.rebuild_index_from_log()
+    d._request_snapshot()
+    return {"result": result}
+
+
 OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "ping": _op_ping,
     "enqueue": _op_enqueue,
@@ -3580,6 +3646,11 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "upsert_entity": _op_upsert_entity,
     "add_concept": _op_add_concept,
     "add_linkage_type": _op_add_linkage_type,
+    "link": _op_link,
+    "unlink": _op_unlink,
+    "link_canon": _op_link_canon,
+    "save_query": _op_save_query,
+    "rebuild_index": _op_rebuild_index,
     "iter_entities": _op_iter_entities,
     "list_linkages": _op_list_linkages,
     "list_saved_queries": _op_list_saved_queries,
