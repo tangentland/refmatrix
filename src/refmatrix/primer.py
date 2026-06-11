@@ -103,29 +103,39 @@ def build_primer(
         f"top_n={top_n} symbol_like={symbol_like_only} "
         f"exclude={','.join(sorted(excluded))} min_refs={min_refs}",
         "#",
-        "# Format: NAME(total_refs) linkage:count linkage:count ...",
-        "# Use this for orientation only — query the index for specifics:",
-        "#   rmx context <name>            # bundle: anchor + neighbors + tldr +",
-        "#       a CONTENT MATCH group (BM25 ranked grep over code/docs).",
-        "#   rmx context \"<plain english>\"  # RANKED GREP for a phrase. Falls back",
-        "#       to content search when the phrase is no known symbol, so prefer a",
-        "#       natural phrase over guessing an identifier — it greps either way.",
-        "#   rmx context <name> --expand N  # ±N source lines around each code hit",
-        "#       (grep -C) — read a function body inline without opening the file.",
-        "#   rmx context <name> --hit-lines first|nums|text   # WHERE the concept",
-        "#       is used in each MENTIONED-IN / IMPORTED-BY neighbor:",
-        "#         first (default) one `file:line` jump target;",
-        "#         nums  every hit line number, compact (`file:12,40,77`) — a",
-        "#               density signal + jump targets;",
-        "#         text  every hit line WITH its source (grep -n) — see the",
-        "#               usages without opening the file.",
-        "#       Code CONTENT hits always lead with a `path:line` jump target.",
-        "#   context FALLS BACK to a literal grep when the index misses, so it is",
-        "#       never worse than `rg` — and (daemon up) learns the hit into the",
-        "#       index, protected, so the next lookup is indexed. Reach for it",
-        "#       FIRST; it degrades to grep, never to nothing.",
-        "#   rmx neighbors <name>           # graph walk",
-        "#   rmx query \"<dsl>\"            # set algebra",
+        "# WHY THIS over raw grep + Read: ONE query returns RANKED, "
+        "token-compressed",
+        "#   hits with `path:line` provenance — the graph's structure when it "
+        "has it,",
+        "#   a literal grep floor when it doesn't. It degrades to grep, NEVER "
+        "to nothing.",
+        "#   Make `rmx context` your FIRST lookup, not your last. The list "
+        "below is just",
+        "#   orientation (NAME(total_refs) linkage:count …) — then query:",
+        "#",
+        "#   rmx context \"<what you're looking for>\"   # THE first stop. Plain "
+        "english",
+        "#       OR a symbol: BM25-ranked code/doc hits + graph neighbors, each "
+        "with a",
+        "#       `path:line` + snippet. Unknown phrase still greps; never empty "
+        "when the",
+        "#       terms exist on disk. Daemon up → learns the hit (protected) so "
+        "next is",
+        "#       indexed. (`--no-grep` to skip the floor.)",
+        "#   rmx context <name> --expand N             # ±N source lines per "
+        "code hit (grep -C)",
+        "#   rmx context <name> --hit-lines nums|text  # WHERE a concept is "
+        "used per",
+        "#       neighbor: nums = all hit line numbers (`file:12,40,77`); text "
+        "= each",
+        "#       line WITH its source (grep -n). first (default) = one "
+        "`file:line`.",
+        "#   rmx neighbors <name>     # graph walk        "
+        "rmx query \"<dsl>\"   # set algebra",
+        "#   curate: rmx protect|unprotect|noise|unnoise|forget <sel>   "
+        "(sel = NAME /",
+        "#       --like GLOB / --namespace NS / --kind K) — pin keepers, forget "
+        "cruft.",
         "",
     ]
     out_lines = list(header)
