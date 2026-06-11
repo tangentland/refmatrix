@@ -148,9 +148,14 @@ def should_ignore(p: Path, root: Path | None = None) -> bool:
 
 def ingest_path(
     s: Store, path: Path, source: str = "auto", semantic: bool = False,
-    *, yield_lock=None, yield_every: int = 200,
+    *, yield_lock=None, yield_every: int = 200, progress_cb=None,
 ) -> int:
     """Run a full ingest.
+
+    `progress_cb(phase: str, done: int, total: int)` is called at each pass
+    boundary (and within the dominant per-file loops) so a caller — the daemon,
+    which logs `ingest-progress` for the CLI to tail — has visibility into an
+    otherwise-opaque blocking ingest. Optional; default no-op.
 
     Two modes:
 
@@ -170,7 +175,8 @@ def ingest_path(
     """
     if yield_lock is None:
         with s.transaction():
-            return _ingest_path_inner(s, path, source=source, semantic=semantic)
+            return _ingest_path_inner(s, path, source=source, semantic=semantic,
+                                      progress_cb=progress_cb)
     # Cooperative path: drive windowed transactions so per-row WAL fsync
     # collapses to one fsync per yield window. The inner loops call their
     # yield hook (`_yield_flush`) every `yield_every` units; routing that hook
@@ -184,6 +190,7 @@ def ingest_path(
         return _ingest_path_inner(
             s, path, source=source, semantic=semantic,
             yield_lock=win.boundary, yield_every=yield_every,
+            progress_cb=progress_cb,
         )
     finally:
         win.close()
@@ -205,9 +212,16 @@ def _md_file_changed(pre_tracked: "dict[str, float]", p: Path) -> bool:
 
 def _ingest_path_inner(
     s: Store, path: Path, source: str = "auto", semantic: bool = False,
-    *, yield_lock=None, yield_every: int = 200,
+    *, yield_lock=None, yield_every: int = 200, progress_cb=None,
 ) -> int:
     path = path.resolve()
+
+    def _phase(name: str, done: int = 0, total: int = 0) -> None:
+        if progress_cb is not None:
+            try:
+                progress_cb(name, done, total)
+            except Exception:
+                pass  # progress is best-effort; never fail an ingest on it
     # Snapshot tracked mtimes up front: the markdown passes gate against PRIOR
     # ingests only, not files an earlier pass (e.g. _ingest_tree) tracks during
     # this same call.
@@ -219,6 +233,7 @@ def _ingest_path_inner(
     call_graph_path = path / ".tldr" / "cache" / "call_graph.json"
     graphify_path = path / "graphify-out" / "graph.json"
     n = 0
+    _phase("code+docs: tldr/tree")
     if source in ("auto", "metadata") and metadata_path.exists():
         n = _ingest_tldr_metadata(s, path, yield_lock=yield_lock,
                                   yield_every=yield_every)
@@ -231,10 +246,13 @@ def _ingest_path_inner(
     # top of whatever the primary source produced. source=graphify forces it
     # to be the only ingest.
     if source == "graphify":
+        _phase("code+docs: graphify")
         n = _ingest_graphify(s, path)
     elif source == "auto" and graphify_path.exists():
+        _phase("code+docs: graphify")
         _ingest_graphify(s, path)
     if semantic:
+        _phase("code+docs: python-semantic (scanning)")
         from concurrent.futures import ThreadPoolExecutor
         from refmatrix.ingest_records import bulk_apply_records
         # Gate on a DEDICATED `pysem:<abs>` marker key. .py files are ALSO
@@ -257,13 +275,21 @@ def _ingest_path_inner(
             if prev is None or abs(prev - cur) > 1e-6:
                 changed_py.append((p, cur))
         if changed_py:
+            n_py = len(changed_py)
+            _phase("code+docs: python-semantic", 0, n_py)
             sworkers = int(os.environ.get("RMX_INGEST_WORKERS", "8") or "8")
+            sem_records = []
             with ThreadPoolExecutor(max_workers=sworkers,
                                     thread_name_prefix="rmx-pysem-parse") as ex:
-                sem_records = list(ex.map(
+                # ex.map yields in input order; count completions for per-file
+                # progress (throttled) so a big --semantic tree shows movement.
+                for _i, _rec in enumerate(ex.map(
                     lambda fp: _build_python_semantic_record(fp, path),
                     [p for p, _ in changed_py],
-                ))
+                ), 1):
+                    sem_records.append(_rec)
+                    if _i == n_py or _i % 25 == 0:
+                        _phase("code+docs: python-semantic", _i, n_py)
             # One bulk apply across all changed .py files instead of ~1 upsert
             # per concept per file (the per-row cost that dominated
             # `rmx ingest . --semantic` on a large tree).
@@ -294,15 +320,21 @@ def _ingest_path_inner(
         if prev is None or abs(prev - cur) > 1e-6:
             changed_pseudo.append((p, cur))
     if changed_pseudo:
+        n_ps = len(changed_pseudo)
+        _phase("code+docs: pseudo", 0, n_ps)
         from concurrent.futures import ThreadPoolExecutor
         from refmatrix.ingest_records import bulk_apply_records
         pworkers = int(os.environ.get("RMX_INGEST_WORKERS", "8") or "8")
+        ps_records = []
         with ThreadPoolExecutor(max_workers=pworkers,
                                 thread_name_prefix="rmx-ps-parse") as ex:
-            ps_records = list(ex.map(
+            for _i, _rec in enumerate(ex.map(
                 lambda fp: _build_pseudo_record(fp, path),
                 [p for p, _ in changed_pseudo],
-            ))
+            ), 1):
+                ps_records.append(_rec)
+                if _i == n_ps or _i % 25 == 0:
+                    _phase("code+docs: pseudo", _i, n_ps)
         # One bulk apply across all changed .pseudo files instead of one
         # apply_record per file (the per-row cost the other passes already
         # shed). bulk_apply_records filters None records and marks the real
@@ -318,6 +350,7 @@ def _ingest_path_inner(
     # Build adr_num_to_eid for EVERY ADR (so changed docs' @adr refs resolve),
     # but only parse + apply the ones whose mtime changed. bulk_apply marks the
     # changed ones tracked; unchanged ones stay tracked from the prior ingest.
+    _phase("code+docs: markdown/adr")
     adr_files: list[tuple[Path, str]] = []
     adr_num_to_eid: dict[str, int] = {}
     for p in path.rglob("*.md"):
@@ -338,15 +371,21 @@ def _ingest_path_inner(
         if changed:
             adr_files.append((p, adr_num))
     if adr_files:
+        n_adr = len(adr_files)
+        _phase("code+docs: adr", 0, n_adr)
         from concurrent.futures import ThreadPoolExecutor
         from refmatrix.ingest_records import bulk_apply_records
         adr_workers = int(os.environ.get("RMX_INGEST_WORKERS", "8") or "8")
+        adr_records = []
         with ThreadPoolExecutor(max_workers=adr_workers,
                                 thread_name_prefix="rmx-adr-parse") as ex:
-            adr_records = list(ex.map(
+            for _i, _rec in enumerate(ex.map(
                 lambda fp: _build_adr_record(fp, path, adr_num_to_eid),
                 [p for p, _ in adr_files],
-            ))
+            ), 1):
+                adr_records.append(_rec)
+                if _i == n_adr or _i % 25 == 0:
+                    _phase("code+docs: adr", _i, n_adr)
         bulk_apply_records(s, adr_records, adr_num_to_eid=adr_num_to_eid)
 
     # General markdown semantic extraction (non-ADR). Runs after ADR pass so
@@ -367,15 +406,21 @@ def _ingest_path_inner(
             continue
         md_files.append(p)
     if md_files:
+        n_md = len(md_files)
+        _phase("code+docs: markdown", 0, n_md)
         from concurrent.futures import ThreadPoolExecutor
         from refmatrix.ingest_records import bulk_apply_records
         workers = int(os.environ.get("RMX_INGEST_WORKERS", "8") or "8")
+        records = []
         with ThreadPoolExecutor(max_workers=workers,
                                 thread_name_prefix="rmx-md-parse") as ex:
-            records = list(ex.map(
+            for _i, _rec in enumerate(ex.map(
                 lambda fp: _build_markdown_record(fp, path, adr_num_to_eid),
                 md_files,
-            ))
+            ), 1):
+                records.append(_rec)
+                if _i == n_md or _i % 25 == 0:
+                    _phase("code+docs: markdown", _i, n_md)
         # One bulk apply across all changed docs instead of ~1 upsert per
         # concept per file (the per-row cost that dominated ingest on a large
         # tree). See ingest_records.bulk_apply_records.

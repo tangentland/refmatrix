@@ -3538,6 +3538,11 @@ class Store:
             "SELECT path, mtime, last_synced FROM tracked_files WHERE partition_id=?",
             (self._partition_id,),
         ):
+            # tracked_files also stores synthetic mtime-gate keys for the bulk
+            # passes (`pysem:/abs`, `pssem:/abs`, …) — not real files, so they'd
+            # always read as "missing". Real entries are absolute paths.
+            if not path.startswith("/"):
+                continue
             try:
                 cur = _stat(path).st_mtime
             except OSError:

@@ -1959,6 +1959,17 @@ def _op_ingest_path(d: Daemon, args: dict) -> dict:
         d._request_snapshot()
         d._store_lock.acquire()
 
+    # Emit `ingest-progress` per pass so the blocking CLI ingest isn't a black
+    # box — the CLI tails these lines live (see `_stream_ingest_progress`).
+    job_id = f"ingest-{int(time.monotonic() * 1000) % 1_000_000}"
+    t0 = time.monotonic()
+
+    def _progress(phase: str, done: int = 0, total: int = 0) -> None:
+        elapsed = time.monotonic() - t0
+        detail = f"{done}/{total} " if total else ""
+        d._log(f"ingest-progress {phase} {detail}job={job_id} "
+               f"elapsed={elapsed:.0f}s {path}")
+
     part = args.get("partition")
     d._store_lock.acquire()
     try:
@@ -1967,11 +1978,13 @@ def _op_ingest_path(d: Daemon, args: dict) -> dict:
                 n = ingest_path(
                     d.store, path, source=source, semantic=semantic,
                     yield_lock=_yield, yield_every=yield_every,
+                    progress_cb=_progress,
                 )
         else:
             n = ingest_path(
                 d.store, path, source=source, semantic=semantic,
                 yield_lock=_yield, yield_every=yield_every,
+                progress_cb=_progress,
             )
     finally:
         d._store_lock.release()
@@ -2229,7 +2242,13 @@ def _op_sync_since(d: Daemon, args: dict) -> dict:
 
 def _op_stats(d: Daemon, args: dict) -> dict:
     with d._store_lock:
-        return d.store.stats()
+        out = d.store.stats()
+        # `--stale` needs the writer's tracked_files (mtime > last_synced),
+        # which the replica/snapshot never refreshes — so serve it from the
+        # daemon (the writer) instead of forcing the user to stop the daemon.
+        if args.get("include_stale"):
+            out["stale_files"] = d.store.stale_files()
+        return out
 
 
 def _op_checkpoint(d: Daemon, args: dict) -> dict:

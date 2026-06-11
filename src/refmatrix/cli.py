@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import atexit
+import contextlib
 import json
 import os
 import sys
@@ -310,6 +311,43 @@ def _store(write: bool = True) -> "Store | _DaemonWriter":
     return _store_rw()
 
 
+@contextlib.contextmanager
+def _stream_ingest_progress(root: Path):
+    """Surface the daemon's per-pass `ingest-progress` live while a blocking
+    ingest RPC runs, so the CLI isn't a black box during the long code+docs
+    pass. Tails `rmxd.log` from EOF in a daemon thread; best-effort — if the
+    log is unreadable nothing prints and the ingest is unaffected."""
+    import threading
+    import time as _t
+    log_path = root / "rmxd.log"
+    stop = threading.Event()
+
+    def _tail():
+        try:
+            f = log_path.open("r")
+        except OSError:
+            return
+        with f:
+            f.seek(0, 2)  # only NEW lines from here
+            while not stop.is_set():
+                line = f.readline()
+                if not line:
+                    _t.sleep(0.2)
+                    continue
+                if "ingest-progress " in line:
+                    msg = line.split("ingest-progress ", 1)[1]
+                    msg = msg.split(" job=", 1)[0].strip()
+                    console.print(f"[dim]  ⋯ {msg}[/]")
+
+    t = threading.Thread(target=_tail, daemon=True)
+    t.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        t.join(timeout=1.0)
+
+
 def _ingest(writer: "Store | _DaemonWriter", path, *,
             source: str = "auto", semantic: bool = False) -> int:
     """Uniform whole-path ingest through the write control point.
@@ -319,7 +357,10 @@ def _ingest(writer: "Store | _DaemonWriter", path, *,
     direct Store. Returns the entity count. Lets `ingest` / `tldr-warm` /
     `graphify-warm` share one call shape regardless of daemon state."""
     if isinstance(writer, _DaemonWriter):
-        return writer.ingest_path(path, source=source, semantic=semantic)
+        # Blocking RPC — stream the daemon's per-pass progress so the user sees
+        # movement instead of a frozen prompt for minutes.
+        with _stream_ingest_progress(writer._root):
+            return writer.ingest_path(path, source=source, semantic=semantic)
     from refmatrix.ingest import ingest_path as _ip
     return _ip(writer, Path(path), source=source, semantic=semantic)
 
@@ -2673,44 +2714,45 @@ main.add_command(_alias(list_queries, "list-queries"))
 
 @main.command()
 @click.option("--stale", is_flag=True,
-              help="Also list tracked files where on-disk mtime > last_synced.")
+              help="Also list tracked files where on-disk mtime > last_synced. "
+                   "Reads the writer's tracked_files via the daemon — no need "
+                   "to stop the daemon.")
 @click.option("--via-replica", is_flag=True,
-              help="Read from the rotation reader slot instead of the daemon. "
-                   "Lock-free; sees stale-by-N-seconds data. Incompatible with "
-                   "--stale (tracked_files is not refreshed in the replica path).")
+              help="Read counts from the rotation reader slot instead of the "
+                   "daemon. Lock-free; sees stale-by-N-seconds data. Cannot be "
+                   "combined with --stale (the replica's tracked_files isn't "
+                   "refreshed).")
 def stats(stale, via_replica):
     """Print catalog and bitmap stats."""
     from refmatrix import daemon as daemon_mod
     root = _root()
-    s = None
+    if via_replica and stale:
+        raise click.ClickException(
+            "--via-replica and --stale are incompatible: the replica's "
+            "tracked_files isn't refreshed. Use plain `--stale` (routes "
+            "through the daemon's writer).")
     if via_replica or (not stale and _should_via_replica(False)):
-        # Replica-first, gated on the replica file EXISTING — not on ping.
-        # The replica (catalog.read.duckdb) is never write-locked, so this
-        # works even when the daemon is saturated and its ping times out.
-        # (Gating on ping was the bug: a busy daemon fails the 0.5s ping, the
-        # caller then opened the writer slot r/w -> "Conflicting lock".)
-        if stale:
-            raise click.ClickException("--via-replica and --stale are incompatible")
+        # Replica-first for plain counts, gated on the replica file EXISTING —
+        # not on ping. The replica (catalog.read.duckdb) is never write-locked,
+        # so this works even when the daemon is saturated and its ping times
+        # out. (Gating on ping was the old bug: a busy daemon fails the 0.5s
+        # ping, the caller then opened the writer slot r/w -> "Conflicting
+        # lock".) --stale skips this branch — it needs the live writer.
         out = _replica_read(lambda st: st.stats())
-    elif not stale and daemon_mod.ping(root):
-        # No replica yet but daemon up -> RPC. Never open the writer slot
-        # directly while the daemon owns it.
-        resp = daemon_mod.call(root, "stats", {})
+    elif daemon_mod.ping(root):
+        # Daemon owns the writer (+ tracked_files). Route through it so --stale
+        # works WITHOUT stopping the daemon. Never open the writer slot directly
+        # while the daemon owns it.
+        resp = daemon_mod.call(root, "stats", {"include_stale": stale})
         if not resp.get("ok"):
             raise click.ClickException(f"daemon stats failed: {resp.get('error')}")
         out = resp["result"]
-    elif stale and daemon_mod.ping(root):
-        # --stale needs the writer's tracked_files, which the daemon owns.
-        raise click.ClickException(
-            "--stale needs the writer slot, which the running daemon owns. "
-            "Stop the daemon (`rmx daemon stop`) to inspect stale files, or "
-            "run `rmx stats` without --stale (reads the lock-free replica)."
-        )
     else:
-        # No daemon (and no replica, or --stale): safe to read the live
-        # catalog directly.
+        # No daemon: safe to read the live catalog directly.
         s = _store_rw()
         out = s.stats()
+        if stale:
+            out["stale_files"] = s.stale_files()
     t1 = Table("kind", "count", title="entities")
     for k, v in out["entities"].items():
         t1.add_row(k, str(v))
@@ -2719,8 +2761,8 @@ def stats(stale, via_replica):
     for name, d in out["linkages"].items():
         t2.add_row(name, str(d["concepts"]), str(d["bits"]))
     console.print(t2)
-    if stale and s is not None:
-        rows = s.stale_files()
+    if stale:
+        rows = out.get("stale_files") or []
         if not rows:
             console.print("[green]no stale files[/]")
             return
@@ -4677,6 +4719,10 @@ def embed_cmd(kinds, batch, rebuild, max_batches, gc_mode, dry_run):
             "[yellow]no daemon up — embed runs faster through `rmx daemon start` "
             "so the model stays loaded between calls.[/]"
         )
+    console.print(
+        f"[dim]embedding kinds={','.join(selected)} (batch={batch}); the first "
+        f"batch warms the model (~134MB)…[/]"
+    )
     while True:
         iters += 1
         args = {
@@ -4707,7 +4753,8 @@ def embed_cmd(kinds, batch, rebuild, max_batches, gc_mode, dry_run):
         remaining = int(result.get("remaining", 0))
         total_embedded += embedded
         console.print(
-            f"  batch {iters}: embedded={embedded} remaining={remaining}"
+            f"[dim]  ⋯ embed batch {iters}: +{embedded} "
+            f"({total_embedded} done, {remaining} left)[/]"
         )
         if embedded == 0 or remaining == 0:
             break
