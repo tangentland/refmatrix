@@ -675,6 +675,36 @@ def info():
     console.print(f"partition: {_resolve_partition()}")
 
 
+@main.command()
+@click.option("--from-dev", type=click.Path(path_type=Path), default=None,
+              help="Promote a local dev tree's branch INTO this install instead "
+                   "of pulling from GitHub (the dev->deploy ritual). "
+                   "Fast-forward only.")
+@click.option("--ref", default=None,
+              help="Branch or tag to upgrade to (default: the install's current "
+                   "branch; 'master' for --from-dev).")
+@click.option("--check", is_flag=True,
+              help="Dry-run: fetch and report current-vs-available version + "
+                   "HEAD, mutating nothing.")
+@click.option("--no-restart", is_flag=True,
+              help="Skip the daemon restart after installing.")
+def upgrade(from_dev, ref, check, no_restart):
+    """Self-update this install: fast-forward its git tree, `pip install -e`,
+    and restart the daemon, then report the version change.
+
+    Default pulls from `origin/<branch>` (or `--ref`). `--from-dev <path>`
+    promotes a local dev tree instead — the dev->deploy ritual, no GitHub
+    round-trip. `--check` previews the change read-only. Merges are
+    fast-forward only, so a divergent local tree is refused rather than
+    rewritten."""
+    from refmatrix import upgrade as _up
+    try:
+        _up.upgrade(from_dev=from_dev, ref=ref, check=check,
+                    restart=not no_restart, log=console.print)
+    except _up.UpgradeError as e:
+        raise click.ClickException(str(e))
+
+
 @main.group()
 def daemon():
     """Per-store background process that holds the catalog open and
@@ -5554,23 +5584,28 @@ def _parse_duration(text: str) -> float:
                    "gains a `context` field per row; table output appends "
                    "the rendered context block under each row. Cost is N "
                    "extra daemon context calls; keep low for hook latency.")
-@click.option("--fuse/--no-fuse", "fuse", default=True, show_default=True,
-              help="Hybrid (default): RRF-fuse dense ANN with symbolic "
+@click.option("--fuse/--no-fuse", "fuse", default=False, show_default=True,
+              help="--fuse (opt-in): RRF-fuse dense ANN with symbolic "
                    "content_rank (BM25), so rare-keyword queries surface the "
-                   "lexically-exact memory dense alone misses. --no-fuse = "
-                   "pure dense ANN (the old behavior).")
+                   "lexically-exact memory dense alone misses. The lexical win "
+                   "is a scale effect; on small memory sets it is muted/mixed, "
+                   "so it stays opt-in until a labeled memory-recall eval tunes "
+                   "rrf_k. Default = pure dense ANN.")
 def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                   session_start, as_json, as_gmd, kinds, exclude_mtype,
                   degree, fuse):
     """Memory retrieval. Three modes:
 
-    Hybrid (default): RRF fusion of dense ANN (cosine over bge-small
-    vectors) with symbolic content_rank (BM25 over the mentions index) on
-    the memory partition. content_rank rewards rare exact query terms that
-    a 384-dim dense vector dilutes into topical space, so a query like
-    "grep backstop protected query concept" surfaces the lexically-exact
-    memory that dense alone ranked far down. Requires the [dense] extra +
-    embedded memories (rmx embed --kinds memory). --no-fuse = pure dense.
+    Dense (default): pure dense ANN (cosine over bge-small vectors) on the
+    memory partition. Requires the [dense] extra + embedded memories
+    (rmx embed --kinds memory).
+
+    Hybrid (--fuse, opt-in): RRF fusion of dense ANN with symbolic
+    content_rank (BM25 over the mentions index). content_rank rewards rare
+    exact query terms that a 384-dim dense vector dilutes into topical space,
+    so a rare-keyword query surfaces the lexically-exact memory dense alone
+    ranks far down. The win is a scale effect — muted/mixed on small memory
+    sets — so it is opt-in until a labeled memory-recall eval tunes rrf_k.
 
     Recent (--recent): newest-first ordering by created_at; no dense
     embedder needed. Pair with --since 1h / 7d to bound the window.
