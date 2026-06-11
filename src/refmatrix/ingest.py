@@ -189,11 +189,32 @@ def ingest_path(
         win.close()
 
 
+def _md_file_changed(pre_tracked: "dict[str, float]", p: Path) -> bool:
+    """True if `p` should be (re)ingested by the markdown passes: not in the
+    pre-ingest tracked snapshot, or its on-disk mtime differs. Gating against a
+    snapshot captured BEFORE any pass writes is essential -- otherwise
+    `_ingest_tree` (which tracks files earlier in the SAME ingest) would make
+    every .md look 'already ingested' and the markdown passes would no-op."""
+    try:
+        cur = p.stat().st_mtime
+    except OSError:
+        return True
+    prev = pre_tracked.get(str(p))
+    return prev is None or abs(prev - cur) > 1e-6
+
+
 def _ingest_path_inner(
     s: Store, path: Path, source: str = "auto", semantic: bool = False,
     *, yield_lock=None, yield_every: int = 200,
 ) -> int:
     path = path.resolve()
+    # Snapshot tracked mtimes up front: the markdown passes gate against PRIOR
+    # ingests only, not files an earlier pass (e.g. _ingest_tree) tracks during
+    # this same call.
+    try:
+        _pre_tracked = dict(s.list_tracked())
+    except Exception:
+        _pre_tracked = {}
     metadata_path = path / ".tldr" / "cache" / "semantic" / "metadata.json"
     call_graph_path = path / ".tldr" / "cache" / "call_graph.json"
     graphify_path = path / "graphify-out" / "graph.json"
@@ -243,6 +264,9 @@ def _ingest_path_inner(
             apply_record(s, rec)
 
     # ADR semantic extraction — two-pass so cross-references resolve.
+    # Build adr_num_to_eid for EVERY ADR (so changed docs' @adr refs resolve),
+    # but only parse + apply the ones whose mtime changed. bulk_apply marks the
+    # changed ones tracked; unchanged ones stay tracked from the prior ingest.
     adr_files: list[tuple[Path, str]] = []
     adr_num_to_eid: dict[str, int] = {}
     for p in path.rglob("*.md"):
@@ -254,19 +278,17 @@ def _ingest_path_inner(
         rel = (
             p.relative_to(path).as_posix() if p.is_relative_to(path) else str(p)
         )
+        changed = _md_file_changed(_pre_tracked, p)
         eid = s.upsert_entity(
             kind="doc", name=rel, path=str(p),
             meta={"adr_number": adr_num},
         )
-        try:
-            s.mark_tracked(str(p), p.stat().st_mtime)
-        except OSError:
-            pass
         adr_num_to_eid[adr_num] = eid
-        adr_files.append((p, adr_num))
+        if changed:
+            adr_files.append((p, adr_num))
     if adr_files:
         from concurrent.futures import ThreadPoolExecutor
-        from refmatrix.ingest_records import apply_record
+        from refmatrix.ingest_records import bulk_apply_records
         adr_workers = int(os.environ.get("RMX_INGEST_WORKERS", "8") or "8")
         with ThreadPoolExecutor(max_workers=adr_workers,
                                 thread_name_prefix="rmx-adr-parse") as ex:
@@ -274,10 +296,7 @@ def _ingest_path_inner(
                 lambda fp: _build_adr_record(fp, path, adr_num_to_eid),
                 [p for p, _ in adr_files],
             ))
-        for rec in adr_records:
-            if rec is None:
-                continue
-            apply_record(s, rec, adr_num_to_eid=adr_num_to_eid)
+        bulk_apply_records(s, adr_records, adr_num_to_eid=adr_num_to_eid)
 
     # General markdown semantic extraction (non-ADR). Runs after ADR pass so
     # ADR-NNNN cross-references from generic docs can resolve via
@@ -290,10 +309,15 @@ def _ingest_path_inner(
             continue
         if _is_adr_file(p) is not None:
             continue
+        # Skip files already ingested at their current mtime: a re-ingest over
+        # an unchanged tree then does no markdown work. Their entities + links
+        # persist from the prior ingest and cross-doc refs still resolve.
+        if not _md_file_changed(_pre_tracked, p):
+            continue
         md_files.append(p)
     if md_files:
         from concurrent.futures import ThreadPoolExecutor
-        from refmatrix.ingest_records import apply_record
+        from refmatrix.ingest_records import bulk_apply_records
         workers = int(os.environ.get("RMX_INGEST_WORKERS", "8") or "8")
         with ThreadPoolExecutor(max_workers=workers,
                                 thread_name_prefix="rmx-md-parse") as ex:
@@ -301,10 +325,10 @@ def _ingest_path_inner(
                 lambda fp: _build_markdown_record(fp, path, adr_num_to_eid),
                 md_files,
             ))
-        for rec in records:
-            if rec is None:
-                continue
-            apply_record(s, rec, adr_num_to_eid=adr_num_to_eid)
+        # One bulk apply across all changed docs instead of ~1 upsert per
+        # concept per file (the per-row cost that dominated ingest on a large
+        # tree). See ingest_records.bulk_apply_records.
+        bulk_apply_records(s, records, adr_num_to_eid=adr_num_to_eid)
     return n
 
 

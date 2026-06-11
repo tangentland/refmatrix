@@ -279,3 +279,127 @@ def apply_record(
                 )
             n += 1
     return n
+
+
+def bulk_apply_records(
+    s,
+    records: "list[IngestRecord]",
+    *,
+    adr_num_to_eid: dict[str, int] | None = None,
+) -> int:
+    """Bulk equivalent of calling `apply_record` for each record in turn.
+
+    Collects the doc + sub entities and the bare/namespaced concepts across
+    ALL records and creates them in batched statements (`bulk_upsert_entity` +
+    `_bulk_add_concepts`) -- one table scan per group instead of ~1 upsert per
+    item, which is the cost that dominated `rmx ingest` on a large tree
+    (per-record `apply_record` over thousands of markdown files). Links are
+    then replayed per record inside one `deferred_links()` flush, exactly as
+    `apply_record` does.
+
+    Produces the same graph as a per-record apply: entity de-dup is by
+    (kind, name) just like upsert, concept order/description first-wins is
+    preserved by collection order, and the link conflict semantics are
+    unchanged (same `s.link` / `s.weighted_link` calls, one buffered flush)."""
+    from refmatrix.ingest import _bulk_add_concepts  # lazy: avoid import cycle
+    adr_num_to_eid = adr_num_to_eid or {}
+    records = [r for r in records if r is not None]
+    if not records:
+        return 0
+
+    # ---- collect unique entities + concepts across all records ----
+    doc_rows: list = []                         # one per record, in order
+    sub_seen: dict[tuple[str, str], tuple] = {}  # (kind,qname) -> (path, meta)
+    sub_order: list[tuple[str, str]] = []
+    concept_specs: list[tuple[str, str | None]] = []      # (name, desc)
+    ns_specs: list[tuple[str, str | None]] = []           # ("ns/name", desc)
+    for rec in records:
+        doc_rows.append(
+            (rec.doc_kind, rec.rel, rec.file_path, None, rec.doc_meta)
+        )
+        for sub in rec.sub_entities:
+            key = (sub["kind"], sub["qname"])
+            if key not in sub_seen:
+                sub_seen[key] = (rec.file_path, sub.get("meta"))
+                sub_order.append(key)
+        for c in rec.concepts:
+            concept_specs.append((c["name"], c.get("description")))
+        for c in rec.ns_concepts:
+            ns_specs.append((f'{c["ns"]}/{c["name"]}', c.get("description")))
+
+    # ---- bulk-create entities + concepts ----
+    doc_ids = s.bulk_upsert_entity(doc_rows)
+    doc_eid_by_rel: dict[tuple[str, str], int] = {}
+    for (k, name, *_rest), eid in zip(doc_rows, doc_ids):
+        doc_eid_by_rel[(k, name)] = eid
+
+    sub_rows = [
+        (k, q, sub_seen[(k, q)][0], None, sub_seen[(k, q)][1])
+        for (k, q) in sub_order
+    ]
+    sub_id_list = s.bulk_upsert_entity(sub_rows)
+    sub_eid = {key: eid for key, eid in zip(sub_order, sub_id_list)}
+
+    for rec in records:
+        if rec.mtime is not None:
+            try:
+                s.mark_tracked(rec.file_path, rec.mtime)
+            except OSError:
+                pass
+
+    concept_ids = _bulk_add_concepts(s, concept_specs)
+    ns_concept_ids = _bulk_add_concepts(s, ns_specs)
+
+    n = len(doc_rows) + len(sub_order)
+
+    # ---- per-record ref resolution + link replay (one batched flush) ----
+    with s.deferred_links():
+        for rec in records:
+            doc_eid = doc_eid_by_rel[(rec.doc_kind, rec.rel)]
+            ref_ids: dict[str, int | None] = {}
+            for r in rec.ref_resolves:
+                found: int | None = None
+                for cand in r["candidates"]:
+                    ent = s.get_entity(cand[0], cand[1])
+                    if ent is not None:
+                        found = ent.id
+                        break
+                ref_ids[r["key"]] = found
+
+            def _resolve(ref: str) -> int | None:
+                if ref == "@doc":
+                    return doc_eid
+                if ref.startswith("@sub:"):
+                    kind, _, qname = ref[len("@sub:"):].partition("/")
+                    return sub_eid.get((kind, qname))
+                if ref.startswith("@concept:"):
+                    return concept_ids.get(ref[len("@concept:"):])
+                if ref.startswith("@nsconcept:"):
+                    ns, _, name = ref[len("@nsconcept:"):].partition("/")
+                    return ns_concept_ids.get(f"{ns}/{name}")
+                if ref.startswith("@adr:"):
+                    return adr_num_to_eid.get(ref[len("@adr:"):])
+                if ref.startswith("@ref:"):
+                    return ref_ids.get(ref[len("@ref:"):])
+                return None
+
+            for op in rec.ops:
+                src = _resolve(op["src"])
+                dst = _resolve(op["dst"])
+                if src is None or dst is None:
+                    continue
+                kind = op["op"]
+                if kind == "link":
+                    s.link(op["linkage"], src, dst, weight=op.get("weight"))
+                elif kind == "weighted_link":
+                    s.weighted_link(
+                        op["linkage"], src, dst, weight=op["weight"],
+                    )
+                elif kind == "evidence":
+                    s.add_evidence(
+                        op["linkage"], src, dst,
+                        file=op.get("file"), line=op.get("line"),
+                        detail=op.get("detail"),
+                    )
+                n += 1
+    return n
