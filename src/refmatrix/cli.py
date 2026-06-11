@@ -5282,6 +5282,15 @@ def memory_search(query, limit):
 _DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
 
 
+def _ann_similarity(distance: float) -> float:
+    """Cosine similarity (higher = closer) from a Lance L2 distance over
+    L2-normalized embedding vectors. For unit vectors ‖a−b‖² = 2(1 − cos), so
+    cos = 1 − d²/2. The daemon's ANN op returns the raw L2 *distance*
+    (ascending = best); converting here lets `memory recall` show a `score`
+    that rises with rank instead of a distance mislabeled "score"."""
+    return 1.0 - (distance * distance) / 2.0
+
+
 def _render_memory_gmd(rows, *, query: str | None = None,
                        mode: str | None = None,
                        partition: str | None = None) -> str:
@@ -5458,9 +5467,14 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
                   degree):
     """Memory retrieval. Three modes:
 
-    Hybrid (default): dense ANN over memory.lance fused with the
-    symbolic graph. Requires the [dense] extra and embedded memories
-    (rmx embed --kinds memory).
+    Dense (default): pure dense ANN (cosine over bge-small vectors) on
+    memory.lance. Requires the [dense] extra and embedded memories
+    (rmx embed --kinds memory). NOTE: despite the historical "hybrid"
+    label, this path does NOT yet fuse the symbolic graph / BM25
+    (`content_rank`) — it is dense-only. On rare-keyword queries the
+    symbolic `rmx context` path outranks it (BM25 rewards rare exact
+    terms; a 384-dim dense vector dilutes them into topical space). Real
+    hybrid fusion (dense ⊕ content_rank) is the tracked follow-up.
 
     Recent (--recent): newest-first ordering by created_at; no dense
     embedder needed. Pair with --since 1h / 7d to bound the window.
@@ -5630,6 +5644,17 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
     if not resp.get("ok"):
         raise click.ClickException(resp.get("error", "daemon error"))
     hits = resp["result"].get("hits", [])
+    # Best-first by ascending L2 distance so the displayed `score` (cosine
+    # similarity, higher = better) decreases monotonically with rank — the
+    # column and the row order cannot disagree. The daemon already sorts
+    # ascending; this makes the invariant explicit and robust to hit shape.
+    hits = sorted(
+        hits,
+        key=lambda h: (
+            h["distance"] if h.get("distance") is not None
+            else -(h.get("score") or 0.0)
+        ),
+    )
     if not hits:
         if as_gmd:
             click.echo(_render_memory_gmd(
@@ -5658,7 +5683,9 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
             if len(rows) >= k:
                 break
             eid = h.get("entity_id") or h.get("id")
-            score = h.get("score") or h.get("distance")
+            dist = h.get("distance")
+            if dist is None:
+                dist = h.get("score")  # legacy hit shape
             m = _fetch_memory(eid)
             if m is None and "doc" in kinds_list:
                 # Non-memory hit (kind=doc/code/concept). For these we
@@ -5697,7 +5724,13 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
             if m:
                 if exclude_mtypes and (m.get("mtype") or "") in exclude_mtypes:
                     continue
-                m["score"] = score
+                # Honest fields: `score` = cosine similarity (higher = better,
+                # agrees with rank order); `distance` = raw L2 (lower = closer).
+                m["distance"] = dist
+                m["score"] = (
+                    _ann_similarity(dist)
+                    if isinstance(dist, (int, float)) else dist
+                )
                 rows.append(m)
         rows = _attach_context(rows)
         if as_gmd:
@@ -5716,7 +5749,12 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
         if shown >= k:
             break
         eid = h.get("entity_id") or h.get("id")
-        score = h.get("score") or h.get("distance")
+        dist = h.get("distance")
+        if dist is None:
+            dist = h.get("score")  # legacy hit shape
+        score = (
+            _ann_similarity(dist) if isinstance(dist, (int, float)) else dist
+        )
         m = _fetch_memory(eid)
         if exclude_mtypes and m and (m.get("mtype") or "") in exclude_mtypes:
             continue
