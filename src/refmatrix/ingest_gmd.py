@@ -382,8 +382,12 @@ def _resolve_target_eid(
     eid = eid_by_name.get(target_name)
     if eid is not None:
         return eid
-    # Try concept (node anchors) then doc (file-level refs).
-    for kind in ("concept", "doc"):
+    # Try concept (node anchors `doc#id`) then doc, then memory (a bare doc-id
+    # ingested with --as-memory is a `kind=memory` entity, NOT a doc/concept).
+    # `memory` MUST be in this list: once the duplicate `__root__` concept is no
+    # longer minted, a cross-doc `[[slug]]` target only exists as the memory,
+    # and omitting it here would drop every memory->memory rel: edge.
+    for kind in ("concept", "doc", "memory"):
         e = store.get_entity(kind, target_name)
         if e is not None:
             eid_by_name[target_name] = e.id  # cache for the rest of this batch
@@ -662,6 +666,18 @@ def ingest_gmd_paths(
         # to concepts first). The doc-level file remains kind='doc'.
         for node in doc.nodes:
             name = _entity_name(doc.doc_id, node.id)
+            # The synthetic `__root__` node maps to the bare doc-id, which is
+            # ALREADY materialized as the doc-level entity above (a `memory`
+            # under as_memory, else a `doc`). Minting a parallel `kind=concept`
+            # here created a duplicate node per subject and split this subject's
+            # inbound rel: edges across the two (cross-doc targets resolved to
+            # the concept via _resolve_target_eid, while pass-2 mentions landed
+            # on the memory). Skip it: the doc-level entity IS the root node.
+            # eid_by_name[doc_id] already points at doc_eid (set above), so
+            # pass-2 title/body/rel edges land on it.
+            if name == doc.doc_id:
+                eid_by_name.setdefault(name, doc_eid)
+                continue
             tldr = (
                 f"{node.title}\n\n"
                 + "\n".join(node.body_lines[:8]).strip()
@@ -677,15 +693,6 @@ def ingest_gmd_paths(
                 kind="concept", name=name, path=str(path),
                 tldr=tldr, meta=meta,
             )
-            # `__root__` resolves to the doc-id, which is also the key
-            # we used for the doc-level entity above (add_memory under
-            # `as_memory=True`, upsert_entity(kind='doc') otherwise).
-            # Overwriting here clobbers the doc-level entity id in
-            # `eid_by_name` and forces every cross-doc rel: edge to
-            # land on the node-level concept duplicate instead of the
-            # doc-level memory — exactly the path the root-rel mirror
-            # tries to walk. Preserve the prior mapping; the concept
-            # entity is still queryable by id elsewhere.
             eid_by_name.setdefault(name, eid)
             stats.nodes += 1
             _node_tick()

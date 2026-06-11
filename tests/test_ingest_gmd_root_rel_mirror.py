@@ -188,3 +188,59 @@ body
     ).fetchone()
     # Pre-fix behavior preserved for non-memory ingest.
     assert row is None
+
+
+def test_root_node_does_not_duplicate_doc_level_memory(tmp_path):
+    """The synthetic `__root__` node maps to the bare doc-id, which is already
+    the doc-level memory. It must NOT mint a parallel kind=concept (the dup
+    that split a subject's inbound edges across two nodes)."""
+    s = _seed_store(tmp_path)
+    a = _write_memory(tmp_path, "alpha-mem", '''---
+gmd: "0.1"
+id: alpha-mem
+title: "Alpha"
+tags: [project]
+metadata:
+  type: project
+---
+
+# Alpha {#root}
+
+Body referencing beta.
+
+rel: related-to -> [[beta-mem]]
+''')
+    b = _write_memory(tmp_path, "beta-mem", '''---
+gmd: "0.1"
+id: beta-mem
+title: "Beta"
+tags: [project]
+metadata:
+  type: project
+---
+
+# Beta {#root}
+
+Body.
+''')
+    ingest_gmd_paths(s, [a, b], as_memory=True)
+    con = s._connect()
+    # Exactly one entity per slug, and it is the memory — no concept duplicate.
+    for slug in ("alpha-mem", "beta-mem"):
+        rows = con.execute(
+            "SELECT kind, count(*) FROM entities WHERE name=? GROUP BY kind",
+            (slug,),
+        ).fetchall()
+        kinds = {r[0]: r[1] for r in rows}
+        assert kinds == {"memory": 1}, f"{slug} not deduped: {kinds}"
+    # The cross-doc `[[beta-mem]]` target resolves to beta's MEMORY, and the
+    # root-mirror lands the edge on alpha's MEMORY (memory->memory rel: chain).
+    a_eid = s.get_memory("alpha-mem")["id"]
+    b_eid = s.get_memory("beta-mem")["id"]
+    row = con.execute(
+        "SELECT 1 FROM entity_links el "
+        "JOIN linkage_types lt ON lt.id = el.linkage_id "
+        "WHERE lt.name='related-to' AND el.concept_id=? AND el.entity_id=?",
+        (a_eid, b_eid),
+    ).fetchone()
+    assert row is not None, "memory->memory related-to edge missing"
