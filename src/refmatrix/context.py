@@ -15,7 +15,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from refmatrix.kwic import kwic_one
+from refmatrix.kwic import kwic_line, kwic_one
 from refmatrix.store import Entity, Store
 
 # Co-mention linkages whose neighbors are sections/docs that merely *talk
@@ -104,6 +104,7 @@ def build_context(
     strict: bool = False,
     degree: int = 0,
     include_sessions: bool = False,
+    expand: int = 0,
     _entities_explicit: bool = False,
     _tokens_explicit: bool = False,
 ) -> ContextBundle:
@@ -287,7 +288,8 @@ def build_context(
                 centry = ContextEntry(entity=cent, linkage="content",
                                       weight=cscore)
                 centry.snippet = _content_snippet(
-                    s, cent, ref_terms, parent_cache=parent_cache,
+                    s, cent, ref_terms, expand=expand,
+                    parent_cache=parent_cache,
                 )
                 built.append(centry)
                 seen_ids.add(ceid)
@@ -510,21 +512,41 @@ def _ref_terms(ref: str) -> list[str]:
 
 def _content_snippet(
     s: Store, ent: Entity, terms: list[str],
-    *, parent_cache: dict[str, str | None] | None = None,
+    *, expand: int = 0, parent_cache: dict[str, str | None] | None = None,
 ) -> str | None:
-    """KWIC window for a content-ranked hit: reuse the `_mention_snippet` body
-    ladder (memory body → parent doc/section → tldr) for the first term that
-    lands a window. None when no term occurs in any available text."""
-    probe = ContextEntry(entity=ent, linkage="content")
+    """Whole-line (grep-style) snippet for a content-ranked hit, via the body
+    ladder (memory body → parent doc/section → tldr). `expand` adds that many
+    context lines around the match. None when no term occurs in any text."""
+    q = " ".join(terms)
+    texts: list[str] = []
     if ent.kind == "memory":
         try:
             m = s.get_memory(ent.id)
         except Exception:
             m = None
-        if m is not None:
-            probe.body = m.get("content")
-    for t in terms:
-        snip = _mention_snippet(s, probe, t, parent_cache=parent_cache)
+        if m and m.get("content"):
+            texts.append(m["content"])
+    if "#" in ent.name:
+        parent_name, anchor_id = ent.name.split("#", 1)
+        if parent_cache is not None and parent_name in parent_cache:
+            body = parent_cache[parent_name]
+        else:
+            try:
+                mem = s.find_memory_any_partition(parent_name)
+            except Exception:
+                mem = None
+            body = mem.get("content") if mem else None
+            if parent_cache is not None:
+                parent_cache[parent_name] = body
+        if body:
+            sec = _section_text(body, anchor_id)
+            if sec:
+                texts.append(sec)
+            texts.append(body)
+    if ent.tldr:
+        texts.append(ent.tldr)
+    for t in texts:
+        snip = kwic_line(t, q, expand=expand)
         if snip:
             return snip
     return None
@@ -584,9 +606,11 @@ def _render_entry(e: ContextEntry) -> str:
     if e.weight is not None:
         line += f"  (w={e.weight:g})"
     # A KWIC snippet is the whole payload — it already shows the matched line,
-    # so we skip the whole-section tldr / full body dump that follows.
+    # so we skip the whole-section tldr / full body dump that follows. Indent
+    # every line (an --expand snippet spans multiple source lines).
     if e.snippet:
-        line += f"\n    {e.snippet}"
+        snippet_block = "\n".join(f"    {ln}" for ln in e.snippet.splitlines())
+        line += f"\n{snippet_block}"
         return line
     if e.entity.tldr:
         tldr = e.entity.tldr

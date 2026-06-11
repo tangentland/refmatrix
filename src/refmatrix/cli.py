@@ -1641,8 +1641,12 @@ def neighbors(concept, depth, linkage, limit, include_noise, strict, via_replica
                    "by default: session cards are transient activity logs that "
                    "co-mention everything and drown out durable docs/code. Use "
                    "`rmx session recall <term>` to search sessions instead.")
+@click.option("--expand", default=0, type=int,
+              help="Context lines around each CONTENT MATCH snippet (grep -C "
+                   "style). 0 (default) = the whole matched line only; N = ±N "
+                   "surrounding source lines.")
 def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
-            via_replica, degree, include_sessions):
+            via_replica, degree, include_sessions, expand):
     """Token-budgeted context bundle: anchor + neighbors + their tldr blobs."""
     from refmatrix.context import build_context, render_json, render_text
     from refmatrix import daemon as daemon_mod
@@ -1684,6 +1688,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
                     strict=strict,
                     degree=degree,
                     include_sessions=include_sessions,
+                    expand=expand,
                     _entities_explicit=entities_explicit,
                     _tokens_explicit=tokens_explicit,
                 )
@@ -1712,6 +1717,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
                 "strict": strict,
                 "degree": degree,
                 "include_sessions": include_sessions,
+                "expand": expand,
                 "entities_explicit": entities_explicit,
                 "tokens_explicit": tokens_explicit,
             }, timeout=120.0)
@@ -1794,6 +1800,8 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
             fuse=fuse,
             strict=strict,
             degree=degree,
+            include_sessions=include_sessions,
+            expand=expand,
             _entities_explicit=entities_explicit,
             _tokens_explicit=tokens_explicit,
         )

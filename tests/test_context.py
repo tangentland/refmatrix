@@ -132,6 +132,19 @@ def test_build_context_inlines_memory_body_for_bare_slug(tmp_path):
     s.close()
 
 
+def test_kwic_line_whole_line_and_expand():
+    from refmatrix.kwic import kwic_line
+    body = "intro\nThe FOV wedge here\ntrailing\nmore"
+    # default: just the whole matched line, term marked
+    assert kwic_line(body, "fov wedge") == "The «FOV» wedge here"
+    # expand=1: one context line each side
+    assert kwic_line(body, "fov wedge", expand=1).splitlines() == [
+        "intro", "The «FOV» wedge here", "trailing",
+    ]
+    # no hit → empty
+    assert kwic_line(body, "absent") == ""
+
+
 def test_build_context_content_fusion_surfaces_phrase_matches(tmp_path):
     """A natural-language phrase whose terms were never co-mentioned on one
     node has no graph anchor — content-ranked fusion (BM25 over `mentions`)
