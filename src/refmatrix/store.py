@@ -2955,67 +2955,92 @@ class Store:
         flat = list(cid_to_term)
         if not flat:
             return []
-        N, avgdl = self._mentions_bm25_stats(mlid)
-        if N == 0 or avgdl == 0:
-            return []
-        # Document frequency per query term (global within the partition).
-        n_term: dict[int, int] = {}
-        for ti, cids in enumerate(term_cids):
-            if not cids:
-                n_term[ti] = 0
-                continue
-            ph = ",".join("?" * len(cids))
-            n_term[ti] = int(con.execute(
-                f"SELECT COUNT(DISTINCT el.entity_id) FROM entity_links el "
-                f"JOIN entities e ON e.id = el.entity_id "
-                f"WHERE el.linkage_id=? AND e.partition_id=? "
-                f"AND el.concept_id IN ({ph})",
-                (mlid, self._partition_id, *cids),
-            ).fetchone()[0] or 0)
-        # Postings for the query-term concepts (partition + optional kind scope).
         kind_clause = f" AND e.kind IN ({','.join('?' * len(kinds))})" if kinds else ""
-        ph = ",".join("?" * len(flat))
-        rows = con.execute(
-            f"SELECT el.entity_id, el.concept_id, el.weight FROM entity_links el "
-            f"JOIN entities e ON e.id = el.entity_id "
-            f"WHERE el.linkage_id=? AND e.partition_id=? "
-            f"AND el.concept_id IN ({ph}){kind_clause}",
-            (mlid, self._partition_id, *flat, *(kinds or [])),
-        ).fetchall()
-        if not rows:
-            return []
-        cand_ids = sorted({r[0] for r in rows})
-        ph2 = ",".join("?" * len(cand_ids))
-        doc_len = {
-            r[0]: float(r[1] or 0.0) for r in con.execute(
-                f"SELECT entity_id, SUM(weight) FROM entity_links "
-                f"WHERE linkage_id=? AND entity_id IN ({ph2}) GROUP BY entity_id",
-                (mlid, *cand_ids),
-            )
-        }
         scores: dict[int, float] = {}
         cover: dict[int, set] = {}
-        for eid, cid, w in rows:
-            ti = cid_to_term.get(cid)
-            if ti is None:
-                continue
-            nt = n_term.get(ti, 0)
-            if nt <= 0:
-                continue
-            idf = math.log((N - nt + 0.5) / (nt + 0.5) + 1.0)
-            tf = float(w or 0.0)
-            dl = doc_len.get(eid, avgdl)
-            denom = tf + k1 * (1.0 - b + b * dl / avgdl)
-            if denom <= 0:
-                continue
-            scores[eid] = scores.get(eid, 0.0) + idf * (tf * (k1 + 1.0)) / denom
-            cover.setdefault(eid, set()).add(ti)
+        # BM25 (+ coverage) over the `mentions` index. Skipped wholesale when the
+        # index is empty or these terms have no mention postings — an exact
+        # symbol with no body mentions still falls through to def-surfacing below.
+        N, avgdl = self._mentions_bm25_stats(mlid)
+        if N > 0 and avgdl > 0:
+            # Document frequency per query term (global within the partition).
+            n_term: dict[int, int] = {}
+            for ti, cids in enumerate(term_cids):
+                if not cids:
+                    n_term[ti] = 0
+                    continue
+                ph = ",".join("?" * len(cids))
+                n_term[ti] = int(con.execute(
+                    f"SELECT COUNT(DISTINCT el.entity_id) FROM entity_links el "
+                    f"JOIN entities e ON e.id = el.entity_id "
+                    f"WHERE el.linkage_id=? AND e.partition_id=? "
+                    f"AND el.concept_id IN ({ph})",
+                    (mlid, self._partition_id, *cids),
+                ).fetchone()[0] or 0)
+            # Postings for the query-term concepts (partition + optional kind scope).
+            ph = ",".join("?" * len(flat))
+            rows = con.execute(
+                f"SELECT el.entity_id, el.concept_id, el.weight FROM entity_links el "
+                f"JOIN entities e ON e.id = el.entity_id "
+                f"WHERE el.linkage_id=? AND e.partition_id=? "
+                f"AND el.concept_id IN ({ph}){kind_clause}",
+                (mlid, self._partition_id, *flat, *(kinds or [])),
+            ).fetchall()
+            if rows:
+                cand_ids = sorted({r[0] for r in rows})
+                ph2 = ",".join("?" * len(cand_ids))
+                doc_len = {
+                    r[0]: float(r[1] or 0.0) for r in con.execute(
+                        f"SELECT entity_id, SUM(weight) FROM entity_links "
+                        f"WHERE linkage_id=? AND entity_id IN ({ph2}) GROUP BY entity_id",
+                        (mlid, *cand_ids),
+                    )
+                }
+                for eid, cid, w in rows:
+                    ti = cid_to_term.get(cid)
+                    if ti is None:
+                        continue
+                    nt = n_term.get(ti, 0)
+                    if nt <= 0:
+                        continue
+                    idf = math.log((N - nt + 0.5) / (nt + 0.5) + 1.0)
+                    tf = float(w or 0.0)
+                    dl = doc_len.get(eid, avgdl)
+                    denom = tf + k1 * (1.0 - b + b * dl / avgdl)
+                    if denom <= 0:
+                        continue
+                    scores[eid] = scores.get(eid, 0.0) + idf * (tf * (k1 + 1.0)) / denom
+                    cover.setdefault(eid, set()).add(ti)
+                n_units = sum(1 for cids in term_cids if cids) or 1
+                if coverage_alpha > 0 and n_units > 1:
+                    for eid in list(scores):
+                        scores[eid] *= (len(cover[eid]) / n_units) ** coverage_alpha
+        # M1 — surface DEFINITION files. A symbol's own name is a `defines`
+        # concept on its file, not a `mentions` term, so the file that DEFINES
+        # the query symbol is otherwise ABSENT from this index entirely (the
+        # deeper root of the exact-symbol `w=0` miss). Add the def entities for
+        # the query-term concepts with a small floor score so they're RETURNED:
+        # `_floor_exact_defs` (context) lifts an exact-symbol def above fuzzy
+        # body mentions, while for NL phrases they sit below real hits and get
+        # trimmed by `limit`. Skipped silently if `defines` doesn't exist yet.
+        try:
+            dlid = self.get_linkage_id("defines")
+        except Exception:
+            dlid = None
+        if dlid is not None and flat:
+            ph_def = ",".join("?" * len(flat))
+            def_rows = con.execute(
+                f"SELECT DISTINCT el.entity_id FROM entity_links el "
+                f"JOIN entities e ON e.id = el.entity_id "
+                f"WHERE el.linkage_id=? AND e.partition_id=? "
+                f"AND el.concept_id IN ({ph_def}){kind_clause}",
+                (dlid, self._partition_id, *flat, *(kinds or [])),
+            ).fetchall()
+            for (eid,) in def_rows:
+                if eid not in scores:
+                    scores[eid] = 1e-3
         if not scores:
             return []
-        n_units = sum(1 for cids in term_cids if cids) or 1
-        if coverage_alpha > 0 and n_units > 1:
-            for eid in list(scores):
-                scores[eid] *= (len(cover[eid]) / n_units) ** coverage_alpha
         return sorted(scores.items(), key=lambda kv: -kv[1])[:limit]
 
     def add_evidence(
