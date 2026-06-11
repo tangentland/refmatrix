@@ -472,6 +472,13 @@ def _ingest_tldr_metadata(s: Store, project: Path, *, yield_lock=None,
     cache = project / ".tldr" / "cache" / "semantic" / "metadata.json"
     payload = json.loads(cache.read_text())
     units = payload.get("units") or []
+    # The tldr cache indexes the whole tree; honor `.refmatrix_ignore` here too
+    # (the tree-walk + semantic passes already filter, but this cache path
+    # bypassed it and re-added ignored units — e.g. a vendored duplicate tree).
+    units = [
+        u for u in units
+        if u.get("file") and not should_ignore(project / u["file"], project)
+    ]
     if not units:
         return 0
 
@@ -681,6 +688,12 @@ def _ingest_tldr(s: Store, project: Path, *, yield_lock=None,
         from_func = e.get("from_func") or ""
         to_file = e.get("to_file") or ""
         to_func = e.get("to_func") or ""
+
+        # Honor `.refmatrix_ignore` on the cache path too (see metadata ingest).
+        if from_file and should_ignore(project / from_file, project):
+            continue
+        if to_file and should_ignore(project / to_file, project):
+            continue
 
         if from_file:
             file_rels.setdefault(from_file)
