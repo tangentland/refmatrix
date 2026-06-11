@@ -20,6 +20,7 @@ Phase A7 surface; Phase B's `rmx memory recall` is the CLI consumer.
 """
 from __future__ import annotations
 
+import re
 from typing import Sequence
 
 from refmatrix.query import fuse_rrf
@@ -104,6 +105,59 @@ def hybrid_recall(
         return []
     fused = fuse_rrf(lists, k=rrf_k)
     return fused[:k]
+
+
+def _content_terms(query: str) -> list[str]:
+    """Tokenize an NL query into content-search terms for `content_rank`:
+    whitespace split, drop sub-2-char tokens, dedupe (case-insensitive).
+    Mirrors `context._ref_terms`; kept local so recall.py doesn't import a
+    context-private helper. Per-term variant/canonical expansion happens
+    inside `Store.content_rank`."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for tok in re.split(r"\s+", (query or "").strip()):
+        tok = tok.strip()
+        if len(tok) < 2 or tok.lower() in seen:
+            continue
+        seen.add(tok.lower())
+        out.append(tok)
+    return out
+
+
+def hybrid_memory_recall(
+    store: Store,
+    embedder,
+    query: str,
+    *,
+    k: int = 20,
+    kinds: Sequence[str] | None = None,
+    rrf_k: int = 60,
+) -> list[tuple[int, float]]:
+    """Dense ⊕ symbolic RRF fusion for `rmx memory recall`.
+
+    Runs `store.content_rank` (BM25 over the mentions forward index — rewards
+    rare, exact query terms) AND the dense ANN, then RRF-fuses via
+    `hybrid_recall`. Closes the gap where pure dense missed a lexically-exact
+    memory because a 384-dim vector dilutes rare terms into topical space
+    (e.g. "grep backstop protected query concept" — symbolic nailed it, dense
+    didn't). `content_rank` is partition-scoped, so the CALLER must already
+    have `store` bound to the target memory partition.
+
+    Returns `[(entity_id, fused_score)]` descending by RRF score."""
+    terms = _content_terms(query)
+    symbolic_hits: list[int] = []
+    if terms:
+        symbolic_hits = [
+            eid for eid, _score in store.content_rank(
+                terms,
+                kinds=list(kinds) if kinds else ["memory"],
+                limit=max(k, rrf_k),
+            )
+        ]
+    return hybrid_recall(
+        store, embedder, query,
+        k=k, kinds=kinds, symbolic_hits=symbolic_hits, rrf_k=rrf_k,
+    )
 
 
 def bitmap_prefilter(

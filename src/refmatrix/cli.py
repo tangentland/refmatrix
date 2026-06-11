@@ -5367,6 +5367,19 @@ def _ann_similarity(distance: float) -> float:
     return 1.0 - (distance * distance) / 2.0
 
 
+def _recall_display_score(h: dict) -> "float | None":
+    """Display score (higher = better, agrees with rank order) for a recall
+    hit. A fused hit carries an RRF `score` — use it directly. A pure-dense
+    hit carries an L2 `distance` — convert to cosine similarity."""
+    if h.get("fused"):
+        s = h.get("score")
+        return float(s) if isinstance(s, (int, float)) else None
+    d = h.get("distance")
+    if d is None:
+        d = h.get("score")  # pure-dense legacy hit shape
+    return _ann_similarity(float(d)) if isinstance(d, (int, float)) else None
+
+
 def _render_memory_gmd(rows, *, query: str | None = None,
                        mode: str | None = None,
                        partition: str | None = None) -> str:
@@ -5541,19 +5554,23 @@ def _parse_duration(text: str) -> float:
                    "gains a `context` field per row; table output appends "
                    "the rendered context block under each row. Cost is N "
                    "extra daemon context calls; keep low for hook latency.")
+@click.option("--fuse/--no-fuse", "fuse", default=True, show_default=True,
+              help="Hybrid (default): RRF-fuse dense ANN with symbolic "
+                   "content_rank (BM25), so rare-keyword queries surface the "
+                   "lexically-exact memory dense alone misses. --no-fuse = "
+                   "pure dense ANN (the old behavior).")
 def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                   session_start, as_json, as_gmd, kinds, exclude_mtype,
-                  degree):
+                  degree, fuse):
     """Memory retrieval. Three modes:
 
-    Dense (default): pure dense ANN (cosine over bge-small vectors) on
-    memory.lance. Requires the [dense] extra and embedded memories
-    (rmx embed --kinds memory). NOTE: despite the historical "hybrid"
-    label, this path does NOT yet fuse the symbolic graph / BM25
-    (`content_rank`) — it is dense-only. On rare-keyword queries the
-    symbolic `rmx context` path outranks it (BM25 rewards rare exact
-    terms; a 384-dim dense vector dilutes them into topical space). Real
-    hybrid fusion (dense ⊕ content_rank) is the tracked follow-up.
+    Hybrid (default): RRF fusion of dense ANN (cosine over bge-small
+    vectors) with symbolic content_rank (BM25 over the mentions index) on
+    the memory partition. content_rank rewards rare exact query terms that
+    a 384-dim dense vector dilutes into topical space, so a query like
+    "grep backstop protected query concept" surfaces the lexically-exact
+    memory that dense alone ranked far down. Requires the [dense] extra +
+    embedded memories (rmx embed --kinds memory). --no-fuse = pure dense.
 
     Recent (--recent): newest-first ordering by created_at; no dense
     embedder needed. Pair with --since 1h / 7d to bound the window.
@@ -5701,7 +5718,7 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
     # has k rows after exclusion. 3× covers most pollution levels; user
     # can raise -k for partitions with denser noise.
     ann_k = k * 3 if exclude_mtypes else k
-    args = {"query": q, "k": ann_k, "kinds": kinds_list}
+    args = {"query": q, "k": ann_k, "kinds": kinds_list, "fuse": fuse}
     if not daemon_mod.ping(root):
         raise click.ClickException(
             "rmx memory recall needs the daemon up (dense embedder lives there)"
@@ -5709,7 +5726,7 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
     # 180s covers worst-case embedder cold-start (sentence-transformers
     # model load on a busy CPU takes 30-90s). Steady-state recall is
     # sub-second once the daemon's _embedder cache warms.
-    resp = _memory_daemon_call("ann_search", args, timeout=180.0)
+    resp = _memory_daemon_call("memory_recall", args, timeout=180.0)
     if not resp.get("ok"):
         raise click.ClickException(resp.get("error", "daemon error"))
     hits = resp["result"].get("hits", [])
@@ -5752,9 +5769,6 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             if len(rows) >= k:
                 break
             eid = h.get("entity_id") or h.get("id")
-            dist = h.get("distance")
-            if dist is None:
-                dist = h.get("score")  # legacy hit shape
             m = _fetch_memory(eid)
             if m is None and "doc" in kinds_list:
                 # Non-memory hit (kind=doc/code/concept). For these we
@@ -5793,13 +5807,12 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             if m:
                 if exclude_mtypes and (m.get("mtype") or "") in exclude_mtypes:
                     continue
-                # Honest fields: `score` = cosine similarity (higher = better,
-                # agrees with rank order); `distance` = raw L2 (lower = closer).
-                m["distance"] = dist
-                m["score"] = (
-                    _ann_similarity(dist)
-                    if isinstance(dist, (int, float)) else dist
-                )
+                # Honest fields, higher = better, agreeing with rank order.
+                # Fused hits carry an RRF `score`; pure-dense hits a cosine
+                # similarity derived from the raw L2 `distance` (kept too).
+                m["score"] = _recall_display_score(h)
+                m["distance"] = h.get("distance")
+                m["fused"] = bool(h.get("fused"))
                 rows.append(m)
         rows = _attach_context(rows)
         if as_gmd:
@@ -5818,12 +5831,7 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         if shown >= k:
             break
         eid = h.get("entity_id") or h.get("id")
-        dist = h.get("distance")
-        if dist is None:
-            dist = h.get("score")  # legacy hit shape
-        score = (
-            _ann_similarity(dist) if isinstance(dist, (int, float)) else dist
-        )
+        score = _recall_display_score(h)
         m = _fetch_memory(eid)
         if exclude_mtypes and m and (m.get("mtype") or "") in exclude_mtypes:
             continue

@@ -3368,6 +3368,38 @@ def _op_ann_search(d: Daemon, args: dict) -> dict:
     return {"hits": [{"id": eid, "distance": dist} for eid, dist in hits]}
 
 
+def _op_memory_recall(d: Daemon, args: dict) -> dict:
+    """Hybrid memory recall: dense ANN ⊕ symbolic content_rank, RRF-fused —
+    the lexical side the pure-dense `ann_search` op lacks. `fuse=False` falls
+    back to pure dense. Runs under `with_partition` so content_rank (DuckDB,
+    partition-scoped) and the Lance ANN both target the requested memory
+    partition. Fused hits carry an RRF `score` (higher = better); dense hits
+    carry the raw L2 `distance`."""
+    try:
+        emb = d._embedder()
+    except ImportError as exc:
+        return {"ok": False, "error": f"dense extra not installed: {exc}"}
+    query = args.get("query")
+    if not query:
+        return {"ok": False, "error": "need 'query' text"}
+    k = int(args.get("k") or 20)
+    kinds = args.get("kinds")
+    fuse = args.get("fuse", True)
+    partition = _memory_partition(d, args)
+
+    from refmatrix.recall import dense_recall, hybrid_memory_recall
+
+    with d._store_lock, d.store.with_partition(partition):
+        if fuse:
+            hits = hybrid_memory_recall(d.store, emb, query, k=k, kinds=kinds)
+        else:
+            hits = dense_recall(d.store, emb, query, k=k, kinds=kinds)
+    if fuse:
+        return {"hits": [{"id": eid, "score": sc, "fused": True}
+                         for eid, sc in hits]}
+    return {"hits": [{"id": eid, "distance": dist} for eid, dist in hits]}
+
+
 def _op_part_ctx(d: "Daemon", args: dict):
     """Optional per-op partition override, mirroring the memory ops.
 
@@ -3481,6 +3513,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "embed": _op_embed,
     "embed_gc": _op_embed_gc,
     "ann_search": _op_ann_search,
+    "memory_recall": _op_memory_recall,
     "memory_add": _op_memory_add,
     "memory_get": _op_memory_get,
     "memory_iter": _op_memory_iter,
@@ -3516,6 +3549,7 @@ CLI_OPS: set[str] = {
     "replica_audit",
     "snapshot",
     "ann_search",
+    "memory_recall",
     "memory_get",
     "memory_iter",
     "memory_search",
