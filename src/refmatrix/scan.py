@@ -12,7 +12,9 @@ import json
 import re
 import sys
 
-from refmatrix.context import build_context, render_text
+from refmatrix.context import (
+    build_context, content_only_bundle, render_json, render_text,
+)
 from refmatrix.store import Store
 
 
@@ -143,7 +145,25 @@ def scan_prompt(
         include_noise=include_noise,
     )
     if not matches:
-        return ""
+        # No registered concept matched the prompt. Don't go dark — fall back
+        # to a content-ranked grep over the prompt's candidate terms so the
+        # always-on hook still surfaces code/doc for arbitrary phrasing (the
+        # strength of `rmx context "<phrase>"`, which the concept-gated path
+        # otherwise withholds). Whole-line snippets only (expand=0) to bound
+        # the per-prompt injected token cost.
+        if not cands:
+            return ""
+        b = content_only_bundle(
+            s, " ".join(cands),
+            max_tokens=per_concept_tokens, max_entities=10,
+        )
+        if not b.groups:
+            return ""
+        if fmt == "json":
+            return json.dumps([json.loads(render_json(b))], indent=2)
+        header = (f"# refmatrix content matches for prompt: "
+                  f"{', '.join(cands[:8])}")
+        return header + "\n\n" + render_text(b)
     matches = matches[:max_concepts]
 
     if fmt == "json":

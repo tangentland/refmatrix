@@ -1,9 +1,12 @@
 """Tests for the KWIC snippet helper + context co-mention snippets."""
 from __future__ import annotations
 
-from refmatrix.context import _content_snippet, _section_text, build_context
+from refmatrix.context import (
+    ContextEntry, _content_snippet, _render_entry, _section_text,
+    build_context, content_only_bundle, render_text,
+)
 from refmatrix.kwic import kwic_def_line, kwic_line, kwic_one, query_terms
-from refmatrix.store import Store
+from refmatrix.store import Entity, Store
 
 
 def test_query_terms_dedup_minlen_longest_first():
@@ -109,11 +112,13 @@ def test_content_snippet_reads_source_file_for_code_entity(tmp_path):
                           path=str(src), tldr="fov_wedge_polygon()",
                           meta={"norm_label": "fov_wedge_polygon()"})
     ent = s.get_entity_by_id(eid)
-    assert _content_snippet(s, ent, ["fov", "wedge"], expand=0) == \
-        "def «fov»_wedge_polygon(angle):"
-    snip = _content_snippet(s, ent, ["fov", "wedge"], expand=1)
+    snip, line = _content_snippet(s, ent, ["fov", "wedge"], expand=0)
+    assert snip == "def «fov»_wedge_polygon(angle):"
+    assert line == 5  # 1-based def line in _CODE
+    snip, line = _content_snippet(s, ent, ["fov", "wedge"], expand=1)
     assert snip.splitlines()[0] == "def «fov»_wedge_polygon(angle):"
     assert len(snip.splitlines()) == 2  # def line + docstring (blank above trimmed)
+    assert line == 5
     s.close()
 
 
@@ -125,7 +130,97 @@ def test_content_snippet_code_falls_back_to_tldr_without_source(tmp_path):
                           path=str(tmp_path / "gone.py"),
                           tldr="computes the fov wedge")
     ent = s.get_entity_by_id(eid)
-    assert _content_snippet(s, ent, ["fov"], expand=2) == "computes the «fov» wedge"
+    assert _content_snippet(s, ent, ["fov"], expand=2) == ("computes the «fov» wedge", None)
+    s.close()
+
+
+def _code_ent(eid, name, path, **meta):
+    return Entity(id=eid, kind="code", name=name, path=path,
+                  tldr=name.split("::")[-1] + "()", meta=meta)
+
+
+def test_render_entry_code_content_hit_leads_with_path_line():
+    """#2: a code CONTENT hit prints `path:line` above the snippet so a reader
+    can jump straight to the def."""
+    e = ContextEntry(
+        entity=_code_ent(1, "region_detection.py::fov_wedge_polygon",
+                         "/abs/region_detection.py"),
+        linkage="content", weight=9.0)
+    e.snippet = "def «fov»_wedge_polygon(angle):"
+    e.line = 5
+    out = _render_entry(e).splitlines()
+    assert "    /abs/region_detection.py:5" in out
+    assert any("def «fov»_wedge_polygon" in ln for ln in out)
+    # location must come BEFORE the snippet body
+    assert out.index("    /abs/region_detection.py:5") < \
+        next(i for i, ln in enumerate(out) if "def «fov»" in ln)
+
+
+def test_append_content_hits_dedupes_identical_twins(tmp_path, monkeypatch):
+    """#3: two paths with byte-identical code (a vendored / uat-workspace
+    mirror) collapse to one result instead of eating two slots."""
+    from refmatrix import context as C
+    real = tmp_path / "region_detection.py"
+    twin = tmp_path / "uat-workspace" / "region_detection.py"
+    twin.parent.mkdir(parents=True)
+    real.write_text(_CODE)
+    twin.write_text(_CODE)
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    rid = s.upsert_entity(kind="code", name="region_detection.py::fov_wedge_polygon",
+                          path=str(real))
+    tid = s.upsert_entity(kind="code",
+                          name="uat-workspace/region_detection.py::fov_wedge_polygon",
+                          path=str(twin))
+    # Bypass the BM25 index: force both ids through content ranking, real first.
+    monkeypatch.setattr(s, "content_rank",
+                        lambda *a, **k: [(rid, 9.0), (tid, 8.0)])
+    built: list = []
+    C._append_content_hits(s, "fov wedge", built, seen_ids=set(),
+                           max_entities=10, expand=0, include_sessions=False,
+                           parent_cache={})
+    assert len(built) == 1  # twin dropped
+    assert built[0].entity.id == rid  # the higher-scoring (canonical) path kept
+    s.close()
+
+
+def test_content_only_bundle_and_anchorless_render(tmp_path, monkeypatch):
+    """#1: a ref with no graph anchor still serves a ranked-grep bundle, and
+    render_text shows the content group instead of `(unknown symbol)`."""
+    from refmatrix import context as C
+    src = tmp_path / "region_detection.py"
+    src.write_text(_CODE)
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    cid = s.upsert_entity(kind="code", name="region_detection.py::fov_wedge_polygon",
+                          path=str(src))
+    monkeypatch.setattr(s, "content_rank", lambda *a, **k: [(cid, 9.0)])
+    b = content_only_bundle(s, "fov wedge")
+    assert b.anchor is None
+    assert b.groups.get("content"), "expected a content group"
+    txt = render_text(b)
+    assert "(unknown symbol)" not in txt
+    assert "def «fov»_wedge_polygon" in txt
+    assert f"{src}:5" in txt  # path:line present
+    s.close()
+
+
+def test_build_context_falls_back_to_content_when_ref_unresolved(tmp_path, monkeypatch):
+    """#1: build_context with a non-resolving ref returns the content bundle."""
+    from refmatrix import context as C
+    src = tmp_path / "region_detection.py"
+    src.write_text(_CODE)
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    cid = s.upsert_entity(kind="code", name="region_detection.py::fov_wedge_polygon",
+                          path=str(src))
+    monkeypatch.setattr(s, "content_rank", lambda *a, **k: [(cid, 9.0)])
+    b = build_context(s, "totally unregistered phrase")
+    assert b.anchor is None
+    assert b.groups.get("content")
+    # --linkage filtering opts OUT of the fallback (back-compat).
+    b2 = build_context(s, "totally unregistered phrase", linkages=["mentions"])
+    assert b2.anchor is None and not b2.groups
     s.close()
 
 

@@ -146,7 +146,15 @@ def build_context(
     if e is None:
         e = s.resolve_entity(ref)
     if e is None:
-        return bundle
+        # No graph anchor — serve a content-ranked grep over ref's terms so an
+        # arbitrary NL phrase (and the scan-prompt hook) gets the ranked-grep
+        # fallback instead of an empty stub. --linkage filtering opts out.
+        if linkages:
+            return bundle
+        return content_only_bundle(
+            s, ref, max_entities=max_entities, max_tokens=max_tokens,
+            expand=expand, include_sessions=include_sessions,
+        )
     bundle.anchor = e
 
     # Attach the memory body to the bundle regardless of degree — at
@@ -272,43 +280,94 @@ def build_context(
     # grep. content_rank is partition-scoped, so operational SESSION cards
     # (separate partition) never surface here.
     if not linkages:
-        ref_terms = _ref_terms(ref)
-        if ref_terms:
-            seen_ids = {x.entity.id for x in built} | {e.id}
-            for ceid, cscore in s.content_rank(
-                ref_terms, kinds=["code", "doc", "memory"],
-                limit=max_entities,
-            ):
-                if ceid in seen_ids:
-                    continue
-                cent = s.get_entity_by_id(ceid)
-                if cent is None:
-                    continue
-                if not include_sessions and _is_session_card(cent.name):
-                    continue
-                centry = ContextEntry(entity=cent, linkage="content",
-                                      weight=cscore)
-                centry.snippet = _content_snippet(
-                    s, cent, ref_terms, expand=expand,
-                    parent_cache=parent_cache,
-                )
-                built.append(centry)
-                seen_ids.add(ceid)
+        seen_ids = {x.entity.id for x in built} | {e.id}
+        _append_content_hits(
+            s, ref, built, seen_ids=seen_ids, max_entities=max_entities,
+            expand=expand, include_sessions=include_sessions,
+            parent_cache=parent_cache,
+        )
 
-    # Pass 2: rank (hits-first, docs-before-sessions) then apply the budget so
-    # real hits and durable docs survive truncation.
+    _apply_budget(bundle, built, max_entities, max_tokens, used)
+    return bundle
+
+
+def _append_content_hits(
+    s: Store, ref: str, built: list[ContextEntry], *,
+    seen_ids: set[int], max_entities: int, expand: int,
+    include_sessions: bool, parent_cache: dict[str, str | None],
+) -> None:
+    """Content-ranked fusion: BM25 over the `mentions` forward index for the
+    ref's terms, folding in body matches the graph walk can't reach. Turns
+    context (and scan-prompt / memory recall, which share this path) into a
+    ranked grep. Partition-scoped, so operational SESSION cards never surface.
+
+    Twin dedup: two paths holding byte-identical code (vendored copies, a
+    `docker/uat-workspace` mirror) yield the same visible def-line snippet at
+    the same rank — keep the first (highest-scoring) and drop the rest, so a
+    duplicated tree can't eat half the result slots."""
+    ref_terms = _ref_terms(ref)
+    if not ref_terms:
+        return
+    seen_snip: set[tuple[str, str]] = set()
+    for ceid, cscore in s.content_rank(
+        ref_terms, kinds=["code", "doc", "memory"], limit=max_entities,
+    ):
+        if ceid in seen_ids:
+            continue
+        cent = s.get_entity_by_id(ceid)
+        if cent is None:
+            continue
+        if not include_sessions and _is_session_card(cent.name):
+            continue
+        seen_ids.add(ceid)
+        res = _content_snippet(s, cent, ref_terms, expand=expand,
+                               parent_cache=parent_cache)
+        snippet, line = res if res else (None, None)
+        if snippet:
+            # Key on (symbol leaf, first/anchor snippet line) — identical
+            # visible code from a different path is a twin, not a new hit.
+            tkey = (cent.name.split("::")[-1], snippet.splitlines()[0])
+            if tkey in seen_snip:
+                continue
+            seen_snip.add(tkey)
+        centry = ContextEntry(entity=cent, linkage="content", weight=cscore)
+        centry.snippet = snippet
+        centry.line = line
+        built.append(centry)
+
+
+def _apply_budget(
+    bundle: ContextBundle, built: list[ContextEntry],
+    max_entities: int, max_tokens: int, used: int,
+) -> None:
+    """Rank (hits-first, docs-before-sessions) then fill groups under the token
+    / entity budget so real hits and durable docs survive truncation."""
     for entry in _rank_entries(built):
         cost = estimate_tokens(_render_entry(entry))
-        if used + cost > max_tokens:
-            bundle.truncated = True
-            break
-        if bundle.total_entities() >= max_entities:
+        if used + cost > max_tokens or bundle.total_entities() >= max_entities:
             bundle.truncated = True
             break
         bundle.groups.setdefault(entry.linkage, []).append(entry)
         used += cost
-
     bundle.estimated_tokens = used
+
+
+def content_only_bundle(
+    s: Store, ref: str, *, max_entities: int = 20, max_tokens: int = 4000,
+    expand: int = 0, include_sessions: bool = False,
+) -> ContextBundle:
+    """A ranked-grep bundle for a ref that resolves to NO graph anchor — the
+    content-fusion path with `anchor=None`. Lets `rmx context "<phrase>"` and
+    the scan-prompt hook serve code/doc hits for an arbitrary natural-language
+    phrase instead of an empty `(unknown symbol)` stub."""
+    bundle = ContextBundle(ref=ref)
+    built: list[ContextEntry] = []
+    _append_content_hits(
+        s, ref, built, seen_ids=set(), max_entities=max_entities,
+        expand=expand, include_sessions=include_sessions, parent_cache={},
+    )
+    _apply_budget(bundle, built, max_entities, max_tokens,
+                  estimate_tokens(_render_header(bundle)))
     return bundle
 
 
@@ -514,10 +573,13 @@ def _ref_terms(ref: str) -> list[str]:
 def _content_snippet(
     s: Store, ent: Entity, terms: list[str],
     *, expand: int = 0, parent_cache: dict[str, str | None] | None = None,
-) -> str | None:
+) -> tuple[str, int | None] | None:
     """Whole-line (grep-style) snippet for a content-ranked hit, via the body
     ladder (memory body → parent doc/section → tldr). `expand` adds that many
-    context lines around the match. None when no term occurs in any text."""
+    context lines around the match. Returns `(snippet, line)` where `line` is
+    the 1-based source line for a CODE file hit (a `path:line` jump target) and
+    None for body/tldr hits that aren't a file line. None when no term occurs in
+    any text."""
     q = " ".join(terms)
     texts: list[str] = []
     if ent.kind == "memory":
@@ -555,18 +617,19 @@ def _content_snippet(
         file_text = _read_source(ent.path)
         if file_text:
             for symbol in _symbol_candidates(ent):
-                snip = kwic_def_line(file_text, q, symbol, expand=expand)
+                snip, ln = kwic_def_line(file_text, q, symbol, expand=expand,
+                                         with_line=True)
                 if snip:
-                    return snip
-            snip = kwic_line(file_text, q, expand=expand)
+                    return snip, (ln + 1 if ln is not None else None)
+            snip, ln = kwic_line(file_text, q, expand=expand, with_line=True)
             if snip:
-                return snip
+                return snip, (ln + 1 if ln is not None else None)
     if ent.tldr:
         texts.append(ent.tldr)
     for t in texts:
         snip = kwic_line(t, q, expand=expand)
         if snip:
-            return snip
+            return snip, None
     return None
 
 
@@ -656,8 +719,17 @@ def _render_entry(e: ContextEntry) -> str:
     # so we skip the whole-section tldr / full body dump that follows. Indent
     # every line (an --expand snippet spans multiple source lines).
     if e.snippet:
-        snippet_block = "\n".join(f"    {ln}" for ln in e.snippet.splitlines())
-        line += f"\n{snippet_block}"
+        out_lines: list[str] = []
+        # For a code CONTENT hit, lead with a `path:line` jump target — the
+        # snippet shows the def but not where it lives, and an agent acting on
+        # the hit otherwise has to grep again.
+        if e.linkage == "content" and e.entity.kind == "code" and e.entity.path:
+            loc = e.entity.path
+            if e.line is not None:
+                loc = f"{loc}:{e.line}"
+            out_lines.append(f"    {loc}")
+        out_lines += [f"    {ln}" for ln in e.snippet.splitlines()]
+        line += "\n" + "\n".join(out_lines)
         return line
     if e.entity.tldr:
         tldr = e.entity.tldr
@@ -683,17 +755,19 @@ def _render_entry(e: ContextEntry) -> str:
 
 def render_text(b: ContextBundle) -> str:
     lines = [_render_header(b)]
-    if b.anchor is None:
+    a = b.anchor
+    if a is not None:
+        lines.append(f"anchor: {a.name}  [{a.kind}]")
+        if a.tldr:
+            lines.append(f"  {a.tldr}")
+        if b.anchor_body:
+            lines.append("")
+            lines.append("--- body ---")
+            lines.append(b.anchor_body)
+    elif not b.groups:
+        # No graph anchor AND no content hits — truly nothing to show.
         lines.append("(unknown symbol)")
         return "\n".join(lines)
-    a = b.anchor
-    lines.append(f"anchor: {a.name}  [{a.kind}]")
-    if a.tldr:
-        lines.append(f"  {a.tldr}")
-    if b.anchor_body:
-        lines.append("")
-        lines.append("--- body ---")
-        lines.append(b.anchor_body)
     if not b.groups:
         lines.append("")
         lines.append("(no linkages found — try `rmx link` or `rmx ingest --semantic`)")

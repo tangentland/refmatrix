@@ -100,17 +100,22 @@ def kwic_line(
     max_chars: int = 240,
     marker: tuple[str, str] = ("«", "»"),
     ellipsis: str = "…",
-) -> str:
+    with_line: bool = False,
+):
     """Return the whole LINE containing the first occurrence of any `query`
     term (grep-style, not a centered window), with the match wrapped in
     `marker`. `expand > 0` adds that many context lines before AND after the
     match (like `grep -C`), preserving indentation. A match line longer than
-    `max_chars` is capped around the match with ellipsis. "" when no term hits."""
+    `max_chars` is capped around the match with ellipsis. "" when no term hits.
+
+    `with_line=True` returns `(snippet, line_index)` — the 0-based index of the
+    matched line — instead of the bare snippet (`("", None)` on no hit), so
+    callers can render a `path:line` jump target."""
     if not text or not query:
-        return ""
+        return _empty(with_line)
     terms = query_terms(query)
     if not terms:
-        return ""
+        return _empty(with_line)
     lines = [ln.rstrip() for ln in text.splitlines()]
     for i, line in enumerate(lines):
         if not line.strip():
@@ -120,8 +125,14 @@ def kwic_line(
             continue
         marked = _mark_hit(line, hit, max_chars=max_chars, marker=marker,
                            ellipsis=ellipsis)
-        return _window(lines, i, marked, expand)
-    return ""
+        snip = _window(lines, i, marked, expand)
+        return (snip, i) if with_line else snip
+    return _empty(with_line)
+
+
+def _empty(with_line: bool):
+    """The no-hit return for the `with_line`-polymorphic kwic helpers."""
+    return ("", None) if with_line else ""
 
 
 def _mark_hit(
@@ -177,16 +188,18 @@ def kwic_def_line(
     max_chars: int = 240,
     marker: tuple[str, str] = ("«", "»"),
     ellipsis: str = "…",
-) -> str:
+    with_line: bool = False,
+):
     """Like `kwic_line`, but anchor the window on the line that DEFINES
     `symbol` (e.g. `def fov_wedge_polygon`) rather than the first query hit —
     a code entity IS its definition, so that line is the relevant one. The def
     line's query term is marked (or the symbol itself when the query term is
     elsewhere). `expand > 0` adds ±N context lines (grep -C). Returns "" when
     no definition line for `symbol` is found, so the caller can fall back to a
-    plain first-hit window."""
+    plain first-hit window. `with_line=True` returns `(snippet, def_line_index)`
+    (`("", None)` when no def line found)."""
     if not text or not symbol:
-        return ""
+        return _empty(with_line)
     lines = [ln.rstrip() for ln in text.splitlines()]
     sym = re.escape(symbol)
     strict = re.compile(r"(?:^|\W)(?:%s)\s+%s\b" % (_DEF_KW, sym))
@@ -200,7 +213,7 @@ def kwic_def_line(
         if idx is not None:
             break
     if idx is None:
-        return ""
+        return _empty(with_line)
     line = lines[idx]
     terms = query_terms(query) if query else []
     hit = _first_hit(line.lower(), terms) if terms else None
@@ -209,4 +222,5 @@ def kwic_def_line(
         hit = (m.start(), m.end()) if m else None
     marked = (_mark_hit(line, hit, max_chars=max_chars, marker=marker,
                         ellipsis=ellipsis) if hit else line)
-    return _window(lines, idx, marked, expand)
+    snip = _window(lines, idx, marked, expand)
+    return (snip, idx) if with_line else snip
