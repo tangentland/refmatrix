@@ -1298,6 +1298,12 @@ class Store:
         canon = _canonical_for_kind(kind, name)
         # On conflict: only ratchet protected upward — re-ingestion by an
         # auto-source must never clear a flag the user set manually.
+        # updated_at advances ONLY when an embedding-/content-relevant field
+        # (path/tldr/meta, or a first-time canonical_name) actually changes. A
+        # no-op re-ingest of an unchanged entity must NOT bump it: otherwise
+        # `pending_embeddings` (vectors_updated_at < updated_at) re-stales every
+        # row each cycle (the ~2709-vector re-embed tax), and replica-merge /
+        # concept-timeline both read updated_at as "last real write".
         cur = con.execute(
             """
             INSERT INTO entities(partition_id, kind, name, path, tldr, meta,
@@ -1308,7 +1314,12 @@ class Store:
                 path = COALESCE(excluded.path, entities.path),
                 tldr = COALESCE(excluded.tldr, entities.tldr),
                 meta = COALESCE(excluded.meta, entities.meta),
-                updated_at = excluded.updated_at,
+                updated_at = CASE WHEN
+                    (excluded.path IS NOT NULL AND (entities.path IS NULL OR entities.path <> excluded.path))
+                 OR (excluded.tldr IS NOT NULL AND (entities.tldr IS NULL OR entities.tldr <> excluded.tldr))
+                 OR (excluded.meta IS NOT NULL AND (entities.meta IS NULL OR entities.meta <> excluded.meta))
+                 OR (entities.canonical_name IS NULL AND excluded.canonical_name IS NOT NULL)
+                THEN excluded.updated_at ELSE entities.updated_at END,
                 protected = GREATEST(entities.protected, excluded.protected),
                 canonical_name = COALESCE(entities.canonical_name,
                                           excluded.canonical_name)
@@ -1404,7 +1415,12 @@ class Store:
                     "path = COALESCE(excluded.path, entities.path), "
                     "tldr = COALESCE(excluded.tldr, entities.tldr), "
                     "meta = COALESCE(excluded.meta, entities.meta), "
-                    "updated_at = excluded.updated_at, "
+                    "updated_at = CASE WHEN "
+                    "  (excluded.path IS NOT NULL AND (entities.path IS NULL OR entities.path <> excluded.path)) "
+                    "OR (excluded.tldr IS NOT NULL AND (entities.tldr IS NULL OR entities.tldr <> excluded.tldr)) "
+                    "OR (excluded.meta IS NOT NULL AND (entities.meta IS NULL OR entities.meta <> excluded.meta)) "
+                    "OR (entities.canonical_name IS NULL AND excluded.canonical_name IS NOT NULL) "
+                    "THEN excluded.updated_at ELSE entities.updated_at END, "
                     "protected = GREATEST(entities.protected, "
                     "excluded.protected), "
                     "canonical_name = COALESCE(entities.canonical_name, "
@@ -1423,7 +1439,12 @@ class Store:
                     path = COALESCE(excluded.path, entities.path),
                     tldr = COALESCE(excluded.tldr, entities.tldr),
                     meta = COALESCE(excluded.meta, entities.meta),
-                    updated_at = excluded.updated_at,
+                    updated_at = CASE WHEN
+                        (excluded.path IS NOT NULL AND (entities.path IS NULL OR entities.path <> excluded.path))
+                     OR (excluded.tldr IS NOT NULL AND (entities.tldr IS NULL OR entities.tldr <> excluded.tldr))
+                     OR (excluded.meta IS NOT NULL AND (entities.meta IS NULL OR entities.meta <> excluded.meta))
+                     OR (entities.canonical_name IS NULL AND excluded.canonical_name IS NOT NULL)
+                    THEN excluded.updated_at ELSE entities.updated_at END,
                     protected = GREATEST(entities.protected, excluded.protected),
                     canonical_name = COALESCE(entities.canonical_name,
                                               excluded.canonical_name)
