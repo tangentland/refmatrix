@@ -1866,12 +1866,23 @@ def neighbors(concept, depth, linkage, limit, include_noise, strict, via_replica
                    "in a GREP group; when the daemon is up they're learned into "
                    "the index as a protected `query/<ref>` concept (survives "
                    "prune). --no-grep disables both.")
+@click.option("--text", "text", default=None,
+              help="Query text — alias of the positional SYMBOL, for parity "
+                   "with scan-prompt / memory recall.")
+@click.option("--stdin-json", is_flag=True,
+              help="Read the query from a UserPromptSubmit JSON envelope on "
+                   "stdin ({\"prompt\": ...}) instead of an argument.")
 def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
             via_replica, degree, include_sessions, expand, hit_lines,
-            grep_backstop):
+            grep_backstop, text, stdin_json):
     """Token-budgeted context bundle: anchor + neighbors + their tldr blobs."""
     from refmatrix.context import build_context, render_json, render_text
     from refmatrix import daemon as daemon_mod
+    # Uniform query resolution: positional SYMBOL > --text > --stdin-json
+    # envelope. Shared with scan-prompt / memory recall. read_stdin=False so a
+    # bare `rmx context` in a pipeline doesn't silently consume stdin.
+    symbol = _resolve_query(symbol, text, stdin_json=stdin_json,
+                            read_stdin=False)
     # Detect whether the user actually passed --max-entities / --max-tokens
     # so the auto-scale (degree>0) knows whether to multiply or not. An
     # explicit override always wins, even if it happens to match the
@@ -3906,8 +3917,70 @@ def primer(top, symbol_like, exclude_namespace, min_refs, max_tokens,
         click.echo(text)
 
 
+def _read_stdin_text() -> str:
+    """Read all of stdin, returning '' on any error / no data."""
+    try:
+        return sys.stdin.read()
+    except Exception:
+        return ""
+
+
+def _resolve_query(
+    positional: "str | None",
+    text: "str | None" = None,
+    prompt: "str | None" = None,
+    *,
+    stdin_json: bool = False,
+    read_stdin: bool = True,
+) -> str:
+    """Uniform query resolution for the read surfaces — `context`,
+    `scan-prompt`, and `memory recall` — so they stop disagreeing on how a
+    query is passed.
+
+    Precedence: positional arg > --text > --prompt > stdin. For stdin, an
+    explicit --stdin-json (or a payload that merely looks like a JSON object)
+    is parsed as the UserPromptSubmit envelope and its `.prompt` is used;
+    anything else is taken as raw prose. Auto-detecting the JSON object closes
+    the scan-prompt footgun where a hook piping `{"prompt": "..."}` got the
+    braces indexed as the query.
+
+    `read_stdin=False` suppresses the implicit non-tty stdin read (so
+    `context` / `memory recall` don't consume a pipe unless --stdin-json is
+    explicit); an explicit --stdin-json still reads. Returns the resolved
+    query (stripped); '' when nothing resolves."""
+    import json
+    for cand in (positional, text, prompt):
+        if cand and cand.strip():
+            return cand.strip()
+    if not (stdin_json or (read_stdin and not sys.stdin.isatty())):
+        return ""
+    raw = _read_stdin_text()
+    if not raw.strip():
+        return ""
+    if stdin_json or raw.lstrip().startswith("{"):
+        try:
+            env = json.loads(raw)
+        except Exception:
+            if stdin_json:
+                raise click.ClickException(
+                    "--stdin-json: invalid JSON on stdin"
+                )
+            return raw.strip()   # looked like JSON but isn't — treat as prose
+        if isinstance(env, dict):
+            return (env.get("prompt") or "").strip()
+        return raw.strip()
+    return raw.strip()
+
+
 @main.command("scan-prompt")
-@click.option("--text", default=None, help="Prompt text (else read from stdin).")
+@click.argument("query", required=False)
+@click.option("--text", default=None,
+              help="Prompt text — alias of the positional QUERY; else read "
+                   "from stdin.")
+@click.option("--stdin-json", is_flag=True,
+              help="Force-parse stdin as a UserPromptSubmit JSON envelope "
+                   "({\"prompt\": ...}). A raw piped envelope is auto-detected "
+                   "as JSON too, so the braces are no longer indexed as prose.")
 @click.option("--max-tokens", default=2000, type=int)
 @click.option("--per-concept-tokens", default=600, type=int)
 @click.option("--max-concepts", default=5, type=int)
@@ -3917,16 +3990,19 @@ def primer(top, symbol_like, exclude_namespace, min_refs, max_tokens,
 @click.option("--full", "include_noise", is_flag=True,
               help="Include noise-marked concepts when matching.")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
-def scan_prompt_cmd(text, max_tokens, per_concept_tokens, max_concepts,
-                    exclude_namespace, include_noise, fmt):
+def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
+                    exclude_namespace, include_noise, fmt, stdin_json):
     """Read a prompt; emit context bundles for symbols it mentions.
 
     Designed for the Claude Code UserPromptSubmit hook. Output goes to stdout,
-    which Claude Code injects as additional context for the turn.
+    which Claude Code injects as additional context for the turn. Accepts the
+    prompt as a positional QUERY, --text, or stdin (raw prose or a JSON
+    envelope — auto-detected).
     """
-    from refmatrix.scan import read_stdin_prompt, scan_prompt
+    from refmatrix.scan import scan_prompt
 
-    prompt = text if text is not None else read_stdin_prompt()
+    # Positional QUERY > --text > stdin (JSON envelope auto-detected).
+    prompt = _resolve_query(query, text, stdin_json=stdin_json, read_stdin=True)
     if not prompt.strip():
         return
 
@@ -5417,6 +5493,9 @@ def _parse_duration(text: str) -> float:
 @click.option("--prompt", "prompt_query", default=None,
               help="Alias for the positional query. Convenience for "
                    "hook payloads that resolve the prompt themselves.")
+@click.option("--text", "text", default=None,
+              help="Alias of the positional query / --prompt, for parity "
+                   "with context / scan-prompt.")
 @click.option("--stdin-json", "stdin_json", is_flag=True,
               help="Read a Claude Code UserPromptSubmit JSON envelope "
                    "from stdin and use its `.prompt` field as the "
@@ -5462,7 +5541,7 @@ def _parse_duration(text: str) -> float:
                    "gains a `context` field per row; table output appends "
                    "the rendered context block under each row. Cost is N "
                    "extra daemon context calls; keep low for hook latency.")
-def memory_recall(query, prompt_query, stdin_json, k, recent, since,
+def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                   session_start, as_json, as_gmd, kinds, exclude_mtype,
                   degree):
     """Memory retrieval. Three modes:
@@ -5490,37 +5569,27 @@ def memory_recall(query, prompt_query, stdin_json, k, recent, since,
         recent = True
         if since is None:
             since = "7d"
-    if stdin_json:
-        # UserPromptSubmit hook envelope: {"prompt": "...", ...}.
-        # An empty prompt is a normal case (slash commands, /clear,
-        # /resume etc fire UserPromptSubmit with no user-typed text) —
-        # exit 0 silently rather than erroring, so the hook stays
-        # non-fatal for those events. A broken store still surfaces
-        # via the daemon RPC path further down.
-        import json as _json
-        try:
-            envelope = _json.load(sys.stdin)
-        except Exception as e:
-            raise click.ClickException(
-                f"--stdin-json: invalid JSON on stdin: {e}"
-            )
-        prompt_query = (envelope.get("prompt") or "").strip()
-        if not prompt_query:
-            if as_json:
-                click.echo("[]")
-            elif as_gmd:
-                # Empty-prompt path needs a parseable artifact so the
-                # hook caller can detect "no recall" deterministically.
-                click.echo(_render_memory_gmd(
-                    [], query=None,
-                    mode="empty", partition=_resolve_partition(),
-                ))
-            return
-    q = prompt_query or query
+    # Uniform resolution: positional query > --text > --prompt > --stdin-json
+    # envelope. read_stdin=False so --recent doesn't consume an unrelated pipe;
+    # an explicit --stdin-json still reads + parses (raising on bad JSON).
+    q = _resolve_query(query, text, prompt_query, stdin_json=stdin_json,
+                       read_stdin=False)
+    if stdin_json and not q:
+        # UserPromptSubmit hook fired with an empty prompt (slash command,
+        # /clear, /resume etc): non-fatal — emit a parseable empty artifact so
+        # the hook can detect "no recall" deterministically, and exit 0.
+        if as_json:
+            click.echo("[]")
+        elif as_gmd:
+            click.echo(_render_memory_gmd(
+                [], query=None, mode="empty",
+                partition=_resolve_partition(),
+            ))
+        return
     if not recent and not q:
         raise click.ClickException(
-            "rmx memory recall needs a QUERY (or --prompt / --stdin-json), "
-            "--recent, or --session-start"
+            "rmx memory recall needs a QUERY (or --text / --prompt / "
+            "--stdin-json), --recent, or --session-start"
         )
 
     exclude_mtypes = set(exclude_mtype) if exclude_mtype else set()
