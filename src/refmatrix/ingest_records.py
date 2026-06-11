@@ -149,6 +149,22 @@ class RecordingStore:
         })
         return True
 
+    def bulk_link(
+        self, items: "list[tuple[str, str, str, float | None]]",
+    ) -> int:
+        """Recording mirror of `Store.bulk_link`. Each item is a
+        `(linkage, concept_ref, entity_ref, weight)` tuple where the refs
+        are the symbolic @-handles this recorder returns. Buffered as `link`
+        ops so the applier replays them through one `deferred_links()` flush
+        (which itself calls the real `bulk_link`) — same first-wins conflict
+        semantics as the direct path."""
+        for linkage, src, dst, weight in items:
+            self.record.ops.append({
+                "op": "link", "linkage": linkage,
+                "src": src, "dst": dst, "weight": weight,
+            })
+        return len(items)
+
     def add_evidence(
         self, linkage: str, c: str, e: str, *,
         file: str | None = None, line: int | None = None,

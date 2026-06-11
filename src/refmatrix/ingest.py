@@ -235,13 +235,46 @@ def _ingest_path_inner(
     elif source == "auto" and graphify_path.exists():
         _ingest_graphify(s, path)
     if semantic:
-        _sem_count = 0
+        from concurrent.futures import ThreadPoolExecutor
+        from refmatrix.ingest_records import bulk_apply_records
+        # Gate on a DEDICATED `pysem:<abs>` marker key. .py files are ALSO
+        # tracked by the tldr pass under their real path, so the shared
+        # tracking key can't tell whether the *semantic* pass has seen a
+        # file -- gating on it would skip files tldr tracked but --semantic
+        # never processed (wrong on the FIRST --semantic run). Only this
+        # pass writes pysem: markers, so a mismatch means "changed since the
+        # last --semantic run, or never run". Snapshot is _pre_tracked,
+        # captured before any pass writes (same rationale as the md gate).
+        changed_py: list[tuple[Path, float]] = []
         for p in path.rglob("*.py"):
             if should_ignore(p, path):
                 continue
-            _ingest_python_semantics(s, p, path)
-            _sem_count += 1
-            if yield_lock is not None and _sem_count % yield_every == 0:
+            try:
+                cur = p.stat().st_mtime
+            except OSError:
+                continue
+            prev = _pre_tracked.get(f"pysem:{str(p)}")
+            if prev is None or abs(prev - cur) > 1e-6:
+                changed_py.append((p, cur))
+        if changed_py:
+            sworkers = int(os.environ.get("RMX_INGEST_WORKERS", "8") or "8")
+            with ThreadPoolExecutor(max_workers=sworkers,
+                                    thread_name_prefix="rmx-pysem-parse") as ex:
+                sem_records = list(ex.map(
+                    lambda fp: _build_python_semantic_record(fp, path),
+                    [p for p, _ in changed_py],
+                ))
+            # One bulk apply across all changed .py files instead of ~1 upsert
+            # per concept per file (the per-row cost that dominated
+            # `rmx ingest . --semantic` on a large tree).
+            bulk_apply_records(s, sem_records)
+            # Write the gate markers in one batched statement. bulk_apply
+            # already marked the real .py paths tracked (harmless, same value
+            # tldr writes); the pysem: key is what this pass gates on.
+            s.bulk_mark_tracked([
+                (f"pysem:{str(p)}", mtime) for p, mtime in changed_py
+            ])
+            if yield_lock is not None:
                 _yield_flush(s, yield_lock)
     pseudo_files: list[Path] = []
     for p in path.rglob("*.pseudo"):
@@ -910,6 +943,10 @@ def _ingest_python_semantics(s: Store, file_path: Path, project_root: Path) -> i
     Function-name concepts (from the call graph) stay bare so they collide
     naturally with user concepts (which is the desired join behavior).
     Records linkage_evidence with file:line for explainability.
+
+    Direct path: parses + writes against a real Store in one call. The
+    parallel-parse path (`_build_python_semantic_record`) shares the same
+    AST-walk body via `_python_semantic_emit_body`.
     """
     try:
         src = file_path.read_text(encoding="utf-8", errors="ignore")
@@ -921,8 +958,48 @@ def _ingest_python_semantics(s: Store, file_path: Path, project_root: Path) -> i
         if file_path.is_relative_to(project_root)
         else str(file_path)
     )
+    return _python_semantic_emit_body(s, tree, rel, file_path)
+
+
+def _build_python_semantic_record(
+    file_path: Path,
+    project_root: Path,
+) -> "IngestRecord | None":
+    """Pure-parse builder for a .py file -- worker-thread safe. Runs the same
+    AST walk as `_ingest_python_semantics` against a RecordingStore so the
+    applier can replay it in one bulk batch. Mirrors `_build_pseudo_record`."""
+    from refmatrix.ingest_records import RecordingStore
+    try:
+        src = file_path.read_text(encoding="utf-8", errors="ignore")
+        tree = ast.parse(src)
+    except (SyntaxError, OSError):
+        return None
+    rel = (
+        file_path.relative_to(project_root).as_posix()
+        if file_path.is_relative_to(project_root)
+        else str(file_path)
+    )
+    try:
+        mtime: float | None = file_path.stat().st_mtime
+    except OSError:
+        mtime = None
+    rb = RecordingStore(
+        rel=rel, file_path=str(file_path), mtime=mtime, doc_kind="code",
+    )
+    _python_semantic_emit_body(rb, tree, rel, file_path)
+    return rb.record
+
+
+def _python_semantic_emit_body(s, tree, rel: str, file_path: Path) -> int:
+    """Shared AST-walk body. `s` is a real Store (direct path) or a
+    RecordingStore (parallel-parse path); both expose the same mutation
+    surface (upsert_entity / add_namespaced_concept / add_evidence /
+    bulk_link), so the walk is identical for either."""
     file_id = s.upsert_entity(kind="code", name=rel, path=str(file_path))
-    s.mark_tracked(str(file_path), file_path.stat().st_mtime)
+    try:
+        s.mark_tracked(str(file_path), file_path.stat().st_mtime)
+    except OSError:
+        pass
     n = 0
     # Buffer (linkage, concept_id, entity_id, weight) tuples so the entity_links
     # writes flush as one Arrow batch (DuckDB) or one executemany (SQLite).

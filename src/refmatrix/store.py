@@ -3141,6 +3141,52 @@ class Store:
         con.commit()
         self._log_event("track", path=abs_path, mtime=mtime)
 
+    def bulk_mark_tracked(self, rows: "list[tuple[str, float]]") -> None:
+        """Mark many `(abs_path, mtime)` pairs tracked in one batched write.
+
+        Bulk equivalent of `mark_tracked`: a single Arrow `INSERT...SELECT`
+        (DuckDB) or one `executemany` (SQLite) plus one `_maybe_commit`,
+        instead of a per-row INSERT + `con.commit()` each. Used by gated
+        ingest passes that mark thousands of files at once (e.g. the
+        `pysem:` markers for the `--semantic` Python pass) — per-row
+        `mark_tracked` would force thousands of commits. Skips `_log_event`:
+        these are internal gate markers, not user-facing mutations."""
+        if not rows:
+            return
+        now = time.time()
+        con = self._connect()
+        if self._backend.kind == "duckdb":
+            import pyarrow as pa
+
+            tbl = pa.table({
+                "partition_id": [self._partition_id] * len(rows),
+                "path":         [r[0] for r in rows],
+                "mtime":        [float(r[1]) for r in rows],
+                "last_synced":  [now] * len(rows),
+            })
+            con._duck.register("_rmx_bulk_tracked", tbl)
+            try:
+                con._duck.execute(
+                    "INSERT INTO tracked_files"
+                    "(partition_id, path, mtime, last_synced) "
+                    "SELECT partition_id, path, mtime, last_synced "
+                    "FROM _rmx_bulk_tracked "
+                    "ON CONFLICT(partition_id, path) DO UPDATE SET "
+                    "  mtime=excluded.mtime, last_synced=excluded.last_synced"
+                )
+            finally:
+                con._duck.unregister("_rmx_bulk_tracked")
+        else:
+            con.executemany(
+                "INSERT INTO tracked_files"
+                "(partition_id, path, mtime, last_synced) "
+                "VALUES (?,?,?,?) "
+                "ON CONFLICT(partition_id, path) DO UPDATE SET "
+                "  mtime=excluded.mtime, last_synced=excluded.last_synced",
+                [(self._partition_id, r[0], float(r[1]), now) for r in rows],
+            )
+        self._maybe_commit(con)
+
     def get_tracked_mtime(self, abs_path: str) -> float | None:
         """Return the tracked mtime for `abs_path` in the active partition,
         or None if the file isn't tracked. Used by sync to skip files whose
