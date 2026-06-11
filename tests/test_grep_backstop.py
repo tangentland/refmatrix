@@ -68,6 +68,48 @@ def test_append_content_hits_backstop_fires_only_on_empty_index(tmp_path, monkey
     s.close()
 
 
+def test_maybe_learn_grep_backstop_brokers_hits_to_daemon(tmp_path):
+    """The replica read path is read-only, so the CLI brokers the learn through
+    the daemon writer. Verify it extracts every hit line and only fires when the
+    backstop is on AND a grep group exists."""
+    from refmatrix import cli
+    from refmatrix.context import ContextBundle, ContextEntry
+    from refmatrix.store import Entity
+
+    calls: list = []
+
+    class FakeDaemon:
+        @staticmethod
+        def ping(root):
+            return True
+
+        @staticmethod
+        def call(root, op, args, timeout=None):
+            calls.append((op, args))
+            return {"ok": True}
+
+    e = ContextEntry(
+        entity=Entity(id=0, kind="code", name="m.py", path="/abs/m.py",
+                      tldr=None, meta={}),
+        linkage="grep")
+    e.line, e.lines = 5, [5, 9]
+    b = ContextBundle(ref="foo")
+    b.groups["grep"] = [e]
+
+    cli._maybe_learn_grep_backstop(tmp_path, FakeDaemon, "foo", b, True)
+    assert calls and calls[0][0] == "learn_from_grep"
+    hits = calls[0][1]["hits"]
+    assert {"file": "/abs/m.py", "line": 5} in hits
+    assert {"file": "/abs/m.py", "line": 9} in hits
+
+    calls.clear()
+    cli._maybe_learn_grep_backstop(tmp_path, FakeDaemon, "foo", b, False)  # off
+    assert not calls
+    cli._maybe_learn_grep_backstop(tmp_path, FakeDaemon, "foo",
+                                   ContextBundle(ref="foo"), True)  # no grep grp
+    assert not calls
+
+
 def test_learn_grep_hits_marks_concept_and_entities_protected(tmp_path):
     """The whole point: learned-from-grep items are protected so prune_noise
     (which only reaps protected=0) can't undo the learning."""

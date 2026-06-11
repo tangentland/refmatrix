@@ -381,6 +381,34 @@ def _should_via_replica(explicit_flag: bool) -> bool:
         return False
 
 
+def _maybe_learn_grep_backstop(root, daemon_mod, ref, bundle, grep_backstop):
+    """When the grep backstop fired (index miss → grep hit), fold its hits into
+    a protected `query/<ref>` concept via the daemon writer so the next lookup
+    is indexed and survives `prune_noise`. The read path (replica) can't write,
+    so the CLI brokers the learn through the daemon. Best-effort: a read command
+    never fails on a learn miss, and with no daemon up nothing is learned."""
+    if not grep_backstop or not ref:
+        return
+    grep_entries = bundle.groups.get("grep") or []
+    if not grep_entries or not daemon_mod.ping(root):
+        return
+    hits: list[dict] = []
+    for e in grep_entries:
+        path = e.entity.path
+        if not path:
+            continue
+        for ln in (e.lines or ([e.line] if e.line is not None else [])):
+            hits.append({"file": path, "line": ln})
+    if not hits:
+        return
+    try:
+        daemon_mod.call(root, "learn_from_grep", {
+            "pattern": ref, "hits": hits, "project_root": str(root.parent),
+        }, timeout=30.0)
+    except Exception:
+        pass  # best-effort self-heal; never break the read
+
+
 def _replica_store() -> Store:
     """Open the reader-slot catalog in read-only mode.
 
@@ -1716,6 +1744,12 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
             click.echo(render_json(bundle))
         else:
             click.echo(render_text(bundle))
+        # The replica read is read-only, so the grep backstop can only DISPLAY
+        # the floor here. Fold its hits into a protected `query/<ref>` concept
+        # via the daemon writer so the next lookup is indexed (and survives
+        # prune). Best-effort; never fails the read.
+        _maybe_learn_grep_backstop(_root(), daemon_mod, symbol, bundle,
+                                   grep_backstop)
         return
 
     # If a daemon is up, route the simple `context <symbol>` path through
