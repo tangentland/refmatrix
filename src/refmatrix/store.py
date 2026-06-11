@@ -2859,11 +2859,23 @@ class Store:
             mlid = self.get_linkage_id("mentions")
         except Exception:
             return []
-        # Each query term → its matching mention-concept ids (variant/canonical
-        # expansion, so `FovWedge` and `fov_wedge` collapse to the same term).
-        term_cids: list[list[int]] = [
-            self.resolve_concept_ids(t, strict=False) or [] for t in terms
-        ]
+        # Each query term → its matching mention-concept ids: variant/canonical
+        # expansion (so `FovWedge` and `fov_wedge` collapse) PLUS namespaced
+        # auto-concepts (`keyword/<t>`, `import/<t>`, …) so a code file's
+        # docstring keywords + import edges are reachable by the bare term.
+        term_cids: list[list[int]] = []
+        for t in terms:
+            cids = list(self.resolve_concept_ids(t, strict=False) or [])
+            seen_t = set(cids)
+            for r in con.execute(
+                "SELECT id FROM entities WHERE kind='concept' AND partition_id=? "
+                "AND lower(name) LIKE ?",
+                (self._partition_id, f"%/{t.lower()}"),
+            ):
+                if r[0] not in seen_t:
+                    seen_t.add(r[0])
+                    cids.append(r[0])
+            term_cids.append(cids)
         cid_to_term: dict[int, int] = {}
         for ti, cids in enumerate(term_cids):
             for c in cids:
