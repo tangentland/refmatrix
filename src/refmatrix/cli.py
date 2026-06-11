@@ -2878,6 +2878,112 @@ def ingest(path, source, semantic):
     console.print(f"[green]ingested[/] {n} entities from {path}")
 
 
+def _default_memory_dir(repo: Path) -> Path:
+    """The curated-memory dir for this project:
+    `~/.claude/projects/<encoded-cwd>/memory`, matching the slug Claude Code
+    and `rmx session ingest` use. `repo` is the .refmatrix root's parent."""
+    slug = _encode_claude_project_dir(repo.resolve())
+    return Path.home() / ".claude" / "projects" / slug / "memory"
+
+
+def _reingest_embed(ctx, partition: str, *, rebuild: bool) -> None:
+    """Run the embed pass with `partition` pinned (embed only walks the active
+    partition, so the orchestrator embeds each layer's partition in turn)."""
+    global _partition_override
+    prev = _partition_override
+    _partition_override = partition
+    try:
+        ctx.invoke(embed_cmd, kinds=(), rebuild=rebuild)
+    finally:
+        _partition_override = prev
+
+
+@main.command("reingest")
+@click.option("--semantic/--no-semantic", default=True, show_default=True,
+              help="Run the slow Python/markdown semantic passes on the tree.")
+@click.option("--sessions/--no-sessions", "do_sessions", default=True,
+              show_default=True,
+              help="Ingest this project's Claude Code session JSONLs.")
+@click.option("--embed/--no-embed", "do_embed", default=True, show_default=True,
+              help="Embed dense vectors after ingest (incremental).")
+@click.option("--rebuild", is_flag=True,
+              help="Pass --rebuild to the embed pass (re-embed every row).")
+@click.option("--memory-dir", "memory_dir",
+              type=click.Path(path_type=Path), default=None,
+              help="Curated memory `.md` dir. "
+                   "Default: ~/.claude/projects/<project-slug>/memory.")
+@click.pass_context
+def reingest(ctx, semantic, do_sessions, do_embed, rebuild, memory_dir):
+    """Run every ingest pass over all sources in canonical order, then embed.
+
+    Order (each gated/incremental — unchanged files are skipped):
+
+    \b
+      1. code + docs  — the repo tree (tldr/metadata/tree + markdown + pseudo
+                        + python-semantic + graphify) into the project partition.
+      2. memory       — curated `.md` memories as kind=memory WITH content and
+                        the rel: graph (ingest-gmd --as-memory).
+      3. sessions     — Claude Code session JSONLs into sessions-<project>.
+      4. embed        — dense vectors for the project (+ memory) partition(s).
+
+    The single "make this store correct" command: picks the right pass per
+    source in the right order so the read surfaces (context, scan-prompt,
+    recall) see a consistent graph. Routes through the daemon when one is up.
+    """
+    root = _root()
+    repo = root.parent
+    results: list[tuple[str, bool, str]] = []
+
+    def step(label: str, fn) -> None:
+        console.print(f"[bold cyan]» {label}[/]")
+        try:
+            fn()
+            results.append((label, True, ""))
+        except click.ClickException as e:
+            msg = e.format_message()
+            console.print(f"[red]  {label} failed:[/] {msg}")
+            results.append((label, False, msg))
+        except Exception as e:  # noqa: BLE001 — orchestrator continues past one bad pass
+            console.print(f"[red]  {label} error:[/] {e}")
+            results.append((label, False, str(e)))
+
+    # 1. code + docs
+    step("1/4 code+docs", lambda: ctx.invoke(
+        ingest, path=repo, source="auto", semantic=semantic))
+
+    # 2. memory
+    memdir = Path(memory_dir).resolve() if memory_dir else _default_memory_dir(repo)
+    if memdir and memdir.is_dir():
+        step(f"2/4 memory ({memdir})", lambda: ctx.invoke(
+            ingest_gmd, targets=(memdir,), as_memory=True))
+    else:
+        console.print(f"[yellow]» 2/4 memory: no dir at {memdir}, skipped[/]")
+        results.append(("2/4 memory", True, "skipped (no dir)"))
+
+    # 3. sessions
+    if do_sessions:
+        step("3/4 sessions", lambda: ctx.invoke(session_ingest_cmd))
+    else:
+        console.print("[dim]» 3/4 sessions: skipped (--no-sessions)[/]")
+
+    # 4. embed — per partition (embed only walks the active partition).
+    if do_embed:
+        parts = list(dict.fromkeys([
+            _resolve_partition(), _memory_partition_default(),
+        ]))
+        for part in parts:
+            step(f"4/4 embed [{part}]",
+                 lambda p=part: _reingest_embed(ctx, p, rebuild=rebuild))
+    else:
+        console.print("[dim]» 4/4 embed: skipped (--no-embed)[/]")
+
+    ok = sum(1 for _, good, _ in results if good)
+    console.print(f"\n[bold]reingest done[/] — {ok}/{len(results)} steps ok")
+    for label, good, detail in results:
+        mark = "[green]✓[/]" if good else "[red]✗[/]"
+        console.print(f"  {mark} {label}" + (f" — {detail}" if detail else ""))
+
+
 @main.command("tldr-warm")
 @click.argument("path", type=click.Path(exists=True, path_type=Path), default=".")
 @click.option("--tldr-bin", default=None, type=click.Path(path_type=Path),
