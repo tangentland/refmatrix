@@ -224,6 +224,52 @@ def test_build_context_falls_back_to_content_when_ref_unresolved(tmp_path, monke
     s.close()
 
 
+def test_render_entry_hit_lines_first_nums_text():
+    """The three --hit-lines render shapes for an evidence (mentions/imports)
+    entry: first = file:line, nums = file:l1,l2,l3, text = grep -n block."""
+    def base():
+        e = ContextEntry(entity=_code_ent(1, "a.py::f", "/a.py"),
+                         linkage="imports", weight=2.0)
+        e.file = "a.py"
+        return e
+    # first
+    e = base(); e.snippet = "ctx"; e.line = 20
+    assert "    a.py:20" in _render_entry(e)
+    # nums
+    e2 = base(); e2.snippet = "ctx"; e2.line = 20; e2.lines = [20, 68, 90]
+    assert "    a.py:20,68,90" in _render_entry(e2)
+    # text — hit lines are the payload; snippet suppressed
+    e3 = base(); e3.snippet = "ctx"; e3.lines = [20, 68]
+    e3.hit_lines = [(20, "import os"), (68, "import sys")]
+    out3 = _render_entry(e3).splitlines()
+    assert "    a.py" in out3
+    assert "      20: import os" in out3
+    assert "      68: import sys" in out3
+    assert not any("ctx" in ln for ln in out3)  # snippet suppressed in text mode
+
+
+def test_render_entry_hit_lines_caps_with_marker():
+    from refmatrix.context import _HIT_LINES_CAP
+    e = ContextEntry(entity=_code_ent(1, "a.py::f", "/a.py"), linkage="imports")
+    e.file = "a.py"
+    e.lines = list(range(1, 21))  # 20 distinct hit lines
+    e.hit_lines = [(n, f"row{n}") for n in range(1, _HIT_LINES_CAP + 1)]
+    out = _render_entry(e)
+    assert f"(+{20 - _HIT_LINES_CAP} more)" in out
+
+
+def test_read_hit_lines_resolves_relative_and_caps(tmp_path):
+    from refmatrix.context import _read_hit_lines, _HIT_LINES_CAP
+    f = tmp_path / "m.py"
+    f.write_text("\n".join(f"row{i}" for i in range(1, 30)))
+    # relative path resolves against the project root
+    assert _read_hit_lines(tmp_path, "m.py", [2, 5, 29]) == \
+        [(2, "row2"), (5, "row5"), (29, "row29")]
+    # capped at _HIT_LINES_CAP; out-of-range lines dropped
+    assert len(_read_hit_lines(tmp_path, "m.py", list(range(1, 20)))) == _HIT_LINES_CAP
+    assert _read_hit_lines(tmp_path, "missing.py", [1]) == []
+
+
 def test_section_text_slices_the_right_anchor():
     body = (
         "# Card {#root}\n\nintro fov mention one\n\n"

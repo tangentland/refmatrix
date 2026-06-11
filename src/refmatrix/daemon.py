@@ -2615,6 +2615,7 @@ def _op_context(d: Daemon, args: dict) -> dict:
     degree = int(args.get("degree", 0))
     include_sessions = bool(args.get("include_sessions", False))
     expand = int(args.get("expand", 0))
+    hit_lines = args.get("hit_lines", "first")
     entities_explicit = bool(args.get("entities_explicit", False))
     tokens_explicit = bool(args.get("tokens_explicit", False))
     with d._store_lock:
@@ -2628,6 +2629,7 @@ def _op_context(d: Daemon, args: dict) -> dict:
             degree=degree,
             include_sessions=include_sessions,
             expand=expand,
+            hit_lines=hit_lines,
             _entities_explicit=entities_explicit,
             _tokens_explicit=tokens_explicit,
         )

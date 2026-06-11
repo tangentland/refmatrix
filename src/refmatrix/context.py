@@ -73,6 +73,13 @@ class ContextEntry:
     # the term actually appears instead of a whole-section summary that often
     # does not contain it. None → renderer falls back to tldr / body.
     snippet: str | None = None
+    # Every source line where the anchor concept hit this entity (sorted, from
+    # linkage_evidence). Populated under `--hit-lines nums`/`text`; the renderer
+    # prints `file:l1,l2,l3` instead of the single first-occurrence line.
+    lines: list[int] | None = None
+    # (line_no, source_text) for each hit line — populated under `--hit-lines
+    # text` so the renderer shows grep -n style content, not just numbers.
+    hit_lines: list[tuple[int, str]] | None = None
 
 
 @dataclass
@@ -106,6 +113,7 @@ def build_context(
     degree: int = 0,
     include_sessions: bool = False,
     expand: int = 0,
+    hit_lines: str = "first",
     _entities_explicit: bool = False,
     _tokens_explicit: bool = False,
 ) -> ContextBundle:
@@ -233,7 +241,10 @@ def build_context(
     # extractor wrote multiple evidence rows for the same (entity, linkage,
     # concept) triple we keep the lowest line — that's the most useful
     # "jump to here" target.
-    evidence = _evidence_index(s, e) if e.kind == "concept" else {}
+    all_lines = hit_lines in ("nums", "text")
+    evidence = (_evidence_index(s, e, all_lines=all_lines)
+                if e.kind == "concept" else {})
+    proj_root = s.root.parent
 
     # Pass 1: materialize entries (+ KWIC snippets) so ranking can see which
     # are real hits. Parent-doc bodies are cached so a card with several
@@ -251,9 +262,12 @@ def build_context(
         if not include_sessions and _is_session_card(ent.name):
             continue
         entry = ContextEntry(entity=ent, linkage=linkage, weight=weight)
-        file_line = evidence.get((eid, linkage))
-        if file_line is not None:
-            entry.file, entry.line = file_line
+        ev = evidence.get((eid, linkage))
+        if ev is not None:
+            entry.file, entry.line, entry.lines = ev
+            if hit_lines == "text" and entry.lines:
+                entry.hit_lines = _read_hit_lines(proj_root, entry.file,
+                                                  entry.lines)
         # Attach memory bodies to memory neighbors so a degree>=1 walk
         # carries the actual content rather than just a graph edge.
         if ent.kind == "memory":
@@ -371,32 +385,42 @@ def content_only_bundle(
     return bundle
 
 
+# Cap the lines printed per entry under --hit-lines nums/text so a concept
+# mentioned hundreds of times in one file can't blow the budget. The renderer
+# appends a `(+N more)` marker rather than truncating silently.
+_HIT_LINES_CAP = 8
+
+
 def _evidence_index(
-    s: Store, anchor: Entity
-) -> dict[tuple[int, str], tuple[str | None, int | None]]:
-    """Return {(entity_id, linkage_name): (file, line)} for every evidence
-    row pointing at `anchor` (a concept). Picks the lowest line per group
-    so the printed target is the first occurrence in the source."""
+    s: Store, anchor: Entity, *, all_lines: bool = False
+) -> dict[tuple[int, str], tuple[str | None, int | None, list[int] | None]]:
+    """Return {(entity_id, linkage_name): (file, first_line, all_lines)} for
+    every evidence row pointing at `anchor` (a concept). `first_line` is the
+    lowest line (the default jump target). `all_lines` is the sorted distinct
+    line list when the caller asked for it (`--hit-lines nums`/`text`), else
+    None."""
     con = s._connect()
     rows = con.execute(
         """
-        SELECT ev.entity_id, lt.name AS linkage,
-               ev.file, MIN(ev.line) AS line
+        SELECT ev.entity_id, lt.name AS linkage, ev.file, ev.line
         FROM linkage_evidence ev
         JOIN linkage_types lt ON lt.id = ev.linkage_id
-        WHERE ev.concept_id = ?
-        GROUP BY ev.entity_id, lt.name, ev.file
+        WHERE ev.concept_id = ? AND ev.line IS NOT NULL
         """,
         (anchor.id,),
     ).fetchall()
-    out: dict[tuple[int, str], tuple[str | None, int | None]] = {}
+    # Gather every line per (entity, linkage); the first file seen wins (rows
+    # for one entity+linkage are typically all its own source file anyway).
+    acc: dict[tuple[int, str], tuple[str | None, set[int]]] = {}
     for r in rows:
         key = (r["entity_id"], r["linkage"])
-        # If multiple files recorded evidence for the same (entity, linkage),
-        # the first one we see wins. They're typically the same file anyway
-        # (the entity's own source).
-        if key not in out:
-            out[key] = (r["file"], r["line"])
+        file, lines = acc.get(key, (r["file"], set()))
+        lines.add(r["line"])
+        acc[key] = (file, lines)
+    out: dict[tuple[int, str], tuple[str | None, int | None, list[int] | None]] = {}
+    for key, (file, lines) in acc.items():
+        ordered = sorted(lines)
+        out[key] = (file, ordered[0], ordered if all_lines else None)
     return out
 
 
@@ -647,6 +671,25 @@ def _read_source(path: str) -> str | None:
     return None
 
 
+def _read_hit_lines(
+    proj_root: Path, file: str | None, lines: list[int],
+) -> list[tuple[int, str]]:
+    """For `--hit-lines text`: `(line_no, source_text)` per hit line (1-based),
+    capped at `_HIT_LINES_CAP`. A relative evidence path resolves against the
+    project root. Empty list when the file is unreadable."""
+    if not file or not lines:
+        return []
+    p = Path(file)
+    if not p.is_absolute():
+        p = proj_root / p
+    txt = _read_source(str(p))
+    if txt is None:
+        return []
+    src = txt.splitlines()
+    return [(n, src[n - 1].rstrip())
+            for n in lines[:_HIT_LINES_CAP] if 1 <= n <= len(src)]
+
+
 def _symbol_candidates(ent: Entity) -> list[str]:
     """Symbol names to locate a code entity's definition by, best-first:
     the `norm_label` (e.g. ``store()`` → ``store``) then the name leaf after
@@ -711,26 +754,67 @@ def _render_header(b: ContextBundle) -> str:
     return f"=== context for `{b.ref}` ==="
 
 
+def _single_location(e: ContextEntry) -> str | None:
+    """The `path:line` jump target for an entry (default `first` mode). A code
+    CONTENT hit points at its own def line; a graph/mention entry points at the
+    evidence `file:line` (first occurrence)."""
+    if e.linkage == "content":
+        if e.entity.kind == "code" and e.entity.path:
+            return f"{e.entity.path}:{e.line}" if e.line is not None \
+                else e.entity.path
+        return None
+    if e.file and e.line is not None:
+        return f"{e.file}:{e.line}"
+    if e.entity.path:
+        return f"{e.entity.path}:{e.line}" if e.line is not None \
+            else e.entity.path
+    return None
+
+
+def _location_block(e: ContextEntry) -> tuple[list[str], bool]:
+    """Indented location/hit-line lines to print, plus whether the KWIC snippet
+    should still follow. `--hit-lines text` → grep -n block (snippet redundant);
+    `nums` → compact `file:l1,l2,l3`; otherwise a single `file:line`."""
+    # text: the hit lines ARE the content.
+    if e.hit_lines:
+        loc = e.file or (e.entity.path or "")
+        block = [f"    {loc}"] if loc else []
+        block += [f"      {n}: {txt}" for n, txt in e.hit_lines]
+        extra = len(e.lines or []) - len(e.hit_lines)
+        if extra > 0:
+            block.append(f"      (+{extra} more)")
+        return block, False
+    # nums: every hit line number, compact.
+    if e.lines and len(e.lines) > 1:
+        loc = e.file or e.entity.path
+        if loc:
+            shown = e.lines[:_HIT_LINES_CAP]
+            nums = ",".join(str(n) for n in shown)
+            more = len(e.lines) - len(shown)
+            if more > 0:
+                nums += f"(+{more})"
+            return [f"    {loc}:{nums}"], True
+    # first / fallback: a single jump target.
+    loc = _single_location(e)
+    return ([f"    {loc}"] if loc else []), True
+
+
 def _render_entry(e: ContextEntry) -> str:
     line = f"  {e.entity.name}  [{e.entity.kind}]"
     if e.weight is not None:
         line += f"  (w={e.weight:g})"
-    # A KWIC snippet is the whole payload — it already shows the matched line,
-    # so we skip the whole-section tldr / full body dump that follows. Indent
-    # every line (an --expand snippet spans multiple source lines).
-    if e.snippet:
-        out_lines: list[str] = []
-        # For a code CONTENT hit, lead with a `path:line` jump target — the
-        # snippet shows the def but not where it lives, and an agent acting on
-        # the hit otherwise has to grep again.
-        if e.linkage == "content" and e.entity.kind == "code" and e.entity.path:
-            loc = e.entity.path
-            if e.line is not None:
-                loc = f"{loc}:{e.line}"
-            out_lines.append(f"    {loc}")
-        out_lines += [f"    {ln}" for ln in e.snippet.splitlines()]
-        line += "\n" + "\n".join(out_lines)
+    parts, show_snippet = _location_block(e)
+    # text mode: location + hit lines are the whole payload.
+    if e.hit_lines:
+        line += "\n" + "\n".join(parts)
         return line
+    # A KWIC snippet is the payload — show it (led by the location) and skip the
+    # whole-section tldr that would otherwise follow.
+    if e.snippet and show_snippet:
+        parts += [f"    {ln}" for ln in e.snippet.splitlines()]
+        line += "\n" + "\n".join(parts)
+        return line
+    # No snippet: location (if any) + tldr/body fallbacks.
     if e.entity.tldr:
         tldr = e.entity.tldr
         # A co-mention node with no KWIC hit: the term isn't in its body, so
@@ -738,18 +822,11 @@ def _render_entry(e: ContextEntry) -> str:
         # as a label. (Definitional linkages keep the full tldr.)
         if e.linkage in _KWIC_LINKAGES:
             tldr = tldr.splitlines()[0] if tldr.strip() else tldr
-        line += f"\n    {tldr}"
-    elif e.entity.path:
-        # Append :line when we have one from linkage_evidence so editors
-        # / readers can jump straight to the relevant source location.
-        location = e.entity.path
-        if e.line is not None:
-            location = f"{location}:{e.line}"
-        line += f"\n    {location}"
+        parts.append(f"    {tldr}")
     if e.body:
-        # Indent body lines so they read as a block under the entry header.
-        body_block = "\n".join(f"    {ln}" for ln in e.body.splitlines())
-        line += f"\n{body_block}"
+        parts += [f"    {ln}" for ln in e.body.splitlines()]
+    if parts:
+        line += "\n" + "\n".join(parts)
     return line
 
 
@@ -816,6 +893,8 @@ def render_json(b: ContextBundle) -> str:
                         "linkage": e.linkage,
                         "file": e.file,
                         "line": e.line,
+                        "lines": e.lines,
+                        "hit_lines": e.hit_lines,
                     }
                     for e in entries
                 ]

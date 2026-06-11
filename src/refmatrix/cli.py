@@ -1645,8 +1645,15 @@ def neighbors(concept, depth, linkage, limit, include_noise, strict, via_replica
               help="Context lines around each CONTENT MATCH snippet (grep -C "
                    "style). 0 (default) = the whole matched line only; N = ±N "
                    "surrounding source lines.")
+@click.option("--hit-lines", "hit_lines",
+              type=click.Choice(["first", "nums", "text"]), default="first",
+              help="How many source lines to show per MENTIONED-IN entry. "
+                   "first (default) = the first occurrence as a `file:line` "
+                   "jump target; nums = every hit line number, compact "
+                   "(`file:12,40,77`); text = every hit line WITH its source "
+                   "(grep -n). Capped per entry with a `(+N more)` marker.")
 def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
-            via_replica, degree, include_sessions, expand):
+            via_replica, degree, include_sessions, expand, hit_lines):
     """Token-budgeted context bundle: anchor + neighbors + their tldr blobs."""
     from refmatrix.context import build_context, render_json, render_text
     from refmatrix import daemon as daemon_mod
@@ -1689,6 +1696,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
                     degree=degree,
                     include_sessions=include_sessions,
                     expand=expand,
+                    hit_lines=hit_lines,
                     _entities_explicit=entities_explicit,
                     _tokens_explicit=tokens_explicit,
                 )
@@ -1718,6 +1726,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
                 "degree": degree,
                 "include_sessions": include_sessions,
                 "expand": expand,
+                "hit_lines": hit_lines,
                 "entities_explicit": entities_explicit,
                 "tokens_explicit": tokens_explicit,
             }, timeout=120.0)
@@ -1802,6 +1811,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
             degree=degree,
             include_sessions=include_sessions,
             expand=expand,
+            hit_lines=hit_lines,
             _entities_explicit=entities_explicit,
             _tokens_explicit=tokens_explicit,
         )
