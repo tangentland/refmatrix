@@ -309,6 +309,43 @@ def build_context(
     return bundle
 
 
+def _def_pattern(sym: str) -> "re.Pattern[str]":
+    """Regex matching a source line that DEFINES `sym` (a single identifier),
+    across Python / JS / TS / Rust-ish syntaxes. Used to recognize an exact-
+    symbol definition among content hits so it can be floored above fuzzy body
+    mentions."""
+    s = re.escape(sym)
+    return re.compile(
+        r"\b(?:async\s+)?(?:def|class|function|interface|type|enum|struct"
+        r"|trait|fn)\s+" + s + r"\b"
+        r"|\b(?:const|let|var)\s+" + s + r"\b\s*[=:]"
+    )
+
+
+def _floor_exact_defs(entries: list[ContextEntry], ref: str) -> None:
+    """In-place: lift any content entry whose snippet DEFINES the single-
+    identifier `ref` above the top fuzzy score, then sort exact-first.
+
+    A definition's BM25 content score can be 0 — e.g. the ref resolves to a
+    learned `query/<ref>` concept whose `mentions` edges carry `tf=0`, zeroing
+    the BM25 numerator — which sinks the actual `def <ref>` below fuzzy body
+    mentions and renders it as `w=0`: the least-useful slot for the most-
+    relevant hit. No-op for an NL phrase (no single symbol to define) or when
+    no hit defines the ref, so phrase queries rank exactly as before."""
+    sym = ref.strip()
+    if not entries or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", sym):
+        return
+    pat = _def_pattern(sym)
+    top = max((e.weight or 0.0) for e in entries)
+    boosted = False
+    for e in entries:
+        if e.snippet and pat.search(e.snippet):
+            e.weight = top + 1.0 + (e.weight or 0.0)
+            boosted = True
+    if boosted:
+        entries.sort(key=lambda e: -(e.weight or 0.0))
+
+
 def _append_content_hits(
     s: Store, ref: str, built: list[ContextEntry], *,
     seen_ids: set[int], max_entities: int, expand: int,
@@ -333,6 +370,7 @@ def _append_content_hits(
         return
     seen_snip: set[tuple[str, str]] = set()
     n_before = len(built)
+    content_entries: list[ContextEntry] = []
     for ceid, cscore in s.content_rank(
         ref_terms, kinds=["code", "doc", "memory"], limit=max_entities,
     ):
@@ -357,7 +395,12 @@ def _append_content_hits(
         centry = ContextEntry(entity=cent, linkage="content", weight=cscore)
         centry.snippet = snippet
         centry.line = line
-        built.append(centry)
+        content_entries.append(centry)
+    # Floor an exact-symbol definition above fuzzy body mentions before the
+    # entries land: a `def <ref>` whose BM25 score is 0 must not rank last or
+    # render w=0. No-op for NL phrases.
+    _floor_exact_defs(content_entries, ref)
+    built.extend(content_entries)
     # Floor: index found nothing on disk that grep would have. Grep the files.
     if grep_backstop and len(built) == n_before:
         built.extend(_grep_backstop(
