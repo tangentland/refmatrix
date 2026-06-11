@@ -753,16 +753,12 @@ class Daemon:
         # out-of-process readers always have a lock-free path even before
         # the first rotation cycle. Derived from the real writer above.
         self._refresh_read_only_link()
-        # Refresh thread: catches up the inactive slot every N seconds
-        # (RMX_REPLICA_REFRESH_S, default 60). 5s was too aggressive —
-        # every cycle is a window where a replica reader can hit the
-        # mid-swap lock state. 60s gives readers a long stable view
-        # without falling significantly behind.
-        self._start_replica_refresh()
+        # Writer rotation is dropped: the writer stays pinned to the active
+        # slot for the daemon's life. No refresh/swap thread is started — the
+        # swap could promote a log-replayed slot missing under-logged state.
         # Snapshot-tier: unidirectional copy of writer catalog into
-        # `catalog.read.duckdb`, regenerated within ~250ms after each
-        # write op. Supersedes A/B rotation as the read path; rotation
-        # files remain for back-compat until follow-up cleanup.
+        # `catalog.read.duckdb`, regenerated within ~250ms after each write op.
+        # This is the sole read path now (A/B kept only as the writer's slot).
         self._start_snapshot_tick()
         # Materialize an initial snapshot at startup so readers spawning
         # right after `daemon start` already have a lock-free file to
@@ -1518,297 +1514,20 @@ class Daemon:
             self._log(f"slot offset write failed for {slot}: {exc!r}")
 
     def _refresh_replica_now(self) -> dict:
-        """Rotate the read replica via facts.log delta-replay.
-
-        Steps:
-          1. Read end-of-log byte offset.
-          2. If inactive slot is already at that offset, no-op.
-          3. Open inactive slot in normal write mode.
-          4. Replay log events [inactive_offset..end] into it.
-          5. Persist the new offset alongside the inactive slot.
-          6. Atomically swap the `active` marker — the just-caught-up
-             slot becomes the writer, the previous writer becomes the
-             frozen reader.
-
-        Cost: O(delta entries) instead of O(file size). For idle
-        catalogs the typical cycle is near-zero work.
-
-        DuckDB only."""
-        if self.store is None or self.store._backend.kind != "duckdb":
-            return {"enabled": False, "reason": "non-duckdb backend"}
-        active = self._active_slot
-        inactive = self._inactive_slot(active)
-        t0 = time.monotonic()
-        # Sentinel-driven swap: refuse to start while a read store is
-        # live. The refresh thread tries again next tick. The reader's
-        # close path also notifies the gate, so the next refresh fires
-        # promptly once readers drain. No thread blocks on read I/O.
-        with self._swap_gate:
-            if self._read_inflight > 0:
-                self._log(
-                    f"swap: deferred, read_inflight="
-                    f"{self._read_inflight}"
-                )
-                return {"enabled": True, "ok": False, "deferred": True,
-                        "reason": "read in flight"}
-        with self._store_lock:
-            # 1. snapshot current log position
-            try:
-                end_offset = self.store.log_path.stat().st_size \
-                    if self.store.log_path.exists() else 0
-            except OSError:
-                end_offset = 0
-            inactive_offset = self._read_slot_offset(inactive)
-            if end_offset == inactive_offset:
-                # Inactive is already current at this log offset; just
-                # swap (active slot has the same logical state under our
-                # CHECKPOINT-on-quiesce invariant — but we still need to
-                # commit pending state to disk before promoting).
-                try:
-                    self.store._connect().execute("CHECKPOINT")
-                    self.store.flush_fragments()
-                except Exception:
-                    pass
-                self._write_slot_offset(active, end_offset)
-                new_active = inactive
-                # Atomic-ish swap: do the reopen FIRST so we know it
-                # works before flipping the marker on disk. If we wrote
-                # the marker first and the reopen failed, the marker
-                # would lie about which slot is the writer for the rest
-                # of the daemon's life.
-                rebuilt = False
-                try:
-                    self.store.close()
-                except Exception:
-                    pass
-                # `active` was just CHECKPOINTed and is now unlocked +
-                # current. Move readers onto it before reopening the writer
-                # on `new_active`, so the reopen never strands a reader on a
-                # write-locked slot.
-                self._set_read_only_link(active)
-                try:
-                    self.store = Store(self.root, partition=self.partition)
-                    self.store.db_path = self._replica_file(new_active)
-                    self.store.init()
-                except Exception as exc:
-                    if self._is_invalidated_error(exc):
-                        try:
-                            self._rebuild_slot_from(active, new_active,
-                                                    end_offset)
-                            rebuilt = True
-                            self.store = Store(self.root,
-                                               partition=self.partition)
-                            self.store.db_path = self._replica_file(new_active)
-                            self.store.init()
-                        except Exception as rexc:
-                            self._log(
-                                f"noop-swap rebuild failed: {rexc!r}"
-                            )
-                            try:
-                                self.store = Store(self.root,
-                                                   partition=self.partition)
-                                self.store.db_path = self._replica_file(active)
-                                self.store.init()
-                            except Exception:
-                                pass
-                            return {"enabled": True, "ok": False,
-                                    "error": f"noop-swap rebuild: {rexc!r}"}
-                    else:
-                        try:
-                            self.store = Store(self.root,
-                                               partition=self.partition)
-                            self.store.db_path = self._replica_file(active)
-                            self.store.init()
-                        except Exception:
-                            pass
-                        return {"enabled": True, "ok": False,
-                                "error": f"pointer swap: {exc!r}"}
-                # Reopen succeeded — commit the swap. In-memory slot +
-                # symlink first (both derive from the store we just
-                # opened, so they're authoritative and consistent); the
-                # marker write is a best-effort persistence of that truth.
-                # A failed marker write must NOT fail the swap or skip the
-                # symlink refresh — that was the drift bug: store moved to
-                # the new slot while the symlink kept pointing at it.
-                self._active_slot = new_active
-                self._refresh_read_only_link()
-                try:
-                    self._active_marker().write_text(new_active)
-                except OSError as exc:
-                    self._log(
-                        f"swap marker persist failed (in-mem + symlink "
-                        f"already consistent on {new_active}): {exc!r}"
-                    )
-                elapsed_ms = int((time.monotonic() - t0) * 1000)
-                result = {
-                    "enabled": True, "ok": True,
-                    "applied": 0, "skipped_unresolved": 0,
-                    "writer_slot": new_active,
-                    "reader_slot": "B" if new_active == "A" else "A",
-                    "writer_path": str(self._replica_file(new_active)),
-                    "reader_path": str(self._replica_file(
-                        "B" if new_active == "A" else "A")),
-                    "log_end_offset": end_offset,
-                    "elapsed_ms": elapsed_ms,
-                    "refreshed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                    "mode": "noop-delta-rebuilt" if rebuilt else "noop-delta",
-                    "rebuilt_slot": new_active if rebuilt else None,
-                }
-                self._replica_last = result
-                return result
-
-            # 2. CHECKPOINT + flush primary so its on-disk state equals
-            # its logical state (the log already captured the writes).
-            try:
-                self.store._connect().execute("CHECKPOINT")
-                self.store.flush_fragments()
-            except Exception as exc:
-                return {"enabled": True, "ok": False,
-                        "error": f"pre-replay checkpoint: {exc!r}"}
-
-            # 3. open inactive slot, apply delta, close.
-            try:
-                self.store.close()
-            except Exception:
-                pass
-            # The active slot was just CHECKPOINTed and is now unlocked +
-            # current. Move readers onto it BEFORE we write-lock `inactive`
-            # for the delta apply. Without this, both slots are busy during
-            # the apply (old writer just closed, new one being written) and
-            # a cross-process reader on `inactive` hits a lock conflict.
-            # Pointing readers at the freed active slot gives them a
-            # lock-free, current file for the whole apply window.
-            self._set_read_only_link(active)
-
-            # Bring `inactive` up to end_offset. Small delta -> cheap
-            # incremental log replay. Large delta -> rebuild by copying the
-            # (already-current) active file: O(file size), bounded, seconds
-            # — vs. log replay which is ~tens of KB/s and can never converge
-            # on a multi-MB backlog (the spin that pegged the daemon for
-            # hours and re-replayed from scratch on every restart).
-            report: dict = {}
-            mode = "delta"
-            delta = end_offset - inactive_offset
-            if delta >= REPLICA_REBUILD_DELTA_BYTES:
-                self._log(
-                    f"refresh: delta {delta}B >= "
-                    f"{REPLICA_REBUILD_DELTA_BYTES}B — rebuilding {inactive} "
-                    f"from {active} by file copy (skip slow log replay)"
-                )
-                try:
-                    # Copies active->inactive and resets BOTH offsets to
-                    # end_offset. Safe: active was just closed above and the
-                    # inactive slot has no live connection.
-                    self._rebuild_slot_from(active, inactive, end_offset)
-                    mode = "delta-rebuilt-large"
-                except Exception as exc:
-                    self.store = Store(self.root, partition=self.partition)
-                    self.store.db_path = self._replica_file(active)
-                    self.store.init()
-                    self._active_slot = active
-                    self._refresh_read_only_link()
-                    return {"enabled": True, "ok": False,
-                            "error": f"large-delta rebuild: {exc!r}"}
-            else:
-                inactive_store = None
-                try:
-                    try:
-                        inactive_store = Store(self.root,
-                                               partition=self.partition)
-                        inactive_store.db_path = self._replica_file(inactive)
-                        inactive_store.init()
-                        report = inactive_store.apply_log_delta(
-                            inactive_offset, end_offset,
-                        )
-                        inactive_store.flush_fragments()
-                    except Exception as exc:
-                        # Reopen active so the daemon stays functional
-                        # (readers already point at it), then surface it.
-                        rebuilt = False
-                        if self._is_invalidated_error(exc):
-                            try:
-                                self._rebuild_slot_from(active, inactive,
-                                                        end_offset)
-                                rebuilt = True
-                            except Exception as rexc:
-                                self._log(
-                                    f"delta-replay rebuild failed: {rexc!r}"
-                                )
-                        self.store = Store(self.root,
-                                           partition=self.partition)
-                        self.store.db_path = self._replica_file(active)
-                        self.store.init()
-                        self._active_slot = active
-                        err_kind = ("delta-replay-rebuilt" if rebuilt
-                                    else "delta-replay")
-                        return {"enabled": True, "ok": False,
-                                "error": f"{err_kind}: {exc!r}",
-                                "rebuilt_slot": inactive if rebuilt else None}
-                finally:
-                    # No-leak backstop: always release the inactive slot's
-                    # write connection, even if close()'s flush re-raised.
-                    self._force_close_store(inactive_store)
-
-                self._write_slot_offset(inactive, end_offset)
-
-            # 4. swap pointer. The newly-current slot becomes writer.
-            # Reopen FIRST so a failed open doesn't leave the on-disk
-            # marker pointing at a slot the daemon can't actually use.
-            new_active = inactive
-            try:
-                self.store = Store(self.root, partition=self.partition)
-                self.store.db_path = self._replica_file(new_active)
-                self.store.init()
-            except Exception as exc:
-                # Fall back to active so daemon stays functional. Do
-                # not write the marker — current marker still names
-                # the working slot. Refresh the symlink so it tracks the
-                # slot we fell back onto (derived from store.db_path).
-                try:
-                    self.store = Store(self.root, partition=self.partition)
-                    self.store.db_path = self._replica_file(active)
-                    self.store.init()
-                    self._active_slot = active
-                    self._refresh_read_only_link()
-                except Exception:
-                    pass
-                return {"enabled": True, "ok": False,
-                        "error": f"pointer swap: {exc!r}"}
-            # Commit: in-memory slot + symlink first (authoritative,
-            # derived from the store we just opened), marker best-effort.
-            # A failed marker write must not fail the swap or skip the
-            # symlink refresh.
-            self._active_slot = new_active
-            self._refresh_read_only_link()
-            try:
-                self._active_marker().write_text(new_active)
-            except OSError as exc:
-                self._log(
-                    f"swap marker persist failed (in-mem + symlink "
-                    f"already consistent on {new_active}): {exc!r}"
-                )
-
-        size = self._replica_file(new_active).stat().st_size \
-            if self._replica_file(new_active).exists() else 0
-        elapsed_ms = int((time.monotonic() - t0) * 1000)
-        result = {
-            "enabled": True, "ok": True,
-            "applied": report.get("applied", 0),
-            "skipped_unresolved": report.get("skipped_unresolved", 0),
-            "writer_slot": new_active,
-            "reader_slot": "B" if new_active == "A" else "A",
-            "writer_path": str(self._replica_file(new_active)),
-            "reader_path": str(self._replica_file(
-                "B" if new_active == "A" else "A")),
-            "size_bytes": size,
-            "log_start_offset": inactive_offset,
-            "log_end_offset": end_offset,
-            "elapsed_ms": elapsed_ms,
-            "refreshed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "mode": mode,
-        }
-        self._replica_last = result
-        return result
+        """No-op: writer rotation is dropped (see body). Kept so the
+        `replica refresh` RPC and any lingering caller degrade gracefully."""
+        # Writer rotation is DROPPED. The swap promoted the inactive slot —
+        # caught up only by facts.log delta-replay — to writer; any state not
+        # fully captured by the log (memory_content historically, plus any
+        # under-logged table or off-log direct write made while the daemon was
+        # down) was absent from the promoted slot, and the snapshot rebuilt
+        # from the new writer lost it. Snapshot-tier (`catalog.read.duckdb`, a
+        # full copy of the writer) is the read path, so the swap bought nothing
+        # and only risked data loss. The writer now stays pinned to the active
+        # slot for the daemon's life; the refresh thread is no longer started.
+        # Retained as a no-op so the `replica refresh` RPC degrades gracefully.
+        return {"enabled": False, "ok": True,
+                "reason": "rotation dropped (snapshot-tier read path)"}
 
     def _bootstrap_rotation_if_needed(self) -> None:
         """One-shot migration of legacy single-file `catalog.duckdb` into the
@@ -1921,36 +1640,6 @@ class Daemon:
                 )
         except Exception as exc:
             self._log(f"rotation bootstrap failed: {exc!r}")
-
-    def _start_replica_refresh(self, interval_s: float | None = None) -> None:
-        """Spawn a daemon thread that periodically rotates the replica.
-
-        Default interval 60s, override via RMX_REPLICA_REFRESH_S. Set
-        RMX_REPLICA_REFRESH_S=0 to disable the thread entirely. DuckDB
-        backend only."""
-        import threading as _t
-        if self.store is None or self.store._backend.kind != "duckdb":
-            return
-        if interval_s is None:
-            interval_s = float(os.environ.get("RMX_REPLICA_REFRESH_S", "60") or "60")
-        if interval_s <= 0:
-            return
-        self._replica_stop = _t.Event()
-
-        def _runner():
-            while not self._replica_stop.is_set():
-                if self._replica_stop.wait(interval_s):
-                    return
-                try:
-                    self._refresh_replica_now()
-                except Exception as exc:
-                    self._log(f"replica refresh failed: {exc!r}")
-                    self._fast_exit_if_invalidated(exc, "replica refresh")
-
-        self._replica_thread = _t.Thread(
-            target=_runner, name="rmxd-replica", daemon=True,
-        )
-        self._replica_thread.start()
 
     def _start_watcher(self) -> None:
         """Spawn a watchdog thread that debounces fs events and syncs the

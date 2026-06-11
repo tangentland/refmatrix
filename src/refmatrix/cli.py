@@ -383,8 +383,8 @@ def _replica_store() -> Store:
 
     Skips migrations / writes / repair. Used by `--via-replica` CLI ops
     so reads bypass the daemon's `_store_lock` entirely. The file is
-    refreshed by the daemon's rotation thread every
-    RMX_REPLICA_REFRESH_S seconds (default 5)."""
+    a snapshot (`catalog.read.duckdb`) the daemon regenerates shortly
+    after each write op (snapshot-tier; writer rotation is dropped)."""
     path = _replica_reader_path()
     if not path.exists():
         raise click.ClickException(
@@ -1430,8 +1430,8 @@ def _print_bitmap(s: Store, bm, limit: int = 50):
 @click.option("--via-replica", is_flag=True,
               help="Read from the rotation reader slot instead of the daemon. "
                    "Bypasses _store_lock entirely; reads at native DuckDB speed "
-                   "even during heavy bg ingest. Sees stale-by-N-seconds data "
-                   "(N = RMX_REPLICA_REFRESH_S, default 5).")
+                   "even during heavy bg ingest. Reads a snapshot the daemon "
+                   "regenerates shortly after each write (snapshot-tier).")
 def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter, strict, via_replica):
     """Run a query. DSL: `mentions:parser AND defines:parser`. PQL: `Row(calls,foo)`."""
     # --explain renders evidence via the daemon's writer-slot path; the
@@ -3266,15 +3266,13 @@ def queue_cmd():
 
 @main.group()
 def replica():
-    """Read-replica rotation management.
+    """Read-replica (snapshot-tier) management.
 
-    The daemon maintains two persistent catalog files —
-    catalog.A.duckdb + catalog.B.duckdb — and an `active` marker that
-    names the current writer slot. Reads can be served by the frozen
-    inactive slot without contending on the writer's lock. Every
-    RMX_REPLICA_REFRESH_S seconds (default 5) the inactive slot is
-    caught up to the writer's state and the marker swaps, demoting the
-    old writer to reader. DuckDB backend only."""
+    The writer stays pinned to one catalog slot (the `active` marker
+    names it); writer rotation is dropped. Reads are served from a
+    snapshot file (`catalog.read.duckdb`) the daemon regenerates shortly
+    after each write op, so readers never contend on the writer's lock.
+    `refresh` is now a no-op. DuckDB backend only."""
 
 
 @replica.command("status")
@@ -3513,9 +3511,9 @@ def replica_path():
     """Print the absolute path of the *reader* slot file. CLI tools that
     want a lock-free read can open this file in read-only DuckDB mode.
 
-    The reader slot may change after the next refresh (every
-    RMX_REPLICA_REFRESH_S seconds, default 5); re-call this command if
-    you need the current path."""
+    The reader path is the snapshot file (`catalog.read.duckdb`), which
+    the daemon regenerates in place after each write — stable across
+    writes, so the path does not change."""
     from refmatrix import daemon as daemon_mod
     root = _root()
     if daemon_mod.ping(root):

@@ -1566,6 +1566,14 @@ class Store:
             (eid, content, mtype, tags_json, meta_json, now, now),
         )
         con.commit()
+        # Log the body too. upsert_entity above logged the entity row, but the
+        # sidecar content was previously unlogged — so log-replay / catch-up /
+        # `rebuild --from-log` reconstructed memory entities WITHOUT bodies.
+        # Replayed by `_apply_one_event` + `rebuild_index_from_log`.
+        self._log_event(
+            "memory_content", kind="memory", name=name,
+            content=content, mtype=mtype, tags=tags, metadata=metadata,
+        )
         return eid
 
     def get_memory(self, name_or_id: str | int) -> dict | None:
@@ -3730,6 +3738,17 @@ class Store:
                     span_end=ev.get("span_end"), detail=ev.get("detail"),
                 )
                 return True
+            if op == "memory_content":
+                # add_memory upserts the entity (idempotent — the prior
+                # `entity` event already created it) and (re)writes the body.
+                self.add_memory(
+                    name=ev["name"],
+                    content=ev.get("content", ""),
+                    mtype=ev.get("mtype", "observation"),
+                    tags=ev.get("tags"),
+                    metadata=ev.get("metadata"),
+                )
+                return True
             if op == "track":
                 mtime = ev.get("mtime")
                 if mtime is not None:
@@ -3805,6 +3824,9 @@ class Store:
         link_state: dict[tuple, tuple[float, str, float | None]] = {}
         track_state: dict[str, tuple[float, str, float | None]] = {}
         evidence_events: list[dict] = []
+        # Memory bodies, LWW by entity name (the sidecar is keyed by entity,
+        # one row per memory).
+        memory_content_lww: dict[str, tuple[float, dict]] = {}
         # Linkage types referenced anywhere in the log. Pre-2.0 logs don't
         # carry `linkage_type` events, so we have to derive the set from
         # link/unlink/evidence events and register the missing ones before
@@ -3872,6 +3894,11 @@ class Store:
                 prev = track_state.get(key)
                 if prev is None or ts > prev[0]:
                     track_state[key] = (ts, "untrack", None)
+            elif op == "memory_content":
+                key = ev["name"]
+                prev = memory_content_lww.get(key)
+                if prev is None or ts > prev[0]:
+                    memory_content_lww[key] = (ts, ev)
 
         # Pass 3: materialize, with logging suppressed to avoid the rebuild
         # appending duplicate events to the same log we're replaying.
@@ -3944,6 +3971,21 @@ class Store:
                 if op == "track" and mtime is not None:
                     self.mark_tracked(path, mtime)
                     tracks_added += 1
+
+            # Memory bodies: attach to surviving (non-tombstoned) memory
+            # entities. add_memory re-upserts the entity idempotently.
+            memory_content_added = 0
+            for name, (_, ev) in memory_content_lww.items():
+                if ("memory", name) not in name_to_id:
+                    continue
+                self.add_memory(
+                    name=name,
+                    content=ev.get("content", ""),
+                    mtype=ev.get("mtype", "observation"),
+                    tags=ev.get("tags"),
+                    metadata=ev.get("metadata"),
+                )
+                memory_content_added += 1
         finally:
             self._replay_mode = False
 
@@ -3953,5 +3995,6 @@ class Store:
             "links": links_added,
             "evidence": evidence_added,
             "tracked": tracks_added,
+            "memory_content": memory_content_added,
             "events_replayed": len(events),
         }
