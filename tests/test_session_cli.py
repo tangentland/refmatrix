@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -40,6 +41,13 @@ def _write_fixture_jsonl(path: Path) -> None:
         }),
     ]
     path.write_text("\n".join(lines) + "\n")
+    # Backdate the fixture past the session-ingest active-skip window
+    # (RMX_SESSION_INGEST_QUIET_S, default 300s). A just-written JSONL looks
+    # like a still-live session and is skipped (active_skipped), yielding
+    # built=0 — so every retrieval test downstream sees no card. Stamp the
+    # mtime a day in the past so `session ingest` treats it as settled.
+    old = time.time() - 86400
+    os.utime(path, (old, old))
 
 
 def test_encode_claude_project_dir():
