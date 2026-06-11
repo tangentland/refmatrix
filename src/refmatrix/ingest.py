@@ -425,6 +425,12 @@ def _ingest_path_inner(
         # concept per file (the per-row cost that dominated ingest on a large
         # tree). See ingest_records.bulk_apply_records.
         bulk_apply_records(s, records, adr_num_to_eid=adr_num_to_eid)
+    # Inverse-linkage derivation: materialize `called_by` from `calls` once
+    # every pass has written its call edges. Source-agnostic (operates on the
+    # final entity_links) so it covers metadata / call-graph / graphify /
+    # python-semantic at once; idempotent, and a no-op when there are no calls.
+    _phase("code+docs: derive called_by")
+    s.derive_called_by()
     return n
 
 

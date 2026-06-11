@@ -2658,6 +2658,57 @@ class Store:
             )
         return present
 
+    def derive_called_by(self) -> int:
+        """Materialize `called_by` edges as the inverse of `calls`.
+
+        `called_by` is registered with `inverse_of=calls` but nothing
+        traverses that metadata at query time, and the tldr/graphify extractors
+        never populate a unit's `called_by` field — so the linkage rendered a
+        "CALLED BY" header with zero rows tool-wide ("who calls this function?"
+        silently returned nothing). The data to derive it IS present as `calls`.
+
+        Model: links are `entity --[linkage]--> concept`. A call is
+        `caller_entity --calls--> callee_bare_concept`; a definition is
+        `defn_entity --defines--> bare_concept`. So the callee ENTITY is whoever
+        DEFINES the called bare name, and the caller's displayable name is the
+        bare concept the caller entity defines. Join through `defines` on both
+        sides and emit `callee_entity --called_by--> caller_bare_concept`.
+
+        Idempotent (bulk_link skips bits already present) and source-agnostic
+        (operates on the final `entity_links`, so it covers the metadata, tldr
+        call-graph, graphify, and python-semantic passes at once). Returns the
+        number of newly added called_by edges.
+        """
+        con = self._connect()
+        try:
+            calls_lid = self.get_linkage_id("calls")
+            defines_lid = self.get_linkage_id("defines")
+        except Exception:
+            return 0
+        rows = con.execute(
+            """
+            SELECT DISTINCT def_callee.entity_id  AS callee_entity,
+                            def_caller.concept_id AS caller_concept
+            FROM entity_links calls
+            JOIN entity_links def_callee
+              ON def_callee.linkage_id = ?
+             AND def_callee.concept_id = calls.concept_id
+            JOIN entity_links def_caller
+              ON def_caller.linkage_id = ?
+             AND def_caller.entity_id = calls.entity_id
+            WHERE calls.linkage_id = ?
+              AND def_callee.entity_id <> calls.entity_id
+            """,
+            (defines_lid, defines_lid, calls_lid),
+        ).fetchall()
+        if not rows:
+            return 0
+        items = [
+            ("called_by", int(caller_concept), int(callee_entity), 1.0)
+            for (callee_entity, caller_concept) in rows
+        ]
+        return self.bulk_link(items)
+
     def bulk_link(
         self,
         items: list[tuple[str, int, int, float | None]],
