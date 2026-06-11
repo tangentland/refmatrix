@@ -2470,27 +2470,19 @@ def _op_grep_indexed(d: Daemon, args: dict) -> dict:
     }
 
 
-def _op_learn_from_grep(d: Daemon, args: dict) -> dict:
-    """Promote rg fallback hits into the index. A search miss + a grep hit
-    is a strong signal that PATTERN is something the user cares about;
-    fold the hits into a `query/PATTERN` namespaced concept with one
-    `mentions` linkage per matched file and `linkage_evidence` carrying
-    the line. Future `rmx grep`/`context` calls hit the index.
-    """
-    pattern = args["pattern"]
-    hits = args.get("hits") or []  # [{file, line}]
-    project_root = Path(args.get("project_root") or Path.cwd()).resolve()
-    if not pattern or not hits:
-        return {"added": 0}
-
+def _learn_grep_hits(store, pattern: str, hits: list, project_root: Path) -> dict:
+    """Fold grep fall-through hits into a `query/PATTERN` concept (one
+    `mentions` link + `linkage_evidence` per file/line). A search miss + a grep
+    hit is a strong signal the user cares about PATTERN, so the concept AND its
+    entities are marked **protected** — `prune_noise` skips `protected` rows, so
+    the index self-heals permanently instead of re-missing after the next prune.
+    Caller holds `d._store_lock`. Returns {added, concept, concept_id}."""
     name = f"query/{pattern}"
-    with d._store_lock, d.store.transaction(), d.store.deferred_links():
-        cid = d.store.add_concept(
+    with store.transaction(), store.deferred_links():
+        cid = store.add_concept(
             name, description=f"learned from grep query {pattern!r}",
-            protected=False,
+            protected=True,
         )
-        # Group hits by file so we add one entity + one link per file,
-        # then evidence rows per line.
         per_file: dict[str, list[int]] = {}
         for h in hits:
             f = h.get("file")
@@ -2498,7 +2490,6 @@ def _op_learn_from_grep(d: Daemon, args: dict) -> dict:
             if not f:
                 continue
             per_file.setdefault(f, []).append(ln if ln is not None else 0)
-
         added = 0
         for abs_path, lines in per_file.items():
             ap = Path(abs_path)
@@ -2510,18 +2501,32 @@ def _op_learn_from_grep(d: Daemon, args: dict) -> dict:
                 ".py", ".js", ".ts", ".go", ".rs", ".java", ".rb", ".php",
                 ".cpp", ".c", ".h", ".hpp", ".pseudo",
             } else "doc"
-            eid = d.store.upsert_entity(
-                kind=kind, name=rel, path=str(ap),
-            )
-            d.store.link("mentions", cid, eid)
+            # protected: a learned hit must survive prune_noise so the index
+            # doesn't churn (miss -> grep -> learn -> prune -> miss ...).
+            eid = store.upsert_entity(kind=kind, name=rel, path=str(ap),
+                                      protected=True)
+            store.link("mentions", cid, eid)
             for line in lines:
-                d.store.add_evidence(
+                store.add_evidence(
                     "mentions", cid, eid, file=rel, line=line,
                     detail=f"learned from grep {pattern!r}",
                 )
             added += 1
-    d._request_snapshot()
     return {"added": added, "concept": name, "concept_id": cid}
+
+
+def _op_learn_from_grep(d: Daemon, args: dict) -> dict:
+    """Promote rg fallback hits into the index (protected — see
+    `_learn_grep_hits`). Future `rmx grep`/`context` calls hit the index."""
+    pattern = args["pattern"]
+    hits = args.get("hits") or []  # [{file, line}]
+    project_root = Path(args.get("project_root") or Path.cwd()).resolve()
+    if not pattern or not hits:
+        return {"added": 0}
+    with d._store_lock:
+        result = _learn_grep_hits(d.store, pattern, hits, project_root)
+    d._request_snapshot()
+    return result
 
 
 def _op_query(d: Daemon, args: dict) -> dict:
@@ -2616,6 +2621,7 @@ def _op_context(d: Daemon, args: dict) -> dict:
     include_sessions = bool(args.get("include_sessions", False))
     expand = int(args.get("expand", 0))
     hit_lines = args.get("hit_lines", "first")
+    grep_backstop = bool(args.get("grep_backstop", True))
     entities_explicit = bool(args.get("entities_explicit", False))
     tokens_explicit = bool(args.get("tokens_explicit", False))
     with d._store_lock:
@@ -2630,10 +2636,31 @@ def _op_context(d: Daemon, args: dict) -> dict:
             include_sessions=include_sessions,
             expand=expand,
             hit_lines=hit_lines,
+            grep_backstop=grep_backstop,
             _entities_explicit=entities_explicit,
             _tokens_explicit=tokens_explicit,
         )
     body = render_json(bundle) if fmt == "json" else render_text(bundle)
+    # Self-heal: if the grep backstop fired (index missed, grep hit), fold the
+    # hits into a protected `query/<ref>` concept so the next query hits the
+    # index — and survives prune_noise. We hold the writer here (daemon); the
+    # read-only replica/CLI path just displays the floor, never learns.
+    grep_entries = bundle.groups.get("grep") or []
+    if grep_backstop and grep_entries:
+        hits = []
+        for ge in grep_entries:
+            path = ge.entity.path
+            if not path:
+                continue
+            for ln in (ge.lines or ([ge.line] if ge.line is not None else [])):
+                hits.append({"file": path, "line": ln})
+        if hits:
+            try:
+                with d._store_lock:
+                    _learn_grep_hits(d.store, ref, hits, d.store.root.parent)
+                d._request_snapshot()
+            except Exception as exc:  # learning is best-effort; never fail a read
+                d._log(f"context grep-learn skipped: {exc}")
     return {"body": body}
 
 

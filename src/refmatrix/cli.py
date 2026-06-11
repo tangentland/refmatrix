@@ -1652,8 +1652,16 @@ def neighbors(concept, depth, linkage, limit, include_noise, strict, via_replica
                    "jump target; nums = every hit line number, compact "
                    "(`file:12,40,77`); text = every hit line WITH its source "
                    "(grep -n). Capped per entry with a `(+N more)` marker.")
+@click.option("--grep/--no-grep", "grep_backstop", default=True,
+              help="Grep backstop (default on): when the index returns no "
+                   "CONTENT hit for the terms, literally `rg` the source tree "
+                   "so context is never worse than a plain grep. Hits surface "
+                   "in a GREP group; when the daemon is up they're learned into "
+                   "the index as a protected `query/<ref>` concept (survives "
+                   "prune). --no-grep disables both.")
 def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
-            via_replica, degree, include_sessions, expand, hit_lines):
+            via_replica, degree, include_sessions, expand, hit_lines,
+            grep_backstop):
     """Token-budgeted context bundle: anchor + neighbors + their tldr blobs."""
     from refmatrix.context import build_context, render_json, render_text
     from refmatrix import daemon as daemon_mod
@@ -1697,6 +1705,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
                     include_sessions=include_sessions,
                     expand=expand,
                     hit_lines=hit_lines,
+                    grep_backstop=grep_backstop,
                     _entities_explicit=entities_explicit,
                     _tokens_explicit=tokens_explicit,
                 )
@@ -1727,6 +1736,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
                 "include_sessions": include_sessions,
                 "expand": expand,
                 "hit_lines": hit_lines,
+                "grep_backstop": grep_backstop,
                 "entities_explicit": entities_explicit,
                 "tokens_explicit": tokens_explicit,
             }, timeout=120.0)
@@ -1812,6 +1822,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
             include_sessions=include_sessions,
             expand=expand,
             hit_lines=hit_lines,
+            grep_backstop=grep_backstop,
             _entities_explicit=entities_explicit,
             _tokens_explicit=tokens_explicit,
         )

@@ -45,6 +45,7 @@ LINKAGE_LABELS = {
     "is_a": "IS A",
     "related_to": "RELATED TO",
     "content": "CONTENT MATCH",
+    "grep": "GREP (unindexed — floor)",
 }
 
 
@@ -114,6 +115,7 @@ def build_context(
     include_sessions: bool = False,
     expand: int = 0,
     hit_lines: str = "first",
+    grep_backstop: bool = True,
     _entities_explicit: bool = False,
     _tokens_explicit: bool = False,
 ) -> ContextBundle:
@@ -162,6 +164,7 @@ def build_context(
         return content_only_bundle(
             s, ref, max_entities=max_entities, max_tokens=max_tokens,
             expand=expand, include_sessions=include_sessions,
+            hit_lines=hit_lines, grep_backstop=grep_backstop,
         )
     bundle.anchor = e
 
@@ -298,7 +301,8 @@ def build_context(
         _append_content_hits(
             s, ref, built, seen_ids=seen_ids, max_entities=max_entities,
             expand=expand, include_sessions=include_sessions,
-            parent_cache=parent_cache,
+            parent_cache=parent_cache, grep_backstop=grep_backstop,
+            hit_lines=hit_lines,
         )
 
     _apply_budget(bundle, built, max_entities, max_tokens, used)
@@ -309,6 +313,7 @@ def _append_content_hits(
     s: Store, ref: str, built: list[ContextEntry], *,
     seen_ids: set[int], max_entities: int, expand: int,
     include_sessions: bool, parent_cache: dict[str, str | None],
+    grep_backstop: bool = False, hit_lines: str = "first",
 ) -> None:
     """Content-ranked fusion: BM25 over the `mentions` forward index for the
     ref's terms, folding in body matches the graph walk can't reach. Turns
@@ -318,11 +323,16 @@ def _append_content_hits(
     Twin dedup: two paths holding byte-identical code (vendored copies, a
     `docker/uat-workspace` mirror) yield the same visible def-line snippet at
     the same rank — keep the first (highest-scoring) and drop the rest, so a
-    duplicated tree can't eat half the result slots."""
+    duplicated tree can't eat half the result slots.
+
+    Grep backstop: when the index returns ZERO content hits but `grep_backstop`
+    is set, literally grep the source tree (`_grep_backstop`) so `context` is
+    never worse than a plain grep — grep with the index's upside on top."""
     ref_terms = _ref_terms(ref)
     if not ref_terms:
         return
     seen_snip: set[tuple[str, str]] = set()
+    n_before = len(built)
     for ceid, cscore in s.content_rank(
         ref_terms, kinds=["code", "doc", "memory"], limit=max_entities,
     ):
@@ -348,6 +358,88 @@ def _append_content_hits(
         centry.snippet = snippet
         centry.line = line
         built.append(centry)
+    # Floor: index found nothing on disk that grep would have. Grep the files.
+    if grep_backstop and len(built) == n_before:
+        built.extend(_grep_backstop(
+            ref_terms, s.root.parent, limit=max_entities,
+            expand=expand, hit_lines=hit_lines,
+        ))
+
+
+def _grep_backstop(
+    terms: list[str], root: Path, *, limit: int, expand: int = 0,
+    hit_lines: str = "first",
+) -> list[ContextEntry]:
+    """Literal `rg` (then `grep -rn`) over the source tree for `terms` — the
+    floor that makes `context` never worse than a plain grep. Honors
+    `.refmatrix_ignore` + code/doc extensions, groups matches per file, and
+    returns `grep`-linkage entries that render like content hits (path:line,
+    snippet, and `--hit-lines` nums/text). Empty on no tool / no match."""
+    import shutil
+    import subprocess
+    from refmatrix.ingest import CODE_EXTS, DOC_EXTS, should_ignore
+
+    if not terms:
+        return []
+    rg = shutil.which("rg")
+    if rg:
+        cmd = [rg, "-nH", "-i", "-F", "--no-heading", "--no-messages"]
+        for t in terms:
+            cmd += ["-e", t]
+        cmd.append(str(root))
+    else:
+        g = shutil.which("grep")
+        if not g:
+            return []
+        cmd = [g, "-rnHiF"]
+        for t in terms:
+            cmd += ["-e", t]
+        cmd.append(str(root))
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return []
+    if not res.stdout.strip():
+        return []
+    exts = CODE_EXTS | DOC_EXTS
+    per_file: dict[str, list[tuple[int, str]]] = {}
+    for raw in res.stdout.splitlines():
+        parts = raw.split(":", 2)
+        if len(parts) < 3:
+            continue
+        path, lno, text = parts
+        try:
+            n = int(lno)
+        except ValueError:
+            continue
+        p = Path(path)
+        if p.suffix.lower() not in exts or should_ignore(p, root):
+            continue
+        per_file.setdefault(str(p), []).append((n, text.rstrip()))
+        if len(per_file) > limit * 8:   # bound parse work on a flood
+            break
+    # Rank files by match count (a density signal), then path for stability.
+    ranked = sorted(per_file.items(), key=lambda kv: (-len(kv[1]), kv[0]))[:limit]
+    q = " ".join(terms)
+    out: list[ContextEntry] = []
+    for path, hits in ranked:
+        hits.sort()
+        try:
+            rel = str(Path(path).relative_to(root))
+        except ValueError:
+            rel = path
+        kind = "code" if Path(path).suffix.lower() in CODE_EXTS else "doc"
+        ent = Entity(id=0, kind=kind, name=rel, path=path, tldr=None, meta={})
+        e = ContextEntry(entity=ent, linkage="grep", weight=float(len(hits)))
+        e.file = rel
+        e.line = hits[0][0]
+        e.snippet = kwic_line(hits[0][1], q) or hits[0][1]
+        if hit_lines in ("nums", "text"):
+            e.lines = [n for n, _ in hits]
+            if hit_lines == "text":
+                e.hit_lines = hits[:_HIT_LINES_CAP]
+        out.append(e)
+    return out
 
 
 def _apply_budget(
@@ -369,6 +461,7 @@ def _apply_budget(
 def content_only_bundle(
     s: Store, ref: str, *, max_entities: int = 20, max_tokens: int = 4000,
     expand: int = 0, include_sessions: bool = False,
+    hit_lines: str = "first", grep_backstop: bool = True,
 ) -> ContextBundle:
     """A ranked-grep bundle for a ref that resolves to NO graph anchor — the
     content-fusion path with `anchor=None`. Lets `rmx context "<phrase>"` and
@@ -379,6 +472,7 @@ def content_only_bundle(
     _append_content_hits(
         s, ref, built, seen_ids=set(), max_entities=max_entities,
         expand=expand, include_sessions=include_sessions, parent_cache={},
+        grep_backstop=grep_backstop, hit_lines=hit_lines,
     )
     _apply_budget(bundle, built, max_entities, max_tokens,
                   estimate_tokens(_render_header(bundle)))

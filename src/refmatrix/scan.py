@@ -153,9 +153,14 @@ def scan_prompt(
         # the per-prompt injected token cost.
         if not cands:
             return ""
+        # grep_backstop OFF here: scan-prompt is the always-on UserPromptSubmit
+        # hook — spawning `rg` (and learning) on every prompt that names no
+        # concept would tax every turn. The index path stays; explicit
+        # `rmx context` carries the grep floor.
         b = content_only_bundle(
             s, " ".join(cands),
             max_tokens=per_concept_tokens, max_entities=10,
+            grep_backstop=False,
         )
         if not b.groups:
             return ""
