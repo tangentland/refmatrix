@@ -276,25 +276,43 @@ def _ingest_path_inner(
             ])
             if yield_lock is not None:
                 _yield_flush(s, yield_lock)
-    pseudo_files: list[Path] = []
+    # .pseudo pseudocode semantic enrichment. Gate on a DEDICATED
+    # `pssem:<abs>` marker: .pseudo is in CODE_EXTS, so the tree pass ALSO
+    # tracks these files under their real path -- gating on the shared key
+    # would skip files tree tracked but the .pseudo pass never applied (wrong
+    # on the FIRST run). Same rationale as the pysem: gate above. Snapshot is
+    # _pre_tracked, captured before any pass writes.
+    changed_pseudo: list[tuple[Path, float]] = []
     for p in path.rglob("*.pseudo"):
         if should_ignore(p, path):
             continue
-        pseudo_files.append(p)
-    if pseudo_files:
+        try:
+            cur = p.stat().st_mtime
+        except OSError:
+            continue
+        prev = _pre_tracked.get(f"pssem:{str(p)}")
+        if prev is None or abs(prev - cur) > 1e-6:
+            changed_pseudo.append((p, cur))
+    if changed_pseudo:
         from concurrent.futures import ThreadPoolExecutor
-        from refmatrix.ingest_records import apply_record
+        from refmatrix.ingest_records import bulk_apply_records
         pworkers = int(os.environ.get("RMX_INGEST_WORKERS", "8") or "8")
         with ThreadPoolExecutor(max_workers=pworkers,
                                 thread_name_prefix="rmx-ps-parse") as ex:
             ps_records = list(ex.map(
                 lambda fp: _build_pseudo_record(fp, path),
-                pseudo_files,
+                [p for p, _ in changed_pseudo],
             ))
-        for rec in ps_records:
-            if rec is None:
-                continue
-            apply_record(s, rec)
+        # One bulk apply across all changed .pseudo files instead of one
+        # apply_record per file (the per-row cost the other passes already
+        # shed). bulk_apply_records filters None records and marks the real
+        # .pseudo paths tracked; the pssem: key is what this pass gates on.
+        bulk_apply_records(s, ps_records)
+        s.bulk_mark_tracked([
+            (f"pssem:{str(p)}", mtime) for p, mtime in changed_pseudo
+        ])
+        if yield_lock is not None:
+            _yield_flush(s, yield_lock)
 
     # ADR semantic extraction — two-pass so cross-references resolve.
     # Build adr_num_to_eid for EVERY ADR (so changed docs' @adr refs resolve),
