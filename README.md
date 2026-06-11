@@ -1,37 +1,79 @@
 # refmatrix
 
-A roaring-bitmap-backed reference matrix for **documents, code, and concepts**.
-A hyper-tldr index that lets you ask set-algebra questions about a codebase
-that `grep` can't answer.
+**Concept-graph content indexing + memory for Claude Code.** A roaring-bitmap
+reference matrix over **documents, code, concepts, and memory** — a hyper-tldr
+index that answers set-algebra questions about a codebase that `grep` can't,
+and doubles as the durable memory layer for an agent.
 
 ```bash
-rmx query "defines:auth AND NOT mentions:auth"
-# code that implements `auth` but is documented nowhere
+rmx query "defines:auth AND NOT mentions:auth"   # code that implements auth, documented nowhere
+rmx context parse --format json                   # one LLM-ready bundle: body + graph + file:line
+rmx memory recall "why did rotation get dropped"  # dense recall over curated memories
 ```
+
+## Benchmarks — symbolic retrieval beats dense embeddings
+
+rmx ships a reproducible eval harness (`eval/`) against `cornstack/CodeRankEmbed`
+on CodeSearchNet (BEIR layout). The tuned **symbolic** stack — BM25 + docstring/code
+linkage split + coverage^α + linkage-coupled co-mention, **no embeddings, no GPU,
+no reranker** — wins on every headline metric, with the biggest edge in
+**top-rank recall**:
+
+### CSN Python (43 827 docs · 14 918 queries)
+
+| Metric        | rmx (symbolic) | CodeRankEmbed (dense) | Δ        |
+|---------------|:--------------:|:---------------------:|:--------:|
+| **Recall@1**  | **0.971**      | 0.934                 | **+0.037** |
+| **Recall@10** | **0.997**      | 0.993                 | +0.004   |
+| MRR@10        | **0.982**      | 0.959                 | +0.024   |
+| nDCG@10       | **0.986**      | 0.967                 | +0.018   |
+
+### CSN JavaScript (margin *larger* than Python)
+
+| Metric        | rmx       | CodeRankEmbed | Δ        |
+|---------------|:---------:|:-------------:|:--------:|
+| **Recall@1**  | **0.920** | 0.895         | **+0.025** |
+| **Recall@10** | **0.970** | 0.951         | +0.019   |
+| MRR@10        | **0.939** | 0.916         | +0.023   |
+
+### CSN TypeScript (real-world corpus w/ fork dupes — low absolute, still ahead)
+
+| Metric        | rmx       | CodeRankEmbed | Δ        |
+|---------------|:---------:|:-------------:|:--------:|
+| **Recall@1**  | **0.244** | 0.241         | +0.004   |
+| **Recall@10** | **0.660** | 0.644         | +0.016   |
+| MRR@10        | **0.365** | 0.358         | +0.007   |
+
+Latency: rmx ≈ 3–4 min ingest + ~70–100s retrieve (8-worker, CPU). CodeRankEmbed
+≈ 100 min corpus encode (GPU/MPS) + ~1 min retrieve. rmx wins on accuracy,
+latency, *and* explainability — every score traces to `file:line` evidence. Full
+methodology + the tuning ablation in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
 ## What it is
 
-Every entity in your project — a doc, a source file, a function, a concept —
-gets a stable integer column id. Every concept gets a row. **Linkage types**
-(`defines`, `calls`, `mentions`, `imports`, `is_a`, `related_to`, plus any
-custom one you add) live as fields. Each `(linkage_type, concept_id)` cell is
-a roaring bitmap of the entity column ids that satisfy that relation.
+Every entity in your project — a doc, a source file, a function, a concept, a
+**memory** — gets a stable integer column id. Every concept gets a row. **Linkage
+types** (`defines`, `calls`, `mentions`, `imports`, `is_a`, `related-to`, plus
+any custom verb) are the field axis. Each `(linkage_type, concept_id)` cell is a
+roaring bitmap of the entity column ids that satisfy that relation.
 
-The conceptual model mirrors [Pilosa](https://github.com/FeatureBaseDB/featurebase)
-(index → field → row → column), but storage is in-process via
-[pyroaring](https://github.com/Ezibenroc/PyRoaringBitMap) plus a SQLite catalog.
-No server, no HTTP, single-binary CLI.
+The model mirrors [Pilosa](https://github.com/FeatureBaseDB/featurebase)
+(index → field → row → column). Storage is a single **DuckDB** catalog plus
+in-process [pyroaring](https://github.com/Ezibenroc/PyRoaringBitMap) bitmaps;
+dense vectors (for memory/code recall) live in **Lance**. An optional per-store
+**daemon** owns the writer so editor + watcher + CLI never contend on the lock.
+No external server, no HTTP — a single-binary CLI.
 
 ## Install
 
 ```bash
-git clone <this repo> && cd refmatrix
+git clone https://github.com/tangentland/refmatrix && cd refmatrix
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e '.[watch,dev]'
+pip install -e '.[watch,dense,dev]'      # dense = Lance + sentence-transformers (memory recall)
 rmx --version
 ```
 
-To call `rmx` outside the venv, drop a shim into a directory on your `$PATH`:
+To call `rmx` outside the venv, drop a shim into a `$PATH` dir:
 
 ```bash
 cat > ~/bin/rmx <<'EOF'
@@ -42,66 +84,25 @@ EOF
 chmod +x ~/bin/rmx
 ```
 
-(The env-clearing matters if you have a global `PYTHONPATH` — without it your
-user-site packages can shadow the venv's.)
-
 ## Five-minute tour
 
 ```bash
-mkdir demo && cd demo
-git init -q                              # so post-commit hook has somewhere to live
-rmx init                                 # creates .refmatrix/ in cwd
+mkdir demo && cd demo && git init -q
+rmx init                                  # creates .refmatrix/ (DuckDB catalog)
+rmx ingest . --semantic                   # files + Python AST (imports + docstrings) + markdown/GMD
 
-# ---- manual entities + concepts ----
-rmx add-concept parser -d "anything that turns text into structure"
-rmx add-concept tokenizer
-rmx add-entity --kind code src/foo.py --tldr "@core/foo: dispatch + parse"
-rmx add-entity --kind code src/lex.py --tldr "tokenizer impl"
-rmx add-entity --kind doc README.md      --tldr "high-level overview"
-
-# ---- linking ----
-rmx link parser src/foo.py --type defines
-rmx link parser README.md  --type mentions
-rmx link parser src/lex.py --type related_to
-rmx link tokenizer src/lex.py --type defines
-
-# ---- query ----
 rmx query "defines:parser"
-rmx query "defines:parser OR mentions:parser"
 rmx query "defines:parser AND NOT mentions:parser"   # implementation gap
-rmx query "parser"                                   # bare term: any linkage
 rmx neighbors parser --depth 2
-rmx co-occur parser --type defines
+rmx context parser                                   # token-budgeted bundle (body + graph)
 rmx stats
 ```
 
-Output of `rmx query "defines:parser OR mentions:parser"`:
-
-```
-┏━━━━┳━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
-┃ id ┃ kind ┃ name       ┃ path         ┃
-┡━━━━╇━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 3  │ doc  │ README.md  │ ./README.md  │
-│ 4  │ code │ src/foo.py │ ./src/foo.py │
-└────┴──────┴────────────┴──────────────┘
-cardinality=2
-```
-
-## Auto-ingest from a real codebase
-
-`rmx tldr-warm` shells out to [llm-tldr](https://github.com/parcadei/llm-tldr)
-to build a call graph, then ingests it:
+With [llm-tldr](https://github.com/parcadei/llm-tldr) installed you get a full
+call graph too:
 
 ```bash
-rmx tldr-warm . --semantic        # warm + ingest call graph + Python imports + docstrings
-rmx stats                         # see what was extracted
-rmx list-entities --kind concept  # one row per function name + docstring keyword
-```
-
-Without llm-tldr installed, you still get file-level entities:
-
-```bash
-rmx ingest . --source tree --semantic   # files + Python ast (imports + docstrings)
+rmx tldr-warm . --semantic        # warm tldr cache + ingest call graph + Python semantics
 ```
 
 ## The query surface
@@ -115,22 +116,19 @@ rmx query "parser"                                     # bare: union over all li
 rmx query "defines:auth AND NOT mentions:auth" --ids-only
 ```
 
-Operators: `AND` / `&&`, `OR` / `||`, `NOT` / `!`, parentheses for grouping.
-A term is `linkage:concept` (or just `concept` to mean "any linkage to that concept").
+Operators: `AND` / `&&`, `OR` / `||`, `NOT` / `!`, parentheses. A term is
+`linkage:concept` (or bare `concept` for "any linkage").
 
 ### PQL (Pilosa-style functions)
 
 ```bash
-rmx query --pql "Row(defines, parser)"
 rmx query --pql "Intersect(Row(calls, foo), Row(mentions, bar))"
-rmx query --pql "Union(Row(defines, parser), Row(related_to, parser))"
 rmx query --pql "Difference(Row(calls, x), Row(defines, x))"   # ghost callers
 rmx query --pql "TopN(Row(defines, parser), 5)"
-rmx query --pql "Count(Row(defines, parser))"
 ```
 
-Functions: `Row`, `Intersect` / `And`, `Union` / `Or`, `Difference` / `Diff`,
-`Xor`, `TopN`, `Neighbors`, `Count`.
+Functions: `Row`, `Intersect`/`And`, `Union`/`Or`, `Difference`/`Diff`, `Xor`,
+`TopN`, `Neighbors`, `Count`.
 
 ### Higher-level helpers
 
@@ -138,293 +136,173 @@ Functions: `Row`, `Intersect` / `And`, `Union` / `Or`, `Difference` / `Diff`,
 rmx neighbors parser --depth 2 --limit 50
 rmx co-occur parser --type mentions
 rmx top parser --type mentions -k 10                   # weighted top-N
-rmx context parser                                     # token-budgeted bundle
+rmx context parser                                     # token-budgeted bundle (body + graph)
 rmx context parser --format json                       # LLM-ready
-rmx context parser -l defines -l calls --max-tokens 800
-rmx context --since main                               # branch-scoped: every concept
-                                                       # touched by files changed
-                                                       # since `main`
-rmx query "defines:auth" --explain                     # show file:line evidence for
-                                                       # every result's memberships
+rmx context --since main                               # branch-scoped: concepts touched since main
+rmx concept timeline parser                            # when a concept was introduced / worked on
+rmx query "defines:auth" --explain                     # file:line evidence per membership
 ```
 
-Output of `rmx context parser`:
+`rmx context <name>` resolves a concept **or** a same-named memory: it returns
+the memory body inline AND the graph neighborhood in one bundle, with KWIC
+snippets centered on the matched term.
 
-```
-=== context for `parser` ===
-anchor: parser  [concept]
+## Memory, sessions & dense recall
 
-DEFINED BY (defines):
-  src/foo.py  [code]
-    @core/foo: dispatch + parse
-
-CALLED BY (called_by):
-  src/bar.py  [code]
-    caller of parser
-
-CALLS (calls):
-  src/lex.py  [code]
-    tokenizer impl
-
-MENTIONED IN (mentions):
-  README.md  [doc]
-    high-level overview of the parser pipeline
-
-[~55 tokens, 4 neighbors]
-```
-
-### Saved queries
+refmatrix is also the agent memory layer. Curated `.md` memories and Claude Code
+session transcripts are first-class entities, kept out of the code graph's
+ranking but reachable through their own recall surfaces.
 
 ```bash
-rmx save-query doc-gap "defines:auth AND NOT mentions:auth"
-rmx run doc-gap
-rmx list-queries
+# Curated memories (kind=memory + body sidecar + rel: graph)
+rmx memory sync-disk ~/.claude/projects/<proj>/memory   # ingest curated .md memories
+rmx embed --kinds memory                                # dense vectors (Lance)
+rmx memory recall "why was the writer rotation dropped" # hybrid dense + symbolic recall
+rmx memory get <slug>                                   # body + frontmatter
+rmx memory dedup                                        # fold any concept↔memory duplicate nodes
+
+# Past Claude Code sessions, compressed to GMD cards
+rmx session ingest                                      # index this project's session JSONLs
+rmx session recall "slot rotation"                      # KWIC search over session cards
 ```
 
-## Power examples
+Sessions and curated memories live in their own partitions so dense English
+prose never drowns out code/specs in the concept graph's BM25 ranking.
 
-These are the queries that justify the bitmap layer — single-shot answers to
-questions that are awkward with `grep`.
+## `rmx reingest` — one command to make a store correct
+
+Runs every ingest pass over every source in canonical order, then embeds —
+each pass gated/incremental:
 
 ```bash
-# 1. Documentation gap: code implements `auth` but no doc mentions it.
-rmx query "defines:auth AND NOT mentions:auth"
-
-# 2. Ghost API: anything called somewhere but never defined.
-rmx query "calls:parse AND NOT defines:parse"
-
-# 3. Cross-cutting code: modules tied to two subsystems.
-rmx query "(defines:auth OR calls:auth) AND (defines:billing OR calls:billing)"
-
-# 4. Refactor blast radius: 2-hop transitive closure of a symbol.
-rmx neighbors parse --depth 2
-
-# 5. The killer single-shot bundle for an LLM.
-rmx context parse --format json --max-tokens 1500
+rmx reingest                  # code+docs → memory → sessions → embed, in order
+rmx reingest --no-sessions --no-embed
 ```
 
-The reason these compose is that every linkage lives in the same algebra.
-Add `rmx add-linkage-type implements` and `implements:foo AND tested_by:foo`
-becomes a one-liner immediately.
+This is the "rebuild this store consistently" command; it picks the right pass
+per source so the read surfaces (`context`, `scan-prompt`, `recall`) see one
+coherent graph.
+
+## Primer & prompt-aware context (LLM hooks)
+
+```bash
+rmx primer --top 150 --out .refmatrix/PRIMER.md         # static: density-ranked symbol map
+echo '{"prompt":"fix register_graph_object handler"}' | rmx scan-prompt   # dynamic: prompt → bundles
+```
+
+`rmx install-hooks --apply` wires `primer` to `SessionStart` and `scan-prompt`
+to `UserPromptSubmit`, so every Claude session loads a fresh symbol map and gets
+context bundles injected for symbols it mentions. `build_context` is shared by
+`context`, `scan-prompt`, and `memory recall`, so a fix to one improves all.
 
 ## Concept namespacing
 
-Auto-generated concepts are stored under namespaces so they don't collide
-with the ones you add by hand:
+Auto-generated concepts are namespaced so they don't collide with hand-added
+ones:
 
 | Namespace | Source | Example |
 |---|---|---|
 | `keyword/` | docstring keywords (semantic ingest) | `keyword/tokenizer` |
 | `import/` | Python `import` statements | `import/json`, `import/tree_sitter` |
-| (none) | function-name concepts (from `tldr-warm`) and your own `add-concept` | `parse`, `register_graph_object` |
+| (none) | function-name concepts + your own `add-concept` | `parse`, `register_graph_object` |
 
-Query a namespaced concept with the slash in the term:
-
-```bash
-rmx query "imports:import/json"
-rmx query "mentions:keyword/parser"
-```
-
-Bare-token user concepts (`parser`) and namespaced auto concepts
-(`keyword/parser`) are independent. The DSL already accepts `/` inside concept
-refs, so no quoting is needed.
-
-## Primer & prompt-aware context
-
-Two LLM-orientation features that use the index proactively:
-
-```bash
-# Static — emit a density-ranked top-N symbol map for `@`-include in CLAUDE.md.
-rmx primer --top 150 --max-tokens 2000 --out .refmatrix/PRIMER.md
-
-# Dynamic — read a prompt, find concepts mentioned in it, emit context bundles.
-echo '{"prompt": "fix register_graph_object handler"}' | rmx scan-prompt
-```
-
-`primer` filters to identifier-shaped names (snake_case, dotted.path,
-camelCase, or any namespaced `<ns>/<name>`) and skips the `keyword/`
-namespace by default. `scan-prompt` does suffix matching, so a prompt
-mentioning bare `tree_sitter` matches the indexed `import/tree_sitter`.
-
-The Claude Code hooks installed by `rmx install-hooks --apply` wire
-`primer` to `SessionStart` and `scan-prompt` to `UserPromptSubmit`
-automatically.
-
-## Maintenance
-
-```bash
-rmx stats                                  # cardinalities per linkage
-rmx stats --stale                          # tracked files where on-disk mtime
-                                           # > last_synced (drift detector)
-rmx queue                                  # pending paths waiting to flush
-cat .refmatrix/sync.log                    # append-only log of every sync run
-
-rmx vacuum                                 # drop empty-bitmap concepts and
-                                           # missing-file tracked rows
-
-rmx prune-noise                            # MARK concepts in `keyword/` with
-                                           # df<2 or df/total>0.25 as noise
-                                           # (non-destructive — queries hide them
-                                           # by default; --full reveals them)
-rmx prune-noise --max-df-ratio 0.10        # tighter — marks "get", "name", etc.
-rmx prune-noise -n keyword -n import       # also mark obscure imports
-rmx prune-noise --drop                     # actually DELETE marked concepts
-                                           # (irrecoverable — use with care)
-
-# query both views:
-rmx query "mentions:foo"                   # cleaned graph (default)
-rmx query "mentions:foo" --full            # raw — find/grep parity
-```
+Query a namespaced concept with the slash in the term: `rmx query "imports:import/json"`.
 
 ## Custom linkage types
 
 ```bash
 rmx add-linkage-type implements --description "code implements concept"
-rmx add-linkage-type tested_by  --description "concept covered by entity (test)"
 rmx link parser src/foo.py --type implements
 rmx query "implements:parser AND NOT tested_by:parser"
 ```
 
-## Incremental sync
+GMD ingest auto-creates linkage types from any `rel: <verb> -> [[target]]` line,
+so authored docs can introduce verbs without code changes.
 
-`rmx sync` is the freshness primitive that hooks call into:
-
-```bash
-rmx sync -f path/to/changed.py            # one or more specific files
-rmx sync --since HEAD~1                   # everything changed since a git ref
-rmx sync --flush-queue                    # drain .refmatrix/dirty.queue
-rmx sync --invalidate path/to/gone.py     # force-purge regardless of existence
-rmx sync --enqueue-only -f path/...       # cheap append for fast hooks
-rmx queue                                 # see what's pending
-```
-
-Every sync purges-then-re-adds each touched path, so stale per-function
-entities and semantic linkages don't leak across edits.
-
-## Hooks: keep the index fresh
+## Keeping the index fresh
 
 ```bash
-rmx install-hooks                         # dry-run — prints the plan
-rmx install-hooks --apply                 # actually write
-rmx install-hooks --apply --force         # overwrite existing hook files
-rmx install-hooks --no-briefing           # skip .refmatrix/CLAUDE.md
+rmx install-hooks --apply        # git post-commit/merge/checkout + Claude Code hooks
+rmx sync -f path/to/changed.py   # the freshness primitive hooks call
+rmx watch . --semantic           # watchdog daemon for editor-driven flows
+rmx daemon start                 # per-store socket server: single writer, hot bitmaps
 ```
-
-What gets written:
 
 | Target | Purpose |
 |---|---|
 | `.git/hooks/post-commit` | `rmx sync --since HEAD~1` after each commit |
-| `.git/hooks/post-merge` | sync since `ORIG_HEAD` |
-| `.git/hooks/post-checkout` | sync the diff on branch switch |
-| `.git/hooks/post-rewrite` | sync after rebase/amend |
-| `.claude/settings.local.json` | `PostToolUse` enqueue · `Stop`/`SubagentStop` flush · `SessionStart` flush + regen `PRIMER.md` · `UserPromptSubmit` runs `rmx scan-prompt` |
-| `.refmatrix/CLAUDE.md` | briefing so Claude knows rmx exists and how to use it |
-| `.refmatrix/PRIMER.md` | density-ranked symbol map, refreshed on `SessionStart` (suggested `@`-include) |
-
-After installing, add these lines to your project's `CLAUDE.md` (or create one):
-
-```
-@.refmatrix/CLAUDE.md
-@.refmatrix/PRIMER.md
-```
-
-Now every Claude session in this project loads the briefing and a refreshed
-top-symbols map automatically. Symbols you mention in a prompt also get
-context bundles injected on the fly via the `UserPromptSubmit` hook.
-
-## Watch mode (editor-driven freshness)
-
-For flows outside Claude or git — e.g. another tool rewriting code — there's
-a watcher daemon:
-
-```bash
-pip install 'refmatrix[watch]'
-rmx watch . --semantic --debounce 500     # blocks until Ctrl-C
-```
-
-Coalesces fs events for `--debounce` ms, then batch-syncs. Ignores `.git`,
-`.venv`, `node_modules`, `__pycache__`, `.tldr`, `.refmatrix`, etc.
+| `.git/hooks/post-merge` / `post-checkout` / `post-rewrite` | sync the relevant diff |
+| `.claude/settings.local.json` | `PostToolUse` enqueue · `Stop` flush · `SessionStart` primer · `UserPromptSubmit` scan-prompt |
+| `.refmatrix/CLAUDE.md` · `PRIMER.md` | briefing + density-ranked symbol map |
 
 ## Storage layout
 
 ```
 .refmatrix/
-├── catalog.db                # SQLite: entities, concepts, linkage_types, entity_links, tracked_files, saved_queries
-├── bitmaps/
-│   ├── defines/<concept_id>.rb        # roaring bitmap, one file per concept row per linkage
-│   ├── calls/<concept_id>.rb
-│   └── …
-├── queries/                  # saved query bodies (also in catalog)
-├── dirty.queue               # populated by hooks, drained by `rmx sync --flush-queue`
-└── CLAUDE.md                 # briefing for Claude (written by install-hooks)
+├── catalog.A.duckdb / catalog.B.duckdb   # DuckDB catalog (one slot is the pinned writer)
+├── active                                # marker: which slot is the writer
+├── catalog.read.duckdb                   # snapshot-tier: lock-free read copy, refreshed after writes
+├── read_only.duckdb                      # symlink → the current reader (snapshot)
+├── vectors/<partition>/<kind>.lance      # dense vectors for memory/code recall
+├── facts.log                             # append-only mutation log (replayable: rmx rebuild --from-log)
+├── rmxd.sock / rmxd.pid                  # daemon socket + lock
+├── dirty.queue                           # hook-populated, drained by sync --flush-queue
+└── CLAUDE.md / PRIMER.md                 # agent briefing + symbol map
 ```
 
-The forward index (`entity_links`) tracks every `(entity, linkage, concept)`
-membership in SQL so deletes are O(links) instead of needing a scan over
-every bitmap.
+Entities, concepts, linkage types, the `entity_links` forward index, bitmap
+fragments (BLOBs), and the `memory_content` sidecar all live in the DuckDB
+catalog. The forward index makes deletes O(links) instead of a full bitmap scan.
 
 ## Concept model
 
 | Term | What it is |
 |---|---|
-| **Entity** | A column. `kind ∈ {doc, code, concept}`. Concepts are themselves entities, so concepts can link to concepts. |
-| **Concept** | A row label. Identified by name, gets a stable id. |
-| **Linkage type** | A named relation; the field axis. Directed by default; `--undirected` for symmetric ones like `related_to`. |
-| **Bitmap** | A roaring set of entity ids. Persisted as `<linkage>/<concept_id>.rb`. |
-| **Weight** | Optional float on `(entity, linkage, concept)` — used by `rmx top` and the weighted ranking inside `rmx context`. |
+| **Entity** | A column. `kind ∈ {doc, code, concept, memory}`. Concepts are entities too, so concepts link to concepts. |
+| **Concept** | A row label, stable id by name. |
+| **Linkage type** | A named relation (the field axis). Directed by default; symmetric ones like `related-to` excepted. |
+| **Bitmap** | A roaring set of entity ids, packed `(concept_id << 32) | entity_id`. |
+| **Weight** | Optional float on `(entity, linkage, concept)` — drives `rmx top` + weighted ranking in `context`. |
+| **Partition** | A logical namespace in one shared catalog (per-project code, memory, sessions). |
 
 ## Architecture
 
 ```
-   ┌──────────────────────────────────────────────────────────────┐
-   │  CLI  (click + rich)                                         │
-   │   init  add-* link sync ingest tldr-warm install-hooks       │
-   │   query (DSL+PQL) neighbors co-occur top context             │
-   └────────────────────────┬─────────────────────────────────────┘
-                            ▼
-   ┌──────────────────────────────────────────────────────────────┐
-   │  Query engine  (refmatrix.query, refmatrix.context)          │
-   │   DSL parser  •  PQL evaluator  •  graph walks  •  topN      │
-   └────────────────────────┬─────────────────────────────────────┘
-                            ▼
-   ┌──────────────────────────────────────────────────────────────┐
-   │  Store  (refmatrix.store)                                    │
-   │   SQLite catalog  +  on-disk roaring bitmaps                 │
-   │   forward index for O(links) deletes                         │
-   └──────────────────────────────────────────────────────────────┘
-              ▲                            ▲
-              │                            │
-   ┌──────────┴──────────┐        ┌────────┴────────┐
-   │  ingest             │        │  sync           │
-   │  • tldr cache       │        │  files / since  │
-   │  • file tree        │        │  / queue / inv. │
-   │  • ast (Py)         │        └─────────────────┘
-   └─────────────────────┘                 ▲
-                                           │
-                                ┌──────────┴──────────┐
-                                │ hooks: git + Claude │
-                                │ + watchdog watcher  │
-                                └─────────────────────┘
+   ┌─────────────────────────────────────────────────────────────┐
+   │  CLI (click + rich): query · context · memory · session ·    │
+   │  ingest · reingest · embed · sync · daemon · install-hooks   │
+   └───────────────────────────┬─────────────────────────────────┘
+                               ▼
+   ┌─────────────────────────────────────────────────────────────┐
+   │  Daemon (per-store unix socket) — owns the writer, serves     │
+   │  reads from the snapshot, hosts the embedder + fs watcher     │
+   └───────────────────────────┬─────────────────────────────────┘
+        ┌──────────────┬────────┴────────┬──────────────┐
+        ▼              ▼                 ▼              ▼
+   ┌─────────┐   ┌──────────┐    ┌────────────┐  ┌───────────┐
+   │ ingest  │   │  query   │    │  Store      │  │  embed    │
+   │ /reingest│  │ /context │    │ DuckDB +    │  │  (Lance   │
+   │ /gmd    │   │ /scan    │    │ roaring +   │  │  dense)   │
+   │         │   │ /recall  │    │ memory side │  │           │
+   └─────────┘   └──────────┘    └────────────┘  └───────────┘
 ```
+
+**Reads** come from the snapshot-tier copy (`catalog.read.duckdb`), never the
+write-locked slot — so a query never blocks on an ingest. The writer stays
+**pinned** to one catalog slot for the daemon's life (writer rotation was
+retired in 0.7.7); the snapshot is regenerated shortly after each write. Deeper
+detail in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
+[`docs/SYSTEM.md`](docs/SYSTEM.md).
 
 ## Relationship to llm-tldr
 
-refmatrix consumes [llm-tldr](https://github.com/parcadei/llm-tldr) output —
-tldr is the extractor, refmatrix is the indexer/query layer. They compose;
-neither is bundled inside the other.
+refmatrix consumes [llm-tldr](https://github.com/parcadei/llm-tldr) output — tldr
+is the per-function extractor, rmx is the cross-entity index + query engine +
+agent memory surface. They compose; neither bundles the other.
 
-Source priority (auto):
-1. `.tldr/cache/semantic/metadata.json` — per-unit semantic dump with
-   `signature`, `unit_type` (function/class/method/...), per-unit
-   `calls`/`called_by`, `dependencies`, CFG/DFG summaries. Yields a
-   `kind/<unit_type>` namespace queryable as `is_a:kind/class`.
-2. `.tldr/cache/call_graph.json` — leaner: just `(from_file, from_func) →
-   (to_file, to_func)` edges.
-3. `tree` — last-resort directory walk; per-file entities only.
-
-Force a source explicitly: `rmx ingest . --source metadata|tldr|tree`.
-Run `rmx tldr-warm <path>` to extract + ingest in one shot.
+Source priority (auto): `.tldr/cache/semantic/metadata.json` (richest) →
+`.tldr/cache/call_graph.json` → `tree` walk (file-level only). Force with
+`rmx ingest . --source metadata|tldr|tree`.
 
 ## Development
 
@@ -433,7 +311,7 @@ source .venv/bin/activate
 env -u PYTHONPATH -u PYTHONUSERBASE PYTHONNOUSERSITE=1 pytest tests/ -q
 ```
 
-37 tests, ~3 seconds.
+502 tests, ~90 seconds.
 
 ## License
 

@@ -10,8 +10,8 @@
                                 │
 ┌───────────────────────────────┴──────────────────────────────────────┐
 │                    Daemon / Concurrency Layer                        │
-│   daemon.py  (per-store Unix socket, owns catalog lock,              │
-│               embeds watcher, dispatches 21 named ops)               │
+│   daemon.py  (per-store Unix socket, owns the writer lock, serves    │
+│              snapshot-tier reads, hosts embedder + watcher, ~40 ops)  │
 └───┬───────────────────┬─────────────────────────┬───────────────────┘
     │                   │                         │
 ┌───┴────────┐  ┌───────┴────────────┐   ┌────────┴────────────────────┐
@@ -27,9 +27,10 @@
                         │
 ┌───────────────────────┴──────────────────────────────────────────────┐
 │                       Core Data Layer                                │
-│  store.py    SQLite + roaring bitmap fragments                       │
-│  backend.py  SQLite vs DuckDB backend selection                      │
-│  duckdb_catalog.py   native DuckDB schema (phase 3)                  │
+│  store.py    DuckDB catalog + roaring bitmap fragments (BLOB)        │
+│              + memory_content sidecar + Lance dense vectors          │
+│  backend.py  SQLite vs DuckDB backend selection (new stores: DuckDB) │
+│  duckdb_catalog.py   native DuckDB schema (phase 3, current default) │
 │  duckdb_view.py      read-only DuckDB facade over SQLite (phase 1)   │
 │  migrate.py          one-shot SQLite → DuckDB migration              │
 └──────────────────────────────────────────────────────────────────────┘
@@ -85,8 +86,9 @@ running daemon open no `Store` of their own.
 
 | Table                | Key columns                                              | Purpose                              |
 |----------------------|----------------------------------------------------------|--------------------------------------|
-| `entities`           | id, kind, name, path, tldr, meta, protected, noise       | One row per doc/code/concept/query   |
+| `entities`           | id, kind, name, path, tldr, meta, canonical_name, protected, noise | One row per doc/code/concept/memory/query (`kind ∈ {doc,code,concept,memory}`) |
 | `concepts`           | id (entity_id), description                              | Concept-kinded entity sidecar        |
+| `memory_content`     | entity_id, content, mtype, tags, metadata, timestamps   | Memory body sidecar (logged → replayable) |
 | `linkage_types`      | id, name, directed, description, inverse                 | Open-set verb registry               |
 | `entity_links`       | linkage_id, concept_id, entity_id, weight                | SQL-shadow of bitmap content (FK)    |
 | `linkage_evidence`   | linkage_id, concept_id, entity_id, file, line, detail    | file:line provenance per linkage     |
@@ -213,9 +215,21 @@ score = BM25(query, entity)
 ```
 
 Tuned production variant: `bm25_docstring30_cov30_cm20` — BM25 + docstring
-linkage weight 0.30 + coverage^3 + linkage-coupled co-mention^2. Beats
-CodeRankEmbed on CSN Python (0.972 vs 0.959 MRR@10) and on CSN JavaScript
-(0.939 vs 0.916 MRR@10). See `PERFORMANCE.md` for full eval methodology.
+linkage weight 0.30 + coverage^3 + linkage-coupled co-mention^2.
+
+The symbolic stack beats dense `CodeRankEmbed` on CodeSearchNet — the edge is
+biggest in **top-rank recall** (no embeddings, no GPU, no reranker):
+
+| Dataset | Recall@1 (rmx / CE) | Recall@10 (rmx / CE) | MRR@10 (rmx / CE) |
+|---------|:-------------------:|:--------------------:|:-----------------:|
+| CSN Python      | **0.971** / 0.934 | **0.997** / 0.993 | **0.982** / 0.959 |
+| CSN JavaScript  | **0.920** / 0.895 | **0.970** / 0.951 | **0.939** / 0.916 |
+| CSN TypeScript  | **0.244** / 0.241 | **0.660** / 0.644 | **0.365** / 0.358 |
+
+(TS absolutes are low — real-world corpus with fork/copy dupes — but rmx still
+leads at every cutoff. JS margin is *larger* than Python: rmx's linkage-aware
+scorer benefits from JS's denser cross-file relations.) Full methodology +
+tuning ablation in `PERFORMANCE.md`.
 
 ## Daemon / concurrency layer
 
@@ -241,21 +255,42 @@ rmx <op>           # client side
   └─ if not:   open Store directly (read-only ops) or fail (writes)
 ```
 
-### OPS dispatch (`daemon.py:OPS` — 21 named ops)
+### Read path — snapshot-tier (writer rotation retired in 0.7.7)
+
+Reads never touch the write-locked catalog. After each write op the daemon
+regenerates `catalog.read.duckdb` — a full lock-free copy of the writer's
+catalog — and points `read_only.duckdb` at it. Every read-only CLI command and
+the in-process replica reader open that snapshot, so a `query` never blocks on
+an ingest.
+
+The writer stays **pinned** to its catalog slot (`catalog.A.duckdb` or
+`catalog.B.duckdb`, named by the `active` marker) for the daemon's life. The old
+A/B writer *rotation* — which caught up the inactive slot by `facts.log`
+delta-replay then swapped the writer onto it — was **dropped**: any state not
+fully captured by the log (e.g. the `memory_content` body sidecar, or an off-log
+direct write made while the daemon was down) was absent from the promoted slot,
+and the snapshot rebuilt from it silently lost that data. `memory_content` is now
+logged too (so `rmx rebuild --from-log` reconstructs bodies), and the swap is a
+no-op; A/B persist only as the writer's slot. Invariant: **no swap can ever
+promote a slot missing committed data.**
+
+### OPS dispatch (`daemon.py:OPS`)
 
 | Category    | Ops                                                                       |
 |-------------|---------------------------------------------------------------------------|
 | Health      | `ping`, `stats`, `stop`                                                   |
-| Write       | `enqueue`, `flush_queue`, `flush_queue_async`, `sync_files`, `sync_since` |
+| Write/sync  | `enqueue`, `flush_queue`, `flush_queue_async`, `sync_files`, `sync_since`, `ingest_path`, `ingest_gmd` |
 | Mutate      | `upsert_entity`, `add_concept`, `add_linkage_type`                        |
-| Read        | `iter_entities`, `list_linkages`, `list_saved_queries`                    |
-| Query       | `query`, `context`, `grep_indexed`                                        |
-| Learn       | `learn_from_grep`                                                         |
-| Maintain    | `prune_noise`, `vacuum`, `checkpoint`                                     |
+| Query/read  | `query`, `context`, `grep_indexed`, `iter_entities`, `list_linkages`, `list_saved_queries` |
+| Memory      | `memory_add`, `memory_get`, `memory_iter`, `memory_search`, `memory_recall`/`ann_search`, `memory_forget`, `memory_bulk_forget`, `memory_dedup`, `memory_link`, `memory_score` |
+| Dense       | `embed`, `embed_gc`                                                       |
+| Partition   | `partition_add`, `partition_list`, `partition_rename`, `replica_status`, `replica_refresh` (no-op) |
+| Maintain    | `prune_noise`, `vacuum`, `checkpoint`, `rebuild_index`                    |
 
 `flush_queue_async` exists so the Claude Code `Stop` hook doesn't block agent
 shutdown on a slow ingest pass — it returns immediately and the daemon drains
-the queue on a background thread.
+the queue on a background thread. Latency-sensitive ops run on a small `cli_pool`;
+mutating/bulk ops run on `bg_pool`.
 
 ## CLI / hook surface
 
@@ -265,22 +300,25 @@ The CLI is Click-based with subgroups:
 rmx
 ├── init / info
 ├── daemon         start / stop / status
-├── partition      list / add
+├── partition      list / add / rename / merge
+├── replica        status / path / refresh        (snapshot-tier; refresh is a no-op)
 ├── canon          link / siblings
 ├── add            entity / concept / linkage-type
 ├── list           entities / linkages / queries
 ├── link / unlink
 ├── query / explain
-├── neighbors / context / co-occur / top
+├── neighbors / context / co-occur / top / concept timeline
 ├── grep                                         (index-backed + rg fallback)
 ├── save-query / run
-├── ingest / tldr-warm / ingest-gmd
+├── ingest / tldr-warm / ingest-gmd / reingest    (reingest = ordered all-source + embed)
+├── embed                                         (dense vectors → Lance)
+├── memory         add / get / list / search / recall / link / forget / bulk-forget / dedup / sync-disk
+├── session        ingest / recall / show / list / stats / launchctl
 ├── sync           --files / --since / --flush-queue / --enqueue-only
-├── queue
-├── watch
+├── queue / watch
 ├── primer / scan-prompt
 ├── install-hooks
-├── stats / telemetry
+├── stats / telemetry / log
 ├── compact / checkpoint / vacuum / prune-noise
 ├── export / import / dump-log / rebuild
 └── migrate-to-duckdb
