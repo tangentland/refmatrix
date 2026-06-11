@@ -2811,6 +2811,129 @@ class Store:
             )
         ]
 
+    def _mentions_bm25_stats(self, mentions_lid: int) -> tuple[int, float]:
+        """(N, avgdl) for BM25 over the `mentions` forward index in the active
+        partition: N = #entities carrying any mention edge, avgdl = mean
+        summed-tf per such entity. Cached per (instance, partition) — N/avgdl
+        are slow-moving denominators, so a small staleness between ingests is
+        harmless; a long-lived daemon Store computes this once."""
+        cache = getattr(self, "_bm25_stats_cache", None)
+        if cache is not None and cache[0] == self._partition_id:
+            return cache[1], cache[2]
+        row = self._connect().execute(
+            "SELECT COUNT(DISTINCT el.entity_id), COALESCE(SUM(el.weight), 0) "
+            "FROM entity_links el JOIN entities e ON e.id = el.entity_id "
+            "WHERE el.linkage_id=? AND e.partition_id=?",
+            (mentions_lid, self._partition_id),
+        ).fetchone()
+        n = int(row[0] or 0)
+        avgdl = (float(row[1] or 0.0) / n) if n else 0.0
+        self._bm25_stats_cache = (self._partition_id, n, avgdl)
+        return n, avgdl
+
+    def content_rank(
+        self,
+        terms: "list[str]",
+        *,
+        kinds: "list[str] | None" = None,
+        limit: int = 50,
+        k1: float = 1.5,
+        b: float = 0.75,
+        coverage_alpha: float = 3.0,
+    ) -> "list[tuple[int, float]]":
+        """BM25 (+ coverage^alpha) over the `mentions` forward index for a bag
+        of query terms — the live counterpart of the eval retriever's winning
+        variant, computed straight off `entity_links` (concept = term, weight =
+        tf). Returns `[(entity_id, score)]` best-first (score > 0), scoped to
+        the active partition.
+
+        Lets `rmx context "<natural language>"` rank the entities whose bodies
+        actually contain the query terms (via their docstring/body `mentions`
+        edges), instead of only resolving an exact concept-name anchor."""
+        import math
+        terms = [t for t in (terms or []) if t and t.strip()]
+        if not terms:
+            return []
+        con = self._connect()
+        try:
+            mlid = self.get_linkage_id("mentions")
+        except Exception:
+            return []
+        # Each query term → its matching mention-concept ids (variant/canonical
+        # expansion, so `FovWedge` and `fov_wedge` collapse to the same term).
+        term_cids: list[list[int]] = [
+            self.resolve_concept_ids(t, strict=False) or [] for t in terms
+        ]
+        cid_to_term: dict[int, int] = {}
+        for ti, cids in enumerate(term_cids):
+            for c in cids:
+                cid_to_term.setdefault(c, ti)
+        flat = list(cid_to_term)
+        if not flat:
+            return []
+        N, avgdl = self._mentions_bm25_stats(mlid)
+        if N == 0 or avgdl == 0:
+            return []
+        # Document frequency per query term (global within the partition).
+        n_term: dict[int, int] = {}
+        for ti, cids in enumerate(term_cids):
+            if not cids:
+                n_term[ti] = 0
+                continue
+            ph = ",".join("?" * len(cids))
+            n_term[ti] = int(con.execute(
+                f"SELECT COUNT(DISTINCT el.entity_id) FROM entity_links el "
+                f"JOIN entities e ON e.id = el.entity_id "
+                f"WHERE el.linkage_id=? AND e.partition_id=? "
+                f"AND el.concept_id IN ({ph})",
+                (mlid, self._partition_id, *cids),
+            ).fetchone()[0] or 0)
+        # Postings for the query-term concepts (partition + optional kind scope).
+        kind_clause = f" AND e.kind IN ({','.join('?' * len(kinds))})" if kinds else ""
+        ph = ",".join("?" * len(flat))
+        rows = con.execute(
+            f"SELECT el.entity_id, el.concept_id, el.weight FROM entity_links el "
+            f"JOIN entities e ON e.id = el.entity_id "
+            f"WHERE el.linkage_id=? AND e.partition_id=? "
+            f"AND el.concept_id IN ({ph}){kind_clause}",
+            (mlid, self._partition_id, *flat, *(kinds or [])),
+        ).fetchall()
+        if not rows:
+            return []
+        cand_ids = sorted({r[0] for r in rows})
+        ph2 = ",".join("?" * len(cand_ids))
+        doc_len = {
+            r[0]: float(r[1] or 0.0) for r in con.execute(
+                f"SELECT entity_id, SUM(weight) FROM entity_links "
+                f"WHERE linkage_id=? AND entity_id IN ({ph2}) GROUP BY entity_id",
+                (mlid, *cand_ids),
+            )
+        }
+        scores: dict[int, float] = {}
+        cover: dict[int, set] = {}
+        for eid, cid, w in rows:
+            ti = cid_to_term.get(cid)
+            if ti is None:
+                continue
+            nt = n_term.get(ti, 0)
+            if nt <= 0:
+                continue
+            idf = math.log((N - nt + 0.5) / (nt + 0.5) + 1.0)
+            tf = float(w or 0.0)
+            dl = doc_len.get(eid, avgdl)
+            denom = tf + k1 * (1.0 - b + b * dl / avgdl)
+            if denom <= 0:
+                continue
+            scores[eid] = scores.get(eid, 0.0) + idf * (tf * (k1 + 1.0)) / denom
+            cover.setdefault(eid, set()).add(ti)
+        if not scores:
+            return []
+        n_units = sum(1 for cids in term_cids if cids) or 1
+        if coverage_alpha > 0 and n_units > 1:
+            for eid in list(scores):
+                scores[eid] *= (len(cover[eid]) / n_units) ** coverage_alpha
+        return sorted(scores.items(), key=lambda kv: -kv[1])[:limit]
+
     def add_evidence(
         self,
         linkage: str,

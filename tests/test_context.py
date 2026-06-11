@@ -132,6 +132,41 @@ def test_build_context_inlines_memory_body_for_bare_slug(tmp_path):
     s.close()
 
 
+def test_build_context_content_fusion_surfaces_phrase_matches(tmp_path):
+    """A natural-language phrase whose terms were never co-mentioned on one
+    node has no graph anchor — content-ranked fusion (BM25 over `mentions`)
+    must still surface the entities whose bodies contain the terms, ranked,
+    under a `content` group."""
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    # weak anchor: the concept the phrase canonicalizes to, with NO edges
+    s.add_concept("fov_wedge")
+    fov = s.add_concept("fov")
+    wedge = s.add_concept("wedge")
+    cam = s.add_concept("camera")
+    f1 = s.upsert_entity(kind="code", name="src/region_detection.py",
+                         tldr="convert each camera FOV wedge to a polygon")
+    f3 = s.upsert_entity(kind="doc", name="docs/spatial.md",
+                         tldr="The FOV wedge as calibration primitive")
+    f4 = s.upsert_entity(kind="doc", name="docs/unrelated.md",
+                         tldr="camera mounting guide")
+    for c, ent, w in [(fov, f1, 3.0), (wedge, f1, 2.0),
+                      (fov, f3, 2.0), (wedge, f3, 3.0), (cam, f4, 5.0)]:
+        s.weighted_link("mentions", c, ent, weight=w)
+    s.flush_fragments()
+
+    b = build_context(s, "fov wedge", max_entities=10)
+    assert "content" in b.groups
+    names = [e.entity.name for e in b.groups["content"]]
+    # both-term docs surface; the camera-only doc does not
+    assert "src/region_detection.py" in names
+    assert "docs/spatial.md" in names
+    assert "docs/unrelated.md" not in names
+    # content hits carry KWIC snippets
+    assert any(e.snippet for e in b.groups["content"])
+    s.close()
+
+
 def test_build_context_truncates_long_anchor_body_to_budget(tmp_path):
     """A long memory body must not swallow the whole bundle — it's capped to a
     fraction of max_tokens so the scan-prompt hook's small per-concept budget

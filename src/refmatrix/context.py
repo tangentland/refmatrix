@@ -22,7 +22,7 @@ from refmatrix.store import Entity, Store
 # about* the anchor (vs. defining it). For these we replace the whole-section
 # tldr with a KWIC window around the anchor term — the tldr is a section
 # summary that often does not even contain the term.
-_KWIC_LINKAGES = {"mentions", "related_to"}
+_KWIC_LINKAGES = {"mentions", "related_to", "content"}
 
 
 # Order linkages so output reads like a natural definition: what *is* this
@@ -43,6 +43,7 @@ LINKAGE_LABELS = {
     "mentions": "MENTIONED IN",
     "is_a": "IS A",
     "related_to": "RELATED TO",
+    "content": "CONTENT MATCH",
 }
 
 
@@ -260,6 +261,37 @@ def build_context(
                                              parent_cache=parent_cache)
         built.append(entry)
 
+    # Content-ranked fusion (always-on unless the caller filtered linkages):
+    # BM25 over the `mentions` forward index for the ref's terms, folding in
+    # body matches the graph walk can't reach — a natural-language phrase whose
+    # terms were never co-mentioned on a single node has no graph anchor, so
+    # without this `context "fov wedge"` returns an empty stub. Turns context
+    # (and scan-prompt / memory recall, which share this path) into a ranked
+    # grep. content_rank is partition-scoped, so operational SESSION cards
+    # (separate partition) never surface here.
+    if not linkages:
+        ref_terms = _ref_terms(ref)
+        if ref_terms:
+            seen_ids = {x.entity.id for x in built} | {e.id}
+            for ceid, cscore in s.content_rank(
+                ref_terms, kinds=["code", "doc", "memory"],
+                limit=max_entities,
+            ):
+                if ceid in seen_ids:
+                    continue
+                cent = s.get_entity_by_id(ceid)
+                if cent is None:
+                    continue
+                if not include_sessions and _is_session_card(cent.name):
+                    continue
+                centry = ContextEntry(entity=cent, linkage="content",
+                                      weight=cscore)
+                centry.snippet = _content_snippet(
+                    s, cent, ref_terms, parent_cache=parent_cache,
+                )
+                built.append(centry)
+                seen_ids.add(ceid)
+
     # Pass 2: rank (hits-first, docs-before-sessions) then apply the budget so
     # real hits and durable docs survive truncation.
     for entry in _rank_entries(built):
@@ -455,6 +487,47 @@ def _rank_entries(entries: list[ContextEntry]) -> list[ContextEntry]:
             ))
         out.extend(rows)
     return out
+
+
+def _ref_terms(ref: str) -> list[str]:
+    """Tokenize a context ref into content-search terms: split a multi-word
+    phrase on whitespace, strip a leading `kind:` prefix, drop 1-char tokens.
+    Per-term variant/canonical expansion happens inside `Store.content_rank`."""
+    ref = ref.strip()
+    head = ref.split(":", 1)[0]
+    if ":" in ref and " " not in head and "/" not in head:
+        ref = ref.split(":", 1)[1]  # kind:name → name
+    out: list[str] = []
+    seen: set[str] = set()
+    for tok in re.split(r"\s+", ref):
+        tok = tok.strip()
+        if len(tok) < 2 or tok.lower() in seen:
+            continue
+        seen.add(tok.lower())
+        out.append(tok)
+    return out
+
+
+def _content_snippet(
+    s: Store, ent: Entity, terms: list[str],
+    *, parent_cache: dict[str, str | None] | None = None,
+) -> str | None:
+    """KWIC window for a content-ranked hit: reuse the `_mention_snippet` body
+    ladder (memory body → parent doc/section → tldr) for the first term that
+    lands a window. None when no term occurs in any available text."""
+    probe = ContextEntry(entity=ent, linkage="content")
+    if ent.kind == "memory":
+        try:
+            m = s.get_memory(ent.id)
+        except Exception:
+            m = None
+        if m is not None:
+            probe.body = m.get("content")
+    for t in terms:
+        snip = _mention_snippet(s, probe, t, parent_cache=parent_cache)
+        if snip:
+            return snip
+    return None
 
 
 def _mention_snippet(
