@@ -2529,6 +2529,34 @@ def _op_learn_from_grep(d: Daemon, args: dict) -> dict:
     return result
 
 
+def _op_set_flag(d: Daemon, args: dict) -> dict:
+    """Set the `protected` or `noise` flag on entities matched by selector
+    (names / like / namespace / kind), in the caller's partition. Writes a
+    replayable event per row."""
+    flag = args["flag"]
+    value = bool(args.get("value"))
+    part = args.get("partition") or d.store._partition_name
+    sel = {k: args.get(k) for k in ("names", "like", "namespace", "kind")}
+    with d._store_lock, d.store.with_partition(part):
+        result = d.store.set_flag_by_selector(flag, value, **sel)
+    d._request_snapshot()
+    return result
+
+
+def _op_forget(d: Daemon, args: dict) -> dict:
+    """Purge entities matched by selector (names / like / namespace / kind) in
+    the caller's partition — drops the row + bitmaps + linkages + Lance vector,
+    tombstone-logged. `dry_run` previews the matched names."""
+    part = args.get("partition") or d.store._partition_name
+    dry_run = bool(args.get("dry_run"))
+    sel = {k: args.get(k) for k in ("names", "like", "namespace", "kind")}
+    with d._store_lock, d.store.with_partition(part):
+        result = d.store.forget_by_selector(dry_run=dry_run, **sel)
+    if not dry_run:
+        d._request_snapshot()
+    return result
+
+
 def _op_query(d: Daemon, args: dict) -> dict:
     """Run a DSL or PQL expression and return result ids + names rendered
     as text or json. Routes through the daemon so reads work while the
@@ -3420,6 +3448,8 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "partition_rename": _op_partition_rename,
     "partition_merge": _op_partition_merge,
     "prune_noise": _op_prune_noise,
+    "set_flag": _op_set_flag,
+    "forget": _op_forget,
     "vacuum": _op_vacuum,
     "stats": _op_stats,
     "checkpoint": _op_checkpoint,

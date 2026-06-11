@@ -3361,6 +3361,95 @@ class Store:
         self._log_event("untrack", path=abs_path)
         return len(ids)
 
+    # -- protected / noise flag CRUD + forget -------------------------------
+    #
+    # The replay log already carries `protect` / `noise` / `tombstone` events
+    # (see `_apply_event`); these are the on-demand emitters + a selector layer
+    # so the CLI can read, set, clear, and delete by name / glob / namespace.
+
+    def find_entity_ids(
+        self, *, names=None, like=None, namespace=None, kind=None,
+        protected=None, noise=None,
+    ) -> "list[tuple[int, str, str, int, int]]":
+        """Resolve entities in the ACTIVE partition by any combination of
+        selectors. Returns `(id, name, kind, protected, noise)` rows sorted by
+        name. `names` is exact-match; `like` is a SQL LIKE glob; `namespace`
+        is shorthand for the `NS/%` prefix; `kind` / `protected` / `noise`
+        refine. No selector → every entity in the partition."""
+        where = ["partition_id = ?"]
+        params: list = [self.partition_id]
+        if names:
+            where.append("name IN (" + ",".join("?" * len(names)) + ")")
+            params += list(names)
+        if like:
+            where.append("name LIKE ?")
+            params.append(like)
+        if namespace:
+            where.append("name LIKE ?")
+            params.append(f"{namespace}/%")
+        if kind:
+            where.append("kind = ?")
+            params.append(kind)
+        if protected is not None:
+            where.append("protected = ?")
+            params.append(1 if protected else 0)
+        if noise is not None:
+            where.append("noise = ?")
+            params.append(1 if noise else 0)
+        rows = self._connect().execute(
+            f"SELECT id, name, kind, protected, noise FROM entities "
+            f"WHERE {' AND '.join(where)} ORDER BY name", params,
+        ).fetchall()
+        return [(r[0], r[1], r[2], r[3], r[4]) for r in rows]
+
+    def set_entity_flag(self, ids, flag: str, value: bool) -> int:
+        """Set `protected` or `noise` to `value` on each id, emitting one
+        replayable event per row so the flag survives a rebuild-from-log.
+        Returns the number of rows changed."""
+        if flag not in ("protected", "noise"):
+            raise ValueError(f"unknown flag: {flag}")
+        ids = list(ids)
+        if not ids:
+            return 0
+        con = self._connect()
+        now = time.time()
+        v = 1 if value else 0
+        ev = "protect" if flag == "protected" else "noise"
+        n = 0
+        for eid in ids:
+            row = con.execute(
+                "SELECT kind, name FROM entities WHERE id=?", (eid,)).fetchone()
+            if not row:
+                continue
+            con.execute(
+                f"UPDATE entities SET {flag}=?, updated_at=? WHERE id=?",
+                (v, now, eid))
+            self._log_event(ev, kind=row["kind"], name=row["name"], value=v)
+            n += 1
+        self._maybe_commit(con)
+        return n
+
+    def set_flag_by_selector(self, flag: str, value: bool, **selectors) -> dict:
+        """Resolve `selectors` (see `find_entity_ids`) then set `flag`. Returns
+        `{count, names}` so the caller can report exactly what changed."""
+        rows = self.find_entity_ids(**selectors)
+        names = [r[1] for r in rows]
+        count = self.set_entity_flag([r[0] for r in rows], flag, value)
+        return {"count": count, "names": names}
+
+    def forget_by_selector(self, *, dry_run: bool = False, **selectors) -> dict:
+        """Resolve `selectors` then `purge_entity` each (drops the row, every
+        bitmap membership, linkage evidence, and the Lance vector; emits a
+        `tombstone` so the delete replays). `dry_run` previews the matched
+        names without deleting. Returns `{forgotten, names, dry_run}`."""
+        rows = self.find_entity_ids(**selectors)
+        names = [r[1] for r in rows]
+        if dry_run:
+            return {"forgotten": 0, "names": names, "dry_run": True}
+        for eid, *_ in rows:
+            self.purge_entity(eid)
+        return {"forgotten": len(rows), "names": names, "dry_run": False}
+
     def mark_tracked(self, abs_path: str, mtime: float) -> None:
         now = time.time()
         con = self._connect()

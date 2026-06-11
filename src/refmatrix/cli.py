@@ -271,6 +271,13 @@ class _DaemonWriter:
             "max_df_ratio": max_df_ratio, "drop": drop,
         })
 
+    def set_flag_by_selector(self, flag, value, **selectors):
+        return self._call("set_flag", {"flag": flag, "value": value,
+                                       **selectors})
+
+    def forget_by_selector(self, *, dry_run=False, **selectors):
+        return self._call("forget", {"dry_run": dry_run, **selectors})
+
     def rebuild_index_from_log(self):
         return self._call("rebuild_index", {}, timeout=600.0).get("result", {})
 
@@ -1327,14 +1334,145 @@ def add_concept(name, description, no_protect):
 main.add_command(_alias(add_concept, "add-concept"))
 
 
+# ---- protected / noise flag CRUD + forget ---------------------------------
+
+
+def _entity_selectors(names, like, namespace, kind):
+    """Build the selector dict shared by protect / unprotect / noise / forget,
+    requiring at least one selector so a bare command can't touch everything."""
+    sel = {"names": list(names) or None, "like": like,
+           "namespace": namespace, "kind": kind}
+    if not any(sel.values()):
+        raise click.ClickException(
+            "select targets: NAMES..., --like GLOB, --namespace NS, or --kind K")
+    return sel
+
+
+def _selector_opts(f):
+    f = click.option("--kind", type=click.Choice(["doc", "code", "concept"]),
+                     default=None, help="Restrict to this entity kind.")(f)
+    f = click.option("--namespace", default=None,
+                     help="Match a `NS/...` namespace (e.g. query, keyword).")(f)
+    f = click.option("--like", default=None,
+                     help="SQL LIKE glob over the entity name, e.g. 'query/%'.")(f)
+    return f
+
+
+def _report_flag(action, r):
+    n = r.get("count", 0)
+    console.print(f"[green]{action}[/] {n} entit{'y' if n == 1 else 'ies'}")
+    for name in r.get("names", [])[:20]:
+        console.print(f"  {name}")
+    extra = len(r.get("names", [])) - 20
+    if extra > 0:
+        console.print(f"  … +{extra} more")
+
+
+@main.command("protect")
+@click.argument("names", nargs=-1)
+@_selector_opts
+def protect_cmd(names, like, namespace, kind):
+    """Pin entities (protected=1) so prune-noise / vacuum never reap them.
+
+        rmx protect MyConcept                 # by name
+        rmx protect --namespace query         # every learned query/* concept
+        rmx protect --like 'src/%' --kind code
+    """
+    s = _store(write=True)
+    _report_flag("protected", s.set_flag_by_selector(
+        "protected", True, **_entity_selectors(names, like, namespace, kind)))
+
+
+@main.command("unprotect")
+@click.argument("names", nargs=-1)
+@_selector_opts
+def unprotect_cmd(names, like, namespace, kind):
+    """Clear protected so an entity can be pruned or forgotten."""
+    s = _store(write=True)
+    _report_flag("unprotected", s.set_flag_by_selector(
+        "protected", False, **_entity_selectors(names, like, namespace, kind)))
+
+
+@main.command("noise")
+@click.argument("names", nargs=-1)
+@_selector_opts
+def noise_cmd(names, like, namespace, kind):
+    """Flag entities as noise (hidden from default queries; reaped by
+    prune-noise --drop unless also protected)."""
+    s = _store(write=True)
+    _report_flag("flagged noise", s.set_flag_by_selector(
+        "noise", True, **_entity_selectors(names, like, namespace, kind)))
+
+
+@main.command("unnoise")
+@click.argument("names", nargs=-1)
+@_selector_opts
+def unnoise_cmd(names, like, namespace, kind):
+    """Clear the noise flag."""
+    s = _store(write=True)
+    _report_flag("cleared noise", s.set_flag_by_selector(
+        "noise", False, **_entity_selectors(names, like, namespace, kind)))
+
+
+@main.command("forget")
+@click.argument("names", nargs=-1)
+@_selector_opts
+@click.option("--dry-run", is_flag=True, help="Preview matches; delete nothing.")
+@click.option("--yes", "-y", is_flag=True, help="Skip the confirm prompt.")
+def forget_cmd(names, like, namespace, kind, dry_run, yes):
+    """Delete entities — row, bitmap memberships, linkage evidence, and dense
+    vector. Irreversible (tombstone-logged). The one removal path for protected
+    learned `query/*` concepts that prune-noise / vacuum spare.
+
+        rmx forget --namespace query --dry-run     # preview learned concepts
+        rmx forget 'query/oldsearch' -y
+    """
+    s = _store(write=True)
+    sel = _entity_selectors(names, like, namespace, kind)
+    preview = s.forget_by_selector(dry_run=True, **sel)
+    matched = preview.get("names", [])
+    if not matched:
+        console.print("[dim]no matching entities[/]")
+        return
+    if dry_run:
+        console.print(f"[yellow]would forget[/] {len(matched)}:")
+        for name in matched[:50]:
+            console.print(f"  {name}")
+        if len(matched) > 50:
+            console.print(f"  … +{len(matched) - 50} more")
+        return
+    if not yes:
+        console.print(f"[red]forget {len(matched)} entit"
+                      f"{'y' if len(matched) == 1 else 'ies'}?[/]")
+        for name in matched[:20]:
+            console.print(f"  {name}")
+        if len(matched) > 20:
+            console.print(f"  … +{len(matched) - 20} more")
+        click.confirm("proceed", abort=True)
+    r = s.forget_by_selector(dry_run=False, **sel)
+    console.print(f"[red]forgot[/] {r.get('forgotten', 0)} entities")
+
+
 @list_grp.command("entities")
 @click.option("--kind", type=click.Choice(["doc", "code", "concept"]), default=None)
-def list_entities(kind):
-    """List entities."""
-    t = Table("id", "kind", "name", "path", "tldr")
-    for e in _store(write=False).iter_entities(kind):
-        t.add_row(str(e.id), e.kind, e.name, e.path or "",
-                  (e.tldr or "")[:80])
+@click.option("--protected/--unprotected", "want_protected", default=None,
+              help="Filter to protected (or explicitly unprotected) entities.")
+@click.option("--noise/--no-noise", "want_noise", default=None,
+              help="Filter to noise (or non-noise) entities.")
+def list_entities(kind, want_protected, want_noise):
+    """List entities. --protected / --noise filter by flag and show them."""
+    s = _store(write=False)
+    if want_protected is None and want_noise is None:
+        t = Table("id", "kind", "name", "path", "tldr")
+        for e in s.iter_entities(kind):
+            t.add_row(str(e.id), e.kind, e.name, e.path or "",
+                      (e.tldr or "")[:80])
+        console.print(t)
+        return
+    t = Table("id", "kind", "name", "prot", "noise")
+    for eid, name, ekind, prot, noise in s.find_entity_ids(
+            kind=kind, protected=want_protected, noise=want_noise):
+        t.add_row(str(eid), ekind, name, "✓" if prot else "", "✓" if noise else "")
     console.print(t)
 
 
