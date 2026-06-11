@@ -2761,6 +2761,15 @@ def _op_memory_forget(d: Daemon, args: dict) -> dict:
     return {"forgotten": ok}
 
 
+def _op_memory_dedup(d: Daemon, args: dict) -> dict:
+    """Fold concept↔memory duplicate nodes in a partition (pre-0.7.6 debt)."""
+    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
+        result = d.store.fold_concept_dups(dry_run=bool(args.get("dry_run")))
+    if not args.get("dry_run"):
+        d._request_snapshot()
+    return result
+
+
 def _op_memory_bulk_forget(d: Daemon, args: dict) -> dict:
     """Bulk-delete memory rows by ids / names / mtypes (union semantics).
 
@@ -3398,6 +3407,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "memory_search": _op_memory_search,
     "memory_recent": _op_memory_recent,
     "memory_forget": _op_memory_forget,
+    "memory_dedup": _op_memory_dedup,
     "memory_bulk_forget": _op_memory_bulk_forget,
     "memory_link": _op_memory_link,
     "memory_score": _op_memory_score,

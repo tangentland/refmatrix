@@ -258,6 +258,9 @@ class _DaemonWriter:
             "ids": ids, "names": names, "mtypes": mtypes, "dry_run": dry_run,
         })
 
+    def fold_concept_dups(self, *, dry_run=False):
+        return self._call("memory_dedup", {"dry_run": dry_run})
+
     def vacuum(self):
         return self._call("vacuum", {})
 
@@ -5856,6 +5859,28 @@ def memory_forget(name_or_id):
         console.print(f"[green]forgot[/] {name_or_id}")
     else:
         console.print(f"[yellow]no memory matching[/] {name_or_id}")
+
+
+@memory_grp.command("dedup")
+@click.option("--dry-run", is_flag=True,
+              help="Report the dup count without folding.")
+def memory_dedup(dry_run):
+    """Fold concept↔memory duplicate nodes into the memory (pre-0.7.6 debt).
+
+    The GMD `__root__` node used to mint a concept twinning each doc-level
+    memory, splitting a subject's edges across two nodes. New ingests no
+    longer create them (the ingest_gmd fix); this migrates any lingering
+    concept's edges onto the same-named memory and drops the concept.
+    Operates on the active partition. Routes through the daemon when one is up.
+    """
+    _memory_intent("memory_dedup")
+    s = _store(write=True)
+    res = s.fold_concept_dups(dry_run=dry_run)
+    verb = "would fold" if res.get("dry_run") else "folded"
+    console.print(
+        f"[green]{verb}[/] {res.get('folded', 0)} concept↔memory dup(s), "
+        f"{res.get('edges_migrated', 0)} edge(s) migrated"
+    )
 
 
 @memory_grp.command("bulk-forget")

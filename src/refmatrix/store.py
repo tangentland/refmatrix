@@ -3115,6 +3115,96 @@ class Store:
             self._log_event("tombstone", kind=kind, name=name)
         return n
 
+    def fold_concept_dups(self, *, dry_run: bool = False) -> dict:
+        """Fold every kind=concept entity whose (partition, name) collides
+        with a kind=memory entity in the SAME partition into that memory:
+        migrate the concept's graph edges onto the memory, then purge the
+        concept.
+
+        Repairs pre-0.7.6 duplicate-node debt — the GMD `__root__` node minted
+        a concept twinning the doc-level memory, splitting a subject's edges
+        across two nodes. New ingests no longer create the dup (ingest_gmd
+        fix); this cleans the ones already on disk. Active partition only.
+
+        Edges already present on the memory are left untouched (the memory's
+        post-reingest weights are authoritative); only edges the memory lacks
+        are migrated. Self-loops (concept↔its own memory) are dropped.
+
+        Returns {folded, edges_migrated, dry_run}."""
+        con = self._connect()
+        pairs = con.execute(
+            """
+            SELECT c.id AS cid, m.id AS mid
+            FROM entities c
+            JOIN entities m
+              ON c.name = m.name AND c.partition_id = m.partition_id
+            WHERE c.kind = 'concept' AND m.kind = 'memory'
+              AND c.partition_id = ?
+            """,
+            (self._partition_id,),
+        ).fetchall()
+
+        folded = 0
+        edges_migrated = 0
+        for row in pairs:
+            cid, mid = int(row["cid"]), int(row["mid"])
+            if cid == mid:
+                continue
+            # The concept as the SOURCE side (concept_id=cid).
+            out_edges = con.execute(
+                "SELECT lt.name AS ln, el.entity_id AS eid, el.weight AS w "
+                "FROM entity_links el JOIN linkage_types lt "
+                "ON lt.id = el.linkage_id WHERE el.concept_id = ?",
+                (cid,),
+            ).fetchall()
+            # The concept as the OBJECT side (entity_id=cid).
+            in_edges = con.execute(
+                "SELECT lt.name AS ln, el.concept_id AS cpid, el.weight AS w "
+                "FROM entity_links el JOIN linkage_types lt "
+                "ON lt.id = el.linkage_id WHERE el.entity_id = ?",
+                (cid,),
+            ).fetchall()
+            if dry_run:
+                folded += 1
+                edges_migrated += len(out_edges) + len(in_edges)
+                continue
+            # Edges the memory already carries — don't clobber its weights.
+            m_out = {
+                (r["ln"], int(r["eid"])) for r in con.execute(
+                    "SELECT lt.name AS ln, el.entity_id AS eid "
+                    "FROM entity_links el JOIN linkage_types lt "
+                    "ON lt.id = el.linkage_id WHERE el.concept_id = ?",
+                    (mid,),
+                )
+            }
+            m_in = {
+                (r["ln"], int(r["cpid"])) for r in con.execute(
+                    "SELECT lt.name AS ln, el.concept_id AS cpid "
+                    "FROM entity_links el JOIN linkage_types lt "
+                    "ON lt.id = el.linkage_id WHERE el.entity_id = ?",
+                    (mid,),
+                )
+            }
+            for e in out_edges:
+                tgt = int(e["eid"])
+                if tgt == mid or (e["ln"], tgt) in m_out:
+                    continue
+                self.link(e["ln"], mid, tgt, weight=e["w"])
+                edges_migrated += 1
+            for e in in_edges:
+                src = int(e["cpid"])
+                if src == mid or (e["ln"], src) in m_in:
+                    continue
+                self.link(e["ln"], src, mid, weight=e["w"])
+                edges_migrated += 1
+            self.purge_entity(cid)
+            folded += 1
+
+        if not dry_run and folded:
+            self.flush_fragments()
+        return {"folded": folded, "edges_migrated": edges_migrated,
+                "dry_run": dry_run}
+
     def purge_path(self, abs_path: str) -> int:
         """Remove every entity (file + per-function) anchored at abs_path.
         Returns the number of *entities* removed. Scoped to the active
