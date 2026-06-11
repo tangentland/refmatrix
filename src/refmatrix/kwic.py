@@ -118,25 +118,95 @@ def kwic_line(
         hit = _first_hit(line.lower(), terms)
         if hit is None:
             continue
-        s, e = hit
-        if len(line) <= max_chars:
-            marked = line[:s] + marker[0] + line[s:e] + marker[1] + line[e:]
-        else:  # cap a very long match line around the hit
-            half = max_chars // 2
-            start = max(0, s - half)
-            end = min(len(line), e + half)
-            ms, me = s - start, e - start
-            seg = line[start:end]
-            seg = seg[:ms] + marker[0] + seg[ms:me] + marker[1] + seg[me:]
-            marked = ((ellipsis if start > 0 else "") + seg
-                      + (ellipsis if end < len(line) else ""))
-        if expand <= 0:
-            return marked.strip()
-        lo, hi = max(0, i - expand), min(len(lines), i + expand + 1)
-        out = [(marked if j == i else lines[j]) for j in range(lo, hi)]
-        while out and not out[0].strip():   # trim blank context edges
-            out.pop(0)
-        while out and not out[-1].strip():
-            out.pop()
-        return "\n".join(out)
+        marked = _mark_hit(line, hit, max_chars=max_chars, marker=marker,
+                           ellipsis=ellipsis)
+        return _window(lines, i, marked, expand)
     return ""
+
+
+def _mark_hit(
+    line: str, hit: tuple[int, int], *,
+    max_chars: int = 240,
+    marker: tuple[str, str] = ("«", "»"),
+    ellipsis: str = "…",
+) -> str:
+    """Wrap `line[hit]` in `marker`. A line longer than `max_chars` is capped
+    around the hit with `ellipsis` on the trimmed sides."""
+    s, e = hit
+    if len(line) <= max_chars:
+        return line[:s] + marker[0] + line[s:e] + marker[1] + line[e:]
+    half = max_chars // 2
+    start = max(0, s - half)
+    end = min(len(line), e + half)
+    ms, me = s - start, e - start
+    seg = line[start:end]
+    seg = seg[:ms] + marker[0] + seg[ms:me] + marker[1] + seg[me:]
+    return ((ellipsis if start > 0 else "") + seg
+            + (ellipsis if end < len(line) else ""))
+
+
+def _window(lines: list[str], i: int, marked: str, expand: int) -> str:
+    """Join lines `[i-expand, i+expand]` (grep -C), substituting `marked` for
+    the anchor line `i` and trimming blank context edges. `expand <= 0` returns
+    just the stripped anchor line."""
+    if expand <= 0:
+        return marked.strip()
+    lo, hi = max(0, i - expand), min(len(lines), i + expand + 1)
+    out = [(marked if j == i else lines[j]) for j in range(lo, hi)]
+    while out and not out[0].strip():   # trim blank context edges
+        out.pop(0)
+    while out and not out[-1].strip():
+        out.pop()
+    return "\n".join(out)
+
+
+# A symbol definition: a def/class/... keyword introducing the name, or the
+# name immediately bound/called/typed (covers Python, JS/TS, Rust, Go, etc.).
+_DEF_KW = (
+    r"def|class|function|func|fn|interface|type|struct|impl|trait|"
+    r"module|sub|method|val|var|let|const|enum|object"
+)
+
+
+def kwic_def_line(
+    text: str | None,
+    query: str | None,
+    symbol: str | None,
+    *,
+    expand: int = 0,
+    max_chars: int = 240,
+    marker: tuple[str, str] = ("«", "»"),
+    ellipsis: str = "…",
+) -> str:
+    """Like `kwic_line`, but anchor the window on the line that DEFINES
+    `symbol` (e.g. `def fov_wedge_polygon`) rather than the first query hit —
+    a code entity IS its definition, so that line is the relevant one. The def
+    line's query term is marked (or the symbol itself when the query term is
+    elsewhere). `expand > 0` adds ±N context lines (grep -C). Returns "" when
+    no definition line for `symbol` is found, so the caller can fall back to a
+    plain first-hit window."""
+    if not text or not symbol:
+        return ""
+    lines = [ln.rstrip() for ln in text.splitlines()]
+    sym = re.escape(symbol)
+    strict = re.compile(r"(?:^|\W)(?:%s)\s+%s\b" % (_DEF_KW, sym))
+    loose = re.compile(r"\b%s\s*[=:(]" % sym)
+    idx: int | None = None
+    for pat in (strict, loose):
+        for i, line in enumerate(lines):
+            if pat.search(line):
+                idx = i
+                break
+        if idx is not None:
+            break
+    if idx is None:
+        return ""
+    line = lines[idx]
+    terms = query_terms(query) if query else []
+    hit = _first_hit(line.lower(), terms) if terms else None
+    if hit is None:  # query term isn't on the def line — mark the symbol
+        m = re.search(r"\b%s\b" % sym, line)
+        hit = (m.start(), m.end()) if m else None
+    marked = (_mark_hit(line, hit, max_chars=max_chars, marker=marker,
+                        ellipsis=ellipsis) if hit else line)
+    return _window(lines, idx, marked, expand)

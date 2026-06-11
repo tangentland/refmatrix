@@ -14,8 +14,9 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from refmatrix.kwic import kwic_line, kwic_one
+from refmatrix.kwic import kwic_def_line, kwic_line, kwic_one
 from refmatrix.store import Entity, Store
 
 # Co-mention linkages whose neighbors are sections/docs that merely *talk
@@ -543,6 +544,23 @@ def _content_snippet(
             if sec:
                 texts.append(sec)
             texts.append(body)
+    # Code hit: read the real source file so the whole matched line AND the
+    # `--expand N` context lines come from disk (grep -C), not the one-line
+    # `tldr` label — which has nothing to expand into. A code entity IS its
+    # definition, so anchor the window on the symbol's def line (most relevant
+    # for a function-level hit); fall back to the first query-term occurrence
+    # (plain grep) when no def line is found. Size-guarded; a missing/oversized
+    # file falls through to the tldr below.
+    if ent.kind == "code" and ent.path:
+        file_text = _read_source(ent.path)
+        if file_text:
+            for symbol in _symbol_candidates(ent):
+                snip = kwic_def_line(file_text, q, symbol, expand=expand)
+                if snip:
+                    return snip
+            snip = kwic_line(file_text, q, expand=expand)
+            if snip:
+                return snip
     if ent.tldr:
         texts.append(ent.tldr)
     for t in texts:
@@ -550,6 +568,35 @@ def _content_snippet(
         if snip:
             return snip
     return None
+
+
+_MAX_SOURCE_BYTES = 1_000_000  # skip reading pathologically large source files
+
+
+def _read_source(path: str) -> str | None:
+    """Read a source file for snippet windowing; None on miss / oversize."""
+    try:
+        p = Path(path)
+        if p.is_file() and p.stat().st_size <= _MAX_SOURCE_BYTES:
+            return p.read_text(errors="replace")
+    except OSError:
+        pass
+    return None
+
+
+def _symbol_candidates(ent: Entity) -> list[str]:
+    """Symbol names to locate a code entity's definition by, best-first:
+    the `norm_label` (e.g. ``store()`` → ``store``) then the name leaf after
+    ``::`` (e.g. ``region_detection.py::fov_wedge_polygon`` → that function)."""
+    out: list[str] = []
+    nl = (ent.meta or {}).get("norm_label")
+    if isinstance(nl, str) and nl.strip():
+        out.append(nl.split("(", 1)[0].strip())
+    leaf = ent.name.split("::")[-1].strip()
+    if leaf:
+        out.append(leaf)
+    seen: set[str] = set()
+    return [s for s in out if s and not (s in seen or seen.add(s))]
 
 
 def _mention_snippet(

@@ -1,8 +1,8 @@
 """Tests for the KWIC snippet helper + context co-mention snippets."""
 from __future__ import annotations
 
-from refmatrix.context import _section_text, build_context
-from refmatrix.kwic import kwic_one, query_terms
+from refmatrix.context import _content_snippet, _section_text, build_context
+from refmatrix.kwic import kwic_def_line, kwic_line, kwic_one, query_terms
 from refmatrix.store import Store
 
 
@@ -50,6 +50,83 @@ def test_kwic_picks_earliest_among_terms():
                    width=30)
     # 'camera' occurs earlier than 'perspective' -> window centers on it
     assert "«camera»" in out
+
+
+_CODE = (
+    "import os\n"
+    "\n"
+    "FOV_CONST = 90  # snapshot of the default\n"
+    "\n"
+    "def fov_wedge_polygon(angle):\n"
+    "    \"\"\"Build the wedge for the camera snapshot.\"\"\"\n"
+    "    return angle * 2\n"
+    "\n"
+    "def other():\n"
+    "    return fov_wedge_polygon(45)\n"
+)
+
+
+def test_kwic_def_line_anchors_on_definition_not_first_hit():
+    # 'fov' appears first on the FOV_CONST line; the def-anchored window must
+    # land on the `def fov_wedge_polygon` line instead.
+    out = kwic_def_line(_CODE, "fov wedge", "fov_wedge_polygon", expand=0)
+    assert out == "def «fov»_wedge_polygon(angle):"
+
+
+def test_kwic_def_line_expand_adds_grep_context():
+    out = kwic_def_line(_CODE, "fov wedge", "fov_wedge_polygon", expand=1)
+    lines = out.splitlines()
+    assert lines == [
+        "def «fov»_wedge_polygon(angle):",
+        '    """Build the wedge for the camera snapshot."""',
+    ]
+    # ±2 reaches the blank-trimmed body below and the line above the def.
+    out2 = kwic_def_line(_CODE, "fov wedge", "fov_wedge_polygon", expand=2)
+    assert "return angle * 2" in out2
+
+
+def test_kwic_def_line_marks_symbol_when_query_term_elsewhere():
+    # Query term absent from the def line -> the symbol itself is marked.
+    out = kwic_def_line(_CODE, "camera", "fov_wedge_polygon", expand=0)
+    assert out == "def «fov_wedge_polygon»(angle):"
+
+
+def test_kwic_def_line_empty_when_no_definition():
+    assert kwic_def_line(_CODE, "fov", "nonexistent_symbol") == ""
+    assert kwic_def_line("", "fov", "x") == ""
+    assert kwic_def_line(_CODE, "fov", None) == ""
+
+
+def test_content_snippet_reads_source_file_for_code_entity(tmp_path):
+    """A code content-hit windows the real source file (grep -C), anchored on
+    the symbol's def line — not the one-line tldr, which can't be expanded."""
+    src = tmp_path / "region_detection.py"
+    src.write_text(_CODE)
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    eid = s.upsert_entity(kind="code",
+                          name="region_detection.py::fov_wedge_polygon",
+                          path=str(src), tldr="fov_wedge_polygon()",
+                          meta={"norm_label": "fov_wedge_polygon()"})
+    ent = s.get_entity_by_id(eid)
+    assert _content_snippet(s, ent, ["fov", "wedge"], expand=0) == \
+        "def «fov»_wedge_polygon(angle):"
+    snip = _content_snippet(s, ent, ["fov", "wedge"], expand=1)
+    assert snip.splitlines()[0] == "def «fov»_wedge_polygon(angle):"
+    assert len(snip.splitlines()) == 2  # def line + docstring (blank above trimmed)
+    s.close()
+
+
+def test_content_snippet_code_falls_back_to_tldr_without_source(tmp_path):
+    """Missing source file -> fall through to the tldr ladder, never crash."""
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    eid = s.upsert_entity(kind="code", name="gone.py::fov_calc",
+                          path=str(tmp_path / "gone.py"),
+                          tldr="computes the fov wedge")
+    ent = s.get_entity_by_id(eid)
+    assert _content_snippet(s, ent, ["fov"], expand=2) == "computes the «fov» wedge"
+    s.close()
 
 
 def test_section_text_slices_the_right_anchor():
