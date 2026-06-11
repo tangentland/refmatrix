@@ -107,3 +107,40 @@ def test_entity_anchored_context_pulls_concepts_and_siblings(filled):
         entry.entity.name for entries in b.groups.values() for entry in entries
     }
     assert "parser" in flat_names
+
+
+def test_build_context_inlines_memory_body_for_bare_slug(tmp_path):
+    """A slug that exists as BOTH a concept and a same-named memory anchors on
+    the concept (concept-first resolution) but must still surface the memory
+    body — `rmx context <slug>` should return content, not just a graph stub."""
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    s.add_concept("widget_notes", description="concept stub for the slug")
+    s.add_memory(
+        name="widget_notes",
+        content="# Widget notes\n\nThe frobnicator must be primed first.",
+        mtype="project",
+    )
+    b = build_context(s, "widget_notes")
+    assert b.anchor is not None
+    # concept-first resolution: anchor is the concept node...
+    assert b.anchor.kind == "concept"
+    # ...but the memory body is enriched onto the bundle.
+    assert b.anchor_body is not None
+    assert "frobnicator must be primed" in b.anchor_body
+    assert "--- body ---" in render_text(b)
+    s.close()
+
+
+def test_build_context_truncates_long_anchor_body_to_budget(tmp_path):
+    """A long memory body must not swallow the whole bundle — it's capped to a
+    fraction of max_tokens so the scan-prompt hook's small per-concept budget
+    still leaves room for the graph view."""
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    s.add_concept("big_note", description="stub")
+    s.add_memory(name="big_note", content="lorem ipsum " * 1000, mtype="project")
+    b = build_context(s, "big_note", max_tokens=600)
+    assert b.anchor_body is not None
+    assert "body truncated to fit budget" in b.anchor_body
+    s.close()

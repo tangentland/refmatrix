@@ -156,6 +156,21 @@ def build_context(
             mem = None
         if mem is not None:
             bundle.anchor_body = mem.get("content")
+    else:
+        # The anchor resolved to a concept/doc/code node, but the same slug
+        # very often ALSO exists as a memory entity — a curated `.md` is
+        # ingested as a memory AND its title spawns a concept, so a bare
+        # `rmx context <slug>` lands on the thin concept node. Surface the
+        # memory body here so context (and the scan-prompt hook, which renders
+        # through this same path) returns actual content, not just a graph
+        # stub. Cross-partition: the memory may live in memory-<project> while
+        # the concept lives in the code partition.
+        try:
+            mem = s.find_memory_any_partition(e.name)
+        except Exception:
+            mem = None
+        if mem is not None and mem.get("content"):
+            bundle.anchor_body = mem.get("content")
 
     # Auto-scale the budget when the caller did NOT explicitly set the
     # flag and degree > 0 — a deeper request without an override should
@@ -174,6 +189,20 @@ def build_context(
     if linkages:
         wanted = set(linkages)
         ordered = [ln for ln in ordered if ln in wanted]
+
+    # Budget-bound the anchor body so a long memory can't swallow the whole
+    # bundle and crowd out the graph view. Matters for the scan-prompt hook's
+    # small per-concept budget; `rmx context` runs at 4000 tokens so typical
+    # bodies pass through untouched. Reserve ~25% of the budget for neighbors.
+    if bundle.anchor_body:
+        header_cost = estimate_tokens(_render_header(bundle))
+        tldr_cost = estimate_tokens(e.tldr) if e.tldr else 0
+        body_budget = int(max_tokens * 0.75) - header_cost - tldr_cost
+        if body_budget > 0 and estimate_tokens(bundle.anchor_body) > body_budget:
+            bundle.anchor_body = (
+                bundle.anchor_body[: body_budget * 4].rstrip()
+                + "\n…[body truncated to fit budget]"
+            )
 
     used = estimate_tokens(_render_header(bundle))
     if e.tldr:
