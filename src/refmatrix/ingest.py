@@ -235,7 +235,8 @@ def _ingest_path_inner(
     n = 0
     _phase("code+docs: tldr/tree")
     if source in ("auto", "metadata") and metadata_path.exists():
-        n = _ingest_tldr_metadata(s, path, yield_lock=yield_lock,
+        n = _ingest_tldr_metadata(s, path, pre_tracked=_pre_tracked,
+                                  yield_lock=yield_lock,
                                   yield_every=yield_every)
     if n == 0 and source in ("auto", "tldr") and call_graph_path.exists():
         n = _ingest_tldr(s, path, yield_lock=yield_lock, yield_every=yield_every)
@@ -247,10 +248,10 @@ def _ingest_path_inner(
     # to be the only ingest.
     if source == "graphify":
         _phase("code+docs: graphify")
-        n = _ingest_graphify(s, path)
+        n = _ingest_graphify(s, path, pre_tracked=_pre_tracked)
     elif source == "auto" and graphify_path.exists():
         _phase("code+docs: graphify")
-        _ingest_graphify(s, path)
+        _ingest_graphify(s, path, pre_tracked=_pre_tracked)
     if semantic:
         _phase("code+docs: python-semantic (scanning)")
         from concurrent.futures import ThreadPoolExecutor
@@ -510,8 +511,8 @@ class _CommitWindow:
             self._cm = None
 
 
-def _ingest_tldr_metadata(s: Store, project: Path, *, yield_lock=None,
-                          yield_every: int = 200) -> int:
+def _ingest_tldr_metadata(s: Store, project: Path, *, pre_tracked=None,
+                          yield_lock=None, yield_every: int = 200) -> int:
     """Ingest llm-tldr's per-unit semantic dump. Returns the number of units
     processed (not linkages). See the module docstring for source priority.
 
@@ -521,6 +522,27 @@ def _ingest_tldr_metadata(s: Store, project: Path, *, yield_lock=None,
     of ~N single-row executes per unit. Same graph as the old per-row code;
     only creation order differs. Mirror of `_ingest_tldr`."""
     cache = project / ".tldr" / "cache" / "semantic" / "metadata.json"
+    # Front-door no-op gate. `tldr` regenerates metadata.json only when source
+    # actually changes, so an unchanged mtime guarantees this pass would
+    # re-derive a byte-identical graph -- yet without a gate it still re-runs
+    # every bulk upsert + link flush (thousands of DuckDB executes against the
+    # big entity index: ~18s on a re-ingest of an unchanged tree). f3b7c9d
+    # killed the *embed* re-stale tax via the updated_at predicate; this kills
+    # the *write* tax. Gate on a dedicated `tldrmeta:<cache>` marker (the unit
+    # paths are also tracked under their real names by the link flush, so the
+    # shared key can't tell whether THIS pass has run). The recorded unit count
+    # rides a sibling `tldrmeta_n:` marker so the no-op return keeps the
+    # caller's `n == 0` source-chaining and the "ingested N" tally truthful.
+    _gate_key = f"tldrmeta:{cache}"
+    _count_key = f"tldrmeta_n:{cache}"
+    try:
+        _cache_mtime = cache.stat().st_mtime
+    except OSError:
+        _cache_mtime = None
+    if pre_tracked is not None and _cache_mtime is not None:
+        _prev = pre_tracked.get(_gate_key)
+        if _prev is not None and abs(_prev - _cache_mtime) <= 1e-6:
+            return int(pre_tracked.get(_count_key, 0))
     payload = json.loads(cache.read_text())
     units = payload.get("units") or []
     # The tldr cache indexes the whole tree; honor `.refmatrix_ignore` here too
@@ -638,6 +660,12 @@ def _ingest_tldr_metadata(s: Store, project: Path, *, yield_lock=None,
             for mn in mods:
                 s.link("imports", concept_ids[mn], fid)
 
+    # Stamp the no-op gate: next ingest over an unchanged metadata.json mtime
+    # short-circuits at the top. Count rides alongside so the skip path can
+    # return the right `n` without re-parsing the cache.
+    if _cache_mtime is not None:
+        s.mark_tracked(_gate_key, _cache_mtime)
+        s.mark_tracked(_count_key, float(unit_count))
     return unit_count
 
 
@@ -858,7 +886,7 @@ def _parse_source_line(loc: str | None) -> int | None:
         return None
 
 
-def _ingest_graphify(s: Store, project: Path) -> int:
+def _ingest_graphify(s: Store, project: Path, *, pre_tracked=None) -> int:
     """Ingest a graphify knowledge graph (graphify-out/graph.json).
 
     Two-pass: nodes → entities + concept handles, then edges → linkages
@@ -867,6 +895,20 @@ def _ingest_graphify(s: Store, project: Path) -> int:
     cache = project / "graphify-out" / "graph.json"
     if not cache.exists():
         return 0
+    # Front-door no-op gate, same contract as `_ingest_tldr_metadata`: graph.json
+    # is rewritten only when graphify re-runs, so an unchanged mtime means this
+    # additive pass (per-row upsert_entity + add_concept + weighted_link +
+    # add_evidence, ~18s on a re-ingest) would re-derive an identical subgraph.
+    _gate_key = f"graphify:{cache}"
+    _count_key = f"graphify_n:{cache}"
+    try:
+        _cache_mtime = cache.stat().st_mtime
+    except OSError:
+        _cache_mtime = None
+    if pre_tracked is not None and _cache_mtime is not None:
+        _prev = pre_tracked.get(_gate_key)
+        if _prev is not None and abs(_prev - _cache_mtime) <= 1e-6:
+            return int(pre_tracked.get(_count_key, 0))
     data = json.loads(cache.read_text())
     nodes = data.get("nodes") or []
     edges = data.get("links") or data.get("edges") or []
@@ -948,6 +990,9 @@ def _ingest_graphify(s: Store, project: Path) -> int:
                 detail=edge.get("context") or f"graphify:{confidence}",
             )
             n += 1
+    if _cache_mtime is not None:
+        s.mark_tracked(_gate_key, _cache_mtime)
+        s.mark_tracked(_count_key, float(n))
     return n
 
 

@@ -204,6 +204,42 @@ def test_ingest_graphify_skips_when_cache_missing(store, tmp_path):
     assert n == 0
 
 
+def test_ingest_graphify_mtime_gate_skips_unchanged(store, tmp_path, monkeypatch):
+    """Front-door no-op gate: a re-ingest over an unchanged graph.json mtime
+    must skip the per-row upsert/link/evidence work entirely and return the
+    recorded edge count (so `_ingest_path_inner`'s `n == 0` source-chaining and
+    the 'ingested N' tally stay truthful). Touching the file re-arms the pass."""
+    import os
+    project = tmp_path / "proj"
+    project.mkdir()
+    gp = _write_graph(project, _basic_graph())
+
+    n1 = ingest_path(store, project, source="graphify")
+    assert n1 == 3
+
+    # add_evidence is written only by the graphify edge pass (derive_called_by
+    # never touches it), so it's a clean sentinel for "the pass actually ran".
+    calls = {"evidence": 0}
+    real = store.add_evidence
+
+    def spy(*a, **k):
+        calls["evidence"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(store, "add_evidence", spy)
+
+    n2 = ingest_path(store, project, source="graphify")
+    assert n2 == 3            # count preserved for chaining + tally
+    assert calls["evidence"] == 0  # gate fired: zero re-writes
+
+    # New mtime → gate misses → the pass re-runs.
+    st = gp.stat()
+    os.utime(gp, (st.st_atime + 5, st.st_mtime + 5))
+    n3 = ingest_path(store, project, source="graphify")
+    assert n3 == 3
+    assert calls["evidence"] > 0
+
+
 def test_ingest_graphify_weight_modulated_by_confidence(store, tmp_path):
     project = tmp_path / "proj"
     project.mkdir()
