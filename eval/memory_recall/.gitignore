@@ -1,0 +1,6 @@
+# viascope-derived eval data: real queries + memory snippets are private. Local-only.
+queries.jsonl
+candidates.jsonl
+qrels.tsv
+cand.chunk.*
+qrels.part.*
