@@ -1097,24 +1097,30 @@ def merge_verb_aliases():
                 f"daemon merge failed: {resp.get('error')}")
         results = resp["result"]["results"]
     else:
-        # Daemon down: open the writer slot directly and refresh the snapshot.
+        # Daemon down: open the writer slot directly.
         s = _store_rw()
         results = []
         active = s.db_path
+        is_duckdb = s._backend.kind == "duckdb"
         try:
             for legacy, canon in _VERB_ALIASES.items():
                 results.append(s.merge_verb_alias(legacy, canon))
-            # Flush WAL into the main file so the snapshot copy is self-contained.
-            s._connect().execute("CHECKPOINT")
+            # DuckDB only: flush WAL into the main file so the snapshot copy is
+            # self-contained. SQLite has no CHECKPOINT statement (and no
+            # snapshot tier — its WAL is the read path), so it's skipped.
+            if is_duckdb:
+                s._connect().execute("CHECKPOINT")
         finally:
             s.close()
-        # Atomic snapshot refresh (mirrors the daemon's _snapshot_catalog) so
-        # lock-free readers see the merged graph immediately.
-        snap = root / "catalog.read.duckdb"
-        if active.exists():
-            tmp = snap.with_name(snap.name + ".merge.tmp")
-            shutil.copy2(active, tmp)
-            os.replace(tmp, snap)
+        # DuckDB snapshot-tier refresh (mirrors the daemon's _snapshot_catalog)
+        # so lock-free readers see the merged graph immediately. SQLite stores
+        # have no catalog.read.duckdb; the in-method commit is enough.
+        if is_duckdb:
+            snap = root / "catalog.read.duckdb"
+            if active.exists():
+                tmp = snap.with_name(snap.name + ".merge.tmp")
+                shutil.copy2(active, tmp)
+                os.replace(tmp, snap)
 
     table = Table(show_header=True)
     table.add_column("legacy")
@@ -1131,7 +1137,7 @@ def merge_verb_aliases():
     console.print(table)
     any_merged = any(r["merged"] for r in results)
     console.print(
-        "[green]merged[/] — restart the daemon to resume serving"
+        "[green]merged[/] — read snapshot refreshed"
         if any_merged else "[dim]nothing to merge (already canonical)[/]"
     )
 
