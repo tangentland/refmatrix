@@ -1127,6 +1127,47 @@ def merge_verb_aliases():
     )
 
 
+@main.command("audit-same-as")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+def audit_same_as(as_json: bool):
+    """Health check on `same_as` identifier variant-unification.
+
+    Reports edge count, the variants-per-canonical distribution (should stay
+    ~2/concept — space + dash forms), and the over-merge tripwire: edges whose
+    two endpoints have DIFFERENT canonical_names, meaning `canonicalize_name`
+    fused distinct symbols. A clean store has zero. Read-only (lock-free via
+    the replica). Exits non-zero when the tripwire fires, so it can gate a
+    periodic/CI run.
+    """
+    out = _replica_read(lambda st: st.same_as_audit())
+    if as_json:
+        console.print_json(data=out)
+    else:
+        console.print(f"[bold]same_as edges:[/] {out['edges']}")
+        dist = ", ".join(f"{k}→{v}" for k, v in sorted(out["distribution"].items()))
+        console.print(f"variants-per-canonical (size→#canonicals): {dist or '(none)'}")
+        if out["divergent_count"]:
+            console.print(
+                f"[red]⚠ over-merge tripwire: {out['divergent_count']} edge(s) "
+                f"fuse different canonical_names[/]"
+            )
+            t = Table("variant", "variant_canon", "canonical", "canonical_canon")
+            for d in out["divergent"]:
+                t.add_row(d["variant"], d["variant_canon"],
+                          d["canonical"], d["canonical_canon"])
+            console.print(t)
+            if out["divergent_count"] > len(out["divergent"]):
+                console.print(
+                    f"[dim]… {out['divergent_count'] - len(out['divergent'])} "
+                    f"more not shown[/]"
+                )
+        else:
+            console.print("[green]✓ no over-merge — every same_as edge unifies "
+                          "one identifier[/]")
+    if out["divergent_count"]:
+        raise SystemExit(1)
+
+
 @main.group()
 def partition():
     """Inspect and manage named partitions inside the active refmatrix."""

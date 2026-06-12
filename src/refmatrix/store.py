@@ -2006,6 +2006,58 @@ class Store:
         others = sorted(r[0] for r in rows if r[1] != name)
         return exact + others
 
+    def same_as_audit(self, limit: int = 20) -> dict:
+        """Read-only health report on `same_as` — the identifier variant-
+        unification edges (`_concept_variants`: space/dash forms linked to the
+        underscore canonical).
+
+        The variant-expansion query path (`resolve_concept_ids`) unifies via
+        the `canonical_name` column, NOT these edges, so they carry no query
+        weight; their only risk is the audit's #6 concern — a silent over-merge
+        fusing DISTINCT symbols. A legitimate `same_as` edge connects surface
+        variants of ONE identifier, so both endpoints share a `canonical_name`.
+        An edge whose endpoints have DIFFERENT canonical_names is the tripwire:
+        it means `canonicalize_name` collapsed two distinct identifiers. Empty
+        `divergent` = healthy. Reports edge count + variants-per-canonical
+        distribution so growth stays observable (it should be ~2/concept)."""
+        self._connect()
+        r = self._read()
+        edges = r.execute(
+            "SELECT count(*) FROM entity_links el JOIN linkage_types lt "
+            "ON lt.id=el.linkage_id WHERE lt.name='same_as'"
+        ).fetchone()[0]
+        dist = r.execute(
+            "SELECT cnt, count(*) FROM ("
+            "  SELECT el.entity_id, count(*) cnt FROM entity_links el "
+            "  JOIN linkage_types lt ON lt.id=el.linkage_id AND lt.name='same_as' "
+            "  GROUP BY el.entity_id) GROUP BY cnt ORDER BY cnt"
+        ).fetchall()
+        _div_where = (
+            "JOIN linkage_types lt ON lt.id=el.linkage_id AND lt.name='same_as' "
+            "JOIN entities v ON v.id=el.concept_id "
+            "JOIN entities c ON c.id=el.entity_id "
+            "WHERE v.canonical_name IS NOT NULL AND c.canonical_name IS NOT NULL "
+            "  AND v.canonical_name <> c.canonical_name"
+        )
+        divergent_count = r.execute(
+            f"SELECT count(*) FROM entity_links el {_div_where}"
+        ).fetchone()[0]
+        sample = r.execute(
+            "SELECT v.name, v.canonical_name, c.name, c.canonical_name "
+            f"FROM entity_links el {_div_where} LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return {
+            "edges": edges,
+            "distribution": {int(k): int(v) for k, v in dist},
+            "divergent_count": divergent_count,
+            "divergent": [
+                {"variant": s[0], "variant_canon": s[1],
+                 "canonical": s[2], "canonical_canon": s[3]}
+                for s in sample
+            ],
+        }
+
     # ---- dense vector wrappers (Lance-backed) -----------------------------
     #
     # The [dense] optional extra (pylance + numpy) is required for any of
