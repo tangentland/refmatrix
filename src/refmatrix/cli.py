@@ -1077,8 +1077,10 @@ def merge_verb_aliases():
     and drops the orphan type. Go-forward writes already canonicalize; this
     cleans up edges written before that landed.
 
-    Requires the daemon stopped (needs exclusive writer access). Refreshes the
-    read snapshot so queries reflect the merge immediately.
+    Routes through the daemon when one is running (no stop, no service
+    interruption — safe on supervised stores); otherwise opens the writer
+    directly. Either way refreshes the read snapshot so queries reflect the
+    merge immediately.
     """
     import shutil
     from refmatrix import daemon as daemon_mod
@@ -1086,26 +1088,33 @@ def merge_verb_aliases():
 
     root = _root()
     if daemon_mod.ping(root):
-        raise click.ClickException(
-            "daemon is running — stop it first (`rmx daemon stop`), then re-run."
-        )
-    s = _store_rw()
-    results = []
-    active = s.db_path
-    try:
-        for legacy, canon in _VERB_ALIASES.items():
-            results.append(s.merge_verb_alias(legacy, canon))
-        # Flush WAL into the main file so the snapshot copy is self-contained.
-        s._connect().execute("CHECKPOINT")
-    finally:
-        s.close()
-    # Atomic snapshot refresh (mirrors the daemon's _snapshot_catalog) so
-    # lock-free readers see the merged graph before the daemon is restarted.
-    snap = root / "catalog.read.duckdb"
-    if active.exists():
-        tmp = snap.with_name(snap.name + ".merge.tmp")
-        shutil.copy2(active, tmp)
-        os.replace(tmp, snap)
+        # Daemon owns the writer — route the merge through it (no stop, no
+        # service interruption; works on supervised stores). The op refreshes
+        # the read snapshot itself.
+        resp = daemon_mod.call(root, "merge_verb_aliases", {})
+        if not resp.get("ok"):
+            raise click.ClickException(
+                f"daemon merge failed: {resp.get('error')}")
+        results = resp["result"]["results"]
+    else:
+        # Daemon down: open the writer slot directly and refresh the snapshot.
+        s = _store_rw()
+        results = []
+        active = s.db_path
+        try:
+            for legacy, canon in _VERB_ALIASES.items():
+                results.append(s.merge_verb_alias(legacy, canon))
+            # Flush WAL into the main file so the snapshot copy is self-contained.
+            s._connect().execute("CHECKPOINT")
+        finally:
+            s.close()
+        # Atomic snapshot refresh (mirrors the daemon's _snapshot_catalog) so
+        # lock-free readers see the merged graph immediately.
+        snap = root / "catalog.read.duckdb"
+        if active.exists():
+            tmp = snap.with_name(snap.name + ".merge.tmp")
+            shutil.copy2(active, tmp)
+            os.replace(tmp, snap)
 
     table = Table(show_header=True)
     table.add_column("legacy")

@@ -2576,6 +2576,21 @@ def _op_forget(d: Daemon, args: dict) -> dict:
     return result
 
 
+def _op_merge_verb_aliases(d: Daemon, args: dict) -> dict:
+    """Fold legacy snake-case linkage verbs into their kebab canonical across
+    the whole store (relational forward index + per-partition bitmaps +
+    linkage_type), in-process under the writer lock — so a supervised daemon
+    never has to be stopped. Idempotent; snapshot refreshed on any merge."""
+    from refmatrix.store import _VERB_ALIASES
+    results = []
+    with d._store_lock:
+        for legacy, canon in _VERB_ALIASES.items():
+            results.append(d.store.merge_verb_alias(legacy, canon))
+    if any(r["merged"] for r in results):
+        d._request_snapshot()
+    return {"results": results}
+
+
 def _op_query(d: Daemon, args: dict) -> dict:
     """Run a DSL or PQL expression and return result ids + names rendered
     as text or json. Routes through the daemon so reads work while the
@@ -3501,6 +3516,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "prune_noise": _op_prune_noise,
     "set_flag": _op_set_flag,
     "forget": _op_forget,
+    "merge_verb_aliases": _op_merge_verb_aliases,
     "vacuum": _op_vacuum,
     "stats": _op_stats,
     "checkpoint": _op_checkpoint,
