@@ -230,7 +230,7 @@ DEFAULT_LINKAGES = [
     ("called_by",    1, "calls", "inverse of calls"),
     ("imports",      1, None, "entity imports module/concept"),
     ("is_a",         1, None, "concept is a subtype of concept"),
-    ("related_to",   0, None, "undirected association"),
+    ("related-to",   0, None, "undirected association"),
     # Provenance: a plan / spec / issue entity specifies a concept that some
     # downstream code is meant to realize. Lets queries trace "what produced
     # this class?" back through the spec that drove it.
@@ -251,6 +251,28 @@ DEFAULT_LINKAGES = [
     ("recalls",      1, None, "memory references / recalls a concept"),
     ("informs",      1, None, "memory provides context informing a concept"),
 ]
+
+
+# Verb canonicalization. The graph mixes two naming conventions: GMD/memory
+# `rel:` edges are kebab-case (the regex only admits `[a-z0-9-]`), while the
+# seeded defaults + code emitters (ADR ingest, graphify map) historically used
+# snake_case for the same relations. Where both forms denote the SAME relation
+# they would otherwise live under two `linkage_types` ids — a split-brain that
+# makes `related-to:x` miss the `related_to` edges and vice versa. This map
+# folds each known snake twin to its kebab canonical at every verb choke point
+# (link/query/bitmap-key), so no emitter can re-split. Snake verbs WITHOUT a
+# kebab twin (`same_as`, `is_a`, `called_by`, `similar_to`, `shares_data_with`,
+# `specified_by`) are intentional distinct relations and are NOT remapped.
+_VERB_ALIASES = {
+    "related_to": "related-to",
+}
+
+
+def _canonical_verb(name: str) -> str:
+    """Fold a linkage verb to its canonical form (see `_VERB_ALIASES`).
+    Idempotent: a verb with no alias (incl. already-canonical) returns
+    unchanged, so applying this at multiple layers is harmless."""
+    return _VERB_ALIASES.get(name, name)
 
 
 @dataclass
@@ -2313,6 +2335,7 @@ class Store:
     def add_linkage_type(
         self, name: str, directed: bool = True, description: str | None = None
     ) -> int:
+        name = _canonical_verb(name)
         con = self._connect()
         cur = con.execute(
             "INSERT OR IGNORE INTO linkage_types(name, directed, description) VALUES (?,?,?)",
@@ -2331,6 +2354,7 @@ class Store:
         return row[0]
 
     def get_linkage_id(self, name: str) -> int:
+        name = _canonical_verb(name)
         self._connect()
         row = self._read().execute(
             "SELECT id FROM linkage_types WHERE name=?", (name,)
@@ -2346,10 +2370,128 @@ class Store:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def merge_verb_alias(self, legacy: str, canon: str) -> dict:
+        """Fold a legacy linkage verb into its canonical twin across BOTH the
+        relational forward index (entity_links, linkage_evidence) and the
+        per-partition bitmap fragments, then drop the orphan linkage_type.
+
+        Idempotent: returns `{merged: False}` once `legacy` is gone. The
+        relational re-point carries a NOT EXISTS guard so the
+        UNIQUE(entity_id, linkage_id, concept_id) never collides — a legacy
+        edge duplicating an existing canonical edge is simply dropped. Bitmap
+        bits are partition-blind (`_pack` of global ids), so the legacy
+        fragment ORs into canon verbatim. Must run on a directly-opened writer
+        Store (daemon down), not a DaemonWriter proxy."""
+        con = self._connect()
+        legacy_row = con.execute(
+            "SELECT id, directed FROM linkage_types WHERE name=?", (legacy,)
+        ).fetchone()
+        if not legacy_row:
+            return {"legacy": legacy, "canon": canon, "merged": False,
+                    "edges": 0, "evidence": 0, "fragments": 0}
+        legacy_id, legacy_dir = legacy_row[0], legacy_row[1]
+        # Ensure the canonical linkage_type exists (inherit directedness).
+        canon_row = con.execute(
+            "SELECT id FROM linkage_types WHERE name=?", (canon,)
+        ).fetchone()
+        if canon_row:
+            canon_id = canon_row[0]
+        else:
+            canon_id = self.add_linkage_type(canon, directed=bool(legacy_dir))
+            con = self._connect()
+        # --- relational: entity_links (re-point, dedup on the UNIQUE) ---
+        edges = con.execute(
+            "SELECT count(*) FROM entity_links WHERE linkage_id=?", (legacy_id,)
+        ).fetchone()[0]
+        con.execute(
+            "INSERT INTO entity_links(entity_id, linkage_id, concept_id, weight) "
+            "SELECT e.entity_id, ?, e.concept_id, e.weight FROM entity_links e "
+            "WHERE e.linkage_id=? AND NOT EXISTS ("
+            "  SELECT 1 FROM entity_links c WHERE c.entity_id=e.entity_id "
+            "    AND c.linkage_id=? AND c.concept_id=e.concept_id)",
+            (canon_id, legacy_id, canon_id),
+        )
+        con.execute(
+            "DELETE FROM entity_links WHERE linkage_id=?", (legacy_id,)
+        )
+        # --- relational: linkage_evidence (no UNIQUE; plain re-point) ---
+        evid = con.execute(
+            "SELECT count(*) FROM linkage_evidence WHERE linkage_id=?",
+            (legacy_id,),
+        ).fetchone()[0]
+        con.execute(
+            "UPDATE linkage_evidence SET linkage_id=? WHERE linkage_id=?",
+            (canon_id, legacy_id),
+        )
+        # --- bitmaps: OR each partition's legacy fragment into canon ---
+        frags = self._merge_fragment_all_partitions(legacy, canon)
+        # --- drop the orphan linkage_type ---
+        con.execute("DELETE FROM linkage_types WHERE id=?", (legacy_id,))
+        self._maybe_commit(con)
+        con.commit()
+        return {"legacy": legacy, "canon": canon, "merged": True,
+                "edges": edges, "evidence": evid, "fragments": frags}
+
+    def _read_legacy_fragment_raw(self, linkage_raw: str) -> "BitMap64 | None":
+        """Load a bitmap fragment by its RAW (non-canonicalized) key in the
+        active partition. Needed only by the alias merge: `_load_fragment`
+        canonicalizes its key, so it can no longer reach a legacy fragment."""
+        if self._backend.kind == "duckdb":
+            con = self._connect()
+            row = con._duck.execute(
+                "SELECT blob FROM bitmap_fragments "
+                "WHERE partition_id=? AND linkage=?",
+                [self._partition_id, linkage_raw],
+            ).fetchone()
+            if not row or row[0] is None:
+                return None
+            return BitMap64.deserialize(bytes(row[0]))
+        p = self._partition_fragments_dir() / f"{linkage_raw}.rb64"
+        if not p.exists():
+            return None
+        return BitMap64.deserialize(p.read_bytes())
+
+    def _drop_legacy_fragment_raw(self, linkage_raw: str) -> None:
+        """Delete a legacy fragment by RAW key in the active partition + evict
+        any cache entry under that key."""
+        if self._backend.kind == "duckdb":
+            self._connect()._duck.execute(
+                "DELETE FROM bitmap_fragments WHERE partition_id=? AND linkage=?",
+                [self._partition_id, linkage_raw],
+            )
+        else:
+            p = self._partition_fragments_dir() / f"{linkage_raw}.rb64"
+            if p.exists():
+                p.unlink()
+        self._fragments.pop(linkage_raw, None)
+
+    def _merge_fragment_all_partitions(self, legacy: str, canon: str) -> int:
+        """OR every partition's `legacy` bitmap fragment into its `canon`
+        fragment, then delete the legacy fragment. Returns the count of
+        partitions whose legacy fragment held bits."""
+        con = self._connect()
+        parts = [r[0] for r in con.execute(
+            "SELECT name FROM partitions"
+        ).fetchall()]
+        n = 0
+        for pname in parts:
+            with self.with_partition(pname):
+                legacy_bits = self._read_legacy_fragment_raw(legacy)
+                if legacy_bits is None or len(legacy_bits) == 0:
+                    self._drop_legacy_fragment_raw(legacy)
+                    continue
+                canon_frag = self._load_fragment(canon)
+                canon_frag |= legacy_bits
+                self._dirty_fragments.add(_canonical_verb(canon))
+                self.flush_fragments()
+                self._drop_legacy_fragment_raw(legacy)
+                n += 1
+        return n
+
     # ---- bitmaps (Pilosa-style fragments) ---------------------------------
 
     def _fragment_path(self, linkage: str) -> Path:
-        return self._partition_fragments_dir() / f"{linkage}.rb64"
+        return self._partition_fragments_dir() / f"{_canonical_verb(linkage)}.rb64"
 
     def _load_fragment(self, linkage: str) -> BitMap64:
         """Return the in-memory BitMap64 for a linkage, lazy-loading on first
@@ -2362,6 +2504,7 @@ class Store:
         - DuckDB: fragment persists as a BLOB row in `bitmap_fragments`
           keyed by (partition_id, linkage); lazy-loaded by SELECT.
         """
+        linkage = _canonical_verb(linkage)
         if linkage in self._fragments:
             return self._fragments[linkage]
         if self._backend.kind == "duckdb":
@@ -2403,10 +2546,12 @@ class Store:
             self._flush_fragments_duckdb()
             return
         self._partition_fragments_dir().mkdir(parents=True, exist_ok=True)
-        for linkage in list(self._dirty_fragments):
+        for raw in list(self._dirty_fragments):
+            # Fold a raw-alias dirty entry to its canonical cache + path key.
+            linkage = _canonical_verb(raw)
             frag = self._fragments.get(linkage)
             if frag is None:
-                self._dirty_fragments.discard(linkage)
+                self._dirty_fragments.discard(raw)
                 continue
             p = self._fragment_path(linkage)
             if len(frag) == 0:
@@ -2416,17 +2561,20 @@ class Store:
                 tmp = p.with_suffix(".rb64.tmp")
                 tmp.write_bytes(frag.serialize())
                 tmp.replace(p)
-            self._dirty_fragments.discard(linkage)
+            self._dirty_fragments.discard(raw)
 
     def _flush_fragments_duckdb(self) -> None:
         """DuckDB persistence path for flush_fragments: UPSERT (or DELETE on
         empty) the BLOB row for each dirty linkage in the active partition."""
         con = self._connect()
         pid = self._partition_id
-        for linkage in list(self._dirty_fragments):
+        for raw in list(self._dirty_fragments):
+            # A dirtied entry may be a raw alias (e.g. `related_to`); the cache
+            # + blob key are canonical, so fold before lookup/persist.
+            linkage = _canonical_verb(raw)
             frag = self._fragments.get(linkage)
             if frag is None:
-                self._dirty_fragments.discard(linkage)
+                self._dirty_fragments.discard(raw)
                 continue
             if len(frag) == 0:
                 con._duck.execute(
@@ -2442,7 +2590,7 @@ class Store:
                     "SET blob = excluded.blob",
                     [pid, linkage, frag.serialize()],
                 )
-            self._dirty_fragments.discard(linkage)
+            self._dirty_fragments.discard(raw)
 
     @staticmethod
     def _pack(concept_id: int, entity_id: int) -> int:
@@ -2589,6 +2737,7 @@ class Store:
         weight: float | None = None,
         protect: bool = False,
     ) -> bool:
+        linkage = _canonical_verb(linkage)
         if self._link_buffer is not None:
             self._link_buffer.append((linkage, concept_id, entity_id, weight))
             if protect:
@@ -2632,6 +2781,7 @@ class Store:
         return not already
 
     def unlink(self, linkage: str, concept_id: int, entity_id: int) -> bool:
+        linkage = _canonical_verb(linkage)
         lid = self.get_linkage_id(linkage)
         frag = self._load_fragment(linkage)
         bit = self._pack(concept_id, entity_id)
@@ -3055,6 +3205,7 @@ class Store:
         detail: str | None = None,
     ) -> None:
         """Record where a linkage came from. Pure annotation — does not affect bitmaps."""
+        linkage = _canonical_verb(linkage)
         lid = self.get_linkage_id(linkage)
         con = self._connect()
         con.execute(

@@ -1066,6 +1066,67 @@ def migrate_to_duckdb(out_path: Path | None, overwrite: bool):
     console.print(f"[green]wrote[/] {dst}")
 
 
+@main.command("merge-verb-aliases")
+def merge_verb_aliases():
+    """Fold legacy snake_case linkage verbs into their kebab canonical.
+
+    One-shot, idempotent maintenance: where the same relation accreted under
+    two `linkage_types` ids (e.g. `related_to` from seeded defaults / code
+    emitters vs `related-to` from GMD `rel:` edges), this re-points the
+    relational forward index + per-partition bitmaps onto the canonical verb
+    and drops the orphan type. Go-forward writes already canonicalize; this
+    cleans up edges written before that landed.
+
+    Requires the daemon stopped (needs exclusive writer access). Refreshes the
+    read snapshot so queries reflect the merge immediately.
+    """
+    import shutil
+    from refmatrix import daemon as daemon_mod
+    from refmatrix.store import _VERB_ALIASES
+
+    root = _root()
+    if daemon_mod.ping(root):
+        raise click.ClickException(
+            "daemon is running — stop it first (`rmx daemon stop`), then re-run."
+        )
+    s = _store_rw()
+    results = []
+    active = s.db_path
+    try:
+        for legacy, canon in _VERB_ALIASES.items():
+            results.append(s.merge_verb_alias(legacy, canon))
+        # Flush WAL into the main file so the snapshot copy is self-contained.
+        s._connect().execute("CHECKPOINT")
+    finally:
+        s.close()
+    # Atomic snapshot refresh (mirrors the daemon's _snapshot_catalog) so
+    # lock-free readers see the merged graph before the daemon is restarted.
+    snap = root / "catalog.read.duckdb"
+    if active.exists():
+        tmp = snap.with_name(snap.name + ".merge.tmp")
+        shutil.copy2(active, tmp)
+        os.replace(tmp, snap)
+
+    table = Table(show_header=True)
+    table.add_column("legacy")
+    table.add_column("canonical")
+    table.add_column("merged", justify="right")
+    table.add_column("edges", justify="right")
+    table.add_column("evidence", justify="right")
+    table.add_column("fragments", justify="right")
+    for r in results:
+        table.add_row(
+            r["legacy"], r["canon"], "yes" if r["merged"] else "no",
+            str(r["edges"]), str(r["evidence"]), str(r["fragments"]),
+        )
+    console.print(table)
+    any_merged = any(r["merged"] for r in results)
+    console.print(
+        "[green]merged[/] — restart the daemon to resume serving"
+        if any_merged else "[dim]nothing to merge (already canonical)[/]"
+    )
+
+
 @main.group()
 def partition():
     """Inspect and manage named partitions inside the active refmatrix."""

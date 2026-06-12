@@ -23,7 +23,7 @@ from refmatrix.store import Entity, Store
 # about* the anchor (vs. defining it). For these we replace the whole-section
 # tldr with a KWIC window around the anchor term — the tldr is a section
 # summary that often does not even contain the term.
-_KWIC_LINKAGES = {"mentions", "related_to", "content"}
+_KWIC_LINKAGES = {"mentions", "related-to", "content"}
 
 
 # Order linkages so output reads like a natural definition: what *is* this
@@ -31,7 +31,7 @@ _KWIC_LINKAGES = {"mentions", "related_to", "content"}
 DEFAULT_LINKAGE_ORDER = [
     "defines", "implements",
     "called_by", "imports",
-    "calls", "is_a", "related_to",
+    "calls", "is_a", "related-to",
     "mentions",
 ]
 
@@ -43,7 +43,7 @@ LINKAGE_LABELS = {
     "calls": "CALLS",
     "mentions": "MENTIONED IN",
     "is_a": "IS A",
-    "related_to": "RELATED TO",
+    "related-to": "RELATED TO",
     "content": "CONTENT MATCH",
     "grep": "GREP (unindexed — floor)",
 }

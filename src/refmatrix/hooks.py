@@ -302,7 +302,7 @@ Union(...)  Difference(A, B)  Xor(...)  TopN(<bm>, n)  Count(<bm>)
 ## Linkage taxonomy
 
 Defaults: `defines`, `called_by`, `calls`, `mentions`, `imports`, `is_a`,
-`related_to`. Plus any custom types added with `rmx add-linkage-type`.
+`related-to`. Plus any custom types added with `rmx add-linkage-type`.
 
 `rmx list-linkages` shows what's actually defined in this project.
 

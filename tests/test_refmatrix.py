@@ -40,7 +40,7 @@ def test_init_creates_layout(tmp_path):
     # it on fresh inits. fragments/ only materializes on SQLite backend.
     # default linkages exist
     names = {lk["name"] for lk in s.list_linkages()}
-    assert {"mentions", "defines", "calls", "called_by", "imports", "is_a", "related_to"} <= names
+    assert {"mentions", "defines", "calls", "called_by", "imports", "is_a", "related-to"} <= names
 
 
 def test_link_and_query_dsl(store):

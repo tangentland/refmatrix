@@ -851,10 +851,10 @@ _GRAPHIFY_VERB_MAP = {
     "implements":                "defines",
     "references":                "mentions",
     "uses":                      "depends-on",
-    "cites":                     "related_to",
+    "cites":                     "related-to",
     "method":                    "has-part",
     "rationale_for":             "specifies",
-    "conceptually_related_to":   "related_to",
+    "conceptually_related_to":   "related-to",
     "semantically_similar_to":   "similar_to",
     "shares_data_with":          "shares_data_with",
 }
@@ -1581,9 +1581,9 @@ def _adr_emit_body(
         ref_concept = s.add_namespaced_concept(
             "adr", ref_num, description=f"ADR-{ref_num}"
         )
-        s.link("related_to", ref_concept, adr_eid)
-        s.link("related_to", ref_concept, target_eid)
-        s.add_evidence("related_to", ref_concept, adr_eid,
+        s.link("related-to", ref_concept, adr_eid)
+        s.link("related-to", ref_concept, target_eid)
+        s.add_evidence("related-to", ref_concept, adr_eid,
                        file=rel, detail=f"references ADR-{ref_num}")
         n += 1
 
@@ -1895,9 +1895,9 @@ def _build_markdown_record(
         ref_concept = rb.add_namespaced_concept(
             "adr", ref_num, description=f"ADR-{ref_num}"
         )
-        rb.link("related_to", ref_concept, doc_eid)
-        rb.link("related_to", ref_concept, f"@adr:{ref_num}")
-        rb.add_evidence("related_to", ref_concept, doc_eid,
+        rb.link("related-to", ref_concept, doc_eid)
+        rb.link("related-to", ref_concept, f"@adr:{ref_num}")
+        rb.add_evidence("related-to", ref_concept, doc_eid,
                         file=rel, detail=f"references ADR-{ref_num}")
 
     is_plan = _is_plan_file(file_path)
@@ -1990,9 +1990,9 @@ def _emit_bold_metadata_refs(
                 ref_concept = s.add_namespaced_concept(
                     "adr", ref_num, description=f"ADR-{ref_num}"
                 )
-                s.link("related_to", ref_concept, doc_eid)
-                s.link("related_to", ref_concept, target_eid)
-                s.add_evidence("related_to", ref_concept, doc_eid,
+                s.link("related-to", ref_concept, doc_eid)
+                s.link("related-to", ref_concept, target_eid)
+                s.add_evidence("related-to", ref_concept, doc_eid,
                                file=rel, line=lineno,
                                detail=f"{label}: ADR-{ref_num}")
                 n += 1
@@ -2003,9 +2003,9 @@ def _emit_bold_metadata_refs(
                 path_concept = s.add_namespaced_concept(
                     "ref", tok, description=f"reference to {tok}"
                 )
-                s.link("related_to", path_concept, doc_eid)
-                s.link("related_to", path_concept, target_eid)
-                s.add_evidence("related_to", path_concept, doc_eid,
+                s.link("related-to", path_concept, doc_eid)
+                s.link("related-to", path_concept, target_eid)
+                s.add_evidence("related-to", path_concept, doc_eid,
                                file=rel, line=lineno,
                                detail=f"{label}: {tok}")
                 n += 1
