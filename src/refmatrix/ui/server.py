@@ -203,10 +203,14 @@ def create_app(hub) -> FastAPI:
 
     # ---- graph landing views ----
     @app.get("/api/top")
-    def top(root: str, n: int = 30):
-        """Density-ranked concept entry points for the Graph landing view."""
+    def top(root: str, n: int = 30, exclude_ns: str = "keyword,kind,import"):
+        """Density-ranked concept entry points for the Graph landing view.
+        Excludes category/import namespaces by default so the entries are
+        clickable symbols, not buckets like `kind/function`."""
+        ns = [x for x in exclude_ns.split(",") if x]
         return _daemon_read(Path(root), "top_concepts",
-                            {"n": n, "partition": _partition(Path(root))})
+                            {"n": n, "partition": _partition(Path(root)),
+                             "exclude_ns": ns})
 
     @app.get("/api/tree")
     def tree(root: str, max_entries: int = 800):
