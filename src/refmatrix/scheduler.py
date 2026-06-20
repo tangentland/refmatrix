@@ -19,7 +19,7 @@ from pathlib import Path
 from refmatrix.taxonomy import user_home
 
 SCHEDULE_FILE = "schedule.json"
-ALLOWED_OPS = ("sync", "embed", "vacuum", "checkpoint", "ingest")
+ALLOWED_OPS = ("sync", "embed", "vacuum", "checkpoint", "ingest", "curator-scan")
 TICK_S = float(os.environ.get("RMX_SCHED_TICK", "30"))
 
 
@@ -122,9 +122,13 @@ class Scheduler:
         return ran
 
     def _run(self, root: Path, op: str) -> None:
-        args = [sys.executable, "-m", "refmatrix.cli", op]
-        if op == "ingest":
-            args.append(".")
+        if op == "curator-scan":
+            cli_args = ["curator", "scan"]
+        elif op == "ingest":
+            cli_args = ["ingest", "."]
+        else:
+            cli_args = [op]
+        args = [sys.executable, "-m", "refmatrix.cli", *cli_args]
         env = {**os.environ, "REFMATRIX_ROOT": str(root),
                "RMX_INVOCATION_SOURCE": "internal"}
         subprocess.Popen(args, cwd=str(root.parent), env=env,

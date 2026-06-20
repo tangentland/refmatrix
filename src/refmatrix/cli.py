@@ -992,7 +992,7 @@ def schedule():
 
 
 @schedule.command("add")
-@click.argument("op", type=click.Choice(["sync", "embed", "vacuum", "checkpoint", "ingest"]))
+@click.argument("op", type=click.Choice(["sync", "embed", "vacuum", "checkpoint", "ingest", "curator-scan"]))
 @click.option("--every", "every", required=True,
               help="Interval, e.g. 30m / 2h / 1d.")
 def schedule_add(op, every):
@@ -1070,6 +1070,47 @@ def hub_stop():
         console.print("[green]hub stopped[/]")
     else:
         console.print("[yellow]hub did not stop cleanly[/]")
+
+
+@hub.group("launchctl")
+def hub_launchctl():
+    """Supervise the hub itself via macOS launchd (com.refmatrix.hub).
+    RunAtLoad + KeepAlive: auto-start at login, restart on crash."""
+
+
+@hub_launchctl.command("install")
+@click.option("--port", type=int, default=7777, show_default=True)
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--force", is_flag=True)
+def hub_launchctl_install(port, host, force):
+    """Install + load the hub LaunchAgent."""
+    from refmatrix import launchctl
+    try:
+        p = launchctl.install_hub(port=port, host=host, force=force)
+    except Exception as e:
+        raise click.ClickException(str(e))
+    console.print(f"[green]hub supervised[/] {launchctl.HUB_LABEL}\n[dim]{p}[/]")
+
+
+@hub_launchctl.command("uninstall")
+def hub_launchctl_uninstall():
+    """Unload + remove the hub LaunchAgent."""
+    from refmatrix import launchctl
+    if launchctl.uninstall_hub():
+        console.print("[green]hub LaunchAgent removed[/]")
+    else:
+        console.print("[yellow]no hub LaunchAgent to remove[/]")
+
+
+@hub_launchctl.command("status")
+def hub_launchctl_status():
+    """Show hub LaunchAgent status."""
+    from refmatrix import launchctl
+    st = launchctl.hub_status()
+    dot = "[green]●[/]" if st["loaded"] else "[red]●[/]"
+    console.print(f"{dot} {st['label']}  installed={st['installed']} "
+                  f"loaded={st['loaded']}")
+    console.print(f"[dim]{st['plist_path']}[/]")
 
 
 @hub.command("status")
@@ -4429,6 +4470,37 @@ def curator_drain():
             raise click.ClickException(f"drain failed: {exc}")
     else:
         console.print("[dim]curator queue already empty[/]")
+
+
+@curator.command("scan")
+@click.option("--no-drain", is_flag=True,
+              help="Leave the curator queue in place after scanning.")
+@click.option("--dry-run", is_flag=True,
+              help="Show candidates without enqueueing them.")
+def curator_scan(no_drain, dry_run):
+    """Lint queued GMD docs → file curation candidates into the refinement
+    queue (no silent writes). The gmd-curator subagent drains + fixes them.
+    Intended to run on the scheduler or on demand."""
+    from refmatrix import gmd_curator
+    root = _root()
+    if dry_run:
+        cands = gmd_curator.scan(root)
+        if not cands:
+            console.print("[dim]no curation candidates[/]")
+            return
+        for c in cands:
+            console.print(f"[yellow]{c['kind']}[/] {c['path']}")
+            console.print(f"  [dim]{c['detail'].strip()[:200]}[/]")
+        console.print(f"\n[dim]{len(cands)} candidate(s) — run without --dry-run "
+                      f"to enqueue[/]")
+        return
+    res = gmd_curator.scan_and_enqueue(root, drain=not no_drain)
+    console.print(f"[green]curator scan:[/] {res['candidates']} candidate(s) "
+                  f"queued for review"
+                  + (" · queue drained" if res["drained"] else ""))
+    if res["candidates"]:
+        console.print("[dim]review/accept in the UI Bus tab or `rmx bus` "
+                      "refinement queue; dispatch the gmd-curator subagent to fix[/]")
 
 
 # ---- weighted ranking -----------------------------------------------------

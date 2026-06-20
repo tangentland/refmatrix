@@ -55,8 +55,36 @@ async function renderProjects() {
   const el = $("#tab-projects");
   el.innerHTML = `<div class="loading">scanning stores…</div>`;
   const ps = await loadProjects();
-  el.innerHTML = `<div class="grid">${ps.map(projCard).join("")}</div>`;
+  el.innerHTML = `<div class="grid">${ps.map(projCard).join("")}${onboardCard()}</div>`;
   $$("[data-act]", el).forEach((b) => b.addEventListener("click", onProjAction));
+  const ob = $("#onboard-go");
+  if (ob) ob.addEventListener("click", onboard);
+}
+
+function onboardCard() {
+  return `<div class="card" style="border-style:dashed">
+    <h3>+ onboard a project</h3>
+    <div class="sub">add refmatrix to a new repo</div>
+    <input id="onboard-path" placeholder="/path/to/project" style="width:100%;padding:6px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;margin-bottom:8px">
+    <label class="kv"><span>install hooks</span><input type="checkbox" id="onboard-hooks" checked></label>
+    <label class="kv"><span>supervise (launchd)</span><input type="checkbox" id="onboard-launchd"></label>
+    <div class="row-actions"><button class="btn" id="onboard-go">onboard</button></div>
+    <div id="onboard-out" class="muted" style="font-size:11px;margin-top:8px"></div>
+  </div>`;
+}
+
+async function onboard() {
+  const path = $("#onboard-path").value.trim();
+  if (!path) return;
+  const out = $("#onboard-out");
+  out.textContent = "onboarding…";
+  const r = await post("/api/projects/init", {
+    path, hooks: $("#onboard-hooks").checked, launchd: $("#onboard-launchd").checked,
+  });
+  if (!r.ok) { out.textContent = r.error || "failed"; return; }
+  out.innerHTML = r.result.steps.map((s) =>
+    `${s.ok ? "✓" : "✗"} ${s.step}`).join("<br>");
+  setTimeout(renderProjects, 1200);
 }
 
 function projCard(p) {

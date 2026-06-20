@@ -36,6 +36,26 @@ def test_read_spine_endpoints(client):
     assert client.get("/api/taxonomy").json()["ok"]
 
 
+def test_project_register_endpoint(client, tmp_path):
+    root = tmp_path / "proj" / ".refmatrix"
+    root.mkdir(parents=True)
+    r = client.post("/api/projects/register", json={"root": str(tmp_path / "proj")})
+    assert r.json()["ok"]
+    bad = client.post("/api/projects/register", json={"root": "/no/such/place"})
+    assert bad.json()["ok"] is False
+
+
+def test_canon_and_schedule_endpoints(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("RMX_HOME", str(tmp_path / "home"))
+    assert client.get("/api/canon?concept=foo").json()["ok"]
+    root = str(tmp_path / "p" / ".refmatrix")
+    r = client.post("/api/schedule", json={"root": root, "op": "sync",
+                                           "interval_s": 600})
+    assert r.json()["ok"]
+    got = client.get("/api/schedule").json()
+    assert got["ok"] and got["result"]["schedule"]
+
+
 def test_bus_focus_refine_endpoints(client, tmp_path):
     assert client.get("/api/bus/channels").json()["ok"]
     assert client.get("/api/refine").json()["result"]["candidates"] == []

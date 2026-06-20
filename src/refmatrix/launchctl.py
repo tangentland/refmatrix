@@ -164,6 +164,97 @@ def render_plist(root: Path, *, partition: str | None = None,
     return plistlib.dumps(plist)
 
 
+# ---- hub (the user-level control plane, distinct from per-store daemons) ----
+
+HUB_LABEL = "com.refmatrix.hub"
+
+
+def hub_plist_path() -> Path:
+    return LAUNCH_AGENTS_DIR / f"{HUB_LABEL}.plist"
+
+
+def render_hub_plist(*, port: int = 7777, host: str = "127.0.0.1") -> bytes:
+    """Render the hub LaunchAgent. Runs `rmx hub start --no-detach` so launchd
+    owns the process; KeepAlive restarts it on crash, RunAtLoad starts it at
+    login."""
+    rmx = _rmx_path()
+    home = Path.home() / ".refmatrix"
+    plist: dict = {
+        "Label": HUB_LABEL,
+        "ProgramArguments": [rmx, "hub", "start", "--no-detach",
+                             "--port", str(port), "--host", host],
+        "EnvironmentVariables": {
+            "PATH": os.environ.get(
+                "PATH", "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"),
+        },
+        "RunAtLoad": True,
+        "KeepAlive": {"SuccessfulExit": False},
+        "ThrottleInterval": DEFAULT_THROTTLE_SECONDS,
+        "StandardOutPath": str(home / "hub.stdout.log"),
+        "StandardErrorPath": str(home / "hub.stderr.log"),
+        "ProcessType": "Background",
+    }
+    return plistlib.dumps(plist)
+
+
+def hub_is_loaded() -> bool:
+    if sys.platform != "darwin":
+        return False
+    return subprocess.run(_print_cmd(HUB_LABEL), capture_output=True).returncode == 0
+
+
+def install_hub(*, port: int = 7777, host: str = "127.0.0.1",
+                force: bool = False) -> Path:
+    """Write + bootstrap the hub LaunchAgent. Idempotent unless force."""
+    _require_darwin()
+    LAUNCH_AGENTS_DIR.mkdir(parents=True, exist_ok=True)
+    (Path.home() / ".refmatrix").mkdir(parents=True, exist_ok=True)
+    p = hub_plist_path()
+    if p.exists() and hub_is_loaded() and not force:
+        return p
+    if hub_is_loaded():
+        subprocess.run(_bootout_cmd(HUB_LABEL), capture_output=True)
+        deadline = time.time() + 3.0
+        while time.time() < deadline and hub_is_loaded():
+            time.sleep(0.1)
+    p.write_bytes(render_hub_plist(port=port, host=host))
+    p.chmod(0o644)
+    r = subprocess.run(_bootstrap_cmd(p), capture_output=True, text=True)
+    deadline = time.time() + 3.0
+    while time.time() < deadline and not hub_is_loaded():
+        time.sleep(0.1)
+    if not hub_is_loaded():
+        subprocess.run(["launchctl", "load", str(p)], capture_output=True)
+        deadline = time.time() + 3.0
+        while time.time() < deadline and not hub_is_loaded():
+            time.sleep(0.1)
+    if not hub_is_loaded():
+        raise RuntimeError(
+            f"launchctl did not load the hub agent "
+            f"(rc={r.returncode}, err={r.stderr.strip() or '(silent)'})")
+    return p
+
+
+def uninstall_hub() -> bool:
+    _require_darwin()
+    p = hub_plist_path()
+    if hub_is_loaded():
+        subprocess.run(_bootout_cmd(HUB_LABEL), capture_output=True)
+    if p.exists():
+        p.unlink()
+        return True
+    return False
+
+
+def hub_status() -> dict:
+    return {
+        "label": HUB_LABEL,
+        "plist_path": str(hub_plist_path()),
+        "installed": hub_plist_path().exists(),
+        "loaded": hub_is_loaded(),
+    }
+
+
 def _domain() -> str:
     return f"gui/{os.getuid()}"
 

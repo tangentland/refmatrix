@@ -101,6 +101,45 @@ def create_app(hub) -> FastAPI:
     def projects(with_footprint: bool = True):
         return {"projects": discovery.all_projects(with_footprint=with_footprint)}
 
+    @app.post("/api/projects/init")
+    async def project_init(payload: dict):
+        """Onboard a project: `rmx init` (+ optional install-hooks + launchd),
+        then register it. Runs the CLI as a subprocess (daemon-routed writes)."""
+        import subprocess
+        import sys
+        path = Path(payload["path"]).expanduser()
+        if not path.is_dir():
+            return {"ok": False, "error": f"not a directory: {path}"}
+        steps: list[dict] = []
+
+        def run(args, label):
+            env = {**os.environ, "RMX_INVOCATION_SOURCE": "internal"}
+            r = subprocess.run([sys.executable, "-m", "refmatrix.cli", *args],
+                               cwd=str(path), env=env, capture_output=True, text=True)
+            steps.append({"step": label, "ok": r.returncode == 0,
+                          "out": (r.stdout or r.stderr)[-400:]})
+            return r.returncode == 0
+
+        run(["init"], "init")
+        if payload.get("hooks", True):
+            run(["install-hooks", "--apply"], "install-hooks")
+        root = path / ".refmatrix"
+        if payload.get("launchd") and sys.platform == "darwin":
+            run(["daemon", "launchctl", "install"], "launchctl")
+        if root.is_dir():
+            discovery.register_root(root)
+        return {"ok": True, "result": {"root": str(root), "steps": steps,
+                                       "status": discovery.project_status(root)}}
+
+    @app.post("/api/projects/register")
+    async def project_register(payload: dict):
+        root = Path(payload["root"])
+        root = root if root.name == ".refmatrix" else root / ".refmatrix"
+        if not root.is_dir():
+            return {"ok": False, "error": f"no .refmatrix at {root}"}
+        discovery.register_root(root)
+        return {"ok": True, "result": {"root": str(root)}}
+
     @app.get("/api/stats")
     def stats(root: str):
         return _daemon_read(Path(root), "stats", {"include_stale": True})
