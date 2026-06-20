@@ -105,6 +105,7 @@ def create_app(hub) -> FastAPI:
     async def project_init(payload: dict):
         """Onboard a project: `rmx init` (+ optional install-hooks + launchd),
         then register it. Runs the CLI as a subprocess (daemon-routed writes)."""
+        import os
         import subprocess
         import sys
         path = Path(payload["path"]).expanduser()

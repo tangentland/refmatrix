@@ -91,11 +91,14 @@ def test_context_to_graph_conversion():
     assert {e["linkage"] for e in g["edges"]} == {"defines", "mentions"}
 
 
-def test_where_federates(monkeypatch):
+def test_where_federates(monkeypatch, tmp_path):
+    # /api/where delegates to refmatrix.search.federated_where — patch THERE.
+    from refmatrix import search
     root = Path("/tmp/projX/.refmatrix")
-    monkeypatch.setattr(discovery, "discover_roots", lambda: [root])
-    monkeypatch.setattr(discovery, "store_name", lambda r: "projX")
-    monkeypatch.setattr(srv.daemon_mod, "ping", lambda r, timeout=0.5: True)
+    monkeypatch.setattr(search.discovery, "discover_roots", lambda: [root])
+    monkeypatch.setattr(search.discovery, "store_name", lambda r: "projX")
+    monkeypatch.setattr(search.daemon_mod, "ping", lambda r, timeout=0.5: True)
+    monkeypatch.setenv("RMX_HOME", str(tmp_path / "home"))  # no global store
 
     def fake_call(r, op, args, timeout=60.0):
         if op == "context":
@@ -111,7 +114,7 @@ def test_where_federates(monkeypatch):
                 {"name": "where-keys-note", "content": "in the drawer"}]}}
         return {"ok": False, "error": "?"}
 
-    monkeypatch.setattr(srv.daemon_mod, "call", fake_call)
+    monkeypatch.setattr(search.daemon_mod, "call", fake_call)
     c = TestClient(srv.create_app(Hub(port=0)))
     res = c.get("/api/where?q=keys").json()
     assert res["ok"]
