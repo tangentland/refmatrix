@@ -328,14 +328,32 @@ async function renderFocus() {
     const r = await api(`/api/focus?root=${encodeURIComponent(root)}&session=${encodeURIComponent(session)}`);
     const g = r.result?.graph || {nodes: [], focus: []};
     const tasks = r.result?.tasks || [];
-    const crumb = tasks.length ? tasks.map((t) => t.desc).join(" ▸ ") : "<span class='muted'>no task on stack</span>";
     const maxW = Math.max(1, ...g.nodes.map((n) => n.weight));
+    // Task stack: top of stack = current. Render newest-first, clickable.
+    const stackHtml = tasks.length ? tasks.slice().reverse().map((t, i) => {
+      const depth = tasks.length - 1 - i;
+      return `<div class="kv stack-item" data-depth="${depth}" style="cursor:pointer">
+        <span>${i === 0 ? "▸" : "·"} ${t.desc}</span>
+        <span class="muted mono" style="font-size:11px">${t.ts || ""}</span></div>`;
+    }).join("") : "<div class='muted'>no task on stack — push with <span class='mono'>rmx task push</span></div>";
     $("#focus-body").innerHTML = `
-      <div class="card" style="margin-bottom:12px"><h2 class="section">task stack</h2><div class="mono">${crumb}</div></div>
-      <h2 class="section">focus — ${g.events || 0} events, session ${g.session || session}</h2>
-      ${g.nodes.length ? g.nodes.map((n) => `<div class="kv"><span class="mono" style="color:var(--${n.kind === "code" ? "accent" : n.kind === "doc" ? "amber" : "purple"})">${n.name}</span>
-        <span>×${n.count}</span></div><div class="bar"><i style="background:var(--accent);width:${100 * n.weight / maxW}%"></i></div>`).join("")
-        : '<div class="muted">no focus yet — focus builds from tool use + rmx calls via the focus hook</div>'}`;
+      <div style="display:grid;grid-template-columns:300px 1fr;gap:12px">
+        <div class="card"><h2 class="section">task stack (depth ${tasks.length})</h2>
+          ${stackHtml}
+          <div id="snap" class="muted" style="margin-top:10px;font-size:12px"></div></div>
+        <div><h2 class="section">live focus — ${g.events || 0} events · session ${g.session || session}</h2>
+          ${g.nodes.length ? g.nodes.map((n) => `<div class="kv"><span class="mono" style="color:var(--${n.kind === "code" ? "accent" : n.kind === "doc" ? "amber" : "purple"})">${n.name}</span>
+            <span>w ${n.weight} · ×${n.count} · °${n.degree}${n.pin ? " · 📌" : ""}</span></div>
+            <div class="bar"><i style="background:var(--accent);width:${100 * n.weight / maxW}%"></i></div>`).join("")
+            : "<div class='muted'>no focus yet — builds from tool use + rmx calls via the focus hook</div>"}</div>
+      </div>`;
+    $$(".stack-item", $("#focus-body")).forEach((it) => it.addEventListener("click", () => {
+      const t = tasks[+it.dataset.depth];
+      const snap = (t.focus_snapshot || []);
+      $("#snap").innerHTML = `<b>${t.desc}</b> — focus when pushed:<br>` +
+        (snap.length ? snap.map((s) => `<span class="chip" style="margin:2px">${s}</span>`).join("")
+          : "<span class='muted'>(empty)</span>");
+    }));
   };
   $("#focus-project").addEventListener("change", async () => { await loadSessions(); go(); });
   $("#focus-go").addEventListener("click", go);

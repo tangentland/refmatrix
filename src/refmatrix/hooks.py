@@ -20,6 +20,11 @@ import os
 import stat
 from pathlib import Path
 
+# Prefix for every Claude-hook command so cli.log tags the invocation form as
+# `hook` (telemetry "by form" axis). Exported so it reaches every rmx in a
+# compound command.
+HOOK_ENV = "export RMX_INVOCATION_SOURCE=hook; "
+
 GIT_HOOK_SCRIPTS: dict[str, str] = {
     "post-commit": r"""#!/usr/bin/env bash
 # refmatrix: refresh after each commit
@@ -87,14 +92,26 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
     # append, no DuckDB lock), but a slow Python startup can still chew
     # 50-100ms per Edit/Write; multiplied by burst hooks it adds up.
     enqueue_cmd = (
-        f"( python3 -c \"{enqueue_py}\" 2>/dev/null || true ) & disown"
+        HOOK_ENV
+        + f"( python3 -c \"{enqueue_py}\" 2>/dev/null || true ) & disown"
+    )
+    # PostToolUse focus capture: record the tool + touched paths into the
+    # per-project short-term focus graph. Cheap (file append); best-effort.
+    focus_tool_cmd = (
+        HOOK_ENV + "rmx focus hook --event tool 2>/dev/null || true"
+    )
+    # UserPromptSubmit focus capture: record the prompt as an input event
+    # (opens a new STM turn + admits prompt symbols).
+    focus_input_cmd = (
+        HOOK_ENV + "rmx focus hook --event input 2>/dev/null || true"
     )
 
     # --async hands the actual sync work to the daemon and returns
     # immediately. With no daemon up, the flag is a silent no-op so the
     # hook stays cheap.
     flush_cmd = (
-        "( rmx sync --flush-queue --async >/dev/null 2>&1 || true ) & disown"
+        HOOK_ENV
+        + "( rmx sync --flush-queue --async >/dev/null 2>&1 || true ) & disown"
     )
 
     # SessionStart: flush + (optionally) regenerate primer in the
@@ -112,7 +129,8 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
             + "' >/dev/null 2>&1 || true"
         )
     sess_cmd = (
-        "( " + " ; ".join(bg_parts) + " ) & disown ; "
+        HOOK_ENV
+        + "( " + " ; ".join(bg_parts) + " ) & disown ; "
         "rmx curator status --drain 2>/dev/null || true"
     )
 
@@ -146,16 +164,26 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
         # arrives alongside the curator-dispatch signal (subsecond, silent
         # when empty, drains on read).
         scan_cmd = (
-            "rmx scan-prompt --max-tokens 2000 2>/dev/null || true ; "
+            HOOK_ENV
+            + "rmx scan-prompt --max-tokens 2000 2>/dev/null || true ; "
             "rmx curator status --drain 2>/dev/null || true"
         )
         block["hooks"]["UserPromptSubmit"] = [
             {
                 "hooks": [
-                    {"type": "command", "command": scan_cmd}
+                    {"type": "command", "command": scan_cmd},
+                    {"type": "command", "command": focus_input_cmd},
                 ],
             }
         ]
+
+    # PostToolUse focus capture on the read/edit/run tools so the focus graph
+    # tracks what's being worked on right now (separate matcher so it composes
+    # with the enqueue hook above).
+    block["hooks"]["PostToolUse"].append({
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read|Bash|Grep|Glob",
+        "hooks": [{"type": "command", "command": focus_tool_cmd}],
+    })
 
     if memory_hooks:
         # Phase C3: intuition-style memory hooks. Each event gets its
@@ -171,8 +199,9 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
             "hooks": [{
                 "type": "command",
                 "command": (
-                    "rmx memory recall --session-start "
-                    "--k 10 --json"
+                    HOOK_ENV
+                    + "rmx memory recall --session-start "
+                    "--k 10 --scope both --json"
                 ),
             }],
         })
@@ -184,7 +213,8 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                 # parses it natively so the hook is one line with no
                 # jq/python dependency. Empty prompt = no-op exit 0.
                 "command": (
-                    "rmx memory recall --stdin-json --k 5 --json"
+                    HOOK_ENV
+                    + "rmx memory recall --stdin-json --k 5 --scope both --json"
                 ),
             }],
         })
@@ -192,8 +222,9 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
             "hooks": [{
                 "type": "command",
                 "command": (
-                    "rmx memory recall --recent --since 1h "
-                    "--k 20 --json"
+                    HOOK_ENV
+                    + "rmx memory recall --recent --since 1h "
+                    "--k 20 --scope both --json"
                 ),
             }],
         }]

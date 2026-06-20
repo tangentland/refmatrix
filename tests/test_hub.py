@@ -107,17 +107,19 @@ def test_set_watchdog_via_rpc(monkeypatch, short_home):
         th.join(timeout=3)
 
 
-def test_ensure_global_store(monkeypatch, tmp_path):
-    monkeypatch.setenv("RMX_HOME", str(tmp_path / "home"))
-    s = hub.ensure_global_store()
+def test_ensure_global_daemon(short_home):
+    """Global store gets its OWN daemon; writes route through it (not a direct
+    Store open) per the store-calls-via-daemon rule."""
+    from refmatrix import daemon as daemon_mod
+    assert hub.ensure_global_daemon() is True
     try:
         assert hub.global_store_root().is_dir()
-        eid = s.add_memory(name="behave", content="be terse", mtype="feedback",
-                           tags=["tone"])
-        assert eid > 0
-        assert s.get_memory("behave")["content"] == "be terse"
+        add = hub.global_call("memory_add", {
+            "name": "behave", "content": "be terse", "mtype": "feedback",
+            "tags": ["tone"]})
+        assert add["ok"] and add["result"]["id"] > 0
     finally:
-        s.close()
+        daemon_mod.stop_daemon(hub.global_store_root())
 
 
 def test_registry_roundtrip(monkeypatch, tmp_path):

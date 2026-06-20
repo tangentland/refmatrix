@@ -798,6 +798,41 @@ def focus_size():
                   f"(set RMX_STM_SIZE to change)")
 
 
+@focus.command("hook")
+@click.option("--event", type=click.Choice(["input", "tool"]), required=True,
+              help="Which Claude Code hook is firing.")
+def focus_hook(event):
+    """Record a short-term event from a Claude Code hook envelope on stdin.
+
+    UserPromptSubmit → --event input; PostToolUse → --event tool. The session
+    id from the envelope groups STM per Claude session. Silent + best-effort:
+    a malformed/empty envelope is a no-op exit 0 so the hook never blocks."""
+    from refmatrix import stm as stm_mod
+    try:
+        d = json.load(sys.stdin)
+    except Exception:
+        return
+    session = d.get("session_id") or stm_mod.session_id()
+    s = stm_mod.Stm(_root(), session)
+    if event == "input":
+        prompt = (d.get("prompt") or "").strip()
+        if prompt:
+            s.record("input", prompt[:300])
+    else:
+        tool = d.get("tool_name") or "tool"
+        ti = d.get("tool_input") or {}
+        refs = []
+        fp = ti.get("file_path")
+        if isinstance(fp, str):
+            refs.append(fp)
+        for e in (ti.get("edits") or []):
+            if isinstance(e, dict) and isinstance(e.get("file_path"), str):
+                refs.append(e["file_path"])
+        cmd = ti.get("command")
+        terse = f"{tool} {' '.join(refs) or (cmd or '')}".strip()[:300]
+        s.record("tool", terse, refs=refs or None)
+
+
 @main.group()
 def task():
     """Pushdown task stack — track interrupted work when tangents get
@@ -5690,7 +5725,10 @@ def memory_grp():
 @click.option("--meta", default=None, help="JSON metadata.")
 @click.option("--protect", is_flag=True,
               help="Pin against vacuum/prune-noise.")
-def memory_add(name, content, mtype, tags, meta, protect):
+@click.option("--global", "is_global", is_flag=True,
+              help="Write to the shared cross-project global behavior store "
+                   "(~/.refmatrix/global) instead of this project.")
+def memory_add(name, content, mtype, tags, meta, protect, is_global):
     """Add or update a memory entity."""
     _memory_intent("memory_add")
     if content == "-":
@@ -5705,6 +5743,16 @@ def memory_add(name, content, mtype, tags, meta, protect):
                 f"[yellow]note:[/] off-vocabulary tag(s): {', '.join(unknown)} "
                 f"(add via `rmx taxonomy add <category> <tag>`)"
             )
+    if is_global:
+        from refmatrix import hub as hub_mod
+        resp = hub_mod.global_call("memory_add", {
+            "name": name, "content": content, "mtype": mtype,
+            "tags": tags_l, "metadata": meta_d, "protected": protect})
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        console.print(f"[green]global memory[/] {name} "
+                      f"(id={resp['result']['id']}) {mtype}")
+        return
     from refmatrix import daemon as daemon_mod
     root = _root()
     args = {
@@ -5791,6 +5839,34 @@ def memory_get(name_or_id, degree):
                     _entities_explicit=False, _tokens_explicit=False,
                 )
             ))
+
+
+@memory_grp.command("promote")
+@click.argument("name_or_id")
+def memory_promote(name_or_id):
+    """Copy a project memory into the shared global behavior store. Both reads
+    and the write route through daemons (no direct Store opens)."""
+    _memory_intent("memory_get")
+    from refmatrix import daemon as daemon_mod, hub as hub_mod
+    root = _root()
+    target = int(name_or_id) if name_or_id.isdigit() else name_or_id
+    args = {"id": target} if isinstance(target, int) else {"name": target}
+    if daemon_mod.ping(root):
+        resp = _memory_daemon_call("memory_get", args)
+        m = resp.get("result", {}).get("memory") if resp.get("ok") else None
+    else:
+        raise click.ClickException("daemon not running for this project")
+    if m is None:
+        raise click.ClickException(f"no memory matching {name_or_id!r}")
+    tags = list(dict.fromkeys((m.get("tags") or []) + ["behavior"]))
+    g = hub_mod.global_call("memory_add", {
+        "name": m["name"], "content": m["content"],
+        "mtype": m.get("mtype") or "feedback", "tags": tags,
+        "metadata": m.get("metadata")})
+    if not g.get("ok"):
+        raise click.ClickException(g.get("error", "global write failed"))
+    console.print(f"[green]promoted to global[/] {m['name']} "
+                  f"(global id={g['result']['id']})")
 
 
 @memory_grp.command("retag")
@@ -5929,6 +6005,57 @@ def _recall_display_score(h: dict) -> "float | None":
     if d is None:
         d = h.get("score")  # pure-dense legacy hit shape
     return _ann_similarity(float(d)) if isinstance(d, (int, float)) else None
+
+
+def _global_recall_rows(q, *, k, recent, since_s):
+    """Recall from the hub-owned global behavior store — routed through ITS
+    daemon (global_call ensures it's up), never a direct Store() open, so we
+    don't reintroduce catalog lock contention. Lexical/recent only (no embedder
+    needed), keeping the UserPromptSubmit/SessionStart hooks cheap."""
+    from refmatrix import hub as hub_mod
+    if not hub_mod.global_store_root().exists():
+        return []
+    if recent:
+        op, args = "memory_recent", {"since_seconds": since_s, "limit": k}
+    elif q:
+        op, args = "memory_search", {"query": q, "limit": k}
+    else:
+        return []
+    try:
+        resp = hub_mod.global_call(op, args, timeout=30.0)
+    except Exception:
+        return []
+    rows = resp.get("result", {}).get("rows", []) if resp.get("ok") else []
+    for r in rows:
+        r["scope"] = "global"
+    return rows
+
+
+def _merge_scope(project_rows, global_rows, k, scope):
+    """Combine project + global recall. `both` round-robins so global behavior
+    memories are guaranteed representation, not truncated behind project hits."""
+    for r in project_rows:
+        r.setdefault("scope", "project")
+    for r in global_rows:
+        r.setdefault("scope", "global")
+    if scope == "global":
+        return global_rows[:k]
+    if scope == "project":
+        return project_rows[:k]
+    out, seen = [], set()
+    pi = gi = 0
+    while len(out) < k and (pi < len(project_rows) or gi < len(global_rows)):
+        if pi < len(project_rows):
+            r = project_rows[pi]; pi += 1
+            if r.get("name") not in seen:
+                seen.add(r.get("name")); out.append(r)
+        if len(out) >= k:
+            break
+        if gi < len(global_rows):
+            r = global_rows[gi]; gi += 1
+            if r.get("name") not in seen:
+                seen.add(r.get("name")); out.append(r)
+    return out
 
 
 def _render_memory_gmd(rows, *, query: str | None = None,
@@ -6112,9 +6239,15 @@ def _parse_duration(text: str) -> float:
                    "is a scale effect; on small memory sets it is muted/mixed, "
                    "so it stays opt-in until a labeled memory-recall eval tunes "
                    "rrf_k. Default = pure dense ANN.")
+@click.option("--scope", type=click.Choice(["project", "global", "both"]),
+              default="project", show_default=True,
+              help="project: this store only. global: the shared cross-project "
+                   "behavior store only. both: round-robin merge so global "
+                   "behavior memories surface alongside project hits (what the "
+                   "recall hook uses).")
 def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                   session_start, as_json, as_gmd, kinds, exclude_mtype,
-                  degree, fuse):
+                  degree, fuse, scope):
     """Memory retrieval. Three modes:
 
     Dense (default): pure dense ANN (cosine over bge-small vectors) on the
@@ -6231,6 +6364,10 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             rows = s.recent_memories(since_seconds=since_s, limit=effective_k)
         if exclude_mtypes:
             rows = [r for r in rows if (r.get("mtype") or "") not in exclude_mtypes][:k]
+        if scope != "project":
+            rows = _merge_scope(
+                rows, _global_recall_rows(None, k=k, recent=True, since_s=since_s),
+                k, scope)
         rows = _attach_context(rows)
         if as_json:
             import json as _json
@@ -6370,6 +6507,10 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                 m["distance"] = h.get("distance")
                 m["fused"] = bool(h.get("fused"))
                 rows.append(m)
+        if scope != "project":
+            rows = _merge_scope(
+                rows, _global_recall_rows(q, k=k, recent=False, since_s=None),
+                k, scope)
         rows = _attach_context(rows)
         if as_gmd:
             click.echo(_render_memory_gmd(
@@ -6400,6 +6541,17 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         )
         if m is not None:
             table_rows.append(m)
+    if scope != "project":
+        seen_names = {m.get("name") for m in table_rows}
+        for gr in _global_recall_rows(q, k=k, recent=False, since_s=None):
+            if shown >= k:
+                break
+            if gr.get("name") in seen_names:
+                continue
+            shown += 1
+            t.add_row(str(shown), "—", str(gr.get("id")),
+                      f"{gr['name']} [global]")
+            table_rows.append(gr)
     console.print(t)
     if degree > 0 and table_rows:
         # Mirror the recent-mode behavior: render per-hit context blocks

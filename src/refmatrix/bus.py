@@ -210,27 +210,24 @@ class Bus:
         return {"ok": True}
 
     def _write_memory(self, cand: dict, sug: dict) -> int:
-        from refmatrix.store import Store
+        """Promote a candidate to a memory — routed through the owning daemon
+        (single writer), never a direct Store() open. See the
+        store-calls-via-daemon rule."""
+        from refmatrix import daemon as daemon_mod
+        args = {"name": sug["name"], "content": sug["content"],
+                "mtype": sug["mtype"], "tags": sug["tags"] or None}
         if cand["scope"] == "global":
-            from refmatrix.hub import global_store_root, GLOBAL_PARTITION
-            s = Store(global_store_root()); s.init()
-            with s.with_partition(GLOBAL_PARTITION):
-                eid = s.add_memory(name=sug["name"], content=sug["content"],
-                                   mtype=sug["mtype"], tags=sug["tags"] or None)
-            s.close()
-            return eid
-        # project scope — resolve the project's root from the registry by name.
-        from refmatrix import discovery
-        root = None
-        for r in discovery.discover_roots():
-            if discovery.store_name(r) == cand.get("project"):
-                root = r
-                break
-        if root is None:
-            raise RuntimeError(f"no store for project {cand.get('project')!r}")
-        s = Store(Path(root)); s.init()
-        with s.with_partition(discovery.store_name(root)):
-            eid = s.add_memory(name=sug["name"], content=sug["content"],
-                               mtype=sug["mtype"], tags=sug["tags"] or None)
-        s.close()
-        return eid
+            from refmatrix.hub import global_call
+            resp = global_call("memory_add", args)
+        else:
+            from refmatrix import discovery
+            root = next((r for r in discovery.discover_roots()
+                         if discovery.store_name(r) == cand.get("project")), None)
+            if root is None:
+                raise RuntimeError(f"no store for project {cand.get('project')!r}")
+            daemon_mod.spawn_daemon(root)
+            resp = daemon_mod.call(root, "memory_add",
+                                   {**args, "partition": discovery.store_name(root)})
+        if not resp.get("ok"):
+            raise RuntimeError(resp.get("error", "memory_add failed"))
+        return resp["result"]["id"]

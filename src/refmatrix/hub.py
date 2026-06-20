@@ -77,16 +77,39 @@ def _log(msg: str) -> None:
 # ---- global memory store --------------------------------------------------
 
 
-def ensure_global_store():
-    """Create + init the global store if missing; return an opened Store bound
-    to the `global` partition. Caller closes it."""
+def _bootstrap_global_store() -> None:
+    """One-time schema create for the global store (the only sanctioned direct
+    Store() open — the store's daemon doesn't exist yet). Ongoing access goes
+    through `global_call` / the daemon."""
     from refmatrix.store import Store
     root = global_store_root()
     root.mkdir(parents=True, exist_ok=True)
     s = Store(root)
     s.init()
-    s.with_partition(GLOBAL_PARTITION).__enter__()
-    return s
+    s.close()
+
+
+def ensure_global_daemon() -> bool:
+    """Make sure the global store has a (watcher-less) daemon serving. The
+    store is memory-only, so no filesystem watch. Returns True if up."""
+    root = global_store_root()
+    if daemon_mod.ping(root):
+        return True
+    _bootstrap_global_store()
+    try:
+        daemon_mod.spawn_daemon(root, partition=GLOBAL_PARTITION, watch_root=[])
+    except Exception as e:
+        _log(f"global daemon spawn failed: {e}")
+        return False
+    return daemon_mod.ping(root)
+
+
+def global_call(op: str, args: dict | None = None, *, timeout: float = 60.0) -> dict:
+    """Route a memory op to the global store's daemon (the single writer for
+    global behavior memories). Ensures the daemon is up first."""
+    ensure_global_daemon()
+    a = {**(args or {}), "partition": GLOBAL_PARTITION}
+    return daemon_mod.call(global_store_root(), op, a, timeout=timeout)
 
 
 # ---- watchdog -------------------------------------------------------------
@@ -465,7 +488,8 @@ class Hub:
         hub_pid_path().write_text(str(os.getpid()))
         _log(f"hub starting pid={os.getpid()} port={self.port}")
         try:
-            ensure_global_store().close()
+            ensure_global_daemon()
+            discovery.register_root(global_store_root())  # watchdog supervises it
         except Exception as e:
             _log(f"global store init failed: {e}")
         self.watchdog.start()

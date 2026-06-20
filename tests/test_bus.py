@@ -63,22 +63,28 @@ def test_announce_enqueues_refinement(home):
     assert "behavior" in q[0]["suggested"]["tags"]
 
 
-def test_accept_refinement_writes_global_memory(home, monkeypatch):
+def test_accept_refinement_writes_global_memory(home):
+    import time
+    from refmatrix import daemon as daemon_mod
     b = busmod.Bus()
     msg = b.publish("global:decisions", "always branch first", mtype="decision")
-    res = b.accept_refinement(msg["id"])
-    assert res["ok"] and res["memory_id"] > 0
-    # candidate now accepted
-    assert b.refinement_queue("pending") == []
-    assert len(b.refinement_queue("accepted")) == 1
-    # memory landed in the global store
-    from refmatrix.store import Store
-    s = Store(hub.global_store_root())
-    s.init()
-    with s.with_partition(hub.GLOBAL_PARTITION):
-        rows = s.search_memories("branch first")
-    s.close()
-    assert any("branch first" in (r["content"] or "") for r in rows)
+    try:
+        res = b.accept_refinement(msg["id"])
+        assert res["ok"] and res["memory_id"] > 0
+        assert b.refinement_queue("pending") == []
+        assert len(b.refinement_queue("accepted")) == 1
+        # verify via the global daemon (no direct Store open — would contend
+        # with the daemon's catalog lock)
+        names = []
+        for _ in range(20):
+            found = hub.global_call("memory_search", {"query": "branch first", "limit": 5})
+            names = [r["name"] for r in found.get("result", {}).get("rows", [])]
+            if names:
+                break
+            time.sleep(0.2)
+        assert names  # the promoted memory is retrievable from the global store
+    finally:
+        daemon_mod.stop_daemon(hub.global_store_root())
 
 
 def test_reject_refinement(home):
