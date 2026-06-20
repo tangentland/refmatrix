@@ -45,6 +45,26 @@ def test_top_concepts_ranks_by_density(tmp_path):
     s.close()
 
 
+def test_top_concepts_partition_scoped_no_cross_partition_dupes(tmp_path):
+    """Regression: a concept name living in two partitions must not appear
+    twice in one partition's ranked list (the viascope `new_id ×3` bug)."""
+    s = Store(tmp_path / ".refmatrix"); s.init()
+    with s.with_partition("A"):
+        cA = s.add_concept("shared_sym")
+        for i in range(4):
+            s.link("mentions", cA, s.upsert_entity(kind="code", name=f"a{i}.py"))
+    with s.with_partition("B"):
+        cB = s.add_concept("shared_sym")
+        for i in range(9):
+            s.link("mentions", cB, s.upsert_entity(kind="code", name=f"b{i}.py"))
+    with s.with_partition("A"):
+        out = _op_top_concepts(_D(s), {"n": 10})["concepts"]
+        names = [c["name"] for c in out]
+        assert names.count("shared_sym") == 1          # not duplicated
+        assert dict(zip(names, [c["total"] for c in out]))["shared_sym"] == 4  # A's count, not B's
+    s.close()
+
+
 def test_tree_endpoint_lists_code_and_docs(tmp_path, monkeypatch):
     monkeypatch.setattr(discovery, "discover_roots", lambda: [])
     proj = tmp_path / "proj"

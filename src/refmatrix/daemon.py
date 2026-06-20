@@ -2351,17 +2351,24 @@ def _op_top_concepts(d: Daemon, args: dict) -> dict:
     from refmatrix.primer import concept_density, is_symbol_like
     n = int(args.get("n", 30))
     symbol_only = bool(args.get("symbol_only", True))
+    min_refs = int(args.get("min_refs", 2))
+    exclude_ns = set(args.get("exclude_ns") or ("keyword",))
     partition = args.get("partition")
 
     def _run(s):
-        rows = concept_density(s, include_noise=False)
-        out = []
+        rows = concept_density(s, include_noise=False)  # partition-scoped
+        out, seen = [], set()
         for r in rows:
             name = r["name"]
-            if "/" in name and name.split("/", 1)[0] == "keyword":
+            if r["total"] < min_refs:
+                break  # sorted desc — nothing below this clears the bar
+            if "/" in name and name.split("/", 1)[0] in exclude_ns:
                 continue
             if symbol_only and not is_symbol_like(name):
                 continue
+            if name in seen:  # dedup by name (belt + suspenders)
+                continue
+            seen.add(name)
             out.append({"name": name, "total": r["total"],
                         "by_link": r["by_link"]})
             if len(out) >= n:

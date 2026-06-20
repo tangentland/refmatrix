@@ -38,10 +38,20 @@ def concept_density(
     s: Store,
     kinds: tuple[str, ...] = ("concept",),
     include_noise: bool = False,
+    partition_scoped: bool = True,
 ) -> list[dict]:
-    """Aggregate (concept, total_refs, per-linkage counts) sorted by total desc."""
+    """Aggregate (concept, total_refs, per-linkage counts) sorted by total desc.
+
+    `partition_scoped` (default on) restricts to the store's active partition —
+    without it, the same concept name in multiple partitions returns separate
+    rows and the ranked list shows duplicates."""
     placeholders = ",".join("?" * len(kinds))
     noise_clause = "" if include_noise else " AND c.noise = 0"
+    params: list = list(kinds)
+    part_clause = ""
+    if partition_scoped and s._partition_id is not None:
+        part_clause = " AND c.partition_id = ?"
+        params.append(s._partition_id)
     rows = s._connect().execute(
         f"""
         SELECT el.concept_id   AS cid,
@@ -51,10 +61,10 @@ def concept_density(
         FROM entity_links el
         JOIN linkage_types lt ON lt.id = el.linkage_id
         JOIN entities c       ON c.id = el.concept_id
-        WHERE c.kind IN ({placeholders}){noise_clause}
+        WHERE c.kind IN ({placeholders}){noise_clause}{part_clause}
         GROUP BY el.concept_id, c.name, lt.name
         """,
-        kinds,
+        params,
     ).fetchall()
 
     by_cid: dict[int, dict] = {}
