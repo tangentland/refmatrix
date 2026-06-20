@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>refmatrix hub</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">rmx<span>hub</span></div>
+    <div class="omnibox">
+      <input id="omni" type="text" placeholder="where are my keys?  ·  search across everything"
+             autocomplete="off" spellcheck="false">
+      <div id="omni-results" class="omni-results hidden"></div>
+    </div>
+    <div id="hub-state" class="hub-state">…</div>
+  </header>
+
+  <nav id="tabs">
+    <button data-tab="projects" class="active">Projects</button>
+    <button data-tab="graph">Graph</button>
+    <button data-tab="ops">Ops</button>
+    <button data-tab="health">Health</button>
+    <button data-tab="usage">Usage</button>
+    <button data-tab="memory">Memory</button>
+  </nav>
+
+  <main>
+    <section id="tab-projects" class="tab active"></section>
+
+    <section id="tab-graph" class="tab">
+      <div class="graph-bar">
+        <select id="graph-project"></select>
+        <input id="graph-ref" type="text" placeholder="symbol / concept / phrase">
+        <label class="degree">degree
+          <select id="graph-degree">
+            <option value="0">0</option>
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+          </select>
+        </label>
+        <button id="graph-go">explore</button>
+        <span class="hint">double-click a node to expand · drag to pan · scroll to zoom</span>
+      </div>
+      <div class="graph-wrap">
+        <canvas id="graph-canvas"></canvas>
+        <aside id="node-panel" class="node-panel hidden"></aside>
+      </div>
+    </section>
+
+    <section id="tab-ops" class="tab"></section>
+    <section id="tab-health" class="tab"></section>
+    <section id="tab-usage" class="tab"></section>
+    <section id="tab-memory" class="tab"></section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

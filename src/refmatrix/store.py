@@ -1681,11 +1681,28 @@ class Store:
         ).fetchone()
         return self.get_memory(int(row["id"])) if row else None
 
+    @staticmethod
+    def _tag_filter_sql(
+        tags: "list[str] | None", mode: str = "all",
+    ) -> "tuple[str, list[Any]]":
+        """Build a WHERE fragment that matches `mc.tags` (a json.dumps'd list)
+        against `tags`. Uses a quoted LIKE (`%"tag"%`) so it matches whole
+        tokens — `"git"` never matches inside `"github"`. `mode='all'` = AND
+        (every tag present), `'any'` = OR. Returns ('', []) when no tags."""
+        if not tags:
+            return "", []
+        clauses = ["mc.tags LIKE ?" for _ in tags]
+        params: list[Any] = [f'%"{tg}"%' for tg in tags]
+        joiner = " AND " if mode == "all" else " OR "
+        return " AND (" + joiner.join(clauses) + ")", params
+
     def iter_memories(
         self, *, mtype: str | None = None, limit: int | None = None,
+        tags: "list[str] | None" = None, tags_match: str = "all",
     ) -> Iterator[dict]:
-        """Stream memories in the active partition (id ascending). mtype
-        filters by sidecar mtype; None returns all kinds."""
+        """Stream memories in the active partition (id ascending). `mtype`
+        filters by sidecar mtype; `tags` filters by sidecar tags (AND when
+        tags_match='all', OR when 'any'). None returns all kinds."""
         self._connect()
         sql = (
             "SELECT e.id, e.name, mc.content, mc.mtype, mc.tags, mc.metadata, "
@@ -1698,6 +1715,9 @@ class Store:
         if mtype is not None:
             sql += " AND mc.mtype = ?"
             params.append(mtype)
+        tag_sql, tag_params = self._tag_filter_sql(tags, tags_match)
+        sql += tag_sql
+        params.extend(tag_params)
         sql += " ORDER BY e.id"
         if limit is not None:
             sql += f" LIMIT {int(limit)}"
@@ -1716,14 +1736,16 @@ class Store:
 
     def search_memories(
         self, query: str, *, limit: int = 20,
+        tags: "list[str] | None" = None, tags_match: str = "all",
     ) -> list[dict]:
-        """Substring search over memory name + content (case-insensitive).
-        Returns rows newest-first. Intentionally lo-fi — the hybrid /
-        BM25-fused recall path lives in `rmx memory recall` (ann_search
-        op). This is the cheap symbolic fallback that works without the
-        [dense] extra installed."""
+        """Substring search over memory name + content (case-insensitive),
+        optionally narrowed to `tags`. Returns rows newest-first. Intentionally
+        lo-fi — the hybrid / BM25-fused recall path lives in `rmx memory recall`
+        (ann_search op). This is the cheap symbolic fallback that works without
+        the [dense] extra installed."""
         self._connect()
         like = f"%{query}%"
+        tag_sql, tag_params = self._tag_filter_sql(tags, tags_match)
         sql = (
             "SELECT e.id, e.name, mc.content, mc.mtype, mc.tags, mc.metadata, "
             "       mc.created_at, mc.updated_at "
@@ -1731,12 +1753,13 @@ class Store:
             "LEFT JOIN memory_content mc ON mc.entity_id = e.id "
             "WHERE e.partition_id=? AND e.kind='memory' "
             "  AND (lower(e.name) LIKE lower(?) OR lower(mc.content) LIKE lower(?)) "
-            "ORDER BY mc.updated_at DESC NULLS LAST "
+            + tag_sql +
+            " ORDER BY mc.updated_at DESC NULLS LAST "
             "LIMIT ?"
         )
         rows = []
         for r in self._read().execute(
-            sql, (self._partition_id, like, like, int(limit)),
+            sql, (self._partition_id, like, like, *tag_params, int(limit)),
         ).fetchall():
             rows.append({
                 "id": r["id"], "name": r["name"],
@@ -1751,11 +1774,12 @@ class Store:
 
     def recent_memories(
         self, since_seconds: float | None = None, limit: int = 20,
+        *, tags: "list[str] | None" = None, tags_match: str = "all",
     ) -> list[dict]:
         """Phase C2: return memories in the active partition ordered by
         `entities.created_at` DESC. When `since_seconds` is set, only
-        include rows newer than `now - since_seconds`. Powers
-        `rmx memory recall --recent --since <duration>` and the
+        include rows newer than `now - since_seconds`. Optionally narrowed to
+        `tags`. Powers `rmx memory recall --recent --since <duration>` and the
         SessionStart / PreCompact hook templates."""
         import time as _time
         self._connect()
@@ -1771,6 +1795,9 @@ class Store:
         if since_seconds is not None and since_seconds > 0:
             sql += " AND e.created_at >= ?"
             params.append(_time.time() - since_seconds)
+        tag_sql, tag_params = self._tag_filter_sql(tags, tags_match)
+        sql += tag_sql
+        params.extend(tag_params)
         sql += " ORDER BY e.created_at DESC LIMIT ?"
         params.append(int(limit))
         rows = []
@@ -1797,6 +1824,42 @@ class Store:
             return False
         self.purge_entity(m["id"])
         return True
+
+    def retag_memory(
+        self, name_or_id: "str | int", *,
+        add: "list[str] | None" = None,
+        remove: "list[str] | None" = None,
+        replace: "list[str] | None" = None,
+    ) -> "list[str] | None":
+        """Mutate a memory's tags. `replace` sets the whole list; otherwise
+        `remove` then `add` are applied to the current tags (order-preserving,
+        deduped). Leaves content/mtype/protected/created_at untouched. Returns
+        the new tag list, or None if the memory doesn't exist."""
+        m = self.get_memory(name_or_id)
+        if m is None:
+            return None
+        if replace is not None:
+            new = list(dict.fromkeys(replace))
+        else:
+            rm = set(remove or [])
+            new = [t for t in (m["tags"] or []) if t not in rm]
+            for t in (add or []):
+                if t not in new:
+                    new.append(t)
+        now = time.time()
+        con = self._connect()
+        con.execute(
+            "UPDATE memory_content SET tags=?, updated_at=? WHERE entity_id=?",
+            (json.dumps(new) if new else None, now, m["id"]),
+        )
+        con.commit()
+        # Re-log the full sidecar so log-replay / rebuild keeps the new tags.
+        self._log_event(
+            "memory_content", kind="memory", name=m["name"],
+            content=m["content"] or "", mtype=m["mtype"] or "observation",
+            tags=new, metadata=m["metadata"] or None,
+        )
+        return new
 
     def bulk_forget_memories(
         self,

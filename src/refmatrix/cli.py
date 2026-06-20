@@ -705,6 +705,98 @@ def upgrade(from_dev, ref, check, no_restart):
         raise click.ClickException(str(e))
 
 
+@main.command("ui")
+@click.option("--port", type=int, default=None, help="HTTP port (default 7777).")
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--no-browser", is_flag=True, help="Don't open a browser.")
+def ui_cmd(port, host, no_browser):
+    """Open the web UI (starts the hub if needed)."""
+    try:
+        import fastapi  # noqa: F401
+        import uvicorn  # noqa: F401
+    except ImportError:
+        raise click.ClickException(
+            "the web UI needs extra deps. Install with:\n"
+            "    pip install 'refmatrix[ui]'"
+        )
+    from refmatrix import hub as hub_mod
+    port = port or hub_mod.DEFAULT_PORT
+    if not hub_mod.is_running():
+        console.print("[dim]starting hub…[/]")
+        hub_mod.spawn_hub(port=port, host=host)
+    if not hub_mod.is_running():
+        raise click.ClickException(f"hub failed to start (see {hub_mod.hub_log_path()})")
+    url = f"http://{host}:{port}"
+    console.print(f"[green]refmatrix hub UI[/] → {url}")
+    if not no_browser:
+        import webbrowser
+        webbrowser.open(url)
+
+
+@main.group()
+def hub():
+    """User-level control plane: supervises every per-project daemon
+    (watchdog/restart), aggregates status + usage, owns the global memory
+    store, and serves the web UI. One hub per machine."""
+
+
+@hub.command("start")
+@click.option("--port", type=int, default=None, help="HTTP port (default 7777).")
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--no-detach", is_flag=True,
+              help="Run in the foreground (for launchd / debugging).")
+@click.option("--no-http", is_flag=True,
+              help="Supervise headless; don't serve the web UI.")
+def hub_start(port, host, no_detach, no_http):
+    """Start the hub (idempotent)."""
+    from refmatrix import hub as hub_mod
+    port = port or hub_mod.DEFAULT_PORT
+    if no_detach:
+        hub_mod.Hub(port=port).run(host=host, serve_http=not no_http)
+        return
+    if hub_mod.is_running():
+        console.print(f"[yellow]hub already running[/] pid={hub_mod.hub_pid()}")
+        return
+    pid = hub_mod.spawn_hub(port=port, host=host)
+    if hub_mod.is_running():
+        console.print(f"[green]hub started[/] pid={pid} http://{host}:{port}")
+    else:
+        console.print(f"[red]hub failed to start[/] (see {hub_mod.hub_log_path()})")
+
+
+@hub.command("stop")
+def hub_stop():
+    """Stop the hub."""
+    from refmatrix import hub as hub_mod
+    if hub_mod.stop_hub():
+        console.print("[green]hub stopped[/]")
+    else:
+        console.print("[yellow]hub did not stop cleanly[/]")
+
+
+@hub.command("status")
+def hub_status():
+    """Show hub + supervised-store health."""
+    from refmatrix import hub as hub_mod
+    st = hub_mod.status()
+    if not st["running"]:
+        console.print("[yellow]hub not running[/]")
+        console.print(f"[dim]start with `rmx hub start` ({st['sock']})[/]")
+        return
+    console.print(f"[green]hub running[/] pid={st.get('pid')} "
+                  f"port={st.get('port')} registry={st.get('registry_size')}")
+    resp = hub_mod.rpc("health")
+    if resp.get("ok"):
+        health = resp["result"]["health"]
+        if not health:
+            console.print("[dim]no health samples yet[/]")
+        for root, h in health.items():
+            last = h["history"][-1] if h["history"] else {}
+            dot = "[green]●[/]" if last.get("up") else "[red]●[/]"
+            console.print(f"  {dot} {root}  policy={h['policy']} "
+                          f"restarts={h['restart_count']}")
+
+
 @main.group()
 def daemon():
     """Per-store background process that holds the catalog open and
@@ -5328,6 +5420,51 @@ def _apply_memory_partition_default() -> None:
     _partition_override = _memory_partition_default()
 
 
+@main.group("taxonomy")
+def taxonomy_grp():
+    """Shared memory-tag vocabulary (~/.refmatrix/taxonomy.json). Validation is
+    soft — off-vocabulary tags warn, never block."""
+
+
+@taxonomy_grp.command("list")
+def taxonomy_list():
+    """Show the tag vocabulary grouped by category."""
+    from refmatrix import taxonomy as _tax
+    data = _tax.load()
+    cats = data.get("categories", {})
+    if not cats:
+        console.print("[yellow]empty taxonomy[/]")
+        return
+    for cat_name, cat in cats.items():
+        console.print(f"[bold]{cat_name}[/]  [dim]{cat.get('description','')}[/]")
+        for tag, meta in (cat.get("tags") or {}).items():
+            console.print(f"  • {tag}  [dim]{meta.get('description','')}[/]")
+    console.print(f"\n[dim]{_tax.taxonomy_path()}[/]")
+
+
+@taxonomy_grp.command("add")
+@click.argument("category")
+@click.argument("tag")
+@click.option("--desc", default="", help="Tag description.")
+@click.option("--color", default="#64748b", help="Hex color for the UI.")
+def taxonomy_add(category, tag, desc, color):
+    """Add (or update) a tag under a category."""
+    from refmatrix import taxonomy as _tax
+    _tax.add_tag(category, tag, description=desc, color=color)
+    console.print(f"[green]added[/] {tag} → {category}")
+
+
+@taxonomy_grp.command("remove")
+@click.argument("tag")
+def taxonomy_remove(tag):
+    """Remove a tag from the vocabulary."""
+    from refmatrix import taxonomy as _tax
+    if _tax.remove_tag(tag):
+        console.print(f"[green]removed[/] {tag}")
+    else:
+        console.print(f"[yellow]not in taxonomy:[/] {tag}")
+
+
 @main.group("memory")
 def memory_grp():
     """Intuition memory layer (ADR-0001). add / get / search / recall /
@@ -5352,6 +5489,14 @@ def memory_add(name, content, mtype, tags, meta, protect):
         content = sys.stdin.read()
     meta_d = json.loads(meta) if meta else None
     tags_l = list(tags) if tags else None
+    if tags_l:
+        from refmatrix import taxonomy as _tax
+        _, unknown = _tax.validate(tags_l)
+        if unknown:
+            console.print(
+                f"[yellow]note:[/] off-vocabulary tag(s): {', '.join(unknown)} "
+                f"(add via `rmx taxonomy add <category> <tag>`)"
+            )
     from refmatrix import daemon as daemon_mod
     root = _root()
     args = {
@@ -5440,16 +5585,60 @@ def memory_get(name_or_id, degree):
             ))
 
 
+@memory_grp.command("retag")
+@click.argument("name_or_id")
+@click.option("--add", "add_tags", multiple=True, help="Tag to add (repeatable).")
+@click.option("--remove", "rm_tags", multiple=True, help="Tag to remove (repeatable).")
+@click.option("--set", "set_tags", multiple=True,
+              help="Replace ALL tags with these (overrides --add/--remove).")
+def memory_retag(name_or_id, add_tags, rm_tags, set_tags):
+    """Add/remove/replace a memory's tags."""
+    _memory_intent("memory_retag")
+    add_l = list(add_tags) or None
+    rm_l = list(rm_tags) or None
+    set_l = list(set_tags) if set_tags else None
+    check = set_l if set_l is not None else (add_l or [])
+    if check:
+        from refmatrix import taxonomy as _tax
+        _, unknown = _tax.validate(check)
+        if unknown:
+            console.print(
+                f"[yellow]note:[/] off-vocabulary tag(s): {', '.join(unknown)}"
+            )
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    target = int(name_or_id) if name_or_id.isdigit() else name_or_id
+    args: dict = {"add": add_l, "remove": rm_l, "replace": set_l}
+    args["id" if isinstance(target, int) else "name"] = target
+    if daemon_mod.ping(root):
+        resp = _memory_daemon_call("memory_retag", args)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        new = resp["result"]["tags"]
+    else:
+        s = _store()
+        new = s.retag_memory(target, add=add_l, remove=rm_l, replace=set_l)
+    if new is None:
+        raise click.ClickException(f"no memory matching {name_or_id!r}")
+    console.print(f"[green]retagged[/] {name_or_id}: {', '.join(new) if new else '(none)'}")
+
+
 @memory_grp.command("list")
 @click.option("--type", "mtype", default=None,
               help="Filter by mtype.")
+@click.option("--tag", "tags", multiple=True,
+              help="Filter by tag (repeatable). AND by default; --tag-any for OR.")
+@click.option("--tag-any", "tag_any", is_flag=True, default=False,
+              help="Match ANY of --tag instead of ALL.")
 @click.option("--limit", "-n", type=int, default=20, show_default=True)
-def memory_list(mtype, limit):
+def memory_list(mtype, tags, tag_any, limit):
     """List memories in the active partition."""
     _memory_intent("memory_iter")
     from refmatrix import daemon as daemon_mod
     root = _root()
-    args = {"mtype": mtype, "limit": limit}
+    tags = list(tags) or None
+    tags_match = "any" if tag_any else "all"
+    args = {"mtype": mtype, "limit": limit, "tags": tags, "tags_match": tags_match}
     if daemon_mod.ping(root):
         resp = _memory_daemon_call("memory_iter", args)
         if not resp.get("ok"):
@@ -5457,7 +5646,8 @@ def memory_list(mtype, limit):
         rows = resp["result"]["rows"]
     else:
         s = _read_store()
-        rows = list(s.iter_memories(mtype=mtype, limit=limit))
+        rows = list(s.iter_memories(
+            mtype=mtype, limit=limit, tags=tags, tags_match=tags_match))
     if not rows:
         console.print("[yellow]no memories[/]")
         return
@@ -5473,15 +5663,21 @@ def memory_list(mtype, limit):
 
 @memory_grp.command("search")
 @click.argument("query")
+@click.option("--tag", "tags", multiple=True,
+              help="Filter by tag (repeatable). AND by default; --tag-any for OR.")
+@click.option("--tag-any", "tag_any", is_flag=True, default=False,
+              help="Match ANY of --tag instead of ALL.")
 @click.option("--limit", "-n", type=int, default=20, show_default=True)
-def memory_search(query, limit):
+def memory_search(query, tags, tag_any, limit):
     """Case-insensitive substring search over memory name + content.
     Returns matching rows newest-first. For dense / hybrid retrieval,
     use `rmx memory recall`."""
     _memory_intent("memory_search")
     from refmatrix import daemon as daemon_mod
     root = _root()
-    args = {"query": query, "limit": limit}
+    tags = list(tags) or None
+    tags_match = "any" if tag_any else "all"
+    args = {"query": query, "limit": limit, "tags": tags, "tags_match": tags_match}
     if daemon_mod.ping(root):
         resp = _memory_daemon_call("memory_search", args)
         if not resp.get("ok"):
@@ -5489,7 +5685,7 @@ def memory_search(query, limit):
         rows = resp["result"]["rows"]
     else:
         s = _read_store()
-        rows = s.search_memories(query, limit=limit)
+        rows = s.search_memories(query, limit=limit, tags=tags, tags_match=tags_match)
     if not rows:
         console.print("[yellow]no matches[/]")
         return

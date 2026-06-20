@@ -2805,40 +2805,49 @@ def _op_memory_get(d: Daemon, args: dict) -> dict:
 
 
 def _op_memory_iter(d: Daemon, args: dict) -> dict:
-    """Stream memories in the active partition. Optional mtype filter.
+    """Stream memories in the active partition. Optional mtype + tags filter.
     See `_op_memory_get` for the read-isolation rationale."""
     mtype = args.get("mtype")
     limit = args.get("limit")
+    tags = args.get("tags")
+    tags_match = args.get("tags_match", "all")
     rows = _read_with_fallback(
         d, _memory_partition(d, args),
-        lambda s: list(s.iter_memories(mtype=mtype, limit=limit)),
+        lambda s: list(s.iter_memories(
+            mtype=mtype, limit=limit, tags=tags, tags_match=tags_match)),
     )
     return {"rows": rows}
 
 
 def _op_memory_search(d: Daemon, args: dict) -> dict:
-    """Substring search over memory name + content. Returns at most
-    `limit` rows newest-first. See `_op_memory_get` for the
+    """Substring search over memory name + content, optional tags filter.
+    Returns at most `limit` rows newest-first. See `_op_memory_get` for the
     read-isolation rationale."""
     query = args["query"]
     limit = int(args.get("limit", 20))
+    tags = args.get("tags")
+    tags_match = args.get("tags_match", "all")
     rows = _read_with_fallback(
         d, _memory_partition(d, args),
-        lambda s: s.search_memories(query, limit=limit),
+        lambda s: s.search_memories(
+            query, limit=limit, tags=tags, tags_match=tags_match),
     )
     return {"rows": rows}
 
 
 def _op_memory_recent(d: Daemon, args: dict) -> dict:
     """Phase C2: most recent memories within an optional `since_seconds`
-    window, newest first. Routed through the daemon so the in-process
-    Store can't deadlock against the daemon's DuckDB write lock.
+    window, newest first, optional tags filter. Routed through the daemon so
+    the in-process Store can't deadlock against the daemon's DuckDB write lock.
     See `_op_memory_get` for the read-isolation rationale."""
     since = args.get("since_seconds")
     limit = int(args.get("limit", 20))
+    tags = args.get("tags")
+    tags_match = args.get("tags_match", "all")
     rows = _read_with_fallback(
         d, _memory_partition(d, args),
-        lambda s: s.recent_memories(since_seconds=since, limit=limit),
+        lambda s: s.recent_memories(
+            since_seconds=since, limit=limit, tags=tags, tags_match=tags_match),
     )
     return {"rows": rows}
 
@@ -2852,6 +2861,20 @@ def _op_memory_forget(d: Daemon, args: dict) -> dict:
         ok = d.store.forget_memory(target)
     d._request_snapshot()
     return {"forgotten": ok}
+
+
+def _op_memory_retag(d: Daemon, args: dict) -> dict:
+    """Mutate a memory's tags (add/remove/replace). Returns the new tags."""
+    target = args.get("name") if args.get("name") is not None else args.get("id")
+    if target is None:
+        raise ValueError("memory_retag requires 'name' or 'id'")
+    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
+        new = d.store.retag_memory(
+            target, add=args.get("add"), remove=args.get("remove"),
+            replace=args.get("replace"),
+        )
+    d._request_snapshot()
+    return {"tags": new}
 
 
 def _op_memory_dedup(d: Daemon, args: dict) -> dict:
@@ -3536,6 +3559,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "memory_search": _op_memory_search,
     "memory_recent": _op_memory_recent,
     "memory_forget": _op_memory_forget,
+    "memory_retag": _op_memory_retag,
     "memory_dedup": _op_memory_dedup,
     "memory_bulk_forget": _op_memory_bulk_forget,
     "memory_link": _op_memory_link,
