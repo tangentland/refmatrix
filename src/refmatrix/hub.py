@@ -223,6 +223,8 @@ class Hub:
         self.port = port
         self.watchdog = Watchdog()
         self.bus = Bus()
+        from refmatrix.scheduler import Scheduler
+        self.scheduler = Scheduler()
         self._stop = threading.Event()
         self._sock: socket.socket | None = None
         self._alert_thread: threading.Thread | None = None
@@ -493,6 +495,7 @@ class Hub:
         except Exception as e:
             _log(f"global store init failed: {e}")
         self.watchdog.start()
+        self.scheduler.start()
         self._alert_thread = threading.Thread(
             target=self._queue_alert_loop, name="rmx-hub-queue-alert", daemon=True)
         self._alert_thread.start()

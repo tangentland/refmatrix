@@ -199,64 +199,36 @@ def create_app(hub) -> FastAPI:
         from refmatrix import taxonomy as tax
         return {"ok": True, "result": tax.load()}
 
-    # ---- "where are my keys?" — federated retrieval ----
+    # ---- "where are my keys?" — federated retrieval (shared engine) ----
     @app.get("/api/where")
     def where(q: str, limit: int = 40):
-        """Fan a query across every live store: code/doc/concept hits from
-        context + memory hits. Merge-ranked-ish (grouped by source)."""
-        results: list[dict] = []
-        for root in discovery.discover_roots():
-            if not daemon_mod.ping(root):
-                continue
-            proj = discovery.store_name(root)
-            try:
-                ctx = daemon_mod.call(root, "context", {
-                    "ref": q, "format": "json", "degree": 0,
-                    "entities_explicit": False, "tokens_explicit": False,
-                    "partition": proj,
-                }, timeout=20.0)
-                if ctx.get("ok"):
-                    b = ctx["result"]
-                    anchor = b.get("anchor")
-                    if anchor:
-                        results.append({
-                            "source": anchor.get("kind", "concept"),
-                            "project": proj, "root": str(root),
-                            "name": anchor["name"], "kind": anchor.get("kind", "concept"),
-                            "path": anchor.get("path"), "line": None,
-                        })
-                    for entries in (b.get("groups") or {}).values():
-                        for e in entries[:6]:
-                            results.append({
-                                "source": e.get("kind", "concept"),
-                                "project": proj, "root": str(root),
-                                "name": e["name"], "kind": e.get("kind", "concept"),
-                                "path": e.get("path"), "line": e.get("line"),
-                                "snippet": e.get("snippet"),
-                            })
-            except Exception:
-                pass
-            try:
-                mem = daemon_mod.call(root, "memory_search", {
-                    "query": q, "limit": 4, "partition": proj,
-                }, timeout=10.0)
-                if mem.get("ok"):
-                    for m in mem["result"].get("rows", []):
-                        results.append({
-                            "source": "memory", "project": proj, "root": str(root),
-                            "name": m["name"], "kind": "memory", "path": None,
-                            "snippet": (m.get("content") or "")[:120],
-                        })
-            except Exception:
-                pass
-        # de-dup by (kind,name,project); cap.
-        seen = set(); deduped = []
-        for r in results:
-            k = (r["kind"], r["name"], r["project"])
-            if k in seen:
-                continue
-            seen.add(k); deduped.append(r)
-        return {"ok": True, "result": {"results": deduped[:limit]}}
+        from refmatrix.search import federated_where
+        return {"ok": True, "result": federated_where(q, limit=limit)}
+
+    @app.get("/api/search")
+    def search(dsl: str, limit: int = 50):
+        from refmatrix.search import federated_query
+        return {"ok": True, "result": federated_query(dsl, limit=limit)}
+
+    @app.get("/api/canon")
+    def canon(concept: str):
+        from refmatrix.search import federated_concept
+        return {"ok": True, "result": federated_concept(concept)}
+
+    @app.get("/api/schedule")
+    def schedule_get():
+        from refmatrix import scheduler as sch
+        return {"ok": True, "result": {"schedule": sch.load_schedule()}}
+
+    @app.post("/api/schedule")
+    async def schedule_set(payload: dict):
+        from refmatrix import scheduler as sch
+        root = Path(payload["root"])
+        if payload.get("remove"):
+            sch.remove_job(root, payload["op"])
+        else:
+            sch.add_job(root, payload["op"], int(payload["interval_s"]))
+        return {"ok": True, "result": {"schedule": sch.load_schedule()}}
 
     # ---- bus + refinement ----
     @app.get("/api/bus/channels")

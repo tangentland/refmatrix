@@ -976,6 +976,61 @@ def bus_history(channel, n):
         console.print(f"[dim]{m['ts']}[/] [bold]{who}[/] [magenta]{m['type']}[/]: {m['body']}")
 
 
+@main.command("mcp")
+def mcp_cmd():
+    """Run the refmatrix MCP server over stdio. Configure in Claude Code as an
+    MCP server with command `rmx mcp` — Claude then calls where/context/
+    memory_recall/query/bus/queues/focus as native tools."""
+    from refmatrix.mcp import serve_stdio
+    serve_stdio()
+
+
+@main.group()
+def schedule():
+    """Per-project scheduled maintenance, run by the hub (sync/embed/vacuum/
+    checkpoint/ingest on an interval). Config: ~/.refmatrix/schedule.json."""
+
+
+@schedule.command("add")
+@click.argument("op", type=click.Choice(["sync", "embed", "vacuum", "checkpoint", "ingest"]))
+@click.option("--every", "every", required=True,
+              help="Interval, e.g. 30m / 2h / 1d.")
+def schedule_add(op, every):
+    """Schedule OP for the current project every <interval>."""
+    from refmatrix import scheduler as sch
+    secs = _parse_duration(every)
+    if not secs:
+        raise click.ClickException(f"bad interval: {every}")
+    sch.add_job(_root(), op, int(secs))
+    console.print(f"[green]scheduled[/] {op} every {every} for {_root().parent.name}")
+
+
+@schedule.command("list")
+def schedule_list():
+    """Show all scheduled jobs across projects."""
+    from refmatrix import scheduler as sch
+    data = sch.load_schedule()
+    if not data:
+        console.print("[yellow]no scheduled jobs[/]")
+        return
+    t = Table("project", "op", "every (s)")
+    for root, ops in data.items():
+        for op, interval in ops.items():
+            t.add_row(Path(root).parent.name, op, str(interval))
+    console.print(t)
+
+
+@schedule.command("remove")
+@click.argument("op")
+def schedule_remove(op):
+    """Remove a scheduled OP for the current project."""
+    from refmatrix import scheduler as sch
+    if sch.remove_job(_root(), op):
+        console.print(f"[green]removed[/] {op}")
+    else:
+        console.print(f"[yellow]no such job:[/] {op}")
+
+
 @main.group()
 def hub():
     """User-level control plane: supervises every per-project daemon
@@ -1753,6 +1808,25 @@ def canon_link(concept: str, canon_name: str | None, canon_partition: str):
         f"[green]linked[/] {s.partition_name}/{concept} "
         f"-> {canon_partition}/{name} (canon_id={canon_id})"
     )
+
+
+@canon.command("find")
+@click.argument("concept")
+def canon_find(concept: str):
+    """Find which projects host CONCEPT (cross-project canon view)."""
+    from refmatrix.search import federated_concept
+    res = federated_concept(concept)
+    projs = res["projects"]
+    if not projs:
+        console.print(f"[yellow]no live project hosts[/] {concept}")
+        return
+    t = Table("project", "kind", "neighbors")
+    for p in projs:
+        t.add_row(p["project"], p.get("kind") or "", str(p.get("neighbors", 0)))
+    console.print(t)
+    if len(projs) > 1:
+        console.print(f"[dim]{concept} spans {len(projs)} projects — "
+                      f"`rmx canon link {concept}` in each to unify[/]")
 
 
 @canon.command("siblings")
