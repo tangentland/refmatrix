@@ -203,13 +203,14 @@ class Watchdog:
 
     def health(self) -> dict:
         with self._lock:
+            roots = set(self.history) | set(self.policy)
             return {
                 root: {
                     "restart_count": self.restart_counts.get(root, 0),
-                    "history": list(ring),
+                    "history": list(self.history.get(root, [])),
                     "policy": self.policy.get(root, "auto"),
                 }
-                for root, ring in self.history.items()
+                for root in roots
             }
 
 

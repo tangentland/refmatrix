@@ -51,10 +51,22 @@ async function loadProjects() {
   return PROJECTS;
 }
 
+let POLICY = {};  // resolved-root → "auto" | "manual"
+
+async function loadPolicy() {
+  try {
+    const h = await api("/api/health");
+    POLICY = {};
+    Object.entries(h.result?.health || {}).forEach(([root, v]) => {
+      POLICY[root] = v.policy;
+    });
+  } catch { POLICY = {}; }
+}
+
 async function renderProjects() {
   const el = $("#tab-projects");
   el.innerHTML = `<div class="loading">scanning stores…</div>`;
-  const ps = await loadProjects();
+  const [ps] = await Promise.all([loadProjects(), loadPolicy()]);
   el.innerHTML = `<div class="grid">${ps.map(projCard).join("")}${onboardCard()}</div>`;
   $$("[data-act]", el).forEach((b) => b.addEventListener("click", onProjAction));
   const ob = $("#onboard-go");
@@ -93,10 +105,12 @@ function projCard(p) {
   const seg = (k) => `width:${Math.max(0, 100 * (f[k + "_bytes"] || 0) / tot)}%`;
   const up = p.daemon.up;
   const lc = p.launchd || {};
-  return `<div class="card">
-    <h3><span class="dot ${up ? "up" : "down"}"></span>${p.name}</h3>
+  const disabled = POLICY[p.root] === "manual";
+  return `<div class="card"${disabled ? ' style="opacity:.6"' : ""}>
+    <h3><span class="dot ${up ? "up" : "down"}"></span>${p.name}${disabled ? ' <span class="chip">disabled</span>' : ""}</h3>
     <div class="sub">${p.root}</div>
     <div class="kv"><span>daemon</span><span>${up ? "up · pid " + p.daemon.pid : "down"}${p.daemon.rss_mb ? " · " + p.daemon.rss_mb + " MB" : ""}</span></div>
+    <div class="kv"><span>watchdog</span><span>${disabled ? "manual (no auto-restart)" : "auto"}</span></div>
     <div class="kv"><span>supervised</span><span>${lc.loaded ? "launchd ●" : (lc.installed ? "installed" : "no")}</span></div>
     <div class="kv"><span>disk</span><span>${fmtBytes(f.total_bytes)}</span></div>
     <div class="bar">
@@ -111,6 +125,9 @@ function projCard(p) {
       ${up ? `<button class="btn danger" data-act="dstop" data-root="${p.root}">stop daemon</button>`
            : `<button class="btn" data-act="dstart" data-root="${p.root}">start daemon</button>`}
       <button class="btn" data-act="restart" data-root="${p.root}">restart</button>
+      ${disabled
+        ? `<button class="btn" data-act="enable" data-root="${p.root}">enable</button>`
+        : `<button class="btn danger" data-act="disable" data-root="${p.root}">disable</button>`}
       <button class="btn" data-act="graph" data-root="${p.root}">graph</button>
     </div>
   </div>`;
@@ -122,7 +139,14 @@ async function onProjAction(e) {
   if (act === "dstart") await post("/api/daemon", {root, action: "start"});
   else if (act === "dstop") await post("/api/daemon", {root, action: "stop"});
   else if (act === "restart") await post("/api/restart", {root});
-  else if (act === "graph") {
+  else if (act === "disable") {
+    // stop auto-restart THEN stop the daemon (else the watchdog races a restart)
+    await post("/api/watchdog", {root, policy: "manual"});
+    await post("/api/daemon", {root, action: "stop"});
+  } else if (act === "enable") {
+    await post("/api/watchdog", {root, policy: "auto"});
+    await post("/api/daemon", {root, action: "start"});
+  } else if (act === "graph") {
     $$("#tabs button").forEach((x) => x.classList.remove("active"));
     $$(".tab").forEach((x) => x.classList.remove("active"));
     $('#tabs button[data-tab="graph"]').classList.add("active");
