@@ -201,6 +201,44 @@ def create_app(hub) -> FastAPI:
             "partition": _partition(Path(root)),
         }, timeout=120.0)
 
+    # ---- graph landing views ----
+    @app.get("/api/top")
+    def top(root: str, n: int = 30):
+        """Density-ranked concept entry points for the Graph landing view."""
+        return _daemon_read(Path(root), "top_concepts",
+                            {"n": n, "partition": _partition(Path(root))})
+
+    @app.get("/api/tree")
+    def tree(root: str, max_entries: int = 800):
+        """Project file tree (code/doc files) for the Graph directory view.
+        Walks the project root (parent of .refmatrix); skips hidden + heavy
+        dirs. Returns a flat list of {path, rel, dir, depth} the client nests."""
+        rootp = Path(root)
+        base = rootp.parent
+        SKIP = {".git", ".refmatrix", "node_modules", "__pycache__", ".venv",
+                ".venv-eval", "dist", "build", ".tldr", "vectors"}
+        KEEP = {".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java",
+                ".c", ".cpp", ".h", ".md", ".gmd", ".rst", ".txt"}
+        entries: list[dict] = []
+        import os as _os
+        for dirpath, dirnames, filenames in _os.walk(base):
+            dirnames[:] = [d for d in dirnames if d not in SKIP
+                           and not d.startswith(".")]
+            rel_dir = _os.path.relpath(dirpath, base)
+            depth = 0 if rel_dir == "." else rel_dir.count(_os.sep) + 1
+            for fn in sorted(filenames):
+                if Path(fn).suffix not in KEEP:
+                    continue
+                rel = fn if rel_dir == "." else _os.path.join(rel_dir, fn)
+                entries.append({"rel": rel, "name": fn, "depth": depth,
+                                "dir": rel_dir if rel_dir != "." else ""})
+                if len(entries) >= max_entries:
+                    return {"ok": True, "result": {"base": str(base),
+                            "entries": entries, "truncated": True}}
+        entries.sort(key=lambda e: e["rel"])
+        return {"ok": True, "result": {"base": str(base), "entries": entries,
+                "truncated": False}}
+
     @app.get("/api/graph")
     def graph(root: str, seed: str, degree: int = 0):
         resp = _daemon_read(Path(root), "context", {

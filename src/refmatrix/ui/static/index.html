@@ -44,11 +44,19 @@
           </select>
         </label>
         <button id="graph-go">explore</button>
+        <button id="graph-home" class="hidden">⌂ home</button>
         <span class="hint">double-click a node to expand · drag to pan · scroll to zoom</span>
       </div>
       <div class="graph-wrap">
         <canvas id="graph-canvas"></canvas>
         <aside id="node-panel" class="node-panel hidden"></aside>
+        <div id="graph-landing" class="graph-landing">
+          <div class="landing-toggle">
+            <button data-view="top" class="active">top concepts</button>
+            <button data-view="tree">project files</button>
+          </div>
+          <div id="landing-body" class="landing-body"></div>
+        </div>
       </div>
     </section>
 

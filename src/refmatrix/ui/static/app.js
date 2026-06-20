@@ -458,14 +458,80 @@ async function initGraphTab() {
   const sel = $("#graph-project");
   if (!sel.children.length)
     sel.innerHTML = PROJECTS.map((p) => `<option value="${p.root}">${p.name}</option>`).join("");
-  if (G.inited) return;
+  $("#graph-project").addEventListener("change", () => {
+    if (!$("#graph-landing").classList.contains("hidden")) renderLanding();
+  });
+  if (G.inited) { showLanding(); return; }
   G.inited = true;
   G.canvas = $("#graph-canvas"); G.ctx = G.canvas.getContext("2d");
   $("#graph-go").addEventListener("click", runGraph);
   $("#graph-ref").addEventListener("keydown", (e) => e.key === "Enter" && runGraph());
+  $("#graph-home").addEventListener("click", showLanding);
+  $$(".landing-toggle button").forEach((b) => b.addEventListener("click", () => {
+    $$(".landing-toggle button").forEach((x) => x.classList.remove("active"));
+    b.classList.add("active");
+    renderLanding(b.dataset.view);
+  }));
   setupGraphInput();
   resizeCanvas(); window.addEventListener("resize", resizeCanvas);
   loop();
+  showLanding();
+}
+
+let LANDING_VIEW = "top";
+
+function showLanding() {
+  $("#graph-landing").classList.remove("hidden");
+  $("#graph-home").classList.add("hidden");
+  $("#node-panel").classList.add("hidden");
+  renderLanding(LANDING_VIEW);
+}
+
+function hideLanding() {
+  $("#graph-landing").classList.add("hidden");
+  $("#graph-home").classList.remove("hidden");
+}
+
+async function renderLanding(view) {
+  if (view) LANDING_VIEW = view;
+  const root = $("#graph-project").value;
+  const body = $("#landing-body");
+  if (!root) { body.innerHTML = '<div class="muted">no project</div>'; return; }
+  body.innerHTML = '<div class="loading">loading…</div>';
+  if (LANDING_VIEW === "top") {
+    const r = await api(`/api/top?root=${encodeURIComponent(root)}&n=40`);
+    const cs = r.result?.concepts || [];
+    if (!cs.length) { body.innerHTML = '<div class="muted">no ranked concepts (is the project ingested?)</div>'; return; }
+    const max = Math.max(1, ...cs.map((c) => c.total));
+    body.innerHTML = cs.map((c) => `<div class="top-item" data-name="${c.name}">
+      <span class="nm">${c.name}</span>
+      <span class="meter"><i style="width:${100 * c.total / max}%"></i></span>
+      <span class="n">${c.total}</span></div>`).join("");
+    $$(".top-item", body).forEach((it) => it.addEventListener("click", () => {
+      $("#graph-ref").value = it.dataset.name; runGraph();
+    }));
+  } else {
+    const r = await api(`/api/tree?root=${encodeURIComponent(root)}`);
+    const es = r.result?.entries || [];
+    if (!es.length) { body.innerHTML = '<div class="muted">no files</div>'; return; }
+    const codeExt = /\.(py|js|ts|tsx|jsx|go|rs|java|c|cpp|h)$/;
+    let lastDir = null, html = "";
+    es.forEach((e) => {
+      if (e.dir !== lastDir) {
+        lastDir = e.dir;
+        if (e.dir) html += `<div class="tree-row dir">▸ ${e.dir}/</div>`;
+      }
+      const cls = codeExt.test(e.name) ? "fcode" : "fdoc";
+      html += `<div class="tree-row" data-name="${e.name}" style="padding-left:${12 + e.depth * 12}px">
+        <span class="${cls}">${e.name}</span></div>`;
+    });
+    body.innerHTML = html + (r.result.truncated ? '<div class="muted" style="padding:8px">… truncated</div>' : "");
+    $$(".tree-row[data-name]", body).forEach((it) => it.addEventListener("click", () => {
+      // seed on the file's stem — context resolves the symbol or greps the file
+      $("#graph-ref").value = it.dataset.name.replace(/\.[^.]+$/, "");
+      runGraph();
+    }));
+  }
 }
 
 function resizeCanvas() {
@@ -483,6 +549,7 @@ async function runGraph() {
   if (!root || !ref) return;
   const r = await api(`/api/graph?root=${encodeURIComponent(root)}&seed=${encodeURIComponent(ref)}&degree=${degree}`);
   if (!r.ok) { alert(r.error || "graph error"); return; }
+  hideLanding();
   mergeGraph(r.result, true);
 }
 

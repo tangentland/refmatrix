@@ -2345,6 +2345,37 @@ def _op_list_linkages(d: Daemon, args: dict) -> dict:
         return {"rows": d.store.list_linkages()}
 
 
+def _op_top_concepts(d: Daemon, args: dict) -> dict:
+    """Density-ranked concept entry points (reuses primer.concept_density) —
+    the Graph-tab landing view. Symbol-shaped, noise-excluded by default."""
+    from refmatrix.primer import concept_density, is_symbol_like
+    n = int(args.get("n", 30))
+    symbol_only = bool(args.get("symbol_only", True))
+    partition = args.get("partition")
+
+    def _run(s):
+        rows = concept_density(s, include_noise=False)
+        out = []
+        for r in rows:
+            name = r["name"]
+            if "/" in name and name.split("/", 1)[0] == "keyword":
+                continue
+            if symbol_only and not is_symbol_like(name):
+                continue
+            out.append({"name": name, "total": r["total"],
+                        "by_link": r["by_link"]})
+            if len(out) >= n:
+                break
+        return out
+
+    if partition:
+        rows = _read_with_fallback(d, partition, _run)
+    else:
+        with d._store_lock:
+            rows = _run(d.store)
+    return {"concepts": rows}
+
+
 def _op_snapshot(d: Daemon, args: dict) -> dict:
     """Materialize a fresh `catalog.read.duckdb` and swing the
     `read_only.duckdb` symlink onto it. Bypasses the debounce when
@@ -3530,6 +3561,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "save_query": _op_save_query,
     "rebuild_index": _op_rebuild_index,
     "iter_entities": _op_iter_entities,
+    "top_concepts": _op_top_concepts,
     "list_linkages": _op_list_linkages,
     "list_saved_queries": _op_list_saved_queries,
     "partition_add": _op_partition_add,
