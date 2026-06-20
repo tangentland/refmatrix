@@ -734,6 +734,214 @@ def ui_cmd(port, host, no_browser):
 
 
 @main.group()
+def focus():
+    """Short-term (working) memory — a per-project, isolated focus graph of
+    what you're working on right now. Fixed-size ring + recency-weighted
+    co-occurrence graph. Works with the daemon/hub stopped."""
+
+
+def _stm():
+    from refmatrix import stm as stm_mod
+    return stm_mod.Stm(_root(), stm_mod.session_id())
+
+
+@focus.command("record")
+@click.option("--kind", type=click.Choice(["input", "tool", "rmx", "result"]),
+              default="tool")
+@click.option("--terse", required=True, help="Terse one-line event text.")
+@click.option("--ref", "refs", multiple=True, help="Explicit ref (repeatable).")
+def focus_record(kind, terse, refs):
+    """Append an event to short-term memory (used by hooks)."""
+    ev = _stm().record(kind, terse, refs=list(refs) or None)
+    console.print(f"[dim]stm[/] {ev['kind']}: {', '.join(ev['refs']) or '—'}")
+
+
+@focus.command("tail")
+@click.option("-n", type=int, default=20, show_default=True)
+def focus_tail(n):
+    """Show recent short-term events."""
+    rows = _stm().tail(n)
+    if not rows:
+        console.print("[yellow]no focus events[/]")
+        return
+    for ev in rows:
+        task = f" [dim]({ev['task']})[/]" if ev.get("task") else ""
+        console.print(f"[dim]{ev['ts']}[/] [cyan]{ev['kind']}[/]{task}: {ev['terse']}")
+
+
+@focus.command("context")
+@click.option("--top", type=int, default=20, show_default=True)
+def focus_context(top):
+    """Show the current focus mini-graph (recency-weighted)."""
+    g = _stm().focus_graph(top=top)
+    if not g["nodes"]:
+        console.print("[yellow]no focus yet[/]")
+        return
+    console.print(f"[bold]focus[/] · {g['events']} events · session {g['session']}")
+    for nd in g["nodes"]:
+        console.print(f"  {nd['weight']:>5.2f}  [cyan]{nd['name']}[/] "
+                      f"[dim]{nd['kind']} ×{nd['count']}[/]")
+
+
+@focus.command("clear")
+def focus_clear():
+    """Clear short-term memory + task stack for this session."""
+    _stm().clear()
+    console.print("[green]focus cleared[/]")
+
+
+@focus.command("size")
+def focus_size():
+    """Show the STM ring size + current event count."""
+    s = _stm()
+    console.print(f"size={s.size}  events={len(s.all_events())}  "
+                  f"(set RMX_STM_SIZE to change)")
+
+
+@main.group()
+def task():
+    """Pushdown task stack — track interrupted work when tangents get
+    explored. Push snapshots the current focus; pop restores it."""
+
+
+@task.command("push")
+@click.argument("desc")
+def task_push(desc):
+    """Push a task (snapshots current focus)."""
+    r = _stm().task_push(desc)
+    console.print(f"[green]▸[/] {r['current']}  [dim]depth={r['depth']}[/]")
+
+
+@task.command("pop")
+def task_pop():
+    """Pop the current task, restoring the prior one's focus."""
+    r = _stm().task_pop()
+    if r["popped"] is None:
+        console.print("[yellow]task stack empty[/]")
+        return
+    msg = f"[green]✓[/] done: {r['popped']}"
+    if r["restored"]:
+        msg += f"  [dim]↩ back to: {r['restored']}[/]"
+    console.print(msg)
+    if r.get("restored_focus"):
+        console.print(f"  [dim]focus: {', '.join(r['restored_focus'][:8])}[/]")
+
+
+@task.command("list")
+def task_list():
+    """Show the task stack (top = current)."""
+    stack = _stm().task_list()
+    if not stack:
+        console.print("[yellow]no tasks[/]")
+        return
+    for i, t in enumerate(reversed(stack)):
+        marker = "[green]▸[/]" if i == 0 else " "
+        console.print(f"{marker} {t['desc']}  [dim]{t['ts']}[/]")
+
+
+@task.command("current")
+def task_current():
+    """Show the current (top) task."""
+    t = _stm().task_current()
+    console.print(t["desc"] if t else "[yellow](none)[/]")
+
+
+@task.command("swap")
+def task_swap():
+    """Swap the top two tasks."""
+    r = _stm().task_swap()
+    console.print(f"[green]current:[/] {r['current']}" if r["swapped"]
+                  else "[yellow]need ≥2 tasks to swap[/]")
+
+
+@main.group()
+def bus():
+    """Agent message bus (hub-hosted). Intra-project (proj:<name>:<topic>) +
+    inter-project (global:<topic>) pub/sub for live agent coordination."""
+
+
+def _require_hub():
+    from refmatrix import hub as hub_mod
+    if not hub_mod.is_running():
+        raise click.ClickException("hub not running — start it with `rmx hub start`")
+    return hub_mod
+
+
+@bus.command("pub")
+@click.argument("channel")
+@click.argument("message")
+@click.option("--type", "mtype", default="announce",
+              type=click.Choice(["announce", "decision", "request", "reply", "note"]),
+              help="Message type. announce/decision feed the refinement queue.")
+@click.option("--from", "sender", default=None, help="Agent id (default: $RMX_AGENT or host).")
+@click.option("--reply-to", default=None, help="Message id this replies to.")
+def bus_pub(channel, message, mtype, sender, reply_to):
+    """Publish a message to a channel."""
+    hub_mod = _require_hub()
+    import socket as _s
+    sender = sender or os.environ.get("RMX_AGENT") or _s.gethostname()
+    project = None
+    if channel.startswith("proj:"):
+        parts = channel.split(":")
+        project = parts[1] if len(parts) > 1 else None
+    resp = hub_mod.rpc("bus_pub", {
+        "channel": channel, "body": message, "type": mtype,
+        "from": sender, "project": project, "reply_to": reply_to,
+    })
+    if not resp.get("ok"):
+        raise click.ClickException(resp.get("error", "bus error"))
+    console.print(f"[green]published[/] {resp['result']['message']['id']} → {channel}")
+
+
+@bus.command("sub")
+@click.argument("channels", nargs=-1, required=True)
+@click.option("--history", "-H", type=int, default=0,
+              help="Replay the last N messages before streaming (single exact channel).")
+def bus_sub(channels, history):
+    """Subscribe and stream messages (Ctrl-C to stop). Patterns: exact,
+    `prefix:` or `prefix*`, or `*` for everything."""
+    hub_mod = _require_hub()
+    console.print(f"[dim]subscribed to {', '.join(channels)} — Ctrl-C to stop[/]")
+    try:
+        for m in hub_mod.subscribe_stream(list(channels), history=history):
+            who = m.get("from", "?")
+            proj = f" [{m['project']}]" if m.get("project") else ""
+            console.print(f"[dim]{m['ts']}[/] [cyan]{m['channel']}[/] "
+                          f"[bold]{who}[/]{proj} [magenta]{m['type']}[/]: {m['body']}")
+    except KeyboardInterrupt:
+        console.print("\n[dim]unsubscribed[/]")
+    except (ConnectionError, OSError) as e:
+        raise click.ClickException(f"bus connection lost: {e}")
+
+
+@bus.command("channels")
+def bus_channels():
+    """List channels with message counts."""
+    hub_mod = _require_hub()
+    resp = hub_mod.rpc("bus_channels")
+    chans = resp.get("result", {}).get("channels", [])
+    if not chans:
+        console.print("[yellow]no channels yet[/]")
+        return
+    t = Table("channel", "messages")
+    for c in chans:
+        t.add_row(c["channel"], str(c["messages"]))
+    console.print(t)
+
+
+@bus.command("history")
+@click.argument("channel")
+@click.option("-n", type=int, default=20, show_default=True)
+def bus_history(channel, n):
+    """Show the last N messages on a channel."""
+    hub_mod = _require_hub()
+    resp = hub_mod.rpc("bus_history", {"channel": channel, "n": n})
+    for m in resp.get("result", {}).get("messages", []):
+        who = m.get("from", "?")
+        console.print(f"[dim]{m['ts']}[/] [bold]{who}[/] [magenta]{m['type']}[/]: {m['body']}")
+
+
+@main.group()
 def hub():
     """User-level control plane: supervises every per-project daemon
     (watchdog/restart), aggregates status + usage, owns the global memory

@@ -36,6 +36,21 @@ def test_read_spine_endpoints(client):
     assert client.get("/api/taxonomy").json()["ok"]
 
 
+def test_bus_focus_refine_endpoints(client, tmp_path):
+    assert client.get("/api/bus/channels").json()["ok"]
+    assert client.get("/api/refine").json()["result"]["candidates"] == []
+    assert client.get("/api/queues").json()["ok"]
+    # publish via API then it's in history
+    r = client.post("/api/bus/pub", json={"channel": "global:t", "body": "hi", "type": "note"})
+    assert r.json()["ok"]
+    hist = client.get("/api/bus/history?channel=global:t").json()
+    assert any(m["body"] == "hi" for m in hist["result"]["messages"])
+    # focus on an empty root
+    root = tmp_path / "p" / ".refmatrix"; root.mkdir(parents=True)
+    f = client.get(f"/api/focus?root={root}&session=default").json()
+    assert f["ok"] and f["result"]["graph"]["nodes"] == []
+
+
 def test_context_to_graph_conversion():
     bundle = {
         "ref": "foo",

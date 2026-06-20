@@ -28,6 +28,7 @@ from typing import Any, Callable
 
 from refmatrix import daemon as daemon_mod
 from refmatrix import discovery, launchctl
+from refmatrix.bus import Bus
 from refmatrix.taxonomy import user_home
 
 HUB_SOCK = "hub.sock"
@@ -36,6 +37,7 @@ HUB_LOG = "hub.log"
 GLOBAL_PARTITION = "global"
 DEFAULT_PORT = 7777
 WATCHDOG_INTERVAL_S = float(os.environ.get("RMX_HUB_WATCH_INTERVAL", "15"))
+QUEUE_ALERT_INTERVAL_S = float(os.environ.get("RMX_HUB_QUEUE_ALERT_INTERVAL", "60"))
 HEALTH_HISTORY = 50
 
 
@@ -197,8 +199,10 @@ class Hub:
     def __init__(self, *, port: int = DEFAULT_PORT):
         self.port = port
         self.watchdog = Watchdog()
+        self.bus = Bus()
         self._stop = threading.Event()
         self._sock: socket.socket | None = None
+        self._alert_thread: threading.Thread | None = None
 
     # -- ops ----
     def _op_ping(self, args: dict) -> dict:
@@ -261,6 +265,49 @@ class Hub:
         self._stop.set()
         return {"stopping": True}
 
+    # -- bus ----
+    def _op_bus_pub(self, args: dict) -> dict:
+        msg = self.bus.publish(
+            args["channel"], args.get("body"),
+            sender=args.get("from", "?"), project=args.get("project"),
+            mtype=args.get("type", "announce"), reply_to=args.get("reply_to"),
+        )
+        return {"message": msg}
+
+    def _op_bus_channels(self, args: dict) -> dict:
+        return {"channels": self.bus.channels()}
+
+    def _op_bus_history(self, args: dict) -> dict:
+        return {"messages": self.bus.history(args["channel"], int(args.get("n", 50)))}
+
+    def _op_refine_list(self, args: dict) -> dict:
+        return {"candidates": self.bus.refinement_queue(args.get("status", "pending"))}
+
+    def _op_refine_accept(self, args: dict) -> dict:
+        return self.bus.accept_refinement(args["id"])
+
+    def _op_refine_reject(self, args: dict) -> dict:
+        return self.bus.reject_refinement(args["id"])
+
+    def _op_queues(self, args: dict) -> dict:
+        return {"queues": self._gather_queues()}
+
+    # -- short-term focus (per-project, read-only aggregation) ----
+    def _op_focus(self, args: dict) -> dict:
+        from refmatrix import stm as stm_mod
+        s = stm_mod.Stm(Path(args["root"]), args.get("session") or "default")
+        return {"graph": s.focus_graph(top=int(args.get("top", 30))),
+                "tasks": s.task_list()}
+
+    def _op_focus_sessions(self, args: dict) -> dict:
+        from refmatrix import stm as stm_mod
+        d = stm_mod.stm_dir(Path(args["root"]))
+        sessions = []
+        if d.is_dir():
+            for p in d.glob("*.jsonl"):
+                sessions.append(p.stem)
+        return {"sessions": sessions}
+
     @property
     def OPS(self) -> dict[str, Callable[[dict], dict]]:
         return {
@@ -272,8 +319,56 @@ class Hub:
             "health": self._op_health,
             "restart": self._op_restart,
             "set_watchdog": self._op_set_watchdog,
+            "bus_pub": self._op_bus_pub,
+            "bus_channels": self._op_bus_channels,
+            "bus_history": self._op_bus_history,
+            "refine_list": self._op_refine_list,
+            "refine_accept": self._op_refine_accept,
+            "refine_reject": self._op_refine_reject,
+            "queues": self._op_queues,
+            "focus": self._op_focus,
+            "focus_sessions": self._op_focus_sessions,
             "stop": self._op_stop,
         }
+
+    # -- change-queue visibility ----
+    def _gather_queues(self) -> list[dict]:
+        """Per-project pending-work snapshot: stale files (change queue),
+        plus the machine-wide refinement-queue depth."""
+        out: list[dict] = []
+        for root in discovery.discover_roots():
+            st = discovery.daemon_status(root)
+            stale = None
+            if st["up"]:
+                try:
+                    resp = daemon_mod.call(root, "stats", {"include_stale": True},
+                                           timeout=10.0)
+                    if resp.get("ok"):
+                        sf = resp["result"].get("stale_files") or []
+                        stale = len(sf)
+                except Exception:
+                    stale = None
+            out.append({"project": discovery.store_name(root), "root": str(root),
+                        "daemon_up": st["up"], "stale_files": stale})
+        return out
+
+    def _queue_alert_loop(self) -> None:
+        while not self._stop.is_set():
+            self._stop.wait(QUEUE_ALERT_INTERVAL_S)
+            if self._stop.is_set():
+                break
+            try:
+                queues = self._gather_queues()
+                pending_refine = len(self.bus.refinement_queue("pending"))
+                hot = [q for q in queues if (q.get("stale_files") or 0) > 0]
+                if hot or pending_refine:
+                    self.bus.publish(
+                        "global:queues",
+                        {"queues": queues, "refinement_pending": pending_refine},
+                        sender="hub", mtype="alert",
+                    )
+            except Exception as e:
+                _log(f"queue-alert error: {e}")
 
     # -- socket server ----
     def serve_sock(self) -> None:
@@ -313,6 +408,9 @@ class Hub:
                 buf += chunk
             req = json.loads(buf.decode())
             op = req.get("op")
+            if op == "bus_sub":
+                self._stream_bus_sub(conn, req.get("args") or {})
+                return
             handler = self.OPS.get(op)
             if handler is None:
                 resp = {"ok": False, "error": f"unknown op: {op}"}
@@ -327,6 +425,40 @@ class Hub:
         finally:
             conn.close()
 
+    def _stream_bus_sub(self, conn: socket.socket, args: dict) -> None:
+        """Long-lived subscription: stream newline-JSON messages until the
+        client disconnects. Optionally replays `history` backlog first."""
+        patterns = args.get("channels") or args.get("patterns") or ["*"]
+        if isinstance(patterns, str):
+            patterns = [patterns]
+        sub = self.bus.subscribe(patterns)
+        conn.settimeout(1.0)
+        try:
+            backlog = int(args.get("history", 0))
+            if backlog and len(patterns) == 1 and not patterns[0].endswith(("*", ":")):
+                for m in self.bus.history(patterns[0], backlog):
+                    conn.sendall((json.dumps(m) + "\n").encode())
+            while not self._stop.is_set():
+                try:
+                    msg = sub.q.get(timeout=1.0)
+                except Exception:
+                    # idle: probe the socket so a dead client is noticed
+                    try:
+                        conn.sendall(b"")
+                    except OSError:
+                        break
+                    continue
+                try:
+                    conn.sendall((json.dumps(msg) + "\n").encode())
+                except OSError:
+                    break
+        finally:
+            self.bus.unsubscribe(sub)
+            try:
+                conn.close()
+            except OSError:
+                pass
+
     # -- run ----
     def run(self, *, host: str = "127.0.0.1", serve_http: bool = True) -> None:
         hub_home().mkdir(parents=True, exist_ok=True)
@@ -337,6 +469,9 @@ class Hub:
         except Exception as e:
             _log(f"global store init failed: {e}")
         self.watchdog.start()
+        self._alert_thread = threading.Thread(
+            target=self._queue_alert_loop, name="rmx-hub-queue-alert", daemon=True)
+        self._alert_thread.start()
         threading.Thread(target=self.serve_sock, name="rmx-hub-sock",
                          daemon=True).start()
 
@@ -425,6 +560,31 @@ def rpc(op: str, args: dict | None = None, *, timeout: float = 30.0) -> dict:
                 break
             buf += chunk
         return json.loads(buf.decode()) if buf else {"ok": False, "error": "no response"}
+    finally:
+        s.close()
+
+
+def subscribe_stream(patterns, *, history: int = 0):
+    """Connect to the hub bus and yield messages as they arrive. Blocks;
+    the caller breaks out (e.g. KeyboardInterrupt). Closes on hub shutdown."""
+    if isinstance(patterns, str):
+        patterns = [patterns]
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.connect(str(hub_sock_path()))
+    s.sendall((json.dumps({"op": "bus_sub",
+                           "args": {"channels": patterns, "history": history}}) + "\n").encode())
+    buf = b""
+    try:
+        while True:
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                line = line.strip()
+                if line:
+                    yield json.loads(line)
     finally:
         s.close()
 

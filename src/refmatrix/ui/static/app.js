@@ -41,6 +41,8 @@ async function render(tab) {
   if (tab === "health") return renderHealth();
   if (tab === "usage") return renderUsage();
   if (tab === "memory") return renderMemory();
+  if (tab === "bus") return renderBus();
+  if (tab === "focus") return renderFocus();
 }
 
 async function loadProjects() {
@@ -239,6 +241,105 @@ async function renderMemory() {
   $("#mem-go").addEventListener("click", go);
   $("#mem-q").addEventListener("keydown", (e) => e.key === "Enter" && go());
   go();
+}
+
+// ---- bus ----
+let BUS_WS = null;
+async function renderBus() {
+  const el = $("#tab-bus");
+  el.innerHTML = `
+    <div class="graph-bar" style="border:0;padding:0 0 12px">
+      <input id="bus-chan" placeholder="channel (e.g. global:chat or proj:foo:topic)" value="global:">
+      <input id="bus-msg" placeholder="message…">
+      <select id="bus-type"><option>announce</option><option>decision</option><option>note</option><option>request</option><option>reply</option></select>
+      <button class="btn" id="bus-send">publish</button>
+      <button class="btn" id="bus-sub">subscribe global:*</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 360px;gap:12px">
+      <div><h2 class="section">live stream</h2><div class="term" id="bus-stream"></div></div>
+      <div><h2 class="section">refinement queue</h2><div id="refine"></div></div>
+    </div>`;
+  $("#bus-send").addEventListener("click", async () => {
+    const channel = $("#bus-chan").value, body = $("#bus-msg").value;
+    if (!channel || !body) return;
+    const project = channel.startsWith("proj:") ? channel.split(":")[1] : null;
+    await post("/api/bus/pub", {channel, body, type: $("#bus-type").value, project, from: "ui"});
+    $("#bus-msg").value = "";
+    loadRefine();
+  });
+  $("#bus-sub").addEventListener("click", subBus);
+  subBus();
+  loadRefine();
+}
+
+function subBus() {
+  if (BUS_WS) { try { BUS_WS.close(); } catch {} }
+  const term = $("#bus-stream"); if (!term) return;
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  BUS_WS = new WebSocket(`${proto}://${location.host}/ws/bus`);
+  BUS_WS.onopen = () => BUS_WS.send(JSON.stringify({channels: ["*"]}));
+  BUS_WS.onmessage = (m) => {
+    const d = JSON.parse(m.data);
+    if (d.keepalive) return;
+    const proj = d.project ? `[${d.project}]` : "";
+    term.innerHTML += `<div><span class="muted">${d.ts}</span> <span style="color:var(--accent)">${d.channel}</span> <b>${d.from}</b>${proj} <span style="color:var(--purple)">${d.type}</span>: ${d.body}</div>`;
+    term.scrollTop = term.scrollHeight;
+    if (d.type === "announce" || d.type === "decision") loadRefine();
+  };
+}
+
+async function loadRefine() {
+  const box = $("#refine"); if (!box) return;
+  const r = await api("/api/refine?status=pending");
+  const items = r.result?.candidates || [];
+  box.innerHTML = items.length ? items.map((c) => `<div class="card" style="padding:10px">
+      <div class="kv"><span class="chip ${c.scope === "global" ? "tag" : ""}">${c.scope}</span>
+        <span class="muted" style="font-size:11px">${c.channel}</span></div>
+      <div style="font-size:12px;margin:6px 0">${c.suggested.content.slice(0, 140)}</div>
+      <div class="row-actions">
+        <button class="btn" data-acc="${c.id}">accept → memory</button>
+        <button class="btn danger" data-rej="${c.id}">dismiss</button></div>
+    </div>`).join("") : '<div class="muted">no pending candidates</div>';
+  $$("[data-acc]", box).forEach((b) => b.addEventListener("click", async () => {
+    await post("/api/refine/accept", {id: b.dataset.acc}); loadRefine();
+  }));
+  $$("[data-rej]", box).forEach((b) => b.addEventListener("click", async () => {
+    await post("/api/refine/reject", {id: b.dataset.rej}); loadRefine();
+  }));
+}
+
+// ---- focus ----
+async function renderFocus() {
+  const el = $("#tab-focus");
+  const ps = await loadProjects();
+  el.innerHTML = `<div class="graph-bar" style="border:0;padding:0 0 12px">
+      <select id="focus-project">${ps.map((p) => `<option value="${p.root}">${p.name}</option>`).join("")}</select>
+      <select id="focus-session"></select>
+      <button class="btn" id="focus-go">refresh</button></div>
+    <div id="focus-body"></div>`;
+  const loadSessions = async () => {
+    const root = $("#focus-project").value;
+    const r = await api("/api/focus/sessions?root=" + encodeURIComponent(root));
+    const ss = r.result?.sessions || ["default"];
+    $("#focus-session").innerHTML = (ss.length ? ss : ["default"]).map((s) => `<option>${s}</option>`).join("");
+  };
+  const go = async () => {
+    const root = $("#focus-project").value, session = $("#focus-session").value || "default";
+    const r = await api(`/api/focus?root=${encodeURIComponent(root)}&session=${encodeURIComponent(session)}`);
+    const g = r.result?.graph || {nodes: [], focus: []};
+    const tasks = r.result?.tasks || [];
+    const crumb = tasks.length ? tasks.map((t) => t.desc).join(" ▸ ") : "<span class='muted'>no task on stack</span>";
+    const maxW = Math.max(1, ...g.nodes.map((n) => n.weight));
+    $("#focus-body").innerHTML = `
+      <div class="card" style="margin-bottom:12px"><h2 class="section">task stack</h2><div class="mono">${crumb}</div></div>
+      <h2 class="section">focus — ${g.events || 0} events, session ${g.session || session}</h2>
+      ${g.nodes.length ? g.nodes.map((n) => `<div class="kv"><span class="mono" style="color:var(--${n.kind === "code" ? "accent" : n.kind === "doc" ? "amber" : "purple"})">${n.name}</span>
+        <span>×${n.count}</span></div><div class="bar"><i style="background:var(--accent);width:${100 * n.weight / maxW}%"></i></div>`).join("")
+        : '<div class="muted">no focus yet — focus builds from tool use + rmx calls via the focus hook</div>'}`;
+  };
+  $("#focus-project").addEventListener("change", async () => { await loadSessions(); go(); });
+  $("#focus-go").addEventListener("click", go);
+  await loadSessions(); go();
 }
 
 // ---- omnibox (where) ----

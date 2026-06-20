@@ -39,6 +39,15 @@ def _partition(root: Path) -> str:
     return discovery.store_name(root)
 
 
+def _drain(sub):
+    """Block up to 1s for the next bus message; None on timeout (keepalive)."""
+    import queue as _q
+    try:
+        return sub.q.get(timeout=1.0)
+    except _q.Empty:
+        return None
+
+
 def _context_to_graph(bundle: dict) -> dict:
     """Convert a context-bundle JSON into {nodes, edges} for force-graph.
     Anchor is the center; each grouped neighbor is a node + a typed edge."""
@@ -248,6 +257,79 @@ def create_app(hub) -> FastAPI:
                 continue
             seen.add(k); deduped.append(r)
         return {"ok": True, "result": {"results": deduped[:limit]}}
+
+    # ---- bus + refinement ----
+    @app.get("/api/bus/channels")
+    def bus_channels():
+        return {"ok": True, "result": {"channels": hub.bus.channels()}}
+
+    @app.get("/api/bus/history")
+    def bus_history(channel: str, n: int = 50):
+        return {"ok": True, "result": {"messages": hub.bus.history(channel, n)}}
+
+    @app.post("/api/bus/pub")
+    async def bus_pub(payload: dict):
+        msg = hub.bus.publish(
+            payload["channel"], payload.get("body"),
+            sender=payload.get("from", "ui"), project=payload.get("project"),
+            mtype=payload.get("type", "announce"))
+        return {"ok": True, "result": {"message": msg}}
+
+    @app.get("/api/refine")
+    def refine_list(status: str = "pending"):
+        return {"ok": True, "result": {"candidates": hub.bus.refinement_queue(status)}}
+
+    @app.post("/api/refine/accept")
+    async def refine_accept(payload: dict):
+        return hub.bus.accept_refinement(payload["id"])
+
+    @app.post("/api/refine/reject")
+    async def refine_reject(payload: dict):
+        return hub.bus.reject_refinement(payload["id"])
+
+    @app.get("/api/queues")
+    def queues():
+        return {"ok": True, "result": hub._op_queues({})}
+
+    # ---- short-term focus ----
+    @app.get("/api/focus")
+    def focus(root: str, session: str = "default", top: int = 30):
+        return {"ok": True, "result": hub._op_focus(
+            {"root": root, "session": session, "top": top})}
+
+    @app.get("/api/focus/sessions")
+    def focus_sessions(root: str):
+        return {"ok": True, "result": hub._op_focus_sessions({"root": root})}
+
+    @app.websocket("/ws/bus")
+    async def ws_bus(ws: WebSocket):
+        await ws.accept()
+        try:
+            req = json.loads(await ws.receive_text())
+        except Exception:
+            await ws.close()
+            return
+        patterns = req.get("channels") or ["*"]
+        if isinstance(patterns, str):
+            patterns = [patterns]
+        sub = hub.bus.subscribe(patterns)
+        try:
+            loop = asyncio.get_event_loop()
+            while True:
+                msg = await loop.run_in_executor(None, _drain, sub)
+                if msg is None:
+                    # keepalive / liveness probe
+                    await ws.send_json({"keepalive": True})
+                    continue
+                await ws.send_json(msg)
+        except (WebSocketDisconnect, RuntimeError):
+            pass
+        finally:
+            hub.bus.unsubscribe(sub)
+            try:
+                await ws.close()
+            except Exception:
+                pass
 
     # ---- streamed ops ----
     @app.websocket("/ws/op")
