@@ -258,9 +258,10 @@ def create_app(hub) -> FastAPI:
     async def query(payload: dict):
         root = Path(payload["root"])
         body = payload.get("dsl") or payload.get("pql") or ""
-        mode = "pql" if payload.get("pql") else "dsl"
+        is_pql = bool(payload.get("pql"))
+        # the daemon query op takes `expr` (+ pql flag), not `dsl`/`pql` keys
         return _daemon_read(root, "query", {
-            mode: body, "partition": _partition(root),
+            "expr": body, "pql": is_pql, "partition": _partition(root),
         })
 
     @app.get("/api/memory")

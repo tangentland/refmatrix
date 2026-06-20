@@ -121,13 +121,15 @@ def federated_query(dsl: str, *, limit: int = 50) -> dict:
             continue
         proj = discovery.store_name(root)
         try:
-            r = daemon_mod.call(root, "query", {"dsl": dsl, "partition": proj},
+            r = daemon_mod.call(root, "query",
+                                {"expr": dsl, "partition": proj, "limit": limit},
                                 timeout=20.0)
             if r.get("ok"):
                 res = r["result"]
-                ids = res.get("ids") or res.get("entity_ids") or []
+                rows = res.get("rows") or []
                 out.append({"project": proj, "root": str(root),
-                            "count": len(ids), "ids": ids[:limit]})
+                            "count": res.get("cardinality", len(rows)),
+                            "rows": rows[:limit]})
         except Exception:
             pass
     return {"projects": out}

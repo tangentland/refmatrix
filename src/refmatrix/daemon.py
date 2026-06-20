@@ -2641,7 +2641,8 @@ def _op_query(d: Daemon, args: dict) -> dict:
     limit = int(args.get("limit", 50))
     name_filter = args.get("name_filter")
     explain = bool(args.get("explain", False))
-    with d._store_lock:
+    _q_part = args.get("partition") or d.store._partition_name
+    with d._store_lock, d.store.with_partition(_q_part):
         qe = QueryEngine(d.store, include_noise=include_noise, strict=strict)
         result = qe.run_pql(expr) if is_pql else qe.run(expr)
         if name_filter:
@@ -2724,7 +2725,15 @@ def _op_context(d: Daemon, args: dict) -> dict:
     grep_backstop = bool(args.get("grep_backstop", True))
     entities_explicit = bool(args.get("entities_explicit", False))
     tokens_explicit = bool(args.get("tokens_explicit", False))
-    with d._store_lock:
+    # Bind the requested partition explicitly. build_context →
+    # resolve_concept_ids filters by `self._partition_id`; without this the
+    # op runs on the daemon's *ambient* partition, which drifts on a
+    # long-lived multi-partition daemon (every memory op enters/exits a
+    # `with_partition`). The result was anchor=None for valid concepts —
+    # the "graph not coming up" bug. `partition` defaults to the daemon's
+    # bound name so single-partition callers are unaffected.
+    _ctx_part = args.get("partition") or d.store._partition_name
+    with d._store_lock, d.store.with_partition(_ctx_part):
         bundle = build_context(
             d.store, ref,
             linkages=linkages,

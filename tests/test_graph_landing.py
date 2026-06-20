@@ -65,6 +65,38 @@ def test_top_concepts_partition_scoped_no_cross_partition_dupes(tmp_path):
     s.close()
 
 
+def test_context_op_honors_partition_under_ambient_drift(tmp_path):
+    """Regression: `_op_context` must bind the requested partition. On a
+    multi-partition daemon the ambient partition drifts (memory ops enter/exit
+    with_partition); without an explicit bind, build_context resolved the
+    concept in the wrong partition → anchor=None ('graph not coming up')."""
+    import threading
+    from refmatrix.daemon import _op_context
+    import json as _json
+
+    s = Store(tmp_path / ".refmatrix"); s.init()
+    with s.with_partition("code-proj"):
+        cid = s.add_concept("Widget")
+        for i in range(3):
+            s.link("defines", cid, s.upsert_entity(kind="code", name=f"w{i}.py"))
+    # create another partition + leave the store's AMBIENT partition pointing there
+    with s.with_partition("memory-proj"):
+        s.add_memory(name="note", content="x")
+    s.with_partition("memory-proj").__enter__()  # drift ambient away from code-proj
+
+    class D:
+        def __init__(self, st):
+            self.store = st; self._store_lock = threading.RLock()
+        def _request_snapshot(self): pass
+
+    resp = _op_context(D(s), {"ref": "Widget", "format": "json", "degree": 1,
+                              "partition": "code-proj"})
+    bundle = _json.loads(resp["body"])
+    assert bundle["anchor"] and bundle["anchor"]["name"] == "Widget"
+    assert sum(len(v) for v in bundle["groups"].values()) == 3
+    s.close()
+
+
 def test_tree_endpoint_lists_code_and_docs(tmp_path, monkeypatch):
     monkeypatch.setattr(discovery, "discover_roots", lambda: [])
     proj = tmp_path / "proj"
