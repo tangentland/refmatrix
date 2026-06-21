@@ -48,25 +48,56 @@ def _drain(sub):
         return None
 
 
+import threading as _threading
+
+# Per-root read-only replica Store cache. Opening viascope's ~670MB snapshot
+# cold costs seconds; reusing the open Store makes graph navigation snappy.
+# DuckDB connections aren't safe for concurrent cursors, so each cached store
+# is guarded by its own lock. Read-only, so a swapped snapshot just means the
+# cached view is slightly stale until the process restarts.
+_REPLICA_CACHE: "dict[str, tuple]" = {}
+_REPLICA_CACHE_LOCK = _threading.Lock()
+
+
+def _cached_replica(root: Path):
+    """Return (store, lock) for a root, opening + caching on first use."""
+    from refmatrix.store import Store
+    key = str(Path(root).resolve())
+    with _REPLICA_CACHE_LOCK:
+        hit = _REPLICA_CACHE.get(key)
+        if hit is not None:
+            return hit
+    part = _partition(root)
+    s = Store(root, partition=part, read_only=True)
+    entry = (s, _threading.Lock())
+    with _REPLICA_CACHE_LOCK:
+        # another thread may have opened it concurrently; keep the first
+        existing = _REPLICA_CACHE.setdefault(key, entry)
+    if existing is not entry:
+        try:
+            s.close()
+        except Exception:
+            pass
+    return existing
+
+
 def replica_context(root: Path, ref: str, *, degree: int = 0,
                     max_entities: int = 20, max_tokens: int = 4000) -> dict:
-    """Build a context bundle via an in-process READ-ONLY replica store —
-    the same path the `rmx context` CLI uses (`--via-replica`). The daemon's
-    `context` op reads the writer store and mis-resolves concepts on a
-    multi-partition daemon; the snapshot replica is the consistent read source
-    (snapshot-tier design) and never contends with the writer lock.
-
-    Returns the render_json dict, or {"error": ...} on failure."""
-    from refmatrix.store import Store
+    """Build a context bundle via a CACHED in-process READ-ONLY replica store —
+    the same path `rmx context --via-replica` uses. The daemon's `context` op
+    reads the writer store and mis-resolves concepts on a multi-partition
+    daemon; the snapshot replica is the consistent read source (snapshot-tier)
+    and never contends with the writer lock. Returns the render_json dict, or
+    {"error": ...}."""
     from refmatrix.context import build_context, render_json
     root = Path(root)
     part = _partition(root)
     try:
-        s = Store(root, partition=part, read_only=True)
+        s, lock = _cached_replica(root)
     except Exception as e:
         return {"error": f"replica unavailable: {e}"}
     try:
-        with s.with_partition(part):
+        with lock, s.with_partition(part):
             bundle = build_context(
                 s, ref, degree=degree, max_entities=max_entities,
                 max_tokens=max_tokens,
@@ -75,11 +106,6 @@ def replica_context(root: Path, ref: str, *, degree: int = 0,
         return json.loads(render_json(bundle))
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}"}
-    finally:
-        try:
-            s.close()
-        except Exception:
-            pass
 
 
 def _context_to_graph(bundle: dict) -> dict:
