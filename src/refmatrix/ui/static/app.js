@@ -674,7 +674,11 @@ function draw() {
     ctx.fillStyle = KIND_COLOR[n.kind] || "#8b949e"; ctx.fill();
     if (n.anchor) { ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke(); }
     ctx.fillStyle = "#e6edf3";
-    ctx.fillText(n.name.length > 22 ? n.name.slice(0, 21) + "…" : n.name, n.x + r + 3, n.y + 4);
+    const label = n.name.length > 22 ? n.name.slice(0, 21) + "…" : n.name;
+    const lx = n.x + r + 3;
+    ctx.fillText(label, lx, n.y + 4);
+    // cache the label hit-box (world coords) so clicking the TEXT selects too
+    n._lx = lx; n._lw = ctx.measureText(label).width; n._r = r;
   });
   ctx.restore();
 }
@@ -686,7 +690,13 @@ function screenToWorld(px, py) {
 }
 function nodeAt(px, py) {
   const w = screenToWorld(px, py);
-  return G.nodes.find((n) => Math.hypot(n.x - w.x, n.y - w.y) < 10);
+  return G.nodes.find((n) => {
+    if (Math.hypot(n.x - w.x, n.y - w.y) < 10) return true;       // circle
+    // label hit-box: clicking the text selects the node too
+    if (n._lw != null && w.x >= n._lx - 2 && w.x <= n._lx + n._lw + 2
+        && w.y >= n.y - 8 && w.y <= n.y + 8) return true;
+    return false;
+  });
 }
 
 function setupGraphInput() {
@@ -715,7 +725,10 @@ function setupGraphInput() {
   c.addEventListener("dblclick", (e) => {
     const rect = c.getBoundingClientRect();
     const n = nodeAt(e.clientX - rect.left, e.clientY - rect.top);
-    if (n) expandNode(n);
+    if (!n) return;
+    // code/doc node with a file → open the doc viewer; else expand neighborhood
+    if ((n.kind === "code" || n.kind === "doc") && n.path) openDocViewer(n);
+    else expandNode(n);
   });
   c.addEventListener("wheel", (e) => {
     e.preventDefault();
@@ -736,6 +749,39 @@ function showNode(n) {
       <button class="btn" id="np-close">close</button></div>`;
   $("#np-expand").addEventListener("click", () => expandNode(n));
   $("#np-close").addEventListener("click", () => p.classList.add("hidden"));
+}
+
+async function openDocViewer(n) {
+  let modal = $("#doc-modal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "doc-modal"; modal.className = "doc-modal";
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove("hidden");
+  const fname = (n.path || "").split("/").pop();
+  modal.innerHTML = `<div class="doc-box">
+    <div class="doc-head"><span class="mono">${n.name}</span>
+      <span class="muted mono" style="font-size:11px">${n.path || ""}</span>
+      <button class="btn" id="doc-close">✕</button></div>
+    <div class="doc-body" id="doc-body"><div class="loading">loading ${fname}…</div></div>
+  </div>`;
+  $("#doc-close").addEventListener("click", () => modal.classList.add("hidden"));
+  modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.add("hidden"); });
+  const root = $("#graph-project").value;
+  const r = await api(`/api/file?root=${encodeURIComponent(root)}&path=${encodeURIComponent(n.path)}`
+    + (n.line ? `&line=${n.line}` : ""));
+  const body = $("#doc-body");
+  if (!r.ok) { body.innerHTML = `<div class="muted">${r.error || "could not read file"}</div>`; return; }
+  const esc = (s) => s.replace(/[&<>]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c]));
+  const start = r.result.start || 1;
+  const lines = (r.result.content || "").split("\n");
+  const hl = r.result.line;
+  body.innerHTML = `<pre class="doc-pre">${lines.map((ln, i) => {
+    const no = start + i;
+    return `<div class="dl${no === hl ? " hot" : ""}"><span class="ln">${no}</span>${esc(ln)}</div>`;
+  }).join("")}</pre>`;
+  if (hl) { const h = body.querySelector(".dl.hot"); if (h) h.scrollIntoView({block: "center"}); }
 }
 
 // ---- boot ----

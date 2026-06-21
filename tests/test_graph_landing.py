@@ -116,6 +116,25 @@ def test_context_to_graph_filters_tests():
     assert len({n["name"] for n in incl["nodes"]}) == 4
 
 
+def test_file_endpoint_reads_and_guards(tmp_path, monkeypatch):
+    monkeypatch.setattr(discovery, "discover_roots", lambda: [])
+    client = TestClient(srv.create_app(Hub(port=0)))
+    proj = tmp_path / "proj"
+    (proj / ".refmatrix").mkdir(parents=True)
+    src = proj / "src"; src.mkdir()
+    (src / "a.py").write_text("\n".join(f"line{i}" for i in range(1, 11)))
+    (tmp_path / "secret.txt").write_text("TOPSECRET")
+    root = str(proj / ".refmatrix")
+    # reads a file inside the project
+    r = client.get(f"/api/file?root={root}&path=src/a.py").json()
+    assert r["ok"] and "line5" in r["result"]["content"]
+    # path escape is refused
+    bad = client.get(f"/api/file?root={root}&path=../secret.txt").json()
+    assert bad["ok"] is False
+    bad2 = client.get(f"/api/file?root={root}&path=/etc/hosts").json()
+    assert bad2["ok"] is False
+
+
 def test_is_test_path():
     for p in ["/a/tests/test_x.py", "/a/test_foo.py", "/a/foo_test.py",
               "/a/conftest.py", "/a/__tests__/x.js", "/a/x.spec.ts"]:

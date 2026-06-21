@@ -260,6 +260,40 @@ def create_app(hub) -> FastAPI:
                             {"n": n, "partition": _partition(Path(root)),
                              "exclude_ns": ns})
 
+    @app.get("/api/file")
+    def file(root: str, path: str, line: int | None = None, ctx: int = 400):
+        """Read a source file for the graph doc-viewer. Path must resolve INSIDE
+        the project tree (parent of .refmatrix) — no escaping the project. When
+        `line` is given, returns a window of ±ctx lines around it."""
+        rootp = Path(root)
+        base = rootp.parent.resolve()
+        p = Path(path)
+        if not p.is_absolute():
+            p = (base / path)
+        try:
+            p = p.resolve()
+            p.relative_to(base)  # raises if outside the project
+        except (ValueError, OSError):
+            return {"ok": False, "error": "path outside project"}
+        if not p.is_file():
+            return {"ok": False, "error": "not a file"}
+        try:
+            if p.stat().st_size > 2_000_000:
+                return {"ok": False, "error": "file too large"}
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            return {"ok": False, "error": str(e)}
+        lines = text.split("\n")
+        start = 1
+        if line and len(lines) > ctx * 2:
+            lo = max(0, line - ctx - 1)
+            hi = min(len(lines), line + ctx)
+            lines = lines[lo:hi]
+            start = lo + 1
+        return {"ok": True, "result": {
+            "content": "\n".join(lines), "start": start, "line": line,
+            "path": str(p), "total_lines": len(text.split("\n"))}}
+
     @app.get("/api/tree")
     def tree(root: str, max_entries: int = 800):
         """Project file tree (code/doc files) for the Graph directory view.
