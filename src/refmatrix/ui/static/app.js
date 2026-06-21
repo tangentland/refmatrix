@@ -466,7 +466,10 @@ async function initGraphTab() {
   G.canvas = $("#graph-canvas"); G.ctx = G.canvas.getContext("2d");
   $("#graph-go").addEventListener("click", runGraph);
   $("#graph-ref").addEventListener("keydown", (e) => e.key === "Enter" && runGraph());
-  $("#graph-home").addEventListener("click", showLanding);
+  $("#graph-tests").addEventListener("change", () => {
+    if ($("#graph-ref").value.trim() && $("#graph-landing").classList.contains("hidden"))
+      runGraph({keepTrail: true});
+  });
   $$(".landing-toggle button").forEach((b) => b.addEventListener("click", () => {
     $$(".landing-toggle button").forEach((x) => x.classList.remove("active"));
     b.classList.add("active");
@@ -479,17 +482,45 @@ async function initGraphTab() {
 }
 
 let LANDING_VIEW = "top";
+let TRAIL = [];  // navigable breadcrumb of visited seeds
 
 function showLanding() {
   $("#graph-landing").classList.remove("hidden");
-  $("#graph-home").classList.add("hidden");
   $("#node-panel").classList.add("hidden");
+  TRAIL = [];
+  renderCrumbs();
   renderLanding(LANDING_VIEW);
 }
 
 function hideLanding() {
   $("#graph-landing").classList.add("hidden");
-  $("#graph-home").classList.remove("hidden");
+}
+
+function renderCrumbs() {
+  const el = $("#graph-crumbs");
+  if (!el) return;
+  if (!TRAIL.length) {
+    el.innerHTML = `<span class="empty">pick a concept or file to start navigating</span>`;
+    return;
+  }
+  let html = `<span class="home" title="back to start">⌂</span>`;
+  TRAIL.forEach((seed, i) => {
+    const cur = i === TRAIL.length - 1;
+    html += `<span class="sep">›</span><span class="crumb ${cur ? "current" : ""}" data-i="${i}">${seed}</span>`;
+  });
+  el.innerHTML = html;
+  el.querySelector(".home").addEventListener("click", showLanding);
+  $$(".crumb:not(.current)", el).forEach((c) => c.addEventListener("click", () => {
+    const i = +c.dataset.i;
+    TRAIL = TRAIL.slice(0, i + 1);   // truncate forward history
+    $("#graph-ref").value = TRAIL[i];
+    runGraph({fromCrumb: true});
+  }));
+}
+
+function pushCrumb(seed) {
+  if (TRAIL[TRAIL.length - 1] !== seed) TRAIL.push(seed);
+  renderCrumbs();
 }
 
 async function renderLanding(view) {
@@ -543,21 +574,28 @@ function resizeCanvas() {
   G.w = r.width; G.h = r.height;
 }
 
-async function runGraph() {
+function graphQS(root, seed, degree) {
+  const tests = $("#graph-tests") && $("#graph-tests").checked ? 1 : 0;
+  return `/api/graph?root=${encodeURIComponent(root)}&seed=${encodeURIComponent(seed)}&degree=${degree}&include_tests=${tests}`;
+}
+
+async function runGraph(opts = {}) {
   const root = $("#graph-project").value, ref = $("#graph-ref").value.trim();
   const degree = +$("#graph-degree").value;
   if (!root || !ref) return;
-  const r = await api(`/api/graph?root=${encodeURIComponent(root)}&seed=${encodeURIComponent(ref)}&degree=${degree}`);
+  const r = await api(graphQS(root, ref, degree));
   if (!r.ok) { alert(r.error || "graph error"); return; }
   hideLanding();
+  if (!opts.fromCrumb && !opts.keepTrail) pushCrumb(ref);
+  else renderCrumbs();
   mergeGraph(r.result, true);
 }
 
 async function expandNode(node) {
   const root = $("#graph-project").value;
   const degree = +$("#graph-degree").value;
-  const r = await api(`/api/graph?root=${encodeURIComponent(root)}&seed=${encodeURIComponent(node.name)}&degree=${degree}`);
-  if (r.ok) mergeGraph(r.result, false);
+  const r = await api(graphQS(root, node.name, degree));
+  if (r.ok) { pushCrumb(node.name); mergeGraph(r.result, false); }
 }
 
 function mergeGraph(g, reset) {

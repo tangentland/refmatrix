@@ -61,51 +61,65 @@ def _replica_bundle(root: Path, ref: str, *, degree: int = 0) -> dict:
         return {}
 
 
-def federated_where(q: str, *, limit: int = 40) -> dict:
-    """Fan a query across all live stores: code/doc/concept hits from context +
-    memory hits, grouped by source, deduped, capped. Returns
-    {"results": [{source, project, root, name, kind, path, line, snippet}]}."""
-    results: list[dict] = []
-    for root in discovery.discover_roots():
-        if not daemon_mod.ping(root):
-            continue
-        proj = discovery.store_name(root)
-        try:
-            b = _replica_bundle(root, q, degree=0)
-            if b:
-                anchor = b.get("anchor")
-                if anchor:
-                    results.append({
-                        "source": anchor.get("kind", "concept"),
-                        "project": proj, "root": str(root),
-                        "name": anchor["name"], "kind": anchor.get("kind", "concept"),
-                        "path": anchor.get("path"), "line": None,
-                    })
-                for entries in (b.get("groups") or {}).values():
-                    for e in entries[:6]:
-                        results.append({
-                            "source": e.get("kind", "concept"),
+def _where_one_project(root, q: str) -> list[dict]:
+    """code/doc/concept anchor hits (via cached replica) + memory_search hits
+    for one project. Best-effort; returns [] on any failure."""
+    out: list[dict] = []
+    proj = discovery.store_name(root)
+    try:
+        b = _replica_bundle(root, q, degree=0)
+        if b:
+            anchor = b.get("anchor")
+            if anchor:
+                out.append({"source": anchor.get("kind", "concept"),
                             "project": proj, "root": str(root),
-                            "name": e["name"], "kind": e.get("kind", "concept"),
-                            "path": e.get("path"), "line": e.get("line"),
-                            "snippet": e.get("snippet"),
-                        })
-        except Exception:
-            pass
-        try:
-            mem = daemon_mod.call(root, "memory_search", {
-                "query": q, "limit": 4, "partition": proj,
-            }, timeout=10.0)
-            if mem.get("ok"):
-                for m in mem["result"].get("rows", []):
-                    results.append({
-                        "source": "memory", "project": proj, "root": str(root),
-                        "name": m["name"], "kind": "memory", "path": None,
-                        "snippet": (m.get("content") or "")[:120],
-                    })
-        except Exception:
-            pass
-    # include global behavior memories
+                            "name": anchor["name"],
+                            "kind": anchor.get("kind", "concept"),
+                            "path": anchor.get("path"), "line": None})
+            for entries in (b.get("groups") or {}).values():
+                for e in entries[:6]:
+                    out.append({"source": e.get("kind", "concept"),
+                                "project": proj, "root": str(root),
+                                "name": e["name"], "kind": e.get("kind", "concept"),
+                                "path": e.get("path"), "line": e.get("line"),
+                                "snippet": e.get("snippet")})
+    except Exception:
+        pass
+    try:
+        mem = daemon_mod.call(root, "memory_search",
+                              {"query": q, "limit": 4, "partition": proj},
+                              timeout=3.0, retries=0)
+        if mem.get("ok"):
+            for m in mem["result"].get("rows", []):
+                out.append({"source": "memory", "project": proj,
+                            "root": str(root), "name": m["name"], "kind": "memory",
+                            "path": None, "snippet": (m.get("content") or "")[:120]})
+    except Exception:
+        pass
+    return out
+
+
+def federated_where(q: str, *, limit: int = 40) -> dict:
+    """Fan a query across all live stores: code/doc/concept hits from the cached
+    replica + memory hits, grouped by source, deduped, capped. Per-project work
+    runs concurrently with short timeouts so one slow/stuck daemon can't stall
+    the whole omnibox. Returns
+    {"results": [{source, project, root, name, kind, path, line, snippet}]}."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    roots = [r for r in discovery.discover_roots() if daemon_mod.ping(r)]
+    results: list[dict] = []
+    if roots:
+        with ThreadPoolExecutor(max_workers=min(8, len(roots))) as ex:
+            futs = {ex.submit(_where_one_project, r, q): r for r in roots}
+            try:
+                for fut in as_completed(futs, timeout=8):
+                    try:
+                        results.extend(fut.result(timeout=0.1) or [])
+                    except Exception:
+                        pass
+            except Exception:
+                pass  # overall fan-out timeout — return whatever finished
+    # global behavior memories (hub-local; fast)
     try:
         from refmatrix import hub as hub_mod
         if hub_mod.global_store_root().exists():
@@ -116,8 +130,7 @@ def federated_where(q: str, *, limit: int = 40) -> dict:
                         "source": "global", "project": "global",
                         "root": str(hub_mod.global_store_root()),
                         "name": m["name"], "kind": "memory", "path": None,
-                        "snippet": (m.get("content") or "")[:120],
-                    })
+                        "snippet": (m.get("content") or "")[:120]})
     except Exception:
         pass
 

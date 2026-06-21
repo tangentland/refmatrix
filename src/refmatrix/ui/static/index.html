@@ -44,9 +44,9 @@
           </select>
         </label>
         <button id="graph-go">explore</button>
-        <button id="graph-home" class="hidden">⌂ home</button>
-        <span class="hint">double-click a node to expand · drag to pan · scroll to zoom</span>
+        <label class="degree"><input type="checkbox" id="graph-tests"> include tests</label>
       </div>
+      <div class="graph-crumbs" id="graph-crumbs"></div>
       <div class="graph-wrap">
         <canvas id="graph-canvas"></canvas>
         <aside id="node-panel" class="node-panel hidden"></aside>

@@ -76,11 +76,28 @@ def replica_context(root: Path, ref: str, *, degree: int = 0,
         return {"error": f"{type(e).__name__}: {e}"}
 
 
-def _context_to_graph(bundle: dict) -> dict:
+import re as _re
+
+# Test-file detector: tests/ or test_*/ *_test segments, conftest, spec files.
+_TEST_PATH_RE = _re.compile(
+    r"(^|/)(tests?|testing|__tests__|spec)(/|$)"
+    r"|(^|/)(test_[^/]*|[^/]*_test|conftest|[^/]*\.spec|[^/]*\.test)\.[A-Za-z]+$",
+    _re.IGNORECASE,
+)
+
+
+def _is_test_path(path: str | None) -> bool:
+    return bool(path) and bool(_TEST_PATH_RE.search(path))
+
+
+def _context_to_graph(bundle: dict, *, include_tests: bool = True) -> dict:
     """Convert a context-bundle JSON into {nodes, edges} for force-graph.
-    Anchor is the center; each grouped neighbor is a node + a typed edge."""
+    Anchor is the center; each grouped neighbor is a node + a typed edge.
+    When `include_tests` is False, neighbor nodes whose path is a test file are
+    dropped (the anchor is always kept)."""
     nodes: dict[str, dict] = {}
     edges: list[dict] = []
+    dropped_tests = 0
 
     def node_id(name: str, kind: str) -> str:
         return f"{kind}:{name}"
@@ -103,6 +120,9 @@ def _context_to_graph(bundle: dict) -> dict:
 
     for linkage, entries in (bundle.get("groups") or {}).items():
         for e in entries:
+            if not include_tests and _is_test_path(e.get("path")):
+                dropped_tests += 1
+                continue
             nid = node_id(e["name"], e.get("kind", "concept"))
             if nid not in nodes:
                 nodes[nid] = {
@@ -115,7 +135,8 @@ def _context_to_graph(bundle: dict) -> dict:
                 "weight": e.get("weight"),
             })
     return {"ref": bundle.get("ref"), "nodes": list(nodes.values()),
-            "edges": edges, "truncated": bundle.get("truncated", False)}
+            "edges": edges, "truncated": bundle.get("truncated", False),
+            "dropped_tests": dropped_tests}
 
 
 # ---- app ------------------------------------------------------------------
@@ -271,11 +292,15 @@ def create_app(hub) -> FastAPI:
                 "truncated": False}}
 
     @app.get("/api/graph")
-    def graph(root: str, seed: str, degree: int = 0):
-        bundle = replica_context(Path(root), seed, degree=degree)
+    def graph(root: str, seed: str, degree: int = 0, include_tests: bool = False):
+        # bump max_entities when hiding tests so we still surface enough
+        # non-test neighbors (tests often dominate a symbol's defines).
+        bundle = replica_context(Path(root), seed, degree=degree,
+                                 max_entities=60 if not include_tests else 20)
         if bundle.get("error"):
             return {"ok": False, "error": bundle["error"]}
-        return {"ok": True, "result": _context_to_graph(bundle)}
+        return {"ok": True,
+                "result": _context_to_graph(bundle, include_tests=include_tests)}
 
     @app.post("/api/query")
     async def query(payload: dict):

@@ -97,6 +97,33 @@ def test_context_op_honors_partition_under_ambient_drift(tmp_path):
     s.close()
 
 
+def test_context_to_graph_filters_tests():
+    bundle = {
+        "ref": "make_config",
+        "anchor": {"name": "make_config", "kind": "concept"},
+        "groups": {"defines": [
+            {"name": "tests.test_x._make_config", "kind": "code",
+             "path": "/p/tests/test_x.py"},
+            {"name": "config.builder", "kind": "code", "path": "/p/config/builder.py"},
+            {"name": "conftest._cfg", "kind": "code", "path": "/p/conftest.py"},
+        ]},
+    }
+    excl = srv._context_to_graph(bundle, include_tests=False)
+    names = {n["name"] for n in excl["nodes"]}
+    assert names == {"make_config", "config.builder"}  # tests + conftest dropped
+    assert excl["dropped_tests"] == 2
+    incl = srv._context_to_graph(bundle, include_tests=True)
+    assert len({n["name"] for n in incl["nodes"]}) == 4
+
+
+def test_is_test_path():
+    for p in ["/a/tests/test_x.py", "/a/test_foo.py", "/a/foo_test.py",
+              "/a/conftest.py", "/a/__tests__/x.js", "/a/x.spec.ts"]:
+        assert srv._is_test_path(p), p
+    for p in ["/a/config/builder.py", "/a/src/store.py", None, "/a/contest.py"]:
+        assert not srv._is_test_path(p), p
+
+
 def test_tree_endpoint_lists_code_and_docs(tmp_path, monkeypatch):
     monkeypatch.setattr(discovery, "discover_roots", lambda: [])
     proj = tmp_path / "proj"

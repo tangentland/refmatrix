@@ -111,7 +111,7 @@ def test_where_federates(monkeypatch, tmp_path):
              "line": 3}]},
     })
 
-    def fake_call(r, op, args, timeout=60.0):
+    def fake_call(r, op, args, timeout=60.0, **kw):
         if op == "memory_search":
             return {"ok": True, "result": {"rows": [
                 {"name": "where-keys-note", "content": "in the drawer"}]}}
