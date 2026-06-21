@@ -400,6 +400,44 @@ class Stm:
         return {"swapped": True, "current": stack[-1]["desc"]}
 
 
+def cluster_focus(graph: dict, *, min_size: int = 2) -> list[list[str]]:
+    """Partition a `focus_graph()` snapshot into topic clusters by label
+    propagation over the co-occurrence edges. Each cluster is a thread of work
+    (symbols that co-occurred). Returns node-name lists, largest first.
+
+    Deterministic: node iteration follows the graph's score order and labels
+    break ties by lowest id, so the same graph always yields the same topics
+    (no Math.random / dict-order dependence)."""
+    import collections
+    nodes = [n["name"] for n in graph.get("nodes", [])]
+    adj: dict[str, dict[str, float]] = {n: {} for n in nodes}
+    for e in graph.get("edges", []):
+        a, b, w = e.get("source"), e.get("target"), e.get("weight", 1.0)
+        if a in adj and b in adj:
+            adj[a][b] = adj[a].get(b, 0.0) + w
+            adj[b][a] = adj[b].get(a, 0.0) + w
+    label = {n: i for i, n in enumerate(nodes)}
+    for _ in range(30):
+        changed = False
+        for n in nodes:  # graph order = score order → deterministic
+            if not adj[n]:
+                continue
+            tally = collections.Counter()
+            for m, w in adj[n].items():
+                tally[label[m]] += w
+            best = max(tally.items(), key=lambda kv: (kv[1], -kv[0]))[0]
+            if label[n] != best:
+                label[n] = best
+                changed = True
+        if not changed:
+            break
+    clusters: dict[int, list[str]] = collections.defaultdict(list)
+    for n in nodes:
+        clusters[label[n]].append(n)
+    return sorted((c for c in clusters.values() if len(c) >= min_size),
+                  key=len, reverse=True)
+
+
 def _neighbors(g: dict, name: str) -> list[str]:
     out = []
     for k in g["edges"]:

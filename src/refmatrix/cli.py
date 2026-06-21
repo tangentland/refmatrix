@@ -915,6 +915,49 @@ def focus_show(line, session, ctx):
             console.print(f"    [dim]refs: {', '.join(e['refs'])}[/]")
 
 
+@focus.command("topics")
+@click.option("--top", type=int, default=60, show_default=True,
+              help="Graph nodes to cluster.")
+@click.option("-s", "--session", default=None,
+              help="Session id. Default: active Claude session.")
+def focus_topics(top, session):
+    """Cluster the session into topics — its distinct threads of work — as a
+    timeline. Each topic shows its symbols + the L<n> range into the full log,
+    so you can follow the session's evolution topically and drill via
+    `focus show`."""
+    from refmatrix import stm as stm_mod
+    s = _stm(session, prefer_latest=True)
+    g = s.focus_graph(top=top)
+    # Cluster on the real symbols only (shell/path noise would merge topics).
+    clean = {"nodes": [n for n in g["nodes"]
+                       if n["name"].lower() not in _SS_FOCUS_NOISE],
+             "edges": g["edges"]}
+    clusters = stm_mod.cluster_focus(clean)
+    if not clusters:
+        console.print("[yellow]no topics yet[/]")
+        return
+    events = s.all_events()
+    first_line: dict[str, int] = {}
+    last_line: dict[str, int] = {}
+    for i, e in enumerate(events, 1):
+        for r in (e.get("refs") or []):
+            first_line.setdefault(r, i)
+            last_line[r] = i
+    weight = {n["name"]: n["weight"] for n in g["nodes"]}
+    # Order topics as a timeline by first appearance in the log.
+    def span(c):
+        ls = [first_line[n] for n in c if n in first_line]
+        return min(ls) if ls else 10**9
+    console.print(f"[bold]topics[/] · {g['events']} events · session {g['session']}")
+    for c in sorted(clusters, key=span):
+        members = sorted(c, key=lambda n: weight.get(n, 0), reverse=True)
+        lines = [last_line[n] for n in c if n in last_line] + \
+                [first_line[n] for n in c if n in first_line]
+        rng = f"L{min(lines)}–L{max(lines)}" if lines else ""
+        console.print(f"[bold]● {members[0]}[/] [dim]{rng}[/]")
+        console.print(f"    [dim]{', '.join(members[:8])}[/]")
+
+
 @focus.command("clear")
 def focus_clear():
     """Clear short-term memory + task stack for this session."""

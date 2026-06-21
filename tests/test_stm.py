@@ -220,3 +220,31 @@ def test_log_is_not_trimmed(tmp_path):
     assert s.tail(1)[0]["terse"] == "e299"   # newest last
 
 
+
+
+# ---- topic clustering (session evolution by topic) ----
+
+
+def test_cluster_focus_separates_components():
+    from refmatrix.stm import cluster_focus
+    # two disconnected triangles → two topics
+    g = {"nodes": [{"name": n} for n in ("a", "b", "c", "x", "y", "z")],
+         "edges": [{"source": "a", "target": "b", "weight": 3},
+                   {"source": "b", "target": "c", "weight": 3},
+                   {"source": "a", "target": "c", "weight": 3},
+                   {"source": "x", "target": "y", "weight": 3},
+                   {"source": "y", "target": "z", "weight": 3},
+                   {"source": "x", "target": "z", "weight": 3}]}
+    clusters = cluster_focus(g)
+    assert len(clusters) == 2
+    sets = [set(c) for c in clusters]
+    assert {"a", "b", "c"} in sets and {"x", "y", "z"} in sets
+
+
+def test_cluster_focus_deterministic():
+    from refmatrix.stm import cluster_focus
+    g = {"nodes": [{"name": n} for n in ("a", "b", "c", "x", "y")],
+         "edges": [{"source": "a", "target": "b", "weight": 2},
+                   {"source": "b", "target": "c", "weight": 2},
+                   {"source": "x", "target": "y", "weight": 2}]}
+    assert cluster_focus(g) == cluster_focus(g)  # stable
