@@ -26,6 +26,8 @@ import re
 import time
 from pathlib import Path
 
+from .scan import _PROMPT_STOPWORDS
+
 # Event ring (raw provenance).
 RING_SIZE = int(os.environ.get("RMX_STM_SIZE", "500"))
 # Focus-graph node budget (scored eviction kicks in above this).
@@ -45,19 +47,31 @@ EVENT_KINDS = ("input", "tool", "rmx", "result", "say", "git", "mark", "reason")
 
 _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}(?:\.[A-Za-z_][A-Za-z0-9_]+)*")
 _PATH_RE = re.compile(r"[\w./-]+\.[A-Za-z]{1,5}")
-_STOP = {"the", "and", "for", "this", "that", "with", "from", "into", "rmx",
-         "true", "false", "none", "null", "self", "args", "kwargs",
-         # shell commands + tool names: noise when a Bash command line or a
-         # tool envelope is ref-extracted. The signal in a command is its file
-         # paths, not `echo`/`grep`/`Bash`.
-         "bash", "sh", "zsh", "echo", "grep", "rg", "cat", "sed", "awk", "ls",
-         "cd", "cp", "mv", "head", "tail", "git", "python", "python3", "pip",
-         "rtk", "tee", "xargs", "find", "sleep", "export", "sudo", "chmod",
-         "mkdir", "touch", "curl", "wget", "make", "tool", "read", "edit",
-         "write", "glob", "bash_tool",
-         # home-dir path segments that appear in every absolute path
-         "users", "home", "tmp", "var", "usr", "opt", "bin", "dev",
-         "tholley", "claude_tools", "claude"}
+# Reuse the maintained NL function-word stoplist from the prompt scanner
+# (articles/pronouns/prepositions/conjunctions/auxiliaries) — a focus note is
+# prose, same problem as a prompt. Union with the shell/path/domain noise that
+# is specific to ref-extraction over command lines and absolute paths.
+_STOP = _PROMPT_STOPWORDS | {
+    "rmx", "true", "false", "none", "null", "self", "args", "kwargs",
+    # common adverbs / fillers the prompt list omits (prose-only noise)
+    "here", "there", "now", "also", "because", "just", "very", "much",
+    "more", "most", "some", "any", "all", "each", "every", "both", "either",
+    "neither", "only", "even", "still", "again", "back", "over", "out", "up",
+    "down", "too", "use", "used", "using", "uses", "try", "tried", "trying",
+    "get", "got", "make", "made", "note", "noted", "like", "want", "need",
+    "see", "seen", "test", "testing", "tested",
+    # shell commands + tool names: noise when a Bash command line or a
+    # tool envelope is ref-extracted. The signal in a command is its file
+    # paths, not `echo`/`grep`/`Bash`.
+    "bash", "sh", "zsh", "echo", "grep", "rg", "cat", "sed", "awk", "ls",
+    "cd", "cp", "mv", "head", "tail", "git", "python", "python3", "pip",
+    "rtk", "tee", "xargs", "find", "sleep", "export", "sudo", "chmod",
+    "mkdir", "touch", "curl", "wget", "tool", "read", "edit",
+    "write", "glob", "bash_tool",
+    # home-dir path segments that appear in every absolute path
+    "users", "home", "tmp", "var", "usr", "opt", "bin", "dev",
+    "tholley", "claude_tools", "claude",
+}
 
 
 def stm_dir(root: Path) -> Path:

@@ -123,7 +123,8 @@ def _t_queues(args: dict) -> dict:
 
 def _t_focus(args: dict) -> dict:
     from refmatrix import stm as stm_mod
-    s = stm_mod.Stm(_resolve_root(args), args.get("session") or stm_mod.session_id())
+    root = _resolve_root(args)
+    s = stm_mod.Stm(root, _session(args, stm_mod, root))
     return {"graph": s.focus_graph(top=int(args.get("top", 20))),
             "tasks": s.task_list()}
 
@@ -136,9 +137,12 @@ def _t_projects(args: dict) -> dict:
 # ---- write path (per-project; daemon-routed, in-proc fallback) -------------
 
 
-def _write_session(args: dict, stm_mod, root: Path) -> str:
-    """Resolve the STM session for a write: explicit arg → most-recently-written
-    ring (the active Claude session a spawned MCP process can't name) → bare."""
+def _session(args: dict, stm_mod, root: Path) -> str:
+    """Resolve the STM session for read OR write: explicit arg → most-recently-
+    written ring (the active Claude session a spawned MCP process can't name) →
+    bare "default". Reads and writes MUST resolve identically, else a note
+    written to the active session is invisible to a `focus` read that fell back
+    to "default"."""
     return (args.get("session") or stm_mod.latest_session(root)
             or stm_mod.session_id())
 
@@ -149,7 +153,7 @@ def _t_focus_note(args: dict) -> dict:
     without the daemon. MCP-native so note text bypasses shell quoting."""
     from refmatrix import stm as stm_mod
     root = _resolve_root(args)
-    s = stm_mod.Stm(root, _write_session(args, stm_mod, root))
+    s = stm_mod.Stm(root, _session(args, stm_mod, root))
     ev = s.record("reason", str(args["text"])[:800])
     return {"noted": True, "session": s.session, "refs": ev.get("refs", [])[:6]}
 
@@ -182,7 +186,7 @@ def _t_change_subject(args: dict) -> dict:
     routed (in-proc fallback when down)."""
     from refmatrix import daemon as daemon_mod, discovery, stm as stm_mod
     root = _resolve_root(args)
-    s = stm_mod.Stm(root, _write_session(args, stm_mod, root))
+    s = stm_mod.Stm(root, _session(args, stm_mod, root))
     rec = s.set_subject(args["label"])
     part = discovery.store_name(root)
     eid = None
