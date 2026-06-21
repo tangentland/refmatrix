@@ -459,9 +459,13 @@ async function initGraphTab() {
   if (!sel.children.length)
     sel.innerHTML = PROJECTS.map((p) => `<option value="${p.root}">${p.name}</option>`).join("");
   $("#graph-project").addEventListener("change", () => {
-    if (!$("#graph-landing").classList.contains("hidden")) renderLanding();
+    TRAIL = []; autoLoadTop();
   });
-  if (G.inited) { showLanding(); return; }
+  if (G.inited) {
+    // returning to the tab: keep the current graph if any, else autoload
+    if (!G.nodes.length) autoLoadTop();
+    return;
+  }
   G.inited = true;
   G.canvas = $("#graph-canvas"); G.ctx = G.canvas.getContext("2d");
   $("#graph-go").addEventListener("click", runGraph);
@@ -478,7 +482,20 @@ async function initGraphTab() {
   setupGraphInput();
   resizeCanvas(); window.addEventListener("resize", resizeCanvas);
   loop();
-  showLanding();
+  autoLoadTop();
+}
+
+// Open the Graph tab straight into the #1 top concept's graph instead of an
+// empty canvas. The ⌂ breadcrumb returns to the top/files landing list.
+async function autoLoadTop() {
+  const root = $("#graph-project").value;
+  if (!root) { showLanding(); return; }
+  try {
+    const r = await api(`/api/top?root=${encodeURIComponent(root)}&n=1`);
+    const top = (r.result?.concepts || [])[0];
+    if (top) { $("#graph-ref").value = top.name; TRAIL = []; runGraph(); return; }
+  } catch {}
+  showLanding();  // nothing ranked (un-ingested) → show the list
 }
 
 let LANDING_VIEW = "top";
