@@ -83,14 +83,25 @@ def _roots_from_launchd() -> list[Path]:
     return out
 
 
+def is_global_root(root: Path) -> bool:
+    """True if `root` IS the user-level global store (`~/.refmatrix`, the hub
+    home). The home dir doubles as the global store; it is named "global"
+    rather than by its parent dir ("tholley")."""
+    try:
+        return Path(root).resolve() == user_home().resolve()
+    except OSError:
+        return False
+
+
 def _cwd_root() -> Path | None:
     env = os.environ.get("REFMATRIX_ROOT")
     if env:
         return Path(env)
     cur = Path.cwd()
     for d in (cur, *cur.parents):
-        if (d / ".refmatrix").is_dir():
-            return d / ".refmatrix"
+        cand = d / ".refmatrix"
+        if cand.is_dir():
+            return cand
     return None
 
 
@@ -110,6 +121,8 @@ def discover_roots() -> list[Path]:
     cwd = _cwd_root()
     if cwd is not None:
         candidates.append(cwd)
+    # always include the global store (the home dir doubles as it)
+    candidates.append(user_home())
     for c in candidates:
         try:
             rc = c.resolve()
@@ -197,6 +210,8 @@ def footprint(root: Path) -> dict:
 
 
 def store_name(root: Path) -> str:
+    if is_global_root(root):
+        return "global"  # the home dir (~/.refmatrix) is the global store
     from refmatrix.store import default_partition_name
     try:
         return default_partition_name(root)

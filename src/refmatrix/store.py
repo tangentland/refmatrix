@@ -92,8 +92,19 @@ def default_partition_name(root: "Path") -> str:
     explicit `partition=` argument or the `RMX_PARTITION` env var override
     it; env vars are overrides only, never required to reach the default.
     Store() and the CLI both resolve through here, so the same root always
-    maps to the same partition regardless of which layer opens it."""
+    maps to the same partition regardless of which layer opens it.
+
+    The user-level global store (`~/.refmatrix`, the hub home) is the one
+    exception — it maps to the partition "global" rather than its parent dir
+    name, so a bare `rmx` command falling back to it reads/writes the global
+    behavior memories."""
     p = Path(root).resolve()
+    try:
+        from refmatrix.taxonomy import user_home
+        if p == user_home().resolve():
+            return "global"
+    except Exception:
+        pass
     return p.parent.name or "default"
 
 CATALOG_DDL = """

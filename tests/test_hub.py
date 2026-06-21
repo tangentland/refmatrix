@@ -122,6 +122,23 @@ def test_ensure_global_daemon(short_home):
         daemon_mod.stop_daemon(hub.global_store_root())
 
 
+def test_global_store_is_the_home_dir(monkeypatch, tmp_path):
+    """The hub home (~/.refmatrix) IS the user-level global store — discovered,
+    named "global" (not by its parent dir), and always present."""
+    home = tmp_path / ".refmatrix"
+    home.mkdir()
+    monkeypatch.setenv("RMX_HOME", str(home))
+    assert discovery.is_global_root(home) is True
+    assert discovery.store_name(home) == "global"
+    proj = tmp_path / "proj" / ".refmatrix"; proj.mkdir(parents=True)
+    assert discovery.is_global_root(proj) is False
+    # global is always discovered, alongside any registered project
+    discovery.register_root(proj)
+    roots = {str(r) for r in discovery.discover_roots()}
+    assert str(home.resolve()) in roots   # the global/home store
+    assert str(proj.resolve()) in roots
+
+
 def test_registry_roundtrip(monkeypatch, tmp_path):
     monkeypatch.setenv("RMX_HOME", str(tmp_path / "home"))
     r = tmp_path / "p" / ".refmatrix"

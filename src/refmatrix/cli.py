@@ -21,6 +21,12 @@ console = Console()
 
 
 def _root() -> Path:
+    """Resolve the active store root.
+
+    REFMATRIX_ROOT env wins. Else walk up from cwd for a project `.refmatrix`.
+    If none is found, fall back to the user-level GLOBAL store (`~/.refmatrix`)
+    rather than auto-creating a junk `cwd/.refmatrix` — store creation is
+    explicit (`rmx init`) only."""
     env = os.environ.get("REFMATRIX_ROOT")
     if env:
         return Path(env)
@@ -28,7 +34,8 @@ def _root() -> Path:
     for p in [cur, *cur.parents]:
         if (p / ".refmatrix").is_dir():
             return p / ".refmatrix"
-    return cur / ".refmatrix"
+    from refmatrix.taxonomy import user_home
+    return user_home()  # global/home store; never auto-create cwd/.refmatrix
 
 
 # Set by main()'s --partition flag, consumed by _store() and init. None means

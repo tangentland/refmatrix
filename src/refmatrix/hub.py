@@ -61,8 +61,12 @@ def hub_log_path() -> Path:
 
 
 def global_store_root() -> Path:
-    """`.refmatrix` dir of the hub-owned global memory store."""
-    return hub_home() / "global" / ".refmatrix"
+    """Root of the user-level "global" store. This IS the hub home
+    (`~/.refmatrix`) — the home dir doubles as the cross-project store, holding
+    its catalog alongside the registry/taxonomy/bus. `_root()` falls back here
+    when no project `.refmatrix` is found, so a bare `rmx` command targets the
+    user's global store instead of auto-creating a junk one."""
+    return hub_home()
 
 
 def _log(msg: str) -> None:
