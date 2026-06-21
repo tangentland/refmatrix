@@ -147,3 +147,46 @@ def test_registry_roundtrip(monkeypatch, tmp_path):
     assert str(r.resolve()) in discovery.load_registry()
     discovery.unregister_root(r)
     assert str(r.resolve()) not in discovery.load_registry()
+
+
+# ---- port-orphan reap + start preflight (the 7777-wedge fixes) ----
+
+
+def test_pid_on_port_parses_lsof(monkeypatch):
+    import subprocess
+    class R:
+        stdout = "12345\n"
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: R())
+    assert hub._pid_on_port(7777) == 12345
+
+
+def test_pid_on_port_none_when_free(monkeypatch):
+    import subprocess
+    class R:
+        stdout = ""
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: R())
+    assert hub._pid_on_port(7777) is None
+
+
+def test_stop_hub_reaps_port_orphan(monkeypatch):
+    """A zombie hub whose control socket is dead (is_running False) but whose
+    uvicorn still holds the port must be killed by port."""
+    monkeypatch.setattr(hub, "is_running", lambda: False)
+    monkeypatch.setattr(hub, "hub_pid", lambda: None)
+    # Orphan present on first probe, gone after the SIGTERM.
+    seen = {"n": 0}
+    def fake_pid_on_port(port):
+        seen["n"] += 1
+        return 99999 if seen["n"] == 1 else None
+    monkeypatch.setattr(hub, "_pid_on_port", fake_pid_on_port)
+    killed = []
+    monkeypatch.setattr(hub.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    assert hub.stop_hub() is True
+    assert killed and killed[0][0] == 99999  # SIGTERM'd the orphan
+
+
+def test_stop_hub_clean_when_nothing_running(monkeypatch):
+    monkeypatch.setattr(hub, "is_running", lambda: False)
+    monkeypatch.setattr(hub, "hub_pid", lambda: None)
+    monkeypatch.setattr(hub, "_pid_on_port", lambda port: None)
+    assert hub.stop_hub() is True

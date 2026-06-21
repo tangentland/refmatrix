@@ -530,6 +530,25 @@ class Hub:
     def _serve_http(self, host: str) -> None:
         import uvicorn  # noqa: F401  (ImportError bubbles to run())
         from refmatrix.ui.server import create_app
+        # Preflight the port. Without this, an orphan still holding the port
+        # (a zombie hub whose control socket died but whose uvicorn survived)
+        # makes uvicorn fail to bind inside its thread; the thread dies, the
+        # serve loop falls through to shutdown(), and the user sees "hub
+        # started pid=X" immediately followed by "not running" — the wedge
+        # that drove the crash-loop debugging. Surface it as a clear log.
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            probe.bind((host, self.port))
+        except OSError:
+            other = _pid_on_port(self.port)
+            who = f" by pid {other}" if other else ""
+            _log(f"hub port {self.port} already in use{who} — run "
+                 f"`rmx hub stop` (reaps the orphan) or kill it; not starting")
+            probe.close()
+            self.shutdown()
+            return
+        finally:
+            probe.close()
         app = create_app(self)
         config = uvicorn.Config(app, host=host, port=self.port,
                                 log_level="warning")
@@ -647,8 +666,26 @@ def spawn_hub(*, port: int = DEFAULT_PORT, host: str = "127.0.0.1",
     return pid
 
 
-def stop_hub(*, timeout: float = 5.0) -> bool:
-    """Ask the hub to stop; fall back to SIGTERM. Returns True if it stopped."""
+def _pid_on_port(port: int) -> int | None:
+    """PID of the process LISTENing on `port`, or None. Best-effort via lsof
+    (no extra dep). Used to find/reap a hub orphan that lost its control
+    socket but still holds the HTTP port."""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+            capture_output=True, text=True, timeout=5).stdout.split()
+    except Exception:
+        return None
+    for tok in out:
+        if tok.isdigit():
+            return int(tok)
+    return None
+
+
+def stop_hub(*, timeout: float = 5.0, port: int = DEFAULT_PORT) -> bool:
+    """Ask the hub to stop; fall back to SIGTERM, then reap any orphan still
+    holding the HTTP port. Returns True if nothing is left running."""
     if is_running():
         try:
             rpc("stop", timeout=2.0)
@@ -662,16 +699,32 @@ def stop_hub(*, timeout: float = 5.0) -> bool:
                 hub_pid_path().unlink()
             except OSError:
                 pass
-            return True
+            break
         if pid:
             try:
                 os.kill(pid, signal.SIGTERM)
             except ProcessLookupError:
-                return True
+                break
             except OSError:
                 pass
         time.sleep(0.2)
-    return not is_running()
+    # Reap a port-orphan: a zombie hub whose control socket is dead (so
+    # is_running()/rpc can't reach it) but whose uvicorn still squats the
+    # port, blocking every future `hub start`. The socket-based stop above
+    # is blind to it; kill it by port.
+    orphan = _pid_on_port(port)
+    if orphan and orphan != os.getpid():
+        try:
+            os.kill(orphan, signal.SIGTERM)
+            for _ in range(15):
+                time.sleep(0.2)
+                if _pid_on_port(port) != orphan:
+                    break
+            else:
+                os.kill(orphan, signal.SIGKILL)
+        except OSError:
+            pass
+    return not is_running() and _pid_on_port(port) is None
 
 
 def status() -> dict:

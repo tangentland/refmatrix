@@ -1099,6 +1099,14 @@ def hub_start(port, host, no_detach, no_http):
     if hub_mod.is_running():
         console.print(f"[yellow]hub already running[/] pid={hub_mod.hub_pid()}")
         return
+    # A foreign process on the port (orphaned uvicorn from a hub whose control
+    # socket died) blocks startup — uvicorn can't bind, the hub self-stops, and
+    # the user sees a confusing "started then gone". Catch it before spawning.
+    orphan = hub_mod._pid_on_port(port)
+    if orphan:
+        console.print(f"[red]port {port} is held by pid {orphan}[/] but no live "
+                      f"hub answers — run `rmx hub stop` to reap it, then retry")
+        return
     pid = hub_mod.spawn_hub(port=port, host=host)
     if hub_mod.is_running():
         console.print(f"[green]hub started[/] pid={pid} http://{host}:{port}")
