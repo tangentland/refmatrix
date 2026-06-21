@@ -1053,6 +1053,47 @@ def focus_summarize(session, promote, is_global):
                   f"`rmx memory recall summary` or `rmx context {name}`")
 
 
+@focus.command("detour")
+@click.argument("label", required=False)
+def focus_detour(label):
+    """Soft branch detour — bookmark the current focus before chasing a
+    related-but-off-task tangent, so you can rewind to it with `focus return`.
+    No git, no stash; just a focus return-point on the L-ref'd log."""
+    m = _stm(prefer_latest=True).focus_mark(label or "")
+    console.print(f"[magenta]⤴ detour[/] [bold]{m['label']}[/]  "
+                  f"[dim]return-point at L{m['line']} · /return to rewind[/]")
+
+
+@focus.command("detours")
+@click.option("-s", "--session", default=None,
+              help="Session id. Default: active Claude session.")
+def focus_detours(session):
+    """List open soft-detour return-points (most recent first)."""
+    marks = _stm(session, prefer_latest=True).focus_marks()
+    if not marks:
+        console.print("[yellow]no open detours[/]")
+        return
+    for i, m in enumerate(reversed(marks), 1):
+        console.print(f"[bold]{i}[/] {m['label']}  [dim]L{m.get('line')} · "
+                      f"{m['ts']}[/]")
+
+
+@focus.command("return")
+@click.argument("selector", required=False)
+def focus_return(selector):
+    """Return from a soft detour — rewind focus to the bookmark. Default = most
+    recent; SELECTOR (index from `focus detours` or label substring) returns
+    from a specific detour. The tangent stays in the full log."""
+    r = _stm(prefer_latest=True).focus_return(selector)
+    if r["returned"] is None:
+        console.print(f"[yellow]{r.get('error') or 'no open detours'}[/]")
+        return
+    console.print(f"[green]⤶ returned[/] from [bold]{r['returned']}[/] "
+                  f"[dim](L{r.get('line')}, {r['remaining']} detour(s) left)[/]")
+    if r.get("focus"):
+        console.print(f"  [dim]focus: {', '.join(r['focus'][:8])}[/]")
+
+
 @focus.command("clear")
 def focus_clear():
     """Clear short-term memory + task stack for this session."""

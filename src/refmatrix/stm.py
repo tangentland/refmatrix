@@ -41,7 +41,7 @@ COOCCUR_WINDOW = 4
 # Score weights. Pin dominates so a pinned node is never evicted ahead of junk.
 W_RECENCY, W_FREQ, W_CENTRALITY, W_PIN = 1.0, 0.5, 0.8, 10.0
 
-EVENT_KINDS = ("input", "tool", "rmx", "result", "say", "git")
+EVENT_KINDS = ("input", "tool", "rmx", "result", "say", "git", "mark")
 
 _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}(?:\.[A-Za-z_][A-Za-z0-9_]+)*")
 _PATH_RE = re.compile(r"[\w./-]+\.[A-Za-z]{1,5}")
@@ -179,7 +179,8 @@ class Stm:
             return 0
 
     def clear(self) -> None:
-        for p in (self._path, self._graph_path, self._tasks_path):
+        marks_path = self._dir / f"{_safe(self.session)}.marks.json"
+        for p in (self._path, self._graph_path, self._tasks_path, marks_path):
             try:
                 p.unlink()
             except OSError:
@@ -420,6 +421,75 @@ class Stm:
         stack[-1], stack[-2] = stack[-2], stack[-1]
         self._save_tasks(stack)
         return {"swapped": True, "current": stack[-1]["desc"]}
+
+    # ---- soft branch detours (lightweight focus rewind points) ----
+    # A detour is NOT a stash: no git, no stack discipline — just a focus
+    # return-point you bookmark before chasing a related-but-off-task tangent,
+    # then rewind to. The tangent stays in the full log (clusters as its own
+    # topic); `return` re-warms the pre-detour focus.
+    def _load_marks(self) -> list[dict]:
+        p = self._dir / f"{_safe(self.session)}.marks.json"
+        if not p.exists():
+            return []
+        try:
+            return json.loads(p.read_text())
+        except (json.JSONDecodeError, OSError):
+            return []
+
+    def _save_marks(self, marks: list[dict]) -> None:
+        self._dir.mkdir(parents=True, exist_ok=True)
+        p = self._dir / f"{_safe(self.session)}.marks.json"
+        tmp = p.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(marks, indent=2))
+        tmp.replace(p)
+
+    def _find_mark(self, marks: list[dict], selector: str) -> "int | None":
+        s = str(selector).strip()
+        if not s:
+            return len(marks) - 1 if marks else None
+        if s.lstrip("+").isdigit():
+            i = len(marks) - int(s)   # display 1 == most recent == marks[-1]
+            return i if 0 <= i < len(marks) else None
+        for i in range(len(marks) - 1, -1, -1):
+            if s.lower() in marks[i]["label"].lower():
+                return i
+        return None
+
+    def focus_mark(self, label: str = "") -> dict:
+        """Drop a soft-detour return-point: the current focus snapshot + log
+        line. Also logs a `mark` event so the detour shows on the timeline."""
+        marks = self._load_marks()
+        snap = self.focus_graph(top=12)["focus"]
+        mark = {"label": label or f"detour-{len(marks) + 1}",
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "line": self.event_count() + 1, "focus_snapshot": snap}
+        marks.append(mark)
+        self._save_marks(marks)
+        self.record("mark", f"⤴ detour: {mark['label']}", refs=[])
+        return mark
+
+    def focus_marks(self) -> list[dict]:
+        return self._load_marks()
+
+    def focus_return(self, selector: str | None = None) -> dict:
+        """Rewind focus to a detour return-point (re-warm its snapshot). The
+        tangent's events stay in the log. Default = most recent; `selector`
+        (index or label substring) returns from a specific detour."""
+        marks = self._load_marks()
+        if not marks:
+            return {"returned": None, "focus": [], "remaining": 0}
+        idx = (len(marks) - 1) if selector is None \
+            else self._find_mark(marks, selector)
+        if idx is None:
+            return {"returned": None, "focus": [], "remaining": len(marks),
+                    "error": f"no detour matching {selector!r}"}
+        mark = marks.pop(idx)
+        self._save_marks(marks)
+        snap = mark.get("focus_snapshot") or []
+        self._ingest_into_graph(list(snap), new_turn=False)
+        self.record("mark", f"⤶ return: {mark['label']}", refs=list(snap)[:6])
+        return {"returned": mark["label"], "line": mark.get("line"),
+                "focus": snap, "remaining": len(marks)}
 
 
 def cluster_focus(graph: dict, *, min_size: int = 2) -> list[list[str]]:

@@ -267,3 +267,37 @@ def test_cluster_focus_deterministic():
                    {"source": "b", "target": "c", "weight": 2},
                    {"source": "x", "target": "y", "weight": 2}]}
     assert cluster_focus(g) == cluster_focus(g)  # stable
+
+
+# ---- soft branch detours (focus rewind points) ----
+
+
+def test_detour_mark_and_return(tmp_path):
+    s = Stm(tmp_path / ".refmatrix", "sess")
+    s.record("tool", "x", refs=["main_fn"])
+    m = s.focus_mark("chase tangent")
+    assert m["label"] == "chase tangent"
+    for i in range(5):
+        s.record("tool", "x", refs=[f"tangent_{i}"])
+    r = s.focus_return()
+    assert r["returned"] == "chase tangent"
+    assert any("main_fn" == f for f in r["focus"])   # pre-detour focus re-warmed
+    assert r["remaining"] == 0
+
+
+def test_detour_return_out_of_order(tmp_path):
+    s = Stm(tmp_path / ".refmatrix", "sess")
+    for d, ref in [("A", "a"), ("B", "b"), ("C", "c")]:
+        s.record("tool", "x", refs=[ref])
+        s.focus_mark(d)
+    assert [m["label"] for m in s.focus_marks()] == ["A", "B", "C"]
+    assert s.focus_return("A")["returned"] == "A"        # by label, out of order
+    assert s.focus_return("2")["returned"] == "B"        # 1-based from top → B
+    assert s.focus_return("nope")["returned"] is None
+
+
+def test_detour_logs_mark_events(tmp_path):
+    s = Stm(tmp_path / ".refmatrix", "sess")
+    s.focus_mark("d1")
+    kinds = [e["kind"] for e in s.all_events()]
+    assert "mark" in kinds
