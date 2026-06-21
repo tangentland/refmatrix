@@ -126,16 +126,35 @@ def test_rehydrate_frontier_on_retouch(tmp_path):
 # ---- task stack ----
 
 
-def test_task_push_pop_restores_focus(tmp_path):
+def test_task_pop_restores_popped_stash_focus(tmp_path):
+    """git-stash semantics: pop restores the POPPED stash's own focus (you
+    resume exactly where you stashed)."""
     s = Stm(tmp_path / ".refmatrix", "sess")
     s.record("tool", "x", refs=["refactor_target"])
-    s.task_push("refactor X")
-    _turn(s, "test_failure")
-    s.task_push("chase test")
-    assert s.current_task_desc() == "chase test"
+    s.task_push("refactor X")          # snapshot includes refactor_target
     r = s.task_pop()
-    assert r["popped"] == "chase test" and r["restored"] == "refactor X"
+    assert r["popped"] == "refactor X" and r["restored"] == "refactor X"
     assert "refactor_target" in r["restored_focus"]
+
+
+def test_task_pop_out_of_order(tmp_path):
+    s = Stm(tmp_path / ".refmatrix", "sess")
+    for d, ref in [("A", "a_work"), ("B", "b_work"), ("C", "c_work")]:
+        s.record("tool", "x", refs=[ref])
+        s.task_push(d)
+    # pop the bottom (out of order) by desc
+    r = s.task_pop("A")
+    assert r["popped"] == "A" and "a_work" in r["restored_focus"]
+    assert [t["desc"] for t in s.task_list()] == ["B", "C"]
+    # pop by 1-based index (top = 1): index 2 == "B"
+    assert s.task_pop("2")["popped"] == "B"
+    # unknown selector → no-op with error
+    assert s.task_pop("nope")["popped"] is None
+
+
+def test_task_pop_empty(tmp_path):
+    s = Stm(tmp_path / ".refmatrix", "sess")
+    assert s.task_pop()["popped"] is None
 
 
 def test_task_swap_clear(tmp_path):

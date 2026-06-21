@@ -668,8 +668,12 @@ def init(path: Path | None, hooks: bool, memory_hooks: bool, agents: bool,
             console.print(line)
 
     if agents:
-        from refmatrix.init_agents import install_agents
+        from refmatrix.init_agents import install_agents, install_commands
         for line in install_agents(project_root=project_root, force=force):
+            console.print(line)
+        # Slash commands (/stash, /stash-list, /stash-pop, /save-state,
+        # /recall-state) — the standardized workflow rituals.
+        for line in install_commands(project_root=project_root, force=force):
             console.print(line)
 
 
@@ -1222,16 +1226,17 @@ def task_push(desc):
 
 
 @task.command("pop")
-def task_pop():
-    """Pop the current task, restoring the prior one's focus."""
-    r = _stm().task_pop()
+@click.argument("selector", required=False)
+def task_pop(selector):
+    """Pop a stash and restore ITS focus (git-stash semantics). Default = top;
+    SELECTOR (a 1-based index from `task list`, or a desc substring) pops out
+    of order."""
+    r = _stm().task_pop(selector)
     if r["popped"] is None:
-        console.print("[yellow]task stack empty[/]")
+        msg = r.get("error") or "task stack empty"
+        console.print(f"[yellow]{msg}[/]")
         return
-    msg = f"[green]✓[/] done: {r['popped']}"
-    if r["restored"]:
-        msg += f"  [dim]↩ back to: {r['restored']}[/]"
-    console.print(msg)
+    console.print(f"[green]✓[/] resumed: {r['popped']}  [dim]depth={r['depth']}[/]")
     if r.get("restored_focus"):
         console.print(f"  [dim]focus: {', '.join(r['restored_focus'][:8])}[/]")
 
@@ -1240,14 +1245,14 @@ def task_pop():
 @click.option("-s", "--session", default=None,
               help="Session id to read. Default: active Claude session.")
 def task_list(session):
-    """Show the task stack (top = current)."""
+    """Show the stash stack with 1-based indices (top = 1 = most recent)."""
     stack = _stm(session, prefer_latest=True).task_list()
     if not stack:
         console.print("[yellow]no tasks[/]")
         return
-    for i, t in enumerate(reversed(stack)):
-        marker = "[green]▸[/]" if i == 0 else " "
-        console.print(f"{marker} {t['desc']}  [dim]{t['ts']}[/]")
+    for i, t in enumerate(reversed(stack), 1):
+        marker = "[green]▸[/]" if i == 1 else " "
+        console.print(f"{marker} [bold]{i}[/] {t['desc']}  [dim]{t['ts']}[/]")
 
 
 @task.command("current")

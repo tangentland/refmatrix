@@ -45,6 +45,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 refmatrix = [
     "templates/agents/*.md",
+    "templates/commands/*.md",
     "ui/static/*",
     "ui/static/**/*",
 ]

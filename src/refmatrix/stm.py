@@ -369,20 +369,42 @@ class Stm:
         self._save_tasks(stack)
         return {"depth": len(stack), "current": desc}
 
-    def task_pop(self) -> dict:
+    def _find_task(self, stack: list[dict], selector: str) -> "int | None":
+        """Resolve a stack index from a selector: a 1-based index as shown by
+        `stash-list` (top = 1), or a case-insensitive desc substring (most
+        recent match wins). Enables out-of-order pop."""
+        s = str(selector).strip()
+        if not s:
+            return len(stack) - 1 if stack else None
+        if s.lstrip("+").isdigit():
+            i = len(stack) - int(s)   # display 1 == top == stack[-1]
+            return i if 0 <= i < len(stack) else None
+        for i in range(len(stack) - 1, -1, -1):
+            if s.lower() in stack[i]["desc"].lower():
+                return i
+        return None
+
+    def task_pop(self, selector: str | None = None) -> dict:
+        """Pop a stash and restore ITS focus snapshot (git-stash semantics: you
+        resume exactly where you stashed). Default = top; `selector` (index or
+        desc substring) pops out of order."""
         stack = self._load_tasks()
         if not stack:
-            return {"popped": None, "depth": 0, "restored": None, "restored_focus": []}
-        popped = stack.pop()
+            return {"popped": None, "depth": 0, "restored": None,
+                    "restored_focus": []}
+        idx = (len(stack) - 1) if selector is None \
+            else self._find_task(stack, selector)
+        if idx is None:
+            return {"popped": None, "depth": len(stack), "restored": None,
+                    "restored_focus": [],
+                    "error": f"no stash matching {selector!r}"}
+        popped = stack.pop(idx)
         self._save_tasks(stack)
-        restored = stack[-1] if stack else None
-        # Re-touch the restored task's focus so popping back actually re-warms it.
-        if restored:
-            self._ingest_into_graph(list(restored.get("focus_snapshot") or []),
-                                    new_turn=False)
+        snap = popped.get("focus_snapshot") or []
+        # Re-warm the resumed work's focus.
+        self._ingest_into_graph(list(snap), new_turn=False)
         return {"popped": popped["desc"], "depth": len(stack),
-                "restored": restored["desc"] if restored else None,
-                "restored_focus": restored["focus_snapshot"] if restored else []}
+                "restored": popped["desc"], "restored_focus": snap}
 
     def task_list(self) -> list[dict]:
         return self._load_tasks()

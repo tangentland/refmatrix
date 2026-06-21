@@ -28,25 +28,39 @@ def install_agents(project_root: Path, force: bool = False) -> list[str]:
     Returns a list of human-readable plan lines for the CLI to render.
     Skips files that already exist unless `force=True`.
     """
+    return _install_pkg_md(TEMPLATE_PKG, project_root / ".claude" / "agents",
+                           force=force, kind="agents")
+
+
+COMMANDS_PKG = "refmatrix.templates.commands"
+
+
+def install_commands(project_root: Path, force: bool = False) -> list[str]:
+    """Copy bundled slash-command definitions into <project>/.claude/commands/
+    so `/stash`, `/unstash`, `/save-state`, `/recall-state` are available
+    per-project — the standardized workflow rituals shipped with rmx."""
+    return _install_pkg_md(COMMANDS_PKG, project_root / ".claude" / "commands",
+                           force=force, kind="commands")
+
+
+def _install_pkg_md(pkg_name: str, dest_dir: Path, *, force: bool,
+                    kind: str) -> list[str]:
     out: list[str] = []
-    project_root = project_root.resolve()
-    agents_dir = project_root / ".claude" / "agents"
-    agents_dir.mkdir(parents=True, exist_ok=True)
-
-    names = _iter_template_names()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    pkg = resources.files(pkg_name)
+    names = sorted(p.name for p in pkg.iterdir()
+                   if p.is_file() and p.name.endswith(".md"))
     if not names:
-        out.append("[yellow]no packaged agents found[/]")
+        out.append(f"[yellow]no packaged {kind} found[/]")
         return out
-
-    pkg = resources.files(TEMPLATE_PKG)
     for name in names:
-        target = agents_dir / name
+        target = dest_dir / name
         if target.exists() and not force:
             out.append(
                 f"[yellow]skip[/] {target} (exists; pass --force to overwrite)"
             )
             continue
-        content = (pkg / name).read_text(encoding="utf-8")
-        target.write_text(content, encoding="utf-8")
+        target.write_text((pkg / name).read_text(encoding="utf-8"),
+                          encoding="utf-8")
         out.append(f"[green]write[/] {target}")
     return out
