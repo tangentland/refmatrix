@@ -96,10 +96,17 @@ def _cwd_root() -> Path | None:
 
 def discover_roots() -> list[Path]:
     """Union of launchd-supervised roots, the registry cache, and the cwd.
-    Returns existing `.refmatrix` dirs, deduped + sorted."""
+    Returns existing `.refmatrix` dirs, deduped + sorted. Self-heals the
+    registry: any cached root that no longer exists on disk (e.g. a temp dir
+    from a test run) is pruned so the watchdog never thrashes trying to spawn a
+    daemon for a path that's gone."""
     seen: dict[str, Path] = {}
+    reg = load_registry()
+    reg_alive = [r for r in reg if Path(r).is_dir()]
+    if len(reg_alive) != len(reg):
+        save_registry(reg_alive)  # drop dead entries
     candidates = list(_roots_from_launchd())
-    candidates += [Path(r) for r in load_registry()]
+    candidates += [Path(r) for r in reg_alive]
     cwd = _cwd_root()
     if cwd is not None:
         candidates.append(cwd)

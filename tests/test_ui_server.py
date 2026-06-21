@@ -36,7 +36,10 @@ def test_read_spine_endpoints(client):
     assert client.get("/api/taxonomy").json()["ok"]
 
 
-def test_project_register_endpoint(client, tmp_path):
+def test_project_register_endpoint(client, tmp_path, monkeypatch):
+    # isolate the registry to a temp home so the test never pollutes the real
+    # ~/.refmatrix/registry.json with a tmp path the watchdog would later chase
+    monkeypatch.setenv("RMX_HOME", str(tmp_path / "home"))
     root = tmp_path / "proj" / ".refmatrix"
     root.mkdir(parents=True)
     r = client.post("/api/projects/register", json={"root": str(tmp_path / "proj")})

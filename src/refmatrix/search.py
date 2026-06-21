@@ -6,36 +6,59 @@ never a direct Store open.
 """
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from refmatrix import daemon as daemon_mod
 from refmatrix import discovery
 
+# Shared per-root read-only replica Store cache (used by federated search AND
+# the UI server). Opening a large snapshot cold costs seconds; reuse keeps
+# reads sub-second. DuckDB cursors aren't concurrency-safe, so each cached
+# store carries its own lock.
+_REPLICA_CACHE: "dict[str, tuple]" = {}
+_REPLICA_CACHE_LOCK = threading.Lock()
+
+
+def cached_replica(root: Path):
+    """Return (store, lock) for a root, opening + caching on first use."""
+    from refmatrix.store import Store
+    key = str(Path(root).resolve())
+    with _REPLICA_CACHE_LOCK:
+        hit = _REPLICA_CACHE.get(key)
+        if hit is not None:
+            return hit
+    part = discovery.store_name(root)
+    s = Store(root, partition=part, read_only=True)
+    entry = (s, threading.Lock())
+    with _REPLICA_CACHE_LOCK:
+        existing = _REPLICA_CACHE.setdefault(key, entry)
+    if existing is not entry:
+        try:
+            s.close()
+        except Exception:
+            pass
+    return existing
+
 
 def _replica_bundle(root: Path, ref: str, *, degree: int = 0) -> dict:
-    """In-process read-only-replica context bundle (the working read path; the
-    daemon context op mis-resolves on multi-partition daemons). Returns the
-    render_json dict or {} on failure."""
-    from refmatrix.store import Store
+    """In-process cached read-only-replica context bundle (the working read
+    path; the daemon context op mis-resolves on multi-partition daemons).
+    Returns the render_json dict or {} on failure."""
     from refmatrix.context import build_context, render_json
     import json as _json
     part = discovery.store_name(root)
     try:
-        s = Store(root, partition=part, read_only=True)
+        s, lock = cached_replica(root)
     except Exception:
         return {}
     try:
-        with s.with_partition(part):
+        with lock, s.with_partition(part):
             b = build_context(s, ref, degree=degree,
                               _entities_explicit=False, _tokens_explicit=False)
         return _json.loads(render_json(b))
     except Exception:
         return {}
-    finally:
-        try:
-            s.close()
-        except Exception:
-            pass
 
 
 def federated_where(q: str, *, limit: int = 40) -> dict:
