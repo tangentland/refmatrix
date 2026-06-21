@@ -1,0 +1,61 @@
+"""rmx save-state: the session-handoff compiler (STM + git + memory → one
+stable-id GMD memory). Unit-level checks on the pure helpers + render."""
+from __future__ import annotations
+
+from refmatrix import cli
+
+
+def test_clean_focus_drops_shell_noise_keeps_code():
+    nodes = [
+        {"name": "Bash", "kind": "concept", "count": 50, "weight": 2.3},
+        {"name": "echo", "kind": "concept", "count": 20, "weight": 1.6},
+        {"name": "src/refmatrix/cli.py", "kind": "code", "count": 13, "weight": 1.3},
+        {"name": "daemon", "kind": "concept", "count": 5, "weight": 1.1},
+        {"name": "tholley", "kind": "concept", "count": 23, "weight": 1.5},
+    ]
+    out = [n["name"] for n in cli._ss_clean_focus(nodes)]
+    assert "Bash" not in out and "echo" not in out and "tholley" not in out
+    assert "src/refmatrix/cli.py" in out  # code always kept
+    assert "daemon" in out                # real concept kept
+
+
+def test_frozen_created_preserves_existing(tmp_path):
+    p = tmp_path / "savestate_abc.md"
+    p.write_text("---\nid: savestate_abc\n  created: 2026-01-01\n---\n")
+    assert cli._ss_frozen_created(p, "2026-06-20") == "2026-01-01"
+
+
+def test_frozen_created_defaults_today_when_absent(tmp_path):
+    assert cli._ss_frozen_created(tmp_path / "nope.md", "2026-06-20") == "2026-06-20"
+
+
+def test_render_has_gmd_frontmatter_and_sections():
+    doc = cli._ss_render(
+        mem_id="savestate_x", session="sess-x", repo=__import__("pathlib").Path("/r/proj"),
+        message="headline", git={"branch": "master", "head": "abc123 msg",
+                                  "dirty": "M f.py", "ahead_base": "origin/main",
+                                  "ahead": "abc123 msg", "session_commits": "abc123 msg"},
+        focus={"events": 9, "nodes": [{"name": "f.py", "kind": "code",
+                                       "count": 3, "weight": 1.2}]},
+        tasks=[{"desc": "do the thing", "ts": "2026-06-20T10:00:00"}],
+        recents=[("other_mem", "Other Memory")],
+        created="2026-06-20", today="2026-06-20")
+    assert 'gmd: "0.1"' in doc
+    assert "id: savestate_x" in doc
+    assert "originSessionId: sess-x" in doc
+    assert "# Save-state 2026-06-20: headline {#root}" in doc
+    assert "## Session {#session}" in doc
+    assert "## Focus {#focus}" in doc
+    assert "## Tasks {#tasks}" in doc
+    assert "[[other_mem]]" in doc
+    assert "rel: realizes -> [[feedback_save_state_means_handoff]]" in doc
+
+
+def test_update_index_replaces_not_duplicates(tmp_path):
+    idx = tmp_path / "MEMORY.md"
+    idx.write_text("- [Old](savestate_x.md) — old hook\n- [Keep](other.md) — keep\n")
+    cli._ss_update_index(tmp_path, "savestate_x", "New Title", "new hook")
+    body = idx.read_text()
+    assert body.count("savestate_x.md") == 1
+    assert "New Title" in body and "old hook" not in body
+    assert "other.md" in body  # untouched
