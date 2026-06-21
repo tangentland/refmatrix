@@ -57,6 +57,28 @@ def session_id() -> str:
     return os.environ.get("RMX_SESSION") or "default"
 
 
+def latest_session(root: Path) -> str | None:
+    """The session id whose event ring was written most recently, or None if
+    no STM exists yet. Lets read surfaces (`focus tail/context`, save-state)
+    default to the active Claude session instead of the bare "default" ring —
+    the hook keys STM by the Claude `session_id`, which a plain shell does not
+    have in `$RMX_SESSION`."""
+    d = stm_dir(root)
+    if not d.is_dir():
+        return None
+    newest: tuple[float, str] | None = None
+    for p in d.glob("*.jsonl"):
+        if p.name.endswith(".tmp"):
+            continue
+        try:
+            mtime = p.stat().st_mtime
+        except OSError:
+            continue
+        if newest is None or mtime > newest[0]:
+            newest = (mtime, p.stem)
+    return newest[1] if newest else None
+
+
 def _safe(session: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", session) or "default"
 

@@ -155,3 +155,34 @@ def test_isolation_between_projects(tmp_path):
 def test_extract_refs():
     refs = _extract_refs("edited context.py and called build_context for the parser")
     assert "context.py" in refs and "build_context" in refs and "the" not in refs
+
+
+# ---- latest_session resolution (read surfaces default to the active session) ----
+
+
+def test_latest_session_none_when_empty(tmp_path):
+    from refmatrix.stm import latest_session
+    assert latest_session(tmp_path / ".refmatrix") is None
+
+
+def test_latest_session_picks_most_recent_ring(tmp_path):
+    import os
+    from refmatrix.stm import latest_session
+    root = tmp_path / ".refmatrix"
+    a = Stm(root, "sess-a")
+    a.record("tool", "old work", refs=["a.py"])
+    b = Stm(root, "sess-b")
+    b.record("tool", "new work", refs=["b.py"])
+    # Force b's ring to be newer regardless of filesystem mtime granularity.
+    os.utime(root / "stm" / "sess-a.jsonl", (1, 1))
+    os.utime(root / "stm" / "sess-b.jsonl", (2, 2))
+    assert latest_session(root) == "sess-b"
+
+
+def test_latest_session_ignores_tmp(tmp_path):
+    from refmatrix.stm import latest_session
+    root = tmp_path / ".refmatrix"
+    s = Stm(root, "real")
+    s.record("tool", "work", refs=["x.py"])
+    (root / "stm" / "scratch.jsonl.tmp").write_text("{}\n")
+    assert latest_session(root) == "real"

@@ -747,9 +747,27 @@ def focus():
     co-occurrence graph. Works with the daemon/hub stopped."""
 
 
-def _stm():
+def _resolve_stm_session(explicit: str | None = None, *, prefer_latest: bool = False) -> str:
+    """Pick the STM session: an explicit --session wins, else $RMX_SESSION,
+    else (for read surfaces) the most-recently-written session ring, else the
+    bare "default". `prefer_latest` lets `focus tail/context/size` and the
+    task read commands show the active Claude session a plain shell can't name."""
     from refmatrix import stm as stm_mod
-    return stm_mod.Stm(_root(), stm_mod.session_id())
+    if explicit:
+        return explicit
+    env = os.environ.get("RMX_SESSION")
+    if env:
+        return env
+    if prefer_latest:
+        latest = stm_mod.latest_session(_root())
+        if latest:
+            return latest
+    return stm_mod.session_id()
+
+
+def _stm(session: str | None = None, *, prefer_latest: bool = False):
+    from refmatrix import stm as stm_mod
+    return stm_mod.Stm(_root(), _resolve_stm_session(session, prefer_latest=prefer_latest))
 
 
 @focus.command("record")
@@ -765,12 +783,16 @@ def focus_record(kind, terse, refs):
 
 @focus.command("tail")
 @click.option("-n", type=int, default=20, show_default=True)
-def focus_tail(n):
-    """Show recent short-term events."""
-    rows = _stm().tail(n)
+@click.option("-s", "--session", default=None,
+              help="Session id to read. Default: active Claude session.")
+def focus_tail(n, session):
+    """Show recent short-term events (defaults to the active session)."""
+    s = _stm(session, prefer_latest=True)
+    rows = s.tail(n)
     if not rows:
-        console.print("[yellow]no focus events[/]")
+        console.print(f"[yellow]no focus events[/] [dim](session {s.session})[/]")
         return
+    console.print(f"[dim]session {s.session}[/]")
     for ev in rows:
         task = f" [dim]({ev['task']})[/]" if ev.get("task") else ""
         console.print(f"[dim]{ev['ts']}[/] [cyan]{ev['kind']}[/]{task}: {ev['terse']}")
@@ -778,9 +800,11 @@ def focus_tail(n):
 
 @focus.command("context")
 @click.option("--top", type=int, default=20, show_default=True)
-def focus_context(top):
+@click.option("-s", "--session", default=None,
+              help="Session id to read. Default: active Claude session.")
+def focus_context(top, session):
     """Show the current focus mini-graph (recency-weighted)."""
-    g = _stm().focus_graph(top=top)
+    g = _stm(session, prefer_latest=True).focus_graph(top=top)
     if not g["nodes"]:
         console.print("[yellow]no focus yet[/]")
         return
@@ -798,11 +822,13 @@ def focus_clear():
 
 
 @focus.command("size")
-def focus_size():
+@click.option("-s", "--session", default=None,
+              help="Session id to read. Default: active Claude session.")
+def focus_size(session):
     """Show the STM ring size + current event count."""
-    s = _stm()
+    s = _stm(session, prefer_latest=True)
     console.print(f"size={s.size}  events={len(s.all_events())}  "
-                  f"(set RMX_STM_SIZE to change)")
+                  f"session={s.session}  (set RMX_STM_SIZE to change)")
 
 
 @focus.command("hook")
@@ -870,9 +896,11 @@ def task_pop():
 
 
 @task.command("list")
-def task_list():
+@click.option("-s", "--session", default=None,
+              help="Session id to read. Default: active Claude session.")
+def task_list(session):
     """Show the task stack (top = current)."""
-    stack = _stm().task_list()
+    stack = _stm(session, prefer_latest=True).task_list()
     if not stack:
         console.print("[yellow]no tasks[/]")
         return
@@ -882,9 +910,11 @@ def task_list():
 
 
 @task.command("current")
-def task_current():
+@click.option("-s", "--session", default=None,
+              help="Session id to read. Default: active Claude session.")
+def task_current(session):
     """Show the current (top) task."""
-    t = _stm().task_current()
+    t = _stm(session, prefer_latest=True).task_current()
     console.print(t["desc"] if t else "[yellow](none)[/]")
 
 
