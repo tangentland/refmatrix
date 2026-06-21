@@ -20,7 +20,14 @@ specific one. `$ARGUMENTS` selects which: a desc substring, or the index from
    git stash pop "stash@{n}"
    ```
    With no `$ARGUMENTS`, the most recent rmx-stash is `stash@{0}`.
-3. If git reports a conflict, STOP and surface it — do not force or discard.
+3. If `$ARGUMENTS` contains `--branch <name>` (or `-b <name>`), strip it from
+   the selector and restore the code ONTO that branch instead of the current
+   one — this is the clean way to resume on a different direction:
+   ```
+   git stash branch <name> "stash@{n}"   # creates <name> at the stash's base + applies + drops
+   ```
+   The focus restores the same way regardless of branch (STM is per-session).
+4. If git reports a conflict, STOP and surface it — do not force or discard.
 
-Report what was resumed (desc + focus) and confirm the code is back, so I can
-pick the work up where I left it.
+Report what was resumed (desc + focus), the branch now checked out, and confirm
+the code is back, so I can pick the work up where I left it.

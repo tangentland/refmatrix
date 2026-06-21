@@ -15,9 +15,19 @@ in-progress code AND the focus context, paired by a matching label.
    rmx task push "$ARGUMENTS"
    ```
 
-If `$ARGUMENTS` is empty, first run `rmx focus context` and use a concise
-one-line description of what I'm working on, and use it for BOTH commands so
-they stay paired.
+If `$ARGUMENTS` contains `--branch <name>` (or `-b <name>`), strip it from the
+description, and AFTER stashing switch git direction to that branch:
+```
+git switch <name>      # or: git switch -c <name>   (if it doesn't exist yet)
+```
+The STM/focus is per-SESSION, not per-branch, so it stays intact across the
+swap and keeps recording — that's the point: swap direction, STM intact.
 
-Then report what was stashed (code + focus) and the new depth (`git stash list`
-/ `rmx task list`). Don't start the new task — just stash and report.
+If `$ARGUMENTS` (after removing any `--branch`) is empty, first run
+`rmx focus context` and use a concise one-line description of what I'm working
+on, and use it for BOTH the git stash message and `rmx task push` so they stay
+paired.
+
+Then report what was stashed (code + focus), the branch now checked out, and
+the new depth (`git stash list` / `rmx task list`). Don't start the new task —
+just stash, swap if asked, and report.
