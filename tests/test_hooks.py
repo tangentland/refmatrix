@@ -90,3 +90,28 @@ def test_install_respects_no_memory_hooks(tmp_path):
     rendered = json.dumps(settings)
     assert "rmx memory recall" not in rendered
     assert "PreCompact" not in settings.get("hooks", {})
+
+
+def test_force_reinstall_overwrites_not_duplicates(tmp_path):
+    """`--force` re-install must replace rmx hooks, not append duplicates,
+    while preserving user-authored hooks."""
+    from refmatrix.hooks import _install_claude_hooks
+    proj = tmp_path / "proj"
+    (proj / ".claude").mkdir(parents=True)
+    settings = proj / ".claude" / "settings.local.json"
+    # Seed a user hook that rmx must never touch.
+    user_hook = {"type": "command", "command": "echo my-own-hook"}
+    settings.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [user_hook]}]}}))
+
+    rroot = proj / ".refmatrix"
+    for _ in range(2):  # install twice with force
+        _install_claude_hooks(proj, rroot, "project", apply=True, force=True)
+
+    data = json.loads(settings.read_text())
+    all_cmds = [h["command"] for blks in data["hooks"].values()
+                for blk in blks for h in blk.get("hooks", [])]
+    # rmx say-hook present exactly once despite two force installs
+    assert sum("focus hook --event say" in c for c in all_cmds) == 1
+    assert sum("rmx focus hook --event tool" in c for c in all_cmds) == 1
+    # user hook survived
+    assert "echo my-own-hook" in all_cmds

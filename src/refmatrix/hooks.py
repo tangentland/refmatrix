@@ -527,6 +527,13 @@ def _install_claude_hooks(
 
     merged = {**existing}
     merged.setdefault("hooks", {})
+    # --force re-install must OVERWRITE rmx-managed entries, not append them
+    # (a blind extend duplicates every hook on each re-run). Strip prior rmx
+    # entries first — identified by the RMX_INVOCATION_SOURCE=hook marker that
+    # every rmx hook command carries — then add the fresh block. User-authored
+    # hooks (without the marker) are preserved, even if they share an event.
+    if force:
+        _strip_rmx_hooks(merged["hooks"])
     for event, entries in block["hooks"].items():
         merged["hooks"].setdefault(event, [])
         merged["hooks"][event].extend(entries)
@@ -534,3 +541,23 @@ def _install_claude_hooks(
     if apply:
         target.write_text(json.dumps(merged, indent=2))
     return out
+
+
+RMX_HOOK_MARKER = "RMX_INVOCATION_SOURCE=hook"
+
+
+def _strip_rmx_hooks(events: dict) -> None:
+    """Remove rmx-managed hook entries (by marker) from a settings `hooks`
+    dict, in place. Preserves user hooks; drops blocks left empty and events
+    left with no blocks — so a re-install re-adds a clean single copy."""
+    for event in list(events.keys()):
+        new_blocks = []
+        for blk in events.get(event, []):
+            kept = [h for h in blk.get("hooks", [])
+                    if RMX_HOOK_MARKER not in (h.get("command") or "")]
+            if kept:
+                new_blocks.append({**blk, "hooks": kept})
+        if new_blocks:
+            events[event] = new_blocks
+        else:
+            del events[event]
