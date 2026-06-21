@@ -832,15 +832,17 @@ def focus_context(top, session):
     # so they're invisible in the ref-graph below; the dialogue gives the graph
     # its "why" and makes a bare "yes" legible against what I'd just proposed.
     dialogue = [(i, e) for i, e in enumerate(events, 1)
-                if e.get("kind") in ("input", "say")]
+                if e.get("kind") in ("input", "say", "reason")]
     if dialogue:
-        console.print("[bold]intent[/] [dim](dialogue)[/]")
-        for i, e in dialogue[-6:]:
-            mark = "[magenta]▸[/]" if e["kind"] == "input" else "[green]◂[/]"
-            style = "" if e["kind"] == "input" else "[dim]"
-            close = "" if e["kind"] == "input" else "[/]"
-            console.print(f"  {mark} {style}{e['terse'][:84]}{close} "
-                          f"[dim]L{i}[/]")
+        console.print("[bold]intent[/] [dim](dialogue + reasoning)[/]")
+        _marks = {"input": "[magenta]▸[/]", "say": "[green]◂[/]",
+                  "reason": "[blue]✎[/]"}
+        for i, e in dialogue[-7:]:
+            k = e["kind"]
+            mark = _marks.get(k, " ")
+            dim = "" if k == "input" else "[dim]"
+            undim = "" if k == "input" else "[/]"
+            console.print(f"  {mark} {dim}{e['terse'][:84]}{undim} [dim]L{i}[/]")
     # Milestones — git ops captured with their output (commit/push/merge/...).
     gits = [(i, e) for i, e in enumerate(events, 1) if e.get("kind") == "git"]
     if gits:
@@ -1051,6 +1053,18 @@ def focus_summarize(session, promote, is_global):
             eid = _store().add_memory(**args)
     console.print(f"[green]promoted[/] {name} (id={eid}) — recall with "
                   f"`rmx memory recall summary` or `rmx context {name}`")
+
+
+@focus.command("note")
+@click.argument("text")
+def focus_note(text):
+    """Record a deliberate reasoning note into STM — the WHY behind a decision,
+    a hypothesis, or a tradeoff. My extended-thinking blocks are redacted from
+    the transcript, so this is the only reliable way the reasoning survives the
+    session (see the briefing's 'Capture your reasoning' rule). Refs in the
+    note enter the focus graph."""
+    ev = _stm(prefer_latest=True).record("reason", text[:800])
+    console.print(f"[blue]✎ noted[/]  [dim]{', '.join(ev['refs'][:6]) or '—'}[/]")
 
 
 @focus.command("detour")

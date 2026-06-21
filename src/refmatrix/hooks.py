@@ -484,6 +484,23 @@ rmx task push/pop/list   # pushdown stack for interrupted work (snapshots focus)
 The L<n> refs link every summary row back to raw events — follow the session's
 evolution topically, then drill to depth. The log is the full session on disk.
 
+## Capture your reasoning (add-thought-process)
+
+STM auto-captures your prompts, tool calls, replies, and git milestones — but
+your extended-thinking blocks are redacted from the transcript, so the WHY
+behind your decisions is lost unless you record it. When you make a non-obvious
+decision, form a hypothesis, choose between approaches, or hit a gotcha, leave
+a terse reasoning note:
+
+```
+rmx focus note "chose X over Y because Z; risk is W"
+```
+
+It lands as a `reason` event in STM (shown in `focus context` as ✎), so the
+reasoning survives compaction and the next instance inherits not just what you
+did but why. Cheap, deliberate, high-signal — do it at decision points, not
+every turn.
+
 ## Durable memory (LTM) + handoff
 
 ```

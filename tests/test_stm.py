@@ -301,3 +301,12 @@ def test_detour_logs_mark_events(tmp_path):
     s.focus_mark("d1")
     kinds = [e["kind"] for e in s.all_events()]
     assert "mark" in kinds
+
+
+def test_reason_event_recorded(tmp_path):
+    """Deliberate reasoning notes land as `reason` events with refs extracted."""
+    s = Stm(tmp_path / ".refmatrix", "sess")
+    ev = s.record("reason", "chose duckdb over sqlite because of vector_search")
+    assert ev["kind"] == "reason"
+    assert "vector_search" in ev["refs"]
+    assert any(e["kind"] == "reason" for e in s.all_events())

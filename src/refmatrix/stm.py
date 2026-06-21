@@ -41,7 +41,7 @@ COOCCUR_WINDOW = 4
 # Score weights. Pin dominates so a pinned node is never evicted ahead of junk.
 W_RECENCY, W_FREQ, W_CENTRALITY, W_PIN = 1.0, 0.5, 0.8, 10.0
 
-EVENT_KINDS = ("input", "tool", "rmx", "result", "say", "git", "mark")
+EVENT_KINDS = ("input", "tool", "rmx", "result", "say", "git", "mark", "reason")
 
 _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}(?:\.[A-Za-z_][A-Za-z0-9_]+)*")
 _PATH_RE = re.compile(r"[\w./-]+\.[A-Za-z]{1,5}")
