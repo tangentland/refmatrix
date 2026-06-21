@@ -59,3 +59,34 @@ def test_update_index_replaces_not_duplicates(tmp_path):
     assert body.count("savestate_x.md") == 1
     assert "New Title" in body and "old hook" not in body
     assert "other.md" in body  # untouched
+
+
+# ---- say capture: assistant transcript → STM (full-dialogue STM) ----
+
+
+def test_last_assistant_text_extracts_latest(tmp_path):
+    import json as _j
+    tp = tmp_path / "t.jsonl"
+    tp.write_text("\n".join([
+        _j.dumps({"type": "user", "message": {"role": "user", "content": "hi"}}),
+        _j.dumps({"type": "assistant", "message": {"role": "assistant",
+                  "content": [{"type": "text", "text": "first reply"}]}}),
+        _j.dumps({"type": "assistant", "message": {"role": "assistant",
+                  "content": [{"type": "tool_use", "name": "Bash"}]}}),  # no text
+        _j.dumps({"type": "assistant", "message": {"role": "assistant",
+                  "content": [{"type": "text", "text": "latest  reply\nline2"}]}}),
+    ]))
+    assert cli._last_assistant_text(str(tp)) == "latest reply line2"
+
+
+def test_last_assistant_text_missing_file():
+    assert cli._last_assistant_text("/no/such/transcript.jsonl") == ""
+
+
+def test_stop_hook_template_records_say():
+    from refmatrix import hooks
+    from pathlib import Path
+    block = hooks._claude_hook_block(Path("/proj/.refmatrix"))
+    stop_cmds = [h["command"] for blk in block["hooks"]["Stop"]
+                 for h in blk["hooks"]]
+    assert any("focus hook --event say" in c for c in stop_cmds)

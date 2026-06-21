@@ -804,14 +804,45 @@ def focus_tail(n, session):
               help="Session id to read. Default: active Claude session.")
 def focus_context(top, session):
     """Show the current focus mini-graph (recency-weighted)."""
-    g = _stm(session, prefer_latest=True).focus_graph(top=top)
-    if not g["nodes"]:
+    s = _stm(session, prefer_latest=True)
+    # Pull a wider slice, then drop shell-token noise at render time so a graph
+    # polluted by pre-noise-fix events (the ring isn't retroactively cleaned)
+    # still displays the real symbols. _ss_clean_focus is the shared filter.
+    g = s.focus_graph(top=max(top * 3, 30))
+    nodes = _ss_clean_focus(g["nodes"], limit=top)
+    if not nodes:
         console.print("[yellow]no focus yet[/]")
         return
     console.print(f"[bold]focus[/] · {g['events']} events · session {g['session']}")
-    for nd in g["nodes"]:
+    # Intent thread — the dialogue: user inputs (UserPromptSubmit) interleaved
+    # with my replies (Stop → `say`). Short prompts ("deploy") extract no refs
+    # so they're invisible in the ref-graph below; the dialogue gives the graph
+    # its "why" and makes a bare "yes" legible against what I'd just proposed.
+    dialogue = [e for e in s.all_events() if e.get("kind") in ("input", "say")]
+    if dialogue:
+        console.print("[bold]intent[/] [dim](dialogue)[/]")
+        for e in dialogue[-6:]:
+            if e["kind"] == "input":
+                console.print(f"  [magenta]▸[/] {e['terse'][:90]}")
+            else:
+                console.print(f"  [green]◂[/] [dim]{e['terse'][:90]}[/]")
+    # Per-row +1 neighbors from the focus edges (co-occurrence within the
+    # rolling window) — the graph structure, not just the ranked list. Noise
+    # neighbors are dropped so a row points only at real symbols.
+    shown = {nd["name"] for nd in nodes}
+    nbr: dict[str, list[tuple[float, str]]] = {}
+    for ed in g.get("edges", []):
+        a, b, w = ed["source"], ed["target"], ed["weight"]
+        if b.lower() not in _SS_FOCUS_NOISE:
+            nbr.setdefault(a, []).append((w, b))
+        if a.lower() not in _SS_FOCUS_NOISE:
+            nbr.setdefault(b, []).append((w, a))
+    console.print("[bold]graph[/]")
+    for nd in nodes:
+        tops = sorted(nbr.get(nd["name"], []), reverse=True)[:3]
+        arrow = ("  [dim]→[/] " + ", ".join(n for _, n in tops)) if tops else ""
         console.print(f"  {nd['weight']:>5.2f}  [cyan]{nd['name']}[/] "
-                      f"[dim]{nd['kind']} ×{nd['count']}[/]")
+                      f"[dim]{nd['kind']} ×{nd['count']}[/]{arrow}")
 
 
 @focus.command("clear")
@@ -831,15 +862,49 @@ def focus_size(session):
                   f"session={s.session}  (set RMX_STM_SIZE to change)")
 
 
+def _last_assistant_text(transcript_path: str) -> str:
+    """Extract the most recent assistant message text from a Claude Code
+    transcript JSONL. Each line is `{type, message:{role, content:[...]}}`;
+    we want the last `type==assistant` with text blocks (tool-only turns are
+    skipped). Returns collapsed whitespace, '' on any failure."""
+    import re as _re
+    try:
+        lines = Path(transcript_path).read_text().splitlines()
+    except OSError:
+        return ""
+    for ln in reversed(lines):
+        try:
+            d = json.loads(ln)
+        except json.JSONDecodeError:
+            continue
+        if d.get("type") != "assistant":
+            continue
+        msg = d.get("message")
+        content = msg.get("content") if isinstance(msg, dict) else None
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            text = " ".join(b.get("text", "") for b in content
+                            if isinstance(b, dict) and b.get("type") == "text")
+        else:
+            text = ""
+        text = _re.sub(r"\s+", " ", text).strip()
+        if text:
+            return text
+    return ""
+
+
 @focus.command("hook")
-@click.option("--event", type=click.Choice(["input", "tool"]), required=True,
-              help="Which Claude Code hook is firing.")
+@click.option("--event", type=click.Choice(["input", "tool", "say"]),
+              required=True, help="Which Claude Code hook is firing.")
 def focus_hook(event):
     """Record a short-term event from a Claude Code hook envelope on stdin.
 
-    UserPromptSubmit → --event input; PostToolUse → --event tool. The session
-    id from the envelope groups STM per Claude session. Silent + best-effort:
-    a malformed/empty envelope is a no-op exit 0 so the hook never blocks."""
+    UserPromptSubmit → --event input; PostToolUse → --event tool; Stop →
+    --event say (records my last assistant message so STM holds the full
+    dialogue, not just the user's half). The session id from the envelope
+    groups STM per Claude session. Silent + best-effort: a malformed/empty
+    envelope is a no-op exit 0 so the hook never blocks."""
     from refmatrix import stm as stm_mod
     try:
         d = json.load(sys.stdin)
@@ -851,6 +916,13 @@ def focus_hook(event):
         prompt = (d.get("prompt") or "").strip()
         if prompt:
             s.record("input", prompt[:300])
+    elif event == "say":
+        # Stop hook: capture my reply from the transcript. refs=[] keeps it
+        # text-only (visible in the intent thread) without admitting prose
+        # tokens into the focus graph.
+        text = _last_assistant_text(d.get("transcript_path") or "")
+        if text:
+            s.record("say", text[:300], refs=[])
     else:
         tool = d.get("tool_name") or "tool"
         ti = d.get("tool_input") or {}

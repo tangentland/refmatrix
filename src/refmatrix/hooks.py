@@ -105,6 +105,13 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
     focus_input_cmd = (
         HOOK_ENV + "rmx focus hook --event input 2>/dev/null || true"
     )
+    # Stop focus capture: record my last assistant message (read from the
+    # transcript the Stop envelope points at) so STM holds the full dialogue,
+    # not just the user's half — a bare "yes" stays legible against what I
+    # had just proposed. Best-effort; never blocks the turn.
+    focus_say_cmd = (
+        HOOK_ENV + "rmx focus hook --event say 2>/dev/null || true"
+    )
 
     # --async hands the actual sync work to the daemon and returns
     # immediately. With no daemon up, the flag is a silent no-op so the
@@ -143,7 +150,10 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                 }
             ],
             "Stop": [
-                {"hooks": [{"type": "command", "command": flush_cmd}]}
+                {"hooks": [
+                    {"type": "command", "command": flush_cmd},
+                    {"type": "command", "command": focus_say_cmd},
+                ]}
             ],
             "SubagentStop": [
                 {"hooks": [{"type": "command", "command": flush_cmd}]}
