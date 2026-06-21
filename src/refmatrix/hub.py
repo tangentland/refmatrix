@@ -530,25 +530,20 @@ class Hub:
     def _serve_http(self, host: str) -> None:
         import uvicorn  # noqa: F401  (ImportError bubbles to run())
         from refmatrix.ui.server import create_app
-        # Preflight the port. Without this, an orphan still holding the port
-        # (a zombie hub whose control socket died but whose uvicorn survived)
+        # Preflight the port. Without this, an orphan still holding it (a
+        # zombie hub whose control socket died but whose uvicorn survived)
         # makes uvicorn fail to bind inside its thread; the thread dies, the
         # serve loop falls through to shutdown(), and the user sees "hub
-        # started pid=X" immediately followed by "not running" — the wedge
-        # that drove the crash-loop debugging. Surface it as a clear log.
-        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            probe.bind((host, self.port))
-        except OSError:
-            other = _pid_on_port(self.port)
-            who = f" by pid {other}" if other else ""
-            _log(f"hub port {self.port} already in use{who} — run "
+        # started pid=X" immediately followed by "not running". Check for an
+        # active LISTENer via lsof rather than a probe bind() — a probe
+        # without SO_REUSEADDR false-positives on a port in TIME_WAIT from a
+        # just-stopped hub, which uvicorn (SO_REUSEADDR) would bind fine.
+        other = _pid_on_port(self.port)
+        if other and other != os.getpid():
+            _log(f"hub port {self.port} already in use by pid {other} — run "
                  f"`rmx hub stop` (reaps the orphan) or kill it; not starting")
-            probe.close()
             self.shutdown()
             return
-        finally:
-            probe.close()
         app = create_app(self)
         config = uvicorn.Config(app, host=host, port=self.port,
                                 log_level="warning")
