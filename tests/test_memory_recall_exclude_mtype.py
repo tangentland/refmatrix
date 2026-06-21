@@ -94,6 +94,36 @@ def test_recent_without_exclude_keeps_everything(tmp_path, monkeypatch):
     assert {r["name"] for r in rows} == {"a", "b", "c"}
 
 
+def test_recent_exclude_mtype_glob_prefix(tmp_path, monkeypatch):
+    """A glob pattern hides every namespaced mtype under a prefix in one
+    value: `--exclude-mtype 'session/*'` drops session/recall-state +
+    session/digest while keeping real LTM. The cheat that lets namespaced
+    mtypes (`<type>/<purpose>`) substitute for a dedicated purpose column."""
+    s = _store(tmp_path, monkeypatch)
+    s.add_memory("real-feedback", "don't mock the db", mtype="feedback")
+    s.add_memory("savestate_abc", "handoff", mtype="session/recall-state")
+    s.add_memory("focus_summary_abc", "digest", mtype="session/digest")
+
+    from refmatrix.cli import main as cli_main
+    from refmatrix.store import default_partition_name
+    monkeypatch.setenv("REFMATRIX_ROOT", str(tmp_path / ".refmatrix"))
+    monkeypatch.setenv(
+        "RMX_PARTITION", default_partition_name(tmp_path / ".refmatrix"),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli_main, [
+        "memory", "recall", "--recent",
+        "--exclude-mtype", "session/*",
+        "--json",
+    ])
+    assert result.exit_code == 0, result.output
+
+    rows = json.loads(result.output)
+    names = {r["name"] for r in rows}
+    assert names == {"real-feedback"}, names
+
+
 def test_recent_exclude_mtype_repeatable_flag(tmp_path, monkeypatch):
     """`--exclude-mtype` accepts repeated flags AND comma-separated lists
     interchangeably (matches the `--kinds` convention via

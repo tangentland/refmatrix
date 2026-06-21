@@ -1031,8 +1031,8 @@ def focus_summarize(session, promote, is_global):
     import re as _re
     slug = _re.sub(r"[^A-Za-z0-9]+", "", s.session)[:12] or "default"
     name = f"focus_summary_{slug}"
-    args = {"name": name, "content": digest, "mtype": "session-summary",
-            "tags": ["session-state", "summary"],
+    args = {"name": name, "content": digest, "mtype": "session/digest",
+            "tags": [f"session:{s.session}", "summary"],
             "metadata": {"title": f"Session summary {s.session[:8]}"},
             "protected": False}
     if is_global:
@@ -6873,9 +6873,11 @@ def _parse_duration(text: str) -> float:
               help="Filter out memories whose mtype matches any of the "
                    "given values. Repeat the flag or pass a comma-separated "
                    "list (`--exclude-mtype session-request,session-milestone`). "
-                   "Useful for hiding legacy intuition-MCP import noise from "
-                   "recall output. Filter is applied client-side after the "
-                   "recall RPC returns.")
+                   "Glob patterns supported (fnmatch), so namespaced mtypes "
+                   "filter by prefix: `--exclude-mtype 'session/*'` hides "
+                   "session/recall-state + session/digest in one value. "
+                   "Filter is applied client-side after the recall RPC "
+                   "returns.")
 @click.option("--degree", default=0, type=int,
               help="When >0, attach a context bundle (body + one-hop "
                    "neighbors with their bodies) to each hit. JSON output "
@@ -6950,6 +6952,18 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
 
     exclude_mtypes = set(exclude_mtype) if exclude_mtype else set()
 
+    def _mt_excluded(mtype: "str | None") -> bool:
+        """True if mtype matches any --exclude-mtype value. Patterns glob
+        (fnmatchcase) so namespaced mtypes filter by prefix —
+        `--exclude-mtype 'session/*'` hides session/recall-state +
+        session/digest. Plain values without glob chars still match
+        exactly."""
+        if not exclude_mtypes:
+            return False
+        from fnmatch import fnmatchcase
+        m = mtype or ""
+        return any(fnmatchcase(m, pat) for pat in exclude_mtypes)
+
     def _attach_context(rows: list[dict]) -> list[dict]:
         """When --degree > 0, fetch a context bundle per row and stash
         the rendered text on `row['context']`. Daemon-side: routes
@@ -7013,7 +7027,7 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             s = _store()
             rows = s.recent_memories(since_seconds=since_s, limit=effective_k)
         if exclude_mtypes:
-            rows = [r for r in rows if (r.get("mtype") or "") not in exclude_mtypes][:k]
+            rows = [r for r in rows if not _mt_excluded(r.get("mtype"))][:k]
         if scope != "project":
             rows = _merge_scope(
                 rows, _global_recall_rows(None, k=k, recent=True, since_s=since_s),
@@ -7148,7 +7162,7 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                         "updated_at": None,
                     }
             if m:
-                if exclude_mtypes and (m.get("mtype") or "") in exclude_mtypes:
+                if _mt_excluded(m.get("mtype")):
                     continue
                 # Honest fields, higher = better, agreeing with rank order.
                 # Fused hits carry an RRF `score`; pure-dense hits a cosine
@@ -7180,7 +7194,7 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         eid = h.get("entity_id") or h.get("id")
         score = _recall_display_score(h)
         m = _fetch_memory(eid)
-        if exclude_mtypes and m and (m.get("mtype") or "") in exclude_mtypes:
+        if m and _mt_excluded(m.get("mtype")):
             continue
         name = m["name"] if m else "?"
         shown += 1
@@ -7835,10 +7849,10 @@ def _ss_render(*, mem_id: str, session: str, repo: Path, message: str | None,
     L.append('gmd: "0.1"')
     L.append(f"id: {mem_id}")
     L.append(f'title: "Save-state {today}: {headline}"')
-    L.append("tags: [project, session-state]")
+    L.append(f'tags: ["session:{session}"]')
     L.append("metadata:")
     L.append("  node_type: memory")
-    L.append("  type: project")
+    L.append("  type: session/recall-state")
     L.append(f"  originSessionId: {session}")
     L.append(f"  created: {created}")
     L.append(f"  updated: {today}")
@@ -8014,8 +8028,8 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote):
         # the next instance recalls it. Mirrors `focus summarize --promote`.
         digest = _focus_digest(s)
         pname = f"focus_summary_{sess_slug}"
-        pargs = {"name": pname, "content": digest, "mtype": "session-summary",
-                 "tags": ["session-state", "summary"],
+        pargs = {"name": pname, "content": digest, "mtype": "session/digest",
+                 "tags": [f"session:{sess}", "summary"],
                  "metadata": {"title": f"Session summary {sess[:8]}"},
                  "protected": False}
         from refmatrix import daemon as daemon_mod
