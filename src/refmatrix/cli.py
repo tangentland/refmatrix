@@ -8357,6 +8357,45 @@ def concept_timeline_cmd(concept, hops, since, until, k, no_git, as_json):
         click.echo(f"worked on: {len(session_events)} sessions, {lo} → {hi}")
 
 
+def _reexec_for_fork_safety() -> None:
+    """macOS only: re-exec once so a fresh libobjc loads with the
+    initialize-after-fork check DISABLED.
+
+    `OBJC_DISABLE_INITIALIZE_FORK_SAFETY` is read by libobjc ONCE at image
+    load (`environ_init`) and cached — setting it from Python afterwards is
+    too late for the daemon's plain `os.fork()` (double-fork, no exec): the
+    cached "safety ON" state is copied into the forked daemon child, which
+    then SIGABRTs the moment it touches objc:
+
+        objc[...]: +[NSMutableString initialize] may have been in progress
+        in another thread when fork() was called. ... Crashing instead.
+
+    Re-execing a fresh interpreter with the var already present means its
+    libobjc loads with the check off; the daemon we later fork inherits that
+    cleared state, and loky's fork+exec workers inherit the env directly.
+    `_harden_fork_safety()` (env-only, in spawn_daemon) remains a fallback
+    that covers the fork+exec paths but cannot fix the no-exec daemon fork —
+    this does.
+
+    Idempotent: once the var is set we return without re-execing, so there
+    is no exec loop. A launchd plist that already provides the var (see
+    `launchctl.render_plist`) short-circuits here too, paying no exec cost.
+    """
+    if sys.platform != "darwin":
+        return
+    if os.environ.get("OBJC_DISABLE_INITIALIZE_FORK_SAFETY") == "YES":
+        return
+    os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+    try:
+        os.execv(sys.executable, [sys.executable, *sys.argv])
+    except OSError:
+        # exec failed (e.g. ENOMEM) — proceed in-process; the env var still
+        # helps fork+exec children even if the no-exec daemon fork can't be
+        # rescued. Never block startup on this.
+        pass
+
+
 def cli_entry() -> None:
     """Console-script entrypoint. Wraps `main()` with invocation logging.
 
@@ -8364,6 +8403,7 @@ def cli_entry() -> None:
     one JSONL record to .refmatrix/cli.log via telemetry. Preserves Click's
     exit semantics by re-raising SystemExit.
     """
+    _reexec_for_fork_safety()
     import time as _time
     from refmatrix.telemetry import log_cli_invocation
 

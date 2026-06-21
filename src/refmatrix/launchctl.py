@@ -136,6 +136,11 @@ def render_plist(root: Path, *, partition: str | None = None,
         "PATH": os.environ.get(
             "PATH", "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
         ),
+        # libobjc reads this once at image load; providing it here means the
+        # launchd-spawned daemon never hits the initialize-after-fork SIGABRT
+        # and skips the cli_entry re-exec. See cli._reexec_for_fork_safety.
+        "OBJC_DISABLE_INITIALIZE_FORK_SAFETY": "YES",
+        "TOKENIZERS_PARALLELISM": "false",
     }
     # No PYTHONPATH / PYTHONUSERBASE capture: the daemon runs from a
     # standalone venv (`rmx` resolves to .venv/bin/rmx) that carries every
@@ -186,6 +191,9 @@ def render_hub_plist(*, port: int = 7777, host: str = "127.0.0.1") -> bytes:
         "EnvironmentVariables": {
             "PATH": os.environ.get(
                 "PATH", "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"),
+            # The hub forks per-project daemons; same fork-safety guard.
+            "OBJC_DISABLE_INITIALIZE_FORK_SAFETY": "YES",
+            "TOKENIZERS_PARALLELISM": "false",
         },
         "RunAtLoad": True,
         "KeepAlive": {"SuccessfulExit": False},

@@ -46,3 +46,31 @@ def test_distinct_roots_same_basename_do_not_collide():
     assert a != b
     assert a.startswith("com.refmatrix.daemon.viascope-")
     assert b.startswith("com.refmatrix.daemon.viascope-")
+
+
+def test_daemon_plist_disables_objc_fork_safety(tmp_path, monkeypatch):
+    """The launchd-spawned daemon forks worker processes; libobjc reads
+    OBJC_DISABLE_INITIALIZE_FORK_SAFETY once at image load, so it must be in
+    the plist env or the daemon SIGABRTs on the initialize-after-fork check."""
+    import plistlib
+    fake_rmx = tmp_path / "bin" / "rmx"
+    fake_rmx.parent.mkdir()
+    fake_rmx.write_text("#!/bin/sh\nexit 0\n")
+    fake_rmx.chmod(0o755)
+    monkeypatch.setenv("RMX_BIN", str(fake_rmx))
+    root = tmp_path / "proj" / ".refmatrix"
+    root.mkdir(parents=True)
+    env = plistlib.loads(lc.render_plist(root))["EnvironmentVariables"]
+    assert env["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] == "YES"
+    assert env["TOKENIZERS_PARALLELISM"] == "false"
+
+
+def test_hub_plist_disables_objc_fork_safety(tmp_path, monkeypatch):
+    import plistlib
+    fake_rmx = tmp_path / "bin" / "rmx"
+    fake_rmx.parent.mkdir()
+    fake_rmx.write_text("#!/bin/sh\nexit 0\n")
+    fake_rmx.chmod(0o755)
+    monkeypatch.setenv("RMX_BIN", str(fake_rmx))
+    env = plistlib.loads(lc.render_hub_plist())["EnvironmentVariables"]
+    assert env["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] == "YES"
