@@ -109,3 +109,20 @@ def test_tool_output_text_flattens():
     assert cli._tool_output_text({"stdout": "a", "stderr": "b"}) == "a\nb"
     assert cli._tool_output_text("plain") == "plain"
     assert cli._tool_output_text(None) == ""
+
+
+# ---- focus summarize (STM → LTM digest) ----
+
+
+def test_focus_digest_has_sections(tmp_path):
+    from refmatrix.stm import Stm
+    s = Stm(tmp_path / ".refmatrix", "sess")
+    s.record("input", "build the thing")
+    s.record("tool", "x", refs=["a.py", "b.py"])
+    s.record("git", "git commit: [m abc] done", refs=["a.py"])
+    s.record("input", "ship it")
+    digest = cli._focus_digest(s)
+    assert "# Session summary" in digest
+    assert "## Milestones" in digest and "git commit" in digest
+    assert "## Arc" in digest
+    assert "build the thing" in digest and "ship it" in digest

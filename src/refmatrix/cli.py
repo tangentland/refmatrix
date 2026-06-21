@@ -958,6 +958,88 @@ def focus_topics(top, session):
         console.print(f"    [dim]{', '.join(members[:8])}[/]")
 
 
+def _focus_digest(s) -> str:
+    """Condense a session's STM — topics, milestones, intent arc, touched
+    files — into a compact markdown digest."""
+    from refmatrix import stm as stm_mod
+    g = s.focus_graph(top=60)
+    events = s.all_events()
+    weight = {n["name"]: n["weight"] for n in g["nodes"]}
+    clean = {"nodes": [n for n in g["nodes"]
+                       if n["name"].lower() not in _SS_FOCUS_NOISE],
+             "edges": g["edges"]}
+    clusters = stm_mod.cluster_focus(clean)
+    inputs = [e for e in events if e.get("kind") == "input"]
+    gits = [e for e in events if e.get("kind") == "git"]
+    files = [n["name"] for n in clean["nodes"] if n["kind"] in ("code", "doc")][:10]
+    span = f"{events[0]['ts']} → {events[-1]['ts']}" if events else ""
+    L = [f"# Session summary — {s.session}", "",
+         f"{len(events)} events · {span}", ""]
+    if clusters:
+        L.append("## Topics worked on")
+        for c in clusters:
+            members = sorted(c, key=lambda n: weight.get(n, 0), reverse=True)
+            L.append(f"- **{members[0]}** — {', '.join(members[:6])}")
+        L.append("")
+    if gits:
+        L.append("## Milestones")
+        for e in gits:
+            L.append(f"- {e['terse']}")
+        L.append("")
+    if files:
+        L.append("## Touched")
+        L.append("- " + ", ".join(f"`{f}`" for f in files))
+        L.append("")
+    if inputs:
+        L.append("## Arc")
+        L.append(f"- first: {inputs[0]['terse'][:120]}")
+        L.append(f"- last: {inputs[-1]['terse'][:120]}")
+    return "\n".join(L)
+
+
+@focus.command("summarize")
+@click.option("-s", "--session", default=None,
+              help="Session id. Default: active Claude session.")
+@click.option("--promote", is_flag=True,
+              help="Write the digest to durable memory (the STM→LTM bridge).")
+@click.option("--global", "is_global", is_flag=True,
+              help="Promote to the shared cross-project global store.")
+def focus_summarize(session, promote, is_global):
+    """Condense the session's STM (topics + milestones + intent arc) into a
+    compact digest. --promote writes it to durable memory so the transient
+    focus graduates to LTM. Lighter than `save-state` (STM-only, no git/repo)."""
+    s = _stm(session, prefer_latest=True)
+    digest = _focus_digest(s)
+    if not promote:
+        click.echo(digest)
+        return
+    import re as _re
+    slug = _re.sub(r"[^A-Za-z0-9]+", "", s.session)[:12] or "default"
+    name = f"focus_summary_{slug}"
+    args = {"name": name, "content": digest, "mtype": "session-summary",
+            "tags": ["session-state", "summary"],
+            "metadata": {"title": f"Session summary {s.session[:8]}"},
+            "protected": False}
+    if is_global:
+        from refmatrix import hub as hub_mod
+        resp = hub_mod.global_call("memory_add", args)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        eid = resp["result"]["id"]
+    else:
+        from refmatrix import daemon as daemon_mod
+        root = _root()
+        if daemon_mod.ping(root):
+            resp = _memory_daemon_call("memory_add", args)
+            if not resp.get("ok"):
+                raise click.ClickException(resp.get("error", "daemon error"))
+            eid = resp["result"]["id"]
+        else:
+            eid = _store().add_memory(**args)
+    console.print(f"[green]promoted[/] {name} (id={eid}) — recall with "
+                  f"`rmx memory recall summary` or `rmx context {name}`")
+
+
 @focus.command("clear")
 def focus_clear():
     """Clear short-term memory + task stack for this session."""
