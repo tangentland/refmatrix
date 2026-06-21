@@ -1,8 +1,9 @@
 {
   "mcpServers": {
-    "refmatrix": {
-      "command": "rmx",
-      "args": ["mcp"]
-    }
+      "refmatrix": {
+        "command": "/Users/tholley/bin/rmx",
+        "args": ["mcp"],
+        "env": { "PYTHONPATH": "" }
+      }
   }
 }
