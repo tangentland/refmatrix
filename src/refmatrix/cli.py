@@ -862,8 +862,15 @@ def focus_hook(event):
             if isinstance(e, dict) and isinstance(e.get("file_path"), str):
                 refs.append(e["file_path"])
         cmd = ti.get("command")
+        if not refs and isinstance(cmd, str):
+            # Bash/command tools carry no file_path: keep only path-like tokens
+            # from the command, drop shell words. Pass refs EXPLICITLY (even if
+            # empty) so record() never ref-extracts the whole command line —
+            # the historical source of `Bash`/`echo`/`grep`/path-segment noise.
+            refs = [m for m in stm_mod._PATH_RE.findall(cmd)
+                    if ("/" in m or "." in m)][:8]
         terse = f"{tool} {' '.join(refs) or (cmd or '')}".strip()[:300]
-        s.record("tool", terse, refs=refs or None)
+        s.record("tool", terse, refs=refs)
 
 
 @main.group()

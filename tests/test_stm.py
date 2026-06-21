@@ -186,3 +186,20 @@ def test_latest_session_ignores_tmp(tmp_path):
     s.record("tool", "work", refs=["x.py"])
     (root / "stm" / "scratch.jsonl.tmp").write_text("{}\n")
     assert latest_session(root) == "real"
+
+
+# ---- ref extraction noise filtering (clean focus graph) ----
+
+
+def test_extract_refs_drops_shell_words():
+    refs = _extract_refs("Bash echo hi && grep -n foo src/refmatrix/stm.py")
+    assert "src/refmatrix/stm.py" in refs        # real path kept
+    for noise in ("Bash", "echo", "grep"):       # stoplisted shell words
+        assert noise not in refs
+
+
+def test_extract_refs_drops_home_path_segments():
+    refs = _extract_refs("cat /Users/tholley/claude_tools/refmatrix/notes.md")
+    assert any(r.endswith("notes.md") for r in refs)
+    for seg in ("Users", "tholley", "claude_tools"):
+        assert seg not in refs
