@@ -12,6 +12,32 @@ from refmatrix import daemon as daemon_mod
 from refmatrix import discovery
 
 
+def _replica_bundle(root: Path, ref: str, *, degree: int = 0) -> dict:
+    """In-process read-only-replica context bundle (the working read path; the
+    daemon context op mis-resolves on multi-partition daemons). Returns the
+    render_json dict or {} on failure."""
+    from refmatrix.store import Store
+    from refmatrix.context import build_context, render_json
+    import json as _json
+    part = discovery.store_name(root)
+    try:
+        s = Store(root, partition=part, read_only=True)
+    except Exception:
+        return {}
+    try:
+        with s.with_partition(part):
+            b = build_context(s, ref, degree=degree,
+                              _entities_explicit=False, _tokens_explicit=False)
+        return _json.loads(render_json(b))
+    except Exception:
+        return {}
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
+
+
 def federated_where(q: str, *, limit: int = 40) -> dict:
     """Fan a query across all live stores: code/doc/concept hits from context +
     memory hits, grouped by source, deduped, capped. Returns
@@ -22,13 +48,8 @@ def federated_where(q: str, *, limit: int = 40) -> dict:
             continue
         proj = discovery.store_name(root)
         try:
-            ctx = daemon_mod.call(root, "context", {
-                "ref": q, "format": "json", "degree": 0,
-                "entities_explicit": False, "tokens_explicit": False,
-                "partition": proj,
-            }, timeout=20.0)
-            if ctx.get("ok"):
-                b = ctx["result"]
+            b = _replica_bundle(root, q, degree=0)
+            if b:
                 anchor = b.get("anchor")
                 if anchor:
                     results.append({
@@ -96,12 +117,8 @@ def federated_concept(name: str) -> dict:
             continue
         proj = discovery.store_name(root)
         try:
-            ctx = daemon_mod.call(root, "context", {
-                "ref": name, "format": "json", "degree": 0,
-                "entities_explicit": False, "tokens_explicit": False,
-                "partition": proj}, timeout=15.0)
-            if ctx.get("ok"):
-                b = ctx["result"]
+            b = _replica_bundle(root, name, degree=0)
+            if b:
                 anchor = b.get("anchor")
                 if anchor and anchor.get("name") == name:
                     neighbors = sum(len(v) for v in (b.get("groups") or {}).values())

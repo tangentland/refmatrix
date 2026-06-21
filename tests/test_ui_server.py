@@ -100,15 +100,15 @@ def test_where_federates(monkeypatch, tmp_path):
     monkeypatch.setattr(search.daemon_mod, "ping", lambda r, timeout=0.5: True)
     monkeypatch.setenv("RMX_HOME", str(tmp_path / "home"))  # no global store
 
+    # context now goes through the in-process replica bundle, not a daemon call
+    monkeypatch.setattr(search, "_replica_bundle", lambda root, ref, degree=0: {
+        "anchor": {"name": "keys", "kind": "concept"},
+        "groups": {"mentions": [
+            {"name": "keychain.py", "kind": "code", "path": "/p/keychain.py",
+             "line": 3}]},
+    })
+
     def fake_call(r, op, args, timeout=60.0):
-        if op == "context":
-            return {"ok": True, "result": {
-                "ref": args["ref"],
-                "anchor": {"name": "keys", "kind": "concept"},
-                "groups": {"mentions": [
-                    {"name": "keychain.py", "kind": "code", "path": "/p/keychain.py",
-                     "line": 3}]},
-            }}
         if op == "memory_search":
             return {"ok": True, "result": {"rows": [
                 {"name": "where-keys-note", "content": "in the drawer"}]}}

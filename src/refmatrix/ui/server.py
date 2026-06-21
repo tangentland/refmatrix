@@ -48,6 +48,40 @@ def _drain(sub):
         return None
 
 
+def replica_context(root: Path, ref: str, *, degree: int = 0,
+                    max_entities: int = 20, max_tokens: int = 4000) -> dict:
+    """Build a context bundle via an in-process READ-ONLY replica store —
+    the same path the `rmx context` CLI uses (`--via-replica`). The daemon's
+    `context` op reads the writer store and mis-resolves concepts on a
+    multi-partition daemon; the snapshot replica is the consistent read source
+    (snapshot-tier design) and never contends with the writer lock.
+
+    Returns the render_json dict, or {"error": ...} on failure."""
+    from refmatrix.store import Store
+    from refmatrix.context import build_context, render_json
+    root = Path(root)
+    part = _partition(root)
+    try:
+        s = Store(root, partition=part, read_only=True)
+    except Exception as e:
+        return {"error": f"replica unavailable: {e}"}
+    try:
+        with s.with_partition(part):
+            bundle = build_context(
+                s, ref, degree=degree, max_entities=max_entities,
+                max_tokens=max_tokens,
+                _entities_explicit=False, _tokens_explicit=False,
+            )
+        return json.loads(render_json(bundle))
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
+
+
 def _context_to_graph(bundle: dict) -> dict:
     """Convert a context-bundle JSON into {nodes, edges} for force-graph.
     Anchor is the center; each grouped neighbor is a node + a typed edge."""
@@ -195,11 +229,10 @@ def create_app(hub) -> FastAPI:
     # ---- graph / reads ----
     @app.get("/api/context")
     def context(root: str, ref: str, degree: int = 0):
-        return _daemon_read(Path(root), "context", {
-            "ref": ref, "format": "json", "degree": degree,
-            "entities_explicit": False, "tokens_explicit": False,
-            "partition": _partition(Path(root)),
-        }, timeout=120.0)
+        bundle = replica_context(Path(root), ref, degree=degree)
+        if bundle.get("error"):
+            return {"ok": False, "error": bundle["error"]}
+        return {"ok": True, "result": bundle}
 
     # ---- graph landing views ----
     @app.get("/api/top")
@@ -245,14 +278,10 @@ def create_app(hub) -> FastAPI:
 
     @app.get("/api/graph")
     def graph(root: str, seed: str, degree: int = 0):
-        resp = _daemon_read(Path(root), "context", {
-            "ref": seed, "format": "json", "degree": degree,
-            "entities_explicit": False, "tokens_explicit": False,
-            "partition": _partition(Path(root)),
-        }, timeout=120.0)
-        if not resp.get("ok"):
-            return resp
-        return {"ok": True, "result": _context_to_graph(resp["result"])}
+        bundle = replica_context(Path(root), seed, degree=degree)
+        if bundle.get("error"):
+            return {"ok": False, "error": bundle["error"]}
+        return {"ok": True, "result": _context_to_graph(bundle)}
 
     @app.post("/api/query")
     async def query(payload: dict):

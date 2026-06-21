@@ -122,14 +122,10 @@ def test_federated_concept_groups_by_project(monkeypatch):
     monkeypatch.setattr(search.discovery, "store_name",
                         lambda r: "a" if "/a/" in str(r) else "b")
     monkeypatch.setattr(search.daemon_mod, "ping", lambda r, timeout=0.5: True)
-
-    def fake_call(r, op, args, timeout=60.0):
-        # concept present in both projects
-        return {"ok": True, "result": {
-            "anchor": {"name": args["ref"], "kind": "concept"},
-            "groups": {"mentions": [{"name": "x", "kind": "code"}]}}}
-
-    monkeypatch.setattr(search.daemon_mod, "call", fake_call)
+    # federated_concept resolves via the in-process replica bundle
+    monkeypatch.setattr(search, "_replica_bundle", lambda root, name, degree=0: {
+        "anchor": {"name": name, "kind": "concept"},
+        "groups": {"mentions": [{"name": "x", "kind": "code"}]}})
     res = search.federated_concept("build_context")
     projs = {p["project"] for p in res["projects"]}
     assert projs == {"a", "b"}
