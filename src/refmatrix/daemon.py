@@ -2924,6 +2924,12 @@ def _op_memory_retag(d: Daemon, args: dict) -> dict:
     return {"tags": new}
 
 
+def _op_memory_facets(d: Daemon, args: dict) -> dict:
+    """Distinct mtypes + tags (with counts) for the UI filter dropdowns."""
+    return _read_with_fallback(
+        d, _memory_partition(d, args), lambda s: s.memory_facets())
+
+
 def _op_memory_reclassify(d: Daemon, args: dict) -> dict:
     """Bulk-change memory mtype in a partition (selector: like/names/from_mtype)."""
     with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
@@ -3621,6 +3627,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "memory_recent": _op_memory_recent,
     "memory_forget": _op_memory_forget,
     "memory_retag": _op_memory_retag,
+    "memory_facets": _op_memory_facets,
     "memory_reclassify": _op_memory_reclassify,
     "memory_dedup": _op_memory_dedup,
     "memory_bulk_forget": _op_memory_bulk_forget,

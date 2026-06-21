@@ -270,32 +270,73 @@ function tailLog(root, el) {
 }
 
 // ---- memory ----
+function tagChips(tags, i) {
+  return (tags || []).map((t) =>
+    `<span class="chip tag">${t}<span class="tag-x" data-i="${i}" data-tag="${t}" title="remove">×</span></span>`).join(" ");
+}
+
 async function renderMemory() {
   const el = $("#tab-memory");
   const ps = await loadProjects();
   el.innerHTML = `<div class="graph-bar" style="border:0;padding:0 0 12px">
       <select id="mem-project">${ps.map((p) => `<option value="${p.root}">${p.name}</option>`).join("")}</select>
-      <input id="mem-q" placeholder="filter memory… (empty = list all)">
-      <input id="mem-tag" placeholder="tag" style="max-width:140px">
+      <select id="mem-mtype"><option value="">all types</option></select>
+      <select id="mem-tagsel"><option value="">all tags</option></select>
+      <input id="mem-q" placeholder="filter text… (empty = list all)" style="flex:1">
       <button class="btn" id="mem-go">search</button>
       <span class="hint" id="mem-count"></span></div>
     <div id="mem-results"><div class="loading">loading memories…</div></div>`;
-  const go = async () => {
-    const root = $("#mem-project").value, q = $("#mem-q").value, tag = $("#mem-tag").value;
-    const qs = new URLSearchParams({root, q, limit: 100, ...(tag ? {tag} : {})});
-    const r = await api("/api/memory?" + qs);
-    const rows = r.result?.rows || [];
+  const loadFacets = async () => {
+    const root = $("#mem-project").value;
+    const r = await api("/api/memory/facets?root=" + encodeURIComponent(root));
+    const f = r.result || {mtypes: {}, tags: {}};
+    $("#mem-mtype").innerHTML = `<option value="">all types</option>` +
+      Object.entries(f.mtypes).map(([k, n]) => `<option value="${k}">${k} (${n})</option>`).join("");
+    $("#mem-tagsel").innerHTML = `<option value="">all tags</option>` +
+      Object.entries(f.tags).map(([k, n]) => `<option value="${k}">${k} (${n})</option>`).join("");
+  };
+  let rows = [];   // current result set (mutated by inline tag edits)
+  const root2 = () => $("#mem-project").value;
+  const retag = (name, partition, body) =>
+    post("/api/memory/retag", {root: root2(), name, partition, ...body});
+
+  const renderRows = () => {
     $("#mem-count").textContent = rows.length ? `${rows.length} memories` : "";
-    $("#mem-results").innerHTML = rows.length ? `<table><thead><tr><th>name</th><th>mtype</th><th>tags</th><th>content</th></tr></thead>
-      <tbody>${rows.map((m) => `<tr><td class="mono">${m.name}</td><td><span class="chip">${m.mtype || ""}</span></td>
-        <td>${(m.tags || []).map((t) => `<span class="chip tag">${t}</span>`).join(" ")}</td>
-        <td class="muted">${(m.content || "").slice(0, 120)}</td></tr>`).join("")}</tbody></table>`
-      : `<div class="muted">${r.ok ? "no memories in this store" : (r.error || "error")}</div>`;
+    $("#mem-results").innerHTML = rows.length ? `<table><thead><tr><th>name</th><th>mtype</th><th>tags</th><th>partition</th><th>content</th></tr></thead>
+      <tbody>${rows.map((m, i) => `<tr><td class="mono">${m.name}</td><td><span class="chip">${m.mtype || ""}</span></td>
+        <td class="tagcell">${tagChips(m.tags || [], i)}<button class="tag-add" data-i="${i}" title="add tag">+</button></td>
+        <td class="muted mono" style="font-size:11px">${m.partition || ""}</td>
+        <td class="muted">${(m.content || "").slice(0, 110)}</td></tr>`).join("")}</tbody></table>`
+      : `<div class="muted">no memories match</div>`;
+    $$(".tag-x", $("#mem-results")).forEach((b) => b.addEventListener("click", async (e) => {
+      e.stopPropagation(); const m = rows[+b.dataset.i];
+      await retag(m.name, m.partition, {remove: [b.dataset.tag]});
+      m.tags = (m.tags || []).filter((t) => t !== b.dataset.tag); renderRows(); loadFacets();
+    }));
+    $$(".tag-add", $("#mem-results")).forEach((b) => b.addEventListener("click", async () => {
+      const m = rows[+b.dataset.i]; const t = (prompt("add tag:") || "").trim(); if (!t) return;
+      await retag(m.name, m.partition, {add: [t]});
+      m.tags = [...(m.tags || []), t]; renderRows(); loadFacets();
+    }));
+  };
+
+  const go = async () => {
+    const root = root2(), q = $("#mem-q").value;
+    const tag = $("#mem-tagsel").value, mtype = $("#mem-mtype").value;
+    const qs = new URLSearchParams({root, q, limit: 200,
+      ...(tag ? {tag} : {}), ...(mtype ? {mtype} : {})});
+    $("#mem-results").innerHTML = `<div class="loading">loading…</div>`;
+    const r = await api("/api/memory?" + qs);
+    rows = r.ok ? (r.result?.rows || []) : [];
+    if (!r.ok) { $("#mem-results").innerHTML = `<div class="muted">${r.error || "error"}</div>`; return; }
+    renderRows();
   };
   $("#mem-go").addEventListener("click", go);
   $("#mem-q").addEventListener("keydown", (e) => e.key === "Enter" && go());
-  $("#mem-tag").addEventListener("keydown", (e) => e.key === "Enter" && go());
-  $("#mem-project").addEventListener("change", go);   // reload on project switch
+  $("#mem-mtype").addEventListener("change", go);
+  $("#mem-tagsel").addEventListener("change", go);
+  $("#mem-project").addEventListener("change", async () => { await loadFacets(); go(); });
+  await loadFacets();
   go();   // auto-list on open — never start empty
 }
 

@@ -52,6 +52,19 @@ def test_reclassify_by_names(tmp_path):
     s.close()
 
 
+def test_memory_facets(tmp_path):
+    s = Store(tmp_path / ".refmatrix"); s.init()
+    with s.with_partition("p"):
+        s.add_memory("a", "x", mtype="feedback", tags=["tone", "git-policy"])
+        s.add_memory("b", "y", mtype="project", tags=["tone"])
+        s.add_memory("c", "z", mtype="feedback")
+        f = s.memory_facets()
+        assert f["mtypes"] == {"feedback": 2, "project": 1}
+        assert f["tags"]["tone"] == 2 and f["tags"]["git-policy"] == 1
+        assert f["total"] == 3
+    s.close()
+
+
 def test_reclassify_re_logs_for_replay(tmp_path):
     """The mtype change must survive a rebuild-from-log."""
     s = Store(tmp_path / ".refmatrix"); s.init()

@@ -39,6 +39,21 @@ def _partition(root: Path) -> str:
     return discovery.store_name(root)
 
 
+def _store_partitions(root: Path) -> list[str]:
+    """All partition names in a store (so the memory views span the default +
+    memory-<name> + sessions-<name> splits). Falls back to the default name if
+    the daemon's partition list is unavailable."""
+    default = _partition(root)
+    resp = _daemon_read(root, "partition_list", {})
+    if resp.get("ok"):
+        rows = resp["result"].get("rows") or resp["result"].get("partitions") or []
+        names = [r.get("name") for r in rows if r.get("name")]
+        if names:
+            # default first, then the rest, deterministic
+            return [default] + [n for n in names if n != default]
+    return [default]
+
+
 def _drain(sub):
     """Block up to 1s for the next bus message; None on timeout (keepalive)."""
     import queue as _q
@@ -348,16 +363,70 @@ def create_app(hub) -> FastAPI:
 
     @app.get("/api/memory")
     def memory(root: str, q: str = "", tag: str | None = None,
-               mtype: str | None = None, limit: int = 30):
+               mtype: str | None = None, limit: int = 100):
+        """List/search memories across ALL of the store's partitions (a project's
+        memories are split across <name>/memory-<name>/sessions-<name>)."""
         rootp = Path(root)
         tags = [tag] if tag else None
-        if q:
-            args: dict[str, Any] = {"query": q, "limit": limit, "tags": tags,
-                                    "partition": _partition(rootp)}
-            return _daemon_read(rootp, "memory_search", args)
-        args = {"mtype": mtype, "limit": limit, "tags": tags,
-                "partition": _partition(rootp)}
-        return _daemon_read(rootp, "memory_iter", args)
+        op = "memory_search" if q else "memory_iter"
+        merged: list[dict] = []
+        seen: set = set()
+        for part in _store_partitions(rootp):
+            if q:
+                args: dict[str, Any] = {"query": q, "limit": limit, "tags": tags,
+                                        "partition": part}
+            else:
+                args = {"mtype": mtype, "limit": limit, "tags": tags,
+                        "partition": part}
+            resp = _daemon_read(rootp, op, args)
+            if not resp.get("ok"):
+                continue
+            for m in resp["result"].get("rows", []):
+                key = (m.get("name"), m.get("mtype"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                m["partition"] = part
+                merged.append(m)
+        return {"ok": True, "result": {"rows": merged[:limit * 2]}}
+
+    @app.post("/api/memory/retag")
+    async def memory_retag(payload: dict):
+        """Inline tag edit: add/remove tags on a memory (by name, in a given
+        partition). Routes through the daemon writer."""
+        root = Path(payload["root"])
+        args = {"name": payload["name"],
+                "add": payload.get("add"), "remove": payload.get("remove"),
+                "replace": payload.get("replace"),
+                "partition": payload.get("partition") or _partition(root)}
+        if not daemon_mod.ping(root):
+            return {"ok": False, "error": "daemon not running"}
+        try:
+            resp = daemon_mod.call(root, "memory_retag", args, timeout=30.0)
+            return resp
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+    @app.get("/api/memory/facets")
+    def memory_facets(root: str):
+        """mtype + tag counts aggregated across all the store's partitions."""
+        rootp = Path(root)
+        mtypes: dict[str, int] = {}
+        tags: dict[str, int] = {}
+        total = 0
+        for part in _store_partitions(rootp):
+            resp = _daemon_read(rootp, "memory_facets", {"partition": part})
+            if not resp.get("ok"):
+                continue
+            res = resp["result"]
+            total += res.get("total", 0)
+            for k, v in (res.get("mtypes") or {}).items():
+                mtypes[k] = mtypes.get(k, 0) + v
+            for k, v in (res.get("tags") or {}).items():
+                tags[k] = tags.get(k, 0) + v
+        order = lambda d: dict(sorted(d.items(), key=lambda kv: kv[1], reverse=True))
+        return {"ok": True, "result": {"mtypes": order(mtypes),
+                "tags": order(tags), "total": total}}
 
     @app.get("/api/taxonomy")
     def taxonomy_get():

@@ -1836,6 +1836,34 @@ class Store:
         self.purge_entity(m["id"])
         return True
 
+    def memory_facets(self) -> dict:
+        """Distinct mtypes + tags (with counts) for memories in the active
+        partition — populates the UI filter dropdowns. Tags are stored as a
+        JSON list per row, so they're unpacked + counted in Python."""
+        self._connect()
+        rows = self._read().execute(
+            "SELECT mc.mtype, mc.tags FROM entities e "
+            "JOIN memory_content mc ON mc.entity_id = e.id "
+            "WHERE e.partition_id=? AND e.kind='memory'",
+            (self._partition_id,),
+        ).fetchall()
+        from collections import Counter
+        mtypes: Counter = Counter()
+        tags: Counter = Counter()
+        for r in rows:
+            mtypes[r["mtype"] or "?"] += 1
+            if r["tags"]:
+                try:
+                    for t in json.loads(r["tags"]):
+                        tags[t] += 1
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        return {
+            "mtypes": dict(mtypes.most_common()),
+            "tags": dict(tags.most_common()),
+            "total": len(rows),
+        }
+
     def reclassify_memories(
         self, *, to_mtype: str, like: "str | None" = None,
         names: "list[str] | None" = None, from_mtype: "str | None" = None,

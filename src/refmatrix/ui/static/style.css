@@ -75,6 +75,12 @@ button.btn.danger:hover { border-color: var(--down); color: var(--down); }
 .chip { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius: 4px;
   background: var(--panel2); border: 1px solid var(--border); }
 .tag { background: rgba(188,140,255,.15); border-color: rgba(188,140,255,.4); }
+.tag .tag-x { margin-left: 4px; cursor: pointer; color: var(--dim); font-weight: 700; }
+.tag .tag-x:hover { color: var(--down); }
+.tag-add { background: var(--panel2); border: 1px dashed var(--border); color: var(--dim);
+  border-radius: 4px; cursor: pointer; font-size: 11px; padding: 0 6px; margin-left: 4px; }
+.tag-add:hover { border-color: var(--accent); color: var(--accent); }
+.tagcell { white-space: nowrap; }
 
 h2.section { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: var(--dim);
   margin: 0 0 12px; font-weight: 600; }
