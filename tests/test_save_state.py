@@ -123,6 +123,8 @@ def test_focus_digest_has_sections(tmp_path):
     s.record("input", "ship it")
     digest = cli._focus_digest(s)
     assert "# Session summary" in digest
+    assert "## Top (by strength)" in digest      # strength-ranked top-N
+    assert "1. `" in digest and "w=" in digest
     assert "## Milestones" in digest and "git commit" in digest
     assert "## Arc" in digest
     assert "build the thing" in digest and "ship it" in digest

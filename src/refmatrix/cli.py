@@ -975,6 +975,15 @@ def _focus_digest(s) -> str:
     span = f"{events[0]['ts']} → {events[-1]['ts']}" if events else ""
     L = [f"# Session summary — {s.session}", "",
          f"{len(events)} events · {span}", ""]
+    # Top-N focus nodes in strength (weight) order — the session's heaviest
+    # symbols, ranked. clean["nodes"] is already weight-sorted by focus_graph.
+    topn = [{"name": n["name"], "kind": n["kind"], "weight": n["weight"]}
+            for n in clean["nodes"][:10]]
+    if topn:
+        L.append("## Top (by strength)")
+        for i, n in enumerate(topn, 1):
+            L.append(f"{i}. `{n['name']}` [{n['kind']}] w={n['weight']}")
+        L.append("")
     if clusters:
         L.append("## Topics worked on")
         for c in clusters:
