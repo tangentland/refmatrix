@@ -41,9 +41,12 @@ def cached_replica(root: Path):
     return existing
 
 
-def _replica_bundle(root: Path, ref: str, *, degree: int = 0) -> dict:
+def _replica_bundle(root: Path, ref: str, *, degree: int = 0,
+                    grep_backstop: bool = False) -> dict:
     """In-process cached read-only-replica context bundle (the working read
     path; the daemon context op mis-resolves on multi-partition daemons).
+    `grep_backstop=False` by default — the filesystem-grep floor is slow on a
+    big tree and pointless for federated search (we want index hits only).
     Returns the render_json dict or {} on failure."""
     from refmatrix.context import build_context, render_json
     import json as _json
@@ -54,7 +57,7 @@ def _replica_bundle(root: Path, ref: str, *, degree: int = 0) -> dict:
         return {}
     try:
         with lock, s.with_partition(part):
-            b = build_context(s, ref, degree=degree,
+            b = build_context(s, ref, degree=degree, grep_backstop=grep_backstop,
                               _entities_explicit=False, _tokens_explicit=False)
         return _json.loads(render_json(b))
     except Exception:
@@ -109,16 +112,18 @@ def federated_where(q: str, *, limit: int = 40) -> dict:
     roots = [r for r in discovery.discover_roots() if daemon_mod.ping(r)]
     results: list[dict] = []
     if roots:
-        with ThreadPoolExecutor(max_workers=min(8, len(roots))) as ex:
-            futs = {ex.submit(_where_one_project, r, q): r for r in roots}
-            try:
-                for fut in as_completed(futs, timeout=8):
-                    try:
-                        results.extend(fut.result(timeout=0.1) or [])
-                    except Exception:
-                        pass
-            except Exception:
-                pass  # overall fan-out timeout — return whatever finished
+        ex = ThreadPoolExecutor(max_workers=min(8, len(roots)))
+        futs = {ex.submit(_where_one_project, r, q): r for r in roots}
+        try:
+            for fut in as_completed(futs, timeout=6):
+                try:
+                    results.extend(fut.result(timeout=0.1) or [])
+                except Exception:
+                    pass
+        except Exception:
+            pass  # overall fan-out timeout — return whatever finished
+        # don't block on stragglers (a `with` block would shutdown(wait=True))
+        ex.shutdown(wait=False, cancel_futures=True)
     # global behavior memories (hub-local; fast)
     try:
         from refmatrix import hub as hub_mod
