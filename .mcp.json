@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "refmatrix": {
+      "command": "rmx",
+      "args": ["mcp"]
+    }
+  }
+}

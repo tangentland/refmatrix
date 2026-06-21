@@ -133,6 +133,72 @@ def _t_projects(args: dict) -> dict:
     return {"projects": discovery.all_projects(with_footprint=False)}
 
 
+# ---- write path (per-project; daemon-routed, in-proc fallback) -------------
+
+
+def _write_session(args: dict, stm_mod, root: Path) -> str:
+    """Resolve the STM session for a write: explicit arg → most-recently-written
+    ring (the active Claude session a spawned MCP process can't name) → bare."""
+    return (args.get("session") or stm_mod.latest_session(root)
+            or stm_mod.session_id())
+
+
+def _t_focus_note(args: dict) -> dict:
+    """Record a deliberate reasoning note into the project's short-term memory —
+    the WHY behind a decision/tradeoff. File-based + per-project; works with or
+    without the daemon. MCP-native so note text bypasses shell quoting."""
+    from refmatrix import stm as stm_mod
+    root = _resolve_root(args)
+    s = stm_mod.Stm(root, _write_session(args, stm_mod, root))
+    ev = s.record("reason", str(args["text"])[:800])
+    return {"noted": True, "session": s.session, "refs": ev.get("refs", [])[:6]}
+
+
+def _t_memory_add(args: dict) -> dict:
+    """Add/update a durable memory in the project store. Daemon-routed (the
+    single write control point); in-proc fallback only when the daemon is down."""
+    from refmatrix import daemon as daemon_mod, discovery
+    root = _resolve_root(args)
+    part = discovery.store_name(root)
+    payload = {"name": args["name"], "content": args["content"],
+               "mtype": args.get("mtype", "observation"),
+               "tags": args.get("tags"),
+               "protected": bool(args.get("protect", False)), "partition": part}
+    if daemon_mod.ping(root):
+        r = daemon_mod.call(root, "memory_add", payload, timeout=30.0)
+        return r.get("result", {}) if r.get("ok") else {"error": r.get("error")}
+    from refmatrix.store import Store
+    s = Store(root)
+    with s.with_partition(part):
+        eid = s.add_memory(name=payload["name"], content=payload["content"],
+                           mtype=payload["mtype"], tags=payload["tags"],
+                           protected=payload["protected"])
+    return {"id": eid}
+
+
+def _t_change_subject(args: dict) -> dict:
+    """Set the active subject (a named STM partition) for this session + upsert
+    its durable LTM node. STM pointer is file-based; the node write is daemon-
+    routed (in-proc fallback when down)."""
+    from refmatrix import daemon as daemon_mod, discovery, stm as stm_mod
+    root = _resolve_root(args)
+    s = stm_mod.Stm(root, _write_session(args, stm_mod, root))
+    rec = s.set_subject(args["label"])
+    part = discovery.store_name(root)
+    eid = None
+    if daemon_mod.ping(root):
+        r = daemon_mod.call(root, "subject_upsert",
+                            {"label": args["label"], "partition": part}, timeout=30.0)
+        eid = r.get("result", {}).get("id") if r.get("ok") else None
+    else:
+        from refmatrix.store import Store
+        s2 = Store(root)
+        with s2.with_partition(part):
+            eid = s2.upsert_subject(args["label"])["id"]
+    return {"subject": rec["subject"], "label": rec["label"], "id": eid,
+            "session": s.session}
+
+
 TOOLS: dict[str, dict] = {
     "rmx_where": {
         "description": "Find where something is across ALL your refmatrix "
@@ -199,6 +265,33 @@ TOOLS: dict[str, dict] = {
         "description": "List all refmatrix projects + daemon status.",
         "schema": {"type": "object", "properties": {}},
         "fn": _t_projects},
+    "rmx_focus_note": {
+        "description": "Record a deliberate reasoning note into the project's "
+                       "short-term memory — the WHY behind a decision, a "
+                       "hypothesis, a tradeoff. The reliable reasoning-capture "
+                       "channel (extended thinking is redacted from transcripts).",
+        "schema": {"type": "object", "properties": {
+            "text": {"type": "string"}, "session": {"type": "string"},
+            "root": {"type": "string"}}, "required": ["text"]},
+        "fn": _t_focus_note},
+    "rmx_memory_add": {
+        "description": "Add or update a durable memory in the current project's "
+                       "memory store (daemon-routed write).",
+        "schema": {"type": "object", "properties": {
+            "name": {"type": "string"}, "content": {"type": "string"},
+            "mtype": {"type": "string"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "protect": {"type": "boolean"}, "root": {"type": "string"}},
+            "required": ["name", "content"]},
+        "fn": _t_memory_add},
+    "rmx_change_subject": {
+        "description": "Set the active subject (a named STM partition + durable "
+                       "LTM container) for this session's thread of work; "
+                       "promoted digests/handoffs file under it.",
+        "schema": {"type": "object", "properties": {
+            "label": {"type": "string"}, "session": {"type": "string"},
+            "root": {"type": "string"}}, "required": ["label"]},
+        "fn": _t_change_subject},
 }
 
 
