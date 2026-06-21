@@ -726,9 +726,17 @@ function setupGraphInput() {
     const rect = c.getBoundingClientRect();
     const n = nodeAt(e.clientX - rect.left, e.clientY - rect.top);
     if (!n) return;
-    // code/doc node with a file → open the doc viewer; else expand neighborhood
-    if ((n.kind === "code" || n.kind === "doc") && n.path) openDocViewer(n);
-    else expandNode(n);
+    // refocus: re-center the graph on the double-clicked node
+    $("#graph-ref").value = n.name; runGraph();
+  });
+  // right-click a code/doc node → doc viewer
+  c.addEventListener("contextmenu", (e) => {
+    const rect = c.getBoundingClientRect();
+    const n = nodeAt(e.clientX - rect.left, e.clientY - rect.top);
+    if (n && (n.kind === "code" || n.kind === "doc") && n.path) {
+      e.preventDefault();
+      openDocViewer(n);
+    }
   });
   c.addEventListener("wheel", (e) => {
     e.preventDefault();
@@ -745,9 +753,13 @@ function showNode(n) {
     ${n.path ? `<div class="sub">${n.path}</div>` : ""}
     ${n.tldr ? `<p class="muted" style="font-size:12px">${n.tldr}</p>` : ""}
     ${n.snippet ? `<pre>${n.snippet.replace(/[<>]/g, "")}</pre>` : ""}
-    <div class="row-actions"><button class="btn" id="np-expand">expand</button>
+    <div class="row-actions">
+      <button class="btn" id="np-focus">refocus</button>
+      ${((n.kind === "code" || n.kind === "doc") && n.path)
+        ? `<button class="btn" id="np-view">open</button>` : ""}
       <button class="btn" id="np-close">close</button></div>`;
-  $("#np-expand").addEventListener("click", () => expandNode(n));
+  $("#np-focus").addEventListener("click", () => { $("#graph-ref").value = n.name; runGraph(); });
+  if ($("#np-view")) $("#np-view").addEventListener("click", () => openDocViewer(n));
   $("#np-close").addEventListener("click", () => p.classList.add("hidden"));
 }
 
