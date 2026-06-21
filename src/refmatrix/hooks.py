@@ -229,14 +229,27 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
             }],
         })
         block["hooks"]["PreCompact"] = [{
-            "hooks": [{
-                "type": "command",
-                "command": (
-                    HOOK_ENV
-                    + "rmx memory recall --recent --since 1h "
-                    "--k 20 --scope both --json"
-                ),
-            }],
+            "hooks": [
+                # Inject the FULL STM digest before compaction so the compacted
+                # context keeps the session's topics, git milestones, intent
+                # arc, and top-N symbols — with L<n> refs into the on-disk full
+                # log, so depth is still recoverable post-compact (`focus show`).
+                # This is the "compaction keeps the real summary" path.
+                {
+                    "type": "command",
+                    "command": (
+                        HOOK_ENV + "rmx focus summarize 2>/dev/null || true"
+                    ),
+                },
+                {
+                    "type": "command",
+                    "command": (
+                        HOOK_ENV
+                        + "rmx memory recall --recent --since 1h "
+                        "--k 20 --scope both --json"
+                    ),
+                },
+            ],
         }]
     return block
 

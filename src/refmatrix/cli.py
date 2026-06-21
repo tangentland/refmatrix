@@ -7882,7 +7882,9 @@ def _ss_update_index(memdir: Path, mem_id: str, title: str, hook: str) -> None:
               default=None, help="Override the curated-memory dir.")
 @click.option("--dry-run", is_flag=True, help="Render to stdout; write nothing.")
 @click.option("--no-lint", is_flag=True, help="Skip the GMD lint pass.")
-def save_state(message, commit, session, memory_dir, dry_run, no_lint):
+@click.option("--promote/--no-promote", default=True, show_default=True,
+              help="Also promote the condensed STM digest to durable memory.")
+def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote):
     """Compile a session handoff memory from STM + git + recent memories.
 
     Incremental by design: writes ONE GMD memory with a stable per-session id
@@ -7890,6 +7892,10 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint):
     save-state late in a session is a cheap recompile, not a rebuild. The file
     lands in the curated-memory dir; the SessionStart bridge ingests it into
     rmx. `--commit` commits repo CODE (the memory file lives outside the repo).
+
+    save-state = promote: by default it ALSO promotes the condensed STM digest
+    (`focus summarize`) into the rmx memory store, so the working memory
+    graduates to LTM and the next instance recalls it. `--no-promote` opts out.
     """
     import re as _re
     import time as _time
@@ -7941,6 +7947,27 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint):
                 else "[yellow]lint[/]"
             if out:
                 console.print(f"{tag} {out.splitlines()[-1] if out else ''}")
+
+    if promote:
+        # save-state = promote: condense the STM and graduate it to the rmx
+        # memory store (LTM), so the working memory survives the session and
+        # the next instance recalls it. Mirrors `focus summarize --promote`.
+        digest = _focus_digest(s)
+        pname = f"focus_summary_{sess_slug}"
+        pargs = {"name": pname, "content": digest, "mtype": "session-summary",
+                 "tags": ["session-state", "summary"],
+                 "metadata": {"title": f"Session summary {sess[:8]}"},
+                 "protected": False}
+        from refmatrix import daemon as daemon_mod
+        try:
+            if daemon_mod.ping(root):
+                resp = _memory_daemon_call("memory_add", pargs)
+                eid = resp.get("result", {}).get("id") if resp.get("ok") else None
+            else:
+                eid = _store().add_memory(**pargs)
+            console.print(f"[green]promoted[/] {pname} (id={eid}) → durable memory")
+        except Exception as e:
+            console.print(f"[yellow]promote skipped:[/] {e}")
 
     if commit:
         _ss_sh(["git", "add", "-A"], repo)
