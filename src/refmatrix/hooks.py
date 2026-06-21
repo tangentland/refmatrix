@@ -452,6 +452,41 @@ rmx scan-prompt --text "<prompt>"        # context for symbols in a prompt
 If you're handed a symbol you've never seen, run `rmx context <name>`
 explicitly — the hook only kicks in when the symbol appears verbatim.
 
+## Working memory (STM) — what's being worked on right now
+
+Hooks auto-capture this session into a per-project focus graph + full log:
+user prompts (`input`), tool calls (`tool`), my replies (`say`, from the Stop
+hook), and git milestones (`git` — commit/push/merge captured WITH their
+output + diffstat). Read surfaces default to the **active** Claude session.
+
+```
+rmx focus context        # dialogue (intent) + git milestones + ranked graph
+                         #   with +1 neighbors, each row L<n>-ref'd to the log
+rmx focus topics         # cluster the session into topical threads (timeline)
+rmx focus show <n> [-C K] # the full untruncated event(s) at log line n
+rmx focus export         # the ENTIRE session log (never trimmed), line-numbered
+rmx task push/pop/list   # pushdown stack for interrupted work (snapshots focus)
+```
+
+The L<n> refs link every summary row back to raw events — follow the session's
+evolution topically, then drill to depth. The log is the full session on disk.
+
+## Durable memory (LTM) + handoff
+
+```
+rmx memory recall "<query>"     # semantic recall over curated memories
+rmx memory recall --recent      # newest-first, no embedder
+rmx memory add <name> -c "..."   # write a memory (--global for cross-project)
+rmx context <memory-id>          # a memory's body + its graph neighborhood
+rmx save-state [--commit]        # compile STM + git + recent memories into ONE
+                                 #   stable-id handoff memory (overwrite, not
+                                 #   rebuild). --commit also commits the repo.
+```
+
+On a cold start, `rmx memory recall --session-start` (run by the SessionStart
+hook) surfaces recent context. `rmx save-state` at the end of a work session
+leaves a handoff the next instance reads.
+
 ## To remove
 
 Delete `.refmatrix/`, the `rmx` lines from `.git/hooks/*`, and the rmx
