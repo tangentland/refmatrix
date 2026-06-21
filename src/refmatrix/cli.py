@@ -814,22 +814,38 @@ def focus_context(top, session):
         console.print("[yellow]no focus yet[/]")
         return
     console.print(f"[bold]focus[/] · {g['events']} events · session {g['session']}")
+    console.print("[dim]L<n> = line in the full log; `rmx focus show <n>` for "
+                  "depth[/]")
+    # Each event's 1-based line in the full on-disk log, so every row below can
+    # cite L<n> and the reader can drill to the raw event via `focus show <n>`.
+    events = s.all_events()
+    last_line: dict[str, int] = {}
+    for i, e in enumerate(events, 1):
+        for r in (e.get("refs") or []):
+            last_line[r] = i
     # Intent thread — the dialogue: user inputs (UserPromptSubmit) interleaved
     # with my replies (Stop → `say`). Short prompts ("deploy") extract no refs
     # so they're invisible in the ref-graph below; the dialogue gives the graph
     # its "why" and makes a bare "yes" legible against what I'd just proposed.
-    dialogue = [e for e in s.all_events() if e.get("kind") in ("input", "say")]
+    dialogue = [(i, e) for i, e in enumerate(events, 1)
+                if e.get("kind") in ("input", "say")]
     if dialogue:
         console.print("[bold]intent[/] [dim](dialogue)[/]")
-        for e in dialogue[-6:]:
-            if e["kind"] == "input":
-                console.print(f"  [magenta]▸[/] {e['terse'][:90]}")
-            else:
-                console.print(f"  [green]◂[/] [dim]{e['terse'][:90]}[/]")
+        for i, e in dialogue[-6:]:
+            mark = "[magenta]▸[/]" if e["kind"] == "input" else "[green]◂[/]"
+            style = "" if e["kind"] == "input" else "[dim]"
+            close = "" if e["kind"] == "input" else "[/]"
+            console.print(f"  {mark} {style}{e['terse'][:84]}{close} "
+                          f"[dim]L{i}[/]")
+    # Milestones — git ops captured with their output (commit/push/merge/...).
+    gits = [(i, e) for i, e in enumerate(events, 1) if e.get("kind") == "git"]
+    if gits:
+        console.print("[bold]milestones[/] [dim](git)[/]")
+        for i, e in gits[-6:]:
+            console.print(f"  [yellow]⎇[/] [dim]{e['terse'][:84]}[/] [dim]L{i}[/]")
     # Per-row +1 neighbors from the focus edges (co-occurrence within the
     # rolling window) — the graph structure, not just the ranked list. Noise
     # neighbors are dropped so a row points only at real symbols.
-    shown = {nd["name"] for nd in nodes}
     nbr: dict[str, list[tuple[float, str]]] = {}
     for ed in g.get("edges", []):
         a, b, w = ed["source"], ed["target"], ed["weight"]
@@ -841,8 +857,62 @@ def focus_context(top, session):
     for nd in nodes:
         tops = sorted(nbr.get(nd["name"], []), reverse=True)[:3]
         arrow = ("  [dim]→[/] " + ", ".join(n for _, n in tops)) if tops else ""
+        ln = last_line.get(nd["name"])
+        lref = f"  [dim]L{ln}[/]" if ln else ""
         console.print(f"  {nd['weight']:>5.2f}  [cyan]{nd['name']}[/] "
-                      f"[dim]{nd['kind']} ×{nd['count']}[/]{arrow}")
+                      f"[dim]{nd['kind']} ×{nd['count']}[/]{arrow}{lref}")
+
+
+@focus.command("export")
+@click.option("-s", "--session", default=None,
+              help="Session id to export. Default: active Claude session.")
+@click.option("-o", "--out", type=click.Path(path_type=Path), default=None,
+              help="Write to a file instead of stdout.")
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSONL events.")
+def focus_export(session, out, as_json):
+    """Dump the FULL session focus log — every event, untrimmed. The ring file
+    is never trimmed, so the complete context is always retrievable here."""
+    s = _stm(session, prefer_latest=True)
+    events = s.all_events()
+    if as_json:
+        text = "\n".join(json.dumps(e) for e in events)
+    else:
+        lines = [f"# focus log · session {s.session} · {len(events)} events", ""]
+        # Line-numbered (1-based) so the L<n> refs in `focus context` resolve.
+        for i, e in enumerate(events, 1):
+            task = f" ({e['task']})" if e.get("task") else ""
+            lines.append(f"{i:>5}: {e['ts']} [{e['kind']}]{task} {e.get('terse', '')}")
+        text = "\n".join(lines)
+    if out:
+        Path(out).write_text(text + "\n")
+        console.print(f"[green]exported[/] {len(events)} events → {out}")
+    else:
+        click.echo(text)
+
+
+@focus.command("show")
+@click.argument("line", type=int)
+@click.option("-s", "--session", default=None,
+              help="Session id. Default: active Claude session.")
+@click.option("-C", "--context", "ctx", type=int, default=0,
+              help="Also show ±N surrounding events.")
+def focus_show(line, session, ctx):
+    """Show the full event(s) at a log line (the L<n> refs in `focus context`)
+    — untruncated terse + refs + task. -C N widens the window for depth."""
+    s = _stm(session, prefer_latest=True)
+    events = s.all_events()
+    lo, hi = max(1, line - ctx), min(len(events), line + ctx)
+    if line < 1 or line > len(events):
+        console.print(f"[yellow]line {line} out of range[/] (1..{len(events)})")
+        return
+    for i in range(lo, hi + 1):
+        e = events[i - 1]
+        mark = "[bold]►[/]" if i == line else " "
+        task = f" [dim]({e['task']})[/]" if e.get("task") else ""
+        console.print(f"{mark} [dim]L{i}[/] [dim]{e['ts']}[/] [cyan]{e['kind']}[/]{task}")
+        console.print(f"    {e.get('terse', '')}")
+        if e.get("refs"):
+            console.print(f"    [dim]refs: {', '.join(e['refs'])}[/]")
 
 
 @focus.command("clear")
@@ -894,6 +964,47 @@ def _last_assistant_text(transcript_path: str) -> str:
     return ""
 
 
+import re as _re_mod
+# Mutating git ops are work milestones (commit/push/merge/...); read-only ones
+# (status/log/diff/show) are noise and stay out.
+_GIT_MILESTONE_RE = _re_mod.compile(
+    r"(?:^|&&|\|\||;|\||\(|\n)\s*git\s+(?:-C\s+\S+\s+)?"
+    r"(commit|push|merge|rebase|checkout|switch|tag|reset|revert|"
+    r"cherry-pick|stash|pull|clone|init)\b")
+
+
+def _git_milestone_subcmd(cmd: str) -> str | None:
+    m = _GIT_MILESTONE_RE.search(cmd)
+    return m.group(1) if m else None
+
+
+def _tool_output_text(resp) -> str:
+    """Flatten a PostToolUse tool_response to text (Bash → stdout+stderr)."""
+    if isinstance(resp, dict):
+        return ((resp.get("stdout") or "") + "\n"
+                + (resp.get("stderr") or "")).strip()
+    if isinstance(resp, str):
+        return resp.strip()
+    return ""
+
+
+def _git_diff_summary(repo: str) -> "tuple[str, list[str]]":
+    """(diffstat summary, changed files) for the just-created HEAD commit.
+    Captured right after a milestone so the event carries WHAT changed; the
+    changed files become refs so they enter the focus graph as real signal."""
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["git", "-C", repo, "show", "--stat", "--format=", "HEAD"],
+            capture_output=True, text=True, timeout=5)
+    except Exception:
+        return "", []
+    lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
+    summary = lines[-1].strip() if lines and "changed" in lines[-1] else ""
+    files = [ln.split("|")[0].strip() for ln in lines if "|" in ln]
+    return summary, files[:10]
+
+
 @focus.command("hook")
 @click.option("--event", type=click.Choice(["input", "tool", "say"]),
               required=True, help="Which Claude Code hook is firing.")
@@ -934,6 +1045,23 @@ def focus_hook(event):
             if isinstance(e, dict) and isinstance(e.get("file_path"), str):
                 refs.append(e["file_path"])
         cmd = ti.get("command")
+        # Git milestones: capture the op + its output line as a `git` event —
+        # the work narrative's anchors (committed X, pushed Y, merged Z).
+        sub = _git_milestone_subcmd(cmd) if isinstance(cmd, str) else None
+        if sub:
+            out = _tool_output_text(d.get("tool_response"))
+            first = next((ln for ln in out.splitlines() if ln.strip()), "")
+            terse = f"git {sub}: {first}".strip()
+            diff_refs: list[str] = []
+            # Capture the diffstat right after a content-changing milestone so
+            # the event records WHAT changed; the changed files become refs.
+            if sub in ("commit", "merge", "cherry-pick", "revert"):
+                repo = d.get("cwd") or str(_root().parent)
+                stat, diff_refs = _git_diff_summary(repo)
+                if stat:
+                    terse = f"{terse}  [{stat}]"
+            s.record("git", terse[:300], refs=diff_refs)
+            return
         if not refs and isinstance(cmd, str):
             # Bash/command tools carry no file_path: keep only path-like tokens
             # from the command, drop shell words. Pass refs EXPLICITLY (even if

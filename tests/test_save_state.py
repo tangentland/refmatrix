@@ -90,3 +90,22 @@ def test_stop_hook_template_records_say():
     stop_cmds = [h["command"] for blk in block["hooks"]["Stop"]
                  for h in blk["hooks"]]
     assert any("focus hook --event say" in c for c in stop_cmds)
+
+
+# ---- git milestone capture ----
+
+
+def test_git_milestone_detects_mutating_ops():
+    assert cli._git_milestone_subcmd("git commit -m x") == "commit"
+    assert cli._git_milestone_subcmd("git -C /r push origin master") == "push"
+    assert cli._git_milestone_subcmd("git merge --ff-only origin/master") == "merge"
+    # read-only ops are NOT milestones
+    assert cli._git_milestone_subcmd("git status --short") is None
+    assert cli._git_milestone_subcmd("git log --oneline") is None
+    assert cli._git_milestone_subcmd("echo git commit") is None  # not a git cmd
+
+
+def test_tool_output_text_flattens():
+    assert cli._tool_output_text({"stdout": "a", "stderr": "b"}) == "a\nb"
+    assert cli._tool_output_text("plain") == "plain"
+    assert cli._tool_output_text(None) == ""

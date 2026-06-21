@@ -24,13 +24,15 @@ def test_record_and_tail(tmp_path):
     assert rows[1]["refs"] == ["build_context"]
 
 
-def test_ring_trims_to_size(tmp_path):
+def test_full_log_retained_tail_bounded(tmp_path):
+    """The on-disk log is the FULL session (never trimmed); tail() stays
+    bounded for cheap reads."""
     s = Stm(tmp_path / ".refmatrix", "sess", size=10)
     for i in range(200):
         s.record("tool", f"edit f_{i}.py", refs=[f"f_{i}.py"])
-    rows = s.all_events()
-    assert len(rows) <= 10 + 64
-    assert rows[-1]["refs"] == ["f_199.py"]
+    assert len(s.all_events()) == 200          # full log kept
+    assert s.all_events()[-1]["refs"] == ["f_199.py"]
+    assert len(s.tail(10)) == 10               # tail window bounded
 
 
 # ---- focus graph ----
@@ -203,3 +205,18 @@ def test_extract_refs_drops_home_path_segments():
     assert any(r.endswith("notes.md") for r in refs)
     for seg in ("Users", "tholley", "claude_tools"):
         assert seg not in refs
+
+
+# ---- full session log on disk (never trimmed) ----
+
+
+def test_log_is_not_trimmed(tmp_path):
+    s = Stm(tmp_path / ".refmatrix", "sess", size=50)
+    for i in range(300):
+        s.record("tool", f"e{i}", refs=[])
+    assert s.event_count() == 300            # full log retained, not capped at 50
+    assert len(s.all_events()) == 300
+    assert len(s.tail(20)) == 20             # tail still bounded
+    assert s.tail(1)[0]["terse"] == "e299"   # newest last
+
+

@@ -41,7 +41,7 @@ COOCCUR_WINDOW = 4
 # Score weights. Pin dominates so a pinned node is never evicted ahead of junk.
 W_RECENCY, W_FREQ, W_CENTRALITY, W_PIN = 1.0, 0.5, 0.8, 10.0
 
-EVENT_KINDS = ("input", "tool", "rmx", "result", "say")
+EVENT_KINDS = ("input", "tool", "rmx", "result", "say", "git")
 
 _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}(?:\.[A-Za-z_][A-Za-z0-9_]+)*")
 _PATH_RE = re.compile(r"[\w./-]+\.[A-Za-z]{1,5}")
@@ -128,36 +128,55 @@ class Stm:
         self._dir.mkdir(parents=True, exist_ok=True)
         with self._path.open("a") as f:
             f.write(json.dumps(ev) + "\n")
-        self._trim_ring()
-        # Maintain the focus graph. An `input` event opens a new turn (decay).
+        # The jsonl is the FULL, append-only session log — never trimmed, so the
+        # complete context is always retrievable from disk (`focus export`). The
+        # live focus GRAPH stays bounded independently via node-budget eviction,
+        # so an unbounded log doesn't grow the working set.
         self._ingest_into_graph(rlist, new_turn=(kind == "input"))
         return ev
 
-    def _trim_ring(self) -> None:
-        try:
-            lines = self._path.read_text().splitlines()
-        except OSError:
-            return
-        if len(lines) <= self.size + 64:
-            return
-        keep = lines[-self.size:]
-        tmp = self._path.with_suffix(".jsonl.tmp")
-        tmp.write_text("\n".join(keep) + "\n")
-        tmp.replace(self._path)
-
     def tail(self, n: int = 50) -> list[dict]:
+        """Last n events. Reads the full log but keeps only the last n in
+        memory (deque) so it stays cheap as the log grows."""
         if not self._path.exists():
             return []
+        from collections import deque
         out = []
-        for ln in self._path.read_text().splitlines()[-n:]:
-            try:
-                out.append(json.loads(ln))
-            except json.JSONDecodeError:
-                pass
+        try:
+            with self._path.open() as f:
+                for ln in deque(f, maxlen=n):
+                    try:
+                        out.append(json.loads(ln))
+                    except json.JSONDecodeError:
+                        pass
+        except OSError:
+            return []
         return out
 
     def all_events(self) -> list[dict]:
-        return self.tail(self.size)
+        """The ENTIRE session log (full context), not just a recent window."""
+        if not self._path.exists():
+            return []
+        out = []
+        try:
+            for ln in self._path.read_text().splitlines():
+                try:
+                    out.append(json.loads(ln))
+                except json.JSONDecodeError:
+                    pass
+        except OSError:
+            return []
+        return out
+
+    def event_count(self) -> int:
+        """Cheap total event count (line count, no parse)."""
+        if not self._path.exists():
+            return 0
+        try:
+            with self._path.open() as f:
+                return sum(1 for _ in f)
+        except OSError:
+            return 0
 
     def clear(self) -> None:
         for p in (self._path, self._graph_path, self._tasks_path):
@@ -309,7 +328,7 @@ class Stm:
             if a in keep and b in keep:
                 edges.append({"source": a, "target": b, "weight": round(w, 2)})
         return {"session": self.session, "turn": g.get("turn", 0),
-                "events": len(self.all_events()), "nodes": out_nodes,
+                "events": self.event_count(), "nodes": out_nodes,
                 "edges": edges, "focus": [n["name"] for n in out_nodes if not n.get("frontier")]}
 
     def pin(self, name: str, value: bool = True) -> bool:
