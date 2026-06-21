@@ -275,24 +275,28 @@ async function renderMemory() {
   const ps = await loadProjects();
   el.innerHTML = `<div class="graph-bar" style="border:0;padding:0 0 12px">
       <select id="mem-project">${ps.map((p) => `<option value="${p.root}">${p.name}</option>`).join("")}</select>
-      <input id="mem-q" placeholder="search memory…">
+      <input id="mem-q" placeholder="filter memory… (empty = list all)">
       <input id="mem-tag" placeholder="tag" style="max-width:140px">
-      <button class="btn" id="mem-go">search</button></div>
-    <div id="mem-results"></div>`;
+      <button class="btn" id="mem-go">search</button>
+      <span class="hint" id="mem-count"></span></div>
+    <div id="mem-results"><div class="loading">loading memories…</div></div>`;
   const go = async () => {
     const root = $("#mem-project").value, q = $("#mem-q").value, tag = $("#mem-tag").value;
-    const qs = new URLSearchParams({root, q, ...(tag ? {tag} : {})});
+    const qs = new URLSearchParams({root, q, limit: 100, ...(tag ? {tag} : {})});
     const r = await api("/api/memory?" + qs);
     const rows = r.result?.rows || [];
+    $("#mem-count").textContent = rows.length ? `${rows.length} memories` : "";
     $("#mem-results").innerHTML = rows.length ? `<table><thead><tr><th>name</th><th>mtype</th><th>tags</th><th>content</th></tr></thead>
       <tbody>${rows.map((m) => `<tr><td class="mono">${m.name}</td><td><span class="chip">${m.mtype || ""}</span></td>
         <td>${(m.tags || []).map((t) => `<span class="chip tag">${t}</span>`).join(" ")}</td>
         <td class="muted">${(m.content || "").slice(0, 120)}</td></tr>`).join("")}</tbody></table>`
-      : `<div class="muted">${r.ok ? "no memories" : (r.error || "error")}</div>`;
+      : `<div class="muted">${r.ok ? "no memories in this store" : (r.error || "error")}</div>`;
   };
   $("#mem-go").addEventListener("click", go);
   $("#mem-q").addEventListener("keydown", (e) => e.key === "Enter" && go());
-  go();
+  $("#mem-tag").addEventListener("keydown", (e) => e.key === "Enter" && go());
+  $("#mem-project").addEventListener("change", go);   // reload on project switch
+  go();   // auto-list on open — never start empty
 }
 
 // ---- bus ----
