@@ -3047,6 +3047,40 @@ def _op_memory_link(d: Daemon, args: dict) -> dict:
     return {"src_id": m["id"], "concept_id": cid}
 
 
+def _op_subject_upsert(d: Daemon, args: dict) -> dict:
+    """Upsert a durable subject node (ADR-0002) in the memory partition."""
+    label = args["label"]
+    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
+        rec = d.store.upsert_subject(label)
+    d._request_snapshot()
+    return rec
+
+
+def _op_subject_link(d: Daemon, args: dict) -> dict:
+    """File a leaf memory under a subject via a `part-of` edge."""
+    leaf_id = int(args["leaf_id"])
+    subject_id = int(args["subject_id"])
+    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
+        created = d.store.link_part_of(leaf_id, subject_id)
+    d._request_snapshot()
+    return {"linked": created}
+
+
+def _op_subject_list(d: Daemon, args: dict) -> dict:
+    """Subject nodes with leaf counts (read-routed)."""
+    rows = _read_with_fallback(
+        d, _memory_partition(d, args), lambda s: s.list_subjects())
+    return {"rows": rows}
+
+
+def _op_subject_leaves(d: Daemon, args: dict) -> dict:
+    """The memories filed under a subject (read-routed)."""
+    target = args["subject"]
+    rows = _read_with_fallback(
+        d, _memory_partition(d, args), lambda s: s.subject_leaves(target))
+    return {"rows": rows}
+
+
 def _op_stop(d: Daemon, args: dict) -> dict:
     d._stop = True
     return {"stopping": True}
@@ -3633,6 +3667,10 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "memory_bulk_forget": _op_memory_bulk_forget,
     "memory_link": _op_memory_link,
     "memory_score": _op_memory_score,
+    "subject_upsert": _op_subject_upsert,
+    "subject_link": _op_subject_link,
+    "subject_list": _op_subject_list,
+    "subject_leaves": _op_subject_leaves,
     "stop": _op_stop,
 }
 
@@ -3664,6 +3702,8 @@ CLI_OPS: set[str] = {
     "memory_search",
     "memory_recent",
     "memory_score",
+    "subject_list",
+    "subject_leaves",
     "ingest_gmd_status",
     "mem_mirror_status",
     "stop",

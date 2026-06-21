@@ -85,13 +85,31 @@ def latest_session(root: Path) -> str | None:
             mtime = p.stat().st_mtime
         except OSError:
             continue
+        # A subject ring is named `<session>__<subject>.jsonl`; the resumable
+        # unit is still the Claude session, so strip the subject suffix.
+        stem = p.stem.split("__", 1)[0]
         if newest is None or mtime > newest[0]:
-            newest = (mtime, p.stem)
+            newest = (mtime, stem)
     return newest[1] if newest else None
 
 
 def _safe(session: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", session) or "default"
+
+
+def subject_slug(label: str) -> str:
+    """Slug a subject label into a stable partition-key fragment. Lowercase,
+    non-alphanumerics → `_`, collapsed, capped. Empty → 'subject'."""
+    s = re.sub(r"[^a-z0-9]+", "_", str(label).lower()).strip("_")
+    return s[:48] or "subject"
+
+
+def _partition_key(session: str, subject: "str | None") -> str:
+    """The on-disk key for an STM partition. Bare session when no subject is
+    active; `<session>__<subject-slug>` when one is. The `__` separator never
+    collides with a Claude session id (a hyphenated uuid)."""
+    base = _safe(session)
+    return f"{base}__{subject}" if subject else base
 
 
 def _edge_key(a: str, b: str) -> str:
@@ -102,15 +120,70 @@ class Stm:
     """File-backed short-term memory for one (root, session)."""
 
     def __init__(self, root: Path, session: str | None = None,
-                 size: int = RING_SIZE, node_budget: int = NODE_BUDGET):
+                 size: int = RING_SIZE, node_budget: int = NODE_BUDGET,
+                 subject: "str | None" = None):
         self.root = Path(root)
         self.session = session or session_id()
         self.size = size
         self.node_budget = node_budget
         self._dir = stm_dir(self.root)
-        self._path = self._dir / f"{_safe(self.session)}.jsonl"
-        self._graph_path = self._dir / f"{_safe(self.session)}.focus.json"
-        self._tasks_path = self._dir / f"{_safe(self.session)}.tasks.json"
+        # The active-subject pointer is keyed by the RAW session, so every
+        # subject of a session shares one pointer. An explicit `subject` arg
+        # overrides it (None = inherit the active subject, "" = force bare).
+        self._subject_path = self._dir / f"{_safe(self.session)}.subject.json"
+        self.subject = subject if subject is not None else self._read_subject()
+        self.subject = self.subject or None
+        self._rebind()
+
+    def _rebind(self) -> None:
+        """(Re)point the ring/graph/tasks/marks files at the active partition
+        key — `<session>` or `<session>__<subject>`."""
+        key = _partition_key(self.session, self.subject)
+        self._key = key
+        self._path = self._dir / f"{key}.jsonl"
+        self._graph_path = self._dir / f"{key}.focus.json"
+        self._tasks_path = self._dir / f"{key}.tasks.json"
+        self._marks_path = self._dir / f"{key}.marks.json"
+
+    # ---- subject (named STM partition; durable face lives in the memory store) ----
+    def _read_subject(self) -> "str | None":
+        try:
+            d = json.loads(self._subject_path.read_text())
+            return d.get("subject") or None
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def set_subject(self, label: str) -> dict:
+        """Set the active subject for this session and rebind to its partition.
+        Returns the pointer record. Idempotent for the same label."""
+        slug = subject_slug(label)
+        self._dir.mkdir(parents=True, exist_ok=True)
+        rec = {"subject": slug, "label": label,
+               "ts": time.strftime("%Y-%m-%dT%H:%M:%S")}
+        tmp = self._subject_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(rec))
+        tmp.replace(self._subject_path)
+        self.subject = slug
+        self._rebind()
+        return rec
+
+    def get_subject(self) -> "dict | None":
+        try:
+            return json.loads(self._subject_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def clear_subject(self) -> bool:
+        """Unset the active subject (revert to the bare session ring). Returns
+        True if one was set."""
+        existed = self._subject_path.exists()
+        try:
+            self._subject_path.unlink()
+        except OSError:
+            pass
+        self.subject = None
+        self._rebind()
+        return existed
 
     # ---- event ring (provenance) ----
     def record(self, kind: str, terse: str, *, refs: list[str] | None = None) -> dict:
@@ -179,8 +252,7 @@ class Stm:
             return 0
 
     def clear(self) -> None:
-        marks_path = self._dir / f"{_safe(self.session)}.marks.json"
-        for p in (self._path, self._graph_path, self._tasks_path, marks_path):
+        for p in (self._path, self._graph_path, self._tasks_path, self._marks_path):
             try:
                 p.unlink()
             except OSError:
@@ -428,7 +500,7 @@ class Stm:
     # then rewind to. The tangent stays in the full log (clusters as its own
     # topic); `return` re-warms the pre-detour focus.
     def _load_marks(self) -> list[dict]:
-        p = self._dir / f"{_safe(self.session)}.marks.json"
+        p = self._marks_path
         if not p.exists():
             return []
         try:
@@ -438,7 +510,7 @@ class Stm:
 
     def _save_marks(self, marks: list[dict]) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
-        p = self._dir / f"{_safe(self.session)}.marks.json"
+        p = self._marks_path
         tmp = p.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(marks, indent=2))
         tmp.replace(p)

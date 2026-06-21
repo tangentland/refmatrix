@@ -1783,6 +1783,88 @@ class Store:
             })
         return rows
 
+    # ---- subjects (durable face of an STM partition; ADR-0002) ----
+    def upsert_subject(self, label: str) -> dict:
+        """Upsert a durable subject node (`mtype='subject'`) in the active
+        partition. The STM-partition slug is the entity name (`subject_<slug>`);
+        the human label lives in content + metadata. Protected so prune/vacuum
+        never reaps a pursuit. Idempotent on the slug."""
+        from refmatrix.stm import subject_slug
+        slug = subject_slug(label)
+        name = f"subject_{slug}"
+        eid = self.add_memory(
+            name=name, content=label, mtype="subject",
+            metadata={"label": label, "slug": slug}, protected=True,
+        )
+        return {"id": eid, "name": name, "slug": slug, "label": label}
+
+    def link_part_of(self, leaf_id: int, subject_id: int) -> bool:
+        """File a leaf memory under a subject via a `part-of` edge
+        (entity=leaf → concept=subject). Ensures the linkage type exists."""
+        self.add_linkage_type(
+            "part-of", directed=True, description="entity is part of a container")
+        return self.link("part-of", concept_id=subject_id, entity_id=leaf_id)
+
+    def list_subjects(self) -> list[dict]:
+        """Subject nodes in the active partition with leaf counts, most-recently
+        -updated first."""
+        self._connect()
+        try:
+            lid = self.get_linkage_id("part-of")
+        except KeyError:
+            lid = None
+        rows = self._read().execute(
+            "SELECT e.id, e.name, mc.metadata, mc.updated_at "
+            "FROM entities e JOIN memory_content mc ON mc.entity_id=e.id "
+            "WHERE e.partition_id=? AND e.kind='memory' AND mc.mtype='subject' "
+            "ORDER BY mc.updated_at DESC",
+            (self._partition_id,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            leaves = 0
+            if lid is not None:
+                leaves = self._read().execute(
+                    "SELECT count(*) FROM entity_links "
+                    "WHERE linkage_id=? AND concept_id=?",
+                    (lid, r["id"]),
+                ).fetchone()[0]
+            meta = json.loads(r["metadata"]) if r["metadata"] else {}
+            out.append({
+                "id": r["id"], "name": r["name"],
+                "label": meta.get("label") or r["name"],
+                "leaves": leaves, "updated_at": r["updated_at"],
+            })
+        return out
+
+    def subject_leaves(self, name_or_id: "str | int") -> list[dict]:
+        """Memories filed under a subject (walk part-of: concept=subject →
+        entity=leaf), newest first. Empty if the subject or linkage is
+        unknown. Accepts a memory id, `subject_<slug>` name, or a bare label."""
+        subj = self.get_memory(name_or_id)
+        if subj is None and not str(name_or_id).isdigit():
+            from refmatrix.stm import subject_slug
+            subj = self.get_memory(f"subject_{subject_slug(str(name_or_id))}")
+        if subj is None:
+            return []
+        try:
+            lid = self.get_linkage_id("part-of")
+        except KeyError:
+            return []
+        rows = self._read().execute(
+            "SELECT el.entity_id FROM entity_links el "
+            "JOIN memory_content mc ON mc.entity_id=el.entity_id "
+            "WHERE el.linkage_id=? AND el.concept_id=? "
+            "ORDER BY mc.updated_at DESC",
+            (lid, subj["id"]),
+        ).fetchall()
+        out = []
+        for r in rows:
+            m = self.get_memory(int(r["entity_id"]))
+            if m:
+                out.append(m)
+        return out
+
     def recent_memories(
         self, since_seconds: float | None = None, limit: int = 20,
         *, tags: "list[str] | None" = None, tags_match: str = "all",

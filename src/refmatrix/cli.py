@@ -1053,6 +1053,22 @@ def focus_summarize(session, promote, is_global):
             eid = _store().add_memory(**args)
     console.print(f"[green]promoted[/] {name} (id={eid}) — recall with "
                   f"`rmx memory recall summary` or `rmx context {name}`")
+    if not is_global:
+        _file_under_active_subject(s, eid)
+
+
+def _file_under_active_subject(s, leaf_eid: "int | None") -> None:
+    """If the session has an active subject, file a just-promoted artifact
+    under it (`part-of`) so the subject indexes it. Best-effort + quiet."""
+    if not leaf_eid:
+        return
+    subj = s.get_subject()
+    if not subj:
+        return
+    sid = _subject_upsert(subj.get("label") or subj.get("subject"))
+    if sid:
+        _subject_link(int(leaf_eid), int(sid))
+        console.print(f"[dim]  filed under subject {subj.get('label')}[/]")
 
 
 @focus.command("note")
@@ -1113,6 +1129,97 @@ def focus_clear():
     """Clear short-term memory + task stack for this session."""
     _stm().clear()
     console.print("[green]focus cleared[/]")
+
+
+# ---- subjects (ADR-0002): a named STM partition + durable LTM container ----
+def _subject_upsert(label: str) -> "int | None":
+    """Upsert the durable subject node, daemon-or-inproc. Routes to the same
+    partition as promoted digests so `part-of` edges resolve."""
+    from refmatrix import daemon as daemon_mod
+    if daemon_mod.ping(_root()):
+        resp = _memory_daemon_call("subject_upsert", {"label": label})
+        return resp.get("result", {}).get("id") if resp.get("ok") else None
+    return _store().upsert_subject(label)["id"]
+
+
+def _subject_link(leaf_id: int, subject_id: int) -> None:
+    """File a leaf memory under a subject (part-of), daemon-or-inproc.
+    Best-effort: a link failure never breaks the promote it rides on."""
+    from refmatrix import daemon as daemon_mod
+    try:
+        if daemon_mod.ping(_root()):
+            _memory_daemon_call(
+                "subject_link", {"leaf_id": leaf_id, "subject_id": subject_id})
+        else:
+            _store().link_part_of(leaf_id, subject_id)
+    except Exception:
+        pass
+
+
+@focus.command("change-subject")
+@click.argument("label")
+@click.option("-s", "--session", default=None,
+              help="Session id. Default: active Claude session.")
+def focus_change_subject(label, session):
+    """Set the active SUBJECT — a named STM partition + durable LTM container
+    for a thread of work. Focus events accrue to this subject; promoted
+    digests / save-state handoffs file under it (`part-of`) so the thread is
+    recallable across sessions. Idempotent for the same label."""
+    s = _stm(session, prefer_latest=True)
+    rec = s.set_subject(label)
+    eid = _subject_upsert(label)
+    console.print(
+        f"[green]subject[/] {rec['label']} "
+        f"[dim](slug={rec['subject']}, id={eid})[/] — focus scoped; "
+        f"promotes file under it")
+
+
+@focus.command("subject")
+@click.option("-s", "--session", default=None,
+              help="Session id. Default: active Claude session.")
+def focus_subject(session):
+    """Show the active subject for this session (or none)."""
+    s = _stm(session, prefer_latest=True)
+    cur = s.get_subject()
+    if not cur:
+        console.print("[yellow]no active subject[/] (bare session ring) — set one "
+                      "with `rmx focus change-subject \"<label>\"`")
+        return
+    console.print(f"[bold]{cur.get('label')}[/]  [dim](slug={cur.get('subject')}, "
+                  f"since {cur.get('ts')})[/]")
+
+
+@focus.command("subjects")
+def focus_subjects():
+    """List durable subjects in this project (newest-active first) with leaf
+    counts — the cross-session map of pursuits."""
+    from refmatrix import daemon as daemon_mod
+    if daemon_mod.ping(_root()):
+        resp = _memory_daemon_call("subject_list", {})
+        rows = resp.get("result", {}).get("rows", []) if resp.get("ok") else []
+    else:
+        rows = _store().list_subjects()
+    if not rows:
+        console.print("[yellow]no subjects yet[/] — `rmx focus change-subject "
+                      "\"<label>\"`")
+        return
+    t = Table("subject", "leaves", "updated", "id")
+    for r in rows:
+        t.add_row(r.get("label") or r.get("name"), str(r.get("leaves", 0)),
+                  str(r.get("updated_at") or ""), str(r.get("id")))
+    console.print(t)
+
+
+@focus.command("clear-subject")
+@click.option("-s", "--session", default=None,
+              help="Session id. Default: active Claude session.")
+def focus_clear_subject(session):
+    """Unset the active subject (revert to the bare session ring). The durable
+    subject node + its filed leaves are untouched."""
+    s = _stm(session, prefer_latest=True)
+    had = s.clear_subject()
+    console.print("[green]subject cleared[/]" if had
+                  else "[yellow]no active subject[/]")
 
 
 @focus.command("size")
@@ -6897,9 +7004,14 @@ def _parse_duration(text: str) -> float:
                    "behavior store only. both: round-robin merge so global "
                    "behavior memories surface alongside project hits (what the "
                    "recall hook uses).")
+@click.option("--subject", default=None,
+              help="Recall the memories filed under a SUBJECT (ADR-0002): walk "
+                   "the `part-of` index for this subject (id, `subject_<slug>` "
+                   "name, or bare label), newest first. Composes with "
+                   "--exclude-mtype / -k. The cross-session 'everything on X'.")
 def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                   session_start, as_json, as_gmd, kinds, exclude_mtype,
-                  degree, fuse, scope):
+                  degree, fuse, scope, subject):
     """Memory retrieval. Three modes:
 
     Dense (default): pure dense ANN (cosine over bge-small vectors) on the
@@ -6944,10 +7056,10 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                 partition=_resolve_partition(),
             ))
         return
-    if not recent and not q:
+    if not recent and not q and not subject:
         raise click.ClickException(
             "rmx memory recall needs a QUERY (or --text / --prompt / "
-            "--stdin-json), --recent, or --session-start"
+            "--stdin-json), --recent, --session-start, or --subject"
         )
 
     exclude_mtypes = set(exclude_mtype) if exclude_mtype else set()
@@ -7007,6 +7119,36 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             except Exception:
                 row["context"] = None
         return rows
+
+    if subject:
+        # ADR-0002: recall the leaves filed under a subject (walk part-of),
+        # newest first. Composes with --exclude-mtype / -k. daemon-or-inproc.
+        from refmatrix import daemon as daemon_mod
+        if daemon_mod.ping(_root()):
+            resp = _memory_daemon_call("subject_leaves", {"subject": subject})
+            rows = resp.get("result", {}).get("rows", []) if resp.get("ok") else []
+        else:
+            rows = _store().subject_leaves(subject)
+        rows = [r for r in rows if not _mt_excluded(r.get("mtype"))][:k]
+        rows = _attach_context(rows)
+        if as_json:
+            import json as _json
+            click.echo(_json.dumps(rows, indent=2))
+            return
+        if as_gmd:
+            click.echo(_render_memory_gmd(
+                rows, query=None, mode="subject",
+                partition=_resolve_partition()))
+            return
+        if not rows:
+            console.print(f"[yellow]no memories filed under subject[/] {subject!r}")
+            return
+        t = Table("rank", "id", "name", "mtype", "content")
+        for i, m in enumerate(rows, 1):
+            t.add_row(str(i), str(m["id"]), m["name"], m.get("mtype") or "",
+                      (m.get("content") or "")[:80])
+        console.print(t)
+        return
 
     if recent:
         since_s = _parse_duration(since) if since else None
@@ -8040,8 +8182,14 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote):
             else:
                 eid = _store().add_memory(**pargs)
             console.print(f"[green]promoted[/] {pname} (id={eid}) → durable memory")
+            _file_under_active_subject(s, eid)
         except Exception as e:
             console.print(f"[yellow]promote skipped:[/] {e}")
+
+    subj = s.get_subject()
+    if subj:
+        console.print(f"[dim]subject:[/] {subj.get('label')} "
+                      f"(slug={subj.get('subject')})")
 
     if commit:
         _ss_sh(["git", "add", "-A"], repo)
