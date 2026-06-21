@@ -6022,6 +6022,64 @@ def memory_promote(name_or_id):
                   f"(global id={g['result']['id']})")
 
 
+@memory_grp.command("reclassify")
+@click.option("--to", "to_mtype", required=True, help="New mtype to set.")
+@click.option("--like", default=None,
+              help="Glob on memory name (e.g. '*save_state*'). * → SQL %.")
+@click.option("--from", "from_mtype", default=None,
+              help="Only reclassify memories currently of this mtype.")
+@click.option("--name", "names", multiple=True, help="Explicit name (repeatable).")
+@click.option("--dry-run", is_flag=True, help="Show matches without changing.")
+@click.option("-y", "--yes", is_flag=True, help="Skip confirmation.")
+def memory_reclassify(to_mtype, like, from_mtype, names, dry_run, yes):
+    """Bulk-change the mtype of memories (selector: --like / --from / --name).
+
+    e.g. `rmx memory reclassify --like '*save_state*' --from project --to session-state`"""
+    _memory_intent("memory_reclassify")
+    if not (like or names):
+        raise click.ClickException("need --like or --name to select memories")
+    from refmatrix import daemon as daemon_mod
+    args = {"to_mtype": to_mtype, "like": like, "from_mtype": from_mtype,
+            "names": list(names) or None, "dry_run": True}
+    root = _root()
+    daemon_up = daemon_mod.ping(root)
+    # preview first
+    if daemon_up:
+        resp = _memory_daemon_call("memory_reclassify", args)
+        prev = resp.get("result", {}) if resp.get("ok") else None
+        if prev is None:
+            raise click.ClickException(resp.get("error", "daemon error"))
+    else:
+        s = _store()
+        prev = s.reclassify_memories(to_mtype=to_mtype, like=like,
+                                     from_mtype=from_mtype,
+                                     names=list(names) or None, dry_run=True)
+    n = prev["matched"]
+    if n == 0:
+        console.print("[yellow]no memories matched[/]")
+        return
+    console.print(f"[bold]{n}[/] memories → mtype [cyan]{to_mtype}[/]")
+    for nm in prev["names"][:10]:
+        console.print(f"  {nm}")
+    if n > 10:
+        console.print(f"  … +{n - 10} more")
+    if dry_run:
+        return
+    if not yes and not click.confirm(f"reclassify {n} memories?"):
+        return
+    args["dry_run"] = False
+    if daemon_up:
+        resp = _memory_daemon_call("memory_reclassify", args)
+        res = resp.get("result", {}) if resp.get("ok") else None
+        if res is None:
+            raise click.ClickException(resp.get("error", "daemon error"))
+    else:
+        res = s.reclassify_memories(to_mtype=to_mtype, like=like,
+                                    from_mtype=from_mtype,
+                                    names=list(names) or None, dry_run=False)
+    console.print(f"[green]reclassified[/] {res['changed']} → {to_mtype}")
+
+
 @memory_grp.command("retag")
 @click.argument("name_or_id")
 @click.option("--add", "add_tags", multiple=True, help="Tag to add (repeatable).")

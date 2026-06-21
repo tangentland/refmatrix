@@ -2924,6 +2924,19 @@ def _op_memory_retag(d: Daemon, args: dict) -> dict:
     return {"tags": new}
 
 
+def _op_memory_reclassify(d: Daemon, args: dict) -> dict:
+    """Bulk-change memory mtype in a partition (selector: like/names/from_mtype)."""
+    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
+        res = d.store.reclassify_memories(
+            to_mtype=args["to_mtype"], like=args.get("like"),
+            names=args.get("names"), from_mtype=args.get("from_mtype"),
+            dry_run=bool(args.get("dry_run")),
+        )
+    if not args.get("dry_run"):
+        d._request_snapshot()
+    return res
+
+
 def _op_memory_dedup(d: Daemon, args: dict) -> dict:
     """Fold concept↔memory duplicate nodes in a partition (pre-0.7.6 debt)."""
     with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
@@ -3608,6 +3621,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "memory_recent": _op_memory_recent,
     "memory_forget": _op_memory_forget,
     "memory_retag": _op_memory_retag,
+    "memory_reclassify": _op_memory_reclassify,
     "memory_dedup": _op_memory_dedup,
     "memory_bulk_forget": _op_memory_bulk_forget,
     "memory_link": _op_memory_link,

@@ -1836,6 +1836,57 @@ class Store:
         self.purge_entity(m["id"])
         return True
 
+    def reclassify_memories(
+        self, *, to_mtype: str, like: "str | None" = None,
+        names: "list[str] | None" = None, from_mtype: "str | None" = None,
+        dry_run: bool = False,
+    ) -> dict:
+        """Bulk-change the `mtype` of memories in the active partition.
+
+        Selection (intersected): `like` (SQL glob on name, `*`→`%`), explicit
+        `names`, and/or `from_mtype`. Re-logs each change so log-replay keeps
+        the new mtype. Returns {matched, changed, names:[...], dry_run}."""
+        con = self._connect()
+        where = ["e.partition_id = ?", "e.kind = 'memory'"]
+        params: list[Any] = [self._partition_id]
+        if like:
+            where.append("e.name LIKE ?")
+            params.append(like.replace("*", "%"))
+        if names:
+            where.append("e.name IN (" + ",".join("?" * len(names)) + ")")
+            params.extend(names)
+        if from_mtype:
+            where.append("mc.mtype = ?")
+            params.append(from_mtype)
+        rows = self._read().execute(
+            "SELECT e.id, e.name FROM entities e "
+            "JOIN memory_content mc ON mc.entity_id = e.id "
+            "WHERE " + " AND ".join(where),
+            params,
+        ).fetchall()
+        matched = [(r["id"], r["name"]) for r in rows]
+        if dry_run or not matched:
+            return {"matched": len(matched), "changed": 0,
+                    "names": [n for _, n in matched], "dry_run": dry_run}
+        now = time.time()
+        for eid, _name in matched:
+            con.execute(
+                "UPDATE memory_content SET mtype=?, updated_at=? WHERE entity_id=?",
+                (to_mtype, now, eid),
+            )
+        con.commit()
+        # re-log each so rebuild-from-log preserves the reclassification
+        for eid, name in matched:
+            m = self.get_memory(int(eid))
+            if m:
+                self._log_event(
+                    "memory_content", kind="memory", name=name,
+                    content=m["content"] or "", mtype=to_mtype,
+                    tags=m["tags"] or None, metadata=m["metadata"] or None,
+                )
+        return {"matched": len(matched), "changed": len(matched),
+                "names": [n for _, n in matched], "dry_run": False}
+
     def retag_memory(
         self, name_or_id: "str | int", *,
         add: "list[str] | None" = None,

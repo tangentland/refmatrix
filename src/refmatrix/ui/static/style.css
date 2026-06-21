@@ -88,7 +88,8 @@ td.mono, .mono { font-family: var(--mono); }
 
 /* graph */
 .graph-bar { display: flex; gap: 8px; align-items: center; padding: 10px 16px;
-  border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
+  border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap;
+  flex: none; }
 .graph-bar select, .graph-bar input { background: var(--bg); color: var(--text);
   border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 13px; }
 .graph-bar input { flex: 1; min-width: 180px; font-family: var(--mono); }
@@ -96,7 +97,8 @@ td.mono, .mono { font-family: var(--mono); }
 .graph-bar .hint { color: var(--dim); font-size: 11px; }
 .graph-crumbs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
   padding: 6px 16px; border-bottom: 1px solid var(--border); background: var(--panel);
-  font-family: var(--mono); font-size: 12px; min-height: 31px; }
+  font-family: var(--mono); font-size: 12px; min-height: 31px;
+  flex: none; position: sticky; top: 0; z-index: 5; }
 .graph-crumbs .crumb { color: var(--accent); cursor: pointer; padding: 1px 4px; border-radius: 4px; }
 .graph-crumbs .crumb:hover { background: var(--panel2); }
 .graph-crumbs .crumb.current { color: var(--text); cursor: default; }
