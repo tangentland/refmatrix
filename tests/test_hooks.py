@@ -123,7 +123,7 @@ def test_install_commands_writes_stash_slash_commands(tmp_path):
     cmds_dir = tmp_path / ".claude" / "commands"
     names = {p.name for p in cmds_dir.glob("*.md")}
     assert {"stash.md", "stash-list.md", "stash-pop.md",
-            "save-state.md", "recall-state.md", "detour.md", "return.md"} <= names
+            "save-state.md", "recall-state.md", "detour.md", "return.md", "commit-state.md"} <= names
     # the stash command pairs git + focus
     body = (cmds_dir / "stash.md").read_text()
     assert "git stash push" in body and "rmx task push" in body
