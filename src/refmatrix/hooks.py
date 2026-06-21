@@ -544,17 +544,29 @@ def _install_claude_hooks(
 
 
 RMX_HOOK_MARKER = "RMX_INVOCATION_SOURCE=hook"
+# Every current rmx hook carries the marker, but legacy installs predate it
+# (e.g. the marker-less `--enqueue-only` PostToolUse hook). Match those
+# command signatures too so a `--force` reinstall reaps stale duplicates
+# instead of leaving them beside the fresh copy.
+_RMX_HOOK_SIGNATURES = (
+    RMX_HOOK_MARKER, "--enqueue-only", "rmx focus hook", "rmx memory recall",
+    "rmx scan-prompt", "rmx sync --flush-queue", "rmx primer", "rmx curator",
+)
+
+
+def _is_rmx_hook(cmd: str) -> bool:
+    return any(sig in cmd for sig in _RMX_HOOK_SIGNATURES)
 
 
 def _strip_rmx_hooks(events: dict) -> None:
-    """Remove rmx-managed hook entries (by marker) from a settings `hooks`
-    dict, in place. Preserves user hooks; drops blocks left empty and events
-    left with no blocks — so a re-install re-adds a clean single copy."""
+    """Remove rmx-managed hook entries from a settings `hooks` dict, in place.
+    Preserves user hooks; drops blocks left empty and events left with no
+    blocks — so a re-install re-adds a clean single copy."""
     for event in list(events.keys()):
         new_blocks = []
         for blk in events.get(event, []):
             kept = [h for h in blk.get("hooks", [])
-                    if RMX_HOOK_MARKER not in (h.get("command") or "")]
+                    if not _is_rmx_hook(h.get("command") or "")]
             if kept:
                 new_blocks.append({**blk, "hooks": kept})
         if new_blocks:
