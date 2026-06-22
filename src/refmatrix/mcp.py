@@ -15,10 +15,16 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 from pathlib import Path
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_INFO = {"name": "refmatrix", "version": "1"}
+
+# Channels are on unless explicitly disabled. When on, the server advertises the
+# `claude/channel` capability and bridges hub bus messages → native push
+# notifications (see the channel-bridge section below).
+CHANNELS_ENABLED = os.environ.get("REFMATRIX_CHANNELS", "1") not in ("0", "false", "")
 
 
 # ---- root resolution ------------------------------------------------------
@@ -324,12 +330,17 @@ def handle_message(msg: dict):
     method = msg.get("method")
     req_id = msg.get("id")
     if method == "initialize":
+        caps: dict = {"tools": {}}
+        if CHANNELS_ENABLED:
+            caps["experimental"] = {"claude/channel": {}}
         return _result(req_id, {
             "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": {"tools": {}},
+            "capabilities": caps,
             "serverInfo": SERVER_INFO,
         })
     if method in ("notifications/initialized", "initialized"):
+        if CHANNELS_ENABLED:
+            _ensure_channel_bridge()
         return None
     if method == "ping":
         return _result(req_id, {})
@@ -360,9 +371,93 @@ def handle_message(msg: dict):
     return None
 
 
+# ---- channel bridge (hub bus → native push notifications) -----------------
+#
+# The hub already streams matching bus messages over its control socket
+# (`subscribe_stream`). We tap that stream on a daemon thread and re-emit each
+# message as a `notifications/claude/channel` notification, so bus traffic to
+# `proj:<project>:*` / `global:*` arrives in-context with zero polling. The
+# client only acts on these if it negotiated the `claude/channel` capability;
+# otherwise they're harmless no-ops.
+
+_OUT_LOCK = threading.Lock()
+_CHANNEL_STOP = threading.Event()
+_CHANNEL_THREAD: "threading.Thread | None" = None
+
+
+def _emit(obj: dict) -> None:
+    """Serialize a JSON-RPC object to stdout. Shared by the request loop and
+    the channel bridge, so writes from both never interleave."""
+    line = json.dumps(obj, default=str)
+    with _OUT_LOCK:
+        sys.stdout.write(line + "\n")
+        sys.stdout.flush()
+
+
+def _channel_patterns() -> list[str]:
+    """Which bus channels to forward. Default: this project + global. Override
+    with REFMATRIX_CHANNEL_PATTERNS (comma-separated)."""
+    env = os.environ.get("REFMATRIX_CHANNEL_PATTERNS")
+    if env:
+        return [p.strip() for p in env.split(",") if p.strip()]
+    pats = ["global:*"]
+    try:
+        from refmatrix import discovery
+        name = discovery.store_name(_resolve_root({}))
+        if name:
+            pats.insert(0, f"proj:{name}:*")
+    except Exception:
+        pass
+    return pats
+
+
+def _channel_notification(msg: dict) -> dict:
+    """Map a bus message to a claude/channel notification. The body becomes the
+    content; routing fields become meta (→ tag attributes). meta keys must be
+    bare identifiers, so we only pass known-safe ones."""
+    body = msg.get("body")
+    content = body if isinstance(body, str) else json.dumps(body, default=str)
+    meta = {}
+    for k in ("channel", "from", "type", "id", "ts", "project"):
+        v = msg.get(k)
+        if v is not None:
+            meta[k] = str(v)
+    return {"jsonrpc": "2.0", "method": "notifications/claude/channel",
+            "params": {"content": content, "meta": meta}}
+
+
+def _channel_loop() -> None:
+    from refmatrix import hub as hub_mod
+    patterns = _channel_patterns()
+    while not _CHANNEL_STOP.is_set():
+        if not hub_mod.is_running():
+            _CHANNEL_STOP.wait(5.0)
+            continue
+        try:
+            for msg in hub_mod.subscribe_stream(patterns, history=0):
+                if _CHANNEL_STOP.is_set():
+                    break
+                try:
+                    _emit(_channel_notification(msg))
+                except Exception:
+                    pass
+        except Exception:
+            # hub restarted / socket dropped — back off, then reconnect.
+            _CHANNEL_STOP.wait(3.0)
+
+
+def _ensure_channel_bridge() -> None:
+    """Start the bus→channel bridge once, on `initialized`."""
+    global _CHANNEL_THREAD
+    if _CHANNEL_THREAD is not None and _CHANNEL_THREAD.is_alive():
+        return
+    _CHANNEL_THREAD = threading.Thread(
+        target=_channel_loop, name="rmx-mcp-channel", daemon=True)
+    _CHANNEL_THREAD.start()
+
+
 def serve_stdio() -> None:
     """Read newline-delimited JSON-RPC from stdin, write responses to stdout."""
-    out = sys.stdout
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -373,5 +468,5 @@ def serve_stdio() -> None:
             continue
         resp = handle_message(msg)
         if resp is not None:
-            out.write(json.dumps(resp) + "\n")
-            out.flush()
+            _emit(resp)
+    _CHANNEL_STOP.set()
