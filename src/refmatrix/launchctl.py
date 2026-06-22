@@ -184,17 +184,22 @@ def render_hub_plist(*, port: int = 7777, host: str = "127.0.0.1") -> bytes:
     login."""
     rmx = _rmx_path()
     home = Path.home() / ".refmatrix"
+    env: dict = {
+        "PATH": os.environ.get(
+            "PATH", "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"),
+        # The hub forks per-project daemons; same fork-safety guard.
+        "OBJC_DISABLE_INITIALIZE_FORK_SAFETY": "YES",
+        "TOKENIZERS_PARALLELISM": "false",
+    }
+    # Pass through the queue-alert interval if set; <=0 disables the alerts.
+    qa = os.environ.get("RMX_HUB_QUEUE_ALERT_INTERVAL")
+    if qa:
+        env["RMX_HUB_QUEUE_ALERT_INTERVAL"] = qa
     plist: dict = {
         "Label": HUB_LABEL,
         "ProgramArguments": [rmx, "hub", "start", "--no-detach",
                              "--port", str(port), "--host", host],
-        "EnvironmentVariables": {
-            "PATH": os.environ.get(
-                "PATH", "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"),
-            # The hub forks per-project daemons; same fork-safety guard.
-            "OBJC_DISABLE_INITIALIZE_FORK_SAFETY": "YES",
-            "TOKENIZERS_PARALLELISM": "false",
-        },
+        "EnvironmentVariables": env,
         "RunAtLoad": True,
         "KeepAlive": {"SuccessfulExit": False},
         "ThrottleInterval": DEFAULT_THROTTLE_SECONDS,

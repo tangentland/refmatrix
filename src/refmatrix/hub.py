@@ -383,6 +383,9 @@ class Hub:
         return out
 
     def _queue_alert_loop(self) -> None:
+        if QUEUE_ALERT_INTERVAL_S <= 0:
+            _log("queue-alert disabled (RMX_HUB_QUEUE_ALERT_INTERVAL <= 0)")
+            return
         while not self._stop.is_set():
             self._stop.wait(QUEUE_ALERT_INTERVAL_S)
             if self._stop.is_set():
