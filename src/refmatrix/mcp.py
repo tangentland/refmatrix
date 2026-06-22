@@ -153,8 +153,11 @@ def _t_focus_note(args: dict) -> dict:
     without the daemon. MCP-native so note text bypasses shell quoting."""
     from refmatrix import stm as stm_mod
     root = _resolve_root(args)
+    text = args.get("text") or args.get("note")
+    if not text:
+        raise ValueError("focus_note requires 'text' (alias: 'note')")
     s = stm_mod.Stm(root, _session(args, stm_mod, root))
-    ev = s.record("reason", str(args["text"])[:800])
+    ev = s.record("reason", str(text)[:800])
     return {"noted": True, "session": s.session, "refs": ev.get("refs", [])[:6]}
 
 
@@ -186,19 +189,22 @@ def _t_change_subject(args: dict) -> dict:
     routed (in-proc fallback when down)."""
     from refmatrix import daemon as daemon_mod, discovery, stm as stm_mod
     root = _resolve_root(args)
+    label = args.get("label") or args.get("subject")
+    if not label:
+        raise ValueError("change_subject requires 'label' (alias: 'subject')")
     s = stm_mod.Stm(root, _session(args, stm_mod, root))
-    rec = s.set_subject(args["label"])
+    rec = s.set_subject(label)
     part = discovery.store_name(root)
     eid = None
     if daemon_mod.ping(root):
         r = daemon_mod.call(root, "subject_upsert",
-                            {"label": args["label"], "partition": part}, timeout=30.0)
+                            {"label": label, "partition": part}, timeout=30.0)
         eid = r.get("result", {}).get("id") if r.get("ok") else None
     else:
         from refmatrix.store import Store
         s2 = Store(root)
         with s2.with_partition(part):
-            eid = s2.upsert_subject(args["label"])["id"]
+            eid = s2.upsert_subject(label)["id"]
     return {"subject": rec["subject"], "label": rec["label"], "id": eid,
             "session": s.session}
 
@@ -275,7 +281,8 @@ TOOLS: dict[str, dict] = {
                        "hypothesis, a tradeoff. The reliable reasoning-capture "
                        "channel (extended thinking is redacted from transcripts).",
         "schema": {"type": "object", "properties": {
-            "text": {"type": "string"}, "session": {"type": "string"},
+            "text": {"type": "string"}, "note": {"type": "string"},
+            "session": {"type": "string"},
             "root": {"type": "string"}}, "required": ["text"]},
         "fn": _t_focus_note},
     "rmx_memory_add": {
@@ -293,7 +300,8 @@ TOOLS: dict[str, dict] = {
                        "LTM container) for this session's thread of work; "
                        "promoted digests/handoffs file under it.",
         "schema": {"type": "object", "properties": {
-            "label": {"type": "string"}, "session": {"type": "string"},
+            "label": {"type": "string"}, "subject": {"type": "string"},
+            "session": {"type": "string"},
             "root": {"type": "string"}}, "required": ["label"]},
         "fn": _t_change_subject},
 }
