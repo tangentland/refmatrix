@@ -14,6 +14,12 @@ Sources, in order of preference:
 4. **semantic** (Python only, opt-in via --semantic) — stdlib ast pass that
    adds `imports` and docstring-keyword `mentions` linkages. Redundant when
    metadata.json is available, but harmless and cross-source-additive.
+
+Always-on, language-specific regex passes layer structure onto files the tree
+pass only registered at file level (each gated on its own `*sem:<abs>` marker):
+`.pseudo` (types/funcs/calls) and `.sql` (PL/pgSQL — CREATE
+TABLE/VIEW/TYPE/TRIGGER/INDEX/SCHEMA + FUNCTION/PROCEDURE as `defines`, plus
+in-body table `mentions` and function `calls`).
 """
 from __future__ import annotations
 
@@ -343,6 +349,46 @@ def _ingest_path_inner(
         bulk_apply_records(s, ps_records)
         s.bulk_mark_tracked([
             (f"pssem:{str(p)}", mtime) for p, mtime in changed_pseudo
+        ])
+        if yield_lock is not None:
+            _yield_flush(s, yield_lock)
+
+    # SQL / PL/pgSQL semantic enrichment. Gate on a DEDICATED `sqlsem:<abs>`
+    # marker: .sql is in CODE_EXTS, so the tree pass ALSO tracks these files
+    # under their real path -- gating on the shared key would skip files tree
+    # tracked but the .sql pass never applied (wrong on the FIRST run). Same
+    # rationale as the pysem:/pssem: gates above. Runs always (cheap regex
+    # pass, no --semantic flag) so DDL structure is graphed by default.
+    changed_sql: list[tuple[Path, float]] = []
+    for p in path.rglob("*.sql"):
+        if should_ignore(p, path):
+            continue
+        try:
+            cur = p.stat().st_mtime
+        except OSError:
+            continue
+        prev = _pre_tracked.get(f"sqlsem:{str(p)}")
+        if prev is None or abs(prev - cur) > 1e-6:
+            changed_sql.append((p, cur))
+    if changed_sql:
+        n_sql = len(changed_sql)
+        _phase("code+docs: sql", 0, n_sql)
+        from concurrent.futures import ThreadPoolExecutor
+        from refmatrix.ingest_records import bulk_apply_records
+        qworkers = int(os.environ.get("RMX_INGEST_WORKERS", "8") or "8")
+        sql_records = []
+        with ThreadPoolExecutor(max_workers=qworkers,
+                                thread_name_prefix="rmx-sql-parse") as ex:
+            for _i, _rec in enumerate(ex.map(
+                lambda fp: _build_sql_record(fp, path),
+                [p for p, _ in changed_sql],
+            ), 1):
+                sql_records.append(_rec)
+                if _i == n_sql or _i % 25 == 0:
+                    _phase("code+docs: sql", _i, n_sql)
+        bulk_apply_records(s, sql_records)
+        s.bulk_mark_tracked([
+            (f"sqlsem:{str(p)}", mtime) for p, mtime in changed_sql
         ])
         if yield_lock is not None:
             _yield_flush(s, yield_lock)
@@ -1221,6 +1267,244 @@ def _build_pseudo_record(
         rel=rel, file_path=str(file_path), mtime=mtime, doc_kind="code",
     )
     _pseudo_emit_body(rb, lines, rel, file_path)
+    return rb.record
+
+
+# --- SQL / PL/pgSQL semantic enrichment ------------------------------------
+#
+# No stdlib AST for SQL, so this is a regex pass (like .pseudo). It graphs the
+# high-value DDL structure: CREATE TABLE/VIEW/TYPE/TRIGGER/INDEX/SCHEMA and
+# CREATE FUNCTION/PROCEDURE as `defines` edges, plus -- inside dollar-quoted
+# PL/pgSQL bodies -- table references (FROM/JOIN/INTO/UPDATE -> `mentions`) and
+# nested function calls (`calls`). Linkages reuse the existing vocab so the
+# graph stays uniform with the Python/pseudo extractors.
+
+_SQL_IDENT = r'(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_$]*)'
+_SQL_QNAME = rf'(?:{_SQL_IDENT}\s*\.\s*)*{_SQL_IDENT}'
+
+_SQL_LINE_COMMENT_RE = re.compile(r'--[^\n]*')
+_SQL_BLOCK_COMMENT_RE = re.compile(r'/\*.*?\*/', re.DOTALL)
+
+_SQL_FUNC_RE = re.compile(
+    rf'\bCREATE\s+(?:OR\s+REPLACE\s+)?(FUNCTION|PROCEDURE)\s+({_SQL_QNAME})\s*\(',
+    re.IGNORECASE)
+_SQL_TABLE_RE = re.compile(
+    rf'\bCREATE\s+(?:(?:GLOBAL|LOCAL)\s+)?(?:(?:TEMP|TEMPORARY|UNLOGGED)\s+)?'
+    rf'TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?({_SQL_QNAME})',
+    re.IGNORECASE)
+_SQL_VIEW_RE = re.compile(
+    rf'\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:MATERIALIZED\s+)?VIEW\s+'
+    rf'(?:IF\s+NOT\s+EXISTS\s+)?({_SQL_QNAME})',
+    re.IGNORECASE)
+_SQL_TYPE_RE = re.compile(
+    rf'\bCREATE\s+TYPE\s+({_SQL_QNAME})', re.IGNORECASE)
+_SQL_TRIGGER_RE = re.compile(
+    rf'\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\s+({_SQL_QNAME})',
+    re.IGNORECASE)
+_SQL_INDEX_RE = re.compile(
+    rf'\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?'
+    rf'(?:IF\s+NOT\s+EXISTS\s+)?({_SQL_QNAME})',
+    re.IGNORECASE)
+_SQL_SCHEMA_RE = re.compile(
+    rf'\bCREATE\s+SCHEMA\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:AUTHORIZATION\s+)?({_SQL_IDENT})',
+    re.IGNORECASE)
+
+# (object-kind label, regex). Functions/procedures handled separately so their
+# bodies can be scanned for references + calls.
+_SQL_OBJECT_RES = (
+    ("table", _SQL_TABLE_RE),
+    ("view", _SQL_VIEW_RE),
+    ("type", _SQL_TYPE_RE),
+    ("trigger", _SQL_TRIGGER_RE),
+    ("index", _SQL_INDEX_RE),
+    ("schema", _SQL_SCHEMA_RE),
+)
+
+# Dollar-quoted body: $$ ... $$ or $tag$ ... $tag$ (backref pins the tag).
+_SQL_DOLLAR_BODY_RE = re.compile(r'(\$[A-Za-z0-9_]*\$)(.*?)\1', re.DOTALL)
+# Table references inside a body.
+_SQL_REF_RE = re.compile(
+    rf'\b(?:FROM|JOIN|INTO|UPDATE)\s+(?:ONLY\s+)?({_SQL_QNAME})', re.IGNORECASE)
+# Function calls: identifier immediately followed by '('.
+_SQL_CALL_RE = re.compile(r'\b([A-Za-z_][A-Za-z0-9_]{2,})\s*\(')
+
+# Keywords / builtins that read as calls or table refs but are noise.
+_SQL_STOP = frozenset({
+    "select", "from", "where", "join", "inner", "outer", "left", "right",
+    "full", "cross", "on", "using", "group", "order", "having", "limit",
+    "offset", "union", "all", "into", "values", "insert", "update", "delete",
+    "set", "and", "or", "not", "is", "null", "as", "by", "with", "lateral",
+    "case", "when", "then", "else", "end", "if", "elsif", "elseif", "loop",
+    "while", "for", "foreach", "return", "returns", "begin", "declare",
+    "exception", "raise", "perform", "execute", "create", "table", "view",
+    "function", "procedure", "trigger", "index", "type", "schema", "exists",
+    "distinct", "asc", "desc", "only",
+    # common builtin functions
+    "count", "sum", "avg", "min", "max", "coalesce", "nullif", "cast",
+    "array", "row", "over", "partition", "between", "like", "ilike", "abs",
+    "now", "extract", "to_char", "to_date", "to_timestamp", "length", "lower",
+    "upper", "trim", "concat", "nextval", "currval", "setval", "substring",
+    "position", "replace", "split_part", "format", "round", "floor", "ceil",
+    "greatest", "least", "jsonb_build_object", "json_build_object", "unnest",
+})
+
+
+def _sql_norm_name(raw: str) -> str:
+    """Strip schema-qualification + quotes; return the leaf identifier."""
+    leaf = raw.split(".")[-1].strip()
+    if len(leaf) >= 2 and leaf.startswith('"') and leaf.endswith('"'):
+        leaf = leaf[1:-1]
+    return leaf
+
+
+def _sql_blank_comments(text: str) -> str:
+    """Replace comment spans with same-length whitespace (newlines preserved)
+    so byte offsets still map to the right source line."""
+    def blank(m: "re.Match") -> str:
+        return re.sub(r'[^\n]', ' ', m.group(0))
+    text = _SQL_BLOCK_COMMENT_RE.sub(blank, text)
+    text = _SQL_LINE_COMMENT_RE.sub(blank, text)
+    return text
+
+
+def _ingest_sql_semantics(s: Store, file_path: Path, project_root: Path) -> int:
+    """Direct-path SQL extractor. Shares its body with the parallel-parse path
+    (`_build_sql_record`) via `_sql_emit_body`."""
+    try:
+        text = file_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return 0
+    rel = (
+        file_path.relative_to(project_root).as_posix()
+        if file_path.is_relative_to(project_root)
+        else str(file_path)
+    )
+    return _sql_emit_body(s, text, rel, file_path)
+
+
+def _sql_emit_body(s, text: str, rel: str, file_path: Path) -> int:
+    file_id = s.upsert_entity(kind="code", name=rel, path=str(file_path))
+    try:
+        s.mark_tracked(str(file_path), file_path.stat().st_mtime)
+    except OSError:
+        pass
+    n = 0
+    concept_cache: dict[str, object] = {}
+
+    def get_concept(name: str):
+        key = name.lower()
+        if key in concept_cache:
+            return concept_cache[key]
+        cid = s.add_concept(name, description=f"sql symbol '{name}'")
+        concept_cache[key] = cid
+        return cid
+
+    # Blank comments so CREATE matches don't fire inside comments, and so
+    # offsets still map to lines (blanking preserves length + newlines).
+    blanked = _sql_blank_comments(text)
+
+    def line_of(pos: int) -> int:
+        return blanked.count("\n", 0, pos) + 1
+
+    # 1) Plain object definitions (table/view/type/trigger/index/schema).
+    for okind, rx in _SQL_OBJECT_RES:
+        for m in rx.finditer(blanked):
+            name = _sql_norm_name(m.group(1))
+            if not name:
+                continue
+            lineno = line_of(m.start())
+            qname = f"{rel}::{name}"
+            eid = s.upsert_entity(
+                kind="code", name=qname, path=str(file_path),
+                meta={"file": rel, "func": name, "kind": okind, "line": lineno},
+            )
+            cid = get_concept(name)
+            s.link("defines", cid, eid)
+            s.add_evidence("defines", cid, eid, file=rel, line=lineno,
+                           detail=f"{okind} {name}")
+            n += 1
+
+    # 2) Functions / procedures — define + scan dollar-quoted body.
+    func_matches = list(_SQL_FUNC_RE.finditer(blanked))
+    for idx, m in enumerate(func_matches):
+        subtype = m.group(1).lower()   # function | procedure
+        name = _sql_norm_name(m.group(2))
+        if not name:
+            continue
+        lineno = line_of(m.start())
+        qname = f"{rel}::{name}"
+        eid = s.upsert_entity(
+            kind="code", name=qname, path=str(file_path),
+            meta={"file": rel, "func": name, "kind": subtype, "line": lineno},
+        )
+        cid = get_concept(name)
+        s.link("defines", cid, eid)
+        s.add_evidence("defines", cid, eid, file=rel, line=lineno,
+                       detail=f"{subtype} {name}")
+        n += 1
+
+        # Body = first dollar-quoted block between this CREATE and the next,
+        # read from the ORIGINAL text so content survives (offsets align with
+        # `blanked` since blanking preserves length).
+        end_bound = (func_matches[idx + 1].start()
+                     if idx + 1 < len(func_matches) else len(text))
+        body_m = _SQL_DOLLAR_BODY_RE.search(text, m.start(), end_bound)
+        if body_m is None:
+            continue
+        body = _sql_blank_comments(body_m.group(2))
+        body_line0 = text.count("\n", 0, body_m.start(2)) + 1
+        nm_lower = name.lower()
+
+        seen_refs: set[str] = set()
+        for rm in _SQL_REF_RE.finditer(body):
+            ref = _sql_norm_name(rm.group(1))
+            rl = ref.lower()
+            if not ref or rl in _SQL_STOP or rl == nm_lower or rl in seen_refs:
+                continue
+            seen_refs.add(rl)
+            rc = get_concept(ref)
+            s.link("mentions", rc, eid)
+            s.add_evidence("mentions", rc, eid, file=rel,
+                           line=body_line0 + body.count("\n", 0, rm.start()),
+                           detail=f"references {ref}")
+            n += 1
+
+        seen_calls: set[str] = set()
+        for cm in _SQL_CALL_RE.finditer(body):
+            callee = cm.group(1)
+            cl = callee.lower()
+            if cl in _SQL_STOP or cl == nm_lower or cl in seen_calls:
+                continue
+            seen_calls.add(cl)
+            cc = get_concept(callee)
+            s.link("calls", cc, eid)
+            n += 1
+
+    return n
+
+
+def _build_sql_record(
+    file_path: Path, project_root: Path,
+) -> "IngestRecord | None":
+    """Pure-parse builder for a .sql file -- worker-thread safe."""
+    from refmatrix.ingest_records import RecordingStore
+    try:
+        text = file_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+    rel = (
+        file_path.relative_to(project_root).as_posix()
+        if file_path.is_relative_to(project_root)
+        else str(file_path)
+    )
+    try:
+        mtime: float | None = file_path.stat().st_mtime
+    except OSError:
+        mtime = None
+    rb = RecordingStore(
+        rel=rel, file_path=str(file_path), mtime=mtime, doc_kind="code",
+    )
+    _sql_emit_body(rb, text, rel, file_path)
     return rb.record
 
 
