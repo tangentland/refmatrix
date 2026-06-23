@@ -2276,6 +2276,49 @@ def _op_ingest_gmd_start(d: Daemon, args: dict) -> dict:
     }
 
 
+def _run_detached_job(d: Daemon, job_id: str, fn) -> None:
+    """Run `fn()` on the bg pool under the ingest-job lifecycle: flip the job
+    record to `done` (capturing the return as `result`) or `error`. The job
+    record is otherwise progress-agnostic — `ingest_path`/`embed` emit their
+    own `ingest-progress`/running-total log lines that the status op surfaces
+    via the daemon log; per-file event granularity is GMD-only."""
+    job = d._ingest_jobs[job_id]
+    try:
+        result = fn()
+        with d._ingest_jobs_lock:
+            job["status"] = "done"
+            job["ended_at"] = time.time()
+            job["result"] = result
+    except Exception as exc:
+        with d._ingest_jobs_lock:
+            job["status"] = "error"
+            job["ended_at"] = time.time()
+            job["error"] = repr(exc)
+        d._log(f"detached job {job_id} failed: {exc!r}")
+
+
+def _op_ingest_path_start(d: Daemon, args: dict) -> dict:
+    """Fire-and-poll `ingest_path`: reserve the ingest slot, dispatch the same
+    body `_op_ingest_path` runs onto bg_pool, return the job_id immediately.
+    Poll completion via `ingest_gmd_status` (generic over all ingest jobs).
+    The single-active guard in `_register_ingest_job` rejects a second start
+    while one is running."""
+    job_id = _register_ingest_job(d, files_total=0, args=args)
+    d._bg_pool.submit(lambda: _run_detached_job(d, job_id, lambda: _op_ingest_path(d, args)))
+    return {"job_id": job_id, "status": "running",
+            "path": str(Path(args["path"]).resolve())}
+
+
+def _op_embed_start(d: Daemon, args: dict) -> dict:
+    """Fire-and-poll `embed`: dispatch the embedding pass onto bg_pool and
+    return the job_id immediately. Poll via `ingest_gmd_status`. Shares the
+    single-active-ingest slot so an embed and an ingest don't fight the store
+    lock."""
+    job_id = _register_ingest_job(d, files_total=0, args=args)
+    d._bg_pool.submit(lambda: _run_detached_job(d, job_id, lambda: _op_embed(d, args)))
+    return {"job_id": job_id, "status": "running"}
+
+
 def _op_mem_mirror_status(d: Daemon, args: dict) -> dict:
     """Inspect the in-memory mirror: ready / last refresh / refresh
     count / last error. Lets operators verify the mirror is keeping
@@ -3725,9 +3768,11 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "sync_files": _op_sync_files,
     "sync_since": _op_sync_since,
     "ingest_path": _op_ingest_path,
+    "ingest_path_start": _op_ingest_path_start,
     "ingest_gmd": _op_ingest_gmd,
     "ingest_gmd_start": _op_ingest_gmd_start,
     "ingest_gmd_status": _op_ingest_gmd_status,
+    "embed_start": _op_embed_start,
     "mem_mirror_status": _op_mem_mirror_status,
     "prestage_hashes": _op_prestage_hashes,
     "context": _op_context,

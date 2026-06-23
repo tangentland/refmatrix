@@ -14,7 +14,10 @@ from refmatrix.ui import server as srv  # noqa: E402
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, tmp_path):
+    # Isolate the global store (RMX_HOME) so endpoints like /api/refine read a
+    # clean per-test queue instead of the developer's live ~/.refmatrix bus.
+    monkeypatch.setenv("RMX_HOME", str(tmp_path / "home"))
     monkeypatch.setattr(discovery, "discover_roots", lambda: [])
     monkeypatch.setattr(discovery, "all_projects",
                         lambda with_footprint=True: [])

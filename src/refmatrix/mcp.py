@@ -215,6 +215,181 @@ def _t_change_subject(args: dict) -> dict:
             "session": s.session}
 
 
+# ---- full memory parity (one dispatcher over the CLI `memory` group) --------
+
+_MEMORY_OPS = {
+    "get": "memory_get", "list": "memory_iter", "search": "memory_search",
+    "forget": "memory_forget", "reclassify": "memory_reclassify",
+    "retag": "memory_retag", "link": "memory_link", "score": "memory_score",
+    "bulk_forget": "memory_bulk_forget", "dedup": "memory_dedup",
+}
+
+
+def _memory_payload(action: str, a: dict) -> dict:
+    """Build the daemon-op payload for a memory action. Keys mirror what the
+    CLI memory subcommands send (the proven callers) so the daemon op contract
+    stays single-sourced."""
+    def keyed():
+        return {"id": int(a["id"])} if a.get("id") is not None else {"name": a["name"]}
+    if action == "get" or action == "forget":
+        return keyed()
+    if action == "list":
+        return {k: a[k] for k in ("mtype", "limit", "tags", "tags_match")
+                if a.get(k) is not None}
+    if action == "search":
+        p = {"query": a["query"]}
+        for k in ("limit", "tags", "tags_match"):
+            if a.get(k) is not None:
+                p[k] = a[k]
+        return p
+    if action == "reclassify":
+        p = {"to_mtype": a["to_mtype"]}
+        for k in ("from_mtype", "like", "names", "dry_run"):
+            if a.get(k) is not None:
+                p[k] = a[k]
+        return p
+    if action == "retag":
+        p = keyed()
+        for k in ("add", "remove", "replace"):
+            if a.get(k) is not None:
+                p[k] = a[k]
+        return p
+    if action == "link":
+        p = {"src_id": int(a["id"])} if a.get("id") is not None \
+            else {"src_name": a["name"]}
+        p["linkage"] = a.get("linkage", "related-to")
+        p["concept"] = a["concept"]
+        if a.get("weight") is not None:
+            p["weight"] = a["weight"]
+        return p
+    if action == "score":
+        p = {"concept": a["concept"]}
+        for k in ("halflife_days", "cap", "explain"):
+            if a.get(k) is not None:
+                p[k] = a[k]
+        return p
+    if action == "bulk_forget":
+        p = {"dry_run": bool(a.get("dry_run", False))}
+        for k in ("ids", "names", "mtypes"):
+            if a.get(k) is not None:
+                p[k] = a[k]
+        return p
+    if action == "dedup":
+        return {"dry_run": bool(a.get("dry_run", False))}
+    return {}
+
+
+def _t_memory(args: dict) -> dict:
+    """Full parity with the CLI `rmx memory` group via one dispatcher. `action`
+    selects the operation; the remaining args are the operation's parameters
+    (see the action enum). recall/add reuse the dedicated tools; promote is the
+    project→global behavior-store copy; everything else routes to the daemon's
+    `memory_*` op with the project partition injected."""
+    action = args.get("action")
+    if action == "recall":
+        return _t_memory_recall(args)
+    if action == "add":
+        return _t_memory_add(args)
+    from refmatrix import daemon as daemon_mod, discovery, hub as hub_mod
+    root = _resolve_root(args)
+    part = args.get("partition") or discovery.store_name(root)
+    if not daemon_mod.ping(root):
+        return {"error": f"daemon not running for {root}"}
+    if action == "promote":
+        key = {"id": int(args["id"])} if args.get("id") is not None \
+            else {"name": args["name"]}
+        g0 = daemon_mod.call(root, "memory_get", {**key, "partition": part},
+                             timeout=30.0)
+        m = g0.get("result", {}).get("memory") if g0.get("ok") else None
+        if not m:
+            return {"error": "no memory matching the id/name"}
+        tags = list(dict.fromkeys((m.get("tags") or []) + ["behavior"]))
+        g = hub_mod.global_call("memory_add", {
+            "name": m["name"], "content": m["content"],
+            "mtype": m.get("mtype") or "feedback", "tags": tags,
+            "metadata": m.get("metadata")})
+        return g.get("result", {}) if g.get("ok") else {"error": g.get("error")}
+    op = _MEMORY_OPS.get(action)
+    if op is None:
+        return {"error": f"unknown memory action {action!r}"}
+    try:
+        payload = {**_memory_payload(action, args), "partition": part}
+    except KeyError as exc:
+        return {"error": f"missing required arg for {action}: {exc}"}
+    r = daemon_mod.call(root, op, payload, timeout=120.0)
+    return r.get("result", {}) if r.get("ok") else {"error": r.get("error")}
+
+
+def _t_locate(args: dict) -> dict:
+    """Locate full filesystem paths by filename and/or keywords/concepts,
+    across every live store (federated)."""
+    from refmatrix.search import federated_locate
+    return federated_locate(args.get("file"), args.get("keywords") or [],
+                            limit=int(args.get("n", 10)))
+
+
+def _t_task(args: dict) -> dict:
+    """Task pushdown stack for the active session (push/pop/list/current/swap).
+    Uses the symmetric session resolution so MCP writes are visible to CLI
+    reads and vice versa."""
+    from refmatrix import stm as stm_mod
+    root = _resolve_root(args)
+    s = stm_mod.Stm(root, _session(args, stm_mod, root))
+    action = args.get("action", "list")
+    if action == "push":
+        if not args.get("desc"):
+            return {"error": "task push requires 'desc'"}
+        return s.task_push(args["desc"])
+    if action == "pop":
+        return s.task_pop(args.get("selector"))
+    if action == "list":
+        return {"tasks": s.task_list()}
+    if action == "current":
+        return {"current": s.task_current()}
+    if action == "swap":
+        return s.task_swap()
+    return {"error": f"unknown task action {action!r}"}
+
+
+def _t_ingest(args: dict) -> dict:
+    """Fire-and-poll ingest/embed: enqueues the job on the daemon and returns a
+    `job_id` immediately (time-bound). Poll `rmx_ingest_status`. `mode`:
+    'ingest' (default, the project tree) or 'embed' (dense vectors)."""
+    from refmatrix import daemon as daemon_mod, discovery
+    root = _resolve_root(args)
+    if not daemon_mod.ping(root):
+        return {"error": f"daemon not running for {root}"}
+    part = args.get("partition") or discovery.store_name(root)
+    if args.get("mode") == "embed":
+        payload = {"partition": part}
+        for k in ("kinds", "limit", "rebuild"):
+            if args.get(k) is not None:
+                payload[k] = args[k]
+        r = daemon_mod.call(root, "embed_start", payload, timeout=30.0)
+    else:
+        payload = {
+            "path": args.get("path") or str(Path(root).parent),
+            "source": args.get("source", "auto"),
+            "semantic": bool(args.get("semantic", False)),
+            "partition": part,
+        }
+        r = daemon_mod.call(root, "ingest_path_start", payload, timeout=30.0)
+    return r.get("result", {}) if r.get("ok") else {"error": r.get("error")}
+
+
+def _t_ingest_status(args: dict) -> dict:
+    """Poll an ingest/embed job started by `rmx_ingest`. Omit `job_id` to list
+    all jobs; pass `since_seq` to stream new per-file events."""
+    from refmatrix import daemon as daemon_mod
+    root = _resolve_root(args)
+    if not daemon_mod.ping(root):
+        return {"error": f"daemon not running for {root}"}
+    payload = {k: args[k] for k in ("job_id", "since_seq", "limit")
+               if args.get(k) is not None}
+    r = daemon_mod.call(root, "ingest_gmd_status", payload, timeout=15.0)
+    return r.get("result", {}) if r.get("ok") else {"error": r.get("error")}
+
+
 TOOLS: dict[str, dict] = {
     "rmx_where": {
         "description": "Find where something is across ALL your refmatrix "
@@ -310,6 +485,72 @@ TOOLS: dict[str, dict] = {
             "session": {"type": "string"},
             "root": {"type": "string"}}, "required": ["label"]},
         "fn": _t_change_subject},
+    "rmx_memory": {
+        "description": "Full access to the project memory store — parity with "
+                       "the CLI `rmx memory` group. `action` selects the op; "
+                       "pass that op's params alongside.",
+        "schema": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": [
+                "recall", "add", "get", "list", "search", "forget",
+                "reclassify", "retag", "link", "score", "bulk_forget",
+                "dedup", "promote"]},
+            "name": {"type": "string"}, "id": {"type": "integer"},
+            "content": {"type": "string"}, "mtype": {"type": "string"},
+            "to_mtype": {"type": "string"}, "from_mtype": {"type": "string"},
+            "query": {"type": "string"}, "scope": {"type": "string"},
+            "k": {"type": "integer"}, "limit": {"type": "integer"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "tags_match": {"type": "string"},
+            "add": {"type": "array", "items": {"type": "string"}},
+            "remove": {"type": "array", "items": {"type": "string"}},
+            "replace": {"type": "array", "items": {"type": "string"}},
+            "names": {"type": "array", "items": {"type": "string"}},
+            "ids": {"type": "array", "items": {"type": "integer"}},
+            "mtypes": {"type": "array", "items": {"type": "string"}},
+            "like": {"type": "string"}, "concept": {"type": "string"},
+            "linkage": {"type": "string"}, "weight": {"type": "number"},
+            "halflife_days": {"type": "number"}, "cap": {"type": "number"},
+            "explain": {"type": "boolean"}, "protect": {"type": "boolean"},
+            "dry_run": {"type": "boolean"}, "root": {"type": "string"}},
+            "required": ["action"]},
+        "fn": _t_memory},
+    "rmx_locate": {
+        "description": "Locate full filesystem paths by filename (basename, no "
+                       "path) and/or keywords/concepts, across all live stores.",
+        "schema": {"type": "object", "properties": {
+            "file": {"type": "string"},
+            "keywords": {"type": "array", "items": {"type": "string"}},
+            "n": {"type": "integer"}}},
+        "fn": _t_locate},
+    "rmx_task": {
+        "description": "Task pushdown stack for the active session: push, pop, "
+                       "list, current, swap. Snapshots focus on push; restores "
+                       "it on pop (git-stash semantics).",
+        "schema": {"type": "object", "properties": {
+            "action": {"type": "string",
+                       "enum": ["push", "pop", "list", "current", "swap"]},
+            "desc": {"type": "string"}, "selector": {"type": "string"},
+            "session": {"type": "string"}, "root": {"type": "string"}}},
+        "fn": _t_task},
+    "rmx_ingest": {
+        "description": "Fire-and-poll ingest/embed: enqueues the job and returns "
+                       "a job_id immediately (time-bound). `mode`: 'ingest' "
+                       "(project tree) or 'embed'. Poll with rmx_ingest_status.",
+        "schema": {"type": "object", "properties": {
+            "mode": {"type": "string", "enum": ["ingest", "embed"]},
+            "path": {"type": "string"}, "source": {"type": "string"},
+            "semantic": {"type": "boolean"},
+            "kinds": {"type": "array", "items": {"type": "string"}},
+            "limit": {"type": "integer"}, "rebuild": {"type": "boolean"},
+            "root": {"type": "string"}}},
+        "fn": _t_ingest},
+    "rmx_ingest_status": {
+        "description": "Poll an ingest/embed job started by rmx_ingest. Omit "
+                       "job_id to list all jobs; since_seq streams new events.",
+        "schema": {"type": "object", "properties": {
+            "job_id": {"type": "string"}, "since_seq": {"type": "integer"},
+            "limit": {"type": "integer"}, "root": {"type": "string"}}},
+        "fn": _t_ingest_status},
 }
 
 

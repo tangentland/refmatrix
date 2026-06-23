@@ -209,9 +209,15 @@ def test_ingest_ops_registered():
     assert "ingest_gmd" in OPS
     assert "ingest_gmd_start" in OPS
     assert "ingest_gmd_status" in OPS
-    # Synchronous + detached start are mutating → bg pool.
+    # Detached fire-and-poll starts for the plain ingest + embed paths.
+    assert "ingest_path_start" in OPS
+    assert "embed_start" in OPS
+    # Synchronous + detached start dispatch onto bg pool (the start op just
+    # registers the job + submits; the work runs on another bg worker).
     assert "ingest_gmd" not in CLI_OPS
     assert "ingest_gmd_start" not in CLI_OPS
+    assert "ingest_path_start" not in CLI_OPS
+    assert "embed_start" not in CLI_OPS
     # Status is a read → cli pool so polling stays responsive even
     # while bg_pool is saturated.
     assert "ingest_gmd_status" in CLI_OPS
