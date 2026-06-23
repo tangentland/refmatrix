@@ -4341,14 +4341,25 @@ class Store:
     # ---- log dump / rebuild -----------------------------------------------
 
     def dump_catalog_to_log(self) -> dict:
-        """Snapshot the current catalog into facts.log as a fresh sequence
-        of events. Overwrites any existing log. Run once to bootstrap an
-        existing repo onto the log, then commit the result."""
+        """Snapshot the WHOLE catalog into facts.log as a fresh, replay-faithful
+        event sequence. Overwrites any existing log (atomic tmp+rename).
+
+        Faithful = a `rebuild_index_from_log()` of the result reproduces the
+        catalog exactly, including:
+        - every partition (each event carries `partition`; replay re-scopes),
+        - memory bodies (`memory_content` events for kind=memory rows),
+        - non-default linkage types (`linkage_type` events).
+
+        This is both the bootstrap-onto-the-log primitive and the compaction
+        primitive the daemon's facts.log rotation tick calls: a 2GB append log
+        of churned duplicate events collapses to one minimal current-state
+        snapshot."""
         con = self._connect()
         counts = {
-            "entity": 0, "protect": 0, "noise": 0,
-            "link": 0, "evidence": 0, "track": 0,
+            "entity": 0, "protect": 0, "noise": 0, "memory_content": 0,
+            "link": 0, "evidence": 0, "track": 0, "linkage_type": 0,
         }
+        default_linkages = {row[0] for row in DEFAULT_LINKAGES}
         # Stream into a temp file then atomic-rename so a crash mid-dump
         # doesn't leave a half-written log.
         tmp = self.log_path.with_suffix(".log.tmp")
@@ -4356,95 +4367,146 @@ class Store:
             def emit(rec: dict) -> None:
                 f.write(json.dumps(rec, sort_keys=True, ensure_ascii=False) + "\n")
 
+            # Linkage types first (partition-independent) so link/evidence
+            # replay can resolve them. Only the non-default ones — defaults are
+            # recreated by init() during rebuild.
             for row in con.execute(
-                "SELECT id, kind, name, path, tldr, meta, "
-                "       created_at, updated_at, protected, noise "
-                "FROM entities ORDER BY created_at, id"
+                "SELECT name, directed, description FROM linkage_types "
+                "ORDER BY name"
             ):
-                meta = json.loads(row["meta"]) if row["meta"] else None
+                if row["name"] in default_linkages:
+                    continue
                 emit({
-                    "ts": row["created_at"],
-                    "op": "entity",
-                    "kind": row["kind"], "name": row["name"],
-                    "path": row["path"], "tldr": row["tldr"], "meta": meta,
+                    "ts": 0, "op": "linkage_type",
+                    "name": row["name"],
+                    "directed": int(row["directed"]) if row["directed"] is not None else 1,
+                    "description": row["description"],
                 })
-                counts["entity"] += 1
-                if row["protected"]:
+                counts["linkage_type"] += 1
+
+            # One pass per partition so every event is tagged with its
+            # partition and replay lands rows in the right slot (pre-this-
+            # change dumps flattened all partitions into the default one).
+            partitions = [
+                (r["id"], r["name"])
+                for r in con.execute(
+                    "SELECT id, name FROM partitions ORDER BY id"
+                )
+            ]
+            for pid, pname in partitions:
+                for row in con.execute(
+                    "SELECT id, kind, name, path, tldr, meta, "
+                    "       created_at, updated_at, protected, noise "
+                    "FROM entities WHERE partition_id=? "
+                    "ORDER BY created_at, id",
+                    (pid,),
+                ):
+                    meta = json.loads(row["meta"]) if row["meta"] else None
                     emit({
-                        "ts": row["updated_at"],
-                        "op": "protect",
-                        "kind": row["kind"], "name": row["name"], "value": 1,
+                        "ts": row["created_at"],
+                        "op": "entity", "partition": pname,
+                        "kind": row["kind"], "name": row["name"],
+                        "path": row["path"], "tldr": row["tldr"], "meta": meta,
                     })
-                    counts["protect"] += 1
-                if row["noise"]:
+                    counts["entity"] += 1
+                    if row["protected"]:
+                        emit({
+                            "ts": row["updated_at"], "op": "protect",
+                            "partition": pname,
+                            "kind": row["kind"], "name": row["name"], "value": 1,
+                        })
+                        counts["protect"] += 1
+                    if row["noise"]:
+                        emit({
+                            "ts": row["updated_at"], "op": "noise",
+                            "partition": pname,
+                            "kind": row["kind"], "name": row["name"], "value": 1,
+                        })
+                        counts["noise"] += 1
+
+                # Memory bodies (sidecar) — emit AFTER the entity events so the
+                # entity exists at replay time. LWW-keyed by name on replay.
+                for row in con.execute(
+                    "SELECT e.name AS name, mc.content, mc.mtype, mc.tags, "
+                    "       mc.metadata, mc.updated_at AS ts "
+                    "FROM memory_content mc "
+                    "JOIN entities e ON e.id = mc.entity_id "
+                    "WHERE e.partition_id=? ORDER BY mc.updated_at, e.name",
+                    (pid,),
+                ):
                     emit({
-                        "ts": row["updated_at"],
-                        "op": "noise",
-                        "kind": row["kind"], "name": row["name"], "value": 1,
+                        "ts": row["ts"], "op": "memory_content",
+                        "partition": pname,
+                        "kind": "memory", "name": row["name"],
+                        "content": row["content"] or "",
+                        "mtype": row["mtype"] or "observation",
+                        "tags": json.loads(row["tags"]) if row["tags"] else None,
+                        "metadata": json.loads(row["metadata"]) if row["metadata"] else None,
                     })
-                    counts["noise"] += 1
+                    counts["memory_content"] += 1
 
-            # Use the entity's updated_at as the link timestamp baseline so
-            # links sort *after* their entities on replay even when
-            # facts.log is regenerated on a different machine clock.
-            for row in con.execute(
-                """
-                SELECT lt.name AS linkage,
-                       c.name AS c_name,
-                       e.kind AS e_kind, e.name AS e_name,
-                       el.weight AS weight,
-                       GREATEST(c.updated_at, e.updated_at) AS ts
-                FROM entity_links el
-                JOIN linkage_types lt ON lt.id = el.linkage_id
-                JOIN entities c ON c.id = el.concept_id
-                JOIN entities e ON e.id = el.entity_id
-                ORDER BY ts, lt.name, c.name, e.name
-                """
-            ):
-                emit({
-                    "ts": row["ts"],
-                    "op": "link",
-                    "linkage": row["linkage"],
-                    "c": row["c_name"],
-                    "e_kind": row["e_kind"], "e": row["e_name"],
-                    "weight": row["weight"],
-                })
-                counts["link"] += 1
+                # Links + evidence are scoped to the partition by requiring BOTH
+                # endpoints to live in it (entity_links has no partition column).
+                # entity.updated_at is the ts baseline so links sort after their
+                # entities on replay even if regenerated on a different clock.
+                for row in con.execute(
+                    """
+                    SELECT lt.name AS linkage, c.name AS c_name,
+                           e.kind AS e_kind, e.name AS e_name,
+                           el.weight AS weight,
+                           GREATEST(c.updated_at, e.updated_at) AS ts
+                    FROM entity_links el
+                    JOIN linkage_types lt ON lt.id = el.linkage_id
+                    JOIN entities c ON c.id = el.concept_id
+                    JOIN entities e ON e.id = el.entity_id
+                    WHERE c.partition_id=? AND e.partition_id=?
+                    ORDER BY ts, lt.name, c.name, e.name
+                    """,
+                    (pid, pid),
+                ):
+                    emit({
+                        "ts": row["ts"], "op": "link", "partition": pname,
+                        "linkage": row["linkage"], "c": row["c_name"],
+                        "e_kind": row["e_kind"], "e": row["e_name"],
+                        "weight": row["weight"],
+                    })
+                    counts["link"] += 1
 
-            for row in con.execute(
-                """
-                SELECT lt.name AS linkage, c.name AS c_name,
-                       e.kind AS e_kind, e.name AS e_name,
-                       ev.file, ev.line, ev.span_end, ev.detail,
-                       GREATEST(c.updated_at, e.updated_at) AS ts
-                FROM linkage_evidence ev
-                JOIN linkage_types lt ON lt.id = ev.linkage_id
-                JOIN entities c ON c.id = ev.concept_id
-                JOIN entities e ON e.id = ev.entity_id
-                ORDER BY ts, lt.name, c.name, e.name, ev.file, ev.line
-                """
-            ):
-                emit({
-                    "ts": row["ts"],
-                    "op": "evidence",
-                    "linkage": row["linkage"],
-                    "c": row["c_name"],
-                    "e_kind": row["e_kind"], "e": row["e_name"],
-                    "file": row["file"], "line": row["line"],
-                    "span_end": row["span_end"], "detail": row["detail"],
-                })
-                counts["evidence"] += 1
+                for row in con.execute(
+                    """
+                    SELECT lt.name AS linkage, c.name AS c_name,
+                           e.kind AS e_kind, e.name AS e_name,
+                           ev.file, ev.line, ev.span_end, ev.detail,
+                           GREATEST(c.updated_at, e.updated_at) AS ts
+                    FROM linkage_evidence ev
+                    JOIN linkage_types lt ON lt.id = ev.linkage_id
+                    JOIN entities c ON c.id = ev.concept_id
+                    JOIN entities e ON e.id = ev.entity_id
+                    WHERE c.partition_id=? AND e.partition_id=?
+                    ORDER BY ts, lt.name, c.name, e.name, ev.file, ev.line
+                    """,
+                    (pid, pid),
+                ):
+                    emit({
+                        "ts": row["ts"], "op": "evidence", "partition": pname,
+                        "linkage": row["linkage"], "c": row["c_name"],
+                        "e_kind": row["e_kind"], "e": row["e_name"],
+                        "file": row["file"], "line": row["line"],
+                        "span_end": row["span_end"], "detail": row["detail"],
+                    })
+                    counts["evidence"] += 1
 
-            for row in con.execute(
-                "SELECT path, mtime, last_synced FROM tracked_files "
-                "ORDER BY last_synced, path"
-            ):
-                emit({
-                    "ts": row["last_synced"],
-                    "op": "track",
-                    "path": row["path"], "mtime": row["mtime"],
-                })
-                counts["track"] += 1
+                for row in con.execute(
+                    "SELECT path, mtime, last_synced FROM tracked_files "
+                    "WHERE partition_id=? ORDER BY last_synced, path",
+                    (pid,),
+                ):
+                    emit({
+                        "ts": row["last_synced"], "op": "track",
+                        "partition": pname,
+                        "path": row["path"], "mtime": row["mtime"],
+                    })
+                    counts["track"] += 1
 
         tmp.replace(self.log_path)
         return counts
@@ -4519,10 +4581,20 @@ class Store:
                 "end_offset": end_offset}
 
     def _apply_one_event(self, ev: dict) -> bool:
-        """Apply a single facts.log event to self. Returns True if applied,
-        False if the event couldn't be resolved (e.g. link referencing
-        an entity that doesn't exist yet — rare; can happen if events
-        arrive out of order from a concurrent writer)."""
+        """Apply a single facts.log event, re-scoping to the event's
+        `partition` when it carries one (partition-faithful logs). Events
+        without a partition apply to the active partition (legacy logs)."""
+        part = ev.get("partition")
+        if part and part != self._partition_name:
+            with self.with_partition(part):
+                return self._apply_event_body(ev)
+        return self._apply_event_body(ev)
+
+    def _apply_event_body(self, ev: dict) -> bool:
+        """Apply a single facts.log event to self's active partition. Returns
+        True if applied, False if the event couldn't be resolved (e.g. link
+        referencing an entity that doesn't exist yet — rare; can happen if
+        events arrive out of order from a concurrent writer)."""
         op = ev.get("op")
         try:
             if op == "entity":
@@ -4670,26 +4742,32 @@ class Store:
                     continue
         events.sort(key=lambda e: e.get("ts", 0))
 
-        # Pass 2: collapse to final state per key.
-        entity_state: dict[tuple[str, str], dict] = {}
-        tombstone_ts: dict[tuple[str, str], float] = {}
-        protect_lww: dict[tuple[str, str], tuple[float, int]] = {}
-        noise_lww: dict[tuple[str, str], tuple[float, int]] = {}
+        # Events lacking a `partition` field (legacy pre-partition-faithful
+        # logs) default to the store's active partition — same as before this
+        # change, so old logs still rebuild into one partition.
+        dpart = self._partition_name
+
+        # Pass 2: collapse to final state per key. Keys are partition-qualified
+        # so the same (kind, name) in two partitions stays distinct.
+        entity_state: dict[tuple[str, str, str], dict] = {}
+        tombstone_ts: dict[tuple[str, str, str], float] = {}
+        protect_lww: dict[tuple[str, str, str], tuple[float, int]] = {}
+        noise_lww: dict[tuple[str, str, str], tuple[float, int]] = {}
         link_state: dict[tuple, tuple[float, str, float | None]] = {}
-        track_state: dict[str, tuple[float, str, float | None]] = {}
+        track_state: dict[tuple[str, str], tuple[float, str, float | None]] = {}
         evidence_events: list[dict] = []
-        # Memory bodies, LWW by entity name (the sidecar is keyed by entity,
-        # one row per memory).
-        memory_content_lww: dict[str, tuple[float, dict]] = {}
-        # Linkage types referenced anywhere in the log. Pre-2.0 logs don't
-        # carry `linkage_type` events, so we have to derive the set from
-        # link/unlink/evidence events and register the missing ones before
-        # replay or `get_linkage_id` blows up mid-replay.
+        # Memory bodies, LWW by (partition, entity name).
+        memory_content_lww: dict[tuple[str, str], tuple[float, dict]] = {}
+        # Linkage types referenced anywhere in the log (partition-independent).
+        # Pre-2.0 logs don't carry `linkage_type` events, so we also derive the
+        # set from link/unlink/evidence events and register the missing ones
+        # before replay or `get_linkage_id` blows up mid-replay.
         linkage_types_seen: dict[str, dict] = {}
 
         for ev in events:
             op = ev.get("op")
             ts = ev.get("ts", 0)
+            part = ev.get("partition") or dpart
             if op == "linkage_type":
                 name = ev["name"]
                 cur = linkage_types_seen.setdefault(name, {
@@ -4707,7 +4785,7 @@ class Store:
                         lname, {"directed": 1, "description": ""},
                     )
             if op == "entity":
-                key = (ev["kind"], ev["name"])
+                key = (part, ev["kind"], ev["name"])
                 cur = entity_state.setdefault(key, {})
                 for field in ("path", "tldr", "meta"):
                     val = ev.get(field)
@@ -4715,140 +4793,158 @@ class Store:
                         cur[field] = val
                 cur["latest_ts"] = max(cur.get("latest_ts", 0), ts)
             elif op == "tombstone":
-                key = (ev["kind"], ev["name"])
+                key = (part, ev["kind"], ev["name"])
                 if ts > tombstone_ts.get(key, -1):
                     tombstone_ts[key] = ts
             elif op == "protect":
-                key = (ev["kind"], ev["name"])
+                key = (part, ev["kind"], ev["name"])
                 prev = protect_lww.get(key)
                 if prev is None or ts > prev[0]:
                     protect_lww[key] = (ts, int(ev.get("value", 1)))
             elif op == "noise":
-                key = (ev["kind"], ev["name"])
+                key = (part, ev["kind"], ev["name"])
                 prev = noise_lww.get(key)
                 if prev is None or ts > prev[0]:
                     noise_lww[key] = (ts, int(ev.get("value", 1)))
             elif op in ("link", "unlink"):
-                key = (
-                    ev["linkage"], ev["c"],
-                    ev["e_kind"], ev["e"],
-                )
+                key = (part, ev["linkage"], ev["c"], ev["e_kind"], ev["e"])
                 prev = link_state.get(key)
                 if prev is None or ts > prev[0]:
                     link_state[key] = (ts, op, ev.get("weight"))
             elif op == "evidence":
                 evidence_events.append(ev)
             elif op == "track":
-                key = ev["path"]
+                key = (part, ev["path"])
                 prev = track_state.get(key)
                 if prev is None or ts > prev[0]:
                     track_state[key] = (ts, "track", ev.get("mtime"))
             elif op == "untrack":
-                key = ev["path"]
+                key = (part, ev["path"])
                 prev = track_state.get(key)
                 if prev is None or ts > prev[0]:
                     track_state[key] = (ts, "untrack", None)
             elif op == "memory_content":
-                key = ev["name"]
+                key = (part, ev["name"])
                 prev = memory_content_lww.get(key)
                 if prev is None or ts > prev[0]:
                     memory_content_lww[key] = (ts, ev)
 
         # Pass 3: materialize, with logging suppressed to avoid the rebuild
-        # appending duplicate events to the same log we're replaying.
+        # appending duplicate events to the same log we're replaying. Work
+        # one partition at a time under `with_partition` (auto-creates the
+        # partition row) so rows land in the right slot.
+        counts = {
+            "entities": 0, "links": 0, "evidence": 0,
+            "tracked": 0, "memory_content": 0,
+        }
         self._replay_mode = True
         try:
             # Register every linkage type seen in the log before any
-            # link/evidence replay touches them. add_linkage_type is
-            # idempotent via INSERT OR IGNORE.
+            # link/evidence replay touches them. Idempotent (INSERT OR IGNORE).
             for lname, props in linkage_types_seen.items():
                 self.add_linkage_type(
                     lname, directed=bool(props.get("directed", 1)),
                     description=props.get("description") or None,
                 )
 
-            name_to_id: dict[tuple[str, str], int] = {}
-            for key, state in entity_state.items():
-                kind, name = key
-                ts_dead = tombstone_ts.get(key)
-                if ts_dead is not None and ts_dead >= state.get("latest_ts", 0):
-                    continue
-                eid = self.upsert_entity(
-                    kind=kind, name=name,
-                    path=state.get("path"),
-                    tldr=state.get("tldr"),
-                    meta=state.get("meta"),
-                )
-                name_to_id[key] = eid
+            parts = sorted({k[0] for k in entity_state}
+                           | {k[0] for k in track_state})
+            for pname in parts:
+                with self.with_partition(pname):
+                    # (kind, name) -> id within THIS partition.
+                    name_to_id: dict[tuple[str, str], int] = {}
+                    for key, state in entity_state.items():
+                        if key[0] != pname:
+                            continue
+                        _, kind, name = key
+                        ts_dead = tombstone_ts.get(key)
+                        if ts_dead is not None and ts_dead >= state.get("latest_ts", 0):
+                            continue
+                        eid = self.upsert_entity(
+                            kind=kind, name=name,
+                            path=state.get("path"),
+                            tldr=state.get("tldr"),
+                            meta=state.get("meta"),
+                        )
+                        name_to_id[(kind, name)] = eid
+                    counts["entities"] += len(name_to_id)
 
-            con = self._connect()
-            for key, (_, val) in protect_lww.items():
-                eid = name_to_id.get(key)
-                if eid is not None:
-                    con.execute(
-                        "UPDATE entities SET protected=? WHERE id=?", (val, eid)
-                    )
-            for key, (_, val) in noise_lww.items():
-                eid = name_to_id.get(key)
-                if eid is not None:
-                    con.execute(
-                        "UPDATE entities SET noise=? WHERE id=?", (val, eid)
-                    )
-            con.commit()
+                    con = self._connect()
+                    for key, (_, val) in protect_lww.items():
+                        if key[0] != pname:
+                            continue
+                        eid = name_to_id.get((key[1], key[2]))
+                        if eid is not None:
+                            con.execute(
+                                "UPDATE entities SET protected=? WHERE id=?",
+                                (val, eid),
+                            )
+                    for key, (_, val) in noise_lww.items():
+                        if key[0] != pname:
+                            continue
+                        eid = name_to_id.get((key[1], key[2]))
+                        if eid is not None:
+                            con.execute(
+                                "UPDATE entities SET noise=? WHERE id=?",
+                                (val, eid),
+                            )
+                    con.commit()
 
-            links_added = 0
-            for (linkage, c_name, e_kind, e_name), (_, op, weight) in link_state.items():
-                if op != "link":
-                    continue
-                cid = name_to_id.get(("concept", c_name))
-                eid = name_to_id.get((e_kind, e_name))
-                if cid is None or eid is None:
-                    continue
-                self.link(linkage, cid, eid, weight=weight)
-                links_added += 1
+                    for key, (_, op, weight) in link_state.items():
+                        if key[0] != pname or op != "link":
+                            continue
+                        _, linkage, c_name, e_kind, e_name = key
+                        cid = name_to_id.get(("concept", c_name))
+                        eid = name_to_id.get((e_kind, e_name))
+                        if cid is None or eid is None:
+                            continue
+                        self.link(linkage, cid, eid, weight=weight)
+                        counts["links"] += 1
 
-            evidence_added = 0
-            for ev in evidence_events:
-                cid = name_to_id.get(("concept", ev["c"]))
-                eid = name_to_id.get((ev["e_kind"], ev["e"]))
-                if cid is None or eid is None:
-                    continue
-                self.add_evidence(
-                    ev["linkage"], cid, eid,
-                    file=ev.get("file"), line=ev.get("line"),
-                    span_end=ev.get("span_end"), detail=ev.get("detail"),
-                )
-                evidence_added += 1
+                    for ev in evidence_events:
+                        if (ev.get("partition") or dpart) != pname:
+                            continue
+                        cid = name_to_id.get(("concept", ev["c"]))
+                        eid = name_to_id.get((ev["e_kind"], ev["e"]))
+                        if cid is None or eid is None:
+                            continue
+                        self.add_evidence(
+                            ev["linkage"], cid, eid,
+                            file=ev.get("file"), line=ev.get("line"),
+                            span_end=ev.get("span_end"), detail=ev.get("detail"),
+                        )
+                        counts["evidence"] += 1
 
-            tracks_added = 0
-            for path, (_, op, mtime) in track_state.items():
-                if op == "track" and mtime is not None:
-                    self.mark_tracked(path, mtime)
-                    tracks_added += 1
+                    for key, (_, op, mtime) in track_state.items():
+                        if key[0] != pname:
+                            continue
+                        if op == "track" and mtime is not None:
+                            self.mark_tracked(key[1], mtime)
+                            counts["tracked"] += 1
 
-            # Memory bodies: attach to surviving (non-tombstoned) memory
-            # entities. add_memory re-upserts the entity idempotently.
-            memory_content_added = 0
-            for name, (_, ev) in memory_content_lww.items():
-                if ("memory", name) not in name_to_id:
-                    continue
-                self.add_memory(
-                    name=name,
-                    content=ev.get("content", ""),
-                    mtype=ev.get("mtype", "observation"),
-                    tags=ev.get("tags"),
-                    metadata=ev.get("metadata"),
-                )
-                memory_content_added += 1
+                    # Memory bodies: attach to surviving memory entities.
+                    for key, (_, ev) in memory_content_lww.items():
+                        if key[0] != pname:
+                            continue
+                        if ("memory", key[1]) not in name_to_id:
+                            continue
+                        self.add_memory(
+                            name=key[1],
+                            content=ev.get("content", ""),
+                            mtype=ev.get("mtype", "observation"),
+                            tags=ev.get("tags"),
+                            metadata=ev.get("metadata"),
+                        )
+                        counts["memory_content"] += 1
         finally:
             self._replay_mode = False
 
         self.flush_fragments()
         return {
-            "entities": len(name_to_id),
-            "links": links_added,
-            "evidence": evidence_added,
-            "tracked": tracks_added,
-            "memory_content": memory_content_added,
+            "entities": counts["entities"],
+            "links": counts["links"],
+            "evidence": counts["evidence"],
+            "tracked": counts["tracked"],
+            "memory_content": counts["memory_content"],
             "events_replayed": len(events),
         }

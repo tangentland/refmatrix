@@ -487,6 +487,9 @@ class Daemon:
         # Index-repair tick (option B). See `_start_index_repair_tick`.
         self._repair_stop: "threading.Event | None" = None
         self._repair_thread: "threading.Thread | None" = None
+        # facts.log compaction tick. See `_start_factslog_compact_tick`.
+        self._factslog_stop: "threading.Event | None" = None
+        self._factslog_thread: "threading.Thread | None" = None
         # Guard against re-entering fast-exit from multiple threads racing
         # the same FatalException.
         self._fast_exit_armed = False
@@ -760,6 +763,9 @@ class Daemon:
         # `catalog.read.duckdb`, regenerated within ~250ms after each write op.
         # This is the sole read path now (A/B kept only as the writer's slot).
         self._start_snapshot_tick()
+        # facts.log rotation: keep the append-only mutation log from growing
+        # unbounded across re-ingests (a churned store reached 2.4GB).
+        self._start_factslog_compact_tick()
         # Materialize an initial snapshot at startup so readers spawning
         # right after `daemon start` already have a lock-free file to
         # open. Best-effort: a checkpoint failure here doesn't block
@@ -882,6 +888,8 @@ class Daemon:
                 self._flush_stop.set()
             if getattr(self, "_repair_stop", None) is not None:
                 self._repair_stop.set()
+            if getattr(self, "_factslog_stop", None) is not None:
+                self._factslog_stop.set()
             if getattr(self, "_replica_stop", None) is not None:
                 self._replica_stop.set()
             if getattr(self, "_snapshot_stop", None) is not None:
@@ -1082,6 +1090,103 @@ class Daemon:
             target=_runner, name="rmxd-repair", daemon=True,
         )
         self._repair_thread.start()
+
+    # ---- facts.log rotation ---------------------------------------------
+
+    def _factslog_threshold(self) -> int:
+        """Max facts.log size before compaction, in bytes. Default 256 MiB.
+        <=0 disables auto-compaction."""
+        return int(
+            os.environ.get("RMX_FACTSLOG_MAX_BYTES", str(256 * 1024 * 1024))
+            or 0
+        )
+
+    def _compact_factslog_if_needed(self, *, force: bool = False) -> dict:
+        """Compact `.refmatrix/facts.log` when it grows past the threshold.
+
+        facts.log is the append-only mutation log: every write appends, and
+        re-ingests append duplicate events the catalog already folds by name.
+        Left alone it grows unbounded (a re-ingested store hit 2.4 GB).
+        `dump_catalog_to_log()` rewrites it from the authoritative catalog as a
+        minimal, replay-faithful current-state snapshot (atomic tmp+rename).
+
+        Held under `_store_lock` so no concurrent `_log_event` append races the
+        swap (every write op already serializes on that lock). After the swap
+        every byte-offset into the old, larger log is stale, so reset the A/B
+        slot offsets to the new EOF — the snapshot is full current state,
+        already materialized in the catalog, so there is nothing left for a
+        delta-replay to apply.
+
+        Size-gated: returns `{skipped: ...}` until the log exceeds the
+        threshold. `force=True` compacts regardless of size."""
+        if self.store is None:
+            return {"skipped": "no-store"}
+        log_path = self.store.log_path
+        try:
+            size = log_path.stat().st_size
+        except OSError:
+            return {"skipped": "no-log"}
+        threshold = self._factslog_threshold()
+        if not force and (threshold <= 0 or size < threshold):
+            return {"skipped": "under-threshold", "size": size,
+                    "threshold": threshold}
+        with self._store_lock:
+            counts = self.store.dump_catalog_to_log()
+            try:
+                new_size = log_path.stat().st_size
+            except OSError:
+                new_size = 0
+            # Old offsets point past the new EOF; reset both slots to the end.
+            for slot in ("A", "B"):
+                if self._slot_offset_path(slot).exists():
+                    self._write_slot_offset(slot, new_size)
+        self._log(
+            f"facts.log compacted {size} -> {new_size} bytes "
+            f"(entity={counts.get('entity')} link={counts.get('link')} "
+            f"memory_content={counts.get('memory_content')})"
+        )
+        return {"compacted": True, "old_size": size, "new_size": new_size,
+                "counts": counts}
+
+    def _start_factslog_compact_tick(self) -> None:
+        """Spawn the facts.log compaction tick. Wakes every
+        RMX_FACTSLOG_COMPACT_INTERVAL_S (default 1800s) and compacts when the
+        log exceeds RMX_FACTSLOG_MAX_BYTES (default 256 MiB). Low frequency
+        because `dump_catalog_to_log` scans the whole catalog under
+        `_store_lock` (seconds on a 100k-entity store) — only paid when the log
+        is genuinely bloated. Disable by setting either env <= 0."""
+        if self.store is None:
+            return
+        interval_s = float(
+            os.environ.get("RMX_FACTSLOG_COMPACT_INTERVAL_S", "1800") or "1800"
+        )
+        if interval_s <= 0 or self._factslog_threshold() <= 0:
+            return
+        import threading as _t
+        self._factslog_stop = _t.Event()
+
+        def _runner():
+            stop = self._factslog_stop
+            while not stop.is_set():
+                if stop.wait(interval_s):
+                    return
+                if self.store is None:
+                    continue
+                try:
+                    r = self._compact_factslog_if_needed()
+                    if r.get("compacted"):
+                        self._log(
+                            f"periodic facts.log compaction: "
+                            f"{r['old_size']} -> {r['new_size']} bytes"
+                        )
+                except Exception as exc:
+                    self._log(f"periodic facts.log compaction failed: {exc!r}")
+                    self._fast_exit_if_invalidated(exc, "facts.log compaction")
+
+        self._factslog_thread = _t.Thread(
+            target=_runner, name="rmxd-factslog", daemon=True,
+        )
+        self._factslog_thread.start()
 
     # ---- read replica (rotation) ----------------------------------------
 
@@ -2392,6 +2497,14 @@ def _op_snapshot(d: Daemon, args: dict) -> dict:
     return d._snapshot_catalog(force=bool(args.get("force", True)))
 
 
+def _op_compact_factslog(d: Daemon, args: dict) -> dict:
+    """Compact `.refmatrix/facts.log` from the authoritative catalog (size-
+    gated unless `force=True`). Returns `{compacted, old_size, new_size,
+    counts}` or `{skipped: ...}`. Runs on the bg pool: the catalog scan can
+    take seconds on a large store."""
+    return d._compact_factslog_if_needed(force=bool(args.get("force", False)))
+
+
 def _op_partition_add(d: Daemon, args: dict) -> dict:
     """Register a partition row in the catalog. Routed through the daemon
     so `rmx partition add` doesn't try to grab the writer lock from a
@@ -3645,6 +3758,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "stats": _op_stats,
     "checkpoint": _op_checkpoint,
     "snapshot": _op_snapshot,
+    "compact_factslog": _op_compact_factslog,
     "replica_refresh": _op_replica_refresh,
     "replica_status": _op_replica_status,
     "replica_relink": _op_replica_relink,

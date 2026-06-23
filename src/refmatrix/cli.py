@@ -5595,6 +5595,61 @@ def dump_log():
         console.print(f"  {k}: {v}")
 
 
+@main.command("compact-log")
+@click.option("--force", is_flag=True,
+              help="Compact even if the log is under the size threshold.")
+def compact_log(force: bool):
+    """Compact .refmatrix/facts.log, reclaiming its unbounded growth.
+
+    facts.log is the append-only mutation log; every re-ingest appends
+    duplicate events the catalog already folds by name, so it grows without
+    bound (a churned store reached 2.4GB). This rewrites it from the
+    authoritative catalog as a minimal, replay-faithful current-state snapshot
+    (partitions + memory bodies preserved).
+
+    Routes through the daemon writer when one is up (no daemon-stop needed);
+    otherwise compacts in-process. Size-gated unless --force; the daemon also
+    auto-compacts on a tick (RMX_FACTSLOG_MAX_BYTES, default 256MiB)."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.ping(root):
+        r = daemon_mod.call(root, "compact_factslog", {"force": force},
+                            timeout=180.0)
+        if not r.get("ok"):
+            raise click.ClickException(r.get("error", "compact failed"))
+        res = r["result"]
+    else:
+        s = _store()
+        log_path = s.log_path
+        size = log_path.stat().st_size if log_path.exists() else 0
+        threshold = int(
+            os.environ.get("RMX_FACTSLOG_MAX_BYTES", str(256 * 1024 * 1024))
+            or 0
+        )
+        if not force and (threshold <= 0 or size < threshold):
+            res = {"skipped": "under-threshold", "size": size,
+                   "threshold": threshold}
+        else:
+            counts = s.dump_catalog_to_log()
+            new_size = log_path.stat().st_size if log_path.exists() else 0
+            res = {"compacted": True, "old_size": size, "new_size": new_size,
+                   "counts": counts}
+    if res.get("compacted"):
+        old, new = res["old_size"], res["new_size"]
+        pct = (1 - new / old) * 100 if old else 0
+        console.print(
+            f"[green]compacted[/] facts.log "
+            f"{old/1024/1024:.1f}MB -> {new/1024/1024:.1f}MB ([cyan]{pct:.0f}%[/] smaller)"
+        )
+    else:
+        console.print(
+            f"[yellow]skipped[/] ({res.get('skipped')}): "
+            f"size={res.get('size', 0)/1024/1024:.1f}MB "
+            f"threshold={res.get('threshold', 0)/1024/1024:.0f}MB "
+            f"— use --force to compact anyway"
+        )
+
+
 @main.command("rebuild")
 @click.option("--from-log", "from_log", is_flag=True,
               help="Replay facts.log into a fresh catalog. Wipes catalog.db "
