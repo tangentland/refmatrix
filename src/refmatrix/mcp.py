@@ -390,6 +390,43 @@ def _t_ingest_status(args: dict) -> dict:
     return r.get("result", {}) if r.get("ok") else {"error": r.get("error")}
 
 
+def _t_save_state(args: dict) -> dict:
+    """Compile + persist the session handoff (mirror of the CLI `save-state`).
+    Writes the durable GMD handoff memory (git state + STM focus + tasks +
+    recent-memory links) and, unless promote=false, promotes the condensed STM
+    digest to durable memory. File-based + daemon-routed promote; works headless.
+    """
+    import time as _time
+    from refmatrix import handoff, stm as stm_mod
+    root = _resolve_root(args)
+    repo = root.parent
+    s = stm_mod.Stm(root, _session(args, stm_mod, root))
+    memdir = handoff.default_memory_dir(repo)
+    res = handoff.compose_save_state(
+        s, root, repo=repo, memdir=memdir,
+        today=_time.strftime("%Y-%m-%d"),
+        message=args.get("message"),
+        promote=bool(args.get("promote", True)),
+        dry_run=bool(args.get("dry_run", False)))
+    # Drop the full rendered doc from the tool result unless dry-run asked for it.
+    if not res.get("dry_run"):
+        res.pop("doc", None)
+    return res
+
+
+def _t_recall_state(args: dict) -> dict:
+    """Pull the prior session's handoff + live STM + git + daemon health to
+    resume (mirror of the CLI `recall-state`). Read-only; returns the structured
+    resume payload: latest save-state handoff, STM focus digest, recent
+    memories, git facts, daemon status, and anomalies."""
+    from refmatrix import handoff, stm as stm_mod
+    root = _resolve_root(args)
+    repo = root.parent
+    s = stm_mod.Stm(root, _session(args, stm_mod, root))
+    memdir = handoff.default_memory_dir(repo)
+    return handoff.compose_recall_state(s, root, repo=repo, memdir=memdir)
+
+
 TOOLS: dict[str, dict] = {
     "rmx_where": {
         "description": "Find where something is across ALL your refmatrix "
@@ -551,6 +588,33 @@ TOOLS: dict[str, dict] = {
             "job_id": {"type": "string"}, "since_seq": {"type": "integer"},
             "limit": {"type": "integer"}, "root": {"type": "string"}}},
         "fn": _t_ingest_status},
+    "rmx_save_state": {
+        "description": "Save session state — the handoff for the next instance. "
+                       "Writes ONE durable handoff memory capturing: git state "
+                       "(branch, HEAD, commits-ahead, dirty/uncommitted files, "
+                       "this-session commits), the STM focus graph (top weighted "
+                       "symbols/files), the task stack, and recent-memory links. "
+                       "Unless promote=false, ALSO promotes the condensed STM "
+                       "digest (topics, milestones, intent arc, touched files) "
+                       "to durable memory so working memory graduates to LTM. "
+                       "Mirror of rmx_recall_state.",
+        "schema": {"type": "object", "properties": {
+            "message": {"type": "string"},
+            "promote": {"type": "boolean"}, "dry_run": {"type": "boolean"},
+            "session": {"type": "string"}, "root": {"type": "string"}}},
+        "fn": _t_save_state},
+    "rmx_recall_state": {
+        "description": "Recall session state — pull the prior handoff and orient "
+                       "(read-only). Returns: the latest save-state handoff "
+                       "(prior git/focus/tasks/recent-memory links), the live "
+                       "session's STM focus digest (top symbols, topics, "
+                       "milestones, intent arc), recent memories, current git "
+                       "state, daemon health, and anomalies (dirty tree, "
+                       "unmerged/undeployed commits, stale daemon). Mirror of "
+                       "rmx_save_state.",
+        "schema": {"type": "object", "properties": {
+            "session": {"type": "string"}, "root": {"type": "string"}}},
+        "fn": _t_recall_state},
 }
 
 

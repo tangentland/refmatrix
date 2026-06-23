@@ -2,7 +2,7 @@
 stable-id GMD memory). Unit-level checks on the pure helpers + render."""
 from __future__ import annotations
 
-from refmatrix import cli
+from refmatrix import cli, handoff
 
 
 def test_clean_focus_drops_shell_noise_keeps_code():
@@ -13,7 +13,7 @@ def test_clean_focus_drops_shell_noise_keeps_code():
         {"name": "daemon", "kind": "concept", "count": 5, "weight": 1.1},
         {"name": "tholley", "kind": "concept", "count": 23, "weight": 1.5},
     ]
-    out = [n["name"] for n in cli._ss_clean_focus(nodes)]
+    out = [n["name"] for n in handoff._ss_clean_focus(nodes)]
     assert "Bash" not in out and "echo" not in out and "tholley" not in out
     assert "src/refmatrix/cli.py" in out  # code always kept
     assert "daemon" in out                # real concept kept
@@ -22,15 +22,15 @@ def test_clean_focus_drops_shell_noise_keeps_code():
 def test_frozen_created_preserves_existing(tmp_path):
     p = tmp_path / "savestate_abc.md"
     p.write_text("---\nid: savestate_abc\n  created: 2026-01-01\n---\n")
-    assert cli._ss_frozen_created(p, "2026-06-20") == "2026-01-01"
+    assert handoff._ss_frozen_created(p, "2026-06-20") == "2026-01-01"
 
 
 def test_frozen_created_defaults_today_when_absent(tmp_path):
-    assert cli._ss_frozen_created(tmp_path / "nope.md", "2026-06-20") == "2026-06-20"
+    assert handoff._ss_frozen_created(tmp_path / "nope.md", "2026-06-20") == "2026-06-20"
 
 
 def test_render_has_gmd_frontmatter_and_sections():
-    doc = cli._ss_render(
+    doc = handoff._ss_render(
         mem_id="savestate_x", session="sess-x", repo=__import__("pathlib").Path("/r/proj"),
         message="headline", git={"branch": "master", "head": "abc123 msg",
                                   "dirty": "M f.py", "ahead_base": "origin/main",
@@ -54,7 +54,7 @@ def test_render_has_gmd_frontmatter_and_sections():
 def test_update_index_replaces_not_duplicates(tmp_path):
     idx = tmp_path / "MEMORY.md"
     idx.write_text("- [Old](savestate_x.md) — old hook\n- [Keep](other.md) — keep\n")
-    cli._ss_update_index(tmp_path, "savestate_x", "New Title", "new hook")
+    handoff._ss_update_index(tmp_path, "savestate_x", "New Title", "new hook")
     body = idx.read_text()
     assert body.count("savestate_x.md") == 1
     assert "New Title" in body and "old hook" not in body
@@ -128,3 +128,69 @@ def test_focus_digest_has_sections(tmp_path):
     assert "## Milestones" in digest and "git commit" in digest
     assert "## Arc" in digest
     assert "build the thing" in digest and "ship it" in digest
+
+
+# ---- compose: the shared CLI+MCP save/recall core ----
+
+
+def test_compose_save_state_writes_handoff_and_index(tmp_path):
+    from refmatrix.stm import Stm
+    root = tmp_path / ".refmatrix"
+    repo = tmp_path
+    s = Stm(root, "sess-compose")
+    s.record("input", "do work")
+    s.record("tool", "x", refs=["a.py"])
+    memdir = tmp_path / "memory"
+    res = handoff.compose_save_state(
+        s, root, repo=repo, memdir=memdir, today="2026-06-23",
+        message="hand off", promote=False, dry_run=False)
+    target = memdir / f"{res['mem_id']}.md"
+    assert res["mem_id"] == "savestate_sesscompose"
+    assert target.exists()
+    assert "hand off" in target.read_text()
+    assert (memdir / "MEMORY.md").read_text().count(f"{res['mem_id']}.md") == 1
+    assert res["promoted"] is None  # promote=False
+
+
+def test_compose_save_state_dry_run_writes_nothing(tmp_path):
+    from refmatrix.stm import Stm
+    root = tmp_path / ".refmatrix"
+    s = Stm(root, "sess-dry")
+    s.record("input", "peek")
+    memdir = tmp_path / "memory"
+    res = handoff.compose_save_state(
+        s, root, repo=tmp_path, memdir=memdir, today="2026-06-23",
+        promote=False, dry_run=True)
+    assert res["dry_run"] is True
+    assert 'gmd: "0.1"' in res["doc"]
+    assert not memdir.exists()  # nothing written
+
+
+def test_compose_recall_state_pulls_latest_handoff(tmp_path):
+    from refmatrix.stm import Stm
+    root = tmp_path / ".refmatrix"
+    s = Stm(root, "sess-recall")
+    s.record("input", "resume")
+    memdir = tmp_path / "memory"
+    memdir.mkdir()
+    (memdir / "savestate_old.md").write_text(
+        "---\nid: savestate_old\n---\n\n# Old handoff {#root}\n\nbody here\n")
+    rep = handoff.compose_recall_state(s, root, repo=tmp_path, memdir=memdir)
+    assert rep["session"] == "sess-recall"
+    assert rep["savestate"]["id"] == "savestate_old"
+    assert "body here" in rep["savestate"]["body"]
+    assert "Old handoff" in rep["savestate"]["body"]
+    assert rep["stm_digest"] is not None  # session has events
+    assert isinstance(rep["anomalies"], list)
+    assert rep["daemon"]["running"] is False  # no daemon for tmp root
+
+
+def test_compose_recall_state_no_handoff(tmp_path):
+    from refmatrix.stm import Stm
+    root = tmp_path / ".refmatrix"
+    s = Stm(root, "sess-empty")
+    rep = handoff.compose_recall_state(
+        s, root, repo=tmp_path, memdir=tmp_path / "memory")
+    assert rep["savestate"] is None
+    assert rep["stm_digest"] is None  # no events
+    assert rep["recent_memories"] == []

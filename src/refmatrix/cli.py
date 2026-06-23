@@ -13,6 +13,10 @@ from rich.console import Console
 from rich.table import Table
 
 from refmatrix import __version__
+from refmatrix.handoff import (
+    _SS_FOCUS_NOISE, _focus_digest, _ss_clean_focus, _ss_sh,
+    compose_recall_state, compose_save_state,
+)
 from refmatrix.query import QueryEngine
 from refmatrix.store import Store, default_partition_name
 from refmatrix.telemetry import log_query
@@ -962,54 +966,6 @@ def focus_topics(top, session):
         rng = f"L{min(lines)}–L{max(lines)}" if lines else ""
         console.print(f"[bold]● {members[0]}[/] [dim]{rng}[/]")
         console.print(f"    [dim]{', '.join(members[:8])}[/]")
-
-
-def _focus_digest(s) -> str:
-    """Condense a session's STM — topics, milestones, intent arc, touched
-    files — into a compact markdown digest."""
-    from refmatrix import stm as stm_mod
-    g = s.focus_graph(top=60)
-    events = s.all_events()
-    weight = {n["name"]: n["weight"] for n in g["nodes"]}
-    clean = {"nodes": [n for n in g["nodes"]
-                       if n["name"].lower() not in _SS_FOCUS_NOISE],
-             "edges": g["edges"]}
-    clusters = stm_mod.cluster_focus(clean)
-    inputs = [e for e in events if e.get("kind") == "input"]
-    gits = [e for e in events if e.get("kind") == "git"]
-    files = [n["name"] for n in clean["nodes"] if n["kind"] in ("code", "doc")][:10]
-    span = f"{events[0]['ts']} → {events[-1]['ts']}" if events else ""
-    L = [f"# Session summary — {s.session}", "",
-         f"{len(events)} events · {span}", ""]
-    # Top-N focus nodes in strength (weight) order — the session's heaviest
-    # symbols, ranked. clean["nodes"] is already weight-sorted by focus_graph.
-    topn = [{"name": n["name"], "kind": n["kind"], "weight": n["weight"]}
-            for n in clean["nodes"][:10]]
-    if topn:
-        L.append("## Top (by strength)")
-        for i, n in enumerate(topn, 1):
-            L.append(f"{i}. `{n['name']}` [{n['kind']}] w={n['weight']}")
-        L.append("")
-    if clusters:
-        L.append("## Topics worked on")
-        for c in clusters:
-            members = sorted(c, key=lambda n: weight.get(n, 0), reverse=True)
-            L.append(f"- **{members[0]}** — {', '.join(members[:6])}")
-        L.append("")
-    if gits:
-        L.append("## Milestones")
-        for e in gits:
-            L.append(f"- {e['terse']}")
-        L.append("")
-    if files:
-        L.append("## Touched")
-        L.append("- " + ", ".join(f"`{f}`" for f in files))
-        L.append("")
-    if inputs:
-        L.append("## Arc")
-        L.append(f"- first: {inputs[0]['terse'][:120]}")
-        L.append(f"- last: {inputs[-1]['terse'][:120]}")
-    return "\n".join(L)
 
 
 @focus.command("summarize")
@@ -4293,8 +4249,8 @@ def _default_memory_dir(repo: Path) -> Path:
     """The curated-memory dir for this project:
     `~/.claude/projects/<encoded-cwd>/memory`, matching the slug Claude Code
     and `rmx session ingest` use. `repo` is the .refmatrix root's parent."""
-    slug = _encode_claude_project_dir(repo.resolve())
-    return Path.home() / ".claude" / "projects" / slug / "memory"
+    from refmatrix.handoff import default_memory_dir
+    return default_memory_dir(repo)
 
 
 def _reingest_embed(ctx, partition: str, *, rebuild: bool) -> None:
@@ -7990,211 +7946,7 @@ def _encode_claude_project_dir(cwd: Path) -> str:
     return str(cwd).replace("/", "-").replace("_", "-")
 
 
-# ---- save-state: compile a session handoff from STM + git + memory --------
-
-# Shell/path tokens that pollute the STM focus graph (Bash hooks extract them
-# from command lines). Dropped from the save-state Focus section so the
-# handoff surfaces real symbols, not `echo`/`grep`/the home-dir path.
-_SS_FOCUS_NOISE = {
-    "bash", "sh", "echo", "grep", "rg", "cat", "sed", "awk", "ls", "cd", "cp",
-    "mv", "rm", "head", "tail", "git", "python", "python3", "pip", "rmx",
-    "rtk", "def", "src", "tests", "true", "false", "null", "none", "self",
-    "users", "tholley", "claude_tools", "tmp", "dev", "out", "tee", "sleep",
-    "import", "from", "print", "the", "and", "for",
-}
-
-
-def _ss_clean_focus(nodes: list[dict], limit: int = 15) -> list[dict]:
-    """Drop shell/path noise; keep code/doc refs and real concepts."""
-    out = []
-    for nd in nodes:
-        name = nd.get("name", "")
-        if nd.get("kind") in ("code", "doc"):
-            out.append(nd); continue
-        if name.lower() in _SS_FOCUS_NOISE:
-            continue
-        out.append(nd)
-        if len(out) >= limit:
-            break
-    return out[:limit]
-
-
-def _ss_sh(args: list[str], cwd: Path) -> str:
-    """Best-effort subprocess capture; '' on any failure (never raises)."""
-    import subprocess
-    try:
-        r = subprocess.run(args, cwd=str(cwd), capture_output=True,
-                           text=True, timeout=20)
-        return r.stdout.strip()
-    except Exception:
-        return ""
-
-
-def _ss_git_facts(repo: Path, since: str | None) -> dict:
-    """Branch, HEAD, dirty tree, commits-ahead-of-trunk, and this-session
-    commits (since the first STM event, if known)."""
-    g = lambda *a: _ss_sh(["git", *a], repo)
-    facts = {
-        "branch": g("rev-parse", "--abbrev-ref", "HEAD"),
-        "head": g("log", "-1", "--format=%h %s"),
-        "dirty": g("status", "--short"),
-        "ahead_base": "", "ahead": "", "session_commits": "",
-    }
-    for base in ("origin/main", "origin/master", "main", "master"):
-        if g("rev-parse", "--verify", "--quiet", base):
-            facts["ahead_base"] = base
-            facts["ahead"] = g("log", "--oneline", f"{base}..HEAD")
-            break
-    if since:
-        facts["session_commits"] = g("log", "--oneline", f"--since={since}")
-    return facts
-
-
-def _ss_recent_memories(memdir: Path, exclude: str, limit: int = 8) -> list[tuple[str, str]]:
-    """(id, title) for the most-recently-touched memory files, newest first."""
-    import re as _re
-    if not memdir.is_dir():
-        return []
-    files = []
-    for p in memdir.glob("*.md"):
-        if p.name == "MEMORY.md" or p.stem == exclude:
-            continue
-        try:
-            files.append((p.stat().st_mtime, p))
-        except OSError:
-            continue
-    files.sort(reverse=True)
-    out = []
-    for _, p in files[:limit]:
-        title = p.stem
-        try:
-            m = _re.search(r'^title:\s*"?(.+?)"?\s*$', p.read_text(), _re.M)
-            if m:
-                title = m.group(1)
-        except OSError:
-            pass
-        out.append((p.stem, title))
-    return out
-
-
-def _ss_frozen_created(path: Path, today: str) -> str:
-    """Preserve `created:` across overwrites (MEMORY-RULES: created is frozen)."""
-    import re as _re
-    if path.exists():
-        try:
-            m = _re.search(r"^\s*created:\s*(\S+)", path.read_text(), _re.M)
-            if m:
-                return m.group(1)
-        except OSError:
-            pass
-    return today
-
-
-def _ss_render(*, mem_id: str, session: str, repo: Path, message: str | None,
-               git: dict, focus: dict, tasks: list, recents: list,
-               created: str, today: str) -> str:
-    """Render the handoff as a GMD memory doc (MEMORY-RULES shape)."""
-    head_sha = (git["head"].split() or ["?"])[0]
-    headline = message or f"{repo.name} @ {head_sha}"
-    L: list[str] = []
-    L.append("---")
-    L.append('gmd: "0.1"')
-    L.append(f"id: {mem_id}")
-    L.append(f'title: "Save-state {today}: {headline}"')
-    L.append(f'tags: ["session:{session}"]')
-    L.append("metadata:")
-    L.append("  node_type: memory")
-    L.append("  type: session/recall-state")
-    L.append(f"  originSessionId: {session}")
-    L.append(f"  created: {created}")
-    L.append(f"  updated: {today}")
-    L.append("---")
-    L.append("")
-    L.append(f"# Save-state {today}: {headline} {{#root}}")
-    L.append("")
-    if message:
-        L.append(message)
-        L.append("")
-
-    L.append("## Session {#session}")
-    L.append("")
-    L.append(f"- branch **{git['branch'] or '?'}** · HEAD `{git['head'] or '?'}`")
-    if git["ahead_base"]:
-        n = len([x for x in git["ahead"].splitlines() if x.strip()])
-        L.append(f"- **{n}** commit(s) ahead of `{git['ahead_base']}`"
-                 + ("" if n else " — in sync"))
-    L.append(f"- working tree: {'**dirty**' if git['dirty'] else 'clean'}")
-    L.append("")
-
-    if git["session_commits"] or git["ahead"]:
-        L.append("## Git activity {#git}")
-        L.append("")
-        body = git["session_commits"] or git["ahead"]
-        label = "this session" if git["session_commits"] else f"ahead of {git['ahead_base']}"
-        L.append(f"Commits ({label}):")
-        L.append("")
-        L.append("```")
-        L.append(body or "(none)")
-        L.append("```")
-        if git["dirty"]:
-            L.append("")
-            L.append("Uncommitted:")
-            L.append("")
-            L.append("```")
-            L.append(git["dirty"])
-            L.append("```")
-        L.append("")
-
-    nodes = _ss_clean_focus(focus.get("nodes", []))
-    if nodes:
-        L.append("## Focus {#focus}")
-        L.append("")
-        L.append(f"Top of the working-memory graph ({focus.get('events', 0)} events):")
-        L.append("")
-        for nd in nodes:
-            L.append(f"- `{nd['name']}` [{nd['kind']}] ×{nd.get('count', 0)} "
-                     f"(w={nd['weight']})")
-        L.append("")
-
-    if tasks:
-        L.append("## Tasks {#tasks}")
-        L.append("")
-        for i, t in enumerate(reversed(tasks)):
-            mark = "▸" if i == 0 else " "
-            L.append(f"- {mark} {t['desc']}  ({t.get('ts', '')})")
-        L.append("")
-
-    if recents:
-        L.append("## Recent memories {#memories}")
-        L.append("")
-        for mid, title in recents:
-            L.append(f"- [[{mid}]] — {title}")
-        L.append("")
-
-    L.append("rel: realizes -> [[feedback_save_state_means_handoff]]")
-    L.append("rel: related-to -> [[feedback_recall_state_means_resume]]")
-    L.append("")
-    return "\n".join(L)
-
-
-def _ss_update_index(memdir: Path, mem_id: str, title: str, hook: str) -> None:
-    """Add/refresh the one-line MEMORY.md index entry for this memory."""
-    idx = memdir / "MEMORY.md"
-    line = f"- [{title}]({mem_id}.md) — {hook}"
-    try:
-        lines = idx.read_text().splitlines() if idx.exists() else []
-    except OSError:
-        lines = []
-    out, replaced = [], False
-    needle = f"]({mem_id}.md)"
-    for ln in lines:
-        if needle in ln:
-            out.append(line); replaced = True
-        else:
-            out.append(ln)
-    if not replaced:
-        out.append(line)
-    idx.write_text("\n".join(out) + "\n")
+# ---- save-state / recall-state: session handoff (core in handoff.py) -------
 
 
 @main.command("save-state")
@@ -8211,90 +7963,69 @@ def _ss_update_index(memdir: Path, mem_id: str, title: str, hook: str) -> None:
 @click.option("--promote/--no-promote", default=True, show_default=True,
               help="Also promote the condensed STM digest to durable memory.")
 def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote):
-    """Compile a session handoff memory from STM + git + recent memories.
+    """Compile + persist a session handoff — the resume point for the next instance.
 
-    Incremental by design: writes ONE GMD memory with a stable per-session id
-    and OVERWRITES it on each call (created: frozen, updated: refreshed), so a
-    save-state late in a session is a cheap recompile, not a rebuild. The file
-    lands in the curated-memory dir; the SessionStart bridge ingests it into
-    rmx. `--commit` commits repo CODE (the memory file lives outside the repo).
+    SAVES, into ONE durable GMD memory (`savestate_<session>`) in the curated-
+    memory dir (overwritten each call: `created:` frozen, `updated:` refreshed):
 
-    save-state = promote: by default it ALSO promotes the condensed STM digest
-    (`focus summarize`) into the rmx memory store, so the working memory
-    graduates to LTM and the next instance recalls it. `--no-promote` opts out.
+    \b
+      • git state — branch, HEAD sha + subject, commits-ahead-of-trunk,
+        dirty-tree / uncommitted file list, and this-session's commits
+      • Focus — top of the short-term working-memory graph (heaviest symbols
+        by recency-weight: files, concepts), with event count
+      • Tasks — the session's task stack (active item marked)
+      • Recent memories — links to the most-recently-touched memory files
+      • the headline / notes passed via `-m`
+
+    Then (unless `--no-promote`) it PROMOTES a condensed STM digest
+    (`focus_summary_<session>`, mtype `session/digest`) into the durable memory
+    store — topics, milestones, intent arc, touched files — so the working
+    memory graduates to LTM and `recall-state` / `memory recall` find it. If a
+    subject is active, the digest is filed under it (`part-of`).
+
+    The handoff file lands OUTSIDE the repo; the SessionStart bridge ingests it
+    into rmx. `--commit` commits repo CODE only. `--dry-run` renders the file to
+    stdout and writes nothing. Mirror of `recall-state`.
     """
-    import re as _re
     import time as _time
-    from refmatrix import stm as stm_mod
 
     root = _root()
     repo = root.parent
     sess = _resolve_stm_session(session, prefer_latest=True)
     today = _time.strftime("%Y-%m-%d")
-
-    s = stm_mod.Stm(root, sess)
-    events = s.all_events()
-    focus = s.focus_graph(top=20)
-    tasks = s.task_list()
-    since = events[0]["ts"] if events else None
-
-    git = _ss_git_facts(repo, since)
     memdir = Path(memory_dir).resolve() if memory_dir else _default_memory_dir(repo)
 
-    sess_slug = _re.sub(r"[^A-Za-z0-9]+", "", sess)[:12] or "default"
-    mem_id = f"savestate_{sess_slug}"
-    target = memdir / f"{mem_id}.md"
-    created = _ss_frozen_created(target, today)
-    recents = _ss_recent_memories(memdir, exclude=mem_id)
+    from refmatrix import stm as stm_mod
+    s = stm_mod.Stm(root, sess)
 
-    doc = _ss_render(mem_id=mem_id, session=sess, repo=repo, message=message,
-                     git=git, focus=focus, tasks=tasks, recents=recents,
-                     created=created, today=today)
+    res = compose_save_state(s, root, repo=repo, memdir=memdir, today=today,
+                             message=message, promote=promote, dry_run=dry_run)
 
     if dry_run:
-        console.print(f"[dim]# would write {target}[/]")
-        click.echo(doc)
+        console.print(f"[dim]# would write {res['target']}[/]")
+        click.echo(res["doc"])
         return
 
-    memdir.mkdir(parents=True, exist_ok=True)
-    target.write_text(doc)
-    head_sha = (git["head"].split() or ["?"])[0]
-    hook = (message or f"{repo.name} @ {head_sha}")[:90]
-    title = f"Save-state {today}: {message or repo.name + ' @ ' + head_sha}"
-    _ss_update_index(memdir, mem_id, title, hook)
-    console.print(f"[green]save-state[/] {target}  "
-                  f"[dim]({len(events)} events, session {sess})[/]")
+    console.print(f"[green]save-state[/] {res['target']}  "
+                  f"[dim]({res['events']} events, session {sess})[/]")
 
     if not no_lint:
         lint = Path.home() / "claude_tools" / "gmd" / "lint.py"
         if lint.exists():
-            out = _ss_sh(["python3", str(lint), str(target)], repo)
+            out = _ss_sh(["python3", str(lint), res["target"]], repo)
             tag = "[green]lint ok[/]" if "0 error" in out.lower() or not out \
                 else "[yellow]lint[/]"
             if out:
                 console.print(f"{tag} {out.splitlines()[-1] if out else ''}")
 
-    if promote:
-        # save-state = promote: condense the STM and graduate it to the rmx
-        # memory store (LTM), so the working memory survives the session and
-        # the next instance recalls it. Mirrors `focus summarize --promote`.
-        digest = _focus_digest(s)
-        pname = f"focus_summary_{sess_slug}"
-        pargs = {"name": pname, "content": digest, "mtype": "session/digest",
-                 "tags": [f"session:{sess}", "summary"],
-                 "metadata": {"title": f"Session summary {sess[:8]}"},
-                 "protected": False}
-        from refmatrix import daemon as daemon_mod
-        try:
-            if daemon_mod.ping(root):
-                resp = _memory_daemon_call("memory_add", pargs)
-                eid = resp.get("result", {}).get("id") if resp.get("ok") else None
-            else:
-                eid = _store().add_memory(**pargs)
-            console.print(f"[green]promoted[/] {pname} (id={eid}) → durable memory")
-            _file_under_active_subject(s, eid)
-        except Exception as e:
-            console.print(f"[yellow]promote skipped:[/] {e}")
+    promoted = res.get("promoted")
+    if promoted:
+        if promoted.get("error"):
+            console.print(f"[yellow]promote skipped:[/] {promoted['error']}")
+        else:
+            console.print(f"[green]promoted[/] {promoted['name']} "
+                          f"(id={promoted.get('id')}) → durable memory")
+            _file_under_active_subject(s, promoted.get("id"))
 
     subj = s.get_subject()
     if subj:
@@ -8306,6 +8037,90 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote):
         msg = f"chore(save-state): {today} {message or 'session handoff'}"
         out = _ss_sh(["git", "commit", "-m", msg], repo)
         console.print(f"[green]committed[/] {out.splitlines()[0] if out else '(nothing to commit)'}")
+
+
+@main.command("recall-state")
+@click.option("-s", "--session", default=None,
+              help="STM session to resume. Default: active Claude session.")
+@click.option("--memory-dir", "memory_dir", type=click.Path(path_type=Path),
+              default=None, help="Override the curated-memory dir.")
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit the structured resume payload as JSON.")
+def recall_state(session, memory_dir, as_json):
+    """Pull the prior session's handoff and orient — the mirror of save-state.
+
+    Read-only. PULLS and reports, so the next instance starts warm instead of
+    cold:
+
+    \b
+      • Latest save-state handoff (`savestate_<session>`) — the durable
+        resume point: prior git state, focus, tasks, recent-memory links
+      • STM focus digest — the live session's short-term working memory
+        condensed (top symbols, topics, milestones, intent arc). Cold at a
+        fresh session start; populated when recalled mid-session.
+      • Recent memories — the most-recently-touched memory files
+      • git state — branch, HEAD, commits-ahead-of-trunk, dirty tree
+      • daemon health — running / pid for the active store
+      • Anomalies — dirty tree, unmerged/undeployed commits, a stale daemon
+
+    `--json` emits the raw payload (what the `rmx_recall_state` MCP tool
+    returns). After this, decide the next action — recall-state does not start
+    work on its own.
+    """
+    root = _root()
+    repo = root.parent
+    sess = _resolve_stm_session(session, prefer_latest=True)
+    memdir = Path(memory_dir).resolve() if memory_dir else _default_memory_dir(repo)
+
+    from refmatrix import stm as stm_mod
+    s = stm_mod.Stm(root, sess)
+    rep = compose_recall_state(s, root, repo=repo, memdir=memdir)
+
+    if as_json:
+        import json as _json
+        click.echo(_json.dumps(rep, default=str, indent=2))
+        return
+
+    git = rep["git"]
+    console.print(f"[bold]recall-state[/] · session {sess} "
+                  f"[dim]({rep['events']} STM events)[/]")
+    console.print(f"[bold]git[/] branch [cyan]{git['branch'] or '?'}[/] · "
+                  f"HEAD {git['head'] or '?'}")
+    if git["ahead_base"]:
+        n = len([x for x in git["ahead"].splitlines() if x.strip()])
+        console.print(f"     {n} commit(s) ahead of {git['ahead_base']}"
+                      + ("" if n else " — in sync"))
+    console.print(f"     working tree: "
+                  + ("[yellow]dirty[/]" if git["dirty"] else "clean"))
+
+    d = rep["daemon"]
+    state = (f"[green]running[/] pid={d['pid']}" if d["running"]
+             else (f"[yellow]stale pid {d['pid']}[/]" if d["pid"]
+                   else "[dim]not running[/]"))
+    console.print(f"[bold]daemon[/] {state}")
+
+    ss = rep["savestate"]
+    if ss:
+        console.print(f"[bold]handoff[/] [cyan]{ss['id']}[/] [dim]{ss['path']}[/]")
+        body = ss["body"]
+        excerpt = "\n".join(body.splitlines()[:24])
+        console.print(excerpt)
+    else:
+        console.print("[yellow]no prior save-state handoff found[/]")
+
+    if rep["recent_memories"]:
+        console.print("[bold]recent memories[/]")
+        for mid, title in rep["recent_memories"][:8]:
+            console.print(f"  [cyan]{mid}[/] — {title}")
+
+    if rep["stm_digest"]:
+        console.print("[bold]STM digest (live session)[/]")
+        console.print(rep["stm_digest"])
+
+    if rep["anomalies"]:
+        console.print("[bold yellow]anomalies[/]")
+        for a in rep["anomalies"]:
+            console.print(f"  [yellow]![/] {a}")
 
 
 @main.group("session")
