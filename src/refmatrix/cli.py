@@ -1383,7 +1383,11 @@ def task():
 @click.argument("desc")
 def task_push(desc):
     """Push a task (snapshots current focus)."""
-    r = _stm().task_push(desc)
+    # prefer_latest so a plain-shell push lands in the SAME session ring the
+    # readers (`list`/`current`) resolve to — otherwise push writes the bare
+    # "default" session while list reads the active Claude session and the
+    # stack looks empty across invocations.
+    r = _stm(prefer_latest=True).task_push(desc)
     console.print(f"[green]▸[/] {r['current']}  [dim]depth={r['depth']}[/]")
 
 
@@ -1393,7 +1397,7 @@ def task_pop(selector):
     """Pop a stash and restore ITS focus (git-stash semantics). Default = top;
     SELECTOR (a 1-based index from `task list`, or a desc substring) pops out
     of order."""
-    r = _stm().task_pop(selector)
+    r = _stm(prefer_latest=True).task_pop(selector)
     if r["popped"] is None:
         msg = r.get("error") or "task stack empty"
         console.print(f"[yellow]{msg}[/]")
@@ -1429,7 +1433,7 @@ def task_current(session):
 @task.command("swap")
 def task_swap():
     """Swap the top two tasks."""
-    r = _stm().task_swap()
+    r = _stm(prefer_latest=True).task_swap()
     console.print(f"[green]current:[/] {r['current']}" if r["swapped"]
                   else "[yellow]need ≥2 tasks to swap[/]")
 
