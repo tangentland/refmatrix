@@ -191,3 +191,119 @@ def federated_query(dsl: str, *, limit: int = 50) -> dict:
         except Exception:
             pass
     return {"projects": out}
+
+
+def _locate_one_project(root, filename: str | None,
+                        keywords: list[str]) -> dict:
+    """Per-project locate. Returns {path: {path, project, root, score, why}} for
+    the live store at `root`. Best-effort; returns {} on any failure.
+
+    - `filename` (basename, no path) -> exact-basename match on code/doc entity
+      paths (the `name` hit; score 0 from keywords, but always surfaced).
+    - `keywords` -> reuse the proven content-ranking bundle per keyword and
+      accumulate a relevance score per file path (rank-decayed, summed).
+    """
+    proj = discovery.store_name(root)
+    hits: dict[str, dict] = {}
+
+    def _bump(path: str | None, score: float, why: str,
+              name_hit: bool = False) -> None:
+        if not path:
+            return
+        h = hits.get(path)
+        if h is None:
+            h = {"path": path, "project": proj, "root": str(root),
+                 "score": 0.0, "name_hit": False, "why": set()}
+            hits[path] = h
+        h["score"] += score
+        if name_hit:
+            h["name_hit"] = True
+        if why:
+            h["why"].add(why)
+
+    # 1) Exact-basename file match via the cached read-only replica.
+    if filename:
+        try:
+            s, lock = cached_replica(root)
+            with lock, s.with_partition(proj):
+                con = s._connect()
+                rows = con.execute(
+                    "SELECT DISTINCT path FROM entities "
+                    "WHERE kind IN ('code', 'doc') AND path IS NOT NULL "
+                    "AND noise = 0 AND partition_id = ? "
+                    "AND (path = ? OR path LIKE '%/' || ?)",
+                    [s.partition_id, filename, filename],
+                ).fetchall()
+            for (path,) in rows:
+                _bump(path, 0.0, f"filename={filename}", name_hit=True)
+        except Exception:
+            pass
+
+    # 2) Keyword/concept relevance -> file paths, reusing the content bundle.
+    for kw in keywords:
+        try:
+            b = _replica_bundle(root, kw, degree=0)
+        except Exception:
+            continue
+        if not b:
+            continue
+        anchor = b.get("anchor")
+        if anchor and anchor.get("path"):
+            _bump(anchor["path"], 3.0, kw)
+        for entries in (b.get("groups") or {}).values():
+            for rank, e in enumerate(entries):
+                if e.get("path"):
+                    _bump(e["path"], max(2.0 - 0.1 * rank, 0.2), kw)
+    return hits
+
+
+def federated_locate(filename: str | None = None,
+                     keywords: list[str] | None = None, *,
+                     limit: int = 10) -> dict:
+    """Locate full filesystem paths by filename (basename, no path) and/or
+    keywords/concepts, across every live store. Returns
+    {"results": [{path, project, root, score, why}]} ranked best-first.
+
+    Combine semantics:
+    - filename only      -> every exact-basename file match (score by keywords
+                            is 0, so ties broken by path).
+    - keywords only      -> files ranked by summed keyword relevance.
+    - filename + keywords -> intersection: basename matches RANKED by their
+                            keyword relevance (the "find file X about Y" case).
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    keywords = [k for k in (keywords or []) if k.strip()]
+    roots = [r for r in discovery.discover_roots() if daemon_mod.ping(r)]
+    merged: dict[str, dict] = {}
+    if roots:
+        ex = ThreadPoolExecutor(max_workers=min(8, len(roots)))
+        futs = {ex.submit(_locate_one_project, r, filename, keywords): r
+                for r in roots}
+        try:
+            for fut in as_completed(futs, timeout=8):
+                try:
+                    part = fut.result(timeout=0.1) or {}
+                except Exception:
+                    part = {}
+                for path, h in part.items():
+                    cur = merged.get(path)
+                    if cur is None:
+                        merged[path] = h
+                    else:
+                        cur["score"] += h["score"]
+                        cur["name_hit"] = cur["name_hit"] or h["name_hit"]
+                        cur["why"] |= h["why"]
+        except Exception:
+            pass
+        ex.shutdown(wait=False, cancel_futures=True)
+
+    rows = list(merged.values())
+    # When a filename is given, it's a hard filter: only basename matches.
+    if filename:
+        rows = [r for r in rows if r["name_hit"]]
+    # Rank: higher score first, then shorter path (closer to root), then path.
+    rows.sort(key=lambda r: (-r["score"], len(r["path"]), r["path"]))
+    out = [{"path": r["path"], "project": r["project"], "root": r["root"],
+            "score": round(r["score"], 3), "why": sorted(r["why"])}
+           for r in rows[:limit]]
+    return {"results": out}

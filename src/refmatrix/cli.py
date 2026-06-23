@@ -5227,6 +5227,57 @@ def top(concept, linkage, k):
     console.print(t)
 
 
+@main.command("locate")
+@click.argument("terms", nargs=-1)
+@click.option("-f", "--file", "filename", default=None,
+              help="Filename to locate (basename only; a path is reduced to "
+                   "its basename).")
+@click.option("-n", "limit", default=10, type=int, show_default=True,
+              help="Max number of full paths to return.")
+@click.option("--json", "as_json", is_flag=True,
+              help="JSON output (paths + scores + why).")
+def locate(terms, filename, limit, as_json):
+    """Locate full filesystem paths by FILENAME and/or keywords/concepts.
+
+    Searches every live store. A positional token that looks like a filename
+    (has an extension, no slash) becomes the filename filter; the remaining
+    tokens are keywords/concepts that rank the results by relevance. `-f` sets
+    the filename explicitly.
+
+    \b
+    Examples:
+      rmx locate cli.py                 # where is cli.py
+      rmx locate ingest semantic        # files most about these concepts
+      rmx locate store.py partition     # store.py ranked by 'partition' relevance
+    """
+    import re as _re
+    from refmatrix.search import federated_locate
+
+    keywords: list[str] = []
+    fname = filename
+    for t in terms:
+        looks_file = "/" not in t and bool(_re.match(r'^[\w.\-]+\.\w+$', t))
+        if looks_file and fname is None:
+            fname = t
+        else:
+            keywords.append(t)
+    if fname and "/" in fname:
+        fname = Path(fname).name
+    if not fname and not keywords:
+        raise click.ClickException("give a filename and/or keywords to locate")
+
+    res = federated_locate(fname, keywords, limit=limit)
+    rows = res["results"]
+    if as_json:
+        console.print_json(data=res)
+        return
+    if not rows:
+        console.print("[yellow]no matches[/]")
+        return
+    for r in rows:
+        click.echo(r["path"])
+
+
 # ---- hook installation ----------------------------------------------------
 
 
