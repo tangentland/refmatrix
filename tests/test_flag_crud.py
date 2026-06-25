@@ -128,3 +128,24 @@ def test_forget_by_selector_purges_concept_side_bits(tmp_path):
         "SELECT count(*) FROM entities WHERE name='victim'").fetchone()[0] == 0
     assert len(s.load_bitmap("mentions", victim)) == 0
     s.close()
+
+
+def test_vacuum_bulk_drops_orphaned_concepts(tmp_path):
+    """vacuum batches its orphaned-concept purge (was a per-concept loop that
+    timed out on big partitions)."""
+    s = _store(tmp_path)
+    for i in range(40):
+        s.add_concept(f"orphan{i}")            # no links → empty
+    linked = s.add_concept("linked")
+    prot = s.add_concept("pinned", protected=True)   # empty but protected
+    e = s.upsert_entity(kind="code", name="m.py", path="/x/m.py")
+    s.link("mentions", linked, e)
+    res = s.vacuum()
+    assert res["concepts_dropped"] == 40
+    con = s._connect()
+    assert con.execute(
+        "SELECT count(*) FROM entities WHERE name LIKE 'orphan%'").fetchone()[0] == 0
+    assert con.execute(
+        "SELECT count(*) FROM entities WHERE name IN ('linked','pinned')"
+    ).fetchone()[0] == 2                        # linked + protected survive
+    s.close()

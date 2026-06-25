@@ -274,7 +274,9 @@ class _DaemonWriter:
         return self._call("memory_dedup", {"dry_run": dry_run})
 
     def vacuum(self):
-        return self._call("vacuum", {})
+        # Dropping orphaned concepts is a batched bulk-purge that can touch
+        # thousands of rows on a big partition — give it the long timeout.
+        return self._call("vacuum", {}, timeout=600.0)
 
     def prune_noise(self, namespaces=("keyword",), min_df=2,
                     max_df_ratio=0.25, drop=False):

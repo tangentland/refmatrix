@@ -4197,21 +4197,21 @@ class Store:
         # even when they have no links (e.g. a freshly-added bare concept).
         # Scoped to the active partition so vacuum can't drop concepts that
         # belong to a different agent's partition.
-        empty_concepts = [
-            r[0] for r in con.execute(
-                """
-                SELECT e.id FROM entities e
-                LEFT JOIN entity_links el ON el.concept_id = e.id
-                WHERE e.partition_id = ?
-                  AND e.kind = 'concept'
-                  AND el.entity_id IS NULL
-                  AND e.protected = 0
-                """,
-                (self._partition_id,),
-            )
-        ]
-        for cid in empty_concepts:
-            self.purge_entity(cid)
+        empty_concepts = con.execute(
+            """
+            SELECT e.id, e.name FROM entities e
+            LEFT JOIN entity_links el ON el.concept_id = e.id
+            WHERE e.partition_id = ?
+              AND e.kind = 'concept'
+              AND el.entity_id IS NULL
+              AND e.protected = 0
+            """,
+            (self._partition_id,),
+        ).fetchall()
+        # Batched purge — a per-concept purge_entity loop timed out the daemon
+        # RPC on big partitions (thousands of orphaned session/term concepts).
+        self._bulk_purge_ids(
+            [(int(r[0]), "concept", r[1]) for r in empty_concepts])
 
         # 2. tracked_files for paths that no longer exist
         gone = [
