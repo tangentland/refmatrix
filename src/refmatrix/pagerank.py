@@ -62,14 +62,19 @@ def build_adjacency(
     # canonicalizes to `session_<id>`) via a broad LIKE prefilter + a precise
     # `^(session|digest)[-_]` regex — so a curated memory like
     # `project_session_0328` (separator not at the start) is never caught.
+    # NOT partition-scoped: a code partition's `mentions` fragment can carry
+    # cross-partition edges to session-card concepts that live in the
+    # sessions-<project> partition, so a partition-local filter misses them.
+    # Match operational concepts globally.
+    # Any kind, any partition: a session card can enter the graph as a concept
+    # node OR as a doc/memory entity the code partition mentions. The anchored
+    # regex keeps curated memories (e.g. `project_session_0328`) safe.
     op_ids: set[int] = set()
     if exclude_operational:
         try:
             for r in con.execute(
-                "SELECT id, name FROM entities WHERE partition_id = ? "
-                "AND kind = 'concept' "
-                "AND (lower(name) LIKE 'session%' OR lower(name) LIKE 'digest%')",
-                (pid,),
+                "SELECT id, name FROM entities "
+                "WHERE lower(name) LIKE 'session%' OR lower(name) LIKE 'digest%'",
             ).fetchall():
                 if _OPERATIONAL_RE.match(str(r[1])):
                     op_ids.add(int(r[0]))
