@@ -4292,6 +4292,9 @@ def reingest(ctx, semantic, do_sessions, do_embed, rebuild, memory_dir):
                         the rel: graph (ingest-gmd --as-memory).
       3. sessions     — Claude Code session JSONLs into sessions-<project>.
       4. embed        — dense vectors for the project (+ memory) partition(s).
+      5. pagerank     — global PageRank prior over each partition's graph,
+                        so scan-prompt salience + `--rank ppr` use fresh
+                        centrality (the graph just changed in steps 1-2).
 
     The single "make this store correct" command: picks the right pass per
     source in the right order so the read surfaces (context, scan-prompt,
@@ -4315,34 +4318,44 @@ def reingest(ctx, semantic, do_sessions, do_embed, rebuild, memory_dir):
             results.append((label, False, str(e)))
 
     # 1. code + docs
-    step("1/4 code+docs", lambda: ctx.invoke(
+    step("1/5 code+docs", lambda: ctx.invoke(
         ingest, path=repo, source="auto", semantic=semantic))
 
     # 2. memory
     memdir = Path(memory_dir).resolve() if memory_dir else _default_memory_dir(repo)
     if memdir and memdir.is_dir():
-        step(f"2/4 memory ({memdir})", lambda: ctx.invoke(
+        step(f"2/5 memory ({memdir})", lambda: ctx.invoke(
             ingest_gmd, targets=(memdir,), as_memory=True))
     else:
-        console.print(f"[yellow]» 2/4 memory: no dir at {memdir}, skipped[/]")
-        results.append(("2/4 memory", True, "skipped (no dir)"))
+        console.print(f"[yellow]» 2/5 memory: no dir at {memdir}, skipped[/]")
+        results.append(("2/5 memory", True, "skipped (no dir)"))
 
     # 3. sessions
     if do_sessions:
-        step("3/4 sessions", lambda: ctx.invoke(session_ingest_cmd))
+        step("3/5 sessions", lambda: ctx.invoke(session_ingest_cmd))
     else:
-        console.print("[dim]» 3/4 sessions: skipped (--no-sessions)[/]")
+        console.print("[dim]» 3/5 sessions: skipped (--no-sessions)[/]")
+
+    # Partitions touched by graph-bearing passes — embed + pagerank both walk
+    # the active partition only, so iterate the project + memory partitions.
+    graph_parts = list(dict.fromkeys([
+        _resolve_partition(), _memory_partition_default(),
+    ]))
 
     # 4. embed — per partition (embed only walks the active partition).
     if do_embed:
-        parts = list(dict.fromkeys([
-            _resolve_partition(), _memory_partition_default(),
-        ]))
-        for part in parts:
-            step(f"4/4 embed [{part}]",
+        for part in graph_parts:
+            step(f"4/5 embed [{part}]",
                  lambda p=part: _reingest_embed(ctx, p, rebuild=rebuild))
     else:
-        console.print("[dim]» 4/4 embed: skipped (--no-embed)[/]")
+        console.print("[dim]» 4/5 embed: skipped (--no-embed)[/]")
+
+    # 5. pagerank — recompute the centrality prior now the graph changed.
+    #    Cheap relative to embed; always run (no flag) since scan-prompt
+    #    salience + --rank ppr read it on every prompt.
+    for part in graph_parts:
+        step(f"5/5 pagerank [{part}]",
+             lambda p=part: _run_pagerank(root, p))
 
     ok = sum(1 for _, good, _ in results if good)
     console.print(f"\n[bold]reingest done[/] — {ok}/{len(results)} steps ok")
@@ -5131,8 +5144,16 @@ def _resolve_query(
 @click.option("--full", "include_noise", is_flag=True,
               help="Include noise-marked concepts when matching.")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
+@click.option("--rank", type=click.Choice(["salience", "ppr"]),
+              default="ppr", show_default=True,
+              help="Concept selection. 'ppr' (default) seeds local-push "
+                   "personalized PageRank on the matched concepts and also "
+                   "surfaces strongly-related concepts the prompt never named; "
+                   "falls back to 'salience' if the walk can't seed. "
+                   "'salience' ranks only the prompt's own matched concepts "
+                   "(shape+idf+PageRank prior).")
 def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
-                    exclude_namespace, include_noise, fmt, stdin_json):
+                    exclude_namespace, include_noise, fmt, stdin_json, rank):
     """Read a prompt; emit context bundles for symbols it mentions.
 
     Designed for the Claude Code UserPromptSubmit hook. Output goes to stdout,
@@ -5154,6 +5175,7 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                 max_tokens=max_tokens,
                 per_concept_tokens=per_concept_tokens,
                 max_concepts=max_concepts,
+                rank=rank,
                 exclude_namespaces=tuple(exclude_namespace),
                 include_noise=include_noise,
                 fmt=fmt,
@@ -5945,6 +5967,61 @@ def _split_kinds(ctx, param, value):
             if tok not in out:
                 out.append(tok)
     return tuple(out)
+
+
+@main.command("pagerank")
+@click.option("--damping", default=0.85, show_default=True,
+              help="PageRank damping factor (restart probability = 1-damping).")
+@click.option("--link-weight", default=2.0, show_default=True,
+              help="Transition-weight multiplier for typed linkage edges "
+                   "(defines/calls/...) relative to bare co-mention edges.")
+@click.option("--max-iter", default=100, show_default=True,
+              help="Power-iteration cap (stops early on L1 convergence).")
+@click.option("--top", default=10, show_default=True,
+              help="Print the N most central nodes after computing.")
+def pagerank_cmd(damping, link_weight, max_iter, top):
+    """Recompute the global PageRank prior over the concept⇄entity graph.
+
+    Stores a centrality ratio (`pr * N`; an average node ≈ 1.0, hubs > 1)
+    per node in the `pagerank` sidecar for the active partition. The
+    scan-prompt salience ranker reads it as a query-agnostic prior so
+    central concepts outrank incidental ones. Run after a large ingest.
+
+    Graph: bipartite concept⇄entity, undirected — mention edges from the
+    `mentions` fragment plus typed `entity_links` edges (weighted heavier
+    via --link-weight). Daemon-routed when up; in-proc fallback otherwise.
+    """
+    root = _root()
+    result = _run_pagerank(
+        root, _resolve_partition(), damping=damping, link_weight=link_weight,
+        max_iter=max_iter, top=top)
+    console.print(
+        f"[green]pagerank[/] partition={result.get('partition')} "
+        f"nodes={result.get('nodes')}")
+    for row in result.get("top", []):
+        console.print(
+            f"  {row['ratio']:6.2f}  [{row['kind']}] {row['name']}")
+
+
+def _run_pagerank(root: Path, partition: str, *, damping: float = 0.85,
+                  link_weight: float = 2.0, max_iter: int = 100,
+                  top: int = 10) -> dict:
+    """Compute + persist the PageRank prior for one partition. Daemon-routed
+    when up, in-proc otherwise. Shared by `rmx pagerank` and `rmx reingest`."""
+    from refmatrix import daemon as daemon_mod
+    args = {
+        "partition": partition, "damping": damping,
+        "link_weight": link_weight, "max_iter": max_iter, "top": top,
+    }
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "pagerank_compute", args, timeout=600.0)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        return resp["result"]
+    from refmatrix.daemon import _op_pagerank, Daemon
+    d = Daemon(root)
+    d.store = _store()
+    return _op_pagerank(d, args)
 
 
 @main.command("embed")
@@ -7632,7 +7709,7 @@ def _parse_memory_md_frontmatter(text: str) -> tuple[dict, str]:
 
 @memory_grp.command("sync-disk")
 @click.argument("paths", type=click.Path(exists=True, path_type=Path),
-                nargs=-1, required=True)
+                nargs=-1, required=False)
 @click.option("--mtype", "default_mtype", default="curated", show_default=True,
               help="mtype assigned to memories whose frontmatter does "
                    "not carry an explicit `metadata.type`.")
@@ -7665,6 +7742,18 @@ def memory_sync_disk(paths: tuple[Path, ...], default_mtype: str,
     from refmatrix import daemon as daemon_mod
     root = _root()
     daemon_up = daemon_mod.ping(root)
+
+    if not paths:
+        # No-arg → sync the whole curated-memory dir for this project, matching
+        # the save-state skill's "sync the memory tree" contract.
+        default_dir = _default_memory_dir(root.parent)
+        if not default_dir.is_dir():
+            raise click.ClickException(
+                f"no PATHS given and default memory dir does not exist: "
+                f"{default_dir}")
+        paths = (default_dir,)
+        click.echo(f"# no PATHS given — syncing default memory dir: "
+                   f"{default_dir}", err=True)
 
     candidates: list[Path] = []
     for p in paths:

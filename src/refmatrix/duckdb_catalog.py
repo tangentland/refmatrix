@@ -156,6 +156,20 @@ CREATE TABLE IF NOT EXISTS bitmap_fragments (
     blob         BLOB NOT NULL,
     PRIMARY KEY (partition_id, linkage)
 );
+
+-- Global PageRank prior (stage 2 of scan-prompt ranking). One centrality
+-- score per node per partition; score is the centrality RATIO (pr * N, avg
+-- node ≈ 1.0). Recomputed offline by `rmx pagerank`, read as a query-agnostic
+-- salience prior. Whole-file snapshot copy carries it to the read replica.
+CREATE TABLE IF NOT EXISTS pagerank (
+    partition_id INTEGER NOT NULL DEFAULT 1,
+    entity_id    INTEGER NOT NULL,
+    score        DOUBLE NOT NULL,
+    computed_at  DOUBLE NOT NULL,
+    PRIMARY KEY (partition_id, entity_id)
+);
+CREATE INDEX IF NOT EXISTS idx_pagerank_score
+    ON pagerank(partition_id, score);
 """
 
 # Tables in the order they need to be (re-)populated so foreign keys resolve.

@@ -83,7 +83,10 @@ def _t_query(args: dict) -> dict:
 def _t_memory_recall(args: dict) -> dict:
     """Lexical recall across project + global behavior store (scope=both)."""
     from refmatrix import daemon as daemon_mod, discovery, hub as hub_mod
-    q = args["query"]
+    # query optional: empty → LIKE '%%' → recent memories newest-first, which is
+    # exactly what a SessionStart/no-topic recall wants. Demanding it crashed the
+    # first call with KeyError: 'query'.
+    q = args.get("query") or ""
     k = int(args.get("k", 8))
     scope = args.get("scope", "both")
     rows = []
@@ -463,7 +466,7 @@ TOOLS: dict[str, dict] = {
             "query": {"type": "string"}, "scope": {
                 "type": "string", "enum": ["project", "global", "both"]},
             "k": {"type": "integer"}, "root": {"type": "string"}},
-            "required": ["query"]},
+            "required": []},
         "fn": _t_memory_recall},
     "rmx_bus_pub": {
         "description": "Publish a message to the agent bus "

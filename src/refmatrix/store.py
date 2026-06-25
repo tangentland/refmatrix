@@ -232,6 +232,21 @@ CREATE INDEX IF NOT EXISTS idx_evidence_entity
     ON linkage_evidence(entity_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_lookup
     ON linkage_evidence(linkage_id, concept_id, entity_id);
+
+-- Global PageRank prior (stage 2 of scan-prompt ranking). One centrality
+-- score per node per partition, recomputed offline by `rmx pagerank`. Score
+-- is the centrality RATIO (pr * N): an average node ≈ 1.0, hubs > 1. Read as
+-- a query-agnostic salience prior; never on the write hot path.
+CREATE TABLE IF NOT EXISTS pagerank (
+    partition_id INTEGER NOT NULL DEFAULT 1 REFERENCES partitions(id),
+    entity_id    INTEGER NOT NULL,
+    score        REAL NOT NULL,
+    computed_at  REAL NOT NULL,
+    PRIMARY KEY (partition_id, entity_id),
+    FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_pagerank_score
+    ON pagerank(partition_id, score);
 """
 
 DEFAULT_LINKAGES = [

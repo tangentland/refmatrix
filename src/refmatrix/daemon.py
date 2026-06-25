@@ -3760,8 +3760,38 @@ def _op_rebuild_index(d: Daemon, args: dict) -> dict:
     return {"result": result}
 
 
+def _op_pagerank(d: Daemon, args: dict) -> dict:
+    """Recompute the global PageRank prior for a partition and persist it to
+    the `pagerank` sidecar (stage 2 of scan-prompt ranking). Heavy-ish offline
+    compute → bg_pool. Binds the requested partition explicitly so it doesn't
+    run on the daemon's ambient (drifting) partition."""
+    from refmatrix import pagerank as pr_mod
+    part = args.get("partition") or d.store._partition_name
+    damping = float(args.get("damping", 0.85))
+    link_weight = float(args.get("link_weight", 2.0))
+    max_iter = int(args.get("max_iter", 100))
+    topn = int(args.get("top", 10))
+    with d._store_lock, d.store.with_partition(part):
+        scores = pr_mod.compute(
+            d.store, damping=damping, link_weight=link_weight,
+            max_iter=max_iter)
+        written = pr_mod.store_scores(d.store, scores)
+        con = d.store._connect()
+        top_named = []
+        for eid, score in sorted(scores.items(), key=lambda kv: -kv[1])[:topn]:
+            r = con.execute(
+                "SELECT name, kind FROM entities WHERE id = ?", (int(eid),),
+            ).fetchone()
+            top_named.append({
+                "id": int(eid), "name": r[0] if r else str(eid),
+                "kind": r[1] if r else "?", "ratio": round(score, 3)})
+    d._request_snapshot()
+    return {"partition": part, "nodes": written, "top": top_named}
+
+
 OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "ping": _op_ping,
+    "pagerank_compute": _op_pagerank,
     "enqueue": _op_enqueue,
     "flush_queue": _op_flush_queue,
     "flush_queue_async": _op_flush_queue_async,

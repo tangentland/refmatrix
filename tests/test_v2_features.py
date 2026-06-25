@@ -101,6 +101,88 @@ def test_scan_prompt_silent_for_unknown_prompt(store):
     assert scan_prompt(store, "what is the weather") == ""
 
 
+# --- pagerank prior (stage 2) ----------------------------------------------
+
+
+def test_pagerank_hub_outranks_leaf(store):
+    from refmatrix import pagerank as pr
+    hub = store.add_concept("hub")
+    leaf = store.add_concept("leaf")
+    ents = [store.upsert_entity(kind="code", name=f"f{i}.py") for i in range(6)]
+    store.add_linkage_type("defines", directed=True, description="x")
+    for e in ents:
+        store.link("defines", hub, e)
+        store.link("mentions", hub, e)
+    store.link("defines", leaf, ents[0])
+    store.link("mentions", leaf, ents[0])
+    scores = pr.compute(store)
+    assert scores[hub] > scores[leaf]
+    # centrality ratio: hub well above the 1.0 average, leaf below
+    assert scores[hub] > 1.0 > scores[leaf]
+    n = pr.store_scores(store, scores)
+    assert n == len(scores)
+    assert pr.get_score(store, hub) == pytest.approx(scores[hub])
+    assert len(pr.load_scores(store)) == n
+
+
+def test_pagerank_prior_lifts_central_concept_in_match_ranking(store):
+    """A central concept should outrank a peripheral one of identical token
+    shape once the PageRank prior is computed."""
+    from refmatrix import pagerank as pr
+    # two same-shaped lowercase concepts; only graph centrality differs
+    central = store.add_concept("alpha")
+    fringe = store.add_concept("omega")
+    ents = [store.upsert_entity(kind="code", name=f"m{i}.py") for i in range(6)]
+    store.add_linkage_type("defines", directed=True, description="x")
+    for e in ents:
+        store.link("defines", central, e)
+        store.link("mentions", central, e)
+    store.link("mentions", fringe, ents[0])
+    pr.store_scores(store, pr.compute(store))
+    ranked = match_concepts(store, ["omega", "alpha"])
+    assert ranked.index("alpha") < ranked.index("omega")
+
+
+# --- local-push PPR (stage 3) ----------------------------------------------
+
+
+def test_ppr_surfaces_related_concept_not_in_prompt(store):
+    """Seed PPR on concept A; concept B (shares A's entities) should rank high
+    among related concepts, while an unrelated concept C does not appear."""
+    from refmatrix import ppr
+    a = store.add_concept("alpha")
+    b = store.add_concept("beta")
+    c = store.add_concept("gamma")
+    shared = [store.upsert_entity(kind="code", name=f"s{i}.py") for i in range(4)]
+    lone = store.upsert_entity(kind="code", name="lone.py")
+    for e in shared:
+        store.link("mentions", a, e)
+        store.link("mentions", b, e)      # B co-mentions everything A does
+    store.link("mentions", c, lone)        # C is off on its own
+    related = ppr.rank_related(store, [a], k=5, kinds=("concept",),
+                               include_seeds=False)
+    names = [r["name"] for r in related]
+    assert "beta" in names                 # discovered neighbor
+    assert "gamma" not in names            # disconnected — never reached
+
+
+def test_ppr_local_push_mass_concentrates_on_seed_cluster(store):
+    from refmatrix import ppr
+    from refmatrix.pagerank import build_adjacency
+    a = store.add_concept("alpha")
+    b = store.add_concept("beta")
+    ents = [store.upsert_entity(kind="code", name=f"e{i}.py") for i in range(3)]
+    for e in ents:
+        store.link("mentions", a, e)
+        store.link("mentions", b, e)
+    adj = build_adjacency(store)
+    p = ppr.local_push_ppr(adj, [a], alpha=0.15, eps=1e-5)
+    # seed holds the most mass; connected nodes get positive mass
+    assert p[a] == max(p.values())
+    assert p.get(b, 0.0) > 0.0
+    assert abs(sum(p.values())) <= 1.0 + 1e-6
+
+
 # --- vacuum -----------------------------------------------------------------
 
 

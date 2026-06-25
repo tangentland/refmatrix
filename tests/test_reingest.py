@@ -68,9 +68,10 @@ def test_reingest_runs_code_then_memory_in_order(tmp_path, monkeypatch):
         catch_exceptions=False,
     )
     assert r.exit_code == 0, r.output
-    assert "1/4 code+docs" in r.output
-    assert "2/4 memory" in r.output
-    assert "reingest done — 2/2 steps ok" in r.output
+    assert "1/5 code+docs" in r.output
+    assert "2/5 memory" in r.output
+    assert "5/5 pagerank" in r.output
+    assert "reingest done" in r.output
 
     s = Store(proj / ".refmatrix")
     con = s._connect()

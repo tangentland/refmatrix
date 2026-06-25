@@ -9,6 +9,7 @@ the user prompt.
 from __future__ import annotations
 
 import json
+import math
 import re
 import sys
 
@@ -66,6 +67,77 @@ def extract_candidates(text: str) -> list[str]:
     return out
 
 
+def _token_shape_score(token: str) -> float:
+    """Reward identifier-shaped tokens, penalize plain dictionary words.
+
+    `MCP` (acronym), `KeyError` (CamelCase), `scan_prompt` (snake),
+    `a.b::c` (qualified) look like code the author cited deliberately;
+    `first` / `call` / `results` / `query` are bare lowercase English
+    words that merely happen to exist as degree-0 concepts. Shape alone
+    separates the two without a hand-maintained blocklist."""
+    leaf = token.rsplit("/", 1)[-1].rsplit("::", 1)[-1]
+    score = 0.0
+    has_upper = any(c.isupper() for c in leaf)
+    has_lower = any(c.islower() for c in leaf)
+    if has_upper and has_lower:
+        score += 1.0                       # CamelCase / mixedCase
+    if leaf.isupper() and len(leaf) >= 2:
+        score += 1.0                       # acronym (MCP, API, RPC)
+    if "_" in leaf or "." in leaf or "::" in token or "-" in leaf:
+        score += 1.0                       # compound identifier
+    if any(c.isdigit() for c in leaf):
+        score += 0.5
+    if len(leaf) >= 12:
+        score += 0.5                       # long token ≠ plain word
+    return score
+
+
+def _salience(s: Store, con, name: str, token: str) -> float:
+    """Rank score for a matched concept. Higher = more worth surfacing in
+    the always-on scan-prompt hook. Combines graph signal (linkage degree),
+    specificity (inverse mention frequency = idf), token shape, and a small
+    namespaced-concept bonus. Demote-only: weak matches sort last and fall
+    off the per-prompt budget rather than being hard-dropped."""
+    cid = None
+    try:
+        row = con.execute(
+            "SELECT id FROM entities WHERE kind='concept' AND name=? LIMIT 1",
+            (name,),
+        ).fetchone()
+        if row:
+            cid = row[0]
+    except Exception:
+        cid = None
+    deg = 0
+    df = 0
+    if cid is not None:
+        try:
+            r = con.execute(
+                "SELECT COUNT(*) FROM entity_links WHERE concept_id=?", (cid,),
+            ).fetchone()
+            deg = int(r[0]) if r else 0
+        except Exception:
+            deg = 0
+        try:
+            df = len(s.load_bitmap("mentions", cid))
+        except Exception:
+            df = 0
+    idf = 1.0 / math.log2(df + 2) if df > 0 else 0.3
+    # Centrality prior: the global PageRank ratio (avg node ≈ 1.0) when it has
+    # been computed (`rmx pagerank`), log-compressed and capped so a mega-hub
+    # can't swamp the other signals. Falls back to raw linkage degree when no
+    # PR row exists — a fresh store still ranks sensibly before the first
+    # `rmx pagerank` run.
+    from refmatrix import pagerank as pr_mod
+    pr = pr_mod.get_score(s, cid) if cid is not None else None
+    if pr is not None and pr > 0:
+        central = min(2.5, 0.8 * math.log2(pr + 1.0))
+    else:
+        central = (2.0 + 0.1 * min(deg, 10)) if deg > 0 else 0.0
+    ns_bonus = 0.5 if "/" in name else 0.0
+    return central + 1.5 * idf + _token_shape_score(token) + ns_bonus
+
+
 def match_concepts(
     s: Store,
     candidates: list[str],
@@ -74,28 +146,34 @@ def match_concepts(
     case_insensitive: bool = True,
     include_noise: bool = False,
 ) -> list[str]:
-    """Resolve candidate tokens to concept names that exist in the index.
+    """Resolve candidate tokens to concept names that exist in the index,
+    salience-ranked (most-informative first).
 
-    Tries, in order:
+    Resolution per candidate, in order:
     1. exact bare-name match
     2. case-insensitive bare-name match
     3. namespaced suffix match — `tree_sitter` matches `import/tree_sitter`
        (excluding namespaces in `exclude_namespaces`)
-    """
+
+    The resolved names are then ranked by `_salience` so the always-on
+    scan-prompt hook spends its small budget on the concepts the prompt
+    actually cared about, not on the first lowercase dictionary word that
+    happened to be registered. Order is salience desc, first-seen as the
+    stable tie-break."""
     excluded = set(exclude_namespaces)
-    out: list[str] = []
+    found: list[tuple[str, str]] = []   # (concept name, source token)
     seen: set[str] = set()
     con = s._connect()
     noise_clause = "" if include_noise else " AND noise=0"
 
-    def consider(name: str) -> None:
+    def consider(name: str, token: str) -> None:
         if name in seen:
             return
         ns = name.split("/", 1)[0] if "/" in name else None
         if ns and ns in excluded:
             return
         seen.add(name)
-        out.append(name)
+        found.append((name, token))
 
     for cand in candidates:
         # Drop function words before they can match junk concepts in the
@@ -105,7 +183,7 @@ def match_concepts(
         # exact (case-preserving)
         e = s.resolve_entity(cand)
         if e is not None and e.kind == "concept" and (include_noise or not e.noise):
-            consider(e.name)
+            consider(e.name, cand)
             continue
         if case_insensitive:
             row = con.execute(
@@ -114,7 +192,7 @@ def match_concepts(
                 (cand,),
             ).fetchone()
             if row:
-                consider(row[0])
+                consider(row[0], cand)
                 continue
         # namespaced suffix: match anything */<cand>
         rows = con.execute(
@@ -123,8 +201,46 @@ def match_concepts(
             (f"%/{cand}",),
         ).fetchall()
         for r in rows:
-            consider(r[0])
-    return out
+            consider(r[0], cand)
+
+    # Stable salience sort: Python's sort is stable, so equal scores keep
+    # first-seen order. Negate the score for descending without disturbing
+    # the index tie-break.
+    ranked = sorted(
+        enumerate(found),
+        key=lambda it: (-_salience(s, con, it[1][0], it[1][1]), it[0]),
+    )
+    return [name for _, (name, _tok) in ranked]
+
+
+def _ppr_rerank(
+    s: Store, matches: list[str], *, max_concepts: int,
+) -> list[str]:
+    """Seed local-push PPR on the matched concepts and return a concept list
+    re-ranked by PPR mass — seeds plus the most strongly related concepts the
+    prompt never named. Falls back to the salience order on any failure so the
+    always-on hook can never go dark."""
+    from refmatrix import ppr as ppr_mod
+    seed_ids: list[int] = []
+    for name in matches:
+        e = s.resolve_entity(name)
+        if e is not None and e.kind == "concept":
+            seed_ids.append(e.id)
+    if not seed_ids:
+        return matches
+    try:
+        ranked = ppr_mod.rank_related(
+            s, seed_ids, k=max_concepts, kinds=("concept",),
+            include_seeds=True)
+    except Exception:
+        return matches
+    names = [r["name"] for r in ranked]
+    # Guarantee seeds survive even if the walk surfaced unrelated hubs: append
+    # any matched concept the PPR top-k dropped, preserving salience order.
+    for name in matches:
+        if name not in names:
+            names.append(name)
+    return names
 
 
 def scan_prompt(
@@ -137,6 +253,7 @@ def scan_prompt(
     exclude_namespaces: tuple[str, ...] = ("keyword",),
     fmt: str = "text",
     include_noise: bool = False,
+    rank: str = "ppr",
 ) -> str:
     cands = extract_candidates(prompt)
     matches = match_concepts(
@@ -144,6 +261,8 @@ def scan_prompt(
         exclude_namespaces=exclude_namespaces,
         include_noise=include_noise,
     )
+    if matches and rank == "ppr":
+        matches = _ppr_rerank(s, matches, max_concepts=max_concepts)
     if not matches:
         # No registered concept matched the prompt. Don't go dark — fall back
         # to a content-ranked grep over the prompt's candidate terms so the
