@@ -166,6 +166,19 @@ def test_ppr_surfaces_related_concept_not_in_prompt(store):
     assert "gamma" not in names            # disconnected — never reached
 
 
+def test_ppr_excludes_operational_session_cards(store):
+    """A high-degree session card hub must not surface as a related concept."""
+    from refmatrix import ppr
+    a = store.add_concept("alpha")
+    card = store.add_concept("session-deadbeef")   # operational card anchor
+    ents = [store.upsert_entity(kind="code", name=f"e{i}.py") for i in range(4)]
+    for e in ents:
+        store.link("mentions", a, e)
+        store.link("mentions", card, e)            # card co-mentions everything
+    related = ppr.rank_related(store, [a], k=5, include_seeds=False)
+    assert "session-deadbeef" not in [r["name"] for r in related]
+
+
 def test_ppr_local_push_mass_concentrates_on_seed_cluster(store):
     from refmatrix import ppr
     from refmatrix.pagerank import build_adjacency

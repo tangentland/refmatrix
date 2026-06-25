@@ -102,6 +102,19 @@ def local_push_ppr(
     return p
 
 
+# Raw session/digest CARD anchors are operational content that must not be
+# surfaced as graph concepts (see the "operational content stays out of graph"
+# rule). They're high-degree hubs, so an unfiltered PPR walk can land on them.
+# Curated MEMORY docs whose names merely CONTAIN "session" (e.g.
+# `project_session_0328_to_0331`) are knowledge, not cards — only the bare
+# `session-<id>` / `digest-<id>` prefixes are excluded.
+_OPERATIONAL_PREFIXES = ("session-", "digest-")
+
+
+def _is_operational(name: str) -> bool:
+    return name.startswith(_OPERATIONAL_PREFIXES)
+
+
 def rank_related(
     store: "Store",
     seed_ids: list[int],
@@ -134,6 +147,8 @@ def rank_related(
         if r is None:
             continue
         if kinds and r[1] not in kinds:
+            continue
+        if _is_operational(r[0]):
             continue
         out.append({
             "id": int(nid), "name": r[0], "kind": r[1],
