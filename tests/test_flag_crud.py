@@ -81,3 +81,50 @@ def test_set_entity_flag_survives_rebuild_from_log(tmp_path):
     s.rebuild_index_from_log()
     assert s.find_entity_ids(names=["alpha"])[0][3] == 1
     s.close()
+
+
+def test_forget_by_selector_bulk_purges_and_cleans_bitmaps(tmp_path):
+    """forget --kind code over many rows: rows + linkages + bitmap bits all
+    drop in one batched pass; untouched concepts stay intact."""
+    s = _store(tmp_path)
+    shared = s.add_concept("shared")
+    keep = s.add_concept("keepme")
+    codes = [s.upsert_entity(kind="code", name=f"f{i}.py", path=f"/r/f{i}.py",
+                             tldr="x") for i in range(6)]
+    for e in codes:
+        s.link("mentions", shared, e)
+        s.link("defines", shared, e)
+    doc = s.upsert_entity(kind="doc", name="d.md", path="/r/d.md")
+    s.link("mentions", keep, doc)
+
+    # dry-run previews, deletes nothing
+    dry = s.forget_by_selector(dry_run=True, kind="code")
+    assert dry["forgotten"] == 0 and len(dry["names"]) == 6
+
+    res = s.forget_by_selector(kind="code")
+    assert res["forgotten"] == 6
+    con = s._connect()
+    assert con.execute(
+        "SELECT count(*) FROM entities WHERE kind='code'").fetchone()[0] == 0
+    # only the keep->doc edge survives
+    assert con.execute("SELECT count(*) FROM entity_links").fetchone()[0] == 1
+    # shared's mention/defines bitmaps fully cleared; keep untouched
+    assert len(s.load_bitmap("mentions", shared)) == 0
+    assert len(s.load_bitmap("defines", shared)) == 0
+    assert len(s.load_bitmap("mentions", keep)) == 1
+    s.close()
+
+
+def test_forget_by_selector_purges_concept_side_bits(tmp_path):
+    """Forgetting a concept clears the rows where it is the concept side too."""
+    s = _store(tmp_path)
+    victim = s.add_concept("victim")
+    e = s.upsert_entity(kind="code", name="a.py", path="/r/a.py")
+    s.link("mentions", victim, e)
+    assert len(s.load_bitmap("mentions", victim)) == 1
+    s.forget_by_selector(names=["victim"])
+    con = s._connect()
+    assert con.execute(
+        "SELECT count(*) FROM entities WHERE name='victim'").fetchone()[0] == 0
+    assert len(s.load_bitmap("mentions", victim)) == 0
+    s.close()

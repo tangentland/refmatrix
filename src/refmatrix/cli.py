@@ -288,7 +288,10 @@ class _DaemonWriter:
                                        **selectors})
 
     def forget_by_selector(self, *, dry_run=False, **selectors):
-        return self._call("forget", {"dry_run": dry_run, **selectors})
+        # Batched bulk-purge can still touch thousands of rows + fragments on a
+        # big partition — give it the same long timeout as bulk-forget/rebuild.
+        return self._call("forget", {"dry_run": dry_run, **selectors},
+                          timeout=600.0)
 
     def rebuild_index_from_log(self):
         return self._call("rebuild_index", {}, timeout=600.0).get("result", {})

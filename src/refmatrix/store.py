@@ -3988,17 +3988,96 @@ class Store:
         return {"count": count, "names": names}
 
     def forget_by_selector(self, *, dry_run: bool = False, **selectors) -> dict:
-        """Resolve `selectors` then `purge_entity` each (drops the row, every
-        bitmap membership, linkage evidence, and the Lance vector; emits a
-        `tombstone` so the delete replays). `dry_run` previews the matched
-        names without deleting. Returns `{forgotten, names, dry_run}`."""
+        """Resolve `selectors` then bulk-purge them (drops the row, every bitmap
+        membership, linkage evidence, memory sidecar, and the Lance vector;
+        emits a `tombstone` per id so the delete replays). `dry_run` previews
+        the matched names without deleting. Returns `{forgotten, names,
+        dry_run}`.
+
+        Uses the batched `_bulk_purge_ids` path so a large selection (e.g.
+        `forget --kind code` over a partition's thousands of rows) completes in
+        one pass instead of a per-entity loop that times out the daemon RPC.
+        The graph result is identical to looping `purge_entity`."""
         rows = self.find_entity_ids(**selectors)
         names = [r[1] for r in rows]
         if dry_run:
             return {"forgotten": 0, "names": names, "dry_run": True}
-        for eid, *_ in rows:
-            self.purge_entity(eid)
+        self._bulk_purge_ids([(int(r[0]), r[2], r[1]) for r in rows])
         return {"forgotten": len(rows), "names": names, "dry_run": False}
+
+    def _bulk_purge_ids(self, info: "list[tuple[int, str, str]]") -> int:
+        """Batched purge of `(id, kind, name)` triples — the scalable sibling of
+        `purge_entity`. One-pass bitmap-fragment cleanup + chunked SQL deletes +
+        per-id tombstones. Produces the same graph state as looping
+        `purge_entity`, but issues O(#linkages) fragment scans and O(rows/chunk)
+        DELETEs instead of O(#entities) of each. Caller owns lock/partition."""
+        if not info:
+            return 0
+        con = self._connect()
+        ids = [int(i) for i, _k, _n in info]
+        chunk = 900
+
+        def _chunks(seq):
+            for i in range(0, len(seq), chunk):
+                yield seq[i:i + chunk]
+
+        # 1. Lance: one drop per kind (not per id).
+        ids_by_kind: dict[str, list[int]] = {}
+        for eid, kind, _name in info:
+            ids_by_kind.setdefault(kind, []).append(int(eid))
+        try:
+            self._drop_lance_for_purge_batch(ids_by_kind)
+        except Exception:
+            pass
+
+        # 2. Bitmap cleanup. Entity-side: gather the (linkage, packed-bit) set
+        #    for edges where a killed id is the ENTITY, then discard. Concept-
+        #    side: for ids that are a concept prefix, remove the whole row range.
+        bits_by_ln: dict[str, list[int]] = {}
+        for ck in _chunks(ids):
+            ph = ",".join("?" * len(ck))
+            for r in con.execute(
+                f"SELECT lt.name AS ln, el.concept_id AS cid, el.entity_id AS eid "
+                f"FROM entity_links el JOIN linkage_types lt "
+                f"ON lt.id = el.linkage_id WHERE el.entity_id IN ({ph})", ck,
+            ).fetchall():
+                bits_by_ln.setdefault(r["ln"], []).append(
+                    self._pack(int(r["cid"]), int(r["eid"])))
+        for ln in (lk["name"] for lk in self.list_linkages()):
+            frag = self._load_fragment(ln)
+            changed = False
+            for bit in bits_by_ln.get(ln, ()):
+                if bit in frag:
+                    frag.discard(bit)
+                    changed = True
+            for kid in ids:
+                start = kid << _CONCEPT_SHIFT
+                end = (kid + 1) << _CONCEPT_SHIFT
+                if frag.range_cardinality(start, end) > 0:
+                    frag.remove_range(start, end)
+                    changed = True
+            if changed:
+                self._dirty_fragments.add(ln)
+
+        # 3. Chunked SQL deletes. tracked_files first (needs entities.path).
+        for ck in _chunks(ids):
+            ph = ",".join("?" * len(ck))
+            con.execute(
+                f"DELETE FROM tracked_files WHERE partition_id=? AND path IN "
+                f"(SELECT path FROM entities WHERE id IN ({ph}) "
+                f" AND path IS NOT NULL)", [self._partition_id, *ck])
+            con.execute(f"DELETE FROM entity_links WHERE entity_id IN ({ph})", ck)
+            con.execute(f"DELETE FROM entity_links WHERE concept_id IN ({ph})", ck)
+            con.execute(f"DELETE FROM memory_content WHERE entity_id IN ({ph})", ck)
+            con.execute(f"DELETE FROM concepts WHERE id IN ({ph})", ck)
+            con.execute(f"DELETE FROM entities WHERE id IN ({ph})", ck)
+        con.commit()
+
+        # 4. Per-id tombstones so rebuild_index_from_log doesn't resurrect them.
+        if _log_enabled() and not self._replay_mode:
+            for _eid, kind, name in info:
+                self._log_event("tombstone", kind=kind, name=name)
+        return len(ids)
 
     def mark_tracked(self, abs_path: str, mtime: float) -> None:
         now = time.time()
