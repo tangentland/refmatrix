@@ -630,16 +630,70 @@ class Daemon:
                 return
             t.join(timeout=remaining)
 
+    def _reap_predecessor(self, sock_path: Path) -> bool:
+        """Kill any predecessor daemon for this root so a fresh launch wins.
+
+        Targets the pid named in the pid file (the single owner slot) — a
+        wedged process that holds the file but no longer serves, or a healthy
+        orphan that should defer to this newer launch. SIGTERM, then escalate
+        to SIGKILL. Returns True when it is safe to bind (predecessor gone, or
+        none existed); False only if a predecessor survives SIGKILL AND still
+        answers the socket — in which case the caller yields to avoid a
+        double-bind that could corrupt the DuckDB WAL.
+
+        A stale socket file (no listener) is unlinked either way."""
+        my_pid = os.getpid()
+        old = read_pid(self.root)  # live pid from the pid file, or None
+        if old is not None and old != my_pid:
+            try:
+                os.kill(old, signal.SIGTERM)
+            except ProcessLookupError:
+                old = None
+            except PermissionError:
+                old = None  # not ours to kill; fall through to the ping gate
+            if old is not None:
+                deadline = time.monotonic() + 3.0
+                while time.monotonic() < deadline and is_alive(old):
+                    time.sleep(0.1)
+                if is_alive(old):
+                    try:
+                        os.kill(old, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    # Brief grace for the kernel to tear it down + release the
+                    # socket.
+                    kdeadline = time.monotonic() + 2.0
+                    while time.monotonic() < kdeadline and is_alive(old):
+                        time.sleep(0.05)
+        # If something still answers the socket after the reap, a process we
+        # could not kill owns it — yield rather than stomp it.
+        if sock_path.exists() and ping(self.root, timeout=0.3):
+            return False
+        # Clean up a stale socket left by a crashed/killed predecessor.
+        if sock_path.exists():
+            try:
+                sock_path.unlink()
+            except OSError:
+                pass
+        return True
+
     def serve_forever(self) -> int:
         sock_path = socket_path(self.root)
-        # Defensive: if another daemon is somehow alive on this socket
-        # (concurrent spawn that slipped past the parent's flock), bail
-        # instead of unlinking and stomping it.
-        if sock_path.exists() and ping(self.root, timeout=0.2):
+        # Smart startup: reap any predecessor daemon for this root before we
+        # bind. launchd serializes spawns of a job, so a fresh launch is the
+        # legit owner — an older process still holding the pid file (a wedged
+        # alive-but-not-serving daemon) or still answering on the socket (an
+        # orphan / standalone fork that escaped the supervisor) must yield to
+        # it, NOT the other way round. Without this, a wedged predecessor or an
+        # orphan kept the socket and every relaunch crash-looped on a refused
+        # connection while `launchctl list` showed the job "running".
+        if not self._reap_predecessor(sock_path):
+            # Could not guarantee the predecessor is gone (it ignored SIGKILL
+            # or we lack permission) AND it still answers — yield rather than
+            # double-bind and corrupt the DuckDB WAL.
+            self.log_fh = (self.root / LOG_NAME).open("a", encoding="utf-8")
+            self._log("startup: predecessor still serving after reap; yielding")
             return 0
-        # Clean up any stale socket left from a crashed daemon.
-        if sock_path.exists():
-            sock_path.unlink()
 
         self.log_fh = (self.root / LOG_NAME).open("a", encoding="utf-8")
         self._log(f"daemon starting pid={os.getpid()} root={self.root}")
@@ -3771,10 +3825,18 @@ def _op_pagerank(d: Daemon, args: dict) -> dict:
     link_weight = float(args.get("link_weight", 2.0))
     max_iter = int(args.get("max_iter", 100))
     topn = int(args.get("top", 10))
+    # Read the graph under the lock...
     with d._store_lock, d.store.with_partition(part):
-        scores = pr_mod.compute(
-            d.store, damping=damping, link_weight=link_weight,
-            max_iter=max_iter)
+        adj = pr_mod.build_adjacency(d.store, link_weight=link_weight)
+    # ...but run the CPU-bound power iteration OUTSIDE the store lock. The
+    # vectorized path releases the GIL during the matvec, so the daemon stays
+    # responsive to pings while computing — otherwise a multi-second hold makes
+    # the hub watchdog think the daemon is dead and SIGKILL-restart it mid-op.
+    raw = pr_mod.pagerank(adj, damping=damping, max_iter=max_iter)
+    n = len(raw)
+    scores = {nid: score * n for nid, score in raw.items()}
+    # ...then write + resolve top names under the lock again.
+    with d._store_lock, d.store.with_partition(part):
         written = pr_mod.store_scores(d.store, scores)
         con = d.store._connect()
         top_named = []

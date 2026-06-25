@@ -37,6 +37,16 @@ HUB_LOG = "hub.log"
 GLOBAL_PARTITION = "global"
 DEFAULT_PORT = 7777
 WATCHDOG_INTERVAL_S = float(os.environ.get("RMX_HUB_WATCH_INTERVAL", "15"))
+# Liveness grace. A daemon busy in a GIL/lock-holding op (embed, big ingest,
+# pagerank) can't answer a ping in time but is NOT dead — SIGKILL-restarting it
+# mid-op churns the daemon and risks DuckDB WAL corruption. So: ping with a
+# generous timeout, and only restart a non-answering daemon when EITHER its
+# process is gone (genuinely dead → restart now) OR it has missed this many
+# consecutive ticks while its process stays alive (a real wedge, past grace).
+WATCHDOG_PING_TIMEOUT_S = float(
+    os.environ.get("RMX_HUB_WATCH_PING_TIMEOUT", "2.0"))
+WATCHDOG_GRACE_MISSES = int(
+    os.environ.get("RMX_HUB_WATCH_GRACE_MISSES", "3"))
 QUEUE_ALERT_INTERVAL_S = float(os.environ.get("RMX_HUB_QUEUE_ALERT_INTERVAL", "300"))
 HEALTH_HISTORY = 50
 
@@ -133,6 +143,8 @@ class Watchdog:
         self.policy: dict[str, str] = {}
         self.history: dict[str, deque] = {}
         self.restart_counts: dict[str, int] = {}
+        # consecutive ping-miss counter per root, for the liveness grace window
+        self.miss_counts: dict[str, int] = {}
         self._thread: threading.Thread | None = None
 
     # -- policy ----
@@ -172,17 +184,41 @@ class Watchdog:
         key = str(Path(root).resolve())
         up = False
         try:
-            up = bool(daemon_mod.ping(root))
+            up = bool(daemon_mod.ping(root, timeout=WATCHDOG_PING_TIMEOUT_S))
         except Exception:
             up = False
         restarted = False
-        if not up and self.get_policy(root) == "auto":
-            restarted = self._restart(root)
+        reason = ""
+        if up:
+            self.miss_counts[key] = 0
+        elif self.get_policy(root) == "auto":
+            # Not answering — but is it DEAD or just BUSY/STARTING? A live
+            # process holding the GIL/store-lock in a long op (embed, ingest,
+            # pagerank) or still initializing isn't dead. Restarting it here is
+            # a SIGKILL (`kickstart -k`) mid-op → churn + WAL-corruption risk.
+            proc_alive = False
+            try:
+                proc_alive = daemon_mod.read_pid(root) is not None
+            except Exception:
+                proc_alive = False
+            misses = self.miss_counts.get(key, 0) + 1
+            self.miss_counts[key] = misses
+            if not proc_alive:
+                restarted = self._restart(root)          # genuinely dead
+                reason = "no-process"
+                self.miss_counts[key] = 0
+            elif misses >= WATCHDOG_GRACE_MISSES:
+                restarted = self._restart(root)          # wedged past grace
+                reason = f"wedged-{misses}-misses"
+                self.miss_counts[key] = 0
+            else:
+                reason = f"busy-grace-{misses}/{WATCHDOG_GRACE_MISSES}"
         with self._lock:
             ring = self.history.setdefault(key, deque(maxlen=HEALTH_HISTORY))
             ring.append({
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "up": up, "restarted": restarted,
+                "reason": reason,
             })
             if restarted:
                 self.restart_counts[key] = self.restart_counts.get(key, 0) + 1

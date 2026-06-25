@@ -125,16 +125,71 @@ def pagerank(
     adj: dict[int, dict[int, float]], *,
     damping: float = 0.85, max_iter: int = 100, tol: float = 1e-7,
 ) -> dict[int, float]:
-    """Weighted PageRank via power iteration. Pure Python (no numpy dep).
+    """Weighted PageRank via power iteration over the undirected weighted
+    adjacency from `build_adjacency`. Returns the stationary distribution
+    (sums to 1 over all nodes).
 
-    `adj` is the undirected weighted adjacency from `build_adjacency`. Returns
-    the stationary distribution (sums to 1 over all nodes). Dangling nodes
-    (none, for a connected undirected graph, but guarded anyway) redistribute
-    their mass uniformly."""
+    Prefers a scipy.sparse matvec: it runs in C and RELEASES THE GIL during the
+    multiply, so a daemon computing this stays responsive to pings (the hub
+    watchdog would otherwise see a multi-second pure-python GIL hold as a dead
+    daemon and SIGKILL-restart it). Falls back to a pure-python loop when
+    numpy/scipy aren't installed (base install without the [dense] extra)."""
     nodes = list(adj.keys())
     n = len(nodes)
     if n == 0:
         return {}
+    try:
+        return _pagerank_scipy(adj, nodes, damping, max_iter, tol)
+    except Exception:
+        return _pagerank_pure(adj, nodes, damping, max_iter, tol)
+
+
+def _pagerank_scipy(
+    adj: dict[int, dict[int, float]], nodes: list[int],
+    damping: float, max_iter: int, tol: float,
+) -> dict[int, float]:
+    import numpy as np
+    from scipy import sparse
+
+    n = len(nodes)
+    idx = {nd: i for i, nd in enumerate(nodes)}
+    rows: list[int] = []
+    cols: list[int] = []
+    data: list[float] = []
+    for u, nbrs in adj.items():
+        ui = idx[u]
+        for v, w in nbrs.items():
+            rows.append(ui)
+            cols.append(idx[v])
+            data.append(w)
+    # M[u, v] = w(u, v). The adjacency is symmetric (undirected), so M == M.T;
+    # contribution into v is sum_u M[u,v] * pr[u]/wdeg[u].
+    m = sparse.csr_matrix((data, (rows, cols)), shape=(n, n), dtype="float64")
+    wdeg = np.asarray(m.sum(axis=1)).ravel()
+    nz = wdeg > 0
+    inv = np.zeros(n, dtype="float64")
+    inv[nz] = 1.0 / wdeg[nz]
+    dangling_mask = ~nz
+    pr = np.full(n, 1.0 / n, dtype="float64")
+    base = (1.0 - damping) / n
+    for _ in range(max_iter):
+        contrib = m.T.dot(pr * inv)            # C-level matvec, GIL released
+        dangling = float(pr[dangling_mask].sum())
+        nxt = base + damping * contrib + damping * dangling / n
+        if float(np.abs(nxt - pr).sum()) < tol:
+            pr = nxt
+            break
+        pr = nxt
+    return {nodes[i]: float(pr[i]) for i in range(n)}
+
+
+def _pagerank_pure(
+    adj: dict[int, dict[int, float]], nodes: list[int],
+    damping: float, max_iter: int, tol: float,
+) -> dict[int, float]:
+    """Dependency-free power iteration. Dangling nodes (none for a connected
+    undirected graph, but guarded) redistribute their mass uniformly."""
+    n = len(nodes)
     wdeg = {u: sum(adj[u].values()) for u in nodes}
     pr = {u: 1.0 / n for u in nodes}
     base = (1.0 - damping) / n
