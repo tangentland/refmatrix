@@ -239,11 +239,15 @@ def store_scores(
     pid = store._partition_id
     ts = now if now is not None else time.time()
     con.execute("DELETE FROM pagerank WHERE partition_id = ?", (pid,))
-    for nid, score in scores.items():
-        con.execute(
+    # Bulk insert — DuckDB (columnar) is pathologically slow at single-row
+    # INSERTs, so a per-row loop took minutes on a 110k-node store. executemany
+    # batches it into one bind.
+    rows = [(pid, int(nid), float(score), ts) for nid, score in scores.items()]
+    if rows:
+        con.executemany(
             "INSERT INTO pagerank (partition_id, entity_id, score, computed_at) "
             "VALUES (?, ?, ?, ?)",
-            (pid, int(nid), float(score), ts),
+            rows,
         )
     try:
         con.commit()
