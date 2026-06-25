@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import time
+from pathlib import Path
 
 from refmatrix import daemon as dm
 from refmatrix.daemon import Daemon
@@ -60,3 +61,28 @@ def test_reap_does_not_kill_self(tmp_path):
     d = Daemon(root)
     # must return True and obviously not kill the test process
     assert d._reap_predecessor(dm.socket_path(root)) is True
+
+
+def test_spawn_daemon_subprocess_starts_and_idempotent():
+    """spawn_daemon_subprocess launches a real daemon via a fresh CLI process
+    (no in-process fork) and is idempotent.
+
+    Uses a SHORT mkdtemp root, not pytest's deep tmp_path: the daemon binds a
+    unix socket at <root>/rmxd.sock and macOS caps sun_path at ~104 bytes, which
+    pytest's nested basetemp blows past for a long test name."""
+    import shutil
+    import tempfile
+    from refmatrix.store import Store
+    base = Path(tempfile.mkdtemp())
+    root = base / ".refmatrix"
+    Store(root).init()
+    try:
+        pid = dm.spawn_daemon_subprocess(root, watch_root=[])
+        assert pid and pid > 0
+        assert dm.ping(root)
+        pid2 = dm.spawn_daemon_subprocess(root, watch_root=[])  # already up
+        assert pid2 == pid                                       # no new spawn
+    finally:
+        dm.stop_daemon(root)
+        shutil.rmtree(base, ignore_errors=True)
+    assert not dm.ping(root)

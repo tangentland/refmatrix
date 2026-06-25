@@ -111,7 +111,11 @@ def ensure_global_daemon() -> bool:
         return True
     _bootstrap_global_store()
     try:
-        daemon_mod.spawn_daemon(root, partition=GLOBAL_PARTITION, watch_root=[])
+        # Subprocess, not os.fork — the hub is multi-threaded (watchdog/bus/
+        # queue threads) and forking it risks a deadlocked child (see
+        # spawn_daemon_subprocess).
+        daemon_mod.spawn_daemon_subprocess(
+            root, partition=GLOBAL_PARTITION, watch_root=[])
     except Exception as e:
         _log(f"global daemon spawn failed: {e}")
         return False
@@ -234,7 +238,9 @@ class Watchdog:
         except Exception as e:
             _log(f"watchdog kickstart failed for {root}: {e}")
         try:
-            daemon_mod.spawn_daemon(root)
+            # Subprocess, not os.fork — the watchdog runs in the multi-threaded
+            # hub; forking it risks a deadlocked child.
+            daemon_mod.spawn_daemon_subprocess(root)
             _log(f"watchdog spawned daemon for {root}")
             return True
         except Exception as e:

@@ -4087,6 +4087,71 @@ def spawn_daemon(root: Path, *, partition: str | None = None,
             pass
 
 
+def spawn_daemon_subprocess(
+    root: Path, *, partition: str | None = None,
+    watch_root: "Path | list[Path] | None" = None,
+    watch_semantic: bool = False, wait_for_ready: float = 30.0,
+) -> int:
+    """Start the daemon for `root` as a fresh `rmx daemon start` SUBPROCESS
+    instead of an in-process `os.fork`.
+
+    For multi-threaded callers — notably the hub (watchdog + bus + queue-alert
+    threads) — `os.fork` hands the child a snapshot in which every mutex held
+    by another thread (malloc arena, the import lock, logging, a C-extension
+    lock) stays locked forever, so the child can deadlock. That is the CPython
+    "fork in a multi-threaded process may deadlock the child" hazard and the
+    same class as the objc fork-safety abort. Re-launching via the CLI means
+    the process that ultimately daemonizes (`spawn_daemon`) is single-threaded
+    when IT forks, so the fork is safe.
+
+    Idempotent (returns the running pid if one is already up). Blocks until the
+    daemon answers ping or `wait_for_ready` elapses; returns its pid (or -1 if
+    serving without a readable pidfile), else raises RuntimeError."""
+    import subprocess
+    import sys as _sys
+
+    root = Path(root).resolve()
+    if ping(root):
+        return read_pid(root) or -1
+
+    argv = [_sys.executable, "-m", "refmatrix.cli"]
+    if partition:
+        argv += ["-p", partition]
+    argv += ["daemon", "start"]
+    # None / [] → no file watcher (matches the hub callers' spawn_daemon use).
+    if not watch_root:
+        argv += ["--no-watch"]
+    else:
+        roots = [watch_root] if isinstance(watch_root, Path) else list(watch_root)
+        for r in roots:
+            argv += ["--watch-root", str(r)]
+    if watch_semantic:
+        argv += ["--semantic"]
+
+    env = dict(os.environ, REFMATRIX_ROOT=str(root))
+    # `rmx daemon start` blocks until the daemon is accepting connections, then
+    # returns — so run it and let it daemonize. Its own fork is single-threaded
+    # and safe. Output is discarded; failure surfaces via the ping check below.
+    try:
+        subprocess.run(
+            argv, env=env, timeout=wait_for_ready + 5.0,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    except subprocess.TimeoutExpired:
+        pass
+
+    # Poll for the full readiness window after the launcher returns: under load
+    # the inner `daemon start` can exit before its child has bound the socket,
+    # so a short poll would spuriously fail.
+    deadline = time.time() + wait_for_ready
+    while time.time() < deadline:
+        if ping(root):
+            return read_pid(root) or -1
+        time.sleep(0.1)
+    raise RuntimeError(
+        f"subprocess daemon did not start for {root} "
+        f"within {wait_for_ready:.0f}s")
+
+
 def stop_daemon(root: Path, *, timeout: float = 5.0) -> bool:
     """Send a stop op, then wait for the pid to exit. Returns True if the
     daemon stopped within the timeout (or if no daemon was running)."""
