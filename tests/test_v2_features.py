@@ -125,6 +125,23 @@ def test_pagerank_hub_outranks_leaf(store):
     assert len(pr.load_scores(store)) == n
 
 
+def test_pagerank_excludes_operational_cards_from_graph(store):
+    """Raw session/digest card hubs must not appear in the centrality prior."""
+    from refmatrix import pagerank as pr
+    real = store.add_concept("alpha")
+    card = store.add_concept("session-cafe")
+    ents = [store.upsert_entity(kind="code", name=f"e{i}.py") for i in range(5)]
+    for e in ents:
+        store.link("mentions", real, e)
+        store.link("mentions", card, e)
+    scores = pr.compute(store)
+    assert real in scores
+    assert card not in scores              # excluded from the graph entirely
+    # opt-out path still includes it
+    adj_all = pr.build_adjacency(store, exclude_operational=False)
+    assert card in adj_all
+
+
 def test_pagerank_prior_lifts_central_concept_in_match_ranking(store):
     """A central concept should outrank a peripheral one of identical token
     shape once the PageRank prior is computed."""

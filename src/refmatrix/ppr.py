@@ -27,7 +27,7 @@ from __future__ import annotations
 from collections import deque
 from typing import TYPE_CHECKING
 
-from refmatrix.pagerank import build_adjacency
+from refmatrix.pagerank import _OPERATIONAL_RE, build_adjacency
 
 if TYPE_CHECKING:
     from refmatrix.store import Store
@@ -108,11 +108,8 @@ def local_push_ppr(
 # Curated MEMORY docs whose names merely CONTAIN "session" (e.g.
 # `project_session_0328_to_0331`) are knowledge, not cards — only the bare
 # `session-<id>` / `digest-<id>` prefixes are excluded.
-_OPERATIONAL_PREFIXES = ("session-", "digest-")
-
-
 def _is_operational(name: str) -> bool:
-    return name.startswith(_OPERATIONAL_PREFIXES)
+    return bool(_OPERATIONAL_RE.match(name))
 
 
 def rank_related(

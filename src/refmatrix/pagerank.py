@@ -23,6 +23,7 @@ without re-deriving N.
 """
 from __future__ import annotations
 
+import re
 import time
 from typing import TYPE_CHECKING
 
@@ -31,19 +32,54 @@ from refmatrix.store import _CONCEPT_SHIFT, _ENTITY_MASK
 if TYPE_CHECKING:
     from refmatrix.store import Store
 
+# Raw session/digest CARD anchors are operational content (the "operational
+# content stays out of graph" rule). Anchored at start with either separator so
+# curated memory docs that merely contain "session" mid-name aren't caught.
+_OPERATIONAL_RE = re.compile(r"(?i)^(session|digest)[-_]")
+
 
 def build_adjacency(
     store: "Store", *, link_weight: float = 2.0,
+    exclude_operational: bool = True,
 ) -> dict[int, dict[int, float]]:
     """Bipartite concept⇄entity adjacency for the store's ACTIVE partition.
 
     Returns an undirected weighted adjacency map `{node: {neighbor: weight}}`.
     Parallel edges (a mention AND a typed link between the same pair) sum their
-    weights. Self-loops are dropped."""
+    weights. Self-loops are dropped.
+
+    `exclude_operational` drops raw `session-<id>` / `digest-<id>` card concept
+    nodes (and any edge touching them) before building the graph — they are
+    operational content (the "operational content stays out of graph" rule),
+    and being high-degree hubs they would otherwise top the centrality prior
+    and act as PPR conduits between unrelated concepts. Curated memory docs
+    that merely contain "session" in their name are NOT excluded."""
+    con = store._connect()
+    pid = store._partition_id
+
+    # Operational card concept ids to drop from the graph entirely. Match
+    # both separators (`session-<id>` raw cards keep the dash; `add_concept`
+    # canonicalizes to `session_<id>`) via a broad LIKE prefilter + a precise
+    # `^(session|digest)[-_]` regex — so a curated memory like
+    # `project_session_0328` (separator not at the start) is never caught.
+    op_ids: set[int] = set()
+    if exclude_operational:
+        try:
+            for r in con.execute(
+                "SELECT id, name FROM entities WHERE partition_id = ? "
+                "AND kind = 'concept' "
+                "AND (lower(name) LIKE 'session%' OR lower(name) LIKE 'digest%')",
+                (pid,),
+            ).fetchall():
+                if _OPERATIONAL_RE.match(str(r[1])):
+                    op_ids.add(int(r[0]))
+        except Exception:
+            op_ids = set()
+
     adj: dict[int, dict[int, float]] = {}
 
     def add(a: int, b: int, w: float) -> None:
-        if a == b or w <= 0:
+        if a == b or w <= 0 or a in op_ids or b in op_ids:
             return
         adj.setdefault(a, {})
         adj.setdefault(b, {})
@@ -65,8 +101,6 @@ def build_adjacency(
     # 2. typed linkage edges, restricted to the active partition on both ends
     #    so cross-partition `same_as` / canon edges don't leak foreign nodes
     #    into a partition-local centrality.
-    con = store._connect()
-    pid = store._partition_id
     try:
         rows = con.execute(
             "SELECT el.concept_id, el.entity_id, el.weight "
