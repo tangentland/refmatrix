@@ -155,13 +155,29 @@ def _t_memory_recall(args: dict) -> dict:
 
 
 def _t_bus_pub(args: dict) -> dict:
-    from refmatrix import hub as hub_mod
+    from refmatrix import hub as hub_mod, discovery
+    import os
     if not hub_mod.is_running():
         return {"error": "hub not running"}
+    channel = args["channel"]
+    # Identity passthrough (mirrors `rmx bus pub`): explicit `from` wins, then
+    # $RMX_AGENT, then the MCP server's own project name. NOT a hardcoded
+    # "claude-mcp" — co-located agents share a hostname, so the project is the
+    # only default that tells receivers WHO published.
+    sender = (args.get("from") or os.environ.get("RMX_AGENT")
+              or discovery.store_name(_resolve_root(args)))
+    # Derive the project tag from a proj:<name>:<topic> channel unless the
+    # caller set it explicitly (global:* channels stay project-less).
+    project = args.get("project")
+    if project is None and channel.startswith("proj:"):
+        parts = channel.split(":")
+        project = parts[1] if len(parts) > 1 else None
     return hub_mod.rpc("bus_pub", {
-        "channel": args["channel"], "body": args["body"],
+        "channel": channel, "body": args["body"],
         "type": args.get("type", "announce"),
-        "from": args.get("from", "claude-mcp")}).get("result", {})
+        "from": sender, "project": project,
+        "reply_to": args.get("reply_to"),
+    }).get("result", {})
 
 
 def _t_bus_history(args: dict) -> dict:
@@ -170,6 +186,21 @@ def _t_bus_history(args: dict) -> dict:
         return {"error": "hub not running"}
     return hub_mod.rpc("bus_history", {
         "channel": args["channel"], "n": int(args.get("n", 20))}).get("result", {})
+
+
+def _t_bus_channels(args: dict) -> dict:
+    """Discover live bus channels, optionally filtered by a glob (`proj:*`,
+    `global:*`, `proj:cliquedb:*`)."""
+    from refmatrix import hub as hub_mod
+    import fnmatch
+    if not hub_mod.is_running():
+        return {"error": "hub not running"}
+    chans = hub_mod.rpc("bus_channels").get("result", {}).get("channels", [])
+    glob = args.get("glob")
+    if glob:
+        chans = [c for c in chans
+                 if fnmatch.fnmatch(str(c.get("channel", "")), glob)]
+    return {"channels": chans}
 
 
 def _t_queues(args: dict) -> dict:
@@ -519,10 +550,15 @@ TOOLS: dict[str, dict] = {
         "fn": _t_memory_recall},
     "rmx_bus_pub": {
         "description": "Publish a message to the agent bus "
-                       "(proj:<name>:<topic> or global:<topic>).",
+                       "(proj:<name>:<topic> or global:<topic>). `from` "
+                       "defaults to this server's project; pass `reply_to` "
+                       "(a prior message id) to thread a reply.",
         "schema": {"type": "object", "properties": {
             "channel": {"type": "string"}, "body": {"type": "string"},
-            "type": {"type": "string"}}, "required": ["channel", "body"]},
+            "type": {"type": "string"},
+            "from": {"type": "string"},
+            "project": {"type": "string"},
+            "reply_to": {"type": "string"}}, "required": ["channel", "body"]},
         "fn": _t_bus_pub},
     "rmx_bus_history": {
         "description": "Read recent messages on a bus channel.",
@@ -530,6 +566,13 @@ TOOLS: dict[str, dict] = {
             "channel": {"type": "string"}, "n": {"type": "integer"}},
             "required": ["channel"]},
         "fn": _t_bus_history},
+    "rmx_bus_channels": {
+        "description": "List live bus channels (with message counts), "
+                       "optionally filtered by a glob like `proj:*` or "
+                       "`proj:cliquedb:*`. Channel discovery for the bus.",
+        "schema": {"type": "object", "properties": {
+            "glob": {"type": "string"}}, "required": []},
+        "fn": _t_bus_channels},
     "rmx_queues": {
         "description": "Change-queue visibility: pending sync/stale work per "
                        "project + refinement-queue depth.",
