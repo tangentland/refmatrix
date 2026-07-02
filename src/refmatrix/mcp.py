@@ -80,23 +80,72 @@ def _t_query(args: dict) -> dict:
     return resp.get("result", {}) if resp.get("ok") else {"error": resp.get("error")}
 
 
+def _memory_partition(root: Path) -> str:
+    """The partition memory nodes live in — `memory-<project>` on a pre-merge
+    host (legacy partition still present), else the project partition. Mirrors
+    the CLI `_memory_partition_default` so MCP recall reads the SAME partition
+    `rmx memory recall` uses. MCP is daemon-routed, so detect the legacy
+    partition via the daemon's `partition_list`."""
+    from refmatrix import daemon as daemon_mod, discovery
+    project = discovery.store_name(root)
+    legacy = f"memory-{project}"
+    try:
+        if daemon_mod.ping(root):
+            r = daemon_mod.call(root, "partition_list", {}, timeout=10.0)
+            if r.get("ok") and any(
+                row.get("name") == legacy
+                for row in r["result"].get("rows", [])
+            ):
+                return legacy
+    except Exception:
+        pass
+    return project
+
+
 def _t_memory_recall(args: dict) -> dict:
-    """Lexical recall across project + global behavior store (scope=both)."""
-    from refmatrix import daemon as daemon_mod, discovery, hub as hub_mod
-    # query optional: empty → LIKE '%%' → recent memories newest-first, which is
-    # exactly what a SessionStart/no-topic recall wants. Demanding it crashed the
-    # first call with KeyError: 'query'.
+    """Dense memory recall across project + global behavior store (scope=both).
+
+    Mirrors `rmx memory recall`: dense ANN on the *memory* partition
+    (`memory-<project>` pre-merge), NOT a lexical substring search on the code
+    partition. The previous handler called the `memory_search` op against
+    `store_name(root)` (the CODE partition), so every natural-language recall
+    returned `[]` even when the CLI found ranked hits — the read-side twin of
+    the embed wrong-partition bug. Project side is dense now; global stays
+    lexical (its own store/partition topology; upgrade is separate work).
+    """
+    from refmatrix import daemon as daemon_mod, hub as hub_mod
+    # query optional: empty → recent memories newest-first, which is exactly
+    # what a SessionStart/no-topic recall wants.
     q = args.get("query") or ""
     k = int(args.get("k", 8))
     scope = args.get("scope", "both")
     rows = []
     root = _resolve_root(args)
     if scope in ("project", "both") and daemon_mod.ping(root):
-        r = daemon_mod.call(root, "memory_search", {
-            "query": q, "limit": k, "partition": discovery.store_name(root)})
-        if r.get("ok"):
-            for m in r["result"].get("rows", []):
-                m["scope"] = "project"; rows.append(m)
+        partition = _memory_partition(root)
+        if q:
+            r = daemon_mod.call(root, "memory_recall", {
+                "query": q, "k": k, "kinds": ["memory"], "fuse": False,
+                "partition": partition}, timeout=180.0)
+            hits = r["result"].get("hits", []) if r.get("ok") else []
+            # Best-first: ascending L2 distance (dense) / descending score.
+            hits = sorted(hits, key=lambda h: (
+                h["distance"] if h.get("distance") is not None
+                else -(h.get("score") or 0.0)))
+            for h in hits[:k]:
+                eid = h.get("id") or h.get("entity_id")
+                g = daemon_mod.call(root, "memory_get", {
+                    "id": eid, "partition": partition}, timeout=30.0)
+                if g.get("ok"):
+                    m = g["result"].get("memory")
+                    if m:
+                        m["scope"] = "project"; rows.append(m)
+        else:
+            r = daemon_mod.call(root, "memory_recent", {
+                "since_seconds": None, "limit": k, "partition": partition})
+            if r.get("ok"):
+                for m in r["result"].get("rows", []):
+                    m["scope"] = "project"; rows.append(m)
     if scope in ("global", "both") and hub_mod.global_store_root().exists():
         g = hub_mod.global_call("memory_search", {"query": q, "limit": k})
         if g.get("ok"):
