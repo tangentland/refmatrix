@@ -6117,54 +6117,79 @@ def embed_cmd(kinds, batch, rebuild, max_batches, gc_mode, dry_run):
         )
         return
 
-    total_embedded = 0
-    iters = 0
+    # Memory nodes live in the memory partition (`memory-<project>` pre-merge,
+    # else the project partition); every other kind lives in the project
+    # partition. embed used to send ALL kinds to `_resolve_partition()`, so
+    # `rmx embed --kinds memory` scanned the *code* partition and never built
+    # the memory vectors — dense recall came up empty on every prompt and the
+    # recall hook nagged "rmx embed --kinds memory" (the command that didn't
+    # work). Route per kind, matching `reingest`'s graph_parts loop and the
+    # partition recall actually reads.
+    mem_kinds = [k for k in selected if k == "memory"]
+    other_kinds = [k for k in selected if k != "memory"]
+    plan: list[tuple[str, list[str]]] = []
+    if other_kinds:
+        plan.append((_resolve_partition(), other_kinds))
+    if mem_kinds:
+        mp = _memory_partition_default()
+        # On a post-merge host the memory partition IS the project partition;
+        # fold rather than embed the same partition twice.
+        folded = next((i for i, (p, _) in enumerate(plan) if p == mp), None)
+        if folded is not None:
+            plan[folded] = (mp, plan[folded][1] + mem_kinds)
+        else:
+            plan.append((mp, mem_kinds))
+
     if not daemon_mod.ping(root):
         console.print(
             "[yellow]no daemon up — embed runs faster through `rmx daemon start` "
             "so the model stays loaded between calls.[/]"
         )
-    console.print(
-        f"[dim]embedding kinds={','.join(selected)} (batch={batch}); the first "
-        f"batch warms the model (~134MB)…[/]"
-    )
-    while True:
-        iters += 1
-        args = {
-            "kinds": selected, "limit": batch,
-            "rebuild": rebuild and iters == 1,
-            # Daemon is bound to its startup partition; without this
-            # the embed lands in `<root>/vectors/<daemon-partition>/...`
-            # regardless of -p, so memory recall against memory-<project>
-            # comes up empty even after a "successful" rebuild.
-            "partition": _resolve_partition(),
-        }
-        if daemon_mod.ping(root):
-            resp = daemon_mod.call(root, "embed", args, timeout=600.0)
-            if not resp.get("ok"):
-                raise click.ClickException(resp.get("error", "daemon error"))
-            result = resp["result"]
-        else:
-            # Direct path: open the Store ourselves and run the same
-            # logic the op handler runs. Worse latency (cold model
-            # each call), but works without a daemon.
-            from refmatrix.daemon import _op_embed, Daemon
-            d = Daemon(root)
-            d.store = _store()
-            result = _op_embed(d, args)
-        if result.get("ok") is False:
-            raise click.ClickException(result.get("error", "embed failed"))
-        embedded = int(result.get("embedded", 0))
-        remaining = int(result.get("remaining", 0))
-        total_embedded += embedded
+
+    total_embedded = 0
+    for part, part_kinds in plan:
         console.print(
-            f"[dim]  ⋯ embed batch {iters}: +{embedded} "
-            f"({total_embedded} done, {remaining} left)[/]"
+            f"[dim]embedding kinds={','.join(part_kinds)} partition={part} "
+            f"(batch={batch}); the first batch warms the model (~134MB)…[/]"
         )
-        if embedded == 0 or remaining == 0:
-            break
-        if max_batches and iters >= max_batches:
-            break
+        iters = 0
+        while True:
+            iters += 1
+            args = {
+                "kinds": part_kinds, "limit": batch,
+                "rebuild": rebuild and iters == 1,
+                # Daemon is bound to its startup partition; without this
+                # the embed lands in `<root>/vectors/<daemon-partition>/...`
+                # regardless of -p, so memory recall against memory-<project>
+                # comes up empty even after a "successful" rebuild.
+                "partition": part,
+            }
+            if daemon_mod.ping(root):
+                resp = daemon_mod.call(root, "embed", args, timeout=600.0)
+                if not resp.get("ok"):
+                    raise click.ClickException(resp.get("error", "daemon error"))
+                result = resp["result"]
+            else:
+                # Direct path: open the Store ourselves and run the same
+                # logic the op handler runs. Worse latency (cold model
+                # each call), but works without a daemon.
+                from refmatrix.daemon import _op_embed, Daemon
+                d = Daemon(root)
+                d.store = _store()
+                result = _op_embed(d, args)
+            if result.get("ok") is False:
+                raise click.ClickException(result.get("error", "embed failed"))
+            embedded = int(result.get("embedded", 0))
+            remaining = int(result.get("remaining", 0))
+            total_embedded += embedded
+            console.print(
+                f"[dim]  ⋯ embed batch {iters}: +{embedded} "
+                f"({total_embedded} done, {remaining} left)[/]"
+            )
+            if embedded == 0 or remaining == 0:
+                break
+            if max_batches and iters >= max_batches:
+                break
 
     console.print(
         f"[green]done[/] embedded={total_embedded} kinds={','.join(selected)}"
