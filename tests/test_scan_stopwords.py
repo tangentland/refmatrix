@@ -2,7 +2,7 @@
 (user, camera, get) matchable as concepts."""
 from __future__ import annotations
 
-from refmatrix.scan import _PROMPT_STOPWORDS, match_concepts
+from refmatrix.scan import _PROMPT_STOPWORDS, _is_unlinked_plain, match_concepts
 from refmatrix.store import Store
 
 
@@ -22,13 +22,55 @@ def test_match_concepts_skips_stopwords_keeps_content(tmp_path):
     s = Store(tmp_path / ".refmatrix")
     s.init()
     # Seed junk function-word concepts (as the real graph accidentally does)
-    # plus a real domain concept.
+    # plus real domain concepts. A real domain concept is MENTIONED in code
+    # (degree > 0); seed the link so it survives the unlinked-plain-word gate
+    # the way `camera`/`user` do in an actual indexed graph.
     for junk in ("THE", "Does", "How"):
         s.add_concept(junk)
-    s.add_concept("camera")
-    s.add_concept("user")
+    cam = s.add_concept("camera")
+    usr = s.add_concept("user")
+    ent = s.upsert_entity(kind="code", name="cam.py")
+    s.link("mentions", cam, ent)
+    s.link("mentions", usr, ent)
     got = match_concepts(s, ["how", "does", "the", "camera", "user"])
     assert "camera" in got
     assert "user" in got
     assert not ({"THE", "Does", "How"} & set(got))
+    s.close()
+
+
+def test_is_unlinked_plain_predicate():
+    # degree-0 plain lowercase word → dropped (accidental prose extraction)
+    assert _is_unlinked_plain("selection", 0)
+    assert _is_unlinked_plain("meaningful", 0)
+    assert _is_unlinked_plain("keep", 0)
+    # identifier-shaped tokens the author cited survive even at degree 0
+    assert not _is_unlinked_plain("max_tokens", 0)
+    assert not _is_unlinked_plain("scan-prompt", 0)
+    assert not _is_unlinked_plain("KeyError", 0)
+    assert not _is_unlinked_plain("adr-0036", 0)
+    # any linked concept survives, plain word or not
+    assert not _is_unlinked_plain("selection", 3)
+
+
+def test_match_concepts_gate_drops_unlinked_plain_keeps_shaped(tmp_path):
+    """Unlinked plain word dropped; unlinked *shaped* symbol and linked plain
+    concept both kept — the fix cliquedb-claude requested for scan-prompt."""
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    s.add_concept("selection")          # degree-0 plain prose word → junk
+    s.add_concept("max_tokens")         # degree-0 but shaped → real symbol
+    linked = s.add_concept("authentication")
+    ent = s.upsert_entity(kind="code", name="auth.py")
+    s.link("mentions", linked, ent)     # degree>0 plain domain concept
+    got = match_concepts(s, ["selection", "max_tokens", "authentication"])
+    assert "selection" not in got
+    assert "max_tokens" in got
+    assert "authentication" in got
+    # gate is opt-out: pre-gate demote-only behavior keeps everything
+    ungated = match_concepts(
+        s, ["selection", "max_tokens", "authentication"],
+        drop_unlinked_plain=False,
+    )
+    assert "selection" in ungated
     s.close()

@@ -92,12 +92,13 @@ def _token_shape_score(token: str) -> float:
     return score
 
 
-def _salience(s: Store, con, name: str, token: str) -> float:
-    """Rank score for a matched concept. Higher = more worth surfacing in
-    the always-on scan-prompt hook. Combines graph signal (linkage degree),
-    specificity (inverse mention frequency = idf), token shape, and a small
-    namespaced-concept bonus. Demote-only: weak matches sort last and fall
-    off the per-prompt budget rather than being hard-dropped."""
+def _concept_signal(s: Store, con, name: str) -> tuple[int | None, int, int]:
+    """`(concept_id, linkage_degree, mention_doc_freq)` for a concept name.
+
+    Single source of truth for the graph signals that feed both the
+    unlinked-plain-word gate and the salience score, so `match_concepts`
+    queries each matched concept once. All-zero / `None` on any lookup
+    failure so callers degrade gracefully."""
     cid = None
     try:
         row = con.execute(
@@ -122,6 +123,33 @@ def _salience(s: Store, con, name: str, token: str) -> float:
             df = len(s.load_bitmap("mentions", cid))
         except Exception:
             df = 0
+    return cid, deg, df
+
+
+def _is_unlinked_plain(token: str, deg: int) -> bool:
+    """True when a matched concept is a degree-0 node whose citing token is a
+    plain lowercase word — indistinguishable from an accidental prose-word
+    extraction (`meaningful`, `selection`, `keep`, `send`, `note`, `lower`,
+    `start`), and whose context bundle is empty anyway. The always-on
+    scan-prompt hook drops these so the token budget lands on real symbols.
+
+    NOT dropped: linked concepts (`deg > 0` → a real domain concept, even a
+    plain-word one like `user`/`camera` that is mentioned in code), and
+    identifier-shaped tokens the author cited deliberately (`max_tokens`,
+    `scan-prompt`, `adr-0036`, `p20`) which keep `_token_shape_score > 0`
+    even at degree 0."""
+    return deg == 0 and _token_shape_score(token) == 0.0
+
+
+def _salience(
+    s: Store, name: str, token: str, cid: int | None, deg: int, df: int,
+) -> float:
+    """Rank score for a matched concept. Higher = more worth surfacing in
+    the always-on scan-prompt hook. Combines graph signal (linkage degree),
+    specificity (inverse mention frequency = idf), token shape, and a small
+    namespaced-concept bonus. Demote-only: weak matches sort last and fall
+    off the per-prompt budget rather than being hard-dropped. Graph signals
+    (`cid`/`deg`/`df`) are precomputed by `_concept_signal`."""
     idf = 1.0 / math.log2(df + 2) if df > 0 else 0.3
     # Centrality prior: the global PageRank ratio (avg node ≈ 1.0) when it has
     # been computed (`rmx pagerank`), log-compressed and capped so a mega-hub
@@ -145,6 +173,7 @@ def match_concepts(
     exclude_namespaces: tuple[str, ...] = ("keyword",),
     case_insensitive: bool = True,
     include_noise: bool = False,
+    drop_unlinked_plain: bool = True,
 ) -> list[str]:
     """Resolve candidate tokens to concept names that exist in the index,
     salience-ranked (most-informative first).
@@ -155,11 +184,13 @@ def match_concepts(
     3. namespaced suffix match — `tree_sitter` matches `import/tree_sitter`
        (excluding namespaces in `exclude_namespaces`)
 
-    The resolved names are then ranked by `_salience` so the always-on
+    Survivors of the unlinked-plain-word gate (`drop_unlinked_plain`, see
+    `_is_unlinked_plain`) are then ranked by `_salience` so the always-on
     scan-prompt hook spends its small budget on the concepts the prompt
     actually cared about, not on the first lowercase dictionary word that
     happened to be registered. Order is salience desc, first-seen as the
-    stable tie-break."""
+    stable tie-break. Set `drop_unlinked_plain=False` to keep every resolved
+    match (demote-only, pre-gate behavior)."""
     excluded = set(exclude_namespaces)
     found: list[tuple[str, str]] = []   # (concept name, source token)
     seen: set[str] = set()
@@ -203,14 +234,18 @@ def match_concepts(
         for r in rows:
             consider(r[0], cand)
 
-    # Stable salience sort: Python's sort is stable, so equal scores keep
-    # first-seen order. Negate the score for descending without disturbing
-    # the index tie-break.
-    ranked = sorted(
-        enumerate(found),
-        key=lambda it: (-_salience(s, con, it[1][0], it[1][1]), it[0]),
-    )
-    return [name for _, (name, _tok) in ranked]
+    # Gate then rank. Query each matched concept's graph signal once
+    # (`_concept_signal`) and reuse it for both the unlinked-plain-word gate
+    # and the salience score. Stable sort: equal scores keep first-seen order;
+    # negate the score for descending without disturbing the index tie-break.
+    scored: list[tuple[int, str, float]] = []
+    for idx, (name, token) in enumerate(found):
+        cid, deg, df = _concept_signal(s, con, name)
+        if drop_unlinked_plain and _is_unlinked_plain(token, deg):
+            continue
+        scored.append((idx, name, _salience(s, name, token, cid, deg, df)))
+    ranked = sorted(scored, key=lambda it: (-it[2], it[0]))
+    return [name for _idx, name, _sc in ranked]
 
 
 def _ppr_rerank(
