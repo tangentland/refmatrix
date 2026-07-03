@@ -22,6 +22,15 @@ from refmatrix.store import Store
 # Tokenization: identifier-shaped runs only. Skip pure-English noise.
 _IDENT_RE = re.compile(r"[A-Za-z_][\w\-./]*(?:::[\w\-./]+)*")
 
+# Minimum `_salience` a PLAIN lowercase word (shape-score 0, not namespaced)
+# must reach to earn a context bundle in the always-on scan-prompt hook, once
+# PageRank has been computed. Calibrated on the live refmatrix graph: central
+# domain concepts (`entity`≈1.62, `store`≈2.74, `memory`≈2.71) clear it;
+# code-mentioned common-English words (`keep`≈1.53, `selection`≈1.19,
+# `lower`≈1.21, `send`≈1.11) fall below. Shaped / namespaced tokens bypass this
+# floor entirely — they are cited symbols, not prose.
+SHAPE0_SALIENCE_FLOOR = 1.55
+
 # Function words that are never useful concept anchors. The graph sometimes
 # carries junk concepts for them (`THE`, `Does`, `How` from capitalized-word /
 # acronym extraction, noise=0); without this guard a prompt like "how does the
@@ -143,24 +152,33 @@ def _is_unlinked_plain(token: str, deg: int) -> bool:
 
 def _salience(
     s: Store, name: str, token: str, cid: int | None, deg: int, df: int,
+    *, pr_computed: bool = False,
 ) -> float:
     """Rank score for a matched concept. Higher = more worth surfacing in
     the always-on scan-prompt hook. Combines graph signal (linkage degree),
     specificity (inverse mention frequency = idf), token shape, and a small
     namespaced-concept bonus. Demote-only: weak matches sort last and fall
     off the per-prompt budget rather than being hard-dropped. Graph signals
-    (`cid`/`deg`/`df`) are precomputed by `_concept_signal`."""
+    (`cid`/`deg`/`df`) are precomputed by `_concept_signal`; `pr_computed` is
+    `pagerank.has_scores(s)`, hoisted out of the per-concept loop."""
     idf = 1.0 / math.log2(df + 2) if df > 0 else 0.3
     # Centrality prior: the global PageRank ratio (avg node ≈ 1.0) when it has
     # been computed (`rmx pagerank`), log-compressed and capped so a mega-hub
-    # can't swamp the other signals. Falls back to raw linkage degree when no
-    # PR row exists — a fresh store still ranks sensibly before the first
-    # `rmx pagerank` run.
+    # can't swamp the other signals.
     from refmatrix import pagerank as pr_mod
     pr = pr_mod.get_score(s, cid) if cid is not None else None
     if pr is not None and pr > 0:
         central = min(2.5, 0.8 * math.log2(pr + 1.0))
+    elif pr_computed:
+        # PageRank ran but this concept is absent/zero — genuinely peripheral
+        # (or created after the last `rmx pagerank`). Give only a tiny
+        # degree-derived nudge, NOT the fresh-store flat prior below: a plain
+        # word like `meaningful` (deg 5, unscored) must not inflate to
+        # hub-level and outrank real domain concepts.
+        central = 0.1 * min(deg, 10)
     else:
+        # No PageRank table at all — a fresh store. Fall back to raw linkage
+        # degree so it still ranks sensibly before the first `rmx pagerank`.
         central = (2.0 + 0.1 * min(deg, 10)) if deg > 0 else 0.0
     ns_bonus = 0.5 if "/" in name else 0.0
     return central + 1.5 * idf + _token_shape_score(token) + ns_bonus
@@ -238,12 +256,27 @@ def match_concepts(
     # (`_concept_signal`) and reuse it for both the unlinked-plain-word gate
     # and the salience score. Stable sort: equal scores keep first-seen order;
     # negate the score for descending without disturbing the index tie-break.
+    from refmatrix import pagerank as pr_mod
+    pr_computed = pr_mod.has_scores(s)
     scored: list[tuple[int, str, float]] = []
     for idx, (name, token) in enumerate(found):
         cid, deg, df = _concept_signal(s, con, name)
         if drop_unlinked_plain and _is_unlinked_plain(token, deg):
             continue
-        scored.append((idx, name, _salience(s, name, token, cid, deg, df)))
+        sal = _salience(s, name, token, cid, deg, df, pr_computed=pr_computed)
+        # Shape-0 salience floor: a plain lowercase word (no identifier shape,
+        # not namespaced) must clear SHAPE0_SALIENCE_FLOOR to earn a bundle in
+        # the always-on hook. Kills common-English hapaxes that happen to be
+        # code-mentioned (`selection`, `lower`, `thing`, `going`) — degree>0
+        # so the unlinked-plain gate above misses them — while central domain
+        # concepts (`store`, `memory`, `concept`, `entity`) clear it and every
+        # identifier-shaped / namespaced token is exempt. Only applied once
+        # PageRank exists, so a fresh store (flat central prior) keeps all.
+        if (drop_unlinked_plain and pr_computed
+                and "/" not in name and _token_shape_score(token) == 0.0
+                and sal < SHAPE0_SALIENCE_FLOOR):
+            continue
+        scored.append((idx, name, sal))
     ranked = sorted(scored, key=lambda it: (-it[2], it[0]))
     return [name for _idx, name, _sc in ranked]
 

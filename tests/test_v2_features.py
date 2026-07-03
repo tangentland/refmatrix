@@ -156,7 +156,10 @@ def test_pagerank_prior_lifts_central_concept_in_match_ranking(store):
         store.link("mentions", central, e)
     store.link("mentions", fringe, ents[0])
     pr.store_scores(store, pr.compute(store))
-    ranked = match_concepts(store, ["omega", "alpha"])
+    # Isolate the PR-ranking behavior from the shape-0 salience floor (its own
+    # tests cover that): both peripheral plain concepts must be present so the
+    # assertion is about ORDER, not survival.
+    ranked = match_concepts(store, ["omega", "alpha"], drop_unlinked_plain=False)
     assert ranked.index("alpha") < ranked.index("omega")
 
 

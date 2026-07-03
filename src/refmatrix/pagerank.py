@@ -271,6 +271,23 @@ def load_scores(store: "Store") -> dict[int, float]:
     return {int(r[0]): float(r[1]) for r in rows}
 
 
+def has_scores(store: "Store") -> bool:
+    """True when PageRank has been computed for the active partition (the
+    `pagerank` table holds at least one row). Lets callers distinguish a
+    concept that is genuinely peripheral (scored low / absent from a
+    populated table) from a fresh store where PageRank never ran — the two
+    warrant different centrality fallbacks in the salience ranker."""
+    con = store._connect()
+    pid = store._partition_id
+    try:
+        row = con.execute(
+            "SELECT 1 FROM pagerank WHERE partition_id = ? LIMIT 1", (pid,),
+        ).fetchone()
+    except Exception:
+        return False
+    return row is not None
+
+
 def get_score(store: "Store", entity_id: int) -> float | None:
     """Single centrality-ratio lookup for one node in the active partition,
     or None if absent. Cheap PK-indexed read — used by the scan-prompt

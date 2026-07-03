@@ -74,3 +74,30 @@ def test_match_concepts_gate_drops_unlinked_plain_keeps_shaped(tmp_path):
     )
     assert "selection" in ungated
     s.close()
+
+
+def test_shape0_floor_drops_peripheral_plain_word_once_pagerank_ran(tmp_path):
+    """After PageRank is computed, a code-mentioned but peripheral plain word
+    (degree>0, so the unlinked-plain gate misses it) is dropped by the shape-0
+    salience floor, while a central plain concept and any shaped token survive.
+    This is the second half of the cliquedb-claude fix: dictionary-common
+    words that happen to appear in code."""
+    from refmatrix import pagerank as pr
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    s.add_linkage_type("defines", directed=True, description="x")
+    hub = s.add_concept("store")            # central plain domain concept
+    fringe = s.add_concept("selection")     # peripheral plain word
+    shaped = s.add_concept("max_tokens")    # shaped, exempt from the floor
+    ents = [s.upsert_entity(kind="code", name=f"m{i}.py") for i in range(8)]
+    for e in ents:                          # hub is co-mentioned everywhere
+        s.link("defines", hub, e)
+        s.link("mentions", hub, e)
+    s.link("mentions", fringe, ents[0])     # fringe: one lonely mention
+    s.link("mentions", shaped, ents[0])     # shaped: also peripheral by degree
+    pr.store_scores(s, pr.compute(s))
+    got = match_concepts(s, ["store", "selection", "max_tokens"])
+    assert "store" in got                   # central plain concept kept
+    assert "max_tokens" in got              # shaped token exempt from floor
+    assert "selection" not in got           # peripheral plain word floored out
+    s.close()
