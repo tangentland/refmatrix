@@ -121,6 +121,13 @@ td.mono, .mono { font-family: var(--mono); }
 .node-panel h3 { margin: 0 0 6px; font-family: var(--mono); font-size: 14px; word-break: break-all; }
 .node-panel pre { white-space: pre-wrap; word-break: break-word; font-size: 11px; color: var(--dim);
   background: var(--bg); padding: 8px; border-radius: 6px; max-height: 220px; overflow: auto; }
+/* widen the panel + inline read-only source viewer when a file-backed node is selected */
+.node-panel.wide { width: min(46vw, 720px); }
+.node-panel .np-file { background: #0a0d12; border: 1px solid var(--border); border-radius: 6px;
+  margin: 8px 0; max-height: 52vh; overflow: auto; }
+.node-panel .np-file .doc-pre { font-size: 11px; }
+.node-panel .sub { font-family: var(--mono); font-size: 11px; color: var(--dim);
+  word-break: break-all; margin-bottom: 6px; }
 
 /* ops / logs */
 .term { background: #000; border: 1px solid var(--border); border-radius: var(--r);

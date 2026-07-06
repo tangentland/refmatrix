@@ -21,17 +21,27 @@ const KIND_COLOR = {code: "#58a6ff", doc: "#d29922", concept: "#bc8cff",
 const CATEGORY_COLOR = {code: "#58a6ff", sql: "#f778ba", doc: "#d29922",
   adr: "#db6d28", taskplan: "#39c5cf", concept: "#bc8cff", memory: "#3fb950",
   query: "#8b949e", session: "#8b949e"};
+const CODE_RE = /\.(py|pyi|js|ts|tsx|jsx|go|rs|java|kt|swift|c|cc|cpp|h|hpp|rb|php|cs|scala|sh|bash|zsh|lua|pseudo)$/;
+const DOC_RE = /\.(md|markdown|rst|txt|adoc|gmd)$/;
 function nodeCategory(n) {
   const path = (n.path || "").toLowerCase();
   const name = (n.name || "").toLowerCase();
-  if (n.kind === "code") return path.endsWith(".sql") ? "sql" : "code";
-  if (n.kind === "doc") {
+  // Path is the strongest signal: /api/graph returns neighbors as kind=
+  // "concept" but each carries the file it represents, so classify by that
+  // file's type — otherwise every node is the always-shown "concept" spine
+  // and the toggles filter nothing.
+  if (path) {
+    if (/\/memory\//.test(path)) return "memory";   // memory cards: spine
+    if (path.endsWith(".sql")) return "sql";
     if ((n.meta && n.meta.adr_number != null) || /(^|\/)adr\//.test(path)
         || /(^|\/)adr-?\d/.test(name)) return "adr";
-    if (/\/plans?\//.test(path) || /(^|\/)(task|plan)[-_]/.test(name)
-        || /\btask-\d/.test(path)) return "taskplan";
-    return "doc";
+    if (/\/(workflow|plans?)\//.test(path) || /(^|\/)(task|plan)[-_]/.test(name)
+        || /\btask[-_.]\d/.test(path)) return "taskplan";
+    if (CODE_RE.test(path)) return "code";
+    if (DOC_RE.test(path)) return "doc";
   }
+  if (n.kind === "code") return "code";
+  if (n.kind === "doc") return "doc";
   return n.kind || "concept";
 }
 const nodeColor = (n) => CATEGORY_COLOR[nodeCategory(n)] || "#8b949e";
@@ -40,6 +50,7 @@ const nodeColor = (n) => CATEGORY_COLOR[nodeCategory(n)] || "#8b949e";
 const FILTER_CB = {code: "gf-code", sql: "gf-sql", doc: "gf-doc",
   adr: "gf-adr", taskplan: "gf-task"};
 function nodeVisible(n) {
+  if (n.anchor) return true;   // never hide the focused/seed node
   const id = FILTER_CB[nodeCategory(n)];
   if (!id) return true;
   const el = document.getElementById(id);
@@ -826,22 +837,59 @@ function setupGraphInput() {
   }, {passive: false});
 }
 
+// A node backs a real source file when it carries a path and isn't a pure
+// graph node (concept/memory/query/session have no file behind them).
+function fileHasSource(n) {
+  const c = nodeCategory(n);
+  return !!n.path && c !== "concept" && c !== "memory"
+    && c !== "query" && c !== "session";
+}
+
+// Read-only source render — line numbers, escaped, highlighted anchor line,
+// auto-scrolled to it. Shared by the inline node-panel viewer and the full
+// modal so both stay identical.
+async function loadFileInto(el, n) {
+  const root = $("#graph-project").value;
+  const fname = (n.path || "").split("/").pop();
+  el.innerHTML = `<div class="loading">loading ${fname}…</div>`;
+  const r = await api(`/api/file?root=${encodeURIComponent(root)}&path=${encodeURIComponent(n.path)}`
+    + (n.line ? `&line=${n.line}` : ""));
+  if (!r.ok) {
+    el.innerHTML = `<div class="muted" style="padding:8px">${r.error || "could not read file"}</div>`;
+    return;
+  }
+  const esc = (s) => s.replace(/[&<>]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c]));
+  const start = r.result.start || 1;
+  const lines = (r.result.content || "").split("\n");
+  const hl = r.result.line;
+  el.innerHTML = `<pre class="doc-pre">${lines.map((ln, i) => {
+    const no = start + i;
+    return `<div class="dl${no === hl ? " hot" : ""}"><span class="ln">${no}</span>${esc(ln)}</div>`;
+  }).join("")}</pre>`;
+  const h = el.querySelector(".dl.hot"); if (h) h.scrollIntoView({block: "center"});
+}
+
 function showNode(n) {
   const p = $("#node-panel");
   p.classList.remove("hidden");
+  const hasFile = fileHasSource(n);
+  p.classList.toggle("wide", hasFile);   // widen the panel to fit source
   p.innerHTML = `<h3>${n.name}</h3>
     <div class="kv"><span>kind</span><span style="color:${nodeColor(n)}">${nodeCategory(n)}</span></div>
     ${n.path ? `<div class="sub">${n.path}</div>` : ""}
     ${n.tldr ? `<p class="muted" style="font-size:12px">${n.tldr}</p>` : ""}
-    ${n.snippet ? `<pre>${n.snippet.replace(/[<>]/g, "")}</pre>` : ""}
+    ${hasFile ? `<div class="np-file" id="np-file"></div>`
+      : (n.snippet ? `<pre>${n.snippet.replace(/[<>]/g, "")}</pre>` : "")}
     <div class="row-actions">
       <button class="btn" id="np-focus">refocus</button>
-      ${((n.kind === "code" || n.kind === "doc") && n.path)
-        ? `<button class="btn" id="np-view">open</button>` : ""}
+      ${hasFile ? `<button class="btn" id="np-full">⤢ full</button>` : ""}
       <button class="btn" id="np-close">close</button></div>`;
   $("#np-focus").addEventListener("click", () => { $("#graph-ref").value = n.name; runGraph(); });
-  if ($("#np-view")) $("#np-view").addEventListener("click", () => openDocViewer(n));
-  $("#np-close").addEventListener("click", () => p.classList.add("hidden"));
+  if ($("#np-full")) $("#np-full").addEventListener("click", () => openDocViewer(n));
+  $("#np-close").addEventListener("click", () => {
+    p.classList.add("hidden"); p.classList.remove("wide");
+  });
+  if (hasFile) loadFileInto($("#np-file"), n);   // read-only inline viewer
 }
 
 async function openDocViewer(n) {
@@ -861,20 +909,7 @@ async function openDocViewer(n) {
   </div>`;
   $("#doc-close").addEventListener("click", () => modal.classList.add("hidden"));
   modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.add("hidden"); });
-  const root = $("#graph-project").value;
-  const r = await api(`/api/file?root=${encodeURIComponent(root)}&path=${encodeURIComponent(n.path)}`
-    + (n.line ? `&line=${n.line}` : ""));
-  const body = $("#doc-body");
-  if (!r.ok) { body.innerHTML = `<div class="muted">${r.error || "could not read file"}</div>`; return; }
-  const esc = (s) => s.replace(/[&<>]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c]));
-  const start = r.result.start || 1;
-  const lines = (r.result.content || "").split("\n");
-  const hl = r.result.line;
-  body.innerHTML = `<pre class="doc-pre">${lines.map((ln, i) => {
-    const no = start + i;
-    return `<div class="dl${no === hl ? " hot" : ""}"><span class="ln">${no}</span>${esc(ln)}</div>`;
-  }).join("")}</pre>`;
-  if (hl) { const h = body.querySelector(".dl.hot"); if (h) h.scrollIntoView({block: "center"}); }
+  loadFileInto($("#doc-body"), n);
 }
 
 // ---- boot ----
