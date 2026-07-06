@@ -14,6 +14,38 @@ const fmtBytes = (n) => {
 const KIND_COLOR = {code: "#58a6ff", doc: "#d29922", concept: "#bc8cff",
   memory: "#3fb950", query: "#8b949e", session: "#8b949e"};
 
+// Display categories. DB `kind` is only code/doc/concept/memory; sql/adr/
+// task-plan are sub-categories discriminated by path+name, both of which the
+// backend already passes through on every graph node — so classification is
+// pure client-side, no /api/graph change.
+const CATEGORY_COLOR = {code: "#58a6ff", sql: "#f778ba", doc: "#d29922",
+  adr: "#db6d28", taskplan: "#39c5cf", concept: "#bc8cff", memory: "#3fb950",
+  query: "#8b949e", session: "#8b949e"};
+function nodeCategory(n) {
+  const path = (n.path || "").toLowerCase();
+  const name = (n.name || "").toLowerCase();
+  if (n.kind === "code") return path.endsWith(".sql") ? "sql" : "code";
+  if (n.kind === "doc") {
+    if ((n.meta && n.meta.adr_number != null) || /(^|\/)adr\//.test(path)
+        || /(^|\/)adr-?\d/.test(name)) return "adr";
+    if (/\/plans?\//.test(path) || /(^|\/)(task|plan)[-_]/.test(name)
+        || /\btask-\d/.test(path)) return "taskplan";
+    return "doc";
+  }
+  return n.kind || "concept";
+}
+const nodeColor = (n) => CATEGORY_COLOR[nodeCategory(n)] || "#8b949e";
+// Filterable categories → checkbox id. concept/memory/query/session are the
+// graph spine and always render (no checkbox).
+const FILTER_CB = {code: "gf-code", sql: "gf-sql", doc: "gf-doc",
+  adr: "gf-adr", taskplan: "gf-task"};
+function nodeVisible(n) {
+  const id = FILTER_CB[nodeCategory(n)];
+  if (!id) return true;
+  const el = document.getElementById(id);
+  return !el || el.checked;
+}
+
 let PROJECTS = [];
 
 // ---- tabs ----
@@ -607,7 +639,7 @@ async function renderLanding(view) {
     const r = await api(`/api/tree?root=${encodeURIComponent(root)}`);
     const es = r.result?.entries || [];
     if (!es.length) { body.innerHTML = '<div class="muted">no files</div>'; return; }
-    const codeExt = /\.(py|js|ts|tsx|jsx|go|rs|java|c|cpp|h)$/;
+    const codeExt = /\.(py|pyi|js|ts|tsx|jsx|go|rs|java|kt|swift|c|cc|cpp|h|hpp|rb|php|cs|scala|sh|bash|zsh|sql|lua|pseudo)$/;
     let lastDir = null, html = "";
     es.forEach((e) => {
       if (e.dir !== lastDir) {
@@ -707,16 +739,19 @@ function draw() {
   ctx.clearRect(0, 0, G.w, G.h);
   ctx.save(); ctx.translate(x, y); ctx.scale(z, z);
   const idx = new Map(G.nodes.map((n) => [n.id, n]));
+  const vis = new Map(G.nodes.map((n) => [n.id, nodeVisible(n)]));
   ctx.lineWidth = 1; ctx.strokeStyle = "rgba(139,148,158,.25)";
   G.edges.forEach((e) => {
     const a = idx.get(e.source), b = idx.get(e.target); if (!a || !b) return;
+    if (!vis.get(e.source) || !vis.get(e.target)) return;   // hide filtered
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   });
   ctx.font = "11px ui-monospace, monospace";
   G.nodes.forEach((n) => {
+    if (!vis.get(n.id)) return;   // category toggled off
     const r = n.anchor ? 8 : 5;
     ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 7);
-    ctx.fillStyle = KIND_COLOR[n.kind] || "#8b949e"; ctx.fill();
+    ctx.fillStyle = nodeColor(n); ctx.fill();
     if (n.anchor) { ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke(); }
     ctx.fillStyle = "#e6edf3";
     const label = n.name.length > 22 ? n.name.slice(0, 21) + "…" : n.name;
@@ -736,6 +771,7 @@ function screenToWorld(px, py) {
 function nodeAt(px, py) {
   const w = screenToWorld(px, py);
   return G.nodes.find((n) => {
+    if (!nodeVisible(n)) return false;                            // filtered out
     if (Math.hypot(n.x - w.x, n.y - w.y) < 10) return true;       // circle
     // label hit-box: clicking the text selects the node too
     if (n._lw != null && w.x >= n._lx - 2 && w.x <= n._lx + n._lw + 2
@@ -794,7 +830,7 @@ function showNode(n) {
   const p = $("#node-panel");
   p.classList.remove("hidden");
   p.innerHTML = `<h3>${n.name}</h3>
-    <div class="kv"><span>kind</span><span style="color:${KIND_COLOR[n.kind]}">${n.kind}</span></div>
+    <div class="kv"><span>kind</span><span style="color:${nodeColor(n)}">${nodeCategory(n)}</span></div>
     ${n.path ? `<div class="sub">${n.path}</div>` : ""}
     ${n.tldr ? `<p class="muted" style="font-size:12px">${n.tldr}</p>` : ""}
     ${n.snippet ? `<pre>${n.snippet.replace(/[<>]/g, "")}</pre>` : ""}

@@ -318,8 +318,11 @@ def create_app(hub) -> FastAPI:
         base = rootp.parent
         SKIP = {".git", ".refmatrix", "node_modules", "__pycache__", ".venv",
                 ".venv-eval", "dist", "build", ".tldr", "vectors"}
-        KEEP = {".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java",
-                ".c", ".cpp", ".h", ".md", ".gmd", ".rst", ".txt"}
+        # Track exactly what ingest ingests (CODE_EXTS ∪ DOC_EXTS) so the file
+        # tree never drifts from the graph — a hand-rolled subset silently
+        # dropped .sql/.sh/.lua/etc. even though they were ingested.
+        from refmatrix.ingest import CODE_EXTS, DOC_EXTS
+        KEEP = CODE_EXTS | DOC_EXTS | {".gmd"}
         entries: list[dict] = []
         import os as _os
         for dirpath, dirnames, filenames in _os.walk(base):

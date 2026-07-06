@@ -45,6 +45,13 @@
         </label>
         <button id="graph-go">explore</button>
         <label class="degree"><input type="checkbox" id="graph-tests"> include tests</label>
+        <span class="graph-filters">
+          <label class="degree"><input type="checkbox" id="gf-code" checked> <b style="color:#58a6ff">code</b></label>
+          <label class="degree"><input type="checkbox" id="gf-sql" checked> <b style="color:#f778ba">sql</b></label>
+          <label class="degree"><input type="checkbox" id="gf-doc" checked> <b style="color:#d29922">docs</b></label>
+          <label class="degree"><input type="checkbox" id="gf-adr" checked> <b style="color:#db6d28">adr</b></label>
+          <label class="degree"><input type="checkbox" id="gf-task" checked> <b style="color:#39c5cf">task/plan</b></label>
+        </span>
         <span class="hint">click=select · dbl-click=refocus · right-click code/doc=view file</span>
       </div>
       <div class="graph-crumbs" id="graph-crumbs"></div>
