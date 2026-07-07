@@ -11,9 +11,10 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from refmatrix import __version__ as _RMX_VERSION
 from refmatrix import daemon as daemon_mod
 from refmatrix import discovery, telemetry
 
@@ -623,7 +624,18 @@ def create_app(hub) -> FastAPI:
         def index():
             idx = STATIC_DIR / "index.html"
             if idx.exists():
-                return FileResponse(str(idx))
+                # Cache-bust the SPA assets by app version. StaticFiles sends
+                # etag/last-modified, but browsers heuristic-cache JS and skip
+                # revalidation on a normal reload — so a UI deploy silently
+                # served stale app.js until a hard refresh. Versioning the URL
+                # (`?v=<ver>`) makes each release a fresh URL → guaranteed miss;
+                # the query string is ignored by StaticFiles when reading disk.
+                html = idx.read_text(encoding="utf-8")
+                html = html.replace("/static/app.js",
+                                    f"/static/app.js?v={_RMX_VERSION}")
+                html = html.replace("/static/style.css",
+                                    f"/static/style.css?v={_RMX_VERSION}")
+                return HTMLResponse(html)
             return JSONResponse({"error": "UI not built"}, status_code=404)
 
     return app
