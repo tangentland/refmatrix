@@ -718,6 +718,27 @@ function mergeGraph(g, reset) {
     const k = e.source + ">" + e.target + e.linkage;
     if (!eset.has(k)) { eset.add(k); G.edges.push(e); }
   });
+  normalizeEdgeWeights();
+}
+
+// Per-linkage-type weight normalization → e._nw in [0,1]. Edge weight scales
+// differ by kind (mention ~1-5, content BM25 ~5-8, grep = hit count), so each
+// edge is judged against its OWN linkage's max — otherwise BM25 content edges
+// would swamp mention edges into invisibility. Recomputed on every merge over
+// the full current edge set. Weightless edges (weight == null) stay null and
+// draw neutral.
+function normalizeEdgeWeights() {
+  const maxByLink = new Map();
+  G.edges.forEach((e) => {
+    if (e.weight == null) return;
+    const w = Math.abs(e.weight);
+    if (w > (maxByLink.get(e.linkage) || 0)) maxByLink.set(e.linkage, w);
+  });
+  G.edges.forEach((e) => {
+    if (e.weight == null) { e._nw = null; return; }
+    const m = maxByLink.get(e.linkage) || 0;
+    e._nw = m > 0 ? Math.abs(e.weight) / m : 0;
+  });
 }
 
 function tick() {
@@ -751,10 +772,18 @@ function draw() {
   ctx.save(); ctx.translate(x, y); ctx.scale(z, z);
   const idx = new Map(G.nodes.map((n) => [n.id, n]));
   const vis = new Map(G.nodes.map((n) => [n.id, nodeVisible(n)]));
-  ctx.lineWidth = 1; ctx.strokeStyle = "rgba(139,148,158,.25)";
   G.edges.forEach((e) => {
     const a = idx.get(e.source), b = idx.get(e.target); if (!a || !b) return;
     if (!vis.get(e.source) || !vis.get(e.target)) return;   // hide filtered
+    // Relevance → thickness + alpha. e._nw is the per-linkage-normalized
+    // weight (0..1, set by normalizeEdgeWeights); null = weightless group,
+    // drawn neutral so it reads as "linked, relevance unknown".
+    const nw = e._nw;
+    if (nw == null) { ctx.lineWidth = 1; ctx.strokeStyle = "rgba(139,148,158,.22)"; }
+    else {
+      ctx.lineWidth = 1 + 3 * nw;                                        // 1..4 px
+      ctx.strokeStyle = `rgba(139,148,158,${(0.15 + 0.55 * nw).toFixed(3)})`;  // .15...7
+    }
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   });
   ctx.font = "11px ui-monospace, monospace";
