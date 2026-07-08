@@ -203,6 +203,79 @@ def _t_bus_channels(args: dict) -> dict:
     return {"channels": chans}
 
 
+def _bus_agent(args: dict) -> str:
+    """Agent identity for read-cursor / stats — mirrors `_t_bus_pub`'s sender
+    resolution: explicit `agent`/`from`, then $RMX_AGENT, then the MCP server's
+    own project (co-located agents share a hostname; the project is the only
+    default that distinguishes them)."""
+    import os
+    from refmatrix import discovery
+    return (args.get("agent") or args.get("from") or os.environ.get("RMX_AGENT")
+            or discovery.store_name(_resolve_root(args)))
+
+
+def _t_bus_read(args: dict) -> dict:
+    from refmatrix import hub as hub_mod
+    if not hub_mod.is_running():
+        return {"error": "hub not running"}
+    chans = args.get("channels")
+    if chans is None:
+        chans = [args["channel"]] if args.get("channel") else ["*"]
+    if isinstance(chans, str):
+        chans = [chans]
+    return hub_mod.rpc("bus_read", {
+        "agent": _bus_agent(args), "channels": chans,
+        "peek": bool(args.get("peek")), "n": args.get("n")}).get("result", {})
+
+
+def _t_bus_mark_read(args: dict) -> dict:
+    from refmatrix import hub as hub_mod
+    if not hub_mod.is_running():
+        return {"error": "hub not running"}
+    return hub_mod.rpc("bus_mark_read", {
+        "agent": _bus_agent(args), "channel": args["channel"],
+        "upto_seq": args.get("upto_seq")}).get("result", {})
+
+
+def _t_bus_delete(args: dict) -> dict:
+    from refmatrix import hub as hub_mod
+    if not hub_mod.is_running():
+        return {"error": "hub not running"}
+    return hub_mod.rpc("bus_delete", {"id": args["id"]}).get("result", {})
+
+
+def _t_bus_archive(args: dict) -> dict:
+    from refmatrix import hub as hub_mod
+    if not hub_mod.is_running():
+        return {"error": "hub not running"}
+    return hub_mod.rpc("bus_archive", {
+        "id": args.get("id"), "channel": args.get("channel"),
+        "before_ts": args.get("before_ts")}).get("result", {})
+
+
+def _t_bus_unarchive(args: dict) -> dict:
+    from refmatrix import hub as hub_mod
+    if not hub_mod.is_running():
+        return {"error": "hub not running"}
+    return hub_mod.rpc("bus_unarchive", {"id": args["id"]}).get("result", {})
+
+
+def _t_bus_purge(args: dict) -> dict:
+    from refmatrix import hub as hub_mod
+    if not hub_mod.is_running():
+        return {"error": "hub not running"}
+    return hub_mod.rpc("bus_purge", {
+        "status": args.get("status", "deleted"), "channel": args.get("channel"),
+        "before_ts": args.get("before_ts")}).get("result", {})
+
+
+def _t_bus_stats(args: dict) -> dict:
+    from refmatrix import hub as hub_mod
+    if not hub_mod.is_running():
+        return {"error": "hub not running"}
+    return hub_mod.rpc("bus_stats", {"agent": _bus_agent(args)}).get("result", {})
+
+
 def _t_queues(args: dict) -> dict:
     from refmatrix import hub as hub_mod
     if not hub_mod.is_running():
@@ -573,6 +646,57 @@ TOOLS: dict[str, dict] = {
         "schema": {"type": "object", "properties": {
             "glob": {"type": "string"}}, "required": []},
         "fn": _t_bus_channels},
+    "rmx_bus_read": {
+        "description": "Read bus messages you have NOT seen yet across matching "
+                       "channels, advancing your read-cursor (unless peek=true). "
+                       "`channels` is a list of patterns (`proj:*`, `global:`, "
+                       "exact); default `*`. Use this instead of bus_history to "
+                       "poll for new messages without re-reading old ones.",
+        "schema": {"type": "object", "properties": {
+            "channels": {"type": "array", "items": {"type": "string"}},
+            "agent": {"type": "string"}, "peek": {"type": "boolean"},
+            "n": {"type": "integer"}}, "required": []},
+        "fn": _t_bus_read},
+    "rmx_bus_mark_read": {
+        "description": "Mark a channel read up to a point (default: everything) "
+                       "without returning the messages.",
+        "schema": {"type": "object", "properties": {
+            "channel": {"type": "string"}, "agent": {"type": "string"},
+            "upto_seq": {"type": "integer"}}, "required": ["channel"]},
+        "fn": _t_bus_mark_read},
+    "rmx_bus_delete": {
+        "description": "Soft-delete a bus message by id — hidden from "
+                       "history/read, recoverable until purge.",
+        "schema": {"type": "object", "properties": {
+            "id": {"type": "string"}}, "required": ["id"]},
+        "fn": _t_bus_delete},
+    "rmx_bus_archive": {
+        "description": "Archive bus messages (still readable via bus_history "
+                       "status=archived): by `id`, or a whole `channel` "
+                       "(optionally only those with ts < `before_ts`).",
+        "schema": {"type": "object", "properties": {
+            "id": {"type": "string"}, "channel": {"type": "string"},
+            "before_ts": {"type": "string"}}, "required": []},
+        "fn": _t_bus_archive},
+    "rmx_bus_unarchive": {
+        "description": "Restore an archived bus message to active.",
+        "schema": {"type": "object", "properties": {
+            "id": {"type": "string"}}, "required": ["id"]},
+        "fn": _t_bus_unarchive},
+    "rmx_bus_purge": {
+        "description": "Hard-remove bus messages — the only destructive path. "
+                       "Default reaps soft-deleted rows; status=archived reaps "
+                       "the archive; status=all + before_ts prunes old history.",
+        "schema": {"type": "object", "properties": {
+            "status": {"type": "string"}, "channel": {"type": "string"},
+            "before_ts": {"type": "string"}}, "required": []},
+        "fn": _t_bus_purge},
+    "rmx_bus_stats": {
+        "description": "Bus overview: per-status totals + per-channel breakdown "
+                       "(active/archived/deleted) + your unread counts.",
+        "schema": {"type": "object", "properties": {
+            "agent": {"type": "string"}}, "required": []},
+        "fn": _t_bus_stats},
     "rmx_queues": {
         "description": "Change-queue visibility: pending sync/stale work per "
                        "project + refinement-queue depth.",

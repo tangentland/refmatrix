@@ -350,7 +350,37 @@ class Hub:
         return {"channels": self.bus.channels()}
 
     def _op_bus_history(self, args: dict) -> dict:
-        return {"messages": self.bus.history(args["channel"], int(args.get("n", 50)))}
+        return {"messages": self.bus.history(
+            args["channel"], int(args.get("n", 50)),
+            status=args.get("status", "active"))}
+
+    def _op_bus_read(self, args: dict) -> dict:
+        return {"messages": self.bus.read(
+            args["agent"], args.get("channels") or ["*"],
+            peek=bool(args.get("peek")), n=args.get("n"))}
+
+    def _op_bus_mark_read(self, args: dict) -> dict:
+        return self.bus.mark_read(
+            args["agent"], args["channel"], args.get("upto_seq"))
+
+    def _op_bus_delete(self, args: dict) -> dict:
+        return self.bus.delete(args["id"])
+
+    def _op_bus_archive(self, args: dict) -> dict:
+        return self.bus.archive(
+            msg_id=args.get("id"), channel=args.get("channel"),
+            before_ts=args.get("before_ts"))
+
+    def _op_bus_unarchive(self, args: dict) -> dict:
+        return self.bus.unarchive(args["id"])
+
+    def _op_bus_purge(self, args: dict) -> dict:
+        return self.bus.purge(
+            status=args.get("status", "deleted"),
+            channel=args.get("channel"), before_ts=args.get("before_ts"))
+
+    def _op_bus_stats(self, args: dict) -> dict:
+        return self.bus.stats(agent=args.get("agent"))
 
     def _op_refine_list(self, args: dict) -> dict:
         return {"candidates": self.bus.refinement_queue(args.get("status", "pending"))}
@@ -394,6 +424,13 @@ class Hub:
             "bus_pub": self._op_bus_pub,
             "bus_channels": self._op_bus_channels,
             "bus_history": self._op_bus_history,
+            "bus_read": self._op_bus_read,
+            "bus_mark_read": self._op_bus_mark_read,
+            "bus_delete": self._op_bus_delete,
+            "bus_archive": self._op_bus_archive,
+            "bus_unarchive": self._op_bus_unarchive,
+            "bus_purge": self._op_bus_purge,
+            "bus_stats": self._op_bus_stats,
             "refine_list": self._op_refine_list,
             "refine_accept": self._op_refine_accept,
             "refine_reject": self._op_refine_reject,

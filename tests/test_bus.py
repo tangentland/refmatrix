@@ -95,6 +95,98 @@ def test_reject_refinement(home):
     assert len(b.refinement_queue("rejected")) == 1
 
 
+# ---- read cursor / maintenance ----
+
+
+def test_read_advances_cursor(home):
+    b = busmod.Bus()
+    for i in range(3):
+        b.publish("proj:x:t", f"m{i}", mtype="note")
+    first = b.read("agent1", ["proj:x:"])
+    assert [m["body"] for m in first] == ["m0", "m1", "m2"]
+    assert b.read("agent1", ["proj:x:"]) == []          # cursor consumed all
+    b.publish("proj:x:t", "m3", mtype="note")
+    nxt = b.read("agent1", ["proj:x:"])
+    assert [m["body"] for m in nxt] == ["m3"]
+    # a different agent has its own cursor → sees everything unseen
+    assert len(b.read("agent2", ["proj:x:"])) == 4
+
+
+def test_read_peek_does_not_advance(home):
+    b = busmod.Bus()
+    b.publish("global:a", "hi", mtype="note")
+    assert len(b.read("ag", ["global:"], peek=True)) == 1
+    assert len(b.read("ag", ["global:"])) == 1          # still unread after peek
+
+
+def test_read_n_caps_and_cursor_respects_cap(home):
+    b = busmod.Bus()
+    for i in range(5):
+        b.publish("global:a", f"m{i}", mtype="note")
+    got = b.read("ag", ["global:"], n=2)
+    assert [m["body"] for m in got] == ["m0", "m1"]      # oldest-first, capped
+    # cursor advanced only to the last RETURNED message, not the channel max
+    assert [m["body"] for m in b.read("ag", ["global:"])] == ["m2", "m3", "m4"]
+
+
+def test_mark_read_clears_unread(home):
+    b = busmod.Bus()
+    for i in range(3):
+        b.publish("global:a", f"m{i}", mtype="note")
+    b.mark_read("ag", "global:a")
+    assert b.read("ag", ["global:"]) == []
+    assert b.unread_count("ag").get("global:a", 0) == 0
+
+
+def test_delete_hides_from_history_and_read(home):
+    b = busmod.Bus()
+    m = b.publish("global:a", "gone", mtype="note")
+    b.publish("global:a", "stay", mtype="note")
+    assert b.delete(m["id"])["deleted"] == 1
+    bodies = [x["body"] for x in b.history("global:a")]
+    assert bodies == ["stay"]
+    assert [x["body"] for x in b.read("ag", ["global:"])] == ["stay"]
+
+
+def test_archive_moves_aside_and_unarchive_restores(home):
+    b = busmod.Bus()
+    m = b.publish("global:a", "old", mtype="note")
+    b.publish("global:a", "new", mtype="note")
+    assert b.archive(msg_id=m["id"])["archived"] == 1
+    assert [x["body"] for x in b.history("global:a")] == ["new"]
+    assert [x["body"] for x in b.history("global:a", status="archived")] == ["old"]
+    assert b.unarchive(m["id"])["restored"] == 1
+    assert {x["body"] for x in b.history("global:a")} == {"old", "new"}
+
+
+def test_archive_by_channel_before_ts(home):
+    b = busmod.Bus()
+    b.publish("global:a", "x", mtype="note")
+    # before_ts far in the future archives everything in the channel
+    n = b.archive(channel="global:a", before_ts="9999-01-01T00:00:00")["archived"]
+    assert n == 1
+    assert b.history("global:a") == []
+
+
+def test_purge_hard_removes_deleted(home):
+    b = busmod.Bus()
+    m = b.publish("global:a", "x", mtype="note")
+    b.delete(m["id"])
+    assert b.purge()["purged"] == 1                      # default reaps deleted
+    assert b.history("global:a", status="all") == []
+
+
+def test_stats_reports_totals_and_unread(home):
+    b = busmod.Bus()
+    a = b.publish("global:a", "1", mtype="note")
+    b.publish("global:a", "2", mtype="note")
+    b.archive(msg_id=a["id"])
+    st = b.stats(agent="ag")
+    assert st["totals"].get("active") == 1
+    assert st["totals"].get("archived") == 1
+    assert st["unread"].get("global:a") == 1             # only the active one
+
+
 # ---- hub streaming ----
 
 

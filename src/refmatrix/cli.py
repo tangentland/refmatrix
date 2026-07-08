@@ -1477,13 +1477,139 @@ def bus_channels():
 @bus.command("history")
 @click.argument("channel")
 @click.option("-n", type=int, default=20, show_default=True)
-def bus_history(channel, n):
+@click.option("--status", default="active", show_default=True,
+              type=click.Choice(["active", "archived", "deleted", "all"]),
+              help="Which lifecycle state to show.")
+def bus_history(channel, n, status):
     """Show the last N messages on a channel."""
     hub_mod = _require_hub()
-    resp = hub_mod.rpc("bus_history", {"channel": channel, "n": n})
+    resp = hub_mod.rpc("bus_history", {"channel": channel, "n": n, "status": status})
     for m in resp.get("result", {}).get("messages", []):
         who = m.get("from", "?")
-        console.print(f"[dim]{m['ts']}[/] [bold]{who}[/] [magenta]{m['type']}[/]: {m['body']}")
+        console.print(f"[dim]{m['ts']}[/] [bold]{who}[/] [magenta]{m['type']}[/] "
+                      f"[dim]#{m['id']}[/]: {m['body']}")
+
+
+def _bus_agent(explicit):
+    import socket as _s
+    return explicit or os.environ.get("RMX_AGENT") or _s.gethostname()
+
+
+@bus.command("read")
+@click.argument("channels", nargs=-1)
+@click.option("--from", "agent", default=None,
+              help="Agent whose read-cursor to use (default: $RMX_AGENT or host).")
+@click.option("--peek", is_flag=True, help="Show unread WITHOUT advancing the cursor.")
+@click.option("-n", type=int, default=None, help="Cap messages returned (oldest-first).")
+def bus_read(channels, agent, peek, n):
+    """Show messages you haven't read yet across matching channels, advancing
+    your cursor (unless --peek). Default pattern: * (all channels)."""
+    hub_mod = _require_hub()
+    agent = _bus_agent(agent)
+    resp = hub_mod.rpc("bus_read", {"agent": agent, "channels": list(channels) or ["*"],
+                                    "peek": peek, "n": n})
+    msgs = resp.get("result", {}).get("messages", [])
+    if not msgs:
+        console.print("[dim]no unread messages[/]")
+        return
+    for m in msgs:
+        who = m.get("from", "?")
+        proj = f" [{m['project']}]" if m.get("project") else ""
+        console.print(f"[dim]{m['ts']}[/] [cyan]{m['channel']}[/] [bold]{who}[/]{proj} "
+                      f"[magenta]{m['type']}[/] [dim]#{m['id']}[/]: {m['body']}")
+    tail = " (peek — cursor unchanged)" if peek else ""
+    console.print(f"[dim]{len(msgs)} message(s){tail}[/]")
+
+
+@bus.command("mark-read")
+@click.argument("channel")
+@click.option("--from", "agent", default=None, help="Agent whose cursor to set.")
+@click.option("--upto-seq", type=int, default=None,
+              help="Cursor position; default = channel max (mark everything read).")
+def bus_mark_read(channel, agent, upto_seq):
+    """Mark a channel read up to a point (default: everything)."""
+    hub_mod = _require_hub()
+    resp = hub_mod.rpc("bus_mark_read", {"agent": _bus_agent(agent),
+                                         "channel": channel, "upto_seq": upto_seq})
+    r = resp.get("result", {})
+    console.print(f"[green]marked read[/] {channel} → seq {r.get('last_seq')}")
+
+
+@bus.command("delete")
+@click.argument("msg_id")
+def bus_delete(msg_id):
+    """Soft-delete a message by id (hidden from history/read, recoverable until purge)."""
+    hub_mod = _require_hub()
+    r = hub_mod.rpc("bus_delete", {"id": msg_id}).get("result", {})
+    if r.get("deleted"):
+        console.print(f"[green]deleted[/] {msg_id}")
+    else:
+        console.print(f"[yellow]not found or already deleted[/] {msg_id}")
+
+
+@bus.command("archive")
+@click.option("--id", "msg_id", default=None, help="Archive a single message by id.")
+@click.option("--channel", default=None, help="Archive a whole channel.")
+@click.option("--before", default=None,
+              help="With --channel: only messages with ts < this ISO stamp.")
+def bus_archive(msg_id, channel, before):
+    """Move messages to the archive (still readable via `history --status archived`)."""
+    hub_mod = _require_hub()
+    r = hub_mod.rpc("bus_archive", {"id": msg_id, "channel": channel,
+                                    "before_ts": before}).get("result", {})
+    if not r.get("ok"):
+        raise click.ClickException(r.get("error", "archive error"))
+    console.print(f"[green]archived[/] {r.get('archived', 0)} message(s)")
+
+
+@bus.command("unarchive")
+@click.argument("msg_id")
+def bus_unarchive(msg_id):
+    """Restore an archived message to active."""
+    hub_mod = _require_hub()
+    r = hub_mod.rpc("bus_unarchive", {"id": msg_id}).get("result", {})
+    console.print(f"[green]restored[/] {msg_id}" if r.get("restored")
+                  else f"[yellow]not archived[/] {msg_id}")
+
+
+@bus.command("purge")
+@click.option("--status", default="deleted", show_default=True,
+              type=click.Choice(["deleted", "archived", "all"]),
+              help="Which rows to hard-remove.")
+@click.option("--channel", default=None)
+@click.option("--before", default=None, help="Only rows with ts < this ISO stamp.")
+@click.option("-y", "--yes", is_flag=True, help="Skip confirmation.")
+def bus_purge(status, channel, before, yes):
+    """Hard-remove messages — the only destructive path. Default reaps soft-deleted."""
+    if not yes:
+        scope = f"status={status}"
+        if channel:
+            scope += f" channel={channel}"
+        if before:
+            scope += f" before={before}"
+        click.confirm(f"purge {scope}?", abort=True)
+    hub_mod = _require_hub()
+    r = hub_mod.rpc("bus_purge", {"status": status, "channel": channel,
+                                  "before_ts": before}).get("result", {})
+    console.print(f"[green]purged[/] {r.get('purged', 0)} row(s)")
+
+
+@bus.command("stats")
+@click.option("--from", "agent", default=None,
+              help="Include unread counts for this agent (default: $RMX_AGENT or host).")
+def bus_stats(agent):
+    """Per-status totals + per-channel breakdown (+ unread counts)."""
+    hub_mod = _require_hub()
+    r = hub_mod.rpc("bus_stats", {"agent": _bus_agent(agent)}).get("result", {})
+    totals = r.get("totals", {})
+    console.print("[bold]totals[/] " +
+                  (", ".join(f"{k}={v}" for k, v in totals.items()) or "empty"))
+    unread = r.get("unread", {})
+    t = Table("channel", "active", "archived", "deleted", "unread")
+    for c in r.get("channels", []):
+        t.add_row(c["channel"], str(c["messages"]), str(c.get("archived", 0)),
+                  str(c.get("deleted", 0)), str(unread.get(c["channel"], 0)))
+    console.print(t)
 
 
 @main.command("mcp")
