@@ -177,6 +177,32 @@ def test_plain_recent_still_keeps_session_mtype(tmp_path, monkeypatch):
     assert {"savestate_abc", "focus_summary_abc", "real-feedback"} <= names
 
 
+def test_scope_both_filters_global_rows(tmp_path, monkeypatch):
+    """Regression: --scope both must apply the mtype filter to GLOBAL rows too,
+    not just project. The scope-both merge leaked promoted global save-state /
+    digest rows straight past --exclude-mtype (cliquedb UX report 2026-07-09)."""
+    _store(tmp_path, monkeypatch).add_memory("keep", "x", mtype="feedback")
+    from refmatrix import cli as climod
+    monkeypatch.setattr(
+        climod, "_global_recall_rows",
+        lambda q, *, k, recent, since_s: [
+            {"name": "savestate_g", "mtype": "session/recall-state", "content": "h"},
+            {"name": "global-feedback", "mtype": "feedback", "content": "f"}])
+    from refmatrix.cli import main as cli_main
+    from refmatrix.store import default_partition_name
+    monkeypatch.setenv("REFMATRIX_ROOT", str(tmp_path / ".refmatrix"))
+    monkeypatch.setenv(
+        "RMX_PARTITION", default_partition_name(tmp_path / ".refmatrix"))
+    result = CliRunner().invoke(cli_main, [
+        "memory", "recall", "--recent", "--scope", "both",
+        "--exclude-mtype", "session/*", "--json"])
+    assert result.exit_code == 0, result.output
+    names = {r["name"] for r in json.loads(result.output)}
+    assert "savestate_g" not in names       # global session/* filtered out
+    assert "global-feedback" in names        # global non-session kept
+    assert "keep" in names                    # project row kept
+
+
 def test_recent_exclude_mtype_repeatable_flag(tmp_path, monkeypatch):
     """`--exclude-mtype` accepts repeated flags AND comma-separated lists
     interchangeably (matches the `--kinds` convention via

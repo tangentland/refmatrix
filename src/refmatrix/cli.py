@@ -7390,6 +7390,18 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         m = mtype or ""
         return any(fnmatchcase(m, pat) for pat in exclude_mtypes)
 
+    def _global_rows(qq, *, recent_flag, since):
+        """Global-store rows for the --scope both/global merge, with the SAME
+        `--exclude-mtype` filter applied as the project side. Without this the
+        session/* exclusion (and any explicit --exclude-mtype) leaked global
+        save-state / digest rows straight past the filter (cliquedb UX report
+        2026-07-09). Over-fetch when filtering so the merge still has k."""
+        gk = k * 10 if exclude_mtypes else k
+        grows = _global_recall_rows(qq, k=gk, recent=recent_flag, since_s=since)
+        if exclude_mtypes:
+            grows = [r for r in grows if not _mt_excluded(r.get("mtype"))]
+        return grows
+
     def _attach_context(rows: list[dict]) -> list[dict]:
         """When --degree > 0, fetch a context bundle per row and stash
         the rendered text on `row['context']`. Daemon-side: routes
@@ -7486,7 +7498,7 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             rows = [r for r in rows if not _mt_excluded(r.get("mtype"))][:k]
         if scope != "project":
             rows = _merge_scope(
-                rows, _global_recall_rows(None, k=k, recent=True, since_s=since_s),
+                rows, _global_rows(None, recent_flag=True, since=since_s),
                 k, scope)
         rows = _attach_context(rows)
         if as_json:
@@ -7629,7 +7641,7 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                 rows.append(m)
         if scope != "project":
             rows = _merge_scope(
-                rows, _global_recall_rows(q, k=k, recent=False, since_s=None),
+                rows, _global_rows(q, recent_flag=False, since=None),
                 k, scope)
         rows = _attach_context(rows)
         if as_gmd:
@@ -7663,7 +7675,7 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             table_rows.append(m)
     if scope != "project":
         seen_names = {m.get("name") for m in table_rows}
-        for gr in _global_recall_rows(q, k=k, recent=False, since_s=None):
+        for gr in _global_rows(q, recent_flag=False, since=None):
             if shown >= k:
                 break
             if gr.get("name") in seen_names:
