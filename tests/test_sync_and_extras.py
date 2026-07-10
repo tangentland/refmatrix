@@ -119,6 +119,57 @@ def test_queue_enqueue_and_flush(tmp_path):
     s.close()
 
 
+def test_queue_clear_discards_without_ingesting(tmp_path):
+    """`rmx queue clear` (default) drops dirty.queue without opening the
+    catalog — abandons the pending backlog."""
+    from click.testing import CliRunner
+    from refmatrix.cli import main as cli_main
+
+    root = tmp_path / ".refmatrix"
+    s = Store(root)
+    s.init()
+    s.close()
+    a = tmp_path / "a.py"; a.write_text("# a")
+    b = tmp_path / "b.py"; b.write_text("# b")
+    enqueue(root, [str(a), str(b)])
+    monkeypatch_env = {"REFMATRIX_ROOT": str(root)}
+    old = os.environ.get("REFMATRIX_ROOT")
+    os.environ.update(monkeypatch_env)
+    try:
+        r = CliRunner().invoke(cli_main, ["queue", "clear", "-y"])
+    finally:
+        if old is None:
+            os.environ.pop("REFMATRIX_ROOT", None)
+        else:
+            os.environ["REFMATRIX_ROOT"] = old
+    assert r.exit_code == 0, r.output
+    assert "cleared 2 pending path" in r.output
+    assert not (root / "dirty.queue").exists()
+
+
+def test_vacuum_batch_drains_missing_tracked_files(tmp_path):
+    """A relocated tree leaves tracked_files rows pointing at vanished paths
+    (status='missing'); vacuum must batch-purge them so stale_files drains,
+    while surviving files keep their entities."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    keep = proj / "keep.py"; keep.write_text("def foo():\n    return 1\n")
+    gone = proj / "gone.py"; gone.write_text("def bar():\n    return 2\n")
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    sync_files(s, [str(keep), str(gone)], project_root=proj)
+    assert s.stale_files() == []
+    gone.unlink()
+    stale = s.stale_files()
+    assert len(stale) == 1 and stale[0]["status"] == "missing"
+    rep = s.vacuum()
+    assert rep["files_purged"] == 1
+    assert s.stale_files() == []
+    # keep.py's entity survives the vacuum.
+    assert s.stats()["entities"].get("code", 0) >= 1
+    s.close()
+
+
 def test_sync_enqueues_when_daemon_down_on_managed_store(tmp_path, monkeypatch):
     """A daemon-managed store with the daemon unreachable must NOT open the
     catalog on `rmx sync` — it enqueues for the daemon instead. This breaks

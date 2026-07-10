@@ -4762,17 +4762,68 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
     )
 
 
-@main.command("queue")
-def queue_cmd():
-    """Show pending paths in the dirty queue."""
-    s = _store()
-    q = s.root / "dirty.queue"
+@main.group("queue", invoke_without_command=True)
+@click.pass_context
+def queue_cmd(ctx):
+    """Show or manage the dirty (change) queue.
+
+    Bare `rmx queue` lists pending paths; `rmx queue clear` empties it."""
+    if ctx.invoked_subcommand is not None:
+        return
+    from refmatrix import sync as syncmod
+    q = _root() / syncmod.QUEUE_FILE
     if not q.exists():
         console.print("[dim]queue is empty[/]")
         return
     for line in q.read_text().splitlines():
         if line.strip():
             console.print(line)
+
+
+@queue_cmd.command("clear")
+@click.option("--flush", is_flag=True,
+              help="Drain AND process the queued paths (like `sync "
+                   "--flush-queue`) instead of discarding them.")
+@click.option("-y", "--yes", is_flag=True, help="Skip the confirmation prompt.")
+def queue_clear(flush, yes):
+    """Empty the dirty queue.
+
+    Default DISCARDS the pending paths without ingesting them — just drops
+    `dirty.queue`. Use this to abandon a stale backlog the daemon keeps
+    re-attempting. `--flush` instead drains and syncs the paths (identical to
+    `rmx sync --flush-queue`), so no pending work is lost.
+
+    Note: this only touches the hook-populated change queue. It does NOT clear
+    `stale_files` (tracked rows whose on-disk mtime drifted, or whose path
+    vanished) — resolve those with `rmx sync` / `rmx vacuum`."""
+    from refmatrix import sync as syncmod
+    root = _root()
+    q = root / syncmod.QUEUE_FILE
+
+    if flush:
+        # Reuse the daemon-routed flush the `sync` command already implements.
+        ctx = click.get_current_context()
+        ctx.invoke(sync, flush_queue=True)
+        return
+
+    # Discard path: dirty.queue is a plain hook-appended text file, never the
+    # catalog — safe to unlink directly whether the daemon is up or down. The
+    # daemon's next drain simply finds no file. No lock needed.
+    if not q.exists():
+        console.print("[dim]queue is empty[/]")
+        return
+    pending = [ln for ln in q.read_text().splitlines() if ln.strip()]
+    if not pending:
+        q.unlink()
+        console.print("[dim]queue is empty[/]")
+        return
+    if not yes:
+        click.confirm(
+            f"Discard {len(pending)} pending path(s) without ingesting?",
+            abort=True,
+        )
+    q.unlink()
+    console.print(f"[green]cleared[/] {len(pending)} pending path(s) (discarded)")
 
 
 @main.group()

@@ -4213,7 +4213,14 @@ class Store:
         self._bulk_purge_ids(
             [(int(r[0]), "concept", r[1]) for r in empty_concepts])
 
-        # 2. tracked_files for paths that no longer exist
+        # 2. tracked_files for paths that no longer exist. Batch the purge: a
+        #    per-path `purge_path` loop over a big relocated tree (hundreds of
+        #    dead paths, e.g. a store whose project root moved) issues a Lance
+        #    drop PER entity, spikes RSS, and gets the supervised daemon
+        #    jetsam-killed mid-vacuum — leaving the stale count only partly
+        #    drained. Gather every entity across the dead paths and bulk-purge
+        #    (one Lance drop per kind, chunked SQL), then sweep any path-only
+        #    tracked_files rows that produced no entities.
         gone = [
             r[0] for r in con.execute(
                 "SELECT path FROM tracked_files WHERE partition_id=?",
@@ -4221,8 +4228,33 @@ class Store:
             )
             if not _exists(r[0])
         ]
-        for p in gone:
-            self.purge_path(p)
+        if gone:
+            _pchunk = 900
+            info: list[tuple[int, str, str]] = []
+            for i in range(0, len(gone), _pchunk):
+                ck = gone[i:i + _pchunk]
+                ph = ",".join("?" * len(ck))
+                info += [
+                    (int(r[0]), r[1], r[2]) for r in con.execute(
+                        f"SELECT id, kind, name FROM entities "
+                        f"WHERE partition_id=? AND path IN ({ph})",
+                        [self._partition_id, *ck],
+                    ).fetchall()
+                ]
+            self._bulk_purge_ids(info)
+            # Sweep tracked_files rows for dead paths with no entities left —
+            # _bulk_purge_ids only clears rows reachable via an entity-path join.
+            for i in range(0, len(gone), _pchunk):
+                ck = gone[i:i + _pchunk]
+                ph = ",".join("?" * len(ck))
+                con.execute(
+                    f"DELETE FROM tracked_files WHERE partition_id=? "
+                    f"AND path IN ({ph})", [self._partition_id, *ck])
+            con.commit()
+            # Preserve the per-path `untrack` replay events purge_path emitted.
+            if _log_enabled() and not self._replay_mode:
+                for p in gone:
+                    self._log_event("untrack", path=p)
 
         # 3. orphaned linkage_evidence rows (after purges, FKs handle this with
         # ON DELETE CASCADE — but make sure)
