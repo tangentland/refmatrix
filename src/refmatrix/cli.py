@@ -7284,6 +7284,12 @@ def _parse_duration(text: str) -> float:
                    "session/recall-state + session/digest in one value. "
                    "Filter is applied client-side after the recall RPC "
                    "returns.")
+@click.option("--include-session", is_flag=True, default=False,
+              help="Opt back into session/* memories (save-state handoffs, "
+                   "STM digests) in the always-on hook modes (--session-start / "
+                   "--stdin-json), which exclude them by default. Their multi-KB "
+                   "bodies otherwise dominate the per-prompt injection budget; "
+                   "`rmx recall-state` surfaces the latest handoff on demand.")
 @click.option("--degree", default=0, type=int,
               help="When >0, attach a context bundle (body + one-hop "
                    "neighbors with their bodies) to each hit. JSON output "
@@ -7310,7 +7316,7 @@ def _parse_duration(text: str) -> float:
                    "--exclude-mtype / -k. The cross-session 'everything on X'.")
 def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                   session_start, as_json, as_gmd, kinds, exclude_mtype,
-                  degree, fuse, scope, subject):
+                  include_session, degree, fuse, scope, subject):
     """Memory retrieval. Three modes:
 
     Dense (default): pure dense ANN (cosine over bge-small vectors) on the
@@ -7362,6 +7368,15 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         )
 
     exclude_mtypes = set(exclude_mtype) if exclude_mtype else set()
+    # Always-on injection hooks (SessionStart --session-start, UserPromptSubmit
+    # --stdin-json) must NOT re-dump save-state / STM-digest bodies every prompt:
+    # they're multi-KB each and at -k 5 blow the injection budget → "Output too
+    # large" truncation (cliquedb UX report 2026-07-09). Exclude the session/*
+    # mtype family by default in these modes; --include-session opts back in.
+    # The latest handoff still surfaces on demand via `rmx recall-state`
+    # (handoff.compose_recall_state — a different path from this recall).
+    if (session_start or stdin_json) and not include_session:
+        exclude_mtypes.add("session/*")
 
     def _mt_excluded(mtype: "str | None") -> bool:
         """True if mtype matches any --exclude-mtype value. Patterns glob

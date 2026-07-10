@@ -185,6 +185,33 @@ def test_compose_recall_state_pulls_latest_handoff(tmp_path):
     assert rep["daemon"]["running"] is False  # no daemon for tmp root
 
 
+def test_latest_savestate_head_caps_long_body(tmp_path):
+    """A multi-KB handoff is capped to a head + a `memory get` pointer so
+    recall-state stays a thin resume signal (cliquedb UX report 2026-07-09).
+    Short handoffs pass through untouched."""
+    memdir = tmp_path / "memory"
+    memdir.mkdir()
+    long_body = "# Save-state {#root}\n\n" + ("resume detail line\n" * 400)
+    (memdir / "savestate_big.md").write_text(
+        "---\nid: savestate_big\n---\n\n" + long_body)
+    r = handoff._latest_savestate(memdir, head_chars=1800)
+    assert r["truncated"] is True
+    assert len(r["body"]) < 1800 + 120           # head + short pointer only
+    assert "rmx memory get savestate_big" in r["body"]
+    assert r["body"].startswith("# Save-state")   # current-state header kept
+
+
+def test_latest_savestate_short_body_untouched(tmp_path):
+    memdir = tmp_path / "memory"
+    memdir.mkdir()
+    (memdir / "savestate_s.md").write_text(
+        "---\nid: savestate_s\n---\n\n# handoff {#root}\n\ntiny body\n")
+    r = handoff._latest_savestate(memdir)
+    assert r["truncated"] is False
+    assert "tiny body" in r["body"]
+    assert "truncated" not in r["body"]
+
+
 def test_compose_recall_state_no_handoff(tmp_path):
     from refmatrix.stm import Stm
     root = tmp_path / ".refmatrix"

@@ -124,6 +124,59 @@ def test_recent_exclude_mtype_glob_prefix(tmp_path, monkeypatch):
     assert names == {"real-feedback"}, names
 
 
+def _seed_session_mix(tmp_path, monkeypatch):
+    s = _store(tmp_path, monkeypatch)
+    s.add_memory("real-feedback", "don't mock the db", mtype="feedback")
+    s.add_memory("savestate_abc", "a multi-KB handoff body",
+                 mtype="session/recall-state")
+    s.add_memory("focus_summary_abc", "stm digest", mtype="session/digest")
+    from refmatrix.store import default_partition_name
+    monkeypatch.setenv("REFMATRIX_ROOT", str(tmp_path / ".refmatrix"))
+    monkeypatch.setenv(
+        "RMX_PARTITION", default_partition_name(tmp_path / ".refmatrix"))
+    return s
+
+
+def test_session_start_excludes_session_mtype_by_default(tmp_path, monkeypatch):
+    """The always-on SessionStart hook mode (--session-start) must NOT re-dump
+    save-state / STM-digest bodies — they blow the injection budget. session/*
+    is excluded by default here even without an explicit --exclude-mtype
+    (cliquedb UX report 2026-07-09). Real LTM still surfaces."""
+    _seed_session_mix(tmp_path, monkeypatch)
+    from refmatrix.cli import main as cli_main
+    result = CliRunner().invoke(cli_main, [
+        "memory", "recall", "--session-start", "--json"])
+    assert result.exit_code == 0, result.output
+    names = {r["name"] for r in json.loads(result.output)}
+    assert "real-feedback" in names
+    assert "savestate_abc" not in names
+    assert "focus_summary_abc" not in names
+
+
+def test_include_session_opts_back_in(tmp_path, monkeypatch):
+    """--include-session restores session/* in the hook modes."""
+    _seed_session_mix(tmp_path, monkeypatch)
+    from refmatrix.cli import main as cli_main
+    result = CliRunner().invoke(cli_main, [
+        "memory", "recall", "--session-start", "--include-session", "--json"])
+    assert result.exit_code == 0, result.output
+    names = {r["name"] for r in json.loads(result.output)}
+    assert {"savestate_abc", "focus_summary_abc"} <= names
+
+
+def test_plain_recent_still_keeps_session_mtype(tmp_path, monkeypatch):
+    """Back-compat: the default exclusion is scoped to the hook modes
+    (--session-start / --stdin-json). A plain --recent must still return
+    session memories (no silent drop outside the hooks)."""
+    _seed_session_mix(tmp_path, monkeypatch)
+    from refmatrix.cli import main as cli_main
+    result = CliRunner().invoke(cli_main, [
+        "memory", "recall", "--recent", "--json"])
+    assert result.exit_code == 0, result.output
+    names = {r["name"] for r in json.loads(result.output)}
+    assert {"savestate_abc", "focus_summary_abc", "real-feedback"} <= names
+
+
 def test_recent_exclude_mtype_repeatable_flag(tmp_path, monkeypatch):
     """`--exclude-mtype` accepts repeated flags AND comma-separated lists
     interchangeably (matches the `--kinds` convention via

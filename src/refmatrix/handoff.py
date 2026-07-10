@@ -375,10 +375,17 @@ def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
 # ---- recall-state core -----------------------------------------------------
 
 
-def _latest_savestate(memdir: Path) -> dict | None:
-    """The most-recent save-state handoff memory file (id + body, frontmatter
-    stripped). This is the prior session's durable handoff — the primary thing
-    recall-state pulls."""
+def _latest_savestate(memdir: Path, *, head_chars: int = 1800) -> dict | None:
+    """The most-recent save-state handoff memory file (id + bounded body,
+    frontmatter stripped). This is the prior session's durable handoff — the
+    primary thing recall-state pulls.
+
+    The body is capped to `head_chars` (the current-state header — arc, git,
+    resume point — is front-loaded by `_ss_render`) with a pointer to the full
+    file, so recall-state stays a thin resume signal instead of re-dumping a
+    multi-KB (and growing) handoff inline every time (cliquedb UX report
+    2026-07-09). `truncated` flags when the tail was elided; full via
+    `rmx memory get <id>`."""
     if not memdir.is_dir():
         return None
     cands = sorted(memdir.glob("savestate_*.md"),
@@ -391,7 +398,11 @@ def _latest_savestate(memdir: Path) -> dict | None:
     except OSError:
         return None
     body = re.sub(r"^---\n.*?\n---\n", "", txt, count=1, flags=re.S).strip()
-    return {"id": p.stem, "path": str(p), "body": body}
+    truncated = len(body) > head_chars
+    if truncated:
+        body = (body[:head_chars].rstrip() +
+                f"\n\n… [truncated — full handoff: `rmx memory get {p.stem}`]")
+    return {"id": p.stem, "path": str(p), "body": body, "truncated": truncated}
 
 
 def compose_recall_state(s, root: Path, *, repo: Path, memdir: Path) -> dict:
