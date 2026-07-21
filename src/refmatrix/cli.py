@@ -1931,6 +1931,107 @@ def daemon_stop():
         raise click.ClickException("daemon did not stop within timeout")
 
 
+@daemon.command("restart")
+@click.option(
+    "--watch/--no-watch", "watch", default=True,
+    help="Watch the filesystem and auto-sync on change (standalone "
+         "respawn only; ignored when launchd-supervised).",
+)
+@click.option(
+    "--watch-root", "watch_roots",
+    type=click.Path(path_type=Path), default=(), multiple=True,
+    help="Directory to watch on the standalone respawn. Repeat for "
+         "multiple. Defaults to the parent of the active `.refmatrix/`.",
+)
+@click.option(
+    "--debounce-ms", type=int, default=500,
+    help="Quiet period before flushing a batch of fs events (ms).",
+)
+@click.option(
+    "--semantic", is_flag=True,
+    help="Also extract Python semantics on watcher-driven syncs (slow).",
+)
+@click.option(
+    "--standalone", is_flag=True,
+    help="Force a standalone stop+respawn even if a launchd LaunchAgent "
+         "supervises this store (by default a supervised store is "
+         "force-restarted via `launchctl kickstart -k`).",
+)
+def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
+                   debounce_ms: int, semantic: bool, standalone: bool):
+    """Restart the daemon for the active store.
+
+    Supervision-aware: if a launchd LaunchAgent is loaded for this store,
+    the running instance is force-restarted in place via
+    `launchctl kickstart -k` (launchd keeps owning the lifecycle). Otherwise
+    the standalone daemon is stopped and a fresh one is forked. Pass
+    --standalone to force the stop+respawn path even under launchd."""
+    import sys as _sys
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if not root.is_dir():
+        raise click.ClickException(
+            f"no refmatrix at {root}. Run `rmx init` first."
+        )
+
+    # launchd-supervised store → force-restart in place, unless overridden.
+    if not standalone and _sys.platform == "darwin":
+        from refmatrix import launchctl as lc
+        try:
+            loaded = lc.is_loaded(root)
+        except Exception:  # noqa: BLE001 — supervision probe is best-effort
+            loaded = False
+        if loaded:
+            if watch_roots or semantic or debounce_ms != 500 or not watch:
+                console.print(
+                    "[yellow]note:[/] store is launchd-supervised; "
+                    "--watch/--watch-root/--debounce-ms/--semantic here are "
+                    "ignored (the plist governs). Use `rmx daemon launchctl "
+                    "install --force ...` to change supervised watch config."
+                )
+            try:
+                label = lc.kickstart(root, restart=True)
+            except Exception as e:  # noqa: BLE001 — fall back to standalone
+                console.print(
+                    f"[yellow]kickstart -k failed ({e}); "
+                    f"restarting standalone[/]"
+                )
+            else:
+                pid = daemon_mod.read_pid(root)
+                pid_part = f" pid={pid}" if pid else ""
+                console.print(
+                    f"[green]daemon restarted[/] (launchd kickstart -k "
+                    f"label={label}){pid_part} root={root}"
+                )
+                return
+
+    # Standalone path: stop the current daemon (idempotent), then respawn.
+    daemon_mod.stop_daemon(root)
+    resolved_watch_roots: list[Path] = []
+    if watch:
+        if watch_roots:
+            resolved_watch_roots = [Path(r).resolve() for r in watch_roots]
+        else:
+            resolved_watch_roots = [root.parent.resolve()]
+    pid = daemon_mod.spawn_daemon(
+        root,
+        partition=_resolve_partition(),
+        watch_root=resolved_watch_roots or None,
+        watch_debounce_ms=debounce_ms,
+        watch_semantic=semantic,
+    )
+    if resolved_watch_roots:
+        roots_repr = (
+            str(resolved_watch_roots[0])
+            if len(resolved_watch_roots) == 1
+            else "[" + ", ".join(str(r) for r in resolved_watch_roots) + "]"
+        )
+        extra = f" watching={roots_repr} (debounce={debounce_ms}ms)"
+    else:
+        extra = ""
+    console.print(f"[green]daemon restarted[/] pid={pid} root={root}{extra}")
+
+
 @daemon.command("status")
 def daemon_status():
     """Report whether the daemon is running for the active store, plus its
