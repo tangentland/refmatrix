@@ -74,6 +74,44 @@ _STOP = _PROMPT_STOPWORDS | {
 }
 
 
+# Machine-noise gates, shared by the input hook (skip at ingest), the topic
+# composite (skip at render), and `rebuild_focus` (skip on replay).
+_JUNK_PREFIX = ("toolu_", "msg_", "call_", "run_", "req_", "wf_")
+# Hex-ish id: >=4 hex chars AND >=1 digit, so real all-letter words like
+# "face"/"cafe" survive but "a22a"/"e8fb2e" are gated.
+_HEXISH = re.compile(r"^(?=.*[0-9])[0-9a-f]{4,}$", re.I)
+_UUIDISH = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}", re.I)
+
+
+def is_junk_ref(name: str) -> bool:
+    """Shape-based junk gate for a ref/node name: tool/message/run ids, bare hex
+    blobs, uuids, and deep absolute-path tails (tmp/scratchpad blobs). These
+    carry no topical signal and must never enter the focus graph or composite."""
+    n = (name or "").strip()
+    if not n:
+        return True
+    if n.startswith(_JUNK_PREFIX):
+        return True
+    if _HEXISH.match(n) or _UUIDISH.search(n):
+        return True
+    if n.startswith("/") and n.count("/") >= 4:
+        return True
+    return False
+
+
+def is_ambient_text(text: str) -> bool:
+    """True for machine-injected turns that are NOT user intent: hub/bus channel
+    messages (`<channel …>`) and system/task notifications. Claude Code delivers
+    these as 'user' prompts, but they carry no topical signal — recording them
+    pollutes the focus graph and every downstream composite."""
+    t = (text or "").lstrip()
+    return (
+        t.startswith("<channel")
+        or t.startswith("<task-notification")
+        or t.startswith("[SYSTEM NOTIFICATION")
+    )
+
+
 def stm_dir(root: Path) -> Path:
     return Path(root) / "stm"
 
@@ -289,10 +327,10 @@ class Stm:
         tmp.write_text(json.dumps(g))
         tmp.replace(self._graph_path)
 
-    def _ingest_into_graph(self, refs: list[str], *, new_turn: bool) -> None:
-        if not refs and not new_turn:
-            return
-        g = self._load_graph()
+    def _apply_turn(self, g: dict, refs: list[str], *, new_turn: bool) -> None:
+        """Fold one event's refs into graph `g` in place — the pure ingest step,
+        shared by the live `record` path and the offline `rebuild_focus` replay.
+        Does NOT load or save; the caller owns persistence."""
         if new_turn:
             g["turn"] += 1
             for nd in g["nodes"].values():
@@ -306,7 +344,48 @@ class Stm:
                 k = _edge_key(admitted[i], admitted[j])
                 g["edges"][k] = g["edges"].get(k, 0.0) + 1.0
         self._evict(g)
+
+    def _ingest_into_graph(self, refs: list[str], *, new_turn: bool) -> None:
+        if not refs and not new_turn:
+            return
+        g = self._load_graph()
+        self._apply_turn(g, refs, new_turn=new_turn)
         self._save_graph(g)
+
+    def rebuild_focus(self, *, drop_ambient: bool = True,
+                      drop_junk: bool = True, dry_run: bool = False) -> dict:
+        """Recompute the focus graph from the event ring, dropping machine noise
+        that older ingests admitted: ambient turns (hub/bus channel messages,
+        system/task notifications recorded as `input`) and shape-junk refs
+        (tool/message ids, hex blobs, deep tmp paths). Replays the SAME ingest
+        math over the surviving events into a fresh graph and swaps it in.
+
+        The ring is left intact (full provenance); only the maintained graph is
+        rewritten. When `dry_run`, the fresh graph is computed and measured but
+        NOT swapped in — the on-disk graph is untouched. Returns a stats dict for
+        reporting / dry-run callers; `dry_run` is echoed back in it."""
+        events = self.all_events()
+        g = {"turn": 0, "nodes": {}, "edges": {}}
+        dropped_events = 0
+        dropped_refs = 0
+        for ev in events:
+            kind = ev.get("kind", "tool")
+            terse = ev.get("terse", "")
+            if drop_ambient and kind == "input" and is_ambient_text(terse):
+                dropped_events += 1
+                continue
+            refs = ev.get("refs") or []
+            if drop_junk:
+                kept = [r for r in refs if not is_junk_ref(r)]
+                dropped_refs += len(refs) - len(kept)
+                refs = kept
+            self._apply_turn(g, refs, new_turn=(kind == "input"))
+        if not dry_run:
+            self._save_graph(g)
+        return {"session": self._key, "events": len(events),
+                "dropped_events": dropped_events, "dropped_refs": dropped_refs,
+                "nodes": len(g["nodes"]), "edges": len(g["edges"]),
+                "dry_run": dry_run}
 
     def _admit(self, g: dict, refs: list[str], turn: int) -> list[str]:
         """Create/refresh nodes in place (stable key = ref name). Rehydrates a
@@ -614,6 +693,33 @@ def cluster_focus(graph: dict, *, min_size: int = 2) -> list[list[str]]:
         clusters[label[n]].append(n)
     return sorted((c for c in clusters.values() if len(c) >= min_size),
                   key=len, reverse=True)
+
+
+def topic_composites(graph: dict, *, k: int = 3, min_size: int = 2) -> list[dict]:
+    """Top-`k` topic clusters of a `focus_graph()` snapshot, each rendered as an
+    induced subgraph: the cluster's nodes plus every co-occurrence edge whose
+    endpoints are BOTH in the cluster. Largest cluster first; members sorted by
+    focus weight (strongest head first). Deterministic — inherits
+    `cluster_focus`'s label-propagation determinism.
+
+    This is the aggregation surface for "the current topic": the focus graph
+    already fuses every prompt+result (their extracted refs) into a scored,
+    decayed co-occurrence graph; this splits it into the k dominant threads and
+    hands back each thread's self-contained subgraph for rendering/expansion."""
+    nmap = {n["name"]: n for n in graph.get("nodes", [])}
+    out: list[dict] = []
+    for members in cluster_focus(graph, min_size=min_size)[:k]:
+        keep = set(members)
+        nodes = sorted(
+            (nmap[n] for n in members if n in nmap),
+            key=lambda nd: nd.get("weight", 0.0), reverse=True)
+        if not nodes:
+            continue
+        edges = [e for e in graph.get("edges", [])
+                 if e.get("source") in keep and e.get("target") in keep]
+        out.append({"members": [nd["name"] for nd in nodes],
+                    "nodes": nodes, "edges": edges})
+    return out
 
 
 def _neighbors(g: dict, name: str) -> list[str]:

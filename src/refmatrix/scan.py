@@ -12,6 +12,7 @@ import json
 import math
 import re
 import sys
+from pathlib import Path
 
 from refmatrix.context import (
     build_context, content_only_bundle, render_json, render_text,
@@ -322,7 +323,33 @@ def scan_prompt(
     fmt: str = "text",
     include_noise: bool = False,
     rank: str = "ppr",
+    composite: bool = False,
+    composite_root: "str | Path | None" = None,
+    composite_k: int = 3,
+    composite_expand: bool = True,
+    composite_max_tokens: int = 1200,
 ) -> str:
+    """Emit context bundles for a prompt's symbols. When `composite` is set (and
+    `composite_root` names the project `.refmatrix` dir), ALSO append a GMD
+    topic-composite subgraph of the session's current focus — a running
+    aggregate of every prompt+result — budgeted SEPARATELY by
+    `composite_max_tokens`, independent of `max_tokens`. Text mode only; JSON
+    output is unchanged."""
+
+    def _compose(sym_text: str) -> str:
+        if not composite or composite_root is None or fmt == "json":
+            return sym_text
+        try:
+            from .composite import build_topic_composite
+            comp = build_topic_composite(
+                s, composite_root, k=composite_k,
+                expand=composite_expand, max_tokens=composite_max_tokens)
+        except Exception:
+            comp = ""
+        if not comp:
+            return sym_text
+        return (sym_text + "\n\n" + comp) if sym_text else comp
+
     cands = extract_candidates(prompt)
     matches = match_concepts(
         s, cands,
@@ -339,7 +366,7 @@ def scan_prompt(
         # otherwise withholds). Whole-line snippets only (expand=0) to bound
         # the per-prompt injected token cost.
         if not cands:
-            return ""
+            return _compose("")
         # grep_backstop OFF here: scan-prompt is the always-on UserPromptSubmit
         # hook — spawning `rg` (and learning) on every prompt that names no
         # concept would tax every turn. The index path stays; explicit
@@ -350,12 +377,12 @@ def scan_prompt(
             grep_backstop=False,
         )
         if not b.groups:
-            return ""
+            return _compose("")
         if fmt == "json":
             return json.dumps([json.loads(render_json(b))], indent=2)
         header = (f"# refmatrix content matches for prompt: "
                   f"{', '.join(cands[:8])}")
-        return header + "\n\n" + render_text(b)
+        return _compose(header + "\n\n" + render_text(b))
     matches = matches[:max_concepts]
 
     if fmt == "json":
@@ -385,7 +412,7 @@ def scan_prompt(
         parts.append("")
         parts.append(rendered)
         used += cost
-    return "\n".join(parts)
+    return _compose("\n".join(parts))
 
 
 def read_stdin_prompt() -> str:

@@ -1044,6 +1044,105 @@ def focus_note(text):
     console.print(f"[blue]✎ noted[/]  [dim]{', '.join(ev['refs'][:6]) or '—'}[/]")
 
 
+@focus.command("composite")
+@click.option("--k", default=3, type=int, show_default=True,
+              help="Max topic clusters to render.")
+@click.option("--max-tokens", default=1200, type=int, show_default=True,
+              help="Floor budget; autoscales up with session depth to a "
+                   "ceiling unless --no-autoscale.")
+@click.option("--no-expand", is_flag=True,
+              help="STM focus only — skip long-term graph expansion.")
+@click.option("--no-autoscale", is_flag=True,
+              help="Fixed budget (disable session-depth autoscaling).")
+def focus_composite(k, max_tokens, no_expand, no_autoscale):
+    """Emit a GMD topic-composite subgraph of the current STM focus.
+
+    Splits the session's focus graph — the running aggregate of every
+    prompt+result — into its dominant topic threads and fuses each with its
+    long-term graph neighborhood. This is the same block `scan-prompt` injects
+    each turn; call it to pull the composite on demand."""
+    from refmatrix.composite import build_topic_composite
+    root = _root()
+
+    def _run(s):
+        return build_topic_composite(
+            s, root, k=k, max_tokens=max_tokens,
+            expand=not no_expand, autoscale=not no_autoscale)
+
+    out = _replica_read(_run)
+    if out:
+        click.echo(out)
+    else:
+        console.print(
+            "[dim]no STM topic composite "
+            "(empty focus or no multi-node topic yet)[/]")
+
+
+@focus.command("rebuild")
+@click.option("--all", "all_rings", is_flag=True,
+              help="Sweep every ring in the store's STM dir (not just the "
+                   "active session).")
+@click.option("--session", "session", default=None,
+              help="Rebuild one ring by session/partition key (stem of its "
+                   ".jsonl). Ignored when --all.")
+@click.option("--root", "root_override", default=None,
+              help="STM lives under <root>/stm. Defaults to this project's "
+                   ".refmatrix. Pure file op — no daemon needed — so this can "
+                   "target any store's rings.")
+@click.option("--dry-run", is_flag=True,
+              help="Report what WOULD be dropped without rewriting any graph.")
+@click.option("--keep-ambient", is_flag=True,
+              help="Do NOT drop ambient turns (hub/bus channel + notification "
+                   "prompts). Default drops them.")
+@click.option("--keep-junk", is_flag=True,
+              help="Do NOT drop shape-junk refs (ids, hex, deep tmp paths). "
+                   "Default drops them.")
+def focus_rebuild(all_rings, session, root_override, dry_run,
+                  keep_ambient, keep_junk):
+    """Recompute focus graph(s) from the event ring, purging machine noise older
+    ingests admitted — ambient turns (`<channel …>` hub/bus messages,
+    system/task notifications recorded as `input`) and shape-junk refs. The ring
+    is left intact (full provenance); only the maintained focus graph is
+    rewritten. Use --all to remediate an entire store, --dry-run to preview."""
+    from refmatrix import stm as stm_mod
+    root = Path(root_override) if root_override else _root()
+    d = stm_mod.stm_dir(root)
+    if not d.is_dir():
+        console.print(f"[dim]no STM at {d}[/]")
+        return
+    if all_rings:
+        stems = sorted(
+            p.stem for p in d.glob("*.jsonl") if not p.name.endswith(".tmp"))
+    elif session:
+        stems = [session]
+    else:
+        stems = [_resolve_stm_session(None, prefer_latest=True)]
+    if not stems:
+        console.print("[dim]no rings to rebuild[/]")
+        return
+    tag = "[yellow]DRY-RUN[/] " if dry_run else ""
+    tot_ev = tot_amb = tot_ref = rewritten = 0
+    for stem in stems:
+        s = stm_mod.Stm(root, session=stem, subject="")
+        st = s.rebuild_focus(
+            drop_ambient=not keep_ambient, drop_junk=not keep_junk,
+            dry_run=dry_run)
+        tot_ev += st["events"]
+        tot_amb += st["dropped_events"]
+        tot_ref += st["dropped_refs"]
+        if st["dropped_events"] or st["dropped_refs"]:
+            rewritten += 1
+            console.print(
+                f"{tag}[cyan]{stem[:40]}[/]  events={st['events']} "
+                f"[red]−{st['dropped_events']}amb[/] "
+                f"[red]−{st['dropped_refs']}junk[/] "
+                f"→ nodes={st['nodes']} edges={st['edges']}")
+    verb = "would rewrite" if dry_run else "rewrote"
+    console.print(
+        f"{tag}[bold]{len(stems)} rings scanned[/] · {verb} {rewritten} · "
+        f"events={tot_ev} dropped_ambient={tot_amb} dropped_junk={tot_ref}")
+
+
 @focus.command("detour")
 @click.argument("label", required=False)
 def focus_detour(label):
@@ -1266,6 +1365,20 @@ def _git_diff_summary(repo: str) -> "tuple[str, list[str]]":
     return summary, files[:10]
 
 
+def _is_ambient_prompt(text: str) -> bool:
+    """True for machine-injected turns that are NOT user intent: hub/bus channel
+    messages (`<channel …>`) and system/task notifications. Claude Code delivers
+    these as 'user' prompts in the UserPromptSubmit envelope, but they carry no
+    topical signal — recording them pollutes the STM focus graph (and every
+    downstream topic composite), so the input hook skips them."""
+    t = (text or "").lstrip()
+    return (
+        t.startswith("<channel")
+        or t.startswith("<task-notification")
+        or t.startswith("[SYSTEM NOTIFICATION")
+    )
+
+
 @focus.command("hook")
 @click.option("--event", type=click.Choice(["input", "tool", "say"]),
               required=True, help="Which Claude Code hook is firing.")
@@ -1286,7 +1399,7 @@ def focus_hook(event):
     s = stm_mod.Stm(_root(), session)
     if event == "input":
         prompt = (d.get("prompt") or "").strip()
-        if prompt:
+        if prompt and not _is_ambient_prompt(prompt):
             s.record("input", prompt[:300])
     elif event == "say":
         # Stop hook: capture my reply from the transcript. refs=[] keeps it
@@ -5435,14 +5548,33 @@ def _resolve_query(
                    "falls back to 'salience' if the walk can't seed. "
                    "'salience' ranks only the prompt's own matched concepts "
                    "(shape+idf+PageRank prior).")
+@click.option("--composite/--no-composite", default=True, show_default=True,
+              help="Append a GMD topic-composite subgraph of the session's "
+                   "current STM focus (the running aggregate of every "
+                   "prompt+result), budgeted SEPARATELY from --max-tokens.")
+@click.option("--composite-max-tokens", default=1200, type=int, show_default=True,
+              help="Floor budget for the composite; autoscales up with session "
+                   "depth to a ceiling (RMX_STM_COMPOSITE_TOKENS_MAX). "
+                   "Independent of --max-tokens.")
+@click.option("--composite-k", default=3, type=int, show_default=True,
+              help="Max topic clusters rendered in the composite.")
+@click.option("--no-composite-expand", "composite_no_expand", is_flag=True,
+              help="Build the composite from STM focus only — skip long-term "
+                   "graph expansion (no build_context calls).")
 def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
-                    exclude_namespace, include_noise, fmt, stdin_json, rank):
+                    exclude_namespace, include_noise, fmt, stdin_json, rank,
+                    composite, composite_max_tokens, composite_k,
+                    composite_no_expand):
     """Read a prompt; emit context bundles for symbols it mentions.
 
     Designed for the Claude Code UserPromptSubmit hook. Output goes to stdout,
     which Claude Code injects as additional context for the turn. Accepts the
     prompt as a positional QUERY, --text, or stdin (raw prose or a JSON
     envelope — auto-detected).
+
+    Also appends (default on) a GMD topic-composite subgraph of the session's
+    current focus — a running aggregate of every prompt+result — with its own
+    autoscaling token budget, so it never robs the prompt-symbol context.
     """
     from refmatrix.scan import scan_prompt
 
@@ -5450,6 +5582,7 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
     prompt = _resolve_query(query, text, stdin_json=stdin_json, read_stdin=True)
     if not prompt.strip():
         return
+    composite_root = _root() if composite else None
 
     def _run(s):
         with log_query(s, kind="scan", body=prompt[:200], source="scan-prompt") as tlog:
@@ -5462,6 +5595,11 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                 exclude_namespaces=tuple(exclude_namespace),
                 include_noise=include_noise,
                 fmt=fmt,
+                composite=composite,
+                composite_root=composite_root,
+                composite_k=composite_k,
+                composite_expand=not composite_no_expand,
+                composite_max_tokens=composite_max_tokens,
             )
             tlog.cardinality = result.count("=== context for") if result else 0
         return result
