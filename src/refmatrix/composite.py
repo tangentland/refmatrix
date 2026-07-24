@@ -39,6 +39,12 @@ COMPOSITE_K = int(os.environ.get("RMX_STM_COMPOSITE_K", "3"))
 # updates every turn, but the composite block is only emitted on turns where
 # `turn % every == 0` (turn 0 always renders).
 COMPOSITE_EVERY = int(os.environ.get("RMX_STM_COMPOSITE_EVERY", "1"))
+# Per-topic cap on STM co-occurrence edges rendered. The Members line already
+# names the whole cluster, so the full N² pairwise `co-occurs` dump is mostly
+# filler — the topic HEADER + Members + LTM-expansion edges carry the signal.
+# Keep only the strongest few bindings; 0 = drop the STM co-occurs block.
+COMPOSITE_COOCCUR_EDGES = int(
+    os.environ.get("RMX_STM_COMPOSITE_COOCCUR_EDGES", "3"))
 
 
 def _scaled_budget(base: int, turn: int, *, autoscale: bool,
@@ -67,6 +73,7 @@ def build_topic_composite(
     max_tokens_ceiling: int = COMPOSITE_TOKENS_MAX,
     tokens_per_turn: int = COMPOSITE_TOKENS_PER_TURN,
     every: int = COMPOSITE_EVERY,
+    cooccur_edges: int = COMPOSITE_COOCCUR_EDGES,
     session: str | None = None,
 ) -> str:
     """GMD subgraph of the session's current topics, or "" when there is no STM
@@ -80,6 +87,11 @@ def build_topic_composite(
     Cadence: `every` throttles injection to one turn in N (default 1 = every
     turn). On skipped turns this returns "" — the focus graph still updates, only
     the emitted block is suppressed.
+
+    Signal: `cooccur_edges` caps the per-topic STM co-occurrence block, ranked by
+    lift (surprising bindings) not raw weight (hub-node bulk). The topic header +
+    Members line + LTM-expansion edges carry the signal; the pairwise dump is
+    filler, so the cap is small (0 drops it).
 
     `s` is the long-term Store (for LTM expansion); `root` is the project's
     `.refmatrix` dir (STM lives at `<root>/stm`, keyed like `focus hook`).
@@ -105,13 +117,13 @@ def build_topic_composite(
         expand=expand, per_node_entities=per_node_entities,
         expand_nodes_per_topic=expand_nodes_per_topic,
         max_expansions=max_expansions, max_tokens=budget,
-        turn=turn,
+        turn=turn, cooccur_edges=cooccur_edges,
     )
 
 
 def _render_gmd(
     s, topics, *, expand, per_node_entities, expand_nodes_per_topic,
-    max_expansions, max_tokens, turn,
+    max_expansions, max_tokens, turn, cooccur_edges=COMPOSITE_COOCCUR_EDGES,
 ) -> str:
     lines: list[str] = [
         "# STM topic composite — current focus (GMD subgraph)",
@@ -142,15 +154,31 @@ def _render_gmd(
         lines.append("")
         lines.append(f"## Topic {topic_no}: {head} {{#topic-{topic_no}}}")
         lines.append("Members: " + ", ".join(members))
-        # STM co-occurrence edges (typed rel between focus members).
-        for e in t["edges"]:
-            if not _budget_ok():
-                break
-            if _is_junk(e.get("source", "")) or _is_junk(e.get("target", "")):
-                continue
-            lines.append(
-                f"rel: co-occurs -> [[{e['target']}]] "
-                f"{{from: {e['source']}, w: {e.get('weight', 0)}}}")
+        # STM co-occurrence edges: the Members line already names the cluster,
+        # so the full pairwise dump is filler. Keep only the `cooccur_edges`
+        # most SURPRISING bindings, ranked by lift (w / freq_src·freq_tgt), not
+        # raw weight — raw weight favors high-degree hub nodes that co-occur with
+        # everything (the bulk); lift surfaces specific pairs that bind tighter
+        # than their individual popularity predicts (the outliers). 0 drops it.
+        if cooccur_edges > 0:
+            freq = {nd["name"]: max(1, nd.get("freq", 1)) for nd in t["nodes"]}
+
+            def _lift(e):
+                return e.get("weight", 0) / (
+                    freq.get(e.get("source", ""), 1)
+                    * freq.get(e.get("target", ""), 1))
+
+            clean_edges = [
+                e for e in t["edges"]
+                if not _is_junk(e.get("source", ""))
+                and not _is_junk(e.get("target", ""))]
+            clean_edges.sort(key=_lift, reverse=True)
+            for e in clean_edges[:cooccur_edges]:
+                if not _budget_ok():
+                    break
+                lines.append(
+                    f"rel: co-occurs -> [[{e['target']}]] "
+                    f"{{from: {e['source']}, w: {e.get('weight', 0)}}}")
         # LTM expansion: strongest clean nodes → their linkage neighborhood.
         if expand:
             clean_nodes = [nd for nd in t["nodes"] if not _is_junk(nd["name"])]

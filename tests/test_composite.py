@@ -11,7 +11,7 @@ from click.testing import CliRunner
 from refmatrix import stm as stm_mod
 from refmatrix.cli import main, _is_ambient_prompt
 from refmatrix.composite import (
-    _is_junk, _scaled_budget, build_topic_composite,
+    _is_junk, _render_gmd, _scaled_budget, build_topic_composite,
 )
 from refmatrix.scan import scan_prompt
 from refmatrix.store import Store
@@ -104,6 +104,44 @@ def test_build_composite_drops_junk_and_noise_topics(tmp_path):
     assert "toolu_01A" not in out
     assert "a02b61d4963696b49" not in out
     assert "parser.py" in out  # clean thread survives
+
+
+# ---- co-occurs edge selection: outliers (lift) not bulk (weight) ----
+
+def test_cooccur_ranks_by_lift_not_weight():
+    # `hub` co-occurs heavily with everything (bulk); `a`/`b` are a rare tight
+    # pair (outlier). Raw weight favors hub; lift favors the a-b binding.
+    topic = {
+        "members": ["hub", "aardvark", "boron", "xigma", "yotta"],
+        "nodes": [
+            {"name": "hub", "freq": 10}, {"name": "aardvark", "freq": 1},
+            {"name": "boron", "freq": 1}, {"name": "xigma", "freq": 5},
+            {"name": "yotta", "freq": 5}],
+        "edges": [
+            {"source": "hub", "target": "xigma", "weight": 4},
+            {"source": "hub", "target": "yotta", "weight": 4},
+            {"source": "aardvark", "target": "boron", "weight": 2}],
+    }
+    out = _render_gmd(
+        None, [topic], expand=False, per_node_entities=4,
+        expand_nodes_per_topic=3, max_expansions=6, max_tokens=5000, turn=1,
+        cooccur_edges=1)
+    assert "[[boron]]" in out          # outlier pair rendered
+    assert "[[xigma]]" not in out and "[[yotta]]" not in out  # hub bulk dropped
+
+
+def test_cooccur_edges_zero_drops_block():
+    topic = {
+        "members": ["aardvark", "boron"],
+        "nodes": [{"name": "aardvark", "freq": 1}, {"name": "boron", "freq": 1}],
+        "edges": [{"source": "aardvark", "target": "boron", "weight": 2}],
+    }
+    out = _render_gmd(
+        None, [topic], expand=False, per_node_entities=4,
+        expand_nodes_per_topic=3, max_expansions=6, max_tokens=5000, turn=1,
+        cooccur_edges=0)
+    assert "co-occurs" not in out
+    assert "aardvark" in out  # header/Members still present
 
 
 # ---- cadence gate (inject every Nth turn) ----
