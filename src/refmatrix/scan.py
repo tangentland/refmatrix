@@ -328,6 +328,7 @@ def scan_prompt(
     composite_k: int = 3,
     composite_expand: bool = True,
     composite_max_tokens: int = 1200,
+    composite_every: int = 1,
 ) -> str:
     """Emit context bundles for a prompt's symbols. When `composite` is set (and
     `composite_root` names the project `.refmatrix` dir), ALSO append a GMD
@@ -343,7 +344,8 @@ def scan_prompt(
             from .composite import build_topic_composite
             comp = build_topic_composite(
                 s, composite_root, k=composite_k,
-                expand=composite_expand, max_tokens=composite_max_tokens)
+                expand=composite_expand, max_tokens=composite_max_tokens,
+                every=composite_every)
         except Exception:
             comp = ""
         if not comp:

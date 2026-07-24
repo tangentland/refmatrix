@@ -34,6 +34,11 @@ COMPOSITE_TOKENS_MAX = int(os.environ.get("RMX_STM_COMPOSITE_TOKENS_MAX", "3000"
 COMPOSITE_TOKENS_PER_TURN = int(
     os.environ.get("RMX_STM_COMPOSITE_TOKENS_PER_TURN", "15"))
 COMPOSITE_K = int(os.environ.get("RMX_STM_COMPOSITE_K", "3"))
+# Inject cadence: render the composite only every Nth STM turn. 1 = every turn
+# (default). Higher N throttles the per-prompt injection — the focus graph still
+# updates every turn, but the composite block is only emitted on turns where
+# `turn % every == 0` (turn 0 always renders).
+COMPOSITE_EVERY = int(os.environ.get("RMX_STM_COMPOSITE_EVERY", "1"))
 
 
 def _scaled_budget(base: int, turn: int, *, autoscale: bool,
@@ -61,6 +66,7 @@ def build_topic_composite(
     autoscale: bool = True,
     max_tokens_ceiling: int = COMPOSITE_TOKENS_MAX,
     tokens_per_turn: int = COMPOSITE_TOKENS_PER_TURN,
+    every: int = COMPOSITE_EVERY,
     session: str | None = None,
 ) -> str:
     """GMD subgraph of the session's current topics, or "" when there is no STM
@@ -70,6 +76,10 @@ def build_topic_composite(
     cap grows with session depth (STM turn count) up to `max_tokens_ceiling`, so
     a deep session's denser focus gets a proportionally richer composite. This
     budget is separate from the prompt-symbol context budget.
+
+    Cadence: `every` throttles injection to one turn in N (default 1 = every
+    turn). On skipped turns this returns "" — the focus graph still updates, only
+    the emitted block is suppressed.
 
     `s` is the long-term Store (for LTM expansion); `root` is the project's
     `.refmatrix` dir (STM lives at `<root>/stm`, keyed like `focus hook`).
@@ -84,6 +94,9 @@ def build_topic_composite(
     if not topics:
         return ""
     turn = graph.get("turn", 0)
+    # Cadence gate: throttle per-prompt injection to every Nth turn.
+    if every > 1 and turn % every != 0:
+        return ""
     budget = _scaled_budget(
         max_tokens, turn, autoscale=autoscale,
         ceiling=max_tokens_ceiling, per_turn=tokens_per_turn)

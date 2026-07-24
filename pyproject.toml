@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "refmatrix"
-version = "0.25.0"
+version = "0.25.1"
 description = "Roaring-bitmap reference matrix for documents, code, and concepts. Hyper-tldr index."
 readme = "README.md"
 requires-python = ">=3.10"

@@ -106,6 +106,33 @@ def test_build_composite_drops_junk_and_noise_topics(tmp_path):
     assert "parser.py" in out  # clean thread survives
 
 
+# ---- cadence gate (inject every Nth turn) ----
+
+def test_composite_every_gates_on_turn(tmp_path):
+    root = tmp_path / ".refmatrix"
+    _seed(root)
+    turn = stm_mod.Stm(root, "sess").focus_graph(top=30)["turn"]
+    assert turn > 0
+    # every=1 always renders
+    assert build_topic_composite(None, root, expand=False, session="sess", every=1)
+    # a divisor of turn renders (turn % turn == 0); turn+1 never divides → skip
+    assert build_topic_composite(
+        None, root, expand=False, session="sess", every=turn)
+    assert build_topic_composite(
+        None, root, expand=False, session="sess", every=turn + 1) == ""
+
+
+def test_scan_prompt_composite_every_suppresses(tmp_path):
+    root = tmp_path / ".refmatrix"
+    _seed(root)
+    turn = stm_mod.Stm(root, "sess").focus_graph(top=30)["turn"]
+    s = Store(root)
+    out = scan_prompt(
+        s, "nothing matches here", composite=True, composite_root=root,
+        composite_expand=False, composite_every=turn + 1)
+    assert "STM topic composite" not in out
+
+
 # ---- scan-prompt append / omit ----
 
 def test_scan_prompt_appends_composite(tmp_path):
@@ -164,6 +191,27 @@ def test_focus_hook_skips_ambient_channel_message(tmp_path, monkeypatch):
     # nothing recorded → no ring for this session
     st = stm_mod.Stm(root, "hooksess")
     assert st.event_count() == 0
+
+
+def test_rebuild_focus_drops_ambient_keeps_ring(tmp_path):
+    root = tmp_path / ".refmatrix"
+    s = stm_mod.Stm(root, "sess")
+    s.record("input", "work on parser.py", refs=["parser.py", "lexer"])
+    # ambient turns older ingests admitted (channel + notification)
+    s.record("input", '<channel source="hub">{"q":1}</channel>', refs=["channel"])
+    s.record("input", "<task-notification>x</task-notification>", refs=["notification"])
+    before = s.event_count()
+    st = s.rebuild_focus(dry_run=True)
+    assert st["dropped_events"] == 2 and st["dry_run"] is True
+    # dry-run leaves ring intact and does not rewrite the graph
+    assert s.event_count() == before
+    st2 = s.rebuild_focus()
+    assert st2["dropped_events"] == 2 and st2["dry_run"] is False
+    g = stm_mod.Stm(root, "sess").focus_graph(top=30)
+    names = {n["name"] for n in g["nodes"]}
+    assert "channel" not in names and "notification" not in names
+    assert "parser.py" in names  # real ref survives
+    assert s.event_count() == before  # ring preserved
 
 
 def test_focus_hook_records_real_prompt(tmp_path, monkeypatch):

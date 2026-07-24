@@ -5561,10 +5561,15 @@ def _resolve_query(
 @click.option("--no-composite-expand", "composite_no_expand", is_flag=True,
               help="Build the composite from STM focus only — skip long-term "
                    "graph expansion (no build_context calls).")
+@click.option("--composite-every", default=1, type=int, show_default=True,
+              help="Inject the composite only every Nth turn (env "
+                   "RMX_STM_COMPOSITE_EVERY). 1 = every turn; higher throttles "
+                   "the per-prompt injection. Focus graph still updates each "
+                   "turn — only the emitted block is suppressed on skips.")
 def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                     exclude_namespace, include_noise, fmt, stdin_json, rank,
                     composite, composite_max_tokens, composite_k,
-                    composite_no_expand):
+                    composite_no_expand, composite_every):
     """Read a prompt; emit context bundles for symbols it mentions.
 
     Designed for the Claude Code UserPromptSubmit hook. Output goes to stdout,
@@ -5600,6 +5605,7 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                 composite_k=composite_k,
                 composite_expand=not composite_no_expand,
                 composite_max_tokens=composite_max_tokens,
+                composite_every=composite_every,
             )
             tlog.cardinality = result.count("=== context for") if result else 0
         return result
