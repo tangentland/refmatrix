@@ -1,7 +1,7 @@
 {
   "mcpServers": {
       "refmatrix": {
-        "command": "/Users/tholley/bin/rmx",
+        "command": "/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx",
         "args": ["mcp"],
         "env": { "PYTHONPATH": "" }
       }
