@@ -144,6 +144,51 @@ def test_cooccur_edges_zero_drops_block():
     assert "aardvark" in out  # header/Members still present
 
 
+# ---- LTM expansion: sparse-first (low PageRank) + dedup across composite ----
+
+def test_ltm_expansion_ranks_sparse_first_and_dedups(monkeypatch):
+    import types
+    import refmatrix.composite as C
+
+    def _ent(eid, name):
+        return types.SimpleNamespace(id=eid, name=name)
+
+    def _entry(eid, name):
+        return types.SimpleNamespace(entity=_ent(eid, name))
+
+    # Every anchor resolves to the same neighborhood: a hub target (high PR) and
+    # a sparse target (low PR), plus one target shared across anchors.
+    def fake_build_context(s, name, **kw):
+        return types.SimpleNamespace(
+            anchor=_ent(999, name),
+            groups={"mentions": [
+                _entry(1, "hub_memory"),      # high centrality → demote
+                _entry(2, "sparse_bridge"),   # low centrality → aha, surface
+                _entry(3, "shared_target"),   # appears for every anchor → dedup
+            ]})
+
+    import refmatrix.pagerank as PR
+    monkeypatch.setattr(C, "build_context", fake_build_context)
+    monkeypatch.setattr(PR, "load_scores", lambda s: {1: 0.90, 2: 0.01, 3: 0.50})
+
+    topic = {
+        "members": ["alpha", "bravo"],
+        "nodes": [{"name": "alpha", "freq": 1}, {"name": "bravo", "freq": 1}],
+        "edges": [],
+    }
+    out = C._render_gmd(
+        object(), [topic], expand=True, per_node_entities=2,
+        expand_nodes_per_topic=2, max_expansions=6, max_tokens=5000, turn=1,
+        cooccur_edges=0)
+    ltm = [ln for ln in out.splitlines() if "ltm: 1" in ln]
+    # sparse_bridge (lowest PR) ranks above hub_memory within an anchor
+    joined = "\n".join(ltm)
+    assert "sparse_bridge" in joined and "hub_memory" in joined
+    assert joined.index("sparse_bridge") < joined.index("hub_memory")
+    # shared_target emitted once across the whole composite (dedup), not per-anchor
+    assert joined.count("[[shared_target]]") == 1
+
+
 # ---- cadence gate (inject every Nth turn) ----
 
 def test_composite_every_gates_on_turn(tmp_path):

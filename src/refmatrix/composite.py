@@ -141,6 +141,20 @@ def _render_gmd(
     def _budget_ok() -> bool:
         return estimate_tokens("\n".join(lines)) < max_tokens
 
+    # Sparse-link ranking for LTM expansion: prefer the "aha" bridges — targets
+    # FEW concepts point to — over hub memories everything links to. PageRank
+    # centrality is the popularity proxy: rank expansion targets by ASCENDING
+    # score (peripheral first). Absent from a populated table = genuinely
+    # peripheral → surfaced. Empty map (PageRank never ran) → keep native order.
+    pr_scores: dict = {}
+    if expand and s is not None:
+        try:
+            from .pagerank import load_scores
+            pr_scores = load_scores(s)
+        except Exception:
+            pr_scores = {}
+    seen_ltm: set = set()  # dedup targets across the whole composite (uniqueness)
+
     expansions = 0
     topic_no = 0
     for t in topics:
@@ -191,15 +205,25 @@ def _render_gmd(
                 if b.anchor is None or not b.groups:
                     continue
                 expansions += 1
+                # Gather this anchor's candidates across all linkage groups, drop
+                # self-links + targets already emitted elsewhere in the composite,
+                # then rank sparse-first (ascending PageRank) so the unique
+                # bridges win the per-node budget over popular hub targets.
+                cands = []
                 for linkage, entries in b.groups.items():
-                    for ent in entries[:per_node_entities]:
-                        if not _budget_ok():
-                            break
+                    for ent in entries:
                         tgt = getattr(ent.entity, "name", None)
-                        if not tgt or tgt == nd["name"]:
+                        eid = getattr(ent.entity, "id", None)
+                        if not tgt or tgt == nd["name"] or eid in seen_ltm:
                             continue
-                        lines.append(
-                            f"rel: {linkage} -> [[{tgt}]] "
-                            f"{{anchor: {nd['name']}, ltm: 1}}")
+                        cands.append((pr_scores.get(eid, 0.0), linkage, tgt, eid))
+                cands.sort(key=lambda c: c[0])  # ascending centrality = sparse first
+                for _score, linkage, tgt, eid in cands[:per_node_entities]:
+                    if not _budget_ok():
+                        break
+                    seen_ltm.add(eid)
+                    lines.append(
+                        f"rel: {linkage} -> [[{tgt}]] "
+                        f"{{anchor: {nd['name']}, ltm: 1}}")
     lines.append("```")
     return "\n".join(lines)
