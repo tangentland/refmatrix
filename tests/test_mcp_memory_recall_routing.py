@@ -63,6 +63,34 @@ def test_recall_falls_back_to_project_partition_post_merge(tmp_path, monkeypatch
     assert recall["partition"] == "proj"
 
 
+def test_resolve_root_targets_project_by_name(tmp_path, monkeypatch):
+    # Two stores discovered; cwd is NEITHER. `project` must resolve the right
+    # root independent of the MCP server's cwd (the recall-drift fix).
+    clq = tmp_path / "cliquedb" / ".refmatrix"
+    via = tmp_path / "viascope" / ".refmatrix"
+    clq.mkdir(parents=True); via.mkdir(parents=True)
+    monkeypatch.setattr("refmatrix.discovery.discover_roots",
+                        lambda: [clq, via])
+    monkeypatch.setattr("refmatrix.discovery.store_name",
+                        lambda root: root.parent.name)
+    assert mcp._resolve_root({"project": "cliquedb"}) == clq
+    assert mcp._resolve_root({"project": "viascope"}) == via
+
+
+def test_resolve_root_explicit_root_beats_project(tmp_path, monkeypatch):
+    monkeypatch.setattr("refmatrix.discovery.discover_roots", lambda: [])
+    # `root` wins over `project`; path normalized to the .refmatrix dir.
+    got = mcp._resolve_root({"root": str(tmp_path), "project": "ignored"})
+    assert got == tmp_path / ".refmatrix"
+
+
+def test_resolve_root_unknown_project_falls_through(tmp_path, monkeypatch):
+    monkeypatch.setattr("refmatrix.discovery.discover_roots", lambda: [])
+    monkeypatch.setenv("REFMATRIX_ROOT", str(tmp_path / ".refmatrix"))
+    # Unknown project name → no match → next precedence (REFMATRIX_ROOT).
+    assert mcp._resolve_root({"project": "nope"}) == tmp_path / ".refmatrix"
+
+
 def test_empty_query_uses_recent_on_memory_partition(tmp_path, monkeypatch):
     calls: list[tuple[str, dict]] = []
     _mock_daemon(monkeypatch, calls, legacy_present=True)

@@ -30,10 +30,33 @@ CHANNELS_ENABLED = os.environ.get("REFMATRIX_CHANNELS", "1") not in ("0", "false
 # ---- root resolution ------------------------------------------------------
 
 
+def _resolve_project_root(project: str) -> "Path | None":
+    """Map a project NAME (e.g. 'cliquedb') to its `.refmatrix` root among the
+    discovered stores. Lets an MCP caller target a store explicitly instead of
+    relying on the server process's cwd — the read-side twin of passing an
+    explicit `root`. Matches on the store's default partition name (its parent
+    dir basename), so 'cliquedb' resolves regardless of where `rmx mcp` runs."""
+    from refmatrix import discovery
+    for root in discovery.discover_roots():
+        try:
+            if discovery.store_name(root) == project:
+                return root
+        except Exception:
+            continue
+    return None
+
+
 def _resolve_root(args: dict) -> Path:
+    # Explicit target wins — `root` (path) or `project` (name). This is the
+    # cwd-independent path: an MCP server serving one project can still be asked
+    # to read another store's memory when a caller (e.g. a subagent) names it.
     if args.get("root"):
         r = Path(args["root"])
         return r if r.name == ".refmatrix" else r / ".refmatrix"
+    if args.get("project"):
+        pr = _resolve_project_root(str(args["project"]))
+        if pr is not None:
+            return pr
     env = os.environ.get("REFMATRIX_ROOT")
     if env:
         return Path(env)
@@ -614,11 +637,14 @@ TOOLS: dict[str, dict] = {
         "fn": _t_query},
     "rmx_memory_recall": {
         "description": "Recall memories — project + global 'Claude behavior' "
-                       "store (scope=both by default).",
+                       "store (scope=both by default). Pass `project` (name, "
+                       "e.g. 'cliquedb') or `root` to target a specific store "
+                       "when this server's cwd is a different project.",
         "schema": {"type": "object", "properties": {
             "query": {"type": "string"}, "scope": {
                 "type": "string", "enum": ["project", "global", "both"]},
-            "k": {"type": "integer"}, "root": {"type": "string"}},
+            "k": {"type": "integer"}, "root": {"type": "string"},
+            "project": {"type": "string"}},
             "required": []},
         "fn": _t_memory_recall},
     "rmx_bus_pub": {
@@ -767,7 +793,8 @@ TOOLS: dict[str, dict] = {
             "linkage": {"type": "string"}, "weight": {"type": "number"},
             "halflife_days": {"type": "number"}, "cap": {"type": "number"},
             "explain": {"type": "boolean"}, "protect": {"type": "boolean"},
-            "dry_run": {"type": "boolean"}, "root": {"type": "string"}},
+            "dry_run": {"type": "boolean"}, "root": {"type": "string"},
+            "project": {"type": "string"}},
             "required": ["action"]},
         "fn": _t_memory},
     "rmx_locate": {
