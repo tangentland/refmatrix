@@ -83,7 +83,9 @@ def test_build_composite_stm_only(tmp_path):
     assert "STM topic composite" in out
     assert "```gmd" in out
     assert "parser.py" in out and "daemon" in out
-    assert "rel: co-occurs ->" in out
+    # expand=False → no LTM lookups, so no grounded/external edges; the header +
+    # Members line (the signal) still render. co-occurs is gone entirely.
+    assert "Members:" in out and "co-occurs" not in out
 
 
 def test_build_composite_empty_when_no_stm(tmp_path):
@@ -106,42 +108,74 @@ def test_build_composite_drops_junk_and_noise_topics(tmp_path):
     assert "parser.py" in out  # clean thread survives
 
 
-# ---- co-occurs edge selection: outliers (lift) not bulk (weight) ----
+# ---- intra-cluster edges: grounded real verbs, not weak co-occurs ----
 
-def test_cooccur_ranks_by_lift_not_weight():
-    # `hub` co-occurs heavily with everything (bulk); `a`/`b` are a rare tight
-    # pair (outlier). Raw weight favors hub; lift favors the a-b binding.
-    topic = {
-        "members": ["hub", "aardvark", "boron", "xigma", "yotta"],
-        "nodes": [
-            {"name": "hub", "freq": 10}, {"name": "aardvark", "freq": 1},
-            {"name": "boron", "freq": 1}, {"name": "xigma", "freq": 5},
-            {"name": "yotta", "freq": 5}],
-        "edges": [
-            {"source": "hub", "target": "xigma", "weight": 4},
-            {"source": "hub", "target": "yotta", "weight": 4},
-            {"source": "aardvark", "target": "boron", "weight": 2}],
+def _intra_topic():
+    # A cluster of three members; the durable graph links A→B (calls) but A's
+    # other neighbor `xtern` is NOT a member (external bridge).
+    return {
+        "members": ["parser", "lexer", "tokens"],
+        "nodes": [{"name": "parser", "freq": 3}, {"name": "lexer", "freq": 2},
+                  {"name": "tokens", "freq": 1}],
+        "edges": [],  # STM co-occurs is no longer consulted
     }
-    out = _render_gmd(
-        None, [topic], expand=False, per_node_entities=4,
-        expand_nodes_per_topic=3, max_expansions=6, max_tokens=5000, turn=1,
-        cooccur_edges=1)
-    assert "[[boron]]" in out          # outlier pair rendered
-    assert "[[xigma]]" not in out and "[[yotta]]" not in out  # hub bulk dropped
 
 
-def test_cooccur_edges_zero_drops_block():
-    topic = {
-        "members": ["aardvark", "boron"],
-        "nodes": [{"name": "aardvark", "freq": 1}, {"name": "boron", "freq": 1}],
-        "edges": [{"source": "aardvark", "target": "boron", "weight": 2}],
-    }
-    out = _render_gmd(
-        None, [topic], expand=False, per_node_entities=4,
+def _patch_bc(monkeypatch, groups_for):
+    import types
+    import refmatrix.composite as C
+
+    def fake_build_context(s, name, **kw):
+        ents = groups_for(name)
+        if not ents:
+            return types.SimpleNamespace(anchor=None, groups={})
+        return types.SimpleNamespace(
+            anchor=types.SimpleNamespace(id=0, name=name), groups=ents)
+
+    monkeypatch.setattr(C, "build_context", fake_build_context)
+    import refmatrix.pagerank as PR
+    monkeypatch.setattr(PR, "load_scores", lambda s: {})
+
+
+def test_intra_cluster_emits_real_verb_not_cooccurs(monkeypatch):
+    import types
+    import refmatrix.composite as C
+
+    def groups_for(name):
+        if name == "parser":  # parser calls lexer (member) + mentions xtern (ext)
+            return {"calls": [types.SimpleNamespace(
+                        entity=types.SimpleNamespace(id=1, name="lexer"))],
+                    "mentions": [types.SimpleNamespace(
+                        entity=types.SimpleNamespace(id=9, name="xtern"))]}
+        return {}
+
+    _patch_bc(monkeypatch, groups_for)
+    out = C._render_gmd(
+        object(), [_intra_topic()], expand=True, per_node_entities=4,
         expand_nodes_per_topic=3, max_expansions=6, max_tokens=5000, turn=1,
-        cooccur_edges=0)
-    assert "co-occurs" not in out
-    assert "aardvark" in out  # header/Members still present
+        intra_edges=3)
+    assert "co-occurs" not in out                       # weak relation gone
+    assert "rel: calls -> [[lexer]] {from: parser, graph: 1}" in out  # grounded
+    assert "rel: mentions -> [[xtern]] {anchor: parser, ltm: 1}" in out  # ext kept
+
+
+def test_intra_edges_zero_drops_grounded_block(monkeypatch):
+    import types
+    import refmatrix.composite as C
+
+    def groups_for(name):
+        if name == "parser":
+            return {"calls": [types.SimpleNamespace(
+                entity=types.SimpleNamespace(id=1, name="lexer"))]}
+        return {}
+
+    _patch_bc(monkeypatch, groups_for)
+    out = C._render_gmd(
+        object(), [_intra_topic()], expand=True, per_node_entities=4,
+        expand_nodes_per_topic=3, max_expansions=6, max_tokens=5000, turn=1,
+        intra_edges=0)
+    assert "graph: 1" not in out       # no grounded intra edges
+    assert "parser" in out             # header/Members still present
 
 
 # ---- LTM expansion: sparse-first (low PageRank) + dedup across composite ----
@@ -179,7 +213,7 @@ def test_ltm_expansion_ranks_sparse_first_and_dedups(monkeypatch):
     out = C._render_gmd(
         object(), [topic], expand=True, per_node_entities=2,
         expand_nodes_per_topic=2, max_expansions=6, max_tokens=5000, turn=1,
-        cooccur_edges=0)
+        intra_edges=0)
     ltm = [ln for ln in out.splitlines() if "ltm: 1" in ln]
     # sparse_bridge (lowest PR) ranks above hub_memory within an anchor
     joined = "\n".join(ltm)

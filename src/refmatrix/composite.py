@@ -39,12 +39,13 @@ COMPOSITE_K = int(os.environ.get("RMX_STM_COMPOSITE_K", "3"))
 # updates every turn, but the composite block is only emitted on turns where
 # `turn % every == 0` (turn 0 always renders).
 COMPOSITE_EVERY = int(os.environ.get("RMX_STM_COMPOSITE_EVERY", "1"))
-# Per-topic cap on STM co-occurrence edges rendered. The Members line already
-# names the whole cluster, so the full N² pairwise `co-occurs` dump is mostly
-# filler — the topic HEADER + Members + LTM-expansion edges carry the signal.
-# Keep only the strongest few bindings; 0 = drop the STM co-occurs block.
-COMPOSITE_COOCCUR_EDGES = int(
-    os.environ.get("RMX_STM_COMPOSITE_COOCCUR_EDGES", "3"))
+# Per-topic cap on GROUNDED intra-cluster edges. The old STM `co-occurs` dump
+# was a weak relation ("these focus nodes appeared together") the Members line
+# already implied. Instead, for pairs of focus members that are ALSO linked in
+# the durable graph, emit the REAL typed verb (calls/defines/depends-on…) — the
+# cluster grounded in structure. Cap the strongest few; 0 = drop the block.
+COMPOSITE_INTRA_EDGES = int(
+    os.environ.get("RMX_STM_COMPOSITE_INTRA_EDGES", "3"))
 
 
 def _scaled_budget(base: int, turn: int, *, autoscale: bool,
@@ -73,7 +74,7 @@ def build_topic_composite(
     max_tokens_ceiling: int = COMPOSITE_TOKENS_MAX,
     tokens_per_turn: int = COMPOSITE_TOKENS_PER_TURN,
     every: int = COMPOSITE_EVERY,
-    cooccur_edges: int = COMPOSITE_COOCCUR_EDGES,
+    intra_edges: int = COMPOSITE_INTRA_EDGES,
     session: str | None = None,
 ) -> str:
     """GMD subgraph of the session's current topics, or "" when there is no STM
@@ -88,10 +89,10 @@ def build_topic_composite(
     turn). On skipped turns this returns "" — the focus graph still updates, only
     the emitted block is suppressed.
 
-    Signal: `cooccur_edges` caps the per-topic STM co-occurrence block, ranked by
-    lift (surprising bindings) not raw weight (hub-node bulk). The topic header +
-    Members line + LTM-expansion edges carry the signal; the pairwise dump is
-    filler, so the cap is small (0 drops it).
+    Signal: `intra_edges` caps the per-topic GROUNDED intra-cluster block — real
+    typed graph verbs (calls/defines/depends-on…) between focus members, detected
+    from the LTM expansion neighborhoods. Replaces the old weak `co-occurs` dump.
+    The header + Members line + external `{ltm}` bridges carry the rest.
 
     `s` is the long-term Store (for LTM expansion); `root` is the project's
     `.refmatrix` dir (STM lives at `<root>/stm`, keyed like `focus hook`).
@@ -117,13 +118,13 @@ def build_topic_composite(
         expand=expand, per_node_entities=per_node_entities,
         expand_nodes_per_topic=expand_nodes_per_topic,
         max_expansions=max_expansions, max_tokens=budget,
-        turn=turn, cooccur_edges=cooccur_edges,
+        turn=turn, intra_edges=intra_edges,
     )
 
 
 def _render_gmd(
     s, topics, *, expand, per_node_entities, expand_nodes_per_topic,
-    max_expansions, max_tokens, turn, cooccur_edges=COMPOSITE_COOCCUR_EDGES,
+    max_expansions, max_tokens, turn, intra_edges=COMPOSITE_INTRA_EDGES,
 ) -> str:
     lines: list[str] = [
         "# STM topic composite — current focus (GMD subgraph)",
@@ -168,36 +169,22 @@ def _render_gmd(
         lines.append("")
         lines.append(f"## Topic {topic_no}: {head} {{#topic-{topic_no}}}")
         lines.append("Members: " + ", ".join(members))
-        # STM co-occurrence edges: the Members line already names the cluster,
-        # so the full pairwise dump is filler. Keep only the `cooccur_edges`
-        # most SURPRISING bindings, ranked by lift (w / freq_src·freq_tgt), not
-        # raw weight — raw weight favors high-degree hub nodes that co-occur with
-        # everything (the bulk); lift surfaces specific pairs that bind tighter
-        # than their individual popularity predicts (the outliers). 0 drops it.
-        if cooccur_edges > 0:
-            freq = {nd["name"]: max(1, nd.get("freq", 1)) for nd in t["nodes"]}
-
-            def _lift(e):
-                return e.get("weight", 0) / (
-                    freq.get(e.get("source", ""), 1)
-                    * freq.get(e.get("target", ""), 1))
-
-            clean_edges = [
-                e for e in t["edges"]
-                if not _is_junk(e.get("source", ""))
-                and not _is_junk(e.get("target", ""))]
-            clean_edges.sort(key=_lift, reverse=True)
-            for e in clean_edges[:cooccur_edges]:
-                if not _budget_ok():
-                    break
-                lines.append(
-                    f"rel: co-occurs -> [[{e['target']}]] "
-                    f"{{from: {e['source']}, w: {e.get('weight', 0)}}}")
-        # LTM expansion: strongest clean nodes → their linkage neighborhood.
+        # LTM expansion: expand each strong clean node into its durable-graph
+        # neighborhood, then split every neighbor two ways:
+        #   INTRA — the target is ANOTHER focus member → emit the REAL typed verb
+        #     (calls/defines/depends-on…): the cluster grounded in structure. This
+        #     replaces the old weak `co-occurs` dump ("appeared together"), which
+        #     the Members line already implied.
+        #   EXTERNAL — not a member → a sparse-first "aha" bridge ({ltm}), ranked
+        #     by ascending PageRank so unique targets win over hubs.
         if expand:
+            members_set = set(members)
             clean_nodes = [nd for nd in t["nodes"] if not _is_junk(nd["name"])]
+            intra: list[tuple[str, str, str]] = []   # (verb, src, tgt), deduped
+            intra_seen: set = set()
+            ext_cands: list = []                     # (pr, verb, tgt, eid, src)
             for nd in clean_nodes[:expand_nodes_per_topic]:
-                if expansions >= max_expansions or not _budget_ok():
+                if expansions >= max_expansions:
                     break
                 b = build_context(
                     s, nd["name"],
@@ -205,25 +192,42 @@ def _render_gmd(
                 if b.anchor is None or not b.groups:
                     continue
                 expansions += 1
-                # Gather this anchor's candidates across all linkage groups, drop
-                # self-links + targets already emitted elsewhere in the composite,
-                # then rank sparse-first (ascending PageRank) so the unique
-                # bridges win the per-node budget over popular hub targets.
-                cands = []
                 for linkage, entries in b.groups.items():
                     for ent in entries:
                         tgt = getattr(ent.entity, "name", None)
                         eid = getattr(ent.entity, "id", None)
-                        if not tgt or tgt == nd["name"] or eid in seen_ltm:
+                        if not tgt or tgt == nd["name"]:
                             continue
-                        cands.append((pr_scores.get(eid, 0.0), linkage, tgt, eid))
-                cands.sort(key=lambda c: c[0])  # ascending centrality = sparse first
-                for _score, linkage, tgt, eid in cands[:per_node_entities]:
-                    if not _budget_ok():
-                        break
-                    seen_ltm.add(eid)
-                    lines.append(
-                        f"rel: {linkage} -> [[{tgt}]] "
-                        f"{{anchor: {nd['name']}, ltm: 1}}")
+                        if tgt in members_set:
+                            key = (nd["name"], tgt)
+                            if key not in intra_seen:
+                                intra_seen.add(key)
+                                intra.append((linkage, nd["name"], tgt))
+                        elif eid not in seen_ltm:
+                            ext_cands.append(
+                                (pr_scores.get(eid, 0.0), linkage, tgt, eid,
+                                 nd["name"]))
+            # grounded intra-cluster edges first (real verbs among members)
+            capped_intra = intra[:intra_edges] if intra_edges > 0 else []
+            for verb, src, tgt in capped_intra:
+                if not _budget_ok():
+                    break
+                lines.append(f"rel: {verb} -> [[{tgt}]] {{from: {src}, graph: 1}}")
+            # external sparse-first bridges. Sort ascending PageRank, then emit
+            # up to ext_cap DISTINCT targets — dedup by count, not by pre-slice,
+            # so a target repeated across expansion nodes can't crowd the cap and
+            # starve a higher-PR bridge below it.
+            ext_cands.sort(key=lambda c: c[0])
+            ext_cap = expand_nodes_per_topic * per_node_entities
+            emitted = 0
+            for _score, linkage, tgt, eid, src in ext_cands:
+                if emitted >= ext_cap or not _budget_ok():
+                    break
+                if eid in seen_ltm:
+                    continue
+                seen_ltm.add(eid)
+                emitted += 1
+                lines.append(
+                    f"rel: {linkage} -> [[{tgt}]] {{anchor: {src}, ltm: 1}}")
     lines.append("```")
     return "\n".join(lines)

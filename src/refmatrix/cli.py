@@ -5566,16 +5566,16 @@ def _resolve_query(
                    "RMX_STM_COMPOSITE_EVERY). 1 = every turn; higher throttles "
                    "the per-prompt injection. Focus graph still updates each "
                    "turn — only the emitted block is suppressed on skips.")
-@click.option("--composite-cooccur-edges", default=3, type=int, show_default=True,
-              help="Per-topic cap on STM co-occurrence edges (env "
-                   "RMX_STM_COMPOSITE_COOCCUR_EDGES). The Members line already "
-                   "names the cluster, so the full pairwise dump is filler; "
-                   "keep only the strongest few. 0 = drop the block.")
+@click.option("--composite-intra-edges", default=3, type=int, show_default=True,
+              help="Per-topic cap on GROUNDED intra-cluster edges (env "
+                   "RMX_STM_COMPOSITE_INTRA_EDGES). Real typed graph verbs "
+                   "(calls/defines/depends-on…) between focus members, replacing "
+                   "the old weak co-occurs dump. 0 = drop the block.")
 def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                     exclude_namespace, include_noise, fmt, stdin_json, rank,
                     composite, composite_max_tokens, composite_k,
                     composite_no_expand, composite_every,
-                    composite_cooccur_edges):
+                    composite_intra_edges):
     """Read a prompt; emit context bundles for symbols it mentions.
 
     Designed for the Claude Code UserPromptSubmit hook. Output goes to stdout,
@@ -5612,7 +5612,7 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                 composite_expand=not composite_no_expand,
                 composite_max_tokens=composite_max_tokens,
                 composite_every=composite_every,
-                composite_cooccur_edges=composite_cooccur_edges,
+                composite_intra_edges=composite_intra_edges,
             )
             tlog.cardinality = result.count("=== context for") if result else 0
         return result
