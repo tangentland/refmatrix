@@ -35,11 +35,42 @@ def _root() -> Path:
     if env:
         return Path(env)
     cur = Path.cwd().resolve()
+    # A `~/.claude/projects/<slug>/` cwd (e.g. a curated-memory dir) encodes the
+    # project in its slug. Resolve THAT project's store FIRST — before the
+    # generic ancestor walk, which would otherwise climb past it and hit the
+    # home store's `~/.refmatrix` at `/Users/<user>`, mis-resolving every memory
+    # op run from inside the projects dir to partition `global`.
+    proj_root = _root_from_projects_slug(cur)
+    if proj_root is not None:
+        return proj_root
     for p in [cur, *cur.parents]:
         if (p / ".refmatrix").is_dir():
             return p / ".refmatrix"
     from refmatrix.taxonomy import user_home
     return user_home()  # global/home store; never auto-create cwd/.refmatrix
+
+
+def _root_from_projects_slug(cwd: Path) -> "Path | None":
+    """When `cwd` is inside `~/.claude/projects/<slug>/...`, resolve the project
+    store whose slug matches `<slug>`. The slug is Claude Code's lossy cwd
+    encoding (`/` and `_` → `-`) of the project dir — the same encoding
+    `handoff.default_memory_dir` uses — so match it against the discovered
+    roots' encoded parent dirs rather than trying to invert it (lossy)."""
+    projects = Path.home() / ".claude" / "projects"
+    try:
+        rel = cwd.relative_to(projects)
+    except ValueError:
+        return None
+    if not rel.parts:
+        return None
+    slug = rel.parts[0]
+    from refmatrix import discovery
+    for root in discovery.discover_roots():
+        proj = root.parent
+        encoded = str(proj.resolve()).replace("/", "-").replace("_", "-")
+        if encoded == slug:
+            return root
+    return None
 
 
 # Set by main()'s --partition flag, consumed by _store() and init. None means

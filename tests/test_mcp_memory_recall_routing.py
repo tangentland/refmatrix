@@ -102,3 +102,31 @@ def test_empty_query_uses_recent_on_memory_partition(tmp_path, monkeypatch):
     recent = next(a for op, a in calls if op == "memory_recent")
     assert recent["partition"] == "memory-proj"
     assert out["memories"] == [{"id": 9, "name": "recent9", "scope": "project"}]
+
+
+# --- _root slug-decode: cwd under ~/.claude/projects/<slug>/ ----------------
+
+def test_root_decodes_projects_slug_to_project_store(tmp_path, monkeypatch):
+    import refmatrix.cli as cli
+    from pathlib import Path
+    # A discovered project store whose parent encodes to <slug>.
+    proj = tmp_path / "github" / "acme" / "widget"
+    root = proj / ".refmatrix"
+    root.mkdir(parents=True)
+    slug = str(proj.resolve()).replace("/", "-").replace("_", "-")
+    monkeypatch.setattr("refmatrix.discovery.discover_roots", lambda: [root])
+    # cwd standing inside ~/.claude/projects/<slug>/memory
+    cwd = Path.home() / ".claude" / "projects" / slug / "memory"
+    monkeypatch.setattr(cli.Path, "cwd", staticmethod(lambda: cwd))
+    monkeypatch.delenv("REFMATRIX_ROOT", raising=False)
+    assert cli._root() == root  # NOT the global home store
+
+
+def test_root_from_projects_slug_no_match_returns_none(tmp_path, monkeypatch):
+    import refmatrix.cli as cli
+    from pathlib import Path
+    monkeypatch.setattr("refmatrix.discovery.discover_roots", lambda: [])
+    cwd = Path.home() / ".claude" / "projects" / "-nonexistent-proj" / "memory"
+    assert cli._root_from_projects_slug(cwd) is None
+    # a cwd outside ~/.claude/projects → None (not a projects-slug dir)
+    assert cli._root_from_projects_slug(tmp_path) is None

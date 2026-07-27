@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS entities (
     noise              INTEGER NOT NULL DEFAULT 0,
     canonical_name     TEXT,
     vectors_updated_at REAL,
+    vectors_partition  TEXT,
     UNIQUE(partition_id, kind, name)
 );
 CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(kind);
@@ -522,6 +523,10 @@ class Store:
                     con.execute(
                         "ALTER TABLE entities ADD COLUMN vectors_updated_at REAL"
                     )
+                if "vectors_partition" not in cols:
+                    con.execute(
+                        "ALTER TABLE entities ADD COLUMN vectors_partition TEXT"
+                    )
                 # Indexes that don't depend on partition_id are safe before
                 # the legacy migration; the partition-aware index waits until
                 # after _migrate_to_partitions_if_needed() has added the
@@ -579,6 +584,10 @@ class Store:
                 if "vectors_updated_at" not in cols:
                     con.execute(
                         "ALTER TABLE entities ADD COLUMN vectors_updated_at DOUBLE"
+                    )
+                if "vectors_partition" not in cols:
+                    con.execute(
+                        "ALTER TABLE entities ADD COLUMN vectors_partition TEXT"
                     )
                 # ADR-0001 / Phase B: relax the kind CHECK constraint on
                 # pre-Phase-B catalogs so 'memory' rows can land. DuckDB
@@ -2368,10 +2377,15 @@ class Store:
             now = _t.time()
             con = self._connect()
             placeholders = ",".join("?" * len(entity_ids))
+            # Stamp WHICH partition the vectors landed in, alongside the
+            # freshness timestamp. `pending_embeddings` re-queues a row whose
+            # recorded partition no longer matches the store's active one —
+            # so vectors written to the wrong partition self-heal on the next
+            # embed instead of being masked forever by the timestamp guard.
             con.execute(
-                f"UPDATE entities SET vectors_updated_at = ? "
-                f"WHERE id IN ({placeholders})",
-                [now, *list(entity_ids)],
+                f"UPDATE entities SET vectors_updated_at = ?, "
+                f"vectors_partition = ? WHERE id IN ({placeholders})",
+                [now, self.partition_name, *list(entity_ids)],
             )
             con.commit()
 
@@ -2526,7 +2540,12 @@ class Store:
         self, *, kinds: list[str] | None = None, limit: int | None = None
     ) -> list[tuple[int, str, str]]:
         """Return `(id, kind, name)` for entities whose vector is missing or
-        stale: `vectors_updated_at` is NULL or older than `updated_at`.
+        stale: `vectors_updated_at` is NULL or older than `updated_at`, OR whose
+        vectors were recorded against a DIFFERENT partition than this store's
+        active one (`vectors_partition` set but mismatched — the fingerprint of
+        a vector written to the wrong partition; re-queue so it self-heals).
+        A NULL `vectors_partition` (rows embedded before this column existed) is
+        trusted, so the migration does not trigger a mass re-embed.
         Filtered to `kinds` when provided. `limit` caps the result.
         """
         con = self._connect()
@@ -2534,9 +2553,11 @@ class Store:
             "SELECT id, kind, name FROM entities "
             "WHERE partition_id = ? "
             "AND (vectors_updated_at IS NULL "
-            "     OR vectors_updated_at < updated_at)"
+            "     OR vectors_updated_at < updated_at "
+            "     OR (vectors_partition IS NOT NULL "
+            "         AND vectors_partition != ?))"
         )
-        params: list = [self._partition_id]
+        params: list = [self._partition_id, self.partition_name]
         if kinds:
             in_list = ",".join("?" * len(kinds))
             sql += f" AND kind IN ({in_list})"

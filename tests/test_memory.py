@@ -484,3 +484,33 @@ def test_duckdb_kind_check_migration_idempotent(tmp_path, monkeypatch):
     s2.add_memory("second", "body")
     assert {m["name"] for m in s2.iter_memories()} == {"first", "second"}
     s2.close()
+
+
+# --- embed self-heal: partition-aware incremental guard --------------------
+
+def test_pending_embeddings_requeues_on_partition_mismatch(tmp_path, monkeypatch):
+    import time
+    s = _store(tmp_path, monkeypatch)
+    eid = s.add_memory("m1", "body", mtype="note")
+    con = s._connect()
+    # Simulate a row embedded (fresh timestamp) but vectors recorded against a
+    # DIFFERENT partition than this store's active one — the mis-partition bug.
+    con.execute(
+        "UPDATE entities SET vectors_updated_at=?, vectors_partition=? WHERE id=?",
+        (time.time() + 100, "some-other-partition", eid))
+    con.commit()
+    pend = [r[0] for r in s.pending_embeddings(kinds=["memory"])]
+    assert eid in pend, "partition mismatch must re-queue (self-heal)"
+
+    # Same partition name → current, NOT re-queued.
+    con.execute("UPDATE entities SET vectors_partition=? WHERE id=?",
+                (s.partition_name, eid))
+    con.commit()
+    assert eid not in [r[0] for r in s.pending_embeddings(kinds=["memory"])]
+
+    # Legacy NULL vectors_partition + fresh timestamp → trusted (no mass
+    # re-embed on migration).
+    con.execute("UPDATE entities SET vectors_partition=NULL WHERE id=?", (eid,))
+    con.commit()
+    assert eid not in [r[0] for r in s.pending_embeddings(kinds=["memory"])]
+
