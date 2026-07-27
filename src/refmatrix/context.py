@@ -891,6 +891,36 @@ def _render_header(b: ContextBundle) -> str:
     return f"=== context for `{b.ref}` ==="
 
 
+# Caller/callee edge groups are built from STATIC extraction (AST for code, a
+# parse of static call sites for SQL). They cannot see calls made through
+# dynamic dispatch — dynamic SQL (`EXECUTE format('… fn(…)')`), reflection,
+# function pointers — so the reported set is a lower bound, never a census.
+# A short `calls` list otherwise reads as authoritative; the note below is the
+# honesty signal cliquedb bug #5fcfecd3862a asked for (asks #2 + #3): flag
+# unresolved dynamic-SQL sites AND mark the group as non-exhaustive generally.
+_STATIC_EXTRACTION_GROUPS = {"calls", "called_by"}
+
+
+def _completeness_note(b: ContextBundle, ln: str) -> str | None:
+    """Non-census caveat for a static-extraction edge group, or None. Wording
+    is SQL-specific when the anchor/neighbors live in `.sql` (ask #2), else the
+    general dynamic-dispatch caveat (ask #3)."""
+    if ln not in _STATIC_EXTRACTION_GROUPS or not b.groups.get(ln):
+        return None
+    paths = [b.anchor.path if b.anchor else None]
+    paths += [e.file or e.entity.path for e in b.groups.get(ln, [])]
+    is_sql = any((p or "").endswith(".sql") for p in paths)
+    dyn = (
+        "dynamic SQL (`EXECUTE format(...)`) call sites"
+        if is_sql
+        else "dynamic-dispatch call sites (reflection, function pointers)"
+    )
+    return (
+        f"[completeness: static-extraction only — {dyn} are not resolved; "
+        f"treat as a lower bound, not a census]"
+    )
+
+
 def _single_location(e: ContextEntry) -> str | None:
     """The `path:line` jump target for an entry (default `first` mode). A code
     CONTENT hit points at its own def line; a graph/mention entry points at the
@@ -991,6 +1021,9 @@ def render_text(b: ContextBundle) -> str:
         lines.append(f"{LINKAGE_LABELS.get(ln, ln.upper())} ({ln}):")
         for e in entries:
             lines.append(_render_entry(e))
+        note = _completeness_note(b, ln)
+        if note:
+            lines.append(f"  {note}")
     if b.truncated:
         lines.append("")
         lines.append("[truncated by budget]")
@@ -1036,6 +1069,11 @@ def render_json(b: ContextBundle) -> str:
                     for e in entries
                 ]
                 for ln, entries in b.groups.items()
+            },
+            "group_notes": {
+                ln: note
+                for ln in b.groups
+                if (note := _completeness_note(b, ln))
             },
             "truncated": b.truncated,
             "estimated_tokens": b.estimated_tokens,

@@ -96,6 +96,47 @@ def test_render_json_is_parseable_and_well_shaped(filled):
     assert "estimated_tokens" in data
 
 
+def test_static_edge_group_carries_completeness_note(filled):
+    """`called_by`/`calls` are static-extraction — the renderer must flag them
+    as a lower bound, never a census (cliquedb bug #5fcfecd3862a, asks #2+#3)."""
+    s, _ = filled
+    out = render_text(build_context(s, "parser"))
+    assert "completeness: static-extraction only" in out
+    assert "lower bound, not a census" in out
+    # Non-SQL anchor → general dynamic-dispatch wording, not the SQL variant.
+    assert "dynamic-dispatch call sites" in out
+    # The note attaches to the static-edge group, not to `mentions`.
+    lines = out.splitlines()
+    note_idx = next(i for i, ln in enumerate(lines) if "completeness:" in ln)
+    header = next(lines[j] for j in range(note_idx, -1, -1) if "(" in lines[j]
+                  and lines[j].endswith("):"))
+    assert "called_by" in header
+
+
+def test_completeness_note_sql_variant_calls_out_dynamic_sql(tmp_path):
+    """SQL anchor → the note names dynamic SQL (`EXECUTE format`) explicitly."""
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    fn = s.add_concept("facet_key", description="clique key builder")
+    caller = s.upsert_entity(kind="code", name="resolve_predicate",
+                             path="/p/sql/D1_facade_verbs.sql", tldr="verb")
+    s.link("calls", fn, caller)
+    out = render_text(build_context(s, "facet_key"))
+    assert "dynamic SQL (`EXECUTE format(...)`)" in out
+    assert "not resolved" in out
+    s.close()
+
+
+def test_group_notes_surfaced_in_json(filled):
+    s, _ = filled
+    data = json.loads(render_json(build_context(s, "parser")))
+    assert "group_notes" in data
+    assert "called_by" in data["group_notes"]
+    assert "static-extraction only" in data["group_notes"]["called_by"]
+    # `mentions` is not a static-edge group → no note.
+    assert "mentions" not in data["group_notes"]
+
+
 def test_entity_anchored_context_pulls_concepts_and_siblings(filled):
     s, ids = filled
     # anchor on the foo file (an entity, not a concept)
