@@ -3588,6 +3588,7 @@ def _parse_grep_flags(s: str | None) -> dict:
         "ignore_case": None, "files_only": False, "count": False,
         "invert": False, "word": False, "force_substring": False,
         "force_regex": False, "files_without_match": False,
+        "whole_line": False,
     }
     if not s:
         return f
@@ -3626,6 +3627,149 @@ def _parse_grep_flags(s: str | None) -> dict:
     if f["files_only"] and f["files_without_match"]:
         raise click.UsageError("--flags: -l and -L are mutually exclusive")
     return f
+
+
+# Bare grep/rg flag compatibility. `rmx grep -rn "pat" src/` should behave like
+# a drop-in for grep/rg so a rewrite hook can route EVERY search through the
+# learning grep. Three flag classes:
+#   - ANSWER: changes which rows match → honored (or fail loud if unsupported).
+#   - FORMAT: only changes rendering/recursion rmx already does → ignored + note.
+#   - VALUE: consumes the next token (so it can't be mistaken for the pattern).
+_GREP_VALUE_FLAGS = {"-e", "-A", "-B", "-C", "-m", "-g", "--glob", "-t",
+                     "--max-count", "--after-context", "--before-context",
+                     "--context"}
+# FORMAT/recursion flags rmx grep ignores (its output is always path:line, it
+# always searches the whole index): line numbers, filename toggles, only-match,
+# recursion, binary/color/heading knobs.
+_GREP_FORMAT_FLAGS = set("nHhroRasIbTup")
+_GREP_FORMAT_LONG = {"--color", "--colour", "--no-heading", "--heading",
+                     "--line-number", "--no-line-number", "--with-filename",
+                     "--no-filename", "--only-matching", "--recursive",
+                     "--no-messages", "--binary-files", "--null"}
+
+
+def _split_grep_argv(tokens: list) -> tuple:
+    """Split a raw grep-style argv into (flag_tokens, pattern, paths, warnings).
+
+    Honors `--` (end of flags), `-e PAT` (explicit pattern), and value-taking
+    flags (-A/-B/-C/-m/-g/-t) so their argument is never mistaken for the
+    pattern. The first non-flag token (or the `-e` value) is the pattern; the
+    rest are paths. A pattern beginning with `-` requires `--`."""
+    flags: list = []
+    pattern = None
+    paths: list = []
+    warnings: list = []
+    i = 0
+    n = len(tokens)
+    end_of_flags = False
+    while i < n:
+        tok = str(tokens[i])
+        if not end_of_flags and tok == "--":
+            end_of_flags = True
+            i += 1
+            continue
+        is_flag = (not end_of_flags) and tok.startswith("-") and tok != "-"
+        if is_flag:
+            # -e PAT: the value IS the pattern.
+            base = tok.split("=", 1)[0]
+            if base == "-e" or base == "--regexp":
+                if "=" in tok:
+                    pattern = tok.split("=", 1)[1]
+                elif i + 1 < n:
+                    pattern = str(tokens[i + 1]); i += 1
+                i += 1
+                continue
+            flags.append(tok)
+            # consume a value token for value-flags written separately (-C 3).
+            if base in _GREP_VALUE_FLAGS and "=" not in tok and i + 1 < n:
+                flags.append(str(tokens[i + 1])); i += 1
+            i += 1
+            continue
+        # non-flag: pattern first, then paths.
+        if pattern is None:
+            pattern = tok
+        else:
+            paths.append(tok)
+        i += 1
+    return flags, pattern, paths, warnings
+
+
+def _grep_bare_flags(flag_tokens: list, gf: dict) -> tuple:
+    """Fold bare grep/rg flag tokens into `gf` (mutated in place) with grep
+    semantics. Returns (ignored_note | None, error | None). ANSWER flags are
+    honored; FORMAT flags are ignored (surfaced in the note); an unsupported
+    flag that would CHANGE THE ANSWER (path filters -g/--glob/-t, unknown
+    letters) errors loudly — a filter silently dropped from a READ is a wrong
+    answer, not a formatting nicety."""
+    ignored: list = []
+    j = 0
+    n = len(flag_tokens)
+    while j < n:
+        tok = str(flag_tokens[j]); j += 1
+        base = tok.split("=", 1)[0]
+        # value-flags: their consumed argument was appended right after them.
+        if base in _GREP_VALUE_FLAGS:
+            has_inline = "=" in tok
+            val = None
+            if has_inline:
+                val = tok.split("=", 1)[1]
+            elif j < n:
+                val = flag_tokens[j]; j += 1
+            if base in ("-A", "-B", "-C", "-m", "--after-context",
+                        "--before-context", "--context", "--max-count"):
+                ignored.append(tok)          # context/max-count = formatting-ish
+                continue
+            # -g/--glob/-t narrow the file set → dropping them WIDENS the answer.
+            return None, (f"grep: '{base}' (path filter) is not supported by "
+                          f"rmx grep and would change the result set — pass an "
+                          f"explicit PATH instead of {base} {val!r}")
+        if base.startswith("--"):
+            if base in _GREP_FORMAT_LONG:
+                ignored.append(tok); continue
+            if base in ("--ignore-case",): gf["ignore_case"] = True; continue
+            if base in ("--word-regexp",): gf["word"] = True; continue
+            if base in ("--invert-match",): gf["invert"] = True; continue
+            if base in ("--files-with-matches",): gf["files_only"] = True; continue
+            if base in ("--files-without-match",):
+                gf["files_without_match"] = True; continue
+            if base in ("--count",): gf["count"] = True; continue
+            if base in ("--fixed-strings",): gf["force_substring"] = True; continue
+            if base in ("--extended-regexp", "--regexp-extended"):
+                gf["force_regex"] = True; continue
+            if base in ("--line-regexp",): gf["whole_line"] = True; continue
+            return None, (f"grep: unsupported flag '{base}'. If it only affects "
+                          f"formatting use -f to bundle known letters; "
+                          f"answer-changing flags must be supported to be safe.")
+        # short cluster, e.g. -inl
+        for ch in tok[1:]:
+            if ch == "i": gf["ignore_case"] = True
+            elif ch == "w": gf["word"] = True
+            elif ch == "v": gf["invert"] = True
+            elif ch == "l": gf["files_only"] = True
+            elif ch == "L": gf["files_without_match"] = True
+            elif ch == "c": gf["count"] = True
+            elif ch == "F": gf["force_substring"] = True
+            elif ch == "E": gf["force_regex"] = True
+            elif ch == "x": gf["whole_line"] = True
+            elif ch in _GREP_FORMAT_FLAGS:
+                ignored.append(f"-{ch}")
+            else:
+                return None, (f"grep: unsupported flag '-{ch}' (in {tok!r}). "
+                              f"Answer-changing flags must be supported to be "
+                              f"safe; formatting flags are ignored.")
+    if gf["force_substring"] and gf["force_regex"]:
+        return None, "grep: -F and -E are mutually exclusive"
+    if gf["files_only"] and gf["files_without_match"]:
+        return None, "grep: -l and -L are mutually exclusive"
+    note = None
+    if ignored:
+        seen = []
+        for x in ignored:
+            if x not in seen: seen.append(x)
+        note = ("rmx grep: ignoring formatting/recursion flags "
+                + " ".join(seen) + " (output is always path:line over the "
+                "whole index)")
+    return note, None
 
 
 def _render_grep_rows(rows, gf, limit, source_tag="idx"):
@@ -3767,9 +3911,8 @@ def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
     return out
 
 
-@main.command()
-@click.argument("pattern")
-@click.argument("paths", nargs=-1, type=click.Path(path_type=Path))
+@main.command(context_settings={"ignore_unknown_options": True})
+@click.argument("argv", nargs=-1, type=click.UNPROCESSED)
 @click.option("--regex/--substring", default=False,
               help="Treat PATTERN as a regex matched against concept names. "
                    "Default is case-insensitive substring.")
@@ -3790,28 +3933,38 @@ def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
               help="Read from the rotation reader slot instead of the daemon. "
                    "Lock-free; default ON when the replica file exists. "
                    "Skips --learn (writes need the daemon).")
-def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn, via_replica):
+def grep(argv, regex, flags, linkage, kind, limit, fallback, learn, via_replica):
     """Index-backed grep: find concepts whose name matches PATTERN and
     print file:line for every recorded reference. Falls back to `rg` /
     `grep -rn` under the project root when the index has no hits.
 
-    PATHS (optional, variadic) restrict both the indexed-row filter and the
-    fall-through grep target. Pipe data into stdin to bypass the index
-    entirely and grep the pipe.
+    Drop-in for grep/rg: bare grep-style flags work directly, so a rewrite hook
+    can route every search through the learning grep.
 
-        rmx grep "daemon" src/refmatrix/        # only entities under src/
-        rmx grep "daemon" src/ tests/           # multiple targets
-        rg -l TODO | rmx grep "FIXME"           # pipe mode (no index)
+        rmx grep -rn "daemon" src/           # bare flags, like grep
+        rmx grep -i -l "daemon" src/         # case-insensitive, files only
+        rmx grep -inl "Daemon"               # bundled short flags
+        rmx grep -e "-x" -- src/             # -e gives the pattern
+        rg -l TODO | rmx grep "FIXME"        # pipe mode (no index)
 
-    Grep-style flags can be passed as a quoted bundle via --flags / -f:
-
-        rmx grep -f '-i -l'   "daemon"      # case-insens, files only
-        rmx grep -f '-inl'    "Daemon"      # same, bundled letters
-        rmx grep -f '-c'      "linkage"     # count per file
-        rmx grep -f '-v'      "noise"       # entities/files with NO match
+    Answer-changing flags (-i -w -v -l -L -c -F -E -x -e) are honored;
+    formatting/recursion flags (-n -H -r -o --color …) are ignored with a note;
+    an unsupported flag that would change the result set (path filters
+    -g/--glob/-t, unknown letters) fails loudly rather than silently mangling
+    the search. `--flags`/`-f` still accepts a quoted bundle for back-compat.
     """
     import sys as _sys
+    flag_tokens, pattern, path_strs, _w = _split_grep_argv(list(argv))
+    if pattern is None:
+        raise click.UsageError("grep: no PATTERN given")
+    paths = [Path(p) for p in path_strs]
     gf = _parse_grep_flags(flags)
+    if flag_tokens:
+        note, err = _grep_bare_flags(flag_tokens, gf)
+        if err:
+            raise click.UsageError(err)
+        if note:
+            click.echo(note, err=True)
     # --regex/--substring is the canonical control; -F / -E in --flags can
     # override it for convenience.
     if gf["force_substring"]:
@@ -3828,10 +3981,16 @@ def grep(pattern, paths, regex, flags, linkage, kind, limit, fallback, learn, vi
         _grep_stdin(pattern, regex, gf, limit)
         return
 
+    # -x / --line-regexp: whole-line match. Forces regex and anchors the
+    # pattern; an answer-changing flag, so it must be honored, not ignored.
+    if gf["whole_line"]:
+        regex = True
     # Word-boundary wrapping when regex mode is on.
     effective_pattern = pattern
     if gf["word"] and regex:
         effective_pattern = rf"\b{pattern}\b"
+    if gf["whole_line"]:
+        effective_pattern = rf"^{effective_pattern}$"
     from refmatrix import daemon as daemon_mod
     root = _root()
     via_replica = _should_via_replica(via_replica)
@@ -4852,6 +5011,63 @@ def graphify_warm(path, graphify_bin, mode, update):
 # ---- incremental sync -----------------------------------------------------
 
 
+def _sync_stale(project_root, semantic, *, batch: int) -> None:
+    """Re-sync every `status=stale` file the daemon reports (mtime ahead of
+    last_synced), in jetsam-safe batches. The incremental hook/queue path only
+    re-syncs files it was told about; edits that bypass it (git ops, external
+    tools) sit stale forever with no lever to drain them. This is that lever:
+    the counterpart to `vacuum` (which handles `missing`), not a duplicate."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if not daemon_mod.ping(root):
+        raise click.ClickException(
+            "--stale needs the daemon (it serves the authoritative stale list "
+            "and holds the Store open); start it and retry.")
+    r = daemon_mod.call(root, "stats", {"include_stale": True}, timeout=60.0)
+    if not r.get("ok"):
+        raise click.ClickException(f"stats failed: {r.get('error')}")
+    sf = r["result"].get("stale_files") or []
+    paths = [e["path"] for e in sf if e.get("status") == "stale"]
+    missing = sum(1 for e in sf if e.get("status") == "missing")
+    if missing:
+        console.print(f"[dim]{missing} missing file(s) — run `rmx vacuum` "
+                      f"for those (this only re-syncs stale)[/]")
+    if not paths:
+        console.print("[green]no stale files to sync[/]")
+        return
+    proot = str((project_root or Path.cwd()).resolve())
+    total = len(paths)
+    added = updated = purged = done = 0
+    for i in range(0, total, batch):
+        chunk = paths[i:i + batch]
+        resp = daemon_mod.call(root, "sync_files", {
+            "project_root": proot, "semantic": semantic,
+            "files": chunk}, timeout=600.0)
+        if not resp.get("ok"):
+            # Daemon likely died (jetsam) mid-run — enqueue the remainder so a
+            # later flush drains it, and report honestly rather than silently.
+            from refmatrix import sync as syncmod
+            remaining = paths[i:]
+            try:
+                syncmod.enqueue(root, remaining)
+            except Exception:
+                pass
+            console.print(
+                f"[yellow]daemon stopped at {done}/{total}[/] — enqueued "
+                f"{len(remaining)} remaining to dirty.queue "
+                f"(recover with `rmx sync --flush-queue`)")
+            return
+        res = resp["result"]
+        added += res.get("added", 0); updated += res.get("updated", 0)
+        purged += res.get("purged", 0); done += len(chunk)
+        console.print(
+            f"[dim]{done}/{total}[/] +{res.get('added',0)} "
+            f"~{res.get('updated',0)} -{res.get('purged',0)}")
+    console.print(
+        f"[green]stale-sync done[/] {done} files · "
+        f"+{added} ~{updated} -{purged}")
+
+
 @main.command()
 @click.option("--files", "-f", multiple=True, type=click.Path(path_type=Path),
               help="Specific files to (re)ingest. Repeat or use shell glob.")
@@ -4869,10 +5085,22 @@ def graphify_warm(path, graphify_bin, mode, update):
 @click.option("--async", "async_flag", is_flag=True,
               help="Fire-and-forget: hand the flush to the daemon and return "
                    "immediately. Hook-friendly. No-op without a running daemon.")
+@click.option("--stale", "stale_flag", is_flag=True,
+              help="Re-sync every file `stats --stale` reports (on-disk mtime "
+                   "ahead of last_synced) — drains a stuck stale count without "
+                   "naming paths. Batched jetsam-safe; enqueues the remainder "
+                   "if the daemon dies mid-run.")
+@click.option("--stale-batch", default=25, type=int, show_default=True,
+              help="Files per batch for --stale (small keeps a fat daemon "
+                   "under the jetsam ceiling).")
 def sync(files, since, flush_queue, invalidate, project_root, semantic,
-         enqueue_only, async_flag):
+         enqueue_only, async_flag, stale_flag, stale_batch):
     """Incrementally update the matrix for given files / git changes / queued paths."""
     from refmatrix import sync as syncmod
+
+    if stale_flag:
+        _sync_stale(project_root, semantic, batch=max(1, stale_batch))
+        return
 
     # --enqueue-only is the hottest hook path (fires on every Edit/Write).
     # Don't open the DuckDB catalog just to append to a text queue file —
