@@ -104,3 +104,33 @@ def test_sql_ingests_then_gates_unchanged_and_reparses_on_touch(
         _ingest_path_inner(s, proj, source="tree")
         assert calls["n"] == 1, "touched .sql not re-parsed"
     s.close()
+
+
+def test_sql_top_level_call_sites_attributed_to_file(tmp_path):
+    """Calls OUTSIDE any function body (CHECK constraints, DO blocks, static
+    statements) must produce a `calls` edge from the FILE entity, so a
+    heavily-called symbol's caller census is complete — not just the in-body
+    call sites. Regression for cliquedb 5fcfecd3862a."""
+    sql = (
+        "CREATE FUNCTION cliquedb.facet_key(a text) RETURNS text\n"
+        "  LANGUAGE sql AS $$ SELECT cliquedb.resolve_predicate(a) $$;\n"
+        "CREATE FUNCTION cliquedb.caller_fn() RETURNS void\n"
+        "  LANGUAGE plpgsql AS $$ BEGIN PERFORM cliquedb.facet_key('x'); END $$;\n"
+        "ALTER TABLE t ADD CONSTRAINT c CHECK (cliquedb.facet_key(col1) IS NOT NULL);\n"
+        "DO $$ BEGIN PERFORM cliquedb.facet_key('p'); END $$;\n"
+    )
+    p = Path(tmp_path) / "spec.sql"
+    p.write_text(sql)
+    rec = _build_sql_record(p, Path(tmp_path))
+    calls = {(op["src"], op["dst"]) for op in rec.ops
+             if op["op"] == "link" and op["linkage"] == "calls"}
+    fn = "@sub:code/spec.sql::caller_fn"
+    # in-body call site (unchanged)
+    assert ("@concept:facet_key", fn) in calls
+    # NEW: top-level call sites (CHECK + DO) attributed to the file entity
+    assert any(src == "@concept:facet_key" and dst != fn for src, dst in calls)
+    # CHECK / DDL keywords must NOT read as calls
+    assert not any("check" in src.lower() or "constraint" in src.lower()
+                   for src, _ in calls)
+    # the function's own CREATE header must not self-call
+    assert ("@concept:facet_key", "@sub:code/spec.sql::facet_key") not in calls

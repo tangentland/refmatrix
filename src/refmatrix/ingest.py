@@ -1339,6 +1339,14 @@ _SQL_STOP = frozenset({
     "exception", "raise", "perform", "execute", "create", "table", "view",
     "function", "procedure", "trigger", "index", "type", "schema", "exists",
     "distinct", "asc", "desc", "only",
+    # DDL / constraint keywords — appear at file scope (esp. CHECK(...)) and
+    # would otherwise read as calls once the top-level scan looks outside
+    # function bodies.
+    "alter", "add", "constraint", "check", "references", "foreign", "primary",
+    "unique", "key", "default", "column", "do", "drop", "grant", "revoke",
+    "comment", "rename", "sequence", "materialized", "refresh", "truncate",
+    "copy", "analyze", "owner", "to", "tablespace", "cascade", "restrict",
+    "returning", "conflict", "nothing", "do_nothing", "generated", "always",
     # common builtin functions
     "count", "sum", "avg", "min", "max", "coalesce", "nullif", "cast",
     "array", "row", "over", "partition", "between", "like", "ilike", "abs",
@@ -1426,6 +1434,7 @@ def _sql_emit_body(s, text: str, rel: str, file_path: Path) -> int:
 
     # 2) Functions / procedures — define + scan dollar-quoted body.
     func_matches = list(_SQL_FUNC_RE.finditer(blanked))
+    func_regions: list = []   # (start, end) spans of CREATE FUNCTION header+body
     for idx, m in enumerate(func_matches):
         subtype = m.group(1).lower()   # function | procedure
         name = _sql_norm_name(m.group(2))
@@ -1449,6 +1458,11 @@ def _sql_emit_body(s, text: str, rel: str, file_path: Path) -> int:
         end_bound = (func_matches[idx + 1].start()
                      if idx + 1 < len(func_matches) else len(text))
         body_m = _SQL_DOLLAR_BODY_RE.search(text, m.start(), end_bound)
+        # Record this function's full span (header + body) so the top-level
+        # call scan below excises it: a CREATE header's own signature must not
+        # read as a call, and in-body calls are already emitted here.
+        func_regions.append((m.start(),
+                             body_m.end(2) if body_m else end_bound))
         if body_m is None:
             continue
         body = _sql_blank_comments(body_m.group(2))
@@ -1479,6 +1493,33 @@ def _sql_emit_body(s, text: str, rel: str, file_path: Path) -> int:
             cc = get_concept(callee)
             s.link("calls", cc, eid)
             n += 1
+
+    # 3) Top-level call sites — calls that live OUTSIDE any function body:
+    # CHECK constraints, DO blocks, maintenance statements, materialize SQL,
+    # `EXECUTE format(...)` at file scope. The per-function scan above only sees
+    # inside dollar-quoted bodies, so these were silently dropped — a caller
+    # census that read as complete but was a fraction of reality. Excise the
+    # function regions (header + body, already scanned) and attribute the
+    # remaining call sites to the FILE entity, so the callee gains a caller
+    # edge with file:line evidence.
+    toplevel = list(blanked)
+    for a, b in func_regions:
+        for k in range(a, min(b, len(toplevel))):
+            if toplevel[k] != "\n":
+                toplevel[k] = " "
+    top_text = "".join(toplevel)
+    seen_top: set[str] = set()
+    for cm in _SQL_CALL_RE.finditer(top_text):
+        callee = cm.group(1)
+        cl = callee.lower()
+        if cl in _SQL_STOP or cl in seen_top:
+            continue
+        seen_top.add(cl)
+        cc = get_concept(callee)
+        s.link("calls", cc, file_id)
+        s.add_evidence("calls", cc, file_id, file=rel, line=line_of(cm.start()),
+                       detail=f"top-level call {callee}")
+        n += 1
 
     return n
 
