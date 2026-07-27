@@ -5038,24 +5038,33 @@ def _sync_stale(project_root, semantic, *, batch: int) -> None:
     proot = str((project_root or Path.cwd()).resolve())
     total = len(paths)
     added = updated = purged = done = 0
+    def _bail(i, why):
+        # Daemon died (jetsam is the usual cause — inline embed spikes RSS) or
+        # errored mid-run. Enqueue the remainder so a later flush drains it, and
+        # report honestly rather than crashing with a socket traceback.
+        from refmatrix import sync as syncmod
+        remaining = paths[i:]
+        try:
+            syncmod.enqueue(root, remaining)
+        except Exception:
+            pass
+        console.print(
+            f"[yellow]daemon stopped at {done}/{total}[/] ({why}) — enqueued "
+            f"{len(remaining)} remaining to dirty.queue "
+            f"(recover with `rmx sync --flush-queue`; if it keeps dying on "
+            f"embed, drain in a lean process per the jetsam recipe)")
+
     for i in range(0, total, batch):
         chunk = paths[i:i + batch]
-        resp = daemon_mod.call(root, "sync_files", {
-            "project_root": proot, "semantic": semantic,
-            "files": chunk}, timeout=600.0)
+        try:
+            resp = daemon_mod.call(root, "sync_files", {
+                "project_root": proot, "semantic": semantic,
+                "files": chunk}, timeout=600.0)
+        except (ConnectionError, OSError) as e:
+            _bail(i, type(e).__name__)
+            return
         if not resp.get("ok"):
-            # Daemon likely died (jetsam) mid-run — enqueue the remainder so a
-            # later flush drains it, and report honestly rather than silently.
-            from refmatrix import sync as syncmod
-            remaining = paths[i:]
-            try:
-                syncmod.enqueue(root, remaining)
-            except Exception:
-                pass
-            console.print(
-                f"[yellow]daemon stopped at {done}/{total}[/] — enqueued "
-                f"{len(remaining)} remaining to dirty.queue "
-                f"(recover with `rmx sync --flush-queue`)")
+            _bail(i, resp.get("error") or "op failed")
             return
         res = resp["result"]
         added += res.get("added", 0); updated += res.get("updated", 0)
