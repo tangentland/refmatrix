@@ -1622,12 +1622,31 @@ class Store:
         content (preserving created_at, ratcheting updated_at). Tags and
         metadata are stored as JSON text — readers parse them on the way
         out via get_memory().
+
+        When content/mtype/tags actually change, entities.updated_at is
+        ratcheted too so `pending_embeddings` re-queues the row. A re-upsert
+        that only rewrites metadata is a no-op for the embedding clock.
         """
         eid = self.upsert_entity(kind="memory", name=name, protected=protected)
         now = time.time()
         tags_json = json.dumps(tags) if tags else None
         meta_json = json.dumps(metadata) if metadata else None
         con = self._connect()
+        # Memory bodies live in the sidecar, but `pending_embeddings` keys
+        # staleness off entities.updated_at — and upsert_entity's no-op gate
+        # never bumps it for memory (path/tldr/meta are all NULL here). So an
+        # edited body would embed against its pre-edit vector forever. Detect a
+        # real change to the EMBEDDED fields (content/mtype/tags — see
+        # embedder._extract_memory) and ratchet the entity clock ourselves.
+        # metadata is deliberately excluded: sync-disk rewrites source_mtime on
+        # every scan, so gating on it would re-stale every row each cycle.
+        prior = con.execute(
+            "SELECT content, mtype, tags FROM memory_content WHERE entity_id=?",
+            (eid,),
+        ).fetchone()
+        embed_changed = prior is None or (
+            prior[0] != content or prior[1] != mtype or prior[2] != tags_json
+        )
         con.execute(
             """
             INSERT INTO memory_content
@@ -1643,6 +1662,10 @@ class Store:
             """,
             (eid, content, mtype, tags_json, meta_json, now, now),
         )
+        if embed_changed:
+            con.execute(
+                "UPDATE entities SET updated_at=? WHERE id=?", (now, eid)
+            )
         con.commit()
         # Log the body too. upsert_entity above logged the entity row, but the
         # sidecar content was previously unlogged — so log-replay / catch-up /
