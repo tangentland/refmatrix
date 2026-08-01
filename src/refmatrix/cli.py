@@ -1556,6 +1556,155 @@ def _require_hub():
     return hub_mod
 
 
+@main.group("refine")
+def refine_grp():
+    """Review promotion candidates queued from the bus + the GMD curator.
+
+    Candidates accumulate in the hub's refinement queue and are what the
+    `global:queues` alert counts as `refinement_pending`. Accepting one writes
+    the suggested memory into its scope's store (daemon-routed); rejecting
+    drops it. Both are terminal — a candidate leaves `pending` either way.
+    """
+
+
+def _refine_rows(status: str) -> list[dict]:
+    hub_mod = _require_hub()
+    resp = hub_mod.rpc("refine_list", {"status": status})
+    return resp.get("result", {}).get("candidates", [])
+
+
+def _refine_pick(cand_id: str, rows: list[dict]) -> dict:
+    """Resolve an id or unambiguous id-prefix to one candidate. Ids are 12-char
+    hex, so typing the whole thing to reject a line noise entry is a chore —
+    but a prefix that matches two candidates must NOT silently pick one, since
+    accept writes a memory."""
+    exact = [c for c in rows if c["id"] == cand_id]
+    if exact:
+        return exact[0]
+    hits = [c for c in rows if c["id"].startswith(cand_id)]
+    if not hits:
+        raise click.ClickException(f"no candidate matching {cand_id!r}")
+    if len(hits) > 1:
+        ids = ", ".join(c["id"] for c in hits[:5])
+        raise click.ClickException(
+            f"{cand_id!r} matches {len(hits)} candidates: {ids}")
+    return hits[0]
+
+
+@refine_grp.command("list")
+@click.option("--status", default="pending", show_default=True,
+              type=click.Choice(["pending", "accepted", "rejected", "all"]))
+@click.option("--scope", type=click.Choice(["global", "project"]), default=None,
+              help="Only candidates targeting this scope.")
+@click.option("--project", default=None, help="Only candidates for this project.")
+@click.option("-n", "limit", type=int, default=20, show_default=True)
+@click.option("--full", is_flag=True, help="Show the whole suggested body.")
+@click.option("--json", "as_json", is_flag=True)
+def refine_list(status, scope, project, limit, full, as_json):
+    """List promotion candidates, oldest first."""
+    rows = _refine_rows(status)
+    if scope:
+        rows = [c for c in rows if c.get("scope") == scope]
+    if project:
+        rows = [c for c in rows if c.get("project") == project]
+    total = len(rows)
+    shown = rows[:limit] if limit and limit > 0 else rows
+    if as_json:
+        console.print_json(json.dumps(
+            {"candidates": shown, "total": total, "shown": len(shown)}))
+        return
+    if not rows:
+        console.print(f"[dim]no {status} candidates[/]")
+        return
+    from rich.table import Column
+    # The id must never be truncated — it is the argument you paste into
+    # `refine accept`. Let the suggested-body column absorb the squeeze.
+    t = Table(
+        Column("id", no_wrap=True), Column("when", no_wrap=True),
+        Column("scope", no_wrap=True), Column("mtype", no_wrap=True),
+        # `suggested` stays wrappable: marking it no_wrap makes rich hand it
+        # the whole width and squeeze the id down to an ellipsis.
+        Column("suggested"),
+    )
+    for c in shown:
+        sug = c.get("suggested") or {}
+        body = (sug.get("content") or "").replace("\n", " ")
+        if not full:
+            body = body[:70] + ("…" if len(body) > 70 else "")
+        t.add_row(
+            c["id"], (c.get("ts") or "")[:16],
+            c.get("project") or c.get("scope") or "?",
+            sug.get("mtype") or "",
+            f"{sug.get('name', '?')} — {body}",
+        )
+    console.print(t)
+    if len(shown) < total:
+        # Never let a -n cap read as "that is all there is".
+        console.print(f"[dim]showing {len(shown)} of {total}; -n 0 for all[/]")
+
+
+@refine_grp.command("show")
+@click.argument("cand_id")
+def refine_show(cand_id):
+    """Show one candidate in full, including the body that would be written."""
+    c = _refine_pick(cand_id, _refine_rows("all"))
+    sug = c.get("suggested") or {}
+    console.print(f"[bold]{c['id']}[/]  [dim]{c.get('ts', '')}[/]  "
+                  f"status=[magenta]{c.get('status')}[/]")
+    console.print(f"  scope={c.get('scope')} project={c.get('project')} "
+                  f"channel={c.get('channel')} origin={c.get('origin')}")
+    console.print(f"  → memory [bold]{sug.get('name')}[/] "
+                  f"mtype={sug.get('mtype')} tags={sug.get('tags') or []}")
+    if c.get("memory_id"):
+        console.print(f"  written as entity {c['memory_id']}")
+    console.print()
+    console.print(sug.get("content") or "[dim](no body)[/]")
+
+
+@refine_grp.command("accept")
+@click.argument("cand_ids", nargs=-1, required=True)
+def refine_accept(cand_ids):
+    """Promote candidates into memories. Writes are daemon-routed."""
+    rows = _refine_rows("all")
+    ok = 0
+    for raw in cand_ids:
+        c = _refine_pick(raw, rows)
+        hub_mod = _require_hub()
+        resp = hub_mod.rpc("refine_accept", {"id": c["id"]})
+        r = resp.get("result") or {}
+        if r.get("ok"):
+            ok += 1
+            sug = c.get("suggested") or {}
+            console.print(f"[green]accepted[/] {c['id']} → "
+                          f"{sug.get('name')} (entity {r.get('memory_id')})")
+        else:
+            # Report per-candidate and keep going: a batch that dies on the
+            # first already-accepted id would strand the rest.
+            console.print(f"[red]failed[/] {c['id']}: "
+                          f"{r.get('error', 'unknown error')}")
+    console.print(f"[dim]{ok}/{len(cand_ids)} accepted[/]")
+
+
+@refine_grp.command("reject")
+@click.argument("cand_ids", nargs=-1, required=True)
+def refine_reject(cand_ids):
+    """Drop candidates without writing a memory."""
+    rows = _refine_rows("all")
+    ok = 0
+    for raw in cand_ids:
+        c = _refine_pick(raw, rows)
+        hub_mod = _require_hub()
+        resp = hub_mod.rpc("refine_reject", {"id": c["id"]})
+        r = resp.get("result") or {}
+        if r.get("ok"):
+            ok += 1
+            console.print(f"[yellow]rejected[/] {c['id']}")
+        else:
+            console.print(f"[red]failed[/] {c['id']}: "
+                          f"{r.get('error', 'unknown error')}")
+    console.print(f"[dim]{ok}/{len(cand_ids)} rejected[/]")
+
+
 @bus.command("pub")
 @click.argument("channel")
 @click.argument("message")
