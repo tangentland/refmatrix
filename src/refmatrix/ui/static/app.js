@@ -2,6 +2,10 @@
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const api = async (p) => (await fetch(p)).json();
+// Shared HTML escape. Was a local const inside the file viewer; hoisted so any
+// renderer interpolating server data into innerHTML can reach it.
+const esc = (s) => String(s ?? "").replace(
+  /[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const post = async (p, b) => (await fetch(p, {
   method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(b),
 })).json();
@@ -86,6 +90,53 @@ async function render(tab) {
   if (tab === "memory") return renderMemory();
   if (tab === "bus") return renderBus();
   if (tab === "focus") return renderFocus();
+  if (tab === "sessions") return renderSessions();
+}
+
+// Claude Code session trees (cctree). The tree pages are server-rendered
+// standalone HTML, so this tab is an index into them rather than an embed —
+// each row opens /cctree/<id> in a new tab.
+async function renderSessions() {
+  const el = $("#tab-sessions");
+  el.innerHTML = `<div class="graph-bar" style="border:0;padding:0 0 12px">
+      <select id="cc-project"><option value="">all projects</option></select>
+      <input id="cc-filter" placeholder="filter…" autocomplete="off">
+      <a class="btn" href="/cctree" target="_blank" rel="noopener">full index ↗</a>
+    </div>
+    <div id="cc-body">loading…</div>`;
+  const r = await api("/api/cctree/sessions");
+  const rows = r.sessions || [];
+  const cwds = [...new Set(rows.map((s) => s.cwd).filter(Boolean))].sort();
+  $("#cc-project").innerHTML =
+    `<option value="">all projects (${cwds.length})</option>` +
+    cwds.map((c) => `<option value="${esc(c)}">${esc(c.split("/").pop())}</option>`).join("");
+
+  const draw = () => {
+    const want = $("#cc-project").value;
+    const q = ($("#cc-filter").value || "").toLowerCase();
+    let shown = rows.filter((s) => (!want || s.cwd === want));
+    if (q) shown = shown.filter((s) =>
+      (s.session + " " + (s.cwd || "")).toLowerCase().includes(q));
+    if (!shown.length) { $("#cc-body").innerHTML = "<p>no sessions</p>"; return; }
+    $("#cc-body").innerHTML = `<table><thead><tr>
+        <th>when</th><th>project</th><th>turns</th><th>actions</th>
+        <th>errors</th><th>agents</th><th>session</th></tr></thead><tbody>` +
+      shown.map((s) => {
+        const when = s.mtime
+          ? new Date(s.mtime * 1000).toLocaleString() : "";
+        const agents = (s.subagents || 0) + (s.teammates || 0);
+        return `<tr><td>${esc(when)}</td>
+          <td>${esc((s.cwd || "").split("/").pop())}</td>
+          <td>${s.turns ?? ""}</td><td>${s.actions ?? ""}</td>
+          <td>${s.errors ? s.errors : `<span class="muted">0</span>`}</td>
+          <td>${agents || 0}</td>
+          <td><a href="${esc(s.url)}" target="_blank" rel="noopener">
+            ${esc((s.session || "").slice(0, 8))} ↗</a></td></tr>`;
+      }).join("") + "</tbody></table>";
+  };
+  $("#cc-project").onchange = draw;
+  $("#cc-filter").oninput = draw;
+  draw();
 }
 
 async function loadProjects() {
@@ -887,7 +938,6 @@ async function loadFileInto(el, n) {
     el.innerHTML = `<div class="muted" style="padding:8px">${r.error || "could not read file"}</div>`;
     return;
   }
-  const esc = (s) => s.replace(/[&<>]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c]));
   const start = r.result.start || 1;
   const lines = (r.result.content || "").split("\n");
   const hl = r.result.line;
