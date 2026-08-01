@@ -1831,17 +1831,22 @@ class Store:
         return rows
 
     # ---- subjects (durable face of an STM partition; ADR-0002) ----
-    def upsert_subject(self, label: str) -> dict:
+    def upsert_subject(self, label: str, metadata: dict | None = None) -> dict:
         """Upsert a durable subject node (`mtype='subject'`) in the active
         partition. The STM-partition slug is the entity name (`subject_<slug>`);
         the human label lives in content + metadata. Protected so prune/vacuum
-        never reaps a pursuit. Idempotent on the slug."""
+        never reaps a pursuit. Idempotent on the slug.
+
+        `metadata` merges extra keys over the base `{label, slug}` — e.g.
+        `memory compile` stamps `compiled_by` so a later run can tell its own
+        derived subjects from hand-declared ones and re-file only its own."""
         from refmatrix.stm import subject_slug
         slug = subject_slug(label)
         name = f"subject_{slug}"
+        meta = {"label": label, "slug": slug, **(metadata or {})}
         eid = self.add_memory(
             name=name, content=label, mtype="subject",
-            metadata={"label": label, "slug": slug}, protected=True,
+            metadata=meta, protected=True,
         )
         return {"id": eid, "name": name, "slug": slug, "label": label}
 
@@ -1881,6 +1886,10 @@ class Store:
                 "id": r["id"], "name": r["name"],
                 "label": meta.get("label") or r["name"],
                 "leaves": leaves, "updated_at": r["updated_at"],
+                # Parsed metadata rides along so callers can tell a derived
+                # subject (`compiled_by`) from a hand-declared one without a
+                # second get_memory round-trip per row.
+                "metadata": meta,
             })
         return out
 
@@ -2437,6 +2446,28 @@ class Store:
             query_vec, k=k, kinds=kinds, candidate_ids=candidate_ids,
         )
 
+    def read_vectors(
+        self, *, kind: str, partition: str | None = None,
+        ids: "Iterable[int] | None" = None,
+    ):
+        """Bulk-read `(ids, matrix)` for a kind's Lance dataset. Read-only —
+        used by corpus-wide work (clustering, offline rerank) that needs every
+        vector at once rather than a per-query ANN probe.
+
+        The handle is built directly rather than through `_vector_store` on
+        purpose: that helper caches per (dim, partition) and would poison the
+        cache with the placeholder dim used here. The read path infers dim
+        from the dataset, so no Embedder — and no model load — is involved.
+        """
+        from refmatrix.vectors import LanceVectorStore
+
+        vs = LanceVectorStore(
+            self.root / "vectors",
+            partition=partition or self._partition_name,
+            dim=0,
+        )
+        return vs.read_vectors(kind=kind, ids=ids)
+
     def gc_vectors(
         self, *, kinds: list[str] | None = None, dim: int,
         dry_run: bool = False,
@@ -2450,7 +2481,17 @@ class Store:
         JSON output of `memory recall` silently drops them, masquerading
         as a "no recall hits" result.
 
-        Returns a `{kind: {"orphans": N, "kept": N, "dry_run": bool}}` map.
+        The INVERSE leak is repaired too: a catalog row whose
+        `vectors_updated_at` is set but which has no vector in Lance. That
+        row is invisible to `pending_embeddings` (its clock looks current), so
+        `rmx embed` reports nothing pending while dense retrieval silently
+        cannot see the entity — a permanent, self-concealing hole. Clearing
+        the stamp re-queues it. Partition merges produce these in bulk, since
+        colliding entities are remapped to new ids while their vectors stay
+        keyed by the old ones.
+
+        Returns a `{kind: {"orphans": N, "missing": N, "kept": N,
+        "dry_run": bool}}` map.
         """
         vs = self._vector_store(dim)
         if kinds is None:
@@ -2459,21 +2500,41 @@ class Store:
         con = self._connect()
         for kind in kinds:
             lance_ids = vs.list_ids(kind=kind)
-            if not lance_ids:
-                out[kind] = {"orphans": 0, "kept": 0, "dry_run": dry_run}
-                continue
-            # Catalog ids for this partition+kind.
+            # Catalog ids for this partition+kind, and which of them claim a
+            # vector. Runs even with an empty dataset: "no vectors at all but
+            # every row claims one" is the worst case of this leak, not a
+            # reason to skip the check.
             rows = con.execute(
-                "SELECT id FROM entities "
+                "SELECT id, vectors_updated_at FROM entities "
                 "WHERE partition_id=? AND kind=?",
                 (self._partition_id, kind),
             ).fetchall()
             catalog_ids = {int(r[0]) for r in rows}
+            claimed = {int(r[0]) for r in rows if r[1] is not None}
+            have = set(lance_ids)
+            missing = sorted(claimed - have)
+            if missing and not dry_run:
+                # Batched: a per-id UPDATE loop over a large kind is exactly
+                # the shape that gets a fat daemon jetsammed.
+                for start in range(0, len(missing), 500):
+                    chunk = missing[start:start + 500]
+                    ph = ",".join("?" * len(chunk))
+                    con.execute(
+                        f"UPDATE entities SET vectors_updated_at = NULL "
+                        f"WHERE id IN ({ph})",
+                        chunk,
+                    )
+                con.commit()
+            if not lance_ids:
+                out[kind] = {"orphans": 0, "missing": len(missing),
+                             "kept": 0, "dry_run": dry_run}
+                continue
             orphans = [i for i in lance_ids if i not in catalog_ids]
             if orphans and not dry_run:
                 vs.drop_for(orphans, kind=kind)
             out[kind] = {
                 "orphans": len(orphans),
+                "missing": len(missing),
                 "kept": len(lance_ids) - len(orphans),
                 "dry_run": dry_run,
             }

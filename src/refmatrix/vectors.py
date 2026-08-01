@@ -147,6 +147,47 @@ class LanceVectorStore:
         tbl = ds.to_table(columns=["id"])
         return [int(x) for x in tbl["id"].to_pylist()]
 
+    def read_vectors(
+        self, *, kind: str, ids: Iterable[int] | None = None,
+    ) -> tuple[list[int], np.ndarray]:
+        """Bulk-read the whole dataset for `kind` as `(ids, matrix)`.
+
+        `list_ids` deliberately returns ids only (the gc orphan check never
+        needs payloads); anything that clusters or reranks over the full
+        corpus needs the vectors themselves. Returns row-aligned `ids` and an
+        `(N, dim)` float32 matrix; `(<empty>, (0,0) array)` when the dataset
+        doesn't exist.
+
+        `dim` is taken from the DATA, not from `self.dim` — the read path is
+        the one place a handle may legitimately be opened without knowing the
+        embedder's output dimension (loading the model just to read costs a
+        model load, which is exactly what a fat daemon gets jetsammed for).
+        """
+        import lance
+
+        path = self._dataset_path(kind)
+        if not path.exists():
+            return [], np.zeros((0, 0), dtype="float32")
+        ds = lance.dataset(str(path))
+        if ids is not None:
+            wanted = [int(i) for i in ids]
+            if not wanted:
+                return [], np.zeros((0, 0), dtype="float32")
+            in_list = ",".join(str(i) for i in wanted)
+            tbl = ds.to_table(
+                columns=["id", "vector"], filter=f"id IN ({in_list})")
+        else:
+            tbl = ds.to_table(columns=["id", "vector"])
+        if tbl.num_rows == 0:
+            return [], np.zeros((0, 0), dtype="float32")
+        out_ids = [int(x) for x in tbl["id"].to_pylist()]
+        # fixed_size_list<float32> -> (N, dim) without a python-level copy
+        # per row: flatten the child array once and reshape.
+        flat = tbl["vector"].combine_chunks().flatten().to_numpy(
+            zero_copy_only=False)
+        mat = np.asarray(flat, dtype="float32").reshape(len(out_ids), -1)
+        return out_ids, mat
+
     def kinds_on_disk(self) -> list[str]:
         """List kinds with a materialized lance dataset under this partition."""
         base = self.root / self.partition

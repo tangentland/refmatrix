@@ -3276,6 +3276,23 @@ def _op_subject_link(d: Daemon, args: dict) -> dict:
     return {"linked": created}
 
 
+def _op_memory_compile_apply(d: Daemon, args: dict) -> dict:
+    """Write a `memory compile` plan: subject nodes + `part-of` edges.
+
+    Only the APPLY half runs here. The clustering itself stays in the caller
+    because it reads the whole vector matrix, and the daemon is the process
+    that gets jetsammed when it grows fat — the plan arrives as data.
+    """
+    from refmatrix import consolidate
+
+    plan = args["plan"]
+    prune = bool(args.get("prune", True))
+    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
+        result = consolidate.apply_plan(d.store, plan, prune=prune)
+    d._request_snapshot()
+    return result
+
+
 def _op_subject_list(d: Daemon, args: dict) -> dict:
     """Subject nodes with leaf counts (read-routed)."""
     rows = _read_with_fallback(
@@ -3920,6 +3937,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "memory_score": _op_memory_score,
     "subject_upsert": _op_subject_upsert,
     "subject_link": _op_subject_link,
+    "memory_compile_apply": _op_memory_compile_apply,
     "subject_list": _op_subject_list,
     "subject_leaves": _op_subject_leaves,
     "stop": _op_stop,

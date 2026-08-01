@@ -6803,15 +6803,27 @@ def embed_cmd(kinds, batch, rebuild, max_batches, gc_mode, dry_run):
             console.print("[yellow]no lance datasets found[/]")
             return
         total_orphans = sum(r["orphans"] for r in by_kind.values())
+        total_missing = sum(r.get("missing", 0) for r in by_kind.values())
         tag = "would drop" if dry_run else "dropped"
         for kind, r in sorted(by_kind.items()):
             console.print(
-                f"  {kind}: {tag}={r['orphans']} kept={r['kept']}"
+                f"  {kind}: {tag}={r['orphans']} kept={r['kept']} "
+                f"re-queued={r.get('missing', 0)}"
             )
         console.print(
             f"[{'yellow' if dry_run else 'green'}]total {tag}: "
             f"{total_orphans}[/]"
         )
+        if total_missing:
+            # The inverse leak: rows claiming a vector Lance never had. They
+            # are invisible to `embed` until the stamp is cleared, so say it
+            # out loud and name the follow-up rather than fixing it silently.
+            console.print(
+                f"[{'yellow' if dry_run else 'green'}]{total_missing} row(s) "
+                f"claimed a vector that is absent from lance"
+                f"{' — would be' if dry_run else ''} re-queued; "
+                f"run `rmx embed` to fill them[/]"
+            )
         return
 
     # Memory nodes live in the memory partition (`memory-<project>` pre-merge,
@@ -8667,6 +8679,155 @@ def memory_dedup(dry_run):
         f"[green]{verb}[/] {res.get('folded', 0)} concept↔memory dup(s), "
         f"{res.get('edges_migrated', 0)} edge(s) migrated"
     )
+
+
+@memory_grp.command("compile")
+@click.option("--k", type=int, default=8, show_default=True,
+              help="Dense neighbours considered per memory.")
+@click.option("--threshold", type=float, default=None,
+              help="Absolute cosine floor. Default is adaptive — see "
+                   "--threshold-pct — because an absolute cosine means "
+                   "nothing across corpora of different breadth.")
+@click.option("--threshold-pct", type=float, default=95.0, show_default=True,
+              help="Percentile of this corpus's own pair-similarity "
+                   "distribution to use as the floor.")
+@click.option("--mutual/--no-mutual", default=True, show_default=True,
+              help="Require reciprocal kNN membership. Without it a single "
+                   "generic memory welds unrelated groups into one blob.")
+@click.option("--beta", type=float, default=1.0, show_default=True,
+              help="How hard shared concepts strengthen a dense edge.")
+@click.option("--gamma", type=float, default=0.5, show_default=True,
+              help="Weight multiplier for concept-only bridge edges.")
+@click.option("--bridge-min", type=float, default=0.35, show_default=True,
+              help="Concept similarity a NON-dense pair must clear to bridge.")
+@click.option("--hub-df-frac", type=float, default=0.10, show_default=True,
+              help="Concepts in more than this fraction of the corpus are "
+                   "hubs and leave the concept space entirely.")
+@click.option("--min-size", type=int, default=2, show_default=True,
+              help="Smallest cluster that becomes a subject.")
+@click.option("--signal", type=click.Choice(["fused", "dense", "concept"]),
+              default="fused", show_default=True,
+              help="Edge weighting. Ablation: run all three and compare "
+                   "against the hand-declared part-of/amends edges.")
+@click.option("--exclude-mtype", "exclude_mtypes", multiple=True,
+              help="mtype glob to keep out of clustering (repeatable). "
+                   "Defaults to session*/digest*/subject.")
+@click.option("--max-subjects", type=int, default=None,
+              help="Keep only the N largest clusters (drops are reported).")
+@click.option("--apply", "do_apply", is_flag=True,
+              help="Write subject nodes + part-of edges and emit the index. "
+                   "Without it this is a preview.")
+@click.option("--no-prune", is_flag=True,
+              help="Keep previously-compiled part-of edges instead of "
+                   "re-filing. Accretes; use only to inspect drift.")
+@click.option("--out", type=click.Path(path_type=Path), default=None,
+              help="Where to write the GMD index ('-' for stdout). Default "
+                   "is <root>/compiled/subjects.md — deliberately NOT the "
+                   "memory dir, which would re-ingest it as a memory.")
+@click.option("--json", "as_json", is_flag=True, help="Emit the raw plan.")
+def memory_compile(k, threshold, threshold_pct, mutual, beta, gamma,
+                   bridge_min, hub_df_frac, min_size, signal, exclude_mtypes,
+                   max_subjects, do_apply, no_prune, out, as_json):
+    """Group memories into subjects and link crosscutting concepts.
+
+    Clusters the partition's memories on a FUSED signal — dense cosine over
+    the memory vectors sets the topology, idf-weighted concept overlap
+    strengthens confirmed pairs and adds sparse bridges dense missed — then
+    names each cluster by its highest-lift shared concept.
+
+    Preview by default; `--apply` writes subject nodes + `part-of` edges
+    (daemon-routed) and emits the GMD index.
+    """
+    from refmatrix import consolidate
+    from refmatrix import daemon as daemon_mod
+
+    _memory_intent("memory_compile")
+    plan = consolidate.compile_memories(
+        _read_store(), k=k, threshold=threshold, threshold_pct=threshold_pct,
+        mutual=mutual, beta=beta, gamma=gamma, bridge_min=bridge_min,
+        hub_df_frac=hub_df_frac, min_size=min_size, signal=signal,
+        max_subjects=max_subjects,
+        exclude_mtypes=list(exclude_mtypes) or None,
+    )
+    if as_json:
+        console.print_json(json.dumps(plan))
+        if not do_apply:
+            return
+
+    st, clusters = plan["stats"], plan["clusters"]
+    if not as_json:
+        if st.get("unembedded"):
+            # Loud, not swallowed: an unembedded memory is INVISIBLE to
+            # clustering, so a quiet run would under-report coverage.
+            console.print(
+                f"[yellow]{st['unembedded']} memory(ies) have no vector[/] — "
+                f"excluded from clustering; run `rmx embed` first."
+            )
+        console.print(
+            f"[dim]{st['candidates']} candidates · {st['embedded']} embedded · "
+            f"{st.get('concept_space', 0)} informative concepts · "
+            f"{st.get('edges', 0)} edges "
+            f"({st.get('confirmed', 0)} concept-confirmed, "
+            f"{st.get('bridges', 0)} bridges)[/]"
+        )
+        if not clusters:
+            console.print("[yellow]no clusters[/] — loosen --threshold or "
+                          "lower --min-size")
+            return
+        t = Table("subject", "size", "evidence (concept, lift)")
+        for c in clusters:
+            t.add_row(
+                c["label"], str(c["size"]),
+                ", ".join(f'{e["concept"]}×{e["lift"]}'
+                          for e in c["evidence"][:3]) or "—",
+            )
+        console.print(t)
+        if plan["crosscutting"]:
+            console.print(
+                "\n[bold]crosscutting[/] (bridge score = df × idf ÷ spread):")
+            for x in plan["crosscutting"]:
+                console.print(f"  {x['concept']} — {x['spread']} subjects, "
+                              f"{x.get('df', 0)} memories "
+                              f"(score {x['score']})")
+        if plan["unclustered"]:
+            console.print(
+                f"\n[dim]{len(plan['unclustered'])} memory(ies) unclustered[/]")
+        if st.get("dropped_clusters"):
+            console.print(
+                f"[yellow]--max-subjects dropped {st['dropped_clusters']} "
+                f"cluster(s) / {st['dropped_members']} member(s)[/]")
+
+    if not do_apply:
+        if not as_json:
+            console.print("\n[dim]preview only — re-run with --apply to "
+                          "write subjects + part-of edges[/]")
+        return
+
+    root = _root()
+    args = {"plan": plan, "prune": not no_prune}
+    if daemon_mod.ping(root):
+        resp = _memory_daemon_call("memory_compile_apply", args, timeout=180.0)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        res = resp["result"]
+    else:
+        res = consolidate.apply_plan(
+            _store(write=True), plan, prune=not no_prune)
+    console.print(
+        f"[green]applied[/] {len(res['subjects'])} subject(s), "
+        f"{res['linked']} part-of edge(s) linked, "
+        f"{res['unlinked']} stale edge(s) unlinked"
+    )
+
+    gmd = consolidate.render_gmd(
+        plan, partition=plan["stats"].get("partition"))
+    if str(out) == "-":
+        console.print(gmd)
+        return
+    dest = Path(out) if out else consolidate.default_out_path(root)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(gmd)
+    console.print(f"[green]index[/] {dest}")
 
 
 @memory_grp.command("bulk-forget")
