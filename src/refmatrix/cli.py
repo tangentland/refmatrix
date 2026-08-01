@@ -9817,6 +9817,34 @@ def session_launchctl_status():
     console.print(f"loaded:    {'[green]yes[/]' if loaded else '[red]no[/]'}")
 
 
+@main.command("cctree", context_settings={
+    "ignore_unknown_options": True, "allow_extra_args": True,
+    "help_option_names": [],
+})
+@click.pass_context
+def cctree_cmd(ctx):
+    """Prompt -> action tree for Claude Code sessions.
+
+    Every flag is passed through to cctree unchanged (`rmx cctree --help` for
+    the full set): --list, --session <id>, --json, --html OUT, --html-site DIR,
+    --summary --all-projects, --follow, --full.
+
+    The hub serves the same renderers at /cctree, so the tree is browsable
+    without generating files.
+    """
+    import sys as _sys
+    from refmatrix import cctree
+
+    argv = _sys.argv
+    try:
+        # cctree parses sys.argv itself; hand it just the post-subcommand args
+        # so `rmx cctree --list` and `cctree.py --list` behave identically.
+        _sys.argv = ["cctree"] + list(ctx.args)
+        cctree.main()
+    finally:
+        _sys.argv = argv
+
+
 @main.command("tools-primer")
 @click.option("--json", "as_json", is_flag=True,
               help="Emit JSON instead of markdown.")

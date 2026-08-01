@@ -21,6 +21,14 @@ from refmatrix import discovery, telemetry
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+def _esc(s: str) -> str:
+    """Escape before interpolating a caller-supplied value into HTML. The
+    cctree renderers escape every transcript payload themselves; this covers
+    the error paths in this module, which build markup directly."""
+    from html import escape
+    return escape(str(s))
+
+
 # ---- read helpers ---------------------------------------------------------
 
 
@@ -615,6 +623,101 @@ def create_app(hub) -> FastAPI:
                 await ws.close()
             except Exception:
                 pass
+
+    # ---- cctree: prompt -> action trees for Claude Code sessions ----
+    #
+    # Rendered LIVE rather than pre-generated. The static-site mode writes the
+    # full tool output into every page (a 212-turn session is ~2.6MB), so the
+    # whole archive materialized at once is ~100MB of HTML that goes stale the
+    # moment a session advances. Parsing is fast enough to do per request.
+
+    def _cc_args(full: bool = False, subagents: bool = True):
+        """Render options straight from cctree's own CLI defaults.
+
+        Hand-rolling the namespace here would break the moment a new flag is
+        added to the renderer — which it already did — so take the real parser's
+        defaults and override only what the request controls.
+        """
+        from refmatrix import cctree
+        return cctree.render_args(full=full, no_subagents=not subagents)
+
+    @app.get("/api/cctree/sessions")
+    def cctree_sessions(project: str | None = None):
+        """Session rollup: one row per transcript, grouped by real cwd.
+
+        The transcript DIRECTORY name is lossy — Claude Code replaces both `/`
+        and `_` with `-`, so `claude_tools` and `claude-tools` collapse to the
+        same slug and cannot be told apart. The cwd recorded inside each
+        session is the only reliable project key, which is what `stat_session`
+        reports and what this groups on.
+        """
+        from refmatrix import cctree
+
+        rows = []
+        for d in cctree.all_projects():
+            for s in cctree.sessions_in(d):
+                try:
+                    st = cctree.stat_session(s)
+                except Exception as e:  # a half-written live session
+                    rows.append({"session": s.stem, "path": str(s),
+                                 "error": f"{type(e).__name__}: {e}"})
+                    continue
+                if project and st.cwd != project:
+                    continue
+                rows.append({
+                    "session": s.stem, "url": f"/cctree/{s.stem}",
+                    "path": str(s), "cwd": st.cwd,
+                    "turns": st.turns, "actions": st.actions,
+                    "errors": st.errors, "mtime": st.mtime,
+                    "subagents": st.subagents, "teammates": st.teammates,
+                    "tools": st.tools,
+                })
+        rows.sort(key=lambda r: r.get("mtime") or 0, reverse=True)
+        return {"sessions": rows, "count": len(rows)}
+
+    @app.get("/api/cctree/session/{session_id}")
+    def cctree_session_json(session_id: str, subagents: bool = True):
+        from refmatrix import cctree
+
+        p = cctree.find_session(session_id)
+        if p is None:
+            return JSONResponse({"error": f"no session {session_id}"},
+                                status_code=404)
+        turns, runs = cctree.parse_session(p, expand_subagents=subagents)
+        return JSONResponse(json.loads(cctree.to_json(turns, p, runs)))
+
+    @app.get("/cctree")
+    def cctree_index():
+        """Landing page: every session, grouped by project, linked to its tree."""
+        from refmatrix import cctree
+
+        rows, links = [], {}
+        for d in cctree.all_projects():
+            for s in cctree.sessions_in(d):
+                try:
+                    st = cctree.stat_session(s)
+                except Exception:
+                    continue  # skip unparseable rather than 500 the index
+                rows.append(st)
+                # render_html_index looks links up by `path.stem` (the
+                # session uuid), which is also what /cctree/{id} resolves.
+                links[s.stem] = f"/cctree/{s.stem}"
+        return HTMLResponse(cctree.render_html_index(
+            rows, links, "refmatrix — Claude Code session trees"))
+
+    @app.get("/cctree/{session_id}")
+    def cctree_session(session_id: str, full: bool = False,
+                       subagents: bool = True):
+        from refmatrix import cctree
+
+        p = cctree.find_session(session_id)
+        if p is None:
+            return HTMLResponse(
+                f"<h1>404</h1><p>no session {_esc(session_id)}</p>",
+                status_code=404)
+        turns, runs = cctree.parse_session(p, expand_subagents=subagents)
+        return HTMLResponse(
+            cctree.render_html(turns, runs, p, _cc_args(full, subagents)))
 
     # ---- static SPA ----
     if STATIC_DIR.is_dir():
