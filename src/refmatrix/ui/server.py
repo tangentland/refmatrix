@@ -657,7 +657,7 @@ def create_app(hub) -> FastAPI:
         for d in cctree.all_projects():
             for s in cctree.sessions_in(d):
                 try:
-                    st = cctree.stat_session(s)
+                    st = cctree.stat_session_cached(s)
                 except Exception as e:  # a half-written live session
                     rows.append({"session": s.stem, "path": str(s),
                                  "error": f"{type(e).__name__}: {e}"})
@@ -695,7 +695,7 @@ def create_app(hub) -> FastAPI:
         for d in cctree.all_projects():
             for s in cctree.sessions_in(d):
                 try:
-                    st = cctree.stat_session(s)
+                    st = cctree.stat_session_cached(s)
                 except Exception:
                     continue  # skip unparseable rather than 500 the index
                 rows.append(st)

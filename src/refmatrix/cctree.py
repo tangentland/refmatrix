@@ -1084,6 +1084,35 @@ class SessionStats:
         return time.strftime("%Y-%m-%d %H:%M", time.localtime(self.mtime))
 
 
+_STAT_CACHE: dict[str, tuple[float, int, "SessionStats"]] = {}
+
+
+def stat_session_cached(path: Path) -> SessionStats:
+    """`stat_session` memoized on (mtime, size).
+
+    Statting the whole archive means parsing every transcript — ~10s for 99
+    sessions on this host, paid on EVERY request once the hub serves the index.
+    Transcripts are append-only files, so mtime+size is a sound cache key: a
+    session that has not been written to cannot have new turns, and one that
+    has gets re-parsed. Only the sessions that actually moved cost anything.
+
+    Deliberately not an lru_cache — that keys on the path alone and would
+    happily serve a stale tree for a live session, which is the one session a
+    reader is most likely to be watching.
+    """
+    try:
+        st = path.stat()
+        key = str(path)
+        hit = _STAT_CACHE.get(key)
+        if hit and hit[0] == st.st_mtime and hit[1] == st.st_size:
+            return hit[2]
+        out = stat_session(path)
+        _STAT_CACHE[key] = (st.st_mtime, st.st_size, out)
+        return out
+    except OSError:
+        return stat_session(path)
+
+
 def stat_session(path: Path) -> SessionStats:
     turns, runs = parse_session(path)
     st = SessionStats(path=path, cwd=session_cwd(path), mtime=path.stat().st_mtime)

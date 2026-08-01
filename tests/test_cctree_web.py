@@ -79,6 +79,43 @@ def test_render_args_carries_every_cli_default():
         assert hasattr(a, attr), attr
 
 
+# ------------------------------------------------------------------- cache ---
+
+def _rec(**kw):
+    base = {"type": "user", "cwd": "/tmp/proj", "timestamp": "2026-07-31T00:00:00Z",
+            "uuid": "u1", "message": {"role": "user", "content": "hi"}}
+    base.update(kw)
+    return json.dumps(base)
+
+
+def test_stat_cache_reparses_when_a_live_session_grows(tmp_path, monkeypatch):
+    """Serving a stale tree for the session someone is actively watching is the
+    failure mode that matters, so the key is (mtime, size), not the path."""
+    p = tmp_path / "sess.jsonl"
+    p.write_text(_rec() + "\n")
+    monkeypatch.setattr(cctree, "_STAT_CACHE", {})
+
+    first = cctree.stat_session_cached(p)
+    again = cctree.stat_session_cached(p)
+    assert again is first                       # unchanged file -> cached object
+
+    p.write_text(_rec() + "\n" + _rec(uuid="u2") + "\n")
+    import os
+    st = p.stat()
+    os.utime(p, (st.st_atime, st.st_mtime + 10))
+
+    grown = cctree.stat_session_cached(p)
+    assert grown is not first
+    assert grown.turns >= first.turns
+
+
+def test_stat_cache_matches_the_uncached_result(tmp_path, monkeypatch):
+    p = tmp_path / "sess.jsonl"
+    p.write_text(_rec() + "\n")
+    monkeypatch.setattr(cctree, "_STAT_CACHE", {})
+    assert cctree.stat_session_cached(p).turns == cctree.stat_session(p).turns
+
+
 # ------------------------------------------------------------------ routes ---
 
 @pytest.fixture
