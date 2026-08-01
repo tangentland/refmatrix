@@ -675,6 +675,8 @@ button { font:inherit; font-size:.82rem; padding:.25rem .6rem; border:1px solid 
 button:hover { border-color:var(--mut); }
 #q { flex:1; min-width:11rem; font:inherit; font-size:.82rem; padding:.25rem .5rem;
   border:1px solid var(--line); border-radius:5px; background:var(--card); color:var(--fg); }
+#projsel { font:inherit; font-size:.82rem; padding:.25rem .4rem; max-width:16rem;
+  border:1px solid var(--line); border-radius:5px; background:var(--card); color:var(--fg); }
 details { border-left:2px solid var(--line); margin:.18rem 0; padding:.1rem .35rem .1rem .55rem;
   border-radius:0 4px 4px 0; }
 .l0{background:var(--l0)} .l1{background:var(--l1)} .l2{background:var(--l2)}
@@ -746,6 +748,34 @@ NODE_JS = """
 document.querySelectorAll('.toggles input').forEach(cb => {
   cb.onchange = () => document.body.classList.toggle('hide-' + cb.dataset.k, !cb.checked);
 });
+"""
+
+def _project_picker(items: list[tuple[str, str]]) -> str:
+    """Project dropdown for the index header.
+
+    Jumps to one project and hides the rest — with 18 projects and 99 sessions,
+    scrolling to find a repo is the main cost of the page. Omitted below two
+    projects, where it would be a control with nothing to choose.
+    """
+    if len(items) < 2:
+        return ""
+    opts = "".join(f'<option value="{esc(pid)}">{esc(label)}</option>'
+                   for pid, label in items)
+    return (f'<select id="projsel" title="jump to a project">'
+            f'<option value="">all projects ({len(items)})</option>'
+            f"{opts}</select>")
+
+
+PICKER_JS = """
+const sel = document.getElementById('projsel');
+if (sel) sel.onchange = () => {
+  const want = sel.value;
+  document.querySelectorAll('details.proj').forEach(d => {
+    const hit = !want || d.id === want;
+    d.classList.toggle('hide', !hit);
+    if (want && hit) { d.open = true; d.scrollIntoView({block: 'start'}); }
+  });
+};
 """
 
 HTML_JS = """
@@ -920,8 +950,11 @@ def render_html_index(
         groups.setdefault(st.cwd, []).append(st)
 
     body: list[str] = []
+    # (value, label) for the project picker, in the same order as the groups.
+    picker: list[tuple[str, str]] = []
     g_turns = g_acts = g_err = g_ag = 0
-    for cwd, g in sorted(groups.items(), key=lambda kv: -max(s.mtime for s in kv[1])):
+    for gi, (cwd, g) in enumerate(sorted(
+            groups.items(), key=lambda kv: -max(s.mtime for s in kv[1]))):
         g = sorted(g, key=lambda s: -s.mtime)
         t = sum(s.turns for s in g)
         a = sum(s.actions for s in g)
@@ -939,8 +972,14 @@ def render_html_index(
             f'<span class="chip">{esc(k)} {v}</span>'
             for k, v in sorted(tools.items(), key=lambda kv: -kv[1])[:10]
         )
+        pid = f"proj-{gi}"
+        # Leaf dir name reads better in a dropdown than the absolute path, but
+        # two checkouts can share one, so disambiguate with the parent.
+        leaf = cwd.rstrip("/").split("/")[-1] or cwd
+        parent = cwd.rstrip("/").split("/")[-2:-1]
+        picker.append((pid, f"{leaf} ({parent[0]})" if parent else leaf))
         body.append(
-            f'<details class="proj l0"><summary>{esc(cwd)} '
+            f'<details class="proj l0" id="{pid}"><summary>{esc(cwd)} '
             f'<span class="nums">· {len(g)} sessions · {t} turns · {a} actions · '
             f"{e} errors · {ag} agents</span></summary>"
             f'<div class="toolrow n-tools">{chips}</div>'
@@ -972,13 +1011,16 @@ def render_html_index(
         f"<h1>{esc(title)}</h1>"
         f"<div class='sub'>{len(groups)} projects · {len(rows)} sessions · {g_turns} turns · "
         f"{g_acts} actions · {g_err} errors · {g_ag} agents</div>"
-        "<div class='bar'><div class='row'><button id='xall'>expand all</button>"
+        "<div class='bar'><div class='row'>"
+        + _project_picker(picker)
+        + "<button id='xall'>expand all</button>"
         "<button id='call'>collapse all</button>"
         "<input id='q' type='search' placeholder='filter projects…'></div>"
         + node_toolbar(INDEX_NODES, "".join(body))
         + "</div>"
         + "".join(body)
-        + f"<script>{HTML_JS.replace('details.turn', 'details.proj')}{NODE_JS}</script>"
+        + f"<script>{HTML_JS.replace('details.turn', 'details.proj')}"
+        f"{NODE_JS}{PICKER_JS}</script>"
         "</body></html>"
     )
 

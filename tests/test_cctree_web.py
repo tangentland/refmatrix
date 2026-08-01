@@ -184,3 +184,37 @@ def test_json_route_matches_the_module(a_session, client):
     direct = json.loads(cctree.to_json(turns, a_session, runs))
     served = client.get(f"/api/cctree/session/{a_session.stem}").json()
     assert type(direct) is type(served)
+
+
+# ---------------------------------------------------------- project picker ---
+
+def _stats(cwd, stem, mtime=1.0):
+    s = cctree.SessionStats(path=__import__("pathlib").Path(f"/t/{stem}.jsonl"),
+                            cwd=cwd, mtime=mtime)
+    s.turns, s.actions = 1, 1
+    return s
+
+
+def test_index_has_a_project_picker_with_one_option_per_project():
+    rows = [_stats("/a/alpha", "s1"), _stats("/a/beta", "s2", 2.0),
+            _stats("/a/alpha", "s3", 3.0)]
+    html = cctree.render_html_index(rows, {}, "t")
+    assert 'id="projsel"' in html
+    assert html.count('<option value="proj-') == 2      # two projects, 3 sessions
+    assert 'all projects (2)' in html
+    # Every option must target a group that exists on the page.
+    for pid in ["proj-0", "proj-1"]:
+        assert f'id="{pid}"' in html
+
+
+def test_picker_labels_disambiguate_same_leaf_dir_name():
+    """Two checkouts of the same repo share a leaf dir; the label must not
+    collapse them into two identical options."""
+    rows = [_stats("/one/cliquedb", "s1"), _stats("/two/cliquedb", "s2", 2.0)]
+    html = cctree.render_html_index(rows, {}, "t")
+    assert "cliquedb (one)" in html and "cliquedb (two)" in html
+
+
+def test_picker_is_omitted_when_there_is_nothing_to_choose():
+    html = cctree.render_html_index([_stats("/a/alpha", "s1")], {}, "t")
+    assert 'id="projsel"' not in html
