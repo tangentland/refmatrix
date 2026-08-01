@@ -654,10 +654,13 @@ def render_gmd(plan: dict, *, doc_id: str = "memory-subjects",
     if cross:
         lines += ['## Crosscutting concepts {#crosscutting}', '',
                   'Concepts spanning two or more subjects, ranked by '
-                  'idf x spread — sparse bridges, not hubs.', '']
+                  'df x idf / (spread - 1) — attested but concentrated, so '
+                  'sparse bridges outrank corpus-wide hubs.', '']
         for x in cross:
             span = ", ".join(f'[[#subject-{ci + 1}]]' for ci in x["clusters"])
-            lines.append(f'- `{x["concept"]}` — {x["spread"]} subjects: {span}')
+            lines.append(
+                f'- `{x["concept"]}` — {x["spread"]} subjects, '
+                f'{x.get("df", 0)} memories (score {x["score"]}): {span}')
         lines.append('')
     unc = plan.get("unclustered", [])
     if unc:
