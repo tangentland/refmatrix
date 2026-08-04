@@ -2983,6 +2983,33 @@ def _op_context(d: Daemon, args: dict) -> dict:
     return {"body": body}
 
 
+def _op_describe(d: Daemon, args: dict) -> dict:
+    """Full metadata dump for ONE entity: resolve the ref, then join every
+    catalog fact about it. Read-only, so it runs on the read store like the
+    other CLI reads (see `_op_memory_get` for the isolation rationale)."""
+    ref = args.get("ref")
+    if ref is None:
+        raise ValueError("describe requires 'ref'")
+    partition = args.get("partition") or d.store._partition_name
+    kwargs = {
+        "evidence_limit": int(args.get("evidence_limit", 20)),
+        "edge_limit": int(args.get("edge_limit", 200)),
+        "sibling_limit": int(args.get("sibling_limit", 200)),
+        "include_vectors": bool(args.get("include_vectors", True)),
+    }
+
+    def _run(s):
+        targets = s.find_describe_targets(str(ref))
+        if not targets:
+            return {"found": None, "candidates": []}
+        if len(targets) > 1 and not args.get("first"):
+            return {"found": None, "candidates": targets}
+        return {"found": s.describe_entity(targets[0]["id"], **kwargs),
+                "candidates": targets}
+
+    return _read_with_fallback(d, partition, _run)
+
+
 def _memory_partition(d: "Daemon", args: dict) -> str:
     """Resolve which partition this memory op targets. Caller passes
     `partition` explicitly; absent, we fall back to the daemon's bound
@@ -3885,6 +3912,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "mem_mirror_status": _op_mem_mirror_status,
     "prestage_hashes": _op_prestage_hashes,
     "context": _op_context,
+    "describe": _op_describe,
     "query": _op_query,
     "grep_indexed": _op_grep_indexed,
     "learn_from_grep": _op_learn_from_grep,
@@ -3952,6 +3980,7 @@ CLI_OPS: set[str] = {
     "ping",
     "stats",
     "context",
+    "describe",
     "query",
     "grep_indexed",
     "list_linkages",

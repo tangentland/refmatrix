@@ -3692,6 +3692,188 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
         click.echo(render_text(bundle))
 
 
+def _render_describe(d: dict) -> None:
+    """Human-readable rendering of a `describe_entity` payload."""
+    import datetime as _dt
+
+    def _ts(v):
+        if not v:
+            return "—"
+        try:
+            return _dt.datetime.fromtimestamp(float(v)).strftime(
+                "%Y-%m-%d %H:%M:%S")
+        except (TypeError, ValueError, OSError):
+            return str(v)
+
+    e = d["entity"]
+    t = Table("field", "value", title=f"entity {e['id']}", show_lines=False)
+    t.add_row("kind", str(e["kind"]))
+    t.add_row("name", str(e["name"]))
+    t.add_row("path", str(e["path"] or "—"))
+    t.add_row("partition", f"{e.get('partition')} (id {e['partition_id']})")
+    t.add_row("canonical_name", str(e.get("canonical_name") or "—"))
+    t.add_row("protected / noise",
+              f"{bool(e['protected'])} / {bool(e['noise'])}")
+    t.add_row("created / updated", f"{_ts(e['created_at'])}  →  {_ts(e['updated_at'])}")
+    t.add_row("tldr", (e.get("tldr") or "—")[:400])
+    meta = e.get("meta")
+    t.add_row("meta", json.dumps(meta, indent=2)[:1200] if meta else "—")
+    console.print(t)
+
+    v = d.get("vectors") or {}
+    tf = d.get("tracked_file")
+    pr = d.get("pagerank")
+    t2 = Table("subsystem", "state", title="storage")
+    t2.add_row("vectors (Lance)",
+               (f"present={v.get('present')} dim={v.get('dim')} "
+                f"dataset={v.get('dataset', '—')} embedded_at="
+                f"{_ts(v.get('embedded_at'))}")
+               + (f" error={v['error']}" if v.get("error") else ""))
+    t2.add_row("tracked_file",
+               (f"mtime={_ts(tf['mtime'])} last_synced={_ts(tf['last_synced'])} "
+                f"stale={tf['stale']}") if tf else "— (not a tracked file)")
+    t2.add_row("pagerank",
+               f"{pr['score']:.6g} (computed {_ts(pr['computed_at'])})"
+               if pr else "— (never computed)")
+    console.print(t2)
+
+    m = d.get("memory")
+    if m:
+        t3 = Table("field", "value", title="memory sidecar")
+        t3.add_row("mtype", str(m["mtype"]))
+        t3.add_row("tags", ", ".join(m["tags"]) if m["tags"] else "—")
+        t3.add_row("metadata",
+                   json.dumps(m["metadata"], indent=2)[:1200]
+                   if m["metadata"] else "—")
+        t3.add_row("created / updated",
+                   f"{_ts(m['created_at'])}  →  {_ts(m['updated_at'])}")
+        t3.add_row("content", (m["content"] or "")[:2000])
+        console.print(t3)
+
+    out = d["links_out"]
+    t4 = Table("linkage", "concept", "weight", "evidence",
+               title=f"outbound memberships — {out['total']} total, "
+                     f"{len(out['shown'])} shown")
+    for r in out["shown"]:
+        ev = r.get("evidence") or []
+        first = (f"{Path(ev[0]['file']).name}:{ev[0]['line']}"
+                 if ev and ev[0].get("file") else "")
+        t4.add_row(r["linkage"], str(r["concept"] or r["concept_id"]),
+                   "—" if r["weight"] is None else f"{r['weight']:g}",
+                   f"{r['evidence_count']}" + (f" ({first}…)" if first else ""))
+    console.print(t4)
+
+    inb = d["links_in"]
+    if inb["total"]:
+        t5 = Table("linkage", "entity", "kind", "weight",
+                   title=f"inbound edges — {inb['total']} total, "
+                         f"{len(inb['shown'])} shown")
+        for r in inb["shown"]:
+            t5.add_row(r["linkage"], str(r["name"] or r["entity_id"]),
+                       str(r["kind"] or "—"),
+                       "—" if r["weight"] is None else f"{r['weight']:g}")
+        console.print(t5)
+
+    sib = d["siblings"]
+    if sib["total"]:
+        t6 = Table("id", "kind", "name",
+                   title=f"same-path rows — {sib['total']} total, "
+                         f"{len(sib['shown'])} shown")
+        for r in sib["shown"]:
+            t6.add_row(str(r["id"]), r["kind"], r["name"])
+        console.print(t6)
+
+
+@main.command()
+@click.argument("ref")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]),
+              default="text")
+@click.option("--first", is_flag=True,
+              help="On an ambiguous ref, describe the best match instead of "
+                   "listing candidates.")
+@click.option("--edge-limit", default=200, type=int,
+              help="Max inbound / outbound edge rows shown (totals are exact).")
+@click.option("--evidence-limit", default=20, type=int,
+              help="Max evidence spans kept per outbound edge.")
+@click.option("--sibling-limit", default=200, type=int,
+              help="Max same-path sibling rows shown.")
+@click.option("--no-vectors", is_flag=True,
+              help="Skip the Lance probe (catalog-only, no dense import).")
+@click.option("--via-replica", is_flag=True,
+              help="Read from the rotation reader slot instead of the daemon.")
+def describe(ref, fmt, first, edge_limit, evidence_limit, sibling_limit,
+             no_vectors, via_replica):
+    """Dump EVERY stored fact about one entity — the whole row plus the
+    tables that hang off it.
+
+    REF is an entity id, a file path (absolute, project-relative, or a
+    suffix like `server.py`), or an entity/concept/memory name.
+
+    Reports: the `entities` row (kind, path, tldr, meta, flags, timestamps,
+    canonical_name), the partition it lives in, outbound `(linkage,
+    concept)` memberships with evidence spans, inbound edges (what links TO
+    it), same-path sibling rows (a doc's anchors, a file's symbols), the
+    `tracked_files` sync record with on-disk staleness, the PageRank prior,
+    the memory sidecar (content / mtype / tags / metadata), and Lance
+    vector presence. `--format json` emits the whole payload verbatim.
+    """
+    from refmatrix import daemon as daemon_mod
+
+    kwargs = {
+        "evidence_limit": evidence_limit,
+        "edge_limit": edge_limit,
+        "sibling_limit": sibling_limit,
+        "include_vectors": not no_vectors,
+    }
+
+    def _run(s):
+        targets = s.find_describe_targets(str(ref))
+        if not targets:
+            return {"found": None, "candidates": []}
+        if len(targets) > 1 and not first:
+            return {"found": None, "candidates": targets}
+        return {"found": s.describe_entity(targets[0]["id"], **kwargs),
+                "candidates": targets}
+
+    root = _root()
+    if _should_via_replica(via_replica):
+        payload = _replica_read(_run)
+    elif daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "describe", {
+            "ref": str(ref), "first": first,
+            "partition": _resolve_partition(), **kwargs,
+        }, timeout=60.0)
+        if not resp.get("ok"):
+            raise click.ClickException(
+                f"daemon describe failed: {resp.get('error')}")
+        payload = resp["result"]
+    else:
+        payload = _run(_read_store())
+
+    if payload["found"] is None:
+        cands = payload["candidates"]
+        if not cands:
+            raise click.ClickException(
+                f"no entity matches {ref!r} in partition "
+                f"{_resolve_partition()!r}. Try an id, a full path, or "
+                f"`rmx locate {ref}`.")
+        if fmt == "json":
+            click.echo(json.dumps({"ambiguous": cands}, indent=2))
+            return
+        t = Table("id", "kind", "name", "path",
+                  title=f"{len(cands)} matches for {ref!r} — re-run with an id "
+                        f"or --first")
+        for c in cands:
+            t.add_row(str(c["id"]), c["kind"], c["name"], c["path"] or "—")
+        console.print(t)
+        return
+
+    if fmt == "json":
+        click.echo(json.dumps(payload["found"], indent=2, default=str))
+    else:
+        _render_describe(payload["found"])
+
+
 @main.command("co-occur")
 @click.argument("concept")
 @click.option("--type", "linkage", default="mentions")

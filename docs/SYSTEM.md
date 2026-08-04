@@ -204,6 +204,7 @@ index, so the next equivalent query lands at the `rmx query` step instead.
 | Find unimplemented spec                    | `rmx query "specifies:X AND NOT defines:X"` — plan with no code yet     |
 | Find what a symbol calls / is called by    | `rmx query "calls:X"` / `rmx query "called_by:X"`                       |
 | Find co-mentioned concepts                 | `rmx co-occur <symbol> --type defines`                                  |
+| Dump all metadata for one file / node      | `rmx describe <path\|id\|name>` — row, edges, evidence, tracked, vectors |
 | Surface a project's top concepts           | `rmx top --limit 50` / `rmx primer` (writes `.refmatrix/PRIMER.md`)     |
 | Project orientation for a new agent        | `rmx install-hooks` + `rmx primer` (briefing written to `.refmatrix/CLAUDE.md`) |
 | Cross-codebase concept matching            | `rmx canon link <local-concept> <canonical-concept>`                    |

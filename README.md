@@ -141,6 +141,8 @@ rmx context parser --format json                       # LLM-ready
 rmx context --since main                               # branch-scoped: concepts touched since main
 rmx concept timeline parser                            # when a concept was introduced / worked on
 rmx query "defines:auth" --explain                     # file:line evidence per membership
+rmx describe src/parser.py                             # EVERY stored fact about one entity
+rmx describe parser --format json                      # same dump, machine-readable
 ```
 
 `rmx context <name>` resolves a concept **or** a same-named memory: it returns

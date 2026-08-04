@@ -302,6 +302,18 @@ def _canonical_verb(name: str) -> str:
     return _VERB_ALIASES.get(name, name)
 
 
+def _loads_or_raw(blob):
+    """Parse a JSON text column, falling back to the raw string when the
+    column holds something that was never valid JSON (legacy rows wrote
+    free text into `meta`). None stays None."""
+    if blob is None or isinstance(blob, (dict, list)):
+        return blob
+    try:
+        return json.loads(blob)
+    except (TypeError, ValueError):
+        return blob
+
+
 @dataclass
 class Entity:
     id: int
@@ -3675,6 +3687,236 @@ class Store:
                 entity_id, linkage=r["linkage"], concept_id=r["concept_id"]
             )
         return rows
+
+    def find_describe_targets(self, ref: str, *, limit: int = 20) -> list[dict]:
+        """Resolve a user ref to candidate entities for `describe`.
+
+        Order (first non-empty wins): numeric id → exact path → exact name
+        across kinds → path suffix → name substring. The id lookup is
+        cross-partition (ids are globally unique, same as
+        `get_entity_by_id`); every other lookup is scoped to the active
+        partition. Returns `[{id, kind, name, path, partition_id}, ...]`.
+        More than one row means the ref is ambiguous — the caller decides
+        whether to pick or to ask."""
+        self._connect()
+        cols = "id, kind, name, path, partition_id"
+
+        def _rows(sql: str, params: tuple) -> list[dict]:
+            return [
+                {"id": r[0], "kind": r[1], "name": r[2], "path": r[3],
+                 "partition_id": r[4]}
+                for r in self._read().execute(sql, params).fetchall()
+            ]
+
+        ref = ref.strip()
+        if ref.isdigit():
+            got = _rows(f"SELECT {cols} FROM entities WHERE id=?", (int(ref),))
+            if got:
+                return got
+        pid = self._partition_id
+        # Exact path — accept the ref as given and as an absolute path
+        # resolved against cwd, so `rmx describe src/foo.py` works from the
+        # project root the same way `--path` selectors elsewhere do.
+        candidates = [ref]
+        try:
+            resolved = str(Path(ref).resolve())
+            if resolved != ref:
+                candidates.append(resolved)
+        except OSError:
+            pass
+        for cand in candidates:
+            got = _rows(
+                f"SELECT {cols} FROM entities WHERE partition_id=? AND path=? "
+                f"ORDER BY id LIMIT ?", (pid, cand, limit))
+            if got:
+                return got
+        got = _rows(
+            f"SELECT {cols} FROM entities WHERE partition_id=? AND name=? "
+            f"ORDER BY CASE kind WHEN 'concept' THEN 0 WHEN 'code' THEN 1 "
+            f"WHEN 'doc' THEN 2 ELSE 3 END, id LIMIT ?", (pid, ref, limit))
+        if got:
+            return got
+        # Suffix match on path: `describe server.py` from anywhere.
+        got = _rows(
+            f"SELECT {cols} FROM entities WHERE partition_id=? AND path LIKE ? "
+            f"ORDER BY LENGTH(path), id LIMIT ?", (pid, f"%{ref}", limit))
+        if got:
+            return got
+        return _rows(
+            f"SELECT {cols} FROM entities WHERE partition_id=? AND name LIKE ? "
+            f"ORDER BY LENGTH(name), id LIMIT ?", (pid, f"%{ref}%", limit))
+
+    def describe_entity(
+        self, entity_id: int, *, evidence_limit: int = 20,
+        edge_limit: int = 200, sibling_limit: int = 200,
+        include_vectors: bool = True,
+    ) -> dict | None:
+        """Every catalog fact stored about ONE entity, in one read.
+
+        Joins the entity row with its outbound `(linkage, concept)`
+        memberships + evidence spans, its inbound edges (rows that link TO
+        it when it is a concept), same-path sibling rows (a doc and its
+        anchors / a file and its symbols), the `tracked_files` sync record,
+        the PageRank prior, the memory sidecar, and Lance vector presence.
+        Read-only: safe on the replica slot.
+
+        `edge_limit` / `sibling_limit` truncate the row lists (totals are
+        always reported unclipped); `evidence_limit` caps evidence spans per
+        outbound edge. `include_vectors=False` skips the Lance probe, which
+        is the only part that touches something other than the catalog."""
+        self._connect()
+        row = self._read().execute(
+            "SELECT id, partition_id, kind, path, name, tldr, meta, "
+            "       created_at, updated_at, protected, noise, canonical_name, "
+            "       vectors_updated_at "
+            "FROM entities WHERE id=?", (entity_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        ent = dict(row)
+        ent["meta"] = _loads_or_raw(ent.get("meta"))
+        prow = self._read().execute(
+            "SELECT name, root_path, kind FROM partitions WHERE id=?",
+            (ent["partition_id"],),
+        ).fetchone()
+        ent["partition"] = prow[0] if prow else None
+        ent["partition_root"] = prow[1] if prow else None
+
+        out: dict = {"entity": ent}
+
+        # ---- outbound memberships: this entity -> concepts ----------------
+        edges = [
+            {"linkage": r[0], "concept_id": r[1], "concept": r[2],
+             "weight": r[3]}
+            for r in self._read().execute(
+                "SELECT lt.name, el.concept_id, c.name, el.weight "
+                "FROM entity_links el "
+                "JOIN linkage_types lt ON lt.id = el.linkage_id "
+                "LEFT JOIN entities c ON c.id = el.concept_id "
+                "WHERE el.entity_id = ? "
+                "ORDER BY el.weight DESC NULLS LAST, lt.name, c.name "
+                "LIMIT ?", (entity_id, edge_limit),
+            ).fetchall()
+        ]
+        total_out = self._read().execute(
+            "SELECT COUNT(*) FROM entity_links WHERE entity_id=?", (entity_id,)
+        ).fetchone()[0]
+        for e in edges:
+            ev = self.get_evidence(
+                entity_id, linkage=e["linkage"], concept_id=e["concept_id"])
+            e["evidence_count"] = len(ev)
+            e["evidence"] = ev[:evidence_limit]
+
+        # ---- inbound: rows that link TO this entity (it as concept) -------
+        inbound = [
+            {"linkage": r[0], "entity_id": r[1], "name": r[2], "kind": r[3],
+             "path": r[4], "weight": r[5]}
+            for r in self._read().execute(
+                "SELECT lt.name, el.entity_id, e.name, e.kind, e.path, el.weight "
+                "FROM entity_links el "
+                "JOIN linkage_types lt ON lt.id = el.linkage_id "
+                "LEFT JOIN entities e ON e.id = el.entity_id "
+                "WHERE el.concept_id = ? "
+                "ORDER BY el.weight DESC NULLS LAST, lt.name, e.name "
+                "LIMIT ?", (entity_id, edge_limit),
+            ).fetchall()
+        ]
+        total_in = self._read().execute(
+            "SELECT COUNT(*) FROM entity_links WHERE concept_id=?", (entity_id,)
+        ).fetchone()[0]
+        out["links_out"] = {"total": int(total_out), "shown": edges}
+        out["links_in"] = {"total": int(total_in), "shown": inbound}
+
+        # ---- same-path siblings: the doc's anchors, the file's symbols ----
+        siblings: list[dict] = []
+        total_sib = 0
+        if ent.get("path"):
+            total_sib = self._read().execute(
+                "SELECT COUNT(*) FROM entities "
+                "WHERE partition_id=? AND path=? AND id<>?",
+                (ent["partition_id"], ent["path"], entity_id),
+            ).fetchone()[0]
+            siblings = [
+                {"id": r[0], "kind": r[1], "name": r[2]}
+                for r in self._read().execute(
+                    "SELECT id, kind, name FROM entities "
+                    "WHERE partition_id=? AND path=? AND id<>? "
+                    "ORDER BY name LIMIT ?",
+                    (ent["partition_id"], ent["path"], entity_id,
+                     sibling_limit),
+                ).fetchall()
+            ]
+        out["siblings"] = {"total": int(total_sib), "shown": siblings}
+
+        # ---- tracked file (sync bookkeeping) ------------------------------
+        tracked = None
+        if ent.get("path"):
+            trow = self._read().execute(
+                "SELECT path, mtime, last_synced FROM tracked_files "
+                "WHERE partition_id=? AND path=?",
+                (ent["partition_id"], ent["path"]),
+            ).fetchone()
+            if trow:
+                tracked = {"path": trow[0], "mtime": float(trow[1]),
+                           "last_synced": float(trow[2])}
+                try:
+                    disk = os.stat(trow[0]).st_mtime
+                    tracked["disk_mtime"] = disk
+                    tracked["stale"] = disk > float(trow[2])
+                except OSError:
+                    tracked["disk_mtime"] = None
+                    tracked["stale"] = None  # file is gone / unreadable
+        out["tracked_file"] = tracked
+
+        # ---- pagerank prior ----------------------------------------------
+        pr = None
+        try:
+            prrow = self._read().execute(
+                "SELECT score, computed_at FROM pagerank "
+                "WHERE partition_id=? AND entity_id=?",
+                (ent["partition_id"], entity_id),
+            ).fetchone()
+            if prrow:
+                pr = {"score": float(prrow[0]),
+                      "computed_at": float(prrow[1])}
+        except Exception:
+            pr = None  # table absent on a legacy catalog
+        out["pagerank"] = pr
+
+        # ---- memory sidecar ----------------------------------------------
+        mem = None
+        if ent["kind"] == "memory":
+            mrow = self._read().execute(
+                "SELECT content, mtype, tags, metadata, created_at, updated_at "
+                "FROM memory_content WHERE entity_id=?", (entity_id,)
+            ).fetchone()
+            if mrow:
+                mem = {
+                    "content": mrow[0],
+                    "mtype": mrow[1],
+                    "tags": _loads_or_raw(mrow[2]) or [],
+                    "metadata": _loads_or_raw(mrow[3]) or {},
+                    "created_at": mrow[4],
+                    "updated_at": mrow[5],
+                }
+        out["memory"] = mem
+
+        # ---- dense vector presence ---------------------------------------
+        vec = {"embedded_at": ent.get("vectors_updated_at")}
+        if include_vectors:
+            try:
+                ids, mat = self.read_vectors(kind=ent["kind"], ids=[entity_id])
+                vec["present"] = bool(len(ids))
+                vec["dim"] = int(mat.shape[1]) if len(ids) else None
+                vec["dataset"] = f"{self._partition_name}/{ent['kind']}.lance"
+            except ImportError:
+                vec["present"] = None
+                vec["error"] = "dense extra not installed"
+            except Exception as e:  # missing dataset, unreadable, etc.
+                vec["present"] = None
+                vec["error"] = str(e)
+        out["vectors"] = vec
+        return out
 
     def add_namespaced_concept(
         self, namespace: str, name: str, description: str | None = None

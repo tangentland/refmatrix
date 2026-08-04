@@ -251,6 +251,7 @@ rmx
 ├── neighbors                  walk linkages
 ├── context                    token-budgeted bundle (--since <ref> also)
 ├── co-occur                   co-mention analysis
+├── describe                   every stored fact about ONE entity (row+edges+vectors)
 ├── grep                       index-backed + rg/grep fallback + learn-on-miss
 ├── top                        top-N concepts by density
 ├── save-query / run
