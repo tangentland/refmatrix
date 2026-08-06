@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 
 from refmatrix.cli import (
-    _filter_rows_by_paths, _grep_stdin, _parse_grep_flags, _render_grep_rows,
+    _filter_rows_by_paths, _grep_bare_flags, _grep_stdin, _parse_grep_flags,
+    _render_grep_rows,
 )
 
 
@@ -138,83 +139,229 @@ def test_render_limit_applies_to_files_only(capsys):
 
 
 # ---- stdin pipe mode ------------------------------------------------------
+#
+# Pipe mode stands in for grep inside arbitrary pipelines (a rewrite hook can
+# put `rmx grep` anywhere `grep` was), so the contract is grep's, not rmx's:
+# plain matching lines, no `path:` prefix unless -H, no `N:` unless -n, and
+# exit 1 when nothing matched. Anything rmx adds goes AFTER that output and is
+# suppressed here via RMX_GREP_NOTE=0 (its own tests cover placement).
+
+
+@pytest.fixture(autouse=True)
+def _no_index_addendum(monkeypatch):
+    monkeypatch.setenv("RMX_GREP_NOTE", "0")
+
+
+def _run_stdin(text, pattern, *, regex=False, flags=None, limit=None):
+    """Feed `text` through _grep_stdin, returning (lines, exit_code)."""
+    import sys as _sys
+    _sys.stdin = io.StringIO(text)
+    code = 0
+    try:
+        _grep_stdin(pattern, regex=regex, gf=_parse_grep_flags(flags),
+                    limit=limit)
+    except SystemExit as exc:
+        code = exc.code
+    return code
 
 
 def test_grep_stdin_substring(capsys, monkeypatch):
     monkeypatch.setattr("sys.stdin", io.StringIO("alpha\nbeta\nalphabet\n"))
-    _grep_stdin("alpha", regex=False, gf=_parse_grep_flags(None), limit=100)
+    code = _run_stdin("alpha\nbeta\nalphabet\n", "alpha")
     out = capsys.readouterr().out.splitlines()
-    assert out == ["<stdin>:1:alpha", "<stdin>:3:alphabet"]
+    assert out == ["alpha", "alphabet"]
+    assert code == 0
 
 
-def test_grep_stdin_case_sensitive(capsys, monkeypatch):
-    monkeypatch.setattr("sys.stdin", io.StringIO("Alpha\nalpha\nALPHA\n"))
-    _grep_stdin("alpha", regex=False, gf=_parse_grep_flags("-I"), limit=100)
+def test_grep_stdin_case_sensitive(capsys):
+    _run_stdin("Alpha\nalpha\nALPHA\n", "alpha", flags="-I")
     out = capsys.readouterr().out.splitlines()
-    assert out == ["<stdin>:2:alpha"]
+    assert out == ["alpha"]
 
 
-def test_grep_stdin_default_case_insensitive(capsys, monkeypatch):
-    monkeypatch.setattr("sys.stdin", io.StringIO("Alpha\nalpha\nALPHA\n"))
-    _grep_stdin("alpha", regex=False, gf=_parse_grep_flags(None), limit=100)
+def test_grep_stdin_case_sensitive_by_default(capsys):
+    """grep is case-SENSITIVE unless -i; a pipe filter that quietly widened
+    the match would be a wrong answer downstream."""
+    _run_stdin("Alpha\nalpha\nALPHA\n", "alpha")
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["alpha"]
+
+
+def test_grep_stdin_ignore_case(capsys):
+    _run_stdin("Alpha\nalpha\nALPHA\n", "alpha", flags="-i")
     out = capsys.readouterr().out.splitlines()
     assert len(out) == 3
 
 
-def test_grep_stdin_regex(capsys, monkeypatch):
-    monkeypatch.setattr("sys.stdin", io.StringIO("foo123\nfoo\nfoobar\n"))
-    _grep_stdin(r"foo\d+", regex=True, gf=_parse_grep_flags(None), limit=100)
+def test_grep_stdin_regex(capsys):
+    _run_stdin("foo123\nfoo\nfoobar\n", r"foo\d+", regex=True)
     out = capsys.readouterr().out.splitlines()
-    assert out == ["<stdin>:1:foo123"]
+    assert out == ["foo123"]
 
 
-def test_grep_stdin_word_boundary(capsys, monkeypatch):
-    monkeypatch.setattr("sys.stdin", io.StringIO("cat\ncategory\nconcat\n"))
-    _grep_stdin("cat", regex=False, gf=_parse_grep_flags("-w"), limit=100)
+def test_grep_stdin_word_boundary(capsys):
+    _run_stdin("cat\ncategory\nconcat\n", "cat", flags="-w")
     out = capsys.readouterr().out.splitlines()
-    assert out == ["<stdin>:1:cat"]
+    assert out == ["cat"]
 
 
-def test_grep_stdin_invert(capsys, monkeypatch):
-    monkeypatch.setattr("sys.stdin", io.StringIO("alpha\nbeta\ngamma\n"))
-    _grep_stdin("alpha", regex=False, gf=_parse_grep_flags("-v"), limit=100)
+def test_grep_stdin_invert(capsys):
+    _run_stdin("alpha\nbeta\ngamma\n", "alpha", flags="-v")
     out = capsys.readouterr().out.splitlines()
-    assert out == ["<stdin>:2:beta", "<stdin>:3:gamma"]
+    assert out == ["beta", "gamma"]
 
 
-def test_grep_stdin_count(capsys, monkeypatch):
-    monkeypatch.setattr("sys.stdin", io.StringIO("hit\nmiss\nhit\nhit\n"))
-    _grep_stdin("hit", regex=False, gf=_parse_grep_flags("-c"), limit=100)
+def test_grep_stdin_count(capsys):
+    _run_stdin("hit\nmiss\nhit\nhit\n", "hit", flags="-c")
     out = capsys.readouterr().out.splitlines()
     assert out == ["3"]
 
 
-def test_grep_stdin_files_only_emits_stdin_label(capsys, monkeypatch):
-    monkeypatch.setattr("sys.stdin", io.StringIO("hit\nhit\nhit\n"))
-    _grep_stdin("hit", regex=False, gf=_parse_grep_flags("-l"), limit=100)
+def test_grep_stdin_files_only_emits_stdin_label(capsys):
+    _run_stdin("hit\nhit\nhit\n", "hit", flags="-l")
     out = capsys.readouterr().out.splitlines()
-    assert out == ["<stdin>"]
+    assert out == ["(standard input)"]
 
 
-def test_grep_stdin_files_only_no_hit_silent(capsys, monkeypatch):
-    monkeypatch.setattr("sys.stdin", io.StringIO("alpha\nbeta\n"))
-    _grep_stdin("missing", regex=False, gf=_parse_grep_flags("-l"), limit=100)
-    out = capsys.readouterr().out
-    assert out == ""
+def test_grep_stdin_files_only_no_hit_silent(capsys):
+    code = _run_stdin("alpha\nbeta\n", "missing", flags="-l")
+    assert capsys.readouterr().out == ""
+    assert code == 1
 
 
-def test_grep_stdin_limit(capsys, monkeypatch):
-    monkeypatch.setattr("sys.stdin", io.StringIO("hit\nhit\nhit\nhit\n"))
-    _grep_stdin("hit", regex=False, gf=_parse_grep_flags(None), limit=2)
-    out = capsys.readouterr().out.splitlines()
-    assert out == ["<stdin>:1:hit", "<stdin>:2:hit"]
+def test_grep_stdin_files_without_match(capsys):
+    _run_stdin("alpha\nbeta\n", "missing", flags="-L")
+    assert capsys.readouterr().out.splitlines() == ["(standard input)"]
+
+
+def test_grep_stdin_line_numbers(capsys):
+    gf = _parse_grep_flags(None)
+    _grep_bare_flags(["-n"], gf, stdin_mode=True)
+    import sys as _sys
+    _sys.stdin = io.StringIO("alpha\nbeta\nalpha\n")
+    with pytest.raises(SystemExit):
+        _grep_stdin("alpha", regex=False, gf=gf, limit=None)
+    assert capsys.readouterr().out.splitlines() == ["1:alpha", "3:alpha"]
+
+
+def test_grep_stdin_with_filename(capsys):
+    gf = _parse_grep_flags(None)
+    _grep_bare_flags(["-H"], gf, stdin_mode=True)
+    import sys as _sys
+    _sys.stdin = io.StringIO("alpha\nbeta\n")
+    with pytest.raises(SystemExit):
+        _grep_stdin("alpha", regex=False, gf=gf, limit=None)
+    assert capsys.readouterr().out.splitlines() == ["(standard input):alpha"]
+
+
+def test_grep_stdin_only_matching(capsys):
+    gf = _parse_grep_flags(None)
+    _grep_bare_flags(["-o"], gf, stdin_mode=True)
+    import sys as _sys
+    _sys.stdin = io.StringIO("xx alpha yy alpha\n")
+    with pytest.raises(SystemExit):
+        _grep_stdin("alpha", regex=False, gf=gf, limit=None)
+    assert capsys.readouterr().out.splitlines() == ["alpha", "alpha"]
+
+
+def test_grep_stdin_quiet_is_exit_code_only(capsys):
+    gf = _parse_grep_flags(None)
+    _grep_bare_flags(["-q"], gf, stdin_mode=True)
+    import sys as _sys
+    _sys.stdin = io.StringIO("alpha\n")
+    with pytest.raises(SystemExit) as exc:
+        _grep_stdin("alpha", regex=False, gf=gf, limit=None)
+    assert capsys.readouterr().out == ""
+    assert exc.value.code == 0
+
+
+def test_grep_stdin_max_count(capsys):
+    gf = _parse_grep_flags(None)
+    _grep_bare_flags(["-m", "2"], gf, stdin_mode=True)
+    import sys as _sys
+    _sys.stdin = io.StringIO("hit\nhit\nhit\nhit\n")
+    with pytest.raises(SystemExit):
+        _grep_stdin("hit", regex=False, gf=gf, limit=None)
+    assert capsys.readouterr().out.splitlines() == ["hit", "hit"]
+
+
+def test_grep_stdin_context_lines_and_group_separator(capsys):
+    gf = _parse_grep_flags(None)
+    _grep_bare_flags(["-C1"], gf, stdin_mode=True)
+    import sys as _sys
+    _sys.stdin = io.StringIO(
+        "a\nHIT\nb\nc\nd\ne\nHIT\nf\n"
+    )
+    with pytest.raises(SystemExit):
+        _grep_stdin("HIT", regex=False, gf=gf, limit=None)
+    assert capsys.readouterr().out.splitlines() == [
+        "a", "HIT", "b", "--", "e", "HIT", "f",
+    ]
+
+
+def test_grep_stdin_exit_code_1_on_no_match(capsys):
+    code = _run_stdin("alpha\nbeta\n", "missing")
+    assert capsys.readouterr().out == ""
+    assert code == 1
+
+
+def test_grep_stdin_unlimited_by_default(capsys):
+    """A pipe filter must not silently truncate: --limit only caps when the
+    caller asked for it (the CLI passes None otherwise)."""
+    _run_stdin("hit\n" * 500, "hit")
+    assert len(capsys.readouterr().out.splitlines()) == 500
+
+
+def test_grep_stdin_explicit_limit_caps_and_says_so(capsys):
+    _run_stdin("hit\n" * 10, "hit", limit=2)
+    cap = capsys.readouterr()
+    assert cap.out.splitlines() == ["hit", "hit"]
+    assert "capped at --limit 2" in cap.err
+
+
+def test_grep_stdin_addendum_follows_grep_output(capsys, monkeypatch):
+    """rmx's index note is appended AFTER grep's output, never interleaved."""
+    monkeypatch.setenv("RMX_GREP_NOTE", "1")
+    monkeypatch.setattr(
+        "refmatrix.cli._grep_stdin_addendum",
+        lambda pattern, total: print(f"# rmx: {pattern} ({total})"),
+    )
+    _run_stdin("alpha\nbeta\nalpha\n", "alpha")
+    assert capsys.readouterr().out.splitlines() == [
+        "alpha", "alpha", "# rmx: alpha (2)",
+    ]
+
+
+def test_grep_stdin_addendum_suppressed_in_machine_modes(capsys, monkeypatch):
+    """-c/-l/-q/-o feed `wc`, `$(…)` and `&&`; an extra line there is data
+    corruption, so the note is skipped."""
+    monkeypatch.setenv("RMX_GREP_NOTE", "1")
+    monkeypatch.setattr(
+        "refmatrix.cli._grep_stdin_addendum",
+        lambda pattern, total: print("# rmx: SHOULD NOT APPEAR"),
+    )
+    _run_stdin("hit\nhit\n", "hit", flags="-c")
+    assert capsys.readouterr().out.splitlines() == ["2"]
+
+
+def test_grep_stdin_addendum_never_fails_the_pipe(capsys, monkeypatch):
+    """No index / no daemon must not break a filter — the note is optional."""
+    monkeypatch.setenv("RMX_GREP_NOTE", "1")
+    monkeypatch.setattr(
+        "refmatrix.daemon.ping",
+        lambda root: (_ for _ in ()).throw(RuntimeError("no daemon")),
+    )
+    code = _run_stdin("alpha\n", "alpha")
+    assert capsys.readouterr().out.splitlines() == ["alpha"]
+    assert code == 0
 
 
 def test_grep_stdin_invalid_regex_raises(monkeypatch):
     import click as _click
     monkeypatch.setattr("sys.stdin", io.StringIO("anything\n"))
     with pytest.raises(_click.ClickException):
-        _grep_stdin("(unclosed", regex=True, gf=_parse_grep_flags(None), limit=100)
+        _grep_stdin("(unclosed", regex=True, gf=_parse_grep_flags(None),
+                    limit=None)
 
 
 # ---- PATHS filter ---------------------------------------------------------

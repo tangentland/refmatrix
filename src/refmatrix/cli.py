@@ -3920,6 +3920,10 @@ def _parse_grep_flags(s: str | None) -> dict:
         "invert": False, "word": False, "force_substring": False,
         "force_regex": False, "files_without_match": False,
         "whole_line": False,
+        # Pipe-mode (stdin) rendering knobs. Ignored on the indexed path,
+        # which always renders path:line over the whole index.
+        "line_number": False, "with_filename": None, "quiet": False,
+        "only_matching": False, "max_count": None, "after": 0, "before": 0,
     }
     if not s:
         return f
@@ -3977,6 +3981,22 @@ _GREP_FORMAT_LONG = {"--color", "--colour", "--no-heading", "--heading",
                      "--line-number", "--no-line-number", "--with-filename",
                      "--no-filename", "--only-matching", "--recursive",
                      "--no-messages", "--binary-files", "--null"}
+# Rendering flags that are NOT formatting noise once rmx grep is filtering a
+# pipe: there it stands in for grep byte-for-byte, so `-n` must number lines
+# and `-h` must strip the filename. Honored only under stdin_mode.
+_GREP_STDIN_SHORT = {
+    "n": lambda gf: gf.__setitem__("line_number", True),
+    "H": lambda gf: gf.__setitem__("with_filename", True),
+    "h": lambda gf: gf.__setitem__("with_filename", False),
+    "o": lambda gf: gf.__setitem__("only_matching", True),
+}
+_GREP_STDIN_LONG = {
+    "--line-number": _GREP_STDIN_SHORT["n"],
+    "--no-line-number": lambda gf: gf.__setitem__("line_number", False),
+    "--with-filename": _GREP_STDIN_SHORT["H"],
+    "--no-filename": _GREP_STDIN_SHORT["h"],
+    "--only-matching": _GREP_STDIN_SHORT["o"],
+}
 
 
 def _split_grep_argv(tokens: list) -> tuple:
@@ -4025,13 +4045,17 @@ def _split_grep_argv(tokens: list) -> tuple:
     return flags, pattern, paths, warnings
 
 
-def _grep_bare_flags(flag_tokens: list, gf: dict) -> tuple:
+def _grep_bare_flags(flag_tokens: list, gf: dict, stdin_mode: bool = False) -> tuple:
     """Fold bare grep/rg flag tokens into `gf` (mutated in place) with grep
     semantics. Returns (ignored_note | None, error | None). ANSWER flags are
     honored; FORMAT flags are ignored (surfaced in the note); an unsupported
     flag that would CHANGE THE ANSWER (path filters -g/--glob/-t, unknown
     letters) errors loudly — a filter silently dropped from a READ is a wrong
-    answer, not a formatting nicety."""
+    answer, not a formatting nicety.
+
+    Under `stdin_mode` (pipe filtering, no index involved) rmx grep IS grep, so
+    the rendering flags -n/-H/-h/-o/-q and the value flags -m/-A/-B/-C are
+    honored rather than ignored."""
     ignored: list = []
     j = 0
     n = len(flag_tokens)
@@ -4048,7 +4072,22 @@ def _grep_bare_flags(flag_tokens: list, gf: dict) -> tuple:
                 val = flag_tokens[j]; j += 1
             if base in ("-A", "-B", "-C", "-m", "--after-context",
                         "--before-context", "--context", "--max-count"):
-                ignored.append(tok)          # context/max-count = formatting-ish
+                if not stdin_mode:
+                    ignored.append(tok)      # index output is always path:line
+                    continue
+                try:
+                    num = int(str(val))
+                except (TypeError, ValueError):
+                    return None, (f"grep: '{base}' expects a number, got "
+                                  f"{val!r}")
+                if base in ("-m", "--max-count"):
+                    gf["max_count"] = num
+                elif base in ("-A", "--after-context"):
+                    gf["after"] = num
+                elif base in ("-B", "--before-context"):
+                    gf["before"] = num
+                else:
+                    gf["after"] = gf["before"] = num
                 continue
             # -g/--glob/-t narrow the file set → dropping them WIDENS the answer.
             return None, (f"grep: '{base}' (path filter) is not supported by "
@@ -4056,7 +4095,15 @@ def _grep_bare_flags(flag_tokens: list, gf: dict) -> tuple:
                           f"explicit PATH instead of {base} {val!r}")
         if base.startswith("--"):
             if base in _GREP_FORMAT_LONG:
+                if stdin_mode and base in _GREP_STDIN_LONG:
+                    _GREP_STDIN_LONG[base](gf); continue
                 ignored.append(tok); continue
+            if base in ("--quiet", "--silent"):
+                if stdin_mode:
+                    gf["quiet"] = True; continue
+                return None, ("grep: -q/--quiet is only supported when rmx "
+                              "grep filters a pipe; on the indexed path the "
+                              "exit code would not mean what grep means")
             if base in ("--ignore-case",): gf["ignore_case"] = True; continue
             if base in ("--word-regexp",): gf["word"] = True; continue
             if base in ("--invert-match",): gf["invert"] = True; continue
@@ -4071,8 +4118,27 @@ def _grep_bare_flags(flag_tokens: list, gf: dict) -> tuple:
             return None, (f"grep: unsupported flag '{base}'. If it only affects "
                           f"formatting use -f to bundle known letters; "
                           f"answer-changing flags must be supported to be safe.")
-        # short cluster, e.g. -inl
-        for ch in tok[1:]:
+        # short cluster, e.g. -inl. Value letters may carry their argument
+        # attached (`-C1`, `-nA2`, `-m10`) and a bare `-3` means `-C 3`.
+        body = tok[1:]
+        if body.isdigit():
+            # `-NUM` is GNU-only shorthand for -C NUM and BSD grep reads it
+            # differently. Two grep dialects disagreeing about the answer is
+            # exactly the case that must fail loud, not be guessed at.
+            return None, (f"grep: '{tok}' (GNU -NUM context shorthand) is "
+                          f"ambiguous across grep dialects — use -C {body}")
+        k = 0
+        while k < len(body):
+            ch = body[k]; k += 1
+            if ch in "ABCm" and body[k:].isdigit() and body[k:]:
+                num = int(body[k:]); k = len(body)
+                if not stdin_mode:
+                    ignored.append(f"-{ch}{num}")
+                elif ch == "m": gf["max_count"] = num
+                elif ch == "A": gf["after"] = num
+                elif ch == "B": gf["before"] = num
+                else: gf["after"] = gf["before"] = num
+                continue
             if ch == "i": gf["ignore_case"] = True
             elif ch == "w": gf["word"] = True
             elif ch == "v": gf["invert"] = True
@@ -4082,6 +4148,9 @@ def _grep_bare_flags(flag_tokens: list, gf: dict) -> tuple:
             elif ch == "F": gf["force_substring"] = True
             elif ch == "E": gf["force_regex"] = True
             elif ch == "x": gf["whole_line"] = True
+            elif ch == "q" and stdin_mode: gf["quiet"] = True
+            elif stdin_mode and ch in _GREP_STDIN_SHORT:
+                _GREP_STDIN_SHORT[ch](gf)
             elif ch in _GREP_FORMAT_FLAGS:
                 ignored.append(f"-{ch}")
             else:
@@ -4181,46 +4250,156 @@ def _is_stdin_piped() -> bool:
         return False
 
 
-def _grep_stdin(pattern: str, regex: bool, gf: dict, limit: int) -> None:
+_STDIN_LABEL = "(standard input)"
+# Modes whose stdout is near-certainly parsed by the next stage of the
+# pipeline (`| wc -l`, `&& …`, `$(…)`): the rmx addendum is suppressed so it
+# can never be mistaken for data.
+_STDIN_MACHINE_KEYS = ("quiet", "count", "files_only", "files_without_match",
+                       "only_matching")
+
+
+def _grep_stdin(pattern: str, regex: bool, gf: dict, limit: int | None) -> None:
     """Pipe-mode grep: search lines from sys.stdin, ignore the index.
-    Honors -i / -I / -w / -l / -c / -v / -F / -E from the flag bundle."""
+
+    Output is byte-compatible with `grep` reading stdin — plain matching
+    lines, `N:` only under -n, `(standard input):` only under -H — because a
+    rewrite hook drops this into arbitrary pipelines where the next stage
+    parses what grep would have produced. Honors -i/-I/-w/-v/-F/-E/-x plus
+    the pipe-mode knobs -n/-H/-h/-o/-q/-c/-l/-L/-m/-A/-B/-C. Exits 1 when
+    nothing matched (grep's contract for `&&` / `if` callers).
+
+    Anything rmx has to add beyond grep is appended AFTER the grep output,
+    never interleaved with it (see `_grep_stdin_addendum`)."""
     import re as _re
     import sys as _sys
+    from collections import deque as _deque
     if regex:
         rx_pattern = pattern
     else:
         rx_pattern = _re.escape(pattern)
     if gf["word"]:
         rx_pattern = rf"\b{rx_pattern}\b"
-    flags_re = _re.IGNORECASE if gf["ignore_case"] is not False else 0
+    if gf["whole_line"]:
+        rx_pattern = rf"^(?:{rx_pattern})$"
+    flags_re = _re.IGNORECASE if gf["ignore_case"] is True else 0
     try:
         rx = _re.compile(rx_pattern, flags_re)
     except _re.error as exc:
         raise click.ClickException(f"invalid regex: {exc}")
-    matched = 0
+
+    max_count = gf["max_count"]
+    cap = limit if limit is not None else None
+    before, after = gf["before"], gf["after"]
+    show_num = gf["line_number"]
+    show_name = bool(gf["with_filename"])
+
+    def _fmt(n: int, line: str, sep: str = ":") -> str:
+        head = f"{_STDIN_LABEL}{sep}" if show_name else ""
+        if show_num:
+            head += f"{n}{sep}"
+        return head + line
+
+    out: list[str] = []
     total = 0
-    lines_out: list[tuple[int, str]] = []
+    ctx_before = _deque(maxlen=before) if before else _deque(maxlen=0)
+    after_left = 0
+    last_emitted = 0        # line number of the last line pushed to `out`
+    truncated = False
     for n, raw in enumerate(_sys.stdin, start=1):
         line = raw.rstrip("\n")
         hit = bool(rx.search(line))
         if gf["invert"]:
             hit = not hit
-        if not hit:
-            continue
-        total += 1
-        if matched < limit:
-            lines_out.append((n, line))
-            matched += 1
-    if gf["count"]:
+        if hit and max_count is not None and total >= max_count:
+            hit = False
+            after_left = 0
+        if hit:
+            total += 1
+            if cap is not None and total > cap:
+                truncated = True
+            elif not gf["quiet"] and not gf["count"] and not gf["files_only"]:
+                if (before or after) and last_emitted and out and \
+                        n - len(ctx_before) > last_emitted + 1:
+                    out.append("--")
+                for cn, cline in ctx_before:
+                    out.append(_fmt(cn, cline, "-"))
+                if gf["only_matching"]:
+                    for m in rx.finditer(line):
+                        out.append(_fmt(n, m.group(0)))
+                else:
+                    out.append(_fmt(n, line))
+                last_emitted = n
+            ctx_before.clear()
+            after_left = after
+            if gf["quiet"] or (gf["files_only"] and not gf["count"]):
+                # Nothing more to learn: -q/-l answer on the first match.
+                break
+        else:
+            if after_left and not (gf["quiet"] or gf["count"]
+                                   or gf["files_only"]):
+                out.append(_fmt(n, line, "-"))
+                last_emitted = n
+                after_left -= 1
+            elif before:
+                ctx_before.append((n, line))
+
+    # --- grep-expected output first, verbatim -------------------------------
+    if gf["quiet"]:
+        pass
+    elif gf["count"]:
         click.echo(str(total))
+    elif gf["files_only"]:
+        if total:
+            click.echo(_STDIN_LABEL)
+    elif gf["files_without_match"]:
+        if not total:
+            click.echo(_STDIN_LABEL)
+    else:
+        for line in out:
+            click.echo(line)
+
+    # --- rmx-specific output strictly AFTER the grep output -----------------
+    if truncated:
+        click.echo(f"rmx grep: output capped at --limit {cap} "
+                   f"({total} lines matched)", err=True)
+    if not gf["quiet"] and not any(gf[k] for k in _STDIN_MACHINE_KEYS):
+        _grep_stdin_addendum(pattern, total)
+
+    raise SystemExit(0 if total else 1)
+
+
+def _grep_stdin_addendum(pattern: str, total: int) -> None:
+    """Append what rmx knows about PATTERN beneath the grep output.
+
+    Best-effort and strictly additive: the grep-compatible lines are already
+    on stdout, so this block starts with a `# rmx` marker and any failure
+    (no index, no daemon, cold store) is swallowed — a pipe filter must never
+    fail because the index was unavailable. Disable with RMX_GREP_NOTE=0."""
+    import os as _os
+    if _os.environ.get("RMX_GREP_NOTE", "1") in ("0", "false", "no"):
         return
-    if gf["files_only"]:
-        # `<stdin>` is the one file; emit once if any match.
-        if lines_out:
-            click.echo("<stdin>")
+    rows = []
+    try:
+        from refmatrix import daemon as daemon_mod
+        root = _root()
+        if not daemon_mod.ping(root):
+            return          # no daemon: a pipe filter must not open the store
+        resp = daemon_mod.call(root, "grep_indexed", {
+            "pattern": pattern, "regex": False, "linkage": None,
+            "kind": None, "limit": 5,
+        }, timeout=3.0, retries=0)
+        if resp.get("ok"):
+            rows = (resp.get("result") or {}).get("rows") or []
+    except Exception:
         return
-    for n, line in lines_out:
-        click.echo(f"<stdin>:{n}:{line}")
+    if not rows:
+        return
+    click.echo(f"# rmx: {pattern!r} in the index "
+               f"({len(rows)} of the top references)")
+    for r in rows[:5]:
+        loc = r.get("path") or r.get("entity") or ""
+        line = f":{r['line']}" if r.get("line") is not None else ""
+        click.echo(f"#   {loc}{line}  [{r.get('linkage')}]  {r.get('concept')}")
 
 
 def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
@@ -4290,11 +4469,15 @@ def grep(argv, regex, flags, linkage, kind, limit, fallback, learn, via_replica)
         raise click.UsageError("grep: no PATTERN given")
     paths = [Path(p) for p in path_strs]
     gf = _parse_grep_flags(flags)
+    # Pipe mode is decided BEFORE flag folding: it changes which flags are
+    # answer-changing (-n/-o/-m/-A… render output when we're standing in for
+    # grep, but mean nothing against the index).
+    piped = _is_stdin_piped()
     if flag_tokens:
-        note, err = _grep_bare_flags(flag_tokens, gf)
+        note, err = _grep_bare_flags(flag_tokens, gf, stdin_mode=piped)
         if err:
             raise click.UsageError(err)
-        if note:
+        if note and not piped:
             click.echo(note, err=True)
     # --regex/--substring is the canonical control; -F / -E in --flags can
     # override it for convenience.
@@ -4308,8 +4491,18 @@ def grep(argv, regex, flags, linkage, kind, limit, fallback, learn, via_replica)
     # post-commit hooks) have a non-tty stdin even when no data is being
     # piped, which used to silently swallow the request. Peek with select
     # to confirm there is actually a byte ready before switching modes.
-    if _is_stdin_piped():
-        _grep_stdin(pattern, regex, gf, limit)
+    if piped:
+        # --limit is an index-side guard; silently truncating a pipe would be
+        # a wrong answer, so it only applies when the user asked for it.
+        cap = limit
+        try:
+            ctx = click.get_current_context()
+            if (ctx.get_parameter_source("limit")
+                    == click.core.ParameterSource.DEFAULT):
+                cap = None
+        except Exception:
+            cap = None
+        _grep_stdin(pattern, regex, gf, cap)
         return
 
     # -x / --line-regexp: whole-line match. Forces regex and anchors the
