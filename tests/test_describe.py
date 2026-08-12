@@ -162,7 +162,9 @@ def test_cli_describe_json_and_ambiguity(tmp_path, monkeypatch):
     # text rendering names the tables it joined
     r2 = runner.invoke(main, ["describe", str(ids["code"]), "--no-vectors"])
     assert r2.exit_code == 0, r2.output
-    assert "outbound memberships" in r2.output
+    # Header names the direction explicitly: these rows match on entity_id,
+    # so the described entity is the TARGET side of the stored edge.
+    assert "edges INTO this entity" in r2.output
     assert "tracked_file" in r2.output
 
     # unresolvable ref fails loudly instead of printing an empty dump

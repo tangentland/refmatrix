@@ -10,6 +10,7 @@ from pathlib import Path
 
 import click
 from rich.console import Console
+from rich.markup import escape as rich_escape
 from rich.table import Table
 
 from refmatrix import __version__
@@ -3764,12 +3765,19 @@ def _render_describe(d: dict) -> None:
                    if m["metadata"] else "—")
         t3.add_row("created / updated",
                    f"{_ts(m['created_at'])}  →  {_ts(m['updated_at'])}")
-        t3.add_row("content", (m["content"] or "")[:2000])
+        # Escape: rich would eat `[[wikilink]]` as console markup, so a GMD
+        # body rendered here lost exactly the rel: targets you came to read.
+        t3.add_row("content", rich_escape((m["content"] or "")[:2000]))
         console.print(t3)
 
     out = d["links_out"]
-    t4 = Table("linkage", "concept", "weight", "evidence",
-               title=f"outbound memberships — {out['total']} total, "
+    # `store.link(linkage, concept_id, entity_id)` packs (source, target).
+    # These rows match on entity_id, so THIS entity is the target and the
+    # `concept` column is the source — the opposite of what a bare "outbound"
+    # label suggests. Say so in the header: reading these as outbound is what
+    # makes a correctly-stored `amends` edge look inverted.
+    t4 = Table("linkage", "source → this", "weight", "evidence",
+               title=f"edges INTO this entity — {out['total']} total, "
                      f"{len(out['shown'])} shown")
     for r in out["shown"]:
         ev = r.get("evidence") or []
@@ -3782,8 +3790,10 @@ def _render_describe(d: dict) -> None:
 
     inb = d["links_in"]
     if inb["total"]:
-        t5 = Table("linkage", "entity", "kind", "weight",
-                   title=f"inbound edges — {inb['total']} total, "
+        # Matched on concept_id: this entity is the SOURCE of these edges.
+        # A GMD doc's own `rel:` verbs live here.
+        t5 = Table("linkage", "this → target", "kind", "weight",
+                   title=f"edges FROM this entity — {inb['total']} total, "
                          f"{len(inb['shown'])} shown")
         for r in inb["shown"]:
             t5.add_row(r["linkage"], str(r["name"] or r["entity_id"]),
