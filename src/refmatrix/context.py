@@ -253,7 +253,17 @@ def build_context(
             return _fused_rows(s, anchor, ordered, max_entities)
         if anchor.kind == "concept":
             return _concept_rows(s, anchor.id, ordered, max_entities)
-        return _entity_anchored_rows(s, anchor.id, ordered, max_entities)
+        # A non-concept anchor can still be the SOURCE side of a typed edge:
+        # `store.link(verb, src, dst)` packs src into the concept_id column
+        # whatever the src entity's kind, so a memory's own `rel:` edges are
+        # keyed by its id. `_entity_anchored_rows` only reads the entity_id
+        # side, so those outbound edges were invisible — a GMD memory's
+        # declared graph did not show up in its own context bundle. Read the
+        # source side first (few, typed, high-signal), then the inbound walk.
+        return itertools.chain(
+            _concept_rows(s, anchor.id, ordered, max_entities),
+            _entity_anchored_rows(s, anchor.id, ordered, max_entities),
+        )
 
     rows_iter = _rows_for(e)
     if companion is not None:
@@ -278,10 +288,17 @@ def build_context(
     # mentioned sections is fetched once.
     parent_cache: dict[str, str | None] = {}
     built: list[ContextEntry] = []
+    seen_pairs: set[tuple[str, int]] = set()
     for linkage, eid, weight in list(rows_iter):
         ent = s.get_entity_by_id(eid)
         if ent is None or ent.id == e.id:
             continue
+        # The bundle now merges several row sources (outbound edges, the
+        # inbound walk, the `#root` companion); the same (linkage, entity)
+        # can surface from more than one of them.
+        if (linkage, eid) in seen_pairs:
+            continue
+        seen_pairs.add((linkage, eid))
         # Session summaries are transient activity logs that co-mention
         # nearly everything; by default keep them out of the durable concept
         # graph so specs / code / ADRs aren't drowned out. `rmx session

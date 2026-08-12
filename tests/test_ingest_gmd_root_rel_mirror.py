@@ -310,3 +310,81 @@ body
     assert "amends" in linkages, (
         f"root-anchored rel: edge missing from bare-id context: {linkages}"
     )
+
+
+def test_memory_context_surfaces_its_own_outbound_rels(tmp_path):
+    """`store.link(verb, src, dst)` packs src into the concept_id column
+    whatever the src kind, so a memory's own rel: edges are keyed by its id.
+    The entity-anchored walk reads only the entity_id side, so a memory's
+    declared graph was missing from its own bundle."""
+    from refmatrix.context import build_context
+
+    s = _seed_store(tmp_path)
+    src = _write_memory(tmp_path, "outbound-src", '''---
+gmd: "0.1"
+id: outbound-src
+title: "Outbound"
+tags: [reference]
+---
+
+# Outbound {#root}
+
+rel: depends-on -> [[outbound-tgt]]
+
+body
+''')
+    tgt = _write_memory(tmp_path, "outbound-tgt", '''---
+gmd: "0.1"
+id: outbound-tgt
+title: "Target"
+tags: [reference]
+---
+
+# Target {#root}
+
+body
+''')
+    ingest_gmd_paths(s, [src, tgt], as_memory=True)
+    bundle = build_context(s, "outbound-src", degree=1, grep_backstop=False)
+    assert "depends-on" in bundle.groups, (
+        f"outbound rel: edge missing from its own context: {set(bundle.groups)}"
+    )
+    names = {en.entity.name for en in bundle.groups["depends-on"]}
+    assert "outbound-tgt" in names
+
+
+def test_context_rows_are_deduped_per_linkage(tmp_path):
+    """Merging the outbound, inbound, and `#root`-companion row sources must
+    not list the same (linkage, entity) twice."""
+    from refmatrix.context import build_context
+
+    s = _seed_store(tmp_path)
+    src = _write_memory(tmp_path, "dedup-src", '''---
+gmd: "0.1"
+id: dedup-src
+title: "Dedup"
+tags: [reference]
+---
+
+# Dedup {#root}
+
+rel: depends-on -> [[dedup-tgt]]
+
+body
+''')
+    tgt = _write_memory(tmp_path, "dedup-tgt", '''---
+gmd: "0.1"
+id: dedup-tgt
+title: "Target"
+tags: [reference]
+---
+
+# Target {#root}
+
+body
+''')
+    ingest_gmd_paths(s, [src, tgt], as_memory=True)
+    bundle = build_context(s, "dedup-src", degree=1, grep_backstop=False)
+    for linkage, entries in bundle.groups.items():
+        ids = [en.entity.id for en in entries]
+        assert len(ids) == len(set(ids)), f"duplicate rows under '{linkage}'"
