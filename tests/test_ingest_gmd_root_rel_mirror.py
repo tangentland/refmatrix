@@ -146,10 +146,11 @@ body
     assert row is None
 
 
-def test_root_rel_does_not_mirror_when_not_as_memory(tmp_path):
-    """The mirror is `as_memory`-gated. A non-memory ingest keeps the
-    old behavior (rel: edges attach to the node concept only) so the
-    classic doc/code use case is unchanged."""
+def test_root_rel_mirrors_for_plain_doc_ingest(tmp_path):
+    """The mirror is NOT `as_memory`-gated. A plain `rmx ingest-gmd <dir>`
+    (the form the memory rules document) must also put root-level rel: edges
+    on the doc-level entity — otherwise seeding retrieval with the frontmatter
+    `id:` returns mention noise and none of the graph."""
     s = _seed_store(tmp_path)
     src = _write_memory(tmp_path, "doc-src", '''---
 gmd: "0.1"
@@ -183,11 +184,10 @@ body
         "SELECT 1 FROM entity_links el "
         "JOIN linkage_types lt ON lt.id = el.linkage_id "
         "WHERE lt.name='related-to' "
-        "  AND el.entity_id=? AND el.concept_id=?",
+        "  AND el.concept_id=? AND el.entity_id=?",
         (src_ent.id, tgt_ent.id),
     ).fetchone()
-    # Pre-fix behavior preserved for non-memory ingest.
-    assert row is None
+    assert row is not None
 
 
 def test_root_node_does_not_duplicate_doc_level_memory(tmp_path):
@@ -244,3 +244,69 @@ Body.
         (a_eid, b_eid),
     ).fetchone()
     assert row is not None, "memory->memory related-to edge missing"
+
+
+def test_prose_heading_tokens_are_stopword_filtered(tmp_path):
+    """Title tokens are filed as weight-2.0 `mentions` concepts. A prose
+    heading must not file `What`/`the`/`after` — those outrank real terms in
+    the BM25 mentions walk and drag in unrelated docs that share a common
+    word."""
+    s = _seed_store(tmp_path)
+    src = _write_memory(tmp_path, "prose-doc", '''---
+gmd: "0.1"
+id: prose-doc
+title: "Prose"
+tags: [reference]
+---
+
+# Prose {#root}
+
+## What the config does after boot {#detail}
+
+body
+''')
+    ingest_gmd_paths(s, [src], as_memory=True)
+    for junk in ("What", "the", "after"):
+        assert s.get_entity("concept", junk) is None, (
+            f"stopword '{junk}' filed as a concept from a heading"
+        )
+    # The signal-bearing token from the same heading survives.
+    assert s.get_entity("concept", "config") is not None
+
+
+def test_context_on_doc_id_surfaces_root_graph(tmp_path):
+    """Seeding `rmx context` with the frontmatter `id:` must return the typed
+    rel: edges that live on the `<id>#root` node, not only mention noise."""
+    from refmatrix.context import build_context
+
+    s = _seed_store(tmp_path)
+    src = _write_memory(tmp_path, "seed-doc", '''---
+gmd: "0.1"
+id: seed-doc
+title: "Seed"
+tags: [reference]
+---
+
+# Seed {#root}
+
+rel: amends -> [[other-doc]]
+
+body text
+''')
+    tgt = _write_memory(tmp_path, "other-doc", '''---
+gmd: "0.1"
+id: other-doc
+title: "Other"
+tags: [reference]
+---
+
+# Other {#root}
+
+body
+''')
+    ingest_gmd_paths(s, [src, tgt], as_memory=True)
+    bundle = build_context(s, "seed-doc", degree=1, grep_backstop=False)
+    linkages = set(bundle.groups)
+    assert "amends" in linkages, (
+        f"root-anchored rel: edge missing from bare-id context: {linkages}"
+    )

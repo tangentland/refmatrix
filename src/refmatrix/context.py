@@ -11,6 +11,7 @@ the goal is "stop bloating the context" not "exact accounting."
 """
 from __future__ import annotations
 
+import itertools
 import json
 import re
 from dataclasses import dataclass, field
@@ -232,12 +233,31 @@ def build_context(
     if bundle.anchor_body:
         used += estimate_tokens(bundle.anchor_body)
 
-    if fuse:
-        rows_iter = _fused_rows(s, e, ordered, max_entities)
-    elif e.kind == "concept":
-        rows_iter = _concept_rows(s, e.id, ordered, max_entities)
-    else:
-        rows_iter = _entity_anchored_rows(s, e.id, ordered, max_entities)
+    # `<doc-id>` and `<doc-id>#root` are BOTH real entities for an ingested
+    # GMD doc, and the typed `rel:` edges land on the `#root` concept — the
+    # doc-level entity carries only `mentions`. An author seeding retrieval
+    # with the id they declared in frontmatter (the id MEMORY.md indexes)
+    # therefore got mention noise and none of the graph. Seed both and put
+    # the root node's rows FIRST so real edges win the token budget.
+    companion = None
+    if "#" not in e.name:
+        try:
+            companion = s.resolve_entity(f"{e.name}#root")
+        except Exception:
+            companion = None
+        if companion is not None and companion.id == e.id:
+            companion = None
+
+    def _rows_for(anchor):
+        if fuse:
+            return _fused_rows(s, anchor, ordered, max_entities)
+        if anchor.kind == "concept":
+            return _concept_rows(s, anchor.id, ordered, max_entities)
+        return _entity_anchored_rows(s, anchor.id, ordered, max_entities)
+
+    rows_iter = _rows_for(e)
+    if companion is not None:
+        rows_iter = itertools.chain(_rows_for(companion), rows_iter)
 
     # Pull evidence rows for the anchor concept up front so we don't issue
     # one SELECT per entry. Keyed by (entity_id, linkage_name); when an
@@ -247,6 +267,10 @@ def build_context(
     all_lines = hit_lines in ("nums", "text")
     evidence = (_evidence_index(s, e, all_lines=all_lines)
                 if e.kind == "concept" else {})
+    if companion is not None and companion.kind == "concept":
+        # Companion rows keep their file:line jump targets too.
+        for k, v in _evidence_index(s, companion, all_lines=all_lines).items():
+            evidence.setdefault(k, v)
     proj_root = s.root.parent
 
     # Pass 1: materialize entries (+ KWIC snippets) so ranking can see which

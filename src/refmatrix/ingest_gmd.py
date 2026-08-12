@@ -438,8 +438,15 @@ def _ensure_linkage(store: Store, verb: str, stats: IngestStats) -> None:
 
 
 def _title_concept_tokens(title: str) -> list[str]:
-    """Identifier-shaped tokens from a heading title for retrieval surfaces."""
-    return [t for t in _TITLE_TOKEN_RE.findall(title)]
+    """Identifier-shaped tokens from a heading title for retrieval surfaces.
+
+    Stopword-filtered on the same list as the body TF pass. Without this,
+    a prose heading ("What the config does after boot") files `What`, `the`,
+    `after` as weight-2.0 `mentions` concepts — they then dominate the
+    `mentions` walk on the doc entity and pull in unrelated nodes from other
+    repos that happen to share a common word."""
+    return [t for t in _TITLE_TOKEN_RE.findall(title)
+            if t.lower() not in _BODY_STOPWORDS]
 
 
 def _body_term_frequencies(body_lines: list[str]) -> dict[str, int]:
@@ -848,8 +855,7 @@ def ingest_gmd_paths(
                     # to the doc-level entity so memory→memory rel:
                     # chains traverse naturally in build_context.
                     if (
-                        as_memory
-                        and node.id == "root"
+                        node.id == "root"
                         and doc_eid != src_eid
                         and doc_eid != target_eid
                     ):

@@ -3447,6 +3447,23 @@ def neighbors(concept, depth, linkage, limit, include_noise, strict, via_replica
                               linkages=list(linkage) or None)
             t.cardinality = len(bm)
         _print_bitmap(s, bm, limit=limit)
+        if len(bm) == 0:
+            # An empty walk is ambiguous: unknown seed, no edges, or the
+            # edges live on a sibling node. Say which, so the caller doesn't
+            # conclude "this graph is unwalkable".
+            if not s.resolve_concept_ids(concept, strict=strict):
+                console.print(
+                    f"[dim]no concept resolves to '{concept}'"
+                    f"{' (try without --strict)' if strict else ''}[/]"
+                )
+            else:
+                hint = f"'{concept}' has no edges at depth={depth}"
+                if "#" not in concept and s.resolve_entity(f"{concept}#root"):
+                    hint += (
+                        f"; GMD rel: edges for this doc are on "
+                        f"'{concept}#root'"
+                    )
+                console.print(f"[dim]{hint}[/]")
 
     if via_replica:
         _replica_read(_run)
