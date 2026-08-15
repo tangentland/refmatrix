@@ -327,6 +327,14 @@ class _DaemonWriter:
         return self._call("forget", {"dry_run": dry_run, **selectors},
                           timeout=600.0)
 
+    def untrack_by_path(self, *, like=None, paths=None, dry_run=False):
+        # Same long timeout as forget: a mis-ingested subtree can carry
+        # thousands of entities across hundreds of files.
+        return self._call("untrack",
+                          {"like": like, "paths": list(paths) if paths else None,
+                           "dry_run": dry_run},
+                          timeout=600.0)
+
     def rebuild_index_from_log(self):
         return self._call("rebuild_index", {}, timeout=600.0).get("result", {})
 
@@ -3128,6 +3136,60 @@ def forget_cmd(names, like, namespace, kind, dry_run, yes):
         click.confirm("proceed", abort=True)
     r = s.forget_by_selector(dry_run=False, **sel)
     console.print(f"[red]forgot[/] {r.get('forgotten', 0)} entities")
+
+
+@main.command("untrack")
+@click.argument("paths", nargs=-1)
+@click.option("--like", default=None,
+              help="SQL LIKE glob over the absolute tracked path, e.g. "
+                   "'/Users/me/Applications/PyCharm.app/%'.")
+@click.option("--dry-run", is_flag=True, help="Preview matches; delete nothing.")
+@click.option("--yes", "-y", is_flag=True, help="Skip the confirm prompt.")
+def untrack_cmd(paths, like, dry_run, yes):
+    """Stop tracking files matching a path glob, purging their entities.
+
+    The lever `vacuum` cannot pull: vacuum only reaps paths that are GONE from
+    disk, so a subtree ingested by mistake but still present (an IDE bundle a
+    wide crawl picked up, a vendored dependency tree) stays tracked forever and
+    re-reports `stale` on every upstream touch.
+
+        rmx untrack --like '/Users/me/Applications/PyCharm.app/%' --dry-run
+        rmx untrack /abs/path/one.py /abs/path/two.py -y
+
+    Irreversible (each path is untrack-logged). Re-ingesting the path brings it
+    back.
+    """
+    if not paths and not like:
+        raise click.UsageError("pass PATHS or --like — refusing to untrack "
+                               "an entire partition")
+    s = _store(write=True)
+    preview = s.untrack_by_path(like=like, paths=list(paths) or None,
+                                dry_run=True)
+    matched = preview.get("paths", [])
+    n_ent = preview.get("entities_purged", 0)
+    if not matched:
+        console.print("[dim]no tracked files match[/]")
+        return
+    summary = (f"{len(matched)} file{'' if len(matched) == 1 else 's'} "
+               f"({n_ent} entit{'y' if n_ent == 1 else 'ies'})")
+    if dry_run:
+        console.print(f"[yellow]would untrack[/] {summary}:")
+        _print_paths(matched, 50)
+        return
+    if not yes:
+        console.print(f"[red]untrack {summary}?[/]")
+        _print_paths(matched, 20)
+        click.confirm("proceed", abort=True)
+    r = s.untrack_by_path(like=like, paths=list(paths) or None, dry_run=False)
+    console.print(f"[red]untracked[/] {r.get('files_untracked', 0)} files, "
+                  f"purged {r.get('entities_purged', 0)} entities")
+
+
+def _print_paths(paths, limit):
+    for pth in paths[:limit]:
+        console.print(f"  {pth}")
+    if len(paths) > limit:
+        console.print(f"  … +{len(paths) - limit} more")
 
 
 @list_grp.command("entities")

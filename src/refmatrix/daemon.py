@@ -2824,6 +2824,22 @@ def _op_forget(d: Daemon, args: dict) -> dict:
     return result
 
 
+def _op_untrack(d: Daemon, args: dict) -> dict:
+    """Untrack tracked_files matching a path glob (or an explicit path list) in
+    the caller's partition, purging the entities anchored there. Unlike
+    `vacuum`, this works on paths that still exist on disk. `dry_run`
+    previews."""
+    part = args.get("partition") or d.store._partition_name
+    dry_run = bool(args.get("dry_run"))
+    with d._store_lock, d.store.with_partition(part):
+        result = d.store.untrack_by_path(
+            like=args.get("like"), paths=args.get("paths"), dry_run=dry_run,
+        )
+    if not dry_run:
+        d._request_snapshot()
+    return result
+
+
 def _op_merge_verb_aliases(d: Daemon, args: dict) -> dict:
     """Fold legacy snake-case linkage verbs into their kebab canonical across
     the whole store (relational forward index + per-partition bitmaps +
@@ -3935,6 +3951,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "prune_noise": _op_prune_noise,
     "set_flag": _op_set_flag,
     "forget": _op_forget,
+    "untrack": _op_untrack,
     "merge_verb_aliases": _op_merge_verb_aliases,
     "vacuum": _op_vacuum,
     "stats": _op_stats,
