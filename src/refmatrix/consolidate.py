@@ -321,13 +321,17 @@ def _member_derived_label(
     best = max(members,
                key=lambda e: (len(sets.get(e, ())), by_id.get(e, {}).get("name", "")))
     raw = (by_id.get(best, {}).get("name") or "").strip()
+    # Normalize separators FIRST: memory names use either `-` or `_`, and
+    # checking the prefix against the raw form let `project-phase-c-shipped`
+    # keep the `project` segment while `project_phase_c_shipped` shed it.
+    norm = raw.replace("-", "_")
     for prefix in ("project_", "feedback_", "reference_", "savestate_",
                    "guardrail_", "impression_", "subject_"):
-        if raw.startswith(prefix):
-            raw = raw[len(prefix):]
+        if norm.startswith(prefix):
+            norm = norm[len(prefix):]
             break
-    parts = [p for p in raw.replace("-", "_").split("_") if p][:3]
-    return "_".join(parts) or raw
+    parts = [p for p in norm.split("_") if p][:3]
+    return "_".join(parts) or norm or raw
 
 
 def _cluster_label(

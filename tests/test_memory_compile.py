@@ -423,3 +423,25 @@ def test_gc_dry_run_reports_missing_without_clearing_the_stamp(store):
         assert res["memory"]["missing"] == 1
         assert not any(e == victim for e, *_ in
                        store.pending_embeddings(kinds=["memory"]))
+
+
+def test_member_derived_label_strips_the_mtype_prefix_either_separator():
+    """Memory names use `-` or `_` interchangeably. Checking the prefix before
+    normalizing separators let dash-form names keep the prefix segment, so
+    `project-phase-c-shipped` became `project_phase_c` while the underscore
+    form correctly became `phase_c_shipped`."""
+    f = consolidate._member_derived_label
+    by_id = {1: {"name": "project-phase-c-shipped"}}
+    assert f([1], {1: set()}, by_id) == "phase_c_shipped"
+    by_id = {1: {"name": "project_phase_c_shipped"}}
+    assert f([1], {1: set()}, by_id) == "phase_c_shipped"
+    by_id = {1: {"name": "feedback-rmx-binary-is-deploy"}}
+    assert f([1], {1: set()}, by_id) == "rmx_binary_is"
+
+
+def test_member_derived_label_picks_the_richest_member_deterministically():
+    f = consolidate._member_derived_label
+    by_id = {1: {"name": "thin_one"}, 2: {"name": "rich_one_here"}}
+    sets = {1: {10}, 2: {10, 11, 12}}
+    assert f([1, 2], sets, by_id) == "rich_one_here"
+    assert f([2, 1], sets, by_id) == "rich_one_here"
