@@ -140,3 +140,91 @@ def test_compact_force_shrinks_and_resets_offsets(tmp_path):
     s.rebuild_index_from_log()
     assert _snapshot(s) == before
     s.close()
+
+
+@duckdb_only
+def test_unproductive_compaction_sets_floor_and_stops_the_loop(tmp_path, monkeypatch):
+    """A store whose MINIMAL log already exceeds the threshold must not
+    re-compact every tick forever.
+
+    Observed live on a 202k-entity store: `270568387 -> 270568387 bytes` every
+    30 minutes, rewriting ~258 MB under the store lock and reclaiming nothing,
+    because the compacted log can never get back under the size gate.
+    """
+    d, s = _make_daemon(tmp_path)
+    with s.with_partition("p"):
+        for i in range(50):
+            s.upsert_entity(kind="code", name=f"m{i}.py", path=f"/m{i}.py")
+    # Already minimal: dumping again reclaims nothing.
+    s.dump_catalog_to_log()
+    minimal = s.log_path.stat().st_size
+    # Threshold below the minimal size — the pre-fix infinite-loop condition.
+    monkeypatch.setenv("RMX_FACTSLOG_MAX_BYTES", str(max(1, minimal // 2)))
+
+    first = d._compact_factslog_if_needed(force=False)
+    assert first["compacted"] is True
+    assert first["reclaimed"] < minimal * d._FACTSLOG_MIN_RECLAIM
+    assert first["floor"] and first["floor"] > s.log_path.stat().st_size
+
+    # The whole point: the very next tick must NOT compact again.
+    second = d._compact_factslog_if_needed(force=False)
+    assert second.get("skipped") == "under-threshold", (
+        f"compaction re-fired at its minimal size: {second}"
+    )
+    assert second["floor"] == first["floor"]
+    s.close()
+
+
+@duckdb_only
+def test_floor_persists_across_daemon_restart(tmp_path, monkeypatch):
+    """The floor lives on disk, so a restart doesn't re-pay one full rewrite
+    of a hundreds-of-MB log before rediscovering it can't shrink."""
+    from refmatrix.daemon import Daemon
+
+    d, s = _make_daemon(tmp_path)
+    with s.with_partition("p"):
+        for i in range(50):
+            s.upsert_entity(kind="code", name=f"m{i}.py", path=f"/m{i}.py")
+    s.dump_catalog_to_log()
+    minimal = s.log_path.stat().st_size
+    monkeypatch.setenv("RMX_FACTSLOG_MAX_BYTES", str(max(1, minimal // 2)))
+    floor = d._compact_factslog_if_needed(force=False)["floor"]
+    assert floor
+
+    d2 = Daemon(s.root)
+    d2.store = s
+    assert d2._read_factslog_floor() == floor
+    assert d2._compact_factslog_if_needed(force=False).get("skipped") == \
+        "under-threshold"
+    s.close()
+
+
+@duckdb_only
+def test_floor_does_not_block_growth_or_force(tmp_path, monkeypatch):
+    """The floor is a pause, not an off-switch: real growth past it resumes
+    auto-compaction, and `force=True` always runs."""
+    d, s = _make_daemon(tmp_path)
+    with s.with_partition("p"):
+        for i in range(50):
+            s.upsert_entity(kind="code", name=f"m{i}.py", path=f"/m{i}.py")
+    s.dump_catalog_to_log()
+    minimal = s.log_path.stat().st_size
+    monkeypatch.setenv("RMX_FACTSLOG_MAX_BYTES", str(max(1, minimal // 2)))
+    floor = d._compact_factslog_if_needed(force=False)["floor"]
+
+    # force ignores the floor
+    assert d._compact_factslog_if_needed(force=True)["compacted"] is True
+
+    # Churn well past the floor: auto-compaction resumes and is productive,
+    # which clears the floor.
+    with s.with_partition("p"):
+        i = 0
+        while s.log_path.stat().st_size <= floor * 2:
+            s.upsert_entity(kind="code", name="churn.py", path=f"/churn.py#{i}")
+            i += 1
+    r = d._compact_factslog_if_needed(force=False)
+    assert r["compacted"] is True
+    assert r["reclaimed"] > 0
+    assert r["floor"] is None, "productive compaction must clear the floor"
+    assert d._read_factslog_floor() == 0
+    s.close()

@@ -1155,6 +1155,38 @@ class Daemon:
             or 0
         )
 
+    def _factslog_floor_path(self) -> Path:
+        """Path to the compaction floor marker — the size facts.log must reach
+        before auto-compaction is worth attempting again."""
+        return self.root / "factslog.floor"
+
+    def _read_factslog_floor(self) -> int:
+        p = self._factslog_floor_path()
+        if not p.exists():
+            return 0
+        try:
+            return int(p.read_text().strip() or "0")
+        except (OSError, ValueError):
+            return 0
+
+    def _write_factslog_floor(self, floor: int) -> None:
+        p = self._factslog_floor_path()
+        try:
+            if floor <= 0:
+                p.unlink(missing_ok=True)
+            else:
+                p.write_text(str(int(floor)))
+        except OSError as exc:
+            self._log(f"facts.log floor write failed: {exc!r}")
+
+    # A compaction that reclaims less than this fraction of the log did not
+    # earn its cost: the log is already at (or near) its minimal form and the
+    # size gate alone would re-fire it on the very next tick, forever.
+    _FACTSLOG_MIN_RECLAIM = 0.10
+    # How much a floored log must grow past its compacted size before another
+    # attempt can pay off.
+    _FACTSLOG_REGROW = 1.25
+
     def _compact_factslog_if_needed(self, *, force: bool = False) -> dict:
         """Compact `.refmatrix/facts.log` when it grows past the threshold.
 
@@ -1181,9 +1213,19 @@ class Daemon:
         except OSError:
             return {"skipped": "no-log"}
         threshold = self._factslog_threshold()
-        if not force and (threshold <= 0 or size < threshold):
+        # A store whose MINIMAL snapshot already exceeds the threshold (a big
+        # catalog: hundreds of thousands of entities/links) can never get back
+        # under it. The size gate alone therefore re-fires every tick forever,
+        # rewriting hundreds of MB under `_store_lock` and reclaiming nothing —
+        # observed on a 202k-entity store as `270568387 -> 270568387 bytes`
+        # every 30 minutes, which also blocked `stats` RPCs long enough for the
+        # hub to report a null. The floor records "compacting at this size does
+        # not help"; auto-compaction resumes only after real growth past it.
+        floor = self._read_factslog_floor()
+        effective = max(threshold, floor)
+        if not force and (threshold <= 0 or size < effective):
             return {"skipped": "under-threshold", "size": size,
-                    "threshold": threshold}
+                    "threshold": threshold, "floor": floor or None}
         with self._store_lock:
             counts = self.store.dump_catalog_to_log()
             try:
@@ -1194,13 +1236,29 @@ class Daemon:
             for slot in ("A", "B"):
                 if self._slot_offset_path(slot).exists():
                     self._write_slot_offset(slot, new_size)
+        reclaimed = size - new_size
+        ratio = (reclaimed / size) if size else 0.0
+        if ratio < self._FACTSLOG_MIN_RECLAIM:
+            new_floor = int(new_size * self._FACTSLOG_REGROW)
+            self._write_factslog_floor(new_floor)
+            self._log(
+                f"facts.log compaction reclaimed {reclaimed} bytes "
+                f"({ratio:.1%}) — at its minimal size; floor set to "
+                f"{new_floor} bytes (no auto-compaction until it grows past)"
+            )
+        else:
+            # Productive again — drop any floor so the plain size gate governs.
+            new_floor = 0
+            if self._read_factslog_floor():
+                self._write_factslog_floor(0)
         self._log(
             f"facts.log compacted {size} -> {new_size} bytes "
             f"(entity={counts.get('entity')} link={counts.get('link')} "
             f"memory_content={counts.get('memory_content')})"
         )
         return {"compacted": True, "old_size": size, "new_size": new_size,
-                "counts": counts}
+                "counts": counts, "reclaimed": reclaimed,
+                "floor": new_floor or None}
 
     def _start_factslog_compact_tick(self) -> None:
         """Spawn the facts.log compaction tick. Wakes every
