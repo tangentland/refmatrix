@@ -53,6 +53,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
+from refmatrix.scan import _PROMPT_STOPWORDS, _token_shape_score
 from refmatrix.store import _CONCEPT_SHIFT, _ENTITY_MASK
 
 if TYPE_CHECKING:
@@ -280,9 +281,59 @@ def _concept_sim(
 
 # --------------------------------------------------------------- labeling --
 
+# Prose-generic terms that name nothing as a SUBJECT. Deliberately separate
+# from `scan._PROMPT_STOPWORDS` (function words), which is applied first: these
+# are content words that are perfectly good prompt tokens but useless as the
+# name of a group of memories — every corpus has `fixes` and `session` in it,
+# so a subject called "fixes" tells a reader nothing about what is inside.
+_LABEL_GENERIC = {
+    "existing", "fixes", "fix", "session", "sessions", "memory", "memories",
+    "feedback", "commit", "commits", "thing", "things", "stuff", "work",
+    "change", "changes", "code", "file", "files", "data", "test", "tests",
+    "issue", "issues", "problem", "problems", "case", "cases", "note", "notes",
+    "one", "same", "other", "others", "new", "old", "next", "last", "first",
+    "way", "ways", "part", "parts", "step", "steps", "item", "items",
+}
+_LABEL_MIN_LEN = 3
+
+
+def _label_candidate_ok(name: str) -> bool:
+    """A label must be a word that could plausibly name a body of work."""
+    n = (name or "").strip()
+    if len(n) < _LABEL_MIN_LEN or n.isdigit():
+        return False
+    low = n.lower()
+    return low not in _PROMPT_STOPWORDS and low not in _LABEL_GENERIC
+
+
+def _member_derived_label(
+    members: list[int], sets: dict[int, set[int]], by_id: dict,
+) -> str:
+    """Name a cluster after its richest member when no shared concept survives.
+
+    Beats `unlabeled-N`, which is what shipped before: 6 of 30 clusters here
+    carried a positional name that tells a reader nothing and makes the subject
+    list unusable as a navigational index. The member with the most concepts is
+    the most representative one; its name is at least a real handle back into
+    the corpus. Deterministic (name breaks size ties)."""
+    if not members:
+        return ""
+    best = max(members,
+               key=lambda e: (len(sets.get(e, ())), by_id.get(e, {}).get("name", "")))
+    raw = (by_id.get(best, {}).get("name") or "").strip()
+    for prefix in ("project_", "feedback_", "reference_", "savestate_",
+                   "guardrail_", "impression_", "subject_"):
+        if raw.startswith(prefix):
+            raw = raw[len(prefix):]
+            break
+    parts = [p for p in raw.replace("-", "_").split("_") if p][:3]
+    return "_".join(parts) or raw
+
+
 def _cluster_label(
     members: list[int], sets: dict[int, set[int]], idf: dict[int, float],
     names: dict[int, str], df_all: Counter, n_total: int, *, top: int = 5,
+    by_id: dict | None = None,
 ) -> tuple[str, list[dict]]:
     """Highest-LIFT shared concept names the cluster; the runners-up become
     its evidence. Deterministic — no model call.
@@ -302,6 +353,8 @@ def _cluster_label(
     for c, df_in in local.items():
         if df_in < 2:
             continue
+        if not _label_candidate_ok(names.get(c, "")):
+            continue
         p_local = df_in / size
         p_global = df_all[c] / max(1, n_total)
         if p_global <= 0:
@@ -316,8 +369,16 @@ def _cluster_label(
             "idf": round(idf.get(c, 0.0), 3),
         })
     # Coverage breaks lift ties: two terms with equal lift, prefer the one
-    # more of the cluster actually mentions. Name last for determinism.
-    scored.sort(key=lambda d: (-d["lift"], -d["df_in"], d["concept"]))
+    # more of the cluster actually mentions. Then SHAPE — `existing`,
+    # `linkage` and `one` tied at lift 43.667 and the winner was decided
+    # alphabetically, which is how a cluster came to be called "existing".
+    # An identifier-shaped token (`dual_write`, `csn_typescript`, `KeyError`)
+    # is something the project named deliberately; a bare English word is not.
+    # Name last, purely for determinism.
+    for d in scored:
+        d["shape"] = _token_shape_score(d["concept"])
+    scored.sort(key=lambda d: (-d["lift"], -d["df_in"], -d["shape"],
+                               -d["idf"], d["concept"]))
     if not scored:
         return "", []
     return scored[0]["concept"], scored[:top]
@@ -509,11 +570,14 @@ def compile_memories(
     used_labels: Counter = Counter()
     for ci, members in enumerate(raw_clusters):
         label, evidence = _cluster_label(
-            members, sets, idf, cnames, df_all, len(ids))
+            members, sets, idf, cnames, df_all, len(ids), by_id=by_id)
         if not label:
-            # No shared concept: dense grouped it but nothing names it. Keep
-            # the cluster (the grouping is still real) under a positional
-            # label, and say so rather than silently dropping members.
+            # No shared concept survived: dense grouped these but nothing names
+            # them. Fall back to the richest member rather than a positional
+            # `unlabeled-N` — the grouping is real, so it deserves a handle a
+            # reader can follow back into the corpus.
+            label = _member_derived_label(members, sets, by_id)
+        if not label:
             label = f"unlabeled-{ci + 1}"
         used_labels[label] += 1
         if used_labels[label] > 1:

@@ -185,13 +185,26 @@ def test_label_is_the_highest_lift_shared_concept(store):
     assert c["evidence"][0]["df_in"] == 2
 
 
-def test_cluster_without_a_shared_concept_is_kept_and_marked(store):
+def test_cluster_without_a_shared_concept_is_kept_and_named_after_a_member(store):
     _seed(store)
     plan = _plan(store)
     c = _cluster_of(plan, "paraphrase-a")
-    # Grouped by vectors, named by nothing — kept, honestly labeled.
-    assert c["label"].startswith("unlabeled")
+    # Grouped by vectors, named by no shared concept — still kept, and still
+    # honest about having no evidence.
     assert c["evidence"] == []
+    # But NOT `unlabeled-N`: a positional name is unusable as an index entry.
+    # Fall back to the richest member so the label is a handle back into the
+    # corpus.
+    assert not c["label"].startswith("unlabeled"), c["label"]
+    # Compared canonically: labels are slug-formed (`-` folded to `_`), which
+    # is how subject identity is derived downstream.
+    def _canon(x: str) -> str:
+        return x.replace("-", "_")
+
+    member_names = {m["name"] for m in c["members"]}
+    assert any(c["label"] in _canon(n) for n in member_names), (
+        f"label {c['label']!r} not derived from a member of {member_names}"
+    )
 
 
 def test_crosscutting_excludes_hubs(store):
