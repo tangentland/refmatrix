@@ -6574,6 +6574,16 @@ def _resolve_query(
                    "falls back to 'salience' if the walk can't seed. "
                    "'salience' ranks only the prompt's own matched concepts "
                    "(shape+idf+PageRank prior).")
+@click.option("--content/--no-content", default=True, show_default=True,
+              help="Prepend a content-ranked (BM25 idf + coverage) bundle over "
+                   "ALL the prompt's terms, ahead of the per-concept graph "
+                   "bundles. The per-concept view ranks by raw term frequency "
+                   "within one term at a time, so it cannot prefer a document "
+                   "covering several of the prompt's terms — on prose that "
+                   "costs more than half the recall.")
+@click.option("--content-tokens", default=600, type=int, show_default=True,
+              help="Token budget for the content-ranked bundle. Counts against "
+                   "--max-tokens, so the graph bundles get what is left.")
 @click.option("--composite/--no-composite", default=True, show_default=True,
               help="Append a GMD topic-composite subgraph of the session's "
                    "current STM focus (the running aggregate of every "
@@ -6601,7 +6611,7 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                     exclude_namespace, include_noise, fmt, stdin_json, rank,
                     composite, composite_max_tokens, composite_k,
                     composite_no_expand, composite_every,
-                    composite_intra_edges):
+                    composite_intra_edges, content, content_tokens):
     """Read a prompt; emit context bundles for symbols it mentions.
 
     Designed for the Claude Code UserPromptSubmit hook. Output goes to stdout,
@@ -6637,6 +6647,8 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                 composite_k=composite_k,
                 composite_expand=not composite_no_expand,
                 composite_max_tokens=composite_max_tokens,
+                content=content,
+                content_tokens=content_tokens,
                 composite_every=composite_every,
                 composite_intra_edges=composite_intra_edges,
             )

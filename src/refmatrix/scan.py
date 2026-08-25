@@ -330,6 +330,8 @@ def scan_prompt(
     composite_max_tokens: int = 1200,
     composite_every: int = 1,
     composite_intra_edges: int = 3,
+    content: bool = True,
+    content_tokens: int = 600,
 ) -> str:
     """Emit context bundles for a prompt's symbols. When `composite` is set (and
     `composite_root` names the project `.refmatrix` dir), ALSO append a GMD
@@ -361,47 +363,67 @@ def scan_prompt(
     )
     if matches and rank == "ppr":
         matches = _ppr_rerank(s, matches, max_concepts=max_concepts)
-    if not matches:
-        # No registered concept matched the prompt. Don't go dark — fall back
-        # to a content-ranked grep over the prompt's candidate terms so the
-        # always-on hook still surfaces code/doc for arbitrary phrasing (the
-        # strength of `rmx context "<phrase>"`, which the concept-gated path
-        # otherwise withholds). Whole-line snippets only (expand=0) to bound
-        # the per-prompt injected token cost.
-        if not cands:
-            return _compose("")
-        # grep_backstop OFF here: scan-prompt is the always-on UserPromptSubmit
-        # hook — spawning `rg` (and learning) on every prompt that names no
-        # concept would tax every turn. The index path stays; explicit
-        # `rmx context` carries the grep floor.
-        b = content_only_bundle(
-            s, " ".join(cands),
-            max_tokens=per_concept_tokens, max_entities=10,
-            grep_backstop=False,
-        )
-        if not b.groups:
-            return _compose("")
-        if fmt == "json":
-            return json.dumps([json.loads(render_json(b))], indent=2)
-        header = (f"# refmatrix content matches for prompt: "
-                  f"{', '.join(cands[:8])}")
-        return _compose(header + "\n\n" + render_text(b))
     matches = matches[:max_concepts]
 
-    if fmt == "json":
-        bundles = [
-            build_context(s, name, max_tokens=per_concept_tokens, max_entities=10)
-            for name in matches
-        ]
-        from refmatrix.context import render_json
-        return json.dumps(
-            [json.loads(render_json(b)) for b in bundles],
-            indent=2,
+    # ---- content-ranked view over the WHOLE candidate bag ------------------
+    # The per-concept bundles below answer "what neighbours this term", once
+    # per term, independently. That question has no notion of idf and none of
+    # coverage: a bundle ranks by raw `mentions` weight (= term frequency), so
+    # a COMMON prompt word with a high tf outranks a RARE one with a low tf,
+    # and nothing ever prefers a document that contains several of the prompt's
+    # terms over one that contains a single term many times.
+    #
+    # Measured on a prose corpus (eval/memaware, 90 questions): scan-prompt hit
+    # @20 0.200 against 0.433 for `rmx context` over the SAME store, because
+    # `vacuum` alone at tf=12 crowded out the session that actually carried
+    # `sneakers` + `closet`. content_rank supplies exactly the two missing
+    # terms — BM25 idf and coverage^alpha.
+    #
+    # This path already existed here, but only as a fallback for when NO
+    # concept matched. On a corpus where every content word is a concept it
+    # therefore never ran — the case that needs it most was the case that
+    # could not reach it.
+    #
+    # grep_backstop stays OFF: scan-prompt is the always-on UserPromptSubmit
+    # hook, and spawning `rg` (plus learning its hits) on every prompt would
+    # tax every turn. Explicit `rmx context` carries the grep floor.
+    cbundle = None
+    if content and cands:
+        cb = content_only_bundle(
+            s, " ".join(cands),
+            max_tokens=content_tokens, max_entities=10,
+            grep_backstop=False,
         )
+        if cb.groups:
+            cbundle = cb
+
+    if fmt == "json":
+        out = []
+        if cbundle is not None:
+            out.append(json.loads(render_json(cbundle)))
+        out.extend(
+            json.loads(render_json(
+                build_context(s, name, max_tokens=per_concept_tokens,
+                              max_entities=10)))
+            for name in matches
+        )
+        return json.dumps(out, indent=2)
 
     parts: list[str] = []
     used = 0
-    parts.append(f"# refmatrix context for prompt-mentioned symbols: {', '.join(matches)}")
+    if cbundle is not None:
+        header = (f"# refmatrix content matches for prompt: "
+                  f"{', '.join(cands[:8])}")
+        rendered = render_text(cbundle)
+        parts.append(header)
+        parts.append("")
+        parts.append(rendered)
+        used += (len(header) + len(rendered)) // 4
+    if not matches:
+        return _compose("\n".join(parts))
+    parts.append("")
+    parts.append(
+        f"# refmatrix context for prompt-mentioned symbols: {', '.join(matches)}")
     used += len(parts[-1]) // 4
     for name in matches:
         b = build_context(s, name, max_tokens=per_concept_tokens, max_entities=10)
