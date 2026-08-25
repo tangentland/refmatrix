@@ -5,7 +5,7 @@
 `answer_session_ids`? Deterministic, zero API cost. See README for why this
 layer exists separately from upstream's continuity-accuracy harness.
 
-All numbers below are at rmx **0.36.0**. The `context` row moved 20x between
+All numbers below are at rmx **0.37.0**. The `context` row moved 20x between
 first run and this one because the benchmark found three real defects in it;
 the pre-fix figures are kept at the bottom.
 
@@ -16,8 +16,8 @@ the pre-fix figures are kept at the bottom.
 | bm25 (per session) | 0.667 | 0.533 | 0.133 | **0.444** |
 | rmx context | 0.667 | 0.500 | 0.133 | **0.433** |
 | rmx memory recall (dense) | 0.600 | 0.467 | 0.067 | **0.378** |
+| rmx scan-prompt | 0.633 | 0.433 | 0.067 | **0.378** |
 | rmx memory recall --fuse | 0.600 | 0.467 | 0.067 | **0.378** |
-| rmx scan-prompt | 0.433 | 0.133 | 0.033 | **0.200** |
 | bm25 (per day, upstream chunking) | 0.267 | 0.133 | 0.067 | **0.156** |
 
 ## MRR@20
@@ -27,7 +27,7 @@ the pre-fix figures are kept at the bottom.
 | bm25 | 0.454 | 0.245 | 0.027 | **0.242** |
 | rmx memory recall | 0.326 | 0.197 | 0.019 | **0.180** |
 | rmx context | 0.247 | 0.185 | 0.029 | **0.153** |
-| rmx scan-prompt | 0.109 | 0.019 | 0.002 | **0.043** |
+| rmx scan-prompt | 0.266 | 0.157 | 0.023 | **0.149** |
 | bm25 (per day) | 0.106 | 0.028 | 0.041 | **0.058** |
 
 ## hit@5 — what a k=5 injection would actually carry
@@ -36,8 +36,8 @@ the pre-fix figures are kept at the bottom.
 |---|---:|---:|---:|---:|
 | bm25 | 0.500 | 0.300 | 0.067 | **0.289** |
 | rmx context | 0.367 | 0.300 | 0.067 | **0.244** |
+| rmx scan-prompt | 0.367 | 0.300 | 0.067 | **0.244** |
 | rmx memory recall | 0.467 | 0.233 | 0.033 | **0.244** |
-| rmx scan-prompt | 0.233 | 0.033 | 0.000 | **0.089** |
 | bm25 (per day) | 0.133 | 0.033 | 0.033 | **0.067** |
 
 Every method returned exactly 20 candidates (mean 19.9-20.0, no empties), so
@@ -120,15 +120,41 @@ concept — a query term, not a body — never becomes a result.
 
 This affects every GMD-ingested memory in every store, not just this corpus.
 
-## scan-prompt did not move
+## scan-prompt (0.37.0) — before and after
 
-Identical scores before and after (0.200 hit@20), because `scan-prompt` reaches
-the graph by its own concept-matching + PPR path rather than through
-`_append_content_hits`. It remains the weakest rmx surface here and it is the
-one the product actually ships on every prompt. Closing that gap — either by
-giving scan-prompt the content-rank path or by understanding why its PPR walk
-underperforms a BM25 bag of terms on prose — is the open question this
-benchmark exists to answer.
+| metric | before | after |
+|---|---:|---:|
+| hit@20 overall | 0.200 | **0.378** |
+| MRR@20 overall | 0.043 | **0.149** |
+| hit@20 easy | 0.433 | **0.633** |
+| hit@20 medium | 0.133 | **0.433** |
+
+`scan-prompt` was the weakest rmx surface and it is the one that runs on every
+prompt. Its per-concept bundles answer "what neighbours this term", once per
+term, independently — a question with no idf and no coverage. A bundle ranks by
+raw `mentions` weight (term frequency), so a COMMON prompt word with a high tf
+outranks a RARE one with a low tf, and nothing prefers a document carrying
+several prompt terms over one repeating a single term. Live, for a prompt about
+vacuuming under a bed and old sneakers:
+
+    === context for `vacuum` ===
+      answer_8ee04a2e#root  (w=12)   …**Vacuum regularly**: Invest in a good…
+
+Five such bundles, one per term, none able to notice that one session carried
+both `sneakers` and `closet`. The fix was not new machinery: `content_rank`
+already supplies idf + coverage, and the path was ALREADY in `scan_prompt` —
+wired as a fallback for when no concept matched. On a corpus where every
+content word is a concept it never ran. The case that needed it most was the
+one case that could not reach it.
+
+## Where rmx still trails, after all three fixes
+
+BM25 keeps the lead on every metric, and the gap is now concentrated in
+RANKING, not retrieval: rmx surfaces have essentially closed hit@20 on easy
+(0.667 vs 0.667) but sit at 0.149-0.180 MRR against BM25's 0.242. They find the
+session and rank it lower. The hard tier is untouched by any of this — 0.133
+best, and every rmx surface at 0.067 — which is the finding upstream predicted
+and the one no amount of retrieval tuning addresses.
 
 ## What has NOT been run
 
