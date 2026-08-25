@@ -1405,6 +1405,75 @@ def _git_diff_summary(repo: str) -> "tuple[str, list[str]]":
     return summary, files[:10]
 
 
+# Line comments the codebase actually uses. `--` would collide with diff
+# metadata, so SQL comments are matched only with following whitespace.
+_COMMENT_RE = _re_mod.compile(r"^\+\s*(#|//|\*|--\s)")
+# Comment lines that carry no rationale: directives, noqa pragmas, shebangs,
+# and section rules like `# ----------`.
+_COMMENT_NOISE_RE = _re_mod.compile(
+    r"^(#!|#\s*(type:|noqa|pragma|pylint|ruff|fmt:|isort:|-{3,}|={3,})"
+    r"|//\s*(eslint|@ts-|prettier))"
+)
+
+
+def _git_commit_rationale(repo: str) -> str:
+    """The commit message BODY (everything after the subject line).
+
+    The densest rationale an agent produces, and structurally mandatory — it
+    gets written to finish the task, not because someone asked for memory.
+    `_git_diff_summary`'s sibling event kept only the subject (the first line
+    of `git commit` output), discarding exactly the part that says WHY."""
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["git", "-C", repo, "log", "-1", "--format=%B", "HEAD"],
+            capture_output=True, text=True, timeout=5)
+    except Exception:
+        return ""
+    parts = (r.stdout or "").split("\n", 1)
+    body = parts[1].strip() if len(parts) > 1 else ""
+    # Drop trailers (Co-Authored-By, Signed-off-by, …) — provenance, not why.
+    keep = [ln for ln in body.splitlines()
+            if not _re_mod.match(r"^[A-Z][A-Za-z-]+-[Bb]y:\s", ln.strip())]
+    return "\n".join(keep).strip()
+
+
+def _git_added_comments(repo: str, limit: int = 12) -> "tuple[list[str], list[str]]":
+    """(rendered `file: comment` lines, files that gained them) for HEAD.
+
+    Where the LOCAL why lives: a comment sits next to the code it explains, and
+    in this codebase writing one is near-mandatory by style. Mined from the
+    diff rather than requested, so it costs no new discipline."""
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["git", "-C", repo, "show", "--unified=0", "--no-color",
+             "--format=", "HEAD"],
+            capture_output=True, text=True, timeout=5)
+    except Exception:
+        return [], []
+    out: list[str] = []
+    files: list[str] = []
+    cur = ""
+    for ln in (r.stdout or "").splitlines():
+        if ln.startswith("+++ b/"):
+            cur = ln[6:].strip()
+            continue
+        if not _COMMENT_RE.match(ln):
+            continue
+        text = ln[1:].strip().lstrip("#/*- ").strip()
+        if not text or _COMMENT_NOISE_RE.match(ln[1:].strip()):
+            continue
+        if len(text) < 12:      # `ok`, `TODO`, closing markers — no rationale
+            continue
+        out.append(f"{cur}: {text}" if cur else text)
+        if cur and cur not in files:
+            files.append(cur)
+        if len(out) >= limit:
+            break
+    return out, files[:10]
+
+
 def _is_ambient_prompt(text: str) -> bool:
     """True for machine-injected turns that are NOT user intent: hub/bus channel
     messages (`<channel …>`) and system/task notifications. Claude Code delivers
@@ -1539,6 +1608,26 @@ def focus_hook(event):
             # detail carries the verbatim git invocation — `terse` holds only
             # the subcommand + its first output line.
             s.record("git", terse[:300], refs=diff_refs, detail=detail)
+            # Harvest the WHY from the two channels that are already mandatory,
+            # rather than asking the agent to volunteer it (a `focus note` the
+            # agent must remember to call is, empirically, not called). A merge
+            # is skipped: its body is generated, not authored.
+            if sub in ("commit", "cherry-pick", "revert"):
+                repo = d.get("cwd") or str(_root().parent)
+                body = _git_commit_rationale(repo)
+                if body:
+                    head = body.splitlines()[0].strip()
+                    s.record("reason", f"why {sub}: {head}"[:300],
+                             refs=diff_refs, detail=body)
+                comments, cfiles = _git_added_comments(repo)
+                if comments:
+                    s.record(
+                        "reason",
+                        f"comments added ({len(comments)}): "
+                        f"{comments[0]}"[:300],
+                        refs=cfiles or diff_refs,
+                        detail="\n".join(comments),
+                    )
             return
         s.record("tool", terse, refs=refs, detail=detail)
 
