@@ -758,24 +758,34 @@ def ingest_gmd_paths(
                 concept_specs.append((term, f"body term '{term}'"))
         cids = _bulk_add_concepts(store, concept_specs)
 
-        # Links are written per-row (NOT via deferred_links/bulk_link): the
-        # weighted `mentions` edges rely on link()'s ON CONFLICT DO UPDATE
-        # (last-non-null weight wins) when the same concept mentions a node at
-        # several weights -- e.g. a word that is both a title token (2.0) and a
-        # body term (tf). bulk_link is DO NOTHING (first-wins) and would corrupt
-        # those BM25 weights. The big win here is the bulk concept creation
-        # above; the links stay correctness-first.
+        # Unconditional links are batched and written with ONE weight-aware
+        # bulk_link per doc. They used to go per-row because bulk_link was
+        # first-wins (DO NOTHING), which corrupts a `mentions` weight whenever
+        # one concept reaches the same node twice -- as a title token (2.0)
+        # and again as a body term (tf). `update_weight=True` gives bulk_link
+        # link()'s own last-non-null-wins conflict rule, so append order here
+        # carries exactly the semantics the sequential calls had.
+        #
+        # This is the dominant cost of the pass: the body term-frequency sweep
+        # emits one link per unique term per node, which on prose-sized
+        # documents is thousands per file (measured: ~2.3 s/doc, 20 min for a
+        # 1307-document corpus).
+        #
+        # rel: edges stay per-row below -- they are few, and each needs
+        # _ensure_linkage plus target resolution before its weight is known.
+        link_batch: list[tuple[str, int, int, float | None]] = []
+
         # frontmatter imports
         for imp in doc.imports:
             target = eid_by_name.get(imp)
             if target is None:
                 # cross-batch reference may not be in this ingest; skip silently
                 continue
-            store.link("imports", doc_eid, target)
+            link_batch.append(("imports", doc_eid, target, None))
 
         # tags as mentions
         for tag in doc.tags:
-            store.link("mentions", cids[tag], doc_eid)
+            link_batch.append(("mentions", cids[tag], doc_eid, None))
             stats.mentions += 1
 
         # per-node processing
@@ -788,7 +798,7 @@ def ingest_gmd_paths(
                 parent_name = _entity_name(doc.doc_id, node.parent)
                 parent_eid = eid_by_name.get(parent_name)
                 if parent_eid is not None and parent_eid != src_eid:
-                    store.link("part-of", src_eid, parent_eid)
+                    link_batch.append(("part-of", src_eid, parent_eid, None))
 
             # title tokens → mentions (lets prose queries find this node)
             title_concepts: set[str] = set()
@@ -796,17 +806,19 @@ def ingest_gmd_paths(
                 if tok in title_concepts:
                     continue
                 title_concepts.add(tok)
-                store.link("mentions", cids[tok], src_eid, weight=2.0)
+                link_batch.append(("mentions", cids[tok], src_eid, 2.0))
                 stats.mentions += 1
 
             # aliases → mentions with high weight
             for alias in node.aliases:
-                store.link("mentions", cids[alias], src_eid, weight=3.0)
+                link_batch.append(("mentions", cids[alias], src_eid, 3.0))
                 stats.mentions += 1
 
             # body terms → mentions with weight = tf (BM25 will normalize)
+            # Appended AFTER the title/alias passes: on a collision the tf wins,
+            # which is what the sequential link() calls did.
             for term, tf in _body_term_frequencies(node.body_lines).items():
-                store.link("mentions", cids[term], src_eid, weight=float(tf))
+                link_batch.append(("mentions", cids[term], src_eid, float(tf)))
                 stats.mentions += 1
 
             # rel: edges
@@ -900,6 +912,13 @@ def ingest_gmd_paths(
                     stats.mentions += 1
 
             _node_tick()
+
+        # One weight-aware write for every unconditional link in this doc.
+        # Ordering against the per-row wikilink `mentions` above does not
+        # matter: those pass weight=None, and both conflict rules leave a
+        # stored weight untouched when the incoming one is NULL.
+        if link_batch:
+            store.bulk_link(link_batch, update_weight=True)
 
         # Mark file fully ingested for resume. The hash was captured at
         # pass1 entry (before any writes), so this writes the snapshot

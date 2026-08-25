@@ -3281,6 +3281,8 @@ class Store:
     def bulk_link(
         self,
         items: list[tuple[str, int, int, float | None]],
+        *,
+        update_weight: bool = False,
     ) -> int:
         """Insert many links at once, amortizing per-row INSERT overhead.
 
@@ -3290,15 +3292,30 @@ class Store:
         statement — Arrow batch under DuckDB, `executemany` under SQLite.
         Returns the number of bitmap bits newly added.
 
-        Weight policy matches `link()`: on conflict the existing row's
-        weight is preserved unless the new weight is non-NULL. SQLite's
-        `INSERT OR IGNORE` skips the weight update entirely on conflict,
-        so callers updating weights for already-linked pairs should stick
-        with `link()`; bulk_link is for the ingest-time path where the
-        common case is fresh links.
+        Default weight policy is FIRST-WINS: on conflict the existing row is
+        left alone. That suits the ingest-time path where the common case is
+        fresh links and re-links carry no weight.
+
+        `update_weight=True` switches to LAST-NON-NULL-WINS, matching `link()`
+        exactly (`ON CONFLICT ... DO UPDATE`, NULL weights leaving the stored
+        value intact). Callers whose weights are meaningful — the GMD body
+        term-frequency sweep, where one concept can reach the same node as a
+        title token (2.0) and again as a body term (tf) — need this mode, and
+        before it existed they had no choice but per-row `link()`.
+
+        In that mode duplicate keys are collapsed IN PYTHON before the write,
+        keeping the last occurrence, because DuckDB refuses to update the same
+        row twice within one `INSERT ... ON CONFLICT DO UPDATE`. Last-wins is
+        also what a sequence of `link()` calls would have produced, so the
+        collapse is what makes the two paths agree rather than a concession.
         """
         if not items:
             return 0
+        if update_weight:
+            deduped: dict[tuple[str, int, int], tuple[str, int, int, float | None]] = {}
+            for it in items:
+                deduped[(it[0], it[1], it[2])] = it
+            items = list(deduped.values())
         # Resolve linkage names once. The cache hit on _connect() at the
         # bottom also serves the bitmap fragment loads.
         linkage_ids: dict[str, int] = {}
@@ -3340,15 +3357,26 @@ class Store:
                     "(entity_id, linkage_id, concept_id, weight) "
                     "SELECT entity_id, linkage_id, concept_id, weight "
                     "FROM _rmx_bulk_links "
-                    "ON CONFLICT(entity_id, linkage_id, concept_id) DO NOTHING"
+                    "ON CONFLICT(entity_id, linkage_id, concept_id) "
+                    + ("DO UPDATE SET weight = CASE WHEN excluded.weight IS NULL "
+                       "THEN entity_links.weight ELSE excluded.weight END"
+                       if update_weight else "DO NOTHING")
                 )
             finally:
                 con._duck.unregister("_rmx_bulk_links")
         else:
-            con.executemany(
+            sql = (
+                "INSERT INTO entity_links"
+                "(entity_id, linkage_id, concept_id, weight) VALUES (?,?,?,?) "
+                "ON CONFLICT(entity_id, linkage_id, concept_id) DO UPDATE SET "
+                "weight = CASE WHEN excluded.weight IS NULL "
+                "THEN entity_links.weight ELSE excluded.weight END"
+            ) if update_weight else (
                 "INSERT OR IGNORE INTO entity_links"
-                "(entity_id, linkage_id, concept_id, weight) "
-                "VALUES (?,?,?,?)",
+                "(entity_id, linkage_id, concept_id, weight) VALUES (?,?,?,?)"
+            )
+            con.executemany(
+                sql,
                 [
                     (it[2], linkage_ids[it[0]], it[1], it[3])
                     for it in items
