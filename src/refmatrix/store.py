@@ -445,6 +445,45 @@ class Store:
         with self.log_path.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
 
+    def _log_events(self, records: "list[dict]") -> None:
+        """Append MANY events in one open/write/close.
+
+        `_log_event` opens the file per call, which is fine at one write per
+        mutation and ruinous at one write per LINK: the GMD body
+        term-frequency sweep emits ~608k of them for a 1307-document corpus,
+        and at roughly a millisecond of open/append/close each the log alone
+        outlasts the work it describes. Callers that already hold a batch pass
+        it whole."""
+        if self._replay_mode or not _log_enabled() or not records:
+            return
+        now = time.time()
+        lines = [
+            json.dumps({"ts": now, **rec}, sort_keys=True, ensure_ascii=False)
+            for rec in records
+        ]
+        with self.log_path.open("a", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+
+    def _names_of(self, eids: "Iterable[int]") -> "dict[int, tuple[str, str]]":
+        """(kind, name) for many entity ids in one query — the batch form of
+        `_name_of`, which the per-link logger otherwise calls once per id."""
+        ids = list({int(e) for e in eids})
+        if not ids:
+            return {}
+        out: dict[int, tuple[str, str]] = {}
+        con = self._read()
+        self._connect()
+        CHUNK = 900   # stay under SQLite's variable limit
+        for i in range(0, len(ids), CHUNK):
+            part = ids[i:i + CHUNK]
+            ph = ",".join("?" * len(part))
+            for row in con.execute(
+                f"SELECT id, kind, name FROM entities WHERE id IN ({ph})",
+                tuple(part),
+            ):
+                out[row["id"]] = (row["kind"], row["name"])
+        return out
+
     # ---- lifecycle ---------------------------------------------------------
 
     def init(self) -> None:
@@ -3385,21 +3424,22 @@ class Store:
         self._maybe_commit(con)
 
         if newly_added_for_log and _log_enabled() and not self._replay_mode:
-            # Resolve names once per concept/entity rather than per link.
-            name_cache: dict[int, tuple[str, str] | None] = {}
-            def _name(eid: int):
-                if eid not in name_cache:
-                    name_cache[eid] = self._name_of(eid)
-                return name_cache[eid]
+            # One name query and one file write for the whole batch. Doing
+            # either per link put the logger's cost above the insert's.
+            names = self._names_of(
+                [it[1] for it in newly_added_for_log]
+                + [it[2] for it in newly_added_for_log]
+            )
+            events = []
             for linkage, concept_id, entity_id, weight in newly_added_for_log:
-                cn = _name(concept_id)
-                en = _name(entity_id)
+                cn = names.get(concept_id)
+                en = names.get(entity_id)
                 if cn and en:
-                    self._log_event(
-                        "link",
-                        linkage=linkage, c=cn[1],
-                        e_kind=en[0], e=en[1], weight=weight,
-                    )
+                    events.append({
+                        "op": "link", "linkage": linkage, "c": cn[1],
+                        "e_kind": en[0], "e": en[1], "weight": weight,
+                    })
+            self._log_events(events)
         return added_total
 
     def link_many(self, linkage: str, concept_id: int, entity_ids: Iterable[int]) -> int:
