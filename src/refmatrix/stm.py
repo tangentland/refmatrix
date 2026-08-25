@@ -39,6 +39,10 @@ DECAY = float(os.environ.get("RMX_STM_DECAY", "0.85"))
 # Frontier stubs are cheap but bounded.
 FRONTIER_BUDGET = max(8, NODE_BUDGET // 2)
 COOCCUR_WINDOW = 4
+# Verbatim surface action retained on the timeline (never graph-ingested).
+DETAIL_MAX = int(os.environ.get("RMX_STM_DETAIL_MAX", "600"))
+# Cap on parked (started-but-unfinished) tool calls.
+INFLIGHT_BUDGET = 64
 
 # Score weights. Pin dominates so a pinned node is never evicted ahead of junk.
 W_RECENCY, W_FREQ, W_CENTRALITY, W_PIN = 1.0, 0.5, 0.8, 10.0
@@ -196,6 +200,7 @@ class Stm:
         self._graph_path = self._dir / f"{key}.focus.json"
         self._tasks_path = self._dir / f"{key}.tasks.json"
         self._marks_path = self._dir / f"{key}.marks.json"
+        self._inflight_path = self._dir / f"{key}.inflight.json"
 
     # ---- subject (named STM partition; durable face lives in the memory store) ----
     def _read_subject(self) -> "str | None":
@@ -238,7 +243,16 @@ class Stm:
         return existed
 
     # ---- event ring (provenance) ----
-    def record(self, kind: str, terse: str, *, refs: list[str] | None = None) -> dict:
+    def record(self, kind: str, terse: str, *, refs: list[str] | None = None,
+               detail: str | None = None, extra: dict | None = None) -> dict:
+        """Append one event to the ring.
+
+        `detail` is the verbatim surface action — the shell command, the grep
+        pattern, the tool_input — kept on the TIMELINE only. It never reaches
+        `_extract_refs` and never enters the focus graph, so it cannot admit
+        `Bash`/`echo`/path-segment noise as concept nodes. `terse` stays the
+        graph-facing summary; `detail` answers "what was actually run", which
+        `terse` deliberately drops once path refs are extractable."""
         if kind not in EVENT_KINDS:
             kind = "tool"
         rlist = refs if refs is not None else _extract_refs(terse)
@@ -250,6 +264,10 @@ class Stm:
             "refs": rlist,
             "task": self.current_task_desc(),
         }
+        if detail:
+            ev["detail"] = detail[:DETAIL_MAX]
+        if extra:
+            ev.update(extra)
         self._dir.mkdir(parents=True, exist_ok=True)
         with self._path.open("a") as f:
             f.write(json.dumps(ev) + "\n")
@@ -259,6 +277,80 @@ class Stm:
         # so an unbounded log doesn't grow the working set.
         self._ingest_into_graph(rlist, new_turn=(kind == "input"))
         return ev
+
+    # ---- in-flight tool calls (PreToolUse) --------------------------------
+    #
+    # PostToolUse only fires for calls that COMPLETE. A tool that hangs, is
+    # denied, or takes the session down leaves no trace at all — precisely the
+    # moment a post-mortem wants. PreToolUse writes the call here first; the
+    # matching PostToolUse clears it. Whatever is still parked when the next
+    # turn starts never finished, and gets folded into the ring as an
+    # `abandoned` event.
+    #
+    # A sidecar rather than a ring entry: the ring is append-only, so a
+    # pre/post pair would either double every tool event or need a rewrite.
+
+    def _read_inflight(self) -> dict:
+        try:
+            d = json.loads(self._inflight_path.read_text())
+            return d if isinstance(d, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _write_inflight(self, d: dict) -> None:
+        self._dir.mkdir(parents=True, exist_ok=True)
+        tmp = self._inflight_path.with_suffix(".json.tmp")
+        try:
+            tmp.write_text(json.dumps(d))
+            tmp.replace(self._inflight_path)
+        except OSError:
+            pass
+
+    def inflight_begin(self, key: str, *, terse: str, refs: list[str],
+                       detail: str | None = None) -> dict:
+        """Park a tool call as started. Bounded so a runaway session can't grow
+        the sidecar without limit."""
+        d = self._read_inflight()
+        if len(d) > INFLIGHT_BUDGET:
+            for k in sorted(d, key=lambda k: d[k].get("t", 0))[:len(d) // 2]:
+                d.pop(k, None)
+        rec = {"t": time.time(), "terse": terse[:500], "refs": refs,
+               "detail": (detail or "")[:DETAIL_MAX] or None}
+        d[key] = rec
+        self._write_inflight(d)
+        return rec
+
+    def inflight_end(self, key: str) -> dict | None:
+        """Clear a completed call. Returns the parked record if there was one."""
+        d = self._read_inflight()
+        rec = d.pop(key, None)
+        if rec is not None:
+            self._write_inflight(d)
+        return rec
+
+    def inflight_sweep(self, *, max_age_s: float = 90.0) -> list[dict]:
+        """Fold calls that never completed into the ring as `abandoned` tool
+        events. Called at the top of each turn (the `input` hook), so a hang or
+        a denial shows up on the timeline by the next prompt."""
+        d = self._read_inflight()
+        if not d:
+            return []
+        now = time.time()
+        stale = {k: v for k, v in d.items()
+                 if now - float(v.get("t") or 0) > max_age_s}
+        if not stale:
+            return []
+        out = []
+        for k, v in stale.items():
+            out.append(self.record(
+                "tool", v.get("terse") or "tool",
+                refs=list(v.get("refs") or []),
+                detail=v.get("detail"),
+                extra={"abandoned": True},
+            ))
+            d.pop(k, None)
+        self._write_inflight(d)
+        return out
 
     def tail(self, n: int = 50) -> list[dict]:
         """Last n events. Reads the full log but keeps only the last n in

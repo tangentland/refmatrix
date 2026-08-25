@@ -100,6 +100,15 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
     focus_tool_cmd = (
         HOOK_ENV + "rmx focus hook --event tool 2>/dev/null || true"
     )
+    # PreToolUse focus capture: park the call BEFORE it runs. PostToolUse only
+    # fires for calls that complete, so a tool that hangs, is denied, or takes
+    # the session down leaves no trace — exactly the moment a post-mortem
+    # wants. The parked entry is cleared by the matching PostToolUse; whatever
+    # is still parked at the next prompt gets folded into the ring as an
+    # `abandoned` event.
+    focus_tool_pre_cmd = (
+        HOOK_ENV + "rmx focus hook --event tool-pre 2>/dev/null || true"
+    )
     # UserPromptSubmit focus capture: record the prompt as an input event
     # (opens a new STM turn + admits prompt symbols).
     focus_input_cmd = (
@@ -193,6 +202,10 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
     block["hooks"]["PostToolUse"].append({
         "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read|Bash|Grep|Glob",
         "hooks": [{"type": "command", "command": focus_tool_cmd}],
+    })
+    block["hooks"].setdefault("PreToolUse", []).append({
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read|Bash|Grep|Glob",
+        "hooks": [{"type": "command", "command": focus_tool_pre_cmd}],
     })
 
     if memory_hooks:

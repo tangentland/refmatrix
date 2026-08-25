@@ -1419,15 +1419,70 @@ def _is_ambient_prompt(text: str) -> bool:
     )
 
 
+def _tool_call_key(d: dict) -> str:
+    """Stable id pairing a PreToolUse with its PostToolUse. Prefers the
+    harness-supplied tool_use_id; falls back to a hash of (tool, input) so the
+    pairing still works on envelopes that omit it."""
+    tid = d.get("tool_use_id") or d.get("toolUseId")
+    if isinstance(tid, str) and tid:
+        return tid
+    import hashlib
+    raw = json.dumps(
+        [d.get("tool_name"), d.get("tool_input")], sort_keys=True, default=str)
+    return "h:" + hashlib.sha1(raw.encode("utf-8", "replace")).hexdigest()[:16]
+
+
+def _tool_event_fields(d: dict) -> tuple[str, list[str], str | None]:
+    """(terse, refs, detail) for one tool envelope — shared by the pre and post
+    hooks so a parked call and its completion describe themselves identically.
+
+    `refs` is the graph-facing token set (file paths only, explicitly passed so
+    `record()` never ref-extracts a whole command line). `detail` is the
+    verbatim action — the command string, the grep pattern — which `terse`
+    drops as soon as any path ref is extractable."""
+    tool = d.get("tool_name") or "tool"
+    ti = d.get("tool_input") or {}
+    refs: list[str] = []
+    fp = ti.get("file_path")
+    if isinstance(fp, str):
+        refs.append(fp)
+    for e in (ti.get("edits") or []):
+        if isinstance(e, dict) and isinstance(e.get("file_path"), str):
+            refs.append(e["file_path"])
+    cmd = ti.get("command")
+    if not refs and isinstance(cmd, str):
+        from refmatrix import stm as _stm_mod
+        refs = [m for m in _stm_mod._PATH_RE.findall(cmd)
+                if ("/" in m or "." in m)][:8]
+    if isinstance(cmd, str) and cmd.strip():
+        detail = cmd.strip()
+    elif isinstance(ti, dict) and ti:
+        # Grep/Read/Glob and friends: keep the structured input, minus bulk
+        # payloads that would swamp the ring.
+        slim = {k: v for k, v in ti.items()
+                if k not in ("content", "new_string", "old_string", "edits")}
+        detail = json.dumps(slim, default=str) if slim else None
+    else:
+        detail = None
+    terse = f"{tool} {' '.join(refs) or (cmd or '')}".strip()[:300]
+    return terse, refs, detail
+
+
 @focus.command("hook")
-@click.option("--event", type=click.Choice(["input", "tool", "say"]),
+@click.option("--event",
+              type=click.Choice(["input", "tool", "tool-pre", "say"]),
               required=True, help="Which Claude Code hook is firing.")
 def focus_hook(event):
     """Record a short-term event from a Claude Code hook envelope on stdin.
 
-    UserPromptSubmit → --event input; PostToolUse → --event tool; Stop →
-    --event say (records my last assistant message so STM holds the full
-    dialogue, not just the user's half). The session id from the envelope
+    UserPromptSubmit → --event input; PreToolUse → --event tool-pre;
+    PostToolUse → --event tool; Stop → --event say (records my last assistant
+    message so STM holds the full dialogue, not just the user's half).
+
+    `tool-pre` parks the call in a sidecar instead of appending to the ring —
+    the matching `tool` clears it, and anything still parked at the next
+    `input` is folded in as an `abandoned` event. That is the only way a tool
+    call which hung, was denied, or killed the session reaches the timeline. The session id from the envelope
     groups STM per Claude session. Silent + best-effort: a malformed/empty
     envelope is a no-op exit 0 so the hook never blocks."""
     from refmatrix import stm as stm_mod
@@ -1437,7 +1492,19 @@ def focus_hook(event):
         return
     session = d.get("session_id") or stm_mod.session_id()
     s = stm_mod.Stm(_root(), session)
+    if event == "tool-pre":
+        terse, refs, detail = _tool_event_fields(d)
+        s.inflight_begin(_tool_call_key(d), terse=terse, refs=refs,
+                         detail=detail)
+        return
     if event == "input":
+        # Top of a turn: anything still parked from the previous one never
+        # completed. Fold it in before recording the new prompt so the
+        # abandoned call sits in front of it on the timeline.
+        try:
+            s.inflight_sweep()
+        except Exception:
+            pass
         prompt = (d.get("prompt") or "").strip()
         if prompt and not _is_ambient_prompt(prompt):
             s.record("input", prompt[:300])
@@ -1449,15 +1516,10 @@ def focus_hook(event):
         if text:
             s.record("say", text[:300], refs=[])
     else:
+        s.inflight_end(_tool_call_key(d))
+        terse, refs, detail = _tool_event_fields(d)
         tool = d.get("tool_name") or "tool"
         ti = d.get("tool_input") or {}
-        refs = []
-        fp = ti.get("file_path")
-        if isinstance(fp, str):
-            refs.append(fp)
-        for e in (ti.get("edits") or []):
-            if isinstance(e, dict) and isinstance(e.get("file_path"), str):
-                refs.append(e["file_path"])
         cmd = ti.get("command")
         # Git milestones: capture the op + its output line as a `git` event —
         # the work narrative's anchors (committed X, pushed Y, merged Z).
@@ -1474,17 +1536,11 @@ def focus_hook(event):
                 stat, diff_refs = _git_diff_summary(repo)
                 if stat:
                     terse = f"{terse}  [{stat}]"
-            s.record("git", terse[:300], refs=diff_refs)
+            # detail carries the verbatim git invocation — `terse` holds only
+            # the subcommand + its first output line.
+            s.record("git", terse[:300], refs=diff_refs, detail=detail)
             return
-        if not refs and isinstance(cmd, str):
-            # Bash/command tools carry no file_path: keep only path-like tokens
-            # from the command, drop shell words. Pass refs EXPLICITLY (even if
-            # empty) so record() never ref-extracts the whole command line —
-            # the historical source of `Bash`/`echo`/`grep`/path-segment noise.
-            refs = [m for m in stm_mod._PATH_RE.findall(cmd)
-                    if ("/" in m or "." in m)][:8]
-        terse = f"{tool} {' '.join(refs) or (cmd or '')}".strip()[:300]
-        s.record("tool", terse, refs=refs)
+        s.record("tool", terse, refs=refs, detail=detail)
 
 
 @main.group()

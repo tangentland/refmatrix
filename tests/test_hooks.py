@@ -112,7 +112,13 @@ def test_force_reinstall_overwrites_not_duplicates(tmp_path):
                 for blk in blks for h in blk.get("hooks", [])]
     # rmx say-hook present exactly once despite two force installs
     assert sum("focus hook --event say" in c for c in all_cmds) == 1
-    assert sum("rmx focus hook --event tool" in c for c in all_cmds) == 1
+    # Exact-match the event name: `--event tool` is a PREFIX of `--event
+    # tool-pre`, so a bare substring count conflates the two hooks.
+    def _n(event):
+        return sum(f"rmx focus hook --event {event} " in c for c in all_cmds)
+
+    assert _n("tool") == 1
+    assert _n("tool-pre") == 1, "PreToolUse focus capture missing"
     # user hook survived
     assert "echo my-own-hook" in all_cmds
 
