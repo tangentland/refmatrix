@@ -1,0 +1,6 @@
+# Benchmark DATA lives off-repo entirely (see paths.py): the upstream clone,
+# the generated corpus, the rmx store, and run artifacts all sit under
+# $MEMAWARE_DATA — /Volumes/littlebig/memaware by default. Nothing here should
+# ever appear inside this tree again; these entries exist only as a backstop
+# for the ./data fallback used when that volume is absent.
+data/
