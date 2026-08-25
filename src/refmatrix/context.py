@@ -412,13 +412,30 @@ def _append_content_hits(
     seen_snip: set[tuple[str, str]] = set()
     n_before = len(built)
     content_entries: list[ContextEntry] = []
+    # `concept` belongs in this list because of how GMD ingest shapes the
+    # graph: a GMD doc becomes TWO entities — a doc/memory named `<doc-id>`
+    # and one `kind=concept` node per heading named `<doc-id>#<anchor>` — and
+    # the body term-frequency sweep hangs every `mentions` edge on the NODE.
+    # Measured on a GMD-ingested corpus: the `#root` node carried hundreds of
+    # body-term edges while its memory sibling carried 5. Ranking only
+    # code/doc/memory therefore searched the half of the graph that has no body
+    # index, and every multi-word natural-language ref fell through to the grep
+    # floor while the same terms resolved fine as single-token anchors.
+    # Over-fetch: several anchors of one doc can rank, and they collapse below.
     for ceid, cscore in s.content_rank(
-        ref_terms, kinds=["code", "doc", "memory"], limit=max_entities,
+        ref_terms, kinds=["code", "doc", "memory", "concept"],
+        limit=max_entities * 3,
     ):
+        if len(content_entries) >= max_entities:
+            break
         if ceid in seen_ids:
             continue
         cent = s.get_entity_by_id(ceid)
         if cent is None:
+            continue
+        # A bare concept is a query term, not a body — only ANCHORED concepts
+        # (`doc#section`) are content the reader can be sent to.
+        if cent.kind == "concept" and "#" not in cent.name:
             continue
         if not include_sessions and _is_session_card(cent.name):
             continue
@@ -447,18 +464,25 @@ def _append_content_hits(
         built.extend(_grep_backstop(
             ref_terms, s.root.parent, limit=max_entities,
             expand=expand, hit_lines=hit_lines,
+            # A multi-word ref is prose, not a symbol: match whole words.
+            whole_word=len(ref.split()) > 1,
         ))
 
 
 def _grep_backstop(
     terms: list[str], root: Path, *, limit: int, expand: int = 0,
-    hit_lines: str = "first",
+    hit_lines: str = "first", whole_word: bool = False,
 ) -> list[ContextEntry]:
     """Literal `rg` (then `grep -rn`) over the source tree for `terms` — the
     floor that makes `context` never worse than a plain grep. Honors
     `.refmatrix_ignore` + code/doc extensions, groups matches per file, and
     returns `grep`-linkage entries that render like content hits (path:line,
-    snippet, and `--hit-lines` nums/text). Empty on no tool / no match."""
+    snippet, and `--hit-lines` nums/text). Empty on no tool / no match.
+
+    `whole_word` adds `-w`. Callers set it for natural-language refs, where a
+    substring match on a short word is almost always spurious. It stays OFF for
+    identifier refs: there, matching `fov_wedge` inside `fov_wedge_polygon` is
+    the point of the floor, and a word boundary would throw the hit away."""
     import shutil
     import subprocess
     from refmatrix.ingest import CODE_EXTS, DOC_EXTS, should_ignore
@@ -468,6 +492,8 @@ def _grep_backstop(
     rg = shutil.which("rg")
     if rg:
         cmd = [rg, "-nH", "-i", "-F", "--no-heading", "--no-messages"]
+        if whole_word:
+            cmd.append("-w")
         for t in terms:
             cmd += ["-e", t]
         cmd.append(str(root))
@@ -475,7 +501,7 @@ def _grep_backstop(
         g = shutil.which("grep")
         if not g:
             return []
-        cmd = [g, "-rnHiF"]
+        cmd = [g, "-rnHiFw"] if whole_word else [g, "-rnHiF"]
         for t in terms:
             cmd += ["-e", t]
         cmd.append(str(root))
@@ -755,8 +781,20 @@ def _rank_entries(entries: list[ContextEntry]) -> list[ContextEntry]:
 
 def _ref_terms(ref: str) -> list[str]:
     """Tokenize a context ref into content-search terms: split a multi-word
-    phrase on whitespace, strip a leading `kind:` prefix, drop 1-char tokens.
-    Per-term variant/canonical expansion happens inside `Store.content_rank`."""
+    phrase on whitespace, strip a leading `kind:` prefix, drop 1-char tokens
+    and (for multi-word refs) function words.
+    Per-term variant/canonical expansion happens inside `Store.content_rank`.
+
+    The stoplist matters most for the grep floor, which matches literally: a
+    prose question carrying `are`/`the`/`to` sends those to `rg` and they hit
+    INSIDE unrelated words, so ranking-by-match-count crowns whichever file
+    repeats the commonest fragment. Observed live before this filter:
+    `context "…my old sneakers are still in that spot?"` returned a file whose
+    top hit was `tags: [memaw«are», session]` at weight 191.
+
+    Only applied when more than one term survives. A single-token ref IS the
+    query — `context "the"` should still look for `the` — and a ref whose every
+    token is a stopword has nothing else to search on."""
     ref = ref.strip()
     head = ref.split(":", 1)[0]
     if ":" in ref and " " not in head and "/" not in head:
@@ -769,6 +807,11 @@ def _ref_terms(ref: str) -> list[str]:
             continue
         seen.add(tok.lower())
         out.append(tok)
+    if len(out) > 1:
+        from refmatrix.scan import _PROMPT_STOPWORDS
+        content = [t for t in out if t.lower() not in _PROMPT_STOPWORDS]
+        if content:
+            return content
     return out
 
 
