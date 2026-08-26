@@ -2348,6 +2348,51 @@ class Store:
         others = sorted(r[0] for r in rows if r[1] != name)
         return exact + others
 
+    def resolve_concept_ids_many(
+        self, names: "list[str]",
+    ) -> "dict[str, list[int]]":
+        """Batched `resolve_concept_ids(strict=False)` — one indexed SELECT for
+        a whole bag of query terms instead of one per term.
+
+        `content_rank` calls this once per natural-language ref. Per-term it
+        cost ~3.3 ms and a 16-term question spent 52.9 ms here, more than every
+        other stage of the query combined once doclen and the leaf index were
+        cached. The per-term SELECT is already index-backed; the cost is
+        16 round trips, not the lookup.
+
+        Same contract as the singular form: exact-name match first, remaining
+        canonical matches in id order."""
+        from refmatrix.identifier import canonicalize_name
+
+        names = [n for n in (names or []) if n]
+        if not names:
+            return {}
+        self._connect()
+        canon_of = {n: canonicalize_name(n) for n in names}
+        wanted = sorted({c for c in canon_of.values() if c})
+        if not wanted:
+            return {n: [] for n in names}
+        by_canon: dict[str, list[tuple[int, str]]] = {}
+        CHUNK = 900   # stay under SQLite's variable limit
+        r = self._read()
+        for i in range(0, len(wanted), CHUNK):
+            part = wanted[i:i + CHUNK]
+            ph = ",".join("?" * len(part))
+            for row in r.execute(
+                f"SELECT id, name, canonical_name FROM entities "
+                f"WHERE partition_id=? AND kind='concept' "
+                f"AND canonical_name IN ({ph})",
+                (self._partition_id, *part),
+            ):
+                by_canon.setdefault(str(row[2]), []).append((int(row[0]), str(row[1])))
+        out: dict[str, list[int]] = {}
+        for n in names:
+            rows = by_canon.get(canon_of[n], [])
+            exact = [i for i, nm in rows if nm == n]
+            others = sorted(i for i, nm in rows if nm != n)
+            out[n] = exact + others
+        return out
+
     def same_as_audit(self, limit: int = 20) -> dict:
         """Read-only health report on `same_as` — the identifier variant-
         unification edges (`_concept_variants`: space/dash forms linked to the
@@ -2994,10 +3039,16 @@ class Store:
     def flush_fragments(self) -> None:
         """Write any dirty linkage fragments to their backing store. Idempotent.
 
+        Also drops the content_rank read caches (BM25 N/avgdl, doclen, the
+        namespaced-leaf index). This is the natural batch boundary: the daemon
+        calls it after ingest and on close, so a long-lived Store recomputes
+        those denominators once per write batch instead of once per read.
+
         SQLite path writes to `fragments/<partition>/<linkage>.rb64` on disk
         (atomic via tmp + rename); DuckDB path UPSERTs the BLOB into the
         `bitmap_fragments` table. Empty fragments are removed in both modes.
         """
+        self._invalidate_content_rank_caches()
         if not self._dirty_fragments:
             return
         if self._backend.kind == "duckdb":
@@ -3540,6 +3591,71 @@ class Store:
         self._bm25_stats_cache = (self._partition_id, n, avgdl)
         return n, avgdl
 
+    def _namespaced_leaf_index(self) -> "dict[str, list[int]]":
+        """`leaf -> [concept_id]` for every namespaced concept (`keyword/foo`,
+        `import/foo`, `adr/0012`) in the active partition.
+
+        Replaces a per-term `LIKE '%/<term>'`. That pattern leads with a
+        wildcard, so it can never use an index — it is a full scan of
+        `entities`, and content_rank ran ONE PER QUERY TERM. Profiled on a
+        1307-document store: 110.9 ms of a 260 ms query, 43% of the total, for
+        16 terms resolving to 15 concept ids.
+
+        One scan, cached per (instance, partition). Invalidated with the BM25
+        stats in `flush_fragments`, so a long-lived daemon Store pays it once
+        per write batch rather than 16 times per read."""
+        cache = getattr(self, "_leafidx_cache", None)
+        if cache is not None and cache[0] == self._partition_id:
+            return cache[1]
+        idx: dict[str, list[int]] = {}
+        for row in self._connect().execute(
+            "SELECT id, name FROM entities WHERE kind='concept' "
+            "AND partition_id=? AND name LIKE '%/%'",
+            (self._partition_id,),
+        ):
+            leaf = str(row[1]).rsplit("/", 1)[-1].lower()
+            if leaf:
+                idx.setdefault(leaf, []).append(int(row[0]))
+        self._leafidx_cache = (self._partition_id, idx)
+        return idx
+
+    def _mentions_doclen(self, mentions_lid: int) -> "dict[int, float]":
+        """`entity_id -> summed tf` over the `mentions` index, the BM25 length
+        norm, for the whole active partition.
+
+        content_rank used to recompute this per query with a
+        `SUM(weight) GROUP BY entity_id` over the candidate set — which on a
+        natural-language query is most of the corpus (measured: 1256 of 1307
+        documents, 96%, at 109.4 ms, another 42% of the query). Document length
+        is a per-document constant between ingests; recomputing it per read was
+        pure waste.
+
+        Cached per (instance, partition) on the same terms as
+        `_mentions_bm25_stats`: slow-moving, invalidated at write boundaries,
+        and a MISSING entry is already safe — callers fall back to `avgdl` for
+        an entity ingested since the cache was built."""
+        cache = getattr(self, "_doclen_cache", None)
+        if cache is not None and cache[0] == self._partition_id:
+            return cache[1]
+        dl = {
+            int(r[0]): float(r[1] or 0.0)
+            for r in self._connect().execute(
+                "SELECT el.entity_id, SUM(el.weight) FROM entity_links el "
+                "JOIN entities e ON e.id = el.entity_id "
+                "WHERE el.linkage_id=? AND e.partition_id=? "
+                "GROUP BY el.entity_id",
+                (mentions_lid, self._partition_id),
+            )
+        }
+        self._doclen_cache = (self._partition_id, dl)
+        return dl
+
+    def _invalidate_content_rank_caches(self) -> None:
+        """Drop the read-side BM25 caches. Called at write boundaries."""
+        for attr in ("_bm25_stats_cache", "_doclen_cache", "_leafidx_cache"):
+            if hasattr(self, attr):
+                delattr(self, attr)
+
     def content_rank(
         self,
         terms: "list[str]",
@@ -3573,17 +3689,15 @@ class Store:
         # auto-concepts (`keyword/<t>`, `import/<t>`, …) so a code file's
         # docstring keywords + import edges are reachable by the bare term.
         term_cids: list[list[int]] = []
+        leaf_idx = self._namespaced_leaf_index()
+        resolved = self.resolve_concept_ids_many(terms)
         for t in terms:
-            cids = list(self.resolve_concept_ids(t, strict=False) or [])
+            cids = list(resolved.get(t) or [])
             seen_t = set(cids)
-            for r in con.execute(
-                "SELECT id FROM entities WHERE kind='concept' AND partition_id=? "
-                "AND lower(name) LIKE ?",
-                (self._partition_id, f"%/{t.lower()}"),
-            ):
-                if r[0] not in seen_t:
-                    seen_t.add(r[0])
-                    cids.append(r[0])
+            for cid in leaf_idx.get(t.lower(), ()):
+                if cid not in seen_t:
+                    seen_t.add(cid)
+                    cids.append(cid)
             term_cids.append(cids)
         cid_to_term: dict[int, int] = {}
         for ti, cids in enumerate(term_cids):
@@ -3601,19 +3715,28 @@ class Store:
         N, avgdl = self._mentions_bm25_stats(mlid)
         if N > 0 and avgdl > 0:
             # Document frequency per query term (global within the partition).
+            # ONE pass over the query terms' postings, folded into per-term
+            # entity SETS in Python. Was one COUNT(DISTINCT) query PER TERM —
+            # 16 round trips for a natural-language ref, 19 ms of a 260 ms
+            # query. Union-by-set (not a sum of per-concept counts) keeps df
+            # exact when one term resolves to several concept ids that share
+            # documents.
+            ph_df = ",".join("?" * len(flat))
+            postings_by_cid: dict[int, set] = {}
+            for cid, eid in con.execute(
+                f"SELECT el.concept_id, el.entity_id FROM entity_links el "
+                f"JOIN entities e ON e.id = el.entity_id "
+                f"WHERE el.linkage_id=? AND e.partition_id=? "
+                f"AND el.concept_id IN ({ph_df})",
+                (mlid, self._partition_id, *flat),
+            ):
+                postings_by_cid.setdefault(int(cid), set()).add(int(eid))
             n_term: dict[int, int] = {}
             for ti, cids in enumerate(term_cids):
-                if not cids:
-                    n_term[ti] = 0
-                    continue
-                ph = ",".join("?" * len(cids))
-                n_term[ti] = int(con.execute(
-                    f"SELECT COUNT(DISTINCT el.entity_id) FROM entity_links el "
-                    f"JOIN entities e ON e.id = el.entity_id "
-                    f"WHERE el.linkage_id=? AND e.partition_id=? "
-                    f"AND el.concept_id IN ({ph})",
-                    (mlid, self._partition_id, *cids),
-                ).fetchone()[0] or 0)
+                docs: set = set()
+                for c in cids:
+                    docs |= postings_by_cid.get(c, set())
+                n_term[ti] = len(docs)
             # Postings for the query-term concepts (partition + optional kind scope).
             ph = ",".join("?" * len(flat))
             rows = con.execute(
@@ -3624,15 +3747,7 @@ class Store:
                 (mlid, self._partition_id, *flat, *(kinds or [])),
             ).fetchall()
             if rows:
-                cand_ids = sorted({r[0] for r in rows})
-                ph2 = ",".join("?" * len(cand_ids))
-                doc_len = {
-                    r[0]: float(r[1] or 0.0) for r in con.execute(
-                        f"SELECT entity_id, SUM(weight) FROM entity_links "
-                        f"WHERE linkage_id=? AND entity_id IN ({ph2}) GROUP BY entity_id",
-                        (mlid, *cand_ids),
-                    )
-                }
+                doc_len = self._mentions_doclen(mlid)
                 for eid, cid, w in rows:
                     ti = cid_to_term.get(cid)
                     if ti is None:
@@ -3678,7 +3793,13 @@ class Store:
                     scores[eid] = 1e-3
         if not scores:
             return []
-        return sorted(scores.items(), key=lambda kv: -kv[1])[:limit]
+        # entity_id breaks ties. Without it the order of equal-scoring hits
+        # came from dict insertion order, which came from the SQL row order,
+        # which the planner is free to change — two runs over an unchanged
+        # store could disagree. Caught by an A/B after batching the concept
+        # resolve: 19 of 90 benchmark rankings differed, every one of them a
+        # swap between two hits of identical score.
+        return sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))[:limit]
 
     def add_evidence(
         self,
