@@ -346,6 +346,27 @@ class Store:
         # filename now; legacy SQLite stores stay at catalog.db, DuckDB-native
         # stores use catalog.duckdb so the two can coexist during migration.
         self.db_path = self.root / self._backend.db_filename
+        # Rotation-slot policy (WRITERS). A rotated store keeps its live
+        # catalog in `catalog.A.duckdb` / `catalog.B.duckdb` with an `active`
+        # marker naming the writer; `catalog.duckdb` is the pre-rotation
+        # original and goes stale the moment rotation begins.
+        #
+        # Only the daemon used to resolve this, patching `db_path` after
+        # construction. Everything else — every CLI invocation with the daemon
+        # down, every tool that opens a Store directly — kept writing into the
+        # legacy file, where the daemon would never read it again. That is the
+        # documented `slot_rotation_drift`: "rows written outside the log are
+        # structurally invisible to delta-apply", and it is why a replica
+        # refresh reports `applied=0` while the slots diverge.
+        #
+        # Observed live: `rmx memory forget <name>` with the daemon stopped
+        # reported success, mutated `catalog.duckdb`, and left the active slot
+        # untouched. Resolving the marker HERE means one answer to "which file
+        # is this store" for every caller.
+        if not self._read_only and self._backend.kind == "duckdb":
+            slot_path = self._active_slot_path()
+            if slot_path is not None:
+                self.db_path = slot_path
         # Snapshot-tier policy: read_only Stores prefer the daemon-maintained
         # snapshot file `catalog.read.duckdb` over the writer's primary file
         # because the writer never holds the snapshot open exclusively,
@@ -364,8 +385,15 @@ class Store:
                 if snap.exists():
                     self.db_path = snap
                 else:
+                    # `exists()` follows the link, so a DANGLING symlink is
+                    # excluded — binding one opens an empty database whose
+                    # `partitions` table is missing, which surfaced as
+                    # `TypeError: 'NoneType' object is not subscriptable`
+                    # from `_ensure_partition` and sent the daemon into its
+                    # legacy-catalog fallback. `is_symlink()` alone accepted
+                    # exactly that case.
                     symlink = self.root / "read_only.duckdb"
-                    if symlink.exists() or symlink.is_symlink():
+                    if symlink.exists():
                         self.db_path = symlink
             except OSError:
                 pass
@@ -520,6 +548,23 @@ class Store:
                     "UPDATE linkage_types SET inverse_of=(SELECT id FROM linkage_types WHERE name=?) WHERE name=?",
                     (inverse_name, name),
                 )
+
+    def _active_slot_path(self) -> "Path | None":
+        """The rotation slot this store should WRITE to, or None when the
+        store has not been rotated (no marker, or the named slot is missing).
+
+        Deliberately tolerant: a store with no `active` marker is a
+        pre-rotation store and belongs on `catalog.duckdb`; a marker naming a
+        slot whose file is absent is a half-finished bootstrap and also falls
+        back, rather than creating an empty slot out from under the daemon."""
+        try:
+            marker = (self.root / "active").read_text().strip()
+        except OSError:
+            return None
+        if marker not in ("A", "B"):
+            return None
+        cand = self.root / f"catalog.{marker}.duckdb"
+        return cand if cand.exists() else None
 
     def _connect(self):
         if self._conn is None:
