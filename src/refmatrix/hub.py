@@ -48,6 +48,12 @@ WATCHDOG_PING_TIMEOUT_S = float(
 WATCHDOG_GRACE_MISSES = int(
     os.environ.get("RMX_HUB_WATCH_GRACE_MISSES", "3"))
 QUEUE_ALERT_INTERVAL_S = float(os.environ.get("RMX_HUB_QUEUE_ALERT_INTERVAL", "1800"))
+# Catalog footprint that earns a line in the queue alert. DuckDB reuses freed
+# blocks but never shrinks the file, so a store can grow without bound and
+# nothing notices: cliquet reached 41GB for 45 documents while every health
+# signal read green. 2GB is far above any healthy store here (the largest,
+# viascope, sits in the hundreds of MB) and far below "the disk is gone".
+STORE_BYTES_ALERT = int(os.environ.get("RMX_HUB_STORE_BYTES_ALERT", str(2 * 1024**3)))
 HEALTH_HISTORY = 50
 
 
@@ -448,17 +454,34 @@ class Hub:
         for root in discovery.discover_roots():
             st = discovery.daemon_status(root)
             stale = None
+            health: dict = {}
             if st["up"]:
                 try:
-                    resp = daemon_mod.call(root, "stats", {"include_stale": True},
-                                           timeout=10.0)
+                    resp = daemon_mod.call(
+                        root, "stats",
+                        {"include_stale": True, "include_health": True},
+                        timeout=10.0)
                     if resp.get("ok"):
                         sf = resp["result"].get("stale_files") or []
                         stale = len(sf)
+                        health = resp["result"].get("health") or {}
                 except Exception:
                     stale = None
-            out.append({"project": discovery.store_name(root), "root": str(root),
-                        "daemon_up": st["up"], "stale_files": stale})
+            row = {"project": discovery.store_name(root), "root": str(root),
+                   "daemon_up": st["up"], "stale_files": stale}
+            # Only carry health keys that are ACTIONABLE, so a healthy row stays
+            # as small as it is today and a sick one is impossible to miss.
+            if health.get("memory_read_ok") is False:
+                row["memory_read_ok"] = False
+                row["memory_read_error"] = health.get("memory_read_error")
+            if health.get("slot_bound") is False:
+                row["serving_legacy_catalog"] = True
+                row["db_file"] = health.get("db_file")
+                row["active_slot"] = health.get("active_slot")
+            b = health.get("store_bytes")
+            if isinstance(b, int) and b > STORE_BYTES_ALERT:
+                row["store_bytes"] = b
+            out.append(row)
         return out
 
     def _queue_alert_loop(self) -> None:
@@ -472,7 +495,11 @@ class Hub:
             try:
                 queues = self._gather_queues()
                 pending_refine = len(self.bus.refinement_queue("pending"))
-                hot = [q for q in queues if (q.get("stale_files") or 0) > 0]
+                hot = [q for q in queues
+                       if (q.get("stale_files") or 0) > 0
+                       or q.get("memory_read_ok") is False
+                       or q.get("serving_legacy_catalog")
+                       or q.get("store_bytes")]
                 if hot or pending_refine:
                     self.bus.publish(
                         "global:queues",

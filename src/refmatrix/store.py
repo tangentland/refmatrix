@@ -1268,6 +1268,35 @@ class Store:
         row = con.execute(
             "SELECT id FROM partitions WHERE name=?", (self._partition_name,)
         ).fetchone()
+        if row is None:
+            # The INSERT above just guaranteed this row. Getting None back means
+            # the equality predicate cannot see a row that exists — a damaged
+            # zonemap will do exactly that, silently pruning the row group
+            # instead of erroring. Seen live: `SELECT id FROM partitions WHERE
+            # name='cliquet'` returned [] while `WHERE name||''='cliquet'`
+            # returned [(1,)] on the same connection.
+            #
+            # Retry once through an expression that defeats filter pushdown. If
+            # THAT also finds nothing the catalog is genuinely empty, and either
+            # way the caller gets a diagnosis rather than
+            # `TypeError: 'NoneType' object is not subscriptable` from `row[0]`
+            # forty frames down.
+            row = con.execute(
+                "SELECT id FROM partitions WHERE name || '' = ?",
+                (self._partition_name,),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError(
+                    f"partition {self._partition_name!r} is missing from "
+                    f"{self.db_path} immediately after an INSERT — the catalog "
+                    f"is empty or its partitions table is unreadable"
+                )
+            raise RuntimeError(
+                f"partition {self._partition_name!r} exists in {self.db_path} "
+                f"but an indexed equality predicate cannot find it — the "
+                f"catalog's column statistics are corrupt. Rebuild it: copy "
+                f"every table into a fresh file (see the cliquet repair)."
+            )
         self._partition_id = row[0]
 
     def _migrate_fragments_to_partitions_if_needed(self) -> None:

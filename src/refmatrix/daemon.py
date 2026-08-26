@@ -788,7 +788,19 @@ class Daemon:
                 # Fall back to the legacy file; daemon stays alive but
                 # writes will continue to land in catalog.duckdb. Log
                 # so the operator notices the drift.
-                self._log(f"init slot rebind FAILED: {exc!r}")
+                #
+                # "Log so the operator notices" was not enough. cliquet served
+                # 1 entity out of 3545 from the legacy file after this fired,
+                # and nothing surfaced it: `rmx daemon status` said running,
+                # the hub said daemon_up + stale_files 0. The line below is
+                # why `_store_health` reports `slot_bound`, and why the hub
+                # alerts on it.
+                self._log(
+                    f"init slot rebind FAILED: {exc!r} — SERVING LEGACY "
+                    f"catalog.duckdb; the rotation slot "
+                    f"{active_path.name} is NOT bound and its contents are "
+                    f"invisible until this is fixed"
+                )
                 self.store = Store(self.root, partition=self.partition)
                 self.store.init()
         # Reconcile the on-disk marker to the slot we actually opened.
@@ -2508,7 +2520,56 @@ def _op_stats(d: Daemon, args: dict) -> dict:
         # daemon (the writer) instead of forcing the user to stop the daemon.
         if args.get("include_stale"):
             out["stale_files"] = d.store.stale_files()
+        if args.get("include_health"):
+            out["health"] = _store_health(d)
         return out
+
+
+def _store_health(d: Daemon) -> dict:
+    """Facts a monitor needs that `daemon_up` + `stale_files` cannot express.
+
+    Written after a store ran for six days reporting `daemon_up: true,
+    stale_files: 0` while EVERY memory read raised (1013 logged failures) and
+    its catalog had grown to 41GB for 45 documents. Both signals were true and
+    both were useless: neither exercises a read path, and neither looks at the
+    file. So this reports three things that would have caught it on day one.
+
+    Cheap by construction — one bounded query, one stat() per catalog file —
+    because it runs on the hub's alert tick for every project.
+    """
+    h: dict = {}
+    # 1. Does a memory read actually work? A corrupt row, a bad index or a
+    #    damaged zonemap surfaces here and nowhere else.
+    try:
+        d.store.recent_memories(limit=1)
+        h["memory_read_ok"] = True
+    except Exception as exc:
+        h["memory_read_ok"] = False
+        h["memory_read_error"] = f"{type(exc).__name__}: {exc}"[:200]
+    # 2. Footprint. DuckDB reuses freed blocks but never shrinks the file, so
+    #    unbounded growth is invisible until the disk is gone.
+    try:
+        total = 0
+        for pat in ("catalog*.duckdb", "*.wal"):
+            for f in d.root.glob(pat):
+                try:
+                    total += f.stat().st_size
+                except OSError:
+                    pass
+        h["store_bytes"] = total
+    except Exception:
+        h["store_bytes"] = None
+    # 3. WHICH catalog is being served. When the init slot rebind fails the
+    #    daemon falls back to the legacy `catalog.duckdb` and serves whatever
+    #    stale contents it holds — cliquet served 1 entity out of 3545 that
+    #    way. The marker and the bound file disagreeing is the tell.
+    try:
+        h["db_file"] = d.store.db_path.name
+        h["active_slot"] = d._read_active_slot()
+        h["slot_bound"] = d.store.db_path.name != "catalog.duckdb"
+    except Exception:
+        pass
+    return h
 
 
 def _op_checkpoint(d: Daemon, args: dict) -> dict:
