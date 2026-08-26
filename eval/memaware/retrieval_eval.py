@@ -183,8 +183,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--method", action="append", default=None,
-                    help=f"one of {sorted(METHODS)} + 'bm25' / 'bm25-daily' "
-                         "(precomputed by tools/bm25_rank.mjs). Repeatable.")
+                    help=f"live rmx surfaces {sorted(METHODS)}, or a precomputed "
+                         "condition name ('bm25', 'bm25-daily', 'latticedb') "
+                         "whose ranker under tools/ has already run. Repeatable.")
     ap.add_argument("--questions", type=Path,
                     default=SUBSETS / "stratified-30.json")
     ap.add_argument("--k", type=int, default=20)
@@ -210,13 +211,18 @@ def main() -> None:
         print(json.dumps(_rmx_json(cmd, args.rmx), indent=1)[:4000])
         return
 
-    methods = args.method or ["bm25", *METHODS]
+    methods = args.method or ["bm25", "latticedb", *METHODS]
     for name in methods:
         rank_path = RESULTS / f"rank-{name}.json"
-        if name.startswith("bm25"):   # precomputed by tools/bm25_rank.mjs
+        if name not in METHODS:
+            # Precomputed by a tools/ ranker (tools/bm25_rank.mjs,
+            # tools/latticedb_rank.py). Anything not in METHODS is expected to
+            # have dropped its rankings here already.
             if not rank_path.exists():
-                sys.exit(f"  ! {rank_path} missing — run:\n"
-                         f"    node tools/bm25_rank.mjs --questions {args.questions} --k {args.k}")
+                sys.exit(
+                    f"  ! {rank_path} missing. Precomputed conditions come from\n"
+                    f"    node tools/bm25_rank.mjs --questions {args.questions} --k {args.k}\n"
+                    f"    python3 tools/latticedb_rank.py --questions {args.questions} --k {args.k}")
             rankings = json.loads(rank_path.read_text(encoding="utf8"))
         else:
             fn = METHODS[name]

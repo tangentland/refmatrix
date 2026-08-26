@@ -19,6 +19,7 @@ the pre-fix figures are kept at the bottom.
 | rmx scan-prompt | 0.633 | 0.433 | 0.067 | **0.378** |
 | rmx memory recall --fuse | 0.600 | 0.467 | 0.067 | **0.378** |
 | bm25 (per day, upstream chunking) | 0.267 | 0.133 | 0.067 | **0.156** |
+| LatticeDB 0.11.1 (BM25 FTS) | 0.100 | 0.133 | 0.033 | **0.089** |
 
 ## MRR@20
 
@@ -155,6 +156,71 @@ RANKING, not retrieval: rmx surfaces have essentially closed hit@20 on easy
 session and rank it lower. The hard tier is untouched by any of this — 0.133
 best, and every rmx surface at 0.067 — which is the finding upstream predicted
 and the one no amount of retrieval tuning addresses.
+
+## LatticeDB as a fourth condition — the index is fine, the ranking is absent
+
+[LatticeDB](https://github.com/jeffhajewski/latticedb) 0.11.1 puts BM25, HNSW
+and graph traversal behind one transaction path in one file. refmatrix spreads
+those across DuckDB + Lance + roaring bitmaps + a hand-rolled `facts.log`, and
+most of its operational scars live on those seams, so "does the consolidated
+engine retrieve better on the same corpus" is worth an hour rather than a
+README reading. `tools/latticedb_rank.py` builds one FTS-indexed node per
+session — same granularity as every other condition.
+
+**Scope: BM25 only.** The vector path is deliberately untouched. LatticeDB
+ships `hash_embed`, a hashing trick rather than a semantic embedding, so a
+vector run against rmx's bge-small numbers would measure the embedder and
+report it as the index. The honest version — load the SAME bge-small vectors
+into both, compare recall and latency — is separate work.
+
+### Every BM25 score comes back 0.0
+
+Reproducible on a three-document database, across all three surfaces:
+
+    fts_search("closet")        -> a:0.0000, b:0.0000
+    fts_search_fuzzy("closet")  -> a:0.0000, b:0.0000
+    Cypher  d.content @@ ...    -> matches, exposes no score column
+
+The Python binding is not at fault: `database.py` reads a `ctypes.c_float`
+out-param from `lattice_fts_result_get`, so the zero arrives from the native
+side. Documentation calls this a "BM25-ranked inverted index" and the README
+claims it is "~300x faster than SQLite FTS5"; on this build it returns the
+right documents in no particular order.
+
+### Which makes the headline number meaningless, so here is the one that isn't
+
+With no scores, the top-k slice of a large matched set is arbitrary. Running
+the same queries at k=500 separates *did the index find it* from *did the
+engine rank it*:
+
+| cutoff | easy | medium | hard | **overall** |
+|---|---:|---:|---:|---:|
+| hit@20 | 0.067 | 0.133 | 0.033 | **0.078** |
+| hit@100 | 0.267 | 0.267 | 0.133 | **0.222** |
+| hit@500 | 0.800 | 0.700 | 0.667 | **0.722** |
+
+**The inverted index is good.** It contains the answer session for 72% of
+questions — including 0.667 on the hard tier, where every other method sits at
+0.067–0.133. It simply cannot say which of its matches matters. That is a
+scoring bug, not a retrieval one, and it is presumably fixable in an afternoon
+by whoever owns the Zig.
+
+### One design choice, correctly documented, that a caller must handle
+
+`@@` and `fts_search` are **conjunctive**: "All terms must match (implicit
+AND)" (`book/src/cypher/full-text-search.md`). Handing it a raw 20-word
+question therefore matches nothing — the first run returned a mean of **0.12**
+documents per question. The ranker now stoplists the question through
+refmatrix's own `scan._PROMPT_STOPWORDS` and backs off the conjunction until
+something matches, which is what a real integration would do and keeps the
+comparison about the engine. Not a defect; a contract.
+
+### Timings
+
+1307 sessions indexed in **20.3s** into a **175 MB** file. Query latency
+**0.175 ms median** for a single term, **1.6 ms median / 4.2 ms p95** for the
+backoff sequence at k=20. The speed claims that can be checked here hold up;
+they are just attached to an index that does not rank.
 
 ## What has NOT been run
 
