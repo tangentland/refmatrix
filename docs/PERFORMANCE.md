@@ -81,6 +81,87 @@ order-independent and ~3x faster on large doc trees.
 | Noisy ubiquitous concepts (`self`, `the`, etc.)  | `rmx prune-noise --min-df 2 --max-df-ratio 0.5`        |
 | Bitmap fragments holding deleted entity ids      | `rmx vacuum` — drop zero-linkage concepts + stale rows |
 | DuckDB WAL bloat on rapid bursts                 | `rmx checkpoint` (also auto-run inside daemon)         |
+| Resident model fattening the daemon into jetsam   | Models run in worker processes (default; `RMX_EMBED_SUBPROC=0` opts out) |
+
+## Model processes — `RMX_EMBED_SUBPROC` and the rerank stage
+
+macOS jetsam SIGKILLs the fattest unmanaged anonymous process under system
+memory pressure. A daemon that has served one recall holds a resident
+sentence-transformers model; a daemon mid-ingest holds a large working set;
+together they are the fattest process on the box, and SIGKILL is uncatchable.
+
+In-process eviction cannot fix this. Dropping the model reference and calling
+`gc.collect()` returns only ~84 MB of ~610 to the OS — torch's caching
+allocator never gives the rest back on macOS. That fix shipped, was measured,
+and was reverted.
+
+So the model runs in a worker process instead (`refmatrix.embed_worker`,
+spawned via `subproc.WorkerClient`). **This is the default**; set
+`RMX_EMBED_SUBPROC=0` to opt back into the in-process model. Measured on this
+repo, one embed + one ANN search, with the reranker enabled:
+
+| Layout                    | Daemon RSS | Embed worker | Rerank worker | Fattest process |
+|---------------------------|-----------:|-------------:|--------------:|----------------:|
+| `RMX_EMBED_SUBPROC=0`     |   695 MB   |            — |             — |      **695 MB** |
+| Default (worker process)  | **203 MB** |     576 MB   |      565 MB   |        576 MB   |
+
+Three things change:
+
+1. **The daemon stops being the jetsam target.** It drops to ~203 MB; the
+   fattest process becomes a worker that can be respawned in seconds without
+   touching the store, the catalog lock, or an in-flight ingest.
+2. **Eviction becomes real.** `RMX_WORKER_IDLE_S=<seconds>` reaps an idle
+   worker on the flush tick. The memory comes back because the process is
+   gone — the thing in-process eviction could not deliver.
+3. **A second model becomes affordable.** The cross-encoder reranker is
+   subprocess-only by policy. In-process it would push a single process past
+   1.2 GB; as its own worker it is just another evictable child.
+
+If the worker cannot be spawned at all — an interpreter the child cannot reach,
+a sandbox that forbids `fork`/`exec`, a pipe the OS refuses — the daemon logs
+the failure and falls back to the in-process model rather than losing dense
+retrieval. The log line is deliberately loud: the daemon is then carrying the
+model's RSS again, which is the condition this whole mechanism exists to avoid.
+A missing `[dense]` extra is not caught by that fallback, since the in-process
+path would fail identically.
+
+### The rerank stage
+
+The cross-encoder pass over the retrieved shortlist is **on by default**
+(`RMX_RERANK=0`, or `--no-rerank` per call, disables it). BM25 and the
+bi-encoder both score query and document
+*independently*, which is what makes them cheap enough to run over a whole
+partition and also what caps their precision. A cross-encoder scores the pair
+jointly, so it can separate "the term appears" from "this is about that".
+
+It reorders; it cannot recall. The op over-fetches
+`k × RMX_RERANK_POOL_MULT` (default 4, capped by `RMX_RERANK_MAX_POOL`=100)
+before reranking, because a true hit outside the retrieved pool is unreachable
+no matter how good the reranker is. If recall is the problem, raise `-k`.
+
+Every failure degrades to retrieval order and logs why: no `[dense]` extra, a
+worker that died twice, a model that will not load, or a model that returns
+non-finite scores. That last one is not hypothetical —
+`cross-encoder/ms-marco-MiniLM-L-6-v2` returns NaN for every pair under
+transformers 5.8.1 / torch 2.12, which is why the default is the L-12 sibling
+and why `reranker._checked` rejects non-finite scores rather than sorting by
+them (NaN compares False against everything and silently scrambles a ranking).
+
+Both models therefore run out-of-process by default: the embedder because the
+daemon must not be the jetsam target, the reranker because it is a second model
+and only affordable as its own evictable child.
+
+### Environment variables
+
+| Variable                | Default | Effect                                             |
+|-------------------------|---------|----------------------------------------------------|
+| `RMX_EMBED_SUBPROC`     | `1`     | Run the embedder in a worker process (`0` opts out)|
+| `RMX_WORKER_IDLE_S`     | `0`     | Reap workers idle this many seconds (`0` = never)  |
+| `RMX_WORKER_TIMEOUT_S`  | `300`   | Per-call budget before a wedged worker is killed   |
+| `RMX_RERANK`            | `1`     | Cross-encoder rerank stage (`0` opts out)          |
+| `RMX_RERANK_MODEL`      | `cross-encoder/ms-marco-MiniLM-L-12-v2` | Reranker checkpoint |
+| `RMX_RERANK_POOL_MULT`  | `4`     | Candidates reranked per `k` requested              |
+| `RMX_RERANK_MAX_POOL`   | `100`   | Hard cap on the rerank pool                        |
 
 ## The scoring stack — when ranking matters
 

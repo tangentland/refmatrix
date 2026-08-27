@@ -8663,6 +8663,13 @@ def _parse_duration(text: str) -> float:
                    "gains a `context` field per row; table output appends "
                    "the rendered context block under each row. Cost is N "
                    "extra daemon context calls; keep low for hook latency.")
+@click.option("--rerank/--no-rerank", "rerank", default=None,
+              help="Cross-encoder rerank of the dense/fused shortlist "
+                   "(daemon-side, subprocess model). Default: RMX_RERANK. "
+                   "Reorders only \u2014 it cannot surface a memory retrieval "
+                   "missed, so raise -k if recall is the problem. Note the "
+                   "score column then shows cross-encoder logits, not cosine "
+                   "similarity: comparable within one result set, not across.")
 @click.option("--fuse/--no-fuse", "fuse", default=False, show_default=True,
               help="--fuse (opt-in): RRF-fuse dense ANN with symbolic "
                    "content_rank (BM25), so rare-keyword queries surface the "
@@ -8683,7 +8690,7 @@ def _parse_duration(text: str) -> float:
                    "--exclude-mtype / -k. The cross-session 'everything on X'.")
 def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                   session_start, as_json, as_gmd, kinds, exclude_mtype,
-                  include_session, degree, fuse, scope, subject):
+                  include_session, degree, fuse, scope, subject, rerank):
     """Memory retrieval. Three modes:
 
     Dense (default): pure dense ANN (cosine over bge-small vectors) on the
@@ -8911,6 +8918,10 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
     # can raise -k for partitions with denser noise.
     ann_k = k * 3 if exclude_mtypes else k
     args = {"query": q, "k": ann_k, "kinds": kinds_list, "fuse": fuse}
+    # None = let the daemon apply its RMX_RERANK default; explicit
+    # --rerank/--no-rerank overrides it for this call only.
+    if rerank is not None:
+        args["rerank"] = bool(rerank)
     if not daemon_mod.ping(root):
         raise click.ClickException(
             "rmx memory recall needs the daemon up (dense embedder lives there)"

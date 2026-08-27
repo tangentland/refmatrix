@@ -5,9 +5,10 @@
 `answer_session_ids`? Deterministic, zero API cost. See README for why this
 layer exists separately from upstream's continuity-accuracy harness.
 
-All numbers below are at rmx **0.37.0**. The `context` row moved 20x between
-first run and this one because the benchmark found three real defects in it;
-the pre-fix figures are kept at the bottom.
+All numbers below are at rmx **0.37.0**, except the `+rerank` rows, which are
+**0.42.0**. The `context` row moved 20x between first run and this one because
+the benchmark found three real defects in it; the pre-fix figures are kept at
+the bottom.
 
 ## hit@20 — is the answer session anywhere in the top 20?
 
@@ -15,6 +16,7 @@ the pre-fix figures are kept at the bottom.
 |---|---:|---:|---:|---:|
 | bm25 (per session) | 0.667 | 0.533 | 0.133 | **0.444** |
 | rmx context | 0.667 | 0.500 | 0.133 | **0.433** |
+| **rmx memory recall +rerank (0.42.0)** | 0.667 | 0.500 | 0.100 | **0.422** |
 | rmx memory recall (dense) | 0.600 | 0.467 | 0.067 | **0.378** |
 | rmx scan-prompt | 0.633 | 0.433 | 0.067 | **0.378** |
 | rmx memory recall --fuse | 0.600 | 0.467 | 0.067 | **0.378** |
@@ -26,6 +28,7 @@ the pre-fix figures are kept at the bottom.
 | method | easy | medium | hard | **overall** |
 |---|---:|---:|---:|---:|
 | bm25 | 0.454 | 0.245 | 0.027 | **0.242** |
+| **rmx memory recall +rerank (0.42.0)** | 0.449 | 0.197 | 0.006 | **0.218** |
 | rmx memory recall | 0.326 | 0.197 | 0.019 | **0.180** |
 | rmx context | 0.247 | 0.185 | 0.029 | **0.153** |
 | rmx scan-prompt | 0.266 | 0.157 | 0.023 | **0.149** |
@@ -36,6 +39,7 @@ the pre-fix figures are kept at the bottom.
 | method | easy | medium | hard | **overall** |
 |---|---:|---:|---:|---:|
 | bm25 | 0.500 | 0.300 | 0.067 | **0.289** |
+| **rmx memory recall +rerank (0.42.0)** | 0.533 | 0.333 | 0.000 | **0.289** |
 | rmx context | 0.367 | 0.300 | 0.067 | **0.244** |
 | rmx scan-prompt | 0.367 | 0.300 | 0.067 | **0.244** |
 | rmx memory recall | 0.467 | 0.233 | 0.033 | **0.244** |
@@ -147,6 +151,60 @@ already supplies idf + coverage, and the path was ALREADY in `scan_prompt` —
 wired as a fallback for when no concept matched. On a corpus where every
 content word is a concept it never ran. The case that needed it most was the
 one case that could not reach it.
+
+## Cross-encoder rerank (0.42.0) — buys the easy/medium tiers, costs the hard one
+
+`RMX_RERANK` adds a cross-encoder pass (`ms-marco-MiniLM-L-12-v2`) over a 4x
+over-fetched shortlist. Same retrieval, different ordering. Measured against the
+same 90 questions, with `--no-rerank` reproducing the 0.37.0 `recall` row
+*exactly* — so the baseline path is provably unchanged by 0.42.0 and this is a
+clean A/B.
+
+| metric | recall | recall +rerank | delta |
+|---|---:|---:|---:|
+| MRR@20 | 0.180 | **0.218** | +21% |
+| hit@1 | 0.122 | **0.156** | +28% |
+| hit@5 | 0.244 | **0.289** | +18% |
+| hit@20 | 0.378 | **0.422** | +12% |
+| Recall@20 | 0.315 | **0.357** | +13% |
+
+It moves rerank-recall past dense and past scan-prompt on every cutoff, to
+within 0.011 hit@20 of `context` and 0.022 of BM25 — and it does it on the
+ordering, which is what the shortlist-precision argument predicted.
+
+**But read the hard tier before believing the headline.** Rerank makes it worse:
+
+| hard tier | recall | recall +rerank |
+|---|---:|---:|
+| MRR@20 | 0.019 | **0.006** |
+| hit@5 | 0.033 | **0.000** |
+| hit@20 | 0.067 | **0.100** |
+
+Hard questions are the ones where the request and the answer session share no
+keywords at all ("Ford Mustang air filter" -> "user redeems coupons at Target").
+A cross-encoder is a semantic *matching* model; asked to rank a genuinely
+non-matching pair it does exactly its job and pushes the answer down. hit@20
+still improves there, but that is the 4x over-fetch, not the reranker — the
+wider pool catches sessions retrieval was cutting off, and then the reranker
+buries them below rank 5.
+
+So the gain is real and the mechanism is the one claimed, but it is concentrated
+where lexical/semantic overlap already exists. It does not touch the tier
+upstream calls unsolved, and on the evidence here it cannot: that tier needs
+association, and reranking is the opposite operation. Upstream's conclusion —
+that this needs "a holistic view of the user's history" rather than a better
+retriever — survives this result intact.
+
+`--fuse` remains a no-op on this corpus (1 of 90 rankings differs from
+non-fused, both before and after 0.42.0), so `recall-fuse-rr` is identical to
+`recall-rr` and is not tabled separately.
+
+`scan-prompt` and `context` do **not** run the rerank stage — it is wired into
+`memory_recall` and `ann_search` only. Both were re-measured at 0.42.0 and are
+unchanged (scan 0.149 MRR / 0.378 hit@20; context 0.433 hit@20), which also
+confirms 0.42.0 introduced no regression on the surfaces it did not touch.
+Extending rerank to scan-prompt is the obvious next experiment, and the hard-tier
+result above is the reason to run it as an experiment rather than ship it.
 
 ## Where rmx still trails, after all three fixes
 

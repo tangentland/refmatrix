@@ -96,6 +96,67 @@ class Embedder:
         return np.asarray(vecs, dtype="float32")
 
 
+class RemoteEmbedder:
+    """Same surface as `Embedder`, backed by a worker process.
+
+    Exposes exactly the three members the daemon uses — `dim`,
+    `model_name`, `embed_texts` — so `daemon._embedder()` can return
+    either implementation and no call site changes. Vectors come back as
+    a raw float32 buffer and are reinterpreted here, so a 256-row batch
+    is one 393 KB pipe write rather than a JSON float array.
+
+    The point of the indirection is memory: killing this worker returns
+    the model's ~610 MB to the OS, which dropping an in-process reference
+    demonstrably does not (see `subproc` for the measurements).
+    """
+
+    def __init__(self, client):
+        self._client = client
+        self._dim: int | None = None
+        self._model_name: str | None = None
+
+    def _info(self) -> dict:
+        info = self._client.info()
+        self._dim = int(info.get("dim") or DEFAULT_DIM)
+        self._model_name = info.get("model") or DEFAULT_MODEL
+        return info
+
+    @property
+    def dim(self) -> int:
+        if self._dim is None:
+            self._info()
+        assert self._dim is not None
+        return self._dim
+
+    @property
+    def model_name(self) -> str:
+        if self._model_name is None:
+            self._info()
+        assert self._model_name is not None
+        return self._model_name
+
+    def embed_texts(self, texts: Sequence[str]) -> np.ndarray:
+        """Encode a batch in the worker. Same contract as
+        `Embedder.embed_texts`: float32 (N, dim), L2-normalized,
+        truncated to `MAX_INPUT_CHARS`.
+
+        Truncation happens on this side so a pathological row never
+        becomes a multi-megabyte pipe write.
+        """
+        if not texts:
+            return np.zeros((0, self.dim), dtype="float32")
+        truncated = [(t or "")[:MAX_INPUT_CHARS] for t in texts]
+        hdr, blob = self._client.call("embed", {"texts": truncated})
+        n = int(hdr.get("n") or 0)
+        dim = int(hdr.get("dim") or self.dim)
+        self._dim = dim
+        if n == 0:
+            return np.zeros((0, dim), dtype="float32")
+        # `.copy()` because frombuffer is a read-only view over the pipe
+        # buffer; callers slice and hand pieces to Lance, which writes.
+        return np.frombuffer(blob, dtype="float32").reshape(n, dim).copy()
+
+
 # ---------- per-kind text extractors -----------------------------------
 
 

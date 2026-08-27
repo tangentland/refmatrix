@@ -112,10 +112,17 @@ def _ids(obj, seen=None) -> list[str]:
     return out
 
 
-def m_recall(q: str, k: int, rmx: str, fuse: bool = False) -> list[str]:
+def m_recall(q: str, k: int, rmx: str, fuse: bool = False,
+             rerank: bool = False) -> list[str]:
     args = ["memory", "recall", q, "--json", "-k", str(k)]
     if fuse:
         args.append("--fuse")
+    # Always explicit. `--rerank` defaults ON in the daemon as of 0.42.0, so a
+    # method that passed no flag would silently measure whatever the daemon's
+    # env happened to be — and the pre-0.42.0 numbers in REPORT.md were all
+    # taken without a reranker. Pinning it here keeps old rows comparable and
+    # makes the new rows a controlled A/B against them.
+    args.append("--rerank" if rerank else "--no-rerank")
     return _ids(_rmx_json(args, rmx))[:k]
 
 
@@ -131,6 +138,11 @@ def m_scan(q: str, k: int, rmx: str) -> list[str]:
 METHODS = {
     "recall": lambda q, k, r: m_recall(q, k, r),
     "recall-fuse": lambda q, k, r: m_recall(q, k, r, fuse=True),
+    # 0.42.0 cross-encoder rerank of the retrieved shortlist. Same retrieval,
+    # different ordering — so a gain here is precision the retriever already
+    # had and was mis-ranking, and Recall@20 should be ~flat while MRR moves.
+    "recall-rr": lambda q, k, r: m_recall(q, k, r, rerank=True),
+    "recall-fuse-rr": lambda q, k, r: m_recall(q, k, r, fuse=True, rerank=True),
     "context": m_context,
     "scan": m_scan,
 }

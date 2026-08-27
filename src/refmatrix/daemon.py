@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from refmatrix.store import Store
+from refmatrix.subproc import subproc_embed_enabled
 
 
 SOCKET_NAME = "rmxd.sock"
@@ -516,6 +517,16 @@ class Daemon:
         # ~134 MB of sentence-transformers state unless someone asks
         # for it. None when [dense] extra isn't installed yet.
         self._embedder_inst = None
+        # Out-of-process model workers (RMX_EMBED_SUBPROC=1). When enabled,
+        # `_embedder()` returns a `RemoteEmbedder` over `_embed_worker` and
+        # the ~610 MB model lives in a child that can actually be killed to
+        # reclaim it. `_rerank_worker` backs the optional cross-encoder
+        # stage, which is subprocess-only by policy — a 90 MB-to-1.1 GB
+        # second model has no business resident in this process.
+        self._embed_worker = None
+        self._rerank_worker = None
+        self._reranker_inst = None
+        self._worker_lock = threading.Lock()
         # Snapshot-tier state. `_request_snapshot()` sets `_snapshot_dirty`
         # + signals `_snapshot_event`; the snapshot tick thread debounces
         # and produces `catalog.read.duckdb`. `_last_snapshot_ts` gates
@@ -555,6 +566,40 @@ class Daemon:
         existing = getattr(self, "_embedder_inst", None)
         if existing is not None:
             return existing
+        if subproc_embed_enabled():
+            try:
+                e = self._remote_embedder()
+                self._embedder_inst = e
+                self._log(
+                    f"embedder loaded (subprocess) "
+                    f"model={e.model_name} dim={e.dim}"
+                )
+                return e
+            except ImportError:
+                # No [dense] extra. In-process would fail identically, so
+                # let the op handlers surface it the way they always have.
+                raise
+            except Exception as exc:
+                # Anything else -- an interpreter the child can't reach, a
+                # sandbox that forbids spawn, a pipe the OS won't give us --
+                # is a transport problem, not a dense problem. Since this is
+                # the DEFAULT path now, failing here would take dense
+                # retrieval down on hosts where it used to work fine. Fall
+                # back to the in-process model and say so loudly.
+                self._log(
+                    f"subprocess embedder unavailable ({exc!r}); "
+                    "falling back to in-process model -- the daemon now "
+                    "carries the model's RSS. Set RMX_EMBED_SUBPROC=0 to "
+                    "silence this, or investigate the spawn failure."
+                )
+                # Only the embed worker: a live rerank worker is unrelated
+                # and killing it would cost a needless model reload.
+                w, self._embed_worker = self._embed_worker, None
+                if w is not None:
+                    try:
+                        w.close(timeout=2.0)
+                    except Exception:
+                        pass
         from refmatrix.embedder import Embedder
 
         e = Embedder()
@@ -564,6 +609,110 @@ class Daemon:
         self._embedder_inst = e
         self._log(f"embedder loaded model={e.model_name} dim={e.dim}")
         return e
+
+    def _remote_embedder(self):
+        """Build the subprocess-backed embedder, spawning its worker.
+
+        Raises ImportError when the [dense] extra is missing, matching the
+        in-process path's contract: every `_op_*` already catches ImportError
+        and returns a clean client error instead of crashing the daemon.
+        The worker reports the failure as an error frame; we translate.
+        """
+        from refmatrix.embedder import RemoteEmbedder
+        from refmatrix.subproc import WorkerClient, WorkerError
+
+        with self._worker_lock:
+            if self._embed_worker is None:
+                w = WorkerClient("embed", log=self._log)
+                w.set_stderr(self.log_fh)
+                self._embed_worker = w
+        e = RemoteEmbedder(self._embed_worker)
+        try:
+            _ = e.dim          # forces the spawn + model load now
+        except WorkerError as exc:
+            if "ModuleNotFoundError" in str(exc) or "ImportError" in str(exc):
+                raise ImportError(str(exc)) from exc
+            raise
+        return e
+
+    def _reranker(self):
+        """Lazy cross-encoder reranker, always out-of-process.
+
+        Unlike the embedder there is no in-process branch. A reranker is a
+        SECOND model in a daemon that already jetsams under one; keeping it
+        subprocess-only means the co-residence question never reopens.
+        Raises ImportError when the [dense] extra is missing.
+        """
+        existing = getattr(self, "_reranker_inst", None)
+        if existing is not None:
+            return existing
+        from refmatrix.reranker import RemoteReranker, rerank_available
+        from refmatrix.subproc import WorkerClient, WorkerError
+
+        if not rerank_available():
+            raise ImportError("sentence-transformers not installed")
+        with self._worker_lock:
+            if self._rerank_worker is None:
+                w = WorkerClient("rerank", log=self._log)
+                w.set_stderr(self.log_fh)
+                self._rerank_worker = w
+        r = RemoteReranker(self._rerank_worker)
+        try:
+            name = r.model_name
+        except WorkerError as exc:
+            if "ModuleNotFoundError" in str(exc) or "ImportError" in str(exc):
+                raise ImportError(str(exc)) from exc
+            raise
+        self._reranker_inst = r
+        self._log(f"reranker loaded (subprocess) model={name}")
+        return r
+
+    def _maybe_rerank(self, args: dict) -> bool:
+        """Should this op run the rerank stage? Per-request `rerank` arg
+        wins; otherwise the RMX_RERANK env default."""
+        from refmatrix.reranker import rerank_enabled
+        want = args.get("rerank")
+        return rerank_enabled() if want is None else bool(want)
+
+    def _close_workers(self) -> None:
+        """Terminate model workers. Called on shutdown so a daemon exit
+        never strands a child holding ~610 MB (or its pipes)."""
+        for attr in ("_embed_worker", "_rerank_worker"):
+            w = getattr(self, attr, None)
+            if w is None:
+                continue
+            try:
+                w.close(timeout=2.0)
+            except Exception as exc:
+                self._log(f"worker close failed ({attr}): {exc!r}")
+            setattr(self, attr, None)
+        self._embedder_inst = None
+        self._reranker_inst = None
+
+    def _evict_idle_workers(self) -> None:
+        """Reap workers idle past RMX_WORKER_IDLE_S (default 0 = never).
+
+        This is the eviction that in-process caching could never provide:
+        the memory comes back because the process is gone. Opt-in, because
+        the next query then pays a cold model load — worth it on a
+        memory-constrained host, not on a busy one.
+        """
+        idle_s = float(os.environ.get("RMX_WORKER_IDLE_S", "0") or "0")
+        if idle_s <= 0:
+            return
+        for attr, cache in (("_embed_worker", "_embedder_inst"),
+                            ("_rerank_worker", "_reranker_inst")):
+            w = getattr(self, attr, None)
+            if w is None:
+                continue
+            try:
+                if w.evict_if_idle(idle_s):
+                    # Drop the proxy too: it caches dim/model_name, which
+                    # stay valid, but a fresh proxy keeps the invariant
+                    # "proxy exists => worker was reachable" simple.
+                    setattr(self, cache, None)
+            except Exception as exc:
+                self._log(f"worker idle-evict failed ({attr}): {exc!r}")
 
     def _start_embedder_warmup(self) -> None:
         """Load the dense embedder in the background once the daemon is up.
@@ -599,6 +748,20 @@ class Daemon:
                 # Never fatal: symbolic ops do not need the embedder, and the
                 # lazy path will retry on first real use.
                 self._log(f"embedder warmup failed: {exc!r}")
+            # Same argument for the reranker, and the same stakes: a cold
+            # cross-encoder on the first recall would blow the hook budget
+            # exactly the way the cold embedder used to.
+            from refmatrix.reranker import rerank_enabled
+            if not rerank_enabled():
+                return
+            t1 = time.time()
+            try:
+                self._reranker()
+                self._log(f"reranker warm in {time.time() - t1:.1f}s")
+            except ImportError:
+                self._log("reranker warmup skipped ([dense] extra not installed)")
+            except Exception as exc:
+                self._log(f"reranker warmup failed: {exc!r}")
 
         threading.Thread(target=_warm, name="rmx-embed-warm",
                          daemon=True).start()
@@ -1004,6 +1167,13 @@ class Daemon:
             # its worker thread, and pin the daemon's DuckDB connection past
             # store.close() — which is what stranded PID 79273 holding
             # catalog.B's lock for 8 minutes after "daemon stopped".
+            # Model workers first: they hold no locks and no store state,
+            # so reaping them early gives back ~610 MB (and any reranker)
+            # while the slower DuckDB teardown runs.
+            try:
+                self._close_workers()
+            except Exception as exc:
+                self._log(f"worker shutdown failed: {exc!r}")
             if self._watch_stop is not None:
                 self._watch_stop.set()
             if getattr(self, "_flush_stop", None) is not None:
@@ -1150,6 +1320,12 @@ class Daemon:
                 # transaction.flush at startup
                 if self._flush_stop.wait(interval_s):
                     return
+                # Outside _store_lock on purpose: reaping a worker must
+                # never queue behind a multi-minute ingest holding the lock.
+                try:
+                    self._evict_idle_workers()
+                except Exception as exc:
+                    self._log(f"worker evict tick failed: {exc!r}")
                 if self.store is None:
                     continue
                 try:
@@ -3902,6 +4078,42 @@ def _op_embed_gc(d: Daemon, args: dict) -> dict:
     return {"by_kind": result, "partition": partition, "dim": emb.dim}
 
 
+def _apply_rerank_safe(d: "Daemon", query: str, docs, k: int):
+    """Run the cross-encoder stage, or return None to keep retrieval order.
+
+    Every failure mode degrades rather than raises: no [dense] extra, a
+    worker that died twice, a model that will not load. Reranking is a
+    precision refinement on an answer we already have — it must never be
+    the reason a recall returns nothing.
+    """
+    from refmatrix.reranker import apply_rerank
+
+    scored, untexted, tail = docs
+    if not scored:
+        # Worth a line. Without it, "rerank is enabled" is unfalsifiable from
+        # the logs: a partition whose rows have no extractable body silently
+        # returns retrieval order forever and looks identical to rerank being
+        # off. Cheap -- it fires only when the whole shortlist was untexted.
+        d._log(
+            f"rerank skipped: no extractable text in the shortlist "
+            f"({len(untexted)} untexted, {len(tail)} beyond pool)"
+        )
+        return None
+    try:
+        rr = d._reranker()
+    except ImportError as exc:
+        d._log(f"rerank skipped (dense extra missing): {exc}")
+        return None
+    except Exception as exc:
+        d._log(f"rerank skipped (reranker unavailable): {exc!r}")
+        return None
+    try:
+        return apply_rerank(rr, query, scored, untexted, tail, k=k)
+    except Exception as exc:
+        d._log(f"rerank failed, keeping retrieval order: {exc!r}")
+        return None
+
+
 def _op_ann_search(d: Daemon, args: dict) -> dict:
     """Dense ANN search via Lance. Accepts either a precomputed
     `vector` (list of floats) or a `query` string that gets embedded
@@ -3944,11 +4156,34 @@ def _op_ann_search(d: Daemon, args: dict) -> dict:
                 "error": f"vector dim {v.shape[0]} != model dim {emb.dim}",
             }
 
+    want_rerank = d._maybe_rerank(args) and bool(query)
+    # Over-fetch before reranking: the stage can only reorder what retrieval
+    # already returned, so a true hit sitting at rank 30 of a k=10 request is
+    # unreachable unless the pool is widened here.
+    from refmatrix.reranker import DEFAULT_POOL_MULT, MAX_POOL
+    ann_k = min(max(k, k * DEFAULT_POOL_MULT), MAX_POOL) if want_rerank else k
+    docs = None
+
     with d._store_lock:
         hits = d.store.ann_search(
-            v, k=k, dim=emb.dim, kinds=kinds, partition=partition,
+            v, k=ann_k, dim=emb.dim, kinds=kinds, partition=partition,
         )
-    return {"hits": [{"id": eid, "distance": dist} for eid, dist in hits]}
+        if want_rerank:
+            from refmatrix.reranker import collect_rerank_docs
+            try:
+                docs = collect_rerank_docs(d.store, hits, k=k)
+            except Exception as exc:
+                d._log(f"rerank doc collect failed: {exc!r}")
+                docs = None
+
+    if want_rerank and docs is not None:
+        # Model call OUTSIDE _store_lock -- see collect_rerank_docs.
+        reranked = _apply_rerank_safe(d, query, docs, k)
+        if reranked is not None:
+            return {"hits": [{"id": eid, "score": sc, "reranked": True}
+                             for eid, sc in reranked]}
+
+    return {"hits": [{"id": eid, "distance": dist} for eid, dist in hits[:k]]}
 
 
 def _op_memory_recall(d: Daemon, args: dict) -> dict:
@@ -3972,11 +4207,33 @@ def _op_memory_recall(d: Daemon, args: dict) -> dict:
 
     from refmatrix.recall import dense_recall, hybrid_memory_recall
 
+    want_rerank = d._maybe_rerank(args)
+    from refmatrix.reranker import DEFAULT_POOL_MULT, MAX_POOL
+    retrieve_k = min(max(k, k * DEFAULT_POOL_MULT), MAX_POOL) if want_rerank else k
+
     with d._store_lock, d.store.with_partition(partition):
         if fuse:
-            hits = hybrid_memory_recall(d.store, emb, query, k=k, kinds=kinds)
+            hits = hybrid_memory_recall(
+                d.store, emb, query, k=retrieve_k, kinds=kinds)
         else:
-            hits = dense_recall(d.store, emb, query, k=k, kinds=kinds)
+            hits = dense_recall(d.store, emb, query, k=retrieve_k, kinds=kinds)
+        docs = None
+        if want_rerank:
+            from refmatrix.reranker import collect_rerank_docs
+            try:
+                docs = collect_rerank_docs(d.store, hits, k=k)
+            except Exception as exc:
+                d._log(f"rerank doc collect failed: {exc!r}")
+                docs = None
+
+    if want_rerank and docs is not None:
+        reranked = _apply_rerank_safe(d, query, docs, k)
+        if reranked is not None:
+            return {"hits": [{"id": eid, "score": sc, "fused": bool(fuse),
+                              "reranked": True}
+                             for eid, sc in reranked]}
+
+    hits = hits[:k]
     if fuse:
         return {"hits": [{"id": eid, "score": sc, "fused": True}
                          for eid, sc in hits]}
