@@ -160,6 +160,14 @@ def _read_pid(root: Path) -> int | None:
 
 
 def daemon_status(root: Path) -> dict:
+    """Liveness for one store's daemon.
+
+    `busy` distinguishes the two states a failed ping conflates: the process
+    is gone (dead, needs a restart) versus the process is alive with its
+    socket in place but not answering yet (starting up, rebuilding an index,
+    holding the store lock). Reporting the second as dead is how a healthy
+    daemon gets needlessly killed — cliquet read `stale pid (socket
+    unreachable)` while a direct RPC answered in 0.1s."""
     from refmatrix import daemon as daemon_mod
     up = False
     try:
@@ -167,9 +175,17 @@ def daemon_status(root: Path) -> dict:
     except Exception:
         up = False
     pid = _read_pid(root)
+    busy = False
+    if not up and pid:
+        try:
+            os.kill(pid, 0)          # signal 0 = liveness probe, no delivery
+            busy = daemon_mod.socket_path(root).exists()
+        except (OSError, ProcessLookupError, PermissionError):
+            busy = False
     return {
         "up": up,
         "pid": pid,
+        "busy": busy,
         "rss_mb": _rss_mb(pid) if (up and pid) else None,
     }
 

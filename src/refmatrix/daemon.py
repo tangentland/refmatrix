@@ -351,20 +351,37 @@ def read_pid(root: Path) -> int | None:
     return pid if is_alive(pid) else None
 
 
-def ping(root: Path, timeout: float = 0.5) -> bool:
-    """Quick health check: send {"op":"ping"} and expect ok=true."""
+def ping(root: Path, timeout: float = 0.5, retries: int = 2,
+         retry_backoff: float = 0.15) -> bool:
+    """Quick health check: send {"op":"ping"} and expect ok=true.
+
+    Retries before answering False. A single 0.5s probe cannot tell a DEAD
+    daemon from a BUSY one, and a healthy daemon is routinely busy at exactly
+    the moment something checks: rebuilding an index at startup (observed
+    `repaired idx_entity_links_lk_concept rows=23138`), flushing fragments, or
+    holding the store lock for a write. cliquet was reported `stale pid …
+    (socket unreachable)` while a direct RPC answered in 0.1s.
+
+    Cost is unchanged when the daemon is healthy — one round trip, capped at
+    `timeout`. The extra attempts are only paid on the path that is about to
+    declare a daemon dead, which is the expensive thing to get wrong."""
     sock = socket_path(root)
     if not sock.exists():
         return False
-    try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-            s.settimeout(timeout)
-            s.connect(str(sock))
-            s.sendall(b'{"op":"ping"}\n')
-            data = _recv_line(s, timeout)
-        return json.loads(data).get("ok") is True
-    except Exception:
-        return False
+    for attempt in range(max(1, retries + 1)):
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                s.settimeout(timeout)
+                s.connect(str(sock))
+                s.sendall(b'{"op":"ping"}\n')
+                data = _recv_line(s, timeout)
+            if json.loads(data).get("ok") is True:
+                return True
+        except Exception:
+            pass
+        if attempt < retries:
+            time.sleep(retry_backoff * (attempt + 1))
+    return False
 
 
 def call(root: Path, op: str, args: dict | None = None,
@@ -547,6 +564,44 @@ class Daemon:
         self._embedder_inst = e
         self._log(f"embedder loaded model={e.model_name} dim={e.dim}")
         return e
+
+    def _start_embedder_warmup(self) -> None:
+        """Load the dense embedder in the background once the daemon is up.
+
+        It used to load lazily on the first `embed` / `ann_search`, which put
+        ~134MB of sentence-transformers startup on whoever asked first — and
+        that is almost always the always-on UserPromptSubmit hook, which runs
+        `memory recall --scope both` and therefore pays it on TWO stores.
+        Measured in cli.log: 5.2s, 5.3s, 6.0s, 8.8s, 21.8s, every one of them
+        the first recall after a daemon restart, against ~0.18s warm. The
+        hook's 30s budget covers three stages, so a couple of cold stores
+        could blow the whole thing and Claude Code discards ALL hook output on
+        timeout — the context injection silently vanishes.
+
+        Deliberately best-effort and off the critical path: a daemon with no
+        [dense] extra installed, or a model that fails to load, is still a
+        perfectly good daemon for every symbolic op. Set RMX_NO_EMBED_WARMUP=1
+        to keep the old lazy behaviour (a memory-constrained host may prefer
+        never to hold the model unless something asks).
+        """
+        if os.environ.get("RMX_NO_EMBED_WARMUP") in ("1", "true", "True"):
+            self._log("embedder warmup disabled (RMX_NO_EMBED_WARMUP)")
+            return
+
+        def _warm() -> None:
+            t0 = time.time()
+            try:
+                self._embedder()
+                self._log(f"embedder warm in {time.time() - t0:.1f}s")
+            except ImportError:
+                self._log("embedder warmup skipped ([dense] extra not installed)")
+            except Exception as exc:
+                # Never fatal: symbolic ops do not need the embedder, and the
+                # lazy path will retry on first real use.
+                self._log(f"embedder warmup failed: {exc!r}")
+
+        threading.Thread(target=_warm, name="rmx-embed-warm",
+                         daemon=True).start()
 
     # ---- option D: SIGABRT/index-drift defense ----------------------------
     #
@@ -920,6 +975,7 @@ class Daemon:
             f"pools cli={cli_workers} bg={bg_workers} "
             f"disp={cli_workers + bg_workers + 4}"
         )
+        self._start_embedder_warmup()
 
         def _run_handler(c) -> None:
             try:

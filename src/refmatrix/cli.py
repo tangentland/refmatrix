@@ -2492,7 +2492,21 @@ def daemon_status():
     if pid and healthy:
         console.print(f"[green]running[/] pid={pid} root={root}")
     elif pid:
-        console.print(f"[yellow]stale pid[/] {pid} (socket unreachable)")
+        # A live process whose socket is still there is BUSY, not stale:
+        # starting up, rebuilding an index, or holding the store lock for a
+        # write. Saying "stale" invites a kill, which is the wrong move.
+        alive = False
+        try:
+            os.kill(pid, 0)
+            alive = daemon_mod.socket_path(root).exists()
+        except (OSError, ProcessLookupError, PermissionError):
+            alive = False
+        if alive:
+            console.print(
+                f"[yellow]busy[/] pid={pid} root={root} "
+                f"(alive, not answering yet — startup or a long write)")
+        else:
+            console.print(f"[yellow]stale pid[/] {pid} (process gone)")
     else:
         console.print("[dim]not running[/]")
 
@@ -9869,8 +9883,9 @@ def recall_state(session, memory_dir, as_json):
 
     d = rep["daemon"]
     state = (f"[green]running[/] pid={d['pid']}" if d["running"]
-             else (f"[yellow]stale pid {d['pid']}[/]" if d["pid"]
-                   else "[dim]not running[/]"))
+             else (f"[yellow]busy pid {d['pid']}[/]" if d.get("busy")
+                   else (f"[yellow]stale pid {d['pid']}[/]" if d["pid"]
+                         else "[dim]not running[/]")))
     console.print(f"[bold]daemon[/] {state}")
 
     ss = rep["savestate"]
