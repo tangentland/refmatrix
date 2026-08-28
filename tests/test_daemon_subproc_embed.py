@@ -233,6 +233,11 @@ def test_op_embed_works_through_the_worker(tmp_path, monkeypatch):
     from refmatrix.embedder import RemoteEmbedder
 
     monkeypatch.setenv("RMX_EMBED_SUBPROC", "1")
+    # This test is about the PRIVATE worker path specifically — it asserts a
+    # real child process with a pid we can reap. On a machine where the hub is
+    # up, the daemon would (correctly) adopt the shared worker instead, which
+    # has no `_proc`. Shared-vs-private selection is covered in test_modelsrv.
+    monkeypatch.setenv("RMX_SHARED_MODELS", "0")
     d = _make_daemon(tmp_path)
     try:
         d.store.upsert_entity(

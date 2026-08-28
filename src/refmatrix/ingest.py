@@ -1109,6 +1109,42 @@ _DOCSTRING_STOP = {
 _WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 
 
+# Cap on a stored body. Docstrings are usually short; a module-level one can
+# run long, and the embedder truncates at MAX_INPUT_CHARS anyway.
+_MAX_TLDR_CHARS = 1500
+
+
+def _docstring_body(node) -> str:
+    """A node's docstring, whitespace-normalized and length-capped."""
+    try:
+        doc = ast.get_docstring(node)
+    except Exception:
+        return ""
+    if not doc:
+        return ""
+    return " ".join(doc.split())[:_MAX_TLDR_CHARS]
+
+
+def _unit_signature(node) -> str:
+    """`def name(a, b=...)` / `class Name(Base)` — the shape of the unit,
+    which a docstring often omits."""
+    name = getattr(node, "name", "") or ""
+    if isinstance(node, ast.ClassDef):
+        bases = []
+        for b in node.bases:
+            try:
+                bases.append(ast.unparse(b))
+            except Exception:
+                continue
+        return f"class {name}({', '.join(bases)})" if bases else f"class {name}"
+    try:
+        args = ast.unparse(node.args)
+    except Exception:
+        args = ""
+    kw = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
+    return f"{kw} {name}({args})"
+
+
 def _ingest_python_semantics(s: Store, file_path: Path, project_root: Path) -> int:
     """Emit namespaced concepts so noise is filterable:
     - import/<module>  for ImportNode targets
@@ -1168,7 +1204,15 @@ def _python_semantic_emit_body(s, tree, rel: str, file_path: Path) -> int:
     RecordingStore (parallel-parse path); both expose the same mutation
     surface (upsert_entity / add_namespaced_concept / add_evidence /
     bulk_link), so the walk is identical for either."""
-    file_id = s.upsert_entity(kind="code", name=rel, path=str(file_path))
+    # Module docstring as the FILE's body. Without it a code entity describes
+    # itself to every semantic consumer as its own path: measured on the dev
+    # store, 695 code entities, 196 with a `tldr`, average length 9 characters
+    # -- so the dense vector for `src/refmatrix/daemon.py` was the vector of
+    # that string, and a cross-encoder asked to rank it scored the query
+    # against a filename. The text was already parsed here and thrown away.
+    _mod_doc = _docstring_body(tree)
+    file_id = s.upsert_entity(kind="code", name=rel, path=str(file_path),
+                              tldr=_mod_doc or None)
     try:
         s.mark_tracked(str(file_path), file_path.stat().st_mtime)
     except OSError:
@@ -1199,14 +1243,24 @@ def _python_semantic_emit_body(s, tree, rel: str, file_path: Path) -> int:
                 s.add_evidence("imports", cid, file_id, file=rel, line=line,
                                detail=f"from {node.module} import ...")
                 n += 1
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                               ast.ClassDef)):
             doc = ast.get_docstring(node)
             if not doc:
                 continue
             fname = f"{rel}::{node.name}"
+            is_class = isinstance(node, ast.ClassDef)
+            # `_UNIT_META_FIELDS` has always listed `docstring` and
+            # `signature`, but only the external llm-tldr cache ever filled
+            # them, so a natively-ingested store had neither. Both are in hand
+            # right here.
             f_id = s.upsert_entity(
                 kind="code", name=fname, path=str(file_path),
-                meta={"file": rel, "func": node.name, "kind": "function"},
+                tldr=_docstring_body(node) or None,
+                meta={"file": rel, "func": node.name,
+                      "kind": "class" if is_class else "function",
+                      "signature": _unit_signature(node),
+                      "docstring": doc[:_MAX_TLDR_CHARS]},
             )
             words = [
                 w.lower() for w in _WORD_RE.findall(doc)

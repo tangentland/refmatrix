@@ -116,6 +116,7 @@ def build_context(
     include_sessions: bool = False,
     expand: int = 0,
     hit_lines: str = "first",
+    reranker=None,
     grep_backstop: bool = True,
     _entities_explicit: bool = False,
     _tokens_explicit: bool = False,
@@ -343,7 +344,7 @@ def build_context(
             s, ref, built, seen_ids=seen_ids, max_entities=max_entities,
             expand=expand, include_sessions=include_sessions,
             parent_cache=parent_cache, grep_backstop=grep_backstop,
-            hit_lines=hit_lines,
+            hit_lines=hit_lines, reranker=reranker,
         )
 
     _apply_budget(bundle, built, max_entities, max_tokens, used)
@@ -387,11 +388,143 @@ def _floor_exact_defs(entries: list[ContextEntry], ref: str) -> None:
         entries.sort(key=lambda e: -(e.weight or 0.0))
 
 
+# A hit earns a rerank only if its extractor returns more than a label. Asking
+# a cross-encoder to score a sentence against two words is noise, and this path
+# surfaces a lot of short nodes: on a GMD corpus the anchored `doc#section`
+# concepts carry the body-term index, so they dominate `content_rank`.
+#
+# Deliberately measured on TEXT rather than on kind. Kind was the first cut and
+# it was wrong in both directions — it excluded anchored concepts that do have
+# bodies (`_extract_concept` now returns them) and would have included any
+# future bodiless doc row.
+_MIN_RERANK_CHARS = 120
+
+
+def _prf_terms() -> int:
+    """How many expansion terms to mine from the top hits' bodies. 0 = off."""
+    import os
+    try:
+        return max(0, int(os.environ.get("RMX_PRF_TERMS", "0") or "0"))
+    except ValueError:
+        return 0
+
+
+def _prf_docs() -> int:
+    """How many top hits to mine them FROM. Kept small: the whole risk of
+    pseudo-relevance feedback is that a bad first-pass hit poisons the second
+    pass, and the damage scales with how many documents you trust."""
+    import os
+    try:
+        return max(1, int(os.environ.get("RMX_PRF_DOCS", "3") or "3"))
+    except ValueError:
+        return 3
+
+
+def _prf_expansion(s: Store, hits: list, ref_terms: list[str],
+                   n_terms: int) -> list[str]:
+    """Mine expansion terms from the bodies of the top hits.
+
+    Ranks candidate terms by document frequency WITHIN the feedback set — a
+    term several top hits agree on is a better bet than one that appears many
+    times in a single document, which is how PRF usually goes wrong.
+    Stopwords and terms already in the query are dropped.
+    """
+    from collections import Counter
+
+    from refmatrix.terms import STOPWORDS, content_terms
+
+    have = {t.lower() for t in ref_terms}
+    df: Counter[str] = Counter()
+    surface: dict[str, str] = {}
+    order: dict[str, int] = {}
+    for eid, _sc in hits[:_prf_docs()]:
+        ent = s.get_entity_by_id(eid)
+        if ent is None:
+            continue
+        body = (getattr(ent, "tldr", None) or "").strip()
+        if not body:
+            continue
+        seen_here: set[str] = set()
+        for tok in content_terms(body, drop_stopwords=False):
+            low = tok.lower()
+            if low in have or low in STOPWORDS or len(low) < 3:
+                continue
+            if low not in seen_here:          # df, not tf
+                seen_here.add(low)
+                df[low] += 1
+            surface.setdefault(low, tok)
+            order.setdefault(low, len(order))
+    # Deterministic: df descending, then first appearance. Iterating a set
+    # made tie-breaking arbitrary, so which expansion terms won varied run to
+    # run — and with a small feedback set almost every term ties at df=1.
+    ranked = sorted(df, key=lambda t: (-df[t], order[t]))
+    return [surface[t] for t in ranked[:n_terms]]
+
+
+def _rerank_pool() -> int:
+    """How many bodied hits the cross-encoder may score on the content path.
+
+    Bodied concepts are what made reranking this surface work at all
+    (MemAware MRR 0.150 -> 0.217), and also what made it expensive: an
+    823-char body costs ~20x a 45-char label. 10 keeps the always-on hook
+    near a second."""
+    import os
+    try:
+        return max(2, int(os.environ.get("RMX_SCAN_RERANK_POOL", "10") or "10"))
+    except ValueError:
+        return 10
+
+
+def _rerank_bodied(s: Store, reranker, query: str,
+                   hits: list) -> list:
+    """Reorder only the hits that carry real text; leave label-like rows where
+    BM25 put them.
+
+    Reranking everything measured WORSE than not reranking at all on MemAware
+    (hit@20 0.389 -> 0.344 even after fixing the query shape). Bodied rows keep
+    their positions in the output list, so a label row is never displaced by a
+    reorder it did not participate in.
+    """
+    from refmatrix import embedder as embmod
+    from refmatrix.reranker import rerank_entity_hits
+
+    slots: list[int] = []
+    for i, (eid, _sc) in enumerate(hits):
+        ent = s.get_entity_by_id(eid)
+        if ent is None:
+            continue
+        try:
+            text = embmod.extract_text_for_entity(s, eid, ent.kind)
+        except Exception:
+            continue
+        if len(text) >= _MIN_RERANK_CHARS:
+            slots.append(i)
+    if len(slots) < 2:
+        return hits
+    # Cap the pool. Cost is linear-ish in DOC COUNT and indifferent to doc
+    # length (the model truncates at 512 tokens either way): measured 5 docs
+    # 0.64s, 10 docs 1.33s, 15 docs 5.25s, 30 docs 10.67s. Reranking all 30
+    # content hits took the always-on scan-prompt hook from 0.24s to 9.3s,
+    # which no per-prompt budget can absorb. Rows beyond the pool keep their
+    # BM25 positions.
+    pool = _rerank_pool()
+    slots = slots[:pool]
+    subset = [hits[i] for i in slots]
+    reordered = rerank_entity_hits(s, reranker, query, subset, k=len(subset))
+    if len(reordered) != len(subset):
+        return hits
+    out = list(hits)
+    for slot, hit in zip(slots, reordered):
+        out[slot] = hit
+    return out
+
+
 def _append_content_hits(
     s: Store, ref: str, built: list[ContextEntry], *,
     seen_ids: set[int], max_entities: int, expand: int,
     include_sessions: bool, parent_cache: dict[str, str | None],
-    grep_backstop: bool = False, hit_lines: str = "first",
+    grep_backstop: bool = False, hit_lines: str = "first", reranker=None,
+    rerank_query: "str | None" = None,
 ) -> None:
     """Content-ranked fusion: BM25 over the `mentions` forward index for the
     ref's terms, folding in body matches the graph walk can't reach. Turns
@@ -422,10 +555,47 @@ def _append_content_hits(
     # index, and every multi-word natural-language ref fell through to the grep
     # floor while the same terms resolved fine as single-token anchors.
     # Over-fetch: several anchors of one doc can rank, and they collapse below.
-    for ceid, cscore in s.content_rank(
+    ranked_hits = s.content_rank(
         ref_terms, kinds=["code", "doc", "memory", "concept"],
         limit=max_entities * 3,
-    ):
+    )
+    # Pseudo-relevance feedback over `tldr`. The top hits' bodies name the
+    # vocabulary the prompt was reaching for but did not use — the classic
+    # case being a request whose words share nothing with the answer's words.
+    # Only possible now that anchored concepts carry their section text;
+    # before, expanding from `tldr` would have expanded from headings.
+    prf_n = _prf_terms()
+    if prf_n and ranked_hits and ref_terms:
+        extra = _prf_expansion(s, ranked_hits, ref_terms, prf_n)
+        if extra:
+            ranked_hits = s.content_rank(
+                list(ref_terms) + extra,
+                kinds=["code", "doc", "memory", "concept"],
+                limit=max_entities * 3,
+            ) or ranked_hits
+    # Cross-encoder pass over the shortlist, when the caller supplied one.
+    # This is THE shared choke point: `build_context` (rmx context) and
+    # `content_only_bundle` (scan-prompt's content view) both land here, so
+    # wiring rerank once gives both surfaces the capability that previously
+    # existed only on `memory recall` / `ann_search`. Degrades to the BM25
+    # order on any failure — reranking refines an answer we already have and
+    # must never be the reason a surface returns nothing.
+    if reranker is not None and ranked_hits:
+        # Rerank against the ORIGINAL phrasing, not the tokenized bag. A
+        # cross-encoder scores a (query, passage) pair jointly and was trained
+        # on natural language; handing it stoplisted identifier tokens is a
+        # different distribution. Measured: scan-prompt reranking against its
+        # candidate bag took MemAware hit@20 0.389 -> 0.333 and MRR 0.150 ->
+        # 0.065, while `memory recall` reranking against the raw question
+        # GAINED 21% MRR. Same model, same corpus — the query shape was the
+        # whole difference. `rerank_query` lets a caller whose `ref` is already
+        # a bag supply the sentence the user actually wrote.
+        rq = rerank_query or ref
+        try:
+            ranked_hits = _rerank_bodied(s, reranker, rq, ranked_hits)
+        except Exception:
+            pass
+    for ceid, cscore in ranked_hits:
         if len(content_entries) >= max_entities:
             break
         if ceid in seen_ids:
@@ -572,6 +742,7 @@ def content_only_bundle(
     s: Store, ref: str, *, max_entities: int = 20, max_tokens: int = 4000,
     expand: int = 0, include_sessions: bool = False,
     hit_lines: str = "first", grep_backstop: bool = True,
+    reranker=None, rerank_query: "str | None" = None,
 ) -> ContextBundle:
     """A ranked-grep bundle for a ref that resolves to NO graph anchor — the
     content-fusion path with `anchor=None`. Lets `rmx context "<phrase>"` and
@@ -582,7 +753,8 @@ def content_only_bundle(
     _append_content_hits(
         s, ref, built, seen_ids=set(), max_entities=max_entities,
         expand=expand, include_sessions=include_sessions, parent_cache={},
-        grep_backstop=grep_backstop, hit_lines=hit_lines,
+        grep_backstop=grep_backstop, hit_lines=hit_lines, reranker=reranker,
+        rerank_query=rerank_query,
     )
     _apply_budget(bundle, built, max_entities, max_tokens,
                   estimate_tokens(_render_header(bundle)))
@@ -780,39 +952,13 @@ def _rank_entries(entries: list[ContextEntry]) -> list[ContextEntry]:
 
 
 def _ref_terms(ref: str) -> list[str]:
-    """Tokenize a context ref into content-search terms: split a multi-word
-    phrase on whitespace, strip a leading `kind:` prefix, drop 1-char tokens
-    and (for multi-word refs) function words.
-    Per-term variant/canonical expansion happens inside `Store.content_rank`.
+    """Tokenize a context ref into content-search terms.
 
-    The stoplist matters most for the grep floor, which matches literally: a
-    prose question carrying `are`/`the`/`to` sends those to `rg` and they hit
-    INSIDE unrelated words, so ranking-by-match-count crowns whichever file
-    repeats the commonest fragment. Observed live before this filter:
-    `context "…my old sneakers are still in that spot?"` returned a file whose
-    top hit was `tags: [memaw«are», session]` at weight 191.
-
-    Only applied when more than one term survives. A single-token ref IS the
-    query — `context "the"` should still look for `the` — and a ref whose every
-    token is a stopword has nothing else to search on."""
-    ref = ref.strip()
-    head = ref.split(":", 1)[0]
-    if ":" in ref and " " not in head and "/" not in head:
-        ref = ref.split(":", 1)[1]  # kind:name → name
-    out: list[str] = []
-    seen: set[str] = set()
-    for tok in re.split(r"\s+", ref):
-        tok = tok.strip()
-        if len(tok) < 2 or tok.lower() in seen:
-            continue
-        seen.add(tok.lower())
-        out.append(tok)
-    if len(out) > 1:
-        from refmatrix.scan import _PROMPT_STOPWORDS
-        content = [t for t in out if t.lower() not in _PROMPT_STOPWORDS]
-        if content:
-            return content
-    return out
+    Thin wrapper over the shared tokenizer; `strip_kind_prefix` handles this
+    surface's `kind:name` refs. See `terms.content_terms` for why the stoplist
+    is applied and why it is skipped when nothing would survive."""
+    from refmatrix.terms import content_terms
+    return content_terms(ref, strip_kind_prefix=True)
 
 
 def _content_snippet(

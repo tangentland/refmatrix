@@ -286,3 +286,30 @@ def rerank_entity_hits(
     if not scored:
         return list(hits)[:k]
     return apply_rerank(reranker, query, scored, untexted, tail, k=k)
+
+
+def shared_reranker(log=None):
+    """A reranker backed by the hub's shared worker, or None.
+
+    Deliberately shared-or-nothing, with no private-worker fallback. The
+    callers are read surfaces that run in short-lived CLI processes — the
+    always-on `scan-prompt` hook among them — and spawning a ~450 MB model
+    process per invocation to rerank twenty rows would cost far more than the
+    ranking is worth. In the daemon the tradeoff is different (a private
+    worker is amortized over the daemon's life), which is why
+    `Daemon._model_client` does fall back and this does not.
+
+    Returns None when the hub is down or sharing is disabled, and every caller
+    treats None as "keep retrieval order".
+    """
+    if not rerank_enabled() or not rerank_available():
+        return None
+    try:
+        from refmatrix import modelsrv
+        if not modelsrv.shared_enabled() or not modelsrv.shared_available():
+            return None
+        client = modelsrv.SharedWorkerClient("rerank", log=log)
+        client.info()          # prove it answers before handing it out
+        return RemoteReranker(client)
+    except Exception:
+        return None

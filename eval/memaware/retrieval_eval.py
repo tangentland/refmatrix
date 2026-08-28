@@ -130,8 +130,10 @@ def m_context(q: str, k: int, rmx: str) -> list[str]:
     return _ids(_rmx_json(["context", q, "--format", "json"], rmx))[:k]
 
 
-def m_scan(q: str, k: int, rmx: str, content: bool = True) -> list[str]:
-    args = ["scan-prompt", q, "--format", "json", "--no-composite"]
+def m_scan(q: str, k: int, rmx: str, content: bool = True,
+           rank: str = "ppr") -> list[str]:
+    args = ["scan-prompt", q, "--format", "json", "--no-composite",
+            "--rank", rank]
     if not content:
         args.append("--no-content")
     return _ids(_rmx_json(args, rmx))[:k]
@@ -151,6 +153,20 @@ METHODS = {
     # of the ids, so it masks any change to concept selection/ranking —
     # isolating it is the only way to see whether the concept path moved.
     "scan-nocontent": lambda q, k, r: m_scan(q, k, r, content=False),
+    # Full enrichment: degree-2 walk over canonical-expanded seeds, coalesced
+    # by seed-reach. `--no-composite` means no STM here anyway, and MemAware
+    # items have no session continuity, so the STM merge contributes nothing
+    # to these numbers by construction.
+    "scan-enrich": lambda q, k, r: m_scan(q, k, r, rank="enrich"),
+    "scan-enrich-nocontent": lambda q, k, r: m_scan(
+        q, k, r, content=False, rank="enrich"),
+    # Core clique -> tldr expansion -> keep only nodes >1 core member reached.
+    # NOTE: MemAware items have no session continuity, so the STM half of the
+    # core is empty here and a single-concept question falls back to PPR. This
+    # measures the cull, not the design.
+    "scan-net": lambda q, k, r: m_scan(q, k, r, rank="net"),
+    "scan-net-nocontent": lambda q, k, r: m_scan(
+        q, k, r, content=False, rank="net"),
 }
 
 

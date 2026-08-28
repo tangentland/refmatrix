@@ -42,6 +42,11 @@ class IngestRecord:
     mtime: float | None = None
     doc_kind: str = "doc"
     doc_meta: dict | None = None
+    # Body for the file-level entity. Carried because the parallel-parse path
+    # is the one that actually runs on a real ingest, and it used to drop the
+    # `tldr` argument on the floor -- so a file could only ever be described
+    # by its own path.
+    doc_tldr: str | None = None
     # Order matters within each list — apply phase preserves it.
     sub_entities: list[dict] = field(default_factory=list)
     concepts: list[dict] = field(default_factory=list)
@@ -93,11 +98,13 @@ class RecordingStore:
             # doc-level entity already in the record header
             if meta is not None and self.record.doc_meta is None:
                 self.record.doc_meta = meta
+            if tldr and self.record.doc_tldr is None:
+                self.record.doc_tldr = tldr
             return "@doc"
         key = (kind, name)
         if key not in self._sub_set:
             self.record.sub_entities.append({
-                "kind": kind, "qname": name, "meta": meta,
+                "kind": kind, "qname": name, "meta": meta, "tldr": tldr,
             })
             self._sub_set.add(key)
         return f"@sub:{kind}/{name}"
@@ -213,7 +220,7 @@ def apply_record(
     # 1. doc-level entity
     doc_eid = s.upsert_entity(
         kind=record.doc_kind, name=record.rel,
-        path=record.file_path, meta=record.doc_meta,
+        path=record.file_path, tldr=record.doc_tldr, meta=record.doc_meta,
     )
     n += 1
     if record.mtime is not None:
@@ -227,7 +234,7 @@ def apply_record(
     for sub in record.sub_entities:
         sub_ids[(sub["kind"], sub["qname"])] = s.upsert_entity(
             kind=sub["kind"], name=sub["qname"],
-            path=record.file_path, meta=sub.get("meta"),
+            path=record.file_path, tldr=sub.get("tldr"), meta=sub.get("meta"),
         )
         n += 1
 
@@ -325,18 +332,19 @@ def bulk_apply_records(
 
     # ---- collect unique entities + concepts across all records ----
     doc_rows: list = []                         # one per record, in order
-    sub_seen: dict[tuple[str, str], tuple] = {}  # (kind,qname) -> (path, meta)
+    sub_seen: dict[tuple[str, str], tuple] = {}  # (kind,qname) -> (path, meta, tldr)
     sub_order: list[tuple[str, str]] = []
     concept_specs: list[tuple[str, str | None]] = []      # (name, desc)
     ns_specs: list[tuple[str, str | None]] = []           # ("ns/name", desc)
     for rec in records:
         doc_rows.append(
-            (rec.doc_kind, rec.rel, rec.file_path, None, rec.doc_meta)
+            (rec.doc_kind, rec.rel, rec.file_path, rec.doc_tldr, rec.doc_meta)
         )
         for sub in rec.sub_entities:
             key = (sub["kind"], sub["qname"])
             if key not in sub_seen:
-                sub_seen[key] = (rec.file_path, sub.get("meta"))
+                sub_seen[key] = (rec.file_path, sub.get("meta"),
+                                 sub.get("tldr"))
                 sub_order.append(key)
         for c in rec.concepts:
             concept_specs.append((c["name"], c.get("description")))
@@ -350,7 +358,7 @@ def bulk_apply_records(
         doc_eid_by_rel[(k, name)] = eid
 
     sub_rows = [
-        (k, q, sub_seen[(k, q)][0], None, sub_seen[(k, q)][1])
+        (k, q, sub_seen[(k, q)][0], sub_seen[(k, q)][2], sub_seen[(k, q)][1])
         for (k, q) in sub_order
     ]
     sub_id_list = s.bulk_upsert_entity(sub_rows)

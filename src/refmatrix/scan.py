@@ -13,6 +13,8 @@ import math
 import os
 import re
 import sys
+
+from refmatrix.terms import STOPWORDS as _STOPWORDS
 from pathlib import Path
 
 from refmatrix.context import (
@@ -41,28 +43,9 @@ SHAPE0_SALIENCE_FLOOR = 1.55
 # conjunctions, pronouns, interrogatives, auxiliaries/copula). Content words —
 # `user`, `get`, `make`, `use`, `work`, `show`, `go`, ... — are NOT here: they
 # can be legit domain concepts / method names and must stay matchable.
-_PROMPT_STOPWORDS = frozenset({
-    # articles / determiners
-    "a", "an", "the", "this", "that", "these", "those",
-    # conjunctions
-    "and", "or", "but", "nor", "if", "so", "yet",
-    # prepositions
-    "of", "to", "in", "on", "at", "by", "for", "with", "from", "into",
-    "onto", "off", "per", "via", "as", "about",
-    # pronouns
-    "i", "we", "me", "my", "us", "our", "you", "your", "he", "she", "it",
-    "they", "them", "their",
-    # interrogatives / relatives
-    "how", "why", "who", "whom", "whose", "what", "which", "when", "where",
-    "while",
-    # auxiliaries / copula
-    "is", "am", "are", "was", "were", "be", "been", "being",
-    "do", "does", "did", "doing", "done",
-    "have", "has", "had", "can", "could", "will", "would", "should",
-    "shall", "may", "might", "must",
-    # misc grammatical
-    "not", "no", "yes", "than", "then", "such",
-})
+# Canonical home is `terms.STOPWORDS`. Re-exported under the historical
+# name because consolidate.py, stm.py and context.py import it from here.
+_PROMPT_STOPWORDS = _STOPWORDS
 
 
 def extract_candidates(text: str) -> list[str]:
@@ -184,6 +167,11 @@ def _salience(
         central = (2.0 + 0.1 * min(deg, 10)) if deg > 0 else 0.0
     ns_bonus = 0.5 if "/" in name else 0.0
     return central + 1.5 * idf + _token_shape_score(token) + ns_bonus
+
+
+# Salience bump for an STM seed that carries a body. Small — it reorders
+# among survivors of the gate, it does not rescue a node the gate rejected.
+_STM_BODY_BONUS = 0.5
 
 
 def _variant_expansion() -> bool:
@@ -346,6 +334,190 @@ def _coverage_alpha() -> float:
         return 0.0
 
 
+def _stm_seed_ids(s: Store, root, *, max_seeds: int = 8) -> list[int]:
+    """Concept ids for the session's current focus, as extra walk seeds.
+
+    The STM focus graph is already maintained per session and already
+    rendered into the prompt as a topic composite. Using it as a RETRIEVAL
+    seed is different: it conditions what the graph walk explores on what the
+    session is actually about, which is the one input in the enrichment chain
+    that adds information rather than rearranging what the prompt already
+    said. A three-word prompt in a long session is exactly the case the rest
+    of the pipeline cannot help with.
+
+    Best-effort: no STM, no session, unresolvable names -> no extra seeds.
+    """
+    if root is None:
+        return []
+    try:
+        from pathlib import Path as _P
+
+        from refmatrix.stm import Stm, latest_session
+        root = _P(root)
+        session = latest_session(root)
+        if not session:
+            return []
+        graph = Stm(root, session=session).focus_graph(top=30)
+    except Exception:
+        return []
+    # Gate them the same way prompt tokens are gated. `_stm_seed_ids` used to
+    # resolve every focus-graph name straight through, which put discourse
+    # vocabulary into the core: measured live mid-session, the top five STM
+    # seeds were `multiple`, `cross`, `terms`, `prompt`, `link` — the words of
+    # a conversation ABOUT retrieval, not the domain. Seeding a graph walk with
+    # those spends the walk on nothing.
+    #
+    # The gate is applied directly on the resolved concept rather than through
+    # `match_concepts`, whose resolution ladder ends in a leading-wildcard LIKE
+    # (a full concept-table scan per name). Thirty of those per prompt is not
+    # something an always-on hook can pay for.
+    from refmatrix import pagerank as pr_mod
+    con = s._connect()
+    pr_computed = pr_mod.has_scores(s)
+    scored: list[tuple[float, int, int]] = []
+    seen: set[int] = set()
+    for idx, nd in enumerate(graph.get("nodes") or []):
+        name = (nd.get("name") or "").split("#", 1)[0]
+        if not name or name.lower() in _PROMPT_STOPWORDS:
+            continue
+        try:
+            cids = s.resolve_concept_ids(name)
+        except Exception:
+            continue
+        for cid in cids:
+            if cid in seen:
+                continue
+            seen.add(cid)
+            row = con.execute(
+                "SELECT name FROM entities WHERE id = ?", (cid,)).fetchone()
+            if row is None:
+                continue
+            cname = row[0]
+            _cid, deg, df = _concept_signal(s, con, cname)
+            if _is_unlinked_plain(name, deg):
+                continue
+            sal = _salience(s, cname, name, cid, deg, df,
+                            pr_computed=pr_computed)
+            if (pr_computed and "/" not in cname
+                    and _token_shape_score(name) == 0.0
+                    and sal < SHAPE0_SALIENCE_FLOOR):
+                continue
+            # Prefer a node that can actually carry the tldr expansion. A bare
+            # concept has no body, so it contributes edges but nothing for
+            # `net._body_expansion` to work with.
+            body = con.execute(
+                "SELECT length(coalesce(tldr,'')) FROM entities WHERE id = ?",
+                (cid,)).fetchone()
+            if body and body[0]:
+                sal += _STM_BODY_BONUS
+            scored.append((sal, idx, cid))
+    scored.sort(key=lambda t: (-t[0], t[1]))
+    return [cid for _sal, _idx, cid in scored[:max_seeds]]
+
+
+def _enrich_rerank(
+    s: Store, matches: list[str], *, max_concepts: int, root=None,
+) -> list[str]:
+    """Full-enrichment ranking: canonical-expanded seeds (+ STM focus) walked
+    to degree 2, coalesced by how many seeds reach each node, then ranked.
+
+    Falls back to the salience order on any failure — same contract as
+    `_ppr_rerank`, because the always-on hook must never go dark."""
+    from refmatrix import enrich as enrich_mod
+
+    seed_ids: list[int] = []
+    for name in matches:
+        e = s.resolve_entity(name)
+        if e is not None and e.kind == "concept":
+            seed_ids.append(e.id)
+    if not seed_ids:
+        return matches
+    try:
+        ranked = enrich_mod.enrich_concepts(
+            s, seed_ids, k=max_concepts, kinds=("concept",),
+            include_seeds=True,
+            hops=_enrich_hops(),
+            stm_seed_ids=_stm_seed_ids(s, root) if _enrich_stm() else None,
+            clique_weight=_clique_weight(),
+        )
+    except Exception:
+        return matches
+    names = [r["name"] for r in ranked]
+    for name in matches:
+        if name not in names:
+            names.append(name)
+    return names
+
+
+def _net_rerank(
+    s: Store, matches: list[str], *, max_concepts: int, root=None,
+) -> list[str]:
+    """Core clique -> tldr expansion -> corroboration cull -> ranked concepts.
+
+    STM focus joins the core unconditionally here (not only under a flag):
+    it is what gives a one-term prompt a core large enough for the
+    `>1 edge` cull to mean anything. Falls back to the PPR order when the net
+    comes back empty — a short prompt in a fresh session with no STM is
+    exactly that case, and the always-on hook must not go dark."""
+    from refmatrix import net as net_mod
+
+    seed_ids: list[int] = []
+    for name in matches:
+        e = s.resolve_entity(name)
+        if e is not None and e.kind == "concept":
+            seed_ids.append(e.id)
+    if not seed_ids:
+        return matches
+    try:
+        ranked = net_mod.net_concepts(
+            s, seed_ids, k=max_concepts, kinds=("concept",),
+            include_seeds=True,
+            stm_seed_ids=_stm_seed_ids(s, root),
+            min_support=_net_min_support(),
+            use_bodies=_net_use_bodies(),
+        )
+    except Exception:
+        return _ppr_rerank(s, matches, max_concepts=max_concepts)
+    corroborated = [r for r in ranked if r.get("support", 0) > 0]
+    if not corroborated:
+        # Empty net: nothing was reached by more than one core member.
+        return _ppr_rerank(s, matches, max_concepts=max_concepts)
+    names = [r["name"] for r in ranked]
+    for name in matches:
+        if name not in names:
+            names.append(name)
+    return names
+
+
+def _net_min_support() -> int:
+    """Core members that must independently reach a node for it to join the
+    net. 2 is corroboration; 1 would be no cull at all."""
+    try:
+        return max(1, int(os.environ.get("RMX_SCAN_NET_SUPPORT", "2") or "2"))
+    except ValueError:
+        return 2
+
+
+def _net_use_bodies() -> bool:
+    """Expand the core through `tldr` bodies as well as graph edges."""
+    return os.environ.get("RMX_SCAN_NET_BODIES", "1") not in (
+        "0", "false", "False")
+
+
+def _enrich_hops() -> int:
+    try:
+        return max(1, int(os.environ.get("RMX_SCAN_ENRICH_HOPS", "2") or "2"))
+    except ValueError:
+        return 2
+
+
+def _enrich_stm() -> bool:
+    """Merge STM focus into the walk seeds. On by default under `--rank
+    enrich`; note that an independent-question benchmark cannot measure it,
+    since there is no session to condition on."""
+    return os.environ.get("RMX_SCAN_ENRICH_STM", "1") not in ("0", "false", "False")
+
+
 def _ppr_rerank(
     s: Store, matches: list[str], *, max_concepts: int,
 ) -> list[str]:
@@ -430,6 +602,12 @@ def scan_prompt(
     )
     if matches and rank == "ppr":
         matches = _ppr_rerank(s, matches, max_concepts=max_concepts)
+    elif matches and rank == "enrich":
+        matches = _enrich_rerank(
+            s, matches, max_concepts=max_concepts, root=composite_root)
+    elif matches and rank == "net":
+        matches = _net_rerank(
+            s, matches, max_concepts=max_concepts, root=composite_root)
     matches = matches[:max_concepts]
 
     # ---- content-ranked view over the WHOLE candidate bag ------------------
@@ -456,10 +634,20 @@ def scan_prompt(
     # tax every turn. Explicit `rmx context` carries the grep floor.
     cbundle = None
     if content and cands:
+        # Shared-or-nothing reranker: `scan-prompt` is the always-on
+        # UserPromptSubmit hook running in a short-lived CLI process, so it
+        # uses the hub's worker if one is listening and otherwise keeps the
+        # BM25 order. It must never spawn a model of its own — see
+        # `reranker.shared_reranker`.
+        from refmatrix.reranker import shared_reranker
         cb = content_only_bundle(
             s, " ".join(cands),
             max_tokens=content_tokens, max_entities=10,
             grep_backstop=False,
+            reranker=shared_reranker(),
+            # The bundle's `ref` is the candidate BAG; the reranker needs the
+            # sentence the user actually typed.
+            rerank_query=prompt,
         )
         if cb.groups:
             cbundle = cb

@@ -245,18 +245,42 @@ def _extract_doc(store, entity_id: int) -> str:
 
 
 def _extract_concept(store, entity_id: int) -> str:
-    """concept: name + canonical_name (identifier variants). The
-    canonical form often disambiguates: 'parseURL' vs 'parse_url'
-    both canonicalize to 'parse_url' so the embedding lands at the
-    same point."""
+    """concept: name + canonical_name, plus the body when the node has one.
+
+    The canonical form disambiguates identifier variants: 'parseURL' and
+    'parse_url' canonicalize together so their embeddings land at the same
+    point.
+
+    The body half matters more than it looks. GMD ingest gives a document TWO
+    entities — a doc/memory named `<doc-id>` and one `kind=concept` node per
+    heading named `<doc-id>#<anchor>` — and hangs the body term-frequency
+    sweep on the ANCHORED NODE. So on a GMD corpus those nodes are what
+    `content_rank` returns, and they were representing themselves to every
+    semantic consumer with nothing but their heading.
+
+    That asymmetry explains a run of otherwise confusing results: BM25 could
+    see a section's whole body through its `mentions` edges while the dense
+    vector for that section was the vector of its title, and a cross-encoder
+    asked to rank it scored a sentence against two words. Reranking
+    scan-prompt's content path measured 0.150 -> 0.065 MRR on MemAware for
+    exactly this reason.
+
+    The text is already on the row — `tldr` is populated for all 942 anchored
+    concepts in the dev store — so this reads it the same way `_extract_doc`
+    always has. Bare (unanchored) concepts have no body and are unchanged.
+
+    NOTE: this changes the text that produces concept vectors, so previously
+    embedded concept rows are stale until re-embedded
+    (`rmx embed --kinds concept --rebuild`).
+    """
     row = _row(store, entity_id)
     if row is None:
         return ""
     name = row["name"] or ""
     canon = row["canonical_name"] or ""
-    if canon and canon != name:
-        return f"{name} {canon}"
-    return name
+    head = f"{name} {canon}" if (canon and canon != name) else name
+    body = (row["tldr"] or "").strip()
+    return f"{head}\n{body}" if body else head
 
 
 def extract_batch(

@@ -3341,6 +3341,20 @@ def _op_context(d: Daemon, args: dict) -> dict:
     # the "graph not coming up" bug. `partition` defaults to the daemon's
     # bound name so single-partition callers are unaffected.
     _ctx_part = args.get("partition") or d.store._partition_name
+    # Same rerank stage `memory_recall` and `ann_search` carry. `context` was
+    # symbolic-only, so a surface that already scored well on recall was
+    # ordering purely by BM25. Resolved OUTSIDE the store lock: building the
+    # reranker can spawn or connect to a worker, and that must not queue
+    # behind an ingest holding the lock.
+    # getattr, not attribute access: `_op_context` is called with lightweight
+    # stub daemons in tests and by callers that never built the model
+    # machinery. A read op must not hard-require the rerank stage to exist.
+    _ctx_rr = None
+    if getattr(d, "_maybe_rerank", None) and d._maybe_rerank(args):
+        try:
+            _ctx_rr = d._reranker()
+        except Exception as exc:
+            d._log(f"context rerank unavailable: {exc!r}")
     with d._store_lock, d.store.with_partition(_ctx_part):
         bundle = build_context(
             d.store, ref,
@@ -3354,6 +3368,7 @@ def _op_context(d: Daemon, args: dict) -> dict:
             expand=expand,
             hit_lines=hit_lines,
             grep_backstop=grep_backstop,
+            reranker=_ctx_rr,
             _entities_explicit=entities_explicit,
             _tokens_explicit=tokens_explicit,
         )
@@ -4109,6 +4124,45 @@ def _op_embed_gc(d: Daemon, args: dict) -> dict:
     return {"by_kind": result, "partition": partition, "dim": emb.dim}
 
 
+def _prefilter_enabled(args: dict) -> bool:
+    """Cull the dense candidate pool with the query's own concepts. Per-call
+    `prefilter` arg wins; otherwise RMX_RECALL_PREFILTER (default off until
+    measured)."""
+    want = args.get("prefilter")
+    if want is not None:
+        return bool(want)
+    return os.environ.get("RMX_RECALL_PREFILTER", "0") not in (
+        "0", "false", "False")
+
+
+def _op_promote_edges(d: "Daemon", args: dict) -> dict:
+    """Promote recurring STM co-occurrence into durable LTM `co-occurs` edges.
+
+    A write op, so it runs under `_store_lock` on the single writer — the same
+    control point every other mutation goes through. Defaults to dry_run: the
+    caller has to ask to mutate the graph.
+    """
+    from refmatrix.promote import promote_focus_edges
+
+    dry_run = args.get("dry_run")
+    dry_run = True if dry_run is None else bool(dry_run)
+    partition = args.get("partition") or d.store._partition_name
+    with d._store_lock, d.store.with_partition(partition):
+        res = promote_focus_edges(
+            d.store, d.root,
+            session=args.get("session"),
+            threshold=args.get("threshold"),
+            max_edges=int(args.get("max_edges") or 200),
+            dry_run=dry_run,
+        )
+    if not dry_run and res.get("promoted"):
+        d._request_snapshot()
+    # The pair list can be long; the caller asked for a count plus a sample.
+    sample = int(args.get("sample") or 20)
+    res["pairs"] = res.get("pairs", [])[:sample]
+    return res
+
+
 def _apply_rerank_safe(d: "Daemon", query: str, docs, k: int):
     """Run the cross-encoder stage, or return None to keep retrieval order.
 
@@ -4242,12 +4296,26 @@ def _op_memory_recall(d: Daemon, args: dict) -> dict:
     from refmatrix.reranker import DEFAULT_POOL_MULT, MAX_POOL
     retrieve_k = min(max(k, k * DEFAULT_POOL_MULT), MAX_POOL) if want_rerank else k
 
+    # Resolve the dense candidate cull BEFORE taking the lock. It reads the
+    # concept index, which does not need the writer, and holding _store_lock
+    # across it puts every other op behind a query-shaped lookup.
+    _cand = None
+    if _prefilter_enabled(args):
+        from refmatrix.recall import concept_prefilter
+        try:
+            with d.store.with_partition(partition):
+                _cand = concept_prefilter(d.store, query)
+        except Exception as exc:
+            d._log(f"concept prefilter skipped: {exc!r}")
+
     with d._store_lock, d.store.with_partition(partition):
         if fuse:
             hits = hybrid_memory_recall(
-                d.store, emb, query, k=retrieve_k, kinds=kinds)
+                d.store, emb, query, k=retrieve_k, kinds=kinds,
+                candidate_ids=_cand)
         else:
-            hits = dense_recall(d.store, emb, query, k=retrieve_k, kinds=kinds)
+            hits = dense_recall(d.store, emb, query, k=retrieve_k, kinds=kinds,
+                                candidate_ids=_cand)
         docs = None
         if want_rerank:
             from refmatrix.reranker import collect_rerank_docs
@@ -4430,6 +4498,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "embed_gc": _op_embed_gc,
     "ann_search": _op_ann_search,
     "memory_recall": _op_memory_recall,
+    "promote_edges": _op_promote_edges,
     "memory_add": _op_memory_add,
     "memory_get": _op_memory_get,
     "memory_iter": _op_memory_iter,

@@ -1118,6 +1118,63 @@ def focus_composite(k, max_tokens, no_expand, no_autoscale):
             "(empty focus or no multi-node topic yet)[/]")
 
 
+@focus.command("promote-edges")
+@click.option("--min-weight", "min_w", type=float, default=None,
+              help="Co-occurrence count a pair must reach to be promoted. "
+                   "Default: RMX_PROMOTE_MIN_WEIGHT (3).")
+@click.option("--max-edges", type=int, default=200, show_default=True,
+              help="Cap per run. A focus graph of N nodes carries O(N^2) "
+                   "edges; an unbounded run could bury the structural graph "
+                   "in weak associations.")
+@click.option("--session", default=None, help="Session id (default: latest).")
+@click.option("--dry-run/--apply", "dry_run", default=True, show_default=True,
+              help="Preview by default — this writes to the durable graph.")
+@click.option("-y", "--yes", is_flag=True, help="Skip the confirm on --apply.")
+def focus_promote_edges(min_w, max_edges, session, dry_run, yes):
+    """Promote recurring STM co-occurrence into durable `co-occurs` edges.
+
+    Every prompt's refs are already cliqued into the session's focus graph,
+    with the pair weight bumped once per co-occurrence — so the working graph
+    accumulates "these keep coming up together" and then throws it away when
+    the session ends. This moves the pairs that recurred often enough into the
+    long-term graph.
+
+    `co-occurs` is deliberately its own verb, never `related-to`: that one is
+    authored in GMD documents and carries editorial intent, and folding
+    machine-derived co-occurrence into it would make a curated edge
+    indistinguishable from an accident of phrasing. It is also purely
+    associative, so it never touches the structural edges (`calls`, `defines`,
+    `imports`) the symbolic retrieval floor is built on.
+
+    Ranked by LIFT (`w / (freq_a * freq_b)`), not raw weight — raw weight
+    crowns whatever file the workflow touches constantly (a version bump
+    co-occurs with everything and means nothing).
+    """
+    args = {"dry_run": dry_run, "max_edges": max_edges, "sample": 20}
+    if min_w is not None:
+        args["threshold"] = min_w
+    if session:
+        args["session"] = session
+    if not dry_run and not yes:
+        click.confirm(
+            "Write co-occurs edges into the durable graph?", abort=True)
+    res = _memory_daemon_call("promote_edges", args, timeout=300.0)
+    if not res.get("ok"):
+        raise click.ClickException(res.get("error", "daemon error"))
+    r = res["result"]
+    n = r.get("promoted") or r.get("would_promote") or 0
+    verb = "promoted" if not dry_run else "would promote"
+    console.print(
+        f"{verb} [bold]{n}[/] edge(s) "
+        f"(threshold {r.get('threshold')}, "
+        f"{r.get('skipped_below_threshold', 0)} below, "
+        f"{r.get('skipped_ungated', 0)} unresolved/gated)"
+    )
+    for pair in r.get("pairs", [])[:20]:
+        a, b, w = pair
+        console.print(f"  [dim]w={w:>5}[/]  {a}  <->  {b}")
+
+
 @focus.command("rebuild")
 @click.option("--all", "all_rings", is_flag=True,
               help="Sweep every ring in the store's STM dir (not just the "
@@ -6580,11 +6637,18 @@ def _resolve_query(
 @click.option("--full", "include_noise", is_flag=True,
               help="Include noise-marked concepts when matching.")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
-@click.option("--rank", type=click.Choice(["salience", "ppr"]),
+@click.option("--rank",
+              type=click.Choice(["salience", "ppr", "enrich", "net"]),
               default="ppr", show_default=True,
               help="Concept selection. 'ppr' (default) seeds local-push "
                    "personalized PageRank on the matched concepts and also "
                    "surfaces strongly-related concepts the prompt never named; "
+                   "'enrich' walks the seeds (plus the session's STM focus) to "
+                   "degree 2 and ranks by how many seeds independently reach "
+                   "each node, rather than by diffused mass; 'net' links the "
+                   "prompt's concepts (plus STM focus) into a core clique, "
+                   "expands via graph edges AND tldr bodies, then keeps only "
+                   "nodes more than one core member reached; "
                    "falls back to 'salience' if the walk can't seed. "
                    "'salience' ranks only the prompt's own matched concepts "
                    "(shape+idf+PageRank prior).")
