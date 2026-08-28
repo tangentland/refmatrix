@@ -120,6 +120,16 @@ def render_plist(root: Path, *, partition: str | None = None,
     label = label_for_root(root)
     rmx = _rmx_path()
 
+    # The global store is memory-only and its root is `~/.refmatrix`, so the
+    # default watch root is $HOME -- which tracked 12,448 files (10k of them
+    # under ~/Applications, plus refmatrix's own dev and deploy trees) into
+    # the behavior store and re-dirtied it on every deploy. `hub.
+    # ensure_global_daemon` always spawned it with `watch_root=[]`; only this
+    # plist disagreed, so a launchd start behaved differently from a hub
+    # start. Force the two paths to agree.
+    if root == (Path.home() / ".refmatrix").resolve():
+        watch = False
+
     args: list[str] = [rmx, "daemon", "start", "--no-detach"]
     if not watch:
         args.append("--no-watch")

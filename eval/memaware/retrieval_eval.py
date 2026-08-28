@@ -130,9 +130,11 @@ def m_context(q: str, k: int, rmx: str) -> list[str]:
     return _ids(_rmx_json(["context", q, "--format", "json"], rmx))[:k]
 
 
-def m_scan(q: str, k: int, rmx: str) -> list[str]:
-    return _ids(_rmx_json(
-        ["scan-prompt", q, "--format", "json", "--no-composite"], rmx))[:k]
+def m_scan(q: str, k: int, rmx: str, content: bool = True) -> list[str]:
+    args = ["scan-prompt", q, "--format", "json", "--no-composite"]
+    if not content:
+        args.append("--no-content")
+    return _ids(_rmx_json(args, rmx))[:k]
 
 
 METHODS = {
@@ -145,6 +147,10 @@ METHODS = {
     "recall-fuse-rr": lambda q, k, r: m_recall(q, k, r, fuse=True, rerank=True),
     "context": m_context,
     "scan": m_scan,
+    # Concept path only. The content bundle is emitted first and carries most
+    # of the ids, so it masks any change to concept selection/ranking —
+    # isolating it is the only way to see whether the concept path moved.
+    "scan-nocontent": lambda q, k, r: m_scan(q, k, r, content=False),
 }
 
 

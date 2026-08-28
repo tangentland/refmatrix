@@ -206,6 +206,79 @@ confirms 0.42.0 introduced no regression on the surfaces it did not touch.
 Extending rerank to scan-prompt is the obvious next experiment, and the hard-tier
 result above is the reason to run it as an experiment rather than ship it.
 
+## Prompt-concept expansion (0.43.0) — and why the headline barely moves
+
+Three changes to how a prompt becomes concepts, measured on the same 90
+questions.
+
+1. **Canonical-variant resolution.** `match_concepts` resolved by exact name
+   only. `resolve_concept_ids` folds camel/snake/dash/digit-boundary forms via
+   `canonical_name`, and `store.py` documents it as "used by the
+   query/context/neighbors path so an LLM passing any surface form lands on the
+   same set" — scan-prompt, the always-on hook, was the one read surface that
+   skipped it.
+2. **Prompt-coverage on concept selection.** `content_rank` multiplies entity
+   scores by `(covered_terms / n_terms) ** 3`, the single largest win in the
+   CSN stack. Concept *selection* never used it: bundles went to the
+   highest-salience concepts, and salience knows nothing about the rest of the
+   prompt. Now a seed is boosted by how much its neighborhood overlaps the
+   other seeds'.
+3. **A prompt clique before the PPR walk.** Seeding PPR on several concepts is
+   not the same as linking them: joint seeding sums independent diffusions, so
+   mass never flows *through* one prompt concept to another's neighborhood. A
+   weighted clique changes the topology. The justification is the one ingest
+   already uses — co-occurrence in a document is written as a co-mention edge,
+   and a prompt is a document.
+
+### Isolated concept path (`--no-content`)
+
+| config | MRR@20 | hit@5 | hit@20 | Recall@20 |
+|---|---:|---:|---:|---:|
+| baseline | 0.043 | 0.089 | 0.200 | 0.132 |
+| coverage only | 0.047 | 0.100 | 0.222 | 0.155 |
+| clique only | 0.044 | 0.089 | **0.178** | 0.144 |
+| clique + coverage | 0.052 | 0.111 | 0.222 | 0.169 |
+| **all three** | **0.065** | **0.144** | **0.267** | **0.206** |
+
+hit@20 +34%, Recall@20 +56%, MRR +51%.
+
+**The clique is negative on its own** (0.200 → 0.178) and positive only with
+coverage. That is the predicted failure mode arriving on schedule: a clique
+gives any junk seed surviving the salience gate a path into every other seed's
+neighborhood, and coverage is what demotes the seed that shares nothing with
+the rest of the prompt. They ship together or not at all; enabling one without
+the other ships a known regression.
+
+### Full pipeline — the honest number
+
+| config | MRR@20 | hit@20 | Recall@20 | hard hit@20 |
+|---|---:|---:|---:|---:|
+| baseline | 0.149 | 0.378 | 0.300 | 0.067 |
+| variants + coverage | 0.149 | 0.378 | 0.291 | 0.100 |
+| variants + clique | 0.148 | 0.367 | 0.286 | 0.100 |
+| **all three** | **0.150** | **0.389** | **0.303** | **0.100** |
+
+hit@20 0.378 → 0.389 is **one question out of 90**. MRR is flat. Taken alone
+this is within noise, and it would be wrong to call it a win.
+
+The isolation explains why: the content bundle is emitted first and already
+finds most of what the improved concept path finds, so the concept-path gain
+is largely redundant *on this corpus*. The pre-0.37.0 concept-only score was
+0.200 hit@20 — exactly the isolated baseline here — and content fusion is what
+took the surface to 0.378. Concept selection has been the junior partner ever
+since.
+
+That makes the case for shipping these a structural one rather than a metric
+one: the changes are correct (a read surface that skipped variant expansion was
+a bug), they cost nothing measurable, and they matter wherever the content
+bundle is weak — short prompts with few content words, and code corpora where
+identifier structure carries what BM25-over-prose cannot. MemAware is prose
+only, so it is close to the worst case for exactly these three.
+
+Flags: `RMX_SCAN_VARIANTS`, `RMX_SCAN_COVERAGE_ALPHA` (default 3, measured
+identical at 1), `RMX_SCAN_CLIQUE_W` (default 2.0). `scan-nocontent` is a
+condition in `retrieval_eval.py` for reproducing the isolation.
+
 ## Where rmx still trails, after all three fixes
 
 BM25 keeps the lead on every metric, and the gap is now concentrated in

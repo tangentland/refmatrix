@@ -1,0 +1,329 @@
+"""One set of model workers for the whole fleet, owned by the hub.
+
+`subproc` gave every daemon its own embedder and reranker. That fixed the
+jetsam problem — the daemon stopped being the fattest process — but it
+multiplies: 7 stores x 2 models = 14 worker processes at ~450 MB, ~6.5 GB
+resident, to serve one user who is typing in one project at a time. The
+models are identical; only the stores differ.
+
+So the hub hosts them once and the per-project daemons become clients.
+Same models, same vectors, ~0.9 GB instead of ~6.5 GB.
+
+Wire format is deliberately the SAME framed protocol `subproc` speaks, just
+over a unix socket instead of a pipe pair, with a `role` field selecting
+which worker serves the request. That means `embedder.RemoteEmbedder` and
+`reranker.RemoteReranker` work against a `SharedWorkerClient` with no
+changes — they only ever needed `.call()` and `.info()`.
+
+Failure containment matters here, because this turns one process into a
+dependency of every store's dense retrieval. Two guards:
+
+  * A daemon that cannot reach the socket falls back to its own private
+    worker (`subproc.WorkerClient`) and keeps serving. The hub going down
+    costs memory, not availability.
+  * The server owns its workers through the same `WorkerClient` that
+    already handles death, respawn, and wedged-process timeouts, so a
+    model crash is one client's retry rather than a fleet outage.
+
+Requests serialize per role (a `WorkerClient` holds a lock). A warm embed
+is ~40 ms, so interactive traffic from several daemons interleaves fine; a
+bulk `rmx embed` pass is the case that queues, and that is the price of
+not paying for seven copies of the model.
+"""
+from __future__ import annotations
+
+import os
+import socket
+import threading
+from pathlib import Path
+
+from refmatrix.subproc import WorkerClient, recv_frame, send_frame
+
+ROLES = ("embed", "rerank")
+
+
+def model_sock_path() -> Path:
+    """Where the shared model server listens. Lives beside the hub's own
+    socket in the global store, because the hub owns its lifecycle."""
+    return Path(
+        os.environ.get("RMX_MODEL_SOCK")
+        or (Path.home() / ".refmatrix" / "models.sock")
+    )
+
+
+def shared_enabled() -> bool:
+    """Should daemons prefer the shared workers? Default: yes.
+
+    `RMX_SHARED_MODELS=0` sends every daemon back to a private worker pair
+    — the escape hatch if the shared path ever becomes the problem."""
+    return os.environ.get("RMX_SHARED_MODELS", "1") not in ("0", "false", "False")
+
+
+def shared_available(timeout: float = 0.5) -> bool:
+    """Cheap probe: is something listening on the model socket?
+
+    Deliberately does not load a model or send a request — this runs on the
+    daemon's path to deciding shared-vs-private and must stay fast."""
+    sp = model_sock_path()
+    if not sp.exists():
+        return False
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        s.connect(str(sp))
+        s.close()
+        return True
+    except OSError:
+        return False
+
+
+class SharedWorkerClient:
+    """Client half. Same surface as `subproc.WorkerClient` — `call`, `info`,
+    `alive`, `close` — so the model proxies cannot tell the difference.
+
+    One socket per client object, opened lazily and reconnected once on a
+    dropped connection (the hub restarting under us is the expected case).
+    """
+
+    def __init__(self, role: str, *, log=None, timeout: float | None = None):
+        if role not in ROLES:
+            raise ValueError(f"unknown role {role!r}")
+        self.role = role
+        self._log_fn = log
+        from refmatrix.subproc import DEFAULT_TIMEOUT_S
+        self.timeout = timeout or DEFAULT_TIMEOUT_S
+        self._sock: socket.socket | None = None
+        self._rw = None
+        self._lock = threading.RLock()
+        self._info: dict = {}
+
+    def _log(self, msg: str) -> None:
+        if self._log_fn is not None:
+            try:
+                self._log_fn(f"shared[{self.role}] {msg}")
+            except Exception:
+                pass
+
+    def alive(self) -> bool:
+        return self._sock is not None
+
+    def _connect(self) -> None:
+        sp = model_sock_path()
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(self.timeout)
+        s.connect(str(sp))
+        self._sock = s
+        self._rw = s.makefile("rwb")
+        self._log(f"connected to {sp}")
+
+    def close(self, *, timeout: float = 0.0) -> None:
+        with self._lock:
+            for obj in (self._rw, self._sock):
+                try:
+                    if obj is not None:
+                        obj.close()
+                except Exception:
+                    pass
+            self._rw = None
+            self._sock = None
+
+    def _call_once(self, req: dict, blob: bytes | None):
+        if self._sock is None:
+            self._connect()
+        assert self._rw is not None
+        send_frame(self._rw, req, blob)
+        hdr, out = recv_frame(self._rw)
+        if not hdr.get("ok"):
+            from refmatrix.subproc import WorkerError
+            raise WorkerError(hdr.get("error") or "shared worker error")
+        return hdr, out
+
+    def call(self, op: str, payload: dict | None = None, *,
+             blob: bytes | None = None, timeout: float | None = None):
+        req = {"role": self.role, "op": op, **(payload or {})}
+        with self._lock:
+            if timeout is not None and self._sock is not None:
+                self._sock.settimeout(timeout)
+            try:
+                return self._call_once(req, blob)
+            except (EOFError, BrokenPipeError, ConnectionError, OSError) as exc:
+                self._log(f"connection lost on op={op} ({exc!r}); reconnecting")
+                self.close()
+                return self._call_once(req, blob)
+
+    def evict_if_idle(self, idle_s: float) -> bool:
+        """No-op. The daemon's idle tick calls this on whatever client it
+        holds, but a shared worker belongs to the hub — one project going
+        quiet is not a reason to drop a model six other projects are using.
+        Returning False keeps the tick's bookkeeping honest."""
+        return False
+
+    def info(self) -> dict:
+        with self._lock:
+            if self._info:
+                return self._info
+            hdr, _ = self.call("info")
+            self._info = {k: v for k, v in hdr.items() if k != "ok"}
+            return self._info
+
+
+class ModelServer:
+    """Server half. Owns one `WorkerClient` per role and fans N socket
+    clients onto them.
+
+    Workers are created lazily: a fleet that never runs a dense query never
+    pays for a model, and the hub stays light until something asks.
+    """
+
+    def __init__(self, *, log=None):
+        self._log_fn = log
+        self._clients: dict[str, WorkerClient] = {}
+        self._lock = threading.Lock()
+        self._srv: socket.socket | None = None
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def _log(self, msg: str) -> None:
+        if self._log_fn is not None:
+            try:
+                self._log_fn(f"models {msg}")
+            except Exception:
+                pass
+
+    def _worker(self, role: str) -> WorkerClient:
+        with self._lock:
+            w = self._clients.get(role)
+            if w is None:
+                w = WorkerClient(role, log=self._log_fn)
+                self._clients[role] = w
+                self._log(f"worker[{role}] created")
+            return w
+
+    # -- lifecycle ----------------------------------------------------
+
+    def start(self) -> bool:
+        sp = model_sock_path()
+        sp.parent.mkdir(parents=True, exist_ok=True)
+        # Unlink-before-bind, the way the per-project daemons do. A stale
+        # socket file from a killed hub would otherwise make bind fail and
+        # send the whole fleet to private workers silently.
+        if sp.exists():
+            try:
+                sp.unlink()
+            except OSError:
+                pass
+        try:
+            srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            srv.bind(str(sp))
+            os.chmod(sp, 0o600)
+            srv.listen(32)
+            srv.settimeout(1.0)
+        except OSError as exc:
+            self._log(f"listen failed at {sp}: {exc!r} -- daemons will use "
+                      "private workers")
+            return False
+        self._srv = srv
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._serve, name="rmx-models", daemon=True)
+        self._thread.start()
+        self._log(f"listening at {sp}")
+        return True
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=3.0)
+        try:
+            if self._srv is not None:
+                self._srv.close()
+        except OSError:
+            pass
+        sp = model_sock_path()
+        try:
+            if sp.exists():
+                sp.unlink()
+        except OSError:
+            pass
+        with self._lock:
+            workers, self._clients = self._clients, {}
+        for role, w in workers.items():
+            try:
+                w.close(timeout=2.0)
+            except Exception as exc:
+                self._log(f"worker[{role}] close failed: {exc!r}")
+        self._log("stopped")
+
+    def warm(self, roles=ROLES) -> None:
+        """Load the models now, in the background, so the first client does
+        not pay for it. Same argument as the daemon's own warmup: the first
+        caller is almost always an always-on hook with a budget."""
+        def _warm() -> None:
+            for role in roles:
+                try:
+                    import time
+                    t0 = time.time()
+                    self._worker(role).info()
+                    self._log(f"worker[{role}] warm in {time.time() - t0:.1f}s")
+                except Exception as exc:
+                    self._log(f"worker[{role}] warmup failed: {exc!r}")
+        threading.Thread(target=_warm, name="rmx-models-warm",
+                         daemon=True).start()
+
+    def status(self) -> dict:
+        with self._lock:
+            live = {r: w.alive() for r, w in self._clients.items()}
+        return {
+            "socket": str(model_sock_path()),
+            "listening": self._srv is not None and not self._stop.is_set(),
+            "workers": live,
+        }
+
+    # -- serving ------------------------------------------------------
+
+    def _serve(self) -> None:
+        assert self._srv is not None
+        while not self._stop.is_set():
+            try:
+                conn, _ = self._srv.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            threading.Thread(target=self._handle, args=(conn,),
+                             daemon=True).start()
+
+    def _handle(self, conn: socket.socket) -> None:
+        """One client connection. Stays open for many requests — a daemon
+        holds its connection for its lifetime rather than reconnecting per
+        query."""
+        try:
+            rw = conn.makefile("rwb")
+            while not self._stop.is_set():
+                try:
+                    req, blob = recv_frame(rw)
+                except (EOFError, OSError):
+                    return                    # client went away; normal
+                role = req.pop("role", "")
+                op = req.pop("op", "")
+                try:
+                    if role not in ROLES:
+                        raise ValueError(f"unknown role {role!r}")
+                    hdr, out = self._worker(role).call(op, req, blob=blob)
+                    # `ok` comes from the worker; re-send it as our own.
+                    hdr = {k: v for k, v in hdr.items() if k != "ok"}
+                    send_frame(rw, {"ok": True, **hdr}, out or None)
+                except Exception as exc:
+                    self._log(f"role={role} op={op} failed: {exc!r}")
+                    try:
+                        send_frame(rw, {
+                            "ok": False,
+                            "error": f"{type(exc).__name__}: {exc}",
+                        })
+                    except Exception:
+                        return
+        finally:
+            try:
+                conn.close()
+            except OSError:
+                pass

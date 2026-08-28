@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import sys
 from pathlib import Path
@@ -185,6 +186,14 @@ def _salience(
     return central + 1.5 * idf + _token_shape_score(token) + ns_bonus
 
 
+def _variant_expansion() -> bool:
+    """Canonical-variant expansion in `match_concepts`. On by default; set
+    RMX_SCAN_VARIANTS=0 to restore exact-name-only resolution (the pre-fix
+    behavior) for an A/B. Read per call, not at import, so the eval harness
+    can flip it without a fresh interpreter."""
+    return os.environ.get("RMX_SCAN_VARIANTS", "1") not in ("0", "false", "False")
+
+
 def match_concepts(
     s: Store,
     candidates: list[str],
@@ -244,6 +253,30 @@ def match_concepts(
             if row:
                 consider(row[0], cand)
                 continue
+        # Canonical-form expansion. `resolve_concept_ids` matches on
+        # `canonical_name`, folding camelCase / PascalCase-with-acronym /
+        # dash / space / digit-boundary variants into one indexed lookup.
+        # store.py documents it as "used by the query/context/neighbors path
+        # so an LLM passing any surface form lands on the same set" — but
+        # scan-prompt, the always-on hook, resolved by exact name only and so
+        # was the ONE read surface that missed every variant. `parse_url` in a
+        # prompt did not find `parseURL` in the graph.
+        if _variant_expansion():
+            try:
+                ids = s.resolve_concept_ids(cand)
+            except Exception:
+                ids = []
+            if ids:
+                in_list = ",".join("?" * len(ids))
+                rows = con.execute(
+                    f"SELECT name FROM entities WHERE id IN ({in_list})"
+                    f"{noise_clause}",
+                    list(ids),
+                ).fetchall()
+                if rows:
+                    for r in rows:
+                        consider(r[0], cand)
+                    continue
         # namespaced suffix: match anything */<cand>
         rows = con.execute(
             f"SELECT name FROM entities WHERE kind='concept'{noise_clause} "
@@ -282,6 +315,37 @@ def match_concepts(
     return [name for _idx, name, _sc in ranked]
 
 
+def _clique_weight() -> float:
+    """Weight of the artificial edges linking the prompt's own concepts to
+    each other before the PPR walk. 0 = off (plain joint seeding).
+
+    Default 2.0, matching `build_adjacency`'s `link_weight`. It ships ON only
+    in company: measured alone it makes things WORSE (concept-path hit@20
+    0.200 -> 0.178), because a junk seed that survives the salience gate gets
+    a path into every other seed's neighborhood. Coverage is the corrective —
+    with both on the same walk goes to 0.222, and with variant expansion too,
+    0.267. Turning coverage off while leaving this on reproduces the
+    regression, so the two move together."""
+    try:
+        return float(os.environ.get("RMX_SCAN_CLIQUE_W", "2.0") or "2.0")
+    except ValueError:
+        return 0.0
+
+
+def _coverage_alpha() -> float:
+    """Exponent on per-seed prompt-coverage when ordering concepts. 0 = off.
+
+    The same lever `content_rank` uses at alpha=3 for entities, where it was
+    the biggest single win in the CSN scoring stack. Applied to concept
+    SELECTION here, which never had it. Default 3 to match content_rank;
+    measured identical at alpha=1, so the exponent is not sensitive on this
+    corpus and the shared constant is the better default."""
+    try:
+        return float(os.environ.get("RMX_SCAN_COVERAGE_ALPHA", "3") or "3")
+    except ValueError:
+        return 0.0
+
+
 def _ppr_rerank(
     s: Store, matches: list[str], *, max_concepts: int,
 ) -> list[str]:
@@ -298,9 +362,12 @@ def _ppr_rerank(
     if not seed_ids:
         return matches
     try:
-        ranked = ppr_mod.rank_related(
+        ranked = ppr_mod.rank_related_for_prompt(
             s, seed_ids, k=max_concepts, kinds=("concept",),
-            include_seeds=True)
+            include_seeds=True,
+            clique_weight=_clique_weight(),
+            coverage_alpha=_coverage_alpha(),
+        )
     except Exception:
         return matches
     names = [r["name"] for r in ranked]

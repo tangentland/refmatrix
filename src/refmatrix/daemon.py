@@ -619,14 +619,9 @@ class Daemon:
         The worker reports the failure as an error frame; we translate.
         """
         from refmatrix.embedder import RemoteEmbedder
-        from refmatrix.subproc import WorkerClient, WorkerError
+        from refmatrix.subproc import WorkerError
 
-        with self._worker_lock:
-            if self._embed_worker is None:
-                w = WorkerClient("embed", log=self._log)
-                w.set_stderr(self.log_fh)
-                self._embed_worker = w
-        e = RemoteEmbedder(self._embed_worker)
+        e = RemoteEmbedder(self._model_client("embed"))
         try:
             _ = e.dim          # forces the spawn + model load now
         except WorkerError as exc:
@@ -634,6 +629,47 @@ class Daemon:
                 raise ImportError(str(exc)) from exc
             raise
         return e
+
+    def _model_client(self, role: str):
+        """Return a client for `role` — the hub's shared worker when one is
+        listening, otherwise a private worker of our own.
+
+        The hub hosts one embedder and one reranker for the whole fleet
+        because the models are identical and only the stores differ; seven
+        daemons each holding both was ~6.5 GB to serve one person typing in
+        one project. Falling back to a private worker rather than failing is
+        the rule that keeps the hub from becoming a single point of failure
+        for every store's dense retrieval.
+        """
+        attr = "_embed_worker" if role == "embed" else "_rerank_worker"
+        with self._worker_lock:
+            existing = getattr(self, attr, None)
+            if existing is not None:
+                return existing
+            client = None
+            from refmatrix import modelsrv
+            if modelsrv.shared_enabled() and modelsrv.shared_available():
+                try:
+                    client = modelsrv.SharedWorkerClient(role, log=self._log)
+                    client.info()          # prove it answers before adopting
+                    self._log(f"{role}: using hub-shared worker")
+                except Exception as exc:
+                    self._log(
+                        f"{role}: hub-shared worker unusable ({exc!r}); "
+                        "falling back to a private worker"
+                    )
+                    try:
+                        if client is not None:
+                            client.close()
+                    except Exception:
+                        pass
+                    client = None
+            if client is None:
+                from refmatrix.subproc import WorkerClient
+                client = WorkerClient(role, log=self._log)
+                client.set_stderr(self.log_fh)
+            setattr(self, attr, client)
+            return client
 
     def _reranker(self):
         """Lazy cross-encoder reranker, always out-of-process.
@@ -647,16 +683,11 @@ class Daemon:
         if existing is not None:
             return existing
         from refmatrix.reranker import RemoteReranker, rerank_available
-        from refmatrix.subproc import WorkerClient, WorkerError
+        from refmatrix.subproc import WorkerError
 
         if not rerank_available():
             raise ImportError("sentence-transformers not installed")
-        with self._worker_lock:
-            if self._rerank_worker is None:
-                w = WorkerClient("rerank", log=self._log)
-                w.set_stderr(self.log_fh)
-                self._rerank_worker = w
-        r = RemoteReranker(self._rerank_worker)
+        r = RemoteReranker(self._model_client("rerank"))
         try:
             name = r.model_name
         except WorkerError as exc:

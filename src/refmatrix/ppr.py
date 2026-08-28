@@ -112,6 +112,87 @@ def _is_operational(name: str) -> bool:
     return bool(_OPERATIONAL_RE.match(name))
 
 
+def overlay_prompt_clique(
+    adj: dict[int, dict[int, float]],
+    seeds: list[int],
+    *,
+    weight: float = 1.0,
+) -> dict[int, dict[int, float]]:
+    """Return `adj` with a weighted clique added among `seeds`.
+
+    Seeding PPR on several concepts is NOT the same as linking them. Joint
+    seeding gives each seed its own restart mass and sums the diffusions, so a
+    node near many seeds scores well — but mass never flows THROUGH one prompt
+    concept to reach another's neighborhood. A clique changes the topology: a
+    walk that lands on A can step directly to B, so B's region is reinforced by
+    A's mass and the walk can reach clusters no single seed reaches alone.
+
+    The justification is the one ingest already uses. Co-occurrence inside a
+    document is written as a co-mention edge because it is evidence of
+    association. A prompt is a document. Leaving its concepts mutually
+    unlinked is the inconsistency.
+
+    The risk is symmetric and real: a junk seed that survives the salience gate
+    now leaks its mass into every other seed's neighborhood. Hence `weight`
+    defaults well below `build_adjacency`'s `link_weight` (2.0) and the caller
+    scales per-edge by endpoint salience.
+
+    Mutates a shallow copy — the caller's `adj` is left alone, but the
+    per-node dicts are copied only for the seeds we touch.
+    """
+    if weight <= 0 or len(seeds) < 2:
+        return adj
+    present = [n for n in seeds if n in adj]
+    if len(present) < 2:
+        return adj
+    out = dict(adj)
+    for a in present:
+        row = dict(out[a])
+        for b in present:
+            if a == b:
+                continue
+            row[b] = row.get(b, 0.0) + weight
+        out[a] = row
+    return out
+
+
+def seed_coverage(
+    adj: dict[int, dict[int, float]],
+    seeds: list[int],
+) -> dict[int, float]:
+    """For each seed, the fraction of its neighbors shared with the OTHER
+    seeds — "how much of this concept's world is also the rest of the
+    prompt's world".
+
+    This is the bitmap-coverage idea applied to concept SELECTION rather than
+    entity ranking. `content_rank` already multiplies entity scores by
+    `(covered_terms / n_terms) ** 3`, and on CodeSearchNet that coverage term
+    was the single largest jump in the whole scoring stack (+0.050 MRR@10).
+    Concept selection never used it: bundles went to the highest-salience
+    concepts, where salience is a property of the concept alone and knows
+    nothing about the rest of the prompt.
+
+    Uses the adjacency rather than reading roaring fragments directly, because
+    the PPR path has already built it — so this costs set intersections, not
+    another pass over the store.
+    """
+    if len(seeds) < 2:
+        return {n: 0.0 for n in seeds}
+    nbrs = {n: set(adj.get(n, {})) for n in seeds}
+    out: dict[int, float] = {}
+    for n in seeds:
+        mine = nbrs[n]
+        if not mine:
+            out[n] = 0.0
+            continue
+        others: set[int] = set()
+        for m in seeds:
+            if m != n:
+                others |= nbrs[m]
+        out[n] = len(mine & others) / len(mine)
+    return out
+
+
 def rank_related(
     store: "Store",
     seed_ids: list[int],
@@ -151,6 +232,79 @@ def rank_related(
             "id": int(nid), "name": r[0], "kind": r[1],
             "score": score, "seed": nid in seedset,
         })
+        if len(out) >= k:
+            break
+    return out
+
+
+def rank_related_for_prompt(
+    store: "Store",
+    seed_ids: list[int],
+    *,
+    k: int = 10,
+    alpha: float = 0.15,
+    eps: float = 1e-4,
+    link_weight: float = 2.0,
+    clique_weight: float = 0.0,
+    coverage_alpha: float = 0.0,
+    kinds: "tuple[str, ...] | None" = ("concept",),
+    include_seeds: bool = True,
+) -> list[dict]:
+    """PPR over the prompt's concepts, with the two prompt-aware terms.
+
+    Differs from `rank_related` in that the seeds are treated as a SET that
+    the prompt itself asserts belongs together:
+
+    * `clique_weight > 0` links the seeds to each other before the walk, so
+      mass can travel between them (see `overlay_prompt_clique`).
+    * `coverage_alpha > 0` boosts a seed by how much its neighborhood overlaps
+      the rest of the prompt's, so bundles go to the concepts that are
+      coherent with the request rather than the ones that are merely central
+      on their own (see `seed_coverage`).
+
+    Both default to off; `rank_related`'s behavior is the zero case. Returns
+    the same `{id, name, kind, score, seed}` dicts, with `coverage` added for
+    seed rows.
+    """
+    adj = build_adjacency(store, link_weight=link_weight)
+    present = [sid for sid in seed_ids if sid in adj]
+    if not present:
+        return []
+
+    cov = seed_coverage(adj, present) if coverage_alpha > 0 else {}
+    walk_adj = overlay_prompt_clique(adj, present, weight=clique_weight)
+    p = local_push_ppr(walk_adj, {sid: 1.0 for sid in present},
+                       alpha=alpha, eps=eps)
+
+    if coverage_alpha > 0:
+        # (1 + cov) rather than cov: a seed sharing nothing with the rest of
+        # the prompt is demoted, never zeroed. A single-concept prompt has no
+        # "rest" and must not have all its mass erased.
+        for sid, c in cov.items():
+            if sid in p:
+                p[sid] *= (1.0 + c) ** coverage_alpha
+
+    seedset = set(present)
+    con = store._connect()
+    out: list[dict] = []
+    for nid, score in sorted(p.items(), key=lambda kv: -kv[1]):
+        if not include_seeds and nid in seedset:
+            continue
+        row = con.execute(
+            "SELECT name, kind FROM entities WHERE id = ?", (nid,),
+        ).fetchone()
+        if row is None:
+            continue
+        name, kind = row[0], row[1]
+        if kinds is not None and kind not in kinds:
+            continue
+        if _OPERATIONAL_RE.match(name or ""):
+            continue
+        rec = {"id": nid, "name": name, "kind": kind, "score": score,
+               "seed": nid in seedset}
+        if nid in cov:
+            rec["coverage"] = cov[nid]
+        out.append(rec)
         if len(out) >= k:
             break
     return out

@@ -279,6 +279,12 @@ class Hub:
         from refmatrix.scheduler import Scheduler
         self.scheduler = Scheduler()
         self._stop = threading.Event()
+        # Shared model workers. The hub hosts ONE embedder + ONE reranker for
+        # the whole fleet; per-project daemons connect over `models.sock`
+        # instead of each spawning its own pair (7 stores x 2 models was
+        # ~6.5 GB resident to serve one person typing in one project).
+        # `RMX_HUB_MODELS=0` leaves them off and every daemon goes private.
+        self._models = None
         self._sock: socket.socket | None = None
         self._alert_thread: threading.Thread | None = None
 
@@ -444,6 +450,7 @@ class Hub:
             "focus": self._op_focus,
             "focus_sessions": self._op_focus_sessions,
             "stop": self._op_stop,
+            "models": self._op_models,
         }
 
     # -- change-queue visibility ----
@@ -508,6 +515,42 @@ class Hub:
                     )
             except Exception as e:
                 _log(f"queue-alert error: {e}")
+
+    # -- shared model workers ----
+    def _start_models(self) -> None:
+        """Stand up the fleet-wide embedder + reranker.
+
+        Best-effort by design: if the socket cannot be bound, every daemon
+        falls back to its own private worker and the fleet keeps serving —
+        it just costs the memory this exists to save. The hub must never be
+        a single point of failure for dense retrieval.
+        """
+        if os.environ.get("RMX_HUB_MODELS", "1") in ("0", "false", "False"):
+            _log("shared model workers disabled (RMX_HUB_MODELS=0)")
+            return
+        try:
+            from refmatrix.modelsrv import ModelServer
+            srv = ModelServer(log=_log)
+            if srv.start():
+                self._models = srv
+                srv.warm()
+        except Exception as e:
+            _log(f"shared model workers failed to start: {e!r}")
+
+    def _stop_models(self) -> None:
+        srv, self._models = self._models, None
+        if srv is None:
+            return
+        try:
+            srv.stop()
+        except Exception as e:
+            _log(f"shared model workers stop failed: {e!r}")
+
+    def _op_models(self, args: dict) -> dict:
+        """Status of the shared workers — which are loaded, where they listen."""
+        if self._models is None:
+            return {"enabled": False}
+        return {"enabled": True, **self._models.status()}
 
     # -- socket server ----
     def serve_sock(self) -> None:
@@ -603,6 +646,10 @@ class Hub:
         hub_home().mkdir(parents=True, exist_ok=True)
         hub_pid_path().write_text(str(os.getpid()))
         _log(f"hub starting pid={os.getpid()} port={self.port}")
+        # First: every daemon we are about to start or supervise should find
+        # the shared socket already listening, or it spawns a private worker
+        # pair and keeps it for its lifetime.
+        self._start_models()
         try:
             ensure_global_daemon()
             discovery.register_root(global_store_root())  # watchdog supervises it
@@ -669,6 +716,11 @@ class Hub:
 
     def shutdown(self) -> None:
         _log("hub stopping")
+        # Models first: they hold ~900 MB across two children and no state,
+        # so reaping them early gives the memory back and unlinks the socket
+        # so daemons fail over to private workers immediately instead of
+        # blocking on a socket nobody is accepting on.
+        self._stop_models()
         self.watchdog.stop()
         try:
             hub_pid_path().unlink()
