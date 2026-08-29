@@ -684,8 +684,22 @@ def _ingest_tldr_metadata(s: Store, project: Path, *, pre_tracked=None,
             pass
 
     qnames = list(unit_rows)
+    # Precedence: an AUTHORED docstring outranks a generated body.
+    #
+    # The on-conflict clause is `tldr = COALESCE(excluded.tldr, entities.tldr)`,
+    # so a non-null write always wins and pass ORDER silently decided which
+    # body the embeddings were built from — a tldr-warm after ingest replaced
+    # docstrings with generated summaries, an ingest after tldr-warm reversed
+    # it, and nothing recorded which kind of body a row held.
+    #
+    # Passing None where a body already exists makes COALESCE preserve it, so
+    # this pass GAP-FILLS: it supplies a body for units that have none and
+    # never overwrites one that does. Order-independent by construction.
+    _has_body = _entities_with_bodies(s, qnames)
     unit_entity_rows = [
-        ("code", q, unit_rows[q][0], unit_rows[q][1], unit_rows[q][2])
+        ("code", q, unit_rows[q][0],
+         None if q in _has_body else unit_rows[q][1],
+         unit_rows[q][2])
         for q in qnames
     ]
     unit_id_list = _bulk_upsert_chunked(s, unit_entity_rows)
@@ -716,6 +730,34 @@ def _ingest_tldr_metadata(s: Store, project: Path, *, pre_tracked=None,
 
 
 # --- tldr -------------------------------------------------------------------
+
+
+def _entities_with_bodies(s: Store, names: list[str], *,
+                          kind: str = "code") -> set[str]:
+    """Names in `names` whose entity already carries a non-empty `tldr`.
+
+    Chunked: `names` is one entry per code unit and runs to the thousands on a
+    real tree, which is past what a single bound IN-list wants to carry.
+    """
+    out: set[str] = set()
+    if not names:
+        return out
+    con = s._connect()
+    CHUNK = 900
+    for i in range(0, len(names), CHUNK):
+        batch = names[i:i + CHUNK]
+        in_list = ",".join("?" * len(batch))
+        try:
+            rows = con.execute(
+                f"SELECT name FROM entities WHERE partition_id = ? "
+                f"AND kind = ? AND name IN ({in_list}) "
+                f"AND coalesce(tldr, '') <> ''",
+                [s._partition_id, kind, *batch],
+            ).fetchall()
+        except Exception:
+            continue
+        out.update(r[0] for r in rows)
+    return out
 
 
 def _bulk_upsert_chunked(s: Store, rows: list) -> list[int]:
