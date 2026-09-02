@@ -1156,8 +1156,25 @@ _WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 _MAX_TLDR_CHARS = 1500
 
 
+def _bodies_enabled() -> bool:
+    """Write docstrings as entity bodies? Default on.
+
+    `RMX_INGEST_BODIES=0` exists for measurement, not for production: it makes
+    the semantic pass build an otherwise IDENTICAL graph — same concepts, same
+    mentions edges, same links — with the `tldr` write suppressed, so an A/B
+    isolates the bodies alone. Without it the only available comparison is
+    `ingest` vs `ingest --semantic`, and that is not an isolation: a plain
+    ingest of Python extracts no concepts at all, so `content_rank` has no
+    index and scores zero on everything. Comparing those two measures whether
+    the store was indexed, not whether nodes could describe themselves.
+    """
+    return os.environ.get("RMX_INGEST_BODIES", "1") not in ("0", "false", "False")
+
+
 def _docstring_body(node) -> str:
     """A node's docstring, whitespace-normalized and length-capped."""
+    if not _bodies_enabled():
+        return ""
     try:
         doc = ast.get_docstring(node)
     except Exception:
@@ -1302,7 +1319,8 @@ def _python_semantic_emit_body(s, tree, rel: str, file_path: Path) -> int:
                 meta={"file": rel, "func": node.name,
                       "kind": "class" if is_class else "function",
                       "signature": _unit_signature(node),
-                      "docstring": doc[:_MAX_TLDR_CHARS]},
+                      **({"docstring": doc[:_MAX_TLDR_CHARS]}
+                         if _bodies_enabled() else {})},
             )
             words = [
                 w.lower() for w in _WORD_RE.findall(doc)

@@ -7834,12 +7834,17 @@ def search_dense_cmd(query, k, kinds):
          "rank order. RRF-fuses with the dense side.",
 )
 @click.option(
+    "--json", "as_json", is_flag=True,
+    help="Emit ranked hits as JSON (rank/id/score/kind/name/path). Parity "
+         "with context / memory recall / scan-prompt.",
+)
+@click.option(
     "--no-dense", is_flag=True,
     help="Skip the dense side entirely. Just returns the symbolic list "
          "(or empty if no --symbolic given). Use when [dense] isn't "
          "installed.",
 )
-def recall_cmd(query, k, kinds, concept, symbolic, no_dense):
+def recall_cmd(query, k, kinds, concept, symbolic, as_json, no_dense):
     """Hybrid retrieval: bitmap-prefiltered Lance ANN + RRF fusion
     with an optional symbolic ranking.
 
@@ -7918,11 +7923,30 @@ def recall_cmd(query, k, kinds, concept, symbolic, no_dense):
                 candidate_ids=candidate_ids,
             )
 
+    con = s._connect()
+    if as_json:
+        # Every other read surface (`context`, `memory recall`, `scan-prompt`,
+        # `query`) speaks JSON; this one only ever rendered a rich table, so a
+        # programmatic caller had to scrape it. Emitted before the empty check
+        # so "no hits" is a parseable [] rather than prose on stdout.
+        out = []
+        for rank, (eid, score) in enumerate(ranked, 1):
+            row = con.execute(
+                "SELECT kind, name, path FROM entities WHERE id = ?", [eid],
+            ).fetchone()
+            out.append({
+                "rank": rank, "id": eid, "score": float(score),
+                "kind": row[0] if row else None,
+                "name": row[1] if row else None,
+                "path": row[2] if row else None,
+            })
+        click.echo(json.dumps(out))
+        return
+
     if not ranked:
         console.print("[yellow]no hits[/]")
         return
 
-    con = s._connect()
     table = Table(show_header=True, header_style="bold")
     table.add_column("rank", justify="right")
     table.add_column("score", justify="right")
