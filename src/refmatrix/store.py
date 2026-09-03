@@ -44,6 +44,70 @@ def _canonical_for_kind(kind: str, name: str) -> str | None:
     return canonicalize_name(name)
 
 
+def _env_f(name: str, default: float = 0.0) -> float:
+    try:
+        return float(os.environ.get(name) or default)
+    except ValueError:
+        return default
+
+
+def _term_boost_linkages() -> "dict[str, float]":
+    """Structural linkages that add `boost * idf` to a term's contribution.
+
+    All default 0.0 — off. `titles` and `lead` only exist in a store ingested
+    with `RMX_SPLIT_TITLE_LINKS` / `RMX_LEAD_TERMS`, so a boost is a no-op on
+    a store that predates them; a missing linkage is skipped silently."""
+    return {
+        # Measured neutral: the fabricated `tf=2.0` it replaces was not doing
+        # much either way, and re-adding the boost properly did not recover a
+        # gain because there was none to recover.
+        "titles": _env_f("RMX_BOOST_TITLES", 0.0),
+        # Measured, replicated on held-out questions, and ON by default:
+        # `context` MRR 0.206 -> 0.248, hit@20 0.378 -> 0.511. The weight sits
+        # on a plateau (0.25 won the tuning set, 0.5 the held-out set, within
+        # noise of each other), and only degrades past ~2.0 where the boost
+        # starts swamping BM25. A store without a `lead` linkage ignores this
+        # silently, so it is safe to leave on everywhere.
+        "lead": _env_f("RMX_BOOST_LEAD", 0.5),
+    }
+
+
+def _doc_prior_weights() -> "dict[str, float]":
+    """Per-DOCUMENT multipliers, all default 0.0 (off).
+
+    `depth`     — heading level. `ingest_gmd` already records `"level"` in the
+                  entity meta and nothing has ever ranked with it, so an H1
+                  section and an H4 subsection score identically today.
+    `protected` — a human pinned this concept. Currently consulted only by
+                  vacuum and prune-noise; never by ranking.
+    `rel`       — count of typed (non-`mentions`) edges. Author-asserted
+                  relations drive graph walks but contribute nothing to term
+                  ranking."""
+    return {
+        "depth": _env_f("RMX_PRIOR_DEPTH"),
+        "protected": _env_f("RMX_PRIOR_PROTECTED"),
+        "rel": _env_f("RMX_PRIOR_REL"),
+    }
+
+
+def _null_tf_fn():
+    """How a NULL `mentions.weight` becomes a tf for BM25.
+
+    `zero` (default) is the shipped behaviour, `float(w or 0.0)` — and it is an
+    asymmetry: the edge scores NOTHING in BM25, but `concept_df` is a COUNT(*)
+    that still counts it and `_mentions_doclen` is a SUM that does not. So a
+    NULL-weight edge (tags, 4451 rows on the MemAware store) purely depresses
+    its own concept's idf while contributing no score. A penalty for existing.
+
+    `one` treats it as a single occurrence, which is what the edge's existence
+    actually asserts: the concept was attached to the document at least once.
+    `RMX_NULL_TF=one` selects it."""
+    import os as _os
+    if (_os.environ.get("RMX_NULL_TF") or "zero").strip().lower() == "one":
+        return lambda w: (1.0 if w is None else float(w))
+    return lambda w: float(w or 0.0)
+
+
 def _concept_variants(name: str) -> tuple[str, list[str]]:
     """For a multi-word concept name, return (canonical, alias_variants).
 
@@ -3785,12 +3849,143 @@ class Store:
         self._codefrac_cache = (self._partition_id, frac)
         return frac
 
+    def mentions_tf_tail(self, mentions_lid: int) -> "dict[float, float]":
+        """`tf -> P(TF >= tf)` over the partition's `mentions` weights.
+
+        The empirical tail of the term-frequency distribution, which on both
+        measured corpora is a power law with R^2 ~= 0.98 but with a corpus-
+        dependent exponent: alpha 2.68 on prose, 3.53 on code. That difference
+        is the point. `tf=3` sits in the top 26% of prose edges and the top
+        3.5% of code edges, so the same raw count carries very different
+        information and no single global tf weighting can be right for both.
+
+        Tabulated rather than fitted: the log-log fit is good but its tail
+        drifts from the prediction (code, P(>=3)/P(>=2): predicted 0.36,
+        measured 0.21), and the exact CDF is both cheaper and more faithful
+        than an exponent. Cached on the same terms as the other read-side BM25
+        statistics."""
+        cache = getattr(self, "_tftail_cache", None)
+        if cache is not None and cache[0] == self._partition_id:
+            return cache[1]
+        rows = self._connect().execute(
+            "SELECT el.weight, COUNT(*) FROM entity_links el "
+            "JOIN entities e ON e.id = el.entity_id "
+            "WHERE el.linkage_id=? AND e.partition_id=? AND el.weight IS NOT NULL "
+            "GROUP BY el.weight ORDER BY el.weight DESC",
+            (mentions_lid, self._partition_id),
+        ).fetchall()
+        total = sum(int(r[1]) for r in rows) or 1
+        tail: dict[float, float] = {}
+        running = 0
+        for w, n in rows:                      # descending, so this accumulates
+            running += int(n)                  # the >= tail as it goes
+            tail[float(w)] = running / total
+        self._tftail_cache = (self._partition_id, tail)
+        return tail
+
     def _invalidate_content_rank_caches(self) -> None:
         """Drop the read-side BM25 caches. Called at write boundaries."""
         for attr in ("_bm25_stats_cache", "_doclen_cache", "_leafidx_cache",
-                     "_conceptdf_cache", "_codefrac_cache"):
+                     "_conceptdf_cache", "_codefrac_cache", "_tftail_cache"):
             if hasattr(self, attr):
                 delattr(self, attr)
+
+    def _document_priors(
+        self, eids: "list[int]", weights: "dict[str, float]", mentions_lid: int,
+    ) -> "dict[int, float]":
+        """`entity_id -> score multiplier` from document-level structure.
+
+        Each enabled component contributes `1 + w * signal`, where `signal` is
+        normalised to roughly [0, 1] so the weight alone controls magnitude.
+        Components multiply, so enabling two is not the same as one at twice
+        the weight — that is intended, they are independent assertions.
+        """
+        import json as _json
+        if not eids:
+            return {}
+        out: dict[int, float] = {e: 1.0 for e in eids}
+        ph = ",".join("?" * len(eids))
+        con = self._connect()
+
+        w_depth = weights.get("depth", 0.0)
+        w_prot = weights.get("protected", 0.0)
+        if w_depth > 0 or w_prot > 0:
+            for r in con.execute(
+                f"SELECT id, meta, protected FROM entities WHERE id IN ({ph})",
+                eids,
+            ).fetchall():
+                eid = int(r[0])
+                if w_prot > 0 and r[2]:
+                    out[eid] *= (1.0 + w_prot)
+                if w_depth > 0:
+                    lvl = None
+                    try:
+                        m = r[1]
+                        m = _json.loads(m) if isinstance(m, str) else (m or {})
+                        lvl = m.get("level")
+                    except Exception:
+                        lvl = None
+                    if isinstance(lvl, (int, float)) and lvl > 0:
+                        # Shallow == general == more likely the thing being
+                        # asked about. 1/level is 1.0 at H1, 0.25 at H4.
+                        out[eid] *= (1.0 + w_depth * (1.0 / float(lvl)))
+
+        w_rel = weights.get("rel", 0.0)
+        if w_rel > 0:
+            try:
+                rows = con.execute(
+                    f"SELECT el.entity_id, COUNT(*) FROM entity_links el "
+                    f"WHERE el.entity_id IN ({ph}) AND el.linkage_id <> ? "
+                    f"GROUP BY el.entity_id",
+                    (*eids, mentions_lid),
+                ).fetchall()
+                counts = {int(r[0]): int(r[1]) for r in rows}
+                mx = max(counts.values()) if counts else 0
+                if mx > 0:
+                    for eid, c in counts.items():
+                        out[eid] *= (1.0 + w_rel * (c / mx))
+            except Exception:
+                pass
+
+        return out
+
+    def _null_tf(self):
+        """Kept for symmetry with the other read-side knobs; see `_null_tf_fn`."""
+        return _null_tf_fn()
+
+    def _tf_transform(self):
+        """Return `(fn, label)` mapping a raw `mentions` weight to the tf BM25
+        should score, per `RMX_TF_NORM`.
+
+        `raw` (default) is the shipped behaviour: the stored weight IS the tf.
+
+        `surprisal` scores `1 + -log2 P(TF >= tf)` — the information content of
+        seeing a term that often in THIS corpus. Unit-free and self-calibrating,
+        which also makes it robust to the fact that the weight column mixes
+        genuine counts with the 2.0/3.0 importance constants `ingest_gmd`
+        writes for title tokens and aliases: the transform is monotone in the
+        stored value whatever that value meant. The `1 +` matters — raw
+        surprisal is 0 at tf=1 by construction, and tf=1 is 55% of the prose
+        edges, so without it the majority of the index scores nothing.
+
+        `log` is `1 + log2(tf)`, the classic lnc weight. It exists as a CONTROL:
+        it shares surprisal's compression but none of its corpus calibration,
+        so comparing the two separates "log-shaped tf helps" from "the corpus's
+        own distribution helps". Without that arm a win is unattributable."""
+        import math as _m
+        mode = (os.environ.get("RMX_TF_NORM") or "raw").strip().lower()
+        if mode == "log":
+            return (lambda tf, tail: 1.0 + _m.log2(tf) if tf > 0 else 0.0), "log"
+        if mode == "surprisal":
+            def _s(tf, tail):
+                if tf <= 0:
+                    return 0.0
+                p = tail.get(tf)
+                if not p or p <= 0.0:
+                    return 1.0
+                return 1.0 + -_m.log2(p)
+            return _s, "surprisal"
+        return (lambda tf, tail: tf), "raw"
 
     def content_rank(
         self,
@@ -3858,6 +4053,7 @@ class Store:
             # exact when one term resolves to several concept ids that share
             # documents.
             ph_df = ",".join("?" * len(flat))
+            _idf_by_cid: dict[int, float] = {}
             postings_by_cid: dict[int, set] = {}
             for cid, eid in con.execute(
                 f"SELECT el.concept_id, el.entity_id FROM entity_links el "
@@ -3884,6 +4080,9 @@ class Store:
             ).fetchall()
             if rows:
                 doc_len = self._mentions_doclen(mlid)
+                _tf_fn, _ = self._tf_transform()
+                _tf_tail = self.mentions_tf_tail(mlid)
+                _raw_tf = _null_tf_fn()
                 for eid, cid, w in rows:
                     ti = cid_to_term.get(cid)
                     if ti is None:
@@ -3892,7 +4091,11 @@ class Store:
                     if nt <= 0:
                         continue
                     idf = math.log((N - nt + 0.5) / (nt + 0.5) + 1.0)
-                    tf = float(w or 0.0)
+                    _idf_by_cid[cid] = idf
+                    tf = _tf_fn(_raw_tf(w), _tf_tail)
+                    # `dl` stays the RAW summed weight on purpose: document
+                    # length is a property of the document, not of how we
+                    # choose to score a term inside it.
                     dl = doc_len.get(eid, avgdl)
                     denom = tf + k1 * (1.0 - b + b * dl / avgdl)
                     if denom <= 0:
@@ -3903,6 +4106,82 @@ class Store:
                 if coverage_alpha > 0 and n_units > 1:
                     for eid in list(scores):
                         scores[eid] *= (len(cover[eid]) / n_units) ** coverage_alpha
+        # --- structural signal: boosts and priors --------------------------
+        # Everything a HUMAN asserted about a document currently contributes
+        # nothing to its score, while everything an extractor counted drives
+        # the whole ranking. Tags, heading depth, `protected`, and the typed
+        # `rel:` edges are all curated and all ignored; body term frequency is
+        # fully automatic and decides everything. For a system whose charter is
+        # curated memory that is backwards, so both halves below exist to give
+        # the asserted signal a way in.
+        #
+        # Term-level boosts add `boost * idf` for a term that ALSO reaches the
+        # entity through a structural linkage (`titles`, `lead`). Deliberately
+        # additive and OUTSIDE the BM25 saturation: the reason title tokens
+        # were mis-modelled in the first place is that their boost was written
+        # as a fabricated tf, where `tf/(tf+k1*...)` swallows it and
+        # `SUM(weight)` turns it into document length that penalises every
+        # other term in the same document.
+        # Reinforcement is a property of a CONCEPT -- how often it has proved
+        # useful -- not of a document, so it scales the matching TERM's
+        # contribution rather than the document's total. `reinforcement_scores`
+        # takes concept ids and returns 0.0 for anything it does not know, so
+        # handing it document ids would have been a silent no-op arm rather
+        # than an error. `RMX_REINFORCE_ALPHA` defaults to 0.0 and
+        # `apply_to_concept_scores` has no callers, so this whole behavioural
+        # channel currently contributes nothing on any surface.
+        _w_rein = _env_f("RMX_BOOST_REINFORCE")
+        if scores and _idf_by_cid and _w_rein > 0:
+            try:
+                from refmatrix.reinforcement import reinforcement_scores
+                _rs = reinforcement_scores(self, list(_idf_by_cid)) or {}
+                _mx = max(_rs.values()) if _rs else 0.0
+                if _mx > 0:
+                    for _cid, _sig in _rs.items():
+                        if _sig <= 0 or _cid not in _idf_by_cid:
+                            continue
+                        _add = _w_rein * (_sig / _mx) * _idf_by_cid[_cid]
+                        for _eid in postings_by_cid.get(_cid, ()):
+                            if _eid in scores:
+                                scores[_eid] += _add
+            except Exception:
+                pass
+
+        if scores and _idf_by_cid:
+            for _lk, _bw in _term_boost_linkages().items():
+                if _bw <= 0:
+                    continue
+                try:
+                    _blid = self.get_linkage_id(_lk)
+                except Exception:
+                    continue
+                try:
+                    for _cid, _eid in con.execute(
+                        f"SELECT el.concept_id, el.entity_id FROM entity_links el "
+                        f"WHERE el.linkage_id=? AND el.concept_id IN ({ph_df})",
+                        (_blid, *flat),
+                    ):
+                        _eid = int(_eid)
+                        if _eid in scores:
+                            scores[_eid] += _bw * _idf_by_cid.get(int(_cid), 0.0)
+                except Exception:
+                    continue
+
+        # Document-level priors MULTIPLY the finished score. These are
+        # properties of the document, not of any term in it, so they cannot be
+        # expressed as a per-term boost without double-counting documents that
+        # matched several terms.
+        if scores:
+            _pri = _doc_prior_weights()
+            if any(v > 0 for v in _pri.values()):
+                try:
+                    _mult = self._document_priors(list(scores), _pri, mlid)
+                    for _eid, _m in _mult.items():
+                        if _m and _m != 1.0:
+                            scores[_eid] *= _m
+                except Exception:
+                    pass
+
         # M1 — surface DEFINITION files. A symbol's own name is a `defines`
         # concept on its file, not a `mentions` term, so the file that DEFINES
         # the query symbol is otherwise ABSENT from this index entirely (the

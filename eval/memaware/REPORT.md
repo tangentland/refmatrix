@@ -465,6 +465,104 @@ The structural reason all three underperformed: they target the concept path,
 which is 0.069 of a 0.241 surface. The content bundle already applies true
 BM25 idf, which is the same correction two of these were reaching for.
 
+## tf normalization: a real scaling law that BM25 already absorbs (2026-09-03)
+
+`mentions.weight` is the one intermediate every symbolic surface reads —
+`content_rank` BM25 (as tf AND, summed, as doclen), the per-concept bundles,
+`build_adjacency` -> pagerank -> `_salience`, `concept_df`, the bitmap
+projections. It is also a column with mixed units: `ingest_gmd` writes 2.0 for
+a title token and 3.0 for an alias (importance) alongside `float(tf)` for a
+body term (frequency), and NULL for a tag. A NULL scores `tf = 0.0` in BM25
+while still counting in `concept_df`, so a tag edge is a pure ranking penalty.
+
+The term-frequency distribution is a clean power law on both corpora, with a
+CORPUS-DEPENDENT exponent:
+
+| corpus | alpha | R^2 | P(TF>=2) | P(TF>=3) | P(TF>=10) |
+|---|---:|---:|---:|---:|---:|
+| memaware (prose) | 2.68 | 0.980 | 0.453 | 0.256 | 0.036 |
+| refmatrix (code) | 3.53 | 0.981 | 0.163 | 0.035 | 0.001 |
+
+`tf=3` is the top 26% of prose edges and the top 3.5% of code edges, so the
+same count carries different information per corpus. For a power law the tail
+gives `-log P(TF>=tf) = (alpha-1)*log(tf)`: log-shaped tf with a per-corpus
+coefficient. Tested as `RMX_TF_NORM=surprisal` (tabulated empirical tail, not
+the fitted exponent) against `RMX_TF_NORM=log` as a control.
+
+| arm | context MRR / hit@20 | scan MRR / hit@20 |
+|---|---|---|
+| raw (shipped) | **0.160 / 0.433** | **0.241** / 0.411 |
+| log | 0.154 / 0.411 | 0.238 / 0.422 |
+| surprisal | 0.155 / 0.411 | 0.238 / 0.422 |
+
+**Surprisal and log are indistinguishable** (identical to three decimals on
+scan), so the corpus calibration bought nothing over plain compression — the
+control is the only reason that is knowable. Both lose to raw on `context`,
+the near-pure content_rank surface.
+
+BM25's `k1` saturation is already a tf compressor; stacking a log or a
+surprisal transform on top double-saturates. The information-theoretic and the
+engineering answers converge, which is the textbook argument for BM25's
+saturation reached from the other side.
+
+Untested: code, where alpha deviates furthest from what a fixed `k1` assumes,
+and where the calibration therefore has the most room to matter. Also note
+`doclen` stays the raw summed weight under all arms — document length is a
+property of the document, but the asymmetry could confound.
+
+## Eight discarded signals: one wins, and the ceiling is recall (2026-09-03)
+
+Everything a HUMAN asserts about a document contributed nothing to its score,
+while everything an extractor counts drove the whole ranking. Tags scored
+literally 0.0 in BM25 (`float(w or 0.0)`) while still counting in `concept_df`,
+so a tag DEPRESSED its own concept's idf. Heading depth was parsed into entity
+meta and never read. `protected` gated vacuum, never ranking. `rel:` edges drove
+graph walks, never term scoring. `RMX_REINFORCE_ALPHA` defaulted to 0.0 and
+`apply_to_concept_scores` had no callers at all.
+
+All eight given a path to strength via two mechanisms — term-level boosts
+(`boost * idf`, deliberately OUTSIDE BM25 saturation and outside doclen) and
+document-level priors (multiplicative). Then measured on TWO corpora, because
+MemAware alone cannot see five of them: it is synthetic prose with 0 `rel:`
+edges, nothing protected, and 99.6% of nodes at heading level 1.
+
+### The one that won: lead position
+
+Held-out (90 questions disjoint from the weight tuning), `context`:
+MRR 0.206 -> 0.248 (+20%), hit@20 0.378 -> 0.511 (+35%), hit@1 +28%. Replicates
+the tuning set's +21% across a weight plateau of 0.25..2.0, degrading only past
+4.0. Shipped ON (`RMX_LEAD_TERMS`, `RMX_BOOST_LEAD=0.5`); needs re-ingest.
+
+### The rest, on cliquedb — a corpus that HAS the signals
+
+34.8k typed edges, four populated heading levels, 8.6k tag edges, 54 protected.
+Known-item retrieval, 400 queries sampled from NON-LEAD BODY lines so the task
+cannot flatter the signals under test. PAIRED per-query, because a mean over
+400 queries dilutes an effect that touches twelve of them:
+
+| signal | changed | better | worse | net |
+|---|---|---|---|---|
+| depth=1.0 | 12/400 | 7 | 5 | +2 |
+| rel=0.5 | 5/400 | 3 | 2 | +1 |
+| tags | 1/400 | 0 | 1 | -1 |
+| protected | 0/400 | 0 | 0 | 0 |
+
+Seven better against five worse is a coin flip. The signals are present, the
+priors demonstrably move scores (see `tests/test_structural_signal.py`), and
+retrieval does not improve.
+
+### Why: the ceiling is recall, not ranking
+
+cliquedb baseline is hit@1 0.447 against hit@20 0.537. **46% of known-item
+queries never retrieve the gold document at all**, and most of the 54% that do
+are already at rank 1. The band a reordering prior can act on is a few percent
+of queries wide, which is exactly the 1-3% each prior touches.
+
+Same wall the phrase layer hit from the opposite side: a phrase cannot reach a
+document its component words missed; a prior cannot reach one BM25 missed.
+`lead` is the only one of the eight that changes WHICH documents are retrieved
+rather than how the retrieved set is ordered, and it is the only one that paid.
+
 ## What has NOT been run
 
 Layer B — upstream's continuity-accuracy harness — has never executed. It needs

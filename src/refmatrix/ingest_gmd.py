@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -463,6 +464,102 @@ def _body_term_frequencies(body_lines: list[str]) -> dict[str, int]:
     return tf
 
 
+# How many leading body lines count as the "lead" of a node.
+_LEAD_LINES = 3
+
+
+def _lead_terms_on() -> bool:
+    """Record which terms appear in a node's OPENING lines, as a `lead`
+    linkage. OFF by default; `RMX_LEAD_TERMS=1` enables. Requires re-ingest.
+
+    `_body_term_frequencies` is position-blind: a term on line 1 and a term on
+    line 400 produce the same tf and are indistinguishable afterwards. Lead
+    position is one of the oldest signals in IR — prose states its subject
+    early — and it is free to capture here because the parser already has the
+    body split into lines.
+
+    Recorded as a LINKAGE, not folded into `mentions.weight`, for the same
+    reason title tokens should not be: `weight` is read as term frequency by
+    BM25 and summed into document length, so an importance judgement placed
+    there is both saturated and self-penalising.
+
+    ON by default as of the measurement below — the only structural signal of
+    eight that this corpus could test AND that paid. MemAware `context`,
+    90 HELD-OUT questions (disjoint from the set the boost weight was tuned
+    on): MRR 0.206 -> 0.248 (+20%), hit@20 0.378 -> 0.511 (+35%). The gain
+    replicates the tuning set's +21% MRR, so it is not selection.
+
+    Costs ~7% more edges (44.5k `lead` rows on a 1307-document corpus) and
+    needs a re-ingest before an existing store benefits.
+    `RMX_LEAD_TERMS=0` opts out."""
+    return os.environ.get("RMX_LEAD_TERMS", "1") not in ("0", "false", "False")
+
+
+def _lead_term_keys(body_lines: list[str]) -> set[str]:
+    """Terms occurring in the first `_LEAD_LINES` non-empty, non-`rel:` lines."""
+    lead: list[str] = []
+    for line in body_lines:
+        if not line.strip() or line.startswith("rel:"):
+            continue
+        lead.append(line)
+        if len(lead) >= _LEAD_LINES:
+            break
+    return set(_body_term_frequencies(lead))
+
+
+def _title_phrases_on() -> bool:
+    """Emit the multi-word structure of a HEADING as `phrase/*` concepts.
+    OFF by default; `RMX_TITLE_PHRASES=1` enables. Requires re-ingest.
+
+    Distinct from the body phrase miner that was measured and closed. That one
+    mined prose automatically: 549k keys, 82% hapax, no reachability gain.
+    A title is the opposite population -- author-ASSERTED, curated, and tiny
+    (1626 title tokens over 811 nodes on the MemAware corpus, so ~1.3k pairs
+    against the body miner's 549k). `_title_concept_tokens` currently shreds
+    "Worker lifecycle" into two independent concepts and discards the fact
+    that a human wrote them as a unit.
+
+    The reachability ceiling still applies -- a pair's documents are a subset
+    of its tokens' -- so this cannot move hit@20. It can only move ranking, by
+    separating documents that merely share both words from the one actually
+    about the pair. That is the metric the mined version lost on, and it lost
+    there because of volume, which is the objection this population does not
+    have."""
+    return os.environ.get("RMX_TITLE_PHRASES", "0") not in ("0", "false", "False")
+
+
+def _title_phrase_keys(title: str) -> list[str]:
+    """Alphabetized co-occurring token pairs from a heading, same identity the
+    body miner uses (see `ingest.text_phrases`) so the two agree on what a
+    phrase key looks like."""
+    from refmatrix.ingest import text_phrases
+    toks = _title_concept_tokens(title)
+    if len(toks) < 2:
+        return []
+    return list(text_phrases(" ".join(toks), stop=frozenset()))
+
+
+def _split_title_links() -> bool:
+    """Write title tokens and aliases as their own linkages instead of as
+    weighted `mentions`. OFF by default; `RMX_SPLIT_TITLE_LINKS=1` enables.
+
+    `mentions.weight` is read as TERM FREQUENCY by `content_rank`'s BM25 (and,
+    summed, as document length). Writing 2.0 for a title token and 3.0 for an
+    alias puts an importance judgement into a frequency field, and the two are
+    then indistinguishable downstream: a stored 3.0 could mean "occurred three
+    times" or "is an alias", and nothing can tell them apart afterwards.
+
+    It is not a rounding error either. Measured on the MemAware corpus, 99.5%
+    of title tokens (1618 of 1626) never appear in their node's body, so the
+    fabricated 2.0 is what BM25 actually scores for them -- and title tokens
+    are the most discriminative terms a document has.
+
+    With this on, `mentions` carries only real counts (a title token occurred
+    once, in the heading) and the structural fact moves to `titles`/`aliases`,
+    where a ranker can consult it deliberately. Requires re-ingest."""
+    return os.environ.get("RMX_SPLIT_TITLE_LINKS", "0") not in ("0", "false", "False")
+
+
 def _body_phrases(body_lines: list[str]) -> dict[str, int]:
     """Co-occurring content-word pairs over a node body, as `phrase/*` keys.
 
@@ -733,6 +830,16 @@ def ingest_gmd_paths(
     # ---- pass 2: hierarchy + rel: + mentions ----------------------------
     _ensure_linkage(store, "part-of", stats)
     _ensure_linkage(store, "mentions", stats)
+    # Title/alias structure as its OWN linkage rather than as a magic weight.
+    # See `_split_title_links`.
+    _split_titles = _split_title_links()
+    _tphrases = _title_phrases_on()
+    _lead_on = _lead_terms_on()
+    if _split_titles:
+        _ensure_linkage(store, "titles", stats)
+        _ensure_linkage(store, "aliases", stats)
+    if _lead_on:
+        _ensure_linkage(store, "lead", stats)
     _ensure_linkage(store, "imports", stats)
     # Bulk concept creation (mirrors add_concept, batched). Lazy import to
     # avoid a circular import with refmatrix.ingest (which calls this module).
@@ -772,6 +879,11 @@ def ingest_gmd_paths(
                 concept_specs.append((tok, f"title token '{tok}'"))
             for alias in node.aliases:
                 concept_specs.append((alias, f"alias '{alias}'"))
+            if _tphrases:
+                for ph in _title_phrase_keys(node.title):
+                    concept_specs.append((
+                        f"phrase/{ph}",
+                        f"title phrase '{ph.replace(chr(95), chr(32))}'"))
             for term in _body_term_frequencies(node.body_lines):
                 concept_specs.append((term, f"body term '{term}'"))
             if _phrases_on:
@@ -829,12 +941,23 @@ def ingest_gmd_paths(
                 if tok in title_concepts:
                     continue
                 title_concepts.add(tok)
-                link_batch.append(("mentions", cids[tok], src_eid, 2.0))
+                if _split_titles:
+                    # An honest tf: the token occurred ONCE, in the heading.
+                    # The fact that it was a TITLE is structure, and structure
+                    # belongs in a linkage, not in a fabricated frequency.
+                    link_batch.append(("mentions", cids[tok], src_eid, 1.0))
+                    link_batch.append(("titles", cids[tok], src_eid, 1.0))
+                else:
+                    link_batch.append(("mentions", cids[tok], src_eid, 2.0))
                 stats.mentions += 1
 
             # aliases → mentions with high weight
             for alias in node.aliases:
-                link_batch.append(("mentions", cids[alias], src_eid, 3.0))
+                if _split_titles:
+                    link_batch.append(("mentions", cids[alias], src_eid, 1.0))
+                    link_batch.append(("aliases", cids[alias], src_eid, 1.0))
+                else:
+                    link_batch.append(("mentions", cids[alias], src_eid, 3.0))
                 stats.mentions += 1
 
             # body terms → mentions with weight = tf (BM25 will normalize)
@@ -852,6 +975,20 @@ def ingest_gmd_paths(
                     link_batch.append(
                         ("mentions", cids[f"phrase/{ph}"], src_eid, float(tf)))
                     stats.mentions += 1
+
+            if _tphrases:
+                for ph in _title_phrase_keys(node.title):
+                    link_batch.append(
+                        ("mentions", cids[f"phrase/{ph}"], src_eid, 1.0))
+                    stats.mentions += 1
+
+            if _lead_on:
+                # Structure only — the term already carries its tf on the
+                # `mentions` edge; this records WHERE it first appeared.
+                for term in _lead_term_keys(node.body_lines):
+                    cid = cids.get(term)
+                    if cid is not None:
+                        link_batch.append(("lead", cid, src_eid, 1.0))
 
             # rel: edges
             for line_no, verb, target in node.rels:

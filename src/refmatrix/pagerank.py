@@ -38,6 +38,26 @@ if TYPE_CHECKING:
 _OPERATIONAL_RE = re.compile(r"(?i)^(session|digest)[-_]")
 
 
+def _adj_mentions_mode() -> str:
+    """How `build_adjacency` should count a `mentions` edge.
+
+    `both` (default) is the shipped behaviour and it double-counts: pass 1 adds
+    every mention flat at 1.0 from the bitmap fragment, then pass 2 adds the
+    SAME edge again at `link_weight * tf` from `entity_links`, which mirrors
+    those bitmaps. Verified `1 + 2*tf` on live data. With 99.3% of edges being
+    mentions, PageRank becomes largely a measure of term frequency.
+
+    `flat` keeps pass 1 only — a mention is an unweighted association.
+    `weighted` keeps pass 2 only — a mention counts once, at its tf.
+
+    Both fixes remove the duplication; they disagree on whether repetition
+    means association strength, which is a modelling question the measurement
+    should answer rather than the patch. `RMX_ADJ_MENTIONS` selects."""
+    import os as _os
+    v = (_os.environ.get("RMX_ADJ_MENTIONS") or "both").strip().lower()
+    return v if v in ("both", "flat", "weighted") else "both"
+
+
 def build_adjacency(
     store: "Store", *, link_weight: float = 2.0,
     exclude_operational: bool = True,
@@ -97,7 +117,8 @@ def build_adjacency(
         frag = store._load_fragment("mentions")
     except Exception:
         frag = None
-    if frag is not None:
+    _mmode = _adj_mentions_mode()
+    if frag is not None and _mmode != "weighted":
         for packed in frag:
             cid = packed >> _CONCEPT_SHIFT
             eid = packed & _ENTITY_MASK
@@ -106,14 +127,40 @@ def build_adjacency(
     # 2. typed linkage edges, restricted to the active partition on both ends
     #    so cross-partition `same_as` / canon edges don't leak foreign nodes
     #    into a partition-local centrality.
+    # `mentions` rows are EXCLUDED here when the dedupe is on, because pass 1
+    # already added every one of them from the bitmap fragment. `entity_links`
+    # mirrors those bitmaps, so without the filter each mention edge is scored
+    # twice -- once flat at 1.0, once at `link_weight * tf` -- giving
+    # `1 + 2*tf`, verified on live data (stored 171 -> adjacency 343). Since
+    # 99.3% of the edges in this graph ARE mentions, that made PageRank
+    # substantially a measure of term frequency, and PageRank feeds
+    # `scan._salience`'s centrality prior. The docstring's "a mention AND a
+    # typed link between the same pair" assumes the two sources are disjoint;
+    # they are not.
+    skip_lid = None
+    if _mmode == "flat":
+        try:
+            skip_lid = store.get_linkage_id("mentions")
+        except Exception:
+            skip_lid = None
     try:
-        rows = con.execute(
-            "SELECT el.concept_id, el.entity_id, el.weight "
-            "FROM entity_links el "
-            "JOIN entities ce ON ce.id = el.concept_id AND ce.partition_id = ? "
-            "JOIN entities ee ON ee.id = el.entity_id  AND ee.partition_id = ? ",
-            (pid, pid),
-        ).fetchall()
+        if skip_lid is not None:
+            rows = con.execute(
+                "SELECT el.concept_id, el.entity_id, el.weight "
+                "FROM entity_links el "
+                "JOIN entities ce ON ce.id = el.concept_id AND ce.partition_id = ? "
+                "JOIN entities ee ON ee.id = el.entity_id  AND ee.partition_id = ? "
+                "WHERE el.linkage_id <> ?",
+                (pid, pid, skip_lid),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT el.concept_id, el.entity_id, el.weight "
+                "FROM entity_links el "
+                "JOIN entities ce ON ce.id = el.concept_id AND ce.partition_id = ? "
+                "JOIN entities ee ON ee.id = el.entity_id  AND ee.partition_id = ? ",
+                (pid, pid),
+            ).fetchall()
     except Exception:
         rows = []
     for r in rows:
