@@ -391,6 +391,80 @@ arms, so the comparison stands, but `recall-fuse` is genuinely phrase-sensitive
 The base arm reproduced the published numbers (scan MRR 0.240 vs 0.241;
 context hit@20 0.422 vs 0.433), which is what validates the build.
 
+## Concept-path expansion + salience: three changes, none shipped (2026-09-03)
+
+All measured on the same store, `scan-nocontent` isolating the concept path
+because the content bundle carries ~75% of the full surface and masks it.
+
+### Lift-scored association (`--rank assoc`)
+
+`assoc.py` scores expansion candidates by how SURPRISING their overlap with
+the prompt's documents is — `(co/|A|)/(df/N)` — instead of by PPR's diffused
+mass. The reasoning: PPR already reaches the co-occurrence neighborhood, so
+what is missing is specificity, and under a hard `max_concepts` cap the five
+concepts that win the cap ARE the product.
+
+| arm | MRR | hit@20 |
+|---|---:|---:|
+| scan-nocontent (ppr) | **0.069** | **0.267** |
+| scan-assoc-nocontent | 0.007 | 0.044 |
+
+Six to ten times worse. Rejected. The qualitative failure is legible: for
+"vacuum under my bed ... old sneakers", the top associations are wedding
+vendors (`weddingwire`, `bouquets`, `florists`), because the anchor is built
+from whatever `match_concepts` returned and on prose that is function words.
+
+Three sub-findings worth keeping, each a trap the first implementation fell in:
+seeds scored `inf` sort ahead of every association and eat the whole cap;
+support as a MULTIPLIER on lift re-elects the hubs (when the anchor is loose
+every lift sits near 1.0 and the multiplier alone decides); and the union of
+all seeds' documents is not "the prompt's documents" — it was 38% of the
+corpus, which makes `co/|A| == df/N` and collapses lift to 1.0 for everything.
+
+### Modal salience by corpus type
+
+`_salience` is `central + 1.5*idf + shape + ns_bonus`, where `central`
+(PageRank) spans 0..2.5 and `1.5*idf` spans ~0.45. Centrality outweighs
+specificity tenfold, so salience RISES with df — on prose it selects function
+words. Measured: `sneakers` df=22 scores 1.43, `there` df=864 scores 2.65.
+
+`Store.code_fraction()` separates the regimes unambiguously (refmatrix 0.95,
+this corpus 0.004), and blending the weights by it fixes the SELECTION
+completely — prose mode picks `sneakers, vacuum, bed, items, stored, spot`
+where the default picks `first, items, still, know, need, there`.
+
+It does not fix RETRIEVAL. The 2x2 against the punctuation flag below:
+
+| scan-nocontent | strip ON | strip OFF |
+|---|---|---|
+| code mode | 0.052 / 0.222 | **0.069 / 0.267** |
+| prose mode | 0.059 / 0.267 | 0.062 / 0.267 |
+
+Read the strip-OFF column — against the shipped tokenizer, prose weighting is
+WORSE (0.069 -> 0.062). The +13%/+20% it appears to win in the strip-ON column
+is not signal; it is prose weighting partially offsetting the other flag's
+loss. Judging it on that column alone would have shipped a regression.
+
+### Sentence-final punctuation
+
+`_IDENT_RE` keeps a trailing `.` so `os.path` survives, so the last word of
+every prose sentence arrives as `first.` — which `_token_shape_score` reads as
+a dotted attribute path and rewards with 1.0, ALSO exempting it from the
+shape-0 floor (that gate only fires at shape exactly 0). A bug by inspection.
+Removing it cost recall: 0.069 -> 0.052 MRR, 0.267 -> 0.222 hit@20. Sentence-
+final position apparently correlates with the topical noun by more than the
+noise it admits.
+
+### Disposition
+
+The best of the four cells is the configuration that already ships. All three
+land default-off behind `RMX_SCAN_MODE`, `RMX_SCAN_STRIP_PUNCT`, and
+`--rank assoc`, with the numbers in their docstrings.
+
+The structural reason all three underperformed: they target the concept path,
+which is 0.069 of a 0.241 surface. The content bundle already applies true
+BM25 idf, which is the same correction two of these were reaching for.
+
 ## What has NOT been run
 
 Layer B — upstream's continuity-accuracy harness — has never executed. It needs

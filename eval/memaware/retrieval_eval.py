@@ -160,6 +160,14 @@ METHODS = {
     "scan-enrich": lambda q, k, r: m_scan(q, k, r, rank="enrich"),
     "scan-enrich-nocontent": lambda q, k, r: m_scan(
         q, k, r, content=False, rank="enrich"),
+    # Lift-scored association: seeds + the concepts whose overlap with the
+    # prompt's documents is most SURPRISING, rather than most massive. Pair
+    # with RMX_SCAN_SHAPE0_FLOOR=0 to see it without the shape-0 gate, which
+    # is calibrated on code and drops the rare prose content words the anchor
+    # needs (`sneakers` df=22 is gated out; `there` df=864 is not).
+    "scan-assoc": lambda q, k, r: m_scan(q, k, r, rank="assoc"),
+    "scan-assoc-nocontent": lambda q, k, r: m_scan(
+        q, k, r, content=False, rank="assoc"),
     # Core clique -> tldr expansion -> keep only nodes >1 core member reached.
     # NOTE: MemAware items have no session continuity, so the STM half of the
     # core is empty here and a single-concept question falls back to PPR. This

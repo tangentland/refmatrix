@@ -6679,7 +6679,7 @@ def _resolve_query(
               help="Include noise-marked concepts when matching.")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
 @click.option("--rank",
-              type=click.Choice(["salience", "ppr", "enrich", "net"]),
+              type=click.Choice(["salience", "ppr", "enrich", "net", "assoc"]),
               default="ppr", show_default=True,
               help="Concept selection. 'ppr' (default) seeds local-push "
                    "personalized PageRank on the matched concepts and also "
@@ -6691,6 +6691,10 @@ def _resolve_query(
                    "expands via graph edges AND tldr bodies, then keeps only "
                    "nodes more than one core member reached; "
                    "falls back to 'salience' if the walk can't seed. "
+                   "'assoc' keeps the concepts whose overlap with the prompt's "
+                   "documents is most SURPRISING (lift over base rate) rather "
+                   "than most massive, which is the correction PPR's diffused "
+                   "mass does not make; "
                    "'salience' ranks only the prompt's own matched concepts "
                    "(shape+idf+PageRank prior).")
 @click.option("--content/--no-content", default=True, show_default=True,

@@ -33,7 +33,33 @@ _IDENT_RE = re.compile(r"[A-Za-z_][\w\-./]*(?:::[\w\-./]+)*")
 # code-mentioned common-English words (`keep`≈1.53, `selection`≈1.19,
 # `lower`≈1.21, `send`≈1.11) fall below. Shaped / namespaced tokens bypass this
 # floor entirely — they are cited symbols, not prose.
+# Calibrated on a CODE graph, and it inverts on prose. `_salience` is
+# `central + 1.5*idf + shape + ns_bonus`, where `central` (PageRank) spans
+# 0..2.5 and `1.5*idf` spans ~0.15..0.45 -- centrality outweighs specificity
+# about tenfold, so salience RISES with df. On code that is right: central
+# means domain. On prose central means function word, and the floor then drops
+# exactly the discriminative terms. Measured on eval/memaware (N=2940):
+# `vacuum` df=16 sal 0.89 DROP, `sneakers` df=22 sal 1.43 DROP, while
+# `need` df=850 sal 2.65 and `there` df=864 sal 2.65 both survive.
+# `RMX_SCAN_SHAPE0_FLOOR=0` disables the gate for an A/B.
 SHAPE0_SALIENCE_FLOOR = 1.55
+
+
+def _shape0_floor(code_frac: float = 1.0) -> float:
+    """The active shape-0 salience floor, faded out by corpus mode.
+
+    The gate exists to demote plain lowercase words as second-class against
+    cited symbols. In prose there are no cited symbols — every token is
+    shape-0 — so the gate has nothing to discriminate and scales to 0.
+    `RMX_SCAN_SHAPE0_FLOOR` pins it for an A/B."""
+    raw = os.environ.get("RMX_SCAN_SHAPE0_FLOOR")
+    if raw is not None and raw != "":
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    cf = 0.0 if code_frac < 0.0 else (1.0 if code_frac > 1.0 else code_frac)
+    return SHAPE0_SALIENCE_FLOOR * cf
 
 # Function words that are never useful concept anchors. The graph sometimes
 # carries junk concepts for them (`THE`, `Does`, `How` from capitalized-word /
@@ -48,13 +74,40 @@ SHAPE0_SALIENCE_FLOOR = 1.55
 _PROMPT_STOPWORDS = _STOPWORDS
 
 
+def _strip_trailing_punct() -> bool:
+    """Strip sentence-final punctuation off candidate tokens. OFF by default.
+
+    Correct by inspection and NEGATIVE by measurement, which is why it ships
+    disabled. `_IDENT_RE` keeps a trailing `.` so dotted paths survive, so the
+    last word of every prose sentence arrives as `first.` and
+    `_token_shape_score` reads it as an attribute path, scoring 1.0 — an
+    artificial bonus that also exempts it from the shape-0 floor. Removing
+    that bonus COST recall on MemAware: concept-path MRR 0.069 -> 0.052,
+    hit@20 0.267 -> 0.222. Sentence-final position evidently correlates with
+    the topical noun well enough to be worth more than the noise it admits.
+
+    Kept behind `RMX_SCAN_STRIP_PUNCT=1` rather than deleted: the reasoning
+    for the fix is still sound and a corpus where it pays may well exist."""
+    return os.environ.get("RMX_SCAN_STRIP_PUNCT", "0") not in ("0", "false", "False")
+
+
 def extract_candidates(text: str) -> list[str]:
     """Return distinct identifier-shaped tokens from a prompt, in first-seen order."""
     seen: set[str] = set()
     out: list[str] = []
     for m in _IDENT_RE.finditer(text):
         tok = m.group(0)
-        if tok in seen:
+        # Sentence-final punctuation is not part of the token. `_IDENT_RE`
+        # keeps a trailing `.` so dotted paths (`os.path`) survive, but that
+        # also means the last word of every prose sentence arrives as `first.`
+        # -- which `_token_shape_score` reads as a dotted attribute path and
+        # rewards with 1.0. In prose that promoted sentence-final words to the
+        # top of the concept ranking AND exempted them from the shape-0 floor,
+        # which only applies at shape exactly 0. Interior dots are untouched,
+        # so `os.path.` still resolves to `os.path`.
+        if _strip_trailing_punct():
+            tok = tok.rstrip(".,;:!?")
+        if not tok or tok in seen:
             continue
         seen.add(tok)
         out.append(tok)
@@ -135,9 +188,30 @@ def _is_unlinked_plain(token: str, deg: int) -> bool:
     return deg == 0 and _token_shape_score(token) == 0.0
 
 
+def _code_fraction(s: Store) -> float:
+    """How code-like this corpus is, in [0, 1]. `RMX_SCAN_MODE=code|prose`
+    pins it for an A/B; anything else (or unset) derives it from the store."""
+    mode = (os.environ.get("RMX_SCAN_MODE") or "").strip().lower()
+    if mode == "prose":
+        return 0.0
+    if mode == "auto":
+        try:
+            return float(s.code_fraction())
+        except Exception:
+            return 1.0
+    # Default 1.0 == the original salience expression exactly. Prose weighting
+    # is real and does what it claims to the CONCEPT SELECTION -- it picks
+    # `sneakers`/`vacuum` over `first`/`items` on the MemAware questions -- but
+    # it does not improve RETRIEVAL, and measured against the shipped
+    # tokenizer it is slightly worse (concept-path MRR 0.069 -> 0.062).
+    # The apparent +13%/+20% win came from pairing it with
+    # RMX_SCAN_STRIP_PUNCT, where it was only offsetting that flag's own loss.
+    return 1.0
+
+
 def _salience(
     s: Store, name: str, token: str, cid: int | None, deg: int, df: int,
-    *, pr_computed: bool = False,
+    *, pr_computed: bool = False, code_frac: float = 1.0, n_docs: int = 0,
 ) -> float:
     """Rank score for a matched concept. Higher = more worth surfacing in
     the always-on scan-prompt hook. Combines graph signal (linkage degree),
@@ -146,7 +220,18 @@ def _salience(
     off the per-prompt budget rather than being hard-dropped. Graph signals
     (`cid`/`deg`/`df`) are precomputed by `_concept_signal`; `pr_computed` is
     `pagerank.has_scores(s)`, hoisted out of the per-concept loop."""
-    idf = 1.0 / math.log2(df + 2) if df > 0 else 0.3
+    # Two specificity terms, blended by how code-like the corpus is.
+    #
+    # `idf_weak` (the original) is a RECIPROCAL log: it compresses the whole
+    # corpus into roughly 0.10..0.30, so `1.5 * idf_weak` spans ~0.45 against a
+    # `central` term spanning 0..2.5. Specificity never had a vote. On code
+    # that is survivable, because centrality genuinely tracks domain relevance.
+    # On prose it inverts the ranking outright: measured on eval/memaware,
+    # `need` (df=850) scored 2.65 and `sneakers` (df=22) scored 1.43.
+    #
+    # `idf_true` is textbook log(N/df), which spreads the same two terms by 4x
+    # (1.79 vs 7.06). Scaled to sit in the same band as `central`, it makes
+    # rarity decisive in the regime where rarity is what carries meaning.
     # Centrality prior: the global PageRank ratio (avg node ≈ 1.0) when it has
     # been computed (`rmx pagerank`), log-compressed and capped so a mega-hub
     # can't swamp the other signals.
@@ -165,8 +250,34 @@ def _salience(
         # No PageRank table at all — a fresh store. Fall back to raw linkage
         # degree so it still ranks sensibly before the first `rmx pagerank`.
         central = (2.0 + 0.1 * min(deg, 10)) if deg > 0 else 0.0
+    return _salience_from_parts(central=central, df=df, token=token, name=name,
+                                code_frac=code_frac, n_docs=n_docs)
+
+
+# Scale on prose idf, chosen so `log2(N/df)` lands in the same band as the
+# capped `central` term (0..2.5) rather than dwarfing it.
+_PROSE_IDF_W = 0.25
+
+
+def _salience_from_parts(
+    *, central: float, df: int, token: str, name: str,
+    code_frac: float = 1.0, n_docs: int = 0,
+) -> float:
+    """The salience arithmetic, split out from the graph lookups so the
+    identity property below is directly testable.
+
+    At `code_frac == 1.0` this reduces EXACTLY to the original
+    `central + 1.5*idf_weak + shape + ns_bonus` — the property that lets the
+    prose blend exist at all without putting any code store at risk.
+    """
+    idf_weak = 1.0 / math.log2(df + 2) if df > 0 else 0.3
+    idf_true = (math.log2(max(1.0, n_docs / float(df)))
+                if (n_docs > 0 and df > 0) else 0.0)
     ns_bonus = 0.5 if "/" in name else 0.0
-    return central + 1.5 * idf + _token_shape_score(token) + ns_bonus
+    cf = 0.0 if code_frac < 0.0 else (1.0 if code_frac > 1.0 else code_frac)
+    w_central = 0.3 + 0.7 * cf
+    spec = cf * (1.5 * idf_weak) + (1.0 - cf) * (_PROSE_IDF_W * idf_true)
+    return w_central * central + spec + _token_shape_score(token) + ns_bonus
 
 
 # Salience bump for an STM seed that carries a body. Small — it reorders
@@ -280,12 +391,20 @@ def match_concepts(
     # negate the score for descending without disturbing the index tie-break.
     from refmatrix import pagerank as pr_mod
     pr_computed = pr_mod.has_scores(s)
+    # Corpus mode + document count, hoisted out of the per-concept loop for the
+    # same reason `pr_computed` is: both are per-store constants.
+    code_frac = _code_fraction(s)
+    try:
+        n_docs = s._mentions_bm25_stats(s.get_linkage_id("mentions"))[0]
+    except Exception:
+        n_docs = 0
     scored: list[tuple[int, str, float]] = []
     for idx, (name, token) in enumerate(found):
         cid, deg, df = _concept_signal(s, con, name)
         if drop_unlinked_plain and _is_unlinked_plain(token, deg):
             continue
-        sal = _salience(s, name, token, cid, deg, df, pr_computed=pr_computed)
+        sal = _salience(s, name, token, cid, deg, df, pr_computed=pr_computed,
+                        code_frac=code_frac, n_docs=n_docs)
         # Shape-0 salience floor: a plain lowercase word (no identifier shape,
         # not namespaced) must clear SHAPE0_SALIENCE_FLOOR to earn a bundle in
         # the always-on hook. Kills common-English hapaxes that happen to be
@@ -296,7 +415,7 @@ def match_concepts(
         # PageRank exists, so a fresh store (flat central prior) keeps all.
         if (drop_unlinked_plain and pr_computed
                 and "/" not in name and _token_shape_score(token) == 0.0
-                and sal < SHAPE0_SALIENCE_FLOOR):
+                and sal < _shape0_floor(code_frac)):
             continue
         scored.append((idx, name, sal))
     ranked = sorted(scored, key=lambda it: (-it[2], it[0]))
@@ -374,6 +493,13 @@ def _stm_seed_ids(s: Store, root, *, max_seeds: int = 8) -> list[int]:
     from refmatrix import pagerank as pr_mod
     con = s._connect()
     pr_computed = pr_mod.has_scores(s)
+    # Corpus mode + document count, hoisted out of the per-concept loop for the
+    # same reason `pr_computed` is: both are per-store constants.
+    code_frac = _code_fraction(s)
+    try:
+        n_docs = s._mentions_bm25_stats(s.get_linkage_id("mentions"))[0]
+    except Exception:
+        n_docs = 0
     scored: list[tuple[float, int, int]] = []
     seen: set[int] = set()
     for idx, nd in enumerate(graph.get("nodes") or []):
@@ -397,10 +523,11 @@ def _stm_seed_ids(s: Store, root, *, max_seeds: int = 8) -> list[int]:
             if _is_unlinked_plain(name, deg):
                 continue
             sal = _salience(s, cname, name, cid, deg, df,
-                            pr_computed=pr_computed)
+                            pr_computed=pr_computed,
+                            code_frac=code_frac, n_docs=n_docs)
             if (pr_computed and "/" not in cname
                     and _token_shape_score(name) == 0.0
-                    and sal < SHAPE0_SALIENCE_FLOOR):
+                    and sal < _shape0_floor(code_frac)):
                 continue
             # Prefer a node that can actually carry the tldr expansion. A bare
             # concept has no body, so it contributes edges but nothing for
@@ -518,6 +645,36 @@ def _enrich_stm() -> bool:
     return os.environ.get("RMX_SCAN_ENRICH_STM", "1") not in ("0", "false", "False")
 
 
+def _assoc_rerank(
+    s: Store, matches: list[str], *, max_concepts: int,
+) -> list[str]:
+    """Lift-scored association ranking: seeds plus the concepts whose overlap
+    with the prompt's documents is most SURPRISING, rather than most massive.
+
+    Same fallback contract as `_ppr_rerank` — the always-on hook must never go
+    dark, so any failure returns the salience order untouched."""
+    from refmatrix import assoc as assoc_mod
+    seed_ids: list[int] = []
+    for name in matches:
+        e = s.resolve_entity(name)
+        if e is not None and e.kind == "concept":
+            seed_ids.append(e.id)
+    if not seed_ids:
+        return matches
+    try:
+        ranked = assoc_mod.rank_assoc_for_prompt(
+            s, seed_ids, k=max_concepts, kinds=("concept",),
+            include_seeds=True,
+        )
+    except Exception:
+        return matches
+    names = [r["name"] for r in ranked]
+    for name in matches:
+        if name not in names:
+            names.append(name)
+    return names
+
+
 def _ppr_rerank(
     s: Store, matches: list[str], *, max_concepts: int,
 ) -> list[str]:
@@ -608,6 +765,8 @@ def scan_prompt(
     elif matches and rank == "net":
         matches = _net_rerank(
             s, matches, max_concepts=max_concepts, root=composite_root)
+    elif matches and rank == "assoc":
+        matches = _assoc_rerank(s, matches, max_concepts=max_concepts)
     matches = matches[:max_concepts]
 
     # ---- content-ranked view over the WHOLE candidate bag ------------------

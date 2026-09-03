@@ -3731,9 +3731,64 @@ class Store:
         self._doclen_cache = (self._partition_id, dl)
         return dl
 
+    def concept_df(self, mentions_lid: int) -> "dict[int, int]":
+        """`concept_id -> document frequency` over `mentions` in the active
+        partition.
+
+        The base rate a co-occurrence has to beat. Association scoring needs to
+        know that a concept sharing 40 documents with the prompt is unremarkable
+        if it appears in 800, and striking if it appears in 45 — raw overlap
+        alone just re-elects the hubs. Same cache contract as
+        `_mentions_bm25_stats`: a per-document constant between ingests, so
+        recomputing it per read is waste, and slight staleness is harmless
+        because it only shifts a ranking, never hides a candidate."""
+        cache = getattr(self, "_conceptdf_cache", None)
+        if cache is not None and cache[0] == self._partition_id:
+            return cache[1]
+        df = {
+            int(r[0]): int(r[1] or 0)
+            for r in self._connect().execute(
+                "SELECT el.concept_id, COUNT(*) FROM entity_links el "
+                "JOIN entities e ON e.id = el.entity_id "
+                "WHERE el.linkage_id=? AND e.partition_id=? "
+                "GROUP BY el.concept_id",
+                (mentions_lid, self._partition_id),
+            )
+        }
+        self._conceptdf_cache = (self._partition_id, df)
+        return df
+
+    def code_fraction(self) -> float:
+        """Share of the active partition's non-concept entities that are code.
+
+        A corpus descriptor, not a setting. `scan._salience` weighs graph
+        centrality against term specificity, and the right balance is opposite
+        in the two regimes: in code a central symbol IS the domain, in prose a
+        central term is a function word. This is the signal that tells them
+        apart, and it is unambiguous in practice — the refmatrix store measures
+        0.95, the MemAware prose store 0.00.
+
+        Concepts are excluded from the denominator: they are index artifacts of
+        whatever the documents are, not documents themselves.
+        """
+        cache = getattr(self, "_codefrac_cache", None)
+        if cache is not None and cache[0] == self._partition_id:
+            return cache[1]
+        rows = self._connect().execute(
+            "SELECT kind, COUNT(*) FROM entities "
+            "WHERE partition_id=? AND kind <> 'concept' GROUP BY kind",
+            (self._partition_id,),
+        ).fetchall()
+        counts = {str(r[0]): int(r[1] or 0) for r in rows}
+        total = sum(counts.values())
+        frac = (counts.get("code", 0) / total) if total else 1.0
+        self._codefrac_cache = (self._partition_id, frac)
+        return frac
+
     def _invalidate_content_rank_caches(self) -> None:
         """Drop the read-side BM25 caches. Called at write boundaries."""
-        for attr in ("_bm25_stats_cache", "_doclen_cache", "_leafidx_cache"):
+        for attr in ("_bm25_stats_cache", "_doclen_cache", "_leafidx_cache",
+                     "_conceptdf_cache", "_codefrac_cache"):
             if hasattr(self, attr):
                 delattr(self, attr)
 
