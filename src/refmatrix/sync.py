@@ -33,6 +33,39 @@ from refmatrix.store import Store
 _GMD_SNIFF_BYTES = 512
 
 
+def _gmd_route_pending(s, path: Path, ext: str) -> bool:
+    """Would this file route to GMD, but has never actually been GMD-ingested?
+
+    The mtime gate above means "the previous ingest's output is still current",
+    and that premise is false when the ROUTING changed rather than the file. A
+    `.md` first indexed by the plain-doc branch got `mark_tracked(mtime)`
+    stamped there; if it later becomes GMD-eligible — frontmatter added, or the
+    GMD dispatch itself introduced after the fact — its mtime is unchanged, so
+    the gate fires and the file NEVER reaches the dispatch below. It stays a
+    content-less doc entity forever, because only an edit to the file can
+    dislodge it.
+
+    Measured on cliquedb: 199 `.md` files with zero `mentions` edges, 179 of
+    them valid GMD, 100% skipped by this gate. That is 43% of the store's
+    documents present in the index and unretrievable by their own content.
+
+    Cost is one 512-byte sniff plus one indexed meta lookup, and ONLY for files
+    that both sniff as GMD and were going to be skipped anyway.
+    """
+    if ext not in (".gmd", ".md"):
+        return False
+    if ext == ".md" and not _is_gmd_file(path):
+        return False
+    try:
+        from refmatrix.ingest_gmd import _existing_hash_for, parse_gmd
+        doc = parse_gmd(path)
+        if doc is None:
+            return False
+        return _existing_hash_for(s, doc.doc_id, ("memory", "doc")) is None
+    except Exception:
+        return False
+
+
 def _is_gmd_file(path: Path) -> bool:
     """Cheap sniff: file opens with `---` and has `gmd:` in first ~512 bytes."""
     try:
@@ -188,7 +221,8 @@ def _sync_paths(
                 disk_mtime = None
             if disk_mtime is not None:
                 cached_mtime = s.get_tracked_mtime(str(ap))
-                if cached_mtime is not None and disk_mtime == cached_mtime:
+                if (cached_mtime is not None and disk_mtime == cached_mtime
+                        and not _gmd_route_pending(s, ap, ext)):
                     skipped_unchanged += 1
                     continue
 
