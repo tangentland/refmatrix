@@ -90,6 +90,51 @@ def _doc_prior_weights() -> "dict[str, float]":
     }
 
 
+def _expand_cfg() -> "tuple[int, str, int]":
+    """`(hops, mode, seeds)` for typed-edge candidate expansion. Hops 0 = off.
+
+    `mode` is how a graph-reached candidate joins the lexical ranking:
+
+    `rrf` (default) fuses the two as RANKED LISTS via `query.fuse_rrf`, which
+    is scale-free. `decay` multiplies the parent's BM25 score by a constant.
+    The decay form is kept only for comparison, and it is the wrong model: a
+    BM25 score means "contains these terms with this tf/idf profile" while a
+    propagated score means "is linked to something that does". Those are
+    incommensurate, and a constant that makes one comparable to the other is
+    the same category error as storing a `2.0` importance in a term-frequency
+    column. Measured, the constant did not place candidates thoughtfully — it
+    placed them at ranks 32-78, outside the window entirely, for every value
+    tried.
+
+    MEASURED AND REJECTED; kept behind the flag as a documented negative.
+
+    The motivation was sound: on cliquedb known-item retrieval the baseline is
+    hit@1 0.447 against hit@20 0.537, and a full-pool diagnostic showed 0% of
+    failures are ranking failures — when the gold document is retrieved at all
+    it is always inside the top 20, and 44% of queries never retrieve it. Only
+    something that ADDS candidates can move that, which a walk does.
+
+    It does not work. hit@20 is 0.5367 in EVERY arm — both scoring models, one
+    and two hops, ten and twenty seeds. Under `decay` the candidates never
+    entered the window (ranks 32-78), so that null said nothing. Under `rrf`
+    they entered hard enough to take hit@1 from 0.447 to 0.143, and recall
+    STILL did not move. The walk is not under-scored; it reaches the wrong
+    documents. Being reachable by a typed edge from SOMEWHERE in the graph
+    (343 of 563 zero-term docs are) is not the same as being reachable from
+    the documents a given query actually retrieves.
+
+    Distinct from `enrich`'s rejected degree-2 walk, which was 5x worse: that
+    one traversed the concept<->entity `mentions` graph, where hop 2 from any
+    hub concept is most of the corpus. This walks TYPED edges only (`amends`,
+    `depends-on`, `part-of`, `derives-from`, ...), which are sparse and
+    curated — measured fan-out 4.65 on cliquedb, against `mentions`' thousands.
+    `same_as` is excluded: it is variant aliasing, not a relation.
+    """
+    return (int(_env_f("RMX_EXPAND_HOPS", 0.0)),
+            (os.environ.get("RMX_EXPAND_MODE") or "rrf").strip().lower(),
+            int(_env_f("RMX_EXPAND_SEEDS", 10.0)))
+
+
 def _null_tf_fn():
     """How a NULL `mentions.weight` becomes a tf for BM25.
 
@@ -4181,6 +4226,58 @@ class Store:
                             scores[_eid] *= _m
                 except Exception:
                     pass
+
+        # --- typed-edge candidate expansion ------------------------------
+        # Runs BEFORE the final truncation so added candidates can actually
+        # land in the returned window.
+        _hops, _mode, _nseed = _expand_cfg()
+        if scores and _hops > 0:
+            try:
+                _sa = None
+                try:
+                    _sa = self.get_linkage_id("same_as")
+                except Exception:
+                    pass
+                _lex_order = [e for e, _ in sorted(
+                    scores.items(), key=lambda kv: (-kv[1], kv[0]))]
+                _frontier = _lex_order[:_nseed]
+                _seen = set(scores)
+                _walk_order: list[int] = []
+                _w = 1.0
+                for _ in range(_hops):
+                    _w *= 0.3
+                    if not _frontier:
+                        break
+                    _fp = ",".join("?" * len(_frontier))
+                    _skip = [mlid] + ([_sa] if _sa is not None else [])
+                    _sp = ",".join("?" * len(_skip))
+                    # Bidirectional: a typed edge is stored (target, source),
+                    # so a document is reachable from either slot.
+                    _rows = con.execute(
+                        f"SELECT el.concept_id, el.entity_id FROM entity_links el "
+                        f"WHERE el.linkage_id NOT IN ({_sp}) "
+                        f"AND (el.entity_id IN ({_fp}) OR el.concept_id IN ({_fp}))",
+                        (*_skip, *_frontier, *_frontier),
+                    ).fetchall()
+                    _next = []
+                    for _a, _b in _rows:
+                        for _cand, _src in ((int(_a), int(_b)), (int(_b), int(_a))):
+                            if _cand in _seen or _src not in scores:
+                                continue
+                            _seen.add(_cand)
+                            _next.append(_cand)
+                            _walk_order.append(_cand)
+                            if _mode == "decay":
+                                scores[_cand] = scores.get(_src, 0.0) * _w
+                    _frontier = _next
+                if _mode != "decay" and _walk_order:
+                    # Scale-free: fuse the lexical ranking with the walk order
+                    # as two RANKED LISTS. No constant has to claim what a hop
+                    # is worth relative to an idf.
+                    from refmatrix.query import fuse_rrf
+                    scores = dict(fuse_rrf([_lex_order, _walk_order]))
+            except Exception:
+                pass
 
         # M1 — surface DEFINITION files. A symbol's own name is a `defines`
         # concept on its file, not a `mentions` term, so the file that DEFINES
