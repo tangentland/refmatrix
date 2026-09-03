@@ -51,6 +51,13 @@ def _concept_variants(name: str) -> tuple[str, list[str]]:
     that differ from canonical. Single-token names return (name, []).
     """
     stripped = name.strip()
+    # `phrase/a_b` keys are generated pair identities, not identifiers anyone
+    # types, so there is no spelling of them to alias. Expanding them anyway
+    # wrote three rows and two `same_as` links per pair -- and the alias rows
+    # carry no `mentions`, so they are pure bloat in the concept table and in
+    # the df statistics the noise pruner reads.
+    if stripped.startswith("phrase/"):
+        return stripped, []
     parts = [p for p in _CONCEPT_WORD_SPLIT_RE.split(stripped) if p]
     if len(parts) < 2:
         return stripped, []

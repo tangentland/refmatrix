@@ -463,6 +463,19 @@ def _body_term_frequencies(body_lines: list[str]) -> dict[str, int]:
     return tf
 
 
+def _body_phrases(body_lines: list[str]) -> dict[str, int]:
+    """Co-occurring content-word pairs over a node body, as `phrase/*` keys.
+
+    Same miner the docstring pass uses, handed the PROSE stoplist so phrases
+    and body terms agree on what counts as content. Bodies are joined with
+    newlines because the miner treats a line break as a clause break -- a
+    phrase never spans two lines.
+    """
+    from refmatrix.ingest import text_phrases
+    text = "\n".join(l for l in body_lines if not l.startswith("rel:"))
+    return dict(text_phrases(text, stop=_BODY_STOPWORDS))
+
+
 def ingest_gmd_paths(
     store: Store, paths: list[Path], verbose: bool = False,
     yield_lock: Callable[[], None] | None = None,
@@ -492,6 +505,11 @@ def ingest_gmd_paths(
     memory mtype (falls back to `memory_mtype_default`).
     """
     stats = IngestStats()
+
+    # Resolved once per run, not per node: `phrases_enabled()` reads the
+    # environment and both emission sites sit inside the per-doc loop.
+    from refmatrix.ingest import phrases_enabled
+    _phrases_on = phrases_enabled()
 
     # Intra-doc lock-yield cadence. `yield_lock` fires between DOCS, but a
     # single huge doc (e.g. a live session transcript with thousands of
@@ -756,6 +774,11 @@ def ingest_gmd_paths(
                 concept_specs.append((alias, f"alias '{alias}'"))
             for term in _body_term_frequencies(node.body_lines):
                 concept_specs.append((term, f"body term '{term}'"))
+            if _phrases_on:
+                for ph in _body_phrases(node.body_lines):
+                    concept_specs.append((
+                        f"phrase/{ph}",
+                        f"phrase '{ph.replace(chr(95), chr(32))}'"))
         cids = _bulk_add_concepts(store, concept_specs)
 
         # Unconditional links are batched and written with ONE weight-aware
@@ -820,6 +843,15 @@ def ingest_gmd_paths(
             for term, tf in _body_term_frequencies(node.body_lines).items():
                 link_batch.append(("mentions", cids[term], src_eid, float(tf)))
                 stats.mentions += 1
+
+            # phrase pairs → mentions, same tf weighting as unigrams. Namespaced
+            # so `--no-phrases` recall and the noise pruner can tell the two
+            # apart, and so a pair key can never collide with a real symbol.
+            if _phrases_on:
+                for ph, tf in _body_phrases(node.body_lines).items():
+                    link_batch.append(
+                        ("mentions", cids[f"phrase/{ph}"], src_eid, float(tf)))
+                    stats.mentions += 1
 
             # rel: edges
             for line_no, verb, target in node.rels:

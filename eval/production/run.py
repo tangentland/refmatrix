@@ -61,7 +61,7 @@ def _env(root: Path) -> dict:
 
 
 def build_store(rmx: str, corpus: Path, root: Path, *, semantic: bool,
-                bodies: bool = True) -> dict:
+                bodies: bool = True, phrases: bool = False) -> dict:
     """Fresh store, real ingest, real embed. Returns timings."""
     if root.exists():
         shutil.rmtree(root)
@@ -69,6 +69,7 @@ def build_store(rmx: str, corpus: Path, root: Path, *, semantic: bool,
     env = _env(root)
     if not bodies:
         env["RMX_INGEST_BODIES"] = "0"
+    env["RMX_INGEST_PHRASES"] = "1" if phrases else "0"
     out: dict = {}
 
     _run([rmx, "init"], env)
@@ -200,7 +201,8 @@ def main() -> int:
                     help="Directory written by prepare.py")
     ap.add_argument("--rmx", default="rmx")
     ap.add_argument("--condition", action="append",
-                    choices=["plain", "nobody", "semantic"], default=None)
+                    choices=["plain", "nobody", "semantic", "phrases"],
+                    default=None)
     ap.add_argument("--k", type=int, default=20)
     ap.add_argument("--surface", action="append",
                     choices=sorted(SURFACES), default=None,
@@ -225,7 +227,8 @@ def main() -> int:
         print(f"\n=== {cond}: building store ===", flush=True)
         timings = build_store(a.rmx, corpus, root,
                               semantic=(cond != "plain"),
-                              bodies=(cond != "nobody"))
+                              bodies=(cond != "nobody"),
+                              phrases=(cond == "phrases"))
         stats = body_stats(a.rmx, root)
         print(f"  {timings} {stats}", flush=True)
 

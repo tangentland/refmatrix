@@ -1150,6 +1150,136 @@ _DOCSTRING_STOP = {
 }
 _WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 
+# Multi-word concept capture, borrowed from intropretor's CTST: its tree levels
+# are whole WORDS and the eq-chain encodes word SEQUENCES, so a concept can be
+# `shared model worker` rather than three unrelated tokens.
+#
+# The motivating measurement: file-level `co-occurs` pairs share only 5-11% of
+# their `keyword/*` concepts (jaccard 0.08 for daemon.py<->embedder.py), and
+# the overlap that does exist is contaminated with prose — `one`, `when`,
+# `same`, `already`, `which`. Single words are the wrong granularity to
+# associate over. A phrase is a far better discriminator: `model` and `worker`
+# each appear all over the tree, `model_worker` does not.
+# A phrase pair is emitted for every two content words within this many
+# positions of each other. Measured on this corpus, dropping the contiguity
+# requirement is by far the largest of the phrase normalizations: hapax rate
+# 87.1% -> 82.8% on docstrings and 85.6% -> 81.6% on prose, with df>=3 keys up
+# 56% and 38% respectively, for ~10% more distinct keys. Widening to 6 buys
+# nothing further (hapax 82.8% -> 82.9%) while inflating the key space 12%,
+# which is itself the evidence that the co-occurrence signal is local.
+_PHRASE_WINDOW = 4
+
+# Cap per unit. A 30-word docstring yields ~29 bigrams + ~28 trigrams, and
+# emitting all of them across thousands of units would swamp the concept table
+# with hapaxes that can never link anything to anything.
+_MAX_PHRASES_PER_UNIT = 12
+
+# A phrase never spans these: they end a clause, so the words on either side
+# were never adjacent in meaning. Without this, "... the store. Returns a
+# handle" yields `store_returns`, which is an artifact of formatting.
+_CLAUSE_BREAK_RE = re.compile(r"[.;:,!?()\[\]{}\n\r|/\\\"'`]+|\s-\s|--+")
+
+
+def phrases_enabled() -> bool:
+    """Emit multi-word `phrase/*` concepts alongside `keyword/*` unigrams.
+
+    OFF by default, and measurement says keep it that way. On MemAware
+    Layer-A (1307 prose session docs, 90 questions, identical corpus, only
+    this flag differing) phrases bought NOTHING and cost a little:
+
+        surface   metric     unigram   +phrases
+        context   hit@20       0.422      0.422
+        context   hit@10       0.344      0.322
+        scan      MRR          0.240      0.225
+        scan      hit@5        0.300      0.278
+
+    hit@20 is IDENTICAL on both surfaces, which is the whole story: a phrase
+    key's constituent words are already `mentions` on the same node, so pairs
+    cannot reach a document the unigrams missed. They only redistribute weight
+    inside a candidate set that never grows -- and that redistribution is
+    mildly harmful. The price was 13x the concept table (42k -> 549k) and 2.4x
+    the ingest. See eval/memaware/REPORT.md.
+
+    Kept behind the flag, not deleted, because the miner itself is sound and
+    the A/B is worth being able to re-run (`eval/production/run.py --condition
+    phrases` builds the code-corpus arm)."""
+    return os.environ.get("RMX_INGEST_PHRASES", "0") not in (
+        "0", "false", "False")
+
+
+# Suffix families folded before a phrase key is built. Deliberately crude —
+# a real stemmer is a dependency and a per-token cost on the ingest hot path,
+# and measured on this corpus the whole family of normalizations is worth about
+# one point of hapax rate. This one is the only variant that improves BOTH
+# axes: fewer distinct phrases (19571 -> 19199) AND more that recur (df>=2
+# 2173 -> 2321, df>=3 714 -> 779). Stripping stopwords instead RAISES the hapax
+# rate (88.9% -> 90.7%) by inventing adjacencies across the words it removes.
+_STEM_SUFFIXES = ("ingly", "edly", "ing", "ies", "ied", "es", "ed", "s")
+
+
+def _stem(word: str) -> str:
+    """Fold `loaded`/`loads`/`loading` onto one key.
+
+    Guards on length so short words are never truncated into collisions
+    (`is`, `was`, `des`), and restores the `y` that `-ies`/`-ied` replaced.
+    """
+    for suf in _STEM_SUFFIXES:
+        if len(word) <= len(suf) + 3 or not word.endswith(suf):
+            continue
+        # A bare trailing `s` after s/u/i is part of the stem, not a plural.
+        # Without this, `process` -> `proces` while `processes` -> `process`,
+        # so the singular and plural SPLIT instead of merging — the exact
+        # opposite of the point, on exactly the domain words that matter
+        # (`process`, `status`, `analysis`).
+        if suf == "s" and word[-2:-1] in ("s", "u", "i"):
+            continue
+        base = word[: -len(suf)]
+        return base + "y" if suf in ("ies", "ied") else base
+    return word
+
+
+def text_phrases(
+    doc: str,
+    stop: "set[str] | frozenset[str] | None" = None,
+    window: int = _PHRASE_WINDOW,
+) -> "Counter[str]":
+    """Co-occurring CONTENT-word pairs within a window, as sorted `a_b` keys.
+
+    Not contiguous n-grams. `loads the sentence transformer model` and `the
+    model, which is a sentence transformer` share no trigram in any order, but
+    they share the pairs `load_model`, `model_transformer`, `sentence_
+    transformer` -- the structural comparison, not the exact sequence. Keys are
+    alphabetized so word order is not part of the identity either; that is a
+    smaller win than dropping contiguity but a free one (see _PHRASE_WINDOW).
+
+    Stopwords and clause punctuation BREAK a run rather than being skipped
+    over: skipping would pair words that were never near each other in meaning.
+    `stop` defaults to the docstring stoplist; prose callers pass their own so
+    phrases and that corpus's unigrams agree on what counts as content.
+    """
+    stopset = _DOCSTRING_STOP if stop is None else stop
+    out: "Counter[str]" = Counter()
+    for segment in _CLAUSE_BREAK_RE.split(doc or ""):
+        run: list[str] = []
+        for m in _WORD_RE.finditer(segment):
+            w = m.group(0).lower()
+            if w in stopset or w.isdigit():
+                run = []          # a stopword ENDS the run
+                continue
+            w = _stem(w)
+            for prev in run[-(window - 1):]:
+                if prev == w:     # a repeat is not a pair
+                    continue
+                a, b = (prev, w) if prev < w else (w, prev)
+                out[f"{a}_{b}"] += 1
+            run.append(w)
+    return out
+
+
+# The docstring pass's name for it, kept because that is the only corpus the
+# unigram miner and this share a stoplist on.
+_docstring_phrases = text_phrases
+
 
 # Cap on a stored body. Docstrings are usually short; a module-level one can
 # run long, and the embedder truncates at MAX_INPUT_CHARS anyway.
@@ -1351,6 +1481,15 @@ def _python_semantic_emit_body(s, tree, rel: str, file_path: Path) -> int:
                 s.add_evidence("mentions", cid, f_id, file=rel, line=line,
                                detail=f"docstring keyword (×{count})")
                 n += 1
+            if phrases_enabled():
+                ranked = sorted(_docstring_phrases(doc).items(),
+                                key=lambda kv: (-kv[1], kv[0]))
+                for phrase, count in ranked[:_MAX_PHRASES_PER_UNIT]:
+                    cid = s.add_namespaced_concept(
+                        "phrase", phrase,
+                        description=f"phrase '{phrase.replace(chr(95), chr(32))}'")
+                    pending_links.append(("mentions", cid, f_id, float(count)))
+                    n += 1
     if pending_links:
         s.bulk_link(pending_links)
     return n

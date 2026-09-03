@@ -353,6 +353,44 @@ comparison about the engine. Not a defect; a contract.
 backoff sequence at k=20. The speed claims that can be checked here hold up;
 they are just attached to an index that does not rank.
 
+## Multi-word phrases: measured, and closed (2026-09-03)
+
+Skip-pair `phrase/*` concepts wired into the prose path (`ingest_gmd`), A/B'd
+against the identical corpus with only `RMX_INGEST_PHRASES` differing. Both
+arms built from scratch under `/Volumes/littlebig/ab/{base,phrase}/memaware`,
+1307 docs, 90 questions.
+
+| surface | metric | unigram | +phrases |
+|---|---|---:|---:|
+| context | MRR | 0.159 | 0.160 |
+| context | hit@10 | 0.344 | 0.322 |
+| context | hit@20 | 0.422 | 0.422 |
+| scan | MRR | 0.240 | 0.225 |
+| scan | hit@1 | 0.189 | 0.178 |
+| scan | hit@5 | 0.300 | 0.278 |
+| scan | hit@20 | 0.389 | 0.389 |
+
+**hit@20 is identical on both surfaces.** That is the finding, not the small
+MRR losses. A phrase key's constituent words are already `mentions` on the same
+node, so pairs cannot surface a session the unigrams missed — the candidate set
+never grows, the pairs only redistribute weight inside it, and that
+redistribution costs ~2 points at k=5 and k=10. Price: concepts 42,094 →
+548,645 (13x), mentions 607k → 1.65M, ingest 99s → 242s.
+
+The identity was the best of four measured variants (contiguous trigram →
+stemmed → alphabetized → skip-pair within a window of 4; hapax 88.9% → 81.6%
+on this corpus). Making the key better did not make the layer useful, because
+the ceiling was never the key — it was that composition adds no reachability
+over its own components. Left behind the default-off flag.
+
+**Caveat.** `recall` and `recall-fuse` scored 0.000 in both arms: they need the
+daemon up for the dense embedder and this run was daemon-less. Equal across
+arms, so the comparison stands, but `recall-fuse` is genuinely phrase-sensitive
+(it fuses dense with the same `content_rank` BM25) and remains unmeasured.
+
+The base arm reproduced the published numbers (scan MRR 0.240 vs 0.241;
+context hit@20 0.422 vs 0.433), which is what validates the build.
+
 ## What has NOT been run
 
 Layer B — upstream's continuity-accuracy harness — has never executed. It needs
