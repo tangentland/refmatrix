@@ -1272,6 +1272,9 @@ def _python_semantic_emit_body(s, tree, rel: str, file_path: Path) -> int:
     _mod_doc = _docstring_body(tree)
     file_id = s.upsert_entity(kind="code", name=rel, path=str(file_path),
                               tldr=_mod_doc or None)
+    s.add_linkage_type(
+        "has-part", directed=True,
+        description="container holds this unit (file -> function/class)")
     try:
         s.mark_tracked(str(file_path), file_path.stat().st_mtime)
     except OSError:
@@ -1322,6 +1325,21 @@ def _python_semantic_emit_body(s, tree, rel: str, file_path: Path) -> int:
                       **({"docstring": doc[:_MAX_TLDR_CHARS]}
                          if _bodies_enabled() else {})},
             )
+            # File CONTAINS unit, as a real edge.
+            #
+            # `file.py` and `file.py::fn` were related only by a `::` prefix in
+            # the name — a convention, not something the graph could walk. That
+            # left the file rung semantically empty: measured on the dev store,
+            # all 22823 keyword `mentions` edges attach to UNITS and exactly
+            # zero to files, so a file entity carried `imports` and nothing
+            # else. Anything that lands on a file (STM refs are file paths, and
+            # so are the `co-occurs` edges promoted from them) had no route to
+            # the concepts describing it.
+            #
+            # `has-part` already exists and already means this: the graphify
+            # extractor writes `gf/<file> -has-part-> graphify::<unit>`. Reuse
+            # the verb rather than inventing a second containment relation.
+            pending_links.append(("has-part", file_id, f_id, None))
             words = [
                 w.lower() for w in _WORD_RE.findall(doc)
                 if w.lower() not in _DOCSTRING_STOP and not w.isdigit()

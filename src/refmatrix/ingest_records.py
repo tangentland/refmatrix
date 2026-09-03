@@ -137,6 +137,20 @@ class RecordingStore:
 
     # ---- linkage ops ----------------------------------------------------
 
+    def add_linkage_type(
+        self, name: str, directed: bool = True,
+        description: str | None = None,
+    ) -> str:
+        """Recorded, not applied. `Store.get_linkage_id` RAISES on an unknown
+        verb rather than auto-creating one, so a record that links with a verb
+        the store has never seen would fail at replay. Buffered as an op the
+        applier replays BEFORE the link flush."""
+        self.record.ops.append({
+            "op": "add_linkage_type", "linkage": name,
+            "directed": bool(directed), "description": description,
+        })
+        return name
+
     def link(
         self, linkage: str, c: str, e: str,
         weight: float | None = None, protect: bool = False,
@@ -281,8 +295,19 @@ def apply_record(
         return None
 
     # 6. linkage ops, batched
+    # Verbs first: `get_linkage_id` raises on an unknown type, so a link op
+    # using a verb this store has never seen must not reach the flush before
+    # the type exists.
+    for op in record.ops:
+        if op["op"] == "add_linkage_type":
+            s.add_linkage_type(
+                op["linkage"], directed=op.get("directed", True),
+                description=op.get("description"),
+            )
     with s.deferred_links():
         for op in record.ops:
+            if op["op"] == "add_linkage_type":
+                continue
             src = _resolve(op["src"])
             dst = _resolve(op["dst"])
             if src is None or dst is None:
@@ -376,6 +401,17 @@ def bulk_apply_records(
 
     n = len(doc_rows) + len(sub_order)
 
+    # Verbs first, across ALL records: `get_linkage_id` raises on an unknown
+    # type, so a link op using a verb this store has never seen must not reach
+    # the flush before the type exists.
+    for rec in records:
+        for op in rec.ops:
+            if op["op"] == "add_linkage_type":
+                s.add_linkage_type(
+                    op["linkage"], directed=op.get("directed", True),
+                    description=op.get("description"),
+                )
+
     # ---- per-record ref resolution + link replay (one batched flush) ----
     with s.deferred_links():
         for rec in records:
@@ -408,6 +444,8 @@ def bulk_apply_records(
                 return None
 
             for op in rec.ops:
+                if op["op"] == "add_linkage_type":
+                    continue
                 src = _resolve(op["src"])
                 dst = _resolve(op["dst"])
                 if src is None or dst is None:
