@@ -202,6 +202,14 @@ def render_hub_plist(*, port: int = 7777, host: str = "127.0.0.1") -> bytes:
         "TOKENIZERS_PARALLELISM": "false",
     }
     # Pass through the queue-alert interval if set; <=0 disables the alerts.
+    # The hub owns the fleet's model workers, so the idle-evict knob has to
+    # reach ITS process — a per-daemon `RMX_WORKER_IDLE_S` is a no-op under
+    # sharing (each daemon holds a `SharedWorkerClient` that refuses to kill a
+    # model six other projects are using).
+    idle = os.environ.get("RMX_WORKER_IDLE_S")
+    if idle:
+        env["RMX_WORKER_IDLE_S"] = idle
+
     qa = os.environ.get("RMX_HUB_QUEUE_ALERT_INTERVAL")
     if qa:
         env["RMX_HUB_QUEUE_ALERT_INTERVAL"] = qa

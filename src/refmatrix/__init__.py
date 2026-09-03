@@ -1,5 +1,5 @@
 """refmatrix: roaring-bitmap reference index for docs, code, and concepts."""
-__version__ = "0.46.0"
+__version__ = "0.47.0"
 
 from refmatrix.store import Store
 from refmatrix.query import QueryEngine

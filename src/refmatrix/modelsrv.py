@@ -182,6 +182,7 @@ class ModelServer:
         self._srv: socket.socket | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._evict_thread: threading.Thread | None = None
 
     def _log(self, msg: str) -> None:
         if self._log_fn is not None:
@@ -227,11 +228,65 @@ class ModelServer:
         self._thread = threading.Thread(
             target=self._serve, name="rmx-models", daemon=True)
         self._thread.start()
+        self._start_evict_tick()
         self._log(f"listening at {sp}")
         return True
 
+    def idle_seconds(self) -> float:
+        """Reap a worker idle this long. 0 = never (the default).
+
+        The knob moved here when the workers did. A per-daemon
+        `RMX_WORKER_IDLE_S` is a NO-OP under sharing: each daemon holds a
+        `SharedWorkerClient` whose `evict_if_idle` deliberately returns False,
+        because one project going quiet is not a reason to drop a model six
+        others are using. Only the hub, which owns the processes, can decide
+        the fleet is idle.
+        """
+        try:
+            return float(os.environ.get("RMX_WORKER_IDLE_S", "0") or "0")
+        except ValueError:
+            return 0.0
+
+    def _evict_loop(self, idle_s: float, interval: float) -> None:
+        while not self._stop.wait(interval):
+            with self._lock:
+                workers = list(self._clients.items())
+            for role, w in workers:
+                try:
+                    if w.evict_if_idle(idle_s):
+                        # Drop the entry so the next request builds a fresh
+                        # client rather than reusing a closed one.
+                        with self._lock:
+                            if self._clients.get(role) is w:
+                                del self._clients[role]
+                        self._log(f"worker[{role}] idle-evicted after "
+                                  f"{idle_s:.0f}s")
+                except Exception as exc:
+                    self._log(f"worker[{role}] idle-evict failed: {exc!r}")
+
+    def _start_evict_tick(self) -> None:
+        """Reclaim model RSS when the fleet goes quiet.
+
+        This is the only eviction that actually returns memory: torch's
+        caching allocator never gives it back on macOS (dropping an in-process
+        reference recovered ~84 MB of ~610), so `kill()` is the mechanism.
+        Measured live: two shared workers sat at 891 MB cold and 3155 MB after
+        a 13,517-vector embed, because the allocator keeps its high-water mark.
+        """
+        idle_s = self.idle_seconds()
+        if idle_s <= 0:
+            return
+        interval = max(5.0, min(idle_s / 4.0, 60.0))
+        self._evict_thread = threading.Thread(
+            target=self._evict_loop, args=(idle_s, interval),
+            name="rmx-models-evict", daemon=True)
+        self._evict_thread.start()
+        self._log(f"idle-evict tick every {interval:.0f}s (idle>{idle_s:.0f}s)")
+
     def stop(self) -> None:
         self._stop.set()
+        if self._evict_thread is not None:
+            self._evict_thread.join(timeout=3.0)
         if self._thread is not None:
             self._thread.join(timeout=3.0)
         try:

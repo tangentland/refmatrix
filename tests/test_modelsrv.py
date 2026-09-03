@@ -390,3 +390,65 @@ def test_shared_and_private_embedders_agree(tmp_path, sock_path):
         srv.stop()
 
     assert np.allclose(shared, local, atol=1e-5)
+
+
+# --- hub-side idle eviction ------------------------------------------------
+
+
+def test_idle_seconds_defaults_to_never(monkeypatch):
+    """Off by default: the next query after an eviction pays a cold model
+    load, which is worth it on a memory-constrained host and not on a busy
+    one."""
+    from refmatrix.modelsrv import ModelServer
+
+    monkeypatch.delenv("RMX_WORKER_IDLE_S", raising=False)
+    assert ModelServer().idle_seconds() == 0.0
+    monkeypatch.setenv("RMX_WORKER_IDLE_S", "300")
+    assert ModelServer().idle_seconds() == 300.0
+    monkeypatch.setenv("RMX_WORKER_IDLE_S", "banana")
+    assert ModelServer().idle_seconds() == 0.0
+
+
+def test_no_evict_tick_when_disabled(sock_path, monkeypatch):
+    from refmatrix.modelsrv import ModelServer
+
+    monkeypatch.delenv("RMX_WORKER_IDLE_S", raising=False)
+    srv = ModelServer()
+    try:
+        assert srv.start() is True
+        assert srv._evict_thread is None
+    finally:
+        srv.stop()
+
+
+def test_idle_worker_is_reaped_and_reopens(server, monkeypatch):
+    """The whole point: the PROCESS exits, which is the only thing that
+    returns torch's memory to the OS. And the next request must still work."""
+    from refmatrix.modelsrv import SharedWorkerClient
+
+    c = SharedWorkerClient("embed")
+    try:
+        first = c.call("echo", {"v": 1})[0]["pid"]
+        worker = server._clients["embed"]
+        assert worker.alive()
+        # Reap directly: the tick is only a timer around exactly this call.
+        assert worker.evict_if_idle(0.0) is True
+        assert not worker.alive()
+        import os
+        with pytest.raises(OSError):
+            os.kill(int(first), 0)
+        # A fresh request rebuilds the worker rather than erroring.
+        second = c.call("echo", {"v": 2})[0]["pid"]
+        assert second != first
+    finally:
+        c.close()
+
+
+def test_shared_client_never_evicts_the_hubs_worker():
+    """A per-daemon RMX_WORKER_IDLE_S must NOT reach across and kill a model
+    six other projects are using — which is also why setting that env var on
+    the daemons was a no-op and the tick had to live on the hub."""
+    from refmatrix.modelsrv import SharedWorkerClient
+
+    c = SharedWorkerClient("embed")
+    assert c.evict_if_idle(0.0) is False
