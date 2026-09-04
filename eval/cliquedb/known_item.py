@@ -36,6 +36,41 @@ LEAD_SKIP = 6          # lines to skip so the `lead` signal is never sampled
 QUERY_WORDS = 10
 
 
+def _passage_list(path: Path, rnd: random.Random, k: int) -> list[str]:
+    """Up to `k` DISTINCT query passages from one file.
+
+    With only 25 target documents, one passage each gives 25 queries and no
+    resolution. Sampling several per file trades independence for n — the
+    queries share a target, so treat this as k probes of the same document
+    rather than k independent trials.
+    """
+    try:
+        raw = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except Exception:
+        return []
+    body = [l for l in raw
+            if l.strip()
+            and not l.startswith(("#", "rel:", "---", "```", "|", ">"))
+            and not l.strip().startswith(("-", "*", "="))]
+    if len(body) <= LEAD_SKIP:
+        return []
+    pool = body[LEAD_SKIP:]
+    rnd.shuffle(pool)
+    out, seen = [], set()
+    for line in pool:
+        words = _WORD.findall(line)
+        if len(words) < 5:
+            continue
+        q = " ".join(words[:QUERY_WORDS])
+        if q in seen:
+            continue
+        seen.add(q)
+        out.append(q)
+        if len(out) >= k:
+            break
+    return out
+
+
 def _passages(path: Path, rnd: random.Random) -> "str | None":
     try:
         raw = path.read_text(encoding="utf-8", errors="ignore").splitlines()
@@ -63,6 +98,13 @@ def main() -> int:
     ap.add_argument("--n", type=int, default=300)
     ap.add_argument("--seed", type=int, default=20260903)
     ap.add_argument("--limit", type=int, default=20)
+    ap.add_argument("--per-file", type=int, default=1,
+                    help="query passages to draw per document")
+    ap.add_argument("--only", default=None,
+                    help="restrict QUERY SOURCES to paths containing this "
+                         "substring. The retrieval pool stays the whole store, "
+                         "so distractors still compete — this only chooses "
+                         "which documents we ask to find.")
     a = ap.parse_args()
 
     os.environ["REFMATRIX_ROOT"] = a.root
@@ -87,6 +129,8 @@ def main() -> int:
 
     rnd = random.Random(a.seed)
     paths = [p for p in by_path if Path(p).exists()]
+    if a.only:
+        paths = [p for p in paths if a.only in p]
     rnd.shuffle(paths)
 
     ranks: list[int] = []
@@ -94,14 +138,18 @@ def main() -> int:
     for p in paths:
         if asked >= a.n:
             break
-        q = _passages(Path(p), rnd)
-        if not q:
+        qs = _passage_list(Path(p), rnd, a.per_file)
+        if not qs:
             continue
-        asked += 1
-        hits = s.content_rank(q.split(), limit=a.limit)
         gold = by_path[p]
-        rank = next((i + 1 for i, (eid, _sc) in enumerate(hits) if eid in gold), 0)
-        ranks.append(rank)
+        for q in qs:
+            if asked >= a.n:
+                break
+            asked += 1
+            hits = s.content_rank(q.split(), limit=a.limit)
+            rank = next((i + 1 for i, (eid, _sc) in enumerate(hits)
+                         if eid in gold), 0)
+            ranks.append(rank)
 
     def at(k: int) -> float:
         return sum(1 for r in ranks if 0 < r <= k) / max(len(ranks), 1)

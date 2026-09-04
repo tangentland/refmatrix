@@ -468,6 +468,24 @@ def _body_term_frequencies(body_lines: list[str]) -> dict[str, int]:
 _LEAD_LINES = 3
 
 
+def _body_terms_on() -> bool:
+    """Emit the per-node body term-frequency sweep. ON by default.
+
+    `RMX_GMD_BODY_TERMS=0` ingests a document's STRUCTURE without its PROSE:
+    entities, `part-of` containment, title tokens, aliases, tags and every
+    `rel:` edge still land; only the body tf sweep is skipped.
+
+    This exists for operational content — plans, handoffs, session summaries.
+    The standing rule keeps that material out of the concept graph because it
+    "co-mentions nearly everything, so it dominates co-mention weights and
+    drowns out specs/code". That objection is specifically about BODY TERMS.
+    A plan's durable residue is its decisions and its `supersedes` /
+    `implements` / `depends-on` edges, which outlive the process narrative and
+    carry none of the co-mention mass. This flag keeps the second and drops
+    the first."""
+    return os.environ.get("RMX_GMD_BODY_TERMS", "1") not in ("0", "false", "False")
+
+
 def _lead_terms_on() -> bool:
     """Record which terms appear in a node's OPENING lines, as a `lead`
     linkage. OFF by default; `RMX_LEAD_TERMS=1` enables. Requires re-ingest.
@@ -835,6 +853,7 @@ def ingest_gmd_paths(
     _split_titles = _split_title_links()
     _tphrases = _title_phrases_on()
     _lead_on = _lead_terms_on()
+    _body_on = _body_terms_on()
     if _split_titles:
         _ensure_linkage(store, "titles", stats)
         _ensure_linkage(store, "aliases", stats)
@@ -884,8 +903,9 @@ def ingest_gmd_paths(
                     concept_specs.append((
                         f"phrase/{ph}",
                         f"title phrase '{ph.replace(chr(95), chr(32))}'"))
-            for term in _body_term_frequencies(node.body_lines):
-                concept_specs.append((term, f"body term '{term}'"))
+            if _body_on:
+                for term in _body_term_frequencies(node.body_lines):
+                    concept_specs.append((term, f"body term '{term}'"))
             if _phrases_on:
                 for ph in _body_phrases(node.body_lines):
                     concept_specs.append((
@@ -963,9 +983,10 @@ def ingest_gmd_paths(
             # body terms → mentions with weight = tf (BM25 will normalize)
             # Appended AFTER the title/alias passes: on a collision the tf wins,
             # which is what the sequential link() calls did.
-            for term, tf in _body_term_frequencies(node.body_lines).items():
-                link_batch.append(("mentions", cids[term], src_eid, float(tf)))
-                stats.mentions += 1
+            if _body_on:
+                for term, tf in _body_term_frequencies(node.body_lines).items():
+                    link_batch.append(("mentions", cids[term], src_eid, float(tf)))
+                    stats.mentions += 1
 
             # phrase pairs → mentions, same tf weighting as unigrams. Namespaced
             # so `--no-phrases` recall and the noise pruner can tell the two
