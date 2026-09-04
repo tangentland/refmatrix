@@ -41,21 +41,31 @@ _OPERATIONAL_RE = re.compile(r"(?i)^(session|digest)[-_]")
 def _adj_mentions_mode() -> str:
     """How `build_adjacency` should count a `mentions` edge.
 
-    `both` (default) is the shipped behaviour and it double-counts: pass 1 adds
-    every mention flat at 1.0 from the bitmap fragment, then pass 2 adds the
-    SAME edge again at `link_weight * tf` from `entity_links`, which mirrors
-    those bitmaps. Verified `1 + 2*tf` on live data. With 99.3% of edges being
-    mentions, PageRank becomes largely a measure of term frequency.
+    `flat` (default) counts a mention ONCE, unweighted, from the bitmap
+    fragment — which is what `--link-weight`'s own help text describes: a
+    multiplier "for typed linkage edges (defines/calls/...) relative to bare
+    co-mention edges".
 
-    `flat` keeps pass 1 only — a mention is an unweighted association.
-    `weighted` keeps pass 2 only — a mention counts once, at its tf.
+    `both` was the previous default and it double-counts: pass 1 adds every
+    mention flat at 1.0, then pass 2 adds the SAME edge again at
+    `link_weight * tf` from `entity_links`, which mirrors those bitmaps.
+    Verified `1 + 2*tf` on live data (stored 171 -> adjacency 343). With 99.3%
+    of the edges in this graph being mentions, that made PageRank substantially
+    a measure of term frequency — and PageRank is the centrality prior under
+    `scan._salience`, so `central` and `df` became nearly the same variable.
 
-    Both fixes remove the duplication; they disagree on whether repetition
-    means association strength, which is a modelling question the measurement
-    should answer rather than the patch. `RMX_ADJ_MENTIONS` selects."""
+    `weighted` keeps pass 2 only: one count, at tf. Measured indistinguishable
+    from `both` (the +1 is noise beside 2*tf), so it does not settle whether
+    repetition means association strength; it just removes the duplication a
+    different way.
+
+    Flipping to `flat` measured NEUTRAL-to-positive on MemAware — scan MRR
+    0.241 -> 0.242, hit@20 0.411 -> 0.422, with `context` byte-identical as a
+    control (it never reads PageRank). It ships because it is a BUG FIX that
+    costs nothing, not because 0.011 hit@20 is a result."""
     import os as _os
-    v = (_os.environ.get("RMX_ADJ_MENTIONS") or "both").strip().lower()
-    return v if v in ("both", "flat", "weighted") else "both"
+    v = (_os.environ.get("RMX_ADJ_MENTIONS") or "flat").strip().lower()
+    return v if v in ("both", "flat", "weighted") else "flat"
 
 
 def build_adjacency(

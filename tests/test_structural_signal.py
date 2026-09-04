@@ -116,3 +116,33 @@ def test_missing_linkage_is_a_silent_noop_not_a_crash(tmp_path, monkeypatch):
     s.link("mentions", cid, eid, weight=2.0)
     assert dict(s.content_rank(["alpha"], limit=5))
     s.close()
+
+
+def test_mentions_are_counted_once_in_the_adjacency(tmp_path, monkeypatch):
+    """A mention edge must contribute ONCE to the centrality graph.
+
+    `build_adjacency` reads mentions twice — flat from the bitmap fragment,
+    then again from `entity_links`, which mirrors those bitmaps — so the old
+    `both` default scored every mention at `1 + link_weight*tf`. With 99.3% of
+    edges being mentions that made PageRank largely a term-frequency measure,
+    and PageRank is the prior under `scan._salience`.
+    """
+    monkeypatch.delenv("RMX_ADJ_MENTIONS", raising=False)
+    from refmatrix import pagerank as pg
+    assert pg._adj_mentions_mode() == "flat"
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    s.add_linkage_type("mentions")
+    cid = s.add_concept("alpha")
+    eid = s.upsert_entity(kind="doc", name="d1")
+    s.link("mentions", cid, eid, weight=17.0)
+
+    adj = pg.build_adjacency(s)
+    assert adj.get(cid, {}).get(eid) == 1.0, "flat: one unweighted count"
+
+    monkeypatch.setenv("RMX_ADJ_MENTIONS", "both")
+    adj2 = pg.build_adjacency(s)
+    assert adj2.get(cid, {}).get(eid) == pytest.approx(1.0 + 2.0 * 17.0), (
+        "the old default double-counted; kept reachable for comparison")
+    s.close()
