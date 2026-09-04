@@ -38,6 +38,9 @@ CODE_EXTS = {
     ".cs", ".scala", ".sh", ".bash", ".zsh", ".sql", ".lua", ".pseudo",
 }
 DOC_EXTS = {".md", ".markdown", ".rst", ".txt", ".adoc"}
+# Markdown handled by the GMD pass (see `_ingest_tree`). `.rst`/`.txt`/`.adoc`
+# stay on the plain path -- the GMD parser reads markdown headings.
+GMD_EXTS = {".md", ".markdown", ".gmd"}
 
 # Non-dot directory segments excluded from rglob walks. Dotfile dirs
 # (anything starting with `.`) are excluded via _is_ignored() below —
@@ -1109,6 +1112,7 @@ def _ingest_tree(s: Store, root: Path) -> int:
         track_payload.clear()
 
     n = 0
+    gmd_paths: list[Path] = []
     for p in root.rglob("*"):
         if not p.is_file():
             continue
@@ -1116,6 +1120,28 @@ def _ingest_tree(s: Store, root: Path) -> int:
             continue
         rel = p.relative_to(root).as_posix()
         ext = p.suffix.lower()
+        # Markdown goes to the GMD pass, ALWAYS -- not just when it carries
+        # `gmd:` frontmatter. Registering it here as a plain `doc` gives it an
+        # entity with NO body terms, so it is unretrievable by its own content
+        # at any k, AND stamps `mark_tracked(mtime)` below, which makes the
+        # sync mtime gate skip it forever afterwards. That pairing is what
+        # stranded 43-72% of the doc/memory entities in every store measured.
+        # The parser handles plain markdown fine (`lenient=True`); the only
+        # thing frontmatter adds that matters is the explicit id, and
+        # `_lenient_doc_id` derives a collision-free one from the path.
+        if ext in GMD_EXTS:
+            # Purge a LEGACY plain-doc row for this path first. The GMD pass
+            # names entities by doc-id (`charter`), the old tree pass named
+            # them by relpath (`CHARTER.md`), so without this the two coexist
+            # and the stale one keeps its zero body terms -- manufacturing the
+            # very stranding this change exists to remove. Guarded on the
+            # relpath row actually existing, so a re-ingest of an
+            # already-correct store does not churn the graph. Mirrors the
+            # same guard in `sync._sync_paths`.
+            if s.get_entity("doc", rel) is not None:
+                s.purge_path(str(p))
+            gmd_paths.append(p)
+            continue
         if ext in DOC_EXTS:
             kind = "doc"
         elif ext in CODE_EXTS:
@@ -1132,6 +1158,25 @@ def _ingest_tree(s: Store, root: Path) -> int:
         if len(batch) >= BATCH:
             _flush()
     _flush()
+    if gmd_paths:
+        # Batched so cross-doc `[[doc-id#anchor]]` refs resolve within the run.
+        from refmatrix.ingest_gmd import ingest_gmd_paths
+        try:
+            st = ingest_gmd_paths(s, gmd_paths, lenient=True, project_root=root)
+            n += st.docs
+        except Exception:
+            # Never let a bad markdown file abort the whole tree pass; the
+            # plain registration above is gone for these, so a failure here
+            # costs their body terms, not the ingest.
+            for gp in gmd_paths:
+                try:
+                    s.upsert_entity(kind="doc",
+                                    name=gp.relative_to(root).as_posix(),
+                                    path=str(gp))
+                    s.mark_tracked(str(gp), gp.stat().st_mtime)
+                    n += 1
+                except Exception:
+                    pass
     return n
 
 

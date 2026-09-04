@@ -2309,8 +2309,8 @@ def daemon():
     help="Quiet period before flushing a batch of fs events (ms).",
 )
 @click.option(
-    "--semantic", is_flag=True,
-    help="Also extract Python semantics on watcher-driven syncs (slow).",
+    "--semantic/--no-semantic", default=True, show_default=True,
+    help="Extract Python imports + docstring keywords. ON by default: without it code entities carry NO searchable terms, and measured across the live fleet 44-83% of code entities had none because no daemon ran with the old opt-in flag. The 0.7.5 bulk-gate made it cheap -- measured warm no-op delta 0.0-0.6s, single-file watcher sync +0.8s.",
 )
 @click.option(
     "--no-detach", is_flag=True,
@@ -2452,8 +2452,8 @@ def daemon_stop():
     help="Quiet period before flushing a batch of fs events (ms).",
 )
 @click.option(
-    "--semantic", is_flag=True,
-    help="Also extract Python semantics on watcher-driven syncs (slow).",
+    "--semantic/--no-semantic", default=True, show_default=True,
+    help="Extract Python imports + docstring keywords. ON by default: without it code entities carry NO searchable terms, and measured across the live fleet 44-83% of code entities had none because no daemon ran with the old opt-in flag. The 0.7.5 bulk-gate made it cheap -- measured warm no-op delta 0.0-0.6s, single-file watcher sync +0.8s.",
 )
 @click.option(
     "--standalone", is_flag=True,
@@ -5598,8 +5598,8 @@ def import_(path, merge):
                    "reads llm-tldr's per-unit semantic dump for the richest "
                    "graph; tldr falls back to call_graph.json; graphify forces "
                    "the knowledge-graph JSON to be the only ingest.")
-@click.option("--semantic", is_flag=True,
-              help="Also extract Python imports + docstring keywords (slow on big trees).")
+@click.option("--semantic/--no-semantic", default=True, show_default=True,
+              help="Extract Python imports + docstring keywords. ON by default: without it code entities carry NO searchable terms, and measured across the live fleet 44-83% of code entities had none because no daemon ran with the old opt-in flag. The 0.7.5 bulk-gate made it cheap -- measured warm no-op delta 0.0-0.6s, single-file watcher sync +0.8s.")
 def ingest(path, source, semantic):
     """Ingest a directory. Prefers .tldr/cache/semantic/metadata.json when present."""
     resolved = Path(path).resolve()

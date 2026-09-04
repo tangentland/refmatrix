@@ -146,7 +146,12 @@ def _null_tf_fn():
 
     `one` treats it as a single occurrence, which is what the edge's existence
     actually asserts: the concept was attached to the document at least once.
-    `RMX_NULL_TF=one` selects it."""
+    `RMX_NULL_TF=one` selects it.
+
+    As of the tag fix in `ingest_gmd`, freshly ingested tags carry tf=1.0 at
+    the WRITE side, so this read-side knob only matters for rows written before
+    that change. Fixing the stored value is preferable to reinterpreting it:
+    the column then means one thing."""
     import os as _os
     if (_os.environ.get("RMX_NULL_TF") or "zero").strip().lower() == "one":
         return lambda w: (1.0 if w is None else float(w))

@@ -86,7 +86,9 @@ def _write_content_hash(store: Store, eid: int, content_hash: str) -> None:
 
 
 def prestage_hashes(store: Store, paths: list[Path], *,
-                    kinds: tuple[str, ...] = ("memory", "doc")) -> dict:
+                    kinds: tuple[str, ...] = ("memory", "doc"),
+                    lenient: bool = False,
+                    project_root: "Path | None" = None) -> dict:
     """Backfill `gmd_content_hash` for files whose entities are already
     fully ingested in the active partition.
 
@@ -109,7 +111,7 @@ def prestage_hashes(store: Store, paths: list[Path], *,
     for path in paths:
         considered += 1
         try:
-            doc = parse_gmd(path)
+            doc = parse_gmd(path, lenient=lenient, project_root=project_root)
         except Exception:
             doc = None
         if doc is None:
@@ -256,14 +258,58 @@ def _parse_attrs(raw: str) -> tuple[dict[str, str], list[str]]:
 
 # ---- doc parsing ----------------------------------------------------------
 
-def parse_gmd(path: Path) -> GmdDoc | None:
-    """Parse a GMD doc. Returns None if file lacks `gmd:` frontmatter."""
+def _lenient_doc_id(path: Path, project_root: "Path | None") -> str:
+    """Collision-free doc id for markdown that carries no `id:` frontmatter.
+
+    The id IS the project-relative path, which normalizes document references
+    onto one rule: **an authored doc is named by its `id:`, everything else by
+    its path — the same way code entities are named.**
+
+    `path.stem` is what authored GMD falls back to, and it is fine there because
+    an author picks the filename. For plain markdown it collides immediately —
+    every `README.md` in a repo becomes the doc id `README`, and they would all
+    upsert onto ONE entity, silently merging unrelated documents.
+
+    A slug (`docs-architecture-decisions`) would also be unique, but it is
+    synthetic: nobody would write `[[docs-architecture-decisions#ordering]]`,
+    and `resolve_entity("docs/architecture/DECISIONS.md")` — the reference a
+    human or an agent actually reaches for — would miss. Using the path keeps
+    the natural reference working and makes anchors read as
+    `docs/architecture/DECISIONS.md#ordering`.
+    """
+    try:
+        rel = path.resolve().relative_to(Path(project_root).resolve()) \
+            if project_root else Path(path.name)
+    except Exception:
+        rel = Path(path.name)
+    return rel.as_posix() or path.name
+
+
+def parse_gmd(path: Path, *, lenient: bool = False,
+              project_root: "Path | None" = None) -> GmdDoc | None:
+    """Parse a GMD doc.
+
+    Strict (default): returns None unless the file carries `gmd:` frontmatter.
+
+    `lenient=True` parses PLAIN markdown with the same machinery. The heading
+    tree, body lines, anchors and `part-of` containment all come from the
+    markdown structure itself — the only things frontmatter adds are the
+    explicit `id:`, `title:`, `tags:` and `imports:`, and of those only the id
+    matters for correctness (see `_lenient_doc_id`). `rel:` lines are still
+    read if present, so a plain file that happens to use them keeps its edges.
+
+    This exists because the main ingest path must content-index markdown that
+    is NOT authored GMD — generated reports, vendored READMEs, sub-project
+    docs. Without it those files register as entities with no body terms and
+    are unretrievable by their own content at any k.
+    """
     raw = path.read_text(encoding="utf-8")
     lines = raw.splitlines()
     fm, body_start = _parse_frontmatter(lines)
-    if "gmd" not in fm:
+    if "gmd" not in fm and not lenient:
         return None
-    doc_id = fm.get("id") or path.stem
+    doc_id = fm.get("id") or (
+        _lenient_doc_id(path, project_root) if lenient else path.stem)
     title = fm.get("title") or doc_id
     tags = fm.get("tags") if isinstance(fm.get("tags"), list) else []
     imports = fm.get("imports") if isinstance(fm.get("imports"), list) else []
@@ -337,7 +383,8 @@ def parse_gmd(path: Path) -> GmdDoc | None:
             current.refs.append((line_no, wm.group(1).strip()))
 
     return GmdDoc(
-        path=path, doc_id=doc_id, title=title, gmd_version=str(fm["gmd"]),
+        path=path, doc_id=doc_id, title=title,
+        gmd_version=str(fm.get("gmd", "lenient")),
         imports=imports, nodes=nodes, tags=tags,
     )
 
@@ -598,6 +645,8 @@ def ingest_gmd_paths(
     as_memory: bool = False,
     memory_mtype_default: str = "curated",
     progress_cb: Callable[[str, int, int, Path], None] | None = None,
+    lenient: bool = False,
+    project_root: "Path | None" = None,
 ) -> IngestStats:
     """Two-pass ingest: parse all docs first (build id table), then link.
 
@@ -678,7 +727,7 @@ def ingest_gmd_paths(
         except Exception:
             current_hash = ""
         try:
-            doc = parse_gmd(path)
+            doc = parse_gmd(path, lenient=lenient, project_root=project_root)
         except Exception as e:
             if verbose:
                 print(f"  skip {path}: {type(e).__name__}: {e}")
@@ -940,7 +989,15 @@ def ingest_gmd_paths(
 
         # tags as mentions
         for tag in doc.tags:
-            link_batch.append(("mentions", cids[tag], doc_eid, None))
+            # tf=1.0, not NULL. A tag OCCURS -- once, as a tag -- and NULL was
+            # read by `content_rank` as `float(w or 0.0)` = 0.0, so a
+            # frontmatter tag scored NOTHING in BM25 while still counting in
+            # `concept_df` and depressing its own concept's idf. A pure penalty
+            # for existing, on the highest-precision term signal a document has
+            # (a human wrote it to say what the doc is about). Tags are only
+            # 0.7-1.9% of edges, so this will not move an aggregate metric --
+            # it makes the few that exist capable of mattering at all.
+            link_batch.append(("mentions", cids[tag], doc_eid, 1.0))
             stats.mentions += 1
 
         # per-node processing
