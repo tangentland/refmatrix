@@ -54,7 +54,22 @@ _OPENER_STOP = frozenset(
     "yesterday today tomorrow now then however meanwhile also finally next "
     "first second third later soon once again still after before during "
     "everything nothing something anything someone anyone everyone nobody "
-    "here there maybe perhaps instead thus hence overall".split())
+    "here there maybe perhaps instead thus hence overall "
+    "do does did don't doesn't didn't let let's please yes no okay ok well "
+    "what why how where who which".split())
+
+# Aux/modal/common verbs and function words that recur in any prose and would
+# otherwise qualify as neuter candidates on the df>=2 rule alone. Measured on
+# the MemAware corpus: without this, `it` bound to `would` and `they` to
+# gerunds -- recurrence proves frequency, not referent-hood.
+_VERBISH_STOP = frozenset(
+    "would could should shall will can may might must have has had having "
+    "was were been being are is am get got gets getting go goes going went "
+    "make makes making made take takes taking took come comes coming came "
+    "say says saying said know knows knew think thinks thought want wants "
+    "wanted like likes liked need needs needed feel feels felt see sees saw "
+    "look looks looked really very just quite about because though although "
+    "pairing doing being trying going".split())
 
 
 @dataclass(frozen=True)
@@ -135,13 +150,15 @@ def resolve_text(text: str, *, window: int = 3,
                 continue
 
             at_sentence_start = m.start() == 0
-            if tok[0].isupper() and low not in _CAP_STOP and len(tok) >= 2:
+            if tok[0].isupper() and low not in _CAP_STOP \
+                    and low not in _VERBISH_STOP and len(tok) >= 2:
                 # A sentence-opener is capitalized by grammar, not identity:
                 # it qualifies only when it is not a stoplisted adverb/
                 # quantifier, or when it recurs enough to prove itself.
                 if not at_sentence_start or low not in _OPENER_STOP:
                     candidates.append((si, tok, True))
-            elif tok.islower() and low not in _CAP_STOP and len(tok) >= 3 \
+            elif tok.islower() and low not in _CAP_STOP \
+                    and low not in _VERBISH_STOP and len(tok) >= 3 \
                     and token_df[low] >= 2:
                 candidates.append((si, tok, False))
 

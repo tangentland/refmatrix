@@ -7810,7 +7810,16 @@ def embed_cmd(kinds, batch, rebuild, max_batches, gc_mode, dry_run):
     if other_kinds:
         plan.append((_resolve_partition(), other_kinds))
     if mem_kinds:
-        mp = _memory_partition_default()
+        # Explicit -p / RMX_PARTITION wins for the memory kind too --
+        # mirroring the as-memory ingest rule. Without this, an eval store
+        # whose dir name differs from its pinned partition (memaware-coref
+        # pinned to `memaware`) gets `embed --kinds memory` walking the
+        # dir-named partition: 0 rows, exit 0, "done embedded=0" -- a no-op
+        # wearing a success suit, and dense recall silently empty.
+        if _partition_override or os.environ.get("RMX_PARTITION"):
+            mp = _resolve_partition()
+        else:
+            mp = _memory_partition_default()
         # On a post-merge host the memory partition IS the project partition;
         # fold rather than embed the same partition twice.
         folded = next((i for i, (p, _) in enumerate(plan) if p == mp), None)
