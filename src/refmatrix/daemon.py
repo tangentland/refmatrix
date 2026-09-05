@@ -385,6 +385,24 @@ def ping(root: Path, timeout: float = 0.5, retries: int = 2,
     return False
 
 
+def served_identity(root: Path, timeout: float = 2.0) -> "tuple[int, str] | None":
+    """`(pid, version)` the live daemon reports via ping, or None if no daemon
+    answers. The authority on whether a restart actually swapped the process:
+    compare against the installed `__version__` and the pre-restart pid."""
+    try:
+        resp = call(root, "ping", {}, timeout=timeout, retries=1)
+    except Exception:
+        return None
+    if not isinstance(resp, dict) or not resp.get("ok"):
+        return None
+    result = resp.get("result") or {}
+    pid = result.get("pid")
+    ver = result.get("version")
+    if pid is None or ver is None:
+        return None
+    return int(pid), str(ver)
+
+
 def call(root: Path, op: str, args: dict | None = None,
          timeout: float = 60.0, retries: int = 2,
          retry_backoff: float = 0.05) -> dict:
@@ -2349,10 +2367,17 @@ class Daemon:
 
 
 def _op_ping(d: Daemon, args: dict) -> dict:
+    # `version` is the code the daemon PROCESS actually imported, which is the
+    # only authority on whether a restart took: the CLI binary and the daemon
+    # are separate processes, and a stale daemon serves old ops while `rmx
+    # --version` reports the new install. `rmx daemon restart --relaunch`
+    # polls this until it changes.
+    from refmatrix import __version__ as _v
     return {
         "pid": os.getpid(),
         "root": str(d.root),
         "backend": d.store._backend.kind if d.store else None,
+        "version": _v,
     }
 
 

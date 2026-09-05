@@ -2543,8 +2543,20 @@ def daemon_stop():
          "supervises this store (by default a supervised store is "
          "force-restarted via `launchctl kickstart -k`).",
 )
+@click.option(
+    "--relaunch", is_flag=True,
+    help="Verify the restart actually swapped the process: poll the new "
+         "daemon until it reports a DIFFERENT pid AND the installed version, "
+         "SIGKILLing a lingering predecessor and re-kickstarting once if it "
+         "clings to the socket. `kickstart -k` only SCHEDULES a spawn -- a "
+         "daemon busy in a lock-holding op keeps serving OLD code (and old "
+         "op registry) meanwhile, so a plain restart after a deploy can leave "
+         "`unknown op` errors. Use this after an upgrade to guarantee the new "
+         "code is live before you depend on it.",
+)
 def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
-                   debounce_ms: int, semantic: bool, standalone: bool):
+                   debounce_ms: int, semantic: bool, standalone: bool,
+                   relaunch: bool):
     """Restart the daemon for the active store.
 
     Supervision-aware: if a launchd LaunchAgent is loaded for this store,
@@ -2559,6 +2571,55 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
         raise click.ClickException(
             f"no refmatrix at {root}. Run `rmx init` first."
         )
+
+    import time as _time
+    from refmatrix import __version__ as _installed_version
+    _old = daemon_mod.served_identity(root, timeout=1.0)
+    _old_pid = _old[0] if _old else None
+
+    def _verify_relaunch(kick) -> None:
+        """Block until the daemon reports a NEW pid on the installed version.
+
+        `kick` re-issues the restart (used once to clear a clinging
+        predecessor). Raises ClickException if it cannot converge -- a loud
+        failure is the point: the caller ran --relaunch precisely because a
+        silent stale daemon is the hazard."""
+        deadline = 40.0
+        killed_once = False
+        waited = 0.0
+        while waited < deadline:
+            cur = daemon_mod.served_identity(root, timeout=1.5)
+            if cur is not None:
+                pid, ver = cur
+                new_pid = _old_pid is None or pid != _old_pid
+                if new_pid and ver == _installed_version:
+                    console.print(
+                        f"[green]relaunch verified[/] pid "
+                        f"{_old_pid or '-'}→{pid} version={ver}")
+                    return
+                # A predecessor still answering on the OLD pid past a short
+                # grace is the kickstart-scheduled-but-not-swapped case: kill
+                # it once and re-issue the restart so launchd rebinds clean.
+                if (not new_pid and _old_pid and waited > 5.0
+                        and not killed_once):
+                    console.print(
+                        f"[yellow]predecessor pid={_old_pid} still serving "
+                        f"(v{ver}); killing and re-issuing restart[/]")
+                    try:
+                        os.kill(_old_pid, 9)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+                    killed_once = True
+                    _time.sleep(1.0)
+                    kick()
+            _time.sleep(1.5)
+            waited += 1.5
+        got = daemon_mod.served_identity(root, timeout=1.5)
+        raise click.ClickException(
+            f"relaunch did not converge in {deadline:.0f}s: installed "
+            f"{_installed_version}, daemon now {got} (old pid {_old_pid}). "
+            f"The process did not swap — check `rmx daemon status` and the "
+            f"launchd job.")
 
     # launchd-supervised store → force-restart in place, unless overridden.
     if not standalone and _sys.platform == "darwin":
@@ -2589,6 +2650,8 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
                     f"[green]daemon restarted[/] (launchd kickstart -k "
                     f"label={label}){pid_part} root={root}"
                 )
+                if relaunch:
+                    _verify_relaunch(lambda: lc.kickstart(root, restart=True))
                 return
 
     # Standalone path: stop the current daemon (idempotent), then respawn.
@@ -2616,6 +2679,14 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
     else:
         extra = ""
     console.print(f"[green]daemon restarted[/] pid={pid} root={root}{extra}")
+    if relaunch:
+        def _respawn():
+            daemon_mod.stop_daemon(root)
+            daemon_mod.spawn_daemon(
+                root, partition=_resolve_partition(),
+                watch_root=resolved_watch_roots or None,
+                watch_debounce_ms=debounce_ms, watch_semantic=semantic)
+        _verify_relaunch(_respawn)
 
 
 @daemon.command("status")
