@@ -5211,6 +5211,49 @@ class Store:
             )
         ]
 
+    def clear_tracked_stamps(self, *, like: str | None = None) -> dict:
+        """Delete tracked_files rows in the active partition WITHOUT purging
+        the entities anchored at those paths — the non-destructive half of
+        `untrack_by_path`.
+
+        Every ingest pass gates on these stamps, so after a change to what a
+        pass EXTRACTS (not to the files themselves) a re-ingest is a no-op:
+        the stamp records that a file was read, never which extractor read it.
+        Clearing forces the next ingest to re-derive every file while entity
+        ids, curation flags, and linkages survive.
+
+        Also removes the synthetic bulk-gate keys (`pysem:`, `pssem:`,
+        `sqlsem:`, and the metadata/graphify no-op gates), which are the
+        stamps that gate the semantic passes specifically.
+
+        `like` is a SQL LIKE glob over the stored path, so one tree can be
+        cleared inside a shared store; omit it to clear the whole partition.
+        Run `vacuum` FIRST if paths may have disappeared from disk: vacuum
+        derives its missing-file worklist from these same rows, so clearing
+        them first would orphan the entities of deleted files."""
+        con = self._connect()
+        if like:
+            n = con.execute(
+                "SELECT count(*) FROM tracked_files "
+                "WHERE partition_id=? AND path LIKE ?",
+                (self._partition_id, like),
+            ).fetchone()[0]
+            con.execute(
+                "DELETE FROM tracked_files WHERE partition_id=? AND path LIKE ?",
+                (self._partition_id, like),
+            )
+        else:
+            n = con.execute(
+                "SELECT count(*) FROM tracked_files WHERE partition_id=?",
+                (self._partition_id,),
+            ).fetchone()[0]
+            con.execute(
+                "DELETE FROM tracked_files WHERE partition_id=?",
+                (self._partition_id,),
+            )
+        self._maybe_commit(con)
+        return {"stamps_cleared": int(n), "partition": self._partition_name}
+
     def stale_files(self) -> list[dict]:
         """Return tracked files where on-disk mtime is newer than last_synced.
         These are files the index doesn't yet reflect."""

@@ -335,6 +335,9 @@ class _DaemonWriter:
                            "dry_run": dry_run},
                           timeout=600.0)
 
+    def clear_tracked_stamps(self, *, like=None):
+        return self._call("clear_tracked_stamps", {"like": like}, timeout=600.0)
+
     def rebuild_index_from_log(self):
         return self._call("rebuild_index", {}, timeout=600.0).get("result", {})
 
@@ -5639,12 +5642,19 @@ def _reingest_embed(ctx, partition: str, *, rebuild: bool) -> None:
               help="Embed dense vectors after ingest (incremental).")
 @click.option("--rebuild", is_flag=True,
               help="Pass --rebuild to the embed pass (re-embed every row).")
+@click.option("--force", is_flag=True,
+              help="Clear the ingest mtime stamps first, so every pass "
+                   "re-derives every file instead of skipping it. Needed "
+                   "after a change to what a pass EXTRACTS: a stamp records "
+                   "that a file was read, not which extractor read it, so an "
+                   "unforced re-ingest of an unchanged tree is a no-op. "
+                   "Entities, curation flags, and linkages are NOT purged.")
 @click.option("--memory-dir", "memory_dir",
               type=click.Path(path_type=Path), default=None,
               help="Curated memory `.md` dir. "
                    "Default: ~/.claude/projects/<project-slug>/memory.")
 @click.pass_context
-def reingest(ctx, semantic, do_sessions, do_embed, rebuild, memory_dir):
+def reingest(ctx, semantic, do_sessions, do_embed, rebuild, force, memory_dir):
     """Run every ingest pass over all sources in canonical order, then embed.
 
     Order (each gated/incremental — unchanged files are skipped):
@@ -5680,6 +5690,26 @@ def reingest(ctx, semantic, do_sessions, do_embed, rebuild, memory_dir):
         except Exception as e:  # noqa: BLE001 — orchestrator continues past one bad pass
             console.print(f"[red]  {label} error:[/] {e}")
             results.append((label, False, str(e)))
+
+    # 0. stamp clear — must precede pass 1, and vacuum must precede IT:
+    # vacuum derives its missing-file worklist from the same tracked rows, so
+    # clearing first would orphan the entities of files deleted off disk.
+    if force:
+        def _clear():
+            global _partition_override
+            prev = _partition_override
+            try:
+                for part in dict.fromkeys([
+                    _resolve_partition(), _memory_partition_default(),
+                ]):
+                    _partition_override = part
+                    r = _store(write=True).clear_tracked_stamps()
+                    console.print(
+                        f"  [dim]{part}: {r.get('stamps_cleared', 0)} "
+                        f"stamps cleared[/]")
+            finally:
+                _partition_override = prev
+        step("0/5 clear stamps (--force)", _clear)
 
     # 1. code + docs
     step("1/5 code+docs", lambda: ctx.invoke(

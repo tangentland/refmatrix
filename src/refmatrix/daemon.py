@@ -3222,6 +3222,17 @@ def _op_untrack(d: Daemon, args: dict) -> dict:
     return result
 
 
+def _op_clear_tracked_stamps(d: Daemon, args: dict) -> dict:
+    """Drop the ingest mtime stamps for the caller's partition without
+    touching entities, so the next ingest re-derives every file. `like` scopes
+    it to one subtree."""
+    part = args.get("partition") or d.store._partition_name
+    with d._store_lock, d.store.with_partition(part):
+        result = d.store.clear_tracked_stamps(like=args.get("like"))
+    d._request_snapshot()
+    return result
+
+
 def _op_merge_verb_aliases(d: Daemon, args: dict) -> dict:
     """Fold legacy snake-case linkage verbs into their kebab canonical across
     the whole store (relational forward index + per-partition bitmaps +
@@ -4483,6 +4494,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "set_flag": _op_set_flag,
     "forget": _op_forget,
     "untrack": _op_untrack,
+    "clear_tracked_stamps": _op_clear_tracked_stamps,
     "merge_verb_aliases": _op_merge_verb_aliases,
     "vacuum": _op_vacuum,
     "stats": _op_stats,
