@@ -841,13 +841,15 @@ def ingest_gmd_paths(
                 # became memory_content.content -- the embedder re-applies
                 # them to that same string, so offsets never drift.
                 from refmatrix import coref as _coref
+                from refmatrix.ingest import \
+                    _bulk_add_concepts as _coref_add_concepts
                 _res = _coref.resolve_text(_mem_content, min_confidence=0.25)
                 store.save_coref(doc_eid, _res)
                 if _res:
                     _ensure_linkage(store, "coref", stats)
                     _c_specs = [(t, f"coref antecedent '{t}'")
                                 for t in _coref.antecedent_counts(_res)]
-                    _c_ids = _bulk_add_concepts(store, _c_specs)
+                    _c_ids = _coref_add_concepts(store, _c_specs)
                     store.bulk_link(
                         [("coref", _c_ids[t], doc_eid, float(n))
                          for t, n in _coref.antecedent_counts(_res).items()],
