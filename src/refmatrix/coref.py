@@ -117,6 +117,11 @@ def resolve_text(text: str, *, window: int = 3,
     `min_confidence`. Unresolvable pronouns are simply skipped -- silence,
     not a guess, is the correct output for a floor heuristic.
     """
+    # The shared prompt stoplist is the candidate floor -- the hand-rolled
+    # lists above only add coref-specific classes on top of it. (The same
+    # junk-token bug has now been made at FIVE call sites; the fifth was this
+    # module binding `it` to `for` because a local list lacked prepositions.)
+    from refmatrix.scan import _PROMPT_STOPWORDS
     sents = _sentences(text)
     token_df: Counter[str] = Counter()
     for _, s in sents:
@@ -150,15 +155,19 @@ def resolve_text(text: str, *, window: int = 3,
                 continue
 
             at_sentence_start = m.start() == 0
+            if "'" in tok:
+                continue  # contractions (I'm, it's) are never referents
             if tok[0].isupper() and low not in _CAP_STOP \
-                    and low not in _VERBISH_STOP and len(tok) >= 2:
+                    and low not in _VERBISH_STOP \
+                    and low not in _PROMPT_STOPWORDS and len(tok) >= 2:
                 # A sentence-opener is capitalized by grammar, not identity:
                 # it qualifies only when it is not a stoplisted adverb/
                 # quantifier, or when it recurs enough to prove itself.
                 if not at_sentence_start or low not in _OPENER_STOP:
                     candidates.append((si, tok, True))
             elif tok.islower() and low not in _CAP_STOP \
-                    and low not in _VERBISH_STOP and len(tok) >= 3 \
+                    and low not in _VERBISH_STOP \
+                    and low not in _PROMPT_STOPWORDS and len(tok) >= 3 \
                     and token_df[low] >= 2:
                 candidates.append((si, tok, False))
 
