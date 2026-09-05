@@ -92,3 +92,29 @@ def test_compile_pairs_filters_hapax_and_keeps_postings(store):
     assert set(ids) <= set(docs)
     # hapax pair from the solo doc must not survive
     assert store.pair_docs("banana_pancake") == []
+
+
+# ---- ingest wiring -----------------------------------------------------
+
+def test_as_memory_ingest_emits_coref_linkage(store, tmp_path, monkeypatch):
+    """RMX_INGEST_COREF=1 on the as-memory path must store resolutions AND
+    emit the `coref` linkage — the wiring the shadowed-import bug broke while
+    every resolver unit test stayed green."""
+    monkeypatch.setenv("RMX_INGEST_COREF", "1")
+    from refmatrix.ingest_gmd import ingest_gmd_paths
+    md = tmp_path / "note.md"
+    md.write_text(
+        "# Note\n\nMarcus fixed the gate. He also rewrote the gate check. "
+        "He documented everything.\n")
+    ingest_gmd_paths(store, [md], lenient=True, as_memory=True,
+                     project_root=tmp_path)
+    row = store.get_entity("memory", "note.md")
+    assert row is not None
+    res = store.load_coref(row.id)
+    assert res, "resolutions were not persisted"
+    assert {r.antecedent for r in res} == {"Marcus"}
+    lid = store.get_linkage_id("coref")
+    n = store._connect().execute(
+        "SELECT count(*) FROM entity_links WHERE linkage_id=?", (lid,)
+    ).fetchone()[0]
+    assert n >= 1, "coref linkage carries no bits"
