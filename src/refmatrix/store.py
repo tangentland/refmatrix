@@ -62,13 +62,19 @@ def _term_boost_linkages() -> "dict[str, float]":
         # much either way, and re-adding the boost properly did not recover a
         # gain because there was none to recover.
         "titles": _env_f("RMX_BOOST_TITLES", 0.0),
-        # Measured, replicated on held-out questions, and ON by default:
-        # `context` MRR 0.206 -> 0.248, hit@20 0.378 -> 0.511. The weight sits
-        # on a plateau (0.25 won the tuning set, 0.5 the held-out set, within
-        # noise of each other), and only degrades past ~2.0 where the boost
-        # starts swamping BM25. A store without a `lead` linkage ignores this
-        # silently, so it is safe to leave on everywhere.
-        "lead": _env_f("RMX_BOOST_LEAD", 0.5),
+        # Measured, replicated on held-out questions, and ON by default.
+        # Retuned 0.5 -> 0.25 on the post-0.49.1 CLEAN stores, where three
+        # views converge on 0.25: MemAware context (MRR 0.153 off -> 0.188,
+        # hit@20 0.478 at 0.25 vs 0.433 at 0.5), the cliquedb merge-arm
+        # paired sweep (net +51, dMRR +0.124, on a 0.25-1.0 plateau), and
+        # the deliberately anti-lead lines construction (queries sampled
+        # from NON-lead body lines), which is neutral at 0.25 and degrades
+        # monotonically above it (-36 at 0.5, -40 at 2.0). The old 0.5 was
+        # tuned on stores whose bodies were largely termless, where lead
+        # terms stood in for missing content. A store without a `lead`
+        # linkage ignores this silently, so it is safe to leave on
+        # everywhere.
+        "lead": _env_f("RMX_BOOST_LEAD", 0.25),
     }
 
 

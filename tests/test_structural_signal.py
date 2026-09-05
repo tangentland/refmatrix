@@ -49,8 +49,9 @@ def test_defaults_are_all_off(monkeypatch):
     b = _term_boost_linkages()
     assert b["titles"] == 0.0
     # `lead` ships ON — the one structural signal that measured, and
-    # replicated on held-out questions (+20% MRR, +35% hit@20 on `context`).
-    assert b["lead"] == 0.5
+    # replicated on held-out questions. Retuned 0.5 -> 0.25 on the clean
+    # post-0.49.1 stores (see _term_boost_linkages for the three-view data).
+    assert b["lead"] == 0.25
     assert all(v == 0.0 for v in _doc_prior_weights().values())
 
 

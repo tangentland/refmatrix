@@ -12,6 +12,7 @@ import argparse, os, random, re, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 from known_item import _passages, LEAD_SKIP  # noqa: E402
+from baseline_rederive import _body_lines, _q_merge  # noqa: E402
 
 
 def ranks_for(s, samples, env, limit):
@@ -36,12 +37,20 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=20)
     ap.add_argument("--var", required=True, help="env var to toggle")
     ap.add_argument("--val", required=True)
+    ap.add_argument("--off", default=None,
+                    help="explicit OFF-arm value, for knobs whose default is "
+                         "already on (RMX_BOOST_LEAD): unset != off.")
+    ap.add_argument("--construction", choices=("lines", "merge"),
+                    default="lines",
+                    help="query construction: `lines` = the 09-03 verbatim "
+                         "rule (comparability); `merge` = cross-line dedup, "
+                         "the arm with rank-histogram headroom.")
     a = ap.parse_args()
 
     os.environ["REFMATRIX_ROOT"] = a.root
     os.environ["RMX_PARTITION"] = a.partition
     from refmatrix.store import Store
-    s = Store(a.root); con = s._connect()
+    s = Store(a.root, read_only=True); con = s._connect()
 
     by_path: dict[str, set] = {}
     for r in con.execute("SELECT id, path FROM entities WHERE partition_id=? "
@@ -61,11 +70,14 @@ def main() -> int:
     for p in paths:
         if len(samples) >= a.n:
             break
-        q = _passages(Path(p), rnd)
+        if a.construction == "merge":
+            q = _q_merge(_body_lines(Path(p)))
+        else:
+            q = _passages(Path(p), rnd)
         if q:
             samples.append((q, by_path[p]))
 
-    off = ranks_for(s, samples, {a.var: None}, a.limit)
+    off = ranks_for(s, samples, {a.var: a.off}, a.limit)
     on = ranks_for(s, samples, {a.var: a.val}, a.limit)
 
     def rr(r): return 1.0 / r if r > 0 else 0.0
