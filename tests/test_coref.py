@@ -165,3 +165,29 @@ def test_cross_doc_link_binds_via_pair_neighbor(store):
     assert b in hits, "coref postings did not grow the candidate set"
     assert b not in dict(store.content_rank(["marcus"], limit=10)), \
         "boost=off should NOT surface B (proves the postings are gated)"
+
+
+def test_cross_doc_link_ratchets_updated_at_for_reembed(store):
+    """coref link must re-queue the dense vector: the substitution changes
+    what the embedder produces, so a linked doc's updated_at must move past
+    its vectors_updated_at (the re-embed-on-edit gate, on the coref path)."""
+    shared = ("Marcus booked the crown fitting. Marcus asked about the "
+              "crown fitting appointment.")
+    store.add_memory(name="A", content=shared, mtype="note")
+    b = store.add_memory(
+        name="B",
+        content=("He asked about the crown fitting appointment. The crown "
+                 "fitting appointment slipped."),
+        mtype="note")
+    # Simulate B already embedded: stamp vectors_updated_at at/after updated_at.
+    con = store._connect()
+    # "already embedded" == vectors_updated_at >= updated_at; equal is the
+    # tightest form of that and avoids racing wall-clock resolution.
+    con.execute("UPDATE entities SET vectors_updated_at = updated_at "
+                "WHERE id=?", (b,))
+    store.compile_pairs(min_df=2)
+    store.link_cross_doc_coref(min_shared=2)
+    row = con.execute(
+        "SELECT updated_at, vectors_updated_at FROM entities WHERE id=?",
+        (b,)).fetchone()
+    assert row[0] > row[1], "updated_at did not move past vectors_updated_at"

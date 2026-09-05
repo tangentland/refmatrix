@@ -5495,6 +5495,7 @@ class Store:
         doc -> neighbor. Requires `compile_pairs` to have run; returns the
         counts either way. Re-running replaces each doc's cross-doc
         resolutions rather than accreting (offsets identify them)."""
+        import time as _time
         from refmatrix import coref as _coref
         from refmatrix.ingest import text_phrases
         con = self._connect()
@@ -5556,6 +5557,13 @@ class Store:
                                    f"coref antecedent '{ante}'")
             self.link("coref", cid, eid, weight=float(len(adds)))
             self.link("refers-to", eid, best)
+            # Ratchet updated_at so `embed` re-queues this row: the coref
+            # substitution changes what `embedder._extract_memory` produces,
+            # but `pending_embeddings` gates on updated_at, so without this
+            # the dense side silently keeps the pre-resolution vector (the
+            # re-embed-on-edit gate, 0.25.11, on a different write path).
+            con.execute("UPDATE entities SET updated_at=? WHERE id=?",
+                        (_time.time(), eid))
             linked += 1
             new_res += len(adds)
         return {"docs_scanned": scanned, "linked": linked,
