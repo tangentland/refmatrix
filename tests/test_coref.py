@@ -118,3 +118,50 @@ def test_as_memory_ingest_emits_coref_linkage(store, tmp_path, monkeypatch):
         "SELECT count(*) FROM entity_links WHERE linkage_id=?", (lid,)
     ).fetchone()[0]
     assert n >= 1, "coref linkage carries no bits"
+
+
+# ---- cross-doc resolution ----------------------------------------------
+
+def test_initial_unresolved_flags_doc_opening_pronouns():
+    # "He" opens the doc with no prior antecedent -> cross-doc candidate.
+    text = "He went back about the crown. The dentist was firm."
+    pend = coref.initial_unresolved(text)
+    assert [p for _o, p in pend] == ["He"]
+    # A doc that introduces its referent first has nothing pending.
+    assert coref.initial_unresolved("Marcus went in. He sat.") == []
+
+
+def test_doc_antecedent_prefers_recurring_person():
+    text = "Marcus called. Marcus waited. The office was closed."
+    res = coref.resolve_text(text)
+    assert coref.doc_antecedent(res, text) == "Marcus"
+
+
+def test_cross_doc_link_binds_via_pair_neighbor(store):
+    # Doc A establishes Marcus + a distinctive shared vocabulary.
+    shared = ("Marcus scheduled the crown fitting. Marcus asked the "
+              "endodontist about the crown fitting appointment.")
+    a = store.add_memory(name="sessionA", content=shared, mtype="note")
+    # Doc B opens with an unresolved pronoun and repeats the shared pairs,
+    # so pair_index makes A its neighbor.
+    b = store.add_memory(
+        name="sessionB",
+        content=("He returned about the crown fitting. The crown fitting "
+                 "appointment ran long."),
+        mtype="note")
+    store.compile_pairs(min_df=2)
+    r = store.link_cross_doc_coref(min_shared=2)
+    assert r["linked"] >= 1
+    res_b = store.load_coref(b)
+    assert any(x.antecedent == "Marcus" for x in res_b), \
+        "cross-doc pronoun did not bind to the neighbor's referent"
+    # coref postings now let content_rank reach B by a term it never contains.
+    import os
+    os.environ["RMX_BOOST_COREF"] = "1.0"
+    try:
+        hits = dict(store.content_rank(["marcus"], limit=10))
+    finally:
+        os.environ.pop("RMX_BOOST_COREF", None)
+    assert b in hits, "coref postings did not grow the candidate set"
+    assert b not in dict(store.content_rank(["marcus"], limit=10)), \
+        "boost=off should NOT surface B (proves the postings are gated)"

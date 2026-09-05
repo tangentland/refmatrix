@@ -3244,6 +3244,17 @@ def _op_compile_pairs(d: Daemon, args: dict) -> dict:
     return result
 
 
+def _op_coref_link(d: Daemon, args: dict) -> dict:
+    """Cross-doc coref pass for the caller's partition (see
+    Store.link_cross_doc_coref). Needs a compiled pair_index."""
+    part = args.get("partition") or d.store._partition_name
+    with d._store_lock, d.store.with_partition(part):
+        result = d.store.link_cross_doc_coref(
+            min_shared=int(args.get("min_shared", 2)))
+    d._request_snapshot()
+    return result
+
+
 def _op_merge_verb_aliases(d: Daemon, args: dict) -> dict:
     """Fold legacy snake-case linkage verbs into their kebab canonical across
     the whole store (relational forward index + per-partition bitmaps +
@@ -4507,6 +4518,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "untrack": _op_untrack,
     "clear_tracked_stamps": _op_clear_tracked_stamps,
     "compile_pairs": _op_compile_pairs,
+    "coref_link": _op_coref_link,
     "merge_verb_aliases": _op_merge_verb_aliases,
     "vacuum": _op_vacuum,
     "stats": _op_stats,

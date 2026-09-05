@@ -194,3 +194,60 @@ def antecedent_counts(resolutions: "list[Resolution]") -> "Counter[str]":
     for r in resolutions:
         c[r.antecedent.lower()] += 1
     return c
+
+
+def initial_unresolved(text: str, *, sentences: int = 3,
+                       window: int = 3) -> "list[tuple[int, str]]":
+    """(offset, pronoun) for pronouns in the document's FIRST `sentences`
+    sentences that within-doc resolution leaves unbound.
+
+    Doc-initial unresolved pronouns are the cross-document signal: a session
+    that opens "He went back about the crown" is continuing a referent
+    introduced in an earlier session. Later unresolved pronouns are usually
+    just resolver misses and are left alone -- guessing across documents on a
+    mid-doc pronoun multiplies noise for no continuity evidence."""
+    resolved = {r.offset for r in resolve_text(text, window=window)}
+    out: list[tuple[int, str]] = []
+    for si, (s_start, sent) in enumerate(_sentences(text)):
+        if si >= sentences:
+            break
+        for m in _TOKEN_RE.finditer(sent):
+            low = m.group(0).lower()
+            if low in _PERSON_PRONOUNS or low in _NEUTER_PRONOUNS:
+                off = s_start + m.start()
+                if off not in resolved:
+                    out.append((off, m.group(0)))
+    return out
+
+
+def doc_antecedent(resolutions, content: str) -> "str | None":
+    """The document's dominant person referent -- what a cross-doc pronoun
+    pointing INTO this document most plausibly means.
+
+    Prefers the most common person antecedent among the doc's own
+    resolutions; falls back to a census of capitalized mid-sentence tokens.
+    Returns None rather than a weak guess when nothing recurs."""
+    people = Counter(r.antecedent for r in resolutions
+                     if r.antecedent[0].isupper())
+    if people:
+        name, n = people.most_common(1)[0]
+        if n >= 2:
+            return name
+    # Census every proper-noun-ish token. A recurring name is the referent
+    # whether or not it opens sentences -- the mid-sentence-only rule the
+    # resolver uses to AVOID false candidates is wrong here, where we already
+    # know a referent exists and only need to name it.
+    census: Counter[str] = Counter()
+    for _start, sent in _sentences(content):
+        for m in _TOKEN_RE.finditer(sent):
+            tok = m.group(0)
+            low = tok.lower()
+            if tok[0].isupper() and low not in _CAP_STOP \
+                    and low not in _VERBISH_STOP and low not in _OPENER_STOP \
+                    and len(tok) >= 2:
+                census[tok] += 1
+    if census:
+        name, n = census.most_common(1)[0]
+        if n >= 2:
+            return name
+    return None

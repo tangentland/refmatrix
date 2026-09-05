@@ -75,12 +75,12 @@ def _term_boost_linkages() -> "dict[str, float]":
         # linkage ignores this silently, so it is safe to leave on
         # everywhere.
         "lead": _env_f("RMX_BOOST_LEAD", 0.25),
-        # Pronoun-deref tf delta (coref.py). A resolved pronoun is a REPEAT
-        # occurrence of its antecedent, so the natural weight is 1.0 -- the
-        # same as an organic occurrence -- but it ships 0.0 (off) until the
-        # retrieval effect is measured. The linkage is separate from
-        # `mentions` precisely so this knob can exist.
-        "coref": _env_f("RMX_BOOST_COREF", 0.0),
+        # NOTE: `coref` is deliberately NOT in this dict. These boosts only
+        # reorder entities already retrieved through `mentions`, and a
+        # within-doc antecedent always has an organic mention -- measured
+        # byte-identical output at boost 1.0. Cross-doc coref exists to grow
+        # REACH, so RMX_BOOST_COREF gates a postings source inside
+        # content_rank instead (see the coref-postings block there).
     }
 
 
@@ -4133,6 +4133,10 @@ class Store:
         kind_clause = f" AND e.kind IN ({','.join('?' * len(kinds))})" if kinds else ""
         scores: dict[int, float] = {}
         cover: dict[int, set] = {}
+        # Populated by the mentions-BM25 block; referenced by the structural
+        # boosts and the coref postings, both of which can run when that block
+        # was skipped (empty/sparse mentions index), so init unconditionally.
+        _idf_by_cid: dict[int, float] = {}
         # BM25 (+ coverage) over the `mentions` index. Skipped wholesale when the
         # index is empty or these terms have no mention postings — an exact
         # symbol with no body mentions still falls through to def-surfacing below.
@@ -4146,7 +4150,6 @@ class Store:
             # exact when one term resolves to several concept ids that share
             # documents.
             ph_df = ",".join("?" * len(flat))
-            _idf_by_cid: dict[int, float] = {}
             postings_by_cid: dict[int, set] = {}
             for cid, eid in con.execute(
                 f"SELECT el.concept_id, el.entity_id FROM entity_links el "
@@ -4199,6 +4202,58 @@ class Store:
                 if coverage_alpha > 0 and n_units > 1:
                     for eid in list(scores):
                         scores[eid] *= (len(cover[eid]) / n_units) ** coverage_alpha
+        # --- coref postings: the reach-growing half ------------------------
+        # A `coref` link means the document REFERS to the concept though the
+        # term never appears in its body (a pronoun resolved to an antecedent,
+        # possibly from ANOTHER document via `link_cross_doc_coref`). The term
+        # boosts below only reorder entities the mentions walk already found,
+        # so this is a separate CANDIDATE source, gated on RMX_BOOST_COREF and
+        # standing on its own OUTSIDE the mentions-BM25 block -- a doc reached
+        # only by coref (zero organic mentions of the term) must still surface,
+        # which is the whole point of growing the candidate set. idf uses the
+        # partition doc count when the mentions index is too sparse for stats.
+        _w_coref = _env_f("RMX_BOOST_COREF")
+        if _w_coref > 0:
+            try:
+                _clid = self.get_linkage_id("coref")
+                if N > 0:
+                    _Nc = N
+                else:
+                    _Nc = max(con.execute(
+                        "SELECT count(*) FROM entities WHERE partition_id=? "
+                        "AND kind IN ('memory','doc')",
+                        (self._partition_id,)).fetchone()[0], 1)
+                _seen_terms: dict[int, int] = {}
+                for _cid, _eid in con.execute(
+                    f"SELECT el.concept_id, el.entity_id FROM entity_links el "
+                    f"JOIN entities e ON e.id = el.entity_id "
+                    f"WHERE el.linkage_id=? AND e.partition_id=? "
+                    f"AND el.concept_id IN ({','.join('?' * len(flat))})"
+                    f"{kind_clause}",
+                    (_clid, self._partition_id, *flat, *(kinds or [])),
+                ).fetchall():
+                    _seen_terms.setdefault(int(_cid), 0)
+                    _seen_terms[int(_cid)] += 1
+                for _cid, _eid, _w in con.execute(
+                    f"SELECT el.concept_id, el.entity_id, el.weight "
+                    f"FROM entity_links el "
+                    f"JOIN entities e ON e.id = el.entity_id "
+                    f"WHERE el.linkage_id=? AND e.partition_id=? "
+                    f"AND el.concept_id IN ({','.join('?' * len(flat))})"
+                    f"{kind_clause}",
+                    (_clid, self._partition_id, *flat, *(kinds or [])),
+                ).fetchall():
+                    _ti = cid_to_term.get(int(_cid))
+                    if _ti is None:
+                        continue
+                    _nt = _seen_terms.get(int(_cid), 1)
+                    _idf = math.log((_Nc - _nt + 0.5) / (_nt + 0.5) + 1.0)
+                    scores[int(_eid)] = scores.get(int(_eid), 0.0) + (
+                        _w_coref * _idf * min(float(_w or 1.0), 3.0))
+                    cover.setdefault(int(_eid), set()).add(_ti)
+            except Exception:
+                pass  # linkage absent on stores that predate coref
+
         # --- structural signal: boosts and priors --------------------------
         # Everything a HUMAN asserted about a document currently contributes
         # nothing to its score, while everything an extractor counted drives
@@ -5422,6 +5477,89 @@ class Store:
         hapax = sum(1 for b in docs_of.values() if len(b) == 1)
         return {"scanned_docs": scanned, "pairs_total": len(docs_of),
                 "hapax": hapax, "kept": len(survivors), "min_df": min_df}
+
+    def link_cross_doc_coref(self, *, min_shared: int = 2,
+                             max_sentences: int = 3) -> dict:
+        """Resolve doc-INITIAL unresolved pronouns across documents -- the
+        only coref variant that can grow a candidate set, since it injects
+        vocabulary the referring document does not contain.
+
+        For each memory with doc-initial unresolved pronouns: candidate
+        antecedent documents are the `pair_index` neighbors (documents
+        sharing at least `min_shared` df-filtered pairs, scored sum(1/df) so
+        rare shared pairs dominate); the best neighbor's dominant person
+        referent (`coref.doc_antecedent`) becomes the antecedent. Emits the
+        resolutions into the sidecar (merged, embed-time substitution picks
+        them up on the next embed), `coref` linkage bits (the postings
+        `content_rank` reads under RMX_BOOST_COREF), and a `refers-to` edge
+        doc -> neighbor. Requires `compile_pairs` to have run; returns the
+        counts either way. Re-running replaces each doc's cross-doc
+        resolutions rather than accreting (offsets identify them)."""
+        from refmatrix import coref as _coref
+        from refmatrix.ingest import text_phrases
+        con = self._connect()
+        pair_rows = con.execute(
+            "SELECT pair_key, df, docs FROM pair_index WHERE partition_id=?",
+            (self._partition_id,)).fetchall()
+        if not pair_rows:
+            return {"docs_scanned": 0, "linked": 0, "resolutions": 0,
+                    "note": "pair_index empty — run `rmx pairs compile` first"}
+        inv = {r[0]: (int(r[1]), BitMap.deserialize(r[2])) for r in pair_rows}
+        mems = con.execute(
+            "SELECT mc.entity_id, mc.content FROM memory_content mc "
+            "JOIN entities e ON e.id = mc.entity_id "
+            "WHERE e.partition_id=? AND mc.content IS NOT NULL",
+            (self._partition_id,)).fetchall()
+        content_of = {int(eid): c or "" for eid, c in mems}
+        self.add_linkage_type("coref", description="pronoun-deref antecedent")
+        self.add_linkage_type(
+            "refers-to", description="cross-doc coref continuity")
+        scanned = linked = new_res = 0
+        for eid, content in content_of.items():
+            scanned += 1
+            pending = _coref.initial_unresolved(content,
+                                                sentences=max_sentences)
+            if not pending:
+                continue
+            neigh: dict[int, float] = {}
+            shared: dict[int, int] = {}
+            for key in text_phrases(content, stop=frozenset()):
+                hit = inv.get(key)
+                if hit is None:
+                    continue
+                df, docs = hit
+                for other in docs:
+                    other = int(other)
+                    if other == eid:
+                        continue
+                    neigh[other] = neigh.get(other, 0.0) + 1.0 / df
+                    shared[other] = shared.get(other, 0) + 1
+            cands = [(sc, o) for o, sc in neigh.items()
+                     if shared[o] >= min_shared and o in content_of]
+            if not cands:
+                continue
+            _score, best = max(cands)
+            existing = self.load_coref(best)
+            ante = _coref.doc_antecedent(existing, content_of[best])
+            if not ante:
+                continue
+            # Merge: replace prior CROSS-doc rows at these offsets, keep the
+            # in-doc ones. Confidence is deliberately low -- these are
+            # continuity guesses, and min_confidence filters exist downstream.
+            mine = [r for r in self.load_coref(eid)
+                    if r.offset not in {off for off, _p in pending}]
+            adds = [_coref.Resolution(offset=off, pronoun=pron,
+                                      antecedent=ante, confidence=0.2)
+                    for off, pron in pending]
+            self.save_coref(eid, mine + adds)
+            cid = self.add_concept(ante.lower(),
+                                   f"coref antecedent '{ante}'")
+            self.link("coref", cid, eid, weight=float(len(adds)))
+            self.link("refers-to", eid, best)
+            linked += 1
+            new_res += len(adds)
+        return {"docs_scanned": scanned, "linked": linked,
+                "resolutions": new_res, "min_shared": min_shared}
 
     def pair_docs(self, pair_key: str) -> "list[int]":
         """Entity ids of the documents containing `pair_key` (df-filtered

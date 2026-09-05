@@ -335,6 +335,10 @@ class _DaemonWriter:
                            "dry_run": dry_run},
                           timeout=600.0)
 
+    def link_cross_doc_coref(self, *, min_shared=2):
+        return self._call("coref_link", {"min_shared": min_shared},
+                          timeout=600.0)
+
     def compile_pairs(self, *, min_df=3):
         return self._call("compile_pairs", {"min_df": min_df}, timeout=600.0)
 
@@ -812,6 +816,35 @@ def pairs_show(pair_key):
     for r in con.execute(
         f"SELECT id, kind, name FROM entities WHERE id IN ({ph})", ids):
         console.print(f"  {r[0]}  [{r[1]}]  {r[2]}")
+
+
+@main.group("coref")
+def coref_group():
+    """Pronoun dereferencing (coref.py). Within-doc resolution runs at
+    ingest under RMX_INGEST_COREF=1; the subcommands here are the offline
+    corpus-level passes."""
+
+
+@coref_group.command("link")
+@click.option("--min-shared", type=int, default=2, show_default=True,
+              help="df-filtered pairs two documents must share before one "
+                   "may serve as the other's antecedent source.")
+def coref_link_cmd(min_shared):
+    """Cross-document resolution: bind each document's doc-INITIAL
+    unresolved pronouns to the dominant referent of its best pair_index
+    neighbor. The only coref variant that can grow a candidate set -- it
+    injects vocabulary the referring document does not contain. Run
+    `rmx pairs compile` first; re-run after the corpus moves."""
+    s = _store(write=True)
+    r = s.link_cross_doc_coref(min_shared=min_shared)
+    if r.get("note"):
+        console.print(f"[yellow]{r['note']}[/]")
+        return
+    console.print(
+        f"[green]linked[/] scanned={r['docs_scanned']} "
+        f"linked={r['linked']} resolutions={r['resolutions']} "
+        f"(min-shared={r['min_shared']}) — re-run `rmx embed` so the "
+        f"dense vectors pick up the substitutions")
 
 
 @main.command("ui")
