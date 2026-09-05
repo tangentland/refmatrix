@@ -533,6 +533,15 @@ def _body_terms_on() -> bool:
     return os.environ.get("RMX_GMD_BODY_TERMS", "1") not in ("0", "false", "False")
 
 
+def _coref_on() -> bool:
+    """Resolve pronouns to antecedents during the memory ingest and emit the
+    counts as a `coref` linkage (see coref.py). OFF by default until the
+    retrieval effect is measured; `RMX_INGEST_COREF=1` enables. The stored
+    resolutions also let the embedder substitute antecedents into the text
+    it encodes, so both channels ride one sidecar."""
+    return os.environ.get("RMX_INGEST_COREF", "0") not in ("0", "false", "False")
+
+
 def _lead_terms_on() -> bool:
     """Record which terms appear in a node's OPENING lines, as a `lead`
     linkage. OFF by default; `RMX_LEAD_TERMS=1` enables. Requires re-ingest.
@@ -819,13 +828,30 @@ def ingest_gmd_paths(
             for k, v in raw_meta.items():
                 if k not in mem_metadata:
                     mem_metadata[k] = v
+            _mem_content = body or raw_text
             doc_eid = store.add_memory(
                 name=doc.doc_id,
-                content=body or raw_text,
+                content=_mem_content,
                 mtype=mtype,
                 tags=list(doc.tags) if doc.tags else None,
                 metadata=mem_metadata,
             )
+            if _coref_on():
+                # Resolutions are stored against EXACTLY the string that
+                # became memory_content.content -- the embedder re-applies
+                # them to that same string, so offsets never drift.
+                from refmatrix import coref as _coref
+                _res = _coref.resolve_text(_mem_content, min_confidence=0.25)
+                store.save_coref(doc_eid, _res)
+                if _res:
+                    _ensure_linkage(store, "coref", stats)
+                    _c_specs = [(t, f"coref antecedent '{t}'")
+                                for t in _coref.antecedent_counts(_res)]
+                    _c_ids = _bulk_add_concepts(store, _c_specs)
+                    store.bulk_link(
+                        [("coref", _c_ids[t], doc_eid, float(n))
+                         for t, n in _coref.antecedent_counts(_res).items()],
+                        update_weight=True)
         else:
             doc_eid = store.upsert_entity(
                 kind="doc", name=doc.doc_id, path=str(path),

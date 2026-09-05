@@ -170,6 +170,37 @@ CREATE TABLE IF NOT EXISTS pagerank (
 );
 CREATE INDEX IF NOT EXISTS idx_pagerank_score
     ON pagerank(partition_id, score);
+
+-- Pronoun-deref sidecar (see coref.py). One row per resolved pronoun
+-- occurrence; offsets index the exact content string that was resolved
+-- (memory_content.content for memories). The resolved TEXT is never stored:
+-- symbolic reads the counts, dense re-materializes the substitution at embed
+-- time, and this table is the only persistent artifact.
+CREATE TABLE IF NOT EXISTS coref_resolutions (
+    partition_id INTEGER NOT NULL DEFAULT 1,
+    entity_id    INTEGER NOT NULL,
+    pos          INTEGER NOT NULL,
+    pronoun      TEXT NOT NULL,
+    antecedent   TEXT NOT NULL,
+    confidence   REAL NOT NULL,
+    PRIMARY KEY (partition_id, entity_id, pos)
+);
+
+-- Central df-filtered pair inventory with document postings -- the cross-doc
+-- substrate for coref (which documents share this pair) and the persisted
+-- form of the phrase-tabulation threshold work. Compiled offline by
+-- `rmx pairs compile --min-df N`; docs is a roaring-bitmap blob of entity
+-- ids. Never on the write hot path.
+CREATE TABLE IF NOT EXISTS pair_index (
+    partition_id INTEGER NOT NULL DEFAULT 1,
+    pair_key     TEXT NOT NULL,
+    df           INTEGER NOT NULL,
+    docs         BLOB NOT NULL,
+    compiled_at  REAL NOT NULL,
+    PRIMARY KEY (partition_id, pair_key)
+);
+CREATE INDEX IF NOT EXISTS idx_pair_index_df
+    ON pair_index(partition_id, df);
 """
 
 # Tables in the order they need to be (re-)populated so foreign keys resolve.

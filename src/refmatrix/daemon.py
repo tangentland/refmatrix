@@ -3233,6 +3233,17 @@ def _op_clear_tracked_stamps(d: Daemon, args: dict) -> dict:
     return result
 
 
+def _op_compile_pairs(d: Daemon, args: dict) -> dict:
+    """Compile the df-filtered pair inventory for the caller's partition
+    (see Store.compile_pairs). Heavy corpus scan; runs under the writer lock
+    because it replaces the partition's pair_index wholesale."""
+    part = args.get("partition") or d.store._partition_name
+    with d._store_lock, d.store.with_partition(part):
+        result = d.store.compile_pairs(min_df=int(args.get("min_df", 3)))
+    d._request_snapshot()
+    return result
+
+
 def _op_merge_verb_aliases(d: Daemon, args: dict) -> dict:
     """Fold legacy snake-case linkage verbs into their kebab canonical across
     the whole store (relational forward index + per-partition bitmaps +
@@ -4495,6 +4506,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "forget": _op_forget,
     "untrack": _op_untrack,
     "clear_tracked_stamps": _op_clear_tracked_stamps,
+    "compile_pairs": _op_compile_pairs,
     "merge_verb_aliases": _op_merge_verb_aliases,
     "vacuum": _op_vacuum,
     "stats": _op_stats,

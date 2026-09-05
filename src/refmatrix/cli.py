@@ -335,6 +335,9 @@ class _DaemonWriter:
                            "dry_run": dry_run},
                           timeout=600.0)
 
+    def compile_pairs(self, *, min_df=3):
+        return self._call("compile_pairs", {"min_df": min_df}, timeout=600.0)
+
     def clear_tracked_stamps(self, *, like=None):
         return self._call("clear_tracked_stamps", {"like": like}, timeout=600.0)
 
@@ -766,6 +769,49 @@ def upgrade(from_dev, ref, check, no_restart):
                     restart=not no_restart, log=console.print)
     except _up.UpgradeError as e:
         raise click.ClickException(str(e))
+
+
+@main.group()
+def pairs():
+    """Central df-filtered skip-pair inventory with document postings.
+
+    The persisted form of the phrase-tabulation threshold work: pairs are
+    mined with the SAME identity the phrase layer measured
+    (`ingest.text_phrases`), filtered to df >= N (82% of raw pairs are hapax
+    and can never link anything to anything), and stored with a bitmap of
+    the documents containing each survivor. Cross-document coref reads it to
+    find which documents share a rare pair."""
+
+
+@pairs.command("compile")
+@click.option("--min-df", type=int, default=3, show_default=True,
+              help="Document-frequency floor a pair must reach to be kept. "
+                   "3 is where the hapax tabulation put the knee.")
+def pairs_compile(min_df):
+    """Scan the partition's memories + docs and (re)build the inventory."""
+    s = _store(write=True)
+    r = s.compile_pairs(min_df=min_df)
+    console.print(
+        f"[green]compiled[/] scanned={r['scanned_docs']} "
+        f"pairs={r['pairs_total']} hapax={r['hapax']} "
+        f"kept={r['kept']} (df>={r['min_df']})")
+
+
+@pairs.command("show")
+@click.argument("pair_key")
+def pairs_show(pair_key):
+    """Documents containing PAIR_KEY (alphabetized `a_b` form)."""
+    s = _store(write=False)
+    ids = s.pair_docs(pair_key)
+    if not ids:
+        console.print("[dim]not in the compiled inventory "
+                      "(below threshold, or never compiled)[/]")
+        return
+    con = s._connect()
+    ph = ",".join("?" * len(ids))
+    for r in con.execute(
+        f"SELECT id, kind, name FROM entities WHERE id IN ({ph})", ids):
+        console.print(f"  {r[0]}  [{r[1]}]  {r[2]}")
 
 
 @main.command("ui")

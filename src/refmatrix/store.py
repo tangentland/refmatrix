@@ -75,6 +75,12 @@ def _term_boost_linkages() -> "dict[str, float]":
         # linkage ignores this silently, so it is safe to leave on
         # everywhere.
         "lead": _env_f("RMX_BOOST_LEAD", 0.25),
+        # Pronoun-deref tf delta (coref.py). A resolved pronoun is a REPEAT
+        # occurrence of its antecedent, so the natural weight is 1.0 -- the
+        # same as an organic occurrence -- but it ships 0.0 (off) until the
+        # retrieval effect is measured. The linkage is separate from
+        # `mentions` precisely so this knob can exist.
+        "coref": _env_f("RMX_BOOST_COREF", 0.0),
     }
 
 
@@ -375,6 +381,37 @@ CREATE TABLE IF NOT EXISTS pagerank (
 );
 CREATE INDEX IF NOT EXISTS idx_pagerank_score
     ON pagerank(partition_id, score);
+
+-- Pronoun-deref sidecar (see coref.py). One row per resolved pronoun
+-- occurrence; offsets index the exact content string that was resolved
+-- (memory_content.content for memories). The resolved TEXT is never stored:
+-- symbolic reads the counts, dense re-materializes the substitution at embed
+-- time, and this table is the only persistent artifact.
+CREATE TABLE IF NOT EXISTS coref_resolutions (
+    partition_id INTEGER NOT NULL DEFAULT 1,
+    entity_id    INTEGER NOT NULL,
+    pos          INTEGER NOT NULL,
+    pronoun      TEXT NOT NULL,
+    antecedent   TEXT NOT NULL,
+    confidence   REAL NOT NULL,
+    PRIMARY KEY (partition_id, entity_id, pos)
+);
+
+-- Central df-filtered pair inventory with document postings -- the cross-doc
+-- substrate for coref (which documents share this pair) and the persisted
+-- form of the phrase-tabulation threshold work. Compiled offline by
+-- `rmx pairs compile --min-df N`; docs is a roaring-bitmap blob of entity
+-- ids. Never on the write hot path.
+CREATE TABLE IF NOT EXISTS pair_index (
+    partition_id INTEGER NOT NULL DEFAULT 1,
+    pair_key     TEXT NOT NULL,
+    df           INTEGER NOT NULL,
+    docs         BLOB NOT NULL,
+    compiled_at  REAL NOT NULL,
+    PRIMARY KEY (partition_id, pair_key)
+);
+CREATE INDEX IF NOT EXISTS idx_pair_index_df
+    ON pair_index(partition_id, df);
 """
 
 DEFAULT_LINKAGES = [
@@ -5294,6 +5331,105 @@ class Store:
                 "UPDATE entities SET meta=? WHERE id=?", payload[i:i + 900]
             )
         return len(payload)
+
+    # ---- coref sidecar + pair index ---------------------------------------
+
+    def save_coref(self, entity_id: int, resolutions) -> int:
+        """Persist an entity's pronoun resolutions (coref.Resolution list),
+        replacing any prior set. Offsets index the exact content string the
+        resolver saw -- for memories, `memory_content.content` -- so the
+        embed-time `coref.apply` never drifts."""
+        con = self._connect()
+        con.execute(
+            "DELETE FROM coref_resolutions WHERE partition_id=? AND entity_id=?",
+            (self._partition_id, entity_id))
+        rows = [(self._partition_id, entity_id, r.offset, r.pronoun,
+                 r.antecedent, r.confidence) for r in resolutions]
+        for i in range(0, len(rows), 900):
+            con.executemany(
+                "INSERT INTO coref_resolutions "
+                "(partition_id, entity_id, pos, pronoun, antecedent, confidence) "
+                "VALUES (?,?,?,?,?,?)", rows[i:i + 900])
+        self._maybe_commit(con)
+        return len(rows)
+
+    def load_coref(self, entity_id: int):
+        """The entity's stored resolutions, offset-ordered."""
+        from refmatrix.coref import Resolution
+        return [
+            Resolution(offset=int(r[0]), pronoun=r[1], antecedent=r[2],
+                       confidence=float(r[3]))
+            for r in self._connect().execute(
+                "SELECT pos, pronoun, antecedent, confidence "
+                "FROM coref_resolutions WHERE partition_id=? AND entity_id=? "
+                "ORDER BY pos", (self._partition_id, entity_id))
+        ]
+
+    def compile_pairs(self, *, min_df: int = 3) -> dict:
+        """Build the central df-filtered pair inventory with doc postings.
+
+        Mines skip-pairs (`ingest.text_phrases` -- the SAME identity the
+        phrase layer measured) over every memory body and every on-disk doc
+        in the active partition, keeps pairs whose document frequency reaches
+        `min_df`, and stores each survivor with a roaring bitmap of the
+        entity ids that contain it. This is the tabulation that established
+        df>=3 as the hapax floor, persisted: cross-doc coref reads it to find
+        which documents share a rare pair, and any future phrase experiment
+        starts from the filtered inventory instead of the 82%-hapax raw one.
+
+        Replaces the partition's previous compilation wholesale -- postings
+        go stale as the corpus moves, so a partial refresh would lie."""
+        import time as _time
+        from collections import Counter as _Counter
+        from pathlib import Path as _Path
+        from refmatrix.ingest import text_phrases
+        con = self._connect()
+        docs_of: "dict[str, BitMap]" = {}
+        scanned = 0
+        for eid, content in con.execute(
+            "SELECT mc.entity_id, mc.content FROM memory_content mc "
+            "JOIN entities e ON e.id = mc.entity_id "
+            "WHERE e.partition_id=? AND mc.content IS NOT NULL",
+            (self._partition_id,),
+        ).fetchall():
+            scanned += 1
+            for key in text_phrases(content or "", stop=frozenset()):
+                docs_of.setdefault(key, BitMap()).add(int(eid))
+        for eid, path in con.execute(
+            "SELECT id, path FROM entities WHERE partition_id=? "
+            "AND kind='doc' AND path IS NOT NULL", (self._partition_id,),
+        ).fetchall():
+            fp = _Path(str(path))
+            try:
+                body = fp.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            scanned += 1
+            for key in text_phrases(body, stop=frozenset()):
+                docs_of.setdefault(key, BitMap()).add(int(eid))
+        survivors = {k: b for k, b in docs_of.items() if len(b) >= min_df}
+        now = _time.time()
+        con.execute("DELETE FROM pair_index WHERE partition_id=?",
+                    (self._partition_id,))
+        rows = [(self._partition_id, k, len(b), b.serialize(), now)
+                for k, b in survivors.items()]
+        for i in range(0, len(rows), 500):
+            con.executemany(
+                "INSERT INTO pair_index "
+                "(partition_id, pair_key, df, docs, compiled_at) "
+                "VALUES (?,?,?,?,?)", rows[i:i + 500])
+        self._maybe_commit(con)
+        hapax = sum(1 for b in docs_of.values() if len(b) == 1)
+        return {"scanned_docs": scanned, "pairs_total": len(docs_of),
+                "hapax": hapax, "kept": len(survivors), "min_df": min_df}
+
+    def pair_docs(self, pair_key: str) -> "list[int]":
+        """Entity ids of the documents containing `pair_key` (df-filtered
+        inventory only -- a miss means below threshold or never compiled)."""
+        row = self._connect().execute(
+            "SELECT docs FROM pair_index WHERE partition_id=? AND pair_key=?",
+            (self._partition_id, pair_key)).fetchone()
+        return sorted(BitMap.deserialize(row[0])) if row else []
 
     def stale_files(self) -> list[dict]:
         """Return tracked files where on-disk mtime is newer than last_synced.

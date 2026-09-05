@@ -206,6 +206,17 @@ def _extract_memory(store, entity_id: int) -> str:
         ).fetchone()
         if r is not None:
             content, mtype, tags = r[0], r[1] or "", r[2] or ""
+            # Transiently materialize the pronoun-deref form when resolutions
+            # exist (coref.py): offsets were stored against exactly this
+            # content string. The substituted text is embedded and discarded
+            # -- vectors persist, resolutions persist, resolved text never.
+            try:
+                res = store.load_coref(entity_id)
+                if res:
+                    from refmatrix.coref import apply as _coref_apply
+                    content = _coref_apply(content or "", res)
+            except Exception:
+                pass  # sidecar absent (pre-migration store) -- embed raw
             return f"[{mtype}] {content}\n{tags}".strip()
     except Exception:
         # memory_content table doesn't exist yet (Phase A only).
