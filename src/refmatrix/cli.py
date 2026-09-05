@@ -5705,8 +5705,9 @@ def reingest(ctx, semantic, do_sessions, do_embed, rebuild, force, memory_dir):
                     _partition_override = part
                     r = _store(write=True).clear_tracked_stamps()
                     console.print(
-                        f"  [dim]{part}: {r.get('stamps_cleared', 0)} "
-                        f"stamps cleared[/]")
+                        f"  [dim]{part}: {r.get('stamps_cleared', 0)} mtime "
+                        f"stamps + {r.get('gmd_hashes_cleared', 0)} GMD "
+                        f"content hashes cleared[/]")
             finally:
                 _partition_override = prev
         step("0/5 clear stamps (--force)", _clear)

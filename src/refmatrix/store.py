@@ -5251,8 +5251,43 @@ class Store:
                 "DELETE FROM tracked_files WHERE partition_id=?",
                 (self._partition_id,),
             )
+        gmd = self._clear_gmd_content_hashes(con)
         self._maybe_commit(con)
-        return {"stamps_cleared": int(n), "partition": self._partition_name}
+        return {"stamps_cleared": int(n), "gmd_hashes_cleared": gmd,
+                "partition": self._partition_name}
+
+    def _clear_gmd_content_hashes(self, con) -> int:
+        """Strip `gmd_content_hash` / `gmd_pass2_done` from doc+memory meta in
+        the active partition.
+
+        The GMD passes do NOT gate on tracked_files — they gate on a content
+        hash stamped into the entity's own meta, so clearing the mtime stamps
+        alone leaves every already-ingested markdown file skipped at
+        `pass1-skip` / `pass2-skip` and the body terms never get re-derived.
+        Two independent stamps, the same defect: both key on the identity of
+        the INPUT while it is the transform that changed."""
+        rows = con.execute(
+            "SELECT id, meta FROM entities "
+            "WHERE partition_id=? AND kind IN ('doc','memory') "
+            "AND meta IS NOT NULL AND meta LIKE '%gmd_content_hash%'",
+            (self._partition_id,),
+        ).fetchall()
+        payload: list[tuple[str, int]] = []
+        for eid, raw in rows:
+            try:
+                meta = json.loads(raw) if raw else None
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(meta, dict):
+                continue
+            meta.pop("gmd_content_hash", None)
+            meta.pop("gmd_pass2_done", None)
+            payload.append((json.dumps(meta), int(eid)))
+        for i in range(0, len(payload), 900):
+            con.executemany(
+                "UPDATE entities SET meta=? WHERE id=?", payload[i:i + 900]
+            )
+        return len(payload)
 
     def stale_files(self) -> list[dict]:
         """Return tracked files where on-disk mtime is newer than last_synced.
