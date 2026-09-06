@@ -1,0 +1,87 @@
+#!/bin/sh
+# rmxrg — ripgrep drop-in that teaches the refmatrix graph.
+#
+# The rg-habit sibling of rmxgrep: `alias rg=rmxrg` system-wide. Same
+# routing contract, rg semantics for the passthrough:
+#
+#   * OUTSIDE an rmx project, or no rmx on PATH: exec real rg untouched.
+#   * INSIDE, rich mode (tty or RMXGREP_MODE=rich): `rmx grep` — it accepts
+#     bare rg flags; its fail-loud exit 2 falls back to real rg.
+#   * INSIDE, plain mode: real rg answers; a throttled, flag-stripped teach
+#     ping learns the query in the background.
+#
+# Shares rmxgrep's env knobs: RMXGREP_MODE, RMXGREP_RMX, RMXGREP_TEACH,
+# RMXGREP_TEACH_TTL_MIN. The underlying binary comes from RMXRG_RG
+# (default: rg).
+
+REAL="${RMXRG_RG:-rg}"
+RMX="${RMXGREP_RMX:-rmx}"
+MODE="${RMXGREP_MODE:-auto}"
+
+root=""
+d="$PWD"
+while [ -n "$d" ] && [ "$d" != "/" ]; do
+    if [ -d "$d/.refmatrix" ]; then root="$d"; break; fi
+    d="${d%/*}"
+done
+
+if [ -z "$root" ] || ! command -v "$RMX" >/dev/null 2>&1; then
+    exec "$REAL" "$@"
+fi
+
+rich=0
+case "$MODE" in
+    rich)  rich=1 ;;
+    plain) rich=0 ;;
+    *)     [ -t 1 ] && rich=1 ;;
+esac
+
+if [ "$rich" = "1" ]; then
+    "$RMX" grep "$@"
+    st=$?
+    if [ "$st" -eq 2 ]; then
+        exec "$REAL" "$@"
+    fi
+    exit "$st"
+fi
+
+if [ "${RMXGREP_TEACH:-1}" != "0" ]; then
+    ttl="${RMXGREP_TEACH_TTL_MIN:-5}"
+    stampdir="$root/.refmatrix/.rmxgrep-teach"
+    stamp="$stampdir/$(printf '%s' "$*" | cksum | tr ' \t' '__')"
+    if [ -z "$(find "$stamp" -mmin "-$ttl" 2>/dev/null)" ]; then
+        mkdir -p "$stampdir" 2>/dev/null
+        : > "$stamp" 2>/dev/null
+        (
+            cd "$root" || exit 0
+            expect=0
+            built=0
+            for tok in "$@"; do
+                keep=""
+                if [ "$expect" = "1" ]; then
+                    keep="$tok"
+                    expect=0
+                else
+                    case "$tok" in
+                        -e|--regexp) expect=1 ;;
+                        --regexp=*)  keep="${tok#--regexp=}" ;;
+                        --)          ;;
+                        -*)          ;;
+                        *)           keep="$tok" ;;
+                    esac
+                fi
+                if [ -n "$keep" ]; then
+                    if [ "$built" = "0" ]; then
+                        set -- "$keep"
+                        built=1
+                    else
+                        set -- "$@" "$keep"
+                    fi
+                fi
+            done
+            [ "$built" = "1" ] || exit 0
+            exec "$RMX" grep --limit 3 "$@" >/dev/null 2>&1
+        ) >/dev/null 2>&1 &
+    fi
+fi
+exec "$REAL" "$@"

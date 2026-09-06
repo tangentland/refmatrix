@@ -155,6 +155,12 @@ class Watchdog:
         self.restart_counts: dict[str, int] = {}
         # consecutive ping-miss counter per root, for the liveness grace window
         self.miss_counts: dict[str, int] = {}
+        # root -> unix ts when a maintenance pause expires (inf = until
+        # resumed). While paused the watchdog observes but NEVER restarts —
+        # an operator doing a bootout/merge/repair must not fight a respawn
+        # (a paused root's freshly-killed daemon got respawned 44s later and
+        # took the catalog lock out from under a direct-store merge).
+        self.paused_until: dict[str, float] = {}
         self._thread: threading.Thread | None = None
 
     # -- policy ----
@@ -165,6 +171,32 @@ class Watchdog:
         if policy not in ("auto", "manual"):
             raise ValueError("policy must be 'auto' or 'manual'")
         self.policy[str(Path(root).resolve())] = policy
+
+    # -- maintenance pause ----
+    def pause(self, root: Path, seconds: "float | None" = None) -> float:
+        """Suspend restarts for `root`. `seconds=None` pauses until `resume`.
+        Returns the expiry timestamp (inf for indefinite)."""
+        until = float("inf") if seconds is None else time.time() + float(seconds)
+        with self._lock:
+            self.paused_until[str(Path(root).resolve())] = until
+        return until
+
+    def resume(self, root: Path) -> bool:
+        """Lift a maintenance pause. Returns True if one was active."""
+        with self._lock:
+            return self.paused_until.pop(
+                str(Path(root).resolve()), None) is not None
+
+    def is_paused(self, root: Path) -> bool:
+        key = str(Path(root).resolve())
+        with self._lock:
+            until = self.paused_until.get(key)
+            if until is None:
+                return False
+            if time.time() >= until:      # expired: auto-revert to policy
+                del self.paused_until[key]
+                return False
+            return True
 
     # -- lifecycle ----
     def start(self) -> None:
@@ -200,6 +232,12 @@ class Watchdog:
         restarted = False
         reason = ""
         if up:
+            self.miss_counts[key] = 0
+        elif self.is_paused(root):
+            # Maintenance window: observe, never restart. Reset the miss
+            # counter so a long pause doesn't bank grace-misses that trigger
+            # an instant SIGKILL the moment the pause lifts.
+            reason = "paused"
             self.miss_counts[key] = 0
         elif self.get_policy(root) == "auto":
             # Not answering — but is it DEAD or just BUSY/STARTING? A live
@@ -254,13 +292,16 @@ class Watchdog:
             return False
 
     def health(self) -> dict:
+        now = time.time()
         with self._lock:
-            roots = set(self.history) | set(self.policy)
+            roots = set(self.history) | set(self.policy) | set(self.paused_until)
             return {
                 root: {
                     "restart_count": self.restart_counts.get(root, 0),
                     "history": list(self.history.get(root, [])),
                     "policy": self.policy.get(root, "auto"),
+                    "paused_until": self.paused_until.get(root),
+                    "paused": (self.paused_until.get(root) or 0) > now,
                 }
                 for root in roots
             }
@@ -344,6 +385,15 @@ class Hub:
     def _op_set_watchdog(self, args: dict) -> dict:
         self.watchdog.set_policy(Path(args["root"]), args["policy"])
         return {"ok": True, "policy": args["policy"]}
+
+    def _op_pause(self, args: dict) -> dict:
+        until = self.watchdog.pause(
+            Path(args["root"]), args.get("seconds"))
+        return {"paused": True, "until": None if until == float("inf") else until}
+
+    def _op_resume(self, args: dict) -> dict:
+        was = self.watchdog.resume(Path(args["root"]))
+        return {"resumed": was}
 
     def _op_stop(self, args: dict) -> dict:
         self._stop.set()
@@ -433,6 +483,8 @@ class Hub:
             "health": self._op_health,
             "restart": self._op_restart,
             "set_watchdog": self._op_set_watchdog,
+            "pause": self._op_pause,
+            "resume": self._op_resume,
             "bus_pub": self._op_bus_pub,
             "bus_channels": self._op_bus_channels,
             "bus_history": self._op_bus_history,

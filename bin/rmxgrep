@@ -1,0 +1,121 @@
+#!/bin/sh
+# rmxgrep — grep drop-in that teaches the refmatrix graph.
+#
+# Safe to `alias grep=rmxgrep` system-wide:
+#
+#   * OUTSIDE an rmx project (no .refmatrix dir walking up from $PWD, or no
+#     rmx on PATH): exec the real grep with the argv untouched. Byte-exact
+#     output, grep exit codes, no python startup — this path is pure shell.
+#
+#   * INSIDE a project, rich mode (stdout is a TTY, or RMXGREP_MODE=rich):
+#     delegate to `rmx grep` — index-first, annotated hits, learn-on-miss
+#     (brokered through the daemon writer even though reads ride the
+#     replica). If rmx grep refuses the flags (its fail-loud unsupported
+#     set, exit 2) fall back to the real grep with the original argv so no
+#     invocation ever errors that plain grep would have served.
+#
+#   * INSIDE a project, plain mode (stdout piped/redirected, or
+#     RMXGREP_MODE=plain): the consumer expects grep bytes and grep exit
+#     codes, so the real grep answers — and a detached, throttled
+#     `rmx grep` teach ping runs in the background so the graph still
+#     learns the query. The ping strips flag tokens (keeps pattern, paths,
+#     and `-e` values) so a flag rmx grep would fail-loud on can't stop
+#     the teach.
+#
+# Env:
+#   RMXGREP_MODE     auto (default) | rich | plain. rich forces the
+#                    annotated index path even when stdout is piped — an
+#                    agent shell is never a tty but is exactly the consumer
+#                    the index annotations help most.
+#   RMXGREP_GREP     underlying grep binary (default: grep)
+#   RMXGREP_RMX      rmx binary (default: rmx on PATH)
+#   RMXGREP_TEACH=0  disable the plain-mode background teach ping
+#   RMXGREP_TEACH_TTL_MIN  minutes a pattern's teach stamp suppresses
+#                    re-pings (default 5); a shell loop calling grep 50
+#                    times must not spawn 50 rmx processes.
+
+REAL="${RMXGREP_GREP:-grep}"
+RMX="${RMXGREP_RMX:-rmx}"
+MODE="${RMXGREP_MODE:-auto}"
+
+# Locate the project root: nearest ancestor with a .refmatrix dir.
+root=""
+d="$PWD"
+while [ -n "$d" ] && [ "$d" != "/" ]; do
+    if [ -d "$d/.refmatrix" ]; then root="$d"; break; fi
+    d="${d%/*}"
+done
+
+# Outside a project, or rmx missing: be grep, exactly.
+if [ -z "$root" ] || ! command -v "$RMX" >/dev/null 2>&1; then
+    exec "$REAL" "$@"
+fi
+
+rich=0
+case "$MODE" in
+    rich)  rich=1 ;;
+    plain) rich=0 ;;
+    *)     [ -t 1 ] && rich=1 ;;
+esac
+
+if [ "$rich" = "1" ]; then
+    # Index-first annotated grep. Exit 2 from rmx grep is its fail-loud
+    # "unsupported answer-changing flag" (or a real error) — either way the
+    # real grep serves the original request faithfully. Exit 0/1 carry grep
+    # semantics (1 = no matches) and pass through untouched.
+    "$RMX" grep "$@"
+    st=$?
+    if [ "$st" -eq 2 ]; then
+        exec "$REAL" "$@"
+    fi
+    exit "$st"
+fi
+
+# Plain mode: real grep answers (bytes + exit codes), the index learns in
+# the background — throttled per invocation, flags stripped from the ping.
+if [ "${RMXGREP_TEACH:-1}" != "0" ]; then
+    ttl="${RMXGREP_TEACH_TTL_MIN:-5}"
+    stampdir="$root/.refmatrix/.rmxgrep-teach"
+    stamp="$stampdir/$(printf '%s' "$*" | cksum | tr ' \t' '__')"
+    if [ -z "$(find "$stamp" -mmin "-$ttl" 2>/dev/null)" ]; then
+        mkdir -p "$stampdir" 2>/dev/null
+        : > "$stamp" 2>/dev/null
+        (
+            cd "$root" || exit 0
+            # Rebuild argv keeping only pattern, paths, and -e/--regexp
+            # values: flags narrow rendering/case, the graph learns
+            # pattern->files either way, and a stripped ping can't die on a
+            # flag rmx grep fail-louds on. `for tok in "$@"` snapshots the
+            # list once, so reassigning $@ inside is the standard POSIX
+            # accumulator.
+            expect=0
+            built=0
+            for tok in "$@"; do
+                keep=""
+                if [ "$expect" = "1" ]; then
+                    keep="$tok"
+                    expect=0
+                else
+                    case "$tok" in
+                        -e|--regexp) expect=1 ;;
+                        --regexp=*)  keep="${tok#--regexp=}" ;;
+                        --)          ;;
+                        -*)          ;;
+                        *)           keep="$tok" ;;
+                    esac
+                fi
+                if [ -n "$keep" ]; then
+                    if [ "$built" = "0" ]; then
+                        set -- "$keep"
+                        built=1
+                    else
+                        set -- "$@" "$keep"
+                    fi
+                fi
+            done
+            [ "$built" = "1" ] || exit 0
+            exec "$RMX" grep --limit 3 "$@" >/dev/null 2>&1
+        ) >/dev/null 2>&1 &
+    fi
+fi
+exec "$REAL" "$@"

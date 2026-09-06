@@ -2302,6 +2302,65 @@ def hub_stop():
         console.print("[yellow]hub did not stop cleanly[/]")
 
 
+def _hub_resolve_root(target: "str | None") -> Path:
+    """Resolve a pause/resume TARGET to a store root. Accepts a project name
+    (matched against discovered stores), a path, or nothing (cwd project)."""
+    from refmatrix import discovery
+    if not target:
+        return _root()
+    p = Path(target).expanduser()
+    if (p / ".refmatrix").is_dir():
+        return (p / ".refmatrix").resolve()
+    if p.is_dir() and p.name == ".refmatrix":
+        return p.resolve()
+    for root in discovery.discover_roots():
+        if discovery.store_name(root) == target:
+            return root
+    raise click.ClickException(
+        f"no store found for {target!r} (project name or path)")
+
+
+@hub.command("pause")
+@click.argument("target", required=False)
+@click.option("--minutes", "-m", type=float, default=30.0, show_default=True,
+              help="Auto-resume after this long. Guards against a forgotten "
+                   "pause leaving a store unsupervised.")
+@click.option("--forever", is_flag=True,
+              help="No auto-resume; supervision stays off until "
+                   "`rmx hub resume`.")
+def hub_pause(target: "str | None", minutes: float, forever: bool):
+    """Maintenance pause: the hub watchdog observes TARGET's daemon but will
+    not restart it, so bootout / direct-store merges / repairs don't race a
+    respawn. TARGET is a project name or path; default is the cwd project."""
+    import time as _time
+    from refmatrix import hub as hub_mod
+    root = _hub_resolve_root(target)
+    args: dict = {"root": str(root)}
+    if not forever:
+        args["seconds"] = minutes * 60.0
+    resp = hub_mod.rpc("pause", args)
+    if not resp.get("ok"):
+        raise click.ClickException(resp.get("error", "hub error"))
+    until = resp["result"].get("until")
+    when = "until `rmx hub resume`" if until is None else \
+        _time.strftime("until %H:%M:%S", _time.localtime(until))
+    console.print(f"[green]watchdog paused[/] {root} {when}")
+
+
+@hub.command("resume")
+@click.argument("target", required=False)
+def hub_resume(target: "str | None"):
+    """Lift a maintenance pause set by `rmx hub pause`."""
+    from refmatrix import hub as hub_mod
+    root = _hub_resolve_root(target)
+    resp = hub_mod.rpc("resume", {"root": str(root)})
+    if not resp.get("ok"):
+        raise click.ClickException(resp.get("error", "hub error"))
+    was = resp["result"].get("resumed")
+    console.print(f"[green]watchdog resumed[/] {root}"
+                  if was else f"[yellow]no pause was active[/] {root}")
+
+
 @hub.group("launchctl")
 def hub_launchctl():
     """Supervise the hub itself via macOS launchd (com.refmatrix.hub).
@@ -2362,8 +2421,9 @@ def hub_status():
         for root, h in health.items():
             last = h["history"][-1] if h["history"] else {}
             dot = "[green]●[/]" if last.get("up") else "[red]●[/]"
+            paused = " [yellow]PAUSED[/]" if h.get("paused") else ""
             console.print(f"  {dot} {root}  policy={h['policy']} "
-                          f"restarts={h['restart_count']}")
+                          f"restarts={h['restart_count']}{paused}")
 
 
 @main.group()
@@ -2371,6 +2431,40 @@ def daemon():
     """Per-store background process that holds the catalog open and
     serializes writes — bypasses DuckDB's single-writer lock contention
     when many hooks fire concurrently."""
+
+
+@daemon.command("job")
+@click.argument("job_id", required=False)
+def daemon_job(job_id: "str | None"):
+    """Status of a daemon background job (e.g. `partition merge --async`).
+    Without JOB_ID, lists every job from this daemon run."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if not daemon_mod.ping(root):
+        raise click.ClickException("daemon not running")
+    resp = daemon_mod.call(
+        root, "job_status", {"job": job_id} if job_id else {}, timeout=10.0)
+    if not resp.get("ok"):
+        raise click.ClickException(resp.get("error", "daemon error"))
+    result = resp["result"]
+    if "jobs" in result:
+        if not result["jobs"]:
+            console.print("[dim]no jobs this daemon run[/]")
+        for jid, j in result["jobs"].items():
+            console.print(
+                f"  {jid}  {j['state']}  {j.get('op')} "
+                f"{j.get('src')}->{j.get('dst')}  "
+                f"{j.get('phase')} {j.get('done')}/{j.get('total')}")
+        return
+    if result.get("error"):
+        raise click.ClickException(result["error"])
+    console.print(
+        f"job {result['job']}: [bold]{result['state']}[/]  "
+        f"{result.get('phase')} {result.get('done')}/{result.get('total')}")
+    if result.get("result"):
+        console.print(f"  result: {result['result']}")
+    if result.get("error"):
+        console.print(f"  [red]error:[/] {result['error']}")
 
 
 @daemon.command("start")
@@ -3142,7 +3236,13 @@ def partition_rename(old: str, new: str):
                    "reparented + merged.")
 @click.option("--yes", "-y", is_flag=True,
               help="Skip the confirmation prompt. Use after a --dry-run.")
-def partition_merge(src: str, dst: str, dry_run: bool, yes: bool):
+@click.option("--async", "run_async", is_flag=True,
+              help="Submit as a daemon background job and return the job id "
+                   "immediately instead of blocking on the RPC. Progress "
+                   "streams to rmxd.log (merge-progress lines); poll with "
+                   "`rmx daemon job <id>`. Needs the daemon up.")
+def partition_merge(src: str, dst: str, dry_run: bool, yes: bool,
+                    run_async: bool):
     """Merge SRC partition into DST. Drops SRC on success.
 
     Built for the `memory-<project>` → `<project>` consolidation: the
@@ -3198,13 +3298,22 @@ def partition_merge(src: str, dst: str, dry_run: bool, yes: bool):
     if daemon_mod.ping(root):
         resp = daemon_mod.call(
             root, "partition_merge",
-            {"src": src, "dst": dst, "dry_run": False},
+            {"src": src, "dst": dst, "dry_run": False, "async": run_async},
             timeout=3600.0,
         )
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         result = resp["result"]
+        if run_async and result.get("job"):
+            console.print(
+                f"[green]merge submitted[/] job={result['job']}  "
+                f"poll: `rmx daemon job {result['job']}`  "
+                f"progress: merge-progress lines in rmxd.log")
+            return
     else:
+        if run_async:
+            raise click.ClickException(
+                "--async needs the daemon up (the job runs inside it)")
         s = _store()
         try:
             result = s.merge_partition(src, dst, dry_run=False)
@@ -4678,7 +4787,7 @@ def _render_grep_rows(rows, gf, limit, source_tag="idx"):
         loc = r["path"] or r["entity"]
         line = f":{r['line']}" if r["line"] is not None else ""
         click.echo(
-            f"{loc}{line}  [{source_tag} {r['linkage']}]  {r['concept']}"
+            f"{loc}{line}  [{r['linkage']}]  {r['concept']}"
         )
 
 
@@ -4900,7 +5009,8 @@ def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
 @click.option("--via-replica", is_flag=True,
               help="Read from the rotation reader slot instead of the daemon. "
                    "Lock-free; default ON when the replica file exists. "
-                   "Skips --learn (writes need the daemon).")
+                   "Learning still works: fallback hits are brokered to "
+                   "the daemon writer as a fire-and-forget RPC.")
 def grep(argv, regex, flags, linkage, kind, limit, fallback, learn, via_replica):
     """Index-backed grep: find concepts whose name matches PATTERN and
     print file:line for every recorded reference. Falls back to `rg` /
@@ -4935,7 +5045,9 @@ def grep(argv, regex, flags, linkage, kind, limit, fallback, learn, via_replica)
         note, err = _grep_bare_flags(flag_tokens, gf, stdin_mode=piped)
         if err:
             raise click.UsageError(err)
-        if note and not piped:
+        # Habitual grep flags (-rn) hit this on every call; the note says
+        # nothing actionable, so it only prints under RMX_GREP_VERBOSE=1.
+        if note and not piped and os.environ.get("RMX_GREP_VERBOSE"):
             click.echo(note, err=True)
     # --regex/--substring is the canonical control; -F / -E in --flags can
     # override it for convenience.
@@ -4980,9 +5092,11 @@ def grep(argv, regex, flags, linkage, kind, limit, fallback, learn, via_replica)
         # Read-only replica path. Skip the daemon entirely so a busy
         # writer can't make us wait. `--learn` is implicitly disabled
         # because writes require the daemon's write connection.
-        if learn:
-            console.print("[dim]learn=off under --via-replica (read-only).[/]")
-            learn = False
+        # `--learn` stays honored under the replica default: the read is
+        # lock-free, and any fallback hits are brokered to the daemon
+        # writer via `learn_from_grep` (see _grep_run_direct). Pre-0.55
+        # this forced learn OFF, which silently made the "learning grep"
+        # teach nothing on its default path.
 
         def _run(s):
             with log_query(s, kind="grep", body=pattern,
@@ -5015,10 +5129,16 @@ def grep(argv, regex, flags, linkage, kind, limit, fallback, learn, via_replica)
         )
 
 
-def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root):
+def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
+                      learn_broker=None):
     """Run `rg` then `grep -rn` as a fallback when the index returns
     zero rows. Extracted from `_grep_run` so the replica-read path can
-    reuse it without re-implementing the rg/grep arg construction."""
+    reuse it without re-implementing the rg/grep arg construction.
+
+    `learn_broker(hits)` — hits as [{file, line}] — is called best-effort
+    with the parsed fallback matches so the replica read path can still
+    teach the graph through the daemon writer (reads stay lock-free, the
+    learn is a fire-and-forget RPC)."""
     import shutil
     import subprocess
 
@@ -5067,9 +5187,15 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root):
     res = subprocess.run(cmd, capture_output=True, text=True)
     if not res.stdout.strip():
         _tlog.cardinality = 0
-        console.print("[dim]no matches[/]")
-        return
-    prefix = "[rg] " if tool.endswith("/rg") else "[grep] "
+        # grep semantics: silent stdout, exit 1. The note goes to stderr so
+        # a tty user still learns why nothing printed.
+        click.echo("rmx grep: no matches", err=True)
+        raise SystemExit(1)
+    # Provenance is one stderr line, not a per-line stdout tag: tagging every
+    # hit broke file:line copy-paste and any consumer parsing grep format.
+    click.echo(f"# rmx grep fallback via {'rg' if tool.endswith('/rg') else 'grep'}",
+               err=True)
+    prefix = ""
     shown = 0
     if gf["files_only"] or gf["files_without_match"] or gf["count"]:
         for raw in res.stdout.splitlines():
@@ -5079,7 +5205,7 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root):
             shown += 1
         _tlog.cardinality = shown
         return
-    parsed = 0
+    fb_hits: list[dict] = []
     for raw in res.stdout.splitlines():
         if shown < limit:
             click.echo(prefix + raw)
@@ -5087,18 +5213,25 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root):
         parts = raw.split(":", 2)
         if len(parts) >= 2:
             try:
-                int(parts[1])
-                parsed += 1
+                fb_hits.append({"file": parts[0], "line": int(parts[1])})
             except ValueError:
                 pass
-    _tlog.cardinality = parsed
+    _tlog.cardinality = len(fb_hits)
+    if learn_broker is not None and fb_hits:
+        try:
+            learn_broker(fb_hits)
+        except Exception:
+            pass
 
 
 def _grep_run_direct(s, pattern, effective_pattern, regex,
                      linkage, kind, limit, fallback, learn, gf, paths, _tlog):
     """Read-only path: no daemon, no _store_lock. Mirrors the SQL the
     daemon's `_op_grep_indexed` runs but against the replica reader
-    slot. `--learn` is no-op here (writes need the daemon)."""
+    slot. Learning still works: the READ never touches the writer, but a
+    fallback hit is brokered to the daemon's `learn_from_grep` op as a
+    fire-and-forget write — the replica default no longer means the graph
+    learns nothing (which made the always-on learning grep a no-op)."""
     rows: list[dict] = []
     like = f"%{effective_pattern}%"
     sql = (
@@ -5133,14 +5266,30 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
 
     if not fallback:
         _tlog.cardinality = 0
-        console.print("[dim]no indexed matches[/]")
-        return
+        click.echo("rmx grep: no indexed matches", err=True)
+        raise SystemExit(1)
 
-    # Replica path: rg fallback without learn-on-miss (writes need
-    # the daemon; user can re-run without --via-replica to learn).
+    # Replica path: reads stay on the replica, the learn write is
+    # brokered to the daemon (best-effort, short timeout, swallowed).
+    broker = None
+    if learn:
+        from refmatrix import daemon as _dmod
+        _r = _root()
+
+        def broker(hits):
+            try:
+                if _dmod.ping(_r):
+                    _dmod.call(_r, "learn_from_grep", {
+                        "pattern": pattern, "hits": hits,
+                        "project_root": str(_r.parent),
+                    }, timeout=10.0)
+            except Exception:
+                pass
+
     _grep_rg_fallback(
         pattern=pattern, regex=regex, gf=gf, limit=limit,
         paths=paths, _tlog=_tlog, project_root=Path.cwd(),
+        learn_broker=broker,
     )
 
 
@@ -5191,8 +5340,8 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
 
     if not fallback:
         _tlog.cardinality = 0
-        console.print("[dim]no indexed matches[/]")
-        return
+        click.echo("rmx grep: no indexed matches", err=True)
+        raise SystemExit(1)
 
     # Fall through to a real grep. Targets are the given PATHS if any,
     # otherwise the project root (existing behavior).
@@ -5246,9 +5395,13 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
     res = subprocess.run(cmd, capture_output=True, text=True)
     if not res.stdout.strip():
         _tlog.cardinality = 0
-        console.print("[dim]no matches[/]")
-        return
-    prefix = "[rg] " if tool.endswith("/rg") else "[grep] "
+        click.echo("rmx grep: no matches", err=True)
+        raise SystemExit(1)
+    # Provenance is one stderr line, not a per-line stdout tag: tagging every
+    # hit broke file:line copy-paste and any consumer parsing grep format.
+    click.echo(f"# rmx grep fallback via {'rg' if tool.endswith('/rg') else 'grep'}",
+               err=True)
+    prefix = ""
     # In -l (files-only) / -L (files-without-match) mode tool emits bare
     # paths; in -c (count) mode it emits `path:N`. Skip the line-number
     # parsing for those.
@@ -5285,10 +5438,10 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
         }, timeout=60.0)
         if resp.get("ok"):
             r = resp["result"]
-            console.print(
-                f"[dim]learned: concept '{r['concept']}' "
-                f"with {r['added']} file(s) — future searches hit the index[/]"
-            )
+            click.echo(
+                f"# rmx learned: concept '{r['concept']}' "
+                f"({r['added']} file(s)) — future searches hit the index",
+                err=True)
 
 
 # ---- saved queries --------------------------------------------------------
@@ -8230,6 +8383,69 @@ def _memory_intent(op: str) -> None:
 # (so `<project>/.refmatrix/` -> partition `memory-<project>`).
 # User-supplied -p / RMX_PARTITION / .refmatrix/partition still win,
 # matching _resolve_partition's chain.
+def _replica_memory_recall(query: str, *, k: int, kinds: list,
+                           fuse: bool, rerank: "bool | None"):
+    """Writer-independent recall: replica catalog slot + lock-free Lance +
+    the hub's shared model workers. Returns RPC-shaped hits or None.
+
+    The always-on prompt hooks are the target. They used to RPC into the
+    daemon (`memory_recall`), which queues behind whatever the writer is
+    doing — a partition merge or fat ingest starved prompt injection into
+    "Output too large"/timeout territory. Every leg here is lock-free: the
+    replica slot never touches the writer catalog, Lance reads are plain
+    files, and the query embedding (plus rerank, when enabled) comes from the
+    hub's shared workers, never a locally spawned model.
+
+    None on ANY missing leg or failure — caller falls back to the daemon RPC
+    unchanged, so this can only remove a wait, never a result. Set
+    RMX_RECALL_REPLICA_FIRST=0 to force the RPC path for an A/B."""
+    if os.environ.get("RMX_RECALL_REPLICA_FIRST", "1") in ("0", "false", "False"):
+        return None
+    try:
+        from refmatrix import modelsrv
+        if not (modelsrv.shared_enabled() and modelsrv.shared_available()):
+            return None
+        s = _reader_store()
+        if s is None:
+            return None
+        from refmatrix.embedder import RemoteEmbedder
+        from refmatrix.recall import dense_recall, hybrid_memory_recall
+        from refmatrix.reranker import (
+            DEFAULT_POOL_MULT, MAX_POOL, apply_rerank, collect_rerank_docs,
+            rerank_enabled, shared_reranker,
+        )
+        emb = RemoteEmbedder(modelsrv.SharedWorkerClient("embed"))
+        want_rerank = rerank_enabled() if rerank is None else bool(rerank)
+        retrieve_k = (min(max(k, k * DEFAULT_POOL_MULT), MAX_POOL)
+                      if want_rerank else k)
+        with s.with_partition(_resolve_partition()):
+            if fuse:
+                hits = hybrid_memory_recall(
+                    s, emb, query, k=retrieve_k, kinds=kinds)
+            else:
+                hits = dense_recall(
+                    s, emb, query, k=retrieve_k, kinds=kinds)
+            if want_rerank and hits:
+                rr = shared_reranker()
+                if rr is not None:
+                    try:
+                        docs = collect_rerank_docs(s, hits, k=k)
+                        ranked = apply_rerank(rr, query, *docs, k=k)
+                        return [{"id": eid, "score": sc, "fused": bool(fuse),
+                                 "reranked": True, "replica": True}
+                                for eid, sc in ranked]
+                    except Exception:
+                        pass          # fall through to unreranked hits
+        hits = hits[:k]
+        if fuse:
+            return [{"id": eid, "score": sc, "fused": True, "replica": True}
+                    for eid, sc in hits]
+        return [{"id": eid, "distance": dist, "replica": True}
+                for eid, dist in hits]
+    except Exception:
+        return None
+
+
 MEMORY_PARTITION_PREFIX = "memory-"
 
 
@@ -9245,17 +9461,25 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
     # --rerank/--no-rerank overrides it for this call only.
     if rerank is not None:
         args["rerank"] = bool(rerank)
-    if not daemon_mod.ping(root):
-        raise click.ClickException(
-            "rmx memory recall needs the daemon up (dense embedder lives there)"
-        )
-    # 180s covers worst-case embedder cold-start (sentence-transformers
-    # model load on a busy CPU takes 30-90s). Steady-state recall is
-    # sub-second once the daemon's _embedder cache warms.
-    resp = _memory_daemon_call("memory_recall", args, timeout=180.0)
-    if not resp.get("ok"):
-        raise click.ClickException(resp.get("error", "daemon error"))
-    hits = resp["result"].get("hits", [])
+    # Replica-first: serve the recall off the snapshot slot + shared model
+    # workers so a busy writer (partition merge, fat ingest) can never stall
+    # the always-on hooks. Falls back to the daemon RPC on any missing leg.
+    hits = _replica_memory_recall(
+        q, k=ann_k, kinds=kinds_list, fuse=fuse, rerank=rerank)
+    replica_used = hits is not None
+    if hits is None:
+        if not daemon_mod.ping(root):
+            raise click.ClickException(
+                "rmx memory recall needs the daemon up (dense embedder "
+                "lives there) or a replica + shared model workers"
+            )
+        # 180s covers worst-case embedder cold-start (sentence-transformers
+        # model load on a busy CPU takes 30-90s). Steady-state recall is
+        # sub-second once the daemon's _embedder cache warms.
+        resp = _memory_daemon_call("memory_recall", args, timeout=180.0)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        hits = resp["result"].get("hits", [])
     # Best-first by ascending L2 distance so the displayed `score` (cosine
     # similarity, higher = better) decreases monotonically with rank — the
     # column and the row order cannot disagree. The daemon already sorts
@@ -9284,6 +9508,18 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
     # silently produces `[]` from the JSON branch. The daemon's own slot
     # has the truth.
     def _fetch_memory(eid: int) -> dict | None:
+        # Replica-served hits resolve bodies from the same replica —
+        # falling back to a per-hit daemon RPC here would reintroduce the
+        # writer wait the replica path just removed.
+        if replica_used:
+            try:
+                s = _reader_store()
+                if s is not None:
+                    m = s.get_memory(int(eid))
+                    if m is not None:
+                        return m
+            except Exception:
+                pass
         resp = _memory_daemon_call("memory_get", {"id": eid}, timeout=30.0)
         if not resp.get("ok"):
             return None

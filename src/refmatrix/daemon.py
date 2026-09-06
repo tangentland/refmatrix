@@ -501,6 +501,11 @@ class Daemon:
         self._store_lock = _FairLock()
         self._async_flush_pending = False
         self._async_lock = threading.Lock()
+        # Background jobs (big ops run off the RPC thread so the caller gets
+        # an id instead of a 300s socket timeout). id -> {state, phase, done,
+        # total, result, error}; states: running | done | error.
+        self._jobs: dict[str, dict] = {}
+        self._jobs_lock = threading.Lock()
         # Read-op refcount + gate. Each `_open_read_store` increments the
         # count; the dedicated read store's wrapper decrements on close
         # and notifies. `_refresh_replica_now` waits on this gate before
@@ -2880,6 +2885,19 @@ def _op_checkpoint(d: Daemon, args: dict) -> dict:
     return {"checkpointed": True, "index_rebuilt": True}
 
 
+def _op_job_status(d: Daemon, args: dict) -> dict:
+    """Status of a background job started by an async big-op (partition_merge
+    with async=true). No `job` arg lists every known job this daemon run."""
+    job_id = args.get("job")
+    with d._jobs_lock:
+        if job_id is None:
+            return {"jobs": {k: dict(v) for k, v in d._jobs.items()}}
+        j = d._jobs.get(job_id)
+        if j is None:
+            return {"error": f"unknown job {job_id!r}"}
+        return {"job": job_id, **dict(j)}
+
+
 def _op_prune_noise(d: Daemon, args: dict) -> dict:
     namespaces = tuple(args.get("namespaces") or ("keyword",))
     min_df = int(args.get("min_df", 2))
@@ -3051,8 +3069,52 @@ def _op_partition_merge(d: Daemon, args: dict) -> dict:
     src = args["src"]
     dst = args["dst"]
     dry_run = bool(args.get("dry_run"))
-    with d._store_lock:
-        result = d.store.merge_partition(src, dst, dry_run=dry_run)
+
+    def _progress(job_id=None):
+        def cb(phase: str, done: int, total: int) -> None:
+            d._log(f"merge-progress {phase} {done}/{total} {src}->{dst}")
+            if job_id is not None:
+                with d._jobs_lock:
+                    j = d._jobs.get(job_id)
+                    if j is not None:
+                        j.update(phase=phase, done=done, total=total)
+        return cb
+
+    if args.get("async") and not dry_run:
+        # Background job: return an id now; the merge takes the store lock
+        # per chunk (lock-yield), so queued ops interleave while it runs.
+        import uuid
+        job_id = uuid.uuid4().hex[:12]
+        with d._jobs_lock:
+            d._jobs[job_id] = {"state": "running", "op": "partition_merge",
+                               "src": src, "dst": dst,
+                               "phase": "classify", "done": 0, "total": 0,
+                               "result": None, "error": None}
+
+        def _run() -> None:
+            try:
+                res = d.store.merge_partition(
+                    src, dst, dry_run=False,
+                    lock=d._store_lock, progress=_progress(job_id))
+                with d._jobs_lock:
+                    d._jobs[job_id].update(state="done", result=res)
+                d._request_snapshot()
+                d._log(f"merge-done {src}->{dst} job={job_id}")
+            except Exception as e:
+                with d._jobs_lock:
+                    d._jobs[job_id].update(state="error", error=str(e))
+                d._log(f"merge-error {src}->{dst} job={job_id}: {e}")
+
+        threading.Thread(target=_run, name=f"rmx-merge-{job_id}",
+                         daemon=True).start()
+        return {"job": job_id, "async": True}
+
+    # Synchronous path: same lock-yield chunking, caller blocks for the
+    # result. The lock is taken per chunk INSIDE merge_partition — not here —
+    # so hooks and reads interleave with a long merge instead of timing out.
+    result = d.store.merge_partition(
+        src, dst, dry_run=dry_run,
+        lock=d._store_lock, progress=_progress())
     if not dry_run:
         d._request_snapshot()
     return result
@@ -4537,6 +4599,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "partition_list": _op_partition_list,
     "partition_rename": _op_partition_rename,
     "partition_merge": _op_partition_merge,
+    "job_status": _op_job_status,
     "prune_noise": _op_prune_noise,
     "set_flag": _op_set_flag,
     "forget": _op_forget,

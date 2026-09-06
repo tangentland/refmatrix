@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "refmatrix"
-version = "0.53.0"
+version = "0.54.0"
 description = "Roaring-bitmap reference matrix for documents, code, and concepts. Hyper-tldr index."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -38,6 +38,11 @@ ui = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
 [project.scripts]
 refmatrix = "refmatrix.cli:cli_entry"
 rmx = "refmatrix.cli:cli_entry"
+
+[tool.setuptools]
+# rmxgrep is POSIX shell, not a console_script: alias grep=rmxgrep must not
+# pay python startup on every invocation outside a project.
+script-files = ["bin/rmxgrep", "bin/rmxrg"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

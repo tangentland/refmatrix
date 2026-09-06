@@ -89,8 +89,10 @@ def test_render_default(capsys):
     gf = _parse_grep_flags(None)
     _render_grep_rows(rows, gf, limit=100)
     out = capsys.readouterr().out.splitlines()
-    assert "src/a.py:12  [idx defines]  parser" in out
-    assert "src/b.py:7  [idx mentions]  parser" in out
+    # 0.54.0 noise trim: the source tag left the per-line format — linkage
+    # stays (signal), provenance moved off stdout.
+    assert "src/a.py:12  [defines]  parser" in out
+    assert "src/b.py:7  [mentions]  parser" in out
 
 
 def test_render_files_only(capsys):

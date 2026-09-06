@@ -1145,6 +1145,7 @@ class Store:
 
     def merge_partition(
         self, src_name: str, dst_name: str, *, dry_run: bool = False,
+        lock=None, chunk: int = 200, progress=None,
     ) -> dict:
         """Merge SRC partition into DST partition. Drops SRC on success.
 
@@ -1174,14 +1175,34 @@ class Store:
         `dry_run=True` returns the resolved counts without mutating.
         Returns `{src, dst, entities_reparented, entities_merged,
         saved_queries, tracked_files, dry_run}`.
+
+        Lock-yield batching: `lock` (any re-enterable context manager, e.g.
+        the daemon's `_store_lock`) is acquired PER CHUNK of `chunk`
+        collisions/reparents rather than around the whole merge, so queued
+        ops (the always-on prompt hooks above all) interleave instead of
+        timing out behind a minutes-long merge. `progress(phase, done,
+        total)` fires between chunks; failures in it are swallowed. With
+        `lock=None` behavior is the classic single-pass merge.
         """
+        from contextlib import nullcontext
+        _lk = lock if lock is not None else nullcontext()
+
+        def _tick(phase: str, done: int, total: int) -> None:
+            if progress is None:
+                return
+            try:
+                progress(phase, done, total)
+            except Exception:
+                pass
+
         con = self._connect()
-        src_row = con.execute(
-            "SELECT id FROM partitions WHERE name=?", (src_name,),
-        ).fetchone()
-        dst_row = con.execute(
-            "SELECT id FROM partitions WHERE name=?", (dst_name,),
-        ).fetchone()
+        with _lk:
+            src_row = con.execute(
+                "SELECT id FROM partitions WHERE name=?", (src_name,),
+            ).fetchone()
+            dst_row = con.execute(
+                "SELECT id FROM partitions WHERE name=?", (dst_name,),
+            ).fetchone()
         if src_row is None:
             raise ValueError(f"no partition named {src_name!r}")
         if dst_row is None:
@@ -1196,34 +1217,38 @@ class Store:
         src_id = int(src_row["id"])
         dst_id = int(dst_row["id"])
 
-        # Classify SRC entities: collide vs reparent.
+        # Classify SRC entities: collide vs reparent. ONE join, not one
+        # point-SELECT per src entity — the per-entity loop took >300s on a
+        # 59k-entity partition and blew every RPC deadline in front of it.
         collisions: list[tuple[int, int, str, str]] = []
         reparents: list[int] = []
-        for r in con.execute(
-            "SELECT id, kind, name FROM entities WHERE partition_id=?",
-            (src_id,),
-        ).fetchall():
-            dst_match = con.execute(
-                "SELECT id FROM entities "
-                "WHERE partition_id=? AND kind=? AND name=?",
-                (dst_id, r["kind"], r["name"]),
-            ).fetchone()
-            if dst_match is None:
-                reparents.append(int(r["id"]))
+        with _lk:
+            rows = con.execute(
+                "SELECT s.id AS sid, d.id AS did, s.kind AS kind, "
+                "       s.name AS name "
+                "FROM entities s LEFT JOIN entities d "
+                "  ON d.partition_id = ? AND d.kind = s.kind "
+                " AND d.name = s.name "
+                "WHERE s.partition_id = ?",
+                (dst_id, src_id),
+            ).fetchall()
+        for r in rows:
+            if r["did"] is None:
+                reparents.append(int(r["sid"]))
             else:
                 collisions.append(
-                    (int(r["id"]), int(dst_match["id"]),
-                     r["kind"], r["name"])
+                    (int(r["sid"]), int(r["did"]), r["kind"], r["name"])
                 )
 
-        sq_count = con.execute(
-            "SELECT COUNT(*) AS n FROM saved_queries WHERE partition_id=?",
-            (src_id,),
-        ).fetchone()["n"]
-        tf_count = con.execute(
-            "SELECT COUNT(*) AS n FROM tracked_files WHERE partition_id=?",
-            (src_id,),
-        ).fetchone()["n"]
+        with _lk:
+            sq_count = con.execute(
+                "SELECT COUNT(*) AS n FROM saved_queries WHERE partition_id=?",
+                (src_id,),
+            ).fetchone()["n"]
+            tf_count = con.execute(
+                "SELECT COUNT(*) AS n FROM tracked_files WHERE partition_id=?",
+                (src_id,),
+            ).fetchone()["n"]
 
         if dry_run:
             return {
@@ -1236,168 +1261,178 @@ class Store:
             }
 
         # ---- collisions: remap child refs, prefer longer content ------
-        for src_eid, dst_eid, _kind, _name in collisions:
-            # memory_content: prefer the side whose content is longer
-            # (longer == more authoritative; null/empty loses).
-            src_mc = con.execute(
-                "SELECT content, mtype, tags, metadata, created_at, "
-                "       updated_at FROM memory_content WHERE entity_id=?",
-                (src_eid,),
-            ).fetchone()
-            dst_mc = con.execute(
-                "SELECT content FROM memory_content WHERE entity_id=?",
-                (dst_eid,),
-            ).fetchone()
-            if src_mc is not None:
-                src_len = len(src_mc["content"] or "")
-                dst_len = len(dst_mc["content"] or "") if dst_mc else 0
-                if src_len > dst_len:
-                    if dst_mc is None:
-                        con.execute(
-                            "INSERT INTO memory_content "
-                            "(entity_id, content, mtype, tags, metadata, "
-                            " created_at, updated_at) "
-                            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                            (dst_eid, src_mc["content"], src_mc["mtype"],
-                             src_mc["tags"], src_mc["metadata"],
-                             src_mc["created_at"], src_mc["updated_at"]),
-                        )
-                    else:
-                        con.execute(
-                            "UPDATE memory_content "
-                            "SET content=?, mtype=?, tags=?, metadata=?, "
-                            "    updated_at=? "
-                            "WHERE entity_id=?",
-                            (src_mc["content"], src_mc["mtype"],
-                             src_mc["tags"], src_mc["metadata"],
-                             src_mc["updated_at"], dst_eid),
-                        )
-                con.execute(
-                    "DELETE FROM memory_content WHERE entity_id=?",
+        _n_coll = len(collisions)
+        _step = max(1, chunk)
+        for _ci in range(0, _n_coll, _step):
+          with _lk:
+            for src_eid, dst_eid, _kind, _name in collisions[_ci:_ci + _step]:
+                # memory_content: prefer the side whose content is longer
+                # (longer == more authoritative; null/empty loses).
+                src_mc = con.execute(
+                    "SELECT content, mtype, tags, metadata, created_at, "
+                    "       updated_at FROM memory_content WHERE entity_id=?",
                     (src_eid,),
+                ).fetchone()
+                dst_mc = con.execute(
+                    "SELECT content FROM memory_content WHERE entity_id=?",
+                    (dst_eid,),
+                ).fetchone()
+                if src_mc is not None:
+                    src_len = len(src_mc["content"] or "")
+                    dst_len = len(dst_mc["content"] or "") if dst_mc else 0
+                    if src_len > dst_len:
+                        if dst_mc is None:
+                            con.execute(
+                                "INSERT INTO memory_content "
+                                "(entity_id, content, mtype, tags, metadata, "
+                                " created_at, updated_at) "
+                                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                (dst_eid, src_mc["content"], src_mc["mtype"],
+                                 src_mc["tags"], src_mc["metadata"],
+                                 src_mc["created_at"], src_mc["updated_at"]),
+                            )
+                        else:
+                            con.execute(
+                                "UPDATE memory_content "
+                                "SET content=?, mtype=?, tags=?, metadata=?, "
+                                "    updated_at=? "
+                                "WHERE entity_id=?",
+                                (src_mc["content"], src_mc["mtype"],
+                                 src_mc["tags"], src_mc["metadata"],
+                                 src_mc["updated_at"], dst_eid),
+                            )
+                    con.execute(
+                        "DELETE FROM memory_content WHERE entity_id=?",
+                        (src_eid,),
+                    )
+                # entity_links: replace SRC id with DST id (both source +
+                # concept sides). Conflicts (same (entity_id, linkage_id,
+                # concept_id) row already exists for DST) are dropped — the
+                # PK constraint already covered them.
+                con.execute(
+                    "DELETE FROM entity_links "
+                    "WHERE entity_id=? AND concept_id IN ("
+                    "  SELECT concept_id FROM entity_links WHERE entity_id=?"
+                    ")",
+                    (dst_eid, src_eid),
                 )
-            # entity_links: replace SRC id with DST id (both source +
-            # concept sides). Conflicts (same (entity_id, linkage_id,
-            # concept_id) row already exists for DST) are dropped — the
-            # PK constraint already covered them.
-            con.execute(
-                "DELETE FROM entity_links "
-                "WHERE entity_id=? AND concept_id IN ("
-                "  SELECT concept_id FROM entity_links WHERE entity_id=?"
-                ")",
-                (dst_eid, src_eid),
-            )
-            con.execute(
-                "UPDATE entity_links SET entity_id=? WHERE entity_id=?",
-                (dst_eid, src_eid),
-            )
-            con.execute(
-                "DELETE FROM entity_links "
-                "WHERE concept_id=? AND entity_id IN ("
-                "  SELECT entity_id FROM entity_links WHERE concept_id=?"
-                ")",
-                (dst_eid, src_eid),
-            )
-            con.execute(
-                "UPDATE entity_links SET concept_id=? WHERE concept_id=?",
-                (dst_eid, src_eid),
-            )
-            # linkage_evidence: re-point both sides.
-            con.execute(
-                "UPDATE linkage_evidence SET entity_id=? WHERE entity_id=?",
-                (dst_eid, src_eid),
-            )
-            con.execute(
-                "UPDATE linkage_evidence SET concept_id=? WHERE concept_id=?",
-                (dst_eid, src_eid),
-            )
-            # concepts: PK is entity_id; if a concept row sits on the
-            # SRC id, the DST id may or may not already have one.
-            con.execute(
-                "INSERT OR IGNORE INTO concepts (id, description) "
-                "SELECT ?, description FROM concepts WHERE id=?",
-                (dst_eid, src_eid),
-            )
-            con.execute("DELETE FROM concepts WHERE id=?", (src_eid,))
-            # Finally drop the SRC entity row.
-            con.execute("DELETE FROM entities WHERE id=?", (src_eid,))
+                con.execute(
+                    "UPDATE entity_links SET entity_id=? WHERE entity_id=?",
+                    (dst_eid, src_eid),
+                )
+                con.execute(
+                    "DELETE FROM entity_links "
+                    "WHERE concept_id=? AND entity_id IN ("
+                    "  SELECT entity_id FROM entity_links WHERE concept_id=?"
+                    ")",
+                    (dst_eid, src_eid),
+                )
+                con.execute(
+                    "UPDATE entity_links SET concept_id=? WHERE concept_id=?",
+                    (dst_eid, src_eid),
+                )
+                # linkage_evidence: re-point both sides.
+                con.execute(
+                    "UPDATE linkage_evidence SET entity_id=? WHERE entity_id=?",
+                    (dst_eid, src_eid),
+                )
+                con.execute(
+                    "UPDATE linkage_evidence SET concept_id=? WHERE concept_id=?",
+                    (dst_eid, src_eid),
+                )
+                # concepts: PK is entity_id; if a concept row sits on the
+                # SRC id, the DST id may or may not already have one.
+                con.execute(
+                    "INSERT OR IGNORE INTO concepts (id, description) "
+                    "SELECT ?, description FROM concepts WHERE id=?",
+                    (dst_eid, src_eid),
+                )
+                con.execute("DELETE FROM concepts WHERE id=?", (src_eid,))
+                # Finally drop the SRC entity row.
+                con.execute("DELETE FROM entities WHERE id=?", (src_eid,))
 
+          _tick("merge-collisions", min(_ci + _step, _n_coll), _n_coll)
         # ---- reparent the non-colliding survivors --------------------
-        if reparents:
-            placeholders = ",".join("?" * len(reparents))
-            con.execute(
-                f"UPDATE entities SET partition_id=? "
-                f"WHERE id IN ({placeholders})",
-                [dst_id, *reparents],
-            )
-
-        # ---- saved_queries / tracked_files ---------------------------
-        # saved_queries: composite PK (partition_id, name); skip dup names.
-        for r in con.execute(
-            "SELECT name, body, created_at FROM saved_queries "
-            "WHERE partition_id=?",
-            (src_id,),
-        ).fetchall():
-            con.execute(
-                "INSERT OR IGNORE INTO saved_queries "
-                "(partition_id, name, body, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                (dst_id, r["name"], r["body"], r["created_at"]),
-            )
-        con.execute(
-            "DELETE FROM saved_queries WHERE partition_id=?", (src_id,),
-        )
-        # tracked_files: prefer the newer last_synced on collision.
-        for r in con.execute(
-            "SELECT path, mtime, last_synced FROM tracked_files "
-            "WHERE partition_id=?",
-            (src_id,),
-        ).fetchall():
-            existing = con.execute(
-                "SELECT last_synced FROM tracked_files "
-                "WHERE partition_id=? AND path=?",
-                (dst_id, r["path"]),
-            ).fetchone()
-            if existing is None:
+        for _ri in range(0, len(reparents), _step):
+            batch = reparents[_ri:_ri + _step]
+            placeholders = ",".join("?" * len(batch))
+            with _lk:
                 con.execute(
-                    "INSERT INTO tracked_files "
-                    "(partition_id, path, mtime, last_synced) "
+                    f"UPDATE entities SET partition_id=? "
+                    f"WHERE id IN ({placeholders})",
+                    [dst_id, *batch],
+                )
+            _tick("merge-reparent", min(_ri + _step, len(reparents)),
+                  len(reparents))
+
+        with _lk:
+            # ---- saved_queries / tracked_files ---------------------------
+            # saved_queries: composite PK (partition_id, name); skip dup names.
+            for r in con.execute(
+                "SELECT name, body, created_at FROM saved_queries "
+                "WHERE partition_id=?",
+                (src_id,),
+            ).fetchall():
+                con.execute(
+                    "INSERT OR IGNORE INTO saved_queries "
+                    "(partition_id, name, body, created_at) "
                     "VALUES (?, ?, ?, ?)",
-                    (dst_id, r["path"], r["mtime"], r["last_synced"]),
+                    (dst_id, r["name"], r["body"], r["created_at"]),
                 )
-            elif r["last_synced"] > existing["last_synced"]:
-                con.execute(
-                    "UPDATE tracked_files SET mtime=?, last_synced=? "
+            con.execute(
+                "DELETE FROM saved_queries WHERE partition_id=?", (src_id,),
+            )
+            # tracked_files: prefer the newer last_synced on collision.
+            for r in con.execute(
+                "SELECT path, mtime, last_synced FROM tracked_files "
+                "WHERE partition_id=?",
+                (src_id,),
+            ).fetchall():
+                existing = con.execute(
+                    "SELECT last_synced FROM tracked_files "
                     "WHERE partition_id=? AND path=?",
-                    (r["mtime"], r["last_synced"], dst_id, r["path"]),
-                )
-        con.execute(
-            "DELETE FROM tracked_files WHERE partition_id=?", (src_id,),
-        )
+                    (dst_id, r["path"]),
+                ).fetchone()
+                if existing is None:
+                    con.execute(
+                        "INSERT INTO tracked_files "
+                        "(partition_id, path, mtime, last_synced) "
+                        "VALUES (?, ?, ?, ?)",
+                        (dst_id, r["path"], r["mtime"], r["last_synced"]),
+                    )
+                elif r["last_synced"] > existing["last_synced"]:
+                    con.execute(
+                        "UPDATE tracked_files SET mtime=?, last_synced=? "
+                        "WHERE partition_id=? AND path=?",
+                        (r["mtime"], r["last_synced"], dst_id, r["path"]),
+                    )
+            con.execute(
+                "DELETE FROM tracked_files WHERE partition_id=?", (src_id,),
+            )
 
-        # ---- on-disk side: vectors + fragments -----------------------
-        import shutil as _shutil
-        for base in (self.root / "vectors", self.fragments_dir):
-            src_dir = base / src_name
-            if not src_dir.is_dir():
-                continue
-            dst_dir = base / dst_name
-            dst_dir.mkdir(parents=True, exist_ok=True)
-            for child in src_dir.iterdir():
-                target = dst_dir / child.name
-                if not target.exists():
-                    child.rename(target)
-                # Existing target: best-effort skip. Per-kind Lance
-                # dataset merge is tricky (id collisions, schema
-                # checks); leaving the SRC copy in place to be
-                # rebuilt by `rmx embed --gc` + re-embed is safer.
-            try:
-                src_dir.rmdir()
-            except OSError:
-                pass
+            # ---- on-disk side: vectors + fragments -----------------------
+            import shutil as _shutil
+            for base in (self.root / "vectors", self.fragments_dir):
+                src_dir = base / src_name
+                if not src_dir.is_dir():
+                    continue
+                dst_dir = base / dst_name
+                dst_dir.mkdir(parents=True, exist_ok=True)
+                for child in src_dir.iterdir():
+                    target = dst_dir / child.name
+                    if not target.exists():
+                        child.rename(target)
+                    # Existing target: best-effort skip. Per-kind Lance
+                    # dataset merge is tricky (id collisions, schema
+                    # checks); leaving the SRC copy in place to be
+                    # rebuilt by `rmx embed --gc` + re-embed is safer.
+                try:
+                    src_dir.rmdir()
+                except OSError:
+                    pass
 
-        # ---- drop SRC partition row ----------------------------------
-        con.execute("DELETE FROM partitions WHERE id=?", (src_id,))
+            # ---- drop SRC partition row ----------------------------------
+            con.execute("DELETE FROM partitions WHERE id=?", (src_id,))
         con.commit()
 
         if self._partition_name == src_name:
