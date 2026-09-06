@@ -43,8 +43,15 @@ from refmatrix.duckdb_catalog import init_catalog
 REMAP_HEADROOM = 1000
 
 
+def _scalar(cur: Any) -> Any:
+    """First column of an aggregate SELECT — always returns exactly one row."""
+    row = cur.fetchone()
+    assert row is not None
+    return row[0]
+
+
 def _table_count(con: duckdb.DuckDBPyConnection, table: str) -> int:
-    return con.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+    return _scalar(con.execute(f'SELECT COUNT(*) FROM "{table}"'))
 
 
 def merge_slots(
@@ -84,16 +91,16 @@ def merge_slots(
     b_counts = {t: _table_count(b_ro, t) for t in tables}
 
     max_entity = max(
-        a_ro.execute("SELECT COALESCE(MAX(id),0) FROM entities").fetchone()[0],
-        b_ro.execute("SELECT COALESCE(MAX(id),0) FROM entities").fetchone()[0],
+        _scalar(a_ro.execute("SELECT COALESCE(MAX(id),0) FROM entities")),
+        _scalar(b_ro.execute("SELECT COALESCE(MAX(id),0) FROM entities")),
     )
     max_partition = max(
-        a_ro.execute("SELECT COALESCE(MAX(id),0) FROM partitions").fetchone()[0],
-        b_ro.execute("SELECT COALESCE(MAX(id),0) FROM partitions").fetchone()[0],
+        _scalar(a_ro.execute("SELECT COALESCE(MAX(id),0) FROM partitions")),
+        _scalar(b_ro.execute("SELECT COALESCE(MAX(id),0) FROM partitions")),
     )
     max_lt = max(
-        a_ro.execute("SELECT COALESCE(MAX(id),0) FROM linkage_types").fetchone()[0],
-        b_ro.execute("SELECT COALESCE(MAX(id),0) FROM linkage_types").fetchone()[0],
+        _scalar(a_ro.execute("SELECT COALESCE(MAX(id),0) FROM linkage_types")),
+        _scalar(b_ro.execute("SELECT COALESCE(MAX(id),0) FROM linkage_types")),
     )
     a_ro.close()
     b_ro.close()
@@ -432,46 +439,46 @@ def audit_via_writer(
     writer_conn.execute(f"ATTACH '{reader_path}' AS {alias} (READ_ONLY)")
     try:
         writer_counts = {
-            t: writer_conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
+            t: _scalar(writer_conn.execute(f'SELECT COUNT(*) FROM "{t}"'))
             for t in tables
         }
         reader_counts = {
-            t: writer_conn.execute(
+            t: _scalar(writer_conn.execute(
                 f'SELECT COUNT(*) FROM {alias}."{t}"'
-            ).fetchone()[0]
+            ))
             for t in tables
         }
         # Entity overlap shape — express both sides symmetrically.
-        writer_only = writer_conn.execute(
+        writer_only = _scalar(writer_conn.execute(
             f"SELECT COUNT(*) FROM entities WHERE id NOT IN "
             f"(SELECT id FROM {alias}.entities)"
-        ).fetchone()[0]
-        reader_only = writer_conn.execute(
+        ))
+        reader_only = _scalar(writer_conn.execute(
             f"SELECT COUNT(*) FROM {alias}.entities WHERE id NOT IN "
             f"(SELECT id FROM entities)"
-        ).fetchone()[0]
-        same_id_diff_payload = writer_conn.execute(f"""
+        ))
+        same_id_diff_payload = _scalar(writer_conn.execute(f"""
             SELECT COUNT(*) FROM entities w
             JOIN {alias}.entities r USING (id)
             WHERE w.name <> r.name OR w.kind <> r.kind
                   OR w.partition_id <> r.partition_id
-        """).fetchone()[0]
-        pkn_collisions = writer_conn.execute(f"""
+        """))
+        pkn_collisions = _scalar(writer_conn.execute(f"""
             SELECT COUNT(*) FROM entities w
             JOIN {alias}.entities r
             ON w.partition_id = r.partition_id
                AND w.kind = r.kind
                AND w.name = r.name
             WHERE w.id <> r.id
-        """).fetchone()[0]
-        mc_writer_only = writer_conn.execute(
+        """))
+        mc_writer_only = _scalar(writer_conn.execute(
             f"SELECT COUNT(*) FROM memory_content WHERE entity_id NOT IN "
             f"(SELECT entity_id FROM {alias}.memory_content)"
-        ).fetchone()[0]
-        mc_reader_only = writer_conn.execute(
+        ))
+        mc_reader_only = _scalar(writer_conn.execute(
             f"SELECT COUNT(*) FROM {alias}.memory_content WHERE entity_id NOT IN "
             f"(SELECT entity_id FROM memory_content)"
-        ).fetchone()[0]
+        ))
     finally:
         try:
             writer_conn.execute(f"DETACH {alias}")
@@ -532,32 +539,32 @@ def audit_slots(a_path: Path, b_path: Path) -> dict[str, Any]:
     mem.execute(f"ATTACH '{b_path}' AS b (READ_ONLY)")
 
     # Entity id-overlap shape
-    a_only = mem.execute(
+    a_only = _scalar(mem.execute(
         "SELECT COUNT(*) FROM a.entities WHERE id NOT IN (SELECT id FROM b.entities)"
-    ).fetchone()[0]
-    b_only = mem.execute(
+    ))
+    b_only = _scalar(mem.execute(
         "SELECT COUNT(*) FROM b.entities WHERE id NOT IN (SELECT id FROM a.entities)"
-    ).fetchone()[0]
-    same_id_diff_payload = mem.execute("""
+    ))
+    same_id_diff_payload = _scalar(mem.execute("""
         SELECT COUNT(*) FROM a.entities ae JOIN b.entities be USING (id)
         WHERE ae.name <> be.name OR ae.kind <> be.kind
               OR ae.partition_id <> be.partition_id
-    """).fetchone()[0]
-    pkn_collisions = mem.execute("""
+    """))
+    pkn_collisions = _scalar(mem.execute("""
         SELECT COUNT(*) FROM a.entities ae JOIN b.entities be
         ON ae.partition_id = be.partition_id
            AND ae.kind = be.kind
            AND ae.name = be.name
         WHERE ae.id <> be.id
-    """).fetchone()[0]
+    """))
 
     # Memory_content overlap (the user-visible drift class)
-    mc_a_only = mem.execute(
+    mc_a_only = _scalar(mem.execute(
         "SELECT COUNT(*) FROM a.memory_content WHERE entity_id NOT IN (SELECT entity_id FROM b.memory_content)"
-    ).fetchone()[0]
-    mc_b_only = mem.execute(
+    ))
+    mc_b_only = _scalar(mem.execute(
         "SELECT COUNT(*) FROM b.memory_content WHERE entity_id NOT IN (SELECT entity_id FROM a.memory_content)"
-    ).fetchone()[0]
+    ))
     mem.close()
 
     diffs = [t for t in tables if a_counts[t] != b_counts[t]]

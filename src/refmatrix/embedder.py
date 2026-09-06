@@ -54,12 +54,16 @@ class Embedder:
         if self._dim is not None:
             return self._dim
         self._load()
+        model = self._model
+        assert model is not None  # _load() just set it
         # sentence-transformers 5.x renamed get_sentence_embedding_dimension
         # to get_embedding_dimension. Prefer the new name when present.
-        if hasattr(self._model, "get_embedding_dimension"):
-            d = int(self._model.get_embedding_dimension())
+        if hasattr(model, "get_embedding_dimension"):
+            raw = model.get_embedding_dimension()
         else:
-            d = int(self._model.get_sentence_embedding_dimension())
+            raw = model.get_sentence_embedding_dimension()
+        assert raw is not None  # concrete models always report a dimension
+        d = int(raw)
         self._dim = d
         return d
 
@@ -83,10 +87,12 @@ class Embedder:
         by taking dot products.
         """
         self._load()
+        model = self._model
+        assert model is not None  # _load() just set it
         if not texts:
             return np.zeros((0, self.dim), dtype="float32")
         truncated = [(t or "")[:MAX_INPUT_CHARS] for t in texts]
-        vecs = self._model.encode(
+        vecs = model.encode(
             truncated,
             batch_size=32,
             show_progress_bar=False,

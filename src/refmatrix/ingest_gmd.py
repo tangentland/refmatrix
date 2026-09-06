@@ -311,8 +311,10 @@ def parse_gmd(path: Path, *, lenient: bool = False,
     doc_id = fm.get("id") or (
         _lenient_doc_id(path, project_root) if lenient else path.stem)
     title = fm.get("title") or doc_id
-    tags = fm.get("tags") if isinstance(fm.get("tags"), list) else []
-    imports = fm.get("imports") if isinstance(fm.get("imports"), list) else []
+    _tags = fm.get("tags")
+    tags = _tags if isinstance(_tags, list) else []
+    _imports = fm.get("imports")
+    imports = _imports if isinstance(_imports, list) else []
 
     nodes: list[GmdNode] = []
     by_id: dict[str, GmdNode] = {}
@@ -801,6 +803,7 @@ def ingest_gmd_paths(
                 fm_data, body_start = _parse_frontmatter(fm_lines)
             except Exception:
                 fm_data, body_start, raw_text = {}, 0, ""
+                fm_lines = []
             body = "\n".join(fm_lines[body_start:]).lstrip("\n") if raw_text else ""
             # _parse_frontmatter doesn't unwrap nested `metadata:` blocks.
             # Pull `metadata.type` directly off the raw frontmatter slice.

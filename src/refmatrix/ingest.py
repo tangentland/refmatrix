@@ -28,6 +28,10 @@ import json
 import os
 import re
 from collections import Counter
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from refmatrix.ingest_records import IngestRecord
 from pathlib import Path
 
 from refmatrix.store import Store
@@ -1065,6 +1069,8 @@ def _ingest_graphify(s: Store, project: Path, *, pre_tracked=None) -> int:
             if src not in nid_to_cid or tgt not in nid_to_eid:
                 continue
             verb = _GRAPHIFY_VERB_MAP.get(relation, relation)
+            if verb is None:
+                continue
             ensure_verb(verb)
             confidence = edge.get("confidence") or "EXTRACTED"
             cw = _GRAPHIFY_CONFIDENCE_W.get(confidence, 1.0)
@@ -2091,6 +2097,7 @@ def _parse_adr_header(lines: list[str]) -> dict[str, str]:
         m = _ADR_HEADER_FIELD_RE.match(stripped)
         if m:
             last_key = m.group(1)
+            assert last_key is not None  # group 1 is non-optional in the pattern
             header[last_key] = m.group(2).strip()
         elif last_key and (line.startswith(" ") or line.startswith("\t")):
             header[last_key] = (header[last_key] + " " + stripped).strip()
@@ -2578,10 +2585,10 @@ def _ingest_markdown_semantics(
 
 
 def _emit_bold_metadata_refs(
-    s: Store,
+    s: Any,  # Store or RecordingStore (duck-typed)
     lines: list[str],
     rel: str,
-    doc_eid: int,
+    doc_eid: int | str,  # int (direct) or recording handle
     file_path: Path,
     project_root: Path,
     adr_num_to_eid: dict[str, int],
@@ -2654,10 +2661,10 @@ def _emit_bold_metadata_refs(
 
 
 def _emit_concept_doc_linkages(
-    s: Store,
+    s: Any,  # Store or RecordingStore (duck-typed)
     lines: list[str],
     rel: str,
-    doc_eid: int,
+    doc_eid: int | str,  # int (direct) or recording handle
     file_path: Path,
     get_concept,
     verb: str = "defines",
@@ -2775,10 +2782,10 @@ def _emit_concept_doc_linkages(
 
 
 def _emit_md_fenced_class_specs(
-    s: Store,
+    s: Any,  # Store or RecordingStore (duck-typed)
     lines: list[str],
     rel: str,
-    doc_eid: int,
+    doc_eid: int | str,  # int (direct) or recording handle
     file_path: Path,
     get_concept,
     weight: float,
