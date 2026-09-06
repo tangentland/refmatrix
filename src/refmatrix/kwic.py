@@ -11,6 +11,8 @@ caller can restyle or strip. No I/O, no store access.
 """
 from __future__ import annotations
 
+from typing import Any
+
 import re
 
 _WORD_RE = re.compile(r"[A-Za-z0-9_]+")
@@ -101,7 +103,8 @@ def kwic_line(
     marker: tuple[str, str] = ("«", "»"),
     ellipsis: str = "…",
     with_line: bool = False,
-):
+) -> Any:
+    # -> Any: returns str, or (str, int | None) when with_line=True.
     """Return the whole LINE containing the first occurrence of any `query`
     term (grep-style, not a centered window), with the match wrapped in
     `marker`. `expand > 0` adds that many context lines before AND after the
@@ -189,7 +192,8 @@ def kwic_def_line(
     marker: tuple[str, str] = ("«", "»"),
     ellipsis: str = "…",
     with_line: bool = False,
-):
+) -> Any:
+    # -> Any: returns str, or (str, int | None) when with_line=True.
     """Like `kwic_line`, but anchor the window on the line that DEFINES
     `symbol` (e.g. `def fov_wedge_polygon`) rather than the first query hit —
     a code entity IS its definition, so that line is the relevant one. The def

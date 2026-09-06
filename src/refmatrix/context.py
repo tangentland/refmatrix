@@ -84,6 +84,12 @@ class ContextEntry:
     hit_lines: list[tuple[int, str]] | None = None
 
 
+# Helix neighbor sweep bounds: how many neighbor names to test against the
+# touch index per bundle, and how many annotations may render.
+_HELIX_NEIGHBOR_SCAN = 20
+_HELIX_NEIGHBOR_NOTES = 2
+
+
 @dataclass
 class ContextBundle:
     ref: str
@@ -102,6 +108,10 @@ class ContextBundle:
     # the working window, this carries the point-in-time neighborhood from
     # that touch (see helix.annotate). None = current work or no history.
     helix_note: "str | None" = None
+    # Stale graph NEIGHBORS annotated the same way (capped): the richest
+    # source of genuinely-cold concepts — an anchor the prompt just named is
+    # almost never stale, its neighborhood often is.
+    helix_neighbor_notes: "list[str]" = field(default_factory=list)
 
     def total_entities(self) -> int:
         return sum(len(v) for v in self.groups.values())
@@ -362,6 +372,34 @@ def build_context(
         )
 
     _apply_budget(bundle, built, max_entities, max_tokens, used)
+
+    # Helix: annotate stale NEIGHBORS too (the anchor-only gate measured the
+    # wrong thing — a concept the prompt just named is inside the working
+    # window by construction; its neighborhood is where cold history lives).
+    # Bounded: one shared index, first _HELIX_NEIGHBOR_SCAN names checked,
+    # at most _HELIX_NEIGHBOR_NOTES emitted. Best-effort, never fatal.
+    try:
+        from refmatrix import helix
+        idx = helix.build_index(s.root)
+        seen: set = {e.name}
+        for entries in bundle.groups.values():
+            for entry in entries:
+                nm = entry.entity.name
+                if nm in seen:
+                    continue
+                seen.add(nm)
+                if len(seen) > _HELIX_NEIGHBOR_SCAN:
+                    break
+                note = helix.annotate(s.root, nm, index=idx, label=nm)
+                if note:
+                    bundle.helix_neighbor_notes.append(note)
+                    if len(bundle.helix_neighbor_notes) >= _HELIX_NEIGHBOR_NOTES:
+                        break
+            if (len(bundle.helix_neighbor_notes) >= _HELIX_NEIGHBOR_NOTES
+                    or len(seen) > _HELIX_NEIGHBOR_SCAN):
+                break
+    except Exception:
+        pass
     return bundle
 
 
@@ -1259,6 +1297,8 @@ def render_text(b: ContextBundle) -> str:
             lines.append(f"  {a.tldr}")
         if b.helix_note:
             lines.append(b.helix_note)
+        for _n in b.helix_neighbor_notes:
+            lines.append(_n)
         if b.anchor_body:
             lines.append("")
             lines.append("--- body ---")

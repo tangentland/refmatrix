@@ -553,10 +553,16 @@ _BASHRC_END = "# <<< rmx agent env <<<"
 AGENT_BASHRC_SECTION = f"""{_BASHRC_BEGIN}
 # Managed by `rmx install-hooks` — edits inside these markers are overwritten
 # on reinstall. Add personal content OUTSIDE the markers.
-# Sourced on EVERY Bash tool call: keep fast; exports + functions only
-# (aliases need `shopt -s expand_aliases` and don't expand in tool calls).
+# Sourced on EVERY Bash tool call: keep fast.
 
 export RMXGREP_MODE="${{RMXGREP_MODE:-rich}}"
+
+# grep/rg become the learning drop-ins (byte-exact outside a project, index
+# + delegation inside). expand_aliases: non-interactive bash ignores aliases
+# without it.
+shopt -s expand_aliases
+[ -x "$HOME/refmatrix/bin/rmxgrep" ] && alias grep="$HOME/refmatrix/bin/rmxgrep"
+[ -x "$HOME/refmatrix/bin/rmxrg" ] && alias rg="$HOME/refmatrix/bin/rmxrg"
 
 # Retrieval-first helpers. `rmx context` is THE first lookup (BM25 + graph
 # neighbors with a literal-grep floor); see .refmatrix/PRIMER.md.

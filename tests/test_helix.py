@@ -34,7 +34,8 @@ def _write_ring(root: Path, stem: str, events: list[dict]) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def _fresh_cache():
+def _fresh_cache(monkeypatch):
+    monkeypatch.delenv("RMX_SESSION", raising=False)
     helix._proc_cache.clear()
     yield
     helix._proc_cache.clear()
@@ -122,6 +123,12 @@ def test_build_context_attaches_and_renders_the_note(tmp_path):
          "terse": "tuning zone_class thresholds",
          "refs": ["zone_class", "threshold"]},
     ])
+    # Production always has a live ring (the hook writes the prompt being
+    # served); it is the CURRENT session and must not mask the stale touch.
+    _write_ring(tmp_path / ".refmatrix", "livesession", [
+        {"ts": _iso(now - 5), "session": "livesession", "kind": "input",
+         "terse": "zone_class question", "refs": ["zone_class"]},
+    ])
     s = Store(tmp_path / ".refmatrix")
     s.init()
     c = s.add_concept("zone_class")
@@ -131,4 +138,96 @@ def test_build_context_attaches_and_renders_the_note(tmp_path):
     assert b.helix_note and "[helix]" in b.helix_note
     out = render_text(b)
     assert "[helix] last worked" in out
+    s.close()
+
+
+# --- phase 1.5: current-session exclusion + neighbor annotation -------------
+
+
+def test_current_session_echo_does_not_mask_staleness(root):
+    """The confound fix: the prompt's own STM echo (current ring) is
+    excluded from last_touch, so a concept revisited after 60d still
+    annotates even though the hook just recorded it."""
+    now = time.time()
+    # newest-mtime ring = current session; it touches fov_wedge NOW.
+    _write_ring(root, "livesession", [
+        {"ts": _iso(now - 2), "session": "livesession", "kind": "input",
+         "terse": "asking about fov_wedge again", "refs": ["fov_wedge"]},
+    ])
+    helix._proc_cache.clear()
+    note = helix.annotate(root, "fov_wedge")
+    assert note is not None and "60d ago" in note or "59d ago" in note
+
+
+def test_rmx_session_env_names_the_current_ring(root, monkeypatch):
+    now = time.time()
+    _write_ring(root, "sess-a", [
+        {"ts": _iso(now - 3), "session": "sess-a", "kind": "input",
+         "terse": "fov again", "refs": ["fov_wedge"]},
+    ])
+    helix._proc_cache.clear()
+    # Without env: sess-a is newest by mtime -> excluded -> stale note.
+    assert helix.annotate(root, "fov_wedge") is not None
+    # Env names a DIFFERENT session as current: sess-a's fresh touch now
+    # counts, so the concept is current -> silent.
+    monkeypatch.setenv("RMX_SESSION", "someother")
+    helix._proc_cache.clear()
+    assert helix.annotate(root, "fov_wedge") is None
+
+
+def test_subject_ring_belongs_to_its_session(root, monkeypatch):
+    now = time.time()
+    _write_ring(root, "sess-b__topicx", [
+        {"ts": _iso(now - 3), "session": "sess-b", "kind": "input",
+         "terse": "fov subject work", "refs": ["fov_wedge"]},
+    ])
+    monkeypatch.setenv("RMX_SESSION", "sess-b")
+    helix._proc_cache.clear()
+    # The subject ring's fresh touch is excluded with its session.
+    assert helix.annotate(root, "fov_wedge") is not None
+
+
+def test_neighbor_label_and_log_role(root):
+    note = helix.annotate(root, "fov_wedge", label="fov_wedge")
+    assert note is not None and note.startswith("[helix] fov_wedge:")
+    rows = [json.loads(l) for l in
+            (root / "helix.log").read_text(encoding="utf8").splitlines()]
+    assert rows[-1]["role"] == "neighbor"
+    helix.annotate(root, "fov_wedge")
+    rows = [json.loads(l) for l in
+            (root / "helix.log").read_text(encoding="utf8").splitlines()]
+    assert rows[-1]["role"] == "anchor"
+
+
+def test_display_ref_drops_junk_and_stopwords():
+    assert helix._display_ref("main..maste") == ""
+    assert helix._display_ref(".claud") == ""
+    assert helix._display_ref("trailing.") == ""
+    assert helix._display_ref("/a/b/store.py") == "store.py"
+    assert helix._display_ref("ok_token") == "ok_token"
+
+
+def test_build_context_annotates_stale_neighbor(tmp_path):
+    """Anchor is fresh (prompt echo) but its graph neighbor went cold 40d
+    ago: the neighbor gets the annotation."""
+    now = time.time()
+    rmxroot = tmp_path / ".refmatrix"
+    _write_ring(rmxroot, "oldwork", [
+        {"ts": _iso(now - 40 * DAY), "session": "oldwork", "kind": "tool",
+         "terse": "cold_helper refactor", "refs": ["cold_helper", "widget"]},
+    ])
+    _write_ring(rmxroot, "livesession", [
+        {"ts": _iso(now - 5), "session": "livesession", "kind": "input",
+         "terse": "hub question", "refs": ["hub_thing"]},
+    ])
+    s = Store(rmxroot)
+    s.init()
+    c = s.add_concept("hub_thing")
+    s.link("mentions", c, s.upsert_entity(kind="code", name="cold_helper"))
+    from refmatrix.context import build_context, render_text
+    b = build_context(s, "hub_thing")
+    assert any("cold_helper" in n for n in b.helix_neighbor_notes), (
+        b.helix_neighbor_notes)
+    out = render_text(b)
+    assert "[helix] cold_helper:" in out
     s.close()
