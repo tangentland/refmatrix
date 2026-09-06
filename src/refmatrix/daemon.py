@@ -3116,6 +3116,13 @@ def _op_partition_merge(d: Daemon, args: dict) -> dict:
                 res = d._st().merge_partition(
                     src, dst, dry_run=False,
                     lock=d._store_lock, progress=_progress(job_id))
+                # The merge rewrites rows with direct SQL and emits NO log
+                # events (facts.log audit 2026-09-06): without this snapshot
+                # the log keeps describing the pre-merge partition layout and
+                # every log-replay consumer silently diverges. The log is the
+                # replication boundary — restructurings must be followed by a
+                # forced snapshot-compaction.
+                d._compact_factslog_if_needed(force=True)
                 with d._jobs_lock:
                     d._jobs[job_id].update(state="done", result=res)
                 d._request_snapshot()
@@ -3136,6 +3143,9 @@ def _op_partition_merge(d: Daemon, args: dict) -> dict:
         src, dst, dry_run=dry_run,
         lock=d._store_lock, progress=_progress())
     if not dry_run:
+        # See the async branch: merge_partition is log-invisible, so the log
+        # must be re-snapshotted from the post-merge catalog.
+        d._compact_factslog_if_needed(force=True)
         d._request_snapshot()
     return result
 
@@ -3373,6 +3383,9 @@ def _op_merge_verb_aliases(d: Daemon, args: dict) -> dict:
         for legacy, canon in _VERB_ALIASES.items():
             results.append(d._st().merge_verb_alias(legacy, canon))
     if any(r["merged"] for r in results):
+        # merge_verb_alias rewrites the forward index + bitmaps with direct
+        # SQL and no log events; snapshot the log so replay stays faithful.
+        d._compact_factslog_if_needed(force=True)
         d._request_snapshot()
     return {"results": results}
 
@@ -4115,6 +4128,11 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
 
         # 5. Point read replica at B.
         d._refresh_read_only_link()
+
+    # merge_slots wrote the union with direct SQL — zero log events — so
+    # facts.log still describes a pre-merge slot. Snapshot it from the merged
+    # catalog (also resets both slot offsets to the fresh EOF).
+    d._compact_factslog_if_needed(force=True)
 
     elapsed_ms = int((time.monotonic() - t0) * 1000)
     report["enabled"] = True

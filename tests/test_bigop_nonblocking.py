@@ -171,6 +171,11 @@ def _fake_daemon(store):
     d._jobs_lock = threading.Lock()
     d._log = lambda _msg: None
     d._request_snapshot = lambda: None
+    # Restructuring ops force a log snapshot (unlogged-write-paths fix);
+    # the fake has no facts.log to rewrite — record the calls instead.
+    d.compactions = []
+    d._compact_factslog_if_needed = (
+        lambda **kw: d.compactions.append(kw) or {})
     return cast("Daemon", d)
 
 
@@ -191,6 +196,8 @@ def test_async_merge_returns_job_id_then_completes(store):
         time.sleep(0.05)
     assert st["state"] == "done", st
     assert st["result"]["entities_merged"] >= 5
+    # The merge is log-invisible; success MUST force a snapshot-compaction.
+    assert getattr(d, "compactions") == [{"force": True}]
 
 
 def test_job_status_unknown_and_listing(store):

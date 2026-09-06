@@ -3048,6 +3048,14 @@ def merge_verb_aliases():
         try:
             for legacy, canon in _VERB_ALIASES.items():
                 results.append(s.merge_verb_alias(legacy, canon))
+            if any(r["merged"] for r in results):
+                # merge_verb_alias emits no log events; snapshot the log from
+                # the post-merge catalog so replay stays faithful.
+                try:
+                    s.dump_catalog_to_log()
+                except Exception as e:
+                    console.print(f"[yellow]warn:[/] post-merge log snapshot "
+                                  f"failed: {e}")
             # DuckDB only: flush WAL into the main file so the snapshot copy is
             # self-contained. SQLite has no CHECKPOINT statement (and no
             # snapshot tier — its WAL is the read path), so it's skipped.
@@ -3321,6 +3329,12 @@ def partition_merge(src: str, dst: str, dry_run: bool, yes: bool,
             result = s.merge_partition(src, dst, dry_run=False)
         except ValueError as e:
             raise click.ClickException(str(e))
+        # Daemon-down path: merge_partition emits no log events; snapshot the
+        # log from the post-merge catalog so replay stays faithful.
+        try:
+            s.dump_catalog_to_log()
+        except Exception as e:
+            console.print(f"[yellow]warn:[/] post-merge log snapshot failed: {e}")
     console.print(
         f"[green]merged[/] reparented={result['entities_reparented']} "
         f"merged={result['entities_merged']} "
