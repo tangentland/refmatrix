@@ -143,7 +143,7 @@ class log_query:
 
     def __init__(
         self,
-        store: Store,
+        store: "Store | None",
         *,
         kind: str,
         body: str,
@@ -162,6 +162,11 @@ class log_query:
 
     def __exit__(self, exc_type, exc_val, _exc_tb) -> None:
         if _disabled():
+            return
+        if self.store is None:
+            # RPC-served paths (e.g. grep via daemon) have no local store;
+            # there is nowhere to append the record. Previously this raised
+            # AttributeError out of __exit__.
             return
         latency_ms = int((time.monotonic() - self.t0) * 1000)
         record: dict[str, Any] = {

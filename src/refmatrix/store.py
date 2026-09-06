@@ -24,7 +24,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Any, Iterable, Iterator
 
 from pyroaring import BitMap, BitMap64
 
@@ -730,7 +730,10 @@ class Store:
         cand = self.root / f"catalog.{marker}.duckdb"
         return cand if cand.exists() else None
 
-    def _connect(self):
+    def _connect(self) -> Any:
+        # -> Any: the connection is sqlite3.Connection, DuckDBPyConnection,
+        # or duckdb_view.ReadConnection depending on backend/mode; all expose
+        # the same execute/fetch cursor surface. Never returns None.
         if self._conn is None:
             if self._read_only:
                 # Fast path: replica reader. Open the backend in read-only

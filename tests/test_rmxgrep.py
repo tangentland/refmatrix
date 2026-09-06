@@ -11,12 +11,17 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 RMXGREP = Path(__file__).resolve().parents[1] / "bin" / "rmxgrep"
 
 
 def _run(args, cwd, env_extra=None, stdin=None):
     import os
     env = dict(os.environ)
+    # The dev shell may carry RMXGREP_MODE=rich (agent env); each test pins
+    # the mode it exercises via env_extra, so strip the ambient value.
+    env.pop("RMXGREP_MODE", None)
     env.update(env_extra or {})
     return subprocess.run(
         [str(RMXGREP), *args], cwd=cwd, env=env, input=stdin,

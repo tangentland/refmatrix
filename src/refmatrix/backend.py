@@ -22,7 +22,7 @@ import os
 import sqlite3
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Protocol
 
 import duckdb
 
@@ -71,22 +71,26 @@ class Backend(ABC):
     db_filename: str
 
     @abstractmethod
-    def connect(self, db_path: Path) -> "ConnLike":
+    def connect(self, db_path: Path, read_only: bool = False) -> "ConnLike":
         """Open a connection to the catalog at `db_path`. Must return a
-        connection whose `execute()` produces sqlite3-shaped cursors."""
+        connection whose `execute()` produces sqlite3-shaped cursors.
+        `read_only` is honored by DuckDB; SQLite ignores it (WAL readers
+        don't block)."""
 
     @abstractmethod
     def init_catalog(self, con: "ConnLike") -> None:
         """Bootstrap the schema if it isn't there yet. Idempotent."""
 
 
-class ConnLike:
-    """Marker / structural type. Implementations expose:
-        execute(sql, params=()) -> CursorLike
-        executescript(sql) -> None  (sqlite parity; DuckDB uses execute)
-        commit() -> None
-        close() -> None
-    """
+class ConnLike(Protocol):
+    """Structural type for catalog connections. sqlite3.Connection and
+    DuckDBConnection both satisfy it; nothing instantiates it."""
+
+    def execute(self, *args: Any, **kwargs: Any) -> Any: ...
+
+    def commit(self) -> None: ...
+
+    def close(self) -> None: ...
 
 
 # ---------- SQLite ---------------------------------------------------------
@@ -96,7 +100,8 @@ class SQLiteBackend(Backend):
     kind = "sqlite"
     db_filename = "catalog.db"
 
-    def connect(self, db_path: Path) -> sqlite3.Connection:
+    def connect(self, db_path: Path,
+                read_only: bool = False) -> sqlite3.Connection:
         con = sqlite3.connect(db_path, check_same_thread=False)
         con.execute("PRAGMA foreign_keys = ON")
         con.execute("PRAGMA journal_mode = WAL")
@@ -111,7 +116,7 @@ class SQLiteBackend(Backend):
         con.create_function("LEAST", 2, lambda a, b: a if a <= b else b)
         return con
 
-    def init_catalog(self, con: sqlite3.Connection) -> None:
+    def init_catalog(self, con: Any) -> None:
         # SQLiteBackend doesn't own the SQLite DDL — store.py still drives it
         # via CATALOG_DDL.executescript() because the legacy migration path
         # (partitions backfill, ALTER TABLE adds, etc.) is interleaved.
@@ -244,5 +249,5 @@ class DuckDBBackend(Backend):
     def connect(self, db_path: Path, read_only: bool = False) -> DuckDBConnection:
         return DuckDBConnection(duckdb.connect(str(db_path), read_only=read_only))
 
-    def init_catalog(self, con: DuckDBConnection) -> None:
+    def init_catalog(self, con: Any) -> None:
         init_duckdb_catalog(con._duck)

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+from typing import Any, Callable, cast
 import json
 import os
 import sys
@@ -356,7 +357,7 @@ class _DaemonWriter:
         }, timeout=24 * 3600.0).get("entities", 0)
 
 
-def _store(write: bool = True) -> "Store | _DaemonWriter":
+def _store(write: bool = True) -> "Store":
     """THE catalog accessor. The `write` flag signals intent at the call site.
 
     write=False -> a lock-free READER (replica/snapshot). Never opens the
@@ -373,7 +374,8 @@ def _store(write: bool = True) -> "Store | _DaemonWriter":
     from refmatrix import daemon as daemon_mod
     root = _root()
     if daemon_mod.ping(root):
-        return _DaemonWriter(root, _resolve_partition())
+        # Deliberate duck-type: the proxy mirrors Store's mutation surface.
+        return cast(Store, _DaemonWriter(root, _resolve_partition()))
     return _store_rw()
 
 
@@ -4201,8 +4203,8 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
             console.print(f"[yellow]no indexed concepts touch the {len(paths)} changed file(s)[/]")
             return
         # Render a small bundle per concept.
-        concept_names = [s.get_entity_by_id(cid).name for cid in concept_ids
-                         if s.get_entity_by_id(cid)]
+        concept_ents = (s.get_entity_by_id(cid) for cid in concept_ids)
+        concept_names = [e.name for e in concept_ents if e is not None]
         per = max(200, max_tokens // max(1, min(len(concept_names), 8)))
         rendered: list[str] = [
             f"# context for changes since {since} — {len(concept_names)} concepts"
@@ -5271,12 +5273,12 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
 
     # Replica path: reads stay on the replica, the learn write is
     # brokered to the daemon (best-effort, short timeout, swallowed).
-    broker = None
+    broker: Callable[[list], None] | None = None
     if learn:
         from refmatrix import daemon as _dmod
         _r = _root()
 
-        def broker(hits):
+        def _send_learn(hits):
             try:
                 if _dmod.ping(_r):
                     _dmod.call(_r, "learn_from_grep", {
@@ -5285,6 +5287,8 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
                     }, timeout=10.0)
             except Exception:
                 pass
+
+        broker = _send_learn
 
     _grep_rg_fallback(
         pattern=pattern, regex=regex, gf=gf, limit=limit,
@@ -5464,7 +5468,7 @@ def save_query(name, body):
 @click.option("--limit", default=50, type=int)
 def run(name, is_pql, ids_only, limit):
     """Run a saved query by name."""
-    def _run(s):
+    def _run(s) -> tuple:  # tagged: (kind, payload[, extra])
         body = s.get_saved_query(name)
         if body is None:
             raise click.ClickException(f"no saved query: {name}")
@@ -5576,7 +5580,7 @@ def telemetry(since, top_queried, zero_results, fmt):
         summarize, top_queried_concepts, zero_result_queries,
     )
 
-    def _run(s):
+    def _run(s) -> tuple[str, Any]:
         if top_queried:
             return ("top_queried", top_queried_concepts(s))
         if zero_results:
@@ -8798,14 +8802,14 @@ def memory_reclassify(to_mtype, like, from_mtype, names, dry_run, yes):
             "names": list(names) or None, "dry_run": True}
     root = _root()
     daemon_up = daemon_mod.ping(root)
+    s = None if daemon_up else _store()
     # preview first
-    if daemon_up:
+    if s is None:
         resp = _memory_daemon_call("memory_reclassify", args)
         prev = resp.get("result", {}) if resp.get("ok") else None
         if prev is None:
             raise click.ClickException(resp.get("error", "daemon error"))
     else:
-        s = _store()
         prev = s.reclassify_memories(to_mtype=to_mtype, like=like,
                                      from_mtype=from_mtype,
                                      names=list(names) or None, dry_run=True)
@@ -8823,7 +8827,7 @@ def memory_reclassify(to_mtype, like, from_mtype, names, dry_run, yes):
     if not yes and not click.confirm(f"reclassify {n} memories?"):
         return
     args["dry_run"] = False
-    if daemon_up:
+    if s is None:
         resp = _memory_daemon_call("memory_reclassify", args)
         res = resp.get("result", {}) if resp.get("ok") else None
         if res is None:
@@ -9535,6 +9539,8 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             if len(rows) >= k:
                 break
             eid = h.get("entity_id") or h.get("id")
+            if eid is None:
+                continue
             m = _fetch_memory(eid)
             if m is None and "doc" in kinds_list:
                 # Non-memory hit (kind=doc/code/concept). For these we
@@ -9601,6 +9607,8 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         if shown >= k:
             break
         eid = h.get("entity_id") or h.get("id")
+        if eid is None:
+            continue
         score = _recall_display_score(h)
         m = _fetch_memory(eid)
         if m and _mt_excluded(m.get("mtype")):
@@ -9904,6 +9912,7 @@ def memory_sync_disk(paths: tuple[Path, ...], default_mtype: str,
             skipped_reasons.append((str(path), f"read: {exc}"))
             continue
         fm, body = _parse_memory_md_frontmatter(text)
+        fm = fm or {}
         # The auto-memory index file (MEMORY.md) is a flat list, not a
         # memory node itself — skip it explicitly.
         if path.name == "MEMORY.md":
@@ -9915,7 +9924,8 @@ def memory_sync_disk(paths: tuple[Path, ...], default_mtype: str,
             or (fm.get("name") if isinstance(fm.get("name"), str) else None)
             or path.stem
         )
-        meta = fm.get("metadata") if isinstance(fm.get("metadata"), dict) else {}
+        meta_raw = fm.get("metadata")
+        meta = meta_raw if isinstance(meta_raw, dict) else {}
         mtype = (
             meta.get("type") if isinstance(meta.get("type"), str) else None
         ) or default_mtype
