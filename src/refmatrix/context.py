@@ -112,6 +112,11 @@ class ContextBundle:
     # source of genuinely-cold concepts — an anchor the prompt just named is
     # almost never stale, its neighborhood often is.
     helix_neighbor_notes: "list[str]" = field(default_factory=list)
+    # Deferred helix readership rows + the store root to flush them against.
+    # Renderers call helix.flush() so ONLY rendered bundles log (scan-prompt
+    # drops some bundles after building them; those must not count).
+    helix_pending: list = field(default_factory=list)
+    store_root: "str | None" = None
 
     def total_entities(self) -> int:
         return sum(len(v) for v in self.groups.values())
@@ -188,9 +193,11 @@ def build_context(
     # window, carry the point-in-time neighborhood from that touch. Strictly
     # additive and best-effort — a read surface must never fail (or slow
     # down meaningfully) because the STM rings were unreadable.
+    bundle.store_root = str(s.root)
     try:
         from refmatrix import helix
-        bundle.helix_note = helix.annotate(s.root, e.name)
+        bundle.helix_note = helix.annotate(s.root, e.name,
+                                           sink=bundle.helix_pending)
     except Exception:
         bundle.helix_note = None
 
@@ -376,30 +383,7 @@ def build_context(
     # Helix: annotate stale NEIGHBORS too (the anchor-only gate measured the
     # wrong thing — a concept the prompt just named is inside the working
     # window by construction; its neighborhood is where cold history lives).
-    # Bounded: one shared index, first _HELIX_NEIGHBOR_SCAN names checked,
-    # at most _HELIX_NEIGHBOR_NOTES emitted. Best-effort, never fatal.
-    try:
-        from refmatrix import helix
-        idx = helix.build_index(s.root)
-        seen: set = {e.name}
-        for entries in bundle.groups.values():
-            for entry in entries:
-                nm = entry.entity.name
-                if nm in seen:
-                    continue
-                seen.add(nm)
-                if len(seen) > _HELIX_NEIGHBOR_SCAN:
-                    break
-                note = helix.annotate(s.root, nm, index=idx, label=nm)
-                if note:
-                    bundle.helix_neighbor_notes.append(note)
-                    if len(bundle.helix_neighbor_notes) >= _HELIX_NEIGHBOR_NOTES:
-                        break
-            if (len(bundle.helix_neighbor_notes) >= _HELIX_NEIGHBOR_NOTES
-                    or len(seen) > _HELIX_NEIGHBOR_SCAN):
-                break
-    except Exception:
-        pass
+    _helix_neighbor_sweep(s, bundle, skip={e.name})
     return bundle
 
 
@@ -799,6 +783,38 @@ def _apply_budget(
     bundle.estimated_tokens = used
 
 
+def _helix_neighbor_sweep(s: Store, bundle: ContextBundle,
+                          *, skip: set | None = None) -> None:
+    """Annotate stale graph neighbors on a built bundle. Bounded: one shared
+    index, first _HELIX_NEIGHBOR_SCAN names checked, at most
+    _HELIX_NEIGHBOR_NOTES emitted. Rows go to bundle.helix_pending so only a
+    RENDERED bundle logs them. Best-effort, never fatal."""
+    try:
+        from refmatrix import helix
+        idx = helix.build_index(s.root)
+        bundle.store_root = bundle.store_root or str(s.root)
+        seen: set = set(skip or ())
+        for entries in bundle.groups.values():
+            for entry in entries:
+                nm = entry.entity.name
+                if nm in seen:
+                    continue
+                seen.add(nm)
+                if len(seen) > _HELIX_NEIGHBOR_SCAN:
+                    break
+                note = helix.annotate(s.root, nm, index=idx, label=nm,
+                                      sink=bundle.helix_pending)
+                if note:
+                    bundle.helix_neighbor_notes.append(note)
+                    if len(bundle.helix_neighbor_notes) >= _HELIX_NEIGHBOR_NOTES:
+                        break
+            if (len(bundle.helix_neighbor_notes) >= _HELIX_NEIGHBOR_NOTES
+                    or len(seen) > _HELIX_NEIGHBOR_SCAN):
+                break
+    except Exception:
+        pass
+
+
 def content_only_bundle(
     s: Store, ref: str, *, max_entities: int = 20, max_tokens: int = 4000,
     expand: int = 0, include_sessions: bool = False,
@@ -819,6 +835,10 @@ def content_only_bundle(
     )
     _apply_budget(bundle, built, max_entities, max_tokens,
                   estimate_tokens(_render_header(bundle)))
+    # Coverage: the NL/no-anchor path was invisible to helix entirely, which
+    # biased the phase-2 readership signal downward. The hits ARE the
+    # neighborhood here — sweep them like graph neighbors.
+    _helix_neighbor_sweep(s, bundle)
     return bundle
 
 
@@ -1288,7 +1308,17 @@ def _render_entry(e: ContextEntry) -> str:
     return line
 
 
+def _helix_flush(b: ContextBundle) -> None:
+    if b.helix_pending and b.store_root:
+        try:
+            from refmatrix import helix
+            helix.flush(Path(b.store_root), b.helix_pending)
+        except Exception:
+            pass
+
+
 def render_text(b: ContextBundle) -> str:
+    _helix_flush(b)
     lines = [_render_header(b)]
     a = b.anchor
     if a is not None:
@@ -1307,6 +1337,11 @@ def render_text(b: ContextBundle) -> str:
         # No graph anchor AND no content hits — truly nothing to show.
         lines.append("(unknown symbol)")
         return "\n".join(lines)
+    else:
+        # Anchor-less content bundle: stale-neighbor notes still render
+        # (the NL path is part of the readership instrument too).
+        for _n in b.helix_neighbor_notes:
+            lines.append(_n)
     if not b.groups:
         lines.append("")
         lines.append("(no linkages found — try `rmx link` or `rmx ingest --semantic`)")
@@ -1331,6 +1366,7 @@ def render_text(b: ContextBundle) -> str:
 
 
 def render_json(b: ContextBundle) -> str:
+    _helix_flush(b)
     return json.dumps(
         {
             "ref": b.ref,

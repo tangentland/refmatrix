@@ -231,3 +231,65 @@ def test_build_context_annotates_stale_neighbor(tmp_path):
     out = render_text(b)
     assert "[helix] cold_helper:" in out
     s.close()
+
+
+# --- rendered-gated logging (phase-2 instrument hygiene) --------------------
+
+
+def test_annotation_logs_only_when_rendered(tmp_path):
+    """A built-but-dropped bundle (scan-prompt discards anchor-less/group-less
+    bundles) must not count toward the readership signal."""
+    now = time.time()
+    rmxroot = tmp_path / ".refmatrix"
+    _write_ring(rmxroot, "oldwork", [
+        {"ts": _iso(now - 40 * DAY), "session": "oldwork", "kind": "tool",
+         "terse": "zone tuning", "refs": ["zone_class"]},
+    ])
+    _write_ring(rmxroot, "livesession", [
+        {"ts": _iso(now - 5), "session": "livesession", "kind": "input",
+         "terse": "zone_class question", "refs": ["zone_class"]},
+    ])
+    s = Store(rmxroot)
+    s.init()
+    c = s.add_concept("zone_class")
+    s.link("mentions", c, s.upsert_entity(kind="code", name="zones.py"))
+    from refmatrix.context import build_context, render_text
+    b = build_context(s, "zone_class")
+    assert b.helix_note
+    assert not (rmxroot / "helix.log").exists()   # built, not rendered
+    render_text(b)
+    rows = [json.loads(l) for l in
+            (rmxroot / "helix.log").read_text(encoding="utf8").splitlines()]
+    assert rows and rows[-1]["concept"] == "zone_class"
+    assert rows[-1]["rendered"] is True
+    render_text(b)                                # idempotent: sink cleared
+    rows2 = (rmxroot / "helix.log").read_text(encoding="utf8").splitlines()
+    assert len(rows2) == len(rows)
+    s.close()
+
+
+def test_content_only_path_annotates_stale_hits(tmp_path):
+    """The NL/no-anchor path was invisible to helix; its content hits are the
+    neighborhood and must be sweepable."""
+    now = time.time()
+    rmxroot = tmp_path / ".refmatrix"
+    _write_ring(rmxroot, "oldwork", [
+        {"ts": _iso(now - 30 * DAY), "session": "oldwork", "kind": "tool",
+         "terse": "frobnicator rework", "refs": ["frob_helper"]},
+    ])
+    _write_ring(rmxroot, "livesession", [
+        {"ts": _iso(now - 5), "session": "livesession", "kind": "input",
+         "terse": "unrelated", "refs": ["other_thing"]},
+    ])
+    s = Store(rmxroot)
+    s.init()
+    s.upsert_entity(kind="code", name="frob_helper",
+                    tldr="frobnicate the widget pipeline")
+    from refmatrix.context import content_only_bundle, render_text
+    b = content_only_bundle(s, "frobnicate widget")
+    if b.groups:  # content hit found -> the sweep must have seen it
+        assert any("frob_helper" in n for n in b.helix_neighbor_notes)
+        out = render_text(b)
+        assert "[helix] frob_helper:" in out
+        assert (rmxroot / "helix.log").exists()
+    s.close()

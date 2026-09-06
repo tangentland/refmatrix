@@ -288,9 +288,26 @@ def snapshot_at(root: Path, ring_stem: str, line_no: int, name: str) -> dict:
             "neighbors": neighbors}
 
 
+def flush(root: Path, rows: list) -> None:
+    """Write deferred readership rows (see annotate(sink=...)). Called by the
+    renderers, so only annotations that actually REACHED an output surface
+    are logged — logging at annotate time over-counted, because scan-prompt
+    drops anchor-less/group-less bundles after building them."""
+    if not rows:
+        return
+    try:
+        with open(Path(root) / "helix.log", "a", encoding="utf8") as f:
+            for row in rows:
+                f.write(json.dumps({**row, "rendered": True}) + "\n")
+    except OSError:
+        pass
+    rows.clear()
+
+
 def annotate(root: Path, name: str, *, now: float | None = None,
              index: dict | None = None, label: str | None = None,
-             exclude_current: bool = True) -> str | None:
+             exclude_current: bool = True,
+             sink: list | None = None) -> str | None:
     """The phase-1 product: a one-block annotation when `name`'s last STM
     touch predates the working window, else None. Telemetry-logged on every
     emission — the readership signal that decides the phase-2 storage fork.
@@ -330,10 +347,15 @@ def annotate(root: Path, name: str, *, now: float | None = None,
     # emitted annotation in .refmatrix/helix.log (same best-effort shape as
     # the cli.log trinity). If this file stays empty across real sessions,
     # take Option A and stop; if it fills, Option B earns its build.
+    row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "concept": name,
+           "age_days": days, "session": ring_stem,
+           "role": "neighbor" if label else "anchor"}
+    if sink is not None:
+        # Deferred: the caller's renderer flushes rows for bundles that
+        # actually render (see flush()).
+        sink.append(row)
+        return note
     try:
-        row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "concept": name,
-               "age_days": days, "session": ring_stem,
-               "role": "neighbor" if label else "anchor"}
         with open(Path(root) / "helix.log", "a", encoding="utf8") as f:
             f.write(json.dumps(row) + "\n")
     except OSError:
