@@ -17,7 +17,7 @@ from rich.table import Table
 from refmatrix import __version__
 from refmatrix.handoff import (
     _SS_FOCUS_NOISE, _focus_digest, _ss_clean_focus, _ss_sh,
-    compose_recall_state, compose_save_state,
+    compose_recall_state, compose_save_state, finalize_save_state,
 )
 from refmatrix.query import QueryEngine
 from refmatrix.store import Store, default_partition_name
@@ -10476,14 +10476,12 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote):
     console.print(f"[green]save-state[/] {res['target']}  "
                   f"[dim]({res['events']} events, session {sess})[/]")
 
-    if not no_lint:
-        lint = Path.home() / "claude_tools" / "gmd" / "lint.py"
-        if lint.exists():
-            out = _ss_sh(["python3", str(lint), res["target"]], repo)
-            tag = "[green]lint ok[/]" if "0 error" in out.lower() or not out \
-                else "[yellow]lint[/]"
-            if out:
-                console.print(f"{tag} {out.splitlines()[-1] if out else ''}")
+    fin = finalize_save_state(s, root, res, repo=repo, lint=not no_lint)
+    lint_out = fin.get("lint")
+    if lint_out:
+        tag = ("[green]lint ok[/]" if "0 error" in lint_out.lower()
+               else "[yellow]lint[/]")
+        console.print(f"{tag} {lint_out.splitlines()[-1]}")
 
     promoted = res.get("promoted")
     if promoted:
@@ -10492,7 +10490,9 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote):
         else:
             console.print(f"[green]promoted[/] {promoted['name']} "
                           f"(id={promoted.get('id')}) → durable memory")
-            _file_under_active_subject(s, promoted.get("id"))
+            if fin.get("filed_subject"):
+                console.print(
+                    f"[dim]  filed under subject {fin['filed_subject']}[/]")
 
     subj = s.get_subject()
     if subj:

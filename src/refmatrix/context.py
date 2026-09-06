@@ -1373,6 +1373,11 @@ def render_json(b: ContextBundle) -> str:
             "truncated": b.truncated,
             "estimated_tokens": b.estimated_tokens,
             "total_neighbors": b.total_entities(),
+            # Helix staleness signal must survive the JSON surface too — MCP
+            # callers request format=json, and dropping these made the whole
+            # phase-1 instrument text-render-only (parity audit 2026-09-06).
+            "helix_note": b.helix_note,
+            "helix_neighbor_notes": b.helix_neighbor_notes,
         },
         indent=2,
     )

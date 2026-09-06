@@ -372,6 +372,48 @@ def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
     return result
 
 
+def finalize_save_state(s, root: Path, result: dict, *, repo: Path,
+                        lint: bool = True) -> dict:
+    """Post-compose steps EVERY save-state caller needs (CLI and MCP): GMD
+    lint of the written handoff file, and filing the promoted digest under
+    the active subject (`part-of`) so the subject index reaches it. Before
+    2026-09-06 these lived only in the CLI command, so an MCP save-state
+    promoted an orphaned digest (parity audit finding 7).
+
+    Returns {"lint": str | None, "filed_subject": str | None}; best-effort
+    throughout — a lint or filing failure never breaks the handoff."""
+    out: dict = {"lint": None, "filed_subject": None}
+    if result.get("dry_run"):
+        return out
+    if lint:
+        lint_py = Path.home() / "claude_tools" / "gmd" / "lint.py"
+        target = result.get("target")
+        if lint_py.exists() and target:
+            out["lint"] = _ss_sh(["python3", str(lint_py), str(target)], repo)
+    promoted = result.get("promoted") or {}
+    leaf = promoted.get("id") if not promoted.get("error") else None
+    if leaf:
+        subj = None
+        try:
+            subj = s.get_subject()
+        except Exception:
+            subj = None
+        if subj:
+            label = subj.get("label") or subj.get("subject")
+            try:
+                # Lazy import breaks the cli->handoff import cycle; these
+                # helpers carry the partition injection + daemon-or-inproc
+                # routing that a bare daemon call here would get wrong.
+                from refmatrix.cli import _subject_link, _subject_upsert
+                sid = _subject_upsert(label)
+                if sid:
+                    _subject_link(int(leaf), int(sid))
+                    out["filed_subject"] = label
+            except Exception:
+                pass
+    return out
+
+
 # ---- recall-state core -----------------------------------------------------
 
 
