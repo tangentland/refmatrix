@@ -15,9 +15,12 @@ so "does anybody read the snapshots" is a measurable question, not a debate.
 
 Env:
   RMX_HELIX=0                 kill switch (annotation off)
-  RMX_HELIX_WINDOW_DAYS=7     touches younger than this are "current" and
+  RMX_HELIX_WINDOW_DAYS=3     touches younger than this are "current" and
                               get no annotation (wall-clock, not turns —
-                              work here is bursty; a turn window zeroes out)
+                              work here is bursty; a turn window zeroes out).
+                              Default 3 (was 7): with the current-session
+                              exclusion in place, a shorter window surfaces
+                              last-week context without prompt-echo noise.
 """
 from __future__ import annotations
 
@@ -49,9 +52,9 @@ def _enabled() -> bool:
 
 def _window_s() -> float:
     try:
-        days = float(os.environ.get("RMX_HELIX_WINDOW_DAYS", "7") or "7")
+        days = float(os.environ.get("RMX_HELIX_WINDOW_DAYS", "3") or "3")
     except ValueError:
-        days = 7.0
+        days = 3.0
     return days * 86400.0
 
 
