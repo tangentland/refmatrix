@@ -246,8 +246,8 @@ def _t_focus(args: dict) -> dict:
 
 
 def _t_projects(args: dict) -> dict:
-    from refmatrix import discovery
-    return {"projects": discovery.all_projects(with_footprint=False)}
+    from refmatrix.verbs import VERBS
+    return VERBS["rmx_projects"].run(_resolve_root(args), args)
 
 
 # ---- write path (per-project; daemon-routed, in-proc fallback) -------------

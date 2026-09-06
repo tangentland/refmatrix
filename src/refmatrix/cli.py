@@ -7317,6 +7317,38 @@ def watch(path, semantic, debounce):
     console.print("[yellow]watcher stopped[/]")
 
 
+@main.command("projects")
+@click.option("--footprint", is_flag=True,
+              help="Add per-store disk usage (slower — stats every store).")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]),
+              default="text")
+def projects_cmd(footprint, fmt):
+    """List all refmatrix projects on this machine: name, store root,
+    daemon + supervision state. CLI twin of the MCP rmx_projects tool
+    (same verb underneath)."""
+    from refmatrix.verbs import VERBS
+    out = VERBS["rmx_projects"].run(_root(), {"footprint": footprint})
+    rows = out["projects"]
+    if fmt == "json":
+        click.echo(json.dumps(rows, indent=2, default=str))
+        return
+    t = Table("project", "root", "daemon", "supervised",
+              *(("disk",) if footprint else ()))
+    for r in rows:
+        d = r.get("daemon") or {}
+        lc = r.get("launchd") or {}
+        daemon_txt = (f"up pid={d.get('pid')} {d.get('rss_mb', '?')}MB"
+                      if d.get("up") else "down")
+        sup = "yes" if lc.get("loaded") else (
+            "installed" if lc.get("installed") else "no")
+        cells = [r.get("name", "?"), r.get("root", "?"), daemon_txt, sup]
+        if footprint:
+            fp = r.get("footprint") or {}
+            cells.append(str(fp.get("total_h") or fp.get("total") or "?"))
+        t.add_row(*cells)
+    console.print(t)
+
+
 @main.command("install-hooks")
 @click.option("--git/--no-git", default=True, help="Install git hooks.")
 @click.option("--claude/--no-claude", default=True, help="Install Claude Code hook config.")

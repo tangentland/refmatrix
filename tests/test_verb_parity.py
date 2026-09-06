@@ -36,6 +36,7 @@ PAIRING = {
     "rmx_ingest": (("ingest",), {}, {"path", "mode", "kinds", "limit",
                                      "rebuild", "partition"}),
     "rmx_save_state": (("save-state",), {}, {"session"}),
+    "rmx_projects": (("projects",), {}, set()),
 }
 
 

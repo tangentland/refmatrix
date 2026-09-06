@@ -390,3 +390,13 @@ def change_subject(root: Path, label: str, *,
             eid = s2.upsert_subject(label)["id"]
     return {"subject": rec["subject"], "label": rec["label"], "id": eid,
             "session": s.session}
+
+
+@verb("rmx_projects",
+      "List all refmatrix projects on this machine: name, store root, "
+      "daemon + supervision state; footprint=true adds disk usage "
+      "(slower — stats every store).")
+def projects(root: Path, *, footprint: bool = False) -> dict:
+    # `root` is the transport convention; discovery is machine-wide.
+    from refmatrix import discovery
+    return {"projects": discovery.all_projects(with_footprint=footprint)}
