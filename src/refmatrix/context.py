@@ -87,7 +87,7 @@ class ContextEntry:
 # Helix neighbor sweep bounds: how many neighbor names to test against the
 # touch index per bundle, and how many annotations may render.
 _HELIX_NEIGHBOR_SCAN = 20
-_HELIX_NEIGHBOR_NOTES = 2
+_HELIX_NEIGHBOR_NOTES = 5
 
 
 @dataclass
