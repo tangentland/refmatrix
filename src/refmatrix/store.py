@@ -24,7 +24,10 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any, Iterable, Iterator, TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from refmatrix.vectors import LanceVectorStore
 
 from pyroaring import BitMap, BitMap64
 
@@ -765,7 +768,8 @@ class Store:
                 # catalogs created before later schema additions transparently
                 # gain the new tables (e.g. linkage_evidence, tracked_files,
                 # entity_links).
-                con.executescript(CATALOG_DDL)
+                sqlite_con = cast(sqlite3.Connection, con)
+                sqlite_con.executescript(CATALOG_DDL)
                 # ALTER TABLE isn't idempotent — add post-DDL columns conditionally.
                 # CATALOG_DDL deliberately omits the indexes for these columns
                 # because executescript runs top-to-bottom and would fail on a
@@ -2204,11 +2208,13 @@ class Store:
         for r in rows:
             leaves = 0
             if lid is not None:
-                leaves = self._read().execute(
+                _row = self._read().execute(
                     "SELECT count(*) FROM entity_links "
                     "WHERE linkage_id=? AND concept_id=?",
                     (lid, r["id"]),
-                ).fetchone()[0]
+                ).fetchone()
+                assert _row is not None  # COUNT(*) always returns one row
+                leaves = _row[0]
             meta = json.loads(r["metadata"]) if r["metadata"] else {}
             out.append({
                 "id": r["id"], "name": r["name"],
@@ -2686,10 +2692,12 @@ class Store:
         distribution so growth stays observable (it should be ~2/concept)."""
         self._connect()
         r = self._read()
-        edges = r.execute(
+        _erow = r.execute(
             "SELECT count(*) FROM entity_links el JOIN linkage_types lt "
             "ON lt.id=el.linkage_id WHERE lt.name='same_as'"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _erow is not None  # COUNT(*) always returns one row
+        edges = _erow[0]
         dist = r.execute(
             "SELECT cnt, count(*) FROM ("
             "  SELECT el.entity_id, count(*) cnt FROM entity_links el "
@@ -2703,9 +2711,11 @@ class Store:
             "WHERE v.canonical_name IS NOT NULL AND c.canonical_name IS NOT NULL "
             "  AND v.canonical_name <> c.canonical_name"
         )
-        divergent_count = r.execute(
+        _drow = r.execute(
             f"SELECT count(*) FROM entity_links el {_div_where}"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _drow is not None  # COUNT(*) always returns one row
+        divergent_count = _drow[0]
         sample = r.execute(
             "SELECT v.name, v.canonical_name, c.name, c.canonical_name "
             f"FROM entity_links el {_div_where} LIMIT ?",
@@ -2730,7 +2740,8 @@ class Store:
     # raises ImportError with a clear message; the daemon catches that and
     # surfaces it as a graceful "dense not installed" response.
 
-    def _vector_store(self, dim: int, partition: str | None = None):
+    def _vector_store(self, dim: int,
+                      partition: str | None = None) -> "LanceVectorStore":
         """Return a LanceVectorStore for <root>/vectors/<partition>/. `dim`
         must match the embedder's output dimension; mismatch raises.
 
@@ -3097,7 +3108,7 @@ class Store:
         return (row["kind"], row["name"]) if row else None
 
     @staticmethod
-    def _row_to_entity(row: sqlite3.Row) -> Entity:
+    def _row_to_entity(row: Any) -> Entity:  # sqlite3.Row or backend duck-typed row
         keys = row.keys()
         return Entity(
             id=row["id"],
@@ -3527,7 +3538,9 @@ class Store:
         if self._link_buffer is not None:
             self._link_buffer.append((linkage, concept_id, entity_id, weight))
             if protect:
-                self._link_protect_buffer.append((concept_id, entity_id))
+                pbuf = self._link_protect_buffer
+                assert pbuf is not None  # set together with _link_buffer
+                pbuf.append((concept_id, entity_id))
             # Optimistic return: extractors don't check this.
             return True
         lid = self.get_linkage_id(linkage)
@@ -3639,7 +3652,7 @@ class Store:
         ).fetchall()
         if not rows:
             return 0
-        items = [
+        items: list[tuple[str, int, int, float | None]] = [
             ("called_by", int(caller_concept), int(callee_entity), 1.0)
             for (callee_entity, caller_concept) in rows
         ]
@@ -4176,6 +4189,8 @@ class Store:
         # boosts and the coref postings, both of which can run when that block
         # was skipped (empty/sparse mentions index), so init unconditionally.
         _idf_by_cid: dict[int, float] = {}
+        ph_df = ",".join("?" * len(flat))
+        postings_by_cid: dict[int, set] = {}
         # BM25 (+ coverage) over the `mentions` index. Skipped wholesale when the
         # index is empty or these terms have no mention postings — an exact
         # symbol with no body mentions still falls through to def-surfacing below.
@@ -4188,8 +4203,6 @@ class Store:
             # query. Union-by-set (not a sum of per-concept counts) keeps df
             # exact when one term resolves to several concept ids that share
             # documents.
-            ph_df = ",".join("?" * len(flat))
-            postings_by_cid: dict[int, set] = {}
             for cid, eid in con.execute(
                 f"SELECT el.concept_id, el.entity_id FROM entity_links el "
                 f"JOIN entities e ON e.id = el.entity_id "
@@ -4641,9 +4654,11 @@ class Store:
                 "LIMIT ?", (entity_id, edge_limit),
             ).fetchall()
         ]
-        total_out = self._read().execute(
+        _orow = self._read().execute(
             "SELECT COUNT(*) FROM entity_links WHERE entity_id=?", (entity_id,)
-        ).fetchone()[0]
+        ).fetchone()
+        assert _orow is not None  # COUNT(*) always returns one row
+        total_out = _orow[0]
         for e in edges:
             ev = self.get_evidence(
                 entity_id, linkage=e["linkage"], concept_id=e["concept_id"])
@@ -4664,9 +4679,11 @@ class Store:
                 "LIMIT ?", (entity_id, edge_limit),
             ).fetchall()
         ]
-        total_in = self._read().execute(
+        _irow = self._read().execute(
             "SELECT COUNT(*) FROM entity_links WHERE concept_id=?", (entity_id,)
-        ).fetchone()[0]
+        ).fetchone()
+        assert _irow is not None  # COUNT(*) always returns one row
+        total_in = _irow[0]
         out["links_out"] = {"total": int(total_out), "shown": edges}
         out["links_in"] = {"total": int(total_in), "shown": inbound}
 
@@ -4674,11 +4691,13 @@ class Store:
         siblings: list[dict] = []
         total_sib = 0
         if ent.get("path"):
-            total_sib = self._read().execute(
+            _srow = self._read().execute(
                 "SELECT COUNT(*) FROM entities "
                 "WHERE partition_id=? AND path=? AND id<>?",
                 (ent["partition_id"], ent["path"], entity_id),
-            ).fetchone()[0]
+            ).fetchone()
+            assert _srow is not None  # COUNT(*) always returns one row
+            total_sib = _srow[0]
             siblings = [
                 {"id": r[0], "kind": r[1], "name": r[2]}
                 for r in self._read().execute(
