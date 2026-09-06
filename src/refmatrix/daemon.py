@@ -241,6 +241,7 @@ class _MemMirror:
         """
         from refmatrix.store import Store
         writer = self._daemon.store
+        assert writer is not None  # snapshot reader exists only while serving
         # Build a fully-initialized read-only Store, then redirect it
         # to the in-memory backend. read_only=True keeps __init__ off
         # any write-paths and gives us the correct sentinel state.
@@ -573,6 +574,13 @@ class Daemon:
         # uncompressed in-memory data with no file-system contention.
         # Disabled when `RMX_MEM_MIRROR=0`. See `_MemMirror`.
         self._mem_mirror: "_MemMirror | None" = None
+
+    def _st(self) -> "Store":
+        """The open Store, narrowed for op handlers. serve_forever()
+        opens the store before any request is dispatched."""
+        st = self.store
+        assert st is not None  # opened in serve_forever() before dispatch
+        return st
 
     def _log(self, msg: str) -> None:
         if self.log_fh is None:
@@ -1232,14 +1240,18 @@ class Daemon:
                 self._watch_stop.set()
             if getattr(self, "_flush_stop", None) is not None:
                 self._flush_stop.set()
-            if getattr(self, "_repair_stop", None) is not None:
-                self._repair_stop.set()
-            if getattr(self, "_factslog_stop", None) is not None:
-                self._factslog_stop.set()
-            if getattr(self, "_replica_stop", None) is not None:
-                self._replica_stop.set()
-            if getattr(self, "_snapshot_stop", None) is not None:
-                self._snapshot_stop.set()
+            repair_stop = getattr(self, "_repair_stop", None)
+            if repair_stop is not None:
+                repair_stop.set()
+            factslog_stop = getattr(self, "_factslog_stop", None)
+            if factslog_stop is not None:
+                factslog_stop.set()
+            replica_stop = getattr(self, "_replica_stop", None)
+            if replica_stop is not None:
+                replica_stop.set()
+            snapshot_stop = getattr(self, "_snapshot_stop", None)
+            if snapshot_stop is not None:
+                snapshot_stop.set()
                 # Wake the snapshot tick out of its event.wait().
                 ev = getattr(self, "_snapshot_event", None)
                 if ev is not None:
@@ -1265,10 +1277,12 @@ class Daemon:
             self._drain_pool("bg", bg_pool, shutdown_timeout)
             if getattr(self, "_flush_thread", None) is not None:
                 self._flush_thread.join(timeout=3.0)
-            if getattr(self, "_repair_thread", None) is not None:
-                self._repair_thread.join(timeout=3.0)
-            if getattr(self, "_replica_thread", None) is not None:
-                self._replica_thread.join(timeout=3.0)
+            repair_thread = getattr(self, "_repair_thread", None)
+            if repair_thread is not None:
+                repair_thread.join(timeout=3.0)
+            replica_thread = getattr(self, "_replica_thread", None)
+            if replica_thread is not None:
+                replica_thread.join(timeout=3.0)
             # Final flush before close() so anything queued in the last
             # interval lands. close() also flushes, but doing it explicitly
             # under _store_lock keeps the on-disk state consistent if
@@ -1316,7 +1330,7 @@ class Daemon:
                 close_err: list[BaseException] = []
                 def _do_close():
                     try:
-                        self.store.close()
+                        self._st().close()
                     except BaseException as exc:
                         close_err.append(exc)
                     finally:
@@ -1423,8 +1437,10 @@ class Daemon:
         self._repair_stop = _t.Event()
 
         def _runner():
-            while not self._repair_stop.is_set():
-                if self._repair_stop.wait(interval_s):
+            stop = self._repair_stop
+            assert stop is not None  # set just above, before the thread starts
+            while not stop.is_set():
+                if stop.wait(interval_s):
                     return
                 if self.store is None:
                     continue
@@ -1577,6 +1593,7 @@ class Daemon:
 
         def _runner():
             stop = self._factslog_stop
+            assert stop is not None  # set just above, before the thread starts
             while not stop.is_set():
                 if stop.wait(interval_s):
                     return
@@ -1688,7 +1705,7 @@ class Daemon:
         try:
             s = Store(
                 self.root,
-                partition=partition or self.store._partition_name,
+                partition=partition or self._st()._partition_name,
                 read_only=True,
             )
             s.db_path = target
@@ -1943,6 +1960,7 @@ class Daemon:
         def _runner():
             stop = self._snapshot_stop
             ev = self._snapshot_event
+            assert stop is not None and ev is not None  # set before thread start
             while not stop.is_set():
                 ev.wait()
                 if stop.is_set():
@@ -2162,8 +2180,8 @@ class Daemon:
         `_store_lock` so it never races synchronous request handlers."""
         import threading
         try:
-            from watchdog.events import FileSystemEventHandler
-            from watchdog.observers import Observer
+            from watchdog.events import FileSystemEventHandler  # pyright: ignore[reportMissingImports]
+            from watchdog.observers import Observer  # pyright: ignore[reportMissingImports]
         except ImportError as exc:
             self._log(f"watchdog not installed; watcher disabled: {exc}")
             return
@@ -2239,9 +2257,9 @@ class Daemon:
                     repaired = False
                     if (pre_repair_threshold > 0
                             and len(paths) >= pre_repair_threshold
-                            and self.store._backend.kind == "duckdb"):
+                            and self._st()._backend.kind == "duckdb"):
                         try:
-                            self.store.repair_entity_links_index()
+                            self._st().repair_entity_links_index()
                             repaired = True
                         except Exception as rexc:
                             self._log(f"pre-flush repair failed: {rexc!r}")
@@ -2250,7 +2268,7 @@ class Daemon:
                     cancelled = False
                     for owner, owner_paths in groups.items():
                         report = sync_files(
-                            self.store, owner_paths,
+                            self._st(), owner_paths,
                             project_root=owner,
                             semantic=self.watch_semantic,
                             cancel_check=self._shutdown_event.is_set,
@@ -2309,9 +2327,11 @@ class Daemon:
         debouncer.start()
 
         def _runner():
+            stop = self._watch_stop
+            assert stop is not None  # set before the watcher thread starts
             try:
-                while not self._watch_stop.is_set():
-                    self._watch_stop.wait(1.0)
+                while not stop.is_set():
+                    stop.wait(1.0)
             finally:
                 debouncer.stop()
                 observer.stop()
@@ -2401,7 +2421,7 @@ def _op_flush_queue(d: Daemon, args: dict) -> dict:
     semantic = bool(args.get("semantic"))
     with d._store_lock:
         report = syncmod.flush_queue(
-            d.store, project_root=proot, semantic=semantic,
+            d._st(), project_root=proot, semantic=semantic,
             cancel_check=d._shutdown_event.is_set,
         )
     d._request_snapshot()
@@ -2426,7 +2446,7 @@ def _op_flush_queue_async(d: Daemon, args: dict) -> dict:
         try:
             with d._store_lock:
                 syncmod.flush_queue(
-                    d.store, project_root=proot, semantic=semantic,
+                    d._st(), project_root=proot, semantic=semantic,
                     cancel_check=d._shutdown_event.is_set,
                 )
             d._request_snapshot()
@@ -2448,7 +2468,7 @@ def _op_sync_files(d: Daemon, args: dict) -> dict:
     semantic = bool(args.get("semantic"))
     with d._store_lock:
         report = syncmod.sync_files(
-            d.store, [str(p) for p in files],
+            d._st(), [str(p) for p in files],
             project_root=proot, semantic=semantic,
             cancel_check=d._shutdown_event.is_set,
         )
@@ -2496,15 +2516,15 @@ def _op_ingest_path(d: Daemon, args: dict) -> dict:
     d._store_lock.acquire()
     try:
         if part:
-            with d.store.with_partition(part):
+            with d._st().with_partition(part):
                 n = ingest_path(
-                    d.store, path, source=source, semantic=semantic,
+                    d._st(), path, source=source, semantic=semantic,
                     yield_lock=_yield, yield_every=yield_every,
                     progress_cb=_progress,
                 )
         else:
             n = ingest_path(
-                d.store, path, source=source, semantic=semantic,
+                d._st(), path, source=source, semantic=semantic,
                 yield_lock=_yield, yield_every=yield_every,
                 progress_cb=_progress,
             )
@@ -2579,7 +2599,7 @@ def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict) -> dic
     snapshot_every = int(
         os.environ.get("RMX_INGEST_SNAPSHOT_EVERY", "1") or "1"
     )
-    partition = args.get("partition") or d.store._partition_name
+    partition = args.get("partition") or d._st()._partition_name
     log_every = max(1, yield_every)
     t0 = time.monotonic()
     yield_counter = [0]
@@ -2614,9 +2634,9 @@ def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict) -> dic
     try:
         d._store_lock.acquire()
         try:
-            with d.store.with_partition(partition):
+            with d._st().with_partition(partition):
                 stats = ingest_gmd_paths(
-                    d.store, files, verbose=bool(args.get("verbose")),
+                    d._st(), files, verbose=bool(args.get("verbose")),
                     yield_lock=_yield, yield_every=yield_every,
                     as_memory=bool(args.get("as_memory")),
                     memory_mtype_default=args.get("memory_mtype") or "curated",
@@ -2780,9 +2800,9 @@ def _op_prestage_hashes(d: Daemon, args: dict) -> dict:
     from refmatrix.ingest_gmd import collect_gmd_files, prestage_hashes
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
     files = collect_gmd_files(targets)
-    partition = args.get("partition") or d.store._partition_name
-    with d._store_lock, d.store.with_partition(partition):
-        report = prestage_hashes(d.store, files)
+    partition = args.get("partition") or d._st()._partition_name
+    with d._store_lock, d._st().with_partition(partition):
+        report = prestage_hashes(d._st(), files)
     d._request_snapshot()
     return report
 
@@ -2798,7 +2818,7 @@ def _op_sync_since(d: Daemon, args: dict) -> dict:
     semantic = bool(args.get("semantic"))
     with d._store_lock:
         report = syncmod.sync_since(
-            d.store, git_ref, project_root=proot, semantic=semantic,
+            d._st(), git_ref, project_root=proot, semantic=semantic,
             cancel_check=d._shutdown_event.is_set,
         )
     d._request_snapshot()
@@ -2807,12 +2827,12 @@ def _op_sync_since(d: Daemon, args: dict) -> dict:
 
 def _op_stats(d: Daemon, args: dict) -> dict:
     with d._store_lock:
-        out = d.store.stats()
+        out = d._st().stats()
         # `--stale` needs the writer's tracked_files (mtime > last_synced),
         # which the replica/snapshot never refreshes — so serve it from the
         # daemon (the writer) instead of forcing the user to stop the daemon.
         if args.get("include_stale"):
-            out["stale_files"] = d.store.stale_files()
+            out["stale_files"] = d._st().stale_files()
         if args.get("include_health"):
             out["health"] = _store_health(d)
         return out
@@ -2834,7 +2854,7 @@ def _store_health(d: Daemon) -> dict:
     # 1. Does a memory read actually work? A corrupt row, a bad index or a
     #    damaged zonemap surfaces here and nowhere else.
     try:
-        d.store.recent_memories(limit=1)
+        d._st().recent_memories(limit=1)
         h["memory_read_ok"] = True
     except Exception as exc:
         h["memory_read_ok"] = False
@@ -2857,9 +2877,9 @@ def _store_health(d: Daemon) -> dict:
     #    stale contents it holds — cliquet served 1 entity out of 3545 that
     #    way. The marker and the bound file disagreeing is the tell.
     try:
-        h["db_file"] = d.store.db_path.name
+        h["db_file"] = d._st().db_path.name
         h["active_slot"] = d._read_active_slot()
-        h["slot_bound"] = d.store.db_path.name != "catalog.duckdb"
+        h["slot_bound"] = d._st().db_path.name != "catalog.duckdb"
     except Exception:
         pass
     return h
@@ -2871,10 +2891,10 @@ def _op_checkpoint(d: Daemon, args: dict) -> dict:
     table after `prune-noise --drop` (DuckDB FATAL during the next
     DELETE — "Failed to delete all rows from index"). Drop+recreate
     self-heals without losing data."""
-    if d.store._backend.kind != "duckdb":
+    if d._st()._backend.kind != "duckdb":
         return {"checkpointed": False, "reason": "not a duckdb backend"}
     with d._store_lock:
-        con = d.store._connect()._duck
+        con = d._st()._connect()._duck
         con.execute("DROP INDEX IF EXISTS idx_entity_links_lk_concept")
         con.execute(
             "CREATE INDEX idx_entity_links_lk_concept "
@@ -2904,7 +2924,7 @@ def _op_prune_noise(d: Daemon, args: dict) -> dict:
     max_df_ratio = float(args.get("max_df_ratio", 0.25))
     drop = bool(args.get("drop", False))
     with d._store_lock:
-        result = d.store.prune_noise(
+        result = d._st().prune_noise(
             namespaces=namespaces, min_df=min_df,
             max_df_ratio=max_df_ratio, drop=drop,
         )
@@ -2914,7 +2934,7 @@ def _op_prune_noise(d: Daemon, args: dict) -> dict:
 
 def _op_vacuum(d: Daemon, args: dict) -> dict:
     with d._store_lock:
-        result = d.store.vacuum()
+        result = d._st().vacuum()
     d._request_snapshot()
     return result
 
@@ -2925,7 +2945,7 @@ def _op_upsert_entity(d: Daemon, args: dict) -> dict:
     if isinstance(meta, str):
         meta = _json.loads(meta)
     with d._store_lock:
-        eid = d.store.upsert_entity(
+        eid = d._st().upsert_entity(
             kind=args["kind"], name=args["name"],
             path=args.get("path"), tldr=args.get("tldr"),
             meta=meta, protected=bool(args.get("protected", True)),
@@ -2936,7 +2956,7 @@ def _op_upsert_entity(d: Daemon, args: dict) -> dict:
 
 def _op_add_concept(d: Daemon, args: dict) -> dict:
     with d._store_lock:
-        cid = d.store.add_concept(
+        cid = d._st().add_concept(
             args["name"],
             description=args.get("description"),
             protected=bool(args.get("protected", True)),
@@ -2947,7 +2967,7 @@ def _op_add_concept(d: Daemon, args: dict) -> dict:
 
 def _op_add_linkage_type(d: Daemon, args: dict) -> dict:
     with d._store_lock:
-        lid = d.store.add_linkage_type(
+        lid = d._st().add_linkage_type(
             name=args["name"],
             directed=bool(args.get("directed", True)),
             description=args.get("description"),
@@ -2962,14 +2982,14 @@ def _op_iter_entities(d: Daemon, args: dict) -> dict:
         rows = [
             {"id": e.id, "kind": e.kind, "name": e.name,
              "path": e.path, "tldr": e.tldr}
-            for e in d.store.iter_entities(kind)
+            for e in d._st().iter_entities(kind)
         ]
     return {"rows": rows}
 
 
 def _op_list_linkages(d: Daemon, args: dict) -> dict:
     with d._store_lock:
-        return {"rows": d.store.list_linkages()}
+        return {"rows": d._st().list_linkages()}
 
 
 def _op_top_concepts(d: Daemon, args: dict) -> dict:
@@ -3036,7 +3056,7 @@ def _op_partition_add(d: Daemon, args: dict) -> dict:
     kind = args.get("kind", "repo")
     root_path = args.get("root_path")
     with d._store_lock:
-        con = d.store._connect()
+        con = d._st()._connect()
         con.execute(
             "INSERT OR IGNORE INTO partitions(name, kind, root_path, created_at) "
             "VALUES (?, ?, ?, ?)",
@@ -3053,7 +3073,7 @@ def _op_partition_rename(d: Daemon, args: dict) -> dict:
     old = args["old"]
     new = args["new"]
     with d._store_lock:
-        d.store.rename_partition(old, new)
+        d._st().rename_partition(old, new)
     d._request_snapshot()
     return {"old": old, "new": new}
 
@@ -3093,7 +3113,7 @@ def _op_partition_merge(d: Daemon, args: dict) -> dict:
 
         def _run() -> None:
             try:
-                res = d.store.merge_partition(
+                res = d._st().merge_partition(
                     src, dst, dry_run=False,
                     lock=d._store_lock, progress=_progress(job_id))
                 with d._jobs_lock:
@@ -3112,7 +3132,7 @@ def _op_partition_merge(d: Daemon, args: dict) -> dict:
     # Synchronous path: same lock-yield chunking, caller blocks for the
     # result. The lock is taken per chunk INSIDE merge_partition — not here —
     # so hooks and reads interleave with a long merge instead of timing out.
-    result = d.store.merge_partition(
+    result = d._st().merge_partition(
         src, dst, dry_run=dry_run,
         lock=d._store_lock, progress=_progress())
     if not dry_run:
@@ -3125,7 +3145,7 @@ def _op_partition_list(d: Daemon, args: dict) -> dict:
     `rmx partition list` doesn't try to grab the catalog lock the daemon
     already holds."""
     with d._store_lock:
-        rows = d.store._connect().execute(
+        rows = d._st()._connect().execute(
             "SELECT id, name, kind, root_path, created_at "
             "FROM partitions ORDER BY id"
         ).fetchall()
@@ -3140,13 +3160,13 @@ def _op_partition_list(d: Daemon, args: dict) -> dict:
             }
             for r in rows
         ],
-        "daemon_partition": d.store.partition_name,
+        "daemon_partition": d._st().partition_name,
     }
 
 
 def _op_list_saved_queries(d: Daemon, args: dict) -> dict:
     with d._store_lock:
-        return {"rows": list(d.store.list_saved_queries())}
+        return {"rows": list(d._st().list_saved_queries())}
 
 
 def _op_grep_indexed(d: Daemon, args: dict) -> dict:
@@ -3192,7 +3212,7 @@ def _op_grep_indexed(d: Daemon, args: dict) -> dict:
         "LIMIT ?"
     )
     with d._store_lock:
-        rows = d.store._connect()._duck.execute(
+        rows = d._st()._connect()._duck.execute(
             sql, concept_args + extra_args + [limit],
         ).fetchall()
     return {
@@ -3271,10 +3291,10 @@ def _op_set_flag(d: Daemon, args: dict) -> dict:
     replayable event per row."""
     flag = args["flag"]
     value = bool(args.get("value"))
-    part = args.get("partition") or d.store._partition_name
+    part = args.get("partition") or d._st()._partition_name
     sel = {k: args.get(k) for k in ("names", "like", "namespace", "kind")}
-    with d._store_lock, d.store.with_partition(part):
-        result = d.store.set_flag_by_selector(flag, value, **sel)
+    with d._store_lock, d._st().with_partition(part):
+        result = d._st().set_flag_by_selector(flag, value, **sel)
     d._request_snapshot()
     return result
 
@@ -3283,11 +3303,11 @@ def _op_forget(d: Daemon, args: dict) -> dict:
     """Purge entities matched by selector (names / like / namespace / kind) in
     the caller's partition — drops the row + bitmaps + linkages + Lance vector,
     tombstone-logged. `dry_run` previews the matched names."""
-    part = args.get("partition") or d.store._partition_name
+    part = args.get("partition") or d._st()._partition_name
     dry_run = bool(args.get("dry_run"))
     sel = {k: args.get(k) for k in ("names", "like", "namespace", "kind")}
-    with d._store_lock, d.store.with_partition(part):
-        result = d.store.forget_by_selector(dry_run=dry_run, **sel)
+    with d._store_lock, d._st().with_partition(part):
+        result = d._st().forget_by_selector(dry_run=dry_run, **sel)
     if not dry_run:
         d._request_snapshot()
     return result
@@ -3298,10 +3318,10 @@ def _op_untrack(d: Daemon, args: dict) -> dict:
     the caller's partition, purging the entities anchored there. Unlike
     `vacuum`, this works on paths that still exist on disk. `dry_run`
     previews."""
-    part = args.get("partition") or d.store._partition_name
+    part = args.get("partition") or d._st()._partition_name
     dry_run = bool(args.get("dry_run"))
-    with d._store_lock, d.store.with_partition(part):
-        result = d.store.untrack_by_path(
+    with d._store_lock, d._st().with_partition(part):
+        result = d._st().untrack_by_path(
             like=args.get("like"), paths=args.get("paths"), dry_run=dry_run,
         )
     if not dry_run:
@@ -3313,9 +3333,9 @@ def _op_clear_tracked_stamps(d: Daemon, args: dict) -> dict:
     """Drop the ingest mtime stamps for the caller's partition without
     touching entities, so the next ingest re-derives every file. `like` scopes
     it to one subtree."""
-    part = args.get("partition") or d.store._partition_name
-    with d._store_lock, d.store.with_partition(part):
-        result = d.store.clear_tracked_stamps(like=args.get("like"))
+    part = args.get("partition") or d._st()._partition_name
+    with d._store_lock, d._st().with_partition(part):
+        result = d._st().clear_tracked_stamps(like=args.get("like"))
     d._request_snapshot()
     return result
 
@@ -3324,9 +3344,9 @@ def _op_compile_pairs(d: Daemon, args: dict) -> dict:
     """Compile the df-filtered pair inventory for the caller's partition
     (see Store.compile_pairs). Heavy corpus scan; runs under the writer lock
     because it replaces the partition's pair_index wholesale."""
-    part = args.get("partition") or d.store._partition_name
-    with d._store_lock, d.store.with_partition(part):
-        result = d.store.compile_pairs(min_df=int(args.get("min_df", 3)))
+    part = args.get("partition") or d._st()._partition_name
+    with d._store_lock, d._st().with_partition(part):
+        result = d._st().compile_pairs(min_df=int(args.get("min_df", 3)))
     d._request_snapshot()
     return result
 
@@ -3334,9 +3354,9 @@ def _op_compile_pairs(d: Daemon, args: dict) -> dict:
 def _op_coref_link(d: Daemon, args: dict) -> dict:
     """Cross-doc coref pass for the caller's partition (see
     Store.link_cross_doc_coref). Needs a compiled pair_index."""
-    part = args.get("partition") or d.store._partition_name
-    with d._store_lock, d.store.with_partition(part):
-        result = d.store.link_cross_doc_coref(
+    part = args.get("partition") or d._st()._partition_name
+    with d._store_lock, d._st().with_partition(part):
+        result = d._st().link_cross_doc_coref(
             min_shared=int(args.get("min_shared", 2)))
     d._request_snapshot()
     return result
@@ -3351,7 +3371,7 @@ def _op_merge_verb_aliases(d: Daemon, args: dict) -> dict:
     results = []
     with d._store_lock:
         for legacy, canon in _VERB_ALIASES.items():
-            results.append(d.store.merge_verb_alias(legacy, canon))
+            results.append(d._st().merge_verb_alias(legacy, canon))
     if any(r["merged"] for r in results):
         d._request_snapshot()
     return {"results": results}
@@ -3369,14 +3389,14 @@ def _op_query(d: Daemon, args: dict) -> dict:
     limit = int(args.get("limit", 50))
     name_filter = args.get("name_filter")
     explain = bool(args.get("explain", False))
-    _q_part = args.get("partition") or d.store._partition_name
-    with d._store_lock, d.store.with_partition(_q_part):
-        qe = QueryEngine(d.store, include_noise=include_noise, strict=strict)
+    _q_part = args.get("partition") or d._st()._partition_name
+    with d._store_lock, d._st().with_partition(_q_part):
+        qe = QueryEngine(d._st(), include_noise=include_noise, strict=strict)
         result = qe.run_pql(expr) if is_pql else qe.run(expr)
         if name_filter:
             from pyroaring import BitMap
             matching = BitMap(
-                r[0] for r in d.store._connect().execute(
+                r[0] for r in d._st()._connect().execute(
                     "SELECT id FROM entities WHERE name LIKE ?", (name_filter,)
                 )
             )
@@ -3390,7 +3410,7 @@ def _op_query(d: Daemon, args: dict) -> dict:
         if isinstance(result, list):
             rows = []
             for eid, w in result[:limit]:
-                e = d.store.get_entity_by_id(eid)
+                e = d._st().get_entity_by_id(eid)
                 rows.append({
                     "id": eid,
                     "weight": w,
@@ -3403,7 +3423,7 @@ def _op_query(d: Daemon, args: dict) -> dict:
         ids = list(result)
         rows = []
         for eid in ids[:limit]:
-            e = d.store.get_entity_by_id(eid)
+            e = d._st().get_entity_by_id(eid)
             rows.append({
                 "id": eid,
                 "name": e.name if e else None,
@@ -3414,7 +3434,7 @@ def _op_query(d: Daemon, args: dict) -> dict:
         if explain:
             evidence = {}
             for eid in ids[:limit]:
-                ev_rows = d.store._connect().execute(
+                ev_rows = d._st()._connect().execute(
                     """
                     SELECT lt.name AS linkage, c.name AS concept_name,
                            ev.file, ev.line
@@ -3460,7 +3480,7 @@ def _op_context(d: Daemon, args: dict) -> dict:
     # `with_partition`). The result was anchor=None for valid concepts —
     # the "graph not coming up" bug. `partition` defaults to the daemon's
     # bound name so single-partition callers are unaffected.
-    _ctx_part = args.get("partition") or d.store._partition_name
+    _ctx_part = args.get("partition") or d._st()._partition_name
     # Same rerank stage `memory_recall` and `ann_search` carry. `context` was
     # symbolic-only, so a surface that already scored well on recall was
     # ordering purely by BM25. Resolved OUTSIDE the store lock: building the
@@ -3475,9 +3495,9 @@ def _op_context(d: Daemon, args: dict) -> dict:
             _ctx_rr = d._reranker()
         except Exception as exc:
             d._log(f"context rerank unavailable: {exc!r}")
-    with d._store_lock, d.store.with_partition(_ctx_part):
+    with d._store_lock, d._st().with_partition(_ctx_part):
         bundle = build_context(
-            d.store, ref,
+            d._st(), ref,
             linkages=linkages,
             max_entities=max_entities,
             max_tokens=max_tokens,
@@ -3509,7 +3529,7 @@ def _op_context(d: Daemon, args: dict) -> dict:
         if hits:
             try:
                 with d._store_lock:
-                    _learn_grep_hits(d.store, ref, hits, d.store.root.parent)
+                    _learn_grep_hits(d._st(), ref, hits, d._st().root.parent)
                 d._request_snapshot()
             except Exception as exc:  # learning is best-effort; never fail a read
                 d._log(f"context grep-learn skipped: {exc}")
@@ -3523,7 +3543,7 @@ def _op_describe(d: Daemon, args: dict) -> dict:
     ref = args.get("ref")
     if ref is None:
         raise ValueError("describe requires 'ref'")
-    partition = args.get("partition") or d.store._partition_name
+    partition = args.get("partition") or d._st()._partition_name
     kwargs = {
         "evidence_limit": int(args.get("evidence_limit", 20)),
         "edge_limit": int(args.get("edge_limit", 200)),
@@ -3549,7 +3569,7 @@ def _memory_partition(d: "Daemon", args: dict) -> str:
     partition. The daemon binds for code-sync writes; memory ops
     normally land in `intuition` via explicit pass-through from the
     CLI, but we honor whatever the caller asked for."""
-    return args.get("partition") or d.store._partition_name
+    return args.get("partition") or d._st()._partition_name
 
 
 def _op_memory_add(d: Daemon, args: dict) -> dict:
@@ -3560,8 +3580,8 @@ def _op_memory_add(d: Daemon, args: dict) -> dict:
     tags = args.get("tags")
     metadata = args.get("metadata")
     protected = bool(args.get("protected", False))
-    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
-        eid = d.store.add_memory(
+    with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
+        eid = d._st().add_memory(
             name=name, content=content, mtype=mtype,
             tags=tags, metadata=metadata, protected=protected,
         )
@@ -3599,7 +3619,7 @@ def _read_with_fallback(d: Daemon, partition: str, fn):
                 pass
     # Fallback: serialize under the write lock so the swap can't close
     # the connection mid-cursor.
-    with d._store_lock, d.store.with_partition(partition):
+    with d._store_lock, d._st().with_partition(partition):
         return fn(d.store)
 
 
@@ -3674,8 +3694,8 @@ def _op_memory_forget(d: Daemon, args: dict) -> dict:
     target = args.get("name") if args.get("name") is not None else args.get("id")
     if target is None:
         raise ValueError("memory_forget requires 'name' or 'id'")
-    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
-        ok = d.store.forget_memory(target)
+    with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
+        ok = d._st().forget_memory(target)
     d._request_snapshot()
     return {"forgotten": ok}
 
@@ -3685,8 +3705,8 @@ def _op_memory_retag(d: Daemon, args: dict) -> dict:
     target = args.get("name") if args.get("name") is not None else args.get("id")
     if target is None:
         raise ValueError("memory_retag requires 'name' or 'id'")
-    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
-        new = d.store.retag_memory(
+    with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
+        new = d._st().retag_memory(
             target, add=args.get("add"), remove=args.get("remove"),
             replace=args.get("replace"),
         )
@@ -3702,8 +3722,8 @@ def _op_memory_facets(d: Daemon, args: dict) -> dict:
 
 def _op_memory_reclassify(d: Daemon, args: dict) -> dict:
     """Bulk-change memory mtype in a partition (selector: like/names/from_mtype)."""
-    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
-        res = d.store.reclassify_memories(
+    with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
+        res = d._st().reclassify_memories(
             to_mtype=args["to_mtype"], like=args.get("like"),
             names=args.get("names"), from_mtype=args.get("from_mtype"),
             dry_run=bool(args.get("dry_run")),
@@ -3715,8 +3735,8 @@ def _op_memory_reclassify(d: Daemon, args: dict) -> dict:
 
 def _op_memory_dedup(d: Daemon, args: dict) -> dict:
     """Fold concept↔memory duplicate nodes in a partition (pre-0.7.6 debt)."""
-    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
-        result = d.store.fold_concept_dups(dry_run=bool(args.get("dry_run")))
+    with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
+        result = d._st().fold_concept_dups(dry_run=bool(args.get("dry_run")))
     if not args.get("dry_run"):
         d._request_snapshot()
     return result
@@ -3750,8 +3770,8 @@ def _op_memory_bulk_forget(d: Daemon, args: dict) -> dict:
             "'ids', 'names', 'mtypes'"
         )
     dry_run = bool(args.get("dry_run"))
-    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
-        result = d.store.bulk_forget_memories(
+    with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
+        result = d._st().bulk_forget_memories(
             ids=args.get("ids"),
             names=args.get("names"),
             mtypes=args.get("mtypes"),
@@ -3770,12 +3790,12 @@ def _op_memory_score(d: Daemon, args: dict) -> dict:
     halflife = args.get("halflife_days")
     cap = args.get("cap")
     explain = bool(args.get("explain", False))
-    with d.store.with_partition(_memory_partition(d, args)):
-        cids = d.store.resolve_concept_ids(name, strict=False)
+    with d._st().with_partition(_memory_partition(d, args)):
+        cids = d._st().resolve_concept_ids(name, strict=False)
         if not cids:
             return {"concept": name, "concept_ids": [], "signal": 0.0,
                     "components": []}
-        scores = d.store.reinforcement_scores(
+        scores = d._st().reinforcement_scores(
             cids, halflife_days=halflife, cap=cap,
         )
         components: list[dict] = []
@@ -3784,7 +3804,7 @@ def _op_memory_score(d: Daemon, args: dict) -> dict:
                 components.extend({
                     "concept_id": cid,
                     **row,
-                } for row in d.store.reinforcement_components(
+                } for row in d._st().reinforcement_components(
                     cid, halflife_days=halflife,
                 ))
     return {
@@ -3807,12 +3827,12 @@ def _op_memory_link(d: Daemon, args: dict) -> dict:
     linkage = args["linkage"]
     concept_name = args["concept"]
     weight = args.get("weight")
-    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
-        m = d.store.get_memory(src)
+    with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
+        m = d._st().get_memory(src)
         if m is None:
             raise ValueError(f"no memory matching {src!r}")
-        cid = d.store.add_concept(concept_name)
-        d.store.link(linkage, cid, m["id"], weight=weight)
+        cid = d._st().add_concept(concept_name)
+        d._st().link(linkage, cid, m["id"], weight=weight)
     d._request_snapshot()
     return {"src_id": m["id"], "concept_id": cid}
 
@@ -3820,8 +3840,8 @@ def _op_memory_link(d: Daemon, args: dict) -> dict:
 def _op_subject_upsert(d: Daemon, args: dict) -> dict:
     """Upsert a durable subject node (ADR-0002) in the memory partition."""
     label = args["label"]
-    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
-        rec = d.store.upsert_subject(label)
+    with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
+        rec = d._st().upsert_subject(label)
     d._request_snapshot()
     return rec
 
@@ -3830,8 +3850,8 @@ def _op_subject_link(d: Daemon, args: dict) -> dict:
     """File a leaf memory under a subject via a `part-of` edge."""
     leaf_id = int(args["leaf_id"])
     subject_id = int(args["subject_id"])
-    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
-        created = d.store.link_part_of(leaf_id, subject_id)
+    with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
+        created = d._st().link_part_of(leaf_id, subject_id)
     d._request_snapshot()
     return {"linked": created}
 
@@ -3847,8 +3867,8 @@ def _op_memory_compile_apply(d: Daemon, args: dict) -> dict:
 
     plan = args["plan"]
     prune = bool(args.get("prune", True))
-    with d._store_lock, d.store.with_partition(_memory_partition(d, args)):
-        result = consolidate.apply_plan(d.store, plan, prune=prune)
+    with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
+        result = consolidate.apply_plan(d._st(), plan, prune=prune)
     d._request_snapshot()
     return result
 
@@ -4130,8 +4150,8 @@ def _op_replica_status(d: Daemon, args: dict) -> dict:
         "a_exists": a_path.exists(),
         "b_exists": b_path.exists(),
         "refresh_thread": (
-            getattr(d, "_replica_thread", None) is not None
-            and d._replica_thread.is_alive()
+            (_rt := getattr(d, "_replica_thread", None)) is not None
+            and _rt.is_alive()
         ),
         "last": d._replica_last,
     }
@@ -4166,24 +4186,24 @@ def _op_embed(d: Daemon, args: dict) -> dict:
     # ann_search will later read from. Without this, vectors land in the
     # daemon's bound startup partition regardless of `-p` and memory
     # recall returns zero hits even after a "successful" rebuild.
-    partition = args.get("partition") or d.store._partition_name
+    partition = args.get("partition") or d._st()._partition_name
 
-    with d._store_lock, d.store.with_partition(partition):
+    with d._store_lock, d._st().with_partition(partition):
         if rebuild:
             # `pending_embeddings` already skips current rows; for a
             # rebuild we ask the catalog directly so the WHERE clause
             # matches every row of the selected kinds.
-            con = d.store._connect()
+            con = d._st()._connect()
             in_list = ",".join("?" * len(kinds))
             rows = con.execute(
                 f"SELECT id, kind, name FROM entities "
                 f"WHERE partition_id = ? AND kind IN ({in_list}) "
                 f"ORDER BY id LIMIT ?",
-                [d.store._partition_id, *kinds, limit],
+                [d._st()._partition_id, *kinds, limit],
             ).fetchall()
             rows = [(r[0], r[1], r[2]) for r in rows]
         else:
-            rows = d.store.pending_embeddings(kinds=kinds, limit=limit)
+            rows = d._st().pending_embeddings(kinds=kinds, limit=limit)
 
         if not rows:
             return {"embedded": 0, "remaining": 0, "kinds": kinds}
@@ -4206,9 +4226,9 @@ def _op_embed(d: Daemon, args: dict) -> dict:
         for kind, idxs in by_kind.items():
             eids = [triples[i][0] for i in idxs]
             sub = vectors[idxs]
-            d.store.upsert_vector(eids, sub, kind=kind, dim=emb.dim)
+            d._st().upsert_vector(eids, sub, kind=kind, dim=emb.dim)
             embedded += len(eids)
-        remaining = len(d.store.pending_embeddings(kinds=kinds, limit=1))
+        remaining = len(d._st().pending_embeddings(kinds=kinds, limit=1))
 
     d._request_snapshot()
     return {
@@ -4233,10 +4253,10 @@ def _op_embed_gc(d: Daemon, args: dict) -> dict:
     if kinds is not None and not isinstance(kinds, list):
         kinds = list(kinds)
     dry_run = bool(args.get("dry_run"))
-    partition = args.get("partition") or d.store._partition_name
+    partition = args.get("partition") or d._st()._partition_name
 
-    with d._store_lock, d.store.with_partition(partition):
-        result = d.store.gc_vectors(
+    with d._store_lock, d._st().with_partition(partition):
+        result = d._st().gc_vectors(
             kinds=kinds, dim=emb.dim, dry_run=dry_run,
         )
     if not dry_run:
@@ -4266,8 +4286,8 @@ def _op_promote_edges(d: "Daemon", args: dict) -> dict:
 
     dry_run = args.get("dry_run")
     dry_run = True if dry_run is None else bool(dry_run)
-    partition = args.get("partition") or d.store._partition_name
-    with d._store_lock, d.store.with_partition(partition):
+    partition = args.get("partition") or d._st()._partition_name
+    with d._store_lock, d._st().with_partition(partition):
         res = promote_focus_edges(
             d.store, d.root,
             session=args.get("session"),
@@ -4351,6 +4371,7 @@ def _op_ann_search(d: Daemon, args: dict) -> dict:
         return {"ok": False, "error": "need 'query' text or 'vector' list"}
 
     if vector is None:
+        assert query is not None  # the vector-or-query check above returned
         v = emb.embed_texts([query])[0]
     else:
         import numpy as np
@@ -4370,7 +4391,7 @@ def _op_ann_search(d: Daemon, args: dict) -> dict:
     docs = None
 
     with d._store_lock:
-        hits = d.store.ann_search(
+        hits = d._st().ann_search(
             v, k=ann_k, dim=emb.dim, kinds=kinds, partition=partition,
         )
         if want_rerank:
@@ -4382,6 +4403,7 @@ def _op_ann_search(d: Daemon, args: dict) -> dict:
                 docs = None
 
     if want_rerank and docs is not None:
+        assert query is not None  # want_rerank requires bool(query)
         # Model call OUTSIDE _store_lock -- see collect_rerank_docs.
         reranked = _apply_rerank_safe(d, query, docs, k)
         if reranked is not None:
@@ -4423,18 +4445,18 @@ def _op_memory_recall(d: Daemon, args: dict) -> dict:
     if _prefilter_enabled(args):
         from refmatrix.recall import concept_prefilter
         try:
-            with d.store.with_partition(partition):
-                _cand = concept_prefilter(d.store, query)
+            with d._st().with_partition(partition):
+                _cand = concept_prefilter(d._st(), query)
         except Exception as exc:
             d._log(f"concept prefilter skipped: {exc!r}")
 
-    with d._store_lock, d.store.with_partition(partition):
+    with d._store_lock, d._st().with_partition(partition):
         if fuse:
             hits = hybrid_memory_recall(
-                d.store, emb, query, k=retrieve_k, kinds=kinds,
+                d._st(), emb, query, k=retrieve_k, kinds=kinds,
                 candidate_ids=_cand)
         else:
-            hits = dense_recall(d.store, emb, query, k=retrieve_k, kinds=kinds,
+            hits = dense_recall(d._st(), emb, query, k=retrieve_k, kinds=kinds,
                                 candidate_ids=_cand)
         docs = None
         if want_rerank:
@@ -4468,14 +4490,14 @@ def _op_part_ctx(d: "Daemon", args: dict):
     partition route a write to the correct partition."""
     import contextlib
     p = args.get("partition")
-    return d.store.with_partition(p) if p else contextlib.nullcontext()
+    return d._st().with_partition(p) if p else contextlib.nullcontext()
 
 
 def _op_link(d: Daemon, args: dict) -> dict:
     """Create a typed concept->entity edge. Routes `rmx link` through the
     daemon so the catalog write-lock stays single-owner."""
     with d._store_lock, _op_part_ctx(d, args):
-        created = d.store.link(
+        created = d._st().link(
             args["linkage"], int(args["concept_id"]), int(args["entity_id"]),
             weight=args.get("weight"), protect=bool(args.get("protect", False)),
         )
@@ -4486,7 +4508,7 @@ def _op_link(d: Daemon, args: dict) -> dict:
 def _op_unlink(d: Daemon, args: dict) -> dict:
     """Remove a typed concept->entity edge (`rmx unlink`)."""
     with d._store_lock, _op_part_ctx(d, args):
-        removed = d.store.unlink(
+        removed = d._st().unlink(
             args["linkage"], int(args["concept_id"]), int(args["entity_id"]),
         )
     d._request_snapshot()
@@ -4499,7 +4521,7 @@ def _op_link_canon(d: Daemon, args: dict) -> dict:
     is same-process as the daemon, so DuckDB permits the second connection
     (the lock conflict is only cross-process)."""
     with d._store_lock, _op_part_ctx(d, args):
-        canon_id = d.store.link_canon(
+        canon_id = d._st().link_canon(
             int(args["local_concept_id"]),
             args["canon_partition"], args["canon_concept_name"],
         )
@@ -4510,7 +4532,7 @@ def _op_link_canon(d: Daemon, args: dict) -> dict:
 def _op_save_query(d: Daemon, args: dict) -> dict:
     """Persist a named saved query (`rmx save-query`)."""
     with d._store_lock, _op_part_ctx(d, args):
-        d.store.save_query(args["name"], args["body"])
+        d._st().save_query(args["name"], args["body"])
     d._request_snapshot()
     return {"saved": True, "name": args["name"]}
 
@@ -4520,7 +4542,7 @@ def _op_rebuild_index(d: Daemon, args: dict) -> dict:
     the same machinery the daemon runs on startup repair, held under the
     write lock so nothing races the rebuild."""
     with d._store_lock:
-        result = d.store.rebuild_index_from_log()
+        result = d._st().rebuild_index_from_log()
     d._request_snapshot()
     return {"result": result}
 
@@ -4531,14 +4553,14 @@ def _op_pagerank(d: Daemon, args: dict) -> dict:
     compute → bg_pool. Binds the requested partition explicitly so it doesn't
     run on the daemon's ambient (drifting) partition."""
     from refmatrix import pagerank as pr_mod
-    part = args.get("partition") or d.store._partition_name
+    part = args.get("partition") or d._st()._partition_name
     damping = float(args.get("damping", 0.85))
     link_weight = float(args.get("link_weight", 2.0))
     max_iter = int(args.get("max_iter", 100))
     topn = int(args.get("top", 10))
     # Read the graph under the lock...
-    with d._store_lock, d.store.with_partition(part):
-        adj = pr_mod.build_adjacency(d.store, link_weight=link_weight)
+    with d._store_lock, d._st().with_partition(part):
+        adj = pr_mod.build_adjacency(d._st(), link_weight=link_weight)
     # ...but run the CPU-bound power iteration OUTSIDE the store lock. The
     # vectorized path releases the GIL during the matvec, so the daemon stays
     # responsive to pings while computing — otherwise a multi-second hold makes
@@ -4547,9 +4569,9 @@ def _op_pagerank(d: Daemon, args: dict) -> dict:
     n = len(raw)
     scores = {nid: score * n for nid, score in raw.items()}
     # ...then write + resolve top names under the lock again.
-    with d._store_lock, d.store.with_partition(part):
-        written = pr_mod.store_scores(d.store, scores)
-        con = d.store._connect()
+    with d._store_lock, d._st().with_partition(part):
+        written = pr_mod.store_scores(d._st(), scores)
+        con = d._st()._connect()
         top_named = []
         for eid, score in sorted(scores.items(), key=lambda kv: -kv[1])[:topn]:
             r = con.execute(

@@ -577,7 +577,8 @@ class Store:
             or default_partition_name(self.root)
         )
         self._partition_id: int | None = None
-        self._conn: sqlite3.Connection | None = None
+        # Duck-typed across backends: sqlite3.Connection or backend ConnLike.
+        self._conn: Any = None
         # Phase-1 of the DuckDB migration: when RMX_READ_VIA_DUCKDB is set,
         # SELECTs on this Store are routed through a DuckDB sqlite_scanner
         # view of catalog.db. Writes still go through SQLite. The DuckDB view
