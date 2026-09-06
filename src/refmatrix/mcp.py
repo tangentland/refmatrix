@@ -81,140 +81,33 @@ def _t_search(args: dict) -> dict:
 
 
 def _t_context(args: dict) -> dict:
-    from refmatrix import daemon as daemon_mod, discovery
-    root = _resolve_root(args)
-    if not daemon_mod.ping(root):
-        return {"error": "daemon not running for this project"}
-    payload = {
-        "ref": args["ref"], "format": "json",
-        "degree": int(args.get("degree", 0)),
-        "entities_explicit": args.get("max_entities") is not None,
-        "tokens_explicit": args.get("max_tokens") is not None,
-        "partition": discovery.store_name(root),
-    }
-    for key in ("expand", "hit_lines", "max_entities", "max_tokens",
-                "fuse", "strict", "include_sessions", "grep_backstop"):
-        if args.get(key) is not None:
-            payload[key] = args[key]
-    if args.get("linkage"):
-        payload["linkages"] = [args["linkage"]]
-    resp = daemon_mod.call(root, "context", payload, timeout=60.0)
-    if not resp.get("ok"):
-        return {"error": resp.get("error")}
-    result = resp.get("result", {})
-    # The op renders JSON to a string under "body"; decode so the caller
-    # gets one object, not double-encoded JSON.
-    body = result.get("body")
-    if isinstance(body, str):
-        try:
-            return json.loads(body)
-        except ValueError:
-            pass
-    return result
+    from refmatrix.verbs import VERBS, VerbError
+    try:
+        return VERBS["rmx_context"].run(_resolve_root(args), args)
+    except VerbError as e:
+        return {"error": str(e)}
 
 
 def _t_query(args: dict) -> dict:
-    from refmatrix import daemon as daemon_mod, discovery
-    root = _resolve_root(args)
-    if not daemon_mod.ping(root):
-        return {"error": "daemon not running for this project"}
-    resp = daemon_mod.call(root, "query", {
-        "expr": args["dsl"], "partition": discovery.store_name(root)}, timeout=30.0)
-    return resp.get("result", {}) if resp.get("ok") else {"error": resp.get("error")}
+    from refmatrix.verbs import VERBS, VerbError
+    try:
+        return VERBS["rmx_query"].run(_resolve_root(args), args)
+    except VerbError as e:
+        return {"error": str(e)}
 
 
 def _memory_partition(root: Path) -> str:
-    """The partition memory nodes live in — `memory-<project>` on a pre-merge
-    host (legacy partition still present), else the project partition. Mirrors
-    the CLI `_memory_partition_default` so MCP recall reads the SAME partition
-    `rmx memory recall` uses. MCP is daemon-routed, so detect the legacy
-    partition via the daemon's `partition_list`."""
-    from refmatrix import daemon as daemon_mod, discovery
-    project = discovery.store_name(root)
-    legacy = f"memory-{project}"
-    try:
-        if daemon_mod.ping(root):
-            r = daemon_mod.call(root, "partition_list", {}, timeout=10.0)
-            if r.get("ok") and any(
-                row.get("name") == legacy
-                for row in r["result"].get("rows", [])
-            ):
-                return legacy
-    except Exception:
-        pass
-    return project
+    """Delegates to verbs.memory_partition — ONE legacy-aware routing impl."""
+    from refmatrix.verbs import memory_partition
+    return memory_partition(root)
 
 
 def _t_memory_recall(args: dict) -> dict:
-    """Dense memory recall across project + global behavior store (scope=both).
-
-    Mirrors `rmx memory recall`: dense ANN on the *memory* partition
-    (`memory-<project>` pre-merge), NOT a lexical substring search on the code
-    partition. The previous handler called the `memory_search` op against
-    `store_name(root)` (the CODE partition), so every natural-language recall
-    returned `[]` even when the CLI found ranked hits — the read-side twin of
-    the embed wrong-partition bug. Project side is dense now; global stays
-    lexical (its own store/partition topology; upgrade is separate work).
-    """
-    from refmatrix import daemon as daemon_mod, hub as hub_mod
-    # query optional: empty → recent memories newest-first, which is exactly
-    # what a SessionStart/no-topic recall wants.
-    import fnmatch
-    q = args.get("query") or ""
-    k = int(args.get("k", 8))
-    # Parity with the CLI: default scope is the project store; operational
-    # session/* cards are excluded unless asked for (the 0.22.1 noise fix,
-    # which this surface had silently dropped).
-    scope = args.get("scope", "project")
-    exclude_mtype = args.get("exclude_mtype")
-    if exclude_mtype is None:
-        exclude_mtype = ["session/*"]
-
-    def _mt_ok(m):
-        mt = str(m.get("mtype") or "")
-        return not any(fnmatch.fnmatch(mt, pat) for pat in exclude_mtype)
-
-    rows = []
-    root = _resolve_root(args)
-    if scope in ("project", "both") and daemon_mod.ping(root):
-        partition = _memory_partition(root)
-        if q:
-            payload = {
-                "query": q, "k": k,
-                "kinds": args.get("kinds") or ["memory"],
-                "fuse": bool(args.get("fuse", False)),
-                "partition": partition}
-            if args.get("rerank") is not None:
-                payload["rerank"] = args["rerank"]
-            r = daemon_mod.call(root, "memory_recall", payload, timeout=180.0)
-            hits = r["result"].get("hits", []) if r.get("ok") else []
-            # Best-first: ascending L2 distance (dense) / descending score.
-            hits = sorted(hits, key=lambda h: (
-                h["distance"] if h.get("distance") is not None
-                else -(h.get("score") or 0.0)))
-            for h in hits[:k]:
-                eid = h.get("id") or h.get("entity_id")
-                g = daemon_mod.call(root, "memory_get", {
-                    "id": eid, "partition": partition}, timeout=30.0)
-                if g.get("ok"):
-                    m = g["result"].get("memory")
-                    if m and _mt_ok(m):
-                        m["scope"] = "project"; rows.append(m)
-        else:
-            since = args.get("since_seconds")
-            r = daemon_mod.call(root, "memory_recent", {
-                "since_seconds": since, "limit": k, "partition": partition})
-            if r.get("ok"):
-                for m in r["result"].get("rows", []):
-                    if _mt_ok(m):
-                        m["scope"] = "project"; rows.append(m)
-    if scope in ("global", "both") and hub_mod.global_store_root().exists():
-        g = hub_mod.global_call("memory_search", {"query": q, "limit": k})
-        if g.get("ok"):
-            for m in g["result"].get("rows", []):
-                if _mt_ok(m):
-                    m["scope"] = "global"; rows.append(m)
-    return {"memories": rows[: k * 2]}
+    from refmatrix.verbs import VERBS, VerbError
+    try:
+        return VERBS["rmx_memory_recall"].run(_resolve_root(args), args)
+    except VerbError as e:
+        return {"error": str(e)}
 
 
 def _t_bus_pub(args: dict) -> dict:
@@ -347,11 +240,9 @@ def _t_queues(args: dict) -> dict:
 
 
 def _t_focus(args: dict) -> dict:
-    from refmatrix import stm as stm_mod
-    root = _resolve_root(args)
-    s = stm_mod.Stm(root, _session(args, stm_mod, root))
-    return {"graph": s.focus_graph(top=int(args.get("top", 20))),
-            "tasks": s.task_list()}
+    from refmatrix.verbs import VERBS
+    a = {**args, "session": _session_arg(args)}
+    return VERBS["rmx_focus"].run(_resolve_root(args), a)
 
 
 def _t_projects(args: dict) -> dict:
@@ -360,6 +251,12 @@ def _t_projects(args: dict) -> dict:
 
 
 # ---- write path (per-project; daemon-routed, in-proc fallback) -------------
+
+
+def _session_arg(args: dict) -> "str | None":
+    """Explicit session arg or None — verbs resolve latest-ring/default
+    themselves with the same precedence as _session()."""
+    return args.get("session")
 
 
 def _session(args: dict, stm_mod, root: Path) -> str:
@@ -373,65 +270,46 @@ def _session(args: dict, stm_mod, root: Path) -> str:
 
 
 def _t_focus_note(args: dict) -> dict:
-    """Record a deliberate reasoning note into the project's short-term memory —
-    the WHY behind a decision/tradeoff. File-based + per-project; works with or
-    without the daemon. MCP-native so note text bypasses shell quoting."""
-    from refmatrix import stm as stm_mod
-    root = _resolve_root(args)
+    from refmatrix.verbs import VERBS
     text = args.get("text") or args.get("note")
     if not text:
         raise ValueError("focus_note requires 'text' (alias: 'note')")
-    s = stm_mod.Stm(root, _session(args, stm_mod, root))
-    ev = s.record("reason", str(text)[:800])
-    return {"noted": True, "session": s.session, "refs": ev.get("refs", [])[:6]}
+    a = {**args, "text": text, "session": _session_arg(args)}
+    return VERBS["rmx_focus_note"].run(_resolve_root(args), a)
 
 
 def _t_memory_add(args: dict) -> dict:
-    """Add/update a durable memory in the project store. Daemon-routed (the
-    single write control point); in-proc fallback only when the daemon is down."""
-    from refmatrix import daemon as daemon_mod
+    """Daemon-routed write via the verb; in-proc fallback only when the
+    daemon is down (the documented bootstrap exception)."""
+    from refmatrix.verbs import VERBS, VerbError, memory_partition
     root = _resolve_root(args)
-    part = _memory_partition(root)
-    payload = {"name": args["name"], "content": args["content"],
-               "mtype": args.get("mtype", "observation"),
-               "tags": args.get("tags"),
-               "protected": bool(args.get("protect", False)), "partition": part}
-    if daemon_mod.ping(root):
-        r = daemon_mod.call(root, "memory_add", payload, timeout=30.0)
-        return r.get("result", {}) if r.get("ok") else {"error": r.get("error")}
+    try:
+        return VERBS["rmx_memory_add"].run(root, args)
+    except VerbError as e:
+        if "daemon not running" not in str(e):
+            return {"error": str(e)}
     from refmatrix.store import Store
+    part = memory_partition(root)
     s = Store(root)
     with s.with_partition(part):
-        eid = s.add_memory(name=payload["name"], content=payload["content"],
-                           mtype=payload["mtype"], tags=payload["tags"],
-                           protected=payload["protected"])
+        eid = s.add_memory(name=args["name"], content=args["content"],
+                           mtype=args.get("mtype", "observation"),
+                           tags=args.get("tags"),
+                           protected=bool(args.get("protect", False)))
     return {"id": eid}
 
 
 def _t_change_subject(args: dict) -> dict:
-    """Set the active subject (a named STM partition) for this session + upsert
-    its durable LTM node. STM pointer is file-based; the node write is daemon-
-    routed (in-proc fallback when down)."""
-    from refmatrix import daemon as daemon_mod, discovery, stm as stm_mod
-    root = _resolve_root(args)
+    from refmatrix.verbs import VERBS, VerbError
     label = args.get("label") or args.get("subject")
     if not label:
         raise ValueError("change_subject requires 'label' (alias: 'subject')")
-    s = stm_mod.Stm(root, _session(args, stm_mod, root))
-    rec = s.set_subject(label)
-    part = _memory_partition(root)
-    eid = None
-    if daemon_mod.ping(root):
-        r = daemon_mod.call(root, "subject_upsert",
-                            {"label": label, "partition": part}, timeout=30.0)
-        eid = r.get("result", {}).get("id") if r.get("ok") else None
-    else:
-        from refmatrix.store import Store
-        s2 = Store(root)
-        with s2.with_partition(part):
-            eid = s2.upsert_subject(label)["id"]
-    return {"subject": rec["subject"], "label": rec["label"], "id": eid,
-            "session": s.session}
+    a = {**args, "label": label,
+         "session": _session_arg(args)}
+    try:
+        return VERBS["rmx_change_subject"].run(_resolve_root(args), a)
+    except VerbError as e:
+        return {"error": str(e)}
 
 
 # ---- full memory parity (one dispatcher over the CLI `memory` group) --------
@@ -570,32 +448,11 @@ def _t_task(args: dict) -> dict:
 
 
 def _t_ingest(args: dict) -> dict:
-    """Fire-and-poll ingest/embed: enqueues the job on the daemon and returns a
-    `job_id` immediately (time-bound). Poll `rmx_ingest_status`. `mode`:
-    'ingest' (default, the project tree) or 'embed' (dense vectors)."""
-    from refmatrix import daemon as daemon_mod, discovery
-    root = _resolve_root(args)
-    if not daemon_mod.ping(root):
-        return {"error": f"daemon not running for {root}"}
-    part = args.get("partition") or discovery.store_name(root)
-    if args.get("mode") == "embed":
-        payload = {"partition": part}
-        for k in ("kinds", "limit", "rebuild"):
-            if args.get(k) is not None:
-                payload[k] = args[k]
-        r = daemon_mod.call(root, "embed_start", payload, timeout=30.0)
-    else:
-        payload = {
-            "path": args.get("path") or str(Path(root).parent),
-            "source": args.get("source", "auto"),
-            # Default ON, matching the CLI: a semantic-less ingest is the
-            # termless-corpus failure of 0.48.0 ("main path must exercise
-            # core mechanisms").
-            "semantic": bool(args.get("semantic", True)),
-            "partition": part,
-        }
-        r = daemon_mod.call(root, "ingest_path_start", payload, timeout=30.0)
-    return r.get("result", {}) if r.get("ok") else {"error": r.get("error")}
+    from refmatrix.verbs import VERBS, VerbError
+    try:
+        return VERBS["rmx_ingest"].run(_resolve_root(args), args)
+    except VerbError as e:
+        return {"error": str(e)}
 
 
 def _t_ingest_status(args: dict) -> dict:
@@ -612,32 +469,9 @@ def _t_ingest_status(args: dict) -> dict:
 
 
 def _t_save_state(args: dict) -> dict:
-    """Compile + persist the session handoff (mirror of the CLI `save-state`).
-    Writes the durable GMD handoff memory (git state + STM focus + tasks +
-    recent-memory links) and, unless promote=false, promotes the condensed STM
-    digest to durable memory. File-based + daemon-routed promote; works headless.
-    """
-    import time as _time
-    from refmatrix import handoff, stm as stm_mod
-    root = _resolve_root(args)
-    repo = root.parent
-    s = stm_mod.Stm(root, _session(args, stm_mod, root))
-    memdir = handoff.default_memory_dir(repo)
-    res = handoff.compose_save_state(
-        s, root, repo=repo, memdir=memdir,
-        today=_time.strftime("%Y-%m-%d"),
-        message=args.get("message"),
-        promote=bool(args.get("promote", True)),
-        dry_run=bool(args.get("dry_run", False)))
-    # Shared post-steps (GMD lint + file-under-subject): without these an MCP
-    # save-state promoted a digest orphaned from its subject (parity audit 7).
-    fin = handoff.finalize_save_state(s, root, res, repo=repo)
-    res["lint"] = fin.get("lint")
-    res["filed_subject"] = fin.get("filed_subject")
-    # Drop the full rendered doc from the tool result unless dry-run asked for it.
-    if not res.get("dry_run"):
-        res.pop("doc", None)
-    return res
+    from refmatrix.verbs import VERBS
+    a = {**args, "session": _session_arg(args)}
+    return VERBS["rmx_save_state"].run(_resolve_root(args), a)
 
 
 def _t_recall_state(args: dict) -> dict:
@@ -931,6 +765,39 @@ TOOLS: dict[str, dict] = {
             "session": {"type": "string"}, "root": {"type": "string"}}},
         "fn": _t_recall_state},
 }
+
+
+# ---- verb-generated schemas ------------------------------------------------
+# For every tool backed by a verb, the schema and description come FROM the
+# verb signature — hand-written schemas for these are forbidden (they are what
+# drifted). Aliases are transport-level conveniences declared here only.
+
+def _apply_verb_schemas() -> None:
+    import copy
+    from refmatrix.verbs import VERBS
+    aliased = {
+        "rmx_focus_note": (
+            {"note": {"type": "string",
+                      "description": "alias for text; one of the two required"}},
+            ("text",)),
+        "rmx_change_subject": (
+            {"subject": {"type": "string",
+                         "description": "alias for label; one of the two required"}},
+            ("label",)),
+    }
+    for name, v in VERBS.items():
+        if name not in TOOLS:
+            continue
+        schema = copy.deepcopy(v.schema)
+        extra, drop = aliased.get(name, ({}, ()))
+        schema["properties"].update(extra)
+        schema["required"] = [r for r in schema.get("required", [])
+                              if r not in drop]
+        TOOLS[name]["schema"] = schema
+        TOOLS[name]["description"] = v.description
+
+
+_apply_verb_schemas()
 
 
 # ---- JSON-RPC dispatch ----------------------------------------------------

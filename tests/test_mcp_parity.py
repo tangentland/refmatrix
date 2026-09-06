@@ -51,7 +51,8 @@ def test_memory_add_routes_legacy_partition(monkeypatch, tmp_path):
     calls = _Calls({"memory_add": {"ok": True, "result": {"id": 1}}})
     _patch_daemon(monkeypatch, calls)
     monkeypatch.setattr(mcp, "_resolve_root", lambda a: tmp_path)
-    monkeypatch.setattr(mcp, "_memory_partition", lambda root: "memory-proj")
+    from refmatrix import verbs
+    monkeypatch.setattr(verbs, "memory_partition", lambda root: "memory-proj")
     mcp._t_memory_add({"name": "n", "content": "c"})
     op, args = calls.log[0]
     assert op == "memory_add" and args["partition"] == "memory-proj"
@@ -76,7 +77,8 @@ def test_recall_defaults_project_scope_and_excludes_session(monkeypatch, tmp_pat
     calls = _C()
     _patch_daemon(monkeypatch, calls)
     monkeypatch.setattr(mcp, "_resolve_root", lambda a: tmp_path)
-    monkeypatch.setattr(mcp, "_memory_partition", lambda root: "p")
+    from refmatrix import verbs
+    monkeypatch.setattr(verbs, "memory_partition", lambda root: "p")
     out = mcp._t_memory_recall({"query": "q"})
     names = [m["name"] for m in out["memories"]]
     assert names == ["b"]                       # session/* dropped

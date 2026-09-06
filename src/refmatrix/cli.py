@@ -4143,22 +4143,18 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
     if symbol and not since:
         root = _root()
         if daemon_mod.ping(root):
-            resp = daemon_mod.call(root, "context", {
-                "ref": symbol,
-                "format": fmt,
-                "linkages": list(linkage) or None,
-                "max_entities": max_entities,
-                "max_tokens": max_tokens,
-                "fuse": fuse,
-                "strict": strict,
-                "degree": degree,
-                "include_sessions": include_sessions,
-                "expand": expand,
-                "hit_lines": hit_lines,
-                "grep_backstop": grep_backstop,
-                "entities_explicit": entities_explicit,
-                "tokens_explicit": tokens_explicit,
-            }, timeout=120.0)
+            from refmatrix.verbs import payload_context
+            payload = payload_context(
+                symbol, degree=degree, expand=expand, hit_lines=hit_lines,
+                max_entities=max_entities, max_tokens=max_tokens,
+                fuse=fuse, strict=strict, include_sessions=include_sessions,
+                grep_backstop=grep_backstop, fmt=fmt)
+            # Multi-linkage + explicitness are CLI-surface extras the shared
+            # builder doesn't model; override on top, never inline the dict.
+            payload["linkages"] = list(linkage) or None
+            payload["entities_explicit"] = entities_explicit
+            payload["tokens_explicit"] = tokens_explicit
+            resp = daemon_mod.call(root, "context", payload, timeout=120.0)
             if not resp.get("ok"):
                 raise click.ClickException(
                     f"daemon context failed: {resp.get('error')}"
