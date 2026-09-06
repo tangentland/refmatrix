@@ -1,6 +1,17 @@
-# refmatrix — System Overview
+---
+gmd: "0.1"
+id: SYSTEM
+title: "refmatrix — System Overview"
+tags: [system, overview, bitmaps, discovery]
+---
 
-## What refmatrix is
+# refmatrix — System Overview {#root}
+
+rel: related-to -> [[ARCHITECTURE]]
+rel: related-to -> [[INTEGRATION]]
+rel: related-to -> [[PERFORMANCE]]
+
+## What refmatrix is {#what-refmatrix-is}
 
 refmatrix (CLI: `rmx`) is a **roaring-bitmap-backed reference matrix** for the
 three concrete things that live in a software project: **documents, code, and
@@ -26,7 +37,7 @@ rmx query "specifies:Zone AND NOT defines:Zone"
 # plan/issue/spec docs that named a concept no code has produced yet
 ```
 
-## Mental model — three layers
+## Mental model — three layers {#mental-model-three-layers}
 
 | Layer    | What lives here                       | Backed by                          |
 |----------|---------------------------------------|------------------------------------|
@@ -39,7 +50,7 @@ Entities are kinded — `doc`, `code`, `concept`, `query`. Each entity carries a
 docstring, code preview, CFG/DFG summaries when available). Linkage types are
 created on demand; ingesters that encounter an unknown verb auto-register it.
 
-## How refmatrix extends and enhances `llm-tldr`
+## How refmatrix extends and enhances `llm-tldr` {#how-refmatrix-extends-and-enhances-llm-tldr}
 
 refmatrix **composes with** [llm-tldr](https://github.com/parcadei/llm-tldr) —
 tldr is the per-function extractor, refmatrix is the indexer and query layer.
@@ -47,7 +58,7 @@ Where tldr produces a per-unit semantic dump and a call graph, refmatrix
 turns those into a queryable bitmap matrix and adds extraction passes that
 tldr does not perform.
 
-### What tldr produces (and refmatrix consumes)
+### What tldr produces (and refmatrix consumes) {#what-tldr-produces-and-refmatrix-consumes}
 
 - `.tldr/cache/semantic/metadata.json` — per-unit semantic dump: signature,
   docstring, code preview, CFG/DFG summary, unit_type, language.
@@ -67,7 +78,7 @@ filesystem tree walk                 (file-level entities, no call graph)
 
 Override with `rmx ingest . --source metadata|tldr|tree`.
 
-### What tldr does NOT do (refmatrix adds)
+### What tldr does NOT do (refmatrix adds) {#what-tldr-does-not-do-refmatrix-adds}
 
 | Extractor                                  | Where                                          | What it emits |
 |--------------------------------------------|------------------------------------------------|---------------|
@@ -79,7 +90,7 @@ Override with `rmx ingest . --source metadata|tldr|tree`.
 | GMD (Graph Markdown) parser                | `ingest_gmd.py`                                | typed `rel:` edges, `mentions` from `[[wikilinks]]`, `part-of` from heading hierarchy, `imports` from frontmatter |
 | Bare-name + kind/unit_type categorization  | `ingest.py:205-240`                            | universal entity → category linkages over tldr units |
 
-### Plans, specs, and issues are first-class
+### Plans, specs, and issues are first-class {#plans-specs-and-issues-are-first-class}
 
 The `specifies` edge promotes plan / spec / issue / roadmap markdown from
 *generic ingest* (one entity per file, weak `mentions` from docstrings) to
@@ -133,7 +144,7 @@ author-declared `rel: specifies -> [[#X]]` — the heuristic and the
 explicit author path emit the *same* `specifies` linkage type
 (`store.py:DEFAULT_LINKAGES`).
 
-### Net result
+### Net result {#net-result}
 
 `tldr` answers *what does this function do?*  
 `rmx` answers *what set of entities satisfy this combination of relations?* —
@@ -141,7 +152,7 @@ including relations tldr never sees (markdown semantics, design docs,
 cross-file `is_a`, plan→concept intent), and answers them as bitmap algebra
 over a stable column space rather than as cache lookups.
 
-## Lifecycle — how a project becomes an index
+## Lifecycle — how a project becomes an index {#lifecycle-how-a-project-becomes-an-index}
 
 ```
 ┌──────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────┐
@@ -172,7 +183,7 @@ over a stable column space rather than as cache lookups.
    opens the catalog directly (read-only ops only — writes need the daemon
    if one is running).
 
-## Primary use cases
+## Primary use cases {#primary-use-cases}
 
 The recommended **discovery ladder** for an agent (or human) trying to find
 something in a codebase, in order of increasing cost and decreasing semantic
@@ -192,7 +203,7 @@ Each step is faster + more answer-shaped than the next; falling through to
 me anything that matches this string" escape hatch — and it teaches the
 index, so the next equivalent query lands at the `rmx query` step instead.
 
-### By task
+### By task {#by-task}
 
 | Task                                       | Command                                                                 |
 |--------------------------------------------|-------------------------------------------------------------------------|
@@ -212,7 +223,7 @@ index, so the next equivalent query lands at the `rmx query` step instead.
 | Save + replay a complex query              | `rmx save-query <name> "<expr>"` then `rmx run <name>`                  |
 | Audit query history                        | `rmx telemetry` — p50/p99 per op from `.refmatrix/query.log`            |
 
-### By role
+### By role {#by-role}
 
 | Role                          | Workflow                                                                 |
 |-------------------------------|--------------------------------------------------------------------------|
@@ -222,19 +233,19 @@ index, so the next equivalent query lands at the `rmx query` step instead.
 | **Architect / design lead**   | `rmx query "specifies:X AND NOT defines:X"` to find unimplemented ADRs / plans / specs. `rmx neighbors` to audit cross-references between design docs. |
 | **Maintainer**                | `rmx vacuum` + `rmx prune-noise` + `rmx compact` weekly. `rmx telemetry` to find slow queries. |
 
-## What refmatrix is not
+## What refmatrix is not {#what-refmatrix-is-not}
 
 - **Not a vector store.** No embeddings in the core. The scoring stack
   (BM25 + docstring linkage + coverage^3 + linkage-coupled co-mention^2)
   consistently beats CodeRankEmbed on CSN Python/JavaScript MRR@10 — see
-  `eval/` and `PERFORMANCE.md`. Embedding integration is on the roadmap
+  `eval/` and [[PERFORMANCE#benchmark-results]]. Embedding integration is on the roadmap
   but not currently in the index path.
 - **Not a code-execution sandbox.** rmx never runs project code; all
   extraction is static (AST / regex / fenced-block parsing).
 - **Not a server.** Single-process CLI + per-store daemon. No HTTP, no
   central service, no cluster.
 
-## File layout in a project
+## File layout in a project {#file-layout-in-a-project}
 
 ```
 my-project/
@@ -258,10 +269,10 @@ my-project/
 └── .tldrignore                  # exclusions (shared with llm-tldr)
 ```
 
-## Where to go next
+## Where to go next {#where-to-go-next}
 
-- **`ARCHITECTURE.md`** — module layout, dependency graph, storage internals.
-- **`INTEGRATION.md`** — hooks, GMD spec, watcher, daemon socket protocol,
+- **[[ARCHITECTURE]]** — module layout, dependency graph, storage internals.
+- **[[INTEGRATION]]** — hooks, GMD spec, watcher, daemon socket protocol,
   external CLI dependencies.
-- **`PERFORMANCE.md`** — bitmap operations, daemon hot-path, scoring stack,
+- **[[PERFORMANCE]]** — bitmap operations, daemon hot-path, scoring stack,
   eval methodology, benchmark numbers vs. CodeRankEmbed.

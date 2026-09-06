@@ -1,4 +1,13 @@
-# Intuition-style Claude Code hooks (Phase C3)
+---
+gmd: "0.1"
+id: intuition-style-hooks
+title: "Intuition-style Claude Code hooks (Phase C3)"
+tags: [hooks, memory, claude-code, templates]
+---
+
+# Intuition-style Claude Code hooks (Phase C3) {#root}
+
+rel: implements -> [[0001-intuition-lance-integration]]
 
 Copy-pasteable `.claude/settings.local.json` snippets that port
 intuition's hook surface onto `rmx memory`. Each section drops into
@@ -10,7 +19,7 @@ project must have `rmx` on `$PATH` and an initialized `.refmatrix/`
 store somewhere in scope (the memory partition defaults to
 `intuition`; override with `RMX_PARTITION` or `-p`).
 
-## TL;DR
+## TL;DR {#tl-dr}
 
 | Event | Shell call | Purpose |
 |---|---|---|
@@ -30,7 +39,7 @@ That's the correct behavior; fix the cause, not the symptom. If
 you're shipping rmx-optional tooling, gate the hook on `command -v
 rmx` instead of masking failures.
 
-## SessionStart — inject recent memories
+## SessionStart — inject recent memories {#sessionstart-inject-recent-memories}
 
 Run on session startup and on `/clear`. Pulls the 10 most recent
 memories from the last 7 days. The shell output is appended to
@@ -56,7 +65,7 @@ Claude's context.
 }
 ```
 
-## UserPromptSubmit — recall on every prompt
+## UserPromptSubmit — recall on every prompt {#userpromptsubmit-recall-on-every-prompt}
 
 Looks up memories whose content + linked concepts match the user's
 prompt. Returns top-5 by hybrid score (dense ANN if `[dense]` is
@@ -88,7 +97,7 @@ events that fire UserPromptSubmit with no user-typed text) is a
 no-op exit 0 — only genuine failures (broken store, daemon
 mismatch) surface.
 
-## PreCompact — surface this session's observations
+## PreCompact — surface this session's observations {#precompact-surface-this-session-s-observations}
 
 Before context compaction kicks in, dump the last hour of memories
 into the surviving context so the compactor can keep the freshest
@@ -112,7 +121,7 @@ observations intact.
 }
 ```
 
-## Stop — auto-capture (Phase C4, deferred)
+## Stop — auto-capture (Phase C4, deferred) {#stop-auto-capture-phase-c4-deferred}
 
 ADR-0001 Phase C originally planned a `Stop` hook that runs
 `rmx memory add --auto-extract` to capture session observations as
@@ -128,7 +137,7 @@ rmx memory add <slug> -c "..." --type observation --tags ...
 Or pair `rmx memory add` with the user-issued `/remember` flow if
 your harness has one.
 
-## Cleaning up the intuition wiring
+## Cleaning up the intuition wiring {#cleaning-up-the-intuition-wiring}
 
 If you're migrating off `~/claude_tools/intuition`, these steps
 finish the cutover after `rmx memory import-sqlite` has migrated the
@@ -148,7 +157,7 @@ data:
    `rmx memory import-sqlite` (the `.memory.db*` files are moved
    into a sibling `.intuition-migrated/` directory on success).
 
-## Why rmx ships no MCP server
+## Why rmx ships no MCP server {#why-rmx-ships-no-mcp-server}
 
 ADR-0001 is explicit: `rmx` is CLI-only. Hooks shell out to `rmx`
 directly, no MCP layer. This keeps the surface small + scriptable +

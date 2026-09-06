@@ -1,12 +1,22 @@
-# refmatrix — Performance
+---
+gmd: "0.1"
+id: PERFORMANCE
+title: "refmatrix — Performance"
+tags: [performance, scoring, benchmarks, eval]
+---
+
+# refmatrix — Performance {#root}
+
+rel: related-to -> [[SYSTEM]]
+rel: related-to -> [[ARCHITECTURE]]
 
 This document covers the performance model: where the speed comes from, where
 the bottlenecks are, what the scoring stack does, and how rmx benchmarks
 against vector retrieval (CodeRankEmbed) on the standard CSN evaluation.
 
-## Where the speed comes from
+## Where the speed comes from {#where-the-speed-comes-from}
 
-### 1. Roaring bitmaps for set operations
+### 1. Roaring bitmaps for set operations {#1-roaring-bitmaps-for-set-operations}
 
 Every `(linkage_type, concept_id)` cell is a `BitMap64` of entity column ids,
 packed as `(concept_id << 32) | entity_id` (`store.py:30-34`). Set ops are
@@ -23,7 +33,7 @@ The `grep "doesn't scale"` problem is precisely the one bitmaps make go away.
 A 100-file codebase and a 100k-file codebase pay the same big-O for boolean
 combinations of relations; only the constant differs.
 
-### 2. DuckDB catalog (phase 3) for analytics
+### 2. DuckDB catalog (phase 3) for analytics {#2-duckdb-catalog-phase-3-for-analytics}
 
 Phase 3 stores the entire catalog — entities, linkages, evidence, AND the
 bitmap blobs — in a single DuckDB file (`duckdb_catalog.py:CATALOG_DDL`).
@@ -37,7 +47,7 @@ Benefits:
 - Bitmap fragments persist as BLOB rows in `bitmap_fragments`, UPSERTed
   atomically (`store.py:_flush_fragments_duckdb`, lines 839-863).
 
-### 3. Daemon hot-path — eliminate process / catalog open cost
+### 3. Daemon hot-path — eliminate process / catalog open cost {#3-daemon-hot-path-eliminate-process-catalog-open-cost}
 
 Every CLI invocation that *doesn't* go through the daemon pays:
 
@@ -55,14 +65,14 @@ send a JSON op over a Unix socket. Cost shifts to:
 Measured: `rmx stats` drops from ~280ms (cold) to ~5ms (via daemon).
 `rmx query` drops from ~350ms to ~15ms for a typical 3-term boolean.
 
-### 4. Incremental sync — skip-on-unchanged
+### 4. Incremental sync — skip-on-unchanged {#4-incremental-sync-skip-on-unchanged}
 
 `sync.py:_sync_paths()` compares each touched file's disk mtime against
 `tracked_files.mtime` (`sync.py:129-140`). Unchanged files are skipped
 before any extraction work happens. Practical effect: a `git commit` that
 touches 3 files triggers ~3 reingest passes, not a full reindex.
 
-### 5. Deferred cross-file linkages
+### 5. Deferred cross-file linkages {#5-deferred-cross-file-linkages}
 
 `store.deferred_links()` is a context manager that buffers cross-file
 linkages (e.g. `Foo defines Bar` where `Bar` is mentioned in another file's
@@ -70,7 +80,7 @@ docstring) and flushes them in one batch at end-of-pass instead of writing
 per-file. This is what made the markdown/ADR/pseudo ingest passes
 order-independent and ~3x faster on large doc trees.
 
-## Bottlenecks and their mitigations
+## Bottlenecks and their mitigations {#bottlenecks-and-their-mitigations}
 
 | Bottleneck                                       | Mitigation                                             |
 |--------------------------------------------------|--------------------------------------------------------|
@@ -83,7 +93,7 @@ order-independent and ~3x faster on large doc trees.
 | DuckDB WAL bloat on rapid bursts                 | `rmx checkpoint` (also auto-run inside daemon)         |
 | Resident model fattening the daemon into jetsam   | Models run in worker processes (default; `RMX_EMBED_SUBPROC=0` opts out) |
 
-## Model processes — `RMX_EMBED_SUBPROC` and the rerank stage
+## Model processes — `RMX_EMBED_SUBPROC` and the rerank stage {#model-processes-rmx-embed-subproc-and-the-rerank-stage}
 
 macOS jetsam SIGKILLs the fattest unmanaged anonymous process under system
 memory pressure. A daemon that has served one recall holds a resident
@@ -125,7 +135,7 @@ model's RSS again, which is the condition this whole mechanism exists to avoid.
 A missing `[dense]` extra is not caught by that fallback, since the in-process
 path would fail identically.
 
-### The rerank stage
+### The rerank stage {#the-rerank-stage}
 
 The cross-encoder pass over the retrieved shortlist is **on by default**
 (`RMX_RERANK=0`, or `--no-rerank` per call, disables it). BM25 and the
@@ -151,7 +161,7 @@ Both models therefore run out-of-process by default: the embedder because the
 daemon must not be the jetsam target, the reranker because it is a second model
 and only affordable as its own evictable child.
 
-### Environment variables
+### Environment variables {#environment-variables}
 
 | Variable                | Default | Effect                                             |
 |-------------------------|---------|----------------------------------------------------|
@@ -163,7 +173,7 @@ and only affordable as its own evictable child.
 | `RMX_RERANK_POOL_MULT`  | `4`     | Candidates reranked per `k` requested              |
 | `RMX_RERANK_MAX_POOL`   | `100`   | Hard cap on the rerank pool                        |
 
-## The scoring stack — when ranking matters
+## The scoring stack — when ranking matters {#the-scoring-stack-when-ranking-matters}
 
 Set ops are unranked by design. For *finding the right entity* (e.g. NL → code
 retrieval, `rmx context`), refmatrix ranks via a composed scorer:
@@ -182,14 +192,14 @@ score(query, entity) = BM25(query, entity)
 | linkage weights | Per-linkage contributions (docstring linkage at 0.30, etc.)   | `eval/retrievers/rmx_retriever.py:373-407`            |
 | co_mention^β    | Linkage-coupled co-mention (raised to β=2, NOT raw frequency) | `eval/retrievers/rmx_retriever.py:_retrieve_bm25_multi`|
 
-### Reciprocal Rank Fusion (RRF) for multi-signal fusion
+### Reciprocal Rank Fusion (RRF) for multi-signal fusion {#reciprocal-rank-fusion-rrf-for-multi-signal-fusion}
 
 `fuse_rrf` (`query.py:33-49`, k=60) combines rankings from multiple linkage
 types without needing per-linkage hyperparameters. Used heavily inside
 `context.py` for symbol neighborhood walks (`_fused_rows`,
 `_entity_anchored_rows`).
 
-### Production variant
+### Production variant {#production-variant}
 
 | Variant name                       | Components                                                 |
 |------------------------------------|------------------------------------------------------------|
@@ -198,9 +208,9 @@ types without needing per-linkage hyperparameters. Used heavily inside
 
 ★ is the tuned production variant. Configured in `eval/run.py:52-80`.
 
-## Benchmark results
+## Benchmark results {#benchmark-results}
 
-### CSN Python — MRR@10
+### CSN Python — MRR@10 {#csn-python-mrr-10}
 
 | Retriever                            | MRR@10  | Notes                                  |
 |--------------------------------------|---------|----------------------------------------|
@@ -208,7 +218,7 @@ types without needing per-linkage hyperparameters. Used heavily inside
 | CodeRankEmbed                        | 0.959   | dense vector retrieval                 |
 | rmx baseline (tf_rrf)                | ~0.90   | plain TF + RRF                         |
 
-### CSN JavaScript — MRR@10
+### CSN JavaScript — MRR@10 {#csn-javascript-mrr-10}
 
 | Retriever                            | MRR@10  | Notes                                  |
 |--------------------------------------|---------|----------------------------------------|
@@ -219,7 +229,7 @@ The symbolic margin grows on JS because rmx's linkage-aware scorer benefits
 from JS's higher density of cross-file relations (imports, requires, dynamic
 dispatch surfaces) that vector retrieval flattens out.
 
-### Eval harness — `eval/run.py`
+### Eval harness — `eval/run.py` {#eval-harness-eval-run-py}
 
 ```bash
 # corpus ingest + parallel retrieve + metrics + run.tsv save
@@ -234,7 +244,7 @@ Metrics emitted (`eval/metrics.py`):
 
 Results land in `eval/results/<dataset>/<variant>/run.tsv`.
 
-## How `tldr` participates in performance
+## How `tldr` participates in performance {#how-tldr-participates-in-performance}
 
 `llm-tldr` does the expensive per-function semantic extraction *once*, into
 a cache. refmatrix indexes from the cache, so the heavy lifting is amortized:
@@ -251,7 +261,7 @@ incremental sync layer re-runs the tldr-aware ingest pass on `.py` changes
 only when the call graph cache exists (`sync.py:171-178`). Non-Python file
 changes skip the tldr step entirely.
 
-## Maintenance ops — keep the index lean
+## Maintenance ops — keep the index lean {#maintenance-ops-keep-the-index-lean}
 
 | Command            | What it does                                                                  | When to run                       |
 |--------------------|-------------------------------------------------------------------------------|-----------------------------------|
@@ -260,7 +270,7 @@ changes skip the tldr step entirely.
 | `rmx checkpoint`   | DuckDB WAL flush + index rebuild                                              | After write bursts (auto in daemon) |
 | `rmx compact`      | DuckDB EXPORT to parquet then IMPORT back — reclaims fragmented space         | When `.refmatrix/catalog.duckdb` is >2x expected size |
 
-## Profiling tips
+## Profiling tips {#profiling-tips}
 
 - `rmx telemetry` reads `.refmatrix/query.log` (JSONL) and summarizes p50/p99
   per op. Useful for spotting slow queries.
@@ -273,7 +283,7 @@ changes skip the tldr step entirely.
   linkage type. Outlier linkages (one type holding 90% of bitmap mass) often
   point at a noise concept that `prune-noise` should remove.
 
-## Roadmap
+## Roadmap {#roadmap}
 
 - **Migrate fragment storage fully into DuckDB+Lance** (queued; see
   memory `project_queued_work`). Current phase 3 stores bitmaps as DuckDB

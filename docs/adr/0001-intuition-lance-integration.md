@@ -1,4 +1,15 @@
-# ADR-0001: Intuition memory layer + Lance vector backend
+---
+gmd: "0.1"
+id: 0001-intuition-lance-integration
+title: "ADR-0001: Intuition memory layer + Lance vector backend"
+tags: [adr, memory, lance, dense]
+---
+
+# ADR-0001: Intuition memory layer + Lance vector backend {#root}
+
+rel: part-of -> [[adr-0000-adr-overview]]
+rel: related-to -> [[adr-format]]
+rel: specifies -> [[intuition-style-hooks]]
 
 Status: Proposed
 Date: 2026-05-27
@@ -6,7 +17,7 @@ Authors: tholley, Claude Opus 4.7
 Governs: MemoryEntity, MemoryContent, ReinforcementLinkage, LanceVectors, HybridScorer
 Cross-references: project_queued_work, project_daemon_arch, project_csn_eval_baseline
 
-## Context
+## Context {#context}
 
 Two ongoing threads converge:
 
@@ -38,7 +49,7 @@ and the csn-eval baseline showing the symbolic stack already beats
 CodeRankEmbed on csn_python *without* embeddings. Adding embeddings
 should be additive (fused via RRF), not a replacement.
 
-## Decision
+## Decision {#decision}
 
 Land intuition's memory-layer capabilities natively in rmx, backed
 by a new Lance-based vector store. CLI-only. Three components:
@@ -107,7 +118,7 @@ the existing partition_fuse infrastructure ([[project-partitions-canon]]).
 Hooks ported from intuition land as documented `.claude/settings.local.json`
 templates under `docs/hooks/`, not auto-installed.
 
-## Phased build
+## Phased build {#phased-build}
 
 **Phase A — Lance foundation** (~1.5–2 weeks).
 - Add `pylance` and `sentence-transformers` to optional deps
@@ -165,7 +176,7 @@ templates under `docs/hooks/`, not auto-installed.
   Embedding vectors imported through Lance if `[dense]` installed
   (BLOB → numpy → upsert_vector).
 
-## Consequences
+## Consequences {#consequences}
 
 - **Positive:** one substrate, one mental model. The existing rmx
   scoring stack already beats CE on symbolic — adding dense recall
@@ -195,7 +206,7 @@ templates under `docs/hooks/`, not auto-installed.
   resident for `bge-small-en-v1.5`. Acceptable for one long-lived
   daemon per store; not for a re-spawn-per-call pattern.
 
-## Alternatives considered
+## Alternatives considered {#alternatives-considered}
 
 1. **Keep intuition as a separate MCP and have rmx import it on
    demand** — rejected. Two substrates, two databases, two query
@@ -230,14 +241,14 @@ templates under `docs/hooks/`, not auto-installed.
 
 5. **Drop the secondary index on `entity_links` instead of adding
    periodic repair** — out of scope for this ADR; tracked under
-   [[refmatrix-daemon-index-drift-recurrence]]. Mention here only
+   [[project_daemon_index_drift_recurrence]]. Mention here only
    because reinforcement linkages will *increase* entity_links churn
    and may stress the index more. The 1.5.3 upgrade + option D
    defense from commits ad06f41/96ffe47 are presumed sufficient; if
    reinforcement traffic exposes a new drift surface, dropping the
    index becomes Plan B.
 
-## Open questions
+## Open questions {#open-questions}
 
 - **Embedding model choice.** `bge-small-en-v1.5` is the default
   proposal but `gte-base` and `e5-small-v2` are alternatives.
@@ -251,7 +262,7 @@ templates under `docs/hooks/`, not auto-installed.
   in another store is less trustworthy by default) but the rate is
   open.
 
-## Land plan
+## Land plan {#land-plan}
 
 This branch (`feat/intuition-lance`) holds the entire work. Master
 stays at the post-option-D state. Final merge is one squash commit

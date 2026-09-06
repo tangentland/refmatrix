@@ -1,4 +1,14 @@
-# ADR Format Reference
+---
+gmd: "0.1"
+id: adr-format
+title: "ADR Format Reference"
+tags: [adr, format, extraction]
+---
+
+# ADR Format Reference {#root}
+
+rel: related-to -> [[agent-doc-primer#root]]
+rel: related-to -> [[adr-template]]
 
 Architecture Decision Records (ADRs) are markdown files that record
 *why* a system is shaped the way it is. rmx treats ADRs as
@@ -14,7 +24,7 @@ just registered as opaque files. This document describes the
 structure rmx's ADR extractor parses, and what linkages each part
 emits.
 
-## Detection
+## Detection {#detection}
 
 A markdown file is treated as an ADR when both:
 
@@ -35,7 +45,7 @@ docs/
 Non-ADR markdown files (READMEs, design docs outside `adr/`) are
 indexed as `doc` entities but get no ADR-specific extraction.
 
-## Required header
+## Required header {#required-header}
 
 The top of every ADR is a YAML-ish key/value block, ending at the
 first `## ` section heading. Fields rmx reads:
@@ -63,7 +73,7 @@ Cross-references: ADR-0043, ADR-0066
 ...
 ```
 
-## Status weighting
+## Status weighting {#status-weighting}
 
 `Status` controls linkage weight. Accepted ADRs win ranking ties
 against weaker sources; Proposed ADRs are weaker signals; Superseded
@@ -83,9 +93,9 @@ Promoting an ADR to `Accepted` and re-running `rmx ingest` raises its
 weight; retiring an ADR to `Superseded` zeroes its influence on the next
 ingest.
 
-## What the extractor emits
+## What the extractor emits {#what-the-extractor-emits}
 
-### 1. ADR entity per file
+### 1. ADR entity per file {#1-adr-entity-per-file}
 
 Every detected ADR becomes a `doc` entity:
 
@@ -95,7 +105,7 @@ Every detected ADR becomes a `doc` entity:
 This is the entity that `rmx context Zone` will surface alongside
 pseudo/code definitions.
 
-### 2. `mentions` from `Governs` tokens
+### 2. `mentions` from `Governs` tokens {#2-mentions-from-governs-tokens}
 
 The `Governs:` line is scanned for CamelCase tokens (≥3 chars, not
 builtin types). Each becomes a concept linked to the ADR entity with
@@ -110,7 +120,7 @@ Emits: `mentions:Zone → ADR-0087`, `mentions:BBOX → ADR-0087`.
 Lowercase prose ("coordinate representation", "operations") is
 ignored — it produces noise, not signal.
 
-### 3. `related_to` between ADRs
+### 3. `related_to` between ADRs {#3-related-to-between-adrs}
 
 Every `ADR-NNNN` reference anywhere in the body resolves to the
 target ADR entity (if also indexed). Each reference creates an
@@ -127,7 +137,7 @@ rmx neighbors "docs/architecture/adr/0087-...md"
 means cross-references survive re-ingest order — the linkage is
 mediated by a stable concept, not a direct entity-to-entity edge.
 
-### 4. `defines` + `is_a` for class specs
+### 4. `defines` + `is_a` for class specs {#4-defines-is-a-for-class-specs}
 
 ADRs frequently contain pseudocode-style class specs, in fenced code
 blocks **or** in indented blocks under a section heading:
@@ -154,7 +164,7 @@ column 0 followed by an indented body. For each class found:
 - `mentions:<TypeRef>` → child entity for each CamelCase type
   reference in field annotations, params, return types.
 
-#### Subclass syntax — inline
+#### Subclass syntax — inline {#subclass-syntax-inline}
 
 ```
 Zone:
@@ -167,7 +177,7 @@ ScoredZone(Zone):
 
 Emits: `is_a:Zone → AnnotatedZone entity`, `is_a:Zone → ScoredZone entity`.
 
-#### Subclass syntax — tree
+#### Subclass syntax — tree {#subclass-syntax-tree}
 
 ```
 Zone (base)
@@ -180,7 +190,7 @@ Each `+-- Child(Parent[, Parent2...])` line emits:
 - `defines:Child → Child entity`
 - `is_a:Parent → Child entity` for every parent listed
 
-### 5. Evidence trail
+### 5. Evidence trail {#5-evidence-trail}
 
 Every emitted linkage records a `linkage_evidence` row with the
 ADR's file path, line number, and a human-readable detail
@@ -190,7 +200,7 @@ ADR's file path, line number, and a human-readable detail
 these so you can trace any linkage back to the exact line that
 produced it.
 
-## What is NOT extracted
+## What is NOT extracted {#what-is-not-extracted}
 
 Out of scope for the extractor (parsed as prose only):
 
@@ -203,7 +213,7 @@ Out of scope for the extractor (parsed as prose only):
 If you need a concept-level reference from prose, name it in the
 `Governs:` line.
 
-## Authoring checklist
+## Authoring checklist {#authoring-checklist}
 
 Before committing an ADR that should be discoverable through rmx:
 
@@ -230,7 +240,7 @@ rmx context <ConceptName>     # ADR should appear in results
 rmx neighbors <adr-path>      # non-zero edge count
 ```
 
-## Worked example
+## Worked example {#worked-example}
 
-See `docs/templates/adr-template.md` for a minimal copy-paste
-starter that exercises every linkage type.
+See [[adr-template]] for a minimal copy-paste starter that
+exercises every linkage type.

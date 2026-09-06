@@ -1,6 +1,17 @@
-# refmatrix — Architecture
+---
+gmd: "0.1"
+id: ARCHITECTURE
+title: "refmatrix — Architecture"
+tags: [architecture, modules, storage, daemon]
+---
 
-## Layered view
+# refmatrix — Architecture {#root}
+
+rel: related-to -> [[SYSTEM]]
+rel: related-to -> [[INTEGRATION]]
+rel: related-to -> [[PERFORMANCE]]
+
+## Layered view {#layered-view}
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -36,7 +47,7 @@
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-## Module inventory
+## Module inventory {#module-inventory}
 
 | Module              | Purpose                                                     | Public surface                                    |
 |---------------------|-------------------------------------------------------------|---------------------------------------------------|
@@ -58,7 +69,7 @@
 | `hooks.py`          | Git + Claude Code hook installer                            | `install`                                         |
 | `cli.py`            | Click CLI; routes ~50 subcommands; daemon lifecycle         | `main`                                            |
 
-## Dependency flow
+## Dependency flow {#dependency-flow}
 
 ```
 cli ────────────────────────────┐
@@ -80,9 +91,9 @@ All non-trivial reads and writes go through `Store`. `daemon.py` is the only
 place that owns a `Store` instance long-term; CLI commands that talk to a
 running daemon open no `Store` of their own.
 
-## Core data layer
+## Core data layer {#core-data-layer}
 
-### Catalog schema (DuckDB, native — `duckdb_catalog.py:CATALOG_DDL`)
+### Catalog schema (DuckDB, native — `duckdb_catalog.py:CATALOG_DDL`) {#catalog-schema-duckdb-native-duckdb-catalog-py-catalog-ddl}
 
 | Table                | Key columns                                              | Purpose                              |
 |----------------------|----------------------------------------------------------|--------------------------------------|
@@ -98,7 +109,7 @@ running daemon open no `Store` of their own.
 | `canon_links`        | local_concept_id, canonical_concept_id                   | Cross-partition concept canonicalization |
 | `saved_queries`      | name, expression, created_at                             | `rmx save-query` / `rmx run`         |
 
-### Bitmap fragment storage (`store.py`)
+### Bitmap fragment storage (`store.py`) {#bitmap-fragment-storage-store-py}
 
 | Concern               | Implementation                                                              |
 |-----------------------|-----------------------------------------------------------------------------|
@@ -110,7 +121,7 @@ running daemon open no `Store` of their own.
 | Write                 | Lazy fragment load + dirty-set flush at transaction boundary                |
 | Atomic persistence    | DuckDB: single transaction; SQLite: write-rename per fragment file          |
 
-### Backend selection (`backend.py`)
+### Backend selection (`backend.py`) {#backend-selection-backend-py}
 
 The catalog has gone through three phases:
 
@@ -124,7 +135,7 @@ The catalog has gone through three phases:
 `backend.py:select_backend()` detects which phase a given `.refmatrix/`
 directory is in and dispatches accordingly.
 
-## Ingest pipeline
+## Ingest pipeline {#ingest-pipeline}
 
 `ingest_path(store, root, source=..., semantic=...)` is the single entry
 point. It dispatches on source priority (richest first):
@@ -160,7 +171,7 @@ GMD files (`.gmd`, or `.md` with `gmd:` frontmatter) go through
 auto-creates linkage types from any `rel: <verb> -> <target>` line, so
 authors can introduce verbs without code changes.
 
-### Verb policy
+### Verb policy {#verb-policy}
 
 | Verb            | Source                                  | Inverse        |
 |-----------------|-----------------------------------------|----------------|
@@ -168,15 +179,15 @@ authors can introduce verbs without code changes.
 | `specifies`     | plan/spec/issue declares intent         | `specified_by` |
 | `calls`         | call graph                              | `called_by`    |
 | `imports`       | AST imports, GMD frontmatter            | `imported_by`  |
-| `mentions`      | docstring keywords, [[wikilinks]]       | `mentioned_by` |
+| `mentions`      | docstring keywords, `[[wikilinks]]`     | `mentioned_by` |
 | `is_a`          | subclass hierarchies (ADR/markdown)     | (none)         |
 | `related_to`    | ADR-NNNN cross-references               | (symmetric)    |
 | `part-of`       | GMD heading hierarchy                   | `has-part`     |
 | (any kebab)     | author-declared GMD `rel:` line         | (none unless registered) |
 
-## Query layer
+## Query layer {#query-layer}
 
-### DSL (infix set algebra) — `query.py:QueryEngine`
+### DSL (infix set algebra) — `query.py:QueryEngine` {#dsl-infix-set-algebra-query-py-queryengine}
 
 ```
 rmx query "defines:parser AND NOT mentions:parser"
@@ -188,7 +199,7 @@ Operators: `AND` / `&&`, `OR` / `||`, `NOT` / `!`, parentheses. A term is
 `linkage:concept` (or just `concept`). Compiles to BitMap32 union / intersect /
 difference over the loaded fragments.
 
-### PQL (Pilosa-style) — power-user form
+### PQL (Pilosa-style) — power-user form {#pql-pilosa-style-power-user-form}
 
 For when the infix form gets clumsy:
 
@@ -196,7 +207,7 @@ For when the infix form gets clumsy:
 Intersect(Row(defines='parser'), Difference(Row(any='parser'), Row(mentions='parser')))
 ```
 
-### Context bundling — `context.py`
+### Context bundling — `context.py` {#context-bundling-context-py}
 
 `rmx context Foo --max-tokens 2000` returns a token-budgeted bundle of
 entities related to `Foo`, walking linkages and **fusing rankings via
@@ -205,7 +216,9 @@ without per-linkage hyperparameters. The walk knows about `linkage_evidence`,
 so the rendered bundle carries `file:line` markers back to where each linkage
 was extracted.
 
-### Scoring stack (when ranking, not pure set ops) — `eval/retrievers/rmx_retriever.py`
+### Scoring stack (when ranking, not pure set ops) — `eval/retrievers/rmx_retriever.py` {#scoring-stack}
+
+rel: evidence-for -> [[PERFORMANCE#benchmark-results]]
 
 ```
 score = BM25(query, entity)
@@ -229,16 +242,16 @@ biggest in **top-rank recall** (no embeddings, no GPU, no reranker):
 (TS absolutes are low — real-world corpus with fork/copy dupes — but rmx still
 leads at every cutoff. JS margin is *larger* than Python: rmx's linkage-aware
 scorer benefits from JS's denser cross-file relations.) Full methodology +
-tuning ablation in `PERFORMANCE.md`.
+tuning ablation in [[PERFORMANCE#benchmark-results]].
 
-## Daemon / concurrency layer
+## Daemon / concurrency layer {#daemon-concurrency-layer}
 
 The catalog's storage engine (DuckDB or SQLite) holds a writer lock that
 blocks concurrent processes. With editor + watcher + CLI all wanting to
 touch the catalog, lock contention used to corrupt indexes. The daemon
 solves this by being the sole owner.
 
-### Lifecycle
+### Lifecycle {#lifecycle}
 
 ```
 rmx daemon start
@@ -255,7 +268,7 @@ rmx <op>           # client side
   └─ if not:   open Store directly (read-only ops) or fail (writes)
 ```
 
-### Read path — snapshot-tier (writer rotation retired in 0.7.7)
+### Read path — snapshot-tier (writer rotation retired in 0.7.7) {#read-path-snapshot-tier-writer-rotation-retired-in-0-7-7}
 
 Reads never touch the write-locked catalog. After each write op the daemon
 regenerates `catalog.read.duckdb` — a full lock-free copy of the writer's
@@ -274,7 +287,7 @@ logged too (so `rmx rebuild --from-log` reconstructs bodies), and the swap is a
 no-op; A/B persist only as the writer's slot. Invariant: **no swap can ever
 promote a slot missing committed data.**
 
-### OPS dispatch (`daemon.py:OPS`)
+### OPS dispatch (`daemon.py:OPS`) {#ops-dispatch-daemon-py-ops}
 
 | Category    | Ops                                                                       |
 |-------------|---------------------------------------------------------------------------|
@@ -292,7 +305,7 @@ shutdown on a slow ingest pass — it returns immediately and the daemon drains
 the queue on a background thread. Latency-sensitive ops run on a small `cli_pool`;
 mutating/bulk ops run on `bg_pool`.
 
-## CLI / hook surface
+## CLI / hook surface {#cli-hook-surface}
 
 The CLI is Click-based with subgroups:
 
@@ -327,7 +340,7 @@ rmx
 Hyphenated aliases (`add-entity`, `list-linkages`, etc.) are hidden but
 preserved for backwards compatibility with older scripts and hooks.
 
-## How tldr fits in
+## How tldr fits in {#how-tldr-fits-in}
 
 `llm-tldr` produces `.tldr/cache/`. refmatrix:
 

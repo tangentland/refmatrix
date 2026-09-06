@@ -1,11 +1,21 @@
-# refmatrix — Integration Guide
+---
+gmd: "0.1"
+id: INTEGRATION
+title: "refmatrix — Integration Guide"
+tags: [integration, hooks, gmd, daemon, watcher]
+---
+
+# refmatrix — Integration Guide {#root}
+
+rel: related-to -> [[SYSTEM]]
+rel: related-to -> [[ARCHITECTURE]]
 
 This document covers every place refmatrix touches something outside itself:
 external CLIs it shells out to, hooks it installs into git and Claude Code,
 file formats it consumes (tldr cache, GMD, ADR markdown), the daemon socket
 protocol, and the file watcher.
 
-## External tool dependencies
+## External tool dependencies {#external-tool-dependencies}
 
 | Tool       | Required? | Used for                                              | Source                          |
 |------------|-----------|-------------------------------------------------------|---------------------------------|
@@ -28,20 +38,20 @@ Python deps (`pyproject.toml`):
 
 Install with optional groups: `pip install -e '.[tldr,watch,dev]'`.
 
-## Composing with `llm-tldr`
+## Composing with `llm-tldr` {#composing-with-llm-tldr}
 
 `llm-tldr` is the per-function extractor; refmatrix is the cross-entity
 indexer and query layer. Integration is one-way: refmatrix reads tldr's
 on-disk cache. tldr is not aware of refmatrix.
 
-### Cache surface refmatrix consumes
+### Cache surface refmatrix consumes {#cache-surface-refmatrix-consumes}
 
 | File                                         | Used as                                | Reader                                  |
 |----------------------------------------------|----------------------------------------|-----------------------------------------|
 | `.tldr/cache/semantic/metadata.json`         | Richest: per-unit signature, docstring, code preview, CFG/DFG summary, unit_type, language | `ingest.py:_ingest_tldr_metadata` |
 | `.tldr/cache/call_graph.json`                | Leaner: `(from_file, from_func) → [callees]`                          | `ingest.py:_ingest_tldr`               |
 
-### Source priority (`ingest.py:40-48`)
+### Source priority (`ingest.py:40-48`) {#source-priority-ingest-py-40-48}
 
 ```
 metadata.json  ↘
@@ -53,7 +63,7 @@ filesystem      → fallback (tree walk, file-level only)
 
 Force a specific source: `rmx ingest . --source metadata|tldr|tree`.
 
-### Subprocess invocation
+### Subprocess invocation {#subprocess-invocation}
 
 | Command          | Invokes                                                |
 |------------------|--------------------------------------------------------|
@@ -63,7 +73,7 @@ Force a specific source: `rmx ingest . --source metadata|tldr|tree`.
 it warms the cache, then ingests in one shot. After that, the sync layer
 keeps things current incrementally.
 
-### How refmatrix extends what tldr provides
+### How refmatrix extends what tldr provides {#how-refmatrix-extends-what-tldr-provides}
 
 | Layer                       | Provided by tldr                          | Added by refmatrix                                  |
 |-----------------------------|-------------------------------------------|-----------------------------------------------------|
@@ -78,9 +88,9 @@ keeps things current incrementally.
 | Pseudocode parsing          | ✗                                         | `.pseudo` file type/func extraction (`is_a`, `defines`) |
 | Cross-codebase canon links  | ✗                                         | Per-partition concept → canonical concept           |
 
-## Claude Code integration
+## Claude Code integration {#claude-code-integration}
 
-### Hook events installed
+### Hook events installed {#hook-events-installed}
 
 `rmx install-hooks` writes a JSON block into `.claude/settings.local.json`
 (project-local) or `~/.claude/settings.json` (user-global, with `--user`).
@@ -93,23 +103,23 @@ keeps things current incrementally.
 | `SessionStart`                      | `startup\|resume`                        | `rmx sync --flush-queue` + `rmx primer`  | Flush + regenerate `PRIMER.md`                |
 | `UserPromptSubmit`                  | (all)                                    | `rmx scan-prompt --max-tokens 2000`      | Inject context bundles for mentioned symbols  |
 
-### Briefing doc
+### Briefing doc {#briefing-doc}
 
 `rmx install-hooks` also writes `.refmatrix/CLAUDE.md` — a briefing for
 agents working in the project. It's not overwritten by default; suggested
 usage is to add `@.refmatrix/CLAUDE.md` to the project's top-level
 `CLAUDE.md`.
 
-### `scan-prompt` — agent context injection
+### `scan-prompt` — agent context injection {#scan-prompt-agent-context-injection}
 
 When the `UserPromptSubmit` hook fires, `rmx scan-prompt` tokenizes the
 prompt, matches symbol-shape tokens against indexed concepts, fuses
 top hits via RRF, and emits a token-budgeted context bundle. The bundle
 is injected as additional context for the model on that turn.
 
-## Git integration
+## Git integration {#git-integration}
 
-### Hooks installed (`hooks.py:23-59`)
+### Hooks installed (`hooks.py:23-59`) {#hooks-installed-hooks-py-23-59}
 
 | Hook              | Command                                            | Trigger                                    |
 |-------------------|----------------------------------------------------|--------------------------------------------|
@@ -120,19 +130,19 @@ is injected as additional context for the model on that turn.
 
 All hooks run `rmx` in the background so they don't block the git operation.
 
-### `rmx sync --since <ref>`
+### `rmx sync --since <ref>` {#rmx-sync-since-ref}
 
 Calls `git diff --name-only <ref>` to get the changed-file list, then
 re-ingests just those paths. Incremental: files whose mtime equals
 `tracked_files.mtime` are skipped (`sync.py:129-140`).
 
-## GMD (Graph Markdown) integration
+## GMD (Graph Markdown) integration {#gmd-graph-markdown-integration}
 
 GMD is a spec for markdown documents that carry typed relations and stable
 addressability — designed to replace plain markdown in `CLAUDE.md`, `SKILL.md`,
 memory files, notes. Spec lives at `../gmd/SPEC.md`.
 
-### What refmatrix's GMD ingestor (`ingest_gmd.py`) accepts
+### What refmatrix's GMD ingestor (`ingest_gmd.py`) accepts {#what-refmatrix-s-gmd-ingestor-ingest-gmd-py-accepts}
 
 | Input syntax                                  | Becomes                                                       |
 |-----------------------------------------------|---------------------------------------------------------------|
@@ -147,7 +157,7 @@ memory files, notes. Spec lives at `../gmd/SPEC.md`.
 | Frontmatter `imports: [a, b]`                 | `imports` linkage on doc-level entity                         |
 | Frontmatter `id:`, `title:`, `tags:`, `alias` | entity attributes                                             |
 
-### Verb policy
+### Verb policy {#verb-policy}
 
 - Spec §8 recommends an open vocabulary: `supports`, `contradicts`,
   `derives-from`, `supersedes`, `depends-on`, `instance-of`, `part-of`,
@@ -157,7 +167,7 @@ memory files, notes. Spec lives at `../gmd/SPEC.md`.
   `ingest_gmd.py:_ensure_linkage`).
 - Pre-registered verbs (with inverses) live in `store.py:DEFAULT_LINKAGES`.
 
-### Recent extensions
+### Recent extensions {#recent-extensions}
 
 - `_ID_RE` now allows `/` in IDs (`ingest_gmd.py:30`), matching spec §3's
   `[a-z0-9][a-z0-9._/-]*` so hierarchical IDs like `project/foo` parse.
@@ -165,14 +175,14 @@ memory files, notes. Spec lives at `../gmd/SPEC.md`.
   GMD `rel: specifies -> [[#X]]` and rmx's plan-doc heuristic produce the
   same edge type.
 
-## File watcher integration
+## File watcher integration {#file-watcher-integration}
 
-### Backend
+### Backend {#backend}
 
 [watchdog](https://github.com/gorakhargosh/watchdog) (optional dep, install
 with `pip install -e '.[watch]'`).
 
-### Behavior (`watch.py`)
+### Behavior (`watch.py`) {#behavior-watch-py}
 
 | Concern              | Value                                                                |
 |----------------------|----------------------------------------------------------------------|
@@ -183,7 +193,7 @@ with `pip install -e '.[watch]'`).
 | Debounce             | Configurable window (default 500ms); coalesces bursts into one batch |
 | Handler              | Calls `sync_files(paths, semantic=True)` on the coalesced batch      |
 
-### Embedded vs standalone
+### Embedded vs standalone {#embedded-vs-standalone}
 
 - **Standalone**: `rmx watch` runs the observer in the foreground (good for
   debugging).
@@ -191,12 +201,12 @@ with `pip install -e '.[watch]'`).
   inside the daemon (`daemon.py:_start_watcher`). This is the production
   path — single process owns the catalog lock AND the watcher.
 
-## Daemon socket protocol
+## Daemon socket protocol {#daemon-socket-protocol}
 
 The daemon listens on `.refmatrix/rmxd.sock` (Unix socket). Protocol is
 **newline-delimited JSON** — one JSON object per line, request and response.
 
-### Wire format
+### Wire format {#wire-format}
 
 ```json
 // request
@@ -209,7 +219,7 @@ The daemon listens on `.refmatrix/rmxd.sock` (Unix socket). Protocol is
 {"ok": false, "error": "unknown linkage: foobar"}
 ```
 
-### Client API (`daemon.py:72-99`)
+### Client API (`daemon.py:72-99`) {#client-api-daemon-py-72-99}
 
 ```python
 from refmatrix.daemon import ping, call
@@ -221,11 +231,11 @@ else:
     ...
 ```
 
-### Op inventory
+### Op inventory {#op-inventory}
 
-See `ARCHITECTURE.md § Daemon / concurrency layer` for the full 21-op table.
+See [[ARCHITECTURE#daemon-concurrency-layer]] for the full op table.
 
-### Concurrency model
+### Concurrency model {#concurrency-model}
 
 The daemon is single-threaded for catalog ops (Store is not thread-safe).
 The watcher runs on a worker thread but routes through the same socket to
@@ -235,7 +245,7 @@ processes the queue on a background thread. Acceptable because (a) the
 client doesn't need the result and (b) the only writer is still the
 daemon's main loop, just shifted in time.
 
-## CLI surface (top-level)
+## CLI surface (top-level) {#cli-surface-top-level}
 
 ```
 rmx
@@ -274,7 +284,7 @@ rmx
 └── migrate-to-duckdb          one-shot SQLite → DuckDB native catalog
 ```
 
-## Onboarding checklist for a new project
+## Onboarding checklist for a new project {#onboarding-checklist-for-a-new-project}
 
 ```bash
 cd my-project

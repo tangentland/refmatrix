@@ -16,6 +16,7 @@ mechanism that delivers all three at once, so **every ADR is a GMD doc**. That k
 ADRs graph-indexable by rmx (`ADR > concept doc > pseudocode > code` in the discovery
 ladder; see [[adr-format]] for the extractor's header view).
 
+rel: catalogs -> [[0001-intuition-lance-integration]]
 rel: catalogs -> [[adr-0002-subject-memory-container]]
 rel: related-to -> [[adr-format]]
 
@@ -49,8 +50,8 @@ rel: related-to -> [[adr-format]]
 
 | ADR | Title | Status |
 |-----|-------|--------|
-| [0001](0001-intuition-lance-integration.md) | Intuition memory layer + Lance vector backend | Proposed (pre-GMD, grandfathered) |
+| [[0001-intuition-lance-integration]] | Intuition memory layer + Lance vector backend | Proposed |
 | [[adr-0002-subject-memory-container]] | Subject: memory-scoped working/durable container | Proposed |
 
-> ADR-0001 predates the GMD-required rule (it uses the extractor's key/value header
-> from [[adr-format]]). Grandfathered; convert to GMD on next substantive edit.
+> ADR-0001 predates the GMD-required rule; converted to GMD 2026-09-06. It keeps the
+> extractor's key/value header from [[adr-format]] (id = filename stem, not adr-NNNN-slug).

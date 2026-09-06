@@ -1,4 +1,11 @@
-# rmx Doc-Authoring Primer (for Agents)
+---
+gmd: "0.1"
+id: agent-doc-primer
+title: "rmx Doc-Authoring Primer (for Agents)"
+tags: [authoring, primer, doc-forms, agents]
+---
+
+# rmx Doc-Authoring Primer (for Agents) {#root}
 
 You are an agent authoring documentation in a project that uses rmx
 to index code, concepts, and architecture. The primary failure mode
@@ -10,7 +17,7 @@ Before authoring any technical doc, decide which of these forms
 rmx already understands. Match your doc to the form; the indexer
 does the rest.
 
-## Why this matters — the discovery ladder
+## Why this matters — the discovery ladder {#why-this-matters-the-discovery-ladder}
 
 Other agents (and you, in future sessions) find authoritative
 design via:
@@ -51,7 +58,7 @@ default ON), `-I` (case-sensitive), `-l` (files only), `-c` (count),
 PATHS narrow both the indexed-row filter and the fall-through target.
 Stdin data bypasses the index entirely and greps the pipe.
 
-## Decision tree — which form do I write?
+## Decision tree — which form do I write? {#decision-tree-which-form-do-i-write}
 
 Answer the first matching question:
 
@@ -69,9 +76,11 @@ Answer the first matching question:
 If multiple forms could fit, prefer the form *higher* in the table —
 it ranks higher on the discovery ladder.
 
-## Form 1 — ADR (Architecture Decision Record)
+## Form 1 — ADR (Architecture Decision Record) {#form-1-adr}
 
-Full reference: `docs/adr-format.md`. The contract in brief:
+rel: related-to -> [[adr-format]]
+
+Full reference: [[adr-format]]. The contract in brief:
 
 **File path:** must match `<some-dir>/adr/NNNN-kebab-title.md` where
 `NNNN` is zero-padded.
@@ -137,9 +146,9 @@ Zone (base)
 6. To retire an ADR: set `Status: Superseded`. rmx zeros all its
    linkages on the next ingest — no need to delete the file.
 
-**Template:** `docs/templates/adr-template.md` (when created).
+**Template:** [[adr-template]].
 
-## Form 2 — Concept doc
+## Form 2 — Concept doc {#form-2-concept-doc}
 
 A concept doc canonically *defines* one or more named concepts.
 Filename and structure carry the meaning.
@@ -204,7 +213,7 @@ rmx context <YourConcept>     # should return your doc
 rmx neighbors <docs/.../yourdoc.md>   # non-zero
 ```
 
-## Form 3 — Design doc
+## Form 3 — Design doc {#form-3-design-doc}
 
 A design doc records context, exploration, or proposals that aren't
 binding decisions. Less structured than ADRs, less canonical than
@@ -247,7 +256,7 @@ Brief paragraph summarizing the doc's purpose.
    If a design doc is the authoritative definition of a concept,
    promote it to a concept doc (move to `concepts/`).
 
-## Form 4 — `.pseudo` file
+## Form 4 — `.pseudo` file {#form-4-pseudo-file}
 
 Type-first specification of system behavior, data structures, APIs.
 Full reference: `docs/pseudo-format.pseudo`. Brief contract:
@@ -287,7 +296,7 @@ function_name(param: Type) -> ReturnType:
 4. Prefer happy-path bodies. Error handling belongs in
    `contracts.pseudo` or implementation code.
 
-## Form 5 — GMD (Graph Markdown)
+## Form 5 — GMD (Graph Markdown) {#form-5-gmd-graph-markdown}
 
 A doc-as-graph format. Each `{#id}` heading becomes its own walkable
 node; `rel:` lines emit typed linkages between nodes. Use it when the
@@ -380,7 +389,7 @@ rmx context <doc-id>#<node-id>     # should return your node + neighbors
 rmx neighbors <doc-id>#<node-id>   # walks the typed rels you declared
 ```
 
-## Form 6 — Plan / spec / issue doc
+## Form 6 — Plan / spec / issue doc {#form-6-plan-spec-issue-doc}
 
 A markdown doc that **declares intent** for code or design that should
 exist but may not exist yet. Plans, specs, issues, and roadmap items
@@ -463,7 +472,7 @@ rmx neighbors <plan-doc-path>        # should list the specified concepts
 rmx query "specifies:<X> AND NOT defines:<X>"   # finds unimplemented specs
 ```
 
-## Form 7 — Graphify knowledge graph
+## Form 7 — Graphify knowledge graph {#form-7-graphify-knowledge-graph}
 
 Not a doc form you author — a *cache* refmatrix consumes. Graphify is an
 external tool that walks any folder of files and produces a community-
@@ -525,12 +534,12 @@ rmx query "specifies:gf/<some-node>"   # walks rationale_for edges
 rmx query "calls:gf/<func>"            # graphify-derived call graph
 ```
 
-## Universal conventions (apply to every doc form)
+## Universal conventions (apply to every doc form) {#universal-conventions-apply-to-every-doc-form}
 
 These work everywhere — ADR, concept doc, design doc, even plain
 markdown — and are recommended whenever the situation fits.
 
-### 1. Class specs in fenced code blocks
+### 1. Class specs in fenced code blocks {#1-class-specs-in-fenced-code-blocks}
 
 Any fenced code block at any indent containing a `Name:` line at
 column 0 followed by an indented body is parsed as a class spec
@@ -545,30 +554,30 @@ Region:
 ```
 ````
 
-### 2. ADR cross-references
+### 2. ADR cross-references {#2-adr-cross-references}
 
 `ADR-NNNN` anywhere in any doc creates a `related_to` link if the
 target ADR is indexed. Use the exact form — not `ADR 87`, not
 `ADR.0087`, not `#0087`.
 
-### 3. Subclass tree notation
+### 3. Subclass tree notation {#3-subclass-tree-notation}
 
 `+-- Child(Parent)` in any code block or indented region produces
 `is_a:Parent → Child`. Works in ADRs today; extending to all docs.
 
-### 4. Use the concept's canonical name
+### 4. Use the concept's canonical name {#4-use-the-concept-s-canonical-name}
 
 If the project defines a concept named `Zone`, write `Zone`, not
 "zone", "zones", `Zone (in spatial)`, or "the zone construct". The
 indexer matches case-sensitive exact tokens; variants don't join.
 
-### 5. Don't redefine concepts in prose
+### 5. Don't redefine concepts in prose {#5-don-t-redefine-concepts-in-prose}
 
 If a concept already has a canonical concept-doc or ADR, *reference*
 it, don't redefine it inline. Redefinition fragments the graph: two
 "Zone"s with conflicting definitions and no `same_as` link.
 
-## Anti-patterns — do not do these
+## Anti-patterns — do not do these {#anti-patterns-do-not-do-these}
 
 | Anti-pattern | Why it breaks indexing |
 |---|---|
@@ -583,7 +592,7 @@ it, don't redefine it inline. Redefinition fragments the graph: two
 | Using `Status: Superseded` to "soft delete" | rmx zeros all linkages. The doc is silent. (This is intended — confirm before using.) |
 | Mass concept dumps in tables without structure | Tables aren't yet parsed; convert to H3 sections. |
 
-## Self-verification — confirm your doc is indexed
+## Self-verification — confirm your doc is indexed {#self-verification-confirm-your-doc-is-indexed}
 
 After authoring a doc and running `rmx ingest .`:
 
@@ -605,7 +614,7 @@ If `neighbors` returns zero edges and `context` doesn't surface
 the doc, the parser found no structure to extract from. Re-read
 the relevant Form section above and fix the shape.
 
-## Indexing status
+## Indexing status {#indexing-status}
 
 | Form | Status |
 |---|---|
@@ -624,7 +633,7 @@ ADR-NNNN refs) run on every markdown file regardless of location, so
 even a plain prose doc gets some signal if it contains a fenced
 `Name:` block or references an ADR.
 
-## Storage backend (operational note for hooks / CI)
+## Storage backend (operational note for hooks / CI) {#storage-backend-operational-note-for-hooks-ci}
 
 The catalog backend defaults to **DuckDB** as of 2026-05-16. Auto-
 detection at `Store.__init__`:
@@ -646,11 +655,12 @@ speedup vs per-row `link()`: 600-1000× on DuckDB at N=5000 links,
 80× on SQLite. Doc-authoring rules don't change — this is just why
 ingest got fast.
 
-## When in doubt
+## When in doubt {#when-in-doubt}
 
-1. Read the form-specific reference (`adr-format.md`,
+1. Read the form-specific reference ([[adr-format]],
    `pseudo-format.pseudo`).
-2. Copy from a template (`docs/templates/`).
+2. Copy from a template ([[adr-template]], [[concept-doc-template]],
+   [[design-doc-template]]).
 3. Inspect a known-good example with `rmx explain <entity-id>` to
    see what linkages it produced.
 4. If a concept isn't surfacing where you expect, the doc is

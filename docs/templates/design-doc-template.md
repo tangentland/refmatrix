@@ -1,4 +1,13 @@
-# Design Doc Title
+---
+gmd: "0.1"
+id: design-doc-template
+title: "Design Doc Template"
+tags: [template, design-doc]
+---
+
+# Design Doc Title {#root}
+
+rel: related-to -> [[agent-doc-primer#root]]
 
 **Created:** YYYY-MM-DD
 **Authors:** name1, name2
@@ -13,12 +22,12 @@ One-paragraph summary of what this design doc covers and what
 decisions or proposals it makes. Keep it scannable — readers should
 know within ten seconds whether this doc is relevant to them.
 
-## Context
+## Context {#context}
 
 What is the problem? What constraints are in play? What prior work
 brought us here?
 
-## Proposal
+## Proposal {#proposal}
 
 What is being proposed? Use prose freely — design docs are less
 structured than ADRs.
@@ -35,18 +44,18 @@ ProposedType:
     do_thing(arg: OtherType) -> Result
 ```
 
-## Implementation sketch
+## Implementation sketch {#implementation-sketch}
 
 If applicable, outline how the proposal would be implemented. This
 section is prose; it's not extracted semantically.
 
-## Open questions
+## Open questions {#open-questions}
 
 - Question 1
 - Question 2
 - Question 3
 
-## How to use this template
+## How to use this template {#how-to-use-this-template}
 
 1. Save as `docs/design/<topic>.md`. Location is conventional; the
    bold-labeled metadata in the header is what carries indexing
@@ -70,4 +79,4 @@ section is prose; it's not extracted semantically.
    rmx neighbors docs/design/<topic>.md      # should show metadata refs
    ```
 
-For the full agent-authoring primer: `docs/agent-doc-primer.md`.
+For the full agent-authoring primer: [[agent-doc-primer#root]].
