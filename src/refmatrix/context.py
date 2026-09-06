@@ -98,6 +98,10 @@ class ContextBundle:
     # Hop-depth requested; preserved so renderers and callers can show
     # which expansion shape produced the bundle.
     degree: int = 0
+    # Helix phase-1 annotation: when the anchor's last STM touch predates
+    # the working window, this carries the point-in-time neighborhood from
+    # that touch (see helix.annotate). None = current work or no history.
+    helix_note: "str | None" = None
 
     def total_entities(self) -> int:
         return sum(len(v) for v in self.groups.values())
@@ -169,6 +173,16 @@ def build_context(
             hit_lines=hit_lines, grep_backstop=grep_backstop,
         )
     bundle.anchor = e
+
+    # Helix phase 1: when this anchor's last STM touch predates the working
+    # window, carry the point-in-time neighborhood from that touch. Strictly
+    # additive and best-effort — a read surface must never fail (or slow
+    # down meaningfully) because the STM rings were unreadable.
+    try:
+        from refmatrix import helix
+        bundle.helix_note = helix.annotate(s.root, e.name)
+    except Exception:
+        bundle.helix_note = None
 
     # Attach the memory body to the bundle regardless of degree — at
     # degree=0 it's the only payload; at degree>=1 it sits above the
@@ -1243,6 +1257,8 @@ def render_text(b: ContextBundle) -> str:
         lines.append(f"anchor: {a.name}  [{a.kind}]")
         if a.tldr:
             lines.append(f"  {a.tldr}")
+        if b.helix_note:
+            lines.append(b.helix_note)
         if b.anchor_body:
             lines.append("")
             lines.append("--- body ---")
