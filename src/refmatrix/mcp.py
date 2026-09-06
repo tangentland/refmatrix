@@ -85,12 +85,32 @@ def _t_context(args: dict) -> dict:
     root = _resolve_root(args)
     if not daemon_mod.ping(root):
         return {"error": "daemon not running for this project"}
-    resp = daemon_mod.call(root, "context", {
-        "ref": args["ref"], "format": "json", "degree": int(args.get("degree", 0)),
-        "entities_explicit": False, "tokens_explicit": False,
+    payload = {
+        "ref": args["ref"], "format": "json",
+        "degree": int(args.get("degree", 0)),
+        "entities_explicit": args.get("max_entities") is not None,
+        "tokens_explicit": args.get("max_tokens") is not None,
         "partition": discovery.store_name(root),
-    }, timeout=60.0)
-    return resp.get("result", {}) if resp.get("ok") else {"error": resp.get("error")}
+    }
+    for key in ("expand", "hit_lines", "max_entities", "max_tokens",
+                "fuse", "strict", "include_sessions", "grep_backstop"):
+        if args.get(key) is not None:
+            payload[key] = args[key]
+    if args.get("linkage"):
+        payload["linkages"] = [args["linkage"]]
+    resp = daemon_mod.call(root, "context", payload, timeout=60.0)
+    if not resp.get("ok"):
+        return {"error": resp.get("error")}
+    result = resp.get("result", {})
+    # The op renders JSON to a string under "body"; decode so the caller
+    # gets one object, not double-encoded JSON.
+    body = result.get("body")
+    if isinstance(body, str):
+        try:
+            return json.loads(body)
+        except ValueError:
+            pass
+    return result
 
 
 def _t_query(args: dict) -> dict:
@@ -99,7 +119,7 @@ def _t_query(args: dict) -> dict:
     if not daemon_mod.ping(root):
         return {"error": "daemon not running for this project"}
     resp = daemon_mod.call(root, "query", {
-        "dsl": args["dsl"], "partition": discovery.store_name(root)}, timeout=30.0)
+        "expr": args["dsl"], "partition": discovery.store_name(root)}, timeout=30.0)
     return resp.get("result", {}) if resp.get("ok") else {"error": resp.get("error")}
 
 
@@ -139,17 +159,34 @@ def _t_memory_recall(args: dict) -> dict:
     from refmatrix import daemon as daemon_mod, hub as hub_mod
     # query optional: empty → recent memories newest-first, which is exactly
     # what a SessionStart/no-topic recall wants.
+    import fnmatch
     q = args.get("query") or ""
     k = int(args.get("k", 8))
-    scope = args.get("scope", "both")
+    # Parity with the CLI: default scope is the project store; operational
+    # session/* cards are excluded unless asked for (the 0.22.1 noise fix,
+    # which this surface had silently dropped).
+    scope = args.get("scope", "project")
+    exclude_mtype = args.get("exclude_mtype")
+    if exclude_mtype is None:
+        exclude_mtype = ["session/*"]
+
+    def _mt_ok(m):
+        mt = str(m.get("mtype") or "")
+        return not any(fnmatch.fnmatch(mt, pat) for pat in exclude_mtype)
+
     rows = []
     root = _resolve_root(args)
     if scope in ("project", "both") and daemon_mod.ping(root):
         partition = _memory_partition(root)
         if q:
-            r = daemon_mod.call(root, "memory_recall", {
-                "query": q, "k": k, "kinds": ["memory"], "fuse": False,
-                "partition": partition}, timeout=180.0)
+            payload = {
+                "query": q, "k": k,
+                "kinds": args.get("kinds") or ["memory"],
+                "fuse": bool(args.get("fuse", False)),
+                "partition": partition}
+            if args.get("rerank") is not None:
+                payload["rerank"] = args["rerank"]
+            r = daemon_mod.call(root, "memory_recall", payload, timeout=180.0)
             hits = r["result"].get("hits", []) if r.get("ok") else []
             # Best-first: ascending L2 distance (dense) / descending score.
             hits = sorted(hits, key=lambda h: (
@@ -161,19 +198,22 @@ def _t_memory_recall(args: dict) -> dict:
                     "id": eid, "partition": partition}, timeout=30.0)
                 if g.get("ok"):
                     m = g["result"].get("memory")
-                    if m:
+                    if m and _mt_ok(m):
                         m["scope"] = "project"; rows.append(m)
         else:
+            since = args.get("since_seconds")
             r = daemon_mod.call(root, "memory_recent", {
-                "since_seconds": None, "limit": k, "partition": partition})
+                "since_seconds": since, "limit": k, "partition": partition})
             if r.get("ok"):
                 for m in r["result"].get("rows", []):
-                    m["scope"] = "project"; rows.append(m)
+                    if _mt_ok(m):
+                        m["scope"] = "project"; rows.append(m)
     if scope in ("global", "both") and hub_mod.global_store_root().exists():
         g = hub_mod.global_call("memory_search", {"query": q, "limit": k})
         if g.get("ok"):
             for m in g["result"].get("rows", []):
-                m["scope"] = "global"; rows.append(m)
+                if _mt_ok(m):
+                    m["scope"] = "global"; rows.append(m)
     return {"memories": rows[: k * 2]}
 
 
@@ -349,9 +389,9 @@ def _t_focus_note(args: dict) -> dict:
 def _t_memory_add(args: dict) -> dict:
     """Add/update a durable memory in the project store. Daemon-routed (the
     single write control point); in-proc fallback only when the daemon is down."""
-    from refmatrix import daemon as daemon_mod, discovery
+    from refmatrix import daemon as daemon_mod
     root = _resolve_root(args)
-    part = discovery.store_name(root)
+    part = _memory_partition(root)
     payload = {"name": args["name"], "content": args["content"],
                "mtype": args.get("mtype", "observation"),
                "tags": args.get("tags"),
@@ -379,7 +419,7 @@ def _t_change_subject(args: dict) -> dict:
         raise ValueError("change_subject requires 'label' (alias: 'subject')")
     s = stm_mod.Stm(root, _session(args, stm_mod, root))
     rec = s.set_subject(label)
-    part = discovery.store_name(root)
+    part = _memory_partition(root)
     eid = None
     if daemon_mod.ping(root):
         r = daemon_mod.call(root, "subject_upsert",
@@ -469,9 +509,9 @@ def _t_memory(args: dict) -> dict:
         return _t_memory_recall(args)
     if action == "add":
         return _t_memory_add(args)
-    from refmatrix import daemon as daemon_mod, discovery, hub as hub_mod
+    from refmatrix import daemon as daemon_mod, hub as hub_mod
     root = _resolve_root(args)
-    part = args.get("partition") or discovery.store_name(root)
+    part = args.get("partition") or _memory_partition(root)
     if not daemon_mod.ping(root):
         return {"error": f"daemon not running for {root}"}
     if action == "promote":
@@ -548,7 +588,10 @@ def _t_ingest(args: dict) -> dict:
         payload = {
             "path": args.get("path") or str(Path(root).parent),
             "source": args.get("source", "auto"),
-            "semantic": bool(args.get("semantic", False)),
+            # Default ON, matching the CLI: a semantic-less ingest is the
+            # termless-corpus failure of 0.48.0 ("main path must exercise
+            # core mechanisms").
+            "semantic": bool(args.get("semantic", True)),
             "partition": part,
         }
         r = daemon_mod.call(root, "ingest_path_start", payload, timeout=30.0)
@@ -586,6 +629,11 @@ def _t_save_state(args: dict) -> dict:
         message=args.get("message"),
         promote=bool(args.get("promote", True)),
         dry_run=bool(args.get("dry_run", False)))
+    # Shared post-steps (GMD lint + file-under-subject): without these an MCP
+    # save-state promoted a digest orphaned from its subject (parity audit 7).
+    fin = handoff.finalize_save_state(s, root, res, repo=repo)
+    res["lint"] = fin.get("lint")
+    res["filed_subject"] = fin.get("filed_subject")
     # Drop the full rendered doc from the tool result unless dry-run asked for it.
     if not res.get("dry_run"):
         res.pop("doc", None)
@@ -623,10 +671,20 @@ TOOLS: dict[str, dict] = {
         "fn": _t_search},
     "rmx_context": {
         "description": "Token-budgeted context bundle for a symbol/concept in "
-                       "the current project (anchor + typed neighbors).",
+                       "the current project (anchor + typed neighbors + helix "
+                       "staleness notes). expand=N adds source lines per code "
+                       "hit; hit_lines=nums|text lists every hit line per file.",
         "schema": {"type": "object", "properties": {
             "ref": {"type": "string"}, "root": {"type": "string"},
-            "degree": {"type": "integer"}}, "required": ["ref"]},
+            "degree": {"type": "integer"}, "expand": {"type": "integer"},
+            "hit_lines": {"type": "string",
+                          "enum": ["first", "nums", "text"]},
+            "max_entities": {"type": "integer"},
+            "max_tokens": {"type": "integer"},
+            "linkage": {"type": "string"}, "fuse": {"type": "boolean"},
+            "strict": {"type": "boolean"},
+            "include_sessions": {"type": "boolean"},
+            "grep_backstop": {"type": "boolean"}}, "required": ["ref"]},
         "fn": _t_context},
     "rmx_query": {
         "description": "Run a refmatrix DSL query in the current project.",
@@ -635,15 +693,22 @@ TOOLS: dict[str, dict] = {
             "required": ["dsl"]},
         "fn": _t_query},
     "rmx_memory_recall": {
-        "description": "Recall memories — project + global 'Claude behavior' "
-                       "store (scope=both by default). Pass `project` (name, "
+        "description": "Recall memories — project store by default "
+                       "(scope=project, matching the CLI); scope=both adds the "
+                       "global behavior store. Pass `project` (name, "
                        "e.g. 'cliquedb') or `root` to target a specific store "
                        "when this server's cwd is a different project.",
         "schema": {"type": "object", "properties": {
             "query": {"type": "string"}, "scope": {
                 "type": "string", "enum": ["project", "global", "both"]},
             "k": {"type": "integer"}, "root": {"type": "string"},
-            "project": {"type": "string"}},
+            "project": {"type": "string"},
+            "kinds": {"type": "array", "items": {"type": "string"}},
+            "fuse": {"type": "boolean"}, "rerank": {"type": "boolean"},
+            "since_seconds": {"type": "number"},
+            "exclude_mtype": {"type": "array", "items": {"type": "string"},
+                              "description": "mtype globs to drop; default "
+                                             "['session/*'] (pass [] for none)"}},
             "required": []},
         "fn": _t_memory_recall},
     "rmx_bus_pub": {
@@ -731,7 +796,8 @@ TOOLS: dict[str, dict] = {
         "description": "Current short-term focus graph + task stack for the "
                        "project (what's being worked on right now).",
         "schema": {"type": "object", "properties": {
-            "root": {"type": "string"}, "session": {"type": "string"}}},
+            "root": {"type": "string"}, "session": {"type": "string"},
+            "top": {"type": "integer"}}},
         "fn": _t_focus},
     "rmx_projects": {
         "description": "List all refmatrix projects + daemon status.",
@@ -743,9 +809,11 @@ TOOLS: dict[str, dict] = {
                        "hypothesis, a tradeoff. The reliable reasoning-capture "
                        "channel (extended thinking is redacted from transcripts).",
         "schema": {"type": "object", "properties": {
-            "text": {"type": "string"}, "note": {"type": "string"},
+            "text": {"type": "string"},
+            "note": {"type": "string",
+                     "description": "alias for text; one of the two required"},
             "session": {"type": "string"},
-            "root": {"type": "string"}}, "required": ["text"]},
+            "root": {"type": "string"}}, "required": []},
         "fn": _t_focus_note},
     "rmx_memory_add": {
         "description": "Add or update a durable memory in the current project's "
@@ -762,9 +830,11 @@ TOOLS: dict[str, dict] = {
                        "LTM container) for this session's thread of work; "
                        "promoted digests/handoffs file under it.",
         "schema": {"type": "object", "properties": {
-            "label": {"type": "string"}, "subject": {"type": "string"},
+            "label": {"type": "string"},
+            "subject": {"type": "string",
+                        "description": "alias for label; one of the two required"},
             "session": {"type": "string"},
-            "root": {"type": "string"}}, "required": ["label"]},
+            "root": {"type": "string"}}, "required": []},
         "fn": _t_change_subject},
     "rmx_memory": {
         "description": "Full access to the project memory store — parity with "
