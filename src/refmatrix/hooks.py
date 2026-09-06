@@ -277,6 +277,7 @@ def install(
     apply: bool = False,
     force: bool = False,
     memory_hooks: bool = True,
+    agent_env: bool = True,
 ) -> list[str]:
     """Return a list of human-readable plan lines. Performs writes if apply=True."""
     out: list[str] = []
@@ -289,6 +290,9 @@ def install(
                                          scope=scope, apply=apply, force=force,
                                          primer=True, scan_prompt=True,
                                          memory_hooks=memory_hooks))
+    if agent_env:
+        out.extend(_install_agent_env(project_root, scope=scope,
+                                      apply=apply, force=force))
     if briefing:
         out.extend(_install_briefing(project_root, refmatrix_root,
                                      apply=apply, force=force))
@@ -535,6 +539,121 @@ leaves a handoff the next instance reads.
 Delete `.refmatrix/`, the `rmx` lines from `.git/hooks/*`, and the rmx
 entries from `.claude/settings.local.json`.
 """
+
+
+# Agent shell environment. BASH_ENV makes every non-interactive bash the
+# Claude Code harness spawns (main agent AND subagents) source this file, so
+# rmx helpers and env defaults reach every Bash tool call. The rmx-owned
+# content lives between marker lines so re-installs can refresh it without
+# touching user-authored additions in the same file.
+AGENT_BASHRC_PATH = "~/.claude/agent-bashrc.sh"
+_BASHRC_BEGIN = "# >>> rmx agent env >>>"
+_BASHRC_END = "# <<< rmx agent env <<<"
+
+AGENT_BASHRC_SECTION = f"""{_BASHRC_BEGIN}
+# Managed by `rmx install-hooks` — edits inside these markers are overwritten
+# on reinstall. Add personal content OUTSIDE the markers.
+# Sourced on EVERY Bash tool call: keep fast; exports + functions only
+# (aliases need `shopt -s expand_aliases` and don't expand in tool calls).
+
+export RMXGREP_MODE="${{RMXGREP_MODE:-rich}}"
+
+# Retrieval-first helpers. `rmx context` is THE first lookup (BM25 + graph
+# neighbors with a literal-grep floor); see .refmatrix/PRIMER.md.
+rmxc()   {{ rmx context "$@"; }}                          # rmxc "<query or symbol>"
+rmxcx()  {{ rmx context "$1" --expand "${{2:-5}}"; }}       # rmxcx <name> [N] — ±N source lines/hit
+rmxhl()  {{ rmx context "$1" --hit-lines "${{2:-text}}"; }} # rmxhl <name> [nums|text]
+rmxn()   {{ rmx neighbors "$@"; }}                        # graph walk from a node
+rmxq()   {{ rmx query "$@"; }}                            # set-algebra DSL
+rmxg()   {{ rmx grep "$@"; }}                             # index-backed grep (bare grep/rg flags OK)
+rmxloc() {{ rmx locate "$@"; }}                           # full paths by filename/symbol
+rmxmem() {{ rmx memory recall "$@"; }}                    # memory recall
+rmxtop() {{ rmx top "$@"; }}                              # top-K entities by weight
+rmxd()   {{ rmx daemon status "$@"; }}                    # daemon health
+rmxst()  {{ rmx stats "$@"; }}                            # catalog + bitmap stats
+{_BASHRC_END}
+"""
+
+
+def _install_agent_env(
+    project_root: Path,
+    scope: str,
+    apply: bool,
+    force: bool,
+) -> list[str]:
+    """Write the rmx-managed section of ~/.claude/agent-bashrc.sh and wire
+    BASH_ENV (+ RMXGREP_MODE) into the Claude settings env block.
+
+    The bashrc lives at a user-global path regardless of scope — BASH_ENV
+    needs one stable path. The env wiring follows scope: project scope merges
+    into .claude/settings.local.json; user scope prints a snippet (we never
+    silently edit ~/.claude/settings.json).
+    """
+    out: list[str] = []
+    # RMX_AGENT_BASHRC overrides the target path (tests; exotic setups).
+    bashrc = Path(os.environ.get("RMX_AGENT_BASHRC",
+                                 AGENT_BASHRC_PATH)).expanduser()
+
+    # --- bashrc: create, refresh markers, or append section ---
+    if not bashrc.exists():
+        out.append(f"[green]write[/] {bashrc}")
+        if apply:
+            bashrc.parent.mkdir(parents=True, exist_ok=True)
+            bashrc.write_text(AGENT_BASHRC_SECTION)
+    else:
+        text = bashrc.read_text()
+        if _BASHRC_BEGIN in text and _BASHRC_END in text:
+            if force:
+                out.append(f"[green]refresh[/] rmx section in {bashrc}")
+                if apply:
+                    pre, _, rest = text.partition(_BASHRC_BEGIN)
+                    _, _, post = rest.partition(_BASHRC_END)
+                    post = post.lstrip("\n")
+                    section = AGENT_BASHRC_SECTION.rstrip("\n") + "\n"
+                    bashrc.write_text(pre + section + post)
+            else:
+                out.append(f"[yellow]skip[/] {bashrc} "
+                           "(rmx section present; pass --force to refresh)")
+        else:
+            out.append(f"[green]append[/] rmx section to {bashrc}")
+            if apply:
+                sep = "" if text.endswith("\n") else "\n"
+                bashrc.write_text(text + sep + "\n" + AGENT_BASHRC_SECTION)
+
+    # --- env wiring ---
+    env_block = {
+        "BASH_ENV": str(bashrc),
+        "RMXGREP_MODE": "rich",
+    }
+    if scope == "user":
+        out.append("[bold]Claude Code (user scope)[/] — merge into "
+                   "~/.claude/settings.json:")
+        out.append(json.dumps({"env": env_block}, indent=2))
+        return out
+
+    target = project_root / ".claude" / "settings.local.json"
+    existing: dict = {}
+    if target.exists():
+        try:
+            existing = json.loads(target.read_text())
+        except json.JSONDecodeError:
+            out.append(f"[red]warn[/] {target} is not valid JSON; "
+                       "skipping env wiring")
+            return out
+    env = dict(existing.get("env") or {})
+    added = {k: v for k, v in env_block.items()
+             if force or k not in env}
+    if not added:
+        out.append(f"[yellow]skip[/] env block in {target} (keys present)")
+        return out
+    env.update(added)
+    out.append(f"[green]merge[/] env {{{', '.join(sorted(added))}}} "
+               f"into {target}")
+    if apply:
+        target.parent.mkdir(exist_ok=True)
+        merged = {**existing, "env": env}
+        target.write_text(json.dumps(merged, indent=2))
+    return out
 
 
 def _install_briefing(

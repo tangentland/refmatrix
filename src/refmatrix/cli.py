@@ -7227,13 +7227,17 @@ def watch(path, semantic, debounce):
 @click.option("--claude/--no-claude", default=True, help="Install Claude Code hook config.")
 @click.option("--briefing/--no-briefing", default=True,
               help="Write .refmatrix/CLAUDE.md so Claude knows rmx is here.")
+@click.option("--agent-env/--no-agent-env", default=True,
+              help="Write ~/.claude/agent-bashrc.sh (rmx helper functions, "
+                   "RMXGREP_MODE) and wire BASH_ENV into the settings env "
+                   "block so every agent/subagent shell sources it.")
 @click.option("--apply", is_flag=True,
               help="Actually write files. Without this flag, prints what would happen.")
 @click.option("--force", is_flag=True, help="Overwrite existing files.")
 @click.option("--scope", type=click.Choice(["project", "user"]), default="project",
               help="For Claude hooks: write to .claude/settings.local.json (project) "
                    "or print snippet for ~/.claude/settings.json (user).")
-def install_hooks(git, claude, briefing, apply, force, scope):
+def install_hooks(git, claude, briefing, agent_env, apply, force, scope):
     """Install or preview hooks that keep refmatrix in sync."""
     from refmatrix.hooks import install
 
@@ -7241,7 +7245,7 @@ def install_hooks(git, claude, briefing, apply, force, scope):
     project_root = s.root.parent
     plan = install(project_root=project_root, refmatrix_root=s.root,
                    git=git, claude=claude, briefing=briefing, scope=scope,
-                   apply=apply, force=force)
+                   apply=apply, force=force, agent_env=agent_env)
     for line in plan:
         console.print(line)
 
