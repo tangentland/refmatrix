@@ -442,55 +442,75 @@ from refmatrix.cli import _split_grep_argv, _grep_bare_flags
 def _bare(argv):
     ft, pat, paths, _ = _split_grep_argv(list(argv))
     gf = _parse_grep_flags(None)
-    note, err = _grep_bare_flags(ft, gf) if ft else (None, None)
-    return gf, pat, paths, note, err
+    note, err, delegate = (_grep_bare_flags(ft, gf) if ft
+                           else (None, None, []))
+    return gf, pat, paths, note, err, delegate
 
 
 def test_bare_flags_split_pattern_and_paths():
-    gf, pat, paths, note, err = _bare(["-rn", "daemon", "src/"])
-    assert err is None and pat == "daemon" and paths == ["src/"]
+    gf, pat, paths, note, err, delegate = _bare(["-rn", "daemon", "src/"])
+    assert err is None and not delegate
+    assert pat == "daemon" and paths == ["src/"]
     assert note is not None  # -r -n ignored with a note
 
 
 def test_bare_answer_flags_honored():
-    gf, pat, _, _, err = _bare(["-i", "-l", "daemon"])
-    assert err is None and pat == "daemon"
+    gf, pat, _, _, err, delegate = _bare(["-i", "-l", "daemon"])
+    assert err is None and not delegate and pat == "daemon"
     assert gf["ignore_case"] is True and gf["files_only"] is True
-    gf2, _, _, _, _ = _bare(["-inl", "X"])
+    gf2, *_ = _bare(["-inl", "X"])
     assert gf2["ignore_case"] and gf2["files_only"]
 
 
 def test_bare_e_supplies_pattern_and_endflags():
-    _, pat, paths, _, err = _bare(["-e", "-x", "--", "src/"])
-    assert err is None and pat == "-x" and paths == ["src/"]
+    _, pat, paths, _, err, delegate = _bare(["-e", "-x", "--", "src/"])
+    assert err is None and not delegate
+    assert pat == "-x" and paths == ["src/"]
 
 
 def test_bare_whole_line_and_word():
-    gf, pat, _, _, err = _bare(["-w", "-x", "widget"])
-    assert err is None and gf["word"] and gf["whole_line"]
+    gf, pat, _, _, err, delegate = _bare(["-w", "-x", "widget"])
+    assert err is None and not delegate
+    assert gf["word"] and gf["whole_line"]
 
 
-def test_bare_path_filter_fails_loud():
-    *_, err = _bare(["-g", "*.sql", "daemon", "src/"])
-    assert err and "-g" in err and "path filter" in err
+def test_bare_path_filter_delegates():
+    *_, err, delegate = _bare(["-g", "*.sql", "daemon", "src/"])
+    assert err is None
+    assert delegate and "-g" in delegate[0] and "path filter" in delegate[0]
 
 
-def test_bare_context_flag_ignored_and_consumes_value():
-    gf, pat, paths, note, err = _bare(["-C", "3", "daemon"])
+def test_bare_include_delegates_and_consumes_value():
+    _, pat, paths, _, err, delegate = _bare(
+        ["--include=*.py", "daemon", "src/"])
+    assert err is None and pat == "daemon" and paths == ["src/"]
+    assert delegate and "--include" in delegate[0]
+
+
+def test_bare_context_flag_delegates_and_consumes_value():
+    gf, pat, paths, note, err, delegate = _bare(["-C", "3", "daemon"])
     assert err is None and pat == "daemon" and paths == []  # '3' consumed
-    assert note is not None
+    assert delegate and "-C" in delegate[0]
 
 
-def test_bare_unknown_flag_fails_loud():
-    *_, err = _bare(["-z", "daemon"])
-    assert err and "-z" in err
+def test_bare_unknown_flag_delegates():
+    *_, err, delegate = _bare(["-z", "daemon"])
+    assert err is None
+    assert delegate and "-z" in delegate[0]
 
 
 def test_bare_long_forms():
-    gf, pat, _, _, err = _bare(["--ignore-case", "--count", "foo"])
-    assert err is None and gf["ignore_case"] and gf["count"]
+    gf, pat, _, _, err, delegate = _bare(["--ignore-case", "--count", "foo"])
+    assert err is None and not delegate
+    assert gf["ignore_case"] and gf["count"]
 
 
 def test_bare_conflicts_rejected():
-    *_, err = _bare(["-l", "-L", "x"])
+    *_, err, _d = _bare(["-l", "-L", "x"])
     assert err and "-l and -L" in err
+
+
+def test_bare_num_shorthand_delegates():
+    *_, err, delegate = _bare(["-3", "daemon"])
+    assert err is None
+    assert delegate and "-3" in delegate[0]

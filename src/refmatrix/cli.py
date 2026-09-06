@@ -4541,7 +4541,8 @@ def _parse_grep_flags(s: str | None) -> dict:
 #   - VALUE: consumes the next token (so it can't be mistaken for the pattern).
 _GREP_VALUE_FLAGS = {"-e", "-A", "-B", "-C", "-m", "-g", "--glob", "-t",
                      "--max-count", "--after-context", "--before-context",
-                     "--context"}
+                     "--context", "--include", "--exclude", "--exclude-dir",
+                     "--iglob", "-T", "--type-not"}
 # FORMAT/recursion flags rmx grep ignores (its output is always path:line, it
 # always searches the whole index): line numbers, filename toggles, only-match,
 # recursion, binary/color/heading knobs.
@@ -4616,16 +4617,21 @@ def _split_grep_argv(tokens: list) -> tuple:
 
 def _grep_bare_flags(flag_tokens: list, gf: dict, stdin_mode: bool = False) -> tuple:
     """Fold bare grep/rg flag tokens into `gf` (mutated in place) with grep
-    semantics. Returns (ignored_note | None, error | None). ANSWER flags are
-    honored; FORMAT flags are ignored (surfaced in the note); an unsupported
-    flag that would CHANGE THE ANSWER (path filters -g/--glob/-t, unknown
-    letters) errors loudly — a filter silently dropped from a READ is a wrong
-    answer, not a formatting nicety.
+    semantics. Returns (ignored_note | None, error | None, delegate | list).
+
+    ANSWER flags are honored on the index; FORMAT flags are ignored (surfaced
+    in the note); a valid grep/rg flag the index CANNOT express (path filters
+    -g/--glob/-t/--include, context -A/-B/-C, per-file -m, unknown letters/
+    longs, -NUM) lands in `delegate` — the caller then bypasses the index and
+    runs the real tool with the original argv, so every flag keeps its real
+    semantics. `error` is reserved for genuinely malformed input (bad numeric
+    value, mutually exclusive flags).
 
     Under `stdin_mode` (pipe filtering, no index involved) rmx grep IS grep, so
     the rendering flags -n/-H/-h/-o/-q and the value flags -m/-A/-B/-C are
     honored rather than ignored."""
     ignored: list = []
+    delegate: list = []
     j = 0
     n = len(flag_tokens)
     while j < n:
@@ -4642,13 +4648,15 @@ def _grep_bare_flags(flag_tokens: list, gf: dict, stdin_mode: bool = False) -> t
             if base in ("-A", "-B", "-C", "-m", "--after-context",
                         "--before-context", "--context", "--max-count"):
                 if not stdin_mode:
-                    ignored.append(tok)      # index output is always path:line
+                    # Context/max-count shape the ANSWER; the indexed path
+                    # can't render them, the real tool can.
+                    delegate.append(f"{base} (context/max-count)")
                     continue
                 try:
                     num = int(str(val))
                 except (TypeError, ValueError):
                     return None, (f"grep: '{base}' expects a number, got "
-                                  f"{val!r}")
+                                  f"{val!r}"), delegate
                 if base in ("-m", "--max-count"):
                     gf["max_count"] = num
                 elif base in ("-A", "--after-context"):
@@ -4658,10 +4666,10 @@ def _grep_bare_flags(flag_tokens: list, gf: dict, stdin_mode: bool = False) -> t
                 else:
                     gf["after"] = gf["before"] = num
                 continue
-            # -g/--glob/-t narrow the file set → dropping them WIDENS the answer.
-            return None, (f"grep: '{base}' (path filter) is not supported by "
-                          f"rmx grep and would change the result set — pass an "
-                          f"explicit PATH instead of {base} {val!r}")
+            # -g/--glob/-t/--include… narrow the file set — the index can't,
+            # the real tool can.
+            delegate.append(f"{base} (path filter)")
+            continue
         if base.startswith("--"):
             if base in _GREP_FORMAT_LONG:
                 if stdin_mode and base in _GREP_STDIN_LONG:
@@ -4670,9 +4678,8 @@ def _grep_bare_flags(flag_tokens: list, gf: dict, stdin_mode: bool = False) -> t
             if base in ("--quiet", "--silent"):
                 if stdin_mode:
                     gf["quiet"] = True; continue
-                return None, ("grep: -q/--quiet is only supported when rmx "
-                              "grep filters a pipe; on the indexed path the "
-                              "exit code would not mean what grep means")
+                delegate.append(f"{base} (exit-code semantics)")
+                continue
             if base in ("--ignore-case",): gf["ignore_case"] = True; continue
             if base in ("--word-regexp",): gf["word"] = True; continue
             if base in ("--invert-match",): gf["invert"] = True; continue
@@ -4684,18 +4691,16 @@ def _grep_bare_flags(flag_tokens: list, gf: dict, stdin_mode: bool = False) -> t
             if base in ("--extended-regexp", "--regexp-extended"):
                 gf["force_regex"] = True; continue
             if base in ("--line-regexp",): gf["whole_line"] = True; continue
-            return None, (f"grep: unsupported flag '{base}'. If it only affects "
-                          f"formatting use -f to bundle known letters; "
-                          f"answer-changing flags must be supported to be safe.")
+            delegate.append(f"{base} (not index-expressible)")
+            continue
         # short cluster, e.g. -inl. Value letters may carry their argument
         # attached (`-C1`, `-nA2`, `-m10`) and a bare `-3` means `-C 3`.
         body = tok[1:]
         if body.isdigit():
-            # `-NUM` is GNU-only shorthand for -C NUM and BSD grep reads it
-            # differently. Two grep dialects disagreeing about the answer is
-            # exactly the case that must fail loud, not be guessed at.
-            return None, (f"grep: '{tok}' (GNU -NUM context shorthand) is "
-                          f"ambiguous across grep dialects — use -C {body}")
+            # `-NUM` (GNU -C shorthand): let the real tool interpret its own
+            # dialect rather than guessing.
+            delegate.append(f"{tok} (-NUM context shorthand)")
+            continue
         k = 0
         while k < len(body):
             ch = body[k]; k += 1
@@ -4723,13 +4728,13 @@ def _grep_bare_flags(flag_tokens: list, gf: dict, stdin_mode: bool = False) -> t
             elif ch in _GREP_FORMAT_FLAGS:
                 ignored.append(f"-{ch}")
             else:
-                return None, (f"grep: unsupported flag '-{ch}' (in {tok!r}). "
-                              f"Answer-changing flags must be supported to be "
-                              f"safe; formatting flags are ignored.")
+                delegate.append(f"-{ch} (not index-expressible, in {tok!r})")
+    if delegate and not stdin_mode:
+        return None, None, delegate
     if gf["force_substring"] and gf["force_regex"]:
-        return None, "grep: -F and -E are mutually exclusive"
+        return None, "grep: -F and -E are mutually exclusive", delegate
     if gf["files_only"] and gf["files_without_match"]:
-        return None, "grep: -l and -L are mutually exclusive"
+        return None, "grep: -l and -L are mutually exclusive", delegate
     note = None
     if ignored:
         seen = []
@@ -4738,7 +4743,7 @@ def _grep_bare_flags(flag_tokens: list, gf: dict, stdin_mode: bool = False) -> t
         note = ("rmx grep: ignoring formatting/recursion flags "
                 + " ".join(seen) + " (output is always path:line over the "
                 "whole index)")
-    return note, None
+    return note, None, delegate
 
 
 def _render_grep_rows(rows, gf, limit, source_tag="idx"):
@@ -5044,9 +5049,18 @@ def grep(argv, regex, flags, linkage, kind, limit, fallback, learn, via_replica)
     # grep, but mean nothing against the index).
     piped = _is_stdin_piped()
     if flag_tokens:
-        note, err = _grep_bare_flags(flag_tokens, gf, stdin_mode=piped)
+        note, err, delegate = _grep_bare_flags(flag_tokens, gf,
+                                               stdin_mode=piped)
         if err:
             raise click.UsageError(err)
+        if delegate:
+            # Full flag compatibility: a valid grep/rg flag the index can't
+            # express bypasses the index — the real tool runs with the
+            # ORIGINAL argv so every flag keeps its native semantics. The
+            # graph still learns from parsed file:line hits.
+            _grep_delegate(list(argv), path_strs, delegate,
+                           learn=learn, piped=piped)
+            return
         # Habitual grep flags (-rn) hit this on every call; the note says
         # nothing actionable, so it only prints under RMX_GREP_VERBOSE=1.
         if note and not piped and os.environ.get("RMX_GREP_VERBOSE"):
@@ -5129,6 +5143,87 @@ def grep(argv, regex, flags, linkage, kind, limit, fallback, learn, via_replica)
             s, root, daemon_mod, pattern, effective_pattern, regex,
             linkage, kind, limit, fallback, learn, gf, paths, _tlog,
         )
+
+
+def _grep_delegate(raw_tokens: list, path_strs: list, reasons: list,
+                   learn: bool = True, piped: bool = False) -> None:
+    """Run the user's grep invocation VERBATIM through the real tool because
+    it carries flags the index can't express. rg first (it understands most
+    of the surface); on a usage error (exit 2 — e.g. grep-only flags like
+    --include) retry with grep. Output passes through byte-for-byte; hits
+    that parse as file:line still teach the graph (fire-and-forget RPC).
+
+    Exit codes follow the tool: 0 hits, 1 no hits, tool's own error text on
+    genuinely invalid flags — flag compatibility means the real tool is the
+    authority, not this wrapper."""
+    import shutil
+    import subprocess
+    import sys as _sys
+
+    tokens = [str(x) for x in raw_tokens]
+    if not path_strs and not piped:
+        # No explicit target and no pipe: grep/rg would read stdin and hang.
+        tokens = tokens + [str(_root().parent)]
+        # A directory target needs recursion under plain grep; rg recurses
+        # by default. Harmless duplicate if the user already passed -r.
+        grep_extra = ["-r"]
+    else:
+        grep_extra = []
+    stdin_arg = None if piped else subprocess.DEVNULL
+
+    attempts = []
+    rg = shutil.which("rg")
+    if rg:
+        attempts.append([rg, *tokens])
+    gtool = shutil.which("grep")
+    if gtool:
+        attempts.append([gtool, *grep_extra, *tokens])
+    if not attempts:
+        raise click.ClickException("neither rg nor grep on PATH")
+
+    reason_txt = ", ".join(reasons)
+    res = None
+    for i, cmd in enumerate(attempts):
+        res = subprocess.run(cmd, stdin=stdin_arg,
+                             capture_output=True, text=True)
+        if res.returncode != 2:
+            click.echo(f"# rmx grep delegated to {Path(cmd[0]).name} "
+                       f"({reason_txt})", err=True)
+            break
+        # exit 2 = usage error for both tools; try the next dialect.
+        if i == len(attempts) - 1:
+            _sys.stderr.write(res.stderr)
+            raise SystemExit(2)
+    assert res is not None
+    if res.stdout:
+        _sys.stdout.write(res.stdout)
+    if res.stderr and res.returncode not in (0, 1):
+        _sys.stderr.write(res.stderr)
+
+    if learn and res.returncode == 0 and not piped:
+        hits = []
+        for raw in res.stdout.splitlines():
+            parts = raw.split(":", 2)
+            if len(parts) >= 2:
+                try:
+                    hits.append({"file": parts[0], "line": int(parts[1])})
+                except ValueError:
+                    pass
+        if hits:
+            try:
+                from refmatrix import daemon as _dmod
+                _r = _root()
+                if _dmod.ping(_r):
+                    # Teach with the pattern-ish token: first non-flag arg.
+                    pat = next((x for x in tokens
+                                if not x.startswith("-")), "")
+                    _dmod.call(_r, "learn_from_grep", {
+                        "pattern": pat, "hits": hits[:200],
+                        "project_root": str(_r.parent),
+                    }, timeout=10.0)
+            except Exception:
+                pass
+    raise SystemExit(res.returncode)
 
 
 def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
