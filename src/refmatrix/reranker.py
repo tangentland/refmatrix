@@ -125,10 +125,12 @@ class Reranker:
         never mix them with BM25 or RRF magnitudes; use them for ordering.
         """
         self._load()
+        model = self._model
+        assert model is not None  # _load() just set it
         if not docs:
             return []
         pairs = [[query, (d or "")[:MAX_DOC_CHARS]] for d in docs]
-        out = self._model.predict(pairs, show_progress_bar=False)
+        out = model.predict(pairs, show_progress_bar=False)
         return _checked(out, self.model_name)
 
 

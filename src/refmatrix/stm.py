@@ -771,7 +771,7 @@ def cluster_focus(graph: dict, *, min_size: int = 2) -> list[list[str]]:
         for n in nodes:  # graph order = score order → deterministic
             if not adj[n]:
                 continue
-            tally = collections.Counter()
+            tally: dict[int, float] = collections.defaultdict(float)
             for m, w in adj[n].items():
                 tally[label[m]] += w
             best = max(tally.items(), key=lambda kv: (kv[1], -kv[0]))[0]

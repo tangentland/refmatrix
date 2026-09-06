@@ -488,8 +488,7 @@ def _t_memory(args: dict) -> dict:
             "mtype": m.get("mtype") or "feedback", "tags": tags,
             "metadata": m.get("metadata")})
         return g.get("result", {}) if g.get("ok") else {"error": g.get("error")}
-    op = _MEMORY_OPS.get(action)
-    if op is None:
+    if not isinstance(action, str) or (op := _MEMORY_OPS.get(action)) is None:
         return {"error": f"unknown memory action {action!r}"}
     try:
         payload = {**_memory_payload(action, args), "partition": part}
@@ -903,7 +902,7 @@ def handle_message(msg: dict):
     if method == "tools/call":
         params = msg.get("params") or {}
         name = params.get("name")
-        tool = TOOLS.get(name)
+        tool = TOOLS.get(name) if isinstance(name, str) else None
         if tool is None:
             return _error(req_id, -32602, f"unknown tool: {name}")
         try:

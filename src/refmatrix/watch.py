@@ -157,8 +157,8 @@ def run_watcher(
 ) -> None:
     """Block until SIGINT/SIGTERM (or `stop_event` is set), syncing on changes."""
     try:
-        from watchdog.events import FileSystemEventHandler
-        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler  # pyright: ignore[reportMissingImports]
+        from watchdog.observers import Observer  # pyright: ignore[reportMissingImports]
     except ImportError as e:
         raise RuntimeError(
             "watchdog not installed. `pip install 'refmatrix[watch]'` or `pip install watchdog`"

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Iterator, cast
 
 from pyroaring import BitMap
 
@@ -205,7 +205,9 @@ class QueryEngine:
 
     # --- PQL entry point ---
     def run_pql(self, pql: str) -> BitMap | list:
-        return _PQLEvaluator(self).eval(pql.strip())
+        # NOTE: Count() queries actually yield int at runtime; annotation kept
+        # as-is because callers len()/list() the result (see review notes).
+        return cast("BitMap | list", _PQLEvaluator(self).eval(pql.strip()))
 
     # --- core ---
     def _eval(self, node: Node) -> BitMap:

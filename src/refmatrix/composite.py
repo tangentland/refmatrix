@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 from .context import build_context, estimate_tokens
 from .stm import Stm, is_junk_ref, latest_session, topic_composites
@@ -123,7 +124,8 @@ def build_topic_composite(
 
 
 def _render_gmd(
-    s, topics, *, expand, per_node_entities, expand_nodes_per_topic,
+    s: Any,  # Store (duck-typed; daemon and CLI both hand one in)
+    topics, *, expand, per_node_entities, expand_nodes_per_topic,
     max_expansions, max_tokens, turn, intra_edges=COMPOSITE_INTRA_EDGES,
 ) -> str:
     lines: list[str] = [
@@ -178,6 +180,7 @@ def _render_gmd(
         #   EXTERNAL — not a member → a sparse-first "aha" bridge ({ltm}), ranked
         #     by ascending PageRank so unique targets win over hubs.
         if expand:
+            assert s is not None  # expand callers always pass a real store
             members_set = set(members)
             clean_nodes = [nd for nd in t["nodes"] if not _is_junk(nd["name"])]
             intra: list[tuple[str, str, str]] = []   # (verb, src, tgt), deduped

@@ -167,7 +167,7 @@ def rank_assoc_for_prompt(
     seed_set = set(seed_ids)
     a_len = float(len(anchor))
     df_cap = max_df_v * n_docs
-    scored: list[tuple[float, int]] = []
+    scored: list[tuple[float, int, int]] = []
     for r in rows:
         cid = int(r[0])
         if cid in seed_set:

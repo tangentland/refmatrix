@@ -80,6 +80,7 @@ def migrate_catalog(
             row = con.execute(
                 f"SELECT COALESCE(MAX({col}), 0) FROM {SQLITE_ALIAS}.main.{table}"
             ).fetchone()
+            assert row is not None  # aggregate SELECT always returns one row
             sequence_starts[seq] = (row[0] or 0) + 1
 
         init_catalog(con, sequence_starts=sequence_starts)
@@ -107,9 +108,11 @@ def migrate_catalog(
                 f"INSERT INTO {table} ({col_list}) "
                 f"SELECT {col_list} FROM {SQLITE_ALIAS}.main.{table}"
             )
-            counts[table] = con.execute(
+            _crow = con.execute(
                 f"SELECT COUNT(*) FROM {table}"
-            ).fetchone()[0]
+            ).fetchone()
+            assert _crow is not None  # COUNT(*) always returns one row
+            counts[table] = _crow[0]
 
         # Parity check: row counts must match the source for tables that
         # exist on both sides.
@@ -121,9 +124,11 @@ def migrate_catalog(
             ).fetchone()
             if not src_present:
                 continue
-            src_count = con.execute(
+            _srow = con.execute(
                 f"SELECT COUNT(*) FROM {SQLITE_ALIAS}.main.{table}"
-            ).fetchone()[0]
+            ).fetchone()
+            assert _srow is not None  # COUNT(*) always returns one row
+            src_count = _srow[0]
             if src_count != n:
                 raise RuntimeError(
                     f"row count mismatch on {table}: src={src_count} dst={n}"

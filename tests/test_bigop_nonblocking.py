@@ -14,8 +14,11 @@ from __future__ import annotations
 
 import threading
 import time
-from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from refmatrix.daemon import Daemon
 
 import pytest
 
@@ -162,12 +165,13 @@ def test_merge_progress_failure_is_swallowed(store):
 def _fake_daemon(store):
     d = SimpleNamespace()
     d.store = store
+    d._st = lambda: store  # Daemon._st narrows the Optional store
     d._store_lock = threading.Lock()
     d._jobs = {}
     d._jobs_lock = threading.Lock()
-    d._log = lambda msg: None
+    d._log = lambda _msg: None
     d._request_snapshot = lambda: None
-    return d
+    return cast("Daemon", d)
 
 
 def test_async_merge_returns_job_id_then_completes(store):
@@ -179,6 +183,7 @@ def test_async_merge_returns_job_id_then_completes(store):
     job = out.get("job")
     assert job and out.get("async") is True
     deadline = time.time() + 10
+    st: dict = {"state": "timeout"}
     while time.time() < deadline:
         st = _op_job_status(d, {"job": job})
         if st["state"] in ("done", "error"):
