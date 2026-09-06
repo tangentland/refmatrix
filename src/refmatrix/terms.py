@@ -51,6 +51,10 @@ STOPWORDS = frozenset({
     "shall", "may", "might", "must",
     # misc grammatical
     "not", "no", "yes", "than", "then", "such",
+    # pronoun/numeral — "one patch", "no one", "one of". Carries no content
+    # even when a code symbol named `one` exists (an eval helper did, and
+    # "implement as one patch" earned it a full scan-prompt bundle).
+    "one",
 })
 
 

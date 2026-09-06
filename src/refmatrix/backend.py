@@ -12,7 +12,9 @@ management + DDL bootstrap into Backend implementations:
   `.commit()`, `.close()`, dict-or-tuple row access) so the rest of Store
   doesn't have to branch on backend kind.
 
-Selection: `RMX_BACKEND=duckdb` opt-in. Default stays sqlite.
+Selection: DuckDB is the default (since 2026-05-16). SQLite is opt-in only —
+`RMX_BACKEND=sqlite` / constructor arg — or autodetected for a legacy store
+whose `.refmatrix/catalog.db` already exists.
 """
 from __future__ import annotations
 

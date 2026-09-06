@@ -139,13 +139,24 @@ def _token_shape_score(token: str) -> float:
     return score
 
 
-def _concept_signal(s: Store, con, name: str) -> tuple[int | None, int, int]:
-    """`(concept_id, linkage_degree, mention_doc_freq)` for a concept name.
+def _concept_signal(
+    s: Store, con, name: str,
+) -> tuple[int | None, int, int, float]:
+    """`(concept_id, linkage_degree, mention_doc_freq, max_mention_tf)` for a
+    concept name.
 
     Single source of truth for the graph signals that feed both the
     unlinked-plain-word gate and the salience score, so `match_concepts`
     queries each matched concept once. All-zero / `None` on any lookup
-    failure so callers degrade gracefully."""
+    failure so callers degrade gracefully.
+
+    `max_mention_tf` is the PEAK per-document mention weight — how hard the
+    concept's single most-invested document leans on it. Measured on the live
+    graph it is the signal that separates discourse words from domain words
+    when both are PageRank-central: `working` (df=56) and `just` (df=45) never
+    exceed tf=2 in ANY document — mentioned everywhere, the subject of
+    nothing — while `memory` peaks at 24, `hub` at 15, `daemon` at 13,
+    because some document is actually ABOUT them."""
     cid = None
     try:
         row = con.execute(
@@ -170,7 +181,18 @@ def _concept_signal(s: Store, con, name: str) -> tuple[int | None, int, int]:
             df = len(s.load_bitmap("mentions", cid))
         except Exception:
             df = 0
-    return cid, deg, df
+    max_tf = 0.0
+    if cid is not None:
+        try:
+            r = con.execute(
+                "SELECT MAX(COALESCE(el.weight, 1)) FROM entity_links el "
+                "JOIN linkage_types lt ON lt.id = el.linkage_id "
+                "WHERE el.concept_id = ? AND lt.name = 'mentions'", (cid,),
+            ).fetchone()
+            max_tf = float(r[0]) if r and r[0] is not None else 0.0
+        except Exception:
+            max_tf = 0.0
+    return cid, deg, df, max_tf
 
 
 def _is_unlinked_plain(token: str, deg: int) -> bool:
@@ -212,6 +234,7 @@ def _code_fraction(s: Store) -> float:
 def _salience(
     s: Store, name: str, token: str, cid: int | None, deg: int, df: int,
     *, pr_computed: bool = False, code_frac: float = 1.0, n_docs: int = 0,
+    max_tf: "float | None" = None,
 ) -> float:
     """Rank score for a matched concept. Higher = more worth surfacing in
     the always-on scan-prompt hook. Combines graph signal (linkage degree),
@@ -251,7 +274,8 @@ def _salience(
         # degree so it still ranks sensibly before the first `rmx pagerank`.
         central = (2.0 + 0.1 * min(deg, 10)) if deg > 0 else 0.0
     return _salience_from_parts(central=central, df=df, token=token, name=name,
-                                code_frac=code_frac, n_docs=n_docs)
+                                code_frac=code_frac, n_docs=n_docs,
+                                max_tf=max_tf)
 
 
 # Scale on prose idf, chosen so `log2(N/df)` lands in the same band as the
@@ -262,14 +286,25 @@ _PROSE_IDF_W = 0.25
 def _salience_from_parts(
     *, central: float, df: int, token: str, name: str,
     code_frac: float = 1.0, n_docs: int = 0,
+    max_tf: "float | None" = None,
 ) -> float:
     """The salience arithmetic, split out from the graph lookups so the
     identity property below is directly testable.
 
-    At `code_frac == 1.0` this reduces EXACTLY to the original
-    `central + 1.5*idf_weak + shape + ns_bonus` — the property that lets the
-    prose blend exist at all without putting any code store at risk.
-    """
+    At `code_frac == 1.0` and `max_tf=None` this reduces EXACTLY to the
+    original `central + 1.5*idf_weak + shape + ns_bonus` — the property that
+    lets the prose blend exist at all without putting any code store at risk.
+
+    Concentration demotion (`max_tf`): a shape-0 plain word only keeps its
+    centrality prior to the extent SOME document actually leans on it.
+    PageRank rewards being mentioned everywhere, which is exactly the profile
+    of a discourse word (`working` df=56 max-tf 2, `just` df=45 max-tf 2) —
+    while every domain hub that deserves its centrality also has a document
+    that is about it (`memory` max-tf 24, `hub` 15, `daemon` 13). Scaling
+    `central` by peak-tf concentration kills the first class without touching
+    the second, where the shape-0 floor alone could not tell them apart.
+    Shaped / namespaced tokens are cited symbols and keep full centrality.
+    `RMX_SCAN_CONC_DEMOTE=0` disables for an A/B."""
     idf_weak = 1.0 / math.log2(df + 2) if df > 0 else 0.3
     idf_true = (math.log2(max(1.0, n_docs / float(df)))
                 if (n_docs > 0 and df > 0) else 0.0)
@@ -277,7 +312,31 @@ def _salience_from_parts(
     cf = 0.0 if code_frac < 0.0 else (1.0 if code_frac > 1.0 else code_frac)
     w_central = 0.3 + 0.7 * cf
     spec = cf * (1.5 * idf_weak) + (1.0 - cf) * (_PROSE_IDF_W * idf_true)
-    return w_central * central + spec + _token_shape_score(token) + ns_bonus
+    shape = _token_shape_score(token)
+    if (max_tf is not None and shape == 0.0 and "/" not in name
+            and _conc_demote()):
+        central = central * _mention_concentration(max_tf)
+    return w_central * central + spec + shape + ns_bonus
+
+
+# Peak mention tf at which a shape-0 word earns FULL centrality. log-scaled
+# below it: max-tf 2 (the ceiling every measured discourse word sits at)
+# keeps half its centrality prior; 8+ keeps all of it.
+_CONC_SAT_TF = 8.0
+
+
+def _mention_concentration(max_tf: float) -> float:
+    """[0, 1] factor from peak per-document mention weight."""
+    if max_tf <= 0:
+        return 0.0
+    return min(1.0, math.log2(max_tf + 1.0) / math.log2(_CONC_SAT_TF + 1.0))
+
+
+def _conc_demote() -> bool:
+    """Concentration demotion of shape-0 centrality. On by default;
+    RMX_SCAN_CONC_DEMOTE=0 restores the undemoted salience for an A/B."""
+    return os.environ.get("RMX_SCAN_CONC_DEMOTE", "1") not in (
+        "0", "false", "False")
 
 
 # Salience bump for an STM seed that carries a body. Small — it reorders
@@ -400,11 +459,11 @@ def match_concepts(
         n_docs = 0
     scored: list[tuple[int, str, float]] = []
     for idx, (name, token) in enumerate(found):
-        cid, deg, df = _concept_signal(s, con, name)
+        cid, deg, df, max_tf = _concept_signal(s, con, name)
         if drop_unlinked_plain and _is_unlinked_plain(token, deg):
             continue
         sal = _salience(s, name, token, cid, deg, df, pr_computed=pr_computed,
-                        code_frac=code_frac, n_docs=n_docs)
+                        code_frac=code_frac, n_docs=n_docs, max_tf=max_tf)
         # Shape-0 salience floor: a plain lowercase word (no identifier shape,
         # not namespaced) must clear SHAPE0_SALIENCE_FLOOR to earn a bundle in
         # the always-on hook. Kills common-English hapaxes that happen to be
@@ -419,7 +478,9 @@ def match_concepts(
             continue
         scored.append((idx, name, sal))
     ranked = sorted(scored, key=lambda it: (-it[2], it[0]))
-    return [name for _idx, name, _sc in ranked]
+    # Alias twins (`scan-prompt` vs `scan_prompt`) both resolve and both rank;
+    # keep the higher-salience member so one concept can't take two slots.
+    return _dedup_twin_concepts([name for _idx, name, _sc in ranked])
 
 
 def _clique_weight() -> float:
@@ -519,12 +580,13 @@ def _stm_seed_ids(s: Store, root, *, max_seeds: int = 8) -> list[int]:
             if row is None:
                 continue
             cname = row[0]
-            _cid, deg, df = _concept_signal(s, con, cname)
+            _cid, deg, df, max_tf = _concept_signal(s, con, cname)
             if _is_unlinked_plain(name, deg):
                 continue
             sal = _salience(s, cname, name, cid, deg, df,
                             pr_computed=pr_computed,
-                            code_frac=code_frac, n_docs=n_docs)
+                            code_frac=code_frac, n_docs=n_docs,
+                            max_tf=max_tf)
             if (pr_computed and "/" not in cname
                     and _token_shape_score(name) == 0.0
                     and sal < _shape0_floor(code_frac)):
@@ -675,6 +737,52 @@ def _assoc_rerank(
     return names
 
 
+def _twin_key(name: str) -> str:
+    """Alias-collapse key: `scan-prompt` / `scan_prompt` / `ScanPrompt` all
+    map to one key, so variant twins cannot each spend a bundle slot. Anchored
+    names keep their anchor — `doc#a` and `doc#b` are distinct sections, not
+    twins."""
+    from refmatrix.identifier import canonicalize_name
+    if "#" in name:
+        base, anchor = name.split("#", 1)
+        return f"{canonicalize_name(base)}#{anchor.lower()}"
+    return canonicalize_name(name)
+
+
+def _dedup_twin_concepts(names: list[str]) -> list[str]:
+    """Keep the first (best-ranked) member of each twin group, preserve order."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for n in names:
+        k = _twin_key(n)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(n)
+    return out
+
+
+def _render_key(name: str) -> str:
+    """Cross-section dedup key. A GMD doc ingests as BOTH a doc/memory row
+    `X` and a concept row `X#root` carrying the same headline — collapse the
+    `#root` anchor onto its base so the pair counts as one shown row. Other
+    anchors stay distinct (real sections)."""
+    return _twin_key(name[:-5] if name.endswith("#root") else name)
+
+
+def _is_operational_anchor(name: str) -> bool:
+    """True for save-state cards, session cards and focus summaries (and
+    their `#anchor` sections). These mention everything a session touched, so
+    they are PPR gravity wells that win walk mass on ANY prompt. Procedural
+    recall of save-states belongs to the SessionStart hook and content match
+    (query-driven); the per-prompt PPR expansion must not spend bundle slots
+    on them unless the prompt named them (seeds are exempt at the call site)."""
+    base = name.split("#", 1)[0]
+    return (base.startswith("savestate_")
+            or base.startswith("session-")
+            or base.startswith("focus_summary_"))
+
+
 def _ppr_rerank(
     s: Store, matches: list[str], *, max_concepts: int,
 ) -> list[str]:
@@ -699,7 +807,42 @@ def _ppr_rerank(
         )
     except Exception:
         return matches
-    names = [r["name"] for r in ranked]
+    # Walk-DISCOVERED names face the same bar as prompt tokens; a seed the
+    # prompt actually named passes through untouched. Two gates: operational
+    # nodes (save-state / session cards) never spend a slot, and a plain
+    # shape-0 word must clear the salience floor — the walk otherwise
+    # reintroduces exactly the diffuse discourse words (`instance`) that
+    # match_concepts just floored out of the seed set.
+    seed_names = set(matches)
+    pr_computed = None
+    con, code_frac, n_docs = None, 1.0, 0
+    names: list[str] = []
+    for r in ranked:
+        nm = r["name"]
+        if nm in seed_names:
+            names.append(nm)
+            continue
+        if _is_operational_anchor(nm):
+            continue
+        if "/" not in nm and _token_shape_score(nm) == 0.0:
+            if pr_computed is None:   # hoist per-store constants, first need
+                from refmatrix import pagerank as pr_mod2
+                con = s._connect()
+                pr_computed = pr_mod2.has_scores(s)
+                code_frac = _code_fraction(s)
+                try:
+                    n_docs = s._mentions_bm25_stats(
+                        s.get_linkage_id("mentions"))[0]
+                except Exception:
+                    n_docs = 0
+            if pr_computed:
+                cid, deg, df, max_tf = _concept_signal(s, con, nm)
+                sal = _salience(s, nm, nm, cid, deg, df, pr_computed=True,
+                                code_frac=code_frac, n_docs=n_docs,
+                                max_tf=max_tf)
+                if sal < _shape0_floor(code_frac):
+                    continue
+        names.append(nm)
     # Guarantee seeds survive even if the walk surfaced unrelated hubs: append
     # any matched concept the PPR top-k dropped, preserving salience order.
     for name in matches:
@@ -767,7 +910,9 @@ def scan_prompt(
             s, matches, max_concepts=max_concepts, root=composite_root)
     elif matches and rank == "assoc":
         matches = _assoc_rerank(s, matches, max_concepts=max_concepts)
-    matches = matches[:max_concepts]
+    # Rerankers can reintroduce a twin the salience pass already collapsed
+    # (PPR expansion returns raw graph names); dedup again before the trim.
+    matches = _dedup_twin_concepts(matches)[:max_concepts]
 
     # ---- content-ranked view over the WHOLE candidate bag ------------------
     # The per-concept bundles below answer "what neighbours this term", once
@@ -825,6 +970,12 @@ def scan_prompt(
 
     parts: list[str] = []
     used = 0
+    # Rows already rendered by an earlier section (keyed via `_render_key`).
+    # The content bundle and the per-symbol bundles pull from the same graph,
+    # so without this the symbol bundle for the prompt's main term re-prints
+    # the exact memories the content section just showed — measured on a live
+    # prompt, ~30-40% of the spent budget was duplicate rows.
+    shown: set[str] = set()
     if cbundle is not None:
         header = (f"# refmatrix content matches for prompt: "
                   f"{', '.join(cands[:8])}")
@@ -833,6 +984,9 @@ def scan_prompt(
         parts.append("")
         parts.append(rendered)
         used += (len(header) + len(rendered)) // 4
+        for entries in cbundle.groups.values():
+            for e in entries:
+                shown.add(_render_key(e.entity.name))
     if not matches:
         return _compose("\n".join(parts))
     parts.append("")
@@ -843,6 +997,16 @@ def scan_prompt(
         b = build_context(s, name, max_tokens=per_concept_tokens, max_entities=10)
         if b.anchor is None or not b.groups:
             continue
+        if shown:
+            for ln in list(b.groups):
+                kept = [e for e in b.groups[ln]
+                        if _render_key(e.entity.name) not in shown]
+                if kept:
+                    b.groups[ln] = kept
+                else:
+                    del b.groups[ln]
+            if not b.groups:
+                continue
         rendered = render_text(b)
         cost = len(rendered) // 4
         if used + cost > max_tokens:
@@ -851,6 +1015,9 @@ def scan_prompt(
         parts.append("")
         parts.append(rendered)
         used += cost
+        for entries in b.groups.values():
+            for e in entries:
+                shown.add(_render_key(e.entity.name))
     return _compose("\n".join(parts))
 
 

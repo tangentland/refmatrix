@@ -543,6 +543,7 @@ def _append_content_hits(
     if not ref_terms:
         return
     seen_snip: set[tuple[str, str]] = set()
+    seen_root_twins: set[str] = set()
     n_before = len(built)
     content_entries: list[ContextEntry] = []
     # `concept` belongs in this list because of how GMD ingest shapes the
@@ -609,6 +610,14 @@ def _append_content_hits(
             continue
         if not include_sessions and _is_session_card(cent.name):
             continue
+        # Root-anchor twin: GMD ingest makes a doc/memory row `X` AND a
+        # concept row `X#root` carrying the same headline. Both rank on the
+        # same terms and print as near-identical lines — one hit, not two.
+        # Non-root anchors are real sections and stay eligible.
+        base = cent.name[:-5] if cent.name.endswith("#root") else cent.name
+        if base in seen_root_twins:
+            continue
+        seen_root_twins.add(base)
         seen_ids.add(ceid)
         res = _content_snippet(s, cent, ref_terms, expand=expand,
                                parent_cache=parent_cache)

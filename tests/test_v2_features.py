@@ -154,6 +154,11 @@ def test_pagerank_prior_lifts_central_concept_in_match_ranking(store):
     for e in ents:
         store.link("defines", central, e)
         store.link("mentions", central, e)
+    # A real central concept is also CONCENTRATED — some doc leans on it
+    # (measured: `memory` peaks at tf 24, `hub` 15). Without a tf spike the
+    # concentration demotion reads all-tf-1 breadth as a diffuse discourse
+    # word and floors its centrality, which is that fix working as intended.
+    store.link("mentions", central, ents[0], weight=12)
     store.link("mentions", fringe, ents[0])
     pr.store_scores(store, pr.compute(store))
     # Isolate the PR-ranking behavior from the shape-0 salience floor (its own

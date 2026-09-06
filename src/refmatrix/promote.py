@@ -122,11 +122,11 @@ def _gated_concept_id(store, name: str) -> "int | None":
         if row is None:
             continue
         cname = row[0]
-        _c, deg, df = _concept_signal(store, con, cname)
+        _c, deg, df, max_tf = _concept_signal(store, con, cname)
         if _is_unlinked_plain(bare, deg):
             continue
         sal = _salience(store, cname, bare, cid, deg, df,
-                        pr_computed=pr_computed)
+                        pr_computed=pr_computed, max_tf=max_tf)
         if (pr_computed and "/" not in cname
                 and _token_shape_score(bare) == 0.0
                 and sal < SHAPE0_SALIENCE_FLOOR):

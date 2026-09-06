@@ -93,6 +93,11 @@ def test_shape0_floor_drops_peripheral_plain_word_once_pagerank_ran(tmp_path):
     for e in ents:                          # hub is co-mentioned everywhere
         s.link("defines", hub, e)
         s.link("mentions", hub, e)
+    # ...and some document actually leans on it. Every real central domain
+    # word carries a tf spike (`memory` peaks at 24, `hub` at 15); without
+    # one, breadth alone now reads as a diffuse discourse word and the
+    # concentration demotion floors it — which is the point of that fix.
+    s.link("mentions", hub, ents[0], weight=12)
     s.link("mentions", fringe, ents[0])     # fringe: one lonely mention
     s.link("mentions", shaped, ents[0])     # shaped: also peripheral by degree
     pr.store_scores(s, pr.compute(s))
