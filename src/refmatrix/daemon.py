@@ -4725,7 +4725,7 @@ CLI_OPS: set[str] = {
 
 
 def spawn_daemon(root: Path, *, partition: str | None = None,
-                 wait_for_ready: float = 5.0,
+                 wait_for_ready: float | None = None,
                  watch_root: "Path | list[Path] | None" = None,
                  watch_debounce_ms: int = 500,
                  watch_semantic: bool = False) -> int:
@@ -4784,6 +4784,16 @@ def spawn_daemon(root: Path, *, partition: str | None = None,
             # Couldn't get a pid, but it's serving — caller doesn't strictly
             # need one. Return -1 as a sentinel.
             return -1
+
+        if wait_for_ready is None:
+            # A fresh store's first boot (index repair + rotation bootstrap +
+            # model-worker connects) can take >5s; the old hardcoded 5.0
+            # aborted eval/cold-start spawns that were about to succeed.
+            try:
+                wait_for_ready = float(
+                    os.environ.get("RMX_DAEMON_SPAWN_WAIT", "15") or "15")
+            except ValueError:
+                wait_for_ready = 15.0
 
         # Two-stage fork so the daemon becomes session leader, untied from
         # the parent shell. Standard double-fork incantation. The child
