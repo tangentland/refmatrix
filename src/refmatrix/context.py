@@ -377,7 +377,8 @@ def build_context(
         _ppr_expand(s, seeds, built,
                     degree=degree,
                     budget=max(4, max_entities // 2),
-                    include_sessions=include_sessions)
+                    include_sessions=include_sessions,
+                    max_entities=max_entities)
 
     # Content-ranked fusion (always-on unless the caller filtered linkages):
     # BM25 over the `mentions` forward index for the ref's terms, folding in
@@ -583,6 +584,7 @@ _PPR_DEGREE_KNOBS = {1: (0.30, 2e-4), 2: (0.15, 1e-4), 3: (0.10, 5e-5)}
 def _ppr_expand(
     s: Store, seeds: dict[int, float], built: list[ContextEntry],
     *, degree: int, budget: int, include_sessions: bool,
+    max_entities: int | None = None,
 ) -> None:
     """Seeded-PPR expansion for `degree>=1`: run a personalized-PageRank walk
     from `seeds` ({entity_id: restart-mass}) over the weighted adjacency and
@@ -627,6 +629,20 @@ def _ppr_expand(
             built.append(ContextEntry(entity=ent, linkage="walk",
                                       weight=float(score)))
             added += 1
+        # The walk must SURVIVE the entity budget or it is a structural
+        # no-op: content fills max_entities on any healthy query, and
+        # _apply_budget truncates in insertion order, so every walk entry
+        # would be cut (measured: MemAware d2 identical to baseline to the
+        # third decimal — the truncation, not the walk, was the result).
+        # Evict lowest-ranked CONTENT entries one-for-one to make room;
+        # graph/typed rows are never evicted.
+        if added and max_entities is not None:
+            overflow = len(built) - max_entities
+            if overflow > 0:
+                content_idx = [i for i, x in enumerate(built)
+                               if x.linkage == "content"]
+                for i in reversed(content_idx[-overflow:]):
+                    del built[i]
     except Exception:
         pass
 
@@ -974,8 +990,9 @@ def content_only_bundle(
                 seeds[entry.entity.id] = float(entry.weight)
         _ppr_expand(s, seeds, built,
                     degree=degree,
-                    budget=max(4, max_entities // 2),
-                    include_sessions=include_sessions)
+                    budget=max(4, max_entities // 4),
+                    include_sessions=include_sessions,
+                    max_entities=max_entities)
     _apply_budget(bundle, built, max_entities, max_tokens,
                   estimate_tokens(_render_header(bundle)))
     # Coverage: the NL/no-anchor path was invisible to helix entirely, which
