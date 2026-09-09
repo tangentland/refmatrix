@@ -68,6 +68,105 @@ def _adj_mentions_mode() -> str:
     return v if v in ("both", "flat", "weighted") else "flat"
 
 
+class _NeighborView:
+    """Read-only mapping view over one node's CSR slice. Duck-types the
+    dict-of-dicts surface local_push_ppr consumes: .items(), .values()."""
+
+    __slots__ = ("_nbrs", "_wts")
+
+    def __init__(self, nbrs, wts):
+        self._nbrs = nbrs
+        self._wts = wts
+
+    def items(self):
+        return zip(self._nbrs.tolist(), self._wts.tolist())
+
+    def values(self):
+        return self._wts
+
+    def __len__(self):
+        return len(self._nbrs)
+
+
+class CSRAdjacency:
+    """Compact adjacency for caching in a long-lived daemon.
+
+    The dict-of-dicts build_adjacency returns costs ~100+ bytes per directed
+    edge in Python object overhead — ~180MB on a 1M-edge store, which is
+    daemon-jetsam territory. CSR arrays cost 16 bytes/edge (~15MB for the
+    same store). Duck-types the subset of the mapping API the PPR walker
+    uses: `u in adj`, `adj.get(u, default)`, `adj[u].items()/.values()`."""
+
+    __slots__ = ("_index", "_offsets", "_nbrs", "_wts")
+
+    def __init__(self, index, offsets, nbrs, wts):
+        self._index = index      # {node_id: dense_row}
+        self._offsets = offsets  # int64[rows+1]
+        self._nbrs = nbrs        # int64[edges]
+        self._wts = wts          # float64[edges]
+
+    @classmethod
+    def from_dict(cls, adj: dict) -> "CSRAdjacency":
+        import numpy as np
+        index = {u: i for i, u in enumerate(adj)}
+        offsets = np.zeros(len(adj) + 1, dtype=np.int64)
+        total = sum(len(v) for v in adj.values())
+        nbrs = np.empty(total, dtype=np.int64)
+        wts = np.empty(total, dtype=np.float64)
+        pos = 0
+        for u, row in adj.items():
+            offsets[index[u]] = pos
+            for v, w in row.items():
+                nbrs[pos] = v
+                wts[pos] = w
+                pos += 1
+        offsets[len(adj)] = pos
+        # offsets[i] currently holds row-start; verify monotonic by
+        # construction (dict iteration order == index order).
+        return cls(index, offsets, nbrs, wts)
+
+    def __contains__(self, u) -> bool:
+        return u in self._index
+
+    def __getitem__(self, u) -> _NeighborView:
+        i = self._index[u]
+        lo, hi = int(self._offsets[i]), int(self._offsets[i + 1])
+        return _NeighborView(self._nbrs[lo:hi], self._wts[lo:hi])
+
+    def get(self, u, default=None):
+        if u in self._index:
+            return self[u]
+        return default if default is not None else _EMPTY_VIEW
+
+    def __len__(self):
+        return len(self._index)
+
+
+import numpy as _np
+_EMPTY_VIEW = _NeighborView(_np.empty(0, dtype=_np.int64),
+                            _np.empty(0, dtype=_np.float64))
+
+
+def cached_adjacency(store: "Store", *, link_weight: float = 2.0,
+                     exclude_operational: bool = True) -> CSRAdjacency:
+    """CSR adjacency cached on the Store instance, invalidated at the same
+    write-batch boundary as the content_rank caches (flush_fragments →
+    _invalidate_content_rank_caches). In a long-lived daemon this turns the
+    per-call graph build (~0.6s on a 116k-entity store) into a one-time cost
+    per write batch; in a short-lived CLI it degrades to exactly the old
+    behavior (build once, use once)."""
+    key = (store._partition_id, link_weight, exclude_operational,
+           _adj_mentions_mode())
+    cached = getattr(store, "_adjacency_cache", None)
+    if cached is not None and cached[0] == key:
+        return cached[1]
+    adj = build_adjacency(store, link_weight=link_weight,
+                          exclude_operational=exclude_operational)
+    csr = CSRAdjacency.from_dict(adj)
+    store._adjacency_cache = (key, csr)
+    return csr
+
+
 def build_adjacency(
     store: "Store", *, link_weight: float = 2.0,
     exclude_operational: bool = True,

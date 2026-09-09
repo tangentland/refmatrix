@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 
 def local_push_ppr(
-    adj: dict[int, dict[int, float]],
+    adj,  # dict[int, dict[int, float]] | pagerank.CSRAdjacency (duck-typed)
     seeds: "dict[int, float] | list[int]",
     *,
     alpha: float = 0.15,

@@ -4030,6 +4030,9 @@ class Store:
 
     def _invalidate_content_rank_caches(self) -> None:
         """Drop the read-side BM25 caches. Called at write boundaries."""
+        # PPR walk adjacency (pagerank.cached_adjacency) shares the
+        # write-batch freshness contract with the BM25 caches.
+        self._adjacency_cache: "tuple | None" = None
         for attr in ("_bm25_stats_cache", "_doclen_cache", "_leafidx_cache",
                      "_conceptdf_cache", "_codefrac_cache", "_tftail_cache"):
             if hasattr(self, attr):

@@ -600,11 +600,13 @@ def _ppr_expand(
     if degree <= 0 or budget <= 0 or not seeds:
         return
     try:
-        from refmatrix.pagerank import build_adjacency
+        from refmatrix.pagerank import cached_adjacency
         from refmatrix.ppr import local_push_ppr
         alpha, eps = _PPR_DEGREE_KNOBS.get(
             min(degree, 3), _PPR_DEGREE_KNOBS[3])
-        adj = build_adjacency(s)
+        # Instance-cached CSR: free after the first call per write batch in
+        # the daemon; identical cost to the old build in a one-shot CLI.
+        adj = cached_adjacency(s)
         seeds = {sid: m for sid, m in seeds.items() if sid in adj}
         if not seeds:
             return
