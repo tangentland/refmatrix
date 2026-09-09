@@ -23,6 +23,8 @@ without re-deriving N.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import re
 import time
 from typing import TYPE_CHECKING
@@ -147,23 +149,85 @@ _EMPTY_VIEW = _NeighborView(_np.empty(0, dtype=_np.int64),
                             _np.empty(0, dtype=_np.float64))
 
 
+def _adj_disk_paths(store: "Store"):
+    root = Path(store.root)
+    return root / "adjacency.cache.npz", root / "adjacency.cache.json"
+
+
+def _adj_log_size(store: "Store") -> "int | None":
+    """facts.log size as the graph-version proxy: every logged write grows
+    it, and the restructuring ops force a snapshot (0.61.2), so equal size
+    == same graph for cache purposes. None (log disabled/missing) opts out
+    of the disk tier."""
+    try:
+        lp = getattr(store, "log_path", None)
+        if lp is None:
+            return None
+        return int(Path(lp).stat().st_size)
+    except OSError:
+        return None
+
+
 def cached_adjacency(store: "Store", *, link_weight: float = 2.0,
                      exclude_operational: bool = True) -> CSRAdjacency:
-    """CSR adjacency cached on the Store instance, invalidated at the same
-    write-batch boundary as the content_rank caches (flush_fragments →
-    _invalidate_content_rank_caches). In a long-lived daemon this turns the
-    per-call graph build (~0.6s on a 116k-entity store) into a one-time cost
-    per write batch; in a short-lived CLI it degrades to exactly the old
-    behavior (build once, use once)."""
+    """CSR adjacency with two cache tiers sharing one freshness key.
+
+    In-process: stored on the Store instance, dropped by
+    _invalidate_content_rank_caches (the BM25 caches' write-batch boundary).
+    Serves the long-lived daemon.
+
+    On-disk (.refmatrix/adjacency.cache.npz): keyed by (partition, params,
+    facts.log size). Serves the ONE-SHOT processes — the CLI's replica-first
+    context path and the scan-prompt hook — where an instance cache dies
+    with the process (measured: warm CLI calls paid the full ~0.6s rebuild).
+    Written atomically by whoever builds; a stale or unreadable file falls
+    back to a fresh build. Best-effort throughout."""
+    import json as _json
     key = (store._partition_id, link_weight, exclude_operational,
            _adj_mentions_mode())
     cached = getattr(store, "_adjacency_cache", None)
     if cached is not None and cached[0] == key:
         return cached[1]
+
+    log_size = _adj_log_size(store)
+    npz_path, meta_path = _adj_disk_paths(store)
+    disk_key = list(key) + [log_size]
+    if log_size is not None:
+        try:
+            meta = _json.loads(meta_path.read_text())
+            if meta.get("key") == disk_key:
+                import numpy as np
+                z = np.load(npz_path)
+                index = {int(k): int(v) for k, v in
+                         zip(z["idx_keys"], z["idx_vals"])}
+                csr = CSRAdjacency(index, z["offsets"], z["nbrs"], z["wts"])
+                store._adjacency_cache = (key, csr)
+                return csr
+        except Exception:
+            pass
+
     adj = build_adjacency(store, link_weight=link_weight,
                           exclude_operational=exclude_operational)
     csr = CSRAdjacency.from_dict(adj)
     store._adjacency_cache = (key, csr)
+    if log_size is not None:
+        try:
+            import numpy as np
+            tmp = npz_path.with_suffix(".tmp.npz")
+            np.savez(
+                tmp,
+                idx_keys=np.fromiter(csr._index.keys(), dtype=np.int64,
+                                     count=len(csr._index)),
+                idx_vals=np.fromiter(csr._index.values(), dtype=np.int64,
+                                     count=len(csr._index)),
+                offsets=csr._offsets, nbrs=csr._nbrs, wts=csr._wts,
+            )
+            tmp.replace(npz_path)
+            mtmp = meta_path.with_suffix(".tmp.json")
+            mtmp.write_text(_json.dumps({"key": disk_key}))
+            mtmp.replace(meta_path)
+        except Exception:
+            pass
     return csr
 
 

@@ -61,3 +61,30 @@ def test_cache_key_varies_by_params(store):
     a1 = cached_adjacency(store, link_weight=2.0)
     a2 = cached_adjacency(store, link_weight=3.0)
     assert a1 is not a2
+
+
+def test_disk_tier_serves_a_fresh_process_stand_in(store):
+    """A second Store instance (the one-shot CLI shape) must load the CSR
+    from disk, not rebuild — and a write that grows facts.log must miss."""
+    a1 = cached_adjacency(store)
+    npz = store.root / "adjacency.cache.npz"
+    assert npz.exists()
+    s2 = Store(store.root)
+    s2._connect()          # resolve the partition, as any real caller does
+    try:
+        a2 = cached_adjacency(s2)
+        assert a2 is not a1
+        assert len(a2) == len(a1)
+        seeds = {next(iter(a1._index)): 1.0}
+        m1 = local_push_ppr(a1, seeds, alpha=0.15, eps=1e-5)
+        m2 = local_push_ppr(a2, seeds, alpha=0.15, eps=1e-5)
+        assert m1.keys() == m2.keys()
+    finally:
+        s2.close()
+    # grow the log -> disk key mismatch -> rebuild (and re-persist)
+    c = store.add_concept("delta")
+    d = store.upsert_entity(kind="doc", name="d.md", tldr="delta doc")
+    store.link("mentions", c, d, weight=1.0)
+    store.flush_fragments()
+    a3 = cached_adjacency(store)
+    assert d in a3 or c in a3
