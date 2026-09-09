@@ -475,6 +475,32 @@ class IngestStats:
         return "\n".join(lines)
 
 
+def _doc_authority(doc) -> float:
+    """Source-authority multiplier for a GMD doc's typed `rel:` edges.
+
+    An ADR's `supersedes`/`implements`/`depends-on` is a decision record;
+    a design doc's is a commitment; ordinary prose is baseline. Applies to
+    rel: edges ONLY — the mentions/content channels carry term frequency
+    and must stay multiplier-free. Env-tunable: RMX_ADR_AUTHORITY (3.0),
+    RMX_DESIGN_AUTHORITY (1.5)."""
+    import os as _os
+    tags = {str(tg).lower() for tg in (doc.tags or [])}
+    path_l = str(doc.path).lower()
+    try:
+        adr = float(_os.environ.get("RMX_ADR_AUTHORITY", "3.0") or "3.0")
+    except ValueError:
+        adr = 3.0
+    try:
+        design = float(_os.environ.get("RMX_DESIGN_AUTHORITY", "1.5") or "1.5")
+    except ValueError:
+        design = 1.5
+    if "adr" in tags or "/adr/" in path_l:
+        return adr
+    if tags & {"design", "plan", "architecture"}:
+        return design
+    return 1.0
+
+
 def _ensure_linkage(store: Store, verb: str, stats: IngestStats) -> None:
     """Ensure linkage type exists; record in stats if newly created."""
     try:
@@ -1031,6 +1057,10 @@ def ingest_gmd_paths(
             link_batch.append(("mentions", cids[tag], doc_eid, 1.0))
             stats.mentions += 1
 
+        # Source authority for this doc's typed rel: edges (ADR 3x,
+        # design 1.5x, else 1x). Computed once per doc.
+        _authority = _doc_authority(doc)
+
         # per-node processing
         for node in doc.nodes:
             src_name = _entity_name(doc.doc_id, node.id)
@@ -1128,7 +1158,9 @@ def ingest_gmd_paths(
                     if target_eid is None:
                         stats.unresolved.append((doc.path, line_no, ref))
                         continue
-                    store.link(verb, src_eid, target_eid)
+                    store.link(verb, src_eid, target_eid,
+                               weight=(_authority if _authority != 1.0
+                                       else None))
                     store.add_evidence(
                         verb, src_eid, target_eid,
                         file=str(doc.path), line=line_no,
@@ -1149,7 +1181,9 @@ def ingest_gmd_paths(
                         and doc_eid != src_eid
                         and doc_eid != target_eid
                     ):
-                        store.link(verb, doc_eid, target_eid)
+                        store.link(verb, doc_eid, target_eid,
+                                   weight=(_authority if _authority != 1.0
+                                           else None))
                         store.add_evidence(
                             verb, doc_eid, target_eid,
                             file=str(doc.path), line=line_no,

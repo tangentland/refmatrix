@@ -2066,6 +2066,20 @@ _ADR_STATUS_WEIGHT = {
 }
 
 
+def _adr_authority() -> float:
+    """Source-authority multiplier for STRUCTURAL edges emitted by ADRs
+    (defines / is_a / related-to). An accepted ADR's assertion is a
+    decision, not a co-mention, and should outrank baseline references in
+    every weight-ordered surface. Applies ONLY to structural verbs —
+    `mentions` weight is read as term frequency by content_rank's BM25
+    and must never carry a magic multiplier. Composes with the status
+    weight (Accepted 1.0 x authority; Proposed 0.3 x authority)."""
+    try:
+        return float(os.environ.get("RMX_ADR_AUTHORITY", "3.0") or "3.0")
+    except ValueError:
+        return 3.0
+
+
 def _is_adr_file(p: Path) -> str | None:
     """Return zero-padded ADR number if p looks like an ADR markdown, else None."""
     if p.suffix.lower() != ".md":
@@ -2199,6 +2213,9 @@ def _adr_emit_body(
     fn never branches on the type."""
     header = _parse_adr_header(lines)
     n = 0
+    # Structural-edge weight: status x authority. `weight` (status only)
+    # stays on the mentions/tf channel below.
+    sw = weight * _adr_authority()
 
     # Governs line → mentions linkage on CamelCase tokens
     governs = header.get("Governs", "")
@@ -2229,8 +2246,8 @@ def _adr_emit_body(
         ref_concept = s.add_namespaced_concept(
             "adr", ref_num, description=f"ADR-{ref_num}"
         )
-        s.link("related-to", ref_concept, adr_eid)
-        s.link("related-to", ref_concept, target_eid)
+        s.link("related-to", ref_concept, adr_eid, weight=sw)
+        s.link("related-to", ref_concept, target_eid, weight=sw)
         s.add_evidence("related-to", ref_concept, adr_eid,
                        file=rel, detail=f"references ADR-{ref_num}")
         n += 1
@@ -2274,7 +2291,7 @@ def _adr_emit_body(
                       "adr": adr_num, "line": lineno},
             )
             cc = get_concept(child)
-            s.weighted_link("defines", cc, child_eid, weight=weight)
+            s.weighted_link("defines", cc, child_eid, weight=sw)
             s.add_evidence("defines", cc, child_eid, file=rel, line=lineno,
                            detail=f"ADR-{adr_num} subclass {child}")
             n += 1
@@ -2282,7 +2299,7 @@ def _adr_emit_body(
                 if not parent or parent in _PSEUDO_BUILTIN_TYPES:
                     continue
                 pc = get_concept(parent)
-                s.weighted_link("is_a", pc, child_eid, weight=weight)
+                s.weighted_link("is_a", pc, child_eid, weight=sw)
                 s.add_evidence("is_a", pc, child_eid, file=rel, line=lineno,
                                detail=f"{child} subclass of {parent}")
                 n += 1
@@ -2306,7 +2323,7 @@ def _adr_emit_body(
             cur_class_name = name
             class_block_indent = 0
             cid = get_concept(name)
-            s.weighted_link("defines", cid, cur_class_eid, weight=weight)
+            s.weighted_link("defines", cid, cur_class_eid, weight=sw)
             s.add_evidence("defines", cid, cur_class_eid, file=rel, line=lineno,
                            detail=f"ADR-{adr_num} class {name}")
             n += 1
@@ -2314,7 +2331,7 @@ def _adr_emit_body(
                 if not parent or parent in _PSEUDO_BUILTIN_TYPES:
                     continue
                 pc = get_concept(parent)
-                s.weighted_link("is_a", pc, cur_class_eid, weight=weight)
+                s.weighted_link("is_a", pc, cur_class_eid, weight=sw)
                 s.add_evidence("is_a", pc, cur_class_eid, file=rel, line=lineno,
                                detail=f"{name} subclass of {parent}")
                 n += 1

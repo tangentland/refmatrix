@@ -555,6 +555,47 @@ def _rerank_bodied(s: Store, reranker, query: str,
     return out
 
 
+def _phrase_boost_factor() -> float:
+    """Rank-time multiplier for content hits where the query's terms appear
+    ADJACENT (as a phrase) rather than merely co-present. Ordering-only
+    signal: it cannot change the candidate set (the closed phrase-layer
+    experiment showed composition adds no reachability), it promotes the
+    exact-phrase hit above the scattered-terms hit inside the shortlist.
+    RMX_PHRASE_BOOST=1.0 disables."""
+    import os as _os
+    try:
+        return float(_os.environ.get("RMX_PHRASE_BOOST", "1.5") or "1.5")
+    except ValueError:
+        return 1.5
+
+
+# Max chars allowed between two query terms to still count as "adjacent".
+_PHRASE_WINDOW_CHARS = 24
+
+
+def _phrase_hit(text: str | None, terms: list[str]) -> bool:
+    """True when any consecutive term BIGRAM of the query occurs in order
+    within a small window in `text`. Case-insensitive, cheap (top-N snippet
+    strings only), order-sensitive — `replica rotation` matches
+    "replica slot rotation", not "rotation ... replica"."""
+    if not text or len(terms) < 2:
+        return False
+    low = text.lower()
+    for a, b in zip(terms, terms[1:]):
+        start = 0
+        la = a.lower()
+        lb = b.lower()
+        while True:
+            i = low.find(la, start)
+            if i < 0:
+                break
+            j = low.find(lb, i + len(la))
+            if j >= 0 and (j - (i + len(la))) <= _PHRASE_WINDOW_CHARS:
+                return True
+            start = i + 1
+    return False
+
+
 def _append_content_hits(
     s: Store, ref: str, built: list[ContextEntry], *,
     seen_ids: set[int], max_entities: int, expand: int,
@@ -669,6 +710,19 @@ def _append_content_hits(
         centry.snippet = snippet
         centry.line = line
         content_entries.append(centry)
+    # Phrase proximity: terms travelling TOGETHER outrank the same terms
+    # scattered. Checked against the text already in hand (snippet, else
+    # name/tldr) so it costs nothing beyond the shortlist. Ordering-only.
+    boost = _phrase_boost_factor()
+    if boost != 1.0 and len(ref_terms) >= 2:
+        changed = False
+        for centry in content_entries:
+            probe = centry.snippet or centry.entity.tldr or centry.entity.name
+            if _phrase_hit(probe, ref_terms):
+                centry.weight = (centry.weight or 0.0) * boost
+                changed = True
+        if changed:
+            content_entries.sort(key=lambda x: -(x.weight or 0.0))
     # Floor an exact-symbol definition above fuzzy body mentions before the
     # entries land: a `def <ref>` whose BM25 score is 0 must not rank last or
     # render w=0. No-op for NL phrases.
