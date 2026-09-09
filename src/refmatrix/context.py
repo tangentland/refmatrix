@@ -192,6 +192,7 @@ def build_context(
             s, ref, max_entities=max_entities, max_tokens=max_tokens,
             expand=expand, include_sessions=include_sessions,
             hit_lines=hit_lines, grep_backstop=grep_backstop,
+            degree=degree,
         )
     bundle.anchor = e
 
@@ -370,7 +371,10 @@ def build_context(
     # Seeded-PPR expansion: `degree` buys walk REACH beyond one hop. Runs
     # before content fusion so walk-discovered ids join the dedupe set.
     if degree > 0 and not linkages:
-        _ppr_expand(s, e, companion, built,
+        seeds = {e.id: 1.0}
+        if companion is not None:
+            seeds[companion.id] = 1.0
+        _ppr_expand(s, seeds, built,
                     degree=degree,
                     budget=max(4, max_entities // 2),
                     include_sessions=include_sessions)
@@ -577,18 +581,21 @@ _PPR_DEGREE_KNOBS = {1: (0.30, 2e-4), 2: (0.15, 1e-4), 3: (0.10, 5e-5)}
 
 
 def _ppr_expand(
-    s: Store, anchor: Entity, companion, built: list[ContextEntry],
+    s: Store, seeds: dict[int, float], built: list[ContextEntry],
     *, degree: int, budget: int, include_sessions: bool,
 ) -> None:
     """Seeded-PPR expansion for `degree>=1`: run a personalized-PageRank walk
-    from the anchor (+ its `#root` companion) over the weighted adjacency and
+    from `seeds` ({entity_id: restart-mass}) over the weighted adjacency and
     append the top discovered nodes as `walk` entries ranked by PPR mass.
 
-    Adaptive reach by construction: transition probability follows edge
-    weight, so typed/authority-weighted corridors carry mass further than
-    co-mention fans, and hubs self-limit by splitting their mass. Best-effort;
-    an unavailable graph never fails the bundle."""
-    if degree <= 0 or budget <= 0:
+    Anchored bundles seed with the anchor (+#root companion); NL bundles seed
+    with their top content hits weighted by BM25 score — term weights
+    literally modulating traversal reach. Adaptive by construction:
+    transition probability follows edge weight, so typed/authority-weighted
+    corridors carry mass further than co-mention fans, and hubs self-limit by
+    splitting their mass. Best-effort; an unavailable graph never fails the
+    bundle."""
+    if degree <= 0 or budget <= 0 or not seeds:
         return
     try:
         from refmatrix.pagerank import build_adjacency
@@ -596,14 +603,11 @@ def _ppr_expand(
         alpha, eps = _PPR_DEGREE_KNOBS.get(
             min(degree, 3), _PPR_DEGREE_KNOBS[3])
         adj = build_adjacency(s)
-        seeds = {anchor.id: 1.0}
-        if companion is not None:
-            seeds[companion.id] = 1.0
         seeds = {sid: m for sid, m in seeds.items() if sid in adj}
         if not seeds:
             return
         mass = local_push_ppr(adj, seeds, alpha=alpha, eps=eps)
-        skip = {anchor.id} | ({companion.id} if companion is not None else set())
+        skip = set(seeds)
         skip |= {x.entity.id for x in built}
         added = 0
         for nid, score in sorted(mass.items(), key=lambda kv: -kv[1]):
@@ -946,6 +950,7 @@ def content_only_bundle(
     expand: int = 0, include_sessions: bool = False,
     hit_lines: str = "first", grep_backstop: bool = True,
     reranker=None, rerank_query: "str | None" = None,
+    degree: int = 0,
 ) -> ContextBundle:
     """A ranked-grep bundle for a ref that resolves to NO graph anchor — the
     content-fusion path with `anchor=None`. Lets `rmx context "<phrase>"` and
@@ -959,6 +964,18 @@ def content_only_bundle(
         grep_backstop=grep_backstop, hit_lines=hit_lines, reranker=reranker,
         rerank_query=rerank_query,
     )
+    # NL-path PPR expansion (degree>=1): seed the walk with the top content
+    # hits, restart-mass proportional to their BM25 scores — the query's own
+    # term weights decide where reach begins.
+    if degree > 0:
+        seeds: dict[int, float] = {}
+        for entry in built[:10]:
+            if entry.weight and entry.weight > 0:
+                seeds[entry.entity.id] = float(entry.weight)
+        _ppr_expand(s, seeds, built,
+                    degree=degree,
+                    budget=max(4, max_entities // 2),
+                    include_sessions=include_sessions)
     _apply_budget(bundle, built, max_entities, max_tokens,
                   estimate_tokens(_render_header(bundle)))
     # Coverage: the NL/no-anchor path was invisible to helix entirely, which
