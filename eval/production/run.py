@@ -138,12 +138,18 @@ def _rank_scores(ordered_docs: list[str]) -> dict[str, float]:
 
 
 def retrieve_symbolic(rmx: str, root: Path, query: str, *, k: int,
-                      file_to_doc: dict[str, str]) -> dict[str, float]:
-    """`rmx context` — BM25 over the mentions index, plus the graph walk."""
+                      file_to_doc: dict[str, str],
+                      degree: int = 0) -> dict[str, float]:
+    """`rmx context` — BM25 over the mentions index, plus the graph walk.
+    `degree>0` adds the seeded-PPR expansion (0.63.0) — the candidate-set
+    A/B this harness exists for."""
     env = _env(root)
+    cmd = [rmx, "context", query, "--format", "json",
+           "--max-entities", str(k)]
+    if degree:
+        cmd += ["--degree", str(degree)]
     try:
-        raw = _run([rmx, "context", query, "--format", "json",
-                    "--max-entities", str(k)], env, timeout=300)
+        raw = _run(cmd, env, timeout=300)
         payload = json.loads(raw)
     except Exception:
         return {}
@@ -209,6 +215,13 @@ def main() -> int:
                     help="Read surface(s) to score. Default: both.")
     ap.add_argument("--limit", type=int, default=0,
                     help="Cap queries (0 = all in the manifest).")
+    ap.add_argument("--context-degree", type=int, default=0,
+                    help="Pass --degree N to rmx context on the symbolic "
+                         "surface (seeded-PPR expansion A/B).")
+    ap.add_argument("--reuse-store", action="store_true",
+                    help="Skip ingest/embed when the condition's store "
+                         "already exists — retrieval-knob A/Bs share one "
+                         "build.")
     a = ap.parse_args()
 
     manifest = json.loads((a.data / "manifest.json").read_text())
@@ -224,11 +237,19 @@ def main() -> int:
     report: dict[str, dict] = {}
     for cond in conditions:
         root = a.data / f"store-{cond}" / ".refmatrix"
-        print(f"\n=== {cond}: building store ===", flush=True)
-        timings = build_store(a.rmx, corpus, root,
-                              semantic=(cond != "plain"),
-                              bodies=(cond != "nobody"),
-                              phrases=(cond == "phrases"))
+        if a.reuse_store and root.exists():
+            print(f"\n=== {cond}: reusing store ===", flush=True)
+            env = _env(root)
+            subprocess.run([a.rmx, "daemon", "start", "--no-watch"],
+                           env=env, capture_output=True)
+            time.sleep(3)
+            timings = {}
+        else:
+            print(f"\n=== {cond}: building store ===", flush=True)
+            timings = build_store(a.rmx, corpus, root,
+                                  semantic=(cond != "plain"),
+                                  bodies=(cond != "nobody"),
+                                  phrases=(cond == "phrases"))
         stats = body_stats(a.rmx, root)
         print(f"  {timings} {stats}", flush=True)
 
@@ -236,21 +257,34 @@ def main() -> int:
             fn = SURFACES[surface]
             run: dict[str, dict[str, float]] = {}
             t0 = time.time()
+            kw = ({"degree": a.context_degree}
+                  if surface == "symbolic" and a.context_degree else {})
             for i, q in enumerate(qids, 1):
                 run[q] = fn(a.rmx, root, manifest["queries"][q],
-                            k=a.k, file_to_doc=file_to_doc)
+                            k=a.k, file_to_doc=file_to_doc, **kw)
                 if i % 100 == 0:
                     print(f"  {surface} {i}/{len(qids)}", flush=True)
             m = {k: round(v, 4) for k, v in all_metrics(run, qrels).items()}
             m.update(timings); m.update(stats)
             m["retrieve_s"] = round(time.time() - t0, 1)
-            report[f"{cond}/{surface}"] = m
-            print(f"  {cond}/{surface}: MRR@10={m['MRR@10']} "
+            tag = (f"{cond}/{surface}@d{a.context_degree}"
+                   if surface == "symbolic" and a.context_degree
+                   else f"{cond}/{surface}")
+            report[tag] = m
+            print(f"  {tag}: MRR@10={m['MRR@10']} "
                   f"R@1={m['Recall@1']} R@10={m['Recall@10']}", flush=True)
         subprocess.run([a.rmx, "daemon", "stop"], env=_env(root),
                        capture_output=True)
 
-    (a.data / "results.json").write_text(json.dumps(report, indent=1))
+    res_path = a.data / "results.json"
+    merged: dict = {}
+    if res_path.exists():
+        try:
+            merged = json.loads(res_path.read_text())
+        except ValueError:
+            merged = {}
+    merged.update(report)
+    res_path.write_text(json.dumps(merged, indent=1))
     print("\n" + "=" * 72)
     keys = ["MRR@10", "Recall@1", "Recall@10", "nDCG@10"]
     print(f"{'condition/surface':22s} " + " ".join(f"{k:>10s}" for k in keys)

@@ -126,8 +126,11 @@ def m_recall(q: str, k: int, rmx: str, fuse: bool = False,
     return _ids(_rmx_json(args, rmx))[:k]
 
 
-def m_context(q: str, k: int, rmx: str) -> list[str]:
-    return _ids(_rmx_json(["context", q, "--format", "json"], rmx))[:k]
+def m_context(q: str, k: int, rmx: str, degree: int = 0) -> list[str]:
+    args = ["context", q, "--format", "json"]
+    if degree:
+        args += ["--degree", str(degree)]
+    return _ids(_rmx_json(args, rmx))[:k]
 
 
 def m_scan(q: str, k: int, rmx: str, content: bool = True,
@@ -148,6 +151,10 @@ METHODS = {
     "recall-rr": lambda q, k, r: m_recall(q, k, r, rerank=True),
     "recall-fuse-rr": lambda q, k, r: m_recall(q, k, r, fuse=True, rerank=True),
     "context": m_context,
+    # Seeded-PPR expansion (0.63.1): degree-2 walk from the content hits.
+    # The candidate-set A/B — CSN was saturated (R@10 0.99), this surface
+    # has real misses.
+    "context-d2": lambda q, k, r: m_context(q, k, r, degree=2),
     "scan": m_scan,
     # Concept path only. The content bundle is emitted first and carries most
     # of the ids, so it masks any change to concept selection/ranking —
