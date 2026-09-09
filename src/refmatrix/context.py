@@ -611,6 +611,14 @@ def _ppr_expand(
         mass = local_push_ppr(adj, seeds, alpha=alpha, eps=eps)
         skip = set(seeds)
         skip |= {x.entity.id for x in built}
+        # One walk slot per parent DOC: a multi-section hub (measured:
+        # viascope's ui-specification taking 4-5 slots via #_h24/#_h56/...)
+        # splits its mass across section anchors that each pass the filter,
+        # defeating hub self-limiting. Same collapse content hits apply to
+        # root-twins. Highest-mass section wins (iteration is mass-sorted);
+        # the doc base of anything already in the bundle counts too.
+        seen_parent: set[str] = {
+            x.entity.name.split("#", 1)[0] for x in built}
         added = 0
         for nid, score in sorted(mass.items(), key=lambda kv: -kv[1]):
             if added >= budget:
@@ -626,6 +634,10 @@ def _ppr_expand(
                 continue
             if not include_sessions and _is_session_card(ent.name):
                 continue
+            parent = ent.name.split("#", 1)[0]
+            if parent in seen_parent:
+                continue
+            seen_parent.add(parent)
             built.append(ContextEntry(entity=ent, linkage="walk",
                                       weight=float(score)))
             added += 1

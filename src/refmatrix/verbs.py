@@ -189,7 +189,7 @@ def payload_query(dsl: str) -> dict:
       "Token-budgeted context bundle for a symbol/concept (anchor + typed "
       "neighbors + helix staleness notes). expand=N adds source lines per "
       "code hit; hit_lines=nums|text lists every hit line per file.")
-def context(root: Path, ref: str, *, degree: int = 0, expand: int = 0,
+def context(root: Path, ref: str, *, degree: int = 1, expand: int = 0,
             hit_lines: typing.Literal["first", "nums", "text"] = "first",
             max_entities: int | None = None, max_tokens: int | None = None,
             linkage: str | None = None, fuse: bool = False,

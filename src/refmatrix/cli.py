@@ -4046,12 +4046,12 @@ def neighbors(concept, depth, linkage, limit, include_noise, strict, via_replica
 @click.option("--via-replica", is_flag=True,
               help="Read from the rotation reader slot instead of the daemon. "
                    "Lock-free; sees stale-by-N-seconds data.")
-@click.option("--degree", default=0, type=int,
-              help="Hop-depth ON TOP of the existing one-hop walk. 0 (default) "
-                   "= current behavior with memory bodies attached for any "
-                   "kind='memory' entry. Higher values reserve scope for "
-                   "future multi-hop expansion; today they only auto-scale "
-                   "the --max-entities / --max-tokens budgets.")
+@click.option("--degree", default=1, type=int,
+              help="Walk reach via seeded PPR (0.63.x). Default 1: one notch "
+                   "of expansion beyond the one-hop view — surfaces "
+                   "implementation+tests for symbol phrases and ADR-impact "
+                   "chains on typed-edge stores. --degree 0 disables; higher "
+                   "degrees walk further (lower restart, finer residual).")
 @click.option("--include-sessions", is_flag=True,
               help="Include session-summary cards in the co-mention view. Off "
                    "by default: session cards are transient activity logs that "

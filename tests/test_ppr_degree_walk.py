@@ -83,3 +83,24 @@ def test_linkage_filter_disables_walk(store):
     b = build_context(store, "anchor_topic", degree=2,
                       linkages=["mentions"], grep_backstop=False)
     assert "walk" not in b.groups
+
+
+def test_walk_caps_one_slot_per_parent_doc(store):
+    """A multi-section hub doc must not eat the walk group: one slot per
+    parent, highest mass wins (the viascope ui-specification leak)."""
+    anchor_c = store.add_concept("anchor_topic")
+    d1 = store.upsert_entity(kind="doc", name="near.md", tldr="near doc")
+    store.link("mentions", anchor_c, d1, weight=3.0)
+    bridge = store.add_concept("bridge_topic")
+    store.link("mentions", bridge, d1, weight=3.0)
+    # Hub doc with many section anchors, all reachable via the bridge.
+    for i in range(6):
+        sec = store.upsert_entity(kind="concept", name=f"hubdoc#s{i}",
+                                  tldr=f"section {i}")
+        store.link("mentions", bridge, sec, weight=2.0)
+    far = store.upsert_entity(kind="doc", name="far.md", tldr="far doc")
+    store.link("mentions", bridge, far, weight=2.0)
+    b = build_context(store, "anchor_topic", degree=2, grep_backstop=False)
+    walk = [e.entity.name for e in b.groups.get("walk", [])]
+    hub_slots = [n for n in walk if n.startswith("hubdoc#")]
+    assert len(hub_slots) <= 1, walk
