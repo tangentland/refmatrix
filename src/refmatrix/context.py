@@ -47,6 +47,7 @@ LINKAGE_LABELS = {
     "related-to": "RELATED TO",
     "content": "CONTENT MATCH",
     "grep": "GREP (unindexed — floor)",
+    "walk": "REACHED VIA WALK (seeded PPR)",
 }
 
 
@@ -150,11 +151,16 @@ def build_context(
       their full body, so the bundle covers both "what does this say"
       AND "what is it linked to" in one call. Closes the
       `memory get` vs `memory context` two-surfaces cliff.
-    - `degree>=1`: reserved for multi-hop expansion (BFS to depth
-      degree+1). Not yet implemented as a true multi-hop walk; the
-      walk still caps at one hop but `max_entities` / `max_tokens`
-      auto-scale with degree so the budget is ready for the deeper
-      shape when the BFS lands.
+    - `degree>=1`: seeded-PPR expansion. Degree maps to walk REACH,
+      not hop count: a personalized-PageRank walk (ACL local push,
+      `ppr.local_push_ppr`) runs from the anchor over the weighted
+      adjacency; higher degree lowers the restart probability and the
+      residual threshold, so strong-edge corridors (typed links, ADR
+      authority) carry mass further while weak co-mention fans die
+      out. Stable by construction — work is bounded O(1/(eps*alpha))
+      regardless of graph size, and a raw hop-BFS measured 5x worse
+      (project_retrieval_negatives_2026_09#enrich). Discovered nodes
+      land in a `walk` group ranked by PPR mass.
 
     Budget auto-adjustment: when `max_entities` / `max_tokens` were NOT
     explicitly passed by the caller (i.e. the CLI defaults flowed
@@ -361,6 +367,14 @@ def build_context(
                                              parent_cache=parent_cache)
         built.append(entry)
 
+    # Seeded-PPR expansion: `degree` buys walk REACH beyond one hop. Runs
+    # before content fusion so walk-discovered ids join the dedupe set.
+    if degree > 0 and not linkages:
+        _ppr_expand(s, e, companion, built,
+                    degree=degree,
+                    budget=max(4, max_entities // 2),
+                    include_sessions=include_sessions)
+
     # Content-ranked fusion (always-on unless the caller filtered linkages):
     # BM25 over the `mentions` forward index for the ref's terms, folding in
     # body matches the graph walk can't reach — a natural-language phrase whose
@@ -553,6 +567,64 @@ def _rerank_bodied(s: Store, reranker, query: str,
     for slot, hit in zip(slots, reordered):
         out[slot] = hit
     return out
+
+
+# degree -> (alpha, eps): higher degree = lower restart + finer residual =
+# longer effective walk, same stability bound. Values chosen so degree=1 is a
+# tight neighborhood-of-the-neighborhood and degree=3 approaches scan-prompt's
+# default reach (alpha=0.15, eps=1e-4).
+_PPR_DEGREE_KNOBS = {1: (0.30, 2e-4), 2: (0.15, 1e-4), 3: (0.10, 5e-5)}
+
+
+def _ppr_expand(
+    s: Store, anchor: Entity, companion, built: list[ContextEntry],
+    *, degree: int, budget: int, include_sessions: bool,
+) -> None:
+    """Seeded-PPR expansion for `degree>=1`: run a personalized-PageRank walk
+    from the anchor (+ its `#root` companion) over the weighted adjacency and
+    append the top discovered nodes as `walk` entries ranked by PPR mass.
+
+    Adaptive reach by construction: transition probability follows edge
+    weight, so typed/authority-weighted corridors carry mass further than
+    co-mention fans, and hubs self-limit by splitting their mass. Best-effort;
+    an unavailable graph never fails the bundle."""
+    if degree <= 0 or budget <= 0:
+        return
+    try:
+        from refmatrix.pagerank import build_adjacency
+        from refmatrix.ppr import local_push_ppr
+        alpha, eps = _PPR_DEGREE_KNOBS.get(
+            min(degree, 3), _PPR_DEGREE_KNOBS[3])
+        adj = build_adjacency(s)
+        seeds = {anchor.id: 1.0}
+        if companion is not None:
+            seeds[companion.id] = 1.0
+        seeds = {sid: m for sid, m in seeds.items() if sid in adj}
+        if not seeds:
+            return
+        mass = local_push_ppr(adj, seeds, alpha=alpha, eps=eps)
+        skip = {anchor.id} | ({companion.id} if companion is not None else set())
+        skip |= {x.entity.id for x in built}
+        added = 0
+        for nid, score in sorted(mass.items(), key=lambda kv: -kv[1]):
+            if added >= budget:
+                break
+            if nid in skip:
+                continue
+            ent = s.get_entity_by_id(int(nid))
+            if ent is None:
+                continue
+            # Same eligibility as content hits: bare concepts are query
+            # terms, not destinations; session cards are operational.
+            if ent.kind == "concept" and "#" not in ent.name:
+                continue
+            if not include_sessions and _is_session_card(ent.name):
+                continue
+            built.append(ContextEntry(entity=ent, linkage="walk",
+                                      weight=float(score)))
+            added += 1
+    except Exception:
+        pass
 
 
 def _phrase_boost_factor() -> float:
