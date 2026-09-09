@@ -871,6 +871,7 @@ def scan_prompt(
     composite_intra_edges: int = 3,
     content: bool = True,
     content_tokens: int = 600,
+    degree: int = 0,
 ) -> str:
     """Emit context bundles for a prompt's symbols. When `composite` is set (and
     `composite_root` names the project `.refmatrix` dir), ALSO append a GMD
@@ -947,7 +948,7 @@ def scan_prompt(
         cb = content_only_bundle(
             s, " ".join(cands),
             max_tokens=content_tokens, max_entities=10,
-            grep_backstop=False,
+            grep_backstop=False, degree=degree,
             reranker=shared_reranker(),
             # The bundle's `ref` is the candidate BAG; the reranker needs the
             # sentence the user actually typed.
@@ -963,7 +964,7 @@ def scan_prompt(
         out.extend(
             json.loads(render_json(
                 build_context(s, name, max_tokens=per_concept_tokens,
-                              max_entities=10)))
+                              max_entities=10, degree=degree)))
             for name in matches
         )
         return json.dumps(out, indent=2)
@@ -994,7 +995,8 @@ def scan_prompt(
         f"# refmatrix context for prompt-mentioned symbols: {', '.join(matches)}")
     used += len(parts[-1]) // 4
     for name in matches:
-        b = build_context(s, name, max_tokens=per_concept_tokens, max_entities=10)
+        b = build_context(s, name, max_tokens=per_concept_tokens, max_entities=10,
+                          degree=degree)
         if b.anchor is None or not b.groups:
             continue
         if shown:

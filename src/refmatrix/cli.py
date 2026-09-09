@@ -7121,6 +7121,12 @@ def _resolve_query(
 @click.option("--full", "include_noise", is_flag=True,
               help="Include noise-marked concepts when matching.")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
+@click.option("--degree", default=0, type=int, show_default=True,
+              help="Seeded-PPR walk reach for the emitted bundles. DORMANT "
+                   "(0) until the helix phase-2 measurement window closes — "
+                   "then the hook config flips to --degree 1 (measured "
+                   "token-neutral at hook budgets, ~70ms warm via the "
+                   "adjacency cache).")
 @click.option("--rank",
               type=click.Choice(["salience", "ppr", "enrich", "net", "assoc"]),
               default="ppr", show_default=True,
@@ -7175,6 +7181,7 @@ def _resolve_query(
                    "the old weak co-occurs dump. 0 = drop the block.")
 def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                     exclude_namespace, include_noise, fmt, stdin_json, rank,
+                    degree,
                     composite, composite_max_tokens, composite_k,
                     composite_no_expand, composite_every,
                     composite_intra_edges, content, content_tokens):
@@ -7205,6 +7212,7 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                 per_concept_tokens=per_concept_tokens,
                 max_concepts=max_concepts,
                 rank=rank,
+                degree=degree,
                 exclude_namespaces=tuple(exclude_namespace),
                 include_noise=include_noise,
                 fmt=fmt,
