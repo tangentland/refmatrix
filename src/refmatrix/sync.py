@@ -164,6 +164,16 @@ def _sync_paths(
     yield_lock: Callable[[], None] | None = None,
     yield_every: int = 1,
 ) -> dict:
+    # Non-empty only: hook-driven `flush_queue` no-ops against an empty
+    # global queue must stay quiet.
+    if paths:
+        from refmatrix.store import is_memory_only_root
+        if is_memory_only_root(s.root):
+            raise RuntimeError(
+                f"sync refused: {s.root} is the memory-only global store "
+                "and does not track filesystem paths. Sync from a project "
+                "store instead."
+            )
     project_root = (project_root or Path.cwd()).resolve()
     added = updated = purged = skipped_unchanged = 0
     touched_existing: list[Path] = []

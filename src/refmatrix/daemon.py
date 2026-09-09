@@ -480,6 +480,17 @@ class Daemon:
             self.watch_roots = [Path(r).resolve() for r in watch_root]
         else:
             self.watch_roots = [Path(watch_root).resolve()]
+        # Memory-only guard: the user-level global store (`~/.refmatrix`)
+        # holds memories and must never track filesystem code/doc paths — a
+        # historical $HOME ingest filled it with ~/Library cache churn and a
+        # perpetual stale count. Derived from the root (same test
+        # launchctl.plist_for_root uses) so every launch path agrees without
+        # flag plumbing; also force-drops any watch roots for the same reason.
+        self.memory_only = (
+            self.root == (Path.home() / ".refmatrix").resolve()
+        )
+        if self.memory_only:
+            self.watch_roots = []
         # Convenience scalar — first root, for callers that only need one
         # path (logs, sync_files default project_root). None if no watcher.
         self.watch_root: Path | None = (
@@ -2461,8 +2472,22 @@ def _op_flush_queue_async(d: Daemon, args: dict) -> dict:
     return {"queued": True}
 
 
+def _refuse_filesystem_ingest(d: Daemon, op: str) -> None:
+    """Refuse ops that would track filesystem paths into a memory-only
+    store. Raising here surfaces as `{"ok": False, "error": ...}` at the
+    dispatch layer, so the caller fails loudly instead of silently filling
+    the global store with code/doc rows."""
+    if d.memory_only:
+        raise RuntimeError(
+            f"{op} refused: {d.root} is the memory-only global store and "
+            "does not track filesystem paths. Ingest into a project store, "
+            "or use `rmx ingest-gmd --as-memory` for memory rows."
+        )
+
+
 def _op_sync_files(d: Daemon, args: dict) -> dict:
     from refmatrix import sync as syncmod
+    _refuse_filesystem_ingest(d, "sync")
     proot = Path(args.get("project_root") or Path.cwd()).resolve()
     files = args.get("files") or []
     semantic = bool(args.get("semantic"))
@@ -2485,6 +2510,7 @@ def _op_ingest_path(d: Daemon, args: dict) -> dict:
     a big `tldr-warm` doesn't stall latency-sensitive writes (memory hooks)
     for minutes. Same machinery as `_run_ingest_gmd_body`."""
     from refmatrix.ingest import ingest_path
+    _refuse_filesystem_ingest(d, "ingest")
     path = Path(args["path"]).resolve()
     source = args.get("source") or "auto"
     semantic = bool(args.get("semantic"))
@@ -2675,6 +2701,8 @@ def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
     partition.
     """
     from refmatrix.ingest_gmd import collect_gmd_files
+    if not args.get("as_memory"):
+        _refuse_filesystem_ingest(d, "ingest-gmd")
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
     files = collect_gmd_files(targets)
     if not files:
@@ -2690,6 +2718,8 @@ def _op_ingest_gmd_start(d: Daemon, args: dict) -> dict:
     without holding a 24h socket open.
     """
     from refmatrix.ingest_gmd import collect_gmd_files
+    if not args.get("as_memory"):
+        _refuse_filesystem_ingest(d, "ingest-gmd")
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
     files = collect_gmd_files(targets)
     if not files:
@@ -2740,6 +2770,7 @@ def _op_ingest_path_start(d: Daemon, args: dict) -> dict:
     Poll completion via `ingest_gmd_status` (generic over all ingest jobs).
     The single-active guard in `_register_ingest_job` rejects a second start
     while one is running."""
+    _refuse_filesystem_ingest(d, "ingest")
     job_id = _register_ingest_job(d, files_total=0, args=args)
     d._bg_pool.submit(lambda: _run_detached_job(d, job_id, lambda: _op_ingest_path(d, args)))
     return {"job_id": job_id, "status": "running",
@@ -2813,6 +2844,7 @@ def _op_sync_since(d: Daemon, args: dict) -> dict:
     the catalog write lock outside the daemon and block every other
     flush for the duration of a 100+ file diff."""
     from refmatrix import sync as syncmod
+    _refuse_filesystem_ingest(d, "sync")
     proot = Path(args.get("project_root") or Path.cwd()).resolve()
     git_ref = args["git_ref"]
     semantic = bool(args.get("semantic"))

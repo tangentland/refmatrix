@@ -462,6 +462,18 @@ _VERB_ALIASES = {
 }
 
 
+def is_memory_only_root(root: "Path") -> bool:
+    """True when `root` is the user-level global store (`~/.refmatrix`).
+
+    That store holds cross-project memories ONLY — it must never track
+    filesystem code/doc paths (a historical $HOME ingest filled it with
+    ~/Library cache churn and a perpetual stale count). Both the daemon ops
+    and the direct in-process ingest/sync paths consult this predicate, so
+    the class of bug is refused structurally on every route, not by
+    convention."""
+    return Path(root).resolve() == (Path.home() / ".refmatrix").resolve()
+
+
 def _canonical_verb(name: str) -> str:
     """Fold a linkage verb to its canonical form (see `_VERB_ALIASES`).
     Idempotent: a verb with no alias (incl. already-canonical) returns

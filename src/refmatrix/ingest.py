@@ -186,6 +186,13 @@ def ingest_path(
       state (relational autocommitted + fragments flushed). Trades the
       single-commit batching for bounded lock-hold.
     """
+    from refmatrix.store import is_memory_only_root
+    if is_memory_only_root(s.root):
+        raise RuntimeError(
+            f"ingest refused: {s.root} is the memory-only global store and "
+            "does not track filesystem paths. Ingest into a project store, "
+            "or use `rmx ingest-gmd --as-memory` for memory rows."
+        )
     if yield_lock is None:
         with s.transaction():
             return _ingest_path_inner(s, path, source=source, semantic=semantic,
