@@ -135,10 +135,17 @@ def main(argv: list[str] | None = None) -> int:
                 # Report the interpreter too: a worker on the wrong python
                 # fails as a missing dependency, which reads like a broken
                 # install rather than a wrong venv. The parent compares.
+                from refmatrix import __version__ as _rmx_version
                 send_frame(CHAN_OUT, {
                     "ok": True,
                     "python": sys.executable,
                     "prefix": sys.prefix,
+                    # The hub compares this to its own version: a hub that
+                    # outlived a deploy speaks yesterday's protocol at
+                    # today's workers (observed as an 8-minute BrokenPipe
+                    # loop, 2026-09-09) — the mismatch must be detected at
+                    # the handshake, not discovered per-op.
+                    "version": _rmx_version,
                     **role.info(),
                 })
                 continue

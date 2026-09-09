@@ -198,7 +198,35 @@ class ModelServer:
                 w = WorkerClient(role, log=self._log_fn)
                 self._clients[role] = w
                 self._log(f"worker[{role}] created")
+                self._check_worker_version(w)
             return w
+
+    def _check_worker_version(self, w: WorkerClient) -> None:
+        """A hub that outlived a deploy spawns TODAY's workers from
+        YESTERDAY's process: the frame protocol drifts and every op dies
+        with BrokenPipeError while the hub keeps serving (observed
+        2026-09-09 — 8 minutes of ~3s hook stalls fleet-wide). The worker
+        now reports its refmatrix version at the info handshake; on a
+        mismatch the only correct move is to restart THIS process onto the
+        deployed code. Under launchd (KeepAlive on non-zero exit) that is
+        exactly `os._exit(1)`; an unsupervised hub dies loudly instead of
+        limping, and the log says why."""
+        try:
+            info = w.info()
+        except Exception:
+            # Worker didn't come up — the existing respawn/timeout
+            # machinery owns that failure mode.
+            return
+        child = info.get("version")
+        if not child:
+            return
+        from refmatrix import __version__ as mine
+        if child != mine:
+            self._log(
+                f"FATAL worker version {child} != hub {mine} — hub "
+                f"outlived a deploy; exiting for supervisor respawn")
+            import os as _os
+            _os._exit(1)
 
     # -- lifecycle ----------------------------------------------------
 

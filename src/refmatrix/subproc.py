@@ -393,6 +393,14 @@ class WorkerClient:
                 return self._info
             hdr, _ = self.call("info")
             self._info = {k: v for k, v in hdr.items() if k != "ok"}
+            child_version = self._info.get("version")
+            if child_version is not None:
+                from refmatrix import __version__ as _parent_version
+                if child_version != _parent_version:
+                    self._log(
+                        f"VERSION MISMATCH worker={child_version} "
+                        f"parent={_parent_version} — the parent process "
+                        f"outlived a deploy and must restart")
             child_prefix = self._info.get("prefix")
             if child_prefix and child_prefix != sys.prefix:
                 self._log(
