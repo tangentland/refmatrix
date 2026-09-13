@@ -23,7 +23,7 @@ rel: catalogs -> [[system_design_review]]
 | [[SYSTEM]] | What refmatrix is: bitmap reference matrix, discovery ladder, lifecycle, use cases |
 | [[ARCHITECTURE]] | Module layout, dependency graph, catalog schema, daemon/concurrency, CLI tree |
 | [[INTEGRATION]] | Everything touching the outside: llm-tldr, git + Claude Code hooks, GMD ingest, watcher, socket protocol |
-| [[PERFORMANCE]] | Where the speed comes from, model workers + rerank, scoring stack, CSN benchmarks |
+| [[PERFORMANCE]] | Where the speed comes from, scoring stack, honest CSN production harness (0.961), MemAware proactive-retrieval benchmark, measured negatives |
 | [[system_design_review]] | Staff-level system design interview reconstructed for refmatrix (v0.60.x, with the scars) |
 
 ## ADRs {#adrs}

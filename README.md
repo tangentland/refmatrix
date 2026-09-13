@@ -13,41 +13,31 @@ rmx memory recall "why did rotation get dropped"  # dense recall over curated me
 
 ## Benchmarks — symbolic retrieval beats dense embeddings
 
-rmx ships a reproducible eval harness (`eval/`) against `cornstack/CodeRankEmbed`
-on CodeSearchNet (BEIR layout). The tuned **symbolic** stack — BM25 + docstring/code
-linkage split + coverage^α + linkage-coupled co-mention, **no embeddings, no GPU,
-no reranker** — wins on every headline metric, with the biggest edge in
-**top-rank recall**:
+rmx ships two eval harnesses. The number that matters comes from the **honest
+production harness** (`eval/production/`): it materializes the BEIR corpus as
+real files, runs the production `rmx ingest --semantic` path, and ranks
+through the same `content_rank` that `rmx context` calls — no bespoke index,
+no benchmark-only tokenizer.
 
-### CSN Python (43 827 docs · 14 918 queries)
+### CSN Python, production path (43 827 docs · 14 918 queries)
 
-| Metric        | rmx (symbolic) | CodeRankEmbed (dense) | Δ        |
-|---------------|:--------------:|:---------------------:|:--------:|
-| **Recall@1**  | **0.971**      | 0.934                 | **+0.037** |
-| **Recall@10** | **0.997**      | 0.993                 | +0.004   |
-| MRR@10        | **0.982**      | 0.959                 | +0.024   |
-| nDCG@10       | **0.986**      | 0.967                 | +0.018   |
+| Metric        | rmx (symbolic, CPU) | CodeRankEmbed (dense, GPU) |
+|---------------|:-------------------:|:--------------------------:|
+| MRR@10        | **0.961**           | 0.959                      |
+| Recall@1      | **0.944**           | 0.934                      |
+| Recall@10     | 0.984               | 0.993                      |
+| nDCG@10       | 0.967               | 0.967                      |
 
-### CSN JavaScript (margin *larger* than Python)
+The historical bespoke harness scores 0.972 — a true number about code users
+never ran; refmatrix defends the production 0.961 instead. On the bespoke
+harness the symbolic win repeats across languages: JS **0.939 vs 0.916**,
+TS **0.365 vs 0.358** (real-world corpus with fork dupes; low absolute,
+still ahead).
 
-| Metric        | rmx       | CodeRankEmbed | Δ        |
-|---------------|:---------:|:-------------:|:--------:|
-| **Recall@1**  | **0.920** | 0.895         | **+0.025** |
-| **Recall@10** | **0.970** | 0.951         | +0.019   |
-| MRR@10        | **0.939** | 0.916         | +0.023   |
-
-### CSN TypeScript (real-world corpus w/ fork dupes — low absolute, still ahead)
-
-| Metric        | rmx       | CodeRankEmbed | Δ        |
-|---------------|:---------:|:-------------:|:--------:|
-| **Recall@1**  | **0.244** | 0.241         | +0.004   |
-| **Recall@10** | **0.660** | 0.644         | +0.016   |
-| MRR@10        | **0.365** | 0.358         | +0.007   |
-
-Latency: rmx ≈ 3–4 min ingest + ~70–100s retrieve (8-worker, CPU). CodeRankEmbed
-≈ 100 min corpus encode (GPU/MPS) + ~1 min retrieve. rmx wins on accuracy,
-latency, *and* explainability — every score traces to `file:line` evidence. Full
-methodology + the tuning ablation in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+Latency: rmx ≈ 3–4 min ingest + seconds to retrieve, CPU only. CodeRankEmbed
+≈ 100 min corpus encode (GPU/MPS). And every rmx score traces to `file:line`
+evidence. Full methodology, the proactive-retrieval (MemAware) benchmark, and
+the measured-negatives table live in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
 ## What it is
 
@@ -171,6 +161,11 @@ rmx session recall "slot rotation"                      # KWIC search over sessi
 Sessions and curated memories live in their own partitions so dense English
 prose never drowns out code/specs in the concept graph's BM25 ranking.
 
+A user-level **global store** (`~/.refmatrix`) holds cross-project behavior
+memories. It is memory-only by construction: every ingest route — daemon ops
+and direct CLI alike — structurally refuses filesystem code/doc paths there
+(`ingest-gmd --as-memory` is the one sanctioned write shape).
+
 ## `rmx reingest` — one command to make a store correct
 
 Runs every ingest pass over every source in canonical order, then embeds —
@@ -196,6 +191,22 @@ echo '{"prompt":"fix register_graph_object handler"}' | rmx scan-prompt   # dyna
 to `UserPromptSubmit`, so every Claude session loads a fresh symbol map and gets
 context bundles injected for symbols it mentions. `build_context` is shared by
 `context`, `scan-prompt`, and `memory recall`, so a fix to one improves all.
+
+`scan-prompt` ranks its bundles with salience-seeded **personalized PageRank**
+over the concept graph (measured against a degree-walk alternative — PPR wins
+5x; see PERFORMANCE.md's negatives table).
+
+## Drop-in learning grep
+
+`bin/rmxgrep` and `bin/rmxrg` are byte-exact grep/rg drop-ins (`alias
+grep=rmxgrep`): outside an rmx project they exec the real tool untouched;
+inside one, every search teaches the graph — index-first with annotated hits
+in rich mode, real-tool bytes plus a throttled background teach ping in plain
+mode. `rmx grep` honors bare grep flags, greps a pipe when stdin is piped
+(explicit path args win, per grep's contract), and **fails loud (exit 2)**
+on anything it can't honor byte-exactly — the wrappers fall back to the real
+tool, so the worst case is plain grep behavior, never a silently wrong answer.
+
 
 ## Concept namespacing
 
@@ -313,7 +324,7 @@ source .venv/bin/activate
 env -u PYTHONPATH -u PYTHONUSERBASE PYTHONNOUSERSITE=1 pytest tests/ -q
 ```
 
-502 tests, ~90 seconds.
+1361 tests.
 
 ## License
 

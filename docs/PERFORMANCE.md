@@ -210,39 +210,119 @@ types without needing per-linkage hyperparameters. Used heavily inside
 
 ## Benchmark results {#benchmark-results}
 
-### CSN Python — MRR@10 {#csn-python-mrr-10}
+### Two harnesses — and why only one of them counts {#two-harnesses}
 
-| Retriever                            | MRR@10  | Notes                                  |
-|--------------------------------------|---------|----------------------------------------|
-| rmx tuned (bm25_docstring30_cov30_cm20) | **0.972** | symbolic, no embeddings                |
-| CodeRankEmbed                        | 0.959   | dense vector retrieval                 |
-| rmx baseline (tf_rrf)                | ~0.90   | plain TF + RRF                         |
+Until 0.52 the headline CSN number came from `eval/run.py --model rmx`, a
+BESPOKE index build (own tokenizer, per-token `add_concept`) that never called
+`refmatrix.ingest`. Its 0.972 MRR@10 was a true number about code users never
+executed. `eval/production/csn_code.py` is the honest harness: it materializes
+the BEIR corpus as real files, runs production
+`ingest_path(..., semantic=True)`, and ranks through `Store.content_rank` —
+the exact functions `rmx ingest` / `rmx context` call. The number to defend
+is the production one. {#honest-harness}
 
-### CSN JavaScript — MRR@10 {#csn-javascript-mrr-10}
+### CSN Python — production path (43 827 docs · 14 918 queries) {#csn-python-production}
 
-| Retriever                            | MRR@10  | Notes                                  |
-|--------------------------------------|---------|----------------------------------------|
-| rmx tuned                            | **0.939** | margin LARGER on JS than Python        |
-| CodeRankEmbed                        | 0.916   |                                        |
+| Retriever | MRR@10 | R@1 | R@10 | nDCG@10 |
+|---|---|---|---|---|
+| **rmx, production path** (shipped tuned stack) | **0.961** | 0.944 | 0.984 | 0.967 |
+| CodeRankEmbed (dense, GPU) | 0.959 | 0.934 | 0.993 | 0.967 |
+| rmx bespoke harness (historical, tuned) | 0.972 | — | — | — |
 
-The symbolic margin grows on JS because rmx's linkage-aware scorer benefits
-from JS's higher density of cross-file relations (imports, requires, dynamic
-dispatch surfaces) that vector retrieval flattens out.
+The production path is within a point of the bespoke index and still beats the
+neural baseline — with no embeddings, no GPU, and `file:line` evidence behind
+every score. The −0.011 vs bespoke is the honest cost of the plainer
+production semantic pass vs the benchmark-tuned per-linkage tokenizer.
 
-### Eval harness — `eval/run.py` {#eval-harness-eval-run-py}
+### CSN JavaScript / TypeScript (bespoke harness, historical) {#csn-js-ts}
+
+| Corpus | rmx MRR@10 | CodeRankEmbed | Δ |
+|---|---|---|---|
+| csn_javascript | **0.939** | 0.916 | +0.023 |
+| csn_typescript (real-world, fork dupes) | **0.365** | 0.358 | +0.007 |
+
+Same-direction wins on three languages; margin compresses on noisier
+real-world corpora. These two predate the production harness and carry its
+caveat.
+
+### The main-path incident — why every 2026-09-03 result was re-run {#main-path-incident}
+
+Measured at 0.48.0: **43–83% of entities across the live fleet had zero
+indexed terms.** `rmx ingest .` never GMD-dispatched markdown (plain `.md`
+emitted no body terms), and `--semantic` was opt-in with no daemon setting
+it — so the "full rebuild" produced stores whose content was structurally
+unsearchable, and the mtime stamp then hid it from sync forever. The 0.48.0
+fix (markdown→GMD dispatch, lenient parse, semantic default-on) plus
+`rmx reingest --force` (0.49) invalidated and re-ran all eight open retrieval
+experiments. Standing lesson: **benchmark the path users run** — a true
+number about a bespoke path hid four defects. {#measure-the-path}
+
+### Eval harnesses {#eval-harnesses}
 
 ```bash
-# corpus ingest + parallel retrieve + metrics + run.tsv save
+# honest: production ingest + content_rank
+python eval/production/csn_code.py --dataset csn_python
+
+# historical: bespoke index, tuning ablations
 python -m refmatrix.eval.run --dataset csn_python --variant bm25_docstring30_cov30_cm20
 ```
 
-Metrics emitted (`eval/metrics.py`):
+Metrics emitted (`eval/metrics.py`): `mrr@10/1000`, `recall@1/10/100/200/500/1000`,
+`nDCG@10`. Results land in `eval/results/<dataset>/<variant>/run.tsv`.
 
-- `mrr@10`, `mrr@1000`
-- `recall@1/10/100/200/500/1000`
-- `nDCG@10` (relevance-weighted)
+## Proactive retrieval — the MemAware benchmark {#memaware}
 
-Results land in `eval/results/<dataset>/<variant>/run.tsv`.
+CSN grades a lookup someone asked for. MemAware (`eval/memaware/`, Layer A:
+90 questions, deterministic, no LLM) grades whether the system surfaces past
+context **nobody asked for** — `rmx scan-prompt`'s actual job. rmx started
+far behind and closed most of the ranking gap:
+
+| Surface | hit@20 | MRR@20 | Note |
+|---|---|---|---|
+| bm25-per-session (reference) | 0.444 | 0.242 | flat BM25 over session files |
+| `rmx context` (+lead signal) | 0.511 | 0.248 | +35% hit@20 from lead alone |
+| `rmx scan-prompt` at 0.36.0 | 0.200 | 0.043 | starting point |
+| `rmx scan-prompt` now | — | **0.241** | content fusion + bodies + rerank ≈ BM25 parity |
+
+What moved it: per-concept content fusion with real idf/coverage (0.37.0,
+hit@20 0.200→0.378), body text for rerank + candidate pool 10 (not 30 — a
+bigger pool feeds the cross-encoder more distractors than signal), and the
+`lead` linkage. **The remaining ceiling is recall, not ranking**: known-item
+hit@1 on a healthy store is 0.808 post-re-derive (the earlier 0.447 "ceiling"
+was pool contamination from the main-path incident), and questions whose gold
+document is never retrieved are untouchable by any reordering prior. {#memaware-ceiling}
+
+## Measured negatives — do not re-derive these {#negatives}
+
+Ideas built, measured, and rejected; kept in-tree as documented conditions:
+
+| Idea | Result | Why it loses |
+|---|---|---|
+| Degree-2 graph walk (`--rank enrich`) | MRR 0.013 vs PPR 0.065 — 5x worse | hop 2 from any hub concept is most of a bipartite corpus; PPR's restart bound adapts per node, a hop count can't |
+| PRF query expansion from tldr bodies | 0.217 → 0.211 (5 terms) → 0.208 (10) | bodies describe nodes well, extend queries badly |
+| Concept prefilter for dense ANN | exact null | candidate set already dominated by the same concepts |
+| Phrase layer (skip-gram composition) | hit@20 identical | a phrase can't reach a doc its component words missed |
+| RRF dense⊕symbolic recall fusion as default | dense 0.848 vs fused 0.794 MRR@10 | fusion wins Recall@10 (+0.143) and nDCG (+0.095) — right for set-oriented surfaces, wrong for top-1; `--fuse` stays opt-in |
+| 7 of 8 structural signals (tags, heading depth, protected, …) | flat | only `lead` position paid: +20% MRR, +35% hit@20 on held-out questions |
+
+PPR (personalized PageRank with salience-seeded restart) is the shipped
+default ranking prior in `scan-prompt`; a dormant `--degree` flag holds the
+graph-walk A/B for the helix phase-2 read. {#ppr-default}
+
+## Doc–doc similarity: co-occurrence beats dense {#cooccurrence-vs-dense}
+
+Scored against author-asserted `rel:` edges (138 linked pairs, 4 000 sampled
+unlinked, one project): raw concept pair-overlap **AUC 0.929** vs dense
+cosine **0.815**. Dense cosines compress into a 0.70–0.79 band inside one
+project — same domain, same register, no range left to discriminate. Division
+of labour: dense answers "is this about the query" (cross-domain); pair
+overlap answers "which same-domain docs belong together". {#division-of-labour}
+
+## LatticeDB, evaluated as a backend candidate {#latticedb}
+
+Run as a fourth eval condition: index reachability fine (hit@500 0.722) but
+its BM25 scored 0.0 across the board — ranking unusable as shipped. Not a
+migration target; the DuckDB+Lance stack stays. {#latticedb-verdict}
 
 ## How `tldr` participates in performance {#how-tldr-participates-in-performance}
 
@@ -285,13 +365,14 @@ changes skip the tldr step entirely.
 
 ## Roadmap {#roadmap}
 
-- **Migrate fragment storage fully into DuckDB+Lance** (queued; see
-  memory `project_queued_work`). Current phase 3 stores bitmaps as DuckDB
-  BLOBs; Lance would give vectorized scan + columnar persistence.
-- **JS/TS dataset expansion** (blocked on DuckDB+Lance migration). CSN JS
-  result above is encouraging; broader JS/TS coverage needs more annotated
-  corpus.
-- **Optional embedding sidecar.** Symbolic stack already beats CodeRankEmbed
-  on CSN; an embedding layer would be additive, not replacement — likely
-  fused via RRF alongside the existing rankers rather than as a separate
-  retrieval path.
+- **Helix phase 2 — edge time.** Phase 1 ships `[helix]` snapshot annotations
+  on stale retrievals; the pre-registered criterion on `helix.log`
+  (rendered-only rows) decides the storage fork: mutable edge-time columns vs
+  versioned snapshots.
+- **`scan-prompt --degree` hook flip.** The PPR-vs-degree A/B knob is wired in
+  both eval harnesses; the flip is one settings edit once the criterion reads.
+- **Recall tier for proactive retrieval.** MemAware's remaining gap is
+  documents never retrieved at all; candidate-set work (not ranking priors)
+  is the only lever left.
+- **DuckDB+Lance fragment migration** (queued): bitmaps as DuckDB BLOBs →
+  Lance columnar scan.
