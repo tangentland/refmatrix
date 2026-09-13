@@ -4816,20 +4816,27 @@ def _is_stdin_piped() -> bool:
     if _sys.stdin.isatty():
         return False
     try:
-        import select as _select
-        ready, _, _ = _select.select([_sys.stdin], [], [], 0)
-        if not ready:
-            return False
-        # On macOS, regular files always show ready in select(); check
-        # the fstat to differentiate a fed-pipe from /dev/null.
         import os as _os
+        import select as _select
         import stat as _stat
         st = _os.fstat(_sys.stdin.fileno())
-        if _stat.S_ISFIFO(st.st_mode):
-            return True
         if _stat.S_ISREG(st.st_mode):
             return st.st_size > 0
-        return False
+        if not _stat.S_ISFIFO(st.st_mode):
+            # /dev/null (chr device) and friends: not a pipe.
+            return False
+        # FIFO. A zero-timeout peek here raced real pipelines: with
+        # `rg A f | rg -v B` both stages start together, and a slow
+        # upstream (itself a python-backed wrapper) hasn't written its
+        # first byte when this stage peeks — the pipe read as "empty",
+        # the search silently ran over the project tree instead of the
+        # pipe. Block until the pipe is readable: that means either data
+        # (live pipe) or EOF (the closed-or-empty pipe Bash-tool
+        # invocations hand us). Same blocking behavior as real grep on
+        # stdin, and the caller only asks when no path args were given.
+        _select.select([_sys.stdin], [], [])
+        # Readable + zero bytes buffered = EOF on an empty pipe.
+        return len(_sys.stdin.buffer.peek(1)) > 0
     except Exception:
         return False
 
@@ -5057,7 +5064,10 @@ def grep(argv, regex, flags, linkage, kind, limit, fallback, learn, via_replica)
     # Pipe mode is decided BEFORE flag folding: it changes which flags are
     # answer-changing (-n/-o/-m/-A… render output when we're standing in for
     # grep, but mean nothing against the index).
-    piped = _is_stdin_piped()
+    # Explicit path args win over a pipe — `foo | grep pat file` searches
+    # the file, never stdin (grep's contract). Short-circuiting also skips
+    # the blocking pipe probe when stdin was never the target.
+    piped = (not paths) and _is_stdin_piped()
     if flag_tokens:
         note, err, delegate = _grep_bare_flags(flag_tokens, gf,
                                                stdin_mode=piped)
@@ -5081,6 +5091,19 @@ def grep(argv, regex, flags, linkage, kind, limit, fallback, learn, via_replica)
         regex = False
     if gf["force_regex"]:
         regex = True
+    if not regex and not gf["force_substring"]:
+        # GNU BRE escape metas (\| \( \{ …) have no substring reading and
+        # no python-re equivalent in this mode: matching them literally
+        # returned the silent wrong answer for `grep 'a\|b'` piped through
+        # the drop-in wrappers. UsageError exits 2, which is the wrappers'
+        # fall-back-to-the-real-tool signal.
+        import re as _re
+        bre = _re.search(r"\\[|(){}]", pattern)
+        if bre:
+            raise click.UsageError(
+                f"grep: BRE escape {bre.group(0)!r} is not supported "
+                "(pass -E for ERE, or -F for a literal match)"
+            )
 
     # Stdin mode: data piped in → grep the pipe, ignore the index entirely.
     # isatty() alone is not enough -- subprocess invocations (Bash tool,

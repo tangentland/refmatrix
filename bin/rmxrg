@@ -37,7 +37,24 @@ case "$MODE" in
 esac
 
 if [ "$rich" = "1" ]; then
-    "$RMX" grep "$@"
+    # rg's pattern dialect is Rust-regex (ERE-family); rmx grep defaults to
+    # substring, which read `alpha|beta` as a literal and silently matched
+    # nothing. Force -E unless the caller asked for literals (-F /
+    # --fixed-strings, bare or bundled).
+    ere="-E"
+    for tok in "$@"; do
+        case "$tok" in
+            --) break ;;
+            --fixed-strings|--fixed-strings=*) ere="" ;;
+            --*) ;;
+            -*F*) ere="" ;;
+        esac
+    done
+    if [ -n "$ere" ]; then
+        "$RMX" grep -E "$@"
+    else
+        "$RMX" grep "$@"
+    fi
     st=$?
     if [ "$st" -eq 2 ]; then
         exec "$REAL" "$@"
