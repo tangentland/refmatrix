@@ -4835,8 +4835,16 @@ def _is_stdin_piped() -> bool:
         # invocations hand us). Same blocking behavior as real grep on
         # stdin, and the caller only asks when no path args were given.
         _select.select([_sys.stdin], [], [])
-        # Readable + zero bytes buffered = EOF on an empty pipe.
-        return len(_sys.stdin.buffer.peek(1)) > 0
+        # Readable + FIONREAD 0 = EOF on an empty pipe. FIONREAD, not a
+        # buffered peek: peek() would pull bytes into THIS process's stdio
+        # buffer, and on the exit-2 (fail-loud) and delegate paths the real
+        # tool inherits the fd and must see the stream intact.
+        import array as _array
+        import fcntl as _fcntl
+        import termios as _termios
+        pending = _array.array("i", [0])
+        _fcntl.ioctl(_sys.stdin.fileno(), _termios.FIONREAD, pending)
+        return pending[0] > 0
     except Exception:
         return False
 

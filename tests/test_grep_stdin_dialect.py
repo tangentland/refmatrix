@@ -164,3 +164,22 @@ def test_rmxrg_respects_fixed_strings(rmxrg_env):
                              text=True, cwd=proj, env=env)
         assert res.stdout.startswith("STUB:grep " + argv[0]), res.stdout
         assert " -E " not in res.stdout
+
+
+def test_bre_fallback_preserves_stdin_for_the_real_tool(tmp_path):
+    """exit-2 fail-loud must not consume the pipe: the wrapper execs the
+    real grep on the SAME stdin, which must still hold every byte (the
+    buffered-peek probe used to slurp it, leaving the fallback EOF)."""
+    proj = tmp_path / "proj"
+    (proj / ".refmatrix").mkdir(parents=True)
+    rmx = tmp_path / "rmx-real"
+    rmx.write_text(f"#!/bin/sh\nexec {sys.executable} -m refmatrix.cli \"$@\"\n")
+    rmx.chmod(rmx.stat().st_mode | stat.S_IEXEC)
+    env = dict(os.environ, RMXGREP_RMX=str(rmx), RMXGREP_MODE="rich")
+    rmxgrep = REPO / "bin" / "rmxgrep"
+    cmd = (f"printf 'alpha\\nbeta\\ngamma\\n' | "
+           f"{rmxgrep} -v 'alpha\\|beta'")
+    res = subprocess.run(["sh", "-c", cmd], capture_output=True,
+                         text=True, cwd=proj, env=env)
+    assert res.stdout.splitlines() == ["gamma"]
+    assert res.returncode == 0
