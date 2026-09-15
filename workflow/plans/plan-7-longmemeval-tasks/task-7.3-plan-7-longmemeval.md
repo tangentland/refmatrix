@@ -35,7 +35,7 @@ rel: part-of -> [[plan-7-longmemeval]]
 - Recall@k / MRR / hit@k match values computed by hand on a fixture with a known answer
 - `restricted` mode drops candidates outside the question's haystack; `union` keeps them — asserted on one fixture where the modes MUST differ
 - per-type aggregation partitions the question set exactly (sum of per-type n == scored n)
-- abstention questions are excluded from the denominator, not scored 0
+- abstention questions are scored and additionally reported as their own slice
 - every recall method emits an explicit `--rerank` or `--no-rerank` (assert over the built argv, not the docstring)
 - mutation check: removing the prefilter from `restricted` collapses it onto `union` and turns the mode-difference test RED
 
