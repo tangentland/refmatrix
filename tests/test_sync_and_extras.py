@@ -294,7 +294,9 @@ def test_install_hooks_apply_writes_executable_scripts(tmp_path):
     pc = proj / ".git" / "hooks" / "post-commit"
     assert pc.exists()
     assert os.access(pc, os.X_OK)
-    settings = proj / ".claude" / "settings.local.json"
+    # 0.67: the rmx hook block is written to the committed settings.json;
+    # settings.local.json keeps only per-machine keys (env).
+    settings = proj / ".claude" / "settings.json"
     assert settings.exists()
     data = json.loads(settings.read_text())
     assert "PostToolUse" in data["hooks"]

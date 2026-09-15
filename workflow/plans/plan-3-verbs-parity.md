@@ -5,7 +5,7 @@ title: "Every MCP tool is a verb; CLI and MCP are adapters; parity is a test"
 tags: [plan, remediation, bsd]
 metadata:
   node_type: plan
-  status: approved
+  status: in-progress
   created: 2026-09-14
   bsd_findings: "#sk-3, #meh-3"
 ---
