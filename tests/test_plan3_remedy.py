@@ -125,7 +125,7 @@ def test_cli_session_start_widens_with_the_daemon_down(old_store, monkeypatch):
     assert r.exit_code == 0, r.output + (r.stderr or "")
     assert [m["name"] for m in json.loads(r.stdout)] == ["fresh", "old"]
     assert "widened" in (r.stderr or "")
-    assert "reading the store directly" in (r.stderr or "")
+    assert "reading the replica" in (r.stderr or "")
 
 
 # ---- #sk-5 the divergence is a named parameter -----------------------------

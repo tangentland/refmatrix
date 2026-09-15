@@ -60,3 +60,18 @@ rel: evidence-for -> [[bsd-plan3-verbs-parity-r2-209270d]]
 
 TDD: RED `workflow/review-output/pytest-plan3-r2-red.log` (7 failed / 1 passed), GREEN `pytest-plan3-r2-green.log` (177 passed across parity, remedy, migrated, MCP, subject, recall, locate, plan-1/2 suites). Mutations `pytest-plan3-r2-mutations.log`: (A) `_hub_rpc` swallowing `ok:false` again fails both hub-boundary tests; (B) classifying busy as absent again fails the typed-error test and the bootstrap-fallback test.
 
+## Round 3 (bsd-plan3-r3, 76929a2) {#round-3}
+
+rel: evidence-for -> [[bsd-plan3-verbs-parity-r3-76929a2]]
+
+| Finding | Fix |
+|---------|-----|
+| #b-1 `_promote_digest` opened the slot under a busy daemon | classifies through `verbs.require_daemon`; busy → `{"error": "VerbBusyError: daemon busy pid=…"}` (no catalog file appears — asserted on a real silent socket, through `verbs.save_state` too) — Q13 |
+| #b-2 `rmx locate` dropped `skipped`; `federated_query`/`concept` had none | one `_live_roots()` for all four fan-outs; `locate` prints each skipped store on stderr and "no matches (N stores skipped)"; `verbs.search` carries `skipped` — Q14 |
+| #s-3 bare pings in `memory_partition` / `attach_context` | both classify (busy raises / is named; absent keeps the bootstrap default) |
+| #s-4 socket-timeout-is-busy untested; promote bypassed the wrappers | `test_socket_timeout_on_an_op_is_busy` on a `_PingOnlyDaemon`; `_call` treats any transport exception as busy; promote's `memory_get` goes through `_call` and the hub write is wrapped into a typed VerbError |
+| #m-5 reads refused on busy | `memory get` / interactive `memory recall` fall through to `_read_store()` with `# rmx: daemon busy …; reading the replica` on stderr (hook modes degrade to empty instead) — Q13 |
+| observation: `hub queues` rendered busy as down | `_gather_queues` carries `daemon_busy` + `identity: unknown`; the CLI renders `busy` |
+
+TDD: RED `workflow/review-output/pytest-plan3-r3-red.log` (9 failed / 1 passed), GREEN `pytest-plan3-r3-green.log` (10 passed) + `pytest-plan3-r3-green-suites.log` (surrounding suites). Mutations `pytest-plan3-r3-mutations.log`: (A) a bare ping in `_promote_digest` fails the promote test; (B) dropping the skipped print fails the locate test.
+

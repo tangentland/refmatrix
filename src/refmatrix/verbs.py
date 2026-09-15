@@ -209,12 +209,11 @@ def _call(root: Path, op: str, payload: dict, *, timeout: float = 60.0,
           retries: int = 2) -> dict:
     """`retries=0` for budgeted paths: `daemon.call` retries on timeout, so a
     5 s bound with the library default is a 15 s wait."""
-    import socket as _socket
     from refmatrix import daemon as daemon_mod
     require_daemon(root, retries=0 if retries == 0 else 2)
     try:
         r = daemon_mod.call(root, op, payload, timeout=timeout, retries=retries)
-    except (TimeoutError, _socket.timeout, OSError) as e:
+    except Exception as e:  # noqa: BLE001 — transport-level only (call does socket+json)
         raise VerbBusyError(f"daemon op {op} on {root} did not answer within "
                             f"{timeout:g}s ({e}); the daemon is busy") from e
     if not r.get("ok"):
@@ -235,14 +234,20 @@ def memory_partition(root: Path, *, timeout: "float | None" = None) -> str:
     from refmatrix import daemon as daemon_mod, discovery
     project = discovery.store_name(root)
     legacy = f"memory-{project}"
+    # Busy is not absent (ch-bsd plan-3 r3 #s-3): a daemon that holds the
+    # store raises (the caller must not write around it); NO daemon keeps
+    # the project default — the bootstrap case.
     try:
-        if daemon_mod.ping(root, retries=0 if timeout is not None else 2):
-            r = daemon_mod.call(root, "partition_list", {},
-                                timeout=min(10.0, timeout) if timeout else 10.0,
-                                retries=0 if timeout is not None else 2)
-            if r.get("ok") and any(row.get("name") == legacy
-                                   for row in r["result"].get("rows", [])):
-                return legacy
+        require_daemon(root, retries=0 if timeout is not None else 2)
+    except VerbAbsentError:
+        return project
+    try:
+        r = daemon_mod.call(root, "partition_list", {},
+                            timeout=min(10.0, timeout) if timeout else 10.0,
+                            retries=0 if timeout is not None else 2)
+        if r.get("ok") and any(row.get("name") == legacy
+                               for row in r["result"].get("rows", [])):
+            return legacy
     except Exception as e:  # noqa: BLE001 — tolerant, but never mute
         logging.getLogger(__name__).warning(
             "memory_partition: partition_list failed for %s (%s); using %r",
@@ -380,9 +385,11 @@ def attach_context(root: Path, rows: list[dict], degree: int,
     if degree <= 0:
         return rows
     from refmatrix import daemon as daemon_mod
-    if not daemon_mod.ping(root):
+    try:
+        require_daemon(root)
+    except VerbError as e:      # busy or absent — named, never a bare skip
         if warnings is not None:
-            warnings.append(f"context: daemon not running for {root}; no bundles attached")
+            warnings.append(f"context: {e}; no bundles attached")
         return rows
     for row in rows:
         err = None
@@ -1056,15 +1063,17 @@ def memory(root: Path, action: typing.Literal[
     require_daemon(root)          # busy is typed, never "not running"
     if action == "promote":
         key = {"id": int(id)} if id is not None else {"name": name}
-        g0 = daemon_mod.call(root, "memory_get", {**key, "partition": part}, timeout=30.0)
-        m = g0.get("result", {}).get("memory") if g0.get("ok") else None
+        m = _call(root, "memory_get", {**key, "partition": part}, timeout=30.0).get("memory")
         if not m:
             raise VerbError("no memory matching the id/name")
         tg = list(dict.fromkeys((m.get("tags") or []) + ["behavior"]))
-        g = hub_mod.global_call("memory_add", {
-            "name": m["name"], "content": m["content"],
-            "mtype": m.get("mtype") or "feedback", "tags": tg,
-            "metadata": m.get("metadata")})
+        try:
+            g = hub_mod.global_call("memory_add", {
+                "name": m["name"], "content": m["content"],
+                "mtype": m.get("mtype") or "feedback", "tags": tg,
+                "metadata": m.get("metadata")})
+        except Exception as e:  # noqa: BLE001 — typed for the caller (r3 #s-4)
+            raise VerbError(f"global store memory_add failed: {e}") from e
         if not g.get("ok"):
             raise VerbError(str(g.get("error")))
         return g.get("result", {})
