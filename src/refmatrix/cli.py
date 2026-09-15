@@ -9312,54 +9312,15 @@ def _recall_display_score(h: dict) -> "float | None":
 
 
 def _global_recall_rows(q, *, k, recent, since_s):
-    """Recall from the hub-owned global behavior store — routed through ITS
-    daemon (global_call ensures it's up), never a direct Store() open, so we
-    don't reintroduce catalog lock contention. Lexical/recent only (no embedder
-    needed), keeping the UserPromptSubmit/SessionStart hooks cheap."""
-    from refmatrix import hub as hub_mod
-    if not hub_mod.global_store_root().exists():
-        return []
-    if recent:
-        op, args = "memory_recent", {"since_seconds": since_s, "limit": k}
-    elif q:
-        op, args = "memory_search", {"query": q, "limit": k}
-    else:
-        return []
-    try:
-        resp = hub_mod.global_call(op, args, timeout=30.0)
-    except Exception:
-        return []
-    rows = resp.get("result", {}).get("rows", []) if resp.get("ok") else []
-    for r in rows:
-        r["scope"] = "global"
-    return rows
+    """Single-sourced in verbs.global_recall_rows (plan-3)."""
+    from refmatrix.verbs import global_recall_rows
+    return global_recall_rows(q, k=k, recent=recent, since_s=since_s)
 
 
 def _merge_scope(project_rows, global_rows, k, scope):
-    """Combine project + global recall. `both` round-robins so global behavior
-    memories are guaranteed representation, not truncated behind project hits."""
-    for r in project_rows:
-        r.setdefault("scope", "project")
-    for r in global_rows:
-        r.setdefault("scope", "global")
-    if scope == "global":
-        return global_rows[:k]
-    if scope == "project":
-        return project_rows[:k]
-    out, seen = [], set()
-    pi = gi = 0
-    while len(out) < k and (pi < len(project_rows) or gi < len(global_rows)):
-        if pi < len(project_rows):
-            r = project_rows[pi]; pi += 1
-            if r.get("name") not in seen:
-                seen.add(r.get("name")); out.append(r)
-        if len(out) >= k:
-            break
-        if gi < len(global_rows):
-            r = global_rows[gi]; gi += 1
-            if r.get("name") not in seen:
-                seen.add(r.get("name")); out.append(r)
-    return out
+    """Single-sourced in verbs.merge_scope (plan-3)."""
+    from refmatrix.verbs import merge_scope
+    return merge_scope(project_rows, global_rows, k, scope)
 
 
 def _render_memory_gmd(rows, *, query: str | None = None,
@@ -9465,22 +9426,14 @@ def _render_memory_gmd(rows, *, query: str | None = None,
 
 
 def _parse_duration(text: str) -> float:
-    """Parse `30m`, `1h`, `7d`, `2w` (or bare seconds) → seconds."""
-    text = text.strip().lower()
-    if not text:
-        raise click.BadParameter("empty duration")
-    if text[-1] in _DURATION_UNITS:
-        try:
-            n = float(text[:-1])
-        except ValueError as e:
-            raise click.BadParameter(f"bad duration {text!r}") from e
-        return n * _DURATION_UNITS[text[-1]]
+    """Parse `30m`, `1h`, `7d`, `2w` (or bare seconds) → seconds. The parser
+    lives in verbs (the MCP tool accepts the same spellings); this wrapper
+    only translates the error into click's."""
+    from refmatrix.verbs import VerbError, parse_duration
     try:
-        return float(text)
-    except ValueError as e:
-        raise click.BadParameter(
-            f"bad duration {text!r}; use 30m / 1h / 7d / bare seconds"
-        ) from e
+        return parse_duration(text)
+    except VerbError as e:
+        raise click.BadParameter(str(e)) from e
 
 
 @memory_grp.command("recall")
@@ -9595,12 +9548,8 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         raise click.ClickException(
             "--json and --gmd are mutually exclusive"
         )
-    since_defaulted = False
     if session_start:
         recent = True
-        if since is None:
-            since = "7d"
-            since_defaulted = True
     # Uniform resolution: positional query > --text > --prompt > --stdin-json
     # envelope. read_stdin=False so --recent doesn't consume an unrelated pipe;
     # an explicit --stdin-json still reads + parses (raising on bad JSON).
@@ -9635,174 +9584,105 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
     if (session_start or stdin_json) and not include_session:
         exclude_mtypes.add("session/*")
 
+    from refmatrix import verbs as _verbs
+
     def _mt_excluded(mtype: "str | None") -> bool:
-        """True if mtype matches any --exclude-mtype value. Patterns glob
-        (fnmatchcase) so namespaced mtypes filter by prefix —
-        `--exclude-mtype 'session/*'` hides session/recall-state +
-        session/digest. Plain values without glob chars still match
-        exactly."""
-        if not exclude_mtypes:
-            return False
-        from fnmatch import fnmatchcase
-        m = mtype or ""
-        return any(fnmatchcase(m, pat) for pat in exclude_mtypes)
+        return _verbs.mt_excluded(mtype, exclude_mtypes)
 
     def _global_rows(qq, *, recent_flag, since):
         """Global-store rows for the --scope both/global merge, with the SAME
-        `--exclude-mtype` filter applied as the project side. Without this the
-        session/* exclusion (and any explicit --exclude-mtype) leaked global
-        save-state / digest rows straight past the filter (cliquedb UX report
-        2026-07-09). Over-fetch when filtering so the merge still has k."""
+        exclusion applied as the project side (2026-07-09: without it global
+        save-state / digest rows leaked past the filter). Over-fetch when
+        filtering so the merge still has k."""
         gk = k * 10 if exclude_mtypes else k
         grows = _global_recall_rows(qq, k=gk, recent=recent_flag, since_s=since)
-        if exclude_mtypes:
-            grows = [r for r in grows if not _mt_excluded(r.get("mtype"))]
-        return grows
+        return [r for r in grows if not _mt_excluded(r.get("mtype"))]
 
     def _attach_context(rows: list[dict]) -> list[dict]:
-        """When --degree > 0, fetch a context bundle per row and stash
-        the rendered text on `row['context']`. Daemon-side: routes
-        through the same `_op_context` the `rmx context` CLI uses, so
-        the output shape matches. No-op for degree=0.
-        Best-effort: a per-row failure leaves `context` unset rather
-        than breaking the whole recall response."""
+        """--degree>0: context bundle per row. Daemon up → the shared
+        verbs.attach_context (same `context` op as `rmx context`). Daemon
+        down → degraded in-process build on the lock-free reader, a CLI-only
+        courtesy the daemon-routed verb does not offer."""
         if degree <= 0:
             return rows
         from refmatrix import daemon as daemon_mod
         root = _root()
-        if not daemon_mod.ping(root):
-            # Degraded mode: in-process build, no daemon.
-            from refmatrix.context import build_context, render_text
-            s = _read_store()
-            for row in rows:
-                try:
-                    b = build_context(
-                        s, row["name"], degree=degree,
-                        _entities_explicit=False, _tokens_explicit=False,
-                    )
-                    row["context"] = render_text(b)
-                except Exception:
-                    row["context"] = None
-            return rows
+        if daemon_mod.ping(root):
+            return _verbs.attach_context(root, rows, degree, _resolve_partition())
+        from refmatrix.context import build_context, render_text
+        rs = _read_store()
         for row in rows:
             try:
-                ctx_resp = daemon_mod.call(
-                    root, "context",
-                    {"ref": row["name"], "format": "text",
-                     "degree": degree,
-                     "entities_explicit": False,
-                     "tokens_explicit": False,
-                     "partition": _resolve_partition()},
-                    timeout=120.0,
-                )
-                row["context"] = (
-                    ctx_resp.get("result", {}).get("body")
-                    if ctx_resp.get("ok") else None
-                )
+                b = build_context(rs, row["name"], degree=degree,
+                                  _entities_explicit=False, _tokens_explicit=False)
+                row["context"] = render_text(b)
             except Exception:
                 row["context"] = None
         return rows
 
-    if subject:
-        # ADR-0002: recall the leaves filed under a subject (walk part-of),
-        # newest first. Composes with --exclude-mtype / -k. daemon-or-inproc.
-        from refmatrix import daemon as daemon_mod
-        if daemon_mod.ping(_root()):
-            resp = _memory_daemon_call("subject_leaves", {"subject": subject})
-            rows = resp.get("result", {}).get("rows", []) if resp.get("ok") else []
-        else:
-            rows = _store().subject_leaves(subject)
-        rows = [r for r in rows if not _mt_excluded(r.get("mtype"))][:k]
-        rows = _attach_context(rows)
-        if as_json:
-            import json as _json
-            click.echo(_json.dumps(rows, indent=2))
-            return
-        if as_gmd:
-            click.echo(_render_memory_gmd(
-                rows, query=None, mode="subject",
-                partition=_resolve_partition()))
-            return
-        if not rows:
-            console.print(f"[yellow]no memories filed under subject[/] {subject!r}")
-            return
-        t = Table("rank", "id", "name", "mtype", "content")
-        for i, m in enumerate(rows, 1):
-            t.add_row(str(i), str(m["id"]), m["name"], m.get("mtype") or "",
-                      (m.get("content") or "")[:80])
-        console.print(t)
-        return
-
-    if recent:
-        since_s = _parse_duration(since) if since else None
-        from refmatrix import daemon as daemon_mod
-        # Over-fetch when filtering so the final list still has k rows.
-        # Cap at 10× to avoid pathological cases on heavily-polluted
-        # partitions.
-        effective_k = k * 10 if exclude_mtypes else k
-        if daemon_mod.ping(_root()):
-            resp = _memory_daemon_call(
-                "memory_recent",
-                {"since_seconds": since_s, "limit": effective_k},
-            )
-            if not resp.get("ok"):
-                raise click.ClickException(resp.get("error", "daemon error"))
-            rows = resp["result"]["rows"]
-        else:
-            s = _store()
-            rows = s.recent_memories(since_seconds=since_s, limit=effective_k)
-        if exclude_mtypes:
-            rows = [r for r in rows if not _mt_excluded(r.get("mtype"))][:k]
-        if not rows and since_defaulted:
-            # Session-start with nothing in the default 7d window (a quiet
-            # fortnight, or a store that lagged disk — 2026-09-14). An empty
-            # orient pass is worse than an older one: widen to newest-k
-            # regardless of age. An explicit --since is honored as given.
-            since_s = None
-            if daemon_mod.ping(_root()):
-                resp = _memory_daemon_call(
-                    "memory_recent",
-                    {"since_seconds": None, "limit": effective_k},
-                )
-                if not resp.get("ok"):
-                    raise click.ClickException(
-                        resp.get("error", "daemon error"))
-                rows = resp["result"]["rows"]
-            else:
-                rows = _store().recent_memories(since_seconds=None,
-                                                limit=effective_k)
-            if exclude_mtypes:
-                rows = [r for r in rows
+    if subject or recent:
+        # ONE implementation of "which rows" (verbs.memory_recall): the
+        # session-start 7d default + widen-when-empty, the session/*
+        # exclusion, the scope merge, and subject leaves. This command only
+        # renders. Daemon down: the verb refuses (it is daemon-routed); the
+        # CLI degrades to the lock-free replica for the recent modes and says
+        # so on stderr — never a silent empty answer, never the writer slot.
+        widened = False
+        try:
+            res = _verbs.memory_recall(
+                _root(), k=k, scope=scope, since=since,
+                recent=bool(recent), session_start=bool(session_start),
+                exclude_mtype=sorted(exclude_mtypes), subject=subject,
+                degree=degree)
+            rows = res["memories"]
+            widened = bool(res.get("widened"))
+        except _verbs.VerbError as e:
+            if "daemon not running" not in str(e):
+                raise click.ClickException(str(e))
+            if not (as_json or as_gmd):
+                click.echo(f"# rmx: {e}; reading the store directly", err=True)
+            since_s = _parse_duration(since) if since else (
+                7 * 86400.0 if session_start else None)
+            effective_k = k * 10 if exclude_mtypes else k
+            rs = _reader_store() or _store()
+            if subject:
+                rows = [r for r in rs.subject_leaves(subject)
                         if not _mt_excluded(r.get("mtype"))][:k]
-        if scope != "project":
-            rows = _merge_scope(
-                rows, _global_rows(None, recent_flag=True, since=since_s),
-                k, scope)
-        rows = _attach_context(rows)
+            else:
+                rows = [r for r in rs.recent_memories(since_seconds=since_s, limit=effective_k)
+                        if not _mt_excluded(r.get("mtype"))][:k]
+            if not rows and session_start and since is None and not subject:
+                widened = True
+                rows = [r for r in rs.recent_memories(since_seconds=None, limit=effective_k)
+                        if not _mt_excluded(r.get("mtype"))][:k]
+            if scope != "project":
+                rows = _merge_scope(rows, _global_rows(None, recent_flag=True, since=since_s),
+                                    k, scope)
+            rows = _attach_context(rows)
         if as_json:
             import json as _json
             click.echo(_json.dumps(rows, indent=2))
             return
         if as_gmd:
-            mode_tag = "session-start" if session_start else "recent"
+            mode_tag = ("subject" if subject else
+                        "session-start" if session_start else "recent")
             click.echo(_render_memory_gmd(
                 rows, query=None, mode=mode_tag,
                 partition=_resolve_partition(),
             ))
             return
         if not rows:
-            console.print("[yellow]no memories in window[/]")
+            console.print(f"[yellow]no memories filed under subject[/] {subject!r}"
+                          if subject else "[yellow]no memories in window[/]")
             return
+        if widened:
+            click.echo("# rmx: nothing in the 7d window; widened to newest", err=True)
         t = Table("rank", "id", "name", "mtype", "content")
         for i, m in enumerate(rows, 1):
-            t.add_row(str(i), str(m["id"]), m["name"], m["mtype"] or "",
-                      (m["content"] or "")[:80])
+            t.add_row(str(i), str(m["id"]), m["name"], m.get("mtype") or "",
+                      (m.get("content") or "")[:80])
         console.print(t)
         if degree > 0:
-            # Table mode: append the per-row context block under the
-            # table so the operator sees graph + body alongside the
-            # ranked list. JSON/GMD modes carry it inline via the
-            # `context` field set by `_attach_context`.
             for i, m in enumerate(rows, 1):
                 ctx = m.get("context")
                 if ctx:
