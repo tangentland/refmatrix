@@ -8413,6 +8413,7 @@ def _ingest_gmd_sync(resolved: list[Path], *, as_memory: bool,
         stats = ingest_gmd_paths(
             s, files, verbose=verbose,
             as_memory=as_memory, memory_mtype_default=memory_mtype,
+            lenient=as_memory,
         )
     return stats.report()
 
@@ -8434,7 +8435,9 @@ def _sync_memory_dir(memdir: Path) -> dict:
     disk. save-state now runs the bridge itself; the SessionStart hook
     runs it again, detached, as catch-up for files written outside
     save-state."""
-    out = {"memdir": str(memdir), "report": None, "error": None}
+    out: dict = {"memdir": str(memdir), "report": None, "error": None,
+                 "skipped_non_gmd": 0, "skipped_unparseable": [],
+                 "waited": False, "waited_job": None}
     if not memdir.is_dir():
         out["error"] = f"memory dir not found: {memdir}"
         return out
@@ -8448,7 +8451,24 @@ def _sync_memory_dir(memdir: Path) -> dict:
         )
     except Exception as e:  # noqa: BLE001 — reported, not hidden
         out["error"] = f"{type(e).__name__}: {e}"
+    _parse_bridge_report(out)
     return out
+
+
+def _parse_bridge_report(out: dict) -> None:
+    """Lift the ingest report's skip counters into the bridge result so a
+    caller (save-state, MCP) can act on them without scraping text."""
+    rep = out.get("report") or ""
+    import re as _re
+    m = _re.search(r"^skipped_non_gmd: (\d+)$", rep, _re.M)
+    if m:
+        out["skipped_non_gmd"] = int(m.group(1))
+    m = _re.search(r"^skipped_unparseable: (\d+)$", rep, _re.M)
+    if m and int(m.group(1)):
+        for line in rep.splitlines():
+            if line.startswith("  ") and ": " in line and not line.startswith("  ..."):
+                p, _, err = line.strip().partition(": ")
+                out["skipped_unparseable"].append({"path": p, "error": err})
 
 
 # ---- dense / Lance --------------------------------------------------------
@@ -10392,14 +10412,19 @@ def memory_sync_disk(paths: tuple[Path, ...], default_mtype: str,
       tags                          -> tags
     """
     _memory_intent("memory_sync_disk")
-    from refmatrix import daemon as daemon_mod
-    root = _root()
-    daemon_up = daemon_mod.ping(root)
-
+    # plan-5 Q2: sync-disk IS the bridge. One code path (`_sync_memory_dir`
+    # → `ingest-gmd --as-memory`, lenient for plain markdown), one identity
+    # rule, one report. Kept as an alias for one release; the old
+    # hand-rolled walker below is gone.
+    click.echo("# rmx: `memory sync-disk` is deprecated — it now runs the memory "
+               "bridge (`rmx ingest-gmd --as-memory <dir>`); use that directly",
+               err=True)
+    if dry_run:
+        raise click.ClickException(
+            "--dry-run is no longer supported: the bridge is content-hash gated "
+            "and re-running it is cheap; run without --dry-run")
     if not paths:
-        # No-arg → sync the whole curated-memory dir for this project, matching
-        # the save-state skill's "sync the memory tree" contract.
-        default_dir = _default_memory_dir(root.parent)
+        default_dir = _default_memory_dir(_root().parent)
         if not default_dir.is_dir():
             raise click.ClickException(
                 f"no PATHS given and default memory dir does not exist: "
@@ -10407,120 +10432,21 @@ def memory_sync_disk(paths: tuple[Path, ...], default_mtype: str,
         paths = (default_dir,)
         click.echo(f"# no PATHS given — syncing default memory dir: "
                    f"{default_dir}", err=True)
-
-    candidates: list[Path] = []
+    failed = 0
     for p in paths:
-        if p.is_file() and p.suffix == ".md":
-            candidates.append(p.resolve())
-        elif p.is_dir():
-            for sub in sorted(p.rglob("*.md")):
-                if sub.is_file():
-                    candidates.append(sub.resolve())
-    if not candidates:
-        raise click.ClickException(
-            "no .md files found under the given path(s)"
-        )
-
-    added = 0
-    updated = 0
-    skipped = 0
-    skipped_reasons: list[tuple[str, str]] = []
-    for path in candidates:
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError as exc:
-            skipped += 1
-            skipped_reasons.append((str(path), f"read: {exc}"))
-            continue
-        fm, body = _parse_memory_md_frontmatter(text)
-        fm = fm or {}
-        # The auto-memory index file (MEMORY.md) is a flat list, not a
-        # memory node itself — skip it explicitly.
-        if path.name == "MEMORY.md":
-            skipped += 1
-            skipped_reasons.append((str(path), "index file (MEMORY.md)"))
-            continue
-        name = (
-            (fm.get("id") if isinstance(fm.get("id"), str) else None)
-            or (fm.get("name") if isinstance(fm.get("name"), str) else None)
-            or path.stem
-        )
-        meta_raw = fm.get("metadata")
-        meta = meta_raw if isinstance(meta_raw, dict) else {}
-        mtype = (
-            meta.get("type") if isinstance(meta.get("type"), str) else None
-        ) or default_mtype
-        title = (
-            (fm.get("title") if isinstance(fm.get("title"), str) else None)
-            or (fm.get("description") if isinstance(fm.get("description"), str) else None)
-        )
-        tags = fm.get("tags") if isinstance(fm.get("tags"), list) else []
-        # Synthetic source-pointer metadata so a recall can locate the
-        # backing file. Round-trip safe; the writer never reads it
-        # back as truth, only the frontmatter on disk does.
-        try:
-            mtime = path.stat().st_mtime
-        except OSError:
-            mtime = None
-        metadata = {
-            "source": "memory_sync_disk",
-            "source_path": str(path),
-            "source_mtime": mtime,
-        }
-        if title:
-            metadata["title"] = title
-        if meta:
-            for k, v in meta.items():
-                if k not in metadata:
-                    metadata[k] = v
-
-        if dry_run:
-            added += 1
-            continue
-        existed: bool
-        if daemon_up:
-            get_resp = _memory_daemon_call("memory_get", {"name": name})
-            existed = (
-                get_resp.get("ok", False)
-                and bool(get_resp.get("result", {}).get("memory"))
-            )
-            resp = _memory_daemon_call("memory_add", {
-                "name": name,
-                "content": body or text,
-                "mtype": mtype,
-                "tags": list(tags) if tags else None,
-                "metadata": metadata,
-            })
-            if not resp.get("ok"):
-                skipped += 1
-                skipped_reasons.append(
-                    (str(path), resp.get("error", "daemon error"))
-                )
-                continue
+        target = p.resolve()
+        if target.is_file():
+            target = target.parent
+        out = _sync_memory_dir(target)
+        console.print(f"[bold]{target}[/]")
+        if out.get("error"):
+            failed += 1
+            console.print(f"[red]memory bridge FAILED:[/] {out['error']}")
         else:
-            s = _store()
-            existed = s.get_memory(name) is not None
-            s.add_memory(
-                name=name, content=body or text,
-                mtype=mtype, tags=list(tags) if tags else None,
-                metadata=metadata,
-            )
-        if existed:
-            updated += 1
-        else:
-            added += 1
-
-    total = added + updated + skipped
-    console.print(
-        f"sync-disk: scanned={total} added={added} updated={updated} "
-        f"skipped={skipped}{' (dry-run)' if dry_run else ''}"
-    )
-    if skipped_reasons:
-        for p, reason in skipped_reasons[:10]:
-            console.print(f"  [yellow]skipped[/] {p}  ({reason})")
-        if len(skipped_reasons) > 10:
-            console.print(f"  ... and {len(skipped_reasons) - 10} more")
-
+            click.echo(out.get("report") or "")
+    if failed:
+        raise click.ClickException(f"{failed} path(s) failed")
+    return
 
 @memory_grp.command("forget")
 @click.argument("name_or_id")

@@ -286,7 +286,8 @@ def _lenient_doc_id(path: Path, project_root: "Path | None") -> str:
 
 
 def parse_gmd(path: Path, *, lenient: bool = False,
-              project_root: "Path | None" = None) -> GmdDoc | None:
+              project_root: "Path | None" = None,
+              memory_ids: bool = False) -> GmdDoc | None:
     """Parse a GMD doc.
 
     Strict (default): returns None unless the file carries `gmd:` frontmatter.
@@ -308,8 +309,12 @@ def parse_gmd(path: Path, *, lenient: bool = False,
     fm, body_start = _parse_frontmatter(lines)
     if "gmd" not in fm and not lenient:
         return None
+    # `memory_ids`: a curated memory file is named by its frontmatter `id`,
+    # else its STEM (the memory-file rule: id == filename stem) — never the
+    # path-shaped lenient id, which would name it `note.md`.
     doc_id = fm.get("id") or (
-        _lenient_doc_id(path, project_root) if lenient else path.stem)
+        path.stem if memory_ids else
+        (_lenient_doc_id(path, project_root) if lenient else path.stem))
     title = fm.get("title") or doc_id
     _tags = fm.get("tags")
     tags = _tags if isinstance(_tags, list) else []
@@ -455,12 +460,23 @@ class IngestStats:
     mentions: int = 0
     linkage_types_added: set[str] = field(default_factory=set)
     unresolved: list[tuple[Path, int, str]] = field(default_factory=list)
+    # Files the pass-1 loop did NOT ingest, COUNTED (plan-5 task 5.1: the
+    # 0.66.1 bridge skipped 21 memory files with a bare `continue`, and the
+    # SessionStart recall said "no memories" on a store that was behind).
+    skipped_non_gmd: int = 0                       # strict mode: no `gmd:` frontmatter
+    skipped_unparseable: list[tuple[Path, str]] = field(default_factory=list)
 
     def report(self) -> str:
         lines = [
             f"ingested {self.docs} doc(s), {self.nodes} node(s), "
             f"{self.rels} rel: edge(s), {self.mentions} mention(s)",
+            f"skipped_non_gmd: {self.skipped_non_gmd}",
+            f"skipped_unparseable: {len(self.skipped_unparseable)}",
         ]
+        for p, err in self.skipped_unparseable[:20]:
+            lines.append(f"  {p}: {err}")
+        if len(self.skipped_unparseable) > 20:
+            lines.append(f"  ... and {len(self.skipped_unparseable) - 20} more")
         if self.linkage_types_added:
             lines.append(
                 "new linkage types: "
@@ -764,12 +780,17 @@ def ingest_gmd_paths(
         except Exception:
             current_hash = ""
         try:
-            doc = parse_gmd(path, lenient=lenient, project_root=project_root)
+            doc = parse_gmd(path, lenient=lenient or as_memory,
+                            project_root=project_root, memory_ids=as_memory)
         except Exception as e:
+            # Counted AND named in the report — a skipped memory file is a
+            # memory that never reaches recall (plan-5 task 5.1).
+            stats.skipped_unparseable.append((path, f"{type(e).__name__}: {e}"))
             if verbose:
                 print(f"  skip {path}: {type(e).__name__}: {e}")
             continue
         if doc is None:
+            stats.skipped_non_gmd += 1
             continue
         if current_hash:
             file_hashes[doc.doc_id] = current_hash

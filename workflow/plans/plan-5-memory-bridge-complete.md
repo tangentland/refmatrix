@@ -5,7 +5,7 @@ title: "The memory bridge ingests every file, counts what it skips, survives ove
 tags: [plan, remediation, bsd]
 metadata:
   node_type: plan
-  status: approved
+  status: in-progress
   created: 2026-09-14
   bsd_findings: "#bs-1, #sk-1, #sk-2, #meh-2, #meh-3"
 ---

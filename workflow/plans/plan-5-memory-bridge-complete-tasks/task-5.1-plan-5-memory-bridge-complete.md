@@ -5,14 +5,14 @@ title: "Task 5.1: Lenient bridge + skipped counters + sync-disk alias"
 tags: [task, plan-5]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-5-memory-bridge-complete
 ---
 
 # Task 5.1: Lenient bridge + skipped counters + sync-disk alias {#root}
 
 > Plan: [[plan-5-memory-bridge-complete]]
-> Status: Pending
+> Status: Complete
 > Depends on: —
 
 rel: part-of -> [[plan-5-memory-bridge-complete]]

@@ -147,7 +147,7 @@ ranking but reachable through their own recall surfaces.
 
 ```bash
 # Curated memories (kind=memory + body sidecar + rel: graph)
-rmx memory sync-disk ~/.claude/projects/<proj>/memory   # ingest curated .md memories
+rmx ingest-gmd --as-memory ~/.claude/projects/<proj>/memory   # the memory bridge (save-state + SessionStart run it)
 rmx embed --kinds memory                                # dense vectors (Lance)
 rmx memory recall "why was the writer rotation dropped" # hybrid dense + symbolic recall
 rmx memory get <slug>                                   # body + frontmatter
