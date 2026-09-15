@@ -278,6 +278,7 @@ def install(
     force: bool = False,
     memory_hooks: bool = True,
     agent_env: bool = True,
+    search: bool = True,
 ) -> list[str]:
     """Return a list of human-readable plan lines. Performs writes if apply=True."""
     out: list[str] = []
@@ -293,6 +294,10 @@ def install(
     if agent_env:
         out.extend(_install_agent_env(project_root, scope=scope,
                                       apply=apply, force=force))
+    if search:
+        from refmatrix.search_hooks import install_search_hooks
+        out.extend(install_search_hooks(project_root, scope=scope,
+                                        apply=apply, force=force))
     if briefing:
         out.extend(_install_briefing(project_root, refmatrix_root,
                                      apply=apply, force=force))
@@ -754,6 +759,7 @@ RMX_HOOK_MARKER = "RMX_INVOCATION_SOURCE=hook"
 _RMX_HOOK_SIGNATURES = (
     RMX_HOOK_MARKER, "--enqueue-only", "rmx focus hook", "rmx memory recall",
     "rmx scan-prompt", "rmx sync --flush-queue", "rmx primer", "rmx curator",
+    "grep-rewrite-guard.sh", "grep-tool-teach.sh",
 )
 
 
