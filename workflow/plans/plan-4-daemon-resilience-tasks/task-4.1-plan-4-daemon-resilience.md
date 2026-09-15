@@ -5,14 +5,14 @@ title: "Task 4.1: learn_from_grep never fast-exits"
 tags: [task, plan-4]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-4-daemon-resilience
 ---
 
 # Task 4.1: learn_from_grep never fast-exits {#root}
 
 > Plan: [[plan-4-daemon-resilience]]
-> Status: Pending
+> Status: Complete
 > Depends on: —
 
 rel: part-of -> [[plan-4-daemon-resilience]]

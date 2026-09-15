@@ -40,6 +40,25 @@ from refmatrix.subproc import subproc_embed_enabled
 SOCKET_NAME = "rmxd.sock"
 PID_NAME = "rmxd.pid"
 LOG_NAME = "rmxd.log"
+# Written by a READ surface that hit DuckDB index drift (plan-4 task 4.1):
+# `{table, op, at}`. Boot repairs the named table before serving and clears
+# it; `rmx daemon status` shows `repair pending: <table>` while it exists.
+REPAIR_MARKER_NAME = "repair.needed"
+
+
+def repair_marker_path(root: Path) -> Path:
+    return Path(root) / REPAIR_MARKER_NAME
+
+
+def read_repair_marker(root: Path) -> "dict | None":
+    p = repair_marker_path(root)
+    if not p.exists():
+        return None
+    try:
+        body = json.loads(p.read_text() or "{}")
+        return body if isinstance(body, dict) else {"table": str(body)}
+    except (OSError, ValueError):
+        return {"table": "unknown"}
 
 
 class _FairLock:
@@ -865,6 +884,20 @@ class Daemon:
     def _is_fatal_invalidation(cls, exc: BaseException) -> bool:
         msg = str(exc)
         return any(n in msg for n in cls._FAST_EXIT_NEEDLES)
+
+    def _mark_repair_needed(self, table: str, *, op: str) -> Path:
+        """A read surface hit index drift: record it for the boot-time
+        repair instead of taking the daemon down (plan-4 task 4.1 — every
+        `rmx grep` miss fast-exited the daemon 39 times on 2026-09-14).
+        Idempotent; the marker names the first op that saw it."""
+        self._repair_needed = table
+        p = repair_marker_path(self.root)
+        if not p.exists():
+            try:
+                p.write_text(json.dumps({"table": table, "op": op, "at": time.time()}))
+            except OSError as e:
+                self._log(f"could not write {p.name}: {e}")
+        return p
 
     def _fast_exit_if_invalidated(self, exc: BaseException, where: str) -> None:
         """If `exc` looks like DuckDB index-drift / DB-invalidation,
@@ -3349,8 +3382,18 @@ def _op_learn_from_grep(d: Daemon, args: dict) -> dict:
     project_root = Path(args.get("project_root") or Path.cwd()).resolve()
     if not pattern or not hits:
         return {"added": 0}
-    with d._store_lock:
-        result = _learn_grep_hits(d.store, pattern, hits, project_root)
+    try:
+        with d._store_lock:
+            result = _learn_grep_hits(d.store, pattern, hits, project_root)
+    except Exception as exc:  # noqa: BLE001 — classified below
+        if not Daemon._is_fatal_invalidation(exc):
+            raise
+        # A READ surface (every `rmx grep` miss, incl. the PreToolUse rewrite)
+        # must never take the daemon down: degrade, name it, queue the repair
+        # for boot (plan-4 task 4.1). Write ops keep the fast-exit.
+        d._log(f"learn skipped: store invalid ({exc!r}); repair queued")
+        d._mark_repair_needed("entities", op="learn_from_grep")
+        return {"added": 0, "skipped": "store-invalid"}
     d._request_snapshot()
     return result
 

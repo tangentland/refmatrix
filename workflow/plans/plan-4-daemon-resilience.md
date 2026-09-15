@@ -5,7 +5,7 @@ title: "A read never kills the daemon; index corruption is repaired in-band; sup
 tags: [plan, remediation, bsd]
 metadata:
   node_type: plan
-  status: approved
+  status: in-progress
   created: 2026-09-14
   bsd_findings: "#bs-3, incident 2026-09-14, G3, G9"
 ---
