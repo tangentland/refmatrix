@@ -738,7 +738,7 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
         try:
             grows = [row for row in global_recall_rows(
                 query or None, k=gk, recent=bool(recent) and not subject,
-                since_s=since_seconds, timeout=_left(30.0))
+                since_s=since_seconds, timeout=_left(30.0), retries=_retries)
                 if not mt_excluded(row.get("mtype"), patterns)]
         except VerbBusyError:
             raise

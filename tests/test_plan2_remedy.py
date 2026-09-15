@@ -523,7 +523,7 @@ def test_recall_hook_modes_are_bounded_and_degrade_to_empty(pingonly, monkeypatc
         r = CliRunner().invoke(cli_mod.main, argv, input=stdin)
         elapsed = _time.monotonic() - t0
         assert r.exit_code == 0, (argv, r.output, r.stderr)
-        assert elapsed < 2.5, (argv, elapsed)
+        assert elapsed < 1.6, (argv, elapsed)      # budget + 0.6 (r6 #s-2)
         assert _json.loads(r.stdout) == []
         assert "warning" in (r.stderr or "") and "busy" in (r.stderr or ""), (argv, r.stderr)
 

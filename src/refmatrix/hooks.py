@@ -338,7 +338,7 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                     "command": (
                         HOOK_ENV
                         + "rmx memory recall --recent --since 1h "
-                        "--k 20 --scope both --json"
+                        "--k 20 --scope both --json --timeout 30"
                     ),
                 },
                 # Pre-compact checkpoint: the handoff file for the next

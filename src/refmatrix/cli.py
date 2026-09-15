@@ -9211,10 +9211,23 @@ def _memory_intent(op: str, *, partition_timeout: "float | None" = None) -> None
 # (so `<project>/.refmatrix/` -> partition `memory-<project>`).
 # User-supplied -p / RMX_PARTITION / .refmatrix/partition still win,
 # matching _resolve_partition's chain.
+# A rerank on the shared worker is worth waiting for only with this much of
+# the budget left; below it the hits go out unreranked and the skip is said
+# (bsd-plan2-r6 #b-1: `info` 6.3 s + `rerank` 6.2 s at the worker's 300 s
+# default were the 12.5 s of a 12.8 s hook).
+RERANK_MIN_S = float(os.environ.get("RMX_RERANK_MIN_S", "2") or "2")
+
+
 def _replica_memory_recall(query: str, *, k: int, kinds: list,
-                           fuse: bool, rerank: "bool | None"):
+                           fuse: bool, rerank: "bool | None",
+                           left=None, warnings: "list[str] | None" = None):
     """Writer-independent recall: replica catalog slot + lock-free Lance +
     the hub's shared model workers. Returns RPC-shaped hits or None.
+
+    `left(default)` is the caller's deadline (seconds remaining, capped);
+    every worker socket — the availability probe, the embed call, the rerank
+    `info` + `rerank` — is bounded by it, and a rerank that cannot fit in
+    RERANK_MIN_S is skipped and said in `warnings`. None = unbounded.
 
     The always-on prompt hooks are the target. They used to RPC into the
     daemon (`memory_recall`), which queues behind whatever the writer is
@@ -9229,48 +9242,65 @@ def _replica_memory_recall(query: str, *, k: int, kinds: list,
     RMX_RECALL_REPLICA_FIRST=0 to force the RPC path for an A/B."""
     if os.environ.get("RMX_RECALL_REPLICA_FIRST", "1") in ("0", "false", "False"):
         return None
+    from refmatrix import verbs as _verbs
+    ws = warnings if warnings is not None else []
+
+    def _l(default: float) -> float:
+        return left(default) if left is not None else default
+
     try:
         from refmatrix import modelsrv
-        if not (modelsrv.shared_enabled() and modelsrv.shared_available()):
+        if not (modelsrv.shared_enabled()
+                and modelsrv.shared_available(timeout=min(0.5, _l(0.5)))):
             return None
         s = _reader_store()
         if s is None:
             return None
+        from refmatrix import recall as _recall
+        from refmatrix import reranker as _reranker
         from refmatrix.embedder import RemoteEmbedder
-        from refmatrix.recall import dense_recall, hybrid_memory_recall
-        from refmatrix.reranker import (
-            DEFAULT_POOL_MULT, MAX_POOL, apply_rerank, collect_rerank_docs,
-            rerank_enabled, shared_reranker,
-        )
-        emb = RemoteEmbedder(modelsrv.SharedWorkerClient("embed"))
-        want_rerank = rerank_enabled() if rerank is None else bool(rerank)
-        retrieve_k = (min(max(k, k * DEFAULT_POOL_MULT), MAX_POOL)
+        # the socket timeout on the shared worker is the remaining budget —
+        # the worker's own default is 300 s
+        emb = RemoteEmbedder(modelsrv.SharedWorkerClient("embed", timeout=_l(30.0)))
+        want_rerank = _reranker.rerank_enabled() if rerank is None else bool(rerank)
+        retrieve_k = (min(max(k, k * _reranker.DEFAULT_POOL_MULT), _reranker.MAX_POOL)
                       if want_rerank else k)
         with s.with_partition(_resolve_partition()):
             if fuse:
-                hits = hybrid_memory_recall(
+                hits = _recall.hybrid_memory_recall(
                     s, emb, query, k=retrieve_k, kinds=kinds)
             else:
-                hits = dense_recall(
+                hits = _recall.dense_recall(
                     s, emb, query, k=retrieve_k, kinds=kinds)
             if want_rerank and hits:
-                rr = shared_reranker()
-                if rr is not None:
-                    try:
-                        docs = collect_rerank_docs(s, hits, k=k)
-                        ranked = apply_rerank(rr, query, *docs, k=k)
-                        return [{"id": eid, "score": sc, "fused": bool(fuse),
-                                 "reranked": True, "replica": True}
-                                for eid, sc in ranked]
-                    except Exception:
-                        pass          # fall through to unreranked hits
+                rem = _l(30.0)
+                if rem < RERANK_MIN_S:
+                    ws.append(f"rerank skipped: {rem:.1f}s of the budget left "
+                              f"(< {RERANK_MIN_S:g}s); hits unreranked")
+                else:
+                    rr = _reranker.shared_reranker(timeout=rem)
+                    if rr is None:
+                        ws.append("rerank skipped: shared worker unavailable; hits unreranked")
+                    else:
+                        try:
+                            docs = _reranker.collect_rerank_docs(s, hits, k=k)
+                            ranked = _reranker.apply_rerank(rr, query, *docs, k=k)
+                            return [{"id": eid, "score": sc, "fused": bool(fuse),
+                                     "reranked": True, "replica": True}
+                                    for eid, sc in ranked]
+                        except Exception as e:  # noqa: BLE001 — said, never mute
+                            ws.append(f"rerank failed ({type(e).__name__}: {e}); "
+                                      f"hits unreranked")
         hits = hits[:k]
         if fuse:
             return [{"id": eid, "score": sc, "fused": True, "replica": True}
                     for eid, sc in hits]
         return [{"id": eid, "distance": dist, "replica": True}
                 for eid, dist in hits]
-    except Exception:
+    except _verbs.VerbBusyError:
+        raise                       # the deadline itself: the caller degrades
+    except Exception as e:  # noqa: BLE001 — a missing leg: the daemon RPC serves
+        ws.append(f"replica recall unavailable ({type(e).__name__}: {e}); daemon RPC")
         return None
 
 
@@ -9817,10 +9847,11 @@ def _recall_display_score(h: dict) -> "float | None":
     return display_score(h)
 
 
-def _global_recall_rows(q, *, k, recent, since_s):
+def _global_recall_rows(q, *, k, recent, since_s, timeout=30.0, retries=2):
     """Single-sourced in verbs.global_recall_rows (plan-3)."""
     from refmatrix.verbs import global_recall_rows
-    return global_recall_rows(q, k=k, recent=recent, since_s=since_s)
+    return global_recall_rows(q, k=k, recent=recent, since_s=since_s,
+                              timeout=timeout, retries=retries)
 
 
 def _merge_scope(project_rows, global_rows, k, scope):
@@ -10057,7 +10088,13 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
 
     Session-start (--session-start): shorthand for `--recent --since 7d`,
     the SessionStart hook's preferred mode per ADR-0001 Phase C."""
-    _memory_intent("memory_recall", partition_timeout=min(5.0, float(timeout)))
+    # The budget clock starts HERE, before the partition probe: the probe
+    # used to spend its own 5 s and the recall then started at zero
+    # (bsd-plan2-r6 #b-1: wall = 2× budget on a held writer).
+    import time as _time
+    budget = float(timeout)
+    _t_start = _time.monotonic()
+    _memory_intent("memory_recall", partition_timeout=min(5.0, budget))
     if as_json and as_gmd:
         raise click.ClickException(
             "--json and --gmd are mutually exclusive"
@@ -10099,7 +10136,11 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
     # modes (`--recent`, a query, `--subject`) SHOW them — an operator
     # affordance, stated as a named parameter (ch-bsd plan-3 #sk-5) rather
     # than an empty exclude list. --exclude-mtype always wins.
-    hook_mode = bool(session_start or stdin_json)
+    # RMX_INVOCATION_SOURCE=hook is exported by every generated hook command
+    # (HOOK_ENV), so the PreCompact `--recent` recall degrades like the other
+    # two instead of failing the hook (bsd-plan2-r6 #m-3).
+    hook_mode = bool(session_start or stdin_json
+                     or os.environ.get("RMX_INVOCATION_SOURCE") == "hook")
     if hook_mode and not include_session:
         exclude_mtypes.add("session/*")
     verb_include_session = include_session or not hook_mode
@@ -10107,10 +10148,6 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
     # The budget (ch-bsd plan-2 r5 #b-1: the per-prompt hook held the turn
     # ~20 s p50 live, unbounded). Hook modes: 5 s; a busy daemon past it is a
     # warning + empty answer + exit 0, never exit 2 (that erases the prompt).
-    budget = float(timeout)
-    import time as _time
-    _t_start = _time.monotonic()
-
     def _left(default: float) -> float:
         rem = budget - (_time.monotonic() - _t_start)
         if rem <= 0:
@@ -10150,7 +10187,12 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         answer is a stderr warning on `both`, fatal on `global`."""
         gk = k * 10 if exclude_mtypes else k
         try:
-            grows = _global_recall_rows(qq, k=gk, recent=recent_flag, since_s=since)
+            # under the SAME deadline, one attempt (bsd-plan2-r6 #b-1: the
+            # dense path's global leg carried no budget at all — 30 s × 3)
+            grows = _global_recall_rows(qq, k=gk, recent=recent_flag, since_s=since,
+                                        timeout=_left(30.0), retries=0)
+        except _verbs.VerbBusyError:
+            raise
         except _verbs.VerbError as e:
             if scope == "global":
                 raise click.ClickException(str(e))
@@ -10199,7 +10241,9 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                 _root(), k=k, scope=scope, since=since,
                 recent=bool(recent), session_start=bool(session_start),
                 exclude_mtype=verb_exclude, include_session=verb_include_session,
-                subject=subject, degree=degree, timeout=budget)
+                # the REMAINING budget: the verb starts its own clock, and the
+                # probe above already spent part of ours (r7: 2× budget)
+                subject=subject, degree=degree, timeout=_left(budget))
             rows = res["memories"]
             widened = bool(res.get("widened"))
             for w in res.get("warnings") or []:
@@ -10293,8 +10337,18 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
     # Replica-first: serve the recall off the snapshot slot + shared model
     # workers so a busy writer (partition merge, fat ingest) can never stall
     # the always-on hooks. Falls back to the daemon RPC on any missing leg.
-    hits = _replica_memory_recall(
-        q, k=ann_k, kinds=kinds_list, fuse=fuse, rerank=rerank)
+    _replica_ws: list[str] = []
+    try:
+        hits = _replica_memory_recall(
+            q, k=ann_k, kinds=kinds_list, fuse=fuse, rerank=rerank,
+            left=_left, warnings=_replica_ws)
+    except _verbs.VerbBusyError as e:
+        for w in _replica_ws:
+            _warn(w)
+        _degrade_or_raise(e)
+        return
+    for w in _replica_ws:
+        _warn(w)
     replica_used = hits is not None
     if hits is None:
         try:

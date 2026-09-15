@@ -73,3 +73,19 @@ rel: evidence-for -> [[bsd-plan2-hooks-reproducible-r5-a89c733]]
 
 Plan-2 status back to `in-progress` (plan file + plan-of-plans) until ch-bsd r6 is CLEAN. TDD: RED `workflow/review-output/pytest-plan2-r5-red.log` (5 failed), GREEN `pytest-plan2-r5-green.log` (163 passed across hook, recall, parity, MCP, subject and migrated-verb suites). Mutations `pytest-plan2-r5-mutations.log`: (A) the generator without the budgets fails the generator test; (B) a deadline that never raises fails the verb deadline test (the bounded-hook-modes test still passes under B because `_call` converts the socket timeout into busy on its own — the two guards are independent).
 
+
+
+## Round 7 (bsd-plan2-r6, 3fa98bc) {#round-7}
+
+rel: evidence-for -> [[bsd-plan2-hooks-reproducible-r6-3fa98bc]]
+
+| Finding | Fix |
+|---------|-----|
+| #b-1 the deployed `--timeout 5` hook held the turn 12.8 s idle / 26.8 s live: the rerank on the shared worker (`info` + `rerank` at the 300 s default), the global store on the dense path (30 s × 3), and the partition probe on its own 5 s before the clock started | one clock, started before `_memory_intent`; `_replica_memory_recall(left=, warnings=)` bounds the availability probe, the embed client and the rerank client with the remaining budget, skips the rerank below `RERANK_MIN_S` and says so, reports a rerank failure instead of swallowing it, and re-raises the deadline for the caller's degrade path; `shared_reranker(timeout=)`; the dense path's global leg takes `_left(30)` with one attempt (`_global_recall_rows(timeout, retries)` → `verbs.global_recall_rows` → `hub.global_call(retries)`); the verb's recent-path global leg passes `retries=_retries` — Q7 |
+| #s-2 the closure tests admitted the additive shape | `test_recall_hook_modes_are_bounded…` asserts wall < 1.6 s for a 1 s budget; the deadline test runs at `scope="both"` with a global spy (`retries == 0`, `timeout ≤ budget`); a real-socket held GLOBAL store test (`global rows omitted` within 1.6 s); a stalled `models.sock` test on the replica path (2 s budget → 2.6 s wall); unit tests for the rerank skip / rerank timeout wording and for `shared_reranker(timeout=)` |
+| #m-3 PreCompact recall unbounded, not hook mode | `--timeout 30` in the generator; `RMX_INVOCATION_SOURCE=hook` is hook mode — Q8 |
+| #m-4 MCP default unbounded vs CLI 60 s | both 30 s (plan-3 r5 landed the verb default; the CLI default now equals it and the parity gate compares them) — Q8 |
+| #m-5 registry filename | `test_plan3_remedy.py` → `test_plan3_remedy_r3.py` (landed with plan-3 r5) |
+| #m-6 SessionStart / `focus context` rows unobserved live | user-gated (Claude Code restart) |
+
+TDD: RED `workflow/review-output/pytest-plan2-r7-red.log` (8 failed in 5 min — the stalled-worker case ran to pytest's 400 s timeout on the old code), GREEN `pytest-plan2-r7-green.log` (99 passed with plan2_remedy, hooks_reproducible, verb_parity, plan3_remedy_r4; then 36 passed for the two plan-2 files after the verb was handed the REMAINING budget — the first GREEN pass showed the probe + the verb's own clock still summing to 2× on `--session-start`), mutations `pytest-plan2-r7-mutation.log`: (A) the clock started after the probe again → `test_recall_hook_wall_is_within_budget_on_a_held_writer` fails; (B) `RERANK_MIN_S = 0` (the rerank never skipped) → `test_rerank_is_skipped_and_said_when_the_budget_is_short` fails; (C) the verb's global leg back to `retries=2` → `test_verb_recall_deadline_covers_the_global_leg_with_one_attempt` fails. Not mutation-covered: the CLI dense path's `_global_rows(retries=0)` — the CLI dense path needs a live embedder; the verb's dense path carries the same leg and is covered. Live re-measure after deploy: LIVE_NOTE.
