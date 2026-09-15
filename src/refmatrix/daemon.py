@@ -60,6 +60,9 @@ def repair_marker_path(root: Path) -> Path:
 ADOPT_GRACE_S = float(os.environ.get("RMX_ADOPT_GRACE_S", "20") or "20")
 HEARTBEAT_NAME = "heartbeat"
 HEARTBEAT_INTERVAL_S = float(os.environ.get("RMX_HEARTBEAT_S", "5") or "5")
+# Older than this, a heartbeat no longer means "working" — shared by the
+# hub watchdog and the daemon's own adoption/reap decisions (one number).
+HEARTBEAT_STALE_S = float(os.environ.get("RMX_HUB_HEARTBEAT_STALE_S", "60") or "60")
 
 
 def heartbeat_path(root: Path) -> Path:
@@ -933,25 +936,30 @@ class Daemon:
         11,251 times in 1.3 days behind one unsupervised daemon (plan-4
         task 4.4). Returns True when a daemon was adopted (stopped or asked
         to stop; a survivor is escalated by `_reap_predecessor`)."""
-        if not (sock_path.exists() and ping(self.root, timeout=0.5, retries=0)):
+        # Busy is not absent (ch-bsd plan-4 r1 #b-2): a predecessor that is
+        # alive with a fresh heartbeat but not answering is WORKING; it gets
+        # a stop request and the grace, never a kill from this path.
+        pid = read_pid(self.root)
+        answers = sock_path.exists() and ping(self.root, timeout=0.5, retries=0)
+        fresh = heartbeat_age(self.root) <= HEARTBEAT_STALE_S
+        if pid is None and not answers:
             return False
-        pid = None
-        try:
-            resp = call(self.root, "ping", {}, timeout=1.0, retries=0)
-            pid = ((resp or {}).get("result") or {}).get("pid")
-        except Exception:
-            pass
+        if not answers and not fresh:
+            return False          # stale or absent heartbeat: the reap decides
         if self.log_fh is None:
             try:
                 self.log_fh = (self.root / LOG_NAME).open("a", encoding="utf-8")
             except OSError:
                 pass
-        self._log(f"adopted unsupervised daemon pid={pid or '?'} on {self.root}: "
-                  f"asking it to stop so the supervised daemon owns the root")
-        stopped = stop_daemon(self.root, timeout=ADOPT_GRACE_S)
+        self._log(f"adopted unsupervised daemon pid={pid or '?'} on {self.root} "
+                  f"({'answers ping' if answers else 'busy, heartbeat fresh'}): asking it "
+                  f"to stop so the supervised daemon owns the root")
+        report: dict = {}
+        stopped = stop_daemon(self.root, timeout=ADOPT_GRACE_S, report=report)
         if not stopped:
             self._log(f"adopted daemon pid={pid or '?'} did not stop within "
-                      f"{ADOPT_GRACE_S:g}s; startup reap will escalate")
+                      f"{ADOPT_GRACE_S:g}s ({report.get('stop_op', '?')}); the startup "
+                      f"reap decides by heartbeat")
         return True
 
     def _start_heartbeat(self) -> None:
@@ -968,10 +976,24 @@ class Daemon:
         def _runner():
             stop = self._heartbeat_stop
             while not stop.is_set():
-                try:
-                    hb.touch()
-                except OSError:
-                    pass
+                # Derived from SERVING progress (ch-bsd plan-4 r1 #s-7): once
+                # the cli pool exists, the tick is a no-op the pool must run
+                # within the interval; a deadlocked pool stops the heartbeat
+                # and the supervisor sees "wedged". Before the pools exist
+                # (store open, boot repairs) the tick is unconditional.
+                pool = getattr(self, "_cli_pool", None)
+                alive = True
+                if pool is not None:
+                    try:
+                        fut = pool.submit(lambda: True)
+                        fut.result(timeout=interval)
+                    except Exception:  # noqa: BLE001 — timeout or pool gone
+                        alive = False
+                if alive:
+                    try:
+                        hb.touch()
+                    except OSError:
+                        pass
                 stop.wait(interval)
 
         try:
@@ -1016,6 +1038,20 @@ class Daemon:
                   f"(queued by {marker.get('op')})")
         return {"table": table, **rep}
 
+    def _arm_deferred_exit(self, exc: BaseException, where: str) -> None:
+        """A READ degraded on an invalidated store: answer the caller, then
+        exit shortly so launchd's respawn runs the boot repair — instead of
+        serving an invalidated DuckDB with a healthy ping until an unrelated
+        op trips the fast-exit (ch-bsd plan-4 r1 #m-10). RMX_DEGRADE_EXIT_S
+        (default 2) lets the reply flush first."""
+        import threading as _t
+        delay = float(os.environ.get("RMX_DEGRADE_EXIT_S", "2") or "2")
+
+        def _later():
+            time.sleep(delay)
+            self._fast_exit_if_invalidated(exc, where)
+        _t.Thread(target=_later, name="rmxd-deferred-exit", daemon=True).start()
+
     def _fast_exit_if_invalidated(self, exc: BaseException, where: str) -> None:
         """If `exc` looks like DuckDB index-drift / DB-invalidation,
         log + exit hard so the supervisor can spawn a fresh daemon
@@ -1026,6 +1062,14 @@ class Daemon:
             if self._fast_exit_armed:
                 return
             self._fast_exit_armed = True
+        # Queue the boot-time entities rebuild from EVERY detector, not only
+        # the grep miss (ch-bsd plan-4 r1 #b-4: the watcher-flush order of
+        # the incident still crash-looped). The rebuild is 0.3 s and
+        # idempotent; a marker on a healthy table costs one rebuild.
+        try:
+            self._mark_repair_needed("entities", op=where)
+        except Exception:  # noqa: BLE001 — never block the exit
+            pass
         self._shutdown_event.set()
         self._stop = True
         try:
@@ -1087,6 +1131,14 @@ class Daemon:
         A stale socket file (no listener) is unlinked either way."""
         my_pid = os.getpid()
         old = read_pid(self.root)  # live pid from the pid file, or None
+        if old is not None and old != my_pid and heartbeat_age(self.root) <= HEARTBEAT_STALE_S:
+            # A predecessor whose heartbeat is fresh is WORKING (an ingest, an
+            # index rebuild, a model reconnect). Killing it is the 2026-09-14
+            # ART corruption; yield instead — launchd retries in 10 s and the
+            # adoption above already asked it to stop (plan-4 r1 #b-2).
+            self._log(f"startup: predecessor pid={old} has a fresh heartbeat "
+                      f"({heartbeat_age(self.root):.0f}s); yielding, not killing")
+            return False
         if old is not None and old != my_pid:
             try:
                 os.kill(old, signal.SIGTERM)
@@ -3527,6 +3579,7 @@ def _op_learn_from_grep(d: Daemon, args: dict) -> dict:
         # for boot (plan-4 task 4.1). Write ops keep the fast-exit.
         d._log(f"learn skipped: store invalid ({exc!r}); repair queued")
         d._mark_repair_needed("entities", op="learn_from_grep")
+        d._arm_deferred_exit(exc, "learn_from_grep (deferred: boot repairs entities)")
         return {"added": 0, "skipped": "store-invalid"}
     d._request_snapshot()
     return result
@@ -4153,7 +4206,10 @@ def _op_repair_entities(d: Daemon, args: dict) -> dict:
         with d._store_lock:
             rep = d.store.rebuild_entities_indexes()
     except RepairAbort as e:
-        return {"ok": False, "error": f"repair aborted: {e}"}
+        # RAISE: `_handle` answers ok:false with this message (no fast-exit
+        # needle in it). Returning an ok:false dict was wrapped in ok:true and
+        # the CLI printed success (ch-bsd plan-4 r1 #b-1).
+        raise RepairAbort(f"repair aborted: {e}") from e
     repair_marker_path(d.root).unlink(missing_ok=True)
     d._repair_needed = None
     d._log(f"repaired entities (op) rows={rep['rows']} indexes={rep['indexes']}")
@@ -5178,23 +5234,35 @@ def spawn_daemon_subprocess(
         f"within {wait_for_ready:.0f}s")
 
 
-def stop_daemon(root: Path, *, timeout: float = 5.0) -> bool:
+def stop_daemon(root: Path, *, timeout: float = 5.0,
+                report: "dict | None" = None) -> bool:
     """Send a stop op, then wait for the pid to exit. Returns True if the
-    daemon stopped within the timeout (or if no daemon was running)."""
+    daemon stopped within the timeout (or if no daemon was running).
+    `report` (when given) records WHY the stop op was or was not sent
+    (`stop_op`: "sent" / "skipped: not answering ping" / "failed: …") so a
+    supervisor's log can tell a delivered stop from a swallowed one
+    (ch-bsd plan-4 r1 #m-12)."""
     # Use ping as the readiness signal — pidfile can be stale (orphaned
     # daemon survived a losing concurrent spawn that overwrote it).
     pid = read_pid(root)
     socket_alive = ping(root, timeout=0.5)
     if pid is None and not socket_alive:
+        if report is not None:
+            report["stop_op"] = "skipped: no daemon"
         return True
 
     # If ping works, ask the daemon to stop via its protocol so it can
     # cleanly join its watcher thread and unlink its socket.
-    try:
-        if socket_alive:
+    if socket_alive:
+        try:
             call(root, "stop", timeout=2.0)
-    except Exception:
-        pass
+            if report is not None:
+                report["stop_op"] = "sent"
+        except Exception as e:  # noqa: BLE001 — recorded, not swallowed
+            if report is not None:
+                report["stop_op"] = f"failed: {type(e).__name__}: {e}"
+    elif report is not None:
+        report["stop_op"] = "skipped: not answering ping (SIGTERM after the wait)"
 
     # Discover the real pid if pidfile was stale: ping result carries it.
     if pid is None and socket_alive:
@@ -5225,14 +5293,22 @@ def stop_daemon(root: Path, *, timeout: float = 5.0) -> bool:
             if not is_alive(pid):
                 return True
             time.sleep(0.05)
-        # Final escalation: SIGKILL. A daemon that's ignored protocol-stop
-        # + SIGTERM is wedged (worker leaked in a C-extension call, etc.);
-        # leaving it alive holds the writer-slot DuckDB file lock and
-        # stops the next spawn from refreshing the replica. SIGKILL is
-        # safe under 0.3.1+ durability (WAL + fragment flush) and was
-        # already the documented escape hatch for this case.
+        # Final escalation: SIGKILL — but ONLY for a wedge (stale or absent
+        # heartbeat). A daemon whose heartbeat is fresh is WORKING (an ingest,
+        # an index rebuild, a model reconnect) and killing it mid-write is the
+        # 2026-09-14 ART corruption (plan-4 r1 #b-2/#b-3; constitution XII:
+        # supervisors never SIGKILL a working daemon). The caller gets False
+        # and decides — adoption yields, the watchdog kickstarts knowingly.
+        hb_age = heartbeat_age(root)
+        if hb_age <= HEARTBEAT_STALE_S:
+            if report is not None:
+                report["kill"] = (f"withheld: heartbeat {hb_age:.0f}s old (working); "
+                                  f"SIGTERM sent, pid {pid} still alive")
+            return False
         try:
             os.kill(pid, signal.SIGKILL)
+            if report is not None:
+                report["kill"] = f"SIGKILL (heartbeat {hb_age:.0f}s stale)"
         except ProcessLookupError:
             return True
         deadline3 = time.time() + 1.0
@@ -5270,7 +5346,8 @@ def _harden_fork_safety() -> None:
 def serve_foreground(root: Path, *, partition: str | None = None,
                      watch_root: "Path | list[Path] | None" = None,
                      watch_debounce_ms: int = 500,
-                     watch_semantic: bool = False) -> int:
+                     watch_semantic: bool = False,
+                     supervised: "bool | None" = None) -> int:
     """Run the daemon in the foreground (no fork). Used by supervisors
     like launchd / systemd that own the process lifecycle and need the
     daemon process to stay attached to them. Returns 0 on clean exit.
@@ -5292,8 +5369,20 @@ def serve_foreground(root: Path, *, partition: str | None = None,
         watch_semantic=watch_semantic,
     )
     # A live unsupervised daemon on this root is adopted (asked to stop),
-    # not a reason to exit 1 into a KeepAlive spawn loop (plan-4 task 4.4).
-    daemon._adopt_unsupervised(socket_path(root))
+    # not a reason to exit 1 into a KeepAlive spawn loop (plan-4 task 4.4) —
+    # but only by the SUPERVISOR's start (the plist sets RMX_SUPERVISED=1;
+    # ch-bsd plan-4 r1 #m-9): a manual foreground start on a supervised
+    # store must not evict launchd's daemon.
+    if supervised is None:
+        supervised = os.environ.get("RMX_SUPERVISED") == "1"
+    if supervised:
+        daemon._adopt_unsupervised(socket_path(root))
+    elif ping(root):
+        raise RuntimeError(
+            f"daemon already running for {root}; stop it before "
+            f"launching in the foreground (`rmx daemon stop`), or run under "
+            f"the supervisor (RMX_SUPERVISED=1) to adopt it"
+        )
 
     lock_path = root / "daemon.lock"
     lockf = lock_path.open("w")

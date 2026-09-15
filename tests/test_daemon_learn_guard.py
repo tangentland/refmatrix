@@ -37,12 +37,18 @@ def test_learn_from_grep_degrades_instead_of_fast_exiting(d, monkeypatch):
     def boom(store, pattern, hits, project_root):
         raise _Fatal("FATAL Error: Invalid Input Error: Failed to delete all rows from index. Only deleted 0 out of 1 rows.")
     monkeypatch.setattr(dm, "_learn_grep_hits", boom)
+    # The degrade arms a DEFERRED exit (plan-4 r1 #m-10) so the boot repair
+    # runs soon; keep it inside this test's patched os._exit.
+    monkeypatch.setenv("RMX_DEGRADE_EXIT_S", "0.2")
     exited = {"n": 0}
     monkeypatch.setattr(dm.os, "_exit", lambda code: exited.__setitem__("n", exited["n"] + 1))
     res = dm._op_learn_from_grep(d, {"pattern": "x", "hits": [{"file": "a.py", "line": 1}],
                                      "project_root": str(d.root.parent)})
     assert res == {"added": 0, "skipped": "store-invalid"}
-    assert exited["n"] == 0, "a read must never take the daemon down"
+    assert exited["n"] == 0, "the READ itself must never take the daemon down"
+    import time as _time
+    _time.sleep(0.8)
+    assert exited["n"] == 1, "the deferred exit (boot repair) was not armed"
     marker = d.root / "repair.needed"
     assert marker.exists()
     body = json.loads(marker.read_text())

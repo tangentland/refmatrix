@@ -3068,6 +3068,13 @@ class Store:
         data, not an index, and needs an operator. Returns
         `{rows, indexes, constraints}`. Runs under the caller's writer
         lock; CHECKPOINTs at the end."""
+        if self._backend.kind != "duckdb":
+            # SQLite keeps real FOREIGN KEYs with ON DELETE CASCADE on
+            # entities(id): DROP TABLE would wipe concepts, memory bodies and
+            # links (ch-bsd plan-4 r1 #b-5). The phantom this repairs is a
+            # DuckDB ART artefact; there is nothing to rebuild on SQLite.
+            raise RepairAbort("entities rebuild is DuckDB-only (SQLite cascades "
+                              "FOREIGN KEYs on DROP TABLE); nothing was changed")
         con = self._connect()
         dups = con.execute(
             "SELECT partition_id, kind, name, COUNT(*) AS n FROM entities "
