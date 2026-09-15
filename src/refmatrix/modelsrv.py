@@ -59,9 +59,13 @@ def shared_enabled() -> bool:
     return os.environ.get("RMX_SHARED_MODELS", "1") not in ("0", "false", "False")
 
 
-# Adoption probe bound: how long a daemon waits for a listening-but-mute
-# shared socket before going private. Seconds, not the worker op timeout.
-PROBE_TIMEOUT_S = float(os.environ.get("RMX_SHARED_PROBE_TIMEOUT_S", "5") or "5")
+# Adoption probe bound: how long a daemon waits for the shared worker's
+# `info` before going private. A COLD worker loads its model first — measured
+# 14.9 s (embed) and 33 s (rerank) on 2026-09-15 — so the old 5 s sent every
+# daemon that booted or relaunched while the hub was cold to a private
+# worker for good (bug-014: sixteen ~450 MB workers on one machine). A mute
+# socket (hub mid-restart) still costs at most this long, once per role.
+PROBE_TIMEOUT_S = float(os.environ.get("RMX_SHARED_PROBE_TIMEOUT_S", "45") or "45")
 
 
 def shared_available(timeout: float = 0.5) -> bool:
@@ -222,8 +226,14 @@ class ModelServer:
                 self._check_worker_version(w)
             return w
 
-    def _drop_worker(self, role: str, exc: BaseException) -> None:
+    def _drop_worker(self, role: str, exc: BaseException, *, worker=None) -> None:
+        """Forget `worker` (or the current one) for `role`. Only the worker
+        that failed is dropped: a thread holding a stale reference must not
+        close the replacement another thread is already using."""
         with self._lock:
+            cur = self._clients.get(role)
+            if worker is not None and cur is not worker:
+                return
             w = self._clients.pop(role, None)
         if w is None:
             return
@@ -425,18 +435,28 @@ class ModelServer:
                 try:
                     if role not in ROLES:
                         raise ValueError(f"unknown role {role!r}")
-                    hdr, out = self._worker(role).call(op, req, blob=blob)
+                    w = self._worker(role)
+                    try:
+                        hdr, out = w.call(op, req, blob=blob)
+                    except (EOFError, BrokenPipeError, ConnectionError) as exc:
+                        # The WORKER side, and only after WorkerClient's own
+                        # respawn-and-retry also failed: drop it so the next
+                        # call gets a fresh one instead of failing forever.
+                        self._drop_worker(role, exc, worker=w)
+                        raise
                     # `ok` comes from the worker; re-send it as our own.
                     hdr = {k: v for k, v in hdr.items() if k != "ok"}
-                    send_frame(rw, {"ok": True, **hdr}, out or None)
+                    try:
+                        send_frame(rw, {"ok": True, **hdr}, out or None)
+                    except (BrokenPipeError, ConnectionError, OSError):
+                        # The CLIENT went away — a daemon's bounded probe timed
+                        # out while the worker was still warming (the
+                        # `op=info failed: BrokenPipeError` lines of bug-014).
+                        # The worker is fine; a drop here killed healthy
+                        # workers under the whole fleet (2026-09-15 02:35).
+                        return
                 except Exception as exc:
                     self._log(f"role={role} op={op} failed: {exc!r}")
-                    if isinstance(exc, (BrokenPipeError, EOFError, ConnectionError)):
-                        # The worker process is gone or its pipe is dead:
-                        # every later call would fail the same way (bug-014:
-                        # `op=rerank failed: BrokenPipeError` for hours).
-                        # Drop it; the next call recreates a worker.
-                        self._drop_worker(role, exc)
                     try:
                         send_frame(rw, {
                             "ok": False,
