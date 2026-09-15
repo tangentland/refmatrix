@@ -121,7 +121,10 @@ def test_federated_concept_groups_by_project(monkeypatch):
     monkeypatch.setattr(search.discovery, "discover_roots", lambda: roots)
     monkeypatch.setattr(search.discovery, "store_name",
                         lambda r: "a" if "/a/" in str(r) else "b")
-    monkeypatch.setattr(search.daemon_mod, "ping", lambda r, timeout=0.5: True)
+    # _live_roots classifies via discovery.daemon_status (busy != absent,
+    # plan-3 r2 #b-2); a bare `ping` fake no longer reaches it.
+    monkeypatch.setattr(search.discovery, "daemon_status",
+                        lambda r, **kw: {"up": True, "busy": False, "pid": 1})
     # federated_concept resolves via the in-process replica bundle
     monkeypatch.setattr(search, "_replica_bundle", lambda root, name, degree=0: {
         "anchor": {"name": name, "kind": "concept"},
