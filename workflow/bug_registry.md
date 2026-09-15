@@ -41,7 +41,7 @@ The threshold is LOW — when in doubt, log it. Log an entry whenever:
 
 | ID | Symptom / error | File(s) | Root cause | Fix | Tags | Status | Seen |
 |----|-----------------|---------|------------|-----|------|--------|------|
-| _none yet_ | — | — | — | — | — | — | — |
+| bug-001 | deploy venv `.pth` → dev checkout; `rmx`/daemons/hub ran uncommitted code (2026-09-14) | `~/refmatrix/.venv/.../__editable__.refmatrix-*.pth`, save-state memory step 4 | absolute `pip install -e <dev tree>` into the deploy venv | `upgrade.runtime_identity` + `verify_editable`; `rmx version -v`; memory rewritten (0.66.3) | deploy, venv | fixed | 1 |
 
 <!--
 Entry conventions:

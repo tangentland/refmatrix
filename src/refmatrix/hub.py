@@ -541,7 +541,7 @@ class Hub:
             if isinstance(b, int) and b > STORE_BYTES_ALERT:
                 row["store_bytes"] = b
             out.append(row)
-        return out
+        return _annotate_identity(out)
 
     def _queue_alert_loop(self) -> None:
         if QUEUE_ALERT_INTERVAL_S <= 0:
@@ -933,6 +933,35 @@ def stop_hub(*, timeout: float = 5.0, port: int = DEFAULT_PORT) -> bool:
         except OSError:
             pass
     return not is_running() and _pid_on_port(port) is None
+
+
+def _daemon_identity(root: Path, timeout: float = 2.0) -> dict:
+    """`{code_path, dev_tree}` a live daemon reports on ping, else `{}`.
+    Read-only, best-effort: a daemon that cannot answer contributes nothing."""
+    try:
+        resp = daemon_mod.call(root, "ping", {}, timeout=timeout, retries=1)
+    except Exception:
+        return {}
+    if not isinstance(resp, dict) or not resp.get("ok"):
+        return {}
+    r = resp.get("result") or {}
+    if not r.get("code_path"):
+        return {}
+    return {"code_path": str(r["code_path"]), "dev_tree": bool(r.get("dev_tree"))}
+
+
+def _annotate_identity(rows: list[dict]) -> list[dict]:
+    """Stamp `dev_tree` / `code_path` on every up daemon's queue row so the
+    `global:queues` alert says which fleet members run a tree other than
+    the one their venv belongs to (2026-09-14: all of them, silently)."""
+    for row in rows:
+        if not row.get("daemon_up"):
+            continue
+        ident = _daemon_identity(Path(row["root"]))
+        if ident:
+            row["dev_tree"] = ident["dev_tree"]
+            row["code_path"] = ident["code_path"]
+    return rows
 
 
 def status() -> dict:

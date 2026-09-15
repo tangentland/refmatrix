@@ -24,8 +24,10 @@ Do all of this:
    dir, so the next instance's SessionStart recall sees everything), and
    commits. A red `memory bridge FAILED` line is a loose end — fix or report
    it, never skip it.
-4. **Deploy if code landed** — promote dev → the live `rmx` venv and restart
-   any affected daemon.
+4. **Deploy if code landed** — fast-forward the deploy tree to the committed sha and
+   relaunch: `git -C ~/refmatrix pull --ff-only origin master && rmx daemon restart --relaunch`.
+   Verify with `rmx version -v` (no `[DEV TREE]`). NEVER `pip install -e <dev tree>` into the
+   deploy venv — that makes `rmx`, every daemon and the hub run uncommitted code (2026-09-14).
 5. **Report** the resume point: branch + HEAD, what shipped, open loose ends,
    the concrete next action, and whether the push is still pending (the user
    pushes).

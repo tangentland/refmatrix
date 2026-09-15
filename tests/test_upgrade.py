@@ -118,3 +118,99 @@ def test_non_fast_forward_refuses(tmp_path):
     with pytest.raises(up.UpgradeError):
         up.upgrade(root=deploy, from_dev=dev, install_fn=_noop_install,
                    restart=False)
+
+
+# ---- plan-1 task 1.1/1.2: runtime identity (which tree does this interpreter run?) ----
+
+def _fake_tree(base: Path, name: str) -> Path:
+    """A refmatrix-shaped tree: <base>/<name>/{pyproject.toml,src/refmatrix/__init__.py}."""
+    root = base / name
+    (root / "src" / "refmatrix").mkdir(parents=True)
+    (root / "pyproject.toml").write_text('[project]\nname = "refmatrix"\nversion = "0.0.0"\n')
+    (root / "src" / "refmatrix" / "__init__.py").write_text('__version__ = "0.0.0"\n')
+    return root
+
+
+def _fake_venv(root: Path, editable_target: Path | None) -> Path:
+    """<root>/.venv with a site-packages carrying the path-style editable .pth."""
+    sp = root / ".venv" / "lib" / "python3.14" / "site-packages"
+    sp.mkdir(parents=True)
+    if editable_target is not None:
+        (sp / "__editable__.refmatrix-0.0.0.pth").write_text(str(editable_target) + "\n")
+    return root / ".venv"
+
+
+def test_runtime_identity_detects_foreign_editable_target(tmp_path):
+    """2026-09-14: ~/refmatrix/.venv's .pth pointed at the DEV checkout, so the
+    deploy binary, every daemon and the hub ran uncommitted code and nothing
+    said so. The identity is derived from the interpreter prefix + the import
+    path — no attribute of the running package can be trusted on its own."""
+    deploy = _fake_tree(tmp_path, "deploy")
+    dev = _fake_tree(tmp_path, "dev")
+    prefix = _fake_venv(deploy, dev / "src")
+    ident = up.runtime_identity(prefix=prefix, import_file=dev / "src" / "refmatrix" / "__init__.py")
+    assert ident["dev_tree"] is True
+    assert ident["code_root"] == dev
+    assert ident["venv_tree"] == deploy
+    assert ident["editable_target"] == dev / "src"
+
+
+def test_runtime_identity_clean_when_venv_imports_its_own_tree(tmp_path):
+    deploy = _fake_tree(tmp_path, "deploy")
+    prefix = _fake_venv(deploy, deploy / "src")
+    ident = up.runtime_identity(prefix=prefix, import_file=deploy / "src" / "refmatrix" / "__init__.py")
+    assert ident["dev_tree"] is False
+    assert ident["code_root"] == deploy == ident["venv_tree"]
+
+
+def test_runtime_identity_unknown_when_prefix_has_no_tree(tmp_path):
+    """A system interpreter (no pyproject above sys.prefix) cannot be a dev-tree
+    mismatch; report None rather than a false alarm."""
+    dev = _fake_tree(tmp_path, "dev")
+    prefix = tmp_path / "sys" / "python"; prefix.mkdir(parents=True)
+    ident = up.runtime_identity(prefix=prefix, import_file=dev / "src" / "refmatrix" / "__init__.py")
+    assert ident["venv_tree"] is None and ident["dev_tree"] is False
+
+
+def test_verify_editable_refuses_foreign_target(tmp_path):
+    deploy = _fake_tree(tmp_path, "deploy")
+    dev = _fake_tree(tmp_path, "dev")
+    _fake_venv(deploy, dev / "src")
+    with pytest.raises(up.UpgradeError, match="editable target"):
+        up.verify_editable(deploy)
+
+
+def test_verify_editable_accepts_own_tree(tmp_path):
+    deploy = _fake_tree(tmp_path, "deploy")
+    _fake_venv(deploy, deploy / "src")
+    assert up.verify_editable(deploy) == deploy / "src"
+
+
+def test_upgrade_from_dev_verifies_editable_after_install(tmp_path):
+    """The install step is injectable; the VERIFY step is not — an install_fn
+    that leaves the venv pointing at the dev tree must fail the upgrade."""
+    deploy = tmp_path / "deploy"
+    _init_repo(deploy, "0.1.0")
+    (deploy / "src" / "refmatrix").mkdir(parents=True)
+    dev = tmp_path / "dev"
+    subprocess.run(["git", "clone", "-q", str(deploy), str(dev)], check=True)
+    _git(dev, "config", "user.email", "t@t")
+    _git(dev, "config", "user.name", "t")
+    _bump(dev, "0.2.0")
+
+    def bad_install(root, *, log=print):
+        _fake_venv(root, dev / "src")          # the 2026-09-14 mistake
+
+    with pytest.raises(up.UpgradeError, match="editable target"):
+        up.upgrade(root=deploy, from_dev=dev, install_fn=bad_install, restart_fn=lambda r, log=print: True)
+
+    def good_install(root, *, log=print):
+        import shutil
+        shutil.rmtree(root / ".venv", ignore_errors=True)
+        _fake_venv(root, root / "src")
+
+    # The refused run already fast-forwarded the tree (git before pip); a new
+    # dev commit is needed for the next upgrade to have anything to install.
+    _bump(dev, "0.3.0")
+    res = up.upgrade(root=deploy, from_dev=dev, install_fn=good_install, restart_fn=lambda r, log=print: True)
+    assert res.installed and res.new_version == "0.3.0"
