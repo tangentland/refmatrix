@@ -108,3 +108,31 @@ rel: evidence-for -> [[bsd-plan3-verbs-parity-r5-dfc0e62]]
 
 TDD: RED `workflow/review-output/pytest-plan3-r6-red.log` (12 failed / 1 passed — the `get` probe count held already, which is what #m-4 said), GREEN `pytest-plan3-r6-green.log` (14 passed). Mutations `pytest-plan3-r6-plan4-r4-mutation.log`: P3-A (list twin bypasses the verb) → 2 fail; P3-B (`_read_store` hands the proxy to an UP daemon) → 5 fail; P3-C (`federated_query` drops the busy store unsaid, redo with the call replaced) → 1 fail; P3-C2 (pool stragglers unnamed) → 1 fail; P3-C3 (the where memory leg silent, redo) → 1 fail; P3-D (recall twin passes no partition) → 1 fail. The first P3-C / P3-C3 attempts in that log prepended a `pass` instead of replacing the call and are void — the redo lines below them are the evidence.
 
+
+## Round 7 (bsd-plan3-r6, ffed3df) {#round-7}
+
+rel: evidence-for -> [[bsd-plan3-verbs-parity-r6-ffed3df]]
+
+| Finding | Fix |
+|---------|-----|
+| #b-1 `memory get --degree N` printed the body and then died with a bare `NameError: name 'daemon_mod' is not defined` at cli.py:9708 on the DEPLOYED build, in every daemon state — round 6 (a035117) rewrote the body through `_verbs.memory` and deleted the function-local import thirty lines above a surviving `daemon_mod.ping`, and 169 tests passed because NO test invoked the flag (bug-026) | the tail routes through `verbs.attach_context` — THE bundle verb the recall twin already calls, so the capability has one implementation and a hand-rolled daemon call cannot rot again. Bounded by `MEMORY_CONTEXT_TAIL_S` (30 s; under 120 s `attach_context` also drops the library's two retries) because the body is already on screen, and it skips the daemon outright when the read leg already fell through to the replica — a `served_by_replica` flag, not a second probe. Warnings from the verb are echoed, so a failed bundle is named |
+| #b-2 `rmx memory promote` waited 180.2 s on a held writer and exited 1 with an EMPTY message (an unhandled `TimeoutError`) — the memory group's THIRD read path, still behind the bare ping gate + `_memory_daemon_call` at 60 s × 3, while the verb's own `promote` action went unused; the verb leg itself took 90.2 s, 3× Q11's stated `retries=0` (bug-027) | the twin calls `_verbs.memory(root, action="promote", partition=…, timeout=MEMORY_READ_BUDGET_S)` and renders `VerbBusyError` / `VerbAbsentError` as a typed `ClickException`. In the verb, `budgeted = is_read or action == "promote"` puts the project-side read under the action's deadline with `retries=0`, while the global write keeps its own path. NO replica fallthrough here, unlike the read twins: promote WRITES what it read into the shared global store, so a lagging snapshot must not become a promoted body |
+| #s-3 `federated_concept` is the module's FOURTH fan-out: it kept the silent per-root `except: pass` the other three lost, and `canon find` was the last consumer discarding a `skipped` list — so a busy daemon answered "no live project hosts X", verbatim the r3 #b-2 defect that `rmx locate` already fixed one command over | both ends. The per-root `except` appends a reason; `canon_find` echoes each skipped row to stderr and appends "(N stores skipped — see stderr)" to the empty message, the shape `locate_cmd` uses |
+| #s-4 three of the four "said, never mute" branches in `federated_where` were guarded by nothing — mutations M3 (replica-bundle leg back to `pass`), M4 (global memory leg back to `pass`) and M5 (delete `_name_stragglers`) each left the suite green, on a remedy whose whole subject is "no silent failures in a fan-out" | one test per leg. No production change: the behaviour was real at HEAD and is now load-bearing, proven by running M3/M4/M5 against the new tests |
+
+The `_SilentDaemon` / `_PingOnlyDaemon` distinction is now written down in the canon test: a daemon that ANSWERS ping is classified `up` and enters `_live_roots`' roots; `busy` is the state that never answers at all. The first draft of that test used the ping-only fixture and got a HIT, not a skip.
+
+TDD: RED `workflow/review-output/pytest-plan3-r7-red.log` (8 failed / 3 passed in 311 s — the three passes are the #s-4 leg tests, which lock in behaviour that exists at HEAD), GREEN `pytest-plan3-r7-green.log` (11 passed in 43 s — the 7× drop IS the bound). Regression `pytest-plan3-r7-regression.log`: **162 passed** across plan3_remedy(+r2..r6), verb_parity, verbs_migrated, mcp_tools, plan2_remedy(+r6).
+
+Mutations `pytest-plan3-r7-mutations.log`, each reverted with `git checkout --` between runs — all eight kill exactly their target and nothing else:
+
+| Mutation | Result |
+|----------|--------|
+| A — the degree tail back to its own `daemon_mod.ping` with the import still gone | 3 fail (the two healthy-path tests + the held-writer one) |
+| B — promote back behind the bare ping + `_memory_daemon_call` | 2 fail, **in 240 s** — the mutation reinstates the 180 s hang the finding measured |
+| C — the verb's promote read back to the library default retries | 1 fail in 60 s |
+| D — `federated_concept` back to `except: pass` | 1 fail |
+| E — `canon_find` stops rendering `skipped` | 1 fail |
+| M3 — the where replica-bundle leg back to `pass` | 1 fail |
+| M4 — the where global memory leg back to `pass` | 1 fail |
+| M5 — `_name_stragglers` dropped from `federated_where` | 1 fail |

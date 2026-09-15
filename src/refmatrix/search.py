@@ -259,8 +259,13 @@ def federated_concept(name: str) -> dict:
                     neighbors = sum(len(v) for v in (b.get("groups") or {}).values())
                     out.append({"project": proj, "root": str(root),
                                 "kind": anchor.get("kind"), "neighbors": neighbors})
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001 — said, never mute (r6 #s-3)
+            # The fourth fan-out kept the silent per-root swallow the other
+            # three lost, so a store that could not be read was
+            # indistinguishable from one that does not host the concept.
+            skipped.append({"project": proj, "root": str(root),
+                            "reason": f"concept lookup failed "
+                                      f"({type(e).__name__}: {e})"})
     return {"concept": name, "projects": out, "skipped": skipped}
 
 
