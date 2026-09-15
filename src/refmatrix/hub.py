@@ -554,17 +554,25 @@ class Hub:
             if self._stop.is_set():
                 break
             try:
-                queues = self._gather_queues()
-                pending_refine = len(self.bus.refinement_queue("pending"))
-                hot = [q for q in queues if _queue_row_is_hot(q)]
-                if hot or pending_refine:
-                    self.bus.publish(
-                        "global:queues",
-                        {"queues": queues, "refinement_pending": pending_refine},
-                        sender="hub", mtype="alert",
-                    )
+                self._queue_alert_once()
             except Exception as e:
                 _log(f"queue-alert error: {e}")
+
+    def _queue_alert_once(self) -> bool:
+        """One tick of the queue alert: gather, gate, publish. Returns True
+        when an alert was published. Factored out so the PUBLISH is testable
+        with a fake bus (bsd-plan1-r2 #m-3)."""
+        queues = self._gather_queues()
+        pending_refine = len(self.bus.refinement_queue("pending"))
+        hot = [q for q in queues if _queue_row_is_hot(q)]
+        if hot or pending_refine:
+            self.bus.publish(
+                "global:queues",
+                {"queues": queues, "refinement_pending": pending_refine},
+                sender="hub", mtype="alert",
+            )
+            return True
+        return False
 
     # -- shared model workers ----
     def _start_models(self) -> None:
@@ -943,7 +951,10 @@ def _queue_row_is_hot(q: dict) -> bool:
                 or q.get("memory_read_ok") is False
                 or q.get("serving_legacy_catalog")
                 or q.get("store_bytes")
-                or q.get("dev_tree"))
+                or q.get("dev_tree")
+                # a daemon whose tree cannot be verified is not clean either
+                # (bsd-plan1-r2 #m-4: orderly at 0.65.0, no code_path)
+                or q.get("identity") == "unknown")
 
 
 def _daemon_identity(root: Path, timeout: float = 2.0) -> dict:

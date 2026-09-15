@@ -19,4 +19,8 @@ tags: [bsd, impressions]
 - 2026-09-14 (plan-2) — Substring signatures for "ours vs theirs" (`.claude/hooks/enforce-`) quietly widen the delete set; the covering test seeds `echo mine`, which was never at risk. When a test proves "foreign X survives", seed an X that shares the prefix/shape of the managed set. {#imp-signature-overreach}
 - 2026-09-14 (plan-2) — Second plan in a row to flip `status: completed` in the commit that requests the gate, with task specs still `pending`. Escalated to SKETCHY; third time is BULLSHIT. {#imp-status-flip-before-gate}
 
+- 2026-09-14 (plan-1 r2) — `imp-guard-vs-incident-state` hit twice in one plan: the relaunch guard compares CLI vs daemon code path, but launchd runs daemons through the same `~/bin/rmx`, so in the incident both sides agree on the wrong tree. For any "A must match B" guard, ask whether A and B are computed from the same input; if so the guard needs an absolute check (here: `dev_tree` on either side). {#imp-same-input-guard}
+- 2026-09-14 (plan-1 r2) — Same commit that fixed "unreadable ≠ verified" in `editable_target(strict)` shipped a new `except Exception: theirs = None` → green in `_verify_relaunch`. Silent-pass-on-error migrates between call sites; grep every verify/guard function in the diff for `except` + fall-through, not just the one the finding named. {#imp-silent-pass-migrates}
+- 2026-09-14 (plan-1 r2) — Remediation quality is up: 7/9 closed, live surfaces match claims, registry actually updated, plan status honest. The residual is one dict-key read. {#imp-plan1-r2-progress}
+
 rel: reinforces -> [[feedback_no_silent_failures]]

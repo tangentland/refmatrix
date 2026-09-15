@@ -2742,14 +2742,35 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
                     # here: the new daemon must import the same tree this
                     # CLI does (bsd-plan1 #b-2).
                     from refmatrix import upgrade as _up
-                    mine = str(_up.runtime_identity()["import_path"])
-                    theirs = None
+                    mine_ident = _up.runtime_identity()
+                    mine = str(mine_ident["import_path"])
+                    # Three checks, because in the incident state the CLI and
+                    # the daemon share the venv (every plist runs ~/bin/rmx)
+                    # and BOTH import the dev tree — the paths MATCH
+                    # (bsd-plan1-r2 #b-1): (1) neither side may be a dev tree,
+                    # (2) the daemon's code path must be readable, (3) it must
+                    # equal this CLI's.
                     try:
                         r = daemon_mod.call(root, "ping", {}, timeout=2.0, retries=1)
-                        theirs = ((r or {}).get("result") or {}).get("code_path")
-                    except Exception:  # noqa: BLE001 — absent field handled below
-                        theirs = None
-                    if theirs and str(theirs) != mine:
+                    except Exception as e:  # noqa: BLE001 — reported, not skipped
+                        raise click.ClickException(
+                            f"relaunched daemon pid={pid} answered version={ver} "
+                            f"but its code path cannot be read ({e}); not verified")
+                    res = ((r or {}).get("result") or {}) if (r or {}).get("ok") else {}
+                    theirs = res.get("code_path")
+                    if not theirs:
+                        raise click.ClickException(
+                            f"relaunched daemon pid={pid} answered version={ver} "
+                            f"but reports no code path (pre-0.66.3 daemon?); "
+                            f"not verified — `rmx daemon status`")
+                    if mine_ident.get("dev_tree") or res.get("dev_tree"):
+                        raise click.ClickException(
+                            f"[DEV TREE] relaunched daemon pid={pid} imports {theirs} "
+                            f"(dev_tree={bool(res.get('dev_tree'))}); this CLI imports "
+                            f"{mine} (dev_tree={bool(mine_ident.get('dev_tree'))}) — a "
+                            f"venv that belongs to {mine_ident.get('venv_tree')} is "
+                            f"running another tree; fix the editable install first")
+                    if str(theirs) != mine:
                         raise click.ClickException(
                             f"relaunched daemon pid={pid} imports {theirs} but "
                             f"this CLI imports {mine} — code path mismatch; "
@@ -2757,8 +2778,7 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
                             f"same tree (`rmx version -v`)")
                     console.print(
                         f"[green]relaunch verified[/] pid "
-                        f"{_old_pid or '-'}→{pid} version={ver}"
-                        + (f" code={theirs}" if theirs else ""))
+                        f"{_old_pid or '-'}→{pid} version={ver} code={theirs}")
                     return
                 # A predecessor still answering on the OLD pid past a short
                 # grace is the kickstart-scheduled-but-not-swapped case: kill

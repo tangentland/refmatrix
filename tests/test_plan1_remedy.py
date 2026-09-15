@@ -148,3 +148,71 @@ def test_ping_uses_cached_identity(monkeypatch, tmp_path):
         store = None
     res = daemon_mod._op_ping(D(), {})
     assert "code_path" in res and "dev_tree" in res
+
+
+# ---- round 2 (bsd-plan1-r2): the relaunch guard must fire in the incident state ----
+
+def _relaunch_env(monkeypatch, tmp_path, *, cli_ident, ping_result):
+    monkeypatch.setattr(cli_mod, "_root", lambda: tmp_path / ".refmatrix")
+    (tmp_path / ".refmatrix").mkdir(exist_ok=True)
+    monkeypatch.setattr("refmatrix.launchctl.is_loaded", lambda root: False)
+    monkeypatch.setattr(daemon_mod, "stop_daemon", lambda root, **kw: True)
+    monkeypatch.setattr(daemon_mod, "spawn_daemon", lambda root, **kw: 4243)
+    monkeypatch.setattr(daemon_mod, "ping", lambda root, **kw: True)
+    from refmatrix import __version__
+    seq = iter([(4242, __version__)] + [(4243, __version__)] * 6)
+    monkeypatch.setattr(daemon_mod, "served_identity", lambda root, timeout=1.0: next(seq))
+    monkeypatch.setattr(up, "runtime_identity", lambda **kw: cli_ident)
+    monkeypatch.setattr(daemon_mod, "call", lambda root, op, args=None, **kw: ping_result)
+
+
+def test_relaunch_fails_when_cli_and_daemon_both_run_a_dev_tree(tmp_path, monkeypatch):
+    """The 2026-09-14 state: every plist runs ~/bin/rmx, the same venv/.pth as
+    the CLI, so BOTH import the dev tree — paths match. The guard must look at
+    dev_tree on both sides, not only compare paths."""
+    from refmatrix import __version__
+    dev = "/dev/src/refmatrix/__init__.py"
+    ident = {"version": __version__, "import_path": Path(dev), "code_root": Path("/dev"),
+             "venv_tree": Path("/deploy"), "editable_target": Path("/dev/src"), "dev_tree": True}
+    _relaunch_env(monkeypatch, tmp_path, cli_ident=ident, ping_result={
+        "ok": True, "result": {"pid": 4243, "version": __version__, "code_path": dev, "dev_tree": True}})
+    r = CliRunner().invoke(cli_mod.main, ["daemon", "restart", "--relaunch", "--standalone"])
+    assert r.exit_code != 0
+    assert "DEV TREE" in r.output
+
+
+def test_relaunch_fails_when_the_daemons_code_path_cannot_be_read(tmp_path, monkeypatch):
+    """A ping without code_path (or a ping error) is not 'verified'."""
+    from refmatrix import __version__
+    ident = {"version": __version__, "import_path": Path("/deploy/src/refmatrix/__init__.py"),
+             "code_root": Path("/deploy"), "venv_tree": Path("/deploy"),
+             "editable_target": Path("/deploy/src"), "dev_tree": False}
+    _relaunch_env(monkeypatch, tmp_path, cli_ident=ident, ping_result={
+        "ok": True, "result": {"pid": 4243, "version": __version__}})
+    r = CliRunner().invoke(cli_mod.main, ["daemon", "restart", "--relaunch", "--standalone"])
+    assert r.exit_code != 0
+    assert "code path" in r.output.lower()
+
+
+def test_queue_alert_once_publishes_on_dev_tree(monkeypatch):
+    published = []
+    class FakeBus:
+        def refinement_queue(self, status): return []
+        def publish(self, channel, payload, *, sender, mtype): published.append((channel, payload, sender, mtype))
+    class FakeHub:
+        bus = FakeBus()
+        def _gather_queues(self):
+            return [{"project": "p", "root": "/r", "daemon_up": True, "stale_files": 0, "dev_tree": True}]
+    hub_mod.Hub._queue_alert_once(FakeHub())
+    assert published and published[0][0] == "global:queues"
+    assert published[0][1]["queues"][0]["dev_tree"] is True
+    published.clear()
+    class QuietHub(FakeHub):
+        def _gather_queues(self):
+            return [{"project": "p", "root": "/r", "daemon_up": True, "stale_files": 0, "dev_tree": False}]
+    hub_mod.Hub._queue_alert_once(QuietHub())
+    assert published == []
+
+
+def test_unknown_identity_row_is_hot():
+    assert hub_mod._queue_row_is_hot({"daemon_up": True, "stale_files": 0, "identity": "unknown"})
