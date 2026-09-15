@@ -2529,8 +2529,49 @@ def hub_status():
                 idflag = "  [bold red][DEV TREE][/]"
             else:
                 idflag = ""
+            # Each daemon's VERSION next to the hub's: a half-relaunched fleet
+            # used to render eight clean rows (ch-bsd plan-4 r1 #b-6).
+            dver = ident.get("version")
+            vflag = ""
+            if last.get("up") and dver:
+                vflag = f"  [dim]v{dver}[/]"
+                if st.get("version") and dver != st.get("version"):
+                    vflag = f"  [bold yellow]v{dver} STALE (hub v{st.get('version')})[/]"
             console.print(f"  {dot} {root}  policy={h['policy']} "
-                          f"restarts={h['restart_count']}{paused}{idflag}")
+                          f"restarts={h['restart_count']}{paused}{vflag}{idflag}")
+
+
+@hub.command("relaunch-fleet")
+@click.option("--rmx", "rmx_bin", default=None,
+              help="The rmx to relaunch with (default: the one running this command).")
+def hub_relaunch_fleet(rmx_bin):
+    """Relaunch EVERY launchd-supervised store's daemon on the installed
+    code (`rmx daemon restart --relaunch` per root, each verified: new pid,
+    installed version, deploy code path). The deploy step that was missing
+    (ch-bsd plan-4 r1 #b-6): a plain relaunch restarts one store and the
+    hub's version handshake does not restart the rest."""
+    import subprocess
+    import sys as _sys
+    from refmatrix import discovery, launchctl as lc
+    rmx = rmx_bin or _sys.argv[0]
+    failed = 0
+    for root in discovery.discover_roots():
+        root = Path(root)
+        if not lc.is_loaded(root):
+            console.print(f"[dim]skip[/] {root} (not supervised)")
+            continue
+        env = {**os.environ, "REFMATRIX_ROOT": str(root)}
+        r = subprocess.run([rmx, "daemon", "restart", "--relaunch"], env=env,
+                           capture_output=True, text=True)
+        tail = (r.stdout or r.stderr or "").strip().splitlines()
+        line = tail[-1] if tail else "(no output)"
+        if r.returncode == 0:
+            console.print(f"[green]relaunched[/] {root}  {line}")
+        else:
+            failed += 1
+            console.print(f"[red]FAILED[/] {root}  {line}")
+    if failed:
+        raise click.ClickException(f"{failed} store(s) failed to relaunch")
 
 
 @hub.command("queues")
@@ -7748,14 +7789,25 @@ def repair_index(entities: bool):
     from refmatrix import daemon as daemon_mod
     root = _root()
     if entities:
+        from refmatrix import verbs as _verbs
         from refmatrix.store import RepairAbort
-        if daemon_mod.ping(root):
+        # Busy is not absent (ch-bsd plan-4 r1 #b-2): the offline branch may
+        # only run when NO daemon exists; a busy one holds the writer.
+        try:
+            _verbs.require_daemon(root)
+            daemon_up = True
+        except _verbs.VerbBusyError as e:
+            raise click.ClickException(f"{e} — repair skipped; retry, or `rmx daemon "
+                                       f"restart` (boot runs a queued repair)")
+        except _verbs.VerbAbsentError:
+            daemon_up = False
+        if daemon_up:
             resp = daemon_mod.call(root, "repair_entities", {}, timeout=600.0)
             if not resp.get("ok"):
                 raise click.ClickException(resp.get("error", "daemon error"))
             rep = resp["result"]
         else:
-            s = _store()
+            s = _store_rw()
             try:
                 rep = s.rebuild_entities_indexes()
             except RepairAbort as e:

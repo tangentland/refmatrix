@@ -151,6 +151,9 @@ def render_plist(root: Path, *, partition: str | None = None,
         # and skips the cli_entry re-exec. See cli._reexec_for_fork_safety.
         "OBJC_DISABLE_INITIALIZE_FORK_SAFETY": "YES",
         "TOKENIZERS_PARALLELISM": "false",
+        # The daemon under THIS plist is the supervisor's: it may adopt an
+        # unsupervised predecessor (plan-4 4.4 / r1 #m-9).
+        "RMX_SUPERVISED": "1",
     }
     # No PYTHONPATH / PYTHONUSERBASE capture: the daemon runs from a
     # standalone venv (`rmx` resolves to .venv/bin/rmx) that carries every

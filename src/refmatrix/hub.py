@@ -51,7 +51,7 @@ WATCHDOG_GRACE_MISSES = int(
 # A daemon whose process is alive and whose heartbeat is fresh is BUSY, never
 # restarted, however many pings it misses; a heartbeat older than this is a
 # wedge and enters the miss-grace path above; a missing process is dead.
-HEARTBEAT_STALE_S = float(os.environ.get("RMX_HUB_HEARTBEAT_STALE_S", "60"))
+HEARTBEAT_STALE_S = daemon_mod.HEARTBEAT_STALE_S
 # A restart is graceful first (`daemon stop` → SIGTERM) and only escalates
 # to `kickstart -k` (SIGKILL) after this many seconds — the 2026-09-14
 # corruption was a SIGKILL on a daemon mid-reconnect to a model worker.
@@ -294,15 +294,17 @@ class Watchdog:
                 self.restart_counts[key] = self.restart_counts.get(key, 0) + 1
 
     def _restart(self, root: Path, *, alive: bool = False) -> bool:
-        """Restart a daemon: a live-but-wedged one is asked to stop
-        gracefully first (the `stop` op, then SIGTERM, bounded by
-        RMX_HUB_KILL_GRACE_S) so it can close DuckDB cleanly; only then
-        launchd kickstart -k (SIGKILL if it ignored the stop) or a direct
-        spawn. A dead process needs no courtesy."""
+        """Restart a daemon: a live-but-wedged one gets a SIGNAL FIRST (the
+        `stop` op when it answers ping, SIGTERM otherwise) and then the
+        whole RMX_HUB_KILL_GRACE_S to close DuckDB cleanly; only then
+        launchd kickstart -k (SIGKILL if it ignored the signal) or a direct
+        spawn. A dead process needs no courtesy. (ch-bsd plan-4 r1 #b-3:
+        the grace used to be an idle wait BEFORE any signal.)"""
         if alive:
             try:
-                ok = daemon_mod.stop_daemon(root, timeout=RMX_HUB_KILL_GRACE_S)
-                _log(f"watchdog graceful stop {root}: {'stopped' if ok else 'still alive'}")
+                ok = graceful_stop(root, grace=RMX_HUB_KILL_GRACE_S)
+                _log(f"watchdog graceful stop {root}: "
+                     f"{'stopped' if ok else f'still alive after {RMX_HUB_KILL_GRACE_S:g}s grace'}")
             except Exception as e:
                 _log(f"watchdog graceful stop failed for {root}: {e}")
         try:
@@ -986,6 +988,40 @@ def stop_hub(*, timeout: float = 5.0, port: int = DEFAULT_PORT) -> bool:
     return not is_running() and _pid_on_port(port) is None
 
 
+def graceful_stop(root: Path, *, grace: float) -> bool:
+    """Ask a live daemon to stop and give it `grace` seconds to exit: the
+    `stop` op when it answers ping, SIGTERM when it does not — the signal
+    goes FIRST, the wait comes after (ch-bsd plan-4 r1 #b-3). Never SIGKILL:
+    returns False when the pid is still alive after the grace and lets the
+    caller escalate (kickstart -k) knowingly."""
+    import signal as _signal
+    pid = daemon_mod.read_pid(root)
+    report: dict = {}
+    if pid is None:
+        return True
+    if daemon_mod.ping(root, timeout=0.5, retries=0):
+        try:
+            daemon_mod.call(root, "stop", {}, timeout=2.0, retries=0)
+            report["stop_op"] = "sent"
+        except Exception as e:  # noqa: BLE001
+            report["stop_op"] = f"failed: {type(e).__name__}: {e}"
+    if report.get("stop_op") != "sent":
+        try:
+            os.kill(pid, _signal.SIGTERM)
+            report["signal"] = "SIGTERM"
+        except ProcessLookupError:
+            return True
+        except PermissionError:
+            report["signal"] = "SIGTERM refused (permission)"
+    _log(f"graceful stop {root}: pid={pid} {report}")
+    deadline = time.monotonic() + max(0.0, grace)
+    while time.monotonic() < deadline:
+        if not daemon_mod.is_alive(pid):
+            return True
+        time.sleep(0.1)
+    return not daemon_mod.is_alive(pid)
+
+
 def _queue_row_is_hot(q: dict) -> bool:
     """Does this per-project queue row warrant a `global:queues` alert?
     Stale work, a failing memory read, a legacy catalog binding, an oversize
@@ -1025,7 +1061,8 @@ def _daemon_identity(root: Path, timeout: float = 2.0) -> dict:
         # sees WHY (bsd-plan1-r3 #m-4).
         return {"unknown": True, "version": r.get("version"),
                 "error": str(r["identity_error"])}
-    return {"code_path": str(r["code_path"]), "dev_tree": bool(r.get("dev_tree"))}
+    return {"code_path": str(r["code_path"]), "dev_tree": bool(r.get("dev_tree")),
+            "version": r.get("version")}
 
 
 def _annotate_identity(rows: list[dict]) -> list[dict]:

@@ -56,7 +56,9 @@ def _wd(monkeypatch, root, *, ping, pid_alive, hb_age, loaded=True):
     calls = []
     monkeypatch.setattr(launchctl, "is_loaded", lambda r: loaded)
     monkeypatch.setattr(launchctl, "kickstart", lambda r, restart=False: calls.append(("kickstart", restart)) or "label")
-    monkeypatch.setattr(dm, "stop_daemon", lambda r, timeout=5.0: calls.append(("stop", timeout)) or True)
+    # graceful_stop signals a REAL pid: it must be recorded, never run, here
+    # (the fake read_pid returns 4242 — somebody else's process).
+    monkeypatch.setattr(hub_mod, "graceful_stop", lambda r, grace: calls.append(("stop", grace)) or True)
     monkeypatch.setattr(dm, "spawn_daemon_subprocess", lambda r, **kw: calls.append(("spawn", None)) or 1)
     monkeypatch.setattr(hub_mod, "RMX_HUB_KILL_GRACE_S", 0.0, raising=False)
     return wd, calls
