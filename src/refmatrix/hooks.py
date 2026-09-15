@@ -275,7 +275,7 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                     "command": (
                         HOOK_ENV
                         + "rmx memory recall --session-start "
-                        "--k 10 --scope both --json"
+                        "--k 10 --scope both --json --timeout 10"
                     ),
                 },
                 {
@@ -305,9 +305,13 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                 # stdin as JSON ({"prompt": "...", ...}); --stdin-json
                 # parses it natively so the hook is one line with no
                 # jq/python dependency. Empty prompt = no-op exit 0.
+                # --timeout 5: the hook fires on EVERY prompt and held the
+                # turn ~20 s p50 unbounded on 2026-09-14 (bsd-plan2-r5
+                # #b-1); past the budget it warns, answers [], exits 0.
                 "command": (
                     HOOK_ENV
-                    + "rmx memory recall --stdin-json --k 5 --scope both --json"
+                    + "rmx memory recall --stdin-json --k 5 --scope both --json "
+                    "--timeout 5"
                 ),
             }],
         })

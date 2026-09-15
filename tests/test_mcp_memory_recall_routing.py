@@ -15,7 +15,7 @@ import refmatrix.daemon as daemon_mod
 def _mock_daemon(monkeypatch, calls, *, legacy_present: bool):
     monkeypatch.setattr(daemon_mod, "ping", lambda root, **kw: True)
 
-    def fake_call(root, op, args, timeout=None):
+    def fake_call(root, op, args, timeout=None, **kw):
         calls.append((op, args))
         if op == "partition_list":
             rows = [{"name": "memory-proj"}] if legacy_present else [{"name": "proj"}]

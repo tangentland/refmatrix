@@ -205,12 +205,15 @@ def require_daemon(root: Path, *, retries: int = 2) -> dict:
     raise VerbAbsentError(f"daemon not running for {root}")
 
 
-def _call(root: Path, op: str, payload: dict, *, timeout: float = 60.0) -> dict:
+def _call(root: Path, op: str, payload: dict, *, timeout: float = 60.0,
+          retries: int = 2) -> dict:
+    """`retries=0` for budgeted paths: `daemon.call` retries on timeout, so a
+    5 s bound with the library default is a 15 s wait."""
     import socket as _socket
     from refmatrix import daemon as daemon_mod
-    require_daemon(root)
+    require_daemon(root, retries=0 if retries == 0 else 2)
     try:
-        r = daemon_mod.call(root, op, payload, timeout=timeout)
+        r = daemon_mod.call(root, op, payload, timeout=timeout, retries=retries)
     except (TimeoutError, _socket.timeout, OSError) as e:
         raise VerbBusyError(f"daemon op {op} on {root} did not answer within "
                             f"{timeout:g}s ({e}); the daemon is busy") from e
@@ -219,17 +222,24 @@ def _call(root: Path, op: str, payload: dict, *, timeout: float = 60.0) -> dict:
     return r.get("result", {})
 
 
-def memory_partition(root: Path) -> str:
+def memory_partition(root: Path, *, timeout: "float | None" = None) -> str:
     """Legacy-aware memory partition (memory-<project> pre-merge, else the
     project partition). THE routing every memory verb must use — one handler
-    skipping it caused the 0.21.1 / 0.25.x / 2026-09-06 split-brain family."""
+    skipping it caused the 0.21.1 / 0.25.x / 2026-09-06 split-brain family.
+
+    `timeout` bounds the probe for budgeted callers (the hooks): the
+    `partition_list` op takes the writer lock daemon-side, and with the
+    library's two retries a held writer cost every prompt ~20 s on
+    2026-09-14 (ch-bsd plan-2 r5 #b-1)."""
     import logging
     from refmatrix import daemon as daemon_mod, discovery
     project = discovery.store_name(root)
     legacy = f"memory-{project}"
     try:
-        if daemon_mod.ping(root):
-            r = daemon_mod.call(root, "partition_list", {}, timeout=10.0)
+        if daemon_mod.ping(root, retries=0 if timeout is not None else 2):
+            r = daemon_mod.call(root, "partition_list", {},
+                                timeout=min(10.0, timeout) if timeout else 10.0,
+                                retries=0 if timeout is not None else 2)
             if r.get("ok") and any(row.get("name") == legacy
                                    for row in r["result"].get("rows", [])):
                 return legacy
@@ -302,7 +312,7 @@ def mt_excluded(mtype: "str | None", patterns) -> bool:
 
 
 def global_recall_rows(q: "str | None", *, k: int, recent: bool,
-                       since_s: "float | None") -> list[dict]:
+                       since_s: "float | None", timeout: float = 30.0) -> list[dict]:
     """Rows from the hub-owned global behavior store, routed through ITS
     daemon (never a direct Store open). Lexical/recent only — no embedder —
     so the always-on hooks stay cheap. No global store on this machine → [].
@@ -320,7 +330,7 @@ def global_recall_rows(q: "str | None", *, k: int, recent: bool,
     else:
         return []
     try:
-        resp = hub_mod.global_call(op, args, timeout=30.0)
+        resp = hub_mod.global_call(op, args, timeout=timeout)
     except Exception as e:  # noqa: BLE001 — re-raised as a typed, named failure
         raise VerbError(f"global store {op} failed: {e}") from e
     if not resp.get("ok"):
@@ -360,7 +370,8 @@ def merge_scope(project_rows: list, global_rows: list, k: int, scope: str) -> li
 
 def attach_context(root: Path, rows: list[dict], degree: int,
                    partition: "str | None" = None,
-                   warnings: "list[str] | None" = None) -> list[dict]:
+                   warnings: "list[str] | None" = None,
+                   timeout: float = 120.0) -> list[dict]:
     """degree>0: stash a rendered context bundle on each row (`row["context"]`)
     via the daemon `context` op — the same op `rmx context` uses. A row whose
     bundle failed carries `context=None` AND `context_error=<why>`, and the
@@ -380,7 +391,8 @@ def attach_context(root: Path, rows: list[dict], degree: int,
                        "entities_explicit": False, "tokens_explicit": False}
             if partition:
                 payload["partition"] = partition
-            resp = daemon_mod.call(root, "context", payload, timeout=120.0)
+            resp = daemon_mod.call(root, "context", payload, timeout=timeout,
+                                   retries=2 if timeout >= 120.0 else 0)
             if resp.get("ok"):
                 row["context"] = resp.get("result", {}).get("body")
             else:
@@ -570,6 +582,9 @@ _RECALL_DESCRIPTIONS = {
     "subject": "Recall the leaves filed under a subject (id, subject_<slug>, or "
                "bare label), newest first",
     "degree": ">0 attaches a context bundle (body + one-hop neighbours) per row",
+    "timeout": "Budget in seconds for the WHOLE recall (partition probe, recall, "
+               "per-hit fetch, global store, context); past it the call fails "
+               "as busy. The hooks pass 5 / 10; omit for the library defaults",
 }
 
 
@@ -592,7 +607,8 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
                   recent: bool = False, session_start: bool = False,
                   exclude_mtype: list[str] | None = None,
                   include_session: bool = False,
-                  subject: str | None = None, degree: int = 0) -> dict:
+                  subject: str | None = None, degree: int = 0,
+                  timeout: float | None = None) -> dict:
     """ONE implementation of "which memories come back" for the CLI hook
     modes and the MCP tool (2026-09-14: the session-start default window,
     the widen-when-empty rule and the session/* exclusion lived only in
@@ -604,12 +620,28 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
     (a surface with a lock-free replica may degrade on its own via
     `recent_rows`). Dense rows carry `score`/`distance`/`fused`
     (`annotate_hit`)."""
+    import time as _time
     from refmatrix import daemon as daemon_mod
     patterns = (list(exclude_mtype) if exclude_mtype is not None
                 else ([] if include_session else ["session/*"]))
     warnings: list[str] = []
     widened = False
     since_defaulted = False
+    # ONE deadline for the whole recall (ch-bsd plan-2 r5 #b-1: the per-prompt
+    # hook held the turn ~20 s p50 with no bound at all). Unbounded when None.
+    deadline = (_time.monotonic() + float(timeout)) if timeout else None
+
+    def _left(default: float) -> float:
+        if deadline is None:
+            return default
+        rem = deadline - _time.monotonic()
+        if rem <= 0:
+            raise VerbBusyError(
+                f"recall not confirmed within {timeout:g}s — daemon busy; the "
+                f"hook skipped this turn")
+        return min(default, rem)
+
+    _retries = 0 if deadline is not None else 2
     if session_start:
         recent = True
         if since is None and since_seconds is None:
@@ -622,35 +654,42 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
         recent = True
 
     want_project = scope in ("project", "both")
-    partition = memory_partition(root) if want_project else None
+    try:
+        partition = (memory_partition(root, timeout=_left(10.0) if deadline else None)
+                     if want_project else None)
+    except VerbBusyError:
+        raise
     project_rows: list[dict] = []
     mode = "dense"
 
-    if subject:
+    try:
+      if subject:
         mode = "subject"
         if want_project:
-            r = _call(root, "subject_leaves", {"subject": subject, "partition": partition})
+            r = _call(root, "subject_leaves", {"subject": subject, "partition": partition},
+                      timeout=_left(60.0), retries=_retries)
             project_rows = [row for row in r.get("rows", [])
                             if not mt_excluded(row.get("mtype"), patterns)][:k]
-    elif recent:
+      elif recent:
         mode = "session-start" if session_start else "recent"
         if want_project:
             def _fetch(since_s, limit):
                 return _call(root, "memory_recent", {"since_seconds": since_s,
                                                      "limit": limit,
-                                                     "partition": partition}).get("rows", [])
+                                                     "partition": partition},
+                             timeout=_left(60.0), retries=_retries).get("rows", [])
             project_rows, widened = recent_rows(
                 _fetch, k=k, patterns=patterns, since_seconds=since_seconds,
                 widen_if_empty=since_defaulted)
             if widened:
                 since_seconds = None
-    else:
+      else:
         if want_project:
             ann_k = k * 3 if patterns else k
             r = _call(root, "memory_recall",
                       payload_memory_recall(query, k=ann_k, kinds=kinds, fuse=fuse,
                                             rerank=rerank, partition=partition),
-                      timeout=180.0)
+                      timeout=_left(180.0), retries=_retries)
             hits = sorted(r.get("hits", []), key=lambda h: (
                 h["distance"] if h.get("distance") is not None
                 else -(h.get("score") or 0.0)))
@@ -661,27 +700,37 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
                 if eid is None:
                     continue
                 g = daemon_mod.call(root, "memory_get", {"id": eid, "partition": partition},
-                                    timeout=30.0)
+                                    timeout=_left(30.0), retries=_retries)
                 m = g.get("result", {}).get("memory") if g.get("ok") else None
                 if m and not mt_excluded(m.get("mtype"), patterns):
                     project_rows.append(annotate_hit(m, h))
-    for r in project_rows:
+      for r in project_rows:
         r["scope"] = "project"
 
-    rows = project_rows
-    if scope != "project":
+      rows = project_rows
+      if scope != "project":
         gk = k * 10 if patterns else k
         try:
             grows = [row for row in global_recall_rows(
                 query or None, k=gk, recent=bool(recent) and not subject,
-                since_s=since_seconds) if not mt_excluded(row.get("mtype"), patterns)]
+                since_s=since_seconds, timeout=_left(30.0))
+                if not mt_excluded(row.get("mtype"), patterns)]
+        except VerbBusyError:
+            raise
         except VerbError as e:
             if scope == "global":
                 raise
             warnings.append(f"global rows omitted: {e}")
             grows = []
         rows = merge_scope(project_rows, grows, k, scope)
-    rows = attach_context(root, rows, degree, partition, warnings)
+      rows = attach_context(root, rows, degree, partition, warnings,
+                            timeout=_left(120.0) if degree > 0 else 120.0)
+    except VerbBusyError as e:
+        if deadline is not None:
+            raise VerbBusyError(
+                f"recall not confirmed within {timeout:g}s ({e}) — daemon busy; "
+                f"the hook skipped this turn") from e
+        raise
     return {"memories": rows, "mode": mode, "widened": widened,
             "since_seconds": since_seconds, "warnings": warnings}
 

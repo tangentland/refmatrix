@@ -477,3 +477,107 @@ def test_subject_filing_refusal_is_not_reported_as_a_timeout(tmp_path, monkeypat
     assert r.exit_code != 0
     assert "refused" in r.output and "boom" in r.output
     assert "still complete" not in r.output
+
+
+# ---- round 5 (bsd-plan2-r5): the per-prompt recall hook is bounded ----------------
+
+def test_recall_hook_modes_are_bounded_and_degrade_to_empty(pingonly, monkeypatch):
+    """#b-1: `memory recall --stdin-json` (UserPromptSubmit) and
+    `--session-start` (SessionStart) held the turn ~20 s p50 live with no
+    bound. On a daemon that answers ping but holds the store: wall < budget
+    + 1, exit 0 (never 2 — that erases the prompt), `[]` on stdout, a
+    warning on stderr."""
+    import json as _json
+    from refmatrix import cli as cli_mod
+    monkeypatch.setattr(cli_mod, "_root", lambda: pingonly.root)
+    for argv, stdin in ((["memory", "recall", "--stdin-json", "--k", "5", "--scope", "both",
+                          "--json", "--timeout", "1"], _json.dumps({"prompt": "hello world"})),
+                        (["memory", "recall", "--session-start", "--k", "10", "--scope", "both",
+                          "--json", "--timeout", "1"], None)):
+        t0 = _time.monotonic()
+        r = CliRunner().invoke(cli_mod.main, argv, input=stdin)
+        elapsed = _time.monotonic() - t0
+        assert r.exit_code == 0, (argv, r.output, r.stderr)
+        assert elapsed < 2.5, (argv, elapsed)
+        assert _json.loads(r.stdout) == []
+        assert "warning" in (r.stderr or "") and "busy" in (r.stderr or ""), (argv, r.stderr)
+
+
+def test_recall_hook_modes_default_to_a_five_second_budget_and_the_generator_says_so(tmp_path):
+    from refmatrix.cli import main as cli_main
+    cmd = cli_main.commands["memory"].commands["recall"]
+    opt = next(p for p in cmd.params if p.name == "timeout")
+    assert opt.default is None      # None -> 5 s in hook modes, 60 s otherwise
+    block = _claude_hook_block(tmp_path / ".refmatrix")
+    ups = [c for _, _, c in _cmds(block, "UserPromptSubmit") if "memory recall --stdin-json" in c]
+    ss = [c for _, _, c in _cmds(block, "SessionStart") if "memory recall --session-start" in c]
+    assert ups and all("--timeout 5" in c for c in ups), ups
+    assert ss and all("--timeout 10" in c for c in ss), ss
+
+
+def test_verb_recall_timeout_is_a_deadline_across_calls(tmp_path, monkeypatch):
+    """The budget covers partition probe + recall + per-hit get + global,
+    not each call separately."""
+    from refmatrix import daemon as daemon_mod
+    from refmatrix import verbs
+    monkeypatch.setattr("refmatrix.discovery.daemon_status", lambda r, **kw: {"up": True, "busy": False, "pid": 1})
+    monkeypatch.setattr("refmatrix.discovery.store_name", lambda r: "p")
+    monkeypatch.setattr(daemon_mod, "ping", lambda r, **kw: True)
+    seen = []
+
+    def call(r, op, args=None, timeout=60.0, retries=2, **kw):
+        seen.append((op, round(timeout, 2), retries))
+        if timeout < 0.3:
+            raise TimeoutError("timed out")
+        _time.sleep(0.3)
+        if op == "partition_list":
+            return {"ok": True, "result": {"rows": []}}
+        if op == "memory_recent":
+            return {"ok": True, "result": {"rows": [{"id": 1, "name": "a", "mtype": "note"}]}}
+        return {"ok": True, "result": {}}
+    monkeypatch.setattr(daemon_mod, "call", call)
+    t0 = _time.monotonic()
+    with pytest.raises(verbs.VerbBusyError, match="within 0.5s"):
+        verbs.memory_recall(tmp_path, recent=True, k=3, timeout=0.5)
+    assert _time.monotonic() - t0 < 1.5
+    assert all(rt == 0 for _, _, rt in seen) and seen[0][1] <= 0.5 and seen[-1][1] < seen[0][1], seen
+
+
+def test_detach_path_has_one_deadline_and_reports_the_wait(pingonly, monkeypatch):
+    """#m-3: probe + partition_list + ingest_gmd_start under ONE budget; the
+    message says what the operator waited."""
+    import re
+    from refmatrix import cli as cli_mod
+    memdir = pingonly.base / "mem"; memdir.mkdir()
+    (memdir / "m.md").write_text('---\ngmd: "0.1"\nid: m\ntitle: "m"\ntags: [x]\n---\n# m {#root}\n')
+    monkeypatch.setattr(cli_mod, "_root", lambda: pingonly.root)
+    monkeypatch.setenv("RMX_DETACH_WAIT_S", "1")
+    t0 = _time.monotonic()
+    r = CliRunner().invoke(cli_mod.main, ["ingest-gmd", "--as-memory", "--detach", str(memdir)])
+    elapsed = _time.monotonic() - t0
+    assert r.exit_code != 0 and "busy" in r.output
+    assert elapsed < 2.5, elapsed
+    m = re.search(r"waited ([0-9.]+)s", r.output)
+    assert m and abs(float(m.group(1)) - elapsed) < 0.6, (r.output, elapsed)
+
+
+def test_legacy_partition_probe_warns_and_does_not_cache_a_timeout(tmp_path, monkeypatch, capsys):
+    """#m-4: a probe that timed out is not 'no legacy partition' for the
+    rest of the process, and it says so on stderr."""
+    from refmatrix import cli as cli_mod
+    from refmatrix import daemon as daemon_mod
+    root = tmp_path / ".refmatrix"; root.mkdir()
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    cli_mod._legacy_memory_partition_exists._cache = {}
+    calls = []
+
+    def call(r, op, args=None, **kw):
+        calls.append(op)
+        if len(calls) == 1:
+            raise TimeoutError("timed out")
+        return {"ok": True, "result": {"rows": [{"name": "memory-" + root.parent.name}]}}
+    monkeypatch.setattr(daemon_mod, "call", call)
+    assert cli_mod._legacy_memory_partition_exists(root, "memory-" + root.parent.name, daemon_up=True) is False
+    assert "warning" in capsys.readouterr().err
+    assert cli_mod._legacy_memory_partition_exists(root, "memory-" + root.parent.name, daemon_up=True) is True
+    assert calls == ["partition_list", "partition_list"]
