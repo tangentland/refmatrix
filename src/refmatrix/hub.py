@@ -144,10 +144,15 @@ def ensure_global_daemon() -> bool:
 def global_call(op: str, args: dict | None = None, *, timeout: float = 60.0,
                 retries: int = 2) -> dict:
     """Route a memory op to the global store's daemon (the single writer for
-    global behavior memories). Ensures the daemon is up first. `retries=0`
-    for budgeted callers (a hook's global leg used to cost 3× its timeout on
-    a held global store — bsd-plan2-r6 #b-1)."""
-    ensure_global_daemon()
+    global behavior memories). An interactive caller ensures the daemon is
+    up first; a BUDGETED caller (`retries=0` — the hooks' global leg) never
+    does: `ensure_global_daemon` pings bare and waits up to 30 s for a
+    spawn, all outside the caller's deadline, and a hook must not spawn or
+    wait for a daemon (bsd-plan2-r7 #m-3). Absent → the op fails fast and
+    the caller says "global rows omitted". `retries=0` also keeps a held
+    global store from costing 3× the timeout (bsd-plan2-r6 #b-1)."""
+    if retries > 0:
+        ensure_global_daemon()
     a = {**(args or {}), "partition": GLOBAL_PARTITION}
     return daemon_mod.call(global_store_root(), op, a, timeout=timeout, retries=retries)
 
