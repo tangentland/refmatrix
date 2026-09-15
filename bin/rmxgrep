@@ -14,8 +14,8 @@
 #     set, exit 2) fall back to the real grep with the original argv so no
 #     invocation ever errors that plain grep would have served.
 #
-#   * INSIDE a project, plain mode (stdout piped/redirected, or
-#     RMXGREP_MODE=plain): the consumer expects grep bytes and grep exit
+#   * INSIDE a project, auto mode with stdout piped/redirected (no
+#     RMXGREP_MODE=rich): the consumer expects grep bytes and grep exit
 #     codes, so the real grep answers — and a detached, throttled
 #     `rmx grep` teach ping runs in the background so the graph still
 #     learns the query. The ping strips flag tokens (keeps pattern, paths,
@@ -23,10 +23,11 @@
 #     the teach.
 #
 # Env:
-#   RMXGREP_MODE     auto (default) | rich | plain. rich forces the
-#                    annotated index path even when stdout is piped — an
-#                    agent shell is never a tty but is exactly the consumer
-#                    the index annotations help most.
+#   RMXGREP_MODE     auto (default) | rich. rich forces the annotated
+#                    index path even when stdout is piped — an agent shell
+#                    is never a tty but is exactly the consumer the index
+#                    annotations help most. There is no `plain` escape
+#                    (removed 2026-09-15: it bypassed the index).
 #   RMXGREP_GREP     underlying grep binary (default: grep)
 #   RMXGREP_RMX      rmx binary (default: rmx on PATH)
 #   RMXGREP_TEACH=0  disable the plain-mode background teach ping
@@ -62,9 +63,13 @@ if [ -p /dev/stdin ] || [ -p /dev/fd/0 ]; then
 fi
 
 rich=0
+# `RMXGREP_MODE=plain` used to force the real tool here. It was a bypass of
+# the index path — an agent shell exports rich and any caller could opt out
+# with one env word — and was removed 2026-09-15 at the user's direction.
+# Any value other than `rich` is auto (tty → rich); a grep that reads a
+# pipe is a filter and gets the real tool above, byte-exact.
 case "$MODE" in
     rich)  rich=1 ;;
-    plain) rich=0 ;;
     *)     [ -t 1 ] && rich=1 ;;
 esac
 

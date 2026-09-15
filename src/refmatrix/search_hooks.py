@@ -68,7 +68,7 @@ GUARD_TEMPLATE = """\
 # retired `rtk git`. Flag-compat landed (rmx grep bare flags 0.25.7 -> byte-exact
 # rmxgrep/rmxrg shell wrappers 0.54.0), so the guard graduated to the real rewrite
 # its own header had planned. Worst case of a rewrite is byte-identical grep
-# behavior — rmxgrep's plain mode execs the real tool.
+# behavior — a grep reading a pipe execs the real tool (rmxgrep's filter rule).
 #
 # Matched where grep HEADS a command segment — start, or after | ; && ( ` . The
 # rewriter (rmxgrep-rewrite.py) skips heredocs and quoted contexts.
@@ -126,7 +126,7 @@ its compaction; rtk has since been removed, so the envelope is the final word.)
 Scope (v2, widened 2026-09-06 — "we can probably make the rewrite less
 conservative"): a grep/rg token is a command head when it sits at the start
 of the command or line, or after |, ||, &&, ;, &, $(, backtick, (, or {.
-Pipes are now IN scope: rmxgrep's plain mode is byte-exact (it execs the
+Pipes are now IN scope: a rmxgrep that reads a pipe is byte-exact (it execs the
 real tool), so a mid-pipeline rewrite cannot change bytes or exit codes —
 it only adds the detached teach ping.
 
@@ -213,7 +213,7 @@ TEACH_TEMPLATE = """\
 #!/usr/bin/env bash
 # PostToolUse(Grep) teach ping — the dedicated Grep tool bypasses the Bash
 # PreToolUse rewriter entirely, so those searches taught the graph nothing.
-# This closes that channel the same way rmxgrep's plain mode does: a
+# This closes that channel the same way rmxgrep's pipe rule does: a
 # detached, throttled `rmx grep` with the same pattern, output discarded.
 # Capture-only — never touches the tool's own result or timing.
 #

@@ -76,7 +76,7 @@ Mirrored into `.claude/hooks/hooks.env` (`CORPUS_PATHS`, `SRC_DIR`, `ADR_DIR`).
 - **Corpus roots:** `src docs workflow tests eval`
 - **Source extensions:** `.py .md .sh .json .yaml .yml .toml .txt .html .css .js .pseudo`
 - **Lookup ladder:** `rmx context <symbol>` → `rmx grep` → `tldr` → raw grep (the global
-  `grep-rewrite-guard` hook rewrites bare grep to `rmx grep`; `RMXGREP_MODE=plain` is the escape).
+  `grep-rewrite-guard` hook rewrites bare grep to `rmx grep`; there is no escape — a grep reading a pipe is a filter and stays byte-exact).
 
 ## Architectural primitives {#primitives}
 
