@@ -18,7 +18,23 @@ current.
 
 | # | Plan | Status | Tasks specced? | File | Depends on |
 |---|------|--------|----------------|------|------------|
-| — | (plans 1–6 added below by the 2026-09-14 remediation sequence) | — | — | — | — |
+| 1 | plan-1-deploy-runtime | approved | yes (3) | `workflow/plans/plan-1-deploy-runtime.md` | — |
+| 2 | plan-2-hooks-reproducible | approved | yes (3) | `workflow/plans/plan-2-hooks-reproducible.md` | plan 1 (deploy path) |
+| 3 | plan-3-verbs-parity | approved | yes (3) | `workflow/plans/plan-3-verbs-parity.md` | plan 2 (deploy path) |
+| 4 | plan-4-daemon-resilience | approved | yes (4) | `workflow/plans/plan-4-daemon-resilience.md` | — |
+| 5 | plan-5-memory-bridge-complete | approved | yes (3) | `workflow/plans/plan-5-memory-bridge-complete.md` | — |
+| 6 | plan-6-deferrals-docs-benchmark | approved | yes (4) | `workflow/plans/plan-6-deferrals-docs-benchmark.md` | — |
+
+## Sequence rationale {#sequence}
+
+1. **deploy-runtime** first — until `rmx` runs the deploy tree, every later "deploy + verify" step is fiction.
+2. **hooks-reproducible** — the user's first irritation; also decides how PreCompact calls save-state (feeds plan 5).
+3. **verbs-parity** — the user's second irritation; moves recall semantics where both surfaces reach them.
+4. **daemon-resilience** — a read must never kill the daemon; in-band index repair; watchdog grace; orderly loop.
+5. **memory-bridge-complete** — coverage, overlap, real tests (depends on plan 2's PreCompact decision).
+6. **deferrals-docs-benchmark** — cleanup chunk: stale prose, generated docs, artifact, registries, perma-red test.
+
+Each plan ends with `@ch-bsd` over its commit range; remedy → re-review until CLEAN before the next plan starts.
 
 ## Status lifecycle (no file moves) {#status-lifecycle}
 
