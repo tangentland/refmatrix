@@ -247,7 +247,8 @@ def test_stop_promote_bounds_subject_filing_and_is_loud(tmp_path, monkeypatch):
     assert _time.monotonic() - t0 < 3.0
     assert r.exit_code != 0, r.output
     assert "subject" in r.output.lower() and "not confirmed" in r.output.lower()
-    assert seen and all(t == 0.5 and rt == 0 for _, t, rt in seen), seen
+    # every call carries the bound (the second gets what is LEFT of it — r4 #m-3)
+    assert seen and all(0 < t <= 0.5 and rt == 0 for _, t, rt in seen), seen
     assert [op for op, _, _ in seen] == ["memory_add", "subject_upsert"]
 
 
@@ -339,3 +340,140 @@ def test_daemon_status_takes_a_probe_budget(silent):
     st = discovery.daemon_status(silent.root, retries=0)
     assert _time.monotonic() - t0 < 1.2
     assert st["busy"] is True and st["up"] is False and st["pid"] == _os.getpid()
+
+
+# ---- round 4 (bsd-plan2-r4): the bound covers every call on the hook path ----
+
+class _PingOnlyDaemon(_SilentDaemon):
+    """Answers `ping` (so `daemon_status` says up) and stalls every other op
+    — the writer-lock state: the bridge ingest or a post-commit sync holds
+    the store while the hooks fire."""
+
+    def _accept(self):
+        while not self._stop:
+            try:
+                c, _ = self.sock.accept()
+            except OSError:
+                return
+            _threading.Thread(target=self._serve_one, args=(c,), daemon=True).start()
+
+    def _serve_one(self, c):
+        import json as _json
+        try:
+            buf = b""
+            while not buf.endswith(b"\n"):
+                chunk = c.recv(65536)
+                if not chunk:
+                    return
+                buf += chunk
+            req = _json.loads(buf.decode() or "{}")
+            self.held.append(c)
+            if req.get("op") == "ping":
+                c.sendall((_json.dumps({"ok": True, "result": {"pid": _os.getpid(), "version": "x"}}) + "\n").encode())
+        except OSError:
+            pass
+
+
+@pytest.fixture
+def pingonly():
+    d = _PingOnlyDaemon()
+    yield d
+    d.close()
+
+
+def test_detach_is_bounded_when_the_daemon_answers_ping_but_holds_the_store(pingonly, monkeypatch):
+    """#s-1: partition_list (writer lock) and ingest_gmd_start ran with the
+    library defaults behind the "one cheap probe": 30 s, then 180 s with a
+    blank traceback. Every call on the path carries the budget and a stall
+    is the same loud busy message."""
+    from refmatrix import cli as cli_mod
+    memdir = pingonly.base / "mem"; memdir.mkdir()
+    (memdir / "m.md").write_text('---\ngmd: "0.1"\nid: m\ntitle: "m"\ntags: [x]\n---\n# m {#root}\n')
+    monkeypatch.setattr(cli_mod, "_root", lambda: pingonly.root)
+    monkeypatch.setenv("RMX_DETACH_WAIT_S", "1")
+    t0 = _time.monotonic()
+    r = CliRunner().invoke(cli_mod.main, ["ingest-gmd", "--as-memory", "--detach", str(memdir)])
+    elapsed = _time.monotonic() - t0
+    assert r.exit_code != 0
+    assert "Traceback" not in r.output and "busy" in r.output and f"pid={_os.getpid()}" in r.output
+    assert elapsed < 4.0, f"waited {elapsed:.1f}s for a 1s budget"
+
+
+def test_save_state_surfaces_a_subject_filing_failure(tmp_path, monkeypatch):
+    """#s-2: `filed_subject_error` was written by finalize_save_state and
+    read by nothing. The verb carries it and the CLI prints it."""
+    from refmatrix import cli as cli_mod
+    from refmatrix import daemon as daemon_mod
+    from refmatrix import stm as stm_mod
+    from refmatrix import verbs
+    root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
+    memdir = tmp_path / "mem"; memdir.mkdir()
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    monkeypatch.setenv("RMX_SESSION", "s1")
+    s = stm_mod.Stm(root, "s1"); s.record("input", "hi"); s.set_subject("topic-x")
+    monkeypatch.setattr(daemon_mod, "ping", lambda r, **kw: True)
+
+    def call(r, op, args=None, timeout=60.0, retries=2, **kw):
+        if op == "memory_add":
+            return {"ok": True, "result": {"id": 42}}
+        if op == "subject_upsert":
+            return {"ok": False, "error": "boom"}
+        return {"ok": True, "result": {}}
+    monkeypatch.setattr(daemon_mod, "call", call)
+    res = verbs.save_state(root, session="s1", memory_dir=str(memdir), lint=False, sync=False)
+    assert "boom" in (res.get("filed_subject_error") or "")
+    r = CliRunner().invoke(cli_mod.main, ["save-state", "--memory-dir", str(memdir), "--no-lint", "--no-sync"])
+    assert r.exit_code == 0, r.output
+    assert "subject filing failed" in r.output and "boom" in r.output
+
+
+def test_stop_promote_never_exceeds_its_timeout_across_calls(tmp_path, monkeypatch):
+    """#m-3: the budget is a DEADLINE for the command, not a per-call
+    allowance (probe + 3 x --timeout worst case before)."""
+    from refmatrix import cli as cli_mod
+    from refmatrix import daemon as daemon_mod
+    from refmatrix import stm as stm_mod
+    root = tmp_path / ".refmatrix"; root.mkdir()
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    monkeypatch.setenv("RMX_SESSION", "s1")
+    s = stm_mod.Stm(root, "s1"); s.record("input", "hi"); s.set_subject("topic-x")
+    monkeypatch.setattr("refmatrix.discovery.daemon_status",
+                        lambda root, **kw: {"up": True, "busy": False, "pid": 1})
+    seen = []
+
+    def call(r, op, args=None, timeout=60.0, retries=2, **kw):
+        seen.append((op, timeout))
+        _time.sleep(min(0.4, timeout))
+        if op == "memory_add":
+            return {"ok": True, "result": {"id": 42}}
+        return {"ok": True, "result": {"id": 7}}
+    monkeypatch.setattr(daemon_mod, "call", call)
+    t0 = _time.monotonic()
+    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "0.5"])
+    elapsed = _time.monotonic() - t0
+    assert elapsed < 1.2, elapsed
+    # the second call got only what was left of the budget
+    assert seen[0][1] == 0.5 and seen[1][1] < 0.5, seen
+
+
+def test_subject_filing_refusal_is_not_reported_as_a_timeout(tmp_path, monkeypatch):
+    """#m-4: an ok:false reply is a refusal; it will not "still complete"."""
+    from refmatrix import cli as cli_mod
+    from refmatrix import daemon as daemon_mod
+    from refmatrix import stm as stm_mod
+    root = tmp_path / ".refmatrix"; root.mkdir()
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    monkeypatch.setenv("RMX_SESSION", "s1")
+    s = stm_mod.Stm(root, "s1"); s.record("input", "hi"); s.set_subject("topic-x")
+    monkeypatch.setattr("refmatrix.discovery.daemon_status",
+                        lambda root, **kw: {"up": True, "busy": False, "pid": 1})
+
+    def call(r, op, args=None, timeout=60.0, retries=2, **kw):
+        if op == "memory_add":
+            return {"ok": True, "result": {"id": 42}}
+        return {"ok": False, "error": "boom"}
+    monkeypatch.setattr(daemon_mod, "call", call)
+    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "0.5"])
+    assert r.exit_code != 0
+    assert "refused" in r.output and "boom" in r.output
+    assert "still complete" not in r.output

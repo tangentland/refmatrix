@@ -1148,6 +1148,8 @@ def focus_summarize(session, promote, is_global, timeout):
         # daemon that is alive but not answering is BUSY — telling the
         # operator to start one invites a duplicate (bsd-plan2-r3 #s-2).
         st = _disc.daemon_status(root, retries=0)
+        import time as _time
+        deadline = _time.monotonic() + float(timeout)
         if st.get("up"):
             import socket as _socket
             try:
@@ -1183,38 +1185,55 @@ def focus_summarize(session, promote, is_global, timeout):
     console.print(f"[green]promoted[/] {name} (id={eid}) — recall with "
                   f"`rmx memory recall summary` or `rmx context {name}`")
     if not is_global:
-        # The SAME bound covers the whole hook path — the subject filing is
-        # two more daemon calls (bsd-plan2-r3 #b-1: 180 s with a subject set).
+        # ONE deadline covers the whole hook path — the subject filing is two
+        # more daemon calls and each gets only what is left of --timeout
+        # (bsd-plan2-r3 #b-1: 180 s with a subject set; r4 #m-3: additive
+        # per-call budgets were up to 3 x --timeout).
         _file_under_active_subject(s, eid, timeout=float(timeout), retries=0,
-                                   daemon_up=True)
+                                   daemon_up=True, deadline=deadline)
 
 
 def _file_under_active_subject(s, leaf_eid: "int | None", *,
                                timeout: float = 60.0, retries: int = 2,
-                               daemon_up: "bool | None" = None) -> None:
+                               daemon_up: "bool | None" = None,
+                               deadline: "float | None" = None) -> None:
     """If the session has an active subject, file a just-promoted artifact
     under it (`part-of`) so the subject indexes it. `timeout`/`retries`
-    bound BOTH daemon calls; a failure is loud (ClickException), never a
-    quiet `pass` — the promote already landed and the operator must know
-    the subject index does not reach it."""
+    bound BOTH daemon calls; with `deadline` (monotonic) each call gets only
+    the time that is left, so the whole command never exceeds the caller's
+    budget. A failure is loud (ClickException), never a quiet `pass` — the
+    promote already landed and the operator must know the subject index
+    does not reach it. A daemon REFUSAL (ok:false) is named as such; only a
+    timeout is "not confirmed" (bsd-plan2-r4 #m-4)."""
+    import socket as _socket
+    import time as _time
     if not leaf_eid:
         return
     subj = s.get_subject()
     if not subj:
         return
     label = subj.get("label") or subj.get("subject")
+
+    def _left() -> float:
+        if deadline is None:
+            return timeout
+        return max(0.05, min(timeout, deadline - _time.monotonic()))
     try:
-        sid = _subject_upsert(label, timeout=timeout, retries=retries,
+        sid = _subject_upsert(label, timeout=_left(), retries=retries,
                               daemon_up=daemon_up)
         if sid:
-            _subject_link(int(leaf_eid), int(sid), timeout=timeout, retries=retries,
+            _subject_link(int(leaf_eid), int(sid), timeout=_left(), retries=retries,
                           daemon_up=daemon_up)
-    except Exception as e:  # noqa: BLE001 — surfaced, not swallowed
+    except (TimeoutError, _socket.timeout, OSError) as e:
         raise click.ClickException(
             f"promoted id={leaf_eid} but subject filing under {label!r} not "
             f"confirmed within {timeout:g}s ({e}); the daemon may still "
             f"complete it — `rmx focus subject` / `rmx memory recall --subject "
             f"{label}` to verify") from e
+    except Exception as e:  # noqa: BLE001 — a refusal, surfaced as such
+        raise click.ClickException(
+            f"promoted id={leaf_eid} but the daemon refused the subject filing "
+            f"under {label!r}: {e} — `rmx focus subject` to inspect") from e
     console.print(f"[dim]  filed under subject {label}[/]")
 
 
@@ -8231,10 +8250,10 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
     # this, ingested memories are orphaned. With --as-memory we mirror
     # `_apply_memory_partition_default`: explicit -p / RMX_PARTITION wins,
     # otherwise default to `memory-<project>`.
-    def _ingest_partition(daemon_up=None) -> str:
+    def _ingest_partition(daemon_up=None, timeout=10.0) -> str:
         if as_memory and not _partition_override \
                 and not os.environ.get("RMX_PARTITION"):
-            return _memory_partition_default(daemon_up=daemon_up)
+            return _memory_partition_default(daemon_up=daemon_up, timeout=timeout)
         return _resolve_partition()
     # --prestage: walk files and stamp gmd_content_hash on existing
     # entities. Does not ingest. Useful to bootstrap auto-resume on a
@@ -8300,7 +8319,11 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
         daemon_up = daemon_mod.ping(root)
     # Resolved AFTER the classification so the legacy-partition probe reuses
     # it instead of paying its own full-cost ping first.
-    ingest_partition = _ingest_partition(daemon_up=daemon_up)
+    # On the hook path (--detach/--progress) the legacy-partition probe runs
+    # inside the same budget as everything else (bsd-plan2-r4 #s-1).
+    _probe_budget = (min(10.0, float(os.environ.get("RMX_DETACH_WAIT_S", "10") or "10"))
+                     if (detach or progress) else 10.0)
+    ingest_partition = _ingest_partition(daemon_up=daemon_up, timeout=_probe_budget)
     if daemon_up:
         op_args = {
             "targets": [str(p) for p in resolved],
@@ -8310,9 +8333,23 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
             "partition": ingest_partition,
         }
         if detach or progress:
-            resp = daemon_mod.call(
-                root, "ingest_gmd_start", op_args, timeout=60.0,
-            )
+            # The start op runs on the bg pool; a saturated pool or a held
+            # writer used to stall it 60 s x 3 behind the "one cheap probe"
+            # and end in a blank traceback (bsd-plan2-r4 #s-1). Same budget,
+            # same loud message as the silent-socket branch.
+            import socket as _socket
+            budget = float(os.environ.get("RMX_DETACH_WAIT_S", "10") or "10")
+            try:
+                resp = daemon_mod.call(
+                    root, "ingest_gmd_start", op_args,
+                    timeout=max(1.0, budget), retries=0,
+                )
+            except (TimeoutError, _socket.timeout, OSError) as e:
+                pid = daemon_mod.read_pid(root)
+                raise click.ClickException(
+                    f"daemon busy pid={pid or '?'} for {root} (answers ping but "
+                    f"did not accept the ingest job within {budget:g}s: {e}) — "
+                    f"catch-up skipped; retry shortly or run without --detach") from e
             if not resp.get("ok"):
                 raise click.ClickException(
                     resp.get("error", "daemon error")
@@ -9015,7 +9052,8 @@ def _replica_memory_recall(query: str, *, k: int, kinds: list,
 MEMORY_PARTITION_PREFIX = "memory-"
 
 
-def _memory_partition_default(*, daemon_up: "bool | None" = None) -> str:
+def _memory_partition_default(*, daemon_up: "bool | None" = None,
+                              timeout: float = 10.0) -> str:
     """Resolve the memory partition for the active CLI invocation.
 
     Post-0.5.0 default: project partition (`default_partition_name`),
@@ -9041,7 +9079,8 @@ def _memory_partition_default(*, daemon_up: "bool | None" = None) -> str:
         # holding the writer lock. Daemon-up call is preferred so a CLI
         # invocation while the daemon owns the lock doesn't crash on
         # the read; daemon-down falls back to a lock-free reader.
-        if _legacy_memory_partition_exists(root, legacy, daemon_up=daemon_up):
+        if _legacy_memory_partition_exists(root, legacy, daemon_up=daemon_up,
+                                           timeout=timeout):
             return legacy
         return default_partition_name(root)
     except Exception:
@@ -9049,7 +9088,8 @@ def _memory_partition_default(*, daemon_up: "bool | None" = None) -> str:
 
 
 def _legacy_memory_partition_exists(root: Path, legacy: str, *,
-                                    daemon_up: "bool | None" = None) -> bool:
+                                    daemon_up: "bool | None" = None,
+                                    timeout: float = 10.0) -> bool:
     """True when the `memory-<project>` partition row is still present
     (pre-merge state). Caches per process so repeated `rmx memory`
     invocations don't re-query.
@@ -9078,8 +9118,12 @@ def _legacy_memory_partition_exists(root: Path, legacy: str, *,
         # `daemon_up` lets a caller that already classified the daemon skip
         # a second full-cost ping (~2 s against a silent socket).
         if daemon_up if daemon_up is not None else daemon_mod.ping(root):
+            # retries=0: partition_list takes the writer lock daemon-side;
+            # on a busy writer the library default retried for 30 s under
+            # the SessionStart bridge hook (bsd-plan2-r4 #s-1). A miss here
+            # only means "assume the project partition".
             resp = daemon_mod.call(
-                root, "partition_list", {}, timeout=10.0,
+                root, "partition_list", {}, timeout=timeout, retries=0,
             )
             if resp.get("ok"):
                 rows = resp["result"].get("rows", [])
@@ -10888,6 +10932,10 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
             if fin.get("filed_subject"):
                 console.print(
                     f"[dim]  filed under subject {fin['filed_subject']}[/]")
+            elif fin.get("filed_subject_error"):
+                console.print(
+                    f"[yellow]subject filing failed:[/] {fin['filed_subject_error']} "
+                    f"— the digest landed but the subject index does not reach it")
 
     subj = res.get("subject")
     if subj:

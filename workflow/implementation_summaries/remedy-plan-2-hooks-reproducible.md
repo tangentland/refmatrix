@@ -45,3 +45,17 @@ rel: evidence-for -> [[bsd-plan2-hooks-reproducible-r3-c9d75af]]
 
 TDD: RED `workflow/review-output/pytest-plan2-r3-red.log` (7 failed), GREEN `pytest-plan2-r3-green.log` (118 passed across hook/subject/save-state/ingest suites). The silent-daemon tests are timed against a real socket: Stop promote 2.5 s max, detach 3.0 s max for a 1 s budget (was 3.2 s before the hidden ping was found; 7.4 s in the audit).
 
+## Round 4 (bsd-plan2-r4, d68856d) {#round-4}
+
+rel: evidence-for -> [[bsd-plan2-hooks-reproducible-r4-d68856d]]
+
+| Finding | Fix |
+|---------|-----|
+| #s-1 detach bounded only on a silent socket | `partition_list` runs with `retries=0` and a timeout capped by the hook budget (`_memory_partition_default(timeout=…)`); `ingest_gmd_start` runs with `timeout=budget, retries=0` and a stall is the same loud `daemon busy pid=N … catch-up skipped` message; `_PingOnlyDaemon` (answers ping, stalls every other op) times it: < 4 s for a 1 s budget (was 210 s / blank traceback) |
+| #s-2 `filed_subject_error` read by nothing | `verbs.save_state` carries it; the CLI prints `subject filing failed: …`; test drives a refusing `subject_upsert` through the verb and the CLI |
+| #m-3 additive per-call budgets | `focus summarize --promote` computes one deadline; `_file_under_active_subject(deadline=…)` gives each subject call only what is left; doc says so |
+| #m-4 refusal reported as a timeout | timeout family → "not confirmed within Ns; the daemon may still complete it"; any other error (an `ok:false` reply) → "the daemon refused the subject filing: …" |
+| #m-5 hooks unobserved | still user-gated on a Claude Code restart |
+
+TDD: RED `workflow/review-output/pytest-plan2-r4-red.log` (4 failed, 211 s — the unbounded detach stall is in the timing), GREEN `pytest-plan2-r4-green.log` (114 passed). Plan status → `completed` in this commit per the r4 verdict ("may flip once the two SKETCHY items are fixed in the closing commit").
+
