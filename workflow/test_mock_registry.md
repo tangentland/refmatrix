@@ -37,10 +37,13 @@ code (`src/`) contains **no mocks** — see CLAUDE.md "No Mocks in Production Co
 | `_MiniHub` (thread on the real hub socket path, real `Bus` on a tmp RMX_HOME, real `Hub._op_bus_*`) | the hub PROCESS only | internal-active | tests/test_verbs_migrated.py | graduation = a full `Hub.run()` integration test once the hub can start headless without touching discovery/global store (plan 6 sweep); everything below the process boundary is real |
 | `discovery.discover_roots` (pinned to the tmp store) | machine-wide store discovery (launchd + registry + cwd) | external | tests/test_verbs_migrated.py | permanent — an environment input; the federated verbs run their REAL per-project path against a real spawned daemon |
 | `daemon.ping` / `daemon.call` (fake) + `verbs.<fn>` recorder | the daemon process / the verb under wiring test | external / internal-active | tests/test_verb_parity.py (wiring gate) | the recorder is the assertion itself (did the click command call the verb); behaviour of each verb is covered by test_verbs_migrated.py / test_verbs_memory_recall.py on real daemons |
+| `_SilentDaemon` (real pid file + real unix socket that never answers) | a daemon that is alive but not answering | internal-active | tests/test_plan2_remedy.py | permanent as the "busy" simulation — nothing is faked below the socket; the alternative is a real daemon wedged on purpose |
+| `discovery.daemon_status` (dict) | the up/busy/absent classifier | internal-active | tests/test_plan2_remedy.py (`test_stop_promote_bounds_subject_filing_and_is_loud`, `test_promote_timeout_message_says_not_confirmed`) | the busy/absent classification itself is covered for real by the `_SilentDaemon` tests; the two remaining patches isolate the bounded-call assertions (graduated for the detach path 2026-09-14) |
 | `monkeypatch.setattr` sites (≈187 remaining, unregistered) | various | internal-active | tests/ | plan 6 sweep: register or graduate |
 
 ## Graduation Log {#graduation-log}
 
 | Date | Mock | From → To | Notes |
 |------|------|-----------|-------|
+| 2026-09-14 | `discovery.daemon_status` + `daemon.ping` patches (detach busy branch) | dict/lambda → real pid + real silent socket (`_SilentDaemon`) | `test_detach_on_a_silent_daemon_costs_one_probe_plus_the_budget` replaces `test_detach_busy_branch_waits_wall_clock_and_names_the_pid` |
 | 2026-09-14 | `hub.rpc` fake (bus behaviour) | fake → real `Bus` + real socket via `_MiniHub` | tests/test_verbs_migrated.py; the passthrough fakes stay for arg-shape assertions only |

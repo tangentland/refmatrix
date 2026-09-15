@@ -125,7 +125,7 @@ def test_stop_promote_is_bounded_and_fails_loud_when_busy(tmp_path, monkeypatch)
     monkeypatch.setattr(daemon_mod, "call", slow_call)
     r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "0.5"])
     assert r.exit_code != 0
-    assert "busy" in r.output.lower() and "skipped" in r.output.lower()
+    assert "busy" in r.output.lower() and "not confirmed" in r.output.lower()
     # the generator passes the bound on the Stop hook
     block = _claude_hook_block(tmp_path / ".refmatrix")
     stop = [c for _, _, c in _cmds(block, "Stop") if "focus summarize --promote" in c][0]
@@ -155,25 +155,187 @@ def test_no_claude_apply_then_check_is_clean(tmp_path):
     assert ok, diff
 
 
-def test_detach_busy_branch_waits_wall_clock_and_names_the_pid(tmp_path, monkeypatch):
-    import time
-    from refmatrix import cli as cli_mod
-    from refmatrix import daemon as daemon_mod
-    memdir = tmp_path / "mem"; memdir.mkdir()
-    (memdir / "m.md").write_text('---\ngmd: "0.1"\nid: m\ntitle: "m"\ntags: [x]\n---\n# m {#root}\n')
-    monkeypatch.setattr(cli_mod, "_root", lambda: tmp_path / ".refmatrix")
-    monkeypatch.setattr(daemon_mod, "ping", lambda root, **kw: False)
-    monkeypatch.setattr("refmatrix.discovery.daemon_status", lambda root: {"up": False, "busy": True, "pid": 77})
-    monkeypatch.setenv("RMX_DETACH_WAIT_S", "1")
-    t0 = time.monotonic()
-    r = CliRunner().invoke(cli_mod.main, ["ingest-gmd", "--as-memory", "--detach", str(memdir)])
-    elapsed = time.monotonic() - t0
-    assert r.exit_code != 0
-    assert "busy pid=77" in r.output
-    assert elapsed < 2.5, f"waited {elapsed:.1f}s for a 1s budget"
+# (r2's `test_detach_busy_branch_waits_wall_clock_and_names_the_pid`, which
+# patched `discovery.daemon_status` and `daemon.ping`, graduated in r3 to
+# `test_detach_on_a_silent_daemon_costs_one_probe_plus_the_budget` below —
+# a real pid + a real silent socket, no patches.)
 
 
 def test_intuition_doc_describes_the_shipped_stop_hook():
     text = (Path(__file__).resolve().parents[1] / "docs" / "hooks" / "intuition-style-hooks.md").read_text()
     assert "Phase C4" not in text and "out of scope" not in text
     assert "focus summarize --promote" in text
+
+
+# ---- round 3 (bsd-plan2-r3): the bound covers the whole hook path ----
+
+import os as _os
+import socket as _socket
+import tempfile as _tempfile
+import threading as _threading
+import time as _time
+
+
+class _SilentDaemon:
+    """A live pid + a listening socket that never answers: the state
+    `daemon.ping` conflates with dead (index rebuild at startup, writer
+    holding the lock). Short /tmp path so the unix socket binds."""
+
+    def __init__(self):
+        from refmatrix import daemon as daemon_mod
+        self.base = Path(_tempfile.mkdtemp(prefix="rmxs-", dir="/tmp"))
+        self.root = self.base / ".refmatrix"
+        self.root.mkdir()
+        daemon_mod.pid_path(self.root).write_text(str(_os.getpid()))
+        self.sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        self.sock.bind(str(daemon_mod.socket_path(self.root)))
+        self.sock.listen(16)
+        self.held: list = []
+        self._stop = False
+        _threading.Thread(target=self._accept, daemon=True).start()
+
+    def _accept(self):
+        while not self._stop:
+            try:
+                c, _ = self.sock.accept()
+                self.held.append(c)      # never read, never reply
+            except OSError:
+                return
+
+    def close(self):
+        self._stop = True
+        for c in self.held:
+            try:
+                c.close()
+            except OSError:
+                pass
+        self.sock.close()
+        import shutil
+        shutil.rmtree(self.base, ignore_errors=True)
+
+
+@pytest.fixture
+def silent():
+    d = _SilentDaemon()
+    yield d
+    d.close()
+
+
+def test_stop_promote_bounds_subject_filing_and_is_loud(tmp_path, monkeypatch):
+    """#b-1: with an active subject the promote made two more daemon calls at
+    60 s x 3. Every call on the hook path carries the bound; a stalled
+    subject_upsert is a loud, bounded failure."""
+    from refmatrix import cli as cli_mod
+    from refmatrix import daemon as daemon_mod
+    from refmatrix import stm as stm_mod
+    root = tmp_path / ".refmatrix"; root.mkdir()
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    monkeypatch.setenv("RMX_SESSION", "s1")
+    s = stm_mod.Stm(root, "s1"); s.record("input", "hi"); s.set_subject("topic-x")
+    monkeypatch.setattr("refmatrix.discovery.daemon_status",
+                        lambda root, **kw: {"up": True, "busy": False, "pid": 1})
+    seen = []
+
+    def call(root, op, args=None, timeout=60.0, retries=2, **kw):
+        seen.append((op, timeout, retries))
+        if op == "memory_add":
+            return {"ok": True, "result": {"id": 42}}
+        raise TimeoutError(f"no answer in {timeout}s")
+    monkeypatch.setattr(daemon_mod, "call", call)
+    t0 = _time.monotonic()
+    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "0.5"])
+    assert _time.monotonic() - t0 < 3.0
+    assert r.exit_code != 0, r.output
+    assert "subject" in r.output.lower() and "not confirmed" in r.output.lower()
+    assert seen and all(t == 0.5 and rt == 0 for _, t, rt in seen), seen
+    assert [op for op, _, _ in seen] == ["memory_add", "subject_upsert"]
+
+
+def test_stop_promote_says_busy_not_absent_on_a_silent_daemon(silent, monkeypatch):
+    """#s-2: a daemon that is alive but not answering is BUSY; the hook must
+    not tell the operator to start one. Real pid + real silent socket."""
+    from refmatrix import cli as cli_mod
+    from refmatrix import stm as stm_mod
+    monkeypatch.setattr(cli_mod, "_root", lambda: silent.root)
+    monkeypatch.setenv("RMX_SESSION", "s1")
+    stm_mod.Stm(silent.root, "s1").record("input", "hi")
+    t0 = _time.monotonic()
+    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "0.5"])
+    elapsed = _time.monotonic() - t0
+    assert r.exit_code != 0
+    assert f"busy pid={_os.getpid()}" in r.output
+    assert "not running" not in r.output and "daemon start" not in r.output
+    assert "not confirmed" in r.output
+    assert elapsed < 2.5, elapsed
+
+
+def test_promote_timeout_message_says_not_confirmed(tmp_path, monkeypatch):
+    """#m-6: the daemon may still complete the write; say so."""
+    from refmatrix import cli as cli_mod
+    from refmatrix import daemon as daemon_mod
+    from refmatrix import stm as stm_mod
+    root = tmp_path / ".refmatrix"; root.mkdir()
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    monkeypatch.setenv("RMX_SESSION", "s1")
+    stm_mod.Stm(root, "s1").record("input", "hi")
+    monkeypatch.setattr("refmatrix.discovery.daemon_status",
+                        lambda root, **kw: {"up": True, "busy": False, "pid": 1})
+    def slow(root, op, args=None, timeout=60.0, **kw):
+        raise TimeoutError("x")
+    monkeypatch.setattr(daemon_mod, "call", slow)
+    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "0.5"])
+    assert r.exit_code != 0
+    assert "not confirmed within 0.5s" in r.output and "may still complete" in r.output
+    assert "skipped" not in r.output
+
+
+def test_detach_on_a_silent_daemon_costs_one_probe_plus_the_budget(silent, monkeypatch):
+    """#s-3 (graduates the daemon_status patch): timed against a REAL silent
+    socket. One cheap probe + the budget, and the message reports the
+    wall the operator actually waited."""
+    from refmatrix import cli as cli_mod
+    memdir = silent.base / "mem"; memdir.mkdir()
+    (memdir / "m.md").write_text('---\ngmd: "0.1"\nid: m\ntitle: "m"\ntags: [x]\n---\n# m {#root}\n')
+    monkeypatch.setattr(cli_mod, "_root", lambda: silent.root)
+    monkeypatch.setenv("RMX_DETACH_WAIT_S", "1")
+    t0 = _time.monotonic()
+    r = CliRunner().invoke(cli_mod.main, ["ingest-gmd", "--as-memory", "--detach", str(memdir)])
+    elapsed = _time.monotonic() - t0
+    assert r.exit_code != 0
+    assert f"busy pid={_os.getpid()}" in r.output
+    assert elapsed < 3.0, f"waited {elapsed:.1f}s for a 1s budget"
+    import re
+    m = re.search(r"not answering for ([0-9.]+)s", r.output)
+    assert m, r.output
+    assert abs(float(m.group(1)) - elapsed) < 0.6, (m.group(1), elapsed)
+
+
+def test_precompact_promote_is_bounded_too(tmp_path):
+    """#m-5: PreCompact is the catch-up, so its budget is longer — but it is
+    a budget, not the 180 s default the harness kills at 60 s."""
+    block = _claude_hook_block(tmp_path / ".refmatrix")
+    pre = [c for _, _, c in _cmds(block, "PreCompact") if "focus summarize --promote" in c][0]
+    assert "--timeout 30" in pre
+
+
+def test_no_claude_apply_reaps_a_previously_installed_block(tmp_path):
+    """#m-7: `--no-claude --apply --force` on a project that carries the rmx
+    block removes it; `--check` is clean afterwards."""
+    proj = _project(tmp_path)
+    install(project_root=proj, refmatrix_root=proj / ".refmatrix", git=False, claude=True,
+            briefing=False, agent_env=False, search=False, scope="project", apply=True, force=True)
+    assert hooks_mod._managed_entries(json.loads((proj / ".claude" / "settings.json").read_text())["hooks"])
+    install(project_root=proj, refmatrix_root=proj / ".refmatrix", git=False, claude=False,
+            briefing=False, agent_env=False, search=False, scope="project", apply=True, force=True)
+    data = json.loads((proj / ".claude" / "settings.json").read_text())
+    assert not hooks_mod._managed_entries(data.get("hooks") or {})
+    ok, diff = hooks_mod.check(proj)
+    assert ok, diff
+
+
+def test_daemon_status_takes_a_probe_budget(silent):
+    from refmatrix import discovery
+    t0 = _time.monotonic()
+    st = discovery.daemon_status(silent.root, retries=0)
+    assert _time.monotonic() - t0 < 1.2
+    assert st["busy"] is True and st["up"] is False and st["pid"] == _os.getpid()

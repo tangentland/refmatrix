@@ -1142,21 +1142,34 @@ def focus_summarize(session, promote, is_global, timeout):
             raise click.ClickException(resp.get("error", "daemon error"))
         eid = resp["result"]["id"]
     else:
-        from refmatrix import daemon as daemon_mod
+        from refmatrix import discovery as _disc
         root = _root()
-        if daemon_mod.ping(root):
+        # ONE cheap probe classifies the daemon (up / busy / absent): a
+        # daemon that is alive but not answering is BUSY — telling the
+        # operator to start one invites a duplicate (bsd-plan2-r3 #s-2).
+        st = _disc.daemon_status(root, retries=0)
+        if st.get("up"):
             import socket as _socket
             try:
                 resp = _memory_daemon_call("memory_add", args, timeout=float(timeout),
                                            retries=0)
             except (TimeoutError, _socket.timeout, OSError) as e:
+                # The request is in the daemon's hands by now; the digest
+                # (upserted by name) probably lands — only the reply is
+                # lost. Say what is known (bsd-plan2-r3 #m-6).
                 raise click.ClickException(
-                    f"daemon busy (no answer to memory_add within {timeout:g}s: "
-                    f"{e}) — promote skipped this turn; the next PreCompact / "
-                    f"save-state promote catches up") from e
+                    f"daemon busy: promote not confirmed within {timeout:g}s "
+                    f"({e}); the daemon may still complete it — the next "
+                    f"PreCompact / save-state promote confirms") from e
             if not resp.get("ok"):
                 raise click.ClickException(resp.get("error", "daemon error"))
             eid = resp["result"]["id"]
+        elif st.get("busy"):
+            raise click.ClickException(
+                f"daemon busy pid={st.get('pid')} for {root} (alive, not "
+                f"answering) — promote not confirmed this turn; the daemon may "
+                f"still be starting or holding the store lock; the next "
+                f"PreCompact / save-state promote catches up")
         else:
             # Store-through-daemon (constitution VII): the Stop hook runs
             # this every turn; opening the active slot from a CLI process
@@ -1170,21 +1183,39 @@ def focus_summarize(session, promote, is_global, timeout):
     console.print(f"[green]promoted[/] {name} (id={eid}) — recall with "
                   f"`rmx memory recall summary` or `rmx context {name}`")
     if not is_global:
-        _file_under_active_subject(s, eid)
+        # The SAME bound covers the whole hook path — the subject filing is
+        # two more daemon calls (bsd-plan2-r3 #b-1: 180 s with a subject set).
+        _file_under_active_subject(s, eid, timeout=float(timeout), retries=0,
+                                   daemon_up=True)
 
 
-def _file_under_active_subject(s, leaf_eid: "int | None") -> None:
+def _file_under_active_subject(s, leaf_eid: "int | None", *,
+                               timeout: float = 60.0, retries: int = 2,
+                               daemon_up: "bool | None" = None) -> None:
     """If the session has an active subject, file a just-promoted artifact
-    under it (`part-of`) so the subject indexes it. Best-effort + quiet."""
+    under it (`part-of`) so the subject indexes it. `timeout`/`retries`
+    bound BOTH daemon calls; a failure is loud (ClickException), never a
+    quiet `pass` — the promote already landed and the operator must know
+    the subject index does not reach it."""
     if not leaf_eid:
         return
     subj = s.get_subject()
     if not subj:
         return
-    sid = _subject_upsert(subj.get("label") or subj.get("subject"))
-    if sid:
-        _subject_link(int(leaf_eid), int(sid))
-        console.print(f"[dim]  filed under subject {subj.get('label')}[/]")
+    label = subj.get("label") or subj.get("subject")
+    try:
+        sid = _subject_upsert(label, timeout=timeout, retries=retries,
+                              daemon_up=daemon_up)
+        if sid:
+            _subject_link(int(leaf_eid), int(sid), timeout=timeout, retries=retries,
+                          daemon_up=daemon_up)
+    except Exception as e:  # noqa: BLE001 — surfaced, not swallowed
+        raise click.ClickException(
+            f"promoted id={leaf_eid} but subject filing under {label!r} not "
+            f"confirmed within {timeout:g}s ({e}); the daemon may still "
+            f"complete it — `rmx focus subject` / `rmx memory recall --subject "
+            f"{label}` to verify") from e
+    console.print(f"[dim]  filed under subject {label}[/]")
 
 
 @focus.command("note")
@@ -1405,28 +1436,36 @@ def focus_clear():
 
 
 # ---- subjects (ADR-0002): a named STM partition + durable LTM container ----
-def _subject_upsert(label: str) -> "int | None":
+def _subject_upsert(label: str, *, timeout: float = 60.0, retries: int = 2,
+                    daemon_up: "bool | None" = None) -> "int | None":
     """Upsert the durable subject node, daemon-or-inproc. Routes to the same
-    partition as promoted digests so `part-of` edges resolve."""
+    partition as promoted digests so `part-of` edges resolve. Raises on a
+    daemon that does not answer within the budget. `daemon_up` lets a caller
+    that already classified the daemon skip a second full-cost ping."""
     from refmatrix import daemon as daemon_mod
-    if daemon_mod.ping(_root()):
-        resp = _memory_daemon_call("subject_upsert", {"label": label})
-        return resp.get("result", {}).get("id") if resp.get("ok") else None
+    if daemon_up if daemon_up is not None else daemon_mod.ping(_root()):
+        resp = _memory_daemon_call("subject_upsert", {"label": label},
+                                   timeout=timeout, retries=retries)
+        if not resp.get("ok"):
+            raise RuntimeError(resp.get("error", "subject_upsert failed"))
+        return resp.get("result", {}).get("id")
     return _store().upsert_subject(label)["id"]
 
 
-def _subject_link(leaf_id: int, subject_id: int) -> None:
+def _subject_link(leaf_id: int, subject_id: int, *, timeout: float = 60.0,
+                  retries: int = 2, daemon_up: "bool | None" = None) -> None:
     """File a leaf memory under a subject (part-of), daemon-or-inproc.
-    Best-effort: a link failure never breaks the promote it rides on."""
+    Raises on failure — the caller decides how loud (the Stop hook: a
+    ClickException; save-state: `filed_subject_error` in its result)."""
     from refmatrix import daemon as daemon_mod
-    try:
-        if daemon_mod.ping(_root()):
-            _memory_daemon_call(
-                "subject_link", {"leaf_id": leaf_id, "subject_id": subject_id})
-        else:
-            _store().link_part_of(leaf_id, subject_id)
-    except Exception:
-        pass
+    if daemon_up if daemon_up is not None else daemon_mod.ping(_root()):
+        resp = _memory_daemon_call(
+            "subject_link", {"leaf_id": leaf_id, "subject_id": subject_id},
+            timeout=timeout, retries=retries)
+        if not resp.get("ok"):
+            raise RuntimeError(resp.get("error", "subject_link failed"))
+    else:
+        _store().link_part_of(leaf_id, subject_id)
 
 
 @focus.command("change-subject")
@@ -8146,16 +8185,17 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
     # this, ingested memories are orphaned. With --as-memory we mirror
     # `_apply_memory_partition_default`: explicit -p / RMX_PARTITION wins,
     # otherwise default to `memory-<project>`.
-    if as_memory and not _partition_override \
-            and not os.environ.get("RMX_PARTITION"):
-        ingest_partition = _memory_partition_default()
-    else:
-        ingest_partition = _resolve_partition()
+    def _ingest_partition(daemon_up=None) -> str:
+        if as_memory and not _partition_override \
+                and not os.environ.get("RMX_PARTITION"):
+            return _memory_partition_default(daemon_up=daemon_up)
+        return _resolve_partition()
     # --prestage: walk files and stamp gmd_content_hash on existing
     # entities. Does not ingest. Useful to bootstrap auto-resume on a
     # store that was populated by older rmx versions (no hashes
     # recorded).
     if prestage:
+        ingest_partition = _ingest_partition()
         if daemon_mod.ping(root):
             resp = daemon_mod.call(root, "prestage_hashes", {
                 "targets": [str(p) for p in resolved],
@@ -8177,36 +8217,45 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
             f"missing={report['missing']}"
         )
         return
-    if (detach or progress) and not daemon_mod.ping(root):
+    daemon_up: "bool | None" = None
+    if detach or progress:
         # A detached job is a DAEMON job. Falling through to the in-process
         # path would turn the SessionStart bridge hook into a 25 s+ foreground
         # ingest — say so instead (loud: this is a memory path). Busy is not
         # absent (bsd-plan2 #s-11): a daemon mid-startup or mid-write gets
-        # RMX_DETACH_WAIT_S of retries and a busy-specific message.
+        # RMX_DETACH_WAIT_S of retries and a busy-specific message. ONE cheap
+        # probe classifies it; the wait is measured from that probe, so the
+        # message reports what the operator actually waited (bsd-plan2-r3
+        # #s-3: three full-cost pings ahead of the loop cost 6 s unreported).
         import time as _time
         from refmatrix import discovery as _disc
-        st = _disc.daemon_status(root)
-        if st.get("busy"):
+        t0 = _time.monotonic()
+        st = _disc.daemon_status(root, retries=0)
+        daemon_up = bool(st.get("up"))
+        if not daemon_up and st.get("busy"):
             budget = float(os.environ.get("RMX_DETACH_WAIT_S", "10") or "10")
-            t0 = _time.monotonic()
-            answered = False
             # wall-clock budget: each ping already costs its own timeout
             while _time.monotonic() - t0 < budget:
                 if daemon_mod.ping(root, timeout=0.5, retries=0):
-                    answered = True
+                    daemon_up = True
                     break
                 _time.sleep(0.25)
-            if not answered:
+            if not daemon_up:
                 waited = _time.monotonic() - t0
                 raise click.ClickException(
                     f"daemon busy pid={st.get('pid')} for {root} (alive, not "
                     f"answering for {waited:.1f}s) — catch-up skipped; retry "
                     f"shortly or run without --detach")
-        else:
+        elif not daemon_up:
             raise click.ClickException(
                 f"no daemon running for {root} — --detach/--progress need the "
                 f"daemon (`rmx daemon start`), or run without the flag")
-    if daemon_mod.ping(root):
+    if daemon_up is None:
+        daemon_up = daemon_mod.ping(root)
+    # Resolved AFTER the classification so the legacy-partition probe reuses
+    # it instead of paying its own full-cost ping first.
+    ingest_partition = _ingest_partition(daemon_up=daemon_up)
+    if daemon_up:
         op_args = {
             "targets": [str(p) for p in resolved],
             "verbose": verbose,
@@ -8920,7 +8969,7 @@ def _replica_memory_recall(query: str, *, k: int, kinds: list,
 MEMORY_PARTITION_PREFIX = "memory-"
 
 
-def _memory_partition_default() -> str:
+def _memory_partition_default(*, daemon_up: "bool | None" = None) -> str:
     """Resolve the memory partition for the active CLI invocation.
 
     Post-0.5.0 default: project partition (`default_partition_name`),
@@ -8946,14 +8995,15 @@ def _memory_partition_default() -> str:
         # holding the writer lock. Daemon-up call is preferred so a CLI
         # invocation while the daemon owns the lock doesn't crash on
         # the read; daemon-down falls back to a lock-free reader.
-        if _legacy_memory_partition_exists(root, legacy):
+        if _legacy_memory_partition_exists(root, legacy, daemon_up=daemon_up):
             return legacy
         return default_partition_name(root)
     except Exception:
         return f"{MEMORY_PARTITION_PREFIX}default"
 
 
-def _legacy_memory_partition_exists(root: Path, legacy: str) -> bool:
+def _legacy_memory_partition_exists(root: Path, legacy: str, *,
+                                    daemon_up: "bool | None" = None) -> bool:
     """True when the `memory-<project>` partition row is still present
     (pre-merge state). Caches per process so repeated `rmx memory`
     invocations don't re-query.
@@ -8979,7 +9029,9 @@ def _legacy_memory_partition_exists(root: Path, legacy: str) -> bool:
     found = False
     try:
         from refmatrix import daemon as daemon_mod
-        if daemon_mod.ping(root):
+        # `daemon_up` lets a caller that already classified the daemon skip
+        # a second full-cost ping (~2 s against a silent socket).
+        if daemon_up if daemon_up is not None else daemon_mod.ping(root):
             resp = daemon_mod.call(
                 root, "partition_list", {}, timeout=10.0,
             )

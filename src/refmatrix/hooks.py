@@ -322,8 +322,12 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                     "type": "command",
                     # --promote: the digest must GRADUATE, not just print
                     # (2026-07-06 leak: without it compaction kept the
-                    # digest on screen and never wrote it). Loud.
-                    "command": HOOK_ENV + "rmx focus summarize --promote",
+                    # digest on screen and never wrote it). Loud. PreCompact
+                    # is the catch-up for a Stop promote that timed out, so
+                    # its budget is longer — but bounded: past 30 s rmx fails
+                    # loud instead of the harness killing it silently at 60 s
+                    # (bsd-plan2-r3 #m-5).
+                    "command": HOOK_ENV + "rmx focus summarize --promote --timeout 30",
                 },
                 {
                     "type": "command",
@@ -431,6 +435,12 @@ def install(
                                          scope=scope, apply=apply, force=force,
                                          primer=primer, scan_prompt=scan_prompt,
                                          memory_hooks=memory_hooks, **hook_opts))
+    elif scope == "project":
+        # --no-claude means "no rmx block is managed here": a block a
+        # previous apply wrote is reaped, so --check is clean and the
+        # operator has a route back without hand-editing (bsd-plan2-r3
+        # #m-7). The search hooks re-add their entries below when on.
+        out.extend(_reap_claude_hooks(project_root, apply=apply))
     if agent_env:
         out.extend(_install_agent_env(project_root, scope=scope,
                                       apply=apply, force=force))
@@ -1047,6 +1057,29 @@ def _install_claude_hooks(
     out.append(f"[green]write[/] {target}")
     if apply:
         target.write_text(json.dumps(merged, indent=2))
+    return out
+
+
+def _reap_claude_hooks(project_root: Path, *, apply: bool) -> list[str]:
+    """Strip every rmx-managed entry from the project's committed
+    settings.json (user hooks untouched)."""
+    out: list[str] = []
+    target = project_root / ".claude" / "settings.json"
+    if not target.exists():
+        return out
+    try:
+        data = json.loads(target.read_text())
+    except json.JSONDecodeError:
+        out.append(f"[red]warn[/] {target} is not valid JSON; not reaping rmx hooks")
+        return out
+    if not isinstance(data, dict) or not _managed_entries(data.get("hooks") or {}):
+        return out
+    _strip_rmx_hooks(data.setdefault("hooks", {}))
+    if not data["hooks"]:
+        del data["hooks"]
+    out.append(f"[green]reap[/] rmx hooks from {target} (--no-claude)")
+    if apply:
+        target.write_text(json.dumps(data, indent=2))
     return out
 
 
