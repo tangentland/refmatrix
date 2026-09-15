@@ -752,7 +752,11 @@ class Daemon:
             from refmatrix import modelsrv
             if modelsrv.shared_enabled() and modelsrv.shared_available():
                 try:
-                    client = modelsrv.SharedWorkerClient(role, log=self._log)
+                    # Bounded: the worker's 300 s default let a broken shared
+                    # worker (bug-014/015) stall an op — and the store lock it
+                    # held — for five minutes.
+                    client = modelsrv.SharedWorkerClient(role, log=self._log,
+                                                         timeout=SHARED_OP_TIMEOUT_S)
                     # prove it answers before adopting — bounded, so a mute
                     # socket costs seconds, not the 300 s op timeout
                     client.info(timeout=modelsrv.PROBE_TIMEOUT_S)
@@ -1216,6 +1220,16 @@ class Daemon:
         # Heartbeat first: the store open + repairs below can take a while
         # and the supervisor must already see "alive", not "dead".
         self._start_heartbeat()
+        # `kill -USR1 <pid>` dumps EVERY thread's stack to the stderr stream
+        # (daemon.stderr.log under launchd / rmxd.stderr detached). bug-015:
+        # the project daemon wedged three times in an hour — ping alive,
+        # heartbeat stale, every op stalled, no job lines — and there was no
+        # way to see which thread held the store lock.
+        try:
+            import faulthandler
+            faulthandler.register(signal.SIGUSR1, file=sys.stderr, all_threads=True)
+        except Exception as exc:  # noqa: BLE001 — diagnostics must not stop a boot
+            self._log(f"faulthandler not registered: {exc!r}")
         # Banner the stderr stream too so an abort message landing there
         # can be correlated back to a specific daemon launch in rmxd.log.
         # Best-effort: stderr may be /dev/null when serve_forever is run
@@ -5187,6 +5201,13 @@ def spawn_daemon(root: Path, *, partition: str | None = None,
             lockf.close()
         except Exception:
             pass
+
+
+# Socket timeout for the daemon's calls on the hub's shared model workers.
+# One embed batch or one rerank of ~20 docs is sub-second warm; a worker that
+# is loading or broken must cost an op seconds, not the client's 300 s default
+# (bug-015: the daemon wedged behind it while holding the store lock).
+SHARED_OP_TIMEOUT_S = float(os.environ.get("RMX_SHARED_OP_TIMEOUT_S", "30") or "30")
 
 
 def spawn_daemon_subprocess(

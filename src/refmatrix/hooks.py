@@ -225,7 +225,7 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                      if composite_every else "")
         scan_cmd = (
             HOOK_ENV
-            + f"rmx scan-prompt{composite} --max-tokens 2000 2>/dev/null || true ; "
+            + f"rmx scan-prompt{composite} --max-tokens 2000 --timeout 5 2>/dev/null || true ; "
             "rmx curator status --drain 2>/dev/null || true"
         )
         block["hooks"]["UserPromptSubmit"] = [

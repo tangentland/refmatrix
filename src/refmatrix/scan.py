@@ -872,6 +872,7 @@ def scan_prompt(
     content: bool = True,
     content_tokens: int = 600,
     degree: int = 0,
+    rerank_timeout: float = 5.0,
 ) -> str:
     """Emit context bundles for a prompt's symbols. When `composite` is set (and
     `composite_root` names the project `.refmatrix` dir), ALSO append a GMD
@@ -949,7 +950,11 @@ def scan_prompt(
             s, " ".join(cands),
             max_tokens=content_tokens, max_entities=10,
             grep_backstop=False, degree=degree,
-            reranker=shared_reranker(),
+            # bounded like `memory recall`'s hook path: the probe gets 1 s,
+            # the score call the rest (bug-015: the hook hung 20 s+ on a
+            # broken shared worker at the client's 300 s default)
+            reranker=shared_reranker(timeout=rerank_timeout,
+                                     probe_timeout=min(rerank_timeout, 1.0)),
             # The bundle's `ref` is the candidate BAG; the reranker needs the
             # sentence the user actually typed.
             rerank_query=prompt,

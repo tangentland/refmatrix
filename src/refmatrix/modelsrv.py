@@ -222,6 +222,18 @@ class ModelServer:
                 self._check_worker_version(w)
             return w
 
+    def _drop_worker(self, role: str, exc: BaseException) -> None:
+        with self._lock:
+            w = self._clients.pop(role, None)
+        if w is None:
+            return
+        try:
+            w.close(timeout=2.0)
+        except Exception as cexc:  # noqa: BLE001 — logged, never masks the drop
+            self._log(f"worker[{role}] close after broken pipe failed: {cexc!r}")
+        self._log(f"worker[{role}] dropped after {type(exc).__name__}; "
+                  f"recreated on the next call")
+
     def _check_worker_version(self, w: WorkerClient) -> None:
         """A hub that outlived a deploy spawns TODAY's workers from
         YESTERDAY's process: the frame protocol drifts and every op dies
@@ -419,6 +431,12 @@ class ModelServer:
                     send_frame(rw, {"ok": True, **hdr}, out or None)
                 except Exception as exc:
                     self._log(f"role={role} op={op} failed: {exc!r}")
+                    if isinstance(exc, (BrokenPipeError, EOFError, ConnectionError)):
+                        # The worker process is gone or its pipe is dead:
+                        # every later call would fail the same way (bug-014:
+                        # `op=rerank failed: BrokenPipeError` for hours).
+                        # Drop it; the next call recreates a worker.
+                        self._drop_worker(role, exc)
                     try:
                         send_frame(rw, {
                             "ok": False,

@@ -7550,12 +7550,16 @@ def _resolve_query(
                    "RMX_STM_COMPOSITE_INTRA_EDGES). Real typed graph verbs "
                    "(calls/defines/depends-on…) between focus members, replacing "
                    "the old weak co-occurs dump. 0 = drop the block.")
+@click.option("--timeout", "timeout", type=float, default=5.0, show_default=True,
+              help="Budget in seconds for the shared-worker rerank of the content "
+                   "bundle (probe 1 s, score the rest); past it the BM25 order "
+                   "stands. The generated UserPromptSubmit hook passes 5.")
 def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                     exclude_namespace, include_noise, fmt, stdin_json, rank,
                     degree,
                     composite, composite_max_tokens, composite_k,
                     composite_no_expand, composite_every,
-                    composite_intra_edges, content, content_tokens):
+                    composite_intra_edges, content, content_tokens, timeout):
     """Read a prompt; emit context bundles for symbols it mentions.
 
     Designed for the Claude Code UserPromptSubmit hook. Output goes to stdout,
@@ -7596,6 +7600,7 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                 content_tokens=content_tokens,
                 composite_every=composite_every,
                 composite_intra_edges=composite_intra_edges,
+                rerank_timeout=timeout,
             )
             tlog.cardinality = result.count("=== context for") if result else 0
         return result
