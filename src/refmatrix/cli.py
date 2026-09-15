@@ -2974,6 +2974,14 @@ def daemon_status():
     import sys as _sys
     from refmatrix import daemon as daemon_mod
     root = _root()
+    pending = daemon_mod.read_repair_marker(root)
+    if pending:
+        # Written by a read surface that hit index drift (plan-4 4.1); boot
+        # repairs it, or `rmx repair-index --entities` does it in-band.
+        console.print(
+            f"[yellow]repair pending: {pending.get('table')}[/] "
+            f"(queued by {pending.get('op', '?')}; a daemon restart runs it, "
+            f"or `rmx repair-index --entities`)")
     pid = daemon_mod.read_pid(root)
     healthy = daemon_mod.ping(root) if pid else False
     if pid and healthy:
@@ -7684,13 +7692,42 @@ def install_hooks(git, claude, briefing, agent_env, search, apply, force, scope,
 
 
 @main.command("repair-index")
-def repair_index():
+@click.option("--entities", "entities", is_flag=True,
+              help="Rebuild the entities table's PRIMARY KEY / UNIQUE constraints "
+                   "and secondary indexes in-band (the 2026-09-14 phantom-leaf "
+                   "recipe). Daemon-routed when the daemon is up; offline "
+                   "otherwise. Aborts on real duplicate rows.")
+def repair_index(entities: bool):
     """Drop + recreate idx_entity_links_lk_concept to fix DuckDB secondary
     index drift. Daemon does this on every startup; this command is for
     triage when the index drifts mid-session ('Failed to delete all rows
-    from index' fatals). Stops the daemon, repairs, restarts."""
+    from index' fatals). Stops the daemon, repairs, restarts.
+
+    --entities rebuilds the entities table instead (in-band through the
+    daemon's `repair_entities` op; boot runs the same rebuild on its own
+    when `.refmatrix/repair.needed` exists)."""
     from refmatrix import daemon as daemon_mod
     root = _root()
+    if entities:
+        from refmatrix.store import RepairAbort
+        if daemon_mod.ping(root):
+            resp = daemon_mod.call(root, "repair_entities", {}, timeout=600.0)
+            if not resp.get("ok"):
+                raise click.ClickException(resp.get("error", "daemon error"))
+            rep = resp["result"]
+        else:
+            s = _store()
+            try:
+                rep = s.rebuild_entities_indexes()
+            except RepairAbort as e:
+                raise click.ClickException(f"repair aborted: {e}")
+            finally:
+                s.close()
+            daemon_mod.repair_marker_path(root).unlink(missing_ok=True)
+        console.print(
+            f"[green]rebuilt entities[/] rows={rep.get('rows')} "
+            f"indexes={rep.get('indexes')} constraints={', '.join(rep.get('constraints', []))}")
+        return
     daemon_was_up = daemon_mod.ping(root)
     if daemon_was_up:
         console.print("[yellow]stopping daemon...[/]")
