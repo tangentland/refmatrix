@@ -47,6 +47,15 @@ WATCHDOG_PING_TIMEOUT_S = float(
     os.environ.get("RMX_HUB_WATCH_PING_TIMEOUT", "2.0"))
 WATCHDOG_GRACE_MISSES = int(
     os.environ.get("RMX_HUB_WATCH_GRACE_MISSES", "3"))
+# plan-4 task 4.3: liveness is the daemon's heartbeat FILE, not its socket.
+# A daemon whose process is alive and whose heartbeat is fresh is BUSY, never
+# restarted, however many pings it misses; a heartbeat older than this is a
+# wedge and enters the miss-grace path above; a missing process is dead.
+HEARTBEAT_STALE_S = float(os.environ.get("RMX_HUB_HEARTBEAT_STALE_S", "60"))
+# A restart is graceful first (`daemon stop` → SIGTERM) and only escalates
+# to `kickstart -k` (SIGKILL) after this many seconds — the 2026-09-14
+# corruption was a SIGKILL on a daemon mid-reconnect to a model worker.
+RMX_HUB_KILL_GRACE_S = float(os.environ.get("RMX_HUB_KILL_GRACE_S", "30"))
 QUEUE_ALERT_INTERVAL_S = float(os.environ.get("RMX_HUB_QUEUE_ALERT_INTERVAL", "1800"))
 # Catalog footprint that earns a line in the queue alert. DuckDB reuses freed
 # blocks but never shrinks the file, so a store can grow without bound and
@@ -249,18 +258,31 @@ class Watchdog:
                 proc_alive = daemon_mod.read_pid(root) is not None
             except Exception:
                 proc_alive = False
-            misses = self.miss_counts.get(key, 0) + 1
-            self.miss_counts[key] = misses
+            try:
+                hb_age = float(daemon_mod.heartbeat_age(root))
+            except Exception:
+                hb_age = float("inf")
             if not proc_alive:
-                restarted = self._restart(root)          # genuinely dead
+                restarted = self._restart(root, alive=False)   # genuinely dead
                 reason = "no-process"
                 self.miss_counts[key] = 0
-            elif misses >= WATCHDOG_GRACE_MISSES:
-                restarted = self._restart(root)          # wedged past grace
-                reason = f"wedged-{misses}-misses"
+            elif hb_age <= HEARTBEAT_STALE_S:
+                # Alive and ticking: a long op, an index rebuild, a model-
+                # worker reconnect. Never a restart (plan-4 task 4.3).
+                reason = f"busy-heartbeat-{hb_age:.0f}s"
                 self.miss_counts[key] = 0
             else:
-                reason = f"busy-grace-{misses}/{WATCHDOG_GRACE_MISSES}"
+                # No heartbeat (pre-0.69 daemon) or a stale one: the
+                # miss-grace window decides, then a GRACEFUL restart.
+                misses = self.miss_counts.get(key, 0) + 1
+                self.miss_counts[key] = misses
+                if misses >= WATCHDOG_GRACE_MISSES:
+                    restarted = self._restart(root, alive=True)
+                    reason = (f"wedged-{misses}-misses"
+                              + ("" if hb_age == float("inf") else f"-heartbeat-{hb_age:.0f}s"))
+                    self.miss_counts[key] = 0
+                else:
+                    reason = f"busy-grace-{misses}/{WATCHDOG_GRACE_MISSES}"
         with self._lock:
             ring = self.history.setdefault(key, deque(maxlen=HEALTH_HISTORY))
             ring.append({
@@ -271,9 +293,18 @@ class Watchdog:
             if restarted:
                 self.restart_counts[key] = self.restart_counts.get(key, 0) + 1
 
-    def _restart(self, root: Path) -> bool:
-        """Restart a dead daemon: prefer launchd kickstart (it owns the
-        process), else spawn directly."""
+    def _restart(self, root: Path, *, alive: bool = False) -> bool:
+        """Restart a daemon: a live-but-wedged one is asked to stop
+        gracefully first (the `stop` op, then SIGTERM, bounded by
+        RMX_HUB_KILL_GRACE_S) so it can close DuckDB cleanly; only then
+        launchd kickstart -k (SIGKILL if it ignored the stop) or a direct
+        spawn. A dead process needs no courtesy."""
+        if alive:
+            try:
+                ok = daemon_mod.stop_daemon(root, timeout=RMX_HUB_KILL_GRACE_S)
+                _log(f"watchdog graceful stop {root}: {'stopped' if ok else 'still alive'}")
+            except Exception as e:
+                _log(f"watchdog graceful stop failed for {root}: {e}")
         try:
             if launchctl.is_loaded(root):
                 launchctl.kickstart(root, restart=True)

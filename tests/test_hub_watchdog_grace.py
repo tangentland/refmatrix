@@ -16,7 +16,7 @@ def _wd(monkeypatch, *, up: bool, proc_alive: bool):
     monkeypatch.setattr(
         hub_mod.daemon_mod, "read_pid",
         lambda root: 4242 if proc_alive else None)
-    monkeypatch.setattr(wd, "_restart", lambda root: restarts.__setitem__(
+    monkeypatch.setattr(wd, "_restart", lambda root, **kw: restarts.__setitem__(
         "n", restarts["n"] + 1) or True)
     return wd, restarts
 

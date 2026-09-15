@@ -29,7 +29,7 @@ def test_watchdog_restarts_down_daemon_when_auto(monkeypatch, tmp_path):
     monkeypatch.setattr(hub.daemon_mod, "ping", lambda r, timeout=0.5: False)
     restarts = []
     wd = hub.Watchdog()
-    monkeypatch.setattr(wd, "_restart", lambda r: (restarts.append(r) or True))
+    monkeypatch.setattr(wd, "_restart", lambda r, **kw: (restarts.append(r) or True))
     wd.tick()
     assert restarts == [root]
     h = wd.health()[str(root.resolve())]
@@ -45,7 +45,7 @@ def test_watchdog_manual_policy_observes_only(monkeypatch, tmp_path):
     wd = hub.Watchdog()
     wd.set_policy(root, "manual")
     called = []
-    monkeypatch.setattr(wd, "_restart", lambda r: called.append(r))
+    monkeypatch.setattr(wd, "_restart", lambda r, **kw: called.append(r))
     wd.tick()
     assert called == []  # manual = no restart
     assert wd.health()[str(root.resolve())]["restart_count"] == 0
@@ -58,7 +58,7 @@ def test_watchdog_up_daemon_no_restart(monkeypatch, tmp_path):
     monkeypatch.setattr(hub.daemon_mod, "ping", lambda r, timeout=0.5: True)
     wd = hub.Watchdog()
     called = []
-    monkeypatch.setattr(wd, "_restart", lambda r: called.append(r))
+    monkeypatch.setattr(wd, "_restart", lambda r, **kw: called.append(r))
     wd.tick()
     assert called == []
     assert wd.health()[str(root.resolve())]["history"][-1]["up"] is True
