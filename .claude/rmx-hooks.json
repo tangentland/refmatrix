@@ -1,6 +1,7 @@
 {
   "version": "0.68.1",
   "flags": {
+    "claude": true,
     "memory_hooks": true,
     "primer": true,
     "scan_prompt": true,

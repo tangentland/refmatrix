@@ -52,7 +52,7 @@
           },
           {
             "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook; rmx focus summarize --promote"
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx focus summarize --promote --timeout 5"
           }
         ]
       }
