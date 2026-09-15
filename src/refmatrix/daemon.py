@@ -50,6 +50,28 @@ def repair_marker_path(root: Path) -> Path:
     return Path(root) / REPAIR_MARKER_NAME
 
 
+# Liveness the SUPERVISOR can read without a socket round-trip (plan-4 task
+# 4.3): a file the daemon touches from a thread that holds no locks. A ping
+# that must pass the accept loop is exactly what stalls when the daemon is
+# busy; the heartbeat keeps ticking through an ingest, an index rebuild or a
+# model-worker reconnect, so "busy" and "dead" are distinguishable.
+HEARTBEAT_NAME = "heartbeat"
+HEARTBEAT_INTERVAL_S = float(os.environ.get("RMX_HEARTBEAT_S", "5") or "5")
+
+
+def heartbeat_path(root: Path) -> Path:
+    return Path(root) / HEARTBEAT_NAME
+
+
+def heartbeat_age(root: Path) -> float:
+    """Seconds since the daemon last touched its heartbeat; `inf` when there
+    is none (pre-0.69 daemon, or never started)."""
+    try:
+        return max(0.0, time.time() - heartbeat_path(root).stat().st_mtime)
+    except OSError:
+        return float("inf")
+
+
 def read_repair_marker(root: Path) -> "dict | None":
     p = repair_marker_path(root)
     if not p.exists():
@@ -899,6 +921,41 @@ class Daemon:
                 self._log(f"could not write {p.name}: {e}")
         return p
 
+    def _start_heartbeat(self) -> None:
+        """Touch `.refmatrix/heartbeat` every RMX_HEARTBEAT_S (5) from a
+        thread that takes NO lock, so the supervisor's liveness signal is
+        independent of every op. Interval is re-read so tests can shorten it."""
+        import threading as _t
+        if getattr(self, "_heartbeat_thread", None) and self._heartbeat_thread.is_alive():
+            return
+        self._heartbeat_stop = _t.Event()
+        interval = float(os.environ.get("RMX_HEARTBEAT_S", str(HEARTBEAT_INTERVAL_S)) or "5")
+        hb = heartbeat_path(self.root)
+
+        def _runner():
+            stop = self._heartbeat_stop
+            while not stop.is_set():
+                try:
+                    hb.touch()
+                except OSError:
+                    pass
+                stop.wait(interval)
+
+        try:
+            hb.touch()  # first touch synchronously: alive from line one
+        except OSError:
+            pass
+        self._heartbeat_thread = _t.Thread(target=_runner, name="rmxd-heartbeat", daemon=True)
+        self._heartbeat_thread.start()
+
+    def _stop_heartbeat(self) -> None:
+        ev = getattr(self, "_heartbeat_stop", None)
+        if ev is not None:
+            ev.set()
+        th = getattr(self, "_heartbeat_thread", None)
+        if th is not None and th.is_alive():
+            th.join(timeout=2.0)
+
     def _run_pending_repair(self) -> "dict | None":
         """Boot-time repair (plan-4 task 4.2): when a read surface left
         `repair.needed`, rebuild the named table BEFORE serving and clear
@@ -1051,6 +1108,9 @@ class Daemon:
         self.log_fh = (self.root / LOG_NAME).open("a", encoding="utf-8")
         self._log(f"daemon starting pid={os.getpid()} root={self.root}")
         pid_path(self.root).write_text(str(os.getpid()))
+        # Heartbeat first: the store open + repairs below can take a while
+        # and the supervisor must already see "alive", not "dead".
+        self._start_heartbeat()
         # Banner the stderr stream too so an abort message landing there
         # can be correlated back to a specific daemon launch in rmxd.log.
         # Best-effort: stderr may be /dev/null when serve_forever is run
@@ -1319,6 +1379,7 @@ class Daemon:
                 self._watch_stop.set()
             if getattr(self, "_flush_stop", None) is not None:
                 self._flush_stop.set()
+            self._stop_heartbeat()
             repair_stop = getattr(self, "_repair_stop", None)
             if repair_stop is not None:
                 repair_stop.set()
