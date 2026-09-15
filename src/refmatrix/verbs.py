@@ -717,6 +717,9 @@ def save_state(root: Path, *, message: str | None = None,
     fin = handoff.finalize_save_state(s, root, res, repo=repo, lint=lint, sync=sync)
     res["lint"] = fin.get("lint")
     res["filed_subject"] = fin.get("filed_subject")
+    # A subject-filing failure is a memory-path failure: carried, not dropped
+    # (bsd-plan2-r4 #s-2: the key was written by finalize and read by nobody).
+    res["filed_subject_error"] = fin.get("filed_subject_error")
     # Memory bridge outcome — surfaced, not swallowed: an MCP caller sees
     # `sync.error` when the store did not take the handoff.
     res["sync"] = fin.get("sync")
