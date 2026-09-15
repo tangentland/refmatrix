@@ -24,6 +24,8 @@ current.
 | 4 | plan-4-daemon-resilience | in-progress | yes (4) | `workflow/plans/plan-4-daemon-resilience.md` | — |
 | 5 | plan-5-memory-bridge-complete | completed | yes (3) | `workflow/plans/plan-5-memory-bridge-complete.md` | — |
 | 6 | plan-6-deferrals-docs-benchmark | in-progress | yes (5) | `workflow/plans/plan-6-deferrals-docs-benchmark.md` | — |
+| 7 | plan-7-longmemeval | approved | yes (4) | `workflow/plans/plan-7-longmemeval.md` | — |
+| 8 | plan-8-derived-coverage-notes | approved | yes (4) | `workflow/plans/plan-8-derived-coverage-notes.md` | plan 7 (measures it) |
 
 ## Sequence rationale {#sequence}
 
@@ -33,6 +35,10 @@ current.
 4. **daemon-resilience** — a read must never kill the daemon; in-band index repair; watchdog grace; orderly loop.
 5. **memory-bridge-complete** — coverage, overlap, real tests (depends on plan 2's PreCompact decision).
 6. **deferrals-docs-benchmark** — cleanup chunk: stale prose, generated docs, artifact, registries, perma-red test.
+7. **longmemeval** — an outside-comparable memory-retrieval number on the production path; also the
+   measuring stick for plan 8, which is otherwise unfalsifiable.
+8. **derived-coverage-notes** (briefs) — the store says what it has; nothing says what it lacks. Depends on 7 for
+   evidence that a coverage note predicts a retrieval miss.
 
 Each plan ends with `@ch-bsd` over its commit range; remedy → re-review until CLEAN before the next plan starts.
 
