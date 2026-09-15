@@ -641,6 +641,7 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
                   exclude_mtype: list[str] | None = None,
                   include_session: bool = False,
                   subject: str | None = None, degree: int = 0,
+                  partition: str | None = None,
                   timeout: float | None = 30.0) -> dict:
     """ONE implementation of "which memories come back" for the CLI hook
     modes and the MCP tool (2026-09-14: the session-start default window,
@@ -691,7 +692,10 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
 
     want_project = scope in ("project", "both")
     try:
-        partition = (memory_partition(root, timeout=_left(10.0) if deadline else None)
+        # A caller that already resolved the partition under this budget
+        # (the CLI twin) passes it: the verb re-probed `partition_list` and
+        # spent 10 of the twin's 30 s on a held writer (bsd-plan3-r5 #m-4).
+        partition = (partition or memory_partition(root, timeout=_left(10.0) if deadline else None)
                      if want_project else None)
     except VerbBusyError:
         raise
@@ -1056,7 +1060,7 @@ def _memory_payload(action: str, a: dict) -> dict:
 
 _RECALL_FORWARD = ("query", "k", "scope", "since", "since_seconds", "recent",
                    "exclude_mtype", "include_session", "subject", "kinds", "fuse",
-                   "degree")
+                   "degree", "partition")
 
 
 @verb("rmx_memory", "Full access to the project memory store — parity with the CLI `rmx memory` group. `action` selects the op; pass that op's params alongside.")

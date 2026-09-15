@@ -91,6 +91,55 @@ def _migrate_legacy(root: Path) -> bool:
     return False
 
 
+# launchd's own stop budget. `launchctl kickstart -k` and a bootout SIGTERM
+# the job and, after `ExitTimeOut` seconds, SIGKILL it. The default is 5 s;
+# a daemon's drain is three pool drains × RMX_DAEMON_SHUTDOWN_TIMEOUT_S (10)
+# plus the thread joins and a bounded DuckDB close — up to ~50 s. Five
+# daemons were SIGKILLed mid-drain on 2026-09-15 by a deploy that never put
+# the two numbers side by side (ch-bsd plan-4 r3 #b-1). ONE number for every
+# supervisor: the plist's ExitTimeOut, the hub's kill grace and the CLI's
+# stop grace all read it.
+EXIT_TIMEOUT_S = 45.0
+
+_IDENTITY_CACHE: "dict[str, dict]" = {}
+
+
+def binary_identity(rmx: str) -> dict:
+    """What tree does the binary a plist would run actually import? Asks
+    the binary itself (`rmx version -v --json`) — the plist renders THIS
+    process's `rmx`, and from a dev shell that is the dev venv: `check`
+    then reported drift on all eight plists and `reinstall` would have
+    rewritten them to the dev tree before `_verify_relaunch` could object
+    (ch-bsd plan-4 r3 #s-4). Cached per path for the life of the process
+    (`relaunch-fleet` asks once, not once per store). An answer that is not
+    the identity JSON (an older binary) is `{"dev_tree": None, "error": …}`:
+    unknown, never "fine"."""
+    key = str(rmx)
+    hit = _IDENTITY_CACHE.get(key)
+    if hit is not None:
+        return hit
+    try:
+        r = subprocess.run([key, "version", "-v", "--json"], capture_output=True,
+                           text=True, timeout=30)
+        import json as _json
+        ident = _json.loads((r.stdout or "").strip().splitlines()[-1])
+        if not isinstance(ident, dict) or "dev_tree" not in ident:
+            raise ValueError("no dev_tree field")
+    except Exception as e:  # noqa: BLE001 — unknown is said, not assumed fine
+        ident = {"dev_tree": None, "error": f"{type(e).__name__}: {e}"}
+    _IDENTITY_CACHE[key] = ident
+    return ident
+
+
+def _refuse_dev_tree(rmx: str) -> None:
+    ident = binary_identity(rmx)
+    if ident.get("dev_tree"):
+        raise RuntimeError(
+            f"refusing to render a plist against a dev tree: {rmx} imports "
+            f"{ident.get('import_path')} (a venv that belongs to another tree). "
+            f"Run this with the deployed rmx, or pass allow_dev to install")
+
+
 def _rmx_path() -> str:
     override = os.environ.get("RMX_BIN")
     if override:
@@ -108,17 +157,20 @@ def _rmx_path() -> str:
 def render_plist(root: Path, *, partition: str | None = None,
                  watch: bool = True, debounce_ms: int = 500,
                  semantic: bool = False,
-                 watch_roots: "list[Path] | None" = None) -> bytes:
+                 watch_roots: "list[Path] | None" = None,
+                 rmx: "str | None" = None) -> bytes:
     """Render the plist for `root` as bytes (XML).
 
     `watch_roots` — optional list of dirs the daemon should watch. When
     omitted, the daemon defaults to watching the parent of `.refmatrix/`
     (the project root). Pass an explicit list to watch additional paths
     such as the auto-memory dir alongside the project tree.
+    `rmx` — the binary the job runs; the caller's resolved one, else
+    `$RMX_BIN` / `which rmx` (ch-bsd plan-4 r3 #s-4).
     """
     root = Path(root).resolve()
     label = label_for_root(root)
-    rmx = _rmx_path()
+    rmx = rmx or _rmx_path()
 
     # The global store is memory-only and its root is `~/.refmatrix`, so the
     # default watch root is $HOME -- which tracked 12,448 files (10k of them
@@ -175,6 +227,9 @@ def render_plist(root: Path, *, partition: str | None = None,
         "RunAtLoad": True,
         "KeepAlive": {"SuccessfulExit": False},
         "ThrottleInterval": DEFAULT_THROTTLE_SECONDS,
+        # SIGTERM → this many seconds → SIGKILL, on kickstart -k and bootout.
+        # launchd's default (5 s) killed five draining daemons in one night.
+        "ExitTimeOut": int(EXIT_TIMEOUT_S),
         "StandardOutPath": str(root / "daemon.stdout.log"),
         "StandardErrorPath": str(root / "daemon.stderr.log"),
         "ProcessType": "Background",
@@ -224,6 +279,9 @@ def render_hub_plist(*, port: int = 7777, host: str = "127.0.0.1") -> bytes:
         "RunAtLoad": True,
         "KeepAlive": {"SuccessfulExit": False},
         "ThrottleInterval": DEFAULT_THROTTLE_SECONDS,
+        # the hub closes its model workers and the bus on SIGTERM; launchd's
+        # 5 s default SIGKILLed it mid-close on 2026-09-15 04:26 (bug-020)
+        "ExitTimeOut": int(EXIT_TIMEOUT_S),
         "StandardOutPath": str(home / "hub.stdout.log"),
         "StandardErrorPath": str(home / "hub.stderr.log"),
         "ProcessType": "Background",
@@ -237,6 +295,31 @@ def hub_is_loaded() -> bool:
     return subprocess.run(_print_cmd(HUB_LABEL), capture_output=True).returncode == 0
 
 
+def _stop_hub_before_bootout(grace: float = EXIT_TIMEOUT_S) -> bool:
+    """Send the hub's `stop` op and wait until its control socket stops
+    answering (it exits 0; KeepAlive SuccessfulExit:false does not respawn
+    it). Returns True when the hub is gone within `grace`."""
+    import sys as _sys
+    import time as _time
+    from refmatrix import hub as _hub
+    try:
+        _hub.rpc("stop", {}, timeout=5.0)
+    except Exception as e:  # noqa: BLE001 — said; launchd's bootout signals it
+        _sys.stderr.write(f"hub stop op not delivered ({type(e).__name__}: {e}); "
+                          f"launchctl bootout will signal it\n")
+        return False
+    deadline = _time.monotonic() + grace
+    while _time.monotonic() < deadline:
+        try:
+            _hub.rpc("ping", {}, timeout=1.0)
+        except Exception:  # noqa: BLE001 — the socket is gone: the hub exited
+            return True
+        _time.sleep(0.2)
+    _sys.stderr.write(f"hub still answering {grace:g}s after its stop op; "
+                      f"launchctl bootout will signal it\n")
+    return False
+
+
 def install_hub(*, port: int = 7777, host: str = "127.0.0.1",
                 force: bool = False) -> Path:
     """Write + bootstrap the hub LaunchAgent. Idempotent unless force."""
@@ -246,6 +329,12 @@ def install_hub(*, port: int = 7777, host: str = "127.0.0.1",
     p = hub_plist_path()
     if p.exists() and hub_is_loaded() and not force:
         return p
+    if hub_is_loaded():
+        # A forced reinstall boots the job out = SIGTERM + a SIGKILL at the
+        # OLD plist's ExitTimeOut (5 s before this key existed). Ask the hub
+        # to stop first and wait for it to go (bounded by the grace); a hub
+        # that does not answer is said and left to launchd's signal.
+        _stop_hub_before_bootout()
     if hub_is_loaded():
         subprocess.run(_bootout_cmd(HUB_LABEL), capture_output=True)
         deadline = time.time() + 3.0
@@ -393,10 +482,16 @@ def _wait_loaded(root: Path, *, expected: bool, timeout: float = 3.0) -> bool:
 def install(root: Path, *, partition: str | None = None,
             watch: bool = True, debounce_ms: int = 500,
             semantic: bool = False, force: bool = False,
-            watch_roots: "list[Path] | None" = None) -> Path:
+            watch_roots: "list[Path] | None" = None,
+            rmx: "str | None" = None, allow_dev: bool = False) -> Path:
     """Write the plist + bootstrap it into the user's gui domain.
-    Returns the plist path. Idempotent unless `force=True`."""
+    Returns the plist path. Idempotent unless `force=True`. Refuses a
+    dev-tree `rmx` unless `allow_dev` (r3 #s-4) — BEFORE anything is
+    booted out or written."""
     _require_darwin()
+    rmx = rmx or _rmx_path()
+    if not allow_dev:
+        _refuse_dev_tree(rmx)
     LAUNCH_AGENTS_DIR.mkdir(parents=True, exist_ok=True)
     p = plist_path(root)
     label = label_for_root(root)
@@ -415,6 +510,15 @@ def install(root: Path, *, partition: str | None = None,
     # fleet daemons ended up standalone after `relaunch-fleet` (bug-013).
     # A bootout that does not complete is an error, never a shrug.
     if is_loaded(root):
+        # A bootout is launchd's SIGTERM + a SIGKILL at ExitTimeOut — and on a
+        # plist rendered before ExitTimeOut existed that is the 5 s default,
+        # so the drift fixer itself would SIGKILL a draining daemon on its
+        # first run (ch-bsd plan-4 r3 #b-1). Ask the daemon to stop FIRST
+        # with the grace: a clean stop exits 0, which KeepAlive
+        # (SuccessfulExit: false) does not respawn, so the bootout then
+        # unloads an idle job. Lazy import: daemon imports this module.
+        from refmatrix import daemon as _daemon
+        _daemon.graceful_stop(root, grace=EXIT_TIMEOUT_S)
         subprocess.run(_bootout_cmd(label), capture_output=True)
         if not _wait_loaded(root, expected=False, timeout=BOOTOUT_WAIT_S):
             raise RuntimeError(
@@ -425,7 +529,7 @@ def install(root: Path, *, partition: str | None = None,
     rendered = render_plist(
         root, partition=partition, watch=watch,
         debounce_ms=debounce_ms, semantic=semantic,
-        watch_roots=watch_roots,
+        watch_roots=watch_roots, rmx=rmx,
     )
     p.write_bytes(rendered)
     p.chmod(0o644)
@@ -493,21 +597,29 @@ def installed_flags(root: Path) -> dict:
     return flags
 
 
-def check(root: Path) -> "tuple[bool, str]":
+def check(root: Path, *, rmx: "str | None" = None) -> "tuple[bool, str]":
     """Installed plist == its render (the `install-hooks --check` shape for
     plists). Until 2026-09-14 nothing compared the two: `relaunch-fleet`
     restarted two stores on plists rendered before `RMX_SUPERVISED` existed
     and the supervised start on them exited 1 into the KeepAlive loop
-    (ch-bsd plan-4 r2 #b-1). Returns (True, "") or (False, why). Run it
-    with the DEPLOYED rmx: the render bakes this process's `rmx` path."""
+    (ch-bsd plan-4 r2 #b-1). Returns (True, "") or (False, why). The render
+    bakes `rmx` — the caller's binary — and a dev-tree binary is named as
+    drift that must NOT be "fixed" (r3 #s-4): from a dev shell every plist
+    read as drifted and `reinstall` would have pointed all eight at the
+    dev venv."""
     import plistlib
+    rmx = rmx or _rmx_path()
+    ident = binary_identity(rmx)
+    if ident.get("dev_tree"):
+        return False, (f"{rmx} is a dev tree ({ident.get('import_path')}); the plists "
+                       f"are not rendered against it — run with the deployed rmx")
     p = plist_path(root)
     try:
         flags = installed_flags(root)
     except FileNotFoundError as e:
         return False, str(e)
     installed = p.read_bytes()
-    rendered = render_plist(root, **flags)
+    rendered = render_plist(root, rmx=rmx, **flags)
     if installed == rendered:
         # The file is current; is the JOB? An installed-but-unloaded label
         # (bug-013) or a loaded job from an older definition is drift too.
@@ -542,15 +654,16 @@ def check(root: Path) -> "tuple[bool, str]":
     return False, f"{p} drifted from its render: " + "; ".join(why or ["bytes differ"])
 
 
-def reinstall(root: Path) -> Path:
+def reinstall(root: Path, *, rmx: "str | None" = None) -> Path:
     """Re-render + reload an installed plist with its own flags, then VERIFY
     the label is loaded — `install --force` has left a label unloaded
-    (thiquet, 2026-09-14), so a plain install follows when it did."""
+    (thiquet, 2026-09-14), so a plain install follows when it did. `rmx` is
+    the caller's binary (r3 #s-4)."""
     flags = installed_flags(root)
-    p = install(root, force=True, **flags)
+    p = install(root, force=True, rmx=rmx, **flags)
     if not is_loaded(root):
-        p = install(root, **flags)
-    ok, why = check(root)
+        p = install(root, rmx=rmx, **flags)
+    ok, why = check(root, rmx=rmx)
     if not ok:
         raise RuntimeError(f"reinstall did not converge: {why}")
     return p

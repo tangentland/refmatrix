@@ -197,7 +197,7 @@ def test_relaunch_fleet_relaunches_every_supervised_store(monkeypatch, tmp_path)
         r.mkdir(parents=True)
     monkeypatch.setattr("refmatrix.discovery.discover_roots", lambda: list(roots))
     monkeypatch.setattr(launchctl, "is_loaded", lambda r: str(r).endswith("a/.refmatrix"))
-    monkeypatch.setattr(launchctl, "check", lambda r: (True, ""))  # plists in sync (r2 #b-1 adds the drift check)
+    monkeypatch.setattr(launchctl, "check", lambda r, **kw: (True, ""))  # plists in sync (r2 #b-1 adds the drift check; r4 passes the binary)
     ran = []
 
     class R:

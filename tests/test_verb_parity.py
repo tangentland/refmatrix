@@ -40,7 +40,8 @@ PAIRING = {
     "rmx_context": (("context",), {"ref": "symbol"}, {"linkage"}),
     "rmx_query": (("query",), {"dsl": "expr"}, set()),
     "rmx_memory_add": (("memory", "add"), {"to_global": "is_global"}, {"tags", "metadata"}),
-    "rmx_memory_recall": (("memory", "recall"), {}, {"since_seconds", "kinds", "exclude_mtype"}),
+    # `partition`: the CLI carries it on the `rmx` group (`-p`), not the subcommand
+    "rmx_memory_recall": (("memory", "recall"), {}, {"since_seconds", "kinds", "exclude_mtype", "partition"}),
     "rmx_ingest": (("ingest",), {}, {"path", "mode", "kinds", "limit", "rebuild", "partition"}),
     "rmx_save_state": (("save-state",), {}, {"lint", "sync"}),
     "rmx_focus": (("focus", "context"), {}, set()),

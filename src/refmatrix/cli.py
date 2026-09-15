@@ -575,15 +575,24 @@ def _read_store() -> Store:
     # go through the daemon"). Absent → in-process; up → the daemon proxy.
     from refmatrix import verbs as _verbs
     try:
-        _verbs.require_daemon(_root(), retries=0)
+        st = _verbs.require_daemon(_root(), retries=0)
     except _verbs.VerbBusyError as e:
         raise click.ClickException(
             f"{e} — and there is no read replica yet (catalog.read.duckdb); a read "
             f"cannot open the writer slot under a busy daemon. Retry after the "
             f"daemon's first snapshot")
     except _verbs.VerbAbsentError:
-        pass
-    return _store()
+        return _store()          # no daemon: the in-process store serves the read
+    # UP without a replica (a store mid-ingest before its first snapshot):
+    # `_store()` here is the daemon WRITE proxy, whose first read raised
+    # 'no lock-free reader … snapshot not built' AFTER the caller had said
+    # "reading the replica" (bsd-plan3-r5 #s-2, the r4 #m-6 contradiction
+    # one simulation over). A read never goes to the proxy: one read-worded
+    # error, before anything is printed.
+    raise click.ClickException(
+        f"daemon up pid={st.get('pid')} for {_root()} — and there is no read replica "
+        f"yet (catalog.read.duckdb); a read cannot open the writer slot under a live "
+        f"daemon. Retry after the daemon's first snapshot (`rmx replica refresh`)")
 
 
 def _reader_store() -> Store | None:
@@ -2577,10 +2586,10 @@ def hub_relaunch_fleet(rmx_bin):
         # across every relaunch (r2 #b-1: two stores without RMX_SUPERVISED
         # looped on exit 1). Re-install on drift, verified loaded, THEN
         # restart the process on it.
-        ok, why = lc.check(root)
+        ok, why = lc.check(root, rmx=rmx)
         if not ok:
             try:
-                lc.reinstall(root)
+                lc.reinstall(root, rmx=rmx)
                 console.print(f"[yellow]reinstalled[/] {root} plist ({why})")
             except Exception as e:  # noqa: BLE001 — named per store, then counted
                 failed += 1
@@ -2639,7 +2648,10 @@ def hub_queues(as_json):
               help="Also print which tree this interpreter imports "
                    "(code path, venv tree, editable target) and flag a "
                    "dev-tree mismatch.")
-def version_cmd(verbose: bool):
+@click.option("--json", "as_json", is_flag=True,
+              help="The identity as one JSON line (what `launchctl.binary_identity` "
+                   "asks a binary before rendering a plist against it).")
+def version_cmd(verbose: bool, as_json: bool):
     """Print the installed version; with -v, the runtime identity.
 
     `rmx --version` is click's eager option and says only the number. The
@@ -2648,12 +2660,38 @@ def version_cmd(verbose: bool):
     one tree and the code comes from another."""
     from refmatrix import upgrade as _up
     ident = _up.runtime_identity()
+    if as_json:
+        import json as _json
+        click.echo(_json.dumps({k: (str(v) if isinstance(v, Path) else v)
+                                for k, v in ident.items()}))
+        return
     console.print(f"refmatrix {ident['version']}")
     if not verbose:
         return
     _print_code_identity(ident["import_path"], ident["dev_tree"])
     console.print(f"venv tree: {ident['venv_tree'] or '(none — system interpreter)'}")
     console.print(f"editable target: {ident['editable_target'] or '(none)'}")
+
+
+def _watchdog_pause(root: Path, seconds: float) -> None:
+    """Best-effort: a restart is not a wedge. The hub's no-process branch
+    kicked five relaunching daemons inside launchd's ThrottleInterval on
+    2026-09-15 (ch-bsd plan-4 r3 #s-3); the primitive for "an operator is
+    restarting this root" existed (`Watchdog.pause`) and nothing called it.
+    A hub that is down is said, never fatal — the restart proceeds."""
+    from refmatrix import hub as hub_mod
+    try:
+        hub_mod.rpc("pause", {"root": str(root), "seconds": float(seconds)}, timeout=3.0)
+    except Exception as e:  # noqa: BLE001 — said, then the restart proceeds
+        console.print(f"[dim]hub watchdog not paused ({type(e).__name__}); restarting anyway[/]")
+
+
+def _watchdog_resume(root: Path) -> None:
+    from refmatrix import hub as hub_mod
+    try:
+        hub_mod.rpc("resume", {"root": str(root)}, timeout=3.0)
+    except Exception as e:  # noqa: BLE001 — the pause expires on its own
+        console.print(f"[dim]hub watchdog not resumed ({type(e).__name__}); the pause expires on its own[/]")
 
 
 def _print_code_identity(code_path, dev_tree: bool) -> None:
@@ -2978,9 +3016,21 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
                 # it once and re-issue the restart so launchd rebinds clean.
                 if (not new_pid and _old_pid and waited > 5.0
                         and not killed_once):
+                    # A predecessor that still ANSWERS is working; SIGKILL is
+                    # for a wedge (stale heartbeat) only — constitution XII;
+                    # this `kill -9` had no gate (ch-bsd plan-4 r3 #b-1).
+                    hb_age = daemon_mod.heartbeat_age(root)
+                    if hb_age <= daemon_mod.HEARTBEAT_STALE_S:
+                        raise click.ClickException(
+                            f"predecessor pid={_old_pid} still serving v{ver} with a fresh "
+                            f"heartbeat ({hb_age:.0f}s): it is working, not wedged, so it is "
+                            f"not SIGKILLed. The kick did not take (launchd ThrottleInterval, "
+                            f"or a drain still running) — retry `rmx daemon restart "
+                            f"--relaunch` in a minute, or `rmx daemon status`")
                     console.print(
                         f"[yellow]predecessor pid={_old_pid} still serving "
-                        f"(v{ver}); killing and re-issuing restart[/]")
+                        f"(v{ver}) with a stale heartbeat ({hb_age:.0f}s); killing and "
+                        f"re-issuing restart[/]")
                     try:
                         os.kill(_old_pid, 9)
                     except (ProcessLookupError, PermissionError):
@@ -3027,26 +3077,53 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
                     "ignored (the plist governs). Use `rmx daemon launchctl "
                     "install --force ...` to change supervised watch config."
                 )
+            # launchd is a supervisor too (ch-bsd plan-4 r3 #b-1): a bare
+            # `kickstart -k` SIGTERMs the job and SIGKILLs it at launchd's
+            # ExitTimeOut — five daemons died mid-drain on 2026-09-15. So:
+            # pause the hub's watchdog for this root (a relaunch is not a
+            # wedge — r3 #s-3), ask the daemon to stop and give it the
+            # grace, kick WITHOUT -k when it stopped (a clean stop exits 0,
+            # which KeepAlive's SuccessfulExit:false does NOT respawn — the
+            # kick is what starts it), and -k only when it ignored the
+            # signal — said, because that -k is a SIGKILL after ExitTimeOut.
+            grace = daemon_mod.stop_grace_s()
+            _watchdog_pause(root, grace * 2 + 60.0)
             try:
-                label = lc.kickstart(root, restart=True)
-            except Exception as e:  # noqa: BLE001 — fall back to standalone
-                console.print(
-                    f"[yellow]kickstart -k failed ({e}); "
-                    f"restarting standalone[/]"
-                )
-            else:
-                pid = daemon_mod.read_pid(root)
-                pid_part = f" pid={pid}" if pid else ""
-                console.print(
-                    f"[green]daemon restarted[/] (launchd kickstart -k "
-                    f"label={label}){pid_part} root={root}"
-                )
-                if relaunch:
-                    _verify_relaunch(lambda: lc.kickstart(root, restart=True))
-                return
+                stopped = daemon_mod.graceful_stop(root, grace=grace)
+                if not stopped:
+                    console.print(
+                        f"[yellow]predecessor still alive after the {grace:g}s grace; "
+                        f"launchd kickstart -k will SIGTERM it and SIGKILL it at "
+                        f"ExitTimeOut ({lc.EXIT_TIMEOUT_S:g}s)[/]")
+                try:
+                    label = lc.kickstart(root, restart=not stopped)
+                except Exception as e:  # noqa: BLE001 — fall back to standalone
+                    console.print(
+                        f"[yellow]kickstart failed ({e}); restarting standalone[/]")
+                else:
+                    pid = daemon_mod.read_pid(root)
+                    pid_part = f" pid={pid}" if pid else ""
+                    console.print(
+                        f"[green]daemon restarted[/] (launchd kickstart"
+                        f"{'' if stopped else ' -k'} label={label}){pid_part} root={root}")
+                    if relaunch:
+                        _verify_relaunch(lambda: lc.kickstart(root, restart=True))
+                    return
+            finally:
+                _watchdog_resume(root)
 
-    # Standalone path: stop the current daemon (idempotent), then respawn.
-    daemon_mod.stop_daemon(root)
+    # Standalone path: stop the current daemon with the grace every
+    # supervisor uses, and REFUSE to spawn beside one that is still alive —
+    # the old 5 s stop withheld its SIGKILL on a fresh heartbeat (right),
+    # ignored the False and forked a second daemon onto the same store
+    # (ch-bsd plan-4 r3 #b-1).
+    _grace = daemon_mod.stop_grace_s()
+    _rep: dict = {}
+    if not daemon_mod.stop_daemon(root, timeout=_grace, report=_rep):
+        raise click.ClickException(
+            f"predecessor pid={_rep.get('pid') or daemon_mod.read_pid(root)} still alive "
+            f"after the {_grace:g}s grace ({_rep.get('kill') or _rep.get('signal') or 'no signal delivered'}); "
+            f"not spawning a second daemon beside it — `rmx daemon status`")
     resolved_watch_roots: list[Path] = []
     if watch:
         if watch_roots:
@@ -9229,6 +9306,14 @@ RERANK_PROBE_S = float(os.environ.get("RMX_RERANK_PROBE_S", "1") or "1")
 # In the hook modes, how long the recent/subject recall waits on the daemon
 # before the lock-free replica answers instead (only when a replica exists).
 RECALL_DAEMON_SLICE_S = float(os.environ.get("RMX_RECALL_DAEMON_SLICE_S", "1.5") or "1.5")
+# Rerank doc cap for the hook's replica leg. Measured 2026-09-15 on the
+# shared worker (10 memory docs, loaded machine): the pool as extracted
+# (28.7k chars, max 4.2k) scored in 4.8 s and timed out the 5 s hook every
+# time — and the worker kept scoring after the client left, so the NEXT
+# hook's 1 s probe queued behind it and read "unavailable". 768 chars → 3.4 s,
+# 512 → 2–3 s. 700 keeps a memory's title + lead, which is what the
+# cross-encoder ranks on.
+RERANK_DOC_CHARS = int(os.environ.get("RMX_RERANK_DOC_CHARS", "700") or "700")
 
 
 def _replica_memory_recall(query: str, *, k: int, kinds: list,
@@ -9297,7 +9382,8 @@ def _replica_memory_recall(query: str, *, k: int, kinds: list,
                         ws.append("rerank skipped: shared worker unavailable; hits unreranked")
                     else:
                         try:
-                            docs = _reranker.collect_rerank_docs(s, hits, k=k)
+                            docs = _reranker.collect_rerank_docs(
+                                s, hits, k=k, doc_chars=RERANK_DOC_CHARS)
                             ranked = _reranker.apply_rerank(rr, query, *docs, k=k)
                             return [{"id": eid, "score": sc, "fused": bool(fuse),
                                      "reranked": True, "replica": True}
@@ -9780,21 +9866,34 @@ def memory_retag(name_or_id, add_tags, rm_tags, set_tags):
 @click.option("--limit", "-n", type=int, default=20, show_default=True)
 def memory_list(mtype, tags, tag_any, limit):
     """List memories in the active partition."""
-    _memory_intent("memory_iter")
-    from refmatrix import daemon as daemon_mod
+    # ONE budget over the probe and the read, through the verb that bounds
+    # it (bsd-plan3-r5 #b-1: a bare `ping` gate picked the daemon branch on
+    # a held writer — a held writer answers ping — and `_memory_daemon_call`
+    # then waited 60 s × 3 = 190 s while the replica held the rows; the
+    # constant naming `list` bounded the verb this twin never called).
+    import time as _time
+    from refmatrix import verbs as _verbs
+    _t0 = _time.monotonic()
+    _budget = _verbs.MEMORY_READ_BUDGET_S
+    _memory_intent("memory_iter", partition_timeout=min(5.0, _budget))
     root = _root()
     tags = list(tags) or None
     tags_match = "any" if tag_any else "all"
-    args = {"mtype": mtype, "limit": limit, "tags": tags, "tags_match": tags_match}
-    if daemon_mod.ping(root):
-        resp = _memory_daemon_call("memory_iter", args)
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        rows = resp["result"]["rows"]
-    else:
+    try:
+        rows = _verbs.memory(root, action="list", partition=_resolve_partition(),
+                             timeout=max(0.5, _budget - (_time.monotonic() - _t0)),
+                             mtype=mtype, limit=limit, tags=tags,
+                             tags_match=tags_match)["rows"]
+    except (_verbs.VerbAbsentError, _verbs.VerbBusyError) as e:
+        # Daemon down OR busy: the lock-free replica serves the READ, said
+        # AFTER it opened (`_read_store` raises the one read-worded error
+        # when there is none — #s-2).
         s = _read_store()
+        click.echo(f"# rmx: {e}; reading the replica", err=True)
         rows = list(s.iter_memories(
             mtype=mtype, limit=limit, tags=tags, tags_match=tags_match))
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e))
     if not rows:
         console.print("[yellow]no memories[/]")
         return
@@ -9819,20 +9918,26 @@ def memory_search(query, tags, tag_any, limit):
     """Case-insensitive substring search over memory name + content.
     Returns matching rows newest-first. For dense / hybrid retrieval,
     use `rmx memory recall`."""
-    _memory_intent("memory_search")
-    from refmatrix import daemon as daemon_mod
+    # The `list` twin's shape (bsd-plan3-r5 #b-1): the verb bounds the read.
+    import time as _time
+    from refmatrix import verbs as _verbs
+    _t0 = _time.monotonic()
+    _budget = _verbs.MEMORY_READ_BUDGET_S
+    _memory_intent("memory_search", partition_timeout=min(5.0, _budget))
     root = _root()
     tags = list(tags) or None
     tags_match = "any" if tag_any else "all"
-    args = {"query": query, "limit": limit, "tags": tags, "tags_match": tags_match}
-    if daemon_mod.ping(root):
-        resp = _memory_daemon_call("memory_search", args)
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        rows = resp["result"]["rows"]
-    else:
+    try:
+        rows = _verbs.memory(root, action="search", partition=_resolve_partition(),
+                             timeout=max(0.5, _budget - (_time.monotonic() - _t0)),
+                             query=query, limit=limit, tags=tags,
+                             tags_match=tags_match)["rows"]
+    except (_verbs.VerbAbsentError, _verbs.VerbBusyError) as e:
         s = _read_store()
+        click.echo(f"# rmx: {e}; reading the replica", err=True)
         rows = s.search_memories(query, limit=limit, tags=tags, tags_match=tags_match)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e))
     if not rows:
         console.print("[yellow]no matches[/]")
         return
@@ -10269,7 +10374,9 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                 exclude_mtype=verb_exclude, include_session=verb_include_session,
                 # the REMAINING budget: the verb starts its own clock, and the
                 # probe above already spent part of ours (r7: 2× budget)
-                subject=subject, degree=degree, timeout=_verb_timeout)
+                subject=subject, degree=degree, timeout=_verb_timeout,
+                # resolved once above, under this budget (bsd-plan3-r5 #m-4)
+                partition=_resolve_partition())
             rows = res["memories"]
             widened = bool(res.get("widened"))
             for w in res.get("warnings") or []:

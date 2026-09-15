@@ -224,6 +224,7 @@ class _SilentDaemon:
         self.sock.bind(str(daemon_mod.socket_path(self.root)))
         self.sock.listen(16)
         self.held: list = []
+        self.ops: list = []          # every op name the daemon was asked (r6: probe counts)
         self._stop = False
         _threading.Thread(target=self._accept, daemon=True).start()
 
@@ -406,6 +407,7 @@ class _PingOnlyDaemon(_SilentDaemon):
                     return
                 buf += chunk
             req = _json.loads(buf.decode() or "{}")
+            self.ops.append(req.get("op"))
             self.held.append(c)
             if req.get("op") == "ping":
                 c.sendall((_json.dumps({"ok": True, "result": {"pid": self.pid, "version": "x"}}) + "\n").encode())

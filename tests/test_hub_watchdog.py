@@ -83,8 +83,12 @@ def test_stale_heartbeat_past_grace_restarts_gracefully_first(monkeypatch, tmp_p
     assert ("kickstart", True) in calls
 
 
-def test_dead_process_restarts_immediately(monkeypatch, tmp_path):
+def test_dead_process_restarts_on_the_second_no_process_tick(monkeypatch, tmp_path):
+    """One no-process tick is a relaunch in progress (plan-4 r3 #s-3: the
+    hub kicked five relaunching daemons inside launchd's throttle gap)."""
     root = _root(tmp_path)
     wd, calls = _wd(monkeypatch, root, ping=False, pid_alive=False, hb_age=999.0)
+    wd._check(root)
+    assert not any(c[0] == "kickstart" for c in calls)
     wd._check(root)
     assert any(c[0] == "kickstart" for c in calls)

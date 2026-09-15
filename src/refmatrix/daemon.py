@@ -64,6 +64,42 @@ HEARTBEAT_INTERVAL_S = float(os.environ.get("RMX_HEARTBEAT_S", "5") or "5")
 # hub watchdog and the daemon's own adoption/reap decisions (one number).
 HEARTBEAT_STALE_S = float(os.environ.get("RMX_HUB_HEARTBEAT_STALE_S", "60") or "60")
 
+# ONE stop grace for every supervisor — the plist's ExitTimeOut is the
+# source (ch-bsd plan-4 r3 #b-1: the hub waited 45 s, launchd 5 s, the CLI
+# 5 s; nobody had put the numbers beside the ~50 s drain).
+from refmatrix.launchctl import EXIT_TIMEOUT_S as DEFAULT_STOP_GRACE_S  # noqa: E402
+
+
+def stop_grace_s() -> float:
+    """How long a stop order waits before escalating; `RMX_STOP_GRACE_S`
+    overrides (tests, an operator in a hurry)."""
+    return float(os.environ.get("RMX_STOP_GRACE_S", str(DEFAULT_STOP_GRACE_S)) or DEFAULT_STOP_GRACE_S)
+
+
+# The daemon's own shutdown budget, derived from serve_forever's finally:
+# three pool drains × RMX_DAEMON_SHUTDOWN_TIMEOUT_S (10) + watcher join 3 +
+# flush/repair/replica joins 3 × 3 + flush lock 5 + store close 5 = 52 s,
+# rounded up. A `shutdown.started` marker younger than this + a live pid
+# is a daemon DRAINING, and the supervisor waits for it (r3 #b-2).
+SHUTDOWN_BUDGET_S = 60.0
+
+
+def shutdown_started_path(root: Path) -> Path:
+    """Written as the FIRST act of shutdown (serve_forever's finally), so a
+    supervisor can tell "draining" from "wedged" — the heartbeat cannot: the
+    beat is stopped by that same shutdown, so its age only grows and r2's
+    `_await_shutdown` read a value its caller had already ruled out (ch-bsd
+    plan-4 r3 #b-2; pattern: guard-cannot-fire). Removed at boot."""
+    return Path(root) / "shutdown.started"
+
+
+def shutdown_started_age(root: Path) -> float:
+    """Seconds since the shutdown marker was written; inf when there is none."""
+    try:
+        return max(0.0, time.time() - shutdown_started_path(root).stat().st_mtime)
+    except OSError:
+        return float("inf")
+
 
 def heartbeat_path(root: Path) -> Path:
     return Path(root) / HEARTBEAT_NAME
@@ -988,13 +1024,7 @@ class Daemon:
             return
         self._heartbeat_stop = _t.Event()
         interval = float(os.environ.get("RMX_HEARTBEAT_S", str(HEARTBEAT_INTERVAL_S)) or "5")
-        hb = heartbeat_path(self.root)
-
-        def _touch(_f=None):
-            try:
-                hb.touch()
-            except OSError:
-                pass
+        _touch = self._heartbeat_touch
 
         def _runner():
             stop = self._heartbeat_stop
@@ -1020,12 +1050,25 @@ class Daemon:
                         pass
                 stop.wait(interval)
 
-        try:
-            hb.touch()  # first touch synchronously: alive from line one
-        except OSError:
-            pass
+        self._heartbeat_touch()  # first touch synchronously: alive from line one
         self._heartbeat_thread = _t.Thread(target=_runner, name="rmxd-heartbeat", daemon=True)
         self._heartbeat_thread.start()
+
+    def _heartbeat_touch(self, _f=None) -> None:
+        """Touch the heartbeat; a beat that cannot write is SAID, once per
+        errno — a full disk or a removed `.refmatrix/` used to stop the beat
+        in silence, and the hub then restarted a healthy daemon as "wedged"
+        with nothing on either side saying why (ch-bsd plan-4 r1 #m / r3
+        #m-6). `_f` is the done-callback's future, unused."""
+        try:
+            heartbeat_path(self.root).touch()
+        except OSError as e:
+            seen = self.__dict__.setdefault("_hb_errnos", set())
+            if e.errno not in seen:
+                seen.add(e.errno)
+                self._log(f"heartbeat touch failed: {e!r} (said once per errno; the "
+                          f"supervisor reads this daemon as wedged after "
+                          f"{HEARTBEAT_STALE_S:g}s without a beat)")
 
     def _stop_heartbeat(self) -> None:
         ev = getattr(self, "_heartbeat_stop", None)
@@ -1217,6 +1260,13 @@ class Daemon:
         self.log_fh = self.log_fh or (self.root / LOG_NAME).open("a", encoding="utf-8")
         self._log(f"daemon starting pid={os.getpid()} root={self.root}")
         pid_path(self.root).write_text(str(os.getpid()))
+        try:
+            # a fresh instance is not shutting down: the previous marker goes
+            shutdown_started_path(self.root).unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as _e:
+            self._log(f"could not remove a stale shutdown.started: {_e!r}")
         # Heartbeat first: the store open + repairs below can take a while
         # and the supervisor must already see "alive", not "dead".
         self._start_heartbeat()
@@ -1475,6 +1525,13 @@ class Daemon:
                     continue
                 disp_pool.submit(_run_handler, conn)
         finally:
+            # FIRST act of shutdown: say so on disk. The supervisor reads
+            # this marker to tell a draining daemon from a wedged one — the
+            # heartbeat cannot, it stops a few lines below (r3 #b-2).
+            try:
+                shutdown_started_path(self.root).touch()
+            except OSError as _e:
+                self._log(f"could not write shutdown.started: {_e!r}")
             # Make absolutely sure the cooperative shutdown event is set:
             # serve loop may have exited via something other than the signal
             # handler (exception, explicit stop op). Workers polling this
@@ -5312,6 +5369,7 @@ def graceful_stop(root: Path, *, grace: float,
                 pass
     else:
         rep["stop_op"] = "skipped: not answering ping (SIGTERM sent now)"
+    rep["pid"] = pid          # the pid the grace waited on, pid file or ping-discovered
     if rep.get("stop_op") != "sent" and pid is not None:
         try:
             os.kill(pid, signal.SIGTERM)
@@ -5342,7 +5400,10 @@ def stop_daemon(root: Path, *, timeout: float = 5.0,
     rep = report if report is not None else {}
     if graceful_stop(root, grace=timeout, report=rep):
         return True
-    pid = read_pid(root)
+    # the ping-discovered pid survives a stale pid file (ch-bsd plan-4 r3
+    # #m-5: `read_pid` returned None here and a running daemon was reported
+    # "stopped")
+    pid = rep.get("pid") or read_pid(root)
     if pid is None:
         return True
     if rep.get("signal") is None:

@@ -191,8 +191,18 @@ def collect_rerank_docs(
     *,
     k: int = 20,
     pool: int | None = None,
+    doc_chars: int | None = None,
 ) -> tuple[list[tuple[int, str]], list[tuple[int, float]], list[tuple[int, float]]]:
     """Split `hits` into `(scored, untexted, tail)` and fetch doc text.
+
+    `doc_chars` caps each doc's text. The cross-encoder truncates at 512
+    tokens (~2000 chars) anyway, so beyond that a longer doc costs the same
+    and adds nothing; BELOW it the cost is roughly linear — measured on the
+    shared worker 2026-09-15 (10 memory docs, loaded machine): 28.7k chars
+    4.8 s, 1024 chars/doc 5.1 s (the 512-token ceiling), 768 → 3.4 s,
+    512 → 2.0–3.2 s. The per-prompt hook has ~4 s for this leg after its
+    embed, so it caps (cli.RERANK_DOC_CHARS); a memory's head (title +
+    lead) is what the cross-encoder needs to rank it.
 
     This is the DuckDB half of reranking, kept separate from the model half
     so the daemon can do it under `_store_lock` and then release the lock
@@ -226,6 +236,8 @@ def collect_rerank_docs(
                 text = embmod.extract_text_for_entity(store, int(eid), kind)
             except Exception:
                 text = ""
+        if text and doc_chars:
+            text = text[:doc_chars]
         if text:
             scored.append((int(eid), text))
         else:
