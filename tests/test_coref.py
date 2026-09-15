@@ -108,7 +108,7 @@ def test_as_memory_ingest_emits_coref_linkage(store, tmp_path, monkeypatch):
         "He documented everything.\n")
     ingest_gmd_paths(store, [md], lenient=True, as_memory=True,
                      project_root=tmp_path)
-    row = store.get_entity("memory", "note.md")
+    row = store.get_entity("memory", "note")  # memories are named by stem (plan-5 5.1)
     assert row is not None
     res = store.load_coref(row.id)
     assert res, "resolutions were not persisted"
