@@ -21,8 +21,8 @@ Then stop — don't re-commit. Otherwise, make a checkpoint:
 1. **Commit the work properly.** Review the diff, stage only intentional
    changes (tool noise — `.tldr/`, `__pycache__/`, `egg-info/` — stays
    unstaged), and make conventional commit(s), split by logical concern. Use
-   `$ARGUMENTS` as a hint for the headline if given. Deploy (ff `~/refmatrix` to the sha + `rmx daemon restart --relaunch`; verify `rmx version -v` →
-   `rmx` venv) only if code that other instances run changed.
+   `$ARGUMENTS` as a hint for the headline if given. Deploy only if code that other instances run changed: ff `~/refmatrix` to the sha,
+   `rmx daemon restart --relaunch`, verify `rmx version -v`.
 2. **Promote the STM snapshot** so this checkpoint's state is durable:
    ```
    rmx focus summarize --promote

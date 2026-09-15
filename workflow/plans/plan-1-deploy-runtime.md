@@ -5,7 +5,7 @@ title: "Deploy runtime: `rmx`, daemons, and hub execute the deploy tree, and say
 tags: [plan, remediation, bsd]
 metadata:
   node_type: plan
-  status: in-progress
+  status: completed
   created: 2026-09-14
   bsd_findings: "#bs-2"
 ---

@@ -23,7 +23,7 @@ end-to-end audit ([[bsd-0661-e2e-memory-bridge]]).
 
 | ID | Status | Description | Dependencies | Source Ref | Decision Ref |
 |----|--------|-------------|--------------|------------|--------------|
-| G1 | Planned | Deploy venv imports the dev tree; no deploy runtime | — | bsd #bs-2 | plan 1 |
+| G1 | Integrated | Deploy venv imports the dev tree; no deploy runtime | — | bsd #bs-2 | plan 1 |
 | G2 | Planned | `learn_from_grep` (a read) upserts entities unguarded; entities index not repaired on fast-exit | — | bsd #bs-3 | plan 2 |
 | G3 | Planned | Hub watchdog SIGKILLs a daemon reconnecting to an evicted model worker | — | incident 2026-09-14 | plan 2 |
 | G4 | Planned | Memory bridge skips non-GMD files silently; two bridges (sync-disk vs ingest-gmd) | — | bsd #bs-1 | plan 3 |
