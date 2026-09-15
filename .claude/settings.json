@@ -82,7 +82,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook; rmx memory recall --session-start --k 10 --scope both --json"
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx memory recall --session-start --k 10 --scope both --json --timeout 10"
           },
           {
             "type": "command",
@@ -126,7 +126,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook; rmx memory recall --stdin-json --k 5 --scope both --json"
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx memory recall --stdin-json --k 5 --scope both --json --timeout 5"
           }
         ]
       }

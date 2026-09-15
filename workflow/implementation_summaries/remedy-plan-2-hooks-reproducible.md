@@ -71,5 +71,5 @@ rel: evidence-for -> [[bsd-plan2-hooks-reproducible-r5-a89c733]]
 | #m-4 legacy-partition probe cached a timeout silently | a failed probe warns on stderr and is NOT cached; the next command re-probes |
 | #m-5 hooks unobserved | user-gated |
 
-Plan-2 status back to `in-progress` (plan file + plan-of-plans) until ch-bsd r6 is CLEAN. TDD: RED `workflow/review-output/pytest-plan2-r5-red.log` (5 failed), GREEN `pytest-plan2-r5-green.log` (163 passed across hook, recall, parity, MCP, subject and migrated-verb suites). Mutations `pytest-plan2-r5-mutations.log`: (A) the generator without the budgets fails the generator test; (B) a deadline that never raises fails the verb deadline test and the bounded-hook-modes test.
+Plan-2 status back to `in-progress` (plan file + plan-of-plans) until ch-bsd r6 is CLEAN. TDD: RED `workflow/review-output/pytest-plan2-r5-red.log` (5 failed), GREEN `pytest-plan2-r5-green.log` (163 passed across hook, recall, parity, MCP, subject and migrated-verb suites). Mutations `pytest-plan2-r5-mutations.log`: (A) the generator without the budgets fails the generator test; (B) a deadline that never raises fails the verb deadline test (the bounded-hook-modes test still passes under B because `_call` converts the socket timeout into busy on its own — the two guards are independent).
 
