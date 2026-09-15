@@ -58,3 +58,15 @@ TDD: RED `pytest-plan1-r4-red.log` (4 failed), GREEN `pytest-plan1-r4-green.log`
 
 Also found while closing: bug-008 ([[bug-registry#registry]]) — the live rewriter hook was overwritten with dev-tree paths a second time (21:43, by a dev-venv apply outside this session's tests); regenerated from the deploy build, durable fix deferred to plan 6.
 
+## Round 5 (bsd-plan1-r5, 7b35e80) {#round-5}
+
+rel: evidence-for -> [[bsd-plan1-deploy-runtime-r5-7b35e80]]
+
+| Finding | Fix |
+|---------|-----|
+| #b-1-r5 third unregistered-mock strike | rows: `hub.status` (new), `hub.rpc`/`is_running` and `discovery.*` rows now name `tests/test_plan1_remedy.py` (and `test_plan3_remedy_r2.py`) |
+| #b-2-r5 bug-008 deferral unanchored | `task-6.5-plan-6-deferrals-docs-benchmark` written with acceptance criteria (runtime wrapper resolution + foreign-tree refusal); plan-6 breakdown/`rel:` + plan-of-plans task count updated; deferral row points at it |
+| #m-3-r5 dead `except` in `hub_queues` | deleted — `_hub_rpc` owns the wording |
+
+Plan 1 → `completed` in the plan file and plan-of-plans, per the r5 verdict ("may flip in the commit that adds the rows and anchors the deferral"). No source behaviour changed beyond the dead-branch removal (`test_hub_queues_reports_a_busy_fleet_instead_of_a_traceback` still passes through the VerbError arm).
+

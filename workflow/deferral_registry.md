@@ -34,7 +34,7 @@ this registry; `@ch-bsd` flags stale deferrals.
 
 | Item | Location | Classification | Graduation Trigger | Owner |
 |------|----------|----------------|--------------------|-------|
-| rewriter hook bakes the generator's tree (bug-008, recurring) | src/refmatrix/search_hooks.py `render_scripts` (`RMXGREP =`/`RMXRG =` absolute paths in `~/.claude/hooks/rmxgrep-rewrite.py`) | deferred-design | plan 6 task 6.4 (or a new 6.5): resolve the wrappers at runtime from the tree of the `rmx` on PATH, and `install_search_hooks` refuses to write the user-global dir from a tree that is not the one `~/bin/rmx` runs; until then `rmx install-hooks --check` is the tripwire | plan 6 |
+| rewriter hook bakes the generator's tree (bug-008, recurring) | src/refmatrix/search_hooks.py `render_scripts` (`RMXGREP =`/`RMXRG =` absolute paths in `~/.claude/hooks/rmxgrep-rewrite.py`) | deferred-design | task 6.5 (`task-6.5-plan-6-deferrals-docs-benchmark`, acceptance criteria there): runtime resolution of the wrappers + refusal to write the user-global dir from a foreign tree; until then `rmx install-hooks --check` is the tripwire | plan 6 |
 
 ## Graduation Log {#graduation-log}
 
