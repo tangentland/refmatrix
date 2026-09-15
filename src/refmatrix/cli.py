@@ -951,7 +951,8 @@ def focus_context(top, session):
     # still displays the real symbols. _ss_clean_focus is the shared filter.
     # The graph comes from the verb (what rmx_focus returns); the L<n>
     # provenance below is CLI rendering over the same ring.
-    g = _verbs.focus(_root(), top=max(top * 3, 30), session=sess)["graph"]
+    fres = _verbs.focus(_root(), top=max(top * 3, 30), session=sess)
+    g = fres["graph"]
     nodes = _ss_clean_focus(g["nodes"], limit=top)
     if not nodes:
         console.print("[yellow]no focus yet[/]")
@@ -959,35 +960,31 @@ def focus_context(top, session):
     console.print(f"[bold]focus[/] · {g['events']} events · session {g['session']}")
     console.print("[dim]L<n> = line in the full log; `rmx focus show <n>` for "
                   "depth[/]")
-    # Each event's 1-based line in the full on-disk log, so every row below can
-    # cite L<n> and the reader can drill to the raw event via `focus show <n>`.
-    events = s.all_events()
-    last_line: dict[str, int] = {}
-    for i, e in enumerate(events, 1):
-        for r in (e.get("refs") or []):
-            last_line[r] = i
+    # Everything below renders the VERB's result (what rmx_focus returns), so
+    # an MCP caller and this command see the same dialogue / milestones /
+    # L<n> provenance (ch-bsd plan-3 r2 #s-3).
+    last_line: dict[str, int] = fres.get("last_line") or {}
     # Intent thread — the dialogue: user inputs (UserPromptSubmit) interleaved
     # with my replies (Stop → `say`). Short prompts ("deploy") extract no refs
     # so they're invisible in the ref-graph below; the dialogue gives the graph
     # its "why" and makes a bare "yes" legible against what I'd just proposed.
-    dialogue = [(i, e) for i, e in enumerate(events, 1)
-                if e.get("kind") in ("input", "say", "reason")]
+    dialogue = fres.get("dialogue") or []
     if dialogue:
         console.print("[bold]intent[/] [dim](dialogue + reasoning)[/]")
         _marks = {"input": "[magenta]▸[/]", "say": "[green]◂[/]",
                   "reason": "[blue]✎[/]"}
-        for i, e in dialogue[-7:]:
-            k = e["kind"]
+        for d in dialogue[-7:]:
+            k = d["kind"]
             mark = _marks.get(k, " ")
             dim = "" if k == "input" else "[dim]"
             undim = "" if k == "input" else "[/]"
-            console.print(f"  {mark} {dim}{e['terse'][:84]}{undim} [dim]L{i}[/]")
+            console.print(f"  {mark} {dim}{d['terse'][:84]}{undim} [dim]L{d['line']}[/]")
     # Milestones — git ops captured with their output (commit/push/merge/...).
-    gits = [(i, e) for i, e in enumerate(events, 1) if e.get("kind") == "git"]
+    gits = fres.get("milestones") or []
     if gits:
         console.print("[bold]milestones[/] [dim](git)[/]")
-        for i, e in gits[-6:]:
-            console.print(f"  [yellow]⎇[/] [dim]{e['terse'][:84]}[/] [dim]L{i}[/]")
+        for m in gits[-6:]:
+            console.print(f"  [yellow]⎇[/] [dim]{m['terse'][:84]}[/] [dim]L{m['line']}[/]")
     # Per-row +1 neighbors from the focus edges (co-occurrence within the
     # rolling window) — the graph structure, not just the ranked list. Noise
     # neighbors are dropped so a row points only at real symbols.
@@ -8148,10 +8145,10 @@ def ingest_status(job_id: str | None, follow: bool):
         raise click.ClickException("--follow requires a JOB_ID")
     try:
         result = _verbs.ingest_status(root, job_id=job_id)
+    except _verbs.VerbAbsentError:
+        raise click.ClickException(
+            "daemon not running — ingest jobs are daemon-resident")
     except _verbs.VerbError as e:
-        if "daemon not running" in str(e):
-            raise click.ClickException(
-                "daemon not running — ingest jobs are daemon-resident")
         raise click.ClickException(str(e))
     if follow:
         job = result["job"]
@@ -9269,14 +9266,18 @@ def memory_add(name, content, mtype, tags, meta, protect, is_global):
         res = _verbs.memory_add(root, name, content, mtype=mtype, tags=tags_l,
                                 metadata=meta_d, protect=protect, to_global=is_global)
         eid = res.get("id")
-    except _verbs.VerbError as e:
-        if is_global or "daemon not running" not in str(e):
+    except _verbs.VerbAbsentError as e:
+        if is_global:
             raise click.ClickException(str(e))
-        # Bootstrap exception (same as the MCP tool): a fresh store has no
-        # daemon yet and the first memory must still land.
+        # Bootstrap exception (same as the MCP tool): a fresh store has NO
+        # daemon and the first memory must still land. ABSENT only — a busy
+        # daemon (VerbBusyError) holds the writer; opening the slot under it
+        # is the 2026-09-14 lock crash (ch-bsd plan-3 r2 #b-2).
         s = _store()
         eid = s.add_memory(name=name, content=content, mtype=mtype, tags=tags_l,
                            metadata=meta_d, protected=protect)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e))
     label = "global memory" if is_global else "memory"
     console.print(f"[green]{label}[/] {name} (id={eid}) {mtype}")
 
@@ -9299,13 +9300,13 @@ def memory_get(name_or_id, degree):
         m = _verbs.memory(root, action="get",
                           **({"id": target} if isinstance(target, int)
                              else {"name": target}))["memory"]
-    except _verbs.VerbError as e:
-        if "daemon not running" not in str(e):
-            raise click.ClickException(str(e))
+    except _verbs.VerbAbsentError:
         # Daemon down: the lock-free reader (a CLI courtesy the daemon-routed
-        # verb does not offer).
+        # verb does not offer). Busy is NOT down: it surfaces below.
         s = _read_store()
         m = s.get_memory(target)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e))
     if m is None:
         raise click.ClickException(f"no memory matching {name_or_id!r}")
     console.print(f"[bold]{m['name']}[/]  id={m['id']}  mtype={m['mtype']}")
@@ -9920,9 +9921,9 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             widened = bool(res.get("widened"))
             for w in res.get("warnings") or []:
                 _warn(w)
-        except _verbs.VerbError as e:
-            if "daemon not running" not in str(e):
-                raise click.ClickException(str(e))
+        except _verbs.VerbBusyError as e:
+            raise click.ClickException(str(e))
+        except _verbs.VerbAbsentError as e:
             click.echo(f"# rmx: {e}; reading the store directly", err=True)
             since_s = _parse_duration(since) if since else (
                 7 * 86400.0 if session_start else None)
@@ -9944,6 +9945,8 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                 rows = _merge_scope(rows, _global_rows(None, recent_flag=True, since=since_s),
                                     k, scope)
             rows = _attach_context(rows)
+        except _verbs.VerbError as e:
+            raise click.ClickException(str(e))
         if widened:
             click.echo("# rmx: nothing in the 7d window; widened to newest", err=True)
         if as_json:

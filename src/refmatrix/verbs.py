@@ -34,6 +34,18 @@ class VerbError(RuntimeError):
     render it as {"error": str}; CLI wrappers as a ClickException."""
 
 
+class VerbBusyError(VerbError):
+    """The store's daemon is alive but not answering (starting, rebuilding an
+    index, holding the writer lock). Callers retry or report; they must NEVER
+    treat it as absent — an in-process fallback would open the active slot
+    under the writer (ch-bsd plan-3 r2 #b-2, 3rd sighting of busy≠absent)."""
+
+
+class VerbAbsentError(VerbError):
+    """No daemon for this store (no process, no socket). The ONLY condition a
+    documented bootstrap fallback may act on."""
+
+
 class VerbArgsError(VerbError, ValueError):
     """A required argument is missing — a caller bug, not a runtime condition.
     Also a ValueError so transport code that reports caller mistakes as
@@ -179,11 +191,29 @@ def verb(name: str, description: str, *,
 # ---- shared plumbing -------------------------------------------------------
 
 
+def require_daemon(root: Path, *, retries: int = 2) -> dict:
+    """Classify the store's daemon: up → the status dict; busy → VerbBusyError
+    (typed, so no caller string-matches a message); absent → VerbAbsentError."""
+    from refmatrix import discovery
+    st = discovery.daemon_status(root, retries=retries)
+    if st.get("up"):
+        return st
+    if st.get("busy"):
+        raise VerbBusyError(
+            f"daemon busy pid={st.get('pid')} for {root} (alive, not answering — "
+            f"starting, rebuilding an index, or holding the store lock); retry shortly")
+    raise VerbAbsentError(f"daemon not running for {root}")
+
+
 def _call(root: Path, op: str, payload: dict, *, timeout: float = 60.0) -> dict:
+    import socket as _socket
     from refmatrix import daemon as daemon_mod
-    if not daemon_mod.ping(root):
-        raise VerbError(f"daemon not running for {root}")
-    r = daemon_mod.call(root, op, payload, timeout=timeout)
+    require_daemon(root)
+    try:
+        r = daemon_mod.call(root, op, payload, timeout=timeout)
+    except (TimeoutError, _socket.timeout, OSError) as e:
+        raise VerbBusyError(f"daemon op {op} on {root} did not answer within "
+                            f"{timeout:g}s ({e}); the daemon is busy") from e
     if not r.get("ok"):
         raise VerbError(str(r.get("error")))
     return r.get("result", {})
@@ -731,9 +761,28 @@ def save_state(root: Path, *, message: str | None = None,
       "Current short-term focus graph + task stack for the project (what is "
       "being worked on right now).")
 def focus(root: Path, *, top: int = 20, session: str | None = None) -> dict:
+    """Graph + tasks + what `rmx focus context` renders around them: the
+    intent `dialogue` (input / say / reason events, newest last, with their
+    1-based line in the full log), git `milestones`, `last_line` (ref → last
+    line that mentioned it) and `events_total` — so an MCP caller gets what
+    the CLI shows (ch-bsd plan-3 r2 #s-3)."""
     from refmatrix import stm as stm_mod
     s = stm_mod.Stm(root, resolve_session(root, session))
-    return {"graph": s.focus_graph(top=top), "tasks": s.task_list()}
+    events = s.all_events()
+    last_line: dict[str, int] = {}
+    dialogue: list[dict] = []
+    milestones: list[dict] = []
+    for i, e in enumerate(events, 1):
+        for r in (e.get("refs") or []):
+            last_line[r] = i
+        k = e.get("kind")
+        if k in ("input", "say", "reason"):
+            dialogue.append({"line": i, "kind": k, "terse": e.get("terse", "")})
+        elif k == "git":
+            milestones.append({"line": i, "terse": e.get("terse", "")})
+    return {"graph": s.focus_graph(top=top), "tasks": s.task_list(),
+            "dialogue": dialogue, "milestones": milestones,
+            "last_line": last_line, "events_total": len(events)}
 
 
 @verb("rmx_focus_note",
@@ -759,11 +808,13 @@ def change_subject(root: Path, label: str, *,
     rec = s.set_subject(label)
     part = memory_partition(root)
     eid = None
-    if daemon_mod.ping(root):
-        r = daemon_mod.call(root, "subject_upsert",
-                            {"label": label, "partition": part}, timeout=30.0)
-        eid = r.get("result", {}).get("id") if r.get("ok") else None
-    else:
+    try:
+        r = _call(root, "subject_upsert", {"label": label, "partition": part},
+                  timeout=30.0)
+        eid = r.get("id")
+    except VerbAbsentError:
+        # No daemon at all (bootstrap): in-process. A BUSY daemon raises —
+        # opening the slot under the writer is the lock crash.
         from refmatrix.store import Store
         s2 = Store(root)
         with s2.with_partition(part):
@@ -827,16 +878,7 @@ def task(root: Path, *, action: typing.Literal["push", "pop", "list", "current",
 
 @verb("rmx_queues", 'Change-queue visibility: pending sync/stale work per project + refinement-queue depth.')
 def queues(root: Path) -> dict:
-    from refmatrix import hub as hub_mod
-    if not hub_mod.is_running():
-        raise VerbError("hub not running — change-queue visibility needs it")
-    try:
-        return hub_mod.rpc("queues").get("result", {})
-    except (TimeoutError, OSError) as e:
-        # The hub walks every daemon; one busy store used to surface here as
-        # a raw traceback (bsd-plan1-r4 #s-2).
-        raise VerbError(f"hub queues timed out ({e}) — a daemon is busy; retry "
-                        f"or check `rmx daemon status` per project") from e
+    return _hub_rpc("queues")
 
 
 @verb("rmx_ingest_status", 'Poll an ingest/embed job started by rmx_ingest. Omit job_id to list all jobs; since_seq streams new events.')
@@ -962,8 +1004,7 @@ def memory(root: Path, action: typing.Literal[
         return memory_add(root, name, content, mtype=mtype or "observation",
                           tags=tags, protect=bool(protect))
     part = partition or memory_partition(root)
-    if not daemon_mod.ping(root):
-        raise VerbError(f"daemon not running for {root}")
+    require_daemon(root)          # busy is typed, never "not running"
     if action == "promote":
         key = {"id": int(id)} if id is not None else {"name": name}
         g0 = daemon_mod.call(root, "memory_get", {**key, "partition": part}, timeout=30.0)
@@ -1007,10 +1048,24 @@ def _bus_sender(root: Path, explicit: "str | None") -> str:
 
 
 def _hub_rpc(op: str, args: "dict | None" = None) -> dict:
+    """The ONE hub boundary for the verbs: a hub that is down, an op that
+    answers ok:false, or a socket that times out are all a typed VerbError
+    with the hub's own words — never `{}` (ch-bsd plan-3 r2 #b-1: ten bus
+    twins and `rmx hub queues` swallowed refusals and died on the empty
+    dict)."""
+    import socket as _socket
     from refmatrix import hub as hub_mod
     if not hub_mod.is_running():
-        raise VerbError("hub not running")
-    return hub_mod.rpc(op, args).get("result", {}) if args is not None else hub_mod.rpc(op).get("result", {})
+        raise VerbError(f"hub not running — `{op}` needs it (`rmx hub start`)")
+    try:
+        resp = hub_mod.rpc(op, args) if args is not None else hub_mod.rpc(op)
+    except (TimeoutError, _socket.timeout, OSError) as e:
+        raise VerbError(f"hub rpc {op} failed ({e}) — a daemon is busy or the hub "
+                        f"is wedged; retry, or `rmx hub status`") from e
+    if not isinstance(resp, dict) or not resp.get("ok"):
+        err = (resp or {}).get("error") if isinstance(resp, dict) else resp
+        raise VerbError(f"hub {op} refused: {err or 'no response'}")
+    return resp.get("result", {})
 
 
 @verb("rmx_bus_pub", "Publish a message to the agent bus (proj:<name>:<topic> or global:<topic>). `from` defaults to this server's project; pass `reply_to` (a prior message id) to thread a reply.", aliases={"from": "sender"})
