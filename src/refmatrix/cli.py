@@ -372,12 +372,22 @@ def _store(write: bool = True) -> "Store":
     `Store` as before, so behavior is unchanged until a daemon is present."""
     if not write:
         return _read_store()
-    from refmatrix import daemon as daemon_mod
+    from refmatrix import verbs as _verbs
     root = _root()
-    if daemon_mod.ping(root):
-        # Deliberate duck-type: the proxy mirrors Store's mutation surface.
-        return cast(Store, _DaemonWriter(root, _resolve_partition()))
-    return _store_rw()
+    # Busy is not absent (ch-bsd plan-5 #b-1): four bridge runs on
+    # 2026-09-14 took the "daemon down" branch while pid 30867 was alive and
+    # silent, wrote catalog.B directly, and the daemon fast-exited on a
+    # corrupted ART index. A busy daemon REFUSES the writer; only a store
+    # with no daemon at all opens the slot in-process.
+    try:
+        _verbs.require_daemon(root)
+    except _verbs.VerbBusyError as e:
+        raise click.ClickException(
+            f"{e} — writes go through the daemon; retry shortly")
+    except _verbs.VerbAbsentError:
+        return _store_rw()
+    # Deliberate duck-type: the proxy mirrors Store's mutation surface.
+    return cast(Store, _DaemonWriter(root, _resolve_partition()))
 
 
 @contextlib.contextmanager
@@ -8390,7 +8400,7 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
 
 def _ingest_gmd_sync(resolved: list[Path], *, as_memory: bool,
                      memory_mtype: str = "curated", verbose: bool = False,
-                     partition: str | None = None) -> str:
+                     partition: str | None = None, with_stats: bool = False):
     """Run `ingest-gmd` synchronously over `resolved` and return the report
     string. Daemon-up: one `ingest_gmd` RPC (honors `partition` so
     `--as-memory` rows land in the caller's memory partition, not the
@@ -8398,11 +8408,22 @@ def _ingest_gmd_sync(resolved: list[Path], *, as_memory: bool,
     routing. Shared by the `ingest-gmd` command and the save-state memory
     bridge (`_sync_memory_dir`)."""
     from refmatrix import daemon as daemon_mod
+    from refmatrix import verbs as _verbs
     from refmatrix.ingest_gmd import collect_gmd_files, ingest_gmd_paths
 
     root = _root()
     partition = partition or _resolve_partition()
-    if daemon_mod.ping(root):
+    # up → the daemon op; busy → refuse (a second writer on the live slot is
+    # the 2026-09-14 ART corruption, ch-bsd plan-5 #b-1); absent → in-process.
+    try:
+        _verbs.require_daemon(root)
+        daemon_up = True
+    except _verbs.VerbBusyError as e:
+        raise click.ClickException(f"{e} — ingest-gmd skipped (a second writer on "
+                                   f"the live catalog is not an option); retry shortly")
+    except _verbs.VerbAbsentError:
+        daemon_up = False
+    if daemon_up:
         resp = daemon_mod.call(root, "ingest_gmd", {
             "targets": [str(p) for p in resolved],
             "verbose": verbose,
@@ -8412,11 +8433,12 @@ def _ingest_gmd_sync(resolved: list[Path], *, as_memory: bool,
         }, timeout=24 * 3600.0)
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
-        return str(resp["result"]["report"])
-    s = _store()
+        rep = str(resp["result"]["report"])
+        return (rep, dict(resp["result"].get("stats") or {})) if with_stats else rep
+    s = _store_rw()
     files = collect_gmd_files(resolved)
     if not files:
-        return "no candidate files found"
+        return ("no candidate files found", {}) if with_stats else "no candidate files found"
     if verbose:
         for f in files:
             console.print(f"  scan {f}")
@@ -8426,9 +8448,8 @@ def _ingest_gmd_sync(resolved: list[Path], *, as_memory: bool,
         stats = ingest_gmd_paths(
             s, files, verbose=verbose,
             as_memory=as_memory, memory_mtype_default=memory_mtype,
-            lenient=as_memory,
         )
-    return stats.report()
+    return (stats.report(), stats.as_dict()) if with_stats else stats.report()
 
 
 def _sync_memory_dir(memdir: Path) -> dict:
@@ -8449,7 +8470,7 @@ def _sync_memory_dir(memdir: Path) -> dict:
     runs it again, detached, as catch-up for files written outside
     save-state."""
     out: dict = {"memdir": str(memdir), "report": None, "error": None,
-                 "skipped_non_gmd": 0, "skipped_unparseable": [],
+                 "skipped_non_gmd": 0, "skipped_unparseable": [], "skipped_index": [],
                  "waited": False, "waited_job": None}
     if not memdir.is_dir():
         out["error"] = f"memory dir not found: {memdir}"
@@ -8459,9 +8480,11 @@ def _sync_memory_dir(memdir: Path) -> dict:
     else:
         partition = _resolve_partition()
     try:
-        out["report"] = _ingest_gmd_sync(
-            [memdir.resolve()], as_memory=True, partition=partition,
+        rep, stats = _ingest_gmd_sync(
+            [memdir.resolve()], as_memory=True, partition=partition, with_stats=True,
         )
+        out["report"] = rep
+        _bridge_stats(out, stats)
     except click.ClickException as e:
         if "ingest already active" not in str(e):
             out["error"] = f"{type(e).__name__}: {e}"
@@ -8469,8 +8492,15 @@ def _sync_memory_dir(memdir: Path) -> dict:
             _bridge_wait_for_active_job(memdir, partition, str(e), out)
     except Exception as e:  # noqa: BLE001 — reported, not hidden
         out["error"] = f"{type(e).__name__}: {e}"
-    _parse_bridge_report(out)
     return out
+
+
+def _bridge_stats(out: dict, stats: dict) -> None:
+    """The counters, structurally (ch-bsd plan-5 #m-7: no report scraping)."""
+    out["skipped_non_gmd"] = int(stats.get("skipped_non_gmd") or 0)
+    out["skipped_unparseable"] = [{"path": p, "error": e}
+                                  for p, e in (stats.get("skipped_unparseable") or [])]
+    out["skipped_index"] = list(stats.get("skipped_index") or [])
 
 
 def _bridge_wait_for_active_job(memdir: Path, partition: str, err: str, out: dict) -> None:
@@ -8515,37 +8545,31 @@ def _bridge_wait_for_active_job(memdir: Path, partition: str, err: str, out: dic
                             f"SessionStart, or run `rmx ingest-gmd --as-memory {memdir}`")
             return
         _time.sleep(0.5)
-    targets = [str(Path(t).resolve()) for t in ((job.get("args") or {}).get("targets") or [])]
+    jargs = job.get("args") or {}
+    targets = [str(Path(t).resolve()) for t in (jargs.get("targets") or [])]
     me = str(memdir.resolve())
-    covered = any(me == t or me.startswith(t.rstrip("/") + "/") for t in targets)
+    # Covered = the other job was THE bridge over this dir: same target, AS
+    # MEMORY, same partition. A plain doc ingest over the memory dir is not
+    # (ch-bsd plan-5 #s-3: its report said "ingested" and no memory landed).
+    covered = (any(me == t or me.startswith(t.rstrip("/") + "/") for t in targets)
+               and bool(jargs.get("as_memory")) and jargs.get("partition") == partition)
     if job.get("status") == "done" and covered:
         res = job.get("result") or {}
         out["report"] = str(res.get("report") if isinstance(res, dict) else res)
+        if isinstance(res, dict):
+            _bridge_stats(out, res.get("stats") or {})
         return
     if job.get("status") != "done" and covered:
         out["error"] = f"ingest job {jid} over {memdir} ended {job.get('status')}: {job.get('error')}"
         return
     # The other job did not cover our dir: now the slot is free, run ours.
     try:
-        out["report"] = _ingest_gmd_sync([memdir.resolve()], as_memory=True, partition=partition)
+        rep, stats = _ingest_gmd_sync([memdir.resolve()], as_memory=True,
+                                      partition=partition, with_stats=True)
+        out["report"] = rep
+        _bridge_stats(out, stats)
     except Exception as e:  # noqa: BLE001
         out["error"] = f"{type(e).__name__}: {e}"
-
-
-def _parse_bridge_report(out: dict) -> None:
-    """Lift the ingest report's skip counters into the bridge result so a
-    caller (save-state, MCP) can act on them without scraping text."""
-    rep = out.get("report") or ""
-    import re as _re
-    m = _re.search(r"^skipped_non_gmd: (\d+)$", rep, _re.M)
-    if m:
-        out["skipped_non_gmd"] = int(m.group(1))
-    m = _re.search(r"^skipped_unparseable: (\d+)$", rep, _re.M)
-    if m and int(m.group(1)):
-        for line in rep.splitlines():
-            if line.startswith("  ") and ": " in line and not line.startswith("  ..."):
-                p, _, err = line.strip().partition(": ")
-                out["skipped_unparseable"].append({"path": p, "error": err})
 
 
 # ---- dense / Lance --------------------------------------------------------
@@ -10536,7 +10560,6 @@ def _parse_memory_md_frontmatter(text: str) -> tuple[dict, str]:
     return fm, body
 
 
-@memory_grp.command("sync-disk")
 @click.argument("paths", type=click.Path(exists=True, path_type=Path),
                 nargs=-1, required=False)
 @click.option("--mtype", "default_mtype", default="curated", show_default=True,
@@ -11035,6 +11058,8 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
         else:
             # Report may quote unresolved `[[wikilinks]]`; keep them out of
             # Rich markup (which renders `[[foo]]` as `[]`).
+            if sync.get("waited"):
+                console.print(f"[dim]  waited for ingest job {sync.get('waited_job')}[/]")
             console.print(f"[green]memory bridge[/] {memdir} → store:")
             click.echo(sync["report"])
 
