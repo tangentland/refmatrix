@@ -309,17 +309,18 @@ def _promote_digest(root: Path, s) -> dict:
         # Busy is not absent (ch-bsd plan-3 r3 #b-1): only a store with NO
         # daemon may be opened in-process; a busy one raises VerbBusyError,
         # which the outer except turns into the error dict the callers print.
-        from refmatrix.verbs import VerbAbsentError, require_daemon
+        from refmatrix.verbs import VerbAbsentError, _call, require_daemon
         try:
             require_daemon(root)
             daemon_up = True
         except VerbAbsentError:
             daemon_up = False
         if daemon_up:
-            r = daemon_mod.call(root, "memory_add", args, timeout=30.0)
-            if not r.get("ok"):
-                return {"error": r.get("error", "daemon error"), "name": name}
-            return {"name": name, "id": r.get("result", {}).get("id")}
+            # Typed, one attempt (bsd-plan3-r4 #s-3): the bare call retried a
+            # 30 s timeout three times and reported "TimeoutError: timed out"
+            # for a held writer; a busy daemon is now named as busy.
+            r = _call(root, "memory_add", args, timeout=30.0, retries=0)
+            return {"name": name, "id": r.get("id")}
         from refmatrix.store import Store
         st = Store(root)
         with st.with_partition(part):
@@ -489,9 +490,15 @@ def compose_recall_state(s, root: Path, *, repo: Path, memdir: Path) -> dict:
     stm_digest = _focus_digest(s) if events else None
     recents = _ss_recent_memories(memdir, exclude="")
 
-    pid = daemon_mod.read_pid(root)
+    # Busy is not absent (bsd-plan3-r4 #b-1): a bare ping here turned every
+    # busy daemon into "stale pid" on the resume report, and the render's
+    # `busy` branch had no producer since 0.41.0.
+    from refmatrix import discovery
+    st = discovery.daemon_status(root, retries=0)
+    pid = st.get("pid")
     daemon_info = {
-        "running": bool(pid) and daemon_mod.ping(root),
+        "running": bool(st.get("up")),
+        "busy": bool(st.get("busy")),
         "pid": pid,
     }
 
@@ -504,7 +511,11 @@ def compose_recall_state(s, root: Path, *, repo: Path, memdir: Path) -> dict:
             anomalies.append(f"{n} commit(s) ahead of {git['ahead_base']} "
                              f"(unmerged/undeployed?)")
     if pid and not daemon_info["running"]:
-        anomalies.append(f"daemon pid {pid} present but socket unreachable (stale)")
+        if daemon_info["busy"]:
+            anomalies.append(f"daemon pid {pid} alive but not answering (busy: "
+                             f"starting, rebuilding an index, or holding the store lock)")
+        else:
+            anomalies.append(f"daemon pid {pid} present but the process is gone (stale)")
 
     return {
         "session": s.session,

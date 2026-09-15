@@ -141,12 +141,15 @@ def ensure_global_daemon() -> bool:
     return daemon_mod.ping(root)
 
 
-def global_call(op: str, args: dict | None = None, *, timeout: float = 60.0) -> dict:
+def global_call(op: str, args: dict | None = None, *, timeout: float = 60.0,
+                retries: int = 2) -> dict:
     """Route a memory op to the global store's daemon (the single writer for
-    global behavior memories). Ensures the daemon is up first."""
+    global behavior memories). Ensures the daemon is up first. `retries=0`
+    for budgeted callers (a hook's global leg used to cost 3× its timeout on
+    a held global store — bsd-plan2-r6 #b-1)."""
     ensure_global_daemon()
     a = {**(args or {}), "partition": GLOBAL_PARTITION}
-    return daemon_mod.call(global_store_root(), op, a, timeout=timeout)
+    return daemon_mod.call(global_store_root(), op, a, timeout=timeout, retries=retries)
 
 
 # ---- watchdog -------------------------------------------------------------
