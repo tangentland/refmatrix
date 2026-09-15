@@ -23,9 +23,12 @@ def _run(args, cwd, env_extra=None, stdin=None):
     # the mode it exercises via env_extra, so strip the ambient value.
     env.pop("RMXGREP_MODE", None)
     env.update(env_extra or {})
+    # No input → stdin is /dev/null (a tty-less agent shell), NOT the test
+    # runner's own stdin: whether fd 0 is a pipe is part of the contract.
+    kw = {"input": stdin} if stdin is not None else {"stdin": subprocess.DEVNULL}
     return subprocess.run(
-        [str(RMXGREP), *args], cwd=cwd, env=env, input=stdin,
-        capture_output=True, text=True, timeout=30)
+        [str(RMXGREP), *args], cwd=cwd, env=env,
+        capture_output=True, text=True, timeout=30, **kw)
 
 
 def test_outside_project_matches_real_grep_bytes_and_exit(tmp_path):
@@ -142,3 +145,21 @@ def test_rmxrg_outside_project_is_rg_or_absent(tmp_path):
                          capture_output=True, text=True, timeout=30)
     assert got.returncode == 0
     assert "alpha" in got.stdout
+
+
+def test_stdin_pipe_is_a_filter_even_in_rich_mode(tmp_path):
+    """2026-09-14: Claude Code's shell-snapshot generator runs
+    `set -o | grep on | awk ...` in a shell that inherits BASH_ENV +
+    RMXGREP_MODE=rich; rich mode handed the pipe to `rmx grep`, whose stdout
+    note became `set -o #` in every snapshot. A grep reading a PIPE is a
+    filter: real grep, byte-exact, whatever the mode says."""
+    (tmp_path / ".refmatrix").mkdir()
+    fake = tmp_path / "fakermx"
+    fake.write_text("#!/bin/sh\n[ \"$1\" = grep ] && { echo RMXPATH; exit 0; }\nexit 9\n")
+    fake.chmod(0o755)
+    got = _run(["on"], cwd=tmp_path, stdin="emacs           off\nhistexpand      on\n",
+               env_extra={"RMXGREP_MODE": "rich", "RMXGREP_RMX": str(fake),
+                          "RMXGREP_TEACH": "0"})
+    assert got.stdout == "histexpand      on\n"
+    assert "RMXPATH" not in got.stdout and "#" not in got.stdout
+    assert got.returncode == 0

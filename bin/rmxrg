@@ -29,6 +29,16 @@ if [ -z "$root" ] || ! command -v "$RMX" >/dev/null 2>&1; then
     exec "$REAL" "$@"
 fi
 
+# A rg that READS A PIPE is a filter in someone else's pipeline (`set -o |
+# grep on`, `ps ax | grep x`), never a corpus search: the consumer expects
+# rg bytes and nothing else, whatever RMXGREP_MODE says. 2026-09-14: Claude
+# Code's shell-snapshot generator runs exactly `set -o | grep on | awk` in
+# a shell that inherits BASH_ENV + RMXGREP_MODE=rich; the index note on
+# stdout turned into `set -o #` in every snapshot. Byte-exact, no teach.
+if [ -p /dev/stdin ] || [ -p /dev/fd/0 ]; then
+    exec "$REAL" "$@"
+fi
+
 rich=0
 case "$MODE" in
     rich)  rich=1 ;;

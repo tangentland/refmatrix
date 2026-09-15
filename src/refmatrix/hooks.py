@@ -787,11 +787,15 @@ AGENT_BASHRC_SECTION = f"""{_BASHRC_BEGIN}
 export RMXGREP_MODE="${{RMXGREP_MODE:-rich}}"
 
 # grep/rg become the learning drop-ins (byte-exact outside a project, index
-# + delegation inside). expand_aliases: non-interactive bash ignores aliases
-# without it.
-shopt -s expand_aliases
-[ -x "$HOME/refmatrix/bin/rmxgrep" ] && alias grep="$HOME/refmatrix/bin/rmxgrep"
-[ -x "$HOME/refmatrix/bin/rmxrg" ] && alias rg="$HOME/refmatrix/bin/rmxrg"
+# + delegation inside) as FUNCTIONS, not aliases. An alias needs
+# `shopt -s expand_aliases`, which also rewrites `grep` inside every function
+# body bash parses afterwards — 2026-09-14: Claude Code's shell snapshot
+# captured a user's `psg` with the rmxgrep path baked in, and its own
+# `set -o | grep on` generator got rmx's note → `set -o #`. A function
+# resolves at call time only, and the wrappers treat a piped stdin as a
+# plain filter.
+if [ -x "$HOME/refmatrix/bin/rmxgrep" ]; then grep() {{ "$HOME/refmatrix/bin/rmxgrep" "$@"; }}; fi
+if [ -x "$HOME/refmatrix/bin/rmxrg" ]; then rg() {{ "$HOME/refmatrix/bin/rmxrg" "$@"; }}; fi
 
 # Retrieval-first helpers. `rmx context` is THE first lookup (BM25 + graph
 # neighbors with a literal-grep floor); see .refmatrix/PRIMER.md.

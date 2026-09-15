@@ -108,5 +108,29 @@ def test_agent_env_opt_out(tmp_path):
     install(project_root=proj, refmatrix_root=rmx, apply=True,
             agent_env=False)
     assert not _bashrc(tmp_path).exists()
-    data = json.loads((proj / ".claude" / "settings.local.json").read_text())
+    # 0.67: the claude block lives in settings.json; the env block (BASH_ENV,
+    # RMXGREP_MODE) is the only rmx content in settings.local.json, so with
+    # agent_env=False that file may not exist at all.
+    local = proj / ".claude" / "settings.local.json"
+    data = json.loads(local.read_text()) if local.exists() else {}
     assert "env" not in data
+
+
+def test_bashrc_defines_grep_as_a_function_not_an_alias():
+    """`shopt -s expand_aliases` + `alias grep=…` rewrote `grep` inside every
+    function body bash parsed afterwards (Claude Code's shell snapshot captured
+    `psg` with the rmxgrep path baked in, 2026-09-14). A function resolves at
+    call time only and needs no shopt."""
+    live = [l for l in AGENT_BASHRC_SECTION.splitlines() if l.strip() and not l.lstrip().startswith("#")]
+    assert not any("shopt -s expand_aliases" in l for l in live)
+    assert not any(l.lstrip().startswith("alias ") for l in live)
+    assert "grep() {" in AGENT_BASHRC_SECTION and "rg() {" in AGENT_BASHRC_SECTION
+
+
+def test_bashrc_section_parses_and_grep_function_calls_the_wrapper(tmp_path):
+    import subprocess
+    rc = tmp_path / "rc.sh"
+    rc.write_text(AGENT_BASHRC_SECTION)
+    r = subprocess.run(["bash", "-c", f"source {rc} && type grep"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "function" in r.stdout and "rmxgrep" in r.stdout
