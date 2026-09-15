@@ -28,6 +28,10 @@ rel: evidence-for -> [[plan-4-daemon-resilience]]
 
 RED `workflow/review-output/pytest-bug015-red.log` (5 failed). GREEN `pytest-bug015-green.log` (36 passed with hooks_reproducible, plan2_remedy_r6, docs_generated; then 5 passed after the SIGUSR1 test learned the spawned daemon's stderr file). Mutations `pytest-bug015-mutation.log`: (A) the hub keeps the broken worker → `test_model_server_drops_a_worker_whose_pipe_broke` fails; (B) the daemon's client unbounded again → `test_daemon_shared_worker_client_is_bounded` fails.
 
+## Follow-up: bug-014's root cause (same day) {#bug-014}
+
+The first version of the hub's `_drop_worker` killed healthy workers: the `BrokenPipeError` the hub logs is on the CLIENT socket — a daemon's 5 s probe had given up while the worker was still loading (embed 14.9 s, rerank 33 s measured) — and any thread holding a stale reference dropped whichever worker was current. Now: a send failure to the client is "client left" (worker kept); a worker is dropped only when ITS pipe failed after `WorkerClient`'s respawn-and-retry, and only that worker; `PROBE_TIMEOUT_S` is 45 s so booting daemons adopt a cold shared worker instead of spawning private ones (the sixteen ~450 MB workers). Tests: `test_model_server_keeps_the_worker_when_the_client_socket_broke`, `test_drop_worker_only_drops_the_worker_that_failed`, `test_shared_probe_covers_a_cold_worker`; mutations `pytest-bug014-mutation.log` (A: client-side drop again → fails; B: stale drop again → fails). GREEN `pytest-bug014-green.log` (45 passed with modelsrv + hub).
+
 ## Open {#open}
 
 The root cause is a hypothesis until a wedge is caught with `kill -USR1`. The hub-side worker that goes bad (bug-014: cold-start probe, warm 2195 s under load, BrokenPipe) is ch-performance-tuner's; the daemon-side bounds above hold regardless.

@@ -123,3 +123,42 @@ def test_model_server_drops_a_worker_whose_pipe_broke():
     assert hdr["ok"] is False and "BrokenPipe" in hdr["error"]
     assert "rerank" not in srv._clients, "a worker whose pipe broke must be dropped"
     assert broken.calls == 1
+
+
+def test_model_server_keeps_the_worker_when_the_client_socket_broke():
+    """The `op=info failed: BrokenPipeError` lines were the DAEMON giving up
+    (bounded probe) while the worker warmed: the client socket is gone, the
+    worker is fine, and dropping it cascaded across the fleet."""
+    srv = modelsrv.ModelServer(log=None)
+
+    class _Fine:
+        calls = 0
+
+        def call(self, op, req, blob=None):
+            self.calls += 1
+            return {"ok": True, "model": "x"}, b""
+
+        def close(self, timeout=0.0):
+            raise AssertionError("a healthy worker must not be closed")
+    fine = _Fine()
+    srv._clients["embed"] = fine
+    a, b = socket.socketpair()
+    rw = a.makefile("rwb")
+    send_frame(rw, {"role": "embed", "op": "info"})
+    a.shutdown(socket.SHUT_RDWR)                # the client left before the reply
+    srv._handle(b)
+    assert srv._clients.get("embed") is fine and fine.calls == 1
+
+
+def test_drop_worker_only_drops_the_worker_that_failed():
+    srv = modelsrv.ModelServer(log=None)
+    old, new = _BrokenWorker(), _BrokenWorker()
+    srv._clients["rerank"] = new
+    srv._drop_worker("rerank", BrokenPipeError(), worker=old)   # stale reference
+    assert srv._clients.get("rerank") is new
+    srv._drop_worker("rerank", BrokenPipeError(), worker=new)
+    assert "rerank" not in srv._clients
+
+
+def test_shared_probe_covers_a_cold_worker():
+    assert modelsrv.PROBE_TIMEOUT_S >= 40.0     # measured warm: embed 14.9 s, rerank 33 s
