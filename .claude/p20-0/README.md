@@ -44,8 +44,8 @@ compiler, and the new rule is enforced — zero new code.
 
 ## How the compiler works
 
-1. `rmx memory sync-disk guardrails/` — upsert the on-disk seed memories into rmx
-   (idempotent), so a lone run is self-contained.
+1. `rmx ingest-gmd --as-memory guardrails/` — the memory bridge upserts the on-disk
+   seed memories into rmx (idempotent); a failed seed step fails the compile.
 2. `rmx memory list --type guardrail` — deterministic enumeration (NOT `recall`,
    which is semantic / session-dependent).
 3. `rmx memory get <name>` — full body per memory; parse the `tier` + `rule`.

@@ -1,7 +1,7 @@
 """An edited memory body must re-queue for embedding.
 
 Regression for the silent-staleness class reported from cliquedb (0.25.10):
-`memory sync-disk` reported `updated=217` and `embed --kinds memory` then
+the memory bridge (then `memory sync-disk`) reported `updated=217` and `embed --kinds memory` then
 reported `embedded=0`, so recall kept serving the PRE-EDIT vector while both
 commands exited 0.
 
@@ -11,7 +11,7 @@ Cause: memory bodies live in the `memory_content` sidecar, but
 kind='memory' because path/tldr/meta are all NULL on that call. `add_memory`
 now ratchets the entity clock itself when an EMBEDDED field really changed.
 
-The metadata-only case is the other half of the contract: sync-disk rewrites
+The metadata-only case is the other half of the contract: the bridge rewrites
 `source_mtime` on every scan, so bumping on metadata would re-stale every row
 each cycle — the exact tax f3b7c9d removed.
 """
@@ -65,7 +65,7 @@ def test_changed_mtype_or_tags_requeues(tmp_path):
 
 
 def test_metadata_only_rewrite_does_not_requeue(tmp_path):
-    """The re-embed tax must stay dead: sync-disk stamps a fresh source_mtime
+    """The re-embed tax must stay dead: the bridge stamps a fresh source_mtime
     on every scan, and that alone must not re-stale the row."""
     s = Store(tmp_path / ".refmatrix")
     s.init()

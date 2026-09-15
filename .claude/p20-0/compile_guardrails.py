@@ -15,9 +15,12 @@ DETERMINISTIC LOADER: enumerates guardrails via
 `rmx memory list --type guardrail` (NOT `rmx memory recall` — recall is
 semantic/session-dependent; list is deterministic), then `rmx memory get <name>`
 for each full body, and parses the fenced `guardrail:` block's `tier` + `rule`.
-Before listing it re-runs `rmx memory sync-disk` on the committed guardrail dir so
-the store reflects the on-disk source of truth (idempotent upsert), making a lone
-`compile_guardrails.py` run fully self-contained.
+Before listing it runs the memory bridge (`rmx ingest-gmd --as-memory`) on the
+committed guardrail dir so the store reflects the on-disk source of truth
+(idempotent upsert), making a lone `compile_guardrails.py` run fully
+self-contained. The seed step is REQUIRED: if it fails the compile fails, loudly
+— an edited guardrail that never reaches the store is a silent policy hole
+(bsd-plan5-r2 #b-2-r2: the old alias call died behind `|| true`).
 
 TIER -> ARRAY:
   hard_deny -> autoMode.hard_deny        (lane-agnostic BLOCK, any actor)
@@ -66,24 +69,29 @@ TIER_RE = re.compile(r"^\s*tier:\s*(\S+)\s*$")
 RULE_RE = re.compile(r"^\s*rule:\s*(.+?)\s*$")
 
 
-def _rmx(args: list[str]) -> str:
-    """Run an rmx subcommand with a wide COLUMNS so table names never truncate."""
+def _rmx(args: list[str], *, required: bool = False) -> str:
+    """Run an rmx subcommand with a wide COLUMNS so table names never truncate.
+    `required=True`: a non-zero exit aborts the compile (memory path)."""
     env = dict(os.environ, COLUMNS="400", RMX_INVOCATION_SOURCE="hook")
     proc = subprocess.run(
         ["rmx", *args], capture_output=True, text=True, env=env, check=False,
     )
     if proc.returncode != 0:
-        sys.stderr.write(
-            f"compile_guardrails: `rmx {' '.join(args)}` exited "
-            f"{proc.returncode}: {proc.stderr.strip()}\n"
-        )
+        msg = (f"compile_guardrails: `rmx {' '.join(args)}` exited "
+               f"{proc.returncode}: {proc.stderr.strip()}\n")
+        sys.stderr.write(msg)
+        if required:
+            raise SystemExit(f"compile_guardrails: guardrail seed step FAILED — "
+                             f"the store may not reflect .claude/p20-0/guardrails/; "
+                             f"nothing compiled")
     return proc.stdout
 
 
 def sync_source() -> None:
-    """Upsert the committed guardrail .md files into rmx (idempotent)."""
+    """Upsert the committed guardrail .md files into rmx through the memory
+    bridge (idempotent, content-hash gated). Required — see `_rmx`."""
     if os.path.isdir(GUARDRAIL_DIR):
-        _rmx(["memory", "sync-disk", GUARDRAIL_DIR])
+        _rmx(["ingest-gmd", "--as-memory", GUARDRAIL_DIR], required=True)
 
 
 def list_guardrail_names() -> list[str]:
@@ -174,7 +182,8 @@ def main() -> int:
     if not rules:
         sys.stderr.write(
             "compile_guardrails: no guardrail memories found — nothing compiled. "
-            "(Did `rmx memory sync-disk` run? Is the guardrail dir populated?)\n"
+            "(Did `rmx ingest-gmd --as-memory .claude/p20-0/guardrails` land rows? "
+            "Is the guardrail dir populated?)\n"
         )
 
     if os.path.exists(SETTINGS):
