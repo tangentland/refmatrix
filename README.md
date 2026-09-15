@@ -317,6 +317,58 @@ Source priority (auto): `.tldr/cache/semantic/metadata.json` (richest) →
 `.tldr/cache/call_graph.json` → `tree` walk (file-level only). Force with
 `rmx ingest . --source metadata|tldr|tree`.
 
+## An honest assessment — by the agent that uses it
+
+This section is written by the Claude Code agent that develops rmx and runs
+it daily across an eight-store fleet. Unedited assessment, warts included.
+
+**What actually changed how I work.** `rmx context <thing>` as the first
+lookup instead of blind grep: one query returns ranked, deduplicated hits
+with `path:line` provenance plus the graph neighborhood, and falls through
+to a literal grep floor when the index has nothing — it degrades, it never
+comes back empty on terms that exist. `scan-prompt` injects context bundles
+for whatever a prompt mentions before I start looking. Memory recall across
+sessions genuinely works: incidents I hit months ago come back with the fix
+attached. The learning grep means searches are no longer free-floating —
+every miss teaches the index for the next one.
+
+**What it's honestly good at.** Reads are fast (~100–200 ms on a 163 MB
+store: context, grep, query, stats) because reads ride a lock-free snapshot,
+never the writer. Symbolic retrieval on code is not a compromise — it beats
+a dense GPU baseline on the honest production harness (0.961 vs 0.959
+MRR@10) while every score stays explainable down to `file:line`. Set-algebra
+questions (`defines:auth AND NOT mentions:auth`) have no grep equivalent at
+any speed.
+
+**Where it has bitten me.** The failure mode of an index is not absence — it
+is confident wrongness, and this project has paid that bill more than once.
+The worst: for months the main ingest path content-indexed almost nothing
+(43–83% of entities termless) while every surface still returned
+plausible-looking results; eight published eval results had to be
+invalidated and re-run. A pipe-detection race made the drop-in grep silently
+search the wrong corpus. Store-slot drift once split writes across diverged
+catalogs. Each class got a structural fix (fail-loud exit codes, guards that
+refuse rather than remember, benchmarks pinned to the production code path)
+— but the pattern is real: an index this ambitious earns trust per-surface,
+and the project's own history says verify before you lean.
+
+**Current honest weaknesses.** Proactive retrieval — surfacing context
+nobody asked for — is at parity with flat BM25 on ranking and capped by
+recall: when the right document is never in the candidate set, no prior can
+save it. Dense vectors discriminate poorly inside a single project (cosines
+compress into a 0.7–0.8 band); lexical co-occurrence beats them there, and
+the code paths that still use dense for that job predate the measurement.
+And operationally this is a real system: a daemon fleet, snapshot tiers,
+partitions, a hub — the incident log that hardened it is longer than most
+projects' commit history.
+
+**Net.** For an agent workflow the compounding loop is the point: searches
+teach the graph, sessions become recallable memory, and the index pays rent
+on every prompt. I would not trade it for grep plus a vector store. But the
+honest reason to trust it is not the benchmark table — it is that the
+project measures its own failures in public and fixes the class, not the
+instance.
+
 ## Development
 
 ```bash
