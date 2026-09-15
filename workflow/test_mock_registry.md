@@ -30,6 +30,8 @@ code (`src/`) contains **no mocks** — see CLAUDE.md "No Mocks in Production Co
 | `hub._daemon_identity` (fake dict) | hub → daemon ping | internal-active | tests/test_runtime_identity_surface.py, tests/test_plan1_remedy.py | graduated: `test_gather_queues_carries_identity_end_to_end` patches only `daemon.call`/discovery and exercises the real `_gather_queues` → `_annotate_identity` wiring |
 | `cli._root` (tmp root) | cwd resolution | external | tests/test_hooks_reproducible.py, tests/test_plan2_remedy.py | permanent — root discovery is an environment input |
 | `search_hooks.hooks_dir` (tmp dir) | `~/.claude/hooks` location | external | tests/test_plan2_remedy.py | permanent |
+| `hub.bus` (FakeBus: publish/refinement_queue) | the hub's bus (process boundary) | internal-active | tests/test_plan1_remedy.py | permanent for the alert unit test — the real `_queue_alert_once` body runs, only the bus is recorded; real-bus coverage = the hub integration path (`test_gather_queues_carries_identity_end_to_end` + live `rmx hub status`) |
+| `Hub` self with stubbed `_gather_queues` (FakeHub/QuietHub/HotHub/ColdHub) | queue gathering | internal-active | tests/test_plan1_remedy.py | graduated: `test_gather_queues_carries_identity_end_to_end` drives the real `_gather_queues`; the stubs isolate the gate + publish only |
 | `monkeypatch.setattr` sites (≈187 remaining, unregistered) | various | internal-active | tests/ | plan 6 sweep: register or graduate |
 
 ## Graduation Log {#graduation-log}

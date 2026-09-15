@@ -20,7 +20,7 @@ rel: part-of -> [[plan-1-deploy-runtime]]
 ## Requirements {#requirements}
 
 - `~/refmatrix/.venv/bin/python -c "import refmatrix; print(refmatrix.__file__)"` is under `~/refmatrix/src`.
-- `rmx hub status` shows no `[DEV TREE]`; memories linted; MEMORY.md index updated.
+- `rmx hub status` shows no `[DEV TREE]`; memories linted via `./scripts/lint-gmd.sh` (scope = CLAUDE.md, docs/, workflow/, the project profile AND the memory dir — three memories cite ADR ids `adr-0002-subject-memory-container` / `0001-intuition-lance-integration` that live in `docs/adr/`, so a memory-dir-only lint reports them as dangling by design); MEMORY.md index updated.
 
 ## Files to Create / Modify {#files}
 

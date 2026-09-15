@@ -28,3 +28,18 @@ rel: evidence-for -> [[bsd-plan1-deploy-runtime-cabce24]]
 Also folded in (found by the plan-3 full suite): `SharedWorkerClient.info(timeout=)` bounded adoption probe (`RMX_SHARED_PROBE_TIMEOUT_S`, 5 s) and no reconnect-retry on `TimeoutError` — a mute `models.sock` cost a daemon 300 s (the wedge the watchdog SIGKILLed on 2026-09-14). `test_daemon_falls_back_when_shared_socket_does_not_answer` now passes in seconds; it timed out at the session-start commit too.
 
 RED `workflow/review-output/pytest-remedy12-RED.log` (19 failed); GREEN `pytest-remedy12-GREEN.log`.
+
+## Round 3 (bsd-plan1-r3, e6c4081) {#round-3}
+
+rel: evidence-for -> [[bsd-plan1-deploy-runtime-r3-e6c4081]]
+
+| Finding | Fix |
+|---------|-----|
+| #s-1-r3 FakeBus/FakeHub unregistered | two registry rows (`hub.bus`, `Hub` self with stubbed `_gather_queues`) |
+| #m-2-r3 memory-dir lint dangling ADR links | the three links are correct ADR ids in `docs/adr/`; task 1.3 now names the scope (`scripts/lint-gmd.sh`, which lints memory dir + docs together → 0 errors) |
+| #m-3-r3 ping-exception branch untested | `test_relaunch_fails_when_the_ping_itself_raises` (daemon.call raises OSError → exit≠0, "cannot be read") |
+| #m-4-r3 `identity_error` read by nobody | `hub._daemon_identity` → `{unknown, version, error}`; `_annotate_identity` stamps `identity: unknown` + `identity_error` (hot row); `_verify_relaunch` raises "could not compute its identity"; `daemon status` prints `[UNVERIFIED]` + the error; `hub status` appends the error to `[UNVERIFIED vX]` |
+| also-reviewed: `_queue_alert_once` bool | asserted in `test_queue_alert_once_reports_whether_it_published` |
+
+TDD: RED `workflow/review-output/pytest-plan1-r3-red.log` (2 failed: identity_error unknown, status UNVERIFIED; the ping-exception and bool tests passed on arrival — regression guards, not drivers). GREEN `pytest-plan1-r3-green.log` (24 passed across test_plan1_remedy + test_runtime_identity_surface). Mutation: reverting the `identity_error` branch in `_daemon_identity` fails `test_daemon_identity_with_identity_error_is_unknown`.
+
