@@ -13,6 +13,7 @@ All daemon-down (in-proc) — the CliRunner path the suite uses elsewhere.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from click.testing import CliRunner
 
@@ -135,22 +136,57 @@ def test_cli_change_subject_and_list(tmp_path, monkeypatch):
     assert "Explore Ext" in lst.output
 
 
-def test_cli_promote_files_under_subject_and_recall(tmp_path, monkeypatch):
+def test_cli_promote_refuses_without_a_daemon(tmp_path, monkeypatch):
+    """plan-2 Q4 (2026-09-14): the Stop hook runs `focus summarize --promote`
+    every turn; with the daemon down it must refuse loudly, never open the
+    active slot from a CLI process."""
     root = _cli_env(monkeypatch, tmp_path)
     from refmatrix.cli import main as cli
-    r = CliRunner()
+    stm_mod.Stm(root, "clisess").record("input", "something to summarize")
+    prom = CliRunner().invoke(cli, ["focus", "summarize", "--promote"])
+    assert prom.exit_code != 0
+    assert "daemon not running" in prom.output
 
-    # seed STM so the digest has content, then set the subject
-    s = stm_mod.Stm(root, "clisess")
-    s.record("input", "build the subject feature in stm.py and cli.py")
-    assert r.invoke(cli, ["focus", "change-subject", "subject feature"]).exit_code == 0
 
-    prom = r.invoke(cli, ["focus", "summarize", "--promote"])
-    assert prom.exit_code == 0, prom.output
-    assert "filed under subject" in prom.output
+def test_cli_promote_files_under_subject_and_recall(monkeypatch):
+    """Real path: a spawned daemon on a short tmp root (unix socket sun_path
+    limit), promote through it, then recall the leaves filed under the
+    subject through the same daemon."""
+    import shutil
+    import tempfile
+    from refmatrix import daemon as dm
+    from refmatrix.cli import main as cli
+    base = Path(tempfile.mkdtemp(prefix="rmxs-"))
+    root = base / "proj" / ".refmatrix"
+    root.parent.mkdir()
+    Store(root).init()
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+    monkeypatch.setenv("RMX_SESSION", "clisess")
+    monkeypatch.chdir(root.parent)
+    pid = dm.spawn_daemon_subprocess(root, watch_root=[])
+    assert pid and dm.ping(root)
+    try:
+        r = CliRunner()
+        s = stm_mod.Stm(root, "clisess")
+        s.record("input", "build the subject feature in stm.py and cli.py")
+        assert r.invoke(cli, ["focus", "change-subject", "subject feature"]).exit_code == 0
 
-    rec = r.invoke(cli, ["memory", "recall", "--subject", "subject feature",
-                         "--json"])
-    assert rec.exit_code == 0, rec.output
-    rows = json.loads(rec.output)
-    assert any(m["mtype"] == "session/digest" for m in rows), rows
+        prom = r.invoke(cli, ["focus", "summarize", "--promote"])
+        assert prom.exit_code == 0, prom.output
+        assert "filed under subject" in prom.output
+
+        # The daemon serves subject_leaves from the read snapshot, which
+        # follows the write after the snapshot debounce: poll briefly.
+        import time
+        rows = []
+        for _ in range(40):
+            rec = r.invoke(cli, ["memory", "recall", "--subject", "subject feature", "--json"])
+            assert rec.exit_code == 0, rec.output
+            rows = json.loads(rec.output)
+            if rows:
+                break
+            time.sleep(0.25)
+        assert any(m["mtype"] == "session/digest" for m in rows), rows
+    finally:
+        dm.stop_daemon(root)
+        shutil.rmtree(base, ignore_errors=True)
