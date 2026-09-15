@@ -96,10 +96,36 @@ def _replica_bundle(root: Path, ref: str, *, degree: int = 0,
         return {}
 
 
-def _where_one_project(root, q: str) -> list[dict]:
+# Fan-out deadlines. A store that has not answered by then is NAMED in
+# `skipped` with the deadline (bsd-plan3-r5 #s-3: the pools abandoned their
+# stragglers silently and `federated_query` waited 60 s × retries on a held
+# writer, then dropped it from both `projects` and `skipped`).
+WHERE_FANOUT_S = float(os.environ.get("RMX_WHERE_FANOUT_S", "6") or "6")
+LOCATE_FANOUT_S = float(os.environ.get("RMX_LOCATE_FANOUT_S", "8") or "8")
+QUERY_OP_TIMEOUT_S = float(os.environ.get("RMX_QUERY_OP_TIMEOUT_S", "20") or "20")
+WHERE_MEMORY_OP_S = 3.0
+
+
+def _skip(skipped: list, root, reason: str) -> None:
+    skipped.append({"project": discovery.store_name(root), "root": str(root),
+                    "reason": reason})
+
+
+def _name_stragglers(futs: dict, done: set, skipped: list, deadline_s: float) -> None:
+    """Every future still running past the fan-out deadline is a store the
+    caller did not hear from: say so, per store."""
+    for fut, r in futs.items():
+        if fut not in done:
+            _skip(skipped, r, f"did not answer within {deadline_s:g}s")
+
+
+def _where_one_project(root, q: str) -> "tuple[list[dict], list[str]]":
     """code/doc/concept anchor hits (via cached replica) + memory_search hits
-    for one project. Best-effort; returns [] on any failure."""
+    for one project. Returns (rows, reasons): a leg that failed is SAID in
+    `reasons` (the memory leg's 3 s bound on a held writer used to be a
+    silent `pass` — bsd-plan3-r5 #s-3)."""
     out: list[dict] = []
+    reasons: list[str] = []
     proj = discovery.store_name(root)
     try:
         b = _replica_bundle(root, q, degree=0)
@@ -118,20 +144,23 @@ def _where_one_project(root, q: str) -> list[dict]:
                                 "name": e["name"], "kind": e.get("kind", "concept"),
                                 "path": e.get("path"), "line": e.get("line"),
                                 "snippet": e.get("snippet")})
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001 — said, never mute
+        reasons.append(f"replica bundle failed ({type(e).__name__}: {e})")
     try:
         mem = daemon_mod.call(root, "memory_search",
                               {"query": q, "limit": 4, "partition": proj},
-                              timeout=3.0, retries=0)
+                              timeout=WHERE_MEMORY_OP_S, retries=0)
         if mem.get("ok"):
             for m in mem["result"].get("rows", []):
                 out.append({"source": "memory", "project": proj,
                             "root": str(root), "name": m["name"], "kind": "memory",
                             "path": None, "snippet": (m.get("content") or "")[:120]})
-    except Exception:
-        pass
-    return out
+        else:
+            reasons.append(f"memory_search answered an error: {mem.get('error')}")
+    except Exception as e:  # noqa: BLE001 — a held writer: the op did not answer
+        reasons.append(f"memory_search did not answer within {WHERE_MEMORY_OP_S:g}s "
+                       f"({type(e).__name__})")
+    return out, reasons
 
 
 def _live_roots() -> "tuple[list, list[dict]]":
@@ -161,26 +190,34 @@ def federated_where(q: str, *, limit: int = 40) -> dict:
     {"results": [{source, project, root, name, kind, path, line, snippet}],
      "skipped": [{project, root, reason}]}."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import TimeoutError as _FutTimeout
     roots, skipped = _live_roots()
     results: list[dict] = []
     if roots:
         ex = ThreadPoolExecutor(max_workers=min(8, len(roots)))
         futs = {ex.submit(_where_one_project, r, q): r for r in roots}
+        done: set = set()
         try:
-            for fut in as_completed(futs, timeout=6):
+            for fut in as_completed(futs, timeout=WHERE_FANOUT_S):
+                done.add(fut)
                 try:
-                    results.extend(fut.result(timeout=0.1) or [])
-                except Exception:
-                    pass
-        except Exception:
-            pass  # overall fan-out timeout — return whatever finished
+                    rows, reasons = fut.result(timeout=0.1)
+                except Exception as e:  # noqa: BLE001 — said per store
+                    rows, reasons = [], [f"where failed ({type(e).__name__}: {e})"]
+                results.extend(rows or [])
+                for why in reasons:
+                    _skip(skipped, futs[fut], why)
+        except _FutTimeout:
+            pass  # the fan-out deadline: the stragglers are named below
+        _name_stragglers(futs, done, skipped, WHERE_FANOUT_S)
         # don't block on stragglers (a `with` block would shutdown(wait=True))
         ex.shutdown(wait=False, cancel_futures=True)
-    # global behavior memories (hub-local; fast)
+    # global behavior memories (hub-local; fast) — bounded, one attempt, said
     try:
         from refmatrix import hub as hub_mod
         if hub_mod.global_store_root().exists():
-            g = hub_mod.global_call("memory_search", {"query": q, "limit": 6})
+            g = hub_mod.global_call("memory_search", {"query": q, "limit": 6},
+                                    timeout=WHERE_MEMORY_OP_S, retries=0)
             if g.get("ok"):
                 for m in g["result"].get("rows", []):
                     results.append({
@@ -188,8 +225,14 @@ def federated_where(q: str, *, limit: int = 40) -> dict:
                         "root": str(hub_mod.global_store_root()),
                         "name": m["name"], "kind": "memory", "path": None,
                         "snippet": (m.get("content") or "")[:120]})
-    except Exception:
-        pass
+            else:
+                skipped.append({"project": "global", "root": str(hub_mod.global_store_root()),
+                                "reason": f"memory_search answered an error: {g.get('error')}"})
+    except Exception as e:  # noqa: BLE001 — the global leg, said
+        from refmatrix import hub as hub_mod
+        skipped.append({"project": "global", "root": str(hub_mod.global_store_root()),
+                        "reason": f"global memory_search did not answer within "
+                                  f"{WHERE_MEMORY_OP_S:g}s ({type(e).__name__})"})
 
     seen, deduped = set(), []
     for r in results:
@@ -229,17 +272,23 @@ def federated_query(dsl: str, *, limit: int = 50) -> dict:
     for root in roots:
         proj = discovery.store_name(root)
         try:
+            # one attempt: a held writer does not free in 20 s, and the
+            # library's retries made this 60 s per store, sequentially
             r = daemon_mod.call(root, "query",
                                 {"expr": dsl, "partition": proj, "limit": limit},
-                                timeout=20.0)
-            if r.get("ok"):
-                res = r["result"]
-                rows = res.get("rows") or []
-                out.append({"project": proj, "root": str(root),
-                            "count": res.get("cardinality", len(rows)),
-                            "rows": rows[:limit]})
-        except Exception:
-            pass
+                                timeout=QUERY_OP_TIMEOUT_S, retries=0)
+        except Exception as e:  # noqa: BLE001 — the op did not answer: said
+            _skip(skipped, root, f"daemon busy: query did not answer within "
+                                 f"{QUERY_OP_TIMEOUT_S:g}s ({type(e).__name__})")
+            continue
+        if r.get("ok"):
+            res = r["result"]
+            rows = res.get("rows") or []
+            out.append({"project": proj, "root": str(root),
+                        "count": res.get("cardinality", len(rows)),
+                        "rows": rows[:limit]})
+        else:
+            _skip(skipped, root, f"query answered an error: {r.get('error')}")
     return {"projects": out, "skipped": skipped}
 
 
@@ -322,6 +371,7 @@ def federated_locate(filename: str | None = None,
                             keyword relevance (the "find file X about Y" case).
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import TimeoutError as _FutTimeout
     keywords = [k for k in (keywords or []) if k.strip()]
     roots, skipped = _live_roots()
     merged: dict[str, dict] = {}
@@ -329,12 +379,15 @@ def federated_locate(filename: str | None = None,
         ex = ThreadPoolExecutor(max_workers=min(8, len(roots)))
         futs = {ex.submit(_locate_one_project, r, filename, keywords): r
                 for r in roots}
+        done: set = set()
         try:
-            for fut in as_completed(futs, timeout=8):
+            for fut in as_completed(futs, timeout=LOCATE_FANOUT_S):
+                done.add(fut)
                 try:
                     part = fut.result(timeout=0.1) or {}
-                except Exception:
+                except Exception as e:  # noqa: BLE001 — said per store
                     part = {}
+                    _skip(skipped, futs[fut], f"locate failed ({type(e).__name__}: {e})")
                 for path, h in part.items():
                     cur = merged.get(path)
                     if cur is None:
@@ -343,8 +396,9 @@ def federated_locate(filename: str | None = None,
                         cur["score"] += h["score"]
                         cur["name_hit"] = cur["name_hit"] or h["name_hit"]
                         cur["why"] |= h["why"]
-        except Exception:
-            pass
+        except _FutTimeout:
+            pass  # the fan-out deadline: the stragglers are named below
+        _name_stragglers(futs, done, skipped, LOCATE_FANOUT_S)
         ex.shutdown(wait=False, cancel_futures=True)
 
     rows = list(merged.values())

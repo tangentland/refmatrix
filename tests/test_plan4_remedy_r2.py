@@ -146,9 +146,9 @@ def test_relaunch_fleet_reinstalls_a_drifted_plist_before_restarting(monkeypatch
         r.mkdir(parents=True)
     monkeypatch.setattr(discovery, "discover_roots", lambda: [a, b])
     monkeypatch.setattr(lc, "is_loaded", lambda r: True)
-    monkeypatch.setattr(lc, "check", lambda r: (False, "RMX_SUPERVISED missing") if r == a else (True, ""))
+    monkeypatch.setattr(lc, "check", lambda r, **kw: (False, "RMX_SUPERVISED missing") if r == a else (True, ""))
     calls = []
-    monkeypatch.setattr(lc, "reinstall", lambda r: calls.append(("reinstall", r)) or lc.plist_path(r))
+    monkeypatch.setattr(lc, "reinstall", lambda r, **kw: calls.append(("reinstall", r)) or lc.plist_path(r))
     monkeypatch.setattr(cli_mod.subprocess if hasattr(cli_mod, "subprocess") else subprocess, "run",
                         lambda argv, **kw: calls.append(("restart", Path(kw["env"]["REFMATRIX_ROOT"])))
                         or subprocess.CompletedProcess(argv, 0, "ok pid=1 v", ""))
@@ -174,7 +174,7 @@ def test_reinstall_verifies_the_label_is_loaded_afterwards(tmp_path, monkeypatch
         return loaded["n"] > 1        # unloaded right after the forced install, loaded after the plain one
     monkeypatch.setattr(launchctl, "install", fake_install)
     monkeypatch.setattr(launchctl, "is_loaded", fake_is_loaded)
-    monkeypatch.setattr(launchctl, "check", lambda r: (True, ""))
+    monkeypatch.setattr(launchctl, "check", lambda r, **kw: (True, ""))
     launchctl.reinstall(root)
     assert calls == [("install", True), ("install", False)], calls
 
@@ -281,22 +281,27 @@ def test_unsupervised_gate_lets_an_absent_root_serve_and_refuses_a_live_one(tmp_
 
 # ---- #s-5 watchdog waits while the heartbeat is fresh after the signal ------------
 
-def test_watchdog_waits_one_more_grace_while_the_pid_is_alive_and_ticking(monkeypatch, tmp_path):
+def test_watchdog_waits_while_the_pid_is_alive_and_draining(monkeypatch, tmp_path):
+    """r3 #b-2 rewrote this test's premise: the heartbeat is stopped by the
+    shutdown itself, so "fresh heartbeat" was a state the caller could never
+    present. The signal is `shutdown.started`, written by the daemon; the
+    wait ends when the pid goes (the caller-path test lives in
+    test_plan4_remedy_r3.py on a real draining process)."""
     root = tmp_path / ".refmatrix"; root.mkdir()
     monkeypatch.setenv("RMX_HOME", str(tmp_path / "home"))
     calls = []
-    ages = iter([0.0] * 1000)        # fresh throughout: the full extra grace elapses
     monkeypatch.setattr(hub_mod, "graceful_stop", lambda r, grace: calls.append(("graceful_stop", grace)) or False)
     monkeypatch.setattr(dm, "read_pid", lambda r: 4242)
-    monkeypatch.setattr(dm, "is_alive", lambda pid: True)
-    monkeypatch.setattr(dm, "heartbeat_age", lambda r: next(ages))
+    t_start = time.monotonic()
+    monkeypatch.setattr(dm, "is_alive", lambda pid: time.monotonic() - t_start < 0.4)   # drains for 0.4 s
+    monkeypatch.setattr(dm, "heartbeat_age", lambda r: 999.0)                            # the caller's state
+    (root / "shutdown.started").touch()                                                 # the daemon's word
     monkeypatch.setattr(launchctl, "is_loaded", lambda r: True)
     monkeypatch.setattr(launchctl, "kickstart", lambda r, restart=False: calls.append(("kickstart", restart)) or "l")
     monkeypatch.setattr(hub_mod, "RMX_HUB_KILL_GRACE_S", 0.2)
-    t0 = time.monotonic()
     hub_mod.Watchdog()._restart(root, alive=True)
     assert calls == [("graceful_stop", 0.2), ("kickstart", True)]
-    assert time.monotonic() - t0 >= 0.2, "must wait another grace while the heartbeat is fresh"
+    assert time.monotonic() - t_start >= 0.4, "must wait while the daemon is draining"
 
 
 def test_kill_grace_default_covers_the_drain_budget():

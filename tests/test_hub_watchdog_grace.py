@@ -21,8 +21,11 @@ def _wd(monkeypatch, *, up: bool, proc_alive: bool):
     return wd, restarts
 
 
-def test_dead_process_restarts_immediately(tmp_path, monkeypatch):
+def test_dead_process_restarts_on_the_second_no_process_tick(tmp_path, monkeypatch):
+    """r3 #s-3: one no-process tick is a relaunch in progress."""
     wd, restarts = _wd(monkeypatch, up=False, proc_alive=False)
+    wd._check(tmp_path)
+    assert restarts["n"] == 0
     wd._check(tmp_path)
     assert restarts["n"] == 1
 

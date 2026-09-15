@@ -93,3 +93,18 @@ rel: evidence-for -> [[bsd-plan3-verbs-parity-r4-768f868]]
 Also: `hub.global_call` and `verbs.global_recall_rows` carry `retries` (the plan-2 r6 global leg); the memory verb's dispatch table gained `MEMORY_READ_ACTIONS`.
 
 TDD: RED `workflow/review-output/pytest-plan3-r5-red.log` (10 failed / 2 passed in 22 min — the held-writer cases fail by taking minutes each, the r4 numbers reproduced), GREEN `pytest-plan3-r5-green.log` (99 passed across plan3_remedy_r4, verb_parity, plan2_remedy, hooks_reproducible, mcp_parity; earlier pass 116 passed with plan3_remedy_r3, save_state, verbs_migrated), mutations `pytest-plan3-r5-mutation.log`: (A) recall-state back to a bare ping → `test_recall_state_reports_a_busy_daemon_as_busy_not_stale` fails; (B) `memory_partition` guesses on a transport failure again → `test_memory_partition_raises_busy_on_a_held_writer` fails; (C) the promote back to a bare daemon call → `test_promote_digest_is_typed_busy_on_a_held_writer` fails after 90 s (the r4 number).
+
+## Round 6 (bsd-plan3-r5, dfc0e62) {#round-6}
+
+rel: evidence-for -> [[bsd-plan3-verbs-parity-r5-dfc0e62]]
+
+| Finding | Fix |
+|---------|-----|
+| #b-1 `memory list` / `memory search` waited 190 s on a held writer: a bare `ping` gate (a held writer answers ping) then `_memory_daemon_call` at 60 s × 3, while the replica held the rows — the constant naming `list`/`search` bounded a verb the twins never called | both twins route through `verbs.memory(action=…, partition=_resolve_partition(), timeout=remaining)` with the `get` twin's busy/absent → replica fallthrough; the held-writer simulation now records every op it is asked and the tests assert ONE `memory_iter` / `memory_search` — Q15 |
+| #s-2 on a held writer without a replica the twins said "reading the replica" and then died on the write proxy's reader error (`_read_store` returned `_store()` for an UP daemon) | `_read_store` raises the read-worded error for UP-without-replica too; "reading the replica" is printed only after it returned; the #m-6 test now runs on the held-writer simulation for get / list / search / recall — Q16 |
+| #s-3 `federated_query` waited 60 s on a held store and dropped it from `projects` AND `skipped`; the pooled fan-outs abandoned stragglers silently | one attempt at `QUERY_OP_TIMEOUT_S`, every failure → `skipped` with a reason; `_name_stragglers` after the pool deadline; `_where_one_project` returns `(rows, reasons)`; the global leg bounded and said. `_locate_one_project` never asks the daemon (replica only) — a held writer with a replica is served, and the test says so — Q17 |
+| #m-4 the recall twin's verb re-probed the partition (10 of 30 s on a held writer) | `verbs.memory_recall(partition=…)`; the twin passes what it resolved; probe counts asserted on the simulation for `get` and `recall` — Q18 |
+| #m-5 registry two seams short | rows amended: `cli._root` lists the r4/r5 files; the r4 row names `hub.global_store_root` / `ensure_global_daemon` / `discovery.store_name`; new rows for the r5 fakes |
+
+TDD: RED `workflow/review-output/pytest-plan3-r6-red.log` (12 failed / 1 passed — the `get` probe count held already, which is what #m-4 said), GREEN `pytest-plan3-r6-green.log` (14 passed). Mutations `pytest-plan3-r6-plan4-r4-mutation.log`: P3-A (list twin bypasses the verb) → 2 fail; P3-B (`_read_store` hands the proxy to an UP daemon) → 5 fail; P3-C (`federated_query` drops the busy store unsaid, redo with the call replaced) → 1 fail; P3-C2 (pool stragglers unnamed) → 1 fail; P3-C3 (the where memory leg silent, redo) → 1 fail; P3-D (recall twin passes no partition) → 1 fail. The first P3-C / P3-C3 attempts in that log prepended a `pass` instead of replacing the call and are void — the redo lines below them are the evidence.
+

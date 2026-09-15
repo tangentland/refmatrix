@@ -58,7 +58,7 @@ HEARTBEAT_STALE_S = daemon_mod.HEARTBEAT_STALE_S
 # Three pool drains at RMX_DAEMON_SHUTDOWN_TIMEOUT_S (10 s each) plus the store
 # close: 30 s could SIGKILL a daemon doing exactly what it was asked (ch-bsd
 # plan-4 r2 #s-5). Q6 records the reconciliation.
-DEFAULT_KILL_GRACE_S = 45.0
+DEFAULT_KILL_GRACE_S = launchctl.EXIT_TIMEOUT_S      # one number for every supervisor (r3 #b-1)
 RMX_HUB_KILL_GRACE_S = float(os.environ.get("RMX_HUB_KILL_GRACE_S", str(DEFAULT_KILL_GRACE_S)))
 QUEUE_ALERT_INTERVAL_S = float(os.environ.get("RMX_HUB_QUEUE_ALERT_INTERVAL", "1800"))
 # Catalog footprint that earns a line in the queue alert. DuckDB reuses freed
@@ -171,6 +171,8 @@ class Watchdog:
         self.interval = interval
         self._stop = threading.Event()
         self._lock = threading.Lock()
+        # consecutive no-process ticks per root (r3 #s-3: one is a relaunch)
+        self.noproc_counts: dict = {}
         self.policy: dict[str, str] = {}
         self.history: dict[str, deque] = {}
         self.restart_counts: dict[str, int] = {}
@@ -254,6 +256,7 @@ class Watchdog:
         reason = ""
         if up:
             self.miss_counts[key] = 0
+            self.noproc_counts[key] = 0
         elif self.is_paused(root):
             # Maintenance window: observe, never restart. Reset the miss
             # counter so a long pause doesn't bank grace-misses that trigger
@@ -275,8 +278,21 @@ class Watchdog:
             except Exception:
                 hb_age = float("inf")
             if not proc_alive:
-                restarted = self._restart(root, alive=False)   # genuinely dead
-                reason = "no-process"
+                # Two consecutive no-process ticks before a kick: a relaunch
+                # in progress reads as "no process" for a moment (its pid
+                # file names the SIGTERMed pid) and the hub kicked five of
+                # them inside launchd's ThrottleInterval on 2026-09-15 —
+                # each spawned early, each counted as a "wedge" restart
+                # (ch-bsd plan-4 r3 #s-3). launchd's KeepAlive covers the
+                # interval a genuinely dead job waits.
+                n = self.noproc_counts.get(key, 0) + 1
+                if n >= 2:
+                    restarted = self._restart(root, alive=False)   # genuinely dead
+                    reason = "no-process"
+                    self.noproc_counts[key] = 0
+                else:
+                    reason = "no-process-1/2"
+                    self.noproc_counts[key] = n
                 self.miss_counts[key] = 0
             elif hb_age <= HEARTBEAT_STALE_S:
                 # Alive and ticking: a long op, an index rebuild, a model-
@@ -306,24 +322,32 @@ class Watchdog:
                 self.restart_counts[key] = self.restart_counts.get(key, 0) + 1
 
     def _await_shutdown(self, root: Path) -> None:
-        """A pid still alive after the grace WITH a fresh heartbeat is doing
-        what it was asked (draining pools, closing DuckDB) — kickstart -k
-        now would SIGKILL it mid-close, the corruption the plan names. Wait
-        one more grace (or until it exits / its heartbeat goes stale), then
-        the caller kicks knowingly (ch-bsd plan-4 r2 #s-5)."""
+        """CALLER'S PRECONDITION (`_check` → `_restart(alive=True)`): three
+        missed pings AND a heartbeat older than HEARTBEAT_STALE_S (60 s),
+        then `graceful_stop` signalled and waited RMX_HUB_KILL_GRACE_S with
+        the pid still alive. The heartbeat is useless from here: the daemon
+        stops its beat as the first act of shutdown, so the age only grows —
+        r2's version read `heartbeat_age < grace` and could never fire from
+        the state it was handed (ch-bsd plan-4 r3 #b-2, pattern
+        guard-cannot-fire). The signal that a daemon is DRAINING is produced
+        by the shutdown itself: `shutdown.started`, written at the top of
+        serve_forever's finally. Marker younger than the daemon's shutdown
+        budget + a live pid = draining: wait for the pid, bounded by what is
+        left of that budget; then the caller kicks knowingly. No marker =
+        the signal never reached a stop path = a wedge."""
         pid = daemon_mod.read_pid(root)
         if not pid or not daemon_mod.is_alive(pid):
             return
-        if daemon_mod.heartbeat_age(root) >= RMX_HUB_KILL_GRACE_S:
+        age = daemon_mod.shutdown_started_age(root)
+        if age >= daemon_mod.SHUTDOWN_BUDGET_S:
             return
-        _log(f"watchdog: pid={pid} still alive with a fresh heartbeat after the "
-             f"grace (shutting down?); waiting one more {RMX_HUB_KILL_GRACE_S:g}s "
-             f"before kickstart -k")
-        deadline = time.monotonic() + RMX_HUB_KILL_GRACE_S
+        remaining = daemon_mod.SHUTDOWN_BUDGET_S - age
+        _log(f"watchdog: pid={pid} still alive after the grace and shutting down "
+             f"(shutdown.started {age:.0f}s ago); waiting up to {remaining:.0f}s "
+             f"for its drain before kickstart -k")
+        deadline = time.monotonic() + remaining
         while time.monotonic() < deadline:
             if not daemon_mod.is_alive(pid):
-                return
-            if daemon_mod.heartbeat_age(root) >= RMX_HUB_KILL_GRACE_S:
                 return
             time.sleep(0.1)
 

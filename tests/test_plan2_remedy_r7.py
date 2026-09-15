@@ -226,3 +226,58 @@ def test_json_recall_with_no_hits_prints_an_empty_list(tmp_path, monkeypatch):
     r = CliRunner().invoke(cli_mod.main, ["memory", "recall", "nothing here", "--json", "--timeout", "5"])
     assert r.exit_code == 0, r.output
     assert json.loads(r.stdout) == []
+
+
+# ---- round 9 (live re-measure after the r8 deploy): the rerank pool's cost --------------
+
+def test_collect_rerank_docs_caps_each_doc(tmp_path):
+    """10 memory docs as extracted (28.7k chars) cost the shared worker 4.8 s
+    — over the whole 5 s hook. The cap keeps the head of each doc."""
+    from refmatrix.store import Store
+    from refmatrix import reranker as rr
+    root = tmp_path / ".refmatrix"
+    s = Store(root); s.init()
+    try:
+        with s.with_partition("p"):
+            eid = s.add_memory(name="long", content="HEAD " + "body " * 2000, mtype="note")
+        with s.with_partition("p"):
+            scored, untexted, tail = rr.collect_rerank_docs(s, [(eid, 0.1)], k=1, doc_chars=700)
+            full, _, _ = rr.collect_rerank_docs(s, [(eid, 0.1)], k=1)
+    finally:
+        s.close()
+    assert scored and len(scored[0][1]) <= 700 and "HEAD" in scored[0][1][:20]   # "[note] HEAD …"
+    assert len(full[0][1]) > 700, "the cap is opt-in; the daemon's own path is unchanged"
+
+
+def test_replica_recall_leg_sends_a_capped_pool_to_the_reranker(tmp_path, monkeypatch):
+    """The hook's replica leg passes `RERANK_DOC_CHARS` (≤ 768: the measured
+    fit) into the pool it sends to the shared worker."""
+    from refmatrix import modelsrv, recall as _recall, reranker as rr
+    from refmatrix.store import Store
+    assert cli_mod.RERANK_DOC_CHARS <= 768
+    root = tmp_path / ".refmatrix"
+    s = Store(root); s.init()
+    with s.with_partition("p"):
+        eid = s.add_memory(name="m", content="HEAD " + "body " * 2000, mtype="note")
+    monkeypatch.setattr(cli_mod, "_reader_store", lambda: s)
+    monkeypatch.setattr(cli_mod, "_resolve_partition", lambda: "p")
+    monkeypatch.setattr(modelsrv, "shared_enabled", lambda: True)
+    monkeypatch.setattr(modelsrv, "shared_available", lambda timeout=0.5: True)
+    monkeypatch.setattr(modelsrv, "SharedWorkerClient", lambda role, **kw: object())
+    monkeypatch.setattr(_recall, "dense_recall", lambda *a, **kw: [(eid, 0.1)])
+    monkeypatch.setattr(rr, "rerank_enabled", lambda: True)
+    sent = {}
+
+    class _RR:
+        def score(self, query, docs):
+            sent["docs"] = list(docs); return [1.0] * len(docs)
+    monkeypatch.setattr(rr, "shared_reranker", lambda log=None, **kw: _RR())
+    ws = []
+    try:
+        hits = cli_mod._replica_memory_recall("q", k=5, kinds=["memory"], fuse=False, rerank=True,
+                                              left=lambda d: min(d, 30.0), warnings=ws)
+    finally:
+        s.close()
+    assert hits and hits[0].get("reranked"), (hits, ws)
+    assert sent["docs"] and max(len(d) for d in sent["docs"]) <= cli_mod.RERANK_DOC_CHARS, \
+        [len(d) for d in sent["docs"]]
