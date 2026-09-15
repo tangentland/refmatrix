@@ -5,14 +5,14 @@ title: "Task 8.2: Verb, daemon op, CLI + MCP adapters, parity"
 tags: [task, plan-8]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-8-derived-coverage-notes
 ---
 
 # Task 8.2: Verb, daemon op, CLI + MCP adapters, parity {#root}
 
 > Plan: [[plan-8-derived-coverage-notes]]
-> Status: Pending
+> Status: Complete
 > Depends on: 8.1
 
 rel: part-of -> [[plan-8-derived-coverage-notes]]

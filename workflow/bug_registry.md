@@ -79,3 +79,4 @@ Entry conventions:
 - Tags: kebab keywords for search (e.g. auth, off-by-one, import, migration).
 - Seen: occurrence count; bump + flip Status to `recurring` if it reappears.
 -->
+| bug-029 | `.venv-eval/bin/rmx` ran `refmatrix.cli:main`, bypassing `cli_entry` | `.venv-eval/bin/rmx` (generated console script) | Stale console script generated before `cli_entry` was introduced; `pyproject` declares `refmatrix.cli:cli_entry` and the deploy venv's script uses it, so only the DEV binary was affected | Rewrote the script to call `cli_entry` (deliberately not a pip reinstall — mixed-ABI tree, 19 phantom failures on record). Old copy at `/tmp/rmx-devscript.stale.bak` | dev-env, telemetry, console-script | fixed 2026-09-15 |

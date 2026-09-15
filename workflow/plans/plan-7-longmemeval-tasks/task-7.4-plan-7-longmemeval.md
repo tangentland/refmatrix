@@ -20,7 +20,11 @@ rel: part-of -> [[plan-7-longmemeval]]
 ## Requirements {#requirements}
 
 - `REPORT.md` records, for every number: the harness command, the corpus size, the scoring mode, the rmx version, and the date. A figure missing any of those does not ship ([[project_csn_production_harness]] set this bar; plan 6 task 6.3 enforced it for CSN).
-- The published `mcp-memory-service` figures (80.4% R@5, 89.1% MRR, multi-session 70.7%, temporal-reasoning 72.0%) are quoted as an EXTERNAL reference row, clearly attributed, with an explicit note that their harness, embedding model, and chunking are not ours — the row is a landmark, not a controlled comparison.
+- Two published systems are quoted as EXTERNAL reference rows, clearly attributed, with an explicit note that their harness, embedding model, and chunking are not ours. These are landmarks, NOT controlled comparisons:
+  - **mcp-memory-service** (doobidoo) — 80.4% R@5, 89.1% MRR; per-type gaps multi-session 70.7%, temporal-reasoning 72.0%.
+  - **agentmemory** (rohitg00, 28.5k stars) — **95.2% R@5 on LongMemEval-S, 500 questions**; BM25 + vector + graph fused by RRF (k=60), 14ms p50.
+- Neither reference states its haystack scoping. Both figures are almost certainly per-question (gold among ~50 sessions), which is our `restricted` mode — so `restricted` is the row they sit beside and `union` is labelled as comparable to neither. If a source later states its scoping explicitly, the REPORT records which mode it matched rather than silently re-anchoring.
+- agentmemory's own docs say **graph extraction is off by default**, so its headline is presumably BM25+vector. Where our per-type table shows the graph carrying multi-session / temporal-reasoning, say so explicitly — that is the claim neither reference is making, and it is the only part of this comparison that is about the thesis rather than the leaderboard.
 - Results JSON committed under `eval/production/longmemeval/results/`; README and `docs/PERFORMANCE.md` cite the committed path, never a remembered number.
 
 ## Files to Create / Modify {#files}

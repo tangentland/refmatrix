@@ -26,6 +26,7 @@ current.
 | 6 | plan-6-deferrals-docs-benchmark | in-progress | yes (5) | `workflow/plans/plan-6-deferrals-docs-benchmark.md` | — |
 | 7 | plan-7-longmemeval | approved | yes (4) | `workflow/plans/plan-7-longmemeval.md` | — |
 | 8 | plan-8-derived-coverage-notes | approved | yes (4) | `workflow/plans/plan-8-derived-coverage-notes.md` | plan 7 (measures it) |
+| 9 | plan-9-context-cost-telemetry | in-progress | yes (3) | `workflow/plans/plan-9-context-cost-telemetry.md` | — |
 
 ## Sequence rationale {#sequence}
 
@@ -39,6 +40,8 @@ current.
    measuring stick for plan 8, which is otherwise unfalsifiable.
 8. **derived-coverage-notes** (briefs) — the store says what it has; nothing says what it lacks. Depends on 7 for
    evidence that a coverage note predicts a retrieval miss.
+9. **context-cost-telemetry** — rmx measured its own retrieval quality and never its own cost. Three hooks fire
+   every prompt and nothing said whether they spent 400 bytes or 40 KB of the window they were enriching.
 
 Each plan ends with `@ch-bsd` over its commit range; remedy → re-review until CLEAN before the next plan starts.
 

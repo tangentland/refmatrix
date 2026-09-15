@@ -5,14 +5,14 @@ title: "Task 7.1: Fetch, session split, GMD reshape, qrels, haystacks, subsets"
 tags: [task, plan-7]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-7-longmemeval
 ---
 
 # Task 7.1: Fetch, session split, GMD reshape, qrels, haystacks, subsets {#root}
 
 > Plan: [[plan-7-longmemeval]]
-> Status: Pending
+> Status: Complete
 > Depends on: —
 
 rel: part-of -> [[plan-7-longmemeval]]

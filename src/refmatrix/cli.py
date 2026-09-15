@@ -6138,12 +6138,51 @@ def stats(stale, via_replica):
 @click.option("--since", default=None, help="Filter to records on or after ISO timestamp prefix.")
 @click.option("--top-queried", is_flag=True, help="Just show top-queried concept names.")
 @click.option("--zero-results", is_flag=True, help="Just show queries that returned 0.")
+@click.option("--context", "as_context", is_flag=True,
+              help="What rmx SPENT of the model's context window: bytes "
+                   "written to stdout per command, and the per-prompt hook "
+                   "budget. Reads cli.log.")
+@click.option("--window", type=int, default=5, show_default=True,
+              help="With --context: seconds of hook rows treated as one "
+                   "prompt's fan-out.")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
-def telemetry(since, top_queried, zero_results, fmt):
+def telemetry(since, top_queried, zero_results, as_context, window, fmt):
     """Summarize the query telemetry log."""
     from refmatrix.telemetry import (
-        summarize, top_queried_concepts, zero_result_queries,
+        summarize, summarize_context, top_queried_concepts,
+        zero_result_queries,
     )
+
+    if as_context:
+        # cli.log lives on the root, not in the catalog — no replica read.
+        data = summarize_context(_root(), since=since, window_s=window)
+        if fmt == "json":
+            click.echo(json.dumps(data, indent=2))
+            return
+        hb = data["hook_budget"]
+        console.print(
+            f"[bold]{data['total_bytes']:,} bytes[/] "
+            f"(~{data['total_tokens_est']:,} tokens est) over "
+            f"{data['counted']:,} counted invocation(s)")
+        if data["uncounted"]:
+            # Loud: a pre-plan-9 row is UNKNOWN, not free. A small mean beside a
+            # large uncounted total is not a cheap surface.
+            console.print(
+                f"[yellow]{data['uncounted']:,} invocation(s) predate byte "
+                f"accounting[/] — excluded, NOT averaged in as zero")
+        t = Table("command", "n", "total", "mean", "p50", "p95", "max")
+        for name, m in sorted(data["by_command"].items(),
+                              key=lambda kv: -kv[1]["total_bytes"]):
+            t.add_row(name, str(m["n"]), f"{m['total_bytes']:,}",
+                      f"{m['mean_bytes']:,}", f"{m['p50_bytes']:,}",
+                      f"{m['p95_bytes']:,}", f"{m['max_bytes']:,}")
+        console.print(t)
+        console.print(
+            f"\n[bold]per-prompt hook budget[/] over {hb['windows']:,} window(s): "
+            f"p50 {hb['p50_bytes']:,} B (~{hb['p50_tokens_est']:,} tok), "
+            f"p95 {hb['p95_bytes']:,} B, max {hb['max_bytes']:,} B")
+        console.print(f"[dim]grouping: {hb['grouping']}[/]")
+        return
 
     def _run(s) -> tuple[str, Any]:
         if top_queried:
@@ -12708,7 +12747,7 @@ def cli_entry() -> None:
     """
     _reexec_for_fork_safety()
     import time as _time
-    from refmatrix.telemetry import log_cli_invocation
+    from refmatrix import telemetry as _tel
 
     t0 = _time.monotonic()
     argv = list(sys.argv[1:])
@@ -12716,6 +12755,13 @@ def cli_entry() -> None:
     pid = os.getpid()
     exit_code = 0
     error: str | None = None
+    # Count what this invocation writes to stdout — for a hook, exactly what it
+    # injects into the model's context window. One wrapper here, not one per
+    # renderer: rich resolves sys.stdout lazily, so the module-level `console`
+    # is counted too (verified 2026-09-15).
+    _stdout = sys.stdout
+    _counter = _tel.CountingStream(_stdout)
+    sys.stdout = _counter
     try:
         main()
     except SystemExit as e:
@@ -12727,9 +12773,17 @@ def cli_entry() -> None:
         error = f"{type(e).__name__}: {e}"
         raise
     finally:
+        # Restore FIRST and unconditionally. Click raises SystemExit on every
+        # run, so restoration on the happy path alone would leave stdout wrapped
+        # for the life of the process.
+        sys.stdout = _stdout
         latency_ms = int((_time.monotonic() - t0) * 1000)
         try:
-            log_cli_invocation(
+            out_bytes = _counter.out_bytes
+        except Exception:
+            out_bytes = None          # accounting never fails the command
+        try:
+            _tel.log_cli_invocation(
                 _root(),
                 argv=argv,
                 cwd=cwd,
@@ -12737,6 +12791,7 @@ def cli_entry() -> None:
                 latency_ms=latency_ms,
                 error=error,
                 pid=pid,
+                out_bytes=out_bytes,
             )
         except Exception:
             pass

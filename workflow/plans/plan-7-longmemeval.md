@@ -31,8 +31,14 @@ rel: specifies -> [[task-7.4-plan-7-longmemeval]]
 rmx has two production-path numbers: CSN code retrieval (MRR@10 0.961, `eval/production/`) and
 MemAware proactive surfacing (Layer A only, near-floor). Neither is a number an outsider can
 place. **LongMemEval** (Wu et al. 2024) is the long-term-memory benchmark every competing memory
-system reports on — `mcp-memory-service` publishes 80.4% Recall@5 / 89.1% MRR against it, with
-per-type gaps at multi-session 70.7% and temporal-reasoning 72.0%.
+system reports on. Two landmarks: `mcp-memory-service` publishes 80.4% Recall@5 / 89.1% MRR with
+per-type gaps at multi-session 70.7% and temporal-reasoning 72.0%; `agentmemory` (28.5k stars)
+publishes **95.2% Recall@5 on LongMemEval-S**, from BM25 + vector + graph fused by RRF at k=60 —
+architecturally the same three signals rmx fuses, which makes it the sharper comparison.
+
+Neither states its haystack scoping, and both are almost certainly per-question. That is exactly
+why this plan ships two modes and labels every table with its own (see [[#haystack]]): an
+unlabelled Recall@5 is not comparable to anything.
 
 Wiring it gives three things the repo does not have:
 

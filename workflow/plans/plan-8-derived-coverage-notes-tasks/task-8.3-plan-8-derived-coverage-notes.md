@@ -5,14 +5,14 @@ title: "Task 8.3: GMD index render and regenerate-from-store round trip"
 tags: [task, plan-8]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-8-derived-coverage-notes
 ---
 
 # Task 8.3: GMD index render and regenerate-from-store round trip {#root}
 
 > Plan: [[plan-8-derived-coverage-notes]]
-> Status: Pending
+> Status: Complete
 > Depends on: 8.1
 
 rel: part-of -> [[plan-8-derived-coverage-notes]]

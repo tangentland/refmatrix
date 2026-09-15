@@ -5,14 +5,14 @@ title: "Task 7.3: Layer A scoring: both haystack modes, per-type breakdown"
 tags: [task, plan-7]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-7-longmemeval
 ---
 
 # Task 7.3: Layer A scoring: both haystack modes, per-type breakdown {#root}
 
 > Plan: [[plan-7-longmemeval]]
-> Status: Pending
+> Status: Complete
 > Depends on: 7.1
 
 rel: part-of -> [[plan-7-longmemeval]]
