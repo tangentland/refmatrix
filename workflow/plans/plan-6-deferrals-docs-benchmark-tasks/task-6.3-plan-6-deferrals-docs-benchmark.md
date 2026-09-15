@@ -5,14 +5,14 @@ title: "Task 6.3: Benchmark artifact"
 tags: [task, plan-6]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-6-deferrals-docs-benchmark
 ---
 
 # Task 6.3: Benchmark artifact {#root}
 
 > Plan: [[plan-6-deferrals-docs-benchmark]]
-> Status: Pending
+> Status: Complete
 > Depends on: —
 
 rel: part-of -> [[plan-6-deferrals-docs-benchmark]]

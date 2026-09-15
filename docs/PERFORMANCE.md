@@ -229,6 +229,12 @@ is the production one. {#honest-harness}
 | CodeRankEmbed (dense, GPU) | 0.959 | 0.934 | 0.993 | 0.967 |
 | rmx bespoke harness (historical, tuned) | 0.972 | — | — | — |
 
+The production row is read from the committed artifact
+`eval/production/results/csn_python/metrics.json` (full corpus, 43 827 docs ·
+14 918 queries; `eval/production/csn_code.py --out …` at a965805 / 0.69.1,
+2026-09-15: ingest 1913 s, retrieval 390 s); `tests/test_eval_artifact_cited.py`
+compares the cited MRR@10 with the artifact. {#benchmark-artifact}
+
 The production path is within a point of the bespoke index and still beats the
 neural baseline — with no embeddings, no GPU, and `file:line` evidence behind
 every score. The −0.011 vs bespoke is the honest cost of the plainer

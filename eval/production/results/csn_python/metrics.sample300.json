@@ -1,0 +1,33 @@
+{
+  "harness": "eval/production/csn_code.py",
+  "dataset": "csn_python",
+  "corpus_docs": 5300,
+  "corpus_docs_total": 43827,
+  "queries": 300,
+  "queries_total": 14918,
+  "full_run": false,
+  "sample_queries": 300,
+  "limit_queries": null,
+  "limit_corpus": null,
+  "top_k": 1000,
+  "metrics": {
+    "MRR@1000": 0.9838,
+    "MRR@10": 0.9836,
+    "Recall@1": 0.9767,
+    "Recall@10": 0.9933,
+    "Recall@100": 0.9967,
+    "Recall@200": 0.9967,
+    "Recall@500": 1.0,
+    "Recall@1000": 1.0,
+    "nDCG@10": 0.9861
+  },
+  "timing_s": {
+    "materialize_s": 15.2,
+    "ingest_s": 594.8,
+    "retrieval_s": 2.7
+  },
+  "refmatrix_version": "0.69.1",
+  "git_sha": "1aedb41",
+  "generated_at": "2026-09-15T06:41:41Z",
+  "command": "eval/production/csn_code.py --sample-queries 300 --workdir /Volumes/littlebig/csn-honest-sample --out eval/production/results/csn_python/metrics.sample300.json"
+}

@@ -28,6 +28,14 @@ no benchmark-only tokenizer.
 | Recall@10     | 0.984               | 0.993                      |
 | nDCG@10       | 0.967               | 0.967                      |
 
+The rmx column is read from the committed artifact
+`eval/production/results/csn_python/metrics.json` — the full corpus (43827
+docs, 14918 queries), written by `eval/production/csn_code.py --out` at
+a965805 / 0.69.1 on 2026-09-15; `tests/test_eval_artifact_cited.py` fails when
+this table and the artifact disagree. A valid 300-query quick run
+(`--sample-queries 300`, easier haystack) sits beside it as
+`metrics.sample300.json` and is NOT the number defended here.
+
 The historical bespoke harness scores 0.972 — a true number about code users
 never ran; refmatrix defends the production 0.961 instead. On the bespoke
 harness the symbolic win repeats across languages: JS **0.939 vs 0.916**,
