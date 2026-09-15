@@ -83,9 +83,23 @@ LongMemEval is **per-question**: each of the 500 questions carries its own hayst
 for `_s`, 500 for `_m`), and published Recall@5 is recall within that haystack. rmx indexes one
 store. Two scoring modes, both implementable, and they are NOT the same number:
 
-- **restricted** — one union store; each query passes the question's own haystack as a candidate
-  prefilter (`rmx memory recall` already supports one — `test_dense_recall_respects_candidate_prefilter`).
-  This is the mode comparable to published figures.
+- **restricted** — one union store, retrieved DEEP (`--k <deep>`), then the ranked list is filtered
+  to the question's own haystack and cut to k. This approximates per-question retrieval and is the
+  mode comparable to published figures.
+
+  It is an approximation, and the reason is worth stating: `ann_search(candidate_ids=...)` exists
+  in the Python API (`test_dense_recall_respects_candidate_prefilter`) but **no CLI flag exposes
+  it**. Reaching into the API to pass a candidate set would make this harness a bespoke path —
+  precisely the sin [[feedback_measure_the_path_users_run]] was written about, where four ingest
+  defects hid behind a true-looking 0.982 MRR. So the harness stays on the CLI and pays for it by
+  retrieving deep.
+
+  The approximation has a measurable cost and the harness reports it: for every question, whether
+  the gold session appeared anywhere in the deep pool. That fraction is the **recall ceiling** —
+  `restricted` can never score above it, and a ceiling far below 1.0 means the depth is too
+  shallow, not that rmx missed. Every `restricted` table prints its depth and its ceiling beside
+  the metrics. Exposing a CLI candidate-set flag is registered as the follow-up that would remove
+  the approximation.
 - **union** — one union store, no prefilter; the gold session must beat ~25k distractors instead
   of 49. Strictly harder, not comparable to anyone, and the more honest picture of what rmx does
   in production, where there is no oracle haystack.
