@@ -23,6 +23,7 @@ rel: specifies -> [[task-6.1-plan-6-deferrals-docs-benchmark]]
 rel: specifies -> [[task-6.2-plan-6-deferrals-docs-benchmark]]
 rel: specifies -> [[task-6.3-plan-6-deferrals-docs-benchmark]]
 rel: specifies -> [[task-6.4-plan-6-deferrals-docs-benchmark]]
+rel: specifies -> [[task-6.5-plan-6-deferrals-docs-benchmark]]
 
 ## Context {#context}
 
@@ -71,6 +72,7 @@ BSD #bs-5, #sk-4, #meh-1, #meh-2: six docstrings describe systems that no longer
 | 6.2 | Generated CLI tree + hooks table in docs | — |
 | 6.3 | Benchmark artifact | — |
 | 6.4 | Loud verbs.py partition detect, perma-red test, mock registry | — |
+| 6.5 | The rewriter hook stops baking the generator's tree (bug-008) | — |
 
 ## Execution contract {#execution}
 

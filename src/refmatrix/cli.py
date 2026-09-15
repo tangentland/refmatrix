@@ -2532,11 +2532,7 @@ def hub_queues(as_json):
     try:
         res = _verbs.queues(_root())
     except _verbs.VerbError as e:
-        raise click.ClickException(str(e))
-    except (TimeoutError, OSError) as e:
-        raise click.ClickException(
-            f"hub queues timed out ({e}) — a daemon is busy; retry, or "
-            f"`rmx daemon status` in the project that is mid-write")
+        raise click.ClickException(str(e))   # _hub_rpc names a busy/wedged hub
     rows = res.get("queues", [])
     if as_json:
         import json as _json
