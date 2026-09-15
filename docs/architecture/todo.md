@@ -33,6 +33,8 @@ end-to-end audit ([[bsd-0661-e2e-memory-bridge]]).
 | G8 | Planned | README 0.961 has no committed artifact; ARCHITECTURE.md lists 24/80 commands | — | bsd #sk-4, #meh-1 | plan 6 |
 | G9 | Resolveable | orderly launchd service spawn-loops behind a manual daemon (11k runs) | — | incident 2026-09-14 | plan 2 |
 | G10 | Deferred | Linux supervisor (systemd user unit) not implemented | a Linux deploy target | launchctl.py:322 | — |
+| G11 | Planned | `--like GLOB` is a selector on 5 write commands only (`protect`/`noise`/`forget`, `memory reclassify`); user 2026-09-15: make it universal — every read surface (`list entities`, `query`, `context`, `neighbors`, `top`, `co-occur`, `memory list/search/recall`, `locate`) as a PRE-filter (candidate set) and a POST-filter (rows), through the verbs so MCP gets it | after the plan-2/3/4/5 BSD loops close | user request | plan 7 (to write) |
+| G12 | Open | the project's own index has no code entity or `defines` edge for `Daemon._snapshot_catalog` (`rmx query "defines:_snapshot_catalog"` → 0, `rmx context src/refmatrix/daemon.py::_snapshot_catalog` → unknown); `tldr context` finds it in one line. Also `rmx stats --stale` on the busy project daemon died with a raw `TimeoutError` traceback, not a typed busy line | — | probe 2026-09-15 01:5x | plan 3 lineage (busy≠absent) + ingest coverage |
 
 rel: depends-on -> [[architecture-index]]
 rel: evidence-for -> [[bsd-0661-e2e-memory-bridge]]

@@ -241,17 +241,27 @@ def memory_partition(root: Path, *, timeout: "float | None" = None) -> str:
         require_daemon(root, retries=0 if timeout is not None else 2)
     except VerbAbsentError:
         return project
+    op_timeout = min(10.0, timeout) if timeout else 10.0
     try:
-        r = daemon_mod.call(root, "partition_list", {},
-                            timeout=min(10.0, timeout) if timeout else 10.0,
-                            retries=0 if timeout is not None else 2)
-        if r.get("ok") and any(row.get("name") == legacy
-                               for row in r["result"].get("rows", [])):
+        # One attempt: a held writer does not free in 10 s, and a retried
+        # probe multiplied every caller's wait by three (bsd-plan3-r4 #b-2).
+        r = daemon_mod.call(root, "partition_list", {}, timeout=op_timeout, retries=0)
+    except Exception as e:  # noqa: BLE001 — transport-level: the op did not answer
+        # Op-level busy is BUSY (bsd-plan3-r4 #s-4): guessing here let the
+        # write that follows land on the guessed partition once the lock
+        # freed — the split-brain family this function exists to prevent.
+        raise VerbBusyError(
+            f"daemon busy pid={daemon_mod.read_pid(root)} for {root}: partition_list "
+            f"did not answer within {op_timeout:g}s ({e}); retry shortly") from e
+    if r.get("ok"):
+        if any(row.get("name") == legacy for row in r["result"].get("rows", [])):
             return legacy
-    except Exception as e:  # noqa: BLE001 — tolerant, but never mute
-        logging.getLogger(__name__).warning(
-            "memory_partition: partition_list failed for %s (%s); using %r",
-            root, e, project)
+        return project
+    # An ANSWERED error (unknown op on an old daemon) is the one case the
+    # project default is a legitimate guess — and it is said, never mute.
+    logging.getLogger(__name__).warning(
+        "memory_partition: partition_list answered an error for %s (%s); using %r",
+        root, r.get("error"), project)
     return project
 
 
@@ -317,7 +327,8 @@ def mt_excluded(mtype: "str | None", patterns) -> bool:
 
 
 def global_recall_rows(q: "str | None", *, k: int, recent: bool,
-                       since_s: "float | None", timeout: float = 30.0) -> list[dict]:
+                       since_s: "float | None", timeout: float = 30.0,
+                       retries: int = 2) -> list[dict]:
     """Rows from the hub-owned global behavior store, routed through ITS
     daemon (never a direct Store open). Lexical/recent only — no embedder —
     so the always-on hooks stay cheap. No global store on this machine → [].
@@ -335,7 +346,9 @@ def global_recall_rows(q: "str | None", *, k: int, recent: bool,
     else:
         return []
     try:
-        resp = hub_mod.global_call(op, args, timeout=timeout)
+        # `retries=0` from budgeted callers: the library default retried a
+        # 30 s timeout three times on a held global store (bsd-plan2-r6 #b-1).
+        resp = hub_mod.global_call(op, args, timeout=timeout, retries=retries)
     except Exception as e:  # noqa: BLE001 — re-raised as a typed, named failure
         raise VerbError(f"global store {op} failed: {e}") from e
     if not resp.get("ok"):
@@ -615,7 +628,7 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
                   exclude_mtype: list[str] | None = None,
                   include_session: bool = False,
                   subject: str | None = None, degree: int = 0,
-                  timeout: float | None = None) -> dict:
+                  timeout: float | None = 30.0) -> dict:
     """ONE implementation of "which memories come back" for the CLI hook
     modes and the MCP tool (2026-09-14: the session-start default window,
     the widen-when-empty rule and the session/* exclusion lived only in
@@ -635,7 +648,10 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
     widened = False
     since_defaulted = False
     # ONE deadline for the whole recall (ch-bsd plan-2 r5 #b-1: the per-prompt
-    # hook held the turn ~20 s p50 with no bound at all). Unbounded when None.
+    # hook held the turn ~20 s p50 with no bound at all). The default is
+    # 30 s — the MCP tool used to inherit None and held an agent's turn
+    # 210 s on a held writer (bsd-plan3-r4 #b-2); the CLI passes its own
+    # budget explicitly. `timeout=None` is a deliberate "no bound".
     deadline = (_time.monotonic() + float(timeout)) if timeout else None
 
     def _left(default: float) -> float:
@@ -706,9 +722,11 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
                 eid = h.get("id") or h.get("entity_id")
                 if eid is None:
                     continue
-                g = daemon_mod.call(root, "memory_get", {"id": eid, "partition": partition},
-                                    timeout=_left(30.0), retries=_retries)
-                m = g.get("result", {}).get("memory") if g.get("ok") else None
+                # Typed and one attempt under the deadline (bsd-plan3-r4
+                # #s-3): a bare call here leaked a raw TimeoutError out of
+                # the MCP tool.
+                m = _call(root, "memory_get", {"id": eid, "partition": partition},
+                          timeout=_left(30.0), retries=_retries).get("memory")
                 if m and not mt_excluded(m.get("mtype"), patterns):
                     project_rows.append(annotate_hit(m, h))
       for r in project_rows:
@@ -956,6 +974,12 @@ def recall_state(root: Path, *, session: str | None = None,
     return handoff.compose_recall_state(s, root, repo=repo, memdir=memdir)
 
 
+# Read actions of the `memory` verb run under this budget with ONE attempt
+# (bsd-plan3-r4 #b-2); the CLI twins fall through to the lock-free replica
+# past it, the MCP tool reports busy.
+MEMORY_READ_ACTIONS = frozenset({"get", "list", "search"})
+MEMORY_READ_BUDGET_S = 10.0
+
 _MEMORY_OPS = {
     "get": "memory_get", "list": "memory_iter", "search": "memory_search",
     "forget": "memory_forget", "reclassify": "memory_reclassify",
@@ -1043,13 +1067,14 @@ def memory(root: Path, action: typing.Literal[
            recent: bool | None = None, exclude_mtype: list[str] | None = None,
            include_session: bool | None = None, subject: str | None = None,
            kinds: list[str] | None = None, fuse: bool | None = None,
-           degree: int | None = None) -> dict:
+           degree: int | None = None, timeout: float | None = None) -> dict:
     """One dispatcher over the CLI `rmx memory` group. recall/add reuse the
     dedicated verbs (recall forwards every recall knob it accepts); promote
     copies project→global; everything else routes to the daemon's memory_*
     op with the project partition injected."""
     from refmatrix import daemon as daemon_mod, hub as hub_mod
-    a = {k: v for k, v in locals().items() if k not in ("root", "action", "daemon_mod", "hub_mod")}
+    a = {k: v for k, v in locals().items()
+         if k not in ("root", "action", "daemon_mod", "hub_mod", "timeout")}
     if action == "recall":
         kw = {k: v for k, v in a.items()
               if k in _RECALL_FORWARD and v is not None}
@@ -1059,8 +1084,24 @@ def memory(root: Path, action: typing.Literal[
             raise VerbError("memory add requires name and content")
         return memory_add(root, name, content, mtype=mtype or "observation",
                           tags=tags, protect=bool(protect))
-    part = partition or memory_partition(root)
-    require_daemon(root)          # busy is typed, never "not running"
+    # READ actions are bounded and single-attempt (bsd-plan3-r4 #b-2: `memory
+    # get` on a held writer took 390 s to reach the replica fallthrough its
+    # CLI twin offers — 30 s of partition probing, then 3 × 120 s). Writes
+    # keep the long timeout: a retried write is worse than a slow one.
+    is_read = action in MEMORY_READ_ACTIONS
+    import time as _time
+    budget = (float(timeout) if timeout is not None else MEMORY_READ_BUDGET_S) if is_read else None
+    _deadline = (_time.monotonic() + budget) if budget else None
+
+    def _left(default: float) -> float:
+        if _deadline is None:
+            return default
+        rem = _deadline - _time.monotonic()
+        if rem <= 0:
+            raise VerbBusyError(f"memory {action} not confirmed within {budget:g}s — daemon busy")
+        return min(default, rem)
+    part = partition or memory_partition(root, timeout=_left(10.0) if is_read else None)
+    require_daemon(root, retries=0 if is_read else 2)   # busy is typed, never "not running"
     if action == "promote":
         key = {"id": int(id)} if id is not None else {"name": name}
         m = _call(root, "memory_get", {**key, "partition": part}, timeout=30.0).get("memory")
@@ -1084,6 +1125,8 @@ def memory(root: Path, action: typing.Literal[
         payload = {**_memory_payload(action, a), "partition": part}
     except KeyError as exc:
         raise VerbError(f"missing required arg for {action}: {exc}") from exc
+    if is_read:
+        return _call(root, op, payload, timeout=_left(MEMORY_READ_BUDGET_S), retries=0)
     return _call(root, op, payload, timeout=120.0)
 
 

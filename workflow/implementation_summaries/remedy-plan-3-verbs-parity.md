@@ -75,3 +75,21 @@ rel: evidence-for -> [[bsd-plan3-verbs-parity-r3-76929a2]]
 
 TDD: RED `workflow/review-output/pytest-plan3-r3-red.log` (9 failed / 1 passed), GREEN `pytest-plan3-r3-green.log` (10 passed) + `pytest-plan3-r3-green-suites.log` (surrounding suites). Mutations `pytest-plan3-r3-mutations.log`: (A) a bare ping in `_promote_digest` fails the promote test; (B) dropping the skipped print fails the locate test.
 
+
+## Round 5 (bsd-plan3-r4, 768f868) {#round-5}
+
+rel: evidence-for -> [[bsd-plan3-verbs-parity-r4-768f868]]
+
+| Finding | Fix |
+|---------|-----|
+| #b-1 `compose_recall_state` called a busy daemon a stale pid; the render's `busy` branch had no producer since 0.41.0 | classifies through `discovery.daemon_status(retries=0)`: `daemon = {running, busy, pid}`; the anomaly says "alive but not answering (busy: …)" for a live pid and "(stale)" only when the process is gone. `_SilentDaemon` test on `verbs.recall_state` + the CLI render; a dead-pid test keeps "stale" — Q10 |
+| #b-2 `memory get` waited 390 s and the MCP recall 210 s to reach the replica on a held writer | the `memory` verb's read actions (get/list/search) run under ONE deadline (`MEMORY_READ_BUDGET_S` 10 s: partition probe + op, one attempt; `timeout=` lets a caller shorten it); the CLI `memory get` starts the clock before its intent probe, passes the resolved partition (no second probe) and the remainder; `memory_recall` defaults to `timeout=30.0` — the MCP tool inherits it, the CLI's `--timeout` default is the same 30 s and the generated hooks pass 5 / 10 / 30 explicitly. `_PingOnlyDaemon` tests: the verb raises within 16 s, the CLI reaches the replica within 16 s, the MCP default within 36 s — Q11 |
+| #s-3 `_promote_digest` and the dense per-hit `memory_get` were bare calls (raw `TimeoutError`, 3 attempts) | both go through `_call(retries=0)`; a held writer is named busy within 35 s and the slot is untouched (file-level assertion) |
+| #s-4 `memory_partition` raised on ping-level busy and GUESSED on op-level busy | one `partition_list` attempt; a transport failure raises `VerbBusyError` (the write that follows must not land on a guess); only an ANSWERED error keeps the project default, said on the log — Q11 |
+| #s-5 the r3 patches were not in the registry | `hub.global_call` / `daemon.call` / `verbs._call` / `memory_partition` / `require_daemon` rows name the r3 and r4 files; the `daemon_status` row lists `test_plan3_remedy_r3.py` (the r6-#m-5 filename fix) and the plan-4 files |
+| #m-6 a read on a busy store without a replica died with the write control point's message | `_read_store` raises a read-worded error ("no read replica yet … retry after the daemon's first snapshot"); the twins say "reading the replica" only after the replica opened — Q12 |
+| #m-7 the parity gate's canned `rmx_locate` could not fail on `skipped` | the canned result carries `CANARY-skip` |
+
+Also: `hub.global_call` and `verbs.global_recall_rows` carry `retries` (the plan-2 r6 global leg); the memory verb's dispatch table gained `MEMORY_READ_ACTIONS`.
+
+TDD: RED `workflow/review-output/pytest-plan3-r5-red.log` (the held-writer cases fail by taking minutes each — the r4 numbers reproduced), GREEN `pytest-plan3-r5-green.log` (99 passed across plan3_remedy_r4, verb_parity, plan2_remedy, hooks_reproducible, mcp_parity; earlier pass 116 passed with plan3_remedy_r3, save_state, verbs_migrated), mutations `pytest-plan3-r5-mutation.log`: (A) recall-state back to a bare ping → `test_recall_state_reports_a_busy_daemon_as_busy_not_stale` fails; (B) `memory_partition` guesses on a transport failure again → `test_memory_partition_raises_busy_on_a_held_writer` fails; (C) the promote back to a bare daemon call → `test_promote_digest_is_typed_busy_on_a_held_writer` fails after 90 s (the r4 number).

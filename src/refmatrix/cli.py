@@ -569,6 +569,20 @@ def _read_store() -> Store:
     rs = _reader_store()
     if rs is not None:
         return rs
+    # No replica yet. A busy daemon holds the writer slot; a READ must not
+    # open it and must not die with the WRITE control point's message
+    # either (bsd-plan3-r4 #m-6: "reading the replica" followed by "writes
+    # go through the daemon"). Absent → in-process; up → the daemon proxy.
+    from refmatrix import verbs as _verbs
+    try:
+        _verbs.require_daemon(_root(), retries=0)
+    except _verbs.VerbBusyError as e:
+        raise click.ClickException(
+            f"{e} — and there is no read replica yet (catalog.read.duckdb); a read "
+            f"cannot open the writer slot under a busy daemon. Retry after the "
+            f"daemon's first snapshot")
+    except _verbs.VerbAbsentError:
+        pass
     return _store()
 
 
@@ -9513,21 +9527,29 @@ def memory_add(name, content, mtype, tags, meta, protect, is_global):
                    "body + graph instead of forcing two commands.")
 def memory_get(name_or_id, degree):
     """Fetch a memory by name (current partition) or id (any partition)."""
-    _memory_intent("memory_get")
-    from refmatrix import daemon as daemon_mod
+    # ONE budget over the partition probe and the read (bsd-plan3-r4 #b-2:
+    # the probe and the verb's own probe stacked to 20 s on a held writer
+    # before the replica fallthrough below was reached).
+    import time as _time
     from refmatrix import verbs as _verbs
+    _t0 = _time.monotonic()
+    _budget = _verbs.MEMORY_READ_BUDGET_S
+    _memory_intent("memory_get", partition_timeout=min(5.0, _budget))
     root = _root()
     target = int(name_or_id) if name_or_id.isdigit() else name_or_id
     try:
-        m = _verbs.memory(root, action="get",
+        m = _verbs.memory(root, action="get", partition=_resolve_partition(),
+                          timeout=max(0.5, _budget - (_time.monotonic() - _t0)),
                           **({"id": target} if isinstance(target, int)
                              else {"name": target}))["memory"]
     except (_verbs.VerbAbsentError, _verbs.VerbBusyError) as e:
         # Daemon down OR busy: the lock-free replica reader serves the READ
         # (a CLI courtesy the daemon-routed verb does not offer; ch-bsd
-        # plan-3 r3 #m-5). Said on stderr either way — never silently.
-        click.echo(f"# rmx: {e}; reading the replica", err=True)
+        # plan-3 r3 #m-5). Said on stderr — AFTER the replica opened, so a
+        # store with no replica yet gets one read-worded error, not two
+        # lines that contradict each other (r4 #m-6).
         s = _read_store()
+        click.echo(f"# rmx: {e}; reading the replica", err=True)
         m = s.get_memory(target)
     except _verbs.VerbError as e:
         raise click.ClickException(str(e))
@@ -10006,13 +10028,14 @@ def _parse_duration(text: str) -> float:
                    "the `part-of` index for this subject (id, `subject_<slug>` "
                    "name, or bare label), newest first. Composes with "
                    "--exclude-mtype / -k. The cross-session 'everything on X'.")
-@click.option("--timeout", "timeout", type=float, default=None,
+@click.option("--timeout", "timeout", type=float, default=30.0, show_default=True,
               help="Budget in seconds for the WHOLE recall (partition probe, "
-                   "recall, per-hit fetch, global store, context). Default: 5 "
-                   "in the hook modes (--stdin-json / --session-start), 60 "
-                   "otherwise. In the hook modes a busy daemon past the budget "
-                   "is a stderr warning + an empty result + exit 0 — a hook "
-                   "may shout, it may not hold the turn for the store.")
+                   "recall, per-hit fetch, global store, rerank, context) — the "
+                   "same default the verb and the MCP tool use; the generated "
+                   "hooks pass their own (5 per prompt, 10 at SessionStart, 30 "
+                   "at PreCompact). In the hook modes a busy daemon past the "
+                   "budget is a stderr warning + an empty result + exit 0 — a "
+                   "hook may shout, it may not hold the turn for the store.")
 def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                   session_start, as_json, as_gmd, kinds, exclude_mtype,
                   include_session, degree, fuse, scope, subject, rerank, timeout):
@@ -10034,9 +10057,7 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
 
     Session-start (--session-start): shorthand for `--recent --since 7d`,
     the SessionStart hook's preferred mode per ADR-0001 Phase C."""
-    _hook_mode_early = bool(session_start or stdin_json)
-    _memory_intent("memory_recall", partition_timeout=(
-        float(timeout) if timeout is not None else (5.0 if _hook_mode_early else None)))
+    _memory_intent("memory_recall", partition_timeout=min(5.0, float(timeout)))
     if as_json and as_gmd:
         raise click.ClickException(
             "--json and --gmd are mutually exclusive"
@@ -10086,7 +10107,7 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
     # The budget (ch-bsd plan-2 r5 #b-1: the per-prompt hook held the turn
     # ~20 s p50 live, unbounded). Hook modes: 5 s; a busy daemon past it is a
     # warning + empty answer + exit 0, never exit 2 (that erases the prompt).
-    budget = float(timeout) if timeout is not None else (5.0 if hook_mode else 60.0)
+    budget = float(timeout)
     import time as _time
     _t_start = _time.monotonic()
 
@@ -10189,10 +10210,10 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                 return
             # Absent, or busy in interactive use: the lock-free replica
             # reader serves the READ, and says so (ch-bsd plan-3 r3 #m-5).
-            click.echo(f"# rmx: {e}; reading the replica", err=True)
             since_s = _parse_duration(since) if since else (
                 7 * 86400.0 if session_start else None)
-            rs = _reader_store() or _store()
+            rs = _read_store()          # read-worded on busy-without-replica (r4 #m-6)
+            click.echo(f"# rmx: {e}; reading the replica", err=True)
             if subject:
                 rows = [r for r in rs.subject_leaves(subject)
                         if not _mt_excluded(r.get("mtype"))][:k]

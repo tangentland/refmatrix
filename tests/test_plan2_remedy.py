@@ -532,7 +532,7 @@ def test_recall_hook_modes_default_to_a_five_second_budget_and_the_generator_say
     from refmatrix.cli import main as cli_main
     cmd = cli_main.commands["memory"].commands["recall"]
     opt = next(p for p in cmd.params if p.name == "timeout")
-    assert opt.default is None      # None -> 5 s in hook modes, 60 s otherwise
+    assert opt.default == 30.0      # == verbs.memory_recall's default; hooks pass their own
     block = _claude_hook_block(tmp_path / ".refmatrix")
     ups = [c for _, _, c in _cmds(block, "UserPromptSubmit") if "memory recall --stdin-json" in c]
     ss = [c for _, _, c in _cmds(block, "SessionStart") if "memory recall --session-start" in c]
