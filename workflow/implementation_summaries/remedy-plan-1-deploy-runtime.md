@@ -43,3 +43,18 @@ rel: evidence-for -> [[bsd-plan1-deploy-runtime-r3-e6c4081]]
 
 TDD: RED `workflow/review-output/pytest-plan1-r3-red.log` (2 failed: identity_error unknown, status UNVERIFIED; the ping-exception and bool tests passed on arrival — regression guards, not drivers). GREEN `pytest-plan1-r3-green.log` (24 passed across test_plan1_remedy + test_runtime_identity_surface). Mutation: reverting the `identity_error` branch in `_daemon_identity` fails `test_daemon_identity_with_identity_error_is_unknown`.
 
+## Round 4 (bsd-plan1-r4, 54fceb9) {#round-4}
+
+rel: evidence-for -> [[bsd-plan1-deploy-runtime-r4-54fceb9]]
+
+| Finding | Fix |
+|---------|-----|
+| #b-1-r4 `identity_error` never crossed the wire | `_op_ping` forwards `identity_error` from `_process_identity()`; `hub status` renders the hub's own `identity_error` as `[UNVERIFIED]` + the error; producer-side test `test_real_ping_carries_identity_error_and_every_consumer_sees_unknown` starts at `runtime_identity` raising, calls the REAL `_op_ping`, and feeds that dict to `_daemon_identity` and the relaunch guard |
+| #s-2-r4 `rmx hub queues` traceback on a busy fleet | `verbs.queues` wraps `TimeoutError`/`OSError` into a `VerbError` naming the busy daemon; the CLI catches both; `_gather_queues` skips the 2 s identity ping for a root whose 10 s stats call failed and marks the row `identity: unknown` (hot) |
+| #m-3-r4 plan-of-plans disagreed | plan-1 back to `in-progress` in BOTH places until CLEAN; plan-4 row now `in-progress` |
+| #m-4-r4 RED covered 4 of 5 tests | `workflow/review-output/pytest-plan1-r3-red-all5.log`: all five r3 tests run against the pre-remedy commit (c9d75af) in a throwaway worktree — 3 failed (identity unknown, status UNVERIFIED, relaunch identity_error), 2 passed on arrival (ping-exception, bool) |
+
+TDD: RED `pytest-plan1-r4-red.log` (4 failed), GREEN `pytest-plan1-r4-green.log` (94 passed across plan-1, identity, hub, watchdog, parity suites). Mutation: reverting the `_op_ping` forward fails the producer-side test at its first assertion.
+
+Also found while closing: bug-008 ([[bug-registry#registry]]) — the live rewriter hook was overwritten with dev-tree paths a second time (21:43, by a dev-venv apply outside this session's tests); regenerated from the deploy build, durable fix deferred to plan 6.
+

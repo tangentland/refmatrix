@@ -45,7 +45,7 @@ def test_pause_blocks_restart_of_a_dead_daemon(tmp_path, monkeypatch):
     from refmatrix import hub as hub_mod
     wd = _watchdog()
     restarts = []
-    monkeypatch.setattr(wd, "_restart", lambda root: restarts.append(root) or True)
+    monkeypatch.setattr(wd, "_restart", lambda root, **kw: restarts.append(root) or True)
     monkeypatch.setattr(hub_mod.daemon_mod, "ping", lambda *a, **k: False)
     monkeypatch.setattr(hub_mod.daemon_mod, "read_pid", lambda *a, **k: None)
     root = tmp_path / "proj" / ".refmatrix"

@@ -2475,7 +2475,12 @@ def hub_status():
         return
     console.print(f"[green]hub running[/] pid={st.get('pid')} "
                   f"port={st.get('port')} registry={st.get('registry_size')}")
-    if st.get("code_path"):
+    if st.get("identity_error"):
+        # the hub's own fallback identity is a guess, not a verification
+        console.print(
+            f"code: {st.get('code_path')}  [yellow][UNVERIFIED][/] — hub could "
+            f"not compute its identity: {st['identity_error']}")
+    elif st.get("code_path"):
         _print_code_identity(st["code_path"], bool(st.get("dev_tree")))
     resp = hub_mod.rpc("health")
     if resp.get("ok"):
@@ -2512,6 +2517,10 @@ def hub_queues(as_json):
         res = _verbs.queues(_root())
     except _verbs.VerbError as e:
         raise click.ClickException(str(e))
+    except (TimeoutError, OSError) as e:
+        raise click.ClickException(
+            f"hub queues timed out ({e}) — a daemon is busy; retry, or "
+            f"`rmx daemon status` in the project that is mid-write")
     rows = res.get("queues", [])
     if as_json:
         import json as _json

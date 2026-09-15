@@ -2577,7 +2577,7 @@ def _op_ping(d: Daemon, args: dict) -> dict:
     # at import (identity cannot change within a process) so the health
     # probe never globs site-packages and never fails because of it.
     ident = _process_identity()
-    return {
+    out = {
         "pid": os.getpid(),
         "root": str(d.root),
         "backend": d.store._backend.kind if d.store else None,
@@ -2585,6 +2585,12 @@ def _op_ping(d: Daemon, args: dict) -> dict:
         "code_path": ident["code_path"],
         "dev_tree": ident["dev_tree"],
     }
+    # The fallback identity is a GUESS; say so on the wire so every consumer
+    # (hub rows, relaunch guard, daemon status) renders it as unverified
+    # (bsd-plan1-r4 #b-1: the readers existed, the producer dropped it).
+    if ident.get("identity_error"):
+        out["identity_error"] = ident["identity_error"]
+    return out
 
 
 _PROCESS_IDENTITY: "dict | None" = None
