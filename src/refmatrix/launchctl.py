@@ -295,6 +295,22 @@ def hub_is_loaded() -> bool:
     return subprocess.run(_print_cmd(HUB_LABEL), capture_output=True).returncode == 0
 
 
+# After a bootstrap, how long to wait before re-checking that the label is
+# still loaded (a late bootout completing removes it — bug-022).
+HUB_SETTLE_S = float(os.environ.get("RMX_HUB_SETTLE_S", "2") or "2")
+
+
+def _wait_hub_loaded(*, expected: bool, timeout: float) -> bool:
+    """Poll `hub_is_loaded()` until it equals `expected` or `timeout` elapses."""
+    deadline = time.time() + timeout
+    while True:
+        if hub_is_loaded() == expected:
+            return True
+        if time.time() >= deadline:
+            return False
+        time.sleep(0.1)
+
+
 def _stop_hub_before_bootout(grace: float = EXIT_TIMEOUT_S) -> bool:
     """Send the hub's `stop` op and wait until its control socket stops
     answering (it exits 0; KeepAlive SuccessfulExit:false does not respawn
@@ -337,24 +353,37 @@ def install_hub(*, port: int = 7777, host: str = "127.0.0.1",
         _stop_hub_before_bootout()
     if hub_is_loaded():
         subprocess.run(_bootout_cmd(HUB_LABEL), capture_output=True)
-        deadline = time.time() + 3.0
-        while time.time() < deadline and hub_is_loaded():
-            time.sleep(0.1)
+        # WAIT for the domain to release the label — bug-013's shape, hub
+        # twin (bug-022, live 2026-09-15 05:27: a 3 s wait let the bootstrap
+        # land on a job still unloading; launchd then finished the bootout
+        # and the hub label was simply gone). A bootout that does not
+        # complete is an error, never a shrug.
+        if not _wait_hub_loaded(expected=False, timeout=BOOTOUT_WAIT_S):
+            raise RuntimeError(
+                f"launchctl bootout did not unload {HUB_LABEL} within {BOOTOUT_WAIT_S:g}s "
+                f"— the old job is still loaded (draining?); plist NOT rewritten. "
+                f"Retry, or `launchctl bootout {_domain()}/{HUB_LABEL}` by hand")
     p.write_bytes(render_hub_plist(port=port, host=host))
     p.chmod(0o644)
-    r = subprocess.run(_bootstrap_cmd(p), capture_output=True, text=True)
-    deadline = time.time() + 3.0
-    while time.time() < deadline and not hub_is_loaded():
-        time.sleep(0.1)
-    if not hub_is_loaded():
+    def _bootstrap_once() -> bool:
+        subprocess.run(_bootstrap_cmd(p), capture_output=True, text=True)
+        if _wait_hub_loaded(expected=True, timeout=10.0):
+            return True
+        # legacy fallback for a domain that refuses `bootstrap`
         subprocess.run(["launchctl", "load", str(p)], capture_output=True)
-        deadline = time.time() + 3.0
-        while time.time() < deadline and not hub_is_loaded():
-            time.sleep(0.1)
-    if not hub_is_loaded():
+        return _wait_hub_loaded(expected=True, timeout=3.0)
+
+    if not _bootstrap_once():
         raise RuntimeError(
-            f"launchctl did not load the hub agent "
-            f"(rc={r.returncode}, err={r.stderr.strip() or '(silent)'})")
+            f"launchctl did not load the hub agent — `launchctl print {_domain()}/{HUB_LABEL}`")
+    # A bootstrap that raced a late unload reads "loaded" for a moment and is
+    # gone a second later (bug-022): settle, re-check, bootstrap once more.
+    time.sleep(HUB_SETTLE_S)
+    if not hub_is_loaded():
+        if not _bootstrap_once():
+            raise RuntimeError(
+                f"{HUB_LABEL} unloaded itself after the bootstrap and a second bootstrap "
+                f"did not load it — `launchctl print {_domain()}/{HUB_LABEL}`")
     return p
 
 

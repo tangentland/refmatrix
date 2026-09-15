@@ -347,12 +347,25 @@ def _fake_binary(tmp_path: Path, *, dev_tree: bool) -> Path:
 
 
 def test_install_refuses_a_dev_tree_binary(root, tmp_path, monkeypatch):
+    """Every launchd surface is faked here too: under mutation P4-G (the
+    refusal removed) this test once installed a REAL LaunchAgent for its tmp
+    root (bug-023) — a test must not be able to reach launchd even when the
+    code under test is wrong."""
     dev = _fake_binary(tmp_path, dev_tree=True)
     ident = lc.binary_identity(str(dev))
     assert ident["dev_tree"] is True
+    runs = []
+    monkeypatch.setattr(lc, "plist_path", lambda r: tmp_path / "agents" / "x.plist")
+    monkeypatch.setattr(lc, "LAUNCH_AGENTS_DIR", tmp_path / "agents")
+    monkeypatch.setattr(lc, "_migrate_legacy", lambda r: False)
+    monkeypatch.setattr(lc, "is_loaded", lambda r: False)
+    monkeypatch.setattr(lc.subprocess, "run",
+                        lambda cmd, **kw: runs.append(list(cmd)[:2])
+                        or subprocess.CompletedProcess(cmd, 0, "", ""))
     with pytest.raises(RuntimeError, match="dev tree"):
         lc.install(root, rmx=str(dev))
-    assert not lc.plist_path(root).exists(), "the plist was written before the refusal"
+    assert not (tmp_path / "agents" / "x.plist").exists(), "the plist was written before the refusal"
+    assert runs == [], runs
 
 
 def test_check_names_a_dev_tree_binary_without_writing(root, tmp_path, monkeypatch):
@@ -442,26 +455,88 @@ def test_hub_plist_carries_the_exit_timeout_too(monkeypatch):
 def test_forced_hub_install_stops_the_hub_before_the_bootout(monkeypatch, tmp_path):
     """launchd SIGKILLed the hub at 04:26:17 (2026-09-15) on a `kickstart -k`
     — a forced reinstall boots it out the same way."""
+    calls, st = _hub_install_fakes(monkeypatch, tmp_path)
+    seen = []
+    real_rpc = hub_mod.rpc
+    monkeypatch.setattr(hub_mod, "rpc", lambda op, args=None, **kw: seen.append(op) or real_rpc(op, args, **kw))
+    lc.install_hub(force=True)
+    assert "stop" in seen, seen
+    first_run_phase = calls[0][1]
+    assert calls[0][0][1] == "bootout" and first_run_phase == "loaded", calls   # the stop op came before launchd's signal
+
+
+def _hub_install_fakes(monkeypatch, tmp_path, *, unload_polls=2, vanish_after_bootstrap=False):
+    """launchd as a state machine: loaded → (bootout) unloading for
+    `unload_polls` reads → unloaded → (bootstrap) loaded again; with
+    `vanish_after_bootstrap` the label reads loaded once and is then gone —
+    the live 05:27:46 race (bug-022)."""
     calls = []
-    monkeypatch.setenv("RMX_BIN", "/usr/local/bin/rmx")
-    monkeypatch.setattr(lc, "hub_is_loaded", lambda: True)
-    monkeypatch.setattr(lc, "hub_plist_path", lambda: tmp_path / "hub.plist")
-    monkeypatch.setattr(lc, "LAUNCH_AGENTS_DIR", tmp_path)
-    state = {"stopped": False}
+    st = {"phase": "loaded", "polls": 0, "vanished": False}
+
+    def hub_is_loaded():
+        if st["phase"] == "unloading":
+            st["polls"] += 1
+            if st["polls"] >= unload_polls:
+                st["phase"] = "unloaded"
+            return st["phase"] != "unloaded"
+        if st["phase"] == "loaded-again" and vanish_after_bootstrap and not st["vanished"]:
+            st["vanished"] = True
+            st["phase"] = "unloaded"
+            return True
+        return st["phase"] in ("loaded", "loaded-again")
+
+    def run(cmd, **kw):
+        cmd = list(cmd)
+        calls.append((cmd[:2], st["phase"]))
+        if "bootout" in cmd:
+            st["phase"] = "unloading"
+        if "bootstrap" in cmd:
+            st["phase"] = "loaded-again"
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    stopped = {"v": False}
 
     def rpc(op, args=None, *, timeout=30.0):
-        calls.append(("rpc", op))
         if op == "stop":
-            state["stopped"] = True; return {"ok": True}
-        if state["stopped"]:
+            stopped["v"] = True; return {"ok": True}
+        if stopped["v"]:
             raise ConnectionRefusedError()
         return {"ok": True}
+    monkeypatch.setenv("RMX_BIN", "/usr/local/bin/rmx")
+    monkeypatch.setattr(lc, "hub_is_loaded", hub_is_loaded)
+    monkeypatch.setattr(lc, "hub_plist_path", lambda: tmp_path / "hub.plist")
+    monkeypatch.setattr(lc, "LAUNCH_AGENTS_DIR", tmp_path)
+    monkeypatch.setattr(lc.subprocess, "run", run)
     monkeypatch.setattr(hub_mod, "rpc", rpc)
-    monkeypatch.setattr(lc.subprocess, "run",
-                        lambda cmd, **kw: calls.append(("run", list(cmd)[:2]))
-                        or subprocess.CompletedProcess(cmd, 0, "", ""))
+    monkeypatch.setattr(lc, "HUB_SETTLE_S", 0.0, raising=False)
+    monkeypatch.setattr(lc, "BOOTOUT_WAIT_S", 2.0)
+    return calls, st
+
+
+def test_forced_hub_install_bootstraps_only_after_the_domain_released_the_label(monkeypatch, tmp_path):
+    calls, st = _hub_install_fakes(monkeypatch, tmp_path, unload_polls=3)
     lc.install_hub(force=True)
-    assert ("rpc", "stop") in calls, calls
-    first_run = [i for i, c in enumerate(calls) if c[0] == "run"][0]
-    assert calls.index(("rpc", "stop")) < first_run, calls
+    boots = [c for c in calls if "bootstrap" in c[0]]
+    assert boots and boots[0][1] == "unloaded", calls
+    assert (tmp_path / "hub.plist").exists()
+
+
+def test_forced_hub_install_refuses_to_rewrite_while_the_old_job_is_still_loaded(monkeypatch, tmp_path):
+    calls, st = _hub_install_fakes(monkeypatch, tmp_path, unload_polls=10 ** 9)
+    monkeypatch.setattr(lc, "BOOTOUT_WAIT_S", 0.5)
+    with pytest.raises(RuntimeError, match="did not unload"):
+        lc.install_hub(force=True)
+    assert not (tmp_path / "hub.plist").exists()
+    assert not any("bootstrap" in c[0] for c in calls), calls
+
+
+def test_forced_hub_install_bootstraps_again_when_the_label_vanishes_after_the_bootstrap(monkeypatch, tmp_path):
+    """The live race: `launchctl print` said loaded right after the
+    bootstrap, and a second later the label was gone (the late bootout
+    completing). The settle re-check catches it and bootstraps once more."""
+    calls, st = _hub_install_fakes(monkeypatch, tmp_path, vanish_after_bootstrap=True)
+    lc.install_hub(force=True)
+    boots = [c for c in calls if "bootstrap" in c[0]]
+    assert len(boots) == 2, calls
+    assert lc.hub_is_loaded()
 
