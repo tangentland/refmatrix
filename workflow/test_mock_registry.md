@@ -24,7 +24,7 @@ code (`src/`) contains **no mocks** — see CLAUDE.md "No Mocks in Production Co
 
 | Mock | Target | Classification | Test File(s) | Graduation Plan |
 |------|--------|----------------|--------------|-----------------|
-| `cli._sync_memory_dir` (lambda) | the memory bridge itself | internal-active | tests/test_save_state.py | task 5.3 (`task-5.3-plan-5-memory-bridge-complete`, "real tests replace mocks"): replace with a real tmp-store ingest test |
+| `cli._sync_memory_dir` (lambda) | the memory bridge itself | internal-active | (none — graduated) | graduated 2026-09-14 (task 5.3): tests/test_memory_bridge.py runs the real bridge on a spawned daemon |
 | `upgrade.runtime_identity` (fake dict) | interpreter identity (environment) | external | tests/test_runtime_identity_surface.py, tests/test_plan1_remedy.py | permanent — the identity of the test interpreter is not the identity under test; the identity function itself is tested on fake trees |
 | `daemon.call` / `daemon.ping` / `daemon.served_identity` (fake RPC) | the daemon process (external process boundary) | external | tests/test_runtime_identity_surface.py, tests/test_plan1_remedy.py, tests/test_hooks_reproducible.py, tests/test_plan2_remedy.py | permanent for CLI-surface tests; real-daemon coverage lives in tests/test_verbs_memory_recall.py (spawned daemon) |
 | `hub._daemon_identity` (fake dict) | hub → daemon ping | internal-active | tests/test_runtime_identity_surface.py, tests/test_plan1_remedy.py | graduated: `test_gather_queues_carries_identity_end_to_end` patches only `daemon.call`/discovery and exercises the real `_gather_queues` → `_annotate_identity` wiring |
@@ -50,4 +50,5 @@ code (`src/`) contains **no mocks** — see CLAUDE.md "No Mocks in Production Co
 | Date | Mock | From → To | Notes |
 |------|------|-----------|-------|
 | 2026-09-14 | `discovery.daemon_status` + `daemon.ping` patches (detach busy branch) | dict/lambda → real pid + real silent socket (`_SilentDaemon`) | `test_detach_on_a_silent_daemon_costs_one_probe_plus_the_budget` replaces `test_detach_busy_branch_waits_wall_clock_and_names_the_pid` |
+| 2026-09-14 | `cli._sync_memory_dir` lambda (save-state bridge) | lambda → real bridge on a spawned daemon | tests/test_memory_bridge.py::test_finalize_save_state_bridges_the_handoff_dir_for_real + ::test_finalize_skips_the_bridge_on_sync_false_and_dry_run replace tests/test_save_state.py::test_finalize_runs_memory_bridge_over_the_handoff_dir |
 | 2026-09-14 | `hub.rpc` fake (bus behaviour) | fake → real `Bus` + real socket via `_MiniHub` | tests/test_verbs_migrated.py; the passthrough fakes stay for arg-shape assertions only |
