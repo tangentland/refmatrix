@@ -48,7 +48,10 @@ def test_recall_uses_dense_op_on_memory_partition(tmp_path, monkeypatch):
     assert recall["partition"] == "memory-proj"
     assert recall["kinds"] == ["memory"]
     assert recall["fuse"] is False
-    assert out["memories"] == [{"id": 7, "name": "m7", "scope": "project"}]
+    row = out["memories"][0]
+    assert (row["id"], row["name"], row["scope"]) == (7, "m7", "project")
+    # dense rows carry the ranking fields the CLI shows (plan-3 r1 #sk-4)
+    assert row["distance"] == 0.1 and row["fused"] is False and "score" in row
 
 
 def test_recall_falls_back_to_project_partition_post_merge(tmp_path, monkeypatch):

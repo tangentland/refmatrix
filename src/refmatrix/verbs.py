@@ -60,12 +60,18 @@ class Verb:
         params = set(self.defaults) | {
             p for p in inspect.signature(self.fn).parameters if p != "root"}
         kwargs: dict = {}
+        # Canonical spelling first, aliases only for params still unset —
+        # `{"agent": "A", "from": "B"}` means agent=A (ch-bsd plan-3 #meh-9:
+        # first-key-wins let the alias override the documented param).
         for k, v in args.items():
-            if v is None:
-                continue
-            k = self.aliases.get(k, k)
-            if k in params and k not in kwargs:
+            if v is not None and k in params and k not in self.aliases:
                 kwargs[k] = v
+        for k, v in args.items():
+            if v is None or k not in self.aliases:
+                continue
+            target = self.aliases[k]
+            if target in params and target not in kwargs:
+                kwargs[target] = v
         missing = [p for p, prm in inspect.signature(self.fn).parameters.items()
                    if p != "root" and prm.default is inspect.Parameter.empty
                    and prm.kind not in (prm.VAR_POSITIONAL, prm.VAR_KEYWORD)
@@ -126,24 +132,36 @@ def _schema_from_signature(fn: Callable) -> tuple[dict, dict]:
     return schema, defaults
 
 
+# Store targeting, read by the MCP transport (`mcp._resolve_root`) before the
+# verb runs. `session` is NOT a transport prop: the verbs that take a session
+# declare it (ch-bsd plan-3 #meh-9 — it used to be appended to tools that
+# never read it).
 _TRANSPORT_PROPS = {
-    "root": {"type": "string"},
-    "project": {"type": "string"},
-    "session": {"type": "string"},
+    "root": {"type": "string",
+             "description": "Store root (path to a project or its .refmatrix); "
+                            "default: the server's project"},
+    "project": {"type": "string",
+                "description": "Target another project by NAME (any live store)"},
 }
 
 
 def verb(name: str, description: str, *,
-         aliases: "dict[str, str] | None" = None) -> Callable:
+         aliases: "dict[str, str] | None" = None,
+         descriptions: "dict[str, str] | None" = None) -> Callable:
     """Register `fn` as the ONE implementation of tool `name`. `aliases` maps
     an extra tool-arg spelling onto a verb param (`{"from": "sender"}` —
     `from` is a Python keyword; `{"note": "text"}` — a documented convenience).
     The alias is part of the generated schema, and a param that has an alias
-    is no longer `required` (either spelling satisfies it)."""
+    is no longer `required` (either spelling satisfies it). `descriptions`
+    maps params to the per-property text the schema carries."""
     aliases = dict(aliases or {})
+    descriptions = dict(descriptions or {})
 
     def _register(fn: Callable) -> Callable:
         schema, defaults = _schema_from_signature(fn)
+        for param, text in descriptions.items():
+            if param in schema["properties"]:
+                schema["properties"][param]["description"] = text
         for alias, param in aliases.items():
             frag = dict(schema["properties"].get(param) or {})
             frag["description"] = f"alias for {param}"
@@ -175,6 +193,7 @@ def memory_partition(root: Path) -> str:
     """Legacy-aware memory partition (memory-<project> pre-merge, else the
     project partition). THE routing every memory verb must use — one handler
     skipping it caused the 0.21.1 / 0.25.x / 2026-09-06 split-brain family."""
+    import logging
     from refmatrix import daemon as daemon_mod, discovery
     project = discovery.store_name(root)
     legacy = f"memory-{project}"
@@ -184,8 +203,10 @@ def memory_partition(root: Path) -> str:
             if r.get("ok") and any(row.get("name") == legacy
                                    for row in r["result"].get("rows", [])):
                 return legacy
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001 — tolerant, but never mute
+        logging.getLogger(__name__).warning(
+            "memory_partition: partition_list failed for %s (%s); using %r",
+            root, e, project)
     return project
 
 
@@ -254,7 +275,11 @@ def global_recall_rows(q: "str | None", *, k: int, recent: bool,
                        since_s: "float | None") -> list[dict]:
     """Rows from the hub-owned global behavior store, routed through ITS
     daemon (never a direct Store open). Lexical/recent only — no embedder —
-    so the always-on hooks stay cheap."""
+    so the always-on hooks stay cheap. No global store on this machine → [].
+    A global store that does not ANSWER raises VerbError — the caller decides
+    whether that is fatal (scope=global) or a warning on a merged answer
+    (scope=both); it is never a silent project-only answer (ch-bsd plan-3
+    #sk-7)."""
     from refmatrix import hub as hub_mod
     if not hub_mod.global_store_root().exists():
         return []
@@ -266,9 +291,11 @@ def global_recall_rows(q: "str | None", *, k: int, recent: bool,
         return []
     try:
         resp = hub_mod.global_call(op, args, timeout=30.0)
-    except Exception:
-        return []
-    rows = resp.get("result", {}).get("rows", []) if resp.get("ok") else []
+    except Exception as e:  # noqa: BLE001 — re-raised as a typed, named failure
+        raise VerbError(f"global store {op} failed: {e}") from e
+    if not resp.get("ok"):
+        raise VerbError(f"global store {op} failed: {resp.get('error')}")
+    rows = resp.get("result", {}).get("rows", [])
     for r in rows:
         r["scope"] = "global"
     return rows
@@ -302,25 +329,40 @@ def merge_scope(project_rows: list, global_rows: list, k: int, scope: str) -> li
 
 
 def attach_context(root: Path, rows: list[dict], degree: int,
-                   partition: "str | None" = None) -> list[dict]:
+                   partition: "str | None" = None,
+                   warnings: "list[str] | None" = None) -> list[dict]:
     """degree>0: stash a rendered context bundle on each row (`row["context"]`)
-    via the daemon `context` op — the same op `rmx context` uses. Best-effort
-    per row; daemon down leaves `context` unset."""
+    via the daemon `context` op — the same op `rmx context` uses. A row whose
+    bundle failed carries `context=None` AND `context_error=<why>`, and the
+    failure is appended to `warnings` when given — degraded, never silently
+    (ch-bsd plan-3 #sk-7)."""
     if degree <= 0:
         return rows
     from refmatrix import daemon as daemon_mod
     if not daemon_mod.ping(root):
+        if warnings is not None:
+            warnings.append(f"context: daemon not running for {root}; no bundles attached")
         return rows
     for row in rows:
+        err = None
         try:
             payload = {"ref": row["name"], "format": "text", "degree": degree,
                        "entities_explicit": False, "tokens_explicit": False}
             if partition:
                 payload["partition"] = partition
             resp = daemon_mod.call(root, "context", payload, timeout=120.0)
-            row["context"] = resp.get("result", {}).get("body") if resp.get("ok") else None
-        except Exception:
+            if resp.get("ok"):
+                row["context"] = resp.get("result", {}).get("body")
+            else:
+                row["context"] = None
+                err = str(resp.get("error"))
+        except Exception as e:  # noqa: BLE001 — named on the row, not dropped
             row["context"] = None
+            err = str(e)
+        if err:
+            row["context_error"] = err
+            if warnings is not None:
+                warnings.append(f"context for {row.get('name')!r}: {err}")
     return rows
 
 
@@ -337,12 +379,78 @@ def payload_memory_recall(query: str, *, k: int, kinds: "list[str] | None",
     return payload
 
 
+def payload_ingest(path: str, *, source: str = "auto", semantic: bool = True,
+                   partition: "str | None" = None) -> dict:
+    """The daemon whole-path ingest payload (`ingest_path` blocking op and
+    `ingest_path_start` job op share it) — one place for its arg names."""
+    payload: dict = {"path": str(path), "source": source, "semantic": bool(semantic)}
+    if partition:
+        payload["partition"] = partition
+    return payload
+
+
+def recent_rows(fetch: Callable[["float | None", int], list], *, k: int,
+                patterns, since_seconds: "float | None",
+                widen_if_empty: bool) -> "tuple[list[dict], bool]":
+    """THE recent-mode row rule, shared by the daemon-routed verb and the CLI's
+    daemon-down reader fallback (ch-bsd plan-3 #sk-4: the fallback used to be
+    a second copy). `fetch(since_seconds, limit)` returns newest-first rows.
+    Over-fetch ×10 when an mtype filter is active so k survive it; when the
+    window is empty and it was a DEFAULT window, widen to newest-k regardless
+    of age (an empty orient pass is worse than an older one). Returns
+    (rows, widened)."""
+    effective_k = k * 10 if patterns else k
+    rows = [r for r in fetch(since_seconds, effective_k)
+            if not mt_excluded(r.get("mtype"), patterns)][:k]
+    if rows or not widen_if_empty:
+        return rows, False
+    rows = [r for r in fetch(None, effective_k)
+            if not mt_excluded(r.get("mtype"), patterns)][:k]
+    return rows, True
+
+
+def ann_similarity(distance: float) -> float:
+    """Cosine similarity (higher = closer) from a Lance L2 distance over
+    L2-normalized vectors: ‖a−b‖² = 2(1 − cos) → cos = 1 − d²/2."""
+    return 1.0 - (distance * distance) / 2.0
+
+
+def display_score(h: dict) -> "float | None":
+    """Higher = better, agreeing with rank order. A fused hit carries an RRF
+    `score`; a pure-dense hit an L2 `distance` converted to cosine."""
+    if h.get("fused"):
+        sc = h.get("score")
+        return float(sc) if isinstance(sc, (int, float)) else None
+    d = h.get("distance")
+    if d is None:
+        d = h.get("score")  # pure-dense legacy hit shape
+    return ann_similarity(float(d)) if isinstance(d, (int, float)) else None
+
+
+def annotate_hit(m: dict, h: dict) -> dict:
+    """Stamp the honest ranking fields on a recalled memory row: `score`
+    (display score), `distance` (raw L2, kept), `fused`, plus `reranked` /
+    `replica` when the hit carries them. ONE place, so MCP rows and CLI rows
+    carry the same fields (ch-bsd plan-3 #sk-4)."""
+    m["score"] = display_score(h)
+    m["distance"] = h.get("distance")
+    m["fused"] = bool(h.get("fused"))
+    for extra in ("reranked", "replica"):
+        if h.get(extra):
+            m[extra] = True
+    return m
+
+
 def resolve_session(root: Path, session: "str | None") -> str:
-    """Explicit session, else the most-recently-written STM ring (the active
-    Claude session a spawned process cannot name), else the default id.
-    Reads and writes MUST resolve identically."""
+    """Explicit session, else $RMX_SESSION (what the hooks export), else the
+    most-recently-written STM ring (the active Claude session a spawned
+    process cannot name), else the default id. Reads and writes MUST resolve
+    identically — the CLI's `_resolve_stm_session(prefer_latest=True)` is
+    this function."""
+    import os
     from refmatrix import stm as stm_mod
-    return session or stm_mod.latest_session(root) or stm_mod.session_id()
+    return (session or os.environ.get("RMX_SESSION")
+            or stm_mod.latest_session(root) or stm_mod.session_id())
 
 
 # ---- the verbs -------------------------------------------------------------
@@ -391,11 +499,48 @@ def query(root: Path, dsl: str) -> dict:
 def memory_add(root: Path, name: str, content: str, *,
                mtype: str = "observation",
                tags: list[str] | None = None,
-               protect: bool = False) -> dict:
-    return _call(root, "memory_add", {
-        "name": name, "content": content, "mtype": mtype, "tags": tags,
-        "protected": protect, "partition": memory_partition(root),
-    }, timeout=30.0)
+               metadata: dict | None = None,
+               protect: bool = False, to_global: bool = False) -> dict:
+    """`to_global` writes to the shared cross-project behavior store through
+    the hub (CLI `--global`); otherwise this project's memory partition."""
+    payload = {"name": name, "content": content, "mtype": mtype, "tags": tags,
+               "metadata": metadata, "protected": protect}
+    if to_global:
+        from refmatrix import hub as hub_mod
+        try:
+            g = hub_mod.global_call("memory_add", payload)
+        except Exception as e:  # noqa: BLE001 — typed for the caller
+            raise VerbError(f"global store memory_add failed: {e}") from e
+        if not g.get("ok"):
+            raise VerbError(str(g.get("error")))
+        return g.get("result", {})
+    return _call(root, "memory_add", {**payload, "partition": memory_partition(root)},
+                 timeout=30.0)
+
+
+_RECALL_DESCRIPTIONS = {
+    "query": "Natural-language query for dense ANN recall; empty/omitted with no "
+             "other mode means recent=true",
+    "k": "Max memories returned (CLI `-k`; default 10)",
+    "scope": "project: this store; global: the shared behavior store; both: "
+             "round-robin merge (what the SessionStart hook uses)",
+    "kinds": "Entity kinds to recall from (default ['memory']; add 'doc' for "
+             "ingested .md memory files)",
+    "fuse": "RRF-fuse dense ANN with symbolic content_rank (BM25); opt-in",
+    "rerank": "Cross-encoder rerank of the dense shortlist; omit for the daemon's "
+              "RMX_RERANK default",
+    "since_seconds": "recent-mode window in seconds (programmatic twin of `since`)",
+    "since": "recent-mode window: 30m / 1h / 7d / 2w or bare seconds",
+    "recent": "Newest-first by created_at, no embedder needed",
+    "session_start": "recent with a 7d default window, widened to newest-k when "
+                     "empty (the SessionStart hook mode)",
+    "exclude_mtype": "mtype globs to drop (fnmatch); default ['session/*'] hides "
+                     "save-state handoffs + STM digests — pass [] for none",
+    "include_session": "Opt back into session/* cards (same as exclude_mtype=[])",
+    "subject": "Recall the leaves filed under a subject (id, subject_<slug>, or "
+               "bare label), newest first",
+    "degree": ">0 attaches a context bundle (body + one-hop neighbours) per row",
+}
 
 
 @verb("rmx_memory_recall",
@@ -404,8 +549,11 @@ def memory_add(root: Path, name: str, content: str, *,
       "newest-k when empty), subject=<slug> (leaves filed under a subject). "
       "session/* cards (save-state handoffs, STM digests) are hidden unless "
       "include_session=true or exclude_mtype=[]. scope=both adds the global "
-      "behavior store. Pass `project` (name) or `root` to target another store.")
-def memory_recall(root: Path, *, query: str = "", k: int = 8,
+      "behavior store. Pass `project` (name) or `root` to target another store. "
+      "`warnings` lists degraded legs (global store unreachable, a context "
+      "bundle that failed) — never a silent partial answer.",
+      descriptions=_RECALL_DESCRIPTIONS)
+def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
                   scope: typing.Literal["project", "global", "both"] = "project",
                   kinds: list[str] | None = None, fuse: bool = False,
                   rerank: bool | None = None,
@@ -421,12 +569,15 @@ def memory_recall(root: Path, *, query: str = "", k: int = 8,
     cli.py, so agents calling the tool got different answers than the hook).
 
     Returns {"memories": rows, "mode": "session-start|recent|subject|dense",
-    "widened": bool, "since_seconds": float|None}. Daemon-routed; raises
-    VerbError when the project store's daemon is down (a surface with a
-    lock-free replica may degrade on its own)."""
+    "widened": bool, "since_seconds": float|None, "warnings": [str]}.
+    Daemon-routed; raises VerbError when the project store's daemon is down
+    (a surface with a lock-free replica may degrade on its own via
+    `recent_rows`). Dense rows carry `score`/`distance`/`fused`
+    (`annotate_hit`)."""
     from refmatrix import daemon as daemon_mod
     patterns = (list(exclude_mtype) if exclude_mtype is not None
                 else ([] if include_session else ["session/*"]))
+    warnings: list[str] = []
     widened = False
     since_defaulted = False
     if session_start:
@@ -439,10 +590,6 @@ def memory_recall(root: Path, *, query: str = "", k: int = 8,
     if not (recent or subject or query):
         # MCP contract since 0.21: an empty query means "what is recent".
         recent = True
-        mode_hint = "recent"
-
-    def _filt(rows: list[dict]) -> list[dict]:
-        return [r for r in rows if not mt_excluded(r.get("mtype"), patterns)]
 
     want_project = scope in ("project", "both")
     partition = memory_partition(root) if want_project else None
@@ -453,26 +600,22 @@ def memory_recall(root: Path, *, query: str = "", k: int = 8,
         mode = "subject"
         if want_project:
             r = _call(root, "subject_leaves", {"subject": subject, "partition": partition})
-            project_rows = _filt(r.get("rows", []))[:k]
+            project_rows = [row for row in r.get("rows", [])
+                            if not mt_excluded(row.get("mtype"), patterns)][:k]
     elif recent:
         mode = "session-start" if session_start else "recent"
         if want_project:
-            effective_k = k * 10 if patterns else k
-            r = _call(root, "memory_recent", {"since_seconds": since_seconds,
-                                              "limit": effective_k, "partition": partition})
-            project_rows = _filt(r.get("rows", []))[:k]
-            if not project_rows and since_defaulted:
-                # An empty orient pass is worse than an older one: widen to
-                # newest-k regardless of age. An explicit window is honored.
-                widened = True
+            def _fetch(since_s, limit):
+                return _call(root, "memory_recent", {"since_seconds": since_s,
+                                                     "limit": limit,
+                                                     "partition": partition}).get("rows", [])
+            project_rows, widened = recent_rows(
+                _fetch, k=k, patterns=patterns, since_seconds=since_seconds,
+                widen_if_empty=since_defaulted)
+            if widened:
                 since_seconds = None
-                r = _call(root, "memory_recent", {"since_seconds": None,
-                                                  "limit": effective_k, "partition": partition})
-                project_rows = _filt(r.get("rows", []))[:k]
     else:
         if want_project:
-            if not daemon_mod.ping(root):
-                raise VerbError(f"daemon not running for {root}")
             ann_k = k * 3 if patterns else k
             r = _call(root, "memory_recall",
                       payload_memory_recall(query, k=ann_k, kinds=kinds, fuse=fuse,
@@ -491,20 +634,26 @@ def memory_recall(root: Path, *, query: str = "", k: int = 8,
                                     timeout=30.0)
                 m = g.get("result", {}).get("memory") if g.get("ok") else None
                 if m and not mt_excluded(m.get("mtype"), patterns):
-                    project_rows.append(m)
+                    project_rows.append(annotate_hit(m, h))
     for r in project_rows:
         r["scope"] = "project"
 
     rows = project_rows
     if scope != "project":
         gk = k * 10 if patterns else k
-        grows = _filt(global_recall_rows(
-            query or None, k=gk, recent=bool(recent) and not subject,
-            since_s=since_seconds))
+        try:
+            grows = [row for row in global_recall_rows(
+                query or None, k=gk, recent=bool(recent) and not subject,
+                since_s=since_seconds) if not mt_excluded(row.get("mtype"), patterns)]
+        except VerbError as e:
+            if scope == "global":
+                raise
+            warnings.append(f"global rows omitted: {e}")
+            grows = []
         rows = merge_scope(project_rows, grows, k, scope)
-    rows = attach_context(root, rows, degree, partition)
+    rows = attach_context(root, rows, degree, partition, warnings)
     return {"memories": rows, "mode": mode, "widened": widened,
-            "since_seconds": since_seconds}
+            "since_seconds": since_seconds, "warnings": warnings}
 
 
 @verb("rmx_ingest",
@@ -542,24 +691,36 @@ def ingest(root: Path, *, path: str | None = None,
       "memory file) — identical post-steps to the CLI.")
 def save_state(root: Path, *, message: str | None = None,
                promote: bool = True, dry_run: bool = False,
-               session: str | None = None) -> dict:
+               session: str | None = None, memory_dir: str | None = None,
+               lint: bool = True, sync: bool = True) -> dict:
+    """The CLI `rmx save-state` calls this and renders; `--commit` (git) is a
+    CLI-only post-step. `dry_run` returns the rendered `doc` and writes
+    nothing. Result carries `events`, `target`, `promoted`, `subject`,
+    `lint`, `filed_subject`, `sync`."""
     import time as _time
     from refmatrix import handoff, stm as stm_mod
     repo = Path(root).parent
-    sess = session or stm_mod.latest_session(root) or stm_mod.session_id()
+    sess = resolve_session(root, session)
     s = stm_mod.Stm(root, sess)
+    memdir = (Path(memory_dir).resolve() if memory_dir
+              else handoff.default_memory_dir(repo))
     res = handoff.compose_save_state(
-        s, root, repo=repo, memdir=handoff.default_memory_dir(repo),
+        s, root, repo=repo, memdir=memdir,
         today=_time.strftime("%Y-%m-%d"), message=message,
         promote=promote, dry_run=dry_run)
-    fin = handoff.finalize_save_state(s, root, res, repo=repo)
+    res["session"] = sess
+    res["memory_dir"] = str(memdir)
+    res["subject"] = s.get_subject()
+    if dry_run:
+        res["dry_run"] = True
+        return res
+    fin = handoff.finalize_save_state(s, root, res, repo=repo, lint=lint, sync=sync)
     res["lint"] = fin.get("lint")
     res["filed_subject"] = fin.get("filed_subject")
     # Memory bridge outcome — surfaced, not swallowed: an MCP caller sees
     # `sync.error` when the store did not take the handoff.
     res["sync"] = fin.get("sync")
-    if not res.get("dry_run"):
-        res.pop("doc", None)
+    res.pop("doc", None)
     return res
 
 
@@ -568,8 +729,7 @@ def save_state(root: Path, *, message: str | None = None,
       "being worked on right now).")
 def focus(root: Path, *, top: int = 20, session: str | None = None) -> dict:
     from refmatrix import stm as stm_mod
-    sess = session or stm_mod.latest_session(root) or stm_mod.session_id()
-    s = stm_mod.Stm(root, sess)
+    s = stm_mod.Stm(root, resolve_session(root, session))
     return {"graph": s.focus_graph(top=top), "tasks": s.task_list()}
 
 
@@ -579,8 +739,7 @@ def focus(root: Path, *, top: int = 20, session: str | None = None) -> dict:
       "alias for `text`.", aliases={"note": "text"})
 def focus_note(root: Path, text: str, *, session: str | None = None) -> dict:
     from refmatrix import stm as stm_mod
-    sess = session or stm_mod.latest_session(root) or stm_mod.session_id()
-    s = stm_mod.Stm(root, sess)
+    s = stm_mod.Stm(root, resolve_session(root, session))
     ev = s.record("reason", str(text)[:800])
     return {"noted": True, "session": s.session,
             "refs": ev.get("refs", [])[:6]}
@@ -593,8 +752,7 @@ def focus_note(root: Path, text: str, *, session: str | None = None) -> dict:
 def change_subject(root: Path, label: str, *,
                    session: str | None = None) -> dict:
     from refmatrix import daemon as daemon_mod, stm as stm_mod
-    sess = session or stm_mod.latest_session(root) or stm_mod.session_id()
-    s = stm_mod.Stm(root, sess)
+    s = stm_mod.Stm(root, resolve_session(root, session))
     rec = s.set_subject(label)
     part = memory_partition(root)
     eid = None
@@ -681,12 +839,14 @@ def ingest_status(root: Path, *, job_id: str | None = None,
 
 
 @verb("rmx_recall_state", "Recall session state — pull the prior handoff and orient (read-only). Returns: the latest save-state handoff (prior git/focus/tasks/recent-memory links), the live session's STM focus digest (top symbols, topics, milestones, intent arc), recent memories, current git state, daemon health, and anomalies (dirty tree, unmerged/undeployed commits, stale daemon). Mirror of rmx_save_state.")
-def recall_state(root: Path, *, session: str | None = None) -> dict:
+def recall_state(root: Path, *, session: str | None = None,
+                 memory_dir: str | None = None) -> dict:
     from refmatrix import handoff, stm as stm_mod
     repo = Path(root).parent
     s = stm_mod.Stm(root, resolve_session(root, session))
-    return handoff.compose_recall_state(s, root, repo=repo,
-                                        memdir=handoff.default_memory_dir(repo))
+    memdir = (Path(memory_dir).resolve() if memory_dir
+              else handoff.default_memory_dir(repo))
+    return handoff.compose_recall_state(s, root, repo=repo, memdir=memdir)
 
 
 _MEMORY_OPS = {
@@ -701,6 +861,8 @@ def _memory_payload(action: str, a: dict) -> dict:
     """Daemon-op payload for a memory action; keys mirror the CLI memory
     subcommands (the proven callers) so the op contract stays single-sourced."""
     def keyed():
+        if a.get("id") is None and a.get("name") is None:
+            raise VerbArgsError(f"memory {action} requires 'id' or 'name'")
         return {"id": int(a["id"])} if a.get("id") is not None else {"name": a["name"]}
     if action in ("get", "forget"):
         return keyed()
@@ -748,6 +910,11 @@ def _memory_payload(action: str, a: dict) -> dict:
     return {}
 
 
+_RECALL_FORWARD = ("query", "k", "scope", "since", "since_seconds", "recent",
+                   "exclude_mtype", "include_session", "subject", "kinds", "fuse",
+                   "degree")
+
+
 @verb("rmx_memory", "Full access to the project memory store — parity with the CLI `rmx memory` group. `action` selects the op; pass that op's params alongside.")
 def memory(root: Path, action: typing.Literal[
                "recall", "add", "get", "list", "search", "forget", "reclassify",
@@ -764,14 +931,21 @@ def memory(root: Path, action: typing.Literal[
            linkage: str | None = None, weight: float | None = None,
            halflife_days: float | None = None, cap: float | None = None,
            explain: bool | None = None, protect: bool | None = None,
-           dry_run: bool | None = None, partition: str | None = None) -> dict:
+           dry_run: bool | None = None, partition: str | None = None,
+           since: str | None = None, since_seconds: float | None = None,
+           recent: bool | None = None, exclude_mtype: list[str] | None = None,
+           include_session: bool | None = None, subject: str | None = None,
+           kinds: list[str] | None = None, fuse: bool | None = None,
+           degree: int | None = None) -> dict:
     """One dispatcher over the CLI `rmx memory` group. recall/add reuse the
-    dedicated verbs; promote copies project→global; everything else routes to
-    the daemon's memory_* op with the project partition injected."""
+    dedicated verbs (recall forwards every recall knob it accepts); promote
+    copies project→global; everything else routes to the daemon's memory_*
+    op with the project partition injected."""
     from refmatrix import daemon as daemon_mod, hub as hub_mod
     a = {k: v for k, v in locals().items() if k not in ("root", "action", "daemon_mod", "hub_mod")}
     if action == "recall":
-        kw = {k: v for k, v in a.items() if k in ("query", "k", "scope") and v is not None}
+        kw = {k: v for k, v in a.items()
+              if k in _RECALL_FORWARD and v is not None}
         return memory_recall(root, **kw)
     if action == "add":
         if not name or content is None:
@@ -806,12 +980,21 @@ def memory(root: Path, action: typing.Literal[
 
 
 def _bus_sender(root: Path, explicit: "str | None") -> str:
-    """explicit `from`/`agent` → $RMX_AGENT → this store's project name.
-    Co-located agents share a hostname; the project is the only default that
-    tells receivers WHO published."""
+    """explicit `from`/`agent` → $RMX_AGENT → this store's project name →
+    hostname (a bus command run outside any store). Co-located agents share a
+    hostname; the project is the only default that tells receivers WHO
+    published."""
     import os
+    import socket
     from refmatrix import discovery
-    return explicit or os.environ.get("RMX_AGENT") or discovery.store_name(root)
+    if explicit:
+        return explicit
+    env = os.environ.get("RMX_AGENT")
+    if env:
+        return env
+    if Path(root).parent.is_dir():
+        return discovery.store_name(root)   # the project the store belongs to
+    return socket.gethostname()
 
 
 def _hub_rpc(op: str, args: "dict | None" = None) -> dict:
@@ -834,8 +1017,9 @@ def bus_pub(root: Path, channel: str, body: str, *, type: str = "announce",
 
 
 @verb("rmx_bus_history", 'Read recent messages on a bus channel.')
-def bus_history(root: Path, channel: str, *, n: int = 20) -> dict:
-    return _hub_rpc("bus_history", {"channel": channel, "n": int(n)})
+def bus_history(root: Path, channel: str, *, n: int = 20,
+                status: typing.Literal["active", "archived", "deleted", "all"] = "active") -> dict:
+    return _hub_rpc("bus_history", {"channel": channel, "n": int(n), "status": status})
 
 
 @verb("rmx_bus_channels", 'List live bus channels (with message counts), optionally filtered by a glob like `proj:*` or `proj:cliquedb:*`. Channel discovery for the bus.')
@@ -908,7 +1092,7 @@ CLI_MAP: dict[str, "tuple[str, ...] | None"] = {
     "rmx_search": None,
     "rmx_locate": ("locate",),
     "rmx_task": ("task", "list"),
-    "rmx_queues": ("hub", "status"),
+    "rmx_queues": ("hub", "queues"),
     "rmx_ingest_status": ("ingest-status",),
     "rmx_recall_state": ("recall-state",),
     "rmx_memory": ("memory", "get"),
@@ -922,6 +1106,20 @@ CLI_MAP: dict[str, "tuple[str, ...] | None"] = {
     "rmx_bus_unarchive": ("bus", "unarchive"),
     "rmx_bus_purge": ("bus", "purge"),
     "rmx_bus_stats": ("bus", "stats"),
+}
+# How each twin is WIRED to its verb (asserted by test_verb_parity.py by
+# recording the call while the click command runs — ch-bsd plan-3 r1 #bs-1
+# found "has a CLI command that calls it" was an existence check):
+#   calls   — the click command invokes `verbs.<fn>` and renders the result
+#   payload — a bespoke-routed surface (replica-first read, blocking ingest)
+#             that builds its daemon payload through the verb's payload_*
+#             helper, as the module docstring requires
+CLI_WIRING: dict[str, str] = {
+    "rmx_context": "payload",       # replica-first read; payload_context
+    "rmx_query": "payload",         # replica-first read; payload_query
+    "rmx_ingest": "payload",        # blocking whole-path op; payload_ingest
+    **{n: "calls" for n, p in CLI_MAP.items()
+       if p is not None and n not in ("rmx_context", "rmx_query", "rmx_ingest")},
 }
 MCP_ONLY: dict[str, str] = {
     "rmx_where": "federated cross-store lookup for agents; the CLI equivalent "

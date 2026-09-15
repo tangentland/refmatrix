@@ -22,3 +22,8 @@ rel: implements -> [[task-3.3-plan-3-verbs-parity]]
 ## Note {#note}
 
 The running `rmx mcp` server is a per-client stdio process: `/mcp` reconnect is needed to serve the regenerated tool list.
+
+## TDD record {#tdd}
+
+Delivered in the plan-3 r1 remedy (the original task landed without one — ch-bsd #bs-3): RED `workflow/review-output/pytest-plan3-r1-red.log` (51 failed / 12 passed across test_verb_parity, test_verbs_migrated, test_plan3_remedy), GREEN `pytest-plan3-r1-green.log` (63 passed). See [[impl-remedy-plan-3-verbs-parity#tdd]] for the per-verb tests and the mutation checks.
+
