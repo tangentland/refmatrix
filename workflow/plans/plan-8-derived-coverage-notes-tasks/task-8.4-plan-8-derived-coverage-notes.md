@@ -5,14 +5,14 @@ title: "Task 8.4: The `unanswered` detector, behind a pre-registered confound ch
 tags: [task, plan-8]
 metadata:
   node_type: task
-  status: pending
+  status: complete (negative result)
   plan: plan-8-derived-coverage-notes
 ---
 
 # Task 8.4: The `unanswered` detector, behind a pre-registered confound check {#root}
 
 > Plan: [[plan-8-derived-coverage-notes]]
-> Status: Pending
+> Status: Complete — the gate FAILED and the detector was not built
 > Depends on: 8.1
 
 rel: part-of -> [[plan-8-derived-coverage-notes]]
@@ -40,8 +40,31 @@ rel: part-of -> [[plan-8-derived-coverage-notes]]
 - a synthetic self-suppressing log fixture is DETECTED as such by the confound check and the detector refuses to emit
 - thresholds are parameters, asserted by driving the same fixture to two different outcomes
 
+## Outcome {#outcome}
+
+**The gate failed. `brief/unanswered` was not implemented.** Full measurement in
+`workflow/review-output/brief-unanswered-confound.md`.
+
+C1 passed: `telemetry.log_query.__exit__` writes unconditionally and zero-result rows appear across
+the whole 3.5-month span, so this is NOT the helix failure. C2 cleared its bar at 56.6% and the
+bar was shown to be wrong — the shape-0 gate discards real prose queries
+(`fix the slot rotation catalog sync`), the same mis-calibration [[project_scan_prompt_junk_gate]]
+records. C3 failed outright: **one** term reached the registered threshold of five distinct
+zero-result queries, and the nine terms at the looser bar are artifacts — an anchor id, a filename
+fragment, `<task-notification>`, `->`.
+
+The real finding is that `query.log` records what the agent GREPPED FOR, not what the corpus was
+asked and failed to answer: the dominant zero-result sources are `grep-replica` (206 rows) and the
+always-on `scan-prompt` hook (174), which fires on "yes" and "go". Lowering the threshold would
+have shipped a fitted result; the two signals that would actually change the verdict
+(`RMX_INVOCATION_SOURCE` on query rows, and answer-usefulness rather than cardinality) are
+registered as deferrals and are not in plan 8.
+
+No partial detector and no flag-gated stub was left behind.
+
 ## Definition of done {#done}
 
-- RED run recorded, GREEN run recorded, mutation check noted in the implementation summary.
+- ~~RED/GREEN/mutation~~ — not applicable: the gate failed, so no detector was written. The
+  measurement IS the deliverable.
 - Implementation summary at `workflow/implementation_summaries/task-8.4-plan-8-derived-coverage-notes.md`.
-- Committed on branch `task-8.4-plan-8-derived-coverage-notes`; merged `--no-ff` to `master`.
+- Committed with the plan-8 work.

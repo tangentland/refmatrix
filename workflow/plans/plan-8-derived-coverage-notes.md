@@ -62,10 +62,11 @@ note with no evidence is a bug, not a note.
 | `orphan-concept` | concept with `mentions` degree high and `defines`/`lead` degree zero — talked about, never pinned down | degree counts, the primer's own computation |
 | `singleton` | subject whose cluster has exactly one member — a topic the corpus touched once | `memory compile` plan |
 | `contradicted` | two memories joined by a `contradicts` edge with neither superseded | GMD rel edges |
-| `unanswered` | queries that fell to the grep backstop or returned a shape-0/empty bundle, grouped by term | `query.log` / `cli.log` telemetry |
+| ~~`unanswered`~~ | **NOT SHIPPED** — the confound gate failed; `query.log` records what the agent grepped for, not what the corpus was asked | `query.log` / `cli.log` telemetry |
 | `stale` | a subject whose members were all last touched before a cutoff | helix edge-time |
 
-`unanswered` is the class with the most product value and the most measurement risk — see Q3.
+`unanswered` had the most product value and the most measurement risk. The risk won: see Q3 and
+`workflow/review-output/brief-unanswered-confound.md`. Four classes ship, not five.
 
 ### Surfaces {#surfaces}
 
@@ -138,7 +139,7 @@ discipline [[project_helix_phase2_decision_criterion]] applied.
 | 8.1 | Brief detectors, note schema, evidence contract (no surface yet) | — |
 | 8.2 | Verb + daemon op + CLI/MCP adapters; parity test | 8.1 |
 | 8.3 | GMD index render + regenerate-from-store round trip | 8.1 |
-| 8.4 | `unanswered` detector behind the Q3 confound check | 8.1 |
+| 8.4 | `unanswered` detector behind the Q3 confound check — **gate FAILED, not built** | 8.1 |
 
 ## Execution contract {#execution}
 
