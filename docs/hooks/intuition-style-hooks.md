@@ -9,12 +9,12 @@ tags: [hooks, memory, claude-code, templates]
 
 rel: implements -> [[0001-intuition-lance-integration]]
 
-Copy-pasteable `.claude/settings.local.json` snippets that port
-intuition's hook surface onto `rmx memory`. Each section drops into
-the matching event in your project's `.claude/settings.local.json`.
-
-These are **templates**, not auto-installed — paste only the hooks
-your project wants. All of them shell out to the `rmx` CLI, so the
+Reference snippets that port intuition's hook surface onto `rmx memory`.
+Since 0.67 these are NOT pasted by hand: `rmx install-hooks --apply` generates
+the whole block into the committed `.claude/settings.json` (memory hooks on by
+default; `--no-memory-hooks` opts out), and `rmx install-hooks --check` proves
+the installed file still equals the generator's render. Read this doc to
+understand each event; edit `hooks.py:_claude_hook_block` to change one. All of them shell out to the `rmx` CLI, so the
 project must have `rmx` on `$PATH` and an initialized `.refmatrix/`
 store somewhere in scope (the memory partition defaults to
 `intuition`; override with `RMX_PARTITION` or `-p`).

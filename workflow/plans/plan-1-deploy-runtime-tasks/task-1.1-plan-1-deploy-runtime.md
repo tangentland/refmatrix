@@ -5,14 +5,14 @@ title: "Task 1.1: runtime_identity + status surfaces"
 tags: [task, plan-1]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-1-deploy-runtime
 ---
 
 # Task 1.1: runtime_identity + status surfaces {#root}
 
 > Plan: [[plan-1-deploy-runtime]]
-> Status: Pending
+> Status: Complete
 > Depends on: —
 
 rel: part-of -> [[plan-1-deploy-runtime]]

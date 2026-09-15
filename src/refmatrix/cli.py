@@ -1135,7 +1135,14 @@ def focus_summarize(session, promote, is_global):
                 raise click.ClickException(resp.get("error", "daemon error"))
             eid = resp["result"]["id"]
         else:
-            eid = _store().add_memory(**args)
+            # Store-through-daemon (constitution VII): the Stop hook runs
+            # this every turn; opening the active slot from a CLI process
+            # while a daemon may hold it is how the 2026-09-14 lock crashes
+            # started. Refuse loudly instead (plan-2 Q4).
+            raise click.ClickException(
+                f"daemon not running for {root} — `focus summarize --promote` "
+                f"writes durable memory through the daemon; start it "
+                f"(`rmx daemon start`) or use `--no-promote`")
     console.print(f"[green]promoted[/] {name} (id={eid}) — recall with "
                   f"`rmx memory recall summary` or `rmx context {name}`")
     if not is_global:
@@ -2415,6 +2422,8 @@ def hub_status():
         return
     console.print(f"[green]hub running[/] pid={st.get('pid')} "
                   f"port={st.get('port')} registry={st.get('registry_size')}")
+    if st.get("code_path"):
+        _print_code_identity(st["code_path"], bool(st.get("dev_tree")))
     resp = hub_mod.rpc("health")
     if resp.get("ok"):
         health = resp["result"]["health"]
@@ -2425,9 +2434,18 @@ def hub_status():
             dot = "[green]●[/]" if last.get("up") else "[red]●[/]"
             paused = " [yellow]PAUSED[/]" if h.get("paused") else ""
             ident = hub_mod._daemon_identity(Path(root)) if last.get("up") else {}
-            devflag = "  [bold red][DEV TREE][/]" if ident.get("dev_tree") else ""
+            # three states, never "unknown looks clean" (bsd-plan1 #s-3)
+            if not last.get("up"):
+                idflag = ""
+            elif ident.get("unknown"):
+                ver = f" v{ident['version']}" if ident.get("version") else ""
+                idflag = f"  [yellow][UNVERIFIED{ver}][/]"
+            elif ident.get("dev_tree"):
+                idflag = "  [bold red][DEV TREE][/]"
+            else:
+                idflag = ""
             console.print(f"  {dot} {root}  policy={h['policy']} "
-                          f"restarts={h['restart_count']}{paused}{devflag}")
+                          f"restarts={h['restart_count']}{paused}{idflag}")
 
 
 @main.command("version")
@@ -2719,9 +2737,28 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
                 pid, ver = cur
                 new_pid = _old_pid is None or pid != _old_pid
                 if new_pid and ver == _installed_version:
+                    # ff + relaunch IS the documented deploy path and never
+                    # enters `rmx upgrade`, so the code-path check lives
+                    # here: the new daemon must import the same tree this
+                    # CLI does (bsd-plan1 #b-2).
+                    from refmatrix import upgrade as _up
+                    mine = str(_up.runtime_identity()["import_path"])
+                    theirs = None
+                    try:
+                        r = daemon_mod.call(root, "ping", {}, timeout=2.0, retries=1)
+                        theirs = ((r or {}).get("result") or {}).get("code_path")
+                    except Exception:  # noqa: BLE001 — absent field handled below
+                        theirs = None
+                    if theirs and str(theirs) != mine:
+                        raise click.ClickException(
+                            f"relaunched daemon pid={pid} imports {theirs} but "
+                            f"this CLI imports {mine} — code path mismatch; "
+                            f"the deploy venv and the daemon must run the "
+                            f"same tree (`rmx version -v`)")
                     console.print(
                         f"[green]relaunch verified[/] pid "
-                        f"{_old_pid or '-'}→{pid} version={ver}")
+                        f"{_old_pid or '-'}→{pid} version={ver}"
+                        + (f" code={theirs}" if theirs else ""))
                     return
                 # A predecessor still answering on the OLD pid past a short
                 # grace is the kickstart-scheduled-but-not-swapped case: kill
@@ -8073,10 +8110,26 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
     if (detach or progress) and not daemon_mod.ping(root):
         # A detached job is a DAEMON job. Falling through to the in-process
         # path would turn the SessionStart bridge hook into a 25 s+ foreground
-        # ingest — say so instead (loud: this is a memory path).
-        raise click.ClickException(
-            f"no daemon running for {root} — --detach/--progress need the "
-            f"daemon (`rmx daemon start`), or run without the flag")
+        # ingest — say so instead (loud: this is a memory path). Busy is not
+        # absent (bsd-plan2 #s-11): a daemon mid-startup or mid-write gets
+        # RMX_DETACH_WAIT_S of retries and a busy-specific message.
+        import time as _time
+        from refmatrix import discovery as _disc
+        st = _disc.daemon_status(root)
+        if st.get("busy"):
+            deadline = float(os.environ.get("RMX_DETACH_WAIT_S", "10") or "10")
+            waited = 0.0
+            while waited < deadline and not daemon_mod.ping(root):
+                _time.sleep(1.0); waited += 1.0
+            if not daemon_mod.ping(root):
+                raise click.ClickException(
+                    f"daemon busy pid={st.get('pid')} for {root} (alive, not "
+                    f"answering for {deadline:.0f}s) — catch-up skipped; retry "
+                    f"shortly or run without --detach")
+        else:
+            raise click.ClickException(
+                f"no daemon running for {root} — --detach/--progress need the "
+                f"daemon (`rmx daemon start`), or run without the flag")
     if daemon_mod.ping(root):
         op_args = {
             "targets": [str(p) for p in resolved],

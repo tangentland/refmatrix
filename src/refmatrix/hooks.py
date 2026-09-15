@@ -362,8 +362,8 @@ def _add_enforce_entries(block: dict, project_root: "Path | None",
     p20 = (Path(project_root) / ".claude" / "p20-0") if project_root else None
 
     def want(rel: Path | None) -> bool:
-        if enforce is True and rel is None:
-            return True
+        if enforce is True:
+            return True                      # forced: emit whether or not the script is on disk yet
         return bool(rel is not None and rel.exists())
 
     pre = []
@@ -439,7 +439,7 @@ def install(
     if briefing:
         out.extend(_install_briefing(project_root, refmatrix_root,
                                      apply=apply, force=force))
-    if apply and claude and scope == "project":
+    if apply and scope == "project":
         record_flags(project_root, dict(memory_hooks=memory_hooks, primer=primer,
                                         scan_prompt=scan_prompt, search=search,
                                         **hook_opts))
@@ -470,6 +470,26 @@ def _managed_entries(hooks: dict) -> "set[tuple[str, str, str]]":
                 if _is_rmx_hook(cmd):
                     out.add((event, blk.get("matcher") or "", cmd))
     return out
+
+
+def _entry_multiset(hooks: dict):
+    """(managed Counter of (event, matcher, full-entry-json), unmanaged list).
+    Full entry JSON so a `timeout` edit or an extra key is drift; a Counter
+    so a duplicated block is drift (bsd-plan2 #s-4)."""
+    from collections import Counter
+    managed: Counter = Counter()
+    unmanaged: list = []
+    for event, blocks in (hooks or {}).items():
+        for blk in blocks:
+            for h in blk.get("hooks", []):
+                cmd = h.get("command") or ""
+                key = (event, blk.get("matcher") or "",
+                       json.dumps(h, sort_keys=True))
+                if _is_rmx_hook(cmd):
+                    managed[key] += 1
+                else:
+                    unmanaged.append((event, blk.get("matcher") or "", cmd))
+    return managed, unmanaged
 
 
 def render_managed(project_root: Path, flags: dict) -> dict:
@@ -516,13 +536,32 @@ def check(project_root: Path) -> "tuple[bool, str]":
             installed = json.loads(settings.read_text()).get("hooks") or {}
         except json.JSONDecodeError as e:
             return False, f"{settings}: invalid JSON ({e})"
-    have = _managed_entries(installed)
-    want = _managed_entries(render_managed(project_root, flags)["hooks"])
-    if have == want:
-        return True, ""
-    lines = [f"- {ev}/{m}: {c}" for ev, m, c in sorted(have - want)]
-    lines += [f"+ {ev}/{m}: {c}" for ev, m, c in sorted(want - have)]
-    return False, "\n".join(lines)
+    have, foreign = _entry_multiset(installed)
+    want, _ = _entry_multiset(render_managed(project_root, flags)["hooks"])
+    lines: list = []
+    for key in sorted(set(have) | set(want)):
+        h, w = have.get(key, 0), want.get(key, 0)
+        ev, m, entry = key
+        if h > w:
+            tag = "duplicate " if w else ""
+            lines += [f"- {tag}{ev}/{m}: {entry}"] * (h - w)
+        elif w > h:
+            lines += [f"+ {ev}/{m}: {entry}"] * (w - h)
+    # The three ~/.claude/hooks scripts are the second author of runtime
+    # behaviour (the grep rewrite, the Grep-tool teach); an edited one is
+    # drift too.
+    if flags.get("search", True):
+        from refmatrix.search_hooks import hooks_dir, render_scripts
+        for name, content in render_scripts().items():
+            on_disk = hooks_dir() / name
+            if not on_disk.exists() or on_disk.read_text() != content:
+                lines.append(f"- script {name} differs from the generator's "
+                             f"render (rmx install-hooks --apply --force)")
+    ok = not lines
+    # Foreign hooks are listed, never failed: they survive --force by design,
+    # but the operator should see the second author.
+    info = [f"? {ev}/{m}: {c}" for ev, m, c in foreign]
+    return ok, "\n".join(lines + info)
 
 
 def _install_git_hooks(project_root: Path, apply: bool, force: bool) -> list[str]:
@@ -1009,8 +1048,12 @@ _RMX_HOOK_SIGNATURES = (
     # rmx-generated memory/STM hooks (also carry the marker) and the
     # cat-herder enforcement hooks this generator now emits.
     "rmx ingest-gmd --as-memory", "rmx save-state", "rmx focus summarize",
-    "rmx focus context", ".claude/hooks/enforce-", ".claude/hooks/adr-gate.sh",
-    "p20-0/compile_guardrails.py",
+    "rmx focus context",
+    # EXACT script names — a prefix (`.claude/hooks/enforce-`) classified any
+    # user hook named enforce-*.sh as rmx's and `--force` deleted it
+    # (bsd-plan2 #b-2, the failure mode this plan exists to end).
+    ".claude/hooks/enforce-test-to-file.sh", ".claude/hooks/enforce-rmx-grep.sh",
+    ".claude/hooks/adr-gate.sh", "p20-0/compile_guardrails.py",
 )
 
 

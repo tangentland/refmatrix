@@ -340,6 +340,8 @@ class Hub:
             "home": str(hub_home()),
             "watch_interval_s": self.watchdog.interval,
             "registry_size": len(discovery.load_registry()),
+            # the hub supervises everything else; it says which tree IT runs
+            **_hub_identity(),
         }
 
     def _op_projects(self, args: dict) -> dict:
@@ -554,11 +556,7 @@ class Hub:
             try:
                 queues = self._gather_queues()
                 pending_refine = len(self.bus.refinement_queue("pending"))
-                hot = [q for q in queues
-                       if (q.get("stale_files") or 0) > 0
-                       or q.get("memory_read_ok") is False
-                       or q.get("serving_legacy_catalog")
-                       or q.get("store_bytes")]
+                hot = [q for q in queues if _queue_row_is_hot(q)]
                 if hot or pending_refine:
                     self.bus.publish(
                         "global:queues",
@@ -935,33 +933,76 @@ def stop_hub(*, timeout: float = 5.0, port: int = DEFAULT_PORT) -> bool:
     return not is_running() and _pid_on_port(port) is None
 
 
+def _queue_row_is_hot(q: dict) -> bool:
+    """Does this per-project queue row warrant a `global:queues` alert?
+    Stale work, a failing memory read, a legacy catalog binding, an oversize
+    store — and, since 0.68.1, a daemon running a tree other than the one
+    its venv belongs to (`dev_tree`). ch-bsd bsd-plan1 #b-1: the identity
+    used to ride along only when something ELSE was hot."""
+    return bool((q.get("stale_files") or 0) > 0
+                or q.get("memory_read_ok") is False
+                or q.get("serving_legacy_catalog")
+                or q.get("store_bytes")
+                or q.get("dev_tree"))
+
+
 def _daemon_identity(root: Path, timeout: float = 2.0) -> dict:
-    """`{code_path, dev_tree}` a live daemon reports on ping, else `{}`.
-    Read-only, best-effort: a daemon that cannot answer contributes nothing."""
+    """What a live daemon reports about the tree it runs. Three shapes:
+    `{code_path, dev_tree}` (0.66.3+ daemon), `{unknown: True, version}`
+    (an older daemon whose ping carries no code path), `{unknown: True}`
+    (no answer). Unknown is NOT clean — every consumer renders it as
+    UNVERIFIED (ch-bsd bsd-plan1 #s-3: orderly's 0.65.0 daemon showed as a
+    plain green row)."""
     try:
         resp = daemon_mod.call(root, "ping", {}, timeout=timeout, retries=1)
     except Exception:
-        return {}
+        return {"unknown": True}
     if not isinstance(resp, dict) or not resp.get("ok"):
-        return {}
+        return {"unknown": True}
     r = resp.get("result") or {}
     if not r.get("code_path"):
-        return {}
+        return {"unknown": True, "version": r.get("version")}
     return {"code_path": str(r["code_path"]), "dev_tree": bool(r.get("dev_tree"))}
 
 
 def _annotate_identity(rows: list[dict]) -> list[dict]:
-    """Stamp `dev_tree` / `code_path` on every up daemon's queue row so the
-    `global:queues` alert says which fleet members run a tree other than
-    the one their venv belongs to (2026-09-14: all of them, silently)."""
+    """Stamp identity on every up daemon's queue row: `dev_tree`/`code_path`,
+    or `identity: "unknown"` (+ `version`) when the daemon predates the
+    ping field. The `global:queues` alert gates on `dev_tree` via
+    `_queue_row_is_hot`."""
     for row in rows:
         if not row.get("daemon_up"):
             continue
         ident = _daemon_identity(Path(row["root"]))
-        if ident:
+        if ident.get("unknown"):
+            row["identity"] = "unknown"
+            if ident.get("version"):
+                row["version"] = ident["version"]
+        else:
             row["dev_tree"] = ident["dev_tree"]
             row["code_path"] = ident["code_path"]
     return rows
+
+
+def _hub_identity() -> dict:
+    """Which tree THIS hub process runs — computed once, never raises."""
+    global _HUB_IDENTITY
+    try:
+        return _HUB_IDENTITY
+    except NameError:
+        pass
+    try:
+        from refmatrix import upgrade as _up
+        ident = _up.runtime_identity()
+        _HUB_IDENTITY = {"version": ident.get("version"),
+                         "code_path": str(ident["import_path"]),
+                         "dev_tree": bool(ident["dev_tree"])}
+    except Exception as e:  # noqa: BLE001 — identity must never take the hub down
+        import refmatrix
+        _HUB_IDENTITY = {"version": getattr(refmatrix, "__version__", None),
+                         "code_path": str(getattr(refmatrix, "__file__", "?")),
+                         "dev_tree": False, "identity_error": str(e)}
+    return _HUB_IDENTITY
 
 
 def status() -> dict:

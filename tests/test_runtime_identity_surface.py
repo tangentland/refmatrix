@@ -31,6 +31,10 @@ def test_version_verbose_clean(monkeypatch):
 
 
 def test_daemon_ping_carries_code_path_and_dev_tree(tmp_path, monkeypatch):
+    # identity is cached per process (a health probe must not glob
+    # site-packages); reset the cache so the patched identity is what gets
+    # computed for this test
+    monkeypatch.setattr(daemon_mod, "_PROCESS_IDENTITY", None)
     monkeypatch.setattr(up, "runtime_identity", lambda **kw: _ident(True))
 
     class D:  # the ping op only touches root + store

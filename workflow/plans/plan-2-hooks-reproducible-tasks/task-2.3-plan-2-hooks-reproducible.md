@@ -5,14 +5,14 @@ title: "Task 2.3: Migrate this repo and guard it in CI"
 tags: [task, plan-2]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-2-hooks-reproducible
 ---
 
 # Task 2.3: Migrate this repo and guard it in CI {#root}
 
 > Plan: [[plan-2-hooks-reproducible]]
-> Status: Pending
+> Status: Complete
 > Depends on: 2.2
 
 rel: part-of -> [[plan-2-hooks-reproducible]]

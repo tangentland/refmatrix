@@ -5,14 +5,14 @@ title: "Task 2.1: Hook block options for the production hooks"
 tags: [task, plan-2]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-2-hooks-reproducible
 ---
 
 # Task 2.1: Hook block options for the production hooks {#root}
 
 > Plan: [[plan-2-hooks-reproducible]]
-> Status: Pending
+> Status: Complete
 > Depends on: —
 
 rel: part-of -> [[plan-2-hooks-reproducible]]

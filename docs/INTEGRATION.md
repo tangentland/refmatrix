@@ -92,8 +92,12 @@ keeps things current incrementally.
 
 ### Hook events installed {#hook-events-installed}
 
-`rmx install-hooks` writes a JSON block into `.claude/settings.local.json`
-(project-local) or `~/.claude/settings.json` (user-global, with `--user`).
+`rmx install-hooks` writes the rmx hook block into the committed `.claude/settings.json`
+(project scope; the per-machine `.claude/settings.local.json` keeps only the `env` block) or
+prints a snippet for `~/.claude/settings.json` (`--scope user`). The block is GENERATED: the
+generator flags are recorded in `.claude/rmx-hooks.json`, and `rmx install-hooks --check`
+re-renders and diffs the installed file (exit 1 on drift). A hook that exists only in a settings
+file is a template bug — promote it into `hooks.py` or delete it (constitution X).
 
 | Hook event                          | Matcher (tools)                          | Command                                  | Purpose                                       |
 |-------------------------------------|------------------------------------------|------------------------------------------|-----------------------------------------------|
