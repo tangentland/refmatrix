@@ -8016,8 +8016,10 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
             _tail_ingest_progress(root, job_id, files_total)
             return
     # Synchronous path (default), daemon-up or in-process. Daemon errors
-    # immediately if another ingest is already active.
-    console.print(_ingest_gmd_sync(
+    # immediately if another ingest is already active. The report quotes
+    # unresolved `[[wikilinks]]` verbatim — Rich would eat them as markup
+    # (`[[foo]]` rendered as `[]`), so it goes out via click.echo.
+    click.echo(_ingest_gmd_sync(
         resolved, as_memory=as_memory, memory_mtype=memory_mtype,
         verbose=verbose, partition=ingest_partition,
     ))
@@ -10684,8 +10686,10 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
             console.print(f"[red]memory bridge FAILED:[/] {sync['error']} — "
                           f"run `rmx ingest-gmd --as-memory {memdir}` by hand")
         else:
-            console.print(f"[green]memory bridge[/] {memdir} → store: "
-                          f"{sync['report']}")
+            # Report may quote unresolved `[[wikilinks]]`; keep them out of
+            # Rich markup (which renders `[[foo]]` as `[]`).
+            console.print(f"[green]memory bridge[/] {memdir} → store:")
+            click.echo(sync["report"])
 
     if commit:
         _ss_sh(["git", "add", "-A"], repo)
