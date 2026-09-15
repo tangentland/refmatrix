@@ -1,0 +1,33 @@
+name: ci
+
+# refmatrix runs on the host (no Docker): one venv, every test, output captured to a log.
+# Mirrors .claude/PROJECT_PROFILE.md "Commands".
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Tests (pytest — ALL, none skipped; log captured)
+        run: |
+          mkdir -p workflow/review-output
+          python -m pytest -q -p no:cacheprovider 2>&1 | tee workflow/review-output/pytest.log
+          test "${PIPESTATUS[0]}" -eq 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pytest-log
+          path: workflow/review-output/pytest.log

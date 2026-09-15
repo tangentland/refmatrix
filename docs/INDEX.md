@@ -74,3 +74,19 @@ rel: catalogs -> [[design-doc-template]]
 
 `pseudo-format.pseudo` — the `.pseudo` type-first spec format reference
 (not markdown; indexed by the pseudo ingest pass, not `ingest-gmd`).
+
+## cat-herder template docs {#template}
+
+rel: catalogs -> [[architecture-readme]]
+rel: catalogs -> [[architecture-index]]
+rel: catalogs -> [[architecture-todo]]
+rel: catalogs -> [[ONBOARDING]]
+
+| Doc | Hook |
+|-----|------|
+| [[architecture-readme]] | Template entry point into the four core docs |
+| [[architecture-index]] | Navigation hub: topic docs, ADRs, concepts, explorations |
+| [[architecture-todo]] | Gap tracking seeded from the 2026-09-14 ch-bsd audit |
+| [[ONBOARDING]] | Agent first-run onboarding (done 2026-09-14) |
+
+`docs/gmd/PRIMER.md` + `docs/gmd/SPEC.md` are the bundled GMD primer/spec (ids `PRIMER`, `SPEC`).

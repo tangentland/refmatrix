@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# gmd — dispatcher for Graph Markdown tooling
+# Usage: gmd <subcommand> [args...]
+# Subcommands: init | lint | slice | help | version
+
+set -e
+
+GMD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+case "${1:-}" in
+    init)    shift; exec python3 "$GMD_DIR/init.py" "$@" ;;
+    lint)    shift; exec python3 "$GMD_DIR/lint.py" "$@" ;;
+    slice)   shift; exec python3 "$GMD_DIR/slice.py" "$@" ;;
+    version|--version|-V)
+        echo "gmd 0.1 (spec v0.1)"
+        ;;
+    help|--help|-h|"")
+        cat <<EOF
+gmd — Graph Markdown tooling
+
+Usage: gmd <subcommand> [args...]
+
+Subcommands:
+  init   <root> [--all] [--memory] [--agents] [--with-rmx] [--apply]
+         Scaffold a project for GMD authoring.
+  lint   <file-or-dir> [...]
+         Validate GMD docs. Exit 1 on errors.
+  slice  <file> "<query>" [--k N] [--hops N] [--budget-tokens N]
+         Retrieve a relevant subset of a GMD doc (standalone, no rmx).
+  version
+         Print version.
+
+Spec: docs/gmd/SPEC.md (from the project root)
+EOF
+        ;;
+    *)
+        echo "gmd: unknown subcommand '$1'. Try 'gmd help'." >&2
+        exit 2
+        ;;
+esac

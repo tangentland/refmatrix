@@ -1,0 +1,21 @@
+name: gmd-lint
+
+# Validates that all Graph Markdown (GMD) docs lint clean. GMD is the default format for all
+# docs/ and workflow/ items in this template — see docs/gmd/SPEC.md.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  gmd-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Lint GMD docs
+        run: |
+          ./scripts/lint-gmd.sh

@@ -1,0 +1,13 @@
+# .gmd/config.yml — project-local GMD config (optional, all keys defaulted)
+
+# Extra recommended verbs for this project. Added to lint's vocab without
+# triggering unknown-verb warnings.
+extra_verbs: []
+
+# Globs to skip when running `gmd lint .` recursively.
+ignore:
+  - "node_modules/**"
+  - ".venv/**"
+  - "**/dist/**"
+  - "**/build/**"
+  - "**/.refmatrix/**"

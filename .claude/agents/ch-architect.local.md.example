@@ -1,0 +1,25 @@
+# ch-architect — project overlay (EXAMPLE)
+
+Copy to `.claude/agents/ch-architect.local.md` (drops the `.example`; the real file is
+gitignored) and fill with THIS project's architecture specifics. The neutral
+`.claude/agents/ch-architect.md` reads this overlay first when present. Keep it to
+project-specific facts the neutral definition deliberately omits.
+
+## This project's architecture
+
+- **Core primitives:** {e.g. Channel, DPath, Zone} — the abstractions every design must reason from.
+- **Design tenets doc:** {path to your architecture principles / tenets}
+- **ADR conventions:** numbering, `governs:` concept vocabulary, status lifecycle specific to here.
+- **Known architectural constraints:** {e.g. "all storage goes through the Lance layer",
+  "no direct DB access outside the repository module"}.
+
+## Where architectural truth lives
+
+- ADRs: `docs/architecture/adr/`
+- Concepts: `docs/architecture/concepts/`
+- {Pseudocode ground truth: `pseudocode/`, owned by ch-alignment} — if used.
+
+## Review emphasis for this project
+
+{What this project's architect should weight most — e.g. "channel lifecycle correctness",
+"observer contract alignment", "zone geometry invariants".}
