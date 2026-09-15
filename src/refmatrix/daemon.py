@@ -4267,6 +4267,58 @@ def _op_memory_compile_apply(d: Daemon, args: dict) -> dict:
     return result
 
 
+def _op_memory_brief(d: Daemon, args: dict) -> dict:
+    """Derive coverage briefs; optionally persist them as memory rows.
+
+    DERIVATION IS A READ and runs on the read path, not under the writer lock.
+    It decodes a couple of linkage fragments and runs two small SQL queries —
+    nothing like `memory compile`, whose vector matrix is why that pass stayed
+    in the caller (a fat daemon is the process jetsam kills). The expensive
+    half, the compile plan, arrives here as DATA the same way
+    `_op_memory_compile_apply` takes it.
+
+    `save=True` is the only write, and it takes `_store_lock` — one memory row
+    per brief in the `brief/<class>` namespace, so a brief is recallable by
+    every surface that already reads memories.
+    """
+    from refmatrix import brief as brief_mod
+
+    part = _memory_partition(d, args)
+    kw = {k: args[k] for k in
+          ("min_members", "min_dates", "min_mentions", "classes")
+          if args.get(k) is not None}
+    if args.get("plan") is not None:
+        kw["plan"] = args["plan"]
+    result = _read_with_fallback(
+        d, part, lambda s: brief_mod.compile_briefs(s, **kw))
+
+    briefs = result.get("briefs") or []
+    payload = {
+        "briefs": [b.as_dict() if hasattr(b, "as_dict") else b for b in briefs],
+        "stats": result.get("stats", {}),
+        "params": result.get("params", {}),
+        "saved": 0,
+    }
+    if not args.get("save"):
+        return payload
+
+    saved = 0
+    with d._store_lock, d._st().with_partition(part) as st:
+        for b in briefs:
+            rec = b.as_dict() if hasattr(b, "as_dict") else b
+            st.add_memory(
+                f"brief-{rec['class']}-{rec['label']}",
+                rec["finding"],
+                mtype=rec["mtype"],
+                tags=["brief", rec["class"]],
+                metadata={"evidence": rec["evidence"], **rec.get("detail", {})},
+            )
+            saved += 1
+    d._request_snapshot()
+    payload["saved"] = saved
+    return payload
+
+
 def _op_subject_list(d: Daemon, args: dict) -> dict:
     """Subject nodes with leaf counts (read-routed)."""
     rows = _read_with_fallback(
@@ -5078,6 +5130,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "memory_bulk_forget": _op_memory_bulk_forget,
     "memory_link": _op_memory_link,
     "memory_score": _op_memory_score,
+    "memory_brief": _op_memory_brief,
     "subject_upsert": _op_subject_upsert,
     "subject_link": _op_subject_link,
     "memory_compile_apply": _op_memory_compile_apply,

@@ -34,6 +34,7 @@ own copy of the list; one definition, imported, is the fix that stuck.
 from __future__ import annotations
 
 import fnmatch
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Iterable
@@ -361,3 +362,137 @@ def compile_briefs(store: "Store", *, plan: "dict | None" = None,
         "params": {"min_members": min_members, "min_dates": min_dates,
                    "min_mentions": min_mentions},
     }
+
+
+# ── the index on disk ──────────────────────────────────────────────────────
+
+DOC_ID = "memory-briefs"
+GENERATOR = "memory-brief"
+
+_CLASS_ORDER = ("corroborated", "contradicted", "orphan-concept", "singleton")
+
+_BRIEF_RE = re.compile(
+    r"^### (?P<label>.+?) \{#(?P<anchor>[^}]+)\}\n\n(?P<finding>[^\n]+)",
+    re.M)
+
+
+def _anchor_safe(text: str) -> str:
+    """A GMD anchor is an id, so it survives only what an id may contain."""
+    out = re.sub(r"[^A-Za-z0-9._-]+", "-", str(text)).strip("-").lower()
+    return out or "brief"
+
+
+def render_gmd(briefs: Iterable[Brief], *, names: "dict[int, str] | None" = None,
+               doc_id: str = DOC_ID, partition: "str | None" = None,
+               stats: "dict | None" = None) -> str:
+    """Render briefs as a GMD index doc.
+
+    The edge verb is `evidence-for`, pointed FROM the index at each cited
+    memory, because the memory is what supports the finding. Direction is not
+    cosmetic here: `consolidate.render_gmd` records the sibling mistake it had
+    to avoid — emitting a container's own inverse verb would have claimed the
+    subject is part of its own members.
+
+    Output is sorted by (class, label) so two runs over the same store produce
+    the same bytes. A derived file that churns on every run is a file nobody
+    keeps in git.
+
+    An evidence id with no known name cannot become a `[[wikilink]]` — that
+    would be a dangling edge. It is written as a bare id and counted in the
+    section text instead, because a silently shortened evidence list is the
+    difference between "three memories agree" and "three memories, one of which
+    I could not find".
+    """
+    names = names or {}
+    items = sorted(briefs, key=lambda b: (b.cls, b.label))
+    by_class: dict[str, list[Brief]] = defaultdict(list)
+    for b in items:
+        by_class[b.cls].append(b)
+
+    st = stats or {}
+    lines = [
+        '---',
+        'gmd: "0.1"',
+        f'id: {doc_id}',
+        'title: "Memory coverage briefs"',
+        'tags: [memory, brief, derived]',
+        'metadata:',
+        '  node_type: index',
+        f'  generator: {GENERATOR}',
+        f'  partition: {partition or st.get("partition", "?")}',
+        '---',
+        '',
+        '# Memory coverage briefs {#root}',
+        '',
+    ]
+    if not items:
+        lines += [
+            'No briefs. Every detector ran and none fired — on this corpus, at '
+            'these thresholds, nothing is thin enough to report.',
+            '',
+            'Derived, not authored — regenerate with `rmx memory brief`.',
+            '',
+        ]
+        return "\n".join(lines).rstrip() + "\n"
+
+    lines += [
+        f'{len(items)} brief(s) over '
+        f'{st.get("memories", "an unrecorded number of")} memories. '
+        f'`memory compile` says what this corpus HAS; these say where it is '
+        f'THIN.',
+        '',
+        'Derived, not authored — regenerate with `rmx memory brief`. Every '
+        'brief names the rows it was derived from; there is no model in this '
+        'path and nothing here is generated prose.',
+        '',
+    ]
+
+    for cls in list(_CLASS_ORDER) + sorted(set(by_class) - set(_CLASS_ORDER)):
+        group = by_class.get(cls)
+        if not group:
+            continue
+        lines += [f'## {cls} {{#{cls}}}', '',
+                  f'{len(group)} brief(s).', '']
+        for b in group:
+            anchor = f'{cls}-{_anchor_safe(b.label)}'
+            resolved = [(e, names.get(e)) for e in b.evidence]
+            unresolved = [e for e, n in resolved if not n]
+            lines += [f'### {b.label} {{#{anchor}}}', '', b.finding, '']
+            ev = ", ".join(f'[[{n}]]' if n else f'`{e}` (unresolved)'
+                           for e, n in resolved)
+            lines.append(f'Evidence ({len(resolved)}): {ev}.')
+            if unresolved:
+                lines.append(
+                    f'{len(unresolved)} evidence id(s) could not be resolved '
+                    f'to a memory name and are listed bare rather than '
+                    f'dropped: {", ".join(str(e) for e in unresolved)}.')
+            lines.append('')
+            for e, n in resolved:
+                if n:
+                    lines.append(f'rel: evidence-for -> [[{n}]]')
+            lines.append('')
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def parse_gmd(doc: str) -> list[dict]:
+    """Recover briefs from a rendered index — the other half of the trip.
+
+    `memory compile` states the contract: the index is regenerable from the
+    store and the store is rebuildable from the index. Without this half, a
+    brief index is a report that happens to look like a node.
+    """
+    out: list[dict] = []
+    sections = re.split(r"^## ", doc, flags=re.M)[1:]
+    for sec in sections:
+        head = sec.splitlines()[0]
+        m = re.match(r"^(\S+) \{#(\S+)\}", head)
+        if not m:
+            continue
+        cls = m.group(1)
+        if cls == "root":
+            continue
+        for bm in _BRIEF_RE.finditer(sec):
+            out.append({"class": cls, "label": bm.group("label").strip(),
+                        "finding": bm.group("finding").strip(),
+                        "anchor": bm.group("anchor")})
+    return out
