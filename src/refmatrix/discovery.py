@@ -168,7 +168,11 @@ def pid_is_rmx(pid: int) -> bool:
     counts as rmx: refusing a write is the safe direction."""
     try:
         os.kill(pid, 0)              # signal 0 = liveness probe, no delivery
-    except (OSError, ProcessLookupError, PermissionError):
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass                         # exists, not ours to signal: `ps` decides (bsd-plan5-r3 #m-1)
+    except OSError:
         return False
     try:
         import subprocess
