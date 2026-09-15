@@ -305,8 +305,58 @@ def _print_cmd(label: str) -> list[str]:
     return ["launchctl", "print", f"{_domain()}/{label}"]
 
 
+# How long a forced reinstall waits for `launchctl bootout` to actually remove
+# a RUNNING label from the domain. The daemon drains its pools first (up to
+# RMX_DAEMON_SHUTDOWN_TIMEOUT_S per pool), so 3 s was never enough: install
+# bootstrapped against the still-loaded label, both attempts failed silently,
+# and a moment later NOTHING was loaded — two fleet daemons ran standalone
+# after `relaunch-fleet` (bug-013, 2026-09-15).
+BOOTOUT_WAIT_S = float(os.environ.get("RMX_LAUNCHCTL_BOOTOUT_WAIT_S", "45") or "45")
+
+
 def is_installed(root: Path) -> bool:
     return plist_path(root).exists()
+
+
+def loaded_env(root: Path) -> "dict[str, str] | None":
+    """The `environment = { K => V }` block of `launchctl print` for the
+    label — what launchd will actually export to the job, as opposed to what
+    the plist file on disk says. None when the label is not loaded."""
+    if sys.platform != "darwin":
+        return None
+    r = subprocess.run(_print_cmd(label_for_root(root)), capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    env: dict[str, str] = {}
+    inside = False
+    for line in r.stdout.splitlines():
+        s = line.strip()
+        if not inside:
+            if s == "environment = {":
+                inside = True
+            continue
+        if s == "}":
+            break
+        if " => " in s:
+            k, v = s.split(" => ", 1)
+            env[k.strip()] = v.strip()
+    return env
+
+
+def _loaded_env_drift(root: Path, rendered: bytes) -> "list[str]":
+    """Keys/values the rendered plist exports that the LOADED job lacks."""
+    import plistlib
+    want = (plistlib.loads(rendered).get("EnvironmentVariables") or {})
+    have = loaded_env(root)
+    if have is None:
+        return ["label not loaded"]
+    out = []
+    for k, v in want.items():
+        if k not in have:
+            out.append(f"loaded job env {k} missing")
+        elif have[k] != v:
+            out.append(f"loaded job env {k}: loaded {have[k]!r} != rendered {v!r}")
+    return out
 
 
 def is_loaded(root: Path) -> bool:
@@ -358,19 +408,26 @@ def install(root: Path, *, partition: str | None = None,
     if p.exists() and is_loaded(root) and not force:
         return p
 
-    # If already loaded, bootout and wait for the domain to release the
-    # label. Issuing bootstrap before the bootout settles silently no-ops
-    # on some macOS versions — bootstrap returns 0 but the agent never
-    # actually enters the domain.
+    # If already loaded, bootout and WAIT until the domain has released the
+    # label — a running daemon drains its pools first, so this takes seconds.
+    # Bootstrapping before the bootout settles silently no-ops (bootstrap
+    # returns 0 or 37 but the OLD job stays, then leaves), which is how two
+    # fleet daemons ended up standalone after `relaunch-fleet` (bug-013).
+    # A bootout that does not complete is an error, never a shrug.
     if is_loaded(root):
         subprocess.run(_bootout_cmd(label), capture_output=True)
-        _wait_loaded(root, expected=False, timeout=3.0)
+        if not _wait_loaded(root, expected=False, timeout=BOOTOUT_WAIT_S):
+            raise RuntimeError(
+                f"launchctl bootout did not unload {label} within {BOOTOUT_WAIT_S:g}s "
+                f"— the old job is still loaded (draining?); plist NOT rewritten. "
+                f"Retry, or `launchctl bootout {_domain()}/{label}` by hand")
 
-    p.write_bytes(render_plist(
+    rendered = render_plist(
         root, partition=partition, watch=watch,
         debounce_ms=debounce_ms, semantic=semantic,
         watch_roots=watch_roots,
-    ))
+    )
+    p.write_bytes(rendered)
     p.chmod(0o644)
 
     # Bootstrap, then verify the label actually registered. Some races
@@ -392,6 +449,13 @@ def install(root: Path, *, partition: str | None = None,
                 f"(rc={r.returncode}, err={bootstrap_err!r}); "
                 f"load fallback also failed: {load_err}"
             )
+    # Loaded is not enough: the job launchd holds must export what the
+    # rendered plist says (a stale definition survives a failed reload).
+    drift = _loaded_env_drift(root, rendered)
+    if drift:
+        raise RuntimeError(
+            f"{label} is loaded but not from the plist just written: "
+            + "; ".join(drift) + " — `launchctl bootout` it and install again")
     return p
 
 
@@ -445,6 +509,16 @@ def check(root: Path) -> "tuple[bool, str]":
     installed = p.read_bytes()
     rendered = render_plist(root, **flags)
     if installed == rendered:
+        # The file is current; is the JOB? An installed-but-unloaded label
+        # (bug-013) or a loaded job from an older definition is drift too.
+        if not is_loaded(root):
+            return False, (f"{p} is current but its label {label_for_root(root)} is "
+                           f"not loaded — `rmx daemon launchctl install`")
+        drift = _loaded_env_drift(root, rendered)
+        if drift:
+            return False, (f"{p} is current but the loaded job runs an older "
+                           f"definition: " + "; ".join(drift)
+                           + " — bootout/bootstrap needed (`rmx daemon launchctl install --force`)")
         return True, ""
     have = plistlib.loads(installed)
     want = plistlib.loads(rendered)
@@ -476,6 +550,9 @@ def reinstall(root: Path) -> Path:
     p = install(root, force=True, **flags)
     if not is_loaded(root):
         p = install(root, **flags)
+    ok, why = check(root)
+    if not ok:
+        raise RuntimeError(f"reinstall did not converge: {why}")
     return p
 
 
