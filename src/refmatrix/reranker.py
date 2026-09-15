@@ -290,8 +290,10 @@ def rerank_entity_hits(
     return apply_rerank(reranker, query, scored, untexted, tail, k=k)
 
 
-def shared_reranker(log=None):
-    """A reranker backed by the hub's shared worker, or None.
+def shared_reranker(log=None, *, timeout: "float | None" = None):
+    """A reranker backed by the hub's shared worker, or None. `timeout`
+    bounds the probe AND every score call (the client's socket timeout;
+    the worker default is 300 s — bsd-plan2-r6 #b-1).
 
     Deliberately shared-or-nothing, with no private-worker fallback. The
     callers are read surfaces that run in short-lived CLI processes — the
@@ -310,8 +312,8 @@ def shared_reranker(log=None):
         from refmatrix import modelsrv
         if not modelsrv.shared_enabled() or not modelsrv.shared_available():
             return None
-        client = modelsrv.SharedWorkerClient("rerank", log=log)
-        client.info()          # prove it answers before handing it out
+        client = modelsrv.SharedWorkerClient("rerank", log=log, timeout=timeout)
+        client.info(timeout=timeout)   # prove it answers before handing it out
         return RemoteReranker(client)
     except Exception:
         return None
