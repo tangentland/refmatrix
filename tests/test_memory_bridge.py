@@ -164,3 +164,23 @@ def test_finalize_save_state_bridges_the_handoff_dir_for_real(live):
     assert fin["sync"]["error"] is None, fin["sync"]
     assert "ingested" in fin["sync"]["report"]
     assert _get(root, "savestate_abc")["content"].strip().endswith("handoff body")
+
+
+def test_finalize_skips_the_bridge_on_sync_false_and_dry_run(live):
+    """sync=False and a dry run never touch the store — proven on the real
+    store (no row appears), not on a recorded call list."""
+    from refmatrix import handoff
+    base, root = live
+    memdir = base / "memory"; memdir.mkdir()
+    (memdir / "savestate_skip.md").write_text(GMD.format(id="savestate_skip", body="never"))
+    res = {"target": str(memdir / "savestate_skip.md"), "memdir": str(memdir),
+           "dry_run": False, "promoted": None}
+    fin = handoff.finalize_save_state(None, root, res, repo=base / "proj", lint=False, sync=False)
+    assert fin["sync"] is None
+    fin = handoff.finalize_save_state(None, root, dict(res, dry_run=True), repo=base / "proj", lint=False)
+    assert fin["sync"] is None
+    time.sleep(1.0)
+    r = dm.call(root, "memory_get", {"name": "savestate_skip",
+                                     "partition": verbs.memory_partition(root)}, timeout=10)
+    assert (r.get("result") or {}).get("memory") is None
+

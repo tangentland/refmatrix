@@ -5,14 +5,14 @@ title: "Task 5.3: Real tests replace mocks; widen + subject-filing loudness"
 tags: [task, plan-5]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-5-memory-bridge-complete
 ---
 
 # Task 5.3: Real tests replace mocks; widen + subject-filing loudness {#root}
 
 > Plan: [[plan-5-memory-bridge-complete]]
-> Status: Pending
+> Status: Complete
 > Depends on: 5.1
 
 rel: part-of -> [[plan-5-memory-bridge-complete]]
