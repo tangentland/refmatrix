@@ -27,6 +27,7 @@ current.
 | 7 | plan-7-longmemeval | approved | yes (4) | `workflow/plans/plan-7-longmemeval.md` | — |
 | 8 | plan-8-derived-coverage-notes | approved | yes (4) | `workflow/plans/plan-8-derived-coverage-notes.md` | plan 7 (measures it) |
 | 9 | plan-9-context-cost-telemetry | in-progress | yes (3) | `workflow/plans/plan-9-context-cost-telemetry.md` | — |
+| 10 | plan-10-injection-dedup | drafting | yes (3) | `workflow/plans/plan-10-injection-dedup.md` | plan 9 (its instrument) |
 
 ## Sequence rationale {#sequence}
 
@@ -42,6 +43,9 @@ current.
    evidence that a coverage note predicts a retrieval miss.
 9. **context-cost-telemetry** — rmx measured its own retrieval quality and never its own cost. Three hooks fire
    every prompt and nothing said whether they spent 400 bytes or 40 KB of the window they were enriching.
+10. **injection-dedup** — scan-prompt re-pays for context the turn may already hold. Task 10.1 is a
+    PRE-REGISTERED measurement that decides whether 10.2/10.3 are built at all; a result under the
+    threshold ships as a negative finding, not as a lowered bar.
 
 Each plan ends with `@ch-bsd` over its commit range; remedy → re-review until CLEAN before the next plan starts.
 
