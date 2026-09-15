@@ -67,6 +67,8 @@ orderly launchd service spawned 11,251 times behind a manual unsupervised daemon
 |---|----------|----------|------|
 | Q1 | Q1 Repair in the daemon process or a lean subprocess? | In the daemon at boot BEFORE the store is opened for serving (single writer, no contention); the 0.3 s rebuild on 75k rows makes it cheap. | 2026-09-14 |
 | Q2 | Q2 Heartbeat file vs richer ping? | File. A ping that must go through the socket accept loop is exactly what blocks when the daemon is busy. | 2026-09-14 |
+| Q3 | (task 4.3) Move the model-worker reconnect off the ping responder? | Not as separate machinery: the probe is already bounded (plan 1, `PROBE_TIMEOUT_S` 5 s, no retry) and runs on the worker pool, and with the heartbeat file the supervisor no longer reads the ping for liveness at all. Recorded in [[impl-task-4.3-plan-4-daemon-resilience#responder]]. | 2026-09-14 |
+| Q4 | (task 4.4) Operator step for orderly? | None: the supervised start adopts the unsupervised daemon on its own; the deploy at 21:54 did it (pid 39128 → 27922, launchd `runs` static). | 2026-09-14 |
 
 ## Task Breakdown {#task-breakdown}
 

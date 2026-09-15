@@ -20,7 +20,7 @@ rel: implements -> [[task-4.4-plan-4-daemon-resilience]]
 
 ## Live {#live}
 
-Before deploy: orderly's launchd job read `runs = 12253`, `last exit code = 1`, `daemon.stderr.log` full of the old error, `rmx daemon status` `[UNVERIFIED]` (the 0.65.0 manual daemon pid 39128 from Sep 13). After deploying 0.69.0 the next KeepAlive spawn adopted it — see the plan's remedy summary for the post-deploy numbers (pid, `runs` static, `code_path` under `~/refmatrix/src`, no `[UNVERIFIED]` row in `rmx hub status`).
+Before deploy: orderly's launchd job read `runs = 12253`, `last exit code = 1`, `daemon.stderr.log` full of the old error, `rmx daemon status` `[UNVERIFIED]` (the 0.65.0 manual daemon pid 39128 from Sep 13). After deploying 7b35e80 (0.69.0 + plan 4) at 21:54 the next KeepAlive spawn adopted it: `rmxd.log` `2026-09-14T21:54:28 adopted unsupervised daemon pid=39128 … asking it to stop`; `rmx daemon status` → `running pid=27922`, `code: /Users/tholley/refmatrix/src/refmatrix/__init__.py`, `supervised: yes`; `launchctl print` → `state = running, pid = 27922, runs = 12296` and still 12296 at 22:10 (16 min static; it had grown by 43 in the 25 min before the deploy); `rmx hub status` → zero `[UNVERIFIED]` rows. No manual `rmx daemon stop` was needed — the adoption is the fix, not an operator step.
 
 ## TDD record {#tdd}
 
