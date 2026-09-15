@@ -2457,7 +2457,8 @@ def hub_status():
                 idflag = ""
             elif ident.get("unknown"):
                 ver = f" v{ident['version']}" if ident.get("version") else ""
-                idflag = f"  [yellow][UNVERIFIED{ver}][/]"
+                err = f" ({ident['error']})" if ident.get("error") else ""
+                idflag = f"  [yellow][UNVERIFIED{ver}][/]{err}"
             elif ident.get("dev_tree"):
                 idflag = "  [bold red][DEV TREE][/]"
             else:
@@ -2781,6 +2782,13 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
                             f"relaunched daemon pid={pid} answered version={ver} "
                             f"but reports no code path (pre-0.66.3 daemon?); "
                             f"not verified — `rmx daemon status`")
+                    if res.get("identity_error"):
+                        raise click.ClickException(
+                            f"relaunched daemon pid={pid} answered version={ver} "
+                            f"but could not compute its identity "
+                            f"({res['identity_error']}); its code_path {theirs} is a "
+                            f"fallback guess, not verified — `rmx version -v` inside "
+                            f"the daemon's venv")
                     if mine_ident.get("dev_tree") or res.get("dev_tree"):
                         raise click.ClickException(
                             f"[DEV TREE] relaunched daemon pid={pid} imports {theirs} "
@@ -2907,10 +2915,18 @@ def daemon_status():
         try:
             resp = daemon_mod.call(root, "ping", {}, timeout=2.0, retries=1)
             r = (resp or {}).get("result") or {}
-            if r.get("code_path"):
+            if r.get("identity_error"):
+                # fallback guess from the daemon, not a verification
+                console.print(
+                    f"code: {r.get('code_path')}  [yellow][UNVERIFIED][/] — "
+                    f"daemon could not compute its identity: {r['identity_error']}")
+            elif r.get("code_path"):
                 _print_code_identity(r["code_path"], bool(r.get("dev_tree")))
+            else:
+                console.print("code: [yellow]unknown[/] (ping carries no code path; "
+                              "pre-0.66.3 daemon?)  [yellow][UNVERIFIED][/]")
         except Exception as e:  # noqa: BLE001 — diagnostic line, must not raise
-            console.print(f"code: [dim]unknown ({e})[/]")
+            console.print(f"code: [dim]unknown ({e})[/]  [yellow][UNVERIFIED][/]")
     elif pid:
         # A live process whose socket is still there is BUSY, not stale:
         # starting up, rebuilding an index, or holding the store lock for a

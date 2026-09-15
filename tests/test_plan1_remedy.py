@@ -216,3 +216,82 @@ def test_queue_alert_once_publishes_on_dev_tree(monkeypatch):
 
 def test_unknown_identity_row_is_hot():
     assert hub_mod._queue_row_is_hot({"daemon_up": True, "stale_files": 0, "identity": "unknown"})
+
+
+# ---- round 3 (bsd-plan1-r3): identity_error is unknown; ping errors are loud ----
+
+def test_relaunch_fails_when_the_ping_itself_raises(tmp_path, monkeypatch):
+    """#m-3-r3: the exception branch, not only the missing-field branch."""
+    from refmatrix import __version__
+    ident = {"version": __version__, "import_path": Path("/deploy/src/refmatrix/__init__.py"),
+             "code_root": Path("/deploy"), "venv_tree": Path("/deploy"),
+             "editable_target": Path("/deploy/src"), "dev_tree": False}
+    _relaunch_env(monkeypatch, tmp_path, cli_ident=ident, ping_result=None)
+
+    def boom(root, op, args=None, **kw):
+        raise OSError("socket reset")
+    monkeypatch.setattr(daemon_mod, "call", boom)
+    r = CliRunner().invoke(cli_mod.main, ["daemon", "restart", "--relaunch", "--standalone"])
+    assert r.exit_code != 0
+    assert "cannot be read" in r.output
+
+
+def test_relaunch_fails_when_the_daemon_could_not_compute_its_identity(tmp_path, monkeypatch):
+    """#m-4-r3: a ping carrying `identity_error` is the daemon saying "I do
+    not know which tree I run"; the guard must not treat its fallback
+    code_path/dev_tree=False as verified."""
+    from refmatrix import __version__
+    p = "/deploy/src/refmatrix/__init__.py"
+    ident = {"version": __version__, "import_path": Path(p),
+             "code_root": Path("/deploy"), "venv_tree": Path("/deploy"),
+             "editable_target": Path("/deploy/src"), "dev_tree": False}
+    _relaunch_env(monkeypatch, tmp_path, cli_ident=ident, ping_result={
+        "ok": True, "result": {"pid": 4243, "version": __version__, "code_path": p,
+                               "dev_tree": False, "identity_error": "no pth"}})
+    r = CliRunner().invoke(cli_mod.main, ["daemon", "restart", "--relaunch", "--standalone"])
+    assert r.exit_code != 0
+    assert "identity" in r.output.lower() and "no pth" in r.output
+
+
+def test_daemon_identity_with_identity_error_is_unknown(monkeypatch):
+    monkeypatch.setattr(daemon_mod, "call", lambda root, op, args=None, **kw: {
+        "ok": True, "result": {"version": "9.9.9", "code_path": "/x/refmatrix/__init__.py",
+                               "dev_tree": False, "identity_error": "boom"}})
+    ident = hub_mod._daemon_identity(Path("/r"))
+    assert ident.get("unknown") is True
+    assert ident.get("version") == "9.9.9"
+    assert "boom" in (ident.get("error") or "")
+    rows = hub_mod._annotate_identity([{"root": "/r", "daemon_up": True}])
+    assert rows[0]["identity"] == "unknown"
+    assert hub_mod._queue_row_is_hot({**rows[0], "stale_files": 0})
+
+
+def test_daemon_status_flags_identity_error_as_unverified(tmp_path, monkeypatch):
+    root = tmp_path / ".refmatrix"; root.mkdir()
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    monkeypatch.setattr(daemon_mod, "ping", lambda root, **kw: True)
+    monkeypatch.setattr(daemon_mod, "read_pid", lambda root: 4242, raising=False)
+    monkeypatch.setattr(daemon_mod, "call", lambda root, op, args=None, **kw: {
+        "ok": True, "result": {"pid": 4242, "version": "9.9.9", "uptime_s": 1,
+                               "code_path": "/x/refmatrix/__init__.py", "dev_tree": False,
+                               "identity_error": "boom"}})
+    r = CliRunner().invoke(cli_mod.main, ["daemon", "status"])
+    assert r.exit_code == 0, r.output
+    assert "UNVERIFIED" in r.output and "boom" in r.output
+
+
+def test_queue_alert_once_reports_whether_it_published(monkeypatch):
+    class FakeBus:
+        def __init__(self): self.published = []
+        def refinement_queue(self, status): return []
+        def publish(self, channel, payload, *, sender, mtype): self.published.append(channel)
+    class HotHub:
+        bus = FakeBus()
+        def _gather_queues(self):
+            return [{"project": "p", "root": "/r", "daemon_up": True, "stale_files": 2}]
+    class ColdHub:
+        bus = FakeBus()
+        def _gather_queues(self):
+            return [{"project": "p", "root": "/r", "daemon_up": True, "stale_files": 0}]
+    assert hub_mod.Hub._queue_alert_once(HotHub()) is True
+    assert hub_mod.Hub._queue_alert_once(ColdHub()) is False

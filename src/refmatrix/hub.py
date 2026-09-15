@@ -973,6 +973,13 @@ def _daemon_identity(root: Path, timeout: float = 2.0) -> dict:
     r = resp.get("result") or {}
     if not r.get("code_path"):
         return {"unknown": True, "version": r.get("version")}
+    if r.get("identity_error"):
+        # The daemon could not compute its identity and fell back to
+        # refmatrix.__file__ / dev_tree=False. That fallback is a guess, not
+        # a verification: unknown, and the error rides along so the operator
+        # sees WHY (bsd-plan1-r3 #m-4).
+        return {"unknown": True, "version": r.get("version"),
+                "error": str(r["identity_error"])}
     return {"code_path": str(r["code_path"]), "dev_tree": bool(r.get("dev_tree"))}
 
 
@@ -989,6 +996,8 @@ def _annotate_identity(rows: list[dict]) -> list[dict]:
             row["identity"] = "unknown"
             if ident.get("version"):
                 row["version"] = ident["version"]
+            if ident.get("error"):
+                row["identity_error"] = ident["error"]
         else:
             row["dev_tree"] = ident["dev_tree"]
             row["code_path"] = ident["code_path"]
