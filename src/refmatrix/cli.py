@@ -9226,6 +9226,9 @@ RERANK_MIN_S = float(os.environ.get("RMX_RERANK_MIN_S", "2") or "2")
 # cost the hook one second, not the whole remainder (live 2026-09-15: the
 # probe ate 4 of 5 s and the global leg then found no budget).
 RERANK_PROBE_S = float(os.environ.get("RMX_RERANK_PROBE_S", "1") or "1")
+# In the hook modes, how long the recent/subject recall waits on the daemon
+# before the lock-free replica answers instead (only when a replica exists).
+RECALL_DAEMON_SLICE_S = float(os.environ.get("RMX_RECALL_DAEMON_SLICE_S", "1.5") or "1.5")
 
 
 def _replica_memory_recall(query: str, *, k: int, kinds: list,
@@ -9360,15 +9363,17 @@ def _legacy_memory_partition_exists(root: Path, legacy: str, *,
     (pre-merge state). Caches per process so repeated `rmx memory`
     invocations don't re-query.
 
-    Read paths (in order of preference, all lock-free):
-      1. Daemon RPC `partition_list` when the daemon is up. The daemon
-         owns the writer slot; this is the safest read.
-      2. `Store(read_only=True)` opened against the snapshot symlink
-         (`read_only.duckdb`). Lock-free because the writer never
-         attaches to the snapshot file.
-      3. Snapshot/replica absent (bootstrap window) → return False.
-         A fresh tree has no legacy partition by definition; routing
-         to the project partition is the correct default.
+    Read paths (in order of preference):
+      1. The lock-free replica (`catalog.read.duckdb`) — milliseconds, and
+         it does not wait on the writer. The daemon op used to come first,
+         but `partition_list` takes the writer lock daemon-side, so every
+         hook probe timed out (and the hook answered `[]`) whenever the
+         watcher was flushing an edit — the operator's own edits made the
+         hooks blind (bsd-plan2-r7 re-measure, 2026-09-15 03:36).
+      2. Daemon RPC `partition_list` when there is no replica yet and the
+         daemon is up (the bootstrap window).
+      3. Neither → return False. A fresh tree has no legacy partition by
+         definition; routing to the project partition is the correct default.
 
     NEVER opens the active rotation slot directly — that would crash
     with `Could not set lock on catalog.B.duckdb` whenever the daemon
@@ -9382,9 +9387,21 @@ def _legacy_memory_partition_exists(root: Path, legacy: str, *,
     probe_failed = False
     try:
         from refmatrix import daemon as daemon_mod
+        rs = _reader_store()
+        if rs is not None:
+            try:
+                row = rs._connect().execute(
+                    "SELECT 1 FROM partitions WHERE name=?", (legacy,),
+                ).fetchone()
+                found = row is not None
+            finally:
+                try:
+                    rs.close()
+                except Exception:
+                    pass
         # `daemon_up` lets a caller that already classified the daemon skip
         # a second full-cost ping (~2 s against a silent socket).
-        if daemon_up if daemon_up is not None else daemon_mod.ping(root):
+        elif daemon_up if daemon_up is not None else daemon_mod.ping(root):
             # retries=0: partition_list takes the writer lock daemon-side;
             # on a busy writer the library default retried for 30 s under
             # the SessionStart bridge hook (bsd-plan2-r4 #s-1). A miss here
@@ -9395,20 +9412,7 @@ def _legacy_memory_partition_exists(root: Path, legacy: str, *,
             if resp.get("ok"):
                 rows = resp["result"].get("rows", [])
                 found = any(r.get("name") == legacy for r in rows)
-        else:
-            rs = _reader_store()
-            if rs is not None:
-                try:
-                    row = rs._connect().execute(
-                        "SELECT 1 FROM partitions WHERE name=?", (legacy,),
-                    ).fetchone()
-                    found = row is not None
-                finally:
-                    try:
-                        rs.close()
-                    except Exception:
-                        pass
-            # else: no snapshot yet → fresh tree → no legacy partition.
+        # else: no snapshot and no daemon → fresh tree → no legacy partition.
     except Exception as e:  # noqa: BLE001 — named, not cached (bsd-plan2-r5 #m-4)
         probe_failed = True
         click.echo(f"# rmx: warning: partition_list probe failed ({type(e).__name__}: {e}); "
@@ -10248,27 +10252,42 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         # CLI degrades to the lock-free replica for the recent modes and says
         # so on stderr — never a silent empty answer, never the writer slot.
         widened = False
+        # Hook mode with a lock-free replica on disk: the daemon gets a short
+        # slice, then the replica answers — a watcher flush of ONE edited file
+        # held the writer lock for seconds and every hook answered `[]` for
+        # the whole budget (live 2026-09-15 03:36). Without a replica the
+        # hook still degrades to `[]` (never the writer slot, never the turn).
+        _replica = _reader_store() if hook_mode else None
         try:
+            # `_left` raises past the deadline — inside the try, so a probe
+            # that spent the budget degrades like every other busy leg
+            _verb_timeout = (_left(budget) if _replica is None
+                             else min(_left(budget), RECALL_DAEMON_SLICE_S))
             res = _verbs.memory_recall(
                 _root(), k=k, scope=scope, since=since,
                 recent=bool(recent), session_start=bool(session_start),
                 exclude_mtype=verb_exclude, include_session=verb_include_session,
                 # the REMAINING budget: the verb starts its own clock, and the
                 # probe above already spent part of ours (r7: 2× budget)
-                subject=subject, degree=degree, timeout=_left(budget))
+                subject=subject, degree=degree, timeout=_verb_timeout)
             rows = res["memories"]
             widened = bool(res.get("widened"))
             for w in res.get("warnings") or []:
                 _warn(w)
         except (_verbs.VerbBusyError, _verbs.VerbAbsentError) as e:
-            if isinstance(e, _verbs.VerbBusyError) and hook_mode:
-                _degrade_or_raise(e)
-                return
-            # Absent, or busy in interactive use: the lock-free replica
-            # reader serves the READ, and says so (ch-bsd plan-3 r3 #m-5).
+            rs = _replica if _replica is not None else (
+                _reader_store() if isinstance(e, _verbs.VerbBusyError) else None)
+            if rs is None:
+                if isinstance(e, _verbs.VerbBusyError) and hook_mode:
+                    _degrade_or_raise(e)          # busy and nothing lock-free to read
+                    return
+                # Absent → in-process; busy without a replica → a read-worded
+                # error (r4 #m-6), never the writer slot.
+                rs = _read_store()
+            # The lock-free replica reader serves the READ, and says so
+            # (ch-bsd plan-3 r3 #m-5) — after it opened.
             since_s = _parse_duration(since) if since else (
                 7 * 86400.0 if session_start else None)
-            rs = _read_store()          # read-worded on busy-without-replica (r4 #m-6)
             click.echo(f"# rmx: {e}; reading the replica", err=True)
             if subject:
                 rows = [r for r in rs.subject_leaves(subject)
@@ -10403,6 +10422,9 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                 [], query=q, mode="hybrid",
                 partition=_resolve_partition(),
             ))
+            return
+        if as_json:
+            click.echo("[]")          # a JSON consumer gets JSON, not prose
             return
         console.print("[yellow]no recall hits[/] (have memories been embedded? "
                       "rmx embed --kinds memory)")

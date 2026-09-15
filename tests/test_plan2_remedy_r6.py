@@ -67,8 +67,15 @@ def test_recall_hook_wall_is_within_budget_on_a_held_writer(held, monkeypatch):
         r, elapsed = _invoke(argv, stdin)
         assert r.exit_code == 0, (argv, r.output)
         assert elapsed < 1.6, (argv, f"{elapsed:.2f}s for a 1 s budget — the probe runs before the clock")
-        assert json.loads(r.stdout) == []
-        assert "busy" in (r.stderr or ""), (argv, r.stderr)
+        assert r.stdout.strip(), (argv, "empty stdout", r.stderr)
+        try:
+            parsed = json.loads(r.stdout)
+        except ValueError:
+            raise AssertionError((argv, "stdout is not JSON", r.stdout[:400], r.stderr[:400],
+                                  sorted(q.name for q in held.root.iterdir())))
+        assert parsed == []
+        assert "busy" in (r.stderr or ""), (argv, r.stderr, r.stdout,
+                                            sorted(q.name for q in held.root.iterdir()))
 
 
 # ---- #b-1(2): the global leg, one attempt under the deadline ------------------------------

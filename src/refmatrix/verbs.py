@@ -237,6 +237,19 @@ def memory_partition(root: Path, *, timeout: "float | None" = None) -> str:
     # Busy is not absent (ch-bsd plan-3 r3 #s-3): a daemon that holds the
     # store raises (the caller must not write around it); NO daemon keeps
     # the project default — the bootstrap case.
+    # The lock-free replica answers in milliseconds and never waits on the
+    # writer; `partition_list` takes the writer lock daemon-side, so under a
+    # watcher flush every budgeted caller timed out here (bsd-plan2-r7
+    # re-measure, 2026-09-15). Daemon op only when there is no replica yet.
+    try:
+        from refmatrix import search as _search
+        rs, rlock = _search.cached_replica(root)
+        with rlock:
+            row = rs._connect().execute(
+                "SELECT 1 FROM partitions WHERE name=?", (legacy,)).fetchone()
+        return legacy if row is not None else project
+    except Exception as e:  # noqa: BLE001 — no replica yet (bootstrap window): the daemon decides
+        logging.getLogger(__name__).debug("memory_partition: replica unavailable for %s (%s)", root, e)
     try:
         require_daemon(root, retries=0 if timeout is not None else 2)
     except VerbAbsentError:

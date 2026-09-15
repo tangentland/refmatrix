@@ -203,11 +203,20 @@ class _SilentDaemon:
         self.base = Path(_tempfile.mkdtemp(prefix="rmxs-", dir="/tmp"))
         self.root = self.base / ".refmatrix"
         self.root.mkdir()
+        self.writer = None
         if seeded:
             # a real catalog, so "the slot was not touched" is a file
-            # assertion, not a constant (bsd-plan5-r2 #s-4-r2)
+            # assertion, not a constant (bsd-plan5-r2 #s-4-r2) — and the
+            # writer HOLDS it open, the way the held daemon holds its slot:
+            # a seeded-but-closed legacy `catalog.duckdb` read as a replica
+            # (2026-09-15: the replica-first probe answered from the "held"
+            # writer's own file and the hook returned [] without a busy
+            # word — a state no live daemon permits, its lock refuses the
+            # read-only open). Same-process DuckDB refuses the read-only
+            # open of a file another connection holds read-write, which is
+            # the cross-process lock conflict's in-process twin.
             from refmatrix.store import Store
-            st = Store(self.root); st.init(); st.close()
+            self.writer = Store(self.root); self.writer.init()
         self.proc = rmx_lookalike_process()
         self.pid = self.proc.pid
         daemon_mod.pid_path(self.root).write_text(str(self.pid))
@@ -235,6 +244,11 @@ class _SilentDaemon:
                 pass
         self.sock.close()
         self.proc.kill(); self.proc.wait()
+        if self.writer is not None:
+            try:
+                self.writer.close()
+            except Exception:
+                pass
         import shutil
         shutil.rmtree(self.base, ignore_errors=True)
 
