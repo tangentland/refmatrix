@@ -50,7 +50,7 @@ untested; `handoff.finalize_save_state` swallows subject-filing errors.
 ### Q2: Q2 Keep `memory sync-disk`? {#q2}
 **Status:** RESOLVED
 
-**Decision:** Keep the name as an alias for one release with a deprecation line; delete in 0.68.
+**Decision:** (revised after ch-bsd r1 #s-4/#s-6) Deleted outright: the walker was gone, the alias carried a dead `--mtype` flag and a deferral to a release already shipped. One bridge, one name.
 **Rationale:** see Decisions Log.
 
 ## Decisions Log {#decisions-log}
@@ -58,7 +58,9 @@ untested; `handoff.finalize_save_state` swallows subject-filing errors.
 | # | Question | Decision | Date |
 |---|----------|----------|------|
 | Q1 | Q1 Lenient parse or route non-GMD through sync-disk? | Lenient parse: one bridge, one identity rule (frontmatter `id` else stem), one report. | 2026-09-14 |
-| Q2 | Q2 Keep `memory sync-disk`? | Keep the name as an alias for one release with a deprecation line; delete in 0.68. | 2026-09-14 |
+| Q2 | Q2 Keep `memory sync-disk`? | Deleted (revised after ch-bsd r1 #s-4/#s-6): the alias carried a dead `--mtype` flag and a deferral to a shipped release; one bridge, one name (`ingest-gmd --as-memory`). | 2026-09-14 |
+| Q3 | (r1 #b-1) The bridge under a busy daemon | `_store(write=True)` and `_ingest_gmd_sync` classify through `verbs.require_daemon`: busy REFUSES (a named error; the next save-state / SessionStart retries), only absent opens the slot in-process. | 2026-09-14 |
+| Q4 | (r1 #b-2/#s-3/#m-7) Index files and coverage | `MEMORY.md` is skipped and counted (`skipped_index`); a job counts as the bridge only when it targets the dir AS MEMORY in the same partition; counters travel structurally (`IngestStats.as_dict` → daemon `stats` → `_sync_memory_dir`). | 2026-09-14 |
 
 ## Task Breakdown {#task-breakdown}
 

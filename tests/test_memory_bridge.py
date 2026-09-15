@@ -68,7 +68,11 @@ def test_bridge_ingests_gmd_and_plain_files(live):
     plain = _get(root, "plain_note")
     assert plain and "still a memory" in plain["content"]
     assert plain["mtype"] == "curated"
-    assert "skipped_non_gmd: 0" in out["report"]
+    # the flat index is NOT a memory (ch-bsd plan-5 #b-2): skipped and counted
+    time.sleep(1.0)
+    r = dm.call(root, "memory_get", {"name": "MEMORY", "partition": verbs.memory_partition(root)}, timeout=10)
+    assert (r.get("result") or {}).get("memory") is None
+    assert out["skipped_index"] == ["MEMORY.md"] and "skipped_index: 1" in out["report"]
     assert out["skipped_non_gmd"] == 0 and out["skipped_unparseable"] == []
 
 
@@ -84,15 +88,10 @@ def test_bridge_counts_and_names_an_unparseable_file(live):
     assert len(out["skipped_unparseable"]) == 1 and out["skipped_unparseable"][0]["path"].endswith("binary.md")
 
 
-def test_sync_disk_is_the_bridge(live):
-    base, root = live
-    memdir = base / "memory"; memdir.mkdir()
-    (memdir / "via_alias.md").write_text("# via alias\n\nbody\n")
-    r = CliRunner().invoke(cli_mod.main, ["memory", "sync-disk", str(memdir)])
-    assert r.exit_code == 0, r.output
-    assert "deprecated" in (r.output + (r.stderr or "")).lower()
-    assert "ingest-gmd --as-memory" in (r.output + (r.stderr or ""))
-    assert _get(root, "via_alias")
+def test_sync_disk_is_gone(live):
+    """plan-5 Q2 (revised, r1 #s-4/#s-6): one bridge, no alias."""
+    r = CliRunner().invoke(cli_mod.main, ["memory", "sync-disk", "/tmp"])
+    assert r.exit_code != 0 and "No such command" in r.output
 
 
 # ---- 5.2 overlap: wait for the active job --------------------------------------
@@ -183,4 +182,82 @@ def test_finalize_skips_the_bridge_on_sync_false_and_dry_run(live):
     r = dm.call(root, "memory_get", {"name": "savestate_skip",
                                      "partition": verbs.memory_partition(root)}, timeout=10)
     assert (r.get("result") or {}).get("memory") is None
+
+
+# ---- r1 remedy: busy is not absent on the bridge; coverage needs as_memory --------
+
+from tests.test_plan2_remedy import _SilentDaemon  # noqa: E402
+
+
+def test_bridge_never_opens_the_slot_under_a_busy_daemon(monkeypatch):
+    """ch-bsd plan-5 #b-1: four live bridge runs wrote catalog.B directly
+    while pid 30867 was alive-but-silent; the daemon then fast-exited on a
+    corrupted ART index. Busy → a named error, no catalog file, ever."""
+    d = _SilentDaemon()
+    try:
+        monkeypatch.setattr(cli_mod, "_root", lambda: d.root)
+        memdir = d.base / "mem"; memdir.mkdir()
+        (memdir / "m.md").write_text(GMD.format(id="m", body="x"))
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["error"] and "busy" in out["error"] and f"pid={os.getpid()}" in out["error"], out
+        assert not list(d.root.glob("catalog*.duckdb")), "the bridge opened the writer slot"
+        # the write control point itself refuses
+        import click
+        with pytest.raises(click.ClickException, match="busy"):
+            cli_mod._store(write=True)
+        assert not list(d.root.glob("catalog*.duckdb"))
+    finally:
+        d.close()
+
+
+def test_bridge_does_not_take_a_non_memory_job_as_its_report(live, monkeypatch):
+    """ch-bsd plan-5 #s-3: a plain doc ingest over the memory dir is not the
+    bridge; the bridge runs its own once the slot is free."""
+    base, root = live
+    memdir = _big_dir(base, "memory", 350)
+    resp = dm.call(root, "ingest_gmd_start", {"targets": [str(memdir)], "as_memory": False,
+                                              "partition": "proj"}, timeout=30)
+    assert resp.get("ok"), resp
+    monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "120")
+    out = cli_mod._sync_memory_dir(memdir)
+    assert out["error"] is None, out
+    assert out["waited"] is True and out["waited_job"] == resp["result"]["job_id"]
+    assert _get(root, "memory_doc0001"), "no memory row landed — the bridge took a doc ingest's report"
+
+
+def test_strict_ingest_counts_non_gmd_files():
+    """ch-bsd plan-5 #s-5: the counter must be able to move — in strict
+    (non-memory) mode a plain .md is skipped_non_gmd, and the daemon-side
+    result carries the counters structurally."""
+    from refmatrix.ingest_gmd import ingest_gmd_paths
+    base = Path(tempfile.mkdtemp(prefix="rmxsg-"))
+    try:
+        root = base / "proj" / ".refmatrix"; root.parent.mkdir()
+        s = Store(root); s.init()
+        (base / "proj" / "plain.md").write_text("# plain\n\nno frontmatter\n")
+        (base / "proj" / "doc.md").write_text(GMD.format(id="doc", body="x"))
+        stats = ingest_gmd_paths(s, [base / "proj" / "plain.md", base / "proj" / "doc.md"])
+        assert stats.skipped_non_gmd == 1 and stats.docs == 1
+        assert stats.as_dict()["skipped_non_gmd"] == 1
+        s.close()
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_save_state_reports_a_waited_bridge(live, monkeypatch):
+    """ch-bsd plan-5 #s-8: `waited` / `waited_job` reach the CLI."""
+    base, root = live
+    memdir = _big_dir(base, "memory", 350)
+    (memdir / "MEMORY.md").write_text("")
+    part = verbs.memory_partition(root)
+    resp = dm.call(root, "ingest_gmd_start", {"targets": [str(memdir)], "as_memory": True,
+                                              "memory_mtype": "curated", "partition": part}, timeout=30)
+    assert resp.get("ok"), resp
+    monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "120")
+    monkeypatch.setenv("RMX_SESSION", "s-ss")
+    from refmatrix import stm as stm_mod
+    stm_mod.Stm(root, "s-ss").record("input", "hi")
+    r = CliRunner().invoke(cli_mod.main, ["save-state", "--memory-dir", str(memdir), "--no-lint", "--no-promote"])
+    assert r.exit_code == 0, r.output + (r.stderr or "")
+    assert "waited for ingest job " + resp["result"]["job_id"] in r.output
 

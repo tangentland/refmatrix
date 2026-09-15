@@ -465,6 +465,16 @@ class IngestStats:
     # SessionStart recall said "no memories" on a store that was behind).
     skipped_non_gmd: int = 0                       # strict mode: no `gmd:` frontmatter
     skipped_unparseable: list[tuple[Path, str]] = field(default_factory=list)
+    skipped_index: list[str] = field(default_factory=list)   # MEMORY.md: an index, not a memory
+
+    def as_dict(self) -> dict:
+        """The counters, structurally — for the daemon result and the
+        bridge's callers (ch-bsd plan-5 #m-7: no report scraping)."""
+        return {"docs": self.docs, "nodes": self.nodes, "rels": self.rels,
+                "mentions": self.mentions, "unresolved": len(self.unresolved),
+                "skipped_non_gmd": self.skipped_non_gmd,
+                "skipped_unparseable": [[str(p), e] for p, e in self.skipped_unparseable],
+                "skipped_index": list(self.skipped_index)}
 
     def report(self) -> str:
         lines = [
@@ -473,6 +483,9 @@ class IngestStats:
             f"skipped_non_gmd: {self.skipped_non_gmd}",
             f"skipped_unparseable: {len(self.skipped_unparseable)}",
         ]
+        if self.skipped_index:
+            lines.append(f"skipped_index: {len(self.skipped_index)} "
+                         f"({', '.join(self.skipped_index)})")
         for p, err in self.skipped_unparseable[:20]:
             lines.append(f"  {p}: {err}")
         if len(self.skipped_unparseable) > 20:
@@ -759,7 +772,12 @@ def ingest_gmd_paths(
     # same key in `eid_by_name`.
     doc_level_eid: dict[str, int] = {}
     pass1_processed = 0
-    skip_lookup_kinds = ("memory", "doc")
+    # The resume gate must look at the kind THIS ingest produces: a file
+    # ingested earlier as a doc is not "already bridged" for a memory run
+    # (ch-bsd plan-5 #s-3 follow-up: the bridge after a plain doc ingest over
+    # the memory dir created no memory rows because the doc row's hash
+    # matched).
+    skip_lookup_kinds = ("memory",) if as_memory else ("doc",)
     # Map doc_id -> SHA1 of the file content captured at pass1 entry.
     # Used by pass2's final per-file step to mark the entity as fully
     # ingested with this content. Recorded once at the START so a
@@ -779,6 +797,11 @@ def ingest_gmd_paths(
             current_hash = _doc_content_hash(path)
         except Exception:
             current_hash = ""
+        if as_memory and path.name in MEMORY_INDEX_FILES:
+            # The flat index is not a memory (ch-bsd plan-5 #b-2: the deleted
+            # walker excluded it; the rewrite ingested `MEMORY` as curated).
+            stats.skipped_index.append(path.name)
+            continue
         try:
             doc = parse_gmd(path, lenient=lenient or as_memory,
                             project_root=project_root, memory_ids=as_memory)
@@ -803,8 +826,8 @@ def ingest_gmd_paths(
                 row = store._connect().execute(
                     "SELECT id FROM entities "
                     "WHERE partition_id=? AND name=? "
-                    "  AND kind IN ('memory','doc') LIMIT 1",
-                    (store._partition_id, doc.doc_id),
+                    f"  AND kind IN ({', '.join('?' for _ in skip_lookup_kinds)}) LIMIT 1",
+                    (store._partition_id, doc.doc_id, *skip_lookup_kinds),
                 ).fetchone()
                 if row is not None:
                     docs.append(doc)
@@ -1281,6 +1304,10 @@ def ingest_gmd_paths(
             yield_lock()
 
     return stats
+
+
+# Files a memory dir carries that are indexes over memories, not memories.
+MEMORY_INDEX_FILES = frozenset({"MEMORY.md"})
 
 
 def collect_gmd_files(targets: list[Path]) -> list[Path]:
