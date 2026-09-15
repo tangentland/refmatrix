@@ -20,7 +20,7 @@ def _fake_roots(monkeypatch, per_project: dict):
     roots = list(per_project)
     monkeypatch.setattr(search.discovery, "discover_roots",
                         lambda: roots)
-    monkeypatch.setattr(search.daemon_mod, "ping", lambda r: True)
+    monkeypatch.setattr(search.daemon_mod, "ping", lambda r, **kw: True)
 
     def fake_one(root, filename, keywords):
         return per_project.get(root, {})

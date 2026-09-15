@@ -101,13 +101,14 @@ def _t_memory_add(args: dict) -> dict:
     """Daemon-routed write via the verb; in-proc fallback ONLY when the daemon
     is down (the documented bootstrap exception — a fresh store has no daemon
     yet and the first memory must still land)."""
-    from refmatrix.verbs import VERBS, VerbError, memory_partition
+    from refmatrix.verbs import VERBS, VerbAbsentError, VerbError, memory_partition
     root = _resolve_root(args)
     try:
         return VERBS["rmx_memory_add"].run(root, args)
+    except VerbAbsentError:
+        pass          # no daemon at all: the bootstrap fallback below
     except VerbError as e:
-        if "daemon not running" not in str(e):
-            return {"error": str(e)}
+        return {"error": str(e)}   # busy or refused: never open the slot
     from refmatrix.store import Store
     part = memory_partition(root)
     s = Store(root)

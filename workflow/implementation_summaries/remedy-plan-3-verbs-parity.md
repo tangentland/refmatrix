@@ -45,3 +45,18 @@ Mutation checks (each on a scratch edit, reverted):
 - `global_recall_rows` swallowing again (`return []`) → `test_global_failure_surfaces_as_a_warning` FAILS.
 
 All three recorded in `workflow/review-output/pytest-plan3-r1-mutations.log`. Mutation 3 leaked one message onto the LIVE bus (the test only patched `is_running`), deleted afterwards; the wiring fixture now fails closed (`hub.rpc`/`global_call`/`daemon.call` raise), so a bypassing twin can never reach a live service from the gate.
+
+## Round 2 (bsd-plan3-r2, 209270d) {#round-2}
+
+rel: evidence-for -> [[bsd-plan3-verbs-parity-r2-209270d]]
+
+| Finding | Fix |
+|---------|-----|
+| #b-1 hub boundary swallowed `ok:false`; `bus pub` regressed to a KeyError; timeouts were tracebacks | `_hub_rpc` raises a typed `VerbError` with the hub's own error on `ok:false`, wraps `TimeoutError`/`OSError`; `queues` goes through it; tests on a real socket (`_QueuesHub`) + a recorded refusal at the CLI — Q10 |
+| #b-2 busy called "not running"; twins string-matched | `VerbBusyError` / `VerbAbsentError` + `verbs.require_daemon` (`discovery.daemon_status`); `_call`, `memory`, `change_subject` use it; a socket timeout on an op is busy; CLI twins (`ingest-status`, `memory add/get`, `memory recall` fallback) and `mcp._t_memory_add` dispatch on the type — the in-process bootstrap fires on ABSENT only (asserted: no catalog file appears on a busy daemon); `federated_where`/`locate` carry `skipped: [{project, root, reason}]` — Q11 |
+| #s-3 gate proved the call only | `test_cli_twin_calls_its_verb` binds the real signature, compares expected kwargs from option-carrying argv, and requires a canary from the canned result in the output; `rmx_focus` returns `dialogue`/`milestones`/`last_line`/`events_total` and `focus context` renders them — Q12 |
+| #s-4 records | full suite re-recorded at the merge sha (`pytest-plan3-r2-full.log`); the two unlogged r1 mutations logged (`pytest-plan3-r1-mutations-2.log`: bug-007 revert fails `test_locate_verb_finds_an_ingested_file_by_basename`; the linkage shape row removed fails `test_no_twin_exclusions_are_honest`) |
+| #m-5 | vacuous `ingest_status` assertion fixed; `queues` positive path on a real socket |
+
+TDD: RED `workflow/review-output/pytest-plan3-r2-red.log` (7 failed / 1 passed), GREEN `pytest-plan3-r2-green.log` (177 passed across parity, remedy, migrated, MCP, subject, recall, locate, plan-1/2 suites). Mutations `pytest-plan3-r2-mutations.log`: (A) `_hub_rpc` swallowing `ok:false` again fails both hub-boundary tests; (B) classifying busy as absent again fails the typed-error test and the bootstrap-fallback test.
+

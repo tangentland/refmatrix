@@ -125,14 +125,34 @@ def _where_one_project(root, q: str) -> list[dict]:
     return out
 
 
+def _live_roots() -> "tuple[list, list[dict]]":
+    """Stores whose daemon answers, plus the ones that were SKIPPED and why
+    (busy: alive, not answering; absent: no daemon). A busy store used to be
+    silently dropped from the fan-out (ch-bsd plan-3 r2 #b-2)."""
+    roots, skipped = [], []
+    for r in discovery.discover_roots():
+        rp = Path(r)
+        st = discovery.daemon_status(rp)
+        if st.get("up"):
+            roots.append(r)
+        elif st.get("busy"):
+            skipped.append({"project": discovery.store_name(rp), "root": str(r),
+                            "reason": f"daemon busy pid={st.get('pid')} (alive, not answering)"})
+        else:
+            skipped.append({"project": discovery.store_name(rp), "root": str(r),
+                            "reason": "daemon not running"})
+    return roots, skipped
+
+
 def federated_where(q: str, *, limit: int = 40) -> dict:
     """Fan a query across all live stores: code/doc/concept hits from the cached
     replica + memory hits, grouped by source, deduped, capped. Per-project work
     runs concurrently with short timeouts so one slow/stuck daemon can't stall
     the whole omnibox. Returns
-    {"results": [{source, project, root, name, kind, path, line, snippet}]}."""
+    {"results": [{source, project, root, name, kind, path, line, snippet}],
+     "skipped": [{project, root, reason}]}."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    roots = [r for r in discovery.discover_roots() if daemon_mod.ping(r)]
+    roots, skipped = _live_roots()
     results: list[dict] = []
     if roots:
         ex = ThreadPoolExecutor(max_workers=min(8, len(roots)))
@@ -169,7 +189,7 @@ def federated_where(q: str, *, limit: int = 40) -> dict:
             continue
         seen.add(key)
         deduped.append(r)
-    return {"results": deduped[:limit]}
+    return {"results": deduped[:limit], "skipped": skipped}
 
 
 def federated_concept(name: str) -> dict:
@@ -296,7 +316,7 @@ def federated_locate(filename: str | None = None,
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
     keywords = [k for k in (keywords or []) if k.strip()]
-    roots = [r for r in discovery.discover_roots() if daemon_mod.ping(r)]
+    roots, skipped = _live_roots()
     merged: dict[str, dict] = {}
     if roots:
         ex = ThreadPoolExecutor(max_workers=min(8, len(roots)))
@@ -329,4 +349,4 @@ def federated_locate(filename: str | None = None,
     out = [{"path": r["path"], "project": r["project"], "root": r["root"],
             "score": round(r["score"], 3), "why": sorted(r["why"])}
            for r in rows[:limit]]
-    return {"results": out}
+    return {"results": out, "skipped": skipped}

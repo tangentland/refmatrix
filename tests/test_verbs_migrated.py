@@ -214,7 +214,7 @@ def test_recall_state_verb_reads_the_named_memory_dir(live, tmp_path):
 
 
 def test_ingest_status_verb_lists_then_polls_a_real_job(live):
-    assert verbs.ingest_status(live) == {"jobs": []} or "jobs" in verbs.ingest_status(live)
+    assert "jobs" in verbs.ingest_status(live)
     started = verbs.ingest(live, path=str(live.parent), semantic=False)
     jid = started["job_id"]
     deadline = time.monotonic() + 60

@@ -18,6 +18,7 @@
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -182,38 +183,78 @@ def test_click_defaults_match_verb_defaults():
 
 # ---- wiring (#bs-1): the twin CALLS the verb -------------------------------
 
-# verb -> (click argv, canned verb result the CLI must be able to render)
+# verb -> (click argv, canned verb result, kwargs the argv must reach the verb
+# with, a CANARY string from the canned result the CLI output must show).
+# The kwargs + canary are what turn the recorder from "was called" into "the
+# options arrive and the result is what gets rendered" (ch-bsd plan-3 r2 #s-3:
+# a twin that called the verb and then rendered from the ring passed).
 CLI_INVOKE = {
-    "rmx_memory_add": (["memory", "add", "n", "-c", "body"], {"id": 1}),
-    "rmx_memory_recall": (["memory", "recall", "--recent"],
-                          {"memories": [], "mode": "recent", "widened": False,
-                           "since_seconds": None, "warnings": []}),
-    "rmx_save_state": (["save-state", "--dry-run"],
-                       {"target": "/t/x.md", "doc": "# x", "events": 0, "dry_run": True}),
-    "rmx_focus": (["focus", "context"],
-                  {"graph": {"nodes": [], "events": 0, "session": "s"}, "tasks": []}),
-    "rmx_focus_note": (["focus", "note", "why"], {"noted": True, "session": "s", "refs": []}),
+    "rmx_memory_add": (["memory", "add", "n", "-c", "body", "--type", "note", "--protect"],
+                       {"id": 4242},
+                       {"name": "n", "content": "body", "mtype": "note", "protect": True}, "4242"),
+    "rmx_memory_recall": (["memory", "recall", "--recent", "-k", "3", "--scope", "both", "--json"],
+                          {"memories": [{"id": 1, "name": "CANARY-mem", "mtype": "m", "content": "c"}],
+                           "mode": "recent", "widened": False, "since_seconds": None, "warnings": []},
+                          {"recent": True, "k": 3, "scope": "both", "include_session": True}, "CANARY-mem"),
+    "rmx_save_state": (["save-state", "--dry-run", "-m", "hello"],
+                       {"target": "/t/x.md", "doc": "# CANARY-doc", "events": 0, "dry_run": True},
+                       {"dry_run": True, "message": "hello"}, "CANARY-doc"),
+    "rmx_focus": (["focus", "context", "--top", "20"],
+                  {"graph": {"nodes": [{"name": "CANARY-node", "kind": "file", "count": 1, "weight": 1.0}],
+                             "edges": [], "events": 3, "session": "s"},
+                   "tasks": [], "dialogue": [{"line": 1, "kind": "input", "terse": "CANARY-say"}],
+                   "milestones": [], "last_line": {}, "events_total": 3},
+                  {"top": 60}, "CANARY-say"),   # CLI over-fetches 3x for noise filtering
+    "rmx_focus_note": (["focus", "note", "why"], {"noted": True, "session": "s", "refs": ["CANARY-ref"]},
+                       {"text": "why"}, "CANARY-ref"),
     "rmx_change_subject": (["focus", "change-subject", "topic"],
-                           {"subject": "topic", "label": "topic", "id": 1, "session": "s"}),
-    "rmx_projects": (["projects"], {"projects": []}),
-    "rmx_locate": (["locate", "cli.py"], {"results": []}),
-    "rmx_task": (["task", "list"], {"tasks": []}),
-    "rmx_queues": (["hub", "queues"], {"queues": []}),
-    "rmx_ingest_status": (["ingest-status"], {"jobs": []}),
-    "rmx_recall_state": (["recall-state", "--json"], {"handoff": None}),
+                           {"subject": "canary-slug", "label": "topic", "id": 1, "session": "s"},
+                           {"label": "topic"}, "canary-slug"),
+    "rmx_projects": (["projects", "--footprint"],
+                     {"projects": [{"name": "CANARY-proj", "root": "/r", "daemon": {"up": True}}]},
+                     {"footprint": True}, "CANARY-proj"),
+    "rmx_locate": (["locate", "cli.py", "alpha", "-n", "4"],
+                   {"results": [{"path": "/x/CANARY-path.py", "project": "p", "score": 1.0, "why": []}], "skipped": []},
+                   {"file": "cli.py", "keywords": ["alpha"], "n": 4}, "CANARY-path"),
+    "rmx_task": (["task", "list"], {"tasks": [{"desc": "CANARY-task", "ts": "t"}]},
+                 {"action": "list"}, "CANARY-task"),
+    "rmx_queues": (["hub", "queues"],
+                   {"queues": [{"project": "CANARY-q", "root": "/r", "daemon_up": True, "stale_files": 0}]},
+                   {}, "CANARY-q"),
+    "rmx_ingest_status": (["ingest-status", "job-7"],
+                          {"job": {"id": "job-7", "status": "done", "files_done": 1, "files_total": 1,
+                                   "current_file": "CANARY-file"}, "events": []},
+                          {"job_id": "job-7"}, "CANARY-file"),
+    "rmx_recall_state": (["recall-state", "--json", "-s", "sess-9"], {"handoff": "CANARY-handoff"},
+                         {"session": "sess-9"}, "CANARY-handoff"),
     "rmx_memory": (["memory", "get", "x"],
                    {"memory": {"name": "x", "id": 1, "mtype": "m", "tags": [],
-                               "metadata": {}, "content": "c"}}),
-    "rmx_bus_pub": (["bus", "pub", "global:t", "hi"], {"message": {"id": "m1"}}),
-    "rmx_bus_history": (["bus", "history", "global:t"], {"messages": []}),
-    "rmx_bus_channels": (["bus", "channels"], {"channels": []}),
-    "rmx_bus_read": (["bus", "read"], {"messages": []}),
-    "rmx_bus_mark_read": (["bus", "mark-read", "global:t"], {"last_seq": 1}),
-    "rmx_bus_delete": (["bus", "delete", "m1"], {"deleted": True}),
-    "rmx_bus_archive": (["bus", "archive", "--id", "m1"], {"ok": True, "archived": 1}),
-    "rmx_bus_unarchive": (["bus", "unarchive", "m1"], {"restored": True}),
-    "rmx_bus_purge": (["bus", "purge", "-y"], {"purged": 0}),
-    "rmx_bus_stats": (["bus", "stats"], {"totals": {}, "unread": {}, "channels": []}),
+                               "metadata": {}, "content": "CANARY-body"}},
+                   {"action": "get", "name": "x"}, "CANARY-body"),
+    "rmx_bus_pub": (["bus", "pub", "global:t", "hi", "--type", "note", "--from", "me"],
+                    {"message": {"id": "CANARY-msg"}},
+                    {"channel": "global:t", "body": "hi", "type": "note", "sender": "me"}, "CANARY-msg"),
+    "rmx_bus_history": (["bus", "history", "global:t", "-n", "3", "--status", "archived"],
+                        {"messages": [{"ts": "t", "from": "a", "type": "note", "id": "1", "body": "CANARY-hist"}]},
+                        {"channel": "global:t", "n": 3, "status": "archived"}, "CANARY-hist"),
+    "rmx_bus_channels": (["bus", "channels", "--glob", "proj:*"],
+                         {"channels": [{"channel": "CANARY-chan", "messages": 1}]},
+                         {"glob": "proj:*"}, "CANARY-chan"),
+    "rmx_bus_read": (["bus", "read", "proj:*", "--peek", "--from", "me"],
+                     {"messages": [{"ts": "t", "channel": "c", "from": "a", "type": "note", "id": "1",
+                                    "body": "CANARY-unread"}]},
+                     {"channels": ["proj:*"], "peek": True, "agent": "me"}, "CANARY-unread"),
+    "rmx_bus_mark_read": (["bus", "mark-read", "global:t", "--upto-seq", "9"], {"last_seq": 4242},
+                          {"channel": "global:t", "upto_seq": 9}, "4242"),
+    "rmx_bus_delete": (["bus", "delete", "m1"], {"deleted": True}, {"id": "m1"}, "m1"),
+    "rmx_bus_archive": (["bus", "archive", "--id", "m1"], {"ok": True, "archived": 4242},
+                        {"id": "m1"}, "4242"),
+    "rmx_bus_unarchive": (["bus", "unarchive", "m1"], {"restored": True}, {"id": "m1"}, "m1"),
+    "rmx_bus_purge": (["bus", "purge", "-y", "--status", "archived"], {"purged": 4242},
+                      {"status": "archived"}, "4242"),
+    "rmx_bus_stats": (["bus", "stats"],
+                      {"totals": {"active": 1}, "unread": {}, "channels": [{"channel": "CANARY-stat", "messages": 1}]},
+                      {}, "CANARY-stat"),
 }
 # payload-class twins: argv + the daemon op the click command must issue with
 # a payload built by the verb's helper (recorded by wrapping the helper).
@@ -257,18 +298,31 @@ def _cli_env(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("vname", sorted(CLI_INVOKE))
 def test_cli_twin_calls_its_verb(vname, _cli_env, monkeypatch):
-    argv, canned = CLI_INVOKE[vname]
+    """Three properties per twin: the verb is CALLED (with a root), the argv's
+    options ARRIVE as the verb's own parameters (bound against the real
+    signature), and the CLI RENDERS the verb's result (canary)."""
+    import inspect
+    argv, canned, expect, canary = CLI_INVOKE[vname]
     v = verbs.VERBS[vname]
+    sig = inspect.signature(v.fn)
     seen = []
 
     def recorder(root, *a, **kw):
-        seen.append((root, a, kw))
-        return dict(canned)
+        bound = sig.bind(root, *a, **kw)      # a wrong kwarg name fails here
+        bound.apply_defaults()
+        seen.append(bound.arguments)
+        return json.loads(json.dumps(canned))
     monkeypatch.setattr(verbs, v.fn.__name__, recorder)
     r = CliRunner().invoke(cli_main, argv, catch_exceptions=False)
     assert r.exit_code == 0, r.output + (r.stderr or "")
     assert seen, f"{vname}: `rmx {' '.join(argv)}` never called verbs.{v.fn.__name__}"
-    assert Path(seen[0][0]) == _cli_env
+    assert Path(seen[0]["root"]) == _cli_env
+    for k, val in expect.items():
+        got = seen[0].get(k)
+        if isinstance(got, tuple):
+            got = list(got)
+        assert got == val, f"{vname}.{k}: argv gave {got!r}, expected {val!r}"
+    assert canary in r.output, f"{vname}: CLI did not render the verb's result ({canary!r})"
 
 
 @pytest.mark.parametrize("vname", sorted(CLI_PAYLOAD_INVOKE))
