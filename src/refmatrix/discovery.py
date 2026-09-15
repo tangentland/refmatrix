@@ -159,6 +159,29 @@ def _read_pid(root: Path) -> int | None:
         return None
 
 
+def pid_is_rmx(pid: int) -> bool:
+    """Is `pid` a live process whose command line names rmx / refmatrix?
+    The supervised daemon runs as `.../bin/rmx daemon start --no-detach`, a
+    spawned one as `python -m refmatrix.cli ... daemon start`. Used to tell a
+    booting daemon (pid file written, socket not bound yet) from a stale pid
+    file whose number a foreign process has since reused. A `ps` failure
+    counts as rmx: refusing a write is the safe direction."""
+    try:
+        os.kill(pid, 0)              # signal 0 = liveness probe, no delivery
+    except (OSError, ProcessLookupError, PermissionError):
+        return False
+    try:
+        import subprocess
+        r = subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
+                           capture_output=True, text=True, timeout=2.0)
+    except Exception:  # noqa: BLE001 — ps missing/hung: assume it is ours
+        return True
+    if r.returncode != 0:
+        return False                 # ps found no such process
+    cmd = r.stdout
+    return "rmx" in cmd or "refmatrix" in cmd
+
+
 def daemon_status(root: Path, *, timeout: float = 0.5, retries: int = 2) -> dict:
     """Liveness for one store's daemon. `timeout`/`retries` are the ping
     budget: a hook path passes `retries=0` so classifying a busy daemon
@@ -166,11 +189,20 @@ def daemon_status(root: Path, *, timeout: float = 0.5, retries: int = 2) -> dict
     budgeted wait made a 1 s budget cost 7.4 s).
 
     `busy` distinguishes the two states a failed ping conflates: the process
-    is gone (dead, needs a restart) versus the process is alive with its
-    socket in place but not answering yet (starting up, rebuilding an index,
-    holding the store lock). Reporting the second as dead is how a healthy
-    daemon gets needlessly killed — cliquet read `stale pid (socket
-    unreachable)` while a direct RPC answered in 0.1s."""
+    is gone (dead, needs a restart) versus the process is alive and not
+    answering yet. Reporting the second as dead is how a healthy daemon gets
+    needlessly killed — cliquet read `stale pid (socket unreachable)` while a
+    direct RPC answered in 0.1s.
+
+    A live rmx pid is busy WITH OR WITHOUT its socket (bsd-plan5-r2 #b-1-r2):
+    `serve_forever` writes the pid file, opens the Store, runs the queued
+    repair, snapshots, warms the mirror and only then binds the socket — for
+    that whole boot window it holds the DuckDB writer lock. Classifying the
+    window as absent sent the in-process writer onto the live slot on every
+    relaunch (the `Conflicting lock is held` boots in daemon.stderr.log). A
+    pid file whose process is gone, or whose number a foreign process has
+    reused (`pid_is_rmx`), is absent. `socket` says whether the socket file
+    exists (False during boot)."""
     from refmatrix import daemon as daemon_mod
     up = False
     try:
@@ -178,17 +210,15 @@ def daemon_status(root: Path, *, timeout: float = 0.5, retries: int = 2) -> dict
     except Exception:
         up = False
     pid = _read_pid(root)
+    sock = daemon_mod.socket_path(root).exists()
     busy = False
     if not up and pid:
-        try:
-            os.kill(pid, 0)          # signal 0 = liveness probe, no delivery
-            busy = daemon_mod.socket_path(root).exists()
-        except (OSError, ProcessLookupError, PermissionError):
-            busy = False
+        busy = pid_is_rmx(pid)
     return {
         "up": up,
         "pid": pid,
         "busy": busy,
+        "socket": sock,
         "rss_mb": _rss_mb(pid) if (up and pid) else None,
     }
 

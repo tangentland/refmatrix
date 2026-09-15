@@ -171,9 +171,26 @@ def test_intuition_doc_describes_the_shipped_stop_hook():
 
 import os as _os
 import socket as _socket
+import subprocess as _subprocess
+import sys as _sys
 import tempfile as _tempfile
 import threading as _threading
 import time as _time
+
+
+def rmx_lookalike_process() -> "_subprocess.Popen":
+    """A real live process whose argv names rmx, as a daemon's does
+    (`.../bin/rmx daemon start --no-detach`, `python -m refmatrix.cli daemon
+    start`). `discovery.pid_is_rmx` reads the command line (bsd-plan5-r2
+    #b-1-r2), so a fixture's pid file must point at such a process — not at
+    the pytest process. Waits for the interpreter to exec: the venv
+    launcher's argv[0] sits under the repo path for a moment."""
+    p = _subprocess.Popen([_sys.executable, "-c",
+                           "import sys,time; print('ready', flush=True); time.sleep(300)",
+                           "rmx", "daemon", "start"],
+                          stdout=_subprocess.PIPE, stderr=_subprocess.DEVNULL, text=True)
+    assert p.stdout.readline().strip() == "ready"
+    return p
 
 
 class _SilentDaemon:
@@ -181,12 +198,19 @@ class _SilentDaemon:
     `daemon.ping` conflates with dead (index rebuild at startup, writer
     holding the lock). Short /tmp path so the unix socket binds."""
 
-    def __init__(self):
+    def __init__(self, seeded: bool = False):
         from refmatrix import daemon as daemon_mod
         self.base = Path(_tempfile.mkdtemp(prefix="rmxs-", dir="/tmp"))
         self.root = self.base / ".refmatrix"
         self.root.mkdir()
-        daemon_mod.pid_path(self.root).write_text(str(_os.getpid()))
+        if seeded:
+            # a real catalog, so "the slot was not touched" is a file
+            # assertion, not a constant (bsd-plan5-r2 #s-4-r2)
+            from refmatrix.store import Store
+            st = Store(self.root); st.init(); st.close()
+        self.proc = rmx_lookalike_process()
+        self.pid = self.proc.pid
+        daemon_mod.pid_path(self.root).write_text(str(self.pid))
         self.sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
         self.sock.bind(str(daemon_mod.socket_path(self.root)))
         self.sock.listen(16)
@@ -210,6 +234,7 @@ class _SilentDaemon:
             except OSError:
                 pass
         self.sock.close()
+        self.proc.kill(); self.proc.wait()
         import shutil
         shutil.rmtree(self.base, ignore_errors=True)
 
@@ -264,7 +289,7 @@ def test_stop_promote_says_busy_not_absent_on_a_silent_daemon(silent, monkeypatc
     r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "0.5"])
     elapsed = _time.monotonic() - t0
     assert r.exit_code != 0
-    assert f"busy pid={_os.getpid()}" in r.output
+    assert f"busy pid={silent.pid}" in r.output
     assert "not running" not in r.output and "daemon start" not in r.output
     assert "not confirmed" in r.output
     assert elapsed < 2.5, elapsed
@@ -303,7 +328,7 @@ def test_detach_on_a_silent_daemon_costs_one_probe_plus_the_budget(silent, monke
     r = CliRunner().invoke(cli_mod.main, ["ingest-gmd", "--as-memory", "--detach", str(memdir)])
     elapsed = _time.monotonic() - t0
     assert r.exit_code != 0
-    assert f"busy pid={_os.getpid()}" in r.output
+    assert f"busy pid={silent.pid}" in r.output
     assert elapsed < 3.0, f"waited {elapsed:.1f}s for a 1s budget"
     import re
     m = re.search(r"not answering for ([0-9.]+)s", r.output)
@@ -339,7 +364,7 @@ def test_daemon_status_takes_a_probe_budget(silent):
     t0 = _time.monotonic()
     st = discovery.daemon_status(silent.root, retries=0)
     assert _time.monotonic() - t0 < 1.2
-    assert st["busy"] is True and st["up"] is False and st["pid"] == _os.getpid()
+    assert st["busy"] is True and st["up"] is False and st["pid"] == silent.pid
 
 
 # ---- round 4 (bsd-plan2-r4): the bound covers every call on the hook path ----
@@ -369,7 +394,7 @@ class _PingOnlyDaemon(_SilentDaemon):
             req = _json.loads(buf.decode() or "{}")
             self.held.append(c)
             if req.get("op") == "ping":
-                c.sendall((_json.dumps({"ok": True, "result": {"pid": _os.getpid(), "version": "x"}}) + "\n").encode())
+                c.sendall((_json.dumps({"ok": True, "result": {"pid": self.pid, "version": "x"}}) + "\n").encode())
         except OSError:
             pass
 
@@ -395,7 +420,7 @@ def test_detach_is_bounded_when_the_daemon_answers_ping_but_holds_the_store(ping
     r = CliRunner().invoke(cli_mod.main, ["ingest-gmd", "--as-memory", "--detach", str(memdir)])
     elapsed = _time.monotonic() - t0
     assert r.exit_code != 0
-    assert "Traceback" not in r.output and "busy" in r.output and f"pid={_os.getpid()}" in r.output
+    assert "Traceback" not in r.output and "busy" in r.output and f"pid={pingonly.pid}" in r.output
     assert elapsed < 4.0, f"waited {elapsed:.1f}s for a 1s budget"
 
 

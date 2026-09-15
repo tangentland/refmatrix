@@ -35,6 +35,7 @@ this registry; `@ch-bsd` flags stale deferrals.
 | Item | Location | Classification | Graduation Trigger | Owner |
 |------|----------|----------------|--------------------|-------|
 | rewriter hook bakes the generator's tree (bug-008, recurring) | src/refmatrix/search_hooks.py `render_scripts` (`RMXGREP =`/`RMXRG =` absolute paths in `~/.claude/hooks/rmxgrep-rewrite.py`) | deferred-design | task 6.5 (`task-6.5-plan-6-deferrals-docs-benchmark`, acceptance criteria there): runtime resolution of the wrappers + refusal to write the user-global dir from a foreign tree; until then `rmx install-hooks --check` is the tripwire | plan 6 |
+| `rmx memory sync-disk` alias of `ingest-gmd --as-memory` (bsd-plan5-r2 #b-2-r2) | src/refmatrix/cli.py `memory_sync_disk` (15 lines; forwards to `_sync_memory_dir`) | `scaffold-no-caller` (in this repo; the callers are the fleet's copies of the p20-0 compiler) | every cat-herder project's `.claude/p20-0/compile_guardrails.py` (template at ~/at/bdep/cat-herder, 8 fleet copies under ~/github/atollogy/bdep) calls `ingest-gmd --as-memory` — `grep -rl 'memory sync-disk' ~/github/atollogy/bdep/*/.claude ~/at/bdep/cat-herder` empty → delete the alias + `test_sync_disk_is_a_thin_alias_of_the_bridge` | user (template + fleet re-seed); this repo's copy already converted |
 
 ## Graduation Log {#graduation-log}
 

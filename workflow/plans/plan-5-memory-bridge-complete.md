@@ -61,6 +61,8 @@ untested; `handoff.finalize_save_state` swallows subject-filing errors.
 | Q2 | Q2 Keep `memory sync-disk`? | Deleted (revised after ch-bsd r1 #s-4/#s-6): the alias carried a dead `--mtype` flag and a deferral to a shipped release; one bridge, one name (`ingest-gmd --as-memory`). | 2026-09-14 |
 | Q3 | (r1 #b-1) The bridge under a busy daemon | `_store(write=True)` and `_ingest_gmd_sync` classify through `verbs.require_daemon`: busy REFUSES (a named error; the next save-state / SessionStart retries), only absent opens the slot in-process. | 2026-09-14 |
 | Q4 | (r1 #b-2/#s-3/#m-7) Index files and coverage | `MEMORY.md` is skipped and counted (`skipped_index`); a job counts as the bridge only when it targets the dir AS MEMORY in the same partition; counters travel structurally (`IngestStats.as_dict` → daemon `stats` → `_sync_memory_dir`). | 2026-09-14 |
+| Q5 | (r2 #b-1-r2) What is "absent"? | A live rmx pid is busy with or without its socket (`discovery.pid_is_rmx` reads the command line); only a gone pid, or a pid a foreign process reused, is absent. Refusing a write on a false busy is the safe direction; `rmx daemon start` reaps stale pids. | 2026-09-15 |
+| Q6 | (r2 #b-2-r2) `memory sync-disk` deleted vs. its callers | Restored as a thin alias of the bridge (deferral row: removed once the cat-herder template + fleet copies of `compile_guardrails.py` call `ingest-gmd --as-memory`); this repo's compiler calls the canonical command and fails loud; the generated SessionStart entry no longer redirects or `\|\| true`s a memory path. | 2026-09-15 |
 
 ## Task Breakdown {#task-breakdown}
 

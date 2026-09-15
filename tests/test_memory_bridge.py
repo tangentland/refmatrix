@@ -88,12 +88,6 @@ def test_bridge_counts_and_names_an_unparseable_file(live):
     assert len(out["skipped_unparseable"]) == 1 and out["skipped_unparseable"][0]["path"].endswith("binary.md")
 
 
-def test_sync_disk_is_gone(live):
-    """plan-5 Q2 (revised, r1 #s-4/#s-6): one bridge, no alias."""
-    r = CliRunner().invoke(cli_mod.main, ["memory", "sync-disk", "/tmp"])
-    assert r.exit_code != 0 and "No such command" in r.output
-
-
 # ---- 5.2 overlap: wait for the active job --------------------------------------
 
 def _big_dir(base, name, n):
@@ -193,19 +187,23 @@ def test_bridge_never_opens_the_slot_under_a_busy_daemon(monkeypatch):
     """ch-bsd plan-5 #b-1: four live bridge runs wrote catalog.B directly
     while pid 30867 was alive-but-silent; the daemon then fast-exited on a
     corrupted ART index. Busy → a named error, no catalog file, ever."""
-    d = _SilentDaemon()
+    d = _SilentDaemon(seeded=True)
     try:
+        slots = lambda: {p.name: (p.stat().st_mtime_ns, p.stat().st_size)  # noqa: E731
+                         for p in d.root.glob("catalog*.duckdb")}
+        before = slots()
+        assert before, "seeded fixture has a real catalog (bsd-plan5-r2 #s-4-r2)"
         monkeypatch.setattr(cli_mod, "_root", lambda: d.root)
         memdir = d.base / "mem"; memdir.mkdir()
         (memdir / "m.md").write_text(GMD.format(id="m", body="x"))
         out = cli_mod._sync_memory_dir(memdir)
-        assert out["error"] and "busy" in out["error"] and f"pid={os.getpid()}" in out["error"], out
-        assert not list(d.root.glob("catalog*.duckdb")), "the bridge opened the writer slot"
+        assert out["error"] and "busy" in out["error"] and f"pid={d.pid}" in out["error"], out
+        assert slots() == before, "the bridge wrote the writer slot"
         # the write control point itself refuses
         import click
         with pytest.raises(click.ClickException, match="busy"):
             cli_mod._store(write=True)
-        assert not list(d.root.glob("catalog*.duckdb"))
+        assert slots() == before
     finally:
         d.close()
 

@@ -382,8 +382,7 @@ def _store(write: bool = True) -> "Store":
     try:
         _verbs.require_daemon(root)
     except _verbs.VerbBusyError as e:
-        raise click.ClickException(
-            f"{e} — writes go through the daemon; retry shortly")
+        raise click.ClickException(f"{e} — writes go through the daemon")
     except _verbs.VerbAbsentError:
         return _store_rw()
     # Deliberate duck-type: the proxy mirrors Store's mutation surface.
@@ -3077,21 +3076,20 @@ def daemon_status():
         except Exception as e:  # noqa: BLE001 — diagnostic line, must not raise
             console.print(f"code: [dim]unknown ({e})[/]  [yellow][UNVERIFIED][/]")
     elif pid:
-        # A live process whose socket is still there is BUSY, not stale:
-        # starting up, rebuilding an index, or holding the store lock for a
-        # write. Saying "stale" invites a kill, which is the wrong move.
-        alive = False
-        try:
-            os.kill(pid, 0)
-            alive = daemon_mod.socket_path(root).exists()
-        except (OSError, ProcessLookupError, PermissionError):
-            alive = False
-        if alive:
+        # A live rmx process is BUSY, not stale — socket or no socket: booting
+        # (pid written, socket not bound yet), rebuilding an index, or holding
+        # the store lock for a write. Saying "stale" invites a kill, which is
+        # the wrong move (bsd-plan5-r2 #b-1-r2: the boot window was "stale").
+        from refmatrix import discovery as _disc
+        if _disc.pid_is_rmx(pid):
+            phase = ("starting — socket not bound yet"
+                     if not daemon_mod.socket_path(root).exists()
+                     else "startup or a long write")
             console.print(
                 f"[yellow]busy[/] pid={pid} root={root} "
-                f"(alive, not answering yet — startup or a long write)")
+                f"(alive, not answering yet — {phase})")
         else:
-            console.print(f"[yellow]stale pid[/] {pid} (process gone)")
+            console.print(f"[yellow]stale pid[/] {pid} (process gone or reused)")
     else:
         console.print("[dim]not running[/]")
 
@@ -8472,7 +8470,7 @@ def _ingest_gmd_sync(resolved: list[Path], *, as_memory: bool,
         daemon_up = True
     except _verbs.VerbBusyError as e:
         raise click.ClickException(f"{e} — ingest-gmd skipped (a second writer on "
-                                   f"the live catalog is not an option); retry shortly")
+                                   f"the live catalog is not an option)")
     except _verbs.VerbAbsentError:
         daemon_up = False
     if daemon_up:
@@ -10612,57 +10610,24 @@ def _parse_memory_md_frontmatter(text: str) -> tuple[dict, str]:
     return fm, body
 
 
+@memory_grp.command("sync-disk")
 @click.argument("paths", type=click.Path(exists=True, path_type=Path),
                 nargs=-1, required=False)
-@click.option("--mtype", "default_mtype", default="curated", show_default=True,
-              help="mtype assigned to memories whose frontmatter does "
-                   "not carry an explicit `metadata.type`.")
-@click.option("--dry-run", is_flag=True,
-              help="Walk and parse but don't upsert. Reports the set of "
-                   "files that would be synced.")
-def memory_sync_disk(paths: tuple[Path, ...], default_mtype: str,
-                     dry_run: bool):
-    """Ingest curated `.md` memory files into the rmx memory store.
+def memory_sync_disk(paths: tuple[Path, ...]):
+    """Alias of `rmx ingest-gmd --as-memory <dir>` — the memory bridge.
 
-    Walks each path (file or dir) for `*.md` files, parses frontmatter,
-    and upserts each as a `kind=memory` entity using the frontmatter's
-    `id` (or `name`, or filename stem) as the memory name. The body
-    becomes the memory content. `metadata.type` -> mtype (default
-    `curated` when absent). The original source path + mtime are
-    stashed in metadata for round-trip diagnostics.
-
-    Designed to bridge the auto-memory `.md` index at
-    `~/.claude/projects/<project>/memory/` into rmx so SessionStart
-    and UserPromptSubmit hooks see curated memories alongside the
-    intuition observations imported from session JSONL.
-
-    Reads:
-      id | name | <filename-stem>   -> memory name
-      title | description           -> stashed in metadata.title
-      metadata.type                 -> mtype
-      tags                          -> tags
+    Kept because the p20-0 guardrail compiler shipped to every cat-herder
+    project calls it on SessionStart (bsd-plan5-r2 #b-2-r2); removal trigger
+    in workflow/deferral_registry.md. No PATHS = this project's memory dir.
     """
     _memory_intent("memory_sync_disk")
-    # plan-5 Q2: sync-disk IS the bridge. One code path (`_sync_memory_dir`
-    # → `ingest-gmd --as-memory`, lenient for plain markdown), one identity
-    # rule, one report. Kept as an alias for one release; the old
-    # hand-rolled walker below is gone.
-    click.echo("# rmx: `memory sync-disk` is deprecated — it now runs the memory "
-               "bridge (`rmx ingest-gmd --as-memory <dir>`); use that directly",
-               err=True)
-    if dry_run:
-        raise click.ClickException(
-            "--dry-run is no longer supported: the bridge is content-hash gated "
-            "and re-running it is cheap; run without --dry-run")
+    click.echo("# rmx: `memory sync-disk` = `rmx ingest-gmd --as-memory <dir>`", err=True)
     if not paths:
         default_dir = _default_memory_dir(_root().parent)
         if not default_dir.is_dir():
             raise click.ClickException(
-                f"no PATHS given and default memory dir does not exist: "
-                f"{default_dir}")
+                f"no PATHS given and default memory dir does not exist: {default_dir}")
         paths = (default_dir,)
-        click.echo(f"# no PATHS given — syncing default memory dir: "
-                   f"{default_dir}", err=True)
     failed = 0
     for p in paths:
         target = p.resolve()
@@ -10677,7 +10642,7 @@ def memory_sync_disk(paths: tuple[Path, ...], default_mtype: str,
             click.echo(out.get("report") or "")
     if failed:
         raise click.ClickException(f"{failed} path(s) failed")
-    return
+
 
 @memory_grp.command("forget")
 @click.argument("name_or_id")

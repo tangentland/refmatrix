@@ -396,11 +396,16 @@ def _add_enforce_entries(block: dict, project_root: "Path | None",
                        '&& "$CLAUDE_PROJECT_DIR/.claude/hooks/adr-gate.sh" 2>/dev/null || true'}],
         })
     if want(p20 / "compile_guardrails.py" if p20 else None):
+        # The compiler seeds guardrail memories through the bridge — a memory
+        # path, so its exit and stderr reach the session. It used to run
+        # behind `>/dev/null 2>&1 || true`, which hid `No such command
+        # 'sync-disk'` in nine projects (bsd-plan5-r2 #b-2-r2). A plain `if`
+        # keeps the hook at exit 0 when a project has no p20-0 dir.
         block["hooks"].setdefault("SessionStart", []).append({
             "matcher": "startup|resume|clear",
             "hooks": [{"type": "command", "command":
-                       '[ -d "$CLAUDE_PROJECT_DIR/.claude/p20-0" ] && command -v rmx >/dev/null 2>&1 '
-                       '&& python3 "$CLAUDE_PROJECT_DIR/.claude/p20-0/compile_guardrails.py" >/dev/null 2>&1 || true'}],
+                       'if [ -d "$CLAUDE_PROJECT_DIR/.claude/p20-0" ] && command -v rmx >/dev/null 2>&1; '
+                       'then python3 "$CLAUDE_PROJECT_DIR/.claude/p20-0/compile_guardrails.py"; fi'}],
         })
 
 

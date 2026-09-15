@@ -414,7 +414,7 @@ type: impression}`, `id` = filename stem, tags `[impression, ch-bsd, <category>]
 body lead-line + `**Why:**` + `**How to apply:**`), then index it:
 
 ```bash
-rmx memory sync-disk
+rmx ingest-gmd --as-memory ~/.claude/projects/<slug>/memory
 ```
 
 Save when:
