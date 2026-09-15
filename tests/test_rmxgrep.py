@@ -106,7 +106,9 @@ def test_rich_mode_exit2_falls_back_to_real_grep(tmp_path):
     assert got.returncode == 0
 
 
-def test_plain_mode_teach_ping_writes_throttle_stamp(tmp_path):
+def test_auto_mode_piped_stdout_teach_ping_writes_throttle_stamp(tmp_path):
+    """auto + stdout not a tty (the test harness pipes it): the real grep
+    answers and the background teach ping still stamps."""
     (tmp_path / ".refmatrix").mkdir()
     f = tmp_path / "a.txt"
     f.write_text("hit\n", encoding="utf8")
@@ -114,7 +116,7 @@ def test_plain_mode_teach_ping_writes_throttle_stamp(tmp_path):
     fake.write_text("#!/bin/sh\nexit 0\n")
     fake.chmod(0o755)
     got = _run(["hit", str(f)], cwd=tmp_path,
-               env_extra={"RMXGREP_MODE": "plain",
+               env_extra={"RMXGREP_MODE": "auto",
                           "RMXGREP_RMX": str(fake)})
     assert got.returncode == 0 and "hit" in got.stdout
     stamps = list((tmp_path / ".refmatrix" / ".rmxgrep-teach").glob("*"))
@@ -129,9 +131,35 @@ def test_teach_disabled_writes_no_stamp(tmp_path):
     fake.write_text("#!/bin/sh\nexit 0\n")
     fake.chmod(0o755)
     _run(["hit", str(f)], cwd=tmp_path,
-         env_extra={"RMXGREP_MODE": "plain", "RMXGREP_TEACH": "0",
+         env_extra={"RMXGREP_MODE": "auto", "RMXGREP_TEACH": "0",
                     "RMXGREP_RMX": str(fake)})
     assert not (tmp_path / ".refmatrix" / ".rmxgrep-teach").exists()
+
+
+def test_plain_is_not_an_escape_anymore(tmp_path):
+    """2026-09-15: `RMXGREP_MODE=plain` bypassed the index path with one env
+    word. On a tty it now behaves as auto → rich: rmx grep runs. (`script`
+    lends the wrapper a tty; the fake rmx leaves a marker.)"""
+    import os
+    import shutil
+    import subprocess
+    if shutil.which("script") is None:
+        import pytest
+        pytest.skip("no `script` to fake a tty")
+    (tmp_path / ".refmatrix").mkdir()
+    f = tmp_path / "a.txt"
+    f.write_text("hit\n", encoding="utf8")
+    marker = tmp_path / "rmx-ran"
+    fake = tmp_path / "fakermx"
+    fake.write_text(f"#!/bin/sh\ntouch {marker}\nexit 0\n")
+    fake.chmod(0o755)
+    env = {**os.environ, "RMXGREP_MODE": "plain", "RMXGREP_RMX": str(fake),
+           "RMXGREP_TEACH": "0"}
+    subprocess.run(["script", "-q", "/dev/null", str(RMXGREP), "hit", str(f)],
+                   cwd=tmp_path, env=env, capture_output=True, timeout=30)
+    assert marker.exists(), "plain still bypassed rmx grep on a tty"
+    for wrapper in (RMXGREP, RMXGREP.parent / "rmxrg"):
+        assert "plain) rich=0" not in wrapper.read_text()
 
 
 def test_rmxrg_outside_project_is_rg_or_absent(tmp_path):

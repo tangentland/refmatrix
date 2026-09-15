@@ -7,7 +7,7 @@
 #   * OUTSIDE an rmx project, or no rmx on PATH: exec real rg untouched.
 #   * INSIDE, rich mode (tty or RMXGREP_MODE=rich): `rmx grep` — it accepts
 #     bare rg flags; its fail-loud exit 2 falls back to real rg.
-#   * INSIDE, plain mode: real rg answers; a throttled, flag-stripped teach
+#   * INSIDE, auto mode with stdout piped: real rg answers; a throttled, flag-stripped teach
 #     ping learns the query in the background.
 #
 # Shares rmxgrep's env knobs: RMXGREP_MODE, RMXGREP_RMX, RMXGREP_TEACH,
@@ -40,9 +40,13 @@ if [ -p /dev/stdin ] || [ -p /dev/fd/0 ]; then
 fi
 
 rich=0
+# `RMXGREP_MODE=plain` used to force the real tool here. It was a bypass of
+# the index path — an agent shell exports rich and any caller could opt out
+# with one env word — and was removed 2026-09-15 at the user's direction.
+# Any value other than `rich` is auto (tty → rich); a grep that reads a
+# pipe is a filter and gets the real tool above, byte-exact.
 case "$MODE" in
     rich)  rich=1 ;;
-    plain) rich=0 ;;
     *)     [ -t 1 ] && rich=1 ;;
 esac
 

@@ -33,7 +33,7 @@ Lance vector datasets, roaring-bitmap fragments, JSONL logs (`facts.log`, `cli.l
 |----------|----------|---------|
 | `RMX_INVOCATION_SOURCE` | hooks set `hook` | telemetry source tag |
 | `RMX_PARTITION` | optional | override the memory/code partition |
-| `RMXGREP_MODE=plain` | optional | escape the grep→rmx rewrite |
+| `RMXGREP_MODE=rich` | agent shells | force the index path even when piped (the only value; `plain` was removed 2026-09-15 as a bypass) |
 | `RMX_HUB_WATCH_*` | optional | watchdog ping timeout / grace misses |
 
 ## Test Infrastructure {#test-infrastructure}
