@@ -58,6 +58,96 @@ def package_root(start: "Path | None" = None) -> Path:
     raise UpgradeError("could not locate the install's pyproject.toml")
 
 
+def _tree_root(start: "Path | None") -> "Path | None":
+    """Nearest ancestor of `start` carrying pyproject.toml, else None."""
+    if start is None:
+        return None
+    start = Path(start).resolve()
+    for p in [start, *start.parents]:
+        if (p / "pyproject.toml").exists():
+            return p
+    return None
+
+
+def venv_prefix(root: Path) -> "Path | None":
+    """`<root>/.venv` when the tree carries its own venv, else None."""
+    cand = Path(root) / ".venv"
+    return cand if (cand / "bin").is_dir() or (cand / "lib").is_dir() else None
+
+
+def editable_target(prefix: Path) -> "Path | None":
+    """Where the interpreter at `prefix` imports refmatrix from, per pip's
+    path-style editable marker (`__editable__.refmatrix-<v>.pth` = one line,
+    the `src/` dir). None when no editable marker exists (wheel install, or
+    a finder-style marker that carries no path)."""
+    prefix = Path(prefix)
+    for sp in sorted(prefix.glob("lib/python*/site-packages")):
+        for pth in sorted(sp.glob("__editable__.refmatrix*.pth")):
+            for line in pth.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("import "):
+                    return Path(line).resolve()
+    return None
+
+
+def runtime_identity(*, prefix: "Path | None" = None,
+                     import_file: "Path | None" = None) -> dict:
+    """Which tree does this interpreter actually run?
+
+    2026-09-14: `~/refmatrix/.venv`'s editable marker pointed at the DEV
+    checkout, so the deploy binary, every daemon and the hub executed
+    uncommitted code while `git -C ~/refmatrix log` looked deployed. Nothing
+    reported it. This is the one function that can: it derives the answer
+    from the interpreter PREFIX (whose tree the venv belongs to) and the
+    IMPORT PATH (whose tree the code came from), never from a package
+    attribute alone.
+
+    Returns `{version, import_path, code_root, venv_tree, editable_target,
+    dev_tree}`. `dev_tree` is True only when the venv belongs to a tree
+    (pyproject above `sys.prefix`) and the imported code comes from a
+    DIFFERENT tree; a system interpreter yields `venv_tree=None,
+    dev_tree=False` rather than a false alarm. `prefix` / `import_file` are
+    injectable so the check is testable on fake trees without patching the
+    function itself."""
+    import refmatrix
+    imp = Path(import_file or refmatrix.__file__).resolve()
+    code_root = _tree_root(imp)
+    pfx = Path(prefix or sys.prefix).resolve()
+    venv_tree = pfx.parent if (pfx.parent / "pyproject.toml").exists() else None
+    target = editable_target(pfx)
+    dev_tree = bool(venv_tree is not None and code_root is not None
+                    and code_root.resolve() != venv_tree.resolve())
+    return {
+        "version": getattr(refmatrix, "__version__", None),
+        "import_path": imp,
+        "code_root": code_root,
+        "venv_tree": venv_tree,
+        "editable_target": target,
+        "dev_tree": dev_tree,
+    }
+
+
+def verify_editable(root: Path) -> "Path | None":
+    """After `pip install -e <root>` into `<root>/.venv`, prove the venv's
+    editable marker points INTO `root` (its `src/`). Raises UpgradeError with
+    the actual target otherwise — the exact mistake of 2026-09-14 (an
+    absolute `-e <other tree>` into the deploy venv). Returns the target, or
+    None when the venv carries no editable marker (nothing to verify)."""
+    root = Path(root).resolve()
+    pfx = venv_prefix(root)
+    if pfx is None:
+        return None
+    target = editable_target(pfx)
+    if target is None:
+        return None
+    if target != root and root not in target.parents:
+        raise UpgradeError(
+            f"editable target is {target}, expected a path under {root} — "
+            f"the venv would run another tree; fix: "
+            f"{pfx / 'bin' / 'python'} -m pip install -e {root}")
+    return target
+
+
 def venv_python(root: Path) -> Path:
     """The interpreter that should `pip install` — the tree's own `.venv` if it
     has one, else the running interpreter."""
@@ -151,6 +241,11 @@ def upgrade(
     log(res.messages[-1])
 
     (install_fn or _default_install)(root, log=log)
+    # The install is injectable; the verification is not. Whatever wrote the
+    # venv, it must import THIS tree afterwards.
+    target = verify_editable(root)
+    if target is not None:
+        log(f"editable target verified: {target}")
     res.installed = True
 
     if restart:

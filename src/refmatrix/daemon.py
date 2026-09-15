@@ -2409,11 +2409,18 @@ def _op_ping(d: Daemon, args: dict) -> dict:
     # --version` reports the new install. `rmx daemon restart --relaunch`
     # polls this until it changes.
     from refmatrix import __version__ as _v
+    from refmatrix import upgrade as _up
+    # `code_path` / `dev_tree`: which tree THIS process imported. A daemon
+    # whose venv points at a dev checkout ran uncommitted code all day on
+    # 2026-09-14 while every status surface said "deployed".
+    ident = _up.runtime_identity()
     return {
         "pid": os.getpid(),
         "root": str(d.root),
         "backend": d.store._backend.kind if d.store else None,
         "version": _v,
+        "code_path": str(ident["import_path"]),
+        "dev_tree": bool(ident["dev_tree"]),
     }
 
 

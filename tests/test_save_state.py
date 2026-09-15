@@ -252,3 +252,16 @@ def test_sync_memory_dir_reports_missing_dir_not_raises(tmp_path):
     out = _sync_memory_dir(tmp_path / "nope")
     assert out["error"] and "not found" in out["error"]
     assert out["report"] is None
+
+
+def test_save_state_templates_never_install_the_dev_tree_into_deploy():
+    """2026-09-14: the save-state feedback memory literally instructed
+    `pip install -e /Users/tholley/claude_tools/refmatrix` into ~/refmatrix/.venv.
+    The shipped command templates must describe deploy as ff + relaunch."""
+    from pathlib import Path
+    for f in (Path("src/refmatrix/templates/commands/save-state.md"),
+              Path("src/refmatrix/templates/commands/commit-state.md")):
+        text = f.read_text()
+        assert "pip install -e /Users" not in text
+        assert "claude_tools/refmatrix" not in text.replace("~/claude_tools", "")
+    assert "rmx version -v" in Path("src/refmatrix/templates/commands/save-state.md").read_text()

@@ -2424,8 +2424,38 @@ def hub_status():
             last = h["history"][-1] if h["history"] else {}
             dot = "[green]●[/]" if last.get("up") else "[red]●[/]"
             paused = " [yellow]PAUSED[/]" if h.get("paused") else ""
+            ident = hub_mod._daemon_identity(Path(root)) if last.get("up") else {}
+            devflag = "  [bold red][DEV TREE][/]" if ident.get("dev_tree") else ""
             console.print(f"  {dot} {root}  policy={h['policy']} "
-                          f"restarts={h['restart_count']}{paused}")
+                          f"restarts={h['restart_count']}{paused}{devflag}")
+
+
+@main.command("version")
+@click.option("-v", "--verbose", is_flag=True,
+              help="Also print which tree this interpreter imports "
+                   "(code path, venv tree, editable target) and flag a "
+                   "dev-tree mismatch.")
+def version_cmd(verbose: bool):
+    """Print the installed version; with -v, the runtime identity.
+
+    `rmx --version` is click's eager option and says only the number. The
+    number lied on 2026-09-14: the deploy venv imported the dev tree. `-v`
+    shows the import path and shouts `[DEV TREE]` when the venv belongs to
+    one tree and the code comes from another."""
+    from refmatrix import upgrade as _up
+    ident = _up.runtime_identity()
+    console.print(f"refmatrix {ident['version']}")
+    if not verbose:
+        return
+    _print_code_identity(ident["import_path"], ident["dev_tree"])
+    console.print(f"venv tree: {ident['venv_tree'] or '(none — system interpreter)'}")
+    console.print(f"editable target: {ident['editable_target'] or '(none)'}")
+
+
+def _print_code_identity(code_path, dev_tree: bool) -> None:
+    """One line every status surface shares: what tree the code came from."""
+    flag = "  [bold red][DEV TREE][/] — this venv belongs to another tree" if dev_tree else ""
+    console.print(f"code: {code_path}{flag}")
 
 
 @main.group()
@@ -2797,6 +2827,15 @@ def daemon_status():
     healthy = daemon_mod.ping(root) if pid else False
     if pid and healthy:
         console.print(f"[green]running[/] pid={pid} root={root}")
+        # What the DAEMON imported (its ping), not what this CLI imported —
+        # separate processes, separate venvs, and on 2026-09-14 separate trees.
+        try:
+            resp = daemon_mod.call(root, "ping", {}, timeout=2.0, retries=1)
+            r = (resp or {}).get("result") or {}
+            if r.get("code_path"):
+                _print_code_identity(r["code_path"], bool(r.get("dev_tree")))
+        except Exception as e:  # noqa: BLE001 — diagnostic line, must not raise
+            console.print(f"code: [dim]unknown ({e})[/]")
     elif pid:
         # A live process whose socket is still there is BUSY, not stale:
         # starting up, rebuilding an index, or holding the store lock for a
