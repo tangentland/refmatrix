@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: task-4.1-plan-4-daemon-resilience
-title: "Task 4.1: learn_from_grep never fast-exits"
+title: "Task 4.1: learn_from_grep answers the read, marks the repair, exits deferred"
 tags: [task, plan-4]
 metadata:
   node_type: task
@@ -9,7 +9,7 @@ metadata:
   plan: plan-4-daemon-resilience
 ---
 
-# Task 4.1: learn_from_grep never fast-exits {#root}
+# Task 4.1: learn_from_grep answers the read, marks the repair, exits deferred {#root}
 
 > Plan: [[plan-4-daemon-resilience]]
 > Status: Complete
@@ -19,7 +19,7 @@ rel: part-of -> [[plan-4-daemon-resilience]]
 
 ## Requirements {#requirements}
 
-- With `store.upsert_entity` monkeypatched to raise a DuckDB `FatalException`, `_op_learn_from_grep` returns `{"added":0,"skipped":"store-invalid"}`, the daemon keeps serving, and `repair.needed` exists.
+- With `store.upsert_entity` monkeypatched to raise a DuckDB `FatalException`, `_op_learn_from_grep` returns `{"added":0,"skipped":"store-invalid"}` (the READ itself never fast-exits), `repair.needed` exists, and the daemon exits within `RMX_DEGRADE_EXIT_S` so the supervisor respawns it onto the boot repair — amended per plan Q7 (r1 #m-10: an invalidated store must not keep serving until an unrelated op trips it; ch-bsd r2 #m-8 asked for the spec and the test to say the same thing).
 
 ## Files to Create / Modify {#files}
 

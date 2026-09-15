@@ -378,8 +378,21 @@ def pid_path(root: Path) -> Path:
 
 
 def is_alive(pid: int) -> bool:
+    """Liveness of a pid. A zombie — our own child that exited and was not
+    reaped yet — still answers `kill(pid, 0)`, so a SIGTERM'd child looked
+    alive for the whole grace and got the stale-heartbeat SIGKILL (found by
+    the plan-4 r3 signal-first test on a child daemon). `waitpid` reaps it
+    when it is ours; a foreign pid (launchd's daemons) falls to `kill(0)`."""
     if pid <= 0:
         return False
+    try:
+        wpid, _status = os.waitpid(pid, os.WNOHANG)
+        if wpid == pid:
+            return False
+    except ChildProcessError:
+        pass                      # not our child: the signal probe decides
+    except OSError:
+        pass
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -973,26 +986,33 @@ class Daemon:
         interval = float(os.environ.get("RMX_HEARTBEAT_S", str(HEARTBEAT_INTERVAL_S)) or "5")
         hb = heartbeat_path(self.root)
 
+        def _touch(_f=None):
+            try:
+                hb.touch()
+            except OSError:
+                pass
+
         def _runner():
             stop = self._heartbeat_stop
             while not stop.is_set():
                 # Derived from SERVING progress (ch-bsd plan-4 r1 #s-7): once
-                # the cli pool exists, the tick is a no-op the pool must run
-                # within the interval; a deadlocked pool stops the heartbeat
-                # and the supervisor sees "wedged". Before the pools exist
-                # (store open, boot repairs) the tick is unconditional.
+                # the cli pool exists, the tick is a no-op submitted to the
+                # pool and the file is touched when it COMPLETES — however
+                # late. A saturated pool that is making progress ticks at its
+                # own pace; only a pool whose no-op never completes (a
+                # deadlock) stops the beat. r1 waited `interval` for the
+                # result and discarded a late one, so a BUSY daemon (four
+                # 19 s recalls queued behind the writer lock) read as a wedge
+                # after 60 s — the state task 4.3 exists to protect (ch-bsd
+                # plan-4 r2 #b-2). Before the pools exist (store open, boot
+                # repairs) the tick is unconditional.
                 pool = getattr(self, "_cli_pool", None)
-                alive = True
-                if pool is not None:
+                if pool is None:
+                    _touch()
+                else:
                     try:
-                        fut = pool.submit(lambda: True)
-                        fut.result(timeout=interval)
-                    except Exception:  # noqa: BLE001 — timeout or pool gone
-                        alive = False
-                if alive:
-                    try:
-                        hb.touch()
-                    except OSError:
+                        pool.submit(lambda: True).add_done_callback(_touch)
+                    except Exception:  # noqa: BLE001 — pool gone: no tick
                         pass
                 stop.wait(interval)
 
@@ -5234,58 +5254,81 @@ def spawn_daemon_subprocess(
         f"within {wait_for_ready:.0f}s")
 
 
-def stop_daemon(root: Path, *, timeout: float = 5.0,
-                report: "dict | None" = None) -> bool:
-    """Send a stop op, then wait for the pid to exit. Returns True if the
-    daemon stopped within the timeout (or if no daemon was running).
-    `report` (when given) records WHY the stop op was or was not sent
-    (`stop_op`: "sent" / "skipped: not answering ping" / "failed: …") so a
-    supervisor's log can tell a delivered stop from a swallowed one
-    (ch-bsd plan-4 r1 #m-12)."""
-    # Use ping as the readiness signal — pidfile can be stale (orphaned
-    # daemon survived a losing concurrent spawn that overwrote it).
+def graceful_stop(root: Path, *, grace: float,
+                  report: "dict | None" = None) -> bool:
+    """Ask a daemon to stop and give it `grace` seconds: the `stop` op when
+    it answers ping, SIGTERM at t=0 when it does not — the SIGNAL GOES
+    FIRST, the wait comes after. Never SIGKILL; returns False when the pid
+    is still alive after the grace so the caller escalates knowingly.
+    Lives here (not in hub.py) so `stop_daemon` — the adoption path and
+    `rmx daemon stop` — has the same order: r1 fixed the hub and left this
+    sibling spending its whole grace before the first signal (ch-bsd plan-4
+    r2 #b-3, 4th fix-at-the-quoted-line). `report` records what was sent."""
+    rep = report if report is not None else {}
     pid = read_pid(root)
-    socket_alive = ping(root, timeout=0.5)
-    if pid is None and not socket_alive:
-        if report is not None:
-            report["stop_op"] = "skipped: no daemon"
+    answers = False
+    try:
+        answers = bool(ping(root, timeout=0.5, retries=0))
+    except Exception:  # noqa: BLE001 — a transport error is "not answering"
+        answers = False
+    if pid is None and not answers:
+        rep["stop_op"] = "skipped: no daemon"
         return True
-
-    # If ping works, ask the daemon to stop via its protocol so it can
-    # cleanly join its watcher thread and unlink its socket.
-    if socket_alive:
+    if answers:
         try:
-            call(root, "stop", timeout=2.0)
-            if report is not None:
-                report["stop_op"] = "sent"
+            call(root, "stop", {}, timeout=2.0, retries=0)
+            rep["stop_op"] = "sent"
         except Exception as e:  # noqa: BLE001 — recorded, not swallowed
-            if report is not None:
-                report["stop_op"] = f"failed: {type(e).__name__}: {e}"
-    elif report is not None:
-        report["stop_op"] = "skipped: not answering ping (SIGTERM after the wait)"
-
-    # Discover the real pid if pidfile was stale: ping result carries it.
-    if pid is None and socket_alive:
-        try:
-            resp = call(root, "ping", timeout=0.5)
-            pid_candidate = (resp.get("result") or {}).get("pid")
-            if isinstance(pid_candidate, int):
-                pid = pid_candidate
-        except Exception:
-            pass
-
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if pid is None or not is_alive(pid):
-            return True
-        if not ping(root, timeout=0.2) and not socket_path(root).exists():
-            return True
-        time.sleep(0.05)
-
-    # Timed out — SIGTERM the pid we have (if any) for one last try.
-    if pid is not None:
+            rep["stop_op"] = f"failed: {type(e).__name__}: {e}"
+        if pid is None:
+            # pidfile stale/absent: the ping result carries the real pid
+            try:
+                resp = call(root, "ping", timeout=0.5, retries=0)
+                cand = (resp.get("result") or {}).get("pid")
+                if isinstance(cand, int):
+                    pid = cand
+            except Exception:  # noqa: BLE001 — no pid to wait on, then
+                pass
+    else:
+        rep["stop_op"] = "skipped: not answering ping (SIGTERM sent now)"
+    if rep.get("stop_op") != "sent" and pid is not None:
         try:
             os.kill(pid, signal.SIGTERM)
+            rep["signal"] = "SIGTERM"
+        except ProcessLookupError:
+            return True
+        except PermissionError:
+            rep["signal"] = "SIGTERM refused (permission)"
+    deadline = time.monotonic() + max(0.0, grace)
+    while time.monotonic() < deadline:
+        if pid is None:
+            if not socket_path(root).exists():
+                return True
+        elif not is_alive(pid):
+            return True
+        time.sleep(0.05)
+    return pid is None or not is_alive(pid)
+
+
+def stop_daemon(root: Path, *, timeout: float = 5.0,
+                report: "dict | None" = None) -> bool:
+    """`graceful_stop` (signal first, then the grace) and, for a daemon that
+    ignored a delivered stop op, SIGTERM + 2 s; then the heartbeat-gated
+    SIGKILL. Returns True if the daemon stopped (or none was running).
+    `report` records WHY the stop op was or was not sent (`stop_op`), the
+    signal, and the kill decision, so a supervisor's log can tell a
+    delivered stop from a swallowed one (ch-bsd plan-4 r1 #m-12)."""
+    rep = report if report is not None else {}
+    if graceful_stop(root, grace=timeout, report=rep):
+        return True
+    pid = read_pid(root)
+    if pid is None:
+        return True
+    if rep.get("signal") is None:
+        # the stop op was delivered and ignored: one SIGTERM, 2 s
+        try:
+            os.kill(pid, signal.SIGTERM)
+            rep["signal"] = "SIGTERM (after the stop op)"
         except ProcessLookupError:
             return True
         deadline2 = time.time() + 2.0
@@ -5293,30 +5336,28 @@ def stop_daemon(root: Path, *, timeout: float = 5.0,
             if not is_alive(pid):
                 return True
             time.sleep(0.05)
-        # Final escalation: SIGKILL — but ONLY for a wedge (stale or absent
-        # heartbeat). A daemon whose heartbeat is fresh is WORKING (an ingest,
-        # an index rebuild, a model reconnect) and killing it mid-write is the
-        # 2026-09-14 ART corruption (plan-4 r1 #b-2/#b-3; constitution XII:
-        # supervisors never SIGKILL a working daemon). The caller gets False
-        # and decides — adoption yields, the watchdog kickstarts knowingly.
-        hb_age = heartbeat_age(root)
-        if hb_age <= HEARTBEAT_STALE_S:
-            if report is not None:
-                report["kill"] = (f"withheld: heartbeat {hb_age:.0f}s old (working); "
-                                  f"SIGTERM sent, pid {pid} still alive")
-            return False
-        try:
-            os.kill(pid, signal.SIGKILL)
-            if report is not None:
-                report["kill"] = f"SIGKILL (heartbeat {hb_age:.0f}s stale)"
-        except ProcessLookupError:
+    # Final escalation: SIGKILL — but ONLY for a wedge (stale or absent
+    # heartbeat). A daemon whose heartbeat is fresh is WORKING (an ingest,
+    # an index rebuild, a model reconnect) and killing it mid-write is the
+    # 2026-09-14 ART corruption (plan-4 r1 #b-2/#b-3; constitution XII:
+    # supervisors never SIGKILL a working daemon). The caller gets False
+    # and decides — adoption yields, the watchdog kickstarts knowingly.
+    hb_age = heartbeat_age(root)
+    if hb_age <= HEARTBEAT_STALE_S:
+        rep["kill"] = (f"withheld: heartbeat {hb_age:.0f}s old (working); "
+                       f"SIGTERM sent, pid {pid} still alive")
+        return False
+    try:
+        os.kill(pid, signal.SIGKILL)
+        rep["kill"] = f"SIGKILL (heartbeat {hb_age:.0f}s stale)"
+    except ProcessLookupError:
+        return True
+    deadline3 = time.time() + 2.0
+    while time.time() < deadline3:
+        if not is_alive(pid):
             return True
-        deadline3 = time.time() + 1.0
-        while time.time() < deadline3:
-            if not is_alive(pid):
-                return True
-            time.sleep(0.05)
-    return False
+        time.sleep(0.05)
+    return not is_alive(pid)
 
 
 def _harden_fork_safety() -> None:
@@ -5341,6 +5382,43 @@ def _harden_fork_safety() -> None:
     import os as _os
     _os.environ.setdefault("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES")
     _os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
+
+def is_supervised_start() -> bool:
+    """Is this process launchd's own start of a refmatrix daemon? True under
+    the plist's explicit `RMX_SUPERVISED=1` OR launchd's `XPC_SERVICE_NAME`
+    (exported to every job it spawns) naming one of our daemon labels. The
+    second needs no plist re-render and cannot be forgotten by a deploy
+    (ch-bsd plan-4 r2 #b-1: `relaunch-fleet` restarted two stores on plists
+    without the variable, and a supervised start on them exited 1 into the
+    KeepAlive loop plan 4 exists to end)."""
+    if os.environ.get("RMX_SUPERVISED") == "1":
+        return True
+    return os.environ.get("XPC_SERVICE_NAME", "").startswith("com.refmatrix.daemon.")
+
+
+def refuse_unsupervised_start(root: Path) -> None:
+    """The UNSUPERVISED foreground gate, typed (ch-bsd plan-4 r2 #b-4): a
+    daemon that answers is refused as "already running"; one that is alive
+    but not answering (booting, rebuilding, holding the writer lock) is
+    refused as BUSY — never reaped, which is what the bare `ping` gate did
+    (a busy daemon fell through to `_reap_predecessor`). Only an absent
+    daemon lets the caller serve."""
+    from refmatrix import discovery
+    st = discovery.daemon_status(root, retries=0)
+    if st.get("up"):
+        raise RuntimeError(
+            f"daemon already running for {root}; stop it before "
+            f"launching in the foreground (`rmx daemon stop`), or run under "
+            f"the supervisor (RMX_SUPERVISED=1) to adopt it"
+        )
+    if st.get("busy"):
+        raise RuntimeError(
+            f"daemon busy pid={st.get('pid')} for {root} (alive, not answering — "
+            f"starting, rebuilding an index, or holding the store lock); not "
+            f"reaping it. Wait, `rmx daemon stop`, or run under the supervisor "
+            f"(RMX_SUPERVISED=1) to adopt it"
+        )
 
 
 def serve_foreground(root: Path, *, partition: str | None = None,
@@ -5370,19 +5448,17 @@ def serve_foreground(root: Path, *, partition: str | None = None,
     )
     # A live unsupervised daemon on this root is adopted (asked to stop),
     # not a reason to exit 1 into a KeepAlive spawn loop (plan-4 task 4.4) —
-    # but only by the SUPERVISOR's start (the plist sets RMX_SUPERVISED=1;
-    # ch-bsd plan-4 r1 #m-9): a manual foreground start on a supervised
-    # store must not evict launchd's daemon.
+    # but only by the SUPERVISOR's start (ch-bsd plan-4 r1 #m-9): a manual
+    # foreground start on a supervised store must not evict launchd's
+    # daemon. `is_supervised_start` reads launchd's own XPC_SERVICE_NAME as
+    # well as the plist's RMX_SUPERVISED, so the gate does not depend on a
+    # plist re-render (r2 #b-1: two of eight stores ran the old plist).
     if supervised is None:
-        supervised = os.environ.get("RMX_SUPERVISED") == "1"
+        supervised = is_supervised_start()
     if supervised:
         daemon._adopt_unsupervised(socket_path(root))
-    elif ping(root):
-        raise RuntimeError(
-            f"daemon already running for {root}; stop it before "
-            f"launching in the foreground (`rmx daemon stop`), or run under "
-            f"the supervisor (RMX_SUPERVISED=1) to adopt it"
-        )
+    else:
+        refuse_unsupervised_start(root)
 
     lock_path = root / "daemon.lock"
     lockf = lock_path.open("w")

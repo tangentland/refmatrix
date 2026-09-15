@@ -2559,6 +2559,19 @@ def hub_relaunch_fleet(rmx_bin):
         if not lc.is_loaded(root):
             console.print(f"[dim]skip[/] {root} (not supervised)")
             continue
+        # A plist rendered before a setting existed keeps the old behaviour
+        # across every relaunch (r2 #b-1: two stores without RMX_SUPERVISED
+        # looped on exit 1). Re-install on drift, verified loaded, THEN
+        # restart the process on it.
+        ok, why = lc.check(root)
+        if not ok:
+            try:
+                lc.reinstall(root)
+                console.print(f"[yellow]reinstalled[/] {root} plist ({why})")
+            except Exception as e:  # noqa: BLE001 — named per store, then counted
+                failed += 1
+                console.print(f"[red]FAILED[/] {root}  plist reinstall: {e}")
+                continue
         env = {**os.environ, "REFMATRIX_ROOT": str(root)}
         r = subprocess.run([rmx, "daemon", "restart", "--relaunch"], env=env,
                            capture_output=True, text=True)
@@ -3140,8 +3153,12 @@ def daemon_launchctl():
 @click.option("--force", is_flag=True,
               help="Rewrite the plist and reload even if already "
                    "installed and loaded.")
+@click.option("--check", "check_only", is_flag=True,
+              help="Compare the installed plist with its render (exit 1 on "
+                   "drift); write nothing. Run with the deployed rmx.")
 def daemon_launchctl_install(watch: bool, watch_roots: tuple[Path, ...],
-                             debounce_ms: int, semantic: bool, force: bool):
+                             debounce_ms: int, semantic: bool, force: bool,
+                             check_only: bool):
     """Install + bootstrap the LaunchAgent plist for the active store."""
     from refmatrix import launchctl as lc
     root = _root()
@@ -3149,6 +3166,17 @@ def daemon_launchctl_install(watch: bool, watch_roots: tuple[Path, ...],
         raise click.ClickException(
             f"no refmatrix at {root}. Run `rmx init` first."
         )
+    if check_only:
+        # The plist carries settings the daemon needs (RMX_SUPERVISED, the
+        # rmx path, watch roots); nothing re-rendered it on deploy until
+        # ch-bsd plan-4 r2 #b-1. Same shape as `install-hooks --check`.
+        ok, why = lc.check(root)
+        if ok:
+            console.print(f"[green]plist in sync[/] {lc.plist_path(root)}")
+            return
+        console.print(f"[red]plist DRIFT[/] {why}")
+        console.print("fix: `rmx daemon launchctl install --force` (or `rmx hub relaunch-fleet`)")
+        raise SystemExit(1)
     roots_list = [Path(r).resolve() for r in watch_roots] or None
     try:
         p = lc.install(
