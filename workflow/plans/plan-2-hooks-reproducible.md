@@ -69,8 +69,12 @@ One generator, one target, one check:
 ### Q4: Stop-time `focus summarize --promote` — keep it? {#q4}
 **Status:** RESOLVED (after ch-bsd bsd-plan2 #s-6, 2026-09-14)
 
-**Decision:** Keep (default on). It implements `feedback_save_state_includes_promote` ("STM
-graduates at PreCompact/Stop") and costs 0.13 s. Its no-daemon branch no longer opens the active
+**Decision (revised after bsd-plan2-r2 #s-1):** Keep (default on), BOUNDED. The 0.13 s figure was an
+idle-daemon number; live firings on 2026-09-14 took 55 s / 15 s / 6.5 s / 0.1 s while the daemon
+was busy with the detached bridge and a 34 s post-commit sync. The Stop entry now runs
+`rmx focus summarize --promote --timeout 5` with no daemon-call retries: past 5 s it fails loud
+("promote skipped this turn") and PreCompact / save-state catch up. A hook may shout; it may not
+hold the turn for the store. It implements `feedback_save_state_includes_promote`. Its no-daemon branch no longer opens the active
 slot from a CLI process: `focus summarize --promote` refuses loudly when the daemon is down
 (store-through-daemon, constitution VII), the same contract `ingest-gmd --detach` has.
 **Rationale:** the plan's "equals what runs today" requirement was about not LOSING hooks; adding

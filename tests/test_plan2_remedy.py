@@ -104,3 +104,76 @@ def test_focus_summarize_promote_refuses_without_daemon(tmp_path, monkeypatch):
     r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote"])
     assert r.exit_code != 0
     assert "daemon" in r.output.lower()
+
+
+# ---- round 2 (bsd-plan2-r2) ----
+
+def test_stop_promote_is_bounded_and_fails_loud_when_busy(tmp_path, monkeypatch):
+    """Live: the Stop hook's `focus summarize --promote` took 55 s / 15 s / 6 s
+    while the daemon was busy with a bridge + sync (Q4 assumed 0.13 s). The
+    hook path is bounded; a timeout is a loud skip, not a wait."""
+    from refmatrix import cli as cli_mod
+    from refmatrix import daemon as daemon_mod
+    from refmatrix import stm as stm_mod
+    root = tmp_path / ".refmatrix"; root.mkdir()
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    monkeypatch.setenv("RMX_SESSION", "s1")
+    stm_mod.Stm(root, "s1").record("input", "hi")
+    monkeypatch.setattr(daemon_mod, "ping", lambda r, **kw: True)
+    def slow_call(root, op, args=None, timeout=60.0, **kw):
+        raise TimeoutError(f"no answer in {timeout}s")
+    monkeypatch.setattr(daemon_mod, "call", slow_call)
+    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "0.5"])
+    assert r.exit_code != 0
+    assert "busy" in r.output.lower() and "skipped" in r.output.lower()
+    # the generator passes the bound on the Stop hook
+    block = _claude_hook_block(tmp_path / ".refmatrix")
+    stop = [c for _, _, c in _cmds(block, "Stop") if "focus summarize --promote" in c][0]
+    assert "--timeout" in stop
+
+
+def test_promote_refusal_names_a_real_flag(tmp_path, monkeypatch):
+    from refmatrix import cli as cli_mod
+    from refmatrix import daemon as daemon_mod
+    from refmatrix import stm as stm_mod
+    root = tmp_path / ".refmatrix"; root.mkdir()
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    monkeypatch.setenv("RMX_SESSION", "s1")
+    stm_mod.Stm(root, "s1").record("input", "hi")
+    monkeypatch.setattr(daemon_mod, "ping", lambda r, **kw: False)
+    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote"])
+    assert r.exit_code != 0 and "--no-promote" not in r.output
+
+
+def test_no_claude_apply_then_check_is_clean(tmp_path):
+    proj = _project(tmp_path)
+    install(project_root=proj, refmatrix_root=proj / ".refmatrix", git=False, claude=False,
+            briefing=False, agent_env=False, search=False, scope="project", apply=True, force=True)
+    rec = json.loads((proj / ".claude" / "rmx-hooks.json").read_text())
+    assert rec["flags"]["claude"] is False
+    ok, diff = hooks_mod.check(proj)
+    assert ok, diff
+
+
+def test_detach_busy_branch_waits_wall_clock_and_names_the_pid(tmp_path, monkeypatch):
+    import time
+    from refmatrix import cli as cli_mod
+    from refmatrix import daemon as daemon_mod
+    memdir = tmp_path / "mem"; memdir.mkdir()
+    (memdir / "m.md").write_text('---\ngmd: "0.1"\nid: m\ntitle: "m"\ntags: [x]\n---\n# m {#root}\n')
+    monkeypatch.setattr(cli_mod, "_root", lambda: tmp_path / ".refmatrix")
+    monkeypatch.setattr(daemon_mod, "ping", lambda root, **kw: False)
+    monkeypatch.setattr("refmatrix.discovery.daemon_status", lambda root: {"up": False, "busy": True, "pid": 77})
+    monkeypatch.setenv("RMX_DETACH_WAIT_S", "1")
+    t0 = time.monotonic()
+    r = CliRunner().invoke(cli_mod.main, ["ingest-gmd", "--as-memory", "--detach", str(memdir)])
+    elapsed = time.monotonic() - t0
+    assert r.exit_code != 0
+    assert "busy pid=77" in r.output
+    assert elapsed < 2.5, f"waited {elapsed:.1f}s for a 1s budget"
+
+
+def test_intuition_doc_describes_the_shipped_stop_hook():
+    text = (Path(__file__).resolve().parents[1] / "docs" / "hooks" / "intuition-style-hooks.md").read_text()
+    assert "Phase C4" not in text and "out of scope" not in text
+    assert "focus summarize --promote" in text

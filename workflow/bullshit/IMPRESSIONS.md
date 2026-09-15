@@ -23,4 +23,12 @@ tags: [bsd, impressions]
 - 2026-09-14 (plan-1 r2) — Same commit that fixed "unreadable ≠ verified" in `editable_target(strict)` shipped a new `except Exception: theirs = None` → green in `_verify_relaunch`. Silent-pass-on-error migrates between call sites; grep every verify/guard function in the diff for `except` + fall-through, not just the one the finding named. {#imp-silent-pass-migrates}
 - 2026-09-14 (plan-1 r2) — Remediation quality is up: 7/9 closed, live surfaces match claims, registry actually updated, plan status honest. The residual is one dict-key read. {#imp-plan1-r2-progress}
 
+- 2026-09-14 (plan-3) — Third run where the cited test proves EXISTENCE, not the claim: `_click_cmd(path)` for "calls the verb", a `no_twin` set that excludes all 14 `memory_recall` params for "defaults match". Count the population vs the compared set before crediting any "every X has a Y" test. PATTERN filed. {#imp-existence-check-tests}
+- 2026-09-14 (plan-3) — Verb-layer migrations move code but not tests: 18 verbs, 0 new tests, summaries 3.2/3.3 have no TDD section; the recorded full log had 4 failures the commit message reported as 2. Re-run the cited log's files at HEAD; a log that disagrees with the commit message is not a record. {#imp-migration-no-tests}
+- 2026-09-14 (plan-3) — GOOD: plan status stayed `in-progress`, the widen mutation fails, table output is byte-identical, deployed 0.68.1 serves 28==28. The status-flip streak broke at two. Keep the escalation armed but note the correction. {#imp-status-flip-corrected}
+
 rel: reinforces -> [[feedback_no_silent_failures]]
+
+- 2026-09-14 (plan-2 r2) — Cost claims are measured on an idle daemon: the Stop promote was "0.13 s" on paper and 55 s / 15 s / 6.6 s in the first three live firings while the bridge and a post-commit sync held the writer. For any foreground hook, read its `source=hook` latencies from cli.log after the fleet has been busy, not the one-off timing. {#imp-cost-measured-idle}
+- 2026-09-14 (plan-2 r2) — Remedies that follow my own one-line fix suggestion verbatim can still be wrong (`record_flags` now runs for `--no-claude` but does not record `claude`, so `--check` reports false drift). Re-probe the exact scenario the finding named after every remedy; the finding's suggested fix is a hint, not the acceptance test. {#imp-verbatim-fix}
+- 2026-09-14 (plan-2 r2) — Round-2 quality: 9/11 closed, each reproduced by probe; `check()` is now a real guard (six mutation classes detected). The residual is a decision on real numbers, not code. {#imp-plan2-r2-progress}
