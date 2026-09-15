@@ -55,7 +55,11 @@ HEARTBEAT_STALE_S = daemon_mod.HEARTBEAT_STALE_S
 # A restart is graceful first (`daemon stop` → SIGTERM) and only escalates
 # to `kickstart -k` (SIGKILL) after this many seconds — the 2026-09-14
 # corruption was a SIGKILL on a daemon mid-reconnect to a model worker.
-RMX_HUB_KILL_GRACE_S = float(os.environ.get("RMX_HUB_KILL_GRACE_S", "30"))
+# Three pool drains at RMX_DAEMON_SHUTDOWN_TIMEOUT_S (10 s each) plus the store
+# close: 30 s could SIGKILL a daemon doing exactly what it was asked (ch-bsd
+# plan-4 r2 #s-5). Q6 records the reconciliation.
+DEFAULT_KILL_GRACE_S = 45.0
+RMX_HUB_KILL_GRACE_S = float(os.environ.get("RMX_HUB_KILL_GRACE_S", str(DEFAULT_KILL_GRACE_S)))
 QUEUE_ALERT_INTERVAL_S = float(os.environ.get("RMX_HUB_QUEUE_ALERT_INTERVAL", "1800"))
 # Catalog footprint that earns a line in the queue alert. DuckDB reuses freed
 # blocks but never shrinks the file, so a store can grow without bound and
@@ -293,6 +297,28 @@ class Watchdog:
             if restarted:
                 self.restart_counts[key] = self.restart_counts.get(key, 0) + 1
 
+    def _await_shutdown(self, root: Path) -> None:
+        """A pid still alive after the grace WITH a fresh heartbeat is doing
+        what it was asked (draining pools, closing DuckDB) — kickstart -k
+        now would SIGKILL it mid-close, the corruption the plan names. Wait
+        one more grace (or until it exits / its heartbeat goes stale), then
+        the caller kicks knowingly (ch-bsd plan-4 r2 #s-5)."""
+        pid = daemon_mod.read_pid(root)
+        if not pid or not daemon_mod.is_alive(pid):
+            return
+        if daemon_mod.heartbeat_age(root) >= RMX_HUB_KILL_GRACE_S:
+            return
+        _log(f"watchdog: pid={pid} still alive with a fresh heartbeat after the "
+             f"grace (shutting down?); waiting one more {RMX_HUB_KILL_GRACE_S:g}s "
+             f"before kickstart -k")
+        deadline = time.monotonic() + RMX_HUB_KILL_GRACE_S
+        while time.monotonic() < deadline:
+            if not daemon_mod.is_alive(pid):
+                return
+            if daemon_mod.heartbeat_age(root) >= RMX_HUB_KILL_GRACE_S:
+                return
+            time.sleep(0.1)
+
     def _restart(self, root: Path, *, alive: bool = False) -> bool:
         """Restart a daemon: a live-but-wedged one gets a SIGNAL FIRST (the
         `stop` op when it answers ping, SIGTERM otherwise) and then the
@@ -305,6 +331,8 @@ class Watchdog:
                 ok = graceful_stop(root, grace=RMX_HUB_KILL_GRACE_S)
                 _log(f"watchdog graceful stop {root}: "
                      f"{'stopped' if ok else f'still alive after {RMX_HUB_KILL_GRACE_S:g}s grace'}")
+                if not ok:
+                    self._await_shutdown(root)
             except Exception as e:
                 _log(f"watchdog graceful stop failed for {root}: {e}")
         try:
@@ -989,37 +1017,14 @@ def stop_hub(*, timeout: float = 5.0, port: int = DEFAULT_PORT) -> bool:
 
 
 def graceful_stop(root: Path, *, grace: float) -> bool:
-    """Ask a live daemon to stop and give it `grace` seconds to exit: the
-    `stop` op when it answers ping, SIGTERM when it does not — the signal
-    goes FIRST, the wait comes after (ch-bsd plan-4 r1 #b-3). Never SIGKILL:
-    returns False when the pid is still alive after the grace and lets the
-    caller escalate (kickstart -k) knowingly."""
-    import signal as _signal
-    pid = daemon_mod.read_pid(root)
+    """The hub's view of `daemon.graceful_stop` (signal first, then the
+    grace, never SIGKILL) with the decision logged. One implementation for
+    the watchdog, the adoption path and `rmx daemon stop` (ch-bsd plan-4 r2
+    #b-3: r1 fixed the order here and left the daemon's sibling behind)."""
     report: dict = {}
-    if pid is None:
-        return True
-    if daemon_mod.ping(root, timeout=0.5, retries=0):
-        try:
-            daemon_mod.call(root, "stop", {}, timeout=2.0, retries=0)
-            report["stop_op"] = "sent"
-        except Exception as e:  # noqa: BLE001
-            report["stop_op"] = f"failed: {type(e).__name__}: {e}"
-    if report.get("stop_op") != "sent":
-        try:
-            os.kill(pid, _signal.SIGTERM)
-            report["signal"] = "SIGTERM"
-        except ProcessLookupError:
-            return True
-        except PermissionError:
-            report["signal"] = "SIGTERM refused (permission)"
-    _log(f"graceful stop {root}: pid={pid} {report}")
-    deadline = time.monotonic() + max(0.0, grace)
-    while time.monotonic() < deadline:
-        if not daemon_mod.is_alive(pid):
-            return True
-        time.sleep(0.1)
-    return not daemon_mod.is_alive(pid)
+    ok = daemon_mod.graceful_stop(root, grace=grace, report=report)
+    _log(f"graceful stop {root}: {report} → {'stopped' if ok else 'still alive'}")
+    return ok
 
 
 def _queue_row_is_hot(q: dict) -> bool:

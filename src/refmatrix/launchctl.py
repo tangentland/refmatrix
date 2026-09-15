@@ -395,6 +395,90 @@ def install(root: Path, *, partition: str | None = None,
     return p
 
 
+def installed_flags(root: Path) -> dict:
+    """The install-time flags, recovered from the installed plist's
+    ProgramArguments (watch / debounce_ms / semantic / watch_roots) and its
+    RMX_PARTITION env — what `render_plist` needs to re-render the SAME
+    plist. Raises FileNotFoundError when nothing is installed."""
+    import plistlib
+    p = plist_path(root)
+    if not p.exists():
+        raise FileNotFoundError(f"not installed: {p}")
+    data = plistlib.loads(p.read_bytes())
+    args = list(data.get("ProgramArguments") or [])
+    flags: dict = {"watch": True, "debounce_ms": 500, "semantic": False,
+                   "watch_roots": None, "partition": None}
+    roots: list[Path] = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--no-watch":
+            flags["watch"] = False
+        elif a == "--semantic":
+            flags["semantic"] = True
+        elif a == "--debounce-ms" and i + 1 < len(args):
+            flags["debounce_ms"] = int(args[i + 1]); i += 1
+        elif a == "--watch-root" and i + 1 < len(args):
+            roots.append(Path(args[i + 1])); i += 1
+        i += 1
+    if roots:
+        flags["watch_roots"] = roots
+    env = data.get("EnvironmentVariables") or {}
+    if env.get("RMX_PARTITION"):
+        flags["partition"] = env["RMX_PARTITION"]
+    return flags
+
+
+def check(root: Path) -> "tuple[bool, str]":
+    """Installed plist == its render (the `install-hooks --check` shape for
+    plists). Until 2026-09-14 nothing compared the two: `relaunch-fleet`
+    restarted two stores on plists rendered before `RMX_SUPERVISED` existed
+    and the supervised start on them exited 1 into the KeepAlive loop
+    (ch-bsd plan-4 r2 #b-1). Returns (True, "") or (False, why). Run it
+    with the DEPLOYED rmx: the render bakes this process's `rmx` path."""
+    import plistlib
+    p = plist_path(root)
+    try:
+        flags = installed_flags(root)
+    except FileNotFoundError as e:
+        return False, str(e)
+    installed = p.read_bytes()
+    rendered = render_plist(root, **flags)
+    if installed == rendered:
+        return True, ""
+    have = plistlib.loads(installed)
+    want = plistlib.loads(rendered)
+    why: list[str] = []
+    he, we = have.get("EnvironmentVariables") or {}, want.get("EnvironmentVariables") or {}
+    for k in sorted(set(he) | set(we)):
+        if k not in he:
+            why.append(f"env {k} missing")
+        elif k not in we:
+            why.append(f"env {k} extra")
+        elif he[k] != we[k]:
+            why.append(f"env {k}: installed {he[k]!r} != rendered {we[k]!r}")
+    if have.get("ProgramArguments") != want.get("ProgramArguments"):
+        why.append(f"ProgramArguments: installed {have.get('ProgramArguments')} "
+                   f"!= rendered {want.get('ProgramArguments')}")
+    for k in sorted(set(have) | set(want)):
+        if k in ("EnvironmentVariables", "ProgramArguments"):
+            continue
+        if have.get(k) != want.get(k):
+            why.append(f"{k}: installed {have.get(k)!r} != rendered {want.get(k)!r}")
+    return False, f"{p} drifted from its render: " + "; ".join(why or ["bytes differ"])
+
+
+def reinstall(root: Path) -> Path:
+    """Re-render + reload an installed plist with its own flags, then VERIFY
+    the label is loaded — `install --force` has left a label unloaded
+    (thiquet, 2026-09-14), so a plain install follows when it did."""
+    flags = installed_flags(root)
+    p = install(root, force=True, **flags)
+    if not is_loaded(root):
+        p = install(root, **flags)
+    return p
+
+
 def uninstall(root: Path) -> bool:
     """Bootout the agent (if loaded) and remove the plist file.
     Returns True if a plist was removed, False if there was nothing
