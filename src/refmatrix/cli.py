@@ -8449,10 +8449,74 @@ def _sync_memory_dir(memdir: Path) -> dict:
         out["report"] = _ingest_gmd_sync(
             [memdir.resolve()], as_memory=True, partition=partition,
         )
+    except click.ClickException as e:
+        if "ingest already active" not in str(e):
+            out["error"] = f"{type(e).__name__}: {e}"
+        else:
+            _bridge_wait_for_active_job(memdir, partition, str(e), out)
     except Exception as e:  # noqa: BLE001 — reported, not hidden
         out["error"] = f"{type(e).__name__}: {e}"
     _parse_bridge_report(out)
     return out
+
+
+def _bridge_wait_for_active_job(memdir: Path, partition: str, err: str, out: dict) -> None:
+    """Two bridge runs overlapped (save-state's sync + the SessionStart
+    catch-up, or a hook firing under a manual `ingest-gmd`): the daemon's
+    single-active-ingest guard refused the second one. Instead of printing
+    FAILED (plan-5 task 5.2, ch-bsd e2e #sk-2): find the running job, wait
+    for it (bounded by RMX_BRIDGE_WAIT_S, 120 s); if its targets cover the
+    memory dir its report IS ours, otherwise run our own ingest once it has
+    finished. A wait that runs out is reported with the job id."""
+    import re as _re
+    import time as _time
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    m = _re.search(r"job ([0-9a-f]+)", err)
+    jid = m.group(1) if m else None
+    out["waited"] = True
+    out["waited_job"] = jid
+    if jid is None:
+        out["error"] = f"ClickException: {err}"
+        return
+    budget = float(os.environ.get("RMX_BRIDGE_WAIT_S", "120") or "120")
+    t0 = _time.monotonic()
+    job: dict = {}
+    while True:
+        try:
+            resp = daemon_mod.call(root, "ingest_gmd_status", {"job_id": jid},
+                                   timeout=10.0, retries=0)
+        except Exception as e:  # noqa: BLE001 — the wait itself failed loudly
+            out["error"] = f"waiting for ingest job {jid}: {type(e).__name__}: {e}"
+            return
+        job = (resp.get("result") or {}).get("job") or {} if resp.get("ok") else {}
+        if not resp.get("ok"):
+            out["error"] = f"waiting for ingest job {jid}: {resp.get('error')}"
+            return
+        if job.get("status") != "running":
+            break
+        if _time.monotonic() - t0 > budget:
+            out["error"] = (f"ingest job {jid} still running after {budget:g}s "
+                            f"({job.get('files_done')}/{job.get('files_total')} files); "
+                            f"the memory dir will be bridged by the next save-state / "
+                            f"SessionStart, or run `rmx ingest-gmd --as-memory {memdir}`")
+            return
+        _time.sleep(0.5)
+    targets = [str(Path(t).resolve()) for t in ((job.get("args") or {}).get("targets") or [])]
+    me = str(memdir.resolve())
+    covered = any(me == t or me.startswith(t.rstrip("/") + "/") for t in targets)
+    if job.get("status") == "done" and covered:
+        res = job.get("result") or {}
+        out["report"] = str(res.get("report") if isinstance(res, dict) else res)
+        return
+    if job.get("status") != "done" and covered:
+        out["error"] = f"ingest job {jid} over {memdir} ended {job.get('status')}: {job.get('error')}"
+        return
+    # The other job did not cover our dir: now the slot is free, run ours.
+    try:
+        out["report"] = _ingest_gmd_sync([memdir.resolve()], as_memory=True, partition=partition)
+    except Exception as e:  # noqa: BLE001
+        out["error"] = f"{type(e).__name__}: {e}"
 
 
 def _parse_bridge_report(out: dict) -> None:
