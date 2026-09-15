@@ -55,6 +55,9 @@ def repair_marker_path(root: Path) -> Path:
 # that must pass the accept loop is exactly what stalls when the daemon is
 # busy; the heartbeat keeps ticking through an ingest, an index rebuild or a
 # model-worker reconnect, so "busy" and "dead" are distinguishable.
+# How long a supervised start waits for an unsupervised predecessor to stop
+# gracefully before serve_forever's reap escalates (plan-4 task 4.4).
+ADOPT_GRACE_S = float(os.environ.get("RMX_ADOPT_GRACE_S", "20") or "20")
 HEARTBEAT_NAME = "heartbeat"
 HEARTBEAT_INTERVAL_S = float(os.environ.get("RMX_HEARTBEAT_S", "5") or "5")
 
@@ -921,6 +924,36 @@ class Daemon:
                 self._log(f"could not write {p.name}: {e}")
         return p
 
+    def _adopt_unsupervised(self, sock_path: Path) -> bool:
+        """A SUPERVISED start (launchd's `--no-detach`) that finds a live
+        daemon answering on this root — a manual `rmx daemon start` the
+        supervisor does not own — asks it to stop gracefully and takes the
+        root over. Before this, `serve_foreground` raised "already running"
+        → exit 1 → KeepAlive respawn every 10 s: orderly's launchd job ran
+        11,251 times in 1.3 days behind one unsupervised daemon (plan-4
+        task 4.4). Returns True when a daemon was adopted (stopped or asked
+        to stop; a survivor is escalated by `_reap_predecessor`)."""
+        if not (sock_path.exists() and ping(self.root, timeout=0.5, retries=0)):
+            return False
+        pid = None
+        try:
+            resp = call(self.root, "ping", {}, timeout=1.0, retries=0)
+            pid = ((resp or {}).get("result") or {}).get("pid")
+        except Exception:
+            pass
+        if self.log_fh is None:
+            try:
+                self.log_fh = (self.root / LOG_NAME).open("a", encoding="utf-8")
+            except OSError:
+                pass
+        self._log(f"adopted unsupervised daemon pid={pid or '?'} on {self.root}: "
+                  f"asking it to stop so the supervised daemon owns the root")
+        stopped = stop_daemon(self.root, timeout=ADOPT_GRACE_S)
+        if not stopped:
+            self._log(f"adopted daemon pid={pid or '?'} did not stop within "
+                      f"{ADOPT_GRACE_S:g}s; startup reap will escalate")
+        return True
+
     def _start_heartbeat(self) -> None:
         """Touch `.refmatrix/heartbeat` every RMX_HEARTBEAT_S (5) from a
         thread that takes NO lock, so the supervisor's liveness signal is
@@ -1101,11 +1134,11 @@ class Daemon:
             # Could not guarantee the predecessor is gone (it ignored SIGKILL
             # or we lack permission) AND it still answers — yield rather than
             # double-bind and corrupt the DuckDB WAL.
-            self.log_fh = (self.root / LOG_NAME).open("a", encoding="utf-8")
+            self.log_fh = self.log_fh or (self.root / LOG_NAME).open("a", encoding="utf-8")
             self._log("startup: predecessor still serving after reap; yielding")
             return 0
 
-        self.log_fh = (self.root / LOG_NAME).open("a", encoding="utf-8")
+        self.log_fh = self.log_fh or (self.root / LOG_NAME).open("a", encoding="utf-8")
         self._log(f"daemon starting pid={os.getpid()} root={self.root}")
         pid_path(self.root).write_text(str(os.getpid()))
         # Heartbeat first: the store open + repairs below can take a while
@@ -5245,11 +5278,15 @@ def serve_foreground(root: Path, *, partition: str | None = None,
     root = Path(root).resolve()
     root.mkdir(parents=True, exist_ok=True)
 
-    if ping(root):
-        raise RuntimeError(
-            f"daemon already running for {root}; stop it before "
-            f"launching under a supervisor (`rmx daemon stop`)"
-        )
+    daemon = Daemon(
+        root, partition=partition,
+        watch_root=watch_root,
+        watch_debounce_ms=watch_debounce_ms,
+        watch_semantic=watch_semantic,
+    )
+    # A live unsupervised daemon on this root is adopted (asked to stop),
+    # not a reason to exit 1 into a KeepAlive spawn loop (plan-4 task 4.4).
+    daemon._adopt_unsupervised(socket_path(root))
 
     lock_path = root / "daemon.lock"
     lockf = lock_path.open("w")
@@ -5262,12 +5299,7 @@ def serve_foreground(root: Path, *, partition: str | None = None,
         ) from e
 
     try:
-        Daemon(
-            root, partition=partition,
-            watch_root=watch_root,
-            watch_debounce_ms=watch_debounce_ms,
-            watch_semantic=watch_semantic,
-        ).serve_forever()
+        daemon.serve_forever()
     finally:
         try:
             lockf.close()
