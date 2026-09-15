@@ -75,18 +75,27 @@ def venv_prefix(root: Path) -> "Path | None":
     return cand if (cand / "bin").is_dir() or (cand / "lib").is_dir() else None
 
 
-def editable_target(prefix: Path) -> "Path | None":
+def editable_target(prefix: Path, *, strict: bool = False) -> "Path | None":
     """Where the interpreter at `prefix` imports refmatrix from, per pip's
     path-style editable marker (`__editable__.refmatrix-<v>.pth` = one line,
-    the `src/` dir). None when no editable marker exists (wheel install, or
-    a finder-style marker that carries no path)."""
+    the `src/` dir). None when no editable marker exists (wheel install).
+    A marker that exists but yields no path (finder-style `import …` only)
+    is None in reporting mode and an UpgradeError under `strict` — a verify
+    step must not pass on "could not read" (ch-bsd bsd-plan1 #s-8)."""
     prefix = Path(prefix)
+    seen_marker = None
     for sp in sorted(prefix.glob("lib/python*/site-packages")):
         for pth in sorted(sp.glob("__editable__.refmatrix*.pth")):
+            seen_marker = pth
             for line in pth.read_text().splitlines():
                 line = line.strip()
                 if line and not line.startswith("import "):
                     return Path(line).resolve()
+    if seen_marker is not None and strict:
+        raise UpgradeError(
+            f"editable marker present but target unreadable (finder-style "
+            f"install?): {seen_marker} — reinstall with a path-style editable "
+            f"or verify by hand")
     return None
 
 
@@ -137,7 +146,7 @@ def verify_editable(root: Path) -> "Path | None":
     pfx = venv_prefix(root)
     if pfx is None:
         return None
-    target = editable_target(pfx)
+    target = editable_target(pfx, strict=True)
     if target is None:
         return None
     if target != root and root not in target.parents:
@@ -209,6 +218,20 @@ def upgrade(
     `install_fn(root, log=...)` and `restart_fn(root, log=...) -> bool` are
     injectable for tests; the real ones are `_default_install` / `_default_restart`.
     """
+    # FIRST, on every path (--check, up to date, changed head): is this
+    # interpreter running a dev tree? In the 2026-09-14 state the deploy tree
+    # was at master's sha and the imported code came from elsewhere; the
+    # previous guard looked at the imported tree's venv and passed
+    # (ch-bsd bsd-plan1 #b-2). runtime_identity() is the only check that
+    # sees prefix vs import path.
+    ident = runtime_identity()
+    if ident.get("dev_tree"):
+        raise UpgradeError(
+            f"this interpreter runs a DEV TREE: code {ident['import_path']} "
+            f"but the venv belongs to {ident['venv_tree']} — reinstall the "
+            f"deploy venv from its own tree "
+            f"({ident['venv_tree'] / '.venv' / 'bin' / 'python'} -m pip "
+            f"install -e {ident['venv_tree']}) before upgrading")
     root = package_root() if root is None else Path(root)
     source = f"dev:{Path(from_dev).resolve()}" if from_dev else f"origin/{ref or 'HEAD'}"
     old_head = _git(root, "rev-parse", "HEAD")
@@ -228,6 +251,11 @@ def upgrade(
         return res
 
     if target_head == old_head:
+        # Up to date is not verified: the incident tree WAS at master's sha
+        # with a wrong .pth. Check the venv on this path too.
+        target = verify_editable(root)
+        if target is not None:
+            log(f"editable target verified: {target}")
         log(f"already up to date — {old_version} @ {old_head[:8]}")
         return UpgradeResult(root, source, old_head, old_head, old_version,
                              old_version)

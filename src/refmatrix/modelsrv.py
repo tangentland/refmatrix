@@ -59,6 +59,11 @@ def shared_enabled() -> bool:
     return os.environ.get("RMX_SHARED_MODELS", "1") not in ("0", "false", "False")
 
 
+# Adoption probe bound: how long a daemon waits for a listening-but-mute
+# shared socket before going private. Seconds, not the worker op timeout.
+PROBE_TIMEOUT_S = float(os.environ.get("RMX_SHARED_PROBE_TIMEOUT_S", "5") or "5")
+
+
 def shared_available(timeout: float = 0.5) -> bool:
     """Cheap probe: is something listening on the model socket?
 
@@ -142,13 +147,25 @@ class SharedWorkerClient:
              blob: bytes | None = None, timeout: float | None = None):
         req = {"role": self.role, "op": op, **(payload or {})}
         with self._lock:
-            if timeout is not None and self._sock is not None:
+            if timeout is not None:
+                if self._sock is None:
+                    self._connect()
                 self._sock.settimeout(timeout)
             try:
                 return self._call_once(req, blob)
+            except TimeoutError:
+                # A timeout is the answer, not a dropped connection: the
+                # reconnect-and-retry below used to catch it (it is an
+                # OSError) and reconnect with the DEFAULT 300 s timeout, so a
+                # bounded probe blocked for five minutes anyway.
+                self.close()
+                raise
             except (EOFError, BrokenPipeError, ConnectionError, OSError) as exc:
                 self._log(f"connection lost on op={op} ({exc!r}); reconnecting")
                 self.close()
+                if timeout is not None:
+                    self._connect()
+                    self._sock.settimeout(timeout)
                 return self._call_once(req, blob)
 
     def evict_if_idle(self, idle_s: float) -> bool:
@@ -158,11 +175,15 @@ class SharedWorkerClient:
         Returning False keeps the tick's bookkeeping honest."""
         return False
 
-    def info(self) -> dict:
+    def info(self, *, timeout: float | None = None) -> dict:
+        """The worker's info header. `timeout` bounds the probe: a socket
+        that accepts but never answers (a hub mid-restart, an evicted
+        worker) must not hold the caller for the 300 s op timeout — that is
+        the wedge the hub watchdog SIGKILLed on 2026-09-14."""
         with self._lock:
             if self._info:
                 return self._info
-            hdr, _ = self.call("info")
+            hdr, _ = self.call("info", timeout=timeout)
             self._info = {k: v for k, v in hdr.items() if k != "ok"}
             return self._info
 

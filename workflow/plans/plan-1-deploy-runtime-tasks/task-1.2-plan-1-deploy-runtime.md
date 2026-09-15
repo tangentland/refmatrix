@@ -5,14 +5,14 @@ title: "Task 1.2: upgrade --from-dev reinstalls from the install root and re-ver
 tags: [task, plan-1]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-1-deploy-runtime
 ---
 
 # Task 1.2: upgrade --from-dev reinstalls from the install root and re-verifies {#root}
 
 > Plan: [[plan-1-deploy-runtime]]
-> Status: Pending
+> Status: Complete
 > Depends on: 1.1
 
 rel: part-of -> [[plan-1-deploy-runtime]]

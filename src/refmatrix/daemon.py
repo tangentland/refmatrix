@@ -693,7 +693,9 @@ class Daemon:
             if modelsrv.shared_enabled() and modelsrv.shared_available():
                 try:
                     client = modelsrv.SharedWorkerClient(role, log=self._log)
-                    client.info()          # prove it answers before adopting
+                    # prove it answers before adopting — bounded, so a mute
+                    # socket costs seconds, not the 300 s op timeout
+                    client.info(timeout=modelsrv.PROBE_TIMEOUT_S)
                     self._log(f"{role}: using hub-shared worker")
                 except Exception as exc:
                     self._log(
@@ -2409,19 +2411,38 @@ def _op_ping(d: Daemon, args: dict) -> dict:
     # --version` reports the new install. `rmx daemon restart --relaunch`
     # polls this until it changes.
     from refmatrix import __version__ as _v
-    from refmatrix import upgrade as _up
     # `code_path` / `dev_tree`: which tree THIS process imported. A daemon
     # whose venv points at a dev checkout ran uncommitted code all day on
-    # 2026-09-14 while every status surface said "deployed".
-    ident = _up.runtime_identity()
+    # 2026-09-14 while every status surface said "deployed". Computed once
+    # at import (identity cannot change within a process) so the health
+    # probe never globs site-packages and never fails because of it.
+    ident = _process_identity()
     return {
         "pid": os.getpid(),
         "root": str(d.root),
         "backend": d.store._backend.kind if d.store else None,
         "version": _v,
-        "code_path": str(ident["import_path"]),
-        "dev_tree": bool(ident["dev_tree"]),
+        "code_path": ident["code_path"],
+        "dev_tree": ident["dev_tree"],
     }
+
+
+_PROCESS_IDENTITY: "dict | None" = None
+
+
+def _process_identity() -> dict:
+    global _PROCESS_IDENTITY
+    if _PROCESS_IDENTITY is None:
+        try:
+            from refmatrix import upgrade as _up
+            ident = _up.runtime_identity()
+            _PROCESS_IDENTITY = {"code_path": str(ident["import_path"]),
+                                 "dev_tree": bool(ident["dev_tree"])}
+        except Exception as e:  # noqa: BLE001 — never take the ping down
+            import refmatrix
+            _PROCESS_IDENTITY = {"code_path": str(getattr(refmatrix, "__file__", "?")),
+                                 "dev_tree": False, "identity_error": str(e)}
+    return _PROCESS_IDENTITY
 
 
 def _op_enqueue(d: Daemon, args: dict) -> dict:

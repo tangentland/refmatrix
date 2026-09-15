@@ -5,7 +5,7 @@ title: "Hooks are generated: `rmx install-hooks` produces the whole production c
 tags: [plan, remediation, bsd]
 metadata:
   node_type: plan
-  status: completed
+  status: in-progress
   created: 2026-09-14
   bsd_findings: "#bs-4, #sk-5"
 ---
@@ -65,6 +65,32 @@ One generator, one target, one check:
 
 **Decision:** No: install-hooks emits the enforcement entries too (`--enforce`, default on when the scripts exist) so settings.json has ONE author.
 **Rationale:** see Decisions Log.
+
+### Q4: Stop-time `focus summarize --promote` — keep it? {#q4}
+**Status:** RESOLVED (after ch-bsd bsd-plan2 #s-6, 2026-09-14)
+
+**Decision:** Keep (default on). It implements `feedback_save_state_includes_promote` ("STM
+graduates at PreCompact/Stop") and costs 0.13 s. Its no-daemon branch no longer opens the active
+slot from a CLI process: `focus summarize --promote` refuses loudly when the daemon is down
+(store-through-daemon, constitution VII), the same contract `ingest-gmd --detach` has.
+**Rationale:** the plan's "equals what runs today" requirement was about not LOSING hooks; adding
+the promote is a documented rule, now written down here instead of in a code comment.
+
+### Q5: What does `--check` prove? {#q5}
+**Status:** RESOLVED (after ch-bsd bsd-plan2 #s-4)
+
+**Decision:** managed entries are compared as a MULTISET of full entry JSON (every key, so a
+`timeout` edit or a duplicated block is drift); unmanaged (foreign) hooks are LISTED as `? event/
+matcher: cmd` lines without failing (they are a documented survivor of `--force`); the three
+`~/.claude/hooks` search scripts are compared against `render_scripts()`; flags are recorded on
+every project-scope `--apply`, not only the claude path.
+
+### Q6: A busy daemon is not an absent daemon {#q6}
+**Status:** RESOLVED (after ch-bsd bsd-plan2 #s-11)
+
+**Decision:** `ingest-gmd --detach` distinguishes absent (no pid, no socket) from busy (alive,
+not answering): busy retries the ping for `RMX_DETACH_WAIT_S` (10 s) and then fails with
+"daemon busy pid=N — catch-up skipped, retry" instead of "no daemon running … start one".
 
 ## Decisions Log {#decisions-log}
 

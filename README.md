@@ -245,7 +245,8 @@ rmx daemon start                 # per-store socket server: single writer, hot b
 |---|---|
 | `.git/hooks/post-commit` | `rmx sync --since HEAD~1` after each commit |
 | `.git/hooks/post-merge` / `post-checkout` / `post-rewrite` | sync the relevant diff |
-| `.claude/settings.local.json` | `PostToolUse` enqueue · `Stop` flush · `SessionStart` primer · `UserPromptSubmit` scan-prompt |
+| `.claude/settings.json` (committed) | generated rmx hook block — `PreToolUse` focus-pre + enforcement · `PostToolUse` enqueue + focus + adr-gate + Grep teach · `UserPromptSubmit` scan-prompt + focus input + memory recall · `Stop` flush + focus say + STM promote · `SubagentStop` flush · `SessionStart` (startup/resume/clear) sync + primer, memory recall, memory-bridge catch-up, resume focus context · `PreCompact` promote + recall + save-state checkpoint. Re-render is the check: `rmx install-hooks --check` (exit 1 on drift); flags recorded in `.claude/rmx-hooks.json` |
+| `.claude/settings.local.json` (per-machine) | only the `env` block (`BASH_ENV`, `RMXGREP_MODE`) — no hooks since 0.67 |
 | `.refmatrix/CLAUDE.md` · `PRIMER.md` | briefing + density-ranked symbol map |
 
 ## Storage layout

@@ -42,6 +42,11 @@ The threshold is LOW — when in doubt, log it. Log an entry whenever:
 | ID | Symptom / error | File(s) | Root cause | Fix | Tags | Status | Seen |
 |----|-----------------|---------|------------|-----|------|--------|------|
 | bug-001 | deploy venv `.pth` → dev checkout; `rmx`/daemons/hub ran uncommitted code (2026-09-14) | `~/refmatrix/.venv/.../__editable__.refmatrix-*.pth`, save-state memory step 4 | absolute `pip install -e <dev tree>` into the deploy venv | `upgrade.runtime_identity` + `verify_editable`; `rmx version -v`; memory rewritten (0.66.3) | deploy, venv | fixed | 1 |
+| bug-002 | `rmx install-hooks --enforce` accepted but ignored (want() only honoured it with no project root) | src/refmatrix/hooks.py | forced branch unreachable from every production caller | `if enforce is True: return True` (0.68.1) | hooks | fixed | 1 |
+| bug-003 | `--force` stripped user hooks named `enforce-*.sh` | src/refmatrix/hooks.py `_RMX_HOOK_SIGNATURES` | prefix signature `.claude/hooks/enforce-` | exact script names (0.68.1) | hooks | fixed | 1 |
+| bug-004 | daemon wedged 300 s adopting a mute `models.sock`; `test_daemon_falls_back_when_shared_socket_does_not_answer` timed out | src/refmatrix/modelsrv.py, daemon.py `_model_client` | probe used the worker op timeout; a socket timeout (an OSError) triggered reconnect with the default timeout | bounded `info(timeout=PROBE_TIMEOUT_S)`, no retry on TimeoutError (0.68.1) | daemon, models | fixed | 1 |
+| bug-005 | Claude Code shell snapshots contained `set -o #`; user function bodies had grep rewritten to rmxgrep | bin/rmxgrep, hooks.AGENT_BASHRC_SECTION, cli.py `_grep_stdin_addendum` | BASH_ENV alias + expand_aliases + RMXGREP_MODE=rich in the snapshot shell; index note on stdout | note → stderr (0.66.2); piped stdin = real grep; grep()/rg() functions (cf3d87d) | grep, hooks | fixed | 1 |
+| bug-006 | `rmx ingest-gmd --detach` said "no daemon running" to a busy daemon; SessionStart catch-up skipped after every deploy | src/refmatrix/cli.py ingest_gmd | ping cannot tell busy from absent | discovery.daemon_status busy → retry then busy-specific error (0.68.1) | daemon, bridge | fixed | 1 |
 
 <!--
 Entry conventions:

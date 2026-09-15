@@ -25,7 +25,12 @@ code (`src/`) contains **no mocks** — see CLAUDE.md "No Mocks in Production Co
 | Mock | Target | Classification | Test File(s) | Graduation Plan |
 |------|--------|----------------|--------------|-----------------|
 | `cli._sync_memory_dir` (lambda) | the memory bridge itself | internal-active | tests/test_save_state.py | plan 3: replace with a real tmp-store ingest test |
-| `monkeypatch.setattr` sites (184, unregistered) | various | internal-active | tests/ | plan 6 sweep: register or graduate |
+| `upgrade.runtime_identity` (fake dict) | interpreter identity (environment) | external | tests/test_runtime_identity_surface.py, tests/test_plan1_remedy.py | permanent — the identity of the test interpreter is not the identity under test; the identity function itself is tested on fake trees |
+| `daemon.call` / `daemon.ping` / `daemon.served_identity` (fake RPC) | the daemon process (external process boundary) | external | tests/test_runtime_identity_surface.py, tests/test_plan1_remedy.py, tests/test_hooks_reproducible.py, tests/test_plan2_remedy.py | permanent for CLI-surface tests; real-daemon coverage lives in tests/test_verbs_memory_recall.py (spawned daemon) |
+| `hub._daemon_identity` (fake dict) | hub → daemon ping | internal-active | tests/test_runtime_identity_surface.py, tests/test_plan1_remedy.py | graduated: `test_gather_queues_carries_identity_end_to_end` patches only `daemon.call`/discovery and exercises the real `_gather_queues` → `_annotate_identity` wiring |
+| `cli._root` (tmp root) | cwd resolution | external | tests/test_hooks_reproducible.py, tests/test_plan2_remedy.py | permanent — root discovery is an environment input |
+| `search_hooks.hooks_dir` (tmp dir) | `~/.claude/hooks` location | external | tests/test_plan2_remedy.py | permanent |
+| `monkeypatch.setattr` sites (≈187 remaining, unregistered) | various | internal-active | tests/ | plan 6 sweep: register or graduate |
 
 ## Graduation Log {#graduation-log}
 

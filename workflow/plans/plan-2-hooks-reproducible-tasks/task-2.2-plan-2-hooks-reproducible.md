@@ -5,14 +5,14 @@ title: "Task 2.2: install-hooks writes settings.json, records flags, gains --che
 tags: [task, plan-2]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-2-hooks-reproducible
 ---
 
 # Task 2.2: install-hooks writes settings.json, records flags, gains --check {#root}
 
 > Plan: [[plan-2-hooks-reproducible]]
-> Status: Pending
+> Status: Complete
 > Depends on: 2.1
 
 rel: part-of -> [[plan-2-hooks-reproducible]]

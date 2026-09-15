@@ -5,7 +5,7 @@ title: "Deploy runtime: `rmx`, daemons, and hub execute the deploy tree, and say
 tags: [plan, remediation, bsd]
 metadata:
   node_type: plan
-  status: completed
+  status: in-progress
   created: 2026-09-14
   bsd_findings: "#bs-2"
 ---
@@ -55,6 +55,19 @@ save-state feedback memory assert or instruct the wrong thing.
 
 **Decision:** Alert (hub `queues` channel + red status line). Refusing would strand a workstation that only has the dev tree.
 **Rationale:** see Decisions Log.
+
+### Q3: Where does the recurrence guard actually fire? {#q3}
+**Status:** RESOLVED (after ch-bsd bsd-plan1 #b-1/#b-2, 2026-09-14)
+
+**Decision:** (a) `upgrade.upgrade()` calls `runtime_identity()` FIRST on every path — `--check`,
+"already up to date", changed head — and raises when `dev_tree` is true; `verify_editable` also runs
+on the up-to-date path. (b) `rmx daemon restart --relaunch` compares the new daemon's `code_path`
+to this CLI's `import_path` and fails loud on mismatch, because ff + relaunch IS the documented
+deploy path and never enters `upgrade()`. (c) The `global:queues` alert gates on `dev_tree`
+(`_queue_row_is_hot`). (d) `hub status` renders three states: verified path, `[DEV TREE]`, and
+`[UNVERIFIED vX]` for a daemon whose ping carries no code path; the hub reports its own identity.
+**Rationale:** the first cut guarded the fixed state, not the incident state (the deploy tree was
+at master's sha and the check looked at the imported tree's venv).
 
 ## Decisions Log {#decisions-log}
 
