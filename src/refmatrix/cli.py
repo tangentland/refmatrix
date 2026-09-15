@@ -8312,11 +8312,19 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
         daemon_up = daemon_mod.ping(root)
     # Resolved AFTER the classification so the legacy-partition probe reuses
     # it instead of paying its own full-cost ping first.
-    # On the hook path (--detach/--progress) the legacy-partition probe runs
-    # inside the same budget as everything else (bsd-plan2-r4 #s-1).
-    _probe_budget = (min(10.0, float(os.environ.get("RMX_DETACH_WAIT_S", "10") or "10"))
-                     if (detach or progress) else 10.0)
-    ingest_partition = _ingest_partition(daemon_up=daemon_up, timeout=_probe_budget)
+    # On the hook path (--detach/--progress) ONE deadline covers the probe,
+    # the legacy-partition probe and the start op (bsd-plan2-r4 #s-1, r5
+    # #m-3: separate budgets summed to 20 s and the message named one leg).
+    import time as _time2
+    _detach_budget = float(os.environ.get("RMX_DETACH_WAIT_S", "10") or "10")
+    _detach_deadline = (t0 + _detach_budget) if (detach or progress) else None
+
+    def _detach_left(default: float) -> float:
+        if _detach_deadline is None:
+            return default
+        return max(0.5, min(default, _detach_deadline - _time2.monotonic()))
+
+    ingest_partition = _ingest_partition(daemon_up=daemon_up, timeout=_detach_left(10.0))
     if daemon_up:
         op_args = {
             "targets": [str(p) for p in resolved],
@@ -8331,18 +8339,19 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
             # and end in a blank traceback (bsd-plan2-r4 #s-1). Same budget,
             # same loud message as the silent-socket branch.
             import socket as _socket
-            budget = float(os.environ.get("RMX_DETACH_WAIT_S", "10") or "10")
             try:
                 resp = daemon_mod.call(
                     root, "ingest_gmd_start", op_args,
-                    timeout=max(1.0, budget), retries=0,
+                    timeout=_detach_left(_detach_budget), retries=0,
                 )
             except (TimeoutError, _socket.timeout, OSError) as e:
                 pid = daemon_mod.read_pid(root)
+                waited = _time2.monotonic() - t0
                 raise click.ClickException(
                     f"daemon busy pid={pid or '?'} for {root} (answers ping but "
-                    f"did not accept the ingest job within {budget:g}s: {e}) — "
-                    f"catch-up skipped; retry shortly or run without --detach") from e
+                    f"did not accept the ingest job; waited {waited:.1f}s of a "
+                    f"{_detach_budget:g}s budget: {e}) — catch-up skipped; retry "
+                    f"shortly or run without --detach") from e
             if not resp.get("ok"):
                 raise click.ClickException(
                     resp.get("error", "daemon error")
@@ -9039,7 +9048,7 @@ def recall_cmd(query, k, kinds, concept, symbolic, as_json, no_dense):
 # The existing cli_entry wrapper writes the matching end-of-run record in
 # its finally block.
 
-def _memory_intent(op: str) -> None:
+def _memory_intent(op: str, *, partition_timeout: "float | None" = None) -> None:
     """First-line setup for every rmx memory subcommand:
     (1) Persist intent to cli.log BEFORE the store/daemon is touched so
         a crash leaves a recoverable record of what was attempted.
@@ -9049,7 +9058,7 @@ def _memory_intent(op: str) -> None:
     log always lands even if partition resolution explodes later."""
     from refmatrix.telemetry import log_cli_intent
     log_cli_intent(_root(), op=op, argv=list(sys.argv[1:]), pid=os.getpid())
-    _apply_memory_partition_default()
+    _apply_memory_partition_default(timeout=partition_timeout)
 
 
 # Memory commands default to a project-scoped partition
@@ -9190,6 +9199,7 @@ def _legacy_memory_partition_exists(root: Path, legacy: str, *,
     if cache_key in cached:
         return cached[cache_key]
     found = False
+    probe_failed = False
     try:
         from refmatrix import daemon as daemon_mod
         # `daemon_up` lets a caller that already classified the daemon skip
@@ -9219,10 +9229,14 @@ def _legacy_memory_partition_exists(root: Path, legacy: str, *,
                     except Exception:
                         pass
             # else: no snapshot yet → fresh tree → no legacy partition.
-    except Exception:
+    except Exception as e:  # noqa: BLE001 — named, not cached (bsd-plan2-r5 #m-4)
+        probe_failed = True
+        click.echo(f"# rmx: warning: partition_list probe failed ({type(e).__name__}: {e}); "
+                   f"assuming the project partition for THIS command only", err=True)
         found = False
-    cached[cache_key] = found
-    _legacy_memory_partition_exists._cache = cached  # type: ignore[attr-defined]
+    if not probe_failed:
+        cached[cache_key] = found
+        _legacy_memory_partition_exists._cache = cached  # type: ignore[attr-defined]
     return found
 
 
@@ -9241,7 +9255,7 @@ def _memory_daemon_call(op: str, args: dict, *, timeout: float = 60.0,
     return daemon_mod.call(_root(), op, args, timeout=timeout, retries=retries)
 
 
-def _apply_memory_partition_default() -> None:
+def _apply_memory_partition_default(timeout: "float | None" = None) -> None:
     """If the user did not explicitly pick a partition (no -p on the rmx
     group, no RMX_PARTITION env var), pin this invocation to a project-
     scoped memory partition (`memory-<project>`) for the duration of
@@ -9257,7 +9271,10 @@ def _apply_memory_partition_default() -> None:
         return
     if os.environ.get("RMX_PARTITION"):
         return
-    _partition_override = _memory_partition_default()
+    # `timeout` bounds the legacy-partition probe (it takes the writer lock
+    # daemon-side); the recall hooks pass their budget (bsd-plan2-r5 #b-1).
+    _partition_override = _memory_partition_default(
+        timeout=timeout if timeout is not None else 10.0)
 
 
 @main.group("taxonomy")
@@ -9862,9 +9879,16 @@ def _parse_duration(text: str) -> float:
                    "the `part-of` index for this subject (id, `subject_<slug>` "
                    "name, or bare label), newest first. Composes with "
                    "--exclude-mtype / -k. The cross-session 'everything on X'.")
+@click.option("--timeout", "timeout", type=float, default=None,
+              help="Budget in seconds for the WHOLE recall (partition probe, "
+                   "recall, per-hit fetch, global store, context). Default: 5 "
+                   "in the hook modes (--stdin-json / --session-start), 60 "
+                   "otherwise. In the hook modes a busy daemon past the budget "
+                   "is a stderr warning + an empty result + exit 0 — a hook "
+                   "may shout, it may not hold the turn for the store.")
 def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                   session_start, as_json, as_gmd, kinds, exclude_mtype,
-                  include_session, degree, fuse, scope, subject, rerank):
+                  include_session, degree, fuse, scope, subject, rerank, timeout):
     """Memory retrieval. Three modes:
 
     Dense (default): pure dense ANN (cosine over bge-small vectors) on the
@@ -9883,7 +9907,9 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
 
     Session-start (--session-start): shorthand for `--recent --since 7d`,
     the SessionStart hook's preferred mode per ADR-0001 Phase C."""
-    _memory_intent("memory_recall")
+    _hook_mode_early = bool(session_start or stdin_json)
+    _memory_intent("memory_recall", partition_timeout=(
+        float(timeout) if timeout is not None else (5.0 if _hook_mode_early else None)))
     if as_json and as_gmd:
         raise click.ClickException(
             "--json and --gmd are mutually exclusive"
@@ -9930,6 +9956,35 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         exclude_mtypes.add("session/*")
     verb_include_session = include_session or not hook_mode
     verb_exclude = sorted(exclude_mtypes) or None
+    # The budget (ch-bsd plan-2 r5 #b-1: the per-prompt hook held the turn
+    # ~20 s p50 live, unbounded). Hook modes: 5 s; a busy daemon past it is a
+    # warning + empty answer + exit 0, never exit 2 (that erases the prompt).
+    budget = float(timeout) if timeout is not None else (5.0 if hook_mode else 60.0)
+    import time as _time
+    _t_start = _time.monotonic()
+
+    def _left(default: float) -> float:
+        rem = budget - (_time.monotonic() - _t_start)
+        if rem <= 0:
+            raise _verbs.VerbBusyError(
+                f"recall not confirmed within {budget:g}s — daemon busy; "
+                f"the hook skipped this turn")
+        return min(default, rem)
+
+    def _degrade_or_raise(e: Exception):
+        """Hook modes degrade loudly; interactive use fails loudly."""
+        msg = (str(e) if isinstance(e, _verbs.VerbBusyError)
+               else f"daemon busy (recall not confirmed within {budget:g}s: {e})")
+        if not hook_mode:
+            raise click.ClickException(msg)
+        click.echo(f"# rmx: warning: recall skipped: {msg}", err=True)
+        if as_json:
+            click.echo("[]")
+        elif as_gmd:
+            click.echo(_render_memory_gmd([], query=q, mode="skipped",
+                                          partition=_resolve_partition()))
+        else:
+            console.print("[yellow]recall skipped (daemon busy)[/]")
 
     from refmatrix import verbs as _verbs
 
@@ -9996,13 +10051,14 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                 _root(), k=k, scope=scope, since=since,
                 recent=bool(recent), session_start=bool(session_start),
                 exclude_mtype=verb_exclude, include_session=verb_include_session,
-                subject=subject, degree=degree)
+                subject=subject, degree=degree, timeout=budget)
             rows = res["memories"]
             widened = bool(res.get("widened"))
             for w in res.get("warnings") or []:
                 _warn(w)
         except _verbs.VerbBusyError as e:
-            raise click.ClickException(str(e))
+            _degrade_or_raise(e)
+            return
         except _verbs.VerbAbsentError as e:
             click.echo(f"# rmx: {e}; reading the store directly", err=True)
             since_s = _parse_duration(since) if since else (
@@ -10065,6 +10121,16 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
     from refmatrix import daemon as daemon_mod
     root = _root()
     kinds_list = list(kinds) if kinds else ["memory"]
+    # Resolve the memory partition ONCE under the budget (the legacy probe
+    # takes the writer lock daemon-side) and pin it on every call below.
+    try:
+        if not _partition_override and not os.environ.get("RMX_PARTITION"):
+            _dense_partition = _memory_partition_default(timeout=_left(10.0))
+        else:
+            _dense_partition = _resolve_partition()
+    except _verbs.VerbBusyError as e:
+        _degrade_or_raise(e)
+        return
     # Over-fetch when mtype filter is active so the surviving list still
     # has k rows after exclusion. 3× covers most pollution levels; user
     # can raise -k for partitions with denser noise.
@@ -10081,15 +10147,26 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         q, k=ann_k, kinds=kinds_list, fuse=fuse, rerank=rerank)
     replica_used = hits is not None
     if hits is None:
-        if not daemon_mod.ping(root):
+        try:
+            st = _verbs.require_daemon(root, retries=0 if hook_mode else 2)
+        except _verbs.VerbBusyError as e:
+            _degrade_or_raise(e)
+            return
+        except _verbs.VerbAbsentError:
             raise click.ClickException(
                 "rmx memory recall needs the daemon up (dense embedder "
                 "lives there) or a replica + shared model workers"
             )
         # 180s covers worst-case embedder cold-start (sentence-transformers
-        # model load on a busy CPU takes 30-90s). Steady-state recall is
-        # sub-second once the daemon's _embedder cache warms.
-        resp = _memory_daemon_call("memory_recall", args, timeout=180.0)
+        # model load on a busy CPU takes 30-90s) — bounded by the budget in
+        # the hook modes. Steady-state recall is sub-second once warm.
+        import socket as _socket
+        try:
+            resp = _memory_daemon_call("memory_recall", {**args, "partition": _dense_partition},
+                                       timeout=_left(180.0), retries=0 if hook_mode else 2)
+        except (_verbs.VerbBusyError, TimeoutError, _socket.timeout, OSError) as e:
+            _degrade_or_raise(e)
+            return
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         hits = resp["result"].get("hits", [])
@@ -10133,7 +10210,14 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                         return m
             except Exception:
                 pass
-        resp = _memory_daemon_call("memory_get", {"id": eid}, timeout=30.0)
+        try:
+            resp = _memory_daemon_call("memory_get", {"id": eid, "partition": _dense_partition},
+                                       timeout=_left(30.0), retries=0 if hook_mode else 2)
+        except (_verbs.VerbBusyError, TimeoutError, OSError) as e:
+            if hook_mode:
+                _warn(f"memory_get {eid} skipped: {e}")
+                return None
+            raise click.ClickException(str(e))
         if not resp.get("ok"):
             return None
         return resp["result"].get("memory")

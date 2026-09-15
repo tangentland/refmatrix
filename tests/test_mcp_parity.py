@@ -14,7 +14,7 @@ class _Calls:
         self.log = []
         self.results = results or {}
 
-    def __call__(self, root, op, args, timeout=0.0):
+    def __call__(self, root, op, args, timeout=0.0, **kw):
         self.log.append((op, args))
         return self.results.get(op, {"ok": True, "result": {}})
 
@@ -65,7 +65,7 @@ def test_recall_defaults_project_scope_and_excludes_session(monkeypatch, tmp_pat
             2: {"name": "b", "mtype": "project"}}
 
     class _C(_Calls):
-        def __call__(self, root, op, args, timeout=0.0):
+        def __call__(self, root, op, args, timeout=0.0, **kw):
             self.log.append((op, args))
             if op == "memory_recall":
                 return hits
@@ -78,7 +78,7 @@ def test_recall_defaults_project_scope_and_excludes_session(monkeypatch, tmp_pat
     _patch_daemon(monkeypatch, calls)
     monkeypatch.setattr(mcp, "_resolve_root", lambda a: tmp_path)
     from refmatrix import verbs
-    monkeypatch.setattr(verbs, "memory_partition", lambda root: "p")
+    monkeypatch.setattr(verbs, "memory_partition", lambda root, **kw: "p")
     out = mcp._t_memory_recall({"query": "q"})
     names = [m["name"] for m in out["memories"]]
     assert names == ["b"]                       # session/* dropped

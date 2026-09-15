@@ -59,3 +59,17 @@ rel: evidence-for -> [[bsd-plan2-hooks-reproducible-r4-d68856d]]
 
 TDD: RED `workflow/review-output/pytest-plan2-r4-red.log` (4 failed, 211 s — the unbounded detach stall is in the timing), GREEN `pytest-plan2-r4-green.log` (114 passed). Plan status → `completed` in this commit per the r4 verdict ("may flip once the two SKETCHY items are fixed in the closing commit").
 
+## Round 5 (bsd-plan2-r5, a89c733) {#round-5}
+
+rel: evidence-for -> [[bsd-plan2-hooks-reproducible-r5-a89c733]]
+
+| Finding | Fix |
+|---------|-----|
+| #b-1 the per-prompt recall hook was unbounded (p50 20 s live) | `verbs.memory_recall(timeout=)` is ONE deadline over the partition probe (`memory_partition(timeout=)`, retries=0), the recall / recent / subject op, every per-hit `memory_get`, the global store and the context bundles (`_call(retries=)`); past it a typed `VerbBusyError("recall not confirmed within Ns")`. `rmx memory recall --timeout` (None → 5 s in `--stdin-json`/`--session-start`, 60 s otherwise) threads the same budget through the CLI's dense path (partition pinned once under the budget, `memory_recall`/`memory_get` with retries=0) and the memory group's startup partition probe (`_memory_intent(partition_timeout=)`); in the hook modes a busy daemon past the budget is `# rmx: warning: recall skipped: daemon busy …` on stderr + `[]` + exit 0 — never exit 2. The generator emits `--timeout 5` (UserPromptSubmit) and `--timeout 10` (SessionStart); `_PingOnlyDaemon` times both hook modes at < 2.5 s for a 1 s budget |
+| #s-2 registry row named two of four sites | row lists all five `daemon_status` patch sites |
+| #m-3 detach budgets additive, message named one leg | one deadline from the first probe (`_detach_left`) over the legacy-partition probe and `ingest_gmd_start`; the message reports `waited N.Ns of a Bs budget` |
+| #m-4 legacy-partition probe cached a timeout silently | a failed probe warns on stderr and is NOT cached; the next command re-probes |
+| #m-5 hooks unobserved | user-gated |
+
+Plan-2 status back to `in-progress` (plan file + plan-of-plans) until ch-bsd r6 is CLEAN. TDD: RED `workflow/review-output/pytest-plan2-r5-red.log` (5 failed), GREEN `pytest-plan2-r5-green.log` (163 passed across hook, recall, parity, MCP, subject and migrated-verb suites). Mutations `pytest-plan2-r5-mutations.log`: (A) the generator without the budgets fails the generator test; (B) a deadline that never raises fails the verb deadline test and the bounded-hook-modes test.
+

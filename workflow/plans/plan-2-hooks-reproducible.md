@@ -5,7 +5,7 @@ title: "Hooks are generated: `rmx install-hooks` produces the whole production c
 tags: [plan, remediation, bsd]
 metadata:
   node_type: plan
-  status: completed
+  status: in-progress
   created: 2026-09-14
   bsd_findings: "#bs-4, #sk-5"
 ---
