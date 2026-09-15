@@ -159,8 +159,11 @@ def _read_pid(root: Path) -> int | None:
         return None
 
 
-def daemon_status(root: Path) -> dict:
-    """Liveness for one store's daemon.
+def daemon_status(root: Path, *, timeout: float = 0.5, retries: int = 2) -> dict:
+    """Liveness for one store's daemon. `timeout`/`retries` are the ping
+    budget: a hook path passes `retries=0` so classifying a busy daemon
+    costs ONE probe (bsd-plan2-r3 #s-3: three full-cost pings before the
+    budgeted wait made a 1 s budget cost 7.4 s).
 
     `busy` distinguishes the two states a failed ping conflates: the process
     is gone (dead, needs a restart) versus the process is alive with its
@@ -171,7 +174,7 @@ def daemon_status(root: Path) -> dict:
     from refmatrix import daemon as daemon_mod
     up = False
     try:
-        up = bool(daemon_mod.ping(root))
+        up = bool(daemon_mod.ping(root, timeout=timeout, retries=retries))
     except Exception:
         up = False
     pid = _read_pid(root)

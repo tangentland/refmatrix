@@ -425,8 +425,8 @@ def finalize_save_state(s, root: Path, result: dict, *, repo: Path,
                 if sid:
                     _subject_link(int(leaf), int(sid))
                     out["filed_subject"] = label
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001 — named in the result
+                out["filed_subject_error"] = f"{label}: {e}"
     return out
 
 

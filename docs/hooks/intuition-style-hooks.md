@@ -129,7 +129,11 @@ The generator emits three Stop entries: a background `rmx sync --flush-queue --a
 milestones, intent arc, top symbols) into a `session/digest` memory through the daemon —
 upserted by name, so it never grows the store. `--timeout 5` bounds the daemon write: on a busy
 daemon the hook fails loud and the next PreCompact / `rmx save-state` promote catches up
-(2026-09-14: unbounded, it held a turn for 55 s). There is no LLM-driven "auto-extract" step
+(2026-09-14: unbounded, it held a turn for 55 s). The bound covers the whole hook path —
+the subject filing that follows the promote runs on the same budget — and a daemon that is
+alive but not answering is reported as `busy pid=N`, never as "not running". The PreCompact
+promote is the catch-up, so its budget is longer but still a bound (`--timeout 30`): past it
+rmx fails loud instead of Claude Code's 60 s hook limit ending it silently. There is no LLM-driven "auto-extract" step
 and none is planned; observations worth keeping are written explicitly:
 
 ```bash
