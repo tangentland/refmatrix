@@ -26,7 +26,9 @@ lives in the production ingest, this harness sees it; the old one could not.
 from __future__ import annotations
 
 import argparse
+import json
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -82,6 +84,10 @@ def main() -> int:
     ap.add_argument("--top-k", type=int, default=1000)
     ap.add_argument("--reuse", action="store_true",
                     help="skip materialize+ingest if the store already exists")
+    ap.add_argument("--out", default=None,
+                    help="write the metrics + run provenance as JSON here "
+                         "(the committed artifact README cites: "
+                         "eval/production/results/csn_python/metrics.json)")
     a = ap.parse_args()
 
     from refmatrix.store import Store
@@ -94,6 +100,7 @@ def main() -> int:
     store_root = work / ".refmatrix"
 
     t0 = time.time()
+    timing: dict[str, float] = {}
     if a.reuse and store_root.exists():
         stem_to_id = {cid.replace("/", "_"): cid for cid in ds.corpus}
         s = Store(store_root)
@@ -118,7 +125,9 @@ def main() -> int:
         s = Store(store_root)
         s.init()
         t1 = time.time()
+        timing["materialize_s"] = round(t1 - t0, 1)
         n = ingest_path(s, corpus_dir, source="auto", semantic=True)
+        timing["ingest_s"] = round(time.time() - t1, 1)
         print(f"PRODUCTION ingest_path: {n} entities in {time.time()-t1:.0f}s")
 
     # entity id -> corpus id, by file stem (code entities carry the path)
@@ -156,6 +165,7 @@ def main() -> int:
         if (qi + 1) % 2000 == 0:
             print(f"  {qi+1}/{len(q_items)} queries "
                   f"({(qi+1)/(time.time()-t2):.0f}/s)")
+    timing["retrieval_s"] = round(time.time() - t2, 1)
     print(f"retrieval: {len(q_items)} queries in {time.time()-t2:.0f}s")
 
     qrels = {q: r for q, r in ds.qrels.items() if q in run}
@@ -163,8 +173,45 @@ def main() -> int:
     print("\n=== PRODUCTION-PATH metrics (csn_python) ===")
     for k, v in m.items():
         print(f"  {k:14s} {v:.4f}")
+    if a.out:
+        write_artifact(Path(a.out), a, ds, len(stem_to_id), len(q_items), m, timing)
     s.close()
     return 0
+
+
+def write_artifact(out: Path, a: argparse.Namespace, ds, corpus_docs: int,
+                   queries: int, metrics: dict, timing: dict) -> None:
+    """The committed provenance record (plan-6 task 6.3, 2026-09-14). Until
+    then the headline 0.961 lived in a memory file only; README now cites this
+    path and `tests/test_eval_artifact_cited.py` compares the figure. A run is
+    `full_run` only when nothing capped the corpus or the query set — a sampled
+    run is a valid number about an easier haystack and the docs must say so."""
+    from refmatrix import __version__
+    full_run = not (a.limit_corpus or a.limit_queries or a.sample_queries)
+    sha = subprocess.run(["git", "-C", str(_ROOT), "rev-parse", "--short", "HEAD"],
+                         capture_output=True, text=True)
+    rec = {
+        "harness": "eval/production/csn_code.py",
+        "dataset": Path(a.dataset).name,
+        "corpus_docs": corpus_docs,
+        "corpus_docs_total": len(ds.corpus),
+        "queries": queries,
+        "queries_total": len(ds.queries),
+        "full_run": full_run,
+        "sample_queries": a.sample_queries,
+        "limit_queries": a.limit_queries,
+        "limit_corpus": a.limit_corpus,
+        "top_k": a.top_k,
+        "metrics": {k: round(float(v), 4) for k, v in metrics.items()},
+        "timing_s": timing,
+        "refmatrix_version": __version__,
+        "git_sha": sha.stdout.strip() if sha.returncode == 0 else f"unknown ({sha.stderr.strip()})",
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "command": " ".join(sys.argv),
+    }
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(rec, indent=2) + "\n", encoding="utf-8")
+    print(f"wrote {out}")
 
 
 if __name__ == "__main__":

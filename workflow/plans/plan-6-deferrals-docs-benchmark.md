@@ -5,7 +5,7 @@ title: "No stale deferrals, generated CLI docs, a committed benchmark artifact, 
 tags: [plan, remediation, bsd]
 metadata:
   node_type: plan
-  status: approved
+  status: in-progress
   created: 2026-09-14
   bsd_findings: "#bs-5, #sk-4, #meh-1, #meh-2"
 ---

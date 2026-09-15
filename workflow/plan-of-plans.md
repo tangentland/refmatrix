@@ -23,7 +23,7 @@ current.
 | 3 | plan-3-verbs-parity | in-progress | yes (3) | `workflow/plans/plan-3-verbs-parity.md` | plan 2 (deploy path) |
 | 4 | plan-4-daemon-resilience | in-progress | yes (4) | `workflow/plans/plan-4-daemon-resilience.md` | — |
 | 5 | plan-5-memory-bridge-complete | in-progress | yes (3) | `workflow/plans/plan-5-memory-bridge-complete.md` | — |
-| 6 | plan-6-deferrals-docs-benchmark | approved | yes (5) | `workflow/plans/plan-6-deferrals-docs-benchmark.md` | — |
+| 6 | plan-6-deferrals-docs-benchmark | in-progress | yes (5) | `workflow/plans/plan-6-deferrals-docs-benchmark.md` | — |
 
 ## Sequence rationale {#sequence}
 
