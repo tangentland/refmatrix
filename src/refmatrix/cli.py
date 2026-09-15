@@ -2990,6 +2990,21 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
             loaded = lc.is_loaded(root)
         except Exception:  # noqa: BLE001 — supervision probe is best-effort
             loaded = False
+        if not loaded and lc.is_installed(root):
+            # A plist on disk with no loaded label is the bug-013 state (a
+            # forced reinstall whose bootstrap failed): the store IS
+            # supervised, so bootstrap it — a standalone spawn here would
+            # run an unsupervised daemon that launchd will later fight.
+            try:
+                lc.install(root)
+            except (RuntimeError, FileNotFoundError) as e:
+                raise click.ClickException(
+                    f"plist installed but label not loaded, and bootstrap failed: {e}")
+            console.print(f"[green]bootstrapped[/] {lc.label_for_root(root)} "
+                          f"(plist was installed but not loaded) root={root}")
+            if relaunch:
+                _verify_relaunch(lambda: lc.kickstart(root, restart=True))
+            return
         if loaded:
             if watch_roots or semantic or debounce_ms != 500 or not watch:
                 console.print(

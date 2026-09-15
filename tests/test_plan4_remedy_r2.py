@@ -82,10 +82,15 @@ def test_supervised_start_under_xpc_service_name_adopts_instead_of_exiting_1(mon
 
 
 def _installed_plist(tmp_path, monkeypatch, root, **flags) -> Path:
-    agents = tmp_path / "LaunchAgents"; agents.mkdir()
+    """A plist on disk + a launchd that reports it loaded with exactly the
+    rendered env (tests override `is_loaded` / `loaded_env` for drift)."""
+    agents = tmp_path / "LaunchAgents"; agents.mkdir(exist_ok=True)
     monkeypatch.setattr(launchctl, "LAUNCH_AGENTS_DIR", agents)
     p = launchctl.plist_path(root)
     p.write_bytes(launchctl.render_plist(root, **flags))
+    monkeypatch.setattr(launchctl, "is_loaded", lambda r: True)
+    monkeypatch.setattr(launchctl, "loaded_env",
+                        lambda r: dict(plistlib.loads(p.read_bytes())["EnvironmentVariables"]))
     return p
 
 
@@ -169,6 +174,7 @@ def test_reinstall_verifies_the_label_is_loaded_afterwards(tmp_path, monkeypatch
         return loaded["n"] > 1        # unloaded right after the forced install, loaded after the plain one
     monkeypatch.setattr(launchctl, "install", fake_install)
     monkeypatch.setattr(launchctl, "is_loaded", fake_is_loaded)
+    monkeypatch.setattr(launchctl, "check", lambda r: (True, ""))
     launchctl.reinstall(root)
     assert calls == [("install", True), ("install", False)], calls
 
@@ -339,3 +345,137 @@ def test_repair_entities_abort_reaches_the_wire_and_the_daemon_keeps_serving(mon
     finally:
         d.store.close()
         shutil.rmtree(base, ignore_errors=True)
+
+
+# ---- #b-1 (live follow-up, bug-013): a forced reinstall must actually reload -----
+
+_PRINT = """\
+gui/501/com.refmatrix.daemon.x = {
+\tactive count = 1
+\tpath = /Users/x/Library/LaunchAgents/com.refmatrix.daemon.x.plist
+\tstate = running
+\tenvironment = {
+\t\tOBJC_DISABLE_INITIALIZE_FORK_SAFETY => YES
+\t\tREFMATRIX_ROOT => /proj/.refmatrix
+\t\tRMX_SUPERVISED => 1
+\t}
+\tdefault environment = {
+\t\tPATH => /usr/bin:/bin
+\t}
+}
+"""
+
+
+def test_loaded_env_parses_launchctl_print(monkeypatch):
+    monkeypatch.setattr(launchctl.subprocess, "run",
+                        lambda argv, **kw: subprocess.CompletedProcess(argv, 0, _PRINT, ""))
+    env = launchctl.loaded_env(Path("/proj/.refmatrix"))
+    assert env == {"OBJC_DISABLE_INITIALIZE_FORK_SAFETY": "YES",
+                   "REFMATRIX_ROOT": "/proj/.refmatrix", "RMX_SUPERVISED": "1"}
+    monkeypatch.setattr(launchctl.subprocess, "run",
+                        lambda argv, **kw: subprocess.CompletedProcess(argv, 113, "", "Could not find service"))
+    assert launchctl.loaded_env(Path("/proj/.refmatrix")) is None
+
+
+def _fake_launchctl(monkeypatch, tmp_path, root, *, loaded_seq, env_after=None):
+    """launchd stand-in: `is_loaded` answers from `loaded_seq` (last value
+    repeats), `loaded_env` from `env_after` (None = the rendered env), and
+    every launchctl subprocess succeeds."""
+    calls: list = []
+    seq = list(loaded_seq)
+    monkeypatch.setattr(launchctl, "_require_darwin", lambda: None)
+    monkeypatch.setattr(launchctl, "LAUNCH_AGENTS_DIR", tmp_path / "LaunchAgents")
+    monkeypatch.setattr(launchctl, "BOOTOUT_WAIT_S", 0.3)
+    monkeypatch.setattr(launchctl, "is_loaded",
+                        lambda r: seq.pop(0) if len(seq) > 1 else seq[0])
+
+    def fake_run(argv, **kw):
+        verb = argv[1] if argv and argv[0] == "launchctl" else argv[0]
+        if verb != "print":                 # `_migrate_legacy` / `is_loaded` probes
+            calls.append(verb)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+    monkeypatch.setattr(launchctl.subprocess, "run", fake_run)
+
+    def fake_env(r):
+        if env_after is not None:
+            return env_after
+        want = plistlib.loads(launchctl.render_plist(r))["EnvironmentVariables"]
+        return dict(want)
+    monkeypatch.setattr(launchctl, "loaded_env", fake_env)
+    return calls
+
+
+def test_install_force_raises_when_the_bootout_does_not_complete(tmp_path, monkeypatch):
+    root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
+    (tmp_path / "LaunchAgents").mkdir()
+    calls = _fake_launchctl(monkeypatch, tmp_path, root, loaded_seq=[True])   # never unloads
+    launchctl.plist_path(root).write_bytes(launchctl.render_plist(root))
+    with pytest.raises(RuntimeError, match="still loaded"):
+        launchctl.install(root, force=True)
+    assert "bootout" in calls and "bootstrap" not in calls, calls   # never bootstrap against a loaded label
+
+
+def test_install_force_reloads_and_verifies_the_loaded_env(tmp_path, monkeypatch):
+    root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
+    (tmp_path / "LaunchAgents").mkdir()
+    calls = _fake_launchctl(monkeypatch, tmp_path, root, loaded_seq=[True, False, True])
+    launchctl.plist_path(root).write_bytes(b"old")
+    p = launchctl.install(root, force=True)
+    assert calls == ["bootout", "bootstrap"], calls
+    assert p.read_bytes() == launchctl.render_plist(root)
+
+
+def test_install_raises_when_the_loaded_job_lacks_the_rendered_env(tmp_path, monkeypatch):
+    root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
+    (tmp_path / "LaunchAgents").mkdir()
+    _fake_launchctl(monkeypatch, tmp_path, root, loaded_seq=[False, True],
+                    env_after={"REFMATRIX_ROOT": str(root.resolve())})
+    with pytest.raises(RuntimeError, match="RMX_SUPERVISED"):
+        launchctl.install(root)
+
+
+def test_check_reports_a_loaded_job_that_lacks_the_rendered_env(tmp_path, monkeypatch):
+    root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
+    _installed_plist(tmp_path, monkeypatch, root)
+    monkeypatch.setattr(launchctl, "is_loaded", lambda r: True)
+    monkeypatch.setattr(launchctl, "loaded_env", lambda r: {"REFMATRIX_ROOT": str(root.resolve())})
+    ok, why = launchctl.check(root)
+    assert ok is False and "loaded job" in why and "RMX_SUPERVISED" in why, why
+
+
+def test_check_reports_an_installed_but_unloaded_label(tmp_path, monkeypatch):
+    """The bug-013 state: plist current on disk, nothing loaded, a standalone
+    daemon on the root."""
+    root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
+    _installed_plist(tmp_path, monkeypatch, root)
+    monkeypatch.setattr(launchctl, "is_loaded", lambda r: False)
+    ok, why = launchctl.check(root)
+    assert ok is False and "not loaded" in why, why
+
+
+def test_relaunch_bootstraps_an_installed_but_unloaded_plist_instead_of_spawning(tmp_path, monkeypatch):
+    from refmatrix import __version__
+    from refmatrix import upgrade as up
+    root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    calls = []
+    monkeypatch.setattr(launchctl, "is_installed", lambda r: True)
+    monkeypatch.setattr(launchctl, "is_loaded", lambda r: False)
+    monkeypatch.setattr(launchctl, "install", lambda r, **kw: calls.append("install") or launchctl.plist_path(r))
+    monkeypatch.setattr(launchctl, "kickstart", lambda r, restart=False: calls.append("kickstart") or "l")
+    monkeypatch.setattr(dm, "spawn_daemon", lambda r, **kw: calls.append("spawn") or 1)
+    monkeypatch.setattr(dm, "stop_daemon", lambda r, **kw: calls.append("stop") or True)
+    ident = up.runtime_identity()
+    seen = {"n": 0}
+
+    def served(r, timeout=1.0):
+        seen["n"] += 1
+        return None if seen["n"] == 1 else (7, __version__)   # nothing before, the new daemon after
+    monkeypatch.setattr(dm, "served_identity", served)
+    monkeypatch.setattr(dm, "call", lambda r, op, a=None, **kw: {"ok": True, "result": {
+        "code_path": str(ident["import_path"]), "dev_tree": False}})
+    r = CliRunner().invoke(cli_mod.main, ["daemon", "restart", "--relaunch"])
+    assert r.exit_code == 0, r.output
+    assert calls == ["install"], calls
+    assert "bootstrapped" in r.output
