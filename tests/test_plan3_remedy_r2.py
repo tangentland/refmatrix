@@ -110,7 +110,7 @@ def silent():
 def test_verb_call_distinguishes_busy_from_absent(silent, tmp_path):
     with pytest.raises(verbs.VerbBusyError) as ei:
         verbs.ingest_status(silent.root)
-    assert f"pid={os.getpid()}" in str(ei.value) and "busy" in str(ei.value)
+    assert f"pid={silent.pid}" in str(ei.value) and "busy" in str(ei.value)   # the lookalike child, not pytest
     assert isinstance(ei.value, verbs.VerbError)
     absent = tmp_path / "none" / ".refmatrix"; absent.mkdir(parents=True)
     with pytest.raises(verbs.VerbAbsentError, match="not running"):

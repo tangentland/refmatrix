@@ -173,11 +173,27 @@ def test_dense_per_hit_get_goes_through_call(monkeypatch, tmp_path):
 
 # ---- #s-4 memory_partition on a held writer --------------------------------------------
 
-def test_memory_partition_raises_busy_on_a_held_writer(held):
+def test_memory_partition_raises_busy_on_a_held_writer_without_a_replica(held):
+    """No replica to read (rotation layout before the first snapshot): the
+    daemon decides, and a held writer is BUSY — never a guessed partition."""
+    (held.root / "catalog.duckdb").rename(held.root / "catalog.A.duckdb")
+    (held.root / "active").write_text("A")
     t0 = time.monotonic()
     with pytest.raises(verbs.VerbBusyError):
         verbs.memory_partition(held.root)
     assert time.monotonic() - t0 < 16.0
+
+
+def test_memory_partition_reads_the_replica_under_a_held_writer(held, monkeypatch):
+    """With a replica the answer is lock-free and instant (plan-2 r8): the
+    daemon is not asked at all. The replica is the SNAPSHOT — the held
+    writer's own file is locked and never readable (2026-09-15)."""
+    from refmatrix import discovery
+    _snapshot(held.root)
+    monkeypatch.setattr(dm, "call", lambda *a, **kw: (_ for _ in ()).throw(AssertionError("asked the daemon")))
+    t0 = time.monotonic()
+    assert verbs.memory_partition(held.root) == discovery.store_name(held.root)
+    assert time.monotonic() - t0 < 1.0
 
 
 def test_memory_partition_still_guesses_on_an_answered_error(monkeypatch, tmp_path):

@@ -102,3 +102,15 @@ rel: evidence-for -> [[bsd-plan2-hooks-reproducible-r7-8d0a665]]
 | #m-3 `ensure_global_daemon` outside the budget | `hub.global_call(retries=0)` skips it; interactive callers still ensure — Q9 |
 
 TDD: RED `workflow/review-output/pytest-plan2-r8-red.log` (3 failed), GREEN `pytest-plan2-r8-green.log` (45 passed with plan2_remedy_r6, bug015_wedge, modelsrv). Mutations `pytest-plan2-r8-mutation.log`: (A) the restore removed → both real-socket tests fail; (B) every global call ensures again → `test_budgeted_global_call_never_spawns_the_global_daemon` fails. Live re-measure after deploy: LIVE8_NOTE.
+
+## Round 9 (live re-measure after the r8 deploy, f170a4c) {#round-9}
+
+rel: evidence-for -> [[bsd-plan2-hooks-reproducible-r7-8d0a665]]
+
+| Finding | Fix |
+|---------|-----|
+| 03:36 live: the SessionStart and per-prompt hooks answered `[]` with "daemon busy … partition_list did not answer" while the watcher flushed two edited files — the partition probe asked the daemon for a fact the replica holds, and `partition_list` takes the writer lock daemon-side | `verbs.memory_partition` reads the replica first (`search.cached_replica`), the CLI's `_legacy_memory_partition_exists` reads `_reader_store()` first; the daemon op is the bootstrap-window fallback only. The recent path caps its daemon slice at `RECALL_DAEMON_SLICE_S` (1.5 s) when a replica exists, then reads the replica — Q10 |
+| `cached_replica` on a bootstrap-window root cached an unopenable Store; `--json` with no hits printed prose | typed `FileNotFoundError`, nothing cached; the empty-hits branch prints `[]` under `--json` |
+| the held-writer simulation (`_SilentDaemon(seeded=True)`) released its catalog, so the legacy `catalog.duckdb` read as a replica and the r6 hook-wall test answered `[]` without a busy word — a state no live daemon permits (its lock refuses the read-only open) | the seeded fixture HOLDS the writer open for its lifetime (same-process DuckDB refuses the read-only open of a file another connection holds read-write — the cross-process lock's in-process twin); `test_memory_partition_reads_the_replica_under_a_held_writer` snapshots first (the replica is the snapshot, never the locked writer file); the plan-3 r2 busy test compares against the lookalike child's pid (bug-018) — bug-017 |
+
+TDD: GREEN `workflow/review-output/pytest-partition-probe-green3.log` (68 passed: plan2_remedy, r6, r7, plan3_r2, plan3_r4) + `pytest-partition-probe-green2.log` (150 of 152 across the plan-2/3/4/5 remedy suites, memory_bridge, locate, phase8, bug015 — the two failures are the fixture-fidelity pair fixed above). Mutations `pytest-partition-probe-mutation.log`: (A) the replica-first probe removed → both replica-probe tests fail; (B/B2) a catalog pre-check removed / the unopened Store closed → nothing fails (the driver refuses a read-only open of a missing file; the pre-check was redundant and is gone); (B3) the missing-file guard removed → `test_cached_replica_never_creates_a_catalog` fails; (C) the seeded writer released → `test_recall_hook_wall_is_within_budget_on_a_held_writer` fails. Live re-measure after deploy: LIVE9_NOTE.

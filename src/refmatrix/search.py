@@ -53,6 +53,15 @@ def cached_replica(root: Path):
                 pass
     part = discovery.store_name(root)
     s = Store(root, partition=part, read_only=True)
+    if not Path(s.db_path).exists():
+        # A read never creates and never caches what it cannot open: the
+        # driver refuses a read-only open of a missing file (nothing is
+        # written), but caching the unopened Store would hand every later
+        # caller in this process the same dead entry, and the miss would
+        # surface as the driver's IOException at their first query instead
+        # of the plain fact — no replica yet (2026-09-15, the replica-first
+        # partition probe on a bootstrap-window root).
+        raise FileNotFoundError(f"no replica catalog to read at {s.db_path}")
     entry = (s, threading.Lock(), _snapshot_sig(s))
     with _REPLICA_CACHE_LOCK:
         existing = _REPLICA_CACHE.setdefault(key, entry)
