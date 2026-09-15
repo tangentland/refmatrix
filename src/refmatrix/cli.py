@@ -3810,8 +3810,19 @@ def canon_find(concept: str):
     from refmatrix.search import federated_concept
     res = federated_concept(concept)
     projs = res["projects"]
+    skipped = res.get("skipped") or []
+    # A store that could not be searched is said so — this command was the
+    # last consumer discarding its fan-out's `skipped` list, so a busy daemon
+    # turned into "no live project hosts X" and the operator was told a
+    # concept exists nowhere (ch-bsd plan-3 r6 #s-3; the r3 #b-2 defect that
+    # `rmx locate` already fixed, one command over).
+    for sk in skipped:
+        click.echo(f"# rmx: skipped {sk.get('project')} — {sk.get('reason')}",
+                   err=True)
     if not projs:
-        console.print(f"[yellow]no live project hosts[/] {concept}")
+        console.print(f"[yellow]no live project hosts[/] {concept}" + (
+            f" ({len(skipped)} store{'s' if len(skipped) != 1 else ''} "
+            f"skipped — see stderr)" if skipped else ""))
         return
     t = Table("project", "kind", "neighbors")
     for p in projs:
@@ -9314,6 +9325,12 @@ RECALL_DAEMON_SLICE_S = float(os.environ.get("RMX_RECALL_DAEMON_SLICE_S", "1.5")
 # 512 → 2–3 s. 700 keeps a memory's title + lead, which is what the
 # cross-encoder ranks on.
 RERANK_DOC_CHARS = int(os.environ.get("RMX_RERANK_DOC_CHARS", "700") or "700")
+# `memory get --degree N`: the context bundle is a tail on a command whose
+# body has already been printed, so it gets its own bound rather than the
+# bundle op's 120 s × 3 (ch-bsd plan-3 r6 #b-1). Under 120 s
+# `verbs.attach_context` also drops the library's two retries.
+MEMORY_CONTEXT_TAIL_S = float(
+    os.environ.get("RMX_MEMORY_CONTEXT_TAIL_S", "30") or "30")
 
 
 def _replica_memory_recall(query: str, *, k: int, kinds: list,
@@ -9668,6 +9685,7 @@ def memory_get(name_or_id, degree):
     _memory_intent("memory_get", partition_timeout=min(5.0, _budget))
     root = _root()
     target = int(name_or_id) if name_or_id.isdigit() else name_or_id
+    served_by_replica = False
     try:
         m = _verbs.memory(root, action="get", partition=_resolve_partition(),
                           timeout=max(0.5, _budget - (_time.monotonic() - _t0)),
@@ -9682,6 +9700,7 @@ def memory_get(name_or_id, degree):
         s = _read_store()
         click.echo(f"# rmx: {e}; reading the replica", err=True)
         m = s.get_memory(target)
+        served_by_replica = True
     except _verbs.VerbError as e:
         raise click.ClickException(str(e))
     if m is None:
@@ -9699,30 +9718,36 @@ def memory_get(name_or_id, degree):
     click.echo(m["content"] or "")
     if degree > 0:
         # Render the context bundle alongside the body so a `memory get
-        # --degree 1` call covers both surfaces in one shot. Route
-        # through the same daemon path the `rmx context` CLI uses so
-        # callers see identical output.
+        # --degree 1` call covers both surfaces in one shot. THE bundle is a
+        # verb — `attach_context`, the one the recall twin calls. A second
+        # hand-rolled daemon call here is what broke it: the r5 remedy
+        # rewrote the body above and deleted the function-local
+        # `daemon_mod` import, thirty lines above a surviving
+        # `daemon_mod.ping`, so EVERY `--degree` invocation printed the body
+        # and then died with a bare NameError on the deployed build, in
+        # every daemon state, with no test on the flag (bug-026).
         from refmatrix.context import build_context, render_text
         console.print()
         console.print("[bold]--- context ---[/]")
-        if daemon_mod.ping(root):
-            ctx_args = {
-                "ref": m["name"], "format": "text",
-                "degree": degree,
-                "entities_explicit": False, "tokens_explicit": False,
-                "partition": _resolve_partition(),
-            }
-            ctx_resp = daemon_mod.call(
-                root, "context", ctx_args, timeout=120.0,
-            )
-            if ctx_resp.get("ok"):
-                click.echo(ctx_resp["result"]["body"])
-            else:
-                console.print(
-                    f"[yellow]context unavailable: "
-                    f"{ctx_resp.get('error')}[/]"
-                )
+        row = None
+        if not served_by_replica:
+            # The read leg already proved the daemon answers. Bounded and
+            # single-attempt (`attach_context` drops the library's retries
+            # under 120 s): a daemon that stalls here must not add three
+            # more minutes to a command whose body is already rendered.
+            warns: list[str] = []
+            row = _verbs.attach_context(
+                root, [{"name": m["name"]}], degree,
+                partition=_resolve_partition(), warnings=warns,
+                timeout=MEMORY_CONTEXT_TAIL_S,
+            )[0]
+            for w in warns:
+                click.echo(f"# rmx: {w}", err=True)
+        if row is not None and row.get("context"):
+            click.echo(row["context"])
         else:
+            # No daemon, busy, or a bundle that failed: the replica renders
+            # it locally rather than leaving the flag with nothing to show.
             s = _read_store()
             click.echo(render_text(
                 build_context(
@@ -9737,27 +9762,31 @@ def memory_get(name_or_id, degree):
 def memory_promote(name_or_id):
     """Copy a project memory into the shared global behavior store. Both reads
     and the write route through daemons (no direct Store opens)."""
-    _memory_intent("memory_get")
-    from refmatrix import daemon as daemon_mod, hub as hub_mod
+    # The memory group's THIRD read path. `list` and `search` were bounded
+    # through the verb in round 6 because a held writer answers ping; this
+    # one kept the bare ping gate and `_memory_daemon_call`'s 60 s × 3, so a
+    # held writer cost 180.2 s and exit 1 with an EMPTY message — an
+    # unhandled TimeoutError, a raw traceback in a terminal (bug-027).
+    from refmatrix import verbs as _verbs
+    _memory_intent("memory_get",
+                   partition_timeout=min(5.0, _verbs.MEMORY_READ_BUDGET_S))
     root = _root()
     target = int(name_or_id) if name_or_id.isdigit() else name_or_id
-    args = {"id": target} if isinstance(target, int) else {"name": target}
-    if daemon_mod.ping(root):
-        resp = _memory_daemon_call("memory_get", args)
-        m = resp.get("result", {}).get("memory") if resp.get("ok") else None
-    else:
-        raise click.ClickException("daemon not running for this project")
-    if m is None:
-        raise click.ClickException(f"no memory matching {name_or_id!r}")
-    tags = list(dict.fromkeys((m.get("tags") or []) + ["behavior"]))
-    g = hub_mod.global_call("memory_add", {
-        "name": m["name"], "content": m["content"],
-        "mtype": m.get("mtype") or "feedback", "tags": tags,
-        "metadata": m.get("metadata")})
-    if not g.get("ok"):
-        raise click.ClickException(g.get("error", "global write failed"))
-    console.print(f"[green]promoted to global[/] {m['name']} "
-                  f"(global id={g['result']['id']})")
+    key = {"id": target} if isinstance(target, int) else {"name": target}
+    try:
+        res = _verbs.memory(root, action="promote",
+                            partition=_resolve_partition(),
+                            timeout=_verbs.MEMORY_READ_BUDGET_S, **key)
+    except (_verbs.VerbBusyError, _verbs.VerbAbsentError) as e:
+        # NO replica fallthrough here, unlike the read twins: promote WRITES
+        # what it read into the global store, and the replica is a lagging
+        # snapshot. A stale body promoted into the shared behavior store is
+        # worse than a command that says why it stopped.
+        raise click.ClickException(str(e))
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e))
+    console.print(f"[green]promoted to global[/] {name_or_id} "
+                  f"(global id={res.get('id')})")
 
 
 @memory_grp.command("reclassify")

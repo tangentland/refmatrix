@@ -1106,8 +1106,14 @@ def memory(root: Path, action: typing.Literal[
     # CLI twin offers — 30 s of partition probing, then 3 × 120 s). Writes
     # keep the long timeout: a retried write is worse than a slow one.
     is_read = action in MEMORY_READ_ACTIONS
+    # `promote` reads the project store and then writes the GLOBAL one, so its
+    # project-side leg is budgeted like a read while the global write keeps its
+    # own path: the library default made the verb wait 90.2 s on a held writer
+    # (ping, ping, memory_get × 3) against Q11's stated one attempt, and its
+    # CLI twin 180.2 s (ch-bsd plan-3 r6 #b-2, bug-027).
+    budgeted = is_read or action == "promote"
     import time as _time
-    budget = (float(timeout) if timeout is not None else MEMORY_READ_BUDGET_S) if is_read else None
+    budget = (float(timeout) if timeout is not None else MEMORY_READ_BUDGET_S) if budgeted else None
     _deadline = (_time.monotonic() + budget) if budget else None
 
     def _left(default: float) -> float:
@@ -1117,11 +1123,12 @@ def memory(root: Path, action: typing.Literal[
         if rem <= 0:
             raise VerbBusyError(f"memory {action} not confirmed within {budget:g}s — daemon busy")
         return min(default, rem)
-    part = partition or memory_partition(root, timeout=_left(10.0) if is_read else None)
-    require_daemon(root, retries=0 if is_read else 2)   # busy is typed, never "not running"
+    part = partition or memory_partition(root, timeout=_left(10.0) if budgeted else None)
+    require_daemon(root, retries=0 if budgeted else 2)  # busy is typed, never "not running"
     if action == "promote":
         key = {"id": int(id)} if id is not None else {"name": name}
-        m = _call(root, "memory_get", {**key, "partition": part}, timeout=30.0).get("memory")
+        m = _call(root, "memory_get", {**key, "partition": part},
+                  timeout=_left(30.0), retries=0).get("memory")
         if not m:
             raise VerbError("no memory matching the id/name")
         tg = list(dict.fromkeys((m.get("tags") or []) + ["behavior"]))
