@@ -116,3 +116,11 @@ def test_budgeted_global_call_never_spawns_the_global_daemon(tmp_path, monkeypat
     assert calls == [], "a budgeted (retries=0) global call must not spawn or wait for a daemon"
     hub_mod.global_call("memory_recent", {"since_seconds": 1, "limit": 1}, timeout=1.0)
     assert calls == ["ensure"]
+
+
+def test_rerank_pool_fits_the_hook_budget():
+    """20 docs × 2048 chars scored in 5.4–6.0 s on a loaded machine (2026-09-15):
+    the per-prompt hook's pool must be 10 at k=5."""
+    assert reranker.DEFAULT_POOL_MULT == 2
+    k = 5
+    assert min(max(k, k * reranker.DEFAULT_POOL_MULT), reranker.MAX_POOL) == 10

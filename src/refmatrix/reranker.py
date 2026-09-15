@@ -45,7 +45,13 @@ MAX_DOC_CHARS = 2048
 # How many candidates to rerank per k requested. 4x is the usual
 # retrieve-then-rerank ratio: wide enough that a mis-ranked true hit is
 # inside the pool, narrow enough that the forward passes stay cheap.
-DEFAULT_POOL_MULT = int(os.environ.get("RMX_RERANK_POOL_MULT", "4") or "4")
+# Pool = k × this. 2 (pool 10 at the hooks' k=5): the earlier tuning found
+# pool 10 beats 30 on scan-prompt, and on 2026-09-15 a 20-doc × 2048-char
+# pool cost the shared worker 5.4–6.0 s under a load of 4–6 — it could never
+# fit the per-prompt hook's 5 s budget, and the abandoned score then kept the
+# worker busy so the NEXT hook's 1 s probe failed too (bsd-plan2-r7 #b-1
+# re-measure). Ten docs is ~3 s loaded, sub-second quiet.
+DEFAULT_POOL_MULT = int(os.environ.get("RMX_RERANK_POOL_MULT", "2") or "2")
 MAX_POOL = int(os.environ.get("RMX_RERANK_MAX_POOL", "100") or "100")
 
 # Gap between consecutive demoted (unscored) rows. Only their ORDER matters —
