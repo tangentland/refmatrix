@@ -514,3 +514,26 @@ def test_bare_num_shorthand_delegates():
     *_, err, delegate = _bare(["-3", "daemon"])
     assert err is None
     assert delegate and "-3" in delegate[0]
+
+
+def test_grep_stdin_addendum_writes_only_to_stderr(capsys, monkeypatch):
+    """The index note is provenance, not grep output. On 2026-09-14 the
+    PreToolUse rewrite turned `grep … | awk` into `rmx grep … | awk` and the
+    `# rmx: … in the index` header landed in awk's input as `set -o #`.
+    With a daemon answering, stdout must stay empty and the note goes to
+    stderr — same contract as the rg-fallback banner."""
+    from refmatrix import cli as cli_mod
+    from refmatrix import daemon as daemon_mod
+    monkeypatch.setenv("RMX_GREP_NOTE", "1")
+    monkeypatch.setattr(daemon_mod, "ping", lambda root, **kw: True)
+    monkeypatch.setattr(daemon_mod, "call", lambda root, op, args, **kw: {
+        "ok": True, "result": {"rows": [
+            {"path": "src/x.py", "line": 7, "linkage": "mentions", "concept": "alpha"},
+        ]},
+    })
+    monkeypatch.setattr(cli_mod, "_root", lambda: __import__("pathlib").Path("."))
+    cli_mod._grep_stdin_addendum("alpha", 2)
+    cap = capsys.readouterr()
+    assert cap.out == ""
+    assert "# rmx: 'alpha' in the index" in cap.err
+    assert "src/x.py:7" in cap.err

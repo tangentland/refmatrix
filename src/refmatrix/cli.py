@@ -4993,12 +4993,17 @@ def _grep_stdin_addendum(pattern: str, total: int) -> None:
         return
     if not rows:
         return
+    # Provenance goes to STDERR, never stdout (2026-09-14): the PreToolUse
+    # rewrite turns `grep … | awk` into `rmx grep … | awk`, and a "# rmx: …"
+    # line on stdout became `set -o #` in a generated script. Same rule the
+    # fallback banner already follows — stdout is grep bytes only.
     click.echo(f"# rmx: {pattern!r} in the index "
-               f"({len(rows)} of the top references)")
+               f"({len(rows)} of the top references)", err=True)
     for r in rows[:5]:
         loc = r.get("path") or r.get("entity") or ""
         line = f":{r['line']}" if r.get("line") is not None else ""
-        click.echo(f"#   {loc}{line}  [{r.get('linkage')}]  {r.get('concept')}")
+        click.echo(f"#   {loc}{line}  [{r.get('linkage')}]  {r.get('concept')}",
+                   err=True)
 
 
 def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
