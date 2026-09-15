@@ -274,9 +274,12 @@ def wrapper_paths() -> "tuple[str, str]":
     return out[0], out[1]
 
 
-def render_scripts() -> "dict[str, str]":
-    """name -> rendered content, wrapper + rewriter paths baked in."""
-    rmxgrep, rmxrg = wrapper_paths()
+def render_scripts(wrappers: "tuple[str, str] | list | None" = None) -> "dict[str, str]":
+    """name -> rendered content, wrapper + rewriter paths baked in.
+    `wrappers` = (rmxgrep, rmxrg) paths to bake; default = this process's
+    `wrapper_paths()`. `check()` passes the paths recorded at apply time so
+    the comparison does not depend on which venv renders it."""
+    rmxgrep, rmxrg = tuple(wrappers) if wrappers else wrapper_paths()
     rewriter = str(hooks_dir() / REWRITER_NAME)
     return {
         GUARD_NAME: GUARD_TEMPLATE.replace("@REWRITER@", rewriter),
