@@ -29,6 +29,8 @@ def d():
     daemon._request_snapshot = lambda: None
     yield daemon
     daemon.store.close()
+    import shutil
+    shutil.rmtree(base, ignore_errors=True)
 
 
 def test_learn_from_grep_degrades_instead_of_fast_exiting(d, monkeypatch):

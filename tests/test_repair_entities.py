@@ -17,11 +17,23 @@ from refmatrix.store import Store
 RepairAbort = getattr(store_mod, "RepairAbort", type("_Missing", (Exception,), {}))
 
 
+_BASES: list = []
+
+
 def _store():
     base = Path(tempfile.mkdtemp(prefix="rmxr-"))
+    _BASES.append(base)
     root = base / "proj" / ".refmatrix"; root.parent.mkdir()
     s = Store(root); s.init()
     return root, s
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_bases():
+    yield
+    import shutil
+    while _BASES:
+        shutil.rmtree(_BASES.pop(), ignore_errors=True)
 
 
 def test_rebuild_entities_indexes_preserves_rows_and_ids():

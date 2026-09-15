@@ -7,7 +7,6 @@ graceful first, kill only after a grace window."""
 from __future__ import annotations
 
 import os
-import tempfile
 import time
 from pathlib import Path
 
@@ -18,14 +17,22 @@ from refmatrix import hub as hub_mod
 from refmatrix import launchctl
 
 
-def _root():
-    base = Path(tempfile.mkdtemp(prefix="rmxw-"))
-    root = base / "proj" / ".refmatrix"; root.mkdir(parents=True)
+@pytest.fixture(autouse=True)
+def _isolated_home(tmp_path, monkeypatch):
+    """The watchdog's `_log` writes hub.log under the user home and discovery
+    reads the registry there: every test here runs against a tmp RMX_HOME so
+    the LIVE ~/.refmatrix/hub.log never carries tmp-store lines (seen by the
+    plan-3 r2 audit as 'rmxw-* daemons registered with the live hub')."""
+    monkeypatch.setenv("RMX_HOME", str(tmp_path / "home"))
+
+
+def _root(tmp_path):
+    root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
     return root
 
 
-def test_daemon_heartbeat_thread_touches_file(monkeypatch):
-    root = _root()
+def test_daemon_heartbeat_thread_touches_file(monkeypatch, tmp_path):
+    root = _root(tmp_path)
     monkeypatch.setenv("RMX_HEARTBEAT_S", "0.05")
     d = dm.Daemon(root)
     d._start_heartbeat()
@@ -55,8 +62,8 @@ def _wd(monkeypatch, root, *, ping, pid_alive, hb_age, loaded=True):
     return wd, calls
 
 
-def test_busy_daemon_with_fresh_heartbeat_is_never_restarted(monkeypatch):
-    root = _root()
+def test_busy_daemon_with_fresh_heartbeat_is_never_restarted(monkeypatch, tmp_path):
+    root = _root(tmp_path)
     wd, calls = _wd(monkeypatch, root, ping=False, pid_alive=True, hb_age=2.0)
     for _ in range(hub_mod.WATCHDOG_GRACE_MISSES + 3):
         wd._check(root)
@@ -65,8 +72,8 @@ def test_busy_daemon_with_fresh_heartbeat_is_never_restarted(monkeypatch):
     assert last["reason"].startswith("busy")
 
 
-def test_stale_heartbeat_past_grace_restarts_gracefully_first(monkeypatch):
-    root = _root()
+def test_stale_heartbeat_past_grace_restarts_gracefully_first(monkeypatch, tmp_path):
+    root = _root(tmp_path)
     wd, calls = _wd(monkeypatch, root, ping=False, pid_alive=True, hb_age=999.0)
     for _ in range(hub_mod.WATCHDOG_GRACE_MISSES):
         wd._check(root)
@@ -74,8 +81,8 @@ def test_stale_heartbeat_past_grace_restarts_gracefully_first(monkeypatch):
     assert ("kickstart", True) in calls
 
 
-def test_dead_process_restarts_immediately(monkeypatch):
-    root = _root()
+def test_dead_process_restarts_immediately(monkeypatch, tmp_path):
+    root = _root(tmp_path)
     wd, calls = _wd(monkeypatch, root, ping=False, pid_alive=False, hb_age=999.0)
     wd._check(root)
     assert any(c[0] == "kickstart" for c in calls)
