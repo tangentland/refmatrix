@@ -357,6 +357,7 @@ def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
         "events": len(events), "doc": doc, "dry_run": dry_run,
         "branch": git["branch"], "head": git["head"],
         "dirty": bool(git["dirty"]), "promoted": None,
+        "memdir": str(memdir),
     }
     if dry_run:
         return result
@@ -373,18 +374,33 @@ def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
 
 
 def finalize_save_state(s, root: Path, result: dict, *, repo: Path,
-                        lint: bool = True) -> dict:
+                        lint: bool = True, sync: bool = True) -> dict:
     """Post-compose steps EVERY save-state caller needs (CLI and MCP): GMD
-    lint of the written handoff file, and filing the promoted digest under
-    the active subject (`part-of`) so the subject index reaches it. Before
-    2026-09-06 these lived only in the CLI command, so an MCP save-state
-    promoted an orphaned digest (parity audit finding 7).
+    lint of the written handoff file, filing the promoted digest under the
+    active subject (`part-of`) so the subject index reaches it, and — the
+    memory bridge — `ingest-gmd --as-memory` over the whole curated-memory
+    dir so the handoff and every memory file written this session are in
+    the store before the next SessionStart recall. Before 2026-09-06 lint +
+    filing lived only in the CLI command, so an MCP save-state promoted an
+    orphaned digest (parity audit finding 7). Before 2026-09-14 NOTHING ran
+    the bridge: memory files sat on disk for ten days while
+    `memory recall --session-start` reported an empty window.
 
-    Returns {"lint": str | None, "filed_subject": str | None}; best-effort
-    throughout — a lint or filing failure never breaks the handoff."""
-    out: dict = {"lint": None, "filed_subject": None}
+    Returns {"lint": str | None, "filed_subject": str | None,
+    "sync": dict | None}; best-effort throughout — a lint, filing, or bridge
+    failure never breaks the handoff, but the bridge failure is returned in
+    `sync["error"]` for the caller to surface, never swallowed."""
+    out: dict = {"lint": None, "filed_subject": None, "sync": None}
     if result.get("dry_run"):
         return out
+    if sync:
+        memdir = result.get("memdir")
+        target = result.get("target")
+        if not memdir and target:
+            memdir = Path(target).parent
+        if memdir:
+            from refmatrix.cli import _sync_memory_dir  # lazy: cli->handoff cycle
+            out["sync"] = _sync_memory_dir(Path(memdir))
     if lint:
         lint_py = Path.home() / "claude_tools" / "gmd" / "lint.py"
         target = result.get("target")

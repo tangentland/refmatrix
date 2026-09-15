@@ -8015,30 +8015,88 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
             # line per file. Exit when job status flips off "running".
             _tail_ingest_progress(root, job_id, files_total)
             return
-        # Synchronous path (default). Daemon errors immediately if
-        # another ingest is already active.
-        resp = daemon_mod.call(root, "ingest_gmd", op_args,
-                               timeout=24 * 3600.0)
+    # Synchronous path (default), daemon-up or in-process. Daemon errors
+    # immediately if another ingest is already active.
+    console.print(_ingest_gmd_sync(
+        resolved, as_memory=as_memory, memory_mtype=memory_mtype,
+        verbose=verbose, partition=ingest_partition,
+    ))
+
+
+def _ingest_gmd_sync(resolved: list[Path], *, as_memory: bool,
+                     memory_mtype: str = "curated", verbose: bool = False,
+                     partition: str | None = None) -> str:
+    """Run `ingest-gmd` synchronously over `resolved` and return the report
+    string. Daemon-up: one `ingest_gmd` RPC (honors `partition` so
+    `--as-memory` rows land in the caller's memory partition, not the
+    daemon's bound one). Daemon-down: in-process with the same partition
+    routing. Shared by the `ingest-gmd` command and the save-state memory
+    bridge (`_sync_memory_dir`)."""
+    from refmatrix import daemon as daemon_mod
+    from refmatrix.ingest_gmd import collect_gmd_files, ingest_gmd_paths
+
+    root = _root()
+    partition = partition or _resolve_partition()
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "ingest_gmd", {
+            "targets": [str(p) for p in resolved],
+            "verbose": verbose,
+            "as_memory": as_memory,
+            "memory_mtype": memory_mtype,
+            "partition": partition,
+        }, timeout=24 * 3600.0)
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
-        console.print(resp["result"]["report"])
-        return
+        return str(resp["result"]["report"])
     s = _store()
     files = collect_gmd_files(resolved)
     if not files:
-        console.print("[yellow]no candidate files found[/]")
-        return
+        return "no candidate files found"
     if verbose:
         for f in files:
             console.print(f"  scan {f}")
     # In-process path: mirror the daemon partition routing so the
     # no-daemon fallback also lands --as-memory rows in the right slot.
-    with s.with_partition(ingest_partition):
+    with s.with_partition(partition):
         stats = ingest_gmd_paths(
             s, files, verbose=verbose,
             as_memory=as_memory, memory_mtype_default=memory_mtype,
         )
-    console.print(stats.report())
+    return stats.report()
+
+
+def _sync_memory_dir(memdir: Path) -> dict:
+    """The memory bridge: ingest the curated-memory dir (`~/.claude/projects/
+    <slug>/memory/`) into the store as kind=memory rows, synchronously.
+
+    Content-hash gated inside ingest-gmd, so unchanged files cost a parse +
+    one lookup each. Returns {"memdir", "report", "error"}; never raises —
+    save-state must finish its report even when the store is unreachable,
+    but the failure is RETURNED, not swallowed, so the caller prints it.
+
+    Why this exists (2026-09-14): save-state wrote the handoff + memory
+    files to disk and its docstring promised "the SessionStart bridge
+    ingests it" — but no hook ever ran that bridge. Ten days of memory
+    files never reached the store, and `memory recall --session-start`
+    reported "no memories in window" on a store that was simply behind
+    disk. save-state now runs the bridge itself; the SessionStart hook
+    runs it again, detached, as catch-up for files written outside
+    save-state."""
+    out = {"memdir": str(memdir), "report": None, "error": None}
+    if not memdir.is_dir():
+        out["error"] = f"memory dir not found: {memdir}"
+        return out
+    if not _partition_override and not os.environ.get("RMX_PARTITION"):
+        partition = _memory_partition_default()
+    else:
+        partition = _resolve_partition()
+    try:
+        out["report"] = _ingest_gmd_sync(
+            [memdir.resolve()], as_memory=True, partition=partition,
+        )
+    except Exception as e:  # noqa: BLE001 — reported, not hidden
+        out["error"] = f"{type(e).__name__}: {e}"
+    return out
 
 
 # ---- dense / Lance --------------------------------------------------------
@@ -9443,10 +9501,12 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         raise click.ClickException(
             "--json and --gmd are mutually exclusive"
         )
+    since_defaulted = False
     if session_start:
         recent = True
         if since is None:
             since = "7d"
+            since_defaulted = True
     # Uniform resolution: positional query > --text > --prompt > --stdin-json
     # envelope. read_stdin=False so --recent doesn't consume an unrelated pipe;
     # an explicit --stdin-json still reads + parses (raising on bad JSON).
@@ -9599,6 +9659,27 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             rows = s.recent_memories(since_seconds=since_s, limit=effective_k)
         if exclude_mtypes:
             rows = [r for r in rows if not _mt_excluded(r.get("mtype"))][:k]
+        if not rows and since_defaulted:
+            # Session-start with nothing in the default 7d window (a quiet
+            # fortnight, or a store that lagged disk — 2026-09-14). An empty
+            # orient pass is worse than an older one: widen to newest-k
+            # regardless of age. An explicit --since is honored as given.
+            since_s = None
+            if daemon_mod.ping(_root()):
+                resp = _memory_daemon_call(
+                    "memory_recent",
+                    {"since_seconds": None, "limit": effective_k},
+                )
+                if not resp.get("ok"):
+                    raise click.ClickException(
+                        resp.get("error", "daemon error"))
+                rows = resp["result"]["rows"]
+            else:
+                rows = _store().recent_memories(since_seconds=None,
+                                                limit=effective_k)
+            if exclude_mtypes:
+                rows = [r for r in rows
+                        if not _mt_excluded(r.get("mtype"))][:k]
         if scope != "project":
             rows = _merge_scope(
                 rows, _global_rows(None, recent_flag=True, since=since_s),
@@ -10516,7 +10597,12 @@ def _encode_claude_project_dir(cwd: Path) -> str:
 @click.option("--no-lint", is_flag=True, help="Skip the GMD lint pass.")
 @click.option("--promote/--no-promote", default=True, show_default=True,
               help="Also promote the condensed STM digest to durable memory.")
-def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote):
+@click.option("--no-sync", "no_sync", is_flag=True,
+              help="Skip the memory bridge (ingest-gmd --as-memory over the "
+                   "memory dir) that normally runs after the handoff is "
+                   "written.")
+def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
+               no_sync):
     """Compile + persist a session handoff — the resume point for the next instance.
 
     SAVES, into ONE durable GMD memory (`savestate_<session>`) in the curated-
@@ -10537,9 +10623,14 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote):
     memory graduates to LTM and `recall-state` / `memory recall` find it. If a
     subject is active, the digest is filed under it (`part-of`).
 
-    The handoff file lands OUTSIDE the repo; the SessionStart bridge ingests it
-    into rmx. `--commit` commits repo CODE only. `--dry-run` renders the file to
-    stdout and writes nothing. Mirror of `recall-state`.
+    The handoff file lands OUTSIDE the repo. save-state then runs the memory
+    bridge itself — `ingest-gmd --as-memory` over the whole curated-memory
+    dir — so the handoff AND every memory file written this session are in
+    the store before the next instance's SessionStart recall runs (the
+    SessionStart hook re-runs the bridge detached, as catch-up only).
+    `--no-sync` skips the bridge. `--commit` commits repo CODE only.
+    `--dry-run` renders the file to stdout and writes nothing. Mirror of
+    `recall-state`.
     """
     import time as _time
 
@@ -10563,7 +10654,8 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote):
     console.print(f"[green]save-state[/] {res['target']}  "
                   f"[dim]({res['events']} events, session {sess})[/]")
 
-    fin = finalize_save_state(s, root, res, repo=repo, lint=not no_lint)
+    fin = finalize_save_state(s, root, res, repo=repo, lint=not no_lint,
+                              sync=not no_sync)
     lint_out = fin.get("lint")
     if lint_out:
         tag = ("[green]lint ok[/]" if "0 error" in lint_out.lower()
@@ -10585,6 +10677,15 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote):
     if subj:
         console.print(f"[dim]subject:[/] {subj.get('label')} "
                       f"(slug={subj.get('subject')})")
+
+    sync = fin.get("sync")
+    if sync:
+        if sync.get("error"):
+            console.print(f"[red]memory bridge FAILED:[/] {sync['error']} — "
+                          f"run `rmx ingest-gmd --as-memory {memdir}` by hand")
+        else:
+            console.print(f"[green]memory bridge[/] {memdir} → store: "
+                          f"{sync['report']}")
 
     if commit:
         _ss_sh(["git", "add", "-A"], repo)

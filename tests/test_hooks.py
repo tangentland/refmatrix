@@ -23,6 +23,12 @@ def test_memory_hooks_default_on(tmp_path):
     # the bound daemon partition shouldn't determine where recall
     # looks.
     assert "rmx memory recall --session-start" in cmds["SessionStart"]
+    # The memory bridge catch-up rides in the SessionStart background
+    # group: memory files written outside `rmx save-state` still reach
+    # the store. It targets the project's curated-memory dir, as memory.
+    assert "rmx ingest-gmd --as-memory '" in cmds["SessionStart"]
+    assert "/.claude/projects/" in cmds["SessionStart"]
+    assert "/memory'" in cmds["SessionStart"]
     # UserPromptSubmit reads the prompt from stdin (Claude Code's hook
     # envelope), not from an env var -- the old `--prompt $ENV` pattern
     # was broken because the env var doesn't exist in the hook context.
@@ -59,6 +65,7 @@ def test_memory_hooks_opt_out(tmp_path):
             for h in entry.get("hooks", [])
         )
         assert "rmx memory recall" not in cmds
+        assert "ingest-gmd --as-memory" not in cmds
 
 
 def test_install_writes_memory_hooks_into_settings(tmp_path):

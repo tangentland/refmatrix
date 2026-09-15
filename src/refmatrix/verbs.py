@@ -322,8 +322,10 @@ def ingest(root: Path, *, path: str | None = None,
 
 @verb("rmx_save_state",
       "Compile + persist the session handoff (GMD memory: git state + STM "
-      "focus + tasks), promote the STM digest, lint, and file it under the "
-      "active subject — identical post-steps to the CLI.")
+      "focus + tasks), promote the STM digest, lint, file it under the "
+      "active subject, and run the memory bridge (ingest-gmd --as-memory "
+      "over the memory dir so the next SessionStart recall sees every "
+      "memory file) — identical post-steps to the CLI.")
 def save_state(root: Path, *, message: str | None = None,
                promote: bool = True, dry_run: bool = False,
                session: str | None = None) -> dict:
@@ -339,6 +341,9 @@ def save_state(root: Path, *, message: str | None = None,
     fin = handoff.finalize_save_state(s, root, res, repo=repo)
     res["lint"] = fin.get("lint")
     res["filed_subject"] = fin.get("filed_subject")
+    # Memory bridge outcome — surfaced, not swallowed: an MCP caller sees
+    # `sync.error` when the store did not take the handoff.
+    res["sync"] = fin.get("sync")
     if not res.get("dry_run"):
         res.pop("doc", None)
     return res

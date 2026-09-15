@@ -138,6 +138,24 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
     bg_parts = [
         "rmx sync --flush-queue --async >/dev/null 2>&1 || true"
     ]
+    if memory_hooks:
+        # Memory bridge catch-up: ingest the curated-memory dir
+        # (`~/.claude/projects/<slug>/memory/`) as kind=memory rows so
+        # files written outside `rmx save-state` (hand-authored memories,
+        # another session's handoff) still reach the store. Content-hash
+        # gated, ~25s on a 200-file dir, so it runs in the background
+        # group — it CANNOT be ordered before the synchronous
+        # `memory recall --session-start` hook below (Claude Code runs an
+        # event's hooks in parallel), which is why save-state runs the
+        # same bridge synchronously and loudly at the end of a session;
+        # this is the quiet safety net, not the primary path. Missing dir
+        # (a project with no memories yet) is the || true case.
+        from refmatrix.handoff import default_memory_dir
+        memdir = default_memory_dir(refmatrix_root.parent)
+        bg_parts.append(
+            "rmx ingest-gmd --as-memory '" + str(memdir)
+            + "' >/dev/null 2>&1 || true"
+        )
     if primer:
         bg_parts.append(
             "rmx primer --out '"
@@ -537,7 +555,12 @@ rmx save-state [--commit]        # compile STM + git + recent memories into ONE
 
 On a cold start, `rmx memory recall --session-start` (run by the SessionStart
 hook) surfaces recent context. `rmx save-state` at the end of a work session
-leaves a handoff the next instance reads.
+leaves a handoff the next instance reads — and runs the memory bridge
+(`ingest-gmd --as-memory` over `~/.claude/projects/<slug>/memory/`) so every
+memory file written this session is in the store before that recall. The
+SessionStart hook re-runs the bridge in the background as catch-up for files
+written outside save-state. Write memory files BEFORE `rmx save-state`, not
+after.
 
 ## To remove
 

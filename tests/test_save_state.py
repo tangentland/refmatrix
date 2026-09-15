@@ -221,3 +221,34 @@ def test_compose_recall_state_no_handoff(tmp_path):
     assert rep["savestate"] is None
     assert rep["stm_digest"] is None  # no events
     assert rep["recent_memories"] == []
+
+
+def test_finalize_runs_memory_bridge_over_the_handoff_dir(tmp_path, monkeypatch):
+    """The bridge is finalize's job (shared by CLI + MCP), targets the dir
+    the handoff was written to, and reports a failure instead of hiding it."""
+    from refmatrix import cli as cli_mod
+    calls = []
+    monkeypatch.setattr(cli_mod, "_sync_memory_dir",
+                        lambda memdir: calls.append(memdir) or
+                        {"memdir": str(memdir), "report": "ok", "error": None})
+    res = {"target": str(tmp_path / "savestate_x.md"), "memdir": str(tmp_path),
+           "dry_run": False, "promoted": None}
+    fin = handoff.finalize_save_state(None, tmp_path, res, repo=tmp_path,
+                                      lint=False)
+    assert calls == [tmp_path]
+    assert fin["sync"]["report"] == "ok"
+    # sync=False skips it; dry-run never touches the store.
+    calls.clear()
+    fin = handoff.finalize_save_state(None, tmp_path, res, repo=tmp_path,
+                                      lint=False, sync=False)
+    assert calls == [] and fin["sync"] is None
+    fin = handoff.finalize_save_state(None, tmp_path, dict(res, dry_run=True),
+                                      repo=tmp_path, lint=False)
+    assert calls == [] and fin["sync"] is None
+
+
+def test_sync_memory_dir_reports_missing_dir_not_raises(tmp_path):
+    from refmatrix.cli import _sync_memory_dir
+    out = _sync_memory_dir(tmp_path / "nope")
+    assert out["error"] and "not found" in out["error"]
+    assert out["report"] is None
