@@ -99,7 +99,7 @@ def test_memory_recall_recent_degree_zero_no_context_field(
                    "--recent", "--since", "30d", "--json"],
                   monkeypatch)
     assert out.exit_code == 0, out.output
-    data = json.loads(out.output)
+    data = json.loads(out.stdout)
     assert len(data) >= 1
     assert "context" not in data[0]
 
@@ -112,7 +112,7 @@ def test_memory_recall_recent_degree_one_attaches_context_per_row(
                    "--recent", "--since", "30d", "--json", "--degree", "1"],
                   monkeypatch)
     assert out.exit_code == 0, out.output
-    data = json.loads(out.output)
+    data = json.loads(out.stdout)
     assert len(data) >= 1
     # Daemon-down branch builds the context in-process; "context" lands
     # as a text block carrying the anchor header.

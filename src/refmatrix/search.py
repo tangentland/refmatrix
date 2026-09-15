@@ -6,6 +6,8 @@ never a direct Store open.
 """
 from __future__ import annotations
 
+import os
+
 import threading
 from pathlib import Path
 
@@ -20,17 +22,38 @@ _REPLICA_CACHE: "dict[str, tuple]" = {}
 _REPLICA_CACHE_LOCK = threading.Lock()
 
 
+def _snapshot_sig(s) -> "tuple | None":
+    """Identity of the file a read-only Store is bound to. The daemon
+    regenerates `catalog.read.duckdb` by tmp+rename, so an open connection
+    keeps reading the OLD inode forever — a long-lived process (the MCP
+    server, the hub) went permanently stale on where/locate until restart
+    (found by tests/test_verbs_migrated.py, plan-3 r1)."""
+    try:
+        st = os.stat(s.db_path)
+        return (st.st_ino, st.st_mtime_ns, st.st_size)
+    except Exception:
+        return None
+
+
 def cached_replica(root: Path):
-    """Return (store, lock) for a root, opening + caching on first use."""
+    """Return (store, lock) for a root, opening on first use and REOPENING
+    when the snapshot file underneath has been replaced since."""
     from refmatrix.store import Store
     key = str(Path(root).resolve())
     with _REPLICA_CACHE_LOCK:
         hit = _REPLICA_CACHE.get(key)
         if hit is not None:
-            return hit
+            s, lock, sig = hit
+            if sig == _snapshot_sig(s):
+                return s, lock
+            _REPLICA_CACHE.pop(key, None)
+            try:
+                s.close()
+            except Exception:
+                pass
     part = discovery.store_name(root)
     s = Store(root, partition=part, read_only=True)
-    entry = (s, threading.Lock())
+    entry = (s, threading.Lock(), _snapshot_sig(s))
     with _REPLICA_CACHE_LOCK:
         existing = _REPLICA_CACHE.setdefault(key, entry)
     if existing is not entry:
@@ -38,7 +61,7 @@ def cached_replica(root: Path):
             s.close()
         except Exception:
             pass
-    return existing
+    return existing[0], existing[1]
 
 
 def _replica_bundle(root: Path, ref: str, *, degree: int = 0,

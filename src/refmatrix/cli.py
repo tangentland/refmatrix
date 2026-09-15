@@ -352,9 +352,10 @@ class _DaemonWriter:
     def ingest_path(self, path, source="auto", semantic=False):
         """Whole-path ingest as ONE op (not per-entity), so a big ingest is
         a single RPC, not thousands."""
-        return self._call("ingest_path", {
-            "path": str(path), "source": source, "semantic": semantic,
-        }, timeout=24 * 3600.0).get("entities", 0)
+        from refmatrix.verbs import payload_ingest
+        return self._call("ingest_path",
+                          payload_ingest(str(path), source=source, semantic=semantic),
+                          timeout=24 * 3600.0).get("entities", 0)
 
 
 def _store(write: bool = True) -> "Store":
@@ -890,15 +891,16 @@ def _resolve_stm_session(explicit: str | None = None, *, prefer_latest: bool = F
     bare "default". `prefer_latest` lets `focus tail/context/size` and the
     task read commands show the active Claude session a plain shell can't name."""
     from refmatrix import stm as stm_mod
+    if prefer_latest:
+        # ONE resolver with the verbs (explicit → $RMX_SESSION → latest ring
+        # → default) so a CLI write and an MCP read land in the same ring.
+        from refmatrix.verbs import resolve_session
+        return resolve_session(_root(), explicit)
     if explicit:
         return explicit
     env = os.environ.get("RMX_SESSION")
     if env:
         return env
-    if prefer_latest:
-        latest = stm_mod.latest_session(_root())
-        if latest:
-            return latest
     return stm_mod.session_id()
 
 
@@ -941,11 +943,15 @@ def focus_tail(n, session):
               help="Session id to read. Default: active Claude session.")
 def focus_context(top, session):
     """Show the current focus mini-graph (recency-weighted)."""
-    s = _stm(session, prefer_latest=True)
+    from refmatrix import verbs as _verbs
+    sess = _resolve_stm_session(session, prefer_latest=True)
+    s = _stm(sess)
     # Pull a wider slice, then drop shell-token noise at render time so a graph
     # polluted by pre-noise-fix events (the ring isn't retroactively cleaned)
     # still displays the real symbols. _ss_clean_focus is the shared filter.
-    g = s.focus_graph(top=max(top * 3, 30))
+    # The graph comes from the verb (what rmx_focus returns); the L<n>
+    # provenance below is CLI rendering over the same ring.
+    g = _verbs.focus(_root(), top=max(top * 3, 30), session=sess)["graph"]
     nodes = _ss_clean_focus(g["nodes"], limit=top)
     if not nodes:
         console.print("[yellow]no focus yet[/]")
@@ -1189,7 +1195,8 @@ def focus_note(text):
     the transcript, so this is the only reliable way the reasoning survives the
     session (see the briefing's 'Capture your reasoning' rule). Refs in the
     note enter the focus graph."""
-    ev = _stm(prefer_latest=True).record("reason", text[:800])
+    from refmatrix import verbs as _verbs
+    ev = _verbs.focus_note(_root(), text, session=_resolve_stm_session(None, prefer_latest=True))
     console.print(f"[blue]✎ noted[/]  [dim]{', '.join(ev['refs'][:6]) or '—'}[/]")
 
 
@@ -1431,12 +1438,12 @@ def focus_change_subject(label, session):
     for a thread of work. Focus events accrue to this subject; promoted
     digests / save-state handoffs file under it (`part-of`) so the thread is
     recallable across sessions. Idempotent for the same label."""
-    s = _stm(session, prefer_latest=True)
-    rec = s.set_subject(label)
-    eid = _subject_upsert(label)
+    from refmatrix import verbs as _verbs
+    rec = _verbs.change_subject(
+        _root(), label, session=_resolve_stm_session(session, prefer_latest=True))
     console.print(
         f"[green]subject[/] {rec['label']} "
-        f"[dim](slug={rec['subject']}, id={eid})[/] — focus scoped; "
+        f"[dim](slug={rec['subject']}, id={rec.get('id')})[/] — focus scoped; "
         f"promotes file under it")
 
 
@@ -1804,6 +1811,17 @@ def task():
     explored. Push snapshots the current focus; pop restores it."""
 
 
+def _task_verb(action: str, *, session: "str | None" = None, **kw) -> dict:
+    """Every `rmx task` subcommand is a render over verbs.task — the same
+    ring (`prefer_latest` → verbs.resolve_session) reads and writes."""
+    from refmatrix import verbs as _verbs
+    try:
+        return _verbs.task(_root(), action=action,
+                           session=_resolve_stm_session(session, prefer_latest=True), **kw)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e))
+
+
 @task.command("push")
 @click.argument("desc")
 def task_push(desc):
@@ -1812,7 +1830,7 @@ def task_push(desc):
     # readers (`list`/`current`) resolve to — otherwise push writes the bare
     # "default" session while list reads the active Claude session and the
     # stack looks empty across invocations.
-    r = _stm(prefer_latest=True).task_push(desc)
+    r = _task_verb("push", desc=desc)
     console.print(f"[green]▸[/] {r['current']}  [dim]depth={r['depth']}[/]")
 
 
@@ -1822,7 +1840,7 @@ def task_pop(selector):
     """Pop a stash and restore ITS focus (git-stash semantics). Default = top;
     SELECTOR (a 1-based index from `task list`, or a desc substring) pops out
     of order."""
-    r = _stm(prefer_latest=True).task_pop(selector)
+    r = _task_verb("pop", selector=selector)
     if r["popped"] is None:
         msg = r.get("error") or "task stack empty"
         console.print(f"[yellow]{msg}[/]")
@@ -1837,7 +1855,7 @@ def task_pop(selector):
               help="Session id to read. Default: active Claude session.")
 def task_list(session):
     """Show the stash stack with 1-based indices (top = 1 = most recent)."""
-    stack = _stm(session, prefer_latest=True).task_list()
+    stack = _task_verb("list", session=session)["tasks"]
     if not stack:
         console.print("[yellow]no tasks[/]")
         return
@@ -1851,14 +1869,14 @@ def task_list(session):
               help="Session id to read. Default: active Claude session.")
 def task_current(session):
     """Show the current (top) task."""
-    t = _stm(session, prefer_latest=True).task_current()
+    t = _task_verb("current", session=session)["current"]
     console.print(t["desc"] if t else "[yellow](none)[/]")
 
 
 @task.command("swap")
 def task_swap():
     """Swap the top two tasks."""
-    r = _stm(prefer_latest=True).task_swap()
+    r = _task_verb("swap")
     console.print(f"[green]current:[/] {r['current']}" if r["swapped"]
                   else "[yellow]need ≥2 tasks to swap[/]")
 
@@ -2035,20 +2053,9 @@ def refine_reject(cand_ids):
 @click.option("--reply-to", default=None, help="Message id this replies to.")
 def bus_pub(channel, message, mtype, sender, reply_to):
     """Publish a message to a channel."""
-    hub_mod = _require_hub()
-    import socket as _s
-    sender = sender or os.environ.get("RMX_AGENT") or _s.gethostname()
-    project = None
-    if channel.startswith("proj:"):
-        parts = channel.split(":")
-        project = parts[1] if len(parts) > 1 else None
-    resp = hub_mod.rpc("bus_pub", {
-        "channel": channel, "body": message, "type": mtype,
-        "from": sender, "project": project, "reply_to": reply_to,
-    })
-    if not resp.get("ok"):
-        raise click.ClickException(resp.get("error", "bus error"))
-    console.print(f"[green]published[/] {resp['result']['message']['id']} → {channel}")
+    r = _bus_verb("bus_pub", channel, message, type=mtype, sender=sender,
+                  reply_to=reply_to)
+    console.print(f"[green]published[/] {r['message']['id']} → {channel}")
 
 
 @bus.command("sub")
@@ -2073,11 +2080,10 @@ def bus_sub(channels, history):
 
 
 @bus.command("channels")
-def bus_channels():
+@click.option("--glob", default=None, help="Filter channels by glob (proj:*, proj:cliquedb:*).")
+def bus_channels(glob):
     """List channels with message counts."""
-    hub_mod = _require_hub()
-    resp = hub_mod.rpc("bus_channels")
-    chans = resp.get("result", {}).get("channels", [])
+    chans = _bus_verb("bus_channels", glob=glob).get("channels", [])
     if not chans:
         console.print("[yellow]no channels yet[/]")
         return
@@ -2095,17 +2101,20 @@ def bus_channels():
               help="Which lifecycle state to show.")
 def bus_history(channel, n, status):
     """Show the last N messages on a channel."""
-    hub_mod = _require_hub()
-    resp = hub_mod.rpc("bus_history", {"channel": channel, "n": n, "status": status})
-    for m in resp.get("result", {}).get("messages", []):
+    for m in _bus_verb("bus_history", channel, n=n, status=status).get("messages", []):
         who = m.get("from", "?")
         console.print(f"[dim]{m['ts']}[/] [bold]{who}[/] [magenta]{m['type']}[/] "
                       f"[dim]#{m['id']}[/]: {m['body']}")
 
 
-def _bus_agent(explicit):
-    import socket as _s
-    return explicit or os.environ.get("RMX_AGENT") or _s.gethostname()
+def _bus_verb(name: str, *args, **kw) -> dict:
+    """Every `rmx bus` subcommand renders over its verb (sender resolution
+    lives in verbs._bus_sender: explicit → $RMX_AGENT → project → host)."""
+    from refmatrix import verbs as _verbs
+    try:
+        return getattr(_verbs, name)(_root(), *args, **kw)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e))
 
 
 @bus.command("read")
@@ -2117,11 +2126,8 @@ def _bus_agent(explicit):
 def bus_read(channels, agent, peek, n):
     """Show messages you haven't read yet across matching channels, advancing
     your cursor (unless --peek). Default pattern: * (all channels)."""
-    hub_mod = _require_hub()
-    agent = _bus_agent(agent)
-    resp = hub_mod.rpc("bus_read", {"agent": agent, "channels": list(channels) or ["*"],
-                                    "peek": peek, "n": n})
-    msgs = resp.get("result", {}).get("messages", [])
+    msgs = _bus_verb("bus_read", channels=list(channels) or None, agent=agent,
+                     peek=peek, n=n).get("messages", [])
     if not msgs:
         console.print("[dim]no unread messages[/]")
         return
@@ -2141,10 +2147,7 @@ def bus_read(channels, agent, peek, n):
               help="Cursor position; default = channel max (mark everything read).")
 def bus_mark_read(channel, agent, upto_seq):
     """Mark a channel read up to a point (default: everything)."""
-    hub_mod = _require_hub()
-    resp = hub_mod.rpc("bus_mark_read", {"agent": _bus_agent(agent),
-                                         "channel": channel, "upto_seq": upto_seq})
-    r = resp.get("result", {})
+    r = _bus_verb("bus_mark_read", channel, agent=agent, upto_seq=upto_seq)
     console.print(f"[green]marked read[/] {channel} → seq {r.get('last_seq')}")
 
 
@@ -2152,8 +2155,7 @@ def bus_mark_read(channel, agent, upto_seq):
 @click.argument("msg_id")
 def bus_delete(msg_id):
     """Soft-delete a message by id (hidden from history/read, recoverable until purge)."""
-    hub_mod = _require_hub()
-    r = hub_mod.rpc("bus_delete", {"id": msg_id}).get("result", {})
+    r = _bus_verb("bus_delete", msg_id)
     if r.get("deleted"):
         console.print(f"[green]deleted[/] {msg_id}")
     else:
@@ -2167,9 +2169,7 @@ def bus_delete(msg_id):
               help="With --channel: only messages with ts < this ISO stamp.")
 def bus_archive(msg_id, channel, before):
     """Move messages to the archive (still readable via `history --status archived`)."""
-    hub_mod = _require_hub()
-    r = hub_mod.rpc("bus_archive", {"id": msg_id, "channel": channel,
-                                    "before_ts": before}).get("result", {})
+    r = _bus_verb("bus_archive", id=msg_id, channel=channel, before_ts=before)
     if not r.get("ok"):
         raise click.ClickException(r.get("error", "archive error"))
     console.print(f"[green]archived[/] {r.get('archived', 0)} message(s)")
@@ -2179,8 +2179,7 @@ def bus_archive(msg_id, channel, before):
 @click.argument("msg_id")
 def bus_unarchive(msg_id):
     """Restore an archived message to active."""
-    hub_mod = _require_hub()
-    r = hub_mod.rpc("bus_unarchive", {"id": msg_id}).get("result", {})
+    r = _bus_verb("bus_unarchive", msg_id)
     console.print(f"[green]restored[/] {msg_id}" if r.get("restored")
                   else f"[yellow]not archived[/] {msg_id}")
 
@@ -2201,9 +2200,7 @@ def bus_purge(status, channel, before, yes):
         if before:
             scope += f" before={before}"
         click.confirm(f"purge {scope}?", abort=True)
-    hub_mod = _require_hub()
-    r = hub_mod.rpc("bus_purge", {"status": status, "channel": channel,
-                                  "before_ts": before}).get("result", {})
+    r = _bus_verb("bus_purge", status=status, channel=channel, before_ts=before)
     console.print(f"[green]purged[/] {r.get('purged', 0)} row(s)")
 
 
@@ -2212,8 +2209,7 @@ def bus_purge(status, channel, before, yes):
               help="Include unread counts for this agent (default: $RMX_AGENT or host).")
 def bus_stats(agent):
     """Per-status totals + per-channel breakdown (+ unread counts)."""
-    hub_mod = _require_hub()
-    r = hub_mod.rpc("bus_stats", {"agent": _bus_agent(agent)}).get("result", {})
+    r = _bus_verb("bus_stats", agent=agent)
     totals = r.get("totals", {})
     console.print("[bold]totals[/] " +
                   (", ".join(f"{k}={v}" for k, v in totals.items()) or "empty"))
@@ -2465,6 +2461,39 @@ def hub_status():
                 idflag = ""
             console.print(f"  {dot} {root}  policy={h['policy']} "
                           f"restarts={h['restart_count']}{paused}{idflag}")
+
+
+@hub.command("queues")
+@click.option("--json", "as_json", is_flag=True, help="Raw rows (what rmx_queues returns).")
+def hub_queues(as_json):
+    """Change-queue visibility: pending sync/stale work per project + the
+    refinement-queue depth (the CLI twin of the rmx_queues tool)."""
+    from refmatrix import verbs as _verbs
+    try:
+        res = _verbs.queues(_root())
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e))
+    rows = res.get("queues", [])
+    if as_json:
+        import json as _json
+        click.echo(_json.dumps(res, indent=2, default=str))
+        return
+    if not rows:
+        console.print("[dim]no projects reported[/]")
+        return
+    t = Table("project", "daemon", "stale", "flags")
+    for q in rows:
+        flags = [k for k in ("serving_legacy_catalog", "dev_tree") if q.get(k)]
+        if q.get("identity") == "unknown":
+            flags.append("UNVERIFIED")
+        if q.get("memory_read_ok") is False:
+            flags.append("memory-read-failed")
+        t.add_row(str(q.get("project")), "up" if q.get("daemon_up") else "down",
+                  str(q.get("stale_files") if q.get("stale_files") is not None else "?"),
+                  ", ".join(flags))
+    console.print(t)
+    if res.get("refinement_pending"):
+        console.print(f"[dim]refinement pending: {res['refinement_pending']}[/]")
 
 
 @main.command("version")
@@ -4014,8 +4043,9 @@ def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter, st
     from refmatrix import daemon as daemon_mod
     root = _root()
     if daemon_mod.ping(root):
+        from refmatrix.verbs import payload_query
         resp = daemon_mod.call(root, "query", {
-            "expr": expr, "pql": is_pql, "include_noise": include_noise,
+            **payload_query(expr), "pql": is_pql, "include_noise": include_noise,
             "limit": limit, "name_filter": name_filter, "explain": explain,
             "strict": strict,
         }, timeout=120.0)
@@ -7445,7 +7475,6 @@ def locate(terms, filename, limit, as_json):
       rmx locate store.py partition     # store.py ranked by 'partition' relevance
     """
     import re as _re
-    from refmatrix.search import federated_locate
 
     keywords: list[str] = []
     fname = filename
@@ -7460,7 +7489,8 @@ def locate(terms, filename, limit, as_json):
     if not fname and not keywords:
         raise click.ClickException("give a filename and/or keywords to locate")
 
-    res = federated_locate(fname, keywords, limit=limit)
+    from refmatrix import verbs as _verbs
+    res = _verbs.locate(_root(), file=fname, keywords=keywords, n=limit)
     rows = res["results"]
     if as_json:
         console.print_json(data=res)
@@ -7514,9 +7544,8 @@ def projects_cmd(footprint, fmt):
     """List all refmatrix projects on this machine: name, store root,
     daemon + supervision state. CLI twin of the MCP rmx_projects tool
     (same verb underneath)."""
-    from refmatrix.verbs import VERBS
-    out = VERBS["rmx_projects"].run(_root(), {"footprint": footprint})
-    rows = out["projects"]
+    from refmatrix import verbs as _verbs
+    rows = _verbs.projects(_root(), footprint=footprint)["projects"]
     if fmt == "json":
         click.echo(json.dumps(rows, indent=2, default=str))
         return
@@ -8009,34 +8038,21 @@ def ingest_status(job_id: str | None, follow: bool):
     """Inspect ingest job state. With no JOB_ID, lists all known jobs.
     With a JOB_ID, prints the job summary; pass --follow to tail
     per-file events until the job finishes."""
-    from refmatrix import daemon as daemon_mod
+    from refmatrix import verbs as _verbs
     root = _root()
-    if not daemon_mod.ping(root):
-        raise click.ClickException(
-            "daemon not running — ingest jobs are daemon-resident"
-        )
-    if follow:
-        if not job_id:
-            raise click.ClickException("--follow requires a JOB_ID")
-        # Probe once to learn files_total for the header line.
-        resp = daemon_mod.call(
-            root, "ingest_gmd_status", {"job_id": job_id}, timeout=30.0,
-        )
-        if not resp.get("ok"):
+    if follow and not job_id:
+        raise click.ClickException("--follow requires a JOB_ID")
+    try:
+        result = _verbs.ingest_status(root, job_id=job_id)
+    except _verbs.VerbError as e:
+        if "daemon not running" in str(e):
             raise click.ClickException(
-                resp.get("error", "daemon error")
-            )
-        job = resp["result"]["job"]
+                "daemon not running — ingest jobs are daemon-resident")
+        raise click.ClickException(str(e))
+    if follow:
+        job = result["job"]
         _tail_ingest_progress(root, job_id, job.get("files_total", 0))
         return
-    resp = daemon_mod.call(
-        root, "ingest_gmd_status",
-        {"job_id": job_id} if job_id else {},
-        timeout=30.0,
-    )
-    if not resp.get("ok"):
-        raise click.ClickException(resp.get("error", "daemon error"))
-    result = resp["result"]
     if "jobs" in result:
         jobs = result["jobs"]
         if not jobs:
@@ -9105,31 +9121,22 @@ def memory_add(name, content, mtype, tags, meta, protect, is_global):
                 f"[yellow]note:[/] off-vocabulary tag(s): {', '.join(unknown)} "
                 f"(add via `rmx taxonomy add <category> <tag>`)"
             )
-    if is_global:
-        from refmatrix import hub as hub_mod
-        resp = hub_mod.global_call("memory_add", {
-            "name": name, "content": content, "mtype": mtype,
-            "tags": tags_l, "metadata": meta_d, "protected": protect})
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        console.print(f"[green]global memory[/] {name} "
-                      f"(id={resp['result']['id']}) {mtype}")
-        return
-    from refmatrix import daemon as daemon_mod
+    from refmatrix import verbs as _verbs
     root = _root()
-    args = {
-        "name": name, "content": content, "mtype": mtype,
-        "tags": tags_l, "metadata": meta_d, "protected": protect,
-    }
-    if daemon_mod.ping(root):
-        resp = _memory_daemon_call("memory_add", args)
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        eid = resp["result"]["id"]
-    else:
+    try:
+        res = _verbs.memory_add(root, name, content, mtype=mtype, tags=tags_l,
+                                metadata=meta_d, protect=protect, to_global=is_global)
+        eid = res.get("id")
+    except _verbs.VerbError as e:
+        if is_global or "daemon not running" not in str(e):
+            raise click.ClickException(str(e))
+        # Bootstrap exception (same as the MCP tool): a fresh store has no
+        # daemon yet and the first memory must still land.
         s = _store()
-        eid = s.add_memory(**args)
-    console.print(f"[green]memory[/] {name} (id={eid}) {mtype}")
+        eid = s.add_memory(name=name, content=content, mtype=mtype, tags=tags_l,
+                           metadata=meta_d, protected=protect)
+    label = "global memory" if is_global else "memory"
+    console.print(f"[green]{label}[/] {name} (id={eid}) {mtype}")
 
 
 @memory_grp.command("get")
@@ -9143,16 +9150,18 @@ def memory_get(name_or_id, degree):
     """Fetch a memory by name (current partition) or id (any partition)."""
     _memory_intent("memory_get")
     from refmatrix import daemon as daemon_mod
+    from refmatrix import verbs as _verbs
     root = _root()
     target = int(name_or_id) if name_or_id.isdigit() else name_or_id
-    args: dict = ({"id": target} if isinstance(target, int)
-                  else {"name": target})
-    if daemon_mod.ping(root):
-        resp = _memory_daemon_call("memory_get", args)
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        m = resp["result"]["memory"]
-    else:
+    try:
+        m = _verbs.memory(root, action="get",
+                          **({"id": target} if isinstance(target, int)
+                             else {"name": target}))["memory"]
+    except _verbs.VerbError as e:
+        if "daemon not running" not in str(e):
+            raise click.ClickException(str(e))
+        # Daemon down: the lock-free reader (a CLI courtesy the daemon-routed
+        # verb does not offer).
         s = _read_store()
         m = s.get_memory(target)
     if m is None:
@@ -9406,25 +9415,17 @@ _DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
 
 
 def _ann_similarity(distance: float) -> float:
-    """Cosine similarity (higher = closer) from a Lance L2 distance over
-    L2-normalized embedding vectors. For unit vectors ‖a−b‖² = 2(1 − cos), so
-    cos = 1 − d²/2. The daemon's ANN op returns the raw L2 *distance*
-    (ascending = best); converting here lets `memory recall` show a `score`
-    that rises with rank instead of a distance mislabeled "score"."""
-    return 1.0 - (distance * distance) / 2.0
+    """Single-sourced in verbs.ann_similarity (plan-3 r1 #sk-4)."""
+    from refmatrix.verbs import ann_similarity
+    return ann_similarity(distance)
 
 
 def _recall_display_score(h: dict) -> "float | None":
     """Display score (higher = better, agrees with rank order) for a recall
     hit. A fused hit carries an RRF `score` — use it directly. A pure-dense
     hit carries an L2 `distance` — convert to cosine similarity."""
-    if h.get("fused"):
-        s = h.get("score")
-        return float(s) if isinstance(s, (int, float)) else None
-    d = h.get("distance")
-    if d is None:
-        d = h.get("score")  # pure-dense legacy hit shape
-    return _ann_similarity(float(d)) if isinstance(d, (int, float)) else None
+    from refmatrix.verbs import display_score
+    return display_score(h)
 
 
 def _global_recall_rows(q, *, k, recent, since_s):
@@ -9697,21 +9698,38 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
     # mtype family by default in these modes; --include-session opts back in.
     # The latest handoff still surfaces on demand via `rmx recall-state`
     # (handoff.compose_recall_state — a different path from this recall).
-    if (session_start or stdin_json) and not include_session:
+    # The verb hides session/* unless told otherwise; the CLI's non-hook
+    # modes (`--recent`, a query, `--subject`) SHOW them — an operator
+    # affordance, stated as a named parameter (ch-bsd plan-3 #sk-5) rather
+    # than an empty exclude list. --exclude-mtype always wins.
+    hook_mode = bool(session_start or stdin_json)
+    if hook_mode and not include_session:
         exclude_mtypes.add("session/*")
+    verb_include_session = include_session or not hook_mode
+    verb_exclude = sorted(exclude_mtypes) or None
 
     from refmatrix import verbs as _verbs
 
     def _mt_excluded(mtype: "str | None") -> bool:
         return _verbs.mt_excluded(mtype, exclude_mtypes)
 
+    def _warn(msg: str) -> None:
+        click.echo(f"# rmx: warning: {msg}", err=True)
+
     def _global_rows(qq, *, recent_flag, since):
         """Global-store rows for the --scope both/global merge, with the SAME
         exclusion applied as the project side (2026-07-09: without it global
         save-state / digest rows leaked past the filter). Over-fetch when
-        filtering so the merge still has k."""
+        filtering so the merge still has k. A global store that does not
+        answer is a stderr warning on `both`, fatal on `global`."""
         gk = k * 10 if exclude_mtypes else k
-        grows = _global_recall_rows(qq, k=gk, recent=recent_flag, since_s=since)
+        try:
+            grows = _global_recall_rows(qq, k=gk, recent=recent_flag, since_s=since)
+        except _verbs.VerbError as e:
+            if scope == "global":
+                raise click.ClickException(str(e))
+            _warn(f"global rows omitted: {e}")
+            grows = []
         return [r for r in grows if not _mt_excluded(r.get("mtype"))]
 
     def _attach_context(rows: list[dict]) -> list[dict]:
@@ -9724,7 +9742,11 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         from refmatrix import daemon as daemon_mod
         root = _root()
         if daemon_mod.ping(root):
-            return _verbs.attach_context(root, rows, degree, _resolve_partition())
+            ws: list[str] = []
+            rows = _verbs.attach_context(root, rows, degree, _resolve_partition(), ws)
+            for w in ws:
+                _warn(w)
+            return rows
         from refmatrix.context import build_context, render_text
         rs = _read_store()
         for row in rows:
@@ -9732,8 +9754,10 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                 b = build_context(rs, row["name"], degree=degree,
                                   _entities_explicit=False, _tokens_explicit=False)
                 row["context"] = render_text(b)
-            except Exception:
+            except Exception as e:  # noqa: BLE001 — named on the row + stderr
                 row["context"] = None
+                row["context_error"] = str(e)
+                _warn(f"context for {row.get('name')!r}: {e}")
         return rows
 
     if subject or recent:
@@ -9748,33 +9772,38 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             res = _verbs.memory_recall(
                 _root(), k=k, scope=scope, since=since,
                 recent=bool(recent), session_start=bool(session_start),
-                exclude_mtype=sorted(exclude_mtypes), subject=subject,
-                degree=degree)
+                exclude_mtype=verb_exclude, include_session=verb_include_session,
+                subject=subject, degree=degree)
             rows = res["memories"]
             widened = bool(res.get("widened"))
+            for w in res.get("warnings") or []:
+                _warn(w)
         except _verbs.VerbError as e:
             if "daemon not running" not in str(e):
                 raise click.ClickException(str(e))
-            if not (as_json or as_gmd):
-                click.echo(f"# rmx: {e}; reading the store directly", err=True)
+            click.echo(f"# rmx: {e}; reading the store directly", err=True)
             since_s = _parse_duration(since) if since else (
                 7 * 86400.0 if session_start else None)
-            effective_k = k * 10 if exclude_mtypes else k
             rs = _reader_store() or _store()
             if subject:
                 rows = [r for r in rs.subject_leaves(subject)
                         if not _mt_excluded(r.get("mtype"))][:k]
             else:
-                rows = [r for r in rs.recent_memories(since_seconds=since_s, limit=effective_k)
-                        if not _mt_excluded(r.get("mtype"))][:k]
-            if not rows and session_start and since is None and not subject:
-                widened = True
-                rows = [r for r in rs.recent_memories(since_seconds=None, limit=effective_k)
-                        if not _mt_excluded(r.get("mtype"))][:k]
+                # The SAME rule as the verb (verbs.recent_rows): over-fetch,
+                # filter, widen a DEFAULT window when empty.
+                rows, widened = _verbs.recent_rows(
+                    lambda since_secs, limit: rs.recent_memories(
+                        since_seconds=since_secs, limit=limit),
+                    k=k, patterns=sorted(exclude_mtypes), since_seconds=since_s,
+                    widen_if_empty=bool(session_start and since is None))
+                if widened:
+                    since_s = None
             if scope != "project":
                 rows = _merge_scope(rows, _global_rows(None, recent_flag=True, since=since_s),
                                     k, scope)
             rows = _attach_context(rows)
+        if widened:
+            click.echo("# rmx: nothing in the 7d window; widened to newest", err=True)
         if as_json:
             import json as _json
             click.echo(_json.dumps(rows, indent=2))
@@ -9791,8 +9820,6 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             console.print(f"[yellow]no memories filed under subject[/] {subject!r}"
                           if subject else "[yellow]no memories in window[/]")
             return
-        if widened:
-            click.echo("# rmx: nothing in the 7d window; widened to newest", err=True)
         t = Table("rank", "id", "name", "mtype", "content")
         for i, m in enumerate(rows, 1):
             t.add_row(str(i), str(m["id"]), m["name"], m.get("mtype") or "",
@@ -9817,11 +9844,11 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
     # has k rows after exclusion. 3× covers most pollution levels; user
     # can raise -k for partitions with denser noise.
     ann_k = k * 3 if exclude_mtypes else k
-    args = {"query": q, "k": ann_k, "kinds": kinds_list, "fuse": fuse}
-    # None = let the daemon apply its RMX_RERANK default; explicit
-    # --rerank/--no-rerank overrides it for this call only.
-    if rerank is not None:
-        args["rerank"] = bool(rerank)
+    # The daemon op payload comes from the verb's helper — the one place its
+    # arg names exist (ch-bsd plan-3 #sk-4). rerank=None lets the daemon
+    # apply its RMX_RERANK default.
+    args = _verbs.payload_memory_recall(q, k=ann_k, kinds=kinds_list, fuse=fuse,
+                                        rerank=rerank)
     # Replica-first: serve the recall off the snapshot slot + shared model
     # workers so a busy writer (partition merge, fat ingest) can never stall
     # the always-on hooks. Falls back to the daemon RPC on any missing leg.
@@ -9932,13 +9959,9 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             if m:
                 if _mt_excluded(m.get("mtype")):
                     continue
-                # Honest fields, higher = better, agreeing with rank order.
-                # Fused hits carry an RRF `score`; pure-dense hits a cosine
-                # similarity derived from the raw L2 `distance` (kept too).
-                m["score"] = _recall_display_score(h)
-                m["distance"] = h.get("distance")
-                m["fused"] = bool(h.get("fused"))
-                rows.append(m)
+                # Honest fields, higher = better, agreeing with rank order —
+                # the same annotation MCP rows carry (verbs.annotate_hit).
+                rows.append(_verbs.annotate_hit(m, h))
         if scope != "project":
             rows = _merge_scope(
                 rows, _global_rows(q, recent_flag=False, since=None),
@@ -10728,13 +10751,19 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
     repo = root.parent
     sess = _resolve_stm_session(session, prefer_latest=True)
     today = _time.strftime("%Y-%m-%d")
-    memdir = Path(memory_dir).resolve() if memory_dir else _default_memory_dir(repo)
+    from refmatrix import verbs as _verbs
 
-    from refmatrix import stm as stm_mod
-    s = stm_mod.Stm(root, sess)
-
-    res = compose_save_state(s, root, repo=repo, memdir=memdir, today=today,
-                             message=message, promote=promote, dry_run=dry_run)
+    # ONE implementation (verbs.save_state): compose + promote + lint + file
+    # under the subject + memory bridge. This command renders; --commit is
+    # the CLI-only git post-step.
+    try:
+        res = _verbs.save_state(root, message=message, promote=promote,
+                                dry_run=dry_run, session=sess,
+                                memory_dir=str(memory_dir) if memory_dir else None,
+                                lint=not no_lint, sync=not no_sync)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e))
+    memdir = Path(res.get("memory_dir") or _default_memory_dir(repo))
 
     if dry_run:
         console.print(f"[dim]# would write {res['target']}[/]")
@@ -10744,8 +10773,7 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
     console.print(f"[green]save-state[/] {res['target']}  "
                   f"[dim]({res['events']} events, session {sess})[/]")
 
-    fin = finalize_save_state(s, root, res, repo=repo, lint=not no_lint,
-                              sync=not no_sync)
+    fin = res
     lint_out = fin.get("lint")
     if lint_out:
         tag = ("[green]lint ok[/]" if "0 error" in lint_out.lower()
@@ -10763,7 +10791,7 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
                 console.print(
                     f"[dim]  filed under subject {fin['filed_subject']}[/]")
 
-    subj = s.get_subject()
+    subj = res.get("subject")
     if subj:
         console.print(f"[dim]subject:[/] {subj.get('label')} "
                       f"(slug={subj.get('subject')})")
@@ -10815,13 +10843,10 @@ def recall_state(session, memory_dir, as_json):
     work on its own.
     """
     root = _root()
-    repo = root.parent
     sess = _resolve_stm_session(session, prefer_latest=True)
-    memdir = Path(memory_dir).resolve() if memory_dir else _default_memory_dir(repo)
-
-    from refmatrix import stm as stm_mod
-    s = stm_mod.Stm(root, sess)
-    rep = compose_recall_state(s, root, repo=repo, memdir=memdir)
+    from refmatrix import verbs as _verbs
+    rep = _verbs.recall_state(root, session=sess,
+                              memory_dir=str(memory_dir) if memory_dir else None)
 
     if as_json:
         import json as _json

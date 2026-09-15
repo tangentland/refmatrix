@@ -61,7 +61,7 @@ def test_recent_with_exclude_mtype_drops_session_noise(tmp_path, monkeypatch):
     ])
     assert result.exit_code == 0, result.output
 
-    rows = json.loads(result.output)
+    rows = json.loads(result.stdout)
     names = {r["name"] for r in rows}
     assert "real-feedback" in names
     assert "real-project-state" in names
@@ -90,7 +90,7 @@ def test_recent_without_exclude_keeps_everything(tmp_path, monkeypatch):
     ])
     assert result.exit_code == 0, result.output
 
-    rows = json.loads(result.output)
+    rows = json.loads(result.stdout)
     assert {r["name"] for r in rows} == {"a", "b", "c"}
 
 
@@ -119,7 +119,7 @@ def test_recent_exclude_mtype_glob_prefix(tmp_path, monkeypatch):
     ])
     assert result.exit_code == 0, result.output
 
-    rows = json.loads(result.output)
+    rows = json.loads(result.stdout)
     names = {r["name"] for r in rows}
     assert names == {"real-feedback"}, names
 
@@ -147,7 +147,7 @@ def test_session_start_excludes_session_mtype_by_default(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli_main, [
         "memory", "recall", "--session-start", "--json"])
     assert result.exit_code == 0, result.output
-    names = {r["name"] for r in json.loads(result.output)}
+    names = {r["name"] for r in json.loads(result.stdout)}
     assert "real-feedback" in names
     assert "savestate_abc" not in names
     assert "focus_summary_abc" not in names
@@ -160,7 +160,7 @@ def test_include_session_opts_back_in(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli_main, [
         "memory", "recall", "--session-start", "--include-session", "--json"])
     assert result.exit_code == 0, result.output
-    names = {r["name"] for r in json.loads(result.output)}
+    names = {r["name"] for r in json.loads(result.stdout)}
     assert {"savestate_abc", "focus_summary_abc"} <= names
 
 
@@ -173,7 +173,7 @@ def test_plain_recent_still_keeps_session_mtype(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli_main, [
         "memory", "recall", "--recent", "--json"])
     assert result.exit_code == 0, result.output
-    names = {r["name"] for r in json.loads(result.output)}
+    names = {r["name"] for r in json.loads(result.stdout)}
     assert {"savestate_abc", "focus_summary_abc", "real-feedback"} <= names
 
 
@@ -197,7 +197,7 @@ def test_scope_both_filters_global_rows(tmp_path, monkeypatch):
         "memory", "recall", "--recent", "--scope", "both",
         "--exclude-mtype", "session/*", "--json"])
     assert result.exit_code == 0, result.output
-    names = {r["name"] for r in json.loads(result.output)}
+    names = {r["name"] for r in json.loads(result.stdout)}
     assert "savestate_g" not in names       # global session/* filtered out
     assert "global-feedback" in names        # global non-session kept
     assert "keep" in names                    # project row kept
@@ -228,5 +228,5 @@ def test_recent_exclude_mtype_repeatable_flag(tmp_path, monkeypatch):
     ])
     assert result.exit_code == 0, result.output
 
-    rows = json.loads(result.output)
+    rows = json.loads(result.stdout)
     assert {r["name"] for r in rows} == {"keep"}

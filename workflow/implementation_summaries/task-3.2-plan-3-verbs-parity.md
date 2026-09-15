@@ -19,3 +19,8 @@ New `@verb`s in `verbs.py`, bodies moved from mcp.py: `where`, `search`, `locate
 ## Compatibility {#compat}
 
 `mcp._t_*` names remain as module attributes (the generated dispatchers) and `_MEMORY_OPS` / `_memory_payload` are re-exported, so existing callers and tests are unchanged.
+
+## TDD record {#tdd}
+
+Delivered in the plan-3 r1 remedy (the original task landed without one — ch-bsd #bs-3): RED `workflow/review-output/pytest-plan3-r1-red.log` (51 failed / 12 passed across test_verb_parity, test_verbs_migrated, test_plan3_remedy), GREEN `pytest-plan3-r1-green.log` (63 passed). See [[impl-remedy-plan-3-verbs-parity#tdd]] for the per-verb tests and the mutation checks.
+
