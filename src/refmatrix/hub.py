@@ -547,6 +547,7 @@ class Hub:
             st = discovery.daemon_status(root)
             stale = None
             health: dict = {}
+            stats_failed = False
             if st["up"]:
                 try:
                     resp = daemon_mod.call(
@@ -559,8 +560,16 @@ class Hub:
                         health = resp["result"].get("health") or {}
                 except Exception:
                     stale = None
+                    stats_failed = True
             row = {"project": discovery.store_name(root), "root": str(root),
                    "daemon_up": st["up"], "stale_files": stale}
+            if stats_failed:
+                # Per-root work is capped: a daemon that could not answer
+                # stats within 10 s will not answer an identity ping either.
+                # Mark it unknown (hot) without paying another 2 s
+                # (bsd-plan1-r4 #s-2: 8 roots x 12 s behind a 30 s rpc).
+                row["identity"] = "unknown"
+                row["identity_error"] = "stats call failed; daemon busy"
             # Only carry health keys that are ACTIONABLE, so a healthy row stays
             # as small as it is today and a sick one is impossible to miss.
             if health.get("memory_read_ok") is False:
@@ -1020,7 +1029,7 @@ def _annotate_identity(rows: list[dict]) -> list[dict]:
     ping field. The `global:queues` alert gates on `dev_tree` via
     `_queue_row_is_hot`."""
     for row in rows:
-        if not row.get("daemon_up"):
+        if not row.get("daemon_up") or row.get("identity") == "unknown":
             continue
         ident = _daemon_identity(Path(row["root"]))
         if ident.get("unknown"):

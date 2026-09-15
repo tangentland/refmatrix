@@ -827,7 +827,13 @@ def queues(root: Path) -> dict:
     from refmatrix import hub as hub_mod
     if not hub_mod.is_running():
         raise VerbError("hub not running — change-queue visibility needs it")
-    return hub_mod.rpc("queues").get("result", {})
+    try:
+        return hub_mod.rpc("queues").get("result", {})
+    except (TimeoutError, OSError) as e:
+        # The hub walks every daemon; one busy store used to surface here as
+        # a raw traceback (bsd-plan1-r4 #s-2).
+        raise VerbError(f"hub queues timed out ({e}) — a daemon is busy; retry "
+                        f"or check `rmx daemon status` per project") from e
 
 
 @verb("rmx_ingest_status", 'Poll an ingest/embed job started by rmx_ingest. Omit job_id to list all jobs; since_seq streams new events.')

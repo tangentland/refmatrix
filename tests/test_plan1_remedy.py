@@ -295,3 +295,81 @@ def test_queue_alert_once_reports_whether_it_published(monkeypatch):
             return [{"project": "p", "root": "/r", "daemon_up": True, "stale_files": 0}]
     assert hub_mod.Hub._queue_alert_once(HotHub()) is True
     assert hub_mod.Hub._queue_alert_once(ColdHub()) is False
+
+
+# ---- round 4 (bsd-plan1-r4 #b-1-r4): the field must cross the wire -------------
+
+def test_real_ping_carries_identity_error_and_every_consumer_sees_unknown(monkeypatch, tmp_path):
+    """The r3 readers were tested against hand-written ping results while
+    `_op_ping` dropped the field. Produce it the way production does: the
+    real `_process_identity()` with `runtime_identity` raising, the real
+    `_op_ping`, and the real consumers fed that exact result."""
+    from refmatrix import upgrade as _up
+    monkeypatch.setattr(daemon_mod, "_PROCESS_IDENTITY", None)
+    def boom(**kw):
+        raise RuntimeError("no pth")
+    monkeypatch.setattr(_up, "runtime_identity", boom)
+    d = daemon_mod.Daemon(tmp_path / ".refmatrix")
+    res = daemon_mod._op_ping(d, {})
+    assert res.get("identity_error") == "no pth"
+    assert res["dev_tree"] is False and res["code_path"]
+    # hub → daemon: the row is unknown (hot), not verified-clean
+    monkeypatch.setattr(daemon_mod, "call", lambda root, op, args=None, **kw: {"ok": True, "result": res})
+    ident = hub_mod._daemon_identity(Path("/r"))
+    assert ident.get("unknown") is True and "no pth" in ident.get("error", "")
+    # relaunch guard: not verified
+    from refmatrix import __version__
+    ident_cli = {"version": __version__, "import_path": Path(res["code_path"]),
+                 "code_root": Path("/deploy"), "venv_tree": Path("/deploy"),
+                 "editable_target": Path("/deploy/src"), "dev_tree": False}
+    _relaunch_env(monkeypatch, tmp_path, cli_ident=ident_cli,
+                  ping_result={"ok": True, "result": {**res, "pid": 4243, "version": __version__}})
+    r = CliRunner().invoke(cli_mod.main, ["daemon", "restart", "--relaunch", "--standalone"])
+    assert r.exit_code != 0 and "no pth" in r.output
+    monkeypatch.setattr(daemon_mod, "_PROCESS_IDENTITY", None)
+
+
+def test_hub_status_flags_the_hubs_own_identity_error(monkeypatch):
+    """#b-1-r4 second half: the hub's own `identity_error` reaches the CLI
+    through hub_info but was never rendered."""
+    monkeypatch.setattr(hub_mod, "status", lambda: {
+        "running": True, "pid": 1, "port": 7777, "registry_size": 0, "sock": "/s", "home": "/h",
+        "version": "9.9.9", "code_path": "/x/refmatrix/__init__.py", "dev_tree": False,
+        "identity_error": "hub pth missing"})
+    monkeypatch.setattr(hub_mod, "rpc", lambda op, args=None, **kw: {"ok": True, "result": {"health": {}}})
+    r = CliRunner().invoke(cli_mod.main, ["hub", "status"])
+    assert r.exit_code == 0, r.output
+    assert "UNVERIFIED" in r.output and "hub pth missing" in r.output
+
+
+def test_hub_queues_reports_a_busy_fleet_instead_of_a_traceback(monkeypatch, tmp_path):
+    """#s-2-r4: live, `rmx hub queues` printed a 40-line TimeoutError
+    traceback while one daemon held its store for 30 s."""
+    monkeypatch.setattr(cli_mod, "_root", lambda: tmp_path / ".refmatrix")
+    monkeypatch.setattr(hub_mod, "is_running", lambda: True)
+    def slow(op, args=None, **kw):
+        raise TimeoutError("timed out")
+    monkeypatch.setattr(hub_mod, "rpc", slow)
+    r = CliRunner().invoke(cli_mod.main, ["hub", "queues"])
+    assert r.exit_code != 0
+    assert "Traceback" not in r.output
+    assert "timed out" in r.output and "busy" in r.output.lower()
+
+
+def test_gather_queues_skips_the_identity_ping_when_the_status_call_failed(monkeypatch, tmp_path):
+    """#s-2-r4: per-root work is capped — no 2 s identity ping on a root
+    whose 10 s status call already failed."""
+    root = tmp_path / "p" / ".refmatrix"; root.mkdir(parents=True)
+    monkeypatch.setattr("refmatrix.discovery.discover_roots", lambda: [root])
+    monkeypatch.setattr("refmatrix.discovery.daemon_status", lambda r, **kw: {"up": True, "pid": 1, "busy": False})
+    monkeypatch.setattr("refmatrix.discovery.store_name", lambda r: "p")
+    calls = []
+    def call(r, op, args=None, **kw):
+        calls.append(op)
+        raise TimeoutError("timed out")
+    monkeypatch.setattr(daemon_mod, "call", call)
+    hub = hub_mod.Hub.__new__(hub_mod.Hub)
+    rows = hub_mod.Hub._gather_queues(hub)
+    assert rows and rows[0]["daemon_up"] is True
+    assert "ping" not in calls, calls
+    assert rows[0].get("identity") == "unknown"
