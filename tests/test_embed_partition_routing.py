@@ -23,7 +23,7 @@ def _patch(monkeypatch, calls):
     """Mock the daemon so embed_cmd's routing runs without a model/store."""
     monkeypatch.setattr(cli, "_resolve_partition", lambda: "testproj")
     monkeypatch.setattr(cli, "_memory_partition_default", lambda: "memory-testproj")
-    monkeypatch.setattr(daemon_mod, "ping", lambda root: True)
+    monkeypatch.setattr(daemon_mod, "ping", lambda root, **kw: True)
 
     def fake_call(root, op, args, timeout=None):
         assert op == "embed"
@@ -87,7 +87,7 @@ def test_embed_memory_folds_when_partitions_coincide(tmp_path, monkeypatch):
     calls: list[tuple[str, tuple]] = []
     # _patch overrides _memory_partition_default too; set the rest manually.
     monkeypatch.setattr(cli, "_resolve_partition", lambda: "testproj")
-    monkeypatch.setattr(daemon_mod, "ping", lambda root: True)
+    monkeypatch.setattr(daemon_mod, "ping", lambda root, **kw: True)
 
     def fake_call(root, op, args, timeout=None):
         calls.append((args["partition"], tuple(args["kinds"])))

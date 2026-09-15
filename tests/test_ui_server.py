@@ -103,7 +103,7 @@ def test_where_federates(monkeypatch, tmp_path):
     root = Path("/tmp/projX/.refmatrix")
     monkeypatch.setattr(search.discovery, "discover_roots", lambda: [root])
     monkeypatch.setattr(search.discovery, "store_name", lambda r: "projX")
-    monkeypatch.setattr(search.daemon_mod, "ping", lambda r, timeout=0.5: True)
+    monkeypatch.setattr(search.daemon_mod, "ping", lambda r, timeout=0.5, **kw: True)
     monkeypatch.setenv("RMX_HOME", str(tmp_path / "home"))  # no global store
 
     # context now goes through the in-process replica bundle, not a daemon call

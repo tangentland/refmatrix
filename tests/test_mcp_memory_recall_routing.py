@@ -13,7 +13,7 @@ import refmatrix.daemon as daemon_mod
 
 
 def _mock_daemon(monkeypatch, calls, *, legacy_present: bool):
-    monkeypatch.setattr(daemon_mod, "ping", lambda root: True)
+    monkeypatch.setattr(daemon_mod, "ping", lambda root, **kw: True)
 
     def fake_call(root, op, args, timeout=None):
         calls.append((op, args))

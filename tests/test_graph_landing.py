@@ -163,7 +163,7 @@ def test_tree_endpoint_lists_code_and_docs(tmp_path, monkeypatch):
 
 def test_top_endpoint_routes_to_daemon(monkeypatch, tmp_path):
     monkeypatch.setattr(discovery, "discover_roots", lambda: [])
-    monkeypatch.setattr(srv.daemon_mod, "ping", lambda r, timeout=0.5: True)
+    monkeypatch.setattr(srv.daemon_mod, "ping", lambda r, timeout=0.5, **kw: True)
     monkeypatch.setattr(srv.daemon_mod, "call",
                         lambda r, op, a, timeout=60.0: {
                             "ok": True, "result": {"concepts": [
