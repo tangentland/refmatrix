@@ -171,6 +171,18 @@ class SharedWorkerClient:
                     self._connect()
                     self._sock.settimeout(timeout)
                 return self._call_once(req, blob)
+            finally:
+                # A per-call timeout is for THIS call only. It used to stay
+                # on the socket, so the 1 s `info` probe of the recall hook
+                # shortened the `rerank` that followed to 1 s — a warm worker
+                # scores 20 docs in ~1 s, and 0 of 12 live hook runs reranked
+                # (bsd-plan2-r7 #b-1); the daemon's 45 s probe likewise left
+                # its 30 s client at 45 s.
+                if timeout is not None and self._sock is not None:
+                    try:
+                        self._sock.settimeout(self.timeout)
+                    except OSError:
+                        pass
 
     def evict_if_idle(self, idle_s: float) -> bool:
         """No-op. The daemon's idle tick calls this on whatever client it
