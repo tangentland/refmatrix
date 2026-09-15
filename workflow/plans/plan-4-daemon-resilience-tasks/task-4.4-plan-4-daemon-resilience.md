@@ -20,6 +20,7 @@ rel: part-of -> [[plan-4-daemon-resilience]]
 ## Requirements {#requirements}
 
 - Spawned unsupervised test daemon + `serve_foreground(supervised=True)` on the same root → old pid gone, new one serving, one log line. Orderly launchd `runs` static for 5 minutes.
+- After adoption, orderly's ping reports `code_path` under `~/refmatrix/src` and `rmx hub status` shows no `[UNVERIFIED]` row (bsd-plan1 #s-3).
 
 ## Files to Create / Modify {#files}
 
