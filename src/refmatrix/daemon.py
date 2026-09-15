@@ -2861,6 +2861,8 @@ def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict) -> dic
                     as_memory=bool(args.get("as_memory")),
                     memory_mtype_default=args.get("memory_mtype") or "curated",
                     progress_cb=_progress,
+                    # the memory bridge takes plain markdown too (plan-5 Q1)
+                    lenient=bool(args.get("as_memory")),
                 )
         finally:
             d._store_lock.release()

@@ -325,7 +325,7 @@ rmx
 ├── save-query / run
 ├── ingest / tldr-warm / ingest-gmd / reingest    (reingest = ordered all-source + embed)
 ├── embed                                         (dense vectors → Lance)
-├── memory         add / get / list / search / recall / link / forget / bulk-forget / dedup / sync-disk
+├── memory         add / get / list / search / recall / link / forget / bulk-forget / dedup (sync-disk = deprecated alias of ingest-gmd --as-memory)
 ├── session        ingest / recall / show / list / stats / launchctl
 ├── sync           --files / --since / --flush-queue / --enqueue-only
 ├── queue / watch
