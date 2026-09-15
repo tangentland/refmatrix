@@ -306,7 +306,16 @@ def _promote_digest(root: Path, s) -> dict:
             "metadata": {"title": f"Session summary {s.session[:8]}"},
             "protected": False, "partition": part}
     try:
-        if daemon_mod.ping(root):
+        # Busy is not absent (ch-bsd plan-3 r3 #b-1): only a store with NO
+        # daemon may be opened in-process; a busy one raises VerbBusyError,
+        # which the outer except turns into the error dict the callers print.
+        from refmatrix.verbs import VerbAbsentError, require_daemon
+        try:
+            require_daemon(root)
+            daemon_up = True
+        except VerbAbsentError:
+            daemon_up = False
+        if daemon_up:
             r = daemon_mod.call(root, "memory_add", args, timeout=30.0)
             if not r.get("ok"):
                 return {"error": r.get("error", "daemon error"), "name": name}

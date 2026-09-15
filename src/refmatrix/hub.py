@@ -563,6 +563,11 @@ class Hub:
                     stats_failed = True
             row = {"project": discovery.store_name(root), "root": str(root),
                    "daemon_up": st["up"], "stale_files": stale}
+            if st.get("busy"):
+                # alive, not answering: NOT down (ch-bsd plan-3 r3 observation)
+                row["daemon_busy"] = True
+                row["identity"] = "unknown"
+                row["identity_error"] = f"daemon busy pid={st.get('pid')}"
             if stats_failed:
                 # Per-root work is capped: a daemon that could not answer
                 # stats within 10 s will not answer an identity ping either.

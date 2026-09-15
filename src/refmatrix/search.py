@@ -196,9 +196,8 @@ def federated_concept(name: str) -> dict:
     """Which projects host a concept (exact anchor match) — the cross-project
     canon view. Returns {concept, projects:[{project, root, kind, neighbors}]}."""
     out = []
-    for root in discovery.discover_roots():
-        if not daemon_mod.ping(root):
-            continue
+    roots, skipped = _live_roots()
+    for root in roots:
         proj = discovery.store_name(root)
         try:
             b = _replica_bundle(root, name, degree=0)
@@ -210,16 +209,15 @@ def federated_concept(name: str) -> dict:
                                 "kind": anchor.get("kind"), "neighbors": neighbors})
         except Exception:
             pass
-    return {"concept": name, "projects": out}
+    return {"concept": name, "projects": out, "skipped": skipped}
 
 
 def federated_query(dsl: str, *, limit: int = 50) -> dict:
     """Run a DSL query against every live store, returning per-project hit
     counts + entity ids."""
     out = []
-    for root in discovery.discover_roots():
-        if not daemon_mod.ping(root):
-            continue
+    roots, skipped = _live_roots()
+    for root in roots:
         proj = discovery.store_name(root)
         try:
             r = daemon_mod.call(root, "query",
@@ -233,7 +231,7 @@ def federated_query(dsl: str, *, limit: int = 50) -> dict:
                             "rows": rows[:limit]})
         except Exception:
             pass
-    return {"projects": out}
+    return {"projects": out, "skipped": skipped}
 
 
 def _locate_one_project(root, filename: str | None,

@@ -2548,7 +2548,8 @@ def hub_queues(as_json):
             flags.append("UNVERIFIED")
         if q.get("memory_read_ok") is False:
             flags.append("memory-read-failed")
-        t.add_row(str(q.get("project")), "up" if q.get("daemon_up") else "down",
+        t.add_row(str(q.get("project")),
+                  "up" if q.get("daemon_up") else ("busy" if q.get("daemon_busy") else "down"),
                   str(q.get("stale_files") if q.get("stale_files") is not None else "?"),
                   ", ".join(flags))
     console.print(t)
@@ -7560,11 +7561,18 @@ def locate(terms, filename, limit, as_json):
     from refmatrix import verbs as _verbs
     res = _verbs.locate(_root(), file=fname, keywords=keywords, n=limit)
     rows = res["results"]
+    skipped = res.get("skipped") or []
+    # A store that could not be searched is said so, in every mode — a busy
+    # daemon used to turn into "no matches" (ch-bsd plan-3 r3 #b-2).
+    for sk in skipped:
+        click.echo(f"# rmx: skipped {sk.get('project')} — {sk.get('reason')}", err=True)
     if as_json:
         console.print_json(data=res)
         return
     if not rows:
-        console.print("[yellow]no matches[/]")
+        console.print("[yellow]no matches[/]" + (
+            f" ({len(skipped)} store{'s' if len(skipped) != 1 else ''} skipped — see stderr)"
+            if skipped else ""))
         return
     for r in rows:
         click.echo(r["path"])
@@ -9397,9 +9405,11 @@ def memory_get(name_or_id, degree):
         m = _verbs.memory(root, action="get",
                           **({"id": target} if isinstance(target, int)
                              else {"name": target}))["memory"]
-    except _verbs.VerbAbsentError:
-        # Daemon down: the lock-free reader (a CLI courtesy the daemon-routed
-        # verb does not offer). Busy is NOT down: it surfaces below.
+    except (_verbs.VerbAbsentError, _verbs.VerbBusyError) as e:
+        # Daemon down OR busy: the lock-free replica reader serves the READ
+        # (a CLI courtesy the daemon-routed verb does not offer; ch-bsd
+        # plan-3 r3 #m-5). Said on stderr either way — never silently.
+        click.echo(f"# rmx: {e}; reading the replica", err=True)
         s = _read_store()
         m = s.get_memory(target)
     except _verbs.VerbError as e:
@@ -10056,11 +10066,13 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             widened = bool(res.get("widened"))
             for w in res.get("warnings") or []:
                 _warn(w)
-        except _verbs.VerbBusyError as e:
-            _degrade_or_raise(e)
-            return
-        except _verbs.VerbAbsentError as e:
-            click.echo(f"# rmx: {e}; reading the store directly", err=True)
+        except (_verbs.VerbBusyError, _verbs.VerbAbsentError) as e:
+            if isinstance(e, _verbs.VerbBusyError) and hook_mode:
+                _degrade_or_raise(e)
+                return
+            # Absent, or busy in interactive use: the lock-free replica
+            # reader serves the READ, and says so (ch-bsd plan-3 r3 #m-5).
+            click.echo(f"# rmx: {e}; reading the replica", err=True)
             since_s = _parse_duration(since) if since else (
                 7 * 86400.0 if session_start else None)
             rs = _reader_store() or _store()
