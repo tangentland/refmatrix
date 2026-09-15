@@ -196,8 +196,10 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                     # STM graduates to durable memory at every turn end
                     # (feedback_save_state_includes_promote). Memory path
                     # → foreground, loud.
+                    # bounded: 55 s live on a busy daemon (bsd-plan2-r2 #s-1);
+                    # past 5 s it fails loud and PreCompact/save-state catch up
                     *([{"type": "command",
-                        "command": HOOK_ENV + "rmx focus summarize --promote"}]
+                        "command": HOOK_ENV + "rmx focus summarize --promote --timeout 5"}]
                       if stop_promote else []),
                 ]}
             ],
@@ -441,9 +443,9 @@ def install(
                                      apply=apply, force=force))
     if apply and scope == "project":
         from refmatrix.search_hooks import wrapper_paths
-        record_flags(project_root, dict(memory_hooks=memory_hooks, primer=primer,
-                                        scan_prompt=scan_prompt, search=search,
-                                        wrappers=list(wrapper_paths()),
+        record_flags(project_root, dict(claude=claude, memory_hooks=memory_hooks,
+                                        primer=primer, scan_prompt=scan_prompt,
+                                        search=search, wrappers=list(wrapper_paths()),
                                         **hook_opts))
         out.append(f"[green]write[/] {project_root / '.claude' / 'rmx-hooks.json'} (flags)")
     if not apply:
@@ -499,6 +501,16 @@ def render_managed(project_root: Path, flags: dict) -> dict:
     block plus the search hooks when enabled. This is what `--check` compares
     against and what `--apply` writes."""
     project_root = Path(project_root)
+    if flags.get("claude", True) is False:
+        # --no-claude apply: no rmx block was written; only the search hooks
+        # (when on) are managed. Rendering the full block here reported 17
+        # lines of false drift (bsd-plan2-r2 #s-2).
+        block: dict = {"hooks": {}}
+        if flags.get("search", True):
+            from refmatrix.search_hooks import search_hook_block
+            for event, entries in search_hook_block()["hooks"].items():
+                block["hooks"].setdefault(event, []).extend(entries)
+        return block
     block = _claude_hook_block(
         project_root / ".refmatrix", primer=flags.get("primer", True),
         scan_prompt=flags.get("scan_prompt", True),

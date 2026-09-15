@@ -26,7 +26,7 @@ store somewhere in scope (the memory partition defaults to
 | `SessionStart` | `rmx -p intuition memory recall --session-start --json` | Inject the top-k recent memories at session boot |
 | `UserPromptSubmit` | `rmx memory recall --stdin-json --k 5 --json` | Pull memories matching the user's prompt (reads the hook's stdin JSON envelope natively) |
 | `PreCompact` | `rmx -p intuition memory recall --recent --since 1h --json` | Surface this session's recent observations before compaction |
-| `Stop` | (out of scope — Phase C4) | Auto-capture session observations as memories |
+| `Stop` | `rmx focus summarize --promote --timeout 5` | Graduate the turn's STM digest to durable memory (bounded; a busy daemon skips loudly) |
 
 `--json` makes the output friendlier for piping into your prompt
 context; drop it for human-readable Rich tables.
@@ -121,21 +121,20 @@ observations intact.
 }
 ```
 
-## Stop — auto-capture (Phase C4, deferred) {#stop-auto-capture-phase-c4-deferred}
+## Stop — STM promote (shipped 0.67.0) {#stop-auto-capture-phase-c4-deferred}
 
-ADR-0001 Phase C originally planned a `Stop` hook that runs
-`rmx memory add --auto-extract` to capture session observations as
-memories. Auto-extraction needs an LLM call to summarize the
-transcript, so it's been deferred to **Phase C4 (not yet shipped)**.
-
-For now, capture observations explicitly via:
+The generator emits three Stop entries: a background `rmx sync --flush-queue --async`, a
+`rmx focus hook --event say` capture of the assistant's last message into STM, and
+`rmx focus summarize --promote --timeout 5`, which condenses the session's STM (topics,
+milestones, intent arc, top symbols) into a `session/digest` memory through the daemon —
+upserted by name, so it never grows the store. `--timeout 5` bounds the daemon write: on a busy
+daemon the hook fails loud and the next PreCompact / `rmx save-state` promote catches up
+(2026-09-14: unbounded, it held a turn for 55 s). There is no LLM-driven "auto-extract" step
+and none is planned; observations worth keeping are written explicitly:
 
 ```bash
 rmx memory add <slug> -c "..." --type observation --tags ...
 ```
-
-Or pair `rmx memory add` with the user-issued `/remember` flow if
-your harness has one.
 
 ## Cleaning up the intuition wiring {#cleaning-up-the-intuition-wiring}
 

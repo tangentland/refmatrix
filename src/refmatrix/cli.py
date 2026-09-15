@@ -1100,14 +1100,23 @@ def focus_topics(top, session):
 @focus.command("summarize")
 @click.option("-s", "--session", default=None,
               help="Session id. Default: active Claude session.")
+@click.option("--timeout", type=float, default=60.0, show_default=True,
+              help="Seconds to wait for the daemon write when promoting; the "
+                   "Stop hook passes 5 so a busy daemon never holds the turn.")
 @click.option("--promote", is_flag=True,
               help="Write the digest to durable memory (the STM→LTM bridge).")
 @click.option("--global", "is_global", is_flag=True,
               help="Promote to the shared cross-project global store.")
-def focus_summarize(session, promote, is_global):
+def focus_summarize(session, promote, is_global, timeout):
     """Condense the session's STM (topics + milestones + intent arc) into a
     compact digest. --promote writes it to durable memory so the transient
-    focus graduates to LTM. Lighter than `save-state` (STM-only, no git/repo)."""
+    focus graduates to LTM. Lighter than `save-state` (STM-only, no git/repo).
+
+    --timeout bounds the daemon write. The Stop hook runs this every turn;
+    on 2026-09-14 it took 55 s / 15 s / 6 s while the daemon was busy with a
+    bridge ingest and a post-commit sync (bsd-plan2-r2 #s-1). A hook must not
+    hold the turn for the store: past the bound it fails loud and the next
+    PreCompact / save-state promote catches up."""
     s = _stm(session, prefer_latest=True)
     digest = _focus_digest(s)
     if not promote:
@@ -1130,7 +1139,15 @@ def focus_summarize(session, promote, is_global):
         from refmatrix import daemon as daemon_mod
         root = _root()
         if daemon_mod.ping(root):
-            resp = _memory_daemon_call("memory_add", args)
+            import socket as _socket
+            try:
+                resp = _memory_daemon_call("memory_add", args, timeout=float(timeout),
+                                           retries=0)
+            except (TimeoutError, _socket.timeout, OSError) as e:
+                raise click.ClickException(
+                    f"daemon busy (no answer to memory_add within {timeout:g}s: "
+                    f"{e}) — promote skipped this turn; the next PreCompact / "
+                    f"save-state promote catches up") from e
             if not resp.get("ok"):
                 raise click.ClickException(resp.get("error", "daemon error"))
             eid = resp["result"]["id"]
@@ -1142,7 +1159,8 @@ def focus_summarize(session, promote, is_global):
             raise click.ClickException(
                 f"daemon not running for {root} — `focus summarize --promote` "
                 f"writes durable memory through the daemon; start it "
-                f"(`rmx daemon start`) or use `--no-promote`")
+                f"(`rmx daemon start`) or run `rmx focus summarize` without "
+                f"--promote to print the digest only")
     console.print(f"[green]promoted[/] {name} (id={eid}) — recall with "
                   f"`rmx memory recall summary` or `rmx context {name}`")
     if not is_global:
@@ -8137,14 +8155,20 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
         from refmatrix import discovery as _disc
         st = _disc.daemon_status(root)
         if st.get("busy"):
-            deadline = float(os.environ.get("RMX_DETACH_WAIT_S", "10") or "10")
-            waited = 0.0
-            while waited < deadline and not daemon_mod.ping(root):
-                _time.sleep(1.0); waited += 1.0
-            if not daemon_mod.ping(root):
+            budget = float(os.environ.get("RMX_DETACH_WAIT_S", "10") or "10")
+            t0 = _time.monotonic()
+            answered = False
+            # wall-clock budget: each ping already costs its own timeout
+            while _time.monotonic() - t0 < budget:
+                if daemon_mod.ping(root, timeout=0.5, retries=0):
+                    answered = True
+                    break
+                _time.sleep(0.25)
+            if not answered:
+                waited = _time.monotonic() - t0
                 raise click.ClickException(
                     f"daemon busy pid={st.get('pid')} for {root} (alive, not "
-                    f"answering for {deadline:.0f}s) — catch-up skipped; retry "
+                    f"answering for {waited:.1f}s) — catch-up skipped; retry "
                     f"shortly or run without --detach")
         else:
             raise click.ClickException(
@@ -8951,16 +8975,19 @@ def _legacy_memory_partition_exists(root: Path, legacy: str) -> bool:
     return found
 
 
-def _memory_daemon_call(op: str, args: dict, *, timeout: float = 60.0):
+def _memory_daemon_call(op: str, args: dict, *, timeout: float = 60.0,
+                        retries: int = 2):
     """Daemon call helper for memory ops. Auto-injects the active
     partition so memory commands don't have to know that the daemon
     might be bound to a different partition than the one we're
     writing/reading. Special-case callers can still override by
-    setting `args['partition']` explicitly before the call."""
+    setting `args['partition']` explicitly before the call. `retries=0`
+    for hook-bounded calls: `daemon.call` retries on timeout, so a 5 s
+    bound with the default retries is a 15 s wait."""
     from refmatrix import daemon as daemon_mod
     if "partition" not in args:
         args = {**args, "partition": _resolve_partition()}
-    return daemon_mod.call(_root(), op, args, timeout=timeout)
+    return daemon_mod.call(_root(), op, args, timeout=timeout, retries=retries)
 
 
 def _apply_memory_partition_default() -> None:
