@@ -129,6 +129,21 @@ def test_stale_pid_reused_by_a_foreign_process_is_absent():
         shutil.rmtree(base, ignore_errors=True)
 
 
+def test_pid_is_rmx_treats_a_permission_denied_pid_as_existing(monkeypatch):
+    """A pid we may not signal EXISTS (another user's daemon on a shared
+    store): the safe direction is to let `ps` decide, not to call it absent
+    (bsd-plan5-r3 #m-1 — the one branch that went the other way)."""
+    import subprocess as _sp
+
+    def kill(pid, sig):
+        raise PermissionError("not ours")
+    monkeypatch.setattr(discovery.os, "kill", kill)
+    monkeypatch.setattr(_sp, "run", lambda *a, **kw: _sp.CompletedProcess(a[0], 0, "/x/bin/rmx daemon start\n", ""))
+    assert discovery.pid_is_rmx(4242) is True
+    monkeypatch.setattr(_sp, "run", lambda *a, **kw: _sp.CompletedProcess(a[0], 0, "/usr/sbin/cupsd\n", ""))
+    assert discovery.pid_is_rmx(4242) is False
+
+
 def test_pid_is_rmx_reads_the_process_command_line():
     a = _child("rmx", "daemon", "start"); b = _child("something-else")
     try:

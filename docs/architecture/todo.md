@@ -26,7 +26,7 @@ end-to-end audit ([[bsd-0661-e2e-memory-bridge]]).
 | G1 | Shipped (plan 1 completed 2026-09-14, ch-bsd r5 CLEAN-on-bookkeeping) | Deploy venv imports the dev tree; no deploy runtime | — | bsd #bs-2 | plan 1 |
 | G2 | Shipped (plan 4 tasks 4.1/4.2, 2026-09-14; ch-bsd r1 open) | `learn_from_grep` (a read) upserts entities unguarded; entities index not repaired on fast-exit | — | bsd #bs-3 | plan 4 |
 | G3 | Shipped (plan 4 task 4.3, 2026-09-14; ch-bsd r1 open) | Hub watchdog SIGKILLs a daemon reconnecting to an evicted model worker | — | incident 2026-09-14 | plan 4 |
-| G4 | Shipped (plan 5, 2026-09-14; ch-bsd r1 open) | Memory bridge skips non-GMD files silently; two bridges (sync-disk vs ingest-gmd) | — | bsd #bs-1 | plan 5 |
+| G4 | Shipped (plan 5 r3, 2026-09-15; ch-bsd r3: 0 BULLSHIT / 0 SKETCHY) | Memory bridge counts every skip (non-GMD, unparseable, index files); ONE bridge (`ingest-gmd --as-memory`; `memory sync-disk` is a thin alias kept for the fleet's p20-0 compiler, deferral row); busy ≠ absent at the write control point incl. the boot window | — | bsd #bs-1 → r3 | plan 5 |
 | G5 | Shipped (plan 2, 2026-09-14; ch-bsd r5 open) | Installed hooks ≠ generated hooks; PreCompact silences bridge failure | — | bsd #bs-4 | plan 2 |
 | G6 | Shipped (plan 3, 2026-09-14; ch-bsd r3 open) | 30 MCP tools vs 10 verbs; session-start widen only in CLI | — | bsd #sk-3 | plan 3 |
 | G7 | Planned | Stale deferrals: ingest_gmd/store/duckdb_view/embedder/sync docstrings | — | bsd #bs-5 | plan 6 |
