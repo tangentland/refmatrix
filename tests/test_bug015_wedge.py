@@ -145,8 +145,8 @@ def test_model_server_keeps_the_worker_when_the_client_socket_broke():
     a, b = socket.socketpair()
     rw = a.makefile("rwb")
     send_frame(rw, {"role": "embed", "op": "info"})
-    a.shutdown(socket.SHUT_RDWR)                # the client left before the reply
-    srv._handle(b)
+    rw.close(); a.close()                       # the client is GONE before the reply
+    srv._handle(b)                              # the request is still buffered; the reply hits EPIPE
     assert srv._clients.get("embed") is fine and fine.calls == 1
 
 

@@ -114,7 +114,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook; rmx scan-prompt --composite-every 3 --max-tokens 2000 2>/dev/null || true ; rmx curator status --drain 2>/dev/null || true"
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx scan-prompt --composite-every 3 --max-tokens 2000 --timeout 5 2>/dev/null || true ; rmx curator status --drain 2>/dev/null || true"
           },
           {
             "type": "command",
