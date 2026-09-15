@@ -7464,18 +7464,59 @@ def projects_cmd(footprint, fmt):
               help="Actually write files. Without this flag, prints what would happen.")
 @click.option("--force", is_flag=True, help="Overwrite existing files.")
 @click.option("--scope", type=click.Choice(["project", "user"]), default="project",
-              help="For Claude hooks: write to .claude/settings.local.json (project) "
-                   "or print snippet for ~/.claude/settings.json (user).")
-def install_hooks(git, claude, briefing, agent_env, search, apply, force, scope):
-    """Install or preview hooks that keep refmatrix in sync."""
-    from refmatrix.hooks import install
+              help="For Claude hooks: write to .claude/settings.json (project, "
+                   "committed) or print a snippet for ~/.claude/settings.json (user).")
+@click.option("--memory-hooks/--no-memory-hooks", default=True,
+              help="SessionStart/UserPromptSubmit/PreCompact memory recall + "
+                   "the memory-bridge catch-up.")
+@click.option("--primer/--no-primer", default=True,
+              help="Regenerate .refmatrix/PRIMER.md at SessionStart.")
+@click.option("--scan-prompt/--no-scan-prompt", default=True,
+              help="UserPromptSubmit scan-prompt + focus input capture.")
+@click.option("--enforce/--no-enforce", "enforce", default=None,
+              help="Emit the cat-herder enforcement hooks (enforce-test-to-file, "
+                   "enforce-rmx-grep, adr-gate, p20-0 compile). Default: each "
+                   "one when its script exists under .claude/.")
+@click.option("--composite-every", type=int, default=3, show_default=True,
+              help="scan-prompt --composite-every N (0 = off).")
+@click.option("--precompact-checkpoint/--no-precompact-checkpoint", default=True,
+              help="PreCompact `rmx save-state --no-promote --no-sync` checkpoint.")
+@click.option("--stop-promote/--no-stop-promote", default=True,
+              help="Stop runs `rmx focus summarize --promote`.")
+@click.option("--resume-focus", type=int, default=15, show_default=True,
+              help="SessionStart(resume) `rmx focus context --top N` (0 = off).")
+@click.option("--check", "check_only", is_flag=True,
+              help="Diff the installed .claude/settings.json against what this "
+                   "version generates under the recorded flags "
+                   "(.claude/rmx-hooks.json). Exit 1 on drift. Writes nothing.")
+def install_hooks(git, claude, briefing, agent_env, search, apply, force, scope,
+                  memory_hooks, primer, scan_prompt, enforce, composite_every,
+                  precompact_checkpoint, stop_promote, resume_focus, check_only):
+    """Install, preview, or verify the hooks that keep refmatrix in sync.
 
-    s = _store()
-    project_root = s.root.parent
-    plan = install(project_root=project_root, refmatrix_root=s.root,
-                   git=git, claude=claude, briefing=briefing, scope=scope,
-                   apply=apply, force=force, agent_env=agent_env,
-                   search=search)
+    The generated block is the ONLY source of a project's rmx hooks: `--apply`
+    writes it (and records the flags), `--check` proves the installed file
+    still equals it. Hand-edited hooks are drift, and drift is a failed check."""
+    from refmatrix import hooks as hooks_mod
+
+    root = _root()
+    project_root = root.parent
+    if check_only:
+        ok, diff = hooks_mod.check(project_root)
+        if ok:
+            console.print(f"[green]hooks in sync[/] {project_root / '.claude' / 'settings.json'}")
+            return
+        console.print(f"[red]hooks drift[/] {project_root / '.claude' / 'settings.json'}")
+        click.echo(diff)
+        raise SystemExit(1)
+    plan = hooks_mod.install(
+        project_root=project_root, refmatrix_root=root,
+        git=git, claude=claude, briefing=briefing, scope=scope,
+        apply=apply, force=force, agent_env=agent_env, search=search,
+        memory_hooks=memory_hooks, primer=primer, scan_prompt=scan_prompt,
+        composite_every=composite_every or None,
+        precompact_checkpoint=precompact_checkpoint, stop_promote=stop_promote,
+        resume_focus=resume_focus or None, enforce=enforce)
     for line in plan:
         console.print(line)
 
@@ -8029,6 +8070,13 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
             f"missing={report['missing']}"
         )
         return
+    if (detach or progress) and not daemon_mod.ping(root):
+        # A detached job is a DAEMON job. Falling through to the in-process
+        # path would turn the SessionStart bridge hook into a 25 s+ foreground
+        # ingest — say so instead (loud: this is a memory path).
+        raise click.ClickException(
+            f"no daemon running for {root} — --detach/--progress need the "
+            f"daemon (`rmx daemon start`), or run without the flag")
     if daemon_mod.ping(root):
         op_args = {
             "targets": [str(p) for p in resolved],

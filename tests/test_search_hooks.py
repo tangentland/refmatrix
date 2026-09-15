@@ -37,7 +37,7 @@ def test_install_writes_scripts_and_settings(env_hooks, tmp_path):
     for name in (sh.GUARD_NAME, sh.REWRITER_NAME, sh.TEACH_NAME):
         f = env_hooks / name
         assert f.exists() and f.stat().st_mode & 0o111
-    cfg = json.loads((proj / ".claude" / "settings.local.json").read_text())
+    cfg = json.loads((proj / ".claude" / "settings.json").read_text())
     cmds = [h["command"] for evs in cfg["hooks"].values()
             for e in evs for h in e["hooks"]]
     assert str(env_hooks / sh.GUARD_NAME) in cmds
@@ -49,7 +49,7 @@ def test_reinstall_is_idempotent(env_hooks, tmp_path):
     proj.mkdir()
     sh.install_search_hooks(proj, scope="project", apply=True, force=False)
     sh.install_search_hooks(proj, scope="project", apply=True, force=False)
-    cfg = json.loads((proj / ".claude" / "settings.local.json").read_text())
+    cfg = json.loads((proj / ".claude" / "settings.json").read_text())
     cmds = [h["command"] for evs in cfg["hooks"].values()
             for e in evs for h in e["hooks"]]
     assert len(cmds) == len(set(cmds)) == 2
@@ -59,7 +59,7 @@ def test_user_scope_prints_snippet_only(env_hooks, tmp_path):
     proj = tmp_path / "proj"
     proj.mkdir()
     out = sh.install_search_hooks(proj, scope="user", apply=True, force=False)
-    assert not (proj / ".claude" / "settings.local.json").exists()
+    assert not (proj / ".claude" / "settings.json").exists()
     assert any("settings.json" in ln for ln in out)
 
 

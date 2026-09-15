@@ -4,7 +4,7 @@ Hook installer. Two surfaces:
 - git hooks (post-commit, post-merge, post-checkout, post-rewrite) that fire
   `rmx sync --since <ref>` after history-changing operations.
 - Claude Code hook config: a JSON block adding PostToolUse enqueue and Stop
-  flush. Written to `.claude/settings.local.json` for project scope, or
+  flush. Written to `.claude/settings.json` for project scope, or
   printed for the user to merge into `~/.claude/settings.json`.
 
 Default mode is dry-run. Pass `apply=True` to actually write. Refuses to
@@ -67,8 +67,39 @@ disown
 
 def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                        scan_prompt: bool = True,
-                       memory_hooks: bool = True) -> dict:
-    """A merge-ready hooks block for Claude Code settings.json.
+                       memory_hooks: bool = True, *,
+                       composite_every: "int | None" = 3,
+                       precompact_checkpoint: bool = True,
+                       stop_promote: bool = True,
+                       resume_focus: "int | None" = 15,
+                       enforce: "bool | None" = None,
+                       project_root: "Path | None" = None) -> dict:
+    """The ONE generator of a project's rmx hook config (Claude Code
+    `.claude/settings.json`).
+
+    Every hook a project runs comes from here — `rmx install-hooks --check`
+    diffs the installed file against this render, so a hook that exists only
+    in a settings file is a template bug (2026-09-14: four hand-authored hooks
+    lived in one project's settings.local.json; a forced reinstall would have
+    deleted them, and the only unattended save-state swallowed the memory
+    bridge failure the code was built to shout).
+
+    Options (recorded in `.claude/rmx-hooks.json` on apply so --check can
+    re-render identically):
+      composite_every       scan-prompt `--composite-every N` (None = off)
+      precompact_checkpoint PreCompact `rmx save-state --no-promote --no-sync`
+      stop_promote          Stop runs `rmx focus summarize --promote`
+      resume_focus          SessionStart(resume) `rmx focus context --top N`
+      enforce               emit the cat-herder enforcement hooks
+                            (enforce-test-to-file, enforce-rmx-grep, adr-gate,
+                            p20-0 guardrail compile); None = auto, i.e. each
+                            entry only when its script exists under
+                            `<project_root>/.claude/hooks` or `.claude/p20-0`.
+
+    Loudness contract: every command on a memory path (memory recall,
+    ingest-gmd, save-state, focus summarize) runs in the foreground with no
+    `2>/dev/null` and no `|| true`. Plumbing (sync flush, primer, focus
+    events, curator status) may stay quiet.
 
     Uses python -c instead of jq so the hook works on a fresh box without
     extra deps.
@@ -138,24 +169,6 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
     bg_parts = [
         "rmx sync --flush-queue --async >/dev/null 2>&1 || true"
     ]
-    if memory_hooks:
-        # Memory bridge catch-up: ingest the curated-memory dir
-        # (`~/.claude/projects/<slug>/memory/`) as kind=memory rows so
-        # files written outside `rmx save-state` (hand-authored memories,
-        # another session's handoff) still reach the store. Content-hash
-        # gated, ~25s on a 200-file dir, so it runs in the background
-        # group — it CANNOT be ordered before the synchronous
-        # `memory recall --session-start` hook below (Claude Code runs an
-        # event's hooks in parallel), which is why save-state runs the
-        # same bridge synchronously and loudly at the end of a session;
-        # this is the quiet safety net, not the primary path. Missing dir
-        # (a project with no memories yet) is the || true case.
-        from refmatrix.handoff import default_memory_dir
-        memdir = default_memory_dir(refmatrix_root.parent)
-        bg_parts.append(
-            "rmx ingest-gmd --as-memory '" + str(memdir)
-            + "' >/dev/null 2>&1 || true"
-        )
     if primer:
         bg_parts.append(
             "rmx primer --out '"
@@ -180,6 +193,12 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                 {"hooks": [
                     {"type": "command", "command": flush_cmd},
                     {"type": "command", "command": focus_say_cmd},
+                    # STM graduates to durable memory at every turn end
+                    # (feedback_save_state_includes_promote). Memory path
+                    # → foreground, loud.
+                    *([{"type": "command",
+                        "command": HOOK_ENV + "rmx focus summarize --promote"}]
+                      if stop_promote else []),
                 ]}
             ],
             "SubagentStop": [
@@ -200,9 +219,11 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
         # Also surface any pending curator queue so the user's next prompt
         # arrives alongside the curator-dispatch signal (subsecond, silent
         # when empty, drains on read).
+        composite = (f" --composite-every {int(composite_every)}"
+                     if composite_every else "")
         scan_cmd = (
             HOOK_ENV
-            + "rmx scan-prompt --max-tokens 2000 2>/dev/null || true ; "
+            + f"rmx scan-prompt{composite} --max-tokens 2000 2>/dev/null || true ; "
             "rmx curator status --drain 2>/dev/null || true"
         )
         block["hooks"]["UserPromptSubmit"] = [
@@ -235,17 +256,46 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
         # 2>/dev/null and no `|| true` -- memory is critical, broken
         # state must surface; mask the symptom and the data quietly
         # rots.
+        # Memory bridge catch-up: ingest the curated-memory dir as
+        # kind=memory rows so files written outside `rmx save-state` still
+        # reach the store. `--detach` hands the job to the daemon and returns
+        # at once (an "ingest already active" or "no daemon" answer prints —
+        # memory path, so it is never silenced). Claude Code runs an event's
+        # hooks in parallel, so this cannot be ordered before the recall
+        # below; save-state's own synchronous bridge is the primary path.
+        from refmatrix.handoff import default_memory_dir
+        memdir = default_memory_dir(refmatrix_root.parent)
         block["hooks"].setdefault("SessionStart", []).append({
             "matcher": "startup|resume|clear",
-            "hooks": [{
-                "type": "command",
-                "command": (
-                    HOOK_ENV
-                    + "rmx memory recall --session-start "
-                    "--k 10 --scope both --json"
-                ),
-            }],
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": (
+                        HOOK_ENV
+                        + "rmx memory recall --session-start "
+                        "--k 10 --scope both --json"
+                    ),
+                },
+                {
+                    "type": "command",
+                    "command": (
+                        HOOK_ENV
+                        + "rmx ingest-gmd --as-memory --detach '"
+                        + str(memdir) + "'"
+                    ),
+                },
+            ],
         })
+        if resume_focus:
+            # The prior session's live STM threads, on resume only.
+            block["hooks"]["SessionStart"].append({
+                "matcher": "resume",
+                "hooks": [{
+                    "type": "command",
+                    "command": HOOK_ENV
+                    + f"rmx focus context --top {int(resume_focus)}",
+                }],
+            })
         block["hooks"].setdefault("UserPromptSubmit", []).append({
             "hooks": [{
                 "type": "command",
@@ -268,9 +318,10 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                 # This is the "compaction keeps the real summary" path.
                 {
                     "type": "command",
-                    "command": (
-                        HOOK_ENV + "rmx focus summarize 2>/dev/null || true"
-                    ),
+                    # --promote: the digest must GRADUATE, not just print
+                    # (2026-07-06 leak: without it compaction kept the
+                    # digest on screen and never wrote it). Loud.
+                    "command": HOOK_ENV + "rmx focus summarize --promote",
                 },
                 {
                     "type": "command",
@@ -280,9 +331,67 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                         "--k 20 --scope both --json"
                     ),
                 },
+                # Pre-compact checkpoint: the handoff file for the next
+                # instance. --no-promote (the summarize above did it),
+                # --no-sync (a 30 s bridge at compaction is the wrong
+                # moment; SessionStart catch-up + manual save-state cover
+                # the store). Output NOT swallowed — a red "memory bridge
+                # FAILED" or lint line must reach the transcript.
+                *([{
+                    "type": "command",
+                    "command": (
+                        HOOK_ENV + "rmx save-state --no-promote --no-sync "
+                        "-m \"auto: pre-compact checkpoint\""
+                    ),
+                }] if precompact_checkpoint else []),
             ],
         }]
+
+    # cat-herder enforcement hooks — emitted by THIS generator so the
+    # settings file has one author. Auto mode: each entry only when its
+    # script is on disk under the project.
+    _add_enforce_entries(block, project_root, enforce)
     return block
+
+
+def _add_enforce_entries(block: dict, project_root: "Path | None",
+                         enforce: "bool | None") -> None:
+    if enforce is False or (enforce is None and project_root is None):
+        return
+    hd = (Path(project_root) / ".claude" / "hooks") if project_root else None
+    p20 = (Path(project_root) / ".claude" / "p20-0") if project_root else None
+
+    def want(rel: Path | None) -> bool:
+        if enforce is True and rel is None:
+            return True
+        return bool(rel is not None and rel.exists())
+
+    pre = []
+    if want(hd / "enforce-test-to-file.sh" if hd else None):
+        pre.append({"type": "command", "command":
+                    '[ -x "$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-test-to-file.sh" ] '
+                    '&& "$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-test-to-file.sh" || true'})
+    if want(hd / "enforce-rmx-grep.sh" if hd else None):
+        pre.append({"type": "command", "command":
+                    '[ -x "$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-rmx-grep.sh" ] '
+                    '&& "$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-rmx-grep.sh" || true'})
+    if pre:
+        block["hooks"].setdefault("PreToolUse", []).append(
+            {"matcher": "Bash", "hooks": pre})
+    if want(hd / "adr-gate.sh" if hd else None):
+        block["hooks"].setdefault("PostToolUse", []).append({
+            "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+            "hooks": [{"type": "command", "command":
+                       '[ -x "$CLAUDE_PROJECT_DIR/.claude/hooks/adr-gate.sh" ] '
+                       '&& "$CLAUDE_PROJECT_DIR/.claude/hooks/adr-gate.sh" 2>/dev/null || true'}],
+        })
+    if want(p20 / "compile_guardrails.py" if p20 else None):
+        block["hooks"].setdefault("SessionStart", []).append({
+            "matcher": "startup|resume|clear",
+            "hooks": [{"type": "command", "command":
+                       '[ -d "$CLAUDE_PROJECT_DIR/.claude/p20-0" ] && command -v rmx >/dev/null 2>&1 '
+                       '&& python3 "$CLAUDE_PROJECT_DIR/.claude/p20-0/compile_guardrails.py" >/dev/null 2>&1 || true'}],
+        })
 
 
 def install(
@@ -297,18 +406,29 @@ def install(
     memory_hooks: bool = True,
     agent_env: bool = True,
     search: bool = True,
+    primer: bool = True,
+    scan_prompt: bool = True,
+    composite_every: "int | None" = 3,
+    precompact_checkpoint: bool = True,
+    stop_promote: bool = True,
+    resume_focus: "int | None" = 15,
+    enforce: "bool | None" = None,
 ) -> list[str]:
     """Return a list of human-readable plan lines. Performs writes if apply=True."""
     out: list[str] = []
     project_root = project_root.resolve()
+    hook_opts = dict(composite_every=composite_every,
+                     precompact_checkpoint=precompact_checkpoint,
+                     stop_promote=stop_promote, resume_focus=resume_focus,
+                     enforce=enforce)
 
     if git:
         out.extend(_install_git_hooks(project_root, apply=apply, force=force))
     if claude:
         out.extend(_install_claude_hooks(project_root, refmatrix_root,
                                          scope=scope, apply=apply, force=force,
-                                         primer=True, scan_prompt=True,
-                                         memory_hooks=memory_hooks))
+                                         primer=primer, scan_prompt=scan_prompt,
+                                         memory_hooks=memory_hooks, **hook_opts))
     if agent_env:
         out.extend(_install_agent_env(project_root, scope=scope,
                                       apply=apply, force=force))
@@ -319,9 +439,90 @@ def install(
     if briefing:
         out.extend(_install_briefing(project_root, refmatrix_root,
                                      apply=apply, force=force))
+    if apply and claude and scope == "project":
+        record_flags(project_root, dict(memory_hooks=memory_hooks, primer=primer,
+                                        scan_prompt=scan_prompt, search=search,
+                                        **hook_opts))
+        out.append(f"[green]write[/] {project_root / '.claude' / 'rmx-hooks.json'} (flags)")
     if not apply:
         out.append("[dim]dry-run — pass --apply to write[/]")
     return out
+
+
+FLAGS_FILE = Path(".claude") / "rmx-hooks.json"
+
+
+def record_flags(project_root: Path, flags: dict) -> Path:
+    """Persist the generator flags so `--check` re-renders the same block."""
+    from refmatrix import __version__
+    p = Path(project_root) / FLAGS_FILE
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"version": __version__, "flags": flags}, indent=2) + "\n")
+    return p
+
+
+def _managed_entries(hooks: dict) -> "set[tuple[str, str, str]]":
+    out = set()
+    for event, blocks in (hooks or {}).items():
+        for blk in blocks:
+            for h in blk.get("hooks", []):
+                cmd = h.get("command") or ""
+                if _is_rmx_hook(cmd):
+                    out.add((event, blk.get("matcher") or "", cmd))
+    return out
+
+
+def render_managed(project_root: Path, flags: dict) -> dict:
+    """The full rmx-managed hook set for a project under `flags`: the Claude
+    block plus the search hooks when enabled. This is what `--check` compares
+    against and what `--apply` writes."""
+    project_root = Path(project_root)
+    block = _claude_hook_block(
+        project_root / ".refmatrix", primer=flags.get("primer", True),
+        scan_prompt=flags.get("scan_prompt", True),
+        memory_hooks=flags.get("memory_hooks", True),
+        composite_every=flags.get("composite_every", 3),
+        precompact_checkpoint=flags.get("precompact_checkpoint", True),
+        stop_promote=flags.get("stop_promote", True),
+        resume_focus=flags.get("resume_focus", 15),
+        enforce=flags.get("enforce"),
+        project_root=project_root,
+    )
+    if flags.get("search", True):
+        from refmatrix.search_hooks import search_hook_block
+        for event, entries in search_hook_block()["hooks"].items():
+            block["hooks"].setdefault(event, []).extend(entries)
+    return block
+
+
+def check(project_root: Path) -> "tuple[bool, str]":
+    """Does `.claude/settings.json` carry exactly the rmx-managed hooks this
+    version generates under the recorded flags? Returns (ok, diff). The
+    diff lists `- event/matcher: cmd` for installed-only and `+ …` for
+    generated-only entries."""
+    project_root = Path(project_root)
+    fp = project_root / FLAGS_FILE
+    if not fp.exists():
+        return False, (f"no {fp} — run `rmx install-hooks --apply` "
+                       "(this records the generator flags --check needs)")
+    try:
+        flags = json.loads(fp.read_text()).get("flags") or {}
+    except json.JSONDecodeError as e:
+        return False, f"{fp}: invalid JSON ({e})"
+    settings = project_root / ".claude" / "settings.json"
+    installed: dict = {}
+    if settings.exists():
+        try:
+            installed = json.loads(settings.read_text()).get("hooks") or {}
+        except json.JSONDecodeError as e:
+            return False, f"{settings}: invalid JSON ({e})"
+    have = _managed_entries(installed)
+    want = _managed_entries(render_managed(project_root, flags)["hooks"])
+    if have == want:
+        return True, ""
+    lines = [f"- {ev}/{m}: {c}" for ev, m, c in sorted(have - want)]
+    lines += [f"+ {ev}/{m}: {c}" for ev, m, c in sorted(want - have)]
+    return False, "\n".join(lines)
 
 
 def _install_git_hooks(project_root: Path, apply: bool, force: bool) -> list[str]:
@@ -565,7 +766,7 @@ after.
 ## To remove
 
 Delete `.refmatrix/`, the `rmx` lines from `.git/hooks/*`, and the rmx
-entries from `.claude/settings.local.json`.
+entries from `.claude/settings.json`.
 """
 
 
@@ -731,11 +932,12 @@ def _install_claude_hooks(
     primer: bool = True,
     scan_prompt: bool = True,
     memory_hooks: bool = True,
+    **hook_opts,
 ) -> list[str]:
     out: list[str] = []
     block = _claude_hook_block(
         refmatrix_root, primer=primer, scan_prompt=scan_prompt,
-        memory_hooks=memory_hooks,
+        memory_hooks=memory_hooks, project_root=project_root, **hook_opts,
     )
     if scope == "user":
         # Always print — never silently merge into the user's global config.
@@ -743,7 +945,11 @@ def _install_claude_hooks(
         out.append(json.dumps(block, indent=2))
         return out
 
-    target = project_root / ".claude" / "settings.local.json"
+    # Project scope writes the COMMITTED settings.json: hooks are project
+    # customization every clone runs, not per-machine state (settings.local
+    # keeps permissions and the like). Pre-0.67 installs wrote the local
+    # file; its rmx entries are stripped below so nothing fires twice.
+    target = project_root / ".claude" / "settings.json"
     target.parent.mkdir(exist_ok=True)
     existing: dict = {}
     if target.exists():
@@ -752,9 +958,22 @@ def _install_claude_hooks(
         except json.JSONDecodeError:
             out.append(f"[red]warn[/] {target} is not valid JSON; aborting claude install")
             return out
-        if "hooks" in existing and not force:
-            out.append(f"[yellow]skip[/] {target} (already has 'hooks'; pass --force to merge)")
+        if _managed_entries(existing.get("hooks") or {}) and not force:
+            out.append(f"[yellow]skip[/] {target} (already has rmx hooks; pass --force to replace)")
             return out
+    legacy = project_root / ".claude" / "settings.local.json"
+    if legacy.exists():
+        try:
+            ldata = json.loads(legacy.read_text())
+        except json.JSONDecodeError:
+            ldata = None
+        if isinstance(ldata, dict) and _managed_entries(ldata.get("hooks") or {}):
+            _strip_rmx_hooks(ldata.setdefault("hooks", {}))
+            if not ldata["hooks"]:
+                del ldata["hooks"]
+            out.append(f"[green]strip[/] rmx hooks from legacy {legacy}")
+            if apply:
+                legacy.write_text(json.dumps(ldata, indent=2))
 
     merged = {**existing}
     merged.setdefault("hooks", {})
@@ -783,6 +1002,11 @@ _RMX_HOOK_SIGNATURES = (
     RMX_HOOK_MARKER, "--enqueue-only", "rmx focus hook", "rmx memory recall",
     "rmx scan-prompt", "rmx sync --flush-queue", "rmx primer", "rmx curator",
     "grep-rewrite-guard.sh", "grep-tool-teach.sh",
+    # rmx-generated memory/STM hooks (also carry the marker) and the
+    # cat-herder enforcement hooks this generator now emits.
+    "rmx ingest-gmd --as-memory", "rmx save-state", "rmx focus summarize",
+    "rmx focus context", ".claude/hooks/enforce-", ".claude/hooks/adr-gate.sh",
+    "p20-0/compile_guardrails.py",
 )
 
 
