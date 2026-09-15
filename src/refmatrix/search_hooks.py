@@ -14,7 +14,7 @@ the graph and every reasoning-free dodge structurally impossible:
 
 Scripts always live at the user-global hooks dir (one stable path, like the
 agent bashrc); the settings wiring follows --scope: project merges into
-.claude/settings.local.json, user prints a snippet (we never silently edit
+.claude/settings.json, user prints a snippet (we never silently edit
 ~/.claude/settings.json). Wrapper paths are resolved at install time — PATH
 first, then this package's repo bin/ — and baked in absolute, because the
 guard's own history shows aliasable names get aliased out from under hooks.
@@ -328,7 +328,8 @@ def install_search_hooks(project_root: Path, scope: str,
         out.append(json.dumps(block, indent=2))
         return out
 
-    target = project_root / ".claude" / "settings.local.json"
+    # Same committed file the rmx block lives in (hooks.py) — one author.
+    target = project_root / ".claude" / "settings.json"
     existing: dict = {}
     if target.exists():
         try:

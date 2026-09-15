@@ -1,6 +1,6 @@
 """Hook installer tests. Focused on the ADR-0001 Phase C3 addition —
 SessionStart/UserPromptSubmit/PreCompact memory hooks land in
-.claude/settings.local.json when `rmx init` runs with default flags,
+.claude/settings.json when `rmx init` runs with default flags,
 and stay out when `--no-memory-hooks` is passed."""
 from __future__ import annotations
 
@@ -23,10 +23,10 @@ def test_memory_hooks_default_on(tmp_path):
     # the bound daemon partition shouldn't determine where recall
     # looks.
     assert "rmx memory recall --session-start" in cmds["SessionStart"]
-    # The memory bridge catch-up rides in the SessionStart background
-    # group: memory files written outside `rmx save-state` still reach
-    # the store. It targets the project's curated-memory dir, as memory.
-    assert "rmx ingest-gmd --as-memory '" in cmds["SessionStart"]
+    # The memory bridge catch-up is a loud, detached SessionStart entry:
+    # memory files written outside `rmx save-state` still reach the store.
+    # It targets the project's curated-memory dir, as memory.
+    assert "rmx ingest-gmd --as-memory --detach '" in cmds["SessionStart"]
     assert "/.claude/projects/" in cmds["SessionStart"]
     assert "/memory'" in cmds["SessionStart"]
     # UserPromptSubmit reads the prompt from stdin (Claude Code's hook
@@ -70,7 +70,7 @@ def test_memory_hooks_opt_out(tmp_path):
 
 def test_install_writes_memory_hooks_into_settings(tmp_path):
     """Default-flag install drops the memory hook commands into
-    .claude/settings.local.json."""
+    .claude/settings.json."""
     project = tmp_path / "proj"
     rmx_root = project / ".refmatrix"
     project.mkdir()
@@ -78,7 +78,7 @@ def test_install_writes_memory_hooks_into_settings(tmp_path):
     install(project_root=project, refmatrix_root=rmx_root,
             git=False, claude=True, briefing=False, scope="project",
             apply=True, force=True, memory_hooks=True)
-    settings = json.loads((project / ".claude" / "settings.local.json").read_text())
+    settings = json.loads((project / ".claude" / "settings.json").read_text())
     rendered = json.dumps(settings)
     assert "rmx memory recall --session-start" in rendered
     assert "rmx memory recall --stdin-json" in rendered
@@ -93,7 +93,7 @@ def test_install_respects_no_memory_hooks(tmp_path):
     install(project_root=project, refmatrix_root=rmx_root,
             git=False, claude=True, briefing=False, scope="project",
             apply=True, force=True, memory_hooks=False)
-    settings = json.loads((project / ".claude" / "settings.local.json").read_text())
+    settings = json.loads((project / ".claude" / "settings.json").read_text())
     rendered = json.dumps(settings)
     assert "rmx memory recall" not in rendered
     assert "PreCompact" not in settings.get("hooks", {})
@@ -105,7 +105,7 @@ def test_force_reinstall_overwrites_not_duplicates(tmp_path):
     from refmatrix.hooks import _install_claude_hooks
     proj = tmp_path / "proj"
     (proj / ".claude").mkdir(parents=True)
-    settings = proj / ".claude" / "settings.local.json"
+    settings = proj / ".claude" / "settings.json"
     # Seed a user hook that rmx must never touch.
     user_hook = {"type": "command", "command": "echo my-own-hook"}
     settings.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [user_hook]}]}}))
