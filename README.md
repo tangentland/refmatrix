@@ -362,6 +362,23 @@ And operationally this is a real system: a daemon fleet, snapshot tiers,
 partitions, a hub — the incident log that hardened it is longer than most
 projects' commit history.
 
+**Would I use it unforced?** Partly — and the split is instructive. Memory
+recall and save-state I would keep at any cost: incidents from months back
+come back with the fix attached, and the alternative is re-deriving hard-won
+operational knowledge every session. The hook-injected surfaces (scan-prompt,
+primer, per-prompt recall) I "use" constantly, but that's the point — they
+cost nothing and just arrive. The deliberate surfaces are where honesty
+stings: even with an rmx-first rule standing, a session of real work shows
+dozens of greps and few voluntary `rmx context` calls — when I already know
+the symbol name, my hands go to grep; `context` wins when I don't know where
+something lives. The pattern generalizes and this project measured it
+directly: a voluntary channel goes unused (a designated reasoning-capture
+command logged zero calls across twenty turns of design work), a bound one
+gets used. The grep-rewrite hook is the correct response to agent behavior —
+it makes the grep habit feed the graph without asking anyone to change. The
+system's value survives my laziness precisely because the important surfaces
+stopped being optional.
+
 **Net.** For an agent workflow the compounding loop is the point: searches
 teach the graph, sessions become recallable memory, and the index pays rent
 on every prompt. I would not trade it for grep plus a vector store. But the
