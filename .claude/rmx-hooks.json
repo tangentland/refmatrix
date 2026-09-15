@@ -1,0 +1,14 @@
+{
+  "version": "0.67.0",
+  "flags": {
+    "memory_hooks": true,
+    "primer": true,
+    "scan_prompt": true,
+    "search": true,
+    "composite_every": 3,
+    "precompact_checkpoint": true,
+    "stop_promote": true,
+    "resume_focus": 15,
+    "enforce": null
+  }
+}

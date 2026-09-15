@@ -1,6 +1,104 @@
 {
   "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; ( python3 -c \"import json,sys,subprocess;d=json.load(sys.stdin);ti=d.get('tool_input') or {};paths=set();fp=ti.get('file_path');paths.add(fp) if isinstance(fp,str) else None;[paths.add(e.get('file_path')) for e in (ti.get('edits') or []) if isinstance(e,dict) and isinstance(e.get('file_path'),str)];[subprocess.run(['rmx','sync','--enqueue-only','-f',p],check=False) for p in paths if p]\" 2>/dev/null || true ) & disown"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read|Bash|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx focus hook --event tool 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x \"$CLAUDE_PROJECT_DIR/.claude/hooks/adr-gate.sh\" ] && \"$CLAUDE_PROJECT_DIR/.claude/hooks/adr-gate.sh\" 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/tholley/.claude/hooks/grep-tool-teach.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; ( rmx sync --flush-queue --async >/dev/null 2>&1 || true ) & disown"
+          },
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx focus hook --event say 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx focus summarize --promote"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; ( rmx sync --flush-queue --async >/dev/null 2>&1 || true ) & disown"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; ( rmx sync --flush-queue --async >/dev/null 2>&1 || true ; rmx primer --out '/Users/tholley/claude_tools/refmatrix/.refmatrix/PRIMER.md' >/dev/null 2>&1 || true ) & disown ; rmx curator status --drain 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx memory recall --session-start --k 10 --scope both --json"
+          },
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx ingest-gmd --as-memory --detach '/Users/tholley/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory'"
+          }
+        ]
+      },
+      {
+        "matcher": "resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx focus context --top 15"
+          }
+        ]
+      },
       {
         "matcher": "startup|resume|clear",
         "hooks": [
@@ -11,7 +109,38 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx scan-prompt --composite-every 3 --max-tokens 2000 2>/dev/null || true ; rmx curator status --drain 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx focus hook --event input 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx memory recall --stdin-json --k 5 --scope both --json"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read|Bash|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx focus hook --event tool-pre 2>/dev/null || true"
+          }
+        ]
+      },
       {
         "matcher": "Bash",
         "hooks": [
@@ -24,15 +153,31 @@
             "command": "[ -x \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-rmx-grep.sh\" ] && \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-rmx-grep.sh\" || true"
           }
         ]
-      }
-    ],
-    "PostToolUse": [
+      },
       {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "[ -x \"$CLAUDE_PROJECT_DIR/.claude/hooks/adr-gate.sh\" ] && \"$CLAUDE_PROJECT_DIR/.claude/hooks/adr-gate.sh\" 2>/dev/null || true"
+            "command": "/Users/tholley/.claude/hooks/grep-rewrite-guard.sh"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx focus summarize --promote"
+          },
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx memory recall --recent --since 1h --k 20 --scope both --json"
+          },
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx save-state --no-promote --no-sync -m \"auto: pre-compact checkpoint\""
           }
         ]
       }
