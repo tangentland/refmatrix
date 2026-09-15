@@ -493,6 +493,12 @@ def _loads_or_raw(blob):
         return blob
 
 
+class RepairAbort(RuntimeError):
+    """`rebuild_entities_indexes` refused: the table holds REAL duplicate
+    rows (not an index phantom), so a rebuild would fail its own constraints
+    or silently drop data. Operator surgery is required."""
+
+
 @dataclass
 class Entity:
     id: int
@@ -3047,6 +3053,96 @@ class Store:
             sql += f" LIMIT {int(limit)}"
         rows = con.execute(sql, params).fetchall()
         return [(r[0], r[1], r[2]) for r in rows]
+
+    def rebuild_entities_indexes(self) -> dict:
+        """Rebuild the `entities` table with fresh PRIMARY KEY / UNIQUE
+        constraints and its secondary indexes — the 2026-09-14 offline
+        recipe (see memory `project_refmatrix_entities_index_crashloop_0914`)
+        as a store method, so an index PHANTOM (a leaf the ART index still
+        holds for a row that is gone: `Failed to delete all rows from
+        index`, `duplicate key` on a re-insert) is repaired in-band instead
+        of by hand. DuckDB rebuilds indexes from the table on CREATE, so
+        CREATE new → INSERT … SELECT → DROP → RENAME → CREATE INDEX drops
+        the phantom. Aborts (`RepairAbort`) when the table holds real
+        duplicate groups on `(partition_id, kind, name)` or `id`: that is
+        data, not an index, and needs an operator. Returns
+        `{rows, indexes, constraints}`. Runs under the caller's writer
+        lock; CHECKPOINTs at the end."""
+        con = self._connect()
+        dups = con.execute(
+            "SELECT partition_id, kind, name, COUNT(*) AS n FROM entities "
+            "GROUP BY partition_id, kind, name HAVING COUNT(*) > 1"
+        ).fetchall()
+        if dups:
+            sample = ", ".join(f"({r[0]},{r[1]},{r[2]!r})x{r[3]}" for r in dups[:5])
+            raise RepairAbort(
+                f"{len(dups)} real duplicate group(s) on (partition_id, kind, name): "
+                f"{sample} — not an index phantom; resolve by hand before rebuilding")
+        dup_ids = con.execute(
+            "SELECT id, COUNT(*) AS n FROM entities GROUP BY id HAVING COUNT(*) > 1"
+        ).fetchall()
+        if dup_ids:
+            raise RepairAbort(
+                f"{len(dup_ids)} duplicate id(s) in entities (e.g. {dup_ids[0][0]}) — "
+                f"not an index phantom; resolve by hand before rebuilding")
+        duck = self._backend.kind == "duckdb"
+        if duck:
+            cols = con.execute(
+                "SELECT column_name, data_type, is_nullable, column_default "
+                "FROM information_schema.columns WHERE table_name='entities' "
+                "ORDER BY ordinal_position").fetchall()
+            existing_idx = [r[0] for r in con.execute(
+                "SELECT index_name FROM duckdb_indexes() WHERE table_name='entities'"
+            ).fetchall()]
+        else:
+            cols = [(r[1], r[2], "NO" if r[3] else "YES", r[4])
+                    for r in con.execute("PRAGMA table_info(entities)").fetchall()]
+            existing_idx = [r[1] for r in con.execute("PRAGMA index_list(entities)").fetchall()
+                            if str(r[1]).startswith("idx_entities_")]
+        names = [c[0] for c in cols]
+        defs = []
+        for name, dtype, nullable, default in cols:
+            if name == "id":
+                d = (f"DEFAULT {default}" if (duck and default) else
+                     ("AUTOINCREMENT" if not duck else ""))
+                defs.append(f"id INTEGER PRIMARY KEY {d}".rstrip())
+                continue
+            line = f"{name} {dtype}"
+            if str(nullable).upper() == "NO":
+                line += " NOT NULL"
+            if default is not None and str(default).upper() != "NULL":
+                line += f" DEFAULT {default}"
+            defs.append(line)
+        defs.append("CHECK (kind IN ('doc', 'code', 'concept', 'memory'))")
+        defs.append("UNIQUE(partition_id, kind, name)")
+        collist = ", ".join(names)
+        # The standard secondary indexes; `canonical` only where the column
+        # exists (pre-0.3.3 catalogs). Recreated by name so a rebuild never
+        # changes which indexes a store carries.
+        wanted = [
+            ("idx_entities_kind", "kind"), ("idx_entities_path", "path"),
+            ("idx_entities_partition", "partition_id"),
+            ("idx_entities_protected", "protected"), ("idx_entities_noise", "noise"),
+        ]
+        if "canonical_name" in names:
+            wanted.append(("idx_entities_canonical", "partition_id, kind, canonical_name"))
+        con.execute("DROP TABLE IF EXISTS entities_new")
+        con.execute(f"CREATE TABLE entities_new ({', '.join(defs)})")
+        con.execute(f"INSERT INTO entities_new ({collist}) SELECT {collist} FROM entities")
+        n = con.execute("SELECT COUNT(*) FROM entities_new").fetchone()[0]
+        con.execute("DROP TABLE entities")
+        con.execute("ALTER TABLE entities_new RENAME TO entities")
+        for idx, expr in wanted:
+            con.execute(f"CREATE INDEX IF NOT EXISTS {idx} ON entities({expr})")
+        con.commit()
+        if duck:
+            try:
+                con.execute("CHECKPOINT")
+            except Exception:
+                pass
+        return {"rows": int(n), "indexes": len(wanted),
+                "constraints": ["PRIMARY KEY", "UNIQUE"],
+                "indexes_before": sorted(existing_idx)}
 
     def repair_entity_links_index(self) -> dict:
         """Drop + recreate `idx_entity_links_lk_concept` to defend against

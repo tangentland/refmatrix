@@ -899,6 +899,33 @@ class Daemon:
                 self._log(f"could not write {p.name}: {e}")
         return p
 
+    def _run_pending_repair(self) -> "dict | None":
+        """Boot-time repair (plan-4 task 4.2): when a read surface left
+        `repair.needed`, rebuild the named table BEFORE serving and clear
+        the marker. None when there is nothing to do. A `RepairAbort` (real
+        duplicates) is logged loudly and the marker KEPT, so `daemon status`
+        keeps saying `repair pending` until an operator resolves it."""
+        from refmatrix.store import RepairAbort
+        marker = read_repair_marker(self.root)
+        if not marker:
+            return None
+        table = str(marker.get("table") or "unknown")
+        if table != "entities":
+            self._log(f"repair.needed names unknown table {table!r}; clearing the marker")
+            repair_marker_path(self.root).unlink(missing_ok=True)
+            return {"table": table, "skipped": "unknown-table"}
+        try:
+            with self._store_lock:
+                rep = self.store.rebuild_entities_indexes()
+        except RepairAbort as e:
+            self._log(f"repair ABORTED for entities: {e}; marker kept — operator action needed")
+            return {"table": table, "aborted": str(e)}
+        repair_marker_path(self.root).unlink(missing_ok=True)
+        self._repair_needed = None
+        self._log(f"repaired entities rows={rep['rows']} indexes={rep['indexes']} "
+                  f"(queued by {marker.get('op')})")
+        return {"table": table, **rep}
+
     def _fast_exit_if_invalidated(self, exc: BaseException, where: str) -> None:
         """If `exc` looks like DuckDB index-drift / DB-invalidation,
         log + exit hard so the supervisor can spawn a fresh daemon
@@ -1061,6 +1088,12 @@ class Daemon:
                 )
             except Exception as e:
                 self._log(f"repair_entity_links_index failed: {e}")
+            # A read surface queued an entities rebuild (task 4.1): run it
+            # now, single-writer, before anything is served.
+            try:
+                self._run_pending_repair()
+            except Exception as e:  # noqa: BLE001 — logged, boot continues
+                self._log(f"pending repair failed: {e!r}; marker kept")
 
         if self.watch_root is not None:
             self._start_watcher()
@@ -4009,6 +4042,24 @@ def _op_stop(d: Daemon, args: dict) -> dict:
     return {"stopping": True}
 
 
+def _op_repair_entities(d: Daemon, args: dict) -> dict:
+    """In-band entities rebuild (`rmx repair-index --entities`). Under the
+    writer lock; clears `repair.needed` on success. If the store is already
+    invalidated (a fatal fired), DuckDB refuses every statement until the
+    process restarts — restart the daemon and boot runs the repair."""
+    from refmatrix.store import RepairAbort
+    try:
+        with d._store_lock:
+            rep = d.store.rebuild_entities_indexes()
+    except RepairAbort as e:
+        return {"ok": False, "error": f"repair aborted: {e}"}
+    repair_marker_path(d.root).unlink(missing_ok=True)
+    d._repair_needed = None
+    d._log(f"repaired entities (op) rows={rep['rows']} indexes={rep['indexes']}")
+    d._request_snapshot()
+    return rep
+
+
 def _op_replica_refresh(d: Daemon, args: dict) -> dict:
     """Force an immediate snapshot of primary → replica .duckdb file."""
     result = d._refresh_replica_now()
@@ -4785,6 +4836,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "subject_list": _op_subject_list,
     "subject_leaves": _op_subject_leaves,
     "stop": _op_stop,
+    "repair_entities": _op_repair_entities,
 }
 
 # Ops dispatched to the small `cli_pool` — latency-sensitive, mostly
