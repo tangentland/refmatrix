@@ -9216,6 +9216,11 @@ def _memory_intent(op: str, *, partition_timeout: "float | None" = None) -> None
 # (bsd-plan2-r6 #b-1: `info` 6.3 s + `rerank` 6.2 s at the worker's 300 s
 # default were the 12.5 s of a 12.8 s hook).
 RERANK_MIN_S = float(os.environ.get("RMX_RERANK_MIN_S", "2") or "2")
+# The `info` probe of the shared rerank worker gets at most this long: a
+# worker that is loading or broken (bug-014: `info` → BrokenPipe, 6 s) must
+# cost the hook one second, not the whole remainder (live 2026-09-15: the
+# probe ate 4 of 5 s and the global leg then found no budget).
+RERANK_PROBE_S = float(os.environ.get("RMX_RERANK_PROBE_S", "1") or "1")
 
 
 def _replica_memory_recall(query: str, *, k: int, kinds: list,
@@ -9278,7 +9283,8 @@ def _replica_memory_recall(query: str, *, k: int, kinds: list,
                     ws.append(f"rerank skipped: {rem:.1f}s of the budget left "
                               f"(< {RERANK_MIN_S:g}s); hits unreranked")
                 else:
-                    rr = _reranker.shared_reranker(timeout=rem)
+                    rr = _reranker.shared_reranker(timeout=rem,
+                                                   probe_timeout=min(rem, RERANK_PROBE_S))
                     if rr is None:
                         ws.append("rerank skipped: shared worker unavailable; hits unreranked")
                     else:
@@ -10191,9 +10197,10 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             # dense path's global leg carried no budget at all — 30 s × 3)
             grows = _global_recall_rows(qq, k=gk, recent=recent_flag, since_s=since,
                                         timeout=_left(30.0), retries=0)
-        except _verbs.VerbBusyError:
-            raise
         except _verbs.VerbError as e:
+            # VerbBusyError included: a budget spent before this leg (live
+            # 2026-09-15: the rerank ate it) must not throw the project rows
+            # away with a traceback — the global rows are omitted and said.
             if scope == "global":
                 raise click.ClickException(str(e))
             _warn(f"global rows omitted: {e}")

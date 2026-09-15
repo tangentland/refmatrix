@@ -264,6 +264,41 @@ def test_shared_reranker_takes_a_timeout(monkeypatch):
     monkeypatch.setattr(modelsrv, "SharedWorkerClient", _Client)
     assert reranker.shared_reranker(timeout=2.5) is not None
     assert seen == {"ctor": 2.5, "info": 2.5}, seen
+    assert reranker.shared_reranker(timeout=2.5, probe_timeout=1.0) is not None
+    assert seen == {"ctor": 2.5, "info": 1.0}, seen
+
+
+def test_budget_spent_before_the_global_leg_keeps_the_project_rows(tmp_path, monkeypatch):
+    """Live 2026-09-15 after the r7 deploy: the rerank probe ate the budget,
+    `_left()` raised at the global leg and the hook exited 1 with a
+    traceback. The project rows must come back and the omission be said."""
+    monkeypatch.setattr("refmatrix.discovery.daemon_status", lambda r, **kw: {"up": True, "busy": False, "pid": 1})
+    monkeypatch.setattr("refmatrix.discovery.store_name", lambda r: "p")
+    monkeypatch.setattr(dm, "ping", lambda r, **kw: True)
+    monkeypatch.setattr(hub_mod, "global_store_root", lambda: tmp_path)
+    monkeypatch.setattr(hub_mod, "ensure_global_daemon", lambda: None)
+    root = tmp_path / ".refmatrix"; root.mkdir()
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    monkeypatch.setenv("RMX_RECALL_REPLICA_FIRST", "0")
+
+    def call(r, op, args=None, timeout=60.0, retries=2, **kw):
+        if op == "partition_list":
+            return {"ok": True, "result": {"rows": []}}
+        if op == "memory_recall":
+            time.sleep(0.5)
+            return {"ok": True, "result": {"hits": [{"id": 7, "distance": 0.1}]}}
+        if op == "memory_get":
+            time.sleep(0.6)                      # the budget is gone AFTER this leg
+            return {"ok": True, "result": {"memory": {"id": 7, "name": "m", "content": "c",
+                                                       "mtype": "note", "tags": [], "metadata": {}}}}
+        return {"ok": True, "result": {}}
+    monkeypatch.setattr(dm, "call", call)
+    r, elapsed = _invoke(["memory", "recall", "hello", "--k", "3", "--scope", "both", "--json",
+                          "--timeout", "1"])
+    assert r.exit_code == 0, r.output
+    assert "Traceback" not in r.output
+    assert [m["name"] for m in json.loads(r.stdout)] == ["m"], r.stdout
+    assert "global rows omitted" in (r.stderr or ""), r.stderr
 
 
 # ---- #m-3 the third recall hook ---------------------------------------------------------------

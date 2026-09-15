@@ -173,7 +173,7 @@
           },
           {
             "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook; rmx memory recall --recent --since 1h --k 20 --scope both --json"
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx memory recall --recent --since 1h --k 20 --scope both --json --timeout 30"
           },
           {
             "type": "command",
