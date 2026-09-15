@@ -64,6 +64,22 @@ def home(monkeypatch):
     d = Path(tempfile.mkdtemp(prefix="rmxh-", dir="/tmp"))
     monkeypatch.setenv("RMX_HOME", str(d))
     yield d
+    # A test that reached the global store spawned a `-p global` daemon
+    # under this home (`hub.ensure_global_daemon`); rmtree alone left 21 of
+    # them alive on deleted roots, each holding a catalog and a socket
+    # (found by ch-bsd plan-5 r3, 2026-09-15). Stop it before the dir goes.
+    from refmatrix import hub as hub_mod
+    groot = hub_mod.global_store_root()      # the home IS the global store (RMX_HOME still set)
+    if groot.is_dir():
+        # the spawn is asynchronous: give a just-launched daemon up to 3 s to
+        # write its pid file, then stop it (a bare rmtree left one behind
+        # even after this fixture learned to stop the daemon)
+        import time as _time
+        for _ in range(30):
+            if (groot / "rmxd.pid").exists():
+                break
+            _time.sleep(0.1)
+        dm.stop_daemon(groot)
     shutil.rmtree(d, ignore_errors=True)
 
 
