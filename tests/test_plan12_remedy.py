@@ -309,3 +309,71 @@ def test_store_health_sees_a_stale_memory_partition(tmp_path, monkeypatch):
         assert "memory-p" in h["derive"]["stale_partitions"]
     finally:
         s.close()
+
+
+def test_health_labels_an_unstamped_store_on_release_day(tmp_path, monkeypatch):
+    """ch-bsd plan-12 r4: `all(never_stamped)` spanned EVERY partition, and a
+    `memory-<project>` partition has no tracked files so it honestly answers
+    False — collapsing the aggregate on the one day the label exists for. The
+    row then rendered `derive-drift@?`, which tells a reader nothing."""
+    from refmatrix.store import Store
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    try:
+        f = tmp_path / "a.md"
+        f.write_text("# a\n")
+        s.mark_tracked(str(f.resolve()), f.stat().st_mtime)   # tracked, unstamped
+        with s.with_partition("memory-p"):
+            pass                                              # exists, empty
+
+        class _D:
+            root = tmp_path / ".refmatrix"
+
+            def _st(self):
+                return s
+
+            def _read_active_slot(self):
+                return None
+
+        d_ = dm._store_health(_D())["derive"]
+        assert d_["stale"] is True
+        assert d_["never_stamped"] is True, "release day must read unstamped"
+        assert d_["behind_code"] is False, "unstamped must never be hot"
+        assert "passes" not in d_, "a composite must not carry one partition's rows"
+    finally:
+        s.close()
+
+
+def test_health_names_the_worst_partition_not_the_first_alphabetically(tmp_path,
+                                                                       monkeypatch):
+    import refmatrix.store as store_mod
+    from refmatrix.store import Store
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    try:
+        f = tmp_path / "a.md"
+        f.write_text("# a\n")
+        s.mark_tracked(str(f.resolve()), f.stat().st_mtime)
+        monkeypatch.setattr(store_mod, "derive_code_hash", lambda: "current")
+        # alphabetically first, but the NEWER of the two stale versions
+        with s.with_partition("aaa-p"):
+            s.stamp_derive("ingest", version="0.70.0", code_hash="older")
+        with s.with_partition("zzz-p"):
+            s.stamp_derive("ingest", version="0.49.1", code_hash="older")
+
+        class _D:
+            root = tmp_path / ".refmatrix"
+
+            def _st(self):
+                return s
+
+            def _read_active_slot(self):
+                return None
+
+        d_ = dm._store_health(_D())["derive"]
+        assert d_["worst_partition"] == "zzz-p"
+        assert d_["oldest_version"] == "0.49.1"
+    finally:
+        s.close()

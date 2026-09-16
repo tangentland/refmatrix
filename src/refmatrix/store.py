@@ -534,9 +534,25 @@ class Entity:
 _DERIVE_CODE_MODULES = ("ingest.py", "ingest_gmd.py", "store.py")
 
 
-# Cache keyed on the (path, mtime, size) of every deriving module. A wrong key
-# costs a re-read of ~300 KB, never a wrong answer — which is the right way
-# round for something the hub's watchdog tick calls per store.
+# Cache keyed on (path, mtime_ns, ctime_ns, ino, size) of every deriving module.
+#
+# `(mtime, size)` alone is NOT a content identity, and this repo has the scar:
+# bug-037 was a mutation check editing "45" -> "20" — the same byte length —
+# and restoring from a backup, after which CPython served stale bytecode
+# because it keys a `.pyc` on exactly that pair. `tools/pyc_guard.py` exists
+# for it. The first version of this cache reproduced it one layer up, inside
+# the function that replaced mtime with a hash BECAUSE mtime was unreliable:
+# an mtime-preserving restore at the same size (`cp -p`, `rsync -t`, `tar -p`,
+# any `os.utime`) returned a cache HIT carrying the OLD hash, so `behind_code`
+# read False and the gate silently failed to fire — bug-039's blind spot,
+# rebuilt inside its own detector (ch-bsd plan-12 r4, reproduced).
+#
+# `ctime_ns` moves on both restore shapes (in-place utime, and
+# replace-then-utime); `ino` catches the replace shape a second way.
+#
+# Unbounded on purpose: measured at ~145 B/entry, and the key only changes when
+# a deploy rewrites one of the three modules — about one entry per deploy. An
+# eviction policy would be more code than the leak.
 _DERIVE_CODE_HASH_CACHE: "dict[tuple, str]" = {}
 
 
@@ -563,9 +579,10 @@ def derive_code_hash() -> str:
     for p in paths:
         try:
             st = p.stat()
-            key.append((str(p), st.st_mtime_ns, st.st_size))
+            key.append((str(p), st.st_mtime_ns, st.st_ctime_ns,
+                        st.st_ino, st.st_size))
         except OSError:
-            key.append((str(p), None, None))
+            key.append((str(p), None, None, None, None))
     ck = tuple(key)
     hit = _DERIVE_CODE_HASH_CACHE.get(ck)
     if hit is not None:
