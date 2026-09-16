@@ -50,8 +50,15 @@ def test_pause_blocks_restart_of_a_dead_daemon(tmp_path, monkeypatch):
     monkeypatch.setattr(hub_mod.daemon_mod, "read_pid", lambda *a, **k: None)
     root = tmp_path / "proj" / ".refmatrix"
     root.mkdir(parents=True)
+    # TWO no-process ticks before a kick. A relaunch in progress reads as
+    # "no process" for a moment and the hub kicked five of them inside
+    # launchd's ThrottleInterval on 2026-09-15 (plan-4 r3 #s-3), so the first
+    # tick only arms the counter. Asserting that first tick is the point:
+    # this test predated the change and had been red ever since (bug-034).
     wd._check(root)
-    assert restarts, "sanity: unpaused dead daemon restarts"
+    assert not restarts, "the FIRST no-process tick must only arm the counter"
+    wd._check(root)
+    assert restarts, "sanity: unpaused dead daemon restarts on the second tick"
     restarts.clear()
     wd.pause(root)
     wd._check(root)

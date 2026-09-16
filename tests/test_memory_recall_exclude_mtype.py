@@ -185,7 +185,11 @@ def test_scope_both_filters_global_rows(tmp_path, monkeypatch):
     from refmatrix import cli as climod
     monkeypatch.setattr(
         climod, "_global_recall_rows",
-        lambda q, *, k, recent, since_s: [
+        # `**kw` absorbs the ping budget the CLI now passes (`timeout`,
+        # `retries`). The fake pinned the OLD signature, so the command died
+        # with a TypeError the moment those were added — a fake that names
+        # every parameter is a fake that breaks on every new one (bug-034).
+        lambda q, *, k, recent, since_s, **kw: [
             {"name": "savestate_g", "mtype": "session/recall-state", "content": "h"},
             {"name": "global-feedback", "mtype": "feedback", "content": "f"}])
     from refmatrix.cli import main as cli_main

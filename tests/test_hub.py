@@ -30,6 +30,13 @@ def test_watchdog_restarts_down_daemon_when_auto(monkeypatch, tmp_path):
     restarts = []
     wd = hub.Watchdog()
     monkeypatch.setattr(wd, "_restart", lambda r, **kw: (restarts.append(r) or True))
+    # The no-process branch kicks on the SECOND consecutive tick: a relaunch
+    # in progress reads as "no process" while its pid file still names the
+    # SIGTERMed pid, and the hub kicked five of those inside launchd's
+    # ThrottleInterval (plan-4 r3 #s-3). This test ticked once and had been
+    # red since that change landed (bug-034).
+    wd.tick()
+    assert restarts == [], "first no-process tick arms the counter, never kicks"
     wd.tick()
     assert restarts == [root]
     h = wd.health()[str(root.resolve())]
