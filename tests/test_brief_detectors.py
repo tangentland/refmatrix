@@ -208,9 +208,18 @@ def test_orphan_concept_threshold_is_a_real_knob(store):
 
 def test_brief_reuses_consolidates_exclusion_constants_rather_than_copying_them():
     """The same junk-token bug appeared at four call sites because each grew
-    its own copy of the list. One definition, imported."""
-    assert brief.EXCLUDE_MTYPES is consolidate.DEFAULT_EXCLUDE_MTYPES
+    its own copy of the list. One definition, EXTENDED — never re-typed.
+
+    Identity no longer holds because `brief/*` was added (ch-bsd r1 #b-4: a
+    saved brief re-entered its own corpus). Superset is the invariant that
+    survives that: every consolidate exclusion must still be here, sourced
+    rather than copied.
+    """
+    assert set(consolidate.DEFAULT_EXCLUDE_MTYPES) <= set(brief.EXCLUDE_MTYPES)
     assert brief.OPERATIONAL_RE is consolidate._OPERATIONAL_RE
+    # and the shared stoplist, by identity — the sixth-site fix
+    from refmatrix import terms
+    assert brief.STOPWORDS is terms.STOPWORDS
 
 
 # ── the whole run ──────────────────────────────────────────────────────────

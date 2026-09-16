@@ -41,14 +41,31 @@ from typing import TYPE_CHECKING, Iterable
 
 from refmatrix.consolidate import DEFAULT_EXCLUDE_MTYPES, _OPERATIONAL_RE
 from refmatrix.store import _CONCEPT_SHIFT, _ENTITY_MASK
+from refmatrix.terms import STOPWORDS as _SHARED_STOPWORDS
 
 if TYPE_CHECKING:
     from refmatrix.store import Store
 
 # One definition, imported by identity. A test asserts the `is` relationship
 # precisely so a future copy-paste shows up as a failure rather than as drift.
-EXCLUDE_MTYPES = DEFAULT_EXCLUDE_MTYPES
+# `brief/*` excludes ITS OWN OUTPUT. `--save` writes one memory row per brief;
+# without this the tool reports the rows it wrote 30 seconds earlier as a
+# coverage gap, and `memory compile` folds derived prose back into subject
+# clustering and thence into the scan-prompt hook (ch-bsd r1 #b-4).
+EXCLUDE_MTYPES = tuple(DEFAULT_EXCLUDE_MTYPES) + ("brief", "brief/*")
 OPERATIONAL_RE = _OPERATIONAL_RE
+
+# ONE definition, imported. This module's docstring has always said so, and
+# shipped without it anyway: the top `orphan-concept` brief on the live replica
+# was the word `the` (ch-bsd r1 #b-3). That is the SIXTH site of the bug
+# `feedback_reuse_shared_stoplist` records. Identity-asserted by test.
+STOPWORDS = _SHARED_STOPWORDS
+
+# A memory's own id is not a concept. `project_daemon_sigabrt_diagnosed`
+# surfaced as an "orphan concept" on the live replica because it is a node the
+# bridge created for the FILE, mentioned by the memories that cite it.
+_MEMORY_ID_RE = re.compile(
+    r"^(project|feedback|reference|impression|guardrail|savestate|task|plan|bsd|impl)[-_]")
 
 MTYPE_PREFIX = "brief"
 
@@ -219,6 +236,15 @@ def contradicted(store: "Store", *, rows: "dict[int, dict] | None" = None,
     A contradiction someone already resolved is history — the `supersedes` edge
     IS the resolution, and re-reporting it would train a reader to ignore the
     class. What survives is a pair the corpus still disagrees with itself about.
+
+    ENDPOINTS ARE NOT ALWAYS MEMORY ROWS. This shipped requiring both sides in
+    `_memory_ids()` (`kind='memory'`), and on the live replica 54 of 59
+    `contradicts` endpoints are CONCEPT nodes — GMD `rel:` edges land on the
+    `#anchor` node, which `project_context_nl_ref_fixes` already recorded. The
+    class scored 0 on 41 real pairs while the CLI blamed "unresolvable ids",
+    which was the wrong diagnosis: they resolved fine, they were the wrong kind
+    (ch-bsd r1 #b-2). Any endpoint that resolves to an entity now counts; only
+    a genuinely unresolvable id is a skip.
     """
     rows = _memory_ids(store) if rows is None else rows
     contradicts = _pairs(store, "contradicts")
@@ -231,18 +257,37 @@ def contradicted(store: "Store", *, rows: "dict[int, dict] | None" = None,
         if key in seen:
             continue
         seen.add(key)
-        if a not in rows or b not in rows:
-            # Either side operational, excluded, or from another partition.
+        ra, rb = _endpoint(store, a, rows), _endpoint(store, b, rows)
+        if ra is None or rb is None:
+            # A genuinely unresolvable id — not merely a non-memory kind.
+            skipped += 1
+            continue
+        if OPERATIONAL_RE.match(ra) or OPERATIONAL_RE.match(rb):
             skipped += 1
             continue
         if (a, b) in supersedes or (b, a) in supersedes:
             continue
         out.append(Brief(
             cls="contradicted",
-            label=f"{rows[a]['name']} vs {rows[b]['name']}",
+            label=f"{ra} vs {rb}",
             finding="two memories contradict and neither supersedes the other",
             evidence=[a, b]))
     return (out, skipped) if count_skips else out
+
+
+def _endpoint(store: "Store", eid: int,
+              rows: dict[int, dict]) -> "str | None":
+    """Name for a `contradicts` endpoint — memory row OR any other entity.
+
+    Memory rows come from the pre-filtered map (so mtype exclusions still
+    apply); anything else is looked up directly, because a GMD `rel:` edge
+    lands on a concept `#anchor` node and that is the normal case here.
+    """
+    row = rows.get(eid)
+    if row is not None:
+        return row["name"]
+    ent = store.get_entity_by_id(eid)
+    return str(ent.name) if ent is not None else None
 
 
 def orphan_concept(store: "Store", *, min_mentions: int = MIN_MENTIONS,
@@ -286,6 +331,12 @@ def orphan_concept(store: "Store", *, min_mentions: int = MIN_MENTIONS,
         name = names.get(cid)
         if not name or OPERATIONAL_RE.match(name):
             continue
+        # A function word is never an orphan concept; it is a stopword.
+        if name.lower() in STOPWORDS:
+            continue
+        # Nor is a memory id, a filename fragment, or a GMD anchor.
+        if _MEMORY_ID_RE.match(name) or name.startswith(".") or "#" in name:
+            continue
         out.append(Brief(
             cls="orphan-concept", label=name,
             finding=(f"mentioned by {df[cid]} memories; nothing defines or "
@@ -309,8 +360,16 @@ def compile_briefs(store: "Store", *, plan: "dict | None" = None,
     pass that costs vectors and minutes. That is a deliberate asymmetry — the
     cheap classes should never be gated behind the expensive one.
     """
-    wanted = set(classes) if classes else {
-        "corroborated", "singleton", "contradicted", "orphan-concept"}
+    known = {"corroborated", "singleton", "contradicted", "orphan-concept"}
+    wanted = set(classes) if classes else set(known)
+    # Counted skips is rule 3 of this module; a class nobody implements must
+    # not read as "ran and found nothing" (ch-bsd r1 #m-17). The CLI guards
+    # with click.Choice; the generated MCP schema does not.
+    unknown = sorted(wanted - known)
+    if unknown:
+        raise ValueError(
+            f"unknown brief class(es): {', '.join(unknown)}; "
+            f"known classes are {', '.join(sorted(known))}")
     rows = _memory_ids(store)
     briefs: list[Brief] = []
     skipped = 0
@@ -372,8 +431,21 @@ GENERATOR = "memory-brief"
 _CLASS_ORDER = ("corroborated", "contradicted", "orphan-concept", "singleton")
 
 _BRIEF_RE = re.compile(
-    r"^### (?P<label>.+?) \{#(?P<anchor>[^}]+)\}\n\n(?P<finding>[^\n]+)",
-    re.M)
+    r"^### (?P<label>.+?) \{#(?P<anchor>[^}]+)\}\n\n(?P<finding>[^\n]+)\n"
+    r"(?:.*?^Evidence \(\d+\): (?P<evidence>[^\n]+))?",
+    re.M | re.S)
+
+# Both rendered forms carry the id: `[[name]] `11`` and `` `99` (unresolved) ``.
+_EV_ANY_RE = re.compile(r"`(\d+)`")
+
+
+def _as_brief(b) -> "Brief":
+    """Accept a `Brief` or the `as_dict()` shape that crosses the daemon wire."""
+    if isinstance(b, Brief):
+        return b
+    return Brief(cls=b["class"], label=b["label"], finding=b["finding"],
+                 evidence=list(b.get("evidence") or []),
+                 detail=dict(b.get("detail") or {}))
 
 
 def _anchor_safe(text: str) -> str:
@@ -404,7 +476,11 @@ def render_gmd(briefs: Iterable[Brief], *, names: "dict[int, str] | None" = None
     I could not find".
     """
     names = names or {}
-    items = sorted(briefs, key=lambda b: (b.cls, b.label))
+    # The daemon serialises briefs with `as_dict()` and the verb returns dicts
+    # over the wire, so the CLI's `--gmd` path hands dicts in. Accepting only
+    # `Brief` made the flag raise AttributeError on EVERY real invocation while
+    # a unit test passed objects in-process (ch-bsd r1 #b-1).
+    items = sorted((_as_brief(b) for b in briefs), key=lambda b: (b.cls, b.label))
     by_class: dict[str, list[Brief]] = defaultdict(list)
     for b in items:
         by_class[b.cls].append(b)
@@ -458,7 +534,10 @@ def render_gmd(briefs: Iterable[Brief], *, names: "dict[int, str] | None" = None
             resolved = [(e, names.get(e)) for e in b.evidence]
             unresolved = [e for e, n in resolved if not n]
             lines += [f'### {b.label} {{#{anchor}}}', '', b.finding, '']
-            ev = ", ".join(f'[[{n}]]' if n else f'`{e}` (unresolved)'
+            # The id travels WITH the link. Without it the doc names the rows
+            # but cannot be read back into them, which is how the claimed round
+            # trip came to be faked by a literal in its own test (r1 #b-5).
+            ev = ", ".join(f'[[{n}]] `{e}`' if n else f'`{e}` (unresolved)'
                            for e, n in resolved)
             lines.append(f'Evidence ({len(resolved)}): {ev}.')
             if unresolved:
@@ -474,7 +553,7 @@ def render_gmd(briefs: Iterable[Brief], *, names: "dict[int, str] | None" = None
     return "\n".join(lines).rstrip() + "\n"
 
 
-def parse_gmd(doc: str) -> list[dict]:
+def parse_gmd(doc: str, *, names: "dict[int, str] | None" = None) -> list[dict]:
     """Recover briefs from a rendered index — the other half of the trip.
 
     `memory compile` states the contract: the index is regenerable from the
@@ -482,6 +561,9 @@ def parse_gmd(doc: str) -> list[dict]:
     brief index is a report that happens to look like a node.
     """
     out: list[dict] = []
+    # `render_gmd` writes `[[name]]`; invert the same map to get ids back. A
+    # caller with no map still recovers the unresolved (bare-id) entries.
+    ids_by_name = {v: k for k, v in (names or {}).items()}
     sections = re.split(r"^## ", doc, flags=re.M)[1:]
     for sec in sections:
         head = sec.splitlines()[0]
@@ -494,5 +576,23 @@ def parse_gmd(doc: str) -> list[dict]:
         for bm in _BRIEF_RE.finditer(sec):
             out.append({"class": cls, "label": bm.group("label").strip(),
                         "finding": bm.group("finding").strip(),
-                        "anchor": bm.group("anchor")})
+                        "anchor": bm.group("anchor"),
+                        "evidence": _parse_evidence(bm.group("evidence"),
+                                                    ids_by_name)})
     return out
+
+
+def _parse_evidence(line: "str | None",
+                    ids_by_name: "dict[str, int]") -> list[int]:
+    """Recover evidence ids from a rendered `Evidence (N): …` line.
+
+    `evidence` is what `Brief.__post_init__` refuses to construct without and
+    what the module docstring calls "the whole contract" — and it was written
+    into the doc and never read back, so the round trip the plan claimed was
+    faked by a literal in the test (ch-bsd r1 #b-5). Both rendered forms now
+    carry the id, so no names map is needed to recover it.
+    """
+    if not line:
+        return []
+    return [int(x) for x in _EV_ANY_RE.findall(line)]
+

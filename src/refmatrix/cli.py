@@ -11240,6 +11240,7 @@ def memory_brief(classes, min_members, min_dates, min_mentions, do_compile,
         console.print_json(json.dumps(res))
         return
     if as_gmd:
+        # briefs arrive as dicts off the daemon wire; render_gmd rehydrates.
         console.print(brief_mod.render_gmd(
             briefs, partition=stats.get("partition")))
         return
