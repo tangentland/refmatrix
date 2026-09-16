@@ -9,139 +9,100 @@ metadata:
 
 # Session Handoff for refmatrix {#root}
 
-Date: 2026-09-15 (~06:50; session ac8e7c3f, continued across compactions)
+Date: 2026-09-15 → 09-16 (session 99ba458b). Prior handoff archived at
+`workflow/past_handoffs/001-plan-1-to-6-remediation_2026-09-15.md`.
 
-## Completed {#completed}
+rel: depends-on -> [[plan-of-plans]]
 
-All on `master`, each merged `--no-ff`, deployed. Deploy tree and fleet at **ffed3df** (0.69.1, 8/8
-daemons supervised, every daemon on the hub's two shared model workers, every launchd label
-`exit timeout = 45`). Earlier rounds: see the previous handoff in `workflow/past_handoffs/` and the
-`savestate_*` memories.
+## Where the work sits {#state}
 
-- **Plan 2 rounds 8–9** (3734e7f, part of f5f0590): r8 restored the per-call socket timeout (the rerank
-  leg was dead) and a budgeted `global_call` never spawns a daemon. r9 (self-found live): the partition
-  probe reads the replica first (`verbs.memory_partition`, `_legacy_memory_partition_exists`) — a
-  watcher flush had made every hook answer `[]`; `cached_replica` raises a typed miss; `--json` empty
-  prints `[]`; the held-writer simulation HOLDS its catalog (bug-017); the hook's rerank pool is capped
-  (`RERANK_DOC_CHARS` 700 — the extracted pool cost the shared worker 4.8 s, bug-019). Live after the
-  deploy: SessionStart 0.2 s / 10 rows (was `[]` under a held writer) — that half holds. The rerank
-  half does NOT: my "5/5 reranked" was the quiet window 40 s after the relaunch; see [[#verdicts]].
-- **Plan 3 round 6** (26404fe → f5f0590): `memory list`/`search` call the memory verb (one bounded
-  attempt, busy → replica); `_read_store` never hands a read to the write proxy; every fan-out names
-  the stores it did not hear from; `memory_recall(partition=)` — one probe per command. Q15–Q18.
-- **Plan 4 round 4** (26404fe, ffed3df): launchd is a supervisor — `ExitTimeOut` = one grace
-  (`launchctl.EXIT_TIMEOUT_S` 45) on every plist incl. the hub; `daemon restart` pauses the watchdog,
-  stops gracefully, kicks without `-k`; heartbeat-gated SIGKILL in `_verify_relaunch`; standalone
-  refuses to spawn beside a live predecessor; forced plist/hub reinstalls stop the process before the
-  bootout and `install_hub` waits for the unload + re-checks (bug-022); `shutdown.started` marker
-  drives `_await_shutdown` (the heartbeat guard could never fire, bug-021); dead branch needs two ticks;
-  `check`/`reinstall`/`install` take the caller's binary and refuse a dev tree (`rmx version --json`);
-  `stop_daemon` keeps the discovered pid; heartbeat touch failure said once. Q12–Q16. **Live: 0 launchd
-  SIGKILLs on `com.refmatrix.*` since the deploy** (24 in the 4 h before).
-- Bugs logged 017–024. Todo G13 (worker-reported rerank cost; two hooks race one worker) and G14
-  (daemons never re-adopt the shared worker after a hub outage — bug-024: 16 private workers after the
-  05:28 hub-label loss; fixed by state with a second relaunch-fleet, not yet in code).
+**Branch `plan-7-8-authoring`, 15 commits, NOT merged to master.** That is a deviation from the
+one-branch-per-task rule and is the first thing the next session should resolve.
 
-## Git State {#git-state}
+Three new plans authored, specced, and mostly executed: **plan-7** (LongMemEval), **plan-8**
+(`rmx memory brief`), **plan-9** (context-cost telemetry), **plan-10** (injection dedup — closed as
+a negative result).
 
-- Branch `master` at ffed3df = deploy tree. `rmx install-hooks --check` in sync. GMD lint: 61 errors,
-  all pre-existing inside `workflow/bullshit/` reports (BSD-authored; plan-4's q5/q6 anchors are
-  theirs to fix); none in files this session touched.
-- Full suite NOT re-run since e1dba80; the regression set for plans 2–5 + supervisors + parity + hooks
-  ran at 374 passed (`pytest-plan3-r6-plan4-r4-regression.log`); the 9 legacy-contract failures were
-  updated after and pass (`pytest-plan4-r4-green2.log` 90 passed). Run the full suite before the next
-  deploy (`test_graph_landing` perma-red = plan 6.4).
-- Three ch-bsd verdicts landed and are committed at 3dc118e — all DIRTY, see [[#verdicts]]. Plan-5 r3
-  is CLEAN/completed; plans 2, 3, 4, 6 stay `in-progress` in both the plan file and plan-of-plans.
-- Branch `task-6.1-plan-6-deferrals-docs-benchmark` holds one RED test, unmerged, by design.
-- The live hub.log carries lines from pytest runs (`Watchdog._check` tests log through `hub._log`
-  to `~/.refmatrix/hub.log`; `/tmp/rmxp4-*`, `/nowhere` roots) — test pollution of a live log, unfixed.
-- User-gated: Claude Code restart (hooks unobserved live), `/mcp` reconnect (the dev-venv `rmx mcp`
-  serves the old tool list — `partition` on `rmx_memory_recall` is new), push to GitHub.
+## Shipped {#shipped}
 
-## Verdicts in hand (all three DIRTY — no plan may flip) {#verdicts}
+- **`rmx memory brief`** (plan 8) — four deterministic detectors over the memory graph
+  (`corroborated`, `singleton`, `contradicted`, `orphan-concept`). Verb → daemon op → CLI → MCP.
+  GMD index round-trips. 40 tests, mutation-checked.
+- **Context-cost telemetry** (plan 9) — `query.log` carries `invocation`; `cli.log` carries
+  `out_bytes` counted once around `sys.stdout` in `cli_entry`; `rmx telemetry --context` reports
+  per-command bytes and the per-prompt hook budget. Live: `grep` 13,749 B mean (dominant by an
+  order of magnitude), hook budget p50 13,752 B.
+- **LongMemEval harness** — `eval/production/longmemeval/`, 19,829 session docs, 406,885 concepts.
 
-Reports in `workflow/bullshit/`, committed at 3dc118e. Every prior-round finding
-closed in each; these are the new ones.
+## The two numbers that matter {#numbers}
 
-**plan-2 r9** (`2026-09-15-0605-…-r9-ffed3df.md`) — 1B/2S/2M:
-- #b-1 BULLSHIT: the rerank leg is STILL dead as deployed. 0 of 7 runs of the exact
-  hook argv reranked at 05:48–06:02 under load 3.5–5.8, each burning the whole 5 s to
-  return what `--no-rerank` returns in 0.79 s; the capped 10×700 pool cost the shared
-  worker 3.72 / 9.26 / 14.08 s. My "5/5 reranked, 1.7–2.8 s" was the quiet window 40 s
-  after the relaunch. G13 has no task spec behind it (rule 9a).
-- #s-2 the rerank eats the global leg's budget: `--scope both` returned project-only
-  rows 7/7 while blaming a healthy global daemon it never asked.
-- #s-3 the replica-first probe was applied to EVERY caller, so `verbs.memory_add`
-  routes a WRITE off the lagging snapshot — one-line fix (`timeout is not None`).
-- #m-4 the degrade line reports the 1.5 s daemon slice as the budget, then prints rows.
-- #m-5 `rerank_available` patch unregistered (4th plan-2 registry residue).
+**Latency, and it is the session's most consequential finding.** Daemon warm:
+`rmx context` **62.9 s**, `rmx scan-prompt` **75.9 s** per query at 19,829 docs. agentmemory
+publishes 14 ms p50. `scan-prompt` is the always-on UserPromptSubmit hook and cannot run per-prompt
+at this scale. No cause claimed — no profile taken. `workflow/review-output/longmemeval-latency.md`.
 
-**plan-3 r6** (`…-0617-…-r6-ffed3df.md`) — 2B/2S/2M:
-- #b-1 BULLSHIT: `rmx memory get <name> --degree 1` raises a bare `NameError` at
-  cli.py:9708 on the DEPLOYED build, every daemon state — a035117 dropped the
-  function-local `daemon_mod` import above the surviving call; no test uses the flag.
-- #b-2 BULLSHIT: `rmx memory promote` is the group's third read path, still bare-ping
-  + 60 s × 3 = 180.2 s on a held writer, exit 1 with an EMPTY message.
-- #s-3 `federated_concept` is the fourth fan-out and still drops a busy store
-  (`rmx canon find` says "no live project hosts X").
-- #s-4 three of the four new "said, never mute" branches in `federated_where` survive
-  deletion with the suite green. #m-5 `_RECALL_FORWARD`'s `partition` has no guard.
-  #m-6 interactive recall now spends its whole budget on the daemon before the replica.
+**Recall, and it is SATURATED.** `context` MRR@20 0.679 / R@5 0.605 — with hit@5 exactly equal to
+the depth-50 recall ceiling. It measures retrieval DEPTH, not ranking. Do not quote it against
+agentmemory's 95.2%. `eval/production/longmemeval/REPORT.md`.
 
-**plan-4 r4** (`…-0600-…-r4-ffed3df.md`) — 1B/3S/2M. The launchd fix is confirmed
-live by the auditor against launchd's own log (0 SIGKILL lines since 05:20 vs 24
-before; a real 29 s drain exited 0 where 5 s would have killed it):
-- #b-1 BULLSHIT: the hub's OWN plist is the one with no `rmx=`, no `_refuse_dev_tree`
-  and no `check_hub` — a dev shell can point the fleet's supervisor at a dev venv.
-- #s-2 `binary_identity` returns `dev_tree: None` for an old/broken binary and the
-  falsy guard passes it, against its own "unknown, never fine" docstring.
-- #s-3 the stop grace reaches 3 of 7 stop paths (`daemon stop`, vacuum, upgrade and
-  `_respawn` still take the 5 s default; `_respawn` also discards the False).
-- #s-4 the tests append to the LIVE `~/.refmatrix/hub.log` (43 lines).
-- #m-5 `allow_dev` is unreachable from any command. #m-6 the session-indexer label
-  still carries launchd's 5 s.
+Per-type, two uncomfortable readings: preference retrieval nearly fails (0.200), and multi-session
+(0.567) + temporal-reasoning (0.487) land BELOW the single-session types — inverted from what the
+conceptual-memory thesis predicts. Qualifier: this corpus has no structural edges at all.
 
-## Next Steps {#next-steps}
+## Three negative results, each cheaper than the thing it prevented {#negatives}
 
-1. **Round 7, in this order** — plan-3 first (two of its three are one-liners on the
-   deployed build): restore the `daemon_mod` import + a `--degree 1` test; route
-   `memory promote` through the verb; `skipped` render in `canon_find`; guard the three
-   `federated_where` branches. Then plan-4: `rmx=` + refusal + `check_hub` for the hub
-   plist, `dev_tree is not False` as the guard, the grace into the other four stop
-   paths, redirect the tests' hub log. Then plan-2: reserve the global leg's slice,
-   scope the replica-first probe to budgeted callers (`timeout is not None`), and give
-   G13 a task spec — the worker must report seconds-per-doc so a caller can decide
-   BEFORE it commits. Re-review each until CLEAN; flip statuses only then.
-2. Plan 6: **6.1 is parked RED on branch `task-6.1-plan-6-deferrals-docs-benchmark`**
-   (test committed, GREEN patch archived at `workflow/review-output/task-6.1-green-patch.py.txt`
-   — it drops the `yield_lock`/`yield_every` params `_sync_paths` ignored, which touches
-   five daemon call sites and wants a full suite run). Then 6.4, 6.5.
-3. G14 (shared-worker re-adoption after a hub outage) and G13 (worker-reported cost).
-4. Queued by the user for after the loops: universal `--like` pre/post filter (G11,
-   plan 7 to write). G12: no `defines` edge for `Daemon._snapshot_catalog`.
-5. MEMORY.md is 213 lines — third flag; entries past ~195 do not load. User's call.
+- **`brief/unanswered`** — pre-registered confound gate FAILED. `query.log` records what the agent
+  grepped for, not what the corpus was asked. Detector not built.
+  `workflow/review-output/brief-unanswered-confound.md`.
+- **Plan 10 injection dedup** — median consecutive scan-prompt overlap **0.000** against a
+  pre-registered 0.40. Ledger, degraded rendering, PreCompact wiring and a permanent correctness
+  hazard all avoided. Run was 187 pairs vs a 200 minimum and self-reported UNDERPOWERED; that
+  limitation is kept attached. `workflow/review-output/injection-overlap.md`.
+- **Latency** — nobody had measured retrieval COST at scale on the path users run.
 
-## Past Sessions {#past-sessions}
+## Bugs found by doing the work {#bugs}
 
-| # | Session | Date | Archive |
-|---|---------|------|---------|
-| — | rmx save-state handoffs (`savestate_*` memories) carry history before this template | — | `rmx recall-state` |
+- **bug-029 (FIXED)** — `.venv-eval/bin/rmx` called `refmatrix.cli:main`, bypassing `cli_entry`.
+  The dev binary had NEVER written `cli.log`, so all dev-tree verification of CLI telemetry and the
+  fork-safety re-exec was silently invalid. Script rewritten (not a pip reinstall — mixed-ABI tree).
+- **bug-030 (OPEN)** — `WorkerClient.call(timeout=X)` mutates the PERSISTENT socket timeout and
+  never restores it, so a bounded probe leaks its budget onto the next call. Killed the LongMemEval
+  embed pass after a successful 4h23m ingest. **2nd sighting** of
+  `impression_bsd_probe_timeout_leak`.
 
-## User Preferences {#user-preferences}
+## Quality gates {#gates}
 
-- Hooks must be reproducible from `rmx install-hooks`; MCP tools must not bypass the verbs layer.
-- Plans first, then execute one by one, TDD, BSD re-review loop until clean.
-- The user pushes to GitHub; Claude does not.
-- Lookups only via `rmx context` / `rmx grep` / `tldr context`; never `/usr/bin/grep`, never
-  `RMXGREP_MODE=plain` (removed), never `cat | grep`. Exact line ranges via `sed -n` / `awk`.
+| gate | state |
+|---|---|
+| Full suite (idle machine) | **1833 passed, 7 failed, 940 s** |
+| of those 7 | **5 fail identically on master**; 2 were mine and are FIXED |
+| `rmx install-hooks --check` | in sync |
+| GMD lint | 61 errors — unchanged all session, all pre-existing |
 
-## Hand-Off Notes {#hand-off-notes}
+The 5 pre-existing failures are `test_bigop_nonblocking::test_pause_blocks_restart_of_a_dead_daemon`,
+`test_daemon_liveness::test_daemon_status_reports_busy_for_a_live_unresponsive_process`,
+`test_graph_landing::test_context_op_honors_partition_under_ambient_drift` (the perma-red named in
+plan-6 task 6.4), `test_hub::test_watchdog_restarts_down_daemon_when_auto`, and
+`test_memory_recall_exclude_mtype::test_scope_both_filters_global_rows`. Four are daemon/hub/
+liveness — the area plan-4 is still in-progress on. **Not investigated this session.**
 
-- Deploy recipe now: `git -C ~/refmatrix pull --ff-only origin master` → (hub plist changed?)
-  `~/bin/rmx hub launchctl install --force` (graceful) → warm workers → `~/bin/rmx hub relaunch-fleet`
-  (re-renders drifted plists gracefully, restarts each) → verify `launchctl print` exit timeouts and
-  launchd's SIGKILL log → `~/bin/rmx install-hooks --check`. If the hub is ever down while daemons
-  boot, relaunch the fleet again once it is up (G14).
-- `.mcp.json` is a workstation override (dev venv) and stays uncommitted.
-- Restart Claude Code after the next hook-generator change so the regenerated hooks load.
+## Open decisions, deliberately NOT made {#decisions}
+
+1. **Depth-200 LongMemEval rerun (~4 h) vs profiling the 63 s.** The recall number is depth-bound;
+   the latency number is the one that changes what rmx IS.
+2. **bug-030: proper fix vs env workaround.** The fix touches the shared model path every daemon
+   uses.
+3. **Merge the 15 commits before or after `@ch-bsd`.**
+
+## Next session {#next}
+
+1. Resolve the unmerged branch.
+2. `@ch-bsd` over plans 7–10 (none has had a pass).
+3. The three decisions above.
+4. Embed retry resumes via `ingest.py --skip init --skip ingest-gmd` — the 4h23m ingest is
+   persisted at `/Volumes/littlebig/longmemeval/`; do NOT rebuild it.
+
+## Benchmark data, off-tree {#data}
+
+`/Volumes/littlebig/longmemeval/` — corpus (240 MB), store (2.53 GB), results. Daemon STOPPED, store
+out of the fleet. Rebuildable from `prepare.py` but that costs 4h23m.
