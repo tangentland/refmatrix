@@ -239,6 +239,22 @@ def _ss_update_index(memdir: Path, mem_id: str, title: str, hook: str) -> None:
     if not replaced:
         out.append(line)
     idx.write_text("\n".join(out) + "\n")
+    # Appending is what made the index unusable: it grew one line per memory,
+    # past the 200-line cap `MEMORY-RULES.md` sets, and everything beyond that
+    # is CUT when the file loads into a session — 234 lines / 34 KB on
+    # 2026-09-16, with the last 34 entries unreachable through the surface whose
+    # job is to reach them. Save-state is the write that grows it, so it is the
+    # write that compacts it. Failure is said, never swallowed: an index that
+    # silently stopped compacting would rebuild the same blind spot.
+    from refmatrix import memory_index as _mi
+
+    try:
+        if not _mi.check(memdir):
+            _mi.write(memdir)
+    except Exception as exc:  # noqa: BLE001 — said, never mute
+        import sys as _sys
+        print(f"warning: MEMORY.md compaction failed: "
+              f"{type(exc).__name__}: {exc}", file=_sys.stderr)
 
 
 def _focus_digest(s) -> str:
