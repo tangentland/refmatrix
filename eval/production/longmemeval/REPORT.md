@@ -143,7 +143,6 @@ REFMATRIX_ROOT=<data>/.refmatrix python3 run.py \
 ```
 
 `--depth 50` applies to `context` only; `scan` ignores it and records `depth: null`.
-```
 
 Committed results: `eval/production/longmemeval/results/summary-symbolic-120.json`.
 

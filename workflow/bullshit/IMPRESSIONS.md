@@ -48,3 +48,42 @@ tags: [bsd, impressions]
 - 2026-09-16 (plans 7-10 r2) — "FIXED, 0 NOW" CAN BE VACUOUS ON BOTH SIDES OF THE COMPARISON. The hook-budget remedy reported "0 prompt-anchored windows instead of 10,740", but `counted == 0` on the live log (no row has `out_bytes` pre-deploy) so the OLD code also returns 0 — the figure proved nothing. Replaying 23,662 real hook rows with measured per-command byte sizes showed the fix is genuinely good (10,802 → 1,273 windows, p50 0 → 4,370 B). When a before/after number contains a 0, check whether the population was empty for an unrelated reason, then BUILD the data that exercises the path rather than accepting either number. {#imp-zero-on-both-sides}
 - 2026-09-16 (plans 7-10 r3) — A RENDERER CAN DESTROY A CORRECT PAYLOAD, AND THE LINTER WILL BLESS THE WRECKAGE. The `--gmd` names map was fixed correctly at the daemon and in `render_gmd`, then `console.print` parsed `[[note-1]]` as rich markup: the user receives `Evidence (2): [] `1`` and 8 × `rel: evidence-for -> []`. `tools/gmd/lint.py` reports 0 errors on that file, because `[[]]` is not a wikilink at all — so the "GMD lint zero errors" commit gate passes on a document whose entire edge set was deleted. For any command that emits STRUCTURED text (GMD, JSON, YAML, a patch), assert on the BYTES THROUGH THE CLI, never on the builder's return value; and remember a linter that only reports malformed constructs cannot report absent ones. `click.echo` for machine output, `console.print` for humans. {#imp-renderer-destroys-payload}
 - 2026-09-16 (plans 7-10 r3) — THE FAKE THAT OMITS THE NEW FIELD IS THE BLINDFOLD. `--gmd` went through a `CliRunner` test the whole time, and it could not see the mangling because its `fake_memory` returned no `names` key — so no wikilink existed to destroy, and the assertion was `"gmd:" in res.output`. The test that asserted `[[lonely]]` ran in-process. When a fix ADDS a field to a payload, grep every fake that constructs that payload and add the field, or the CLI test is guaranteed to exercise the pre-fix shape forever. Corollary seen the same round: a claimed-closed gap ("can't observe it without a second writer") was closable by polling the daemon — before accepting an honest-gap declaration, spend five minutes looking for the read-only route. {#imp-fake-omits-the-new-field}
+- 2026-09-16 (plans 7-10 r4) — AN EDIT TO A GMD DOC IS A GRAPH MUTATION; PARSE IT BEFORE AND AFTER. The commit that fixed `console.print` eating every `[[link]]` appended one line past a closing fence and added a second fence, taking `eval/.../REPORT.md` from 2 fences to 3 — so `ingest_gmd.parse_gmd` (and `tools/gmd/lint.py`, same `in_code` toggle) lost the `#next` node: 12 anchor ids at `4f451c5`, 11 at HEAD. No gate saw it: `eval/` is not in `scripts/lint-gmd.sh` SCOPE, and a linter that skips fenced content cannot report a heading it was told is code. New standing move for any diff touching a `gmd: "0.1"` file: run `parse_gmd` on both revisions and diff the node-id lists; an odd `^```` count is a one-line check nobody has written. {#imp-doc-edit-is-a-graph-mutation}
+- 2026-09-16 (plans 7-10 r4) — THE FIELD NEXT TO THE ONE I NAMED IS THE ONE STILL BROKEN. r2 `#b-2-r2d` was "`--gmd` renders `(unresolved)` for EVERY evidence id because the caller does not pass `names`"; it was fixed by passing `names=`, and the SAME call still omits `stats=`, so every real `--gmd` doc says "an unrecorded number of memories" over a corpus of 243 while `--json` and the table both print the number. The `stats` parameter has no production caller and no test passes it. When a finding is "caller drops field X of payload P", read the whole call signature and check EVERY optional field of P against what the caller already holds in scope — the fix that passes exactly the one field I named leaves the sibling firing its honest-fallback at 100%. {#imp-field-next-to-the-one-i-named}
+- 2026-09-16 (plans 7-10 r4) — AN UNATTRIBUTABLE FAILURE WHOSE ASSERTION READS SOURCE TEXT MEANS THE FILE CHANGED MID-RUN. The "sixth failure" everyone called a flake was `inspect.getsource(dm.serve_foreground)` returning one line from a different function: `linecache.checkcache` re-reads the edited file and slices it with the ALREADY-LOADED code object's `co_firstlineno`, so a +5-line edit at `daemon.py:4305` (commit 01:00:00) reinterpreted a suite that started ~00:48. Reproduced byte-for-byte in 30 seconds. Standing move: before calling any failure a flake, check whether the assertion reads source/disk state, then diff the commit times against the run window — and run it standalone at HEAD (3/3, 0.78 s) to separate "code is fine" from "harness is fine". {#imp-getsource-mid-run-edit}
+
+## Former anchors, restored {#former-anchors}
+
+Consolidation moved this ledger's per-run impressions into dedicated memories under
+`memory/impressions/` and collapsed their anchors. The historical reports that cite them were never
+edited — correctly, an audit report is a record — so 97 `dangling-anchor` errors accumulated and
+`CLAUDE.md#before-commit` ("GMD lint zero errors") had not been green for days. Each id below is
+restored as an addressable node so its inbound edges resolve; the content lives where the line says.
+Anchors whose destination is not individually evidenced point at [[#imp-consolidated-0914]] and say
+so rather than guessing a file (ch-bsd r4 remedy).
+
+- `imp-busy-absent-call-tree` → [[impression_bsd_busy_absent_call_tree]]. {#imp-busy-absent-call-tree}
+- `imp-cost-measured-idle` → [[impression_bsd_cost_measured_idle]]. {#imp-cost-measured-idle}
+- `imp-existence-check-tests` → [[impression_bsd_existence_check_tests]]. {#imp-existence-check-tests}
+- `imp-quoted-line-sibling` → [[impression_bsd_quoted_line_sibling]]. {#imp-quoted-line-sibling}
+- `imp-tests-bypass-wiring` → [[impression_bsd_tests_bypass_wiring]]. {#imp-tests-bypass-wiring}
+- `imp-unread-diagnostic-field` → [[impression_bsd_unread_diagnostic_field]]. {#imp-unread-diagnostic-field}
+- `imp-grace-before-signal` → [[impression_bsd_grace_spent_before_signal]]. {#imp-grace-before-signal}
+- `imp-partial-bound` → [[impression_bsd_partial_bound_guard]], amended by [[impression_bsd_partial_bound_guard_2]]. {#imp-partial-bound}
+- `imp-silent-memory` → [[impression_bsd_silent_memory_paths]]. {#imp-silent-memory}
+- `imp-registry-2-strikes` → [[impression_bsd_registry_row_deferral]]. {#imp-registry-2-strikes}
+- `imp-registry-three-strikes` → [[impression_bsd_registry_row_deferral]], same lineage one strike later. {#imp-registry-three-strikes}
+- `imp-consolidated-1` — listed by name in [[#imp-consolidated-0914]]. {#imp-consolidated-1}
+- `imp-consolidated-2` — listed by name in [[#imp-consolidated-0914]]. {#imp-consolidated-2}
+- `imp-fix-at-quoted-line` — listed by name in [[#imp-consolidated-0914]]; the live form is [[impression_bsd_quoted_line_sibling]]. {#imp-fix-at-quoted-line}
+- `imp-socket-sim-probe` — listed by name in [[#imp-consolidated-0914]]. {#imp-socket-sim-probe}
+- `imp-busy-absent-verb-layer` — busy≠absent at the verb layer; consolidated, see [[#imp-consolidated-0914]]. {#imp-busy-absent-verb-layer}
+- `imp-fleet-sum-timeouts` — a fan-out's bound is the SUM of its legs' timeouts; consolidated, see [[#imp-consolidated-0914]]. {#imp-fleet-sum-timeouts}
+- `imp-guard-vs-incident-state` — guards built for the fixed state, not the incident; consolidated, see [[#imp-consolidated-0914]]. {#imp-guard-vs-incident-state}
+- `imp-migration-no-tests` — verb migrations shipped without tests; consolidated, see [[#imp-consolidated-0914]]. {#imp-migration-no-tests}
+- `imp-mock-the-sut` — a test that monkeypatches the function under test; consolidated, see [[#imp-consolidated-0914]]. {#imp-mock-the-sut}
+- `imp-plan3-r3-progress` — plan-3 round-3 progress note; consolidated, see [[#imp-consolidated-0914]]. {#imp-plan3-r3-progress}
+- `imp-silent-pass-migrates` — a silent pass carried across a migration; consolidated, see [[#imp-consolidated-0914]]. {#imp-silent-pass-migrates}
+- `imp-summary-claims-bookkeeping` — a summary claiming the bookkeeping instead of the behaviour; consolidated, see [[#imp-consolidated-0914]]. {#imp-summary-claims-bookkeeping}
+- `imp-two-paths` — two ways to do X, one of them unwired; consolidated, see [[#imp-consolidated-0914]]. {#imp-two-paths}
+- `imp-verbatim-fix` — a remedy implementing my one-line wording verbatim and still wrong; the live form is [[impression_bsd_my_fix_needs_measuring]]. {#imp-verbatim-fix}

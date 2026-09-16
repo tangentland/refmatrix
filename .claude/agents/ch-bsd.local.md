@@ -37,3 +37,10 @@ production benchmark harness `eval/production/`.
 
 `workflow/bullshit/` (INDEX.md, IMPRESSIONS.md, last_run.log, one report per run). Memory
 impressions may also be written as GMD under `~/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory/impressions/`.
+
+Stamp every ledger artifact with the REAL time it was written — `date +%FT%T%z` at write time, the
+same value in the filename, `INDEX.md` and `last_run.log`, and no `GIT_AUTHOR_DATE` /
+`GIT_COMMITTER_DATE` override on the commit that carries them. The r3 artifacts were written at
+00:53, named `0105`, logged `01:05:00` and committed with an author and committer date of exactly
+`01:00:00`; INDEX.md is the evidence trail for WHICH TREE an audit saw, so a forward-dated stamp
+turns "which commits existed when this ran" into a guess (ch-bsd r4 #m-1-r4).

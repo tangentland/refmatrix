@@ -260,20 +260,35 @@ def singleton(plan: dict, *, name_to_id: dict[str, int],
     `compile_memories` enforces `min_size` and a lone memory never becomes a
     cluster at all. A singleton is not automatically a problem; it is a place
     the corpus has one data point and is about to be asked for a pattern.
+
+    Returns `(briefs, skipped, by_reason)` under `count_skips`, matching
+    `contradicted`. The breakdown is not decoration: `compile_briefs` sums
+    BOTH detectors into one `skipped` and the CLI renders that breakdown, so a
+    detector that skips without a reason key makes the sentence unanswerable —
+    it printed a literal `(?)` (ch-bsd r4 #s-2-r4).
     """
     out: list[Brief] = []
     skipped = 0
+    by_reason: Counter = Counter()
     for name in plan.get("unclustered") or []:
         eid = name_to_id.get(name)
         if eid is None:
-            # Emitting here would mean a brief with no evidence. Count it.
+            # Emitting here would mean a brief with no evidence. Count it —
+            # and say WHY, because `compile_briefs` sums every detector's
+            # skips into one number and only `contradicted` used to explain
+            # itself. When this branch fired the CLI printed a literal `(?)`
+            # (ch-bsd r4 #s-2-r4). The realistic cause is snapshot skew: the
+            # plan is built from the CLI's replica read while `name_to_id`
+            # comes from the daemon's store, so a name can be in one and not
+            # the other.
             skipped += 1
+            by_reason["singleton_unresolved"] += 1
             continue
         out.append(Brief(
             cls="singleton", label=str(name),
             finding="joined no subject; the corpus touched this once",
             evidence=[int(eid)]))
-    return (out, skipped) if count_skips else out
+    return (out, skipped, dict(by_reason)) if count_skips else out
 
 
 def contradicted(store: "Store", *, rows: "dict[int, dict] | None" = None,
@@ -444,6 +459,10 @@ def compile_briefs(store: "Store", *, plan: "dict | None" = None,
     rows = _memory_ids(store)
     briefs: list[Brief] = []
     skipped = 0
+    # Declared BEFORE any detector runs, because every detector that skips
+    # merges into it. It used to be declared after the plan-derived block and
+    # assigned from `contradicted` alone (ch-bsd r4 #s-2-r4).
+    skipped_by: dict = {}
     ran: list[str] = []
     not_run: dict[str, str] = {}
 
@@ -462,18 +481,24 @@ def compile_briefs(store: "Store", *, plan: "dict | None" = None,
                 ran.append("corroborated")
             if "singleton" in wanted:
                 name_to_id = {r["name"]: r["id"] for r in rows.values()}
-                got, sk = singleton(plan, name_to_id=name_to_id,
-                                    count_skips=True)
+                got, sk, why = singleton(plan, name_to_id=name_to_id,
+                                         count_skips=True)
                 briefs += got
                 skipped += sk
+                # MERGE, never assign: `skipped` is the sum over every
+                # detector, so a breakdown built from one of them cannot
+                # balance it. Assigning here is what made the CLI print `(?)`
+                # whenever singleton skipped (ch-bsd r4 #s-2-r4).
+                for k, v in why.items():
+                    skipped_by[k] = skipped_by.get(k, 0) + v
                 ran.append("singleton")
 
-    skipped_by: dict = {}
     if "contradicted" in wanted:
         got, sk, why = contradicted(store, rows=rows, count_skips=True)
         briefs += got
         skipped += sk
-        skipped_by = why
+        for k, v in why.items():
+            skipped_by[k] = skipped_by.get(k, 0) + v
         ran.append("contradicted")
 
     if "orphan-concept" in wanted:

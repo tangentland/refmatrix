@@ -128,9 +128,12 @@ def test_singleton_does_not_fire_on_a_clustered_memory(store):
 def test_a_singleton_whose_id_cannot_be_resolved_is_counted_not_emitted(store):
     """An unresolvable name would produce a brief with no evidence."""
     plan = {"clusters": [], "unclustered": ["ghost"], "stats": {}}
-    out, skipped = brief.singleton(plan, name_to_id={}, count_skips=True)
+    out, skipped, why = brief.singleton(plan, name_to_id={}, count_skips=True)
     assert out == []
     assert skipped == 1
+    # The reason travels with the count, so `compile_briefs` can balance its
+    # breakdown against its total (ch-bsd r4 #s-2-r4).
+    assert why == {"singleton_unresolved": 1}, why
 
 
 # ── contradicted ───────────────────────────────────────────────────────────

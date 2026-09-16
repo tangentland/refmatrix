@@ -158,6 +158,7 @@ def parse_doc(path: Path) -> tuple[Doc, list[Issue]]:
         ))
 
     in_code = False
+    fence_opened_at = 0
     in_frontmatter = body_start == 0 and lines and lines[0].strip() == FRONTMATTER_DELIM
     if in_frontmatter:
         in_frontmatter = False
@@ -168,6 +169,8 @@ def parse_doc(path: Path) -> tuple[Doc, list[Issue]]:
             continue
         if CODE_FENCE_RE.match(line.strip()):
             in_code = not in_code
+            if in_code:
+                fence_opened_at = line_no
             continue
         if in_code:
             continue
@@ -223,6 +226,21 @@ def parse_doc(path: Path) -> tuple[Doc, list[Issue]]:
             ref = wm.group(1)
             doc_id, anchor = _split_ref(ref)
             doc.refs.append((line_no, ref, doc_id, anchor, False))
+
+    # An UNCLOSED fence is the one malformation this linter was structurally
+    # blind to: every heading, anchor and `rel:` edge after it is read as code
+    # and simply never exists. That is not a formatting nit — it silently
+    # DELETES graph nodes, and the linter reports zero errors while it does.
+    # A stray fence in eval/production/longmemeval/REPORT.md removed its
+    # `#next` node this way, in the very commit that fixed a renderer for
+    # deleting graph edges (ch-bsd r4 #b-2-r4). r3's own sentence: a linter
+    # that only reports malformed constructs cannot report absent ones.
+    if in_code:
+        issues.append(Issue(
+            path, fence_opened_at or 1, "error", "unclosed-fence",
+            f"code fence opened at line {fence_opened_at} is never closed — "
+            f"every heading, anchor and rel: edge after it is invisible",
+        ))
 
     return doc, issues
 

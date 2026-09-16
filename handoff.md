@@ -45,7 +45,9 @@ adjacency cache (file mtime TEN MINUTES after the measurement) and replicated th
 slots. Profiled quiet: `build_context` warm is **0.45 s**, of which BM25 over 406,885 concepts plus
 the graph walk is **0.37 s**. The retrieval core is not slow. What remains open is an unattributed
 **~8.5 s** gap between `build_context` (0.45 s) and the full daemonless CLI (9.0 s), only 2.8 s of
-which is CPU. bug-031; `workflow/measurements/longmemeval-latency.md`.
+which is CPU. **bug-033** (open — the gap has its own row now; bug-031 is the RETRACTED 62.9 s
+figure and is `fixed`, so citing it here said the gap was closed — ch-bsd r4 #m-2-r4);
+`workflow/measurements/longmemeval-latency.md`.
 
 **Recall, and it is SATURATED.** `context` MRR@20 0.679 / R@5 0.605 — with hit@5 exactly equal to
 the depth-50 recall ceiling. It measures retrieval DEPTH, not ranking. Do not quote it against
