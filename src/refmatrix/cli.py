@@ -3184,6 +3184,25 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
                 watch_root=resolved_watch_roots or None,
                 watch_debounce_ms=debounce_ms, watch_semantic=semantic)
         _verify_relaunch(_respawn)
+def render_derive_warning(status: "dict | None") -> str:
+    """One line when a store's graph was derived by code that is not running,
+    and NOTHING when it was (bug-039).
+
+    A green surface stays quiet on purpose. The incident this closes hid in a
+    status screen where every line already read fine — adding a cheerful
+    `derive: current` line to that screen would bury the one case worth seeing
+    among seven that are not.
+    """
+    if not status or not status.get("stale"):
+        return ""
+    oldest = status.get("oldest_version") or "never stamped"
+    running = status.get("running_version") or "?"
+    reason = status.get("reason") or ""
+    return (f"derive: {oldest} (running {running}) — stale; "
+            f"re-derive with `rmx reingest --force`"
+            + (f"\n  {reason}" if reason else ""))
+
+
 
 
 @daemon.command("status")
@@ -3223,6 +3242,16 @@ def daemon_status():
                               "pre-0.66.3 daemon?)  [yellow][UNVERIFIED][/]")
         except Exception as e:  # noqa: BLE001 — diagnostic line, must not raise
             console.print(f"code: [dim]unknown ({e})[/]  [yellow][UNVERIFIED][/]")
+        # Is the GRAPH as current as the code? `stale_files` cannot answer that
+        # (bug-039), and a store whose derive predates the running version is
+        # the failure that hid behind ten days of green surfaces.
+        try:
+            resp = daemon_mod.call(root, "derive_status", {}, timeout=5.0, retries=1)
+            warn = render_derive_warning((resp or {}).get("result"))
+            if warn:
+                console.print(f"[yellow]{warn}[/]")
+        except Exception as e:  # noqa: BLE001 — diagnostic line, must not raise
+            console.print(f"derive: [dim]unknown ({e})[/]")
     elif pid:
         # A live rmx process is BUSY, not stale — socket or no socket: booting
         # (pid written, socket not bound yet), rebuilding an index, or holding

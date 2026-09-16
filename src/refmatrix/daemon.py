@@ -3252,6 +3252,15 @@ def _store_health(d: Daemon) -> dict:
         h["slot_bound"] = d._st().db_path.name != "catalog.duckdb"
     except Exception:
         pass
+    # 4. WHICH CODE derived the graph. `stale_files` counts mtime drift on
+    #    tracked files and cannot see a graph built by passes that have since
+    #    changed — the condition that left this project's own store at a
+    #    1-bundle scan-prompt floor for ten days with every other signal green
+    #    (bug-039). A version mismatch here is the only cheap tell.
+    try:
+        h["derive"] = d._st().derive_status()
+    except Exception as exc:
+        h["derive_error"] = f"{type(exc).__name__}: {exc}"[:200]
     return h
 
 
@@ -3718,6 +3727,18 @@ def _op_untrack(d: Daemon, args: dict) -> dict:
     if not dry_run:
         d._request_snapshot()
     return result
+
+
+def _op_derive_status(d: Daemon, args: dict) -> dict:
+    """Which code derived the caller's partition (bug-039).
+
+    One indexed query, so a status surface can ask it on every invocation. The
+    condition it reports — a graph built by passes that have since changed —
+    has no other cheap tell: `stale_files` counts mtime drift on FILES and read
+    `35` while this project's own store sat at a 1-bundle scan-prompt floor."""
+    part = args.get("partition") or d._st()._partition_name
+    with d._store_lock, d._st().with_partition(part):
+        return d._st().derive_status()
 
 
 def _op_clear_tracked_stamps(d: Daemon, args: dict) -> dict:
@@ -5129,6 +5150,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "forget": _op_forget,
     "untrack": _op_untrack,
     "clear_tracked_stamps": _op_clear_tracked_stamps,
+    "derive_status": _op_derive_status,
     "compile_pairs": _op_compile_pairs,
     "coref_link": _op_coref_link,
     "merge_verb_aliases": _op_merge_verb_aliases,

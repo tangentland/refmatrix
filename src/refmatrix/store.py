@@ -349,6 +349,20 @@ CREATE TABLE IF NOT EXISTS tracked_files (
     PRIMARY KEY (partition_id, path)
 );
 
+-- WHICH CODE derived the graph in this partition, per ingest pass (bug-039).
+-- `tracked_files` answers "did the FILES change"; it answered `35` while this
+-- project's own store sat at a 1-bundle floor because the graph had not been
+-- re-derived since 0.49.1 — ten days and several ingest changes earlier. A
+-- derive carries no freshness signal of its own unless the deriving version is
+-- written down, so every pass that writes derived state stamps itself here.
+CREATE TABLE IF NOT EXISTS derive_stamps (
+    partition_id INTEGER NOT NULL DEFAULT 1 REFERENCES partitions(id),
+    pass_name    TEXT NOT NULL,
+    version      TEXT NOT NULL,
+    derived_at   REAL NOT NULL,
+    PRIMARY KEY (partition_id, pass_name)
+);
+
 -- Evidence: where a linkage was sourced from. Optional; ingesters that know
 -- the source location (e.g. semantic ingester walking ast nodes) populate it.
 -- The `entity_links` row is authoritative for membership; this table is for
@@ -5484,6 +5498,86 @@ class Store:
                 (self._partition_id,),
             )
         ]
+
+    def stamp_derive(self, pass_name: str, *, version: "str | None" = None,
+                     at: "float | None" = None) -> str:
+        """Record that `pass_name` derived this partition's graph, with the
+        version of the code that did it (bug-039).
+
+        Called at the END of a pass, so a crashed ingest leaves the previous
+        stamp standing rather than claiming a derive that did not finish.
+        Upserts on `(partition_id, pass_name)`: the question is always "which
+        code derived what is in the store NOW", never a history.
+        """
+        from refmatrix import __version__ as _running
+
+        v = version or _running
+        ts = time.time() if at is None else float(at)
+        con = self._connect()
+        con.execute(
+            "INSERT INTO derive_stamps(partition_id, pass_name, version, derived_at) "
+            "VALUES (?,?,?,?) "
+            "ON CONFLICT(partition_id, pass_name) DO UPDATE SET "
+            "  version=excluded.version, derived_at=excluded.derived_at",
+            (self._partition_id, pass_name, v, ts),
+        )
+        con.commit()
+        return v
+
+    def derive_status(self) -> dict:
+        """Is this partition's derived graph the product of the running code?
+
+        Returns `{passes, oldest_version, running_version, stale, reason}`.
+
+        The condition this exists for (bug-039, 2026-09-16) is a store whose
+        every health surface reads green while its graph was built by code that
+        is ten days and several ingest changes behind: `daemon_up` true,
+        `dev_tree` false, version parity clean, `install-hooks --check` clean,
+        and `stale_files: 35` — which reads as routine log churn and was
+        dismissed as exactly that three times in one session.
+
+        Two rules that look arbitrary and are not:
+
+        * **An unstamped partition WITH tracked files is stale, not unknown.**
+          That is precisely the state the incident hid in. Reporting it as
+          "no information" would preserve the blind spot the table exists to
+          remove.
+        * **The comparison is exact inequality, never ordering.** A stamp
+          NEWER than the running binary is a rolled-back deploy serving a graph
+          the running code did not build, which is just as much a mismatch.
+        """
+        from refmatrix import __version__ as _running
+
+        con = self._connect()
+        rows = [
+            {"pass_name": r[0], "version": r[1], "at": float(r[2])}
+            for r in con.execute(
+                "SELECT pass_name, version, derived_at FROM derive_stamps "
+                "WHERE partition_id=? ORDER BY pass_name",
+                (self._partition_id,),
+            ).fetchall()
+        ]
+        out = {"passes": rows, "running_version": _running,
+               "oldest_version": None, "stale": False, "reason": None}
+        if not rows:
+            tracked = con.execute(
+                "SELECT count(*) FROM tracked_files WHERE partition_id=?",
+                (self._partition_id,),
+            ).fetchone()[0]
+            if tracked:
+                out["stale"] = True
+                out["reason"] = (
+                    f"{int(tracked)} tracked file(s) and the graph was never "
+                    f"stamped — derived before {_running} recorded it; "
+                    f"re-derive to know")
+            return out
+        mismatched = [r for r in rows if r["version"] != _running]
+        out["oldest_version"] = min(r["version"] for r in rows)
+        if mismatched:
+            names = ", ".join(f"{r['pass_name']}@{r['version']}" for r in mismatched)
+            out["stale"] = True
+            out["reason"] = (f"derived by {names}, running {_running}")
+        return out
 
     def clear_tracked_stamps(self, *, like: str | None = None) -> dict:
         """Delete tracked_files rows in the active partition WITHOUT purging

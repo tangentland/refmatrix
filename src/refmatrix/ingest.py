@@ -195,8 +195,13 @@ def ingest_path(
         )
     if yield_lock is None:
         with s.transaction():
-            return _ingest_path_inner(s, path, source=source, semantic=semantic,
-                                      progress_cb=progress_cb)
+            n = _ingest_path_inner(s, path, source=source, semantic=semantic,
+                                   progress_cb=progress_cb)
+        # Stamp AFTER the transaction commits, and only on a clean return: a
+        # crashed ingest must leave the previous stamp standing rather than
+        # claim a derive that did not finish (bug-039).
+        _stamp_ingest(s, semantic=semantic)
+        return n
     # Cooperative path: drive windowed transactions so per-row WAL fsync
     # collapses to one fsync per yield window. The inner loops call their
     # yield hook (`_yield_flush`) every `yield_every` units; routing that hook
@@ -207,13 +212,33 @@ def ingest_path(
     win = _CommitWindow(s, yield_lock)
     win.open()
     try:
-        return _ingest_path_inner(
+        n = _ingest_path_inner(
             s, path, source=source, semantic=semantic,
             yield_lock=win.boundary, yield_every=yield_every,
             progress_cb=progress_cb,
         )
     finally:
         win.close()
+    _stamp_ingest(s, semantic=semantic)
+    return n
+
+
+def _stamp_ingest(s: Store, *, semantic: bool) -> None:
+    """Record which code derived this partition's graph (bug-039).
+
+    The store had no way to say "this graph was built by 0.49.1" while the
+    binary ran 0.71.0, so ten days of ingest changes left the derived layer
+    behind with every health surface green. Failure to stamp is SAID, never
+    swallowed: a store that silently stopped stamping would rebuild exactly
+    the blind spot this closes.
+    """
+    for name in ("ingest", "semantic") if semantic else ("ingest",):
+        try:
+            s.stamp_derive(name)
+        except Exception as exc:      # noqa: BLE001 — said, never mute
+            import sys as _sys
+            print(f"warning: derive stamp `{name}` failed: "
+                  f"{type(exc).__name__}: {exc}", file=_sys.stderr)
 
 
 def _md_file_changed(pre_tracked: "dict[str, float]", p: Path) -> bool:

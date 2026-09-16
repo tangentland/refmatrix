@@ -130,6 +130,17 @@ CREATE TABLE IF NOT EXISTS tracked_files (
     PRIMARY KEY (partition_id, path)
 );
 
+-- WHICH CODE derived this partition's graph, per ingest pass (bug-039). See
+-- the SQLite CATALOG_DDL for the incident: `tracked_files` answers "did the
+-- FILES change" and cannot see a graph derived by older passes.
+CREATE TABLE IF NOT EXISTS derive_stamps (
+    partition_id INTEGER NOT NULL DEFAULT 1,
+    pass_name    TEXT NOT NULL,
+    version      TEXT NOT NULL,
+    derived_at   DOUBLE NOT NULL,
+    PRIMARY KEY (partition_id, pass_name)
+);
+
 CREATE TABLE IF NOT EXISTS linkage_evidence (
     entity_id   INTEGER NOT NULL,
     linkage_id  INTEGER NOT NULL,
