@@ -12,12 +12,16 @@ metadata:
 Date: 2026-09-15 → 09-16 (session 99ba458b). Prior handoff archived at
 `workflow/past_handoffs/001-plan-1-to-6-remediation_2026-09-15.md`.
 
+**Updated after three @ch-bsd rounds and the profiling gate. Read [[#bsd]] and [[#unverified]]
+before trusting anything else here.**
+
 rel: depends-on -> [[plan-of-plans]]
 
 ## Where the work sits {#state}
 
-**Branch `plan-7-8-authoring`, 15 commits, NOT merged to master.** That is a deviation from the
-one-branch-per-task rule and is the first thing the next session should resolve.
+**MERGED to `master` at `399d0a3`, then three BSD remediation commits → HEAD `6b6a610`.** Version
+bumped **0.69.1 → 0.70.0**. Tree clean. NOT deployed — `~/refmatrix` still serves 0.69.1, and
+deploying restarts the fleet, so it is a decision, not a default.
 
 Three new plans authored, specced, and mostly executed: **plan-7** (LongMemEval), **plan-8**
 (`rmx memory brief`), **plan-9** (context-cost telemetry), **plan-10** (injection dedup — closed as
@@ -36,10 +40,12 @@ a negative result).
 
 ## The two numbers that matter {#numbers}
 
-**Latency, and it is the session's most consequential finding.** Daemon warm:
-`rmx context` **62.9 s**, `rmx scan-prompt` **75.9 s** per query at 19,829 docs. agentmemory
-publishes 14 ms p50. `scan-prompt` is the always-on UserPromptSubmit hook and cannot run per-prompt
-at this scale. No cause claimed — no profile taken. `workflow/measurements/longmemeval-latency.md`.
+**Latency — the 62.9 s claim is RETRACTED.** It was measured while the daemon built a 432 MB
+adjacency cache (file mtime TEN MINUTES after the measurement) and replicated three 2.4 GB catalog
+slots. Profiled quiet: `build_context` warm is **0.45 s**, of which BM25 over 406,885 concepts plus
+the graph walk is **0.37 s**. The retrieval core is not slow. What remains open is an unattributed
+**~8.5 s** gap between `build_context` (0.45 s) and the full daemonless CLI (9.0 s), only 2.8 s of
+which is CPU. bug-031; `workflow/measurements/longmemeval-latency.md`.
 
 **Recall, and it is SATURATED.** `context` MRR@20 0.679 / R@5 0.605 — with hit@5 exactly equal to
 the depth-50 recall ceiling. It measures retrieval DEPTH, not ranking. Do not quote it against
@@ -86,21 +92,72 @@ plan-6 task 6.4), `test_hub::test_watchdog_restarts_down_daemon_when_auto`, and
 `test_memory_recall_exclude_mtype::test_scope_both_filters_global_rows`. Four are daemon/hub/
 liveness — the area plan-4 is still in-progress on. **Not investigated this session.**
 
-## Open decisions, deliberately NOT made {#decisions}
+## @ch-bsd: three rounds, 19 → 5 → 5, all addressed {#bsd}
 
-1. **Depth-200 LongMemEval rerun (~4 h) vs profiling the 63 s.** The recall number is depth-bound;
-   the latency number is the one that changes what rmx IS.
-2. **bug-030: proper fix vs env workaround.** The fix touches the shared model path every daemon
-   uses.
-3. **Merge the 15 commits before or after `@ch-bsd`.**
+Reports in `workflow/bullshit/2026-09-16-00{30,50}-*` and `-0105-plan-7-10-r3-4f451c5.md`.
 
-## Next session {#next}
+**r1's opening line is the durable lesson:** *"110/110 of the new tests pass at HEAD. That is the
+problem: they pass and the command still dies on its first real invocation."*
 
-1. Resolve the unmerged branch.
-2. `@ch-bsd` over plans 7–10 (none has had a pass).
-3. The three decisions above.
-4. Embed retry resumes via `ingest.py --skip init --skip ingest-gmd` — the 4h23m ingest is
-   persisted at `/Volumes/littlebig/longmemeval/`; do NOT rebuild it.
+- **r1 (19)** — `--gmd` crashed on every real call; `contradicted` could never fire (endpoints are
+  concept `#anchor` nodes); top production brief was the word `the` (6th site of the shared-stoplist
+  bug). All fixed and verified on a copy of the live read replica.
+- **r2 (5)** — my fixes were BSD's r1 wording implemented verbatim without measuring. `_endpoint`
+  over-permissive (45/47 emitted were BSD's own citation convention); the `--max-tokens` depth
+  translation was inert. `scan` is now permanently `DEPTH_UNCONTROLLED` rather than guessed at a
+  third time.
+- **r3 (5)** — **the blocker: `console.print` parsed `[[note-1]]` as rich markup and deleted every
+  wikilink and `rel:` edge from `--gmd` output, and `tools/gmd/lint.py` reports 0 errors on that,
+  because `[[]]` is not a wikilink.** Fixed with `click.echo` at both sites. See
+  [[project_bsd_three_round_arc_plans_7_10]].
+
+BSD has NOT re-reviewed `4f451c5..6b6a610` (the r3 remediation). Plans 7/8/9/10 stay `in-progress`.
+
+## UNVERIFIED — read before trusting {#unverified}
+
+- **The full suite at HEAD `6b6a610` was still RUNNING when this handoff was written.** The last
+  completed run describes a tree three commits old (`workflow/review-output/pytest-post-bsd-r2.log`:
+  **6 failed, 1872 passed**). The in-flight log is `pytest-post-bsd-r3.log`.
+- **That pre-r3 run had a SIXTH failure not in the master baseline:**
+  `tests/test_plan4_remedy_r2.py::test_foreground_start_refuses_a_busy_daemon_without_reaping_it`.
+  The other five match master exactly. **It is NOT attributed.** Candidates: my `daemon.py` changes
+  (`_op_memory_brief`, `_names_for` — neither touches start/reap), the 0.70.0 version bump, or
+  flakiness in a daemon-timing test. **Run it against `master` before believing any "0 added"
+  claim** — that check has corrected me twice this session.
+
+## Open decisions, NOT made {#decisions}
+
+1. **Deploy 0.70.0?** Version is bumped; `~/refmatrix` is not updated. Fleet restart.
+2. **bug-030** (probe timeout leaks onto the shared model socket, 2nd sighting): proper fix vs env
+   workaround. Touches the shared model path every daemon uses. Still OPEN — it is why the
+   LongMemEval dense rows do not exist.
+3. **bug-032** (rerank head-truncates at 2048; 36.9% of answer-bearing turns invisible): a ranking
+   change on the always-on hook path, so it wants its own plan. **Its effect may be zero** — after
+   correction it can only reach `scan`/0.150, and only if the shared worker answered during the
+   6,983 s run at all.
+4. **helix plan-11**: Q1–Q4 tentatively approved, held at `drafting`. The profiling gate is
+   satisfied and it CHANGES THE CASE — the retrieval core is 0.45 s, so the versioned store has no
+   performance argument behind it. It stands on the product claim and on the two bugs it
+   incidentally solves.
+
+## Next session, in order {#next}
+
+1. **Read `pytest-post-bsd-r3.log`** and attribute the plan-4 failure against `master`.
+2. **Request `@ch-bsd` r4** over `4f451c5..6b6a610`; send it the suite log (it asked).
+3. Cleanup pass, then **helix plan-11** (write task specs to move it off `drafting`), then
+   benchmarks — the user's stated order.
+4. Embed retry resumes via `ingest.py --skip init --skip ingest-gmd`; the 4h23m ingest is persisted
+   at `/Volumes/littlebig/longmemeval/`. **Do NOT rebuild it.**
+
+## What I got wrong, so the next session does not repeat it {#wrong}
+
+Five times I reached a causal story ahead of the evidence, and each was caught externally, never by
+re-examining my own reasoning: the storm-window latency; "the 7 test failures are contention
+starvation" (an idle machine gave the same 7); "oversized bodies flood the reranker"
+(`MAX_DOC_CHARS` truncates everything); bug-032 blamed on `context`'s 0.200 (`rmx context` never
+constructs a reranker); and "the b-4 mutation is unclosable without a second writer" (polling the
+daemon closes it). See [[feedback_causal_story_before_evidence]] and
+[[feedback_green_tests_are_not_a_working_command]].
 
 ## Benchmark data, off-tree {#data}
 
