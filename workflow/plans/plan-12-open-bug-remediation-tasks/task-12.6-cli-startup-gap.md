@@ -5,14 +5,14 @@ title: "Task 12.6: give the 8.5 s a name"
 tags: [task, plan-12, performance, measurement]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-12-open-bug-remediation
 ---
 
 # Task 12.6: give the 8.5 s a name {#root}
 
 > Plan: [[plan-12-open-bug-remediation]]
-> Status: Pending
+> Status: Complete
 > Bug: bug-033
 > Depends on: [[task-12.5-pyc-invalidation]]
 

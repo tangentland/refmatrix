@@ -5,14 +5,14 @@ title: "Task 12.1: a private daemon re-probes and adopts the shared worker"
 tags: [task, plan-12, daemon, model-workers]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-12-open-bug-remediation
 ---
 
 # Task 12.1: a private daemon re-probes and adopts the shared worker {#root}
 
 > Plan: [[plan-12-open-bug-remediation]]
-> Status: Pending
+> Status: Complete
 > Bug: bug-024 (todo G14)
 > Depends on: [[task-12.5-pyc-invalidation]]
 

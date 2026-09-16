@@ -5,14 +5,14 @@ title: "Task 12.3: the reranker reads the part of the document the query is in"
 tags: [task, plan-12, rerank, retrieval-quality]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-12-open-bug-remediation
 ---
 
 # Task 12.3: the reranker reads the part of the document the query is in {#root}
 
 > Plan: [[plan-12-open-bug-remediation]]
-> Status: Pending
+> Status: Complete
 > Bug: bug-032
 > Depends on: [[task-12.2-rerank-cost-budget]]
 

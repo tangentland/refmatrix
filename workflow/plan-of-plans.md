@@ -28,7 +28,7 @@ current.
 | 8 | plan-8-derived-coverage-notes | in-progress (built; awaiting @ch-bsd) | yes (4) | `workflow/plans/plan-8-derived-coverage-notes.md` | plan 7 (measures it) |
 | 9 | plan-9-context-cost-telemetry | in-progress | yes (3) | `workflow/plans/plan-9-context-cost-telemetry.md` | — |
 | 10 | plan-10-injection-dedup | in-progress (negative result; awaiting BSD clean) | yes (3) | `workflow/plans/plan-10-injection-dedup.md` | plan 9 (its instrument) |
-| 12 | plan-12-open-bug-remediation | approved | yes (6) | `workflow/plans/plan-12-open-bug-remediation.md` | — |
+| 12 | plan-12-open-bug-remediation | in-progress (6/6 built; awaiting @ch-bsd + deploy acceptance) | yes (6) | `workflow/plans/plan-12-open-bug-remediation.md` | — |
 
 ## Sequence rationale {#sequence}
 

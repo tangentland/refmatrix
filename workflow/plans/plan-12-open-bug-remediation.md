@@ -5,7 +5,7 @@ title: "The six open bugs: make the cost knowable, the decay detectable, the byt
 tags: [plan, bugs, model-workers, rerank, store-decay, measurement]
 metadata:
   node_type: plan
-  status: approved
+  status: in-progress
   created: 2026-09-16
 ---
 

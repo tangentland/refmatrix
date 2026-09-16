@@ -5,14 +5,14 @@ title: "Task 12.2: the rerank worker reports what it costs, and an expired frame
 tags: [task, plan-12, rerank, model-workers, hook-budget]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-12-open-bug-remediation
 ---
 
 # Task 12.2: the rerank worker reports what it costs, and an expired frame is dropped {#root}
 
 > Plan: [[plan-12-open-bug-remediation]]
-> Status: Pending
+> Status: Complete
 > Bugs: bug-025 (todo G13), bug-019 (recurring)
 > Depends on: [[task-12.1-shared-worker-readoption]]
 

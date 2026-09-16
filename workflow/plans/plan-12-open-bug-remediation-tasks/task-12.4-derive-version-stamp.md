@@ -5,14 +5,14 @@ title: "Task 12.4: a store says which code derived its graph"
 tags: [task, plan-12, store, health, store-decay]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-12-open-bug-remediation
 ---
 
 # Task 12.4: a store says which code derived its graph {#root}
 
 > Plan: [[plan-12-open-bug-remediation]]
-> Status: Pending
+> Status: Complete
 > Bug: bug-039
 > Depends on: [[task-12.5-pyc-invalidation]]
 

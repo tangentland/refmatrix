@@ -5,14 +5,14 @@ title: "Task 12.5: the suite refuses timestamp-invalidated bytecode"
 tags: [task, plan-12, tests, bytecode]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-12-open-bug-remediation
 ---
 
 # Task 12.5: the suite refuses timestamp-invalidated bytecode {#root}
 
 > Plan: [[plan-12-open-bug-remediation]]
-> Status: Pending
+> Status: Complete
 > Bug: bug-037
 > Depends on: —
 
