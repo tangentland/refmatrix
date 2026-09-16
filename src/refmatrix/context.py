@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -846,13 +847,26 @@ def _append_content_hits(
     _floor_exact_defs(content_entries, ref)
     built.extend(content_entries)
     # Floor: index found nothing on disk that grep would have. Grep the files.
-    if grep_backstop and len(built) == n_before:
+    #
+    # NOT for a memory-only store. `~/.refmatrix` tracks no filesystem paths,
+    # and its `root.parent` is the user's HOME — so the floor was `rg`-ing an
+    # entire home directory for a phrase that by construction is not indexed
+    # there. Measured 2026-09-16 while attributing bug-033: 15.09 s, the hard
+    # subprocess timeout, ZERO hits, swallowed. Almost none of it was CPU,
+    # which is exactly the signature the bug recorded.
+    from refmatrix.store import is_memory_only_root
+    if grep_backstop and len(built) == n_before and not is_memory_only_root(s.root):
         built.extend(_grep_backstop(
             ref_terms, s.root.parent, limit=max_entities,
             expand=expand, hit_lines=hit_lines,
             # A multi-word ref is prose, not a symbol: match whole words.
             whole_word=len(ref.split()) > 1,
         ))
+
+
+# How long the literal floor may run. It is a FLOOR, not the answer: a walk
+# that outlives this has already cost more than the hit is worth (bug-033).
+_BACKSTOP_TIMEOUT_S = float(os.environ.get("RMX_GREP_BACKSTOP_TIMEOUT_S", "15") or "15")
 
 
 def _grep_backstop(
@@ -892,7 +906,16 @@ def _grep_backstop(
             cmd += ["-e", t]
         cmd.append(str(root))
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        res = subprocess.run(cmd, capture_output=True, text=True,
+                             timeout=_BACKSTOP_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        # Spent the whole budget and bought nothing. Saying so is the
+        # difference between "the floor found no hits" and "the floor never
+        # ran" — bug-033 spent 15.09 s here and read as the former.
+        import sys as _sys
+        print(f"rmx: grep backstop timed out after {_BACKSTOP_TIMEOUT_S:.0f}s "
+              f"over {root} — no floor hits for {terms}", file=_sys.stderr)
+        return []
     except (OSError, ValueError, subprocess.SubprocessError):
         return []
     if not res.stdout.strip():

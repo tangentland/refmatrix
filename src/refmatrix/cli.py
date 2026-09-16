@@ -3,11 +3,58 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import time
 from typing import Any, Callable, cast
 import json
 import os
 import sys
 from pathlib import Path
+
+# ---- phase timing (bug-033) ------------------------------------------------
+#
+# `build_context` warm is 0.45 s on the LongMemEval store and the full
+# daemonless `rmx context` is 9.0 s, of which only 2.8 s is CPU. The ~8.5 s
+# between them was never attributed, and the 62.9 s retraction is what happens
+# when a mechanism is named before it is measured. So: the splits are
+# instrumented behind an env flag, reproducible by anyone, and they go to
+# STDERR — stdout is the hook payload, whose bytes plan 9 counts.
+#
+#   RMX_TIME_PHASES=1 rmx context "<q>"
+_PROC_T0 = time.monotonic()
+_PHASE_MARKS: "list[tuple[str, float]]" = []
+
+
+def phases_enabled() -> bool:
+    return os.environ.get("RMX_TIME_PHASES") in ("1", "true", "True")
+
+
+def phase_mark(name: str) -> None:
+    """Record that `name` finished now. No-op unless RMX_TIME_PHASES is set, so
+    the instrumented path costs one env lookup when it is off."""
+    if phases_enabled():
+        _PHASE_MARKS.append((name, time.monotonic()))
+
+
+def render_phase_report(t_end: float) -> str:
+    """`name=<seconds>` per phase plus the total, or "" when disabled.
+
+    The first split is `import`: the time from this module being imported to
+    the first mark, which is where a CLI that spends seconds before doing any
+    work spends them. Everything before THAT belongs to the interpreter and is
+    measured with `-X importtime`, not here.
+    """
+    if not phases_enabled() or not _PHASE_MARKS:
+        return ""
+    parts = []
+    prev = _PROC_T0
+    for i, (name, ts) in enumerate(_PHASE_MARKS):
+        label = "import" if i == 0 else _PHASE_MARKS[i - 1][0]
+        parts.append(f"{label}={ts - prev:.3f}s")
+        prev = ts
+    parts.append(f"{_PHASE_MARKS[-1][0]}={t_end - prev:.3f}s")
+    parts.append(f"total={t_end - _PROC_T0:.3f}s")
+    return "rmx phases: " + " ".join(parts)
+
 
 import click
 from rich.console import Console
@@ -4586,13 +4633,16 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
             via_replica, degree, include_sessions, expand, hit_lines,
             grep_backstop, text, stdin_json):
     """Token-budgeted context bundle: anchor + neighbors + their tldr blobs."""
+    phase_mark("click-parse")
     from refmatrix.context import build_context, render_json, render_text
     from refmatrix import daemon as daemon_mod
+    phase_mark("context-import")
     # Uniform query resolution: positional SYMBOL > --text > --stdin-json
     # envelope. Shared with scan-prompt / memory recall. read_stdin=False so a
     # bare `rmx context` in a pipeline doesn't silently consume stdin.
     symbol = _resolve_query(symbol, text, stdin_json=stdin_json,
                             read_stdin=False)
+    phase_mark("dispatch")
     # Detect whether the user actually passed --max-entities / --max-tokens
     # so the auto-scale (degree>0) knows whether to multiply or not. An
     # explicit override always wins, even if it happens to match the
@@ -4613,6 +4663,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
     # which streams from the writer.
     if not since and symbol:
         via_replica = _should_via_replica(via_replica)
+    phase_mark("route-decision")
 
     if via_replica:
         if since:
@@ -4640,6 +4691,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
                 t.cardinality = b.total_entities() if b.anchor else 0
             return b
         bundle = _replica_read(_run)
+        phase_mark("replica-build_context")
         if fmt == "json":
             click.echo(render_json(bundle))
         else:
@@ -4681,6 +4733,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
     # lookups + build_context rendering. Use the lock-free reader so the
     # command works while the daemon owns the writer slot.
     s = _read_store()
+    phase_mark("store-bind")
 
     if since:
         import shutil
@@ -4757,6 +4810,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
             _tokens_explicit=tokens_explicit,
         )
         t.cardinality = bundle.total_entities() if bundle.anchor else 0
+    phase_mark("build_context")
     if fmt == "json":
         click.echo(render_json(bundle))
     else:
@@ -12876,6 +12930,7 @@ def cli_entry() -> None:
     _stdout = sys.stdout
     _counter = _tel.CountingStream(_stdout)
     sys.stdout = _counter
+    phase_mark("entry")
     try:
         main()
     except SystemExit as e:
@@ -12891,6 +12946,11 @@ def cli_entry() -> None:
         # run, so restoration on the happy path alone would leave stdout wrapped
         # for the life of the process.
         sys.stdout = _stdout
+        # Phase splits go to stderr, never stdout (bug-033). For a hook, stdout
+        # IS the injected payload.
+        _report = render_phase_report(time.monotonic())
+        if _report:
+            print(_report, file=sys.stderr)
         latency_ms = int((_time.monotonic() - t0) * 1000)
         try:
             out_bytes = _counter.out_bytes
