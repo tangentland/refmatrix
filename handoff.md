@@ -54,23 +54,22 @@ bug-039's detector is live and behaved exactly as predicted for landing day: eve
 
 ## What is NOT done, and why {#open}
 
-1. **bug-041 is now `recurring`, Seen 2 — and it is the live item.** The identical shutdown
-   sequence (disp 20 / cli 4 / bg 12 pool drains timing out, then `final flush skipped:
-   _store_lock contended`) reproduced on the deploy restart at 11:51:15-11:51:44, so it is NOT
-   tied to the earlier 94% CPU window: it reproduces on any `rmx daemon restart --relaunch`.
-   **One datum to chase first:** the boot index repair logged `rows=431809` at 11:33 and
-   `rows=422127` at 11:51. A ~9.7k drop in `idx_entity_links_lk_concept` across two boots may be
-   ordinary churn (this session purged and re-derived a lot) or may be the lost-work shape a
-   skipped flush produces. It is unexplained either way, and `replica audit` is NOT the instrument
-   — it audits the DROPPED A/B rotation (reader slot A is 14 MB against writer B at 390 MB, which
-   is expected, not drift).
-2. **`MEMORY.md` is over its cap:** 234 lines / 34 KB against a 200-line limit, so the tail
-   truncates on context load. 139 project / 40 impression / 34 feedback / 11 savestate / 10
-   reference entries, 34 of them over the 200-char line guidance. There is no generator — the
-   index is appended by hand, so it only grows. The user asked about auto-curation; the levers that
-   exist are `rmx memory compile` (0.26.0, consolidates the STORE) and `rmx memory brief`
-   (singleton / corroborated / contradicted), and what is missing is a generator that rebuilds
-   `MEMORY.md` under a hard cap. NOT started — awaiting the user's go.
+Nothing is outstanding from this session's asks. Both bugs raised after plan-12 are closed and
+deployed:
+
+- **bug-041 FIXED (0.72.1), proven live.** The 0.72.1 daemon stops in **1 second** with no drain
+  timeout and no skipped flush; the whole restart is 4 s against 29-32 s. Note the trap for anyone
+  re-checking: the FIRST restart after a deploy is performed by the OLD daemon, which still prints
+  the old lines — a shutdown fix can only be observed by restarting a process that already carries
+  it. The 431,809 -> 422,127 index-row delta that looked like lost work was ordinary churn: four
+  boots today read 431809 / 422127 / 431666 / 431669, moving both ways with purge and re-derive.
+- **bug-042 FIXED (0.72.1).** `MEMORY.md` is generated under a hard cap: 234 -> 193 lines, 257
+  memories all accounted for (192 listed, 65 collapsed, 0 unaccounted), `--check` in sync on the
+  DEPLOYED build. Wired into `handoff._ss_update_index`, so save-state now caps the index it grows.
+
+The one open item is a judgement call rather than a defect: the memory-index and shutdown work
+landed AFTER `@ch-bsd`'s CLEAN range (`c92274b..34aeddf`) and has had no adversarial audit — 22
+tests and six killing mutations, but no BSD round.
 
 ## Quality gates {#gates}
 
