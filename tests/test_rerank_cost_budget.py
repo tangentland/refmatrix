@@ -455,3 +455,65 @@ def test_the_budget_is_anchored_before_the_probe(monkeypatch):
     # the deadline counts from before the probe, not from after it
     assert r._deadline <= t0 + 5.0 + 0.05
     assert r._deadline < time.time() + 5.0 - 0.2
+
+
+def test_the_queue_is_counted_across_a_cold_model_load(monkeypatch):
+    """ch-bsd plan-12 r2: `_worker()` holds the server lock while it creates
+    the client and runs the version handshake, and a COLD load blocks there for
+    6-33 s. Counting the queue after that section reported 0 with two callers
+    ahead — the same off-by-an-instant as #b-1, one scope out."""
+    import socket
+    import threading
+
+    from refmatrix import modelsrv
+    from refmatrix.subproc import recv_frame, send_frame
+
+    loading = threading.Event()
+    release = threading.Event()
+
+    class _ColdWorker:
+        def __init__(self, *a, **kw):
+            loading.set()
+            release.wait(5)               # the model load
+
+        def call(self, op, payload=None, *, blob=None, timeout=None):
+            return ({"ok": True, "model": "stub", "cost_s_per_doc": 0.2}, b"")
+
+        def info(self):
+            return {"version": None}
+
+        def close(self, *, timeout=0.0):
+            pass
+
+    srv = modelsrv.ModelServer()
+    monkeypatch.setattr(modelsrv, "WorkerClient", _ColdWorker)
+
+    answers: dict = {}
+
+    def _client(key: str, req: dict):
+        a, b = socket.socketpair()
+        threading.Thread(target=srv._handle, args=(a,), daemon=True).start()
+        rw = b.makefile("rwb")
+        send_frame(rw, req)
+        hdr, _ = recv_frame(rw)
+        answers[key] = hdr
+        b.close()
+
+    threads = [threading.Thread(
+        target=_client, args=(f"r{i}", {"role": "rerank", "op": "rerank",
+                                        "query": "q", "docs": ["a"]}),
+        daemon=True) for i in range(2)]
+    threads[0].start()
+    assert loading.wait(5), "the cold load never started"
+    threads[1].start()
+    time.sleep(0.2)
+    t3 = threading.Thread(target=_client,
+                          args=("info", {"role": "rerank", "op": "info"}),
+                          daemon=True)
+    t3.start()
+    time.sleep(0.2)
+    release.set()
+    for th in (*threads, t3):
+        th.join(5)
+
+    assert answers["info"]["queue_depth"] == 2, answers["info"]

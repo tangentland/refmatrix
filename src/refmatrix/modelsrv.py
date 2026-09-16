@@ -478,19 +478,26 @@ class ModelServer:
                 try:
                     if role not in ROLES:
                         raise ValueError(f"unknown role {role!r}")
-                    w = self._worker(role)
+                    # Join the line BEFORE `_worker()`, not after. `_worker`
+                    # holds `_lock` while it creates the client and runs the
+                    # version handshake, and a COLD model load blocks there for
+                    # 6-33 s — the exact window where callers pile up. Counting
+                    # after it meant a caller with two reranks ahead still read
+                    # `queue_depth: 0` during a cold start (ch-bsd plan-12 r2),
+                    # which is the same off-by-an-instant as #b-1, one scope out.
                     with self._lock:
                         self._pending[role] = self._pending.get(role, 0) + 1
-                        # Callers already in line when we joined — not counting
-                        # us. Sampled HERE because `finally` drains it below.
+                        # Callers already in line when we joined — not us.
                         ahead = self._pending[role] - 1
                     try:
+                        w = self._worker(role)
                         hdr, out = w.call(op, req, blob=blob)
                     except (EOFError, BrokenPipeError, ConnectionError) as exc:
                         # The WORKER side, and only after WorkerClient's own
                         # respawn-and-retry also failed: drop it so the next
                         # call gets a fresh one instead of failing forever.
-                        self._drop_worker(role, exc, worker=w)
+                        # `w` may be unbound if `_worker()` itself raised.
+                        self._drop_worker(role, exc, worker=locals().get("w"))
                         raise
                     finally:
                         with self._lock:
