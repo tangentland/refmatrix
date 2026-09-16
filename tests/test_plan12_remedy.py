@@ -221,3 +221,45 @@ def test_derive_status_is_a_cli_op():
     behind a fat ingest in the bulk pool it would time out exactly when a
     store is most likely to be stale."""
     assert "derive_status" in dm.CLI_OPS
+
+
+# ---- the partition walk itself, not a canned answer ----------------------
+
+def test_op_derive_status_walks_every_partition(tmp_path):
+    """ch-bsd plan-12 r2: deleting the `all: True` branch left all 75 tests
+    green, because the CLI test cans `daemon.call`. This drives the REAL op
+    against a REAL Store with two partitions."""
+    import threading
+
+    from refmatrix.store import Store
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    try:
+        f = tmp_path / "a.md"
+        f.write_text("# a\n")
+        s.mark_tracked(str(f.resolve()), f.stat().st_mtime)
+        s.stamp_derive("ingest")                       # default: current
+        with s.with_partition("memory-p"):
+            s.stamp_derive("gmd", version="0.49.1")    # memory: stale
+
+        class _D:
+            _store_lock = threading.RLock()
+
+            def _st(self):
+                return s
+
+        out = dm._op_derive_status(_D(), {"all": True})
+        assert set(out["partitions"]) >= {s._partition_name, "memory-p"}
+        assert out["partitions"]["memory-p"]["stale"] is True
+        assert out["partitions"]["memory-p"]["oldest_version"] == "0.49.1"
+        assert out["partitions"][s._partition_name]["stale"] is False
+        # the top level reports the WHOLE store, or a stale memory partition
+        # would be invisible to a caller that only reads `stale`
+        assert out["stale"] is True
+
+        # and the default-partition call still answers the default partition
+        one = dm._op_derive_status(_D(), {})
+        assert one.get("partitions") is None and one["stale"] is False
+    finally:
+        s.close()
