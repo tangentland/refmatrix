@@ -291,3 +291,48 @@ def test_derive_code_hash_covers_the_deriving_modules():
         h.update((here / name).read_bytes())
     store_mod._DERIVE_CODE_HASH_CACHE.clear()
     assert store_mod.derive_code_hash() == h.hexdigest()
+
+
+def test_an_mtime_preserving_restore_is_not_a_cache_hit(tmp_path, monkeypatch):
+    """ch-bsd plan-12 r4, reproduced: `cp -p` / `rsync -t` / `tar -p` / any
+    `os.utime` restores content at the SAME size with the SAME mtime, so a
+    key of (path, mtime, size) reads as a hit and returns the OLD hash —
+    `behind_code` False, gate silently not firing. That is bug-039's blind
+    spot rebuilt inside its own detector, and the same shape as bug-037."""
+    import os
+
+    import refmatrix.store as store_mod
+
+    mod = tmp_path / "fake_ingest.py"
+    mod.write_text("A = 1\n")
+    monkeypatch.setattr(store_mod, "_DERIVE_CODE_MODULES", ("fake_ingest.py",))
+    monkeypatch.setattr(store_mod, "__file__", str(tmp_path / "store.py"))
+    store_mod._DERIVE_CODE_HASH_CACHE.clear()
+
+    first = store_mod.derive_code_hash()
+    st = mod.stat()
+    mod.write_text("A = 2\n")                       # same size, new content
+    os.utime(mod, ns=(st.st_atime_ns, st.st_mtime_ns))   # ... restored mtime
+    assert mod.stat().st_mtime_ns == st.st_mtime_ns
+    assert mod.stat().st_size == st.st_size
+
+    assert store_mod.derive_code_hash() != first, (
+        "an mtime-preserving same-size rewrite was served from cache")
+
+
+def test_the_cache_still_hits_when_nothing_moved(tmp_path, monkeypatch):
+    import refmatrix.store as store_mod
+
+    mod = tmp_path / "fake_ingest.py"
+    mod.write_text("A = 1\n")
+    monkeypatch.setattr(store_mod, "_DERIVE_CODE_MODULES", ("fake_ingest.py",))
+    monkeypatch.setattr(store_mod, "__file__", str(tmp_path / "store.py"))
+    store_mod._DERIVE_CODE_HASH_CACHE.clear()
+
+    first = store_mod.derive_code_hash()
+    reads: list = []
+    real = Path.read_bytes
+    monkeypatch.setattr(Path, "read_bytes",
+                        lambda self: reads.append(self) or real(self))
+    assert store_mod.derive_code_hash() == first
+    assert reads == []

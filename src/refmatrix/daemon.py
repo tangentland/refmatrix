@@ -33,7 +33,7 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Callable
 
-from refmatrix.store import Store
+from refmatrix.store import Store, _version_key
 from refmatrix.subproc import subproc_embed_enabled
 
 
@@ -3405,14 +3405,35 @@ def _store_health(d: Daemon) -> dict:
             with s.with_partition(name):
                 per[name] = s.derive_status()
         own = per.get(s._partition_name) or s.derive_status()
-        worst = next((v for v in per.values() if v.get("behind_code")), None)
+        stale_parts = {n: v for n, v in per.items() if v.get("stale")}
+        # The WORST stale partition, by oldest derived version — not the first
+        # alphabetically, which is what `next(...)` gave and which made
+        # `reason` and `oldest_version` describe a different partition from the
+        # `passes` beside them (ch-bsd plan-12 r4).
+        behind = {n: v for n, v in stale_parts.items() if v.get("behind_code")}
+        pool = behind or stale_parts
+        worst_name = min(
+            pool, key=lambda n: _version_key(pool[n].get("oldest_version")
+                                             or "999999"),
+        ) if pool else None
+        worst = per.get(worst_name) if worst_name else None
+        # A composite describes the STORE. It carries no per-partition `passes`
+        # or `code_hash`, because mixing one partition's rows with another's
+        # verdict is the defect this shape keeps regrowing.
         h["derive"] = {
-            **own,
-            "stale": any(v.get("stale") for v in per.values()) or own["stale"],
-            "behind_code": bool(worst),
-            "never_stamped": all(v.get("never_stamped") for v in per.values()),
-            "stale_partitions": sorted(n for n, v in per.items()
-                                       if v.get("stale")),
+            "running_version": own.get("running_version"),
+            "stale": bool(stale_parts),
+            "behind_code": bool(behind),
+            # Aggregated over the STALE partitions only. Spanning every
+            # partition collapsed it on release day — the one day the
+            # `derive_unstamped` label exists for — because a
+            # `memory-<project>` partition has no tracked files and honestly
+            # answers False, so the row rendered `derive-drift@?` instead
+            # (ch-bsd plan-12 r4).
+            "never_stamped": bool(stale_parts) and all(
+                v.get("never_stamped") for v in stale_parts.values()),
+            "stale_partitions": sorted(stale_parts),
+            "worst_partition": worst_name,
             "oldest_version": (worst or own).get("oldest_version"),
             "reason": (worst or own).get("reason"),
         }
