@@ -131,10 +131,11 @@ def test_the_cli_command_calls_the_verb_rather_than_reimplementing_it(monkeypatc
 
 def test_the_cli_never_opens_a_write_store_directly():
     """`feedback_store_calls_via_daemon`: writes go through the daemon op."""
-    import inspect
     from refmatrix import cli as cli_mod
+    from tests.conftest import source_of
 
-    src = inspect.getsource(cli_mod.memory_brief.callback)
+    # Sliced by name from disk, not `inspect.getsource` — see #m-4-r4.
+    src = source_of(cli_mod, "memory_brief")
     assert "Store(" not in src, "the CLI must not construct a Store"
     assert "_store(write" not in src
 

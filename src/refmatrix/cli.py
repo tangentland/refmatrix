@@ -11252,8 +11252,15 @@ def memory_brief(classes, min_members, min_dates, min_mentions, do_compile,
         # errors on the wreckage, because `[[]]` is not a wikilink at all — so
         # the commit gate passes on a doc whose entire edge set is gone. This
         # is what `scan_prompt_cmd` already does for the same reason.
+        # `stats=stats`, not just its partition: the headline count comes from
+        # `stats["memories"]`, and passing only `partition` left the honest
+        # fallback ("an unrecorded number of memories") firing on 100% of real
+        # invocations while `--json` and the table printed the number from the
+        # SAME dict (ch-bsd r4 #b-1-r4). Same call, one argument over, as the
+        # `names` defect r3 caught.
         click.echo(brief_mod.render_gmd(
-            briefs, names=names, partition=stats.get("partition")))
+            briefs, names=names, partition=stats.get("partition"),
+            stats=stats))
         return
 
     skipped = stats.get("classes_not_run") or {}

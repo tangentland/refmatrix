@@ -260,7 +260,12 @@ def test_foreground_start_refuses_a_busy_daemon_without_reaping_it(monkeypatch):
         assert dm.socket_path(d.root).exists()
     finally:
         d.close()
-    src = inspect.getsource(dm.serve_foreground)
+    # Read from disk and slice by NAME, never `inspect.getsource`: that slices
+    # the current file with an already-loaded `co_firstlineno` and silently
+    # reads a different function when `src/` is edited mid-suite
+    # (ch-bsd r4 #m-4-r4 — it is what produced the phantom 6th failure).
+    from tests.conftest import source_of
+    src = source_of(dm, "serve_foreground")
     assert "refuse_unsupervised_start(root)" in src and "elif ping(root)" not in src
 
 
