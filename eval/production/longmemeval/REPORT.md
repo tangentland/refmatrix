@@ -84,14 +84,20 @@ meets prose corpora in the field.
 `scan` union R@5 **0.465** vs restricted **0.547**. The gap is small only because both are
 depth-bound. `context` union did not complete in this batch.
 
-## Latency — the more consequential finding {#latency}
+## Latency — RETRACTED, see the profile {#latency}
 
-Daemon warm, store resident: `rmx context` **62.9 s**, `rmx scan-prompt` **75.9 s** per query.
-agentmemory publishes 14 ms p50. Full detail, caveats, and what is NOT claimed:
-`workflow/review-output/longmemeval-latency.md`.
+An earlier version of this report claimed `rmx context` costs **62.9 s** per query here and that
+rmx is ~4,500x slower than agentmemory's published 14 ms. **That is retracted.** The number was
+measured while the daemon was building a 432 MB adjacency cache and replicating three 2.4 GB
+catalog slots — a storm window reported as steady state.
 
-`scan-prompt` is the always-on UserPromptSubmit hook. At 75.9 s it cannot run per-prompt at this
-corpus size.
+Profiled 2026-09-16: `build_context` warm is **0.45 s**, of which BM25 over 406,885 concepts plus
+the graph walk is **0.37 s**. The retrieval core is not slow. What remains unexplained is an ~8.5 s
+gap between `build_context` (0.45 s) and the full daemonless CLI (9.0 s), of which only 2.8 s is
+CPU. That gap is not yet attributed.
+
+**No per-query latency figure for this corpus should be quoted** until the store is re-measured
+quiet. Full retraction and decomposition: `workflow/review-output/longmemeval-latency.md`.
 
 ## NOT comparable to published figures {#not-comparable}
 
