@@ -2663,6 +2663,10 @@ def hub_queues(as_json):
             flags.append("UNVERIFIED")
         if q.get("memory_read_ok") is False:
             flags.append("memory-read-failed")
+        if q.get("private_workers"):
+            flags.append(render_worker_split(q["private_workers"]))
+        if q.get("derive_stale"):
+            flags.append(f"derive-stale@{q['derive_stale']}")
         t.add_row(str(q.get("project")),
                   "up" if q.get("daemon_up") else ("busy" if q.get("daemon_busy") else "down"),
                   str(q.get("stale_files") if q.get("stale_files") is not None else "?"),
@@ -3184,6 +3188,22 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
                 watch_root=resolved_watch_roots or None,
                 watch_debounce_ms=debounce_ms, watch_semantic=semantic)
         _verify_relaunch(_respawn)
+def render_worker_split(kinds: "dict | None") -> str:
+    """One line when a daemon holds a PRIVATE model worker, and nothing when
+    the whole fleet is sharing (bug-024).
+
+    The split is otherwise invisible: every surface says `daemon_up` while N
+    torch processes oversubscribe one CPU and the shared reranker takes 16-25 s
+    for a pool it scores in 0.7 s alone.
+    """
+    if not kinds:
+        return ""
+    if not any(v == "private" for v in kinds.values()):
+        return ""
+    parts = " ".join(f"{role}={kind}" for role, kind in sorted(kinds.items()))
+    return f"workers: {parts}"
+
+
 def render_derive_warning(status: "dict | None") -> str:
     """One line when a store's graph was derived by code that is not running,
     and NOTHING when it was (bug-039).
