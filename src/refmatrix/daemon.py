@@ -658,6 +658,10 @@ class Daemon:
         self._rerank_worker = None
         self._reranker_inst = None
         self._worker_lock = threading.Lock()
+        # Shared-worker re-probe bookkeeping (bug-024): when the next
+        # probe is allowed per role, and the backoff that produced it.
+        self._reprobe_next: dict[str, float] = {}
+        self._reprobe_backoff: dict[str, float] = {}
         # Snapshot-tier state. `_request_snapshot()` sets `_snapshot_dirty`
         # + signals `_snapshot_event`; the snapshot tick thread debounces
         # and produces `catalog.read.duckdb`. `_last_snapshot_ts` gates
@@ -814,6 +818,95 @@ class Daemon:
                 client.set_stderr(self.log_fh)
             setattr(self, attr, client)
             return client
+
+    def _maybe_adopt_shared(self, *, now: "float | None" = None) -> list[str]:
+        """Re-probe the hub's shared model socket for any role still holding a
+        PRIVATE worker, and swap when it answers (bug-024, todo G14).
+
+        `_model_client` decides shared-vs-private once, at first use. A daemon
+        that booted or relaunched while the hub was down therefore stayed
+        private for its whole life: on 2026-09-15 the fleet came back with 16
+        private model processes beside the shared pair, N torch processes
+        oversubscribed one CPU, and the shared reranker took 16-25 s for a pool
+        it scores in 0.7 s alone. The hub's outage cost memory by design; it
+        must not cost the fleet its sharing permanently.
+
+        Runs on the existing background tick, never on a request path: the swap
+        takes `_worker_lock`, so a call already in flight finishes against the
+        worker it started with and only the NEXT call sees the new client.
+
+        Backs off (doubling to `RMX_SHARED_REPROBE_MAX_S`) so a machine that
+        will never have a hub does not probe at full rate forever. Returns the
+        roles adopted, for the caller's log and for tests.
+        """
+        from refmatrix import modelsrv
+
+        if not modelsrv.shared_enabled():
+            return []
+        now = time.time() if now is None else float(now)
+        base = float(os.environ.get("RMX_SHARED_REPROBE_S", "300") or "300")
+        cap = float(os.environ.get("RMX_SHARED_REPROBE_MAX_S", "1800") or "1800")
+        adopted: list[str] = []
+        for role, attr, cache in (("embed", "_embed_worker", "_embedder_inst"),
+                                  ("rerank", "_rerank_worker", "_reranker_inst")):
+            w = getattr(self, attr, None)
+            if w is None or isinstance(w, modelsrv.SharedWorkerClient):
+                continue                      # nothing to adopt, or already shared
+            if now < self._reprobe_next.get(role, 0.0):
+                continue
+            client = None
+            try:
+                if modelsrv.shared_available(timeout=0.5):
+                    client = modelsrv.SharedWorkerClient(
+                        role, log=self._log, timeout=SHARED_OP_TIMEOUT_S)
+                    client.info(timeout=modelsrv.PROBE_TIMEOUT_S)
+            except Exception as exc:  # noqa: BLE001 — logged; private keeps serving
+                try:
+                    if client is not None:
+                        client.close()
+                except Exception:
+                    pass
+                client = None
+                self._log(f"{role}: shared worker still unusable ({exc!r}); "
+                          f"keeping the private worker")
+            if client is None:
+                prev = self._reprobe_backoff.get(role, 0.0)
+                wait = min(max(base, prev * 2.0), cap)
+                self._reprobe_backoff[role] = wait
+                self._reprobe_next[role] = now + wait
+                continue
+            with self._worker_lock:
+                setattr(self, attr, client)
+                setattr(self, cache, None)    # the proxy wraps the OLD client
+            try:
+                w.close(timeout=2.0)
+            except Exception as exc:  # noqa: BLE001 — the swap already happened
+                self._log(f"{role}: private worker close failed after adoption: "
+                          f"{exc!r}")
+            self._reprobe_backoff.pop(role, None)
+            self._reprobe_next.pop(role, None)
+            pid = getattr(getattr(w, "_proc", None), "pid", getattr(w, "pid", "?"))
+            self._log(f"{role}: adopted hub-shared worker; closed private "
+                      f"worker pid={pid}")
+            adopted.append(role)
+        return adopted
+
+    def worker_kinds(self) -> dict:
+        """`{role: "shared"|"private"|"none"}` — what this daemon actually
+        holds. Without it a split fleet (bug-024) is invisible: every surface
+        reports `daemon_up` and nothing says the models are not being shared."""
+        from refmatrix import modelsrv
+
+        out = {}
+        for role, attr in (("embed", "_embed_worker"), ("rerank", "_rerank_worker")):
+            w = getattr(self, attr, None)
+            if w is None:
+                out[role] = "none"
+            elif isinstance(w, modelsrv.SharedWorkerClient):
+                out[role] = "shared"
+            else:
+                out[role] = "private"
+        return out
 
     def _reranker(self):
         """Lazy cross-encoder reranker, always out-of-process.
@@ -1710,6 +1803,13 @@ class Daemon:
                     self._evict_idle_workers()
                 except Exception as exc:
                     self._log(f"worker evict tick failed: {exc!r}")
+                # A daemon that went private while the hub was down must not
+                # stay private after it returns (bug-024). Same tick, same
+                # "outside _store_lock" reasoning as the evict above.
+                try:
+                    self._maybe_adopt_shared()
+                except Exception as exc:
+                    self._log(f"shared re-probe tick failed: {exc!r}")
                 if self.store is None:
                     continue
                 try:
@@ -3261,6 +3361,13 @@ def _store_health(d: Daemon) -> dict:
         h["derive"] = d._st().derive_status()
     except Exception as exc:
         h["derive_error"] = f"{type(exc).__name__}: {exc}"[:200]
+    # 5. WHICH model workers this daemon holds. A fleet that quietly went
+    #    private (bug-024) reports `daemon_up` on every surface while N torch
+    #    processes oversubscribe one CPU and every hook rerank times out.
+    try:
+        h["workers"] = d.worker_kinds()
+    except Exception as exc:
+        h["workers_error"] = f"{type(exc).__name__}: {exc}"[:200]
     return h
 
 

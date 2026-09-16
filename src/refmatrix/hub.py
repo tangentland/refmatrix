@@ -649,6 +649,18 @@ class Hub:
             b = health.get("store_bytes")
             if isinstance(b, int) and b > STORE_BYTES_ALERT:
                 row["store_bytes"] = b
+            # A daemon holding PRIVATE model workers means the fleet is split
+            # (bug-024): N torch processes oversubscribe one CPU and every
+            # hook rerank times out, while every other signal reads healthy.
+            workers = health.get("workers") or {}
+            if any(v == "private" for v in workers.values()):
+                row["private_workers"] = workers
+            # A graph derived by code that is no longer running (bug-039).
+            # Carried, deliberately NOT hot: the day this ships, every store
+            # in the fleet is unstamped and would alert at once.
+            derive = health.get("derive") or {}
+            if derive.get("stale"):
+                row["derive_stale"] = derive.get("oldest_version") or "never"
             out.append(row)
         return _annotate_identity(out)
 
