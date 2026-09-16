@@ -140,8 +140,44 @@ import json
 import re
 import sys
 
-RMXGREP = "@RMXGREP@"
-RMXRG = "@RMXRG@"
+# This file is USER-GLOBAL (`~/.claude/hooks/`), so it must not name any one
+# refmatrix checkout. It used to be rendered with an absolute
+# `<generator tree>/bin/rmxgrep`, and every `install-hooks --apply` from a dev
+# venv (a test without the `RMX_CLAUDE_HOOKS_DIR` redirect, an audit probe in a
+# throwaway project) overwrote the live hook with dev-tree paths -- bug-008,
+# seen twice. Resolving at RUNTIME makes the rendered bytes identical whichever
+# tree generated them, so the drift has nowhere to enter.
+#
+# Order: a sibling of the `rmx` on PATH, then that tree's `bin/`, then PATH,
+# then `~/bin`, then the bare name (PATH decides at exec time).
+def _wrapper(name):
+    import os as _os
+    import shutil as _shutil
+    rmx = _shutil.which("rmx")
+    if rmx:
+        rmx_p = _os.path.realpath(rmx)
+        cand = _os.path.join(_os.path.dirname(rmx_p), name)
+        if _os.path.exists(cand):
+            return cand
+        tree = _os.path.dirname(_os.path.dirname(_os.path.dirname(rmx_p)))
+        cand = _os.path.join(tree, "bin", name)
+        if _os.path.exists(cand):
+            return cand
+    p = _shutil.which(name)
+    if p:
+        return p
+    cand = _os.path.expanduser(_os.path.join("~", "bin", name))
+    if _os.path.exists(cand):
+        return cand
+    return name
+
+
+def RMXGREP():
+    return _wrapper("rmxgrep")
+
+
+def RMXRG():
+    return _wrapper("rmxrg")
 
 # The head token may carry an absolute path (`/usr/bin/grep`, `/opt/local/
 # bin/rg`) — the classic dodge around a bare-name rewrite. The optional
@@ -200,7 +236,7 @@ def main() -> None:
         return
     out = cmd
     for start, end, tok in reversed(hits):
-        repl = RMXGREP if tok == "grep" else RMXRG
+        repl = RMXGREP() if tok == "grep" else RMXRG()
         out = out[:start] + repl + out[end:]
     sys.stdout.write(out)
 
@@ -279,13 +315,15 @@ def render_scripts(wrappers: "tuple[str, str] | list | None" = None) -> "dict[st
     `wrappers` = (rmxgrep, rmxrg) paths to bake; default = this process's
     `wrapper_paths()`. `check()` passes the paths recorded at apply time so
     the comparison does not depend on which venv renders it."""
-    rmxgrep, rmxrg = tuple(wrappers) if wrappers else wrapper_paths()
+    # `wrappers` is accepted and IGNORED for the rewriter: it resolves its own
+    # wrappers at runtime now, so the rendered bytes no longer depend on which
+    # tree rendered them (bug-008). The parameter stays because `check()` still
+    # passes the paths recorded at apply time, and removing it would break that
+    # caller for no gain.
     rewriter = str(hooks_dir() / REWRITER_NAME)
     return {
         GUARD_NAME: GUARD_TEMPLATE.replace("@REWRITER@", rewriter),
-        REWRITER_NAME: (REWRITER_TEMPLATE
-                        .replace("@RMXGREP@", rmxgrep)
-                        .replace("@RMXRG@", rmxrg)),
+        REWRITER_NAME: REWRITER_TEMPLATE,
         TEACH_NAME: TEACH_TEMPLATE,
     }
 
@@ -302,11 +340,44 @@ def search_hook_block() -> dict:
     }}
 
 
+def path_rmx_tree() -> "str | None":
+    """The tree that owns the `rmx` on PATH, or None if it cannot be told.
+
+    `<tree>/.venv/bin/rmx` -> `<tree>`. Used to decide whether THIS process is
+    entitled to write the user-global hooks dir."""
+    rmx = shutil.which("rmx")
+    if not rmx:
+        return None
+    p = Path(rmx).resolve()
+    tree = p.parent.parent.parent
+    return str(tree) if (tree / "pyproject.toml").exists() else None
+
+
 def install_search_hooks(project_root: Path, scope: str,
                          apply: bool, force: bool) -> "list[str]":
-    """Write the three scripts (user-global) + wire the settings block."""
+    """Write the three scripts (user-global) + wire the settings block.
+
+    REFUSES to write the user-global dir from a foreign tree. The scripts are
+    shared by every project on the machine, and an `install-hooks --apply`
+    from a dev venv has twice overwritten the live hooks with dev-tree paths
+    (bug-008, recurring). Runtime wrapper resolution removes the baked path;
+    this removes the entitlement, so a dev-tree run cannot rewrite the live
+    scripts even if their content later regains a tree-specific detail.
+    `RMX_CLAUDE_HOOKS_DIR` remains the escape — a redirected dir is nobody
+    else's, so any tree may write it."""
     out: "list[str]" = []
     d = hooks_dir()
+    if apply and not os.environ.get("RMX_CLAUDE_HOOKS_DIR"):
+        from refmatrix import upgrade
+        mine = upgrade.runtime_identity().get("venv_tree")
+        owner = path_rmx_tree()
+        if mine is not None and owner is not None and str(mine) != str(owner):
+            raise RuntimeError(
+                f"refusing to write the user-global hooks dir {d} from a "
+                f"foreign tree: this process runs {mine}, but the `rmx` on "
+                f"PATH belongs to {owner}. Run `install-hooks --apply` with "
+                f"the deployed rmx, or set RMX_CLAUDE_HOOKS_DIR to redirect "
+                f"this write somewhere that is not shared (bug-008)")
     for name, content in render_scripts().items():
         target = d / name
         if target.exists():
