@@ -653,14 +653,22 @@ class Hub:
             # (bug-024): N torch processes oversubscribe one CPU and every
             # hook rerank times out, while every other signal reads healthy.
             workers = health.get("workers") or {}
-            if any(v == "private" for v in workers.values()):
+            if any(v in ("private", "in-process") for v in workers.values()):
                 row["private_workers"] = workers
             # A graph derived by code that is no longer running (bug-039).
-            # Carried, deliberately NOT hot: the day this ships, every store
-            # in the fleet is unstamped and would alert at once.
+            # Two states, two treatments (ch-bsd plan-12 #b-3): a store that
+            # carries a stamp from a DIFFERENT version is hot — that is the
+            # incident. A store that was never stamped is carried and not hot,
+            # because on the release that introduces stamping that is every
+            # store in the fleet, and an alert on all eight rows at once is an
+            # alert nobody reads again. It stops being unstamped at its next
+            # ingest, with no gate to remember to turn back on.
             derive = health.get("derive") or {}
             if derive.get("stale"):
-                row["derive_stale"] = derive.get("oldest_version") or "never"
+                if derive.get("never_stamped"):
+                    row["derive_unstamped"] = True
+                else:
+                    row["derive_stale"] = derive.get("oldest_version") or "?"
             out.append(row)
         return _annotate_identity(out)
 
@@ -1084,7 +1092,15 @@ def _queue_row_is_hot(q: dict) -> bool:
                 or q.get("dev_tree")
                 # a daemon whose tree cannot be verified is not clean either
                 # (bsd-plan1-r2 #m-4: orderly at 0.65.0, no code_path)
-                or q.get("identity") == "unknown")
+                or q.get("identity") == "unknown"
+                # the fleet split onto private/in-process models: every other
+                # signal reads healthy while the shared reranker takes 16-25 s
+                # for a pool it scores in 0.7 s alone (bug-024)
+                or bool(q.get("private_workers"))
+                # a graph derived by code that is not running (bug-039). Only
+                # the STAMPED-and-different case; `derive_unstamped` is carried
+                # and stays cold on purpose (ch-bsd plan-12 #b-3)
+                or bool(q.get("derive_stale")))
 
 
 def _daemon_identity(root: Path, timeout: float = 2.0) -> dict:

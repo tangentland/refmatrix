@@ -294,14 +294,25 @@ class RemoteReranker:
     queries.
     """
 
-    def __init__(self, client, *, budget_s: "float | None" = None):
+    def __init__(self, client, *, budget_s: "float | None" = None,
+                 deadline: "float | None" = None):
         self._client = client
         self._model_name: str | None = None
         # A DEADLINE, not a constant: a 1 s `info` probe that ate 4 of 5 s must
         # leave 1 s for the decision, which is exactly the live shape of
         # bug-019. None = unbounded (tests, batch callers).
+        #
+        # Pass `deadline` (absolute) when the caller's clock started EARLIER
+        # than this construction — `shared_reranker` probes first, and deriving
+        # the deadline here gave the leg a fresh budget starting after the
+        # probe had already spent part of it, so it could outlive the caller by
+        # the probe's length (ch-bsd plan-12 #m-1).
         self._budget_s = budget_s
-        self._deadline = None if budget_s is None else time.time() + float(budget_s)
+        if deadline is not None:
+            self._deadline = float(deadline)
+        else:
+            self._deadline = (None if budget_s is None
+                              else time.time() + float(budget_s))
 
     @property
     def model_name(self) -> str:
@@ -499,6 +510,9 @@ def shared_reranker(log=None, *, timeout: "float | None" = None,
     """
     if not rerank_enabled() or not rerank_available():
         return None
+    # Anchor the budget BEFORE the probe: the probe is part of what the caller
+    # gave us (ch-bsd plan-12 #m-1).
+    t0 = time.time()
     try:
         from refmatrix import modelsrv
         if not modelsrv.shared_enabled() or not modelsrv.shared_available():
@@ -508,6 +522,8 @@ def shared_reranker(log=None, *, timeout: "float | None" = None,
         # The caller's timeout IS the budget: a bounded read surface gets a
         # reranker that knows how much time it has and refuses a pool that
         # cannot fit, instead of discovering it by timing out (bug-025).
-        return RemoteReranker(client, budget_s=timeout)
+        return RemoteReranker(
+            client, budget_s=timeout,
+            deadline=None if timeout is None else t0 + float(timeout))
     except Exception:
         return None

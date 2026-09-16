@@ -19,13 +19,20 @@ rel: derives-from -> [[feedback_causal_story_before_evidence]]
 `RMX_TIME_PHASES=1` emits one line to **stderr** (never stdout — that is the hook payload):
 
 ```
-rmx phases: import=0.025s entry=0.000s click-parse=0.011s context-import=0.000s
-            dispatch=0.000s route-decision=0.671s replica-build_context=0.000s total=0.707s
+rmx phases: import=0.027s click-parse=0.000s context-import=0.012s dispatch=0.000s
+            route-decision=0.000s replica-build_context=0.668s exit=0.000s total=0.707s
 ```
 
-Each number is the time from that mark to the next, so `route-decision=…` is `build_context`
-itself. `import=` is module-import to first mark; everything before that is the interpreter and is
-measured with `-X importtime` (refmatrix 21 ms, rich 10 ms, click 4 ms — not the cost).
+Each number is the cost of the phase it NAMES. `import` is module-import to CLI entry;
+`exit` is the tail after the last mark. Everything before `import` belongs to the interpreter and
+is measured with `-X importtime` (refmatrix 21 ms, rich 10 ms, click 4 ms — not the cost).
+
+> The first version of this instrument labelled each interval with the phase that ended at its
+> START, so it billed `store-bind` for `build_context`'s seconds, and the first version of THIS
+> document told the reader to shift the labels instead of the code shifting them (ch-bsd plan-12
+> #b-2). Fixed in `render_phase_report`; `test_each_interval_carries_the_phase_that_produced_it`
+> pins costs in advance and asserts which label carries which interval. The figures below were
+> re-taken after the fix.
 
 ## Finding 1: a real defect, and it was not in retrieval {#backstop}
 
@@ -43,11 +50,14 @@ printed instead of swallowed. Measured after: **15.13 s -> 0.09 s**.
 
 ## Finding 2: the LongMemEval 8.5 s is cold I/O on an SD card {#cold-io}
 
-| run | total | build_context |
+| run | total | `replica-build_context` |
 |---|---|---|
 | first invocation after idle | **8.75 s** | 8.72 s |
-| immediately after | **0.71 s** | 0.67 s |
-| again | 0.70 s | 0.67 s |
+| immediately after | **0.72 s** | 0.69 s |
+| again | 0.71 s | 0.67 s |
+
+(The first row was taken before the label fix, where the same interval printed under the
+neighbouring name; the interval itself is the one reported here.)
 
 The store lives on `/Volumes/littlebig` — `diskutil`: **Protocol: Secure Digital**. Measured
 sequential read on that volume: **94.7 MB/s** (400 MB via `dd`, 4.43 s).
@@ -58,7 +68,7 @@ catalog slot on the same card and the ~8.5 s first-touch is accounted for, with 
 — matching the "only 2.8 s is CPU" in the original row.
 
 So the gap is **first-touch I/O against an SD-hosted 9.5 GB store**, not a defect in the retrieval
-path, and not the CLI's own startup: warm, the whole command is 0.70 s of which 0.67 s is
+path, and not the CLI's own startup: warm, the whole command is 0.71 s of which 0.67 s is
 `build_context` — consistent with the 0.45 s profiled core plus store binding.
 
 ## What would change the reading {#caveats}
