@@ -1334,6 +1334,17 @@ def ingest_gmd_paths(
         if yield_lock and pass2_processed % yield_every == 0:
             yield_lock()
 
+    # Which code derived this partition's GMD graph (bug-039). The GMD passes
+    # changed under a store that kept reading green — the body-anchor fix
+    # (bug-036) alone re-shaped what a `{#anchor}` becomes — so the deriving
+    # version has to be on the record. Failure is said, never swallowed.
+    try:
+        store.stamp_derive("gmd")
+    except Exception as exc:          # noqa: BLE001 — said, never mute
+        import sys as _sys
+        print(f"warning: derive stamp `gmd` failed: "
+              f"{type(exc).__name__}: {exc}", file=_sys.stderr)
+
     return stats
 
 
