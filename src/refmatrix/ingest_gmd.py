@@ -386,6 +386,37 @@ def parse_gmd(path: Path, *, lenient: bool = False,
             continue
 
         current.body_lines.append(line)
+
+        # A `{#id}` on a paragraph or list item is a NODE, not decoration.
+        # GMD's primer says an anchor is "a stable node id for any heading,
+        # paragraph, or list item"; `tools/gmd/lint.py` implemented that and
+        # this parser did not, so for months a `rel:` edge aimed at a
+        # list-item anchor linted clean and resolved to nothing in the graph.
+        # 71 of the 73 anchors in workflow/bullshit/IMPRESSIONS.md — every
+        # per-run `{#imp-*}` the audit ledger cites — were invisible here
+        # (bug-036). Two parsers, one syntax, never compared.
+        bm = _ID_RE.search(scan)
+        if bm and line.strip():
+            bid = bm.group(1)
+            # Never shadow an existing id: the heading branch owns collisions,
+            # and a body anchor that silently displaced one would move edges.
+            if bid not in by_id:
+                b_attrs, b_aliases = _parse_attrs(bm.group(2))
+                b_node = GmdNode(
+                    id=bid, line=line_no, level=current.level + 1,
+                    title=_ID_RE.sub("", line).strip().lstrip("-*").strip(),
+                    parent=current.id, attrs=b_attrs, aliases=b_aliases,
+                )
+                b_node.body_lines.append(line)
+                nodes.append(b_node)
+                by_id[bid] = b_node
+        # `current` is deliberately NOT reassigned. The spec attaches a `rel:`
+        # to the nearest enclosing block with an id, which now includes a list
+        # item — but measured over docs/, workflow/, eval/ and CLAUDE.md that
+        # would move 32 of 599 existing edges (5.3%) to a different owner.
+        # Making ids RESOLVABLE is reversible; re-pointing live edges is not,
+        # so it is a separate decision with its own measurement (bug-036).
+
         for wm in _WIKILINK_RE.finditer(scan):
             current.refs.append((line_no, wm.group(1).strip()))
 
