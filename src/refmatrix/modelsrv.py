@@ -248,17 +248,25 @@ class ModelServer:
                 self._check_worker_version(w)
             return w
 
-    def _augment_info(self, role: str, hdr: dict) -> dict:
+    def _augment_info(self, role: str, hdr: dict, queue_depth: int) -> dict:
         """Add the server-side half of the cost to an `info` answer.
 
         The worker knows its seconds-per-doc; only the hub knows how many
-        callers are queued for it. `queue_depth` excludes the caller being
-        served, so a lone client reads 0 and the arithmetic
-        `(1 + queue_depth) * docs * cost` is the caller's own wait."""
+        callers were AHEAD of this one. `queue_depth` is sampled at ENQUEUE and
+        passed in — never re-read here.
+
+        The first version read `_pending` at this point and subtracted one "for
+        the caller being served". Both were wrong at once: `_handle` decrements
+        in its `finally`, so by the time this ran the queue had drained and the
+        count described the callers who arrived BEHIND the asker, minus one
+        more. Against the real `_handle` over socketpairs it answered
+        `queue_depth: 0` with two reranks ahead — exactly the single-contender
+        case `(1 + queue_depth)` exists to catch (ch-bsd plan-12 #b-1). The
+        value has to be taken when the caller joins the line, which is the only
+        instant that describes its own wait.
+        """
         out = dict(hdr)
-        with self._lock:
-            pending = int(self._pending.get(role, 0) or 0)
-        out["queue_depth"] = max(0, pending - 1)
+        out["queue_depth"] = max(0, int(queue_depth))
         return out
 
     def _drop_worker(self, role: str, exc: BaseException, *, worker=None) -> None:
@@ -473,6 +481,9 @@ class ModelServer:
                     w = self._worker(role)
                     with self._lock:
                         self._pending[role] = self._pending.get(role, 0) + 1
+                        # Callers already in line when we joined — not counting
+                        # us. Sampled HERE because `finally` drains it below.
+                        ahead = self._pending[role] - 1
                     try:
                         hdr, out = w.call(op, req, blob=blob)
                     except (EOFError, BrokenPipeError, ConnectionError) as exc:
@@ -486,7 +497,7 @@ class ModelServer:
                             self._pending[role] = max(
                                 0, self._pending.get(role, 1) - 1)
                     if op == "info":
-                        hdr = self._augment_info(role, hdr)
+                        hdr = self._augment_info(role, hdr, ahead)
                     # `ok` comes from the worker; re-send it as our own.
                     hdr = {k: v for k, v in hdr.items() if k != "ok"}
                     try:

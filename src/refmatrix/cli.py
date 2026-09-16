@@ -38,20 +38,26 @@ def phase_mark(name: str) -> None:
 def render_phase_report(t_end: float) -> str:
     """`name=<seconds>` per phase plus the total, or "" when disabled.
 
-    The first split is `import`: the time from this module being imported to
-    the first mark, which is where a CLI that spends seconds before doing any
-    work spends them. Everything before THAT belongs to the interpreter and is
-    measured with `-X importtime`, not here.
+    Each interval is labelled by the phase that ENDS it, because `phase_mark`
+    records "this phase finished now". The first version labelled interval `i`
+    with the mark BEFORE it, so on a run with 2.0 s inside `build_context` and
+    0.5 s after it, the report billed `store-bind` for the 2.0 s and
+    `build_context` for the render (ch-bsd plan-12 #b-2) — an attribution tool
+    naming the neighbour. The measurement document then told the reader to
+    shift the labels, which is the workaround this replaces.
+
+    `import` is the interval before the first mark: module import to the CLI
+    entry. Everything before THAT belongs to the interpreter and is measured
+    with `-X importtime`, not here. `exit` is the tail after the last mark.
     """
     if not phases_enabled() or not _PHASE_MARKS:
         return ""
-    parts = []
-    prev = _PROC_T0
-    for i, (name, ts) in enumerate(_PHASE_MARKS):
-        label = "import" if i == 0 else _PHASE_MARKS[i - 1][0]
-        parts.append(f"{label}={ts - prev:.3f}s")
+    parts = [f"import={_PHASE_MARKS[0][1] - _PROC_T0:.3f}s"]
+    prev = _PHASE_MARKS[0][1]
+    for name, ts in _PHASE_MARKS[1:]:
+        parts.append(f"{name}={ts - prev:.3f}s")
         prev = ts
-    parts.append(f"{_PHASE_MARKS[-1][0]}={t_end - prev:.3f}s")
+    parts.append(f"exit={t_end - prev:.3f}s")
     parts.append(f"total={t_end - _PROC_T0:.3f}s")
     return "rmx phases: " + " ".join(parts)
 
@@ -2714,6 +2720,8 @@ def hub_queues(as_json):
             flags.append(render_worker_split(q["private_workers"]))
         if q.get("derive_stale"):
             flags.append(f"derive-stale@{q['derive_stale']}")
+        if q.get("derive_unstamped"):
+            flags.append("derive-unstamped")
         t.add_row(str(q.get("project")),
                   "up" if q.get("daemon_up") else ("busy" if q.get("daemon_busy") else "down"),
                   str(q.get("stale_files") if q.get("stale_files") is not None else "?"),
@@ -3245,13 +3253,16 @@ def render_worker_split(kinds: "dict | None") -> str:
     """
     if not kinds:
         return ""
-    if not any(v == "private" for v in kinds.values()):
+    # "in-process" is a split too, and the heaviest one: the daemon is
+    # carrying the model itself (ch-bsd plan-12 #s-4).
+    if not any(v in ("private", "in-process") for v in kinds.values()):
         return ""
     parts = " ".join(f"{role}={kind}" for role, kind in sorted(kinds.items()))
     return f"workers: {parts}"
 
 
-def render_derive_warning(status: "dict | None") -> str:
+def render_derive_warning(status: "dict | None", *,
+                          partition: "str | None" = None) -> str:
     """One line when a store's graph was derived by code that is not running,
     and NOTHING when it was (bug-039).
 
@@ -3265,7 +3276,8 @@ def render_derive_warning(status: "dict | None") -> str:
     oldest = status.get("oldest_version") or "never stamped"
     running = status.get("running_version") or "?"
     reason = status.get("reason") or ""
-    return (f"derive: {oldest} (running {running}) — stale; "
+    label = f"derive[{partition}]" if partition else "derive"
+    return (f"{label}: {oldest} (running {running}) — stale; "
             f"re-derive with `rmx reingest --force`"
             + (f"\n  {reason}" if reason else ""))
 
@@ -3313,12 +3325,31 @@ def daemon_status():
         # (bug-039), and a store whose derive predates the running version is
         # the failure that hid behind ten days of green surfaces.
         try:
-            resp = daemon_mod.call(root, "derive_status", {}, timeout=5.0, retries=1)
-            warn = render_derive_warning((resp or {}).get("result"))
-            if warn:
-                console.print(f"[yellow]{warn}[/]")
+            resp = daemon_mod.call(root, "derive_status", {"all": True},
+                                   timeout=5.0, retries=1)
+            result = (resp or {}).get("result") or {}
+            parts = result.get("partitions")
+            if parts:
+                # Per partition: the memory partition is the product, and it
+                # carries its own `gmd` stamp (ch-bsd plan-12 #m-3).
+                for name in sorted(parts):
+                    warn = render_derive_warning(parts[name], partition=name)
+                    if warn:
+                        # ESCAPED: rich parses `[memory-p]` as markup and ate
+                        # the partition name outright — the same renderer class
+                        # that deleted every wikilink from `--gmd` output
+                        # (bsd-plan7-10 r3). Caught here by a test, not live.
+                        console.print(f"[yellow]{rich_escape(warn)}[/]")
+            else:
+                warn = render_derive_warning(result)
+                if warn:
+                    console.print(f"[yellow]{rich_escape(warn)}[/]")
         except Exception as e:  # noqa: BLE001 — diagnostic line, must not raise
-            console.print(f"derive: [dim]unknown ({e})[/]")
+            # Unknown is NOT clean on this screen (bsd-plan1 #s-3): the
+            # condition that makes a store stale — an ingest under new code —
+            # is the condition that makes this probe time out (plan-12 #s-2).
+            console.print(
+                f"derive: [dim]unknown ({e})[/]  [yellow][UNVERIFIED][/]")
     elif pid:
         # A live rmx process is BUSY, not stale — socket or no socket: booting
         # (pid written, socket not bound yet), rebuilding an index, or holding

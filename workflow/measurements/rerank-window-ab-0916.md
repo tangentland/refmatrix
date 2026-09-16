@@ -27,6 +27,24 @@ depth-uncontrolled surface whose reranker, under the load that matters, usually 
 all (see [[rerank-cost-budget-0916]]). **No ranking claim is made here** — only a coverage claim,
 which is the thing head truncation was hiding.
 
+## The always-on surfaces, precisely {#always-on}
+
+There are TWO always-on UserPromptSubmit hooks and they do not share a budget:
+
+- `memory recall --stdin-json` caps at `RERANK_DOC_CHARS`=700 in `collect_rerank_docs`, which is
+  below `WINDOW_MIN_CHARS`=1024, so its rerank input is **byte-identical** to before.
+- `scan-prompt` reaches the reranker through `content_only_bundle` → `_rerank_bodied` →
+  `rerank_entity_hits` → `collect_rerank_docs` with **no `doc_chars`**, so `RemoteReranker.score`
+  windows at `MAX_DOC_CHARS`=2048 — above the floor. **`scan-prompt`'s rerank input IS changed**,
+  and the RANKING effect there is unmeasured; this document measures coverage only (ch-bsd plan-12
+  #s-3, correcting an earlier "the always-on hook path is unchanged").
+
+## Reproducing it {#harness}
+
+`eval/production/rerank_window_ab.py --oracle <path to longmemeval_oracle>`. The dataset stays out
+of the repo; the harness does not, because these numbers chose `WINDOW_HEAD_FRAC` and
+`WINDOW_MIN_CHARS` and have to be re-derivable when the reranker or the corpus moves.
+
 ## Result {#result}
 
 Limit 2048 (the `MAX_DOC_CHARS` bound):

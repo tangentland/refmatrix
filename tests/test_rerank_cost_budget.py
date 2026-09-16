@@ -210,9 +210,77 @@ def test_the_ema_moves_toward_a_slow_call():
 
 # ---- the server's half of the cost ---------------------------------------
 
-def test_the_server_adds_its_queue_depth_to_info(monkeypatch):
-    """The hub knows how many callers are waiting on a role and has never
-    said so. Without it every caller estimates as if it were alone."""
+def test_the_server_reports_the_callers_ahead_of_you(monkeypatch):
+    """Driven through the REAL `_handle`, not by setting the counter.
+
+    ch-bsd plan-12 #b-1: the first version read `_pending` AFTER `_handle`'s
+    `finally` drained it and subtracted one more, so a caller with two reranks
+    ahead read `queue_depth: 0` — the single-contender case the term exists for.
+    """
+    import socket
+    import threading
+
+    from refmatrix import modelsrv
+    from refmatrix.subproc import recv_frame, send_frame
+
+    started = threading.Event()
+    release = threading.Event()
+
+    class _SlowWorker:
+        """One serialized worker: a rerank blocks until released."""
+
+        def __init__(self, *a, **kw):
+            self._lock = threading.Lock()
+
+        def call(self, op, payload=None, *, blob=None, timeout=None):
+            with self._lock:
+                if op == "rerank":
+                    started.set()
+                    release.wait(5)
+                    return ({"ok": True, "scores": []}, b"")
+                return ({"ok": True, "model": "stub", "cost_s_per_doc": 0.2}, b"")
+
+        def close(self, *, timeout=0.0):
+            pass
+
+    srv = modelsrv.ModelServer()
+    monkeypatch.setattr(modelsrv, "WorkerClient", _SlowWorker)
+
+    def _client(req: dict) -> dict:
+        a, b = socket.socketpair()
+        threading.Thread(target=srv._handle, args=(a,), daemon=True).start()
+        rw = b.makefile("rwb")
+        send_frame(rw, req)
+        hdr, _ = recv_frame(rw)
+        b.close()
+        return hdr
+
+    out: dict = {}
+
+    def _rerank():
+        _client({"role": "rerank", "op": "rerank", "query": "q", "docs": ["a"]})
+
+    t1 = threading.Thread(target=_rerank, daemon=True)
+    t1.start()
+    assert started.wait(5), "the blocking rerank never reached the worker"
+    t2 = threading.Thread(target=_rerank, daemon=True)
+    t2.start()
+    time.sleep(0.2)                       # let the second one queue
+
+    def _info():
+        out["hdr"] = _client({"role": "rerank", "op": "info"})
+
+    t3 = threading.Thread(target=_info, daemon=True)
+    t3.start()
+    time.sleep(0.2)                       # the info caller is now third in line
+    release.set()
+    for th in (t1, t2, t3):
+        th.join(5)
+
+    assert out["hdr"]["queue_depth"] == 2, out["hdr"]
+
+
+def test_a_lone_caller_reads_zero(monkeypatch):
     from refmatrix import modelsrv
 
     class _W:
@@ -220,19 +288,25 @@ def test_the_server_adds_its_queue_depth_to_info(monkeypatch):
             pass
 
         def call(self, op, payload=None, *, blob=None, timeout=None):
-            return ({"ok": True, "model": "stub", "cost_s_per_doc": 0.2}, b"")
+            return ({"ok": True, "model": "stub"}, b"")
 
         def close(self, *, timeout=0.0):
             pass
 
     srv = modelsrv.ModelServer()
     monkeypatch.setattr(modelsrv, "WorkerClient", _W)
-    srv._pending["rerank"] = 3
-    hdr = srv._augment_info("rerank", {"ok": True, "model": "stub",
-                                       "cost_s_per_doc": 0.2})
-    assert hdr["queue_depth"] == 2          # ahead of the caller being served
-    srv._pending["rerank"] = 0
-    assert srv._augment_info("rerank", {"ok": True})["queue_depth"] == 0
+    import socket
+    import threading
+
+    from refmatrix.subproc import recv_frame, send_frame
+
+    a, b = socket.socketpair()
+    threading.Thread(target=srv._handle, args=(a,), daemon=True).start()
+    rw = b.makefile("rwb")
+    send_frame(rw, {"role": "rerank", "op": "info"})
+    hdr, _ = recv_frame(rw)
+    b.close()
+    assert hdr["queue_depth"] == 0
 
 
 def test_the_client_stamps_a_deadline_from_its_own_timeout(monkeypatch):
@@ -353,3 +427,31 @@ def test_the_scan_bundle_leg_keeps_bm25_order_and_says_why(monkeypatch, capsys):
     assert out == hits, "a skipped rerank must leave retrieval order alone"
     assert client.calls == []
     assert "rerank skipped" in capsys.readouterr().err
+
+
+def test_the_budget_is_anchored_before_the_probe(monkeypatch):
+    """ch-bsd plan-12 #m-1: `shared_reranker` probes, THEN built the reranker,
+    which started a fresh budget after the probe had spent part of it — so the
+    leg could outlive the caller's deadline by the probe's length."""
+    monkeypatch.setattr(rr, "rerank_enabled", lambda: True)
+    monkeypatch.setattr(rr, "rerank_available", lambda: True)
+
+    class _SlowProbe(_StubClient):
+        def __init__(self, role, **kw):
+            super().__init__({"cost_s_per_doc": 0.1, "queue_depth": 0})
+
+        def info(self, *, timeout=None):
+            time.sleep(0.3)               # the probe costs part of the budget
+            return self._info
+
+    from refmatrix import modelsrv
+    monkeypatch.setattr(modelsrv, "shared_enabled", lambda: True)
+    monkeypatch.setattr(modelsrv, "shared_available", lambda timeout=0.5: True)
+    monkeypatch.setattr(modelsrv, "SharedWorkerClient", _SlowProbe)
+
+    t0 = time.time()
+    r = rr.shared_reranker(timeout=5.0, probe_timeout=1.0)
+    assert r is not None
+    # the deadline counts from before the probe, not from after it
+    assert r._deadline <= t0 + 5.0 + 0.05
+    assert r._deadline < time.time() + 5.0 - 0.2

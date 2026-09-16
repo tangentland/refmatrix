@@ -525,6 +525,22 @@ class Entity:
     noise: bool = False
 
 
+def _version_key(v: str) -> tuple:
+    """Order version strings numerically, not lexicographically.
+
+    `min("0.9.0", "0.71.0")` is "0.71.0" as text and 0.9.0 as a version. A
+    non-numeric component sorts after any numeric one rather than raising, so a
+    dev tag never crashes a status line (ch-bsd plan-12 #s-1).
+    """
+    parts: list = []
+    for chunk in str(v).split("."):
+        try:
+            parts.append((0, int(chunk)))
+        except ValueError:
+            parts.append((1, chunk))
+    return tuple(parts)
+
+
 class Store:
     def __init__(
         self,
@@ -5558,7 +5574,12 @@ class Store:
             ).fetchall()
         ]
         out = {"passes": rows, "running_version": _running,
-               "oldest_version": None, "stale": False, "reason": None}
+               "oldest_version": None, "stale": False, "reason": None,
+               # Two different states, and an alert gate has to tell them
+               # apart: on the release that introduces stamping EVERY store in
+               # the fleet is unstamped, and a gate that fired on that would
+               # alert every row once and be turned off (ch-bsd plan-12 #b-3).
+               "never_stamped": False}
         if not rows:
             tracked = con.execute(
                 "SELECT count(*) FROM tracked_files WHERE partition_id=?",
@@ -5566,13 +5587,20 @@ class Store:
             ).fetchone()[0]
             if tracked:
                 out["stale"] = True
+                out["never_stamped"] = True
                 out["reason"] = (
                     f"{int(tracked)} tracked file(s) and the graph was never "
                     f"stamped — derived before {_running} recorded it; "
                     f"re-derive to know")
             return out
         mismatched = [r for r in rows if r["version"] != _running]
-        out["oldest_version"] = min(r["version"] for r in rows)
+        # NOT a lexicographic min: this project has shipped 0.9.0 and 0.71.0,
+        # and `min("0.9.0", "0.71.0")` is "0.71.0" — which printed
+        # `derive: 0.71.0 (running 0.71.0) — stale`, a line contradicting
+        # itself (ch-bsd plan-12 #s-1). Sort on the parsed tuple, falling back
+        # to the string for a non-numeric component.
+        out["oldest_version"] = min(
+            (r["version"] for r in rows), key=_version_key)
         if mismatched:
             names = ", ".join(f"{r['pass_name']}@{r['version']}" for r in mismatched)
             out["stale"] = True

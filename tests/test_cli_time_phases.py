@@ -10,6 +10,8 @@ import os
 import subprocess
 import sys
 
+import pytest
+
 from refmatrix import cli as cli_mod
 
 
@@ -24,14 +26,36 @@ def test_phase_report_is_off_by_default(monkeypatch):
 def test_every_phase_appears_exactly_once(monkeypatch):
     monkeypatch.setenv("RMX_TIME_PHASES", "1")
     cli_mod._PHASE_MARKS.clear()
-    for name in ("entry", "dispatch", "store-bind", "build_context", "render"):
+    for name in ("entry", "dispatch", "store-bind", "build_context"):
         cli_mod.phase_mark(name)
     out = cli_mod.render_phase_report(cli_mod.time.monotonic())
-    for name in ("import", "entry", "dispatch", "store-bind", "build_context",
-                 "render", "total"):
-        assert out.count(f" {name} ") + out.count(f"{name}=") >= 1, (name, out)
-    body = [ln for ln in out.splitlines() if "=" in ln]
-    assert len(body) == len(set(body))
+    for name in ("import", "dispatch", "store-bind", "build_context", "exit",
+                 "total"):
+        assert f"{name}=" in out, (name, out)
+    body = [p for p in out.split() if "=" in p]
+    assert len(body) == len(set(p.split("=")[0] for p in body))
+
+
+def test_each_interval_carries_the_phase_that_produced_it(monkeypatch):
+    """ch-bsd plan-12 #b-2: the labels were shifted by one, so the tool built
+    to attribute 8.5 s billed the neighbouring phase. Costs fixed in advance."""
+    monkeypatch.setenv("RMX_TIME_PHASES", "1")
+    cli_mod._PHASE_MARKS.clear()
+    t = cli_mod._PROC_T0
+    # import 0.1 | dispatch 0.2 | store-bind 0.3 | build_context 2.0 | exit 0.5
+    marks = [("entry", 0.1), ("dispatch", 0.3), ("store-bind", 0.6),
+             ("build_context", 2.6)]
+    for name, off in marks:
+        cli_mod._PHASE_MARKS.append((name, t + off))
+    out = cli_mod.render_phase_report(t + 3.1)
+    parts = dict((p.split("=")[0], float(p.split("=")[1].rstrip("s")))
+                 for p in out.split() if "=" in p)
+    assert parts["import"] == pytest.approx(0.1, abs=0.01)
+    assert parts["dispatch"] == pytest.approx(0.2, abs=0.01)
+    assert parts["store-bind"] == pytest.approx(0.3, abs=0.01)
+    assert parts["build_context"] == pytest.approx(2.0, abs=0.01), (
+        "the phase that cost 2 s must be the one billed for it")
+    assert parts["exit"] == pytest.approx(0.5, abs=0.01)
 
 
 def test_the_splits_sum_to_the_total(monkeypatch):
@@ -39,13 +63,12 @@ def test_the_splits_sum_to_the_total(monkeypatch):
     cli_mod._PHASE_MARKS.clear()
     t = cli_mod._PROC_T0
     for i, name in enumerate(("entry", "dispatch", "store-bind",
-                              "build_context", "render"), 1):
+                              "build_context"), 1):
         cli_mod._PHASE_MARKS.append((name, t + i * 0.5))
     out = cli_mod.render_phase_report(t + 3.0)
     parts = dict(
         (p.split("=")[0], float(p.split("=")[1].rstrip("s")))
-        for p in out.replace("\n", " ").split()
-        if "=" in p
+        for p in out.split() if "=" in p
     )
     total = parts.pop("total")
     assert abs(sum(parts.values()) - total) <= 0.05 * total, (parts, total)

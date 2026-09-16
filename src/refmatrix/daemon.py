@@ -850,8 +850,16 @@ class Daemon:
         for role, attr, cache in (("embed", "_embed_worker", "_embedder_inst"),
                                   ("rerank", "_rerank_worker", "_reranker_inst")):
             w = getattr(self, attr, None)
-            if w is None or isinstance(w, modelsrv.SharedWorkerClient):
-                continue                      # nothing to adopt, or already shared
+            if isinstance(w, modelsrv.SharedWorkerClient):
+                continue                      # already shared
+            if w is None:
+                # An in-process embedder is a worker-less split, and the state
+                # the re-probe could never heal (ch-bsd plan-12 #s-4): adopt
+                # for it too, and drop the resident model when we do.
+                from refmatrix.embedder import Embedder
+                if not (role == "embed" and isinstance(
+                        getattr(self, "_embedder_inst", None), Embedder)):
+                    continue
             if now < self._reprobe_next.get(role, 0.0):
                 continue
             client = None
@@ -877,17 +885,23 @@ class Daemon:
                 continue
             with self._worker_lock:
                 setattr(self, attr, client)
-                setattr(self, cache, None)    # the proxy wraps the OLD client
+                setattr(self, cache, None)    # the proxy (or resident model) goes
             try:
-                w.close(timeout=2.0)
+                if w is not None:
+                    w.close(timeout=2.0)
             except Exception as exc:  # noqa: BLE001 — the swap already happened
                 self._log(f"{role}: private worker close failed after adoption: "
                           f"{exc!r}")
             self._reprobe_backoff.pop(role, None)
             self._reprobe_next.pop(role, None)
-            pid = getattr(getattr(w, "_proc", None), "pid", getattr(w, "pid", "?"))
-            self._log(f"{role}: adopted hub-shared worker; closed private "
-                      f"worker pid={pid}")
+            if w is None:
+                self._log(f"{role}: adopted hub-shared worker; dropped the "
+                          f"in-process model")
+            else:
+                pid = getattr(getattr(w, "_proc", None), "pid",
+                              getattr(w, "pid", "?"))
+                self._log(f"{role}: adopted hub-shared worker; closed private "
+                          f"worker pid={pid}")
             adopted.append(role)
         return adopted
 
@@ -897,15 +911,26 @@ class Daemon:
         reports `daemon_up` and nothing says the models are not being shared."""
         from refmatrix import modelsrv
 
+        from refmatrix.embedder import Embedder
+
         out = {}
         for role, attr in (("embed", "_embed_worker"), ("rerank", "_rerank_worker")):
             w = getattr(self, attr, None)
-            if w is None:
-                out[role] = "none"
-            elif isinstance(w, modelsrv.SharedWorkerClient):
-                out[role] = "shared"
+            if w is not None:
+                out[role] = ("shared" if isinstance(w, modelsrv.SharedWorkerClient)
+                             else "private")
+                continue
+            # No worker object is NOT automatically "no model": `_embedder()`
+            # has a fallback that loads the model IN THIS PROCESS and leaves
+            # `_embed_worker` None. That is the heaviest non-sharing state
+            # there is — the daemon carrying the model itself, which is what
+            # `project_daemon_ingest_jetsam_diagnosed` is about — and it used
+            # to report "none" and produce no split flag (ch-bsd plan-12 #s-4).
+            if role == "embed" and isinstance(
+                    getattr(self, "_embedder_inst", None), Embedder):
+                out[role] = "in-process"
             else:
-                out[role] = "private"
+                out[role] = "none"
         return out
 
     def _reranker(self):
@@ -3843,6 +3868,25 @@ def _op_derive_status(d: Daemon, args: dict) -> dict:
     condition it reports — a graph built by passes that have since changed —
     has no other cheap tell: `stale_files` counts mtime drift on FILES and read
     `35` while this project's own store sat at a 1-bundle scan-prompt floor."""
+    if args.get("all"):
+        # Every partition, because `ingest_gmd_paths` stamps `gmd` in whatever
+        # partition the caller held — including `memory-<project>`, which is
+        # the product and which has no `tracked_files` for the unstamped rule
+        # to fire on. Asking only the default partition left the memory corpus
+        # with no derive-freshness signal at all (ch-bsd plan-12 #m-3).
+        with d._store_lock:
+            s = d._st()
+            names = [r[0] for r in s._connect().execute(
+                "SELECT name FROM partitions ORDER BY name").fetchall()]
+            out = {"partitions": {}}
+            for name in names:
+                with s.with_partition(name):
+                    out["partitions"][name] = s.derive_status()
+            out.update(out["partitions"].get(s._partition_name)
+                       or s.derive_status())
+            out["stale"] = any(v.get("stale")
+                               for v in out["partitions"].values())
+            return out
     part = args.get("partition") or d._st()._partition_name
     with d._store_lock, d._st().with_partition(part):
         return d._st().derive_status()
@@ -5305,6 +5349,9 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
 # on-miss writebacks) goes to `bg_pool`. `stop` is cli because we want
 # it to take effect immediately even while bg work is in flight.
 CLI_OPS: set[str] = {
+    # A status surface asks it on every invocation, and the store most likely
+    # to be stale is the one with a fat ingest in the bg pool (plan-12 #s-2).
+    "derive_status",
     "ping",
     "stats",
     "context",
