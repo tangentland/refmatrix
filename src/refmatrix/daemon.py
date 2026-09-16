@@ -70,6 +70,11 @@ HEARTBEAT_STALE_S = float(os.environ.get("RMX_HUB_HEARTBEAT_STALE_S", "60") or "
 from refmatrix.launchctl import EXIT_TIMEOUT_S as DEFAULT_STOP_GRACE_S  # noqa: E402
 
 
+# How long a dispatcher waits on one socket read slice before re-checking
+# whether the daemon is shutting down. The 30 s ceiling is unchanged.
+_RECV_POLL_S = 1.0
+
+
 def stop_grace_s() -> float:
     """How long a stop order waits before escalating; `RMX_STOP_GRACE_S`
     overrides (tests, an operator in a hurry)."""
@@ -628,6 +633,11 @@ class Daemon:
         # cleanly instead of pinning pool.shutdown(wait=True) until the
         # batch finishes minutes later.
         self._shutdown_event = threading.Event()
+        # {op: started_at} for ops running RIGHT NOW. The shutdown flush used
+        # to guess in the log ("leaked worker likely holds it"); this is the
+        # evidence (bug-041).
+        self._inflight_ops: dict = {}
+        self._inflight_lock = threading.Lock()
         self._watch_stop: "threading.Event | None" = None
         self._watch_thread: "threading.Thread | None" = None
         self._replica_stop: "threading.Event | None" = None
@@ -1280,6 +1290,47 @@ class Daemon:
             pass
         os._exit(2)
 
+    def _final_flush(self, *, budget_s: "float | None" = None) -> bool:
+        """Flush bitmap fragments before exit. True when the flush ran.
+
+        `_start_periodic_flush`'s docstring names a skipped flush as the
+        "relational tables ahead of the bitmaps" surface that wedged viascope,
+        so when this is skipped the log has to say WHY with evidence rather
+        than a guess. The first version waited a flat 5 s and then wrote
+        "leaked worker likely holds it", which is a hypothesis; the in-flight
+        op registry turns it into the op's name and how long it has been
+        running (bug-041).
+
+        Still bounded: blocking forever here leaves a zombie holding the
+        writer-slot file lock, which stops the next spawn from taking over.
+        """
+        if self.store is None:
+            return False
+        budget = (budget_s if budget_s is not None
+                  else float(os.environ.get("RMX_DAEMON_FLUSH_BUDGET_S", "15")
+                             or "15"))
+        try:
+            if self._store_lock.acquire(timeout=budget):
+                try:
+                    self.store.flush_fragments()
+                    return True
+                finally:
+                    self._store_lock.release()
+            with self._inflight_lock:
+                now = time.time()
+                held = ", ".join(f"{op} ({now - t0:.0f}s)"
+                                 for op, t0 in sorted(self._inflight_ops.items()))
+            self._log(
+                f"final flush skipped: _store_lock contended ({budget:.0f}s "
+                f"timeout); in flight: {held or 'nothing tracked — the holder '
+                'is not an op, check the watcher or a background tick'}; "
+                f"exiting anyway so the next spawn isn't blocked"
+            )
+            return False
+        except Exception as exc:
+            self._log(f"final flush failed: {exc!r}")
+            return False
+
     def _drain_pool(self, name: str, pool, timeout_s: float) -> None:
         """Bounded ThreadPoolExecutor shutdown. ThreadPoolExecutor.shutdown
         has no native timeout — `wait=True` is unbounded and `wait=False`
@@ -1303,12 +1354,21 @@ class Daemon:
         for t in list(workers):
             remaining = deadline - _time.monotonic()
             if remaining <= 0:
-                self._log(
-                    f"pool drain {name}: timed out, {len(workers)} workers "
-                    f"may outlive shutdown"
-                )
-                return
+                break
             t.join(timeout=remaining)
+        # Count what is ACTUALLY still running. The old message reported
+        # `len(workers)` — the pool SIZE — so a single stuck thread in `disp`
+        # read as "20 workers may outlive shutdown" and the log overstated the
+        # damage by the width of the pool (bug-041).
+        live = [t for t in list(workers) if t.is_alive()]
+        if live:
+            with self._inflight_lock:
+                ops = sorted(self._inflight_ops)
+            self._log(
+                f"pool drain {name}: timed out after {timeout_s:.0f}s, "
+                f"{len(live)} of {len(workers)} workers still running"
+                + (f" (in flight: {', '.join(ops)})" if ops else "")
+            )
 
     def _reap_predecessor(self, sock_path: Path) -> bool:
         """Kill any predecessor daemon for this root so a fresh launch wins.
@@ -1737,21 +1797,7 @@ class Daemon:
             # is generous; if we still can't get it, the worker is in a
             # C-extension call we can't preempt -- skip the flush and let
             # the process exit so a fresh daemon can take over.
-            try:
-                if self.store is not None:
-                    if self._store_lock.acquire(timeout=5.0):
-                        try:
-                            self.store.flush_fragments()
-                        finally:
-                            self._store_lock.release()
-                    else:
-                        self._log(
-                            "final flush skipped: _store_lock contended "
-                            "(5s timeout) -- leaked worker likely holds it; "
-                            "exiting anyway so the next spawn isn't blocked"
-                        )
-            except Exception as exc:
-                self._log(f"final flush failed: {exc!r}")
+            self._final_flush()
             srv.close()
             if sock_path.exists():
                 sock_path.unlink()
@@ -2809,8 +2855,24 @@ class Daemon:
         writes the response, which is why `disp_pool` is sized larger
         than the sum of the two work pools."""
         try:
-            conn.settimeout(30.0)
-            req_bytes = _recv_line(conn, timeout=30.0)
+            # Poll in short slices instead of one 30 s block. A client that
+            # connects and goes quiet — the hub's watchdog and queue ticks do
+            # exactly this — used to pin a dispatcher thread for up to 30 s
+            # against a 10 s drain budget, which is why `pool drain disp: timed
+            # out` fired on EVERY shutdown, reproduced twice on 2026-09-16
+            # (bug-041). The ceiling is unchanged; only the granularity is.
+            conn.settimeout(_RECV_POLL_S)
+            req_bytes = b""
+            deadline = time.monotonic() + 30.0
+            while True:
+                if self._shutdown_event.is_set():
+                    return              # let go of the socket; we are stopping
+                try:
+                    req_bytes = _recv_line(conn, timeout=_RECV_POLL_S)
+                except (socket.timeout, TimeoutError):
+                    req_bytes = b""
+                if req_bytes or time.monotonic() >= deadline:
+                    break
             if not req_bytes:
                 return
             req = json.loads(req_bytes.decode("utf-8"))
@@ -2822,8 +2884,14 @@ class Daemon:
             else:
                 target_pool = cli_pool if op in CLI_OPS else bg_pool
                 try:
-                    fut = target_pool.submit(handler, self, args)
-                    result = fut.result()
+                    with self._inflight_lock:
+                        self._inflight_ops[op] = time.time()
+                    try:
+                        fut = target_pool.submit(handler, self, args)
+                        result = fut.result()
+                    finally:
+                        with self._inflight_lock:
+                            self._inflight_ops.pop(op, None)
                     resp = {"ok": True, "result": result}
                 except Exception as exc:
                     self._log(f"op {op} raised: {exc!r}")
