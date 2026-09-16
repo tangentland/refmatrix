@@ -35,23 +35,42 @@ then five rounds of `@ch-bsd` ending **CLEAN**.
 | **bug-032** | `reranker.window_doc`: half the budget on the head, half on a query-anchored window. **541 → 672** covered of 896 answer-bearing turns at 2048; byte-identical head truncation below 1024. |
 | **bug-033** → **bug-040** | `RMX_TIME_PHASES=1` phase splits; the instrument found a real defect — the grep floor was `rg`-ing **`$HOME`** for memory-only stores (15.09 s → timeout → zero hits → swallowed). **15.13 s → 0.09 s.** The residual 8.5 s is cold I/O on an SD-card volume (94.7 MB/s, 432 MB adjacency cache). |
 
+## Done since the first draft of this handoff {#closed}
+
+All three items the user approved are complete:
+
+1. **Deployed 0.72.0.** `~/refmatrix` ff-pulled to `66142c1`, `rmx daemon restart --relaunch`
+   verified pid + version against the deploy code path, the hub was restarted onto 0.72.0 (its
+   model workers must run this code for bug-025), and `rmx hub relaunch-fleet` took all 8 stores to
+   0.72.0. No orphan pileup on :7777.
+2. **Pushed.** `origin/main` is `66142c1`; 0 ahead at the time of the push.
+3. **bug-025 acceptance MET.** Four runs of the exact deployed hook argv, two windows two and a
+   half minutes apart, load 3.9-4.5: **20 of 20 rows reranked**, 4.77-5.15 s, against **0 of 5**
+   with `rerank failed (TimeoutError)` four hours earlier. `workflow/measurements/
+   rerank-cost-budget-0916.md#acceptance`. Plan-12 is `completed`.
+
+bug-039's detector is live and behaved exactly as predicted for landing day: every store reads
+`derive-unstamped` and the hub row is **cold**, so the alert did not flood.
+
 ## What is NOT done, and why {#open}
 
-1. **bug-025's live acceptance needs a deploy.** The skip cannot fire until the HUB runs the new
-   worker: the deployed 0.71.0 `info` carries no cost, and a missing cost is treated as unknown
-   rather than guessed. Measured live today, on the deployed path: `rerank failed (TimeoutError)`,
-   **0 of 5 rows reranked**, twice, under load 4.0 — bug-025 still reproducing. Acceptance is two
-   runs of the deployed hook argv, minutes apart, under ordinary load, counting RERANKED ROWS.
-   `workflow/measurements/rerank-cost-budget-0916.md`.
-2. **27 commits unpushed.** The user pushes.
-3. **bug-041 (open, logged today, NOT investigated).** At 11:32:38-11:33:07 this project's daemon
-   took ~28 s to die, timed out draining all three pools (36 workers leaked) and **skipped the
-   final fragment flush** with `_store_lock` contended, then respawned and repaired 431,809 index
-   rows. `_start_periodic_flush`'s own docstring names a skipped flush as the "relational tables
-   ahead of the bitmaps" surface that wedged viascope; exposure is bounded by the 30 s interval.
-   **Verify before trusting the store: `rmx stats` + `replica audit` on an IDLE machine.** Ruled
-   out already: not the DuckDB crash loop (all 8 fatal lines date to 2026-09-14), not the audit's
-   mutation batches (bracketing watch flushes read `+0 ~0 -0`).
+1. **bug-041 is now `recurring`, Seen 2 — and it is the live item.** The identical shutdown
+   sequence (disp 20 / cli 4 / bg 12 pool drains timing out, then `final flush skipped:
+   _store_lock contended`) reproduced on the deploy restart at 11:51:15-11:51:44, so it is NOT
+   tied to the earlier 94% CPU window: it reproduces on any `rmx daemon restart --relaunch`.
+   **One datum to chase first:** the boot index repair logged `rows=431809` at 11:33 and
+   `rows=422127` at 11:51. A ~9.7k drop in `idx_entity_links_lk_concept` across two boots may be
+   ordinary churn (this session purged and re-derived a lot) or may be the lost-work shape a
+   skipped flush produces. It is unexplained either way, and `replica audit` is NOT the instrument
+   — it audits the DROPPED A/B rotation (reader slot A is 14 MB against writer B at 390 MB, which
+   is expected, not drift).
+2. **`MEMORY.md` is over its cap:** 234 lines / 34 KB against a 200-line limit, so the tail
+   truncates on context load. 139 project / 40 impression / 34 feedback / 11 savestate / 10
+   reference entries, 34 of them over the 200-char line guidance. There is no generator — the
+   index is appended by hand, so it only grows. The user asked about auto-curation; the levers that
+   exist are `rmx memory compile` (0.26.0, consolidates the STORE) and `rmx memory brief`
+   (singleton / corroborated / contradicted), and what is missing is a generator that rebuilds
+   `MEMORY.md` under a hard cap. NOT started — awaiting the user's go.
 
 ## Quality gates {#gates}
 
