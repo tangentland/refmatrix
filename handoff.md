@@ -67,6 +67,18 @@ deployed:
   memories all accounted for (192 listed, 65 collapsed, 0 unaccounted), `--check` in sync on the
   DEPLOYED build. Wired into `handoff._ss_update_index`, so save-state now caps the index it grows.
 
+- **bug-043 FIXED (0.72.2).** The `global:queues` alert re-published the whole fleet snapshot every
+  30 minutes with every row clean, because the gate read `hot or pending_refine` and one bus-test
+  candidate from 2026-09-14 (body: the string `hi`) had been pending for two days. A hot row still
+  alerts every tick; a pending candidate alerts once, on arrival; a quiet tick prunes drained ids.
+  The stale candidate was rejected after `rmx refine show` confirmed what it was.
+
+Live confirmation of the plan-12 gate design, visible in `rmx hub queues` right now: `refmatrix`
+reads **`derive-drift@0.72.1`** — its graph was stamped by 0.72.1 while 0.72.2 runs, but 0.72.2
+changed `hub.py`, not `ingest.py` / `ingest_gmd.py` / `store.py`, so `behind_code` is False and the
+row is carried COLD instead of alerting. That is exactly the version-vs-distance distinction ch-bsd
+forced in r2/r4, working on the real fleet.
+
 The one open item is a judgement call rather than a defect: the memory-index and shutdown work
 landed AFTER `@ch-bsd`'s CLEAN range (`c92274b..34aeddf`) and has had no adversarial audit — 22
 tests and six killing mutations, but no BSD round.
