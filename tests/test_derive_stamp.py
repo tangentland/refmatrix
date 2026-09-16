@@ -336,3 +336,14 @@ def test_the_cache_still_hits_when_nothing_moved(tmp_path, monkeypatch):
                         lambda self: reads.append(self) or real(self))
     assert store_mod.derive_code_hash() == first
     assert reads == []
+
+
+def test_version_key_is_public_vocabulary():
+    """ch-bsd plan-12 r5: `daemon._store_health` ranks partitions by it, and a
+    cross-module import of an underscore name is a rule that says "do not
+    depend on this" standing beside a caller that does."""
+    import refmatrix.store as store_mod
+
+    assert hasattr(store_mod, "version_key")
+    assert not hasattr(store_mod, "_version_key")
+    assert store_mod.version_key("0.9.0") < store_mod.version_key("0.71.0")

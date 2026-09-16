@@ -33,7 +33,7 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Callable
 
-from refmatrix.store import Store, _version_key
+from refmatrix.store import Store, version_key
 from refmatrix.subproc import subproc_embed_enabled
 
 
@@ -3413,7 +3413,7 @@ def _store_health(d: Daemon) -> dict:
         behind = {n: v for n, v in stale_parts.items() if v.get("behind_code")}
         pool = behind or stale_parts
         worst_name = min(
-            pool, key=lambda n: _version_key(pool[n].get("oldest_version")
+            pool, key=lambda n: version_key(pool[n].get("oldest_version")
                                              or "999999"),
         ) if pool else None
         worst = per.get(worst_name) if worst_name else None
