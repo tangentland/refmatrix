@@ -34,6 +34,7 @@ compares False against everything and would scramble the ranking.
 from __future__ import annotations
 
 import os
+import time
 from typing import Sequence
 
 DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-12-v2"
@@ -57,6 +58,47 @@ MAX_POOL = int(os.environ.get("RMX_RERANK_MAX_POOL", "100") or "100")
 # Gap between consecutive demoted (unscored) rows. Only their ORDER matters —
 # the value exists so a sort by score cannot reshuffle them.
 _EPS = 1e-6
+
+
+class RerankSkipped(RuntimeError):
+    """The rerank was NOT attempted, and here is the arithmetic (bug-025).
+
+    Distinct from a failure: nothing broke, the pool simply could not fit the
+    caller's remaining budget. The deployed hook used to discover this by
+    burning the whole budget and timing out — 7/7 runs, 0 rows reranked,
+    returning exactly what `--no-rerank` returns in 0.79 s — because the cost
+    was never knowable before the call. The caller catches this, says the
+    numbers, and keeps retrieval order.
+    """
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def estimate_rerank_s(info: "dict | None", n_docs: int) -> "float | None":
+    """Seconds this pool should cost on the shared worker, or None.
+
+    `(1 + queue_depth) * n_docs * cost_s_per_doc`. The queue term is what
+    bug-019's fix was missing: one serialized worker serves every hook of every
+    session, so a pool that fits when you are alone does not fit behind two
+    other callers. Measured on the identical capped 10 x 700 pool: 9.26 /
+    14.08 / 3.72 s on three consecutive tries, all "the same" pool.
+
+    None when the worker has no samples yet — a guess is worse than silence,
+    because the caller would act on it.
+    """
+    if not info:
+        return None
+    cost = info.get("cost_s_per_doc")
+    if cost is None:
+        return None
+    try:
+        cost = float(cost)
+    except (TypeError, ValueError):
+        return None
+    queue = int(info.get("queue_depth") or 0)
+    return (1 + max(0, queue)) * int(n_docs) * cost
 
 
 def rerank_enabled() -> bool:
@@ -150,9 +192,14 @@ class RemoteReranker:
     queries.
     """
 
-    def __init__(self, client):
+    def __init__(self, client, *, budget_s: "float | None" = None):
         self._client = client
         self._model_name: str | None = None
+        # A DEADLINE, not a constant: a 1 s `info` probe that ate 4 of 5 s must
+        # leave 1 s for the decision, which is exactly the live shape of
+        # bug-019. None = unbounded (tests, batch callers).
+        self._budget_s = budget_s
+        self._deadline = None if budget_s is None else time.time() + float(budget_s)
 
     @property
     def model_name(self) -> str:
@@ -164,9 +211,25 @@ class RemoteReranker:
         if not docs:
             return []
         truncated = [(d or "")[:MAX_DOC_CHARS] for d in docs]
-        hdr, _ = self._client.call(
-            "rerank", {"query": query, "docs": truncated},
-        )
+        payload = {"query": query, "docs": truncated}
+        if self._deadline is not None:
+            remaining = self._deadline - time.time()
+            info = {}
+            try:
+                info = self._client.info() or {}
+            except Exception:       # noqa: BLE001 — no info is "cost unknown"
+                info = {}
+            est = estimate_rerank_s(info, len(truncated))
+            if est is not None and est > remaining:
+                raise RerankSkipped(
+                    f"{len(truncated)} docs x {float(info['cost_s_per_doc']):.2f} "
+                    f"s/doc x (1+{int(info.get('queue_depth') or 0)} queued) = "
+                    f"{est:.1f}s > {remaining:.1f}s left"
+                )
+            # The worker drops a frame it dequeues after this instant, so an
+            # abandoned request stops starving the caller behind it.
+            payload["deadline"] = self._deadline
+        hdr, _ = self._client.call("rerank", payload)
         # The worker already ran `_checked`; re-run it here so a future
         # transport that bypasses `Reranker.score` cannot skip the guard.
         return _checked(hdr.get("scores") or [], self.model_name)
@@ -335,6 +398,9 @@ def shared_reranker(log=None, *, timeout: "float | None" = None,
             return None
         client = modelsrv.SharedWorkerClient("rerank", log=log, timeout=timeout)
         client.info(timeout=probe_timeout if probe_timeout is not None else timeout)
-        return RemoteReranker(client)
+        # The caller's timeout IS the budget: a bounded read surface gets a
+        # reranker that knows how much time it has and refuses a pool that
+        # cannot fit, instead of discovering it by timing out (bug-025).
+        return RemoteReranker(client, budget_s=timeout)
     except Exception:
         return None
