@@ -105,3 +105,100 @@ def test_rewriter_leaves_non_searches_alone(env_hooks, cmd):
 def test_env_assignments_survive_in_place(env_hooks):
     out = _rewrite(env_hooks, "env HF_HUB_OFFLINE=1 grep -n pat f.py")
     assert out.startswith("env HF_HUB_OFFLINE=1 ")
+
+
+# ── task 6.5 / bug-008: the user-global rewriter must not name a tree ──────
+
+def test_rewriter_bakes_no_tree_path(env_hooks):
+    """`~/.claude/hooks/rmxgrep-rewrite.py` is USER-GLOBAL and was rendered
+    with `RMXGREP = "<generator tree>/bin/rmxgrep"`. Any `install-hooks
+    --apply` from the dev venv — a test without the `RMX_CLAUDE_HOOKS_DIR`
+    redirect, an audit probe in a throwaway project — overwrote the live hook
+    with dev-tree paths. Seen twice (bug-008, recurring).
+
+    The script must resolve its wrappers at RUNTIME instead, so the bytes are
+    identical whichever tree renders them."""
+    body = sh.render_scripts()[sh.REWRITER_NAME]
+    assert "/refmatrix/bin/" not in body, (
+        "the user-global rewriter names a refmatrix tree")
+    # No absolute path into ANY checkout of this package, dev or deploy.
+    for tree in (Path(sh.__file__).resolve().parents[2], Path.home() / "refmatrix"):
+        assert str(tree) not in body, f"rewriter bakes {tree}"
+
+
+def test_rewriter_renders_identically_from_any_tree(env_hooks, monkeypatch):
+    """The property that makes bug-008 impossible rather than merely caught:
+    two different generating trees produce the same bytes."""
+    monkeypatch.setattr(sh, "wrapper_paths",
+                        lambda: ("/dev/tree/bin/rmxgrep", "/dev/tree/bin/rmxrg"))
+    a = sh.render_scripts()[sh.REWRITER_NAME]
+    monkeypatch.setattr(sh, "wrapper_paths",
+                        lambda: ("/deploy/bin/rmxgrep", "/deploy/bin/rmxrg"))
+    b = sh.render_scripts()[sh.REWRITER_NAME]
+    assert a == b, "the rendered rewriter still depends on the generating tree"
+
+
+def test_rewriter_resolves_its_wrappers_at_runtime(env_hooks, tmp_path):
+    """Resolution moved into the script, so prove the script still finds the
+    wrappers — a rewriter that resolves to nothing is worse than one that
+    bakes a path."""
+    body = sh.render_scripts()[sh.REWRITER_NAME]
+    script = tmp_path / "rw.py"
+    script.write_text(body)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for n in ("rmx", "rmxgrep", "rmxrg"):
+        (fake_bin / n).write_text("#!/bin/sh\nexit 0\n")
+        (fake_bin / n).chmod(0o755)
+    r = subprocess.run(
+        [sys.executable, "-c",
+         f"import runpy,sys;sys.argv=['rw'];m=runpy.run_path({str(script)!r});"
+         "print(m['RMXGREP'](), m['RMXRG']())"],
+        capture_output=True, text=True,
+        env={"PATH": f"{fake_bin}:/usr/bin:/bin", "HOME": str(tmp_path)})
+    assert r.returncode == 0, r.stderr
+    assert str(fake_bin / "rmxgrep") in r.stdout, r.stdout
+    assert str(fake_bin / "rmxrg") in r.stdout, r.stdout
+
+
+def test_install_refuses_user_global_dir_from_a_foreign_tree(
+        tmp_path, monkeypatch):
+    """The second half of the guard: even with runtime resolution, a foreign
+    tree must not overwrite the user-global scripts. `RMX_CLAUDE_HOOKS_DIR`
+    is the stated escape, so tests and probes keep working."""
+    from refmatrix import upgrade
+    monkeypatch.delenv("RMX_CLAUDE_HOOKS_DIR", raising=False)
+    monkeypatch.setattr(sh, "hooks_dir", lambda: tmp_path / "userhooks")
+    monkeypatch.setattr(upgrade, "runtime_identity",
+                        lambda: {"venv_tree": "/dev/tree"})
+    monkeypatch.setattr(sh, "path_rmx_tree", lambda: "/deploy")
+
+    with pytest.raises(RuntimeError) as e:
+        sh.install_search_hooks(tmp_path, "project", apply=True, force=True)
+    msg = str(e.value)
+    assert "/dev/tree" in msg and "/deploy" in msg, msg
+    assert "RMX_CLAUDE_HOOKS_DIR" in msg, msg
+    assert not (tmp_path / "userhooks").exists(), "a refused install wrote scripts"
+
+
+def test_install_allows_the_owning_tree(tmp_path, monkeypatch):
+    from refmatrix import upgrade
+    monkeypatch.delenv("RMX_CLAUDE_HOOKS_DIR", raising=False)
+    monkeypatch.setattr(sh, "hooks_dir", lambda: tmp_path / "userhooks")
+    monkeypatch.setattr(upgrade, "runtime_identity",
+                        lambda: {"venv_tree": "/deploy"})
+    monkeypatch.setattr(sh, "path_rmx_tree", lambda: "/deploy")
+    sh.install_search_hooks(tmp_path, "project", apply=True, force=True)
+    assert (tmp_path / "userhooks" / sh.REWRITER_NAME).exists()
+
+
+def test_install_allows_a_redirected_hooks_dir_from_any_tree(
+        tmp_path, monkeypatch):
+    """The escape must actually work, or every test in this file breaks."""
+    from refmatrix import upgrade
+    monkeypatch.setenv("RMX_CLAUDE_HOOKS_DIR", str(tmp_path / "redirected"))
+    monkeypatch.setattr(upgrade, "runtime_identity",
+                        lambda: {"venv_tree": "/dev/tree"})
+    monkeypatch.setattr(sh, "path_rmx_tree", lambda: "/deploy")
+    sh.install_search_hooks(tmp_path, "project", apply=True, force=True)
+    assert (tmp_path / "redirected" / sh.REWRITER_NAME).exists()
