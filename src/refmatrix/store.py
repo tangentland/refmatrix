@@ -600,8 +600,13 @@ def derive_code_hash() -> str:
     return out
 
 
-def _version_key(v: str) -> tuple:
+def version_key(v: str) -> tuple:
     """Order version strings numerically, not lexicographically.
+
+    Public because `daemon._store_health` ranks partitions by it: version
+    ordering became shared vocabulary the moment a second module needed it,
+    and a cross-module import of an underscore name is a rule saying "do not
+    depend on this" beside a caller depending on it (ch-bsd plan-12 r5).
 
     `min("0.9.0", "0.71.0")` is "0.71.0" as text and 0.9.0 as a version. A
     non-numeric component sorts after any numeric one rather than raising, so a
@@ -5688,7 +5693,7 @@ class Store:
         # itself (ch-bsd plan-12 #s-1). Sort on the parsed tuple, falling back
         # to the string for a non-numeric component.
         out["oldest_version"] = min(
-            (r["version"] for r in rows), key=_version_key)
+            (r["version"] for r in rows), key=version_key)
         # A stamp with NO hash predates this column: it was written before the
         # store recorded what derived it, which is exactly the blind spot, so
         # it counts as behind rather than as "no information".
