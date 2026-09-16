@@ -235,3 +235,24 @@ def test_the_newest_savestate_is_by_date_not_by_name(memdir):
 
     line = next(l for l in mi.render(memdir).splitlines() if "Save-states" in l)
     assert "savestate_005c1cfc17f6" in line, line
+
+
+def test_an_empty_memdir_never_wipes_the_index(memdir, capsys):
+    """The index is derived FROM the files, so a dir that reads empty — the
+    wrong path, an unreadable mount, an index written before its files land —
+    must leave it alone rather than render nothing over it."""
+    idx = memdir / "MEMORY.md"
+    idx.write_text("- [Old](savestate_x.md) — old hook\n- [Keep](other.md) — keep\n")
+    assert mi.write(memdir) == 0
+    assert idx.read_text().count("savestate_x.md") == 1
+    assert "left untouched" in capsys.readouterr().out
+
+
+def test_an_entry_whose_file_is_gone_is_dropped_and_counted(memdir, capsys):
+    _mem(memdir, "project_here", title="Here", mtype="project")
+    (memdir / "MEMORY.md").write_text(
+        "- [Here](project_here.md) — kept\n- [Gone](project_gone.md) — deleted\n")
+    mi.write(memdir)
+    out = capsys.readouterr().out
+    assert "dropped 1 entry" in out and "project_gone.md" in out
+    assert "project_here.md" in (memdir / "MEMORY.md").read_text()

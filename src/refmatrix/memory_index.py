@@ -219,13 +219,37 @@ def write(memdir: Path, *, max_lines: int = MAX_LINES, out=None) -> int:
     out = out or sys.stdout
     memdir = Path(memdir)
     idx = memdir / INDEX_NAME
-    before = len(idx.read_text(errors="replace").splitlines()) if idx.exists() else 0
+    entries = collect(memdir)
+    # NEVER generate from an empty dir. The index is derived FROM the files, so
+    # a memdir that reads empty — the wrong path, an unreadable mount, an index
+    # written before its files land — would render an empty index and delete
+    # every entry. Found by `test_update_index_replaces_not_duplicates`, which
+    # exercises exactly that shape (2026-09-16).
+    if not entries:
+        print(f"{INDEX_NAME}: no memory files found under {memdir}; "
+              f"index left untouched", file=out)
+        return 0
+    before_lines = idx.read_text(errors="replace").splitlines() if idx.exists() else []
+    before_refs = {l.split("](", 1)[1].split(")", 1)[0]
+                   for l in before_lines if l.startswith("- [") and "](" in l}
     text = render(memdir, max_lines=max_lines)
-    after = len(text.splitlines())
+    after_lines = text.splitlines()
+    after_refs = {l.split("](", 1)[1].split(")", 1)[0]
+                  for l in after_lines if l.startswith("- [") and "](" in l}
+    # An entry can legitimately disappear: it was collapsed into a pointer, or
+    # its file is gone (the forget flow deletes both). Either way the count is
+    # PRINTED — a memory index that quietly loses rows is the failure this
+    # whole thing exists to fix.
+    gone = sorted(r for r in before_refs - after_refs
+                  if not (memdir / r).exists())
     idx.write_text(text)
-    print(f"{INDEX_NAME}: {before} -> {after} lines "
-          f"(cap {max_lines}; {len(collect(memdir))} memories on disk)", file=out)
-    return after
+    print(f"{INDEX_NAME}: {len(before_lines)} -> {len(after_lines)} lines "
+          f"(cap {max_lines}; {len(entries)} memories on disk)", file=out)
+    if gone:
+        print(f"{INDEX_NAME}: dropped {len(gone)} entr"
+              f"{'y' if len(gone) == 1 else 'ies'} whose file is gone: "
+              f"{', '.join(gone[:5])}{' …' if len(gone) > 5 else ''}", file=out)
+    return len(after_lines)
 
 
 def check(memdir: Path, *, max_lines: int = MAX_LINES) -> bool:
