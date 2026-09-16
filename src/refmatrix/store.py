@@ -360,6 +360,7 @@ CREATE TABLE IF NOT EXISTS derive_stamps (
     pass_name    TEXT NOT NULL,
     version      TEXT NOT NULL,
     derived_at   REAL NOT NULL,
+    code_hash    TEXT,
     PRIMARY KEY (partition_id, pass_name)
 );
 
@@ -533,24 +534,53 @@ class Entity:
 _DERIVE_CODE_MODULES = ("ingest.py", "ingest_gmd.py", "store.py")
 
 
-def derive_code_mtime() -> float:
-    """Newest mtime among the modules that derive a graph, or 0.0.
+# Cache keyed on the (path, mtime, size) of every deriving module. A wrong key
+# costs a re-read of ~300 KB, never a wrong answer — which is the right way
+# round for something the hub's watchdog tick calls per store.
+_DERIVE_CODE_HASH_CACHE: "dict[tuple, str]" = {}
 
-    Deliberately mtime and not version: a deploy rewrites only the files git
-    changed, so a release that does not touch ingest leaves every store's
-    derive as current as it was.
+
+def derive_code_hash() -> str:
+    """Hash of the modules that derive a graph, or "" if none can be read.
+
+    CONTENT, not mtime. mtime was the first implementation and it was wrong in
+    a way that fires rather than hides: an identical-content rewrite —
+    a formatter, `sed -i`, a backup restore, a fresh clone, a worktree, a
+    `git checkout` round-trip, or (demonstrably, on this machine, 2026-09-16) a
+    mutation-test harness restoring a file byte-for-byte — moves the mtime and
+    would mark every store in the fleet as behind code that never changed
+    (ch-bsd plan-12 r3).
+
+    Version is the other wrong answer: 34 version bumps in ten days, against 16
+    commits touching these three modules on 4 distinct days.
     """
+    from hashlib import blake2b
     from pathlib import Path as _P
 
     here = _P(__file__).resolve().parent
-    newest = 0.0
-    for name in _DERIVE_CODE_MODULES:
-        p = here / name
+    paths = [here / name for name in _DERIVE_CODE_MODULES]
+    key = []
+    for p in paths:
         try:
-            newest = max(newest, p.stat().st_mtime)
+            st = p.stat()
+            key.append((str(p), st.st_mtime_ns, st.st_size))
+        except OSError:
+            key.append((str(p), None, None))
+    ck = tuple(key)
+    hit = _DERIVE_CODE_HASH_CACHE.get(ck)
+    if hit is not None:
+        return hit
+    h = blake2b(digest_size=16)
+    read_any = False
+    for p in paths:
+        try:
+            h.update(p.read_bytes())
+            read_any = True
         except OSError:
             continue          # a missing module is not a freshness signal
-    return newest
+    out = h.hexdigest() if read_any else ""
+    _DERIVE_CODE_HASH_CACHE[ck] = out
+    return out
 
 
 def _version_key(v: str) -> tuple:
@@ -5544,7 +5574,8 @@ class Store:
         ]
 
     def stamp_derive(self, pass_name: str, *, version: "str | None" = None,
-                     at: "float | None" = None) -> str:
+                     at: "float | None" = None,
+                     code_hash: "str | None" = None) -> str:
         """Record that `pass_name` derived this partition's graph, with the
         version of the code that did it (bug-039).
 
@@ -5557,13 +5588,16 @@ class Store:
 
         v = version or _running
         ts = time.time() if at is None else float(at)
+        ch = code_hash if code_hash is not None else derive_code_hash()
         con = self._connect()
         con.execute(
-            "INSERT INTO derive_stamps(partition_id, pass_name, version, derived_at) "
-            "VALUES (?,?,?,?) "
+            "INSERT INTO derive_stamps"
+            "(partition_id, pass_name, version, derived_at, code_hash) "
+            "VALUES (?,?,?,?,?) "
             "ON CONFLICT(partition_id, pass_name) DO UPDATE SET "
-            "  version=excluded.version, derived_at=excluded.derived_at",
-            (self._partition_id, pass_name, v, ts),
+            "  version=excluded.version, derived_at=excluded.derived_at, "
+            "  code_hash=excluded.code_hash",
+            (self._partition_id, pass_name, v, ts, ch),
         )
         con.commit()
         return v
@@ -5594,21 +5628,22 @@ class Store:
 
         con = self._connect()
         rows = [
-            {"pass_name": r[0], "version": r[1], "at": float(r[2])}
+            {"pass_name": r[0], "version": r[1], "at": float(r[2]),
+             "code_hash": r[3]}
             for r in con.execute(
-                "SELECT pass_name, version, derived_at FROM derive_stamps "
-                "WHERE partition_id=? ORDER BY pass_name",
+                "SELECT pass_name, version, derived_at, code_hash "
+                "FROM derive_stamps WHERE partition_id=? ORDER BY pass_name",
                 (self._partition_id,),
             ).fetchall()
         ]
-        code_mtime = derive_code_mtime()
+        code_hash = derive_code_hash()
         out = {"passes": rows, "running_version": _running,
                "oldest_version": None, "stale": False, "reason": None,
                # `stale` answers the human's question (which VERSION built
                # this). `behind_code` answers the alert's: did the deriving
                # code actually move since? They differ on every release that
                # does not touch ingest, which is most of them.
-               "code_mtime": code_mtime, "behind_code": False,
+               "code_hash": code_hash, "behind_code": False,
                # Two different states, and an alert gate has to tell them
                # apart: on the release that introduces stamping EVERY store in
                # the fleet is unstamped, and a gate that fired on that would
@@ -5637,8 +5672,11 @@ class Store:
         # to the string for a non-numeric component.
         out["oldest_version"] = min(
             (r["version"] for r in rows), key=_version_key)
+        # A stamp with NO hash predates this column: it was written before the
+        # store recorded what derived it, which is exactly the blind spot, so
+        # it counts as behind rather than as "no information".
         behind = [r for r in rows
-                  if code_mtime and r["at"] < code_mtime]
+                  if code_hash and r.get("code_hash") != code_hash]
         out["behind_code"] = bool(behind)
         if mismatched:
             names = ", ".join(f"{r['pass_name']}@{r['version']}" for r in mismatched)

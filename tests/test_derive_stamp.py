@@ -206,42 +206,88 @@ def test_daemon_status_prints_the_stale_line_and_only_then(capsys):
     assert render_derive_warning(None) == ""
 
 
-# ---- the alert gate measures DISTANCE, not inequality (ch-bsd r2) --------
+# ---- the alert gate measures the CODE's CONTENT (ch-bsd r2 + r3) --------
 
-def test_a_stamp_older_than_the_ingest_code_is_behind_it(store, tmp_path, monkeypatch):
-    """The condition bug-039 is actually about: the graph was built before the
-    code that builds graphs changed."""
+def test_a_stamp_from_different_code_is_behind_it(store, tmp_path, monkeypatch):
+    """The condition bug-039 is actually about: the graph was built by code
+    that is not the code running now."""
     import refmatrix.store as store_mod
 
     _track(store, tmp_path)
-    store.stamp_derive("ingest", at=1000.0)
-    monkeypatch.setattr(store_mod, "derive_code_mtime", lambda: 2000.0)
+    store.stamp_derive("ingest", code_hash="deadbeef")
+    monkeypatch.setattr(store_mod, "derive_code_hash", lambda: "cafef00d")
     st = store.derive_status()
     assert st["behind_code"] is True
     assert "before the current ingest code" in st["reason"]
 
 
-def test_a_stamp_newer_than_the_ingest_code_is_not_behind_it(store, tmp_path,
-                                                             monkeypatch):
+def test_a_stamp_from_the_same_code_is_not_behind_it(store, tmp_path, monkeypatch):
     """A version bump that does not touch ingest must NOT make a store hot:
     34 bumps in ten days across 8 stores is an alert nobody reads twice."""
     import refmatrix.store as store_mod
 
     _track(store, tmp_path)
-    store.stamp_derive("ingest", version="0.49.1", at=3000.0)
-    monkeypatch.setattr(store_mod, "derive_code_mtime", lambda: 2000.0)
+    monkeypatch.setattr(store_mod, "derive_code_hash", lambda: "cafef00d")
+    store.stamp_derive("ingest", version="0.49.1")     # stamps the hash itself
     st = store.derive_status()
     assert st["behind_code"] is False
     assert st["stale"] is True, "the version line still tells the human"
 
 
-def test_derive_code_mtime_reads_the_deriving_modules():
-    from pathlib import Path as _P
+def test_an_identical_content_rewrite_does_not_fire_the_gate(store, tmp_path):
+    """ch-bsd plan-12 r3, demonstrated on this machine: a mutation harness
+    restored `ingest.py` byte-for-byte and moved its mtime. Under the mtime
+    gate that marked the store behind code that never changed. The hash does
+    not move, so neither does the verdict."""
+    import refmatrix.store as store_mod
+
+    _track(store, tmp_path)
+    store.stamp_derive("ingest")
+    assert store.derive_status()["behind_code"] is False
+
+    src = Path(store_mod.__file__).resolve()
+    body = src.read_bytes()
+    before = store_mod.derive_code_hash()
+    src.write_bytes(body)                       # same bytes, new mtime
+    store_mod._DERIVE_CODE_HASH_CACHE.clear()
+    assert store_mod.derive_code_hash() == before
+    assert store.derive_status()["behind_code"] is False
+
+
+def test_a_stamp_with_no_hash_at_all_counts_as_behind(store, tmp_path):
+    """Rows written before this column exist — the blind spot itself."""
+    _track(store, tmp_path)
+    store.stamp_derive("ingest", code_hash=None)
+    store._connect().execute(
+        "UPDATE derive_stamps SET code_hash=NULL WHERE partition_id=?",
+        (store._partition_id,))
+    assert store.derive_status()["behind_code"] is True
+
+
+def test_the_hash_is_cached_on_path_mtime_size(monkeypatch):
+    """The hub's watchdog tick calls this per store; it must not re-read
+    ~300 KB every time. A wrong cache key costs a recompute, never a wrong
+    answer, which is the right way round."""
+    import refmatrix.store as store_mod
+
+    store_mod._DERIVE_CODE_HASH_CACHE.clear()
+    first = store_mod.derive_code_hash()
+    reads: list = []
+    real = Path.read_bytes
+    monkeypatch.setattr(Path, "read_bytes",
+                        lambda self: reads.append(self) or real(self))
+    assert store_mod.derive_code_hash() == first
+    assert reads == [], "a cache hit re-read the deriving modules"
+
+
+def test_derive_code_hash_covers_the_deriving_modules():
+    from hashlib import blake2b
 
     import refmatrix.store as store_mod
 
-    here = _P(store_mod.__file__).resolve().parent
-    expected = max((here / n).stat().st_mtime for n in ("ingest.py",
-                                                        "ingest_gmd.py",
-                                                        "store.py"))
-    assert store_mod.derive_code_mtime() == expected
+    here = Path(store_mod.__file__).resolve().parent
+    h = blake2b(digest_size=16)
+    for name in ("ingest.py", "ingest_gmd.py", "store.py"):
+        h.update((here / name).read_bytes())
+    store_mod._DERIVE_CODE_HASH_CACHE.clear()
+    assert store_mod.derive_code_hash() == h.hexdigest()

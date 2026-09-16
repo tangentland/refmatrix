@@ -517,3 +517,42 @@ def test_the_queue_is_counted_across_a_cold_model_load(monkeypatch):
         th.join(5)
 
     assert answers["info"]["queue_depth"] == 2, answers["info"]
+
+
+def test_a_failure_in_worker_creation_never_drops_a_healthy_client(monkeypatch):
+    """ch-bsd plan-12 r3: `_drop_worker(worker=None)` means "drop the CURRENT
+    one" — its guard is `if worker is not None and cur is not worker: return`.
+    So passing an unbound `w` would close the role's live client, which is the
+    incident commented beside it. And `_pending` must still drain."""
+    import socket
+    import threading
+
+    from refmatrix import modelsrv
+    from refmatrix.subproc import recv_frame, send_frame
+
+    closed: list = []
+
+    class _Healthy:
+        def call(self, op, payload=None, *, blob=None, timeout=None):
+            return ({"ok": True}, b"")
+
+        def close(self, *, timeout=0.0):
+            closed.append("healthy")
+
+    srv = modelsrv.ModelServer()
+    healthy = _Healthy()
+    srv._clients["rerank"] = healthy
+    monkeypatch.setattr(srv, "_worker",
+                        lambda role: (_ for _ in ()).throw(BrokenPipeError("boom")))
+
+    a, b = socket.socketpair()
+    threading.Thread(target=srv._handle, args=(a,), daemon=True).start()
+    rw = b.makefile("rwb")
+    send_frame(rw, {"role": "rerank", "op": "rerank", "query": "q", "docs": ["a"]})
+    hdr, _ = recv_frame(rw)
+    b.close()
+
+    assert hdr["ok"] is False
+    assert closed == [], "a creation failure closed the role's healthy client"
+    assert srv._clients.get("rerank") is healthy
+    assert srv._pending.get("rerank", 0) == 0, "the queue count must still drain"
