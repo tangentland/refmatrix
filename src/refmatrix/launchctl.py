@@ -246,11 +246,23 @@ def hub_plist_path() -> Path:
     return LAUNCH_AGENTS_DIR / f"{HUB_LABEL}.plist"
 
 
-def render_hub_plist(*, port: int = 7777, host: str = "127.0.0.1") -> bytes:
+def render_hub_plist(*, port: int = 7777, host: str = "127.0.0.1",
+                     rmx: "str | None" = None, allow_dev: bool = False) -> bytes:
     """Render the hub LaunchAgent. Runs `rmx hub start --no-detach` so launchd
     owns the process; KeepAlive restarts it on crash, RunAtLoad starts it at
-    login."""
-    rmx = _rmx_path()
+    login.
+
+    `rmx` is the CALLER's binary, exactly as `render_plist` takes it. plan-4
+    Q15 gave the eight daemon plists a dev-tree refusal and edited this
+    function two lines below the untouched `_rmx_path()` call, so the hub
+    plist kept baking whatever `which rmx` returned — with `RMX_BIN` aimed at
+    a dev binary, `ProgramArguments[0]` became the dev tree and nothing
+    objected (bug-028). The hub is the fleet's watchdog, the owner of the
+    shared model workers and the version handshake, so it is the worst plist
+    to leave unguarded."""
+    rmx = rmx or _rmx_path()
+    if not allow_dev:
+        _refuse_dev_tree(rmx)
     home = Path.home() / ".refmatrix"
     env: dict = {
         "PATH": os.environ.get(
@@ -337,9 +349,18 @@ def _stop_hub_before_bootout(grace: float = EXIT_TIMEOUT_S) -> bool:
 
 
 def install_hub(*, port: int = 7777, host: str = "127.0.0.1",
-                force: bool = False) -> Path:
-    """Write + bootstrap the hub LaunchAgent. Idempotent unless force."""
+                force: bool = False, rmx: "str | None" = None,
+                allow_dev: bool = False) -> Path:
+    """Write + bootstrap the hub LaunchAgent. Idempotent unless force.
+
+    The dev-tree refusal runs FIRST — before the stop order, before the
+    bootout, before the write. A refusal that fired later would already have
+    torn down a working hub to reject the binary that was going to replace it
+    (bug-028, bug-023's shape)."""
     _require_darwin()
+    rmx = rmx or _rmx_path()
+    if not allow_dev:
+        _refuse_dev_tree(rmx)
     LAUNCH_AGENTS_DIR.mkdir(parents=True, exist_ok=True)
     (Path.home() / ".refmatrix").mkdir(parents=True, exist_ok=True)
     p = hub_plist_path()
@@ -363,7 +384,8 @@ def install_hub(*, port: int = 7777, host: str = "127.0.0.1",
                 f"launchctl bootout did not unload {HUB_LABEL} within {BOOTOUT_WAIT_S:g}s "
                 f"— the old job is still loaded (draining?); plist NOT rewritten. "
                 f"Retry, or `launchctl bootout {_domain()}/{HUB_LABEL}` by hand")
-    p.write_bytes(render_hub_plist(port=port, host=host))
+    p.write_bytes(render_hub_plist(port=port, host=host, rmx=rmx,
+                                   allow_dev=allow_dev))
     p.chmod(0o644)
     def _bootstrap_once() -> bool:
         subprocess.run(_bootstrap_cmd(p), capture_output=True, text=True)
@@ -506,6 +528,54 @@ def _wait_loaded(root: Path, *, expected: bool, timeout: float = 3.0) -> bool:
             return True
         time.sleep(0.1)
     return is_loaded(root) == expected
+
+
+def check_hub(*, rmx: "str | None" = None, port: int = 7777,
+              host: str = "127.0.0.1") -> "tuple[bool, str]":
+    """Installed hub plist == its render. The twin of `check(root, rmx=)`.
+
+    This did not exist. A drifted DAEMON plist is caught on every
+    `relaunch-fleet`; nothing ever compared the hub's, so a hub plist aimed at
+    a dev tree — or rendered before a key existed — survived every deploy
+    silently (bug-028). A dev-tree binary is named as drift that must NOT be
+    "fixed", exactly as `check` does: from a dev shell the render would
+    otherwise point the hub at the dev venv."""
+    import plistlib
+    rmx = rmx or _rmx_path()
+    ident = binary_identity(rmx)
+    if ident.get("dev_tree"):
+        return False, (f"{rmx} is a dev tree ({ident.get('import_path')}); the hub "
+                       f"plist is not rendered against it — run with the deployed rmx")
+    p = hub_plist_path()
+    if not p.exists():
+        return False, f"{p} does not exist — `rmx hub launchctl install`"
+    installed = p.read_bytes()
+    rendered = render_hub_plist(port=port, host=host, rmx=rmx)
+    if installed == rendered:
+        if not hub_is_loaded():
+            return False, (f"{p} is current but {HUB_LABEL} is not loaded — "
+                           f"`rmx hub launchctl install`")
+        return True, ""
+    have = plistlib.loads(installed)
+    want = plistlib.loads(rendered)
+    why: list[str] = []
+    he, we = have.get("EnvironmentVariables") or {}, want.get("EnvironmentVariables") or {}
+    for k in sorted(set(he) | set(we)):
+        if k not in he:
+            why.append(f"env {k} missing")
+        elif k not in we:
+            why.append(f"env {k} extra")
+        elif he[k] != we[k]:
+            why.append(f"env {k}: installed {he[k]!r} != rendered {we[k]!r}")
+    if have.get("ProgramArguments") != want.get("ProgramArguments"):
+        why.append(f"ProgramArguments: installed {have.get('ProgramArguments')} "
+                   f"!= rendered {want.get('ProgramArguments')}")
+    for k in sorted(set(have) | set(want)):
+        if k in ("EnvironmentVariables", "ProgramArguments"):
+            continue
+        if have.get(k) != want.get(k):
+            why.append(f"{k}: installed {have.get(k)!r} != rendered {want.get(k)!r}")
+    return False, f"{p} drifted from its render: " + "; ".join(why or ["bytes differ"])
 
 
 def install(root: Path, *, partition: str | None = None,

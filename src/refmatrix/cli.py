@@ -2482,11 +2482,29 @@ def hub_launchctl():
 @click.option("--port", type=int, default=7777, show_default=True)
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--force", is_flag=True)
-def hub_launchctl_install(port, host, force):
+@click.option("--allow-dev", is_flag=True,
+              help="Install against a dev-tree binary anyway (deliberate, "
+                   "and said out loud).")
+@click.option("--check", "do_check", is_flag=True,
+              help="Report whether the installed plist equals its render, "
+                   "and change nothing.")
+def hub_launchctl_install(port, host, force, allow_dev, do_check):
     """Install + load the hub LaunchAgent."""
+    import sys as _sys
     from refmatrix import launchctl
+    # `sys.argv[0]` is THIS invocation's binary, the same thing the daemon
+    # plists are rendered against. `_rmx_path()` would resolve `which rmx`,
+    # which from a dev shell is the dev venv (bug-028).
+    rmx = _sys.argv[0]
+    if do_check:
+        ok, why = launchctl.check_hub(rmx=rmx, port=port, host=host)
+        if ok:
+            console.print("[green]hub plist in sync[/]")
+            return
+        raise click.ClickException(why)
     try:
-        p = launchctl.install_hub(port=port, host=host, force=force)
+        p = launchctl.install_hub(port=port, host=host, force=force,
+                                  rmx=rmx, allow_dev=allow_dev)
     except Exception as e:
         raise click.ClickException(str(e))
     console.print(f"[green]hub supervised[/] {launchctl.HUB_LABEL}\n[dim]{p}[/]")
@@ -2506,11 +2524,21 @@ def hub_launchctl_uninstall():
 def hub_launchctl_status():
     """Show hub LaunchAgent status."""
     from refmatrix import launchctl
+    import sys as _sys
     st = launchctl.hub_status()
     dot = "[green]●[/]" if st["loaded"] else "[red]●[/]"
     console.print(f"{dot} {st['label']}  installed={st['installed']} "
                   f"loaded={st['loaded']}")
     console.print(f"[dim]{st['plist_path']}[/]")
+    # A check nobody runs is a check that does not exist: the daemon plists
+    # are compared on every relaunch-fleet and the hub's was compared by
+    # nothing at all (bug-028). Drift is LOUD here, never a silent pass.
+    if st["installed"]:
+        ok, why = launchctl.check_hub(rmx=_sys.argv[0])
+        if ok:
+            console.print("[green]plist in sync with its render[/]")
+        else:
+            console.print(f"[yellow]plist drift[/] — {why}")
 
 
 @hub.command("status")
