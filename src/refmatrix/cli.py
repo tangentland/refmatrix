@@ -15,6 +15,7 @@ from rich.markup import escape as rich_escape
 from rich.table import Table
 
 from refmatrix import __version__
+from refmatrix import brief as brief_mod
 from refmatrix.handoff import (
     _SS_FOCUS_NOISE, _focus_digest, _ss_clean_focus, _ss_sh,
     compose_recall_state, compose_save_state, finalize_save_state,
@@ -6137,12 +6138,51 @@ def stats(stale, via_replica):
 @click.option("--since", default=None, help="Filter to records on or after ISO timestamp prefix.")
 @click.option("--top-queried", is_flag=True, help="Just show top-queried concept names.")
 @click.option("--zero-results", is_flag=True, help="Just show queries that returned 0.")
+@click.option("--context", "as_context", is_flag=True,
+              help="What rmx SPENT of the model's context window: bytes "
+                   "written to stdout per command, and the per-prompt hook "
+                   "budget. Reads cli.log.")
+@click.option("--window", type=int, default=5, show_default=True,
+              help="With --context: seconds of hook rows treated as one "
+                   "prompt's fan-out.")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
-def telemetry(since, top_queried, zero_results, fmt):
+def telemetry(since, top_queried, zero_results, as_context, window, fmt):
     """Summarize the query telemetry log."""
     from refmatrix.telemetry import (
-        summarize, top_queried_concepts, zero_result_queries,
+        summarize, summarize_context, top_queried_concepts,
+        zero_result_queries,
     )
+
+    if as_context:
+        # cli.log lives on the root, not in the catalog — no replica read.
+        data = summarize_context(_root(), since=since, window_s=window)
+        if fmt == "json":
+            click.echo(json.dumps(data, indent=2))
+            return
+        hb = data["hook_budget"]
+        console.print(
+            f"[bold]{data['total_bytes']:,} bytes[/] "
+            f"(~{data['total_tokens_est']:,} tokens est) over "
+            f"{data['counted']:,} counted invocation(s)")
+        if data["uncounted"]:
+            # Loud: a pre-plan-9 row is UNKNOWN, not free. A small mean beside a
+            # large uncounted total is not a cheap surface.
+            console.print(
+                f"[yellow]{data['uncounted']:,} invocation(s) predate byte "
+                f"accounting[/] — excluded, NOT averaged in as zero")
+        t = Table("command", "n", "total", "mean", "p50", "p95", "max")
+        for name, m in sorted(data["by_command"].items(),
+                              key=lambda kv: -kv[1]["total_bytes"]):
+            t.add_row(name, str(m["n"]), f"{m['total_bytes']:,}",
+                      f"{m['mean_bytes']:,}", f"{m['p50_bytes']:,}",
+                      f"{m['p95_bytes']:,}", f"{m['max_bytes']:,}")
+        console.print(t)
+        console.print(
+            f"\n[bold]per-prompt hook budget[/] over {hb['windows']:,} window(s): "
+            f"p50 {hb['p50_bytes']:,} B (~{hb['p50_tokens_est']:,} tok), "
+            f"p95 {hb['p95_bytes']:,} B, max {hb['max_bytes']:,} B")
+        console.print(f"[dim]grouping: {hb['grouping']}[/]")
+        return
 
     def _run(s) -> tuple[str, Any]:
         if top_queried:
@@ -11129,6 +11169,108 @@ def memory_compile(k, threshold, threshold_pct, mutual, beta, gamma,
     console.print(f"[green]index[/] {dest}")
 
 
+@memory_grp.command("brief")
+@click.option("--class", "classes", multiple=True,
+              type=click.Choice(["corroborated", "singleton", "contradicted",
+                                 "orphan-concept"]),
+              help="Restrict to one or more brief classes (repeatable). "
+                   "Default: all of them.")
+@click.option("--min-members", type=int, default=brief_mod.MIN_MEMBERS,
+              show_default=True,
+              help="corroborated: members a subject needs.")
+@click.option("--min-dates", type=int, default=brief_mod.MIN_DATES,
+              show_default=True,
+              help="corroborated: DISTINCT DAYS those members span. Size "
+                   "alone is not corroboration — four memories written in one "
+                   "sitting are one observation recorded four times.")
+@click.option("--min-mentions", type=int, default=brief_mod.MIN_MENTIONS,
+              show_default=True,
+              help="orphan-concept: how much talk counts as talked-about.")
+@click.option("--compile/--no-compile", "do_compile", default=False,
+              show_default=True,
+              help="Run `memory compile` first so the plan-derived classes "
+                   "(corroborated, singleton) can run. Costs the clustering "
+                   "pass; without it those two classes are SKIPPED and say so.")
+@click.option("--save", is_flag=True,
+              help="Persist each brief as a memory row in the brief/<class> "
+                   "namespace (daemon-routed). Without it this is a read.")
+@click.option("--gmd", "as_gmd", is_flag=True,
+              help="Emit the GMD index instead of a table.")
+@click.option("--json", "as_json", is_flag=True, help="Emit the raw result.")
+@click.option("--limit", type=int, default=0,
+              help="Show at most N briefs (0 = all).")
+def memory_brief(classes, min_members, min_dates, min_mentions, do_compile,
+                 save, as_gmd, as_json, limit):
+    """What the corpus knows solidly, and where it is thin.
+
+    `memory compile` says what the store HAS. This says what it LACKS. Four
+    deterministic detectors over signal that already exists:
+
+    \b
+      corroborated    a subject several memories reached on several days
+      singleton       a memory that joined no subject
+      contradicted    a `contradicts` pair neither side superseded
+      orphan-concept  talked about constantly, defined nowhere
+
+    Every brief names the entity ids it was derived from; there is no model in
+    this path and nothing here is generated prose.
+    """
+    from refmatrix import consolidate
+    from refmatrix import verbs as _verbs
+
+    _memory_intent("memory_brief")
+    kw = dict(min_members=min_members, min_dates=min_dates,
+              min_mentions=min_mentions)
+    if classes:
+        kw["classes"] = list(classes)
+    if do_compile:
+        # The clustering pass reads the whole vector matrix, so it stays in
+        # THIS process — the daemon is what jetsam kills when it grows fat.
+        # The plan travels to the op as data, exactly as memory compile --apply
+        # already does.
+        kw["plan"] = consolidate.compile_memories(_read_store())
+    if save:
+        kw["save"] = True
+
+    res = _verbs.memory(_root(), "brief", **kw)
+    briefs = res.get("briefs") or []
+    stats = res.get("stats") or {}
+
+    if as_json:
+        console.print_json(json.dumps(res))
+        return
+    if as_gmd:
+        console.print(brief_mod.render_gmd(
+            briefs, partition=stats.get("partition")))
+        return
+
+    skipped = stats.get("classes_not_run") or {}
+    for cls, why in skipped.items():
+        # Loud, not swallowed: a class that did not run is not a class that
+        # found nothing.
+        console.print(f"[yellow]{cls}[/] not run — {why}")
+    if stats.get("skipped"):
+        console.print(f"[yellow]{stats['skipped']} row(s) skipped[/] — "
+                      f"unresolvable ids, counted not dropped")
+    if not briefs:
+        console.print("[dim]no briefs[/]")
+        return
+
+    rows = briefs[:limit] if limit else briefs
+    t = Table("class", "label", "finding", "evidence")
+    for b in rows:
+        ev = b["evidence"]
+        t.add_row(b["class"], b["label"], b["finding"],
+                  f"{len(ev)} row(s): " + ",".join(str(e) for e in ev[:4])
+                  + ("…" if len(ev) > 4 else ""))
+    console.print(t)
+    by = stats.get("by_class") or {}
+    console.print(f"[dim]{len(briefs)} brief(s) over {stats.get('memories', 0)} "
+                  f"memories · {by}[/]")
+    if res.get("saved"):
+        console.print(f"[green]saved[/] {res['saved']} brief(s) as memory rows")
+
+
 @memory_grp.command("bulk-forget")
 @click.option("--id", "ids", type=int, multiple=True,
               help="Entity id to forget (repeatable).")
@@ -12605,7 +12747,7 @@ def cli_entry() -> None:
     """
     _reexec_for_fork_safety()
     import time as _time
-    from refmatrix.telemetry import log_cli_invocation
+    from refmatrix import telemetry as _tel
 
     t0 = _time.monotonic()
     argv = list(sys.argv[1:])
@@ -12613,6 +12755,13 @@ def cli_entry() -> None:
     pid = os.getpid()
     exit_code = 0
     error: str | None = None
+    # Count what this invocation writes to stdout — for a hook, exactly what it
+    # injects into the model's context window. One wrapper here, not one per
+    # renderer: rich resolves sys.stdout lazily, so the module-level `console`
+    # is counted too (verified 2026-09-15).
+    _stdout = sys.stdout
+    _counter = _tel.CountingStream(_stdout)
+    sys.stdout = _counter
     try:
         main()
     except SystemExit as e:
@@ -12624,9 +12773,17 @@ def cli_entry() -> None:
         error = f"{type(e).__name__}: {e}"
         raise
     finally:
+        # Restore FIRST and unconditionally. Click raises SystemExit on every
+        # run, so restoration on the happy path alone would leave stdout wrapped
+        # for the life of the process.
+        sys.stdout = _stdout
         latency_ms = int((_time.monotonic() - t0) * 1000)
         try:
-            log_cli_invocation(
+            out_bytes = _counter.out_bytes
+        except Exception:
+            out_bytes = None          # accounting never fails the command
+        try:
+            _tel.log_cli_invocation(
                 _root(),
                 argv=argv,
                 cwd=cwd,
@@ -12634,6 +12791,7 @@ def cli_entry() -> None:
                 latency_ms=latency_ms,
                 error=error,
                 pid=pid,
+                out_bytes=out_bytes,
             )
         except Exception:
             pass

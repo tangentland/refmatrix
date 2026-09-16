@@ -24,6 +24,10 @@ current.
 | 4 | plan-4-daemon-resilience | in-progress | yes (4) | `workflow/plans/plan-4-daemon-resilience.md` | — |
 | 5 | plan-5-memory-bridge-complete | completed | yes (3) | `workflow/plans/plan-5-memory-bridge-complete.md` | — |
 | 6 | plan-6-deferrals-docs-benchmark | in-progress | yes (5) | `workflow/plans/plan-6-deferrals-docs-benchmark.md` | — |
+| 7 | plan-7-longmemeval | in-progress (symbolic reported; dense blocked bug-030) | yes (4) | `workflow/plans/plan-7-longmemeval.md` | — |
+| 8 | plan-8-derived-coverage-notes | in-progress (built; awaiting @ch-bsd) | yes (4) | `workflow/plans/plan-8-derived-coverage-notes.md` | plan 7 (measures it) |
+| 9 | plan-9-context-cost-telemetry | in-progress | yes (3) | `workflow/plans/plan-9-context-cost-telemetry.md` | — |
+| 10 | plan-10-injection-dedup | completed (negative) | yes (3) | `workflow/plans/plan-10-injection-dedup.md` | plan 9 (its instrument) |
 
 ## Sequence rationale {#sequence}
 
@@ -33,6 +37,15 @@ current.
 4. **daemon-resilience** — a read must never kill the daemon; in-band index repair; watchdog grace; orderly loop.
 5. **memory-bridge-complete** — coverage, overlap, real tests (depends on plan 2's PreCompact decision).
 6. **deferrals-docs-benchmark** — cleanup chunk: stale prose, generated docs, artifact, registries, perma-red test.
+7. **longmemeval** — an outside-comparable memory-retrieval number on the production path; also the
+   measuring stick for plan 8, which is otherwise unfalsifiable.
+8. **derived-coverage-notes** (briefs) — the store says what it has; nothing says what it lacks. Depends on 7 for
+   evidence that a coverage note predicts a retrieval miss.
+9. **context-cost-telemetry** — rmx measured its own retrieval quality and never its own cost. Three hooks fire
+   every prompt and nothing said whether they spent 400 bytes or 40 KB of the window they were enriching.
+10. **injection-dedup** — scan-prompt re-pays for context the turn may already hold. Task 10.1 is a
+    PRE-REGISTERED measurement that decides whether 10.2/10.3 are built at all; a result under the
+    threshold ships as a negative finding, not as a lowered bar.
 
 Each plan ends with `@ch-bsd` over its commit range; remedy → re-review until CLEAN before the next plan starts.
 

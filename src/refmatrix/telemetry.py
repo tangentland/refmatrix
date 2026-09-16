@@ -5,7 +5,9 @@ One record per query, fields:
     ts            ISO-8601 timestamp
     kind          'dsl' | 'pql' | 'neighbors' | 'co-occur' | 'top' | 'context' | 'scan'
     body          query string or anchor symbol
-    source        cli command name ('query', 'context', etc.)
+    source        the SURFACE that answered ('scan-prompt', 'grep-replica', ...)
+    invocation    WHO asked: 'hook' | 'interactive' | 'mcp' | 'internal' | 'unknown'
+                  (absent on rows written before 2026-09-15; readers default it)
     cardinality   integer for bitmap results, null otherwise
     latency_ms    elapsed milliseconds
     error         "ExcType: msg" if the query raised, else null
@@ -20,6 +22,7 @@ Use the `log_query` context manager:
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import sys
@@ -65,6 +68,76 @@ def invocation_source() -> str:
     return "unknown"
 
 
+class CountingStream(io.TextIOBase):
+    """A transparent `sys.stdout` proxy that counts the BYTES written through it.
+
+    This exists to answer a question the project could not previously ask: what
+    does rmx charge the model's context window? Three hooks fire on every prompt
+    and each writes its output straight into that window, and until 2026-09-15
+    the telemetry recorded only how LONG they took.
+
+    Counting happens here, once, wrapped around stdout in `cli_entry` — never at
+    the individual renderers. A hook captures this process's stdout and injects
+    exactly these bytes, so this is the real payload rather than an estimate of
+    it; it covers every command uniformly; and there is one copy of the logic
+    instead of one per render site, which is the shape of bug
+    `feedback_reuse_shared_stoplist` records (one junk-token defect, four call
+    sites, because each grew its own copy).
+
+    TRANSPARENCY IS LOad-BEARING. `rich.Console` branches on `isatty()` to pick
+    colour and width, so a proxy that misreported ttyness would change the very
+    bytes it exists to measure. `encoding`, `flush()` and `fileno()` pass
+    through for the same reason. (Verified 2026-09-15 that rich resolves
+    `sys.stdout` lazily at write time, so a Console created at import — as
+    `cli.console` is — picks up a wrapper installed afterwards.)
+    """
+
+    def __init__(self, inner):
+        self._inner = inner
+        self._out_bytes = 0
+
+    @property
+    def out_bytes(self) -> int:
+        return self._out_bytes
+
+    def write(self, s):
+        # BYTES, not characters: a UTF-8 prompt would otherwise under-count.
+        try:
+            self._out_bytes += len(s.encode("utf-8", "replace"))
+        except Exception:
+            pass                      # never let accounting break the write
+        return self._inner.write(s)
+
+    def flush(self):
+        return self._inner.flush()
+
+    def isatty(self):
+        try:
+            return self._inner.isatty()
+        except Exception:
+            return False
+
+    def fileno(self):
+        return self._inner.fileno()
+
+    def writable(self):
+        return True
+
+    @property
+    def encoding(self):
+        return getattr(self._inner, "encoding", "utf-8")
+
+    @property
+    def errors(self):
+        return getattr(self._inner, "errors", None)
+
+    def __getattr__(self, item):
+        # Anything not modelled above (buffer, line_buffering, ...) belongs to
+        # the wrapped stream. A missing attribute here would be a behaviour
+        # change dressed as telemetry.
+        return getattr(self._inner, item)
+
+
 def log_cli_invocation(
     root: Path,
     *,
@@ -74,8 +147,14 @@ def log_cli_invocation(
     latency_ms: int,
     error: str | None,
     pid: int,
+    out_bytes: "int | None" = None,
 ) -> None:
     """Append one JSONL record for an `rmx` CLI invocation to .refmatrix/cli.log.
+
+    `out_bytes` is what this invocation wrote to stdout — for a hook, exactly
+    what it injected into the model's context window. Optional, because callers
+    that did not wrap stdout have nothing to report, and a row without it is
+    UNKNOWN rather than free (readers must not average it in as a zero).
 
     Best-effort: silently skips if .refmatrix/ doesn't exist (e.g. `rmx init`
     invoked outside any project) or if write fails.
@@ -93,6 +172,13 @@ def log_cli_invocation(
         "error": error,
         "pid": pid,
         "source": invocation_source(),
+        "out_bytes": out_bytes,
+        # Deliberately an ESTIMATE and named as one. The decision this drives is
+        # "is a hook spending 400 bytes or 40 KB", where a 20% error changes
+        # nothing; pulling in a tokenizer to make a ratio look precise is the
+        # expensive kind of false rigor. A field named `_est` cannot be quoted
+        # as exact by accident.
+        "out_tokens_est": (out_bytes // 4) if out_bytes is not None else None,
     }
     try:
         with (root / CLI_LOG_NAME).open("a") as f:
@@ -169,11 +255,27 @@ class log_query:
             # AttributeError out of __exit__.
             return
         latency_ms = int((time.monotonic() - self.t0) * 1000)
+        # `invocation` is WHO asked (hook / interactive / mcp / internal);
+        # `source` is WHICH SURFACE answered (scan-prompt / grep-replica / ...).
+        # Two different axes, deliberately two different keys — `cli.log` uses
+        # `source` for the form, and overloading the name across the two logs
+        # would make every later join silently wrong.
+        #
+        # Added 2026-09-15 (plan-9). The field's absence is what stopped the
+        # `brief/unanswered` confound gate: 174 of 465 zero-result rows came
+        # from the always-on scan-prompt hook firing on "yes" and "go", and
+        # nothing on the row could say so.
+        try:
+            form = invocation_source()
+        except Exception:
+            # Telemetry never fails the command it describes.
+            form = "unknown"
         record: dict[str, Any] = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "kind": self.kind,
             "body": self.body,
             "source": self.source,
+            "invocation": form,
             "cardinality": self.cardinality,
             "latency_ms": latency_ms,
             "error": None if exc_type is None else f"{exc_type.__name__}: {exc_val}",
@@ -217,6 +319,9 @@ def summarize(store: Store, since: str | None = None) -> dict:
     total = len(rows)
     by_kind = Counter(r.get("kind", "?") for r in rows)
     by_source = Counter(r.get("source", "?") for r in rows)
+    # Months of rows predate `invocation` (added 2026-09-15). They are UNKNOWN,
+    # not absent: defaulting here is what keeps the pre-field baseline readable.
+    by_invocation = Counter(r.get("invocation") or "unknown" for r in rows)
     body_counter = Counter(r.get("body", "") for r in rows)
     zero = [r for r in rows if r.get("cardinality") == 0]
     errors = [r for r in rows if r.get("error")]
@@ -235,6 +340,9 @@ def summarize(store: Store, since: str | None = None) -> dict:
         "by_kind": dict(by_kind),
         "by_source": dict(by_source),
         "top_queries": body_counter.most_common(20),
+        "by_invocation": dict(by_invocation),
+        "zero_by_invocation": dict(
+            Counter(r.get("invocation") or "unknown" for r in zero)),
         "zero_result_count": len(zero),
         "zero_result_examples": [r["body"] for r in zero[-10:]],
         "error_count": len(errors),
@@ -513,3 +621,148 @@ def zero_result_queries(store: Store, limit: int = 20) -> list[tuple[str, int]]:
         if r.get("cardinality") == 0:
             counter[r.get("body") or "?"] += 1
     return counter.most_common(limit)
+
+
+
+def _command_groups() -> "frozenset[str]":
+    """Names of click GROUPS (`memory`, `daemon`, ...) — commands whose second
+    argv token is a subcommand rather than a value. Read from the CLI tree so
+    this cannot drift as commands are added. An import failure degrades to a
+    small static set rather than mis-grouping everything."""
+    try:
+        from refmatrix.cli import main as _main
+        return frozenset(
+            name for name, cmd in _main.commands.items()
+            if hasattr(cmd, "commands"))
+    except Exception:
+        return frozenset({"memory", "daemon", "hub", "focus", "bus", "session",
+                          "task", "queue", "subject", "flag"})
+
+def summarize_context(root: Path, *, since: "str | None" = None,
+                      window_s: int = 5) -> dict:
+    """What rmx charged the model's context window, from `cli.log`.
+
+    Answers the question the project could not previously ask. Three hooks fire
+    on every prompt and each writes its output straight into the window; until
+    plan-9 the telemetry recorded only how long they took. `out_bytes` is the
+    real payload — the bytes this process wrote to stdout, which is exactly what
+    the hook captured and injected.
+
+    TWO RULES THIS FUNCTION EXISTS TO ENFORCE:
+
+    **A row without `out_bytes` is UNKNOWN, not free.** Months of history
+    predate the field. Averaging those in as zeros would halve every figure and
+    make the surface look cheap, so they are excluded from the counted set and
+    reported separately as `uncounted`. A reader who sees a small mean and a
+    large `uncounted` knows not to trust the mean.
+
+    **Token counts are estimates and say so.** `out_tokens_est` is bytes // 4.
+    The decision this drives is "is a hook spending 400 bytes or 40 KB", where a
+    20% error changes nothing; a key named `total_tokens` would get quoted as
+    exact.
+
+    The hook budget groups hook-sourced rows into `window_s`-second windows —
+    one window approximates one prompt's fan-out of hooks. That rule is a
+    modelling choice, so it is returned in the payload rather than left for a
+    reader to infer.
+    """
+    rows = read_cli_log(root, since=since)
+    counted: list[dict] = []
+    uncounted = 0
+    for r in rows:
+        if r.get("phase") == "start":
+            continue                 # intent records carry no output
+        if isinstance(r.get("out_bytes"), int):
+            counted.append(r)
+        else:
+            uncounted += 1
+
+    groups = _command_groups()
+
+    def _cmd(r: dict) -> str:
+        """The SUBCOMMAND PATH, never its arguments.
+
+        `argv[:2]` looked right and was wrong: `scan-prompt <the user's whole
+        prompt>` then became a distinct "command" per prompt, so the surface
+        with the highest call volume in the product scattered into a row each
+        and its percentiles were computed over samples of one. The group set
+        comes from the click tree itself, so a new subcommand cannot silently
+        reintroduce the bug.
+        """
+        argv = [a for a in (r.get("argv") or []) if not str(a).startswith("-")]
+        if not argv:
+            return "(none)"
+        head = str(argv[0])
+        if head in groups and len(argv) > 1:
+            return f"{head} {argv[1]}"
+        return head
+
+    def _pct(vals: list[int], q: float) -> int:
+        if not vals:
+            return 0
+        s = sorted(vals)
+        return s[min(len(s) - 1, int(q * len(s)))]
+
+    by_command: dict[str, dict] = {}
+    for r in counted:
+        by_command.setdefault(_cmd(r), []).append(int(r["out_bytes"]))
+    commands = {}
+    for name, vals in sorted(by_command.items()):
+        commands[name] = {
+            "n": len(vals),
+            "total_bytes": sum(vals),
+            "mean_bytes": sum(vals) // len(vals),
+            "p50_bytes": _pct(vals, 0.50),
+            "p95_bytes": _pct(vals, 0.95),
+            "max_bytes": max(vals),
+        }
+
+    # ---- the per-prompt hook budget ------------------------------------
+    hook_rows = [r for r in counted if r.get("source") == "hook"]
+    hook_rows.sort(key=lambda r: r.get("ts") or "")
+    windows: list[int] = []
+    cur_total = 0
+    cur_start: "float | None" = None
+    for r in hook_rows:
+        ts = _ts_epoch(r.get("ts"))
+        if ts is None:
+            continue
+        if cur_start is None or (ts - cur_start) > window_s:
+            if cur_start is not None:
+                windows.append(cur_total)
+            cur_start, cur_total = ts, 0
+        cur_total += int(r["out_bytes"])
+    if cur_start is not None:
+        windows.append(cur_total)
+
+    total_bytes = sum(int(r["out_bytes"]) for r in counted)
+    return {
+        "counted": len(counted),
+        "uncounted": uncounted,
+        "total_bytes": total_bytes,
+        "total_tokens_est": total_bytes // 4,
+        "by_command": commands,
+        "hook_budget": {
+            "windows": len(windows),
+            "window_s": window_s,
+            "grouping": (
+                f"hook-sourced rows within a {window_s}s window are treated as "
+                f"one prompt's hook fan-out"),
+            "total_bytes": sum(windows),
+            "p50_bytes": _pct(windows, 0.50),
+            "p95_bytes": _pct(windows, 0.95),
+            "max_bytes": max(windows) if windows else 0,
+            "p50_tokens_est": _pct(windows, 0.50) // 4,
+        },
+    }
+
+
+def _ts_epoch(ts: "str | None") -> "float | None":
+    """`%Y-%m-%dT%H:%M:%S` -> epoch seconds. Unparseable stays None rather than
+    silently becoming 0, which would collapse every row into one window."""
+    if not ts:
+        return None
+    try:
+        return time.mktime(time.strptime(str(ts)[:19], "%Y-%m-%dT%H:%M:%S"))
+    except (ValueError, TypeError):
+        return None

@@ -994,7 +994,7 @@ def recall_state(root: Path, *, session: str | None = None,
 # Read actions of the `memory` verb run under this budget with ONE attempt
 # (bsd-plan3-r4 #b-2); the CLI twins fall through to the lock-free replica
 # past it, the MCP tool reports busy.
-MEMORY_READ_ACTIONS = frozenset({"get", "list", "search"})
+MEMORY_READ_ACTIONS = frozenset({"get", "list", "search", "brief"})
 MEMORY_READ_BUDGET_S = 10.0
 
 _MEMORY_OPS = {
@@ -1002,6 +1002,7 @@ _MEMORY_OPS = {
     "forget": "memory_forget", "reclassify": "memory_reclassify",
     "retag": "memory_retag", "link": "memory_link", "score": "memory_score",
     "bulk_forget": "memory_bulk_forget", "dedup": "memory_dedup",
+    "brief": "memory_brief",
 }
 
 
@@ -1055,6 +1056,15 @@ def _memory_payload(action: str, a: dict) -> dict:
         return p
     if action == "dedup":
         return {"dry_run": bool(a.get("dry_run", False))}
+    if action == "brief":
+        p = {}
+        for k in ("min_members", "min_dates", "min_mentions", "classes",
+                  "plan"):
+            if a.get(k) is not None:
+                p[k] = a[k]
+        if a.get("save"):
+            p["save"] = True
+        return p
     return {}
 
 
@@ -1066,7 +1076,8 @@ _RECALL_FORWARD = ("query", "k", "scope", "since", "since_seconds", "recent",
 @verb("rmx_memory", "Full access to the project memory store — parity with the CLI `rmx memory` group. `action` selects the op; pass that op's params alongside.")
 def memory(root: Path, action: typing.Literal[
                "recall", "add", "get", "list", "search", "forget", "reclassify",
-               "retag", "link", "score", "bulk_forget", "dedup", "promote"], *,
+               "retag", "link", "score", "bulk_forget", "dedup", "promote",
+               "brief"], *,
            name: str | None = None, id: int | None = None, content: str | None = None,
            mtype: str | None = None, to_mtype: str | None = None,
            from_mtype: str | None = None, query: str | None = None,
@@ -1084,7 +1095,11 @@ def memory(root: Path, action: typing.Literal[
            recent: bool | None = None, exclude_mtype: list[str] | None = None,
            include_session: bool | None = None, subject: str | None = None,
            kinds: list[str] | None = None, fuse: bool | None = None,
-           degree: int | None = None, timeout: float | None = None) -> dict:
+           degree: int | None = None,
+           min_members: int = 3, min_dates: int = 3, min_mentions: int = 4,
+           classes: list[str] | None = None, save: bool = False,
+           plan: dict | None = None,
+           timeout: float | None = None) -> dict:
     """One dispatcher over the CLI `rmx memory` group. recall/add reuse the
     dedicated verbs (recall forwards every recall knob it accepts); promote
     copies project→global; everything else routes to the daemon's memory_*
@@ -1105,7 +1120,8 @@ def memory(root: Path, action: typing.Literal[
     # get` on a held writer took 390 s to reach the replica fallthrough its
     # CLI twin offers — 30 s of partition probing, then 3 × 120 s). Writes
     # keep the long timeout: a retried write is worse than a slow one.
-    is_read = action in MEMORY_READ_ACTIONS
+    is_read = action in MEMORY_READ_ACTIONS and not (
+        action == "brief" and save)
     # `promote` reads the project store and then writes the GLOBAL one, so its
     # project-side leg is budgeted like a read while the global write keeps its
     # own path: the library default made the verb wait 90.2 s on a held writer
