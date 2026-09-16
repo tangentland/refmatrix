@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS derive_stamps (
     pass_name    TEXT NOT NULL,
     version      TEXT NOT NULL,
     derived_at   DOUBLE NOT NULL,
+    code_hash    TEXT,
     PRIMARY KEY (partition_id, pass_name)
 );
 

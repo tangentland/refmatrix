@@ -489,6 +489,7 @@ class ModelServer:
                         self._pending[role] = self._pending.get(role, 0) + 1
                         # Callers already in line when we joined — not us.
                         ahead = self._pending[role] - 1
+                    w = None
                     try:
                         w = self._worker(role)
                         hdr, out = w.call(op, req, blob=blob)
@@ -496,8 +497,17 @@ class ModelServer:
                         # The WORKER side, and only after WorkerClient's own
                         # respawn-and-retry also failed: drop it so the next
                         # call gets a fresh one instead of failing forever.
-                        # `w` may be unbound if `_worker()` itself raised.
-                        self._drop_worker(role, exc, worker=locals().get("w"))
+                        #
+                        # Only when we HAVE a worker. `_drop_worker(worker=None)`
+                        # does not mean "nothing to drop" — its guard reads
+                        # `if worker is not None and cur is not worker: return`,
+                        # so None bypasses the identity check and closes the
+                        # role's live client, which is the incident commented 15
+                        # lines below. Unreachable today (`_worker` does no I/O
+                        # that raises these), armed for the day it grows an
+                        # eager spawn (ch-bsd plan-12 r3).
+                        if w is not None:
+                            self._drop_worker(role, exc, worker=w)
                         raise
                     finally:
                         with self._lock:

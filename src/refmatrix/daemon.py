@@ -3391,7 +3391,31 @@ def _store_health(d: Daemon) -> dict:
     #    1-bundle scan-prompt floor for ten days with every other signal green
     #    (bug-039). A version mismatch here is the only cheap tell.
     try:
-        h["derive"] = d._st().derive_status()
+        # EVERY partition, not just the default one. `ingest_gmd_paths` stamps
+        # `gmd` in whatever partition the caller held — including
+        # `memory-<project>`, which is the product — so asking only the default
+        # partition meant a stale memory graph never reached the hub row or the
+        # hot gate, even though `rmx daemon status` showed it (ch-bsd plan-12
+        # r2 #m-3, r3 follow-up).
+        s = d._st()
+        names = [r[0] for r in s._connect().execute(
+            "SELECT name FROM partitions ORDER BY name").fetchall()]
+        per = {}
+        for name in names:
+            with s.with_partition(name):
+                per[name] = s.derive_status()
+        own = per.get(s._partition_name) or s.derive_status()
+        worst = next((v for v in per.values() if v.get("behind_code")), None)
+        h["derive"] = {
+            **own,
+            "stale": any(v.get("stale") for v in per.values()) or own["stale"],
+            "behind_code": bool(worst),
+            "never_stamped": all(v.get("never_stamped") for v in per.values()),
+            "stale_partitions": sorted(n for n, v in per.items()
+                                       if v.get("stale")),
+            "oldest_version": (worst or own).get("oldest_version"),
+            "reason": (worst or own).get("reason"),
+        }
     except Exception as exc:
         h["derive_error"] = f"{type(exc).__name__}: {exc}"[:200]
     # 5. WHICH model workers this daemon holds. A fleet that quietly went

@@ -274,3 +274,38 @@ def test_op_derive_status_walks_every_partition(tmp_path):
         assert one.get("partitions") is None and one["stale"] is False
     finally:
         s.close()
+
+
+def test_store_health_sees_a_stale_memory_partition(tmp_path, monkeypatch):
+    """ch-bsd plan-12 r3: `_store_health` asked only the DEFAULT partition, so
+    a `memory-<project>` graph derived by other code reached `rmx daemon
+    status` and never reached the hub row or the hot gate — the alert path is
+    the one that matters for a store nobody is looking at."""
+    import refmatrix.store as store_mod
+    from refmatrix.store import Store
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    try:
+        f = tmp_path / "a.md"
+        f.write_text("# a\n")
+        s.mark_tracked(str(f.resolve()), f.stat().st_mtime)
+        monkeypatch.setattr(store_mod, "derive_code_hash", lambda: "current")
+        s.stamp_derive("ingest")                       # default: current code
+        with s.with_partition("memory-p"):
+            s.stamp_derive("gmd", version="0.49.1", code_hash="older")
+
+        class _D:
+            root = tmp_path / ".refmatrix"
+
+            def _st(self):
+                return s
+
+            def _read_active_slot(self):
+                return None
+
+        h = dm._store_health(_D())
+        assert h["derive"]["behind_code"] is True
+        assert "memory-p" in h["derive"]["stale_partitions"]
+    finally:
+        s.close()
