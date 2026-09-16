@@ -5,15 +5,18 @@ title: "scan-prompt stops re-paying for context the turn already has"
 tags: [plan, scan-prompt, context, helix, hooks]
 metadata:
   node_type: plan
-  status: completed
+  status: in-progress
   created: 2026-09-15
 ---
 
 # Proposed Plan: scan-prompt degrades repeats instead of re-sending them {#root}
 
 **Date:** 2026-09-15
-**Status:** COMPLETED as a negative result. 10.1 ran and returned median carried **0.000** against a
-pre-registered 0.40; 10.2 and 10.3 are NOT built. Full measurement: `workflow/review-output/injection-overlap.md`.
+**Status:** IN-PROGRESS. The negative result stands, but plan-of-plans requires `@ch-bsd` over the
+range before `completed`, and that pass (bsd-plan7-10-r1-399d0a3) is DIRTY — #b-6 lands on this
+plan's sibling harness and #s-10 on its only deliverable. Flipped back from `completed`
+(ch-bsd r1 #m-16). 10.1 ran and returned median carried **0.000** against a
+pre-registered 0.40; 10.2 and 10.3 are NOT built. Full measurement: `workflow/measurements/injection-overlap.md`.
 **Location:** `workflow/plans/plan-10-injection-dedup.md` — permanent home; stage is `metadata.status`.
 
 rel: depends-on -> [[constitution]]

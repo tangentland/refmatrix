@@ -1,0 +1,18 @@
+{
+ "pairs": 187,
+ "replayed": 400,
+ "runs": 73,
+ "empty_results": 112,
+ "median_carried": 0.0,
+ "mean_carried": 0.1555,
+ "p25_carried": 0.0,
+ "p75_carried": 0.1,
+ "median_jaccard": 0.0,
+ "median_entries_per_call": 10.0,
+ "grouping": "consecutive within a run; a gap > 900s ends a run",
+ "prompt_source": "query.log body, TRUNCATED TO 200 CHARS at write time \u2014 a proxy for the real selection, not a replay of it",
+ "threshold": 0.4,
+ "min_pairs": 200,
+ "verdict": "STOP",
+ "verdict_note": "only 187 pairs against a pre-registered minimum of 200 \u2014 UNDERPOWERED, not a negative result"
+}

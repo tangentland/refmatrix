@@ -39,7 +39,7 @@ a negative result).
 **Latency, and it is the session's most consequential finding.** Daemon warm:
 `rmx context` **62.9 s**, `rmx scan-prompt` **75.9 s** per query at 19,829 docs. agentmemory
 publishes 14 ms p50. `scan-prompt` is the always-on UserPromptSubmit hook and cannot run per-prompt
-at this scale. No cause claimed — no profile taken. `workflow/review-output/longmemeval-latency.md`.
+at this scale. No cause claimed — no profile taken. `workflow/measurements/longmemeval-latency.md`.
 
 **Recall, and it is SATURATED.** `context` MRR@20 0.679 / R@5 0.605 — with hit@5 exactly equal to
 the depth-50 recall ceiling. It measures retrieval DEPTH, not ranking. Do not quote it against
@@ -53,11 +53,11 @@ conceptual-memory thesis predicts. Qualifier: this corpus has no structural edge
 
 - **`brief/unanswered`** — pre-registered confound gate FAILED. `query.log` records what the agent
   grepped for, not what the corpus was asked. Detector not built.
-  `workflow/review-output/brief-unanswered-confound.md`.
+  `workflow/measurements/brief-unanswered-confound.md`.
 - **Plan 10 injection dedup** — median consecutive scan-prompt overlap **0.000** against a
   pre-registered 0.40. Ledger, degraded rendering, PreCompact wiring and a permanent correctness
   hazard all avoided. Run was 187 pairs vs a 200 minimum and self-reported UNDERPOWERED; that
-  limitation is kept attached. `workflow/review-output/injection-overlap.md`.
+  limitation is kept attached. `workflow/measurements/injection-overlap.md`.
 - **Latency** — nobody had measured retrieval COST at scale on the path users run.
 
 ## Bugs found by doing the work {#bugs}

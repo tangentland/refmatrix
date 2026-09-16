@@ -31,7 +31,7 @@ rel: part-of -> [[plan-10-injection-dedup]]
 ## Files to Create / Modify {#files}
 
 - create `eval/injection_overlap.py`
-- create `workflow/review-output/injection-overlap.md` (the pre-registered criteria + the result)
+- create `workflow/measurements/injection-overlap.md` (the pre-registered criteria + the result)
 
 ## Test Strategy (RED first) {#test-strategy}
 

@@ -63,6 +63,14 @@ code (`src/`) contains **no mocks** — see CLAUDE.md "No Mocks in Production Co
 | `socketpair` + `_NowPool` driving `Daemon._handle` in-process (real dispatcher, real JSON wire; `store.rebuild_entities_indexes` raising `RepairAbort`) | the unix socket + the two work pools | internal-active | tests/test_plan4_remedy_r2.py (`test_repair_entities_abort_reaches_the_wire…`) | permanent: PK + UNIQUE make a real duplicate group impossible on DuckDB, so the abort must be injected; the wire path itself is real |
 | `hub.status` / `hub._daemon_identity` (fake dicts) + `subprocess.run` (recorder) | hub process / daemon pings / the child `rmx` | external | tests/test_plan4_remedy.py | permanent for the `hub status` version render and the `relaunch-fleet` orchestration test; the real path is the live fleet relaunch recorded in the remedy summary |
 | `monkeypatch.setattr` sites (≈187 remaining, unregistered) | various | internal-active | tests/ | plan 6 sweep: register or graduate |
+| `_FakeStore` | `tests/test_brief_surfaces.py` | in-memory stand-in for `Store` on the daemon-op tests | GRADUATED: `tests/test_brief_real_daemon.py` drives `memory brief` over a real socket (ch-bsd r1 #b-8) |
+| `_CtxRecorder` / `_PartCtx` | `tests/test_brief_surfaces.py` | record `_store_lock` acquisition + partition ctx | GRADUATED by the same real-daemon test |
+| `fake_memory` (verbs.memory) | `tests/test_brief_surfaces.py`, `test_brief_bsd_r1.py` | prove the CLI CALLS the verb rather than re-implementing it | keep — this is a wiring assertion, not a substitute for the thing under test |
+| `fake_compile` (brief.compile_briefs) | `tests/test_brief_surfaces.py` | isolate the daemon op from detector logic | keep; the op is additionally covered live |
+| `fake_read` (daemon._read_with_fallback) | `tests/test_brief_surfaces.py` | assert derivation takes the READ path | **was the #b-8 defect** — it patched the exact function whose use was the claim. Retained ONLY alongside `test_brief_real_daemon.py`, which runs the op unpatched |
+| `Exploding(CountingStream)` | `tests/test_context_cost.py` | force the byte counter to raise | keep — a failure mode with no real trigger |
+| `telemetry.log_cli_invocation` no-op | `tests/test_context_cost.py` | stop `cli_entry` writing into the LIVE `.refmatrix/cli.log` | keep — required; ch-bsd r1 #s-12 |
+| `Recorder` (subprocess runner) | `tests/test_longmemeval_ingest.py` | record the ingest argv without running a 4h ingest | keep |
 
 ## Graduation Log {#graduation-log}
 

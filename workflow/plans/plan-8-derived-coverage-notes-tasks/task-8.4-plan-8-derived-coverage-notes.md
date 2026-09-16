@@ -30,7 +30,7 @@ rel: part-of -> [[plan-8-derived-coverage-notes]]
 ## Files to Create / Modify {#files}
 
 - modify `src/refmatrix/brief.py`
-- create `workflow/review-output/brief-unanswered-confound.md` (the pre-registered check + its result)
+- create `workflow/measurements/brief-unanswered-confound.md` (the pre-registered check + its result)
 
 ## Test Strategy (RED first) {#test-strategy}
 
@@ -43,7 +43,7 @@ rel: part-of -> [[plan-8-derived-coverage-notes]]
 ## Outcome {#outcome}
 
 **The gate failed. `brief/unanswered` was not implemented.** Full measurement in
-`workflow/review-output/brief-unanswered-confound.md`.
+`workflow/measurements/brief-unanswered-confound.md`.
 
 C1 passed: `telemetry.log_query.__exit__` writes unconditionally and zero-result rows appear across
 the whole 3.5-month span, so this is NOT the helix failure. C2 cleared its bar at 56.6% and the

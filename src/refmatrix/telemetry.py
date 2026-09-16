@@ -624,6 +624,11 @@ def zero_result_queries(store: Store, limit: int = 20) -> list[tuple[str, int]]:
 
 
 
+# The commands only a UserPromptSubmit firing produces. `source == "hook"`
+# alone is every hook event in the system (ch-bsd r1 #b-7).
+PROMPT_ANCHORS = frozenset({"scan-prompt"})
+
+
 def _command_groups() -> "frozenset[str]":
     """Names of click GROUPS (`memory`, `daemon`, ...) — commands whose second
     argv token is a subcommand rather than a value. Read from the CLI tree so
@@ -679,7 +684,7 @@ def summarize_context(root: Path, *, since: "str | None" = None,
 
     groups = _command_groups()
 
-    def _cmd(r: dict) -> str:
+    def _cmd(r: dict, _g=None) -> str:
         """The SUBCOMMAND PATH, never its arguments.
 
         `argv[:2]` looked right and was wrong: `scan-prompt <the user's whole
@@ -718,22 +723,42 @@ def summarize_context(root: Path, *, since: "str | None" = None,
         }
 
     # ---- the per-prompt hook budget ------------------------------------
+    # ANCHORED ON AN ACTUAL PROMPT. `source == "hook"` is exported by EVERY
+    # rmx hook template — PostToolUse, PreToolUse, Stop, SubagentStop,
+    # SessionStart, PreCompact — not just the UserPromptSubmit set this budget
+    # is about. On this project's real cli.log only 11.8% of 5s hook windows
+    # contained a scan-prompt, and 75% of hook rows are `focus hook --event
+    # tool/tool-pre` pairs fired per TOOL CALL; the p50 of the old "per-prompt"
+    # figure was a tool call (ch-bsd r1 #b-7). Nothing on the row says which
+    # hook EVENT fired, so tuning window_s cannot fix it — the window has to be
+    # anchored on the command that only a prompt produces.
     hook_rows = [r for r in counted if r.get("source") == "hook"]
     hook_rows.sort(key=lambda r: r.get("ts") or "")
     windows: list[int] = []
     cur_total = 0
     cur_start: "float | None" = None
+    cur_has_prompt = False
+
+    def _close() -> None:
+        nonlocal cur_total, cur_has_prompt
+        # A window with no prompt in it is not a prompt.
+        if cur_has_prompt:
+            windows.append(cur_total)
+        cur_total, cur_has_prompt = 0, False
+
     for r in hook_rows:
         ts = _ts_epoch(r.get("ts"))
         if ts is None:
             continue
         if cur_start is None or (ts - cur_start) > window_s:
             if cur_start is not None:
-                windows.append(cur_total)
-            cur_start, cur_total = ts, 0
+                _close()
+            cur_start = ts
         cur_total += int(r["out_bytes"])
+        if _cmd(r) in PROMPT_ANCHORS:
+            cur_has_prompt = True
     if cur_start is not None:
-        windows.append(cur_total)
+        _close()
 
     total_bytes = sum(int(r["out_bytes"]) for r in counted)
     return {
@@ -745,9 +770,11 @@ def summarize_context(root: Path, *, since: "str | None" = None,
         "hook_budget": {
             "windows": len(windows),
             "window_s": window_s,
+            "anchored_on": sorted(PROMPT_ANCHORS),
             "grouping": (
-                f"hook-sourced rows within a {window_s}s window are treated as "
-                f"one prompt's hook fan-out"),
+                f"hook-sourced rows within a {window_s}s window ANCHORED on a "
+                f"scan-prompt row are one prompt's hook fan-out; windows with "
+                f"no prompt command are excluded"),
             "total_bytes": sum(windows),
             "p50_bytes": _pct(windows, 0.50),
             "p95_bytes": _pct(windows, 0.95),

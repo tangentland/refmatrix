@@ -27,7 +27,7 @@ rel: part-of -> [[plan-10-injection-dedup]]
 ## Files to Create / Modify {#files}
 
 - modify `src/refmatrix/hooks.py` (PreCompact clear), `src/refmatrix/scan.py` / `stm.py` (TTL)
-- modify `workflow/review-output/injection-overlap.md` (the before/after figures)
+- modify `workflow/measurements/injection-overlap.md` (the before/after figures)
 
 ## Test Strategy (RED first) {#test-strategy}
 

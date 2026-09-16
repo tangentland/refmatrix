@@ -97,7 +97,7 @@ gap between `build_context` (0.45 s) and the full daemonless CLI (9.0 s), of whi
 CPU. That gap is not yet attributed.
 
 **No per-query latency figure for this corpus should be quoted** until the store is re-measured
-quiet. Full retraction and decomposition: `workflow/review-output/longmemeval-latency.md`.
+quiet. Full retraction and decomposition: `workflow/measurements/longmemeval-latency.md`.
 
 ## NOT comparable to published figures {#not-comparable}
 

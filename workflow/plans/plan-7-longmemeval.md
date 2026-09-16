@@ -5,7 +5,7 @@ title: "LongMemEval wired into eval/production/ as an outside-comparable memory-
 tags: [plan, eval, memory, benchmark]
 metadata:
   node_type: plan
-  status: approved
+  status: in-progress
   created: 2026-09-15
 ---
 

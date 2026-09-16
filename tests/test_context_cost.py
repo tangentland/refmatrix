@@ -191,6 +191,11 @@ def test_a_counting_failure_does_not_fail_the_command(monkeypatch):
     monkeypatch.setattr(telemetry, "CountingStream", Exploding)
     monkeypatch.setattr(cli_mod, "main", lambda: print("ok"))
     monkeypatch.setattr(cli_mod, "_reexec_for_fork_safety", lambda: None)
+    # ch-bsd r1 #s-12: without this, cli_entry's finally block calls the REAL
+    # logger with _root() -> this project, and 32 pytest runs became rows in
+    # the live .refmatrix/cli.log that `rmx telemetry --context` reads.
+    monkeypatch.setattr(telemetry, "log_cli_invocation",
+                        lambda root, **kw: None)
 
     cli_mod.cli_entry()                        # must not raise
     assert sys.stdout is original

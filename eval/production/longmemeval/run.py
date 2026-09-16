@@ -55,6 +55,11 @@ from paths import (HAYSTACKS, QRELS, QUESTIONS, RESULTS, STORE_ROOT, SUBSETS,
 
 MODES = ("union", "restricted")
 
+# scan-prompt is budgeted in tokens, not hits. 40 tokens per depth unit keeps
+# depth=50 near the ~2000-token default the surface ships with, so the existing
+# depth-50 rows stay comparable while --depth 200 genuinely widens the pool.
+SCAN_TOKENS_PER_DEPTH = 40
+
 
 # ── metrics ────────────────────────────────────────────────────────────────
 
@@ -177,7 +182,17 @@ def _context_argv(query: str, *, k: int, degree: int = 0) -> list[str]:
 
 
 def _scan_argv(query: str, *, k: int, content: bool = True) -> list[str]:
-    a = ["scan-prompt", query, "--format", "json", "--no-composite"]
+    """scan-prompt has no `-k`; its pool is bounded by the TOKEN budget.
+
+    This accepted `k` and dropped it, so `--depth` was inert for `scan` and
+    `scan-nocontent` while `_meta["depth"]` and the printed table both said
+    otherwise — and REPORT.md's #1 next step ("re-run at --depth 200") would
+    have moved `context` and left `scan` byte-identical (ch-bsd r1 #b-6).
+    `--max-entities` is not a scan-prompt flag either; `--max-tokens` is the
+    knob that actually widens the pool, so depth is translated into it.
+    """
+    a = ["scan-prompt", query, "--format", "json", "--no-composite",
+         "--max-tokens", str(max(200, int(k) * SCAN_TOKENS_PER_DEPTH))]
     if not content:
         a.append("--no-content")
     return a

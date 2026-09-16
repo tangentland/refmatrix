@@ -5,7 +5,7 @@ title: "Briefs — what the corpus knows solidly, and what it is asked but canno
 tags: [plan, memory, consolidate, surface]
 metadata:
   node_type: plan
-  status: approved
+  status: in-progress
   created: 2026-09-15
 ---
 
@@ -66,7 +66,7 @@ note with no evidence is a bug, not a note.
 | `stale` | a subject whose members were all last touched before a cutoff | helix edge-time |
 
 `unanswered` had the most product value and the most measurement risk. The risk won: see Q3 and
-`workflow/review-output/brief-unanswered-confound.md`. Four classes ship, not five.
+`workflow/measurements/brief-unanswered-confound.md`. Four classes ship, not five.
 
 ### Surfaces {#surfaces}
 
@@ -117,7 +117,7 @@ with a confounding hazard.
 **Status:** RESOLVED (as a gate, not as an answer)
 
 **Decision:** The detector does not ship until a pre-registered confound check passes, written to
-`workflow/review-output/brief-unanswered-confound.md` BEFORE its numbers are read. A failed check
+`workflow/measurements/brief-unanswered-confound.md` BEFORE its numbers are read. A failed check
 is a shipped negative result, not a reason to relax the threshold.
 **Rationale:** [[project_helix_log_confounded]] is the exact failure: a log written by a path
 that suppresses its own signal, then read as if it measured demand. Before `unanswered` ships it
