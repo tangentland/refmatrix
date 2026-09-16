@@ -895,8 +895,16 @@ class Daemon:
             self._reprobe_backoff.pop(role, None)
             self._reprobe_next.pop(role, None)
             if w is None:
-                self._log(f"{role}: adopted hub-shared worker; dropped the "
-                          f"in-process model")
+                # Precise on purpose: we released OUR reference. The model is
+                # still resident until the last in-flight caller releases it —
+                # minutes, for an ingest — and torch's allocator does not
+                # return the RSS to the OS even then, which is why the worker
+                # process exists at all. `worker_kinds()` flips to `shared`
+                # here because that is what the NEXT call uses, not because the
+                # memory is back (ch-bsd plan-12 r2).
+                self._log(f"{role}: adopted hub-shared worker; released our "
+                          f"reference to the in-process model (resident until "
+                          f"in-flight callers finish)")
             else:
                 pid = getattr(getattr(w, "_proc", None), "pid",
                               getattr(w, "pid", "?"))
@@ -3882,10 +3890,16 @@ def _op_derive_status(d: Daemon, args: dict) -> dict:
             for name in names:
                 with s.with_partition(name):
                     out["partitions"][name] = s.derive_status()
-            out.update(out["partitions"].get(s._partition_name)
-                       or s.derive_status())
-            out["stale"] = any(v.get("stale")
-                               for v in out["partitions"].values())
+            # Deliberately NOT a copy of the default partition's fields. The
+            # first version did that and overwrote only `stale`, so a caller
+            # rendering the composite printed `derive: 0.71.0 (running
+            # 0.71.0) — stale` — the self-contradicting line #s-1 removed,
+            # rebuilt one scope out (ch-bsd plan-12 r2). The composite answers
+            # only what is true OF THE WHOLE STORE.
+            stale = [n for n, v in out["partitions"].items() if v.get("stale")]
+            out["running_version"] = s.derive_status()["running_version"]
+            out["stale"] = bool(stale)
+            out["stale_partitions"] = sorted(stale)
             return out
     part = args.get("partition") or d._st()._partition_name
     with d._store_lock, d._st().with_partition(part):

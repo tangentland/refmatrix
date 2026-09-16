@@ -2722,6 +2722,8 @@ def hub_queues(as_json):
             flags.append(f"derive-stale@{q['derive_stale']}")
         if q.get("derive_unstamped"):
             flags.append("derive-unstamped")
+        if q.get("derive_version_drift"):
+            flags.append(f"derive-drift@{q['derive_version_drift']}")
         t.add_row(str(q.get("project")),
                   "up" if q.get("daemon_up") else ("busy" if q.get("daemon_busy") else "down"),
                   str(q.get("stale_files") if q.get("stale_files") is not None else "?"),
@@ -4740,7 +4742,9 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
     # blocks cross-process reads while the daemon holds the write lock.
     if symbol and not since:
         root = _root()
-        if daemon_mod.ping(root):
+        pinged = daemon_mod.ping(root)
+        phase_mark("daemon-ping")
+        if pinged:
             from refmatrix.verbs import payload_context
             payload = payload_context(
                 symbol, degree=degree, expand=expand, hit_lines=hit_lines,
@@ -4753,11 +4757,16 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
             payload["entities_explicit"] = entities_explicit
             payload["tokens_explicit"] = tokens_explicit
             resp = daemon_mod.call(root, "context", payload, timeout=120.0)
+            # The daemon-routed branch is the DEFAULT on a live machine and had
+            # no marks at all, so ~1.5 s of RPC landed in `exit` — the one path
+            # the instrument was never pointed at (ch-bsd plan-12 r2).
+            phase_mark("daemon-rpc")
             if not resp.get("ok"):
                 raise click.ClickException(
                     f"daemon context failed: {resp.get('error')}"
                 )
             click.echo(resp["result"]["body"])
+            phase_mark("render")
             return
 
     # `--since` path + symbol fallback are read-only — entity / link

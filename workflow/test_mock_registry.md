@@ -83,6 +83,7 @@ code (`src/`) contains **no mocks** — see CLAUDE.md "No Mocks in Production Co
 | `refmatrix.store.is_memory_only_root` (forced True) | the global memory-only store | internal-active | tests/test_cli_time_phases.py | graduates when the backstop guard is asserted against a real `~/.refmatrix`-shaped root; forcing the predicate keeps the test off the user's HOME, which is the very thing bug-040 was about |
 | `context._grep_backstop` (recorder) | the `rg` subprocess | internal-active | tests/test_cli_time_phases.py | the recorder IS the assertion (was the floor invoked at all); the real subprocess path is covered by tests/test_grep_backstop.py |
 | tmp-package `m.py` + subprocess imports (no doubles) | — | n/a | tests/test_pyc_invalidation.py | listed for completeness: this file fakes NOTHING. It writes a real module, imports it in a real interpreter, and asserts the real bytecode header |
+| `_M` / `_C` (predict / call recorders) + `Reranker._load` no-op | the cross-encoder model and the worker socket | external / internal-active | tests/test_rerank_window.py | the assertion is WHICH TEXT reaches the model, so the model itself is the one part that does not need to be real; `_load` is patched because the class under test would otherwise download 130 MB. Graduates for the remote half when a windowing test runs against `_StubHub`'s real socket (the class exists in tests/test_shared_worker_readoption.py) |
 
 ## Graduation Log {#graduation-log}
 

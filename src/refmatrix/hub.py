@@ -667,8 +667,15 @@ class Hub:
             if derive.get("stale"):
                 if derive.get("never_stamped"):
                     row["derive_unstamped"] = True
-                else:
+                elif derive.get("behind_code"):
+                    # Only this is hot. Gating on version INEQUALITY instead
+                    # would fire on all eight stores within two days — 34
+                    # version bumps in ten days, six repos that never re-ingest
+                    # — at roughly 1-in-34 signal (ch-bsd plan-12 r2). The
+                    # deriving code moving is the condition bug-039 is about.
                     row["derive_stale"] = derive.get("oldest_version") or "?"
+                else:
+                    row["derive_version_drift"] = derive.get("oldest_version") or "?"
             out.append(row)
         return _annotate_identity(out)
 

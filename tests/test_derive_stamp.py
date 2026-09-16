@@ -204,3 +204,44 @@ def test_daemon_status_prints_the_stale_line_and_only_then(capsys):
                "running_version": "0.71.0", "reason": None}
     assert render_derive_warning(current) == ""
     assert render_derive_warning(None) == ""
+
+
+# ---- the alert gate measures DISTANCE, not inequality (ch-bsd r2) --------
+
+def test_a_stamp_older_than_the_ingest_code_is_behind_it(store, tmp_path, monkeypatch):
+    """The condition bug-039 is actually about: the graph was built before the
+    code that builds graphs changed."""
+    import refmatrix.store as store_mod
+
+    _track(store, tmp_path)
+    store.stamp_derive("ingest", at=1000.0)
+    monkeypatch.setattr(store_mod, "derive_code_mtime", lambda: 2000.0)
+    st = store.derive_status()
+    assert st["behind_code"] is True
+    assert "before the current ingest code" in st["reason"]
+
+
+def test_a_stamp_newer_than_the_ingest_code_is_not_behind_it(store, tmp_path,
+                                                             monkeypatch):
+    """A version bump that does not touch ingest must NOT make a store hot:
+    34 bumps in ten days across 8 stores is an alert nobody reads twice."""
+    import refmatrix.store as store_mod
+
+    _track(store, tmp_path)
+    store.stamp_derive("ingest", version="0.49.1", at=3000.0)
+    monkeypatch.setattr(store_mod, "derive_code_mtime", lambda: 2000.0)
+    st = store.derive_status()
+    assert st["behind_code"] is False
+    assert st["stale"] is True, "the version line still tells the human"
+
+
+def test_derive_code_mtime_reads_the_deriving_modules():
+    from pathlib import Path as _P
+
+    import refmatrix.store as store_mod
+
+    here = _P(store_mod.__file__).resolve().parent
+    expected = max((here / n).stat().st_mtime for n in ("ingest.py",
+                                                        "ingest_gmd.py",
+                                                        "store.py"))
+    assert store_mod.derive_code_mtime() == expected

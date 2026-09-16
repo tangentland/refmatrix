@@ -290,7 +290,8 @@ def test_gather_queues_carries_the_split_from_health(tmp_path, monkeypatch):
         if op == "stats":
             return {"ok": True, "result": {"stale_files": [], "health": {
                 "workers": {"embed": "private", "rerank": "shared"},
-                "derive": {"stale": True, "oldest_version": "0.49.1"},
+                "derive": {"stale": True, "behind_code": True,
+                           "oldest_version": "0.49.1"},
             }}}
         if op == "ping":
             return {"ok": True, "result": {"pid": 1, "version": _version(),

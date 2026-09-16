@@ -33,7 +33,8 @@ replace** — worse. 547 of the 896 answers are already in the first 2048 chars;
 the head loses 158 to gain 119.
 
 Keeping half the budget on the head and spending the rest where the query occurs: **672 (+24% over
-head)**. And at the per-prompt hook's 700-char cap even that loses (500 vs 509), so the shipped
+head)**. And at the per-prompt hook's 700-char cap even that loses (338 vs 509 — the table first
+said 500, which was the 0.7 arm's number; ch-bsd r2 re-ran the harness), so the shipped
 code falls back to byte-identical head truncation below 1024 chars. The always-on path is
 unchanged; the gain lands on the 2048-char surfaces.
 

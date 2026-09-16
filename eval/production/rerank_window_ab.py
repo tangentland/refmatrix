@@ -48,21 +48,63 @@ def _session_ids(q: dict) -> list:
     return sids
 
 
-def run(oracle: Path, limits: "list[int]") -> dict:
+def _arm_head(doc: str, question: str, limit: int) -> str:
+    """Before bug-032: the first `limit` chars, whatever is in them."""
+    return doc[:limit]
+
+
+def _arm_anchor_only(doc: str, question: str, limit: int) -> str:
+    """The strategy the task spec PROPOSED: a query-anchored window and no
+    head. Kept because it is the arm that justifies not shipping it."""
+    if len(doc) <= limit:
+        return doc
+    return rr._anchor_window(doc, question, limit=limit)
+
+
+def _arm_split(frac: float):
+    """`frac` of the budget on the head, the rest anchored on the query. The
+    shipped strategy is this at `WINDOW_HEAD_FRAC`; the sweep is what chose it
+    and what chose `WINDOW_MIN_CHARS`, so both arms stay runnable."""
+    def _f(doc: str, question: str, limit: int) -> str:
+        if len(doc) <= limit:
+            return doc
+        head_n = max(1, int(limit * frac))
+        return doc[:head_n] + rr._anchor_window(
+            doc[head_n:], question, limit=limit - head_n)
+    return _f
+
+
+def _arm_shipped(doc: str, question: str, limit: int) -> str:
+    """Whatever `reranker.window_doc` does today, knobs and floors included."""
+    return rr.window_doc(doc, question, limit=limit)
+
+
+ARMS = {
+    "head": _arm_head,
+    "anchor_only": _arm_anchor_only,
+    "shipped": _arm_shipped,
+    **{f"split{f}": _arm_split(f) for f in (0.3, 0.4, 0.5, 0.6, 0.7)},
+}
+
+DEFAULT_ARMS = ("head", "anchor_only", "split0.5", "shipped")
+
+
+def run(oracle: Path, limits: "list[int]", arms: "list[str]") -> dict:
     rows = json.loads(oracle.read_text())
     out: dict = {}
     for limit in limits:
-        acc = {"head": {"in": 0, "past": 0}, "window": {"in": 0, "past": 0},
-               "n_in": 0, "n_past": 0}
+        acc = {a: {"in": 0, "past": 0} for a in arms}
+        acc_n = {"n_in": 0, "n_past": 0}
         for q in rows:
             question = q["question"]
             for sid, session in zip(_session_ids(q), q["haystack_sessions"]):
                 if not any(t.get("has_answer") for t in session):
                     continue
                 doc = _as_gmd(sid, "", session)
-                head = doc[:limit]
-                win = rr.window_doc(doc, question, limit=limit)
-                assert len(win) <= limit, (sid, len(win))
+                cut = {}
+                for a in arms:
+                    cut[a] = ARMS[a](doc, question, limit)
+                    assert len(cut[a]) <= max(limit, len(doc)), (a, sid)
                 for turn in session:
                     if not turn.get("has_answer"):
                         continue
@@ -70,13 +112,14 @@ def run(oracle: Path, limits: "list[int]") -> dict:
                     if not ans or ans not in doc:
                         continue
                     where = "in" if doc.index(ans) < limit else "past"
-                    acc["n_in" if where == "in" else "n_past"] += 1
+                    acc_n["n_in" if where == "in" else "n_past"] += 1
                     probe = ans[:PROBE_CHARS]
-                    acc["head"][where] += probe in head
-                    acc["window"][where] += probe in win
-        acc["head_total"] = acc["head"]["in"] + acc["head"]["past"]
-        acc["window_total"] = acc["window"]["in"] + acc["window"]["past"]
-        out[str(limit)] = acc
+                    for a in arms:
+                        acc[a][where] += probe in cut[a]
+        res = dict(acc_n)
+        for a in arms:
+            res[a] = {**acc[a], "total": acc[a]["in"] + acc[a]["past"]}
+        out[str(limit)] = res
     return out
 
 
@@ -86,9 +129,15 @@ def main(argv: "list[str] | None" = None) -> int:
                     help="path to the longmemeval_oracle blob")
     ap.add_argument("--limits", default="700,2048",
                     help="comma-separated char budgets to measure")
+    ap.add_argument("--arms", default=",".join(DEFAULT_ARMS),
+                    help=f"comma-separated arms; available: {', '.join(sorted(ARMS))}")
     ns = ap.parse_args(argv)
     limits = [int(x) for x in ns.limits.split(",") if x.strip()]
-    print(json.dumps(run(ns.oracle, limits), indent=1))
+    arms = [a.strip() for a in ns.arms.split(",") if a.strip()]
+    unknown = [a for a in arms if a not in ARMS]
+    if unknown:
+        ap.error(f"unknown arm(s): {unknown}; available: {sorted(ARMS)}")
+    print(json.dumps(run(ns.oracle, limits, arms), indent=1))
     return 0
 
 
