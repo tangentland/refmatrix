@@ -9517,7 +9517,8 @@ def _replica_memory_recall(query: str, *, k: int, kinds: list,
                     else:
                         try:
                             docs = _reranker.collect_rerank_docs(
-                                s, hits, k=k, doc_chars=RERANK_DOC_CHARS)
+                                s, hits, k=k, doc_chars=RERANK_DOC_CHARS,
+                                query=query)
                             ranked = _reranker.apply_rerank(rr, query, *docs, k=k)
                             return [{"id": eid, "score": sc, "fused": bool(fuse),
                                      "reranked": True, "replica": True}
