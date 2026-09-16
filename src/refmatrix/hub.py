@@ -697,15 +697,34 @@ class Hub:
         when an alert was published. Factored out so the PUBLISH is testable
         with a fake bus (bsd-plan1-r2 #m-3)."""
         queues = self._gather_queues()
-        pending_refine = len(self.bus.refinement_queue("pending"))
+        pending = self.bus.refinement_queue("pending")
+        pending_ids = {str(c.get("id")) for c in pending}
         hot = [q for q in queues if _queue_row_is_hot(q)]
-        if hot or pending_refine:
+        # A hot row is news EVERY tick — it means something is wrong now, and
+        # suppressing the repeat would trade alert fatigue for a missed
+        # incident. A pending candidate is news ONCE, when it arrives.
+        #
+        # The gate used to be `hot or pending_refine`, so a single candidate
+        # left pending re-published the entire fleet snapshot on every tick
+        # forever: five identical alerts on 2026-09-16 with every row clean,
+        # caused by one bus-test candidate from two days earlier whose body was
+        # the string "hi" (bug-043). Same alert-fatigue shape the `derive_stale`
+        # gate was designed twice to avoid, missed on the sibling condition.
+        announced = getattr(self, "_alerted_refinements", frozenset())
+        new_refine = pending_ids - set(announced)
+        if hot or new_refine:
             self.bus.publish(
                 "global:queues",
-                {"queues": queues, "refinement_pending": pending_refine},
+                {"queues": queues, "refinement_pending": len(pending)},
                 sender="hub", mtype="alert",
             )
+            # Only what we actually announced. An id that drains and later
+            # reappears is a new arrival, not the old backlog.
+            self._alerted_refinements = frozenset(pending_ids)
             return True
+        # Quiet tick: forget ids that have DRAINED, so the same id arriving
+        # again later reads as a new candidate rather than the old backlog.
+        self._alerted_refinements = frozenset(set(announced) & pending_ids)
         return False
 
     # -- shared model workers ----
