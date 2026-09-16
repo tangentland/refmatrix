@@ -5347,7 +5347,33 @@ def spawn_daemon(root: Path, *, partition: str | None = None,
 # One embed batch or one rerank of ~20 docs is sub-second warm; a worker that
 # is loading or broken must cost an op seconds, not the client's 300 s default
 # (bug-015: the daemon wedged behind it while holding the store lock).
-SHARED_OP_TIMEOUT_S = float(os.environ.get("RMX_SHARED_OP_TIMEOUT_S", "30") or "30")
+#
+# FLOORED AT THE PROBE BUDGET. `_model_client` qualifies a worker by waiting
+# `modelsrv.PROBE_TIMEOUT_S` (45 s) for its `info`, because a COLD worker loads
+# its model inside that call — measured 14.9 s (embed) and 33 s (rerank) on
+# 2026-09-15. Shipping 30 s here meant the fleet would wait 45 s to decide a
+# worker was USABLE and then allow 30 s for the work, which is less than the
+# cold load it had just measured. That is what killed `rmx embed --kinds
+# memory` at 30.8 s after a successful 4h23m LongMemEval ingest (bug-030 —
+# whose row blamed a probe timeout leak that was already fixed in d576a81 and
+# which, being LONGER than the op budget, could not have shortened anything).
+#
+# Both constants had a test; their RELATIONSHIP had none, so they drifted into
+# contradiction. `tests/test_worker_budget_invariant.py` now pins the pair.
+# The bug-015 bound is untouched: this stays far below the 300 s client
+# default, so a mute worker still costs an op seconds, not minutes.
+def _shared_op_timeout_default() -> float:
+    # Local import to match this module's convention (modelsrv is pulled in at
+    # use sites, not at the top); it costs nothing — modelsrv imports only
+    # socket/threading and subproc, never a model.
+    from refmatrix import modelsrv
+    return max(
+        float(os.environ.get("RMX_SHARED_OP_TIMEOUT_S", "45") or "45"),
+        modelsrv.PROBE_TIMEOUT_S,
+    )
+
+
+SHARED_OP_TIMEOUT_S = _shared_op_timeout_default()
 
 
 def spawn_daemon_subprocess(
