@@ -88,6 +88,12 @@ def test_context_op_honors_partition_under_ambient_drift(tmp_path):
         def __init__(self, st):
             self.store = st; self._store_lock = threading.RLock()
         def _request_snapshot(self): pass
+        # `_op_context` reads the store through `d._st()`, not `d.store`.
+        # This hand-rolled stand-in pinned the old attribute and the op has
+        # raised `AttributeError: 'D' object has no attribute '_st'` ever
+        # since — the "perma-red" of plan-6 task 6.4 was a stale fake, not a
+        # partition bug (bug-034).
+        def _st(self): return self.store
 
     resp = _op_context(D(s), {"ref": "Widget", "format": "json", "degree": 1,
                               "partition": "code-proj"})

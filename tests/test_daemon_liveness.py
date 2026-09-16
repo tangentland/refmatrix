@@ -53,8 +53,28 @@ def test_daemon_status_reports_busy_for_a_live_unresponsive_process(tmp_path, mo
     monkeypatch.setattr(dm, "socket_path", lambda root: tmp_path / "rmxd.sock")
     (tmp_path / "rmxd.sock").touch()
     monkeypatch.setattr(discovery, "_read_pid", lambda root: os.getpid())
+    # A live pid is not enough: `busy` requires the pid to BE an rmx process
+    # (`pid_is_rmx`), so a stale pid file whose number a foreign process has
+    # reused reads as absent rather than busy (bsd-plan5-r2 #b-1-r2). Under
+    # pytest the command line is `python -m pytest`, which correctly does not
+    # match — so the fixture, not the code, was wrong, and this test had been
+    # red ever since that guard landed (bug-034).
+    monkeypatch.setattr(discovery, "pid_is_rmx", lambda pid: True)
     st = discovery.daemon_status(tmp_path)
     assert st["up"] is False and st["busy"] is True
+
+
+def test_a_foreign_process_reusing_the_pid_number_is_not_busy(tmp_path, monkeypatch):
+    """The other half of the same contract, which nothing asserted: a live pid
+    that is NOT rmx must read absent, or a reused pid number keeps a dead
+    store looking occupied forever."""
+    monkeypatch.setattr(dm, "ping", lambda root, **kw: False)
+    monkeypatch.setattr(dm, "socket_path", lambda root: tmp_path / "rmxd.sock")
+    (tmp_path / "rmxd.sock").touch()
+    monkeypatch.setattr(discovery, "_read_pid", lambda root: os.getpid())
+    monkeypatch.setattr(discovery, "pid_is_rmx", lambda pid: False)
+    st = discovery.daemon_status(tmp_path)
+    assert st["up"] is False and st["busy"] is False
 
 
 def test_daemon_status_reports_dead_when_the_process_is_gone(tmp_path, monkeypatch):
