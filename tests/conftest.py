@@ -1,4 +1,33 @@
+import importlib.util
+import os
+from pathlib import Path
+
 import pytest
+
+_REPO = Path(__file__).resolve().parents[1]
+
+
+def _pyc_guard():
+    """Load `tools/pyc_guard.py` by path — `tools/` is not a package."""
+    spec = importlib.util.spec_from_file_location(
+        "rmx_pyc_guard", _REPO / "tools" / "pyc_guard.py")
+    if spec is None or spec.loader is None:      # pragma: no cover - layout bug
+        raise RuntimeError("tools/pyc_guard.py is missing")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def pytest_sessionstart(session):
+    """Refuse timestamp-invalidated bytecode before a single test runs.
+
+    bug-037: a same-length mutation plus a restore left a `.pyc` that the
+    interpreter considered valid, and `PROBE_TIMEOUT_S` read 20.0 from a file
+    that said 45. Two tests failed for a reason unrelated to their subject,
+    and a green run in the same state would have been just as wrong. See
+    `tools/pyc_guard.py`.
+    """
+    _pyc_guard().enforce(_REPO / "src" / "refmatrix")
 
 
 @pytest.fixture(autouse=True)
