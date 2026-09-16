@@ -55,3 +55,33 @@ rides the same handshake, and the worker drops an abandoned frame without touchi
   condition, i.e. the deployed fleet.
 - **No acceptance claim is made here.** Acceptance for bug-025 is: two runs of the deployed hook
   argv, minutes apart, under ordinary load, counting RERANKED ROWS — after the deploy.
+
+## 4. ACCEPTANCE, after the deploy {#acceptance}
+
+Deployed 0.72.0 at 11:51 (fleet relaunched 11:54, hub restarted onto 0.72.0 at 11:52 so its model
+workers run this code). The exact deployed hook argv, read out of `.claude/settings.json` rather
+than retyped:
+
+```
+rmx memory recall --stdin-json --k 5 --scope both --json --timeout 5
+```
+
+| run | clock | load (1 min) | wall | rows | **reranked** |
+|---|---|---|---|---|---|
+| 1 | 11:53:34 | 4.44 | 4.84 s | 5 | **5** |
+| 2 | 11:53:38 | 4.48 | 4.77 s | 5 | **5** |
+| 3 | 11:56:03 | 3.88 | 5.14 s | 5 | **5** |
+| 4 | 11:56:09 | 3.88 | 5.15 s | 5 | **5** |
+
+Two windows two and a half minutes apart, under ordinary load, counting RERANKED ROWS — the
+acceptance criterion bug-025 set for itself, and deliberately not wall time in a quiet minute.
+
+**Before, on the same machine four hours earlier** (§1): `rerank failed (TimeoutError: timed out)`,
+**0 of 5 reranked**, twice, at load 4.0. **After: 20 of 20 rows reranked across four runs.**
+
+No `rerank skipped` warning fired in any run, which is the correct outcome rather than a missing
+one: the shared worker answers with a real `cost_s_per_doc` now, the estimate fits the remaining
+budget, and the leg runs. The skip exists for the case where it does not fit — covered by test, and
+by construction unobservable while the worker is fast enough.
+
+bug-025 is **closed**: the fix is no longer inert, and the claim is measured on the path users run.
