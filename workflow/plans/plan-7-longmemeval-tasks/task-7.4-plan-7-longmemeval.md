@@ -5,14 +5,14 @@ title: "Task 7.4: REPORT.md, committed results artifact, README citation"
 tags: [task, plan-7]
 metadata:
   node_type: task
-  status: pending
+  status: complete (symbolic only; dense blocked on bug-030)
   plan: plan-7-longmemeval
 ---
 
 # Task 7.4: REPORT.md, committed results artifact, README citation {#root}
 
 > Plan: [[plan-7-longmemeval]]
-> Status: Pending
+> Status: Complete — symbolic surfaces reported; dense rows blocked on bug-030
 > Depends on: 7.2, 7.3
 
 rel: part-of -> [[plan-7-longmemeval]]
