@@ -5,14 +5,14 @@ title: "Task 10.1: Measure consecutive scan-prompt overlap on real prompts"
 tags: [task, plan-10]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-10-injection-dedup
 ---
 
 # Task 10.1: Measure consecutive scan-prompt overlap on real prompts {#root}
 
 > Plan: [[plan-10-injection-dedup]]
-> Status: Pending
+> Status: complete
 > Depends on: plan 9
 
 rel: part-of -> [[plan-10-injection-dedup]]

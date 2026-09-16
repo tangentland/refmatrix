@@ -5,14 +5,15 @@ title: "scan-prompt stops re-paying for context the turn already has"
 tags: [plan, scan-prompt, context, helix, hooks]
 metadata:
   node_type: plan
-  status: drafting
+  status: completed
   created: 2026-09-15
 ---
 
 # Proposed Plan: scan-prompt degrades repeats instead of re-sending them {#root}
 
 **Date:** 2026-09-15
-**Status:** Drafting — task 10.1 is a MEASUREMENT that decides whether 10.2+ are built at all.
+**Status:** COMPLETED as a negative result. 10.1 ran and returned median carried **0.000** against a
+pre-registered 0.40; 10.2 and 10.3 are NOT built. Full measurement: `workflow/review-output/injection-overlap.md`.
 **Location:** `workflow/plans/plan-10-injection-dedup.md` — permanent home; stage is `metadata.status`.
 
 rel: depends-on -> [[constitution]]
@@ -101,7 +102,12 @@ adds.
 ## Open Questions {#open-questions}
 
 ### Q1: Does the repeat actually happen, and how much? {#q1}
-**Status:** OPEN — this is task 10.1, and it gates the plan.
+**Status:** RESOLVED — NO.
+
+**Measured 2026-09-15:** median carried **0.000**, mean 0.156, p75 0.100, over 187 pairs from 400
+replayed real prompts. The median consecutive call shares zero entries with its predecessor. The
+run was 187 pairs against a registered 200 and self-reported UNDERPOWERED; that limitation is kept
+attached rather than laundered, and it does not bridge 0.00 to 0.40.
 
 **Pre-registered threshold, fixed before the numbers are read:** median pairwise entry overlap
 between CONSECUTIVE `scan-prompt` calls must be **>= 40%**, over at least 200 replayed real
@@ -130,7 +136,9 @@ reports both surfaces' live per-prompt cost so this is answered with the same ru
 
 | # | Question | Decision | Date |
 |---|----------|----------|------|
-| Q1 | Repeat rate | Pre-registered: >= 40% median consecutive overlap over >= 200 replayed prompts, or the plan stops at 10.1. | 2026-09-15 |
+| Q1 | Repeat rate | Pre-registered >= 0.40. **Measured 0.000.** Plan stops at 10.1. | 2026-09-15 |
+| Q2 | Ledger location | Moot — not built. | 2026-09-15 |
+| Q3 | scan-prompt vs grep | Moot for dedup. Separate finding: 28% of scan-prompt calls return nothing. | 2026-09-15 |
 | Q2 | Ledger location | Deferred to 10.2; reuse STM session state if it fits. | — |
 | Q3 | scan-prompt vs grep priority | 10.1 reports both live. | — |
 
@@ -139,8 +147,8 @@ reports both surfaces' live per-prompt cost so this is answered with the same ru
 | Task ID | Title | Depends On |
 |---------|-------|------------|
 | 10.1 | **Measure the overlap** — replay real prompts, report against the Q1 threshold | plan 9 |
-| 10.2 | Ledger + degraded rendering (ONLY if 10.1 clears) | 10.1 |
-| 10.3 | PreCompact clear + turn TTL + live cost re-measurement | 10.2 |
+| 10.2 | ~~Ledger + degraded rendering~~ — **NOT BUILT**, 10.1 did not clear | 10.1 |
+| 10.3 | ~~PreCompact clear + turn TTL~~ — **NOT BUILT** | 10.2 |
 
 ## Execution contract {#execution}
 

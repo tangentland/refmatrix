@@ -27,7 +27,7 @@ current.
 | 7 | plan-7-longmemeval | approved | yes (4) | `workflow/plans/plan-7-longmemeval.md` | — |
 | 8 | plan-8-derived-coverage-notes | approved | yes (4) | `workflow/plans/plan-8-derived-coverage-notes.md` | plan 7 (measures it) |
 | 9 | plan-9-context-cost-telemetry | in-progress | yes (3) | `workflow/plans/plan-9-context-cost-telemetry.md` | — |
-| 10 | plan-10-injection-dedup | drafting | yes (3) | `workflow/plans/plan-10-injection-dedup.md` | plan 9 (its instrument) |
+| 10 | plan-10-injection-dedup | completed (negative) | yes (3) | `workflow/plans/plan-10-injection-dedup.md` | plan 9 (its instrument) |
 
 ## Sequence rationale {#sequence}
 

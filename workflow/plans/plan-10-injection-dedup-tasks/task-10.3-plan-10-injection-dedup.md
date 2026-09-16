@@ -5,14 +5,14 @@ title: "Task 10.3: PreCompact clear, turn TTL, and a live re-measurement"
 tags: [task, plan-10]
 metadata:
   node_type: task
-  status: pending
+  status: cancelled (10.1 did not clear)
   plan: plan-10-injection-dedup
 ---
 
 # Task 10.3: PreCompact clear, turn TTL, and a live re-measurement {#root}
 
 > Plan: [[plan-10-injection-dedup]]
-> Status: Pending
+> Status: cancelled (10.1 did not clear)
 > Depends on: 10.2
 
 rel: part-of -> [[plan-10-injection-dedup]]
