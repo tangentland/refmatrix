@@ -67,10 +67,15 @@ def window_enabled() -> bool:
 
 
 # Below this budget a split window measured WORSE than plain head truncation on
-# `longmemeval_oracle` (700 chars: 500 covered vs 509 for the head), because
-# two ~350-char halves cut the answer turn in the middle. Above it the split
-# wins decisively (2048: 672 vs 541). Measured, not chosen —
-# `workflow/measurements/rerank-window-ab-0916.md`.
+# `longmemeval_oracle` (700 chars: **338** covered vs 509 for the head) — two
+# ~350-char halves cut the answer turn in the middle, and every split fraction
+# from 0.3 to 0.7 lost there. Above it the split wins decisively (2048: 672 vs
+# 541). Measured, not chosen, and re-derivable:
+# `eval/production/rerank_window_ab.py --arms head,anchor_only,split0.5,shipped`
+# — see `workflow/measurements/rerank-window-ab-0916.md`. (The first version of
+# that table read 500 here: the 0.7 arm's number transcribed onto the 0.5 row,
+# caught by ch-bsd plan-12 r2 re-running the harness. It errs toward making the
+# floor look weaker than it is.)
 WINDOW_MIN_CHARS = int(os.environ.get("RMX_RERANK_WINDOW_MIN", "1024") or "1024")
 
 # How much of the budget stays on the document's head. 0.4-0.5 were tied at

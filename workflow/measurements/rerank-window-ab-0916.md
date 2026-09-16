@@ -41,7 +41,7 @@ There are TWO always-on UserPromptSubmit hooks and they do not share a budget:
 
 ## Reproducing it {#harness}
 
-`eval/production/rerank_window_ab.py --oracle <path to longmemeval_oracle>`. The dataset stays out
+`eval/production/rerank_window_ab.py --oracle <path to longmemeval_oracle> --arms head,anchor_only,split0.5,shipped`. Every arm that JUSTIFIES the design is in the harness — `head` (before), `anchor_only` (the strategy the task spec proposed), the `split<frac>` sweep, and `shipped` (whatever `window_doc` does today). The dataset stays out
 of the repo; the harness does not, because these numbers chose `WINDOW_HEAD_FRAC` and
 `WINDOW_MIN_CHARS` and have to be re-derivable when the reranker or the corpus moves.
 
@@ -60,8 +60,15 @@ Limit 700 (the per-prompt hook's `RERANK_DOC_CHARS`):
 | arm | total (n=896) |
 |---|---|
 | head truncation | 509 |
-| split window at 0.5 | 500 |
+| query-anchored window only | 413 |
+| split window at 0.3 / 0.4 / **0.5** / 0.6 / 0.7 | 392 / 373 / **338** / 285 / 500 |
 | **shipped (falls back to the head below 1024)** | **509 — byte-identical** |
+
+**Correction (ch-bsd plan-12 r2):** the first version of this row read `500` for the 0.5 split.
+That is the **0.7** arm's number, transcribed onto the wrong row — the 0.5 split covers **338**, a
+32% error in the figure that chose `WINDOW_MIN_CHARS`. It errs in the safe direction (the floor is
+better justified, not worse), and it was caught by re-running the committed harness, which is the
+reason the harness is committed.
 
 Cost: windowing 896 documents took **0.029 s** total (~32 µs/doc) at 2048. The slice length is
 unchanged, so the per-pair model cost is unchanged.
@@ -76,7 +83,8 @@ The fix only pays when it KEEPS the head: half the budget on the head, half wher
 occurs. That was not the plan's hypothesis; it is what the numbers said.
 
 Second correction: the split is **budget-sensitive**. At 700 chars two ~350-char halves cut the
-answer turn in the middle and the split loses (500 vs 509), so below `WINDOW_MIN_CHARS` (1024) the
+answer turn in the middle and every split fraction loses (0.5: 338 vs 509), so below
+`WINDOW_MIN_CHARS` (1024) the
 shipped code keeps head truncation byte-for-byte. The always-on hook path is therefore
 **unchanged**, and bug-032's benefit lands on the 2048-char surfaces.
 

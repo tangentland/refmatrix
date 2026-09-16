@@ -119,8 +119,9 @@ def test_collect_rerank_docs_windows_at_the_cap(monkeypatch):
 
 def test_a_small_budget_keeps_head_truncation(monkeypatch):
     """MEASURED, not chosen: at the per-prompt hook's 700-char cap the split
-    window covered 500 of 896 answer-bearing turns against 509 for plain head
-    truncation — two ~350-char halves cut the answer in the middle. Below
+    window covered 338 of 896 answer-bearing turns against 509 for plain head
+    truncation — two ~350-char halves cut the answer in the middle, and every
+    split fraction from 0.3 to 0.7 lost there too. Below
     `WINDOW_MIN_CHARS` the behaviour is byte-identical to before."""
     text = _doc(6000)
     assert rr.window_doc(text, "sourdough", limit=700) == text[:700]

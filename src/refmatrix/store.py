@@ -525,6 +525,34 @@ class Entity:
     noise: bool = False
 
 
+# The modules whose CHANGE makes a derived graph out of date. A version bump
+# does not: this project shipped 34 of them in ten days, and gating an alert on
+# version inequality would turn every store in the fleet permanently hot at
+# roughly 1-in-34 signal (measured by ch-bsd plan-12 r2). What matters is
+# whether the code that DERIVES the graph moved since the graph was built.
+_DERIVE_CODE_MODULES = ("ingest.py", "ingest_gmd.py", "store.py")
+
+
+def derive_code_mtime() -> float:
+    """Newest mtime among the modules that derive a graph, or 0.0.
+
+    Deliberately mtime and not version: a deploy rewrites only the files git
+    changed, so a release that does not touch ingest leaves every store's
+    derive as current as it was.
+    """
+    from pathlib import Path as _P
+
+    here = _P(__file__).resolve().parent
+    newest = 0.0
+    for name in _DERIVE_CODE_MODULES:
+        p = here / name
+        try:
+            newest = max(newest, p.stat().st_mtime)
+        except OSError:
+            continue          # a missing module is not a freshness signal
+    return newest
+
+
 def _version_key(v: str) -> tuple:
     """Order version strings numerically, not lexicographically.
 
@@ -5573,8 +5601,14 @@ class Store:
                 (self._partition_id,),
             ).fetchall()
         ]
+        code_mtime = derive_code_mtime()
         out = {"passes": rows, "running_version": _running,
                "oldest_version": None, "stale": False, "reason": None,
+               # `stale` answers the human's question (which VERSION built
+               # this). `behind_code` answers the alert's: did the deriving
+               # code actually move since? They differ on every release that
+               # does not touch ingest, which is most of them.
+               "code_mtime": code_mtime, "behind_code": False,
                # Two different states, and an alert gate has to tell them
                # apart: on the release that introduces stamping EVERY store in
                # the fleet is unstamped, and a gate that fired on that would
@@ -5588,6 +5622,8 @@ class Store:
             if tracked:
                 out["stale"] = True
                 out["never_stamped"] = True
+                # Not `behind_code`: nothing is known about when it was
+                # derived, and guessing would make every pre-0.72 store alert.
                 out["reason"] = (
                     f"{int(tracked)} tracked file(s) and the graph was never "
                     f"stamped — derived before {_running} recorded it; "
@@ -5601,10 +5637,18 @@ class Store:
         # to the string for a non-numeric component.
         out["oldest_version"] = min(
             (r["version"] for r in rows), key=_version_key)
+        behind = [r for r in rows
+                  if code_mtime and r["at"] < code_mtime]
+        out["behind_code"] = bool(behind)
         if mismatched:
             names = ", ".join(f"{r['pass_name']}@{r['version']}" for r in mismatched)
             out["stale"] = True
             out["reason"] = (f"derived by {names}, running {_running}")
+        if behind:
+            names = ", ".join(sorted(r["pass_name"] for r in behind))
+            note = (f"{names} derived before the current ingest code")
+            out["reason"] = f"{out['reason']}; {note}" if out["reason"] else note
+            out["stale"] = True
         return out
 
     def clear_tracked_stamps(self, *, like: str | None = None) -> dict:

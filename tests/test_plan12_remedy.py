@@ -143,9 +143,20 @@ def test_gather_queues_separates_unstamped_from_stale(tmp_path, monkeypatch):
     assert row.get("derive_unstamped") is True and "derive_stale" not in row
     assert hub_mod._queue_row_is_hot(row) is False
 
+    # Stamped by an older VERSION but not behind the deriving CODE: carried as
+    # drift, and COLD. 34 version bumps in ten days would otherwise turn every
+    # store in the fleet permanently hot (ch-bsd plan-12 r2).
     monkeypatch.setattr(daemon_mod, "call",
                         _mk({"stale": True, "never_stamped": False,
-                             "oldest_version": "0.49.1"}))
+                             "behind_code": False, "oldest_version": "0.49.1"}))
+    row = hub_mod.Hub._gather_queues(None)[0]
+    assert row["derive_version_drift"] == "0.49.1" and "derive_stale" not in row
+    assert hub_mod._queue_row_is_hot(row) is False
+
+    # Derived before the ingest code moved: that is the incident, and it is hot.
+    monkeypatch.setattr(daemon_mod, "call",
+                        _mk({"stale": True, "never_stamped": False,
+                             "behind_code": True, "oldest_version": "0.49.1"}))
     row = hub_mod.Hub._gather_queues(None)[0]
     assert row["derive_stale"] == "0.49.1" and "derive_unstamped" not in row
     assert hub_mod._queue_row_is_hot(row) is True
