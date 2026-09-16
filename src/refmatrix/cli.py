@@ -9522,6 +9522,12 @@ def _replica_memory_recall(query: str, *, k: int, kinds: list,
                             return [{"id": eid, "score": sc, "fused": bool(fuse),
                                      "reranked": True, "replica": True}
                                     for eid, sc in ranked]
+                        except _reranker.RerankSkipped as e:
+                            # NOT a failure: the pool could not fit the budget,
+                            # and now we know that BEFORE burning it (bug-025).
+                            # 7/7 deployed runs used to discover this by timing
+                            # out after 5 s with 0 rows reranked.
+                            ws.append(f"rerank skipped: {e.reason}; hits unreranked")
                         except Exception as e:  # noqa: BLE001 — said, never mute
                             ws.append(f"rerank failed ({type(e).__name__}: {e}); "
                                       f"hits unreranked")

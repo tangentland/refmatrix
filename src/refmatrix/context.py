@@ -541,7 +541,7 @@ def _rerank_bodied(s: Store, reranker, query: str,
     reorder it did not participate in.
     """
     from refmatrix import embedder as embmod
-    from refmatrix.reranker import rerank_entity_hits
+    from refmatrix.reranker import RerankSkipped, rerank_entity_hits
 
     slots: list[int] = []
     for i, (eid, _sc) in enumerate(hits):
@@ -565,7 +565,16 @@ def _rerank_bodied(s: Store, reranker, query: str,
     pool = _rerank_pool()
     slots = slots[:pool]
     subset = [hits[i] for i in slots]
-    reordered = rerank_entity_hits(s, reranker, query, subset, k=len(subset))
+    try:
+        reordered = rerank_entity_hits(s, reranker, query, subset, k=len(subset))
+    except RerankSkipped as exc:
+        # The pool does not fit this caller's budget (bug-025). Keep BM25
+        # order and SAY so on stderr: for `scan-prompt` stdout is the hook
+        # payload and stderr is the log, so a skip that says nothing is how a
+        # dead rerank leg went unnoticed for a release.
+        import sys as _sys
+        print(f"rerank skipped: {exc.reason}; BM25 order kept", file=_sys.stderr)
+        return hits
     if len(reordered) != len(subset):
         return hits
     out = list(hits)
@@ -777,8 +786,10 @@ def _append_content_hits(
         rq = rerank_query or ref
         try:
             ranked_hits = _rerank_bodied(s, reranker, rq, ranked_hits)
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 — degrade, but never in silence
+            import sys as _sys
+            print(f"rerank failed ({type(exc).__name__}: {exc}); BM25 order kept",
+                  file=_sys.stderr)
     for ceid, cscore in ranked_hits:
         if len(content_entries) >= max_entities:
             break

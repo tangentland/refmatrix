@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 
 # Protect the protocol channel BEFORE importing anything that might print.
 # torch / transformers / sentence-transformers all write to stdout under
@@ -75,9 +76,29 @@ class _RerankRole:
 
     name = "rerank"
 
+    # EMA smoothing for seconds-per-doc. 0.3 tracks a shifting machine load
+    # within a few calls without letting one outlier own the estimate — the
+    # identical 10-doc pool measured 9.26 / 14.08 / 3.72 s on three
+    # consecutive tries (bug-025), so a single sample is not a cost.
+    _EMA_ALPHA = 0.3
+
     def __init__(self, model: str | None):
         from refmatrix.reranker import Reranker
         self._rr = Reranker(model_name=model)
+        self._ema: float | None = None
+        self._scored_docs = 0
+
+    def _observe(self, elapsed_s: float, n_docs: int) -> None:
+        """Fold one real scoring call into the seconds-per-doc EMA.
+
+        Only REAL calls: a warmup `info` loads the model and scores nothing, so
+        seeding from it would report a cost the caller never pays."""
+        if n_docs <= 0:
+            return
+        per_doc = float(elapsed_s) / float(n_docs)
+        self._ema = per_doc if self._ema is None else (
+            self._EMA_ALPHA * per_doc + (1.0 - self._EMA_ALPHA) * self._ema)
+        self._scored_docs += int(n_docs)
 
     def info(self) -> dict:
         # Force the load here, the way the embed role's `dim` does. The
@@ -86,14 +107,22 @@ class _RerankRole:
         # the model load -- which is the exact failure `_start_embedder_warmup`
         # was written to prevent.
         self._rr._load()
-        return {"model": self._rr.model_name}
+        # What a budgeted caller needs to decide whether its pool fits
+        # (bug-025 / G13). `None` until a real call has been measured — a
+        # guess would be acted on.
+        return {"model": self._rr.model_name,
+                "cost_s_per_doc": self._ema,
+                "scored_docs": self._scored_docs}
 
     def handle(self, op: str, req: dict, blob: bytes):
         if op != "rerank":
             raise ValueError(f"unknown op for role=rerank: {op}")
         query = req.get("query") or ""
         docs = req.get("docs") or []
+        import time as _time
+        t0 = _time.time()
         scores = self._rr.score(query, docs)
+        self._observe(_time.time() - t0, len(docs))
         return ({"scores": [float(s) for s in scores]}, None)
 
 
@@ -121,6 +150,25 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
         op = req.pop("op", "")
+        # A frame whose caller already gave up is DROPPED at dequeue, before
+        # the model is touched (bug-025). The request that matters is not the
+        # one in flight — it is the one QUEUED behind it, which the client
+        # abandoned while it waited. Scoring it anyway is what made the NEXT
+        # hook's 1 s probe read "unavailable". Nothing interrupts a forward
+        # pass already running; that is out of scope and pretending otherwise
+        # would be a lie.
+        deadline = req.pop("deadline", None)
+        if deadline is not None:
+            try:
+                late = time.time() - float(deadline)
+            except (TypeError, ValueError):
+                late = None
+            if late is not None and late > 0:
+                send_frame(CHAN_OUT, {
+                    "ok": False,
+                    "error": f"deadline expired {late:.2f}s ago; not scored",
+                })
+                continue
         try:
             if op == "ping" and role is None:
                 # Liveness without paying the model load.

@@ -150,6 +150,12 @@ class SharedWorkerClient:
     def call(self, op: str, payload: dict | None = None, *,
              blob: bytes | None = None, timeout: float | None = None):
         req = {"role": self.role, "op": op, **(payload or {})}
+        # A bounded client cannot forget: if it gave itself N seconds, the
+        # frame says when it stops caring, and a worker that dequeues it after
+        # that drops it instead of starving the next caller (bug-025).
+        if timeout is not None and op != "info" and "deadline" not in req:
+            import time as _time
+            req["deadline"] = _time.time() + float(timeout)
         with self._lock:
             if timeout is not None:
                 if self._sock is None:
@@ -215,6 +221,10 @@ class ModelServer:
     def __init__(self, *, log=None):
         self._log_fn = log
         self._clients: dict[str, WorkerClient] = {}
+        # In-flight + waiting requests per role. One serialized worker serves
+        # every hook of every session, so "how many callers are ahead of me"
+        # is the term a budgeted caller was missing (bug-025 / G13).
+        self._pending: dict[str, int] = {}
         self._lock = threading.Lock()
         self._srv: socket.socket | None = None
         self._stop = threading.Event()
@@ -237,6 +247,19 @@ class ModelServer:
                 self._log(f"worker[{role}] created")
                 self._check_worker_version(w)
             return w
+
+    def _augment_info(self, role: str, hdr: dict) -> dict:
+        """Add the server-side half of the cost to an `info` answer.
+
+        The worker knows its seconds-per-doc; only the hub knows how many
+        callers are queued for it. `queue_depth` excludes the caller being
+        served, so a lone client reads 0 and the arithmetic
+        `(1 + queue_depth) * docs * cost` is the caller's own wait."""
+        out = dict(hdr)
+        with self._lock:
+            pending = int(self._pending.get(role, 0) or 0)
+        out["queue_depth"] = max(0, pending - 1)
+        return out
 
     def _drop_worker(self, role: str, exc: BaseException, *, worker=None) -> None:
         """Forget `worker` (or the current one) for `role`. Only the worker
@@ -448,6 +471,8 @@ class ModelServer:
                     if role not in ROLES:
                         raise ValueError(f"unknown role {role!r}")
                     w = self._worker(role)
+                    with self._lock:
+                        self._pending[role] = self._pending.get(role, 0) + 1
                     try:
                         hdr, out = w.call(op, req, blob=blob)
                     except (EOFError, BrokenPipeError, ConnectionError) as exc:
@@ -456,6 +481,12 @@ class ModelServer:
                         # call gets a fresh one instead of failing forever.
                         self._drop_worker(role, exc, worker=w)
                         raise
+                    finally:
+                        with self._lock:
+                            self._pending[role] = max(
+                                0, self._pending.get(role, 1) - 1)
+                    if op == "info":
+                        hdr = self._augment_info(role, hdr)
                     # `ok` comes from the worker; re-send it as our own.
                     hdr = {k: v for k, v in hdr.items() if k != "ok"}
                     try:
