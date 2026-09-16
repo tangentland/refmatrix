@@ -139,7 +139,16 @@ Committed results: `eval/production/longmemeval/results/summary-symbolic-120.jso
 ## Next, in priority order {#next}
 
 1. **Re-run at `--depth 200`.** Until the ceiling is unsaturated these are not ranking numbers.
-   ~4 h at current latency.
-2. **Profile the 63 s.** Attribute it across BM25 fan-out, PPR walk, and rerank. Registered in the
-   deferral registry; no cause is claimed without it.
-3. **Fix bug-030, re-run embed**, and add the dense and fused rows.
+   Runtime unknown — the "~4 h" an earlier version of this list gave was derived from the retracted
+   62.9 s figure and is withdrawn with it. Note `--depth` reached only `context` until bug b-6 was
+   fixed (ch-bsd r1); `scan` was depth-uncontrolled, so its committed ceiling of 0.642 is
+   scan-prompt's DEFAULT pool, not a depth-50 pool.
+2. **Fix bug-032 before trusting any per-type number.** The cross-encoder scores only a document's
+   first 2048 chars, and **36.9% of this corpus's answer-bearing turns sit beyond that offset**
+   (896 turns measured: median 0, p75 3,268, p90 8,117). `single-session-preference` at 0.200 — the
+   worst per-type result here — is exactly the shape that artifact produces, so it may be
+   truncation rather than retrieval quality.
+3. **Attribute the ~8.5 s CLI gap.** `build_context` warm is 0.45 s; the full daemonless CLI is
+   9.0 s, of which only 2.8 s is CPU. That ~6 s of waiting is the real open performance question —
+   NOT the retracted 62.9 s. See `workflow/measurements/longmemeval-latency.md`.
+4. **Fix bug-030, re-run embed**, and add the dense and fused rows.
