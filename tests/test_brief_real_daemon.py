@@ -103,32 +103,36 @@ def test_the_gmd_flag_does_not_crash_through_a_real_daemon(daemon_root):
     # must reach _as_brief, i.e. render a real brief — not the empty branch
     assert "### " in p.stdout, p.stdout[:400]
     assert "no briefs" not in p.stdout.lower()
+    # AND the edges must survive the renderer. `console.print` parsed
+    # `[[name]]` as rich markup and emitted `[]`, deleting every wikilink and
+    # every `rel:` target — while tools/gmd/lint.py reported 0 errors on the
+    # wreckage, because `[[]]` is not a wikilink (ch-bsd r3 #b-1-r3).
+    assert "rel: evidence-for -> [[" in p.stdout, p.stdout[:800]
+    assert "-> []" not in p.stdout, "rich ate the wikilink"
 
 
-def test_save_works_end_to_end_on_a_real_daemon(daemon_root):
-    """--save writes rows and a re-run still succeeds.
-
-    NOT the #b-4 guard — see the comment below for why, and for where that
-    guard actually lives.
-    """
+def test_saved_briefs_do_not_grow_the_corpus_on_rerun(daemon_root):
+    """#b-4 live, now that the replica lag is waited out rather than dodged."""
     root, env = daemon_root
     first = json.loads(_rmx(env, "memory", "brief", "--json",
                             "--min-mentions", "3", "--save").stdout)
     assert first.get("saved", 0) > 0, "nothing was saved; the test is vacuous"
 
-    # What THIS test guards is that --save works end to end on a real daemon
-    # and that a re-run still succeeds. It deliberately does NOT claim to be
-    # the #b-4 mutation guard: the second CLI read hits the REPLICA, which has
-    # not caught up with the rows just written (#m-19), so the effect is not
-    # observable here. Opening a second Store on a live daemon's root to force
-    # the issue is what feedback_store_calls_via_daemon forbids.
-    #
-    # The exclusion itself is guarded, on a store with no daemon, by
-    # test_brief_bsd_r1.py::test_saved_briefs_are_excluded_from_the_next_run —
-    # verified to fail when EXCLUDE_MTYPES drops brief/*.
+    # Poll the DAEMON until the replica carries the saved rows. This is a
+    # daemon read — nothing feedback_store_calls_via_daemon forbids — and it
+    # closes the gap I previously documented as unclosable (ch-bsd r3).
+    for _ in range(30):
+        listing = _rmx(env, "memory", "list", "--type", "brief/orphan-concept")
+        if "brief-" in listing.stdout:
+            break
+        time.sleep(1)
+    else:
+        pytest.fail("saved briefs never reached the replica; test is vacuous")
+
     second = json.loads(_rmx(env, "memory", "brief", "--json",
                              "--min-mentions", "3").stdout)
-    assert second["stats"]["briefs"] >= 0
+    assert second["stats"]["memories"] == first["stats"]["memories"], (
+        "a saved brief re-entered its own corpus")
 
 
 def test_an_unknown_class_fails_loudly_through_the_daemon(daemon_root):

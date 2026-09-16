@@ -4305,18 +4305,23 @@ def _op_memory_brief(d: Daemon, args: dict) -> dict:
           if args.get(k) is not None}
     if args.get("plan") is not None:
         kw["plan"] = args["plan"]
-    result = _read_with_fallback(
-        d, part, lambda s: brief_mod.compile_briefs(s, **kw))
+    # ONE read closure for both the derivation and the id->name map `--gmd`
+    # links evidence against (ch-bsd r2 #b-2-r2d). Two separate
+    # `_read_with_fallback` calls worked but took the writer lock TWICE in the
+    # pre-first-snapshot boot window — the window plan-4 and plan-5 spent five
+    # rounds on — and could see two different snapshots, so an evidence id
+    # could resolve against a newer catalog than the brief was derived from
+    # (ch-bsd r3, answer to Q2).
+    def _derive(s):
+        res = brief_mod.compile_briefs(s, **kw)
+        bs = res.get("briefs") or []
+        ids = sorted({int(e) for b in bs
+                      for e in (b.as_dict() if hasattr(b, "as_dict") else b
+                                ).get("evidence") or []})
+        return res, _names_for(s, ids)
 
+    result, names = _read_with_fallback(d, part, _derive)
     briefs = result.get("briefs") or []
-    # Ship the id->name map with the briefs. Without it the CLI's `--gmd` has
-    # nothing to resolve evidence ids against and prints `(unresolved)` for
-    # EVERY endpoint, two lines under a heading that names them — the
-    # loud-honesty line firing on 100% of the class (ch-bsd r2 #b-2-r2d).
-    ev_ids = sorted({int(e) for b in briefs
-                     for e in (b.as_dict() if hasattr(b, "as_dict") else b
-                               ).get("evidence") or []})
-    names = _read_with_fallback(d, part, lambda s: _names_for(s, ev_ids))
     payload = {
         "briefs": [b.as_dict() if hasattr(b, "as_dict") else b for b in briefs],
         "names": names,

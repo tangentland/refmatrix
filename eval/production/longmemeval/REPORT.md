@@ -29,7 +29,7 @@ quoting anything.**
 | build | `rmx init` → `ingest-gmd --as-memory` → (embed FAILED, see [[#embed]]) |
 | ingest time | **15,775 s (4h23m)** |
 | questions scored | **120** — type-stratified, 20 per type, seed 42 |
-| retrieval depth | **50** |
+| retrieval depth | **50 for `context`; `scan` is DEPTH-UNCONTROLLED** (see [[#saturation]]) |
 | binary | deploy `rmx` 0.69.1, daemon up and warm |
 | date | 2026-09-15 |
 
@@ -41,19 +41,27 @@ quoting anything.**
 | surface | MRR@20 | R@1 | R@5 | hit@5 | **ceiling** |
 |---|---:|---:|---:|---:|---:|
 | `context` | 0.679 | 0.476 | 0.605 | 0.683 | **0.683** |
-| `scan` | 0.637 | 0.445 | 0.547 | 0.642 | **0.642** |
+| `scan` * | 0.637 | 0.445 | 0.547 | 0.642 | **0.642** |
+
+\* `scan` is DEPTH-UNCONTROLLED — its ceiling is scan-prompt's default pool, NOT a depth-50 pool.
+Do not read it against `context`'s row as though one knob produced both.
 
 ## THE RESULT IS SATURATED — read this before the table {#saturation}
 
 `context` scores **hit@5 = 0.683 against a ceiling of 0.683**. `scan` scores 0.642 against 0.642.
 
-The ceiling is the fraction of questions whose gold session appeared ANYWHERE in the depth-50 pool.
-Hitting it exactly means **every gold session that entered the pool was ranked into the top 5**.
+The ceiling is the fraction of questions whose gold session appeared ANYWHERE in the retrieved
+pool. Hitting it exactly means **every gold session that entered the pool was ranked into the top
+5**. So neither number measures ranking quality. They measure how often retrieval reached the gold
+session at all.
 
-So these numbers do not measure ranking quality at all. They measure how often depth-50 retrieval
-reached the gold session. **R@5 = 0.605 is a floor set by retrieval depth, not a ranking result.**
-Raising `--depth` would raise both the ceiling and the score, and nothing about the ranker would
-have changed.
+**The two rows are bounded by DIFFERENT things and are not comparable to each other:**
+
+- `context` — pool = `--max-entities 50`. **R@5 = 0.605 is a floor set by retrieval depth.**
+  Raising `--depth` raises both its ceiling and its score with no change to the ranker.
+- `scan` — **DEPTH-UNCONTROLLED.** `--depth` never reached it: `--max-tokens` is inert in JSON
+  mode and `scan.py` cuts at `matches[:max_concepts]` before budgeting (measured, ch-bsd r2
+  #b-6-r2). Its 0.642 is scan-prompt's DEFAULT pool, and `--depth 200` will not move it.
 
 ## Per question type {#per-type}
 
@@ -134,15 +142,19 @@ REFMATRIX_ROOT=<data>/.refmatrix python3 run.py \
     --method context --method scan --subset 20 --depth 50 --at 1,5,10,20 --workers 4
 ```
 
+`--depth 50` applies to `context` only; `scan` ignores it and records `depth: null`.
+```
+
 Committed results: `eval/production/longmemeval/results/summary-symbolic-120.json`.
 
 ## Next, in priority order {#next}
 
 1. **Re-run at `--depth 200`.** Until the ceiling is unsaturated these are not ranking numbers.
    Runtime unknown — the "~4 h" an earlier version of this list gave was derived from the retracted
-   62.9 s figure and is withdrawn with it. Note `--depth` reached only `context` until bug b-6 was
-   fixed (ch-bsd r1); `scan` was depth-uncontrolled, so its committed ceiling of 0.642 is
-   scan-prompt's DEFAULT pool, not a depth-50 pool.
+   62.9 s figure and is withdrawn with it. **`--depth` reaches only `context`.** b-6 was NOT
+   fixed: two attempted fixes were both inert and a third guess was declined (ch-bsd r1 #b-6,
+   r2 #b-6-r2), so `scan` is permanently DEPTH-UNCONTROLLED, its committed 0.642 is scan-prompt's
+   DEFAULT pool, and re-running at 200 will leave that row byte-identical.
 2. **Fix bug-032, but do not assume it explains the table.** The cross-encoder scores only a
    document's first 2048 chars and **36.9% of this corpus's answer-bearing turns sit beyond that
    offset** (896 turns: median 0, p75 3,268, p90 8,117). An earlier version of this list blamed

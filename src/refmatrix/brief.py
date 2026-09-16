@@ -298,6 +298,14 @@ def contradicted(store: "Store", *, rows: "dict[int, dict] | None" = None,
     supersedes = _pairs(store, "supersedes")
     out: list[Brief] = []
     skipped = 0
+    # WHY each pair was dropped. "N row(s) skipped — unresolvable ids" has now
+    # been the wrong explanation three rounds running: first for concept
+    # endpoints, now for 49/49 process-authored nodes. And without a breakdown
+    # a future over-filter is INVISIBLE — if `architecture` ever grows a
+    # contradicts edge the class goes quiet and the only signal is a number
+    # ticking up, which is the failure mode this plan exists to prevent
+    # (ch-bsd r3).
+    by_reason: Counter = Counter()
     seen: set[tuple[int, int]] = set()
     for a, b in sorted(contradicts):
         key = (min(a, b), max(a, b))
@@ -306,14 +314,16 @@ def contradicted(store: "Store", *, rows: "dict[int, dict] | None" = None,
         seen.add(key)
         ra, rb = _endpoint(store, a, rows), _endpoint(store, b, rows)
         if ra is None or rb is None:
-            # Unresolvable, mtype-excluded, or process-authored — all skips.
             skipped += 1
+            by_reason["unresolvable_or_mtype"] += 1
             continue
         if OPERATIONAL_RE.match(ra) or OPERATIONAL_RE.match(rb):
             skipped += 1
+            by_reason["operational"] += 1
             continue
         if _WORKFLOW_NODE_RE.match(ra) or _WORKFLOW_NODE_RE.match(rb):
             skipped += 1
+            by_reason["workflow_authored"] += 1
             continue
         if (a, b) in supersedes or (b, a) in supersedes:
             continue
@@ -324,7 +334,9 @@ def contradicted(store: "Store", *, rows: "dict[int, dict] | None" = None,
             # nodes, and saying otherwise mis-describes 100% of the class.
             finding="two nodes contradict and neither supersedes the other",
             evidence=[a, b]))
-    return (out, skipped) if count_skips else out
+    if count_skips:
+        return out, skipped, dict(by_reason)
+    return out
 
 
 def _endpoint(store: "Store", eid: int,
@@ -456,10 +468,12 @@ def compile_briefs(store: "Store", *, plan: "dict | None" = None,
                 skipped += sk
                 ran.append("singleton")
 
+    skipped_by: dict = {}
     if "contradicted" in wanted:
-        got, sk = contradicted(store, rows=rows, count_skips=True)
+        got, sk, why = contradicted(store, rows=rows, count_skips=True)
         briefs += got
         skipped += sk
+        skipped_by = why
         ran.append("contradicted")
 
     if "orphan-concept" in wanted:
@@ -473,6 +487,7 @@ def compile_briefs(store: "Store", *, plan: "dict | None" = None,
             "briefs": len(briefs),
             "skipped": skipped,
             "by_class": dict(Counter(b.cls for b in briefs)),
+            "skipped_by": skipped_by,
             "classes_run": ran,
             "classes_not_run": not_run,
             "partition": store._partition_name,

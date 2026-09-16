@@ -16,6 +16,20 @@ from __future__ import annotations
 
 import pytest
 
+@pytest.fixture(autouse=True)
+def _no_live_cli_log(monkeypatch):
+    """These tests invoke the CLI, whose `_memory_intent` writes a
+    phase:"start" row into the LIVE .refmatrix/cli.log before the body
+    runs. Patched in test_context_cost.py two rounds ago and missed
+    here — third round, third sibling call site (ch-bsd r3).
+    """
+    from refmatrix import telemetry
+    monkeypatch.setattr(telemetry, "log_cli_intent",
+                        lambda root, **kw: None, raising=False)
+    monkeypatch.setattr(telemetry, "log_cli_invocation",
+                        lambda root, **kw: None, raising=False)
+
+
 from refmatrix import brief, daemon as daemon_mod, verbs
 import refmatrix.mcp as mcp
 
@@ -168,15 +182,15 @@ def test_the_op_derives_briefs_on_the_read_path(monkeypatch):
 
     def fake_read(d, partition, fn):
         reads.append(partition)
-        return fn(_FakeStore())
+        return fn(_FakeStore())      # fn is now the combined derive closure
 
     monkeypatch.setattr(daemon_mod, "_read_with_fallback", fake_read)
     out = daemon_mod.OPS["memory_brief"](
         object(), {"partition": "memory-proj", "min_mentions": 3})
-    # TWO read-path calls now: the derivation, and the id->name map --gmd
-    # links evidence against (ch-bsd r2 #b-2-r2d). Both must be reads — the
-    # point of the assertion is that NEITHER takes the writer lock.
-    assert reads == ["memory-proj", "memory-proj"]
+    # ONE read-path call: derivation and the id->name map share a closure, so
+    # they see ONE snapshot and take the lock at most once in the boot window
+    # (ch-bsd r3, answer to Q2).
+    assert reads == ["memory-proj"]
     assert out["stats"]["skipped"] == 0
     assert len(out["briefs"]) == 1
     assert called["min_mentions"] == 3

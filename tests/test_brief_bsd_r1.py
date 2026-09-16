@@ -11,6 +11,20 @@ import numpy as np
 import pytest
 from click.testing import CliRunner
 
+@pytest.fixture(autouse=True)
+def _no_live_cli_log(monkeypatch):
+    """These tests invoke the CLI, whose `_memory_intent` writes a
+    phase:"start" row into the LIVE .refmatrix/cli.log before the body
+    runs. Patched in test_context_cost.py two rounds ago and missed
+    here — third round, third sibling call site (ch-bsd r3).
+    """
+    from refmatrix import telemetry
+    monkeypatch.setattr(telemetry, "log_cli_intent",
+                        lambda root, **kw: None, raising=False)
+    monkeypatch.setattr(telemetry, "log_cli_invocation",
+                        lambda root, **kw: None, raising=False)
+
+
 from refmatrix import brief, terms
 from refmatrix.cli import main as cli_main
 from refmatrix.store import Store
@@ -42,19 +56,51 @@ def test_render_gmd_accepts_the_dicts_the_daemon_actually_returns():
     assert "[[lonely]]" in out
 
 
+def _fake_brief_payload(root, action, **kw):
+    """The shape the daemon op actually returns — INCLUDING `names`.
+
+    The first version of this fake omitted `names`, so no wikilink existed in
+    the rendered doc and the rich-markup defect below had nothing to eat
+    (ch-bsd r3 #b-1-r3). A fake that drops the field under test proves nothing.
+    """
+    return {"briefs": [{"class": "singleton", "label": "x", "finding": "f",
+                        "evidence": [1], "detail": {},
+                        "mtype": "brief/singleton"}],
+            "names": {"1": "note-one"},
+            "stats": {"skipped": 0, "briefs": 1, "partition": "p"}}
+
+
 def test_cli_gmd_flag_runs_end_to_end(monkeypatch):
     """No test invoked --gmd through the CLI; it died on every real call."""
-    def fake_memory(root, action, **kw):
-        return {"briefs": [{"class": "singleton", "label": "x",
-                            "finding": "f", "evidence": [1], "detail": {},
-                            "mtype": "brief/singleton"}],
-                "stats": {"skipped": 0, "briefs": 1, "partition": "p"}}
-
     from refmatrix import verbs
-    monkeypatch.setattr(verbs, "memory", fake_memory)
+    monkeypatch.setattr(verbs, "memory", _fake_brief_payload)
     res = CliRunner().invoke(cli_main, ["memory", "brief", "--gmd"])
     assert res.exit_code == 0, res.output + str(res.exception)
     assert "gmd:" in res.output
+
+
+def test_cli_gmd_output_keeps_its_wikilinks_and_edges(monkeypatch):
+    """`console.print` parsed `[[note-one]]` as rich markup and emitted `[]`,
+    deleting every link and every `rel:` target — and `tools/gmd/lint.py`
+    reported 0 errors on the wreckage because `[[]]` is not a wikilink
+    (ch-bsd r3 #b-1-r3). The CONTENT is the assertion, not the exit code."""
+    from refmatrix import verbs
+    monkeypatch.setattr(verbs, "memory", _fake_brief_payload)
+    res = CliRunner().invoke(cli_main, ["memory", "brief", "--gmd"])
+    assert res.exit_code == 0, res.output
+    assert "[[note-one]]" in res.output, res.output
+    assert "rel: evidence-for -> [[note-one]]" in res.output, res.output
+    assert "-> []" not in res.output, "rich ate the wikilink"
+
+
+def test_cli_gmd_output_survives_the_repo_linter_with_its_edges(monkeypatch,
+                                                                tmp_path):
+    """Lint alone cannot catch this — assert the edges are THERE first."""
+    from refmatrix import verbs
+    monkeypatch.setattr(verbs, "memory", _fake_brief_payload)
+    res = CliRunner().invoke(cli_main, ["memory", "brief", "--gmd"])
+    assert res.output.count("rel: evidence-for ->") >= 1
+    assert "[[" in res.output and "]]" in res.output
 
 
 # ── #b-3: the shared stoplist, sixth site ──────────────────────────────────
@@ -178,9 +224,10 @@ def test_contradicted_reports_a_real_skip_reason_not_a_wrong_one(store):
         a = store.add_concept("x#one")
         b = store.add_concept("y#two")
         store.link("contradicts", a, b)
-        out, skipped = brief.contradicted(store, count_skips=True)
+        out, skipped, why = brief.contradicted(store, count_skips=True)
     assert skipped == 0, "a resolvable concept pair must not be counted a skip"
     assert len(out) == 1
+    assert why == {}, why
 
 
 # ── #s-15: corroboration must use the AUTHORING clock, not the ingest clock ──
@@ -241,9 +288,10 @@ def test_endpoint_fallthrough_still_honours_mtype_exclusion(store):
         keep = store.add_memory("real-note", "x", mtype="project")
         skip = store.add_memory("savestate_abc123", "x", mtype="session/digest")
         store.link("contradicts", keep, skip)
-        out, skipped = brief.contradicted(store, count_skips=True)
+        out, skipped, why = brief.contradicted(store, count_skips=True)
     assert out == [], "an mtype-excluded row reached the class"
     assert skipped == 1
+    assert why.get("unresolvable_or_mtype") == 1, why
 
 
 def test_contradicted_finding_does_not_claim_both_sides_are_memories(store):

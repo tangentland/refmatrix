@@ -11161,7 +11161,9 @@ def memory_compile(k, threshold, threshold_pct, mutual, beta, gamma,
     gmd = consolidate.render_gmd(
         plan, partition=plan["stats"].get("partition"))
     if str(out) == "-":
-        console.print(gmd)
+        # Same defect as the brief --gmd path: rich would eat every `[[link]]`
+        # (ch-bsd r3 #b-1-r3, sibling).
+        click.echo(gmd)
         return
     dest = Path(out) if out else consolidate.default_out_path(root)
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -11244,7 +11246,13 @@ def memory_brief(classes, min_members, min_dates, min_mentions, do_compile,
         # The op ships the id->name map with them — without it every evidence
         # id renders `(unresolved)` (ch-bsd r2 #b-2-r2d).
         names = {int(k): v for k, v in (res.get("names") or {}).items()}
-        console.print(brief_mod.render_gmd(
+        # click.echo, NOT console.print: rich parses `[[note-1]]` as markup and
+        # emits `[]`, deleting EVERY wikilink and every `rel:` target in the
+        # document (ch-bsd r3 #b-1-r3). `tools/gmd/lint.py` then reports 0
+        # errors on the wreckage, because `[[]]` is not a wikilink at all — so
+        # the commit gate passes on a doc whose entire edge set is gone. This
+        # is what `scan_prompt_cmd` already does for the same reason.
+        click.echo(brief_mod.render_gmd(
             briefs, names=names, partition=stats.get("partition")))
         return
 
@@ -11254,8 +11262,13 @@ def memory_brief(classes, min_members, min_dates, min_mentions, do_compile,
         # found nothing.
         console.print(f"[yellow]{cls}[/] not run — {why}")
     if stats.get("skipped"):
-        console.print(f"[yellow]{stats['skipped']} row(s) skipped[/] — "
-                      f"unresolvable ids, counted not dropped")
+        # Say WHY. "unresolvable ids" was the wrong explanation three rounds
+        # running, and a breakdown is what makes a future over-filter visible
+        # (ch-bsd r3).
+        why = stats.get("skipped_by") or {}
+        detail = ", ".join(f"{k}={v}" for k, v in sorted(why.items())) or "?"
+        console.print(f"[yellow]{stats['skipped']} row(s) skipped[/] "
+                      f"({detail}) — counted, not dropped")
     if not briefs:
         console.print("[dim]no briefs[/]")
         return
