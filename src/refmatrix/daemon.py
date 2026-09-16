@@ -4267,6 +4267,22 @@ def _op_memory_compile_apply(d: Daemon, args: dict) -> dict:
     return result
 
 
+def _names_for(store, ids: list) -> dict:
+    """`{entity_id: name}` for the given ids — the map `--gmd` links against."""
+    if not ids:
+        return {}
+    out: dict = {}
+    con = store._read()
+    for start in range(0, len(ids), 500):
+        chunk = ids[start:start + 500]
+        ph = ",".join("?" * len(chunk))
+        for r in con.execute(
+            f"SELECT id, name FROM entities WHERE id IN ({ph})", chunk,
+        ).fetchall():
+            out[str(int(r[0]))] = str(r[1])
+    return out
+
+
 def _op_memory_brief(d: Daemon, args: dict) -> dict:
     """Derive coverage briefs; optionally persist them as memory rows.
 
@@ -4293,8 +4309,17 @@ def _op_memory_brief(d: Daemon, args: dict) -> dict:
         d, part, lambda s: brief_mod.compile_briefs(s, **kw))
 
     briefs = result.get("briefs") or []
+    # Ship the id->name map with the briefs. Without it the CLI's `--gmd` has
+    # nothing to resolve evidence ids against and prints `(unresolved)` for
+    # EVERY endpoint, two lines under a heading that names them — the
+    # loud-honesty line firing on 100% of the class (ch-bsd r2 #b-2-r2d).
+    ev_ids = sorted({int(e) for b in briefs
+                     for e in (b.as_dict() if hasattr(b, "as_dict") else b
+                               ).get("evidence") or []})
+    names = _read_with_fallback(d, part, lambda s: _names_for(s, ev_ids))
     payload = {
         "briefs": [b.as_dict() if hasattr(b, "as_dict") else b for b in briefs],
+        "names": names,
         "stats": result.get("stats", {}),
         "params": result.get("params", {}),
         "saved": 0,

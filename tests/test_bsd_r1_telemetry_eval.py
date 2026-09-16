@@ -72,7 +72,8 @@ def test_a_log_of_only_tool_hooks_reports_zero_prompt_windows(tmp_path):
 
 # ── #b-6: depth must reach every method, or not be claimed ─────────────────
 
-@pytest.mark.parametrize("method", sorted(lme.METHODS))
+@pytest.mark.parametrize("method",
+                         sorted(set(lme.METHODS) - lme.DEPTH_UNCONTROLLED))
 def test_every_method_carries_the_depth_it_is_labelled_with(method):
     """`scan`/`scan-nocontent` ignored k while the table printed depth=50 and
     REPORT.md's next step is 're-run at --depth 200'."""
@@ -89,6 +90,17 @@ def test_every_method_carries_the_depth_it_is_labelled_with(method):
     lo, hi = _nums(small), _nums(big)
     assert lo and hi, f"{method} carries no numeric depth: {small}"
     assert max(hi) > max(lo), f"{method} depth does not scale: {lo} -> {hi}"
+
+
+@pytest.mark.parametrize("method", sorted(lme.DEPTH_UNCONTROLLED))
+def test_a_depth_uncontrolled_surface_records_null_depth(method):
+    """ch-bsd r2 #b-6-r2: --max-tokens is inert in JSON mode, so `scan` has no
+    depth knob this harness can turn. It must not be LABELLED with one."""
+    questions = [{"question_id": "q0", "question_type": "multi-session",
+                  "question": "q"}]
+    s = lme.score({"q0": ["g"]}, questions, {"q0": ["g"]}, {"q0": ["g"]},
+                  ks=[1], mode="union", depth=None)
+    assert s["_meta"]["depth"] is None
 
 
 # ── #s-13: a dead surface must not look like an empty one in the ARTIFACT ──

@@ -127,11 +127,25 @@ def test_the_cli_never_opens_a_write_store_directly():
 
 # ── the daemon op ──────────────────────────────────────────────────────────
 
+class _FakeCon:
+    """`_names_for` reads entity names to build the id->name map --gmd links
+    against (ch-bsd r2 #b-2-r2d). No names in this fixture, so: empty."""
+
+    def execute(self, sql, params=None):
+        return self
+
+    def fetchall(self):
+        return []
+
+
 class _FakeStore:
     def __init__(self):
         self.saved: list[dict] = []
         self._partition_name = "memory-proj"
         self._partition_id = 1
+
+    def _read(self):
+        return _FakeCon()
 
     def add_memory(self, name, content, mtype="observation", tags=None,
                    metadata=None, protected=False):
@@ -159,7 +173,10 @@ def test_the_op_derives_briefs_on_the_read_path(monkeypatch):
     monkeypatch.setattr(daemon_mod, "_read_with_fallback", fake_read)
     out = daemon_mod.OPS["memory_brief"](
         object(), {"partition": "memory-proj", "min_mentions": 3})
-    assert reads == ["memory-proj"]
+    # TWO read-path calls now: the derivation, and the id->name map --gmd
+    # links evidence against (ch-bsd r2 #b-2-r2d). Both must be reads — the
+    # point of the assertion is that NEITHER takes the writer lock.
+    assert reads == ["memory-proj", "memory-proj"]
     assert out["stats"]["skipped"] == 0
     assert len(out["briefs"]) == 1
     assert called["min_mentions"] == 3

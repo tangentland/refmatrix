@@ -69,6 +69,17 @@ STOPWORDS = _SHARED_STOPWORDS
 _MEMORY_ID_RE = re.compile(
     r"^(project|feedback|reference|impression|guardrail|savestate|task|plan|bsd|impl)[-_]")
 
+# Nodes authored by the PROCESS, not by the corpus. A ch-bsd ledger writes
+# `rel: contradicts -> [[some-rule]]` as its citation convention, and a task
+# spec cites the plan it contradicts — 45 of the 47 pairs this class first
+# emitted on the live replica were exactly that (ch-bsd r2 #b-2-r2). They are
+# not the corpus disagreeing with itself. Same principle as
+# `feedback_operational_content_not_in_graph`: process artifacts are not
+# knowledge, and a class that reports them trains a reader to skim past it.
+_WORKFLOW_NODE_RE = re.compile(
+    r"^(bsd|task|plan|impl|remedy|tdd|constitution|agent)[-_]|"
+    r"^(bsd-pattern|architecture|plan-of-plans)\b")
+
 MTYPE_PREFIX = "brief"
 
 # Defaults, stated once. Every detector takes them as parameters; none of them
@@ -295,10 +306,13 @@ def contradicted(store: "Store", *, rows: "dict[int, dict] | None" = None,
         seen.add(key)
         ra, rb = _endpoint(store, a, rows), _endpoint(store, b, rows)
         if ra is None or rb is None:
-            # A genuinely unresolvable id — not merely a non-memory kind.
+            # Unresolvable, mtype-excluded, or process-authored — all skips.
             skipped += 1
             continue
         if OPERATIONAL_RE.match(ra) or OPERATIONAL_RE.match(rb):
+            skipped += 1
+            continue
+        if _WORKFLOW_NODE_RE.match(ra) or _WORKFLOW_NODE_RE.match(rb):
             skipped += 1
             continue
         if (a, b) in supersedes or (b, a) in supersedes:
@@ -306,7 +320,9 @@ def contradicted(store: "Store", *, rows: "dict[int, dict] | None" = None,
         out.append(Brief(
             cls="contradicted",
             label=f"{ra} vs {rb}",
-            finding="two memories contradict and neither supersedes the other",
+            # NOT "two memories": endpoints are usually concept `#anchor`
+            # nodes, and saying otherwise mis-describes 100% of the class.
+            finding="two nodes contradict and neither supersedes the other",
             evidence=[a, b]))
     return (out, skipped) if count_skips else out
 
@@ -323,7 +339,14 @@ def _endpoint(store: "Store", eid: int,
     if row is not None:
         return row["name"]
     ent = store.get_entity_by_id(eid)
-    return str(ent.name) if ent is not None else None
+    if ent is None:
+        return None
+    # The fallthrough must not re-admit what the mtype filter just excluded.
+    # `rows` is already mtype-filtered, so a kind='memory' id that is absent
+    # from it was excluded on purpose (ch-bsd r2 #b-2-r2c).
+    if getattr(ent, "kind", None) == "memory":
+        return None
+    return str(ent.name)
 
 
 def orphan_concept(store: "Store", *, min_mentions: int = MIN_MENTIONS,

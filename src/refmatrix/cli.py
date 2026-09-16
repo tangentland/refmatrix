@@ -11241,8 +11241,11 @@ def memory_brief(classes, min_members, min_dates, min_mentions, do_compile,
         return
     if as_gmd:
         # briefs arrive as dicts off the daemon wire; render_gmd rehydrates.
+        # The op ships the id->name map with them — without it every evidence
+        # id renders `(unresolved)` (ch-bsd r2 #b-2-r2d).
+        names = {int(k): v for k, v in (res.get("names") or {}).items()}
         console.print(brief_mod.render_gmd(
-            briefs, partition=stats.get("partition")))
+            briefs, names=names, partition=stats.get("partition")))
         return
 
     skipped = stats.get("classes_not_run") or {}

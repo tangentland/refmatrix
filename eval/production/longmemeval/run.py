@@ -55,10 +55,9 @@ from paths import (HAYSTACKS, QRELS, QUESTIONS, RESULTS, STORE_ROOT, SUBSETS,
 
 MODES = ("union", "restricted")
 
-# scan-prompt is budgeted in tokens, not hits. 40 tokens per depth unit keeps
-# depth=50 near the ~2000-token default the surface ships with, so the existing
-# depth-50 rows stay comparable while --depth 200 genuinely widens the pool.
-SCAN_TOKENS_PER_DEPTH = 40
+# Surfaces whose pool this harness cannot size. Their `_meta.depth` is null and
+# their ceilings are NOT comparable to a depth-N ceiling (ch-bsd r2 #b-6-r2).
+DEPTH_UNCONTROLLED = frozenset({"scan", "scan-nocontent"})
 
 
 # ── metrics ────────────────────────────────────────────────────────────────
@@ -190,17 +189,28 @@ def _context_argv(query: str, *, k: int, degree: int = 0) -> list[str]:
 
 
 def _scan_argv(query: str, *, k: int, content: bool = True) -> list[str]:
-    """scan-prompt has no `-k`; its pool is bounded by the TOKEN budget.
+    """scan-prompt is DEPTH-UNCONTROLLED. `k` is deliberately unused.
 
-    This accepted `k` and dropped it, so `--depth` was inert for `scan` and
-    `scan-nocontent` while `_meta["depth"]` and the printed table both said
-    otherwise — and REPORT.md's #1 next step ("re-run at --depth 200") would
-    have moved `context` and left `scan` byte-identical (ch-bsd r1 #b-6).
-    `--max-entities` is not a scan-prompt flag either; `--max-tokens` is the
-    knob that actually widens the pool, so depth is translated into it.
+    Two wrong answers preceded this one, both mine:
+
+    1. It silently accepted `k` and dropped it, while `_meta["depth"]` recorded
+       50, the table printed it, and REPORT.md's #1 next step was "re-run at
+       --depth 200" — which would have moved `context` and left `scan`
+       byte-identical (ch-bsd r1 #b-6).
+    2. It then translated depth into `--max-tokens`. Measured by ch-bsd r2:
+       `--max-tokens 1` and `--max-tokens 100000` return the SAME 11,931 bytes
+       in JSON mode. The budget binds in text mode only — `scan.py` cuts at
+       `matches[:max_concepts]` before any budgeting and the `fmt == "json"`
+       branch emits every match unconditionally. `--max-concepts` did not move
+       it either. So the second fix was a second guess (ch-bsd r2 #b-6-r2).
+
+    Rather than guess a third constant, this surface is now labelled honestly:
+    it has no depth knob this harness knows how to turn, `DEPTH_UNCONTROLLED`
+    marks it, and `score()` records `depth: null` for it so no reader can
+    compare its ceiling against a depth-50 ceiling. Finding the real knob needs
+    a budget-bound prompt and a measurement, and is a deferral, not a constant.
     """
-    a = ["scan-prompt", query, "--format", "json", "--no-composite",
-         "--max-tokens", str(max(200, int(k) * SCAN_TOKENS_PER_DEPTH))]
+    a = ["scan-prompt", query, "--format", "json", "--no-composite"]
     if not content:
         a.append("--no-content")
     return a
@@ -323,7 +333,9 @@ def print_table(method: str, summary: dict, ks: list[int]) -> None:
     # `mrr` is reciprocal rank at the deepest reported cutoff; name it so a
     # reader never has to guess which k a bare "MRR" was taken at.
     labels = [f"mrr@{max(ks)}"] + cols[1:]
-    head = f"\n  === {method}  [mode={meta['mode']} depth={meta['depth']}"
+    dep = meta.get("depth")
+    head = (f"\n  === {method}  [mode={meta['mode']} "
+            + (f"depth={dep}" if dep is not None else "depth=UNCONTROLLED"))
     if "recall_ceiling" in meta:
         head += f" ceiling={meta['recall_ceiling']:.3f}"
     if meta.get("n_failed"):
@@ -385,7 +397,8 @@ def main() -> int:
             json.dumps(rankings, indent=1), encoding="utf8")
         for mode in modes:
             s = score(rankings, questions, qrels, haystacks, ks=ks, mode=mode,
-                      depth=a.depth, failed=failed)
+                      depth=(None if method in DEPTH_UNCONTROLLED else a.depth),
+                      failed=failed)
             s["_meta"]["retrieve_s"] = elapsed
             s["_meta"]["n_questions"] = len(questions)
             print_table(method, s, ks)

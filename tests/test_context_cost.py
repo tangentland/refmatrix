@@ -196,6 +196,12 @@ def test_a_counting_failure_does_not_fail_the_command(monkeypatch):
     # the live .refmatrix/cli.log that `rmx telemetry --context` reads.
     monkeypatch.setattr(telemetry, "log_cli_invocation",
                         lambda root, **kw: None)
+    # SIBLING: `log_cli_intent` writes a phase:"start" row BEFORE the command
+    # body runs, and patching only the end-phase logger left it leaking
+    # (ch-bsd r2). Harmless to the report — `phase == "start"` is skipped — but
+    # a leak into the live log all the same.
+    monkeypatch.setattr(telemetry, "log_cli_intent",
+                        lambda root, **kw: None, raising=False)
 
     cli_mod.cli_entry()                        # must not raise
     assert sys.stdout is original

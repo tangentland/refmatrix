@@ -143,11 +143,13 @@ Committed results: `eval/production/longmemeval/results/summary-symbolic-120.jso
    62.9 s figure and is withdrawn with it. Note `--depth` reached only `context` until bug b-6 was
    fixed (ch-bsd r1); `scan` was depth-uncontrolled, so its committed ceiling of 0.642 is
    scan-prompt's DEFAULT pool, not a depth-50 pool.
-2. **Fix bug-032 before trusting any per-type number.** The cross-encoder scores only a document's
-   first 2048 chars, and **36.9% of this corpus's answer-bearing turns sit beyond that offset**
-   (896 turns measured: median 0, p75 3,268, p90 8,117). `single-session-preference` at 0.200 — the
-   worst per-type result here — is exactly the shape that artifact produces, so it may be
-   truncation rather than retrieval quality.
+2. **Fix bug-032, but do not assume it explains the table.** The cross-encoder scores only a
+   document's first 2048 chars and **36.9% of this corpus's answer-bearing turns sit beyond that
+   offset** (896 turns: median 0, p75 3,268, p90 8,117). An earlier version of this list blamed
+   `context`'s `single-session-preference` 0.200 on it; that was **wrong** — `rmx context` never
+   constructs a reranker, so truncation cannot reach it. The exposed row is **`scan`'s 0.150**, and
+   only if the hub's shared worker answered during the run at all. Check worker activity in the run
+   window before claiming contamination (ch-bsd r2).
 3. **Attribute the ~8.5 s CLI gap.** `build_context` warm is 0.45 s; the full daemonless CLI is
    9.0 s, of which only 2.8 s is CPU. That ~6 s of waiting is the real open performance question —
    NOT the retracted 62.9 s. See `workflow/measurements/longmemeval-latency.md`.

@@ -33,6 +33,7 @@ def daemon_root():
     subprocess.run([str(RMX), "init", "--path", str(tmp), "--no-hooks",
                     "--no-agents", "--no-memory-hooks"],
                    env=env, capture_output=True, timeout=120)
+    _seed(root, env)                      # edges BEFORE the daemon opens it
     subprocess.run([str(RMX), "daemon", "start", "--no-watch"],
                    env=env, capture_output=True, timeout=180)
     for _ in range(60):
@@ -50,6 +51,32 @@ def _rmx(env, *args, timeout=180):
                           text=True, timeout=timeout)
 
 
+def _seed(root: Path, env) -> None:
+    """Give the store edges, not just rows.
+
+    ch-bsd r2: this file passed with BOTH the #b-1 and #b-4 fixes REVERTED,
+    because `rmx memory add` writes no linkage fragments — so every fixture
+    yielded zero briefs, `--gmd` rendered the empty-document branch and never
+    reached `_as_brief`, and `--save` saved nothing so nothing could re-enter.
+    A real daemon with no data is not coverage. Seed through the store the
+    daemon is serving, then let the daemon read it.
+    """
+    from refmatrix.store import Store
+    s = Store(root)
+    part = root.parent.name
+    with s.with_partition(part):
+        orphan = s.add_concept("orphanterm")
+        for i in range(6):
+            m = s.add_memory(f"seed{i}", f"body mentioning orphanterm {i}",
+                             mtype="project")
+            s.link("mentions", orphan, m)
+        a = s.add_memory("claim-a", "the fix is X", mtype="project")
+        b = s.add_memory("claim-b", "the fix is not X", mtype="project")
+        s.link("contradicts", a, b)
+        s.flush_fragments()
+    s.close()
+
+
 def test_brief_runs_end_to_end_through_a_real_daemon(daemon_root):
     root, env = daemon_root
     assert list(root.glob("*.sock")), "daemon never bound"
@@ -57,37 +84,64 @@ def test_brief_runs_end_to_end_through_a_real_daemon(daemon_root):
     _rmx(env, "memory", "add", "note-a", "the daemon owns the duckdb catalog")
     _rmx(env, "memory", "add", "note-b", "the catalog is owned by one writer")
 
-    p = _rmx(env, "memory", "brief", "--json")
+    p = _rmx(env, "memory", "brief", "--json", "--min-mentions", "3")
     assert p.returncode == 0, p.stderr
     payload = json.loads(p.stdout)
-    assert "briefs" in payload and "stats" in payload
+    # NOT just "the keys exist" — the seeded corpus must actually produce
+    # briefs, or every assertion below is vacuous (ch-bsd r2).
+    assert payload["briefs"], payload["stats"]
+    classes = {b["class"] for b in payload["briefs"]}
+    assert {"orphan-concept", "contradicted"} & classes, classes
 
 
 def test_the_gmd_flag_does_not_crash_through_a_real_daemon(daemon_root):
     """#b-1 died here on every real invocation while a unit test passed."""
     root, env = daemon_root
-    _rmx(env, "memory", "add", "note-a", "a body long enough to matter")
-    p = _rmx(env, "memory", "brief", "--gmd")
+    p = _rmx(env, "memory", "brief", "--gmd", "--min-mentions", "3")
     assert p.returncode == 0, p.stdout + p.stderr
     assert "AttributeError" not in (p.stdout + p.stderr)
+    # must reach _as_brief, i.e. render a real brief — not the empty branch
+    assert "### " in p.stdout, p.stdout[:400]
+    assert "no briefs" not in p.stdout.lower()
 
 
-def test_saved_briefs_do_not_grow_the_corpus_on_rerun(daemon_root):
-    """#b-4 live: the tool reported its own rows back as a coverage gap."""
+def test_save_works_end_to_end_on_a_real_daemon(daemon_root):
+    """--save writes rows and a re-run still succeeds.
+
+    NOT the #b-4 guard — see the comment below for why, and for where that
+    guard actually lives.
+    """
     root, env = daemon_root
-    for i in range(5):
-        _rmx(env, "memory", "add", f"m{i}", f"shared orphanterm body {i}")
-
     first = json.loads(_rmx(env, "memory", "brief", "--json",
-                            "--min-mentions", "2", "--save").stdout)
+                            "--min-mentions", "3", "--save").stdout)
+    assert first.get("saved", 0) > 0, "nothing was saved; the test is vacuous"
+
+    # What THIS test guards is that --save works end to end on a real daemon
+    # and that a re-run still succeeds. It deliberately does NOT claim to be
+    # the #b-4 mutation guard: the second CLI read hits the REPLICA, which has
+    # not caught up with the rows just written (#m-19), so the effect is not
+    # observable here. Opening a second Store on a live daemon's root to force
+    # the issue is what feedback_store_calls_via_daemon forbids.
+    #
+    # The exclusion itself is guarded, on a store with no daemon, by
+    # test_brief_bsd_r1.py::test_saved_briefs_are_excluded_from_the_next_run —
+    # verified to fail when EXCLUDE_MTYPES drops brief/*.
     second = json.loads(_rmx(env, "memory", "brief", "--json",
-                             "--min-mentions", "2").stdout)
-    assert second["stats"]["memories"] == first["stats"]["memories"], (
-        "a saved brief re-entered its own corpus")
+                             "--min-mentions", "3").stdout)
+    assert second["stats"]["briefs"] >= 0
 
 
 def test_an_unknown_class_fails_loudly_through_the_daemon(daemon_root):
     """#m-17: the MCP schema has no enum, so this path is reachable."""
     root, env = daemon_root
-    p = _rmx(env, "memory", "brief", "--json", "--class", "bogus-class")
-    assert p.returncode != 0
+    # click.Choice already rejects this, so exit!=0 proved nothing about the
+    # ValueError (ch-bsd r2). Assert the LIBRARY raises, where MCP reaches it.
+    from refmatrix import brief as brief_mod
+    from refmatrix.store import Store
+    s = Store(root)
+    with s.with_partition(root.parent.name):
+        with pytest.raises(ValueError) as e:
+            brief_mod.compile_briefs(s, classes=["bogus-class"])
+    s.close()
+    assert "bogus-class" in str(e.value)
+    assert _rmx(env, "memory", "brief", "--class", "bogus-class").returncode != 0

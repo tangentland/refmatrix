@@ -208,3 +208,49 @@ def test_corroborated_falls_back_to_created_at_when_unauthored(store):
         eid = store.add_memory("plain", "body", mtype="project")
         dates = brief.memory_dates(store, [eid])
     assert dates[eid] > 0
+
+
+# ── #b-2-r2: workflow-authored contradicts edges are a convention ──────────
+
+def test_contradicted_excludes_workflow_authored_citation_edges(store):
+    """45 of 47 emitted on the live replica were ch-bsd's OWN
+    `rel: contradicts -> [[rule]]` lines — a ledger citation convention, not a
+    corpus disagreement (ch-bsd r2 #b-2-r2). Same principle as
+    feedback_operational_content_not_in_graph: process artifacts are not
+    knowledge."""
+    with store.with_partition(PART):
+        a = store.add_concept("bsd-plan3-verbs-parity-8ba4799#bs-1")
+        b = store.add_concept("tdd-governance")
+        store.link("contradicts", a, b)
+        assert brief.contradicted(store) == []
+
+
+def test_contradicted_keeps_a_genuine_corpus_disagreement(store):
+    with store.with_partition(PART):
+        a = store.add_concept("adr-0042#old-spec")
+        b = store.add_concept("adr-0087#zone-class")
+        store.link("contradicts", a, b)
+        assert len(brief.contradicted(store)) == 1
+
+
+def test_endpoint_fallthrough_still_honours_mtype_exclusion(store):
+    """`_endpoint`'s docstring said mtype exclusions 'still apply'; the
+    get_entity_by_id fallthrough bypassed them for rows excluded by mtype but
+    not by the name regex (ch-bsd r2 #b-2-r2c)."""
+    with store.with_partition(PART):
+        keep = store.add_memory("real-note", "x", mtype="project")
+        skip = store.add_memory("savestate_abc123", "x", mtype="session/digest")
+        store.link("contradicts", keep, skip)
+        out, skipped = brief.contradicted(store, count_skips=True)
+    assert out == [], "an mtype-excluded row reached the class"
+    assert skipped == 1
+
+
+def test_contradicted_finding_does_not_claim_both_sides_are_memories(store):
+    """The line read 'two memories contradict' over two concept anchors."""
+    with store.with_partition(PART):
+        a = store.add_concept("adr-0042#old-spec")
+        b = store.add_concept("adr-0087#zone-class")
+        store.link("contradicts", a, b)
+        out = brief.contradicted(store)
+    assert "memories" not in out[0].finding, out[0].finding
