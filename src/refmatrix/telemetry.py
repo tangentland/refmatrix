@@ -77,14 +77,28 @@ class CountingStream(io.TextIOBase):
     the telemetry recorded only how LONG they took.
 
     Counting happens here, once, wrapped around stdout in `cli_entry` — never at
-    the individual renderers. A hook captures this process's stdout and injects
-    exactly these bytes, so this is the real payload rather than an estimate of
-    it; it covers every command uniformly; and there is one copy of the logic
-    instead of one per render site, which is the shape of bug
+    the individual renderers. It covers every command uniformly, and there is one
+    copy of the logic instead of one per render site, which is the shape of bug
     `feedback_reuse_shared_stoplist` records (one junk-token defect, four call
     sites, because each grew its own copy).
 
-    TRANSPARENCY IS LOad-BEARING. `rich.Console` branches on `isatty()` to pick
+    WHAT THIS IS AND IS NOT. `out_bytes` is **the bytes this process wrote to
+    stdout** — measured, byte-exact, verified across eight renderers. It is NOT
+    "what the hook injected", which an earlier version of this docstring claimed
+    and which is false in both directions (ch-bsd r1 #s-11):
+
+      * OVER-counts. Four installed hooks redirect stdout to `/dev/null`
+        (`sync --flush-queue` x3, `primer --out`). A hook-env `rmx stats
+        >/dev/null` logs its full 1,536 B and nothing was injected.
+      * UNDER-counts. `grep-tool-teach.sh`, `enforce-test-to-file.sh`,
+        `enforce-rmx-grep.sh`, `grep-rewrite-guard.sh` and
+        `compile_guardrails.py` inject their own stdout and never reach
+        `cli.log` at all — they are not `rmx` invocations.
+
+    Treat the hook budget as a bound on what rmx COMMANDS emitted, not as the
+    context window's actual intake.
+
+    TRANSPARENCY IS LOAD-BEARING. `rich.Console` branches on `isatty()` to pick
     colour and width, so a proxy that misreported ttyness would change the very
     bytes it exists to measure. `encoding`, `flush()` and `fileno()` pass
     through for the same reason. (Verified 2026-09-15 that rich resolves
@@ -151,8 +165,9 @@ def log_cli_invocation(
 ) -> None:
     """Append one JSONL record for an `rmx` CLI invocation to .refmatrix/cli.log.
 
-    `out_bytes` is what this invocation wrote to stdout — for a hook, exactly
-    what it injected into the model's context window. Optional, because callers
+    `out_bytes` is what this invocation wrote to stdout. NOT necessarily what a
+    hook injected — a redirected hook over-counts and a non-rmx hook is absent
+    entirely; see `CountingStream` (ch-bsd r1 #s-11). Optional, because callers
     that did not wrap stdout have nothing to report, and a row without it is
     UNKNOWN rather than free (readers must not average it in as a zero).
 
@@ -771,6 +786,9 @@ def summarize_context(root: Path, *, since: "str | None" = None,
             "windows": len(windows),
             "window_s": window_s,
             "anchored_on": sorted(PROMPT_ANCHORS),
+            "caveat": ("bytes rmx COMMANDS wrote to stdout; a hook that "
+                       "redirects to /dev/null still counts, and non-rmx "
+                       "hooks are absent entirely"),
             "grouping": (
                 f"hook-sourced rows within a {window_s}s window ANCHORED on a "
                 f"scan-prompt row are one prompt's hook fan-out; windows with "

@@ -181,3 +181,30 @@ def test_contradicted_reports_a_real_skip_reason_not_a_wrong_one(store):
         out, skipped = brief.contradicted(store, count_skips=True)
     assert skipped == 0, "a resolvable concept pair must not be counted a skip"
     assert len(out) == 1
+
+
+# ── #s-15: corroboration must use the AUTHORING clock, not the ingest clock ──
+
+def test_corroborated_prefers_the_authored_date_over_the_ingest_date(store):
+    """`memory_dates` read `entities.created_at` — the day the BRIDGE ingested
+    the file. On the live replica 74 of 236 rows share one bridge run, and a
+    `reingest --force` (routine here) collapses every memory onto one day and
+    silences the class permanently with no counter that moves (ch-bsd r1 #s-15).
+    The authored date is in each memory's `metadata.created` and was ignored."""
+    with store.with_partition(PART):
+        ids = {}
+        for i, day in enumerate(["2026-06-01", "2026-07-02", "2026-08-03"]):
+            ids[f"a{i}"] = store.add_memory(
+                f"a{i}", "body", mtype="project", metadata={"created": day})
+        # every row shares ONE ingest timestamp, as after a re-derive
+        dates = brief.memory_dates(store, ids.values())
+    days = {brief._day(v) for v in dates.values()}
+    assert len(days) == 3, (
+        f"authored dates collapsed to {len(days)} day(s) — the ingest clock won")
+
+
+def test_corroborated_falls_back_to_created_at_when_unauthored(store):
+    with store.with_partition(PART):
+        eid = store.add_memory("plain", "body", mtype="project")
+        dates = brief.memory_dates(store, [eid])
+    assert dates[eid] > 0

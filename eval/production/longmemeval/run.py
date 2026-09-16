@@ -109,7 +109,8 @@ def recall_ceiling(rankings: dict[str, list[str]], questions: list[dict],
 
 def score(rankings: dict[str, list[str]], questions: list[dict],
           qrels: dict[str, list[str]], haystacks: dict[str, list[str]],
-          *, ks: list[int], mode: str, depth: int = 0) -> dict:
+          *, ks: list[int], mode: str, depth: int = 0,
+          failed: "list[str] | None" = None) -> dict:
     """Per-type, abstention, and overall slices for one method under one mode.
 
     A question with no resolvable gold is NOT scored as a zero — it is excluded
@@ -137,7 +138,14 @@ def score(rankings: dict[str, list[str]], questions: list[dict],
             by_slice["abstention"].append(row)
         by_slice["overall"].append(row)
 
-    summary: dict = {"_meta": {"mode": mode, "depth": depth}}
+    # A DEAD surface and a surface that found nothing both score 0.000. The
+    # error branch printed to stderr and left no trace in the artifact, so a
+    # method that failed on every question was indistinguishable in the
+    # committed JSON and in REPORT.md (ch-bsd r1 #s-13). Carry it.
+    failed = list(failed or [])
+    summary: dict = {"_meta": {"mode": mode, "depth": depth,
+                               "n_failed": len(failed),
+                               "failed_ids": failed[:50]}}
     for name, rows in by_slice.items():
         entry = {"n": len(rows)}
         if rows:
@@ -279,22 +287,28 @@ def session_ids(payload) -> list[str]:
 
 
 def rank_all(method: str, questions: list[dict], *, rmx: str, root: Path,
-             depth: int, workers: int) -> dict[str, list[str]]:
-    """Run one surface over every question. Deep — `restricted` filters after."""
+             depth: int, workers: int) -> tuple[dict[str, list[str]], list[str]]:
+    """Run one surface over every question. Deep — `restricted` filters after.
+
+    Returns `(rankings, failed_ids)`. The failure list is the half that used to
+    go only to stderr: without it the artifact cannot tell a dead surface from
+    an empty one (ch-bsd r1 #s-13).
+    """
     m = METHODS[method]
 
-    def one(q: dict) -> tuple[str, list[str]]:
+    def one(q: dict) -> tuple[str, list[str], bool]:
         try:
             return q["question_id"], session_ids(
-                _rmx_json(m.argv(q["question"], k=depth), rmx, root))
+                _rmx_json(m.argv(q["question"], k=depth), rmx, root)), False
         except Exception as exc:
-            # A dead surface must not be indistinguishable from a surface that
-            # found nothing: score it 0 AND say so, with the question id.
+            # Say so on stderr AND report it upward.
             print(f"  ! {method} {q['question_id']}: {exc}", file=sys.stderr)
-            return q["question_id"], []
+            return q["question_id"], [], True
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        return dict(ex.map(one, questions))
+        rows = list(ex.map(one, questions))
+    return ({qid: ids for qid, ids, _ in rows},
+            [qid for qid, _, bad in rows if bad])
 
 
 # ── output ─────────────────────────────────────────────────────────────────
@@ -312,6 +326,10 @@ def print_table(method: str, summary: dict, ks: list[int]) -> None:
     head = f"\n  === {method}  [mode={meta['mode']} depth={meta['depth']}"
     if "recall_ceiling" in meta:
         head += f" ceiling={meta['recall_ceiling']:.3f}"
+    if meta.get("n_failed"):
+        # Loud in the table, not just in the JSON: a 0.000 with failures behind
+        # it is not a retrieval result.
+        head += f" FAILED={meta['n_failed']}"
     print(head + "]\n")
     print("  " + "slice".ljust(26) + "n".rjust(5)
           + "".join(c.rjust(11) for c in labels))
@@ -360,14 +378,14 @@ def main() -> int:
 
     for method in methods:
         t0 = time.time()
-        rankings = rank_all(method, questions, rmx=a.rmx, root=a.root,
-                            depth=a.depth, workers=a.workers)
+        rankings, failed = rank_all(method, questions, rmx=a.rmx, root=a.root,
+                                    depth=a.depth, workers=a.workers)
         elapsed = round(time.time() - t0, 1)
         (RESULTS / f"rank-{method}.json").write_text(
             json.dumps(rankings, indent=1), encoding="utf8")
         for mode in modes:
             s = score(rankings, questions, qrels, haystacks, ks=ks, mode=mode,
-                      depth=a.depth)
+                      depth=a.depth, failed=failed)
             s["_meta"]["retrieve_s"] = elapsed
             s["_meta"]["n_questions"] = len(questions)
             print_table(method, s, ks)

@@ -89,3 +89,56 @@ def test_every_method_carries_the_depth_it_is_labelled_with(method):
     lo, hi = _nums(small), _nums(big)
     assert lo and hi, f"{method} carries no numeric depth: {small}"
     assert max(hi) > max(lo), f"{method} depth does not scale: {lo} -> {hi}"
+
+
+# ── #s-13: a dead surface must not look like an empty one in the ARTIFACT ──
+
+def test_failures_are_counted_into_meta_not_just_printed_to_stderr(tmp_path):
+    """run.py prints `! {method} {qid}: {exc}` to stderr and returns [].
+    `_meta` carried only mode/depth/ceiling/retrieve_s/n_questions, so a surface
+    that failed on all 120 questions produced recall 0.000 and no reader of the
+    committed JSON could tell (ch-bsd r1 #s-13)."""
+    questions = [{"question_id": f"q{i}", "question_type": "multi-session",
+                  "question": "q"} for i in range(4)]
+    qrels = {q["question_id"]: ["g"] for q in questions}
+    hs = {q["question_id"]: ["g"] for q in questions}
+    rankings = {"q0": ["g"], "q1": [], "q2": [], "q3": ["g"]}
+    s = lme.score(rankings, questions, qrels, hs, ks=[1], mode="union",
+                  failed=["q1", "q2"])
+    assert s["_meta"]["n_failed"] == 2
+    assert sorted(s["_meta"]["failed_ids"]) == ["q1", "q2"]
+
+
+def test_meta_reports_zero_failures_when_every_surface_answered():
+    questions = [{"question_id": "q0", "question_type": "multi-session",
+                  "question": "q"}]
+    s = lme.score({"q0": ["g"]}, questions, {"q0": ["g"]}, {"q0": ["g"]},
+                  ks=[1], mode="union", failed=[])
+    assert s["_meta"]["n_failed"] == 0
+
+
+def test_rank_all_reports_which_questions_failed():
+    """The caller must be able to distinguish 'found nothing' from 'blew up'."""
+    calls = {"n": 0}
+
+    class _M:
+        @staticmethod
+        def argv(q, *, k):
+            return ["context", q, "--format", "json"]
+
+    def boom(argv, rmx, root):
+        calls["n"] += 1
+        raise RuntimeError("surface is dead")
+
+    import run as _run
+    orig_json, orig_methods = _run._rmx_json, _run.METHODS
+    _run._rmx_json = boom
+    _run.METHODS = {"fake": _M()}
+    try:
+        rankings, failed = _run.rank_all(
+            "fake", [{"question_id": "q0", "question": "x"}],
+            rmx="rmx", root=Path("/tmp"), depth=5, workers=1)
+    finally:
+        _run._rmx_json, _run.METHODS = orig_json, orig_methods
+    assert rankings == {"q0": []}
+    assert failed == ["q0"]

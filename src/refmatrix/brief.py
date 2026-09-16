@@ -34,7 +34,9 @@ own copy of the list; one definition, imported, is the fix that stuck.
 from __future__ import annotations
 
 import fnmatch
+import json
 import re
+import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Iterable
@@ -160,7 +162,20 @@ def _day(ts: float) -> int:
 
 
 def memory_dates(store: "Store", ids: Iterable[int]) -> dict[int, float]:
-    """`entities.created_at` for the given ids — the corroboration clock."""
+    """The AUTHORING clock for each memory, falling back to the ingest clock.
+
+    This read `entities.created_at` and called it "the corroboration clock".
+    That is the day the BRIDGE ingested the file, not the day the thing was
+    learned. On this project's live replica 74 of 236 rows share a single
+    bridge run, and `reingest --force` / a fleet re-derive — both routine here
+    (`project_force_reingest_fleet_rederive`) — collapses EVERY memory onto one
+    day. `corroborated` requires >= N distinct days, so that silences the class
+    permanently with no counter that moves (ch-bsd r1 #s-15).
+
+    Curated memories carry the real date in `metadata.created` (the GMD
+    frontmatter field MEMORY-RULES freezes at first write). Prefer it; fall
+    back to `created_at` for rows that have none.
+    """
     ids = list(ids)
     if not ids:
         return {}
@@ -170,10 +185,31 @@ def memory_dates(store: "Store", ids: Iterable[int]) -> dict[int, float]:
         chunk = ids[start:start + 500]
         ph = ",".join("?" * len(chunk))
         for r in con.execute(
-            f"SELECT id, created_at FROM entities WHERE id IN ({ph})", chunk,
+            "SELECT e.id, e.created_at, mc.metadata FROM entities e "
+            f"LEFT JOIN memory_content mc ON mc.entity_id = e.id "
+            f"WHERE e.id IN ({ph})", chunk,
         ).fetchall():
-            out[int(r[0])] = float(r[1] or 0.0)
+            out[int(r[0])] = _authored_ts(r[2]) or float(r[1] or 0.0)
     return out
+
+
+def _authored_ts(meta_json) -> "float | None":
+    """`metadata.created` (YYYY-MM-DD) as epoch seconds, or None.
+
+    A malformed or absent value returns None so the caller falls back — a date
+    this cannot parse must not silently become 1970 and manufacture a distinct
+    day out of nothing.
+    """
+    if not meta_json:
+        return None
+    try:
+        meta = json.loads(meta_json) if isinstance(meta_json, str) else meta_json
+        raw = str((meta or {}).get("created") or "").strip()[:10]
+        if not raw:
+            return None
+        return time.mktime(time.strptime(raw, "%Y-%m-%d"))
+    except Exception:
+        return None
 
 
 # ── detectors ──────────────────────────────────────────────────────────────

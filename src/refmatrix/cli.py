@@ -11269,7 +11269,13 @@ def memory_brief(classes, min_members, min_dates, min_mentions, do_compile,
     console.print(f"[dim]{len(briefs)} brief(s) over {stats.get('memories', 0)} "
                   f"memories · {by}[/]")
     if res.get("saved"):
-        console.print(f"[green]saved[/] {res['saved']} brief(s) as memory rows")
+        # The write lands on the writer slot; the replica catches up on the next
+        # snapshot tick, so an immediately following `memory list` will not show
+        # them yet (ch-bsd r1 #m-19). Say so rather than look wrong.
+        console.print(
+            f"[green]saved[/] {res['saved']} brief(s) as memory rows "
+            f"[dim](queued to the replica; visible to `memory list` after the "
+            f"next snapshot tick)[/]")
 
 
 @memory_grp.command("bulk-forget")
