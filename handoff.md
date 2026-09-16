@@ -113,6 +113,25 @@ problem: they pass and the command still dies on its first real invocation."*
 
 BSD has NOT re-reviewed `4f451c5..6b6a610` (the r3 remediation). Plans 7/8/9/10 stay `in-progress`.
 
+## The memory bridge did NOT run — first thing to check {#bridge}
+
+`rmx save-state --commit` was **killed at a 400 s timeout** (exit 137) with the project daemon at
+92% CPU rebuilding an index. What DID complete: the `savestate_99ba458bcae2.md` handoff memory (86
+lines, well-formed). What did NOT: **the memory bridge**, so these four files are on disk and
+**NOT in the store**:
+
+- `savestate_99ba458bcae2.md`
+- `feedback_causal_story_before_evidence.md`
+- `feedback_green_tests_are_not_a_working_command.md`
+- `project_bsd_three_round_arc_plans_7_10.md`
+
+Verified absent: `rmx memory get feedback_causal_story_before_evidence` → "no memory matching".
+
+SessionStart has a bridge catch-up path ([[project_memory_bridge_never_ran]]), so this should
+self-heal on the next session — **but confirm it, don't assume it.** If it hasn't, run
+`rmx ingest-gmd --as-memory <memory-dir>` once the daemon is idle. The daemon was NOT wedged (STAT
+R, CPU advancing 33 s per 40 s wall); it was busy, and a full pytest suite was competing with it.
+
 ## UNVERIFIED — read before trusting {#unverified}
 
 - **The full suite at HEAD `6b6a610` was still RUNNING when this handoff was written.** The last
