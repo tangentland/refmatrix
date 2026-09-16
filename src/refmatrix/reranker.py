@@ -60,6 +60,107 @@ MAX_POOL = int(os.environ.get("RMX_RERANK_MAX_POOL", "100") or "100")
 _EPS = 1e-6
 
 
+def window_enabled() -> bool:
+    """Is query-anchored windowing on? Default: yes. `RMX_RERANK_WINDOW=0`
+    restores head truncation so the A/B runs on a deployed binary."""
+    return os.environ.get("RMX_RERANK_WINDOW", "1") not in ("0", "false", "False")
+
+
+# Below this budget a split window measured WORSE than plain head truncation on
+# `longmemeval_oracle` (700 chars: 500 covered vs 509 for the head), because
+# two ~350-char halves cut the answer turn in the middle. Above it the split
+# wins decisively (2048: 672 vs 541). Measured, not chosen —
+# `workflow/measurements/rerank-window-ab-0916.md`.
+WINDOW_MIN_CHARS = int(os.environ.get("RMX_RERANK_WINDOW_MIN", "1024") or "1024")
+
+# How much of the budget stays on the document's head. 0.4-0.5 were tied at
+# 672/896; 0.5 keeps the rule simple.
+WINDOW_HEAD_FRAC = float(os.environ.get("RMX_RERANK_WINDOW_HEAD", "0.5") or "0.5")
+
+
+def _anchor_window(text: str, query: str, *, limit: int) -> str:
+    """`limit` chars of `text` centered on the most SPECIFIC query term.
+
+    Anchoring on the earliest hit of ANY term would pin the window to the head
+    of almost every document — "the" occurs at offset 0 — and reproduce the bug
+    this exists to fix. The shared stoplist decides what is specific
+    (`feedback_reuse_shared_stoplist`: reuse it, never re-derive it), and
+    `kwic.query_terms` orders longest-first. Locating is `kwic`'s; this is not
+    a second windower.
+    """
+    from refmatrix import kwic
+    from refmatrix.terms import content_terms
+
+    if len(text) <= limit:
+        return text
+    kept = {w.lower() for w in content_terms(query)}
+    terms = [w for w in kwic.query_terms(query) if w in kept] \
+        or kwic.query_terms(query)
+    if not terms:
+        return text[:limit]
+    low = text.lower()
+    hit = None
+    for term in terms:                 # longest (most specific) first
+        i = low.find(term)
+        if i != -1:
+            hit = (i, i + len(term))
+            break
+    if hit is None:
+        return text[:limit]
+    s, e = hit
+    if e <= limit:
+        return text[:limit]            # the anchor is already in the head
+    pad = max(0, (limit - (e - s)) // 2)
+    start = max(0, s - pad)
+    end = min(len(text), start + limit)
+    start = max(0, end - limit)
+    nb = text.find(" ", start, s)       # snap left to a word edge, never past s
+    if nb != -1:
+        start = nb + 1
+    return text[start:start + limit]
+
+
+def window_doc(text: "str | None", query: "str | None", *, limit: int) -> str:
+    """`limit` chars of `text`: half the head, half taken from where the QUERY
+    occurs (bug-032).
+
+    A cross-encoder truncates at ~512 tokens, so a bound has to exist; what was
+    wrong was taking every char from the head. Measured on `longmemeval_oracle`
+    (896 answer-bearing turns): median answer offset 0, p75 3,268, p90 8,117 —
+    **349/896 = 38.9% past 2048**, which the model never saw.
+
+    Three strategies were measured on those 896 turns at limit 2048, scoring
+    whether the answer-bearing turn survives the cut:
+
+    | strategy | covered |
+    |---|---|
+    | head truncation (before) | 541 |
+    | query-anchored window only | 502 |
+    | head + query-anchored tail | **672** |
+
+    Anchoring ALONE is worse than the head it replaced: 547 of the 896 answers
+    are already inside the first 2048 chars, and moving the window away loses
+    158 of them to gain 119. Keeping half the budget on the head and spending
+    the other half where the query occurs wins both ways. Same char budget, so
+    the per-pair cost is unchanged — this is a quality change at fixed cost.
+
+    Below `WINDOW_MIN_CHARS` the split measured WORSE than the head (two ~350
+    char halves cut the answer turn in the middle), so a small budget — the
+    per-prompt hook's 700-char cap — keeps head truncation, byte-identical to
+    before. With no query, no term hit, or a doc shorter than the bound, the
+    result is `text[:limit]` exactly.
+    """
+    if not text:
+        return ""
+    if len(text) <= limit:
+        return text
+    if not query or not window_enabled() or limit < WINDOW_MIN_CHARS:
+        return text[:limit]
+    head_n = max(1, int(limit * WINDOW_HEAD_FRAC))
+    tail = _anchor_window(text[head_n:], query, limit=limit - head_n)
+    return text[:head_n] + tail
+
+
 class RerankSkipped(RuntimeError):
     """The rerank was NOT attempted, and here is the arithmetic (bug-025).
 
@@ -177,7 +278,8 @@ class Reranker:
         assert model is not None  # _load() just set it
         if not docs:
             return []
-        pairs = [[query, (d or "")[:MAX_DOC_CHARS]] for d in docs]
+        pairs = [[query, window_doc(d, query, limit=MAX_DOC_CHARS)]
+                 for d in docs]
         out = model.predict(pairs, show_progress_bar=False)
         return _checked(out, self.model_name)
 
@@ -210,7 +312,7 @@ class RemoteReranker:
     def score(self, query: str, docs: Sequence[str]) -> list[float]:
         if not docs:
             return []
-        truncated = [(d or "")[:MAX_DOC_CHARS] for d in docs]
+        truncated = [window_doc(d, query, limit=MAX_DOC_CHARS) for d in docs]
         payload = {"query": query, "docs": truncated}
         if self._deadline is not None:
             remaining = self._deadline - time.time()
@@ -255,6 +357,7 @@ def collect_rerank_docs(
     k: int = 20,
     pool: int | None = None,
     doc_chars: int | None = None,
+    query: "str | None" = None,
 ) -> tuple[list[tuple[int, str]], list[tuple[int, float]], list[tuple[int, float]]]:
     """Split `hits` into `(scored, untexted, tail)` and fetch doc text.
 
@@ -300,7 +403,10 @@ def collect_rerank_docs(
             except Exception:
                 text = ""
         if text and doc_chars:
-            text = text[:doc_chars]
+            # Windowed at the CAP, not after it: the hook cuts to 700 chars
+            # here, before the model ever sees the doc, so a window applied
+            # inside `score` would arrive too late (bug-032).
+            text = window_doc(text, query, limit=doc_chars)
         if text:
             scored.append((int(eid), text))
         else:
@@ -365,7 +471,8 @@ def rerank_entity_hits(
     """
     if not hits or not query:
         return list(hits)[:k]
-    scored, untexted, tail = collect_rerank_docs(store, hits, k=k, pool=pool)
+    scored, untexted, tail = collect_rerank_docs(store, hits, k=k, pool=pool,
+                                                query=query)
     if not scored:
         return list(hits)[:k]
     return apply_rerank(reranker, query, scored, untexted, tail, k=k)
