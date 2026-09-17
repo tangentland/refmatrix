@@ -581,12 +581,73 @@ def _maybe_learn_grep_backstop(root, daemon_mod, ref, bundle, grep_backstop):
             hits.append({"file": path, "line": ln})
     if not hits:
         return
+    _broker_learn_from_grep(root, ref, hits)
+
+
+# How long the graph-learning ping may cost a READ that has already answered.
+# Small on purpose: this runs AFTER the hits are printed, so every millisecond
+# here is pure latency the user pays for nothing they asked for.
+LEARN_BROKER_TIMEOUT_S = float(os.environ.get("RMX_LEARN_TIMEOUT_S") or 2.0)
+
+
+def _broker_learn_from_grep(root: Path, pattern: str, hits: list,
+                            *, want_result: bool = False):
+    """Teach the graph what a grep found. Best-effort, BOUNDED, and never
+    silent. Returns True when the daemon accepted the write.
+
+    bug-049: three call sites each passed a timeout and inherited
+    `daemon.call`'s default `retries=2`, so a daemon that could not answer a
+    WRITE within the budget cost 3 x budget:
+
+        call(timeout=10.0)            -> 30.16 s   (both grep brokers)
+        call(timeout=30.0)            -> 90.15 s   (the context backstop)
+        call(timeout=10.0, retries=0) -> 10.00 s
+
+    That is the wall in `query.log`: 104 of 1,165 `grep-replica` calls pinned
+    at 30,178-30,222 ms, 17% of them on 2026-09-16 alone, every one AFTER its
+    results were already on stdout. Retrying a write three times multiplies
+    the cost of precisely the condition that caused the failure -- a busy
+    writer -- so the retry is wrong here, not merely expensive.
+
+    The old `except Exception: pass` also made the graph quietly stop learning
+    (CLAUDE.md#no-silent-failures). A dropped learn now says so on stderr,
+    where it cannot corrupt stdout for a caller parsing grep output.
+    """
+    if not hits:
+        return None if want_result else False
+    from refmatrix import daemon as _dmod
+
+    if not want_result:
+        # The default path: append and go. No socket, no lock, no wait — the
+        # daemon's flush tick drains the queue coalesced, so N greps cost ONE
+        # write instead of N (bug-049). A caller that needs to REPORT what was
+        # learned falls through to the bounded RPC below.
+        from refmatrix import learn_queue as _lq
+        try:
+            _lq.enqueue(root, pattern, hits)
+            return True
+        except Exception as e:  # noqa: BLE001 — named, never mute
+            click.echo(
+                f"# rmx: learn not queued ({type(e).__name__}) — the graph did "
+                f"not record {len(hits)} hit(s) for {pattern!r}", err=True)
+            return False
+
     try:
-        daemon_mod.call(root, "learn_from_grep", {
-            "pattern": ref, "hits": hits, "project_root": str(root.parent),
-        }, timeout=30.0)
-    except Exception:
-        pass  # best-effort self-heal; never break the read
+        if not _dmod.ping(root):
+            return None if want_result else False
+        resp = _dmod.call(root, "learn_from_grep", {
+            "pattern": pattern, "hits": hits,
+            "project_root": str(Path(root).parent),
+        }, timeout=LEARN_BROKER_TIMEOUT_S, retries=0)
+        if want_result:
+            return resp.get("result") if resp.get("ok") else None
+        return True
+    except Exception as e:  # noqa: BLE001 — named, never mute; never fatal
+        click.echo(
+            f"# rmx: learn skipped ({type(e).__name__}) — the graph did not "
+            f"record {len(hits)} hit(s) for {pattern!r}; the read is unaffected",
+            err=True)
+        return None if want_result else False
 
 
 def _replica_store() -> Store:
@@ -5854,14 +5915,10 @@ def _grep_delegate(raw_tokens: list, path_strs: list, reasons: list,
             try:
                 from refmatrix import daemon as _dmod
                 _r = _root()
-                if _dmod.ping(_r):
-                    # Teach with the pattern-ish token: first non-flag arg.
-                    pat = next((x for x in tokens
-                                if not x.startswith("-")), "")
-                    _dmod.call(_r, "learn_from_grep", {
-                        "pattern": pat, "hits": hits[:200],
-                        "project_root": str(_r.parent),
-                    }, timeout=10.0)
+                # Teach with the pattern-ish token: first non-flag arg.
+                pat = next((x for x in tokens
+                            if not x.startswith("-")), "")
+                _broker_learn_from_grep(_r, pat, hits[:200])
             except Exception:
                 pass
     raise SystemExit(res.returncode)
@@ -6015,14 +6072,7 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
         _r = _root()
 
         def _send_learn(hits):
-            try:
-                if _dmod.ping(_r):
-                    _dmod.call(_r, "learn_from_grep", {
-                        "pattern": pattern, "hits": hits,
-                        "project_root": str(_r.parent),
-                    }, timeout=10.0)
-            except Exception:
-                pass
+            _broker_learn_from_grep(_r, pattern, hits)
 
         broker = _send_learn
 
@@ -6170,14 +6220,13 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
             parsed_hits.append({"file": parts[0], "line": line_no})
     _tlog.cardinality = len(parsed_hits)
 
-    if learn and parsed_hits and daemon_mod.ping(root):
-        resp = daemon_mod.call(root, "learn_from_grep", {
-            "pattern": pattern,
-            "hits": parsed_hits,
-            "project_root": str(root.parent),
-        }, timeout=60.0)
-        if resp.get("ok"):
-            r = resp["result"]
+    if learn and parsed_hits:
+        # Was `timeout=60.0` with daemon.call's default retries=2 -- 180.45 s
+        # worst case, unwrapped, on a read that had already printed its hits
+        # (bug-049). This site WANTS the result (it reports what was learned),
+        # so it asks for it; the budget is the same bounded one.
+        r = _broker_learn_from_grep(root, pattern, parsed_hits, want_result=True)
+        if r:
             click.echo(
                 f"# rmx learned: concept '{r['concept']}' "
                 f"({r['added']} file(s)) — future searches hit the index",

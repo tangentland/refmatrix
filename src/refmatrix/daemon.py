@@ -544,23 +544,40 @@ def call(root: Path, op: str, args: dict | None = None,
     raise last_exc  # type: ignore[misc]
 
 
-def _recv_line(s: socket.socket, timeout: float) -> bytes:
-    """Read until first newline. Daemon always terminates responses with \\n."""
+def _recv_line(s: socket.socket, timeout: float,
+               acc: "bytearray | None" = None) -> bytes:
+    """Read until first newline. Daemon always terminates responses with \\n.
+
+    `acc` is an in/out buffer that SURVIVES a timeout. Without it, bug-041's
+    poll loop (a 30 s block split into 1 s slices) destroyed every request
+    whose bytes did not all arrive inside one slice: the accumulator was
+    function-local, the `socket.timeout` threw it away, and the caller retried
+    on the same socket with a fresh buffer, so the daemon answered
+    `protocol error` for a well-formed request. Callers that poll MUST pass a
+    buffer they own; callers doing a single blocking read need not
+    (bug-047 / ch-bsd #b-3, 2026-09-16).
+    """
     s.settimeout(timeout)
-    chunks: list[bytes] = []
+    chunks = acc if acc is not None else bytearray()
     while True:
         chunk = s.recv(65536)
         if not chunk:
             break
-        chunks.append(chunk)
+        chunks.extend(chunk)
         if b"\n" in chunk:
             break
-    buf = b"".join(chunks)
+    buf = bytes(chunks)
     nl = buf.find(b"\n")
     return buf[:nl] if nl >= 0 else buf
 
 
 # ---------- server ----------------------------------------------------------
+
+
+# How long one flush tick may spend draining queued grep-learn work. The drain
+# takes the writer lock PER ENTRY and releases it in between, so this bounds
+# the tick rather than the lock hold; leftovers ride to the next tick (bug-049).
+LEARN_DRAIN_BUDGET_S = float(os.environ.get("RMX_LEARN_DRAIN_BUDGET_S") or 5.0)
 
 
 class Daemon:
@@ -1320,10 +1337,15 @@ class Daemon:
                 now = time.time()
                 held = ", ".join(f"{op} ({now - t0:.0f}s)"
                                  for op, t0 in sorted(self._inflight_ops.items()))
+            # Built outside the f-string: nesting a multi-line quoted literal
+            # inside an f-string expression is PEP 701 syntax (3.12+), and
+            # `pyproject` declares `requires-python = ">=3.10"`. It parsed here
+            # because the workstation runs 3.14 (bug-046 / ch-bsd #b-4).
+            holder = held or ("nothing tracked — the holder is not an op, "
+                              "check the watcher or a background tick")
             self._log(
                 f"final flush skipped: _store_lock contended ({budget:.0f}s "
-                f"timeout); in flight: {held or 'nothing tracked — the holder '
-                'is not an op, check the watcher or a background tick'}; "
+                f"timeout); in flight: {holder}; "
                 f"exiting anyway so the next spawn isn't blocked"
             )
             return False
@@ -1891,6 +1913,14 @@ class Daemon:
                     self._log(f"shared re-probe tick failed: {exc!r}")
                 if self.store is None:
                     continue
+                # Drain the grep-learn queue on the SAME tick, under the same
+                # reasoning as the flush below: one lock acquisition for work
+                # that used to take one per `rmx grep` (bug-049).
+                try:
+                    self._drain_learn_queue()
+                except Exception as exc:
+                    self._log(f"learn-queue drain tick failed: {exc!r}")
+                    self._fast_exit_if_invalidated(exc, "learn-queue drain")
                 try:
                     with self._store_lock:
                         if self.store._dirty_fragments:
@@ -1905,6 +1935,93 @@ class Daemon:
             target=_runner, name="rmxd-flush", daemon=True,
         )
         self._flush_thread.start()
+
+    def _drain_learn_queue(self) -> dict:
+        """Apply queued `rmx grep` teach records in ONE lock acquisition.
+
+        Counterpart to `learn_queue.enqueue` on the CLI side (bug-049). Every
+        loss is reported: malformed lines, unusable hits and overflow are
+        counted by the drain, and a learn that raises is named here rather
+        than swallowed — a graph that quietly stops learning only shows up as
+        retrieval slowly getting worse.
+        """
+        from refmatrix import learn_queue as _lq
+
+        batch = _lq.drain(self.root)
+        if not batch.entries and not batch.dropped_malformed \
+                and not batch.dropped_overflow:
+            return {"applied": 0, "patterns": 0}
+
+        applied = 0
+        failed = 0
+        done = 0
+        deadline = time.monotonic() + LEARN_DRAIN_BUDGET_S
+        stopped = ""
+        # ONE acquisition per entry, released in between -- NOT one acquisition
+        # for the batch. Coalescing is what makes the queue cheap (N greps
+        # become M patterns with duplicate hits folded away); holding the
+        # writer for all M would trade the CLI's 30 s wall for starving ingest,
+        # recall and save-state, which is the same failure wearing different
+        # clothes. The yield is safe here and only here: each entry is its own
+        # write, so the lock is never released mid-`s.transaction()` -- the
+        # rule `ingest_path` follows and `_sync_paths` deliberately does not.
+        for entry in batch.entries:
+            if self._shutdown_event.is_set():
+                stopped = "shutdown"
+                break
+            if time.monotonic() >= deadline:
+                stopped = "budget"
+                break
+            try:
+                with self._store_lock:
+                    r = _learn_grep_hits(self.store, entry["pattern"],
+                                         entry["hits"], Path(self.root).parent)
+                applied += int(r.get("added") or 0)
+                done += 1
+            except Exception as exc:  # noqa: BLE001 — classified below
+                if Daemon._is_fatal_invalidation(exc):
+                    # Same rule as `_op_learn_from_grep`: a teach must
+                    # never take the daemon down mid-tick. Mark, arm, stop
+                    # draining this batch.
+                    self._log(f"learn drain: store invalid ({exc!r}); "
+                              f"repair queued")
+                    self._mark_repair_needed("entities", op="learn_queue")
+                    self._arm_deferred_exit(
+                        exc, "learn_queue (deferred: boot repairs entities)")
+                    stopped = "store-invalid"
+                    break
+                failed += 1
+                done += 1
+                self._log(f"learn drain: {entry['pattern']!r} failed: {exc!r}")
+            # Hand the lock to anyone waiting before taking it again. Without
+            # this a tight loop can reacquire before a waiting thread is
+            # scheduled, which is starvation with extra steps.
+            time.sleep(0)
+
+        # Nothing is dropped to make a tick look fast: what the budget or a
+        # shutdown cut off goes back on the queue for the next tick.
+        leftover = batch.entries[done:]
+        if leftover:
+            from refmatrix import learn_queue as _lq2
+            _lq2.requeue(self.root, leftover)
+
+        msg = (f"learn drain: {done}/{len(batch.entries)} pattern(s), "
+               f"{applied} file(s) added")
+        if stopped:
+            msg += f", stopped on {stopped}, {len(leftover)} requeued"
+        if failed:
+            msg += f", {failed} failed"
+        if batch.dropped_malformed:
+            msg += f", {batch.dropped_malformed} malformed"
+        if batch.dropped_overflow:
+            msg += f", {batch.dropped_overflow} dropped over queue cap"
+        self._log(msg)
+        if applied:
+            self._request_snapshot()
+        return {"applied": applied, "patterns": len(batch.entries),
+                "failed": failed,
+                "malformed": batch.dropped_malformed,
+                "overflow": batch.dropped_overflow}
 
     def _start_index_repair_tick(self, interval_s: float | None = None) -> None:
         """Option B: periodically DROP+CREATE idx_entity_links_lk_concept
@@ -2863,17 +2980,34 @@ class Daemon:
             # (bug-041). The ceiling is unchanged; only the granularity is.
             conn.settimeout(_RECV_POLL_S)
             req_bytes = b""
+            # The buffer lives OUT here, across slices. A request split by a
+            # sender descheduled mid-`sendall` (the jetsam shape this machine
+            # has on record) used to be destroyed by the slice timeout and
+            # answered with `protocol error` — on the one path every op takes
+            # (bug-047 / ch-bsd #b-3).
+            acc = bytearray()
             deadline = time.monotonic() + 30.0
             while True:
                 if self._shutdown_event.is_set():
+                    if acc:
+                        self._log(
+                            f"dropped a partial request of {len(acc)} byte(s) "
+                            f"at shutdown; the client will see no reply")
                     return              # let go of the socket; we are stopping
                 try:
-                    req_bytes = _recv_line(conn, timeout=_RECV_POLL_S)
+                    req_bytes = _recv_line(conn, timeout=_RECV_POLL_S, acc=acc)
                 except (socket.timeout, TimeoutError):
-                    req_bytes = b""
+                    req_bytes = b""     # partial bytes stay in `acc`
                 if req_bytes or time.monotonic() >= deadline:
                     break
             if not req_bytes:
+                if acc:
+                    # Never silent: a request that arrived incomplete is a
+                    # thing that HAPPENED, and the old code returned as if the
+                    # client had simply never spoken.
+                    self._log(
+                        f"incomplete request abandoned after 30s: {len(acc)} "
+                        f"byte(s) with no newline; no op ran")
                 return
             req = json.loads(req_bytes.decode("utf-8"))
             op = req.get("op")
@@ -3422,6 +3556,16 @@ def _store_health(d: Daemon) -> dict:
     because it runs on the hub's alert tick for every project.
     """
     h: dict = {}
+    # 0. How much grep-learn work is waiting. The queue exists so a read never
+    #    pays for a write (bug-049), but a queue nothing reports is just a
+    #    quieter way to lose work: if the flush tick stops draining, the only
+    #    symptom would be retrieval slowly getting worse. One line count.
+    try:
+        from refmatrix import learn_queue as _lq
+        h["learn_queue_pending"] = _lq.pending_lines(d.root)
+    except Exception as exc:  # noqa: BLE001 — named, never mute
+        h["learn_queue_pending"] = -1
+        h["learn_queue_error"] = f"{type(exc).__name__}: {exc}"
     # 1. Does a memory read actually work? A corrupt row, a bad index or a
     #    damaged zonemap surfaces here and nowhere else.
     try:

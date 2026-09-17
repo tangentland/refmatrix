@@ -68,15 +68,20 @@ def test_append_content_hits_backstop_fires_only_on_empty_index(tmp_path, monkey
     s.close()
 
 
-def test_maybe_learn_grep_backstop_brokers_hits_to_daemon(tmp_path):
-    """The replica read path is read-only, so the CLI brokers the learn through
-    the daemon writer. Verify it extracts every hit line and only fires when the
-    backstop is on AND a grep group exists."""
+def test_maybe_learn_grep_backstop_queues_every_hit_line(tmp_path):
+    """The replica read path is read-only, so the CLI hands the learn to the
+    daemon writer. Verify it extracts every hit line and only fires when the
+    backstop is on AND a grep group exists.
+
+    The TRANSPORT changed in bug-049 — it queues instead of making a blocking
+    RPC (that RPC inherited `retries=2` and cost up to 90 s here) — so this
+    asserts the queue. The contract under test is unchanged: which lines get
+    taught, and when.
+    """
     from refmatrix import cli
+    from refmatrix import learn_queue as lq
     from refmatrix.context import ContextBundle, ContextEntry
     from refmatrix.store import Entity
-
-    calls: list = []
 
     class FakeDaemon:
         @staticmethod
@@ -84,9 +89,8 @@ def test_maybe_learn_grep_backstop_brokers_hits_to_daemon(tmp_path):
             return True
 
         @staticmethod
-        def call(root, op, args, timeout=None):
-            calls.append((op, args))
-            return {"ok": True}
+        def call(root, op, args, timeout=None, retries=None):
+            raise AssertionError("the backstop learn must not block on an RPC")
 
     e = ContextEntry(
         entity=Entity(id=0, kind="code", name="m.py", path="/abs/m.py",
@@ -97,17 +101,20 @@ def test_maybe_learn_grep_backstop_brokers_hits_to_daemon(tmp_path):
     b.groups["grep"] = [e]
 
     cli._maybe_learn_grep_backstop(tmp_path, FakeDaemon, "foo", b, True)
-    assert calls and calls[0][0] == "learn_from_grep"
-    hits = calls[0][1]["hits"]
+
+    batch = lq.drain(tmp_path)
+    assert [en["pattern"] for en in batch.entries] == ["foo"]
+    hits = batch.entries[0]["hits"]
     assert {"file": "/abs/m.py", "line": 5} in hits
     assert {"file": "/abs/m.py", "line": 9} in hits
 
-    calls.clear()
-    cli._maybe_learn_grep_backstop(tmp_path, FakeDaemon, "foo", b, False)  # off
-    assert not calls
+    # off → nothing queued
+    cli._maybe_learn_grep_backstop(tmp_path, FakeDaemon, "foo", b, False)
+    assert lq.pending_lines(tmp_path) == 0
+    # no grep group → nothing queued
     cli._maybe_learn_grep_backstop(tmp_path, FakeDaemon, "foo",
-                                   ContextBundle(ref="foo"), True)  # no grep grp
-    assert not calls
+                                   ContextBundle(ref="foo"), True)
+    assert lq.pending_lines(tmp_path) == 0
 
 
 def test_learn_grep_hits_marks_concept_and_entities_protected(tmp_path):
