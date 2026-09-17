@@ -9,8 +9,10 @@ store:
   - Title tokens + `alias=[...]` attribute → mentions concepts for retrieval.
   - `[[ref]]` outside rel: lines → `mentions` linkage.
 
-This is the minimum that makes `rmx context <doc-id>#<node-id>` return a
-useful slice. Full BM25 over node body text is deferred to v1.
+This is what makes `rmx context <doc-id>#<node-id>` return a useful slice.
+Node body text IS indexed: body term frequencies land as weighted `mentions`
+edges through the weight-aware `bulk_link` path (0.35.0/0.36.1), which is what
+`content_rank`'s BM25 scores over.
 """
 
 from __future__ import annotations

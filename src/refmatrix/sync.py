@@ -108,12 +108,9 @@ def drain_queue(root: Path) -> list[str]:
 
 def sync_files(s: Store, paths: list[str], project_root: Path | None = None,
                semantic: bool = False,
-               cancel_check: Callable[[], bool] | None = None,
-               yield_lock: Callable[[], None] | None = None,
-               yield_every: int = 1) -> dict:
+               cancel_check: Callable[[], bool] | None = None) -> dict:
     return _sync_paths(s, [Path(p) for p in paths], project_root, semantic,
-                       cancel_check=cancel_check,
-                       yield_lock=yield_lock, yield_every=yield_every)
+                       cancel_check=cancel_check)
 
 
 def changed_since(project_root: Path, git_ref: str) -> list[Path]:
@@ -132,26 +129,20 @@ def changed_since(project_root: Path, git_ref: str) -> list[Path]:
 
 def sync_since(s: Store, git_ref: str, project_root: Path | None = None,
                semantic: bool = False,
-               cancel_check: Callable[[], bool] | None = None,
-               yield_lock: Callable[[], None] | None = None,
-               yield_every: int = 1) -> dict:
+               cancel_check: Callable[[], bool] | None = None) -> dict:
     project_root = (project_root or Path.cwd()).resolve()
     files = changed_since(project_root, git_ref)
     return _sync_paths(s, files, project_root, semantic,
-                       cancel_check=cancel_check,
-                       yield_lock=yield_lock, yield_every=yield_every)
+                       cancel_check=cancel_check)
 
 
 def flush_queue(s: Store, project_root: Path | None = None,
                 semantic: bool = False,
-                cancel_check: Callable[[], bool] | None = None,
-                yield_lock: Callable[[], None] | None = None,
-                yield_every: int = 1) -> dict:
+                cancel_check: Callable[[], bool] | None = None) -> dict:
     raws = drain_queue(s.root)
     paths = [Path(p) for p in raws]
     return _sync_paths(s, paths, project_root, semantic,
-                       cancel_check=cancel_check,
-                       yield_lock=yield_lock, yield_every=yield_every)
+                       cancel_check=cancel_check)
 
 
 def _sync_paths(
@@ -161,8 +152,6 @@ def _sync_paths(
     semantic: bool,
     *,
     cancel_check: Callable[[], bool] | None = None,
-    yield_lock: Callable[[], None] | None = None,
-    yield_every: int = 1,
 ) -> dict:
     # Non-empty only: hook-driven `flush_queue` no-ops against an empty
     # global queue must stay quiet.
@@ -190,14 +179,15 @@ def _sync_paths(
     # round-trip pattern into one batch round-trip — big wins on 100+ file
     # diffs (git post-commit `--since`).
     #
-    # NB: yield_lock is plumbed through the signature for forward
-    # compatibility but is intentionally NOT invoked inside the per-file
-    # loop here. Releasing _store_lock mid-`s.transaction()` would let
-    # another daemon thread see the connection in a half-open state.
-    # Reads (via-replica) are the real CLI-priority lever -- they skip
-    # _store_lock entirely. Yielding for writes is only safe between
-    # transactions; ingest_gmd takes that path explicitly.
-    _ = yield_lock, yield_every  # unused for now; see note above
+    # NB: this loop deliberately does NOT yield the store lock, and takes no
+    # yield_lock/yield_every parameters to suggest otherwise. Releasing
+    # _store_lock mid-`s.transaction()` would let another daemon thread see
+    # the connection in a half-open state. Reads (via-replica) are the real
+    # CLI-priority lever -- they skip _store_lock entirely. Yielding for
+    # writes is only safe BETWEEN transactions, which is why `ingest_path`
+    # and `ingest_gmd_paths` take those parameters and this does not; the
+    # daemon passes them only to those two. They sat dead in four signatures
+    # here until task 6.1 (2026-09-16) removed them.
     with s.transaction(), s.deferred_links():
         for p in paths:
             if _cancelled():

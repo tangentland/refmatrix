@@ -10,18 +10,49 @@ CPU-friendly, MTEB-strong for code+docs+general text.
 
 Per-kind text extractors live here, not in vectors.py, so the
 embedder is the single place that knows how a row becomes a string.
-Phase B memory entities will add an extractor for kind='memory' that
-joins MemoryContent.content + tags + type into one string.
+`kind='memory'` joins `memory_content.content` + mtype + tags into one
+string (`_extract_memory`).
 """
 from __future__ import annotations
 
+import logging
 import os
+from collections import Counter
 from typing import Iterable, Sequence
 
 import numpy as np
 
+log = logging.getLogger(__name__)
+
 DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_DIM = 384
+
+# Degraded extractions, by reason. A memory whose sidecar is missing or whose
+# coref resolutions fail to apply still produces SOME text, so the row embeds
+# and nothing raises -- which is exactly how this class of defect stayed
+# invisible: a wrong vector reads the same as a right one downstream. Counting
+# them here is what makes `rmx embed` able to say "N memories embedded from
+# their name alone" instead of silently shipping N bad neighbors.
+# (CLAUDE.md#no-silent-failures; task 6.1, 2026-09-16.)
+_DEGRADED: "Counter[str]" = Counter()
+
+
+def _note_degraded(reason: str, entity_id: int, detail: str = "") -> None:
+    _DEGRADED[reason] += 1
+    log.warning("embed: degraded extraction entity=%s reason=%s%s",
+                entity_id, reason, f" ({detail})" if detail else "")
+
+
+def degraded_report() -> dict:
+    """Degraded-extraction counts by reason since the last reset. Empty when
+    every row extracted cleanly."""
+    return dict(_DEGRADED)
+
+
+def reset_degraded() -> None:
+    """Zero the counters. Callers that report a total (the `embed` CLI, the
+    daemon's embed op) reset before a run so the numbers describe THAT run."""
+    _DEGRADED.clear()
 
 # Hard cap on the text length we feed the embedder. Most ST models
 # truncate to 512 tokens anyway; bounding upfront keeps the per-row
@@ -200,33 +231,50 @@ def _row(store, entity_id: int):
 
 
 def _extract_memory(store, entity_id: int) -> str:
-    """Phase B memory entities. Joins MemoryContent.content +
-    type + tags into one string. Phase A stub: returns the entity
-    name when the memory_content sidecar isn't present yet so
-    A4 can land before B."""
+    """Memory entities: `[mtype] content\\ntags` from the memory_content
+    sidecar.
+
+    Every path that does NOT reach the sidecar is a degraded extraction, and
+    each one is counted and logged rather than swallowed. The fallback text is
+    the entity NAME -- a memory slug embedded as if it were its own body, which
+    produces a plausible-looking vector that answers the wrong queries. Two
+    bare `except Exception: pass` branches used to hide exactly that on the
+    production embed path (`extract_batch`, `context.build_context`,
+    `reranker`), which is what CLAUDE.md#no-silent-failures forbids on a
+    memory path. Task 6.1, 2026-09-16.
+    """
     con = store._connect()
     try:
         r = con.execute(
             "SELECT content, mtype, tags FROM memory_content WHERE entity_id = ?",
             [entity_id],
         ).fetchone()
-        if r is not None:
-            content, mtype, tags = r[0], r[1] or "", r[2] or ""
-            # Transiently materialize the pronoun-deref form when resolutions
-            # exist (coref.py): offsets were stored against exactly this
-            # content string. The substituted text is embedded and discarded
-            # -- vectors persist, resolutions persist, resolved text never.
-            try:
-                res = store.load_coref(entity_id)
-                if res:
-                    from refmatrix.coref import apply as _coref_apply
-                    content = _coref_apply(content or "", res)
-            except Exception:
-                pass  # sidecar absent (pre-migration store) -- embed raw
-            return f"[{mtype}] {content}\n{tags}".strip()
-    except Exception:
-        # memory_content table doesn't exist yet (Phase A only).
-        pass
+    except Exception as e:  # noqa: BLE001 — a pre-migration store has no such table
+        _note_degraded("memory_content_unreadable", entity_id, repr(e))
+        r = None
+    else:
+        if r is None:
+            # The entity says kind='memory' but carries no body. Not an error
+            # the store can answer -- it is a row that will embed as its slug.
+            _note_degraded("memory_content_missing", entity_id)
+
+    if r is not None:
+        content, mtype, tags = r[0], r[1] or "", r[2] or ""
+        # Transiently materialize the pronoun-deref form when resolutions
+        # exist (coref.py): offsets were stored against exactly this
+        # content string. The substituted text is embedded and discarded
+        # -- vectors persist, resolutions persist, resolved text never.
+        try:
+            res = store.load_coref(entity_id)
+            if res:
+                from refmatrix.coref import apply as _coref_apply
+                content = _coref_apply(content or "", res)
+        except Exception as e:  # noqa: BLE001 — coref is an optimization, never a gate
+            # Embed the RAW content: a failed substitution must not cost the
+            # row its body, and must not pass unnamed either.
+            _note_degraded("coref_apply_failed", entity_id, repr(e))
+        return f"[{mtype}] {content}\n{tags}".strip()
+
     row = _row(store, entity_id)
     return (row["name"] if row is not None else "") or ""
 
