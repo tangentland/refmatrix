@@ -209,3 +209,82 @@ def test_inflight_ops_are_tracked_and_cleared(tmp_path):
     finally:
         dm.OPS.pop("__probe2__", None)
         b.close()
+
+
+# ---- 4. the partial read the poll loop used to throw away -----------------
+#
+# bug-047 (ch-bsd #b-3): splitting the 30 s block into 1 s slices made
+# `_recv_line`'s LOCAL accumulator lossy. A request whose bytes did not all
+# land inside one slice was destroyed by the `socket.timeout`, and the
+# `except ...: req_bytes = b""` swallowed it — the daemon then answered
+# `protocol error` for a well-formed request, on the single path EVERY op
+# takes, writes included. `daemon.call` does not retry, because
+# `{"ok": false}` is valid JSON. Nothing in the suite sent a split request;
+# `test_a_normal_request_still_works` above sends one `sendall`, the only
+# case that cannot fail.
+
+def test_a_request_split_across_poll_slices_is_not_lost(tmp_path):
+    """Send the payload in two pieces with a gap LONGER than a poll slice —
+    the shape a sender descheduled mid-`sendall` produces under memory
+    pressure (the jetsam incident on this machine)."""
+    import json
+
+    d = _daemon(tmp_path)
+    a, b = socket.socketpair()
+    seen = {}
+
+    class _Pool:
+        def submit(self, fn, *args):
+            class _F:
+                def result(self_inner, timeout=None):
+                    return fn(*args)
+            return _F()
+
+    dm.OPS["__split__"] = lambda daemon, args: seen.setdefault("args", args) or {"echoed": args}
+    try:
+        t = threading.Thread(target=d._handle, args=(a, _Pool(), _Pool()),
+                             daemon=True)
+        t.start()
+        payload = json.dumps({"op": "__split__", "args": {"k": "v" * 64}}).encode() + b"\n"
+        head, tail = payload[:12], payload[12:]
+        b.sendall(head)
+        time.sleep(dm._RECV_POLL_S * 1.5)   # straddle at least one slice
+        b.sendall(tail)
+
+        b.settimeout(10.0)
+        data = b.makefile("rb").readline()
+        reply = json.loads(data.decode())
+        assert reply["ok"] is True, f"split request was lost: {reply}"
+        assert seen.get("args", {}).get("k") == "v" * 64
+    finally:
+        dm.OPS.pop("__split__", None)
+        b.close()
+
+
+def test_a_request_that_never_completes_is_reported_not_silently_dropped(tmp_path):
+    """If the deadline expires with bytes still buffered, the daemon must SAY
+    it dropped them. Returning quietly is how the loss stayed invisible."""
+    d = _daemon(tmp_path)
+    a, b = socket.socketpair()
+
+    class _Pool:
+        def submit(self, fn, *args):
+            raise AssertionError("no op should run for an incomplete request")
+
+    orig = dm._RECV_POLL_S
+    dm._RECV_POLL_S = 0.05
+    try:
+        t = threading.Thread(target=d._handle, args=(a, _Pool(), _Pool()),
+                             daemon=True)
+        t.start()
+        b.sendall(b'{"op": "__never__"')      # no newline, ever
+        time.sleep(0.4)
+        d._shutdown_event.set()               # end the wait deterministically
+        t.join(5.0)
+        assert not t.is_alive()
+        assert any("partial" in m.lower() or "incomplete" in m.lower()
+                   for m in _logs(d)), (
+            f"no log line named the dropped partial request: {_logs(d)}")
+    finally:
+        dm._RECV_POLL_S = orig
+        b.close()

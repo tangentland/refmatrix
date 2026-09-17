@@ -712,7 +712,25 @@ class Hub:
         # gate was designed twice to avoid, missed on the sibling condition.
         announced = getattr(self, "_alerted_refinements", frozenset())
         new_refine = pending_ids - set(announced)
-        if hot or new_refine:
+
+        # The sibling operand, fixed second (bug-048 / ch-bsd #s-3). The
+        # comment above argued "a hot row is news EVERY tick" WITHOUT the
+        # firing rate, and the rate says otherwise: 37 of 60 live messages
+        # carried a hot row, and this project sat at `stale_files: 37` for 23
+        # consecutive ticks — 13 h 47 m of identical alerts. A steady,
+        # unchanging stale count is not an incident recurring every 30 minutes;
+        # it is ONE incident. So `hot` gets what the refinement branch got:
+        # news on arrival, news on a MATERIAL change, and a rare re-assert so
+        # suppression never becomes amnesia.
+        hot_sig = _hot_signature(hot)
+        prev_sig = getattr(self, "_alerted_hot", frozenset())
+        last_assert = getattr(self, "_hot_asserted_at", 0.0)
+        now = time.time()
+        hot_is_news = bool(hot) and (
+            hot_sig != prev_sig
+            or (now - last_assert) >= HOT_REASSERT_S
+        )
+        if hot_is_news or new_refine:
             self.bus.publish(
                 "global:queues",
                 {"queues": queues, "refinement_pending": len(pending)},
@@ -721,10 +739,18 @@ class Hub:
             # Only what we actually announced. An id that drains and later
             # reappears is a new arrival, not the old backlog.
             self._alerted_refinements = frozenset(pending_ids)
+            self._alerted_hot = hot_sig
+            if hot:
+                self._hot_asserted_at = now
             return True
         # Quiet tick: forget ids that have DRAINED, so the same id arriving
         # again later reads as a new candidate rather than the old backlog.
         self._alerted_refinements = frozenset(set(announced) & pending_ids)
+        # Same for hot: a row that CLEARS is forgotten, so its return reads as
+        # a new incident rather than a continuation of the old one.
+        self._alerted_hot = hot_sig
+        if not hot:
+            self._hot_asserted_at = 0.0
         return False
 
     # -- shared model workers ----
@@ -1103,6 +1129,55 @@ def graceful_stop(root: Path, *, grace: float) -> bool:
     ok = daemon_mod.graceful_stop(root, grace=grace, report=report)
     _log(f"graceful stop {root}: {report} → {'stopped' if ok else 'still alive'}")
     return ok
+
+
+# How long a persistent hot fleet stays quiet before it re-asserts itself.
+# Far longer than the 30-minute tick — the point is that a standing incident is
+# not re-announced on the tick, while a fleet that is STILL broken tomorrow
+# morning says so rather than being silently forgotten (bug-048).
+HOT_REASSERT_S = float(os.environ.get("RMX_HOT_REASSERT_S") or 6 * 3600)
+
+# Below this ratio, a change in a row's stale count is the same incident
+# breathing (37 -> 38 -> 36), not a new one. An order of magnitude is a real
+# escalation and does re-alert.
+_HOT_ESCALATION_RATIO = 4.0
+
+
+def _hot_bucket(n: int) -> int:
+    """Coarse magnitude bucket for a hot row's count.
+
+    The alert must fire when a backlog gets MATERIALLY worse and stay quiet
+    while it jitters. Bucketing by powers of `_HOT_ESCALATION_RATIO` gives both
+    from one comparison: 37 and 38 share a bucket, 10 and 400 do not.
+    """
+    n = int(n or 0)
+    if n <= 0:
+        return 0
+    b, edge = 1, 1.0
+    while n > edge * _HOT_ESCALATION_RATIO:
+        edge *= _HOT_ESCALATION_RATIO
+        b += 1
+    return b
+
+
+def _hot_signature(hot: "list[dict]") -> frozenset:
+    """Identity of the CURRENT incident set: which stores are hot, why, and
+    roughly how badly. Two ticks with the same signature are the same incident,
+    so the second one is not news (bug-048 / ch-bsd #s-3)."""
+    sig = set()
+    for q in hot:
+        name = str(q.get("project") or q.get("name") or q.get("root") or "?")
+        # The REASONS, not just the count: a row that was hot for stale files
+        # and is now also hot for a dev tree is a different incident.
+        reasons = tuple(sorted(
+            k for k in ("memory_read_ok", "serving_legacy_catalog", "store_bytes",
+                        "dev_tree", "private_workers", "derive_stale")
+            if (q.get(k) is False if k == "memory_read_ok" else bool(q.get(k)))
+        ))
+        if q.get("identity") == "unknown":
+            reasons = reasons + ("identity_unknown",)
+        sig.add((name, _hot_bucket(q.get("stale_files") or 0), reasons))
+    return frozenset(sig)
 
 
 def _queue_row_is_hot(q: dict) -> bool:

@@ -153,7 +153,9 @@ def test_write_reports_what_changed_and_check_detects_drift(memdir, capsys):
     n = mi.write(memdir)
     assert n > 0
     assert mi.check(memdir) is True
-    out = capsys.readouterr().out
+    # stderr: the report must never touch stdout, which is the MCP JSON-RPC
+    # channel (bug-045 / ch-bsd #b-2).
+    out = capsys.readouterr().err
     assert "MEMORY.md" in out
 
     _mem(memdir, "project_b", title="B", mtype="project")
@@ -187,7 +189,7 @@ def test_save_state_compacts_the_index_it_just_appended_to(memdir, capsys):
     assert len(lines) <= mi.MAX_LINES, len(lines)
     assert any("savestate_20260916" in l for l in lines), "the new entry survived"
     assert any("older project memories folded" in l for l in lines)
-    assert "MEMORY.md" in capsys.readouterr().out, "the compaction must say so"
+    assert "MEMORY.md" in capsys.readouterr().err, "the compaction must say so"
 
 
 def test_compaction_failure_is_said_not_swallowed(memdir, monkeypatch, capsys):
@@ -245,7 +247,7 @@ def test_an_empty_memdir_never_wipes_the_index(memdir, capsys):
     idx.write_text("- [Old](savestate_x.md) — old hook\n- [Keep](other.md) — keep\n")
     assert mi.write(memdir) == 0
     assert idx.read_text().count("savestate_x.md") == 1
-    assert "left untouched" in capsys.readouterr().out
+    assert "left untouched" in capsys.readouterr().err
 
 
 def test_an_entry_whose_file_is_gone_is_dropped_and_counted(memdir, capsys):
@@ -253,6 +255,8 @@ def test_an_entry_whose_file_is_gone_is_dropped_and_counted(memdir, capsys):
     (memdir / "MEMORY.md").write_text(
         "- [Here](project_here.md) — kept\n- [Gone](project_gone.md) — deleted\n")
     mi.write(memdir)
-    out = capsys.readouterr().out
+    # stderr: the report must never touch stdout, which is the MCP JSON-RPC
+    # channel (bug-045 / ch-bsd #b-2).
+    out = capsys.readouterr().err
     assert "dropped 1 entry" in out and "project_gone.md" in out
     assert "project_here.md" in (memdir / "MEMORY.md").read_text()

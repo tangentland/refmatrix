@@ -30,6 +30,7 @@ Run by hand or in a check:
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -37,8 +38,28 @@ from pathlib import Path
 # that pushes the cap down for everyone else.
 MAX_LINE_CHARS = 200
 
-# The cap `MEMORY-RULES.md` names.
+# The cap `MEMORY-RULES.md` names. Advisory: it shapes the index, it does not
+# decide whether the index survives the load -- MAX_INDEX_CHARS does.
 MAX_LINES = 200
+
+# THE cap that matters. The loader that truncates MEMORY.md counts CHARACTERS
+# against a ~24.4 KiB budget; it does not count lines, and it does not count
+# bytes. bug-042 capped lines, `--check` reported "in sync", and 38 entries
+# stayed unreachable -- the cap was on a dimension nothing enforces (bug-045).
+#
+# The unit was settled by measuring the live index (197 lines / 31,607 bytes /
+# 31,043 chars) against the session banner, which read "MEMORY.md is 30.3KB
+# (limit: 24.4KB) ... 38 of 197 lines were cut off, starting at line 160":
+#
+#   unit=bytes, budget 24.4 KiB -> first line past budget 157, 41 cut
+#   unit=chars, budget 24.4 KiB -> first line past budget 160, 38 cut  <-- banner
+#   chars/1024 = 30.3 KiB                                              <-- banner
+#
+# Characters reproduce both banner numbers exactly; bytes reproduce neither.
+# The default keeps ~1 KiB of headroom under the observed limit because the
+# number belongs to the harness doing the loading, not to rmx -- hence the env
+# override, so a changed limit does not need a release.
+MAX_INDEX_CHARS = int(os.environ.get("RMX_MEMORY_INDEX_CHARS") or 24000)
 
 INDEX_NAME = "MEMORY.md"
 
@@ -171,7 +192,8 @@ def collect(memdir: Path) -> list:
     return out
 
 
-def render(memdir: Path, *, max_lines: int = MAX_LINES) -> str:
+def render(memdir: Path, *, max_lines: int = MAX_LINES,
+           max_chars: int = MAX_INDEX_CHARS) -> str:
     entries = collect(memdir)
     by = {}
     for e in entries:
@@ -199,24 +221,53 @@ def render(memdir: Path, *, max_lines: int = MAX_LINES) -> str:
             f"({newest.rel}) — session handoffs; `rmx recall-state` reads the newest")
 
     # Rule 3: fold the oldest project notes, never feedback, and say the count.
-    if len(lines) > max_lines:
-        projects = sorted(by.get("project", []), key=lambda e: e.mtime)
-        need = len(lines) - max_lines + 1        # +1 for the fold line itself
-        fold = projects[:max(0, need)]
+    #
+    # Two budgets, and the CHARACTER one is the one that decides whether the
+    # tail is readable at all (bug-045). Folding is driven by both: take the
+    # larger of what the line cap needs and what the char cap needs, then
+    # verify the rendered result actually fits instead of assuming the
+    # arithmetic did -- the fold line itself has a length, and so does every
+    # line that survives.
+    projects = sorted(by.get("project", []), key=lambda e: e.mtime)
+
+    def _assemble(fold_n: int) -> str:
+        if fold_n <= 0:
+            return "\n".join(lines) + "\n"
+        fold = projects[:fold_n]
         folded = {e.rel for e in fold}
-        lines = [l for l in lines
-                 if not any(f"]({rel})" in l for rel in folded)]
-        lines.append(
+        kept = [l for l in lines
+                if not any(f"]({rel})" in l for rel in folded)]
+        kept.append(
             f"- {len(fold)} older project memories folded — `rmx memory list` or "
             f"`rmx memory search <term>` reaches them; nothing was deleted")
-    return "\n".join(lines) + "\n"
+        return "\n".join(kept) + "\n"
+
+    need = len(lines) - max_lines + 1 if len(lines) > max_lines else 0
+    text = _assemble(need)
+    # Grow the fold until the rendered text fits the char budget. Bounded by
+    # the number of foldable entries: when they run out the index is as small
+    # as folding can make it, and `write()` says so rather than pretending.
+    while len(text) > max_chars and need < len(projects):
+        # Estimate the shortfall in entries rather than stepping one at a time:
+        # a 400-entry index would otherwise re-render 250 times.
+        over = len(text) - max_chars
+        mean = max(1, (len(text) // max(1, len(lines))))
+        need = min(len(projects), need + max(1, over // mean))
+        text = _assemble(need)
+    return text
 
 
-def write(memdir: Path, *, max_lines: int = MAX_LINES, out=None) -> int:
+def write(memdir: Path, *, max_lines: int = MAX_LINES,
+          max_chars: int = MAX_INDEX_CHARS, out=None) -> int:
     """Rewrite the index. Returns the number of lines written, and SAYS what it
     did — a silent rewrite of the memory index is the shape this project's
     no-silent-failures rule exists to prevent."""
-    out = out or sys.stdout
+    # stderr, NOT stdout: `rmx mcp` speaks JSON-RPC on stdout and save-state
+    # calls this with no `out=`, so a report line lands mid-protocol and the
+    # client fails to parse the frame around it (bug-045 / ch-bsd #b-2). The
+    # failure branch below already used stderr; only the success path leaked.
+    # An explicit `out=` still wins -- the CLI passes stdout deliberately.
+    out = out if out is not None else sys.stderr
     memdir = Path(memdir)
     idx = memdir / INDEX_NAME
     entries = collect(memdir)
@@ -232,7 +283,7 @@ def write(memdir: Path, *, max_lines: int = MAX_LINES, out=None) -> int:
     before_lines = idx.read_text(errors="replace").splitlines() if idx.exists() else []
     before_refs = {l.split("](", 1)[1].split(")", 1)[0]
                    for l in before_lines if l.startswith("- [") and "](" in l}
-    text = render(memdir, max_lines=max_lines)
+    text = render(memdir, max_lines=max_lines, max_chars=max_chars)
     after_lines = text.splitlines()
     after_refs = {l.split("](", 1)[1].split(")", 1)[0]
                   for l in after_lines if l.startswith("- [") and "](" in l}
@@ -243,8 +294,16 @@ def write(memdir: Path, *, max_lines: int = MAX_LINES, out=None) -> int:
     gone = sorted(r for r in before_refs - after_refs
                   if not (memdir / r).exists())
     idx.write_text(text)
-    print(f"{INDEX_NAME}: {len(before_lines)} -> {len(after_lines)} lines "
-          f"(cap {max_lines}; {len(entries)} memories on disk)", file=out)
+    over = len(text) > max_chars
+    print(f"{INDEX_NAME}: {len(before_lines)} -> {len(after_lines)} lines, "
+          f"{len(text)} chars (caps {max_lines} lines / {max_chars} chars; "
+          f"{len(entries)} memories on disk)", file=out)
+    if over:
+        # Folding ran out of foldable entries. The index still will not fit,
+        # and saying "in sync" here is exactly the silence bug-042 created.
+        print(f"{INDEX_NAME}: STILL OVER the {max_chars}-char budget at "
+              f"{len(text)} chars — the tail WILL be cut on load; nothing left "
+              f"to fold (feedback entries are never folded)", file=out)
     if gone:
         print(f"{INDEX_NAME}: dropped {len(gone)} entr"
               f"{'y' if len(gone) == 1 else 'ies'} whose file is gone: "
@@ -252,13 +311,15 @@ def write(memdir: Path, *, max_lines: int = MAX_LINES, out=None) -> int:
     return len(after_lines)
 
 
-def check(memdir: Path, *, max_lines: int = MAX_LINES) -> bool:
+def check(memdir: Path, *, max_lines: int = MAX_LINES,
+          max_chars: int = MAX_INDEX_CHARS) -> bool:
     """True when the index on disk equals what `render` would write."""
     memdir = Path(memdir)
     idx = memdir / INDEX_NAME
     if not idx.exists():
         return False
-    return idx.read_text(errors="replace") == render(memdir, max_lines=max_lines)
+    return idx.read_text(errors="replace") == render(
+        memdir, max_lines=max_lines, max_chars=max_chars)
 
 
 def main(argv: "list[str] | None" = None) -> int:

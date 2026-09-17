@@ -571,9 +571,12 @@ def render_action(
         out.extend(indent_block(ip, pad + "│    ", args.in_limit, args.in_lines))
     if act.children and not args.no_subagents:
         n = len(act.children)
-        out.append(
-            f"{pad}│    {paint(f'└─ subagent · {n} action{"" if n == 1 else "s"}', 'mag', color=color)}"
-        )
+        # Built outside the f-string: reusing the SAME quote character inside
+        # an f-string expression is PEP 701 syntax (3.12+), and `pyproject`
+        # declares `requires-python = ">=3.10"` (bug-046 / ch-bsd #b-4).
+        plural = "" if n == 1 else "s"
+        label = paint(f"└─ subagent · {n} action{plural}", "mag", color=color)
+        out.append(f"{pad}│    {label}")
         for kid in act.children:
             render_action(kid, depth + 2, args, color, out)
     for said in act.agent_said:
