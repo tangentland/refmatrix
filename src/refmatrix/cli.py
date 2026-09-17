@@ -9085,6 +9085,26 @@ def _run_pagerank(root: Path, partition: str, *, damping: float = 0.85,
     return _op_pagerank(d, args)
 
 
+def _degraded_embed_line(counts: dict) -> str:
+    """Render the degraded-extraction summary for `rmx embed`, or '' when the
+    run was clean.
+
+    A degraded row still embeds -- it just embeds the WRONG text (an entity's
+    slug instead of its body when the memory_content sidecar is missing, or
+    un-substituted content when coref resolutions fail). Nothing raises and the
+    vector count looks healthy, so without this line the run reports success
+    while seeding bad neighbors. Task 6.1, 2026-09-16.
+    """
+    if not counts:
+        return ""
+    total = sum(int(v) for v in counts.values())
+    detail = ", ".join(f"{k}={int(v)}" for k, v in sorted(counts.items()))
+    return (
+        f"[yellow]{total} row(s) embedded from degraded text ({detail}) — "
+        f"their vectors describe a slug or unresolved content, not the body[/]"
+    )
+
+
 @main.command("embed")
 @click.option(
     "--kinds", "-k", multiple=True, callback=_split_kinds,
@@ -9224,6 +9244,7 @@ def embed_cmd(kinds, batch, rebuild, max_batches, gc_mode, dry_run):
         )
 
     total_embedded = 0
+    total_degraded: dict[str, int] = {}
     for part, part_kinds in plan:
         console.print(
             f"[dim]embedding kinds={','.join(part_kinds)} partition={part} "
@@ -9258,6 +9279,8 @@ def embed_cmd(kinds, batch, rebuild, max_batches, gc_mode, dry_run):
                 raise click.ClickException(result.get("error", "embed failed"))
             embedded = int(result.get("embedded", 0))
             remaining = int(result.get("remaining", 0))
+            for reason, n in (result.get("degraded") or {}).items():
+                total_degraded[reason] = total_degraded.get(reason, 0) + int(n)
             total_embedded += embedded
             console.print(
                 f"[dim]  ⋯ embed batch {iters}: +{embedded} "
@@ -9271,6 +9294,9 @@ def embed_cmd(kinds, batch, rebuild, max_batches, gc_mode, dry_run):
     console.print(
         f"[green]done[/] embedded={total_embedded} kinds={','.join(selected)}"
     )
+    line = _degraded_embed_line(total_degraded)
+    if line:
+        console.print(line)
 
 
 @main.command("search-dense")

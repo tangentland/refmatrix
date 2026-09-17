@@ -5010,9 +5010,17 @@ def _op_embed(d: Daemon, args: dict) -> dict:
             return {"embedded": 0, "remaining": 0, "kinds": kinds}
 
         # Per-kind grouping so we upsert into the right Lance dataset.
+        # Reset first so `degraded` describes THIS batch: the extraction can
+        # fall back to an entity's name when its memory_content sidecar is
+        # missing or its coref resolutions fail to apply, and that produces a
+        # confident-looking vector for the wrong text. The count rides back on
+        # the result so the CLI can say it out loud (task 6.1, 2026-09-16).
+        embmod.reset_degraded()
         triples = embmod.extract_batch(d.store, rows)
+        degraded = embmod.degraded_report()
         if not triples:
-            return {"embedded": 0, "remaining": 0, "skipped_empty": len(rows)}
+            return {"embedded": 0, "remaining": 0, "skipped_empty": len(rows),
+                    "degraded": degraded}
 
         # Single batch encode keeps the model warm + amortizes the
         # tokenizer cost. ST handles batching internally.
@@ -5038,6 +5046,7 @@ def _op_embed(d: Daemon, args: dict) -> dict:
         "kinds": kinds,
         "dim": emb.dim,
         "model": emb.model_name,
+        "degraded": degraded,
     }
 
 

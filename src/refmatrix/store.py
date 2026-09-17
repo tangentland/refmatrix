@@ -759,9 +759,12 @@ class Store:
     def _log_event(self, op: str, **fields) -> None:
         """Append one JSON event to facts.log if RMX_LOG=1 and not replaying.
 
-        Called after the SQLite commit on every mutation. Phase 1: log runs
-        alongside the catalog as a verification target. Phase 2 will gate the
-        catalog writes off and treat the log as authoritative."""
+        Called after the SQLite commit on every mutation. facts.log is a
+        VERIFICATION and replay log; the catalog is authoritative and stays
+        that way. The 2026-09 facts.log audit found no edge-time history to
+        recover from it and three write paths that never logged at all, so
+        the log cannot be promoted to the source of truth without being
+        rebuilt first -- it is an observability surface, not a journal."""
         if self._replay_mode or not _log_enabled():
             return
         rec = {"ts": time.time(), "op": op, **fields}

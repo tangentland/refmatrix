@@ -5,14 +5,14 @@ title: "Task 6.5: The rewriter hook stops baking the generator's tree (bug-008)"
 tags: [task, plan-6]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-6-deferrals-docs-benchmark
 ---
 
 # Task 6.5: The rewriter hook stops baking the generator's tree (bug-008) {#root}
 
 > Plan: [[plan-6-deferrals-docs-benchmark]]
-> Status: Pending
+> Status: Complete (shipped 2026-09-16; live conversion verified on 0.72.2)
 > Depends on: —
 
 rel: part-of -> [[plan-6-deferrals-docs-benchmark]]
