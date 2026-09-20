@@ -30,6 +30,7 @@ Run by hand or in a check:
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -181,9 +182,52 @@ def parse_hooks(idx: Path) -> dict:
     return hooks
 
 
+HOOKS_SIDECAR = ".memory_hooks.json"
+
+
+def load_hooks(memdir: Path) -> dict:
+    """Curated hooks: the index PLUS the sidecar of hooks for folded entries.
+
+    Without the sidecar the generator is not idempotent on its own output
+    (bug-050). `parse_hooks` can only see entries the index still lists, so a
+    folded entry loses its curated hook, falls back to derived prose — usually
+    LONGER — which grows the render and folds two more. Rendering the live
+    index from itself moved the fold 56 -> 58 with no memory added, and
+    `--check` read out of sync immediately after a successful write. Every
+    save-state would have degraded the index a little further.
+    """
+    hooks: dict = {}
+    side = memdir / HOOKS_SIDECAR
+    if side.exists():
+        try:
+            data = json.loads(side.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                hooks.update({str(k): str(v) for k, v in data.items()})
+        except Exception as exc:  # noqa: BLE001 — named, never mute
+            print(f"{INDEX_NAME}: hook sidecar unreadable ({type(exc).__name__}: "
+                  f"{exc}); folded entries may lose their curated hooks",
+                  file=sys.stderr)
+    # The index wins: it is what a human last edited by hand.
+    hooks.update(parse_hooks(memdir / INDEX_NAME))
+    return hooks
+
+
+def save_hooks(memdir: Path, entries: list) -> None:
+    """Persist every entry's hook, listed or folded, so curation survives a
+    fold. Written on the same call that rewrites the index."""
+    side = memdir / HOOKS_SIDECAR
+    data = {e.rel: e.hook for e in entries if e.hook}
+    try:
+        side.write_text(json.dumps(data, indent=0, sort_keys=True,
+                                   ensure_ascii=False), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 — named, never mute
+        print(f"{INDEX_NAME}: could not write hook sidecar "
+              f"({type(exc).__name__}: {exc}); folded entries will lose their "
+              f"curated hooks on the next render", file=sys.stderr)
+
+
 def collect(memdir: Path) -> list:
-    idx = memdir / INDEX_NAME
-    hooks = parse_hooks(idx)
+    hooks = load_hooks(memdir)
     out = []
     for p in sorted(memdir.glob("*.md")) + sorted(memdir.glob("impressions/*.md")):
         if p.name in _NOT_A_MEMORY:
@@ -294,6 +338,9 @@ def write(memdir: Path, *, max_lines: int = MAX_LINES,
     gone = sorted(r for r in before_refs - after_refs
                   if not (memdir / r).exists())
     idx.write_text(text)
+    # Persist EVERY entry's hook, listed or folded, so the next render
+    # does not lose the folded ones and fold further (bug-050).
+    save_hooks(memdir, entries)
     over = len(text) > max_chars
     print(f"{INDEX_NAME}: {len(before_lines)} -> {len(after_lines)} lines, "
           f"{len(text)} chars (caps {max_lines} lines / {max_chars} chars; "

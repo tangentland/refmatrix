@@ -9,115 +9,107 @@ metadata:
 
 # Session Handoff for refmatrix {#root}
 
-Date: 2026-09-16 (session 96d2fc48). Prior handoff archived at
-`workflow/past_handoffs/002-plans-7-10-longmemeval-brief-telemetry_2026-09-16.md`.
+Date: 2026-09-17/20 (session dd1cb4f9). Prior handoff archived at
+`workflow/past_handoffs/003-plan-12-close-bug-041-043_2026-09-16.md`.
 
 rel: depends-on -> [[plan-of-plans]]
 
 ## Where the work sits {#state}
 
-**`master` at `3c7b470`, tree clean, 27 commits ahead of `origin/main` (`e815191`, confirmed by
-`git fetch`, not a cached ref).** Version **0.71.0**, unchanged — nothing here is deployed;
-`~/refmatrix` still serves the pre-plan-12 tree.
+**`master` at `1109b4a`, tree clean.** Version **0.72.3** — **NOT DEPLOYED**. `~/refmatrix` and all
+8 fleet stores still serve 0.72.2. The push is the user's, as always. {#state-lead}
 
-One task: *fix the bugs*. Every row in `workflow/bug_registry.md` that read `open` or `recurring`
-is now `fixed`, via **plan-12** (`workflow/plans/plan-12-open-bug-remediation.md`, six task specs),
-then five rounds of `@ch-bsd` ending **CLEAN**.
+Two merges this session:
 
-## The six bugs {#bugs}
-
-| bug | what shipped |
+| sha | what |
 |---|---|
-| **bug-037** | `tools/pyc_guard.py` + a `pytest_sessionstart` guard: all `src/` bytecode is recompiled as PEP 552 `checked-hash` before any test runs, so validation is by source hash. The incident replays in a test that fails loud if it stops reproducing. |
-| **bug-039** | `derive_stamps` (both DDLs) + `Store.stamp_derive` / `derive_status`; stamped by `ingest_path` and `ingest_gmd_paths`; surfaced on `_store_health`, `_op_derive_status` and `rmx daemon status`. An unstamped partition holding tracked files reads STALE, not unknown. |
-| **bug-024** (G14) | `Daemon._maybe_adopt_shared` on the existing tick re-probes the shared socket, swaps under `_worker_lock`, closes the private worker, backs off to 1800 s. Split fleet is visible via `worker_kinds()` → hub row → `rmx hub queues`. |
-| **bug-025** (G13) + **bug-019** | The rerank worker reports a seconds-per-doc EMA, the hub adds `queue_depth`, `estimate_rerank_s` is the one place the arithmetic lives, `RemoteReranker` holds a deadline and raises `RerankSkipped` with the numbers. The `rerank` frame carries the deadline and the worker drops it at dequeue. |
-| **bug-032** | `reranker.window_doc`: half the budget on the head, half on a query-anchored window. **541 → 672** covered of 896 answer-bearing turns at 2048; byte-identical head truncation below 1024. |
-| **bug-033** → **bug-040** | `RMX_TIME_PHASES=1` phase splits; the instrument found a real defect — the grep floor was `rg`-ing **`$HOME`** for memory-only stores (15.09 s → timeout → zero hits → swallowed). **15.13 s → 0.09 s.** The residual 8.5 s is cold I/O on an SD-card volume (94.7 MB/s, 432 MB adjacency cache). |
+| `8efef73` | plan-6 task 6.1 — stale deferrals, and **bug-044** (silent degradation on the memory embed path) |
+| `1109b4a` | the ch-bsd remedy round — **bug-045..049** + the `#s-3` sibling gate |
 
-## Done since the first draft of this handoff {#closed}
+Plus **bug-050**, found during this save-state and fixed (committed separately — see
+[[#bug-050]]).
 
-All three items the user approved are complete:
+## What was asked, and what it turned into {#arc}
 
-1. **Deployed 0.72.0.** `~/refmatrix` ff-pulled to `66142c1`, `rmx daemon restart --relaunch`
-   verified pid + version against the deploy code path, the hub was restarted onto 0.72.0 (its
-   model workers must run this code for bug-025), and `rmx hub relaunch-fleet` took all 8 stores to
-   0.72.0. No orphan pileup on :7777.
-2. **Pushed.** `origin/main` is `66142c1`; 0 ahead at the time of the push.
-3. **bug-025 acceptance MET.** Four runs of the exact deployed hook argv, two windows two and a
-   half minutes apart, load 3.9-4.5: **20 of 20 rows reranked**, 4.77-5.15 s, against **0 of 5**
-   with `rerank failed (TimeoutError)` four hours earlier. `workflow/measurements/
-   rerank-cost-budget-0916.md#acceptance`. Plan-12 is `completed`.
+The session opened cold ("where are we") and ran a, b, c in order:
 
-bug-039's detector is live and behaved exactly as predicted for landing day: every store reads
-`derive-unstamped` and the hub row is **cold**, so the alert did not flood.
+1. **(a) Audit the unaudited range.** `@ch-bsd` over `34aeddf..00d0ded` — the bug-041/042/043 work
+   that shipped as 0.72.2 with no adversarial pass. Verdict **DIRTY, 14 findings (5B/4S/5M)**.
+   All five BULLSHIT and the `#s-3` sibling are fixed; **4 SKETCHY and 5 MEH are NOT** ([[#open]]).
+2. **(b) plan-6.** Smaller than it looked: 6.4 and 6.5 were already done and only needed closing
+   out; 6.1 was real and exposed bug-044.
+3. **(c) benchmarks — NOT STARTED.** The user chose MemAware, CSN python/JS/TS, and the
+   8-experiment retrieval set, then redirected to chase the grep wall first.
 
-## What is NOT done, and why {#open}
+## The grep wall (bug-049) — found in telemetry, not by a test {#grep-wall}
 
-Nothing is outstanding from this session's asks. Both bugs raised after plan-12 are closed and
-deployed:
+The suite was green throughout. `.refmatrix/query.log` said otherwise: 104 of 1,165
+`grep-replica` calls pinned at **30,178-30,222 ms**, rising to **17% of calls on 09-16**, ~52 min
+of pure waiting lifetime. Reproduced live at **30.425 s** with `user 0m0.259s`.
 
-- **bug-041 FIXED (0.72.1), proven live.** The 0.72.1 daemon stops in **1 second** with no drain
-  timeout and no skipped flush; the whole restart is 4 s against 29-32 s. Note the trap for anyone
-  re-checking: the FIRST restart after a deploy is performed by the OLD daemon, which still prints
-  the old lines — a shutdown fix can only be observed by restarting a process that already carries
-  it. The 431,809 -> 422,127 index-row delta that looked like lost work was ordinary churn: four
-  boots today read 431809 / 422127 / 431666 / 431669, moving both ways with purge and re-derive.
-- **bug-042 FIXED (0.72.1).** `MEMORY.md` is generated under a hard cap: 234 -> 193 lines, 257
-  memories all accounted for (192 listed, 65 collapsed, 0 unaccounted), `--check` in sync on the
-  DEPLOYED build. Wired into `handoff._ss_update_index`, so save-state now caps the index it grows.
+Cause: four `learn_from_grep` sites each passed a timeout and inherited `daemon.call`'s
+`retries=2` → 3× budget (worst case **180.45 s** at one unwrapped `timeout=60.0` site). Fixed in
+two halves — a bounded shared broker, and a coalescing `learn_queue.py` the daemon's flush tick
+drains. **The drain yields the writer per entry** (the user caught a batch-wide hold in review),
+with a 5 s tick budget, shutdown stop, and requeue-never-drop. Full story:
+[[project_grep_learn_wall_and_queue]]. {#grep-wall-body}
 
-- **bug-043 FIXED (0.72.2).** The `global:queues` alert re-published the whole fleet snapshot every
-  30 minutes with every row clean, because the gate read `hot or pending_refine` and one bus-test
-  candidate from 2026-09-14 (body: the string `hi`) had been pending for two days. A hot row still
-  alerts every tick; a pending candidate alerts once, on arrival; a quiet tick prunes drained ids.
-  The stale candidate was rejected after `rmx refine show` confirmed what it was.
+## bug-050, found by this very save-state {#bug-050}
 
-Live confirmation of the plan-12 gate design, visible in `rmx hub queues` right now: `refmatrix`
-reads **`derive-drift@0.72.1`** — its graph was stamped by 0.72.1 while 0.72.2 runs, but 0.72.2
-changed `hub.py`, not `ingest.py` / `ingest_gmd.py` / `store.py`, so `behind_code` is False and the
-row is carried COLD instead of alerting. That is exactly the version-vs-distance distinction ch-bsd
-forced in r2/r4, working on the real fleet.
+Regenerating `MEMORY.md` during the handoff, `check()` read OUT OF SYNC immediately after a
+successful `write()`. Rendering the index from its own output folded **2 more entries each time**
+(56 → 58) with no memory added: `parse_hooks` only sees entries the index still lists, so a folded
+entry lost its curated hook, fell back to longer derived prose, and pushed two more out. Every
+save-state would have degraded the index further. Fixed with a `.memory_hooks.json` sidecar;
+`render(render(x)) == render(x)` is now a test. Live index converged **145 lines / 23,104 chars,
+`check()` True**. {#bug-050-body}
 
-The one open item is a judgement call rather than a defect: the memory-index and shutdown work
-landed AFTER `@ch-bsd`'s CLEAN range (`c92274b..34aeddf`) and has had no adversarial audit — 22
-tests and six killing mutations, but no BSD round.
+## What is NOT done {#open}
+
+- **DEPLOY.** 0.72.3 is committed and unpushed. I asked and did not get an answer, so I did not
+  deploy — b-3 and s-3 change daemon and hub behaviour, and this repo's own rule is that a
+  shutdown-path change is only observable on the SECOND restart after a deploy. Two things argue
+  for deploying soon: the 30 s grep wall is live in production right now, and bug-045 means every
+  session still loads a truncated `MEMORY.md` from the deploy path.
+- **4 SKETCHY + 5 MEH from the audit.** Ranked: **s-1** is the serious one — the flush budget went
+  5→15 s, putting the degraded stop at 59 s worst case against launchd's `ExitTimeOut = 45`, the
+  SIGKILL that corrupts the ART index. Then **s-2** (`_inflight_ops` keyed by op NAME) and **m-5**
+  (the suite cannot run against a detached checkout of its own commit — ch-bsd saw 42 failures).
+- **(c) the benchmark re-run.** Note the ordering constraint: the grep-wall fix changes
+  retrieval-path latency, so runs before and after the deploy are not comparable. Deploy first,
+  then measure the deployed path.
+- **A telemetry defect, unfixed:** `grep-replica` shows 278 "errors" of which 256 are
+  `SystemExit: 1` (grep's normal NO-MATCH) and 22 are `BrokenPipeError`. Real failures ≈ 6. Same
+  distortion in `cli.log`. Anything reading `error`/`exit_code` from those logs reads noise as
+  failure. Recorded in [[project_grep_learn_wall_and_queue]].
+- **plan-6 is not flipped to `completed`,** and plans 2/3/4/7/8/9/10 still read `in-progress`
+  although every task under them is complete or cancelled. That is bookkeeping I deliberately did
+  not do unilaterally: the plan-of-plans rule gates `completed` on a CLEAN `@ch-bsd` over each
+  plan's range, and plans 7-10's last round was DIRTY before plan-12 absorbed its findings.
 
 ## Quality gates {#gates}
 
 | gate | state |
 |---|---|
-| Full suite | **2026 passed, 0 failed, 850 s** at `ca884b2` (`workflow/review-output/pytest-plan-12-r5.log`) |
-| Suite per round | 2011 → 2016 → 2021 → 2025 → 2026, zero failures throughout |
-| GMD lint | 0 errors, 14 pre-existing warnings |
+| Full suite | **2112 passed, 0 failed** at `1109b4a`, `src/` hash identical before and after the run |
+| bug-050 run | in flight at handoff — `workflow/review-output/pytest-bug050-full.log` |
+| GMD lint | 0 errors, 14 warnings (the standing baseline) |
 | `rmx install-hooks --check` | in sync |
-| `@ch-bsd` | **CLEAN**, 0 findings at `34aeddf`; 22 findings across five rounds, all closed |
+| `@ch-bsd` | DIRTY at `00d0ded`; the 5 BULLSHIT + s-3 remedied here, NOT re-audited |
 
-The contaminated first run is preserved as `pytest-plan-12-CONTAMINATED.log` rather than replaced —
-`@ch-bsd`'s mutation harness edited `src/` while it ran, and a log that describes no tree is worse
-than no log.
-
-## What the audit changed, not just confirmed {#audit}
-
-Worth reading before trusting any number in this session:
-
-- Both round-1 blockers were **the same defect in two instruments**: a number sampled outside the
-  interval it claimed to describe. `queue_depth` was read after `_handle`'s `finally` drained it;
-  the phase report labelled each interval with the phase that ended at its START.
-- My round-1 alert gate fired on version inequality and would have turned **all 8 stores
-  permanently hot within two days** (34 version bumps in ten days). It is now a content hash of
-  `ingest.py` / `ingest_gmd.py` / `store.py`, stamped at derive time.
-- That hash's cache then reproduced **bug-037's own shape** — `(mtime, size)` is not a content
-  identity — inside bug-039's detector. Key is now a 5-tuple with `ctime_ns` and `ino`.
-- One published A/B number was wrong: the 700-char split arm is **338, not 500** (the 0.7 arm's
-  number on the 0.5 row), under a comment reading "Measured, not chosen". Caught by re-running the
-  committed harness, which is the argument for committing harnesses.
+**Every full-suite log this session was hash-verified** against the tree it describes, because two
+were contaminated: one by a mutation I was running concurrently, and one by my own new
+Python-floor guard writing 62 `cpython-310` pycs into `src/__pycache__`. See
+[[feedback_never_explain_away_a_failing_guard]] — I attributed the second to the first and was
+wrong; the clean re-run proved it.
 
 ## Next session {#next}
 
-1. Read `workflow/bullshit/2026-09-16-1146-plan-12-r3-r5-close-34aeddf.md` (CLEAN) and
-   `workflow/bug_registry.md` bug-041.
+1. Read `workflow/bullshit/2026-09-16-1700-bug-041-042-043-post-deploy-00d0ded.md` — the 9
+   unaddressed findings, `#s-1` first.
 2. Decide the deploy. If deploying: `git -C ~/refmatrix pull --ff-only origin master` →
-   `rmx daemon restart --relaunch` → then run bug-025's acceptance and record it.
-3. Settle bug-041 with `rmx stats` + `replica audit` on an idle machine.
-4. plan-12 flips to `completed` only after (2) and (3).
+   `rmx daemon restart --relaunch` → **restart a second time** to observe the shutdown-path change
+   → `rmx hub relaunch-fleet` → verify all 8 stores on 0.72.3.
+3. Confirm on the live fleet that the `hot` gate now alerts once rather than every tick, and that
+   `rmx grep` no longer walls at 30 s (it does today, on the deploy build).
+4. Then (c): MemAware, CSN python/JS/TS, the 8-experiment set — against the DEPLOYED path.
