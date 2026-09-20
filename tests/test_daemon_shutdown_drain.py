@@ -144,7 +144,8 @@ def test_the_skipped_flush_names_the_op_holding_the_lock(tmp_path):
             raise AssertionError("must not flush while the lock is held")
 
     d.store = _Store()
-    d._inflight_ops["ingest_path"] = time.time() - 42.0
+    # {token: (op, started_at)} since bug-053 — one entry per CALL.
+    d._inflight_ops[1] = ("ingest_path", time.time() - 42.0)
     held = threading.Event()
     release = threading.Event()
 
@@ -179,36 +180,11 @@ def test_the_flush_runs_when_the_lock_is_free(tmp_path):
         s.close()
 
 
-def test_inflight_ops_are_tracked_and_cleared(tmp_path):
-    """The registry is the evidence; if it is not maintained the flush is
-    back to guessing."""
-    import json
-
-    d = _daemon(tmp_path)
-    a, b = socket.socketpair()
-    saw = {}
-
-    class _Pool:
-        def submit(self, fn, *args):
-            class _F:
-                def result(self_inner, timeout=None):
-                    saw["during"] = dict(d._inflight_ops)
-                    return {}
-            return _F()
-
-    dm.OPS["__probe2__"] = lambda daemon, args: {}
-    try:
-        t = threading.Thread(target=d._handle, args=(a, _Pool(), _Pool()),
-                             daemon=True)
-        t.start()
-        b.sendall(json.dumps({"op": "__probe2__", "args": {}}).encode() + b"\n")
-        b.makefile("rb").readline()
-        t.join(5)
-        assert "__probe2__" in saw.get("during", {}), saw
-        assert d._inflight_ops == {}, "the op was never cleared"
-    finally:
-        dm.OPS.pop("__probe2__", None)
-        b.close()
+# `test_inflight_ops_are_tracked_and_cleared` lived here. It drove the
+# hand-off through a `_Pool` stub that ran the op inline, so it asserted the
+# registry against a dispatcher that never used the executor (the ch-bsd #b-5
+# MUST GRADUATE row). tests/test_inflight_registry.py replaces it on real
+# ThreadPoolExecutors, where bug-053 actually lives.
 
 
 # ---- 4. the partial read the poll loop used to throw away -----------------
