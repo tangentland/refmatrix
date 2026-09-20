@@ -28,7 +28,9 @@ current.
 | 8 | plan-8-derived-coverage-notes | in-progress (built; awaiting @ch-bsd) | yes (4) | `workflow/plans/plan-8-derived-coverage-notes.md` | plan 7 (measures it) |
 | 9 | plan-9-context-cost-telemetry | in-progress | yes (3) | `workflow/plans/plan-9-context-cost-telemetry.md` | — |
 | 10 | plan-10-injection-dedup | in-progress (negative result; awaiting BSD clean) | yes (3) | `workflow/plans/plan-10-injection-dedup.md` | plan 9 (its instrument) |
+| 11 | plan-11-helix-phase2-versioned-graph | drafting (storage fork A/B undecided; the pre-registered criterion now reads B — 444 rendered helix rows, 27 sessions, 48% neighbour-role) | no | `workflow/plans/plan-11-helix-phase2-versioned-graph.md` | helix phase 1 (0.55.0) |
 | 12 | plan-12-open-bug-remediation | completed (@ch-bsd CLEAN; deployed 0.72.0; bug-025 acceptance 20/20 reranked) | yes (6) | `workflow/plans/plan-12-open-bug-remediation.md` | — |
+| 13 | plan-13-cross-partition-sweep | drafting (@ch-bsd DIRTY 12 → revised; gate 13.0 must return GO before any build) | no | `workflow/plans/plan-13-cross-partition-sweep.md` | — |
 
 ## Sequence rationale {#sequence}
 
