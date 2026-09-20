@@ -24,6 +24,7 @@ code (`src/`) contains **no mocks** — see CLAUDE.md "No Mocks in Production Co
 
 | Mock | Target | Classification | Test File(s) | Graduation Plan |
 |------|--------|----------------|--------------|-----------------|
+| `_Clock` (injected monotonic, `now=` on `_StopDeadline`) | `time.monotonic` (the system clock) | external | tests/test_stop_deadline.py | permanent — the clock is the SEAM, not the thing under test: `_StopDeadline` takes `now` so the shutdown-budget arithmetic is asserted exactly instead of slept through. The real clock is exercised by the live stop path and by `test_daemon_shutdown_drain` (bug-051) |
 | `cli._sync_memory_dir` (lambda) | the memory bridge itself | internal-active | (none — graduated) | graduated 2026-09-14 (task 5.3): tests/test_memory_bridge.py runs the real bridge on a spawned daemon |
 | `upgrade.runtime_identity` (fake dict) | interpreter identity (environment) | external | tests/test_runtime_identity_surface.py, tests/test_plan1_remedy.py | permanent — the identity of the test interpreter is not the identity under test; the identity function itself is tested on fake trees |
 | `daemon.call` / `daemon.ping` / `daemon.served_identity` (fake RPC) | the daemon process (external process boundary) | external | tests/test_runtime_identity_surface.py, tests/test_plan1_remedy.py, tests/test_hooks_reproducible.py, tests/test_plan2_remedy.py | permanent for CLI-surface tests; real-daemon coverage lives in tests/test_verbs_memory_recall.py (spawned daemon) |

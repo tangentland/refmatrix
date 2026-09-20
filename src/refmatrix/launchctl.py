@@ -94,11 +94,14 @@ def _migrate_legacy(root: Path) -> bool:
 # launchd's own stop budget. `launchctl kickstart -k` and a bootout SIGTERM
 # the job and, after `ExitTimeOut` seconds, SIGKILL it. The default is 5 s;
 # a daemon's drain is three pool drains × RMX_DAEMON_SHUTDOWN_TIMEOUT_S (10)
-# plus the thread joins and a bounded DuckDB close — up to ~50 s. Five
+# plus the thread joins, the final flush and a bounded DuckDB close. Five
 # daemons were SIGKILLed mid-drain on 2026-09-15 by a deploy that never put
 # the two numbers side by side (ch-bsd plan-4 r3 #b-1). ONE number for every
 # supervisor: the plist's ExitTimeOut, the hub's kill grace and the CLI's
-# stop grace all read it.
+# stop grace all read it — and since bug-051 the daemon reads it too:
+# `daemon._StopDeadline` hands each shutdown stage a share of THIS number
+# instead of its own constant, so the stages can no longer sum past it
+# (they summed to 59 s when the flush budget went 5 -> 15).
 EXIT_TIMEOUT_S = 45.0
 
 _IDENTITY_CACHE: "dict[str, dict]" = {}

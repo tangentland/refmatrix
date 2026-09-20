@@ -81,12 +81,78 @@ def stop_grace_s() -> float:
     return float(os.environ.get("RMX_STOP_GRACE_S", str(DEFAULT_STOP_GRACE_S)) or DEFAULT_STOP_GRACE_S)
 
 
-# The daemon's own shutdown budget, derived from serve_forever's finally:
-# three pool drains × RMX_DAEMON_SHUTDOWN_TIMEOUT_S (10) + watcher join 3 +
-# flush/repair/replica joins 3 × 3 + flush lock 5 + store close 5 = 52 s,
-# rounded up. A `shutdown.started` marker younger than this + a live pid
-# is a daemon DRAINING, and the supervisor waits for it (r3 #b-2).
+# The daemon's own shutdown budget. Every stage of serve_forever's finally
+# now spends from ONE deadline (`_StopDeadline`), so the sum is bounded by
+# `stop_grace_s()` whatever the per-stage constants say; this number only has
+# to stay ABOVE that bound. A `shutdown.started` marker younger than this + a
+# live pid is a daemon DRAINING, and the supervisor waits for it (r3 #b-2).
 SHUTDOWN_BUDGET_S = 60.0
+
+# Slack left between the last stage and the supervisor's SIGKILL: writing the
+# "daemon stopped" line, closing the log fh and reaching os._exit all happen
+# after the budgeted stages.
+SHUTDOWN_EXIT_MARGIN_S = 2.0
+
+
+class _StopDeadline:
+    """One budget for the whole stop, spent stage by stage.
+
+    bug-051 (ch-bsd #s-1): each shutdown stage carried its own constant and
+    nobody added them up against the supervisor. Raising the flush budget
+    5 -> 15 in the bug-041 remedy put the degraded stop at 59 s against
+    launchd's `ExitTimeOut = 45`, and past ExitTimeOut launchd SIGKILLs —
+    the documented cause of the entities ART-index corruption and the
+    2026-09-14 crash loop. Both stops bug-041 reproduced (39 s, 38 s) fitted
+    inside 45 before the bump and crossed it after.
+
+    A constant cannot hold that invariant: the next stage budget someone
+    changes breaks it again, silently, and only in the degraded path nobody
+    exercises. So the stages ASK for time instead of assuming it, and a
+    stage that asks late gets less or nothing.
+
+    `now` is injectable so the arithmetic is testable without sleeping.
+    """
+
+    def __init__(self, grace_s: float, *, margin_s: float = SHUTDOWN_EXIT_MARGIN_S,
+                 now: "Callable[[], float] | None" = None) -> None:
+        self._now = now or time.monotonic
+        self.deadline = self._now() + max(0.0, grace_s - margin_s)
+
+    def left(self) -> float:
+        """Seconds still available before the supervisor's kill deadline."""
+        return max(0.0, self.deadline - self._now())
+
+    def budget(self, want: float, *, reserve: float = 0.0) -> float:
+        """Grant a stage `want` seconds, or what is left minus what later
+        stages are owed — whichever is smaller, never negative.
+
+        `reserve` is how much the stages AFTER this one still need (the
+        bounded store close, mostly): a drain that spends it strands the
+        catalog file lock, which is the stranding PID 79273 showed.
+        """
+        return max(0.0, min(want, self.left() - reserve))
+
+
+def flush_budget_ceiling_s() -> float:
+    """The most the final fragment flush may ever wait for `_store_lock`.
+    `RMX_DAEMON_FLUSH_BUDGET_S` overrides (bug-041 raised it 5 -> 15)."""
+    return float(os.environ.get("RMX_DAEMON_FLUSH_BUDGET_S", "15") or "15")
+
+
+def store_close_budget_s() -> float:
+    """The bounded `Store.close()` budget; also the reserve every earlier
+    stop stage keeps back for it."""
+    return float(os.environ.get("RMX_STORE_CLOSE_TIMEOUT_S", "5") or "5")
+
+
+def remaining_flush_budget_s(elapsed_s: float) -> float:
+    """What the final flush may spend once the stop has already taken
+    `elapsed_s` — the ceiling, capped by what is left of the stop grace
+    after the store close is paid for. Zero means skip the flush and say so
+    (a silent skip is the 'relational tables ahead of the bitmaps' surface
+    that wedged viascope)."""
+    dl = _StopDeadline(max(0.0, stop_grace_s() - elapsed_s))
+    return dl.budget(flush_budget_ceiling_s(), reserve=store_close_budget_s())
 
 
 def shutdown_started_path(root: Path) -> Path:
@@ -1307,7 +1373,8 @@ class Daemon:
             pass
         os._exit(2)
 
-    def _final_flush(self, *, budget_s: "float | None" = None) -> bool:
+    def _final_flush(self, *, budget_s: "float | None" = None,
+                     elapsed_s: "float | None" = None) -> bool:
         """Flush bitmap fragments before exit. True when the flush ran.
 
         `_start_periodic_flush`'s docstring names a skipped flush as the
@@ -1320,12 +1387,29 @@ class Daemon:
 
         Still bounded: blocking forever here leaves a zombie holding the
         writer-slot file lock, which stops the next spawn from taking over.
+
+        The bound is no longer a constant. `elapsed_s` says how long the stop
+        has already run, and the budget is what is left of the supervisor's
+        ExitTimeOut once the bounded store close is paid for (bug-051 / ch-bsd
+        #s-1: a flat 15 s here pushed the two stops bug-041 reproduced past
+        launchd's 45 s, and a SIGKILL mid-close is what corrupts the entities
+        ART index). A zero budget SKIPS the flush and says why.
         """
+        if budget_s is None and elapsed_s is not None:
+            budget_s = remaining_flush_budget_s(elapsed_s)
+        if budget_s is not None and budget_s <= 0.0:
+            spent = f"{elapsed_s:.1f}s" if elapsed_s is not None else "its stages"
+            self._log(
+                f"final flush skipped: no budget left — the stop spent {spent} "
+                f"of its {stop_grace_s():.0f}s grace and the store close is owed "
+                f"{store_close_budget_s():.0f}s. Flushing anyway risks a SIGKILL "
+                "mid-close (the ART-index corruption path, 2026-09-14)."
+            )
+            return False
         if self.store is None:
             return False
         budget = (budget_s if budget_s is not None
-                  else float(os.environ.get("RMX_DAEMON_FLUSH_BUDGET_S", "15")
-                             or "15"))
+                  else flush_budget_ceiling_s())
         try:
             if self._store_lock.acquire(timeout=budget):
                 try:
@@ -1740,6 +1824,13 @@ class Daemon:
                 shutdown_started_path(self.root).touch()
             except OSError as _e:
                 self._log(f"could not write shutdown.started: {_e!r}")
+            # ONE budget for everything below. Every stage asks it for time
+            # rather than assuming its own constant is affordable, so the sum
+            # cannot cross the supervisor's ExitTimeOut however the per-stage
+            # numbers move (bug-051 / ch-bsd #s-1).
+            _stop_dl = _StopDeadline(stop_grace_s())
+            _stop_t0 = time.monotonic()
+            _close_reserve = store_close_budget_s()
             # Make absolutely sure the cooperative shutdown event is set:
             # serve loop may have exited via something other than the signal
             # handler (exception, explicit stop op). Workers polling this
@@ -1786,27 +1877,37 @@ class Daemon:
             # to drain bg_pool, that flush can hold the lock for minutes
             # against a queued bg task and pin shutdown.
             if self._watch_thread is not None:
-                self._watch_thread.join(timeout=3.0)
+                self._watch_thread.join(
+                    timeout=_stop_dl.budget(3.0, reserve=_close_reserve))
             # Step 2: bounded pool drain. `wait=True` is unbounded — an
             # in-flight ingest/sync (cancel_check now lets it early-exit)
             # should finish within a couple seconds. Hard timeout caps
             # the worst case; we accept leaking a worker thread (daemon=True
             # via thread_name_prefix on the executor's threads are not
             # daemon, so we live with the wait_for_workers ceiling).
+            #
+            # Each drain takes what the stop deadline can still afford: three
+            # of them at a flat 10 s is 30 s of a 45 s grace before anything
+            # else has run (bug-051).
             shutdown_timeout = float(
                 os.environ.get("RMX_DAEMON_SHUTDOWN_TIMEOUT_S", "10") or "10"
             )
-            self._drain_pool("disp", disp_pool, shutdown_timeout)
-            self._drain_pool("cli", cli_pool, shutdown_timeout)
-            self._drain_pool("bg", bg_pool, shutdown_timeout)
+            for _name, _pool in (("disp", disp_pool), ("cli", cli_pool),
+                                 ("bg", bg_pool)):
+                self._drain_pool(
+                    _name, _pool,
+                    _stop_dl.budget(shutdown_timeout, reserve=_close_reserve))
             if getattr(self, "_flush_thread", None) is not None:
-                self._flush_thread.join(timeout=3.0)
+                self._flush_thread.join(
+                    timeout=_stop_dl.budget(3.0, reserve=_close_reserve))
             repair_thread = getattr(self, "_repair_thread", None)
             if repair_thread is not None:
-                repair_thread.join(timeout=3.0)
+                repair_thread.join(
+                    timeout=_stop_dl.budget(3.0, reserve=_close_reserve))
             replica_thread = getattr(self, "_replica_thread", None)
             if replica_thread is not None:
-                replica_thread.join(timeout=3.0)
+                replica_thread.join(
+                    timeout=_stop_dl.budget(3.0, reserve=_close_reserve))
             # Final flush before close() so anything queued in the last
             # interval lands. close() also flushes, but doing it explicitly
             # under _store_lock keeps the on-disk state consistent if
@@ -1815,11 +1916,14 @@ class Daemon:
             # Bounded acquire: if a leaked drain-pool worker still holds
             # _store_lock, blocking forever here turns the daemon into a
             # zombie process that keeps the writer-slot file lock and
-            # stops the next spawn from refreshing the replica. 5s budget
-            # is generous; if we still can't get it, the worker is in a
-            # C-extension call we can't preempt -- skip the flush and let
-            # the process exit so a fresh daemon can take over.
-            self._final_flush()
+            # stops the next spawn from refreshing the replica. The budget
+            # is whatever the stop deadline can still afford after the store
+            # close is reserved (bug-051; it was a flat 15 s, which is how
+            # the degraded stop reached 59 s against a 45 s ExitTimeOut). If
+            # we can't get the lock in that time, the worker is in a
+            # C-extension call we can't preempt -- skip the flush, SAY SO,
+            # and let the process exit so a fresh daemon can take over.
+            self._final_flush(elapsed_s=time.monotonic() - _stop_t0)
             srv.close()
             if sock_path.exists():
                 sock_path.unlink()
@@ -1845,9 +1949,9 @@ class Daemon:
                         close_err.append(exc)
                     finally:
                         close_done.set()
-                close_budget = float(
-                    os.environ.get("RMX_STORE_CLOSE_TIMEOUT_S", "5") or "5"
-                )
+                # The reserve every earlier stage kept back, capped once more
+                # by what the deadline actually has left (bug-051).
+                close_budget = _stop_dl.budget(_close_reserve)
                 _t.Thread(
                     target=_do_close, name="rmxd-close", daemon=True,
                 ).start()
