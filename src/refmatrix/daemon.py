@@ -4049,6 +4049,60 @@ def _op_partition_merge(d: Daemon, args: dict) -> dict:
     return result
 
 
+def _op_partition_audit(d: Daemon, args: dict) -> dict:
+    """Gather this store's layout FACTS and hand them to `partitions.audit`.
+
+    The op collects; the decision logic is a pure function that never sees a
+    store (ADR-0003). Read-only: it takes `_store_lock` because every catalog
+    read here does, and it issues no writes — a repair tool that damaged the
+    thing it was auditing is a failure this project can afford once."""
+    from refmatrix import discovery
+    from refmatrix.partitions import audit as _audit
+
+    with d._store_lock:
+        s = d._st()
+        conn = s._connect()
+        parts = [
+            {"id": r["id"], "name": r["name"], "kind": r["kind"]}
+            for r in conn.execute(
+                "SELECT id, name, kind FROM partitions ORDER BY id"
+            ).fetchall()
+        ]
+        by_id = {p["id"]: p["name"] for p in parts}
+        counts: dict = {p["name"]: {} for p in parts}
+        for row in conn.execute(
+            "SELECT partition_id, kind, COUNT(*) AS n FROM entities "
+            "GROUP BY partition_id, kind"
+        ).fetchall():
+            name = by_id.get(row["partition_id"])
+            if name is None:
+                # An entity whose partition is not registered: report it rather
+                # than dropping it silently (feedback_no_silent_failures).
+                counts.setdefault(f"<unregistered:{row['partition_id']}>", {})[
+                    row["kind"]] = row["n"]
+            else:
+                counts[name][row["kind"]] = row["n"]
+        active = s.partition_name
+
+    vec_dir = Path(d.root) / "vectors"
+    try:
+        vector_dirs = sorted(p.name for p in vec_dir.iterdir() if p.is_dir())
+    except OSError:
+        vector_dirs = []
+
+    out = _audit(
+        store_name=active if discovery.is_global_root(Path(d.root))
+        else discovery.store_name(Path(d.root)),
+        partitions=parts,
+        active=active,
+        row_counts=counts,
+        vector_dirs=vector_dirs,
+        is_global=discovery.is_global_root(Path(d.root)),
+    )
+    out["root"] = str(d.root)
+    return out
+
+
 def _op_partition_list(d: Daemon, args: dict) -> dict:
     """List all partitions in the catalog. Routed through the daemon so
     `rmx partition list` doesn't try to grab the catalog lock the daemon
@@ -5695,6 +5749,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "list_linkages": _op_list_linkages,
     "list_saved_queries": _op_list_saved_queries,
     "partition_add": _op_partition_add,
+    "partition_audit": _op_partition_audit,
     "partition_list": _op_partition_list,
     "partition_rename": _op_partition_rename,
     "partition_merge": _op_partition_merge,
@@ -5764,6 +5819,9 @@ CLI_OPS: set[str] = {
     "list_linkages",
     "list_saved_queries",
     "partition_add",
+    # Read-only and asked by an operator waiting at a prompt, so it belongs
+    # on the interactive pool rather than behind a bulk ingest (ADR-0003).
+    "partition_audit",
     "partition_list",
     "partition_rename",
     "replica_refresh",
