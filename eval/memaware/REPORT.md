@@ -570,3 +570,45 @@ an answer model and a judge; no Fireworks key, and the OpenAI key returns `429
 You have no credits remaining`. `lib/llm.mjs` now routes `claude-*` to the
 Anthropic Messages API, so one `ANTHROPIC_API_KEY` unblocks it. Run
 `tools/smoke_judge.mjs` first.
+
+## Re-measured 2026-09-20 on the DEPLOYED 0.72.4 path {#remeasure-0724}
+
+Run after deploying 0.72.4 (bug-051/052/053/054), through `~/bin/rmx` — the deploy build — against
+`/Volumes/littlebig/memaware`. 90 questions, same harness, `--at 20`.
+
+| surface | hit@20 | MRR@20 | previously recorded |
+|---|---:|---:|---|
+| `rmx context` | 0.478 | 0.186 | 0.511 / 0.248 (`docs/PERFORMANCE.md:286`) |
+| **`rmx scan-prompt`** | **0.444** | **0.257** | 0.378 / 0.149 (this file, 0.37.0) |
+| bm25-per-session (upstream) | 0.444 | 0.242 | unchanged reference |
+| `rmx memory recall` | 0.378 | 0.180 | 0.378 / 0.180 — reproduces exactly |
+
+**scan-prompt reached bm25 parity on hit@20 and now exceeds it on MRR** (0.257 vs 0.242). That is
+the surface that fires on every prompt, and it started this benchmark at 0.200 / 0.043.
+{#remeasure-headline}
+
+### The first run of this set was invalid, and why {#remeasure-stale-daemon}
+
+The initial re-measurement scored scan-prompt **0.433 / 0.230**. The store's own daemon was
+`pid=18148`, `code: unknown (ping carries no code path; pre-0.66.3 daemon?) [UNVERIFIED]`,
+`supervised: no` — an old unsupervised daemon serving stale code to the eval. Restarting it onto
+0.72.4 moved scan-prompt to 0.444 / 0.257 and left `context` and `recall` unchanged.
+
+**An eval store's daemon is part of the path under test.** `rmx daemon status` says
+`[UNVERIFIED]` for exactly this case and the harness does not check it. Logged as bug-055.
+{#remeasure-stale-body}
+
+### `rmx context` does not reproduce, and the cause is NOT the stale daemon {#remeasure-context-gap}
+
+`context` measures **0.478 / 0.186** against a recorded 0.511 / 0.248 — 0.033 low on hit@20, 0.062
+low on MRR. It scored identically before and after the daemon restart, so the stale daemon is
+excluded. `recall` reproduces to three decimals, so the harness and the question set are not
+globally shifted.
+
+What has NOT been established: the cause. Candidates, none of them measured yet — the store's
+derive vintage (the corpus was ingested in the 0.36–0.42 era and never re-ingested through later
+ingest changes; `rmx stats --stale` reports "no stale files", which is the surface bug-039 proved
+can read green on an under-derived store), or a configuration difference between this run and the
+recorded one. The decisive probe is `rmx reingest --force` on this store followed by a re-run, which
+mutates the benchmark store and is therefore announced before it is done, not done on the way past.
+{#remeasure-context-gap-body}
