@@ -3764,9 +3764,135 @@ def audit_same_as(as_json: bool):
         raise SystemExit(1)
 
 
+@main.command("fingerprint")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable.")
+@click.option("--corpus-encoding", default="project", show_default=True,
+              help="How this store's corpus is encoded — an axis of comparability.")
+def fingerprint_cmd(as_json: bool, corpus_encoding: str):
+    """The conditions a measurement here would be taken under (READ-ONLY).
+
+    A number without a fingerprint is not comparable to another number. On
+    2026-09-20 a stale [UNVERIFIED] daemon moved a benchmark 0.433 -> 0.444 with
+    no code change (bug-055), and a recorded 0.511 turned out to be a different
+    question set. `key` is the comparability key: two runs may share a table
+    only if their keys match.
+
+    Exits 1 when the conditions are not trustworthy, so an eval can gate on it.
+    """
+    import json as _json
+
+    from refmatrix import fingerprint as fp_mod
+
+    out = fp_mod.gather(_root(), corpus_encoding=corpus_encoding)
+    if as_json:
+        click.echo(_json.dumps(out, indent=2))
+    else:
+        mark = "[green]trustworthy[/]" if out["trustworthy"] else "[red]NOT trustworthy[/]"
+        console.print(f"[bold]fingerprint[/] {out['key']}  {mark}")
+        console.print(f"  store:    {out['store_root']}")
+        console.print(f"  cli:      {out['cli_version']}   "
+                      f"daemon:   {out['daemon_version'] or '[red]UNVERIFIED[/]'}")
+        console.print(f"  code:     {out['daemon_code'] or '[red]unknown[/]'}")
+        console.print(f"  shape:    {out['partition_shape']}   "
+                      f"vectors: {', '.join(out['vector_partitions']) or '[red]none[/]'}")
+        console.print(f"  derive:   {'[yellow]stale[/]' if out['derive_stale'] else 'current'}"
+                      f"   workers: {out['worker_topology']}"
+                      f"   corpus: {out['corpus_encoding']}")
+        for reason in out["reasons"]:
+            console.print(f"  [red]![/] {reason}")
+    if not out["trustworthy"]:
+        raise SystemExit(1)
+
+
 @main.group()
 def partition():
     """Inspect and manage named partitions inside the active refmatrix."""
+
+
+@partition.command("audit")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable findings.")
+@click.option("--fleet", is_flag=True,
+              help="Audit every live store the hub knows about, not just this one.")
+def partition_audit(as_json: bool, fleet: bool):
+    """Check this store's partition layout against ADR-0003 (READ-ONLY).
+
+    A 2026-09-20 survey found four layouts across nine stores, six zero-row
+    orphan registrations, and ~143MB of vectors for partitions that no longer
+    exist — none of it from a decision, all of it invisible because nothing
+    reported SHAPE. This is that survey as a command.
+
+    Exits 1 when any store is drifted, so it can gate.
+    """
+    import json as _json
+
+    from refmatrix import daemon as daemon_mod
+    from refmatrix import discovery
+    from refmatrix.partitions import audit as _audit
+
+    roots = []
+    if fleet:
+        from refmatrix.search import _live_roots
+        roots = [Path(r) for r in _live_roots()]
+    if not roots:
+        roots = [_root()]
+
+    results = []
+    for root in roots:
+        if daemon_mod.ping(root):
+            resp = daemon_mod.call(root, "partition_audit", {}, retries=0)
+            if not resp.get("ok"):
+                results.append({"root": str(root), "error": resp.get("error", "daemon error")})
+                continue
+            results.append(resp["result"])
+            continue
+        # Daemon down: read the catalog directly. This is a READ, and the
+        # daemon holding the writer is exactly when we must not.
+        try:
+            s = _store()
+            conn = s._connect()
+            parts = [{"id": r["id"], "name": r["name"], "kind": r["kind"]}
+                     for r in conn.execute(
+                         "SELECT id, name, kind FROM partitions ORDER BY id").fetchall()]
+            by_id = {p["id"]: p["name"] for p in parts}
+            counts: dict = {p["name"]: {} for p in parts}
+            for row in conn.execute(
+                    "SELECT partition_id, kind, COUNT(*) AS n FROM entities "
+                    "GROUP BY partition_id, kind").fetchall():
+                name = by_id.get(row["partition_id"])
+                counts.setdefault(name or f"<unregistered:{row['partition_id']}>",
+                                  {})[row["kind"]] = row["n"]
+            vec = root / "vectors"
+            vector_dirs = sorted(d.name for d in vec.iterdir() if d.is_dir()) \
+                if vec.is_dir() else []
+            is_global = discovery.is_global_root(root)
+            out = _audit(
+                store_name=s.partition_name if is_global else discovery.store_name(root),
+                partitions=parts, active=s.partition_name, row_counts=counts,
+                vector_dirs=vector_dirs, is_global=is_global)
+            out["root"] = str(root)
+            results.append(out)
+        except Exception as exc:                       # noqa: BLE001
+            results.append({"root": str(root), "error": f"{type(exc).__name__}: {exc}"})
+
+    if as_json:
+        click.echo(_json.dumps(results if fleet else results[0], indent=2))
+    else:
+        for out in results:
+            if out.get("error"):
+                console.print(f"[red]✗ {out['root']}: {out['error']}[/]")
+                continue
+            mark = "[green]✓ canonical[/]" if out["shape"] == "canonical" else "[yellow]drift[/]"
+            console.print(f"\n[bold]{out['store']}[/] {mark}  [dim]{out['root']}[/]")
+            console.print(f"  expected: {', '.join(out['expected'])}")
+            console.print(f"  found:    {', '.join(out['found']) or '(none)'}")
+            for f in out["findings"]:
+                colour = {"drift": "yellow", "warn": "red", "info": "dim"}[f["severity"]]
+                console.print(f"  [{colour}]{f['severity']:5}[/] {f['kind']}: "
+                              f"{f['name']} — {f['detail']}")
+                console.print(f"        [dim]remedy: {f['remedy']}[/]")
+
+    if any(o.get("error") or o.get("shape") == "drift" for o in results):
+        raise SystemExit(1)
 
 
 @partition.command("list")
