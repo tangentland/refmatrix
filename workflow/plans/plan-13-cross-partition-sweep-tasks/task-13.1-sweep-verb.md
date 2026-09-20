@@ -29,11 +29,12 @@ rel: reinforces -> [[feedback_daemon_call_retries_multiply_timeouts]]
   `memory-<project>` was merged away post-0.5.0 (`cli.py:9736`) and `rmx partition list` on this
   store returns only `refmatrix` / `memory-viascope` / `sessions-refmatrix` — and `session`
   (`sessions-<project>`). A "memory leg" beside a "project leg" would query one partition twice.
-- **The session leg is symbolic-only** and says so in its own result (`"dense": false`): that
-  partition has no vectors (`.refmatrix/vectors` has no `sessions-*` entry) and `embed` walks
-  `graph_parts` = project + memory (`cli.py:6873`). It runs `content_rank`, NOT
-  `hybrid_memory_recall` — specifying a dense call that silently degrades is how a half-leg reports
-  a healthy candidate count (r2 #b-7).
+- **Each leg DETECTS whether it has a dense half and reports it** (`"dense": true|false`). Vector
+  coverage varies per store: refmatrix's session partition has none, viascope's carries 233MB
+  ([[partition-layout-survey#sessions]]). A leg with no vectors runs `content_rank` alone; one with
+  vectors runs `hybrid_memory_recall`. Specifying either unconditionally is wrong on some fleet
+  member, and a dense call that silently degrades is how a half-leg reports a healthy candidate
+  count (r2 #b-7).
 - Each leg addresses its partition through `Store.with_partition(name)` (`store.py:1590`), which is
   **not concurrency-safe on one Store** — so every non-default leg is a DAEMON OP under
   `d._store_lock`, never a replica read. `search.cached_replica(root)` is pinned to one partition
@@ -103,8 +104,9 @@ a store built by hand-inserting rows tests the fixture, not the sweep):
    version asserted that no id appears in two legs, which is FALSE on any real store now that memory
    rows live in the project partition, and could only pass on a fixture carrying a partition the
    product no longer produces (r2 #b-6).
-9. `test_the_session_leg_reports_itself_as_symbolic` — `dense: false` on that leg, so a missing
-   dense half is visible rather than absorbed.
+9. `test_a_leg_without_vectors_reports_dense_false_and_still_answers` — on a fixture partition with
+   no Lance dataset; and its twin `test_a_leg_with_vectors_reports_dense_true` on one with vectors.
+   The pair is what makes the per-store detection real rather than a constant.
 8. `test_context_default_path_is_unchanged` — golden ranked ids for `rmx context` on the fixture
    store, before/after.
 

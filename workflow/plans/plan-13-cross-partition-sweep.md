@@ -28,6 +28,7 @@ rel: reinforces -> [[feedback_measure_the_path_users_run]]
 rel: reinforces -> [[feedback_read_identifiers_at_write_time]]
 rel: reinforces -> [[project_verbs_layer_antidrift]]
 rel: contradicts -> [[project_retrieval_negatives_2026_09]]
+rel: depends-on -> [[partition-layout-survey]]
 
 ## What the first draft got wrong {#revision}
 
@@ -161,13 +162,19 @@ time and never asks a `rel:` edge to resolve across a partition boundary. If a l
 resolution, `store.find_memory_any_partition` (`store.py:2185`) is the shipped mechanism and the
 merge's lesson applies again.
 
-**The session leg is symbolic-only** (r2 #b-7). `.refmatrix/vectors` holds `memory-refmatrix`,
-`memory-viascope`, `refmatrix` — no `sessions-refmatrix` entry — and none is coming:
-`cli.py:6873` walks `graph_parts` = project + memory for embed AND pagerank. So
-`hybrid_memory_recall` on that partition silently loses its dense half and returns a healthy
-non-zero count, which means the zero-candidate error line never fires on the exact leg most likely
-to underperform. 13.1 specifies `content_rank` for that leg and SAYS symbolic-only in the result
-(`"dense": false`), rather than calling a half-leg whole. {#legs-session}
+**The session leg's dense half varies BY STORE, and assuming either answer is wrong somewhere**
+(r2 #b-7, corrected by [[partition-layout-survey]]). On THIS store `.refmatrix/vectors` holds
+`memory-refmatrix`, `memory-viascope`, `refmatrix` — no `sessions-refmatrix` entry — and
+`cli.py:6873` walks `graph_parts` = project + memory for embed and pagerank, so the leg is
+symbolic-only here. **On viascope it is not**: `sessions-viascope` carries 233MB of vectors, and
+that store's session partition holds 40 docs beside its 155 memory rows. Four of eight stores have
+a session partition at all; one of those four is embedded.
+
+An earlier version of this section generalised refmatrix's store to the fleet and wrote "none is
+coming" — the same quote-one-store-as-the-world error this plan has now made twice. The sweep
+therefore DETECTS the dense half per store rather than assuming it, and reports `"dense": true|false`
+per leg, so a half-leg cannot return a healthy candidate count that hides its missing signal.
+{#legs-session}
 
 This also rescues [[#gate-0]]'s ceiling argument: the oracle union's ceiling is real precisely
 because the session leg cannot be improved by fusion — it has no second signal to fuse.
