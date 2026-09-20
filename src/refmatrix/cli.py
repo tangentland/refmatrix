@@ -6451,6 +6451,14 @@ def telemetry(since, top_queried, zero_results, as_context, window, fmt):
         f"[bold]zero-result:[/] {out['zero_result_count']} | "
         f"[bold]errors:[/] {out['error_count']}"
     )
+    # The outcome split is printed, not just counted: `errors` used to absorb
+    # grep's no-match exit and a closed pipe, and the rows those became have
+    # to be visible somewhere or the fix just hides them (bug-052).
+    _oc = out.get("by_outcome") or {}
+    if _oc:
+        console.print("[bold]outcomes:[/] " + "  ".join(
+            f"{k}={_oc[k]}" for k in ("ok", "empty", "consumer-closed", "error")
+            if _oc.get(k)))
     t = Table("kind", "count", title="by kind")
     for k, n in sorted(out["by_kind"].items(), key=lambda kv: -kv[1]):
         t.add_row(k, str(n))
@@ -8289,7 +8297,15 @@ def cli_log(tail: int, pattern: str | None, summary: bool, since: str | None,
             return
         console.print(f"[bold]total:[/] {stats['total']}  "
                       f"[bold]errors:[/] {stats['error_count']} "
-                      f"({stats['error_rate']*100:.1f}%)")
+                      f"({stats['error_rate']*100:.1f}%)  "
+                      f"[bold]nonzero exits:[/] "
+                      f"{stats.get('nonzero_exit_rate', 0.0)*100:.1f}%")
+        _oc = stats.get("by_outcome") or {}
+        if _oc:
+            console.print("[bold]outcomes:[/] " + "  ".join(
+                f"{k}={_oc[k]}"
+                for k in ("ok", "empty", "consumer-closed", "error")
+                if _oc.get(k)))
         console.print(f"[bold]latency ms:[/] p50={stats['latency_p50_ms']} "
                       f"p95={stats['latency_p95_ms']} "
                       f"p99={stats['latency_p99_ms']} "
@@ -13038,6 +13054,10 @@ def cli_entry() -> None:
     pid = os.getpid()
     exit_code = 0
     error: str | None = None
+    # WHICH of the four things happened. `error` stays reserved for a failure,
+    # so a reader counting errors counts failures — `rmx grep`'s no-match exit
+    # and a `| head` closing the pipe are conventions, not faults (bug-052).
+    outcome: str = "ok"
     # Count what this invocation writes to stdout — for a hook, exactly what it
     # injects into the model's context window. One wrapper here, not one per
     # renderer: rich resolves sys.stdout lazily, so the module-level `console`
@@ -13051,10 +13071,11 @@ def cli_entry() -> None:
     except SystemExit as e:
         code = e.code
         exit_code = int(code) if isinstance(code, int) else (0 if code is None else 1)
+        outcome, error = _tel.classify_outcome(SystemExit, e)
         raise
     except BaseException as e:
         exit_code = 1
-        error = f"{type(e).__name__}: {e}"
+        outcome, error = _tel.classify_outcome(type(e), e)
         raise
     finally:
         # Restore FIRST and unconditionally. Click raises SystemExit on every
@@ -13081,6 +13102,7 @@ def cli_entry() -> None:
                 error=error,
                 pid=pid,
                 out_bytes=out_bytes,
+                outcome=outcome,
             )
         except Exception:
             pass

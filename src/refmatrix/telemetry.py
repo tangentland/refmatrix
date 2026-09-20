@@ -10,7 +10,12 @@ One record per query, fields:
                   (absent on rows written before 2026-09-15; readers default it)
     cardinality   integer for bitmap results, null otherwise
     latency_ms    elapsed milliseconds
-    error         "ExcType: msg" if the query raised, else null
+    outcome       'ok' | 'empty' | 'consumer-closed' | 'error' — WHICH of the
+                  four things happened (absent before 2026-09-20; readers
+                  classify those rows from `error`/`exit_code`)
+    error         "ExcType: msg" if the query FAILED, else null. A no-match
+                  exit and a closed consumer are conventions, not failures,
+                  and live in `outcome` (bug-052)
 
 Disable by setting `REFMATRIX_NO_TELEMETRY=1` in the env.
 
@@ -44,6 +49,69 @@ CLI_LOG_NAME = "cli.log"
 # `internal`    — daemon/subprocess fan-out
 # `unknown`     — pre-source-field logs, or no tty + no hint
 INVOCATION_SOURCES = ("hook", "interactive", "mcp", "internal", "unknown")
+
+
+# What actually happened on a logged call. `error` is reserved for the LAST
+# one; the first three are conventions, not failures (bug-052).
+#
+# `grep-replica` showed 278 "errors" in query.log. 256 were `SystemExit: 1` —
+# grep's no-match exit, which `rmx grep` honours on purpose — and 22 were
+# `BrokenPipeError`, a downstream `| head` closing the pipe. Real failures were
+# about six. cli.log carried the same distortion from the other side:
+# `error_rate` counted every nonzero exit. The reader who found bug-049 had to
+# dismiss 272 rows by hand before the signal was visible.
+OUTCOMES = ("ok", "empty", "consumer-closed", "error")
+
+
+def classify_outcome(exc_type, exc_val) -> "tuple[str, str | None]":
+    """Map how a logged call ended onto (outcome, error).
+
+    `error` is non-None only for the `error` outcome, so a reader counting
+    `error` rows counts failures and nothing else. The other two exits keep
+    their evidence in `outcome` — they are not dropped, they are named."""
+    if exc_type is None:
+        return ("ok", None)
+    if isinstance(exc_type, type) and issubclass(exc_type, SystemExit):
+        code = getattr(exc_val, "code", None)
+        if code is None or code == 0:
+            return ("ok", None)
+        if code == 1:
+            # The command's own "nothing to report" exit: grep's no-match
+            # contract, which `_grep_rg_fallback` raises deliberately after
+            # printing the stderr note. `cardinality: 0` carries the detail.
+            return ("empty", None)
+        return ("error", f"SystemExit: {code}")
+    if isinstance(exc_type, type) and issubclass(exc_type, BrokenPipeError):
+        # `rmx grep ... | head -5`: head exits, the pipe closes, we raise. We
+        # did the work; the reader stopped reading.
+        return ("consumer-closed", None)
+    return ("error", f"{getattr(exc_type, '__name__', exc_type)}: {exc_val}")
+
+
+def _outcome_of(row: dict) -> str:
+    """The outcome of a row, classified on READ for the rows written before
+    the field existed. Rewriting the logs is not on the table — re-reading
+    them by the same rules is what makes the historical rate honest."""
+    known = row.get("outcome")
+    if known in OUTCOMES:
+        return known
+    err = row.get("error")
+    if err:
+        head = str(err).split(":", 1)[0].strip()
+        if head == "SystemExit":
+            tail = str(err).split(":", 1)[1].strip() if ":" in str(err) else ""
+            if tail in ("0", "None", ""):
+                return "ok"
+            return "empty" if tail == "1" else "error"
+        if head == "BrokenPipeError":
+            return "consumer-closed"
+        return "error"
+    code = row.get("exit_code")
+    if isinstance(code, int) and code != 0:
+        # A cli.log row with no exception recorded: exit 1 is the empty
+        # convention, anything higher is a real failure.
+        return "empty" if code == 1 else "error"
+    return "ok"
 
 
 def _disabled() -> bool:
@@ -162,6 +230,7 @@ def log_cli_invocation(
     error: str | None,
     pid: int,
     out_bytes: "int | None" = None,
+    outcome: "str | None" = None,
 ) -> None:
     """Append one JSONL record for an `rmx` CLI invocation to .refmatrix/cli.log.
 
@@ -184,6 +253,9 @@ def log_cli_invocation(
         "cwd": cwd,
         "exit_code": exit_code,
         "latency_ms": latency_ms,
+        # WHICH of the four things happened (bug-052). Omitted by a caller
+        # that does not know, and then classified on read from `exit_code`.
+        "outcome": outcome,
         "error": error,
         "pid": pid,
         "source": invocation_source(),
@@ -285,6 +357,10 @@ class log_query:
         except Exception:
             # Telemetry never fails the command it describes.
             form = "unknown"
+        # `outcome` says WHICH of the four things happened; `error` is reserved
+        # for the failure. Before bug-052 every exception landed in `error`, so
+        # grep's no-match exit and a closed pipe read as failures.
+        outcome, error = classify_outcome(exc_type, exc_val)
         record: dict[str, Any] = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "kind": self.kind,
@@ -293,7 +369,8 @@ class log_query:
             "invocation": form,
             "cardinality": self.cardinality,
             "latency_ms": latency_ms,
-            "error": None if exc_type is None else f"{exc_type.__name__}: {exc_val}",
+            "outcome": outcome,
+            "error": error,
         }
         try:
             with (self.store.root / LOG_NAME).open("a") as f:
@@ -339,7 +416,10 @@ def summarize(store: Store, since: str | None = None) -> dict:
     by_invocation = Counter(r.get("invocation") or "unknown" for r in rows)
     body_counter = Counter(r.get("body", "") for r in rows)
     zero = [r for r in rows if r.get("cardinality") == 0]
-    errors = [r for r in rows if r.get("error")]
+    # Classified on read, so the months of rows written before `outcome`
+    # existed are counted by the same rules (bug-052).
+    by_outcome = Counter(_outcome_of(r) for r in rows)
+    errors = [r for r in rows if _outcome_of(r) == "error"]
 
     latencies = [r["latency_ms"] for r in rows if isinstance(r.get("latency_ms"), int)]
     latencies.sort()
@@ -360,6 +440,7 @@ def summarize(store: Store, since: str | None = None) -> dict:
             Counter(r.get("invocation") or "unknown" for r in zero)),
         "zero_result_count": len(zero),
         "zero_result_examples": [r["body"] for r in zero[-10:]],
+        "by_outcome": dict(by_outcome),
         "error_count": len(errors),
         "error_examples": [
             {"body": r["body"], "error": r["error"]} for r in errors[-5:]
@@ -406,6 +487,7 @@ def _aggregate_cli_rows(rows: list[dict]) -> dict:
     cwd_counter: Counter[str] = Counter()
     source_counter: Counter[str] = Counter()
     exit_counter: Counter[int] = Counter()
+    outcome_counter: Counter[str] = Counter()
     errors: list[dict] = []
     latencies: list[int] = []
     total = 0
@@ -422,8 +504,12 @@ def _aggregate_cli_rows(rows: list[dict]) -> dict:
         code = r.get("exit_code", 0)
         if isinstance(code, int):
             exit_counter[code] += 1
-        if r.get("error"):
-            errors.append({"argv": argv, "error": r["error"], "ts": r.get("ts")})
+        outcome = _outcome_of(r)
+        outcome_counter[outcome] += 1
+        if outcome == "error":
+            errors.append({"argv": argv,
+                           "error": r.get("error") or f"exit {code}",
+                           "ts": r.get("ts")})
         lat = r.get("latency_ms")
         if isinstance(lat, int):
             latencies.append(lat)
@@ -445,8 +531,13 @@ def _aggregate_cli_rows(rows: list[dict]) -> dict:
         "top_invocations": argv_counter.most_common(20),
         "by_cwd": cwd_counter.most_common(10),
         "exit_codes": dict(exit_counter),
+        "by_outcome": dict(outcome_counter),
         "error_count": len(errors),
-        "error_rate": (nonzero_exits / total) if total else 0.0,
+        # FAILURES over calls. It was nonzero-exits over calls, which counted
+        # every no-match `rmx grep` as a failed command (bug-052). The raw
+        # fact keeps its own key rather than being dropped.
+        "error_rate": (len(errors) / total) if total else 0.0,
+        "nonzero_exit_rate": (nonzero_exits / total) if total else 0.0,
         "error_examples": errors[-5:],
         "latency_p50_ms": pct(0.50),
         "latency_p95_ms": pct(0.95),
