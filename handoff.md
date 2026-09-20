@@ -64,6 +64,28 @@ save-state would have degraded the index further. Fixed with a `.memory_hooks.js
 `render(render(x)) == render(x)` is now a test. Live index converged **145 lines / 23,104 chars,
 `check()` True**. {#bug-050-body}
 
+## A trap that recurs until 0.72.3 deploys {#savestate-trap}
+
+`rmx` is the DEPLOY build (0.72.2), whose `memory_index` still has only the LINE cap. `rmx
+save-state` calls `handoff._ss_update_index`, so **every save-state run before the deploy rewrites
+`MEMORY.md` to 200 lines / 33,001 chars and re-breaks bug-045.** It did exactly that during this
+handoff (146 -> 200), and was repaired by re-running the dev generator:
+
+```
+.venv-eval/bin/python -m refmatrix.memory_index ~/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory
+```
+
+Running save-state from `.venv-eval` instead is NOT the workaround: the version is bumped, and a
+dev-venv `rmx` at a bumped version against the live store trips the hub version handshake and
+restarts the fleet. So until the deploy: save-state, then regenerate the index, then verify
+`check()` is True. Deploying makes the problem disappear. {#savestate-trap-body}
+
+Also seen this run: `promote skipped: VerbBusyError ... memory_add did not answer within 30s`. The
+daemon had just restarted (new pid 83943) and was carrying the 271-doc bridge ingest. It was
+transient — `rmx focus summarize --promote` succeeded on retry
+(`focus_summary_dd1cb4f9189d`, id 5284592). A skipped promote is a loose end, not a warning to
+scroll past. {#promote-retry}
+
 ## What is NOT done {#open}
 
 - **DEPLOY.** 0.72.3 is committed and unpushed. I asked and did not get an answer, so I did not
