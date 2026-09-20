@@ -11,9 +11,18 @@ from refmatrix import hooks as hooks_mod
 
 REPO = Path(__file__).resolve().parents[1]
 
+# `.claude/settings.json` is committed and its commands carry absolute paths,
+# so a SECOND checkout of this commit (a detached `git worktree`, a clone)
+# holds hooks belonging to the first. Comparing them there measures the path
+# prefix, not drift — and failed the suite at the very sha under test
+# (bug-054 / ch-bsd #m-5). The check runs where it means something.
+_OWNER = hooks_mod.installed_root(REPO)
+
 
 @pytest.mark.skipif(not (REPO / ".claude" / "rmx-hooks.json").exists(),
                     reason="not an rmx-hooks-managed checkout")
+@pytest.mark.skipif(_OWNER is not None and _OWNER != REPO,
+                    reason="hooks belong to another checkout of this commit")
 def test_installed_hooks_match_generated(monkeypatch):
     # This test checks the REAL checkout against the REAL ~/.claude/hooks
     # (read-only); undo the conftest redirect that isolates every other test.

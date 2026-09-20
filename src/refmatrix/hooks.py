@@ -548,6 +548,42 @@ def render_managed(project_root: Path, flags: dict) -> dict:
     return block
 
 
+def installed_root(project_root: Path) -> "Path | None":
+    """Which checkout `.claude/settings.json`'s hook commands were rendered
+    for, or None when nothing in them names a tree.
+
+    The rendered commands carry ABSOLUTE paths (`rmx primer --out
+    '<root>/.refmatrix/PRIMER.md'`), and `settings.json` is committed — so a
+    second checkout of the same sha holds hooks that belong to the FIRST one.
+    Without this, `check()` reported that as drift and the suite failed 42
+    tests in a detached worktree at the very commit under test, which is how a
+    commit's suite result stopped being reproducible from its sha
+    (bug-054 / ch-bsd #m-5)."""
+    settings = Path(project_root) / ".claude" / "settings.json"
+    if not settings.exists():
+        return None
+    try:
+        blob = json.loads(settings.read_text())
+    except json.JSONDecodeError:
+        return None
+    marker = "/.refmatrix/"
+    for entries in (blob.get("hooks") or {}).values():
+        for entry in entries or []:
+            for hook in entry.get("hooks") or []:
+                cmd = hook.get("command") or ""
+                idx = cmd.find(marker)
+                if idx <= 0:
+                    continue
+                head = cmd[:idx]
+                # Back up to the start of the path: the quote that opened it,
+                # or the whitespace before it.
+                cut = max(head.rfind("'"), head.rfind('"'), head.rfind(" "))
+                root = head[cut + 1:]
+                if root.startswith("/"):
+                    return Path(root)
+    return None
+
+
 def check(project_root: Path) -> "tuple[bool, str]":
     """Does `.claude/settings.json` carry exactly the rmx-managed hooks this
     version generates under the recorded flags? Returns (ok, diff). The
@@ -572,6 +608,17 @@ def check(project_root: Path) -> "tuple[bool, str]":
     have, foreign = _entry_multiset(installed)
     want, _ = _entry_multiset(render_managed(project_root, flags)["hooks"])
     lines: list = []
+    # Say WHOSE hooks these are before printing a path-rebased diff. In a
+    # second checkout of the same commit every rendered command differs only
+    # by its absolute prefix, and calling that "drift" sent a reader hunting
+    # for a hand-edit that does not exist (bug-054).
+    owner = installed_root(project_root)
+    if owner is not None and owner != Path(project_root).resolve():
+        lines.append(
+            f"! these hooks were generated for another checkout ({owner}); "
+            f"this tree is {Path(project_root).resolve()} — the entries below "
+            "differ by path prefix, not by content"
+        )
     for key in sorted(set(have) | set(want)):
         h, w = have.get(key, 0), want.get(key, 0)
         ev, m, entry = key

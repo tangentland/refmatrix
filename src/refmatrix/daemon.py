@@ -716,10 +716,20 @@ class Daemon:
         # cleanly instead of pinning pool.shutdown(wait=True) until the
         # batch finishes minutes later.
         self._shutdown_event = threading.Event()
-        # {op: started_at} for ops running RIGHT NOW. The shutdown flush used
-        # to guess in the log ("leaked worker likely holds it"); this is the
-        # evidence (bug-041).
-        self._inflight_ops: dict = {}
+        # {token: (op, started_at)} for the CALLS running RIGHT NOW. The
+        # shutdown flush used to guess in the log ("leaked worker likely holds
+        # it"); this is the evidence (bug-041).
+        #
+        # Keyed by a unique token, NOT by op name (bug-053 / ch-bsd #s-2).
+        # Named keys made two concurrent calls of one op share an entry: the
+        # second arrival overwrote the first's timestamp and whichever finished
+        # first popped the key while the other still held the writer — so the
+        # log said "nothing tracked — check the watcher" with an `ingest_path`
+        # holding `_store_lock`. With `disp=20`, duplicate concurrent op names
+        # are the normal case (the hub tick's `ping`, the watcher's and the
+        # queue's `ingest_path`).
+        self._inflight_ops: "dict[int, tuple[str, float]]" = {}
+        self._inflight_seq = 0
         self._inflight_lock = threading.Lock()
         self._watch_stop: "threading.Event | None" = None
         self._watch_thread: "threading.Thread | None" = None
@@ -1419,8 +1429,13 @@ class Daemon:
                     self._store_lock.release()
             with self._inflight_lock:
                 now = time.time()
-                held = ", ".join(f"{op} ({now - t0:.0f}s)"
-                                 for op, t0 in sorted(self._inflight_ops.items()))
+                # Oldest first — the likeliest holder leads the line. One
+                # entry per CALL, so two concurrent `ingest_path`s render as
+                # two ages instead of collapsing to one (bug-053).
+                held = ", ".join(
+                    f"{op} ({now - t0:.0f}s)"
+                    for op, t0 in sorted(self._inflight_ops.values(),
+                                         key=lambda ot: ot[1]))
             # Built outside the f-string: nesting a multi-line quoted literal
             # inside an f-string expression is PEP 701 syntax (3.12+), and
             # `pyproject` declares `requires-python = ">=3.10"`. It parsed here
@@ -1469,7 +1484,7 @@ class Daemon:
         live = [t for t in list(workers) if t.is_alive()]
         if live:
             with self._inflight_lock:
-                ops = sorted(self._inflight_ops)
+                ops = sorted(op for op, _t0 in self._inflight_ops.values())
             self._log(
                 f"pool drain {name}: timed out after {timeout_s:.0f}s, "
                 f"{len(live)} of {len(workers)} workers still running"
@@ -3123,13 +3138,17 @@ class Daemon:
                 target_pool = cli_pool if op in CLI_OPS else bg_pool
                 try:
                     with self._inflight_lock:
-                        self._inflight_ops[op] = time.time()
+                        self._inflight_seq += 1
+                        token = self._inflight_seq
+                        self._inflight_ops[token] = (op, time.time())
                     try:
                         fut = target_pool.submit(handler, self, args)
                         result = fut.result()
                     finally:
+                        # THIS call's token — popping by name cleared a
+                        # concurrent twin that was still running (bug-053).
                         with self._inflight_lock:
-                            self._inflight_ops.pop(op, None)
+                            self._inflight_ops.pop(token, None)
                     resp = {"ok": True, "result": result}
                 except Exception as exc:
                     self._log(f"op {op} raised: {exc!r}")
