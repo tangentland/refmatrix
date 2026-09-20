@@ -24,6 +24,7 @@ code (`src/`) contains **no mocks** — see CLAUDE.md "No Mocks in Production Co
 
 | Mock | Target | Classification | Test File(s) | Graduation Plan |
 |------|--------|----------------|--------------|-----------------|
+| `_FakeStore` (an object with `.root`) | `Store` as `log_query` uses it | external | tests/test_telemetry_outcomes.py | permanent — `log_query` touches exactly one attribute (`store.root`, the dir it appends the JSONL to) and opening a real DuckDB catalog to assert a log line would test the catalog, not the classifier. Real-Store coverage of the same writer = tests/test_telemetry.py (bug-052) |
 | `_Clock` (injected monotonic, `now=` on `_StopDeadline`) | `time.monotonic` (the system clock) | external | tests/test_stop_deadline.py | permanent — the clock is the SEAM, not the thing under test: `_StopDeadline` takes `now` so the shutdown-budget arithmetic is asserted exactly instead of slept through. The real clock is exercised by the live stop path and by `test_daemon_shutdown_drain` (bug-051) |
 | `cli._sync_memory_dir` (lambda) | the memory bridge itself | internal-active | (none — graduated) | graduated 2026-09-14 (task 5.3): tests/test_memory_bridge.py runs the real bridge on a spawned daemon |
 | `upgrade.runtime_identity` (fake dict) | interpreter identity (environment) | external | tests/test_runtime_identity_surface.py, tests/test_plan1_remedy.py | permanent — the identity of the test interpreter is not the identity under test; the identity function itself is tested on fake trees |
