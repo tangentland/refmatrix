@@ -187,3 +187,71 @@ def test_folding_prefers_old_project_notes_over_feedback(tmp_path):
     assert "older project memories folded" in text
     feedback_rows = [l for l in text.splitlines() if "feedback_entry_" in l]
     assert len(feedback_rows) == 150, "folding took feedback rows"
+
+
+# --- bug-050: the generator must be idempotent on its own output ------------
+
+
+def test_render_is_idempotent_once_folding_kicks_in(tmp_path):
+    """Rendering the index from its own output must produce the same index.
+
+    It did not. `parse_hooks` can only see entries the index still LISTS, so a
+    folded entry lost its curated hook, fell back to derived prose (usually
+    longer), the render grew, and two more entries folded. On the live index
+    that moved the fold 56 -> 58 with no memory added, and `check()` read out
+    of sync immediately after a successful `write()` — so every save-state
+    would have degraded the index a little further.
+    """
+    d = _memdir(tmp_path, 400)
+    mi.write(d, out=io.StringIO())
+
+    first = (d / mi.INDEX_NAME).read_text(encoding="utf-8")
+    assert "folded" in first, "test corpus is not big enough to fold"
+    assert mi.check(d) is True, "check() disagreed with the file write() just made"
+
+    mi.write(d, out=io.StringIO())
+    second = (d / mi.INDEX_NAME).read_text(encoding="utf-8")
+    assert second == first, "a second write changed the index"
+
+    third = mi.render(d)
+    assert third == first, "render() of its own output is not stable"
+
+
+def test_a_folded_entry_keeps_its_curated_hook(tmp_path):
+    """The sidecar exists so curation survives a fold: an entry that folds out
+    and later returns must come back with its hand-written hook, not a derived
+    one."""
+    d = _memdir(tmp_path, 400)
+    mi.write(d, out=io.StringIO())
+
+    hooks = mi.load_hooks(d)
+    listed = set(mi.parse_hooks(d / mi.INDEX_NAME))
+    folded = [rel for rel in hooks if rel not in listed]
+    assert folded, "nothing folded; the test corpus is too small"
+    assert all(hooks[rel] for rel in folded), (
+        "a folded entry lost its hook — the sidecar did not persist it")
+
+
+def test_a_missing_sidecar_is_not_fatal(tmp_path):
+    """First run on an existing memory dir has no sidecar; that must be
+    ordinary, not an error."""
+    d = _memdir(tmp_path, 20)
+    mi.write(d, out=io.StringIO())
+    (d / mi.HOOKS_SIDECAR).unlink()
+    assert mi.render(d)          # does not raise
+
+
+def test_a_corrupt_sidecar_is_reported_not_swallowed(tmp_path, capsys):
+    d = _memdir(tmp_path, 20)
+    mi.write(d, out=io.StringIO())
+    (d / mi.HOOKS_SIDECAR).write_text("{not json", encoding="utf-8")
+    mi.render(d)
+    assert "sidecar unreadable" in capsys.readouterr().err
+
+
+def test_the_sidecar_is_not_indexed_as_a_memory(tmp_path):
+    """It lives in the memory dir but is not a memory."""
+    d = _memdir(tmp_path, 5)
+    mi.write(d, out=io.StringIO())
+    text = (d / mi.INDEX_NAME).read_text(encoding="utf-8")
+    assert mi.HOOKS_SIDECAR not in text
