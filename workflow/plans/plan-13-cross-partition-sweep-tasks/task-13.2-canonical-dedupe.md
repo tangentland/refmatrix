@@ -29,7 +29,13 @@ rel: depends-on -> [[task-13.1-sweep-verb]]
   the collapsed ones as provenance on the surviving row (`also_in: [{partition, id, rank}]`).
 - Canonical identity is by NAME first (the key `merge_scope` already uses), with a documented
   fallback: rows whose names differ but whose `source_path` resolves to the same file are the same
-  answer. Anything beyond that (near-duplicate text) is OUT of scope and stated as such — a
+  answer. **Neither key collapses this task's own motivating example** (r2 #s-7): a decision written
+  as `session-a1b2` in one partition, `project_foo` in another and an ADR heading in a third shares
+  neither name nor path. So the requirement is stated honestly — name + path dedupe handles MIRRORS
+  (the same document reachable twice), and the session/memory/ADR restatement case is **explicitly
+  out of scope**, because collapsing it needs content similarity and a threshold nobody has
+  measured. A test that "passes" on a mirror fixture while the motivating case goes unhandled is the
+  failure this note exists to prevent. Anything beyond that (near-duplicate text) is OUT of scope and stated as such — a
   similarity threshold here would be an unmeasured calibration.
 - `verbs.merge_scope` (`verbs.py:375-399`) is the shipped ancestor: it dedupes a two-source union by
   name with a round-robin that guarantees the smaller source representation. Reuse its rule; do not
@@ -52,7 +58,11 @@ rel: depends-on -> [[task-13.1-sweep-verb]]
 
 ## Test strategy (RED first) {#test-strategy}
 
-1. `test_one_answer_in_three_partitions_takes_one_slot` — three ids, one row, two `also_in`.
+1. `test_one_document_reachable_from_two_legs_takes_one_slot` — a MIRROR (same name, two
+   partitions): two ids, one row, one `also_in`. Named for what the key can actually do.
+1b. `test_a_restatement_across_partitions_is_NOT_collapsed` — the session/memory/ADR case stays
+   three rows, and the test asserts that deliberately so the scope boundary is executable rather
+   than a sentence.
 2. `test_the_surviving_row_carries_the_best_rank` — the collapse keeps rank 2 when instances sit at
    ranks 2, 7, 15.
 3. `test_a_small_partition_still_reaches_the_top_k` — round-robin, modelled on `merge_scope`'s own

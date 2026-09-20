@@ -38,6 +38,15 @@ rel: derives-from -> [[bsd-plan13-cross-partition-sweep-0cb8b1a]]
   flips, the session cards' share of the returned set is CAPPED and the cap is measured, not
   assumed.
 
+## The evidence cannot come from arm P {#mixed-corpus}
+
+`context._rank_entries` (`context.py:1237`) demotes session cards below durable documents even when
+they are opted back in. On [[task-13.0-two-partition-kill-shot]]'s arm P **every** document is a
+session card, so that sort key is constant and the demotion is a no-op (r2 #m-7). Arm P measures a
+flag flip on a HOMOGENEOUS corpus; this task's question is about a MIXED one — this repo's store,
+where 66 session cards compete with its docs and 366 memory rows. The numbers that decide the
+default come from that store, and arm P's recovery delta is context, not evidence. {#mixed-lead}
+
 ## Acceptance criteria {#acceptance}
 
 - A recommendation per surface (`context`, `scan-prompt`, `memory recall`), each with the measured

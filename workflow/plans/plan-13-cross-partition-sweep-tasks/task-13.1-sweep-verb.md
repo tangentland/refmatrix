@@ -25,9 +25,15 @@ rel: reinforces -> [[feedback_daemon_call_retries_multiply_timeouts]]
 
 - One verb, `sweep`, in `verbs.py`. CLI and MCP are adapters ([[task-13.3-surfaces-and-parity]]);
   nothing implements this twice (constitution IX).
-- **Three legs**, never four: `project` (code+doc, one partition), `memory`, `session`. The
-  code/docs split of the first draft is dropped — they are one partition and two legs over one pool
-  double-count under RRF (audit #s-1).
+- **TWO legs, not three** (r2 #b-6): `project` — which HOLDS the memory rows, because
+  `memory-<project>` was merged away post-0.5.0 (`cli.py:9736`) and `rmx partition list` on this
+  store returns only `refmatrix` / `memory-viascope` / `sessions-refmatrix` — and `session`
+  (`sessions-<project>`). A "memory leg" beside a "project leg" would query one partition twice.
+- **The session leg is symbolic-only** and says so in its own result (`"dense": false`): that
+  partition has no vectors (`.refmatrix/vectors` has no `sessions-*` entry) and `embed` walks
+  `graph_parts` = project + memory (`cli.py:6873`). It runs `content_rank`, NOT
+  `hybrid_memory_recall` — specifying a dense call that silently degrades is how a half-leg reports
+  a healthy candidate count (r2 #b-7).
 - Each leg addresses its partition through `Store.with_partition(name)` (`store.py:1590`), which is
   **not concurrency-safe on one Store** — so every non-default leg is a DAEMON OP under
   `d._store_lock`, never a replica read. `search.cached_replica(root)` is pinned to one partition
@@ -86,18 +92,26 @@ a store built by hand-inserting rows tests the fixture, not the sweep):
    `error` is set, the other legs' rows come back.
 4. `test_the_deadline_is_shared_not_per_leg` — a deadline of N ms with a first leg that sleeps N
    leaves the later legs `dropped: true`, and `spent_ms <= deadline_ms + slack`.
-5. `test_no_leg_rpc_uses_retries` — record `daemon.call` kwargs; every call carries `retries=0`.
+5. `test_no_leg_rpc_uses_retries` — record `daemon.call` kwargs; every call carries `retries=0`
+   **AND the recorded call count equals the number of legs attempted**. "Every call carries
+   retries=0" is vacuously true over zero calls, so an implementation issuing no leg RPCs passed the
+   first version of this test (r2 #s-5).
 6. `test_score_arm_and_rank_arm_differ_on_a_constructed_disagreement` — a fixture where min-max
    summation and RRF order two ids differently, so the arms are proven distinct rather than
    assumed.
-7. `test_rrf_sums_per_id_and_two_legs_never_share_a_pool` — the same id cannot appear in two legs'
-   lists (the #s-1 double-count guard).
+7. `test_two_legs_never_draw_from_one_partition` — the legs' partition ids are distinct. The first
+   version asserted that no id appears in two legs, which is FALSE on any real store now that memory
+   rows live in the project partition, and could only pass on a fixture carrying a partition the
+   product no longer produces (r2 #b-6).
+9. `test_the_session_leg_reports_itself_as_symbolic` — `dense: false` on that leg, so a missing
+   dense half is visible rather than absorbed.
 8. `test_context_default_path_is_unchanged` — golden ranked ids for `rmx context` on the fixture
    store, before/after.
 
-**Mutations that must kill a test:** `retries=0` → default (kills 5); per-leg deadline instead of
-shared (kills 4); swallow a leg exception and return `[]` (kills 3); fuse the score arm with RRF
-(kills 6).
+**Mutations that must kill a test:** `retries=0` → default (kills 5); issue zero leg RPCs (kills 5's
+count assertion); per-leg deadline instead of shared (kills 4); swallow a leg exception and return
+`[]` (kills 3); fuse the score arm with RRF (kills 6); point both legs at the active partition
+(kills 7); call `hybrid_memory_recall` on the session partition and report `dense: true` (kills 9).
 
 ## Implementation notes {#notes}
 

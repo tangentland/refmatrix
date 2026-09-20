@@ -30,7 +30,7 @@ current.
 | 10 | plan-10-injection-dedup | in-progress (negative result; awaiting BSD clean) | yes (3) | `workflow/plans/plan-10-injection-dedup.md` | plan 9 (its instrument) |
 | 11 | plan-11-helix-phase2-versioned-graph | drafting (storage fork A/B undecided; the pre-registered criterion now reads B — 444 rendered helix rows, 27 sessions, 48% neighbour-role) | no | `workflow/plans/plan-11-helix-phase2-versioned-graph.md` | helix phase 1 (0.55.0) |
 | 12 | plan-12-open-bug-remediation | completed (@ch-bsd CLEAN; deployed 0.72.0; bug-025 acceptance 20/20 reranked) | yes (6) | `workflow/plans/plan-12-open-bug-remediation.md` | — |
-| 13 | plan-13-cross-partition-sweep | drafting (@ch-bsd DIRTY 12 → revised; gate 13.0 must return GO before any build) | no | `workflow/plans/plan-13-cross-partition-sweep.md` | — |
+| 13 | plan-13-cross-partition-sweep | drafting (@ch-bsd r1 DIRTY 12 → revised; r2 DIRTY 17, 10 of 12 closed; gate 13.0 must return GO before any build) | yes (7) | `workflow/plans/plan-13-cross-partition-sweep.md` | — |
 
 ## Sequence rationale {#sequence}
 

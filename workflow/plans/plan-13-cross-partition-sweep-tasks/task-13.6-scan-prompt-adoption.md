@@ -63,8 +63,8 @@ rel: reinforces -> [[feedback_daemon_call_retries_multiply_timeouts]]
    not on a hand-written one.
 2. `test_a_sweep_that_exceeds_the_budget_drops_legs_and_still_answers` — the hook returns context,
    with `dropped` legs named, under an artificially small deadline.
-3. `test_installed_hooks_match_generated_after_the_change` — the existing repo gate, which now
-   skips correctly in a relocated checkout (bug-054).
+3. `test_installed_hooks_match_generated_after_the_change` — the existing repo gate, which skips
+   correctly in a relocated checkout since bug-054 (merged `8e6bcaa`, released 0.72.4).
 4. `test_declining_adoption_leaves_the_hook_byte_identical` — the negative path is tested too, so
    "we declined" cannot silently change the hook.
 

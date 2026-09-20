@@ -51,9 +51,11 @@ rel: reinforces -> [[project_verbs_layer_antidrift]]
 
 ## Test strategy (RED first) {#test-strategy}
 
-1. `test_cli_sweep_calls_the_verb` — patch the verb, assert the CLI path reaches it with every
-   parameter forwarded (the anti-existence-check test).
-2. `test_mcp_sweep_calls_the_verb` — same, through the MCP dispatcher.
+1. `test_cli_sweep_delegates_to_the_verb` — patch the verb to return a SENTINEL and assert the
+   sentinel reaches the rendered output. Forwarding every parameter does not prove delegation: an
+   adapter that computes its own rows AND also calls the verb forwards perfectly and still
+   reimplements the capability (r2 #s-6). The sentinel is what makes that impossible.
+2. `test_mcp_sweep_delegates_to_the_verb` — same sentinel, through the MCP dispatcher.
 3. `test_mcp_and_cli_return_the_same_json` — one store, one query, byte-compare.
 4. `test_rows_name_their_partition_and_provenance` — rendering contains both.
 5. `test_wikilink_bearing_output_survives_rendering` — a row whose snippet contains `[[name]]`
@@ -61,4 +63,6 @@ rel: reinforces -> [[project_verbs_layer_antidrift]]
 6. `test_single_partition_store_degrades_with_named_empty_legs`.
 
 **Mutations:** hand-write the MCP schema so it drifts from the signature (kills 1/2 via parity);
-render with `console.print` (kills 5).
+render with `console.print` (kills 5); **have the adapter compute its own rows while still calling
+the verb** — the sentinel disappears from the output and kills 1 and 2. That last mutation is the
+one the first version of this spec had no test for.

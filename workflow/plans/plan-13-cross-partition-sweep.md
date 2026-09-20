@@ -63,19 +63,25 @@ partition; `rmx memory recall` reads the memory partition; `rmx session recall` 
 `verbs.merge_scope` (`verbs.py:375-399`) — but it crosses a STORE boundary, not a partition one,
 and it is the only one. {#context-lead}
 
-The live Layer A standings (90 questions, deterministic, `eval/memaware/REPORT.md`):
+**Layer A, measured by this session on the DEPLOYED 0.72.4 path** (not quoted — `eval/memaware/REPORT.md#remeasure-0724`),
+90 questions, after restarting that store's stale `[UNVERIFIED]` daemon (bug-055):
 
 | surface | hit@20 | MRR@20 |
 |---|---:|---:|
-| **`rmx context` (+lead)** | **0.511** | **0.248** |
+| `rmx context` | 0.478 | 0.186 |
+| **`rmx scan-prompt`** | **0.444** | **0.257** |
 | bm25-per-session (upstream reference) | 0.444 | 0.242 |
-| `rmx memory recall` +rerank (0.42.0) | 0.422 | 0.218 |
-| `rmx memory recall` (dense) | 0.378 | 0.180 |
-| `rmx scan-prompt` | 0.378 | 0.149 → **0.241** re-measured (`PERFORMANCE.md:289`) |
-| `rmx memory recall --fuse` | 0.378 | 0.180 |
-| bm25-per-day | 0.156 | 0.058 |
+| `rmx memory recall` | 0.378 | 0.180 |
 
-rmx is no longer behind on this benchmark: `rmx context` leads it. So the motivation is NOT "our
+**The 0.511 / 0.248 figure the first draft and the r1 audit both leaned on is NOT on this question
+set.** `eval/memaware/REPORT.md:531` records it as a HELD-OUT set, disjoint from the tuning set,
+whose baseline is 0.378 / 0.206 — so it never belonged at the top of a leaderboard beside bm25's
+0.444 (r2 #b-9, correcting r1 #b-3). It is doubly incomparable now: different question set AND an
+unfiltered corpus ([[#reencode-note]]). On the set everyone else is scored on, `rmx context`
+measures **0.478 / 0.186** today.
+
+rmx is no longer behind on this benchmark: `scan-prompt` has reached bm25 parity on hit@20 and
+passes it on MRR. So the motivation is NOT "our
 surfaces are weak". It is narrower and checkable: **every one of those numbers was produced by a
 retriever searching one partition, and the product's answers are spread across four.** {#context-numbers}
 
@@ -134,20 +140,39 @@ arms rather than asserted in prose:
 Both run in 13.5. Whichever wins ships; if S wins, `#principle` is amended and the negative stands
 un-re-derived.
 
-### The legs {#legs}
+### The legs — TWO, not three, and one of them is half a leg {#legs}
 
-| leg | partition | candidate generation | exists? |
+| leg | partition | candidate generation | what it actually is |
 |---|---|---|---|
-| project | project code+doc | `content_rank` ⊕ dense, as `build_context` does | yes |
-| memory | `memory-<project>` | `hybrid_memory_recall` | yes |
-| session | `sessions-<project>` | `hybrid_memory_recall` on that partition | **partition ships; no unioned reader** |
+| project | `refmatrix` (active) | `content_rank` ⊕ dense | code, docs **and memory rows** |
+| session | `sessions-refmatrix` | `content_rank` only | **symbolic-only — no vectors exist** |
 
-**Three legs, not four.** The first draft split the project partition into "code" and "docs" legs.
-They are ONE partition, so two legs drawing the same pool can return the same entity id — and RRF
-sums per id, inflating an entity because of an arbitrary split. Dropped. {#legs-lead}
+**`memory-<project>` does not exist, and was deliberately merged away** (r2 #b-6). `cli.py:9736`:
+*"Post-0.5.0 default: project partition, NOT `memory-<project>`. The split ... made cross-partition
+wikilinks unresolvable so memory→memory `rel:` edges silently dropped."* Verified on this store:
+`rmx partition list` returns `refmatrix` / `memory-viascope` / `sessions-refmatrix`, and the 366
+memory rows sit in `refmatrix`. So the memory leg IS the project leg, and a plan that lists three is
+counting one twice. {#legs-merge}
 
-Each leg is capped independently so a 60k-row partition cannot crowd out a 200-row one before
-fusion sees either. Cap defaults are an output of 13.5, not an input.
+**That merge is this plan's most relevant prior art**: partition splitting was tried, and it was
+reversed *because cross-partition edges failed*. A plan proposing to query across partitions has to
+say why it does not re-enter that failure. The answer this plan gives: it unions RESULTS at query
+time and never asks a `rel:` edge to resolve across a partition boundary. If a leg ever needs edge
+resolution, `store.find_memory_any_partition` (`store.py:2185`) is the shipped mechanism and the
+merge's lesson applies again.
+
+**The session leg is symbolic-only** (r2 #b-7). `.refmatrix/vectors` holds `memory-refmatrix`,
+`memory-viascope`, `refmatrix` — no `sessions-refmatrix` entry — and none is coming:
+`cli.py:6873` walks `graph_parts` = project + memory for embed AND pagerank. So
+`hybrid_memory_recall` on that partition silently loses its dense half and returns a healthy
+non-zero count, which means the zero-candidate error line never fires on the exact leg most likely
+to underperform. 13.1 specifies `content_rank` for that leg and SAYS symbolic-only in the result
+(`"dense": false`), rather than calling a half-leg whole. {#legs-session}
+
+This also rescues [[#gate-0]]'s ceiling argument: the oracle union's ceiling is real precisely
+because the session leg cannot be improved by fusion — it has no second signal to fuse.
+
+Each leg is capped independently. Cap defaults are an output of 13.5, not an input.
 
 ### Dedupe is slot-crowding, not rank inflation {#dedupe}
 
@@ -179,6 +204,17 @@ that ADR is still `Status: Proposed` (2026-05-27). `project_partitions_canon` na
 `with_partition` became. This plan is that clause, built and measured, five months later.
 {#prior-art-lead}
 
+## The benchmark's corpus is not in production topology {#reencode-note}
+
+MemAware ingests chat into the store's DEFAULT partition under `answer_*` names
+(`eval/memaware/ingest.py:83`, `paths.py:44`); production puts chat in `sessions-<project>` under
+`session-<hex>`, where FOUR gates exclude it — `context._is_session_card` (`context.py:1213`),
+`consolidate._OPERATIONAL_RE` (`consolidate.py:67`), `pagerank._OPERATIONAL_RE` (`pagerank.py:40`,
+`exclude_operational=True` by default) and `scan._is_operational_anchor` (`scan.py:773`).
+`--include-sessions` lifts ONE of the four. Every MemAware number rmx has published therefore
+describes a topology the product does not run, and the favourable one.
+[[task-13.0-two-partition-kill-shot]] measures that gap directly. {#reencode-note-lead}
+
 ## Acceptance {#acceptance}
 
 Pre-registered before the code exists, per [[project_helix_phase2_decision_criterion]]'s discipline.
@@ -191,8 +227,10 @@ set per [[#question-set]]. Conditions: `rmx context` (control), `rmx context --i
 `rmx session recall`, and the oracle union (the set-union of the first and third, scored as one
 list — the sweep's ceiling without building it).
 
-- **GO** — the oracle union beats the best single condition by ≥ 0.05 absolute hit@20. There is
-  reachable set to win and a sweep can win it.
+- **GO (screening, not proof)** — the oracle union beats the best single condition by ≥ 0.05
+  absolute hit@20, REPORTED WITH ITS INTERVAL. At n=60 a 0.05 difference is three questions and the
+  95% binomial interval spans roughly 0.01–0.14 (r2 #b-8), so GO authorises 13.1 as an experiment —
+  it does not establish the effect. Gate 1 is where the effect is established, on the same set.
 - **STOP** — it does not. Record the negative beside the phrase layer and the eight signals; close
   the plan. **This is a real outcome and costs one report.**
 

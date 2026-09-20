@@ -29,6 +29,16 @@ rel: reinforces -> [[feedback_measure_the_path_users_run]]
   `sessions-refmatrix`.**
 - **No new production code.** Every condition runs through shipped surfaces. If this task needs a
   `sweep` verb to produce its number, it has been written wrong.
+- **Composition is pre-registered before the set is built** (r2 #b-8). This task both builds the
+  question set and is judged by it, so the gold-partition mix is declared first — 50% project-gold,
+  50% session-gold, ±10% — and a set outside that band is rejected by the harness, not re-tuned.
+  Every reported delta carries its 95% binomial interval; at n=60 a 0.05 difference is three
+  questions.
+- **Source 2 is dead and source 1 is all there is:** `rel:` edges cannot have a session endpoint,
+  because `session_ingest.build_card` emits no `rel:` lines (r2 #b-7). The set comes from mined
+  `kind="scan"` query.log bodies (2180 available on this store) paired with judged golds.
+  `helix.log` is NOT a gold source — `project_helix_log_confounded` records it as structurally
+  confounded on the hook path.
 - Build a question set of **40–60 known-item questions** whose gold documents are identified, per
   [[plan-13-cross-partition-sweep#question-set]]:
   - mined from `.refmatrix/query.log` `kind="scan"` bodies (real prompts; `eval/memory_recall/mine_queries.py`
@@ -69,14 +79,46 @@ questions, so no bespoke question set has to be mined for THIS arm. {#reencode-l
 
 Re-ingest the same corpus a second time, unchanged in content, changed only in encoding:
 
-| arm | partition | card name | mtype |
-|---|---|---|---|
-| **D** (today's harness, the ceiling reference) | `memaware` (default) | `answer_*` | `memaware/session` |
-| **P** (production topology) | `sessions-memaware` | `session-<hex>` | `session` |
+The first draft of this arm moved FOUR variables and read one (r2 addendum #b-10). It is split so
+each gate is isolated:
 
-Conditions on arm P: `rmx context` (expected to collapse toward zero — that collapse is the
-measurement), `rmx context --include-sessions`, `rmx session recall`, `rmx memory recall`, and the
-oracle union.
+| arm | partition | card name | mtype | what it isolates |
+|---|---|---|---|---|
+| **D** | `memaware` (default) | `answer_*` | `memaware/session` | today's harness — the ceiling reference |
+| **P1** | `memaware` (default) | `session-<hex>` | `memaware/session` | **the name gates alone** — `_is_session_card`, `_OPERATIONAL_RE` ×2, `_is_operational_anchor` |
+| **P2** | `sessions-memaware` | `session-<hex>` | `memaware/session` | P1 + the partition move |
+| **P3** | `sessions-memaware` | `session-<hex>` | `session` | full production topology |
+
+**Recovery is measured against P1**, because P1 is the only arm where `--include-sessions`'s gate is
+the one that moved. On P2/P3 non-recovery is guaranteed by construction and would read as "the union
+does work a flag cannot" — the branch that authorises building the sweep. An arm that can only
+return "build it" is not an experiment.
+
+**mtype is not cosmetic and P3 pays for it:** `consolidate.DEFAULT_EXCLUDE_MTYPES` is
+`("session", "session/*", "digest", "digest/*", "subject")` (`consolidate.py:66`), so
+`rmx memory compile` drops every P3 card by mtype at `:90` AND by name at `:92` — P3 has no subject
+layer while D compiles fully. Fixing the mtype does not restore it; the name gate fires
+independently. P3 is therefore reported as "production topology including its compile behaviour",
+not as "D with a different label". One thing IS inert and must not be "fixed": bare mtype `session`
+does not trip `rmx memory recall`'s exclusion, because `mt_excluded` uses `fnmatchcase` and
+`session/*` does not match `session`.
+
+**Vectors are a fourth variable and are declared, not discovered:** `rmx embed --kinds memory` walks
+the ACTIVE partition only (`cli.py:6873`), so P2/P3 either have no vectors — a changed retrieval
+stack — or receive an embed pass that production's `sessions-refmatrix` never gets (r2 #b-7). This
+task embeds them and SAYS SO, so the arm is "production topology plus vectors production lacks",
+and the session leg's missing dense half is reported as its own finding rather than smuggled in.
+
+**The harness env must be overridden per arm or every arm-P condition reads the wrong partition**
+(r2 addendum #b-11). `paths.rmx_env()` sets `RMX_PARTITION = PARTITION` (`paths.py:59`), and
+`RMX_PARTITION` wins over `_sessions_partition_default()` in `cli._session_partition()` and over the
+constructor argument in `Store.__init__` (`store.py:700-708`). Unfixed, `rmx session recall` cannot
+answer P2/P3 at all and `context` returns ~nothing — and the collapse would be a PARTITION MISS
+scored as the filter's cost. Every condition records the partition it actually queried, and a
+condition whose recorded partition is not the arm's is a hard error, not a zero.
+
+Conditions per arm: `rmx context` (control), `rmx context --include-sessions`, `rmx session recall`,
+`rmx memory recall`, and the oracle union.
 
 **What each outcome means, written before the run:**
 
@@ -126,10 +168,15 @@ The harness is code, so it is tested; the eval it produces is not a test.
 4. `test_a_condition_that_returns_nothing_is_an_error_line_not_an_empty_list` —
    [[feedback_no_silent_failures]]; a dead condition must not be scored as 0.0 silently.
 5. `test_freshness_lag_is_computed_from_the_newest_card_and_the_newest_jsonl` — on fixture dirs.
-6. `test_reencode_changes_only_partition_and_name` — arm P's card bodies are byte-identical
-   to arm D's; a re-encoding that also rewrites content would measure two things at once.
-7. `test_reencoded_cards_match_the_session_card_predicate` — the P cards DO satisfy
-   `context._is_session_card`, else arm P is not production topology and the arm is void.
+6. `test_each_arm_moves_exactly_the_variables_it_declares` — P1 differs from D in NAME only; P2
+   adds partition; P3 adds mtype. Asserted field by field, not by "bodies are byte-identical" (which
+   passes with three variables moved).
+6b. `test_every_condition_records_the_partition_it_queried` — and a mismatch against the arm's
+   partition raises rather than scoring 0 (the #b-11 guard).
+7. `test_reencoded_cards_match_every_gate_that_keys_on_the_prefix` — the P cards satisfy
+   `context._is_session_card` AND `consolidate._OPERATIONAL_RE` AND `pagerank._OPERATIONAL_RE` AND
+   `scan._is_operational_anchor`. Asserting one of four was the original hole: `--include-sessions`
+   lifts only the first.
 8. `test_scoring_matches_the_layer_a_metric` — same hit@k / MRR definitions as
    `eval/memaware/retrieval_eval.py`, asserted against a hand-computed fixture, so the two reports
    are comparable.

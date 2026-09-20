@@ -60,7 +60,10 @@ rel: reinforces -> [[feedback_green_tests_are_not_a_working_command]]
 ## Files {#files}
 
 - modify `eval/memaware/retrieval_eval.py` (leg-aware method contract + `score()`)
-- create `eval/partition_sweep/run_gate1.py`
+- create `eval/partition_sweep/run_gate1.py` — which **imports** the Layer A metric from
+  `eval/memaware/retrieval_eval.py` rather than reimplementing it. A second copy pinned by one
+  fixture, while this very task edits the original, is two metrics drifting apart under the same
+  name (r2 #s-8). 13.2 gets this right by reusing `merge_scope`; this task does the same.
 - modify `eval/partition_sweep/REPORT.md`
 - modify `docs/PERFORMANCE.md` (result, whichever way it reads)
 - modify `tests/test_partition_sweep_harness.py` (leg-aware scoring)
