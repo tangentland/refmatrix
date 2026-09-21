@@ -4090,6 +4090,20 @@ def _op_partition_audit(d: Daemon, args: dict) -> dict:
     except OSError:
         vector_dirs = []
 
+    # Is there anything to INGEST right now? Same slug encoding `rmx session
+    # ingest` uses (`~/.claude/projects/<cwd with / and _ mapped to ->`), so the
+    # audit and the remedy agree on where transcripts live. A project with no
+    # `.jsonl` cannot be remediated, and the finding is downgraded accordingly.
+    project_dir = Path(d.root).parent
+    slug = str(project_dir).replace("/", "-").replace("_", "-")
+    transcripts = Path.home() / ".claude" / "projects" / slug
+    try:
+        sessions_available = any(transcripts.glob("*.jsonl"))
+    except OSError:
+        # Cannot tell: the conservative default is the REMEDIABLE one, so a
+        # readable-transcripts failure never silently downgrades a real drift.
+        sessions_available = True
+
     out = _audit(
         store_name=active if discovery.is_global_root(Path(d.root))
         else discovery.store_name(Path(d.root)),
@@ -4098,7 +4112,9 @@ def _op_partition_audit(d: Daemon, args: dict) -> dict:
         row_counts=counts,
         vector_dirs=vector_dirs,
         is_global=discovery.is_global_root(Path(d.root)),
+        sessions_available=sessions_available,
     )
+    out["sessions_available"] = sessions_available
     out["root"] = str(d.root)
     return out
 

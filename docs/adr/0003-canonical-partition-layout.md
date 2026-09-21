@@ -106,6 +106,39 @@ Drift produced every anomaly in the survey, and none of it came from a decision:
 4. **The shape is checked where an operator already looks** — fleet health — so a drifted store says
    so rather than waiting for a survey.
 
+## Amendment 2026-09-20: `missing-sessions` severity {#amend-sessions}
+
+Found by remediating, which is the only way it could have been found. `orderly` and `atldb` read
+`drift` for `missing-sessions` and **cannot fix it**: their `~/.claude/projects/<slug>/`
+directories hold a `memory/` subdir and zero `.jsonl`. A store that reads drift forever for a
+condition it cannot remedy trains the signal away — the same argument that makes
+`sessions-unembedded` an `info` (the same reasoning as [[#deferred-embed]]). {#amend-sessions-lead}
+
+So `missing-sessions` is **`drift` when transcripts are available to ingest** and **`info` when
+they are not**. `gather` supplies the fact using the same slug encoding `rmx session ingest` uses,
+so the audit and its own remedy agree on where transcripts live; the default when the answer cannot
+be read is `True`, the REMEDIABLE one, so an unreadable directory never silently downgrades a real
+drift.
+
+**The wording of that `info` matters and the first draft of it was wrong.** Absence of transcripts
+today does NOT mean the project never had sessions. `viascope` holds 155 session rows and has zero
+`.jsonl` on disk — its transcripts were archived to zip and HTML by hand, 889MB of them, in the
+same directory. `atldb` is the stronger case: it holds **5 rmx STM rings** under
+`.refmatrix/stm/`, the oldest from 2026-07-19, so sessions demonstrably ran there, and its
+transcript directory is empty. Disk answers "what can be ingested now" and says nothing about
+history. An audit asserting "this project has no session history" would state something it cannot
+know. {#amend-sessions-wording}
+
+Transcripts are also NOT project-local — checked. The `.jsonl` files inside project trees are
+rmx's own STM rings (`.refmatrix/stm/`) and a guardrail corpus (`.claude/p20-0/golden_cases.jsonl`),
+never Claude Code sessions. `~/.claude/projects/<slug>/` is the only source, which is why the check
+reads exactly where the remedy reads. {#amend-sessions-not-local}
+
+**Consequence worth naming:** the `sessions-<project>` partition is the only DURABLE record of
+session history. Once transcripts are archived or removed, un-ingested sessions are unreachable by
+`rmx session ingest`, which reads `*.jsonl` only. That makes ingest time-sensitive in a way nothing
+currently says. {#amend-sessions-durability}
+
 ## What this ADR deliberately does NOT decide {#deferred}
 
 **Whether session partitions are embedded.** viascope's session vectors cost 233MB and nobody has

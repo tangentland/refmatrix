@@ -13,6 +13,7 @@ be tested against every fleet shape without building nine stores.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -200,7 +201,7 @@ def test_audit_is_pure_and_takes_no_store():
 
     params = set(inspect.signature(pt.audit).parameters)
     assert params == {"store_name", "partitions", "active", "row_counts",
-                      "vector_dirs", "is_global"}
+                      "vector_dirs", "is_global", "sessions_available"}
     assert not any(p in params for p in ("store", "root", "conn"))
 
 
@@ -465,3 +466,87 @@ def test_dropping_a_partition_with_vectors_on_disk_is_refused(tmp_path, monkeypa
     res = CliRunner().invoke(cli_mod.main, ["partition", "drop", "has-vectors", "-y"])
     assert res.exit_code != 0
     assert "vector" in res.output.lower(), res.output
+
+
+# ---- missing-sessions severity depends on whether transcripts EXIST -------
+#
+# Found by remediating: orderly and atldb read `drift` for a condition they
+# cannot fix — their ~/.claude/projects/<slug>/ directories hold a `memory/`
+# subdir and ZERO .jsonl files, so there is no session history to ingest. A
+# store that reads drift forever for an unfixable condition trains the signal
+# away, which is the same argument ADR-0003 uses for `sessions-unembedded`.
+
+def test_missing_sessions_is_drift_when_transcripts_exist():
+    """The remediable case: history exists and was never ingested."""
+    f = _facts()
+    f["partitions"] = [p for p in f["partitions"] if p["name"] == "refmatrix"]
+    f["row_counts"].pop("sessions-refmatrix")
+    f["sessions_available"] = True
+    out = pt.audit(**f)
+    finding = next(x for x in out["findings"] if x["kind"] == "missing-sessions")
+    assert finding["severity"] == "drift"
+    assert "rmx session ingest" in finding["remedy"]
+    assert out["shape"] == "drift"
+
+
+def test_missing_sessions_is_info_when_the_project_has_no_transcripts():
+    """orderly / atldb: nothing to ingest, so nothing to repair — and a store
+    in that state is CANONICAL, not drifted."""
+    f = _facts()
+    f["partitions"] = [p for p in f["partitions"] if p["name"] == "refmatrix"]
+    f["row_counts"].pop("sessions-refmatrix")
+    f["sessions_available"] = False
+    out = pt.audit(**f)
+    finding = next(x for x in out["findings"] if x["kind"] == "missing-sessions")
+    assert finding["severity"] == "info"
+    assert "no session transcripts" in finding["detail"].lower()
+    assert out["shape"] == "canonical", out["findings"]
+
+
+def test_sessions_available_defaults_to_true_so_a_caller_that_cannot_tell_reports_drift():
+    """A gather path that cannot determine the fact must NOT silently downgrade
+    a real drift to info — the conservative default is the remediable one."""
+    f = _facts()
+    f["partitions"] = [p for p in f["partitions"] if p["name"] == "refmatrix"]
+    f["row_counts"].pop("sessions-refmatrix")
+    f.pop("sessions_available", None)
+    out = pt.audit(**f)
+    finding = next(x for x in out["findings"] if x["kind"] == "missing-sessions")
+    assert finding["severity"] == "drift"
+
+
+def test_the_op_reports_whether_transcripts_exist(tmp_path, monkeypatch):
+    """The gather side must supply the fact, using the SAME slug encoding
+    `rmx session ingest` uses — otherwise the audit and its own remedy disagree
+    about where transcripts live."""
+    from refmatrix import daemon as dm
+    from refmatrix.store import Store
+
+    home = tmp_path / "home"
+    proj = tmp_path / "proj"
+    root = proj / ".refmatrix"
+    proj.mkdir()
+    (home / ".claude" / "projects").mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+    s = Store(root)
+    s.init()
+    d = dm.Daemon(root)
+    d.store = s
+    try:
+        out = dm.OPS["partition_audit"](d, {})
+        assert out["sessions_available"] is False
+        finding = next(f for f in out["findings"] if f["kind"] == "missing-sessions")
+        assert finding["severity"] == "info"
+
+        slug = str(proj).replace("/", "-").replace("_", "-")
+        tdir = home / ".claude" / "projects" / slug
+        tdir.mkdir(parents=True)
+        (tdir / "a-session.jsonl").write_text("{}\n")
+
+        out = dm.OPS["partition_audit"](d, {})
+        assert out["sessions_available"] is True
+        finding = next(f for f in out["findings"] if f["kind"] == "missing-sessions")
+        assert finding["severity"] == "drift"
+    finally:
+        s.close()
