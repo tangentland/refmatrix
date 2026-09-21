@@ -17,6 +17,7 @@ import json
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -288,8 +289,82 @@ def write_card(card_md: str, dest_dir: Path, session_id: str) -> Path:
     return out
 
 
-def ingest_session(jsonl_path: Path, dest_dir: Path) -> tuple[Path, SessionData]:
+def ingest_session(jsonl_path: Path,
+                   dest_dir: Path) -> "tuple[Path, SessionData, str]":
+    """Parse one transcript, write its card, and PROTECT the source.
+
+    Protection is not a flag. `rmx session ingest` is what the launchd backfill
+    job runs, so making it the default is what makes the scheduled path protect
+    too — a correctness behaviour behind an optional flag is a behaviour most
+    stores will not have.
+    """
     data = parse_session_jsonl(jsonl_path)
     card = build_card(data)
     out = write_card(card, dest_dir, data.session_id)
-    return out, data
+    link_status, _ = link_raw(jsonl_path, dest_dir)
+    return out, data, link_status
+
+
+# ---- protecting the source transcript -------------------------------------
+
+RAW_DIRNAME = "raw"
+
+
+def link_raw(jsonl_path: Path, dest_dir: Path) -> "tuple[str, Path | None]":
+    """Hard-link the source transcript beside its card. Returns (status, path).
+
+    A session card is a ~2% summary; the JSONL is the only full record, and a
+    card cannot be re-derived from a card. Transcripts DO disappear: viascope
+    has 155 session rows and zero `.jsonl` (archived to zip by hand), and atldb
+    has 5 rmx STM rings proving sessions ran beside an empty transcript
+    directory. rmx is not the one deleting them — audited 2026-09-20, the only
+    write in this module is the card — but something is, and this makes that
+    survivable.
+
+    A hard link costs ZERO bytes: it is a second name for the same inode, and
+    the data lives until the LAST name is removed. Claude Code appends to the
+    transcript in place (inode verified stable across writes), so the link is a
+    live second name rather than a snapshot frozen at ingest time.
+
+    **The cost this deliberately accepts:** a linked inode is never reclaimed
+    while our name exists, so a transcript deleted upstream keeps occupying
+    disk. That is the trade — the alternative is losing it.
+
+    Statuses: `linked` (new), `present` (already protected, same inode),
+    `rotated` (the source was REPLACED — a new inode under the same name — so
+    the old link is kept because its content exists nowhere else), or
+    `failed: <reason>`. Never silent: the caller counts every outcome.
+    """
+    raw_dir = Path(dest_dir) / RAW_DIRNAME
+    target = raw_dir / f"{jsonl_path.stem}.jsonl"
+    try:
+        src_ino = os.stat(jsonl_path).st_ino
+    except OSError as exc:
+        return (f"failed: cannot stat source ({exc.strerror or exc})", None)
+
+    try:
+        raw_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return (f"failed: cannot create {raw_dir} ({exc.strerror or exc})", None)
+
+    if target.exists():
+        try:
+            if os.stat(target).st_ino == src_ino:
+                return ("present", target)
+        except OSError as exc:
+            return (f"failed: cannot stat existing link ({exc.strerror or exc})", None)
+        # Different inode: the source was replaced under the same name. The old
+        # link holds content that exists nowhere else, so keep BOTH.
+        target = raw_dir / f"{jsonl_path.stem}.{src_ino}.jsonl"
+        if target.exists():
+            return ("present", target)
+        status = "rotated"
+    else:
+        status = "linked"
+
+    try:
+        os.link(jsonl_path, target)
+    except OSError as exc:
+        reason = exc.strerror or str(exc)
+        return (f"failed: {reason.lower()}", None)
+    return (status, target)

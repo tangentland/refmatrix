@@ -12145,7 +12145,8 @@ def session_ingest_cmd(targets, all_projects, force, verbose, no_index):
     `--all-projects` walks every project under ~/.claude/projects/."""
     from refmatrix import daemon as daemon_mod
     from refmatrix.ingest_gmd import collect_gmd_files, ingest_gmd_paths
-    from refmatrix.session_ingest import ingest_session, parse_session_jsonl
+    from refmatrix.session_ingest import (ingest_session, link_raw,
+                                          parse_session_jsonl)
 
     root = _root()
     cards_dir = root / "sessions"
@@ -12198,6 +12199,8 @@ def session_ingest_cmd(targets, all_projects, force, verbose, no_index):
     quiet_s = float(os.environ.get("RMX_SESSION_INGEST_QUIET_S", "300") or "300")
     now = _time.time()
     built: list[Path] = []
+    link_counts: dict = {}
+    link_failures: list = []
     skipped = 0
     active_skipped = 0
     for jp in jsonls:
@@ -12221,13 +12224,27 @@ def session_ingest_cmd(targets, all_projects, force, verbose, no_index):
                 new_data = parse_session_jsonl(jp)
                 if f"content_hash: {new_data.content_hash}" in existing:
                     skipped += 1
+                    # Protect the source even when the card is unchanged. The
+                    # already-carded transcripts are the OLD ones — the most
+                    # likely to be removed upstream and the least likely to be
+                    # re-ingested — so skipping the link here would leave
+                    # exactly the at-risk set unprotected.
+                    _st, _ = link_raw(jp, cards_dir)
+                    link_counts[_st.split(":")[0]] = \
+                        link_counts.get(_st.split(":")[0], 0) + 1
+                    if _st.startswith("failed"):
+                        link_failures.append(f"{session_id}: {_st}")
                     if verbose:
-                        console.print(f"  skip {session_id} (hash match)")
+                        console.print(f"  skip {session_id} (hash match) [raw: {_st}]")
                     continue
             except Exception:
                 pass
-        out, data = ingest_session(jp, cards_dir)
+        out, data, link_status = ingest_session(jp, cards_dir)
         built.append(out)
+        link_counts[link_status.split(":")[0]] = \
+            link_counts.get(link_status.split(":")[0], 0) + 1
+        if link_status.startswith("failed"):
+            link_failures.append(f"{session_id}: {link_status}")
         if verbose:
             console.print(
                 f"  card {session_id}: {data.turn_count} turns, "
@@ -12239,6 +12256,12 @@ def session_ingest_cmd(targets, all_projects, force, verbose, no_index):
         f"cards: built={len(built)} skipped={skipped} "
         f"active-skipped={active_skipped} total_jsonl={len(jsonls)}"
     )
+    if link_counts:
+        console.print("raw transcripts protected (hard links, 0 bytes): "
+                      + " ".join(f"{k}={v}" for k, v in sorted(link_counts.items())))
+    # A protection failure is never silent: the source may be the only copy.
+    for failure in link_failures:
+        console.print(f"[red]raw link FAILED[/] {failure}")
 
     if no_index or not built:
         return
