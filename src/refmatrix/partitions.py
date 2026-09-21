@@ -56,6 +56,7 @@ def audit(
     row_counts: "dict[str, dict[str, int]]",
     vector_dirs: "list[str]",
     is_global: bool,
+    sessions_available: bool = True,
 ) -> "dict[str, Any]":
     """Compare one store's layout against ADR-0003 and return its findings.
 
@@ -122,11 +123,32 @@ def audit(
             ))
 
     if not is_global and sessions_name not in names:
-        findings.append(_finding(
-            "missing-sessions", sessions_name, "drift",
-            "no session partition — this store has no turn-level session history",
-            "rmx session ingest",
-        ))
+        # Severity depends on whether there is anything to ingest RIGHT NOW.
+        # Found by remediating (2026-09-20): orderly and atldb read drift for a
+        # condition they cannot fix — their `~/.claude/projects/<slug>/` holds a
+        # `memory/` subdir and zero `.jsonl`. A store that reads drift forever
+        # for an unfixable condition trains the signal away, which is the same
+        # argument that makes `sessions-unembedded` an info.
+        #
+        # The wording is careful: absence of transcripts today does NOT mean the
+        # project never had sessions. viascope has 155 session rows and zero
+        # `.jsonl` on disk, because its transcripts were archived to zip/HTML by
+        # hand. Disk tells us what can be ingested now, nothing about history.
+        if sessions_available:
+            findings.append(_finding(
+                "missing-sessions", sessions_name, "drift",
+                "no session partition, and transcripts are available to ingest",
+                "rmx session ingest",
+            ))
+        else:
+            findings.append(_finding(
+                "missing-sessions", sessions_name, "info",
+                "no session partition, and no session transcripts are available to "
+                "ingest right now — this says nothing about whether the project HAD "
+                "sessions (transcripts can be archived or removed; viascope has "
+                "session rows and no .jsonl on disk)",
+                "nothing to do until transcripts exist for this project",
+            ))
 
     # Vectors are a second catalog. A directory with no partition describes a
     # partition that does not exist, which is worse than dead weight: a reader
