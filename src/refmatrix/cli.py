@@ -3829,14 +3829,23 @@ def partition_audit(as_json: bool, fleet: bool):
     from refmatrix import discovery
     from refmatrix.partitions import audit as _audit
 
-    roots = []
+    roots: list = []
+    skipped: list = []
     if fleet:
         from refmatrix.search import _live_roots
-        roots = [Path(r) for r in _live_roots()]
-    if not roots:
+        # `(roots, skipped)` — a store whose daemon is busy is SKIPPED, and a
+        # fan-out that drops it silently is a filed finding (plan-3 r2 #b-2).
+        # An audit that quietly examines six of eight stores and prints a clean
+        # verdict is worse than no audit, so the skips are results too.
+        live, skipped = _live_roots()
+        roots = [Path(r) for r in live]
+    if not roots and not skipped:
         roots = [_root()]
 
     results = []
+    for entry in skipped:
+        results.append({"root": entry.get("root"), "store": entry.get("project"),
+                        "skipped": entry.get("reason", "unknown")})
     for root in roots:
         if daemon_mod.ping(root):
             resp = daemon_mod.call(root, "partition_audit", {}, retries=0)
@@ -3848,7 +3857,12 @@ def partition_audit(as_json: bool, fleet: bool):
         # Daemon down: read the catalog directly. This is a READ, and the
         # daemon holding the writer is exactly when we must not.
         try:
-            s = _store()
+            # The loop's root, NOT `_store()` — that resolves the ambient root
+            # and made `--fleet` audit one store N times. Read-only: this
+            # branch runs only when no daemon answers, and the audit must never
+            # be the thing that takes a writer lock.
+            from refmatrix.store import Store as _Store
+            s = _Store(root, read_only=True)
             conn = s._connect()
             parts = [{"id": r["id"], "name": r["name"], "kind": r["kind"]}
                      for r in conn.execute(
@@ -3878,6 +3892,10 @@ def partition_audit(as_json: bool, fleet: bool):
         click.echo(_json.dumps(results if fleet else results[0], indent=2))
     else:
         for out in results:
+            if out.get("skipped"):
+                console.print(f"[yellow]… {out.get('store') or out['root']}: "
+                              f"NOT audited — {out['skipped']}[/]")
+                continue
             if out.get("error"):
                 console.print(f"[red]✗ {out['root']}: {out['error']}[/]")
                 continue
@@ -3891,7 +3909,8 @@ def partition_audit(as_json: bool, fleet: bool):
                               f"{f['name']} — {f['detail']}")
                 console.print(f"        [dim]remedy: {f['remedy']}[/]")
 
-    if any(o.get("error") or o.get("shape") == "drift" for o in results):
+    if any(o.get("error") or o.get("skipped") or o.get("shape") == "drift"
+           for o in results):
         raise SystemExit(1)
 
 

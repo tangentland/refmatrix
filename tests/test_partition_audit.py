@@ -298,3 +298,42 @@ def test_the_command_reports_a_canonical_store_and_exits_zero(tmp_path, monkeypa
     payload = json.loads(res.output)
     assert payload["shape"] == "canonical", payload
     assert res.exit_code == 0, res.output
+
+
+def test_fleet_mode_audits_every_live_root_and_REPORTS_the_skipped(tmp_path, monkeypatch):
+    """`search._live_roots()` returns `(roots, skipped)`. The first version of
+    `--fleet` iterated the TUPLE and crashed on the live fleet with
+    `TypeError: argument should be a str ... not 'list'` — no test covered the
+    fleet path at all.
+
+    Reporting `skipped` is not decoration: a busy store silently dropped from a
+    fan-out is a filed finding (ch-bsd plan-3 r2 #b-2). An audit that quietly
+    examines six of eight stores and prints a clean verdict is worse than no
+    audit."""
+    from click.testing import CliRunner
+
+    from refmatrix import cli as cli_mod
+    from refmatrix.store import Store
+
+    roots = []
+    for name in ("alpha", "beta"):
+        root = tmp_path / name / ".refmatrix"
+        root.parent.mkdir()
+        s = Store(root)
+        s.init()
+        s.close()
+        roots.append(str(root))
+
+    skipped = [{"project": "gamma", "root": "/x/gamma/.refmatrix",
+                "reason": "daemon busy pid=1 (alive, not answering)"}]
+    monkeypatch.setattr("refmatrix.search._live_roots", lambda: (roots, skipped))
+    monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
+
+    res = CliRunner().invoke(cli_mod.main, ["partition", "audit", "--fleet", "--json"])
+    payload = json.loads(res.output)
+    audited = {row["store"] for row in payload
+               if row.get("store") and not row.get("skipped")}
+    assert audited == {"alpha", "beta"}, payload
+    assert any(row.get("skipped") for row in payload), (
+        "a store that could not be audited must appear in the output")
+    assert any("gamma" in json.dumps(row) for row in payload)
