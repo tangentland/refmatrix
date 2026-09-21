@@ -273,7 +273,9 @@ def test_ingest_session_writes_card_file(tmp_path):
     parent.mkdir()
     src = _write_jsonl(parent, [_user_text("q"), _assistant_text("a")], "s9.jsonl")
     dest = tmp_path / ".refmatrix" / "sessions"
-    out, data = ingest_session(src, dest)
+    # 3-tuple since bug-057: the third value is the raw-transcript link
+    # status — protecting the source is part of ingesting it.
+    out, data, link_status = ingest_session(src, dest)
     assert out.exists()
     assert out.parent == dest
     assert out.name == "s9.md"
