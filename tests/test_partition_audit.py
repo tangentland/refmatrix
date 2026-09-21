@@ -337,3 +337,131 @@ def test_fleet_mode_audits_every_live_root_and_REPORTS_the_skipped(tmp_path, mon
     assert any(row.get("skipped") for row in payload), (
         "a store that could not be audited must appear in the output")
     assert any("gamma" in json.dumps(row) for row in payload)
+
+
+def test_one_unreachable_store_does_not_kill_the_fleet_audit(tmp_path, monkeypatch):
+    """A daemon that times out (busy with an ingest, holding the store lock)
+    raised straight out of the command and killed the whole fan-out on the live
+    fleet. One store must not take the audit down: it is recorded as an error
+    row and the others are still audited."""
+    from click.testing import CliRunner
+
+    from refmatrix import cli as cli_mod
+    from refmatrix.store import Store
+
+    root = tmp_path / "alpha" / ".refmatrix"
+    root.parent.mkdir()
+    s = Store(root)
+    s.init()
+    s.close()
+    dead = tmp_path / "busy" / ".refmatrix"
+    dead.parent.mkdir(parents=True)
+
+    monkeypatch.setattr("refmatrix.search._live_roots",
+                        lambda: ([str(dead), str(root)], []))
+    # `busy` answers ping and then times out; `alpha` has no daemon at all.
+    monkeypatch.setattr("refmatrix.daemon.ping",
+                        lambda r, *a, **k: str(r) == str(dead))
+
+    def _boom(*a, **k):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr("refmatrix.daemon.call", _boom)
+
+    res = CliRunner().invoke(cli_mod.main, ["partition", "audit", "--fleet", "--json"])
+    payload = json.loads(res.output)
+    errored = [r for r in payload if r.get("error")]
+    audited = [r for r in payload if r.get("shape")]
+    assert errored and "timed out" in errored[0]["error"].lower(), payload
+    assert [r["store"] for r in audited] == ["alpha"], payload
+
+
+# ---- dropping an orphan registration (ADR-0003 remediation) ---------------
+
+def _store_with(tmp_path, extra=()):
+    from refmatrix.store import Store
+
+    root = tmp_path / "proj" / ".refmatrix"
+    root.parent.mkdir(exist_ok=True)
+    s = Store(root)
+    s.init()
+    for name in extra:
+        with s.with_partition(name):
+            pass
+    s.close()
+    return root
+
+
+def test_dropping_an_empty_orphan_removes_the_registration(tmp_path, monkeypatch):
+    """The audit's remedy for five of the fleet's six orphans. It must exist:
+    an audit that prescribes a repair the product cannot perform sends the
+    operator to hand-edit a live catalog."""
+    from click.testing import CliRunner
+
+    from refmatrix import cli as cli_mod
+
+    root = _store_with(tmp_path, extra=["leaked"])
+    monkeypatch.setattr(cli_mod, "_root", lambda *a, **k: root)
+    monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
+
+    res = CliRunner().invoke(cli_mod.main, ["partition", "drop", "leaked", "-y"])
+    assert res.exit_code == 0, res.output
+
+    res = CliRunner().invoke(cli_mod.main, ["partition", "list"])
+    assert "leaked" not in res.output, res.output
+
+
+def test_dropping_a_partition_that_holds_rows_is_REFUSED(tmp_path, monkeypatch):
+    """Data loss by audit remedy is the failure mode here. A partition with
+    rows is a merge decision, never a drop."""
+    from click.testing import CliRunner
+
+    from refmatrix import cli as cli_mod
+    from refmatrix.store import Store
+
+    root = _store_with(tmp_path, extra=["holds-data"])
+    s = Store(root)
+    with s.with_partition("holds-data"):
+        s.upsert_entity(kind="doc", name="a-doc", path="/tmp/a-doc.md")
+    s.close()
+
+    monkeypatch.setattr(cli_mod, "_root", lambda *a, **k: root)
+    monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
+
+    res = CliRunner().invoke(cli_mod.main, ["partition", "drop", "holds-data", "-y"])
+    assert res.exit_code != 0
+    assert "row" in res.output.lower(), res.output
+    res = CliRunner().invoke(cli_mod.main, ["partition", "list"])
+    assert "holds-data" in res.output
+
+
+def test_dropping_the_ACTIVE_partition_is_refused(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+
+    from refmatrix import cli as cli_mod
+
+    root = _store_with(tmp_path)
+    monkeypatch.setattr(cli_mod, "_root", lambda *a, **k: root)
+    monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
+
+    res = CliRunner().invoke(cli_mod.main, ["partition", "drop", "proj", "-y"])
+    assert res.exit_code != 0
+    assert "active" in res.output.lower(), res.output
+
+
+def test_dropping_a_partition_with_vectors_on_disk_is_refused(tmp_path, monkeypatch):
+    """Vectors are the second catalog. Dropping the registration while the
+    Lance dataset stays would MANUFACTURE an orphan-vectors finding — the audit
+    creating the drift it reports."""
+    from click.testing import CliRunner
+
+    from refmatrix import cli as cli_mod
+
+    root = _store_with(tmp_path, extra=["has-vectors"])
+    (root / "vectors" / "has-vectors").mkdir(parents=True)
+    monkeypatch.setattr(cli_mod, "_root", lambda *a, **k: root)
+    monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
+
+    res = CliRunner().invoke(cli_mod.main, ["partition", "drop", "has-vectors", "-y"])
+    assert res.exit_code != 0
+    assert "vector" in res.output.lower(), res.output

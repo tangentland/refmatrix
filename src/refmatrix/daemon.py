@@ -4103,6 +4103,41 @@ def _op_partition_audit(d: Daemon, args: dict) -> dict:
     return out
 
 
+def _op_partition_drop(d: Daemon, args: dict) -> dict:
+    """Drop an EMPTY partition registration (ADR-0003 remediation).
+
+    The fleet carries six zero-row registrations — one of them a test fixture
+    name in a live catalog — and the audit's remedy for them was a repair the
+    product could not perform, which sends an operator to hand-edit a catalog
+    the daemon owns.
+
+    Three refusals, because a remedy that can lose data is worse than the drift:
+    a partition holding ROWS is a merge decision; the ACTIVE partition is where
+    writes are going; and one with VECTORS on disk would leave a Lance dataset
+    behind — the audit manufacturing the orphan-vectors finding it reports.
+    """
+    name = args["name"]
+    with d._store_lock:
+        s = d._st()
+        con = s._connect()
+        if name == s.partition_name:
+            return {"dropped": False, "reason": "refused: that is the ACTIVE partition"}
+        row = con.execute("SELECT id FROM partitions WHERE name = ?", [name]).fetchone()
+        if row is None:
+            return {"dropped": False, "reason": f"no partition named {name!r}"}
+        n = con.execute("SELECT COUNT(*) AS n FROM entities WHERE partition_id = ?",
+                        [row["id"]]).fetchone()["n"]
+        if n:
+            return {"dropped": False,
+                    "reason": f"refused: holds {n} rows — merge it, do not drop it"}
+        if (Path(d.root) / "vectors" / name).is_dir():
+            return {"dropped": False,
+                    "reason": f"refused: vectors/{name} exists on disk; remove the "
+                              "Lance dataset first or the drop creates an orphan"}
+        con.execute("DELETE FROM partitions WHERE id = ?", [row["id"]])
+    return {"dropped": True, "name": name}
+
+
 def _op_partition_list(d: Daemon, args: dict) -> dict:
     """List all partitions in the catalog. Routed through the daemon so
     `rmx partition list` doesn't try to grab the catalog lock the daemon
@@ -5750,6 +5785,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "list_saved_queries": _op_list_saved_queries,
     "partition_add": _op_partition_add,
     "partition_audit": _op_partition_audit,
+    "partition_drop": _op_partition_drop,
     "partition_list": _op_partition_list,
     "partition_rename": _op_partition_rename,
     "partition_merge": _op_partition_merge,

@@ -3809,6 +3809,62 @@ def partition():
     """Inspect and manage named partitions inside the active refmatrix."""
 
 
+@partition.command("drop")
+@click.argument("name")
+@click.option("-y", "--yes", is_flag=True, help="Skip the confirmation.")
+def partition_drop(name: str, yes: bool):
+    """Drop an EMPTY partition registration (ADR-0003 remediation).
+
+    Refuses a partition that holds rows (merge it instead), the active
+    partition, and one with a Lance dataset still on disk.
+    """
+    from refmatrix import daemon as daemon_mod
+
+    root = _root()
+    if not yes:
+        click.confirm(f"drop partition registration {name!r} in {root}?", abort=True)
+
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "partition_drop", {"name": name},
+                               timeout=30.0, retries=0)
+        if not resp.get("ok"):
+            raise click.ClickException(resp.get("error", "daemon error"))
+        out = resp["result"]
+    else:
+        from refmatrix.store import Store as _Store
+        s = _Store(root)
+        try:
+            con = s._connect()
+            if name == s.partition_name:
+                out = {"dropped": False, "reason": "refused: that is the ACTIVE partition"}
+            else:
+                row = con.execute("SELECT id FROM partitions WHERE name = ?",
+                                  [name]).fetchone()
+                if row is None:
+                    out = {"dropped": False, "reason": f"no partition named {name!r}"}
+                else:
+                    n = con.execute("SELECT COUNT(*) AS n FROM entities "
+                                    "WHERE partition_id = ?", [row["id"]]).fetchone()["n"]
+                    if n:
+                        out = {"dropped": False,
+                               "reason": f"refused: holds {n} rows — merge it, do not drop it"}
+                    elif (root / "vectors" / name).is_dir():
+                        out = {"dropped": False,
+                               "reason": f"refused: vectors/{name} exists on disk; remove "
+                                         "the Lance dataset first or the drop creates an orphan"}
+                    else:
+                        con.execute("DELETE FROM partitions WHERE id = ?", [row["id"]])
+                        out = {"dropped": True, "name": name}
+        finally:
+            s.close()
+
+    if out.get("dropped"):
+        console.print(f"[green]dropped partition registration {name!r}[/]")
+        return
+    console.print(f"[yellow]{out.get('reason', 'not dropped')}[/]")
+    raise SystemExit(1)
+
+
 @partition.command("audit")
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable findings.")
 @click.option("--fleet", is_flag=True,
@@ -3848,9 +3904,21 @@ def partition_audit(as_json: bool, fleet: bool):
                         "skipped": entry.get("reason", "unknown")})
     for root in roots:
         if daemon_mod.ping(root):
-            resp = daemon_mod.call(root, "partition_audit", {}, retries=0)
+            # A daemon busy with an ingest holds `_store_lock` and this op waits
+            # on it. One unreachable store must not kill the fan-out — it is an
+            # error ROW, and the remaining stores are still audited.
+            try:
+                resp = daemon_mod.call(root, "partition_audit", {},
+                                       timeout=30.0, retries=0)
+            except Exception as exc:                   # noqa: BLE001
+                results.append({"root": str(root),
+                                "store": discovery.store_name(root),
+                                "error": f"{type(exc).__name__}: {exc}"})
+                continue
             if not resp.get("ok"):
-                results.append({"root": str(root), "error": resp.get("error", "daemon error")})
+                results.append({"root": str(root),
+                                "store": discovery.store_name(root),
+                                "error": resp.get("error", "daemon error")})
                 continue
             results.append(resp["result"])
             continue
