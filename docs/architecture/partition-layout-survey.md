@@ -124,3 +124,39 @@ favourable one — see [[task-13.0-two-partition-kill-shot#reencode]], which mea
 4. **Decide the session question once**: either every project store carries `sessions-<project>`
    and it is embedded, or none does and `rmx session recall` is symbolic by design. Today it is
    four different answers, and plan-13's session leg cannot be specified until it is one.
+
+## Remediation, 2026-09-20 (0.72.6) {#remediation}
+
+Run with `rmx partition audit --fleet` + `rmx partition drop`, after both shipped. Every step was
+backed up first. {#remediation-lead}
+
+| action | result |
+|---|---|
+| global store code/doc rows dumped | 134 rows (14 code, 120 doc) — **all `$HOME`-crawl leftovers**, every source file still on disk; backed up to `~/.refmatrix-backups/2026-09-20/global-code-doc-rows.json`. Global is now `memory 200 + concept 62776` |
+| orphan registrations dropped | 6 of 6 — `tholley`, `local`, `global`×2, `test_session_list_shows_ingest0`, `memory-viascope` |
+| orphan vector directories removed | 4 dirs, **143MB** reclaimed; moved to a backup, dense recall verified on viascope and orderly, then deleted |
+| `orderly` embedded | `embedded=4828` — its dense half had never existed |
+| fleet shape | **5 of 8 canonical** (global, refmatrix, cliquedb, cliquet, viascope) |
+
+**The drop guard earned itself on the first run.** `memory-viascope` was REFUSED because
+`vectors/memory-viascope` still existed on disk — dropping the registration would have manufactured
+the orphan-vectors finding the audit reports. Moving the vectors first, then dropping, is the
+correct order and the tool enforced it rather than trusting the operator to remember.
+
+**21 of the dumped doc rows are other projects' memory-dir `.md` files ingested as `doc` instead of
+`memory`.** The disk files are untouched; they should return through the memory bridge as
+`kind=memory`. {#remediation-memory-rows}
+
+## The ADR is wrong about one thing, found by remediating {#missing-sessions-severity}
+
+`thiquet`, `atldb` and `orderly` still read `drift` for `missing-sessions`, and **it cannot be
+fixed**: their `~/.claude/projects/` transcript directories exist and hold **zero JSONL files**.
+Those projects have no Claude Code history, so there is nothing to ingest. {#missing-sessions-lead}
+
+A store that reads drift forever for a condition it cannot remedy trains the signal away — which is
+the exact argument [[adr-0003-canonical-partition-layout#deferred-embed]] uses to make
+`sessions-unembedded` an `info`. **Proposed amendment:** `missing-sessions` is `drift` when session
+transcripts EXIST for the project and `info` when they do not. The `gather` side already reads the
+filesystem and can supply `sessions_available`; the pure `audit()` keeps taking facts.
+
+Not applied unilaterally: it changes what "canonical" means, which is the ADR's whole job.
