@@ -5905,7 +5905,11 @@ def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
 @click.option("--kind", "-k", type=click.Choice(["doc", "code"]), default=None,
               help="Restrict to entities of this kind.")
 @click.option("--limit", default=100, type=int,
-              help="Cap the number of result rows (or files in -l mode).")
+              help="Cap the number of result rows (or files in -l mode). "
+                   "0 = no cap. On a drop-in invocation with explicit file "
+                   "paths the cap is OFF unless you pass this flag, because "
+                   "grep returns every match; a truncated set is always "
+                   "reported on stderr.")
 @click.option("--fallback/--no-fallback", default=True,
               help="Fall through to `rg` (then `grep -rn`) when the indexed "
                    "lookup returns zero matches.")
@@ -5917,7 +5921,9 @@ def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
                    "Lock-free; default ON when the replica file exists. "
                    "Learning still works: fallback hits are brokered to "
                    "the daemon writer as a fire-and-forget RPC.")
-def grep(argv, regex, flags, linkage, kind, limit, fallback, learn, via_replica):
+@click.pass_context
+def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
+         learn, via_replica):
     """Index-backed grep: find concepts whose name matches PATTERN and
     print file:line for every recorded reference. Falls back to `rg` /
     `grep -rn` under the project root when the index has no hits.
@@ -6018,6 +6024,18 @@ def grep(argv, regex, flags, linkage, kind, limit, fallback, learn, via_replica)
         effective_pattern = rf"^{effective_pattern}$"
     from refmatrix import daemon as daemon_mod
     root = _root()
+    # `--limit` means two different things and conflating them is what made a
+    # 500-match read return 100 rows with exit 0 (bug-058). An EXPLICIT flag is
+    # a user instruction and is always honoured; the DEFAULT is an exploration
+    # cap that must not apply to a drop-in read of explicit file paths, where
+    # grep returns everything. 0 disables it either way.
+    #
+    # Resolved HERE, above the replica / daemon / direct fork, because the
+    # replica branch is the DEFAULT path and an earlier fix that resolved this
+    # further down reached only the branch it was written beside.
+    if limit == 0 or (paths and ctx.get_parameter_source("limit")
+                      is not click.core.ParameterSource.COMMANDLINE):
+        limit = None
     via_replica = _should_via_replica(via_replica)
     if via_replica:
         # Read-only replica path. Skip the daemon entirely so a busy
@@ -6137,6 +6155,24 @@ def _grep_delegate(raw_tokens: list, path_strs: list, reasons: list,
     raise SystemExit(res.returncode)
 
 
+def _index_may_answer(paths: list) -> bool:
+    """May the INDEX answer this invocation, or must the files be read?
+
+    `grep PAT file` names its corpus, and grep's contract is to read it. The
+    index holds learned `query/PAT` evidence, which is a DIFFERENT set: it is
+    whatever past lookups happened to teach, duplicated once per learning run,
+    rendered as `path:line  [mentions]  query/PAT`. Measured on a 500-match
+    file against a store that had learned the pattern: 1000 rows, each line up
+    to 3x, covering ~100 of the 500 lines (bug-058). That is the real cause of
+    "line numbers that did not correspond to the file".
+
+    So the index answers exploration (`rmx grep PATTERN`, no paths) and never a
+    drop-in read. Learning still happens either way — the hits are brokered to
+    the daemon after the real tool answers.
+    """
+    return not paths
+
+
 def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
                       learn_broker=None):
     """Run `rg` then `grep -rn` as a fallback when the index returns
@@ -6205,19 +6241,45 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
                err=True)
     prefix = ""
     shown = 0
-    if gf["files_only"] or gf["files_without_match"] or gf["count"]:
-        for raw in res.stdout.splitlines():
-            if shown >= limit:
+    produced = res.stdout.splitlines()
+
+    # `grep PAT file` is a DROP-IN invocation and grep returns every match. The
+    # default cap exists for index-style exploration, never for a file read:
+    # a peer session piped a 391-line SQL file to `tail -5` and got lines
+    # 101-105, because output stopped at the cap with exit 0 and nothing on
+    # stderr. A short read that looks successful is the worst failure shape
+    # this project has (bug-058).
+    effective_limit = limit          # already resolved by the caller; None = uncapped
+
+    def _emit(rows: list) -> int:
+        n = 0
+        for raw in rows:
+            if effective_limit is not None and n >= effective_limit:
                 break
             click.echo(prefix + raw)
-            shown += 1
+            n += 1
+        if effective_limit is not None and len(rows) > n:
+            # Never silent: say what was withheld and how to get it.
+            click.echo(
+                f"# rmx grep: TRUNCATED — showing {n} of {len(rows)} matches "
+                f"({len(rows) - n} withheld); pass --limit 0 for all",
+                err=True)
+        return n
+
+    if gf["files_only"] or gf["files_without_match"] or gf["count"]:
+        if gf["count"] and len(paths) == 1:
+            # Real grep prints a BARE count for a single file and prefixes the
+            # path only for several, so `n=$(grep -c PAT f)` is a number. The
+            # shim prefixed always, which yielded `/path/f:1` and broke every
+            # arithmetic use of it (verified against grep by direct exec).
+            produced = [raw.rsplit(":", 1)[-1] if ":" in raw else raw
+                        for raw in produced]
+        shown = _emit(produced)
         _tlog.cardinality = shown
         return
     fb_hits: list[dict] = []
-    for raw in res.stdout.splitlines():
-        if shown < limit:
-            click.echo(prefix + raw)
-            shown += 1
+    shown = _emit(produced)
+    for raw in produced:
         parts = raw.split(":", 2)
         if len(parts) >= 2:
             try:
@@ -6241,6 +6303,11 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
     fire-and-forget write — the replica default no longer means the graph
     learns nothing (which made the always-on learning grep a no-op)."""
     rows: list[dict] = []
+    # Drop-in read: the named files are the corpus, not the learned index.
+    # SIBLING of the same rule in `_grep_run` — this is the REPLICA path and
+    # therefore the DEFAULT one, which is why an earlier version of this fix
+    # that touched only `_grep_run` changed nothing in practice.
+    skip_index = not _index_may_answer(paths)
     like = f"%{effective_pattern}%"
     sql = (
         "SELECT e.path, e.name, ev.line, lt.name, c.name "
@@ -6260,7 +6327,8 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
         params.append(kind)
     sql += "ORDER BY e.path, ev.line LIMIT ?"
     params.append(limit)
-    for r in s._connect().execute(sql, params).fetchall():
+    for r in ([] if skip_index
+              else s._connect().execute(sql, params).fetchall()):
         rows.append({"path": r[0], "entity": r[1], "line": r[2],
                      "linkage": r[3], "concept": r[4]})
 
@@ -6299,7 +6367,9 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
 def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
               linkage, kind, limit, fallback, learn, gf, paths, _tlog):
     rows: list[dict] = []
-    if daemon_mod.ping(root):
+    if not _index_may_answer(paths):
+        rows = []                     # drop-in read: the FILE is the corpus
+    elif daemon_mod.ping(root):
         resp = daemon_mod.call(root, "grep_indexed", {
             "pattern": effective_pattern, "regex": regex,
             "linkage": linkage, "kind": kind, "limit": limit,
@@ -6405,25 +6475,41 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
     click.echo(f"# rmx grep fallback via {'rg' if tool.endswith('/rg') else 'grep'}",
                err=True)
     prefix = ""
+    produced = res.stdout.splitlines()
+
+    # SIBLING of the identical block in `_grep_rg_fallback`. Both render the
+    # real tool's output and both had the same two contract breaks (bug-058);
+    # fixing only the one a report quotes is the shape this ledger keeps
+    # filing, so they are fixed together and tested through BOTH entry points.
+    def _emit(rows: list) -> int:
+        n = 0
+        for raw in rows:
+            if limit is not None and n >= limit:
+                break
+            click.echo(prefix + raw)
+            n += 1
+        if limit is not None and len(rows) > n:
+            click.echo(
+                f"# rmx grep: TRUNCATED — showing {n} of {len(rows)} matches "
+                f"({len(rows) - n} withheld); pass --limit 0 for all",
+                err=True)
+        return n
+
     # In -l (files-only) / -L (files-without-match) mode tool emits bare
     # paths; in -c (count) mode it emits `path:N`. Skip the line-number
     # parsing for those.
     if gf["files_only"] or gf["files_without_match"] or gf["count"]:
-        shown = 0
-        for raw in res.stdout.splitlines():
-            if shown >= limit:
-                break
-            click.echo(prefix + raw)
-            shown += 1
-        _tlog.cardinality = shown
+        if gf["count"] and len(paths) == 1:
+            # Real grep prints a bare count for ONE file; the path prefix
+            # appears only with several. `n=$(grep -c PAT f)` must be a number.
+            produced = [raw.rsplit(":", 1)[-1] if ":" in raw else raw
+                        for raw in produced]
+        _tlog.cardinality = _emit(produced)
         return
     # Default rendering: rg --no-heading / grep -H emit `path:line:rest`.
     parsed_hits: list[dict] = []
-    shown = 0
-    for raw in res.stdout.splitlines():
-        if shown < limit:
-            click.echo(prefix + raw)
-            shown += 1
+    _emit(produced)
+    for raw in produced:
         parts = raw.split(":", 2)
         if len(parts) >= 2:
             try:
