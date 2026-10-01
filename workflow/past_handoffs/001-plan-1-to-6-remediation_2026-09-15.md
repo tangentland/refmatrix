@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: handoff
+id: handoff-001-plan-1-to-6-remediation
 title: "Session Handoff for refmatrix"
 tags: [handoff, session]
 metadata:

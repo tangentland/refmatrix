@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: handoff
+id: handoff-004-grep-contract-bus-retention
 title: "Session Handoff for refmatrix"
 tags: [handoff, session]
 metadata:

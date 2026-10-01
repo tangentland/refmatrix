@@ -96,3 +96,26 @@ orderly launchd service spawned 11,251 times behind a manual unsupervised daemon
 TDD per [[tdd-governance]]: RED test recorded to `workflow/review-output/` before GREEN; mutation check on every new test;
 implementation summary per task under `workflow/implementation_summaries/`; then `@ch-bsd` over the plan's commit range —
 remedy and re-review until the verdict is CLEAN; then the plan's `metadata.status` → `completed`.
+
+## Status re-verification 2026-10-01 {#status-2026-10-01}
+
+`in-progress` is CORRECT, not stale bookkeeping. The question was asked because
+plan-12 closed several bugs in this area; it did not close this plan's round-4
+verdict. Each finding below was re-checked against `master` at `0714a11`, in
+code, today — not read off the report.
+
+rel: depends-on -> [[bug_registry#registry]]
+
+| r4 finding | State | Evidence |
+|---|---|---|
+| #b-1 hub plist has no `rmx=` / refusal / `check_hub` | **CLOSED** | bug-028, `7db2e38`. `render_hub_plist(*, port, host, rmx=None, allow_dev=False)` calls `_refuse_dev_tree`; `check_hub` exists; `hub launchctl install` gained `--check` / `--allow-dev` |
+| #s-2 `binary_identity` says an unknown binary is not a dev tree | **OPEN** | the guard is still `if ident.get("dev_tree"):` at `launchctl.py:139`, `:549`, `:715` — `None` is falsy, so an old or unreadable binary still passes. One-line fix is still `is not False` |
+| #s-3 one stop grace reaches 3 of 7 stop paths | **OPEN** | `daemon.py:6190` still reads `def stop_daemon(root, *, timeout: float = 5.0,` — the default nobody changed |
+| #s-4 tests append to the LIVE `~/.refmatrix/hub.log` | **OPEN, and worse** | the live log now carries **104** lines naming a `/tmp/rmxp4-…` root and **50** naming `/nowhere`, against 43 total at the r4 audit. bug-023's family |
+| #m-5 `install`'s `allow_dev` unreachable from any command | **OPEN for the daemon plists** | `allow_dev` is reachable now only via `hub_launchctl_install` (cli.py:2605). The daemon-side `install(..., allow_dev=)` still has no caller that passes it, and the refusal message still tells the operator to use it |
+| #m-6 the session-indexer label carries launchd's 5 s | **OPEN** | `session_launchctl.py` contains **0** occurrences of `ExitTimeOut` |
+
+Three of these are one-liners (#s-2, #s-3, #m-6). #s-4 is the one worth doing
+first: it is actively growing, and `hub.log` is the surface r3 used to prove the
+watchdog's behaviour — a log 154 lines of which are tests cannot serve as
+evidence for the next incident.

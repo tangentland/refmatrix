@@ -74,9 +74,19 @@ shim and cannot serve as a control.
   produced a 0-byte file containing repo matches. Not reproducible here; has the
   pre-0.65.1 stdin-race signature. Both peers asked for a deterministic repro
   plus `rmx version -v`.
-- **plan-2 and plan-4 still read `in-progress`** in plan-of-plans while plan-12
-  closed their round-4/round-9 findings. Unverified whether that is stale
-  bookkeeping or real remaining scope — worth one pass before trusting either.
+- **plan-2 and plan-4 are correctly `in-progress`** — re-verified in code
+  2026-10-01, not stale bookkeeping. plan-12 closed each plan's #b-1 (bug-025,
+  bug-028) and nothing else. Outstanding, with evidence, in
+  [[plan-4-daemon-resilience#status-2026-10-01]] and
+  [[plan-2-hooks-reproducible#status-2026-10-01]]:
+  - plan-4: #s-2 `binary_identity`'s falsy guard (3 sites), #s-3 `stop_daemon`
+    still defaults to 5.0 s, #s-4 tests writing the live `hub.log` (**worse**:
+    154 lines now vs 43 at the audit), #m-5 daemon-side `allow_dev` unreachable,
+    #m-6 session-indexer plist has no `ExitTimeOut`. Three are one-liners.
+  - plan-2: #s-2 no reserved slice for the global leg, #s-3 the replica-first
+    partition probe is unscoped so a WRITE can resolve off a lagging snapshot
+    (the split-brain family — do this one first), #m-4 the degrade line names
+    the 1.5 s slice as the budget.
 - MEMORY.md is generated under a cap now (bug-042); it is not hand-edited.
 
 ## Stale context, and what it cost {#stale-context}

@@ -122,3 +122,24 @@ not answering): busy retries the ping for `RMX_DETACH_WAIT_S` (10 s) and then fa
 TDD per [[tdd-governance]]: RED test recorded to `workflow/review-output/` before GREEN; mutation check on every new test;
 implementation summary per task under `workflow/implementation_summaries/`; then `@ch-bsd` over the plan's commit range —
 remedy and re-review until the verdict is CLEAN; then the plan's `metadata.status` → `completed`.
+
+## Status re-verification 2026-10-01 {#status-2026-10-01}
+
+`in-progress` is CORRECT. Round 9's verdict was DIRTY and no later round cleared
+it; plan-12 closed its #b-1 but not the rest. Re-checked against `master` at
+`0714a11` in code today.
+
+rel: depends-on -> [[bug_registry#registry]]
+
+| r9 finding | State | Evidence |
+|---|---|---|
+| #b-1 the rerank leg is dead as deployed | **CLOSED** | bug-025, plan-12 task 12.2 (G13). Worker reports `cost_s_per_doc` + `queue_depth`, `estimate_rerank_s` in one place, deadline dropped at dequeue. Acceptance measured 20/20 rows reranked after the 0.72.0 deploy |
+| #m-5 the `rerank_available` patch was unregistered | **CLOSED** | present in `workflow/test_mock_registry.md` |
+| #s-2 the rerank eats the global leg's budget, then blames a healthy global daemon | **OPEN** | nothing reserves a slice for the global leg; `cli.py:10934` still just warns `global rows omitted: …` after the fact |
+| #s-3 the replica-first probe was applied to EVERY caller, so a WRITE resolves its partition off the lagging snapshot | **OPEN** | `verbs.memory_partition` reads `cached_replica` unconditionally at `verbs.py:246`, before the `timeout is not None` test at `:254` — that test scopes `require_daemon`'s retries, not the replica read. The proposed one-line scoping was never applied to the probe itself |
+| #m-4 the degrade line reports the 1.5 s daemon slice as the budget, then prints rows | **OPEN** | `RECALL_DAEMON_SLICE_S` is still applied at `cli.py:10984` with no corresponding correction to what the degrade line names |
+
+#s-3 is the one with teeth: it is a write path resolving its target partition
+from a snapshot that may lag, which is the split-brain family
+(`project_embed_partition_routing_fix`, and the 0.21.1 / 0.25.x / 2026-09-06
+recurrences).
