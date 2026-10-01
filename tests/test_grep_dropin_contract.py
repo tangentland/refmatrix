@@ -92,15 +92,25 @@ def test_count_of_multiple_files_keeps_the_path_prefix(tmp_path, no_daemon, monk
     assert any(l.endswith(":1") for l in out) and any(l.endswith(":2") for l in out), out
 
 
-def test_a_single_file_match_list_still_carries_file_and_line(tmp_path, no_daemon, monkeypatch):
-    """The -c fix must not strip the prefix from ordinary match output, which
-    IS `path:line:text` under -H/-n and is what makes hits clickable."""
+def test_provenance_on_a_named_read_is_opt_in_via_n_and_H(tmp_path, no_daemon, monkeypatch):
+    """The `-c` fix must not strip the prefix from output that ASKED for it.
+
+    Renamed and re-aimed: the original required `path:line:text` from a BARE
+    read, which grep does not print for one named file. The property worth
+    holding is that `-n` and `-H` still work and still compose -- that is what
+    keeps hits clickable for anyone who wants them."""
     f = _write(tmp_path, "t.txt", ["a", "ERROR x"])
     monkeypatch.chdir(tmp_path)
 
-    res = CliRunner().invoke(cli_mod.main, ["grep", "ERROR", str(f)])
-    line = next(l for l in res.stdout.splitlines() if "ERROR" in l)
-    assert line.startswith(str(f)), line
+    bare = CliRunner().invoke(cli_mod.main, ["grep", "ERROR", str(f)])
+    assert [l for l in bare.stdout.splitlines() if l.strip()] == ["ERROR x"], bare.stdout
+
+    numbered = CliRunner().invoke(cli_mod.main, ["grep", "-n", "ERROR", str(f)])
+    assert [l for l in numbered.stdout.splitlines() if l.strip()] == ["2:ERROR x"], numbered.stdout
+
+    full = CliRunner().invoke(cli_mod.main, ["grep", "-nH", "ERROR", str(f)])
+    line = next(l for l in full.stdout.splitlines() if "ERROR" in l)
+    assert line.startswith(str(f)) and ":2:" in line, line
 
 
 # ---- explicit file paths mean READ THAT FILE ------------------------------
@@ -125,9 +135,12 @@ def test_explicit_paths_read_the_FILE_not_the_index(tmp_path, no_daemon, monkeyp
     assert len(body) == 2, body
     assert all("[mentions]" not in l for l in body), (
         f"index rows leaked into a drop-in read: {body}")
-    assert body[0].endswith("alpha ERROR") and body[1].endswith("gamma ERROR"), body
-    # file order, real line numbers
-    assert ":1:" in body[0] and ":3:" in body[1], body
+    # Real grep prints BARE lines for ONE named file -- `grep ERROR t.txt` ->
+    # "alpha ERROR\ngamma ERROR" by direct exec, and ripgrep agrees. This
+    # assertion used to require `:1:` / `:3:`, i.e. the SHIM's `file:line:text`,
+    # which is itself the divergence this file's docstring is about. Provenance
+    # is opt-in via -n/-H, asserted in the test above.
+    assert body == ["alpha ERROR", "gamma ERROR"], body
 
 
 def test_the_index_answers_exploration_and_never_a_drop_in_read():

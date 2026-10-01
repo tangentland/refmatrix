@@ -5368,14 +5368,18 @@ def _parse_grep_flags(s: str | None) -> dict:
         "invert": False, "word": False, "force_substring": False,
         "force_regex": False, "files_without_match": False,
         "whole_line": False,
-        # Pipe-mode (stdin) rendering knobs. Ignored on the indexed path,
-        # which always renders path:line over the whole index.
+        # Output-shaping knobs. NOT pipe-only: a named-file read is a drop-in
+        # read and honours them too (bug-060). `_resolve_output_shape` turns
+        # these into the one shape every render path consults.
         "line_number": False, "with_filename": None, "quiet": False,
         "only_matching": False, "max_count": None, "after": 0, "before": 0,
     }
     if not s:
         return f
-    valid = "irIRnLlcvwFEH"
+    # Every letter the argv parser honours. `h`/`o` were missing while legal
+    # in argv, so `--flags '-o'` raised "unknown letter" for a flag the same
+    # command accepted positionally (bug-060).
+    valid = "irIRnLlcvwFEHho"
     for chunk in s.split():
         if not chunk.startswith("-") or len(chunk) < 2:
             raise click.UsageError(
@@ -5400,6 +5404,14 @@ def _parse_grep_flags(s: str | None) -> dict:
                 f["invert"] = True
             elif ch == "w":
                 f["word"] = True
+            elif ch == "o":
+                f["only_matching"] = True
+            elif ch == "h":
+                f["with_filename"] = False
+            elif ch == "H":
+                f["with_filename"] = True
+            elif ch == "n":
+                f["line_number"] = True
             elif ch == "F":
                 f["force_substring"] = True
             elif ch == "E":
@@ -5430,9 +5442,9 @@ _GREP_FORMAT_LONG = {"--color", "--colour", "--no-heading", "--heading",
                      "--line-number", "--no-line-number", "--with-filename",
                      "--no-filename", "--only-matching", "--recursive",
                      "--no-messages", "--binary-files", "--null"}
-# Rendering flags that are NOT formatting noise once rmx grep is filtering a
-# pipe: there it stands in for grep byte-for-byte, so `-n` must number lines
-# and `-h` must strip the filename. Honored only under stdin_mode.
+# Output-shaping flags. rmx grep stands in for grep byte-for-byte on a pipe AND
+# on a named-file read, so these are honoured in both — gating them on
+# `stdin_mode` is what made `-o` a dead flag on a file read (bug-060).
 _GREP_STDIN_SHORT = {
     "n": lambda gf: gf.__setitem__("line_number", True),
     "H": lambda gf: gf.__setitem__("with_filename", True),
@@ -5551,7 +5563,7 @@ def _grep_bare_flags(flag_tokens: list, gf: dict, stdin_mode: bool = False) -> t
             continue
         if base.startswith("--"):
             if base in _GREP_FORMAT_LONG:
-                if stdin_mode and base in _GREP_STDIN_LONG:
+                if base in _GREP_STDIN_LONG:
                     _GREP_STDIN_LONG[base](gf); continue
                 ignored.append(tok); continue
             if base in ("--quiet", "--silent"):
@@ -5602,7 +5614,7 @@ def _grep_bare_flags(flag_tokens: list, gf: dict, stdin_mode: bool = False) -> t
             elif ch == "E": gf["force_regex"] = True
             elif ch == "x": gf["whole_line"] = True
             elif ch == "q" and stdin_mode: gf["quiet"] = True
-            elif stdin_mode and ch in _GREP_STDIN_SHORT:
+            elif ch in _GREP_STDIN_SHORT:
                 _GREP_STDIN_SHORT[ch](gf)
             elif ch in _GREP_FORMAT_FLAGS:
                 ignored.append(f"-{ch}")
@@ -5894,7 +5906,10 @@ def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
     return out
 
 
-@main.command(context_settings={"ignore_unknown_options": True})
+@main.command(context_settings={"ignore_unknown_options": True,
+                                # grep's -h is "no filename"; click claimed
+                                # it as --help, so it never reached the parser.
+                                "help_option_names": ["--help"]})
 @click.argument("argv", nargs=-1, type=click.UNPROCESSED)
 @click.option("--regex/--substring", default=False,
               help="Treat PATTERN as a regex matched against concept names. "
@@ -6173,6 +6188,33 @@ def _index_may_answer(paths: list) -> bool:
     return not paths
 
 
+def _resolve_output_shape(gf: dict, paths: list) -> dict:
+    """THE output shape of a drop-in read, decided ONCE for every render path.
+
+    Four defects came from deciding it per path instead: bug-058 (truncation and
+    the `-c` prefix), bug-059 (the same `-c` prefix surviving in a second copy of
+    the fallback), bug-060 (`-o` honoured only in `_grep_stdin`). Each was
+    correct on the one path its author exercised.
+
+    grep's contract, mirrored here and pinned to real-grep controls in
+    tests/test_grep_output_shape.py:
+      * the filename prefix appears for 2+ targets or a directory walk, never
+        for one named file; `-H` / `-h` override either way.
+      * `-n` adds line numbers; without it there are none.
+      * `-c` prints a bare count for one target, `file:count` for several.
+    """
+    multi = (len(paths) != 1) or any(p.is_dir() for p in paths)
+    with_filename = gf["with_filename"]
+    if with_filename is None:
+        with_filename = multi
+    return {
+        "with_filename": bool(with_filename),
+        "line_number": bool(gf["line_number"]),
+        "only_matching": bool(gf["only_matching"]),
+        "count": bool(gf["count"]),
+    }
+
+
 def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
                       learn_broker=None):
     """Run `rg` then `grep -rn` as a fallback when the index returns
@@ -6187,19 +6229,27 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
     import subprocess
 
     targets = [str(p) for p in paths] if paths else [str(project_root)]
+    shape = _resolve_output_shape(gf, list(paths))
     tool = shutil.which("rg")
     if tool:
         case_flag = (
             "-i" if gf["ignore_case"] is True
             else ("-s" if gf["ignore_case"] is False else "-S")
         )
+        # ALWAYS -nH. The tool's output is the CANONICAL `file:line:text` this
+        # function parses — for the learn broker AND for reshaping below. The
+        # caller's shape is applied at render time; asking the TOOL for a
+        # different layout is what produced the prefix nobody could switch off
+        # (`-c` handed through gave `file:1`, bug-059).
         cmd = ["rg", "-nH", case_flag, "--no-heading"]
         if gf["word"]:
             cmd.append("-w")
         if gf["invert"]:
             cmd.append("-v")
-        if gf["count"]:
-            cmd.append("-c")
+        if shape["only_matching"] and not shape["count"]:
+            # The TOOL decides what a match is; with -nH it still emits
+            # `file:line:match`, so learning keeps full fidelity (bug-060).
+            cmd.append("-o")
         if gf["files_only"]:
             cmd.append("-l")
         if gf["files_without_match"]:
@@ -6211,17 +6261,18 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
             raise click.ClickException(
                 "no indexed match and neither rg nor grep on PATH"
             )
-        g_letters = "rH"
-        if not (gf["count"] or gf["files_only"] or gf["files_without_match"]):
-            g_letters += "n"
+        # `rHn` unconditionally, same canonical-form reason. NOTE `r` is itself
+        # a prefix-forcer on BSD grep: `grep -rciF PAT file` prints `file:1` even
+        # with the H removed, so bug-059 was never fixable by dropping `-H`.
+        g_letters = "rHn"
         if gf["ignore_case"] is not False:
             g_letters += "i"
         if gf["word"]:
             g_letters += "w"
         if gf["invert"]:
             g_letters += "v"
-        if gf["count"]:
-            g_letters += "c"
+        if shape["only_matching"] and not shape["count"]:
+            g_letters += "o"
         if gf["files_only"]:
             g_letters += "l"
         if gf["files_without_match"]:
@@ -6231,6 +6282,11 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
     res = subprocess.run(cmd, capture_output=True, text=True)
     if not res.stdout.strip():
         _tlog.cardinality = 0
+        if shape["count"] and not shape["with_filename"]:
+            # `grep -c` prints 0 and exits 1 on no match, and `n=$(grep -c …)`
+            # must still be a number. The count is no longer computed by the
+            # tool, so this branch has to say it.
+            click.echo("0")
         # grep semantics: silent stdout, exit 1. The note goes to stderr so
         # a tty user still learns why nothing printed.
         click.echo("rmx grep: no matches", err=True)
@@ -6266,26 +6322,39 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
                 err=True)
         return n
 
-    if gf["files_only"] or gf["files_without_match"] or gf["count"]:
-        if gf["count"] and len(paths) == 1:
-            # Real grep prints a BARE count for a single file and prefixes the
-            # path only for several, so `n=$(grep -c PAT f)` is a number. The
-            # shim prefixed always, which yielded `/path/f:1` and broke every
-            # arithmetic use of it (verified against grep by direct exec).
-            produced = [raw.rsplit(":", 1)[-1] if ":" in raw else raw
-                        for raw in produced]
-        shown = _emit(produced)
-        _tlog.cardinality = shown
+    if gf["files_only"] or gf["files_without_match"]:
+        # -l / -L emit bare paths: no line, nothing to reshape.
+        _tlog.cardinality = _emit(produced)
         return
-    fb_hits: list[dict] = []
-    shown = _emit(produced)
+
+    # Canonical `file:line:text` -> triples. ONE parse feeds both the render and
+    # the learn broker, so a reshaped view can never cost the graph a hit.
+    triples: list[tuple] = []
     for raw in produced:
         parts = raw.split(":", 2)
-        if len(parts) >= 2:
+        if len(parts) >= 3:
             try:
-                fb_hits.append({"file": parts[0], "line": int(parts[1])})
+                triples.append((parts[0], int(parts[1]), parts[2]))
             except ValueError:
                 pass
+    fb_hits = [{"file": f, "line": n} for f, n, _ in triples]
+
+    def _shaped(f: str, n: int, text: str) -> str:
+        out = f"{f}:" if shape["with_filename"] else ""
+        if shape["line_number"]:
+            out += f"{n}:"
+        return out + text
+
+    if shape["count"]:
+        counts: dict = {}
+        for f, _n, _t in triples:
+            counts[f] = counts.get(f, 0) + 1
+        rendered = [f"{f}:{c}" if shape["with_filename"] else str(c)
+                    for f, c in counts.items()]
+    else:
+        rendered = [_shaped(f, n, t) for f, n, t in triples]
+
+    _emit(rendered)
     _tlog.cardinality = len(fb_hits)
     if learn_broker is not None and fb_hits:
         try:
@@ -6416,120 +6485,28 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
         click.echo("rmx grep: no indexed matches", err=True)
         raise SystemExit(1)
 
-    # Fall through to a real grep. Targets are the given PATHS if any,
-    # otherwise the project root (existing behavior).
-    import shutil
-    import subprocess
-    targets = [str(p) for p in paths] if paths else [str(root.parent)]
-    tool = shutil.which("rg")
-    if tool:
-        # rg: -n line numbers, -H force filenames, --no-heading.
-        # -S smart-case is overridden when --flags forces case.
-        case_flag = (
-            "-i" if gf["ignore_case"] is True
-            else ("-s" if gf["ignore_case"] is False else "-S")
-        )
-        rg_cmd = ["rg", "-nH", case_flag, "--no-heading"]
-        if gf["word"]:
-            rg_cmd.append("-w")
-        if gf["invert"]:
-            rg_cmd.append("-v")
-        if gf["count"]:
-            rg_cmd.append("-c")
-        if gf["files_only"]:
-            rg_cmd.append("-l")
-        if gf["files_without_match"]:
-            # rg uses long form for files-without-match.
-            rg_cmd.append("--files-without-match")
-        rg_cmd += ["--regexp", pattern] + targets
-        cmd = rg_cmd
-    else:
-        tool = shutil.which("grep")
-        if not tool:
-            raise click.ClickException("no indexed match and neither rg nor grep on PATH")
-        # Build grep flags from gf bundle. Always recursive + filename.
-        g_letters = "rH"
-        if not (gf["count"] or gf["files_only"] or gf["files_without_match"]):
-            g_letters += "n"
-        if gf["ignore_case"] is not False:
-            g_letters += "i"
-        if gf["word"]:
-            g_letters += "w"
-        if gf["invert"]:
-            g_letters += "v"
-        if gf["count"]:
-            g_letters += "c"
-        if gf["files_only"]:
-            g_letters += "l"
-        if gf["files_without_match"]:
-            g_letters += "L"
-        g_letters += "E" if regex else "F"
-        cmd = [tool, f"-{g_letters}", pattern] + targets
-    res = subprocess.run(cmd, capture_output=True, text=True)
-    if not res.stdout.strip():
-        _tlog.cardinality = 0
-        click.echo("rmx grep: no matches", err=True)
-        raise SystemExit(1)
-    # Provenance is one stderr line, not a per-line stdout tag: tagging every
-    # hit broke file:line copy-paste and any consumer parsing grep format.
-    click.echo(f"# rmx grep fallback via {'rg' if tool.endswith('/rg') else 'grep'}",
-               err=True)
-    prefix = ""
-    produced = res.stdout.splitlines()
-
-    # SIBLING of the identical block in `_grep_rg_fallback`. Both render the
-    # real tool's output and both had the same two contract breaks (bug-058);
-    # fixing only the one a report quotes is the shape this ledger keeps
-    # filing, so they are fixed together and tested through BOTH entry points.
-    def _emit(rows: list) -> int:
-        n = 0
-        for raw in rows:
-            if limit is not None and n >= limit:
-                break
-            click.echo(prefix + raw)
-            n += 1
-        if limit is not None and len(rows) > n:
-            click.echo(
-                f"# rmx grep: TRUNCATED — showing {n} of {len(rows)} matches "
-                f"({len(rows) - n} withheld); pass --limit 0 for all",
-                err=True)
-        return n
-
-    # In -l (files-only) / -L (files-without-match) mode tool emits bare
-    # paths; in -c (count) mode it emits `path:N`. Skip the line-number
-    # parsing for those.
-    if gf["files_only"] or gf["files_without_match"] or gf["count"]:
-        if gf["count"] and len(paths) == 1:
-            # Real grep prints a bare count for ONE file; the path prefix
-            # appears only with several. `n=$(grep -c PAT f)` must be a number.
-            produced = [raw.rsplit(":", 1)[-1] if ":" in raw else raw
-                        for raw in produced]
-        _tlog.cardinality = _emit(produced)
-        return
-    # Default rendering: rg --no-heading / grep -H emit `path:line:rest`.
-    parsed_hits: list[dict] = []
-    _emit(produced)
-    for raw in produced:
-        parts = raw.split(":", 2)
-        if len(parts) >= 2:
-            try:
-                line_no = int(parts[1])
-            except ValueError:
-                continue
-            parsed_hits.append({"file": parts[0], "line": line_no})
-    _tlog.cardinality = len(parsed_hits)
-
-    if learn and parsed_hits:
-        # Was `timeout=60.0` with daemon.call's default retries=2 -- 180.45 s
-        # worst case, unwrapped, on a read that had already printed its hits
-        # (bug-049). This site WANTS the result (it reports what was learned),
-        # so it asks for it; the budget is the same bounded one.
-        r = _broker_learn_from_grep(root, pattern, parsed_hits, want_result=True)
+    # ONE fallback implementation. This block used to be an inlined copy of
+    # `_grep_rg_fallback` — whose docstring already said it was "extracted from
+    # `_grep_run`", because the extraction happened and the original was never
+    # deleted. bug-058 then patched BOTH copies rather than removing one (its own
+    # comment called them "SIBLING" blocks "fixed together"), so `-c` was fixed
+    # twice and `-o` was missed twice. Duplicating a renderer means every future
+    # flag rule has to be written twice, and will not be.
+    def _report_learned(hits: list) -> None:
+        # The one real difference on this path: it WANTS the learn result so it
+        # can report what was learned. Bounded (bug-049).
+        r = _broker_learn_from_grep(root, pattern, hits, want_result=True)
         if r:
             click.echo(
                 f"# rmx learned: concept '{r['concept']}' "
                 f"({r['added']} file(s)) — future searches hit the index",
                 err=True)
+
+    _grep_rg_fallback(
+        pattern=pattern, regex=regex, gf=gf, limit=limit, paths=paths,
+        _tlog=_tlog, project_root=root.parent,
+        learn_broker=_report_learned if learn else None,
+    )
 
 
 # ---- saved queries --------------------------------------------------------
