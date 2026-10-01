@@ -206,3 +206,26 @@ def test_promote_subtracts_its_partition_probe_from_the_budget(monkeypatch):
             f"the partition probe is not subtracted from the budget")
     finally:
         d.close()
+
+
+def test_locate_names_a_store_whose_replica_is_missing(
+        up_without_replica, monkeypatch):
+    """The THIRD caller of `_replica_bundle`, found by sweeping the callers
+    instead of fixing the two the finding quoted.
+
+    `_locate_one_project` had no reasons channel at all, so a missing replica
+    produced `{}`, `federated_locate` merged nothing, and `rmx locate` printed
+    "no matches" with no skipped line — the r3 #b-2 symptom, fixed at the
+    fan-out level and still live one frame down. Both of its legs are covered:
+    the filename query and the keyword bundle."""
+    monkeypatch.setattr(discovery, "discover_roots",
+                        lambda: [up_without_replica.root])
+    monkeypatch.setattr(search, "_live_roots",
+                        lambda: ([up_without_replica.root], []))
+    out = search.federated_locate(filename="held.md", keywords=["held"])
+    assert out["results"] == [], out
+    reason = " ".join(s.get("reason", "") for s in out["skipped"])
+    assert reason, (
+        "locate dropped an unreadable store silently — its per-project legs "
+        "had no way to report, so the fan-out's skipped list never saw them")
+    assert "replica" in reason.lower() or "failed" in reason.lower(), out["skipped"]

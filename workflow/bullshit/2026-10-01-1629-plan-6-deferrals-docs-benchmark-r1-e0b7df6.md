@@ -373,7 +373,9 @@ been DuckDB by default since 2026-05-16 (`backend.py:45-61`).
 **File:** `workflow/bug_registry.md:110` (bug-054), `.venv-eval` site-path resolution
 
 **What:** bug-054 is recorded `fixed` on the claim that a detached `git worktree` at the sha under test
-reproduces a commit's full-suite result. It does not, for a second reason the fix did not cover, and the
+reproduces a commit's full-suite result. The precise claim, stated no more strongly than the three runs
+below support: **a worktree is unsafe unless the ambient site-packages are restored, and whether that bites
+depends on the selection** — it is not uniformly fatal, which is exactly what makes it dangerous. The
 mechanism is an **ambient environment variable clobbered by assignment**. This shell already exports a
 four-entry `PYTHONPATH`:
 ```
@@ -419,10 +421,37 @@ depends on an exported variable at all — this is the same mixed-ABI hazard
 construction. Until one of these lands, any suite result from a worktree must cite its collected count or be
 treated as void.
 
-One correction to a neighbouring claim, since it was offered as part of this fix: the venv's OWN
-site-packages is not at risk from the assignment. It is added by the `site` module from `pyvenv.cfg`, not by
-`PYTHONPATH` — verified above, where `.venv-eval/lib/python3.14/site-packages` appears in `sys.path` despite
-not being one of the four `PYTHONPATH` entries. Only the three framework dirs are lost.
+**One correction to a neighbouring claim**, since it was twice offered as part of this fix: the venv's OWN
+site-packages is **not** at risk from the assignment, so a recipe does not need to name it. It is added by
+the `site` module from `pyvenv.cfg`, which `PYTHONPATH` cannot remove. On the fully degraded path the venv's
+dir is the ONE entry that survives — it is the only thing that cannot be lost:
+```
+$ PYTHONPATH=<wt>/src .venv-eval/bin/python -c "..."
+1 site-packages entries:
+   /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages
+pytest still resolves -> .../.venv-eval/lib/python3.14/site-packages/pytest/__init__.py
+typing_inspection LOST: No module named 'typing_inspection'
+```
+And re-appending only the THREE framework dirs yields four entries including the venv's, with `pytest` from
+the venv and `refmatrix` from the worktree:
+```
+$ PYTHONPATH=<wt>/src:<3 framework dirs> .venv-eval/bin/python -c "..."
+4 site-packages entries ... venv own site-packages present: True
+pytest     -> .../.venv-eval/lib/python3.14/site-packages/pytest/__init__.py
+refmatrix  -> /private/tmp/rmx6/src/refmatrix/__init__.py
+lance OK, typing_inspection OK
+```
+So the three-dir restore is sufficient, and "you lose the venv's packages" is the wrong diagnosis — if it
+were true, `python -m pytest` could not have started at all, yet run 2 collected 2125 items. What is lost is
+exactly the three framework dirs, and with them `typing_inspection`. **The derived form is still the better
+recipe** — `PYTHONPATH=<wt>/src:$(python -c "import sys;print(':'.join(p for p in sys.path if 'site-packages' in p))")`
+(bsd-plan3-r7) produces the same four entries and survives a venv rebuild or a different machine, so prefer
+it for robustness rather than because the venv is at risk.
+
+**Worth adding to the harness** (bsd-plan3-r7's suggestion, and it generalises): a probe asserting
+`module.__file__.startswith("<worktree>/")` for each module under test. A worktree that is quietly importing
+the MAIN tree otherwise passes unnoticed — the same silent-success class as the truncation above, and the
+one thing my `refmatrix.__file__` check did cover but only for one module.
 
 ## Full suite {#suite}
 
@@ -435,6 +464,14 @@ $ .venv-eval/bin/python -m pytest -q -p no:cacheprovider
 ```
 `workflow/review-output/bsd-plan6-r1-fullsuite-intree.log` — **2238 passed, 0 failed, 0 skipped, 0 errors.**
 The single warning is a third-party `StarletteDeprecationWarning` from `tests/test_cctree_web.py:16`.
+
+**This figure describes `e0b7df6`, the audited sha, and nothing later.** The tree has since moved: `3ca99f9`
+added 6 round-8 tests and `0e3002f` landed the `search.py` / `verbs.py` / `cli.py` / `ui` fix they were
+written against, so HEAD now collects **2244**. Anyone citing 2238 as "current" is citing the wrong tree —
+the same error this section exists to prevent. A worked example of why that matters arrived during this
+audit: plan-3 r7 measured those 6 tests as **4 failed / 2 passed** and I measure **6 passed**. Neither
+reading is wrong — it read at `3ca99f9` (test committed, fix not yet) and I read at `0e3002f` (fix landed).
+Two correct readings, two trees, and the only thing that reconciles them is naming the sha.
 
 It took three attempts to get one measurement, and the two discarded attempts are [[#m-5]] and the
 concurrency note in [[#adjacent]]:
@@ -470,10 +507,14 @@ Two further guards on run 3, because a suite log is only evidence about the tree
 
 - `git status --short` returned no `src/` or `tests/` entry at launch, and the only in-flight writes during
   the run were to `workflow/bullshit/` reports.
-- The other auditor's new `tests/test_plan3_remedy_r7.py` appeared at 15:14, **after** collection. Proof it
-  was not in the run: `pytest --collect-only --ignore=tests/test_plan3_remedy_r7.py` collects exactly
-  **2238** items and `--collect-only` with it collects 2244. The run passed 2238, so it collected the tree as
-  committed and nothing else.
+- `tests/test_plan3_remedy_r7.py` appeared at 15:14, **after** collection. Proof it was not in the run:
+  `pytest --collect-only --ignore=tests/test_plan3_remedy_r7.py` collects exactly **2238** items and
+  `--collect-only` with it collects 2244. The run passed 2238, so it collected the tree as committed and
+  nothing else. (Correction, and the SECOND attribution slip of this audit — see [[#adjacent]]. That file is
+  NOT the plan-3 auditor's: its docstring opens *"bsd-plan3-r7 remedy (round 8)"* and quotes plan-3's `#b-1`
+  verbatim, so it is round-8 REMEDIATION written against plan-3's findings, committed in `3ca99f9`. Excluding
+  it was right for a stronger reason than I gave — it is a fix that landed after my collection, so including
+  it would have measured a FUTURE tree, not a stray auditor file.)
 
 The plan-6 acceptance tests specifically (`test_docs_generated.py`, `test_deferrals_clean.py`,
 `test_eval_artifact_cited.py`, `test_search_hooks.py`, `test_graph_landing.py`, `test_duckdb_parity.py`,

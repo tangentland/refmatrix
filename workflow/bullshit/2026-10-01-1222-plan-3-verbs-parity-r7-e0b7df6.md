@@ -75,13 +75,24 @@ files were deleted. Re-taken artifacts, all cited above and below:
 | four daemon states × 2 commands | 10.1 / 0.6 / 10.0 / 3.0 s and 10.0 / 0.5 / 15.0 / 0.5 s | **identical in all eight cells**, slot untouched (`…-probe-states-worktree.log`) | to the decimal |
 | mutations A, C, D, E, M3 | each killed its target; C in 210.78 s | **each killed its target; C in 210.90 s** (`…-mutations-worktree.log`) | yes |
 
-A concurrent auditor recorded that `PYTHONPATH=<worktree>/src` is itself unsafe here because it
-costs the interpreter its system site-packages. **I checked and they are right:** with `PYTHONPATH`
-set, `sys.path` carries 1 site-packages entry instead of 4 and `import typing_inspection` fails,
-which is how they got 43 failures. It did not touch my result — none of the 11 files I ran reaches
-that dependency — but "it passed" is not an argument, so I re-ran the whole set a third time with
-the four site-packages dirs appended to `PYTHONPATH` (`import typing_inspection` proven first):
-**152 passed in 412.69 s** (`…-suites-worktree-fullpath.log`). Three runs, three trees, one
+A concurrent auditor recorded that `PYTHONPATH=<worktree>/src` is itself unsafe here. The
+OBSERVATION is solid — with it set, `sys.path` carries 1 site-packages entry instead of 4 and
+`import typing_inspection` fails, which is how they got 43 failures — but three of us then gave
+three wrong causes for it, mine included, and the correction is worth recording because it changes
+the recipe. It is not that `PYTHONPATH` "drops system site-packages" (their account), nor that the
+venv's own dir is at risk (mine — it is the one entry that SURVIVES, arriving via `pyvenv.cfg`).
+**`PYTHONPATH` is already set in this environment**, carrying the three `/Library/Frameworks/…`
+dirs plus `/Users/tholley/python_libraries/lib/python3.14`, so an assignment simply OVERWRITES a
+populated variable. The fix is `PYTHONPATH=<worktree>/src:$PYTHONPATH` — verified: four entries,
+the import resolves, `refmatrix` still loads from the worktree. Rebuilding the list by filtering
+`sys.path` for `'site-packages'`, which is what I did, silently drops that fourth ambient entry
+because it does not contain the string. None of this touched my result — the 11 files I ran reach
+neither that dependency nor the dropped ambient dir — but "it passed" is not an argument, so I
+re-ran the whole set a third time with the site-packages dirs restored (`import typing_inspection`
+proven first): **152 passed in 412.69 s** (`…-suites-worktree-fullpath.log`). That run is valid on
+its own terms (same collection count, the import proven) even though the recipe that produced it
+had the latent gap above; it simply did not bite for this selection, which is exactly the inference
+I am refusing to make elsewhere in this report. Three runs, three trees, one
 collection count — 152 in the shared tree, 152 in the worktree on a degraded path, 152 in the
 worktree on a full path. The degraded path is therefore test-set dependent rather than uniformly
 broken; the safe rule is to compare the COLLECTION COUNT across the two paths, which is what makes
