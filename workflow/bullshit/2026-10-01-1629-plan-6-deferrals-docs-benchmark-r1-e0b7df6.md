@@ -445,7 +445,28 @@ concurrency note in [[#adjacent]]:
 | 2 | `git worktree --detach` at `e0b7df6` + `PYTHONPATH=<wt>/src` | 43 failed, 2062 passed, 13 skipped, 7 errors | invalid — 31 failures are `ModuleNotFoundError: typing_inspection`; see [[#m-5]] |
 | 3 | shared checkout, 12:35-12:57, tree verified clean at start | **2238 passed** | **valid** |
 
-Two guards on run 3, because a suite log is only evidence about the tree it ran in:
+**Which figure this report cites, and why it is not the degraded path.** The headline is run 3: the
+**shared checkout, with no `PYTHONPATH` assignment of any kind**, so it inherited the healthy ambient
+four-entry variable. Three independent confirmations, because [[#m-5]] shows that pass/fail alone cannot
+distinguish a healthy run from a silently-truncated one:
+
+1. **Collected == passed.** `pytest --collect-only -q --ignore=tests/test_plan3_remedy_r7.py` collects
+   exactly **2238**; the run reports **2238 passed**. Nothing was dropped. (With that file: 2244 — see below.)
+2. **No skips, no errors.** The degraded path manifests as `importorskip` skips and collection errors; run 2
+   produced 13 skipped + 7 errors, run 3 produced **0 of each**. `grep -cE "^SKIPPED|^ERROR|importorskip"`
+   over the log returns 0.
+3. **The imports that vanish on the degraded path resolve.** Under run 3's environment,
+   `.venv-eval/bin/python -c "import typing_inspection, lance"` succeeds and `sys.path` carries **4**
+   site-packages entries, `typing_inspection` resolving from
+   `/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages`.
+
+Run 2 (the worktree) is **void and is not cited for anything**. Its 43 failures were environmental, confirmed
+two ways: every file that failed there passes in-tree (`tests/test_onboard_huballd_curator.py`,
+`test_plan1_remedy.py`, `test_plan4_remedy_r2.py`, `test_plan4_remedy_r3.py`, `test_upgrade.py` →
+**89 passed** in `workflow/review-output/bsd-plan6-r1-intree-candidates.log`), and run 3 passed the same
+positions clean. It is reported here only as evidence for [[#m-5]].
+
+Two further guards on run 3, because a suite log is only evidence about the tree it ran in:
 
 - `git status --short` returned no `src/` or `tests/` entry at launch, and the only in-flight writes during
   the run were to `workflow/bullshit/` reports.
@@ -453,11 +474,6 @@ Two guards on run 3, because a suite log is only evidence about the tree it ran 
   was not in the run: `pytest --collect-only --ignore=tests/test_plan3_remedy_r7.py` collects exactly
   **2238** items and `--collect-only` with it collects 2244. The run passed 2238, so it collected the tree as
   committed and nothing else.
-
-Run 2's failures were all environmental, confirmed two ways: every file that failed there passes in-tree
-(`tests/test_onboard_huballd_curator.py`, `test_plan1_remedy.py`, `test_plan4_remedy_r2.py`,
-`test_plan4_remedy_r3.py`, `test_upgrade.py` → **89 passed** in
-`workflow/review-output/bsd-plan6-r1-intree-candidates.log`), and run 3 passed the same positions clean.
 
 The plan-6 acceptance tests specifically (`test_docs_generated.py`, `test_deferrals_clean.py`,
 `test_eval_artifact_cited.py`, `test_search_hooks.py`, `test_graph_landing.py`, `test_duckdb_parity.py`,
@@ -485,6 +501,10 @@ Every mutation was reverted with `git checkout <path>` and `git status` confirme
 
 - `rmx install-hooks --check` — **clean**, and proven to cover the three user-global scripts byte-for-byte
   (`hooks.py:630-639`), not just `.claude/settings.json`. See [[#m-1]].
+- `./scripts/lint-gmd.sh` — **zero errors**, run from the MAIN tree only. It derives `MEMDIR` from the
+  checkout path, so inside a worktree it looks for `~/.claude/projects/-private-tmp-rmx6/memory`, silently
+  drops the memory dir from SCOPE and reports a meaningless error count (bsd-plan8910-r5 saw 347 that way).
+  Memory files were linted with `python3 ~/claude_tools/gmd/lint.py` against the real memory dir.
 - Verb parity (`tests/test_verb_parity.py`) and the save-state/recall-state round trip — carried by the
   full-suite run in [[#suite]].
 - Production benchmark harness — not re-run (a 43827-doc / 14918-query run is ~45 min of ingest alone); the
@@ -499,12 +519,28 @@ ping, so this opens the active slot — the DuckDB lock-crash class, and the **5
 `feedback_store_calls_via_daemon`. Introduced with the session index, not by plan-6; it belongs in the bug
 registry rather than in this plan's gate.
 
-Process hazard, not a code finding: two ch-bsd agents ran mutation checks in this one working tree
-concurrently. At 12:06 `src/refmatrix/cli.py` and `src/refmatrix/verbs.py` were uncommitted-modified by
-`bsd-plan3-r7`'s in-flight probes (plus `bsd_probe_r7.py` / `bsd_probe_r7b.py` at the repo root), which
-invalidated a full-suite run of mine already in progress; symmetrically, my M1-M6 windows could have
-poisoned its readings. Future parallel rounds want one `git worktree --detach` per auditor — with
-[[#m-5]] fixed first, so a worktree is actually usable.
+Process hazard, not a code finding: **THREE** ch-bsd agents ran mutation checks in this one working tree
+concurrently (plan-3 r7, plans-8/9/10 r5, and this audit). At 12:06 `src/refmatrix/cli.py` and
+`src/refmatrix/verbs.py` were uncommitted-modified, plus `bsd_probe_r7.py` / `bsd_probe_r7b.py` at the repo
+root, which invalidated a full-suite run of mine already in progress. Symmetrically, my six
+mutate-and-revert windows between 11:50 and 12:06 could have poisoned the others' readings, and plan-3's
+`git checkout -- src/` restores did revert my in-flight edits — that run died from both sides at once.
+
+**Correction to my own first reading of this.** I initially attributed all of the 12:06 churn to
+`bsd-plan3-r7`. That was over-attribution from a single `git status`. plan-3 accounts for exactly three
+files — `search.py`, `cli.py` (a `canon_find` render loop and a `memory_get --degree` ping) and the
+`verbs.py` promote timeout, which is the edit I named and is correctly theirs. The other `cli.py` edit I
+saw, `default=("contradicted",)` on `memory brief --class`, is **not** plan-3's: `brief --class` is a
+plan-8 surface, outside plan-3's scope, so it belongs to the plans-8/9/10 auditor. Two agents were writing
+to `cli.py` in the same window. The lesson for the detection recipe below: a foreign modification tells you
+the tree is contaminated, it does not tell you BY WHOM, and `git status` cannot separate two writers to one
+file — ask each party what it touched before naming anyone.
+
+Future parallel rounds want one `git worktree --detach` per auditor, with [[#m-5]] fixed first so a
+worktree is actually usable, and with each auditor's suite result citing its collected count. The reusable
+detection route: a `git status` showing foreign uncommitted modifications or foreign probe files at the repo
+root, with their **mtimes compared against your run's start time** — that is what made the contamination
+visible, and nothing in pytest's own output would have.
 
 ## Verdict {#verdict}
 
