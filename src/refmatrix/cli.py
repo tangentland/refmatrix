@@ -4235,6 +4235,24 @@ def canon_link(concept: str, canon_name: str | None, canon_partition: str):
     )
 
 
+def _echo_skipped(skipped: list) -> str:
+    """Say which stores could not be searched, on STDERR, and return the "(N
+    stores skipped — see stderr)" suffix for the empty-result line.
+
+    ONE renderer. Round 7 fixed `canon find` by PASTING `locate_cmd`'s six
+    lines, which is the duplication trap that had just been removed from
+    `_grep_run` in the same session — and ch-bsd plan-3 r7 #s-3 counted a third
+    copy owed to the omnibox. A busy or unreadable store must never read as
+    "no matches" / "no live project hosts X" (r3 #b-2, r6 #s-3)."""
+    for sk in skipped:
+        click.echo(f"# rmx: skipped {sk.get('project')} — {sk.get('reason')}",
+                   err=True)
+    if not skipped:
+        return ""
+    return (f" ({len(skipped)} store{'s' if len(skipped) != 1 else ''} "
+            f"skipped — see stderr)")
+
+
 @canon.command("find")
 @click.argument("concept")
 def canon_find(concept: str):
@@ -4248,13 +4266,9 @@ def canon_find(concept: str):
     # turned into "no live project hosts X" and the operator was told a
     # concept exists nowhere (ch-bsd plan-3 r6 #s-3; the r3 #b-2 defect that
     # `rmx locate` already fixed, one command over).
-    for sk in skipped:
-        click.echo(f"# rmx: skipped {sk.get('project')} — {sk.get('reason')}",
-                   err=True)
+    suffix = _echo_skipped(skipped)
     if not projs:
-        console.print(f"[yellow]no live project hosts[/] {concept}" + (
-            f" ({len(skipped)} store{'s' if len(skipped) != 1 else ''} "
-            f"skipped — see stderr)" if skipped else ""))
+        console.print(f"[yellow]no live project hosts[/] {concept}{suffix}")
         return
     t = Table("project", "kind", "neighbors")
     for p in projs:
@@ -8307,15 +8321,12 @@ def locate(terms, filename, limit, as_json):
     skipped = res.get("skipped") or []
     # A store that could not be searched is said so, in every mode — a busy
     # daemon used to turn into "no matches" (ch-bsd plan-3 r3 #b-2).
-    for sk in skipped:
-        click.echo(f"# rmx: skipped {sk.get('project')} — {sk.get('reason')}", err=True)
+    suffix = _echo_skipped(skipped)
     if as_json:
         console.print_json(data=res)
         return
     if not rows:
-        console.print("[yellow]no matches[/]" + (
-            f" ({len(skipped)} store{'s' if len(skipped) != 1 else ''} skipped — see stderr)"
-            if skipped else ""))
+        console.print(f"[yellow]no matches[/]{suffix}")
         return
     for r in rows:
         click.echo(r["path"])
@@ -10352,16 +10363,25 @@ def memory_promote(name_or_id):
     # one kept the bare ping gate and `_memory_daemon_call`'s 60 s × 3, so a
     # held writer cost 180.2 s and exit 1 with an EMPTY message — an
     # unhandled TimeoutError, a raw traceback in a terminal (bug-027).
+    # ONE budget over the probe AND the read, like the three sibling twins
+    # (`get`/`list`/`search` all pass `max(0.5, _budget - elapsed)`). promote was
+    # the one that passed the whole budget, so the partition probe was spent
+    # twice over: 15.0 s measured against a stated 10 s, and only in the
+    # `[ping/replica=False]` state — with a replica on disk the probe is
+    # answered from it and the defect is invisible (ch-bsd plan-3 r7 #m-5).
+    import time as _time
     from refmatrix import verbs as _verbs
-    _memory_intent("memory_get",
-                   partition_timeout=min(5.0, _verbs.MEMORY_READ_BUDGET_S))
+    _t0 = _time.monotonic()
+    _budget = _verbs.MEMORY_READ_BUDGET_S
+    _memory_intent("memory_get", partition_timeout=min(5.0, _budget))
     root = _root()
     target = int(name_or_id) if name_or_id.isdigit() else name_or_id
     key = {"id": target} if isinstance(target, int) else {"name": target}
     try:
         res = _verbs.memory(root, action="promote",
                             partition=_resolve_partition(),
-                            timeout=_verbs.MEMORY_READ_BUDGET_S, **key)
+                            timeout=max(0.5, _budget - (_time.monotonic() - _t0)),
+                            **key)
     except (_verbs.VerbBusyError, _verbs.VerbAbsentError) as e:
         # NO replica fallthrough here, unlike the read twins: promote WRITES
         # what it read into the global store, and the replica is a lagging

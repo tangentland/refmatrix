@@ -583,6 +583,15 @@ def memory_add(root: Path, name: str, content: str, *,
     if to_global:
         from refmatrix import hub as hub_mod
         try:
+            # DELIBERATELY unbounded, unlike the `promote` action's global write
+            # two hundred lines below, which carries `timeout=_left(30.0),
+            # retries=0`. The difference is the caller, not an oversight:
+            # `memory add --global` is a user-initiated plain write with no
+            # budget over it, and the documented choice there is to wait rather
+            # than drop the write. `promote` runs under the memory group's read
+            # budget and promised 10 s. Named here because ch-bsd plan-3 r7
+            # flagged this as #b-2's sibling and the quoted-line-sibling pattern
+            # says a reader must not have to guess which case this is.
             g = hub_mod.global_call("memory_add", payload)
         except Exception as e:  # noqa: BLE001 — typed for the caller
             raise VerbError(f"global store memory_add failed: {e}") from e
@@ -1149,10 +1158,19 @@ def memory(root: Path, action: typing.Literal[
             raise VerbError("no memory matching the id/name")
         tg = list(dict.fromkeys((m.get("tags") or []) + ["behavior"]))
         try:
+            # The leg that actually costs the time. Round 7 bounded the project
+            # READ above and left this at `global_call`'s `timeout=60,
+            # retries=2` default, so a held GLOBAL store still cost 180.2 s —
+            # r6 #b-2's number to the decimal, one leg over (r7 #b-2, measured
+            # three times: by the auditor, by its worktree re-take, and by me).
+            # `hub.global_call`'s own docstring says `retries=0` exists to
+            # prevent exactly this. `Store.add_memory` upserts on name, so a
+            # single attempt cannot leave a half-written row.
             g = hub_mod.global_call("memory_add", {
                 "name": m["name"], "content": m["content"],
                 "mtype": m.get("mtype") or "feedback", "tags": tg,
-                "metadata": m.get("metadata")})
+                "metadata": m.get("metadata")},
+                timeout=_left(30.0), retries=0)
         except Exception as e:  # noqa: BLE001 — typed for the caller (r3 #s-4)
             raise VerbError(f"global store memory_add failed: {e}") from e
         if not g.get("ok"):

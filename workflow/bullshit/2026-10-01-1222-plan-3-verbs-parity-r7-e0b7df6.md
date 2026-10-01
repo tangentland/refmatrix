@@ -16,6 +16,7 @@ metadata:
   deployed: "0.73.0 at ~/refmatrix (7e76610, an ancestor of HEAD; e0b7df6 and 0714a11 are docs-only), `rmx version -v` code=/Users/tholley/refmatrix/src, fleet 8/8 up and supervised"
   verdict: DIRTY
   findings: 6
+  evidence_retaken: "all dev-tree measurements re-run in the isolated worktree /private/tmp/rmx3 (pinned to e0b7df6, PYTHONPATH-overridden); the 11:50-12:06 first pass was contaminated by a concurrent auditor mutating cli.py in the shared tree and is void — see #method-retaken"
 ---
 
 # ch-bsd findings — plan-3 remedy round 7 re-review {#root}
@@ -31,17 +32,94 @@ rel: evidence-for -> [[impl-remedy-plan-3-verbs-parity]]
 
 ## Method {#method}
 
-Everything below was run by me at HEAD `e0b7df6` on the dev tree (`.venv-eval`), plus three
-read-only commands on the deployed `~/bin/rmx` 0.73.0. Suites:
-`workflow/review-output/pytest-bsd-plan3-r7-suites.log` — **152 passed in 377 s** across
+Everything below was re-run by me at `e0b7df6` in an ISOLATED WORKTREE (`/private/tmp/rmx3`, see
+[[#method-retaken]] — the first pass was contaminated by a concurrent auditor and is void), plus
+five read-only commands on the deployed `~/bin/rmx` 0.73.0. Suites:
+`workflow/review-output/pytest-bsd-plan3-r7-suites-worktree.log` — **152 passed in 377 s** across
 `test_plan3_remedy_r6`, `_r5`, `_r4`, `_r3`, `_r2`, `test_plan3_remedy`, `test_verb_parity`,
 `test_mcp_parity`, `test_verbs_migrated`, `test_locate`, `test_surface_parity`. Probes:
-`pytest-bsd-plan3-r7-probe.log` (the fan-out producers, a REAL spawned daemon for the `--degree`
+`pytest-bsd-plan3-r7-probe-worktree.log` (the fan-out producers, a REAL spawned daemon for the `--degree`
 tail, and the promote command against a held GLOBAL store) and
-`pytest-bsd-plan3-r7-probe-states.log` (`memory get --degree 1` and `memory promote` on both
+`pytest-bsd-plan3-r7-probe-states-worktree.log` (`memory get --degree 1` and `memory promote` on both
 registered simulations × replica present/absent, with the per-command op log and a
-`catalog*.duckdb` size+mtime assertion). Mutations in-tree under `PYTHONDONTWRITEBYTECODE=1`,
-each restored with `git checkout -- src/` and the tree verified clean afterwards. {#method-body}
+`catalog*.duckdb` size+mtime assertion). Mutations in the worktree under `PYTHONDONTWRITEBYTECODE=1`
+(`pytest-bsd-plan3-r7-mutations-worktree.log`), each restored with `git checkout -- src/` and the
+worktree verified `git status` clean afterwards. {#method-body}
+
+### Evidence contaminated and re-taken {#method-retaken}
+
+**Every dev-tree measurement in this report was taken twice, and the second run is the one it
+cites.** Three ch-bsd auditors were spawned into the single working tree at
+`/Users/tholley/claude_tools/refmatrix`, and all three applied source mutations there. In the window
+11:50–12:06 the plan-6 auditor mutated `README.md`, `src/refmatrix/helix.py`,
+**`src/refmatrix/cli.py`**, `src/refmatrix/search_hooks.py` and `tests/test_deferrals_clean.py`,
+each reverted within seconds — and `cli.py` is one of this audit's three primary surfaces. My own
+first-pass artifacts fall inside that window by their mtimes: `…-suites.log` ran 11:49:39–11:55:56,
+`…-probe.log` ~11:57:59–12:01:02, `…-probe-states.log` ~12:03:20–12:04:10, with the mutation set at
+~12:07–12:11. My `git checkout -- src/` restores after each mutation also reverted plan-6's
+in-flight edits, so the contamination ran both ways. **All five of those artifacts are void.**
+
+Everything was re-run in `/private/tmp/rmx3`, a detached worktree pinned to `e0b7df6`, with
+`PYTHONPATH=/private/tmp/rmx3/src` overriding the editable install. Probe P0 asserts the
+contamination cannot recur silently: `cli.__file__`, `search.__file__`, `verbs.__file__` and
+`daemon.__file__` must all start with `/private/tmp/rmx3/`, and the four-state probe repeats the
+assertion. The worktree was `git status` clean before and after every mutation, and the two probe
+files were deleted. Re-taken artifacts, all cited above and below:
+
+| re-taken | first pass (void) | worktree re-take | agrees? |
+|----------|-------------------|------------------|---------|
+| plan-3 suites | 152 passed / 377 s | **152 passed / 377 s** (`…-suites-worktree.log`) | exactly |
+| P1a/P1b/P1c, P2 (the [[#b-1]] probes) | `skipped=[]`, `no live project hosts held_row` | **identical strings** (`…-probe-worktree.log`) | exactly |
+| P3 real spawned daemon `--degree 1` | 0.1 s, exit 0 | **0.1 s, exit 0** | exactly |
+| P4 promote, global held (the [[#b-2]] number) | 180.2 s, `ping, memory_add ×3` | **180.2 s, `ping, memory_add ×3`** | to the decimal |
+| four daemon states × 2 commands | 10.1 / 0.6 / 10.0 / 3.0 s and 10.0 / 0.5 / 15.0 / 0.5 s | **identical in all eight cells**, slot untouched (`…-probe-states-worktree.log`) | to the decimal |
+| mutations A, C, D, E, M3 | each killed its target; C in 210.78 s | **each killed its target; C in 210.90 s** (`…-mutations-worktree.log`) | yes |
+
+A concurrent auditor recorded that `PYTHONPATH=<worktree>/src` is itself unsafe here. The
+OBSERVATION is solid — with it set, `sys.path` carries 1 site-packages entry instead of 4 and
+`import typing_inspection` fails, which is how they got 43 failures — but three of us then gave
+three wrong causes for it, mine included, and the correction is worth recording because it changes
+the recipe. It is not that `PYTHONPATH` "drops system site-packages" (their account), nor that the
+venv's own dir is at risk (mine — it is the one entry that SURVIVES, arriving via `pyvenv.cfg`).
+**`PYTHONPATH` is already set in this environment**, carrying the three `/Library/Frameworks/…`
+dirs plus `/Users/tholley/python_libraries/lib/python3.14`, so an assignment simply OVERWRITES a
+populated variable. The fix is `PYTHONPATH=<worktree>/src:$PYTHONPATH` — verified: four entries,
+the import resolves, `refmatrix` still loads from the worktree. Rebuilding the list by filtering
+`sys.path` for `'site-packages'`, which is what I did, silently drops that fourth ambient entry
+because it does not contain the string. None of this touched my result — the 11 files I ran reach
+neither that dependency nor the dropped ambient dir — but "it passed" is not an argument, so I
+re-ran the whole set a third time with the site-packages dirs restored (`import typing_inspection`
+proven first): **152 passed in 412.69 s** (`…-suites-worktree-fullpath.log`). That run is valid on
+its own terms (same collection count, the import proven) even though the recipe that produced it
+had the latent gap above; it simply did not bite for this selection, which is exactly the inference
+I am refusing to make elsewhere in this report. Three runs, three trees, one
+collection count — 152 in the shared tree, 152 in the worktree on a degraded path, 152 in the
+worktree on a full path. The degraded path is therefore test-set dependent rather than uniformly
+broken; the safe rule is to compare the COLLECTION COUNT across the two paths, which is what makes
+a silently shrunken set visible.
+
+Re-verifying the citations in the clean worktree also caught **four of my own line numbers wrong**
+in the first draft — `_replica_bundle`'s swallows, `cached_replica`'s error line,
+`_where_one_project`'s reason line and `store.add_memory`'s range — all corrected above. The
+findings are unchanged; the addresses were off by one to three lines because I had counted inside a
+`sed` slice rather than the file. {#method-retaken-body}
+
+**One crux proved explicitly rather than inferred.** [[#b-1]] rests on a guard being decoration, so
+I ran the probe with and without it in the clean worktree:
+
+```
+mutation D applied (the except back to a bare `pass`):   P1a/P1b skipped=[] · P1c 'no live project hosts held_row' · P2 skipped=[]
+at HEAD (the except present):                            P1a/P1b skipped=[] · P1c 'no live project hosts held_row' · P2 skipped=[]
+```
+
+Byte-identical, while mutation D fails `test_federated_concept_names_a_failing_root`. That is the
+whole finding in four lines: the test is load-bearing, the code is not. {#method-retaken-crux}
+
+**Not contaminated, and not re-taken for that reason:** the three live readings ran against the
+deploy tree `~/refmatrix` (7e76610), which no auditor touches and whose `git status` is clean. I
+re-took them anyway: `memory get --degree 1` on the deployed 0.73.0 answers in 1.2 s warm (3.6 s
+cold on the first pass), exit 0, no traceback; `canon find refmatrix` returns 7 of 8 projects with
+no skipped line and the fleet is 8/8 up.
 
 **Ancestry, per the trap the lead named:** `763aaa0`, `732c755` and `b252a09` are each
 `git merge-base --is-ancestor … master` → YES, and the deploy tree at `~/refmatrix` (7e76610)
@@ -96,17 +174,18 @@ three edited `cli.py` functions and the `verbs.py` promote block are byte-identi
 
 ### BULLSHIT (guards that cannot fire; the #s-3 symptom reproduces verbatim): both `skipped` producer legs this commit added sit above a swallow that never lets them run, and the two tests that certify them feed an input the collaborator's own docstring forbids {#b-1}
 
-**File:** `src/refmatrix/search.py:262-269` (`federated_concept`'s new `except Exception as e` →
-`skipped.append`), `:145-146` (`_where_one_project`'s replica-bundle `except`, r6 #s-4's M3 leg),
-against `:76-97` (`_replica_bundle`, whose two `except Exception: return {}` are the swallow) and
-`:55-66` (`cached_replica`'s dedicated `FileNotFoundError(f"no replica catalog to read at …")`)
+**File:** `src/refmatrix/search.py:262-268` (`federated_concept`'s new `except Exception as e` →
+`skipped.append`), `:147-148` (`_where_one_project`'s replica-bundle `except` + reason, r6 #s-4's
+M3 leg), against `:76` (`_replica_bundle`), its contract docstring at `:82` and its two swallows at
+`:88-89` and `:95-96`, and `cached_replica` at `:38` whose dedicated
+`FileNotFoundError(f"no replica catalog to read at …")` is at `:64`
 **What:** The remedy added a reason to `federated_concept`'s per-root `except`, with the comment
 "a store that could not be read was indistinguishable from one that does not host the concept".
 The only call inside that `try` is `_replica_bundle(root, name, degree=0)`, and
 `_replica_bundle`'s docstring states its contract: *"Returns the render_json dict or {} on
-failure."* It catches `cached_replica` failing (`:86-87`) and `build_context`/`render_json`
-failing (`:96-97`) and returns `{}` for both. `if b:` is then False, no entry is appended, no skip
-is appended, and the new `except` is never entered. The identical shape is at `:145-146`.
+failure."* It catches `cached_replica` failing (`:88-89`) and `build_context`/`render_json`
+failing (`:95-96`) and returns `{}` for both. `if b:` is then False, no entry is appended, no skip
+is appended, and the new `except` is never entered. The identical shape is at `:147-148`.
 **Why it's bullshit:** two probes, deterministic
 (`workflow/review-output/pytest-bsd-plan3-r7-probe.log`), on a root whose daemon is classified
 **up**:
@@ -119,7 +198,7 @@ is appended, and the new `except` is never entered. The identical shape is at `:
 and for the `where` leg: `federated_where` with `build_context` raising → `results=0`,
 `skipped=[]`, no reason. That is the finding's sentence, unchanged: a store that could not be read
 is still indistinguishable from one that does not host the concept, and the operator is still told
-the concept exists nowhere. The state is not hypothetical — `cached_replica` raises a purpose-built
+the concept exists nowhere. The state is not hypothetical — `cached_replica:64` raises a purpose-built
 `no replica catalog to read at …` for exactly the daemon boot window plan 4 opens on every
 relaunch, with a comment saying the point is that the caller gets "the plain fact — no replica
 yet". Its immediate caller throws that sentence away.
@@ -132,8 +211,9 @@ cannot emit, while my probe output is byte-identical before and after the mutati
 makes a collaborator violate its documented contract proves the branch exists, not that it runs.
 Q17 in the plan already records the covered legs as including "the replica bundle"; that row is
 false at HEAD and round 7 did not amend it.
-**Evidence:** `pytest-bsd-plan3-r7-probe.log` (P1a/P1b/P1c/P2); `/tmp/claude-501/mut.log`
-(mutations D and M3); `sed -n 76,97p src/refmatrix/search.py`; `sed -n 247,270p
+**Evidence:** `pytest-bsd-plan3-r7-probe-worktree.log` (P1a/P1b/P1c/P2);
+`pytest-bsd-plan3-r7-mutations-worktree.log` (mutations D and M3); the with/without pairing in
+[[#method-retaken-crux]]; `sed -n 76,97p src/refmatrix/search.py`; `sed -n 247,270p
 src/refmatrix/search.py`. Caveat stated plainly: the live fleet does not exhibit the precondition
 right now — all 8 stores are up with a readable `catalog.read.duckdb`, and `rmx canon find
 refmatrix` returning 7 of 8 projects with no skipped line is correct (I checked `thiquet` through
@@ -144,7 +224,7 @@ defect is proven on the probe, not on today's weather.
 returning a bare `{}`, and have `federated_concept` / `_where_one_project` read it. Then rewrite
 the two tests to break the real thing: delete `catalog.read.duckdb` under an up-classified root
 (no patching at all) and assert the reason, which is the state the probe used. Effort: under an
-hour; the reason string already exists at `search.py:65`.
+hour; the reason string already exists at `search.py:64`.
 **Pattern match:** YES — the guard-cannot-fire PATTERN filed in plan-4 r3, and
 [[bsd-impressions#imp-consolidated-2]] (a fix at the quoted line while the frame below keeps the
 bug). New shape worth naming: the collaborator's docstring was the contract the test violated.
@@ -154,8 +234,8 @@ rel: contradicts -> [[project-profile#constraints]]
 
 ### BULLSHIT (partial bound, 8th): `rmx memory promote` still costs **180.2 s** — the same number — because the budget the fix added covers the project read and the global write takes `hub.global_call`'s default `timeout=60, retries=2`, the exact cost that function's own docstring says `retries=0` exists to prevent {#b-2}
 
-**File:** `src/refmatrix/verbs.py:1152-1156` (`hub_mod.global_call("memory_add", {...})`, no
-`timeout=`, no `retries=`), `src/refmatrix/cli.py:10362-10365` (the CLI passes
+**File:** `src/refmatrix/verbs.py:1152-1155` (`hub_mod.global_call("memory_add", {...})`, no
+`timeout=`, no `retries=`; the same unbounded call is at `:586` for `memory add --global`), `src/refmatrix/cli.py:10362-10365` (the CLI passes
 `timeout=_verbs.MEMORY_READ_BUDGET_S` = 10 s), `src/refmatrix/hub.py:152-165` (`global_call`
 defaults, and the docstring that names both costs)
 **What:** Round 7 budgeted the promote path's *project-side* leg
@@ -180,9 +260,9 @@ spawn wait is added on top (its own docstring: up to 30 s), so the worst case is
 things are genuinely better than r6 and I want them on the record: the message is no longer empty
 (`global store memory_add failed: timed out` is the verb's typed wrapper doing its job), and the
 retried write cannot duplicate a row, because `Store.add_memory` is an upsert on name
-(`store.py:2082-2093`) — this is a latency finding, not a corruption one.
-**Evidence:** `pytest-bsd-plan3-r7-probe.log` (P4); `sed -n 1148,1160p src/refmatrix/verbs.py`;
-`sed -n 152,166p src/refmatrix/hub.py`; `pytest-bsd-plan3-r7-probe-states.log` for the
+(`store.py:2073-2093`) — this is a latency finding, not a corruption one.
+**Evidence:** `pytest-bsd-plan3-r7-probe-worktree.log` (P4); `sed -n 1148,1160p src/refmatrix/verbs.py`;
+`sed -n 152,166p src/refmatrix/hub.py`; `pytest-bsd-plan3-r7-probe-states-worktree.log` for the
 project-held leg now answering in 10.0 s.
 **Fix:** `hub_mod.global_call("memory_add", {...}, timeout=_left(30.0), retries=0)` — the same
 two keywords the read leg six lines up already passes, with `_left` already in scope — and let the
@@ -202,7 +282,7 @@ rel: contradicts -> [[plan-3-verbs-parity#decisions-log]]
 ### SKETCHY (a false universal, and the renderer now exists twice): "`canon find` was the last consumer discarding a `skipped` list" is disproved by one grep — the web omnibox drops it, and the fix was pasted rather than extracted {#s-3}
 
 **File:** `src/refmatrix/ui/server.py:451-462` (`/api/where`, `/api/query`, `/api/concept` return
-the fan-out dict whole), `src/refmatrix/ui/static/app.js:567-572` (`doWhere` reads
+the fan-out dict whole), `src/refmatrix/ui/static/app.js:570-572` (`doWhere` reads
 `r.result?.results` only and renders `no hits`), against `src/refmatrix/cli.py:4245-4257`
 (`canon_find`'s new renderer) and `:8307-8319` (`locate_cmd`'s, verbatim the same six lines)
 **What:** Two claims in one commit. (a) `canon find` was not the last consumer: `search.py`'s own
@@ -263,14 +343,14 @@ rel: contradicts -> [[claude#no-mocks]]
 ### MEH: `memory promote` is the one twin of the four that does not subtract the partition probe from its budget — measured 15.0 s against a stated 10 s {#m-5}
 
 **File:** `src/refmatrix/cli.py:10356-10365` (`timeout=_verbs.MEMORY_READ_BUDGET_S`, flat)
-against `:10267-10275` (`memory_get`), `:10489-10500` (`memory_list`), `:10537-10548`
-(`memory_search`) — each of which passes `max(0.5, _budget - (_time.monotonic() - _t0))`
+against `:10276` (`memory_get`), `:10498` (`memory_list`), `:10546` (`memory_search`) — each of which
+passes `timeout=max(0.5, _budget - (_time.monotonic() - _t0))`
 **What:** `_memory_intent(..., partition_timeout=min(5.0, MEMORY_READ_BUDGET_S))` can spend 5 s
 on the `partition_list` probe before the verb's deadline even starts, and promote then hands the
 verb the full 10 s. Measured on `_PingOnlyDaemon` without a replica: **15.0 s**, ops
 `['ping','partition_list','ping','ping','memory_get']`, where `memory get` in the same state took
 10.0 s. The three siblings carry `_t0`; promote does not.
-**Evidence:** `pytest-bsd-plan3-r7-probe-states.log`, the `[ping/replica=False]` pair.
+**Evidence:** `pytest-bsd-plan3-r7-probe-states-worktree.log`, the `[ping/replica=False]` pair.
 **Fix:** copy the siblings' two lines — `_t0 = _time.monotonic()` before `_memory_intent`, then
 `timeout=max(0.5, _budget - (_time.monotonic() - _t0))`. The existing
 `test_promote_on_a_held_writer_says_busy_within_the_budget` only needs its `< 36.0` tolerance
@@ -303,10 +383,13 @@ legs that can actually report — which the [[#b-1]] fix will widen again.
   group are writes (`reclassify`, `retag`, `link`, `score`, `forget`, `compile_apply`,
   `bulk_forget`) and the dense legs inside `memory_recall`, which carry that command's own
   deadline. {#obs-inventory}
-- **My probes touched no live store.** Every simulation ran on a `mkdtemp` root and every
+- **My probes touched no live store, and after the re-take they did not touch the shared tree
+  either.** Every simulation ran on a `mkdtemp` root and every
   held-writer case asserts `catalog*.duckdb` size+mtime unchanged; the three live commands
   (`memory get --degree 1`, `canon find`, `projects`) were reads on the deployed 0.73.0 binary,
-  never a dev-venv `rmx`. The two probe files were deleted and `git status` is clean. {#obs-readonly}
+  never a dev-venv `rmx`. The probe files were deleted from both trees and `git status` is clean in each. The one thing I
+  cannot undo is that my first-pass `git checkout -- src/` reverts landed inside the plan-6 auditor's
+  full-suite run — that run is void for the same reason mine were. {#obs-readonly}
 
 ## Verdict {#verdict}
 
