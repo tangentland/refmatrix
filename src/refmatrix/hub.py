@@ -61,6 +61,14 @@ HEARTBEAT_STALE_S = daemon_mod.HEARTBEAT_STALE_S
 DEFAULT_KILL_GRACE_S = launchctl.EXIT_TIMEOUT_S      # one number for every supervisor (r3 #b-1)
 RMX_HUB_KILL_GRACE_S = float(os.environ.get("RMX_HUB_KILL_GRACE_S", str(DEFAULT_KILL_GRACE_S)))
 QUEUE_ALERT_INTERVAL_S = float(os.environ.get("RMX_HUB_QUEUE_ALERT_INTERVAL", "1800"))
+# Retention for the hub's OWN machine-generated bus channels. `global:queues` is
+# the 30-minute fleet alert; nothing reaped it, so it reached 3,044 of the bus's
+# 3,193 active messages and buried `proj:refmatrix:bugs`, where two real reports
+# went unanswered for three days and two hours. <=0 disables, matching
+# RMX_HUB_QUEUE_ALERT_INTERVAL's shape. Only channels the hub itself publishes
+# belong here — agent-authored reports are never reaped on a timer.
+BUS_RETENTION_DAYS = float(os.environ.get("RMX_HUB_BUS_RETENTION_DAYS", "3"))
+BUS_RETENTION_CHANNELS = ("global:queues",)
 # Catalog footprint that earns a line in the queue alert. DuckDB reuses freed
 # blocks but never shrinks the file, so a store can grow without bound and
 # nothing notices: cliquet reached 41GB for 45 documents while every health
@@ -691,6 +699,37 @@ class Hub:
                 self._queue_alert_once()
             except Exception as e:
                 _log(f"queue-alert error: {e}")
+            # Reap on the same tick that publishes: the producer owns its own
+            # retention, and a sweep needing its own thread is a thread that can
+            # go missing without anyone noticing.
+            self._bus_retention_once()
+
+    def _bus_retention_once(self) -> int:
+        """Reap expired messages on the hub's own channels. Returns the count.
+
+        Failure is LOGGED, never swallowed: this sits between the hub and the
+        bus, and a sweep that silently stops is indistinguishable from one that
+        found nothing to do (CLAUDE.md #no-silent-failures). It also must not
+        kill the alert tick it rides on.
+        """
+        if BUS_RETENTION_DAYS <= 0:
+            return 0
+        total = 0
+        for channel in BUS_RETENTION_CHANNELS:
+            try:
+                out = self.bus.reap_channel(
+                    channel, older_than_days=BUS_RETENTION_DAYS)
+            except Exception as e:
+                _log(f"bus retention failed on {channel}: "
+                     f"{type(e).__name__}: {e}")
+                continue
+            n = out.get("purged", 0)
+            total += n
+            if n:
+                _log(f"bus retention: purged {n} message(s) from {channel} "
+                     f"older than {BUS_RETENTION_DAYS:g}d "
+                     f"(cutoff {out.get('cutoff')})")
+        return total
 
     def _queue_alert_once(self) -> bool:
         """One tick of the queue alert: gather, gate, publish. Returns True

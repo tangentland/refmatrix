@@ -385,6 +385,33 @@ class Bus:
             con.close()
         return {"ok": True, "purged": n}
 
+    def reap_channel(self, channel: str, *, older_than_days: float) -> dict:
+        """Hard-remove messages on ONE channel older than `older_than_days`.
+
+        Retention for the hub's own machine-generated channels. `global:queues`
+        is the 30-minute fleet-health alert; nothing ever removed one, so it
+        reached 3,044 of the bus's 3,193 active messages (2026-10-01) — the
+        channel the hub WRITES drowning every channel an agent READS. bug-043
+        stopped the alert repeating a steady backlog; it did not bound history.
+
+        Scoped to one named channel on purpose: an agent- or human-authored
+        report on `proj:*` is never reaped on a timer. Two such reports sat on
+        `proj:refmatrix:bugs` for three days and two hours under that noise,
+        and deleting them would be the opposite of the fix.
+
+        The cutoff uses the SAME `time.strftime` local-time format `publish`
+        stamps, because `purge` compares `ts < ?` as TEXT — a UTC or
+        differently-shaped cutoff compares wrong without erroring.
+        """
+        if older_than_days <= 0:
+            raise ValueError(
+                f"reap_channel: older_than_days must be > 0, got {older_than_days!r}")
+        cutoff = time.strftime("%Y-%m-%dT%H:%M:%S",
+                               time.localtime(time.time() - older_than_days * 86400))
+        out = self.purge(status="all", channel=channel, before_ts=cutoff)
+        return {"ok": True, "purged": out.get("purged", 0),
+                "channel": channel, "cutoff": cutoff}
+
     # ---- overview ----
     def channels(self) -> list[dict]:
         con = self._connect()
