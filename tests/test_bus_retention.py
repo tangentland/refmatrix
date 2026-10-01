@@ -106,10 +106,16 @@ def test_reap_channel_refuses_a_non_positive_window(home):
 
 # ---- the hub tick --------------------------------------------------------
 
-def test_the_alert_tick_reaps_the_channel_it_publishes(home, monkeypatch):
-    """Wiring, not behaviour: the primitive is useless if no tick calls it.
-    The mutation that deletes the call must fail a test (ch-bsd: helpers tested
-    in isolation are cited as wiring proof far too often here)."""
+def test_the_alert_LOOP_reaps_the_channel_it_publishes(home, monkeypatch):
+    """Runs the REAL loop, not the method.
+
+    The first version of this test called `_bus_retention_once` directly and
+    called itself a wiring test. Mutation G6 — deleting
+    `self._bus_retention_once()` from `_queue_alert_loop` — left it GREEN, which
+    is precisely the pattern this repo's ledger keeps filing: a helper tested in
+    isolation cited as proof that something calls it. So drive the loop: one
+    tick, then stop."""
+    import threading
     from refmatrix import hub as hub_mod
     seen: list[tuple] = []
 
@@ -118,11 +124,21 @@ def test_the_alert_tick_reaps_the_channel_it_publishes(home, monkeypatch):
         return {"ok": True, "purged": 0, "cutoff": _ts(older_than_days)}
 
     monkeypatch.setattr(bus_mod.Bus, "reap_channel", spy)
+    monkeypatch.setattr(hub_mod, "QUEUE_ALERT_INTERVAL_S", 0.01)
+
     h = object.__new__(hub_mod.Hub)
     h.bus = bus_mod.Bus()
-    n = hub_mod.Hub._bus_retention_once(h)
-    assert seen == [("global:queues", hub_mod.BUS_RETENTION_DAYS)], seen
-    assert n == 0
+    h._stop = threading.Event()
+
+    def one_tick_then_stop():
+        h._stop.set()           # the loop finishes this iteration, then exits
+        return False
+    monkeypatch.setattr(hub_mod.Hub, "_queue_alert_once",
+                        lambda self: one_tick_then_stop())
+
+    hub_mod.Hub._queue_alert_loop(h)
+    assert seen == [("global:queues", hub_mod.BUS_RETENTION_DAYS)], (
+        f"the alert loop did not reap: {seen}")
 
 
 def test_retention_is_three_days_by_default(home):
