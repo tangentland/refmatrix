@@ -569,7 +569,19 @@ async function doWhere(q) {
   box.innerHTML = `<div class="omni-group">searching…</div>`;
   const r = await api("/api/where?q=" + encodeURIComponent(q));
   const hits = r.result?.results || [];
-  if (!hits.length) { box.innerHTML = `<div class="omni-group">no hits</div>`; return; }
+  // A store that could not be searched is SAID, never rendered as "no hits".
+  // `/api/where` has always carried `skipped`; this reader discarded it, which
+  // made the browser the third consumer to turn a busy store into an empty
+  // answer (ch-bsd plan-3 r7 #s-3 — `canon find` was not the last one).
+  const skipped = r.result?.skipped || [];
+  const skipNote = skipped.length
+    ? `<div class="omni-group">${skipped.length} store${skipped.length !== 1 ? "s" : ""} skipped: ` +
+      skipped.map((s) => `${s.project} — ${s.reason}`).join("; ") + `</div>`
+    : "";
+  if (!hits.length) {
+    box.innerHTML = skipNote || `<div class="omni-group">no hits</div>`;
+    return;
+  }
   const groups = {};
   hits.forEach((h) => (groups[h.source] = groups[h.source] || []).push(h));
   box.innerHTML = Object.entries(groups).map(([g, items]) =>

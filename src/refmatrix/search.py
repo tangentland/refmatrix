@@ -74,25 +74,35 @@ def cached_replica(root: Path):
 
 
 def _replica_bundle(root: Path, ref: str, *, degree: int = 0,
-                    grep_backstop: bool = False) -> dict:
+                    grep_backstop: bool = False,
+                    on_error: "list | None" = None) -> dict:
     """In-process cached read-only-replica context bundle (the working read
     path; the daemon context op mis-resolves on multi-partition daemons).
     `grep_backstop=False` by default — the filesystem-grep floor is slow on a
     big tree and pointless for federated search (we want index hits only).
-    Returns the render_json dict or {} on failure."""
+    Returns the render_json dict or {} on failure — and that is exactly why
+    callers could not name a skipped store: wrapping this call in
+    `except Exception` is dead code, because it swallows everything itself.
+    `on_error` is the way out: pass a list and the reason is appended to it,
+    while the return value stays `{}` for every existing caller
+    (ch-bsd plan-3 r7 #b-1 — both legs round 7 added could not fire)."""
     from refmatrix.context import build_context, render_json
     import json as _json
     part = discovery.store_name(root)
     try:
         s, lock = cached_replica(root)
-    except Exception:
+    except Exception as e:  # noqa: BLE001 — reported when the caller asks
+        if on_error is not None:
+            on_error.append(f"no replica to read ({type(e).__name__}: {e})")
         return {}
     try:
         with lock, s.with_partition(part):
             b = build_context(s, ref, degree=degree, grep_backstop=grep_backstop,
                               _entities_explicit=False, _tokens_explicit=False)
         return _json.loads(render_json(b))
-    except Exception:
+    except Exception as e:  # noqa: BLE001 — reported when the caller asks
+        if on_error is not None:
+            on_error.append(f"replica bundle failed ({type(e).__name__}: {e})")
         return {}
 
 
@@ -127,8 +137,9 @@ def _where_one_project(root, q: str) -> "tuple[list[dict], list[str]]":
     out: list[dict] = []
     reasons: list[str] = []
     proj = discovery.store_name(root)
+    bundle_errs: list = []
     try:
-        b = _replica_bundle(root, q, degree=0)
+        b = _replica_bundle(root, q, degree=0, on_error=bundle_errs)
         if b:
             anchor = b.get("anchor")
             if anchor:
@@ -144,8 +155,9 @@ def _where_one_project(root, q: str) -> "tuple[list[dict], list[str]]":
                                 "name": e["name"], "kind": e.get("kind", "concept"),
                                 "path": e.get("path"), "line": e.get("line"),
                                 "snippet": e.get("snippet")})
-    except Exception as e:  # noqa: BLE001 — said, never mute
-        reasons.append(f"replica bundle failed ({type(e).__name__}: {e})")
+    except Exception as e:  # noqa: BLE001 — a raise would still be named
+        bundle_errs.append(f"replica bundle failed ({type(e).__name__}: {e})")
+    reasons.extend(bundle_errs)   # r7 #b-1: the callee swallows; read its list
     try:
         mem = daemon_mod.call(root, "memory_search",
                               {"query": q, "limit": 4, "partition": proj},
@@ -251,21 +263,22 @@ def federated_concept(name: str) -> dict:
     roots, skipped = _live_roots()
     for root in roots:
         proj = discovery.store_name(root)
+        errs: list = []
         try:
-            b = _replica_bundle(root, name, degree=0)
+            b = _replica_bundle(root, name, degree=0, on_error=errs)
             if b:
                 anchor = b.get("anchor")
                 if anchor and anchor.get("name") == name:
                     neighbors = sum(len(v) for v in (b.get("groups") or {}).values())
                     out.append({"project": proj, "root": str(root),
                                 "kind": anchor.get("kind"), "neighbors": neighbors})
-        except Exception as e:  # noqa: BLE001 — said, never mute (r6 #s-3)
-            # The fourth fan-out kept the silent per-root swallow the other
-            # three lost, so a store that could not be read was
-            # indistinguishable from one that does not host the concept.
-            skipped.append({"project": proj, "root": str(root),
-                            "reason": f"concept lookup failed "
-                                      f"({type(e).__name__}: {e})"})
+        except Exception as e:  # noqa: BLE001 — a raise would still be named
+            errs.append(f"concept lookup failed ({type(e).__name__}: {e})")
+        for why in errs:
+            # `_replica_bundle` SWALLOWS its failures, so round 7's bare
+            # `except` here was unreachable and a store that could not be read
+            # stayed indistinguishable from one that does not host the concept.
+            skipped.append({"project": proj, "root": str(root), "reason": why})
     return {"concept": name, "projects": out, "skipped": skipped}
 
 
