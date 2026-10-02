@@ -368,7 +368,7 @@ been DuckDB by default since 2026-05-16 (`backend.py:45-61`).
 
 **Fix:** "after the catalog commit".
 
-### MEH: "run the full suite from any checkout" does not hold, which is what made task 6.4's first requirement unmeasurable for me {#m-5}
+### MEH: a test command that ASSIGNS an env var discards the ambient one, so "run the full suite from any checkout" does not hold {#m-5}
 
 **File:** `workflow/bug_registry.md:110` (bug-054), `.venv-eval` site-path resolution
 
@@ -411,15 +411,34 @@ COLLECTED COUNT can.** Compare collection, not the verdict. See [[#suite]] for t
 this report actually cites, and note that `refmatrix.__file__` resolving into the worktree does NOT catch
 this: `refmatrix` imports fine either way; it is `lance` / `typing_inspection` that vanish.
 
-**Fix:** three layers, cheapest first. (1) Never assign — `PYTHONPATH=<wt>/src:$PYTHONPATH` prepends and
-keeps the ambient entries; better still, derive them rather than hardcode
-(`$(python -c "import sys;print(':'.join(p for p in sys.path if 'site-packages' in p))")`, bsd-plan3-r7's
-recipe). (2) Make `.venv-eval` self-sufficient (`pip install typing_inspection` into it) so no suite run
-depends on an exported variable at all — this is the same mixed-ABI hazard
-`reference_mixed_abi_python_tree` records. (3) Best: have `tests/conftest.py` put the repo root's `src/` on
-`sys.path` itself, so a second checkout needs no `PYTHONPATH` and bug-054's claim becomes true by
-construction. Until one of these lands, any suite result from a worktree must cite its collected count or be
-treated as void.
+**The general defect, which is bigger than this symptom.** It is not worktree-specific and not
+site-packages-specific: **a command that ASSIGNS an environment variable silently discards whatever the
+environment already had there.** `PYTHONPATH` is merely the instance that bit us; this shell also exports
+`RMX_LOG` and `RMXGREP_MODE`, so `RMX_LOG=1 pytest ...` or any `RMX_*=... ` probe has the same exposure, and
+so does `PATH`. The rule is `VAR=new:$VAR` (or `VAR=new${VAR:+:$VAR}`), and the whole class is checkable in
+one `env | grep` before you trust any prefixed command. That is a stronger case against bug-054's "run the
+suite from any checkout" than the site-packages framing, and I am adopting it — credit bsd-plan3-r7, which
+retracted its own prescription to get here.
+
+**Correction to the recipe I recommended one round ago.** I endorsed deriving the dirs
+(`$(python -c "...'site-packages' in p...")`) as "the better recipe". **That is wrong, and so was my own
+three-dir list** — both rebuild a list that already exists in the environment, and both drop the fourth
+ambient entry `/Users/tholley/python_libraries/lib/python3.14`, which the `'site-packages'` filter cannot
+match even though that tree contains a `site-packages/` of its own:
+```
+ambient entries : 4   ... /Library/Frameworks/..., /opt/local/..., ~/Library/..., ~/python_libraries/lib/python3.14
+derived (filter): 4   ... but a DIFFERENT four — it adds .venv-eval's and drops the last ambient one
+LOST by the derived recipe: ['/Users/tholley/python_libraries/lib/python3.14']
+```
+Do not rebuild the list. Prepend to it.
+
+**Fix:** three layers, cheapest first. (1) Never assign — `PYTHONPATH=<wt>/src:$PYTHONPATH`. One token, no
+list to get wrong, and it is correct for every ambient entry including ones nobody enumerated. (2) Make
+`.venv-eval` self-sufficient (`pip install typing_inspection` into it) so no suite run depends on an exported
+variable at all — the same mixed-ABI hazard `reference_mixed_abi_python_tree` records. (3) Best: have
+`tests/conftest.py` put the repo root's `src/` on `sys.path` itself, so a second checkout needs no
+`PYTHONPATH` and bug-054's claim becomes true by construction. Until one of these lands, any suite result
+from a worktree must cite its collected count or be treated as void.
 
 **One correction to a neighbouring claim**, since it was twice offered as part of this fix: the venv's OWN
 site-packages is **not** at risk from the assignment, so a recipe does not need to name it. It is added by
@@ -441,12 +460,11 @@ pytest     -> .../.venv-eval/lib/python3.14/site-packages/pytest/__init__.py
 refmatrix  -> /private/tmp/rmx6/src/refmatrix/__init__.py
 lance OK, typing_inspection OK
 ```
-So the three-dir restore is sufficient, and "you lose the venv's packages" is the wrong diagnosis — if it
-were true, `python -m pytest` could not have started at all, yet run 2 collected 2125 items. What is lost is
-exactly the three framework dirs, and with them `typing_inspection`. **The derived form is still the better
-recipe** — `PYTHONPATH=<wt>/src:$(python -c "import sys;print(':'.join(p for p in sys.path if 'site-packages' in p))")`
-(bsd-plan3-r7) produces the same four entries and survives a venv rebuild or a different machine, so prefer
-it for robustness rather than because the venv is at risk.
+So "you lose the venv's packages" is the wrong diagnosis — if it were true, `python -m pytest` could not have
+started at all, yet run 2 collected 2125 items. What the assignment loses is the three framework dirs (and
+with them `typing_inspection`) plus a fourth ambient entry neither of our rebuild recipes captured. The
+correct prescription is not a better list but no list at all: `PYTHONPATH=<wt>/src:$PYTHONPATH`. See the
+general defect below.
 
 **Worth adding to the harness** (bsd-plan3-r7's suggestion, and it generalises): a probe asserting
 `module.__file__.startswith("<worktree>/")` for each module under test. A worktree that is quietly importing
