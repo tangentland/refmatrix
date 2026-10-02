@@ -1,3 +1,4 @@
+<!-- not-gmd: flat one-row-per-run ledger index, like MEMORY.md; the reports it points at carry the graph -->
 # ch-bsd ledger — refmatrix
 
 | hash | date | author | verdict | findings | summary |

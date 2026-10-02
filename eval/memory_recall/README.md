@@ -1,4 +1,13 @@
-# Memory-recall fusion eval
+---
+gmd: "0.1"
+id: eval-memory-recall-readme
+title: "Memory-recall fusion eval"
+tags: [eval, report]
+metadata:
+  node_type: eval-doc
+---
+
+# Memory-recall fusion eval {#root}
 
 Decides whether `rmx memory recall --fuse` (dense ⊕ content_rank RRF, shipped
 in d8efc53) should flip **default-on**. The round-4 in-process check on the
@@ -7,7 +16,7 @@ targets; RRF even nudged one down 1→2). This harness re-runs the question on
 **real viascope recall traffic** with **LLM-judged** relevance — a trust set
 grounded in usage, not synthetic.
 
-## Why this shape
+## Why this shape {#why-this-shape}
 
 - **Queries are real.** The recall hook fires `memory recall --stdin-json`, so
   the query lives in stdin and never reaches `cli.log`. But the same
@@ -19,7 +28,7 @@ grounded in usage, not synthetic.
 - **Synthetic is curve-shape only.** Title-derived synthetic queries flatter
   the lexical side; this harness uses the viascope judged set for the go/no-go.
 
-## Pipeline
+## Pipeline {#pipeline}
 
 ```
 mine_queries.py   query.log scan bodies ─filter─▶ queries.jsonl   (stdlib only)
@@ -27,7 +36,7 @@ pool_candidates.py dense ∪ symbolic top-k ──────▶ candidates.jso
 score.py          LLM-judge ▶ qrels.tsv ; fuse ▶ REPORT.md         (anthropic + refmatrix)
 ```
 
-## Run
+## Run {#run}
 
 ```bash
 ROOT=/Users/tholley/github/atollogy/bdep/viascope
@@ -50,14 +59,14 @@ PYTHONPATH=$DEV "$PY" score.py --no-judge
 `qrels.tsv` is the cache — judging is incremental and append-only, so an
 interrupt keeps prior labels and a re-run only judges new pairs.
 
-## Reading the result
+## Reading the result {#reading-the-result}
 
 `REPORT.md` tables MRR@10 / Recall@1,5,10 / nDCG@10 for `dense`, `symbolic`,
 and `fused@{10,30,60,100}`. **Verdict = FLIP** when the best `fused@k` beats
 `max(dense, symbolic)` on MRR@10 — that k is the value to ship. Otherwise KEEP
 default-off (round-4's decision stands).
 
-## Scope / caveats
+## Scope / caveats {#scope-caveats}
 
 - `eval/` only — reads the deployed store **read-only**, touches no
   deploy-path code. The viascope daemon is not required (in-process reads).

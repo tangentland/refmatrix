@@ -1,4 +1,13 @@
-# Production-pipeline retrieval: the dense half was searching filenames
+---
+gmd: "0.1"
+id: eval-production-report
+title: "Production-pipeline retrieval: the dense half was searching filenames"
+tags: [eval, report]
+metadata:
+  node_type: eval-doc
+---
+
+# Production-pipeline retrieval: the dense half was searching filenames {#root}
 
 Every other harness in `eval/` bypasses the code it claims to measure.
 `eval/retrievers/rmx_retriever.py` imports `fuse_rrf` and `Store` and builds its
@@ -10,7 +19,7 @@ about what production ingest writes.
 This harness closes that gap: it writes the corpus to disk and drives `rmx init`
 / `ingest` / `embed` / `context` / `recall` exactly as a user does.
 
-## Setup
+## Setup {#setup}
 
 CSN python subsample materialized as real `.py` files off the watched tree
 (`prepare.py`), then two stores built through the real CLI. The conditions run
@@ -21,7 +30,7 @@ as the entity's `tldr`:
     nobody     rmx ingest --semantic, with RMX_INGEST_BODIES=0
     semantic   rmx ingest --semantic
 
-## Result — 2000 docs, 300 queries
+## Result — 2000 docs, 300 queries {#result-2000-docs-300-queries}
 
 | condition / surface | MRR@10 | Recall@1 | Recall@10 | nDCG@10 |
 |---|---:|---:|---:|---:|
@@ -32,7 +41,7 @@ as the entity's `tldr`:
 
 Dense **MRR@10 +54%**, **Recall@1 +71%**. Symbolic identical to four decimals.
 
-## Why the split is the whole finding
+## Why the split is the whole finding {#why-the-split-is-the-whole-finding}
 
 `content_rank` already had the docstring. The keyword pass tokenizes
 `ast.get_docstring(node)` into `keyword/<word>` concepts and hangs `mentions`
@@ -50,7 +59,7 @@ returning their heading), one layer down and far larger. It silently halved
 dense retrieval in every store this pipeline has ever built, and no existing
 eval could see it, because no existing eval runs the pipeline.
 
-## What these numbers are not
+## What these numbers are not {#what-these-numbers-are-not}
 
 - **A subsample.** 2,000 docs against CSN's 43,827 — a smaller haystack, so the
   absolute values run high. Compare the conditions to each other; never to
@@ -61,7 +70,7 @@ eval could see it, because no existing eval runs the pipeline.
 - **Generalizable to sparse-docstring code.** CSN units almost all carry a
   docstring. On a codebase where few do, the gain shrinks proportionally.
 
-## Reproduce
+## Reproduce {#reproduce}
 
 ```bash
 python3 eval/production/prepare.py --out /path/off/the/watched/tree --queries 300

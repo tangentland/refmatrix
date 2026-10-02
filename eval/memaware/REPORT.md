@@ -1,4 +1,13 @@
-# MemAware Layer-A results — retrieval only, no LLM
+---
+gmd: "0.1"
+id: eval-memaware-report
+title: "MemAware Layer-A results — retrieval only, no LLM"
+tags: [eval, report]
+metadata:
+  node_type: eval-doc
+---
+
+# MemAware Layer-A results — retrieval only, no LLM {#root}
 
 90 questions (30/tier, seed 42), 1307 session documents, one rmx store built by
 `ingest.py`. Metric: does the ranked list contain the question's
@@ -10,7 +19,7 @@ All numbers below are at rmx **0.37.0**, except the `+rerank` rows, which are
 the benchmark found three real defects in it; the pre-fix figures are kept at
 the bottom.
 
-## hit@20 — is the answer session anywhere in the top 20?
+## hit@20 — is the answer session anywhere in the top 20? {#hit-20-is-the-answer-session-anywhere-in-the-top}
 
 | method | easy | medium | hard | **overall** |
 |---|---:|---:|---:|---:|
@@ -23,7 +32,7 @@ the bottom.
 | bm25 (per day, upstream chunking) | 0.267 | 0.133 | 0.067 | **0.156** |
 | LatticeDB 0.11.1 (BM25 FTS) | 0.100 | 0.133 | 0.033 | **0.089** |
 
-## MRR@20
+## MRR@20 {#mrr-20}
 
 | method | easy | medium | hard | **overall** |
 |---|---:|---:|---:|---:|
@@ -34,7 +43,7 @@ the bottom.
 | rmx scan-prompt | 0.266 | 0.157 | 0.023 | **0.149** |
 | bm25 (per day) | 0.106 | 0.028 | 0.041 | **0.058** |
 
-## hit@5 — what a k=5 injection would actually carry
+## hit@5 — what a k=5 injection would actually carry {#hit-5-what-a-k-5-injection-would-actually-carry}
 
 | method | easy | medium | hard | **overall** |
 |---|---:|---:|---:|---:|
@@ -48,7 +57,7 @@ the bottom.
 Every method returned exactly 20 candidates (mean 19.9-20.0, no empties), so
 the cutoffs compare like for like.
 
-## Read this as: rmx loses here, and the reason is legible
+## Read this as: rmx loses here, and the reason is legible {#read-this-as-rmx-loses-here-and-the-reason-is-le}
 
 **BM25 wins outright.** Not marginally — it beats rmx's best surface on every
 tier. The direction was predicted (this corpus has no `calls`, `defines` or
@@ -73,7 +82,7 @@ published 2.8% BM25 baseline is that, not BM25.
 differ on 1 question of 90. Consistent with the prior finding that RRF fusion's
 win is a scale effect.
 
-## The `context` fixes (0.36.0) — before and after
+## The `context` fixes (0.36.0) — before and after {#the-context-fixes-0360-before-and-after}
 
 | metric | before | after |
 |---|---:|---:|
@@ -88,7 +97,7 @@ and ahead of the dense surface (0.378). It still trails BM25 badly on MRR
 the next thing to chase and it is a ranking problem, which the earlier numbers
 were too broken to expose.
 
-## Three defects in `rmx context`, found by this run
+## Three defects in `rmx context`, found by this run {#three-defects-in-rmx-context-found-by-this-run}
 
 `context` scoring 0.007 MRR while `memory recall` scores 0.180 over the same
 store is not a ranking difference — the surface is broken for this input shape.
@@ -125,7 +134,7 @@ concept — a query term, not a body — never becomes a result.
 
 This affects every GMD-ingested memory in every store, not just this corpus.
 
-## scan-prompt (0.37.0) — before and after
+## scan-prompt (0.37.0) — before and after {#scan-prompt-0370-before-and-after}
 
 | metric | before | after |
 |---|---:|---:|
@@ -152,7 +161,7 @@ wired as a fallback for when no concept matched. On a corpus where every
 content word is a concept it never ran. The case that needed it most was the
 one case that could not reach it.
 
-## Cross-encoder rerank (0.42.0) — buys the easy/medium tiers, costs the hard one
+## Cross-encoder rerank (0.42.0) — buys the easy/medium tiers, costs the hard one {#cross-encoder-rerank-0420-buys-the-easymedium-ti}
 
 `RMX_RERANK` adds a cross-encoder pass (`ms-marco-MiniLM-L-12-v2`) over a 4x
 over-fetched shortlist. Same retrieval, different ordering. Measured against the
@@ -206,7 +215,7 @@ confirms 0.42.0 introduced no regression on the surfaces it did not touch.
 Extending rerank to scan-prompt is the obvious next experiment, and the hard-tier
 result above is the reason to run it as an experiment rather than ship it.
 
-## Prompt-concept expansion (0.43.0) — and why the headline barely moves
+## Prompt-concept expansion (0.43.0) — and why the headline barely moves {#prompt-concept-expansion-0430-and-why-the-headli}
 
 Three changes to how a prompt becomes concepts, measured on the same 90
 questions.
@@ -230,7 +239,7 @@ questions.
    already uses — co-occurrence in a document is written as a co-mention edge,
    and a prompt is a document.
 
-### Isolated concept path (`--no-content`)
+### Isolated concept path (`--no-content`) {#isolated-concept-path-no-content}
 
 | config | MRR@20 | hit@5 | hit@20 | Recall@20 |
 |---|---:|---:|---:|---:|
@@ -249,7 +258,7 @@ neighborhood, and coverage is what demotes the seed that shares nothing with
 the rest of the prompt. They ship together or not at all; enabling one without
 the other ships a known regression.
 
-### Full pipeline — the honest number
+### Full pipeline — the honest number {#full-pipeline-the-honest-number}
 
 | config | MRR@20 | hit@20 | Recall@20 | hard hit@20 |
 |---|---:|---:|---:|---:|
@@ -279,7 +288,7 @@ Flags: `RMX_SCAN_VARIANTS`, `RMX_SCAN_COVERAGE_ALPHA` (default 3, measured
 identical at 1), `RMX_SCAN_CLIQUE_W` (default 2.0). `scan-nocontent` is a
 condition in `retrieval_eval.py` for reproducing the isolation.
 
-## Where rmx still trails, after all three fixes
+## Where rmx still trails, after all three fixes {#where-rmx-still-trails-after-all-three-fixes}
 
 BM25 keeps the lead on every metric, and the gap is now concentrated in
 RANKING, not retrieval: rmx surfaces have essentially closed hit@20 on easy
@@ -288,7 +297,7 @@ session and rank it lower. The hard tier is untouched by any of this — 0.133
 best, and every rmx surface at 0.067 — which is the finding upstream predicted
 and the one no amount of retrieval tuning addresses.
 
-## LatticeDB as a fourth condition — the index is fine, the ranking is absent
+## LatticeDB as a fourth condition — the index is fine, the ranking is absent {#latticedb-as-a-fourth-condition-the-index-is-fin}
 
 [LatticeDB](https://github.com/jeffhajewski/latticedb) 0.11.1 puts BM25, HNSW
 and graph traversal behind one transaction path in one file. refmatrix spreads
@@ -304,7 +313,7 @@ vector run against rmx's bge-small numbers would measure the embedder and
 report it as the index. The honest version — load the SAME bge-small vectors
 into both, compare recall and latency — is separate work.
 
-### Every BM25 score comes back 0.0
+### Every BM25 score comes back 0.0 {#every-bm25-score-comes-back-00}
 
 Reproducible on a three-document database, across all three surfaces:
 
@@ -318,7 +327,7 @@ side. Documentation calls this a "BM25-ranked inverted index" and the README
 claims it is "~300x faster than SQLite FTS5"; on this build it returns the
 right documents in no particular order.
 
-### Which makes the headline number meaningless, so here is the one that isn't
+### Which makes the headline number meaningless, so here is the one that isn't {#which-makes-the-headline-number-meaningless-so-h}
 
 With no scores, the top-k slice of a large matched set is arbitrary. Running
 the same queries at k=500 separates *did the index find it* from *did the
@@ -336,7 +345,7 @@ questions — including 0.667 on the hard tier, where every other method sits at
 scoring bug, not a retrieval one, and it is presumably fixable in an afternoon
 by whoever owns the Zig.
 
-### One design choice, correctly documented, that a caller must handle
+### One design choice, correctly documented, that a caller must handle {#one-design-choice-correctly-documented-that-a-ca}
 
 `@@` and `fts_search` are **conjunctive**: "All terms must match (implicit
 AND)" (`book/src/cypher/full-text-search.md`). Handing it a raw 20-word
@@ -346,14 +355,14 @@ refmatrix's own `scan._PROMPT_STOPWORDS` and backs off the conjunction until
 something matches, which is what a real integration would do and keeps the
 comparison about the engine. Not a defect; a contract.
 
-### Timings
+### Timings {#timings}
 
 1307 sessions indexed in **20.3s** into a **175 MB** file. Query latency
 **0.175 ms median** for a single term, **1.6 ms median / 4.2 ms p95** for the
 backoff sequence at k=20. The speed claims that can be checked here hold up;
 they are just attached to an index that does not rank.
 
-## Multi-word phrases: measured, and closed (2026-09-03)
+## Multi-word phrases: measured, and closed (2026-09-03) {#multi-word-phrases-measured-and-closed-2026-09-0}
 
 Skip-pair `phrase/*` concepts wired into the prose path (`ingest_gmd`), A/B'd
 against the identical corpus with only `RMX_INGEST_PHRASES` differing. Both
@@ -391,12 +400,12 @@ arms, so the comparison stands, but `recall-fuse` is genuinely phrase-sensitive
 The base arm reproduced the published numbers (scan MRR 0.240 vs 0.241;
 context hit@20 0.422 vs 0.433), which is what validates the build.
 
-## Concept-path expansion + salience: three changes, none shipped (2026-09-03)
+## Concept-path expansion + salience: three changes, none shipped (2026-09-03) {#concept-path-expansion-salience-three-changes-no}
 
 All measured on the same store, `scan-nocontent` isolating the concept path
 because the content bundle carries ~75% of the full surface and masks it.
 
-### Lift-scored association (`--rank assoc`)
+### Lift-scored association (`--rank assoc`) {#lift-scored-association-rank-assoc}
 
 `assoc.py` scores expansion candidates by how SURPRISING their overlap with
 the prompt's documents is — `(co/|A|)/(df/N)` — instead of by PPR's diffused
@@ -421,7 +430,7 @@ every lift sits near 1.0 and the multiplier alone decides); and the union of
 all seeds' documents is not "the prompt's documents" — it was 38% of the
 corpus, which makes `co/|A| == df/N` and collapses lift to 1.0 for everything.
 
-### Modal salience by corpus type
+### Modal salience by corpus type {#modal-salience-by-corpus-type}
 
 `_salience` is `central + 1.5*idf + shape + ns_bonus`, where `central`
 (PageRank) spans 0..2.5 and `1.5*idf` spans ~0.45. Centrality outweighs
@@ -445,7 +454,7 @@ WORSE (0.069 -> 0.062). The +13%/+20% it appears to win in the strip-ON column
 is not signal; it is prose weighting partially offsetting the other flag's
 loss. Judging it on that column alone would have shipped a regression.
 
-### Sentence-final punctuation
+### Sentence-final punctuation {#sentence-final-punctuation}
 
 `_IDENT_RE` keeps a trailing `.` so `os.path` survives, so the last word of
 every prose sentence arrives as `first.` — which `_token_shape_score` reads as
@@ -455,7 +464,7 @@ Removing it cost recall: 0.069 -> 0.052 MRR, 0.267 -> 0.222 hit@20. Sentence-
 final position apparently correlates with the topical noun by more than the
 noise it admits.
 
-### Disposition
+### Disposition {#disposition}
 
 The best of the four cells is the configuration that already ships. All three
 land default-off behind `RMX_SCAN_MODE`, `RMX_SCAN_STRIP_PUNCT`, and
@@ -465,7 +474,7 @@ The structural reason all three underperformed: they target the concept path,
 which is 0.069 of a 0.241 surface. The content bundle already applies true
 BM25 idf, which is the same correction two of these were reaching for.
 
-## tf normalization: a real scaling law that BM25 already absorbs (2026-09-03)
+## tf normalization: a real scaling law that BM25 already absorbs (2026-09-03) {#tf-normalization-a-real-scaling-law-that-bm25-al}
 
 `mentions.weight` is the one intermediate every symbolic surface reads —
 `content_rank` BM25 (as tf AND, summed, as doclen), the per-concept bundles,
@@ -510,7 +519,7 @@ and where the calibration therefore has the most room to matter. Also note
 `doclen` stays the raw summed weight under all arms — document length is a
 property of the document, but the asymmetry could confound.
 
-## Eight discarded signals: one wins, and the ceiling is recall (2026-09-03)
+## Eight discarded signals: one wins, and the ceiling is recall (2026-09-03) {#eight-discarded-signals-one-wins-and-the-ceiling}
 
 Everything a HUMAN asserts about a document contributed nothing to its score,
 while everything an extractor counts drove the whole ranking. Tags scored
@@ -526,14 +535,14 @@ document-level priors (multiplicative). Then measured on TWO corpora, because
 MemAware alone cannot see five of them: it is synthetic prose with 0 `rel:`
 edges, nothing protected, and 99.6% of nodes at heading level 1.
 
-### The one that won: lead position
+### The one that won: lead position {#the-one-that-won-lead-position}
 
 Held-out (90 questions disjoint from the weight tuning), `context`:
 MRR 0.206 -> 0.248 (+20%), hit@20 0.378 -> 0.511 (+35%), hit@1 +28%. Replicates
 the tuning set's +21% across a weight plateau of 0.25..2.0, degrading only past
 4.0. Shipped ON (`RMX_LEAD_TERMS`, `RMX_BOOST_LEAD=0.5`); needs re-ingest.
 
-### The rest, on cliquedb — a corpus that HAS the signals
+### The rest, on cliquedb — a corpus that HAS the signals {#the-rest-on-cliquedb-a-corpus-that-has-the-signa}
 
 34.8k typed edges, four populated heading levels, 8.6k tag edges, 54 protected.
 Known-item retrieval, 400 queries sampled from NON-LEAD BODY lines so the task
@@ -551,7 +560,7 @@ Seven better against five worse is a coin flip. The signals are present, the
 priors demonstrably move scores (see `tests/test_structural_signal.py`), and
 retrieval does not improve.
 
-### Why: the ceiling is recall, not ranking
+### Why: the ceiling is recall, not ranking {#why-the-ceiling-is-recall-not-ranking}
 
 cliquedb baseline is hit@1 0.447 against hit@20 0.537. **46% of known-item
 queries never retrieve the gold document at all**, and most of the 54% that do
@@ -563,7 +572,7 @@ document its component words missed; a prior cannot reach one BM25 missed.
 `lead` is the only one of the eight that changes WHICH documents are retrieved
 rather than how the retrieved set is ordered, and it is the only one that paid.
 
-## What has NOT been run
+## What has NOT been run {#what-has-not-been-run}
 
 Layer B — upstream's continuity-accuracy harness — has never executed. It needs
 an answer model and a judge; no Fireworks key, and the OpenAI key returns `429

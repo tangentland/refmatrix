@@ -1,4 +1,13 @@
-# Memory-recall fusion eval (viascope, real queries)
+---
+gmd: "0.1"
+id: eval-memory-recall-report
+title: "Memory-recall fusion eval (viascope, real queries)"
+tags: [eval, report]
+metadata:
+  node_type: eval-doc
+---
+
+# Memory-recall fusion eval (viascope, real queries) {#root}
 
 - Queries judged (≥1 relevant): **79** / 80 pooled
 - Judge: **4 parallel Claude subagents** (not the score.py Haiku path), graded

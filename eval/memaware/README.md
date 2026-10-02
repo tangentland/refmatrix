@@ -1,4 +1,13 @@
-# MemAware — proactive-retrieval benchmark for rmx
+---
+gmd: "0.1"
+id: eval-memaware-readme
+title: "MemAware — proactive-retrieval benchmark for rmx"
+tags: [eval, report]
+metadata:
+  node_type: eval-doc
+---
+
+# MemAware — proactive-retrieval benchmark for rmx {#root}
 
 [MemAware](https://github.com/kevin-hs-sohn/memaware) (Son, 2026) measures
 something no other memory benchmark does: whether an agent **surfaces relevant
@@ -14,7 +23,7 @@ symbolic retrieval floor — the thing rmx already beats CodeRankEmbed on
 (0.972 vs 0.959 MRR@10). It says nothing about proactive surfacing. This fills
 that hole.
 
-## Why the baselines are so low, and why that matters
+## Why the baselines are so low, and why that matters {#why-the-baselines-are-so-low-and-why-that-matter}
 
 | Method | Easy | Medium | Hard | Overall | median tokens |
 |---|---:|---:|---:|---:|---:|
@@ -36,7 +45,7 @@ headroom, and it also means **the metric is barely off zero**, so a subset run
 of 90 questions distinguishes 2% from 4% only very noisily. Read the caveats
 below before quoting any number this harness produces.
 
-## Layer A / Layer B
+## Layer A / Layer B {#layer-a-layer-b}
 
 The upstream harness spends two LLM calls per question (answer + judge) and
 grades *continuity accuracy* — did the answer visibly use the past context.
@@ -53,7 +62,7 @@ plain document-retrieval metric:
 - **Layer B — `run.sh`.** The upstream harness verbatim, with rmx wired in as
   conditions. Produces the number comparable to the table above.
 
-## Setup
+## Setup {#setup}
 
 Layer B needs credentials Layer A does not. Upstream wants `OPENAI_API_KEY`
 (judge) and `FIREWORKS_API_KEY` (Kimi answer model); on this machine neither
@@ -86,7 +95,7 @@ python3 retrieval_eval.py       # Layer A — free
 ./run.sh rmx-scan               # Layer B — costs API calls
 ```
 
-## What prepare.py has to fix
+## What prepare.py has to fix {#what-preparepy-has-to-fix}
 
 1. **Split.** Upstream ships 91 *daily* files, each concatenating ~14 sessions
    — one is up to 858KB. That is a poor BM25 document and a worse graph node,
@@ -109,7 +118,7 @@ python3 retrieval_eval.py       # Layer A — free
    order is not tier-balanced, so a limited run silently over-weights whichever
    tier leads. Use `subsets/`.
 
-## Reproducibility traps in the upstream harness
+## Reproducibility traps in the upstream harness {#reproducibility-traps-in-the-upstream-harness}
 
 - **Provider seam.** The judge is constructed inside `run.mjs`, which imports
   `./lib/llm.mjs` directly — a condition cannot inject a provider. `run.sh`
@@ -136,7 +145,7 @@ python3 retrieval_eval.py       # Layer A — free
   taken around `evaluate()`. The run loop is sequential, so this is sound as
   written, but it would silently misattribute under any concurrent evaluate.
 
-## Honest expectations for rmx
+## Honest expectations for rmx {#honest-expectations-for-rmx}
 
 - The corpus is one synthetic person's chat history. There are **no structural
   edges** in it — no calls, defines, imports. The part of the graph that wins

@@ -1,6 +1,15 @@
-# rmx vs CodeRankEmbed
+---
+gmd: "0.1"
+id: eval-results-report
+title: "rmx vs CodeRankEmbed"
+tags: [eval, report]
+metadata:
+  node_type: eval-doc
+---
 
-## csn_python
+# rmx vs CodeRankEmbed {#root}
+
+## csn_python {#csn-python}
 
 | model | MRR@10 | MRR@1000 | Recall@1 | Recall@10 | Recall@100 | Recall@200 | Recall@500 | Recall@1000 | nDCG@10 | elapsed (s) |
 |---|---|---|---|---|---|---|---|---|---|---|

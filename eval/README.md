@@ -1,9 +1,18 @@
-# rmx vs CodeRankEmbed eval
+---
+gmd: "0.1"
+id: eval-readme
+title: "rmx vs CodeRankEmbed eval"
+tags: [eval, report]
+metadata:
+  node_type: eval-doc
+---
+
+# rmx vs CodeRankEmbed eval {#root}
 
 Side-by-side retrieval eval on **CSN python** (CodeSearchNet, Python split,
 BEIR layout) — the same dataset and split CoRNStack's `eval_csn.py` uses.
 
-## Why
+## Why {#why}
 
 rmx is symbolic — no embeddings, no NL semantics. CodeRankEmbed is a dense
 encoder fine-tuned for NL→code retrieval. Running them on the same set lets
@@ -19,7 +28,7 @@ The rmx adapter is a deliberately simple BM25-style baseline:
 That's what the symbolic graph can do *without* embeddings. The gap to
 CodeRankEmbed is the headroom available to a hybrid (dense + graph) setup.
 
-## Layout
+## Layout {#layout}
 
 ```
 eval/
@@ -36,7 +45,7 @@ eval/
   results/                    # run.tsv + metrics.json per (dataset, model)
 ```
 
-## Setup
+## Setup {#setup}
 
 ```bash
 # 1. Fetch CSN python (BEIR-format)
@@ -49,7 +58,7 @@ pip install -e .
 pip install -r eval/requirements.txt
 ```
 
-## Run
+## Run {#run}
 
 ```bash
 # rmx baseline (fast, CPU)
@@ -64,7 +73,7 @@ python eval/run.py --dataset eval/datasets/csn_python --model both --device mps
 python eval/compare.py --out eval/results/REPORT.md
 ```
 
-## Output
+## Output {#output}
 
 Each `(dataset, model)` writes:
 - `results/<dataset>/<model>/run.tsv` — TREC-style `qid\tdid\trank\tscore`
@@ -72,13 +81,13 @@ Each `(dataset, model)` writes:
 
 `compare.py` collates into one markdown table.
 
-## Metric reference
+## Metric reference {#metric-reference}
 
 - **MRR@1000** — primary metric in CoRNStack's CSN eval; reciprocal rank of
   the first relevant doc within top-1000.
 - **MRR@10**, **Recall@{1,10,100}**, **nDCG@10** — standard BEIR set.
 
-## Honest expectation
+## Honest expectation {#honest-expectation}
 
 rmx will lose on CSN. CSN queries are natural-language docstrings that
 share little lexical overlap with the code they describe. The rmx baseline

@@ -1,3 +1,4 @@
+<!-- not-gmd: append-only curator run log, not persistent prose -->
 ## [2026-09-06 12:00] bootstrap | docs/ tree → GMD conversion
 converted: [[ARCHITECTURE]] [[SYSTEM]] [[INTEGRATION]] [[PERFORMANCE]] [[adr-format]] [[agent-doc-primer]] [[0001-intuition-lance-integration]] [[intuition-style-hooks]] [[adr-template]] [[concept-doc-template]] [[design-doc-template]]
 already-gmd (untouched except link fixes): [[system_design_review]] [[gmd-migration-guide]] [[adr-0000-adr-overview]] [[adr-0002-subject-memory-container]]

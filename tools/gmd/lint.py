@@ -44,6 +44,9 @@ REL_RE = re.compile(
     r"^rel:\s+([a-z][a-z0-9-]*)\s*->\s*(\S+(?:\s+\S+)*?)(?:\s*\{([^}]*)\})?\s*$"
 )
 FRONTMATTER_DELIM = "---"
+# Line-1 opt-out for genuinely non-GMD markdown (flat indexes, logs).
+# The reason is mandatory: an unexplained exemption is how drift hides.
+NOT_GMD_RE = re.compile(r"^<!--\s*not-gmd:\s*(.*?)\s*-->\s*$")
 CODE_FENCE_RE = re.compile(r"^(```|~~~)")
 INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
 
@@ -147,15 +150,34 @@ def parse_doc(path: Path) -> tuple[Doc, list[Issue]]:
     if isinstance(imports, list):
         doc.imports = imports
 
-    # MEMORY.md is the per-project memory index (flat one-line-per-memory
-    # list) per MEMORY-RULES — explicitly NOT GMD. Skip the missing-gmd
-    # warning for that filename so the lint output isn't drowned in
-    # false-positives from every project's index.
+    # A missing `gmd:` key is an ERROR, not a warning (2026-10-02). As a warning
+    # it was the gate that could not fail: a file without the key is never
+    # recognized as GMD, so NONE of its anchors, wikilinks or `rel:` edges are
+    # checked — and nine in-scope docs drifted out of the graph unnoticed while
+    # `lint-gmd.sh` reported success. A linter that reports malformed constructs
+    # cannot report ABSENT ones unless it insists the file declare itself.
+    #
+    # Genuinely-flat files opt out IN THE FILE, with a reason, so the exemption
+    # is visible to a reader instead of hidden in this function:
+    #     <!-- not-gmd: flat one-line-per-entry index, see MEMORY-RULES -->
+    # MEMORY.md keeps its by-name exemption because it is GENERATED (bug-042)
+    # and the generator would have to learn to emit the marker.
     if doc.gmd_version is None and path.name != "MEMORY.md":
-        issues.append(Issue(
-            path, 1, "warn", "no-gmd-version",
-            "frontmatter missing `gmd:` key — file not recognized as GMD",
-        ))
+        opt_out = NOT_GMD_RE.match(lines[0].strip()) if lines else None
+        if opt_out is None:
+            issues.append(Issue(
+                path, 1, "error", "no-gmd-version",
+                "no `gmd:` key — file not recognized as GMD, so its anchors, "
+                "wikilinks and `rel:` edges are NOT checked. Add "
+                '`gmd: "0.1"` frontmatter, or opt out on line 1 with '
+                "`<!-- not-gmd: <reason> -->`",
+            ))
+        elif not opt_out.group(1).strip():
+            issues.append(Issue(
+                path, 1, "error", "not-gmd-no-reason",
+                "`not-gmd` opt-out carries no reason — say why this file is "
+                "flat so the next reader need not guess",
+            ))
 
     in_code = False
     fence_opened_at = 0
