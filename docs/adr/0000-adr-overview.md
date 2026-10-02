@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: adr-0000-adr-overview
+id: refmatrix/adr-0000-adr-overview
 title: "ADR-0000: Architecture Decision Records — rules + index"
 tags: [adr, meta]
 ---

@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: SYSTEM
+id: refmatrix/SYSTEM
 title: "refmatrix — System Overview"
 tags: [system, overview, bitmaps, discovery]
 ---

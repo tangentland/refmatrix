@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: partition-layout-survey
+id: refmatrix/partition-layout-survey
 title: "Fleet partition layout survey — four shapes, six orphans, and 143MB of vectors for partitions that do not exist"
 tags: [architecture, partitions, fleet, survey, sessions]
 metadata:

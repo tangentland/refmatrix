@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: gmd-spec
+id: refmatrix/gmd-spec
 title: "GMD v0.1 — Graph Markdown Conformance Spec"
 tags: [gmd, spec, reference]
 metadata:

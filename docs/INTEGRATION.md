@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: INTEGRATION
+id: refmatrix/INTEGRATION
 title: "refmatrix — Integration Guide"
 tags: [integration, hooks, gmd, daemon, watcher]
 ---

@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: design-doc-template
+id: refmatrix/design-doc-template
 title: "Design Doc Template"
 tags: [template, design-doc]
 ---

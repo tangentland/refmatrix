@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: gmd-migration-guide
+id: refmatrix/gmd-migration-guide
 title: "GMD Migration Guide — Converting an Existing Project to Full GMD Compliance"
 tags: [migration, gmd, authoring]
 imports: [agent-doc-primer]

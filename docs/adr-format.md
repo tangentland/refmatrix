@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: adr-format
+id: refmatrix/adr-format
 title: "ADR Format Reference"
 tags: [adr, format, extraction]
 ---

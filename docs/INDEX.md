@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: INDEX
+id: refmatrix/INDEX
 title: "refmatrix docs — curated catalog"
 tags: [index, catalog, docs]
 ---

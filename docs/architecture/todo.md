@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: architecture-todo
+id: refmatrix/architecture-todo
 title: "Architecture Gap Tracking — refmatrix"
 tags: [architecture, todo, gaps, refmatrix]
 ---

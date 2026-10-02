@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: ARCHITECTURE
+id: refmatrix/ARCHITECTURE
 title: "refmatrix — Architecture"
 tags: [architecture, modules, storage, daemon]
 ---

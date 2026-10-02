@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: adr-template
+id: refmatrix/adr-template
 title: "ADR Template"
 tags: [template, adr]
 ---

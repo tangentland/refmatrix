@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: architecture-index
+id: refmatrix/architecture-index
 title: "Architecture Index — refmatrix"
 tags: [architecture, index, refmatrix]
 ---
