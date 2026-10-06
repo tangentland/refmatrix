@@ -75,6 +75,11 @@ REL_RE = re.compile(
     r"^rel:\s+([a-z][a-z0-9-]*)\s*->\s*(\S+(?:\s+\S+)*?)(?:\s*\{([^}]*)\})?\s*$"
 )
 FRONTMATTER_DELIM = "---"
+
+# A genuinely-flat file opts out IN THE FILE, with a reason, so the exemption
+# is visible to a reader instead of hidden in the linter:
+#     <!-- not-gmd: flat one-line-per-entry index, see MEMORY-RULES -->
+NOT_GMD_RE = re.compile(r"^<!--\s*not-gmd:\s*(.*?)\s*-->\s*$")
 CODE_FENCE_RE = re.compile(r"^(```|~~~)")
 INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
 
@@ -206,17 +211,44 @@ def parse_doc(path: Path) -> tuple[Doc, list[Issue]]:
     if isinstance(imports, list):
         doc.imports = imports
 
-    # MEMORY.md is the per-project memory index (flat one-line-per-memory
-    # list) per MEMORY-RULES — explicitly NOT GMD. Skip the missing-gmd
-    # warning for that filename so the lint output isn't drowned in
-    # false-positives from every project's index.
+    # A missing `gmd:` key is an ERROR, not a warning (40edd2f, 2026-10-02).
+    # As a warning it was the gate that could not fail: a file without the key
+    # is never recognized as GMD, so NONE of its anchors, wikilinks or `rel:`
+    # edges are checked — and nine in-scope docs drifted out of the graph
+    # unnoticed while `lint-gmd.sh` reported success. A linter that reports
+    # malformed constructs cannot report ABSENT ones unless it insists the file
+    # declare itself.
+    #
+    # RESTORED 2026-10-06: `84cd783` ("sync gmd tooling") replaced this file
+    # with the upstream canonical copy, which still had the warning, so the
+    # gate silently reverted four commits after it landed and took seven tests
+    # with it. That commit's own verification — "lint error counts are
+    # identical before and after in this repo" — could not see the regression,
+    # because 40edd2f had already converted every file that lacked the key.
+    # A check whose corpus is clean cannot tell you it stopped checking.
+    #
+    # Genuinely-flat files opt out IN THE FILE, with a reason (NOT_GMD_RE).
+    # MEMORY.md keeps its by-name exemption because it is GENERATED (bug-042)
+    # and the generator would have to learn to emit the marker.
     if doc.gmd_version is None and path.name != "MEMORY.md":
-        issues.append(Issue(
-            path, 1, "warn", "no-gmd-version",
-            "frontmatter missing `gmd:` key — file not recognized as GMD",
-        ))
+        opt_out = NOT_GMD_RE.match(lines[0].strip()) if lines else None
+        if opt_out is None:
+            issues.append(Issue(
+                path, 1, "error", "no-gmd-version",
+                "no `gmd:` key — file not recognized as GMD, so its anchors, "
+                "wikilinks and `rel:` edges are NOT checked. Add "
+                '`gmd: "0.1"` frontmatter, or opt out on line 1 with '
+                "`<!-- not-gmd: <reason> -->`",
+            ))
+        elif not opt_out.group(1).strip():
+            issues.append(Issue(
+                path, 1, "error", "not-gmd-no-reason",
+                "`not-gmd` opt-out carries no reason — say why this file is "
+                "flat so the next reader need not guess",
+            ))
 
     in_code = False
+    fence_opened_at = 0
     in_frontmatter = body_start == 0 and lines and lines[0].strip() == FRONTMATTER_DELIM
     if in_frontmatter:
         in_frontmatter = False
@@ -227,6 +259,8 @@ def parse_doc(path: Path) -> tuple[Doc, list[Issue]]:
             continue
         if CODE_FENCE_RE.match(line.strip()):
             in_code = not in_code
+            if in_code:
+                fence_opened_at = line_no
             continue
         if in_code:
             continue
@@ -285,6 +319,21 @@ def parse_doc(path: Path) -> tuple[Doc, list[Issue]]:
             ref = wm.group(1)
             doc_id, anchor = _split_ref(ref)
             doc.refs.append((line_no, ref, doc_id, anchor, False))
+
+    # An UNCLOSED fence is the one malformation this linter was structurally
+    # blind to: every heading, anchor and `rel:` edge after it is read as code
+    # and simply never exists. That is not a formatting nit — it silently
+    # DELETES graph nodes, and the linter reports zero errors while it does.
+    # A stray fence in eval/production/longmemeval/REPORT.md removed its
+    # `#next` node this way, in the very commit that fixed a renderer for
+    # deleting graph edges (ch-bsd r4 #b-2-r4). Also lost in `84cd783`'s
+    # upstream sync and restored 2026-10-06.
+    if in_code:
+        issues.append(Issue(
+            path, fence_opened_at or 1, "error", "unclosed-fence",
+            f"code fence opened at line {fence_opened_at} is never closed — "
+            f"every heading, anchor and rel: edge after it is invisible",
+        ))
 
     return doc, issues
 
