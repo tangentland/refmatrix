@@ -1370,3 +1370,96 @@ def collect_gmd_files(targets: list[Path]) -> list[Path]:
                         out.append(p)
                         seen.add(p)
     return out
+
+
+# ---- memory rows need VECTORS, or recall cannot see them (bug-065) --------
+
+# How many embed batches ONE as-memory ingest will pay for. The bridge writes
+# a handoff plus whatever memory files a session produced — single digits in
+# normal use — so 8 x 256 is ~2000 rows, far past any real session. A store
+# that is thousands of vectors behind (a first run, a model switch) is NOT
+# silently re-embedded inside a bridge call: the cap is hit, the remainder is
+# COUNTED, and `rmx embed --kinds memory` is named.
+MEMORY_EMBED_DRAIN_BATCHES = 8
+MEMORY_EMBED_BATCH = 256
+
+
+def drain_memory_vectors(embed_batch, *, partition: str,
+                         batches: int = MEMORY_EMBED_DRAIN_BATCHES,
+                         limit: int = MEMORY_EMBED_BATCH) -> dict:
+    """Embed the `kind=memory` rows an as-memory ingest just wrote.
+
+    WHY THIS LIVES HERE (bug-065, 2026-10-01): this module inserts memory rows
+    with no vectors, and nothing drained them. `finalize_save_state` had zero
+    occurrences of `embed`, so every save-state produced durable, UNREACHABLE
+    memories — hit twice in one day, by me (four new memories; `rmx memory
+    search "verify fix reachable from master"` returned NO matches while
+    `memory get` found every row) and independently by a ch-bsd run whose
+    distinctive phrase returned five OTHER documents. recall is the only way
+    the next session reaches a memory, so a row without a vector is half
+    saved.
+
+    The first fix put the drain in `finalize_save_state`, which made `rmx
+    save-state` correct and left `rmx ingest-gmd --as-memory` — the SessionStart
+    catch-up hook, `rmx memory sync-disk`, and any by-hand run — still writing
+    vectorless rows. The rule belongs to the WRITE, not to one of its callers:
+    an as-memory ingest implies memory vectors
+    (`feedback_main_path_must_exercise_core_mechanisms`).
+
+    `embed_batch(args) -> dict` is injected so this module never imports the
+    daemon: the daemon op passes `_op_embed`, and the CLI's in-process branch
+    passes the same function over its own store. One implementation, two
+    injection points, no import cycle.
+
+    Bounded, counted, and SAID — never raises, and never returns silence.
+    Returns {"partition", "embedded", "remaining", "batches", "capped",
+    "error"}.
+    """
+    out: dict = {"partition": partition, "embedded": 0, "remaining": None,
+                 "batches": 0, "capped": False, "error": None}
+    try:
+        for i in range(int(batches)):
+            res = embed_batch({"kinds": ["memory"], "limit": int(limit),
+                               "rebuild": False, "partition": partition})
+            if not isinstance(res, dict):
+                out["error"] = f"embed returned {type(res).__name__}, not a dict"
+                return out
+            if res.get("ok") is False:
+                out["error"] = res.get("error", "embed failed")
+                return out
+            out["batches"] = i + 1
+            embedded = int(res.get("embedded", 0))
+            out["embedded"] += embedded
+            out["remaining"] = int(res.get("remaining", 0))
+            # `embedded == 0` ends it too: a pass that can make no progress
+            # would otherwise spin the full budget for nothing.
+            if not embedded or not out["remaining"]:
+                return out
+        out["capped"] = True
+    except Exception as e:      # noqa: BLE001 — reported, never hidden
+        out["error"] = f"{type(e).__name__}: {e}"
+    return out
+
+
+def render_memory_embed_line(emb: "dict | None") -> str:
+    """One line for the drain's outcome, or "" when there was nothing to do.
+
+    Shared so the daemon's report and the CLI's in-process report say the same
+    thing — and so a FAILED drain is impossible to render as success. A memory
+    that is saved and unreachable names the command that finishes the job.
+    """
+    if not emb:
+        return ""
+    if emb.get("error"):
+        return (f"memory embed FAILED: {emb['error']} — the memories are "
+                f"SAVED but recall cannot see them; run "
+                f"`rmx embed --kinds memory` by hand")
+    if emb.get("capped"):
+        return (f"memory embed capped after {emb.get('batches')} batches: "
+                f"{emb.get('embedded')} embedded, {emb.get('remaining')} "
+                f"still without vectors — finish with "
+                f"`rmx embed --kinds memory`")
+    if emb.get("embedded"):
+        return (f"memory embed: {emb['embedded']} row(s) now reachable by "
+                f"recall in {emb.get('partition')}")
+    return ""

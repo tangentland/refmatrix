@@ -853,6 +853,10 @@ def save_state(root: Path, *, message: str | None = None,
     # Memory bridge outcome — surfaced, not swallowed: an MCP caller sees
     # `sync.error` when the store did not take the handoff.
     res["sync"] = fin.get("sync")
+    # And whether those rows got VECTORS (bug-065). A memory the bridge wrote
+    # but nothing embedded is durable and unreachable by recall, which is the
+    # half that matters — so the count rides back to every caller, CLI and MCP.
+    res["embed"] = fin.get("embed")
     res.pop("doc", None)
     return res
 

@@ -412,11 +412,18 @@ def finalize_save_state(s, root: Path, result: dict, *, repo: Path,
     the bridge: memory files sat on disk for ten days while
     `memory recall --session-start` reported an empty window.
 
+    Since bug-065 it also DRAINS the memory embed queue after the bridge: the
+    bridge inserts rows without vectors, so until then every save-state wrote
+    memories that `memory get` could find and `memory recall` could not — and
+    recall is the only way the next session reaches them.
+
     Returns {"lint": str | None, "filed_subject": str | None,
-    "sync": dict | None}; best-effort throughout — a lint, filing, or bridge
-    failure never breaks the handoff, but the bridge failure is returned in
-    `sync["error"]` for the caller to surface, never swallowed."""
-    out: dict = {"lint": None, "filed_subject": None, "sync": None}
+    "sync": dict | None, "embed": dict | None}; best-effort throughout — a
+    lint, filing, bridge, or embed failure never breaks the handoff, but the
+    bridge failure is returned in `sync["error"]` and the embed outcome in
+    `embed` for the caller to surface, never swallowed."""
+    out: dict = {"lint": None, "filed_subject": None, "sync": None,
+                 "embed": None}
     if result.get("dry_run"):
         return out
     if sync:
@@ -427,6 +434,15 @@ def finalize_save_state(s, root: Path, result: dict, *, repo: Path,
         if memdir:
             from refmatrix.cli import _sync_memory_dir  # lazy: cli->handoff cycle
             out["sync"] = _sync_memory_dir(Path(memdir))
+            # bug-065: the bridge writes memory rows, and since the fix it
+            # also EMBEDS them — an as-memory ingest implies memory vectors,
+            # because a row without one is durable and invisible to recall,
+            # which is the only way the next session reaches it. The drain
+            # lives in `ingest_gmd.drain_memory_vectors` so every bridge
+            # caller gets it (this one, `rmx memory sync-disk`, and the
+            # SessionStart `--detach` catch-up), not just save-state. Its
+            # counts ride back here for the caller to print.
+            out["embed"] = (out["sync"] or {}).get("embed")
     if lint:
         lint_py = Path.home() / "claude_tools" / "gmd" / "lint.py"
         target = result.get("target")
