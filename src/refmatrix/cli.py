@@ -5716,44 +5716,57 @@ def _render_grep_rows(rows, gf, limit, source_tag="idx"):
 
 
 def _is_stdin_piped() -> bool:
-    """True if stdin has bytes ready (true pipe input). False for a
-    tty, for a closed-or-empty pipe (Bash tool invocations), or for
-    /dev/null. select() with timeout=0 peeks without blocking."""
+    """Is stdin a STREAM someone handed us, rather than nothing?
+
+    THE QUESTION CHANGED, and that is bug-062's fix. This used to ask whether
+    bytes were PENDING, which conflates "the producer wrote nothing yet/ever"
+    with "there is no producer": `{ true; } | rmx grep hello` read as not-piped,
+    fell through to index exploration, and returned repo hits with exit 0 where
+    grep prints nothing and exits 1 — inverting `if cmd | rmx grep PAT`. It also
+    TAUGHT the graph from a tree search nobody asked for.
+
+    bug-062's own analysis said the two cases are indistinguishable at the fd
+    level ("both a FIFO at EOF") and therefore needed a product decision. They
+    are not, and measuring said so (`tests/test_grep_empty_pipe.py` pins it):
+
+        bare command under the Claude Bash tool   fd 0 = CHR  (/dev/null)
+        `{ true; } | cmd`                         fd 0 = FIFO
+
+    So the shape of the fd answers it. A FIFO is a pipe whether or not anything
+    was written — which is exactly how grep treats one — and a character device
+    is not a pipe no matter how non-tty it looks.
+
+    This also RETIRES the blocking `select()` + FIONREAD probe that the 0.65.1
+    stdin race required. That probe existed to wait out a slow upstream before
+    judging emptiness; with emptiness no longer part of the judgement there is
+    nothing to wait for, so the slow-producer race cannot come back through this
+    function and a pipeline stage no longer blocks here at all.
+
+    Regular files count: `rmx grep PAT < file` is stdin input to grep too. A
+    closed fd 0, or an fstat that raises, is not a stream.
+    """
     import sys as _sys
-    if _sys.stdin.isatty():
-        return False
     try:
         import os as _os
-        import select as _select
         import stat as _stat
         st = _os.fstat(_sys.stdin.fileno())
-        if _stat.S_ISREG(st.st_mode):
-            return st.st_size > 0
-        if not _stat.S_ISFIFO(st.st_mode):
-            # /dev/null (chr device) and friends: not a pipe.
-            return False
-        # FIFO. A zero-timeout peek here raced real pipelines: with
-        # `rg A f | rg -v B` both stages start together, and a slow
-        # upstream (itself a python-backed wrapper) hasn't written its
-        # first byte when this stage peeks — the pipe read as "empty",
-        # the search silently ran over the project tree instead of the
-        # pipe. Block until the pipe is readable: that means either data
-        # (live pipe) or EOF (the closed-or-empty pipe Bash-tool
-        # invocations hand us). Same blocking behavior as real grep on
-        # stdin, and the caller only asks when no path args were given.
-        _select.select([_sys.stdin], [], [])
-        # Readable + FIONREAD 0 = EOF on an empty pipe. FIONREAD, not a
-        # buffered peek: peek() would pull bytes into THIS process's stdio
-        # buffer, and on the exit-2 (fail-loud) and delegate paths the real
-        # tool inherits the fd and must see the stream intact.
-        import array as _array
-        import fcntl as _fcntl
-        import termios as _termios
-        pending = _array.array("i", [0])
-        _fcntl.ioctl(_sys.stdin.fileno(), _termios.FIONREAD, pending)
-        return pending[0] > 0
-    except Exception:
+    except (ValueError, OSError, AttributeError, TypeError):
+        # Closed fd, a replaced `sys.stdin` with no `fileno()` (CliRunner), or
+        # None. Not a stream we can read.
         return False
+    mode = st.st_mode
+    if _stat.S_ISFIFO(mode) or _stat.S_ISSOCK(mode):
+        return True
+    if _stat.S_ISREG(mode):
+        # A redirect of an EMPTY file is still a redirect: grep reads it, finds
+        # nothing and exits 1. Size is not the question here either.
+        return True
+    # CHR, DIR, BLK: not a stream. A TTY needs no separate `isatty()` check —
+    # a terminal IS a character device, so it lands here with /dev/null. The
+    # mutation check is what established that: deleting an `isatty()` pre-check
+    # changed no behaviour, including with a real pty, so it was a branch no
+    # test could ever hold responsible.
+    return False
 
 
 _STDIN_LABEL = "(standard input)"

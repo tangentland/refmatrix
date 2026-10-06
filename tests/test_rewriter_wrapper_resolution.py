@@ -78,7 +78,12 @@ def test_the_rewriter_prefers_the_deployed_wrapper_over_the_venv_copy(
 def test_the_venv_copy_is_still_used_when_the_tree_has_no_bin(
         tmp_path, monkeypatch):
     """The venv sibling stays in the chain — an editable install without a
-    `bin/` must still resolve rather than falling through to a bare name."""
+    `bin/` must still resolve rather than falling through to a bare name.
+
+    PATH holds ONLY a symlink to `rmx`, not the directory the wrapper lives in.
+    An earlier version put the venv bin on PATH, so `shutil.which("rmxgrep")`
+    answered from the PATH branch and a mutation deleting the sibling branch
+    left this green — the test was exercising a route it was not about."""
     tree = tmp_path / "refmatrix"
     venv_bin = tree / ".venv" / "bin"
     venv_bin.mkdir(parents=True)
@@ -86,8 +91,10 @@ def test_the_venv_copy_is_still_used_when_the_tree_has_no_bin(
         p = venv_bin / name
         p.write_text("#!/bin/sh\nexit 0\n")
         p.chmod(p.stat().st_mode | stat.S_IEXEC)
-    monkeypatch.setenv("PATH", str(venv_bin) + os.pathsep
-                       + os.environ.get("PATH", ""))
+    path_dir = tmp_path / "pathbin"
+    path_dir.mkdir()
+    (path_dir / "rmx").symlink_to(venv_bin / "rmx")
+    monkeypatch.setenv("PATH", str(path_dir))
     wrapper = _load_wrapper_resolver(monkeypatch, tmp_path)
 
     assert Path(wrapper("rmxgrep")) == venv_bin / "rmxgrep"
