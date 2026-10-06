@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: ch-implementer
+id: refmatrix/ch-implementer
 title: "ch-implementer — TDD implementer (codes RED→GREEN from the pseudocode ground truth)"
 tags: [agent, cat-herder]
 name: "ch-implementer"

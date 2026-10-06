@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: ch-alignment
+id: refmatrix/ch-alignment
 title: "ch-alignment — Pseudocode Ground-Truth Author + Adversarial Architecture-Alignment Enforcer"
 tags: [agent, cat-herder]
 name: "ch-alignment"

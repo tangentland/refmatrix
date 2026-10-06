@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: ch-security-auditor
+id: refmatrix/ch-security-auditor
 title: "ch-security-auditor — Security Auditor"
 tags: [agent, cat-herder]
 name: "ch-security-auditor"

@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: ch-test-engineer
+id: refmatrix/ch-test-engineer
 title: "ch-test-engineer — Test Engineer"
 tags: [agent, cat-herder]
 name: "ch-test-engineer"
