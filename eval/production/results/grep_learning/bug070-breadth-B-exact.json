@@ -1,0 +1,163 @@
+{
+  "rows": [
+    {
+      "pattern": "error:",
+      "index_rows": 0,
+      "distinct_concepts": 0,
+      "answered": false,
+      "concepts_sample": []
+    },
+    {
+      "pattern": " error: ",
+      "index_rows": 0,
+      "distinct_concepts": 0,
+      "answered": false,
+      "concepts_sample": []
+    },
+    {
+      "pattern": "ERROR",
+      "index_rows": 74,
+      "distinct_concepts": 26,
+      "answered": true,
+      "concepts_sample": [
+        "keyword/brokenpipeerror",
+        "keyword/connectionreseterror",
+        "keyword/context_error",
+        "keyword/eoferror",
+        "keyword/error",
+        "keyword/erroring",
+        "keyword/errors",
+        "keyword/filed_subject_error"
+      ]
+    },
+    {
+      "pattern": "timeout",
+      "index_rows": 26,
+      "distinct_concepts": 6,
+      "answered": true,
+      "concepts_sample": [
+        "keyword/exittimeout",
+        "keyword/probe_timeout",
+        "keyword/timeout",
+        "keyword/timeout_s",
+        "keyword/timeouterror",
+        "keyword/timeouts"
+      ]
+    },
+    {
+      "pattern": "roaring bitmap",
+      "index_rows": 0,
+      "distinct_concepts": 0,
+      "answered": false,
+      "concepts_sample": []
+    },
+    {
+      "pattern": "build context",
+      "index_rows": 0,
+      "distinct_concepts": 0,
+      "answered": false,
+      "concepts_sample": []
+    },
+    {
+      "pattern": "scan prompt",
+      "index_rows": 0,
+      "distinct_concepts": 0,
+      "answered": false,
+      "concepts_sample": []
+    },
+    {
+      "pattern": "derive status",
+      "index_rows": 0,
+      "distinct_concepts": 0,
+      "answered": false,
+      "concepts_sample": []
+    },
+    {
+      "pattern": "memory recall",
+      "index_rows": 0,
+      "distinct_concepts": 0,
+      "answered": false,
+      "concepts_sample": []
+    },
+    {
+      "pattern": "grep evidence",
+      "index_rows": 0,
+      "distinct_concepts": 0,
+      "answered": false,
+      "concepts_sample": []
+    },
+    {
+      "pattern": "learn queue",
+      "index_rows": 0,
+      "distinct_concepts": 0,
+      "answered": false,
+      "concepts_sample": []
+    },
+    {
+      "pattern": "replica bundle",
+      "index_rows": 0,
+      "distinct_concepts": 0,
+      "answered": false,
+      "concepts_sample": []
+    },
+    {
+      "pattern": "pagerank",
+      "index_rows": 22,
+      "distinct_concepts": 3,
+      "answered": true,
+      "concepts_sample": [
+        "import/pagerank",
+        "keyword/_run_pagerank",
+        "keyword/pagerank"
+      ]
+    },
+    {
+      "pattern": "canonicalize",
+      "index_rows": 11,
+      "distinct_concepts": 4,
+      "answered": true,
+      "concepts_sample": [
+        "keyword/canonicalize",
+        "keyword/canonicalize_name",
+        "keyword/canonicalized",
+        "keyword/canonicalizes"
+      ]
+    },
+    {
+      "pattern": "bitmap",
+      "index_rows": 56,
+      "distinct_concepts": 7,
+      "answered": true,
+      "concepts_sample": [
+        "keyword/bitmap",
+        "keyword/bitmap32",
+        "keyword/bitmap64",
+        "keyword/bitmap_fragments",
+        "keyword/bitmap_prefilter",
+        "keyword/bitmaps",
+        "keyword/roaring_bitmap"
+      ]
+    },
+    {
+      "pattern": "partition",
+      "index_rows": 234,
+      "distinct_concepts": 22,
+      "answered": true,
+      "concepts_sample": [
+        "keyword/_memory_partition_default",
+        "keyword/_migrate_to_partitions_if_needed",
+        "keyword/_partition_id",
+        "keyword/canon_partition",
+        "keyword/default_partition_name",
+        "keyword/memory_partition",
+        "keyword/merge_partition",
+        "keyword/partition"
+      ]
+    }
+  ],
+  "patterns": 16,
+  "answered": 6,
+  "total_index_rows": 423,
+  "total_distinct_concepts": 68,
+  "max_concepts": 26
+}
