@@ -234,66 +234,17 @@ def _pct(vals: list[int], p: float) -> int:
     return vals[min(len(vals) - 1, int(p * len(vals)))]
 
 
-def index_vs_control(arm_root: Path, patterns: list[str], hooks: Path,
-                     learn: bool, cap: int = 40) -> list[dict]:
-    """SECONDARY outcome: when the index answers, is its answer right?
-
-    For each pattern the index served, compare its `file:line` set against a
-    REAL-TOOL control over the same corpus. A loop that answers from the index
-    with worse rows has made retrieval worse, not better, and the primary
-    index/floor ratio cannot see that.
-    """
-    env = _env(arm_root, hooks, learn)
-    grep = shutil.which("grep") or "/usr/bin/grep"
-    out: list[dict] = []
-    seen: set[str] = set()
-    for pat in patterns:
-        if pat in seen or len(out) >= cap:
-            continue
-        seen.add(pat)
-        r = _grep(arm_root, pat, env)
-        rows = _rows_after(arm_root, 0)
-        if not rows or rows[-1].get("answered_by") != "index":
-            continue
-        idx_pairs = set()
-        for line in r.stdout.splitlines():
-            head = line.split("  ")[0]
-            if ":" in head:
-                f, _, ln = head.rpartition(":")
-                if ln.isdigit():
-                    idx_pairs.add((Path(f).name, int(ln)))
-        ctl = subprocess.run([grep, "-rnF", "--", pat, str(arm_root)],
-                             capture_output=True, text=True)
-        ctl_pairs = set()
-        for line in ctl.stdout.splitlines():
-            parts = line.split(":", 2)
-            if len(parts) >= 2 and parts[1].isdigit():
-                ctl_pairs.add((Path(parts[0]).name, int(parts[1])))
-        if not ctl_pairs:
-            continue
-        hit = idx_pairs & ctl_pairs
-        out.append({
-            "pattern": pat,
-            "index_rows": len(idx_pairs),
-            "control_rows": len(ctl_pairs),
-            "overlap": len(hit),
-            "recall": round(len(hit) / len(ctl_pairs), 3),
-            "precision": round(len(hit) / len(idx_pairs), 3) if idx_pairs else 0.0,
-        })
-    return out
-
-
 def _grep(arm_root: Path, pat: str, env: dict) -> subprocess.CompletedProcess:
     """One exploration call, with the ERE retry the log forces on us.
 
     `query.log` records the PATTERN and not the flags, so the original
-    invocation's `-E` is unrecoverable. A BRE-invalid pattern (`\\(`, `\\|`)
-    is rejected by `rmx grep`'s fail-loud guard with exit 2 BEFORE any
-    telemetry row is written, and in production the `rmxgrep` wrapper then
-    falls back to the real grep — so those calls are invisible to rmx
-    entirely. Replaying them bare would score a flag-parsing refusal as a
-    learning miss, so a rejected pattern is retried once as ERE, which is what
-    the caller almost certainly passed. Approximation, and named as one.
+    invocation's `-E` is unrecoverable. A BRE-invalid pattern (`\\(`, `\\|`) is
+    rejected by `rmx grep`'s fail-loud guard with exit 2 BEFORE any telemetry
+    row is written, and in production the `rmxgrep` wrapper then falls back to
+    the real grep — so those calls are invisible to rmx entirely. Replaying
+    them bare would score a flag-parsing refusal as a learning miss, so a
+    rejected pattern is retried once as ERE, which is what the caller almost
+    certainly passed. An approximation, and named as one.
     """
     r = subprocess.run([str(RMX), "grep", "--", pat], cwd=str(arm_root),
                        env=env, capture_output=True, text=True, timeout=120)
@@ -301,13 +252,71 @@ def _grep(arm_root: Path, pat: str, env: dict) -> subprocess.CompletedProcess:
         r = subprocess.run([str(RMX), "grep", "-E", "--", pat],
                            cwd=str(arm_root), env=env, capture_output=True,
                            text=True, timeout=120)
-        r.args = list(r.args) + ["(ERE retry)"]
     return r
 
 
 def _log_lines(arm_root: Path) -> int:
     p = arm_root / ".refmatrix" / "query.log"
     return len(p.read_text().splitlines()) if p.exists() else 0
+
+
+def score_against_control(arm_root: Path, pattern: str, stdout: str,
+                          learned_only: bool = True) -> "dict | None":
+    """SECONDARY outcome: when the index answers, is the answer RIGHT?
+
+    Two numbers, and the distinction matters:
+
+      * `precision` — of the rows the index returned, how many name a
+        `file:line` where the literal pattern actually appears. This is the one
+        that can indict the loop: a row pointing at a line that does not
+        contain the pattern is a WRONG answer, and the index/floor ratio cannot
+        see it.
+      * `coverage` — of the lines real grep finds, how many the index returned.
+        This is NOT a quality bound and must never be read as one: the index
+        answers with the top `--limit` references by design, so coverage on a
+        common token is small for the same reason `head -5` "loses" lines.
+
+    An earlier version of this function reported coverage as `recall` against an
+    unbounded `grep -r` control and mixed LEARNED `query/*` rows with
+    ingest-time concepts. It produced a median of 0.000 and would have read as
+    "the learned answer is wrong" — a number with no mechanism behind it
+    (feedback_causal_story_before_evidence). `learned_only` restricts the rows
+    to the ones the teach actually created.
+    """
+    import shutil as _sh
+    grep = _sh.which("grep") or "/usr/bin/grep"
+    idx_pairs: set = set()
+    for line in stdout.splitlines():
+        if line.startswith("#"):
+            continue          # provenance goes to stderr, but be safe
+        head, _, tail = line.partition("  ")
+        if learned_only and "query/" not in line:
+            continue
+        if ":" not in head:
+            continue
+        f, _, ln = head.rpartition(":")
+        if ln.isdigit():
+            idx_pairs.add((Path(f).name, int(ln)))
+    if not idx_pairs:
+        return None
+    ctl = subprocess.run([grep, "-rnF", "--", pattern, str(arm_root)],
+                         capture_output=True, text=True)
+    ctl_pairs: set = set()
+    for line in ctl.stdout.splitlines():
+        parts = line.split(":", 2)
+        if len(parts) >= 2 and parts[1].isdigit():
+            ctl_pairs.add((Path(parts[0]).name, int(parts[1])))
+    if not ctl_pairs:
+        return None
+    hit = idx_pairs & ctl_pairs
+    return {
+        "pattern": pattern,
+        "index_rows": len(idx_pairs),
+        "control_rows": len(ctl_pairs),
+        "overlap": len(hit),
+        "precision": round(len(hit) / len(idx_pairs), 3),
+        "coverage": round(len(hit) / len(ctl_pairs), 3),
+    }
 
 
 def reachability(arm_root: Path, patterns: list[str], hooks: Path,
@@ -331,14 +340,18 @@ def reachability(arm_root: Path, patterns: list[str], hooks: Path,
         first = _rows_after(arm_root, before)
         d = drain(arm_root, True)
         before2 = _log_lines(arm_root)
-        _grep(arm_root, pat, env)
+        r2 = _grep(arm_root, pat, env)
         second = _rows_after(arm_root, before2)
+        quality = None
+        if second and second[-1].get("answered_by") == "index":
+            quality = score_against_control(arm_root, pat, r2.stdout)
         out.append({
             "pattern": pat,
             "first": (first[-1].get("answered_by") if first else None),
             "first_cardinality": (first[-1].get("cardinality") if first else None),
             "applied": int(d.get("applied") or 0),
             "second": (second[-1].get("answered_by") if second else None),
+            "quality": quality,
         })
         if verbose and i % 10 == 0:
             print(f"    {i}/{len(patterns)}", end="\r", flush=True)
@@ -444,8 +457,6 @@ def main() -> None:
                            drain_every=args.drain_every)
             stats["ingest_s"] = build["ingest_s"]
             stats["learned_concepts_before_replay"] = baseline
-            if args.secondary:
-                stats["index_vs_control"] = index_vs_control(arm, patterns, hooks, learn)
             result["arms"][name] = stats
             print(f"    {json.dumps(stats['answered_by'])}  "
                   f"learned={stats['learned_concepts']}  wall={stats['wall_s']}s")
