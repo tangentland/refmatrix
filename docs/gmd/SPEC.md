@@ -39,6 +39,30 @@ Reserved keys:
 
 All other keys are user-defined and preserved verbatim.
 
+### Project namespace {#project-namespace}
+
+`id` is unique *within a project*, so the project is what makes an id globally
+addressable. Any doc that may be read alongside another project's corpus — an agent
+definition, a shared template, a memory file — SHOULD carry a project-prefixed id:
+
+```yaml
+id: cliquedb/gmd-curator        # not: gmd-curator
+```
+
+The prefix is the project name, resolved in this order:
+
+1. `project:` in `.gmd/config.yml` at the repo root.
+2. Otherwise the repo directory name (nearest ancestor holding `.git`).
+3. Paths under `~/.claude/` are the reserved namespace `claude` — the global agent,
+   command and memory trees are shared, not project-scoped.
+
+Within its own project a doc MAY still be referenced unprefixed: `[[other-doc#anchor]]`
+resolves against `<project>/other-doc` as well as the literal id. So adding a prefix to
+an existing id does not break links that already address it bare.
+
+A reference that resolves only by matching a *filename stem* shared by several docs is
+ambiguous; implementations SHOULD warn and authors SHOULD use the prefixed id.
+
 ## 3. Block IDs {#block-ids}
 
 Any block-level element MAY carry a stable ID using the CommonMark attribute-list syntax:
