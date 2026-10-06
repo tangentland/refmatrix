@@ -130,6 +130,50 @@ def test_a_default_on_invocation_silenced_by_a_marker_stays_quiet(project):
 
 # ---- site 2: the context grep backstop -----------------------------------
 
+def test_the_broker_itself_refuses_when_off(project, monkeypatch):
+    """The broker is the funnel both the grep fallback and the context backstop
+    reach, and it carries its OWN guard so a future caller that forgets to ask
+    cannot teach behind the operator.
+
+    Pinned separately because the two guards are deliberately redundant: a
+    mutation check showed that removing either one alone left the backstop test
+    green, which is what redundancy does to coverage. Each layer now has a test
+    that fails when only that layer is broken."""
+    root = project / ".refmatrix"
+    hits = [{"file": str(project / "sample.py"), "line": 1}]
+    (project / "sample.py").write_text("x = 1\n")
+
+    assert cli_mod._broker_learn_from_grep(root, "target", hits) is True
+    assert _queue_depth(root) == 1
+    lq.drain(root)
+
+    monkeypatch.setenv("RMX_LEARN", "0")
+    out = cli_mod._broker_learn_from_grep(root, "target", hits)
+
+    assert out is False
+    assert _queue_depth(root) == 0
+
+
+def test_the_backstop_does_not_even_walk_the_bundle_when_off(project, monkeypatch):
+    """The guard sits before the hits are built, not just before the write —
+    with learning off there is no reason to walk the bundle at all. Asserted by
+    handing it a bundle that RAISES if its groups are touched, which is what
+    makes this test fail when only the backstop's own guard is removed."""
+    root = project / ".refmatrix"
+    fake_daemon = types.SimpleNamespace(ping=lambda *a, **k: True)
+
+    class _ExplodingBundle:
+        @property
+        def groups(self):
+            raise AssertionError("the backstop walked the bundle with learning off")
+
+    monkeypatch.setenv("RMX_LEARN", "0")
+    cli_mod._maybe_learn_grep_backstop(root, fake_daemon, "target",
+                                       _ExplodingBundle(), True)
+
+    assert _queue_depth(root) == 0
+
+
 def test_the_context_backstop_does_not_learn_when_off(project, monkeypatch):
     """Only `ping` is stubbed — the backstop requires a daemon to be up, and
     the broker's default path then APPENDS to the queue, so the assertion is
@@ -238,6 +282,41 @@ def test_the_learn_op_refuses_by_name_when_off(project, monkeypatch):
     rows = _op_grep_indexed(d, {"pattern": "query/target"})["rows"]
     assert rows == [], rows
     d.store.close()
+
+
+# ---- site 5: the context op's OWN teach ----------------------------------
+
+def test_the_context_op_does_not_learn_when_off(project, monkeypatch):
+    """`_op_context` has its own `_learn_grep_hits` call — a sixth site, found
+    by sweeping callers rather than by any finding, and the only one the
+    mutation check could not kill because nothing tested it at all.
+
+    Driven through the real op against a real store whose index is empty, so
+    the grep backstop is what produces the hits."""
+    from refmatrix.daemon import _op_context, _op_grep_indexed
+
+    root = project / ".refmatrix"
+    # BOTH refs must be present in the corpus. An earlier version of this test
+    # used a second ref that matched nothing, so the OFF arm learned nothing
+    # whether the guard was there or not — the mutation check passed with the
+    # guard deleted, which is the "verification that cannot observe the defect"
+    # shape (feedback_red_test_must_fail_at_head).
+    (project / "sample.py").write_text(
+        "def target_symbol():\n    return 1\n\n\ndef other_symbol():\n    return 2\n")
+    d = _daemon_with_store(root)
+
+    # control: with learning ON the op teaches the graph what grep found
+    _op_context(d, {"ref": "target_symbol", "grep_backstop": True})
+    learned_on = _op_grep_indexed(d, {"pattern": "query/target_symbol"})["rows"]
+    assert learned_on, "toggle ON: the context op taught nothing, so the OFF " \
+                       "assertion below would be vacuous"
+
+    monkeypatch.setenv("RMX_LEARN", "0")
+    _op_context(d, {"ref": "other_symbol", "grep_backstop": True})
+    learned_off = _op_grep_indexed(d, {"pattern": "query/other_symbol"})["rows"]
+    d.store.close()
+
+    assert learned_off == [], learned_off
 
 
 # ---- the CLI surface -----------------------------------------------------
