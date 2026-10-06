@@ -5,14 +5,14 @@ title: "Task 15.3: rmx derive log / diff, and a status line that says which pass
 tags: [task, derive, cli, verbs]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   created: 2026-10-06
 ---
 
 # Task 15.3: the surface {#root}
 
 > Plan: [plan-15-derive-impact-tracking](../plan-15-derive-impact-tracking.md)
-> Status: Pending
+> Status: Complete
 > Depends on: Task 15.1, Task 15.2
 
 rel: part-of -> [[plan-15-derive-impact-tracking]]

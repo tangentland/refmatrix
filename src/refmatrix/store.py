@@ -5816,6 +5816,22 @@ class Store:
     # small enough that the table never becomes the thing you have to prune.
     DERIVE_HISTORY_MAX = 50
 
+    def _has_table(self, name: str) -> bool:
+        """Does this catalog carry `name`?
+
+        Checked rather than caught: narrowing on an exception message is how a
+        real failure gets read as "absent". A store opened from an older schema
+        is a normal state on a machine mid-deploy, where the CLI and the daemon
+        can be different versions by design.
+        """
+        try:
+            row = self._connect().execute(
+                "SELECT count(*) FROM information_schema.tables "
+                "WHERE table_name=?", (name,)).fetchone()
+            return bool(row and row[0])
+        except Exception:
+            return False
+
     def derive_counts(self) -> dict:
         """The partition's structural shape — what a derive left behind.
 
@@ -5871,6 +5887,13 @@ class Store:
         the next derive look like it created the entire graph.
         """
         con = self._connect()
+        if not self._has_table("derive_history"):
+            # A store whose schema predates task 15.2 has NO HISTORY, which is
+            # a real answer and not an error. Raising here crashed
+            # `rmx derive log` against the live store on the first real run:
+            # the deployed daemon predates the table, so the dev CLI read a
+            # catalog that legitimately lacks it.
+            return []
         sql = ("SELECT id, pass_name, version, code_hash, derived_at, "
                "       duration_s, pruned, counts "
                "FROM derive_history WHERE partition_id=?")

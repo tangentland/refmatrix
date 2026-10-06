@@ -4378,6 +4378,19 @@ def _op_derive_status(d: Daemon, args: dict) -> dict:
         return d._st().derive_status()
 
 
+def _op_derive_history(d: Daemon, args: dict) -> dict:
+    """Recorded derives for the caller's partition (task 15.2), newest first.
+
+    A READ: the daemon owns the writer, so a CLI asking for history must come
+    through here rather than opening the active slot.
+    """
+    pass_name = args.get("pass_name") or None
+    limit = int(args.get("limit") or 20)
+    part = args.get("partition") or d._st()._partition_name
+    with d._store_lock, d._st().with_partition(part):
+        return {"rows": d._st().derive_history(pass_name=pass_name, limit=limit)}
+
+
 def _op_clear_tracked_stamps(d: Daemon, args: dict) -> dict:
     """Drop the ingest mtime stamps for the caller's partition without
     touching entities, so the next ingest re-derives every file. `like` scopes
@@ -5800,6 +5813,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "untrack": _op_untrack,
     "clear_tracked_stamps": _op_clear_tracked_stamps,
     "derive_status": _op_derive_status,
+    "derive_history": _op_derive_history,
     "compile_pairs": _op_compile_pairs,
     "coref_link": _op_coref_link,
     "merge_verb_aliases": _op_merge_verb_aliases,
@@ -5850,6 +5864,7 @@ CLI_OPS: set[str] = {
     # A status surface asks it on every invocation, and the store most likely
     # to be stale is the one with a fat ingest in the bg pool (plan-12 #s-2).
     "derive_status",
+    "derive_history",
     "ping",
     "stats",
     "context",

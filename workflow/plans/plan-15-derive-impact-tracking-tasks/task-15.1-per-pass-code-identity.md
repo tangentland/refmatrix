@@ -5,14 +5,14 @@ title: "Task 15.1: each pass is stale on its OWN code, not on a shared hash"
 tags: [task, derive, store]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   created: 2026-10-06
 ---
 
 # Task 15.1: per-pass code identity {#root}
 
 > Plan: [plan-15-derive-impact-tracking](../plan-15-derive-impact-tracking.md)
-> Status: Pending
+> Status: Complete
 > Depends on: —
 
 rel: part-of -> [[plan-15-derive-impact-tracking]]

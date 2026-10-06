@@ -104,5 +104,13 @@ Stated before building, so it cannot be adjusted to whatever ships: {#acceptance
 2. A forced re-derive of one pass produces a `derive_history` row whose counts differ from the
    previous row by a number the diff surface prints, and the same re-derive run twice in a row
    produces a diff of **all zeros** — a derive that changes nothing must be visibly a no-op.
+
+   **MET for graph content, and WRONG as written about the rest.** Running the real pass twice over
+   an unchanged tree leaves every graph count identical and moves `bitmap_fragments` **0 -> 3**,
+   because the first pass had not flushed fragments yet. "All zeros" was an assumption about the
+   system, not a requirement of it. Hiding the fragment delta would have been a lie and calling it
+   "the derive changed something" would bury the question people actually ask, so counts are split:
+   GRAPH content decides the verdict, and a `materialized cache:` line reports the rest beside it.
+   The split was found by measuring, not designed.
 3. The counts cost is measured, not asserted: the task records wall time for the counts query set
    against the duration of the pass it follows.

@@ -3346,15 +3346,47 @@ def render_derive_warning(status: "dict | None", *,
     `derive: current` line to that screen would bury the one case worth seeing
     among seven that are not.
     """
-    if not status or not status.get("stale"):
+    if not status:
         return ""
-    oldest = status.get("oldest_version") or "never stamped"
+    label = f"derive[{partition}]" if partition else "derive"
     running = status.get("running_version") or "?"
     reason = status.get("reason") or ""
-    label = f"derive[{partition}]" if partition else "derive"
-    return (f"{label}: {oldest} (running {running}) — stale; "
-            f"re-derive with `rmx reingest --force`"
-            + (f"\n  {reason}" if reason else ""))
+    # ATTRIBUTED (task 15.3). The old line led with the version comparison,
+    # which moves on every bump — 34 in ten days — named no pass, and did not
+    # say whether the deriving CODE had changed. It read as noise, which is how
+    # bug-039's condition hid in a screen where every line already looked fine.
+    # Three axes now, in descending order of what a reader should do about it.
+    passes = status.get("passes") or []
+    behind = sorted(r["pass_name"] for r in passes if r.get("behind_code"))
+    if behind:
+        return (f"{label}: {', '.join(behind)} derived by code that has since "
+                f"CHANGED — re-derive with `rmx reingest --force`"
+                + (f"\n  {reason}" if reason else ""))
+    if status.get("never_stamped"):
+        return (f"{label}: never stamped — whether the graph matches the "
+                f"running code is UNKNOWN; `rmx reingest --force` to know"
+                + (f"\n  {reason}" if reason else ""))
+    if status.get("code_unknown"):
+        unknown = sorted(r["pass_name"] for r in passes if r.get("code_unknown"))
+        return (f"{label}: {', '.join(unknown)} stamped under an older identity "
+                f"scheme — code drift UNKNOWN; `rmx derive status` for detail")
+    if status.get("stale"):
+        oldest = status.get("oldest_version") or "?"
+        # "Version drift only, code unchanged" is a CLAIM, and it needs the
+        # per-pass evidence to make it. A status dict with no `passes` is
+        # pre-15.1 shaped (or came from a daemon that is), so the only axis
+        # available is the version — and the honest line there is the old one.
+        # Saying "no re-derive needed" without having compared any code would
+        # be the reassuring half of a verdict we did not reach.
+        comparable = [r for r in passes if not r.get("code_unknown")]
+        if comparable and len(comparable) == len(passes):
+            return (f"{label}: derived at {oldest}, running {running} — "
+                    f"version drift only, deriving code unchanged "
+                    f"(no re-derive needed)")
+        return (f"{label}: {oldest} (running {running}) — stale; "
+                f"re-derive with `rmx reingest --force`"
+                + (f"\n  {reason}" if reason else ""))
+    return ""
 
 
 
@@ -6655,6 +6687,235 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
         _tlog=_tlog, project_root=root.parent,
         learn_broker=_report_learned if learn else None,
     )
+
+
+# ---- derive: what built this graph, and what each derive changed ----------
+
+
+# The keys worth showing first; the rest follow in sorted order so a new count
+# key cannot go unrendered (an un-rendered number is an un-read number).
+_DERIVE_COUNT_ORDER = ("entities", "concepts", "links", "evidence",
+                       "memory_content", "tracked_files", "pagerank",
+                       "bitmap_fragments")
+
+# GRAPH CONTENT vs MATERIALIZED CACHE, and the split was found by measuring
+# rather than designed. Task 15.3's acceptance said a no-op derive must diff to
+# all zeros; the first run of that test showed graph counts identical and
+# `bitmap_fragments` 0 -> 3, because the first pass had not flushed fragments
+# yet. That is a real difference and hiding it would have been a lie, but
+# calling it "the derive changed something" buries the question people ask —
+# did the GRAPH move? So both are reported and only the first decides the
+# verdict, with the cache delta shown beside it.
+_DERIVE_CACHE_KEYS = frozenset({"bitmap_fragments", "pagerank"})
+
+
+def _derive_count_keys(*rows: dict) -> list:
+    seen = {k for r in rows for k in (r or {}) if k != "by_kind"}
+    ordered = [k for k in _DERIVE_COUNT_ORDER if k in seen]
+    return ordered + sorted(seen - set(ordered))
+
+
+def _derive_delta(new: dict, old: "dict | None") -> "dict | None":
+    """Counts that MOVED between two derives, or None when there is no
+    predecessor. `{}` means compared-and-identical, which is a different
+    answer from "nothing to compare" and must not render the same."""
+    if old is None:
+        return None
+    out = {}
+    for k in _derive_count_keys(new, old):
+        a, b = old.get(k), new.get(k)
+        if isinstance(a, int) and isinstance(b, int) and a != b:
+            out[k] = (a, b)
+    return out
+
+
+def _derive_history_rows(pass_name, limit):
+    """History via the daemon when one is up, else a direct read-only open.
+
+    Same routing every read surface uses: the daemon owns the writer, so a CLI
+    read must not open the active slot while it might.
+    """
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    if daemon_mod.ping(root):
+        try:
+            resp = daemon_mod.call(root, "derive_history",
+                                   {"pass_name": pass_name, "limit": limit},
+                                   timeout=5.0, retries=0)
+            if resp.get("ok"):
+                return resp["result"]["rows"]
+            # An older daemon has no such op. Not an error for a read: fall
+            # through to the replica, which is lock-free.
+        except Exception as exc:    # noqa: BLE001 — named, then degraded
+            # BUSY IS NOT ABSENT, and a read must not die of it. A daemon that
+            # answers `ping` can still be holding the writer, and the first cut
+            # of this command let the TimeoutError out — `rmx derive status`
+            # crashed with a traceback against the live store while every test
+            # passed, because the tests stub `ping` to False
+            # (feedback_green_tests_are_not_a_working_command).
+            click.echo(f"# rmx: daemon did not answer ({type(exc).__name__}); "
+                       f"reading the lock-free replica", err=True)
+    s = _reader_store() or _store()
+    return s.derive_history(pass_name=pass_name, limit=limit)
+
+
+@main.group("derive")
+def derive_cmd():
+    """What built this graph, and what each derive changed.
+
+    `derive_stamps` says which code is behind the CURRENT graph; the history
+    says what each derive produced, so a change has a measurable effect instead
+    of an opinion. bug-039's own impact figures came from a harness that no
+    longer runs.
+    """
+
+
+@derive_cmd.command("log")
+@click.option("--pass", "pass_name", default=None, help="One pass only.")
+@click.option("--limit", default=20, type=int, help="Rows (newest first).")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable.")
+def derive_log(pass_name, limit, as_json):
+    """Recorded derives, newest first, with the delta against the previous one."""
+    import json as _json
+    rows = _derive_history_rows(pass_name, limit)
+    if as_json:
+        click.echo(_json.dumps(rows, indent=2, sort_keys=True))
+        return
+    if not rows:
+        # Never an empty table: a caller cannot tell silence from breakage,
+        # which is bug-058's shape.
+        console.print("no derive history yet — the first derive after 0.74.x "
+                      "records one (`rmx reingest --force`)")
+        return
+    # Oldest-first within each pass so a row's predecessor is the previous
+    # ROW OF THE SAME PASS, not whatever happened to be logged before it.
+    by_pass: dict = {}
+    for r in rows:
+        by_pass.setdefault(r["pass_name"], []).append(r)
+    for name in sorted(by_pass):
+        seq = sorted(by_pass[name], key=lambda r: (r["derived_at"], r["id"]))
+        prev = None
+        console.print(f"\n[bold]{name}[/]")
+        for r in seq:
+            when = time.strftime("%Y-%m-%d %H:%M",
+                                 time.localtime(r["derived_at"]))
+            ch = (r.get("code_hash") or "-")
+            ch = ch.split(":", 1)[1][:8] if ":" in ch else ch[:8]
+            head = (f"  {when}  v{r['version']:<8} code={ch}")
+            if r.get("duration_s"):
+                head += f"  {float(r['duration_s']):.1f}s"
+            if r.get("pruned"):
+                head += f"  (evicted {r['pruned']} older row(s))"
+            console.print(head)
+            counts = r.get("counts") or {}
+            if "error" in counts:
+                console.print(f"      [yellow]counts unavailable[/]: {counts['error']}")
+            else:
+                shown = ", ".join(
+                    f"{k}={counts.get(k):,}" for k in _derive_count_keys(counts)
+                    if isinstance(counts.get(k), int))
+                console.print(f"      {shown}")
+            delta = _derive_delta(counts, (prev or {}).get("counts") if prev else None)
+            if delta is None:
+                console.print("      [dim]first recorded derive — nothing to "
+                              "compare against[/]")
+            elif not delta:
+                console.print("      [green]no change[/] from the previous derive")
+            else:
+                moved = ", ".join(
+                    f"{k} {a:,}->{b:,} ({b - a:+,})" for k, (a, b) in delta.items())
+                console.print(f"      [cyan]changed[/] {moved}")
+            prev = r
+
+
+@derive_cmd.command("diff")
+@click.option("--pass", "pass_name", default="gmd", help="Which pass.")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable.")
+def derive_diff(pass_name, as_json):
+    """Counts delta between the two most recent derives of one pass."""
+    import json as _json
+    rows = _derive_history_rows(pass_name, 2)
+    if as_json:
+        newest = (rows[0] if rows else {}).get("counts") or {}
+        older = (rows[1] if len(rows) > 1 else {}).get("counts") or None
+        click.echo(_json.dumps(
+            {"pass": pass_name, "delta": _derive_delta(newest, older)},
+            indent=2, sort_keys=True, default=str))
+        return
+    if not rows:
+        console.print(f"no derive history for `{pass_name}` yet")
+        return
+    if len(rows) < 2:
+        console.print(f"`{pass_name}` has one recorded derive — nothing to "
+                      f"compare against yet")
+        return
+    delta = _derive_delta(rows[0]["counts"], rows[1]["counts"])
+    graph = {k: v for k, v in delta.items() if k not in _DERIVE_CACHE_KEYS}
+    cache = {k: v for k, v in delta.items() if k in _DERIVE_CACHE_KEYS}
+    if not graph:
+        # Said out loud: an empty render reads as a broken command.
+        console.print(f"[green]no change[/] — the last two `{pass_name}` "
+                      f"derives produced identical graph counts")
+    else:
+        console.print(f"[bold]{pass_name}[/]: what the last derive changed")
+        for k, (a, b) in graph.items():
+            console.print(f"  {k:18} {a:>10,} -> {b:>10,}   ({b - a:+,})")
+    if cache:
+        # Not part of the verdict, and not swallowed either: a materialized
+        # cache can move while the graph stands still (a first flush), and it
+        # can also move because something went wrong.
+        moved = ", ".join(f"{k} {a:,}->{b:,} ({b - a:+,})"
+                          for k, (a, b) in cache.items())
+        console.print(f"  [dim]materialized cache:[/] {moved}")
+
+
+@derive_cmd.command("status")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable.")
+def derive_status_cmd(as_json):
+    """Which code derived this partition, per pass, and on WHICH axis it is
+    behind — version drift and a real code move are different questions."""
+    import json as _json
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    st = None
+    if daemon_mod.ping(root):
+        try:
+            resp = daemon_mod.call(root, "derive_status", {},
+                                   timeout=5.0, retries=0)
+            if resp.get("ok"):
+                st = resp["result"]
+        except Exception as exc:    # noqa: BLE001 — named, then degraded
+            click.echo(f"# rmx: daemon did not answer ({type(exc).__name__}); "
+                       f"reading the lock-free replica", err=True)
+    if st is None:
+        s = _reader_store() or _store()
+        st = s.derive_status()
+    if as_json:
+        click.echo(_json.dumps(st, indent=2, sort_keys=True, default=str))
+        return
+    running = st.get("running_version") or "?"
+    console.print(f"running {running}")
+    passes = st.get("passes") or []
+    if not passes:
+        console.print("  [yellow]no pass has stamped this partition[/] — "
+                      "whether the graph matches the running code is UNKNOWN; "
+                      "re-derive to know")
+        return
+    for r in passes:
+        mods = ", ".join(r.get("modules") or []) or "-"
+        if r.get("code_unknown"):
+            axis = ("[yellow]code UNKNOWN[/] (stamped under an older identity "
+                    "scheme; re-derive to know)")
+        elif r.get("behind_code"):
+            axis = "[red]code MOVED[/] since this derive"
+        else:
+            axis = "[green]code unchanged[/]"
+        drift = ("" if r["version"] == running
+                 else f"  [yellow]version drift[/] {r['version']} -> {running}")
+        console.print(f"  {r['pass_name']:<10} v{r['version']:<8} {axis}{drift}")
+        console.print(f"     covers: {mods}")
+    if st.get("reason"):
+        console.print(f"  {st['reason']}")
 
 
 # ---- the learning toggle --------------------------------------------------
