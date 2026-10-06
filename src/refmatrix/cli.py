@@ -6334,6 +6334,15 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
             cmd.append("-l")
         if gf["files_without_match"]:
             cmd.append("--files-without-match")
+        if not regex:
+            # bug-063: `-F` was parsed, resolved into `regex=False` above, and
+            # then DROPPED here — rg is regex-by-default, so a literal with a
+            # metacharacter matched lines grep rejects entirely
+            # (`-F 'alpha|beta'` returned 2 rows and exit 0 against grep's 0
+            # rows and exit 1, which inverts `if cmd | grep -F ...`). The grep
+            # branch below always said `E if regex else F`; only this branch
+            # had a default instead of a decision.
+            cmd.append("-F")
         cmd += ["--regexp", pattern] + targets
     else:
         tool = shutil.which("grep")
@@ -6360,6 +6369,73 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
         g_letters += "E" if regex else "F"
         cmd = [tool, f"-{g_letters}", pattern] + targets
     res = subprocess.run(cmd, capture_output=True, text=True)
+
+    def _banner() -> None:
+        """Provenance: ONE stderr line, from ONE place.
+
+        `tests/test_grep_output_shape.py::test_the_fallback_renderer_exists_exactly_once`
+        counts this literal, and it caught the `-l`/`-L` fix pasting a second
+        copy. That guard exists because `_grep_run` once carried an inlined
+        duplicate of this whole function and bug-058 was then fixed in one copy
+        and missed in the other.
+        """
+        click.echo(f"# rmx grep fallback via "
+                   f"{'rg' if tool.endswith('/rg') else 'grep'}", err=True)
+
+    if gf["files_only"] or gf["files_without_match"]:
+        # bug-064. `-l`/`-L` are handled HERE, before the empty-output branch
+        # below, because that branch gets BOTH of their answers wrong:
+        #
+        #   * ORDER. The tool's output is fan-out/completion order, so
+        #     `-l alpha a.txt b.txt` came back `b.txt, a.txt` and
+        #     `grep -l X *.py | head -1` picked an arbitrary file.
+        #   * EXIT STATUS. grep's status reflects whether a line was SELECTED,
+        #     not whether filenames were printed. `-L zzz a.txt b.txt` prints
+        #     both files and exits 1 (nothing matched); `-L alpha a.txt` prints
+        #     NOTHING and exits 0 (a line matched). Falling through to the
+        #     empty-output branch inverted the second case too, which is the
+        #     half the row did not name.
+        listed = [l for l in res.stdout.splitlines() if l.strip()]
+        if paths:
+            # Argument order for named paths. A directory walk keeps the
+            # tool's own order: re-sorting a walk would invent an order grep
+            # does not promise either.
+            rank = {str(Path(p_).resolve()): i for i, p_ in enumerate(paths)}
+
+            def _rank(line: str) -> tuple:
+                try:
+                    return (rank.get(str(Path(line).resolve()), len(rank)),
+                            line)
+                except (OSError, ValueError):
+                    return (len(rank), line)
+            listed.sort(key=_rank)
+
+        if gf["files_without_match"]:
+            # The `-L` list cannot say whether anything matched — it is the
+            # complement. Ask the tool the other question; one extra exec, and
+            # only on this flag.
+            probe = list(cmd)
+            if "--files-without-match" in probe:
+                probe[probe.index("--files-without-match")] = "-l"
+            else:
+                probe = [c.replace("L", "l") if c.startswith("-") and "L" in c
+                         else c for c in probe]
+            pr = subprocess.run(probe, capture_output=True, text=True)
+            matched_any = bool(pr.stdout.strip())
+        else:
+            matched_any = bool(listed)
+
+        _tlog.cardinality = len(listed)
+        if listed:
+            _banner()
+            for line in listed:
+                click.echo(line)
+        if not matched_any:
+            if not listed:
+                click.echo("rmx grep: no matches", err=True)
+            raise SystemExit(1)
+        return
+
     if not res.stdout.strip():
         _tlog.cardinality = 0
         if shape["count"] and not shape["with_filename"]:
@@ -6373,8 +6449,7 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
         raise SystemExit(1)
     # Provenance is one stderr line, not a per-line stdout tag: tagging every
     # hit broke file:line copy-paste and any consumer parsing grep format.
-    click.echo(f"# rmx grep fallback via {'rg' if tool.endswith('/rg') else 'grep'}",
-               err=True)
+    _banner()
     prefix = ""
     shown = 0
     produced = res.stdout.splitlines()
@@ -6401,11 +6476,6 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
                 f"({len(rows) - n} withheld); pass --limit 0 for all",
                 err=True)
         return n
-
-    if gf["files_only"] or gf["files_without_match"]:
-        # -l / -L emit bare paths: no line, nothing to reshape.
-        _tlog.cardinality = _emit(produced)
-        return
 
     # Canonical `file:line:text` -> triples. ONE parse feeds both the render and
     # the learn broker, so a reshaped view can never cost the graph a hit.
