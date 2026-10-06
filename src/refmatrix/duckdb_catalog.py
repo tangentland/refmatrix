@@ -142,6 +142,23 @@ CREATE TABLE IF NOT EXISTS derive_stamps (
     PRIMARY KEY (partition_id, pass_name)
 );
 
+-- WHAT each derive PRODUCED, append-only and capped per (partition, pass)
+-- (task 15.2). See the SQLite CATALOG_DDL for the reasoning; the shapes must
+-- stay in step, and this file is the one the DuckDB backend actually applies —
+-- adding the table to only one of the two is how a fresh store gets a schema
+-- the code expects and does not have.
+CREATE TABLE IF NOT EXISTS derive_history (
+    id           BIGINT PRIMARY KEY,
+    partition_id INTEGER NOT NULL DEFAULT 1,
+    pass_name    TEXT NOT NULL,
+    version      TEXT NOT NULL,
+    code_hash    TEXT,
+    derived_at   DOUBLE NOT NULL,
+    duration_s   DOUBLE,
+    pruned       INTEGER NOT NULL DEFAULT 0,
+    counts       TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS linkage_evidence (
     entity_id   INTEGER NOT NULL,
     linkage_id  INTEGER NOT NULL,

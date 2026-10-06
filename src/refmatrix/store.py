@@ -364,6 +364,29 @@ CREATE TABLE IF NOT EXISTS derive_stamps (
     PRIMARY KEY (partition_id, pass_name)
 );
 
+-- WHAT each derive PRODUCED, append-only (task 15.2). `derive_stamps` answers
+-- "which code built what is in the store NOW" and upserts, so there is nothing
+-- to compare a derive against — and bug-039's own impact figures (31 -> 63
+-- bundles, 206 -> 466 nodes) came from a hand-rolled harness that no longer
+-- runs. `counts` is the partition's structural shape AFTER the pass, so two
+-- derives diff directly and a derive that changed nothing is visibly a no-op.
+--
+-- Capped per (partition, pass): `global:queues` reached 3,196 rows unbounded
+-- (bug-061), and an append-only table with no retention is that defect under a
+-- new name. `pruned` records how many rows the insert evicted, so the drop is
+-- visible in `rmx derive log` rather than silent.
+CREATE TABLE IF NOT EXISTS derive_history (
+    id           BIGINT PRIMARY KEY,
+    partition_id INTEGER NOT NULL REFERENCES partitions(id),
+    pass_name    TEXT NOT NULL,
+    version      TEXT NOT NULL,
+    code_hash    TEXT,
+    derived_at   REAL NOT NULL,
+    duration_s   REAL,
+    pruned       INTEGER NOT NULL DEFAULT 0,
+    counts       TEXT NOT NULL
+);
+
 -- Evidence: where a linkage was sourced from. Optional; ingesters that know
 -- the source location (e.g. semantic ingester walking ast nodes) populate it.
 -- The `entity_links` row is authoritative for membership; this table is for
@@ -5748,7 +5771,8 @@ class Store:
 
     def stamp_derive(self, pass_name: str, *, version: "str | None" = None,
                      at: "float | None" = None,
-                     code_hash: "str | None" = None) -> str:
+                     code_hash: "str | None" = None,
+                     duration_s: "float | None" = None) -> str:
         """Record that `pass_name` derived this partition's graph, with the
         version of the code that did it (bug-039).
 
@@ -5774,8 +5798,133 @@ class Store:
             "  code_hash=excluded.code_hash",
             (self._partition_id, pass_name, v, ts, ch),
         )
+        # Same transaction as the stamp (task 15.2): a stamp claiming a derive
+        # the history did not record would make the pair disagree, and the pair
+        # is only useful if it cannot. A failure here is SAID and the derive
+        # stands — losing the derive would be worse than losing its record.
+        try:
+            self._write_derive_history(pass_name, v, ts, ch,
+                                       duration_s=duration_s)
+        except Exception as exc:      # noqa: BLE001 — said, never mute
+            import sys as _sys
+            print(f"warning: derive history for `{pass_name}` not recorded: "
+                  f"{type(exc).__name__}: {exc}", file=_sys.stderr)
         con.commit()
         return v
+
+    # Rows kept per (partition, pass). 50 is enough to see a release arc and
+    # small enough that the table never becomes the thing you have to prune.
+    DERIVE_HISTORY_MAX = 50
+
+    def derive_counts(self) -> dict:
+        """The partition's structural shape — what a derive left behind.
+
+        A FIXED key set, so two rows are comparable without knowing which
+        version wrote them, and cheap: these run at the end of a pass that has
+        already walked the whole corpus.
+
+        `entity_links` and `linkage_evidence` carry no `partition_id`, so they
+        are scoped by joining `entities` — the same way every partition-scoped
+        query in this module does it. Counting them unscoped would report the
+        whole store's totals for one partition and make every diff wrong in the
+        same direction, which is the kind of error that looks like a result.
+        """
+        con = self._connect()
+        pid = self._partition_id
+
+        def one(sql: str) -> int:
+            row = con.execute(sql, (pid,)).fetchone()
+            return int(row[0]) if row and row[0] is not None else 0
+
+        by_kind = {
+            r[0]: int(r[1])
+            for r in con.execute(
+                "SELECT kind, count(*) FROM entities WHERE partition_id=? "
+                "GROUP BY kind", (pid,)).fetchall()
+        }
+        return {
+            "entities": sum(by_kind.values()),
+            "by_kind": by_kind,
+            "concepts": by_kind.get("concept", 0),
+            "links": one("SELECT count(*) FROM entity_links el "
+                         "JOIN entities e ON e.id=el.entity_id "
+                         "WHERE e.partition_id=?"),
+            "evidence": one("SELECT count(*) FROM linkage_evidence ev "
+                            "JOIN entities e ON e.id=ev.entity_id "
+                            "WHERE e.partition_id=?"),
+            "memory_content": one("SELECT count(*) FROM memory_content mc "
+                                  "JOIN entities e ON e.id=mc.entity_id "
+                                  "WHERE e.partition_id=?"),
+            "tracked_files": one("SELECT count(*) FROM tracked_files "
+                                 "WHERE partition_id=?"),
+            "bitmap_fragments": one("SELECT count(*) FROM bitmap_fragments "
+                                    "WHERE partition_id=?"),
+            "pagerank": one("SELECT count(*) FROM pagerank WHERE partition_id=?"),
+        }
+
+    def derive_history(self, pass_name: "str | None" = None,
+                       limit: int = 20) -> "list[dict]":
+        """Recorded derives, NEWEST FIRST. `counts` comes back parsed.
+
+        Empty means NO HISTORY, never "a derive that produced nothing": a
+        pre-15.2 store has stamps and no rows, and a zero baseline would make
+        the next derive look like it created the entire graph.
+        """
+        con = self._connect()
+        sql = ("SELECT id, pass_name, version, code_hash, derived_at, "
+               "       duration_s, pruned, counts "
+               "FROM derive_history WHERE partition_id=?")
+        params: list = [self._partition_id]
+        if pass_name:
+            sql += " AND pass_name=?"
+            params.append(pass_name)
+        sql += " ORDER BY derived_at DESC, id DESC LIMIT ?"
+        params.append(int(limit))
+        out = []
+        for r in con.execute(sql, tuple(params)).fetchall():
+            try:
+                counts = json.loads(r[7]) if r[7] else {}
+            except (TypeError, ValueError):
+                # A row whose counts cannot be parsed is reported AS unreadable
+                # rather than as empty: {} would diff as "everything vanished".
+                counts = {"error": "unparseable counts"}
+            out.append({"id": r[0], "pass_name": r[1], "version": r[2],
+                        "code_hash": r[3], "derived_at": float(r[4]),
+                        "duration_s": r[5], "pruned": int(r[6] or 0),
+                        "counts": counts})
+        return out
+
+    def _write_derive_history(self, pass_name: str, version: str, at: float,
+                              code_hash: "str | None",
+                              duration_s: "float | None" = None) -> dict:
+        """Append one history row and prune the pass back to the cap."""
+        con = self._connect()
+        try:
+            counts = self.derive_counts()
+        except Exception as exc:      # noqa: BLE001 — recorded, never silent
+            # A partial object would read as real numbers. Say it failed.
+            counts = {"error": f"{type(exc).__name__}: {exc}"}
+        nxt = con.execute(
+            "SELECT COALESCE(MAX(id), 0) + 1 FROM derive_history").fetchone()[0]
+        keep = int(self.DERIVE_HISTORY_MAX)
+        doomed = [
+            r[0] for r in con.execute(
+                "SELECT id FROM derive_history "
+                "WHERE partition_id=? AND pass_name=? "
+                "ORDER BY derived_at DESC, id DESC LIMIT 1000 OFFSET ?",
+                (self._partition_id, pass_name, keep - 1),
+            ).fetchall()
+        ]
+        for did in doomed:
+            con.execute("DELETE FROM derive_history WHERE id=?", (did,))
+        con.execute(
+            "INSERT INTO derive_history"
+            "(id, partition_id, pass_name, version, code_hash, derived_at, "
+            " duration_s, pruned, counts) VALUES (?,?,?,?,?,?,?,?,?)",
+            (int(nxt), self._partition_id, pass_name, version, code_hash,
+             at, duration_s, len(doomed), json.dumps(counts, sort_keys=True)),
+        )
+        return {"id": int(nxt), "pruned": len(doomed), "counts": counts}
 
     def derive_status(self) -> dict:
         """Is this partition's derived graph the product of the running code?
