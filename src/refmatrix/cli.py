@@ -6393,50 +6393,97 @@ def _resolve_output_shape(gf: dict, paths: list) -> dict:
     }
 
 
-def argv_order_index(paths: list) -> "tuple[dict, dict]":
-    """`(resolved_path -> argv position, resolved_path -> argv spelling)`.
+def argv_order_index(paths: list) -> "tuple[list, dict]":
+    """`([(argv_index, spelling, is_file)], {})` — the argument list, as given.
 
-    grep's contract for NAMED paths is argument order, and `rg`'s fan-out is
-    completion order — nondeterministic, so the divergence reproduces only
-    sometimes (ch-bsd r1 #b-2 observed it; a direct-exec control on two small
-    files agrees with grep most runs). A rule that cannot be reproduced on
-    demand still has to be CORRECT, so the rule is module-level and unit
-    tested (`tests/test_grep_argv_order.py`) rather than left to a race.
+    grep's contract for named paths is ARGUMENT order: it processes argv
+    left to right, and for a directory argument under `-r` it walks that
+    directory in its OWN order, grouped. `rg`'s fan-out is completion order,
+    nondeterministic, so the divergence reproduces only sometimes — ch-bsd r1
+    #b-2 measured it at 0/40 argv-order holds with 4+ files.
+
+    NO `Path.resolve()` (ch-bsd r2 #b-2). Resolving looked like the obvious
+    identity and was wrong three ways at once: a symlink and its target
+    collapsed into ONE `-c` row carrying the SUMMED count, a directory
+    argument seeded a fabricated `.:0`, and a nonexistent argument seeded
+    `nosuch.txt:0` where grep errors to stderr and exits 2. grep echoes a path
+    exactly as given, so the SPELLING is the identity and `os.path.normpath`
+    is as much normalisation as is safe.
     """
-    order: dict = {}
-    display: dict = {}
+    out: list = []
     for i, p_ in enumerate(paths or []):
+        sp = str(p_)
         try:
-            key = str(Path(p_).resolve())
+            is_file = Path(sp).is_file()
         except (OSError, ValueError):
-            continue
-        order.setdefault(key, i)
-        # grep echoes a path exactly as given on the command line.
-        display.setdefault(key, str(p_))
-    return order, display
+            is_file = False
+        out.append((i, sp, is_file))
+    # Second element kept for callers that still unpack a pair; the spelling
+    # IS the display form now, so no separate map is needed.
+    return out, {}
 
 
-def argv_rank(line_or_path: str, order: "dict") -> int:
-    """Where this file sat in argv; past the end when it was not named."""
-    head = (line_or_path.split(":", 1)[0]
-            if ":" in line_or_path else line_or_path)
-    for cand in (line_or_path, head):
-        try:
-            hit = order.get(str(Path(cand).resolve()))
-        except (OSError, ValueError):
-            continue
-        if hit is not None:
-            return hit
-    return len(order)
+def argv_rank(emitted_path: str, argv: list) -> int:
+    """Which ARGUMENT produced this output path.
+
+    An exact spelling match (a named file) wins; otherwise the LONGEST
+    directory argument that is a prefix, so `rmx grep -rn PAT a_dir b.txt`
+    ranks a_dir's walked files before b.txt. Unmatched sorts last.
+    """
+    import os as _os
+
+    if not argv:
+        return 0
+    em = _os.path.normpath(emitted_path)
+    best = len(argv)
+    best_len = -1
+    for i, sp, _is_file in argv:
+        spn = _os.path.normpath(sp)
+        if em == spn:
+            return i
+        if spn not in (".", "") and em.startswith(spn + _os.sep):
+            if len(spn) > best_len:
+                best, best_len = i, len(spn)
+        elif spn in (".", "") and best_len < 0:
+            best, best_len = i, 0
+    return best
 
 
-def order_triples_by_argv(triples: list, order: "dict") -> list:
-    """`(file, line, text)` triples in argv order, then by line. A no-op when
-    no paths were named — a directory walk keeps the tool's own order, because
-    re-sorting a walk invents an order grep does not promise either."""
-    if not order:
+def order_triples_by_argv(triples: list, argv: list) -> list:
+    """`(file, line, text)` triples grouped by ARGUMENT order.
+
+    STABLE, and keyed on the argument index ALONE (ch-bsd r2 #b-1). The first
+    cut sorted on `(rank, line)`, and the carve-out was `if not order` — but
+    `rmx grep -rn PAT .` NAMES the directory, so the order was non-empty with
+    one entry, every walked file tied at that rank, and the tiebreak became the
+    LINE NUMBER. That interleaved a walk's files:
+
+        grep -rn        rmx 0.76.0        the first remedy
+        f0:1 f0:3       f2:1 f2:3         f2:1 f0:1 f1:1
+        f1:1 f1:3       f0:1 f0:3         f2:3 f0:3 f1:3
+          grouped         grouped           INTERLEAVED
+
+    Grouping is something no grep has ever broken, and it is the form every
+    rewritten bare grep takes — strictly worse than the build it replaced.
+    A stable sort on the rank alone keeps the tool's own order WITHIN an
+    argument (so a walk is untouched) while still honouring argument order
+    ACROSS arguments. Lines within a file arrive in order from the tool, so
+    they need no key of their own.
+    """
+    if not argv:
         return list(triples)
-    return sorted(triples, key=lambda tr: (argv_rank(tr[0], order), tr[1]))
+    return sorted(triples, key=lambda tr: argv_rank(tr[0], argv))
+
+
+def argv_count_rows(argv: list) -> list:
+    """The `-c` rows grep prints for NAMED FILES, zeros included, in argv order.
+
+    Only entries that ARE files (ch-bsd r2 #b-2): a directory argument gets no
+    `.:0` row and a missing argument gets no `nosuch.txt:0` row — grep errors
+    on the latter and exits 2, and fabricating a zero claims it read a file it
+    could not open.
+    """
+    return [sp for _i, sp, is_file in argv if is_file]
 
 
 def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
@@ -6537,8 +6584,8 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
     # rows where grep returns b.txt's, and `-c` was wrong in two ways at once.
     # A directory walk keeps the tool's own order: re-sorting a walk would
     # invent an order grep does not promise either.
-    argv_order, argv_display = argv_order_index(paths)
-    _file_rank = argv_rank
+    # The argument list, as given — no resolve() (r2 #b-2).
+    argv_list, _ = argv_order_index(paths)
 
     if gf["files_only"] or gf["files_without_match"]:
         # bug-064. `-l`/`-L` are handled HERE, before the empty-output branch
@@ -6554,8 +6601,9 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
         #     empty-output branch inverted the second case too, which is the
         #     half the row did not name.
         listed = [l for l in res.stdout.splitlines() if l.strip()]
-        if argv_order:
-            listed.sort(key=lambda line: (_file_rank(line, argv_order), line))
+        if argv_list:
+            # Stable, rank ONLY — same rule as the line branch (r2 #b-1).
+            listed.sort(key=lambda line: argv_rank(line, argv_list))
 
         if gf["files_without_match"]:
             # The `-L` list cannot say whether anything matched — it is the
@@ -6585,11 +6633,25 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
 
     if not res.stdout.strip():
         _tlog.cardinality = 0
-        if shape["count"] and not shape["with_filename"]:
-            # `grep -c` prints 0 and exits 1 on no match, and `n=$(grep -c …)`
-            # must still be a number. The count is no longer computed by the
-            # tool, so this branch has to say it.
-            click.echo("0")
+        if shape["count"]:
+            # `grep -c` prints a row per NAMED FILE even when nothing matched,
+            # and exits 1. ch-bsd r2 #b-3: the zero-seeding lived in the
+            # some-matched branch below, so `-c zzz f0 f1` printed NOTHING
+            # where grep prints `f0.txt:0` and `f1.txt:0`, and `-hc` printed a
+            # single `0` where grep prints one per file. Third sibling-branch
+            # miss in one remedy, in the function whose own comment below
+            # already warns that this branch gets the answers wrong.
+            named = argv_count_rows(argv_list)
+            if named and shape["with_filename"]:
+                for sp in named:
+                    click.echo(f"{sp}:0")
+            elif named:
+                for _sp in named:
+                    click.echo("0")
+            else:
+                # No named files (a walk, or stdin): one number, as before —
+                # `n=$(grep -c …)` must still be a number.
+                click.echo("0")
         # grep semantics: silent stdout, exit 1. The note goes to stderr so
         # a tty user still learns why nothing printed.
         click.echo("rmx grep: no matches", err=True)
@@ -6643,23 +6705,19 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
         return out + text
 
     # The same argument-order rule the `-l` branch above applies (#b-2).
-    triples = order_triples_by_argv(triples, argv_order)
+    triples = order_triples_by_argv(triples, argv_list)
 
     if shape["count"]:
         counts: dict = {}
-        if argv_order:
-            # `grep -c PAT a b c` prints a row for EVERY named file, including
-            # the ones with zero matches, in argument order. Building `counts`
-            # from the hits alone dropped those rows entirely, so
-            # `rmx grep -c PAT *.py` silently omitted every non-matching file.
-            for _key, _i in sorted(argv_order.items(), key=lambda kv: kv[1]):
-                counts[argv_display.get(_key, _key)] = 0
+        # A row for EVERY named FILE, zeros included, in argv order. Keyed on
+        # the argv SPELLING, never a resolved path: resolving collapsed a
+        # symlink and its target into one row carrying the SUMMED count, and
+        # fabricated `.:0` for a directory and `nosuch.txt:0` for a missing
+        # file (r2 #b-2).
+        for sp in argv_count_rows(argv_list):
+            counts.setdefault(sp, 0)
         for f, _n, _t in triples:
-            try:
-                key = argv_display.get(str(Path(f).resolve()), f)
-            except (OSError, ValueError):
-                key = f
-            counts[key] = counts.get(key, 0) + 1
+            counts[f] = counts.get(f, 0) + 1
         rendered = [f"{f}:{c}" if shape["with_filename"] else str(c)
                     for f, c in counts.items()]
     else:
@@ -6693,7 +6751,11 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
         # branch use. This is the DEFAULT path, which is why an earlier fix
         # that touched only `_grep_run` changed nothing in practice.
         rows = s.grep_evidence(effective_pattern, regex=regex, linkage=linkage,
-                               kind=kind, limit=limit)
+                               kind=kind, limit=limit,
+                               # `ILIKE` cannot honour case (bug-073); the row
+                               # verification does, and `-i` must keep the
+                               # case-insensitive rows it would otherwise drop.
+                               ignore_case=gf.get("ignore_case") is True)
 
     if paths:
         rows = _filter_rows_by_paths(rows, paths)
@@ -6749,7 +6811,11 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
         # (with `~` where the daemon used `regexp_matches`), which is how
         # bug-067 would have needed fixing in three places.
         rows = s.grep_evidence(effective_pattern, regex=regex, linkage=linkage,
-                               kind=kind, limit=limit)
+                               kind=kind, limit=limit,
+                               # `ILIKE` cannot honour case (bug-073); the row
+                               # verification does, and `-i` must keep the
+                               # case-insensitive rows it would otherwise drop.
+                               ignore_case=gf.get("ignore_case") is True)
 
     # PATHS filter: drop rows whose entity path is outside the given targets.
     if paths:

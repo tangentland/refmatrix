@@ -468,21 +468,24 @@ def test_the_capped_branch_reports_a_real_count_from_the_real_producer(tmp_path,
     d = Daemon(tmp_path / ".refmatrix")
     d.store = s
     monkeypatch.setattr(d, "_embedder", lambda: _FakeEmb(), raising=False)
-    monkeypatch.setattr(Store, "upsert_vector",
-                        lambda self, *a, **k: None, raising=False)
+    # NO `upsert_vector` stub (ch-bsd r2 #s-1). Stubbing the write pinned
+    # `remaining` at 9, so the assertion could not tell a RE-MEASURED count
+    # from one sampled before the loop — the exact confusion #b-1 was about.
+    # Unstubbed, the vectors really land and `remaining` tracks real progress,
+    # which is strictly stronger and one fewer double.
     try:
         out = drain_memory_vectors(lambda a: _op_embed(d, a),
                                    partition=s._partition_name,
                                    batches=2, limit=1)
         assert out["capped"] is True, out
         assert out["error"] is None, out
-        # `upsert_vector` is stubbed, so the stamp never moves and all 9 rows
-        # still owe a vector. The POINT is that the number is the real debt,
-        # not the 1 the old `limit=1` read would have produced.
+        assert out["embedded"] == 2, out
+        # 9 owed, 2 embedded under a 2-batch cap: the remainder is MEASURED
+        # after the loop, not sampled before it.
+        assert out["remaining"] == 7, out
         assert out["remaining"] == s.pending_embeddings_count(kinds=["memory"])
-        assert out["remaining"] == 9, out
         line = render_memory_embed_line(out)
-        assert "9 still without vectors" in line, line
+        assert "7 still without vectors" in line, line
         assert "rmx embed --kinds memory" in line
     finally:
         s.close()

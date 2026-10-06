@@ -343,3 +343,86 @@ def test_a_directory_walk_is_not_reordered(proj):
     res = _rmx(["-rn", "alpha", "."])
     assert res.exit_code == 0, res.output
     assert len(_lines(res.stdout)) == 2, res.stdout
+
+
+# ---- ch-bsd r2 #b-2 / #b-3: the `-c` rows, in the branch that had none -----
+#
+# r1's `-c` fix seeded the zero rows from argv — but the seeding lived AFTER
+# `if not res.stdout.strip()`, so it only ran when SOMETHING matched, and it
+# keyed on `Path.resolve()`, which is not a path argument's identity. Three
+# divergences, two of them strictly worse than the build being replaced.
+
+
+def test_count_prints_a_row_per_named_file_when_NOTHING_matched(proj):
+    """r2 #b-3. `grep -c zzz f0 f1` prints `f0.txt:0` and `f1.txt:0` and exits
+    1; rmx printed nothing at all, because the zero-seeding sat in the
+    some-matched branch."""
+    (proj / "a.txt").write_text("alpha\n")
+    (proj / "b.txt").write_text("alpha\n")
+
+    ctl_out, ctl_code = _real_grep(["-c", "zzz", "a.txt", "b.txt"], proj)
+    assert _lines(ctl_out) == ["a.txt:0", "b.txt:0"], ctl_out
+
+    res = _rmx(["-c", "zzz", "a.txt", "b.txt"])
+
+    assert res.exit_code == ctl_code, (res.exit_code, ctl_code)
+    assert _lines(res.stdout) == _lines(ctl_out), (res.stdout, ctl_out)
+
+
+def test_count_without_filenames_prints_one_zero_per_file(proj):
+    """r2 #b-3's second half: `-hc` over two non-matching files is `0\\n0`,
+    not a single `0`."""
+    (proj / "a.txt").write_text("nothing\n")
+    (proj / "b.txt").write_text("nothing\n")
+
+    ctl_out, ctl_code = _real_grep(["-hc", "alpha", "a.txt", "b.txt"], proj)
+    assert _lines(ctl_out) == ["0", "0"], ctl_out
+
+    res = _rmx(["-hc", "alpha", "a.txt", "b.txt"])
+
+    assert res.exit_code == ctl_code, (res.exit_code, ctl_code)
+    assert _lines(res.stdout) == _lines(ctl_out), (res.stdout, ctl_out)
+
+
+def test_a_symlink_and_its_target_stay_two_rows(proj):
+    """r2 #b-2, and the answer to the audit question I asked: `Path.resolve()`
+    is NOT a path argument's identity. Resolving collapsed `alias.txt` and
+    `a.txt` into ONE row carrying the SUMMED count — a wrong NUMBER, not a
+    wrong order, and worse than the build it replaced. grep echoes a path
+    exactly as given, so the spelling is the identity."""
+    import os
+
+    (proj / "a.txt").write_text("alpha\nalpha\nalpha\n")
+    os.symlink(proj / "a.txt", proj / "alias.txt")
+
+    ctl_out, ctl_code = _real_grep(["-c", "alpha", "alias.txt", "a.txt"], proj)
+    assert _lines(ctl_out) == ["alias.txt:3", "a.txt:3"], ctl_out
+
+    res = _rmx(["-c", "alpha", "alias.txt", "a.txt"])
+
+    assert res.exit_code == ctl_code, (res.exit_code, ctl_code)
+    assert _lines(res.stdout) == _lines(ctl_out), (res.stdout, ctl_out)
+
+
+def test_a_directory_argument_gets_no_fabricated_zero_row(proj):
+    """r2 #b-2: seeding every argv entry fabricated `.:0` for a directory.
+    A count row claims a file was read."""
+    (proj / "a.txt").write_text("alpha\n")
+
+    res = _rmx(["-c", "alpha", "."])
+
+    assert ".:0" not in _lines(res.stdout), res.stdout
+    assert ":0" not in " ".join(l for l in _lines(res.stdout)
+                                if l.startswith(".:")), res.stdout
+
+
+def test_a_missing_argument_gets_no_fabricated_zero_row(proj):
+    """r2 #b-2: `-c alpha a.txt nosuch.txt` seeded `nosuch.txt:0` where grep
+    errors to stderr and exits 2. Fabricating a zero claims rmx read a file it
+    could not open."""
+    (proj / "a.txt").write_text("alpha\n")
+
+    res = _rmx(["-c", "alpha", "a.txt", "nosuch.txt"])
+
+    assert not any(l.startswith("nosuch.txt:") for l in _lines(res.stdout)), \
+        res.stdout

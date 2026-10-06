@@ -63,16 +63,42 @@ def daemon(tmp_path, monkeypatch):
 
 
 def _corpus(proj):
+    """Every pattern the tests teach appears on a REAL line here, because the
+    read verifies the line (bug-074)."""
     f = proj / "sample.py"
-    f.write_text("roaring bitmap lives here\n" * 2 + "bug-008 reference\n"
-                 "project.scripts entry\n")
+    f.write_text(
+        "roaring bitmap lives here\n" * 2
+        + "bug-008 reference\n"
+        + "project.scripts entry\n"
+        + "scan-prompt wiring\n"
+        + "def _open_read_store(root):\n"
+        + "learning_enabled gate\n"
+        + "an error happens here\n"
+    )
     return f
 
 
+def _real_hit_lines(f, pattern: str) -> list:
+    """The lines that ACTUALLY contain the pattern.
+
+    bug-074: the read now verifies that an evidence row's line really holds
+    the pattern, and this fixture used to hard-code lines 1 and 2 regardless —
+    so `bug-008` was taught against "roaring bitmap lives here". Production
+    never does that: `_learn_grep_hits` records the hits a REAL grep returned,
+    so its lines contain the pattern by construction. Deriving them here makes
+    the fixture faithful instead of merely green.
+    """
+    lines = f.read_text().splitlines()
+    return [i for i, text in enumerate(lines, start=1) if pattern in text]
+
+
 def _teach(d, pattern: str, f) -> dict:
+    hits = [{"file": str(f), "line": n}
+            for n in _real_hit_lines(f, pattern)] or [
+        {"file": str(f), "line": 1}]
     return _op_learn_from_grep(d, {
         "pattern": pattern,
-        "hits": [{"file": str(f), "line": 1}, {"file": str(f), "line": 2}],
+        "hits": hits,
         "project_root": str(f.parent),
     })
 
@@ -170,10 +196,13 @@ def test_regex_mode_is_not_canonicalized(daemon):
     f = _corpus(daemon.root.parent)
     _teach(daemon, "roaring bitmap", f)
 
-    hit = _op_grep_indexed(daemon, {"pattern": "^query/roaring_bitmap$",
-                                    "regex": True})["rows"]
-    miss = _op_grep_indexed(daemon, {"pattern": "^nothing_matches_this$",
-                                     "regex": True})["rows"]
+    # `verify=False`: the subject is whether the NAME is canonicalised, and a
+    # regex over a concept name is not something a source line can confirm
+    # (bug-074's verification compares the pattern against the line).
+    hit = daemon.store.grep_evidence("^query/roaring_bitmap$", regex=True,
+                                     verify=False)
+    miss = daemon.store.grep_evidence("^nothing_matches_this$", regex=True,
+                                      verify=False)
 
     assert hit
     assert miss == []
@@ -235,7 +264,16 @@ def test_an_unrelated_pattern_is_not_dragged_in_by_canonicalization(daemon):
 
 
 def _concept_names(d, pattern: str) -> set:
-    return {r["concept"] for r in _op_grep_indexed(d, {"pattern": pattern})["rows"]}
+    """WHICH CONCEPTS the predicate selects — `verify=False` on purpose.
+
+    bug-074 made the read verify that each row's line really holds the
+    pattern, which is right for a grep-shaped answer and wrong as a probe of
+    the PREDICATE: these tests hand-seed concepts to ask which ones the SQL
+    picks, not whether a hand-written evidence line matches. Verification is
+    covered end to end in `tests/test_grep_evidence_verified.py`, including
+    the fall-through to the floor.
+    """
+    return {r["concept"] for r in d.store.grep_evidence(pattern, verify=False)}
 
 
 def test_a_punctuated_pattern_does_not_drag_in_the_whole_family(daemon):

@@ -4238,6 +4238,9 @@ def _op_grep_indexed(d: Daemon, args: dict) -> dict:
             linkage=args.get("linkage"),
             kind=args.get("kind"),
             limit=int(args.get("limit", 100) or 0),
+            # Same rule as the CLI's two read paths — one implementation,
+            # three callers (bug-073 / bug-074).
+            ignore_case=bool(args.get("ignore_case", False)),
         )
     return {"rows": rows}
 

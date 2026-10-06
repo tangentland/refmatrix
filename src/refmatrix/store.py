@@ -756,6 +756,92 @@ def derive_code_hash(pass_name: "str | None" = None) -> str:
     return out
 
 
+def evidence_line_matches(text: str, pattern: str, *, regex: bool,
+                          ignore_case: bool) -> bool:
+    """Does this source line actually hold the pattern the caller asked for?"""
+    import re as _re
+
+    if regex:
+        try:
+            return _re.search(pattern, text,
+                              _re.IGNORECASE if ignore_case else 0) is not None
+        except _re.error:
+            # An unparseable regex cannot verify anything; do not silently
+            # claim the row is good.
+            return False
+    if ignore_case:
+        return pattern.lower() in text.lower()
+    return pattern in text
+
+
+def verify_evidence_rows(rows: list, pattern: str, *, regex: bool = False,
+                         ignore_case: bool = False,
+                         stats: "dict | None" = None) -> list:
+    """Keep only evidence rows whose `file:line` REALLY contains the pattern.
+
+    WHY (bug-074). An index row is `(path, line)` from `linkage_evidence`, and
+    for a code symbol the semantic ingest attaches a keyword concept to the
+    enclosing SYMBOL'S DEFINITION LINE, not to the line the token is on. So
+    `grep_evidence("error")` returned `brief.py:155` = `def _pairs(...)`, whose
+    function body holds "error" at line 159. Hand-verified, 6 of 6 sampled
+    rows were `def` lines. That is right for a graph ("this symbol mentions
+    this concept") and WRONG for a grep drop-in, which promises lines that
+    match — and it is why precision against a literal control measured 0.000
+    for `error` and 0.087 for `bitmap` while the replay's learned-only rows
+    measured 1.000.
+
+    It also fixes the CASE half (bug-073) at the row level: `c.name ILIKE`
+    cannot honour case, so `rmx grep ERROR` drew 66 rows on a corpus where
+    real grep matches ERROR nowhere. A case-correct line check drops every one
+    of them.
+
+    SAFETY: emptying the result is safe by construction — every caller's shape
+    is `if rows: render; return` followed by the tool floor, so a fully
+    filtered answer degrades to real grep rather than to a false "no matches".
+    That is the property that makes this a filter and not a truncation
+    (bug-058 was a short read that looked successful).
+
+    A row whose file cannot be read is DROPPED and COUNTED, never kept on
+    faith: `stats["unreadable"]` carries the number so a caller can say it.
+    """
+    out: list = []
+    cache: dict = {}
+    unreadable = 0
+    dropped = 0
+    for r in rows:
+        path = r.get("path")
+        line = r.get("line")
+        if not path or not line:
+            # Nothing to verify against; a row with no location cannot be
+            # offered as a grep hit.
+            dropped += 1
+            continue
+        lines = cache.get(path)
+        if lines is None:
+            try:
+                lines = Path(path).read_text(errors="replace").splitlines()
+            except OSError:
+                lines = []
+            cache[path] = lines
+        if not lines:
+            unreadable += 1
+            continue
+        idx = int(line) - 1
+        if idx < 0 or idx >= len(lines):
+            dropped += 1
+            continue
+        if evidence_line_matches(lines[idx], pattern, regex=regex,
+                                 ignore_case=ignore_case):
+            out.append(r)
+        else:
+            dropped += 1
+    if stats is not None:
+        stats["kept"] = len(out)
+        stats["dropped"] = dropped
+        stats["unreadable"] = unreadable
+    return out
+
+
 def version_key(v: str) -> tuple:
     """Order version strings numerically, not lexicographically.
 
@@ -2920,7 +3006,9 @@ class Store:
 
     def grep_evidence(self, pattern: str, *, regex: bool = False,
                       linkage: "str | None" = None, kind: "str | None" = None,
-                      limit: "int | None" = 100) -> "list[dict]":
+                      limit: "int | None" = 100,
+                      ignore_case: bool = False, verify: bool = True,
+                      verify_stats: "dict | None" = None) -> "list[dict]":
         """THE index-backed grep read: concepts whose name matches `pattern`,
         returned as their `linkage_evidence` rows.
 
@@ -3029,8 +3117,20 @@ class Store:
             params.append(limit)
         self._connect()
         rows = self._read().execute(sql, tuple(params)).fetchall()
-        return [{"path": r[0], "entity": r[1], "line": r[2],
-                 "linkage": r[3], "concept": r[4]} for r in rows]
+        out = [{"path": r[0], "entity": r[1], "line": r[2],
+                "linkage": r[3], "concept": r[4]} for r in rows]
+        if not verify:
+            return out
+        # VERIFY each row against the real line (bug-074). The predicate above
+        # picks the right CONCEPTS; it cannot know that a concept's evidence
+        # points at a symbol's `def` line rather than the token's line, nor
+        # that `ILIKE` threw the caller's case away. One line read per distinct
+        # file, cached, and far cheaper than the tool floor this read exists to
+        # avoid. Opt out with `verify=False` for a caller that wants concept
+        # provenance rather than grep-shaped hits.
+        return verify_evidence_rows(out, pattern, regex=regex,
+                                    ignore_case=ignore_case,
+                                    stats=verify_stats)
 
     def resolve_concept_ids_many(
         self, names: "list[str]",
@@ -5949,8 +6049,14 @@ class Store:
         con.commit()
         return v
 
-    # Rows kept per (partition, pass). 50 is enough to see a release arc and
-    # small enough that the table never becomes the thing you have to prune.
+    # Rows kept per (partition, pass). The NUMBER is a table bound, not a time
+    # window: it is small enough that this table never becomes the thing you
+    # have to prune. It is NOT "a release arc" — that claim was in this comment
+    # through two audits (ch-bsd r1 #s-3, r2 unchanged) and it is wrong by a
+    # wide margin. Measured on this store: 12 gmd derives in 2.66 h, so 50 rows
+    # is roughly ELEVEN HOURS of active development, not a release. Anyone
+    # sizing this for a history question should measure their own derive rate
+    # rather than trust a horizon.
     DERIVE_HISTORY_MAX = 50
 
     def _has_table(self, name: str) -> bool:

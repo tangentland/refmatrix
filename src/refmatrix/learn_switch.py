@@ -113,7 +113,12 @@ def decision(root: "str | os.PathLike | None" = None) -> Decision:
             problems.append(f"{store_marker(root)}: {type(e).__name__}: {e}")
     try:
         if global_marker().exists():
-            return Decision(False, "global-marker", rejected)
+            # Carry the STORE marker's read failure even though the global one
+            # answered (ch-bsd r2 MEH): the operator's per-store marker was
+            # unreadable, and the fact that a different scope happened to
+            # supply an answer does not make that disappear.
+            return Decision(False, "global-marker", rejected,
+                            "; ".join(problems) if problems else None)
     except OSError as e:
         problems.append(f"{global_marker()}: {type(e).__name__}: {e}")
     note = "; ".join(problems) if problems else None

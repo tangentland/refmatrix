@@ -154,14 +154,67 @@ def test_the_tool_itself_is_the_one_that_scrambles(many_files):
         f"this docstring rather than deleting this assertion")
 
 
+def _groups_are_contiguous(stdout: str) -> bool:
+    """Is every file's block of lines contiguous? That is what grep guarantees
+    and what interleaving breaks."""
+    seq = [Path(l.split(":", 1)[0]).name for l in stdout.splitlines()
+           if l.strip() and not l.startswith("#")]
+    seen, runs = set(), 0
+    prev = None
+    for f in seq:
+        if f != prev:
+            runs += 1
+            if f in seen:
+                return False          # we left this file and came back
+            seen.add(f)
+            prev = f
+    return runs == len(seen)
+
+
 @pytest.mark.skipif(not RMX.exists(), reason="dev venv rmx not built")
-def test_a_directory_walk_is_not_reordered(many_files):
-    """The carve-out: argv order applies to NAMED paths. A walk keeps the
-    tool's own order, because re-sorting it invents an order grep does not
-    promise either."""
+def test_a_directory_walk_keeps_its_files_GROUPED(many_files):
+    """ch-bsd r2 #b-1 — the regression my own argv sort introduced, and the
+    assertion both of my earlier walk tests were too weak to catch.
+
+    `order_triples_by_argv`'s first carve-out was `if not order`, but
+    `rmx grep -rn PAT .` NAMES the directory: the order held one entry, every
+    walked file tied at that rank, and the tiebreak was the LINE NUMBER — so a
+    walk came back interleaved (`f2:1 f0:1 f1:1 / f2:3 f0:3 f1:3`) where grep
+    and the deployed 0.76.0 both group. Grouping is something no grep has ever
+    broken, and `-rn <dir>` is the commonest shape a rewritten bare grep takes.
+
+    My two earlier tests asserted CARDINALITY — `len(lines) == 2` over
+    one-line files, and `len(distinct_files) == N` — and interleaving changes
+    neither. Multi-line files plus a contiguity assertion is what catches it.
+    The ORDER of the groups is deliberately not asserted: a walk's order is the
+    tool's own and grep does not promise it (rg and grep genuinely differ here,
+    on the deployed build too).
+    """
     cwd, _argv_names = many_files
 
     out, err, code = _run([str(RMX), "grep", "-rn", "alpha", "."], cwd)
 
     assert code == 0, (code, err)
     assert len(_first_appearance(out)) == N_FILES, out[:400]
+    assert _groups_are_contiguous(out), (
+        f"a walk came back interleaved: "
+        f"{[Path(l.split(':', 1)[0]).name for l in out.splitlines()][:12]}")
+
+
+@pytest.mark.skipif(not RMX.exists(), reason="dev venv rmx not built")
+def test_a_named_file_still_wins_its_argv_slot_against_a_walk(many_files):
+    """Argument order ACROSS arguments, the tool's order WITHIN one. A stable
+    rank-only sort has to give both."""
+    cwd, argv_names = many_files
+    sub = cwd / "sub"
+    sub.mkdir()
+    (sub / "deep.txt").write_text("alpha\n" * 3)
+
+    out, err, code = _run([str(RMX), "grep", "-rn", "alpha", "sub",
+                           argv_names[0]], cwd)
+
+    assert code == 0, (code, err)
+    seen = _first_appearance(out)
+    assert seen and seen[0] == "deep.txt", seen
+    assert seen[-1] == argv_names[0], seen
+    assert _groups_are_contiguous(out)

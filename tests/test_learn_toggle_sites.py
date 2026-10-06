@@ -279,7 +279,11 @@ def test_the_learn_op_refuses_by_name_when_off(project, monkeypatch):
     # test happens to guess right (an earlier version guarded the check with
     # `hasattr`, which is a vacuous assertion dressed as a strict one).
     from refmatrix.daemon import _op_grep_indexed
-    rows = _op_grep_indexed(d, {"pattern": "query/target"})["rows"]
+    # `verify=False`: this asks WHAT WAS LEARNED (does the concept exist with
+    # evidence), not for grep-shaped hits. bug-074 made the read verify that
+    # a row's line holds the pattern, and a learned concept named
+    # `query/target` never appears literally in the source line it points at.
+    rows = d.store.grep_evidence("query/target", verify=False)
     assert rows == [], rows
     d.store.close()
 
@@ -307,13 +311,13 @@ def test_the_context_op_does_not_learn_when_off(project, monkeypatch):
 
     # control: with learning ON the op teaches the graph what grep found
     _op_context(d, {"ref": "target_symbol", "grep_backstop": True})
-    learned_on = _op_grep_indexed(d, {"pattern": "query/target_symbol"})["rows"]
+    learned_on = d.store.grep_evidence("query/target_symbol", verify=False)
     assert learned_on, "toggle ON: the context op taught nothing, so the OFF " \
                        "assertion below would be vacuous"
 
     monkeypatch.setenv("RMX_LEARN", "0")
     _op_context(d, {"ref": "other_symbol", "grep_backstop": True})
-    learned_off = _op_grep_indexed(d, {"pattern": "query/other_symbol"})["rows"]
+    learned_off = d.store.grep_evidence("query/other_symbol", verify=False)
     d.store.close()
 
     assert learned_off == [], learned_off
