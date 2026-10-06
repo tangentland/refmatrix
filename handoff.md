@@ -112,8 +112,10 @@ rel: reinforces -> [[feedback_main_path_must_exercise_core_mechanisms]]
 
 ## Gates {#gates}
 
-- Full suite: see `workflow/review-output/pytest-session-full.log` (the run over
-  all four merges).
+- Full suite over all four merges: **2432 passed, 0 failed** in 16m11s
+  (`workflow/review-output/pytest-session-full.log`). The session opened at
+  **2404 passed / 5 failed** — all five closed (3 were bug-069, 2 were
+  bug-072), and 28 tests added.
 - GMD lint: 0 errors / 543 docs.
 - `rmx install-hooks --check`: in sync.
 - Mutations: 8 (task 15.4) + 2 (bug-069) + 3 (bug-065) + 4 (bug-070), all killed.
