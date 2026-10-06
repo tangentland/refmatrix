@@ -6457,29 +6457,12 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
     # therefore the DEFAULT one, which is why an earlier version of this fix
     # that touched only `_grep_run` changed nothing in practice.
     skip_index = not _index_may_answer(paths)
-    like = f"%{effective_pattern}%"
-    sql = (
-        "SELECT e.path, e.name, ev.line, lt.name, c.name "
-        "FROM linkage_evidence ev "
-        "JOIN entities e ON e.id = ev.entity_id "
-        "JOIN entities c ON c.id = ev.concept_id "
-        "JOIN linkage_types lt ON lt.id = ev.linkage_id "
-        "WHERE c.name "
-        + ("ILIKE" if not regex else "~") + " ? "
-    )
-    params: list = [effective_pattern if regex else like]
-    if linkage:
-        sql += "AND lt.name = ? "
-        params.append(linkage)
-    if kind:
-        sql += "AND e.kind = ? "
-        params.append(kind)
-    sql += "ORDER BY e.path, ev.line LIMIT ?"
-    params.append(limit)
-    for r in ([] if skip_index
-              else s._connect().execute(sql, params).fetchall()):
-        rows.append({"path": r[0], "entity": r[1], "line": r[2],
-                     "linkage": r[3], "concept": r[4]})
+    if not skip_index:
+        # `Store.grep_evidence` — the SAME read the daemon op and the direct
+        # branch use. This is the DEFAULT path, which is why an earlier fix
+        # that touched only `_grep_run` changed nothing in practice.
+        rows = s.grep_evidence(effective_pattern, regex=regex, linkage=linkage,
+                               kind=kind, limit=limit)
 
     if paths:
         rows = _filter_rows_by_paths(rows, paths)
@@ -6529,29 +6512,13 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
             raise click.ClickException(resp.get("error", "daemon error"))
         rows = resp["result"]["rows"]
     else:
-        # Direct path: only used when daemon is down. Mirror the SQL.
-        like = f"%{effective_pattern}%"
-        sql = (
-            "SELECT e.path, e.name, ev.line, lt.name, c.name "
-            "FROM linkage_evidence ev "
-            "JOIN entities e ON e.id = ev.entity_id "
-            "JOIN entities c ON c.id = ev.concept_id "
-            "JOIN linkage_types lt ON lt.id = ev.linkage_id "
-            "WHERE c.name "
-            + ("ILIKE" if not regex else "~") + " ? "
-        )
-        params: list = [effective_pattern if regex else like]
-        if linkage:
-            sql += "AND lt.name = ? "
-            params.append(linkage)
-        if kind:
-            sql += "AND e.kind = ? "
-            params.append(kind)
-        sql += "ORDER BY e.path, ev.line LIMIT ?"
-        params.append(limit)
-        for r in s._connect().execute(sql, params).fetchall():
-            rows.append({"path": r[0], "entity": r[1], "line": r[2],
-                         "linkage": r[3], "concept": r[4]})
+        # Direct path: only used when daemon is down. Same read as the daemon
+        # op and the replica path — `Store.grep_evidence` is the ONE
+        # implementation. This branch used to carry its own copy of the SQL
+        # (with `~` where the daemon used `regexp_matches`), which is how
+        # bug-067 would have needed fixing in three places.
+        rows = s.grep_evidence(effective_pattern, regex=regex, linkage=linkage,
+                               kind=kind, limit=limit)
 
     # PATHS filter: drop rows whose entity path is outside the given targets.
     if paths:

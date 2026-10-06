@@ -4202,60 +4202,24 @@ def _op_list_saved_queries(d: Daemon, args: dict) -> dict:
 
 
 def _op_grep_indexed(d: Daemon, args: dict) -> dict:
-    """Index-backed grep: find concepts whose name matches PATTERN (LIKE
-    or REGEXP) and return their `linkage_evidence` rows. The CLI may
-    follow up with a real `rg` fallback when this returns zero.
+    """Index-backed grep: find concepts whose name matches PATTERN (substring
+    or regex) and return their `linkage_evidence` rows. The CLI may follow up
+    with a real `rg` fallback when this returns zero.
+
+    The SQL lives in `Store.grep_evidence` — ONE implementation shared with the
+    CLI's two read paths. This op had its own copy (matching regexes with
+    `regexp_matches` where the CLI used `~`), and the copies had already
+    drifted; bug-067's fix would otherwise have had to be written three times.
     """
-    pattern = args["pattern"]
-    is_regex = bool(args.get("regex", False))
-    linkage_filter = args.get("linkage")
-    kind_filter = args.get("kind")  # 'doc' | 'code' | None
-    limit = int(args.get("limit", 100))
-
-    if is_regex:
-        concept_pred = "regexp_matches(c.name, ?)"
-        concept_args = [pattern]
-    else:
-        # Treat bare pattern as case-insensitive substring; users who want
-        # exact match can pass an exact name (LIKE % wrapping still matches).
-        concept_pred = "c.name ILIKE ?"
-        concept_args = [f"%{pattern}%"]
-
-    where_extra = []
-    extra_args: list = []
-    if linkage_filter:
-        where_extra.append("lt.name = ?")
-        extra_args.append(linkage_filter)
-    if kind_filter:
-        where_extra.append("e.kind = ?")
-        extra_args.append(kind_filter)
-
-    extra_sql = (" AND " + " AND ".join(where_extra)) if where_extra else ""
-
-    sql = (
-        "SELECT e.path AS path, e.name AS entity_name, ev.line AS line, "
-        "       lt.name AS linkage, c.name AS concept_name "
-        "FROM linkage_evidence ev "
-        "JOIN entities e ON e.id = ev.entity_id "
-        "JOIN entities c ON c.id = ev.concept_id "
-        "JOIN linkage_types lt ON lt.id = ev.linkage_id "
-        f"WHERE {concept_pred}{extra_sql} "
-        "ORDER BY e.path, ev.line "
-        "LIMIT ?"
-    )
     with d._store_lock:
-        rows = d._st()._connect()._duck.execute(
-            sql, concept_args + extra_args + [limit],
-        ).fetchall()
-    return {
-        "rows": [
-            {
-                "path": r[0], "entity": r[1], "line": r[2],
-                "linkage": r[3], "concept": r[4],
-            }
-            for r in rows
-        ],
-    }
+        rows = d._st().grep_evidence(
+            args["pattern"],
+            regex=bool(args.get("regex", False)),
+            linkage=args.get("linkage"),
+            kind=args.get("kind"),
+            limit=int(args.get("limit", 100) or 0),
+        )
+    return {"rows": rows}
 
 
 def _learn_grep_hits(store, pattern: str, hits: list, project_root: Path) -> dict:

@@ -1,0 +1,872 @@
+{
+  "root": "/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxRxety11hh",
+  "calls": 122,
+  "drain_every": 25,
+  "corpus": [
+    "/Users/tholley/claude_tools/refmatrix/src",
+    "/Users/tholley/claude_tools/refmatrix/docs"
+  ],
+  "arms": {},
+  "reachability": {
+    "patterns": 122,
+    "taught_something": 64,
+    "indexed_on_the_second_call": 92,
+    "share_of_taught": 1.438,
+    "rows": [
+      {
+        "pattern": "def _open_read_store",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "daemon",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "roaring bitmap",
+        "first": "index",
+        "first_cardinality": 1,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "def grep",
+        "first": "floor",
+        "first_cardinality": 2,
+        "applied": 2,
+        "second": "index"
+      },
+      {
+        "pattern": "project.scripts",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "def _twin_key",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "_twin_key",
+        "first": "index",
+        "first_cardinality": 1,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "class RemoteEmbedder",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "scan-prompt",
+        "first": "index",
+        "first_cardinality": 2,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "_render_key",
+        "first": "floor",
+        "first_cardinality": 5,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "grep",
+        "first": "index",
+        "first_cardinality": 59,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "self\\.store\\.",
+        "first": "floor",
+        "first_cardinality": 43,
+        "applied": 2,
+        "second": "index"
+      },
+      {
+        "pattern": "^from typing import",
+        "first": "floor",
+        "first_cardinality": 37,
+        "applied": 37,
+        "second": "index"
+      },
+      {
+        "pattern": "def _memory_daemon_call",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "\"--degree\"",
+        "first": "index",
+        "first_cardinality": 14,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "def scan_prompt",
+        "first": "floor",
+        "first_cardinality": 2,
+        "applied": 2,
+        "second": "index"
+      },
+      {
+        "pattern": "version",
+        "first": "index",
+        "first_cardinality": 32,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "FAILED",
+        "first": "index",
+        "first_cardinality": 14,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "rmx",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "rtk",
+        "first": "floor",
+        "first_cardinality": 16,
+        "applied": 4,
+        "second": "index"
+      },
+      {
+        "pattern": "savestate_98b295bb3e04",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "created_at",
+        "first": "index",
+        "first_cardinality": 5,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "gstack",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "^id: ",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "savestate_",
+        "first": "index",
+        "first_cardinality": 2,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "except",
+        "first": "index",
+        "first_cardinality": 19,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "^#{1,3} ",
+        "first": "floor",
+        "first_cardinality": 1522,
+        "applied": 81,
+        "second": "index"
+      },
+      {
+        "pattern": "FatalException",
+        "first": "floor",
+        "first_cardinality": 2,
+        "applied": 2,
+        "second": "index"
+      },
+      {
+        "pattern": "ingest-progress",
+        "first": "floor",
+        "first_cardinality": 8,
+        "applied": 3,
+        "second": "index"
+      },
+      {
+        "pattern": "0\\.961",
+        "first": "floor",
+        "first_cardinality": 7,
+        "applied": 5,
+        "second": "index"
+      },
+      {
+        "pattern": "ingest already active",
+        "first": "floor",
+        "first_cardinality": 3,
+        "applied": 3,
+        "second": "index"
+      },
+      {
+        "pattern": "__version__",
+        "first": "index",
+        "first_cardinality": 32,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": ".local.md",
+        "first": "floor",
+        "first_cardinality": 4,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "def _is_rmx_hook",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "def _strip_rmx_hooks",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "plan [0-9]+|until plan|no-op at M|placeholder until|stub until|Phase [0-9]",
+        "first": "floor",
+        "first_cardinality": 36,
+        "applied": 10,
+        "second": "index"
+      },
+      {
+        "pattern": "^FAILED",
+        "first": "index",
+        "first_cardinality": 14,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "status:",
+        "first": "index",
+        "first_cardinality": 41,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "^def daemon_status",
+        "first": "floor",
+        "first_cardinality": 2,
+        "applied": 2,
+        "second": "index"
+      },
+      {
+        "pattern": "^| ",
+        "first": "floor",
+        "first_cardinality": 66387,
+        "applied": 111,
+        "second": "floor"
+      },
+      {
+        "pattern": "passed|failed|^FAILED|mutation|MUTATION|^#",
+        "first": "floor",
+        "first_cardinality": 1823,
+        "applied": 111,
+        "second": "floor"
+      },
+      {
+        "pattern": "^id:",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 89,
+        "second": "index"
+      },
+      {
+        "pattern": "RMX_SUPERVISED",
+        "first": "index",
+        "first_cardinality": 2,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "DEFAULT_TIMEOUT_S",
+        "first": "floor",
+        "first_cardinality": 4,
+        "applied": 2,
+        "second": "index"
+      },
+      {
+        "pattern": "timeout",
+        "first": "index",
+        "first_cardinality": 31,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "rerank",
+        "first": "index",
+        "first_cardinality": 36,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "passed|failed|error",
+        "first": "floor",
+        "first_cardinality": 1223,
+        "applied": 64,
+        "second": "index"
+      },
+      {
+        "pattern": "def user_home",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "{#imp-[a-z0-9-]*}",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "^def _replica_store",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "^def _replica_reader_path",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "^def _legacy_memory_partition_exists",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "^## |^### ",
+        "first": "floor",
+        "first_cardinality": 345,
+        "applied": 27,
+        "second": "floor"
+      },
+      {
+        "pattern": "daemon_mod\\.(ping|call)\\(",
+        "first": "floor",
+        "first_cardinality": 129,
+        "applied": 36,
+        "second": "floor"
+      },
+      {
+        "pattern": "{#[a-z0-9-]*}",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 9,
+        "second": "floor"
+      },
+      {
+        "pattern": "since_s = _parse_duration(since) if since else",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "MUTATION",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "error:",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "error",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "deferred to v1|Phase 2 will|Phase A stub|unused for now",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "duckdb_view",
+        "first": "index",
+        "first_cardinality": 1,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "yield_lock|yield_every",
+        "first": "floor",
+        "first_cardinality": 53,
+        "applied": 4,
+        "second": "index"
+      },
+      {
+        "pattern": "stop_daemon(",
+        "first": "index",
+        "first_cardinality": 1,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "noproc_counts",
+        "first": "floor",
+        "first_cardinality": 5,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "EXIT_TIMEOUT_S",
+        "first": "floor",
+        "first_cardinality": 8,
+        "applied": 4,
+        "second": "index"
+      },
+      {
+        "pattern": "allow_dev",
+        "first": "index",
+        "first_cardinality": 1,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "Leaderboard",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "MEMORY_READ_ACTIONS",
+        "first": "floor",
+        "first_cardinality": 2,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "def make_daemon",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "make_daemon",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "log_query",
+        "first": "floor",
+        "first_cardinality": 18,
+        "applied": 3,
+        "second": "index"
+      },
+      {
+        "pattern": "^(FAILED|ERROR)",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "^def |^class ",
+        "first": "floor",
+        "first_cardinality": 1251,
+        "applied": 65,
+        "second": "index"
+      },
+      {
+        "pattern": "\"out_bytes\": null",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "^title:",
+        "first": "index",
+        "first_cardinality": 21,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "def test_",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "skipped",
+        "first": "index",
+        "first_cardinality": 32,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "^rel:",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "^```",
+        "first": "floor",
+        "first_cardinality": 254,
+        "applied": 24,
+        "second": "index"
+      },
+      {
+        "pattern": "render_gmd",
+        "first": "index",
+        "first_cardinality": 1,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "def render_gmd",
+        "first": "floor",
+        "first_cardinality": 2,
+        "applied": 2,
+        "second": "index"
+      },
+      {
+        "pattern": "SCOPE",
+        "first": "index",
+        "first_cardinality": 45,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "^\\| bug-[0-9]+ \\|",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "^\\| bug-[0-9]+ \\|.*\\| recurring",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "\\{#[a-z0-9-]+\\}",
+        "first": "floor",
+        "first_cardinality": 384,
+        "applied": 32,
+        "second": "floor"
+      },
+      {
+        "pattern": "derive",
+        "first": "index",
+        "first_cardinality": 43,
+        "applied": 32,
+        "second": "index"
+      },
+      {
+        "pattern": "CLI_OPS",
+        "first": "index",
+        "first_cardinality": 1,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "^\\| ",
+        "first": "floor",
+        "first_cardinality": 504,
+        "applied": 19,
+        "second": "floor"
+      },
+      {
+        "pattern": "2026-09-16",
+        "first": "floor",
+        "first_cardinality": 18,
+        "applied": 29,
+        "second": "index"
+      },
+      {
+        "pattern": "\\| *(open|recurring) *\\|",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "floor"
+      },
+      {
+        "pattern": "^(status|  status):",
+        "first": "floor",
+        "first_cardinality": 5,
+        "applied": 6,
+        "second": "index"
+      },
+      {
+        "pattern": "^\\- \\[ \\]",
+        "first": "floor",
+        "first_cardinality": 6,
+        "applied": 1,
+        "second": "floor"
+      },
+      {
+        "pattern": "^\\s*status:",
+        "first": "index",
+        "first_cardinality": 5,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "bug-008",
+        "first": "floor",
+        "first_cardinality": 4,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "partition",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "monkeypatch\\.setattr\\(",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "def _grep_rg_fallback",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "timeout|30",
+        "first": "floor",
+        "first_cardinality": 617,
+        "applied": 49,
+        "second": "index"
+      },
+      {
+        "pattern": "\\b30(\\.0)?\\b",
+        "first": "floor",
+        "first_cardinality": 115,
+        "applied": 31,
+        "second": "index"
+      },
+      {
+        "pattern": "self._store_lock.acquire()",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "with self._store_lock:",
+        "first": "floor",
+        "first_cardinality": 9,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "fallback via",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "build_context",
+        "first": "index",
+        "first_cardinality": 2,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "pop(token, None)",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "bug-054",
+        "first": "floor",
+        "first_cardinality": 2,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "\\.unlink\\(|os\\.remove|shutil\\.(rmtree|move)|\\.rename\\(",
+        "first": "floor",
+        "first_cardinality": 64,
+        "applied": 15,
+        "second": "floor"
+      },
+      {
+        "pattern": "ingest_session",
+        "first": "floor",
+        "first_cardinality": 3,
+        "applied": 17,
+        "second": "index"
+      },
+      {
+        "pattern": "ERROR",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "alpha",
+        "first": "index",
+        "first_cardinality": 14,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "_index_may_answer",
+        "first": "index",
+        "first_cardinality": 1,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": " error: ",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "monkeypatch.setattr",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "tests/test_[a-z0-9_]+\\.py",
+        "first": "floor",
+        "first_cardinality": 154,
+        "applied": 9,
+        "second": "index"
+      },
+      {
+        "pattern": "monkeypatch\\.setattr\\(\\s*(subprocess|socket|shutil|os|time|platform|urllib|sys)\\b|setattr\\([^,]*,\\s*[\"'](run|Popen|check_output|which|socket|create_connection|sleep|time|kill|getpid|system)[\"']",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "multiple=True",
+        "first": "floor",
+        "first_cardinality": 31,
+        "applied": 1,
+        "second": "index"
+      },
+      {
+        "pattern": "def ",
+        "first": "floor",
+        "first_cardinality": 1957,
+        "applied": 67,
+        "second": "floor"
+      },
+      {
+        "pattern": "e",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 67,
+        "second": "index"
+      },
+      {
+        "pattern": "test_mock_registry",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "^- (create|modify)|tests/test_|status:",
+        "first": "floor",
+        "first_cardinality": 183,
+        "applied": 24,
+        "second": "index"
+      },
+      {
+        "pattern": "test_plan7_10_remedy_r4",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor"
+      },
+      {
+        "pattern": "^FAILED|^ERROR",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index"
+      },
+      {
+        "pattern": "^def _op_grep_indexed",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index"
+      }
+    ]
+  }
+}
