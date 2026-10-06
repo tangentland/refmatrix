@@ -79,6 +79,7 @@ reports — see `CLAUDE.md#planning-task-docs` for the split.)
 | Doc | Hook |
 |-----|------|
 | [[refmatrix/grep-learning-replay]] | Does funnelling grep through rmx teach the graph anything? Two-arm replay: index share 18.5% -> 31.7%, and the defect the instrument found first |
+| [[refmatrix/grep-canonical-breadth]] | bug-070: how wide should the canonical grep match be? Four arms — the obvious fix (plain equality) destroyed the bridge; the trailing-segment anchor costs nothing |
 
 ## Non-GMD reference {#non-gmd}
 
