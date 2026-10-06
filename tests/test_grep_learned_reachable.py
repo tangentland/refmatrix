@@ -207,3 +207,119 @@ def test_an_unrelated_pattern_is_not_dragged_in_by_canonicalization(daemon):
 
     assert _op_grep_indexed(daemon, {"pattern": "elephant"})["rows"] == []
     assert _op_grep_indexed(daemon, {"pattern": "bitmap roaring"})["rows"] == []
+
+
+# ---- bug-070: the canonical predicate is a SPELLING bridge, not a family ----
+#
+# bug-067's fix matched `canonical_name ILIKE '%<canon>%'`, and on a short
+# punctuated pattern that substring joins a whole family: measured on a real
+# src+docs store, `rmx grep 'error:'` drew 74 evidence rows from 26 DISTINCT
+# concepts — `keyword/errors`, `keyword/eoferror`, `keyword/brokenpipeerror` —
+# when the caller asked for `error:`
+# (`docs/measurements/grep-canonical-breadth.md`, arm A).
+#
+# Two narrower predicates were measured and rejected before this one:
+#   * plain equality on `canonical_name` lost EVERY multi-word pattern (10 of
+#     16 patterns stopped getting an index answer), because concept canonical
+#     names are namespace-prefixed: `keyword_roaring_bitmap`, not
+#     `roaring_bitmap`;
+#   * anchoring on `c.name`'s post-slash tail lost `replica bundle`, whose
+#     concept is `keyword/_replica_bundle` — a leading underscore the name tail
+#     carries and the canonical form folds away.
+# The shipped predicate anchors on the canonical name's TRAILING SEGMENT, which
+# costs nothing on the gain side: reachability over the same 132-pattern
+# workload is identical on every metric (arm D).
+
+
+def _concept_names(d, pattern: str) -> set:
+    return {r["concept"] for r in _op_grep_indexed(d, {"pattern": pattern})["rows"]}
+
+
+def test_a_punctuated_pattern_does_not_drag_in_the_whole_family(daemon):
+    """THE bug-070 case. `error:` canonicalizes to `error`; as a substring that
+    matched every `error`-ish concept name."""
+    s = daemon.store
+    f = _corpus(daemon.root.parent)
+    for name in ("keyword/error", "keyword/errors", "keyword/eoferror",
+                 "keyword/brokenpipeerror", "keyword/context_error"):
+        cid = s.add_concept(name)
+        eid = s.upsert_entity("code", f"{name}-site", path=str(f))
+        s.link("mentions", cid, eid)
+        s.add_evidence("mentions", cid, eid, file=str(f), line=1)
+
+    got = _concept_names(daemon, "error:")
+    assert "keyword/error" in got, got
+    for family in ("keyword/errors", "keyword/eoferror",
+                   "keyword/brokenpipeerror"):
+        assert family not in got, (family, got)
+
+
+def test_the_spelling_bridge_survives_the_narrowing(daemon):
+    """The reach bug-067 bought, and the reason plain equality was rejected:
+    the concept is `keyword/roaring_bitmap`, whose canonical name carries the
+    `keyword_` namespace prefix."""
+    s = daemon.store
+    f = _corpus(daemon.root.parent)
+    cid = s.add_concept("keyword/roaring_bitmap")
+    eid = s.upsert_entity("code", "bitmap-site", path=str(f))
+    s.link("mentions", cid, eid)
+    s.add_evidence("mentions", cid, eid, file=str(f), line=1)
+
+    assert _concept_names(daemon, "roaring bitmap"), "the bridge is gone"
+    assert _concept_names(daemon, "roaring-bitmap"), "the dash spelling is gone"
+
+
+def test_a_leading_underscore_identifier_is_still_reachable(daemon):
+    """`replica bundle` -> `keyword/_replica_bundle`. The name-tail predicate
+    lost this one; the canonical form folds the leading underscore away, which
+    is why the anchor is on `canonical_name`."""
+    s = daemon.store
+    f = _corpus(daemon.root.parent)
+    cid = s.add_concept("keyword/_replica_bundle")
+    eid = s.upsert_entity("code", "rb-site", path=str(f))
+    s.link("mentions", cid, eid)
+    s.add_evidence("mentions", cid, eid, file=str(f), line=1)
+
+    assert _concept_names(daemon, "replica bundle"), "the leading-underscore \
+identifier lost its index answer"
+
+
+def test_the_underscore_in_the_canonical_form_is_not_a_like_wildcard(daemon):
+    """`_` is a single-character wildcard in SQL LIKE, so an unescaped
+    `%_build_context` would also match `keyword_buildXcontext`. Escaped."""
+    s = daemon.store
+    f = _corpus(daemon.root.parent)
+    cid = s.add_concept("keyword/buildXcontext")
+    eid = s.upsert_entity("code", "x-site", path=str(f))
+    s.link("mentions", cid, eid)
+    s.add_evidence("mentions", cid, eid, file=str(f), line=1)
+
+    assert "keyword/buildXcontext" not in _concept_names(daemon, "build context")
+
+
+def test_bug_067s_own_case_still_holds_after_the_narrowing(daemon):
+    """The regression guard that matters most: the learned `query/<canon>` row
+    is where `_learn_grep_hits` attaches evidence, and narrowing the predicate
+    must not put it back out of reach."""
+    f = _corpus(daemon.root.parent)
+    _teach(daemon, "roaring bitmap", f)
+    rows = _op_grep_indexed(daemon, {"pattern": "roaring bitmap"})["rows"]
+    assert rows, "bug-067 regressed: the learned concept is unreachable again"
+    assert any("query/" in r["concept"] for r in rows), rows
+
+
+def test_the_name_predicate_breadth_is_deliberately_unchanged(daemon):
+    """What this fix does NOT do, pinned so nobody reads it as a wider claim.
+    `ERROR` draws the family through `c.name ILIKE '%ERROR%'` — the pre-bug-067
+    contract, measured as unchanged at 74 rows / 26 concepts (arms A and D) —
+    and narrowing THAT is a separate decision with its own trade."""
+    s = daemon.store
+    f = _corpus(daemon.root.parent)
+    for name in ("keyword/error", "keyword/errors", "keyword/eoferror"):
+        cid = s.add_concept(name)
+        eid = s.upsert_entity("code", f"{name}-site", path=str(f))
+        s.link("mentions", cid, eid)
+        s.add_evidence("mentions", cid, eid, file=str(f), line=1)
+
+    got = _concept_names(daemon, "error")
+    assert {"keyword/error", "keyword/errors", "keyword/eoferror"} <= got, got

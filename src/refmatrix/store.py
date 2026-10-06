@@ -2965,8 +2965,42 @@ class Store:
             params = [f"%{pattern}%"]
             canon = canonicalize_name(pattern)
             if canon and canon != pattern.strip().lower():
-                preds.append("c.canonical_name ILIKE ?")
-                params.append(f"%{canon}%")
+                # SEGMENT-ANCHORED, not a bare substring (bug-070).
+                #
+                # This predicate exists to bridge a SPELLING: `roaring bitmap`
+                # -> `roaring_bitmap`, `error:` -> `error`. As
+                # `canonical_name ILIKE '%error%'` it also joined every
+                # `error`-family concept, so on a real src+docs store
+                # `rmx grep 'error:'` drew 74 evidence rows from 26 DISTINCT
+                # concepts — `keyword/errors`, `keyword/eoferror`,
+                # `keyword/brokenpipeerror` — when the caller asked for
+                # something narrower.
+                #
+                # Two narrower predicates were MEASURED and rejected
+                # (`docs/measurements/grep-canonical-breadth.md`):
+                #   * plain equality lost every multi-word pattern (10 of 16
+                #     stopped getting an index answer), because a concept's
+                #     canonical name is namespace-prefixed —
+                #     `keyword_roaring_bitmap`, not `roaring_bitmap`;
+                #   * anchoring on `c.name`'s post-slash tail lost
+                #     `replica bundle`, whose concept is
+                #     `keyword/_replica_bundle` — a leading underscore the
+                #     name carries and the canonical form folds away.
+                # The trailing SEGMENT of the canonical name is the form that
+                # keeps the bridge: `error:` draws 5 concepts instead of 26,
+                # and reachability over the same 132-pattern workload is
+                # identical on every metric (42 first-call index answers, 46
+                # taught, precision median 1.000).
+                #
+                # `_` and `%` are LIKE wildcards, so the canon is ESCAPED:
+                # unescaped, `%_build_context` would also match
+                # `keyword_buildXcontext`.
+                esc = (canon.replace("\\", "\\\\")
+                            .replace("_", "\\_").replace("%", "\\%"))
+                preds.append("(c.canonical_name = ? OR c.canonical_name "
+                             "LIKE ? ESCAPE '\\')")
+                params.append(canon)
+                params.append(f"%\\_{esc}")
         where = ["(" + " OR ".join(preds) + ")"]
         if linkage:
             where.append("lt.name = ?")
