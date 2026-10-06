@@ -148,19 +148,27 @@ import sys
 # seen twice. Resolving at RUNTIME makes the rendered bytes identical whichever
 # tree generated them, so the drift has nowhere to enter.
 #
-# Order: a sibling of the `rmx` on PATH, then that tree's `bin/`, then PATH,
-# then `~/bin`, then the bare name (PATH decides at exec time).
+# Order: the TREE's `bin/` that owns the `rmx` on PATH, then a sibling of that
+# `rmx`, then PATH, then `~/bin`, then the bare name (PATH decides at exec time).
+#
+# bug-066: `<tree>/bin` goes FIRST, and that order is the whole fix. Wrappers
+# deploy by COPY into `<tree>/bin`; `pip install` does not move them, so the
+# sibling inside `.venv/bin` is a snapshot from whenever the package was last
+# installed. Resolving the sibling first meant 954 bytes of fixes never reached
+# the path every rewritten grep takes — bug-005's pipe short-circuit absent, and
+# the `RMXGREP_MODE=plain` bypass the user ordered removed still live. The
+# sibling stays in the chain for an editable install that has no `bin/`.
 def _wrapper(name):
     import os as _os
     import shutil as _shutil
     rmx = _shutil.which("rmx")
     if rmx:
         rmx_p = _os.path.realpath(rmx)
-        cand = _os.path.join(_os.path.dirname(rmx_p), name)
-        if _os.path.exists(cand):
-            return cand
         tree = _os.path.dirname(_os.path.dirname(_os.path.dirname(rmx_p)))
         cand = _os.path.join(tree, "bin", name)
+        if _os.path.exists(cand):
+            return cand
+        cand = _os.path.join(_os.path.dirname(rmx_p), name)
         if _os.path.exists(cand):
             return cand
     p = _shutil.which(name)
