@@ -6393,6 +6393,52 @@ def _resolve_output_shape(gf: dict, paths: list) -> dict:
     }
 
 
+def argv_order_index(paths: list) -> "tuple[dict, dict]":
+    """`(resolved_path -> argv position, resolved_path -> argv spelling)`.
+
+    grep's contract for NAMED paths is argument order, and `rg`'s fan-out is
+    completion order — nondeterministic, so the divergence reproduces only
+    sometimes (ch-bsd r1 #b-2 observed it; a direct-exec control on two small
+    files agrees with grep most runs). A rule that cannot be reproduced on
+    demand still has to be CORRECT, so the rule is module-level and unit
+    tested (`tests/test_grep_argv_order.py`) rather than left to a race.
+    """
+    order: dict = {}
+    display: dict = {}
+    for i, p_ in enumerate(paths or []):
+        try:
+            key = str(Path(p_).resolve())
+        except (OSError, ValueError):
+            continue
+        order.setdefault(key, i)
+        # grep echoes a path exactly as given on the command line.
+        display.setdefault(key, str(p_))
+    return order, display
+
+
+def argv_rank(line_or_path: str, order: "dict") -> int:
+    """Where this file sat in argv; past the end when it was not named."""
+    head = (line_or_path.split(":", 1)[0]
+            if ":" in line_or_path else line_or_path)
+    for cand in (line_or_path, head):
+        try:
+            hit = order.get(str(Path(cand).resolve()))
+        except (OSError, ValueError):
+            continue
+        if hit is not None:
+            return hit
+    return len(order)
+
+
+def order_triples_by_argv(triples: list, order: "dict") -> list:
+    """`(file, line, text)` triples in argv order, then by line. A no-op when
+    no paths were named — a directory walk keeps the tool's own order, because
+    re-sorting a walk invents an order grep does not promise either."""
+    if not order:
+        return list(triples)
+    return sorted(triples, key=lambda tr: (argv_rank(tr[0], order), tr[1]))
+
+
 def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
                       learn_broker=None):
     """Run `rg` then `grep -rn` as a fallback when the index returns
@@ -6491,30 +6537,8 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
     # rows where grep returns b.txt's, and `-c` was wrong in two ways at once.
     # A directory walk keeps the tool's own order: re-sorting a walk would
     # invent an order grep does not promise either.
-    argv_order: "dict[str, int]" = {}
-    argv_display: "dict[str, str]" = {}
-    if paths:
-        for _i, _p in enumerate(paths):
-            try:
-                _key = str(Path(_p).resolve())
-            except (OSError, ValueError):
-                continue
-            argv_order.setdefault(_key, _i)
-            # grep echoes a path exactly as it was given on the command line,
-            # so the ARGV spelling is the display form, not the resolved one.
-            argv_display.setdefault(_key, str(_p))
-
-    def _file_rank(line_or_path: str, order: "dict[str, int]") -> int:
-        """Where this file sat in argv; past the end when it was not named."""
-        head = line_or_path.split(":", 1)[0] if ":" in line_or_path else line_or_path
-        for cand in (line_or_path, head):
-            try:
-                hit = order.get(str(Path(cand).resolve()))
-            except (OSError, ValueError):
-                continue
-            if hit is not None:
-                return hit
-        return len(order)
+    argv_order, argv_display = argv_order_index(paths)
+    _file_rank = argv_rank
 
     if gf["files_only"] or gf["files_without_match"]:
         # bug-064. `-l`/`-L` are handled HERE, before the empty-output branch
@@ -6619,8 +6643,7 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
         return out + text
 
     # The same argument-order rule the `-l` branch above applies (#b-2).
-    if argv_order:
-        triples.sort(key=lambda tr: (_file_rank(tr[0], argv_order), tr[1]))
+    triples = order_triples_by_argv(triples, argv_order)
 
     if shape["count"]:
         counts: dict = {}
