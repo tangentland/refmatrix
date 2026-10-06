@@ -229,3 +229,19 @@ def test_locate_names_a_store_whose_replica_is_missing(
         "locate dropped an unreadable store silently — its per-project legs "
         "had no way to report, so the fan-out's skipped list never saw them")
     assert "replica" in reason.lower() or "failed" in reason.lower(), out["skipped"]
+
+
+def test_locate_reports_the_filename_leg_on_its_own(up_without_replica,
+                                                    monkeypatch):
+    """bug-069: `_locate_one_project`'s filename leg was a bare
+    `except Exception: pass` — the only silent drop left in the fan-out. The
+    keyword leg's reason could mask it, so this drives the filename leg ALONE
+    (no keywords) and requires a skipped row from it."""
+    monkeypatch.setattr(discovery, "discover_roots",
+                        lambda: [up_without_replica.root])
+    monkeypatch.setattr(search, "_live_roots",
+                        lambda: ([up_without_replica.root], []))
+    out = search.federated_locate(filename="held.md")
+    assert out["results"] == [], out
+    reason = " ".join(s.get("reason", "") for s in out["skipped"])
+    assert "filename query failed" in reason, out["skipped"]

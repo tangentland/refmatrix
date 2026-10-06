@@ -23,7 +23,9 @@ def _fake_roots(monkeypatch, per_project: dict):
     monkeypatch.setattr(search.daemon_mod, "ping", lambda r, **kw: True)
 
     def fake_one(root, filename, keywords):
-        return per_project.get(root, {})
+        # (hits, reasons) — the contract since bug-069 gave the per-project
+        # leg a way to say why it found nothing.
+        return per_project.get(root, {}), []
 
     monkeypatch.setattr(search, "_locate_one_project", fake_one)
 

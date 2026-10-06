@@ -162,7 +162,8 @@ def test_federated_locate_names_a_straggler_past_the_fan_out_deadline(held_repli
     monkeypatch.setattr(discovery, "discover_roots", lambda: [held_replica.root])
     monkeypatch.setattr(search, "LOCATE_FANOUT_S", 1.0)
     monkeypatch.setattr(search, "_locate_one_project",
-                        lambda root, filename, keywords: time.sleep(3.0) or {})
+                        lambda root, filename, keywords: (time.sleep(3.0), {},
+                                                          [])[1:])
     t0 = time.monotonic()
     out = search.federated_locate(keywords=["held"])
     elapsed = time.monotonic() - t0
