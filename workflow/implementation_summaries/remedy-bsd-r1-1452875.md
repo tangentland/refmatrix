@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: impl-remedy-bsd-r1-1452875
-title: "Remediation of ch-bsd r1 (e0b7df6..1452875): 13 findings, 4 of 5 blockers closed and one named unproven"
+title: "Remediation of ch-bsd r1 (e0b7df6..1452875): 13 findings, all 5 blockers closed"
 tags: [implementation-summary, bsd, remediation]
 metadata:
   node_type: summary
@@ -49,37 +49,49 @@ template. {#b-4}
 **#b-5 — ~20 unregistered doubles.** Six registry rows, including the two that
 hid defects and one recording a double DELETED the day it was written. {#b-5}
 
-## #b-2's order half is NOT fixed, and that is the honest answer {#b-2-open}
+## #b-2's order half: real, and now gated — my "unproven" was wrong {#b-2-closed-too}
 
-The `-c` half is real and closed: `grep -c PAT a b c` prints a row per named
-file, zeros included, in argv order, and the fix was RED at HEAD with a killed
-mutation. {#b-2-closed}
+The `-c` half was always closed: a row per named file, zeros included, in argv
+order, RED at HEAD with a killed mutation. {#b-2-c}
 
-The ORDER half I could not reproduce, and two attempts to prove it failed in
-ways this ledger already catalogues: {#b-2-attempts}
+I initially reported the ORDER half as unreproducible and nearly deleted the
+fix as unproven code. **That was wrong, for two measured reasons, both of which
+the audit supplied on request.** {#b-2-correction}
 
-1. A bash control against `/usr/bin/grep` — which the PreToolUse rewrite hook
-   INTERCEPTS, so both sides were `rmx` and agreed for the wrong reason. The
-   sibling test file's own docstring warns about exactly this.
-2. A faked `subprocess.run` handing the renderer reversed output. The fake
-   fires (instrumented: one `rg -nH -S --no-heading -F` call), but the
-   reversal does not change the rendered order with OR without the fix, and a
-   mutation deleting the entire sort left all tests green.
+1. **The defect is nondeterministic — rg's parallel fan-out — so gate power
+   depends on file count.** Measured over 40 runs per size, how often the
+   UNFIXED build holds argv order by luck: 2 files **18/40**, 3 files 1/40,
+   4+ files **0/40**. My probe used TWO files, so it had a ~45% chance of
+   agreeing with grep at HEAD. One clean run was never a disproof.
+2. **My control was not a control.** The rewrite hook replaces even an
+   absolute-path `/usr/bin/grep` and survives a `;` separator, and this
+   machine's settings carry `RMXGREP_MODE=rich` (bug-066's open config half) —
+   under which both sides of that probe are `rmx` and agree by construction.
+   The `# rmx grep fallback via rg` banner on stderr is the discriminator, and
+   my transcript had it on the control's own output. I spotted that and still
+   drew the wrong conclusion from it.
 
-The audit saw `rmx` put `a.txt` first where grep put `b.txt`; I see both put
-`b.txt` first. Those are consistent with rg's fan-out being NONDETERMINISTIC —
-the two observations are two draws, not a contradiction — but I could not force
-the losing draw, so I will not claim a fix I cannot demonstrate.
+And **my fake never fired** because `_grep_rg_fallback` does a function-local
+`import subprocess` — cli.py has 11 local imports and none at module level, so
+patching a `cli.subprocess` attribute silently patches nothing.
 
-What shipped instead: the rule is now module-level (`argv_order_index`,
-`argv_rank`, `order_triples_by_argv`) and pinned by 7 unit tests, including the
-three properties that made the original fix wrong in one of two places — one
-comparator serves a bare path AND a `file:line:text` line, a directory walk is
-left alone, and a duplicated path keeps its first position. A rule that cannot
-be reproduced on demand still has to be correct; it no longer rests on a gate
-that cannot fail. {#b-2-shipped}
+The gate now in place needs no fake: `tests/test_grep_argv_order_e2e.py`, SIX
+files of 400 matching lines, named in reverse alphabetical order (so an
+alphabetical sort cannot pass it), every exec `shell=False` with a list argv,
+and the control asserts the fallback banner is ABSENT. Measured here:
+**unfixed build fails 10/10, fixed build passes 5/5.** A fourth test asserts
+rg itself still scrambles at this size — if that ever stops, the gate has lost
+its power and says so rather than passing quietly. The rule also stays unit
+tested (`test_grep_argv_order.py`) because one comparator serves both the `-l`
+branch and the line-prefixed branch, which is the shape the original fix got
+wrong. {#b-2-gate}
 
-rel: reinforces -> [[feedback_clean_corpus_hides_a_dead_gate]]
+One trap worth recording: seeding the zero counts in argv order ALREADY fixes
+`-c`'s order, because dicts preserve insertion order. So a green `-c` test is
+not evidence the `triples` sort works — reading it as such is how the sort
+would have been deleted with every test still green. {#b-2-trap}
+
+rel: reinforces -> [[feedback_never_explain_away_a_failing_guard]]
 
 ## SKETCHY {#sketchy}
 
@@ -110,11 +122,16 @@ rel: reinforces -> [[feedback_clean_corpus_hides_a_dead_gate]]
 - **#m-1** the breadth instrument's run instructions named
   `grep_evidence_precision.py`; the file is `grep_evidence_breadth.py` (I
   renamed it mid-session and left the docstring behind). Fixed.
-- **#m-2** eight agent-facing commands with no verb. REGISTERED as a deferral
-  rather than fixed, with the part that matters recorded: the parity test
-  asserts every MCP tool is a verb, so it is structurally blind to a command
-  that never became either — adding the verbs without extending the test
-  leaves the same blind spot for the next command.
+- **#m-2** eight commands with no verb. **Resolved by user decision** (2026-10-06,
+  "I'm okay with internal harness/testing cli only commands"): `rmx derive
+  log|diff|status` and `rmx learn on|off|status` are operator/test-harness
+  surfaces, not agent capabilities, so the verb rule does not bind them. The
+  registry row records that as ACCEPTED, not deferred. One piece survives the
+  decision and is recorded separately, because it is not about these eight: the
+  parity test cannot distinguish "CLI-only by decision" from "agent-facing and
+  missing its verb", so the decision needs ENCODING (an internal-only allowlist
+  the gate reads) or the next agent-facing command inherits the same blind
+  spot.
 - **#m-3** the toggle reported a typo'd `RMX_LEARN` loudly and swallowed an
   unreadable marker with a bare `pass` — and the fall-through lands on ON, so
   an operator who turned learning off and hit a permission problem got it back
@@ -132,7 +149,6 @@ one it is — this repo runs no JS). {#gates-body}
 
 ## What is still open after this pass {#open}
 
-- #b-2's order half, above — unproven either way, pending the auditor's repro.
 - #s-3's cap, deliberately unretuned.
 - #m-2, deferred with a trigger.
 - bug-070's other half: `c.name ILIKE '%pattern%'` still draws 74 rows / 26
