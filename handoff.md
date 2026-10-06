@@ -9,126 +9,114 @@ metadata:
 
 # Session Handoff for refmatrix {#root}
 
-Date: 2026-10-06 (session b92019bc). Prior handoff archived at
-`workflow/past_handoffs/007-plan14-grep-measured-plan15-derive_2026-10-06.md`.
+Date: 2026-10-06 (session b92019bc, continued). Prior handoff archived at
+`workflow/past_handoffs/008-task-15.4-bugs-065-069-070-072-073-074_2026-10-06.md`
+— it was written mid-session and the two ch-bsd rounds overtook it.
 
-rel: supersedes -> [[handoff-007-plan14-grep-measured-plan15-derive]]
+rel: supersedes -> [[handoff-008-task-15.4-bugs-065-074]]
 
 ## State {#state}
 
-`master` = **b32bc35**, clean tree. **Pushed:** `origin/main` = `cb35e21`
-(41 commits, the first push in this repo's history of the backlog) — the four
-merges above it are NOT pushed yet. `~/claude_tools/gmd` pushed too
-(`a84af28..8a65aa2`). Deploy `~/refmatrix` = **cb35e21 / 0.75.0**, fleet 8/8 +
-hub on 0.75.0 — plan-15 was deployed before this session opened, so the prior
-handoff's "Next #1" was already done. `rmx install-hooks --check` in sync.
-{#state-body}
+`master` = **24523f3**, clean tree. Full suite **2475 passed / 0 failed**
+(`workflow/review-output/pytest-bug073-074-full.log`, 16m28s), and the log is
+attributable: `find src -newermt "2026-10-06 16:41:07" -name '*.py'` EMPTY with
+a sanity probe proving the check fires. GMD lint 0 errors / 555 docs.
+`rmx install-hooks --check` in sync. {#state-body}
 
-**Not deployed:** everything this session landed. No version bump taken — the
-four merges sit on `master` only. {#state-deploy}
+**NOT DEPLOYED.** `~/refmatrix` and the fleet are at **1452875 / 0.76.0**.
+Everything after that sha — the whole r1 remedy, both ch-bsd rounds' fixes,
+bug-073 and bug-074 — exists only on `master`. `origin/main` is at `1452875`
+too. {#state-deploy}
 
-## What this session did {#did}
+## The arc {#arc}
 
-One ask — "proceed with the task and the 3 bugs" — closed task 15.4 (finishing
-plan 15), the three named bugs, and one more the first full suite surfaced.
-{#did-lead}
+One ask ("recall state", then "proceed with the task and the 3 bugs") became
+task 15.4, six bug fixes, two audit rounds and a read-path change. The audits
+are the spine of it: **r1 DIRTY (13 findings), r2 DIRTY (11)**, and r2's three
+BULLSHIT findings were regressions *I* introduced while remediating r1 — two of
+them strictly worse than the deployed build. {#arc-body}
 
-- **Task 15.4 / plan 15 COMPLETE.** `sessions`, `embed` and `pagerank` now stamp
-  at the end of a successful pass (`_op_pagerank` inside its write lock; embed
-  only when the batch loop ran to completion, so a `--max-batches` run claims
-  nothing; sessions on both index routes and on all-cards-unchanged, never under
-  `--no-index`). Both CLI-owned passes route through a new daemon op,
-  `derive_stamp`. `derive_status()` gained `partition_kind`, `expected_passes`
-  and `missing_passes`, expected per partition KIND
-  (`_DERIVE_EXPECTED_PASSES`), and missing is NOT an alert — it sets neither
-  `stale` nor `behind_code`, so release day does not turn the fleet hot.
-  22 tests, 17 RED first, 8 mutations killed.
-- **bug-072 (found here).** The first full suite since plan-15 landed showed 5
-  failures, not the 3 the prior handoff recorded. Two were plan-12 guard tests
-  that had been failing since 15.1 gave `derive_code_hash` a `pass_name`: their
-  zero-arg doubles raised, `_store_health` swallowed it into `derive_error`, and
-  the whole `derive` key vanished from health. **Nothing in `src/` read
-  `derive_error`** — a store whose derive DETECTOR is broken produced a hub row
-  identical to a clean one. `hub._gather_queues` now carries it.
-- **bug-069.** Two causes, and the registry's own question resolved as "the test
-  asserted something r8 never shipped". `_locate_one_project` was the THIRD
-  caller of `_replica_bundle`; r8 fixed the two its finding quoted and left this
-  one with a bare `except: pass` on the filename leg and no `on_error` on the
-  keyword leg. It returns `(hits, reasons)` now and the fan-out names each one.
-  The other two failures were stale test doubles: r8 added `on_error=` and two
-  2-positional lambdas rejected it.
-- **bug-065.** The memory bridge wrote `kind=memory` rows with no vectors, so
-  every save-state produced durable, unreachable memories.
-  `ingest_gmd.drain_memory_vectors` drains at the BRIDGE's completion point —
-  the daemon's `_run_ingest_gmd_body` (both the sync op and the detached job)
-  and `_ingest_gmd_sync`'s in-process branch. The acceptance is the RECALL the
-  row demanded: a phrase unique to a memory is ranked first, on a spawned daemon
-  with the real embedder.
-- **bug-070.** The canonical grep predicate is a SPELLING bridge, not a family.
-  Four arms measured over one store; the obvious fix (plain equality) destroyed
-  the bridge and the measurement is what said so. Report:
-  `docs/measurements/grep-canonical-breadth.md`.
+## What landed {#landed}
 
-## The correction worth carrying {#correction}
+- **Task 15.4 / plan 15** — `sessions`/`embed`/`pagerank` stamp; coverage named
+  per partition kind; missing is reported without being an alert.
+- **bug-065** — an as-memory ingest implies memory vectors, at the BRIDGE (the
+  user caught the first cut sitting in `finalize_save_state`, which covered one
+  caller of four).
+- **bug-069** — locate's third caller reports its skips; two stale doubles.
+- **bug-070** — the canonical match is a spelling bridge, not a family; chosen
+  by measuring four arms, three worse.
+- **bug-072** — a broken derive detector no longer reads as a clean store.
+- **bug-073** — `ILIKE` threw the caller's CASE away. `grep_evidence("ERROR")`
+  and `("error")` returned byte-identical rows where real grep matched ERROR in
+  0 files and error in 52. Found because the user asked what the ILIKE issue
+  was.
+- **bug-074 — the user's fix, and the biggest result of the session.** An index
+  row named a `file:line` where the pattern was NOT: for a code symbol the
+  ingest attaches keyword evidence to the enclosing symbol's `def` line.
+  Verifying keyword presence per row took precision from 0.000–0.542 to
+  **1.000 on every pattern that still answers**, with `error`/`ERROR` returning
+  zero rows and falling through to the real floor. +2–3.6 ms p50.
 
-bug-065's first cut put the drain in `finalize_save_state`. The user asked "so
-as-memory now implies embed - yes?" and the honest answer was **no** — `rmx
-ingest-gmd --as-memory`, `rmx memory sync-disk` and the SessionStart `--detach`
-catch-up hook all kept writing vectorless rows. The rule belonged to the WRITE,
-not to one of its callers, and it moved down a layer. A fix placed at a caller
-is a fix for that caller. {#correction-body}
+## What the audits cost me, recorded because it will recur {#lessons}
 
-rel: reinforces -> [[feedback_main_path_must_exercise_core_mechanisms]]
+- **A clean run on a nondeterministic defect is not evidence of absence.** I
+  declared bug-070's order half unreproducible and nearly deleted a correct
+  fix. Gate power depends on input size: 2 files hold argv order by luck 18/40,
+  4+ files 0/40. My probe used two.
+- **My "control" was rmx.** The rewrite hook replaces even an absolute-path
+  `/usr/bin/grep`, and `RMXGREP_MODE=rich` is set here. I saw the fallback
+  banner on the control's own output, said it meant the control was rewritten,
+  and still read the agreeing numbers as "no defect".
+- **Three fixtures in one session pointed evidence at files or lines that
+  cannot exist.** bug-074's verification found all three. A fixture that
+  asserts against an unreachable state is a test of nothing.
+- **I invalidated three suite runs by working while they ran** — the third by
+  my own mutation loop moving `cli.py`'s mtime. #b-3's error in a different
+  costume, three times.
+- **Targeted runs are not the gate.** I called the grep surface green at 112
+  passed across 8 files; the full suite found 6 more failures in a file I had
+  not thought to check.
+
+rel: reinforces -> [[feedback_never_explain_away_a_failing_guard]]
+rel: reinforces -> [[feedback_commit_before_mutation_revert]]
 
 ## Next {#next}
 
-1. **Version bump + deploy** — nothing from this session is live. Four merges on
-   `master`; `rmx derive log` on the live store will only show the new passes'
-   history after a deploy runs them, and bug-065's drain only protects
-   save-states taken by the DEPLOYED build.
-2. **Push the four merges** — `origin/main` is at `cb35e21`, four merges behind.
-3. **`@ch-bsd` over this range** — plans 14 and 15 have had NO audit pass, and
-   neither has anything in this session. `workflow/bullshit/last_run.log`'s
-   newest entry is 2026-10-01, three DIRTY runs.
-4. **bug-070's other half** — `ERROR` and `timeout` still draw 74/26 and 26/6
-   rows through `c.name ILIKE '%pattern%'`, the pre-bug-067 contract. The
-   registry's cap-the-distinct-concepts candidate applies to THAT predicate and
-   is still an open decision with its own trade.
-5. **The three plan-12-era DIRTY rounds** (plans 2/4/6 findings) remain open in
-   `workflow/plan-of-plans.md`.
+1. **ch-bsd ROUND 3 over `ae39044..24523f3`.** r2 closed DIRTY and said "plan-15
+   may not close. Round 3." On top of its 11 findings, everything in bug-073 /
+   bug-074 and the three fixture rewrites are unaudited. This is first
+   priority — four of r1's five blocker fixes were already audited once and two
+   came back as regressions.
+2. **Deploy** — nothing from the remedy is live. Fleet 8/8 + hub on 0.76.0 at
+   `1452875`.
+3. **Push** — `origin/main` is at `1452875`, ~10 commits behind.
+4. **Re-run the grep-learning replay.** bug-074 LOWERS the measured index share
+   (18.5% → 31.7% counted the low-precision answers) while raising quality, so
+   `docs/measurements/grep-learning-replay.md` is stale and needs a re-run plus
+   a scope line. Same class as the #s-4 problem corrected this session.
+5. **plan-15 stays `in-progress`** until round 3 closes.
+6. **bug-070's other half** — `c.name ILIKE '%pattern%'` is still a substring
+   over names. bug-074's verification now cleans its output, so the breadth is
+   a cost question (74 rows fetched to keep 4) rather than a correctness one.
+   Re-decide with that in mind.
 
 ## Open, not forgotten {#open}
 
-- `rmx hub launchctl status` reports plist drift on the hub's env `PATH` —
-  pre-existing, untouched.
-- `RMXGREP_MODE=rich` lives in `.claude/settings.local.json`; bug-066's config
-  half is still the user's call.
-- `docs/measurements/` vs `workflow/measurements/` — this session added to
-  `docs/`, consistent with the one already there; the split still wants a
-  decision.
-- `eval/production/grep_evidence_breadth.py` is a new instrument with no test.
-  It is eval code, not `src/`, but it is now the thing a future retune of the
-  name predicate would be judged by.
-
-## Gates {#gates}
-
-- Full suite over all four merges: **2432 passed, 0 failed** in 16m11s
-  (`workflow/review-output/pytest-session-full.log`). The session opened at
-  **2404 passed / 5 failed** — all five closed (3 were bug-069, 2 were
-  bug-072), and 28 tests added.
-  **RETRACTED as evidence about the committed tree (ch-bsd r1 #b-3):** that run
-  edited `src/refmatrix/store.py` 70 s in, because
-  `test_derive_stamp.py::test_an_identical_content_rewrite_does_not_fire_the_gate`
-  wrote the real source file. The collected count matches (2432 = 2432, so
-  nothing was uncollected) and no result is known to be wrong, but the log does
-  not describe `1452875` and must not be cited as if it did. The test is fixed
-  on `bsd-r1-remedy`; a re-run is owed.
-- GMD lint: 0 errors / 543 docs.
-- `rmx install-hooks --check`: in sync.
-- Mutations: 8 (task 15.4) + 2 (bug-069) + 3 (bug-065) + 4 (bug-070), all killed.
-  One mutation pair in the bug-070 loop reported a pass it never ran, because
-  `git checkout --` restored HEAD over an uncommitted arm — re-run after
-  committing.
+- **r2's #s-4 disagreement is unresolved.** It reports the multi-word figure as
+  80.6%; both tokenisations I can construct give 0/28 → 24/27 = 88.9% from the
+  committed JSON. I kept the number I can verify and flagged it back rather
+  than match an unverified one. Round 3 should settle it.
+- `MEMORY.md` is 23,269 bytes against a ~24,400-byte cap — **1,131 bytes of
+  headroom**. The cap that bites is BYTES, not the 200 lines the rule doc says
+  (`impression_bsd_cap_in_the_wrong_unit`). Keep new index lines terse.
+- Hub runs UNSUPERVISED: `launchctl print gui/501/com.refmatrix.hub` says
+  `state = not running` while the process is alive. Pre-existing plist drift;
+  I restarted the hub by hand rather than kickstart a second one onto :7777.
+- `RMXGREP_MODE=rich` in `.claude/settings.local.json` — bug-066's config half,
+  and now known to make any shell `grep` control useless.
+- `docs/measurements/` vs `workflow/measurements/` split still undecided.
+- `eval/production/grep_evidence_breadth.py` — new instrument, no test.
 
 rel: realizes -> [[feedback_save_state_means_handoff]]
-rel: related-to -> [[refmatrix/grep-canonical-breadth]]
+rel: related-to -> [[impression_bsd_substring_signature_widens]]
