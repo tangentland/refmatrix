@@ -107,12 +107,16 @@ def test_where_federates(monkeypatch, tmp_path):
     monkeypatch.setenv("RMX_HOME", str(tmp_path / "home"))  # no global store
 
     # context now goes through the in-process replica bundle, not a daemon call
-    monkeypatch.setattr(search, "_replica_bundle", lambda root, ref, degree=0: {
-        "anchor": {"name": "keys", "kind": "concept"},
-        "groups": {"mentions": [
-            {"name": "keychain.py", "kind": "code", "path": "/p/keychain.py",
-             "line": 3}]},
-    })
+    # `**kw`: plan-3 r8 added `on_error=` to the real call and this double
+    # rejected it, so the code leg raised, only the memory leg survived, and
+    # `/api/where` answered with memory hits alone (bug-069).
+    monkeypatch.setattr(search, "_replica_bundle",
+                        lambda root, ref, degree=0, **kw: {
+                            "anchor": {"name": "keys", "kind": "concept"},
+                            "groups": {"mentions": [
+                                {"name": "keychain.py", "kind": "code",
+                                 "path": "/p/keychain.py", "line": 3}]},
+                        })
 
     def fake_call(r, op, args, timeout=60.0, **kw):
         if op == "memory_search":

@@ -311,17 +311,29 @@ def federated_query(dsl: str, *, limit: int = 50) -> dict:
 
 
 def _locate_one_project(root, filename: str | None,
-                        keywords: list[str]) -> dict:
-    """Per-project locate. Returns {path: {path, project, root, score, why}} for
-    the live store at `root`. Best-effort; returns {} on any failure.
+                        keywords: list[str]) -> "tuple[dict, list[str]]":
+    """Per-project locate. Returns ({path: {path, project, root, score, why}},
+    reasons) for the live store at `root`.
 
     - `filename` (basename, no path) -> exact-basename match on code/doc entity
       paths (the `name` hit; score 0 from keywords, but always surfaced).
     - `keywords` -> reuse the proven content-ranking bundle per keyword and
       accumulate a relevance score per file path (rank-decayed, summed).
+
+    bug-069: this was the THIRD caller of `_replica_bundle`, and plan-3 round 8
+    fixed the other two. It had no reasons channel at all — the filename leg's
+    failure was a bare `except: pass` and the keyword leg called
+    `_replica_bundle` WITHOUT `on_error`, which swallows everything itself. So
+    an up-classified store with no `catalog.read.duckdb` produced `{}`,
+    `federated_locate` merged nothing, and `rmx locate` printed "no matches"
+    with no skipped line — r3 #b-2's symptom, alive one frame down from where
+    it was declared fixed. Shape copied from `_where_one_project`: a leg that
+    failed is SAID in `reasons`, and the fan-out turns each one into a
+    `skipped` row.
     """
     proj = discovery.store_name(root)
     hits: dict[str, dict] = {}
+    reasons: list[str] = []
 
     def _bump(path: str | None, score: float, why: str,
               name_hit: bool = False) -> None:
@@ -353,15 +365,18 @@ def _locate_one_project(root, filename: str | None,
                 ).fetchall()
             for (path,) in rows:
                 _bump(path, 0.0, f"filename={filename}", name_hit=True)
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001 — said, never a bare pass
+            reasons.append(
+                f"filename query failed ({type(e).__name__}: {e})")
 
     # 2) Keyword/concept relevance -> file paths, reusing the content bundle.
     for kw in keywords:
-        try:
-            b = _replica_bundle(root, kw, degree=0)
-        except Exception:
-            continue
+        errs: list = []
+        # `on_error` rather than a wrapping `except`: `_replica_bundle` catches
+        # its own failures and returns {}, so an `except` here is dead code —
+        # which is exactly what round 7 wrote at the other two call sites.
+        b = _replica_bundle(root, kw, degree=0, on_error=errs)
+        reasons.extend(f"{e} (keyword {kw!r})" for e in errs)
         if not b:
             continue
         anchor = b.get("anchor")
@@ -371,7 +386,7 @@ def _locate_one_project(root, filename: str | None,
             for rank, e in enumerate(entries):
                 if e.get("path"):
                     _bump(e["path"], max(2.0 - 0.1 * rank, 0.2), kw)
-    return hits
+    return hits, reasons
 
 
 def federated_locate(filename: str | None = None,
@@ -402,11 +417,16 @@ def federated_locate(filename: str | None = None,
             for fut in as_completed(futs, timeout=LOCATE_FANOUT_S):
                 done.add(fut)
                 try:
-                    part = fut.result(timeout=0.1) or {}
+                    part, reasons = fut.result(timeout=0.1)
                 except Exception as e:  # noqa: BLE001 — said per store
-                    part = {}
-                    _skip(skipped, futs[fut], f"locate failed ({type(e).__name__}: {e})")
-                for path, h in part.items():
+                    part, reasons = {}, [
+                        f"locate failed ({type(e).__name__}: {e})"]
+                # bug-069: every per-project leg that failed becomes a skipped
+                # row. Without this the fan-out merged `{}` and `rmx locate`
+                # answered "no matches" for a store it could not read.
+                for why in reasons:
+                    _skip(skipped, futs[fut], why)
+                for path, h in (part or {}).items():
                     cur = merged.get(path)
                     if cur is None:
                         merged[path] = h

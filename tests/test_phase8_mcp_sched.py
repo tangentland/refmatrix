@@ -126,9 +126,15 @@ def test_federated_concept_groups_by_project(monkeypatch):
     monkeypatch.setattr(search.discovery, "daemon_status",
                         lambda r, **kw: {"up": True, "busy": False, "pid": 1})
     # federated_concept resolves via the in-process replica bundle
-    monkeypatch.setattr(search, "_replica_bundle", lambda root, name, degree=0: {
-        "anchor": {"name": name, "kind": "concept"},
-        "groups": {"mentions": [{"name": "x", "kind": "code"}]}})
+    # `**kw` so the double survives a keyword the real callee grows: plan-3 r8
+    # added `on_error=` at this call site and this lambda rejected it, so every
+    # project was reported as a SKIPPED store with a TypeError and `projects`
+    # came back empty (bug-069).
+    monkeypatch.setattr(search, "_replica_bundle",
+                        lambda root, name, degree=0, **kw: {
+                            "anchor": {"name": name, "kind": "concept"},
+                            "groups": {"mentions": [
+                                {"name": "x", "kind": "code"}]}})
     res = search.federated_concept("build_context")
     projs = {p["project"] for p in res["projects"]}
     assert projs == {"a", "b"}
