@@ -116,6 +116,13 @@ rel: reinforces -> [[feedback_main_path_must_exercise_core_mechanisms]]
   (`workflow/review-output/pytest-session-full.log`). The session opened at
   **2404 passed / 5 failed** — all five closed (3 were bug-069, 2 were
   bug-072), and 28 tests added.
+  **RETRACTED as evidence about the committed tree (ch-bsd r1 #b-3):** that run
+  edited `src/refmatrix/store.py` 70 s in, because
+  `test_derive_stamp.py::test_an_identical_content_rewrite_does_not_fire_the_gate`
+  wrote the real source file. The collected count matches (2432 = 2432, so
+  nothing was uncollected) and no result is known to be wrong, but the log does
+  not describe `1452875` and must not be cited as if it did. The test is fixed
+  on `bsd-r1-remedy`; a re-run is owed.
 - GMD lint: 0 errors / 543 docs.
 - `rmx install-hooks --check`: in sync.
 - Mutations: 8 (task 15.4) + 2 (bug-069) + 3 (bug-065) + 4 (bug-070), all killed.

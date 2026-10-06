@@ -4,7 +4,10 @@
 project's own 121 repeated grep patterns
 (`workflow/review-output/grep-reachability-repeated.json`, 2026-10-06), that was
 true for 24 of the 76 patterns that fell to the floor and taught something —
-and for **0 of 18 multi-word patterns**.
+and for **0 of 28 multi-word patterns** (patterns containing a space, counted
+over those that taught something; the figure read `0 of 18` until ch-bsd r1
+#s-4 found that no definition reproduced that denominator from the committed
+JSON — see `refmatrix/grep-learning-replay#fix-correction`).
 
 MECHANISM, proven by direct SQL rather than inferred. `store.add_concept` runs
 `_concept_variants`, which writes the canonical underscore row PLUS space and

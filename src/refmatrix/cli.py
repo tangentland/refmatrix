@@ -2798,6 +2798,14 @@ def hub_queues(as_json):
             flags.append("derive-unstamped")
         if q.get("derive_version_drift"):
             flags.append(f"derive-drift@{q['derive_version_drift']}")
+        if q.get("derive_error"):
+            # ch-bsd r1 #s-1: `_store_health` catches a failing
+            # `derive_status` into `derive_error` and DROPS the `derive` key,
+            # so a store whose derive detector is broken produced a row
+            # indistinguishable from a clean one. bug-072 put the field on the
+            # row; until this line it reached `--json` and no human surface.
+            # Not hot — a probe timeout must not page anyone — but said.
+            flags.append("derive-UNKNOWN")
         t.add_row(str(q.get("project")),
                   "up" if q.get("daemon_up") else ("busy" if q.get("daemon_busy") else "down"),
                   str(q.get("stale_files") if q.get("stale_files") is not None else "?"),
@@ -10078,7 +10086,15 @@ def _stamp_derive_pass(root: Path, partition: str, pass_name: str, *,
             "duration_s": duration_s}
     try:
         if daemon_mod.ping(root):
-            resp = daemon_mod.call(root, "derive_stamp", args, timeout=30.0)
+            # retries=0 because this is a WRITE (ch-bsd r1 #s-2).
+            # `daemon.call`'s default retries=2 triples the budget AND
+            # re-sends the op: `_op_derive_stamp` appends a
+            # `derive_history` row per call, so a client-side timeout on
+            # a stamp the daemon DID apply would record the same derive
+            # two or three times and corrupt the history this plan added.
+            # The other three new call sites are reads and already pass it.
+            resp = daemon_mod.call(root, "derive_stamp", args,
+                                   timeout=30.0, retries=0)
             if not resp.get("ok"):
                 raise RuntimeError(resp.get("error", "daemon error"))
             return

@@ -124,13 +124,33 @@ ever be given), over the 122 patterns that repeat in the real log: {#fix}
 | | before the fix | after |
 |---|---|---|
 | taught, then reachable on the immediate repeat | 24/76 (31.6%) | **50/61 (82.0%)** |
-| multi-word patterns | **0/18** | 14/15 |
+| multi-word patterns, taught, then reachable | **0/28** | **24/27 (88.9%)** |
 | answered from the index on the FIRST call | 29/121 | **43/122** |
 
 The third row is a side effect worth naming: the canonical predicate also reaches INGEST-time
 concepts, so 14 more patterns are answered from the index before any learning happens. 11 patterns
 remain unreachable, 10 of them regexes whose learned name is the literal regex text — a limitation
 recorded in the row, not the same defect. {#fix-numbers}
+
+**CORRECTED 2026-10-06 (ch-bsd r1 #s-4).** The multi-word row read `0/18 → 14/15` and no
+definition of "multi-word" reproduces those denominators from the committed JSON — the harness
+computes no multi-word metric at all, so the figure was derived by hand and the derivation was not
+recorded. The direction was right and the *rate was overstated*: `14/15` is 93%, the reproducible
+figure is 88.9%. The row now states its definition — patterns containing a SPACE, counted over
+those that taught something (`applied > 0`) and then answered `index` on the immediate repeat — and
+both halves come from the files named in `#repro`:
+
+```
+reachability-before-fix.json : space-separated multi-word = 35, taught = 28, reachable = 0
+reachability-after-fix.json  : space-separated multi-word = 36, taught = 27, reachable = 24
+```
+
+Two other definitions are defensible and are given here so the next reader does not have to guess:
+over ALL multi-word patterns rather than the taught subset, `0/35 → 25/36`; tokenising on dashes and
+underscores as well as spaces, `11/52 → 38/44`. The first row of the table is reproducible but pairs
+its two halves from two different runs, which the `#repro` block does not say. {#fix-correction}
+
+rel: reinforces -> [[feedback_read_identifiers_at_write_time]]
 
 ## What it costs {#cost}
 

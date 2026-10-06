@@ -574,9 +574,15 @@ async function doWhere(q) {
   // made the browser the third consumer to turn a busy store into an empty
   // answer (ch-bsd plan-3 r7 #s-3 — `canon find` was not the last one).
   const skipped = r.result?.skipped || [];
+  // ESCAPED: `reason` now carries exception text and filesystem paths (the
+  // per-project reasons channel bug-069 added), and this template writes it
+  // straight into innerHTML.
+  const esc = (v) => String(v == null ? "" : v)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
   const skipNote = skipped.length
     ? `<div class="omni-group">${skipped.length} store${skipped.length !== 1 ? "s" : ""} skipped: ` +
-      skipped.map((s) => `${s.project} — ${s.reason}`).join("; ") + `</div>`
+      skipped.map((s) => `${esc(s.project)} — ${esc(s.reason)}`).join("; ") + `</div>`
     : "";
   if (!hits.length) {
     box.innerHTML = skipNote || `<div class="omni-group">no hits</div>`;
@@ -584,7 +590,13 @@ async function doWhere(q) {
   }
   const groups = {};
   hits.forEach((h) => (groups[h.source] = groups[h.source] || []).push(h));
-  box.innerHTML = Object.entries(groups).map(([g, items]) =>
+  // The PARTIAL case (ch-bsd r1 #b-4): some stores answered and one could not
+  // be read. `skipNote` was computed and then spent only in the zero-hits
+  // branch above, so this assignment dropped it — and partial is the COMMON
+  // fan-out shape, which made the comment four lines up ("a store that could
+  // not be searched is SAID, never rendered as 'no hits'") false exactly where
+  // it mattered most. Same sibling-output shape as #b-2.
+  box.innerHTML = skipNote + Object.entries(groups).map(([g, items]) =>
     `<div class="omni-group">${g}</div>` + items.slice(0, 8).map((h) =>
       `<div class="omni-item" data-root="${h.root || ""}" data-name="${h.name}">
         <span class="dot" style="background:${KIND_COLOR[h.kind] || "#8b949e"}"></span>
