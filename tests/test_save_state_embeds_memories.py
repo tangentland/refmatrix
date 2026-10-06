@@ -237,6 +237,73 @@ def test_the_drain_is_bounded_and_says_what_it_left():
     assert "capped" in line and "rmx embed --kinds memory" in line
 
 
+def test_the_remaining_count_is_one_the_real_producer_can_emit(tmp_path):
+    """ch-bsd r1 #b-1: the test above feeds `remaining: 9999`, and the REAL
+    producer could only ever return 0 or 1 — `_op_embed` reported
+    `len(pending_embeddings(limit=1))`. The fake was the blindfold, so the
+    capped line told operators "1 still without vectors" with thousands
+    outstanding. Driven against the real store method, no fake."""
+    from refmatrix.store import Store
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    try:
+        for i in range(5):
+            s.upsert_entity("memory", f"m{i}")
+        pend = s.pending_embeddings(kinds=["memory"])
+        assert len(pend) == 5, pend
+        # The bug, pinned: a capped LIST is not a count.
+        assert len(s.pending_embeddings(kinds=["memory"], limit=1)) == 1
+        # The fix: the count is the count.
+        assert s.pending_embeddings_count(kinds=["memory"]) == 5
+        # And it respects the same predicate as the list it counts.
+        assert s.pending_embeddings_count() >= 5
+        assert s.pending_embeddings_count(kinds=["code"]) == 0
+    finally:
+        s.close()
+
+
+def test_op_embed_reports_a_real_remaining_count(tmp_path, monkeypatch):
+    """The producer, not the helper: `_op_embed`'s `remaining` has to be the
+    number the renderer spends. Asserted over a store with more pending rows
+    than one batch, so a 0-or-1 answer is visibly wrong."""
+    from refmatrix.daemon import Daemon, _op_embed
+    from refmatrix.store import Store
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    for i in range(7):
+        s.upsert_entity("memory", f"m{i}")
+
+    class _FakeEmb:
+        """Only the model is faked. `_op_embed`'s own arithmetic — the
+        `remaining` under test — runs for real."""
+        dim = 3
+        model_name = "fake"
+
+        def embed_texts(self, texts):
+            import numpy as _np
+            return _np.zeros((len(texts), 3), dtype="float32")
+
+    d = Daemon(tmp_path / ".refmatrix")
+    d.store = s
+    monkeypatch.setattr(d, "_embedder", lambda: _FakeEmb(), raising=False)
+    monkeypatch.setattr(Store, "upsert_vector",
+                        lambda self, *a, **k: None, raising=False)
+    try:
+        res = _op_embed(d, {"kinds": ["memory"], "limit": 2})
+        assert res.get("ok") is not False, res
+        assert res["embedded"] == 2, res
+        # 7 pending, 2 embedded — but upsert_vector is stubbed, so the stamp
+        # never moves and all 7 remain. The POINT is that the number is not
+        # clamped to 1.
+        assert res["remaining"] > 1, (
+            f"remaining={res['remaining']} — a 0-or-1 boolean wearing a "
+            f"count's clothes (#b-1)")
+    finally:
+        s.close()
+
+
 def test_a_pass_that_makes_no_progress_stops_instead_of_spinning():
     """`embedded == 0` with rows still pending is a pass that cannot advance;
     burning the whole budget on it would turn a stuck embedder into eight

@@ -3405,21 +3405,18 @@ class Store:
                 pass
         return total
 
-    def pending_embeddings(
-        self, *, kinds: list[str] | None = None, limit: int | None = None
-    ) -> list[tuple[int, str, str]]:
-        """Return `(id, kind, name)` for entities whose vector is missing or
-        stale: `vectors_updated_at` is NULL or older than `updated_at`, OR whose
-        vectors were recorded against a DIFFERENT partition than this store's
-        active one (`vectors_partition` set but mismatched — the fingerprint of
-        a vector written to the wrong partition; re-queue so it self-heals).
-        A NULL `vectors_partition` (rows embedded before this column existed) is
-        trusted, so the migration does not trigger a mass re-embed.
-        Filtered to `kinds` when provided. `limit` caps the result.
+    def _pending_embeddings_where(
+        self, kinds: "list[str] | None",
+    ) -> "tuple[str, list]":
+        """The WHERE for "this row's vector is missing or stale", once.
+
+        Shared by `pending_embeddings` and `pending_embeddings_count` so the
+        list and the COUNT cannot drift — this repo's recurring defect is one
+        rule implemented per call path (bug-058/059/060, and the grep read SQL
+        that existed in three divergent copies until bug-067).
         """
-        con = self._connect()
         sql = (
-            "SELECT id, kind, name FROM entities "
+            "FROM entities "
             "WHERE partition_id = ? "
             "AND (vectors_updated_at IS NULL "
             "     OR vectors_updated_at < updated_at "
@@ -3431,11 +3428,52 @@ class Store:
             in_list = ",".join("?" * len(kinds))
             sql += f" AND kind IN ({in_list})"
             params.extend(kinds)
-        sql += " ORDER BY id"
+        return sql, params
+
+    def pending_embeddings(
+        self, *, kinds: list[str] | None = None, limit: int | None = None
+    ) -> list[tuple[int, str, str]]:
+        """Return `(id, kind, name)` for entities whose vector is missing or
+        stale: `vectors_updated_at` is NULL or older than `updated_at`, OR whose
+        vectors were recorded against a DIFFERENT partition than this store's
+        active one (`vectors_partition` set but mismatched — the fingerprint of
+        a vector written to the wrong partition; re-queue so it self-heals).
+        A NULL `vectors_partition` (rows embedded before this column existed) is
+        trusted, so the migration does not trigger a mass re-embed.
+        Filtered to `kinds` when provided. `limit` caps the result.
+
+        NOT the way to ask "how many are left" — a `limit` makes the LENGTH of
+        this result a capped number, and reading it as a count is ch-bsd r1
+        #b-1: `len(pending_embeddings(limit=1))` is 0-or-1 by construction and
+        was reported to operators as the remaining row count. Use
+        `pending_embeddings_count`.
+        """
+        con = self._connect()
+        where, params = self._pending_embeddings_where(kinds)
+        sql = "SELECT id, kind, name " + where + " ORDER BY id"
         if limit is not None:
             sql += f" LIMIT {int(limit)}"
         rows = con.execute(sql, params).fetchall()
         return [(r[0], r[1], r[2]) for r in rows]
+
+    def pending_embeddings_count(self, *, kinds: list[str] | None = None) -> int:
+        """How many rows still need a vector — a REAL count (ch-bsd r1 #b-1).
+
+        `_op_embed` reported `len(pending_embeddings(limit=1))`, so every
+        surface that printed "N left" could only ever print 0 or 1. At a drain
+        cap the operator read "2048 embedded, 1 still without vectors" with
+        thousands outstanding, and "1 left" is exactly the reading that makes
+        someone skip `rmx embed --kinds memory` — leaving memory rows durable
+        and unreachable, which is bug-065's own harm.
+
+        A COUNT over the same predicate, not a materialised list: the caller
+        wants the number, and pulling N rows to measure N is the cost the
+        `limit=1` was dodging in the first place.
+        """
+        where, params = self._pending_embeddings_where(kinds)
+        row = self._connect().execute("SELECT count(*) " + where,
+                                      params).fetchone()
+        return int(row[0]) if row else 0
 
     def rebuild_entities_indexes(self) -> dict:
         """Rebuild the `entities` table with fresh PRIMARY KEY / UNIQUE

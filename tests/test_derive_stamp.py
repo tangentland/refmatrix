@@ -248,24 +248,46 @@ def test_a_stamp_from_the_same_code_is_not_behind_it(store, tmp_path, monkeypatc
     assert st["stale"] is True, "the version line still tells the human"
 
 
-def test_an_identical_content_rewrite_does_not_fire_the_gate(store, tmp_path):
+def test_an_identical_content_rewrite_does_not_fire_the_gate(store, tmp_path,
+                                                             monkeypatch):
     """ch-bsd plan-12 r3, demonstrated on this machine: a mutation harness
     restored `ingest.py` byte-for-byte and moved its mtime. Under the mtime
     gate that marked the store behind code that never changed. The hash does
-    not move, so neither does the verdict."""
+    not move, so neither does the verdict.
+
+    The rewrite lands on a COPY (ch-bsd r1 #b-3). This test used to
+    `write_bytes` the real `src/refmatrix/store.py` — same bytes, new mtime,
+    `git status` clean — so every full-suite run moved the mtime of the largest
+    module in the tree. That poisoned the one signal this project uses to spot
+    a mid-run edit (it put mtime 13:40:31 on store.py 70 s inside the window of
+    the run reported as "2432 passed", which the audit first read as a foreign
+    auditor's confound), and it busted `_DERIVE_CODE_HASH_CACHE` fleet-wide on
+    every run. `_DERIVE_SRC_DIR` is the seam that exists for exactly this and
+    says so; `test_derive_pass_identity.py` already uses it.
+    """
+    import shutil
+
     import refmatrix.store as store_mod
+
+    d = tmp_path / "src"
+    d.mkdir()
+    for name in ("ingest.py", "ingest_gmd.py", "store.py"):
+        shutil.copy2(Path(store_mod.__file__).resolve().parent / name, d / name)
+    monkeypatch.setattr(store_mod, "_DERIVE_SRC_DIR", d, raising=False)
+    store_mod._DERIVE_CODE_HASH_CACHE.clear()
 
     _track(store, tmp_path)
     store.stamp_derive("ingest")
     assert store.derive_status()["behind_code"] is False
 
-    src = Path(store_mod.__file__).resolve()
+    src = d / "ingest.py"          # the pass's OWN module, on the copy
     body = src.read_bytes()
     before = store_mod.derive_code_hash()
     src.write_bytes(body)                       # same bytes, new mtime
     store_mod._DERIVE_CODE_HASH_CACHE.clear()
     assert store_mod.derive_code_hash() == before
     assert store.derive_status()["behind_code"] is False
+    store_mod._DERIVE_CODE_HASH_CACHE.clear()
 
 
 def test_a_stamp_with_no_hash_at_all_counts_as_behind(store, tmp_path):

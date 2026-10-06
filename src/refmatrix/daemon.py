@@ -5467,7 +5467,10 @@ def _op_embed(d: Daemon, args: dict) -> dict:
             sub = vectors[idxs]
             d._st().upsert_vector(eids, sub, kind=kind, dim=emb.dim)
             embedded += len(eids)
-        remaining = len(d._st().pending_embeddings(kinds=kinds, limit=1))
+        # A REAL count, not `len(pending_embeddings(limit=1))` — that was
+        # 0-or-1 by construction and every "N left" surface printed it
+        # (ch-bsd r1 #b-1).
+        remaining = d._st().pending_embeddings_count(kinds=kinds)
 
     d._request_snapshot()
     return {
