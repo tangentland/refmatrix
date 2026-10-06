@@ -9745,7 +9745,14 @@ def _ingest_gmd_sync(resolved: list[Path], *, as_memory: bool,
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         rep = str(resp["result"]["report"])
-        return (rep, dict(resp["result"].get("stats") or {})) if with_stats else rep
+        if not with_stats:
+            return rep
+        st = dict(resp["result"].get("stats") or {})
+        # The daemon already drained the memory vectors (bug-065); carry its
+        # counts STRUCTURALLY rather than scraping them back out of `report`
+        # (ch-bsd plan-5 #m-7).
+        st["embed"] = resp["result"].get("embed")
+        return rep, st
     s = _store_rw()
     files = collect_gmd_files(resolved)
     if not files:
@@ -9760,7 +9767,27 @@ def _ingest_gmd_sync(resolved: list[Path], *, as_memory: bool,
             s, files, verbose=verbose,
             as_memory=as_memory, memory_mtype_default=memory_mtype,
         )
-    return (stats.report(), stats.as_dict()) if with_stats else stats.report()
+    rep = stats.report()
+    emb = None
+    if as_memory:
+        # The daemon-down twin of the drain `_run_ingest_gmd_body` does
+        # (bug-065). Same function, same bound, same line — a rule that holds
+        # only when a daemon happens to be up is not a rule.
+        from refmatrix.daemon import Daemon, _op_embed
+        from refmatrix.ingest_gmd import (drain_memory_vectors,
+                                          render_memory_embed_line)
+        d = Daemon(root)
+        d.store = s
+        emb = drain_memory_vectors(lambda a: _op_embed(d, a),
+                                   partition=partition)
+        line = render_memory_embed_line(emb)
+        if line:
+            rep = f"{rep}\n{line}"
+    if not with_stats:
+        return rep
+    st = stats.as_dict()
+    st["embed"] = emb
+    return rep, st
 
 
 def _sync_memory_dir(memdir: Path) -> dict:
@@ -9782,7 +9809,11 @@ def _sync_memory_dir(memdir: Path) -> dict:
     save-state."""
     out: dict = {"memdir": str(memdir), "report": None, "error": None,
                  "skipped_non_gmd": 0, "skipped_unparseable": [], "skipped_index": [],
-                 "waited": False, "waited_job": None}
+                 "waited": False, "waited_job": None,
+                 # WHICH partition took the rows, and whether those rows got
+                 # VECTORS (bug-065) — an as-memory ingest drains the memory
+                 # embed queue itself, and its counts come back here.
+                 "partition": None, "embed": None}
     if not memdir.is_dir():
         out["error"] = f"memory dir not found: {memdir}"
         return out
@@ -9790,6 +9821,7 @@ def _sync_memory_dir(memdir: Path) -> dict:
         partition = _memory_partition_default()
     else:
         partition = _resolve_partition()
+    out["partition"] = partition
     try:
         rep, stats = _ingest_gmd_sync(
             [memdir.resolve()], as_memory=True, partition=partition, with_stats=True,
@@ -9808,6 +9840,9 @@ def _sync_memory_dir(memdir: Path) -> dict:
 
 def _bridge_stats(out: dict, stats: dict) -> None:
     """The counters, structurally (ch-bsd plan-5 #m-7: no report scraping)."""
+    # Whether the rows the bridge wrote got VECTORS (bug-065). A memory the
+    # bridge wrote and nothing embedded is durable and invisible to recall.
+    out["embed"] = stats.get("embed")
     out["skipped_non_gmd"] = int(stats.get("skipped_non_gmd") or 0)
     out["skipped_unparseable"] = [{"path": p, "error": e}
                                   for p, e in (stats.get("skipped_unparseable") or [])]
@@ -12719,6 +12754,20 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
                 console.print(f"[dim]  waited for ingest job {sync.get('waited_job')}[/]")
             console.print(f"[green]memory bridge[/] {memdir} → store:")
             click.echo(sync["report"])
+
+    # Did those rows get VECTORS? (bug-065) A memory the bridge wrote and
+    # nothing embedded is durable and invisible to recall — and recall is how
+    # the next session reaches it, so this line is never silent. The TEXT
+    # comes from the bridge's own renderer, so the `ingest-gmd` report and the
+    # save-state line cannot drift apart.
+    emb = fin.get("embed")
+    if emb:
+        from refmatrix.ingest_gmd import render_memory_embed_line
+        line = render_memory_embed_line(emb)
+        if line:
+            colour = "red" if emb.get("error") else (
+                "yellow" if emb.get("capped") else "green")
+            console.print(f"[{colour}]{rich_escape(line)}[/]")
 
     if commit:
         _ss_sh(["git", "add", "-A"], repo)

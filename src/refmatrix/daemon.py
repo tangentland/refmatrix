@@ -3491,12 +3491,32 @@ def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict) -> dic
         d._request_snapshot()
         raise
     d._request_snapshot()
+    # An as-memory ingest IMPLIES memory vectors (bug-065). Here, at the one
+    # completion point BOTH the synchronous op and the detached job pass
+    # through — so `rmx save-state`, `rmx memory sync-disk`, the SessionStart
+    # `--detach` catch-up hook and a by-hand run all get it, instead of the
+    # one caller the first fix covered. Rows written without vectors are
+    # durable and invisible to recall, which is the only way the next session
+    # reaches them.
+    emb = None
+    report = stats.report()
+    if args.get("as_memory"):
+        from refmatrix.ingest_gmd import (drain_memory_vectors,
+                                          render_memory_embed_line)
+        emb = drain_memory_vectors(lambda a: _op_embed(d, a),
+                                   partition=partition)
+        line = render_memory_embed_line(emb)
+        if line:
+            d._log(f"ingest-gmd job={job_id} {line}")
+            report = f"{report}\n{line}"
     result = {
-        "files": len(files), "report": stats.report(),
+        "files": len(files), "report": report,
         "docs": stats.docs, "nodes": stats.nodes,
         "rels": stats.rels, "mentions": stats.mentions,
         "unresolved": len(stats.unresolved),
         "stats": stats.as_dict(),
+        # Structured, not scraped from the report (ch-bsd plan-5 #m-7).
+        "embed": emb,
         "job_id": job_id,
     }
     with d._ingest_jobs_lock:
