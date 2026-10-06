@@ -7060,6 +7060,12 @@ def learn_status():
     d = _ls.decision(root)
     state = "[green]ON[/]" if d.enabled else "[red]OFF[/]"
     console.print(f"learning {state}  (rule: {d.rule})")
+    if getattr(d, "marker_error", None):
+        # #m-3: the fall-through lands on ON, so an unreadable marker must not
+        # be the quiet half of this surface.
+        console.print(f"[red]marker UNREADABLE[/] {d.marker_error} — learning "
+                      f"is ON because the marker could not be read, not "
+                      f"because it is absent")
     if d.rejected_env is not None:
         # The operator's typo, shown rather than absorbed: a value that is
         # neither on nor off must not read as either answer.

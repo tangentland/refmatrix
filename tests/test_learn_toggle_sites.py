@@ -365,3 +365,44 @@ def test_learn_off_global_targets_the_user_scope(project):
     assert res.exit_code == 0, res.output
     assert ls.global_marker().exists()
     assert not ls.store_marker(project / ".refmatrix").exists()
+
+
+# ---- ch-bsd r1 #m-3: an unreadable marker is SAID, not swallowed ----------
+
+def test_an_unreadable_marker_is_reported_not_swallowed(tmp_path, monkeypatch):
+    """The asymmetry the audit named: a typo'd `RMX_LEARN` was reported loudly
+    while an `OSError` reading `learn.off` fell through with a bare `pass`. The
+    fall-through lands on ON, so an operator who turned learning OFF and then
+    hit a permission problem got it back on with no word — a silent failure on
+    the learning path."""
+    from refmatrix import learn_switch as ls
+
+    monkeypatch.delenv(ls.ENV_VAR, raising=False)
+
+    boom = tmp_path / "store"
+    boom.mkdir()
+
+    real_exists = ls.Path.exists
+
+    def _raise(self):
+        if self.name == ls.MARKER_NAME:
+            raise PermissionError("permission denied")
+        return real_exists(self)
+
+    monkeypatch.setattr(ls.Path, "exists", _raise)
+
+    d = ls.decision(boom)
+    assert d.enabled is True, "an unreadable marker must not flip the answer"
+    assert d.rule == "default"
+    assert d.marker_error, "the read failure vanished"
+    assert "PermissionError" in d.marker_error
+
+
+def test_a_readable_absent_marker_reports_nothing(tmp_path, monkeypatch):
+    """The quiet case stays quiet — an absent marker is not a failure, and a
+    surface that cried wolf on every call would be ignored."""
+    from refmatrix import learn_switch as ls
+
+    monkeypatch.delenv(ls.ENV_VAR, raising=False)
+    d = ls.decision(tmp_path)
+    assert d.marker_error is None

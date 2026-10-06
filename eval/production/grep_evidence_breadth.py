@@ -36,11 +36,11 @@ WHAT THIS MEASURES, AND WHAT IT DELIBERATELY DOES NOT.
 HOW TO RUN IT — two arms, one bit different, same store:
 
     # build once and keep it
-    eval/production/grep_evidence_precision.py --build --root /tmp/b070
+    eval/production/grep_evidence_breadth.py --build --root /tmp/b070
     # arm A, at HEAD
-    eval/production/grep_evidence_precision.py --root /tmp/b070 --out A.json
+    eval/production/grep_evidence_breadth.py --root /tmp/b070 --out A.json
     # apply the predicate change, then arm B over the SAME rows
-    eval/production/grep_evidence_precision.py --root /tmp/b070 --out B.json
+    eval/production/grep_evidence_breadth.py --root /tmp/b070 --out B.json
 
 Reusing the store is the point: a rebuilt corpus would make the two arms differ
 in more than the predicate.

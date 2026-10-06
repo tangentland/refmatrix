@@ -58,6 +58,13 @@ class Decision:
     enabled: bool
     rule: str
     rejected_env: str | None = None
+    # An UNREADABLE marker file (ch-bsd r1 #m-3). The asymmetry the audit
+    # named: a typo'd `RMX_LEARN` was reported loudly while an `OSError`
+    # reading `learn.off` fell through with a bare `pass`, so an operator who
+    # turned learning OFF and then hit a permission problem got it back ON
+    # with no word. Not an answer — the fall-through is still right, because a
+    # marker that cannot be read has not said "off" — but it is SAID.
+    marker_error: str | None = None
 
 
 def global_marker() -> Path:
@@ -94,20 +101,23 @@ def decision(root: "str | os.PathLike | None" = None) -> Decision:
     env_enabled, rejected = _env_value()
     if env_enabled is not None:
         return Decision(env_enabled, "env", rejected)
+    problems: list = []
     if root is not None:
         try:
             if store_marker(root).exists():
                 return Decision(False, "store-marker", rejected)
-        except OSError:
+        except OSError as e:
             # An unreadable store dir is not an answer; fall through to the
-            # scope that is readable rather than inventing one.
-            pass
+            # scope that is readable rather than inventing one — but say so
+            # (#m-3), because the fall-through lands on ON.
+            problems.append(f"{store_marker(root)}: {type(e).__name__}: {e}")
     try:
         if global_marker().exists():
             return Decision(False, "global-marker", rejected)
-    except OSError:
-        pass
-    return Decision(True, "default", rejected)
+    except OSError as e:
+        problems.append(f"{global_marker()}: {type(e).__name__}: {e}")
+    note = "; ".join(problems) if problems else None
+    return Decision(True, "default", rejected, note)
 
 
 def learning_enabled(root: "str | os.PathLike | None" = None) -> bool:
