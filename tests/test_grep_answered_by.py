@@ -60,6 +60,34 @@ def project(tmp_path, monkeypatch, no_daemon):
     return tmp_path
 
 
+def _force_direct_read_path(root: Path) -> None:
+    """Shape the store so `_should_via_replica` is False and the DAEMON/direct
+    path (`_grep_run`) serves the read instead of the replica path
+    (`_grep_run_direct`).
+
+    A freshly `init`-ed store holds only `catalog.duckdb`, which
+    `_replica_reader_path` accepts as its pre-rotation fallback — so every test
+    that does not do this exercises the replica path ONLY. Two of the labels in
+    this file were covered on one path and not the other until a mutation check
+    said so, which is the per-render-path blind spot bug-058/059/060 all came
+    from. Here the rotation-era layout is reproduced: an `active` marker naming
+    slot A, and no inactive file for the reader to resolve to."""
+    legacy = root / "catalog.duckdb"
+    if legacy.exists():
+        shutil.move(str(legacy), str(root / "catalog.A.duckdb"))
+    (root / "active").write_text("A\n")
+
+
+@pytest.fixture(params=["replica", "direct"])
+def both_read_paths(request, project):
+    """Run the body against BOTH read paths. `rmx grep` reaches the same
+    fallback through two different functions, and a label set in one of them is
+    not set in the other."""
+    if request.param == "direct":
+        _force_direct_read_path(project / ".refmatrix")
+    return project
+
+
 def _seed_index(root: Path, concept: str, file_rel: str, line: int) -> None:
     """Put one concept + one evidence row in the index so a grep can hit it."""
     s = Store(root, backend="duckdb")
@@ -97,7 +125,8 @@ def _run(args: list[str], **kw):
 
 # ---- the five values ------------------------------------------------------
 
-def test_an_index_hit_says_index(project):
+def test_an_index_hit_says_index(both_read_paths):
+    project = both_read_paths
     (project / "src.py").write_text("def parser():\n    pass\n")
     _seed_index(project / ".refmatrix", "parser", "src.py", 1)
 
@@ -106,10 +135,11 @@ def test_an_index_hit_says_index(project):
     assert _last(project / ".refmatrix")["answered_by"] == "index"
 
 
-def test_an_eligible_miss_says_floor(project):
+def test_an_eligible_miss_says_floor(both_read_paths):
     """No paths, so the index WAS eligible; it had nothing and rg/grep answered.
     This is the event the learning loop exists to prevent, and the only bucket
     whose rate learning can move."""
+    project = both_read_paths
     (project / "t.txt").write_text("alpha beta\n")
 
     res = _run(["grep", "alpha"])
@@ -117,10 +147,11 @@ def test_an_eligible_miss_says_floor(project):
     assert _last(project / ".refmatrix")["answered_by"] == "floor"
 
 
-def test_a_named_path_says_dropin_even_when_the_index_holds_the_pattern(project):
+def test_a_named_path_says_dropin_even_when_the_index_holds_the_pattern(both_read_paths):
     """Eligibility, not outcome, decides this one. The index holds `parser`
     here — a two-valued implementation would call this `index` or `floor` and
     either way would be wrong about what happened."""
+    project = both_read_paths
     (project / "t.txt").write_text("def parser():\n")
     _seed_index(project / ".refmatrix", "parser", "t.txt", 1)
 
@@ -146,7 +177,8 @@ def test_a_piped_filter_says_stdin(project):
     assert _last(project / ".refmatrix")["answered_by"] == "stdin"
 
 
-def test_no_fallback_on_an_empty_index_says_none(project):
+def test_no_fallback_on_an_empty_index_says_none(both_read_paths):
+    project = both_read_paths
     (project / "t.txt").write_text("alpha\n")
 
     res = _run(["grep", "--no-fallback", "alpha"])
