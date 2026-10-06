@@ -579,10 +579,75 @@ _DERIVE_PASS_MODULES: "dict[str, tuple]" = {
     "semantic": ("ingest.py",),
     # GMD: frontmatter, anchors and `rel:` edges.
     "gmd": ("ingest_gmd.py",),
-    # Sessions, embed and pagerank do not stamp yet (task 15.4). When they do,
-    # they get an entry here; until then they fall through to the union, which
-    # is the conservative answer.
+    # Claude Code session JSONLs -> GMD cards -> the sessions partition
+    # (task 15.4). Two modules because the pass is two stages: the card is
+    # written by `session_ingest.py` and indexed by `ingest_gmd.py`, and a
+    # change to either one changes what the sessions graph contains.
+    "sessions": ("session_ingest.py", "ingest_gmd.py"),
+    # Dense vectors. `embedder.py` decides WHICH TEXT a row is embedded from —
+    # the defect that made code retrieval search filenames lived there
+    # (`project_dense_was_searching_filenames`) — and `vectors.py` writes the
+    # Lance datasets.
+    "embed": ("embedder.py", "vectors.py"),
+    # The centrality prior scan-prompt salience and `--rank ppr` read.
+    "pagerank": ("pagerank.py",),
 }
+
+# WHICH passes a partition of each KIND can run (task 15.4). Declared here, as
+# one named constant, because the alternative is a literal list inside the
+# reporter — and a pass added to `reingest` but not to the reporter reads as
+# complete, which is the blind spot this task closes one level down.
+#
+# Per KIND, not one global set: a `sessions-<project>` partition holds cards and
+# never runs the tree passes, and a memory partition is never walked by the
+# sessions pass. Reporting a partition as missing a pass it is structurally
+# unable to run is a false positive with the same cost as the one task 15.1
+# removed — it trains the reader to skip the line.
+_DERIVE_EXPECTED_PASSES: "dict[str, tuple]" = {
+    # The repo tree + the curated memory dir both land here on a post-merge
+    # host (`_memory_partition_default` returns the project partition), so the
+    # project kind expects `gmd` as well as the tree passes.
+    "project": ("ingest", "semantic", "gmd", "embed", "pagerank"),
+    "sessions": ("sessions", "embed", "pagerank"),
+    "memory": ("gmd", "embed", "pagerank"),
+}
+
+# The partition-name prefixes the CLI mints. Canonical HERE rather than in
+# `cli.py` (which imported nothing from this layer and grew its own copies)
+# because `derive_status` has to classify a partition without importing the CLI.
+MEMORY_PARTITION_PREFIX = "memory-"
+SESSIONS_PARTITION_PREFIX = "sessions-"
+
+
+def partition_kind(name: str, *, root: "Path | None" = None) -> str:
+    """Which KIND of partition `name` is: `project`, `sessions` or `memory`.
+
+    Name-based, with one root-based exception: the user-level global store's
+    partition is called `global`, not `memory-*`, and it is memory-ONLY by
+    construction (`is_memory_only_root` — a historical `$HOME` ingest filled it
+    with `~/Library` churn and it has refused filesystem paths ever since). A
+    `root` that is memory-only answers `memory` whatever its partition is
+    called, so a store that CANNOT run `ingest` is never reported as missing it.
+    """
+    if name.startswith(SESSIONS_PARTITION_PREFIX):
+        return "sessions"
+    if name.startswith(MEMORY_PARTITION_PREFIX) or name == "global":
+        return "memory"
+    if root is not None and is_memory_only_root(Path(root)):
+        return "memory"
+    return "project"
+
+
+def derive_expected_passes(name: str, *, root: "Path | None" = None) -> tuple:
+    """The passes a partition of this kind is expected to have stamped.
+
+    An UNKNOWN kind would be a programming error here (the kinds are closed and
+    computed by `partition_kind`), so this falls back to the project set — the
+    widest one — rather than to an empty tuple: a reporter that expects nothing
+    reports nothing missing, which is the shape of a gate that cannot fire.
+    """
+    kind = partition_kind(name, root=root)
+    return _DERIVE_EXPECTED_PASSES.get(kind, _DERIVE_EXPECTED_PASSES["project"])
 
 # The identity scheme a stored hash was written under. `p1` = per-pass module
 # sets. An untagged hash predates this and is a union over every deriving
@@ -5984,8 +6049,22 @@ class Store:
             ).fetchall()
         ]
         code_hash = derive_code_hash()
+        # COVERAGE (task 15.4). `passes` answers "what stamped"; on its own it
+        # cannot say what did not, so one row out of five read as a verdict on
+        # the graph. The expected set is per partition KIND and declared in
+        # `_DERIVE_EXPECTED_PASSES`, never spelled out in a renderer.
+        kind = partition_kind(self._partition_name, root=self.root)
+        expected = derive_expected_passes(self._partition_name, root=self.root)
         out = {"passes": rows, "running_version": _running,
                "oldest_version": None, "stale": False, "reason": None,
+               "partition_kind": kind, "expected_passes": list(expected),
+               # Expected and unstamped. NOT folded into `stale` or
+               # `behind_code`: on the release that ships stamping for these
+               # passes, every store in the fleet is missing four of five, and
+               # a gate that fired on that would alert all eight rows once and
+               # be switched off (ch-bsd plan-12 #b-3). Missing is its own
+               # state, reported and not hot.
+               "missing_passes": [],
                # `stale` answers the human's question (which VERSION built
                # this). `behind_code` answers the alert's: did the deriving
                # code actually move since? They differ on every release that
@@ -6008,6 +6087,11 @@ class Store:
             if tracked:
                 out["stale"] = True
                 out["never_stamped"] = True
+                # Every expected pass is missing, by name. A partition with
+                # NOTHING in it (no stamp, no tracked file) lists none: there
+                # is nothing to derive, and five "missing" lines on every
+                # fresh store is how a coverage report gets ignored.
+                out["missing_passes"] = list(expected)
                 # Not `behind_code`: nothing is known about when it was
                 # derived, and guessing would make every pre-0.72 store alert.
                 out["reason"] = (
@@ -6015,6 +6099,8 @@ class Store:
                     f"stamped — derived before {_running} recorded it; "
                     f"re-derive to know")
             return out
+        stamped_names = {r["pass_name"] for r in rows}
+        out["missing_passes"] = [p for p in expected if p not in stamped_names]
         mismatched = [r for r in rows if r["version"] != _running]
         # NOT a lexicographic min: this project has shipped 0.9.0 and 0.71.0,
         # and `min("0.9.0", "0.71.0")` is "0.71.0" — which printed

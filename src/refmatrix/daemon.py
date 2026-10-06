@@ -4378,6 +4378,43 @@ def _op_derive_status(d: Daemon, args: dict) -> dict:
         return d._st().derive_status()
 
 
+def _stamp_pass(store, pass_name: str, *, duration_s: "float | None" = None) -> None:
+    """Record a completed derive, SAYING so when the record fails (task 15.4).
+
+    Shared by the ops that own the end of a pass. Failure to stamp is printed
+    and the derive stands: losing the derive would be worse than losing its
+    record, and a store that silently stopped stamping would rebuild exactly
+    the blind spot bug-039 closed. Mirrors `ingest._stamp_ingest`.
+    """
+    try:
+        store.stamp_derive(pass_name, duration_s=duration_s)
+    except Exception as exc:      # noqa: BLE001 — said, never mute
+        import sys as _sys
+        print(f"warning: derive stamp `{pass_name}` failed: "
+              f"{type(exc).__name__}: {exc}", file=_sys.stderr)
+
+
+def _op_derive_stamp(d: Daemon, args: dict) -> dict:
+    """Record that a pass derived a partition — the WRITE half of task 15.4.
+
+    `embed` and `sessions` complete in the CLI (embed loops over daemon-routed
+    batches; the sessions pass walks JSONLs on disk and then indexes the cards),
+    so neither has a daemon op that owns its end. They cannot open the active
+    slot themselves — the daemon holds the writer — so the stamp comes back
+    through here rather than through a second Store on the catalog.
+    """
+    pass_name = str(args.get("pass_name") or "").strip()
+    if not pass_name:
+        return {"ok": False, "error": "pass_name is required"}
+    part = args.get("partition") or d._st()._partition_name
+    dur = args.get("duration_s")
+    with d._store_lock, d._st().with_partition(part):
+        version = d._st().stamp_derive(
+            pass_name, duration_s=None if dur is None else float(dur))
+    return {"ok": True, "pass_name": pass_name, "partition": part,
+            "version": version}
+
+
 def _op_derive_history(d: Daemon, args: dict) -> dict:
     """Recorded derives for the caller's partition (task 15.2), newest first.
 
@@ -5754,6 +5791,13 @@ def _op_pagerank(d: Daemon, args: dict) -> dict:
     # ...then write + resolve top names under the lock again.
     with d._store_lock, d._st().with_partition(part):
         written = pr_mod.store_scores(d._st(), scores)
+        # Stamp AFTER the scores are written, inside the same lock (task
+        # 15.4). Before this, pagerank was one of three passes that derived
+        # state and recorded nothing, so a partition carrying one `gmd` row
+        # answered for a graph four passes had touched. The power iteration
+        # above runs outside the lock and can raise; a stamp placed earlier
+        # would claim a derive that never landed.
+        _stamp_pass(d._st(), "pagerank")
         con = d._st()._connect()
         top_named = []
         for eid, score in sorted(scores.items(), key=lambda kv: -kv[1])[:topn]:
@@ -5814,6 +5858,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "clear_tracked_stamps": _op_clear_tracked_stamps,
     "derive_status": _op_derive_status,
     "derive_history": _op_derive_history,
+    "derive_stamp": _op_derive_stamp,
     "compile_pairs": _op_compile_pairs,
     "coref_link": _op_coref_link,
     "merge_verb_aliases": _op_merge_verb_aliases,
