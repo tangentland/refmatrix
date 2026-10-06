@@ -370,7 +370,11 @@ def test_reingest_reports_a_skipped_pass_as_skipped_not_missing(tmp_path,
     # printed `derive coverage:` with the name gone, because rich read
     # `[proj]` as a style tag and dropped it — a coverage report that cannot
     # say WHICH partition is uncovered is the blind spot again, one layer out.
-    assert "proj" in out
+    #
+    # Asserted on the BRACKETED label, not on the bare project name: `proj`
+    # also appears in step 1's `ingested … from /…/proj` line, so a looser
+    # assertion passes with the escape deleted (mutation M6 survived it).
+    assert "derive coverage[proj]" in out, out
     # The operator asked for these to be skipped. Reporting them as missing
     # trains the reader to ignore the line.
     for pass_name in ("embed", "semantic", "sessions"):
