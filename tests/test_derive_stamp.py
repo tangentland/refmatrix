@@ -214,8 +214,17 @@ def test_a_stamp_from_different_code_is_behind_it(store, tmp_path, monkeypatch):
     import refmatrix.store as store_mod
 
     _track(store, tmp_path)
-    store.stamp_derive("ingest", code_hash="deadbeef")
-    monkeypatch.setattr(store_mod, "derive_code_hash", lambda: "cafef00d")
+    # Tagged with the current scheme on purpose: an UNTAGGED stamp is a
+    # different state since task 15.1 (an older identity scheme, hence
+    # UNKNOWN rather than behind), and this test is about a stamp that is
+    # comparable and DIFFERENT.
+    store.stamp_derive("ingest", code_hash="p1:deadbeef")
+    # `*_` because `derive_code_hash` takes a pass name since task 15.1:
+    # each pass is compared against the hash of ITS OWN modules. These two
+    # tests are about the STATUS logic, so a constant for every pass is the
+    # right stub — it just has to accept the argument now.
+    monkeypatch.setattr(store_mod, "derive_code_hash",
+                        lambda *_: "p1:cafef00d")
     st = store.derive_status()
     assert st["behind_code"] is True
     assert "before the current ingest code" in st["reason"]
@@ -227,7 +236,12 @@ def test_a_stamp_from_the_same_code_is_not_behind_it(store, tmp_path, monkeypatc
     import refmatrix.store as store_mod
 
     _track(store, tmp_path)
-    monkeypatch.setattr(store_mod, "derive_code_hash", lambda: "cafef00d")
+    # `*_` because `derive_code_hash` takes a pass name since task 15.1:
+    # each pass is compared against the hash of ITS OWN modules. These two
+    # tests are about the STATUS logic, so a constant for every pass is the
+    # right stub — it just has to accept the argument now.
+    monkeypatch.setattr(store_mod, "derive_code_hash",
+                        lambda *_: "p1:cafef00d")
     store.stamp_derive("ingest", version="0.49.1")     # stamps the hash itself
     st = store.derive_status()
     assert st["behind_code"] is False
@@ -290,7 +304,9 @@ def test_derive_code_hash_covers_the_deriving_modules():
     for name in ("ingest.py", "ingest_gmd.py", "store.py"):
         h.update((here / name).read_bytes())
     store_mod._DERIVE_CODE_HASH_CACHE.clear()
-    assert store_mod.derive_code_hash() == h.hexdigest()
+    # Scheme-tagged since task 15.1 so a per-pass hash can never be compared
+    # against a legacy union hash; the DIGEST is unchanged.
+    assert store_mod.derive_code_hash() == "p1:" + h.hexdigest()
 
 
 def test_an_mtime_preserving_restore_is_not_a_cache_hit(tmp_path, monkeypatch):

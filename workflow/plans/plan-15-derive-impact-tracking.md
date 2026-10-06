@@ -55,6 +55,7 @@ Both forks were put to the user on 2026-10-06 with their costs; both landed on t
 | Q2 | **Per-pass module set** for the code hash | Fixes the false positive by construction (`store.py` leaves every pass's set) and attributes staleness to a pass. A per-function AST hash was offered and declined: it needs a maintained entry-point registry, and its failure mode is a hash that silently covers too little — a gate that cannot fire, which is the shape this project keeps getting bitten by. |
 | Q3 | `derive_stamps` KEEPS its current-state contract; history is a NEW table | Four readers depend on the NOW semantics (`derive_status`, `rmx fingerprint`, the hub alert, the daemon status line). Widening that table would put a migration in front of every one of them for a question none of them asks. |
 | Q4 | History is capped per `(partition, pass)` | `global:queues` grew to 3,196 rows unbounded (bug-061). An append-only table with no retention is the same defect with a different name. |
+| Q5 | The stored hash carries its SCHEME (`p1:<digest>`) | **Found while building 15.1, not planned.** A pre-15.1 stamp holds a UNION hash over three modules; a per-pass hash covers one. They are not comparable, and the first cut compared them anyway — reporting every legacy stamp as `behind_code`, which is the same false positive the task set out to remove. Tagging makes the namespaces explicit, so a legacy row reads UNKNOWN ("re-derive to know") and a future scheme change cannot mis-compare either. |
 
 ## Tasks {#tasks}
 
@@ -92,6 +93,14 @@ Stated before building, so it cannot be adjusted to whatever ships: {#acceptance
    `grep_evidence` edit is correctly no longer implicating a pass that never reads `store.py` for
    extraction. (The version-level `stale` may remain True; that is the human signal and is allowed
    to differ.)
+
+   **MET, and by a mechanism this plan did not anticipate — recorded rather than smoothed over.**
+   The live `gmd` stamp reads `behind_code: False` with `code_unknown: True`, because its hash was
+   written under the legacy UNION scheme and is therefore not comparable to a per-pass hash (Q5).
+   So the criterion holds, and it holds because the stamp is classified unknown — NOT because a
+   per-pass comparison succeeded. The first real per-pass comparison cannot happen until the next
+   derive runs under 15.1 code. Had the scheme tag not been added, this criterion would have FAILED:
+   the first implementation reported the legacy stamp as behind, which is what sent me looking.
 2. A forced re-derive of one pass produces a `derive_history` row whose counts differ from the
    previous row by a number the diff surface prints, and the same re-derive run twice in a row
    produces a diff of **all zeros** — a derive that changes nothing must be visibly a no-op.

@@ -533,6 +533,60 @@ class Entity:
 # whether the code that DERIVES the graph moved since the graph was built.
 _DERIVE_CODE_MODULES = ("ingest.py", "ingest_gmd.py", "store.py")
 
+# WHICH modules derive WHICH pass (task 15.1). The union above is kept for the
+# no-argument call that existing readers use; per-pass sets are what make a
+# staleness verdict attributable, and what stop an unrelated edit from implying
+# one.
+#
+# `store.py` is in NO pass's set, deliberately. It is in the union because the
+# schema and the write helpers live there, but no pass's EXTRACTION depends on a
+# read method — and on 2026-10-06 bug-067's fix added `Store.grep_evidence`
+# (+80 lines, a read path) and flipped this project's partition to
+# `behind_code: True` with nothing about the graph changed.
+#
+# The risk this accepts, named so the next reader can weigh it: a shared helper
+# in `store.py` that a pass genuinely derives THROUGH would now go unnoticed.
+# That is why the sets are declared here per pass rather than computed — adding
+# a module is a one-line, reviewable change, and a wrong set is visible as a
+# wrong list instead of hiding inside a call-graph walk.
+_DERIVE_PASS_MODULES: "dict[str, tuple]" = {
+    # The tree walk: metadata / tldr / tree extraction into the project graph.
+    "ingest": ("ingest.py",),
+    # The Python/markdown semantic passes — same module, same extractor family.
+    "semantic": ("ingest.py",),
+    # GMD: frontmatter, anchors and `rel:` edges.
+    "gmd": ("ingest_gmd.py",),
+    # Sessions, embed and pagerank do not stamp yet (task 15.4). When they do,
+    # they get an entry here; until then they fall through to the union, which
+    # is the conservative answer.
+}
+
+# The identity scheme a stored hash was written under. `p1` = per-pass module
+# sets. An untagged hash predates this and is a union over every deriving
+# module — see `derive_code_hash`.
+_DERIVE_HASH_SCHEME = "p1"
+
+
+# Overridable for tests: the directory the deriving modules are read from.
+# Tests edit real COPIES and point this at them, because a test that
+# monkeypatches the hash cannot catch a wrong MAPPING — the mapping is the
+# thing worth testing.
+_DERIVE_SRC_DIR: "Path | None" = None
+
+
+def derive_pass_modules(pass_name: "str | None") -> tuple:
+    """The modules whose change makes `pass_name`'s derived state out of date.
+
+    An UNMAPPED pass gets the union, not an empty set. A new pass must read as
+    maximally stale until someone maps it: the tempting default — no modules,
+    nothing to compare, therefore fresh — is a gate that cannot fire, and this
+    project has shipped that shape more than once (ch-bsd: guards built for the
+    fixed state, `impression_bsd_guard_cannot_fire`).
+    """
+    if pass_name is None:
+        return _DERIVE_CODE_MODULES
+    return _DERIVE_PASS_MODULES.get(pass_name, _DERIVE_CODE_MODULES)
+
 
 # Cache keyed on (path, mtime_ns, ctime_ns, ino, size) of every deriving module.
 #
@@ -556,8 +610,12 @@ _DERIVE_CODE_MODULES = ("ingest.py", "ingest_gmd.py", "store.py")
 _DERIVE_CODE_HASH_CACHE: "dict[tuple, str]" = {}
 
 
-def derive_code_hash() -> str:
+def derive_code_hash(pass_name: "str | None" = None) -> str:
     """Hash of the modules that derive a graph, or "" if none can be read.
+
+    With `pass_name`, hashes only that pass's modules (`derive_pass_modules`),
+    so a verdict names a pass and an unrelated edit implicates nothing. With no
+    argument, the union — the meaning every pre-15.1 caller already relies on.
 
     CONTENT, not mtime. mtime was the first implementation and it was wrong in
     a way that fires rather than hides: an identical-content rewrite —
@@ -573,8 +631,8 @@ def derive_code_hash() -> str:
     from hashlib import blake2b
     from pathlib import Path as _P
 
-    here = _P(__file__).resolve().parent
-    paths = [here / name for name in _DERIVE_CODE_MODULES]
+    here = _DERIVE_SRC_DIR or _P(__file__).resolve().parent
+    paths = [_P(here) / name for name in derive_pass_modules(pass_name)]
     key = []
     for p in paths:
         try:
@@ -583,7 +641,9 @@ def derive_code_hash() -> str:
                         st.st_ino, st.st_size))
         except OSError:
             key.append((str(p), None, None, None, None))
-    ck = tuple(key)
+    # The pass is part of the key: without it the first pass to be hashed would
+    # answer for every other one, which is the bug this task is removing.
+    ck = (pass_name,) + tuple(key)
     hit = _DERIVE_CODE_HASH_CACHE.get(ck)
     if hit is not None:
         return hit
@@ -595,7 +655,15 @@ def derive_code_hash() -> str:
             read_any = True
         except OSError:
             continue          # a missing module is not a freshness signal
-    out = h.hexdigest() if read_any else ""
+    # SCHEME-TAGGED (task 15.1). A hash written before per-pass sets existed is
+    # the union of three modules; a hash written now covers one pass's modules.
+    # Those two are not comparable, and comparing them anyway is what made the
+    # first cut of this task report every legacy stamp as `behind_code` — a
+    # false positive with the same cost as the one the task set out to remove.
+    # The tag makes the namespaces explicit instead of implicit, so a legacy
+    # row reads as UNKNOWN (re-derive to know) rather than as known-stale, and
+    # a future scheme change cannot silently mis-compare either.
+    out = (_DERIVE_HASH_SCHEME + ":" + h.hexdigest()) if read_any else ""
     _DERIVE_CODE_HASH_CACHE[ck] = out
     return out
 
@@ -5693,7 +5761,9 @@ class Store:
 
         v = version or _running
         ts = time.time() if at is None else float(at)
-        ch = code_hash if code_hash is not None else derive_code_hash()
+        # The PASS's hash, not the union (task 15.1): a stamp carrying the
+        # union would be compared against a per-pass hash and never match.
+        ch = code_hash if code_hash is not None else derive_code_hash(pass_name)
         con = self._connect()
         con.execute(
             "INSERT INTO derive_stamps"
@@ -5749,6 +5819,10 @@ class Store:
                # code actually move since? They differ on every release that
                # does not touch ingest, which is most of them.
                "code_hash": code_hash, "behind_code": False,
+               # A stamp written under an older identity scheme: not behind,
+               # not verified either. Separate from `never_stamped`, which is
+               # "no stamp at all".
+               "code_unknown": False,
                # Two different states, and an alert gate has to tell them
                # apart: on the release that introduces stamping EVERY store in
                # the fleet is unstamped, and a gate that fired on that would
@@ -5777,12 +5851,54 @@ class Store:
         # to the string for a non-numeric component.
         out["oldest_version"] = min(
             (r["version"] for r in rows), key=version_key)
+        # PER PASS (task 15.1): each row is compared against the hash of ITS
+        # OWN modules, so a verdict names a pass and an edit to a module the
+        # pass does not derive through implicates nothing. The aggregate stays
+        # `any()` so the hub alert's meaning is unchanged.
+        #
         # A stamp with NO hash predates this column: it was written before the
         # store recorded what derived it, which is exactly the blind spot, so
         # it counts as behind rather than as "no information".
-        behind = [r for r in rows
-                  if code_hash and r.get("code_hash") != code_hash]
+        behind = []
+        unknown_scheme = []
+        tag = _DERIVE_HASH_SCHEME + ":"
+        for r in rows:
+            mods = derive_pass_modules(r["pass_name"])
+            expected = derive_code_hash(r["pass_name"])
+            stamped = r.get("code_hash")
+            r["modules"] = list(mods)
+            r["expected_code_hash"] = expected
+            # A stamp from an older identity scheme (or none at all) cannot be
+            # compared: it covers a different module set. Unknown is its own
+            # state — reporting it as behind would alert every pre-15.1 store
+            # once and get the alert switched off (ch-bsd plan-12 #b-3), and
+            # reporting it as clean would claim freshness nobody measured.
+            # Three states, not two, and the middle one is new:
+            #   tagged      -> comparable; behind iff it differs
+            #   untagged    -> an older identity SCHEME (a union over three
+            #                  modules). Not comparable to a per-pass hash, so
+            #                  UNKNOWN; alerting on it would fire once for
+            #                  every pre-15.1 store in the fleet and get the
+            #                  alert switched off (ch-bsd plan-12 #b-3).
+            #   NULL/absent -> no identity at all. BEHIND, and that contract
+            #                  predates this task: it is the blind spot bug-039
+            #                  exists for, and `test_a_stamp_with_no_hash_at_
+            #                  all_counts_as_behind` has pinned it since.
+            if (stamped or "").startswith(tag):
+                r["code_scheme"] = "p1"
+            elif stamped:
+                r["code_scheme"] = "legacy-union"
+            else:
+                r["code_scheme"] = None
+            r["code_unknown"] = r["code_scheme"] == "legacy-union"
+            r["behind_code"] = bool(
+                expected and not r["code_unknown"] and stamped != expected)
+            if r["behind_code"]:
+                behind.append(r)
+            elif r["code_unknown"]:
+                unknown_scheme.append(r)
         out["behind_code"] = bool(behind)
+        out["code_unknown"] = bool(unknown_scheme)
         if mismatched:
             names = ", ".join(f"{r['pass_name']}@{r['version']}" for r in mismatched)
             out["stale"] = True
@@ -5792,6 +5908,12 @@ class Store:
             note = (f"{names} derived before the current ingest code")
             out["reason"] = f"{out['reason']}; {note}" if out["reason"] else note
             out["stale"] = True
+        if unknown_scheme:
+            names = ", ".join(sorted(r["pass_name"] for r in unknown_scheme))
+            note = (f"{names} stamped under an older identity scheme — "
+                    f"whether the deriving code moved is UNKNOWN; re-derive "
+                    f"to know")
+            out["reason"] = f"{out['reason']}; {note}" if out["reason"] else note
         return out
 
     def clear_tracked_stamps(self, *, like: str | None = None) -> dict:
