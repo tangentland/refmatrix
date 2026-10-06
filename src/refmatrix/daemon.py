@@ -2065,6 +2065,24 @@ class Daemon:
         retrieval slowly getting worse.
         """
         from refmatrix import learn_queue as _lq
+        from refmatrix import learn_switch as _ls
+
+        # Resolved on EVERY tick, never cached at boot: this process can live
+        # for days, and an operator who flips the marker expects the next tick
+        # to honour it. A value read once at startup is how a shipped switch
+        # does nothing.
+        if not _ls.learning_enabled(self.root):
+            # Refuse, but do NOT drain: the queue is the operator's backlog and
+            # eating it here would lose work that learning-on would have
+            # applied. The depth is named so a skipped tick is visible
+            # (CLAUDE.md#no-silent-failures) rather than looking like an empty
+            # queue.
+            pending = _lq.pending_lines(self.root)
+            if pending:
+                self._log(f"learn drain: skipped (learning-disabled); "
+                          f"{pending} record(s) left queued")
+            return {"applied": 0, "patterns": 0,
+                    "skipped": "learning-disabled", "pending": pending}
 
         batch = _lq.drain(self.root)
         if not batch.entries and not batch.dropped_malformed \
@@ -4293,6 +4311,11 @@ def _op_learn_from_grep(d: Daemon, args: dict) -> dict:
     project_root = Path(args.get("project_root") or Path.cwd()).resolve()
     if not pattern or not hits:
         return {"added": 0}
+    from refmatrix import learn_switch as _ls
+    if not _ls.learning_enabled(d.root):
+        # Named, not silent: a caller that asked for a teach gets told why it
+        # did not happen, the same way `store-invalid` is reported below.
+        return {"added": 0, "skipped": "learning-disabled"}
     try:
         with d._store_lock:
             result = _learn_grep_hits(d.store, pattern, hits, project_root)
@@ -4583,7 +4606,8 @@ def _op_context(d: Daemon, args: dict) -> dict:
     # index — and survives prune_noise. We hold the writer here (daemon); the
     # read-only replica/CLI path just displays the floor, never learns.
     grep_entries = bundle.groups.get("grep") or []
-    if grep_backstop and grep_entries:
+    from refmatrix import learn_switch as _ls_ctx
+    if grep_backstop and grep_entries and _ls_ctx.learning_enabled(d.root):
         hits = []
         for ge in grep_entries:
             path = ge.entity.path

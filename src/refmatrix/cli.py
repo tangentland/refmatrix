@@ -569,6 +569,11 @@ def _maybe_learn_grep_backstop(root, daemon_mod, ref, bundle, grep_backstop):
     never fails on a learn miss, and with no daemon up nothing is learned."""
     if not grep_backstop or not ref:
         return
+    from refmatrix import learn_switch as _ls
+    if not _ls.learning_enabled(root):
+        # Checked before the hits are built, not just before the write: with
+        # learning off there is no reason to walk the bundle at all.
+        return
     grep_entries = bundle.groups.get("grep") or []
     if not grep_entries or not daemon_mod.ping(root):
         return
@@ -614,6 +619,13 @@ def _broker_learn_from_grep(root: Path, pattern: str, hits: list,
     where it cannot corrupt stdout for a caller parsing grep output.
     """
     if not hits:
+        return None if want_result else False
+    # The toggle, checked HERE as well as at the call sites: this function is
+    # the funnel both the grep fallback and the context backstop reach, so a
+    # future caller that forgets to ask cannot teach the graph behind an
+    # operator who switched learning off.
+    from refmatrix import learn_switch as _ls
+    if not _ls.learning_enabled(root):
         return None if want_result else False
     from refmatrix import daemon as _dmod
 
@@ -6061,6 +6073,30 @@ def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
         effective_pattern = rf"^{effective_pattern}$"
     from refmatrix import daemon as daemon_mod
     root = _root()
+    # The operator-level toggle, resolved ONCE here — above the replica /
+    # daemon / direct fork, for the same reason `--limit` and the output shape
+    # are (bug-058: a rule resolved per path becomes a rule implemented per
+    # path). `--learn` governs one invocation; this governs the machine, and
+    # neither the daemon's drain nor a hook-spawned child ever sees a flag.
+    from refmatrix import learn_switch as _ls
+    _learn_state = _ls.decision(root)
+    if learn and not _learn_state.enabled:
+        explicit = False
+        try:
+            explicit = (ctx.get_parameter_source("learn")
+                        is click.core.ParameterSource.COMMANDLINE)
+        except Exception:
+            explicit = False
+        if explicit:
+            # A DEFAULT-on call silenced by the operator's own marker stays
+            # quiet — a line per grep would make the toggle unusable. An
+            # explicit `--learn` asked for something the toggle refused, and
+            # that conflict is said out loud, once, on stderr (stdout is grep
+            # bytes only).
+            click.echo(
+                f"# rmx: learning is disabled ({_learn_state.rule}) — "
+                f"--learn ignored for this call", err=True)
+        learn = False
     # `--limit` means two different things and conflating them is what made a
     # 500-match read return 100 rows with exit 0 (bug-058). An EXPLICIT flag is
     # a user instruction and is always honoured; the DEFAULT is an exploration
@@ -6558,6 +6594,80 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
         _tlog=_tlog, project_root=root.parent,
         learn_broker=_report_learned if learn else None,
     )
+
+
+# ---- the learning toggle --------------------------------------------------
+
+
+@main.group("learn", invoke_without_command=True)
+@click.pass_context
+def learn_cmd(ctx):
+    """Turn the grep->graph learning loop off or on, and say what decided it.
+
+    `rmx grep --no-learn` governs ONE invocation. This governs the machine: the
+    daemon drains the learn queue on its own tick, and the PreToolUse rewrite
+    hook spawns `rmx grep` itself, so neither ever sees a shell flag. The state
+    is a marker file (`learn.off`) precisely so the hook can read it with a
+    file test and a CLI with a dead daemon can read it at all.
+    """
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(learn_status)
+
+
+@learn_cmd.command("status")
+def learn_status():
+    """Print the effective state AND which rule decided it."""
+    from refmatrix import learn_switch as _ls
+    root = _root()
+    d = _ls.decision(root)
+    state = "[green]ON[/]" if d.enabled else "[red]OFF[/]"
+    console.print(f"learning {state}  (rule: {d.rule})")
+    if d.rejected_env is not None:
+        # The operator's typo, shown rather than absorbed: a value that is
+        # neither on nor off must not read as either answer.
+        console.print(
+            f"[yellow]rejected[/] {_ls.ENV_VAR}={d.rejected_env!r} — not one of "
+            f"on/off/1/0/true/false/yes/no; it was ignored")
+    sm, gm = _ls.store_marker(root), _ls.global_marker()
+    console.print(f"  store  marker: {sm}  {'present' if sm.exists() else '-'}")
+    console.print(f"  global marker: {gm}  {'present' if gm.exists() else '-'}")
+    if not d.enabled:
+        from refmatrix import learn_queue as _lq
+        console.print(f"  queued teach records: {_lq.pending_lines(root)} "
+                      f"(kept, not dropped — they apply when learning is on)")
+
+
+def _set_learning(on: bool, is_global: bool) -> None:
+    from refmatrix import learn_switch as _ls
+    root = _root()
+    scope = "global" if is_global else "store"
+    marker = _ls.set_enabled(root, on, scope=scope)
+    word = "on" if on else "off"
+    console.print(f"learning {word} for the {scope} scope ({marker})")
+    # The scopes are independent, so turning it on here can leave it off
+    # overall. Saying the effective state prevents "I turned it on and nothing
+    # learned" (the shape of feedback_check_the_sibling_condition).
+    d = _ls.decision(root)
+    if d.enabled is not on:
+        console.print(f"[yellow]note[/] effective state is still "
+                      f"{'ON' if d.enabled else 'OFF'} (rule: {d.rule})")
+
+
+@learn_cmd.command("off")
+@click.option("--global", "is_global", is_flag=True,
+              help="Write the user-level marker (~/.refmatrix/learn.off) "
+                   "instead of this store's.")
+def learn_off(is_global):
+    """Stop every site from teaching the graph."""
+    _set_learning(False, is_global)
+
+
+@learn_cmd.command("on")
+@click.option("--global", "is_global", is_flag=True,
+              help="Clear the user-level marker instead of this store's.")
+def learn_on(is_global):
+    """Let the graph learn again."""
+    _set_learning(True, is_global)
 
 
 # ---- saved queries --------------------------------------------------------
