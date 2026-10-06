@@ -2762,6 +2762,86 @@ class Store:
         others = sorted(r[0] for r in rows if r[1] != name)
         return exact + others
 
+    def grep_evidence(self, pattern: str, *, regex: bool = False,
+                      linkage: "str | None" = None, kind: "str | None" = None,
+                      limit: "int | None" = 100) -> "list[dict]":
+        """THE index-backed grep read: concepts whose name matches `pattern`,
+        returned as their `linkage_evidence` rows.
+
+        ONE implementation. This SQL existed in three copies — the daemon's
+        `_op_grep_indexed` (matching regexes with `regexp_matches`), the CLI's
+        direct branch and the CLI's replica branch (both with `~`) — which had
+        already drifted in dialect. bug-058, bug-059 and bug-060 were each one
+        rule implemented per render path; this is the same family on the read
+        side and it does not get a fourth copy.
+
+        bug-067: the substring match also consults `canonical_name`, and that is
+        what makes a LEARNED concept findable by the query that created it.
+        `add_concept` runs `_concept_variants`, which writes the canonical
+        underscore row plus space/dash ALIAS rows as separate entities, while
+        `_learn_grep_hits` attaches every piece of evidence to the canonical id:
+
+            query/roaring bitmap   evidence=0    <- the literal the next grep seeks
+            query/roaring-bitmap   evidence=0
+            query/roaring_bitmap   evidence=10   <- where the evidence went
+
+        Matching `c.name` alone therefore found an EMPTY concept and fell
+        through to the tool floor on every repeat, so `rmx grep`'s promise that
+        "future searches hit the index" held only for patterns whose literal
+        form already was their canonical one. Measured over this project's 121
+        repeated grep patterns: 24 of 76, and 0 of 18 multi-word ones.
+
+        `canonicalize_name` is the same function `resolve_concept_ids` uses for
+        the query/context/neighbors path — the read side of the identifier
+        unification, finally applied to grep.
+
+        A REGEX pattern is never canonicalized: a regex is not an identifier, and
+        rewriting `^quer` into an identifier form would answer a question the
+        caller did not ask.
+        """
+        from refmatrix.identifier import canonicalize_name
+
+        if regex:
+            preds = ["regexp_matches(c.name, ?)"]
+            params: list = [pattern]
+        else:
+            preds = ["c.name ILIKE ?"]
+            params = [f"%{pattern}%"]
+            canon = canonicalize_name(pattern)
+            if canon and canon != pattern.strip().lower():
+                preds.append("c.canonical_name ILIKE ?")
+                params.append(f"%{canon}%")
+        where = ["(" + " OR ".join(preds) + ")"]
+        if linkage:
+            where.append("lt.name = ?")
+            params.append(linkage)
+        if kind:
+            where.append("e.kind = ?")
+            params.append(kind)
+        # DISTINCT because the canonical and its aliases can both match: a hit
+        # must not be returned once per spelling. bug-058's symptom was exactly
+        # this shape — 1000 rows covering ~100 distinct lines.
+        sql = (
+            "SELECT DISTINCT e.path AS path, e.name AS entity_name, "
+            "       ev.line AS line, lt.name AS linkage, c.name AS concept_name "
+            "FROM linkage_evidence ev "
+            "JOIN entities e ON e.id = ev.entity_id "
+            "JOIN entities c ON c.id = ev.concept_id "
+            "JOIN linkage_types lt ON lt.id = ev.linkage_id "
+            "WHERE " + " AND ".join(where) +
+            " ORDER BY e.path, ev.line"
+        )
+        if limit and limit > 0:
+            # Omitted rather than passed as NULL when there is no cap: a
+            # drop-in read of named paths has its cap deliberately off
+            # (bug-058), and `LIMIT NULL` is not portable.
+            sql += " LIMIT ?"
+            params.append(limit)
+        self._connect()
+        rows = self._read().execute(sql, tuple(params)).fetchall()
+        return [{"path": r[0], "entity": r[1], "line": r[2],
+                 "linkage": r[3], "concept": r[4]} for r in rows]
+
     def resolve_concept_ids_many(
         self, names: "list[str]",
     ) -> "dict[str, list[int]]":

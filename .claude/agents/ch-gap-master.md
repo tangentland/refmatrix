@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: ch-gap-master
+id: refmatrix/ch-gap-master
 title: "ch-gap-master — Gap & Inconsistency Enforcer"
 tags: [agent, cat-herder]
 name: "ch-gap-master"

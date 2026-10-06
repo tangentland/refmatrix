@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: ch-work-summary
+id: refmatrix/ch-work-summary
 title: "ch-work-summary — Work Alignment & Summary"
 tags: [agent, cat-herder]
 name: "ch-work-summary"

@@ -55,9 +55,24 @@ def pipe_stdin(monkeypatch):
     fake.close()
 
 
-def test_closed_empty_pipe_is_not_piped(pipe_stdin):
+def test_a_closed_empty_pipe_IS_piped(pipe_stdin):
+    """SUPERSEDED CONTRACT (bug-062, 2026-10-06). This asserted `is False`.
+
+    That was the defect written as a test. An empty pipe read as "not piped",
+    so `{ true; } | rmx grep hello` fell through to index exploration and
+    returned repo hits with exit 0 where grep prints nothing and exits 1 —
+    `if cmd | rmx grep PAT` took the wrong branch, and the graph was taught
+    from a tree search nobody asked for.
+
+    The old contract rested on bug-062's assumption that a bare command and an
+    empty pipeline are indistinguishable ("both a FIFO at EOF"), so treating a
+    FIFO as a pipe would break exploration. Measured, they differ: under the
+    Claude Bash tool a bare command gets fd 0 = CHR (/dev/null), a pipeline
+    gets a FIFO (`tests/test_grep_empty_pipe.py` pins it). A FIFO is a pipe
+    whether or not the producer wrote anything, which is how grep treats one.
+    """
     os.close(pipe_stdin)
-    assert _is_stdin_piped() is False
+    assert _is_stdin_piped() is True
 
 
 def test_pipe_with_data_is_piped(pipe_stdin):
@@ -67,8 +82,11 @@ def test_pipe_with_data_is_piped(pipe_stdin):
 
 
 def test_slow_writer_still_detected_as_piped(pipe_stdin):
-    # The regression: upstream stage writes its first byte AFTER the probe
-    # runs. The probe must block for it, not misread the pipe as empty.
+    # The 0.65.1 regression: an upstream stage writes its first byte AFTER the
+    # probe runs. It used to need a blocking wait; since bug-062 the answer is
+    # the fd's SHAPE, so a slow writer cannot be misread as "no pipe" and this
+    # passes for a structural reason rather than a timing one. Kept because the
+    # behaviour it protects is the same.
     def _late_write():
         time.sleep(0.3)
         os.write(pipe_stdin, b"late\n")
@@ -82,7 +100,15 @@ def test_slow_writer_still_detected_as_piped(pipe_stdin):
         t.join()
 
 
-def test_slow_close_without_data_is_not_piped(pipe_stdin):
+def test_a_slow_close_without_data_IS_piped(pipe_stdin):
+    """SUPERSEDED with its sibling above; this asserted `is False` too.
+
+    It also no longer tests timing: the probe does not wait for the producer at
+    all now. Emptiness left the judgement, so there is nothing to wait out —
+    which is why the 0.65.1 slow-producer race cannot return through this
+    function. The late close is kept to prove the answer does not depend on
+    when it happens.
+    """
     def _late_close():
         time.sleep(0.3)
         os.close(pipe_stdin)
@@ -90,7 +116,7 @@ def test_slow_close_without_data_is_not_piped(pipe_stdin):
     t = threading.Thread(target=_late_close)
     t.start()
     try:
-        assert _is_stdin_piped() is False
+        assert _is_stdin_piped() is True
     finally:
         t.join()
 

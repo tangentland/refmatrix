@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: agent-doc-primer
+id: refmatrix/agent-doc-primer
 title: "rmx Doc-Authoring Primer (for Agents)"
 tags: [authoring, primer, doc-forms, agents]
 ---

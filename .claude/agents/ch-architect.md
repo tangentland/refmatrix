@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: ch-architect
+id: refmatrix/ch-architect
 title: "ch-architect — ADR Author + Architecture & Design Reviewer"
 tags: [agent, cat-herder]
 name: "ch-architect"

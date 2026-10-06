@@ -100,7 +100,7 @@ zero errors. Warnings (unknown verbs, missing `gmd:` frontmatter) acceptable
 with rationale.
 """
 
-TEXT_VS_DOC_WRITER = """\
+TEXT_DOC_WRITER = """\
 ## Output Format {#output-format}
 
 All persistent docs you author are **GMD**. See project CLAUDE.md
@@ -140,14 +140,14 @@ output. If a target genuinely doesn't exist yet, either create the stub or
 use external markdown link and note the dependency.
 """
 
-TEXT_VS_ALIGNMENT = """\
+TEXT_ALIGNMENT = """\
 ## Output Format {#output-format}
 
 The `pseudocode/*.pseudo` files you maintain are NOT GMD — pseudocode has
 its own format. But every doc you author or amend ABOUT pseudocode is GMD.
 
 When you write or update:
-- ADR amendments → see §output-format of vs-doc-writer
+- ADR amendments → see §output-format of doc-writer
 - Concept doc revisions → GMD frontmatter + anchors
 - Drift reports / actualization findings in `docs/alignment/*.md` → GMD
 
@@ -166,7 +166,7 @@ The ingester recognizes this convention. Without it, the supersession is
 invisible to the graph.
 """
 
-TEXT_VS_BSD = """\
+TEXT_BSD = """\
 ## Output Format {#output-format}
 
 Findings in `docs/bullshit/*.md` are GMD. Each finding file:
@@ -201,14 +201,40 @@ shape — frontmatter, anchors, optional `rel:` lines on each impression that
 links to suspected anti-pattern entries.
 """
 
+def agent_role(name: str) -> str | None:
+    """Map an agent name to its doc-format ROLE by suffix.
+
+    The template describes a role (doc-writer / alignment / bsd), not a
+    particular agent. Keying on the full name coupled this to whatever a
+    project brands its roster, and the key set has already churned through
+    `vs-*` and `ch-*`; every rename silently turned `--agents` into a no-op.
+    Matching the suffix makes the prefix irrelevant: `ch-doc-writer`,
+    `vs-doc-writer` and `doc-writer` all resolve to `doc-writer`.
+
+    `.local` overlays never match. §output-format belongs in the committed
+    core definition; the overlay carries project specifics only.
+    """
+    if name.endswith(".local") or ".local." in name:
+        return None
+    for role in AGENT_TEMPLATES:
+        if name == role or name.endswith(f"-{role}"):
+            return role
+    return None
+
+
 AGENT_TEMPLATES: dict[str, str] = {
-    "vs-doc-writer": TEXT_VS_DOC_WRITER,
-    "vs-alignment": TEXT_VS_ALIGNMENT,
-    "vs-bsd": TEXT_VS_BSD,
+    "doc-writer": TEXT_DOC_WRITER,
+    "alignment": TEXT_ALIGNMENT,
+    "bsd": TEXT_BSD,
 }
 
 GMD_CONFIG_YML = """\
 # .gmd/config.yml — project-local GMD config (optional, all keys defaulted)
+
+# Project namespace for doc ids (SPEC §project-namespace). Doc ids are unique
+# WITHIN a project, so ids that may be read alongside another project's corpus
+# should be prefixed `<project>/<local-id>`. Blank = use the repo directory name.
+project:
 
 # Extra recommended verbs for this project. Added to lint's vocab without
 # triggering unknown-verb warnings.
@@ -378,24 +404,36 @@ def op_agents(root: Path, plan: Plan, apply: bool, force: bool) -> None:
                            "no .claude/agents dir; skipped"))
         return
 
-    for agent_path in sorted(agents_dir.glob("*.md")):
+    agent_paths = sorted(agents_dir.glob("*.md"))
+    matched = 0
+    for agent_path in agent_paths:
         text = agent_path.read_text(encoding="utf-8")
         fields, body_start = _parse_agent_frontmatter(text)
         name = fields.get("name", agent_path.stem)
-        template = AGENT_TEMPLATES.get(name)
+        role = agent_role(name)
+        template = AGENT_TEMPLATES.get(role) if role else None
         if template is None:
             plan.add(PlannedOp("skip", str(agent_path),
                                f"no template for '{name}'"))
             continue
+        matched += 1
         if _has_anchor(text, "output-format") and not force:
             plan.add(PlannedOp("skip", str(agent_path),
                                "§output-format already present"))
             continue
         new_text = text.rstrip() + "\n\n" + template
         plan.add(PlannedOp("edit", str(agent_path),
-                           f"append §output-format ({name})"))
+                           f"append §output-format ({name} -> {role})"))
         if apply:
             agent_path.write_text(new_text, encoding="utf-8")
+
+    # Zero matches against a non-empty roster is a misconfiguration, not a
+    # routine skip. It used to surface only as per-file `skip:` lines, which is
+    # how stale `vs-*` keys sat broken across many repos unnoticed.
+    if matched == 0 and agent_paths:
+        plan.add(PlannedOp("warn", str(agents_dir),
+                           f"--agents matched none of {len(agent_paths)} agent(s); "
+                           f"no role in ({', '.join(AGENT_TEMPLATES)}) found in any name"))
 
 
 def op_with_rmx(root: Path, plan: Plan, apply: bool, force: bool) -> None:

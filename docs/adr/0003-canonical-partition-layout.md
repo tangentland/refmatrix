@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: adr-0003-canonical-partition-layout
+id: refmatrix/adr-0003-canonical-partition-layout
 title: "ADR-0003: Canonical partition layout — two per project store, one for global, benchmarks mirror production"
 tags: [adr, partitions, fleet, sessions, benchmarks]
 ---

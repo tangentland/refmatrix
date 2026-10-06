@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: ch-doc-writer
+id: refmatrix/ch-doc-writer
 title: "ch-doc-writer — Documentation Specialist"
 tags: [agent, cat-herder]
 name: "ch-doc-writer"

@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: INDEX
+id: refmatrix/INDEX
 title: "refmatrix docs — curated catalog"
 tags: [index, catalog, docs]
 ---
@@ -69,6 +69,16 @@ rel: catalogs -> [[design-doc-template]]
 | [[adr-template]] | Copy-paste ADR starter exercising every linkage type the extractor knows |
 | [[concept-doc-template]] | Concept-doc starter: H1 primary concept + H3 sub-concepts + `subclasses` prose |
 | [[design-doc-template]] | Design-doc starter: bold-labeled metadata header carrying the indexing signal |
+
+## Measurements {#measurements}
+
+Reports that answer a question with numbers, each naming its harness and what it does NOT claim.
+(Process-side measurement notes live under `workflow/measurements/`; these are the knowledge-side
+reports — see `CLAUDE.md#planning-task-docs` for the split.)
+
+| Doc | Hook |
+|-----|------|
+| [[refmatrix/grep-learning-replay]] | Does funnelling grep through rmx teach the graph anything? Two-arm replay: index share 18.5% -> 31.7%, and the defect the instrument found first |
 
 ## Non-GMD reference {#non-gmd}
 

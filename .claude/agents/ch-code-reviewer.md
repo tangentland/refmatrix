@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: ch-code-reviewer
+id: refmatrix/ch-code-reviewer
 title: "ch-code-reviewer — Code Reviewer"
 tags: [agent, cat-herder]
 name: "ch-code-reviewer"

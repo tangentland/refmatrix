@@ -569,6 +569,11 @@ def _maybe_learn_grep_backstop(root, daemon_mod, ref, bundle, grep_backstop):
     never fails on a learn miss, and with no daemon up nothing is learned."""
     if not grep_backstop or not ref:
         return
+    from refmatrix import learn_switch as _ls
+    if not _ls.learning_enabled(root):
+        # Checked before the hits are built, not just before the write: with
+        # learning off there is no reason to walk the bundle at all.
+        return
     grep_entries = bundle.groups.get("grep") or []
     if not grep_entries or not daemon_mod.ping(root):
         return
@@ -614,6 +619,13 @@ def _broker_learn_from_grep(root: Path, pattern: str, hits: list,
     where it cannot corrupt stdout for a caller parsing grep output.
     """
     if not hits:
+        return None if want_result else False
+    # The toggle, checked HERE as well as at the call sites: this function is
+    # the funnel both the grep fallback and the context backstop reach, so a
+    # future caller that forgets to ask cannot teach the graph behind an
+    # operator who switched learning off.
+    from refmatrix import learn_switch as _ls
+    if not _ls.learning_enabled(root):
         return None if want_result else False
     from refmatrix import daemon as _dmod
 
@@ -5704,44 +5716,57 @@ def _render_grep_rows(rows, gf, limit, source_tag="idx"):
 
 
 def _is_stdin_piped() -> bool:
-    """True if stdin has bytes ready (true pipe input). False for a
-    tty, for a closed-or-empty pipe (Bash tool invocations), or for
-    /dev/null. select() with timeout=0 peeks without blocking."""
+    """Is stdin a STREAM someone handed us, rather than nothing?
+
+    THE QUESTION CHANGED, and that is bug-062's fix. This used to ask whether
+    bytes were PENDING, which conflates "the producer wrote nothing yet/ever"
+    with "there is no producer": `{ true; } | rmx grep hello` read as not-piped,
+    fell through to index exploration, and returned repo hits with exit 0 where
+    grep prints nothing and exits 1 — inverting `if cmd | rmx grep PAT`. It also
+    TAUGHT the graph from a tree search nobody asked for.
+
+    bug-062's own analysis said the two cases are indistinguishable at the fd
+    level ("both a FIFO at EOF") and therefore needed a product decision. They
+    are not, and measuring said so (`tests/test_grep_empty_pipe.py` pins it):
+
+        bare command under the Claude Bash tool   fd 0 = CHR  (/dev/null)
+        `{ true; } | cmd`                         fd 0 = FIFO
+
+    So the shape of the fd answers it. A FIFO is a pipe whether or not anything
+    was written — which is exactly how grep treats one — and a character device
+    is not a pipe no matter how non-tty it looks.
+
+    This also RETIRES the blocking `select()` + FIONREAD probe that the 0.65.1
+    stdin race required. That probe existed to wait out a slow upstream before
+    judging emptiness; with emptiness no longer part of the judgement there is
+    nothing to wait for, so the slow-producer race cannot come back through this
+    function and a pipeline stage no longer blocks here at all.
+
+    Regular files count: `rmx grep PAT < file` is stdin input to grep too. A
+    closed fd 0, or an fstat that raises, is not a stream.
+    """
     import sys as _sys
-    if _sys.stdin.isatty():
-        return False
     try:
         import os as _os
-        import select as _select
         import stat as _stat
         st = _os.fstat(_sys.stdin.fileno())
-        if _stat.S_ISREG(st.st_mode):
-            return st.st_size > 0
-        if not _stat.S_ISFIFO(st.st_mode):
-            # /dev/null (chr device) and friends: not a pipe.
-            return False
-        # FIFO. A zero-timeout peek here raced real pipelines: with
-        # `rg A f | rg -v B` both stages start together, and a slow
-        # upstream (itself a python-backed wrapper) hasn't written its
-        # first byte when this stage peeks — the pipe read as "empty",
-        # the search silently ran over the project tree instead of the
-        # pipe. Block until the pipe is readable: that means either data
-        # (live pipe) or EOF (the closed-or-empty pipe Bash-tool
-        # invocations hand us). Same blocking behavior as real grep on
-        # stdin, and the caller only asks when no path args were given.
-        _select.select([_sys.stdin], [], [])
-        # Readable + FIONREAD 0 = EOF on an empty pipe. FIONREAD, not a
-        # buffered peek: peek() would pull bytes into THIS process's stdio
-        # buffer, and on the exit-2 (fail-loud) and delegate paths the real
-        # tool inherits the fd and must see the stream intact.
-        import array as _array
-        import fcntl as _fcntl
-        import termios as _termios
-        pending = _array.array("i", [0])
-        _fcntl.ioctl(_sys.stdin.fileno(), _termios.FIONREAD, pending)
-        return pending[0] > 0
-    except Exception:
+    except (ValueError, OSError, AttributeError, TypeError):
+        # Closed fd, a replaced `sys.stdin` with no `fileno()` (CliRunner), or
+        # None. Not a stream we can read.
         return False
+    mode = st.st_mode
+    if _stat.S_ISFIFO(mode) or _stat.S_ISSOCK(mode):
+        return True
+    if _stat.S_ISREG(mode):
+        # A redirect of an EMPTY file is still a redirect: grep reads it, finds
+        # nothing and exits 1. Size is not the question here either.
+        return True
+    # CHR, DIR, BLK: not a stream. A TTY needs no separate `isatty()` check —
+    # a terminal IS a character device, so it lands here with /dev/null. The
+    # mutation check is what established that: deleting an `isatty()` pre-check
+    # changed no behaviour, including with a real pty, so it was a branch no
+    # test could ever hold responsible.
+    return False
 
 
 _STDIN_LABEL = "(standard input)"
@@ -6038,7 +6063,15 @@ def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
                 cap = None
         except Exception:
             cap = None
-        _grep_stdin(pattern, regex, gf, cap)
+        # The filter path was INVISIBLE in query.log: it returns before the
+        # store is resolved, so no `log_query` ever wrapped it. The root is
+        # passed as a callable and resolved at exit, after the bytes are out,
+        # so a piped grep still pays nothing for being counted.
+        with log_query(None, kind="grep", body=pattern,
+                       source="grep-stdin", root=_root) as _tlog:
+            _tlog.answered_by = "stdin"
+            _tlog.learn = False   # a filter teaches nothing, by contract
+            _grep_stdin(pattern, regex, gf, cap)
         return
 
     # -x / --line-regexp: whole-line match. Forces regex and anchors the
@@ -6053,6 +6086,30 @@ def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
         effective_pattern = rf"^{effective_pattern}$"
     from refmatrix import daemon as daemon_mod
     root = _root()
+    # The operator-level toggle, resolved ONCE here — above the replica /
+    # daemon / direct fork, for the same reason `--limit` and the output shape
+    # are (bug-058: a rule resolved per path becomes a rule implemented per
+    # path). `--learn` governs one invocation; this governs the machine, and
+    # neither the daemon's drain nor a hook-spawned child ever sees a flag.
+    from refmatrix import learn_switch as _ls
+    _learn_state = _ls.decision(root)
+    if learn and not _learn_state.enabled:
+        explicit = False
+        try:
+            explicit = (ctx.get_parameter_source("learn")
+                        is click.core.ParameterSource.COMMANDLINE)
+        except Exception:
+            explicit = False
+        if explicit:
+            # A DEFAULT-on call silenced by the operator's own marker stays
+            # quiet — a line per grep would make the toggle unusable. An
+            # explicit `--learn` asked for something the toggle refused, and
+            # that conflict is said out loud, once, on stderr (stdout is grep
+            # bytes only).
+            click.echo(
+                f"# rmx: learning is disabled ({_learn_state.rule}) — "
+                f"--learn ignored for this call", err=True)
+        learn = False
     # `--limit` means two different things and conflating them is what made a
     # 500-match read return 100 rows with exit 0 (bug-058). An EXPLICIT flag is
     # a user instruction and is always honoured; the DEFAULT is an exploration
@@ -6078,7 +6135,8 @@ def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
 
         def _run(s):
             with log_query(s, kind="grep", body=pattern,
-                           source="grep-replica") as _tlog:
+                           source="grep-replica", root=root) as _tlog:
+                _tlog.learn = bool(learn)
                 _grep_run_direct(
                     s, pattern, effective_pattern, regex,
                     linkage, kind, limit, fallback, learn, gf, paths, _tlog,
@@ -6100,7 +6158,9 @@ def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
     s = _reader_store()
     if s is None and not daemon_mod.ping(root):
         s = _store()
-    with log_query(s, kind="grep", body=pattern, source="grep") as _tlog:
+    with log_query(s, kind="grep", body=pattern, source="grep",
+                   root=root) as _tlog:
+        _tlog.learn = bool(learn)
         _grep_run(
             s, root, daemon_mod, pattern, effective_pattern, regex,
             linkage, kind, limit, fallback, learn, gf, paths, _tlog,
@@ -6202,6 +6262,22 @@ def _index_may_answer(paths: list) -> bool:
     return not paths
 
 
+def _floor_answered_by(paths) -> str:
+    """WHICH kind of tool-floor read this is, for the telemetry row.
+
+    `floor` means the index was ELIGIBLE and had nothing — the event the
+    grep→graph learning loop exists to prevent, and the only bucket whose rate
+    learning can move. `dropin` means paths were named, so `_index_may_answer`
+    was false and the real tool answered BY CONTRACT; counting that as a miss
+    would make the loop look dead precisely where it is behaving correctly.
+
+    Decided here, once, because `_grep_rg_fallback` is shared by the replica and
+    daemon read paths and four defects in this file came from resolving a rule
+    per path instead (bug-058/059/060, and `_resolve_output_shape` next door is
+    the fix for exactly that shape)."""
+    return "dropin" if paths else "floor"
+
+
 def _resolve_output_shape(gf: dict, paths: list) -> dict:
     """THE output shape of a drop-in read, decided ONCE for every render path.
 
@@ -6244,6 +6320,9 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
 
     targets = [str(p) for p in paths] if paths else [str(project_root)]
     shape = _resolve_output_shape(gf, list(paths))
+    # Labelled BEFORE the exec, so an exit raised mid-read (grep's no-match
+    # SystemExit, a closed consumer) still records what was answering.
+    _tlog.answered_by = _floor_answered_by(paths)
     tool = shutil.which("rg")
     if tool:
         case_flag = (
@@ -6268,6 +6347,15 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
             cmd.append("-l")
         if gf["files_without_match"]:
             cmd.append("--files-without-match")
+        if not regex:
+            # bug-063: `-F` was parsed, resolved into `regex=False` above, and
+            # then DROPPED here — rg is regex-by-default, so a literal with a
+            # metacharacter matched lines grep rejects entirely
+            # (`-F 'alpha|beta'` returned 2 rows and exit 0 against grep's 0
+            # rows and exit 1, which inverts `if cmd | grep -F ...`). The grep
+            # branch below always said `E if regex else F`; only this branch
+            # had a default instead of a decision.
+            cmd.append("-F")
         cmd += ["--regexp", pattern] + targets
     else:
         tool = shutil.which("grep")
@@ -6294,6 +6382,73 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
         g_letters += "E" if regex else "F"
         cmd = [tool, f"-{g_letters}", pattern] + targets
     res = subprocess.run(cmd, capture_output=True, text=True)
+
+    def _banner() -> None:
+        """Provenance: ONE stderr line, from ONE place.
+
+        `tests/test_grep_output_shape.py::test_the_fallback_renderer_exists_exactly_once`
+        counts this literal, and it caught the `-l`/`-L` fix pasting a second
+        copy. That guard exists because `_grep_run` once carried an inlined
+        duplicate of this whole function and bug-058 was then fixed in one copy
+        and missed in the other.
+        """
+        click.echo(f"# rmx grep fallback via "
+                   f"{'rg' if tool.endswith('/rg') else 'grep'}", err=True)
+
+    if gf["files_only"] or gf["files_without_match"]:
+        # bug-064. `-l`/`-L` are handled HERE, before the empty-output branch
+        # below, because that branch gets BOTH of their answers wrong:
+        #
+        #   * ORDER. The tool's output is fan-out/completion order, so
+        #     `-l alpha a.txt b.txt` came back `b.txt, a.txt` and
+        #     `grep -l X *.py | head -1` picked an arbitrary file.
+        #   * EXIT STATUS. grep's status reflects whether a line was SELECTED,
+        #     not whether filenames were printed. `-L zzz a.txt b.txt` prints
+        #     both files and exits 1 (nothing matched); `-L alpha a.txt` prints
+        #     NOTHING and exits 0 (a line matched). Falling through to the
+        #     empty-output branch inverted the second case too, which is the
+        #     half the row did not name.
+        listed = [l for l in res.stdout.splitlines() if l.strip()]
+        if paths:
+            # Argument order for named paths. A directory walk keeps the
+            # tool's own order: re-sorting a walk would invent an order grep
+            # does not promise either.
+            rank = {str(Path(p_).resolve()): i for i, p_ in enumerate(paths)}
+
+            def _rank(line: str) -> tuple:
+                try:
+                    return (rank.get(str(Path(line).resolve()), len(rank)),
+                            line)
+                except (OSError, ValueError):
+                    return (len(rank), line)
+            listed.sort(key=_rank)
+
+        if gf["files_without_match"]:
+            # The `-L` list cannot say whether anything matched — it is the
+            # complement. Ask the tool the other question; one extra exec, and
+            # only on this flag.
+            probe = list(cmd)
+            if "--files-without-match" in probe:
+                probe[probe.index("--files-without-match")] = "-l"
+            else:
+                probe = [c.replace("L", "l") if c.startswith("-") and "L" in c
+                         else c for c in probe]
+            pr = subprocess.run(probe, capture_output=True, text=True)
+            matched_any = bool(pr.stdout.strip())
+        else:
+            matched_any = bool(listed)
+
+        _tlog.cardinality = len(listed)
+        if listed:
+            _banner()
+            for line in listed:
+                click.echo(line)
+        if not matched_any:
+            if not listed:
+                click.echo("rmx grep: no matches", err=True)
+            raise SystemExit(1)
+        return
+
     if not res.stdout.strip():
         _tlog.cardinality = 0
         if shape["count"] and not shape["with_filename"]:
@@ -6307,8 +6462,7 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
         raise SystemExit(1)
     # Provenance is one stderr line, not a per-line stdout tag: tagging every
     # hit broke file:line copy-paste and any consumer parsing grep format.
-    click.echo(f"# rmx grep fallback via {'rg' if tool.endswith('/rg') else 'grep'}",
-               err=True)
+    _banner()
     prefix = ""
     shown = 0
     produced = res.stdout.splitlines()
@@ -6335,11 +6489,6 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
                 f"({len(rows) - n} withheld); pass --limit 0 for all",
                 err=True)
         return n
-
-    if gf["files_only"] or gf["files_without_match"]:
-        # -l / -L emit bare paths: no line, nothing to reshape.
-        _tlog.cardinality = _emit(produced)
-        return
 
     # Canonical `file:line:text` -> triples. ONE parse feeds both the render and
     # the learn broker, so a reshaped view can never cost the graph a hit.
@@ -6391,40 +6540,25 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
     # therefore the DEFAULT one, which is why an earlier version of this fix
     # that touched only `_grep_run` changed nothing in practice.
     skip_index = not _index_may_answer(paths)
-    like = f"%{effective_pattern}%"
-    sql = (
-        "SELECT e.path, e.name, ev.line, lt.name, c.name "
-        "FROM linkage_evidence ev "
-        "JOIN entities e ON e.id = ev.entity_id "
-        "JOIN entities c ON c.id = ev.concept_id "
-        "JOIN linkage_types lt ON lt.id = ev.linkage_id "
-        "WHERE c.name "
-        + ("ILIKE" if not regex else "~") + " ? "
-    )
-    params: list = [effective_pattern if regex else like]
-    if linkage:
-        sql += "AND lt.name = ? "
-        params.append(linkage)
-    if kind:
-        sql += "AND e.kind = ? "
-        params.append(kind)
-    sql += "ORDER BY e.path, ev.line LIMIT ?"
-    params.append(limit)
-    for r in ([] if skip_index
-              else s._connect().execute(sql, params).fetchall()):
-        rows.append({"path": r[0], "entity": r[1], "line": r[2],
-                     "linkage": r[3], "concept": r[4]})
+    if not skip_index:
+        # `Store.grep_evidence` — the SAME read the daemon op and the direct
+        # branch use. This is the DEFAULT path, which is why an earlier fix
+        # that touched only `_grep_run` changed nothing in practice.
+        rows = s.grep_evidence(effective_pattern, regex=regex, linkage=linkage,
+                               kind=kind, limit=limit)
 
     if paths:
         rows = _filter_rows_by_paths(rows, paths)
 
     if rows:
         _tlog.cardinality = len(rows)
+        _tlog.answered_by = "index"
         _render_grep_rows(rows, gf, limit, source_tag="idx-replica")
         return
 
     if not fallback:
         _tlog.cardinality = 0
+        _tlog.answered_by = "none"
         click.echo("rmx grep: no indexed matches", err=True)
         raise SystemExit(1)
 
@@ -6461,29 +6595,13 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
             raise click.ClickException(resp.get("error", "daemon error"))
         rows = resp["result"]["rows"]
     else:
-        # Direct path: only used when daemon is down. Mirror the SQL.
-        like = f"%{effective_pattern}%"
-        sql = (
-            "SELECT e.path, e.name, ev.line, lt.name, c.name "
-            "FROM linkage_evidence ev "
-            "JOIN entities e ON e.id = ev.entity_id "
-            "JOIN entities c ON c.id = ev.concept_id "
-            "JOIN linkage_types lt ON lt.id = ev.linkage_id "
-            "WHERE c.name "
-            + ("ILIKE" if not regex else "~") + " ? "
-        )
-        params: list = [effective_pattern if regex else like]
-        if linkage:
-            sql += "AND lt.name = ? "
-            params.append(linkage)
-        if kind:
-            sql += "AND e.kind = ? "
-            params.append(kind)
-        sql += "ORDER BY e.path, ev.line LIMIT ?"
-        params.append(limit)
-        for r in s._connect().execute(sql, params).fetchall():
-            rows.append({"path": r[0], "entity": r[1], "line": r[2],
-                         "linkage": r[3], "concept": r[4]})
+        # Direct path: only used when daemon is down. Same read as the daemon
+        # op and the replica path — `Store.grep_evidence` is the ONE
+        # implementation. This branch used to carry its own copy of the SQL
+        # (with `~` where the daemon used `regexp_matches`), which is how
+        # bug-067 would have needed fixing in three places.
+        rows = s.grep_evidence(effective_pattern, regex=regex, linkage=linkage,
+                               kind=kind, limit=limit)
 
     # PATHS filter: drop rows whose entity path is outside the given targets.
     if paths:
@@ -6491,11 +6609,16 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
 
     if rows:
         _tlog.cardinality = len(rows)
+        _tlog.answered_by = "index"
         _render_grep_rows(rows, gf, limit, source_tag="idx")
         return
 
     if not fallback:
         _tlog.cardinality = 0
+        # Eligible, empty, and no floor permitted: NOTHING answered. Distinct
+        # from `floor` — counting it there would credit the tool with a read it
+        # never did.
+        _tlog.answered_by = "none"
         click.echo("rmx grep: no indexed matches", err=True)
         raise SystemExit(1)
 
@@ -6521,6 +6644,80 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
         _tlog=_tlog, project_root=root.parent,
         learn_broker=_report_learned if learn else None,
     )
+
+
+# ---- the learning toggle --------------------------------------------------
+
+
+@main.group("learn", invoke_without_command=True)
+@click.pass_context
+def learn_cmd(ctx):
+    """Turn the grep->graph learning loop off or on, and say what decided it.
+
+    `rmx grep --no-learn` governs ONE invocation. This governs the machine: the
+    daemon drains the learn queue on its own tick, and the PreToolUse rewrite
+    hook spawns `rmx grep` itself, so neither ever sees a shell flag. The state
+    is a marker file (`learn.off`) precisely so the hook can read it with a
+    file test and a CLI with a dead daemon can read it at all.
+    """
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(learn_status)
+
+
+@learn_cmd.command("status")
+def learn_status():
+    """Print the effective state AND which rule decided it."""
+    from refmatrix import learn_switch as _ls
+    root = _root()
+    d = _ls.decision(root)
+    state = "[green]ON[/]" if d.enabled else "[red]OFF[/]"
+    console.print(f"learning {state}  (rule: {d.rule})")
+    if d.rejected_env is not None:
+        # The operator's typo, shown rather than absorbed: a value that is
+        # neither on nor off must not read as either answer.
+        console.print(
+            f"[yellow]rejected[/] {_ls.ENV_VAR}={d.rejected_env!r} — not one of "
+            f"on/off/1/0/true/false/yes/no; it was ignored")
+    sm, gm = _ls.store_marker(root), _ls.global_marker()
+    console.print(f"  store  marker: {sm}  {'present' if sm.exists() else '-'}")
+    console.print(f"  global marker: {gm}  {'present' if gm.exists() else '-'}")
+    if not d.enabled:
+        from refmatrix import learn_queue as _lq
+        console.print(f"  queued teach records: {_lq.pending_lines(root)} "
+                      f"(kept, not dropped — they apply when learning is on)")
+
+
+def _set_learning(on: bool, is_global: bool) -> None:
+    from refmatrix import learn_switch as _ls
+    root = _root()
+    scope = "global" if is_global else "store"
+    marker = _ls.set_enabled(root, on, scope=scope)
+    word = "on" if on else "off"
+    console.print(f"learning {word} for the {scope} scope ({marker})")
+    # The scopes are independent, so turning it on here can leave it off
+    # overall. Saying the effective state prevents "I turned it on and nothing
+    # learned" (the shape of feedback_check_the_sibling_condition).
+    d = _ls.decision(root)
+    if d.enabled is not on:
+        console.print(f"[yellow]note[/] effective state is still "
+                      f"{'ON' if d.enabled else 'OFF'} (rule: {d.rule})")
+
+
+@learn_cmd.command("off")
+@click.option("--global", "is_global", is_flag=True,
+              help="Write the user-level marker (~/.refmatrix/learn.off) "
+                   "instead of this store's.")
+def learn_off(is_global):
+    """Stop every site from teaching the graph."""
+    _set_learning(False, is_global)
+
+
+@learn_cmd.command("on")
+@click.option("--global", "is_global", is_flag=True,
+              help="Clear the user-level marker instead of this store's.")
+def learn_on(is_global):
+    """Let the graph learn again."""
+    _set_learning(True, is_global)
 
 
 # ---- saved queries --------------------------------------------------------

@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: ONBOARDING
+id: refmatrix/ONBOARDING
 title: "Agent Onboarding — first run in a template-bootstrapped project"
 tags: [instructions, onboarding]
 metadata:

@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: PERFORMANCE
+id: refmatrix/PERFORMANCE
 title: "refmatrix — Performance"
 tags: [performance, scoring, benchmarks, eval]
 ---

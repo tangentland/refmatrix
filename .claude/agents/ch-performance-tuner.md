@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: ch-performance-tuner
+id: refmatrix/ch-performance-tuner
 title: "ch-performance-tuner — Performance Tuner"
 tags: [agent, cat-herder]
 name: "ch-performance-tuner"

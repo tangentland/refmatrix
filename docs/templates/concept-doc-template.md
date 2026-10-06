@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: concept-doc-template
+id: refmatrix/concept-doc-template
 title: "Concept Doc Template"
 tags: [template, concept-doc]
 ---

@@ -1,0 +1,701 @@
+{
+  "root": "/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxRd45qrtd1",
+  "calls": 1557,
+  "drain_every": 25,
+  "corpus": [
+    "/Users/tholley/claude_tools/refmatrix/src",
+    "/Users/tholley/claude_tools/refmatrix/docs"
+  ],
+  "arms": {
+    "A_learning_on": {
+      "calls": 1557,
+      "rows_written": 1557,
+      "answered_by": {
+        "floor": 1064,
+        "index": 493
+      },
+      "learn_field": {
+        "True": 1557
+      },
+      "cardinality_zero": 277,
+      "latency_p50_ms": 23,
+      "wall_s": 879.7,
+      "drain_applied": 7637,
+      "drain_s": 511.99,
+      "drain_skipped": [],
+      "queue_pending_end": 0,
+      "learned_concepts": 1733,
+      "catalog_bytes": 62664704,
+      "ingest_s": 49.2,
+      "learned_concepts_before_replay": 0,
+      "index_vs_control": [
+        {
+          "pattern": "def set_flag",
+          "index_rows": 2,
+          "control_rows": 10,
+          "overlap": 2,
+          "recall": 0.2,
+          "precision": 1.0
+        },
+        {
+          "pattern": "def _open_read_store",
+          "index_rows": 1,
+          "control_rows": 56,
+          "overlap": 1,
+          "recall": 0.018,
+          "precision": 1.0
+        },
+        {
+          "pattern": "daemon",
+          "index_rows": 83,
+          "control_rows": 57298,
+          "overlap": 19,
+          "recall": 0.0,
+          "precision": 0.229
+        },
+        {
+          "pattern": "roaring bitmap",
+          "index_rows": 1,
+          "control_rows": 24,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "def grep",
+          "index_rows": 100,
+          "control_rows": 2395,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "_grep_run_direct|_grep_fallback|_grep_stdin|_split_grep_argv|_grep_bare_flags",
+          "index_rows": 24,
+          "control_rows": 36,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "memory-|_memory_partition|def add_memory|memory_add",
+          "index_rows": 100,
+          "control_rows": 187,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "memory_partition_name|with_partition|memory-",
+          "index_rows": 100,
+          "control_rows": 175,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "def _memory_part|def memory_partition|_default_memory_partition",
+          "index_rows": 4,
+          "control_rows": 9,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "def merge|partition merge|merge_partitions",
+          "index_rows": 13,
+          "control_rows": 18,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "def _twin_key",
+          "index_rows": 1,
+          "control_rows": 12,
+          "overlap": 1,
+          "recall": 0.083,
+          "precision": 1.0
+        },
+        {
+          "pattern": "_twin_key",
+          "index_rows": 3,
+          "control_rows": 87,
+          "overlap": 3,
+          "recall": 0.034,
+          "precision": 1.0
+        },
+        {
+          "pattern": "class Watchdog",
+          "index_rows": 1,
+          "control_rows": 10,
+          "overlap": 1,
+          "recall": 0.1,
+          "precision": 1.0
+        },
+        {
+          "pattern": "def _log",
+          "index_rows": 10,
+          "control_rows": 29,
+          "overlap": 9,
+          "recall": 0.31,
+          "precision": 0.9
+        },
+        {
+          "pattern": "class RemoteEmbedder",
+          "index_rows": 3,
+          "control_rows": 21,
+          "overlap": 1,
+          "recall": 0.048,
+          "precision": 0.333
+        },
+        {
+          "pattern": "def get_memory",
+          "index_rows": 1,
+          "control_rows": 8,
+          "overlap": 1,
+          "recall": 0.125,
+          "precision": 1.0
+        },
+        {
+          "pattern": "scan-prompt",
+          "index_rows": 93,
+          "control_rows": 351,
+          "overlap": 42,
+          "recall": 0.12,
+          "precision": 0.452
+        },
+        {
+          "pattern": "_render_key",
+          "index_rows": 5,
+          "control_rows": 89,
+          "overlap": 5,
+          "recall": 0.056,
+          "precision": 1.0
+        },
+        {
+          "pattern": "relaunch|error",
+          "index_rows": 100,
+          "control_rows": 1167,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "def render_text",
+          "index_rows": 1,
+          "control_rows": 7,
+          "overlap": 1,
+          "recall": 0.143,
+          "precision": 1.0
+        },
+        {
+          "pattern": "def build_context",
+          "index_rows": 1,
+          "control_rows": 8,
+          "overlap": 1,
+          "recall": 0.125,
+          "precision": 1.0
+        },
+        {
+          "pattern": "def install_hooks",
+          "index_rows": 1,
+          "control_rows": 10,
+          "overlap": 1,
+          "recall": 0.1,
+          "precision": 1.0
+        },
+        {
+          "pattern": "grep",
+          "index_rows": 100,
+          "control_rows": 421058,
+          "overlap": 7,
+          "recall": 0.0,
+          "precision": 0.07
+        },
+        {
+          "pattern": "unsupported flag",
+          "index_rows": 1,
+          "control_rows": 10,
+          "overlap": 1,
+          "recall": 0.1,
+          "precision": 1.0
+        },
+        {
+          "pattern": "_conn|_backend",
+          "index_rows": 100,
+          "control_rows": 339,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "class Connection|def connect|_duck",
+          "index_rows": 60,
+          "control_rows": 65,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "pyright|watchdog",
+          "index_rows": 95,
+          "control_rows": 119,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "def _row_to_entity",
+          "index_rows": 1,
+          "control_rows": 7,
+          "overlap": 1,
+          "recall": 0.143,
+          "precision": 1.0
+        },
+        {
+          "pattern": "def kinds_on_disk",
+          "index_rows": 1,
+          "control_rows": 8,
+          "overlap": 1,
+          "recall": 0.125,
+          "precision": 1.0
+        },
+        {
+          "pattern": "def gc_vectors|def .*kinds",
+          "index_rows": 12,
+          "control_rows": 17,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "def _vector_store",
+          "index_rows": 1,
+          "control_rows": 8,
+          "overlap": 1,
+          "recall": 0.125,
+          "precision": 1.0
+        },
+        {
+          "pattern": "TYPE_CHECKING|^from typing|^import sqlite3|^from __future__",
+          "index_rows": 100,
+          "control_rows": 120,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "^from typing import",
+          "index_rows": 77,
+          "control_rows": 46,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "FAILED|Error",
+          "index_rows": 71,
+          "control_rows": 679,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "IngestRecord",
+          "index_rows": 28,
+          "control_rows": 113,
+          "overlap": 13,
+          "recall": 0.115,
+          "precision": 0.464
+        },
+        {
+          "pattern": "ingest.py",
+          "index_rows": 3,
+          "control_rows": 23607,
+          "overlap": 2,
+          "recall": 0.0,
+          "precision": 0.667
+        },
+        {
+          "pattern": "class IngestRecord|IngestRecord",
+          "index_rows": 13,
+          "control_rows": 20,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "def _emit_bold_metadata_refs|def _emit_concept_doc_linkages|def _emit_md_fenced_class_specs|_GRAPHIFY_VERB_MAP = |class RecordingStore",
+          "index_rows": 5,
+          "control_rows": 10,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "class IngestRecord|^from refmatrix.ingest_records|import ingest_records|from refmatrix.ingest_records import",
+          "index_rows": 14,
+          "control_rows": 19,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "edges = |def ingest_graphify|edges:",
+          "index_rows": 28,
+          "control_rows": 33,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        }
+      ]
+    },
+    "B_learning_off": {
+      "calls": 1557,
+      "rows_written": 1557,
+      "answered_by": {
+        "floor": 1269,
+        "index": 288
+      },
+      "learn_field": {
+        "False": 1557
+      },
+      "cardinality_zero": 339,
+      "latency_p50_ms": 19,
+      "wall_s": 337.2,
+      "drain_applied": 0,
+      "drain_s": 0.0,
+      "drain_skipped": [
+        "learning-disabled"
+      ],
+      "queue_pending_end": 0,
+      "learned_concepts": 0,
+      "catalog_bytes": 17575936,
+      "ingest_s": 48.9,
+      "learned_concepts_before_replay": 0,
+      "index_vs_control": [
+        {
+          "pattern": "daemon",
+          "index_rows": 92,
+          "control_rows": 13822,
+          "overlap": 9,
+          "recall": 0.001,
+          "precision": 0.098
+        },
+        {
+          "pattern": "roaring bitmap",
+          "index_rows": 1,
+          "control_rows": 24,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "scan-prompt",
+          "index_rows": 2,
+          "control_rows": 215,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "grep",
+          "index_rows": 42,
+          "control_rows": 5815,
+          "overlap": 16,
+          "recall": 0.003,
+          "precision": 0.381
+        },
+        {
+          "pattern": "IngestRecord",
+          "index_rows": 2,
+          "control_rows": 56,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "ingest.py",
+          "index_rows": 1,
+          "control_rows": 3291,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "helix",
+          "index_rows": 1,
+          "control_rows": 741,
+          "overlap": 1,
+          "recall": 0.001,
+          "precision": 1.0
+        },
+        {
+          "pattern": "ModuleNotFound",
+          "index_rows": 1,
+          "control_rows": 13,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "scored",
+          "index_rows": 12,
+          "control_rows": 119,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "wait_for_ready",
+          "index_rows": 1,
+          "control_rows": 24,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "context",
+          "index_rows": 72,
+          "control_rows": 4272,
+          "overlap": 17,
+          "recall": 0.004,
+          "precision": 0.236
+        },
+        {
+          "pattern": "\"--degree\"",
+          "index_rows": 14,
+          "control_rows": 4,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "\"scan-prompt\"",
+          "index_rows": 2,
+          "control_rows": 12,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "version",
+          "index_rows": 29,
+          "control_rows": 713,
+          "overlap": 5,
+          "recall": 0.007,
+          "precision": 0.172
+        },
+        {
+          "pattern": "FAILED",
+          "index_rows": 14,
+          "control_rows": 126,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "rmx",
+          "index_rows": 92,
+          "control_rows": 6936,
+          "overlap": 1,
+          "recall": 0.0,
+          "precision": 0.011
+        },
+        {
+          "pattern": "RMXGREP_MODE",
+          "index_rows": 1,
+          "control_rows": 10,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "\"matcher\"",
+          "index_rows": 3,
+          "control_rows": 27,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "created_at",
+          "index_rows": 5,
+          "control_rows": 134,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "as-memory",
+          "index_rows": 1,
+          "control_rows": 50,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "default_memory_dir",
+          "index_rows": 1,
+          "control_rows": 100,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "^gmd: ",
+          "index_rows": 88,
+          "control_rows": 4,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "^id: ",
+          "index_rows": 81,
+          "control_rows": 30,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "savestate_",
+          "index_rows": 2,
+          "control_rows": 34,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "except",
+          "index_rows": 16,
+          "control_rows": 886,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "lenient",
+          "index_rows": 1,
+          "control_rows": 195,
+          "overlap": 1,
+          "recall": 0.005,
+          "precision": 1.0
+        },
+        {
+          "pattern": "{#fix}",
+          "index_rows": 58,
+          "control_rows": 4,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "__version__",
+          "index_rows": 29,
+          "control_rows": 35,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "job=",
+          "index_rows": 20,
+          "control_rows": 18,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "ProgramArguments",
+          "index_rows": 2,
+          "control_rows": 23,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "session",
+          "index_rows": 82,
+          "control_rows": 3787,
+          "overlap": 33,
+          "recall": 0.009,
+          "precision": 0.402
+        },
+        {
+          "pattern": "db_path",
+          "index_rows": 6,
+          "control_rows": 91,
+          "overlap": 1,
+          "recall": 0.011,
+          "precision": 0.167
+        },
+        {
+          "pattern": "^FAILED",
+          "index_rows": 14,
+          "control_rows": 64,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "status:",
+          "index_rows": 39,
+          "control_rows": 113,
+          "overlap": 3,
+          "recall": 0.027,
+          "precision": 0.077
+        },
+        {
+          "pattern": "filed_subject",
+          "index_rows": 3,
+          "control_rows": 39,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "save_state",
+          "index_rows": 1,
+          "control_rows": 545,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "^E  ",
+          "index_rows": 66,
+          "control_rows": 4,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "unresolved",
+          "index_rows": 5,
+          "control_rows": 185,
+          "overlap": 1,
+          "recall": 0.005,
+          "precision": 0.2
+        },
+        {
+          "pattern": "^version",
+          "index_rows": 29,
+          "control_rows": 6,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        },
+        {
+          "pattern": "^id:",
+          "index_rows": 81,
+          "control_rows": 54,
+          "overlap": 0,
+          "recall": 0.0,
+          "precision": 0.0
+        }
+      ]
+    }
+  }
+}

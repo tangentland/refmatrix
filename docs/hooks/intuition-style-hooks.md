@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: intuition-style-hooks
+id: refmatrix/intuition-style-hooks
 title: "Intuition-style Claude Code hooks (Phase C3)"
 tags: [hooks, memory, claude-code, templates]
 ---

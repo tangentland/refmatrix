@@ -148,19 +148,27 @@ import sys
 # seen twice. Resolving at RUNTIME makes the rendered bytes identical whichever
 # tree generated them, so the drift has nowhere to enter.
 #
-# Order: a sibling of the `rmx` on PATH, then that tree's `bin/`, then PATH,
-# then `~/bin`, then the bare name (PATH decides at exec time).
+# Order: the TREE's `bin/` that owns the `rmx` on PATH, then a sibling of that
+# `rmx`, then PATH, then `~/bin`, then the bare name (PATH decides at exec time).
+#
+# bug-066: `<tree>/bin` goes FIRST, and that order is the whole fix. Wrappers
+# deploy by COPY into `<tree>/bin`; `pip install` does not move them, so the
+# sibling inside `.venv/bin` is a snapshot from whenever the package was last
+# installed. Resolving the sibling first meant 954 bytes of fixes never reached
+# the path every rewritten grep takes — bug-005's pipe short-circuit absent, and
+# the `RMXGREP_MODE=plain` bypass the user ordered removed still live. The
+# sibling stays in the chain for an editable install that has no `bin/`.
 def _wrapper(name):
     import os as _os
     import shutil as _shutil
     rmx = _shutil.which("rmx")
     if rmx:
         rmx_p = _os.path.realpath(rmx)
-        cand = _os.path.join(_os.path.dirname(rmx_p), name)
-        if _os.path.exists(cand):
-            return cand
         tree = _os.path.dirname(_os.path.dirname(_os.path.dirname(rmx_p)))
         cand = _os.path.join(tree, "bin", name)
+        if _os.path.exists(cand):
+            return cand
+        cand = _os.path.join(_os.path.dirname(rmx_p), name)
         if _os.path.exists(cand):
             return cand
     p = _shutil.which(name)
@@ -215,6 +223,45 @@ def _in_open_quote(s: str) -> bool:
     return sq or dq
 
 
+# The learning toggle, read the same way `refmatrix.learn_switch` reads it.
+# This file runs under `/usr/bin/env python3` -- the SYSTEM interpreter, with no
+# refmatrix on sys.path -- so the rule cannot be imported and has to be
+# reimplemented here. The values below are interpolated from `learn_switch` at
+# render time, and a test asserts the rendered script carries the same
+# constants, so the copy cannot drift from the original.
+#
+# With learning OFF the rewrite does not happen AT ALL: a bare `grep` stays a
+# real `grep`. That is the user's decision (2026-10-05) and it is what makes the
+# OFF arm of a measurement measure no routing and no learning, rather than
+# routing without learning.
+_LEARN_ENV = "@LEARN_ENV@"
+_LEARN_MARKER = "@LEARN_MARKER@"
+_LEARN_OFF = @LEARN_OFF_VALUES@
+_LEARN_ON = @LEARN_ON_VALUES@
+
+
+def _learning_off(cwd):
+    import os as _os
+    raw = _os.environ.get(_LEARN_ENV)
+    if raw is not None:
+        val = raw.strip().lower()
+        if val in _LEARN_OFF:
+            return True
+        if val in _LEARN_ON:
+            return False
+        # A malformed value decides nothing -- same rule as the resolver.
+    d = _os.path.abspath(cwd or _os.getcwd())
+    while True:
+        if _os.path.exists(_os.path.join(d, ".refmatrix", _LEARN_MARKER)):
+            return True
+        parent = _os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    return _os.path.exists(
+        _os.path.expanduser(_os.path.join("~", ".refmatrix", _LEARN_MARKER)))
+
+
 def main() -> None:
     try:
         d = json.load(sys.stdin)
@@ -222,6 +269,11 @@ def main() -> None:
     except Exception:
         return
     if not cmd or "<<" in cmd:
+        return
+    # A file test and an env read -- no subprocess, no `rmx` call, no package
+    # import. This runs on EVERY bare grep in every session, so anything
+    # heavier here is a per-tool-call tax.
+    if _learning_off(d.get("cwd")):
         return
     hits = []
     for m in _HEAD.finditer(cmd):
@@ -321,9 +373,21 @@ def render_scripts(wrappers: "tuple[str, str] | list | None" = None) -> "dict[st
     # passes the paths recorded at apply time, and removing it would break that
     # caller for no gain.
     rewriter = str(hooks_dir() / REWRITER_NAME)
+    # The toggle's constants are baked in from `learn_switch`, never retyped:
+    # the rewriter cannot import refmatrix (system python3), so interpolation is
+    # what keeps its copy of the rule identical to the original. Sorted so the
+    # rendered bytes are stable and `install-hooks --check` stays comparable.
+    from refmatrix import learn_switch as _ls
+    rendered_rewriter = (
+        REWRITER_TEMPLATE
+        .replace("@LEARN_ENV@", _ls.ENV_VAR)
+        .replace("@LEARN_MARKER@", _ls.MARKER_NAME)
+        .replace("@LEARN_OFF_VALUES@", repr(tuple(sorted(_ls._OFF_VALUES))))
+        .replace("@LEARN_ON_VALUES@", repr(tuple(sorted(_ls._ON_VALUES))))
+    )
     return {
         GUARD_NAME: GUARD_TEMPLATE.replace("@REWRITER@", rewriter),
-        REWRITER_NAME: REWRITER_TEMPLATE,
+        REWRITER_NAME: rendered_rewriter,
         TEACH_NAME: TEACH_TEMPLATE,
     }
 

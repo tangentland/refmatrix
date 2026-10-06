@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: 0001-intuition-lance-integration
+id: refmatrix/0001-intuition-lance-integration
 title: "ADR-0001: Intuition memory layer + Lance vector backend"
 tags: [adr, memory, lance, dense]
 ---

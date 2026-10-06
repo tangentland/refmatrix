@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: adr-0002-subject-memory-container
+id: refmatrix/adr-0002-subject-memory-container
 title: "ADR-0002: Subject — a memory-scoped working/durable container for threads of work"
 tags: [adr, memory, stm, subject]
 ---

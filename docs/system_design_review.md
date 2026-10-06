@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: system_design_review
+id: refmatrix/system_design_review
 title: "refmatrix — System Design Interview"
 tags: [design, architecture, interview, retrieval, memory]
 ---

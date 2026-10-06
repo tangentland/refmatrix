@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: architecture-readme
+id: refmatrix/architecture-readme
 title: "refmatrix — Architecture Overview (template entry point)"
 tags: [architecture, overview, refmatrix]
 ---

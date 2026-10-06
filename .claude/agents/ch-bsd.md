@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: ch-bsd
+id: refmatrix/ch-bsd
 title: "ch-bsd — Bullshit Detector (Runtime-Integration Auditor)"
 tags: [agent, cat-herder]
 name: "ch-bsd"

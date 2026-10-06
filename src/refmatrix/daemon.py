@@ -2065,6 +2065,24 @@ class Daemon:
         retrieval slowly getting worse.
         """
         from refmatrix import learn_queue as _lq
+        from refmatrix import learn_switch as _ls
+
+        # Resolved on EVERY tick, never cached at boot: this process can live
+        # for days, and an operator who flips the marker expects the next tick
+        # to honour it. A value read once at startup is how a shipped switch
+        # does nothing.
+        if not _ls.learning_enabled(self.root):
+            # Refuse, but do NOT drain: the queue is the operator's backlog and
+            # eating it here would lose work that learning-on would have
+            # applied. The depth is named so a skipped tick is visible
+            # (CLAUDE.md#no-silent-failures) rather than looking like an empty
+            # queue.
+            pending = _lq.pending_lines(self.root)
+            if pending:
+                self._log(f"learn drain: skipped (learning-disabled); "
+                          f"{pending} record(s) left queued")
+            return {"applied": 0, "patterns": 0,
+                    "skipped": "learning-disabled", "pending": pending}
 
         batch = _lq.drain(self.root)
         if not batch.entries and not batch.dropped_malformed \
@@ -4184,60 +4202,24 @@ def _op_list_saved_queries(d: Daemon, args: dict) -> dict:
 
 
 def _op_grep_indexed(d: Daemon, args: dict) -> dict:
-    """Index-backed grep: find concepts whose name matches PATTERN (LIKE
-    or REGEXP) and return their `linkage_evidence` rows. The CLI may
-    follow up with a real `rg` fallback when this returns zero.
+    """Index-backed grep: find concepts whose name matches PATTERN (substring
+    or regex) and return their `linkage_evidence` rows. The CLI may follow up
+    with a real `rg` fallback when this returns zero.
+
+    The SQL lives in `Store.grep_evidence` — ONE implementation shared with the
+    CLI's two read paths. This op had its own copy (matching regexes with
+    `regexp_matches` where the CLI used `~`), and the copies had already
+    drifted; bug-067's fix would otherwise have had to be written three times.
     """
-    pattern = args["pattern"]
-    is_regex = bool(args.get("regex", False))
-    linkage_filter = args.get("linkage")
-    kind_filter = args.get("kind")  # 'doc' | 'code' | None
-    limit = int(args.get("limit", 100))
-
-    if is_regex:
-        concept_pred = "regexp_matches(c.name, ?)"
-        concept_args = [pattern]
-    else:
-        # Treat bare pattern as case-insensitive substring; users who want
-        # exact match can pass an exact name (LIKE % wrapping still matches).
-        concept_pred = "c.name ILIKE ?"
-        concept_args = [f"%{pattern}%"]
-
-    where_extra = []
-    extra_args: list = []
-    if linkage_filter:
-        where_extra.append("lt.name = ?")
-        extra_args.append(linkage_filter)
-    if kind_filter:
-        where_extra.append("e.kind = ?")
-        extra_args.append(kind_filter)
-
-    extra_sql = (" AND " + " AND ".join(where_extra)) if where_extra else ""
-
-    sql = (
-        "SELECT e.path AS path, e.name AS entity_name, ev.line AS line, "
-        "       lt.name AS linkage, c.name AS concept_name "
-        "FROM linkage_evidence ev "
-        "JOIN entities e ON e.id = ev.entity_id "
-        "JOIN entities c ON c.id = ev.concept_id "
-        "JOIN linkage_types lt ON lt.id = ev.linkage_id "
-        f"WHERE {concept_pred}{extra_sql} "
-        "ORDER BY e.path, ev.line "
-        "LIMIT ?"
-    )
     with d._store_lock:
-        rows = d._st()._connect()._duck.execute(
-            sql, concept_args + extra_args + [limit],
-        ).fetchall()
-    return {
-        "rows": [
-            {
-                "path": r[0], "entity": r[1], "line": r[2],
-                "linkage": r[3], "concept": r[4],
-            }
-            for r in rows
-        ],
-    }
+        rows = d._st().grep_evidence(
+            args["pattern"],
+            regex=bool(args.get("regex", False)),
+            linkage=args.get("linkage"),
+            kind=args.get("kind"),
+            limit=int(args.get("limit", 100) or 0),
+        )
+    return {"rows": rows}
 
 
 def _learn_grep_hits(store, pattern: str, hits: list, project_root: Path) -> dict:
@@ -4293,6 +4275,11 @@ def _op_learn_from_grep(d: Daemon, args: dict) -> dict:
     project_root = Path(args.get("project_root") or Path.cwd()).resolve()
     if not pattern or not hits:
         return {"added": 0}
+    from refmatrix import learn_switch as _ls
+    if not _ls.learning_enabled(d.root):
+        # Named, not silent: a caller that asked for a teach gets told why it
+        # did not happen, the same way `store-invalid` is reported below.
+        return {"added": 0, "skipped": "learning-disabled"}
     try:
         with d._store_lock:
             result = _learn_grep_hits(d.store, pattern, hits, project_root)
@@ -4583,7 +4570,8 @@ def _op_context(d: Daemon, args: dict) -> dict:
     # index — and survives prune_noise. We hold the writer here (daemon); the
     # read-only replica/CLI path just displays the floor, never learns.
     grep_entries = bundle.groups.get("grep") or []
-    if grep_backstop and grep_entries:
+    from refmatrix import learn_switch as _ls_ctx
+    if grep_backstop and grep_entries and _ls_ctx.learning_enabled(d.root):
         hits = []
         for ge in grep_entries:
             path = ge.entity.path
