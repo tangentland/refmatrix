@@ -13,6 +13,12 @@ One record per query, fields:
     outcome       'ok' | 'empty' | 'consumer-closed' | 'error' — WHICH of the
                   four things happened (absent before 2026-09-20; readers
                   classify those rows from `error`/`exit_code`)
+    answered_by   grep rows only: WHAT produced the answer — see ANSWERED_BY.
+                  Absent before 2026-10-05 and NOT recoverable for those rows
+                  (the paths that decide eligibility were never logged), so
+                  readers report them as 'unknown' and never as 'floor'
+    learn         grep rows only: the EFFECTIVE learning state of the call, so
+                  a replayed log says which arm wrote the row
     error         "ExcType: msg" if the query FAILED, else null. A no-match
                   exit and a closed consumer are conventions, not failures,
                   and live in `outcome` (bug-052)
@@ -61,6 +67,30 @@ INVOCATION_SOURCES = ("hook", "interactive", "mcp", "internal", "unknown")
 # `error_rate` counted every nonzero exit. The reader who found bug-049 had to
 # dismiss 272 rows by hand before the signal was visible.
 OUTCOMES = ("ok", "empty", "consumer-closed", "error")
+
+
+# WHAT answered a grep. Five-valued, and the reason it is not a boolean is the
+# whole shape of the instrument: `cli._index_may_answer(paths)` is `not paths`,
+# so a drop-in read that NAMES files can never be served from the learned index
+# (bug-058 — a learned index answered with 1000 rows covering ~100 of a file's
+# 500 matching lines). `index|floor` alone would therefore score every CORRECT
+# drop-in read as a learning miss, and the loop would look dead exactly where
+# the tool floor is the right answer.
+#
+#   index   the learned index answered
+#   floor   the index was ELIGIBLE, had nothing, and rg/grep answered. The only
+#           bucket whose rate the learning loop can move, and the denominator
+#           any claim about learning has to use
+#   dropin  paths were named; the index was never eligible. Not a miss
+#   stdin   a grep reading a pipe: a filter, byte-exact, consults nothing
+#   none    eligible, empty, --no-fallback — nothing answered
+ANSWERED_BY = ("index", "floor", "dropin", "stdin", "none")
+
+# A grep row whose producer never set the field. Written LOUDLY rather than
+# omitted: an omitted field is indistinguishable from a pre-2026-10-05 row, so
+# a future render path that forgets to label itself would read as history
+# instead of as the hole it is.
+ANSWERED_BY_UNSET = "unset"
 
 
 def classify_outcome(exc_type, exc_val) -> "tuple[str, str | None]":
@@ -321,13 +351,41 @@ class log_query:
         kind: str,
         body: str,
         source: str = "cli",
+        root: "Path | None" = None,
     ):
         self.store = store
         self.kind = kind
         self.body = body
         self.source = source
+        # Telemetry needs a DIRECTORY, not a database. `root` lets the paths
+        # that legitimately hold no Store still be recorded: the stdin filter
+        # (which returns before any store resolution, by design — a filter must
+        # not pay for an attach) and the daemon-RPC-served grep, whose rows were
+        # dropped entirely by the `store is None` guard below. That silent drop
+        # is why the 1,536 grep rows in this project's log are a partial census
+        # of greps rather than all of them.
+        # A CALLABLE is allowed and is what the stdin filter passes: resolving
+        # the store root costs a cwd walk (and, under ~/.claude/projects, a
+        # `discovery.discover_roots()`), and a grep reading a pipe must not pay
+        # that before answering. Resolved at __exit__, after the bytes are out.
+        self.root = root if (root is None or callable(root)) else Path(root)
         self.cardinality: int | None = None
+        # grep only; see ANSWERED_BY. Set by whichever branch produces the
+        # answer, and left None by every other kind of query.
+        self.answered_by: str | None = None
+        self.learn: bool | None = None
         self.t0: float = 0.0
+
+    def _log_dir(self) -> "Path | None":
+        if self.store is not None:
+            return self.store.root
+        if callable(self.root):
+            try:
+                r = self.root()
+            except Exception:
+                return None      # telemetry never fails the command it describes
+            return Path(r) if r is not None else None
+        return self.root
 
     def __enter__(self) -> "log_query":
         self.t0 = time.monotonic()
@@ -336,9 +394,11 @@ class log_query:
     def __exit__(self, exc_type, exc_val, _exc_tb) -> None:
         if _disabled():
             return
-        if self.store is None:
-            # RPC-served paths (e.g. grep via daemon) have no local store;
-            # there is nowhere to append the record. Previously this raised
+        log_dir = self._log_dir()
+        if log_dir is None:
+            # No store AND no root: nowhere to append the record. Callers on
+            # the RPC-served and stdin paths pass `root=` so they land in the
+            # log rather than vanishing. Previously a store-less call raised
             # AttributeError out of __exit__.
             return
         latency_ms = int((time.monotonic() - self.t0) * 1000)
@@ -372,8 +432,20 @@ class log_query:
             "outcome": outcome,
             "error": error,
         }
+        if self.kind == "grep":
+            # Always present on a grep row, even when no branch set it: see
+            # ANSWERED_BY_UNSET. The field is what makes "did the index answer
+            # this?" answerable at all, so a missing label is a defect to
+            # surface, not a value to omit.
+            record["answered_by"] = (
+                self.answered_by if self.answered_by in ANSWERED_BY
+                else ANSWERED_BY_UNSET
+            )
+            record["learn"] = self.learn
+        elif self.answered_by is not None:
+            record["answered_by"] = self.answered_by
         try:
-            with (self.store.root / LOG_NAME).open("a") as f:
+            with (log_dir / LOG_NAME).open("a") as f:
                 f.write(json.dumps(record) + "\n")
         except OSError:
             pass
@@ -420,6 +492,16 @@ def summarize(store: Store, since: str | None = None) -> dict:
     # existed are counted by the same rules (bug-052).
     by_outcome = Counter(_outcome_of(r) for r in rows)
     errors = [r for r in rows if _outcome_of(r) == "error"]
+    # GREP rows only — the field is meaningless on a scan or a dsl query, and
+    # mixing them would inflate whatever denominator a reader picks. Rows
+    # written before 2026-10-05 report as `unknown` and are NOT folded into
+    # `floor`: the paths that decide eligibility were never logged, so their
+    # bucket is unrecoverable, and guessing it would manufacture the exact
+    # number the field was added to measure.
+    by_answered_by = Counter(
+        r.get("answered_by") or "unknown"
+        for r in rows if r.get("kind") == "grep"
+    )
 
     latencies = [r["latency_ms"] for r in rows if isinstance(r.get("latency_ms"), int)]
     latencies.sort()
@@ -441,6 +523,7 @@ def summarize(store: Store, since: str | None = None) -> dict:
         "zero_result_count": len(zero),
         "zero_result_examples": [r["body"] for r in zero[-10:]],
         "by_outcome": dict(by_outcome),
+        "by_answered_by": dict(by_answered_by),
         "error_count": len(errors),
         "error_examples": [
             {"body": r["body"], "error": r["error"]} for r in errors[-5:]

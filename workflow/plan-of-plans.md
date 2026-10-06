@@ -31,6 +31,7 @@ current.
 | 11 | plan-11-helix-phase2-versioned-graph | drafting (storage fork A/B undecided; the pre-registered criterion now reads B — 444 rendered helix rows, 27 sessions, 48% neighbour-role) | no | `workflow/plans/plan-11-helix-phase2-versioned-graph.md` | helix phase 1 (0.55.0) |
 | 12 | plan-12-open-bug-remediation | completed (@ch-bsd CLEAN; deployed 0.72.0; bug-025 acceptance 20/20 reranked) | yes (6) | `workflow/plans/plan-12-open-bug-remediation.md` | — |
 | 13 | plan-13-cross-partition-sweep | drafting (@ch-bsd r1 DIRTY 12 → revised; r2 DIRTY 17, 10 of 12 closed; gate 13.0 must return GO before any build) | yes (7) | `workflow/plans/plan-13-cross-partition-sweep.md` | — |
+| 14 | plan-14-grep-learning-measurement | approved | yes (4) | `workflow/plans/plan-14-grep-learning-measurement.md` | plan 9 (its telemetry record) |
 
 ## Sequence rationale {#sequence}
 
@@ -49,6 +50,11 @@ current.
 10. **injection-dedup** — scan-prompt re-pays for context the turn may already hold. Task 10.1 is a
     PRE-REGISTERED measurement that decides whether 10.2/10.3 are built at all; a result under the
     threshold ships as a negative finding, not as a lowered bar.
+
+11. **grep-learning-measurement** — the grep→graph teach has run for weeks with its COST measured and
+    its BENEFIT uninstrumented: `query.log` never recorded whether the index or the tool floor answered a
+    call. Task 14.1 ships that field, 14.2/14.3 give the loop an off switch the hook also obeys, and 14.4
+    replays the real workload against both arms against a PRE-REGISTERED threshold.
 
 Each plan ends with `@ch-bsd` over its commit range; remedy → re-review until CLEAN before the next plan starts.
 

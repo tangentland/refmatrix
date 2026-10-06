@@ -6038,7 +6038,15 @@ def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
                 cap = None
         except Exception:
             cap = None
-        _grep_stdin(pattern, regex, gf, cap)
+        # The filter path was INVISIBLE in query.log: it returns before the
+        # store is resolved, so no `log_query` ever wrapped it. The root is
+        # passed as a callable and resolved at exit, after the bytes are out,
+        # so a piped grep still pays nothing for being counted.
+        with log_query(None, kind="grep", body=pattern,
+                       source="grep-stdin", root=_root) as _tlog:
+            _tlog.answered_by = "stdin"
+            _tlog.learn = False   # a filter teaches nothing, by contract
+            _grep_stdin(pattern, regex, gf, cap)
         return
 
     # -x / --line-regexp: whole-line match. Forces regex and anchors the
@@ -6078,7 +6086,8 @@ def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
 
         def _run(s):
             with log_query(s, kind="grep", body=pattern,
-                           source="grep-replica") as _tlog:
+                           source="grep-replica", root=root) as _tlog:
+                _tlog.learn = bool(learn)
                 _grep_run_direct(
                     s, pattern, effective_pattern, regex,
                     linkage, kind, limit, fallback, learn, gf, paths, _tlog,
@@ -6100,7 +6109,9 @@ def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
     s = _reader_store()
     if s is None and not daemon_mod.ping(root):
         s = _store()
-    with log_query(s, kind="grep", body=pattern, source="grep") as _tlog:
+    with log_query(s, kind="grep", body=pattern, source="grep",
+                   root=root) as _tlog:
+        _tlog.learn = bool(learn)
         _grep_run(
             s, root, daemon_mod, pattern, effective_pattern, regex,
             linkage, kind, limit, fallback, learn, gf, paths, _tlog,
@@ -6202,6 +6213,22 @@ def _index_may_answer(paths: list) -> bool:
     return not paths
 
 
+def _floor_answered_by(paths) -> str:
+    """WHICH kind of tool-floor read this is, for the telemetry row.
+
+    `floor` means the index was ELIGIBLE and had nothing — the event the
+    grep→graph learning loop exists to prevent, and the only bucket whose rate
+    learning can move. `dropin` means paths were named, so `_index_may_answer`
+    was false and the real tool answered BY CONTRACT; counting that as a miss
+    would make the loop look dead precisely where it is behaving correctly.
+
+    Decided here, once, because `_grep_rg_fallback` is shared by the replica and
+    daemon read paths and four defects in this file came from resolving a rule
+    per path instead (bug-058/059/060, and `_resolve_output_shape` next door is
+    the fix for exactly that shape)."""
+    return "dropin" if paths else "floor"
+
+
 def _resolve_output_shape(gf: dict, paths: list) -> dict:
     """THE output shape of a drop-in read, decided ONCE for every render path.
 
@@ -6244,6 +6271,9 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
 
     targets = [str(p) for p in paths] if paths else [str(project_root)]
     shape = _resolve_output_shape(gf, list(paths))
+    # Labelled BEFORE the exec, so an exit raised mid-read (grep's no-match
+    # SystemExit, a closed consumer) still records what was answering.
+    _tlog.answered_by = _floor_answered_by(paths)
     tool = shutil.which("rg")
     if tool:
         case_flag = (
@@ -6420,11 +6450,13 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
 
     if rows:
         _tlog.cardinality = len(rows)
+        _tlog.answered_by = "index"
         _render_grep_rows(rows, gf, limit, source_tag="idx-replica")
         return
 
     if not fallback:
         _tlog.cardinality = 0
+        _tlog.answered_by = "none"
         click.echo("rmx grep: no indexed matches", err=True)
         raise SystemExit(1)
 
@@ -6491,11 +6523,16 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
 
     if rows:
         _tlog.cardinality = len(rows)
+        _tlog.answered_by = "index"
         _render_grep_rows(rows, gf, limit, source_tag="idx")
         return
 
     if not fallback:
         _tlog.cardinality = 0
+        # Eligible, empty, and no floor permitted: NOTHING answered. Distinct
+        # from `floor` — counting it there would credit the tool with a read it
+        # never did.
+        _tlog.answered_by = "none"
         click.echo("rmx grep: no indexed matches", err=True)
         raise SystemExit(1)
 
