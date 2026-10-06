@@ -231,3 +231,42 @@ def test_a_tty_stdin_still_explores(proj):
 
     assert res.returncode == 0, res.stderr
     assert _lines(res.stdout), "a tty invocation returned nothing"
+
+
+def test_a_socket_stdin_explores_instead_of_blocking_forever(proj):
+    """REGRESSION, found in-session minutes after bug-062 shipped.
+
+    This harness gives a BACKGROUNDED command a unix socket on fd 0 — not
+    /dev/null, not a FIFO. The first cut of the fd-shape rule counted
+    `S_ISSOCK` as a stream, so `rmx grep PATTERN` tried to filter a socket that
+    never delivers data and never delivers EOF, and blocked FOREVER: a real
+    process sat at 0.11s CPU for five minutes with fd 0 = `unix ->0xfff1...`
+    while an identical foreground grep took 0.21s.
+
+    The line the fix draws, and why:
+      * FIFO — a shell pipeline (`cmd | rmx grep PAT`). bug-062's case. Honour.
+      * REG  — an explicit `< file` redirect. Honour.
+      * SOCK — neither. Nothing in a pipeline hands a socket to a filter; here
+        it is an artifact of how the harness runs a command, and treating it as
+        a producer turns every backgrounded `rmx grep` into a hang. Explore.
+
+    A hang is the worst failure shape available to a read command: it cannot be
+    distinguished from slow, so it takes the whole turn.
+    """
+    import socket
+    sock_parent, sock_child = socket.socketpair()
+    try:
+        res = subprocess.run(
+            [sys.executable, "-m", "refmatrix.cli", "grep", "hello"],
+            stdin=sock_child, capture_output=True, text=True, cwd=str(proj),
+            env=_env(proj), timeout=30)
+    except subprocess.TimeoutExpired:
+        raise AssertionError(
+            "rmx grep BLOCKED on a socket stdin — it read fd 0 as a stream "
+            "that will never produce data or EOF")
+    finally:
+        sock_parent.close()
+        sock_child.close()
+
+    assert res.returncode == 0, res.stderr
+    assert _lines(res.stdout), "a socket-stdin invocation returned nothing"

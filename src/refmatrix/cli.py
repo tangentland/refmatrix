@@ -5755,13 +5755,24 @@ def _is_stdin_piped() -> bool:
         # None. Not a stream we can read.
         return False
     mode = st.st_mode
-    if _stat.S_ISFIFO(mode) or _stat.S_ISSOCK(mode):
+    if _stat.S_ISFIFO(mode):
+        # A shell pipeline, and the only shape bug-062 is about.
         return True
     if _stat.S_ISREG(mode):
         # A redirect of an EMPTY file is still a redirect: grep reads it, finds
         # nothing and exits 1. Size is not the question here either.
         return True
-    # CHR, DIR, BLK: not a stream. A TTY needs no separate `isatty()` check —
+    # A SOCKET is deliberately NOT a stream here, and that cost a regression to
+    # learn: this harness hands a BACKGROUNDED command a unix socket on fd 0, so
+    # counting `S_ISSOCK` made `rmx grep PATTERN` try to filter a socket that
+    # never delivers data and never delivers EOF — a real process sat blocked
+    # for five minutes at 0.11 s CPU while the same grep in the foreground took
+    # 0.21 s. Nothing in a pipeline hands a socket to a filter; it is an
+    # artifact of how a command was launched. A hang is the worst outcome a read
+    # command has, because it is indistinguishable from slow and takes the whole
+    # turn, so an ambiguous socket explores instead.
+    #
+    # CHR, DIR, BLK, SOCK: not a stream. A TTY needs no separate `isatty()` —
     # a terminal IS a character device, so it lands here with /dev/null. The
     # mutation check is what established that: deleting an `isatty()` pre-check
     # changed no behaviour, including with a real pty, so it was a branch no
