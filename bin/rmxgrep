@@ -62,6 +62,31 @@ if [ -p /dev/stdin ] || [ -p /dev/fd/0 ]; then
     exec "$REAL" "$@"
 fi
 
+# The learning toggle (refmatrix.learn_switch): env, then this store's marker,
+# then the user-level one. With learning OFF this wrapper is grep, exactly --
+# no index read, no teach ping -- which is the same contract as the
+# outside-a-project branch above. The user's decision 2026-10-05: the OFF arm of
+# a measurement measures no routing and no learning.
+#
+# Pure shell on purpose. This runs on every rewritten grep, so the check is an
+# env read and two file tests; `rmx learn status` is for humans, not for here.
+# The env var and marker NAME are asserted against learn_switch's constants by
+# tests/test_learn_toggle_hook.py, because a second copy of a rule is a second
+# place for it to drift.
+learn_off=0
+case "$(printf '%s' "${RMX_LEARN:-}" | tr 'A-Z' 'a-z')" in
+    0|off|false|no)  learn_off=1 ;;
+    1|on|true|yes)   learn_off=0 ;;
+    "")              [ -f "$root/.refmatrix/learn.off" ] && learn_off=1
+                     [ -f "$HOME/.refmatrix/learn.off" ] && learn_off=1 ;;
+    *)               # malformed: decides nothing, fall through to the markers
+                     [ -f "$root/.refmatrix/learn.off" ] && learn_off=1
+                     [ -f "$HOME/.refmatrix/learn.off" ] && learn_off=1 ;;
+esac
+if [ "$learn_off" = "1" ]; then
+    exec "$REAL" "$@"
+fi
+
 rich=0
 # `RMXGREP_MODE=plain` used to force the real tool here. It was a bypass of
 # the index path — an agent shell exports rich and any caller could opt out
