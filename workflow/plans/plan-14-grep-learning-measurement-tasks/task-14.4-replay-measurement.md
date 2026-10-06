@@ -5,14 +5,14 @@ title: "Task 14.4: replay the corpus against both arms and report what learning 
 tags: [task, measurement, eval, grep, learning]
 metadata:
   node_type: task
-  status: pending
+  status: in-progress
   created: 2026-10-05
 ---
 
 # Task 14.4: the replay, and the number it produces {#root}
 
 > Plan: [plan-14-grep-learning-measurement](../plan-14-grep-learning-measurement.md)
-> Status: Pending
+> Status: In Progress
 > Depends on: Task 14.1, Task 14.2
 
 rel: part-of -> [[plan-14-grep-learning-measurement]]

@@ -5,14 +5,14 @@ title: "Task 14.2: one learning toggle, honoured by every site that learns"
 tags: [task, grep, learning, toggle]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   created: 2026-10-05
 ---
 
 # Task 14.2: one learning toggle, one resolver {#root}
 
 > Plan: [plan-14-grep-learning-measurement](../plan-14-grep-learning-measurement.md)
-> Status: Pending
+> Status: Complete
 > Depends on: —
 
 rel: part-of -> [[plan-14-grep-learning-measurement]]

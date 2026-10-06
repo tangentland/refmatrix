@@ -5,14 +5,14 @@ title: "Task 14.3: the rewrite hook and the wrapper follow the toggle"
 tags: [task, hooks, grep, toggle]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   created: 2026-10-05
 ---
 
 # Task 14.3: toggle off ⇒ bare grep passes straight through {#root}
 
 > Plan: [plan-14-grep-learning-measurement](../plan-14-grep-learning-measurement.md)
-> Status: Pending
+> Status: Complete
 > Depends on: Task 14.2
 
 rel: part-of -> [[plan-14-grep-learning-measurement]]

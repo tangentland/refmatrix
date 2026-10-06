@@ -5,14 +5,14 @@ title: "Task 14.1: every grep telemetry row says WHAT answered it"
 tags: [task, telemetry, grep]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   created: 2026-10-05
 ---
 
 # Task 14.1: `answered_by` + `learn` on every grep telemetry row {#root}
 
 > Plan: [plan-14-grep-learning-measurement](../plan-14-grep-learning-measurement.md)
-> Status: Pending
+> Status: Complete
 > Depends on: —
 
 rel: part-of -> [[plan-14-grep-learning-measurement]]

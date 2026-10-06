@@ -5,7 +5,7 @@ title: "Does funnelling grep through rmx actually teach the graph anything? Inst
 tags: [plan, grep, learning, telemetry, measurement, instrumentation]
 metadata:
   node_type: plan
-  status: approved
+  status: in-progress
   created: 2026-10-05
   revised: 2026-10-05
 ---
@@ -13,7 +13,7 @@ metadata:
 # Plan 14: measure the grep→rmx learning loop {#root}
 
 **Date:** 2026-10-05
-**Status:** Approved (task specs below; all four written before any production code)
+**Status:** In progress — 14.1/14.2/14.3 complete; 14.4's replay running. bug-067 was found BY the instrument and fixed before the measurement was taken (`[[impl-plan-14-grep-learning-instrumentation]]`).
 **Location:** `workflow/plans/plan-14-grep-learning-measurement.md` — permanent home; stage is
 `metadata.status`.
 
