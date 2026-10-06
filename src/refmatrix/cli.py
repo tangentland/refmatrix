@@ -6475,6 +6475,39 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
         click.echo(f"# rmx grep fallback via "
                    f"{'rg' if tool.endswith('/rg') else 'grep'}", err=True)
 
+    # ARGUMENT ORDER, once, for every output shape (ch-bsd r1 #b-2).
+    #
+    # bug-063/064 diagnosed the general cause — "the tool emits
+    # fan-out/completion order" — and then fixed `-l`/`-L` only. On the
+    # deployed build `rmx grep -n alpha b.txt a.txt` still returned a.txt's
+    # rows where grep returns b.txt's, and `-c` was wrong in two ways at once.
+    # A directory walk keeps the tool's own order: re-sorting a walk would
+    # invent an order grep does not promise either.
+    argv_order: "dict[str, int]" = {}
+    argv_display: "dict[str, str]" = {}
+    if paths:
+        for _i, _p in enumerate(paths):
+            try:
+                _key = str(Path(_p).resolve())
+            except (OSError, ValueError):
+                continue
+            argv_order.setdefault(_key, _i)
+            # grep echoes a path exactly as it was given on the command line,
+            # so the ARGV spelling is the display form, not the resolved one.
+            argv_display.setdefault(_key, str(_p))
+
+    def _file_rank(line_or_path: str, order: "dict[str, int]") -> int:
+        """Where this file sat in argv; past the end when it was not named."""
+        head = line_or_path.split(":", 1)[0] if ":" in line_or_path else line_or_path
+        for cand in (line_or_path, head):
+            try:
+                hit = order.get(str(Path(cand).resolve()))
+            except (OSError, ValueError):
+                continue
+            if hit is not None:
+                return hit
+        return len(order)
+
     if gf["files_only"] or gf["files_without_match"]:
         # bug-064. `-l`/`-L` are handled HERE, before the empty-output branch
         # below, because that branch gets BOTH of their answers wrong:
@@ -6489,19 +6522,8 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
         #     empty-output branch inverted the second case too, which is the
         #     half the row did not name.
         listed = [l for l in res.stdout.splitlines() if l.strip()]
-        if paths:
-            # Argument order for named paths. A directory walk keeps the
-            # tool's own order: re-sorting a walk would invent an order grep
-            # does not promise either.
-            rank = {str(Path(p_).resolve()): i for i, p_ in enumerate(paths)}
-
-            def _rank(line: str) -> tuple:
-                try:
-                    return (rank.get(str(Path(line).resolve()), len(rank)),
-                            line)
-                except (OSError, ValueError):
-                    return (len(rank), line)
-            listed.sort(key=_rank)
+        if argv_order:
+            listed.sort(key=lambda line: (_file_rank(line, argv_order), line))
 
         if gf["files_without_match"]:
             # The `-L` list cannot say whether anything matched — it is the
@@ -6588,10 +6610,25 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
             out += f"{n}:"
         return out + text
 
+    # The same argument-order rule the `-l` branch above applies (#b-2).
+    if argv_order:
+        triples.sort(key=lambda tr: (_file_rank(tr[0], argv_order), tr[1]))
+
     if shape["count"]:
         counts: dict = {}
+        if argv_order:
+            # `grep -c PAT a b c` prints a row for EVERY named file, including
+            # the ones with zero matches, in argument order. Building `counts`
+            # from the hits alone dropped those rows entirely, so
+            # `rmx grep -c PAT *.py` silently omitted every non-matching file.
+            for _key, _i in sorted(argv_order.items(), key=lambda kv: kv[1]):
+                counts[argv_display.get(_key, _key)] = 0
         for f, _n, _t in triples:
-            counts[f] = counts.get(f, 0) + 1
+            try:
+                key = argv_display.get(str(Path(f).resolve()), f)
+            except (OSError, ValueError):
+                key = f
+            counts[key] = counts.get(key, 0) + 1
         rendered = [f"{f}:{c}" if shape["with_filename"] else str(c)
                     for f, c in counts.items()]
     else:

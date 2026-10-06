@@ -274,3 +274,132 @@ def test_the_grep_branch_gets_the_same_order_and_exit(proj, monkeypatch):
 
     assert [Path(l).name for l in _lines(res.stdout)] == ["a.txt", "b.txt"], res.stdout
     assert res.exit_code == 1, res.exit_code
+
+
+# ---- ch-bsd r1 #b-2: the order fix reached `-l`/`-L` and nothing else ------
+#
+# bug-063/064's commit body states the GENERAL cause — "the tool emits
+# fan-out/completion order" — and the fix landed inside the `-l`/`-L` branch
+# only. On the deployed build `rmx grep -n alpha b.txt a.txt` still returned
+# a.txt's rows where grep returns b.txt's, and `-c` was wrong twice over: wrong
+# order AND zero-count files dropped entirely. This is the path every rewritten
+# bare grep takes. Fifth sighting of "the diagnosis is general, the patch is
+# local" (`bsd-pattern-sibling-render-path`).
+
+
+def test_plain_output_comes_back_in_argument_order(proj):
+    """The default shape — no flags — against a real-grep control."""
+    (proj / "a.txt").write_text("alpha\nalpha\n")
+    (proj / "b.txt").write_text("alpha\n")
+
+    ctl_out, ctl_code = _real_grep(["alpha", "b.txt", "a.txt"], proj)
+    res = _rmx(["alpha", "b.txt", "a.txt"])
+
+    assert res.exit_code == ctl_code, (res.exit_code, ctl_code)
+    assert _lines(res.stdout) == _lines(ctl_out), (res.stdout, ctl_out)
+
+
+def test_line_numbered_output_comes_back_in_argument_order(proj):
+    """`-n` is the shape the audit probed: a.txt's rows arrived before b.txt's
+    because the tool finished a.txt first."""
+    (proj / "a.txt").write_text("alpha\nalpha\n")
+    (proj / "b.txt").write_text("alpha\n")
+
+    ctl_out, ctl_code = _real_grep(["-n", "alpha", "b.txt", "a.txt"], proj)
+    assert _lines(ctl_out)[0].startswith("b.txt:"), ctl_out
+
+    res = _rmx(["-n", "alpha", "b.txt", "a.txt"])
+
+    assert res.exit_code == ctl_code, (res.exit_code, ctl_code)
+    assert _lines(res.stdout) == _lines(ctl_out), (res.stdout, ctl_out)
+
+
+def test_count_keeps_argument_order_and_prints_the_zeroes(proj):
+    """`grep -c` prints a row for EVERY named file, zeros included, in
+    argument order. Building the counts from the hits alone dropped the
+    non-matching files, so `rmx grep -c PAT *.py` under-reported its own
+    inputs."""
+    (proj / "a.txt").write_text("alpha\nalpha\n")
+    (proj / "b.txt").write_text("alpha\n")
+    (proj / "c.txt").write_text("nothing\n")
+
+    ctl_out, ctl_code = _real_grep(["-c", "alpha", "a.txt", "b.txt", "c.txt"],
+                                   proj)
+    assert _lines(ctl_out) == ["a.txt:2", "b.txt:1", "c.txt:0"], ctl_out
+
+    res = _rmx(["-c", "alpha", "a.txt", "b.txt", "c.txt"])
+
+    assert res.exit_code == ctl_code, (res.exit_code, ctl_code)
+    assert _lines(res.stdout) == _lines(ctl_out), (res.stdout, ctl_out)
+
+
+def test_a_directory_walk_is_not_reordered(proj):
+    """Argument order applies to NAMED paths. A walk keeps the tool's own
+    order — re-sorting it would invent an order grep does not promise, which is
+    the opposite error."""
+    (proj / "a.txt").write_text("alpha\n")
+    (proj / "b.txt").write_text("alpha\n")
+
+    res = _rmx(["-rn", "alpha", "."])
+    assert res.exit_code == 0, res.output
+    assert len(_lines(res.stdout)) == 2, res.stdout
+
+
+def _reversing_tool(monkeypatch, real_cwd):
+    """Make the tool emit its lines in REVERSE file order.
+
+    The three differential tests above compare against grep and so cannot pass
+    while the order is wrong — but with two small files the tool happens to
+    finish in argument order anyway, so they do not FAIL at the unfixed commit
+    either. A contract test that cannot fail is not evidence the contract was
+    broken (`feedback_clean_corpus_hides_a_dead_gate`), so this fixture forces
+    the condition the audit observed on the deployed build: output whose file
+    order is not argv order. The COLLABORATOR is faked (the external tool), not
+    the renderer under test.
+    """
+    import subprocess as _sp
+    real = _sp.run
+
+    def _fake(cmd, *a, **kw):
+        r = real(cmd, *a, **kw)
+        if not getattr(r, "stdout", None):
+            return r
+        lines = [l for l in r.stdout.splitlines() if l.strip()]
+        # group by file, emit the groups back-to-front
+        groups: dict = {}
+        for l in lines:
+            groups.setdefault(l.split(":", 1)[0], []).append(l)
+        flipped = []
+        for k in reversed(list(groups)):
+            flipped.extend(groups[k])
+        r.stdout = "\n".join(flipped) + "\n"
+        return r
+
+    # `_grep_rg_fallback` does `import subprocess` locally, so there is no
+    # `cli.subprocess` attribute to patch — the lookup goes through the
+    # module at call time, so the module is the seam.
+    monkeypatch.setattr(_sp, "run", _fake)
+
+
+def test_the_renderer_reorders_a_tool_that_emits_out_of_order(proj, monkeypatch):
+    """#b-2 made to fire: the tool hands back b-then-a for `a.txt b.txt`, and
+    the renderer must still produce argv order."""
+    (proj / "a.txt").write_text("alpha\nalpha\n")
+    (proj / "b.txt").write_text("alpha\n")
+    _reversing_tool(monkeypatch, proj)
+
+    res = _rmx(["-n", "alpha", "a.txt", "b.txt"])
+    assert res.exit_code == 0, res.output
+    files = [l.split(":", 1)[0] for l in _lines(res.stdout)]
+    assert [Path(f).name for f in files] == ["a.txt", "a.txt", "b.txt"], res.stdout
+
+
+def test_the_count_renderer_reorders_a_tool_that_emits_out_of_order(proj,
+                                                                    monkeypatch):
+    (proj / "a.txt").write_text("alpha\nalpha\n")
+    (proj / "b.txt").write_text("alpha\n")
+    _reversing_tool(monkeypatch, proj)
+
+    res = _rmx(["-c", "alpha", "a.txt", "b.txt"])
+    assert res.exit_code == 0, res.output
+    assert _lines(res.stdout) == ["a.txt:2", "b.txt:1"], res.stdout
