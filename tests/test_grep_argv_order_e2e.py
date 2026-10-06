@@ -14,6 +14,10 @@ UNFIXED build happens to hold argv order by luck:
     4 files:  0/40 held  ->                                            100%
     8 files:  0/40 held  ->                                            100%
 
+A later 150-trial re-measure found 2/150 holds at FOUR files, so the 4-file row
+above reads "<2%", not "never" — 40 trials did not reach that tail. Six files
+held argv order 0/150.
+
 So this file uses SIX files of 400 matching lines. At two files the assertion
 is a coin flip and would have read as "no defect"; at 4+ the unfixed build
 fails every run.
@@ -81,7 +85,10 @@ def _run(argv: list, cwd: Path) -> "tuple[str, str, int]":
 
 @pytest.mark.skipif(not RMX.exists(), reason="dev venv rmx not built")
 def test_named_paths_come_back_in_argument_order_not_fanout_order(many_files):
-    """THE gate. Deleting the argv sort fails this 40/40 at six files."""
+    """THE gate. Measured by deleting `order_triples_by_argv` from the render:
+    the unfixed build fails this 10/10 and the fixed build passes 5/5 at six
+    files. (The audit's independent table: 0/40 argv-order holds at 4+ files.)
+    """
     cwd, argv_names = many_files
 
     out, err, code = _run([str(RMX), "grep", "-n", "alpha", *argv_names], cwd)
@@ -116,6 +123,21 @@ def test_the_tool_itself_is_the_one_that_scrambles(many_files):
     cwd, argv_names = many_files
     rg = shutil.which("rg")
 
+    # THREE execs, assert AT LEAST ONE scramble. The audit measured how often
+    # rg HOLDS argv order — which is exactly this canary's false-alarm rate —
+    # over 150 trials: 4 files 2/150 (1.33%), 6 files 0/150, 8 files 0/150, so
+    # <=1.98% at the 95% upper bound for N=6. A single exec would cry wolf
+    # about once in fifty-plus runs and cost someone an hour chasing a gate
+    # that is fine; three independent execs drive that to ~1e-5 for two extra
+    # execs. The risk was always ONE-DIRECTIONAL — a false alarm that the gate
+    # lost power, never a false pass — and the main gate above is unaffected:
+    # with the sort in place argv order is deterministic, so only this canary
+    # is probabilistic.
+    #
+    # The audit's own earlier table said 0/40 at four files; 150 trials found
+    # the tail that 40 missed. Recorded because it is the same lesson as the
+    # 2-file coin flip that nearly got the fix deleted: a small sample that
+    # shows nothing is not a measurement of zero.
     orders = set()
     for _ in range(3):
         out, _err, _code = _run([rg, "-nH", "--no-heading", "-e", "alpha",
@@ -125,9 +147,11 @@ def test_the_tool_itself_is_the_one_that_scrambles(many_files):
     assert orders, "rg produced nothing"
     scrambled = any(list(o) != argv_names for o in orders)
     assert scrambled, (
-        "rg held argv order on every run at this size — the gate above can no "
-        "longer distinguish the fix from its absence; raise N_FILES/N_LINES "
-        "or re-measure the power table in this docstring")
+        f"rg held argv order on ALL 3 runs at {N_FILES} files x {N_LINES} "
+        f"lines (measured false-alarm rate <=1.98% per exec, so <=1e-5 for "
+        f"three) — the gate above can no longer distinguish the fix from its "
+        f"absence; raise N_FILES/N_LINES and re-measure the power table in "
+        f"this docstring rather than deleting this assertion")
 
 
 @pytest.mark.skipif(not RMX.exists(), reason="dev venv rmx not built")
