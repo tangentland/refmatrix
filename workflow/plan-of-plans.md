@@ -32,6 +32,7 @@ current.
 | 12 | plan-12-open-bug-remediation | completed (@ch-bsd CLEAN; deployed 0.72.0; bug-025 acceptance 20/20 reranked) | yes (6) | `workflow/plans/plan-12-open-bug-remediation.md` | — |
 | 13 | plan-13-cross-partition-sweep | drafting (@ch-bsd r1 DIRTY 12 → revised; r2 DIRTY 17, 10 of 12 closed; gate 13.0 must return GO before any build) | yes (7) | `workflow/plans/plan-13-cross-partition-sweep.md` | — |
 | 14 | plan-14-grep-learning-measurement | in-progress (all 4 tasks done; threshold NOT met — index share 18.5% -> 31.7%; bug-067 fixed, bug-068/069/070 filed; awaiting @ch-bsd + the install-hooks decision) | yes (4) | `workflow/plans/plan-14-grep-learning-measurement.md` | plan 9 (its telemetry record) |
+| 15 | plan-15-derive-impact-tracking | approved | yes (4) | `workflow/plans/plan-15-derive-impact-tracking.md` | plan 14 (same instrument-first shape); bug-039's stamp |
 
 ## Sequence rationale {#sequence}
 
@@ -55,6 +56,11 @@ current.
     its BENEFIT uninstrumented: `query.log` never recorded whether the index or the tool floor answered a
     call. Task 14.1 ships that field, 14.2/14.3 give the loop an off switch the hook also obeys, and 14.4
     replays the real workload against both arms against a PRE-REGISTERED threshold.
+
+12. **derive-impact-tracking** — bug-039's stamp says WHICH CODE built the graph; it cannot say what a
+    change DID. One hash over three whole modules flagged this store because a READ method was added to
+    `store.py`, the stamp upserts so there is no history to compare against, and nothing records what a
+    derive produced. Per-pass hashes, an append-only history with the counts, and `rmx derive log/diff`.
 
 Each plan ends with `@ch-bsd` over its commit range; remedy → re-review until CLEAN before the next plan starts.
 
