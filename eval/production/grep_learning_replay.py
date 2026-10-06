@@ -248,10 +248,12 @@ def _grep(arm_root: Path, pat: str, env: dict) -> subprocess.CompletedProcess:
     """
     r = subprocess.run([str(RMX), "grep", "--", pat], cwd=str(arm_root),
                        env=env, capture_output=True, text=True, timeout=120)
+    r.ere = False          # type: ignore[attr-defined]
     if r.returncode == 2 and "is not supported" in (r.stderr or ""):
         r = subprocess.run([str(RMX), "grep", "-E", "--", pat],
                            cwd=str(arm_root), env=env, capture_output=True,
                            text=True, timeout=120)
+        r.ere = True       # type: ignore[attr-defined]
     return r
 
 
@@ -261,7 +263,8 @@ def _log_lines(arm_root: Path) -> int:
 
 
 def score_against_control(arm_root: Path, pattern: str, stdout: str,
-                          learned_only: bool = True) -> "dict | None":
+                          learned_only: bool = True,
+                          ere: bool = False) -> "dict | None":
     """SECONDARY outcome: when the index answers, is the answer RIGHT?
 
     Two numbers, and the distinction matters:
@@ -299,8 +302,29 @@ def score_against_control(arm_root: Path, pattern: str, stdout: str,
             idx_pairs.add((Path(f).name, int(ln)))
     if not idx_pairs:
         return None
-    ctl = subprocess.run([grep, "-rnF", "--", pattern, str(arm_root)],
-                         capture_output=True, text=True)
+    # THE CONTROL IS THE PRODUCER THE FLOOR USED. Anything else measures a
+    # dialect difference and calls it an index defect, which this function did
+    # twice before landing here:
+    #   1. literal `grep -F` for every pattern -> precision 0.000 on every
+    #      regex, because `^from typing import` appears literally in no file;
+    #   2. `-E` only when rmx's BRE guard had fired -> still 0.000, because a
+    #      pattern can be valid BRE (`^from typing import`) and still be
+    #      matched as a REGEX by the floor.
+    # `_grep_rg_fallback` runs `rg -nH --no-heading <pattern>`, and rg is
+    # regex-by-default. So the control runs rg the same way, and falls back to
+    # `grep -rnE` only where rg is absent. A rejected pattern is reported as
+    # unscoreable rather than scored against a different dialect.
+    import shutil as _sh2
+    rg = _sh2.which("rg")
+    if rg:
+        ctl = subprocess.run([rg, "-nH", "--no-heading", "-e", pattern,
+                              str(arm_root)], capture_output=True, text=True)
+    else:
+        ctl = subprocess.run([grep, "-rnE", "-e", pattern, str(arm_root)],
+                             capture_output=True, text=True)
+    if ctl.returncode not in (0, 1):
+        return {"pattern": pattern, "index_rows": len(idx_pairs),
+                "unscoreable": (ctl.stderr or "").strip()[:120]}
     ctl_pairs: set = set()
     for line in ctl.stdout.splitlines():
         parts = line.split(":", 2)
@@ -344,7 +368,8 @@ def reachability(arm_root: Path, patterns: list[str], hooks: Path,
         second = _rows_after(arm_root, before2)
         quality = None
         if second and second[-1].get("answered_by") == "index":
-            quality = score_against_control(arm_root, pat, r2.stdout)
+            quality = score_against_control(
+                arm_root, pat, r2.stdout, ere=getattr(r2, "ere", False))
         out.append({
             "pattern": pat,
             "first": (first[-1].get("answered_by") if first else None),

@@ -31,7 +31,7 @@ current.
 | 11 | plan-11-helix-phase2-versioned-graph | drafting (storage fork A/B undecided; the pre-registered criterion now reads B — 444 rendered helix rows, 27 sessions, 48% neighbour-role) | no | `workflow/plans/plan-11-helix-phase2-versioned-graph.md` | helix phase 1 (0.55.0) |
 | 12 | plan-12-open-bug-remediation | completed (@ch-bsd CLEAN; deployed 0.72.0; bug-025 acceptance 20/20 reranked) | yes (6) | `workflow/plans/plan-12-open-bug-remediation.md` | — |
 | 13 | plan-13-cross-partition-sweep | drafting (@ch-bsd r1 DIRTY 12 → revised; r2 DIRTY 17, 10 of 12 closed; gate 13.0 must return GO before any build) | yes (7) | `workflow/plans/plan-13-cross-partition-sweep.md` | — |
-| 14 | plan-14-grep-learning-measurement | in-progress (14.1-14.3 done; bug-067 found by the instrument and fixed; 14.4 replay running) | yes (4) | `workflow/plans/plan-14-grep-learning-measurement.md` | plan 9 (its telemetry record) |
+| 14 | plan-14-grep-learning-measurement | in-progress (all 4 tasks done; threshold NOT met — index share 18.5% -> 31.7%; bug-067 fixed, bug-068/069/070 filed; awaiting @ch-bsd + the install-hooks decision) | yes (4) | `workflow/plans/plan-14-grep-learning-measurement.md` | plan 9 (its telemetry record) |
 
 ## Sequence rationale {#sequence}
 

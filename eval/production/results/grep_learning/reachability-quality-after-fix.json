@@ -1,0 +1,1415 @@
+{
+  "root": "/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxRbyxynl4j",
+  "calls": 123,
+  "drain_every": 25,
+  "corpus": [
+    "/Users/tholley/claude_tools/refmatrix/src",
+    "/Users/tholley/claude_tools/refmatrix/docs"
+  ],
+  "arms": {},
+  "reachability": {
+    "patterns": 123,
+    "taught_something": 65,
+    "indexed_on_the_second_call": 93,
+    "share_of_taught": 1.431,
+    "rows": [
+      {
+        "pattern": "def _open_read_store",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "def _open_read_store",
+          "index_rows": 1,
+          "control_rows": 1,
+          "overlap": 1,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "daemon",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "roaring bitmap",
+        "first": "index",
+        "first_cardinality": 1,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "def grep",
+        "first": "floor",
+        "first_cardinality": 2,
+        "applied": 2,
+        "second": "index",
+        "quality": {
+          "pattern": "def grep",
+          "index_rows": 2,
+          "control_rows": 2,
+          "overlap": 2,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "project.scripts",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "def _twin_key",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "def _twin_key",
+          "index_rows": 1,
+          "control_rows": 1,
+          "overlap": 1,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "_twin_key",
+        "first": "index",
+        "first_cardinality": 1,
+        "applied": 0,
+        "second": "index",
+        "quality": {
+          "pattern": "_twin_key",
+          "index_rows": 1,
+          "control_rows": 3,
+          "overlap": 1,
+          "precision": 1.0,
+          "coverage": 0.333
+        }
+      },
+      {
+        "pattern": "class RemoteEmbedder",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "class RemoteEmbedder",
+          "index_rows": 1,
+          "control_rows": 1,
+          "overlap": 1,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "scan-prompt",
+        "first": "index",
+        "first_cardinality": 2,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "_render_key",
+        "first": "floor",
+        "first_cardinality": 5,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "_render_key",
+          "index_rows": 5,
+          "control_rows": 5,
+          "overlap": 5,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "grep",
+        "first": "index",
+        "first_cardinality": 59,
+        "applied": 0,
+        "second": "index",
+        "quality": {
+          "pattern": "grep",
+          "index_rows": 2,
+          "control_rows": 461,
+          "overlap": 2,
+          "precision": 1.0,
+          "coverage": 0.004
+        }
+      },
+      {
+        "pattern": "self\\.store\\.",
+        "first": "floor",
+        "first_cardinality": 43,
+        "applied": 2,
+        "second": "index",
+        "quality": {
+          "pattern": "self\\.store\\.",
+          "index_rows": 43,
+          "control_rows": 43,
+          "overlap": 43,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "^from typing import",
+        "first": "floor",
+        "first_cardinality": 37,
+        "applied": 37,
+        "second": "index",
+        "quality": {
+          "pattern": "^from typing import",
+          "index_rows": 37,
+          "control_rows": 37,
+          "overlap": 37,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "def _memory_daemon_call",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "def _memory_daemon_call",
+          "index_rows": 1,
+          "control_rows": 1,
+          "overlap": 1,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "\"--degree\"",
+        "first": "index",
+        "first_cardinality": 14,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "def scan_prompt",
+        "first": "floor",
+        "first_cardinality": 2,
+        "applied": 2,
+        "second": "index",
+        "quality": {
+          "pattern": "def scan_prompt",
+          "index_rows": 2,
+          "control_rows": 2,
+          "overlap": 2,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "version",
+        "first": "index",
+        "first_cardinality": 32,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "FAILED",
+        "first": "index",
+        "first_cardinality": 14,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "rmx",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "rtk",
+        "first": "floor",
+        "first_cardinality": 16,
+        "applied": 4,
+        "second": "index",
+        "quality": {
+          "pattern": "rtk",
+          "index_rows": 16,
+          "control_rows": 16,
+          "overlap": 16,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "savestate_98b295bb3e04",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "created_at",
+        "first": "index",
+        "first_cardinality": 5,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "gstack",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "^id: ",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "savestate_",
+        "first": "index",
+        "first_cardinality": 2,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "except",
+        "first": "index",
+        "first_cardinality": 19,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "^#{1,3} ",
+        "first": "floor",
+        "first_cardinality": 1524,
+        "applied": 81,
+        "second": "index",
+        "quality": {
+          "pattern": "^#{1,3} ",
+          "index_rows": 100,
+          "control_rows": 1524,
+          "overlap": 100,
+          "precision": 1.0,
+          "coverage": 0.066
+        }
+      },
+      {
+        "pattern": "FatalException",
+        "first": "floor",
+        "first_cardinality": 2,
+        "applied": 2,
+        "second": "index",
+        "quality": {
+          "pattern": "FatalException",
+          "index_rows": 2,
+          "control_rows": 2,
+          "overlap": 2,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "ingest-progress",
+        "first": "floor",
+        "first_cardinality": 8,
+        "applied": 3,
+        "second": "index",
+        "quality": {
+          "pattern": "ingest-progress",
+          "index_rows": 8,
+          "control_rows": 8,
+          "overlap": 8,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "0\\.961",
+        "first": "floor",
+        "first_cardinality": 7,
+        "applied": 5,
+        "second": "index",
+        "quality": {
+          "pattern": "0\\.961",
+          "index_rows": 7,
+          "control_rows": 7,
+          "overlap": 7,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "ingest already active",
+        "first": "floor",
+        "first_cardinality": 3,
+        "applied": 3,
+        "second": "index",
+        "quality": {
+          "pattern": "ingest already active",
+          "index_rows": 3,
+          "control_rows": 3,
+          "overlap": 3,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "__version__",
+        "first": "index",
+        "first_cardinality": 32,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": ".local.md",
+        "first": "floor",
+        "first_cardinality": 4,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": ".local.md",
+          "index_rows": 4,
+          "control_rows": 4,
+          "overlap": 4,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "def _is_rmx_hook",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "def _is_rmx_hook",
+          "index_rows": 1,
+          "control_rows": 1,
+          "overlap": 1,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "def _strip_rmx_hooks",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "def _strip_rmx_hooks",
+          "index_rows": 1,
+          "control_rows": 1,
+          "overlap": 1,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "plan [0-9]+|until plan|no-op at M|placeholder until|stub until|Phase [0-9]",
+        "first": "floor",
+        "first_cardinality": 36,
+        "applied": 10,
+        "second": "index",
+        "quality": {
+          "pattern": "plan [0-9]+|until plan|no-op at M|placeholder until|stub until|Phase [0-9]",
+          "index_rows": 36,
+          "control_rows": 36,
+          "overlap": 36,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "^FAILED",
+        "first": "index",
+        "first_cardinality": 14,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "status:",
+        "first": "index",
+        "first_cardinality": 41,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "^def daemon_status",
+        "first": "floor",
+        "first_cardinality": 2,
+        "applied": 2,
+        "second": "index",
+        "quality": {
+          "pattern": "^def daemon_status",
+          "index_rows": 2,
+          "control_rows": 2,
+          "overlap": 2,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "^| ",
+        "first": "floor",
+        "first_cardinality": 66419,
+        "applied": 111,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "passed|failed|^FAILED|mutation|MUTATION|^#",
+        "first": "floor",
+        "first_cardinality": 1825,
+        "applied": 111,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "^id:",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 89,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "RMX_SUPERVISED",
+        "first": "index",
+        "first_cardinality": 2,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "DEFAULT_TIMEOUT_S",
+        "first": "floor",
+        "first_cardinality": 4,
+        "applied": 2,
+        "second": "index",
+        "quality": {
+          "pattern": "DEFAULT_TIMEOUT_S",
+          "index_rows": 4,
+          "control_rows": 4,
+          "overlap": 4,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "timeout",
+        "first": "index",
+        "first_cardinality": 31,
+        "applied": 0,
+        "second": "index",
+        "quality": {
+          "pattern": "timeout",
+          "index_rows": 4,
+          "control_rows": 422,
+          "overlap": 2,
+          "precision": 0.5,
+          "coverage": 0.005
+        }
+      },
+      {
+        "pattern": "rerank",
+        "first": "index",
+        "first_cardinality": 36,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "passed|failed|error",
+        "first": "floor",
+        "first_cardinality": 1225,
+        "applied": 64,
+        "second": "index",
+        "quality": {
+          "pattern": "passed|failed|error",
+          "index_rows": 100,
+          "control_rows": 616,
+          "overlap": 61,
+          "precision": 0.61,
+          "coverage": 0.099
+        }
+      },
+      {
+        "pattern": "def user_home",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "def user_home",
+          "index_rows": 1,
+          "control_rows": 1,
+          "overlap": 1,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "{#imp-[a-z0-9-]*}",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "^def _replica_store",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "^def _replica_store",
+          "index_rows": 1,
+          "control_rows": 1,
+          "overlap": 1,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "^def _replica_reader_path",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "^def _replica_reader_path",
+          "index_rows": 1,
+          "control_rows": 1,
+          "overlap": 1,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "^def _legacy_memory_partition_exists",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "^def _legacy_memory_partition_exists",
+          "index_rows": 1,
+          "control_rows": 1,
+          "overlap": 1,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "^## |^### ",
+        "first": "floor",
+        "first_cardinality": 347,
+        "applied": 27,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "daemon_mod\\.(ping|call)\\(",
+        "first": "floor",
+        "first_cardinality": 129,
+        "applied": 36,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "{#[a-z0-9-]*}",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 9,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "since_s = _parse_duration(since) if since else",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "MUTATION",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "error:",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index",
+        "quality": {
+          "pattern": "error:",
+          "index_rows": 93,
+          "control_rows": 21,
+          "overlap": 5,
+          "precision": 0.054,
+          "coverage": 0.238
+        }
+      },
+      {
+        "pattern": "error",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index",
+        "quality": {
+          "pattern": "error",
+          "index_rows": 93,
+          "control_rows": 446,
+          "overlap": 52,
+          "precision": 0.559,
+          "coverage": 0.117
+        }
+      },
+      {
+        "pattern": "deferred to v1|Phase 2 will|Phase A stub|unused for now",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "duckdb_view",
+        "first": "index",
+        "first_cardinality": 1,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "yield_lock|yield_every",
+        "first": "floor",
+        "first_cardinality": 53,
+        "applied": 4,
+        "second": "index",
+        "quality": {
+          "pattern": "yield_lock|yield_every",
+          "index_rows": 53,
+          "control_rows": 51,
+          "overlap": 51,
+          "precision": 0.962,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "stop_daemon(",
+        "first": "index",
+        "first_cardinality": 1,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "noproc_counts",
+        "first": "floor",
+        "first_cardinality": 5,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "noproc_counts",
+          "index_rows": 5,
+          "control_rows": 5,
+          "overlap": 5,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "EXIT_TIMEOUT_S",
+        "first": "floor",
+        "first_cardinality": 8,
+        "applied": 4,
+        "second": "index",
+        "quality": {
+          "pattern": "EXIT_TIMEOUT_S",
+          "index_rows": 8,
+          "control_rows": 8,
+          "overlap": 8,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "allow_dev",
+        "first": "index",
+        "first_cardinality": 1,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "Leaderboard",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "MEMORY_READ_ACTIONS",
+        "first": "floor",
+        "first_cardinality": 2,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "MEMORY_READ_ACTIONS",
+          "index_rows": 2,
+          "control_rows": 2,
+          "overlap": 2,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "def make_daemon",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "make_daemon",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "log_query",
+        "first": "floor",
+        "first_cardinality": 18,
+        "applied": 3,
+        "second": "index",
+        "quality": {
+          "pattern": "log_query",
+          "index_rows": 18,
+          "control_rows": 18,
+          "overlap": 18,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "^(FAILED|ERROR)",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "^def |^class ",
+        "first": "floor",
+        "first_cardinality": 1251,
+        "applied": 65,
+        "second": "index",
+        "quality": {
+          "pattern": "^def |^class ",
+          "index_rows": 100,
+          "control_rows": 1251,
+          "overlap": 100,
+          "precision": 1.0,
+          "coverage": 0.08
+        }
+      },
+      {
+        "pattern": "\"out_bytes\": null",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "^title:",
+        "first": "index",
+        "first_cardinality": 21,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "def test_",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "skipped",
+        "first": "index",
+        "first_cardinality": 32,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "^rel:",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "^```",
+        "first": "floor",
+        "first_cardinality": 256,
+        "applied": 24,
+        "second": "index",
+        "quality": {
+          "pattern": "^```",
+          "index_rows": 100,
+          "control_rows": 256,
+          "overlap": 100,
+          "precision": 1.0,
+          "coverage": 0.391
+        }
+      },
+      {
+        "pattern": "render_gmd",
+        "first": "index",
+        "first_cardinality": 1,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "def render_gmd",
+        "first": "floor",
+        "first_cardinality": 2,
+        "applied": 2,
+        "second": "index",
+        "quality": {
+          "pattern": "def render_gmd",
+          "index_rows": 2,
+          "control_rows": 2,
+          "overlap": 2,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "SCOPE",
+        "first": "index",
+        "first_cardinality": 45,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "^\\| bug-[0-9]+ \\|",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "^\\| bug-[0-9]+ \\|.*\\| recurring",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "\\{#[a-z0-9-]+\\}",
+        "first": "floor",
+        "first_cardinality": 386,
+        "applied": 32,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "derive",
+        "first": "index",
+        "first_cardinality": 43,
+        "applied": 32,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "CLI_OPS",
+        "first": "index",
+        "first_cardinality": 1,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "^\\| ",
+        "first": "floor",
+        "first_cardinality": 504,
+        "applied": 19,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "2026-09-16",
+        "first": "floor",
+        "first_cardinality": 18,
+        "applied": 29,
+        "second": "index",
+        "quality": {
+          "pattern": "2026-09-16",
+          "index_rows": 18,
+          "control_rows": 18,
+          "overlap": 18,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "\\| *(open|recurring) *\\|",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "^(status|  status):",
+        "first": "floor",
+        "first_cardinality": 5,
+        "applied": 6,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "^\\- \\[ \\]",
+        "first": "floor",
+        "first_cardinality": 6,
+        "applied": 1,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "^\\s*status:",
+        "first": "index",
+        "first_cardinality": 5,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "^\\s*status:",
+          "index_rows": 5,
+          "control_rows": 4,
+          "overlap": 0,
+          "precision": 0.0,
+          "coverage": 0.0
+        }
+      },
+      {
+        "pattern": "bug-008",
+        "first": "floor",
+        "first_cardinality": 4,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "bug-008",
+          "index_rows": 4,
+          "control_rows": 4,
+          "overlap": 4,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "partition",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index",
+        "quality": {
+          "pattern": "partition",
+          "index_rows": 1,
+          "control_rows": 1741,
+          "overlap": 1,
+          "precision": 1.0,
+          "coverage": 0.001
+        }
+      },
+      {
+        "pattern": "monkeypatch\\.setattr\\(",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "def _grep_rg_fallback",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "def _grep_rg_fallback",
+          "index_rows": 1,
+          "control_rows": 1,
+          "overlap": 1,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "timeout|30",
+        "first": "floor",
+        "first_cardinality": 617,
+        "applied": 49,
+        "second": "index",
+        "quality": {
+          "pattern": "timeout|30",
+          "index_rows": 100,
+          "control_rows": 557,
+          "overlap": 97,
+          "precision": 0.97,
+          "coverage": 0.174
+        }
+      },
+      {
+        "pattern": "\\b30(\\.0)?\\b",
+        "first": "floor",
+        "first_cardinality": 115,
+        "applied": 31,
+        "second": "index",
+        "quality": {
+          "pattern": "\\b30(\\.0)?\\b",
+          "index_rows": 100,
+          "control_rows": 115,
+          "overlap": 100,
+          "precision": 1.0,
+          "coverage": 0.87
+        }
+      },
+      {
+        "pattern": "self._store_lock.acquire()",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "self._store_lock.acquire()",
+          "index_rows": 1,
+          "control_rows": 1,
+          "overlap": 1,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "with self._store_lock:",
+        "first": "floor",
+        "first_cardinality": 9,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "with self._store_lock:",
+          "index_rows": 9,
+          "control_rows": 9,
+          "overlap": 9,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "fallback via",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "fallback via",
+          "index_rows": 1,
+          "control_rows": 1,
+          "overlap": 1,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "build_context",
+        "first": "index",
+        "first_cardinality": 2,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "pop(token, None)",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "bug-054",
+        "first": "floor",
+        "first_cardinality": 2,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "bug-054",
+          "index_rows": 2,
+          "control_rows": 2,
+          "overlap": 2,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "\\.unlink\\(|os\\.remove|shutil\\.(rmtree|move)|\\.rename\\(",
+        "first": "floor",
+        "first_cardinality": 64,
+        "applied": 15,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "ingest_session",
+        "first": "floor",
+        "first_cardinality": 3,
+        "applied": 17,
+        "second": "index",
+        "quality": {
+          "pattern": "ingest_session",
+          "index_rows": 3,
+          "control_rows": 3,
+          "overlap": 3,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "ERROR",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index",
+        "quality": {
+          "pattern": "ERROR",
+          "index_rows": 93,
+          "control_rows": 2,
+          "overlap": 2,
+          "precision": 0.022,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "alpha",
+        "first": "index",
+        "first_cardinality": 14,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "_index_may_answer",
+        "first": "index",
+        "first_cardinality": 1,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": " error: ",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index",
+        "quality": {
+          "pattern": " error: ",
+          "index_rows": 93,
+          "control_rows": 12,
+          "overlap": 1,
+          "precision": 0.011,
+          "coverage": 0.083
+        }
+      },
+      {
+        "pattern": "monkeypatch.setattr",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "tests/test_[a-z0-9_]+\\.py",
+        "first": "floor",
+        "first_cardinality": 154,
+        "applied": 9,
+        "second": "index",
+        "quality": {
+          "pattern": "tests/test_[a-z0-9_]+\\.py",
+          "index_rows": 100,
+          "control_rows": 154,
+          "overlap": 100,
+          "precision": 1.0,
+          "coverage": 0.649
+        }
+      },
+      {
+        "pattern": "monkeypatch\\.setattr\\(\\s*(subprocess|socket|shutil|os|time|platform|urllib|sys)\\b|setattr\\([^,]*,\\s*[\"'](run|Popen|check_output|which|socket|create_connection|sleep|time|kill|getpid|system)[\"']",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "multiple=True",
+        "first": "floor",
+        "first_cardinality": 31,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "multiple=True",
+          "index_rows": 31,
+          "control_rows": 31,
+          "overlap": 31,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      },
+      {
+        "pattern": "def ",
+        "first": "floor",
+        "first_cardinality": 1957,
+        "applied": 67,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "e",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 67,
+        "second": "index",
+        "quality": {
+          "pattern": "e",
+          "index_rows": 69,
+          "control_rows": 50667,
+          "overlap": 43,
+          "precision": 0.623,
+          "coverage": 0.001
+        }
+      },
+      {
+        "pattern": "test_mock_registry",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "^- (create|modify)|tests/test_|status:",
+        "first": "floor",
+        "first_cardinality": 183,
+        "applied": 24,
+        "second": "index",
+        "quality": {
+          "pattern": "^- (create|modify)|tests/test_|status:",
+          "index_rows": 100,
+          "control_rows": 165,
+          "overlap": 84,
+          "precision": 0.84,
+          "coverage": 0.509
+        }
+      },
+      {
+        "pattern": "test_plan7_10_remedy_r4",
+        "first": "floor",
+        "first_cardinality": 0,
+        "applied": 0,
+        "second": "floor",
+        "quality": null
+      },
+      {
+        "pattern": "^FAILED|^ERROR|passed|failed",
+        "first": "floor",
+        "first_cardinality": 199,
+        "applied": 28,
+        "second": "index",
+        "quality": {
+          "pattern": "^FAILED|^ERROR|passed|failed",
+          "index_rows": 100,
+          "control_rows": 199,
+          "overlap": 100,
+          "precision": 1.0,
+          "coverage": 0.503
+        }
+      },
+      {
+        "pattern": "^FAILED|^ERROR",
+        "first": "index",
+        "first_cardinality": 100,
+        "applied": 0,
+        "second": "index",
+        "quality": null
+      },
+      {
+        "pattern": "^def _op_grep_indexed",
+        "first": "floor",
+        "first_cardinality": 1,
+        "applied": 1,
+        "second": "index",
+        "quality": {
+          "pattern": "^def _op_grep_indexed",
+          "index_rows": 1,
+          "control_rows": 1,
+          "overlap": 1,
+          "precision": 1.0,
+          "coverage": 1.0
+        }
+      }
+    ]
+  }
+}
