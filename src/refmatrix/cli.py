@@ -74,6 +74,7 @@ from refmatrix.handoff import (
     compose_recall_state, compose_save_state, finalize_save_state,
 )
 from refmatrix.query import QueryEngine
+from refmatrix import store as _store_mod
 from refmatrix.store import Store, default_partition_name
 from refmatrix.telemetry import log_query
 
@@ -3334,6 +3335,42 @@ def render_worker_split(kinds: "dict | None") -> str:
         return ""
     parts = " ".join(f"{role}={kind}" for role, kind in sorted(kinds.items()))
     return f"workers: {parts}"
+
+
+def render_derive_coverage(status: "dict | None", *,
+                           partition: "str | None" = None,
+                           skipped: "tuple | list" = ()) -> str:
+    """One line naming the expected passes that have NO stamp, and nothing
+    when every expected pass has one (task 15.4).
+
+    Separate from `render_derive_warning` on purpose: a missing pass is not an
+    alert. It is not `behind_code`, it does not set `stale`, and it never
+    reaches the hub's hot gate — on the release that ships stamping for
+    `sessions`, `embed` and `pagerank`, EVERY store in the fleet is missing
+    four of five, and a gate that fired on that would alert all eight rows once
+    and then be switched off (ch-bsd plan-12 #b-3). Reported, not hot.
+
+    `skipped` is the set of passes THIS RUN deliberately did not run
+    (`--no-embed`, `--no-sessions`, `--no-semantic`). They are labelled rather
+    than listed as missing: a report that cannot tell "the operator said no"
+    from "nobody has ever run this" trains the reader to skip the line, which
+    is the failure mode the whole task is about.
+    """
+    if not status:
+        return ""
+    missing = [p for p in (status.get("missing_passes") or [])
+               if p not in set(skipped)]
+    skipped_present = [p for p in (status.get("expected_passes") or [])
+                       if p in set(skipped)]
+    if not missing and not skipped_present:
+        return ""
+    label = f"derive coverage[{partition}]" if partition else "derive coverage"
+    bits = []
+    if missing:
+        bits.append(f"never stamped: {', '.join(missing)}")
+    if skipped_present:
+        bits.append(f"skipped this run: {', '.join(skipped_present)}")
+    return f"{label}: " + "; ".join(bits)
 
 
 def render_derive_warning(status: "dict | None", *,
@@ -6896,10 +6933,14 @@ def derive_status_cmd(as_json):
     running = st.get("running_version") or "?"
     console.print(f"running {running}")
     passes = st.get("passes") or []
+    missing = st.get("missing_passes") or []
     if not passes:
         console.print("  [yellow]no pass has stamped this partition[/] — "
                       "whether the graph matches the running code is UNKNOWN; "
                       "re-derive to know")
+        if missing:
+            console.print(f"  expected here ({st.get('partition_kind')} "
+                          f"partition): {', '.join(missing)}")
         return
     for r in passes:
         mods = ", ".join(r.get("modules") or []) or "-"
@@ -6914,6 +6955,13 @@ def derive_status_cmd(as_json):
                  else f"  [yellow]version drift[/] {r['version']} -> {running}")
         console.print(f"  {r['pass_name']:<10} v{r['version']:<8} {axis}{drift}")
         console.print(f"     covers: {mods}")
+    # The passes that produced NOTHING to show above (task 15.4). Printed after
+    # the rows, because a reader who sees three green lines and no fourth has
+    # no way to know a fourth was expected — that absence is the whole finding.
+    for name in missing:
+        console.print(f"  [yellow]{name:<10} never stamped[/] — this "
+                      f"{st.get('partition_kind')} partition is expected to "
+                      f"run it; nothing is known about what it derived")
     if st.get("reason"):
         console.print(f"  {st['reason']}")
 
@@ -7655,6 +7703,37 @@ def reingest(ctx, semantic, do_sessions, do_embed, rebuild, force, memory_dir):
     for label, good, detail in results:
         mark = "[green]✓[/]" if good else "[red]✗[/]"
         console.print(f"  {mark} {label}" + (f" — {detail}" if detail else ""))
+
+    # COVERAGE (task 15.4). The step list above says which steps this RUN took;
+    # it cannot say which passes the partition has never recorded, and that is
+    # the gap bug-039 lived in one level up: a surface complete enough to read
+    # as complete. The passes the operator switched off are labelled rather
+    # than listed as missing — a report that cannot tell "I said no" from
+    # "nobody ever ran this" is a report people learn to skip.
+    skipped_passes = []
+    if not semantic:
+        skipped_passes.append("semantic")
+    if not do_sessions:
+        skipped_passes.append("sessions")
+    if not do_embed:
+        skipped_passes.append("embed")
+    coverage_parts = list(dict.fromkeys(
+        graph_parts + ([_sessions_partition_default()] if do_sessions else [])))
+    for part in coverage_parts:
+        try:
+            st = _derive_status_for(root, part)
+        except Exception as exc:    # noqa: BLE001 — named, then skipped
+            console.print(f"[yellow]  derive coverage[{part}]: unavailable "
+                          f"({type(exc).__name__}: {exc})[/]")
+            continue
+        line = render_derive_coverage(st, partition=part,
+                                      skipped=skipped_passes)
+        if line:
+            # ESCAPED: the label is `derive coverage[<partition>]`, and rich
+            # reads `[proj]` as a style tag and drops it — the partition name
+            # vanished from the first run of this line. Same defect family as
+            # the renderer that ate `[[wikilinks]]` (ch-bsd plans 7-10 r3).
+            console.print(f"  [yellow]{rich_escape(line)}[/]")
 
 
 @main.command("tldr-warm")
@@ -9906,6 +9985,61 @@ def _run_pagerank(root: Path, partition: str, *, damping: float = 0.85,
     return _op_pagerank(d, args)
 
 
+def _stamp_derive_pass(root: Path, partition: str, pass_name: str, *,
+                       duration_s: "float | None" = None) -> None:
+    """Record that `pass_name` finished deriving `partition` (task 15.4).
+
+    Daemon-routed when one is up, in-proc otherwise — the same shape as
+    `_run_pagerank`, and for the same reason: the daemon owns the writer, so a
+    CLI pass that completes in the CLI (`embed` loops over daemon-routed
+    batches; the sessions pass walks JSONLs then indexes the cards) cannot open
+    the active slot to stamp itself.
+
+    Failure is SAID and the pass still counts as done. A stamp is a RECORD of a
+    derive; losing the record is bad, and losing the derive to protect the
+    record would be worse. Silence is the one option this path does not have —
+    a store that quietly stopped stamping is bug-039 rebuilt.
+    """
+    from refmatrix import daemon as daemon_mod
+
+    args = {"pass_name": pass_name, "partition": partition,
+            "duration_s": duration_s}
+    try:
+        if daemon_mod.ping(root):
+            resp = daemon_mod.call(root, "derive_stamp", args, timeout=30.0)
+            if not resp.get("ok"):
+                raise RuntimeError(resp.get("error", "daemon error"))
+            return
+        from refmatrix.daemon import Daemon, _op_derive_stamp
+        d = Daemon(root)
+        d.store = _store(write=True)
+        result = _op_derive_stamp(d, args)
+        if result.get("ok") is False:
+            raise RuntimeError(result.get("error", "stamp failed"))
+    except Exception as exc:        # noqa: BLE001 — said, never mute
+        console.print(f"[yellow]warning: derive stamp `{pass_name}` for "
+                      f"{partition} failed: {type(exc).__name__}: {exc}[/]")
+
+
+def _derive_status_for(root: Path, partition: str) -> dict:
+    """`derive_status` for ONE named partition, daemon-first.
+
+    The daemon owns the writer, so a CLI asking a partition it is not bound to
+    has to say which one it means — the no-argument op answers for the daemon's
+    ambient partition, and `reingest` touches three.
+    """
+    from refmatrix import daemon as daemon_mod
+
+    if daemon_mod.ping(root):
+        resp = daemon_mod.call(root, "derive_status", {"partition": partition},
+                               timeout=10.0, retries=0)
+        if resp.get("ok"):
+            return resp["result"]
+    s = _reader_store() or _store()
+    with s.with_partition(partition):
+        return s.derive_status()
+
+
 def _degraded_embed_line(counts: dict) -> str:
     """Render the degraded-extraction summary for `rmx embed`, or '' when the
     run was clean.
@@ -10072,6 +10206,7 @@ def embed_cmd(kinds, batch, rebuild, max_batches, gc_mode, dry_run):
             f"(batch={batch}); the first batch warms the model (~134MB)…[/]"
         )
         iters = 0
+        completed = False
         while True:
             iters += 1
             args = {
@@ -10108,9 +10243,17 @@ def embed_cmd(kinds, batch, rebuild, max_batches, gc_mode, dry_run):
                 f"({total_embedded} done, {remaining} left)[/]"
             )
             if embedded == 0 or remaining == 0:
+                completed = True
                 break
             if max_batches and iters >= max_batches:
+                # A CAPPED run is a partial derive (task 15.4). Stamping it
+                # would record a complete `embed` pass over a partition that
+                # still has rows pending, which is the exact claim this task
+                # exists to stop a store from making.
+                completed = False
                 break
+        if completed:
+            _stamp_derive_pass(root, part, "embed")
 
     console.print(
         f"[green]done[/] embedded={total_embedded} kinds={','.join(selected)}"
@@ -10486,7 +10629,10 @@ def _replica_memory_recall(query: str, *, k: int, kinds: list,
         return None
 
 
-MEMORY_PARTITION_PREFIX = "memory-"
+# Canonical in `store.py` (task 15.4): `derive_status` classifies a partition
+# by these prefixes and cannot import the CLI. Re-exported here because the
+# name is CLI vocabulary and `tests/test_session_cli.py` imports it.
+MEMORY_PARTITION_PREFIX = _store_mod.MEMORY_PARTITION_PREFIX
 
 
 def _memory_partition_default(*, daemon_up: "bool | None" = None,
@@ -12433,7 +12579,7 @@ def memory_bulk_forget(ids, names, mtypes, dry_run, yes):
 # stored as kind=memory rows in the sessions partition, with mtype="session"
 # for cross-partition disambiguation.
 
-SESSIONS_PARTITION_PREFIX = "sessions-"
+SESSIONS_PARTITION_PREFIX = _store_mod.SESSIONS_PARTITION_PREFIX
 
 
 def _sessions_partition_default() -> str:
@@ -12815,7 +12961,10 @@ def session_ingest_cmd(targets, all_projects, force, verbose, no_index):
     for failure in link_failures:
         console.print(f"[red]raw link FAILED[/] {failure}")
 
-    if no_index or not built:
+    if no_index:
+        # Cards on disk, store untouched: nothing was derived, so nothing is
+        # stamped (task 15.4). A stamp here would claim a sessions graph that
+        # this run deliberately did not build.
         return
 
     # Route through ingest_gmd with as_memory=True + sessions partition.
@@ -12824,6 +12973,15 @@ def session_ingest_cmd(targets, all_projects, force, verbose, no_index):
         or os.environ.get("RMX_PARTITION")
         or _sessions_partition_default()
     )
+    if not built:
+        # Every card already matched its content hash. The sessions graph IS
+        # the product of this code — a derive that changed nothing is still a
+        # derive (task 15.2), and NOT stamping here would leave a fully
+        # current partition reading as never-derived forever, since the next
+        # run skips the same cards again.
+        _stamp_derive_pass(root, partition, "sessions",
+                           duration_s=_time.time() - now)
+        return
     if daemon_mod.ping(root):
         resp = daemon_mod.call(root, "ingest_gmd", {
             "targets": [str(p) for p in built],
@@ -12835,6 +12993,10 @@ def session_ingest_cmd(targets, all_projects, force, verbose, no_index):
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         console.print(resp["result"]["report"])
+        # At the END, and only on a clean return: the raise above leaves the
+        # previous stamp standing rather than claiming a derive that failed.
+        _stamp_derive_pass(root, partition, "sessions",
+                           duration_s=_time.time() - now)
         return
 
     s = _store()
@@ -12848,6 +13010,8 @@ def session_ingest_cmd(targets, all_projects, force, verbose, no_index):
             as_memory=True, memory_mtype_default="session",
         )
     console.print(stats.report())
+    _stamp_derive_pass(root, partition, "sessions",
+                       duration_s=_time.time() - now)
 
 
 # --- session-index retrieval (Phase C) ------------------------------------

@@ -5,14 +5,14 @@ title: "Task 15.4: the passes that never stamp are named, not assumed fresh"
 tags: [task, derive, coverage]
 metadata:
   node_type: task
-  status: pending
+  status: completed
   created: 2026-10-06
 ---
 
 # Task 15.4: coverage {#root}
 
 > Plan: [plan-15-derive-impact-tracking](../plan-15-derive-impact-tracking.md)
-> Status: Pending
+> Status: Completed (2026-10-06)
 > Depends on: Task 15.1
 
 rel: part-of -> [[plan-15-derive-impact-tracking]]

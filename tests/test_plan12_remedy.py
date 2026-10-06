@@ -162,6 +162,40 @@ def test_gather_queues_separates_unstamped_from_stale(tmp_path, monkeypatch):
     assert hub_mod._queue_row_is_hot(row) is True
 
 
+def test_a_broken_derive_detector_is_reported_not_silently_clean(tmp_path,
+                                                                 monkeypatch):
+    """bug-072. `_store_health` catches a failing `derive_status` into
+    `derive_error` and drops the `derive` key, so a store whose DETECTOR is
+    broken produced a row indistinguishable from a clean one — and nothing in
+    `src/` read `derive_error`. The alert cannot fire on it (that would make a
+    probe timeout hot), but it must be SAID."""
+    from refmatrix import daemon as daemon_mod
+
+    root = tmp_path / "p" / ".refmatrix"
+    root.mkdir(parents=True)
+    monkeypatch.setattr("refmatrix.discovery.discover_roots", lambda: [root])
+    monkeypatch.setattr("refmatrix.discovery.daemon_status",
+                        lambda r: {"up": True, "pid": 1})
+    monkeypatch.setattr("refmatrix.discovery.store_name", lambda r: "p")
+
+    def _call(r, op, args=None, timeout=0.0, retries=2, **kw):
+        if op == "stats":
+            return {"ok": True, "result": {
+                "stale_files": [],
+                "health": {"derive_error": "TypeError: takes 0 positional "
+                                           "arguments but 1 was given"}}}
+        if op == "ping":
+            return {"ok": True, "result": {
+                "pid": 1, "version": "x",
+                "code_path": "/x/src/refmatrix/__init__.py",
+                "dev_tree": False}}
+        return {"ok": False}
+
+    monkeypatch.setattr(daemon_mod, "call", _call)
+    row = hub_mod.Hub._gather_queues(None)[0]
+    assert "TypeError" in row.get("derive_error", ""), row
+
+
 # ---- #s-4: the in-process embedder is a split, and it can be healed ------
 
 def test_worker_kinds_names_the_in_process_model(tmp_path):
@@ -290,10 +324,14 @@ def test_store_health_sees_a_stale_memory_partition(tmp_path, monkeypatch):
         f = tmp_path / "a.md"
         f.write_text("# a\n")
         s.mark_tracked(str(f.resolve()), f.stat().st_mtime)
-        monkeypatch.setattr(store_mod, "derive_code_hash", lambda: "current")
+        # Task 15.1 gave the hash a `pass_name`; a 0-arg double made
+        # `derive_status` raise, `_store_health` swallow it into
+        # `derive_error`, and the whole `derive` key vanish (bug-072).
+        monkeypatch.setattr(store_mod, "derive_code_hash",
+                            lambda pass_name=None: "p1:current")
         s.stamp_derive("ingest")                       # default: current code
         with s.with_partition("memory-p"):
-            s.stamp_derive("gmd", version="0.49.1", code_hash="older")
+            s.stamp_derive("gmd", version="0.49.1", code_hash="p1:older")
 
         class _D:
             root = tmp_path / ".refmatrix"
@@ -356,12 +394,16 @@ def test_health_names_the_worst_partition_not_the_first_alphabetically(tmp_path,
         f = tmp_path / "a.md"
         f.write_text("# a\n")
         s.mark_tracked(str(f.resolve()), f.stat().st_mtime)
-        monkeypatch.setattr(store_mod, "derive_code_hash", lambda: "current")
+        # Task 15.1 gave the hash a `pass_name`; a 0-arg double made
+        # `derive_status` raise, `_store_health` swallow it into
+        # `derive_error`, and the whole `derive` key vanish (bug-072).
+        monkeypatch.setattr(store_mod, "derive_code_hash",
+                            lambda pass_name=None: "p1:current")
         # alphabetically first, but the NEWER of the two stale versions
         with s.with_partition("aaa-p"):
-            s.stamp_derive("ingest", version="0.70.0", code_hash="older")
+            s.stamp_derive("ingest", version="0.70.0", code_hash="p1:older")
         with s.with_partition("zzz-p"):
-            s.stamp_derive("ingest", version="0.49.1", code_hash="older")
+            s.stamp_derive("ingest", version="0.49.1", code_hash="p1:older")
 
         class _D:
             root = tmp_path / ".refmatrix"

@@ -32,7 +32,7 @@ current.
 | 12 | plan-12-open-bug-remediation | completed (@ch-bsd CLEAN; deployed 0.72.0; bug-025 acceptance 20/20 reranked) | yes (6) | `workflow/plans/plan-12-open-bug-remediation.md` | — |
 | 13 | plan-13-cross-partition-sweep | drafting (@ch-bsd r1 DIRTY 12 → revised; r2 DIRTY 17, 10 of 12 closed; gate 13.0 must return GO before any build) | yes (7) | `workflow/plans/plan-13-cross-partition-sweep.md` | — |
 | 14 | plan-14-grep-learning-measurement | in-progress (all 4 tasks done; threshold NOT met — index share 18.5% -> 31.7%; bug-067 fixed, bug-068/069/070 filed; awaiting @ch-bsd + the install-hooks decision) | yes (4) | `workflow/plans/plan-14-grep-learning-measurement.md` | plan 9 (its telemetry record) |
-| 15 | plan-15-derive-impact-tracking | in-progress (15.1-15.3 complete; `rmx derive log/diff/status` live; 15.4 stamp coverage pending) | yes (4) | `workflow/plans/plan-15-derive-impact-tracking.md` | plan 14 (same instrument-first shape); bug-039's stamp |
+| 15 | plan-15-derive-impact-tracking | completed (15.1-15.4; `rmx derive log/diff/status` live; sessions/embed/pagerank stamp, coverage named per partition kind) | yes (4) | `workflow/plans/plan-15-derive-impact-tracking.md` | plan 14 (same instrument-first shape); bug-039's stamp |
 
 ## Sequence rationale {#sequence}
 

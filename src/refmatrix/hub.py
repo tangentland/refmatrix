@@ -672,6 +672,15 @@ class Hub:
             # alert nobody reads again. It stops being unstamped at its next
             # ingest, with no gate to remember to turn back on.
             derive = health.get("derive") or {}
+            # `_store_health` catches a failing `derive_status` into
+            # `derive_error` and drops the `derive` key entirely — so until
+            # this line NOTHING read that field, and any error on the derive
+            # path removed the alert instead of raising it: a store whose
+            # graph is stale AND whose detector is broken read exactly like a
+            # clean one (found 2026-10-06 by two plan-12 guard tests that had
+            # been failing since 15.1 shipped — bug-072).
+            if health.get("derive_error"):
+                row["derive_error"] = health["derive_error"]
             if derive.get("stale"):
                 if derive.get("never_stamped"):
                     row["derive_unstamped"] = True

@@ -5,14 +5,15 @@ title: "Richer derive tracking: per-pass code identity, a history, and what each
 tags: [plan, derive, versioning, observability, store]
 metadata:
   node_type: plan
-  status: approved
+  status: completed
   created: 2026-10-06
 ---
 
 # Plan 15: make a derive say what it changed {#root}
 
 **Date:** 2026-10-06
-**Status:** Approved — four task specs, written before any production code.
+**Status:** Completed 2026-10-06 — all four tasks shipped (15.1-15.3 at 0.75.0; 15.4 on
+`task-15.4-stamp-coverage`).
 
 rel: depends-on -> [[constitution]]
 rel: implements -> [[tdd-governance]]
