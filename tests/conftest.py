@@ -78,3 +78,46 @@ def source_of(mod, name: str) -> str:
     end = next((j for j in range(start + 1, len(lines))
                 if lines[j].startswith(("def ", "class ", "@"))), len(lines))
     return "\n".join(lines[start:end])
+
+
+# ---- the suite must not reach LIVE sockets (2026-10-07) ----------------------
+#
+# Two project-daemon wedges on 2026-10-07 (bug-085) each happened during a
+# full-suite run, and the stuck daemon held 10 client connections on its live
+# socket. Nothing here isolates `_root()`: tests run from the repo, so a CLI
+# call that does not chdir resolves the LIVE `.refmatrix/`. This guard RECORDS
+# every connect to a live socket with the test that made it, so the offenders
+# are named by evidence, not guessed. (Record mode; refusing comes after the
+# list is known.)
+
+_LIVE_UNIX = {
+    str(_REPO / ".refmatrix" / "rmxd.sock"),
+    str(Path.home() / ".refmatrix" / "rmxd.sock"),
+    str(Path.home() / ".refmatrix" / "hub.sock"),
+    str(Path.home() / ".refmatrix" / "models.sock"),
+}
+_LIVE_TCP = {("127.0.0.1", 7777), ("localhost", 7777)}
+_LIVE_LOG = _REPO / "workflow" / "review-output" / "live-socket-touches.log"
+_current_test = {"id": "<collection>"}
+
+
+def pytest_runtest_setup(item):
+    _current_test["id"] = item.nodeid
+
+
+def pytest_configure(config):
+    import socket as _socket
+    real = _socket.socket.connect
+
+    def _recording_connect(self, address):
+        hit = None
+        if self.family == _socket.AF_UNIX and str(address) in _LIVE_UNIX:
+            hit = str(address)
+        elif isinstance(address, tuple) and tuple(address[:2]) in _LIVE_TCP:
+            hit = f"{address[0]}:{address[1]}"
+        if hit is not None:
+            with open(_LIVE_LOG, "a") as fh:
+                fh.write(f"{os.getpid()}\t{_current_test['id']}\t{hit}\n")
+        return real(self, address)
+
+    _socket.socket.connect = _recording_connect
