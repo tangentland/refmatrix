@@ -12903,19 +12903,12 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
             console.print(f"[green]memory bridge[/] {memdir} → store:")
             click.echo(sync["report"])
 
-    # Did those rows get VECTORS? (bug-065) A memory the bridge wrote and
-    # nothing embedded is durable and invisible to recall — and recall is how
-    # the next session reaches it, so this line is never silent. The TEXT
-    # comes from the bridge's own renderer, so the `ingest-gmd` report and the
-    # save-state line cannot drift apart.
-    emb = fin.get("embed")
-    if emb:
-        from refmatrix.ingest_gmd import render_memory_embed_line
-        line = render_memory_embed_line(emb)
-        if line:
-            colour = "red" if emb.get("error") else (
-                "yellow" if emb.get("capped") else "green")
-            console.print(f"[{colour}]{rich_escape(line)}[/]")
+    # NOT re-printed here (bug-065 follow-up, caught live in this session's own
+    # save-state): the bridge appends `render_memory_embed_line` to the report
+    # that `click.echo(sync["report"])` just emitted, so printing it again from
+    # `fin["embed"]` said "memory embed: 3 row(s)" TWICE. The structured field
+    # still rides back on the result for MCP callers; the human line comes
+    # from the report, once, from the renderer the bridge itself used.
 
     if commit:
         _ss_sh(["git", "add", "-A"], repo)
