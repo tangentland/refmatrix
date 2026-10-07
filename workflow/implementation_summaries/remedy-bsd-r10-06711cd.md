@@ -91,11 +91,17 @@ the WRITER.
 
 ## Mutation check of this remedy {#mutations}
 
-16 mutants over the fixes, run in a detached worktree at `6e86af0` with the model socket isolated
-(`workflow/review-output/r10-remedy-mutations.log`): **15 killed, 1 equivalent**. F16 removes the
-"budget spent on the cost header" guard. The header probe is itself bounded by the remaining
-budget, so a header that would exhaust it times out and reads as cold before the guard is reached.
-The guard covers only timing jitter, and a test pins the observable behaviour: no rerank frame
+15 mutants over the fixes (F1-F16; there is no F5, an id skipped when writing the table), run in a
+detached worktree at `6e86af0` with the model socket isolated
+(`workflow/review-output/r10-remedy-mutations.log`): **14 killed, 1 survivor argued equivalent**.
+The commit message of `4783463` says "15/16 killed", which miscounts the same log; r11 #m-1
+caught it.
+
+F16 removes the "budget spent" guard after the header. On the shared path, the header probe is
+bounded by the remaining budget, so a header that would exhaust it times out and reads as cold
+before the guard is reached. On the private path it is `reserve(remaining)` that can spend the
+budget, and it returns only before its timeout. Either way the guard covers only the jitter
+between that wait and the deadline. A test pins the observable behaviour: no rerank frame
 (`r10-remedy-F16.log`).
 
 ## #m-2 {#m-2}

@@ -252,3 +252,24 @@ def test_a_busy_worker_costs_at_most_the_budget(tmp_path):
     with pytest.raises(RerankSkipped):
         RemoteReranker(c).with_budget(0.5).score("q", ["a", "b"])
     assert time.time() - t0 < 1.0
+
+
+
+def test_with_no_read_store_an_unknown_partition_is_neither_answered_nor_created(tmp_path):
+    """K1 (ch-bsd r11 #m-1): the no-snapshot branch (early boot) reads the
+    WRITER, whose `with_partition` CREATES a missing row. A read must not."""
+    from refmatrix.daemon import _read_with_fallback
+
+    d, s = _daemon(tmp_path)
+    d._mem_mirror = None
+    d._open_read_store = lambda *a, **k: None       # boot: no snapshot yet
+    pid, n = _read_with_fallback(
+        d, "nosuch",
+        lambda rs: (rs._partition_id,
+                    rs._connect().execute(_CONCEPTS, (rs._partition_id,)).fetchone()[0]))
+    created = s._conn.execute(
+        "SELECT count(*) FROM partitions WHERE name='nosuch'").fetchone()[0]
+    with pytest.raises(ValueError, match="unknown partition"):
+        _read_with_fallback(d, "nosuch", lambda rs: None, missing="raise")
+    s.close()
+    assert created == 0 and n == 0 and pid not in (1, 2, 3), (created, n, pid)

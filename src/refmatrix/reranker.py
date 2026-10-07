@@ -400,8 +400,20 @@ class RemoteReranker:
             # A cold worker answers with nothing but the queue the hub saw (or
             # nothing at all): its model is not loaded.
             if not (set(info) - {"queue_depth"}):
+                # Skip, and make sure SOMETHING warms it: with only budgeted
+                # callers a cold private worker otherwise stays cold for the
+                # daemon's life (ch-bsd r11 #b-1). The hub warms its own role.
+                warm = getattr(self._client, "warm_async", None)
+                if warm is not None:
+                    warm()
+                err = getattr(self._client, "warm_error", None)
                 raise RerankSkipped(
-                    "worker cold (model not loaded); a budget does not pay the load")
+                    "worker cold (model not loaded); a budget does not pay the load"
+                    + (f"; last warmup failed: {err}" if err else ""))
+            if self._model_name is None and info.get("model"):
+                # From the header in hand: `model_name` would otherwise ask
+                # `info()` AFTER scoring, outside every bound.
+                self._model_name = info["model"]
             est = estimate_rerank_s(info, n)
             remaining = self._deadline - time.time()
             if remaining <= 0:

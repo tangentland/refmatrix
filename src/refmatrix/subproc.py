@@ -176,6 +176,11 @@ class WorkerClient:
         self._last_used = 0.0
         self._info: dict = {}
         self._stderr_fh = None
+        # Background warmup state (ch-bsd r11 #b-1): one warmup at a time, and
+        # its failure kept so a budgeted skip can name it.
+        self._warm_guard = threading.Lock()
+        self._warming = False
+        self.warm_error: str | None = None
 
     # ---- logging ------------------------------------------------------
 
@@ -381,6 +386,18 @@ class WorkerClient:
                 self.close(timeout=1.0)
                 hdr, out = self._call_once(req, blob, budget)
             self._last_used = time.time()
+            # A respawn (the jetsam case this module exists for) cleared the
+            # header, and only `info()` set it again — which the daemon calls
+            # once, at first use. So after ONE respawn every budgeted rerank
+            # read the warm worker as cold for the daemon's life (ch-bsd r11
+            # #b-1). A scoring op that just succeeded proves the model is
+            # loaded, so the header costs one instant frame here.
+            if not self._info and op not in ("ping", "info"):
+                try:
+                    ihdr, _ = self._call_once({"op": "info"}, None, budget)
+                    self._store_info(ihdr)
+                except Exception as exc:  # noqa: BLE001 — logged; the op itself succeeded
+                    self._log(f"header refill after op={op} failed: {exc!r}")
             # Every scoring reply carries the worker's cost EMA. Folding it into
             # the cached header keeps `info(nowait=True)` current without a
             # probe, and a probe is exactly what a budgeted caller cannot wait
@@ -404,6 +421,35 @@ class WorkerClient:
     def unreserve(self) -> None:
         self._lock.release()
 
+    def warm_async(self) -> None:
+        """Load the model in the background, once at a time.
+
+        A budgeted caller skips a cold worker rather than paying the load; if
+        nothing else ever loads it, the skip is permanent (ch-bsd r11 #b-1).
+        This is the private half of the hub's `ModelServer.warm`. A failure is
+        kept on `warm_error` so the next skip names it (a ModelNotCached is an
+        operator action, ch-bsd r6 #s-2)."""
+        with self._warm_guard:
+            if self._warming:
+                return
+            self._warming = True
+
+        def _warm() -> None:
+            t0 = time.time()
+            try:
+                self.info()
+                self.warm_error = None
+                self._log(f"warm in {time.time() - t0:.1f}s (background)")
+            except Exception as exc:  # noqa: BLE001 — kept and logged, never hidden
+                self.warm_error = f"{type(exc).__name__}: {exc}"
+                self._log(f"background warm failed: {self.warm_error}")
+            finally:
+                with self._warm_guard:
+                    self._warming = False
+
+        threading.Thread(target=_warm, name=f"rmx-warm-{self.role}",
+                         daemon=True).start()
+
     def info(self, *, timeout: float | None = None, nowait: bool = False) -> dict:
         """Cached `{model, dim, python, prefix}` from the worker.
 
@@ -426,6 +472,12 @@ class WorkerClient:
             if self._info:
                 return self._info
             hdr, _ = self.call("info", timeout=timeout)
+            self._store_info(hdr)
+            return self._info
+
+    def _store_info(self, hdr: dict) -> None:
+        """Cache an info header and check the child landed in our environment."""
+        with self._lock:
             self._info = {k: v for k, v in hdr.items() if k != "ok"}
             child_version = self._info.get("version")
             if child_version is not None:

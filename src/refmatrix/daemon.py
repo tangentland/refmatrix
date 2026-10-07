@@ -1060,7 +1060,18 @@ class Daemon:
 
         if not rerank_available():
             raise ImportError("sentence-transformers not installed")
-        r = RemoteReranker(self._model_client("rerank"))
+        client = self._model_client("rerank")
+        r = RemoteReranker(client)
+        if getattr(client, "reserve", None) is not None and not client.info(nowait=True):
+            # A COLD PRIVATE worker: `model_name` would load the model here,
+            # and `_op_context` calls this before its budget starts — after an
+            # idle eviction that put the full cold load inside the "budgeted"
+            # op (ch-bsd r11 #b-1). Warm in the background; budgeted callers
+            # skip until it lands and name its failure if it fails. Not cached:
+            # the next call, once warm, takes the probing path below.
+            client.warm_async()
+            self._log("reranker: private worker cold; warming in the background")
+            return r
         try:
             name = r.model_name
         except WorkerError as exc:

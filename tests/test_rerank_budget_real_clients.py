@@ -53,6 +53,10 @@ while True:
         continue
     if op == "ping":
         send_frame(_OUT, {"ok": True}); continue
+    if os.path.exists(os.path.join(D, "fail")):
+        send_frame(_OUT, {"ok": False,
+                          "error": "ModelNotCached: model 'stub/ce' is not in the local cache"})
+        continue
     if not loaded:
         with open(os.path.join(D, "loads"), "a") as fh:
             fh.write("1\n")
@@ -479,3 +483,149 @@ def test_a_header_that_eats_the_budget_sends_no_rerank(stub):
         raw.close()
     assert out.startswith("skipped"), out
     assert [f.get("op") for f in raw.frames] == ["info"], raw.frames
+
+
+
+# ---- ch-bsd r11 #b-1: a private worker does not stay cold ------------------
+
+def _until(pred, timeout=6.0):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if pred():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def test_a_respawned_private_worker_is_warm_again_after_any_real_call(stub):
+    """r11 #b-1: `close()`/`_spawn()` clear the header and nothing refilled it,
+    so after ONE jetsam respawn every budgeted rerank skipped as "cold" while
+    the unbudgeted recall reranks kept the model loaded and serving."""
+    from refmatrix import subproc
+    from refmatrix.reranker import RemoteReranker
+
+    wc = subproc.WorkerClient("rerank", argv=stub.argv())
+    try:
+        base = RemoteReranker(wc)
+        base.model_name
+        wc._proc.kill()
+        wc._proc.wait()
+        stub.rr(0.05)
+        assert _attempt(base)[1] == "scored"            # respawns: the jetsam case
+        assert stub.spawns() == 2
+        outs = [_attempt(base.with_budget(2.0))[1] for _ in range(3)]
+    finally:
+        wc.close()
+    assert outs == ["scored"] * 3, outs
+
+
+def test_a_cold_private_worker_warms_in_the_background_then_scores(stub):
+    """Nothing but budgeted callers: the first skips as cold AND starts one
+    warmup; once it lands, budgeted reranks score."""
+    from refmatrix import subproc
+    from refmatrix.reranker import RemoteReranker
+
+    wc = subproc.WorkerClient("rerank", argv=stub.argv(load_s=0.5))
+    try:
+        rr = RemoteReranker(wc)
+        first = _attempt(rr.with_budget(1.0))
+        _attempt(rr.with_budget(1.0))                     # a second skip starts no second load
+        assert _until(lambda: wc.info(nowait=True).get("model")), "never warmed"
+        later = _attempt(rr.with_budget(2.0))
+    finally:
+        wc.close()
+    assert first[1].startswith("skipped") and "cold" in first[1], first
+    assert later[1] == "scored", later
+    assert stub.spawns() == 1 and stub.loads() == 1
+
+
+def test_a_failing_warmup_is_named_by_the_skip(stub):
+    """r6 #s-2's rule on the new path: a ModelNotCached is an operator action;
+    the cold skip must carry it, not only `rmxd.log`."""
+    from refmatrix import subproc
+    from refmatrix.reranker import RemoteReranker
+
+    (stub.dir / "fail").write_text("1")
+    wc = subproc.WorkerClient("rerank", argv=stub.argv())
+    try:
+        rr = RemoteReranker(wc)
+        _attempt(rr.with_budget(1.0))
+        assert _until(lambda: wc.warm_error is not None), "warm never reported"
+        out = _attempt(rr.with_budget(1.0))[1]
+    finally:
+        wc.close()
+    assert "cold" in out and "ModelNotCached" in out, out
+
+
+def test_the_daemons_reranker_never_loads_a_cold_private_model(stub, monkeypatch):
+    """r11 #b-1, second route: after an idle eviction `_op_context` rebuilds
+    the reranker BEFORE its budget starts, and `model_name` paid the full cold
+    load there. A cold private worker warms in the background instead."""
+    import threading as _th
+
+    from refmatrix import reranker as rmod
+    from refmatrix import subproc
+    from refmatrix.daemon import Daemon
+
+    monkeypatch.setattr(rmod, "rerank_available", lambda: True)
+    d = object.__new__(Daemon)
+    d._log = lambda *a, **k: None
+    d._worker_lock = _th.Lock()
+    d._reranker_inst = None
+    wc = subproc.WorkerClient("rerank", argv=stub.argv(load_s=2.0))
+    d._rerank_worker = wc
+    try:
+        t0 = time.time()
+        r = d._reranker()
+        wall = time.time() - t0
+        assert r is not None
+        assert wall < 0.5, f"_reranker() took {wall:.2f} s on a cold private worker"
+        assert _until(lambda: wc.info(nowait=True).get("model")), "never warmed"
+        assert _attempt(r.with_budget(2.0))[1] == "scored"
+    finally:
+        wc.close()
+
+
+# ---- ch-bsd r11 #m-1: K2 / K3 / K7 ----------------------------------------
+
+def test_a_cold_hub_role_warms_once_and_then_scores(stub, monkeypatch):
+    """K2: the cold `nowait` answer must start the hub's warmup — and only one
+    (K3), however many budgeted reads ask while it loads."""
+    from refmatrix import modelsrv, subproc
+    from refmatrix.reranker import RemoteReranker
+
+    argv = stub.argv(load_s=0.6)
+
+    class _StubWC(subproc.WorkerClient):
+        def __init__(self, role, **kw):
+            kw.setdefault("argv", argv)
+            super().__init__(role, **kw)
+
+    monkeypatch.setattr(modelsrv, "WorkerClient", _StubWC)
+    srv = modelsrv.ModelServer()
+    assert srv.start()
+    try:
+        c = modelsrv.SharedWorkerClient("rerank", timeout=45.0)
+        rr = RemoteReranker(c)
+        firsts = [_attempt(rr.with_budget(1.0))[1] for _ in range(4)]
+        assert _until(lambda: (srv._clients.get("rerank") is not None
+                               and srv._clients["rerank"].info(nowait=True).get("model")))
+        later = _attempt(rr.with_budget(2.0))[1]
+        c.close()
+    finally:
+        srv.stop()
+    assert all(f.startswith("skipped") for f in firsts), firsts
+    assert later == "scored", later
+    assert stub.spawns() == 1 and stub.loads() == 1, (stub.spawns(), stub.loads())
+
+
+def test_a_budgeted_view_closes_its_forked_connection(stub, hub):
+    """K7: a fork per request that is never closed is a socket (and a hub
+    handler thread) leaked per context op."""
+    from refmatrix.reranker import RemoteReranker
+
+    _srv, client = hub
+    view = RemoteReranker(client).with_budget(2.0)
+    assert view._client is not client
+    assert _attempt(view)[1] == "scored"
+    assert view._client._sock is None, "the forked connection was left open"
