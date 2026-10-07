@@ -45,6 +45,10 @@ refmatrix ever compacts a dataset or removes its old versions. No `compact_files
 | orderly | 9.5 MB | 225 |
 | global, thiquet | < 1 MB | ≤ 5 |
 
+- **The first fleet run, by hand, 2026-10-07** (backups `vectors.bak-20261007-precompact`; logs
+  `workflow/review-output/lance-compact-{viascope,cliquedb}.log`): viascope went from 925 MB to
+  229 MB and cliquedb from 1.1 GB to 62 MB. cliquedb's `concept.lance` was 739 MB with 46,606
+  versions. The fingerprints were identical everywhere.
 - **Orphan vectors.** After the compaction, 559 of `code.lance`'s 5,495 vectors and 1 doc vector have
   no catalog row. They were in the pre-compaction backup too. They surface in `search-dense` as
   `kind ? name ?` hits. `Store.gc_vectors` (behind `rmx embed --gc`) reaps them, but nothing runs it.
