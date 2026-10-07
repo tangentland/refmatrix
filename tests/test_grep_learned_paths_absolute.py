@@ -19,6 +19,7 @@ import types
 
 import pytest
 
+
 from refmatrix import cli as cli_mod
 
 
@@ -82,3 +83,32 @@ def test_the_delegate_branch_teaches_absolute_paths_too(tmp_path, monkeypatch):
             for h in json.loads(line)["hits"]]
     assert hits and all(os.path.isabs(h["file"]) for h in hits), hits
     assert hits[0]["file"] == str(proj / "sub" / "a.txt"), hits
+
+
+@pytest.mark.parametrize("flag", ["-c", "-h", "-l", "-o"])
+def test_the_delegate_teaches_nothing_from_non_line_output(tmp_path, monkeypatch, flag):
+    """ch-bsd r5 #s-2: the delegate parsed every `x:y` output line as
+    `file:line`, so `-c` taught a COUNT as a line number (`c.txt:2` -> line 2)
+    and `-h` taught matched TEXT as a file. Output shapes that are not
+    `file:line:text` teach nothing (plan-16 task 16.5 deletes this branch)."""
+    from click.testing import CliRunner
+
+    from refmatrix.store import Store
+
+    monkeypatch.setenv("RMX_GREP_NOTE", "0")
+    monkeypatch.delenv("RMX_LEARN", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "c.txt").write_text("alpha:3\nx\nalpha two\n")
+    s = Store(proj / ".refmatrix", backend="duckdb")
+    s.init()
+    s.close()
+    monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
+    monkeypatch.chdir(proj)
+
+    CliRunner().invoke(cli_mod.main, ["grep", "--include=*.txt", "-rn", flag,
+                                      "alpha", "."])
+
+    q = proj / ".refmatrix" / "learn.queue.jsonl"
+    assert not q.exists() or not q.read_text().strip(), q.read_text()

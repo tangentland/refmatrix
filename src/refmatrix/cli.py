@@ -6318,7 +6318,19 @@ def _grep_delegate(raw_tokens: list, path_strs: list, reasons: list,
     if res.stderr and res.returncode not in (0, 1):
         _sys.stderr.write(res.stderr)
 
-    if learn and res.returncode == 0 and not piped:
+    # Only `file:line:text` output can teach (ch-bsd r5 #s-2): `-c` printed a
+    # COUNT where the parse read a line number, `-h` printed TEXT where it
+    # read a file. Any output-shaping flag means the lines are not that shape.
+    _shape_short = set("chlLoqZ")
+    _shape_long = {"--count", "--no-filename", "--files-with-matches",
+                   "--files-without-match", "--only-matching", "--quiet",
+                   "--silent", "--null"}
+    _shaped = any(
+        (tok in _shape_long or tok.split("=", 1)[0] in _shape_long)
+        or (tok.startswith("-") and not tok.startswith("--")
+            and _shape_short & set(tok[1:]))
+        for tok in tokens)
+    if learn and res.returncode == 0 and not piped and not _shaped:
         import os as _os
         hits = []
         unparsed = 0
@@ -7288,14 +7300,19 @@ def learn_status():
     # append-only, and a report from last month is not today's state.
     import time as _time
     recent = []
+    malformed = 0
     for line in reports:
         head, _, rest = line.partition(" ")
         try:
             ts = float(head)
         except ValueError:
+            malformed += 1          # counted and said, never skipped silently
             continue
         if ts == 0 or _time.time() - ts < 86400:
             recent.append((ts, rest))
+    if malformed:
+        console.print(f"[yellow]hook reports[/] {malformed} malformed line(s) "
+                      f"in {log}", soft_wrap=True)
     if recent:
         ts, rest = recent[-1]
         when = _time.strftime("%Y-%m-%d %H:%M", _time.localtime(ts)) if ts else "?"

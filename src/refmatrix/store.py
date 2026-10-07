@@ -862,8 +862,10 @@ def verify_evidence_rows(rows: list, pattern: str, *, regex: bool = False,
     """
     out: list = []
     cache: dict = {}
+    seen: set = set()
     unreadable = 0
     dropped = 0
+    merged = 0
     for r in rows:
         path = r.get("path")
         line = r.get("line")
@@ -872,11 +874,16 @@ def verify_evidence_rows(rows: list, pattern: str, *, regex: bool = False,
             # offered as a grep hit.
             dropped += 1
             continue
+        # The row is PRINTED with the path it is READ from (ch-bsd r5 #b-1):
+        # bug-084 resolved a relative row for reading and returned it with its
+        # unresolved spelling, so from a subdirectory 7 of 10 printed paths did
+        # not exist and one file split into two `-c` rows.
+        if base is not None and not Path(path).is_absolute():
+            path = str(Path(base) / path)
+            r = {**r, "path": path}
         lines = cache.get(path)
         if lines is None:
             fp = Path(path)
-            if base is not None and not fp.is_absolute():
-                fp = Path(base) / fp
             try:
                 lines = fp.read_text(errors="replace").splitlines()
             except OSError:
@@ -892,6 +899,13 @@ def verify_evidence_rows(rows: list, pattern: str, *, regex: bool = False,
         if evidence_line_matches(lines[idx], pattern, regex=regex,
                                  ignore_case=ignore_case, word=word) or (
                 variants is not None and variants.search(lines[idx])):
+            # De-duplicated AFTER resolution: a relative and an absolute
+            # spelling of one file are one hit.
+            key = (path, line, r.get("linkage"), r.get("concept"))
+            if key in seen:
+                merged += 1
+                continue
+            seen.add(key)
             out.append(r)
             if stop_after is not None and len(out) >= stop_after:
                 break
@@ -901,6 +915,7 @@ def verify_evidence_rows(rows: list, pattern: str, *, regex: bool = False,
         stats["kept"] = len(out)
         stats["dropped"] = dropped
         stats["unreadable"] = unreadable
+        stats["merged"] = merged
     return out
 
 

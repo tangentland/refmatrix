@@ -19,6 +19,7 @@ consumed entirely by rows verification then throws away.
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -173,3 +174,36 @@ def test_a_relative_row_verifies_regardless_of_the_cwd(store, tmp_path, monkeypa
         monkeypatch.chdir(cwd)
         rows = store.grep_evidence("error")
         assert [r["line"] for r in rows] == [2], f"cwd={cwd}: {rows}"
+        # ...and PRINTED with a path that exists from this cwd (r5 #b-1).
+        assert Path(rows[0]["path"]).is_absolute(), rows
+        assert Path(rows[0]["path"]).exists(), rows
+
+
+# ---- ch-bsd r5 #b-1: printed with the path it was READ from -----------------
+#
+# bug-084 resolved a relative row against the project root for READING and
+# returned the row with its unresolved spelling, so from a subdirectory 7 of 10
+# printed paths did not exist, and one file split into two `-c` rows (its
+# relative and its absolute spelling). The row now carries the resolved path,
+# and rows are de-duplicated after resolution.
+
+def test_a_relative_row_is_printed_resolved_and_merged(store, tmp_path, monkeypatch):
+    proj = store.root.parent
+    (proj / "src").mkdir()
+    a = proj / "src" / "a.py"
+    a.write_text("x = 1\nan error here\n")
+    c = store.add_concept("query/error")
+    rel = store.upsert_entity("code", "src/a.py", path="src/a.py")
+    absent = store.upsert_entity("code", "a-abs", path=str(a))
+    for e, f in ((rel, "src/a.py"), (absent, str(a))):
+        store.link("mentions", c, e)
+        store.add_evidence("mentions", c, e, file=f, line=2)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    rows = store.grep_evidence("error")
+
+    assert {r["path"] for r in rows} == {str(a)}, rows
+    assert all(Path(r["path"]).exists() for r in rows)
+    assert len({(r["path"], r["line"]) for r in rows}) == 1

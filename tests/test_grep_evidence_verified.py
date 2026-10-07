@@ -276,3 +276,15 @@ def test_word_keeps_a_word_hit(store, tmp_path):
     _seed(store, tmp_path, concept="keyword/err", line=1, body="raise err now\n")
 
     assert store.grep_evidence("err", word=True)
+
+
+def test_word_bounds_the_bridged_spellings_too(store, tmp_path):
+    """ch-bsd r5 #b-2: `-w` must bound a BRIDGED spelling as it bounds the
+    literal one. A mutation dropping the `\\b` wrap on the variant regex
+    survived round 5."""
+    _seed(store, tmp_path, concept="keyword/roaring_bitmap", line=1,
+          body="myroaring_bitmapx = 1\n")
+
+    assert store.grep_evidence("roaring bitmap"), "precondition: bridge keeps it"
+    assert store.grep_evidence("roaring bitmap", word=True) == [], \
+        "-w kept a bridged spelling inside a longer word"

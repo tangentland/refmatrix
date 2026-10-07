@@ -217,3 +217,58 @@ def test_word_reaches_the_in_process_read_paths(tmp_path, monkeypatch, layout):
 
     assert plain.exit_code == 0 and "w.py:1" in plain.stdout, plain.output
     assert word.exit_code == 1, f"{layout}: -w kept a non-word hit: {word.output}"
+
+
+# ---- ch-bsd r5 #b-2: the unreadable note, pinned on all three legs ---------
+#
+# Rows whose file cannot be read are dropped and COUNTED; the count reaches the
+# user as a stderr note. Three rounds running, a mutation on any leg (the daemon
+# op's field, the RPC result, the CLI note) survived every test.
+
+def _seed_one_readable_one_gone(s: Store, proj):
+    f = proj / "here.py"
+    f.write_text("an error here\n")
+    c = s.add_concept("keyword/error")
+    for name, path in (("here.py", str(f)), ("gone.py", str(proj / "gone.py"))):
+        e = s.upsert_entity("code", name, path=path)
+        s.link("mentions", c, e)
+        s.add_evidence("mentions", c, e, file=path, line=1)
+
+
+def test_the_daemon_op_returns_the_unreadable_count(daemon):
+    from refmatrix.daemon import _op_grep_indexed
+    _seed_one_readable_one_gone(daemon.store, daemon.root.parent)
+
+    out = _op_grep_indexed(daemon, {"pattern": "error"})
+
+    assert len(out["rows"]) == 1 and out["unreadable"] == 1, out
+
+
+def test_the_rpc_path_prints_the_unreadable_note(daemon, capsys):
+    _seed_one_readable_one_gone(daemon.store, daemon.root.parent)
+    gf = cli_mod._parse_grep_flags("")
+    try:
+        cli_mod._grep_run(None, daemon.root, _rpc_shim(daemon, []), "error",
+                          "error", False, None, None, 100, False, False, gf, [],
+                          _tlog())
+    except SystemExit:
+        pass
+    err = capsys.readouterr().err
+    assert "1 index row(s) dropped" in err, err
+
+
+def test_the_in_process_path_prints_the_unreadable_note(tmp_path, monkeypatch):
+    monkeypatch.delenv("RMX_BACKEND", raising=False)
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    s = Store(proj / ".refmatrix", backend="duckdb")
+    s.init()
+    _seed_one_readable_one_gone(s, proj)
+    s.close()
+    monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
+    monkeypatch.chdir(proj)
+
+    res = CliRunner().invoke(cli_mod.main, ["grep", "--no-fallback", "--", "error"])
+
+    assert res.exit_code == 0, res.output
+    assert "1 index row(s) dropped" in res.stderr, res.stderr

@@ -239,3 +239,32 @@ def test_learn_status_says_unreadable_not_absent(tmp_path, monkeypatch):
     line = next(l for l in res.output.splitlines() if "store  marker" in l)
     assert "UNREADABLE" in line, line
     assert "learn-switch.log" in res.output and "rmxgrep" in res.output, res.output
+
+
+def test_learn_status_shows_only_the_last_24h_and_counts_malformed(tmp_path, monkeypatch):
+    """ch-bsd r5 #m-2: the 24 h window survived mutation (no test), and a
+    malformed log line was skipped without a word."""
+    import time
+
+    from click.testing import CliRunner
+
+    from refmatrix import cli as cli_mod
+
+    monkeypatch.delenv("RMX_LEARN", raising=False)
+    home = tmp_path / "home"
+    (home / ".refmatrix").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    now = int(time.time())
+    (home / ".refmatrix" / "learn-switch.log").write_text(
+        f"{now - 3 * 86400} rmxgrep unreadable /old/learn.off\n"
+        f"{now - 60} rewriter unreadable /new/learn.off\n"
+        "garbage line\n")
+    store = tmp_path / "proj" / ".refmatrix"
+    store.mkdir(parents=True)
+    monkeypatch.setattr(cli_mod, "_root", lambda: store)
+
+    res = CliRunner().invoke(cli_mod.main, ["learn", "status"])
+
+    assert "1 in" in res.output and "/new/learn.off" in res.output, res.output
+    assert "/old/learn.off" not in res.output, res.output
+    assert "1 malformed" in res.output, res.output
