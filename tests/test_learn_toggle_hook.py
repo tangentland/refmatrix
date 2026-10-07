@@ -267,3 +267,18 @@ def test_rmxrg_follows_the_toggle_too(project, tmp_path):
 
     assert not called.exists(), "rmxrg called rmx with learning OFF"
     assert (r.stdout, r.returncode) == (real.stdout, real.returncode)
+
+
+@pytest.mark.skipif(_ROOT_UID, reason="root ignores chmod")
+def test_the_rewriter_reports_at_most_once_a_minute(rendered, project):
+    """The report runs on every Bash call with a grep; a throttle keeps it
+    from writing a line per call. Survived mutation at r4 (no test)."""
+    store = project / ".refmatrix"
+    store.chmod(0)
+    try:
+        for _ in range(3):
+            _rewrite(rendered, "grep -rn alpha src/", project)
+    finally:
+        store.chmod(0o755)
+    lines = _switch_log(project).read_text().splitlines()
+    assert len(lines) == 1, lines

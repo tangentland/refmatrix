@@ -222,7 +222,7 @@ def test_learn_status_says_unreadable_not_absent(tmp_path, monkeypatch):
     (home / ".refmatrix").mkdir(parents=True)
     monkeypatch.setenv("HOME", str(home))
     (home / ".refmatrix" / "learn-switch.log").write_text(
-        "1791350000 rmxgrep unreadable /x/.refmatrix/learn.off\n")
+        f"{int(__import__('time').time())} rmxgrep unreadable /x/.refmatrix/learn.off\n")
     proj = tmp_path / "proj"
     store = proj / ".refmatrix"
     store.mkdir(parents=True)

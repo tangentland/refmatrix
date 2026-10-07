@@ -161,3 +161,59 @@ def test_the_daemon_rpc_carries_word(daemon, capsys):
 
     assert sent and sent[0].get("word") is True, sent
     assert tlog.answered_by != "index", tlog
+
+
+# ---- ch-bsd r4 SKETCHY: paths that worked when run but had no test ---------
+
+def test_the_daemon_rpc_cap_reaches_the_cli_note(daemon, capsys):
+    """`capped` travels from `_op_grep_indexed` through the RPC result to
+    `_grep_index_notes`. Survived mutation at r4 (the CLI ignoring it)."""
+    f = daemon.root.parent / "c.py"
+    f.write_text("error one\nerror two\nerror three\n")
+    s = daemon.store
+    cid = s.add_concept("keyword/error")
+    eid = s.upsert_entity("code", "c.py", path=str(f))
+    s.link("mentions", cid, eid)
+    for ln in (1, 2, 3):
+        s.add_evidence("mentions", cid, eid, file=str(f), line=ln)
+    gf = cli_mod._parse_grep_flags("")
+    try:
+        cli_mod._grep_run(None, daemon.root, _rpc_shim(daemon, []), "error",
+                          "error", False, None, None, 2, False, False, gf, [],
+                          _tlog())
+    except SystemExit:
+        pass
+    err = capsys.readouterr().err
+    assert "capped at --limit 2" in err, err
+
+
+@pytest.mark.parametrize("layout", ["replica", "direct"])
+def test_word_reaches_the_in_process_read_paths(tmp_path, monkeypatch, layout):
+    """`-w` on the replica (default) and direct paths, end to end. At r4 a
+    mutation dropping `word=` from either in-process caller survived."""
+    import shutil as _sh
+    monkeypatch.delenv("RMX_BACKEND", raising=False)
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    s = Store(proj / ".refmatrix", backend="duckdb")
+    s.init()
+    f = proj / "w.py"
+    f.write_text("an error here\n")
+    cid = s.add_concept("keyword/err")
+    eid = s.upsert_entity("code", "w.py", path=str(f))
+    s.link("mentions", cid, eid)
+    s.add_evidence("mentions", cid, eid, file=str(f), line=1)
+    s.close()
+    if layout == "direct":
+        legacy = proj / ".refmatrix" / "catalog.duckdb"
+        if legacy.exists():
+            _sh.move(str(legacy), str(proj / ".refmatrix" / "catalog.A.duckdb"))
+        (proj / ".refmatrix" / "active").write_text("A\n")
+    monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
+    monkeypatch.chdir(proj)
+
+    plain = CliRunner().invoke(cli_mod.main, ["grep", "--no-fallback", "--", "err"])
+    word = CliRunner().invoke(cli_mod.main, ["grep", "--no-fallback", "-w", "--", "err"])
+
+    assert plain.exit_code == 0 and "w.py:1" in plain.stdout, plain.output
+    assert word.exit_code == 1, f"{layout}: -w kept a non-word hit: {word.output}"

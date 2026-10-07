@@ -6040,7 +6040,10 @@ def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
 @click.argument("argv", nargs=-1, type=click.UNPROCESSED)
 @click.option("--regex/--substring", default=False,
               help="Treat PATTERN as a regex. Default is a case-SENSITIVE "
-                   "substring, as in grep; -i ignores case.")
+                   "substring, as in grep; -i ignores case. On the path-less "
+                   "index read a MULTI-WORD pattern also matches its "
+                   "identifier spellings (snake/camel/kebab), "
+                   "case-insensitively.")
 @click.option("--flags", "-f", "flags", default=None, help=_GREP_FLAGS_HELP)
 @click.option("--linkage", default=None,
               help="Restrict to one linkage type (e.g. defines, mentions).")
@@ -6316,24 +6319,38 @@ def _grep_delegate(raw_tokens: list, path_strs: list, reasons: list,
         _sys.stderr.write(res.stderr)
 
     if learn and res.returncode == 0 and not piped:
+        import os as _os
         hits = []
+        unparsed = 0
+        _cwd = _os.getcwd()
         for raw in res.stdout.splitlines():
             parts = raw.split(":", 2)
             if len(parts) >= 2:
                 try:
-                    hits.append({"file": parts[0], "line": int(parts[1])})
+                    # ABSOLUTE, as in `_grep_rg_fallback` (ch-bsd r4 #b-5): the
+                    # tool printed the cwd-relative spelling, and a relative
+                    # learned row is later read against whatever cwd the reader
+                    # has.
+                    hits.append({"file": _os.path.normpath(
+                                     _os.path.join(_cwd, parts[0])),
+                                 "line": int(parts[1])})
                 except ValueError:
-                    pass
+                    unparsed += 1     # counted, not dropped silently
         if hits:
             try:
-                from refmatrix import daemon as _dmod
                 _r = _root()
                 # Teach with the pattern-ish token: first non-flag arg.
                 pat = next((x for x in tokens
                             if not x.startswith("-")), "")
                 _broker_learn_from_grep(_r, pat, hits[:200])
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001 — named, never mute
+                # Was a bare `pass` on a memory path (bug-082). Stderr only:
+                # stdout is the delegated tool's bytes.
+                click.echo(f"# rmx: learn failed ({type(e).__name__}) — the "
+                           f"graph did not record {len(hits)} hit(s)", err=True)
+        if unparsed:
+            click.echo(f"# rmx: {unparsed} delegated output line(s) were not "
+                       f"file:line and taught nothing", err=True)
     raise SystemExit(res.returncode)
 
 
@@ -7266,10 +7283,24 @@ def learn_status():
     try:
         reports = log.read_text().splitlines() if log.exists() else []
     except OSError as e:
-        reports = [f"(could not read {log}: {type(e).__name__})"]
-    if reports:
-        console.print(f"[yellow]hook reports[/] {len(reports)} line(s) in {log}; "
-                      f"latest: {reports[-1]}", soft_wrap=True)
+        reports = [f"0 (could not read {log}: {type(e).__name__})"]
+    # The last 24 h only, with a readable time (ch-bsd r4 MEH): the log is
+    # append-only, and a report from last month is not today's state.
+    import time as _time
+    recent = []
+    for line in reports:
+        head, _, rest = line.partition(" ")
+        try:
+            ts = float(head)
+        except ValueError:
+            continue
+        if ts == 0 or _time.time() - ts < 86400:
+            recent.append((ts, rest))
+    if recent:
+        ts, rest = recent[-1]
+        when = _time.strftime("%Y-%m-%d %H:%M", _time.localtime(ts)) if ts else "?"
+        console.print(f"[yellow]hook reports (24 h)[/] {len(recent)} in {log}; "
+                      f"latest {when}: {rest}", soft_wrap=True)
     if not d.enabled:
         from refmatrix import learn_queue as _lq
         console.print(f"  queued teach records: {_lq.pending_lines(root)} "

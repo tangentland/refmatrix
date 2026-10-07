@@ -817,7 +817,9 @@ def verify_evidence_rows(rows: list, pattern: str, *, regex: bool = False,
                          ignore_case: bool = False,
                          variants: "re.Pattern | None" = None,
                          word: bool = False,
-                         stats: "dict | None" = None) -> list:
+                         stats: "dict | None" = None,
+                         base: "Path | None" = None,
+                         stop_after: "int | None" = None) -> list:
     """Keep only evidence rows whose `file:line` REALLY contains the pattern.
 
     WHY (bug-074). An index row is `(path, line)` from `linkage_evidence`, and
@@ -848,6 +850,15 @@ def verify_evidence_rows(rows: list, pattern: str, *, regex: bool = False,
     `variants` (from `identifier_variant_regex`) is the spelling bridge: a
     row whose line holds none of the literal pattern but one of its
     identifier spellings is kept.
+   
+    `base` (ch-bsd r4 #b-5): a RELATIVE row path is resolved against it — the
+    project root it was relative to when learned — never against the process
+    cwd. 515 of 747 raw `error` rows on the replica are relative (learned
+    before 321ff97), and reading them against the cwd made the index answer
+    depend on where `rmx grep` ran: 96 rows from the root, 5 from `src/`.
+
+    `stop_after`: stop once that many rows are kept. The caller wants a cap
+    plus one; the remaining rows are never read.
     """
     out: list = []
     cache: dict = {}
@@ -863,8 +874,11 @@ def verify_evidence_rows(rows: list, pattern: str, *, regex: bool = False,
             continue
         lines = cache.get(path)
         if lines is None:
+            fp = Path(path)
+            if base is not None and not fp.is_absolute():
+                fp = Path(base) / fp
             try:
-                lines = Path(path).read_text(errors="replace").splitlines()
+                lines = fp.read_text(errors="replace").splitlines()
             except OSError:
                 lines = []
             cache[path] = lines
@@ -879,6 +893,8 @@ def verify_evidence_rows(rows: list, pattern: str, *, regex: bool = False,
                                  ignore_case=ignore_case, word=word) or (
                 variants is not None and variants.search(lines[idx])):
             out.append(r)
+            if stop_after is not None and len(out) >= stop_after:
+                break
         else:
             dropped += 1
     if stats is not None:
@@ -3162,7 +3178,10 @@ class Store:
             "JOIN entities c ON c.id = ev.concept_id "
             "JOIN linkage_types lt ON lt.id = ev.linkage_id "
             "WHERE " + " AND ".join(where) +
-            " ORDER BY e.path, ev.line"
+            # A TOTAL order (ch-bsd r4 #b-1): `(path, line)` ties whenever
+            # several concepts share one line, and a non-total order is not
+            # stable between two reads. Every selected column is in the key.
+            " ORDER BY e.path, ev.line, lt.name, c.name, e.name"
         )
         capped = limit is not None and limit > 0
         self._connect()
@@ -3190,38 +3209,28 @@ class Store:
         # The cap counts VERIFIED rows (ch-bsd r3 #b-1). Verifying after a SQL
         # `LIMIT` spent the cap on `def`-line rows verification then dropped:
         # on the live replica `rmx grep error` returned 13 of 96 real matches
-        # with exit 0 and nothing on stderr — bug-058's silent short read. So
-        # the SQL is PAGED until `limit + 1` verified rows exist or the rows
-        # run out; the `+ 1` is what lets `stats["capped"]` say the cap bit
-        # without reading the whole result.
+        # with exit 0 and nothing on stderr — bug-058's silent short read.
+        #
+        # ONE read, verified LAZILY until `limit + 1` rows are kept (ch-bsd r4
+        # #b-1). The r3 fix paged `LIMIT ? OFFSET ?`, which over a tie-prone
+        # order duplicated one row and lost another at each page boundary, and
+        # was up to 11x slower than a single read (1004 ms vs 87 ms on the
+        # replica): the SELECT is cheap, the line reads are not, so the line
+        # reads are what stop early. The `+ 1` lets `stats["capped"]` say the
+        # cap bit without verifying the rest.
         stats = verify_stats if verify_stats is not None else {}
-        if not capped:
-            out = verify_evidence_rows(_fetch(sql, params), pattern,
-                                       regex=regex, ignore_case=ignore_case,
-                                       variants=variants, word=word, stats=stats)
-            stats["capped"] = False
-            return out
-        cap = int(limit)  # `capped` above means limit is a positive int
-        page = max(4 * cap, 256)
-        out = []
-        dropped = unreadable = 0
-        offset = 0
-        while len(out) <= cap:
-            raw = _fetch(sql + " LIMIT ? OFFSET ?", params + [page, offset])
-            part: dict = {}
-            out.extend(verify_evidence_rows(raw, pattern, regex=regex,
-                                            ignore_case=ignore_case,
-                                            variants=variants, word=word, stats=part))
-            dropped += part.get("dropped", 0)
-            unreadable += part.get("unreadable", 0)
-            if len(raw) < page:
-                break
-            offset += page
-        stats["kept"] = min(len(out), cap)
-        stats["dropped"] = dropped
-        stats["unreadable"] = unreadable
-        stats["capped"] = len(out) > cap
-        return out[:cap]
+        rows = _fetch(sql, params)
+        cap = int(limit) if capped else None
+        out = verify_evidence_rows(rows, pattern, regex=regex,
+                                   ignore_case=ignore_case, variants=variants,
+                                   word=word, stats=stats,
+                                   base=self.root.parent,
+                                   stop_after=(cap + 1) if cap else None)
+        stats["capped"] = cap is not None and len(out) > cap
+        if cap is not None:
+            stats["kept"] = min(len(out), cap)
+            return out[:cap]
+        return out
 
     def resolve_concept_ids_many(
         self, names: "list[str]",

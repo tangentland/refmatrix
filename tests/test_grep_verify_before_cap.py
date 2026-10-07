@@ -110,3 +110,66 @@ def test_the_cli_says_when_the_index_answer_was_capped(store, monkeypatch, layou
     assert res.exit_code == 0, res.output
     assert res.stdout.count("b.py:") == 2, res.stdout
     assert "capped" in res.stderr and "--limit 2" in res.stderr, res.stderr
+
+
+# ---- ch-bsd r4 #b-1: no OFFSET paging over a non-total order ---------------
+#
+# The r3 fix paged `LIMIT ? OFFSET ?` over `ORDER BY e.path, ev.line`, which
+# ties whenever several concepts share one line. DuckDB does not promise a tie
+# order between two queries, so at a page boundary one row came back twice
+# and its sibling was lost (2 of 5 runs of `rmx grep error` on the replica).
+# Paging was also up to 11x slower than one read. The fixture puts the old page
+# boundary (row 256) INSIDE a group of verified ties.
+
+def _seed_ties(s: Store, proj) -> None:
+    f = proj / "t.py"
+    f.write_text("def x():\nqq here\n")
+    e = s.upsert_entity("code", "t.py", path=str(f))
+    for i in range(250):                  # line 1: 250 rows that never verify
+        c = s.add_concept(f"keyword/qq_a{i:03d}")
+        s.link("mentions", c, e)
+        s.add_evidence("mentions", c, e, file=str(f), line=1)
+    for i in range(20):                   # line 2: 20 verified rows, tied
+        c = s.add_concept(f"keyword/qq_b{i:03d}")
+        s.link("mentions", c, e)
+        s.add_evidence("mentions", c, e, file=str(f), line=2)
+
+
+def test_a_capped_read_never_duplicates_or_loses_a_tied_row(store):
+    _seed_ties(store, store.root.parent)
+    full = store.grep_evidence("qq", limit=None)
+    assert len(full) == 20, "precondition"
+    key = lambda r: (r["path"], r["line"], r["linkage"], r["concept"])
+
+    for _ in range(5):
+        stats: dict = {}
+        rows = store.grep_evidence("qq", limit=10, verify_stats=stats)
+        keys = [key(r) for r in rows]
+        assert len(keys) == len(set(keys)) == 10, f"duplicated rows: {keys}"
+        assert keys == [key(r) for r in full[:10]], "not a prefix of the full read"
+        assert stats["capped"] is True
+
+
+# ---- ch-bsd r4 #b-5: a relative learned path verifies from ANY cwd ---------
+#
+# 515 of 747 raw `error` rows on the replica carry RELATIVE paths, learned
+# before 321ff97 made new ones absolute. Verification read them against the
+# process cwd, so `rmx grep error` returned 96 rows from the project root and 5
+# from `src/`. They resolve against the project root (the store root's
+# parent), which is what they were relative to when learned.
+
+def test_a_relative_row_verifies_regardless_of_the_cwd(store, tmp_path, monkeypatch):
+    proj = store.root.parent
+    (proj / "src").mkdir()
+    (proj / "src" / "a.py").write_text("x = 1\nan error here\n")
+    c = store.add_concept("query/error")
+    e = store.upsert_entity("code", "src/a.py", path="src/a.py")   # relative
+    store.link("mentions", c, e)
+    store.add_evidence("mentions", c, e, file="src/a.py", line=2)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    for cwd in (proj, proj / "src", elsewhere):
+        monkeypatch.chdir(cwd)
+        rows = store.grep_evidence("error")
+        assert [r["line"] for r in rows] == [2], f"cwd={cwd}: {rows}"
