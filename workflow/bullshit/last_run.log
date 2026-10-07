@@ -1,1 +1,1 @@
-2026-10-07T14:18:10-0700 commit=4783463 verdict=DIRTY findings=2 (1B/0S/1M) report=2026-10-07-1418-r11-private-worker-cold-forever-4783463.md
+2026-10-07T15:04:56-0700 commit=cf50d89 verdict=DIRTY findings=4 (0B/3S/1M) report=2026-10-07-1504-r12-warm-thread-outlives-close-cf50d89.md
