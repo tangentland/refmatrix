@@ -17,7 +17,16 @@ rel: supersedes -> [[handoff-008-task-15.4-bugs-065-074]]
 
 ## State {#state}
 
-`master` = **24523f3**, clean tree. Full suite **2475 passed / 0 failed**
+**CORRECTED.** This said `master` = 24523f3, which was wrong and was repeated
+to the user several times. `master` is **1452875** (= `origin/main` = deploy =
+0.76.0). Every commit of this session's remedy sits on **`bsd-r1-remedy`**,
+**13 commits unmerged**, now at `607e9db` (the top commit is a peer session's
+docs-only one). The "13 ahead of origin/main" figure was computed from HEAD, so
+the count was right and the label was not. Thanks to the peer session for
+catching it.
+
+`bsd-r1-remedy` = **4f70a0b** for my work, clean tree. Full suite
+**2475 passed / 0 failed**
 (`workflow/review-output/pytest-bug073-074-full.log`, 16m28s), and the log is
 attributable: `find src -newermt "2026-10-06 16:41:07" -name '*.py'` EMPTY with
 a sanity probe proving the check fires. GMD lint 0 errors / 555 docs.
@@ -126,15 +135,20 @@ rel: reinforces -> [[feedback_commit_before_mutation_revert]]
    bug-074 and the three fixture rewrites are unaudited. This is first
    priority — four of r1's five blocker fixes were already audited once and two
    came back as regressions.
-2. **Deploy** — nothing from the remedy is live. Fleet 8/8 + hub on 0.76.0 at
+2. **Merge `bsd-r1-remedy` into `master`** — 13 commits, never merged, which
+   is why the State line above was wrong. CLAUDE.md's workflow is one branch
+   per task merged back `--no-ff`. NOT done here on purpose: r2 closed DIRTY so
+   round 3 is owed first, and the branch now carries a peer session's commit
+   (`607e9db`), so the merge is the user's call rather than mine.
+3. **Deploy** — nothing from the remedy is live. Fleet 8/8 + hub on 0.76.0 at
    `1452875`.
-3. **Push** — `origin/main` is at `1452875`, ~10 commits behind.
-4. **Re-run the grep-learning replay.** bug-074 LOWERS the measured index share
+4. **Push** — `origin/main` is at `1452875`, ~10 commits behind.
+5. **Re-run the grep-learning replay.** bug-074 LOWERS the measured index share
    (18.5% → 31.7% counted the low-precision answers) while raising quality, so
    `docs/measurements/grep-learning-replay.md` is stale and needs a re-run plus
    a scope line. Same class as the #s-4 problem corrected this session.
-5. **plan-15 stays `in-progress`** until round 3 closes.
-6. **bug-070's other half** — `c.name ILIKE '%pattern%'` is still a substring
+6. **plan-15 stays `in-progress`** until round 3 closes.
+7. **bug-070's other half** — `c.name ILIKE '%pattern%'` is still a substring
    over names. bug-074's verification now cleans its output, so the breadth is
    a cost question (74 rows fetched to keep 4) rather than a correctness one.
    Re-decide with that in mind.
