@@ -70,7 +70,11 @@ learner that is faithful to the search. {#already-built}
 - Remove `RMXGREP_MODE: rich` from `~/.claude/settings.json` env and `agent-bashrc.sh`, through the
   generator, never by hand.
 
-**The learner** — a new verb, `grep_learn(argv, cwd)`, exposed as `rmx grep --learn-only`. {#learner}
+**The learner** — `src/refmatrix/grep_learn.py`, reached through the hidden command `rmx grep-learn`.
+It is NOT a verb: `verbs.VERBS` is exactly the MCP tool set, and only hooks call the learner.
+It re-runs the SAME tool the caller ran, never rmx's floor, so the regex dialect is the caller's
+by construction. Hits go through `learn_queue.enqueue`, a file append, so no socket and no daemon
+are needed. Full spec: task 16.1. {#learner}
 
 - **It parses the caller's argv with the same parser `rmx grep` uses.** The current ping STRIPS
   every flag. A `-i` search is re-run case-sensitively, and since bug-077 made the floor grep-case,
@@ -84,9 +88,8 @@ learner that is faithful to the search. {#already-built}
 - **It resolves paths to absolute against the caller's cwd before learning.** This closes the path
   half of ch-bsd r3 #s-6: learned rows are stored relative today, so verifying them depends on the
   cwd.
-- **It is bounded.** At most N hits are taught (start at 500) under a wall-clock cap, through the
-  daemon's `learn_from_grep` with `retries=0`. With no daemon running it learns nothing and appends
-  one counted line to the shim log; it never opens a `Store`.
+- **It is bounded.** At most N hits are taught (start at 500) under a wall-clock cap. Every call
+  appends one record to `.refmatrix/grep-learn.log`, and the learner never opens a `Store`.
 - **The dedicated Grep tool uses it too.** `grep-tool-teach.sh` (PostToolUse(Grep)) calls the same
   learner, so all three surfaces learn from one implementation.
 
@@ -127,18 +130,27 @@ Specs go in `workflow/plans/plan-16-invisible-grep-shim-tasks/` before approval.
    no-bypass rule stands: every grep still teaches, and the learn switch is the only off switch.
    Recorded in memory `feedback_grep_is_observed_not_answered`. {#d-1}
 2. **Fold `RMXGREP_TEACH=0` into `learn_switch`.** One off switch, not two. 16.2 deletes the env
-   var from the shims. If the env var is still set, the shims print one stderr line naming
-   `RMX_LEARN=0` instead and learn anyway, rather than silently honouring a retired knob. {#d-2}
+   var from the shims. If the env var is still set, the shims learn anyway; the learner's log
+   record names it and `rmx learn status` points to `RMX_LEARN=0`. Nothing goes to stderr, because
+   byte-identity includes stderr (task 16.2 R3). {#d-2}
 3. **Invisible shim, not fully passive.** The rewrite stays, because it sees greps inside compound
    commands along with their exact argv and cwd. Fully passive remains the fallback only if 16.2's
    rewriter differential finds misparses. {#d-3}
 
-Next gate: task specs for 16.1–16.4 in `plan-16-invisible-grep-shim-tasks/`, then `approved`.
+**Interim (user, 2026-10-06):** `RMXGREP_MODE=plain` in `~/.claude/settings.json` and
+`.claude/settings.local.json`. Any value other than `rich` is auto, and the agent shell is not a
+tty, so greps already run the real tool plus today's flag-stripped ping until 16.2 ships. The 63
+env-sensitive tests pass under it (`workflow/review-output/rmxgrep-mode-plain.log`). {#interim}
+
+Next gate: task specs written (`plan-16-invisible-grep-shim-tasks/`, 16.1–16.4); `@ch-bsd` spec
+review, then `approved`.
 
 ## Out of scope {#out-of-scope}
 
 - Fixing `rmx grep`'s own drop-in gaps beyond what r3 already fixed (`\b`/`\<` BRE escapes, the
   missing-path exit code, `-w` verification). Each is logged in `workflow/bug_registry.md` and
   belongs to the explicit command's backlog. The shim no longer exposes them.
-- A PATH-level `grep` alias. Scripts outside the agent's Bash tool are not rewritten today and are
-  not rewritten by this plan either.
+- A PATH-level `grep` alias. CORRECTION (task 16.2): scripts the agent runs under bash DO reach the
+  shim today, through the `grep()`/`rg()` functions that `BASH_ENV` defines in
+  `agent-bashrc.sh`. They become invisible along with everything else. Shells outside the agent are
+  untouched.
