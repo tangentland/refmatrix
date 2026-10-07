@@ -12,8 +12,9 @@ metadata:
 # Plan 16: the grep shim stops answering and only watches {#root}
 
 **Date:** 2026-10-06
-**Status:** Drafting. No task specs yet, and no code until the user approves this plan and
-[[#decisions]] is settled. Sequenced after `bsd-r1-remedy` merges (plan-15's round 4).
+**Status:** Drafting. Task specs revision 2 (2026-10-07) addresses ch-bsd spec review
+`bsd-plan16-spec-review-b587621` (NEEDS-REVISION, 23 findings) and awaits re-review before
+`approved`. No code yet. Sequenced after `bsd-r1-remedy` merges.
 
 rel: depends-on -> [[plan-15-derive-impact-tracking]]
 rel: derives-from -> [[plan-14-grep-learning-measurement]]
@@ -63,10 +64,12 @@ learner that is faithful to the search. {#already-built}
 **The shim** (`bin/rmxgrep`, `bin/rmxrg`, generated hook config). {#shim}
 
 - Delete the rich branch and `RMXGREP_MODE`. Every path ends in `exec "$REAL" "$@"`.
-- The learner launches BEFORE the exec, as a detached child with its own process group and stdio
-  closed, so the caller's output and exit code can never wait on it.
-- Unchanged: the outside-a-project branch, the pipe-filter branch (a grep reading a pipe teaches
-  nothing), the learn toggle, and the per-invocation throttle stamp.
+- The learner starts BEFORE the exec with stdio on `/dev/null`. It detaches itself (`os.setsid()`,
+  task 16.1 R0), because `/bin/sh`'s `&` alone leaves it in the caller's process group (measured).
+- Unchanged in BOTH wrappers: the outside-a-project branch, the pipe-filter branch (a grep reading a
+  pipe teaches nothing), and the learn toggle. `rmxrg` gained the toggle in `321ff97`.
+- The throttle stamp is re-keyed on cwd + NUL-joined argv, and every throttled call is counted
+  (task 16.2 R3).
 - Remove `RMXGREP_MODE: rich` from `~/.claude/settings.json` env and `agent-bashrc.sh`, through the
   generator, never by hand.
 
@@ -88,8 +91,13 @@ are needed. Full spec: task 16.1. {#learner}
 - **It resolves paths to absolute against the caller's cwd before learning.** This closes the path
   half of ch-bsd r3 #s-6: learned rows are stored relative today, so verifying them depends on the
   cwd.
-- **It is bounded.** At most N hits are taught (start at 500) under a wall-clock cap. Every call
-  appends one record to `.refmatrix/grep-learn.log`, and the learner never opens a `Store`.
+- **It teaches only the corpus.** Hits pass the watcher's own relevance predicate before the cap
+  (task 16.1 R3), because BSD `grep -r` ignores `.gitignore` and would otherwise teach `.refmatrix/`
+  logs and `.venv-eval/` as protected entities.
+- **It is bounded on every leg.** At most 200 corpus hits are taught, under a wall-clock cap and an
+  in-flight cap of 2 per store. Store-side, re-teaching is idempotent: `_learn_grep_hits` skips
+  existing evidence. Every call appends one record to `<store_root>/grep-learn.log`, and the learner
+  never opens a `Store`.
 - **The dedicated Grep tool uses it too.** `grep-tool-teach.sh` (PostToolUse(Grep)) calls the same
   learner, so all three surfaces learn from one implementation.
 
@@ -118,10 +126,10 @@ Specs go in `workflow/plans/plan-16-invisible-grep-shim-tasks/` before approval.
 
 | Task | Builds | Acceptance (sketch) |
 |---|---|---|
-| 16.1 | the `grep_learn` verb + `rmx grep --learn-only` | flag fidelity table RED→GREEN: `-i`/`-w`/`-F`/`-x`/`-e` each teach the lines `/usr/bin/grep -n` reports; `-v`/`-L` teach nothing; learned paths absolute; bounded under a stalled daemon (wall < cap + 1 s) |
-| 16.2 | invisible shim: rich branch + `RMXGREP_MODE` removed, learner wired, generator updated | differential vs `/usr/bin/grep` and `rg` over a fixed invocation corpus: stdout, stderr, exit identical 100%; `rmx install-hooks --check` clean; learner never delays exit (shim wall within ε of bare grep while daemon stalled) |
-| 16.3 | Grep-tool hook on the learner; docs (PRIMER text, `.refmatrix/CLAUDE.md` briefing, search_hooks header, guard header) | Grep-tool teach uses argv-faithful learner; docs say "grep is observed; ask the index by name" |
-| 16.4 | measurement | replay the real grep log (plan-14's corpus) through old ping vs new learner: patterns taught, rows taught, precision of taught rows vs real lines (must be 1.000); shim overhead p50/p95; index-answer share forgone |
+| 16.1 | `grep_learn.py` behind the hidden `rmx grep-learn` (not a verb); `corpus.py` predicate; `_learn_grep_hits` dedupe | flag fidelity with proven power; cutoffs honoured; corpus-only; entity identity under symlinked cwd; detached; slots; switch on `store_root`; idempotent store |
+| 16.2 | invisible shim in both wrappers; cwd+argv throttle, counted; `RMXGREP_TEACH` retired via the log; generators + `check()` extended | differential 100% byte-identical with power shown on the current shim; caller never delayed; overhead with the REAL learner |
+| 16.3 | Grep-tool hook rebuilt from the tool's real rg argv (`--hidden`, VCS globs, constants pinned); every doc/help surface | taught set equals the tool's captured RESPONSE; paging inputs do not kill; no stale claim anywhere |
+| 16.4 | measurement on real transcript invocations (incl. subagents) | oracle = what the agent SAW (`tool_result`), never the learner's own re-run; route breakdown incl. unobserved route 3; forgone index share without train-on-test |
 
 ## Decisions (user, 2026-10-06) {#decisions}
 
@@ -146,6 +154,12 @@ Next gate: task specs written (`plan-16-invisible-grep-shim-tasks/`, 16.1–16.4
 review, then `approved`.
 
 ## Out of scope {#out-of-scope}
+
+- **Route 3: Claude Code's own `grep()` (spec review #s-5).** In the top-level Bash-tool shell,
+  Claude Code's snapshot function runs its embedded ugrep and shadows the agent-bashrc `grep()`.
+  So a grep the rewrite does not touch is not observed: non-head (`if grep -q …`), git-exempt, or
+  in a command with a heredoc. Capturing it would reopen d-3. Task 16.4 measures its share as
+  `unobserved_share`, and the decision is revisited if that share is large.
 
 - Fixing `rmx grep`'s own drop-in gaps beyond what r3 already fixed (`\b`/`\<` BRE escapes, the
   missing-path exit code, `-w` verification). Each is logged in `workflow/bug_registry.md` and
