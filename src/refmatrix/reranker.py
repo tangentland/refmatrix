@@ -326,6 +326,17 @@ class RemoteReranker:
             self._model_name = self._client.info().get("model") or DEFAULT_MODEL
         return self._model_name
 
+    def with_budget(self, budget_s: "float | None") -> "RemoteReranker":
+        """A per-request view on the SAME worker, bounded by `budget_s` from now.
+
+        The daemon caches one unbounded reranker; a read op that must not wait
+        on a busy worker takes a bounded view of it (ch-bsd r8 #s-2: the
+        context op's rerank had no deadline, so a busy shared worker could
+        hold the op for SHARED_OP_TIMEOUT_S)."""
+        view = RemoteReranker(self._client, budget_s=budget_s)
+        view._model_name = self._model_name
+        return view
+
     def score(self, query: str, docs: Sequence[str]) -> list[float]:
         if not docs:
             return []

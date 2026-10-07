@@ -2441,7 +2441,9 @@ class Daemon:
         if snap.exists():
             target = snap
         else:
-            active = self._active_slot or self._read_active_slot()
+            # getattr: `_active_slot` is set at startup; a daemon that never
+            # started (an op called on a bare `Daemon(root)`) reads the marker.
+            active = getattr(self, "_active_slot", None) or self._read_active_slot()
             target = self._replica_file(active)
             if not target.exists():
                 return None
@@ -4585,6 +4587,17 @@ def _op_query(d: Daemon, args: dict) -> dict:
         return out
 
 
+def _context_rerank_budget_s() -> float:
+    """Seconds the context op's rerank may spend (`RMX_CONTEXT_RERANK_S`,
+    default 3.0). Measured warm: ~0.1 s for 10 docs on the daemon's worker
+    (ch-bsd r8); the hook's shared worker took 1.33 s for 10 (context.py)."""
+    try:
+        v = float(os.environ.get("RMX_CONTEXT_RERANK_S", "3.0"))
+    except ValueError:
+        v = 3.0
+    return v if v > 0 else 3.0
+
+
 def _op_context(d: Daemon, args: dict) -> dict:
     """Build a context bundle and return its rendered form. Read-side
     operations have to route through the daemon too because DuckDB blocks
@@ -4628,13 +4641,24 @@ def _op_context(d: Daemon, args: dict) -> dict:
     if getattr(d, "_maybe_rerank", None) and d._maybe_rerank(args):
         try:
             _ctx_rr = d._reranker()
+            # Bounded per request (ch-bsd r8 #s-2). An over-budget pool is a
+            # RerankSkipped, recorded on bundle.warnings, never a wait.
+            if hasattr(_ctx_rr, "with_budget"):
+                _ctx_rr = _ctx_rr.with_budget(_context_rerank_budget_s())
         except Exception as exc:
             d._log(f"context rerank unavailable: {exc!r}")
             warnings.append(f"rerank unavailable, answer is unreranked "
                             f"({type(exc).__name__}: {exc})")
-    with d._store_lock, d._st().with_partition(_ctx_part):
-        bundle = build_context(
-            d._st(), ref,
+
+    # Built on the READ path, as `describe` and `memory_get` are (ch-bsd r8
+    # #s-2): `build_context` runs the rerank's model call, and on the writer
+    # under `_store_lock` that call held every writer behind it — the
+    # lock-holding wedge class of bug-085. `_read_with_fallback` takes the
+    # writer lock only when no read store exists, and the budget above bounds
+    # that case.
+    def _build(rs):
+        return build_context(
+            rs, ref,
             linkages=linkages,
             max_entities=max_entities,
             max_tokens=max_tokens,
@@ -4649,6 +4673,7 @@ def _op_context(d: Daemon, args: dict) -> dict:
             _entities_explicit=entities_explicit,
             _tokens_explicit=tokens_explicit,
         )
+    bundle = _read_with_fallback(d, _ctx_part, _build)
     body = render_json(bundle) if fmt == "json" else render_text(bundle)
     warnings.extend(bundle.warnings)
     # Self-heal: if the grep backstop fired (index missed, grep hit), fold the
