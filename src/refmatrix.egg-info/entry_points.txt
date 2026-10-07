@@ -1,0 +1,3 @@
+[console_scripts]
+refmatrix = refmatrix.cli:cli_entry
+rmx = refmatrix.cli:cli_entry

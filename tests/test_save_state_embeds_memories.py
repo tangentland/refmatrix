@@ -431,6 +431,13 @@ def test_save_state_command_renders_the_embed_line(quiet, monkeypatch):
         "--no-promote"])
     assert r.exit_code == 0, r.output
     assert "3 row(s) now reachable by recall" in r.output, r.output
+    # EXACTLY once. The first cut printed it twice — the bridge appends the
+    # line to the report that save-state echoes, and the renderer printed it
+    # again from `fin["embed"]`. This assertion said only "appears", so it
+    # passed straight through the duplication; I saw it in this session's own
+    # save-state output, not in a test.
+    assert r.output.count("memory embed") == 1, (
+        f"{r.output.count('memory embed')} embed lines:\n{r.output}")
 
 
 def test_the_capped_branch_reports_a_real_count_from_the_real_producer(tmp_path,
