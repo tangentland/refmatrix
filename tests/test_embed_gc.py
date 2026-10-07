@@ -8,7 +8,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-pytest.importorskip("lance")
+import importlib.util  # noqa: E402
+
+# Skip ONLY when lance is not installed; an installed-but-broken lance fails
+# here instead of skipping (ch-bsd r8 #s-4).
+if importlib.util.find_spec("lance") is None:
+    pytest.skip("lance not installed", allow_module_level=True)
+import lance  # noqa: E402,F401
 
 from refmatrix.store import Store
 

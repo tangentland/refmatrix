@@ -17,7 +17,13 @@ import builtins
 
 import pytest
 
-pytest.importorskip("lance")
+import importlib.util
+
+# Skip ONLY when lance is not installed; an installed-but-broken lance fails
+# here instead of skipping (ch-bsd r8 #s-4).
+if importlib.util.find_spec("lance") is None:
+    pytest.skip("lance not installed", allow_module_level=True)
+import lance  # noqa: E402,F401
 
 from refmatrix import sync as sync_mod
 from refmatrix.store import Store
@@ -99,3 +105,42 @@ def test_sync_prune_and_fold_report_the_failures(tmp_path, capsys):
     s.upsert_entity(kind="concept", name="dup")
     res = s.fold_concept_dups()
     assert res["vector_delete_failed"] == 1, res
+
+
+# ---- ch-bsd r8 #s-1: the count reaches every caller, memory paths included --
+
+def test_the_forget_paths_and_vacuum_return_the_count(tmp_path, capsys):
+    s = _store(tmp_path)
+    _break(s, "memory")
+    _break(s, "concept")
+    m1 = s.add_memory(name="m1", content="x")
+    s.add_memory(name="m2", content="y")
+
+    r = s.bulk_forget_memories(ids=[m1])
+    assert r["vector_delete_failed"] == 1, r
+
+    r = s.forget_by_selector(names=["m2"])
+    assert r["vector_delete_failed"] == 1, r
+
+    s.add_concept("lonely")          # a concept with no links: vacuum drops it
+    r = s.vacuum()
+    assert r["concepts_dropped"] >= 1 and r["vector_delete_failed"] >= 1, r
+
+
+def test_rmx_forget_prints_the_failure_on_the_callers_terminal(tmp_path, monkeypatch):
+    """End to end through the real CLI on a store with a broken dataset."""
+    from click.testing import CliRunner
+
+    from refmatrix import cli as cli_mod
+
+    s = _store(tmp_path)
+    _break(s, "concept")
+    s.add_concept("doomed")
+    s.close()
+    monkeypatch.setattr(cli_mod, "_root", lambda: tmp_path / ".refmatrix")
+    monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
+
+    r = CliRunner().invoke(cli_mod.main, ["forget", "doomed", "-y"])
+
+    assert r.exit_code == 0, r.output
+    assert "rmx forget: 1 vector delete(s) FAILED" in r.stderr, r.stderr

@@ -3016,6 +3016,7 @@ class Daemon:
                             self._log(f"pre-flush repair failed: {rexc!r}")
                             self._fast_exit_if_invalidated(rexc, "pre-flush repair")
                     total_added = total_updated = total_purged = 0
+                    total_vec_failed = 0
                     cancelled = False
                     for owner, owner_paths in groups.items():
                         report = sync_files(
@@ -3027,6 +3028,7 @@ class Daemon:
                         total_added += report["added"]
                         total_updated += report["updated"]
                         total_purged += report["purged"]
+                        total_vec_failed += report.get("vector_delete_failed") or 0
                         if report.get("cancelled"):
                             cancelled = True
                 queued = _enqueue_curator(paths)
@@ -3036,10 +3038,14 @@ class Daemon:
                 roots_tail = (
                     f" roots={len(groups)}" if len(self.watch_roots) > 1 else ""
                 )
+                # The hot path bug-085 moved onto the batch helper; its count
+                # reaches the log line, not only daemon.stderr (ch-bsd r8 #s-1).
+                vec_tail = (f" vector_delete_FAILED={total_vec_failed}"
+                            if total_vec_failed else "")
                 self._log(
                     f"watch flush: paths={len(paths)} +{total_added} "
                     f"~{total_updated} -{total_purged}"
-                    f"{tail}{cancel_tail}{repair_tail}{roots_tail}"
+                    f"{tail}{cancel_tail}{repair_tail}{roots_tail}{vec_tail}"
                 )
             except Exception as exc:
                 self._log(f"watch flush failed: {exc!r}")

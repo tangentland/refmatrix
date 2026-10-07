@@ -2964,6 +2964,7 @@ class Store:
             id_list,
         ).fetchall():
             ids_by_kind.setdefault(row["kind"], []).append(int(row["id"]))
+        failed0 = getattr(self, "vector_delete_failures", 0)
         self._drop_lance_for_purge_batch(ids_by_kind)
 
         for eid in id_list:
@@ -2971,6 +2972,9 @@ class Store:
         return {
             "forgotten": len(id_list), "ids": id_list,
             "by_mtype": per_mtype, "dry_run": False,
+            # ch-bsd r8 #s-1: a memory path; the failure reaches the caller.
+            "vector_delete_failed":
+                getattr(self, "vector_delete_failures", 0) - failed0,
         }
 
     def reinforcement_score(
@@ -6018,8 +6022,11 @@ class Store:
         names = [r[1] for r in rows]
         if dry_run:
             return {"forgotten": 0, "names": names, "dry_run": True}
+        failed0 = getattr(self, "vector_delete_failures", 0)
         self._bulk_purge_ids([(int(r[0]), r[2], r[1]) for r in rows])
-        return {"forgotten": len(rows), "names": names, "dry_run": False}
+        return {"forgotten": len(rows), "names": names, "dry_run": False,
+                "vector_delete_failed":
+                    getattr(self, "vector_delete_failures", 0) - failed0}
 
     def _bulk_purge_ids(self, info: "list[tuple[int, str, str]]") -> int:
         """Batched purge of `(id, kind, name)` triples — the scalable sibling of
@@ -6917,6 +6924,7 @@ class Store:
         summary dict."""
         from os.path import exists as _exists
         con = self._connect()
+        failed0 = getattr(self, "vector_delete_failures", 0)
 
         # 1. concepts whose every bitmap is empty == no rows in entity_links.
         # Skip protected concepts — those are user-asserted and survive vacuum
@@ -6967,6 +6975,8 @@ class Store:
         return {
             "concepts_dropped": len(empty_concepts),
             "files_purged": len(gone),
+            "vector_delete_failed":
+                getattr(self, "vector_delete_failures", 0) - failed0,
         }
 
     # ---- noise pruning ----------------------------------------------------

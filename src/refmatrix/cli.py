@@ -413,6 +413,19 @@ class _DaemonWriter:
                           timeout=24 * 3600.0).get("entities", 0)
 
 
+
+def _say_vector_delete_failures(result, what: str) -> None:
+    """Put a failed vector delete on the CALLER's terminal (ch-bsd r8 #s-1).
+
+    On a daemon-managed store the store's own stderr line lands in
+    `daemon.stderr.log`; the count rides back in the op's result, and every
+    render site calls this so the user who ran the command sees it."""
+    n = (result or {}).get("vector_delete_failed") if isinstance(result, dict) else None
+    if n:
+        click.echo(f"rmx {what}: {n} vector delete(s) FAILED; those vectors are "
+                   f"orphaned until `rmx embed --gc` (cause in daemon.stderr.log)",
+                   err=True)
+
 def _store(write: bool = True) -> "Store":
     """THE catalog accessor. The `write` flag signals intent at the call site.
 
@@ -4586,6 +4599,7 @@ def forget_cmd(names, like, namespace, kind, dry_run, yes):
             console.print(f"  … +{len(matched) - 20} more")
         click.confirm("proceed", abort=True)
     r = s.forget_by_selector(dry_run=False, **sel)
+    _say_vector_delete_failures(r, "forget")
     console.print(f"[red]forgot[/] {r.get('forgotten', 0)} entities")
 
 
@@ -7712,6 +7726,7 @@ def checkpoint():
 def vacuum():
     """Drop empty concepts and tracked files that no longer exist."""
     out = _store(write=True).vacuum()
+    _say_vector_delete_failures(out, "vacuum")
     console.print(
         f"[green]vacuumed[/] dropped {out['concepts_dropped']} empty concepts, "
         f"purged {out['files_purged']} missing files"
@@ -7741,6 +7756,7 @@ def prune_noise(namespace, min_df, max_df_ratio, drop):
         namespaces=tuple(namespace), min_df=min_df,
         max_df_ratio=max_df_ratio, drop=drop,
     )
+    _say_vector_delete_failures(out, "prune-noise")
     if drop:
         console.print(
             f"[green]dropped[/] {out['dropped']} concepts "
@@ -8342,6 +8358,7 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
                     f"[green]synced[/] +{r['added']} ~{r['updated']} "
                     f"-{r['purged']} (touched={r['touched']}) [daemon]"
                 )
+                _say_vector_delete_failures(r, "sync")
             return
         # Daemon-managed store but the daemon isn't reachable (down or
         # restarting). Do NOT open the catalog directly — a direct write
@@ -12547,6 +12564,7 @@ def memory_dedup(dry_run):
     _memory_intent("memory_dedup")
     s = _store(write=True)
     res = s.fold_concept_dups(dry_run=dry_run)
+    _say_vector_delete_failures(res, "memory dedup")
     verb = "would fold" if res.get("dry_run") else "folded"
     console.print(
         f"[green]{verb}[/] {res.get('folded', 0)} concept↔memory dup(s), "
@@ -12923,6 +12941,7 @@ def memory_bulk_forget(ids, names, mtypes, dry_run, yes):
     console.print(
         f"[green]forgot[/] {result.get('forgotten', 0)} memories"
     )
+    _say_vector_delete_failures(result, "memory forget")
 
 
 # --- session-index group (Phase B) ----------------------------------------
