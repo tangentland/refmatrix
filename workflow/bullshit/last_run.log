@@ -1,1 +1,1 @@
-2026-10-07T15:04:56-0700 commit=cf50d89 verdict=DIRTY findings=4 (0B/3S/1M) report=2026-10-07-1504-r12-warm-thread-outlives-close-cf50d89.md
+2026-10-07T16:25:32-0700 commit=dcf7115 verdict=DIRTY findings=3 (0B/1S/2M) report=2026-10-07-1625-r13-retire-holds-startup-pin-misses-dcf7115.md

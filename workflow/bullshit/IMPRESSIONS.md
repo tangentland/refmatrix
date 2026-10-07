@@ -163,3 +163,5 @@ rel: related-to -> [[impression_bsd_guard_cannot_fire]]
 rel: related-to -> [[#imp-budget-view-shares-the-lock]]
 - 2026-10-07 (r12): A HEAL THAT RUNS ONCE IS TESTED ONCE. Every remedy test needed exactly one background warm, so dropping the `_warming` reset (one warm per client lifetime) survived, and that mutant is r11's blocker returning on the second cold episode. For any self-healing path, the test is two episodes on one object. Also: "spawns == 1, loads == 1" cannot see duplicate warm threads that serialize on a lock and read a cache (K3 survived the test written to kill it). {#imp-heal-runs-once}
 rel: related-to -> [[#imp-close-is-not-retirement]]
+- 2026-10-07 (r13): A TEST NAMED FOR THE ROUTE THAT CALLS THE HELPER. `test_the_startup_warmup_really_loads` called `_reranker(load=True)` itself, so reverting the one call site in `_start_embedder_warmup` (L6) survived the whole suite. When a remedy changes a call site, mutate the call site, not the parameter it passes. {#imp-route-named-helper-tested}
+rel: related-to -> [[#imp-heal-runs-once]]
