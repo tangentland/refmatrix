@@ -22,7 +22,6 @@ from refmatrix.ingest import (
     _ingest_adr_semantics,
     _ingest_markdown_semantics,
     _ingest_pseudo_semantics,
-    _ingest_python_semantics,
     _ingest_tldr,
     _is_adr_file,
     should_ignore,
@@ -312,12 +311,22 @@ def _sync_paths(
                 _ingest_markdown_semantics(s, ap, project_root, adr_num_to_eid)
 
         if semantic and not _cancelled():
+            # BULK, as full ingest does (bug-093): build each file's record off
+            # the store, then apply them with batched upserts. The per-row
+            # `_ingest_python_semantics` issued one INSERT ... ON CONFLICT per
+            # docstring keyword under `_store_lock`; a watch re-sync of cli.py
+            # held the lock for minutes and the hub watchdog killed the daemon.
+            from refmatrix.ingest import _build_python_semantic_record
+            from refmatrix.ingest_records import bulk_apply_records
+            records = []
             for ap in touched_existing:
                 if _cancelled():
                     cancelled = True
                     break
                 if ap.suffix.lower() == ".py":
-                    _ingest_python_semantics(s, ap, project_root)
+                    records.append(_build_python_semantic_record(ap, project_root))
+            if records and not cancelled:
+                bulk_apply_records(s, records)
 
     report = {"added": added, "updated": updated, "purged": purged,
               "touched": len(touched_existing), "cancelled": cancelled}
