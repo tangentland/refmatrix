@@ -6124,10 +6124,9 @@ def grep(ctx, argv, regex, linkage, kind, limit, fallback,
         if delegate:
             # Full flag compatibility: a valid grep/rg flag the index can't
             # express bypasses the index — the real tool runs with the
-            # ORIGINAL argv so every flag keeps its native semantics. The
-            # graph still learns from parsed file:line hits.
-            _grep_delegate(list(argv), path_strs, delegate,
-                           learn=learn, piped=piped)
+            # ORIGINAL argv so every flag keeps its native semantics. It
+            # teaches nothing (ch-bsd r6 #s-1).
+            _grep_delegate(list(argv), path_strs, delegate, piped=piped)
             return
         # Habitual grep flags (-rn) hit this on every call; the note says
         # nothing actionable, so it only prints under RMX_GREP_VERBOSE=1.
@@ -6274,12 +6273,12 @@ def grep(ctx, argv, regex, linkage, kind, limit, fallback,
 
 
 def _grep_delegate(raw_tokens: list, path_strs: list, reasons: list,
-                   learn: bool = True, piped: bool = False) -> None:
+                   piped: bool = False) -> None:
     """Run the user's grep invocation VERBATIM through the real tool because
     it carries flags the index can't express. rg first (it understands most
     of the surface); on a usage error (exit 2 — e.g. grep-only flags like
-    --include) retry with grep. Output passes through byte-for-byte; hits
-    that parse as file:line still teach the graph (fire-and-forget RPC).
+    --include) retry with grep. Output passes through byte-for-byte, and
+    nothing is taught (ch-bsd r6 #s-1: the output's shape is the user's).
 
     Exit codes follow the tool: 0 hits, 1 no hits, tool's own error text on
     genuinely invalid flags — flag compatibility means the real tool is the
@@ -6328,51 +6327,13 @@ def _grep_delegate(raw_tokens: list, path_strs: list, reasons: list,
     if res.stderr and res.returncode not in (0, 1):
         _sys.stderr.write(res.stderr)
 
-    # Only `file:line:text` output can teach (ch-bsd r5 #s-2): `-c` printed a
-    # COUNT where the parse read a line number, `-h` printed TEXT where it
-    # read a file. Any output-shaping flag means the lines are not that shape.
-    _shape_short = set("chlLoqZ")
-    _shape_long = {"--count", "--no-filename", "--files-with-matches",
-                   "--files-without-match", "--only-matching", "--quiet",
-                   "--silent", "--null"}
-    _shaped = any(
-        (tok in _shape_long or tok.split("=", 1)[0] in _shape_long)
-        or (tok.startswith("-") and not tok.startswith("--")
-            and _shape_short & set(tok[1:]))
-        for tok in tokens)
-    if learn and res.returncode == 0 and not piped and not _shaped:
-        import os as _os
-        hits = []
-        unparsed = 0
-        _cwd = _os.getcwd()
-        for raw in res.stdout.splitlines():
-            parts = raw.split(":", 2)
-            if len(parts) >= 2:
-                try:
-                    # ABSOLUTE, as in `_grep_rg_fallback` (ch-bsd r4 #b-5): the
-                    # tool printed the cwd-relative spelling, and a relative
-                    # learned row is later read against whatever cwd the reader
-                    # has.
-                    hits.append({"file": _os.path.normpath(
-                                     _os.path.join(_cwd, parts[0])),
-                                 "line": int(parts[1])})
-                except ValueError:
-                    unparsed += 1     # counted, not dropped silently
-        if hits:
-            try:
-                _r = _root()
-                # Teach with the pattern-ish token: first non-flag arg.
-                pat = next((x for x in tokens
-                            if not x.startswith("-")), "")
-                _broker_learn_from_grep(_r, pat, hits[:200])
-            except Exception as e:  # noqa: BLE001 — named, never mute
-                # Was a bare `pass` on a memory path (bug-082). Stderr only:
-                # stdout is the delegated tool's bytes.
-                click.echo(f"# rmx: learn failed ({type(e).__name__}) — the "
-                           f"graph did not record {len(hits)} hit(s)", err=True)
-        if unparsed:
-            click.echo(f"# rmx: {unparsed} delegated output line(s) were not "
-                       f"file:line and taught nothing", err=True)
+    # The delegate TEACHES NOTHING (ch-bsd r6 #s-1, user-approved 2026-10-07).
+    # Its output is whatever shape the user's flags asked for, and every guard
+    # tried here keyed on flag spellings rather than the shape: a default
+    # `--include` grep taught rg's padded `f.yml:  7:` as line 7 of a 3-line
+    # file, `-m 5` taught the concept `query/5`, and both rows are protected,
+    # so prune never reclaims them. Grep is observed, not answered; plan-16
+    # task 16.5 deletes this branch and the learner (16.1) owns teaching.
     raise SystemExit(res.returncode)
 
 

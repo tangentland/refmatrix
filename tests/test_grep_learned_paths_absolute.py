@@ -50,13 +50,19 @@ def test_a_relative_argv_teaches_an_absolute_path(tree, capsys):
     assert "alpha here" in capsys.readouterr().out
 
 
-def test_the_delegate_branch_teaches_absolute_paths_too(tmp_path, monkeypatch):
-    """ch-bsd r4 #b-5's sibling: `_grep_delegate` (flags the index cannot
-    express, e.g. `--include`) taught the tool's cwd-relative spelling, the
-    exact defect 321ff97 fixed one function over. Its learn call was also
-    wrapped in a bare `except Exception: pass` on a memory path (bug-082)."""
-    import json
-
+@pytest.mark.parametrize("flags", [
+    ["-rn"],                      # the default shape: was taught (r4 #b-5)
+    ["-r"],                       # rg pads line numbers off a tty: r6 #s-1
+    ["-rn", "-m", "5"],           # `5` was taken as the pattern: query/5
+    ["-rn", "-c"], ["-rn", "-h"], ["-rn", "-l"], ["-rn", "-o"],
+    ["-rn", "--count"],           # the long forms were never pinned (B2)
+])
+def test_the_delegate_teaches_nothing_and_prints_the_tool_output(
+        tmp_path, monkeypatch, flags):
+    """ch-bsd r6 #s-1 (user-approved): `_grep_delegate` runs the real tool and
+    teaches NOTHING. r4/r5 guarded the teach on flag spellings; the output's
+    shape is the user's, so `--include` taught padded line numbers, `-m 5`
+    taught `query/5`, and the rows were protected. Output is unchanged."""
     from click.testing import CliRunner
 
     from refmatrix.store import Store
@@ -66,49 +72,17 @@ def test_the_delegate_branch_teaches_absolute_paths_too(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     proj = tmp_path / "proj"
     (proj / "sub").mkdir(parents=True)
-    (proj / "sub" / "a.txt").write_text("x\nalpha here\n")
+    (proj / "sub" / "a.txt").write_text("x\nalpha here\nalpha:3\n")
     s = Store(proj / ".refmatrix", backend="duckdb")
     s.init()
     s.close()
     monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
     monkeypatch.chdir(proj / "sub")
 
-    res = CliRunner().invoke(cli_mod.main, ["grep", "--include=*.txt", "-rn",
+    res = CliRunner().invoke(cli_mod.main, ["grep", "--include=*.txt", *flags,
                                             "alpha", "."])
 
-    assert "alpha here" in res.stdout, res.output
-    q = proj / ".refmatrix" / "learn.queue.jsonl"
-    assert q.exists(), "nothing was taught"
-    hits = [h for line in q.read_text().splitlines()
-            for h in json.loads(line)["hits"]]
-    assert hits and all(os.path.isabs(h["file"]) for h in hits), hits
-    assert hits[0]["file"] == str(proj / "sub" / "a.txt"), hits
-
-
-@pytest.mark.parametrize("flag", ["-c", "-h", "-l", "-o"])
-def test_the_delegate_teaches_nothing_from_non_line_output(tmp_path, monkeypatch, flag):
-    """ch-bsd r5 #s-2: the delegate parsed every `x:y` output line as
-    `file:line`, so `-c` taught a COUNT as a line number (`c.txt:2` -> line 2)
-    and `-h` taught matched TEXT as a file. Output shapes that are not
-    `file:line:text` teach nothing (plan-16 task 16.5 deletes this branch)."""
-    from click.testing import CliRunner
-
-    from refmatrix.store import Store
-
-    monkeypatch.setenv("RMX_GREP_NOTE", "0")
-    monkeypatch.delenv("RMX_LEARN", raising=False)
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    proj = tmp_path / "proj"
-    proj.mkdir()
-    (proj / "c.txt").write_text("alpha:3\nx\nalpha two\n")
-    s = Store(proj / ".refmatrix", backend="duckdb")
-    s.init()
-    s.close()
-    monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
-    monkeypatch.chdir(proj)
-
-    CliRunner().invoke(cli_mod.main, ["grep", "--include=*.txt", "-rn", flag,
-                                      "alpha", "."])
-
+    assert res.exit_code == 0, res.output
+    assert res.stdout.strip(), "the tool's output must still print"
     q = proj / ".refmatrix" / "learn.queue.jsonl"
     assert not q.exists() or not q.read_text().strip(), q.read_text()
