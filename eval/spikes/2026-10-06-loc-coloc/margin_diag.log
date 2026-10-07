@@ -1,0 +1,4 @@
+lines losses: 40
+{'gold base rank 2-20': 13, 'gold base rank 1': 27}
+{'gold coloc<0.5': 20, 'gold coloc=0': 20}
+mean gold coloc 0.10  mean new-top coloc 0.54

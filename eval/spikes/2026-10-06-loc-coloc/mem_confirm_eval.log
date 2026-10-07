@@ -1,0 +1,7 @@
+
+== confirmation set: 720 untouched questions (excluded 180 tuning ids)
+  base                   MRR@20=0.1851 hit@1=0.119 hit@5=0.265 hit@10=0.335 hit@20=0.403  +0/-0 sign-p=1.0000
+  sent-l0.3 [PRE-REG]    MRR@20=0.1962 hit@1=0.128 hit@5=0.276 hit@10=0.343 hit@20=0.428  +100/-67 sign-p=0.0130
+  coloc-sent-l0.3        MRR@20=0.1935 hit@1=0.126 hit@5=0.268 hit@10=0.339 hit@20=0.421  +82/-32 sign-p=0.0000
+  coloc-para-l0.3        MRR@20=0.1937 hit@1=0.125 hit@5=0.269 hit@10=0.343 hit@20=0.422  +80/-36 sign-p=0.0001
+  sent+coloc-para-l0.3   MRR@20=0.1997 hit@1=0.131 hit@5=0.282 hit@10=0.347 hit@20=0.436  +118/-68 sign-p=0.0003

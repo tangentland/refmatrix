@@ -1,0 +1,35 @@
+units=4618 terms=19455
+  q: This tree not pgTAP suite and does gate Its integrity
+     +['Full', 'rights', 'test_regr', 'xdist_sharded', 'reworked', 'long_open', 'file_based', 'feedback_branch_authoring_agents_need_worktrees', 'cliquedb_handle_registry_cross_db', 'TDD']
+  q: word mint instance part under Every subnet owns its full
+     +['prefix', 'member', 'disc', 'containment', 'mints', 'instances', 'local', 'sign', 'minted', 'external']
+  q: make test mutation every catalogued mutant must killed zero survivors
+     +['mutants', 'kill', 'assertion', 'group', 'fixture', 'pytest', 'coverage', 'passed', 'sut', 'engineer']
+  q: addr projected security_barrier view exposes index the real unique constraint
+     +['scope_row_visible', 'security_invoker', 'rework', 'pg_has_role', 'row_in_cliquespace', 'querying', 'business', 'shred', 'scope_elevates', 'arbiter']
+  q: paragraph with para reference bar Convention slash mirrors filesystem subdirectory
+     +['noted', 'hide', 'architectural', 'ready', 'lists', 'draft', 'completeness', 'final', 'marker', 'revisions']
+  q: npm install cliquedb client import addr from await conn connect
+     +['setof', 'p_addr', 'thin', 'bigint', 'revoked', 'rpc', 'clients', 'materialized_row', 'acme', 'typescript']
+== lines
+  base      n=37 MRR=0.8523 hit@1=0.8108 hit@5=0.9189 hit@20=0.9189  vs base +0/-0
+            hist 1:30  2-5:4  6-10:0  11-20:0  miss:3
+  rrf-b5    n=37 MRR=0.3934 hit@1=0.2703 hit@5=0.5135 hit@20=0.8919  vs base +0/-24
+            hist 1:10  2-5:9  6-10:9  11-20:5  miss:4
+  rrf-b10   n=37 MRR=0.3485 hit@1=0.2162 hit@5=0.4595 hit@20=0.8919  vs base +0/-26
+            hist 1:8  2-5:9  6-10:8  11-20:8  miss:4
+  cat-b5    n=37 MRR=0.6694 hit@1=0.5676 hit@5=0.8108 hit@20=0.8919  vs base +0/-12
+            hist 1:21  2-5:9  6-10:3  11-20:0  miss:4
+  cat-b10   n=37 MRR=0.4585 hit@1=0.3243 hit@5=0.6486 hit@20=0.8919  vs base +0/-22
+            hist 1:12  2-5:12  6-10:3  11-20:6  miss:4
+== merge
+  base      n=37 MRR=0.8408 hit@1=0.8108 hit@5=0.8649 hit@20=0.8919  vs base +0/-0
+            hist 1:30  2-5:2  6-10:1  11-20:0  miss:4
+  rrf-b5    n=37 MRR=0.4140 hit@1=0.2432 hit@5=0.6486 hit@20=0.8649  vs base +0/-23
+            hist 1:9  2-5:15  6-10:6  11-20:2  miss:5
+  rrf-b10   n=37 MRR=0.3799 hit@1=0.1892 hit@5=0.6216 hit@20=0.8378  vs base +0/-25
+            hist 1:7  2-5:16  6-10:2  11-20:6  miss:6
+  cat-b5    n=37 MRR=0.7928 hit@1=0.7297 hit@5=0.8649 hit@20=0.8649  vs base +0/-4
+            hist 1:27  2-5:5  6-10:0  11-20:0  miss:5
+  cat-b10   n=37 MRR=0.6766 hit@1=0.5405 hit@5=0.8378 hit@20=0.8649  vs base +0/-12
+            hist 1:20  2-5:11  6-10:1  11-20:0  miss:5

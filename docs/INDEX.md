@@ -31,12 +31,16 @@ rel: catalogs -> [[system_design_review]]
 rel: catalogs -> [[adr-0000-adr-overview]]
 rel: catalogs -> [[0001-intuition-lance-integration]]
 rel: catalogs -> [[adr-0002-subject-memory-container]]
+rel: catalogs -> [[adr-0003-canonical-partition-layout]]
+rel: catalogs -> [[adr-0004-unified-location-space-index]]
 
 | Doc | Hook |
 |-----|------|
 | [[adr-0000-adr-overview]] | ADR authoring rules (crosslinking, structure, findability) + the ADR index |
 | [[0001-intuition-lance-integration]] | Intuition memory layer absorbed into rmx + Lance vector backend (Proposed) |
 | [[adr-0002-subject-memory-container]] | Subject: memory-scoped working/durable container for threads of work (Proposed) |
+| [[adr-0003-canonical-partition-layout]] | Canonical partition layout: two per project store, one for global, benchmarks mirror production (Proposed) |
+| [[adr-0004-unified-location-space-index]] | One location space for every search mechanism; sentence co-location measured +4–14% MRR (Proposed) |
 
 ## Authoring guides {#guides}
 

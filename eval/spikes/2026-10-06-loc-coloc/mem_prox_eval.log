@@ -1,0 +1,19 @@
+sessions=1307 entities=43401
+
+== stratified-30.json (n=90)
+  base        MRR@20=0.1925 hit@1=0.111 hit@5=0.322 hit@10=0.400 hit@20=0.478  vs base +0/-0
+  tok10-l0.3  MRR@20=0.1965 hit@1=0.111 hit@5=0.333 hit@10=0.422 hit@20=0.478  vs base +14/-10
+  tok3-l0.3   MRR@20=0.1891 hit@1=0.111 hit@5=0.278 hit@10=0.400 hit@20=0.467  vs base +15/-17
+  sent-l0.3   MRR@20=0.2088 hit@1=0.133 hit@5=0.300 hit@10=0.411 hit@20=0.478  vs base +12/-10
+  tok10-l1.0  MRR@20=0.2066 hit@1=0.122 hit@5=0.333 hit@10=0.389 hit@20=0.467  vs base +18/-15
+  tok3-l1.0   MRR@20=0.1928 hit@1=0.122 hit@5=0.311 hit@10=0.389 hit@20=0.467  vs base +16/-19
+  sent-l1.0   MRR@20=0.2143 hit@1=0.144 hit@5=0.333 hit@10=0.378 hit@20=0.478  vs base +16/-13
+
+== holdout-90.json (n=90)
+  base        MRR@20=0.2502 hit@1=0.167 hit@5=0.311 hit@10=0.400 hit@20=0.489  vs base +0/-0
+  tok10-l0.3  MRR@20=0.2549 hit@1=0.167 hit@5=0.322 hit@10=0.433 hit@20=0.556  vs base +15/-12
+  tok3-l0.3   MRR@20=0.2513 hit@1=0.167 hit@5=0.311 hit@10=0.467 hit@20=0.500  vs base +12/-13
+  sent-l0.3   MRR@20=0.2639 hit@1=0.178 hit@5=0.322 hit@10=0.422 hit@20=0.589  vs base +17/-8
+  tok10-l1.0  MRR@20=0.2405 hit@1=0.144 hit@5=0.356 hit@10=0.433 hit@20=0.556  vs base +17/-17
+  tok3-l1.0   MRR@20=0.2515 hit@1=0.178 hit@5=0.322 hit@10=0.411 hit@20=0.533  vs base +17/-17
+  sent-l1.0   MRR@20=0.2391 hit@1=0.144 hit@5=0.344 hit@10=0.456 hit@20=0.578  vs base +18/-14

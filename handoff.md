@@ -28,6 +28,44 @@ Everything after that sha — the whole r1 remedy, both ch-bsd rounds' fixes,
 bug-073 and bug-074 — exists only on `master`. `origin/main` is at `1452875`
 too. {#state-deploy}
 
+## Two sessions shared this tree on 2026-10-06 {#two-sessions}
+
+Two Claude sessions worked in `~/claude_tools/refmatrix` concurrently. Read both halves of this
+file in that light. {#two-sessions-lead}
+
+- **Session b92019bc (`refmatrix-5e`)** wrote everything else in this handoff: task 15.4,
+  bugs 065–074, two ch-bsd rounds. It works on branch **`bsd-r1-remedy`**.
+- **Session a9e25baf (`helix-unified-bitmap-structure`)** worked on the helix-unification design
+  and spike. It committed only docs and evidence, ON `bsd-r1-remedy` (at the user's direction),
+  on top of `4f70a0b`:
+  - `docs/adr/0004-unified-location-space-index.md` (Proposed) and the ADR-0003/0004 index rows;
+  - `workflow/bug_registry.md` **bug-075**: GMD section text read by dense embed and rerank is
+    the first 8 body lines, capped at 500 chars;
+  - `eval/spikes/2026-10-06-loc-coloc/`.
+  It made no `src/` or `tests/` changes. Headline result: `BM25 + 2.0 × sentence co-location`
+  beats BM25 on cliquedb lines/merge and MemAware test-720
+  (memory `project_sentence_coloc_measured`).
+
+**Branch facts, read at 2026-10-06 ~22:30, because this file's State section disagrees:** {#two-sessions-refs}
+
+- `master` = **1452875** (0.76.0), not 24523f3.
+- `24523f3`, `8ebb691`, `7a7efa0` and `4f70a0b` exist only on **`bsd-r1-remedy`**.
+- The "master = 24523f3" in [[#state]] describes `bsd-r1-remedy`; its merge to master is
+  still pending.
+
+**Incident, recorded so it is not repeated.** At 22:05 session a9e25baf ran `git checkout -b`
+in the shared tree, switching it off `bsd-r1-remedy` for about 7 minutes, and committed there.
+It then restored `bsd-r1-remedy`, re-applied its work staged, and deleted its own branch. The
+other session verified every commit of its own stayed reachable, and its full-suite log
+(16:41–16:58) predates the switch. **Rule: in a shared tree, never switch branches. Stage your own
+paths and commit on the branch that is checked out, or use a separate worktree.** {#two-sessions-incident}
+
+- The `post-checkout` hook backgrounds `rmx sync` but keeps git's stdout open, so a checkout
+  blocks until the sync finishes. On a busy daemon that took more than 10 min.
+- At handoff the daemon was busy, not wedged (a filesystem walk; it answers ping). Do not
+  restart it while queued writes drain.
+- `MEMORY.md` is now 23,583 bytes; headroom against the cap is ~800 bytes.
+
 ## The arc {#arc}
 
 One ask ("recall state", then "proceed with the task and the 3 bugs") became
