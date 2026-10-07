@@ -103,14 +103,19 @@ which about 700 read as unreadable on every global grep (bug-086). {#why-scale}
 
 1. A fixture store with one learned row of each class makes `rmx learn audit` print exactly one in
    each class. The same fixture after a file edit moves the right rows to `stale-line` or `moved`.
-2. `rmx learn prune` (dry run) changes nothing: catalog bytes and Lance versions are unchanged.
+2. `rmx learn prune` (dry run) writes nothing: no catalog row, no sidecar row and no Lance version
+   changes. It is measured with no grep running, because the read-time marks ([[#d-b]]) are written
+   by grep reads, not by prune (ch-bsd r7 #m-5: "byte-identical" conflicted with those marks).
    `--apply` removes exactly the non-`ok` rows, and a second `audit` reports only `ok`.
 3. An entity both ingested and learned survives prune with its ingest links intact, and loses only
    its learned protection and learned evidence.
 4. A prune of N rows across K kinds issues at most K Lance deletes and holds `_store_lock` no longer
    than the batch bound (measured, not asserted from code).
-5. On a COPY of the live global catalog (never the live store), audit's `orphan-root` count matches
-   bug-086's ~700 unreadable rows, to within rows learned since that count.
+5. On a COPY of the live global catalog (never the live store), audit's `orphan-root` count is
+   compared in ONE unit: evidence rows. R5 classifies all 1,087 relative learned entities, which
+   carry 5,159 evidence rows. bug-086's "~700 unreadable" counted rows READ per grep, which is a
+   different population (ch-bsd r7 #m-5). The criterion: `orphan-root` evidence rows equal the
+   catalog copy's count of relative learned evidence rows with no recorded root.
 6. The CLI and MCP surfaces are one verb (verb-parity test).
 
 ## Decisions (user, 2026-10-07) {#decisions}
@@ -125,6 +130,11 @@ which about 700 read as unreadable on every global grep (bug-086). {#why-scale}
   `out-of-range`, `missing-file`, `duplicate` and `orphan-root`. `--class` narrows it. The dry run
   remains the default.
 - **d-d. Scope: inside plan-16, after 16.1** {#d-d}, reviewed in the same spec rounds.
+
+**For the spec review (ch-bsd r7 #m-5):** `moved` is the one class whose row could be re-pointed
+(the same text is now on another line) instead of deleted. d-c stands as decided. Whether
+`prune --repoint-moved` belongs in 16.6 is a question for the review to put to the user, not a
+change made here. {#d-c-review}
 
 The read-time marks (d-b) are writes on a READ path, so they never take `_store_lock` inline. They
 queue the way the learn queue does (`learn_queue.py`), and the daemon tick drains them in bounded

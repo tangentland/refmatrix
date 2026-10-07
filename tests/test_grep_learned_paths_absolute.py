@@ -86,3 +86,28 @@ def test_the_delegate_teaches_nothing_and_prints_the_tool_output(
     assert res.stdout.strip(), "the tool's output must still print"
     q = proj / ".refmatrix" / "learn.queue.jsonl"
     assert not q.exists() or not q.read_text().strip(), q.read_text()
+
+
+def test_an_explicit_learn_on_a_delegated_call_says_it_was_ignored(tmp_path, monkeypatch):
+    """ch-bsd r7 #m-4: the toggle branch says `--learn ignored`; the delegate
+    branch taught nothing and said nothing."""
+    from click.testing import CliRunner
+
+    from refmatrix.store import Store
+
+    monkeypatch.setenv("RMX_GREP_NOTE", "0")
+    monkeypatch.delenv("RMX_LEARN", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "a.txt").write_text("alpha here\n")
+    Store(proj / ".refmatrix", backend="duckdb").init()
+    monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
+    monkeypatch.chdir(proj)
+
+    r = CliRunner().invoke(cli_mod.main, ["grep", "--learn", "--include=*.txt", "-rn",
+                                          "alpha", "."])
+    assert "alpha here" in r.stdout
+    assert "--learn ignored" in r.stderr, r.stderr
+    quiet = CliRunner().invoke(cli_mod.main, ["grep", "--include=*.txt", "-rn", "alpha", "."])
+    assert "--learn ignored" not in quiet.stderr

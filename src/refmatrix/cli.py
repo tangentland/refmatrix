@@ -6125,7 +6125,17 @@ def grep(ctx, argv, regex, linkage, kind, limit, fallback,
             # Full flag compatibility: a valid grep/rg flag the index can't
             # express bypasses the index — the real tool runs with the
             # ORIGINAL argv so every flag keeps its native semantics. It
-            # teaches nothing (ch-bsd r6 #s-1).
+            # teaches nothing (ch-bsd r6 #s-1), and an EXPLICIT `--learn`
+            # that it cannot honour says so, as the toggle branch does
+            # (ch-bsd r7 #m-4). stdout stays the tool's bytes.
+            try:
+                if (ctx.get_parameter_source("learn")
+                        is click.core.ParameterSource.COMMANDLINE and learn):
+                    click.echo("# rmx: a delegated grep teaches nothing — "
+                               "--learn ignored for this call", err=True)
+            except Exception as e:  # noqa: BLE001 — a note, never a failure
+                click.echo(f"# rmx: --learn note unavailable ({type(e).__name__})",
+                           err=True)
             _grep_delegate(list(argv), path_strs, delegate, piped=piped)
             return
         # Habitual grep flags (-rn) hit this on every call; the note says

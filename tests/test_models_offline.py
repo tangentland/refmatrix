@@ -42,11 +42,12 @@ def no_network(monkeypatch):
     for var in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"):
         monkeypatch.setenv(var, "sentinel")
         monkeypatch.delenv(var)
-    # `enforce_offline` also flips the already-imported hub constant; restore it.
-    import sys
-    constants = sys.modules.get("huggingface_hub.constants")
-    if constants is not None:
-        monkeypatch.setattr(constants, "HF_HUB_OFFLINE", False)
+    # `enforce_offline` flips the hub constant; restore it. Imported HERE (not
+    # looked up) so monkeypatch records the pre-test value even when no test
+    # before this one imported the hub: a constant born True inside a test was
+    # never restored and left later tests offline (ch-bsd r7 #m-3).
+    constants = pytest.importorskip("huggingface_hub.constants")
+    monkeypatch.setattr(constants, "HF_HUB_OFFLINE", False)
     return attempts
 
 
@@ -171,6 +172,7 @@ def _partial_copy(tmp_path, repo: str, drop: list[str]) -> Path:
 @pytest.mark.skipif(not _cached("BAAI/bge-small-en-v1.5"), reason="embed model not cached")
 @pytest.mark.parametrize("drop,named", [
     (["tokenizer.json", "vocab.txt", "tokenizer_config.json"], "tokenizer"),
+    (["tokenizer_config.json"], "tokenizer"),     # r7 O7: the clause alone
     (["modules.json"], "modules.json"),
     (["1_Pooling"], "1_Pooling"),
 ])
@@ -230,3 +232,13 @@ def test_a_config_the_check_passes_but_the_library_rejects_is_model_not_cached(
     with pytest.raises(ModelNotCached) as ei:
         load_local("embed", str(path), "cpu")
     assert "TypeError" in str(ei.value), str(ei.value)
+
+
+def test_the_hub_constant_is_restored_after_the_offline_tests():
+    """r7 #m-3: runs after the tests above (file order). The ambient value is
+    whatever the session had before them, which is not offline here."""
+    import os
+
+    import huggingface_hub.constants as constants
+    want = os.environ.get("HF_HUB_OFFLINE", "").upper() in {"1", "ON", "YES", "TRUE"}
+    assert constants.HF_HUB_OFFLINE is want

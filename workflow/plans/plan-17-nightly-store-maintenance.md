@@ -49,6 +49,10 @@ refmatrix ever compacts a dataset or removes its old versions. No `compact_files
   `workflow/review-output/lance-compact-{viascope,cliquedb}.log`): viascope went from 925 MB to
   229 MB and cliquedb from 1.1 GB to 62 MB. cliquedb's `concept.lance` was 739 MB with 46,606
   versions. The fingerprints were identical everywhere.
+- **Per-file commits remain (ch-bsd r7 #m-1).** After bug-085, a watch flush still commits one Lance
+  version per changed file per kind, even when no id matches. r7 measured a 20-file flush at 10.2 s on
+  the 61k-version dataset and 0.2 s after compaction. Nightly compaction is what bounds it. Task 17.1
+  also considers skipping the delete when none of the file's ids were ever embedded.
 - **Orphan vectors.** After the compaction, 559 of `code.lance`'s 5,495 vectors and 1 doc vector have
   no catalog row. They were in the pre-compaction backup too. They surface in `search-dense` as
   `kind ? name ?` hits. `Store.gc_vectors` (behind `rmx embed --gc`) reaps them, but nothing runs it.

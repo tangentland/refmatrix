@@ -81,13 +81,16 @@ Evidence: `workflow/review-output/pyspy-wedge-1569-20261007-101452.*`, the idle 
 `bin/rmxrg`, `.claude/hooks` and the templates; `rmx upgrade`'s git fetch + pip are explicitly
 allowed). eval/ still calls out:
 
-| call | where | implicit? | proposed disposition |
+| call | where | implicit? | disposition |
 |---|---|---|---|
-| `npm install` when `node_modules` is absent | `eval/memaware/run.sh:37-38` | **yes**, runs on its own | Make it explicit: fail with the install command, like `--fetch` above. |
+| `npm install` when `node_modules` is absent | `eval/memaware/run.sh:38` | **yes**, runs on its own | **Kept as is (user, 2026-10-07: "leave it").** |
+| `npm install @anthropic-ai/sdk` when that package dir is absent, even if `node_modules` exists (unpinned, into the upstream checkout) | `eval/memaware/run.sh:39` | **yes** | Kept as is (same user decision; added by ch-bsd r7 #m-2). |
 | `curl` to huggingface.co | `eval/fetch_datasets.sh:39-60` | no; it is a named setup script | Keep. It is "explicit eval setup", which the user allowed. |
 | `git clone` from github | `eval/memaware/prepare.py:50`, behind `--clone` | no; behind a flag | Keep. |
-| `anthropic.Anthropic()` judge; memaware conditions call LLM APIs | `eval/memory_recall/score.py:65`, memaware conditions | no; the benchmark's own scorer | Keep. It is inherent to the benchmark. |
+| `anthropic.Anthropic()` judge | `eval/memory_recall/score.py:66` (the import is at :65) | no; the benchmark's own scorer | Keep. |
+| LLM API calls in the memaware conditions, including the Fireworks provider | `lib/llm.mjs:36` in the memaware upstream checkout | no; the benchmark itself | Keep. |
 
-Only the first row is implicit. Its disposition waits on the user.
+Two rows are implicit (r7 #m-2 corrected the line numbers and added the second). The user's decision
+is to leave both. {#external-calls-decided}
 
 rel: evidence-for -> [[bug_registry#registry]]
