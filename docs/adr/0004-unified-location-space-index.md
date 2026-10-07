@@ -286,6 +286,32 @@ is a query on roaring bitmaps with no sort. {#amend-model-body}
 - **The per-type prior starts flat (1.0)** and moves only on a per-type evaluation, so a
   hand-set weight cannot become an untested ranking change. {#gate-prior}
 
+### Evidence: the shape of the adjacencies, six stores (2026-10-07) {#amend-shape}
+
+rel: derives-from -> [[spike-2026-10-07-adjacency-shape]]
+
+The user asked whether the adjacency network has an intrinsic shape worth leveraging, and asked for
+more than one project. The term → location incidence layer (`mentions`) was measured on catalog
+copies of refmatrix, cliquedb, viascope, cliquet, orderly and atldb. Full table:
+[[spike-2026-10-07-adjacency-shape#results-table]]. {#shape-lead}
+
+| finding | evidence | consequence for this ADR |
+|---|---|---|
+| **heavy-tailed degree** | tail α 1.72–1.88 in the four large stores (KS ≤ 0.039); top 1% of concepts hold 21–31% of edges; 30–47% of concepts are hapax | Hubs and tail get different handling. Hubs are mostly generic words (`one`, `only`, `every`, `plan`, viascope's `keyword/*`): a **stoplist/hub-damping** signal, not structure. Hapax rows feed **promotion or cull**, never co-occurrence evidence. Aster's per-key merge choice is driven by exactly this degree distribution. |
+| **small world, NOT mainly through hubs** | 2-hop reach 56–92% of entities in the large stores; dropping the top 1% hubs barely changes it in 4 of 6 (e.g. cliquet 0.92→0.92); 1-hop reach does drop (refmatrix 0.25→0.10) | Explains the walk negatives better than the hub story: mid-degree concepts alone saturate two hops. **Hub exclusion cannot rescue a global walk.** Typed, lift/NPMI-gated, budgeted admission (pipeline step 4) is the only expansion this graph supports, and [[#gate-depth]] stands. |
+| **weak communities except in two stores** | Louvain modularity 0.12–0.26 for four stores, 0.43–0.45 for viascope and atldb | Community blocks are a per-store property. Do not design storage or ranking around them globally. Where strong (viascope), they are candidates for L3 subjects. |
+| **compression is about DENSE ids, not ORDER** | dense entity renumbering saves 15–42% of bitmap bytes in the large stores; path-locality or community order vs random saves < 0.75% everywhere | Partition-local **dense** ids are a real storage win. The claim that Dewey/locality ORDER buys run containers is **not supported at entity granularity**: one store's entities fit in one 65,536-id chunk, where array containers cost the same in any order. It remains untested at `sid` granularity, so measure it before relying on it there. |
+
+{#shape-table}
+
+**Corrections to earlier reasoning:**
+- (1) "walks failed because hubs put everything within two hops" was half right; see the second
+  row.
+- (2) "Dewey order → run containers → cheaper bitmaps" is unsupported at entity granularity; see
+  the fourth row.
+
+Both claims were stated before this spike and are corrected by it. {#shape-corrections}
+
 ### Helix fit {#amend-helix}
 
 Age tiers apply to EVERY layer above. So each relation type, proximity band and facet gets "when"

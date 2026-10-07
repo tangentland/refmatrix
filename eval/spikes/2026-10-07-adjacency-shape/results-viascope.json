@@ -1,0 +1,136 @@
+{
+  "partition_id": 104,
+  "concepts": 18904,
+  "entities": 13533,
+  "edges": 176936,
+  "concept_df": {
+    "p25": 1.0,
+    "p50": 2.0,
+    "p75": 6.0,
+    "p90": 19.0,
+    "p95": 38.0,
+    "p99": 125.97000000000116,
+    "max": 845,
+    "mean": 9.359712230215827,
+    "share_df_le_1": 0.399174777824799
+  },
+  "entity_degree": {
+    "p25": 4.0,
+    "p50": 6.0,
+    "p75": 13.0,
+    "p90": 29.0,
+    "p95": 45.0,
+    "p99": 102.68000000000029,
+    "max": 797,
+    "mean": 13.07441069977093
+  },
+  "powerlaw_concept_df": {
+    "xmin": 6,
+    "alpha": 1.8782583625680302,
+    "ks": 0.032505759911639905,
+    "n_tail": 5003
+  },
+  "top_hubs": [
+    {
+      "name": "keyword/channel",
+      "df": 845
+    },
+    {
+      "name": "keyword/all",
+      "df": 765
+    },
+    {
+      "name": "keyword/when",
+      "df": 696
+    },
+    {
+      "name": "keyword/per",
+      "df": 677
+    },
+    {
+      "name": "keyword/test",
+      "df": 578
+    },
+    {
+      "name": "keyword/path",
+      "df": 532
+    },
+    {
+      "name": "keyword/adr",
+      "df": 515
+    },
+    {
+      "name": "keyword/list",
+      "df": 485
+    },
+    {
+      "name": "keyword/via",
+      "df": 481
+    },
+    {
+      "name": "keyword/state",
+      "df": 481
+    },
+    {
+      "name": "keyword/result",
+      "df": 470
+    },
+    {
+      "name": "keyword/only",
+      "df": 458
+    }
+  ],
+  "edge_share": {
+    "top_0.1pct": 0.0534939187050685,
+    "top_1pct": 0.24793710720260434,
+    "df_le_1": 0.04264818917574716
+  },
+  "roaring_bytes": {
+    "total": 906987,
+    "share_top_1pct": 0.12365778120303819,
+    "share_df_le_1": 0.14975738351266335
+  },
+  "reach": {
+    "all_concepts": {
+      "reach1_mean": 0.0667091553979162,
+      "reach2_mean": 0.7153690977610286,
+      "reach2_p50": 0.8553905268602675
+    },
+    "minus_top_0.1pct": {
+      "reach1_mean": 0.04876856572821991,
+      "reach2_mean": 0.7054437301411366,
+      "reach2_p50": 0.8489987438114239
+    },
+    "minus_top_1pct": {
+      "reach1_mean": 0.018055863444912435,
+      "reach2_mean": 0.5497631715066873,
+      "reach2_p50": 0.6735018103894185
+    }
+  },
+  "communities": {
+    "concepts_used": 11168,
+    "df_cap": 125,
+    "projection_edges": 1652470,
+    "louvain_modularity": 0.45369819704751113,
+    "n_communities": 336,
+    "largest": [
+      8570,
+      1590,
+      1172,
+      912,
+      492,
+      348,
+      23,
+      11
+    ],
+    "singletons": 269
+  },
+  "compression_bytes": {
+    "today_ids": 906987,
+    "dense_rank_today_order": 655890,
+    "path_locality_order": 655678,
+    "community_order": 655618,
+    "random_order_control": 656336
+  },
+  "elapsed_s": 31.1
+}
