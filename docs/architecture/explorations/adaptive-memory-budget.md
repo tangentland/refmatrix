@@ -5,7 +5,7 @@ title: "Exploration: adaptive memory storage and retrieval, getting more than th
 tags: [exploration, memory, recall, budget, memory-index, hooks, adaptive]
 metadata:
   node_type: exploration
-  status: research-complete
+  status: in-progress
   created: 2026-10-07
 ---
 
@@ -131,4 +131,12 @@ the definition will be validated. {#rec-body}
 
 ## Transition Summary {#transition-summary}
 
-**Status:** NOT STARTED (awaiting d-1..d-4).
+**Status:** IN PROGRESS. User decisions, 2026-10-07:
+
+- **d-1:** B (budget packing) + A (usage log) + **D (subject-tiered index) now**, not deferred.
+  D needs memory compile to run on a schedule, which means plan-17's nightly tick, or a
+  compile-on-save step if that tick lands later.
+- **d-4:** a new plan, **plan-19 (adaptive memory budget)**.
+- **Order:** it follows the remedy merge and is the first track after it.
+- **d-2 / d-3:** settled in the plan's spec. The default is to pack under the measured harness
+  preview, with feedback folding behind a floor.

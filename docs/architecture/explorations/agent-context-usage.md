@@ -5,7 +5,7 @@ title: "Exploration: making `rmx context` the agent's lookup once grep is passiv
 tags: [exploration, context, grep, agent, telemetry, plan-16]
 metadata:
   node_type: exploration
-  status: research-complete
+  status: in-progress
   created: 2026-10-07
 ---
 
@@ -157,4 +157,12 @@ a nudge in the turn it would have helped, works better than a rule the agent has
 
 ## Transition Summary {#transition-summary}
 
-**Status:** NOT STARTED (awaiting d-1..d-4).
+**Status:** IN PROGRESS. User decision, 2026-10-07: **new tasks in plan-16, with the nudge**.
+
+- **16.7** telemetry: MCP invocation source, a `query.log` row for `_op_context`, `-E`
+  cardinality.
+- **16.8** precise identifier answers: `path:line` on DEFINED BY, one id form, edge direction,
+  `--brief`, no helix block on code anchors.
+- **16.9** the PostToolUse nudge.
+- **16.10** surfaces + NL ranking: after the branch NL replay; docs change last.
+- **Order:** after plan-19.

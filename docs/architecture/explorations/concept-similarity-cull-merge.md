@@ -5,7 +5,7 @@ title: "Exploration: concept similarity as the evidence for culling and merging 
 tags: [exploration, helix, concepts, dedup, cull, merge, evaluation]
 metadata:
   node_type: exploration
-  status: research-complete
+  status: in-progress
   created: 2026-10-07
 ---
 
@@ -189,4 +189,11 @@ Run **B's free part first**, then **A**, and treat **C** as conditional.
 
 ## Transition Summary {#transition-summary}
 
-**Status:** NOT STARTED (awaiting d-1..d-4).
+**Status:** IN PROGRESS. User decision, 2026-10-07: **free culls + evaluation now; reconcile
+plan-11 / ADR-0004 later, before any merge writes.**
+
+- **Free culls:** the 9,182 orphan aliases and 747 empty protected `query/*` rows go through task
+  16.6's prune (dry run + ablation).
+- **Evaluation:** the read-only merge-signal evaluation (Option A) is **plan-20**.
+- **Not decided yet:** d-1 (merge target) waits on the reconciliation; d-3 (gold labels) is settled
+  in plan-20's spec.
