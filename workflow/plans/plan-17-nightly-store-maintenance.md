@@ -12,8 +12,8 @@ metadata:
 # Plan 17: nightly store maintenance from the hub {#root}
 
 > Status: DRAFTING, with the decisions taken ([[#decisions]]). The user asked on 2026-10-07: "we should
-> add a nightly compaction job to the hub process to keep projects lean and fast". Next: task specs
-> 17.1-17.3, then spec review.
+> add a nightly compaction job to the hub process to keep projects lean and fast". Task specs
+> 17.1-17.3 are WRITTEN (`plan-17-nightly-store-maintenance-tasks/`); spec review next.
 
 rel: motivates -> [[bug_registry#registry]]
 rel: related-to -> [[project_daemon_wedge_per_entity_lance_delete]]
