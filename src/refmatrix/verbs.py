@@ -560,7 +560,11 @@ def context(root: Path, ref: str, *, degree: int = 1, expand: int = 0,
             # The op's warnings ride beside the body (an unreranked answer,
             # ch-bsd r6 #s-2); parsing the body must not drop them.
             if result.get("warnings"):
-                parsed["warnings"] = result["warnings"]
+                # MERGED with the body's own (score-time) warnings, never
+                # overwriting them (ch-bsd r8 #m-2).
+                parsed["warnings"] = list(parsed.get("warnings") or []) + [
+                    w for w in result["warnings"]
+                    if w not in (parsed.get("warnings") or [])]
             return parsed
     return result
 

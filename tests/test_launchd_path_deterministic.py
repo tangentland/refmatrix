@@ -63,3 +63,14 @@ def test_the_installed_rmx_venv_bin_leads_and_only_existing_dirs_are_kept(tmp_pa
     assert parts[0] == str(venv_bin)
     assert all(Path(p).is_dir() for p in parts), parts
     assert len(parts) == len(set(parts)), parts
+
+
+def test_a_candidate_dir_that_does_not_exist_is_left_out(tmp_path, monkeypatch):
+    """r8 #m-1 (L3): every default dir exists on the dev machine, so the
+    existence filter was never exercised."""
+    venv_bin = tmp_path / "venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    monkeypatch.setattr(launchctl, "_LAUNCHD_PATH_DIRS",
+                        (str(tmp_path / "nope"), "/usr/bin"))
+    assert launchctl.launchd_path(str(venv_bin / "rmx")).split(":") == [
+        str(venv_bin), "/usr/bin"]

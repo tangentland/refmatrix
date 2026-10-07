@@ -423,7 +423,8 @@ def _say_vector_delete_failures(result, what: str) -> None:
     n = (result or {}).get("vector_delete_failed") if isinstance(result, dict) else None
     if n:
         click.echo(f"rmx {what}: {n} vector delete(s) FAILED; those vectors are "
-                   f"orphaned until `rmx embed --gc` (cause in daemon.stderr.log)",
+                   f"orphaned until `rmx embed --gc` reaps them, which needs a "
+                   f"working `import lance` (cause in daemon.stderr.log)",
                    err=True)
 
 def _store(write: bool = True) -> "Store":

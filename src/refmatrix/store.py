@@ -3601,7 +3601,8 @@ class Store:
         self.vector_delete_failures = getattr(self, "vector_delete_failures", 0) + n
         print(f"rmx: vector delete FAILED for {n} {kind} id(s) in partition "
               f"{self._partition_name!r} ({type(exc).__name__}: {exc}); their vectors "
-              f"are orphaned until `rmx embed --gc`", file=_sys.stderr)
+              f"are orphaned until `rmx embed --gc` reaps them (which needs a "
+              f"working `import lance`)", file=_sys.stderr)
 
     def _drop_lance_for_purge(self, entity_id: int, kind: str) -> bool:
         """Drop entity_id's vector from its (partition, kind) Lance dataset.

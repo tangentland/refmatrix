@@ -159,3 +159,14 @@ def test_search_dense_renders_reranked_hits_and_prints_warnings(tmp_path, monkey
     assert r.exit_code == 0, r.output
     assert "rerank score" in r.stdout and "0.900" in r.stdout, r.stdout
     assert "rmx search-dense: W" in r.stderr
+
+
+def test_the_context_verb_merges_body_and_op_warnings(tmp_path, monkeypatch):
+    """r8 #m-2: the op's warnings were assigned OVER the body's, so a
+    construction failure hid a score-time one."""
+    from refmatrix import verbs
+
+    monkeypatch.setattr(verbs, "_call", lambda root, op, payload, **k: {
+        "body": json.dumps({"anchor": None, "groups": {}, "warnings": ["B"]}),
+        "warnings": ["A"]})
+    assert verbs.context(tmp_path, "x")["warnings"] == ["B", "A"]

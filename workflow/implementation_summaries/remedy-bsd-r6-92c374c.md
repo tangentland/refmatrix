@@ -84,13 +84,13 @@ allowed). eval/ still calls out:
 | call | where | implicit? | disposition |
 |---|---|---|---|
 | `npm install` when `node_modules` is absent | `eval/memaware/run.sh:38` | **yes**, runs on its own | **Kept as is (user, 2026-10-07: "leave it").** |
-| `npm install @anthropic-ai/sdk` when that package dir is absent, even if `node_modules` exists (unpinned, into the upstream checkout) | `eval/memaware/run.sh:39` | **yes** | Kept as is (same user decision; added by ch-bsd r7 #m-2). |
+| `npm install @anthropic-ai/sdk` when that package dir is absent, even if `node_modules` exists (unpinned, into the upstream checkout) | `eval/memaware/run.sh:39` | **yes** | **Assumed** kept, like row 1. The user's "leave it" was given for row 1 only, so this row awaits their confirmation (ch-bsd r8 #m-3). |
 | `curl` to huggingface.co | `eval/fetch_datasets.sh:39-60` | no; it is a named setup script | Keep. It is "explicit eval setup", which the user allowed. |
 | `git clone` from github | `eval/memaware/prepare.py:50`, behind `--clone` | no; behind a flag | Keep. |
 | `anthropic.Anthropic()` judge | `eval/memory_recall/score.py:66` (the import is at :65) | no; the benchmark's own scorer | Keep. |
 | LLM API calls in the memaware conditions, including the Fireworks provider | `lib/llm.mjs:36` in the memaware upstream checkout | no; the benchmark itself | Keep. |
 
-Two rows are implicit (r7 #m-2 corrected the line numbers and added the second). The user's decision
-is to leave both. {#external-calls-decided}
+Two rows are implicit (r7 #m-2 corrected the line numbers and added the second). The user decided
+row 1 ("leave it"); row 2 is assumed the same until they confirm (r8 #m-3). {#external-calls-decided}
 
 rel: evidence-for -> [[bug_registry#registry]]

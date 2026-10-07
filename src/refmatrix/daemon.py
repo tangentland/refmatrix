@@ -4681,7 +4681,10 @@ def _op_context(d: Daemon, args: dict) -> dict:
         )
     bundle = _read_with_fallback(d, _ctx_part, _build)
     body = render_json(bundle) if fmt == "json" else render_text(bundle)
-    warnings.extend(bundle.warnings)
+    # bundle.warnings are IN the body (JSON `warnings`, text `# warning:`);
+    # the op's own `warnings` carry only what the body cannot show (a
+    # reranker that failed to construct). Merging both printed a score-time
+    # degrade twice in text mode (ch-bsd r8 #m-2).
     # Self-heal: if the grep backstop fired (index missed, grep hit), fold the
     # hits into a protected `query/<ref>` concept so the next query hits the
     # index — and survives prune_noise. We hold the writer here (daemon); the

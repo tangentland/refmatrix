@@ -132,8 +132,14 @@ def test_the_context_op_carries_a_score_time_degrade(store, exc, needle):
     d = _D(store, reranker_raises=False, rr=_ScoreRaises(exc))
     out = _op_context(d, {"ref": "memory pressure", "format": "json",
                           "grep_backstop": False})
-    assert any(needle in w for w in out.get("warnings", [])), out
-    assert json.loads(out["body"]).get("warnings"), out["body"]
+    body_ws = json.loads(out["body"]).get("warnings") or []
+    assert any(needle in w for w in body_ws), out["body"]
+    # ...and stated ONCE: the op's own warnings do not repeat it (r8 #m-2)
+    assert not any(needle in w for w in out.get("warnings", [])), out
+
+    text = _op_context(d, {"ref": "memory pressure", "format": "text",
+                           "grep_backstop": False})
+    assert text["body"].count(needle) == 1, text["body"]
 
 
 # R16: the ANCHORED path (the ref resolves to a graph entity) passes warnings too
