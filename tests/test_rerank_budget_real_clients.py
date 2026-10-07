@@ -629,3 +629,40 @@ def test_a_budgeted_view_closes_its_forked_connection(stub, hub):
     assert view._client is not client
     assert _attempt(view)[1] == "scored"
     assert view._client._sock is None, "the forked connection was left open"
+
+
+def test_concurrent_cold_skips_start_one_warm_thread(stub):
+    """G5: every budgeted read on a cold worker asks for a warmup; one thread
+    loads, the rest must not pile up behind the worker lock."""
+    import threading as _th
+
+    from refmatrix import subproc
+
+    wc = subproc.WorkerClient("rerank", argv=stub.argv(load_s=1.0))
+    try:
+        for _ in range(5):
+            wc.warm_async()
+        warmers = [t for t in _th.enumerate() if t.name == "rmx-warm-rerank"]
+        assert len(warmers) == 1, len(warmers)
+        assert _until(lambda: wc.info(nowait=True).get("model"))
+    finally:
+        wc.close()
+
+
+def test_an_unprobed_view_asks_the_worker_nothing_after_scoring(stub):
+    """G7: the model name comes from the header the budget already read. Asked
+    after scoring, `model_name` was a worker-bound `info` outside every bound."""
+    from refmatrix import modelsrv
+    from refmatrix.reranker import RemoteReranker
+
+    raw = _RawHub(stub.dir / "m.sock", rerank_reply={"ok": True, "scores": [0.0, 0.0]})
+    try:
+        c = modelsrv.SharedWorkerClient("rerank", timeout=45.0)
+        out = _attempt(RemoteReranker(c).with_budget(2.0), docs=["a", "b"])[1]
+        c.close()
+        time.sleep(0.2)
+    finally:
+        raw.close()
+    assert out == "scored", out
+    assert [(f.get("op"), bool(f.get("nowait"))) for f in raw.frames] == \
+        [("info", True), ("rerank", False)], raw.frames

@@ -41,6 +41,14 @@ RED (`workflow/review-output/r11-remedy-RED.log`), 4 failed:
 
 GREEN: 32 passed.
 
+## Mutation check {#mutations}
+
+7 mutants over the fixes (G1-G7), in a detached worktree at `83ab187` with the model socket isolated
+(`workflow/review-output/r11-remedy-mutations.log`). 5 were killed at once. G5 (the warm-thread
+dedupe) and G7 (the model name from the header) survived. Two tests were added: one thread per
+concurrent cold skip, and an unprobed view sends exactly `info(nowait)` then `rerank`. Both mutants
+are now killed (the same log, appended). **7 of 7 killed.**
+
 ## #m-1: residuals {#m-1}
 
 - **K1:** a test pins that the no-snapshot branch neither answers an unknown partition nor creates
