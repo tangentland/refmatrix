@@ -4649,6 +4649,7 @@ def untrack_cmd(paths, like, dry_run, yes):
     r = s.untrack_by_path(like=like, paths=list(paths) or None, dry_run=False)
     console.print(f"[red]untracked[/] {r.get('files_untracked', 0)} files, "
                   f"purged {r.get('entities_purged', 0)} entities")
+    _say_vector_delete_failures(r, "untrack")
 
 
 def _print_paths(paths, limit):
@@ -12541,9 +12542,14 @@ def memory_forget(name_or_id):
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         ok = resp["result"]["forgotten"]
+        _say_vector_delete_failures(resp["result"], "memory forget")
     else:
         s = _store()
+        failed0 = getattr(s, "vector_delete_failures", 0)
         ok = s.forget_memory(int(name_or_id) if name_or_id.isdigit() else name_or_id)
+        _say_vector_delete_failures(
+            {"vector_delete_failed": getattr(s, "vector_delete_failures", 0) - failed0},
+            "memory forget")
     if ok:
         console.print(f"[green]forgot[/] {name_or_id}")
     else:

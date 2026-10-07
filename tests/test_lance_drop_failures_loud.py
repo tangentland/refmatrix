@@ -144,3 +144,131 @@ def test_rmx_forget_prints_the_failure_on_the_callers_terminal(tmp_path, monkeyp
 
     assert r.exit_code == 0, r.output
     assert "rmx forget: 1 vector delete(s) FAILED" in r.stderr, r.stderr
+
+
+# ---- ch-bsd r9 #s-2: every render site and the flush line, pinned ----------
+
+class _ReportingStore:
+    """The store boundary for the CLI render sites: each method returns what
+    the real store/daemon op returns, with 2 failed vector deletes."""
+    R = {"vector_delete_failed": 2}
+
+    def prune_noise(self, **k):
+        return {"dropped": 1, "kept": 0, "total_seen": 1, "min_df": 2, "max_df": 9,
+                "marked": 0, "unmarked": 0, **self.R}
+
+    def vacuum(self):
+        return {"concepts_dropped": 1, "files_purged": 0, **self.R}
+
+    def fold_concept_dups(self, dry_run=False):
+        return {"folded": 1, "edges_migrated": 0, "dry_run": False, **self.R}
+
+    def bulk_forget_memories(self, **k):
+        if k.get("dry_run"):
+            return {"ids": [1], "by_mtype": {"note": 1}, "dry_run": True}
+        return {"forgotten": 1, "ids": [1], "by_mtype": {}, "dry_run": False, **self.R}
+
+    def untrack_by_path(self, **k):
+        if k.get("dry_run"):
+            return {"paths": ["x"], "files_untracked": 1, "entities_purged": 1}
+        return {"paths": ["x"], "files_untracked": 1, "entities_purged": 1, **self.R}
+
+
+@pytest.mark.parametrize("argv,what", [
+    (["prune-noise", "--drop"], "prune-noise"),
+    (["vacuum"], "vacuum"),
+    (["memory", "dedup"], "memory dedup"),
+    (["memory", "bulk-forget", "--id", "1", "-y"], "memory bulk-forget"),
+    (["untrack", "--like", "x%", "-y"], "untrack"),
+])
+def test_each_cli_render_site_prints_the_count(tmp_path, monkeypatch, argv, what):
+    from click.testing import CliRunner
+
+    from refmatrix import cli as cli_mod
+
+    # NEVER a live daemon: with `_root` unpatched, `memory bulk-forget`
+    # reached this project's live daemon socket (2026-10-07, a dry-run
+    # preview; nothing was deleted). Every path here is the local store.
+    monkeypatch.setattr(cli_mod, "_root", lambda: tmp_path / ".refmatrix")
+    monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
+    monkeypatch.setattr(cli_mod, "_store", lambda *a, **k: _ReportingStore())
+    monkeypatch.setattr(cli_mod, "_memory_intent", lambda *a, **k: None, raising=False)
+    r = CliRunner().invoke(cli_mod.main, argv)
+    assert "2 vector delete(s) FAILED" in r.stderr, (argv, r.exit_code, r.output, r.stderr)
+
+
+def test_the_daemon_sync_render_prints_the_count(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+
+    from refmatrix import cli as cli_mod
+    from refmatrix import daemon as daemon_mod
+
+    f = tmp_path / "a.py"
+    f.write_text("x = 1\n")
+    monkeypatch.setattr(cli_mod, "_root", lambda: tmp_path / ".refmatrix")
+    monkeypatch.setattr(daemon_mod, "ping", lambda *a, **k: True)
+    monkeypatch.setattr(daemon_mod, "call", lambda root, op, args, **k: {
+        "ok": True, "result": {"added": 0, "updated": 1, "purged": 0, "touched": 1,
+                               "cancelled": False, "vector_delete_failed": 2}})
+    r = CliRunner().invoke(cli_mod.main, ["sync", "--files", str(f)])
+    assert "rmx sync: 2 vector delete(s) FAILED" in r.stderr, (r.output, r.stderr)
+
+
+def test_memory_forget_carries_the_count_from_the_daemon(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+
+    from refmatrix import cli as cli_mod
+    from refmatrix import daemon as daemon_mod
+
+    monkeypatch.setattr(cli_mod, "_root", lambda: tmp_path / ".refmatrix")
+    monkeypatch.setattr(daemon_mod, "ping", lambda *a, **k: True)
+    monkeypatch.setattr(cli_mod, "_memory_daemon_call", lambda op, args, **k: {
+        "ok": True, "result": {"forgotten": True, "vector_delete_failed": 1}})
+    r = CliRunner().invoke(cli_mod.main, ["memory", "forget", "m1", "--yes"])
+    assert "rmx memory forget: 1 vector delete(s) FAILED" in r.stderr, (r.output, r.stderr)
+
+
+def test_the_memory_forget_op_returns_the_count(tmp_path):
+    import threading
+
+    from refmatrix.daemon import _op_memory_forget
+
+    s = _store(tmp_path)
+    _break(s, "memory")
+    s.add_memory(name="m1", content="x")
+
+    class D:
+        def __init__(self):
+            self.store = s
+            self._store_lock = threading.RLock()
+
+        def _st(self):
+            return self.store
+
+        def _request_snapshot(self):
+            pass
+
+        def _log(self, m):
+            pass
+
+    out = _op_memory_forget(D(), {"name": "m1", "partition": s._partition_name})
+    assert out == {"forgotten": True, "vector_delete_failed": 1}, out
+
+
+def test_untrack_returns_the_count(tmp_path):
+    s = _store(tmp_path)
+    _break(s, "code")
+    p = tmp_path / "a.py"
+    p.write_text("x = 1\n")
+    s.upsert_entity(kind="code", name="a.py", path=str(p))
+    s.mark_tracked(str(p), p.stat().st_mtime)
+    r = s.untrack_by_path(paths=[str(p)])
+    assert r["vector_delete_failed"] == 1, r
+
+
+def test_the_watch_flush_line_carries_the_count():
+    from refmatrix.daemon import _watch_flush_line
+
+    assert _watch_flush_line(3, 1, 1, 1, "", 0) == "watch flush: paths=3 +1 ~1 -1"
+    assert _watch_flush_line(3, 1, 1, 1, " curator+1", 4).endswith(
+        " curator+1 vector_delete_FAILED=4")

@@ -3029,15 +3029,10 @@ class Daemon:
                 roots_tail = (
                     f" roots={len(groups)}" if len(self.watch_roots) > 1 else ""
                 )
-                # The hot path bug-085 moved onto the batch helper; its count
-                # reaches the log line, not only daemon.stderr (ch-bsd r8 #s-1).
-                vec_tail = (f" vector_delete_FAILED={total_vec_failed}"
-                            if total_vec_failed else "")
-                self._log(
-                    f"watch flush: paths={len(paths)} +{total_added} "
-                    f"~{total_updated} -{total_purged}"
-                    f"{tail}{cancel_tail}{repair_tail}{roots_tail}{vec_tail}"
-                )
+                self._log(_watch_flush_line(
+                    len(paths), total_added, total_updated, total_purged,
+                    tail + cancel_tail + repair_tail + roots_tail,
+                    total_vec_failed))
             except Exception as exc:
                 self._log(f"watch flush failed: {exc!r}")
                 self._fast_exit_if_invalidated(exc, "watch flush")
@@ -4584,6 +4579,16 @@ def _op_query(d: Daemon, args: dict) -> dict:
         return out
 
 
+def _watch_flush_line(n_paths: int, added: int, updated: int, purged: int,
+                      tails: str, vec_failed: int) -> str:
+    """The `rmxd.log` line for one watch flush. A function so the vector-
+    delete count it carries is pinned by a test (ch-bsd r9 #s-2): the flush
+    is the hot path bug-085 moved onto the batch helper."""
+    vec_tail = f" vector_delete_FAILED={vec_failed}" if vec_failed else ""
+    return (f"watch flush: paths={n_paths} +{added} ~{updated} -{purged}"
+            f"{tails}{vec_tail}")
+
+
 def _context_rerank_budget_s() -> float:
     """Seconds the context op's rerank may spend (`RMX_CONTEXT_RERANK_S`,
     default 3.0). Measured warm: ~0.1 s for 10 docs on the daemon's worker
@@ -4881,9 +4886,12 @@ def _op_memory_forget(d: Daemon, args: dict) -> dict:
     if target is None:
         raise ValueError("memory_forget requires 'name' or 'id'")
     with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
+        failed0 = getattr(d._st(), "vector_delete_failures", 0)
         ok = d._st().forget_memory(target)
+        failed = getattr(d._st(), "vector_delete_failures", 0) - failed0
     d._request_snapshot()
-    return {"forgotten": ok}
+    # the count leaves the daemon (ch-bsd r9 #s-2: a single forget dropped it)
+    return {"forgotten": ok, "vector_delete_failed": failed}
 
 
 def _op_memory_retag(d: Daemon, args: dict) -> dict:

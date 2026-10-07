@@ -6876,9 +6876,12 @@ class Store:
         if dry_run:
             return {"paths": matched, "files_untracked": len(matched),
                     "entities_purged": len(info), "dry_run": True}
+        failed0 = getattr(self, "vector_delete_failures", 0)
         self._purge_paths(matched, info)
         return {"paths": matched, "files_untracked": len(matched),
-                "entities_purged": len(info), "dry_run": False}
+                "entities_purged": len(info), "dry_run": False,
+                "vector_delete_failed":
+                    getattr(self, "vector_delete_failures", 0) - failed0}
 
     def _entities_for_paths(
         self, paths: "list[str]"
