@@ -237,6 +237,30 @@ is a query on roaring bitmaps with no sort. {#amend-model-body}
    point is to stop paying a write per event: bug-085 was the per-event-write failure on the Lance
    side, and grep-learning's `query/*` accretion is the same pattern on the catalog side. The count
    is approximate by design; it feeds tiers and ranks, never a correctness decision. {#amend-counters}
+
+   **Decay never loses knowledge** (user, 2026-10-07: "decay is fine but losing knowledge is bad").
+   Every counter obeys these constraints: {#amend-counter-rules}
+
+   1. **Two records per key, only one of which decays.** The *lifetime* record is exact and never
+      decays: `first_seen`, `last_seen`, `lifetime_count`. The *recency* score is the decaying one
+      (approximate allowed). Decay parameters can then change, and the score can be recomputed,
+      without losing anything. {#rule-two-records}
+   2. **A floor, never zero.** The decayed score never falls below a floor that grows with the
+      lifetime evidence (e.g. proportional to `log(1 + lifetime_count)`). Knowledge that was used
+      heavily long ago stays findable, ranked below current work but present. {#rule-floor}
+   3. **Age tiers are terminal, not evicting.** An edge moves day → week → month → older; "older" is
+      the last tier, and nothing ages out of the index. {#rule-terminal-tier}
+   4. **Decay demotes, never deletes.** A cold counter may change ranking, the inline placement in
+      `MEMORY.md` (plan-19's fold) or a merge preference. It may never trigger a forget, cull or
+      prune. Removal goes only through an explicit, audited path (task 16.6's dry-run → apply, the
+      plan-20 evidence), and a folded memory stays recallable. {#rule-no-delete}
+   5. **A higher floor for asserted knowledge.** Feedback memories, user-asserted or `protected`
+      rows, and `rel:`-anchored GMD nodes keep a higher floor; recency may reorder them, never bury
+      them. {#rule-asserted-floor}
+   6. **Never under-count.** Where a sketch is used, use one whose error is one-sided upward
+      (Count-Min with conservative update), so error can only make a key look warmer, never falsely
+      cold. Small domains (≈500 memories) use EXACT counters: the sketch exists for edge-scale
+      domains only. {#rule-no-undercount}
 2. **Choose eager vs lazy merge per key, with a cost model.** Aster's `AdaptPolicy` compares a
    key's write cost with its read cost and picks per key: rewrite the full adjacency (eager), or
    append a merge delta (lazy).
