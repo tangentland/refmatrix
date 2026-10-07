@@ -135,6 +135,7 @@ Specs go in `workflow/plans/plan-16-invisible-grep-shim-tasks/` before approval.
 | 16.3 | Grep-tool hook rebuilt from the tool's real rg argv (`--hidden`, VCS globs, constants pinned); every doc/help surface | taught set equals the tool's captured RESPONSE; paging inputs do not kill; no stale claim anywhere |
 | 16.4 | measurement, historical + forward (learner log joined to transcripts) | precision ≥ 0.99 / recall ≥ 0.95 (micro, timeouts counted) on COMPLETE outputs only, gated at n ≥ 30 else `insufficient-n`; no carve-out; a gate shown able to fail; routes measured |
 | 16.5 | explicit `rmx grep` with paths or a pipe execs the real grep + learner; path-less keeps the index read with a pruned `grep -r` floor; the Python re-implementation (argv order, `-c` rows, stdin filter, delegate) is DELETED | differential 100% incl. round 4's cases and bug-081; nothing beyond the tool's bytes; deletions verified by `rg -l` |
+| 16.6 | grep-learned rows carry provenance (sidecar `learned_evidence`), read-time verification queues `stale_seen` marks, `rmx learn audit` classifies, `rmx learn prune` (dry run by default) removes every non-`ok` class; never purges an ingest-owned entity (user ask + decisions 2026-10-07) | one row per class audited exactly; dry run byte-identical; prune ≤ K Lance deletes, bounded lock hold measured; global `orphan-root` ≈ bug-086's count on a catalog COPY |
 
 ## Decisions (user, 2026-10-06) {#decisions}
 

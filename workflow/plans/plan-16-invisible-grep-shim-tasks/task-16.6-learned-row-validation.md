@@ -12,9 +12,9 @@ metadata:
 # Task 16.6: validate and cull grep-learned rows {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: DRAFTING. The user asked for it on 2026-10-07: "rmx grep learning entries should be
-> cullable and/or at least have a validation process to check for stale entries". The open
-> decisions are in [[#decisions]].
+> Status: DRAFTING, with the decisions taken (user, 2026-10-07; [[#decisions]]). The user asked for
+> it on 2026-10-07: "rmx grep learning entries should be cullable and/or at least have a validation
+> process to check for stale entries". Next: spec review with 16.1-16.5.
 > Depends on: 16.1, which is the only writer that survives plan-16.
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
@@ -65,7 +65,7 @@ which about 700 read as unreadable on every global grep (bug-086). {#why-scale}
   - the pattern and its matching flags (`-i`, `-w`, `-F`/regex), so it can be re-checked under the
     caller's own rules.
 
-  Where it lives is decision [[#d-a]].
+  It lives in a sidecar table ([[#d-a]]).
 - **R2 Validation, `rmx learn audit`.** A read-only pass over every learned row. It re-reads the
   claimed line and classifies the row:
   - `ok`;
@@ -79,8 +79,8 @@ which about 700 read as unreadable on every global grep (bug-086). {#why-scale}
   It prints counts per class and per pattern, and lists rows with `--list`. Exit 0 when the scan
   completes; the counts are the answer. This uses the verifier `grep_evidence` already uses
   (`evidence_line_matches`); there is no second matcher.
-- **R3 Cull, `rmx learn prune`.** Removes the rows `audit` classified, by class (default: everything
-  except `ok`).
+- **R3 Cull, `rmx learn prune`.** Removes the rows `audit` classified, by class (default: every
+  non-`ok` class, per [[#d-c]]; `--class` narrows it).
   - Dry run by default; `--apply` writes.
   - It goes through a daemon op under one `_store_lock` hold per bounded batch. That is bug-085's
     lesson: no unbounded lock hold, and one Lance delete per kind.
@@ -88,8 +88,8 @@ which about 700 read as unreadable on every global grep (bug-086). {#why-scale}
   - It NEVER purges an entity the ingester owns. It only clears the protection that learning
     added (needs R1).
   - It emits tombstones so the delete replays.
-- **R4 Passive marking.** Decision [[#d-b]]: whether read-time verification records what it saw
-  (`last_verified_at`, `stale_seen` count), so audit can be cheap and prune can be scheduled.
+- **R4 Passive marking.** Read-time verification records what it saw (`last_verified_at`,
+  `stale_seen` count) through a queue, never inline under the lock ([[#d-b]]).
 - **R5 Repair of existing rows.** Rows learned before R1 have no provenance. One migration:
   - Backfill `source='grep-learn'` from `detail LIKE 'learned from grep%'`.
   - Set root = the project root, for project stores.
@@ -113,16 +113,20 @@ which about 700 read as unreadable on every global grep (bug-086). {#why-scale}
    bug-086's ~700 unreadable rows, to within rows learned since that count.
 6. The CLI and MCP surfaces are one verb (verb-parity test).
 
-## Decisions for the user {#decisions}
+## Decisions (user, 2026-10-07) {#decisions}
 
-- **d-a. Where provenance lives** {#d-a}
-  - (1) Columns on `linkage_evidence`, which needs a schema migration of the hottest table.
-  - (2) A sidecar table `learned_evidence(evidence_rowid, source, learned_at, root, pattern, flags,
-    last_verified_at, stale_seen)`, which leaves ingest's table alone.
-- **d-b. Validation timing** {#d-b}
-  - (1) On demand only: `audit` / `prune` by hand.
-  - (2) On demand, plus read-time verification records what it saw (cheap audit).
-  - (3) Both, plus a scheduled prune in the daemon's maintenance tick.
-- **d-c. What prune may remove by default** {#d-c}: every non-`ok` class, or only `missing-file` +
-  `out-of-range` + `duplicate`, keeping `stale-line` and `moved` for review.
-- **d-d. Scope** {#d-d}: inside plan-16 (after 16.1, which owns the writer), or its own plan.
+- **d-a. Provenance lives in a SIDECAR table** {#d-a}:
+  `learned_evidence(evidence_rowid, source, learned_at, root, pattern, flags, last_verified_at,
+  stale_seen)`. Ingest's `linkage_evidence` is untouched, so the migration is cheap and reversible.
+- **d-b. Audit and prune run on demand, and read-time verification records marks** {#d-b}. The
+  verification `grep_evidence` already does updates `last_verified_at` / `stale_seen` for learned
+  rows, which makes audit cheap. Nothing deletes automatically: no scheduled prune.
+- **d-c. `prune --apply` removes EVERY non-`ok` class by default** {#d-c}: `moved`, `stale-line`,
+  `out-of-range`, `missing-file`, `duplicate` and `orphan-root`. `--class` narrows it. The dry run
+  remains the default.
+- **d-d. Scope: inside plan-16, after 16.1** {#d-d}, reviewed in the same spec rounds.
+
+The read-time marks (d-b) are writes on a READ path, so they never take `_store_lock` inline. They
+queue the way the learn queue does (`learn_queue.py`), and the daemon tick drains them in bounded
+batches (the 0.72.3 lesson in `project_grep_learn_wall_and_queue`). The spec review must check this.
+{#d-b-write-path}
