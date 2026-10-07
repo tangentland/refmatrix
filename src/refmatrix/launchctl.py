@@ -157,6 +157,31 @@ def _rmx_path() -> str:
     )
 
 
+# The tool dirs a supervised daemon/hub needs, in lookup order: the user's own
+# bins (`~/bin/tldr`, `~/.local/bin/graphify`), MacPorts (`rg`, `git`), Homebrew,
+# then the system. `launchd_path` keeps the ones that exist on this machine.
+_LAUNCHD_PATH_DIRS = ("~/bin", "~/.local/bin", "/opt/local/bin", "/opt/local/sbin",
+                      "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin",
+                      "/usr/sbin", "/sbin")
+
+
+def launchd_path(rmx: str) -> str:
+    """The PATH every refmatrix LaunchAgent exports — FIXED, not the caller's.
+
+    The renderers baked `os.environ["PATH"]` of whichever shell ran the
+    install (2026-10-07). From a Claude Code session that meant versioned
+    plugin-cache bin dirs, which rot on every plugin update, plus `./` and an
+    empty `::` entry (both are the cwd), and every drift check run from another
+    shell reported PATH drift forever. The installed `rmx`'s own venv `bin`
+    leads, so its sibling console scripts resolve first."""
+    dirs = [str(Path(rmx).parent)] + [str(Path(d).expanduser()) for d in _LAUNCHD_PATH_DIRS]
+    out: list[str] = []
+    for d in dirs:
+        if d not in out and Path(d).is_dir():
+            out.append(d)
+    return ":".join(out)
+
+
 def render_plist(root: Path, *, partition: str | None = None,
                  watch: bool = True, debounce_ms: int = 500,
                  semantic: bool = False,
@@ -198,9 +223,7 @@ def render_plist(root: Path, *, partition: str | None = None,
 
     env = {
         "REFMATRIX_ROOT": str(root),
-        "PATH": os.environ.get(
-            "PATH", "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
-        ),
+        "PATH": launchd_path(rmx),
         # libobjc reads this once at image load; providing it here means the
         # launchd-spawned daemon never hits the initialize-after-fork SIGABRT
         # and skips the cli_entry re-exec. See cli._reexec_for_fork_safety.
@@ -268,8 +291,7 @@ def render_hub_plist(*, port: int = 7777, host: str = "127.0.0.1",
         _refuse_dev_tree(rmx)
     home = Path.home() / ".refmatrix"
     env: dict = {
-        "PATH": os.environ.get(
-            "PATH", "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"),
+        "PATH": launchd_path(rmx),
         # The hub forks per-project daemons; same fork-safety guard.
         "OBJC_DISABLE_INITIALIZE_FORK_SAFETY": "YES",
         "TOKENIZERS_PARALLELISM": "false",
