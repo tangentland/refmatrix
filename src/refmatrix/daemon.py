@@ -4652,7 +4652,10 @@ def _op_context(d: Daemon, args: dict) -> dict:
             warnings.append(f"rerank unavailable, answer is unreranked "
                             f"({type(exc).__name__}: {exc})")
 
-    # Built on the READ path, as `describe` and `memory_get` are (ch-bsd r8
+    # Built on the READ path, as `describe` and `memory_get` are. The read
+    # store is the SNAPSHOT, which trails the writer by the snapshot debounce
+    # (RMX_SNAPSHOT_DEBOUNCE_MS), so a write made just before this call can be
+    # missing from the answer (ch-bsd r9 #m-1). (ch-bsd r8
     # #s-2): `build_context` runs the rerank's model call, and on the writer
     # under `_store_lock` that call held every writer behind it — the
     # lock-holding wedge class of bug-085. `_read_with_fallback` takes the

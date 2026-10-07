@@ -170,3 +170,13 @@ def test_the_context_verb_merges_body_and_op_warnings(tmp_path, monkeypatch):
         "body": json.dumps({"anchor": None, "groups": {}, "warnings": ["B"]}),
         "warnings": ["A"]})
     assert verbs.context(tmp_path, "x")["warnings"] == ["B", "A"]
+
+
+def test_the_verb_merge_does_not_repeat_a_warning_already_in_the_body(tmp_path, monkeypatch):
+    """r9 #m-1 (M2): the merge's de-duplication was untested."""
+    from refmatrix import verbs
+
+    monkeypatch.setattr(verbs, "_call", lambda root, op, payload, **k: {
+        "body": json.dumps({"anchor": None, "groups": {}, "warnings": ["B", "A"]}),
+        "warnings": ["A", "C"]})
+    assert verbs.context(tmp_path, "x")["warnings"] == ["B", "A", "C"]
