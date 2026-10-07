@@ -1,1 +1,1 @@
-2026-10-07T11:28:55-0700 commit=64117e1 verdict=DIRTY findings=7 (0B/4S/3M) report=2026-10-07-1128-r8-legs-wired-but-unpinned-and-a-lock-held-rerank-64117e1.md
+2026-10-07T12:10:32-0700 commit=a3a324e verdict=DIRTY findings=6 (2B/2S/2M) report=2026-10-07-1210-r9-context-read-path-wrong-partition-a3a324e.md
