@@ -40,8 +40,14 @@ None yet under `docs/architecture/concepts/`; concept-level docs live as memorie
 
 ## Explorations (`explorations/`) {#explorations}
 
-None yet; design research to date is recorded in `docs/PERFORMANCE.md` negatives and memory
-files (`project_retrieval_negatives_*`).
+Earlier design research lives in the `docs/PERFORMANCE.md` negatives and in memory files
+(`project_retrieval_negatives_*`). Explorations, 2026-10-07:
+
+| exploration | question | status |
+|---|---|---|
+| [[exploration-concept-similarity-cull-merge]] | which similarity signal may cull or merge concepts (helix) | research complete, awaiting decisions |
+| [[exploration-agent-context-usage]] | how the agent uses `rmx context` once grep is passive (plan-16) | research complete, awaiting decisions |
+| [[exploration-adaptive-memory-budget]] | adaptive memory selection under the context load limits | research complete, awaiting decisions |
 
 ## Tech Stack (`tech-stack/`) {#tech-stack}
 
