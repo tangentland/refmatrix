@@ -1,1 +1,1 @@
-2026-10-07T12:10:32-0700 commit=a3a324e verdict=DIRTY findings=6 (2B/2S/2M) report=2026-10-07-1210-r9-context-read-path-wrong-partition-a3a324e.md
+2026-10-07T13:14:47-0700 commit=06711cd verdict=DIRTY findings=5 (1B/2S/2M) report=2026-10-07-1314-r10-budget-bound-excludes-client-lock-06711cd.md
