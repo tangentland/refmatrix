@@ -5805,6 +5805,7 @@ class Store:
         ).fetchall()
 
         folded = 0
+        folded_ids: list[int] = []
         edges_migrated = 0
         for row in pairs:
             cid, mid = int(row["cid"]), int(row["mid"])
@@ -5857,9 +5858,12 @@ class Store:
                     continue
                 self.link(e["ln"], src, mid, weight=e["w"])
                 edges_migrated += 1
-            self.purge_entity(cid)
+            self.purge_entity(cid, _skip_lance=True)
+            folded_ids.append(cid)
             folded += 1
 
+        # One Lance delete for the fold, not one per concept (bug-085).
+        self._drop_lance_for_purge_batch({"concept": folded_ids})
         if not dry_run and folded:
             self.flush_fragments()
         return {"folded": folded, "edges_migrated": edges_migrated,
@@ -5870,14 +5874,23 @@ class Store:
         Returns the number of *entities* removed. Scoped to the active
         partition so two partitions tracking the same path stay isolated."""
         con = self._connect()
-        ids = [
-            r[0] for r in con.execute(
-                "SELECT id FROM entities WHERE partition_id=? AND path=?",
+        rows = [
+            (r[0], r[1]) for r in con.execute(
+                "SELECT id, kind FROM entities WHERE partition_id=? AND path=?",
                 (self._partition_id, abs_path),
             )
         ]
+        ids = [eid for eid, _kind in rows]
+        # ONE Lance delete per kind, not per entity (bug-085). Each Lance
+        # delete is a full commit; on a `code.lance` carrying 60,944 versions
+        # it cost ~1-2 s, so a watch re-sync of store.py (221 symbols) held
+        # `_store_lock` for 6+ minutes and every client queued behind it.
+        ids_by_kind: dict[str, list[int]] = {}
+        for eid, kind in rows:
+            ids_by_kind.setdefault(kind, []).append(int(eid))
+        self._drop_lance_for_purge_batch(ids_by_kind)
         for eid in ids:
-            self.purge_entity(eid)
+            self.purge_entity(eid, _skip_lance=True)
         con.execute(
             "DELETE FROM tracked_files WHERE partition_id=? AND path=?",
             (self._partition_id, abs_path),
@@ -6966,6 +6979,9 @@ class Store:
 
         max_df = max(min_df, int(total * max_df_ratio))
         seen = marked = unmarked = dropped = 0
+        # Dropped concepts' vectors go in ONE Lance delete after the scan,
+        # not one per concept (bug-085: each delete is a full Lance commit).
+        dropped_ids: list[int] = []
         # Buffer noise transitions so log writes happen after commit.
         noise_changes: list[tuple[str, int]] = []  # (concept_name, new_value)
         for ns in namespaces:
@@ -6984,7 +7000,8 @@ class Store:
                 is_noise = df < min_df or df > max_df
                 if is_noise:
                     if drop:
-                        self.purge_entity(cid)
+                        self.purge_entity(cid, _skip_lance=True)
+                        dropped_ids.append(int(cid))
                         dropped += 1
                         continue
                     if not prev_noise:
@@ -7001,6 +7018,7 @@ class Store:
                         noise_changes.append((c_name, 0))
                         unmarked += 1
         con.commit()
+        self._drop_lance_for_purge_batch({"concept": dropped_ids})
         for c_name, value in noise_changes:
             self._log_event("noise", kind="concept", name=c_name, value=value)
         return {
