@@ -13,211 +13,249 @@ metadata:
 # Task 16.1: the argv-faithful learner {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision 2, after ch-bsd spec review `bsd-plan16-spec-review-b587621`)
+> Status: Pending (revision 3, after spec re-review `bsd-plan16-spec-rereview-42a5521`)
 > Depends on: — (plan-16 itself waits on `bsd-r1-remedy` merging)
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
 rel: amends -> [[bsd-plan16-spec-review-b587621]]
+rel: amends -> [[bsd-plan16-spec-rereview-42a5521]]
 
 ## Why {#why}
 
 Today's teach ping (`bin/rmxgrep`, plain mode) rebuilds argv by DROPPING every flag and runs
-`rmx grep --limit 3 PAT PATHS`. That does four kinds of damage:
+`rmx grep --limit 3 PAT PATHS`. A probe showed `-i foo a.txt` becoming `grep --limit 3 foo a.txt`.
+That rebuild loses three things:
 
-- **`-i` is lost.** A `-i` search re-runs case-sensitively, because the floor has been grep-case
-  since bug-077, and so misses the hits the caller saw. Probed live: `-i foo a.txt` was rebuilt as
-  `grep --limit 3 foo a.txt`.
-- **`-F` is lost.** `-F 'a|b'` is re-run as a regex.
-- **The dialect changes.** The re-run goes through rmx's own `rg` floor, which re-interprets BSD
-  grep's BRE (`\b`, `^`). Both 2026-10-06 false negatives (bug-081) had this shape.
-- **Learned paths depend on the cwd.** That one was fixed at the floor in 321ff97 (r3 #s-6), and the
-  learner must not reintroduce it.
+- **`-i`**, so the search re-runs case-sensitively, because the floor is grep-case since bug-077.
+- **`-F`**, so `'a|b'` is re-run as a regex.
+- **The caller's dialect.** rmx's `rg` floor re-interprets BSD BRE (`\b`, `^`), which is bug-081.
 
-**Faithful** means the learner teaches the lines the caller's command MATCHED, under the caller's
-own matching rules and match cutoffs, restricted to files that belong to the store's corpus, up to a
-stated cap. It is no wider than that and no narrower. {#why-lead}
+**Faithful** means: the lines the caller's command MATCHED, under the caller's matching rules and
+match cutoffs, restricted to files that belong to the store's corpus, up to a stated cap. No wider
+and no narrower. {#why-lead}
 
-## Roots, named once (spec review #b-4) {#roots}
+## Roots, named once (#b-4) {#roots}
 
 | name | value | used for |
 |---|---|---|
-| `store_root` | `<project>/.refmatrix`, found from the caller's cwd the way the shim finds it, then `realpath` | `learn_switch.decision(store_root)`, `learn_queue.enqueue(store_root, …)`, `<store_root>/grep-learn.log` |
-| `project_root` | `realpath(store_root.parent)` | the corpus predicate, relativisation |
-| `cwd` | the caller's cwd, passed by the shim (`--cwd "$PWD"`) | resolving the tool's relative output paths |
-
-No requirement below says "root" without one of these names.
+| `store_root` | `realpath(<project>/.refmatrix)`, found from `cwd` the way the shim finds it | `learn_switch.decision(store_root)`, `learn_queue.enqueue(store_root, …)`, `<store_root>/grep-learn.log`, `<store_root>/.grep-learn-slots/` |
+| `project_root` | `store_root.parent` | the corpus predicate (on the project-RELATIVE path), relativisation |
+| `cwd` | the caller's cwd (`--cwd "$PWD"`) | the re-run's working dir; resolving output paths |
 
 ## Requirements {#requirements}
 
-**R0. Detach first (#s-1).** The first statements of `grep_learn` are `os.setsid()` and closing
-inherited fds above 2. Every child is started with `start_new_session=True` and `close_fds=True`. The
-learner's process group never equals the caller's. `/bin/sh` `&` + `disown` does not do this
-(measured: the ping's pgid was the pipeline's).
+**R0. Detach first (#s-1, #m-n2).**
+- The first statements are `os.setsid()` and closing inherited fds above 2. `EPERM` (already a
+  group leader) is tolerated, since the process is detached already.
+- Children are started with `start_new_session=True` and `close_fds=True`.
+- After detaching, the learner writes `<store_root>/.grep-learn-slots/<pid>.detached`.
+- The ~0.14 s of startup before `setsid` runs is an accepted window, stated here. AC-9 kills only
+  after the marker exists.
 
-**R0b. Concurrency bound (#s-2).** At most `RMX_GREP_LEARN_MAX_INFLIGHT` learners run per store
-(default 2). Each slot is an `fcntl.flock` on a file under `<store_root>/.grep-learn-slots/`. A
-learner that gets no slot exits at once with `outcome=skipped reason=busy` logged. A shell loop over
-N files therefore starts N short-lived processes but runs at most 2 searches.
+**R0b. Concurrency bound, visible to the shim before any spawn (#s-2, #s-n9).**
+- Slots are DIRECTORIES `<store_root>/.grep-learn-slots/slot-{0..N-1}.d`, taken with `mkdir`
+  (atomic) and removed on exit. A slot whose mtime is older than 60 s is stale and is reclaimed.
+- `N = RMX_GREP_LEARN_MAX_INFLIGHT`, default 2.
+- The SHIM (16.2 R2) counts fresh slot dirs with a shell glob before spawning. When all are taken
+  it does not spawn, and it counts `busy`. So a 1,000-file loop costs shell globs, not 1,000
+  Python starts.
+- The learner re-checks with `mkdir`. On a race it exits with `reason=busy` logged.
 
 **R1. Re-run the caller's binary with the caller's MATCHING rules and CUTOFFS.**
-- The shim passes its resolved real binary as `--bin ABS` (#s-6), because PATH holds `./` and an
-  empty entry. The learner execs exactly that path with `stdin=/dev/null`.
-- Argv is classified token by token from ONE table per tool, in `grep_learn.py`.
-- Rows are taken from `/usr/bin/grep --help`, which on this machine is BSD grep 2.6.0-FreeBSD:
-  usage `[-abcdDEFGHhIiJLlMmnOopqRSsUVvwXxZz] … [--binary-files] [--context] [--directories]
-  [--label] [--line-buffered] [--null]`.
-- The rg rows are taken from `rg --help` (15.1.0).
-- The table below is the spec's starting point, re-checked at build time. Every row the build
-  changes is listed in the summary. {#r1}
+- The shim passes `--bin ABS` (#s-6): its resolved `$REAL`, or for 16.3 the `type -P rg` result.
+- The learner execs exactly that binary, with `stdin=/dev/null` and in `cwd`.
+- Tokens are classified from ONE table per tool. Short AND long forms, including `--opt=value`,
+  are rows of their own (#s-n3).
+- The grep rows come from BSD grep 2.6.0's `--help` and `man` (verified live by the re-review:
+  `-y`=`-i`; `-P`/`-T` exit 2; `-X`/`-M` exit 2 on plain text; `-S` follows symlinks; `-m` is
+  per file). The rg rows come from `rg --help` (15.1.0).
+- Every row the build changes is listed in the summary. {#r1}
 
 | class | grep (BSD 2.6.0) | rg (15.1.0) |
 |---|---|---|
-| keep: match | `-i -y -w -x -F -E -G -e PAT -r -R -S -O -p --include --exclude --exclude-dir -a -I -U -d ACT -D ACT --binary-files=V` | `-i -s -S -w -x -F -e PAT -g GLOB -t T -T T -u -uu -uuu --hidden --no-ignore* -L -P -U --multiline-dotall -a --binary` |
-| keep: cutoff (#s-10) | `-m N`; `-l`/`--files-with-matches` → re-run as `-m 1` (the caller matched one line per file); `-q` → `-m 1` plus a stop after the first file with a hit | `-m N`; `-l` → `-m 1`; `-q` → first hit only |
-| drop: shape | `-c -o -s -h -H -n -b -A N -B N -C[N] --context[=N] --color* --label --line-buffered --null` | `-c --count-matches -o -n -N -H -I --heading --no-heading -A N -B N -C N --color* --column -b --trim -M N --max-columns-preview -0 --null` |
-| kill: teach nothing | `-v -L -f FILE` (#s-10: `-f` is multi-pattern, so not a keep row), `-z` (`--null-data`: every hit becomes line 1, measured), `-Z`/`-J`/`-X`/`-M` (gzip/bz2/xz/lzma decompress: line numbers refer to the decompressed text), `-P`/`-T` (BSD grep rejects them, exit 2; the caller got an error, not lines), more than one `-e` | `-v --files-without-match --files --type-list --passthru -f FILE`, `--json`/`--vimgrep` (whole-output reformat), `-r REPL` (rg's replace), more than one `-e` |
+| keep: match | `-i --ignore-case -y -w --word-regexp -x --line-regexp -F --fixed-strings -E --extended-regexp -G --basic-regexp -e PAT --regexp=PAT -r -R --recursive -S -O -p --include=G --exclude=G --exclude-dir=G -a --text -I -U --binary -d ACT --directories=ACT -D ACT --devices=ACT --binary-files=V` | `-i --ignore-case -s --case-sensitive -S --smart-case -w --word-regexp -x --line-regexp -F --fixed-strings -e PAT --regexp=PAT -g G --glob=G --iglob=G -t T --type=T -T T --type-not=T -u -uu -uuu --hidden --no-ignore* --no-config -L --follow -P --pcre2 -U --multiline --multiline-dotall -a --text --binary -d N --max-depth=N` |
+| keep: cutoff (#s-10) | `-m N --max-count=N`; `-l --files-with-matches` → re-run as `-m 1` (the caller matched one line per file) | `-m N --max-count=N`; `-l --files-with-matches` → `-m 1` |
+| drop: shape | `-c --count -o --only-matching -s --no-messages -h --no-filename -H --with-filename -n --line-number -b --byte-offset -A N -B N -C[N] --context[=N] -NUM --after-context=N --before-context=N --color[=W] --colour[=W] --label=L --line-buffered --null` | `-c --count --count-matches -o --only-matching -n --line-number -N --no-line-number -H --with-filename -I --no-filename --heading --no-heading -A N -B N -C N --after-context=N --before-context=N --context=N --color=W --column -b --byte-offset --trim -M N --max-columns=N --max-columns-preview -0 --null` |
+| kill: teach nothing | `-v --invert-match -L --files-without-match -q --quiet --silent` (a quiet caller saw no lines; and under the corpus pruning of R1b, its "first hit" could be a line it never matched) `-f FILE --file=FILE` (multi-pattern) `-z --null-data` (every hit becomes line 1, measured) `-Z -J -X -M` (decompress: line numbers refer to decompressed text) `-P -T` (rejected, exit 2), more than one `-e` | `-v --invert-match --files-without-match --files --type-list --passthru -q --quiet -f FILE --file=FILE --json --vimgrep -r REPL --replace=REPL`, more than one `-e` |
 | append | `-n -H --null` | `-n -H --null --no-heading --color never` |
 
-- **An unknown flag kills the teach** (`reason=unknown-flag:<tok>`). {#r1-unknown}
-- **The tool's own exit decides (#s-10).** The learner records the re-run's exit code. Exit 2 (an
-  error) teaches nothing (`reason=tool-error`), so a flag the caller's grep rejected can never teach.
-- **No-operand, per tool (#s-10).** grep with no file operand and no `-r`/`-R` would read stdin, so
-  it teaches nothing (`reason=no-operand`). A path-less `rg` searches the cwd, so it is a valid
-  search and is re-run as is.
+- **An unknown token kills the teach** (`reason=unknown-flag:<tok>`). {#r1-unknown}
+- **AC-1b feeds 16.3's rendered argv through this classifier** and requires that nothing is
+  unknown (#s-n3).
+- **Exit status (#m-n1).**
+  - Exit 0, or exit 2 with hits (BSD grep exits 2 with valid hits when one operand is missing or
+    unreadable), teaches the parsed hits and logs `tool_exit`.
+  - Exit 2 with no hits teaches nothing (`reason=tool-error`).
+  - A child killed at the hit cap teaches what it produced (`tool_exit=killed-at-cap`).
+  - A child killed at the timeout teaches nothing (`outcome=timeout`).
+- **No-operand, per tool.** grep with no file operand and no `-r`/`-R` teaches nothing
+  (`reason=no-operand`), because it would read stdin. A path-less `rg` searches the cwd and is
+  re-run as is.
+
+**R1b. Prune to the corpus in the RE-RUN, not only after it (#s-n1).**
+- On this repo, a whole-tree `grep -rn X` takes 103 s, because BSD grep walks `.claude`,
+  `.refmatrix` and `.venv-eval` first. Path-less recursive greps are about 68 of about 200 in the
+  transcripts, so filtering after the walk alone would time out a third of recursive greps.
+- The re-run therefore APPENDS pruning flags that are equivalent to R3's predicate.
+  - grep: `--exclude-dir='.[A-Za-z0-9_-]*'`, plus one `--exclude-dir=<d>` per `IGNORE_DIRS` entry.
+    The `.?*` form was measured to exclude the `.` operand itself.
+  - grep: `--include=*<ext>` per corpus extension, ONLY when the caller passed no `--include`.
+    BSD grep ORs repeated `--include`s, so adding ours would widen the caller's filter.
+  - rg: `-g '!<d>/'` per `IGNORE_DIRS` entry. rg already skips hidden dirs unless the caller passed
+    `--hidden` or `-u`. When the caller did, `-g '!.*/'` is added, because R3 drops those hits
+    anyway.
+- This is faithful by construction: it removes only files R3 would discard.
 
 **R2. Parse canonical output, streaming (#m-3).**
-- Read line by line from the child's stdout, never buffered whole.
-- With `--null`, the filename ends at the first NUL, then `LINE:TEXT`. A filename containing `:`
-  parses correctly; that is a test.
-- A `Binary file X matches` line is counted as `binary` and teaches nothing.
-- Path: `os.path.normpath(os.path.join(os.path.realpath(cwd), file))`. Directory symlinks in the
-  CWD are resolved, so the base agrees with the daemon's `resolve()`d `project_root` (#s-7). The
-  file component's own spelling is kept, so a symlinked FILE is not merged into its target.
+- The output is read line by line. With `--null`, the filename ends at the first NUL, followed by
+  `LINE:TEXT`. A `:` in a filename parses.
+- A `Binary file X matches` line is counted as `binary`.
+- Path: `os.path.normpath(os.path.join(os.path.realpath(cwd), file))`. This resolves cwd directory
+  symlinks, agreeing with the daemon's `resolve()`d `project_root` (#s-7). The file's own spelling
+  is kept.
 
-**R3. Keep only CORPUS hits, before the cap (#b-1).**
-- A hit is taught only if `corpus.is_relevant(path, project_root)` is true AND the path lies under
-  `project_root`.
-- `corpus.is_relevant` is the predicate the watcher already uses (`watch.is_relevant`: supported
-  extension, no `IGNORE_DIRS` segment, no dot segment, `.refmatrix_ignore`).
-- That predicate is MOVED into a module that imports neither watchdog nor the store, and
-  `watch.py` re-exports it. There is ONE predicate, not a copy.
-- The filter runs as hits stream in, BEFORE the cap. Drops are counted as `out_of_corpus` on the
-  log record.
-- Without this, BSD `grep -r` (which ignores `.gitignore`) teaches `.refmatrix/` logs, which contain
-  the pattern itself, `.venv-eval/` site-packages and catalog binaries, all as PROTECTED entities
-  that `prune_noise` never removes.
+**R3. Keep only CORPUS hits, before the cap (#b-1, #m-n6).**
+- A hit is taught only if the path is under `project_root` AND `corpus.is_relevant(rel,
+  project_root)` holds, where `rel` is the path RELATIVE to `project_root`.
+  `is_relevant` tests path parts, so testing the absolute path would reject every hit in a
+  project under a dot-dir or `build/` ancestor.
+- `src/refmatrix/corpus.py` (new) holds the watcher's predicate and everything it needs:
+  `is_relevant`, `IGNORE_DIRS`, `SUPPORTED_EXTS` (from `watch.py`), and `load_ignore_spec`,
+  `IgnoreSpec`, `IGNORE_FILE`, `CODE_EXTS`, `DOC_EXTS` (from `ingest.py`).
+  - Both modules re-export these, so there is ONE predicate.
+  - The predicate is the WATCHER's: it decides what is synced, and so what is ingested. The
+    differences from ingest's directory rules (`build/`, `dist/`, `.gmd`) are listed in the summary.
+- Drops are counted as `out_of_corpus`.
 
-**R4. Bounded on every leg, the store included (#b-5).**
-- At most `RMX_GREP_LEARN_MAX_HITS` corpus hits per call (default 200). The remainder is counted as
-  `truncated`, and the child is killed once the cap is reached rather than read to the end.
-- A wall-clock cap, `RMX_GREP_LEARN_TIMEOUT_S` (default 10). On expiry, the child's session is
-  killed, partial hits are discarded, and `outcome=timeout` is logged.
-- **Store-side idempotence.** `daemon._learn_grep_hits` skips any `(concept, entity, line)` evidence
-  row that already exists. Today `Store.add_evidence` is an unconditional INSERT, and the queue
-  dedupes only within one drained batch. That way a re-taught argv every TTL cannot grow
-  `linkage_evidence`, which was bug-058's duplicate-row cause.
+**R4. Bounded on every leg, the store included (#b-5, #s-n7, #s-n8).**
+- At most `RMX_GREP_LEARN_MAX_HITS` corpus hits (default 200). The child is killed at the cap.
+- A wall-clock cap, `RMX_GREP_LEARN_TIMEOUT_S` (default 10).
+- **Store-side idempotence in `daemon._learn_grep_hits`.**
+  1. Compute the set of `(concept, entity, line)` the record would add.
+  2. If every one already exists, RETURN BEFORE `add_concept`, `upsert_entity`, `link` or
+     `add_evidence`. No `facts.log` event is written.
+  3. Otherwise write only the missing evidence rows. `add_evidence` is an unconditional INSERT,
+     and `upsert_entity` appends `entity` and `protect` events.
+- **`kind` from `corpus.CODE_EXTS`,** not the hardcoded 13-suffix set at `daemon.py:4281`.
+  Identity is `(partition, kind, name)`, so a `.sh`/`.tsx`/`.sql` file otherwise becomes a second,
+  PROTECTED `doc` entity beside ingest's `code` one.
 
 **R5. The learn switch, on `store_root` (#b-4).** `learn_switch.decision(store_root)` is checked
-before any process is started. That decision includes the store marker, the global marker and the
-env, and it reports an unreadable marker per bug-080. The shim's throttle (16.2) stays in the shim.
+before any process starts. That covers the env, the store marker and the global marker, and an
+unreadable marker is reported per bug-080.
 
-**R6. Never silent.** Each invocation appends exactly one JSONL record to
-`<store_root>/grep-learn.log`. The record holds:
-- `ts`, `tool`, `bin`, `cwd`, `argv_sha`;
-- `outcome`, one of `taught`, `no-hits`, `skipped`, `timeout`, `error`;
-- `reason`, `hits`, `out_of_corpus`, `binary`, `truncated`, `tool_exit`, `ms`.
+**R6. Never silent.** Exactly one JSONL record per invocation goes to
+`<store_root>/grep-learn.log`, rotated at 5 MB with one predecessor kept. Fields:
+- `ts`, `tool`, `bin`, `cwd`, `argv_sha`, `argv` (as given);
+- `outcome` (`taught | no-hits | skipped | timeout | error`), `reason`, `reason_extra` (#m-n4:
+  for example `retired-env:RMXGREP_TEACH`);
+- `hits`, `out_of_corpus`, `binary`, `truncated`, `tool_exit`, `ms`.
 
-`rmx learn status` prints last-24 h counts by outcome and by reason. A test asserts exactly one
-record per call on every outcome. The log rotates at 5 MB, keeping one predecessor.
+`argv_sha` and `argv` are what 16.4 joins against transcripts. `rmx learn status` prints last-24 h
+counts by outcome and by reason.
 
 **R7. One entry point, not a verb.**
-- The entry point is `rmx grep-learn --tool {grep,rg} --bin ABS --cwd DIR -- ARGV...`, a hidden
-  click command that goes on `verbs.INTERNAL_CLI` once task 3.4 lands. It is not a verb, because
-  `verbs.VERBS` is exactly the MCP tool set.
-- The logic lives in `src/refmatrix/grep_learn.py`. Startup imports no `duckdb`, `lance`, `torch`,
+- `rmx grep-learn --tool {grep,rg} --bin ABS --cwd DIR [--retired-env NAME]... -- ARGV...` (#m-n4).
+  It is hidden, and goes on `verbs.INTERNAL_CLI` once task 3.4 lands.
+- The logic lives in `src/refmatrix/grep_learn.py`.
+- `refmatrix/__init__` imports `store` (#m-n6), so "imports no store module" is unattainable. The
+  bound is that the learner opens no `Store` and imports no `lance`, `torch`,
   `sentence_transformers` or `watchdog`.
+- The real `rmx grep-learn` wall time to first statement is measured and recorded (AC-14).
 
-**R8. Matching rules at read time (#s-8).** The queue record stays `{pattern, hits}`, and the
-concept stays `query/<pattern>`. Explicit `rmx grep` re-verifies lines under ITS caller's rules
-(bug-074/077), so lines taught by a `-i` search answer `rmx grep -i PAT` and are correctly dropped
-for a case-sensitive `rmx grep PAT`. This is stated, and AC-10 tests it, rather than encoding flags
-into the concept.
+**R8. Matching rules at read time (#s-8).** Concepts stay `query/<pattern>`. Explicit `rmx grep`
+re-verifies under its own caller's rules, so `-i`-taught lines answer `rmx grep -i` and are dropped
+for a case-sensitive `rmx grep`.
+
+**R9. Small legs, bounded or named (#m-n3).**
+- `.grep-learn-slots/` holds at most N dirs plus stale ones, which are reclaimed.
+- Stamp files older than 24 h are pruned by the learner, at most once an hour (a marker file).
+- The `throttled` counter rotates at 1 MB.
+- Each learner adds one `cli.log` record through `cli_entry`. `cli.log` has no rotation today
+  (19 MB), a pre-existing gap that this task logs in the bug registry and does not fix.
 
 ## Acceptance criteria {#acceptance}
 
-1. **Flag fidelity, with proven power (#s-9).** Covers each keep row the build supports, per tool,
-   and at minimum: `-i`, `-w`, `-x`, `-F` with `|`, BRE `\b`, BRE `^`, ERE `-E 'a|b'`, `-r` over a
-   directory, `--include`, `-m 2`, `-l`, rg `-g`, rg `-t`.
-   - (a) **Power:** on the fixture, the real tool's `-nH --null` output WITH the flag differs from
-     the output WITHOUT it. A case whose flag changes nothing is not a test.
-   - (b) **Fidelity:** the taught `(file, line)` set equals the real tool's output with the flag,
-     corpus-filtered.
-   - (c) **Red:** each case fails against a stub `grep_learn` that drops the flag. That failure must
-     be the set difference, not an `ImportError`.
-2. **Shape flags change nothing.** `-c`, `-o`, `-h`, `-C 2` teach the same set as the bare
-   invocation.
-3. **Cutoffs are honoured.** `-m 1` over a 3-hit file teaches 1. `-l` over two files teaches one
-   line per file.
-4. **Kill rows teach nothing and log their reason.** Covers `-v`, `-L`, `-f`, `-z`, `-P`, two
-   `-e`, an unknown flag, grep with no operand, and a tool exit of 2.
-5. **Corpus (#b-1).** A fixture whose tree holds the pattern in `.refmatrix/query.log`,
-   `.venv-eval/x.py`, `__pycache__/x.pyc`, a path in `.refmatrix_ignore` and `src/a.py` teaches
-   exactly `src/a.py`'s line, with `out_of_corpus=4`. A 300-hit `.venv-eval/` file placed FIRST in
-   walk order does not displace `src/a.py` from the cap.
-6. **Paths and identity (#s-7).** A relative-argv call from a subdirectory teaches absolute paths.
-   The taught entity id EQUALS the id `ingest` gave the same file, whether the cwd is reached
-   directly or through a symlinked directory. A symlinked FILE and its target named separately are
-   two entities.
-7. **Parse.** A filename containing `:` parses. A `Binary file … matches` line counts as `binary`.
-8. **Bounds.**
-   - `MAX_HITS=5` over a 50-hit fixture teaches 5 with `truncated>0`, and the child is gone within
-     1 s of the fifth hit.
-   - A FIFO operand times out: wall < timeout + 1 s, `outcome=timeout`, nothing taught.
-   - Three concurrent learners with `MAX_INFLIGHT=2`: exactly one `reason=busy`.
-9. **Detached (#s-1).** The learner's pgid differs from its spawner's. After `killpg(spawner's
-   group)`, the learner still finishes and logs.
-10. **The switch on the right root (#b-4).**
-    - `RMX_LEARN=0` gives `skipped`.
-    - **7b:** with `RMX_LEARN` UNSET and a per-store `learn.off` at `store_root`, the result is
-      `skipped reason=learning-disabled` and the queue file is unchanged.
-    - **7c:** a global marker gives the same result.
-11. **Idempotent store (#b-5).** Teach the same argv twice (TTL 0), drain through a real `Daemon`
-    built on `store_root` after each, and the `linkage_evidence` row count is unchanged after the
-    second drain.
-12. **End to end through the real drain.**
-    - The queued records are drained by `Daemon._drain_learn_queue` on a real `Store` at
-      `store_root`. Then explicit path-less `rmx grep PAT` answers from the index with the taught
-      lines.
-    - For a `-i` teach over a mixed-case fixture, `rmx grep -i PAT` returns the mixed-case lines and
-      `rmx grep PAT` does not (R8).
-13. **Log completeness.** Exactly one record per call across every outcome above. `rmx learn status`
-    shows the counts.
-14. **Light import.** `python -X importtime -c 'import refmatrix.grep_learn'` lists none of
-    `duckdb`, `lance`, `torch`, `sentence_transformers`, `watchdog`.
+1. **Flag fidelity with proven power (#s-9).** Coverage: each keep row, per tool, short AND long
+   form. At minimum `-i`, `-w`, `-x`, `-F` with `|`, BRE `\b`, BRE `^`, `-E 'a|b'`, `-r` over a
+   directory, `--include`, `-m 2`, `-l`, rg `-g`, rg `-t`, rg `--glob`.
+   - (a) **Power.** The real tool's output WITH the flag differs from its output WITHOUT the flag
+     on the fixture.
+   - (b) **Fidelity.** The taught set equals the real tool's output, corpus-filtered.
+   - (c) **RED.** Each case fails against a stub that drops the flag, by SET DIFFERENCE, not by
+     `ImportError`.
+   - **1b.** 16.3's rendered argv for every captured payload classifies with zero unknown tokens.
+2. **Shape flags change nothing.** `-c`, `-o`, `-h`, `-C 2` and `--count` each teach the bare
+   invocation's set.
+3. **Cutoffs.** `-m 1` over a 3-hit file teaches 1. `-l` over two files teaches one line per file.
+4. **Kill rows.** `-v`, `-L`, `-q`, `-f`, `-z`, `-P`, two `-e`, an unknown flag, grep with no
+   operand, and exit 2 with no hits each produce `skipped` with the right `reason`. Exit 2 WITH hits
+   (one missing operand) teaches the hits and logs `tool_exit=2`.
+5. **Corpus.**
+   - A fixture containing the pattern in `.refmatrix/query.log`, `.venv-eval/x.py`,
+     `__pycache__/x.pyc`, a `.refmatrix_ignore`d path and `src/a.py` teaches only `src/a.py`, with
+     `out_of_corpus=4`.
+   - A 300-hit `.venv-eval/` file walked FIRST does not displace `src/a.py`.
+   - A project whose ancestor directory is named `build` still teaches (the relative-path rule).
+6. **Pruned re-run (#s-n1).** A 20,000-file out-of-corpus tree placed ahead of `src/` gives a
+   path-less `grep -rn PAT` that teaches `src/` hits within the timeout. Without R1b the same
+   fixture times out, and that is the RED.
+7. **Identity (#s-7, #s-n8).** The taught entity id equals the id `ingest` gave the same file, for
+   a `.py`, a `.sh` and a `.tsx` file. Checked with the cwd reached directly and through a
+   symlinked directory. A symlinked FILE and its target are two entities.
+8. **Parse.** A `:` filename parses. A `Binary file … matches` line is counted as `binary`.
+9. **Bounds.**
+   - `MAX_HITS=5` on a 50-hit fixture teaches 5, logs `tool_exit=killed-at-cap`, and the child is
+     gone within 1 s.
+   - A FIFO operand: wall < timeout + 1 s, `outcome=timeout`, nothing taught.
+   - Three concurrent learners with `N=2`: one `busy`.
+10. **Detached (#m-n2).** After the `.detached` marker exists, `killpg(spawner's group)` leaves the
+    learner running to its log record. In a learner spawned as a group leader, `os.setsid()` EPERM
+    is tolerated.
+11. **The switch on the right root.** `RMX_LEARN=0`, then (7b) a store marker with `RMX_LEARN`
+    unset, then (7c) a global marker: each gives `skipped reason=learning-disabled` and an
+    unchanged queue file.
+12. **Idempotent store (#b-5, #s-n7).** Teach the same argv twice (TTL 0), each time drained by a
+    real `Daemon` on `store_root`. After the second drain, the `linkage_evidence` row count AND the
+    `facts.log` byte size are unchanged.
+13. **End to end.**
+    - The real drain runs, then explicit path-less `rmx grep PAT` answers with the taught lines.
+    - A `-i` teach answers `rmx grep -i PAT` with the mixed-case lines and not plain `rmx grep PAT`.
+14. **Log and startup.**
+    - Exactly one record per call across every outcome above.
+    - `rmx learn status` shows the counts.
+    - `python -X importtime -m refmatrix.cli grep-learn …` (the real entry) imports none of
+      `lance`, `torch`, `sentence_transformers`, `watchdog`. Its wall time is recorded.
 
 ## Files to modify {#files-to-modify}
 
 | File | Change |
 |------|--------|
-| `src/refmatrix/grep_learn.py` (new) | detach, slots, tables, classify, re-run, stream-parse, corpus filter, enqueue, log |
-| `src/refmatrix/corpus.py` (new) | `is_relevant` + `IGNORE_DIRS` + `SUPPORTED_EXTS` + `load_ignore_spec`, moved from `watch.py` (re-exported there) |
-| `src/refmatrix/daemon.py` | `_learn_grep_hits` skips existing `(concept, entity, line)` evidence |
-| `src/refmatrix/cli.py` | hidden `grep-learn`; `learn status` 24 h outcome counts |
-| `src/refmatrix/verbs.py` | `grep-learn` on `INTERNAL_CLI` (if task 3.4 has landed; otherwise noted in the 3.4 row) |
+| `src/refmatrix/grep_learn.py` (new) | detach, slot dirs, tables, classify, pruning flags, re-run, stream-parse, corpus filter, enqueue, log, stamp pruning |
+| `src/refmatrix/corpus.py` (new) | predicate + `IGNORE_DIRS`, `SUPPORTED_EXTS`, `load_ignore_spec`, `IgnoreSpec`, `IGNORE_FILE`, `CODE_EXTS`, `DOC_EXTS`, moved from `watch.py` and `ingest.py` (both re-export) |
+| `src/refmatrix/daemon.py` | `_learn_grep_hits`: all-present short-circuit before any write; missing-only evidence; `kind` from `CODE_EXTS` |
+| `src/refmatrix/cli.py` | hidden `grep-learn`; `learn status` counts |
+| `workflow/bug_registry.md` | `cli.log` has no rotation (R9) |
 
 ## Test strategy {#test-strategy}
 
-- `tests/test_grep_learn.py` uses real `/usr/bin/grep` and `rg` (skipped with a printed reason if
-  either is absent), a real fixture tree, and real `store_root` queue and log files. Nothing in
-  `grep_learn` is patched.
-- AC-11 and AC-12 use a real `Daemon` and `Store`, as `tests/test_grep_learned_reachable.py` does.
-- Pre-registered mutations:
-  - move `-i` from keep to DROP: AC-1 fails on its set difference, which is the defect this task
-    exists to remove;
-  - move `-F` from keep to drop: AC-1 fails;
-  - remove the corpus filter: AC-5 fails;
-  - remove the `_learn_grep_hits` dedupe: AC-11 fails;
-  - use `cwd` instead of `realpath(cwd)`: AC-6 fails under the symlinked cwd;
-  - skip `os.setsid()`: AC-9 fails;
-  - read the switch on `project_root`: AC-10 7b fails;
-  - remove the log write on `timeout`: AC-13 fails. {#tests}
+- Real `/usr/bin/grep` and `rg` (skipped with a printed reason when absent), real fixture trees,
+  real `store_root`. Nothing in `grep_learn` is patched. AC-12 and AC-13 use a real `Daemon` and
+  `Store`.
+- Pre-registered mutations, each with the AC it must fail:
+
+| mutation | must fail |
+|---|---|
+| `-i` keep→DROP | AC-1 (set difference) |
+| `-F` keep→drop | AC-1 |
+| remove the corpus filter | AC-5 |
+| remove R1b's pruning | AC-6 |
+| remove the all-present short-circuit | AC-12 (`facts.log` grows) |
+| restore the hardcoded kind set | AC-7 (`.sh`) |
+| `cwd` instead of `realpath(cwd)` | AC-7 (symlinked cwd) |
+| skip `os.setsid()` | AC-10 |
+| read the switch on `project_root` | AC-11 7b |
+| remove the log write on `timeout` | AC-14 |
+| remove a long-form row | AC-1b |
+
+{#tests}

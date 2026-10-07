@@ -13,12 +13,13 @@ metadata:
 # Task 16.2: the invisible shim {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision 2, after ch-bsd spec review `bsd-plan16-spec-review-b587621`)
+> Status: Pending (revision 3, after spec re-review `bsd-plan16-spec-rereview-42a5521`)
 > Depends on: [[task-16.1-argv-faithful-learner]]
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
 rel: depends-on -> [[task-16.1-argv-faithful-learner]]
 rel: amends -> [[bsd-plan16-spec-review-b587621]]
+rel: amends -> [[bsd-plan16-spec-rereview-42a5521]]
 
 ## Why {#why}
 
@@ -57,9 +58,16 @@ This task deletes the rich branch and replaces the ping with 16.1's learner. {#r
 - `$REAL` is resolved ONCE to an absolute path (`command -v`). That same path is what runs and what
   is passed to the learner as `--bin` (#s-6). {#r1}
 
-**R2. Spawn the learner, then exec.** When the throttle (R3) says go:
-- Start `"$RMX" grep-learn --tool grep --bin "$REAL_ABS" --cwd "$PWD" -- "$@"` with stdin, stdout
-  and stderr on `/dev/null`, backgrounded.
+**R2. Spawn the learner, then exec.**
+- **Slot check before spawning (#s-n9).** The shim counts the slot dirs under
+  `<store_root>/.grep-learn-slots/` (16.1 R0b) that are fresher than 60 s, using a shell glob and
+  `find -mmin`. If the count is at least `RMX_GREP_LEARN_MAX_INFLIGHT` (default 2), the shim does
+  not spawn: it appends one byte to `<store_root>/.rmxgrep-teach/busy` and goes straight to the
+  exec. This is what bounds process STARTS: a 1,000-file loop costs globs, not 1,000 Python starts
+  at 0.14 s each.
+- When the slots and the throttle (R3) both say go:
+- Start `"$RMX" grep-learn --tool grep --bin "$REAL_ABS" --cwd "$PWD" [--retired-env
+  RMXGREP_TEACH] -- "$@"` with stdin, stdout and stderr on `/dev/null`, backgrounded.
 - Detaching, the slot cap and logging all belong to the learner (16.1 R0/R0b/R6); the shell does no
   more than start it. `/bin/sh`'s `&` alone does not give the child its own process group, so the
   learner's `os.setsid()` is what does (#s-1). {#r2}
@@ -70,8 +78,9 @@ This task deletes the rich branch and replaces the ping with 16.1's learner. {#r
   searches.
 - `RMXGREP_TEACH_TTL_MIN` stays as the throttle window.
 - Every throttled call appends one byte to `<store_root>/.rmxgrep-teach/throttled`. `rmx learn
-  status` prints that file's size since its last rotation. A throttled grep is a counted skip, not
-  an invisible one. {#r3}
+  status` prints that file's size, and the `busy` file's (R2), since their last rotation. A
+  throttled or busy grep is a counted skip, not an invisible one.
+- Both counters rotate at 1 MB. Stamps older than 24 h are pruned by the learner (16.1 R9). {#r3}
 
 **R4. `RMXGREP_TEACH` is retired (d-2) (#m-2).**
 - The shims stop reading it.
@@ -141,7 +150,9 @@ test that spawns `rmx` from PATH. {#r6}
    dir`.
 5. **Early exits, BOTH wrappers.** Outside a project, rmx missing, piped stdin, `RMX_LEARN=0`, and a
    store marker: each gives byte-exact output, no log record and no stamp. Covers `rmxrg` explicitly.
-6. **Throttle.**
+6. **Throttle and slots.**
+   - With 2 fresh slot dirs present (held by two sleeping stand-in learners), a third call does not
+     spawn, `busy` grows by one byte, and the output is byte-identical.
    - The same cwd and argv twice within the TTL gives one spawn and one byte in `throttled`.
    - The same argv from two cwds gives two spawns.
    - `"a b"` vs `a b` gives two spawns.
@@ -186,4 +197,5 @@ refreshes the rewriter (bug-080 changed it). The handoff names both steps.
   - run the learner in the foreground: AC-3 fails;
   - key the stamp on argv only: AC-6 fails;
   - drop `RMXGREP_MODE` removal from the merge: AC-8 fails;
+  - remove the slot check: AC-6 (busy case) fails;
   - remove `rmxrg`'s learning-off block: AC-5 fails. {#tests}

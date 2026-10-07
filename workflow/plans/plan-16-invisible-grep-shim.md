@@ -12,9 +12,11 @@ metadata:
 # Plan 16: the grep shim stops answering and only watches {#root}
 
 **Date:** 2026-10-06
-**Status:** Drafting. Task specs revision 2 (2026-10-07) addresses ch-bsd spec review
-`bsd-plan16-spec-review-b587621` (NEEDS-REVISION, 23 findings) and awaits re-review before
-`approved`. No code yet. Sequenced after `bsd-r1-remedy` merges.
+**Status:** Drafting. Task specs revision 3 (2026-10-07) addresses the spec re-review
+`bsd-plan16-spec-rereview-42a5521` (NEEDS-REVISION: 2 prior findings open, 18 new). The precision
+gate is KEPT by user decision, scored on complete outputs with a minimum n and a forward-collected
+oracle. Awaiting a third review before `approved`. No code yet. Sequenced after `bsd-r1-remedy`
+merges.
 
 rel: depends-on -> [[plan-15-derive-impact-tracking]]
 rel: derives-from -> [[plan-14-grep-learning-measurement]]
@@ -79,25 +81,26 @@ It re-runs the SAME tool the caller ran, never rmx's floor, so the regex dialect
 by construction. Hits go through `learn_queue.enqueue`, a file append, so no socket and no daemon
 are needed. Full spec: task 16.1. {#learner}
 
-- **It parses the caller's argv with the same parser `rmx grep` uses.** The current ping STRIPS
-  every flag. A `-i` search is re-run case-sensitively, and since bug-077 made the floor grep-case,
-  that means it misses the very hits the caller saw. A `-F 'a|b'` is re-run as a regex.
-- **It re-runs with the caller's matching rules and canonical output.**
-  - Kept: `-i`, `-w`, `-x`, `-F`/`-E`, and every `-e` value.
-  - Forced: `-nH`, as the floor does today.
-  - Ignored: shaping flags (`-c`, `-l`, `-o`, `-h`, `-A/-B/-C`, `-m`), which change rendering,
-    not which lines match.
-  - `-v` and `-L` teach nothing, because their hits are non-matches.
-- **It resolves paths to absolute against the caller's cwd before learning.** This closes the path
-  half of ch-bsd r3 #s-6: learned rows are stored relative today, so verifying them depends on the
-  cwd.
-- **It teaches only the corpus.** Hits pass the watcher's own relevance predicate before the cap
-  (task 16.1 R3), because BSD `grep -r` ignores `.gitignore` and would otherwise teach `.refmatrix/`
-  logs and `.venv-eval/` as protected entities.
-- **It is bounded on every leg.** At most 200 corpus hits are taught, under a wall-clock cap and an
-  in-flight cap of 2 per store. Store-side, re-teaching is idempotent: `_learn_grep_hits` skips
-  existing evidence. Every call appends one record to `<store_root>/grep-learn.log`, and the learner
-  never opens a `Store`.
+- **It re-runs the caller's OWN binary** (`--bin`) with the caller's MATCHING rules and match
+  CUTOFFS, so the dialect is the caller's by construction. Task 16.1 R1's per-tool table is the
+  authority, and this summary defers to it:
+  - match flags are kept, in short and long forms;
+  - cutoffs are honoured: `-m N` is kept, and `-l` is re-run as `-m 1`;
+  - shape flags are dropped;
+  - teaching nothing: `-v`, `-L`, `-q`, `-f`, more than one `-e`, the decompress flags, and flags
+    the tool rejects;
+  - canonical `-nH --null` output is appended.
+- **It prunes the re-run to the corpus and keeps only corpus hits** (16.1 R1b/R3). BSD `grep -r`
+  ignores `.gitignore`. A whole-tree re-run takes 103 s on this repo, and without the corpus filter
+  it would teach `.refmatrix/` logs and `.venv-eval/` as protected entities.
+- **Paths are absolute** from `realpath(cwd)`, and `kind` follows ingest's `CODE_EXTS`, so a taught
+  file is the SAME entity ingest made (16.1 R2/R4).
+- **It is bounded on every leg.**
+  - At most 200 corpus hits, under a wall-clock cap.
+  - An in-flight cap of 2 per store, which the shim checks BEFORE spawning.
+  - Store-side, a fully known re-teach writes nothing, not even to `facts.log`.
+  - Every call appends one record to `<store_root>/grep-learn.log`, and the learner opens no
+    `Store`.
 - **The dedicated Grep tool uses it too.** `grep-tool-teach.sh` (PostToolUse(Grep)) calls the same
   learner, so all three surfaces learn from one implementation.
 
@@ -129,7 +132,7 @@ Specs go in `workflow/plans/plan-16-invisible-grep-shim-tasks/` before approval.
 | 16.1 | `grep_learn.py` behind the hidden `rmx grep-learn` (not a verb); `corpus.py` predicate; `_learn_grep_hits` dedupe | flag fidelity with proven power; cutoffs honoured; corpus-only; entity identity under symlinked cwd; detached; slots; switch on `store_root`; idempotent store |
 | 16.2 | invisible shim in both wrappers; cwd+argv throttle, counted; `RMXGREP_TEACH` retired via the log; generators + `check()` extended | differential 100% byte-identical with power shown on the current shim; caller never delayed; overhead with the REAL learner |
 | 16.3 | Grep-tool hook rebuilt from the tool's real rg argv (`--hidden`, VCS globs, constants pinned); every doc/help surface | taught set equals the tool's captured RESPONSE; paging inputs do not kill; no stale claim anywhere |
-| 16.4 | measurement on real transcript invocations (incl. subagents) | oracle = what the agent SAW (`tool_result`), never the learner's own re-run; route breakdown incl. unobserved route 3; forgone index share without train-on-test |
+| 16.4 | measurement, historical + forward (learner log joined to transcripts) | precision ≥ 0.99 / recall ≥ 0.95 (micro, timeouts counted) on COMPLETE outputs only, gated at n ≥ 30 else `insufficient-n`; no carve-out; a gate shown able to fail; routes measured |
 
 ## Decisions (user, 2026-10-06) {#decisions}
 

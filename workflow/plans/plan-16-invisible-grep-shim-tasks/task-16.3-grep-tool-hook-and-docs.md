@@ -13,12 +13,13 @@ metadata:
 # Task 16.3: Grep-tool hook on the learner, and the docs {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision 2, after ch-bsd spec review `bsd-plan16-spec-review-b587621`)
+> Status: Pending (revision 3, after spec re-review `bsd-plan16-spec-rereview-42a5521`)
 > Depends on: [[task-16.1-argv-faithful-learner]]
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
 rel: depends-on -> [[task-16.1-argv-faithful-learner]]
 rel: amends -> [[bsd-plan16-spec-review-b587621]]
+rel: amends -> [[bsd-plan16-spec-rereview-42a5521]]
 
 ## Why {#why}
 
@@ -35,24 +36,47 @@ inputs was killed (#b-3). {#why-lead}
 ## Requirements {#requirements}
 
 **R1. Rebuild the tool's own rg argv, from the tool's own code, pinned by a captured payload.**
-The hook calls `rmx grep-learn --tool rg --bin "$(command -v rg)" --cwd "$CWD" -- <argv>`, where
-argv is:
+The hook calls `rmx grep-learn --tool rg --bin "$RG_ABS" --cwd "$CWD" -- <argv>`.
+
+**Binary resolution (#s-n5).** `TEACH_TEMPLATE` is a bash script, and hooks inherit `BASH_ENV`.
+Measured: `bash -c 'command -v rg'` prints `rg`, the agent-bashrc FUNCTION. So:
+- `RG_ABS` is `type -P rg`, which resolves PATH only and never a function.
+- The `rmx` call runs under `env -u BASH_ENV`.
+- The test runs with `BASH_ENV` set to a file that defines `rg()`, so a function-resolving build
+  fails it.
+
+**Builtin vs system rg (#s-n5).** The Grep tool runs Claude Code's BUILTIN ripgrep with
+`--no-config`; the learner re-runs the SYSTEM rg (`/opt/local/bin/rg`, 15.1.0) with `--no-config`
+added. That is a stated divergence, not a claim of sameness. The build records both versions in the
+summary, and AC-1 (which compares against the tool's own response) is what catches a behavioural
+difference.
+
+The argv is:
 
 | source | rg argv |
 |---|---|
-| always (tool constant) | `--hidden`, `--glob !<d>` for each VCS dir the tool excludes, `--max-columns 500` |
+| always (tool constant) | `--no-config`, `--hidden`, `--glob=!<d>` for each VCS dir the tool excludes (`.git .svn .hg .bzr .jj .sl` in 2.1.292), `--max-columns=500` |
 | `pattern` | `-e PATTERN` |
 | `path` (default: the cwd) | trailing operand |
-| `glob` | `-g GLOB` |
+| `glob` | the tool's own SPLIT (#s-n4): split on whitespace, then split each piece on commas UNLESS the piece contains `{`; one `--glob=<piece>` per piece. `*.ts,*.tsx` and `*.py *.md` therefore become two globs, and `*.{ts,tsx}` stays one. |
 | `type` | `-t TYPE` |
 | `-i: true` | `-i` |
 | `multiline: true` | `-U --multiline-dotall` |
 | `output_mode`, `-n`, `-A`, `-B`, `-C`, `context`, `head_limit`, `offset`, `-o` | ignored: shaping or paging only. `head_limit`/`offset` page the TOOL's output, while the learner teaches the full corpus-filtered result under its own cap. |
 
-- **The constants and the VCS-dir list are read from the binary on this machine at build time.**
-  The summary records the extraction command and its output, because an rmx version must not
-  silently encode a stale list. A test fails if the rendered hook's constant set differs from a
-  checked-in fixture of that extraction, so a Claude Code upgrade is a visible diff.
+- **The constants (the VCS-dir list, `--max-columns`, the glob split rule) are extracted from the
+  binary.** The extraction is anchored on CONTENT (string literals such as `"--max-columns"` and
+  the VCS-dir array's members), not on minified identifiers. The result is checked in as
+  `tests/fixtures/grep_tool_constants.txt`.
+- **AC-5 re-extracts from the INSTALLED binary on every run (#s-n6)**, from
+  `$CLAUDE_CODE_EXECPATH`, else `~/.local/bin/claude`. It compares both the fixture and the
+  rendered hook with that extraction. When the binary auto-updates (it is `versions/2.1.292`,
+  installed 2026-10-06), the suite FAILS until the fixture is refreshed. When no binary is present
+  it skips with a printed reason.
+- **Unmodelled, named as divergence (#s-n6):** the tool's DYNAMIC exclusions are not modelled:
+  permission-deny `--iglob` patterns, orphaned-plugin globs and task-output globs. The deny list is
+  empty on this machine today. A taught hit inside one of them is a hit the tool did not return,
+  and AC-1 measures that.
 - **An unrecognised input field** gives `outcome=skipped reason=unknown-input:<name>`. With the full
   table, that now means a genuinely new field. {#r1}
 
@@ -92,11 +116,17 @@ each (`feedback_verify_memory_by_recall_not_get`). {#r4}
 2. **Dot-directory hit.** A fixture hit under `.github/x.yml` is taught. It is in the corpus only if
    `corpus.is_relevant` allows it; otherwise it is counted `out_of_corpus`, and the test asserts
    whichever the predicate says, explicitly.
-3. **Paging inputs do not kill the teach.** A payload with `offset`, `context`, `-o` and
+3. **Glob split (#s-n4).** Payloads with `glob: "*.ts,*.tsx"`, `glob: "*.py *.md"` and
+   `glob: "*.{ts,tsx}"` each teach what the tool returned. RED: a single-`-g` mapping teaches
+   nothing for the first two.
+3b. **Paging inputs do not kill the teach.** A payload with `offset`, `context`, `-o` and
    `head_limit` teaches.
 4. **Unknown field.** An extra field gives `skipped reason=unknown-input:<name>`.
-5. **The constant set is pinned.** The rendered hook's constants equal the checked-in extraction
-   fixture. Changing one fails the test.
+5. **The constant set tracks the installed binary.** The fixture, the rendered hook and a live
+   re-extraction from the installed Claude Code binary all agree. Changing any one of them fails
+   the test.
+5b. **Binary resolution.** With `BASH_ENV` defining `rg()`, the learner's log record carries an
+   ABSOLUTE `bin`.
 6. **The hook never touches the tool result.** It exits 0 within 100 ms while the learner sleeps
    (16.2 AC-3's stand-in).
 7. **No stale claims.** A test scans the rendered templates, the briefing, the PRIMER header,
@@ -121,4 +151,7 @@ each (`feedback_verify_memory_by_recall_not_get`). {#r4}
 - Pre-registered mutations:
   - drop `--hidden`: AC-2 fails;
   - drop the `glob` mapping: AC-1 fails on a glob payload;
-  - add `offset` to unknown: AC-3 fails. {#tests}
+  - add `offset` to unknown: AC-3b fails;
+  - drop the glob split: AC-3 fails;
+  - use `command -v` for `RG_ABS`: AC-5b fails;
+  - hardcode a stale VCS list: AC-5 fails against the live extraction. {#tests}
