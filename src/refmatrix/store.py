@@ -845,7 +845,9 @@ def verify_evidence_rows(rows: list, pattern: str, *, regex: bool = False,
     (bug-058 was a short read that looked successful).
 
     A row whose file cannot be read is DROPPED and COUNTED, never kept on
-    faith: `stats["unreadable"]` carries the number so a caller can say it.
+    faith: `stats["unreadable"]` carries the number of such rows READ before
+    `stop_after` stopped the scan (rows past the cap are never read, so their
+    files are never tried) so a caller can say it.
 
     `variants` (from `identifier_variant_regex`) is the spelling bridge: a
     row whose line holds none of the literal pattern but one of its

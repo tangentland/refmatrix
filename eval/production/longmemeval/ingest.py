@@ -83,8 +83,8 @@ def build(*, rmx: str, corpus: Path, root: Path,
     n = sum(1 for _ in corpus.rglob("*.md")) if corpus.exists() else 0
     if not n:
         raise PassFailed(
-            f"corpus is empty or missing: {corpus} — run `python3 prepare.py "
-            f"--fetch` first")
+            f"corpus is empty or missing: {corpus} — run `python3 prepare.py` "
+            f"first")
     print(f"  ~ corpus: {n} session docs under {corpus}")
     print(f"  ~ store:  {root} (partition={PARTITION})")
 
