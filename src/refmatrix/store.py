@@ -3572,49 +3572,69 @@ class Store:
             con.commit()
         return n
 
-    def _drop_lance_for_purge(self, entity_id: int, kind: str) -> bool:
-        """Best-effort: drop entity_id's vector from its (partition, kind)
-        Lance dataset. Paired with `purge_entity` so a DuckDB row deletion
-        also clears the corresponding dense vector instead of leaving an
-        orphan for the next `embed --gc`.
+    def _lance_for_purge(self, kind: str, n: int):
+        """`lance`, or None when the [dense] extra is not installed. A lance
+        that IS installed but fails to import (a missing transitive dependency
+        under `python -I`: `typing_inspection`) is a FAILURE, counted and
+        printed — it used to read as "not installed" and skip every vector
+        delete without a word (ch-bsd r7 #s-2)."""
+        import importlib.util
+        if importlib.util.find_spec("lance") is None:
+            return None
+        try:
+            import lance
+        except Exception as e:  # noqa: BLE001 — named and counted below
+            self._note_vector_delete_failure(kind, n, e)
+            return None
+        return lance
 
-        Skips silently on:
-          - `lance` not importable (no [dense] extra installed)
-          - dataset directory absent (kind never embedded in this partition)
-          - any Lance-side exception (the catalog purge must still proceed
-            even if the vector side fails — worst case stays "orphan, GC
-            reaps later," never "user thinks the row is gone but it isn't")
+    def _note_vector_delete_failure(self, kind: str, n: int, exc: BaseException) -> None:
+        """A failed vector delete leaves `n` orphan vectors for purged ids. The
+        catalog purge still proceeds (the row must go), so the failure is
+        PRINTED with its remedy and COUNTED on `vector_delete_failures`, which
+        sync / prune / fold report (ch-bsd r7 #s-2: it was `except: pass`)."""
+        import sys as _sys
+        self.vector_delete_failures = getattr(self, "vector_delete_failures", 0) + n
+        print(f"rmx: vector delete FAILED for {n} {kind} id(s) in partition "
+              f"{self._partition_name!r} ({type(exc).__name__}: {exc}); their vectors "
+              f"are orphaned until `rmx embed --gc`", file=_sys.stderr)
+
+    def _drop_lance_for_purge(self, entity_id: int, kind: str) -> bool:
+        """Drop entity_id's vector from its (partition, kind) Lance dataset.
+        Paired with `purge_entity` so a DuckDB row deletion also clears the
+        corresponding dense vector instead of leaving an orphan for the next
+        `embed --gc`.
+
+        Quiet only when there is nothing to delete: `lance` not installed (no
+        [dense] extra) or the dataset directory absent (kind never embedded in
+        this partition). Any other failure is printed and counted
+        (`_note_vector_delete_failure`) and the catalog purge proceeds.
 
         Returns True when a delete was issued, False otherwise.
         """
-        try:
-            import lance
-        except ImportError:
-            return False
         path = self.root / "vectors" / self._partition_name / f"{kind}.lance"
         if not path.exists():
+            return False
+        lance = self._lance_for_purge(kind, 1)
+        if lance is None:
             return False
         try:
             ds = lance.dataset(str(path))
             ds.delete(f"id = {int(entity_id)}")
             return True
-        except Exception:
+        except Exception as e:  # noqa: BLE001 — named and counted
+            self._note_vector_delete_failure(kind, 1, e)
             return False
 
     def _drop_lance_for_purge_batch(
         self, ids_by_kind: "dict[str, list[int]]",
     ) -> int:
-        """Batched form of `_drop_lance_for_purge`: one Lance dataset open
-        per kind, one delete per kind. Used by `bulk_forget_memories` so
-        a 261-id purge pays N dataset opens (one per distinct kind) rather
-        than 261. Same failure semantics as the single-id variant.
-        Returns the number of ids whose Lance row was attempted (count is
-        per-kind input length when the dataset exists and lance is
-        importable; sum across kinds)."""
-        try:
-            import lance
-        except ImportError:
-            return 0
+        """Batched form of `_drop_lance_for_purge`: one Lance dataset open and
+        ONE delete per kind. Since bug-085 it is the only vector delete on file
+        re-sync, concept fold, noise prune and bulk memory forget. Same failure
+        semantics as the single-id variant: quiet only when there is nothing to
+        delete, otherwise printed and counted. Returns the number of ids whose
+        delete was issued."""
         total = 0
         for kind, ids in ids_by_kind.items():
             if not ids:
@@ -3625,13 +3645,16 @@ class Store:
             )
             if not path.exists():
                 continue
+            lance = self._lance_for_purge(kind, len(ids))
+            if lance is None:
+                continue
             try:
                 ds = lance.dataset(str(path))
                 in_list = ",".join(str(int(i)) for i in ids)
                 ds.delete(f"id IN ({in_list})")
                 total += len(ids)
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001 — named and counted
+                self._note_vector_delete_failure(kind, len(ids), e)
         return total
 
     def _pending_embeddings_where(
@@ -5865,11 +5888,14 @@ class Store:
             folded += 1
 
         # One Lance delete for the fold, not one per concept (bug-085).
+        failed0 = getattr(self, "vector_delete_failures", 0)
         self._drop_lance_for_purge_batch({"concept": folded_ids})
         if not dry_run and folded:
             self.flush_fragments()
         return {"folded": folded, "edges_migrated": edges_migrated,
-                "dry_run": dry_run}
+                "dry_run": dry_run,
+                "vector_delete_failed":
+                    getattr(self, "vector_delete_failures", 0) - failed0}
 
     def purge_path(self, abs_path: str) -> int:
         """Remove every entity (file + per-function) anchored at abs_path.
@@ -6015,10 +6041,9 @@ class Store:
         ids_by_kind: dict[str, list[int]] = {}
         for eid, kind, _name in info:
             ids_by_kind.setdefault(kind, []).append(int(eid))
-        try:
-            self._drop_lance_for_purge_batch(ids_by_kind)
-        except Exception:
-            pass
+        # Failures are printed + counted inside (ch-bsd r7 #s-2); the outer
+        # `except: pass` this replaced hid them a second time.
+        self._drop_lance_for_purge_batch(ids_by_kind)
 
         # 2. Bitmap cleanup. Entity-side: gather the (linkage, packed-bit) set
         #    for edges where a killed id is the ENTITY, then discard. Concept-
@@ -7020,13 +7045,16 @@ class Store:
                         noise_changes.append((c_name, 0))
                         unmarked += 1
         con.commit()
+        failed0 = getattr(self, "vector_delete_failures", 0)
         self._drop_lance_for_purge_batch({"concept": dropped_ids})
+        vector_delete_failed = getattr(self, "vector_delete_failures", 0) - failed0
         for c_name, value in noise_changes:
             self._log_event("noise", kind="concept", name=c_name, value=value)
         return {
             "marked": marked,
             "unmarked": unmarked,
             "dropped": dropped,
+            "vector_delete_failed": vector_delete_failed,
             "kept": seen - marked - dropped,
             "total_seen": seen,
             "min_df": min_df,

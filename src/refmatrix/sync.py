@@ -165,6 +165,7 @@ def _sync_paths(
             )
     project_root = (project_root or Path.cwd()).resolve()
     added = updated = purged = skipped_unchanged = 0
+    failed0 = getattr(s, "vector_delete_failures", 0)
     touched_existing: list[Path] = []
     gmd_paths: list[Path] = []
     cancelled = False
@@ -319,12 +320,15 @@ def _sync_paths(
                 if ap.suffix.lower() == ".py":
                     _ingest_python_semantics(s, ap, project_root)
 
+    vector_delete_failed = getattr(s, "vector_delete_failures", 0) - failed0
     report = {"added": added, "updated": updated, "purged": purged,
-              "touched": len(touched_existing), "cancelled": cancelled}
+              "touched": len(touched_existing), "cancelled": cancelled,
+              "vector_delete_failed": vector_delete_failed}
     s.append_sync_log(
         f"{time.strftime('%Y-%m-%dT%H:%M:%S')} "
         f"paths={len(paths)} +{added} ~{updated} -{purged} touched={len(touched_existing)} "
         f"semantic={semantic}"
+        + (f" vector_delete_failed={vector_delete_failed}" if vector_delete_failed else "")
     )
     return report
 
