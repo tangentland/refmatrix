@@ -878,3 +878,19 @@ def test_a_worker_side_missing_extra_is_named_as_such():
     warnings: list[str] = []
     _apply_rerank_safe(_D(), "q", ([(1, "a" * 300), (2, "b" * 300)], [], []), 2, warnings)
     assert any("dense extra missing" in w for w in warnings), warnings
+
+
+def test_a_retired_client_starts_no_warm_thread(stub):
+    """J2: `_ensure` would refuse the respawn anyway, but a thread that runs to
+    record "retired" as a warmup FAILURE puts a false operator action on the
+    next skip."""
+    import threading as _th
+
+    from refmatrix import subproc
+
+    wc = subproc.WorkerClient("rerank", argv=stub.argv())
+    wc.retire()
+    wc.warm_async()
+    alive = [t for t in _th.enumerate() if t.name == "rmx-warm-rerank"]
+    time.sleep(0.3)
+    assert alive == [] and wc.warm_error is None, (alive, wc.warm_error)

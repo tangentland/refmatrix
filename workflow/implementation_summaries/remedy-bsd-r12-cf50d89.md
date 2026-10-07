@@ -53,6 +53,13 @@ fallback, so `_op_context` now answers unreranked whenever its build runs on the
 partition newer than the snapshot, or boot with no snapshot. The answer says so ("the partition is
 newer than the read snapshot ... unreranked"). Nothing reranks under `_store_lock` any more.
 
+## Mutation check {#mutations}
+
+9 mutants (J1-J9) at `4fb5000` in a detached worktree with the model socket isolated
+(`workflow/review-output/r12-remedy-mutations.log`). 8 were killed at once. J2 (the `warm_async`
+retired guard) survived, because `_ensure` refuses the respawn anyway. Its own effect is that no
+thread runs to record "retired" as a warmup failure, and that is now pinned. **9 of 9 killed.**
+
 ## #m-1 {#m-1}
 
 - **Warming fast-skip.** A budgeted caller on a private worker that is warming skips at once
