@@ -73,3 +73,22 @@ thread runs to record "retired" as a warmup failure, and that is now pinned. **9
   load inside a budget, and it is said here rather than hidden.
 
 {#m-1-body}
+
+## r13 follow-up {#r13}
+
+rel: implements -> [[bsd-r1-remedy-r13-dcf7115]]
+
+Round 13 closed all four r12 findings in behaviour and filed no blocker: 0 BULLSHIT, 1 SKETCHY,
+2 MEH.
+- **#s-1:** two pinning tests now run through the code path, not the helper.
+  - `test_the_daemon_startup_warmup_loads_the_private_reranker` runs the real
+    `_start_embedder_warmup` and kills L6.
+  - `test_the_header_refill_has_its_own_bound` uses a header that answers in 3 s with
+    `REFILL_TIMEOUT_S` set to 0.3 s, and kills L1.
+  - Both kills are in `r13-remedy-mutations.log`.
+- **#m-1:** the writer-branch warning names both causes: a partition created moments ago, or a
+  missing or unreadable snapshot.
+- **#m-2:** bug-095 logged (the unbudgeted adoption leak). The `_FakePrivate` row is marked
+  graduated, and the stub-worker fakes have their own row.
+
+{#r13-body}

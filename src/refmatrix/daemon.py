@@ -4703,9 +4703,13 @@ def _op_context(d: Daemon, args: dict) -> dict:
             # (ch-bsd r12 #s-3). Answer unreranked: the op's normal fallback
             # whenever a rerank is skipped, said on the answer.
             rr = None
-            warnings.append("rerank skipped: the partition is newer than the read "
-                            "snapshot, so the answer came from the writer and is "
-                            "unreranked")
+            # Both causes named: this branch runs for a partition newer than
+            # the snapshot AND at boot / when the snapshot will not open
+            # (ch-bsd r13 #m-1); the store cannot tell which here.
+            warnings.append("rerank skipped: no read snapshot had this partition "
+                            "(created moments ago, or the snapshot is missing or "
+                            "unreadable), so the answer came from the writer and "
+                            "is unreranked")
         return build_context(
             rs, ref,
             linkages=linkages,

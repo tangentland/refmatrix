@@ -53,6 +53,8 @@ while True:
         continue
     if op == "ping":
         send_frame(_OUT, {"ok": True}); continue
+    if op == "info" and loaded and os.path.exists(os.path.join(D, "slowinfo")):
+        time.sleep(float(open(os.path.join(D, "slowinfo")).read()))
     if op == "info" and loaded and os.path.exists(os.path.join(D, "failinfo")):
         send_frame(_OUT, {"ok": False, "error": "RuntimeError: info broke"}); continue
     if os.path.exists(os.path.join(D, "fail")):
@@ -894,3 +896,61 @@ def test_a_retired_client_starts_no_warm_thread(stub):
     alive = [t for t in _th.enumerate() if t.name == "rmx-warm-rerank"]
     time.sleep(0.3)
     assert alive == [] and wc.warm_error is None, (alive, wc.warm_error)
+
+
+
+# ---- ch-bsd r13 #s-1: pinned through the code path, not the helper --------
+
+def test_the_daemon_startup_warmup_loads_the_private_reranker(stub, monkeypatch):
+    """L6: `_start_embedder_warmup` itself must load, not just `_reranker(load=True)`
+    when a test calls it."""
+    import threading as _th
+
+    from refmatrix import reranker as rmod
+    from refmatrix import subproc
+    from refmatrix.daemon import Daemon
+
+    monkeypatch.delenv("RMX_NO_EMBED_WARMUP", raising=False)
+    monkeypatch.setattr(rmod, "rerank_available", lambda: True)
+    monkeypatch.setattr(rmod, "rerank_enabled", lambda: True)
+    logged: list[str] = []
+    d = object.__new__(Daemon)
+    d._log = logged.append
+    d._worker_lock = _th.Lock()
+    d._reranker_inst = None
+
+    def _no_dense():
+        raise ImportError("no [dense] here")
+
+    d._embedder = _no_dense
+    wc = subproc.WorkerClient("rerank", argv=stub.argv(load_s=0.5))
+    d._rerank_worker = wc
+    try:
+        d._start_embedder_warmup()
+        assert _until(lambda: not any(t.name == "rmx-embed-warm" for t in _th.enumerate()))
+        warm = bool(wc.info(nowait=True).get("model"))
+    finally:
+        wc.close()
+    line = next((m for m in logged if m.startswith("reranker warm in")), "")
+    assert warm and d._reranker_inst is not None, logged
+    assert line and float(line.split()[3].rstrip("s")) >= 0.4, line
+
+
+def test_the_header_refill_has_its_own_bound(stub, monkeypatch):
+    """L1: a refill that waits on a wedged header is bounded by
+    REFILL_TIMEOUT_S, not by the op's whole (300 s) timeout."""
+    from refmatrix import subproc
+
+    monkeypatch.setattr(subproc, "REFILL_TIMEOUT_S", 0.3)
+    (stub.dir / "slowinfo").write_text("3.0")
+    logged: list[str] = []
+    wc = subproc.WorkerClient("rerank", argv=stub.argv(load_s=0.1), log=logged.append)
+    try:
+        t0 = time.time()
+        hdr, _ = wc.call("rerank", {"query": "q", "docs": ["a"]})
+        wall = time.time() - t0
+    finally:
+        wc.close()
+    assert hdr["scores"] == [0.0]
+    assert wall < 1.5, f"the refill waited {wall:.2f} s"
+    assert any("header refill" in m for m in logged), logged
