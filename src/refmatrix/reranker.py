@@ -342,14 +342,26 @@ class RemoteReranker:
             return []
         truncated = [window_doc(d, query, limit=MAX_DOC_CHARS) for d in docs]
         payload = {"query": query, "docs": truncated}
+        timeout = None
         if self._deadline is not None:
             remaining = self._deadline - time.time()
-            info = {}
+            if remaining <= 0:
+                raise RerankSkipped("rerank budget already spent")
+            # A FRESH header, not the client's cached `info()`: the cost
+            # estimate needs the queue depth NOW (ch-bsd r9 #b-2 — a cached
+            # header from the first probe never saw a busy worker).
+            info: dict = {}
+            probe = min(remaining, 1.0)
             try:
-                info = self._client.info() or {}
+                try:
+                    info = self._client.info(timeout=probe, fresh=True) or {}
+                except TypeError:
+                    # a client with no cache to bypass (the private worker)
+                    info = self._client.info() or {}
             except Exception:       # noqa: BLE001 — no info is "cost unknown"
                 info = {}
             est = estimate_rerank_s(info, len(truncated))
+            remaining = self._deadline - time.time()
             if est is not None and est > remaining:
                 raise RerankSkipped(
                     f"{len(truncated)} docs x {float(info['cost_s_per_doc']):.2f} "
@@ -359,7 +371,15 @@ class RemoteReranker:
             # The worker drops a frame it dequeues after this instant, so an
             # abandoned request stops starving the caller behind it.
             payload["deadline"] = self._deadline
-        hdr, _ = self._client.call("rerank", payload)
+            # ...and the SOCKET waits no longer than the budget: the client's
+            # own timeout (45 s on the daemon's) used to hold (r9 #b-2).
+            timeout = max(remaining, 0.01)
+        try:
+            hdr, _ = self._client.call("rerank", payload, timeout=timeout)
+        except TimeoutError as exc:
+            if timeout is None:
+                raise
+            raise RerankSkipped(f"no answer within the {timeout:.1f}s budget") from exc
         # The worker already ran `_checked`; re-run it here so a future
         # transport that bypasses `Reranker.score` cannot skip the guard.
         return _checked(hdr.get("scores") or [], self.model_name)

@@ -57,7 +57,7 @@ class _D:
     def _st(self):
         return self.store
 
-    def _open_read_store(self, partition):
+    def _open_read_store(self, partition, **kw):
         return None
 
     def _request_snapshot(self):

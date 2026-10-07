@@ -2394,7 +2394,8 @@ class Daemon:
             return "B"
         return None
 
-    def _open_read_store(self, partition: str | None = None) -> "Store | None":
+    def _open_read_store(self, partition: str | None = None, *,
+                         allow_mirror: bool = True) -> "Store | None":
         """Return a Store usable for a single read op.
 
         Resolution order (fastest → safest):
@@ -2414,26 +2415,16 @@ class Daemon:
         already serializes concurrent cursors against the shared
         connection.
         """
-        # Mirror path: zero-latency, no file I/O.
-        mirror = getattr(self, "_mem_mirror", None)
+        # Mirror path: zero-latency, no file I/O. The mirror is ONE shared
+        # Store, so its partition is NOT re-pointed here: re-pointing it
+        # outside the use-lock let a concurrent reader on another partition
+        # re-point it again before this caller's `fn` ran (ch-bsd r9 #b-1:
+        # 39 of 40 context ops answered from the wrong partition).
+        # `_read_with_fallback` binds the partition INSIDE the use-lock.
+        mirror = getattr(self, "_mem_mirror", None) if allow_mirror else None
         if mirror is not None:
             mirror_store = mirror.borrow()
             if mirror_store is not None:
-                # Repoint the partition if the caller wants a different
-                # one — partition_id resolution lives on the Store.
-                if partition is not None and \
-                        partition != mirror_store._partition_name:
-                    try:
-                        with mirror.acquire_use():
-                            row = mirror_store._conn._duck.execute(
-                                "SELECT id FROM partitions WHERE name=?",
-                                (partition,),
-                            ).fetchone()
-                        if row:
-                            mirror_store._partition_name = partition
-                            mirror_store._partition_id = row[0]
-                    except Exception:
-                        pass
                 return mirror_store
         # File-snapshot or slot fallback path.
         from refmatrix.store import Store
@@ -4679,7 +4670,9 @@ def _op_context(d: Daemon, args: dict) -> dict:
             _entities_explicit=entities_explicit,
             _tokens_explicit=tokens_explicit,
         )
-    bundle = _read_with_fallback(d, _ctx_part, _build)
+    # private: the build can spend up to the rerank budget inside `fn`, which
+    # on the shared mirror would hold its single reader lock (ch-bsd r9 #b-2).
+    bundle = _read_with_fallback(d, _ctx_part, _build, private=True)
     body = render_json(bundle) if fmt == "json" else render_text(bundle)
     # bundle.warnings are IN the body (JSON `warnings`, text `# warning:`);
     # the op's own `warnings` carry only what the body cannot show (a
@@ -4764,28 +4757,46 @@ def _op_memory_add(d: Daemon, args: dict) -> dict:
     return {"id": eid}
 
 
-def _read_with_fallback(d: Daemon, partition: str, fn):
-    """Run `fn(store)` against the fastest available read path.
+def _read_with_fallback(d: Daemon, partition: str, fn, *, private: bool = False):
+    """Run `fn(store)` against the fastest available read path, bound to
+    `partition` for the whole of `fn`.
 
-    Resolution (per `_open_read_store`): in-memory mirror → snapshot
-    file Store → shared writer connection under `_store_lock`.
+    Resolution: in-memory mirror → snapshot-file Store → the shared writer
+    under `_store_lock`.
 
-    When `_open_read_store` returns the in-memory mirror Store, the
-    DuckDB connection is shared across all callers, so `fn` must run
-    under the mirror's `_use_lock` to keep cursors serialized.
+    The mirror is ONE shared Store and DuckDB connection, so `fn` runs under
+    the mirror's use-lock, and the partition is bound INSIDE that same
+    acquisition and restored after (ch-bsd r9 #b-1). A mirror that lacks the
+    partition falls through to the snapshot file rather than answering from
+    whatever partition it was last bound to.
+
+    `private=True` skips the mirror: `fn` gets its own snapshot-file Store
+    and connection. Use it for an op that may run long inside `fn` (the
+    context op's rerank), which would otherwise hold the mirror's single
+    reader lock against every other read (ch-bsd r9 #b-2).
     """
-    rs = d._open_read_store(partition)
+    mirror = None if private else getattr(d, "_mem_mirror", None)
+    ms = mirror.borrow() if mirror is not None else None
+    if ms is not None:
+        with mirror.acquire_use():
+            row = None
+            if partition is not None:
+                row = ms._conn._duck.execute(
+                    "SELECT id FROM partitions WHERE name=?", (partition,),
+                ).fetchone()
+            if partition is None or row is not None:
+                prev = (ms._partition_name, ms._partition_id)
+                if partition is not None:
+                    ms._partition_name, ms._partition_id = partition, row[0]
+                try:
+                    return fn(ms)
+                finally:
+                    ms._partition_name, ms._partition_id = prev
+        d._log(f"read path: partition {partition!r} not in the mirror; "
+               f"using the snapshot file")
+    rs = d._open_read_store(partition, allow_mirror=False)
     if rs is not None:
-        mirror = getattr(d, "_mem_mirror", None)
-        use_lock = (
-            mirror.acquire_use()
-            if mirror is not None and mirror.borrow() is rs
-            else None
-        )
         try:
-            if use_lock is not None:
-                with use_lock:
-                    return fn(rs)
             return fn(rs)
         finally:
             try:

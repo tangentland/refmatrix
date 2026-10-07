@@ -197,13 +197,17 @@ class SharedWorkerClient:
         Returning False keeps the tick's bookkeeping honest."""
         return False
 
-    def info(self, *, timeout: float | None = None) -> dict:
+    def info(self, *, timeout: float | None = None, fresh: bool = False) -> dict:
         """The worker's info header. `timeout` bounds the probe: a socket
         that accepts but never answers (a hub mid-restart, an evicted
         worker) must not hold the caller for the 300 s op timeout — that is
-        the wedge the hub watchdog SIGKILLed on 2026-09-14."""
+        the wedge the hub watchdog SIGKILLed on 2026-09-14.
+
+        `fresh=True` re-asks the worker and refreshes the cache. A budgeted
+        rerank needs the queue depth NOW; the cached header from the first
+        probe never saw a busy worker (ch-bsd r9 #b-2)."""
         with self._lock:
-            if self._info:
+            if self._info and not fresh:
                 return self._info
             hdr, _ = self.call("info", timeout=timeout)
             self._info = {k: v for k, v in hdr.items() if k != "ok"}
