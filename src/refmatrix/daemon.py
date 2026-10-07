@@ -4621,11 +4621,17 @@ def _op_context(d: Daemon, args: dict) -> dict:
     # stub daemons in tests and by callers that never built the model
     # machinery. A read op must not hard-require the rerank stage to exist.
     _ctx_rr = None
+    # Surfaced on the answer, not only in rmxd.log (ch-bsd r6 #s-2): the
+    # answer is served unreranked, and a caller must be able to see that it
+    # is — a ModelNotCached here is an operator action, not a log line.
+    warnings: list[str] = []
     if getattr(d, "_maybe_rerank", None) and d._maybe_rerank(args):
         try:
             _ctx_rr = d._reranker()
         except Exception as exc:
             d._log(f"context rerank unavailable: {exc!r}")
+            warnings.append(f"rerank unavailable, answer is unreranked "
+                            f"({type(exc).__name__}: {exc})")
     with d._store_lock, d._st().with_partition(_ctx_part):
         bundle = build_context(
             d._st(), ref,
@@ -4665,6 +4671,8 @@ def _op_context(d: Daemon, args: dict) -> dict:
                 d._request_snapshot()
             except Exception as exc:  # learning is best-effort; never fail a read
                 d._log(f"context grep-learn skipped: {exc}")
+    if warnings:
+        return {"body": body, "warnings": warnings}
     return {"body": body}
 
 

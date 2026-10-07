@@ -553,9 +553,15 @@ def context(root: Path, ref: str, *, degree: int = 1, expand: int = 0,
     body = result.get("body")
     if isinstance(body, str):
         try:
-            return _json.loads(body)
+            parsed = _json.loads(body)
         except ValueError:
-            pass
+            parsed = None
+        if isinstance(parsed, dict):
+            # The op's warnings ride beside the body (an unreranked answer,
+            # ch-bsd r6 #s-2); parsing the body must not drop them.
+            if result.get("warnings"):
+                parsed["warnings"] = result["warnings"]
+            return parsed
     return result
 
 

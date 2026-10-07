@@ -5143,6 +5143,8 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
                     f"daemon context failed: {resp.get('error')}"
                 )
             click.echo(resp["result"]["body"])
+            for w in resp["result"].get("warnings") or []:
+                click.echo(f"rmx context: {w}", err=True)
             phase_mark("render")
             return
 
