@@ -5446,20 +5446,6 @@ def co_occur(concept, linkage, limit, include_noise):
     console.print(t)
 
 
-_GREP_FLAGS_HELP = (
-    "Grep-style flag bundle, quoted. Accepts spaces or bundled letters: "
-    "`-f '-i -n -l'`, `-f '-inl'`, `-f -i`. Recognized: "
-    "-i ignore-case (default ON; -I forces case-sensitive), "
-    "-r recursive (no-op — always recursive over the index), "
-    "-n line numbers (no-op — always shown), "
-    "-l files only (one line per unique file, suppress per-hit detail), "
-    "-c count matches per file, "
-    "-v invert match (entities/files with NO match), "
-    "-w word-boundary match, "
-    "-F fixed-string (substring) — same as --substring, "
-    "-E extended regex — same as --regex, "
-    "-H print filename (no-op — always shown)."
-)
 
 
 def _parse_grep_flags(s: str | None) -> dict:
@@ -5572,6 +5558,7 @@ def _split_grep_argv(tokens: list) -> tuple:
     rest are paths. A pattern beginning with `-` requires `--`."""
     flags: list = []
     pattern = None
+    pattern_from_file = False
     paths: list = []
     warnings: list = []
     i = 0
@@ -5587,6 +5574,16 @@ def _split_grep_argv(tokens: list) -> tuple:
         if is_flag:
             # -e PAT: the value IS the pattern.
             base = tok.split("=", 1)[0]
+            # -f FILE / --file=FILE: grep's PATTERN FILE. The patterns come
+            # from the file, so every positional is a path (2026-10-07: the
+            # rmx `-f` bundle is gone and `-f` means what it means to grep).
+            if base in ("-f", "--file"):
+                flags.append(tok)
+                if "=" not in tok and i + 1 < n:
+                    flags.append(str(tokens[i + 1])); i += 1
+                pattern_from_file = True
+                i += 1
+                continue
             if base == "-e" or base == "--regexp":
                 if "=" in tok:
                     pattern = tok.split("=", 1)[1]
@@ -5600,8 +5597,8 @@ def _split_grep_argv(tokens: list) -> tuple:
                 flags.append(str(tokens[i + 1])); i += 1
             i += 1
             continue
-        # non-flag: pattern first, then paths.
-        if pattern is None:
+        # non-flag: pattern first, then paths (all paths under -f FILE).
+        if pattern is None and not pattern_from_file:
             pattern = tok
         else:
             paths.append(tok)
@@ -6044,7 +6041,6 @@ def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
                    "index read a MULTI-WORD pattern also matches its "
                    "identifier spellings (snake/camel/kebab), "
                    "case-insensitively.")
-@click.option("--flags", "-f", "flags", default=None, help=_GREP_FLAGS_HELP)
 @click.option("--linkage", default=None,
               help="Restrict to one linkage type (e.g. defines, mentions).")
 @click.option("--kind", "-k", type=click.Choice(["doc", "code"]), default=None,
@@ -6067,7 +6063,7 @@ def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
                    "Learning still works: fallback hits are brokered to "
                    "the daemon writer as a fire-and-forget RPC.")
 @click.pass_context
-def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
+def grep(ctx, argv, regex, linkage, kind, limit, fallback,
          learn, via_replica):
     """Index-backed grep: find concepts whose name matches PATTERN and
     print file:line for every recorded reference. Falls back to `rg` /
@@ -6086,11 +6082,23 @@ def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
     formatting/recursion flags (-n -H -r -o --color …) are ignored with a note;
     an unsupported flag that would change the result set (path filters
     -g/--glob/-t, unknown letters) fails loudly rather than silently mangling
-    the search. `--flags`/`-f` still accepts a quoted bundle for back-compat.
+    the search. `-f FILE` / `--file=FILE` is grep's pattern file; the old
+    `-f/--flags` bundle was removed 2026-10-07 (pass grep flags bare).
     """
     import sys as _sys
+    # The `-f/--flags` bundle is GONE (user, 2026-10-07): it collided with
+    # grep's own `-f FILE`, so `git diff | rmx grep -f '-c' "^+"` meant two
+    # different things (plan-16 spec review r3 #b-r3-1). Bare grep flags have
+    # worked since 0.25.7. `--flags` is refused with a pointer, never read as
+    # something else.
+    for tok in argv:
+        if str(tok) == "--flags" or str(tok).startswith("--flags="):
+            raise click.UsageError(
+                "--flags was removed: pass grep flags directly "
+                "(e.g. `rmx grep -c -i PAT`). `-f FILE` is grep's pattern file.")
     flag_tokens, pattern, path_strs, _w = _split_grep_argv(list(argv))
-    if pattern is None:
+    _pattern_file = any(t.split("=", 1)[0] in ("-f", "--file") for t in flag_tokens)
+    if pattern is None and not _pattern_file:
         raise click.UsageError("grep: no PATTERN given")
     # The argv SPELLINGS, not `Path` objects (ch-bsd r3 #b-4): `str(Path(
     # './f0.txt')) == 'f0.txt'`, so converting here collapsed `./f0.txt
@@ -6098,7 +6106,7 @@ def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
     # surviving one call above the code that fixed it. grep echoes a path
     # exactly as given; so does every consumer below.
     paths = list(path_strs)
-    gf = _parse_grep_flags(flags)
+    gf = _parse_grep_flags(None)
     # Pipe mode is decided BEFORE flag folding: it changes which flags are
     # answer-changing (-n/-o/-m/-A… render output when we're standing in for
     # grep, but mean nothing against the index).

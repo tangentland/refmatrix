@@ -150,9 +150,11 @@ Specs go in `workflow/plans/plan-16-invisible-grep-shim-tasks/` before approval.
    commands along with their exact argv and cwd. Fully passive remains the fallback only if 16.2's
    rewriter differential finds misparses. {#d-3}
 
-4. **(2026-10-07) rmx's own options are TRANSLATED when `rmx grep` hands off to the real grep
-   (option B).** `-f/--flags` stays rmx's bundle; grep's pattern file is `--file=FILE` only;
-   index-only options are refused on the hand-off route. Full table: task 16.5 `#d-4`. {#d-4}
+4. **(2026-10-07, revised the same day) The `-f/--flags` bundle is REMOVED** (user: "change the
+   grep to not use -flags"), superseding option B's translation of it. Done in code ahead of 16.5
+   (commit after 92c374c): `--flags` is refused with a pointer, `-f FILE`/`--file=FILE` is grep's
+   pattern file. 16.5's remaining d-4 rows (index-only options on the hand-off route and on the
+   floor) are re-specified in revision 5. {#d-4}
 
 **Interim (user, 2026-10-06):** `RMXGREP_MODE=plain` in `~/.claude/settings.json` and
 `.claude/settings.local.json`. Any value other than `rich` is auto, and the agent shell is not a
