@@ -1,0 +1,30 @@
+
+what we’re talking about is really a weighted multidigrapgh or a weighted multilayer network.  Each edge type has a discreet weight.
+  - the order of traversal matters (path tracing/cycle scoring) - or the relevance of edges should be sorted by cumulative weight
+
+term/phrase concept-adjacencies:
+  - degree 1/2/3
+  -  in-path, out-path
+  -  skip-node
+  - how do we store adjacency strength?   
+    - bitmap to find edges with link strength scoring to inform traversal 
+    - cycle path scoring
+  - Lift / Pointwise Mutual Information (PMI): Measures how much more often they appear together than would be expected by chance.
+
+doc-concept - doc as subgraph (implicit link for page-rank)
+  - term counts
+  - adjacency pairs/triple/quads
+
+Types of term relations:
+  - incident (adjacency) - occurrence
+    - container (left)
+    - contained (right)
+  - incidence (bound/relevence) - concurrent
+    - composite (edge)
+  - co-incident (contextual adjacency)
+    - contextity
+    - association (proximity)
+
+doc as:
+  - container (bag) with subtype (extension)
+  - contained (in a directory)
