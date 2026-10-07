@@ -177,6 +177,99 @@ adopted on fit. {#intropretor-lead}
 "Used", the graduation signal, has no intropretor precedent. `record_access` existed but was
 never called, so that open question stays open. {#intropretor-used}
 
+## Amendment 2026-10-07: the relation taxonomy, proximity tiers, and two storage devices {#amend-2026-10-07}
+
+**Source:** the user's notes in `docs/ideas.txt` (untracked), reviewed against this ADR on
+2026-10-07. The user said to fold the review in as an amendment. Two ideas from Aster (NTU,
+SIGMOD 2025, `github.com/NTU-Siqiang-Group/Aster`, GPL-2.0, so ideas only and never code) are
+folded in at the user's direction on the same day. Status stays **Proposed**; this amendment
+records the design, not an implementation. {#amend-source}
+
+rel: derives-from -> [[project_apriori_concept_discovery]]
+rel: derives-from -> [[project_phrase_layer_closed]]
+rel: derives-from -> [[project_sentence_coloc_measured]]
+rel: depends-on -> [[project_ppr_degree_walk_shipped]]
+
+### The model: a weighted multilayer multidigraph {#amend-model}
+
+The graph this ADR stores is a **weighted multilayer multidigraph**. Each relation type is a
+layer (L0–L5), and each edge carries a **discrete** weight: membership in a weight-tier bitmap
+(tf ≥1, ≥2, ≥4 …). Each type may also carry one scalar prior (a per-type weight). The prior is a
+small table, not a bitmap, and starts at 1.0 for every type until a per-type evaluation sets it.
+Discreteness is the point: "edges of strength ≥ t" is the OR of the tier bitmaps from t up, which
+is a query on roaring bitmaps with no sort. {#amend-model-body}
+
+### The taxonomy in ideas.txt, mapped onto the layers {#amend-taxonomy}
+
+| ideas.txt relation | layer / mechanism here | storage |
+|---|---|---|
+| incident → container (left) / contained (right) | the **sequential** containment source (left ⊃ right of a pair) | one bitmap per direction, one manifest |
+| incidence → concurrent / composite (edge) | **L1 co-location**: terms in the same unit (the sentence co-location re-rank is the measured win) | sentence projection per term |
+| co-incident → contextual adjacency / association (proximity) | **L2 term adjacency** within a window, lift-gated | `pair_index` per-key blobs, per direction |
+| term adjacencies, in-path / out-path | the two direction bitmaps of L2 | as above |
+| skip-node | skip-gram pairs (the staged cascade, `project_apriori_concept_discovery`) | L2 with a gap parameter |
+| adjacency pairs / triples / quads | pairs = L2; triples and above = **L3 promoted concepts** | pairs stored; higher orders PROMOTED, never materialized |
+| doc as subgraph (implicit link for PageRank) | the doc is a location whose Dewey range contains its sections and sentences | `pagerank` stays a scalar |
+| term counts | L0 tf tiers | weight-tier bitmaps |
+| degree 1 / 2 / 3 | typed expansion depth ([[#q-expansion]]) | none new |
+| path tracing, cycle scoring, order by cumulative weight | admission (pipeline step 4), cycles as transient → L3 concepts, full path trace (step 6). Cumulative-weight order is approximated by walking tiers from the top down | none new |
+| lift / PMI | the admission gate: **NPMI** with support as a gate | computed, not stored |
+
+{#amend-taxonomy-body}
+
+### Two additions {#amend-additions}
+
+1. **Proximity tiers.** "Contextual adjacency" is a distance dial: same sentence < same paragraph
+   < same section < same doc < same directory. This becomes a **tier family**, like weight, age and
+   session tiers. A bitmap per distance band answers "co-located within distance ≤ d" as an OR of
+   bands, and it unifies L1 (sentence co-location) and L2 (window adjacency) as two settings of one
+   dial. {#amend-proximity}
+2. **Directory and extension facets.** A directory is one more containment level above the doc: a
+   path-prefix level in the location id, so `dir ⊃ doc ⊃ section ⊃ sentence`. The doc's subtype
+   (extension, `kind`) is a **facet bitmap** per value. That covers "doc as container (bag) with
+   subtype (extension), contained in a directory" without a new relation type. {#amend-facets}
+
+### Two storage devices, from Aster {#amend-aster}
+
+1. **Decaying approximate counters for touch counts.** These are Morris counters or a Count-Min
+   sketch, with periodic decay. A touch, recall or edge use increments a few bytes in memory, and a
+   snapshot tick flushes them into the **age tiers** and into plan-19's memory-usage scores. The
+   point is to stop paying a write per event: bug-085 was the per-event-write failure on the Lance
+   side, and grep-learning's `query/*` accretion is the same pattern on the catalog side. The count
+   is approximate by design; it feeds tiers and ranks, never a correctness decision. {#amend-counters}
+2. **Choose eager vs lazy merge per key, with a cost model.** Aster's `AdaptPolicy` compares a
+   key's write cost with its read cost and picks per key: rewrite the full adjacency (eager), or
+   append a merge delta (lazy).
+   - Write cost: degree × LSM write amplification ÷ block size.
+   - Read cost: cache-miss rate × average degree × lookup/update ratio.
+
+   Here the keys are the per-term tier blobs plus the manifest's delta log. Read-hot keys (often
+   queried, rarely written) are kept merged. Write-hot keys (e.g. grep-learned `query/*`: 747 of
+   868 protected rows have df ≤ 1) stay as deltas until compaction, which is plan-17's nightly
+   tick. The counters from device 1 supply the read/write ratios. {#amend-adapt}
+
+### Gates the evidence imposes on these ideas {#amend-gates}
+
+- **Traversal depth and cumulative-weight ordering are opt-in per relation type, after
+  measurement.** A global degree-2 walk measured **5× worse**, and seeded-PPR degree measured flat
+  ("mechanism needs typed edges"). Each type × depth earns its place on the evaluation grid
+  ([[#q-expansion]]). {#gate-depth}
+- **Higher-order n-grams are promoted, not stored.** The phrase layer grew concepts from 42k to
+  549k with **zero** hit@20 gain. Triples and quads enter only as L3 promotions that recur and are
+  used. {#gate-ngrams}
+- **PMI/lift is a gate, never a ranking score.** As a ranker, lift scored MRR 0.007 against
+  PPR's 0.069. Use NPMI (bounded) with a support floor. {#gate-pmi}
+- **The per-type prior starts flat (1.0)** and moves only on a per-type evaluation, so a
+  hand-set weight cannot become an untested ranking change. {#gate-prior}
+
+### Helix fit {#amend-helix}
+
+Age tiers apply to EVERY layer above. So each relation type, proximity band and facet gets "when"
+for free, snapshot manifests give "as of", and the path trace can report that a path existed at an
+earlier snapshot. Cycle graduation across sessions is a helix feature as well. The decaying
+counters (device 1) are the cheap source of the age and touch signal that phase 1 could not log
+without a write per event. {#amend-helix-body}
+
 ## Decision log {#decision-log}
 
 - **2026-10-07 (user):** "helix's design supersedes plan 11's". This ADR's helix half governs
@@ -185,6 +278,10 @@ never called, so that open question stays open. {#intropretor-used}
   ADR as a whole stays **Proposed**, because the location-id and query-pipeline halves are not
   decided. Consequence for concept work: merges target the term-space alias map
   ([[exploration-concept-similarity-cull-merge]] d-1), not new `same_as` rows. {#d-2026-10-07}
+- **2026-10-07 (user): amendment folded in** ([[#amend-2026-10-07]]). It covers: the `docs/ideas.txt`
+  relation taxonomy mapped onto L0–L3; proximity tiers as a tier family; directory/extension facets;
+  Aster's decaying approximate counters and per-key eager/lazy merge; and the gates prior
+  measurements impose. The ADR stays Proposed. {#d-2026-10-07-amend}
 
 ## Open questions {#open}
 
