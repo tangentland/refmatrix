@@ -9,101 +9,76 @@ metadata:
 
 # Session Handoff for refmatrix {#root}
 
-Date: 2026-10-07 (session b38025a7). Prior handoff archived at
-`workflow/past_handoffs/009-bsd-r1-r2-remedy-bugs-073-074_2026-10-06.md`.
+Date: 2026-10-07 (session 94f97944). Prior handoff archived at
+`workflow/past_handoffs/010-bsd-r3-r6-plan16-specs_2026-10-07.md`.
 
-rel: supersedes -> [[handoff-009-bsd-r1-r2-remedy-bugs-073-074]]
+rel: supersedes -> [[handoff-010-bsd-r3-r6-plan16-specs]]
 
 ## State {#state}
 
-- **Branch:** `bsd-r1-remedy`, 33 commits ahead of `master`, UNMERGED. The tree was clean at save.
-- **master:** `master` = `origin/main` = deploy `~/refmatrix` = **1452875 / 0.76.0**. NOTHING from
-  this branch is deployed. Push is pending (the user pushes).
-- **Live processes:**
-  - The project daemon was relaunched twice today after wedges (bug-085); the last pid is 22418.
-  - The hub was relaunched once (pid 15591, the sole listener on :7777).
-- **Suite at the round-5 remedy tree:** 2527 passed, 1 failed (`r5-remedy-full2.log`). The 1 is
-  `test_installed_hooks_match_generated`: the expected rewriter drift from bug-080, which clears
-  with `rmx install-hooks --apply --force` AFTER deploy. Since then the grep tests pass (258) after
-  `d559567`, but the full suite has not been re-run. {#state-body}
+- **Branch:** `bsd-r1-remedy`, ~80 commits ahead of `master`, unmerged. The merge gate is a CLEAN
+  ch-bsd round. **Round 10 was launched on `a3a324e..06711cd` and its result is NOT yet read.**
+  Read `workflow/bullshit/` for an r10 report (newer than
+  `2026-10-07-1210-r9-context-read-path-wrong-partition-a3a324e.md`); commit it, then remedy or merge.
+- **Deployed:** master = `aeee560` = **0.76.3** (three hotfixes cherry-picked today):
+  - 0.76.1: bug-085, batched Lance deletes;
+  - 0.76.2: bug-090, a fixed launchd PATH;
+  - 0.76.3: bug-093, the bulk watch semantic pass.
+
+  All 8 daemons are verified on 0.76.3. The hub process is still 0.76.2 (functionally fine).
+- **Lance compacted by hand:** refmatrix 1.3 GB→105 MB, viascope 925→229 MB, cliquedb
+  1.1 GB→62 MB. Backups deleted at the user's request.
+- **Dev venv:** bug-092 is fixed. `.venv-eval` no longer borrows dependencies from the ambient
+  PYTHONPATH.
+
+{#state-body}
 
 ## What this session did {#did}
 
-**Audit rounds 3 to 6 on the remedy** (r3 16, r4 12, r5 8, r6 12 findings). Each round's blockers
-were fixed with tests shown RED on the old code first, and mutation-proven where the auditor asked.
-- bug-076 to bug-084 fixed: verify before the cap, `-i`/`-w` on every path, the spelling bridge,
-  `-c` dir rows, one total-order read, cwd-independent rows printed resolved, and the delegate
-  learning honestly.
-- bug-080: `Path.exists()` returns False on PermissionError on Python 3.14, so the unreadable-marker
-  report was dead. Fixed in `learn_switch`, `rmxgrep`, `rmxrg` and the rewriter. `rmxrg` had no
-  learn toggle at all.
-- **User decision, option 1:** the Python re-implementation of grep's output will be DELETED by
-  plan-16 task 16.5, not patched further.
+- **bug-085 named by py-spy.** Per-entity Lance deletes under `_store_lock`; fixed and deployed.
+  py-spy 0.4.2 is a uv tool at `~/.local/bin`, used with `sudo -n`.
+- **bug-093.** The watch semantic pass did per-row upserts (61 s → 15 s on a `cli.py` re-sync);
+  fixed and deployed.
+- **ch-bsd rounds 6–9 remediated** (round 10 pending):
+  - offline models;
+  - rerank warnings on every route;
+  - context reads on a private snapshot with partition binding under the mirror lock;
+  - a real rerank budget;
+  - no model calls under the lock;
+  - `vector_delete_failed` on every path.
+- **Explorations:** concept similarity, agent context usage, and the adaptive memory budget.
+- **ADR-0004:** its helix half supersedes plan-11 (user). An amendment adds the relation taxonomy
+  from `docs/ideas.txt`, proximity tiers, Aster's counters + adaptive merge, the
+  decay-never-loses-knowledge rules, and the adjacency-shape evidence across six stores (heavy
+  tail; 2-hop saturation not hub-driven; dense ids save 15–42% and ORDER does not).
+- **Specs:** plans 17, 19 and 20, plan-21 (agent context), plan-22 (audited removal + REPAIR),
+  plan-23 (bounded-write harness).
+- **Plan review applied (C1–C12);** `workflow/plan-review-2026-10-07.md` has the wave order.
 
-**Plan-16 (invisible grep shim)** has specs for 16.1 to 16.5 at revision 4, after spec review r4
-(NEEDS-REVISION).
-- User decisions:
-  - d-1: grep is observed, not answered;
-  - d-2: `RMXGREP_TEACH` folds into the learn switch;
-  - d-3: invisible shim;
-  - 16.4: precision gate kept (complete outputs, n≥30, forward oracle, closure rule);
-  - 16.5 option 1.
-- **d-4 was revised today:** the `-f/--flags` bundle is REMOVED (`d559567`, done in code). `-f FILE`
-  is grep's pattern file.
-- Interim: `RMXGREP_MODE=plain` is set in both settings files.
-
-**External calls:** model loads come from the local cache only (`43e0fa5`,
-`models_local.load_local`). PyPI and the explicit eval-setup calls are allowed (user).
-
-**Test isolation:** a live-socket recorder lives in `tests/conftest.py`, in record mode. Findings
-are in memory `project_suite_reaches_live_sockets`.
+{#did-body}
 
 ## Next {#next}
 
-1. **Round 6 remedy (user said "ok to move forward as suggested").** Report:
-   `workflow/bullshit/2026-10-07-0924-r6-merge-unpinned-and-the-eval-model-still-calls-out-92c374c.md`.
-   - #b-1: the dedup test must assert `len(rows) == 1` and `merged == 1`, not a set size.
-   - #b-2: in `eval/retrievers/coderankembed_retriever.py`, set `HF_HUB_OFFLINE` and
-     `TRANSFORMERS_OFFLINE` BEFORE importing `sentence_transformers` (they are frozen at import).
-     Prove it under a socket guard.
-   - #s-1: TURN OFF delegate teaching. `_grep_delegate` runs the real tool and teaches NOTHING
-     (output unchanged). Approved by the user.
-   - #s-2: a partial model cache must fail loudly as `ModelNotCached`, never load silently.
-     Missing tokenizer, `modules.json` or pooling files → error. Also surface a reranker load
-     failure on `rmx context`.
-   - #s-3: bug row for the global store's wrong `base` (see memory
-     `project_global_relative_rows_repair`).
-   - #s-5: bug or deferral row for the recorder's blind spots (subprocesses, the viascope socket,
-     `::1`) and the deferred test isolation.
-   - MEH: the r5 #m-1 docstring, unsetting `HF_HUB_OFFLINE` after the offline tests, `--fetch`
-     help/error text, and implementation summaries for 43e0fa5, 92c374c and d559567.
-   - Then **ch-bsd round 7**. Do NOT run the full suite from auditors; that is targeted only (memory
-     `project_suite_reaches_live_sockets`).
-2. **Plan-16 revision 5** for spec review r4
-   (`workflow/bullshit/2026-10-07-0918-plan16-spec-review-r4-floor-options-and-click-argv-33809ab.md`).
-   - With the bundle gone, d-4 shrinks to the index-only options (`--limit`, `-k`, `--linkage`,
-     `--no-fallback`) on the hand-off route and on the floor.
-   - Parse raw argv so `--` survives click (b-r4-2).
-   - Also: the FIFO AC hang, keyed throttle lines everywhere, 16.2 AC-4 needing `-r`, plan header
-     staleness.
-   - Then spec review r5, until APPROVE.
-3. **Merge `bsd-r1-remedy` → `master`** (`--no-ff`) once a code round is clean. Then deploy:
-   1. `git -C ~/refmatrix pull --ff-only origin master`;
-   2. `rmx daemon restart --relaunch`;
-   3. `rmx install-hooks --apply --force`.
+1. **Read and act on ch-bsd round 10.** Remedy or merge `bsd-r1-remedy` → `master` (`--no-ff`).
+   Then deploy: ff `~/refmatrix`, `rmx hub relaunch-fleet`, `rmx install-hooks --apply --force`.
+2. **Wave 0 (docs):** plan-16 revision 5 + its spec review; spec reviews of plans 17/19/21/22/23.
+3. **Wave 1:** plan-23 first (the harness), then 17.1/17.2, 19.1/19.2, 21.1, and 22.1–22.3
+   (bug-086 is 22.3).
+4. **Needs the user's time:** the 19.5 hook-limit probe (scratch project), and the 20.1 gold-label
+   review.
 
-   After the deploy the user removes `RMXGREP_MODE` from `~/.claude/settings.json` only once 16.2
-   ships, not before.
-4. **After deploy:** the global-store relative-row repair. Recover 476, forget 611, as a tested
-   daemon op with a backup and a dry run (memory `project_global_relative_rows_repair`).
-5. **plan-15** stays `in-progress` until the remedy branch audits clean.
+{#next-body}
 
 ## Open, not forgotten {#open}
 
-- **bug-085** (daemon wedge): the op is unknown. Samples are in
-  `workflow/review-output/daemon-*-wedge-*.txt`. It needs an op-start log line per daemon op, or
-  py-spy. Suite isolation is deferred by the user.
-- **bug-081:** BRE read as fixed strings by the explicit `rmx grep`, including the stdin path.
-  Fixed by 16.5.
-- The pytest run's HF connection is gone since `43e0fa5`. The deployed hub workers still call
-  huggingface.co until deploy.
+- **bug-093 follow-ups:** yield the writer between files in the watch flush (plan-23); add an
+  op-start log line per daemon op (unowned).
+- **bug-088:** tests can still reach live sockets. Second sighting today: a test of mine sent a
+  bulk-forget DRY RUN to the live daemon (nothing deleted). The refuse stage is deferred.
+- **bug-089:** fixed on the branch (the `search-dense` reranked render).
+- **bug-091:** an FSEvents timing flake.
+- **bug-081:** fixed by 16.5.
+- The second implicit `npm install` (`eval/memaware/run.sh:39`) is assumed "leave it" and awaits
+  the user's confirmation.
+
+{#open-body}
