@@ -12,6 +12,13 @@ metadata:
 
 # Does funnelling grep through rmx teach the graph anything? {#root}
 
+> **SUPERSEDED for current behaviour (2026-10-06, ch-bsd r3 #s-5).** These numbers predate
+> bug-074, which verifies every index row against its real line. That changes what counts as an
+> index answer (on the live replica `ERROR` alone went from 737 rows to 0), and bug-078 then
+> restored part of bug-067's spelling bridge. The 18.5% → 31.7% share is NOT current. Its
+> replacement is plan-16's task 16.4 (`task-16.4-measurement`), which measures on real agent
+> argv rather than on argv-less `query.log` patterns.
+
 rel: realizes -> [[task-14.4-replay-measurement]]
 rel: part-of -> [[plan-14-grep-learning-measurement]]
 rel: derives-from -> [[project_grep_learn_wall_and_queue]]
@@ -136,7 +143,9 @@ recorded in the row, not the same defect. {#fix-numbers}
 definition of "multi-word" reproduces those denominators from the committed JSON — the harness
 computes no multi-word metric at all, so the figure was derived by hand and the derivation was not
 recorded. The direction was right and the *rate was overstated*: `14/15` is 93%, the reproducible
-figure is 88.9%. The row now states its definition — patterns containing a SPACE, counted over
+figure is 88.9%. The row now states its definition — patterns of MORE THAN ONE WHITESPACE TOKEN
+(`len(pattern.split()) > 1`; "containing a space" also counts six leading/trailing-space patterns
+and gives 25/31 = 80.6%, ch-bsd r2 #m-2 / r3 #m-1), counted over
 those that taught something (`applied > 0`) and then answered `index` on the immediate repeat — and
 both halves come from the files named in `#repro`:
 

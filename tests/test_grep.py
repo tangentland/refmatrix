@@ -51,7 +51,7 @@ def _seed(s: Store, corpus=None) -> dict:
 
     foo_path = _write("src/foo.py", {12: "class parser:", 44: "# parser again"})
     lex_path = _write("src/lex.py", {7: "tokenizer = 1"})
-    readme_path = _write("README.md", {3: "the parser docs"})
+    readme_path = _write("README.md", {3: "the docs for parser"})
 
     foo = s.upsert_entity(kind="code", name="src/foo.py", path=foo_path)
     lex = s.upsert_entity(kind="code", name="src/lex.py", path=lex_path)
@@ -86,16 +86,18 @@ def test_grep_indexed_substring_finds_evidence(daemon):
 
 def test_grep_indexed_regex_anchors(daemon):
     _seed(daemon.store, daemon.corpus)
-    # `^token` should match tokenizer but not parser
-    # `verify=False`: these regexes are anchored against the concept NAME
-    # (`^token`, `parser$`), and bug-074's verification applies the pattern to
-    # the source LINE — correct for `rmx grep -E '^def '`, a category error for
-    # a name anchor. The verified regex path is covered in
-    # tests/test_grep_evidence_verified.py.
-    rows = daemon.store.grep_evidence("^token", regex=True, verify=False)
-    assert {r["concept"] for r in rows} == {"tokenizer"}
-    rows = daemon.store.grep_evidence("parser$", regex=True, verify=False)
-    assert {r["concept"] for r in rows} == {"parser"}
+    # `^token` should match tokenizer but not parser.
+    # Through the daemon OP, verification on (ch-bsd r3 #s-3): 24523f3 moved
+    # this to `store.grep_evidence(verify=False)` and the op lost its only
+    # regex coverage — an op that ignored `regex` survived every grep test.
+    # The regex is applied to the concept NAME by the SQL and to the LINE by
+    # verification, so the fixture's lines satisfy both anchors: lex.py:7 is
+    # `tokenizer = 1`, README.md:3 ends in `parser`.
+    rows = _op_grep_indexed(daemon, {"pattern": "^token", "regex": True})["rows"]
+    assert {r["concept"] for r in rows} == {"tokenizer"}, rows
+    rows = _op_grep_indexed(daemon, {"pattern": "parser$", "regex": True})["rows"]
+    assert {r["concept"] for r in rows} == {"parser"}, rows
+    assert {r["line"] for r in rows} == {3}, rows
 
 
 def test_grep_indexed_linkage_filter(daemon):

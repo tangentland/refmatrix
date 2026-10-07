@@ -181,3 +181,61 @@ def test_the_resolver_imports_nothing_from_refmatrix_and_no_database():
     assert not [m for m in imported if m.split(".")[0] in ("refmatrix", "duckdb")], \
         imported
     assert imported <= {"os", "dataclasses", "pathlib", "__future__"}, imported
+
+
+# ---- an UNREADABLE marker is said, not silently read as absent -------------
+
+@pytest.mark.skipif(__import__("os").geteuid() == 0, reason="root ignores chmod")
+def test_an_unreadable_store_marker_is_reported_on_a_real_chmod(root):
+    """ch-bsd r3 #m-2, and what it turned up. r1 #m-3's fix catches `OSError`
+    around `store_marker(root).exists()`, and was checked with `exists`
+    PATCHED to raise. On a real `chmod 000` store dir Python 3.14's
+    `Path.exists()` RAISES NOTHING — it returns False — so the except branch
+    was unreachable and an unreadable store marker read as "no marker" with no
+    word: the exact silent fall-to-ON the fix existed to name. No patch here;
+    the permission is real.
+    """
+    import os
+    (Path.home() / ".refmatrix").mkdir(parents=True, exist_ok=True)
+    os.chmod(root, 0)
+    try:
+        d = ls.decision(root)
+    finally:
+        os.chmod(root, 0o755)
+    assert d.marker_error and "PermissionError" in d.marker_error, d
+    assert d.enabled is True and d.rule == "default", d
+
+
+@pytest.mark.skipif(__import__("os").geteuid() == 0, reason="root ignores chmod")
+def test_learn_status_says_unreadable_not_absent(tmp_path, monkeypatch):
+    """`rmx learn status` printed `store marker: … -` (absent) from `exists()`
+    for a marker it could not read, one line below the marker_error saying the
+    opposite. It also shows the hook/wrapper reports from learn-switch.log."""
+    import os
+
+    from click.testing import CliRunner
+
+    from refmatrix import cli as cli_mod
+
+    monkeypatch.delenv("RMX_LEARN", raising=False)
+    home = tmp_path / "home"
+    (home / ".refmatrix").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    (home / ".refmatrix" / "learn-switch.log").write_text(
+        "1791350000 rmxgrep unreadable /x/.refmatrix/learn.off\n")
+    proj = tmp_path / "proj"
+    store = proj / ".refmatrix"
+    store.mkdir(parents=True)
+    monkeypatch.chdir(proj)
+    monkeypatch.setattr(cli_mod, "_root", lambda: store)
+
+    os.chmod(store, 0)
+    try:
+        res = CliRunner().invoke(cli_mod.main, ["learn", "status"])
+    finally:
+        os.chmod(store, 0o755)
+
+    assert res.exit_code == 0, res.output
+    line = next(l for l in res.output.splitlines() if "store  marker" in l)
+    assert "UNREADABLE" in line, line
+    assert "learn-switch.log" in res.output and "rmxgrep" in res.output, res.output

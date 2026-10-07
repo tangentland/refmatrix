@@ -6613,6 +6613,15 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
         g_letters += "E" if regex else "F"
         cmd = [tool, f"-{g_letters}", pattern] + targets
     res = subprocess.run(cmd, capture_output=True, text=True)
+    # The TOOL's errors are the caller's errors (ch-bsd r3 #m-4). Both rg and
+    # grep exit 2 on an error (a missing or unreadable path) — even when other
+    # operands matched — and this function read neither `res.stderr` nor the
+    # code, so a missing file printed "no matches" and exited 1: absent and
+    # zero could not be told apart. The message goes to stderr verbatim; the
+    # exit status is 2 on every branch below.
+    tool_error = res.returncode == 2
+    if tool_error and res.stderr.strip():
+        click.echo(res.stderr.rstrip("\n"), err=True)
 
     def _banner() -> None:
         """Provenance: ONE stderr line, from ONE place.
@@ -6676,9 +6685,9 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
             for line in listed:
                 click.echo(line)
         if not matched_any:
-            if not listed:
+            if not listed and not tool_error:
                 click.echo("rmx grep: no matches", err=True)
-            raise SystemExit(1)
+            raise SystemExit(2 if tool_error else 1)
         return
 
     if not res.stdout.strip():
@@ -6706,10 +6715,12 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
             # an empty dir): print NOTHING. A bare `0` there was r3 #b-4 —
             # `-rc zzz sub` and `-c zzz sub nosuch.txt` answered `0`, a
             # number grep never prints for a filename-shaped read.
-        # grep semantics: silent stdout, exit 1. The note goes to stderr so
+        # grep semantics: silent stdout, exit 1 — or 2 if the tool errored,
+        # whose own message is already on stderr. The note goes to stderr so
         # a tty user still learns why nothing printed.
-        click.echo("rmx grep: no matches", err=True)
-        raise SystemExit(1)
+        if not tool_error:
+            click.echo("rmx grep: no matches", err=True)
+        raise SystemExit(2 if tool_error else 1)
     # Provenance is one stderr line, not a per-line stdout tag: tagging every
     # hit broke file:line copy-paste and any consumer parsing grep format.
     _banner()
@@ -6750,7 +6761,16 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
                 triples.append((parts[0], int(parts[1]), parts[2]))
             except ValueError:
                 pass
-    fb_hits = [{"file": f, "line": n} for f, n, _ in triples]
+    # The LEARNED copy is absolute (ch-bsd r3 #s-6): the tool printed the argv
+    # spelling, often cwd-relative, and the learned row was later verified
+    # against whatever cwd the reader had. This is the one place that knows the
+    # cwd the tool ran in. `normpath`, not `resolve` — the spelling is the
+    # identity, and a symlink is not its target. The DISPLAY keeps grep's
+    # spelling; only what the graph stores changes.
+    import os as _os
+    _cwd = _os.getcwd()
+    fb_hits = [{"file": _os.path.normpath(_os.path.join(_cwd, f)), "line": n}
+               for f, n, _ in triples]
 
     def _shaped(f: str, n: int, text: str) -> str:
         out = f"{f}:" if shape["with_filename"] else ""
@@ -6782,8 +6802,14 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
     if learn_broker is not None and fb_hits:
         try:
             learn_broker(fb_hits)
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001 — named, never mute
+            # Was a bare `pass` on a memory path (CLAUDE.md#no-silent-
+            # failures; found beside ch-bsd r3 #m-4). Stderr, never stdout.
+            click.echo(f"# rmx: learn failed ({type(e).__name__}) — the graph "
+                       f"did not record {len(fb_hits)} hit(s) for {pattern!r}",
+                       err=True)
+    if tool_error:
+        raise SystemExit(2)
 
 
 def _grep_index_notes(stats: dict, limit) -> None:
@@ -6829,7 +6855,8 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
                                # verification does, and `-i` must keep the
                                # case-insensitive rows it would otherwise drop.
                                ignore_case=gf.get("ignore_case") is True,
-                               verify_stats=stats)
+                               verify_stats=stats,
+                               word=bool(gf.get("word")))
 
     if paths:
         rows = _filter_rows_by_paths(rows, paths)
@@ -6880,6 +6907,7 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
             # missed: without this the daemon path matched case-sensitively
             # under `-i` and fell to the floor (ch-bsd r3 #b-2).
             "ignore_case": gf.get("ignore_case") is True,
+            "word": bool(gf.get("word")),          # -w, ch-bsd r3 #s-7
         }, timeout=60.0)
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
@@ -6899,7 +6927,8 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
                                # verification does, and `-i` must keep the
                                # case-insensitive rows it would otherwise drop.
                                ignore_case=gf.get("ignore_case") is True,
-                               verify_stats=stats)
+                               verify_stats=stats,
+                               word=bool(gf.get("word")))
 
     # PATHS filter: drop rows whose entity path is outside the given targets.
     if paths:
@@ -7224,8 +7253,23 @@ def learn_status():
             f"[yellow]rejected[/] {_ls.ENV_VAR}={d.rejected_env!r} — not one of "
             f"on/off/1/0/true/false/yes/no; it was ignored")
     sm, gm = _ls.store_marker(root), _ls.global_marker()
-    console.print(f"  store  marker: {sm}  {'present' if sm.exists() else '-'}")
-    console.print(f"  global marker: {gm}  {'present' if gm.exists() else '-'}")
+    # `marker_state`, not `exists()` (bug-080): `exists()` says False for a
+    # marker it could not read, which printed "-" one line below the
+    # marker_error saying the opposite.
+    for label, m in (("store ", sm), ("global", gm)):
+        st = _ls.marker_state(m)
+        shown = {"present": "present", "absent": "-"}.get(st, "[red]UNREADABLE[/]")
+        console.print(f"  {label} marker: {m}  {shown}", soft_wrap=True)
+    # The hook copies (rewriter, rmxgrep, rmxrg) cannot print — they report an
+    # unreadable marker to this log instead. Shown here so it is read.
+    log = _ls.switch_log()
+    try:
+        reports = log.read_text().splitlines() if log.exists() else []
+    except OSError as e:
+        reports = [f"(could not read {log}: {type(e).__name__})"]
+    if reports:
+        console.print(f"[yellow]hook reports[/] {len(reports)} line(s) in {log}; "
+                      f"latest: {reports[-1]}", soft_wrap=True)
     if not d.enabled:
         from refmatrix import learn_queue as _lq
         console.print(f"  queued teach records: {_lq.pending_lines(root)} "

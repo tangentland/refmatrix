@@ -379,23 +379,27 @@ def test_an_unreadable_marker_is_reported_not_swallowed(tmp_path, monkeypatch):
     fall-through lands on ON, so an operator who turned learning OFF and then
     hit a permission problem got it back on with no word — a silent failure on
     the learning path."""
+    import os
+
     from refmatrix import learn_switch as ls
 
+    if os.geteuid() == 0:
+        pytest.skip("root ignores chmod")
     monkeypatch.delenv(ls.ENV_VAR, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
     boom = tmp_path / "store"
     boom.mkdir()
 
-    real_exists = ls.Path.exists
-
-    def _raise(self):
-        if self.name == ls.MARKER_NAME:
-            raise PermissionError("permission denied")
-        return real_exists(self)
-
-    monkeypatch.setattr(ls.Path, "exists", _raise)
-
-    d = ls.decision(boom)
+    # A REAL permission failure (ch-bsd r3 #m-2). This test used to patch
+    # `Path.exists` to raise — and on Python 3.14 the real `exists()` never
+    # raises, so it pinned a state production cannot reach while the branch it
+    # guarded was dead. The class-level patch (r2 #b-4's registry row) is gone.
+    os.chmod(boom, 0)
+    try:
+        d = ls.decision(boom)
+    finally:
+        os.chmod(boom, 0o755)
     assert d.enabled is True, "an unreadable marker must not flip the answer"
     assert d.rule == "default"
     assert d.marker_error, "the read failure vanished"

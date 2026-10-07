@@ -4243,6 +4243,7 @@ def _op_grep_indexed(d: Daemon, args: dict) -> dict:
             # three callers (bug-073 / bug-074).
             ignore_case=bool(args.get("ignore_case", False)),
             verify_stats=stats,
+            word=bool(args.get("word", False)),
         )
     # `capped` and `unreadable` travel with the rows so the CLI can say a cap
     # bit or rows were dropped on the RPC path too (ch-bsd r3 #b-1 / #s-6).

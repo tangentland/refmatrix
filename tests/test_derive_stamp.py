@@ -273,7 +273,7 @@ def test_an_identical_content_rewrite_does_not_fire_the_gate(store, tmp_path,
     d.mkdir()
     for name in ("ingest.py", "ingest_gmd.py", "store.py"):
         shutil.copy2(Path(store_mod.__file__).resolve().parent / name, d / name)
-    monkeypatch.setattr(store_mod, "_DERIVE_SRC_DIR", d, raising=False)
+    monkeypatch.setattr(store_mod, "_DERIVE_SRC_DIR", d)
     store_mod._DERIVE_CODE_HASH_CACHE.clear()
 
     _track(store, tmp_path)

@@ -346,9 +346,9 @@ function runOp(root, op, args) {
   ws.onopen = () => ws.send(JSON.stringify({root, op, args}));
   ws.onmessage = (m) => {
     const d = JSON.parse(m.data);
-    if (d.line !== undefined) { term.innerHTML += d.line + "\n"; term.scrollTop = term.scrollHeight; }
-    else if (d.done) { term.innerHTML += `<div class="${d.code ? "err" : "muted"}">— exit ${d.code} —</div>`; term.scrollTop = term.scrollHeight; }
-    else if (d.error) term.innerHTML += `<div class="err">${d.error}</div>`;
+    if (d.line !== undefined) { term.innerHTML += esc(d.line) + "\n"; term.scrollTop = term.scrollHeight; }
+    else if (d.done) { term.innerHTML += `<div class="${d.code ? "err" : "muted"}">— exit ${esc(d.code)} —</div>`; term.scrollTop = term.scrollHeight; }
+    else if (d.error) term.innerHTML += `<div class="err">${esc(d.error)}</div>`;
   };
 }
 
@@ -422,7 +422,7 @@ async function renderMemory() {
     $("#mem-results").innerHTML = `<div class="loading">loading…</div>`;
     const r = await api("/api/memory?" + qs);
     rows = r.ok ? (r.result?.rows || []) : [];
-    if (!r.ok) { $("#mem-results").innerHTML = `<div class="muted">${r.error || "error"}</div>`; return; }
+    if (!r.ok) { $("#mem-results").innerHTML = `<div class="muted">${esc(r.error || "error")}</div>`; return; }
     renderRows();
   };
   $("#mem-go").addEventListener("click", go);
@@ -472,8 +472,10 @@ function subBus() {
   BUS_WS.onmessage = (m) => {
     const d = JSON.parse(m.data);
     if (d.keepalive) return;
-    const proj = d.project ? `[${d.project}]` : "";
-    term.innerHTML += `<div><span class="muted">${d.ts}</span> <span style="color:var(--accent)">${d.channel}</span> <b>${d.from}</b>${proj} <span style="color:var(--purple)">${d.type}</span>: ${d.body}</div>`;
+    // Bus text is written by other agents and processes: escaped (r2 #s-2's
+    // sibling sweep, closed at r3 #s-4).
+    const proj = d.project ? `[${esc(d.project)}]` : "";
+    term.innerHTML += `<div><span class="muted">${esc(d.ts)}</span> <span style="color:var(--accent)">${esc(d.channel)}</span> <b>${esc(d.from)}</b>${proj} <span style="color:var(--purple)">${esc(d.type)}</span>: ${esc(d.body)}</div>`;
     term.scrollTop = term.scrollHeight;
     if (d.type === "announce" || d.type === "decision") loadRefine();
   };
@@ -574,12 +576,9 @@ async function doWhere(q) {
   // made the browser the third consumer to turn a busy store into an empty
   // answer (ch-bsd plan-3 r7 #s-3 — `canon find` was not the last one).
   const skipped = r.result?.skipped || [];
-  // ESCAPED: `reason` now carries exception text and filesystem paths (the
-  // per-project reasons channel bug-069 added), and this template writes it
-  // straight into innerHTML.
-  const esc = (v) => String(v == null ? "" : v)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  // ESCAPED with the module-level `esc`: `reason` carries exception text and
+  // filesystem paths (bug-069's per-project reasons channel). A second local
+  // copy shadowed it until ch-bsd r2 #s-2 / r3 #s-4.
   const skipNote = skipped.length
     ? `<div class="omni-group">${skipped.length} store${skipped.length !== 1 ? "s" : ""} skipped: ` +
       skipped.map((s) => `${esc(s.project)} — ${esc(s.reason)}`).join("; ") + `</div>`
@@ -959,7 +958,7 @@ async function loadFileInto(el, n) {
   const r = await api(`/api/file?root=${encodeURIComponent(root)}&path=${encodeURIComponent(n.path)}`
     + (n.line ? `&line=${n.line}` : ""));
   if (!r.ok) {
-    el.innerHTML = `<div class="muted" style="padding:8px">${r.error || "could not read file"}</div>`;
+    el.innerHTML = `<div class="muted" style="padding:8px">${esc(r.error || "could not read file")}</div>`;
     return;
   }
   const start = r.result.start || 1;

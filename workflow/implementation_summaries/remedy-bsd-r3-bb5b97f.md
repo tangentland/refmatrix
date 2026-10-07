@@ -18,7 +18,7 @@ Round 3 was DIRTY with 16 findings (4 BULLSHIT, 7 SKETCHY, 5 MEH). The user aske
 be fixed in this order: #s-1, #b-1, #b-2, #b-3, #b-4. This summary covers those five, plus
 #m-5, which was a two-line fix in a file already being edited. It also covers the `unreadable`
 half of #s-6, because the cap note needed the same plumbing. The other SKETCHY and MEH findings
-are listed under [[#not-done]]. None of them was closed quietly. {#lead}
+are listed under [[#second-pass]]. None of them was closed quietly. {#lead}
 
 ## What changed {#changed}
 
@@ -98,22 +98,36 @@ The raw rows that verification still drops were each read by hand. All of them s
 lines or unrelated lines that hold no spelling of the identifier, so dropping them is bug-074
 working as intended. {#live}
 
-## Not done in this pass {#not-done}
+## Second pass: the remaining SKETCHY and MEH items {#second-pass}
 
-These are open and stated here so round 4 does not find them silent:
+These were done the same day, at the user's direction ("then do 2"), before round 4. Each test
+below was shown RED on the unfixed code. Logs are in `workflow/review-output/r3-*.log`.
 
-- **#s-2:** the second `Store.upsert_vector` stub at `tests/test_save_state_embeds_memories.py:291`
-  is still there, and its registry row is still wrong.
-- **#s-3:** `test_grep_indexed_regex_anchors` still runs `verify=False` and is not on the op.
-- **#s-4:** carried over from r2. The `app.js:580` `esc` is still there, the verb-parity allowlist
-  has no task spec, and `raising=False` is still in `test_derive_stamp.py`.
-- **#s-5:** the stale replay doc and its two citing rows have no banner yet, and the re-run has no
-  task spec.
-- **#s-6, path half:** learned rows are still stored with relative paths.
-- **#s-7:** `-w` is not honoured by verification.
-- **#m-1, #m-2, #m-3:** the 80.6% wording, the untested marker-error decision, and the handoff's
-  `#state-deploy` line.
-- **#m-4, error half:** the floor still swallows rg's error and exit 2 for a missing path.
+| Finding | What changed | Proof |
+|---|---|---|
+| #s-2 | The second `Store.upsert_vector` stub is gone from `test_op_embed_reports_a_real_remaining_count`. It now asserts `remaining == 5 == pending_embeddings_count`, and the mock registry row says both copies are removed. | The test passes unstubbed. |
+| #s-3 | `test_grep_indexed_regex_anchors` is back on `_op_grep_indexed` with verification on. README.md:3 now ends in `parser`, so both anchors verify. | Mutation M7 (the op ignores `regex`) makes it FAIL (`r3-s3-mut.log`). |
+| #s-4 (r2 #s-2) | The shadowing `esc` in `doWhere` is deleted. Five raw innerHTML sites are now escaped. The audit named three; the new test found two more, `app.js:961` and the `d.code` exit line. | `test_app_js_has_one_escape_and_server_text_goes_through_it` is RED on the old `app.js`. |
+| #s-4 (r2 #s-4) | `task-3.4-internal-cli-allowlist` is written, and the deferral row points at it. | GMD lint 0 errors. |
+| #s-4 (r2 #m-4) | `raising=False` is dropped at `tests/test_derive_stamp.py:276`. | That file passes. |
+| #s-5 | A SUPERSEDED banner is on `grep-learning-replay.md`, `docs/INDEX.md` and `plan-14.md`. The re-measure is plan-16 task 16.4. | — |
+| #s-6, path half | `_grep_rg_fallback` hands the broker ABSOLUTE paths (`normpath(join(cwd, f))`); the display keeps grep's spelling. Rows already learned with relative paths stay until relearned. | `tests/test_grep_learned_paths_absolute.py` was RED (`'file': 'f.txt'`). |
+| #s-7 | `-w` reaches verification: `word=` on `grep_evidence`, the op, and all three CLI callers, plus `\b` on the bridged variants. | Three tests RED, including the RPC carrying `word`. |
+| #m-1 | The replay doc defines "multi-word" as `len(split()) > 1` and states that "containing a space" gives 80.6%. r2's figure was right. | — |
+| #m-2 | **It found a real defect, bug-080.** Python 3.14's `Path.exists()` does not raise on a permission error, so r1 #m-3's `except OSError` was dead. It had been verified only with `exists` patched to raise. `_marker_present` stats the path instead. Both tests now use a real `chmod 000`, and the class-level patch is gone from the registry. | RED on the old `learn_switch.py` (`r3-m2-sib-red.log`). |
+| #m-3 | `handoff.md#state-deploy` says the work is on the unmerged branch. bug-073/074 are marked `fixed (bsd-r1-remedy, unmerged)`. | — |
+| #m-4, error half | The floor passes the tool's stderr through and exits 2 on a tool error, on every branch. A bare `except: pass` around the learn broker now prints to stderr. | Two e2e tests against `/usr/bin/grep` were RED (exit 1, then 0). |
+| #m-5 | `_teach` raises. | — |
 
-`-rc` zero rows are fixed for both branches by the `argv_count_rows` change, which is the first
-half of #m-4. {#open}
+Also logged: **bug-081**, the BRE false negatives (`\b` and `^` read as fixed strings). It is open
+for the explicit `rmx grep`, and plan-16 removes the drop-in exposure. {#second-pass-table}
+
+## Still open {#open}
+
+- **bug-080's siblings: CLOSED** at the user's direction. `bin/rmxgrep` and the rendered rewriter
+  now use stat-based checks that report an unreadable marker to `~/.refmatrix/learn-switch.log`,
+  and `rmx learn status` shows it. While fixing these, I found that `bin/rmxrg` had no learn toggle
+  check at all; it now has the same block. 4 tests were RED on the old code. **Deploy note:** the
+  rewriter is a generated hook, so after the deploy `rmx install-hooks --force` must refresh
+  `~/.claude/hooks/rmxgrep-rewrite.py`, or `--check` reports drift.
+- **bug-081** in the explicit `rmx grep`. {#still-open}

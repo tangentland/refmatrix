@@ -256,3 +256,23 @@ def test_one_read_per_distinct_file(tmp_path, monkeypatch):
 
     assert len(verify_evidence_rows(rows, "alpha")) == 3
     assert reads["n"] == 1, f"{reads['n']} reads for one file"
+
+
+# ---- -w is honoured by verification (ch-bsd r3 #s-7) ----------------------
+#
+# `-w` without `-E` left the pattern bare, and verification checked a
+# substring: `rmx grep -w err` kept 34 index rows on the live replica and 0 of
+# them matched `grep -w err`. The store read takes `word=` and verifies on a
+# word boundary.
+
+def test_word_drops_a_substring_hit(store, tmp_path):
+    _seed(store, tmp_path, concept="keyword/err", line=1, body="an error here\n")
+
+    assert store.grep_evidence("err"), "precondition: substring keeps it"
+    assert store.grep_evidence("err", word=True) == [], "-w kept a non-word hit"
+
+
+def test_word_keeps_a_word_hit(store, tmp_path):
+    _seed(store, tmp_path, concept="keyword/err", line=1, body="raise err now\n")
+
+    assert store.grep_evidence("err", word=True)

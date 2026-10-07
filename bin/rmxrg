@@ -39,6 +39,41 @@ if [ -p /dev/stdin ] || [ -p /dev/fd/0 ]; then
     exec "$REAL" "$@"
 fi
 
+# The learning toggle — the SAME block as bin/rmxgrep (this wrapper had none:
+# with RMX_LEARN=0 it still called `rmx grep`, found fixing bug-080's sibling).
+# With learning OFF this wrapper is rg, exactly.
+# `[ -f ]` answered "absent" for a marker inside an unsearchable dir and said
+# nothing (bug-080). The rule is the resolver's: an unreadable marker has not
+# said "off", so it falls through — but it is REPORTED. Not on stderr (this
+# output must stay the real tool's bytes): one line a minute to
+# ~/.refmatrix/learn-switch.log, which `rmx learn status` prints. If that log is
+# unwritable too, `rmx learn status` still reports the store marker itself
+# through the resolver's marker_error.
+_marker_on() {
+    [ -e "$1" ] && return 0
+    _mdir="${1%/*}"
+    if [ -d "$_mdir" ] && [ ! -x "$_mdir" ]; then
+        _mlog="$HOME/.refmatrix/learn-switch.log"
+        if [ -z "$(find "$_mlog" -mmin -1 2>/dev/null)" ]; then
+            mkdir -p "$HOME/.refmatrix" 2>/dev/null
+            printf '%s %s unreadable %s\n' "$(date +%s)" "${0##*/}" "$1" \
+                >> "$_mlog" 2>/dev/null
+        fi
+    fi
+    return 1
+}
+learn_off=0
+case "$(printf '%s' "${RMX_LEARN:-}" | tr 'A-Z' 'a-z')" in
+    0|off|false|no)  learn_off=1 ;;
+    1|on|true|yes)   learn_off=0 ;;
+    *)               # unset, or malformed (decides nothing): the markers decide
+                     _marker_on "$root/.refmatrix/learn.off" && learn_off=1
+                     _marker_on "$HOME/.refmatrix/learn.off" && learn_off=1 ;;
+esac
+if [ "$learn_off" = "1" ]; then
+    exec "$REAL" "$@"
+fi
+
 rich=0
 # `RMXGREP_MODE=plain` used to force the real tool here. It was a bypass of
 # the index path — an agent shell exports rich and any caller could opt out

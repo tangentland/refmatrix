@@ -33,6 +33,10 @@ from pathlib import Path
 
 # The marker's NAME is the same at both scopes; only its directory differs.
 MARKER_NAME = "learn.off"
+# Where the hook copies (rewriter, rmxgrep, rmxrg) REPORT an unreadable marker
+# (bug-080). They cannot use stderr — a wrapper's output must stay grep's bytes —
+# and the store dir may be the unreadable thing, so it lives under ~/.refmatrix.
+SWITCH_LOG_NAME = "learn-switch.log"
 
 ENV_VAR = "RMX_LEARN"
 
@@ -77,6 +81,37 @@ def store_marker(root: "str | os.PathLike") -> Path:
     return Path(root) / MARKER_NAME
 
 
+def _marker_present(p: Path) -> bool:
+    """True if the marker exists, False if it is ABSENT, and RAISE on anything
+    else.
+
+    NOT `Path.exists()` (ch-bsd r3 #m-2): on Python 3.14 it returns False for a
+    PermissionError, so the `except OSError` around it could never run and an
+    unreadable store marker read as "no marker" with no word — found by a test
+    on a real `chmod 000` dir, after the r1 fix had been checked only with
+    `exists` patched to raise. A stat says which of the three it was.
+    """
+    try:
+        os.stat(p)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    return True
+
+
+def switch_log() -> Path:
+    """`~/.refmatrix/learn-switch.log`: the hook copies' unreadable-marker reports."""
+    return Path.home() / ".refmatrix" / SWITCH_LOG_NAME
+
+
+def marker_state(p: Path) -> str:
+    """`present`, `absent` or `unreadable` — for a DISPLAY that must not say
+    "absent" about a marker it could not read (`rmx learn status`, bug-080)."""
+    try:
+        return "present" if _marker_present(p) else "absent"
+    except OSError:
+        return "unreadable"
+
+
 def _env_value() -> "tuple[bool | None, str | None]":
     """(decision, rejected_text). Both None means the variable is unset."""
     raw = os.environ.get(ENV_VAR)
@@ -104,7 +139,7 @@ def decision(root: "str | os.PathLike | None" = None) -> Decision:
     problems: list = []
     if root is not None:
         try:
-            if store_marker(root).exists():
+            if _marker_present(store_marker(root)):
                 return Decision(False, "store-marker", rejected)
         except OSError as e:
             # An unreadable store dir is not an answer; fall through to the
@@ -112,7 +147,7 @@ def decision(root: "str | os.PathLike | None" = None) -> Decision:
             # (#m-3), because the fall-through lands on ON.
             problems.append(f"{store_marker(root)}: {type(e).__name__}: {e}")
     try:
-        if global_marker().exists():
+        if _marker_present(global_marker()):
             # Carry the STORE marker's read failure even though the global one
             # answered (ch-bsd r2 MEH): the operator's per-store marker was
             # unreadable, and the fact that a different scope happened to

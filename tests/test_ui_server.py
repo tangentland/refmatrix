@@ -162,3 +162,24 @@ def test_the_omnibox_keeps_the_skip_note_when_some_stores_answered():
         "fan-out case renders as if every store answered")
     # And the reason is escaped: it carries exception text and paths now.
     assert "esc(s.reason)" in body, "skip reasons go into innerHTML unescaped"
+
+
+def test_app_js_has_one_escape_and_server_text_goes_through_it():
+    """ch-bsd r2 #s-2 / r3 #s-4: `doWhere` carried a second, shadowing
+    `const esc` with its own null rule, and three renderers wrote server- or
+    bus-produced text into `innerHTML` raw (`d.error`, `r.error`, the bus
+    line's `d.from`/`d.channel`/`d.body`). Source-level, and weak for the same
+    reason as the test above: this repo runs no JS. It pins the two things
+    that regressed — one definition, and no raw interpolation at those sites.
+    """
+    import re
+    from pathlib import Path
+
+    from refmatrix import ui
+
+    js = (Path(ui.__file__).resolve().parent / "static" / "app.js").read_text()
+
+    assert len(re.findall(r"\bconst esc\s*=", js)) == 1, "a second esc shadows the shared one"
+    for raw in ("${d.error}", "${r.error ||", "${d.from}", "${d.channel}",
+                "${d.body}", "innerHTML += d.line +"):
+        assert raw not in js, f"unescaped server text reaches innerHTML: {raw}"

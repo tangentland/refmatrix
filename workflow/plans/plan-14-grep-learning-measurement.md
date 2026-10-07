@@ -13,7 +13,7 @@ metadata:
 # Plan 14: measure the grep→rmx learning loop {#root}
 
 **Date:** 2026-10-05
-**Status:** All four tasks complete. The threshold in [[#negative-criterion]] is NOT met — the loop pays for itself: index share 18.5% (ingest only) -> 31.7% (with the read-path teach), precision median 1.000. bug-067 was found BY the instrument and fixed before the measurement was taken; bug-070 records the precision cost of that fix. Report: [[refmatrix/grep-learning-replay]].
+**Status:** All four tasks complete. The threshold in [[#negative-criterion]] is NOT met — the loop pays for itself: index share 18.5% (ingest only) -> 31.7% (with the read-path teach), precision median 1.000 (**superseded**: bug-074 changed what counts as an index answer; the re-measure is plan-16 task 16.4, ch-bsd r3 #s-5). bug-067 was found BY the instrument and fixed before the measurement was taken; bug-070 records the precision cost of that fix. Report: [[refmatrix/grep-learning-replay]].
 **Location:** `workflow/plans/plan-14-grep-learning-measurement.md` — permanent home; stage is
 `metadata.status`.
 

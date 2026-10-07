@@ -34,7 +34,8 @@ a sanity probe proving the check fires. GMD lint 0 errors / 555 docs.
 
 **NOT DEPLOYED.** `~/refmatrix` and the fleet are at **1452875 / 0.76.0**.
 Everything after that sha — the whole r1 remedy, both ch-bsd rounds' fixes,
-bug-073 and bug-074 — exists only on `master`. `origin/main` is at `1452875`
+bug-073 and bug-074 — exists only on the UNMERGED branch `bsd-r1-remedy`
+(corrected 2026-10-06, ch-bsd r3 #m-3: `master` is still `1452875`). `origin/main` is at `1452875`
 too. {#state-deploy}
 
 ## Two sessions shared this tree on 2026-10-06 {#two-sessions}

@@ -144,3 +144,20 @@ def test_the_floor_with_i_still_matches(proj):
 
     assert "ERROR here" in res.stdout, res.output
     assert res.exit_code == 0, res.output
+
+
+def test_the_daemon_rpc_carries_word(daemon, capsys):
+    """`-w` is the second matching flag the RPC must carry (ch-bsd r3 #s-7)."""
+    f = daemon.root.parent / "w.py"
+    f.write_text("an error here\n")
+    s = daemon.store
+    cid = s.add_concept("keyword/err")
+    eid = s.upsert_entity("code", "w.py", path=str(f))
+    s.link("mentions", cid, eid)
+    s.add_evidence("mentions", cid, eid, file=str(f), line=1)
+    sent: list = []
+
+    tlog = _run_daemon_path(daemon, "-w", "err", sent)
+
+    assert sent and sent[0].get("word") is True, sent
+    assert tlog.answered_by != "index", tlog

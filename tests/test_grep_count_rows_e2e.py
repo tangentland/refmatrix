@@ -95,3 +95,36 @@ def test_two_spellings_keep_their_own_prefix_on_n(tree):
     (rmx, _), (grep, _) = _both(["-n", "alpha", "f0.txt", "./f0.txt"], tree)
 
     assert rmx == grep, (rmx, grep)
+
+
+# ---- a missing path is an ERROR, not "no matches" (ch-bsd r3 #m-4) --------
+
+def _run_err(argv: list, cwd: Path) -> "tuple[list, str, int]":
+    env = dict(os.environ, RMX_GREP_NOTE="0")
+    r = subprocess.run(argv, capture_output=True, text=True, cwd=str(cwd),
+                       timeout=120, env=env)
+    return [l for l in r.stdout.splitlines() if l.strip()], r.stderr, r.returncode
+
+
+def test_a_missing_file_exits_2_and_says_so(tree):
+    """`_grep_rg_fallback` never read `res.stderr` or `res.returncode`, so a
+    missing path printed "no matches" and exited 1 — absent and zero could not
+    be told apart from the exit code."""
+    _, rerr, rcode = _run_err([str(RMX), "grep", "--no-learn", "-n", "alpha",
+                               "nosuch.txt"], tree)
+    _, gerr, gcode = _run_err([GREP, "-n", "alpha", "nosuch.txt"], tree)
+
+    assert gcode == 2, "control"
+    assert rcode == 2, (rcode, rerr)
+    assert "nosuch.txt" in rerr, rerr
+
+
+def test_a_missing_file_beside_a_match_still_exits_2(tree):
+    rout, rerr, rcode = _run_err([str(RMX), "grep", "--no-learn", "-n", "alpha",
+                                  "f0.txt", "nosuch.txt"], tree)
+    gout, _, gcode = _run_err([GREP, "-n", "alpha", "f0.txt", "nosuch.txt"], tree)
+
+    assert gcode == 2, "control"
+    assert rout == gout, (rout, gout)
+    assert rcode == 2, (rcode, rerr)
+    assert "nosuch.txt" in rerr, rerr

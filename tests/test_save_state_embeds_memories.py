@@ -288,18 +288,18 @@ def test_op_embed_reports_a_real_remaining_count(tmp_path, monkeypatch):
     d = Daemon(tmp_path / ".refmatrix")
     d.store = s
     monkeypatch.setattr(d, "_embedder", lambda: _FakeEmb(), raising=False)
-    monkeypatch.setattr(Store, "upsert_vector",
-                        lambda self, *a, **k: None, raising=False)
+    # NO `upsert_vector` stub (ch-bsd r3 #s-2, the twin of r2 #s-1). The stub
+    # pinned `remaining` at 7 so `> 1` could not tell a count measured AFTER
+    # the write from one sampled before it. Unstubbed, the two vectors land
+    # and the count must move to exactly 5.
     try:
         res = _op_embed(d, {"kinds": ["memory"], "limit": 2})
         assert res.get("ok") is not False, res
         assert res["embedded"] == 2, res
-        # 7 pending, 2 embedded — but upsert_vector is stubbed, so the stamp
-        # never moves and all 7 remain. The POINT is that the number is not
-        # clamped to 1.
-        assert res["remaining"] > 1, (
-            f"remaining={res['remaining']} — a 0-or-1 boolean wearing a "
-            f"count's clothes (#b-1)")
+        assert res["remaining"] == 5, (
+            f"remaining={res['remaining']} — not re-measured after the write, "
+            f"or a 0-or-1 boolean wearing a count's clothes (#b-1)")
+        assert res["remaining"] == s.pending_embeddings_count(kinds=["memory"])
     finally:
         s.close()
 

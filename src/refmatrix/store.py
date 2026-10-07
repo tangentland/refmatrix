@@ -757,10 +757,19 @@ def derive_code_hash(pass_name: "str | None" = None) -> str:
 
 
 def evidence_line_matches(text: str, pattern: str, *, regex: bool,
-                          ignore_case: bool) -> bool:
-    """Does this source line actually hold the pattern the caller asked for?"""
+                          ignore_case: bool, word: bool = False) -> bool:
+    """Does this source line actually hold the pattern the caller asked for?
+
+    `word` is grep's `-w` for a LITERAL pattern (ch-bsd r3 #s-7): a substring
+    check kept `rmx grep -w err` rows on lines holding only `error` — 34 of 34
+    on the live replica. A regex caller's `-w` is already in the pattern
+    (`\\b...\\b`, built by the CLI), so it is not applied twice.
+    """
     import re as _re
 
+    if word and not regex:
+        return _re.search(rf"\b{_re.escape(pattern)}\b", text,
+                          _re.IGNORECASE if ignore_case else 0) is not None
     if regex:
         try:
             return _re.search(pattern, text,
@@ -807,6 +816,7 @@ def identifier_variant_regex(pattern: str) -> "re.Pattern | None":
 def verify_evidence_rows(rows: list, pattern: str, *, regex: bool = False,
                          ignore_case: bool = False,
                          variants: "re.Pattern | None" = None,
+                         word: bool = False,
                          stats: "dict | None" = None) -> list:
     """Keep only evidence rows whose `file:line` REALLY contains the pattern.
 
@@ -866,7 +876,7 @@ def verify_evidence_rows(rows: list, pattern: str, *, regex: bool = False,
             dropped += 1
             continue
         if evidence_line_matches(lines[idx], pattern, regex=regex,
-                                 ignore_case=ignore_case) or (
+                                 ignore_case=ignore_case, word=word) or (
                 variants is not None and variants.search(lines[idx])):
             out.append(r)
         else:
@@ -3044,7 +3054,8 @@ class Store:
                       linkage: "str | None" = None, kind: "str | None" = None,
                       limit: "int | None" = 100,
                       ignore_case: bool = False, verify: bool = True,
-                      verify_stats: "dict | None" = None) -> "list[dict]":
+                      verify_stats: "dict | None" = None,
+                      word: bool = False) -> "list[dict]":
         """THE index-backed grep read: concepts whose name matches `pattern`,
         returned as their `linkage_evidence` rows.
 
@@ -3093,6 +3104,10 @@ class Store:
                 # The bridge is engaged, so verification must accept the
                 # spellings it bridges to (ch-bsd r3 #b-3).
                 variants = identifier_variant_regex(pattern)
+                if variants is not None and word:
+                    # `-w` bounds the bridged spelling too (#s-7).
+                    variants = re.compile(rf"\b(?:{variants.pattern})\b",
+                                          variants.flags)
                 # SEGMENT-ANCHORED, not a bare substring (bug-070).
                 #
                 # This predicate exists to bridge a SPELLING: `roaring bitmap`
@@ -3183,7 +3198,7 @@ class Store:
         if not capped:
             out = verify_evidence_rows(_fetch(sql, params), pattern,
                                        regex=regex, ignore_case=ignore_case,
-                                       variants=variants, stats=stats)
+                                       variants=variants, word=word, stats=stats)
             stats["capped"] = False
             return out
         cap = int(limit)  # `capped` above means limit is a positive int
@@ -3196,7 +3211,7 @@ class Store:
             part: dict = {}
             out.extend(verify_evidence_rows(raw, pattern, regex=regex,
                                             ignore_case=ignore_case,
-                                            variants=variants, stats=part))
+                                            variants=variants, word=word, stats=part))
             dropped += part.get("dropped", 0)
             unreadable += part.get("unreadable", 0)
             if len(raw) < page:
