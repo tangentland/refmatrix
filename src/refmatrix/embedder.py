@@ -101,13 +101,14 @@ class Embedder:
     def _load(self) -> None:
         if self._model is not None:
             return
-        from sentence_transformers import SentenceTransformer
+        from refmatrix.models_local import load_local
 
-        # `cache_folder` honors HF_HOME / SENTENCE_TRANSFORMERS_HOME so
-        # downloads land in the standard locations. CPU device is the
-        # safe default; users with MPS / CUDA can set RMX_EMBED_DEVICE.
+        # LOCAL CACHE ONLY (2026-10-07): a load used to check huggingface.co
+        # for a newer revision every time; `load_local` makes no network call
+        # and fails loudly, with the fetch command, for an uncached model.
+        # CPU device is the safe default; MPS / CUDA via RMX_EMBED_DEVICE.
         device = os.environ.get("RMX_EMBED_DEVICE", "cpu")
-        self._model = SentenceTransformer(self.model_name, device=device)
+        self._model = load_local("embed", self.model_name, device)
 
     def embed_texts(self, texts: Sequence[str]) -> np.ndarray:
         """Encode a batch of texts. Returns float32 (N, dim) ndarray.

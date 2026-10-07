@@ -32,7 +32,13 @@ class CodeRankEmbedRetriever:
                 "Install with: pip install -r eval/requirements.txt"
             ) from exc
 
-        model = SentenceTransformer(model_name, trust_remote_code=True).to(device)
+        # LOCAL CACHE ONLY (2026-10-07): no load-time call to huggingface.co.
+        # An uncached model fails here; fetch it once with `hf download`.
+        import os as _os
+        _os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        _os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+        model = SentenceTransformer(model_name, trust_remote_code=True,
+                                    local_files_only=True).to(device)
         model.max_seq_length = max_seq_length
         if bf16:
             import torch

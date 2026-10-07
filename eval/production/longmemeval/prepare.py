@@ -73,19 +73,21 @@ class CorpusConflict(RuntimeError):
 
 
 def fetch(split: str = "s") -> Path:
-    """Download the split blob from HuggingFace. Idempotent (hf caches)."""
-    try:
-        from huggingface_hub import hf_hub_download
-    except ImportError:  # a gap, named — not worked around
-        sys.exit("  ! huggingface_hub is not installed in this interpreter.\n"
-                 "    It is the only supported fetch path for this dataset.\n"
-                 "    Install it, or place the blob at "
-                 f"{UPSTREAM / SPLITS[split]} by hand.")
-    UPSTREAM.mkdir(parents=True, exist_ok=True)
+    """The split blob, from DISK only — this script makes no network call.
+
+    It used to call `hf_hub_download`. External calls were removed project-wide
+    on 2026-10-07 (the user: "find all external calls and remove them"), so the
+    one-time download is a deliberate manual step, printed here when the blob
+    is missing, rather than something an eval run does on its own.
+    """
     name = SPLITS[split]
-    print(f"  ~ fetching {HF_REPO}:{name} -> {UPSTREAM}")
-    return Path(hf_hub_download(HF_REPO, name, repo_type="dataset",
-                                local_dir=str(UPSTREAM)))
+    blob = UPSTREAM / name
+    if not blob.exists():
+        sys.exit(f"  ! {blob} is missing. This script does not download.\n"
+                 f"    Fetch it once, by hand:\n"
+                 f"      hf download {HF_REPO} {name} --repo-type dataset "
+                 f"--local-dir {UPSTREAM}")
+    return blob
 
 
 def _turns_to_markdown(session: list[dict]) -> str:

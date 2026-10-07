@@ -266,11 +266,12 @@ class Reranker:
     def _load(self) -> None:
         if self._model is not None:
             return
-        from sentence_transformers import CrossEncoder
+        from refmatrix.models_local import load_local
 
+        # LOCAL CACHE ONLY (2026-10-07), as in `Embedder._load`.
         device = os.environ.get("RMX_RERANK_DEVICE") or \
             os.environ.get("RMX_EMBED_DEVICE", "cpu")
-        self._model = CrossEncoder(self.model_name, device=device)
+        self._model = load_local("rerank", self.model_name, device)
 
     def score(self, query: str, docs: Sequence[str]) -> list[float]:
         """Score each doc against the query. Higher = more relevant.
