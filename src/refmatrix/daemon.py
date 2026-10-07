@@ -5515,16 +5515,36 @@ def _op_embed(d: Daemon, args: dict) -> dict:
             return {"embedded": 0, "remaining": 0, "skipped_empty": len(rows),
                     "degraded": degraded}
 
-        # Single batch encode keeps the model warm + amortizes the
-        # tokenizer cost. ST handles batching internally.
-        if d._shutdown_event.is_set():
-            return {"embedded": 0, "remaining": len(rows), "cancelled": True}
-        vectors = emb.embed_texts([t for (_eid, _k, t) in triples])
+        # The rows' clocks as of extraction: phase 3 writes a vector only for
+        # a row that did not change while the model ran.
+        eids0 = [t[0] for t in triples]
+        in_e = ",".join("?" * len(eids0))
+        seen_at = dict(d._st()._connect().execute(
+            f"SELECT id, updated_at FROM entities WHERE id IN ({in_e})", eids0,
+        ).fetchall())
 
+    # Phase 2 — the model, OUTSIDE `_store_lock` (ch-bsd r9 #s-1): a 256-text
+    # encode on a busy shared worker held every writer behind it, the
+    # lock-holding wedge class of bug-085. Single batch encode keeps the model
+    # warm and amortizes the tokenizer cost.
+    if d._shutdown_event.is_set():
+        return {"embedded": 0, "remaining": len(rows), "cancelled": True}
+    vectors = emb.embed_texts([t for (_eid, _k, t) in triples])
+
+    # Phase 3 — write back under the lock, skipping any row edited (or
+    # deleted) while the model ran: stamping it would mark a vector of the
+    # OLD text current. It stays pending and the next pass embeds it.
+    with d._store_lock, d._st().with_partition(partition):
+        now_at = dict(d._st()._connect().execute(
+            f"SELECT id, updated_at FROM entities WHERE id IN ({in_e})", eids0,
+        ).fetchall())
+        keep = [i for i, t in enumerate(triples)
+                if t[0] in now_at and now_at[t[0]] == seen_at.get(t[0])]
+        changed = len(triples) - len(keep)
         embedded = 0
         by_kind: dict[str, list[int]] = {}
-        for (eid, kind, _t), idx in zip(triples, range(len(triples))):
-            by_kind.setdefault(kind, []).append(idx)
+        for idx in keep:
+            by_kind.setdefault(triples[idx][1], []).append(idx)
         for kind, idxs in by_kind.items():
             eids = [triples[i][0] for i in idxs]
             sub = vectors[idxs]
@@ -5534,6 +5554,8 @@ def _op_embed(d: Daemon, args: dict) -> dict:
         # 0-or-1 by construction and every "N left" surface printed it
         # (ch-bsd r1 #b-1).
         remaining = d._st().pending_embeddings_count(kinds=kinds)
+    if changed:
+        d._log(f"embed: {changed} row(s) changed while encoding; left pending")
 
     d._request_snapshot()
     return {
@@ -5543,6 +5565,7 @@ def _op_embed(d: Daemon, args: dict) -> dict:
         "dim": emb.dim,
         "model": emb.model_name,
         "degraded": degraded,
+        "changed_while_encoding": changed,
     }
 
 
@@ -5735,6 +5758,28 @@ def _op_ann_search(d: Daemon, args: dict) -> dict:
     return out
 
 
+class _PrecomputedQuery:
+    """An embedder stand-in holding ONE precomputed query vector.
+
+    The query is embedded BEFORE `_store_lock` is taken (ch-bsd r9 #s-1: the
+    model call ran inside the lock, so a busy worker held every writer). The
+    recall code under the lock asks this object for the query's vector; any
+    other text is refused loudly, so a later change cannot quietly move a
+    model call back under the lock."""
+
+    def __init__(self, emb, query: str, vec) -> None:
+        self.dim = emb.dim
+        self.model_name = getattr(emb, "model_name", None)
+        self._query = query
+        self._vec = vec
+
+    def embed_texts(self, texts):
+        if list(texts) == [self._query]:
+            return self._vec
+        raise RuntimeError("model call under _store_lock: only the precomputed "
+                           "query vector is available here")
+
+
 def _op_memory_recall(d: Daemon, args: dict) -> dict:
     """Hybrid memory recall: dense ANN ⊕ symbolic content_rank, RRF-fused —
     the lexical side the pure-dense `ann_search` op lacks. `fuse=False` falls
@@ -5772,13 +5817,15 @@ def _op_memory_recall(d: Daemon, args: dict) -> dict:
         except Exception as exc:
             d._log(f"concept prefilter skipped: {exc!r}")
 
+    # The model call happens HERE, outside the lock (ch-bsd r9 #s-1).
+    q_emb = _PrecomputedQuery(emb, query, emb.embed_texts([query]))
     with d._store_lock, d._st().with_partition(partition):
         if fuse:
             hits = hybrid_memory_recall(
-                d._st(), emb, query, k=retrieve_k, kinds=kinds,
+                d._st(), q_emb, query, k=retrieve_k, kinds=kinds,
                 candidate_ids=_cand)
         else:
-            hits = dense_recall(d._st(), emb, query, k=retrieve_k, kinds=kinds,
+            hits = dense_recall(d._st(), q_emb, query, k=retrieve_k, kinds=kinds,
                                 candidate_ids=_cand)
         docs = None
         if want_rerank:

@@ -39,6 +39,7 @@ def store(tmp_path):
 
 class _Emb:
     dim = 4
+    model_name = "stub-embedder"
 
     def embed_texts(self, texts):
         return np.array([[1.0, 0.5, 0.25, 0.125]] * len(texts), dtype="float32")
@@ -211,3 +212,68 @@ def test_cli_recall_daemon_branch_prints_the_warnings(mem_store, monkeypatch):
 
     r = CliRunner().invoke(cli_mod.main, ["memory", "recall", "daemon jetsam"])
     assert "rerank skipped (X); hits unreranked" in r.stderr, (r.exit_code, r.output, r.stderr)
+
+
+# ---- ch-bsd r9 #s-1: no model call under the writer lock ----------------
+
+class _ProbeEmb(_Emb):
+    """Records whether the writer lock was free while the model ran."""
+
+    def __init__(self, d, on_embed=None):
+        self.d = d
+        self.free: list[bool] = []
+        self.on_embed = on_embed
+
+    def embed_texts(self, texts):
+        got: list[bool] = []
+
+        def probe():
+            ok = self.d._store_lock.acquire(blocking=False)
+            got.append(ok)
+            if ok:
+                self.d._store_lock.release()
+
+        t = threading.Thread(target=probe)
+        t.start()
+        t.join()
+        self.free.append(got[0])
+        if self.on_embed:
+            self.on_embed()
+        return super().embed_texts(texts)
+
+
+def test_memory_recall_embeds_the_query_off_the_writer_lock(mem_store):
+    from refmatrix.daemon import _op_memory_recall
+
+    d = _D(mem_store)
+    pe = _ProbeEmb(d)
+    d._embedder = lambda: pe
+    d._maybe_rerank = lambda args: False
+    out = _op_memory_recall(d, {"query": "daemon jetsam", "k": 2})
+    assert out["hits"], out
+    assert pe.free and all(pe.free), pe.free
+
+
+def test_the_embed_op_encodes_off_the_lock_and_never_stamps_a_row_edited_meanwhile(tmp_path):
+    from refmatrix.daemon import _op_embed
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    ids = [s.add_memory(name=f"e{i}", content=BODY) for i in range(3)]
+    d = _D(s)
+    d._shutdown_event = threading.Event()
+    d._request_snapshot = lambda: None
+
+    def edit_one():
+        # an edit lands while the model runs (the lock is free now)
+        s.add_memory(name="e1", content=BODY + " edited")
+
+    pe = _ProbeEmb(d, on_embed=edit_one)
+    d._embedder = lambda: pe
+    out = _op_embed(d, {"kinds": ["memory"], "limit": 10})
+
+    assert pe.free == [True], pe.free
+    pending = {r[0] for r in s.pending_embeddings(kinds=["memory"], limit=10)}
+    assert ids[1] in pending, "a row edited during encoding was stamped current"
+    assert out["embedded"] == 2, out
+    s.close()
