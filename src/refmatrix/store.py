@@ -3235,6 +3235,18 @@ class Store:
         # cap bit without verifying the rest.
         stats = verify_stats if verify_stats is not None else {}
         rows = _fetch(sql, params)
+        # Ordered on the RESOLVED path before the lazy cap (ch-bsd r6 #m-2).
+        # The SQL order sorts the stored spelling and `/` sorts before `s`, so
+        # the cap took every absolute-spelled row first and one file spelled
+        # both ways printed as two runs out of line order. Joining a path is
+        # cheap; the line reads stay lazy.
+        base = self.root.parent
+        for r in rows:
+            p = r["path"]
+            if p and not Path(p).is_absolute():
+                r["path"] = str(base / p)
+        rows.sort(key=lambda r: (r["path"] or "", r["line"] or 0, r["linkage"] or "",
+                                 r["concept"] or "", r["entity"] or ""))
         cap = int(limit) if capped else None
         out = verify_evidence_rows(rows, pattern, regex=regex,
                                    ignore_case=ignore_case, variants=variants,

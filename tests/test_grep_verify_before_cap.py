@@ -202,8 +202,43 @@ def test_a_relative_row_is_printed_resolved_and_merged(store, tmp_path, monkeypa
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
 
-    rows = store.grep_evidence("error")
+    stats: dict = {}
+    rows = store.grep_evidence("error", verify_stats=stats)
 
     assert {r["path"] for r in rows} == {str(a)}, rows
     assert all(Path(r["path"]).exists() for r in rows)
-    assert len({(r["path"], r["line"]) for r in rows}) == 1
+    # ONE printed row, and the collapse counted (ch-bsd r6 #b-1): a set-size
+    # assert equalled 1 with the dedup deleted, while `-c` counted the one
+    # matching line twice.
+    assert len(rows) == 1, rows
+    assert stats["merged"] == 1, stats
+
+
+# ---- ch-bsd r6 #m-2: ordered and capped on the RESOLVED path -----------------
+#
+# The SQL total order sorts the STORED spelling, and `/` sorts before `s`, so a
+# capped read took every absolute-spelled row before any relative one, and one
+# file spelled both ways printed as two runs out of line order.
+
+def test_the_cap_and_the_order_follow_the_resolved_path(store, tmp_path, monkeypatch):
+    proj = store.root.parent
+    (proj / "src").mkdir()
+    a = proj / "src" / "a.py"
+    b = proj / "src" / "b.py"
+    a.write_text("an error\nx\nan error\n")
+    b.write_text("an error\n")
+    c = store.add_concept("query/error")
+    rel_a = store.upsert_entity("code", "src/a.py", path="src/a.py")
+    abs_a = store.upsert_entity("code", "a-abs", path=str(a))
+    abs_b = store.upsert_entity("code", "b-abs", path=str(b))
+    for e, f, ln in ((rel_a, "src/a.py", 1), (abs_a, str(a), 3), (abs_b, str(b), 1)):
+        store.link("mentions", c, e)
+        store.add_evidence("mentions", c, e, file=f, line=ln)
+    monkeypatch.chdir(tmp_path)
+
+    rows = store.grep_evidence("error", limit=None)
+    assert [(r["path"], r["line"]) for r in rows] == [
+        (str(a), 1), (str(a), 3), (str(b), 1)], rows
+
+    capped = store.grep_evidence("error", limit=1)
+    assert [(r["path"], r["line"]) for r in capped] == [(str(a), 1)], capped
