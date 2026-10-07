@@ -456,3 +456,26 @@ def test_a_recorded_overrun_reaches_the_answers_warnings(monkeypatch):
     warnings: list[str] = []
     ctx._rerank_bodied(_S(), _RR(), "q", [(1, 1.0), (2, 0.5)], warnings)
     assert any("overran" in w and "0.7" in w for w in warnings), warnings
+
+
+def test_a_header_that_eats_the_budget_sends_no_rerank(stub):
+    """When the cost header alone outlasts the budget, nothing is left to
+    score with; a rerank frame then is a request the caller has already
+    abandoned, which the worker would still queue. The probe is bounded by
+    the remaining budget, so such a header times out and reads as cold —
+    which is why the explicit "spent on the cost header" guard is an
+    equivalent mutant (F16 in r10-remedy-mutations.log); it stays for timing
+    jitter between the probe's end and the deadline."""
+    from refmatrix import modelsrv
+    from refmatrix.reranker import RemoteReranker
+
+    raw = _RawHub(stub.dir / "m.sock", info_delay=0.9)
+    try:
+        c = modelsrv.SharedWorkerClient("rerank", timeout=45.0)
+        _wall, out = _attempt(RemoteReranker(c).with_budget(0.8))
+        c.close()
+        time.sleep(0.3)        # let a stray frame land before counting
+    finally:
+        raw.close()
+    assert out.startswith("skipped"), out
+    assert [f.get("op") for f in raw.frames] == ["info"], raw.frames

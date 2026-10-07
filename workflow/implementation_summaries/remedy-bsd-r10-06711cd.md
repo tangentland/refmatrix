@@ -89,6 +89,15 @@ the WRITER.
 - **V16.** The watch flush sums its per-root reports in `_sum_sync_reports`, and the accumulation is
   pinned.
 
+## Mutation check of this remedy {#mutations}
+
+16 mutants over the fixes, run in a detached worktree at `6e86af0` with the model socket isolated
+(`workflow/review-output/r10-remedy-mutations.log`): **15 killed, 1 equivalent**. F16 removes the
+"budget spent on the cost header" guard. The header probe is itself bounded by the remaining
+budget, so a header that would exhaust it times out and reads as cold before the guard is reached.
+The guard covers only timing jitter, and a test pins the observable behaviour: no rerank frame
+(`r10-remedy-F16.log`).
+
 ## #m-2 {#m-2}
 
 [[impl-remedy-bsd-r9-a3a324e]] was written. Its test-run section reads the logs on disk. The r9 #s-1
