@@ -13,13 +13,14 @@ metadata:
 # Task 16.3: Grep-tool hook on the learner, and the docs {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision 3, after spec re-review `bsd-plan16-spec-rereview-42a5521`)
+> Status: Pending (revision 4, after spec review r3 `bsd-plan16-spec-review-r3-c8278b1`)
 > Depends on: [[task-16.1-argv-faithful-learner]]
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
 rel: depends-on -> [[task-16.1-argv-faithful-learner]]
 rel: amends -> [[bsd-plan16-spec-review-b587621]]
 rel: amends -> [[bsd-plan16-spec-rereview-42a5521]]
+rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
 
 ## Why {#why}
 
@@ -40,12 +41,23 @@ The hook calls `rmx grep-learn --tool rg --bin "$RG_ABS" --cwd "$CWD" -- <argv>`
 
 **Binary resolution (#s-n5).** `TEACH_TEMPLATE` is a bash script, and hooks inherit `BASH_ENV`.
 Measured: `bash -c 'command -v rg'` prints `rg`, the agent-bashrc FUNCTION. So:
-- `RG_ABS` is `type -P rg`, which resolves PATH only and never a function.
+- `RG_ABS` is `type -P rg`, which resolves PATH only and never a function (probed: prints
+  `/opt/local/bin/rg` under `BASH_ENV`). If it is EMPTY (rg not on PATH), the hook does not spawn
+  and appends `<epoch> no-rg` to the `busy` log, so the skip is counted (#m-r3-3).
 - The `rmx` call runs under `env -u BASH_ENV`.
 - The test runs with `BASH_ENV` set to a file that defines `rg()`, so a function-resolving build
   fails it.
 
-**Builtin vs system rg (#s-n5).** The Grep tool runs Claude Code's BUILTIN ripgrep with
+**Single-file `path` (#s-r3-10).** When `path` names a FILE, the Grep tool applies `glob`/`type`
+itself and returns nothing on a mismatch, while rg 15.1.0 ignores globs on a named file. So when
+`path` is a file and `glob` or `type` is set, the learner teaches nothing
+(`reason=single-file-filter`). This is counted. The exact filter is not modelled.
+
+**Paging (#s-r3-8).** The tool's default `head_limit` is 250, with pagination. A response that
+carries the pagination marker is INCOMPLETE for 16.4's oracle, and AC-1's captured fixtures are
+recorded below that limit.
+
+**Builtin vs system rg (#s-n5). The Grep tool runs Claude Code's BUILTIN ripgrep with
 `--no-config`; the learner re-runs the SYSTEM rg (`/opt/local/bin/rg`, 15.1.0) with `--no-config`
 added. That is a stated divergence, not a claim of sameness. The build records both versions in the
 summary, and AC-1 (which compares against the tool's own response) is what catches a behavioural
@@ -58,15 +70,19 @@ The argv is:
 | always (tool constant) | `--no-config`, `--hidden`, `--glob=!<d>` for each VCS dir the tool excludes (`.git .svn .hg .bzr .jj .sl` in 2.1.292), `--max-columns=500` |
 | `pattern` | `-e PATTERN` |
 | `path` (default: the cwd) | trailing operand |
-| `glob` | the tool's own SPLIT (#s-n4): split on whitespace, then split each piece on commas UNLESS the piece contains `{`; one `--glob=<piece>` per piece. `*.ts,*.tsx` and `*.py *.md` therefore become two globs, and `*.{ts,tsx}` stays one. |
+| `glob` | the tool's own SPLIT (#s-n4): split on whitespace, then split each piece on commas UNLESS the piece contains `{`; one `--glob=<piece>` per piece. A piece is kept whole only if it contains BOTH `{` and `}` (#m-r3-3, read from the binary). `*.ts,*.tsx` and `*.py *.md` become two globs; `*.{ts,tsx}` stays one. |
 | `type` | `-t TYPE` |
 | `-i: true` | `-i` |
 | `multiline: true` | `-U --multiline-dotall` |
 | `output_mode`, `-n`, `-A`, `-B`, `-C`, `context`, `head_limit`, `offset`, `-o` | ignored: shaping or paging only. `head_limit`/`offset` page the TOOL's output, while the learner teaches the full corpus-filtered result under its own cap. |
 
 - **The constants (the VCS-dir list, `--max-columns`, the glob split rule) are extracted from the
-  binary.** The extraction is anchored on CONTENT (string literals such as `"--max-columns"` and
-  the VCS-dir array's members), not on minified identifiers. The result is checked in as
+  binary.** The extraction is anchored on CONTENT, not on minified identifiers.
+  - `"--max-columns","500"` occurs once in the binary (probed), so it is a sound anchor.
+  - The VCS list is the array referenced next to the `--glob` `!`-exclusion emitter. A member
+    search finds three arrays, one of them a different 8-member list, so member matching alone is
+    ambiguous (#s-n6/#m-r3-3).
+  - The 33 s scan of the 235 MB binary is cached, keyed on (path, size, mtime). The result is checked in as
   `tests/fixtures/grep_tool_constants.txt`.
 - **AC-5 re-extracts from the INSTALLED binary on every run (#s-n6)**, from
   `$CLAUDE_CODE_EXECPATH`, else `~/.local/bin/claude`. It compares both the fixture and the

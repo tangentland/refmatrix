@@ -13,12 +13,13 @@ metadata:
 # Task 16.1: the argv-faithful learner {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision 3, after spec re-review `bsd-plan16-spec-rereview-42a5521`)
+> Status: Pending (revision 4, after spec review r3 `bsd-plan16-spec-review-r3-c8278b1`)
 > Depends on: — (plan-16 itself waits on `bsd-r1-remedy` merging)
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
 rel: amends -> [[bsd-plan16-spec-review-b587621]]
 rel: amends -> [[bsd-plan16-spec-rereview-42a5521]]
+rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
 
 ## Why {#why}
 
@@ -48,7 +49,9 @@ and no narrower. {#why-lead}
 - The first statements are `os.setsid()` and closing inherited fds above 2. `EPERM` (already a
   group leader) is tolerated, since the process is detached already.
 - Children are started with `start_new_session=True` and `close_fds=True`.
-- After detaching, the learner writes `<store_root>/.grep-learn-slots/<pid>.detached`.
+- After detaching, the learner writes `<store_root>/.grep-learn-slots/<pid>.detached` and REMOVES
+  it on exit (#m-r3-1). Stale markers (older than 60 s, pid not alive) are reclaimed with the slots.
+  The shim counts only `slot-*.d` dirs, never markers.
 - The ~0.14 s of startup before `setsid` runs is an accepted window, stated here. AC-9 kills only
   after the marker exists.
 
@@ -73,10 +76,10 @@ and no narrower. {#why-lead}
 
 | class | grep (BSD 2.6.0) | rg (15.1.0) |
 |---|---|---|
-| keep: match | `-i --ignore-case -y -w --word-regexp -x --line-regexp -F --fixed-strings -E --extended-regexp -G --basic-regexp -e PAT --regexp=PAT -r -R --recursive -S -O -p --include=G --exclude=G --exclude-dir=G -a --text -I -U --binary -d ACT --directories=ACT -D ACT --devices=ACT --binary-files=V` | `-i --ignore-case -s --case-sensitive -S --smart-case -w --word-regexp -x --line-regexp -F --fixed-strings -e PAT --regexp=PAT -g G --glob=G --iglob=G -t T --type=T -T T --type-not=T -u -uu -uuu --hidden --no-ignore* --no-config -L --follow -P --pcre2 -U --multiline --multiline-dotall -a --text --binary -d N --max-depth=N` |
+| keep: match | `-i --ignore-case -y -w --word-regexp -x --line-regexp -F --fixed-strings -E --extended-regexp -G --basic-regexp -e PAT --regexp=PAT -r -R --recursive -S -O -p --include=G --exclude=G --exclude-dir=G --include-dir=G -a --text -I -U --binary -d ACT --directories=ACT -D ACT --devices=ACT --binary-files=V --mmap` | `-i --ignore-case -s --case-sensitive -S --smart-case -w --word-regexp -x --line-regexp -F --fixed-strings -e PAT --regexp=PAT -g G --glob=G --iglob=G -t T --type=T -T T --type-not=T -u -uu -uuu --hidden --no-ignore* --no-config -L --follow -P --pcre2 -U --multiline --multiline-dotall -a --text --binary -d N --max-depth=N` |
 | keep: cutoff (#s-10) | `-m N --max-count=N`; `-l --files-with-matches` → re-run as `-m 1` (the caller matched one line per file) | `-m N --max-count=N`; `-l --files-with-matches` → `-m 1` |
 | drop: shape | `-c --count -o --only-matching -s --no-messages -h --no-filename -H --with-filename -n --line-number -b --byte-offset -A N -B N -C[N] --context[=N] -NUM --after-context=N --before-context=N --color[=W] --colour[=W] --label=L --line-buffered --null` | `-c --count --count-matches -o --only-matching -n --line-number -N --no-line-number -H --with-filename -I --no-filename --heading --no-heading -A N -B N -C N --after-context=N --before-context=N --context=N --color=W --column -b --byte-offset --trim -M N --max-columns=N --max-columns-preview -0 --null` |
-| kill: teach nothing | `-v --invert-match -L --files-without-match -q --quiet --silent` (a quiet caller saw no lines; and under the corpus pruning of R1b, its "first hit" could be a line it never matched) `-f FILE --file=FILE` (multi-pattern) `-z --null-data` (every hit becomes line 1, measured) `-Z -J -X -M` (decompress: line numbers refer to decompressed text) `-P -T` (rejected, exit 2), more than one `-e` | `-v --invert-match --files-without-match --files --type-list --passthru -q --quiet -f FILE --file=FILE --json --vimgrep -r REPL --replace=REPL`, more than one `-e` |
+| kill: teach nothing | `-v --invert-match -L --files-without-match -q --quiet --silent` (a quiet caller saw no lines; and under the corpus pruning of R1b, its "first hit" could be a line it never matched) `-f FILE --file=FILE` (multi-pattern) `-z --null-data` (every hit becomes line 1, measured) `-Z -J -X -M --decompress --bz2decompress --xz --lzma` (decompress: line numbers refer to decompressed text) `-P -T` (rejected, exit 2), more than one `-e` | `-v --invert-match --files-without-match --files --type-list --passthru -q --quiet -f FILE --file=FILE --json --vimgrep -r REPL --replace=REPL`, more than one `-e` |
 | append | `-n -H --null` | `-n -H --null --no-heading --color never` |
 
 - **An unknown token kills the teach** (`reason=unknown-flag:<tok>`). {#r1-unknown}
@@ -104,7 +107,13 @@ and no narrower. {#why-lead}
   - rg: `-g '!<d>/'` per `IGNORE_DIRS` entry. rg already skips hidden dirs unless the caller passed
     `--hidden` or `-u`. When the caller did, `-g '!.*/'` is added, because R3 drops those hits
     anyway.
+- **The pruning flags go BEFORE the caller's tokens (#s-r3-1).** BSD grep lets the LAST matching
+  `--include`/`--exclude` win (probed), so appended `--include`s re-included files the caller had
+  `--exclude`d. Placed first, every caller filter overrides ours.
 - This is faithful by construction: it removes only files R3 would discard.
+- Probed on BSD 2.6.0 (spec review r3): `--exclude-dir='.[A-Za-z0-9_-]*'` excludes neither `.`,
+  `..`, `./src` nor a path-less `-r`. The pruned whole-tree grep takes 0.08–0.13 s on this repo,
+  against 103 s unpruned.
 
 **R2. Parse canonical output, streaming (#m-3).**
 - The output is read line by line. With `--null`, the filename ends at the first NUL, followed by

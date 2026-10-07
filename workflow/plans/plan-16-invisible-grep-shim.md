@@ -150,13 +150,16 @@ Specs go in `workflow/plans/plan-16-invisible-grep-shim-tasks/` before approval.
    commands along with their exact argv and cwd. Fully passive remains the fallback only if 16.2's
    rewriter differential finds misparses. {#d-3}
 
+4. **(2026-10-07) rmx's own options are TRANSLATED when `rmx grep` hands off to the real grep
+   (option B).** `-f/--flags` stays rmx's bundle; grep's pattern file is `--file=FILE` only;
+   index-only options are refused on the hand-off route. Full table: task 16.5 `#d-4`. {#d-4}
+
 **Interim (user, 2026-10-06):** `RMXGREP_MODE=plain` in `~/.claude/settings.json` and
 `.claude/settings.local.json`. Any value other than `rich` is auto, and the agent shell is not a
 tty, so greps already run the real tool plus today's flag-stripped ping until 16.2 ships. The 63
 env-sensitive tests pass under it (`workflow/review-output/rmxgrep-mode-plain.log`). {#interim}
 
-Next gate: task specs written (`plan-16-invisible-grep-shim-tasks/`, 16.1–16.4); `@ch-bsd` spec
-review, then `approved`.
+Next gate: task specs 16.1–16.5 revision 4; `@ch-bsd` spec review, then `approved`.
 
 ## Out of scope {#out-of-scope}
 

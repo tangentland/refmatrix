@@ -13,7 +13,7 @@ metadata:
 # Task 16.4: measurement {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision 3, after spec re-review `bsd-plan16-spec-rereview-42a5521`; precision
+> Status: Pending (revision 4, after spec review r3 `bsd-plan16-spec-review-r3-c8278b1`; precision
 > gate KEPT by user decision 2026-10-07, scored on complete outputs only, with a forward-collected
 > oracle)
 > Depends on: [[task-16.1-argv-faithful-learner]], [[task-16.2-invisible-shim]]
@@ -23,6 +23,7 @@ rel: depends-on -> [[task-16.2-invisible-shim]]
 rel: derives-from -> [[plan-14-grep-learning-measurement]]
 rel: amends -> [[bsd-plan16-spec-review-b587621]]
 rel: amends -> [[bsd-plan16-spec-rereview-42a5521]]
+rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
 
 ## Why {#why}
 
@@ -66,6 +67,22 @@ ships: the learner's own log record makes attribution exact. {#why-lead}
   - Route 2 is a record whose `argv` appears in no top-level segment, i.e. it ran inside a script
     (#m-n7).
 - **Multi-segment historical commands** cannot be attributed and are EXCLUDED and counted.
+- **rmx-rendered historical outputs are EXCLUDED and counted (#s-r3-6).** Of 37 complete-looking
+  historical invocations, 28 carry rmx rendering markers: `# rmx`, the `[linkage]  concept` row
+  shape, `rmx grep:` notes, `# rmx grep fallback via rg`. Scoring the learner against rmx's own old
+  output would grade it on rmx's old bugs. About 9 historical invocations remain, so the gate in
+  practice rests on the forward oracle.
+- **Forward join, honestly approximate (#s-r3-7).** The transcript holds SHELL TEXT and the learner
+  record holds EXPANDED argv, so equality fails for `$`, backticks, globs, loops and `xargs`
+  (probed: 117, 109 and 134 commands respectively). The join therefore:
+  1. matches a learner record to a tool call when the record's `ts` (written by the learner at
+     START, before the re-run) falls inside the call's window and its `cwd` matches;
+  2. requires the record's PATTERN operand to appear literally in the segment's text;
+  3. marks a call with two or more candidate records for one segment as `ambiguous`, excluded and
+     counted.
+
+  Throttled and busy greps leave keyed lines (16.2 R3), so they are distinguishable from
+  unobserved ones.
 - **Storage.** The corpus file lives off the watched tree. Summary statistics only are committed.
 
 **R2. Arms on one snapshot,** built through the production ingest into a throwaway store with no
@@ -85,7 +102,10 @@ hub registration.
   3. its size is under the tool-output limit;
   4. its output is line-addressed (`file:line:`);
   5. it is attributed to exactly one segment (R1);
-  6. the number of seen pairs is below the learner's hit cap (200).
+  6. the number of seen pairs is below the learner's hit cap (200);
+  7. the `tool_result` holds the output of THIS command only: no other `&&`/`;` segment printed
+     (#s-r3-8);
+  8. for Grep-tool calls, no pagination marker (16.3).
 - On complete invocations, `seen` is the set of corpus-filtered `(file, line)` pairs in the output,
   each kept only if the snapshot's line hashes equal the recorded text (file drift excludes the
   pair and counts it).
@@ -112,6 +132,11 @@ hub registration.
 | shim_overhead | 16.2 AC-9 | as 16.2 |
 
 If B misses an evaluated gate, the plan is re-decided. Thresholds are not edited after a run.
+
+**Closure rule (#s-r3-9).** plan-16 cannot move to `completed` while `n_complete < 30`. If 14 days
+after 16.2 is deployed the forward oracle still has `n_complete < 30`, the harness's dated row says
+so and the precision decision goes back to the user, with the n reached and the remaining options.
+This deferral is anchored to that date and to this task. It is not open-ended.
 
 **R5. Re-runnable as n grows.**
 - The harness takes `--since` and re-scores historical plus forward data. Each run appends a dated

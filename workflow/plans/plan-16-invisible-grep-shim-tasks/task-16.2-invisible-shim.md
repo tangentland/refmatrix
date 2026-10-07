@@ -13,13 +13,14 @@ metadata:
 # Task 16.2: the invisible shim {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision 3, after spec re-review `bsd-plan16-spec-rereview-42a5521`)
+> Status: Pending (revision 4, after spec review r3 `bsd-plan16-spec-review-r3-c8278b1`)
 > Depends on: [[task-16.1-argv-faithful-learner]]
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
 rel: depends-on -> [[task-16.1-argv-faithful-learner]]
 rel: amends -> [[bsd-plan16-spec-review-b587621]]
 rel: amends -> [[bsd-plan16-spec-rereview-42a5521]]
+rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
 
 ## Why {#why}
 
@@ -72,12 +73,20 @@ This task deletes the rich branch and replaces the ping with 16.1's learner. {#r
   more than start it. `/bin/sh`'s `&` alone does not give the child its own process group, so the
   learner's `os.setsid()` is what does (#s-1). {#r2}
 
+**R2b. Two implementations of the spawn rules, one parity test (#s-r3-3).** The shims are shell
+and `rmx grep` (16.5) is Python, so "one shared function" cannot be literal. The throttle key, the
+slot count and the learn-switch read are implemented twice: in `bin/rmxgrep`/`bin/rmxrg` and in
+`grep_learn.spawn()`. `tests/test_spawn_parity.py` feeds a table of (cwd, argv, slot state, marker
+state) to both and asserts the same decision and the same stamp path for every row.
+
 **R3. Throttle keyed on what the search IS, and counted (#s-3).**
 - The stamp key is `cksum` of `printf '%s\0' "$PWD" "$@"`: the cwd plus NUL-joined argv. `"a b"`
   and `a b` no longer collide, and the same relative argv in two directories counts as two
   searches.
 - `RMXGREP_TEACH_TTL_MIN` stays as the throttle window.
-- Every throttled call appends one byte to `<store_root>/.rmxgrep-teach/throttled`. `rmx learn
+- Every throttled call appends one LINE `<epoch> <cksum>` to `<store_root>/.rmxgrep-teach/throttled`
+  (busy: `.../busy`). Keyed lines, not bytes (#s-r3-7): 16.4's route oracle can then tell a
+  throttled or busy grep from an unobserved one. `rmx learn
   status` prints that file's size, and the `busy` file's (R2), since their last rotation. A
   throttled or busy grep is a counted skip, not an invisible one.
 - Both counters rotate at 1 MB. Stamps older than 24 h are pruned by the learner (16.1 R9). {#r3}
