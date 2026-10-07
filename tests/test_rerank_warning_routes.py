@@ -122,6 +122,26 @@ class _ScoreRaises:
         raise self.exc
 
 
+class _ReadView:
+    """A read store over the same rows that is NOT the writer object: since
+    ch-bsd r12 #s-3 a context build on the writer itself is answered
+    unreranked, so the score-time route is reached only from a read store."""
+
+    def __init__(self, st):
+        self._st = st
+
+    def __getattr__(self, name):
+        return getattr(self._st, name)
+
+    def close(self):
+        pass
+
+
+class _DRead(_D):
+    def _open_read_store(self, partition, **kw):
+        return _ReadView(self.store)
+
+
 # R10 (score-time failure merged by the op) and R13 (RerankSkipped)
 @pytest.mark.parametrize("exc,needle", [
     (ModelNotCached("cached INCOMPLETE"), "rerank failed"),
@@ -130,7 +150,7 @@ class _ScoreRaises:
 def test_the_context_op_carries_a_score_time_degrade(store, exc, needle):
     from refmatrix.daemon import _op_context
 
-    d = _D(store, reranker_raises=False, rr=_ScoreRaises(exc))
+    d = _DRead(store, reranker_raises=False, rr=_ScoreRaises(exc))
     out = _op_context(d, {"ref": "memory pressure", "format": "json",
                           "grep_backstop": False})
     body_ws = json.loads(out["body"]).get("warnings") or []

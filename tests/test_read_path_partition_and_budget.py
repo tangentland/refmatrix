@@ -273,3 +273,43 @@ def test_with_no_read_store_an_unknown_partition_is_neither_answered_nor_created
         _read_with_fallback(d, "nosuch", lambda rs: None, missing="raise")
     s.close()
     assert created == 0 and n == 0 and pid not in (1, 2, 3), (created, n, pid)
+
+
+
+def test_a_context_answer_from_the_writer_is_not_reranked(tmp_path):
+    """ch-bsd r12 #s-3: a partition newer than the snapshot is read from the
+    writer under `_store_lock`; a rerank there (a private pass is let finish)
+    held every writer. It answers unreranked, and says so — the op's normal
+    fallback whenever a rerank is skipped."""
+    from refmatrix.daemon import _op_context
+    from refmatrix.ingest import ingest_path
+
+    d, s = _daemon(tmp_path)
+    scored: list[int] = []
+
+    class _RR:
+        def with_budget(self, b):
+            return self
+
+        def score(self, q, docs):
+            scored.append(len(docs))
+            return [0.0] * len(docs)
+
+    d._maybe_rerank = lambda args: True
+    d._reranker = lambda: _RR()
+    d._request_snapshot = lambda: None
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    body = ("The daemon was SIGKILLed by macOS jetsam under memory pressure while the "
+            "embed worker held the model. ") * 4
+    for i in range(3):
+        (docs / f"d{i}.md").write_text(f"# D{i}\n\n{body}\n")
+    with s.with_partition("fresh"):                  # after the snapshot
+        ingest_path(s, docs)
+    s._conn.commit()
+    out = _op_context(d, {"ref": "memory pressure", "format": "json", "partition": "fresh",
+                          "grep_backstop": False})
+    s.close()
+    assert scored == [], "reranked under the writer lock"
+    warns = out.get("warnings") or []
+    assert any("writer" in w and "unreranked" in w for w in warns), out

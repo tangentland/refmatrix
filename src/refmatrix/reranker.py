@@ -393,6 +393,10 @@ class RemoteReranker:
         # process), so this path never hands it one (r10 Q2: spawns 1 -> 2).
         reserve = getattr(self._client, "reserve", None)
         private = reserve is not None
+        if private and getattr(self._client, "warming", False):
+            # The warm thread holds the worker for the whole load; waiting the
+            # budget out only to say "busy" spends it for nothing (r12 #m-1).
+            raise RerankSkipped("worker warming (model loading in the background)")
         if private and not reserve(remaining):
             raise RerankSkipped(f"private worker busy past the {remaining:.1f}s budget")
         try:

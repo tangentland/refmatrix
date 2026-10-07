@@ -991,7 +991,9 @@ class Daemon:
                 setattr(self, cache, None)    # the proxy (or resident model) goes
             try:
                 if w is not None:
-                    w.close(timeout=2.0)
+                    # Retire, not close: an op that captured `w` before the swap
+                    # must not respawn it (ch-bsd r12 #s-1).
+                    getattr(w, "retire", w.close)(timeout=2.0)
             except Exception as exc:  # noqa: BLE001 — the swap already happened
                 self._log(f"{role}: private worker close failed after adoption: "
                           f"{exc!r}")
@@ -1044,8 +1046,12 @@ class Daemon:
                 out[role] = "none"
         return out
 
-    def _reranker(self):
+    def _reranker(self, *, load: bool = False):
         """Lazy cross-encoder reranker, always out-of-process.
+
+        `load=True` loads a cold private model NOW (the startup warmup, already
+        on its own thread); otherwise a cold private worker warms in the
+        background (ch-bsd r11 #b-1).
 
         Unlike the embedder there is no in-process branch. A reranker is a
         SECOND model in a daemon that already jetsams under one; keeping it
@@ -1062,7 +1068,8 @@ class Daemon:
             raise ImportError("sentence-transformers not installed")
         client = self._model_client("rerank")
         r = RemoteReranker(client)
-        if getattr(client, "reserve", None) is not None and not client.info(nowait=True):
+        if (not load and getattr(client, "reserve", None) is not None
+                and not client.info(nowait=True)):
             # A COLD PRIVATE worker: `model_name` would load the model here,
             # and `_op_context` calls this before its budget starts — after an
             # idle eviction that put the full cold load inside the "budgeted"
@@ -1097,7 +1104,9 @@ class Daemon:
             if w is None:
                 continue
             try:
-                w.close(timeout=2.0)
+                # Retired: an in-flight op's warmup must not respawn a worker
+                # after shutdown (ch-bsd r12 #s-1).
+                getattr(w, "retire", w.close)(timeout=2.0)
             except Exception as exc:
                 self._log(f"worker close failed ({attr}): {exc!r}")
             setattr(self, attr, None)
@@ -1171,7 +1180,7 @@ class Daemon:
                 return
             t1 = time.time()
             try:
-                self._reranker()
+                self._reranker(load=True)
                 self._log(f"reranker warm in {time.time() - t1:.1f}s")
             except ImportError:
                 self._log("reranker warmup skipped ([dense] extra not installed)")
@@ -4685,6 +4694,18 @@ def _op_context(d: Daemon, args: dict) -> dict:
     # writer lock only when no read store exists, and the budget above bounds
     # that case.
     def _build(rs):
+        rr = _ctx_rr
+        if rr is not None and rs is getattr(d, "store", None):
+            # The read stores lack this partition (created inside the snapshot
+            # debounce) or do not exist yet (boot), so this runs on the WRITER
+            # under `_store_lock`. A rerank here held every writer behind it —
+            # unbounded on a private worker, whose started pass is let finish
+            # (ch-bsd r12 #s-3). Answer unreranked: the op's normal fallback
+            # whenever a rerank is skipped, said on the answer.
+            rr = None
+            warnings.append("rerank skipped: the partition is newer than the read "
+                            "snapshot, so the answer came from the writer and is "
+                            "unreranked")
         return build_context(
             rs, ref,
             linkages=linkages,
@@ -4697,7 +4718,7 @@ def _op_context(d: Daemon, args: dict) -> dict:
             expand=expand,
             hit_lines=hit_lines,
             grep_backstop=grep_backstop,
-            reranker=_ctx_rr,
+            reranker=rr,
             _entities_explicit=entities_explicit,
             _tokens_explicit=tokens_explicit,
         )
@@ -5786,8 +5807,21 @@ def _apply_rerank_safe(d: "Daemon", query: str, docs, k: int,
     try:
         return apply_rerank(rr, query, scored, untexted, tail, k=k)
     except Exception as exc:
-        _warn(f"rerank failed ({type(exc).__name__}: {exc}); hits unreranked")
+        if _is_missing_extra(exc):
+            # The import now fails in the WORKER, on first real use, not in the
+            # daemon's `_reranker()` probe (ch-bsd r12 #m-1): same operator
+            # action, same words.
+            _warn(f"rerank skipped (dense extra missing): {exc}; hits unreranked")
+        else:
+            _warn(f"rerank failed ({type(exc).__name__}: {exc}); hits unreranked")
         return None
+
+
+def _is_missing_extra(exc: BaseException) -> bool:
+    """A worker-side import failure: the [dense] extra is not installed."""
+    return isinstance(exc, ImportError) or (
+        type(exc).__name__ == "WorkerError"
+        and ("ModuleNotFoundError" in str(exc) or "ImportError" in str(exc)))
 
 
 def _op_ann_search(d: Daemon, args: dict) -> dict:

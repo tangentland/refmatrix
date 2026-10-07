@@ -53,6 +53,8 @@ while True:
         continue
     if op == "ping":
         send_frame(_OUT, {"ok": True}); continue
+    if op == "info" and loaded and os.path.exists(os.path.join(D, "failinfo")):
+        send_frame(_OUT, {"ok": False, "error": "RuntimeError: info broke"}); continue
     if os.path.exists(os.path.join(D, "fail")):
         send_frame(_OUT, {"ok": False,
                           "error": "ModelNotCached: model 'stub/ce' is not in the local cache"})
@@ -666,3 +668,213 @@ def test_an_unprobed_view_asks_the_worker_nothing_after_scoring(stub):
     assert out == "scored", out
     assert [(f.get("op"), bool(f.get("nowait"))) for f in raw.frames] == \
         [("info", True), ("rerank", False)], raw.frames
+
+
+
+# ---- ch-bsd r12 #s-1: a retired client never respawns --------------------
+
+def test_a_retired_client_neither_warms_nor_respawns(stub):
+    from refmatrix import subproc
+    from refmatrix.reranker import RemoteReranker
+
+    wc = subproc.WorkerClient("rerank", argv=stub.argv())
+    base = RemoteReranker(wc)
+    base.model_name
+    view = base.with_budget(1.0)                    # built before the swap
+    wc.retire()
+    out = _attempt(view)[1]
+    time.sleep(0.6)                                 # a warm thread would have spawned by now
+    with pytest.raises(subproc.WorkerError, match="retired"):
+        wc.call("rerank", {"query": "q", "docs": ["a"]})
+    assert out.startswith("skipped"), out
+    assert stub.spawns() == 1, f"a retired client spawned {stub.spawns() - 1} more"
+
+
+def test_adoption_retires_the_private_worker(stub, hub, monkeypatch):
+    """The op in flight across `_maybe_adopt_shared` held the private client;
+    its cold skip's `warm_async()` spawned a model process nothing tracked."""
+    import threading as _th
+
+    from refmatrix import subproc
+    from refmatrix.daemon import Daemon
+
+    monkeypatch.setenv("RMX_SHARED_MODELS", "1")
+    wc = subproc.WorkerClient("rerank", argv=stub.argv())
+    wc.info()
+    d = object.__new__(Daemon)
+    d._log = lambda *a, **k: None
+    d._worker_lock = _th.Lock()
+    d._embed_worker = None
+    d._embedder_inst = None
+    d._rerank_worker = wc
+    d._reranker_inst = None
+    d._reprobe_next, d._reprobe_backoff = {}, {}
+    assert "rerank" in d._maybe_adopt_shared(now=time.time())
+    wc.warm_async()
+    time.sleep(0.6)
+    n = stub.spawns()
+    d._rerank_worker.close()
+    assert wc._retired and n == 2, (wc._retired, n)   # hub's own worker + ours, no third
+
+
+def test_shutdown_retires_the_workers(stub):
+    import threading as _th
+
+    from refmatrix import subproc
+    from refmatrix.daemon import Daemon
+
+    wc = subproc.WorkerClient("rerank", argv=stub.argv())
+    wc.info()
+    d = object.__new__(Daemon)
+    d._log = lambda *a, **k: None
+    d._embed_worker = None
+    d._rerank_worker = wc
+    d._close_workers()
+    wc.warm_async()
+    time.sleep(0.6)
+    assert wc._retired and stub.spawns() == 1
+
+
+# ---- ch-bsd r12 #s-2: H1 / H3 / H11 / K3 --------------------------------
+
+def test_a_failing_header_refill_does_not_fail_the_op(stub):
+    """H1: the scoring op succeeded; a refill that fails is logged, not raised."""
+    from refmatrix import subproc
+
+    (stub.dir / "failinfo").write_text("1")
+    logged: list[str] = []
+    wc = subproc.WorkerClient("rerank", argv=stub.argv(), log=logged.append)
+    try:
+        hdr, _ = wc.call("rerank", {"query": "q", "docs": ["a", "b"]})
+    finally:
+        wc.close()
+    assert hdr["scores"] == [0.0, 0.0]
+    assert any("header refill" in m for m in logged), logged
+
+
+def test_a_later_success_clears_the_warm_error(stub):
+    """H3: a fixed ModelNotCached must not be named by the next cold episode."""
+    from refmatrix import subproc
+    from refmatrix.reranker import RemoteReranker
+
+    (stub.dir / "fail").write_text("1")
+    wc = subproc.WorkerClient("rerank", argv=stub.argv())
+    try:
+        wc.warm_async()
+        assert _until(lambda: wc.warm_error is not None)
+        (stub.dir / "fail").unlink()
+        RemoteReranker(wc).score("q", ["a"])          # loads; the refill succeeds
+        err = wc.warm_error
+    finally:
+        wc.close()
+    assert err is None, err
+
+
+def test_every_cold_episode_warms_again(stub):
+    """H11: a warmup flag never reset means one warm per client lifetime; the
+    second cold episode (an idle eviction) then stays cold for good."""
+    from refmatrix import subproc
+    from refmatrix.reranker import RemoteReranker
+
+    wc = subproc.WorkerClient("rerank", argv=stub.argv(load_s=0.3))
+    try:
+        rr = RemoteReranker(wc)
+        for episode in range(2):
+            _attempt(rr.with_budget(1.0))
+            assert _until(lambda: wc.info(nowait=True).get("model")), f"episode {episode}"
+            assert wc.evict_if_idle(0.0)
+    finally:
+        wc.close()
+    assert stub.loads() == 2
+
+
+def test_the_hub_starts_one_warm_thread_per_role(stub, monkeypatch):
+    """K3: counted as threads, not loads — a duplicate warm blocks on the
+    worker's lock and then finds the header cached, so loads cannot see it."""
+    import threading as _th
+
+    from refmatrix import modelsrv, subproc
+
+    argv = stub.argv(load_s=1.0)
+
+    class _StubWC(subproc.WorkerClient):
+        def __init__(self, role, **kw):
+            kw.setdefault("argv", argv)
+            super().__init__(role, **kw)
+
+    monkeypatch.setattr(modelsrv, "WorkerClient", _StubWC)
+    srv = modelsrv.ModelServer()
+    try:
+        for _ in range(4):
+            srv.warm(("rerank",))
+        n = len([t for t in _th.enumerate() if t.name == "rmx-models-warm"])
+        assert _until(lambda: srv._clients.get("rerank") is not None
+                      and srv._clients["rerank"].info(nowait=True).get("model"))
+    finally:
+        srv.stop()
+    assert n == 1, n
+
+
+# ---- ch-bsd r12 #m-1 ------------------------------------------------------
+
+def test_a_warming_worker_is_skipped_at_once(stub):
+    """The warm thread holds the worker lock for the whole load; a budgeted
+    caller must not spend its budget waiting on it to say "busy"."""
+    from refmatrix import subproc
+    from refmatrix.reranker import RemoteReranker
+
+    wc = subproc.WorkerClient("rerank", argv=stub.argv(load_s=2.0))
+    try:
+        rr = RemoteReranker(wc)
+        _attempt(rr.with_budget(1.0))                  # starts the warm
+        time.sleep(0.1)
+        wall, out = _attempt(rr.with_budget(1.0))
+    finally:
+        wc.close()
+    assert "warming" in out and wall < 0.2, (wall, out)
+
+
+def test_the_startup_warmup_really_loads(stub, monkeypatch):
+    """`_start_embedder_warmup` logged "reranker warm in 0.0s" over a worker
+    that had only started warming."""
+    import threading as _th
+
+    from refmatrix import reranker as rmod
+    from refmatrix import subproc
+    from refmatrix.daemon import Daemon
+
+    monkeypatch.setattr(rmod, "rerank_available", lambda: True)
+    d = object.__new__(Daemon)
+    d._log = lambda *a, **k: None
+    d._worker_lock = _th.Lock()
+    d._reranker_inst = None
+    wc = subproc.WorkerClient("rerank", argv=stub.argv(load_s=0.5))
+    d._rerank_worker = wc
+    try:
+        d._reranker(load=True)
+        warm = bool(wc.info(nowait=True).get("model"))
+    finally:
+        wc.close()
+    assert warm and d._reranker_inst is not None
+
+
+def test_a_worker_side_missing_extra_is_named_as_such():
+    from refmatrix.daemon import _apply_rerank_safe
+    from refmatrix.subproc import WorkerError
+
+    class _RR:
+        model_name = "x"
+
+        def score(self, q, docs):
+            raise WorkerError("ModuleNotFoundError: No module named 'sentence_transformers'")
+
+    class _D:
+        def _log(self, m):
+            pass
+
+        def _reranker(self):
+            return _RR()
+
+    warnings: list[str] = []
+    _apply_rerank_safe(_D(), "q", ([(1, "a" * 300), (2, "b" * 300)], [], []), 2, warnings)
+    assert any("dense extra missing" in w for w in warnings), warnings

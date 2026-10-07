@@ -142,6 +142,11 @@ def recv_frame(fh) -> tuple[dict, bytes]:
     return obj, _read_exact(fh, nblob) if nblob else b""
 
 
+# The header refill after a respawn (ch-bsd r11/r12): the model is already
+# loaded when it runs, so this only bounds a wedged worker.
+REFILL_TIMEOUT_S = 10.0
+
+
 class WorkerError(RuntimeError):
     """The worker answered, and the answer was an error."""
 
@@ -181,6 +186,10 @@ class WorkerClient:
         self._warm_guard = threading.Lock()
         self._warming = False
         self.warm_error: str | None = None
+        # Set once this client is replaced (hub adoption) or shut down: it then
+        # never spawns again. `close()` alone does not retire — `call` and the
+        # warm thread both respawn a closed client (ch-bsd r12 #s-1).
+        self._retired = False
 
     # ---- logging ------------------------------------------------------
 
@@ -284,6 +293,9 @@ class WorkerClient:
 
     def _ensure(self) -> subprocess.Popen:
         if not self.alive():
+            if self._retired:
+                raise WorkerError(f"{self.role} worker retired (replaced or shut "
+                                  f"down); not respawning")
             self._spawn()
         assert self._proc is not None
         return self._proc
@@ -329,6 +341,23 @@ class WorkerClient:
                     except Exception:
                         pass
                 self._log("closed")
+
+    def retire(self, *, timeout: float = 5.0) -> None:
+        """Close for good: no later call or warmup respawns this client.
+
+        The daemon swaps a private client for the hub's (adoption) and drops it
+        at shutdown, but a budgeted op that captured it before the swap could
+        still `warm_async()` it and spawn a model process nothing tracked
+        (ch-bsd r12 #s-1: one live orphan per such op). Set the flag under the
+        lock so a call or warm already holding it finishes first."""
+        with self._lock:
+            self._retired = True
+            self.close(timeout=timeout)
+
+    @property
+    def warming(self) -> bool:
+        """A background warmup is loading the model right now."""
+        return self._warming
 
     def evict_if_idle(self, idle_s: float) -> bool:
         """Kill the worker if it hasn't been used in `idle_s` seconds.
@@ -394,7 +423,10 @@ class WorkerClient:
             # loaded, so the header costs one instant frame here.
             if not self._info and op not in ("ping", "info"):
                 try:
-                    ihdr, _ = self._call_once({"op": "info"}, None, budget)
+                    # Bounded apart from the op: the model is loaded, so the
+                    # header answers at once; a wait this long is a wedge.
+                    ihdr, _ = self._call_once({"op": "info"}, None,
+                                              min(budget, REFILL_TIMEOUT_S))
                     self._store_info(ihdr)
                 except Exception as exc:  # noqa: BLE001 — logged; the op itself succeeded
                     self._log(f"header refill after op={op} failed: {exc!r}")
@@ -430,7 +462,7 @@ class WorkerClient:
         kept on `warm_error` so the next skip names it (a ModelNotCached is an
         operator action, ch-bsd r6 #s-2)."""
         with self._warm_guard:
-            if self._warming:
+            if self._warming or self._retired:
                 return
             self._warming = True
 
@@ -476,9 +508,14 @@ class WorkerClient:
             return self._info
 
     def _store_info(self, hdr: dict) -> None:
-        """Cache an info header and check the child landed in our environment."""
+        """Cache an info header and check the child landed in our environment.
+
+        A header means the model loaded, so an earlier warmup failure is no
+        longer true; kept, it named a fixed ModelNotCached on the next cold
+        episode (ch-bsd r12 #s-2, H3)."""
         with self._lock:
             self._info = {k: v for k, v in hdr.items() if k != "ok"}
+            self.warm_error = None
             child_version = self._info.get("version")
             if child_version is not None:
                 from refmatrix import __version__ as _parent_version
