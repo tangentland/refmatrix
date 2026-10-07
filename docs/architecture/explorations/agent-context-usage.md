@@ -157,12 +157,12 @@ a nudge in the turn it would have helped, works better than a rule the agent has
 
 ## Transition Summary {#transition-summary}
 
-**Status:** IN PROGRESS. User decision, 2026-10-07: **new tasks in plan-16, with the nudge**.
+**Status:** IN PROGRESS. User decision, 2026-10-07: **new tasks with the nudge** (first in plan-16; moved to plan-21 by the 2026-10-07 plan review, C8).
 
-- **16.7** telemetry: MCP invocation source, a `query.log` row for `_op_context`, `-E`
+- **21.1** telemetry: MCP invocation source, a `query.log` row for `_op_context`, `-E`
   cardinality.
-- **16.8** precise identifier answers: `path:line` on DEFINED BY, one id form, edge direction,
+- **21.2** precise identifier answers: `path:line` on DEFINED BY, one id form, edge direction,
   `--brief`, no helix block on code anchors.
-- **16.9** the PostToolUse nudge.
-- **16.10** surfaces + NL ranking: after the branch NL replay; docs change last.
+- **21.3** the PostToolUse nudge.
+- **21.4** surfaces + NL ranking: after the branch NL replay; docs change last.
 - **Order:** after plan-19.

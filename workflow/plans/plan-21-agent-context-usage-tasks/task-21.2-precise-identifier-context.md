@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
-id: task-16.8-precise-identifier-context
-title: "Task 16.8: rmx context answers an identifier as precisely as grep, plus callers and tests, in a --brief form"
+id: task-21.2-precise-identifier-context
+title: "Task 21.2: rmx context answers an identifier as precisely as grep, plus callers and tests, in a --brief form"
 tags: [task, context, agent, identifier]
 metadata:
   node_type: task
@@ -9,13 +9,13 @@ metadata:
   created: 2026-10-07
 ---
 
-# Task 16.8: precise identifier answers {#root}
+# Task 21.2: precise identifier answers {#root}
 
-> Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
+> Plan: [plan-21-agent-context-usage](../plan-21-agent-context-usage.md)
 > Status: Pending
-> Depends on: 16.7 (to measure the change)
+> Depends on: 21.1 (to measure the change)
 
-rel: part-of -> [[plan-16-invisible-grep-shim]]
+rel: part-of -> [[plan-21-agent-context-usage]]
 rel: derives-from -> [[exploration-agent-context-usage]]
 
 ## Why {#why}

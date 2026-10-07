@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
-id: task-16.7-context-usage-telemetry
-title: "Task 16.7: telemetry that can count how the agent uses rmx context, MCP calls included"
+id: task-21.1-context-usage-telemetry
+title: "Task 21.1: telemetry that can count how the agent uses rmx context, MCP calls included"
 tags: [task, telemetry, context, mcp, agent]
 metadata:
   node_type: task
@@ -9,13 +9,13 @@ metadata:
   created: 2026-10-07
 ---
 
-# Task 16.7: make agent context usage measurable {#root}
+# Task 21.1: make agent context usage measurable {#root}
 
-> Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
+> Plan: [plan-21-agent-context-usage](../plan-21-agent-context-usage.md)
 > Status: Pending
-> Depends on: — (first of the agent-context tasks; 16.8–16.10 are judged by what it counts)
+> Depends on: — (first of the agent-context tasks; 21.2–21.4 are judged by what it counts)
 
-rel: part-of -> [[plan-16-invisible-grep-shim]]
+rel: part-of -> [[plan-21-agent-context-usage]]
 rel: derives-from -> [[exploration-agent-context-usage]]
 
 ## Why {#why}
@@ -28,7 +28,7 @@ count MCP calls at all:
 - The daemon's `_op_context` (MCP `rmx_context`) writes no `query.log` row.
 - `cardinality` reads 0 on `-E` alternation greps that matched.
 
-Without these, no change in 16.8–16.10 can be shown to change behaviour. {#why-body}
+Without these, no change in 21.2–21.4 can be shown to change behaviour. {#why-body}
 
 ## Requirements {#requirements}
 
@@ -42,7 +42,14 @@ Without these, no change in 16.8–16.10 can be shown to change behaviour. {#why
 3. **R3** `cardinality` for an `-E` alternation grep counts the matched rows (the grep-replica
    path), not 0.
 4. **R4** `rmx telemetry agent-usage --days N` prints per-invocation counts and p50/p95 for
-   context, grep, recall and MCP tools. It is the instrument 16.8–16.10 report against.
+   context, grep, recall and MCP tools. It is the instrument 21.2–21.4 report against.
+5. **R5 One recall-event schema** (plan review C7). Every recall surface logs events as
+   `{ts, channel, invocation, query_id, id, rank, stage}`, with `stage ∈ {retrieved, delivered,
+   used}`.
+   - 19.2 (usage counts) reads `delivered` and `used`.
+   - 19.5 (delivery measurement) compares `retrieved` with `delivered`.
+   - No other recall log format may be added. A test asserts that a pack which delivers 3 of 10
+     retrieved hits logs 10 `retrieved` and 3 `delivered` events, with no double counting.
 
 ## Acceptance criteria {#acceptance}
 

@@ -136,10 +136,8 @@ Specs go in `workflow/plans/plan-16-invisible-grep-shim-tasks/` before approval.
 | 16.4 | measurement, historical + forward (learner log joined to transcripts) | precision ≥ 0.99 / recall ≥ 0.95 (micro, timeouts counted) on COMPLETE outputs only, gated at n ≥ 30 else `insufficient-n`; no carve-out; a gate shown able to fail; routes measured |
 | 16.5 | explicit `rmx grep` with paths or a pipe execs the real grep + learner; path-less keeps the index read with a pruned `grep -r` floor; the Python re-implementation (argv order, `-c` rows, stdin filter, delegate) is DELETED | differential 100% incl. round 4's cases and bug-081; nothing beyond the tool's bytes; deletions verified by `rg -l` |
 | 16.6 | grep-learned rows carry provenance (sidecar `learned_evidence`), read-time verification queues `stale_seen` marks, `rmx learn audit` classifies, `rmx learn prune` (dry run by default) removes every non-`ok` class; never purges an ingest-owned entity (user ask + decisions 2026-10-07) | one row per class audited exactly; dry run byte-identical; prune ≤ K Lance deletes, bounded lock hold measured; global `orphan-root` ≈ bug-086's count on a catalog COPY |
-| 16.7 | agent-usage telemetry: MCP sets `RMX_INVOCATION_SOURCE=mcp`, caller-side `query.log` rows for context/recall, `-E` cardinality, `rmx telemetry agent-usage` | an MCP `rmx_context` call logs one `invocation=mcp` row; the exploration's counts reproduce |
-| 16.8 | precise identifier context: `path:line` on DEFINED BY, one id form, correct direction labels, no helix on code anchors, `--brief` ≤ 200 tokens | the 9-identifier replay goes from 4 to ≥ 8 hits with a line |
-| 16.9 | PostToolUse nudge when an identifier-shaped grep names an indexed symbol with callers/tests; once per symbol, ≤ 10/session, 300 ms deadline, off switch, generated | one line on an indexed symbol, none on non-identifiers; before/after context use measured |
-| 16.10 | a frozen NL question set; both routes measured vs an rg baseline; ranking fixes kept only if they win; then ONE rule on all five steering surfaces | the R2 table in the summary; the surfaces agree (test) |
+
+Tasks 16.7–16.10 (the agent's `rmx context` usage) moved to [[plan-21-agent-context-usage]] as 21.1–21.4 (plan review C8, user 2026-10-07), so that review loop and 16.1–16.5's do not block each other.
 
 ## Decisions (user, 2026-10-06) {#decisions}
 

@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
-id: task-16.9-indexed-symbol-nudge
-title: "Task 16.9: a PostToolUse nudge — when the agent greps an indexed identifier, one line says what rmx context knows"
+id: task-21.3-indexed-symbol-nudge
+title: "Task 21.3: a PostToolUse nudge — when the agent greps an indexed identifier, one line says what rmx context knows"
 tags: [task, hooks, context, agent, nudge]
 metadata:
   node_type: task
@@ -9,14 +9,14 @@ metadata:
   created: 2026-10-07
 ---
 
-# Task 16.9: the indexed-symbol nudge {#root}
+# Task 21.3: the indexed-symbol nudge {#root}
 
-> Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
+> Plan: [plan-21-agent-context-usage](../plan-21-agent-context-usage.md)
 > Status: Pending
-> Depends on: 16.2 (the invisible shim removes the old stderr provenance hint), 16.8 (the nudge
+> Depends on: 16.2 (the invisible shim removes the old stderr provenance hint), 21.2 (the nudge
 > points at an answer worth taking)
 
-rel: part-of -> [[plan-16-invisible-grep-shim]]
+rel: part-of -> [[plan-21-agent-context-usage]]
 rel: derives-from -> [[exploration-agent-context-usage]]
 rel: depends-on -> [[feedback_grep_is_observed_not_answered]]
 
@@ -55,7 +55,7 @@ rule), so the nudge is separate context added by a PostToolUse hook. {#why-body}
    nudge.
 3. The lookup p95 is ≤ 300 ms on a catalog copy of this repo, and over-deadline runs are counted,
    not printed.
-4. 16.7's telemetry shows context calls per session before/after over ≥ 3 sessions. The result
+4. 21.1's telemetry shows context calls per session before/after over ≥ 3 sessions. The result
    (rise or not) is reported in the summary. The nudge's value is measured, not assumed.
 5. Mutations that must FAIL a test:
    - the per-session dedupe removed;

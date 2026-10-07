@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
-id: task-16.10-surfaces-and-nl-ranking
-title: "Task 16.10: measure and fix natural-language context ranking, then rewrite every steering surface to one rule"
+id: task-21.4-surfaces-and-nl-ranking
+title: "Task 21.4: measure and fix natural-language context ranking, then rewrite every steering surface to one rule"
 tags: [task, context, ranking, docs, agent]
 metadata:
   node_type: task
@@ -9,13 +9,13 @@ metadata:
   created: 2026-10-07
 ---
 
-# Task 16.10: NL ranking, then the surfaces {#root}
+# Task 21.4: NL ranking, then the surfaces {#root}
 
-> Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
+> Plan: [plan-21-agent-context-usage](../plan-21-agent-context-usage.md)
 > Status: Pending
-> Depends on: 16.7, 16.8. The docs change LAST, so they never promise what the tool cannot do.
+> Depends on: 21.1, 21.2. The docs change LAST, so they never promise what the tool cannot do.
 
-rel: part-of -> [[plan-16-invisible-grep-shim]]
+rel: part-of -> [[plan-21-agent-context-usage]]
 rel: derives-from -> [[exploration-agent-context-usage]]
 
 ## Why {#why}
@@ -36,6 +36,11 @@ replica branch still never reranks, so the two routes may order differently.
 {#why-body}
 
 ## Requirements {#requirements}
+
+**This set is the ONE ranking-eval harness** (plan review C9). It is also the judge for
+ADR-0004's sentence co-location rerank (after bug-075) and for plan-13's session-inclusion
+   question. It lives at `eval/production/context_nl/` with a stable runner API so those callers
+   reuse it rather than building their own.
 
 1. **R1 An NL question set.** ~30 questions with known code answers, drawn from this project's
    concept-OR greps and their eventual answers. It is built and frozen BEFORE any ranking change,
