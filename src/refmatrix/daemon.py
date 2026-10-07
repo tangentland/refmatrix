@@ -4650,6 +4650,7 @@ def _op_context(d: Daemon, args: dict) -> dict:
             _tokens_explicit=tokens_explicit,
         )
     body = render_json(bundle) if fmt == "json" else render_text(bundle)
+    warnings.extend(bundle.warnings)
     # Self-heal: if the grep backstop fired (index missed, grep hit), fold the
     # hits into a protected `query/<ref>` concept so the next query hits the
     # index — and survives prune_noise. We hold the writer here (daemon); the
@@ -5563,14 +5564,25 @@ def _op_promote_edges(d: "Daemon", args: dict) -> dict:
     return res
 
 
-def _apply_rerank_safe(d: "Daemon", query: str, docs, k: int):
+def _apply_rerank_safe(d: "Daemon", query: str, docs, k: int,
+                       warnings: "list[str] | None" = None):
     """Run the cross-encoder stage, or return None to keep retrieval order.
 
     Every failure mode degrades rather than raises: no [dense] extra, a
     worker that died twice, a model that will not load. Reranking is a
     precision refinement on an answer we already have — it must never be
     the reason a recall returns nothing.
+
+    A degrade is also appended to `warnings`, which the op returns beside its
+    hits (ch-bsd r7 #s-1): the log line alone left a ModelNotCached — an
+    operator action — invisible to every caller of `memory_recall` and
+    `ann_search`.
     """
+    def _warn(msg: str) -> None:
+        d._log(msg)
+        if warnings is not None:
+            warnings.append(msg)
+
     from refmatrix.reranker import apply_rerank
 
     scored, untexted, tail = docs
@@ -5587,15 +5599,16 @@ def _apply_rerank_safe(d: "Daemon", query: str, docs, k: int):
     try:
         rr = d._reranker()
     except ImportError as exc:
-        d._log(f"rerank skipped (dense extra missing): {exc}")
+        _warn(f"rerank skipped (dense extra missing): {exc}; hits unreranked")
         return None
     except Exception as exc:
-        d._log(f"rerank skipped (reranker unavailable): {exc!r}")
+        _warn(f"rerank skipped (reranker unavailable, {type(exc).__name__}: {exc}); "
+              f"hits unreranked")
         return None
     try:
         return apply_rerank(rr, query, scored, untexted, tail, k=k)
     except Exception as exc:
-        d._log(f"rerank failed, keeping retrieval order: {exc!r}")
+        _warn(f"rerank failed ({type(exc).__name__}: {exc}); hits unreranked")
         return None
 
 
@@ -5662,15 +5675,19 @@ def _op_ann_search(d: Daemon, args: dict) -> dict:
                 d._log(f"rerank doc collect failed: {exc!r}")
                 docs = None
 
+    rr_warnings: list[str] = []
     if want_rerank and docs is not None:
         assert query is not None  # want_rerank requires bool(query)
         # Model call OUTSIDE _store_lock -- see collect_rerank_docs.
-        reranked = _apply_rerank_safe(d, query, docs, k)
+        reranked = _apply_rerank_safe(d, query, docs, k, warnings=rr_warnings)
         if reranked is not None:
             return {"hits": [{"id": eid, "score": sc, "reranked": True}
                              for eid, sc in reranked]}
 
-    return {"hits": [{"id": eid, "distance": dist} for eid, dist in hits[:k]]}
+    out = {"hits": [{"id": eid, "distance": dist} for eid, dist in hits[:k]]}
+    if rr_warnings:
+        out["warnings"] = rr_warnings
+    return out
 
 
 def _op_memory_recall(d: Daemon, args: dict) -> dict:
@@ -5727,8 +5744,9 @@ def _op_memory_recall(d: Daemon, args: dict) -> dict:
                 d._log(f"rerank doc collect failed: {exc!r}")
                 docs = None
 
+    rr_warnings: list[str] = []
     if want_rerank and docs is not None:
-        reranked = _apply_rerank_safe(d, query, docs, k)
+        reranked = _apply_rerank_safe(d, query, docs, k, warnings=rr_warnings)
         if reranked is not None:
             return {"hits": [{"id": eid, "score": sc, "fused": bool(fuse),
                               "reranked": True}
@@ -5736,9 +5754,13 @@ def _op_memory_recall(d: Daemon, args: dict) -> dict:
 
     hits = hits[:k]
     if fuse:
-        return {"hits": [{"id": eid, "score": sc, "fused": True}
-                         for eid, sc in hits]}
-    return {"hits": [{"id": eid, "distance": dist} for eid, dist in hits]}
+        out = {"hits": [{"id": eid, "score": sc, "fused": True}
+                        for eid, sc in hits]}
+    else:
+        out = {"hits": [{"id": eid, "distance": dist} for eid, dist in hits]}
+    if rr_warnings:
+        out["warnings"] = rr_warnings
+    return out
 
 
 def _op_part_ctx(d: "Daemon", args: dict):

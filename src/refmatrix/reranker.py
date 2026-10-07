@@ -496,7 +496,8 @@ def rerank_entity_hits(
 
 
 def shared_reranker(log=None, *, timeout: "float | None" = None,
-                    probe_timeout: "float | None" = None):
+                    probe_timeout: "float | None" = None,
+                    why: "list[str] | None" = None):
     """A reranker backed by the hub's shared worker, or None. `timeout`
     bounds every score call (the client's socket timeout; the worker
     default is 300 s — bsd-plan2-r6 #b-1); `probe_timeout` bounds the
@@ -512,7 +513,10 @@ def shared_reranker(log=None, *, timeout: "float | None" = None,
     `Daemon._model_client` does fall back and this does not.
 
     Returns None when the hub is down or sharing is disabled, and every caller
-    treats None as "keep retrieval order".
+    treats None as "keep retrieval order". When the worker was REACHED and
+    failed (a ModelNotCached on its `info` probe, a crashed model), the cause
+    is appended to `why` (ch-bsd r7 #s-1): callers printed "shared worker
+    unavailable" and lost the fetch command that would fix it.
     """
     if not rerank_enabled() or not rerank_available():
         return None
@@ -531,5 +535,7 @@ def shared_reranker(log=None, *, timeout: "float | None" = None,
         return RemoteReranker(
             client, budget_s=timeout,
             deadline=None if timeout is None else t0 + float(timeout))
-    except Exception:
+    except Exception as e:  # noqa: BLE001 — degrade, with the cause handed back
+        if why is not None:
+            why.append(f"{type(e).__name__}: {e}")
         return None

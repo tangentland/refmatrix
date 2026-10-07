@@ -366,7 +366,7 @@ def _wire_replica_leg(monkeypatch, *, cost, queue, scores=None):
     client = _StubClient({"cost_s_per_doc": cost, "queue_depth": queue},
                          scores=scores)
     monkeypatch.setattr(rr, "shared_reranker",
-                        lambda log=None, timeout=None, probe_timeout=None:
+                        lambda log=None, timeout=None, probe_timeout=None, why=None:
                         rr.RemoteReranker(client, budget_s=timeout))
     monkeypatch.setattr(rr, "collect_rerank_docs",
                         lambda s, h, **kw: ([(e, "body " * 40) for e, _ in h[:10]],

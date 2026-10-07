@@ -10628,6 +10628,8 @@ def search_dense_cmd(query, k, kinds):
         result = _op_ann_search(d, args)
     if result.get("ok") is False:
         raise click.ClickException(result.get("error", "ann_search failed"))
+    for w in result.get("warnings") or []:
+        click.echo(f"rmx search-dense: {w}", err=True)
 
     hits = result.get("hits", [])
     if not hits:
@@ -10640,13 +10642,16 @@ def search_dense_cmd(query, k, kinds):
     con = s._connect()
     table = Table(show_header=True, header_style="bold")
     table.add_column("rank", justify="right")
-    table.add_column("distance", justify="right")
+    # A reranked answer carries a cross-encoder `score`, not an L2 `distance`
+    # (bug-089: `KeyError: 'distance'` on viascope, whose daemon reranks).
+    reranked = any(h.get("reranked") for h in hits)
+    table.add_column("rerank score" if reranked else "distance", justify="right")
     table.add_column("id", justify="right")
     table.add_column("kind")
     table.add_column("name")
     for rank, h in enumerate(hits, 1):
         eid = h["id"]
-        dist = h["distance"]
+        dist = h["score"] if reranked else h["distance"]
         row = con.execute(
             "SELECT kind, name FROM entities WHERE id = ?", [eid]
         ).fetchone()
@@ -10925,10 +10930,15 @@ def _replica_memory_recall(query: str, *, k: int, kinds: list,
                     ws.append(f"rerank skipped: {rem:.1f}s of the budget left "
                               f"(< {RERANK_MIN_S:g}s); hits unreranked")
                 else:
+                    rr_why: list[str] = []
                     rr = _reranker.shared_reranker(timeout=rem,
-                                                   probe_timeout=min(rem, RERANK_PROBE_S))
+                                                   probe_timeout=min(rem, RERANK_PROBE_S),
+                                                   why=rr_why)
                     if rr is None:
-                        ws.append("rerank skipped: shared worker unavailable; hits unreranked")
+                        # The cause, when the worker was reached and failed
+                        # (ch-bsd r7 #s-1: a ModelNotCached read as "unavailable").
+                        cause = "; ".join(rr_why) or "shared worker unavailable"
+                        ws.append(f"rerank skipped: {cause}; hits unreranked")
                     else:
                         try:
                             docs = _reranker.collect_rerank_docs(
@@ -12092,6 +12102,9 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         hits = resp["result"].get("hits", [])
+        # An unreranked answer says so on stderr (ch-bsd r7 #s-1).
+        for w in resp["result"].get("warnings") or []:
+            click.echo(f"rmx memory recall: {w}", err=True)
     # Best-first by ascending L2 distance so the displayed `score` (cosine
     # similarity, higher = better) decreases monotonically with rank — the
     # column and the row order cannot disagree. The daemon already sorts
