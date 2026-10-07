@@ -104,3 +104,6 @@ refmatrix ever compacts a dataset or removes its old versions. No `compact_files
   ([[plan-18-duckdb-store-maintenance]]). Plan-17 covers vectors only.
 - **d-4. Orphans are reaped nightly** {#d-4}: `gc_vectors` runs inside the op, and the counts are
   logged and published.
+  Confirmed by the user 2026-10-07 against the never-lose rule: the reap is **automatic and logged**.
+  An orphan vector's entity is already gone, so it is derived-index garbage, not knowledge. The ids
+  are written to a recoverable orphan list before removal (task 17.1 R6).
