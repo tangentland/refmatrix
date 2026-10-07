@@ -123,7 +123,12 @@ class _RerankRole:
         t0 = _time.time()
         scores = self._rr.score(query, docs)
         self._observe(_time.time() - t0, len(docs))
-        return ({"scores": [float(s) for s in scores]}, None)
+        # The cost rides on every reply, so the client's cached header stays
+        # current without an `info` probe — and a probe queues behind the
+        # forward pass a budgeted caller is trying to predict (ch-bsd r10 #s-2).
+        return ({"scores": [float(s) for s in scores],
+                 "cost_s_per_doc": self._ema,
+                 "scored_docs": self._scored_docs}, None)
 
 
 ROLES = {"embed": _EmbedRole, "rerank": _RerankRole}

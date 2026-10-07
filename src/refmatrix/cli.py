@@ -10337,6 +10337,31 @@ def _run_pagerank(root: Path, partition: str, *, damping: float = 0.85,
     return _op_pagerank(d, args)
 
 
+# Consecutive all-changed batches `rmx embed` retries before it calls the pass
+# partial: a row rewritten on every pass must not spin the loop forever.
+EMBED_CHANGED_RETRIES = 3
+
+
+def _embed_batch_verdict(result: dict, *, changed_streak: int) -> str:
+    """What one `embed` batch means for the loop: "again", "complete", or
+    "partial" (stop, and do NOT stamp the derive pass).
+
+    The loop used to stop on `embedded == 0` and stamp a complete pass. Since
+    the encode runs outside the store lock (ch-bsd r9 #s-1), a batch whose rows
+    ALL changed while the model ran returns `embedded=0` with rows pending, and
+    that exit recorded a complete embed over a partition with rows left (ch-bsd
+    r10 #m-1). `changed_while_encoding` is what tells the two apart."""
+    embedded = int(result.get("embedded", 0))
+    remaining = int(result.get("remaining", 0))
+    if remaining == 0:
+        return "complete"
+    if embedded:
+        return "again"
+    if result.get("changed_while_encoding") and changed_streak < EMBED_CHANGED_RETRIES:
+        return "again"
+    return "partial"
+
+
 def _stamp_derive_pass(root: Path, partition: str, pass_name: str, *,
                        duration_s: "float | None" = None) -> None:
     """Record that `pass_name` finished deriving `partition` (task 15.4).
@@ -10566,6 +10591,7 @@ def embed_cmd(kinds, batch, rebuild, max_batches, gc_mode, dry_run):
             f"(batch={batch}); the first batch warms the model (~134MB)…[/]"
         )
         iters = 0
+        changed_streak = 0
         completed = False
         while True:
             iters += 1
@@ -10602,8 +10628,20 @@ def embed_cmd(kinds, batch, rebuild, max_batches, gc_mode, dry_run):
                 f"[dim]  ⋯ embed batch {iters}: +{embedded} "
                 f"({total_embedded} done, {remaining} left)[/]"
             )
-            if embedded == 0 or remaining == 0:
+            verdict = _embed_batch_verdict(result, changed_streak=changed_streak)
+            changed_streak = (changed_streak + 1
+                              if result.get("changed_while_encoding") and not embedded
+                              else 0)
+            if verdict == "complete":
                 completed = True
+                break
+            if verdict == "partial":
+                # No progress with rows still pending is NOT a complete pass:
+                # the old `embedded == 0` exit stamped one (ch-bsd r10 #m-1).
+                console.print(
+                    f"[yellow]  {remaining} row(s) still pending in {part}; the "
+                    f"embed pass is NOT recorded complete[/]")
+                completed = False
                 break
             if max_batches and iters >= max_batches:
                 # A CAPPED run is a partial derive (task 15.4). Stamping it

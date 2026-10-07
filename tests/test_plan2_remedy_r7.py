@@ -35,6 +35,7 @@ class _FakeModelSock:
         self.sock.bind(str(path)); self.sock.listen(8)
         self._stop = False
         self.ops: list[str] = []
+        self.frames: list[dict] = []
         threading.Thread(target=self._accept, daemon=True).start()
 
     def _accept(self):
@@ -51,6 +52,7 @@ class _FakeModelSock:
             while True:
                 req, _blob = recv_frame(rw)
                 op = req.get("op"); self.ops.append(op)
+                self.frames.append(req)
                 if op == "info":
                     send_frame(rw, {"ok": True, "model": "fake", "version": "x"})
                 elif op == "rerank":
@@ -102,7 +104,13 @@ def test_shared_reranker_scores_after_a_short_probe(fake_models, monkeypatch):
     assert rr is not None
     scores = rr.score("q", ["doc one", "doc two", "doc three"])
     assert scores == [1.0, 1.0, 1.0]
-    assert fake_models.ops == ["info", "rerank"]
+    # probe, then the budget's cost header, then the rerank. The header is the
+    # hub's lock-free `nowait` answer (ch-bsd r10 #s-2), never a second
+    # worker-bound probe; r9's `fresh=True` header made this ["info", "info",
+    # "rerank"] with both infos worker-bound, and this assertion went red
+    # unnoticed (bug-094).
+    assert fake_models.ops == ["info", "info", "rerank"]
+    assert [bool(f.get("nowait")) for f in fake_models.frames] == [False, True, False]
 
 
 def test_budgeted_global_call_never_spawns_the_global_daemon(tmp_path, monkeypatch):

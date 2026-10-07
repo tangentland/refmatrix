@@ -314,6 +314,11 @@ class RemoteReranker:
         # probe had already spent part of it, so it could outlive the caller by
         # the probe's length (ch-bsd plan-12 #m-1).
         self._budget_s = budget_s
+        # Seconds a private forward pass ran past the deadline: it is allowed
+        # to finish (a kill costs the next caller a cold load) and SAID on the
+        # answer's warnings (ch-bsd r10 #b-1). None = within budget.
+        self.overrun_s: float | None = None
+        self._owns_client = False
         if deadline is not None:
             self._deadline = float(deadline)
         else:
@@ -327,59 +332,116 @@ class RemoteReranker:
         return self._model_name
 
     def with_budget(self, budget_s: "float | None") -> "RemoteReranker":
-        """A per-request view on the SAME worker, bounded by `budget_s` from now.
+        """A per-request view bounded by `budget_s` from now.
 
         The daemon caches one unbounded reranker; a read op that must not wait
-        on a busy worker takes a bounded view of it (ch-bsd r8 #s-2: the
-        context op's rerank had no deadline, so a busy shared worker could
-        hold the op for SHARED_OP_TIMEOUT_S)."""
-        view = RemoteReranker(self._client, budget_s=budget_s)
+        on a busy worker takes a bounded view of it (ch-bsd r8 #s-2).
+
+        On the hub the view gets its OWN connection (`fork`): the daemon's one
+        client holds its lock for a whole round trip, so a view sharing it
+        queued behind the daemon's own unbudgeted `memory_recall` rerank —
+        3.80 s on a 1.0 s budget (ch-bsd r10 #b-1). A private worker has no
+        second connection to give; `score` reserves it instead."""
+        fork = getattr(self._client, "fork", None)
+        client = fork(budget_s) if fork is not None and budget_s is not None \
+            else self._client
+        view = RemoteReranker(client, budget_s=budget_s)
         view._model_name = self._model_name
+        view._owns_client = client is not self._client
         return view
+
+    def _header(self, probe_s: float) -> dict:
+        """The cost header WITHOUT waiting on the worker: `nowait` on both
+        clients (the hub answers from its cache; a private client from its
+        own). A client that predates the keyword gets a bounded probe; none
+        gets an unbounded one — r10 #b-1 measured that `info()` paying a cold
+        load inside a 3.0 s budget (6.01 s)."""
+        try:
+            try:
+                return self._client.info(timeout=probe_s, nowait=True) or {}
+            except TypeError:
+                return self._client.info(timeout=probe_s) or {}
+        except Exception:       # noqa: BLE001 — no info is "cost unknown"
+            return {}
 
     def score(self, query: str, docs: Sequence[str]) -> list[float]:
         if not docs:
             return []
         truncated = [window_doc(d, query, limit=MAX_DOC_CHARS) for d in docs]
         payload = {"query": query, "docs": truncated}
-        timeout = None
-        if self._deadline is not None:
+        if self._deadline is None:
+            hdr, _ = self._client.call("rerank", payload)
+            return _checked(hdr.get("scores") or [], self.model_name)
+        try:
+            return self._score_within(query, payload)
+        finally:
+            if getattr(self, "_owns_client", False):
+                self._client.close()
+
+    def _score_within(self, query: str, payload: dict) -> list[float]:
+        """The budgeted path. Every wait on it is bounded by the deadline:
+        the reservation, the header, and the socket (ch-bsd r10 #b-1)."""
+        from refmatrix.subproc import WorkerError
+
+        n = len(payload["docs"])
+        assert self._deadline is not None
+        remaining = self._deadline - time.time()
+        if remaining <= 0:
+            raise RerankSkipped("rerank budget already spent")
+        # A private worker is ONE process behind ONE lock: take it within the
+        # budget or skip. Its socket timeout is a kill (`_call_once` closes the
+        # process), so this path never hands it one (r10 Q2: spawns 1 -> 2).
+        reserve = getattr(self._client, "reserve", None)
+        private = reserve is not None
+        if private and not reserve(remaining):
+            raise RerankSkipped(f"private worker busy past the {remaining:.1f}s budget")
+        try:
+            info = self._header(min(remaining, 1.0))
+            # A cold worker answers with nothing but the queue the hub saw (or
+            # nothing at all): its model is not loaded.
+            if not (set(info) - {"queue_depth"}):
+                raise RerankSkipped(
+                    "worker cold (model not loaded); a budget does not pay the load")
+            est = estimate_rerank_s(info, n)
             remaining = self._deadline - time.time()
             if remaining <= 0:
-                raise RerankSkipped("rerank budget already spent")
-            # A FRESH header, not the client's cached `info()`: the cost
-            # estimate needs the queue depth NOW (ch-bsd r9 #b-2 — a cached
-            # header from the first probe never saw a busy worker).
-            info: dict = {}
-            probe = min(remaining, 1.0)
-            try:
-                try:
-                    info = self._client.info(timeout=probe, fresh=True) or {}
-                except TypeError:
-                    # a client with no cache to bypass (the private worker)
-                    info = self._client.info() or {}
-            except Exception:       # noqa: BLE001 — no info is "cost unknown"
-                info = {}
-            est = estimate_rerank_s(info, len(truncated))
-            remaining = self._deadline - time.time()
+                raise RerankSkipped("rerank budget spent on the cost header")
             if est is not None and est > remaining:
                 raise RerankSkipped(
-                    f"{len(truncated)} docs x {float(info['cost_s_per_doc']):.2f} "
+                    f"{n} docs x {float(info['cost_s_per_doc']):.2f} "
                     f"s/doc x (1+{int(info.get('queue_depth') or 0)} queued) = "
                     f"{est:.1f}s > {remaining:.1f}s left"
                 )
             # The worker drops a frame it dequeues after this instant, so an
             # abandoned request stops starving the caller behind it.
             payload["deadline"] = self._deadline
-            # ...and the SOCKET waits no longer than the budget: the client's
-            # own timeout (45 s on the daemon's) used to hold (r9 #b-2).
-            timeout = max(remaining, 0.01)
-        try:
-            hdr, _ = self._client.call("rerank", payload, timeout=timeout)
-        except TimeoutError as exc:
-            if timeout is None:
-                raise
-            raise RerankSkipped(f"no answer within the {timeout:.1f}s budget") from exc
+            if private:
+                # Reserved, so it is dequeued now and the deadline cannot drop
+                # it. Let a started forward pass finish and SAY it overran: a
+                # kill would cost the next caller the cold load.
+                payload.pop("deadline")
+                hdr, _ = self._client.call("rerank", payload)
+                over = time.time() - self._deadline
+                if over > 0:
+                    self.overrun_s = over
+            else:
+                # The socket waits for what is LEFT after the header, not the
+                # whole budget.
+                timeout = max(remaining, 0.01)
+                try:
+                    hdr, _ = self._client.call("rerank", payload, timeout=timeout)
+                except TimeoutError as exc:
+                    raise RerankSkipped(
+                        f"no answer within the {timeout:.1f}s budget") from exc
+        except WorkerError as exc:
+            # The worker refused a frame it dequeued past our deadline: that
+            # is the budget working, not a fault.
+            if "deadline expired" in str(exc):
+                raise RerankSkipped(f"worker dropped the late frame ({exc})") from exc
+            raise
+        finally:
+            if private:
+                self._client.unreserve()
         # The worker already ran `_checked`; re-run it here so a future
         # transport that bypasses `Reranker.score` cannot skip the guard.
         return _checked(hdr.get("scores") or [], self.model_name)

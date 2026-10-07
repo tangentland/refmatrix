@@ -87,15 +87,63 @@ def test_concurrent_reads_on_two_partitions_never_cross(tmp_path):
     assert wrong == [], f"{len(wrong)} of 200 reads answered from the other partition"
 
 
-def test_an_unknown_partition_never_answers_from_the_mirrors_current_one(tmp_path):
+_CONCEPTS = "SELECT count(*) FROM entities WHERE partition_id = ?"
+
+
+@pytest.mark.parametrize("private", [False, True])
+def test_an_unknown_partition_never_answers_from_another(tmp_path, private):
+    """ch-bsd r10 #s-1: the snapshot Store's read-only fast path resolves a
+    missing partition to id 1 and keeps the REQUESTED name, so the old
+    assertion (on the name) passed while the op answered from the default
+    partition. Assert on the id and the rows: a partition no store has
+    answers EMPTY by default, and never creates itself on a read."""
     from refmatrix.daemon import _read_with_fallback
 
     d, s = _daemon(tmp_path)
-    name = _read_with_fallback(d, "pb", lambda rs: rs._partition_name)
-    assert name == "pb"
-    got = _read_with_fallback(d, "nosuch", lambda rs: rs._partition_name)
+    assert _read_with_fallback(d, "pb", lambda rs: rs._partition_name,
+                               private=private) == "pb"
+    got = _read_with_fallback(
+        d, "nosuch",
+        lambda rs: (rs._partition_id,
+                    rs._connect().execute(_CONCEPTS, (rs._partition_id,)).fetchone()[0]),
+        private=private)
+    created = s._conn.execute(
+        "SELECT count(*) FROM partitions WHERE name='nosuch'").fetchone()[0]
     s.close()
-    assert got != "pb", "answered from whatever the mirror was last pointed at"
+    pid, n = got
+    assert n == 0, f"answered {n} rows from partition id {pid}"
+    assert pid not in (1, 2, 3), pid
+    assert created == 0, "a read created the partition"
+
+
+@pytest.mark.parametrize("private", [False, True])
+def test_the_context_op_refuses_an_unknown_partition(tmp_path, private):
+    """A typo'd `-p` must not read as "no matches"."""
+    from refmatrix.daemon import _read_with_fallback
+
+    d, s = _daemon(tmp_path)
+    seen: list = []
+    with pytest.raises(ValueError, match="unknown partition 'nosuch'"):
+        _read_with_fallback(d, "nosuch", lambda rs: seen.append(rs._partition_id),
+                            private=private, missing="raise")
+    s.close()
+    assert seen == [], f"fn ran on {seen}"
+
+
+@pytest.mark.parametrize("private", [False, True])
+def test_a_partition_newer_than_the_snapshot_answers_from_its_own_rows(tmp_path, private):
+    """Created on the writer inside the snapshot debounce: the read stores do
+    not have it yet, the writer does. The answer must come from ITS id."""
+    from refmatrix.daemon import _read_with_fallback
+
+    d, s = _daemon(tmp_path)
+    with s.with_partition("fresh"):
+        s.add_concept("fresh_only")
+    s._conn.commit()
+    want = s._conn.execute("SELECT id FROM partitions WHERE name='fresh'").fetchone()[0]
+    got = _read_with_fallback(d, "fresh", lambda rs: rs._partition_id, private=private)
+    s.close()
+    assert got == want, f"bound id {got}; 'fresh' is {want} (1 = the default partition)"
 
 
 def test_the_context_op_holds_no_shared_mirror_lock_while_scoring(tmp_path):
@@ -159,9 +207,9 @@ class _Client:
         self.rerank_sleep = rerank_sleep
         self.cost = cost
 
-    def info(self, timeout=None, fresh=False):
-        # the cached header (fresh=False) always shows the first, idle queue
-        if not fresh:
+    def info(self, timeout=None, nowait=False):
+        # the cached header (nowait=False) always shows the first, idle queue
+        if not nowait:
             return {"model": "m", "cost_s_per_doc": self.cost, "queue_depth": 0}
         self.infos += 1
         return {"model": "m", "cost_s_per_doc": self.cost,

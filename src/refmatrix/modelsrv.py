@@ -197,21 +197,38 @@ class SharedWorkerClient:
         Returning False keeps the tick's bookkeeping honest."""
         return False
 
-    def info(self, *, timeout: float | None = None, fresh: bool = False) -> dict:
+    def info(self, *, timeout: float | None = None, nowait: bool = False) -> dict:
         """The worker's info header. `timeout` bounds the probe: a socket
         that accepts but never answers (a hub mid-restart, an evicted
         worker) must not hold the caller for the 300 s op timeout — that is
         the wedge the hub watchdog SIGKILLed on 2026-09-14.
 
-        `fresh=True` re-asks the worker and refreshes the cache. A budgeted
-        rerank needs the queue depth NOW; the cached header from the first
-        probe never saw a busy worker (ch-bsd r9 #b-2)."""
+        `nowait=True` asks the HUB, not the worker: the hub answers from the
+        worker's cached header plus the queue depth it sampled when this frame
+        joined the line, without taking the worker's lock. r9's `fresh` re-ask
+        went through that lock, so on a busy worker it waited behind the very
+        rerank it was predicting (ch-bsd r10 #s-2). `{}` + `queue_depth` means
+        the worker is cold. Not cached: it describes one instant."""
+        if nowait:
+            hdr, _ = self.call("info", {"nowait": True}, timeout=timeout)
+            return {k: v for k, v in hdr.items() if k != "ok"}
         with self._lock:
-            if self._info and not fresh:
+            if self._info:
                 return self._info
             hdr, _ = self.call("info", timeout=timeout)
             self._info = {k: v for k, v in hdr.items() if k != "ok"}
             return self._info
+
+    def fork(self, timeout: float | None = None) -> "SharedWorkerClient":
+        """A new client on its OWN connection, for one bounded request.
+
+        The daemon holds one long-lived client per role, and `call` holds its
+        lock for a whole round trip. A budgeted read that shared it queued
+        behind the daemon's own unbudgeted `memory_recall` rerank: 3.80 s on a
+        1.0 s budget (ch-bsd r10 #b-1). This is the shape `shared_reranker`
+        already uses for the hook. The connection opens lazily; `close()` it
+        after use."""
+        return SharedWorkerClient(self.role, log=self._log_fn, timeout=timeout)
 
 
 class ModelServer:
@@ -229,6 +246,7 @@ class ModelServer:
         # every hook of every session, so "how many callers are ahead of me"
         # is the term a budgeted caller was missing (bug-025 / G13).
         self._pending: dict[str, int] = {}
+        self._warming: set[str] = set()
         self._lock = threading.Lock()
         self._srv: socket.socket | None = None
         self._stop = threading.Event()
@@ -245,12 +263,19 @@ class ModelServer:
     def _worker(self, role: str) -> WorkerClient:
         with self._lock:
             w = self._clients.get(role)
-            if w is None:
+            created = w is None
+            if created:
                 w = WorkerClient(role, log=self._log_fn)
                 self._clients[role] = w
                 self._log(f"worker[{role}] created")
-                self._check_worker_version(w)
-            return w
+        # The version handshake LOADS the model (6-33 s cold). It used to run
+        # under `_lock`, which `_handle` also takes to count the queue, so
+        # every frame of every role — a lock-free `nowait` header included —
+        # stalled behind a cold start (ch-bsd r10 #s-2). Callers that get `w`
+        # meanwhile queue on the worker's own lock, behind this load.
+        if created:
+            self._check_worker_version(w)
+        return w
 
     def _augment_info(self, role: str, hdr: dict, queue_depth: int) -> dict:
         """Add the server-side half of the cost to an `info` answer.
@@ -431,6 +456,15 @@ class ModelServer:
         """Load the models now, in the background, so the first client does
         not pay for it. Same argument as the daemon's own warmup: the first
         caller is almost always an always-on hook with a budget."""
+        with self._lock:
+            # One warmup per role at a time: a cold role is asked about by
+            # every budgeted read until it is warm (`nowait` info), and each
+            # ask must not start another load.
+            roles = [r for r in roles if r not in self._warming]
+            self._warming.update(roles)
+        if not roles:
+            return
+
         def _warm() -> None:
             for role in roles:
                 try:
@@ -440,6 +474,9 @@ class ModelServer:
                     self._log(f"worker[{role}] warm in {time.time() - t0:.1f}s")
                 except Exception as exc:
                     self._log(f"worker[{role}] warmup failed: {exc!r}")
+                finally:
+                    with self._lock:
+                        self._warming.discard(role)
         threading.Thread(target=_warm, name="rmx-models-warm",
                          daemon=True).start()
 
@@ -495,8 +532,20 @@ class ModelServer:
                         ahead = self._pending[role] - 1
                     w = None
                     try:
-                        w = self._worker(role)
-                        hdr, out = w.call(op, req, blob=blob)
+                        if op == "info" and req.pop("nowait", False):
+                            # Lock-free (ch-bsd r10 #s-2): the worker's cached
+                            # header, never a frame to the worker, and never
+                            # `_worker()`, which holds `_lock` through a cold
+                            # spawn. A cold role answers `{}` and starts warming
+                            # so a LATER budget can use it.
+                            cur = self._clients.get(role)
+                            hdr = cur.info(nowait=True) if cur is not None else {}
+                            out = None
+                            if not hdr:
+                                self.warm((role,))
+                        else:
+                            w = self._worker(role)
+                            hdr, out = w.call(op, req, blob=blob)
                     except (EOFError, BrokenPipeError, ConnectionError) as exc:
                         # The WORKER side, and only after WorkerClient's own
                         # respawn-and-retry also failed: drop it so the next

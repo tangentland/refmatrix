@@ -3006,22 +3006,19 @@ class Daemon:
                         except Exception as rexc:
                             self._log(f"pre-flush repair failed: {rexc!r}")
                             self._fast_exit_if_invalidated(rexc, "pre-flush repair")
-                    total_added = total_updated = total_purged = 0
-                    total_vec_failed = 0
-                    cancelled = False
+                    reports = []
                     for owner, owner_paths in groups.items():
-                        report = sync_files(
+                        reports.append(sync_files(
                             self._st(), owner_paths,
                             project_root=owner,
                             semantic=self.watch_semantic,
                             cancel_check=self._shutdown_event.is_set,
-                        )
-                        total_added += report["added"]
-                        total_updated += report["updated"]
-                        total_purged += report["purged"]
-                        total_vec_failed += report.get("vector_delete_failed") or 0
-                        if report.get("cancelled"):
-                            cancelled = True
+                        ))
+                    tot = _sum_sync_reports(reports)
+                    total_added, total_updated = tot["added"], tot["updated"]
+                    total_purged = tot["purged"]
+                    total_vec_failed = tot["vector_delete_failed"]
+                    cancelled = tot["cancelled"]
                 queued = _enqueue_curator(paths)
                 tail = f" curator+{queued}" if queued else ""
                 cancel_tail = " cancelled" if cancelled else ""
@@ -4579,6 +4576,21 @@ def _op_query(d: Daemon, args: dict) -> dict:
         return out
 
 
+def _sum_sync_reports(reports) -> dict:
+    """Totals of one watch flush's per-root `sync_files` reports. A function so
+    the vector-delete ACCUMULATION across roots is pinned, not only the line it
+    feeds (ch-bsd r10 #m-1: mutant V16 dropped the sum and survived)."""
+    tot = {"added": 0, "updated": 0, "purged": 0, "vector_delete_failed": 0,
+           "cancelled": False}
+    for r in reports:
+        tot["added"] += r["added"]
+        tot["updated"] += r["updated"]
+        tot["purged"] += r["purged"]
+        tot["vector_delete_failed"] += r.get("vector_delete_failed") or 0
+        tot["cancelled"] = tot["cancelled"] or bool(r.get("cancelled"))
+    return tot
+
+
 def _watch_flush_line(n_paths: int, added: int, updated: int, purged: int,
                       tails: str, vec_failed: int) -> str:
     """The `rmxd.log` line for one watch flush. A function so the vector-
@@ -4680,7 +4692,7 @@ def _op_context(d: Daemon, args: dict) -> dict:
         )
     # private: the build can spend up to the rerank budget inside `fn`, which
     # on the shared mirror would hold its single reader lock (ch-bsd r9 #b-2).
-    bundle = _read_with_fallback(d, _ctx_part, _build, private=True)
+    bundle = _read_with_fallback(d, _ctx_part, _build, private=True, missing="raise")
     body = render_json(bundle) if fmt == "json" else render_text(bundle)
     # bundle.warnings are IN the body (JSON `warnings`, text `# warning:`);
     # the op's own `warnings` carry only what the body cannot show (a
@@ -4765,7 +4777,8 @@ def _op_memory_add(d: Daemon, args: dict) -> dict:
     return {"id": eid}
 
 
-def _read_with_fallback(d: Daemon, partition: str, fn, *, private: bool = False):
+def _read_with_fallback(d: Daemon, partition: str, fn, *, private: bool = False,
+                        missing: str = "empty"):
     """Run `fn(store)` against the fastest available read path, bound to
     `partition` for the whole of `fn`.
 
@@ -4782,6 +4795,16 @@ def _read_with_fallback(d: Daemon, partition: str, fn, *, private: bool = False)
     and connection. Use it for an op that may run long inside `fn` (the
     context op's rerank), which would otherwise hold the mirror's single
     reader lock against every other read (ch-bsd r9 #b-2).
+
+    A partition the read stores lack is resolved against the WRITER (ch-bsd
+    r10 #s-1): the snapshot Store's read-only fast path bound a missing name
+    to id 1, so the op answered from the default partition under the
+    requested name. Created inside the snapshot debounce → `fn` runs on the
+    writer under `_store_lock`. Absent everywhere → `missing="empty"` (the
+    default; a memory partition a fresh project never wrote is normal) runs
+    `fn` bound to an id no row carries, so it sees zero rows;
+    `missing="raise"` raises `ValueError("unknown partition ...")` (the
+    context op: a typo'd `-p` must not read as "no matches").
     """
     mirror = None if private else getattr(d, "_mem_mirror", None)
     ms = mirror.borrow() if mirror is not None else None
@@ -4805,7 +4828,21 @@ def _read_with_fallback(d: Daemon, partition: str, fn, *, private: bool = False)
     rs = d._open_read_store(partition, allow_mirror=False)
     if rs is not None:
         try:
-            return fn(rs)
+            if partition is None or _has_partition(rs, partition):
+                return fn(rs)
+            # Checked under the writer lock below; if the writer lacks it too,
+            # this already-open read store answers the empty case.
+            with d._store_lock:
+                on_writer = _has_partition(d._st(), partition)
+            if not on_writer:
+                if missing == "raise":
+                    raise ValueError(f"unknown partition {partition!r}")
+                d._log(f"read path: partition {partition!r} does not exist; "
+                       f"answering empty")
+                rs._partition_name, rs._partition_id = partition, _NO_PARTITION_ID
+                return fn(rs)
+            d._log(f"read path: partition {partition!r} is newer than the "
+                   f"snapshot; reading the writer")
         finally:
             try:
                 rs.close()
@@ -4813,8 +4850,32 @@ def _read_with_fallback(d: Daemon, partition: str, fn, *, private: bool = False)
                 pass
     # Fallback: serialize under the write lock so the swap can't close
     # the connection mid-cursor.
-    with d._store_lock, d._st().with_partition(partition):
-        return fn(d.store)
+    with d._store_lock:
+        if partition is not None and not _has_partition(d._st(), partition):
+            if missing == "raise":
+                raise ValueError(f"unknown partition {partition!r}")
+            # `with_partition` would CREATE the row: a read must not.
+            st = d._st()
+            prev = (st._partition_name, st._partition_id)
+            st._partition_name, st._partition_id = partition, _NO_PARTITION_ID
+            try:
+                return fn(d.store)
+            finally:
+                st._partition_name, st._partition_id = prev
+        with d._st().with_partition(partition):
+            return fn(d.store)
+
+
+# A partition id no row carries: a read bound to it sees nothing. Used for a
+# partition that does not exist, instead of the read-only fast path's id 1
+# (the default partition), which answered with another partition's rows
+# (ch-bsd r10 #s-1).
+_NO_PARTITION_ID = -1
+
+
+def _has_partition(store, name: str) -> bool:
+    return store._connect().execute(
+        "SELECT 1 FROM partitions WHERE name=?", (name,)).fetchone() is not None
 
 
 def _op_memory_get(d: Daemon, args: dict) -> dict:
@@ -5493,6 +5554,33 @@ def _op_embed(d: Daemon, args: dict) -> dict:
     # recall returns zero hits even after a "successful" rebuild.
     partition = args.get("partition") or d._st()._partition_name
 
+    # One embed op at a time, on a lock of its OWN (ch-bsd r10 #m-1). Since the
+    # encode moved outside `_store_lock`, two concurrent ops (save-state's drain
+    # beside `rmx embed`) selected the SAME pending rows and the shared worker
+    # encoded them twice. Writers are not behind this lock; only other embeds.
+    with _embed_serial(d):
+        return _op_embed_locked(d, args, emb, embmod, kinds, limit, rebuild,
+                                partition)
+
+
+_EMBED_SERIAL_GUARD = threading.Lock()
+
+
+def _embed_serial(d) -> "threading.Lock":
+    """The daemon's embed-op lock, created on first use: `_op_embed` also runs
+    on the CLI's bare `Daemon(root)` and on test shells."""
+    lk = getattr(d, "_embed_serial_lock", None)
+    if lk is None:
+        with _EMBED_SERIAL_GUARD:
+            lk = getattr(d, "_embed_serial_lock", None)
+            if lk is None:
+                lk = threading.Lock()
+                d._embed_serial_lock = lk
+    return lk
+
+
+def _op_embed_locked(d, args, emb, embmod, kinds, limit, rebuild,
+                     partition) -> dict:
     with d._store_lock, d._st().with_partition(partition):
         if rebuild:
             # `pending_embeddings` already skips current rows; for a

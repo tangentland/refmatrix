@@ -586,6 +586,13 @@ def _rerank_bodied(s: Store, reranker, query: str,
         if warnings is not None:
             warnings.append(msg)
         return hits
+    # A private worker's forward pass is allowed to finish past the budget
+    # (killing it costs the next caller a cold load); the answer says so
+    # rather than presenting the overrun as a bound (ch-bsd r10 #b-1).
+    over = getattr(reranker, "overrun_s", None)
+    if over and warnings is not None:
+        warnings.append(f"rerank overran its budget by {over:.1f}s "
+                        f"(private worker; the pass was let finish)")
     if len(reordered) != len(subset):
         return hits
     out = list(hits)

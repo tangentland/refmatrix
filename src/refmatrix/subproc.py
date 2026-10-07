@@ -292,6 +292,10 @@ class WorkerClient:
         with self._lock:
             p = self._proc
             self._proc = None
+            # The header describes the process that is going away. Kept, it made
+            # an evicted worker look warm to a budgeted caller, which then paid
+            # the respawn's cold model load inside its budget (ch-bsd r10 #b-1).
+            self._info = {}
             if p is None:
                 return
             try:
@@ -377,10 +381,38 @@ class WorkerClient:
                 self.close(timeout=1.0)
                 hdr, out = self._call_once(req, blob, budget)
             self._last_used = time.time()
+            # Every scoring reply carries the worker's cost EMA. Folding it into
+            # the cached header keeps `info(nowait=True)` current without a
+            # probe, and a probe is exactly what a budgeted caller cannot wait
+            # for (ch-bsd r10 #b-1/#s-2).
+            if self._info and "cost_s_per_doc" in hdr:
+                self._info = {**self._info,
+                              "cost_s_per_doc": hdr.get("cost_s_per_doc"),
+                              "scored_docs": hdr.get("scored_docs")}
             return hdr, out
 
-    def info(self) -> dict:
+    def reserve(self, timeout: float) -> bool:
+        """Take this worker for the calling thread, waiting at most `timeout`.
+
+        A private worker is ONE process behind ONE lock. A budgeted caller must
+        not queue on that lock for as long as another caller's forward pass
+        takes (r10 #b-1: 3.80 s on a 1.0 s budget), so it asks first and skips
+        when the worker is busy. Pair with `unreserve()`; `call` re-enters the
+        same RLock."""
+        return self._lock.acquire(timeout=max(0.0, float(timeout)))
+
+    def unreserve(self) -> None:
+        self._lock.release()
+
+    def info(self, *, timeout: float | None = None, nowait: bool = False) -> dict:
         """Cached `{model, dim, python, prefix}` from the worker.
+
+        `nowait=True` answers from the cache alone, `{}` when the worker is
+        cold, and never touches the process: asking a cold worker loads the
+        model (6-33 s), and asking a busy one waits behind its forward pass.
+        The cost fields stay current because every rerank reply refreshes them
+        (`call`). This is the private half of the hub's lock-free `info`
+        (ch-bsd r10 #b-1/#s-2).
 
         Also verifies the child landed in the same environment as the
         parent. It should be impossible to miss -- we pass the interpreter
@@ -388,10 +420,12 @@ class WorkerClient:
         silent mismatch is expensive to diagnose later, because the symptom
         is a missing-package error rather than a wrong-interpreter one.
         """
+        if nowait:
+            return dict(self._info)
         with self._lock:
             if self._info:
                 return self._info
-            hdr, _ = self.call("info")
+            hdr, _ = self.call("info", timeout=timeout)
             self._info = {k: v for k, v in hdr.items() if k != "ok"}
             child_version = self._info.get("version")
             if child_version is not None:
