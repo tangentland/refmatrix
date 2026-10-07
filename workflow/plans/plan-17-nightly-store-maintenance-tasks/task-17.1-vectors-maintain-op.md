@@ -47,7 +47,7 @@ an embedder just to learn the vector dimension, so a maintenance pass could load
 
    Expected after == before minus the reaped orphans. Any other difference → `ok:false`, a loud
    error, and no further datasets touched in this run.
-3. **R3 Bounded lock holds.** Each dataset's step runs in its own `_store_lock` acquisition, and
+3. **R3 Bounded lock holds**, through plan-23's bounded drain and hold recorder (plan review C5). Each dataset's step runs in its own `_store_lock` acquisition, and
    the lock is released between datasets. Each hold is measured and reported. A hold over
    `RMX_MAINTAIN_HOLD_S` (default 60) is reported as a warning (not aborted mid-commit).
 4. **R4 Handle refresh.** After cleanup, the daemon's cached `LanceVectorStore` (`self._vs`) and

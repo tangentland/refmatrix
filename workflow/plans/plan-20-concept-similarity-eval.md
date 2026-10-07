@@ -41,8 +41,9 @@ This store holds 75,276 concepts.
 measured signals, and a recommended merge rule with its threshold. Writing merges into the alias
 map belongs to ADR-0004's helix plan.
 
-The free culls (9,182 orphan aliases, 747 empty protected `query/*` rows) are task 16.6's dry-run
-→ apply path, not this plan's. No concept is removed on a similarity score: decay and similarity
+The free culls (9,182 orphan aliases, 747 empty protected `query/*` rows) go through
+[[plan-22-audited-removal-and-repair]] (the ONE audited path, which repairs first and gates
+concept culls on an ablation check), not this plan's. Merge writes are task 22.4. No concept is removed on a similarity score: decay and similarity
 may demote, never delete. {#scope-body}
 
 ## Tasks {#tasks}
@@ -58,6 +59,6 @@ may demote, never delete. {#scope-body}
 | # | decision | source |
 |---|---|---|
 | d-1 | merges target ADR-0004's term-space alias map | user, 2026-10-07 |
-| d-2 | free culls via task 16.6, not here | user, 2026-10-07 |
+| d-2 | free culls via plan-22 (originally "via 16.6"; moved by plan review C1) | user, 2026-10-07 |
 | d-3 | gold labels: the gmd-curator agent proposes, the user reviews a 50-pair sample before the set freezes | default taken (exploration d-3 unanswered); revisable at spec review |
 | d-4 | distributions measured on more than one project (cliquedb, viascope, cliquet, atldb, orderly, refmatrix) | user, 2026-10-07 ("use more than refmatrix's project") |

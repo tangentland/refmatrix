@@ -192,8 +192,10 @@ Run **B's free part first**, then **A**, and treat **C** as conditional.
 **Status:** IN PROGRESS. User decision, 2026-10-07: **free culls + evaluation now; reconcile
 plan-11 / ADR-0004 later, before any merge writes.**
 
-- **Free culls:** the 9,182 orphan aliases and 747 empty protected `query/*` rows go through task
-  16.6's prune (dry run + ablation).
+- **Free culls:** the 9,182 orphan aliases and 747 empty protected `query/*` rows go through
+  [[plan-22-audited-removal-and-repair]] (repair first: an orphan alias whose canonical can be
+  found gets its `same_as` edge back; dry run + ablation gate). It was first routed to 16.6; the
+  plan review's C1 moved it.
 - **Evaluation:** the read-only merge-signal evaluation (Option A) is **plan-20**.
-- **Not decided yet:** d-1 (merge target) waits on the reconciliation; d-3 (gold labels) is settled
-  in plan-20's spec.
+- **d-1 DECIDED (user, 2026-10-07):** merges target ADR-0004's term-space alias map (plan-11
+  superseded); the writes are task 22.4. d-3 (gold labels) is settled in plan-20's spec.

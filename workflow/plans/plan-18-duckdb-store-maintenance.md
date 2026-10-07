@@ -13,6 +13,9 @@ metadata:
 
 > Status: DRAFTING (a stub). Split out of plan-17 by the user on 2026-10-07 (plan-17 d-3). Plan-17
 > keeps the Lance vectors lean; this plan does the same for the DuckDB catalog.
+> **Scope kept MINIMAL** (plan review C12, user 2026-10-07): measure + `CHECKPOINT` as a step on
+> plan-17's tick. No slot-rewrite VACUUM until ADR-0004's helix plan decides whether snapshot
+> manifests replace A/B slot reconciliation.
 
 rel: depends-on -> [[plan-17-nightly-store-maintenance]]
 

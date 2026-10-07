@@ -43,12 +43,13 @@ one without losing knowledge. {#why-body}
      name/anchor appears in a later focus note or STM ref within the same session.
 
    Both carry the channel (`session_start | prompt | precompact | cli | mcp`).
-4. **R4 No write per event under the lock.**
-   - Events are appended to `.refmatrix/memory_usage.queue.jsonl` (the `learn_queue.py` pattern:
-     a durable append, no socket, no lock).
-   - The daemon's existing flush tick drains the queue in one batched upsert per drain, yielding
-     the writer between batches (the 0.72.3 learn-queue lesson; the bug-085 lesson).
-5. **R5 Decay, with every ADR-0004 rule.**
+4. **R4 No write per event under the lock.** Events go into plan-23's `BoundedQueue`
+   (`.refmatrix/memory_usage.queue.jsonl`) and are applied by its bounded drain on the daemon's
+   existing flush tick (plan review C5). Events use 21.1's ONE recall-event schema (C7): this task
+   counts `delivered` and `used`.
+5. **R5 Decay, with every ADR-0004 rule. This module is the ONE decay/floor library** (plan review
+   C4): helix's age tiers and touch counters (ADR-0004) import it, and no other formula may be
+   added.
    - `recency` decays with half-life `RMX_MEMORY_RECENCY_HALFLIFE_DAYS` (default 14), applied at
      read time from `(recency, recency_ts)`, so the parameter can change without a rewrite.
    - The floor is `floor = base * log1p(lifetime_hits + 2*lifetime_used)`, and asserted memories

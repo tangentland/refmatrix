@@ -246,14 +246,20 @@ is a query on roaring bitmaps with no sort. {#amend-model-body}
       (approximate allowed). Decay parameters can then change, and the score can be recomputed,
       without losing anything. {#rule-two-records}
    2. **A floor, never zero.** The decayed score never falls below a floor that grows with the
-      lifetime evidence (e.g. proportional to `log(1 + lifetime_count)`). Knowledge that was used
-      heavily long ago stays findable, ranked below current work but present. {#rule-floor}
+      lifetime evidence. Knowledge that was used heavily long ago stays findable, ranked below
+      current work but present. **The one implementation is task 19.2's decay/floor library**
+      (plan review C4, user 2026-10-07): half-life recency over an exact lifetime record, with
+      floor `base * log1p(hits + 2*used)`. Helix's age tiers and touch counters reuse it rather
+      than defining a second formula. The intropretor step decay in the ADAPT row above is prior
+      art, not a rule. {#rule-floor}
    3. **Age tiers are terminal, not evicting.** An edge moves day → week → month → older; "older" is
       the last tier, and nothing ages out of the index. {#rule-terminal-tier}
    4. **Decay demotes, never deletes.** A cold counter may change ranking, the inline placement in
       `MEMORY.md` (plan-19's fold) or a merge preference. It may never trigger a forget, cull or
-      prune. Removal goes only through an explicit, audited path (task 16.6's dry-run → apply, the
-      plan-20 evidence), and a folded memory stays recallable. {#rule-no-delete}
+      prune. Removal goes only through the ONE explicit, audited path,
+      [[plan-22-audited-removal-and-repair]], which repairs before it removes (dry-run → apply,
+      manifest, restore). That includes merges, using plan-20's rule (task 22.4). A folded memory
+      stays recallable (plan review C1/C3, user 2026-10-07). {#rule-no-delete}
    5. **A higher floor for asserted knowledge.** Feedback memories, user-asserted or `protected`
       rows, and `rel:`-anchored GMD nodes keep a higher floor; recency may reorder them, never bury
       them. {#rule-asserted-floor}

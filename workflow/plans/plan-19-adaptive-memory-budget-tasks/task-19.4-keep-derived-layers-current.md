@@ -13,7 +13,7 @@ metadata:
 
 > Plan: [plan-19-adaptive-memory-budget](../plan-19-adaptive-memory-budget.md)
 > Status: Pending
-> Depends on: 19.3; plan-17 task 17.2 (the nightly tick), with the fallback below until it lands
+> Depends on: 19.3; plan-17 task 17.2 (the nightly tick and its step registry; no fallback, plan review C6)
 
 rel: part-of -> [[plan-19-adaptive-memory-budget]]
 rel: depends-on -> [[plan-17-nightly-store-maintenance]]
@@ -29,11 +29,14 @@ rel: depends-on -> [[plan-17-nightly-store-maintenance]]
 
 ## Requirements {#requirements}
 
-1. **R1 Scheduled compile.** Memory compile (apply) joins plan-17's nightly maintenance tick, per
-   store, serially, skipping paused stores, with results logged and published.
-   - Until 17.2 lands, save-state runs compile when the last compile is older than 24 h (a stamp
-     in `.refmatrix/`). The bound is `RMX_MEMORY_COMPILE_BUDGET_S`, default 60.
-   - Over budget, it is skipped and that is said; it is never silent.
+1. **R1 Scheduled compile: one registered step on plan-17's tick** (plan review C6). Memory compile
+   registers as a per-store step in 17.2's step registry (17.2 R7). It runs serially, skips paused
+   stores, and is logged and published with the rest of the run.
+   - There is no second stamp file and no save-state fallback: 17.2's `maintain.json` holds the
+     only stamps. This task therefore depends on 17.2.
+   - It needs a hub-callable daemon op that PLANS and applies. Today only `memory_compile_apply`
+     is a daemon op (`daemon.py`); the planning half runs CLI-side (`cli.py` `memory compile`).
+     This task adds `memory_compile` (plan + apply) as a verb and daemon op.
 2. **R2 Index on write.** The ingest-gmd memory bridge, after a successful batch that added or
    changed memory files, regenerates `MEMORY.md` through `memory_index.write`, the same function
    save-state calls. That covers the SessionStart detach bridge too.
@@ -47,12 +50,12 @@ rel: depends-on -> [[plan-17-nightly-store-maintenance]]
 
 1. Writing a new memory file and running only the SessionStart bridge (no save-state) produces an
    index that names the new memory.
-2. With plan-17's tick (or the save-state fallback with a stamp older than 24 h), subjects
-   recompile once and the stamp updates. A second run inside 24 h skips and says so.
+2. On 17.2's tick (injected clock), the registered compile step runs once per scheduled day per
+   store, through the `memory_compile` daemon op (plan + apply), and appears in the run summary.
 3. A compile that moves memory X out of every subject leaves X reachable (19.3 R4 check passes).
 4. Mutations that must FAIL a test:
    - the bridge not regenerating the index;
-   - the stamp never updated;
+   - the step not registered;
    - the over-budget path silent.
 
 ## Files to modify {#files-to-modify}
@@ -60,10 +63,10 @@ rel: depends-on -> [[plan-17-nightly-store-maintenance]]
 | file | change |
 |---|---|
 | `src/refmatrix/ingest_gmd.py` | regenerate the index after a memory batch |
-| `src/refmatrix/handoff.py` | the stamped compile fallback |
+| `src/refmatrix/daemon.py`, `verbs.py` | the `memory_compile` (plan + apply) op and verb; the step registered on 17.2's tick |
 | `src/refmatrix/hub.py` / plan-17's tick | the compile step (when 17.2 lands) |
 
 ## Test strategy {#test-strategy}
 
 RED on AC-1 (today the bridge never touches the index). Real fixture stores; the clock is
-injected for the 24 h stamp; there are no mocks of compile.
+injected for 17.2's tick; there are no mocks of compile.

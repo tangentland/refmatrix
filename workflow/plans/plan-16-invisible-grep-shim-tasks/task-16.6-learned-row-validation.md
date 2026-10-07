@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: task-16.6-learned-row-validation
-title: "Task 16.6: grep-learned rows carry provenance, are validated against the files they claim, and can be culled"
+title: "Task 16.6: grep-learned rows carry provenance and read-time marks (audit/prune/repair moved to plan-22)"
 tags: [task, grep, learning, validation, cull, provenance]
 metadata:
   node_type: task
@@ -66,57 +66,36 @@ which about 700 read as unreadable on every global grep (bug-086). {#why-scale}
     caller's own rules.
 
   It lives in a sidecar table ([[#d-a]]).
-- **R2 Validation, `rmx learn audit`.** A read-only pass over every learned row. It re-reads the
-  claimed line and classifies the row:
-  - `ok`;
-  - `moved` (the same text is now on another line);
-  - `stale-line` (the line no longer matches the pattern);
-  - `out-of-range`;
-  - `missing-file`;
-  - `duplicate`;
-  - `orphan-root` (a relative row whose root is unknown, which is bug-086's shape).
-
-  It prints counts per class and per pattern, and lists rows with `--list`. Exit 0 when the scan
-  completes; the counts are the answer. This uses the verifier `grep_evidence` already uses
-  (`evidence_line_matches`); there is no second matcher.
-- **R3 Cull, `rmx learn prune`.** Removes the rows `audit` classified, by class (default: every
-  non-`ok` class, per [[#d-c]]; `--class` narrows it).
-  - Dry run by default; `--apply` writes.
-  - It goes through a daemon op under one `_store_lock` hold per bounded batch. That is bug-085's
-    lesson: no unbounded lock hold, and one Lance delete per kind.
-  - It removes evidence and `mentions` links. It drops a `query/*` concept that has no evidence left.
-  - It NEVER purges an entity the ingester owns. It only clears the protection that learning
-    added (needs R1).
-  - It emits tombstones so the delete replays.
+- **R2/R3 moved to plan-22** (plan review C1, user 2026-10-07). The audit (`rmx learn audit`), its
+  classes, and the prune/repair engine now live in [[plan-22-audited-removal-and-repair]]. That is
+  ONE audited path for every removal, and it REPAIRS `moved` rows instead of deleting them. This
+  task keeps what belongs to the learner: provenance (R1), read-time marks (R4), the provenance
+  backfill (R5) and loud counting (R6).
 - **R4 Passive marking.** Read-time verification records what it saw (`last_verified_at`,
-  `stale_seen` count) through a queue, never inline under the lock ([[#d-b]]).
-- **R5 Repair of existing rows.** Rows learned before R1 have no provenance. One migration:
+  `stale_seen` count) through the shared durable queue and bounded drain of
+  [[plan-23-bounded-write-harness]] (plan review C5), never inline under the lock ([[#d-b]]).
+- **R5 Provenance backfill.** Rows learned before R1 have no provenance. One migration:
   - Backfill `source='grep-learn'` from `detail LIKE 'learned from grep%'`.
   - Set root = the project root, for project stores.
-  - Leave the global store's roots NULL, which classifies those rows `orphan-root`. bug-086's
-    scheduled repair then becomes `rmx learn prune --class orphan-root --apply` in the global store,
-    after its 476 uniquely verifiable rows are rewritten to absolute paths.
+  - Leave the global store's roots NULL. Repairing or removing those rows (bug-086) is plan-22's
+    first apply (task 22.3), not this task.
 - **R6 No silent failures.** Every skipped, unreadable or un-culled row is counted and printed
   (project rule: memory-path discipline applies to the store).
 
 ## Acceptance (draft) {#acceptance}
 
-1. A fixture store with one learned row of each class makes `rmx learn audit` print exactly one in
-   each class. The same fixture after a file edit moves the right rows to `stale-line` or `moved`.
-2. `rmx learn prune` (dry run) writes nothing: no catalog row, no sidecar row and no Lance version
-   changes. It is measured with no grep running, because the read-time marks ([[#d-b]]) are written
-   by grep reads, not by prune (ch-bsd r7 #m-5: "byte-identical" conflicted with those marks).
-   `--apply` removes exactly the non-`ok` rows, and a second `audit` reports only `ok`.
-3. An entity both ingested and learned survives prune with its ingest links intact, and loses only
-   its learned protection and learned evidence.
-4. A prune of N rows across K kinds issues at most K Lance deletes and holds `_store_lock` no longer
-   than the batch bound (measured, not asserted from code).
-5. On a COPY of the live global catalog (never the live store), audit's `orphan-root` count is
-   compared in ONE unit: evidence rows. R5 classifies all 1,087 relative learned entities, which
-   carry 5,159 evidence rows. bug-086's "~700 unreadable" counted rows READ per grep, which is a
-   different population (ch-bsd r7 #m-5). The criterion: `orphan-root` evidence rows equal the
-   catalog copy's count of relative learned evidence rows with no recorded root.
-6. The CLI and MCP surfaces are one verb (verb-parity test).
+1. Every evidence row written by the learner after this task carries the R1 provenance in the
+   sidecar, and a re-learn of the same `(concept, entity, line)` writes no second row.
+2. R5's backfill on a catalog COPY marks every `learned from grep` row and leaves no learned row
+   without a provenance record. Global-store rows have root NULL.
+3. A grep read that drops a stale learned row enqueues one mark, and the drain applies it in a
+   bounded batch (plan-23's lock-hold probe).
+4. Mutations that must FAIL a test:
+   - provenance not written;
+   - a mark written inline under the lock;
+   - the backfill skipping rows silently.
+
+The audit/prune/repair acceptance moved to plan-22. {#acceptance-moved}
 
 ## Decisions (user, 2026-10-07) {#decisions}
 
@@ -126,7 +105,10 @@ which about 700 read as unreadable on every global grep (bug-086). {#why-scale}
 - **d-b. Audit and prune run on demand, and read-time verification records marks** {#d-b}. The
   verification `grep_evidence` already does updates `last_verified_at` / `stale_seen` for learned
   rows, which makes audit cheap. Nothing deletes automatically: no scheduled prune.
-- **d-c. `prune --apply` removes EVERY non-`ok` class by default** {#d-c}: `moved`, `stale-line`,
+- **d-c. (moved to plan-22, and AMENDED by the user 2026-10-07: "don't delete moves, repair them
+  if possible").** `prune --apply` removes the non-`ok` classes EXCEPT `moved`, which is re-pointed.
+  {#d-c}
+- *(original d-c, superseded):* `prune --apply` removes every non-`ok` class by default: `moved`, `stale-line`,
   `out-of-range`, `missing-file`, `duplicate` and `orphan-root`. `--class` narrows it. The dry run
   remains the default.
 - **d-d. Scope: inside plan-16, after 16.1** {#d-d}, reviewed in the same spec rounds.

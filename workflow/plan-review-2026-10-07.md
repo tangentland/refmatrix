@@ -5,7 +5,7 @@ title: "Plan review 2026-10-07: consolidation proposals and execution order acro
 tags: [planning, review, consolidation, sequencing]
 metadata:
   node_type: review
-  status: proposed
+  status: applied
   created: 2026-10-07
 ---
 
@@ -14,7 +14,9 @@ metadata:
 The user, 2026-10-07: "given the amount of plan restructuring, we should review all open plans
 looking for areas to consolidate and determine the optimal execution order". A read-only review of
 `plan-of-plans` and every open plan, task spec, ADR-0004, the explorations and the open bugs. Every
-proposal below is **proposed**: nothing is applied until the user approves. {#lead}
+proposal below was **APPLIED** by the user on 2026-10-07 ("apply all the consolidations, don't
+delete moves repair them if possible"): plans 21/22/23 were created, and 13/14/16/17/18/19/20 and
+ADR-0004 were amended. {#lead}
 
 rel: related-to -> [[plan-of-plans]]
 rel: related-to -> [[refmatrix/adr-0004-unified-location-space-index]]
