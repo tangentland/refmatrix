@@ -34,7 +34,8 @@ current.
 | 14 | plan-14-grep-learning-measurement | in-progress (all 4 tasks done; threshold NOT met — index share 18.5% -> 31.7%; bug-067 fixed, bug-068/069/070 filed; awaiting @ch-bsd + the install-hooks decision) | yes (4) | `workflow/plans/plan-14-grep-learning-measurement.md` | plan 9 (its telemetry record) |
 | 15 | plan-15-derive-impact-tracking | in-progress (15.1-15.4 all built + deployed at 0.76.0; flipped `completed` before the @ch-bsd gate, which found 15.1's test writing `src/refmatrix/store.py` — ch-bsd r1 #b-3, fixed on `bsd-r1-remedy`; returns to completed after a clean full suite) | yes (4) | `workflow/plans/plan-15-derive-impact-tracking.md` | plan 14 (same instrument-first shape); bug-039's stamp |
 | 16 | plan-16-invisible-grep-shim | drafting (the shim always execs the real grep/rg and only LEARNS, via an argv-faithful background re-run; awaiting user approval + 3 decisions) | no | `workflow/plans/plan-16-invisible-grep-shim.md` | plan 15 (bsd-r1-remedy merged) |
-| 17 | plan-17-nightly-store-maintenance | drafting (user ask 2026-10-07: hub-scheduled nightly Lance compaction + old-version cleanup + orphan reaping, as a daemon op; this store went 1.3 GB → 105 MB by hand; cliquedb/viascope carry 59k/32k versions; decisions d-1..d-4 open) |
+| 17 | plan-17-nightly-store-maintenance | drafting (user ask 2026-10-07; decisions taken: 03:30 + catch-up, 24 h version window, orphans reaped nightly, vectors only; this store 1.3 GB → 105 MB by hand; cliquedb/viascope 59k/32k versions; next: task specs 17.1-17.3) |
+| 18 | plan-18-duckdb-store-maintenance | drafting stub (split from plan-17 d-3: DuckDB checkpoint/vacuum on the nightly tick; measure first; must respect A/B slot rotation) |
 
 ## Sequence rationale {#sequence}
 

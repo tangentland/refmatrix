@@ -11,8 +11,9 @@ metadata:
 
 # Plan 17: nightly store maintenance from the hub {#root}
 
-> Status: DRAFTING. The user asked on 2026-10-07: "we should add a nightly compaction job to the hub
-> process to keep projects lean and fast". The open decisions are in [[#decisions]].
+> Status: DRAFTING, with the decisions taken ([[#decisions]]). The user asked on 2026-10-07: "we should
+> add a nightly compaction job to the hub process to keep projects lean and fast". Next: task specs
+> 17.1-17.3, then spec review.
 
 rel: motivates -> [[bug_registry#registry]]
 rel: related-to -> [[project_daemon_wedge_per_entity_lance_delete]]
@@ -57,7 +58,7 @@ refmatrix ever compacts a dataset or removes its old versions. No `compact_files
     daemon's cached `LanceVectorStore` handle, and today's run had to STOP the daemon for exactly
     that reason.
   - Per dataset, under the lock, it runs: `gc_vectors` (orphans), then `optimize.compact_files()`,
-    then `cleanup_old_versions(older_than=<window>)`.
+    then `cleanup_old_versions(older_than=24h)` ([[#d-2]]).
   - Afterwards it drops and reopens the cached handles, so no reader holds a version whose files
     were removed.
   - It fingerprints each dataset before and after: rows plus a hash of the id set. A mismatch fails
@@ -85,13 +86,13 @@ refmatrix ever compacts a dataset or removes its old versions. No `compact_files
 | 17.2 | hub nightly scheduler: time-of-day, catch-up after sleep, pause-aware, serial, summary publish | a fake clock drives one run per night; a missed night runs on wake; a paused store is skipped and named; a failing store does not stop the rest |
 | 17.3 | fleet rollout: run once by hand on cliquedb + viascope with backups, measure size and latency before/after; docs + registry | before/after table in the implementation summary; backups removed after N days |
 
-## Decisions for the user {#decisions}
+## Decisions (user, 2026-10-07) {#decisions}
 
-- **d-1. Schedule.** A fixed local time (e.g. 03:30, overridable by `RMX_HUB_MAINTAIN_AT`), or
-  "after N hours idle"? {#d-1}
-- **d-2. Old-version window.** Remove every old version (`older_than=0`; nothing in refmatrix uses
-  Lance time travel), or keep a safety window (e.g. 24 h, which leaves up to a day of versions)? {#d-2}
-- **d-3. Scope beyond Lance.** Also run DuckDB maintenance (`CHECKPOINT`, and a `VACUUM` of the
-  writer slot) in the same op, or keep plan-17 to vectors? {#d-3}
-- **d-4. Orphan reaping.** Run `gc_vectors` nightly as part of the op, or report orphans only and
-  reap on demand? {#d-4}
+- **d-1. A fixed local time with catch-up** {#d-1}. Default 03:30, overridable by
+  `RMX_HUB_MAINTAIN_AT`. A night missed while the machine slept runs at the next wake.
+- **d-2. Keep a 24 h window of old versions** {#d-2}: `cleanup_old_versions(older_than=24h)`. That
+  leaves up to a day of versions as a rollback point. Lean, but deliberately not minimal.
+- **d-3. DuckDB maintenance is plan-18, not part of this plan** {#d-3}
+  ([[plan-18-duckdb-store-maintenance]]). Plan-17 covers vectors only.
+- **d-4. Orphans are reaped nightly** {#d-4}: `gc_vectors` runs inside the op, and the counts are
+  logged and published.
