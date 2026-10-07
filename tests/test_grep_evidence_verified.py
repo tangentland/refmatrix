@@ -101,6 +101,48 @@ def test_dash_i_keeps_the_case_insensitive_rows(store, tmp_path):
         "-i must keep what case-sensitivity drops"
 
 
+# ---- the spelling bridge survives verification (ch-bsd r3 #b-3) ----------
+#
+# bug-067 lets `roaring bitmap` reach `keyword/roaring_bitmap` through the
+# canonical name; bug-070 chose its predicate to keep that reach. A literal
+# `pattern in line` check then dropped every such row, because the line holds
+# the IDENTIFIER spelling. Verification keeps a multi-word pattern's
+# identifier spellings and still drops a `def` line that holds none of them.
+
+@pytest.mark.parametrize("spelling", [
+    "roaring_bitmap = make()",
+    "x = RoaringBitmap()",
+    "see roaring-bitmap docs",
+    "a roaring bitmap here",
+])
+def test_a_multi_word_pattern_keeps_its_identifier_spellings(store, tmp_path,
+                                                             spelling):
+    _seed(store, tmp_path, concept="keyword/roaring_bitmap", line=1,
+          body=spelling + "\n")
+
+    assert store.grep_evidence("roaring bitmap"), \
+        f"the bridge lost {spelling!r}"
+
+
+def test_a_multi_word_pattern_still_drops_a_line_without_it(store, tmp_path):
+    _seed(store, tmp_path, concept="keyword/roaring_bitmap", line=1,
+          body="def build():\n    return roaring_bitmap()\n")
+
+    assert store.grep_evidence("roaring bitmap") == [], \
+        "the def-line row survived through the variant check"
+
+
+def test_a_single_word_pattern_gets_no_variants(store, tmp_path):
+    """`error:` canonicalizes to `error` — a punctuation bridge, not a
+    spelling one. grep for `error:` must not keep a line without the colon,
+    and `ERROR` must stay case-sensitive (bug-073)."""
+    _seed(store, tmp_path, concept="keyword/error", line=1,
+          body="an error here\n")
+
+    assert store.grep_evidence("error:") == []
+    assert store.grep_evidence("ERROR") == []
+
+
 # ---- the SAFETY property, end to end -------------------------------------
 
 @pytest.mark.skipif(not RMX.exists(), reason="dev venv rmx not built")

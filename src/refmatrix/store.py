@@ -774,8 +774,39 @@ def evidence_line_matches(text: str, pattern: str, *, regex: bool,
     return pattern in text
 
 
+def identifier_variant_regex(pattern: str) -> "re.Pattern | None":
+    """The identifier spellings of a MULTI-WORD literal pattern, as one regex.
+
+    WHY (ch-bsd r3 #b-3). bug-067 lets `roaring bitmap` reach the concept
+    `keyword/roaring_bitmap` through `canonical_name`, and bug-070 chose its
+    predicate by measuring that reach. bug-074's literal line check then
+    dropped every such row, because the line holds the IDENTIFIER
+    (`roaring_bitmap`, `RoaringBitmap`), not the space spelling. On a copy of
+    the live replica five of bug-070's sixteen instrument patterns lost their
+    index answer (`build context`, `scan prompt`, `replica bundle`, ...).
+
+    This keeps the bridge without giving back bug-074's precision: a row is
+    still dropped unless ITS line holds the words joined by `_`, `-`, a space,
+    or nothing (camelCase). Case-insensitive on purpose: identifier spellings
+    differ in case by construction (`RoaringBitmap` vs `roaring_bitmap`).
+
+    Single-word patterns get NO variants, so bug-073's case fidelity holds for
+    `ERROR`, and `error:` (a punctuation canonicalisation, not a spelling one)
+    still needs its colon. None when the pattern has fewer than two words.
+    """
+    import re as _re
+    from refmatrix.identifier import canonicalize_name
+
+    words = [w for w in canonicalize_name(pattern).split("_") if w]
+    if len(words) < 2:
+        return None
+    return _re.compile(r"[_\-\s]?".join(_re.escape(w) for w in words),
+                       _re.IGNORECASE)
+
+
 def verify_evidence_rows(rows: list, pattern: str, *, regex: bool = False,
                          ignore_case: bool = False,
+                         variants: "re.Pattern | None" = None,
                          stats: "dict | None" = None) -> list:
     """Keep only evidence rows whose `file:line` REALLY contains the pattern.
 
@@ -803,6 +834,10 @@ def verify_evidence_rows(rows: list, pattern: str, *, regex: bool = False,
 
     A row whose file cannot be read is DROPPED and COUNTED, never kept on
     faith: `stats["unreadable"]` carries the number so a caller can say it.
+
+    `variants` (from `identifier_variant_regex`) is the spelling bridge: a
+    row whose line holds none of the literal pattern but one of its
+    identifier spellings is kept.
     """
     out: list = []
     cache: dict = {}
@@ -831,7 +866,8 @@ def verify_evidence_rows(rows: list, pattern: str, *, regex: bool = False,
             dropped += 1
             continue
         if evidence_line_matches(lines[idx], pattern, regex=regex,
-                                 ignore_case=ignore_case):
+                                 ignore_case=ignore_case) or (
+                variants is not None and variants.search(lines[idx])):
             out.append(r)
         else:
             dropped += 1
@@ -3045,6 +3081,7 @@ class Store:
         """
         from refmatrix.identifier import canonicalize_name
 
+        variants = None
         if regex:
             preds = ["regexp_matches(c.name, ?)"]
             params: list = [pattern]
@@ -3053,6 +3090,9 @@ class Store:
             params = [f"%{pattern}%"]
             canon = canonicalize_name(pattern)
             if canon and canon != pattern.strip().lower():
+                # The bridge is engaged, so verification must accept the
+                # spellings it bridges to (ch-bsd r3 #b-3).
+                variants = identifier_variant_regex(pattern)
                 # SEGMENT-ANCHORED, not a bare substring (bug-070).
                 #
                 # This predicate exists to bridge a SPELLING: `roaring bitmap`
@@ -3109,18 +3149,21 @@ class Store:
             "WHERE " + " AND ".join(where) +
             " ORDER BY e.path, ev.line"
         )
-        if limit and limit > 0:
-            # Omitted rather than passed as NULL when there is no cap: a
-            # drop-in read of named paths has its cap deliberately off
-            # (bug-058), and `LIMIT NULL` is not portable.
-            sql += " LIMIT ?"
-            params.append(limit)
+        capped = limit is not None and limit > 0
         self._connect()
-        rows = self._read().execute(sql, tuple(params)).fetchall()
-        out = [{"path": r[0], "entity": r[1], "line": r[2],
-                "linkage": r[3], "concept": r[4]} for r in rows]
+
+        def _fetch(page_sql: str, page_params: list) -> list:
+            rows = self._read().execute(page_sql, tuple(page_params)).fetchall()
+            return [{"path": r[0], "entity": r[1], "line": r[2],
+                     "linkage": r[3], "concept": r[4]} for r in rows]
+
         if not verify:
-            return out
+            if capped:
+                # Omitted rather than passed as NULL when there is no cap: a
+                # drop-in read of named paths has its cap deliberately off
+                # (bug-058), and `LIMIT NULL` is not portable.
+                return _fetch(sql + " LIMIT ?", params + [limit])
+            return _fetch(sql, params)
         # VERIFY each row against the real line (bug-074). The predicate above
         # picks the right CONCEPTS; it cannot know that a concept's evidence
         # points at a symbol's `def` line rather than the token's line, nor
@@ -3128,9 +3171,42 @@ class Store:
         # file, cached, and far cheaper than the tool floor this read exists to
         # avoid. Opt out with `verify=False` for a caller that wants concept
         # provenance rather than grep-shaped hits.
-        return verify_evidence_rows(out, pattern, regex=regex,
-                                    ignore_case=ignore_case,
-                                    stats=verify_stats)
+        #
+        # The cap counts VERIFIED rows (ch-bsd r3 #b-1). Verifying after a SQL
+        # `LIMIT` spent the cap on `def`-line rows verification then dropped:
+        # on the live replica `rmx grep error` returned 13 of 96 real matches
+        # with exit 0 and nothing on stderr — bug-058's silent short read. So
+        # the SQL is PAGED until `limit + 1` verified rows exist or the rows
+        # run out; the `+ 1` is what lets `stats["capped"]` say the cap bit
+        # without reading the whole result.
+        stats = verify_stats if verify_stats is not None else {}
+        if not capped:
+            out = verify_evidence_rows(_fetch(sql, params), pattern,
+                                       regex=regex, ignore_case=ignore_case,
+                                       variants=variants, stats=stats)
+            stats["capped"] = False
+            return out
+        cap = int(limit)  # `capped` above means limit is a positive int
+        page = max(4 * cap, 256)
+        out = []
+        dropped = unreadable = 0
+        offset = 0
+        while len(out) <= cap:
+            raw = _fetch(sql + " LIMIT ? OFFSET ?", params + [page, offset])
+            part: dict = {}
+            out.extend(verify_evidence_rows(raw, pattern, regex=regex,
+                                            ignore_case=ignore_case,
+                                            variants=variants, stats=part))
+            dropped += part.get("dropped", 0)
+            unreadable += part.get("unreadable", 0)
+            if len(raw) < page:
+                break
+            offset += page
+        stats["kept"] = min(len(out), cap)
+        stats["dropped"] = dropped
+        stats["unreadable"] = unreadable
+        stats["capped"] = len(out) > cap
+        return out[:cap]
 
     def resolve_concept_ids_many(
         self, names: "list[str]",

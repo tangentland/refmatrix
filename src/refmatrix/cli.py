@@ -6039,8 +6039,8 @@ def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
                                 "help_option_names": ["--help"]})
 @click.argument("argv", nargs=-1, type=click.UNPROCESSED)
 @click.option("--regex/--substring", default=False,
-              help="Treat PATTERN as a regex matched against concept names. "
-                   "Default is case-insensitive substring.")
+              help="Treat PATTERN as a regex. Default is a case-SENSITIVE "
+                   "substring, as in grep; -i ignores case.")
 @click.option("--flags", "-f", "flags", default=None, help=_GREP_FLAGS_HELP)
 @click.option("--linkage", default=None,
               help="Restrict to one linkage type (e.g. defines, mentions).")
@@ -6089,7 +6089,12 @@ def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
     flag_tokens, pattern, path_strs, _w = _split_grep_argv(list(argv))
     if pattern is None:
         raise click.UsageError("grep: no PATTERN given")
-    paths = [Path(p) for p in path_strs]
+    # The argv SPELLINGS, not `Path` objects (ch-bsd r3 #b-4): `str(Path(
+    # './f0.txt')) == 'f0.txt'`, so converting here collapsed `./f0.txt
+    # f0.txt` into one `-c` row with the SUMMED count — the r2 #b-2 defect
+    # surviving one call above the code that fixed it. grep echoes a path
+    # exactly as given; so does every consumer below.
+    paths = list(path_strs)
     gf = _parse_grep_flags(flags)
     # Pipe mode is decided BEFORE flag folding: it changes which flags are
     # answer-changing (-n/-o/-m/-A… render output when we're standing in for
@@ -6381,7 +6386,7 @@ def _resolve_output_shape(gf: dict, paths: list) -> dict:
       * `-n` adds line numbers; without it there are none.
       * `-c` prints a bare count for one target, `file:count` for several.
     """
-    multi = (len(paths) != 1) or any(p.is_dir() for p in paths)
+    multi = (len(paths) != 1) or any(Path(p).is_dir() for p in paths)
     with_filename = gf["with_filename"]
     if with_filename is None:
         with_filename = multi
@@ -6434,6 +6439,13 @@ def argv_rank(emitted_path: str, argv: list) -> int:
 
     if not argv:
         return 0
+    # The RAW spelling first (ch-bsd r3 #b-4): `f0.txt ./f0.txt` are two
+    # arguments, and `normpath` folds both to `f0.txt`, so every row ranked
+    # with the first and the second argument's rows came out ahead of their
+    # turn.
+    for i, sp, _is_file in argv:
+        if emitted_path == sp:
+            return i
     em = _os.path.normpath(emitted_path)
     best = len(argv)
     best_len = -1
@@ -6476,14 +6488,50 @@ def order_triples_by_argv(triples: list, argv: list) -> list:
 
 
 def argv_count_rows(argv: list) -> list:
-    """The `-c` rows grep prints for NAMED FILES, zeros included, in argv order.
+    """The `-c` rows grep prints, zeros included, in argv order.
 
-    Only entries that ARE files (ch-bsd r2 #b-2): a directory argument gets no
-    `.:0` row and a missing argument gets no `nosuch.txt:0` row — grep errors
-    on the latter and exits 2, and fabricating a zero claims it read a file it
-    could not open.
+    A named FILE is one row. A DIRECTORY is one row per file its walk reaches
+    (ch-bsd r3 #b-4): `grep -rc zzz sub` prints `sub/s1.txt:0` and
+    `sub/s2.txt:0`, and before this the dir produced nothing, so the
+    nothing-matched branch fell back to a bare `0` in a filename-shaped
+    answer. Within a directory the order is the sorted walk — grep's own walk
+    order is the filesystem's, which no tool reproduces (accepted at r2).
+
+    A missing argument gets no row (ch-bsd r2 #b-2): grep errors on it and
+    exits 2, and fabricating `nosuch.txt:0` claims it read a file it could
+    not open.
     """
-    return [sp for _i, sp, is_file in argv if is_file]
+    out: list = []
+    for _i, sp, is_file in argv:
+        if is_file:
+            out.append(sp)
+        elif Path(sp).is_dir():
+            out.extend(_walk_files(sp))
+    return out
+
+
+def _walk_files(sp: str) -> list:
+    """The files a recursive grep of directory `sp` reads, spelled the way the
+    tool spells them (`sp/rel`). `rg --files` when rg is the floor, so the
+    universe matches the walk that produced the counts (same ignore rules);
+    `os.walk` otherwise, matching `grep -r`, which ignores nothing."""
+    import os as _os
+    import shutil
+    import subprocess
+
+    rg = shutil.which("rg")
+    if rg:
+        res = subprocess.run([rg, "--files", "--sort", "path", sp],
+                             capture_output=True, text=True)
+        if res.returncode not in (0, 1):
+            raise click.ClickException(
+                f"rg --files {sp} failed: {res.stderr.strip()}")
+        return res.stdout.splitlines()
+    found = []
+    for dirpath, dirnames, filenames in _os.walk(sp):
+        dirnames.sort()
+        found.extend(_os.path.join(dirpath, f) for f in sorted(filenames))
+    return found
 
 
 def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
@@ -6506,10 +6554,12 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
     _tlog.answered_by = _floor_answered_by(paths)
     tool = shutil.which("rg")
     if tool:
-        case_flag = (
-            "-i" if gf["ignore_case"] is True
-            else ("-s" if gf["ignore_case"] is False else "-S")
-        )
+        # grep's case rule: case-SENSITIVE unless `-i`. No flag used to map to
+        # rg's smart-case `-S`, so `rmx grep error e.txt` matched `ERROR here`
+        # and exited 0 where grep exits 1 — on the path every rewritten bare
+        # grep with a named file takes (ch-bsd r3 #b-2). The index read is
+        # case-sensitive since bug-073; the floor beneath it now agrees.
+        case_flag = "-i" if gf["ignore_case"] is True else "-s"
         # ALWAYS -nH. The tool's output is the CANONICAL `file:line:text` this
         # function parses — for the learn broker AND for reshaping below. The
         # caller's shape is applied at render time; asking the TOOL for a
@@ -6548,7 +6598,7 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
         # a prefix-forcer on BSD grep: `grep -rciF PAT file` prints `file:1` even
         # with the H removed, so bug-059 was never fixable by dropping `-H`.
         g_letters = "rHn"
-        if gf["ignore_case"] is not False:
+        if gf["ignore_case"] is True:        # grep's own rule; see rg above
             g_letters += "i"
         if gf["word"]:
             g_letters += "w"
@@ -6648,10 +6698,14 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
             elif named:
                 for _sp in named:
                     click.echo("0")
-            else:
-                # No named files (a walk, or stdin): one number, as before —
-                # `n=$(grep -c …)` must still be a number.
+            elif not argv_list:
+                # No paths at all — the project-root exploration read: one
+                # number, so `n=$(rmx grep -c …)` is still a number.
                 click.echo("0")
+            # Paths were named and none of them yields a row (a missing file,
+            # an empty dir): print NOTHING. A bare `0` there was r3 #b-4 —
+            # `-rc zzz sub` and `-c zzz sub nosuch.txt` answered `0`, a
+            # number grep never prints for a filename-shaped read.
         # grep semantics: silent stdout, exit 1. The note goes to stderr so
         # a tty user still learns why nothing printed.
         click.echo("rmx grep: no matches", err=True)
@@ -6732,6 +6786,24 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
             pass
 
 
+def _grep_index_notes(stats: dict, limit) -> None:
+    """Say on STDERR what the index answer left out. stdout stays grep bytes.
+
+    `capped` (ch-bsd r3 #b-1): the verified answer had more rows than
+    `--limit`. Before this an index read said nothing when the cap bit, so 13
+    of 96 read exactly like 13 of 13 — bug-058's shape. `unreadable` (#s-6):
+    rows whose file could not be read were dropped by verification; the count
+    was computed and no caller printed it.
+    """
+    if stats.get("capped"):
+        click.echo(f"rmx grep: index answer capped at --limit {limit} "
+                   "(pass --limit 0 for every row)", err=True)
+    n = int(stats.get("unreadable", 0) or 0)
+    if n:
+        click.echo(f"rmx grep: {n} index row(s) dropped — their file could "
+                   "not be read", err=True)
+
+
 def _grep_run_direct(s, pattern, effective_pattern, regex,
                      linkage, kind, limit, fallback, learn, gf, paths, _tlog):
     """Read-only path: no daemon, no _store_lock. Mirrors the SQL the
@@ -6741,6 +6813,7 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
     fire-and-forget write — the replica default no longer means the graph
     learns nothing (which made the always-on learning grep a no-op)."""
     rows: list[dict] = []
+    stats: dict = {}
     # Drop-in read: the named files are the corpus, not the learned index.
     # SIBLING of the same rule in `_grep_run` — this is the REPLICA path and
     # therefore the DEFAULT one, which is why an earlier version of this fix
@@ -6755,7 +6828,8 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
                                # `ILIKE` cannot honour case (bug-073); the row
                                # verification does, and `-i` must keep the
                                # case-insensitive rows it would otherwise drop.
-                               ignore_case=gf.get("ignore_case") is True)
+                               ignore_case=gf.get("ignore_case") is True,
+                               verify_stats=stats)
 
     if paths:
         rows = _filter_rows_by_paths(rows, paths)
@@ -6764,6 +6838,7 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
         _tlog.cardinality = len(rows)
         _tlog.answered_by = "index"
         _render_grep_rows(rows, gf, limit, source_tag="idx-replica")
+        _grep_index_notes(stats, limit)
         return
 
     if not fallback:
@@ -6794,16 +6869,24 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
 def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
               linkage, kind, limit, fallback, learn, gf, paths, _tlog):
     rows: list[dict] = []
+    stats: dict = {}
     if not _index_may_answer(paths):
         rows = []                     # drop-in read: the FILE is the corpus
     elif daemon_mod.ping(root):
         resp = daemon_mod.call(root, "grep_indexed", {
             "pattern": effective_pattern, "regex": regex,
             "linkage": linkage, "kind": kind, "limit": limit,
+            # The third caller of `grep_evidence`, and the one bug-073's fix
+            # missed: without this the daemon path matched case-sensitively
+            # under `-i` and fell to the floor (ch-bsd r3 #b-2).
+            "ignore_case": gf.get("ignore_case") is True,
         }, timeout=60.0)
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
-        rows = resp["result"]["rows"]
+        result = resp["result"]
+        rows = result["rows"]
+        stats = {"capped": bool(result.get("capped")),
+                 "unreadable": int(result.get("unreadable", 0))}
     else:
         # Direct path: only used when daemon is down. Same read as the daemon
         # op and the replica path — `Store.grep_evidence` is the ONE
@@ -6815,7 +6898,8 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
                                # `ILIKE` cannot honour case (bug-073); the row
                                # verification does, and `-i` must keep the
                                # case-insensitive rows it would otherwise drop.
-                               ignore_case=gf.get("ignore_case") is True)
+                               ignore_case=gf.get("ignore_case") is True,
+                               verify_stats=stats)
 
     # PATHS filter: drop rows whose entity path is outside the given targets.
     if paths:
@@ -6825,6 +6909,7 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
         _tlog.cardinality = len(rows)
         _tlog.answered_by = "index"
         _render_grep_rows(rows, gf, limit, source_tag="idx")
+        _grep_index_notes(stats, limit)
         return
 
     if not fallback:

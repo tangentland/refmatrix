@@ -74,6 +74,10 @@ def _corpus(proj):
         + "def _open_read_store(root):\n"
         + "learning_enabled gate\n"
         + "an error happens here\n"
+        # Lines 9-10: IDENTIFIER spellings, where an ingest-time keyword
+        # concept's evidence really lands (ch-bsd r3 #b-3).
+        + "roaring_bitmap = make()\n"
+        + "def _replica_bundle(x):\n"
     )
     return f
 
@@ -93,9 +97,12 @@ def _real_hit_lines(f, pattern: str) -> list:
 
 
 def _teach(d, pattern: str, f) -> dict:
-    hits = [{"file": str(f), "line": n}
-            for n in _real_hit_lines(f, pattern)] or [
-        {"file": str(f), "line": 1}]
+    hits = [{"file": str(f), "line": n} for n in _real_hit_lines(f, pattern)]
+    if not hits:
+        # A silent `line 1` fallback here re-created the unfaithful fixture
+        # 24523f3 removed (ch-bsd r3 #m-5): production only teaches lines a
+        # real grep returned.
+        raise AssertionError(f"{pattern!r} is not in the corpus; add a line")
     return _op_learn_from_grep(d, {
         "pattern": pattern,
         "hits": hits,
@@ -276,6 +283,15 @@ def _concept_names(d, pattern: str) -> set:
     return {r["concept"] for r in d.store.grep_evidence(pattern, verify=False)}
 
 
+def _reach(d, pattern: str) -> set:
+    """Which concepts the PRODUCTION read answers with — `_op_grep_indexed`,
+    verification on. A test named for REACH asserts this, never the
+    predicate: d5e7fec moved the two bridge guards below to `_concept_names`
+    (`verify=False`), and pointed back at the op they failed with exactly the
+    regression bug-074 had shipped (ch-bsd r3 #b-3)."""
+    return {r["concept"] for r in _op_grep_indexed(d, {"pattern": pattern})["rows"]}
+
+
 def test_a_punctuated_pattern_does_not_drag_in_the_whole_family(daemon):
     """THE bug-070 case. `error:` canonicalizes to `error`; as a substring that
     matched every `error`-ish concept name."""
@@ -304,10 +320,10 @@ def test_the_spelling_bridge_survives_the_narrowing(daemon):
     cid = s.add_concept("keyword/roaring_bitmap")
     eid = s.upsert_entity("code", "bitmap-site", path=str(f))
     s.link("mentions", cid, eid)
-    s.add_evidence("mentions", cid, eid, file=str(f), line=1)
+    s.add_evidence("mentions", cid, eid, file=str(f), line=9)
 
-    assert _concept_names(daemon, "roaring bitmap"), "the bridge is gone"
-    assert _concept_names(daemon, "roaring-bitmap"), "the dash spelling is gone"
+    assert _reach(daemon, "roaring bitmap"), "the bridge is gone"
+    assert _reach(daemon, "roaring-bitmap"), "the dash spelling is gone"
 
 
 def test_a_leading_underscore_identifier_is_still_reachable(daemon):
@@ -319,9 +335,9 @@ def test_a_leading_underscore_identifier_is_still_reachable(daemon):
     cid = s.add_concept("keyword/_replica_bundle")
     eid = s.upsert_entity("code", "rb-site", path=str(f))
     s.link("mentions", cid, eid)
-    s.add_evidence("mentions", cid, eid, file=str(f), line=1)
+    s.add_evidence("mentions", cid, eid, file=str(f), line=10)
 
-    assert _concept_names(daemon, "replica bundle"), "the leading-underscore \
+    assert _reach(daemon, "replica bundle"), "the leading-underscore \
 identifier lost its index answer"
 
 

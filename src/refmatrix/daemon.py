@@ -4231,6 +4231,7 @@ def _op_grep_indexed(d: Daemon, args: dict) -> dict:
     `regexp_matches` where the CLI used `~`), and the copies had already
     drifted; bug-067's fix would otherwise have had to be written three times.
     """
+    stats: dict = {}
     with d._store_lock:
         rows = d._st().grep_evidence(
             args["pattern"],
@@ -4241,8 +4242,12 @@ def _op_grep_indexed(d: Daemon, args: dict) -> dict:
             # Same rule as the CLI's two read paths — one implementation,
             # three callers (bug-073 / bug-074).
             ignore_case=bool(args.get("ignore_case", False)),
+            verify_stats=stats,
         )
-    return {"rows": rows}
+    # `capped` and `unreadable` travel with the rows so the CLI can say a cap
+    # bit or rows were dropped on the RPC path too (ch-bsd r3 #b-1 / #s-6).
+    return {"rows": rows, "capped": bool(stats.get("capped")),
+            "unreadable": int(stats.get("unreadable", 0))}
 
 
 def _learn_grep_hits(store, pattern: str, hits: list, project_root: Path) -> dict:
