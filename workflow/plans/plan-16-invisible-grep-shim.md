@@ -104,9 +104,10 @@ are needed. Full spec: task 16.1. {#learner}
 - **The dedicated Grep tool uses it too.** `grep-tool-teach.sh` (PostToolUse(Grep)) calls the same
   learner, so all three surfaces learn from one implementation.
 
-**The explicit command.** `rmx grep` keeps its index-first read and its `rg` floor. bug-076 to
-bug-079 still matter there. Its stderr notes now describe a command someone chose to run, not a
-silent stand-in for grep. {#explicit}
+**The explicit command (task 16.5, user decision 2026-10-07).** With paths or a pipe, `rmx grep`
+execs the real grep plus the learner, exactly like the shim. Only the path-less `rmx grep PAT` still
+answers, from the index, with a corpus-pruned `grep -r` floor. The Python re-implementation of
+grep's output, where four audit rounds kept finding sibling bugs, is deleted. {#explicit}
 
 ## What we give up {#tradeoffs}
 
@@ -133,6 +134,7 @@ Specs go in `workflow/plans/plan-16-invisible-grep-shim-tasks/` before approval.
 | 16.2 | invisible shim in both wrappers; cwd+argv throttle, counted; `RMXGREP_TEACH` retired via the log; generators + `check()` extended | differential 100% byte-identical with power shown on the current shim; caller never delayed; overhead with the REAL learner |
 | 16.3 | Grep-tool hook rebuilt from the tool's real rg argv (`--hidden`, VCS globs, constants pinned); every doc/help surface | taught set equals the tool's captured RESPONSE; paging inputs do not kill; no stale claim anywhere |
 | 16.4 | measurement, historical + forward (learner log joined to transcripts) | precision ≥ 0.99 / recall ≥ 0.95 (micro, timeouts counted) on COMPLETE outputs only, gated at n ≥ 30 else `insufficient-n`; no carve-out; a gate shown able to fail; routes measured |
+| 16.5 | explicit `rmx grep` with paths or a pipe execs the real grep + learner; path-less keeps the index read with a pruned `grep -r` floor; the Python re-implementation (argv order, `-c` rows, stdin filter, delegate) is DELETED | differential 100% incl. round 4's cases and bug-081; nothing beyond the tool's bytes; deletions verified by `rg -l` |
 
 ## Decisions (user, 2026-10-06) {#decisions}
 
