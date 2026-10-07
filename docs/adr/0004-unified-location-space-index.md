@@ -12,6 +12,7 @@ tags: [adr, helix, bitmaps, retrieval, storage, co-location]
 
 rel: amends -> [[project_stm_ltm_helix_design]]
 rel: supersedes -> [[project_helix_phase2_storage_fork]]
+rel: supersedes -> [[plan-11-helix-phase2-versioned-graph]]
 rel: derives-from -> [[spike-2026-10-06-loc-coloc]]
 rel: depends-on -> [[project_retrieval_negatives_2026_09]]
 rel: related-to -> [[project_concept_path_negatives_0903]]
@@ -175,6 +176,15 @@ adopted on fit. {#intropretor-lead}
 
 "Used", the graduation signal, has no intropretor precedent. `record_access` existed but was
 never called, so that open question stays open. {#intropretor-used}
+
+## Decision log {#decision-log}
+
+- **2026-10-07 (user):** "helix's design supersedes plan 11's". This ADR's helix half governs
+  helix phase 2, and plan-11 (the prolly/Merkle versioned edge store) is `superseded`. The half in
+  question: snapshot manifests, age tiers on the tiered bitmaps, and the term-space alias map. The
+  ADR as a whole stays **Proposed**, because the location-id and query-pipeline halves are not
+  decided. Consequence for concept work: merges target the term-space alias map
+  ([[exploration-concept-similarity-cull-merge]] d-1), not new `same_as` rows. {#d-2026-10-07}
 
 ## Open questions {#open}
 

@@ -178,7 +178,7 @@ Run **B's free part first**, then **A**, and treat **C** as conditional.
 
 ## Decisions for the user {#decisions}
 
-- **d-1. Merge target:** today's `same_as` rows, or ADR-0004's term-space alias map. The second
+- **d-1. Merge target: DECIDED (user, 2026-10-07): ADR-0004's term-space alias map** (plan-11 superseded). Was: `same_as` rows, or the alias map. The second
   means reconciling plan-11 first.
 - **d-2. Cull scope:** start with the model-free classes (orphan aliases, empty learned rows), or
   also run the df ≤ 1 ablation now?
