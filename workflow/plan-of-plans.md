@@ -36,8 +36,8 @@ current.
 | 16 | plan-16-invisible-grep-shim | drafting (the shim always execs the real grep/rg and only LEARNS, via an argv-faithful background re-run; awaiting user approval + 3 decisions) | no | `workflow/plans/plan-16-invisible-grep-shim.md` | plan 15 (bsd-r1-remedy merged); + tasks 16.7-16.10 for agent `rmx context` usage (user 2026-10-07, exploration `exploration-agent-context-usage`) |
 | 17 | plan-17-nightly-store-maintenance | drafting (user ask 2026-10-07; decisions taken: 03:30 + catch-up, 24 h version window, orphans reaped nightly, vectors only; this store 1.3 GB → 105 MB by hand; cliquedb/viascope 59k/32k versions; next: task specs 17.1-17.3) |
 | 18 | plan-18-duckdb-store-maintenance | drafting stub (split from plan-17 d-3: DuckDB checkpoint/vacuum on the nightly tick; measure first; must respect A/B slot rotation) |
-| 19 | plan-19-adaptive-memory-budget | not yet written (user 2026-10-07: recall hooks packed under the harness preview, recall-usage logging, subject-tiered MEMORY.md now; first track after the remedy merge; exploration `exploration-adaptive-memory-budget`) |
-| 20 | plan-20-concept-similarity-eval | not yet written (user 2026-10-07: read-only merge-signal evaluation, co-occurrence vs vectors vs names; free culls ride task 16.6; reconcile plan-11/ADR-0004 before any merge writes; exploration `exploration-concept-similarity-cull-merge`) |
+| 19 | plan-19-adaptive-memory-budget | drafting (plan + task specs 19.1-19.5 written 2026-10-07: pack recall under the ~10k hook limit, exact usage + decaying recency with floors, subject-tiered MEMORY.md, scheduled compile, delivery measurement; spec review next) |
+| 20 | plan-20-concept-similarity-eval | drafting (plan + task specs 20.1-20.3 written 2026-10-07: frozen labelled pairs, signals scored across 6 stores, conditional dense synonyms; read-only; merges target ADR-0004's alias map) |
 
 ## Sequence rationale {#sequence}
 
