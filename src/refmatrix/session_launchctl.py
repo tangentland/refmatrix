@@ -12,7 +12,6 @@ Shape differs from `launchctl.py`:
 """
 from __future__ import annotations
 
-import os
 import plistlib
 import subprocess
 from pathlib import Path
@@ -25,6 +24,7 @@ from refmatrix.launchctl import (
     _print_cmd,
     _require_darwin,
     _rmx_path,
+    launchd_path,
     _short_hash,
     _slug_for_root,
 )
@@ -61,9 +61,8 @@ def render_plist(root: Path, *, partition: str | None = None,
 
     env = {
         "REFMATRIX_ROOT": str(root),
-        "PATH": os.environ.get(
-            "PATH", "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
-        ),
+        # Fixed, not the installing shell's PATH (see `launchctl.launchd_path`).
+        "PATH": launchd_path(rmx),
     }
     from refmatrix.store import default_partition_name
     if partition and partition != default_partition_name(root):
