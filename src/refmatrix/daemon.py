@@ -20,6 +20,7 @@ writer semantics and keeps the protocol trivial.
 """
 from __future__ import annotations
 
+import contextlib
 import errno
 import json
 import os
@@ -3309,6 +3310,31 @@ def _refuse_filesystem_ingest(d: Daemon, op: str) -> None:
         )
 
 
+def _partition_keeping_yield(d: Daemon, sleep_s: float, between=None):
+    """A cooperative ingest's lock hand-off that keeps ITS partition binding.
+
+    Both cooperative ingests (`_op_ingest_path`, the ingest-gmd job) bind the
+    ONE shared writer Store's partition and used to keep it bound across the
+    yield, which releases `_store_lock`. Job A yields; job B takes the lock,
+    binds its own partition and yields while still bound; A reacquires and
+    writes — rows AND derive stamps — into B's partition (bug-098: a forced
+    reingest of this repo wrote project rows and its `ingest`/`semantic` stamps
+    into `sessions-refmatrix` while the hook's session-card job ran). The
+    binding is state of the LOCK HOLDER: record it before releasing, put it
+    back after reacquiring."""
+    def _yield() -> None:
+        st = d._st()
+        bound = (st._partition_name, st._partition_id)
+        d._store_lock.release()
+        time.sleep(sleep_s)
+        if between is not None:
+            between()
+        d._store_lock.acquire()
+        st = d._st()
+        st._partition_name, st._partition_id = bound
+    return _yield
+
+
 def _op_sync_files(d: Daemon, args: dict) -> dict:
     from refmatrix import sync as syncmod
     _refuse_filesystem_ingest(d, "sync")
@@ -3345,11 +3371,7 @@ def _op_ingest_path(d: Daemon, args: dict) -> dict:
         os.environ.get("RMX_INGEST_YIELD_SLEEP_S", "0.005") or "0.005"
     )
 
-    def _yield() -> None:
-        d._store_lock.release()
-        time.sleep(yield_sleep_s)
-        d._request_snapshot()
-        d._store_lock.acquire()
+    _yield = _partition_keeping_yield(d, yield_sleep_s, d._request_snapshot)
 
     # Emit `ingest-progress` per pass so the blocking CLI ingest isn't a black
     # box — the CLI tails these lines live (see `_stream_ingest_progress`).
@@ -3473,13 +3495,12 @@ def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict) -> dic
                 f"elapsed={elapsed:.0f}s eta={eta:.0f}s {p}"
             )
 
-    def _yield() -> None:
-        d._store_lock.release()
-        time.sleep(yield_sleep_s)
+    def _between() -> None:
         yield_counter[0] += 1
         if snapshot_every > 0 and yield_counter[0] % snapshot_every == 0:
             d._request_snapshot()
-        d._store_lock.acquire()
+
+    _yield = _partition_keeping_yield(d, yield_sleep_s, _between)
 
     try:
         d._store_lock.acquire()
@@ -3781,14 +3802,23 @@ def _store_health(d: Daemon) -> dict:
         # partition meant a stale memory graph never reached the hub row or the
         # hot gate, even though `rmx daemon status` showed it (ch-bsd plan-12
         # r2 #m-3, r3 follow-up).
-        s = d._st()
-        names = [r[0] for r in s._connect().execute(
-            "SELECT name FROM partitions ORDER BY name").fetchall()]
+        #
+        # On a READ store, per partition. This runs on `ping` (every hub
+        # watchdog tick, lock-free cli pool), and `with_partition` on the
+        # WRITER without the lock re-bound the partition under whatever write
+        # held the lock: an ingest's rows and stamps landed in the partition
+        # the loop was visiting (bug-098). `writer_wait_s=0`: ping never waits
+        # on the lock either; a busy writer is "unavailable".
+        own_name = d._st()._partition_name
+        names = _read_with_fallback(
+            d, None, lambda rs: [r[0] for r in rs._connect().execute(
+                "SELECT name FROM partitions ORDER BY name").fetchall()],
+            writer_wait_s=0)
         per = {}
         for name in names:
-            with s.with_partition(name):
-                per[name] = s.derive_status()
-        own = per.get(s._partition_name) or s.derive_status()
+            per[name] = _read_with_fallback(
+                d, name, lambda rs: rs.derive_status(), writer_wait_s=0)
+        own = per.get(own_name) or next(iter(per.values()), {})
         stale_parts = {n: v for n, v in per.items() if v.get("stale")}
         # The WORST stale partition, by oldest derived version — not the first
         # alphabetically, which is what `next(...)` gave and which made
@@ -4814,7 +4844,8 @@ def _op_memory_add(d: Daemon, args: dict) -> dict:
 
 
 def _read_with_fallback(d: Daemon, partition: str, fn, *, private: bool = False,
-                        missing: str = "empty"):
+                        missing: str = "empty",
+                        writer_wait_s: "float | None" = None):
     """Run `fn(store)` against the fastest available read path, bound to
     `partition` for the whole of `fn`.
 
@@ -4841,6 +4872,12 @@ def _read_with_fallback(d: Daemon, partition: str, fn, *, private: bool = False,
     `fn` bound to an id no row carries, so it sees zero rows;
     `missing="raise"` raises `ValueError("unknown partition ...")` (the
     context op: a typo'd `-p` must not read as "no matches").
+
+    `writer_wait_s` bounds the wait for the writer lock wherever this would
+    take it (None = wait). For an op that must not block — `ping`'s health
+    check runs on every hub watchdog tick (bug-098) — pass 0: the writer is
+    read only if its lock is free NOW, else `LookupError`. Never without the
+    lock: binding the writer's partition unlocked is the bug-098 race.
     """
     mirror = None if private else getattr(d, "_mem_mirror", None)
     ms = mirror.borrow() if mirror is not None else None
@@ -4868,7 +4905,7 @@ def _read_with_fallback(d: Daemon, partition: str, fn, *, private: bool = False,
                 return fn(rs)
             # Checked under the writer lock below; if the writer lacks it too,
             # this already-open read store answers the empty case.
-            with d._store_lock:
+            with _writer_lock(d, writer_wait_s):
                 on_writer = _has_partition(d._st(), partition)
             if not on_writer:
                 if missing == "raise":
@@ -4886,7 +4923,7 @@ def _read_with_fallback(d: Daemon, partition: str, fn, *, private: bool = False,
                 pass
     # Fallback: serialize under the write lock so the swap can't close
     # the connection mid-cursor.
-    with d._store_lock:
+    with _writer_lock(d, writer_wait_s):
         if partition is not None and not _has_partition(d._st(), partition):
             if missing == "raise":
                 raise ValueError(f"unknown partition {partition!r}")
@@ -4895,11 +4932,30 @@ def _read_with_fallback(d: Daemon, partition: str, fn, *, private: bool = False,
             prev = (st._partition_name, st._partition_id)
             st._partition_name, st._partition_id = partition, _NO_PARTITION_ID
             try:
-                return fn(d.store)
+                return fn(d._st())
             finally:
                 st._partition_name, st._partition_id = prev
+        if partition is None:
+            # No binding asked for: `with_partition(None)` would INSERT a
+            # partition row with a NULL name.
+            return fn(d._st())
         with d._st().with_partition(partition):
-            return fn(d.store)
+            return fn(d._st())
+
+
+@contextlib.contextmanager
+def _writer_lock(d: Daemon, wait_s: "float | None"):
+    """`_store_lock`, waiting at most `wait_s` (None = as long as it takes).
+    A bounded wait that expires raises `LookupError` — the caller is a
+    non-blocking read and says "unavailable" rather than queueing."""
+    if wait_s is None:
+        d._store_lock.acquire()
+    elif not d._store_lock.acquire(timeout=max(0.0, float(wait_s))):
+        raise LookupError("the writer is busy; a non-blocking read does not wait")
+    try:
+        yield
+    finally:
+        d._store_lock.release()
 
 
 # A partition id no row carries: a read bound to it sees nothing. Used for a
@@ -5084,23 +5140,30 @@ def _op_memory_score(d: Daemon, args: dict) -> dict:
     halflife = args.get("halflife_days")
     cap = args.get("cap")
     explain = bool(args.get("explain", False))
-    with d._st().with_partition(_memory_partition(d, args)):
-        cids = d._st().resolve_concept_ids(name, strict=False)
+    # On the READ path: this is a lock-free cli-pool op, and `with_partition`
+    # on the WRITER without the lock re-bound the partition under whatever
+    # write held it (bug-098).
+    def _score(rs):
+        cids = rs.resolve_concept_ids(name, strict=False)
         if not cids:
-            return {"concept": name, "concept_ids": [], "signal": 0.0,
-                    "components": []}
-        scores = d._st().reinforcement_scores(
-            cids, halflife_days=halflife, cap=cap,
-        )
+            return None
+        scores = rs.reinforcement_scores(cids, halflife_days=halflife, cap=cap)
         components: list[dict] = []
         if explain:
             for cid in cids:
                 components.extend({
                     "concept_id": cid,
                     **row,
-                } for row in d._st().reinforcement_components(
+                } for row in rs.reinforcement_components(
                     cid, halflife_days=halflife,
                 ))
+        return cids, scores, components
+
+    got = _read_with_fallback(d, _memory_partition(d, args), _score)
+    if got is None:
+        return {"concept": name, "concept_ids": [], "signal": 0.0,
+                "components": []}
+    cids, scores, components = got
     return {
         "concept": name,
         "concept_ids": cids,
@@ -5960,8 +6023,10 @@ def _op_memory_recall(d: Daemon, args: dict) -> dict:
     if _prefilter_enabled(args):
         from refmatrix.recall import concept_prefilter
         try:
-            with d._st().with_partition(partition):
-                _cand = concept_prefilter(d._st(), query)
+            # A READ store, not the writer: binding the writer's partition
+            # without the lock re-bound it under a write in flight (bug-098).
+            _cand = _read_with_fallback(
+                d, partition, lambda rs: concept_prefilter(rs, query))
         except Exception as exc:
             d._log(f"concept prefilter skipped: {exc!r}")
 

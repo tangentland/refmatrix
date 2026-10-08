@@ -334,6 +334,15 @@ def test_store_health_sees_a_stale_memory_partition(tmp_path, monkeypatch):
             s.stamp_derive("gmd", version="0.49.1", code_hash="p1:older")
 
         class _D:
+            # a real Daemon's lock + read path: health reads derive status
+            # per partition through them, never re-binding the writer unlocked
+            # (bug-098)
+            _store_lock = __import__('threading').Lock()
+            _mem_mirror = None
+
+            def _open_read_store(self, partition=None, **kw):
+                return None
+
             root = tmp_path / ".refmatrix"
 
             def _st(self):
@@ -366,6 +375,15 @@ def test_health_labels_an_unstamped_store_on_release_day(tmp_path, monkeypatch):
             pass                                              # exists, empty
 
         class _D:
+            # a real Daemon's lock + read path: health reads derive status
+            # per partition through them, never re-binding the writer unlocked
+            # (bug-098)
+            _store_lock = __import__('threading').Lock()
+            _mem_mirror = None
+
+            def _open_read_store(self, partition=None, **kw):
+                return None
+
             root = tmp_path / ".refmatrix"
 
             def _st(self):
@@ -406,6 +424,15 @@ def test_health_names_the_worst_partition_not_the_first_alphabetically(tmp_path,
             s.stamp_derive("ingest", version="0.49.1", code_hash="p1:older")
 
         class _D:
+            # a real Daemon's lock + read path: health reads derive status
+            # per partition through them, never re-binding the writer unlocked
+            # (bug-098)
+            _store_lock = __import__('threading').Lock()
+            _mem_mirror = None
+
+            def _open_read_store(self, partition=None, **kw):
+                return None
+
             root = tmp_path / ".refmatrix"
 
             def _st(self):

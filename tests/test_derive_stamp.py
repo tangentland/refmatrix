@@ -173,6 +173,15 @@ def test_health_carries_the_derive_verdict(tmp_path, monkeypatch):
     s.stamp_derive("ingest", version="0.49.1")
 
     class _D:
+        # a real Daemon's lock + read path: health reads derive status
+        # per partition through them, never re-binding the writer unlocked
+        # (bug-098)
+        _store_lock = __import__('threading').Lock()
+        _mem_mirror = None
+
+        def _open_read_store(self, partition=None, **kw):
+            return None
+
         root = tmp_path / ".refmatrix"
 
         def _st(self):

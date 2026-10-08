@@ -187,6 +187,15 @@ def test_the_hub_alert_input_stays_cold_with_four_passes_missing(tmp_path):
     s.stamp_derive("gmd")
 
     class _D:
+        # a real Daemon's lock + read path: health reads derive status
+        # per partition through them, never re-binding the writer unlocked
+        # (bug-098)
+        _store_lock = __import__('threading').Lock()
+        _mem_mirror = None
+
+        def _open_read_store(self, partition=None, **kw):
+            return None
+
         root = tmp_path / ".refmatrix"
 
         def _st(self):
