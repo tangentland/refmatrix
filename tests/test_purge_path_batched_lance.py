@@ -15,8 +15,15 @@ from __future__ import annotations
 
 import pytest
 
-lance = pytest.importorskip("lance")
-pa = pytest.importorskip("pyarrow")
+import importlib.util
+
+# Skip ONLY when lance is not installed. An installed lance that fails to
+# import (e.g. `typing_inspection` missing from the venv) must FAIL here, not
+# skip — importorskip read both as "absent" (ch-bsd r8 #s-4).
+if importlib.util.find_spec("lance") is None:
+    pytest.skip("lance not installed", allow_module_level=True)
+import lance  # noqa: E402
+import pyarrow as pa  # noqa: E402
 
 from refmatrix.store import Store
 

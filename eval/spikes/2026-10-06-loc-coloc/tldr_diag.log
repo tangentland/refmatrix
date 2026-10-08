@@ -1,0 +1,10 @@
+concept asn-coverage-spec#vacuity-real tldr_len= 500 file_len= 9487
+concept task-42-w1-carve-price-2026-07-27#c1c2 tldr_len= 500 file_len= 22383
+concept task-48a-reification-unifies-2026-07-27#d4 tldr_len= 500 file_len= 14548
+concept bsd-debitmap-phase-pre-red-f844738#verdict tldr_len= 500 file_len= 22961
+concept feedback-measurement-vs-structural-rule#root tldr_len= 500 file_len= 3814
+concept feedback-an-inference-marked-mine-is-not-a-premise#instance tldr_len= 487 file_len= 2682
+concept feedback-coordinator-role-plans-specs-orchestrate#root tldr_len= 500 file_len= 3282
+concept bitmap-infrastructure-census-2026-07-29#build tldr_len= 500 file_len= 31364
+n 22 with tldr 22 median tldr len 500.0
+store-wide tldr len: max 1500 p50 500.0 count at max 198

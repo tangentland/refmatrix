@@ -346,9 +346,9 @@ function runOp(root, op, args) {
   ws.onopen = () => ws.send(JSON.stringify({root, op, args}));
   ws.onmessage = (m) => {
     const d = JSON.parse(m.data);
-    if (d.line !== undefined) { term.innerHTML += d.line + "\n"; term.scrollTop = term.scrollHeight; }
-    else if (d.done) { term.innerHTML += `<div class="${d.code ? "err" : "muted"}">— exit ${d.code} —</div>`; term.scrollTop = term.scrollHeight; }
-    else if (d.error) term.innerHTML += `<div class="err">${d.error}</div>`;
+    if (d.line !== undefined) { term.innerHTML += esc(d.line) + "\n"; term.scrollTop = term.scrollHeight; }
+    else if (d.done) { term.innerHTML += `<div class="${d.code ? "err" : "muted"}">— exit ${esc(d.code)} —</div>`; term.scrollTop = term.scrollHeight; }
+    else if (d.error) term.innerHTML += `<div class="err">${esc(d.error)}</div>`;
   };
 }
 
@@ -422,7 +422,7 @@ async function renderMemory() {
     $("#mem-results").innerHTML = `<div class="loading">loading…</div>`;
     const r = await api("/api/memory?" + qs);
     rows = r.ok ? (r.result?.rows || []) : [];
-    if (!r.ok) { $("#mem-results").innerHTML = `<div class="muted">${r.error || "error"}</div>`; return; }
+    if (!r.ok) { $("#mem-results").innerHTML = `<div class="muted">${esc(r.error || "error")}</div>`; return; }
     renderRows();
   };
   $("#mem-go").addEventListener("click", go);
@@ -472,8 +472,10 @@ function subBus() {
   BUS_WS.onmessage = (m) => {
     const d = JSON.parse(m.data);
     if (d.keepalive) return;
-    const proj = d.project ? `[${d.project}]` : "";
-    term.innerHTML += `<div><span class="muted">${d.ts}</span> <span style="color:var(--accent)">${d.channel}</span> <b>${d.from}</b>${proj} <span style="color:var(--purple)">${d.type}</span>: ${d.body}</div>`;
+    // Bus text is written by other agents and processes: escaped (r2 #s-2's
+    // sibling sweep, closed at r3 #s-4).
+    const proj = d.project ? `[${esc(d.project)}]` : "";
+    term.innerHTML += `<div><span class="muted">${esc(d.ts)}</span> <span style="color:var(--accent)">${esc(d.channel)}</span> <b>${esc(d.from)}</b>${proj} <span style="color:var(--purple)">${esc(d.type)}</span>: ${esc(d.body)}</div>`;
     term.scrollTop = term.scrollHeight;
     if (d.type === "announce" || d.type === "decision") loadRefine();
   };
@@ -574,9 +576,12 @@ async function doWhere(q) {
   // made the browser the third consumer to turn a busy store into an empty
   // answer (ch-bsd plan-3 r7 #s-3 — `canon find` was not the last one).
   const skipped = r.result?.skipped || [];
+  // ESCAPED with the module-level `esc`: `reason` carries exception text and
+  // filesystem paths (bug-069's per-project reasons channel). A second local
+  // copy shadowed it until ch-bsd r2 #s-2 / r3 #s-4.
   const skipNote = skipped.length
     ? `<div class="omni-group">${skipped.length} store${skipped.length !== 1 ? "s" : ""} skipped: ` +
-      skipped.map((s) => `${s.project} — ${s.reason}`).join("; ") + `</div>`
+      skipped.map((s) => `${esc(s.project)} — ${esc(s.reason)}`).join("; ") + `</div>`
     : "";
   if (!hits.length) {
     box.innerHTML = skipNote || `<div class="omni-group">no hits</div>`;
@@ -584,7 +589,13 @@ async function doWhere(q) {
   }
   const groups = {};
   hits.forEach((h) => (groups[h.source] = groups[h.source] || []).push(h));
-  box.innerHTML = Object.entries(groups).map(([g, items]) =>
+  // The PARTIAL case (ch-bsd r1 #b-4): some stores answered and one could not
+  // be read. `skipNote` was computed and then spent only in the zero-hits
+  // branch above, so this assignment dropped it — and partial is the COMMON
+  // fan-out shape, which made the comment four lines up ("a store that could
+  // not be searched is SAID, never rendered as 'no hits'") false exactly where
+  // it mattered most. Same sibling-output shape as #b-2.
+  box.innerHTML = skipNote + Object.entries(groups).map(([g, items]) =>
     `<div class="omni-group">${g}</div>` + items.slice(0, 8).map((h) =>
       `<div class="omni-item" data-root="${h.root || ""}" data-name="${h.name}">
         <span class="dot" style="background:${KIND_COLOR[h.kind] || "#8b949e"}"></span>
@@ -947,7 +958,7 @@ async function loadFileInto(el, n) {
   const r = await api(`/api/file?root=${encodeURIComponent(root)}&path=${encodeURIComponent(n.path)}`
     + (n.line ? `&line=${n.line}` : ""));
   if (!r.ok) {
-    el.innerHTML = `<div class="muted" style="padding:8px">${r.error || "could not read file"}</div>`;
+    el.innerHTML = `<div class="muted" style="padding:8px">${esc(r.error || "could not read file")}</div>`;
     return;
   }
   const start = r.result.start || 1;

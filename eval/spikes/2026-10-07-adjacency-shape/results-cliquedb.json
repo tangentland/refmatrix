@@ -1,0 +1,136 @@
+{
+  "partition_id": 2,
+  "concepts": 19456,
+  "entities": 4619,
+  "edges": 283410,
+  "concept_df": {
+    "p25": 1.0,
+    "p50": 2.0,
+    "p75": 7.0,
+    "p90": 29.0,
+    "p95": 65.0,
+    "p99": 223.35000000000218,
+    "max": 1302,
+    "mean": 14.566714638157896,
+    "share_df_le_1": 0.3856393914473684
+  },
+  "entity_degree": {
+    "p25": 8.0,
+    "p50": 40.0,
+    "p75": 91.0,
+    "p90": 143.0,
+    "p95": 179.0,
+    "p99": 314.27999999999884,
+    "max": 2293,
+    "mean": 61.35743667460489
+  },
+  "powerlaw_concept_df": {
+    "xmin": 5,
+    "alpha": 1.7193071654292438,
+    "ks": 0.035737463302331615,
+    "n_tail": 6562
+  },
+  "top_hubs": [
+    {
+      "name": "one",
+      "df": 1302
+    },
+    {
+      "name": "only",
+      "df": 1251
+    },
+    {
+      "name": "adr",
+      "df": 1247
+    },
+    {
+      "name": "sql",
+      "df": 1051
+    },
+    {
+      "name": "cliquedb",
+      "df": 989
+    },
+    {
+      "name": "read",
+      "df": 902
+    },
+    {
+      "name": "every",
+      "df": 889
+    },
+    {
+      "name": "does",
+      "df": 856
+    },
+    {
+      "name": "two",
+      "df": 852
+    },
+    {
+      "name": "row",
+      "df": 825
+    },
+    {
+      "name": "same",
+      "df": 781
+    },
+    {
+      "name": "set",
+      "df": 753
+    }
+  ],
+  "edge_share": {
+    "top_0.1pct": 0.05840302035919692,
+    "top_1pct": 0.26967291203556687,
+    "df_le_1": 0.02647401291415264
+  },
+  "roaring_bytes": {
+    "total": 1240242,
+    "share_top_1pct": 0.14686649863494383,
+    "share_df_le_1": 0.1088932643790486
+  },
+  "reach": {
+    "all_concepts": {
+      "reach1_mean": 0.3923489932885906,
+      "reach2_mean": 0.8015241394241178,
+      "reach2_p50": 0.8856895431911669
+    },
+    "minus_top_0.1pct": {
+      "reach1_mean": 0.34988092660749076,
+      "reach2_mean": 0.7919062567655337,
+      "reach2_p50": 0.8820090928772462
+    },
+    "minus_top_1pct": {
+      "reach1_mean": 0.23980731760121238,
+      "reach2_mean": 0.7411322797142239,
+      "reach2_p50": 0.8628491015371293
+    }
+  },
+  "communities": {
+    "concepts_used": 11758,
+    "df_cap": 223,
+    "projection_edges": 2600141,
+    "louvain_modularity": 0.12018392219105688,
+    "n_communities": 59,
+    "largest": [
+      1164,
+      960,
+      698,
+      621,
+      430,
+      394,
+      273,
+      19
+    ],
+    "singletons": 47
+  },
+  "compression_bytes": {
+    "today_ids": 1240242,
+    "dense_rank_today_order": 876804,
+    "path_locality_order": 876516,
+    "community_order": 876474,
+    "random_order_control": 878116
+  },
+  "elapsed_s": 371.2
+}

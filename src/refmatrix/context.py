@@ -119,6 +119,10 @@ class ContextBundle:
     # drops some bundles after building them; those must not count).
     helix_pending: list = field(default_factory=list)
     store_root: "str | None" = None
+    # Degrades the caller must SEE (ch-bsd r7 #s-1): a rerank that failed at
+    # score time used to reach only the process's stderr — the DAEMON's log
+    # on the daemon path — while the answer looked fully ranked.
+    warnings: "list[str]" = field(default_factory=list)
 
     def total_entities(self) -> int:
         return sum(len(v) for v in self.groups.values())
@@ -189,11 +193,14 @@ def build_context(
         # fallback instead of an empty stub. --linkage filtering opts out.
         if linkages:
             return bundle
+        # The reranker goes WITH it (found 2026-10-07 by the r7 #s-1 test):
+        # this hand-off dropped it, so `rmx context "<phrase>"` was never
+        # reranked although the daemon built a reranker for every such call.
         return content_only_bundle(
             s, ref, max_entities=max_entities, max_tokens=max_tokens,
             expand=expand, include_sessions=include_sessions,
             hit_lines=hit_lines, grep_backstop=grep_backstop,
-            degree=degree,
+            degree=degree, reranker=reranker,
         )
     bundle.anchor = e
 
@@ -395,7 +402,7 @@ def build_context(
             s, ref, built, seen_ids=seen_ids, max_entities=max_entities,
             expand=expand, include_sessions=include_sessions,
             parent_cache=parent_cache, grep_backstop=grep_backstop,
-            hit_lines=hit_lines, reranker=reranker,
+            hit_lines=hit_lines, reranker=reranker, warnings=bundle.warnings,
         )
 
     _apply_budget(bundle, built, max_entities, max_tokens, used)
@@ -532,7 +539,7 @@ def _rerank_pool() -> int:
 
 
 def _rerank_bodied(s: Store, reranker, query: str,
-                   hits: list) -> list:
+                   hits: list, warnings: "list[str] | None" = None) -> list:
     """Reorder only the hits that carry real text; leave label-like rows where
     BM25 put them.
 
@@ -574,8 +581,18 @@ def _rerank_bodied(s: Store, reranker, query: str,
         # payload and stderr is the log, so a skip that says nothing is how a
         # dead rerank leg went unnoticed for a release.
         import sys as _sys
-        print(f"rerank skipped: {exc.reason}; BM25 order kept", file=_sys.stderr)
+        msg = f"rerank skipped: {exc.reason}; BM25 order kept"
+        print(msg, file=_sys.stderr)
+        if warnings is not None:
+            warnings.append(msg)
         return hits
+    # A private worker's forward pass is allowed to finish past the budget
+    # (killing it costs the next caller a cold load); the answer says so
+    # rather than presenting the overrun as a bound (ch-bsd r10 #b-1).
+    over = getattr(reranker, "overrun_s", None)
+    if over and warnings is not None:
+        warnings.append(f"rerank overran its budget by {over:.1f}s "
+                        f"(private worker; the pass was let finish)")
     if len(reordered) != len(subset):
         return hits
     out = list(hits)
@@ -718,6 +735,7 @@ def _append_content_hits(
     include_sessions: bool, parent_cache: dict[str, str | None],
     grep_backstop: bool = False, hit_lines: str = "first", reranker=None,
     rerank_query: "str | None" = None,
+    warnings: "list[str] | None" = None,
 ) -> None:
     """Content-ranked fusion: BM25 over the `mentions` forward index for the
     ref's terms, folding in body matches the graph walk can't reach. Turns
@@ -786,11 +804,14 @@ def _append_content_hits(
         # a bag supply the sentence the user actually wrote.
         rq = rerank_query or ref
         try:
-            ranked_hits = _rerank_bodied(s, reranker, rq, ranked_hits)
+            ranked_hits = _rerank_bodied(s, reranker, rq, ranked_hits,
+                                         warnings=warnings)
         except Exception as exc:  # noqa: BLE001 — degrade, but never in silence
             import sys as _sys
-            print(f"rerank failed ({type(exc).__name__}: {exc}); BM25 order kept",
-                  file=_sys.stderr)
+            msg = f"rerank failed ({type(exc).__name__}: {exc}); BM25 order kept"
+            print(msg, file=_sys.stderr)
+            if warnings is not None:
+                warnings.append(msg)
     for ceid, cscore in ranked_hits:
         if len(content_entries) >= max_entities:
             break
@@ -1026,7 +1047,7 @@ def content_only_bundle(
         s, ref, built, seen_ids=set(), max_entities=max_entities,
         expand=expand, include_sessions=include_sessions, parent_cache={},
         grep_backstop=grep_backstop, hit_lines=hit_lines, reranker=reranker,
-        rerank_query=rerank_query,
+        rerank_query=rerank_query, warnings=bundle.warnings,
     )
     # NL-path PPR expansion (degree>=1): seed the walk with the top content
     # hits, restart-mass proportional to their BM25 scores — the query's own
@@ -1528,6 +1549,7 @@ def _helix_flush(b: ContextBundle) -> None:
 def render_text(b: ContextBundle) -> str:
     _helix_flush(b)
     lines = [_render_header(b)]
+    lines += [f"# warning: {w}" for w in b.warnings]
     a = b.anchor
     if a is not None:
         lines.append(f"anchor: {a.name}  [{a.kind}]")
@@ -1579,6 +1601,7 @@ def render_json(b: ContextBundle) -> str:
         {
             "ref": b.ref,
             "degree": b.degree,
+            **({"warnings": list(b.warnings)} if b.warnings else {}),
             "anchor": (
                 {
                     "name": b.anchor.name,

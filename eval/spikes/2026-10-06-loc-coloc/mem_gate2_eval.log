@@ -1,0 +1,14 @@
+
+== confirmation set: 720 untouched questions (excluded 180 tuning ids)
+  base                   MRR@20=0.1851 hit@1=0.119 hit@5=0.265 hit@10=0.335 hit@20=0.403  +0/-0 sign-p=1.0000
+  coloc                  MRR@20=0.2008 hit@1=0.131 hit@5=0.278 hit@10=0.353 hit@20=0.433  +123/-59 sign-p=0.0000
+  ratio1.25              MRR@20=0.1951 hit@1=0.128 hit@5=0.275 hit@10=0.342 hit@20=0.426  +76/-35 sign-p=0.0001
+  gap0.2                 MRR@20=0.1951 hit@1=0.128 hit@5=0.275 hit@10=0.342 hit@20=0.426  +76/-35 sign-p=0.0001
+  gap0.35                MRR@20=0.1984 hit@1=0.129 hit@5=0.278 hit@10=0.349 hit@20=0.431  +103/-45 sign-p=0.0000
+  verb0.7                MRR@20=0.2008 hit@1=0.131 hit@5=0.278 hit@10=0.353 hit@20=0.433  +123/-59 sign-p=0.0000
+  verb0.85               MRR@20=0.2008 hit@1=0.131 hit@5=0.278 hit@10=0.353 hit@20=0.433  +123/-59 sign-p=0.0000
+  verb1.0                MRR@20=0.2008 hit@1=0.131 hit@5=0.278 hit@10=0.353 hit@20=0.433  +123/-59 sign-p=0.0000
+  dcov0.9                MRR@20=0.1996 hit@1=0.128 hit@5=0.278 hit@10=0.353 hit@20=0.432  +117/-55 sign-p=0.0000
+  ratio1.1|verb0.85      MRR@20=0.1925 hit@1=0.128 hit@5=0.268 hit@10=0.338 hit@20=0.417  +48/-23 sign-p=0.0041
+  ratio1.1&verb0.7       MRR@20=0.2008 hit@1=0.131 hit@5=0.278 hit@10=0.353 hit@20=0.433  +123/-59 sign-p=0.0000
+% gated: {'ratio1.25': 46, 'gap0.2': 46, 'gap0.35': 25, 'verb0.7': 3, 'verb0.85': 1, 'verb1.0': 0, 'dcov0.9': 6, 'ratio1.1|verb0.85': 67, 'ratio1.1&verb0.7': 2}

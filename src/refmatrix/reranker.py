@@ -266,11 +266,12 @@ class Reranker:
     def _load(self) -> None:
         if self._model is not None:
             return
-        from sentence_transformers import CrossEncoder
+        from refmatrix.models_local import load_local
 
+        # LOCAL CACHE ONLY (2026-10-07), as in `Embedder._load`.
         device = os.environ.get("RMX_RERANK_DEVICE") or \
             os.environ.get("RMX_EMBED_DEVICE", "cpu")
-        self._model = CrossEncoder(self.model_name, device=device)
+        self._model = load_local("rerank", self.model_name, device)
 
     def score(self, query: str, docs: Sequence[str]) -> list[float]:
         """Score each doc against the query. Higher = more relevant.
@@ -313,6 +314,11 @@ class RemoteReranker:
         # probe had already spent part of it, so it could outlive the caller by
         # the probe's length (ch-bsd plan-12 #m-1).
         self._budget_s = budget_s
+        # Seconds a private forward pass ran past the deadline: it is allowed
+        # to finish (a kill costs the next caller a cold load) and SAID on the
+        # answer's warnings (ch-bsd r10 #b-1). None = within budget.
+        self.overrun_s: float | None = None
+        self._owns_client = False
         if deadline is not None:
             self._deadline = float(deadline)
         else:
@@ -325,29 +331,133 @@ class RemoteReranker:
             self._model_name = self._client.info().get("model") or DEFAULT_MODEL
         return self._model_name
 
+    def with_budget(self, budget_s: "float | None") -> "RemoteReranker":
+        """A per-request view bounded by `budget_s` from now.
+
+        The daemon caches one unbounded reranker; a read op that must not wait
+        on a busy worker takes a bounded view of it (ch-bsd r8 #s-2).
+
+        On the hub the view gets its OWN connection (`fork`): the daemon's one
+        client holds its lock for a whole round trip, so a view sharing it
+        queued behind the daemon's own unbudgeted `memory_recall` rerank —
+        3.80 s on a 1.0 s budget (ch-bsd r10 #b-1). A private worker has no
+        second connection to give; `score` reserves it instead."""
+        fork = getattr(self._client, "fork", None)
+        client = fork(budget_s) if fork is not None and budget_s is not None \
+            else self._client
+        view = RemoteReranker(client, budget_s=budget_s)
+        view._model_name = self._model_name
+        view._owns_client = client is not self._client
+        return view
+
+    def _header(self, probe_s: float) -> dict:
+        """The cost header WITHOUT waiting on the worker: `nowait` on both
+        clients (the hub answers from its cache; a private client from its
+        own). A client that predates the keyword gets a bounded probe; none
+        gets an unbounded one — r10 #b-1 measured that `info()` paying a cold
+        load inside a 3.0 s budget (6.01 s)."""
+        try:
+            try:
+                return self._client.info(timeout=probe_s, nowait=True) or {}
+            except TypeError:
+                return self._client.info(timeout=probe_s) or {}
+        except Exception:       # noqa: BLE001 — no info is "cost unknown"
+            return {}
+
     def score(self, query: str, docs: Sequence[str]) -> list[float]:
         if not docs:
             return []
         truncated = [window_doc(d, query, limit=MAX_DOC_CHARS) for d in docs]
         payload = {"query": query, "docs": truncated}
-        if self._deadline is not None:
+        if self._deadline is None:
+            hdr, _ = self._client.call("rerank", payload)
+            return _checked(hdr.get("scores") or [], self.model_name)
+        try:
+            return self._score_within(query, payload)
+        finally:
+            if getattr(self, "_owns_client", False):
+                self._client.close()
+
+    def _score_within(self, query: str, payload: dict) -> list[float]:
+        """The budgeted path. Every wait on it is bounded by the deadline:
+        the reservation, the header, and the socket (ch-bsd r10 #b-1)."""
+        from refmatrix.subproc import WorkerError
+
+        n = len(payload["docs"])
+        assert self._deadline is not None
+        remaining = self._deadline - time.time()
+        if remaining <= 0:
+            raise RerankSkipped("rerank budget already spent")
+        # A private worker is ONE process behind ONE lock: take it within the
+        # budget or skip. Its socket timeout is a kill (`_call_once` closes the
+        # process), so this path never hands it one (r10 Q2: spawns 1 -> 2).
+        reserve = getattr(self._client, "reserve", None)
+        private = reserve is not None
+        if private and getattr(self._client, "warming", False):
+            # The warm thread holds the worker for the whole load; waiting the
+            # budget out only to say "busy" spends it for nothing (r12 #m-1).
+            raise RerankSkipped("worker warming (model loading in the background)")
+        if private and not reserve(remaining):
+            raise RerankSkipped(f"private worker busy past the {remaining:.1f}s budget")
+        try:
+            info = self._header(min(remaining, 1.0))
+            # A cold worker answers with nothing but the queue the hub saw (or
+            # nothing at all): its model is not loaded.
+            if not (set(info) - {"queue_depth"}):
+                # Skip, and make sure SOMETHING warms it: with only budgeted
+                # callers a cold private worker otherwise stays cold for the
+                # daemon's life (ch-bsd r11 #b-1). The hub warms its own role.
+                warm = getattr(self._client, "warm_async", None)
+                if warm is not None:
+                    warm()
+                err = getattr(self._client, "warm_error", None)
+                raise RerankSkipped(
+                    "worker cold (model not loaded); a budget does not pay the load"
+                    + (f"; last warmup failed: {err}" if err else ""))
+            if self._model_name is None and info.get("model"):
+                # From the header in hand: `model_name` would otherwise ask
+                # `info()` AFTER scoring, outside every bound.
+                self._model_name = info["model"]
+            est = estimate_rerank_s(info, n)
             remaining = self._deadline - time.time()
-            info = {}
-            try:
-                info = self._client.info() or {}
-            except Exception:       # noqa: BLE001 — no info is "cost unknown"
-                info = {}
-            est = estimate_rerank_s(info, len(truncated))
+            if remaining <= 0:
+                raise RerankSkipped("rerank budget spent on the cost header")
             if est is not None and est > remaining:
                 raise RerankSkipped(
-                    f"{len(truncated)} docs x {float(info['cost_s_per_doc']):.2f} "
+                    f"{n} docs x {float(info['cost_s_per_doc']):.2f} "
                     f"s/doc x (1+{int(info.get('queue_depth') or 0)} queued) = "
                     f"{est:.1f}s > {remaining:.1f}s left"
                 )
             # The worker drops a frame it dequeues after this instant, so an
             # abandoned request stops starving the caller behind it.
             payload["deadline"] = self._deadline
-        hdr, _ = self._client.call("rerank", payload)
+            if private:
+                # Reserved, so it is dequeued now and the deadline cannot drop
+                # it. Let a started forward pass finish and SAY it overran: a
+                # kill would cost the next caller the cold load.
+                payload.pop("deadline")
+                hdr, _ = self._client.call("rerank", payload)
+                over = time.time() - self._deadline
+                if over > 0:
+                    self.overrun_s = over
+            else:
+                # The socket waits for what is LEFT after the header, not the
+                # whole budget.
+                timeout = max(remaining, 0.01)
+                try:
+                    hdr, _ = self._client.call("rerank", payload, timeout=timeout)
+                except TimeoutError as exc:
+                    raise RerankSkipped(
+                        f"no answer within the {timeout:.1f}s budget") from exc
+        except WorkerError as exc:
+            # The worker refused a frame it dequeued past our deadline: that
+            # is the budget working, not a fault.
+            if "deadline expired" in str(exc):
+                raise RerankSkipped(f"worker dropped the late frame ({exc})") from exc
+            raise
+        finally:
+            if private:
+                self._client.unreserve()
         # The worker already ran `_checked`; re-run it here so a future
         # transport that bypasses `Reranker.score` cannot skip the guard.
         return _checked(hdr.get("scores") or [], self.model_name)
@@ -495,7 +605,8 @@ def rerank_entity_hits(
 
 
 def shared_reranker(log=None, *, timeout: "float | None" = None,
-                    probe_timeout: "float | None" = None):
+                    probe_timeout: "float | None" = None,
+                    why: "list[str] | None" = None):
     """A reranker backed by the hub's shared worker, or None. `timeout`
     bounds every score call (the client's socket timeout; the worker
     default is 300 s — bsd-plan2-r6 #b-1); `probe_timeout` bounds the
@@ -511,7 +622,10 @@ def shared_reranker(log=None, *, timeout: "float | None" = None,
     `Daemon._model_client` does fall back and this does not.
 
     Returns None when the hub is down or sharing is disabled, and every caller
-    treats None as "keep retrieval order".
+    treats None as "keep retrieval order". When the worker was REACHED and
+    failed (a ModelNotCached on its `info` probe, a crashed model), the cause
+    is appended to `why` (ch-bsd r7 #s-1): callers printed "shared worker
+    unavailable" and lost the fetch command that would fix it.
     """
     if not rerank_enabled() or not rerank_available():
         return None
@@ -530,5 +644,7 @@ def shared_reranker(log=None, *, timeout: "float | None" = None,
         return RemoteReranker(
             client, budget_s=timeout,
             deadline=None if timeout is None else t0 + float(timeout))
-    except Exception:
+    except Exception as e:  # noqa: BLE001 — degrade, with the cause handed back
+        if why is not None:
+            why.append(f"{type(e).__name__}: {e}")
         return None

@@ -237,6 +237,73 @@ def test_the_drain_is_bounded_and_says_what_it_left():
     assert "capped" in line and "rmx embed --kinds memory" in line
 
 
+def test_the_remaining_count_is_one_the_real_producer_can_emit(tmp_path):
+    """ch-bsd r1 #b-1: the test above feeds `remaining: 9999`, and the REAL
+    producer could only ever return 0 or 1 — `_op_embed` reported
+    `len(pending_embeddings(limit=1))`. The fake was the blindfold, so the
+    capped line told operators "1 still without vectors" with thousands
+    outstanding. Driven against the real store method, no fake."""
+    from refmatrix.store import Store
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    try:
+        for i in range(5):
+            s.upsert_entity("memory", f"m{i}")
+        pend = s.pending_embeddings(kinds=["memory"])
+        assert len(pend) == 5, pend
+        # The bug, pinned: a capped LIST is not a count.
+        assert len(s.pending_embeddings(kinds=["memory"], limit=1)) == 1
+        # The fix: the count is the count.
+        assert s.pending_embeddings_count(kinds=["memory"]) == 5
+        # And it respects the same predicate as the list it counts.
+        assert s.pending_embeddings_count() >= 5
+        assert s.pending_embeddings_count(kinds=["code"]) == 0
+    finally:
+        s.close()
+
+
+def test_op_embed_reports_a_real_remaining_count(tmp_path, monkeypatch):
+    """The producer, not the helper: `_op_embed`'s `remaining` has to be the
+    number the renderer spends. Asserted over a store with more pending rows
+    than one batch, so a 0-or-1 answer is visibly wrong."""
+    from refmatrix.daemon import Daemon, _op_embed
+    from refmatrix.store import Store
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    for i in range(7):
+        s.upsert_entity("memory", f"m{i}")
+
+    class _FakeEmb:
+        """Only the model is faked. `_op_embed`'s own arithmetic — the
+        `remaining` under test — runs for real."""
+        dim = 3
+        model_name = "fake"
+
+        def embed_texts(self, texts):
+            import numpy as _np
+            return _np.zeros((len(texts), 3), dtype="float32")
+
+    d = Daemon(tmp_path / ".refmatrix")
+    d.store = s
+    monkeypatch.setattr(d, "_embedder", lambda: _FakeEmb(), raising=False)
+    # NO `upsert_vector` stub (ch-bsd r3 #s-2, the twin of r2 #s-1). The stub
+    # pinned `remaining` at 7 so `> 1` could not tell a count measured AFTER
+    # the write from one sampled before it. Unstubbed, the two vectors land
+    # and the count must move to exactly 5.
+    try:
+        res = _op_embed(d, {"kinds": ["memory"], "limit": 2})
+        assert res.get("ok") is not False, res
+        assert res["embedded"] == 2, res
+        assert res["remaining"] == 5, (
+            f"remaining={res['remaining']} — not re-measured after the write, "
+            f"or a 0-or-1 boolean wearing a count's clothes (#b-1)")
+        assert res["remaining"] == s.pending_embeddings_count(kinds=["memory"])
+    finally:
+        s.close()
+
+
 def test_a_pass_that_makes_no_progress_stops_instead_of_spinning():
     """`embedded == 0` with rows still pending is a pass that cannot advance;
     burning the whole budget on it would turn a stuck embedder into eight
@@ -364,3 +431,68 @@ def test_save_state_command_renders_the_embed_line(quiet, monkeypatch):
         "--no-promote"])
     assert r.exit_code == 0, r.output
     assert "3 row(s) now reachable by recall" in r.output, r.output
+    # EXACTLY once. The first cut printed it twice — the bridge appends the
+    # line to the report that save-state echoes, and the renderer printed it
+    # again from `fin["embed"]`. This assertion said only "appears", so it
+    # passed straight through the duplication; I saw it in this session's own
+    # save-state output, not in a test.
+    assert r.output.count("memory embed") == 1, (
+        f"{r.output.count('memory embed')} embed lines:\n{r.output}")
+
+
+def test_the_capped_branch_reports_a_real_count_from_the_real_producer(tmp_path,
+                                                                       monkeypatch):
+    """The branch whose number was WRONG, driven end to end with no fake count.
+
+    ch-bsd r1 #b-1 lived specifically in the CAPPED path: `remaining` came from
+    `len(pending_embeddings(limit=1))`, so the one line an operator acts on
+    ("N still without vectors") could only say 0 or 1. Every other test here
+    either does not reach the cap or reaches it through a fake. This one drives
+    `drain_memory_vectors` with the REAL `_op_embed` and a deliberately tiny
+    budget (`batches=2, limit=1`) so the cap is hit on a small store, and then
+    asserts the reported remainder equals what the store actually owes.
+
+    Only the MODEL is faked. The count, the loop, the cap and the rendered line
+    are all real.
+    """
+    from refmatrix.daemon import Daemon, _op_embed
+    from refmatrix.ingest_gmd import drain_memory_vectors, render_memory_embed_line
+    from refmatrix.store import Store
+
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    for i in range(9):
+        s.upsert_entity("memory", f"m{i}")
+
+    class _FakeEmb:
+        dim = 3
+        model_name = "fake"
+
+        def embed_texts(self, texts):
+            import numpy as _np
+            return _np.zeros((len(texts), 3), dtype="float32")
+
+    d = Daemon(tmp_path / ".refmatrix")
+    d.store = s
+    monkeypatch.setattr(d, "_embedder", lambda: _FakeEmb(), raising=False)
+    # NO `upsert_vector` stub (ch-bsd r2 #s-1). Stubbing the write pinned
+    # `remaining` at 9, so the assertion could not tell a RE-MEASURED count
+    # from one sampled before the loop — the exact confusion #b-1 was about.
+    # Unstubbed, the vectors really land and `remaining` tracks real progress,
+    # which is strictly stronger and one fewer double.
+    try:
+        out = drain_memory_vectors(lambda a: _op_embed(d, a),
+                                   partition=s._partition_name,
+                                   batches=2, limit=1)
+        assert out["capped"] is True, out
+        assert out["error"] is None, out
+        assert out["embedded"] == 2, out
+        # 9 owed, 2 embedded under a 2-batch cap: the remainder is MEASURED
+        # after the loop, not sampled before it.
+        assert out["remaining"] == 7, out
+        assert out["remaining"] == s.pending_embeddings_count(kinds=["memory"])
+        line = render_memory_embed_line(out)
+        assert "7 still without vectors" in line, line
+        assert "rmx embed --kinds memory" in line
+    finally:
+        s.close()

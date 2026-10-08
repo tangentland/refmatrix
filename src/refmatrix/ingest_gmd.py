@@ -1431,9 +1431,14 @@ def drain_memory_vectors(embed_batch, *, partition: str,
             embedded = int(res.get("embedded", 0))
             out["embedded"] += embedded
             out["remaining"] = int(res.get("remaining", 0))
+            if not out["remaining"]:
+                return out
             # `embedded == 0` ends it too: a pass that can make no progress
-            # would otherwise spin the full budget for nothing.
-            if not embedded or not out["remaining"]:
+            # would otherwise spin the full budget for nothing. EXCEPT a batch
+            # whose rows all changed while the model ran (ch-bsd r10 #m-1):
+            # they are still pending and the next batch embeds their new text.
+            # The batch budget still bounds a row rewritten on every pass.
+            if not embedded and not res.get("changed_while_encoding"):
                 return out
         out["capped"] = True
     except Exception as e:      # noqa: BLE001 — reported, never hidden

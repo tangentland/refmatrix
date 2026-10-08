@@ -131,3 +131,55 @@ def test_where_federates(monkeypatch, tmp_path):
     kinds = {h["kind"] for h in res["result"]["results"]}
     assert "code" in kinds and "memory" in kinds
     assert all(h["project"] == "projX" for h in res["result"]["results"])
+
+
+def test_the_omnibox_keeps_the_skip_note_when_some_stores_answered():
+    """ch-bsd r1 #b-4: `doWhere` computed `skipNote` and spent it ONLY in the
+    zero-hits branch, so the PARTIAL case — some stores answered, one could not
+    be read — overwrote `innerHTML` and dropped it. Partial is the common
+    fan-out shape, which made the comment four lines above it ("a store that
+    could not be searched is SAID, never rendered as 'no hits'") false exactly
+    where it mattered.
+
+    A source-level assertion, and named as the weak gate it is: this repo runs
+    no JS. It pins the one thing that regressed — the note reaching the
+    grouped-render assignment — rather than the behaviour, which would need a
+    DOM. The server half (`/api/where` carrying `skipped`) is covered by
+    `test_where_federates` and by `search`'s own tests.
+    """
+    from pathlib import Path
+
+    from refmatrix import ui
+
+    js = (Path(ui.__file__).resolve().parent / "static" / "app.js").read_text()
+    body = js[js.index("async function doWhere("):]
+    body = body[:body.index("\n}\n")]
+
+    assert "skipNote" in body
+    grouped = body[body.index("const groups = {}"):]
+    assert "skipNote +" in grouped, (
+        "the grouped render drops the skipped-store note — the partial "
+        "fan-out case renders as if every store answered")
+    # And the reason is escaped: it carries exception text and paths now.
+    assert "esc(s.reason)" in body, "skip reasons go into innerHTML unescaped"
+
+
+def test_app_js_has_one_escape_and_server_text_goes_through_it():
+    """ch-bsd r2 #s-2 / r3 #s-4: `doWhere` carried a second, shadowing
+    `const esc` with its own null rule, and three renderers wrote server- or
+    bus-produced text into `innerHTML` raw (`d.error`, `r.error`, the bus
+    line's `d.from`/`d.channel`/`d.body`). Source-level, and weak for the same
+    reason as the test above: this repo runs no JS. It pins the two things
+    that regressed — one definition, and no raw interpolation at those sites.
+    """
+    import re
+    from pathlib import Path
+
+    from refmatrix import ui
+
+    js = (Path(ui.__file__).resolve().parent / "static" / "app.js").read_text()
+
+    assert len(re.findall(r"\bconst esc\s*=", js)) == 1, "a second esc shadows the shared one"
+    for raw in ("${d.error}", "${r.error ||", "${d.from}", "${d.channel}",
+                "${d.body}", "innerHTML += d.line +"):
+        assert raw not in js, f"unescaped server text reaches innerHTML: {raw}"

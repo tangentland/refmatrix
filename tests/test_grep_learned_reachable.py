@@ -4,7 +4,10 @@
 project's own 121 repeated grep patterns
 (`workflow/review-output/grep-reachability-repeated.json`, 2026-10-06), that was
 true for 24 of the 76 patterns that fell to the floor and taught something —
-and for **0 of 18 multi-word patterns**.
+and for **0 of 28 multi-word patterns** (patterns containing a space, counted
+over those that taught something; the figure read `0 of 18` until ch-bsd r1
+#s-4 found that no definition reproduced that denominator from the committed
+JSON — see `refmatrix/grep-learning-replay#fix-correction`).
 
 MECHANISM, proven by direct SQL rather than inferred. `store.add_concept` runs
 `_concept_variants`, which writes the canonical underscore row PLUS space and
@@ -60,16 +63,49 @@ def daemon(tmp_path, monkeypatch):
 
 
 def _corpus(proj):
+    """Every pattern the tests teach appears on a REAL line here, because the
+    read verifies the line (bug-074)."""
     f = proj / "sample.py"
-    f.write_text("roaring bitmap lives here\n" * 2 + "bug-008 reference\n"
-                 "project.scripts entry\n")
+    f.write_text(
+        "roaring bitmap lives here\n" * 2
+        + "bug-008 reference\n"
+        + "project.scripts entry\n"
+        + "scan-prompt wiring\n"
+        + "def _open_read_store(root):\n"
+        + "learning_enabled gate\n"
+        + "an error happens here\n"
+        # Lines 9-10: IDENTIFIER spellings, where an ingest-time keyword
+        # concept's evidence really lands (ch-bsd r3 #b-3).
+        + "roaring_bitmap = make()\n"
+        + "def _replica_bundle(x):\n"
+    )
     return f
 
 
+def _real_hit_lines(f, pattern: str) -> list:
+    """The lines that ACTUALLY contain the pattern.
+
+    bug-074: the read now verifies that an evidence row's line really holds
+    the pattern, and this fixture used to hard-code lines 1 and 2 regardless —
+    so `bug-008` was taught against "roaring bitmap lives here". Production
+    never does that: `_learn_grep_hits` records the hits a REAL grep returned,
+    so its lines contain the pattern by construction. Deriving them here makes
+    the fixture faithful instead of merely green.
+    """
+    lines = f.read_text().splitlines()
+    return [i for i, text in enumerate(lines, start=1) if pattern in text]
+
+
 def _teach(d, pattern: str, f) -> dict:
+    hits = [{"file": str(f), "line": n} for n in _real_hit_lines(f, pattern)]
+    if not hits:
+        # A silent `line 1` fallback here re-created the unfaithful fixture
+        # 24523f3 removed (ch-bsd r3 #m-5): production only teaches lines a
+        # real grep returned.
+        raise AssertionError(f"{pattern!r} is not in the corpus; add a line")
     return _op_learn_from_grep(d, {
         "pattern": pattern,
-        "hits": [{"file": str(f), "line": 1}, {"file": str(f), "line": 2}],
+        "hits": hits,
         "project_root": str(f.parent),
     })
 
@@ -167,10 +203,13 @@ def test_regex_mode_is_not_canonicalized(daemon):
     f = _corpus(daemon.root.parent)
     _teach(daemon, "roaring bitmap", f)
 
-    hit = _op_grep_indexed(daemon, {"pattern": "^query/roaring_bitmap$",
-                                    "regex": True})["rows"]
-    miss = _op_grep_indexed(daemon, {"pattern": "^nothing_matches_this$",
-                                     "regex": True})["rows"]
+    # `verify=False`: the subject is whether the NAME is canonicalised, and a
+    # regex over a concept name is not something a source line can confirm
+    # (bug-074's verification compares the pattern against the line).
+    hit = daemon.store.grep_evidence("^query/roaring_bitmap$", regex=True,
+                                     verify=False)
+    miss = daemon.store.grep_evidence("^nothing_matches_this$", regex=True,
+                                      verify=False)
 
     assert hit
     assert miss == []
@@ -232,6 +271,24 @@ def test_an_unrelated_pattern_is_not_dragged_in_by_canonicalization(daemon):
 
 
 def _concept_names(d, pattern: str) -> set:
+    """WHICH CONCEPTS the predicate selects — `verify=False` on purpose.
+
+    bug-074 made the read verify that each row's line really holds the
+    pattern, which is right for a grep-shaped answer and wrong as a probe of
+    the PREDICATE: these tests hand-seed concepts to ask which ones the SQL
+    picks, not whether a hand-written evidence line matches. Verification is
+    covered end to end in `tests/test_grep_evidence_verified.py`, including
+    the fall-through to the floor.
+    """
+    return {r["concept"] for r in d.store.grep_evidence(pattern, verify=False)}
+
+
+def _reach(d, pattern: str) -> set:
+    """Which concepts the PRODUCTION read answers with — `_op_grep_indexed`,
+    verification on. A test named for REACH asserts this, never the
+    predicate: d5e7fec moved the two bridge guards below to `_concept_names`
+    (`verify=False`), and pointed back at the op they failed with exactly the
+    regression bug-074 had shipped (ch-bsd r3 #b-3)."""
     return {r["concept"] for r in _op_grep_indexed(d, {"pattern": pattern})["rows"]}
 
 
@@ -263,10 +320,10 @@ def test_the_spelling_bridge_survives_the_narrowing(daemon):
     cid = s.add_concept("keyword/roaring_bitmap")
     eid = s.upsert_entity("code", "bitmap-site", path=str(f))
     s.link("mentions", cid, eid)
-    s.add_evidence("mentions", cid, eid, file=str(f), line=1)
+    s.add_evidence("mentions", cid, eid, file=str(f), line=9)
 
-    assert _concept_names(daemon, "roaring bitmap"), "the bridge is gone"
-    assert _concept_names(daemon, "roaring-bitmap"), "the dash spelling is gone"
+    assert _reach(daemon, "roaring bitmap"), "the bridge is gone"
+    assert _reach(daemon, "roaring-bitmap"), "the dash spelling is gone"
 
 
 def test_a_leading_underscore_identifier_is_still_reachable(daemon):
@@ -278,9 +335,9 @@ def test_a_leading_underscore_identifier_is_still_reachable(daemon):
     cid = s.add_concept("keyword/_replica_bundle")
     eid = s.upsert_entity("code", "rb-site", path=str(f))
     s.link("mentions", cid, eid)
-    s.add_evidence("mentions", cid, eid, file=str(f), line=1)
+    s.add_evidence("mentions", cid, eid, file=str(f), line=10)
 
-    assert _concept_names(daemon, "replica bundle"), "the leading-underscore \
+    assert _reach(daemon, "replica bundle"), "the leading-underscore \
 identifier lost its index answer"
 
 

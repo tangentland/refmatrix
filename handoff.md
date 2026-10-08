@@ -9,119 +9,76 @@ metadata:
 
 # Session Handoff for refmatrix {#root}
 
-Date: 2026-10-06 (session b92019bc). Prior handoff archived at
-`workflow/past_handoffs/007-plan14-grep-measured-plan15-derive_2026-10-06.md`.
+Date: 2026-10-07 (session 94f97944). Prior handoff archived at
+`workflow/past_handoffs/010-bsd-r3-r6-plan16-specs_2026-10-07.md`.
 
-rel: supersedes -> [[handoff-007-plan14-grep-measured-plan15-derive]]
+rel: supersedes -> [[handoff-010-bsd-r3-r6-plan16-specs]]
 
 ## State {#state}
 
-`master` = **b32bc35**, clean tree. **Pushed:** `origin/main` = `cb35e21`
-(41 commits, the first push in this repo's history of the backlog) — the four
-merges above it are NOT pushed yet. `~/claude_tools/gmd` pushed too
-(`a84af28..8a65aa2`). Deploy `~/refmatrix` = **cb35e21 / 0.75.0**, fleet 8/8 +
-hub on 0.75.0 — plan-15 was deployed before this session opened, so the prior
-handoff's "Next #1" was already done. `rmx install-hooks --check` in sync.
-{#state-body}
+- **Branch:** `bsd-r1-remedy`, ~80 commits ahead of `master`, unmerged. The merge gate is a CLEAN
+  ch-bsd round. **Round 10 was launched on `a3a324e..06711cd` and its result is NOT yet read.**
+  Read `workflow/bullshit/` for an r10 report (newer than
+  `2026-10-07-1210-r9-context-read-path-wrong-partition-a3a324e.md`); commit it, then remedy or merge.
+- **Deployed:** master = `aeee560` = **0.76.3** (three hotfixes cherry-picked today):
+  - 0.76.1: bug-085, batched Lance deletes;
+  - 0.76.2: bug-090, a fixed launchd PATH;
+  - 0.76.3: bug-093, the bulk watch semantic pass.
 
-**Not deployed:** everything this session landed. No version bump taken — the
-four merges sit on `master` only. {#state-deploy}
+  All 8 daemons are verified on 0.76.3. The hub process is still 0.76.2 (functionally fine).
+- **Lance compacted by hand:** refmatrix 1.3 GB→105 MB, viascope 925→229 MB, cliquedb
+  1.1 GB→62 MB. Backups deleted at the user's request.
+- **Dev venv:** bug-092 is fixed. `.venv-eval` no longer borrows dependencies from the ambient
+  PYTHONPATH.
+
+{#state-body}
 
 ## What this session did {#did}
 
-One ask — "proceed with the task and the 3 bugs" — closed task 15.4 (finishing
-plan 15), the three named bugs, and one more the first full suite surfaced.
-{#did-lead}
+- **bug-085 named by py-spy.** Per-entity Lance deletes under `_store_lock`; fixed and deployed.
+  py-spy 0.4.2 is a uv tool at `~/.local/bin`, used with `sudo -n`.
+- **bug-093.** The watch semantic pass did per-row upserts (61 s → 15 s on a `cli.py` re-sync);
+  fixed and deployed.
+- **ch-bsd rounds 6–9 remediated** (round 10 pending):
+  - offline models;
+  - rerank warnings on every route;
+  - context reads on a private snapshot with partition binding under the mirror lock;
+  - a real rerank budget;
+  - no model calls under the lock;
+  - `vector_delete_failed` on every path.
+- **Explorations:** concept similarity, agent context usage, and the adaptive memory budget.
+- **ADR-0004:** its helix half supersedes plan-11 (user). An amendment adds the relation taxonomy
+  from `docs/ideas.txt`, proximity tiers, Aster's counters + adaptive merge, the
+  decay-never-loses-knowledge rules, and the adjacency-shape evidence across six stores (heavy
+  tail; 2-hop saturation not hub-driven; dense ids save 15–42% and ORDER does not).
+- **Specs:** plans 17, 19 and 20, plan-21 (agent context), plan-22 (audited removal + REPAIR),
+  plan-23 (bounded-write harness).
+- **Plan review applied (C1–C12);** `workflow/plan-review-2026-10-07.md` has the wave order.
 
-- **Task 15.4 / plan 15 COMPLETE.** `sessions`, `embed` and `pagerank` now stamp
-  at the end of a successful pass (`_op_pagerank` inside its write lock; embed
-  only when the batch loop ran to completion, so a `--max-batches` run claims
-  nothing; sessions on both index routes and on all-cards-unchanged, never under
-  `--no-index`). Both CLI-owned passes route through a new daemon op,
-  `derive_stamp`. `derive_status()` gained `partition_kind`, `expected_passes`
-  and `missing_passes`, expected per partition KIND
-  (`_DERIVE_EXPECTED_PASSES`), and missing is NOT an alert — it sets neither
-  `stale` nor `behind_code`, so release day does not turn the fleet hot.
-  22 tests, 17 RED first, 8 mutations killed.
-- **bug-072 (found here).** The first full suite since plan-15 landed showed 5
-  failures, not the 3 the prior handoff recorded. Two were plan-12 guard tests
-  that had been failing since 15.1 gave `derive_code_hash` a `pass_name`: their
-  zero-arg doubles raised, `_store_health` swallowed it into `derive_error`, and
-  the whole `derive` key vanished from health. **Nothing in `src/` read
-  `derive_error`** — a store whose derive DETECTOR is broken produced a hub row
-  identical to a clean one. `hub._gather_queues` now carries it.
-- **bug-069.** Two causes, and the registry's own question resolved as "the test
-  asserted something r8 never shipped". `_locate_one_project` was the THIRD
-  caller of `_replica_bundle`; r8 fixed the two its finding quoted and left this
-  one with a bare `except: pass` on the filename leg and no `on_error` on the
-  keyword leg. It returns `(hits, reasons)` now and the fan-out names each one.
-  The other two failures were stale test doubles: r8 added `on_error=` and two
-  2-positional lambdas rejected it.
-- **bug-065.** The memory bridge wrote `kind=memory` rows with no vectors, so
-  every save-state produced durable, unreachable memories.
-  `ingest_gmd.drain_memory_vectors` drains at the BRIDGE's completion point —
-  the daemon's `_run_ingest_gmd_body` (both the sync op and the detached job)
-  and `_ingest_gmd_sync`'s in-process branch. The acceptance is the RECALL the
-  row demanded: a phrase unique to a memory is ranked first, on a spawned daemon
-  with the real embedder.
-- **bug-070.** The canonical grep predicate is a SPELLING bridge, not a family.
-  Four arms measured over one store; the obvious fix (plain equality) destroyed
-  the bridge and the measurement is what said so. Report:
-  `docs/measurements/grep-canonical-breadth.md`.
-
-## The correction worth carrying {#correction}
-
-bug-065's first cut put the drain in `finalize_save_state`. The user asked "so
-as-memory now implies embed - yes?" and the honest answer was **no** — `rmx
-ingest-gmd --as-memory`, `rmx memory sync-disk` and the SessionStart `--detach`
-catch-up hook all kept writing vectorless rows. The rule belonged to the WRITE,
-not to one of its callers, and it moved down a layer. A fix placed at a caller
-is a fix for that caller. {#correction-body}
-
-rel: reinforces -> [[feedback_main_path_must_exercise_core_mechanisms]]
+{#did-body}
 
 ## Next {#next}
 
-1. **Version bump + deploy** — nothing from this session is live. Four merges on
-   `master`; `rmx derive log` on the live store will only show the new passes'
-   history after a deploy runs them, and bug-065's drain only protects
-   save-states taken by the DEPLOYED build.
-2. **Push the four merges** — `origin/main` is at `cb35e21`, four merges behind.
-3. **`@ch-bsd` over this range** — plans 14 and 15 have had NO audit pass, and
-   neither has anything in this session. `workflow/bullshit/last_run.log`'s
-   newest entry is 2026-10-01, three DIRTY runs.
-4. **bug-070's other half** — `ERROR` and `timeout` still draw 74/26 and 26/6
-   rows through `c.name ILIKE '%pattern%'`, the pre-bug-067 contract. The
-   registry's cap-the-distinct-concepts candidate applies to THAT predicate and
-   is still an open decision with its own trade.
-5. **The three plan-12-era DIRTY rounds** (plans 2/4/6 findings) remain open in
-   `workflow/plan-of-plans.md`.
+1. **Read and act on ch-bsd round 10.** Remedy or merge `bsd-r1-remedy` → `master` (`--no-ff`).
+   Then deploy: ff `~/refmatrix`, `rmx hub relaunch-fleet`, `rmx install-hooks --apply --force`.
+2. **Wave 0 (docs):** plan-16 revision 5 + its spec review; spec reviews of plans 17/19/21/22/23.
+3. **Wave 1:** plan-23 first (the harness), then 17.1/17.2, 19.1/19.2, 21.1, and 22.1–22.3
+   (bug-086 is 22.3).
+4. **Needs the user's time:** the 19.5 hook-limit probe (scratch project), and the 20.1 gold-label
+   review.
+
+{#next-body}
 
 ## Open, not forgotten {#open}
 
-- `rmx hub launchctl status` reports plist drift on the hub's env `PATH` —
-  pre-existing, untouched.
-- `RMXGREP_MODE=rich` lives in `.claude/settings.local.json`; bug-066's config
-  half is still the user's call.
-- `docs/measurements/` vs `workflow/measurements/` — this session added to
-  `docs/`, consistent with the one already there; the split still wants a
-  decision.
-- `eval/production/grep_evidence_breadth.py` is a new instrument with no test.
-  It is eval code, not `src/`, but it is now the thing a future retune of the
-  name predicate would be judged by.
+- **bug-093 follow-ups:** yield the writer between files in the watch flush (plan-23); add an
+  op-start log line per daemon op (unowned).
+- **bug-088:** tests can still reach live sockets. Second sighting today: a test of mine sent a
+  bulk-forget DRY RUN to the live daemon (nothing deleted). The refuse stage is deferred.
+- **bug-089:** fixed on the branch (the `search-dense` reranked render).
+- **bug-091:** an FSEvents timing flake.
+- **bug-081:** fixed by 16.5.
+- The second implicit `npm install` (`eval/memaware/run.sh:39`) is assumed "leave it" and awaits
+  the user's confirmation.
 
-## Gates {#gates}
-
-- Full suite over all four merges: **2432 passed, 0 failed** in 16m11s
-  (`workflow/review-output/pytest-session-full.log`). The session opened at
-  **2404 passed / 5 failed** — all five closed (3 were bug-069, 2 were
-  bug-072), and 28 tests added.
-- GMD lint: 0 errors / 543 docs.
-- `rmx install-hooks --check`: in sync.
-- Mutations: 8 (task 15.4) + 2 (bug-069) + 3 (bug-065) + 4 (bug-070), all killed.
-  One mutation pair in the bug-070 loop reported a pass it never ran, because
-  `git checkout --` restored HEAD over an uncommitted arm — re-run after
-  committing.
-
-rel: realizes -> [[feedback_save_state_means_handoff]]
-rel: related-to -> [[refmatrix/grep-canonical-breadth]]
+{#open-body}

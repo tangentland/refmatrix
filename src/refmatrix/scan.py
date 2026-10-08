@@ -946,6 +946,7 @@ def scan_prompt(
         # BM25 order. It must never spawn a model of its own — see
         # `reranker.shared_reranker`.
         from refmatrix.reranker import shared_reranker
+        rr_why: list[str] = []
         cb = content_only_bundle(
             s, " ".join(cands),
             max_tokens=content_tokens, max_entities=10,
@@ -954,11 +955,15 @@ def scan_prompt(
             # the score call the rest (bug-015: the hook hung 20 s+ on a
             # broken shared worker at the client's 300 s default)
             reranker=shared_reranker(timeout=rerank_timeout,
-                                     probe_timeout=min(rerank_timeout, 1.0)),
+                                     probe_timeout=min(rerank_timeout, 1.0),
+                                     why=rr_why),
             # The bundle's `ref` is the candidate BAG; the reranker needs the
             # sentence the user actually typed.
             rerank_query=prompt,
         )
+        # A reached-but-failed worker rides on the bundle (ch-bsd r7 #s-1);
+        # a hub that is simply down adds nothing, as before.
+        cb.warnings[:0] = [f"rerank skipped: {w}; BM25 order kept" for w in rr_why]
         if cb.groups:
             cbundle = cb
 

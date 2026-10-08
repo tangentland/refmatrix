@@ -172,8 +172,12 @@ def launchd_path(rmx: str) -> str:
     install (2026-10-07). From a Claude Code session that meant versioned
     plugin-cache bin dirs, which rot on every plugin update, plus `./` and an
     empty `::` entry (both are the cwd), and every drift check run from another
-    shell reported PATH drift forever. The installed `rmx`'s own venv `bin`
-    leads, so its sibling console scripts resolve first."""
+    shell reported PATH drift forever. The installed `rmx`'s own directory
+    leads: the venv `bin` when `rmx` is the console script itself, or `~/bin`
+    when it is reached through that symlink (this machine; r8 #m-1). Env
+    values the HUB plist passes through on purpose (`RMX_WORKER_IDLE_S`,
+    `RMX_HUB_QUEUE_ALERT_INTERVAL`) are operator settings, not the shell's
+    PATH, and stay caller-supplied."""
     dirs = [str(Path(rmx).parent)] + [str(Path(d).expanduser()) for d in _LAUNCHD_PATH_DIRS]
     out: list[str] = []
     for d in dirs:

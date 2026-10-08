@@ -47,9 +47,9 @@ every named concept is referenced.
 ```bash
 rmx grep "FIXME"                          # whole project, index-first
 rmx grep "FIXME" src/ tests/              # restrict to subdirs
-rmx grep -f '-il' "daemon"                # grep-style flag bundle
+rmx grep -il "daemon"                     # bare grep flags (the -f bundle was removed)
 rg -l TODO | rmx grep "FIXME"             # stdin pipe (bypasses index)
-git diff | rmx grep -f '-c' "^+"          # pipe + count
+git diff | rmx grep -c "TODO"             # pipe + count (literal; BRE on a pipe: plan-16 16.5)
 ```
 
 Grep-style flag bundle `-f '<flags>'` accepts: `-i` (ignore-case,

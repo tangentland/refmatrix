@@ -18,6 +18,8 @@ ladder; see [[adr-format]] for the extractor's header view).
 
 rel: catalogs -> [[0001-intuition-lance-integration]]
 rel: catalogs -> [[adr-0002-subject-memory-container]]
+rel: catalogs -> [[adr-0003-canonical-partition-layout]]
+rel: catalogs -> [[adr-0004-unified-location-space-index]]
 rel: related-to -> [[adr-format]]
 
 ## The three requirements {#requirements}
@@ -52,6 +54,8 @@ rel: related-to -> [[adr-format]]
 |-----|-------|--------|
 | [[0001-intuition-lance-integration]] | Intuition memory layer + Lance vector backend | Proposed |
 | [[adr-0002-subject-memory-container]] | Subject: memory-scoped working/durable container | Proposed |
+| [[adr-0003-canonical-partition-layout]] | Canonical partition layout | Proposed |
+| [[adr-0004-unified-location-space-index]] | One location space: hierarchical ids, tiered bitmaps, helix on top | Proposed |
 
 > ADR-0001 predates the GMD-required rule; converted to GMD 2026-09-06. It keeps the
 > extractor's key/value header from [[adr-format]] (id = filename stem, not adr-NNNN-slug).

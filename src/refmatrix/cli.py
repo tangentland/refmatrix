@@ -413,6 +413,20 @@ class _DaemonWriter:
                           timeout=24 * 3600.0).get("entities", 0)
 
 
+
+def _say_vector_delete_failures(result, what: str) -> None:
+    """Put a failed vector delete on the CALLER's terminal (ch-bsd r8 #s-1).
+
+    On a daemon-managed store the store's own stderr line lands in
+    `daemon.stderr.log`; the count rides back in the op's result, and every
+    render site calls this so the user who ran the command sees it."""
+    n = (result or {}).get("vector_delete_failed") if isinstance(result, dict) else None
+    if n:
+        click.echo(f"rmx {what}: {n} vector delete(s) FAILED; those vectors are "
+                   f"orphaned until `rmx embed --gc` reaps them, which needs a "
+                   f"working `import lance` (cause in daemon.stderr.log)",
+                   err=True)
+
 def _store(write: bool = True) -> "Store":
     """THE catalog accessor. The `write` flag signals intent at the call site.
 
@@ -2798,6 +2812,14 @@ def hub_queues(as_json):
             flags.append("derive-unstamped")
         if q.get("derive_version_drift"):
             flags.append(f"derive-drift@{q['derive_version_drift']}")
+        if q.get("derive_error"):
+            # ch-bsd r1 #s-1: `_store_health` catches a failing
+            # `derive_status` into `derive_error` and DROPS the `derive` key,
+            # so a store whose derive detector is broken produced a row
+            # indistinguishable from a clean one. bug-072 put the field on the
+            # row; until this line it reached `--json` and no human surface.
+            # Not hot — a probe timeout must not page anyone — but said.
+            flags.append("derive-UNKNOWN")
         t.add_row(str(q.get("project")),
                   "up" if q.get("daemon_up") else ("busy" if q.get("daemon_busy") else "down"),
                   str(q.get("stale_files") if q.get("stale_files") is not None else "?"),
@@ -4578,6 +4600,7 @@ def forget_cmd(names, like, namespace, kind, dry_run, yes):
             console.print(f"  … +{len(matched) - 20} more")
         click.confirm("proceed", abort=True)
     r = s.forget_by_selector(dry_run=False, **sel)
+    _say_vector_delete_failures(r, "forget")
     console.print(f"[red]forgot[/] {r.get('forgotten', 0)} entities")
 
 
@@ -4626,6 +4649,7 @@ def untrack_cmd(paths, like, dry_run, yes):
     r = s.untrack_by_path(like=like, paths=list(paths) or None, dry_run=False)
     console.print(f"[red]untracked[/] {r.get('files_untracked', 0)} files, "
                   f"purged {r.get('entities_purged', 0)} entities")
+    _say_vector_delete_failures(r, "untrack")
 
 
 def _print_paths(paths, limit):
@@ -5135,6 +5159,8 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
                     f"daemon context failed: {resp.get('error')}"
                 )
             click.echo(resp["result"]["body"])
+            for w in resp["result"].get("warnings") or []:
+                click.echo(f"rmx context: {w}", err=True)
             phase_mark("render")
             return
 
@@ -5438,20 +5464,6 @@ def co_occur(concept, linkage, limit, include_noise):
     console.print(t)
 
 
-_GREP_FLAGS_HELP = (
-    "Grep-style flag bundle, quoted. Accepts spaces or bundled letters: "
-    "`-f '-i -n -l'`, `-f '-inl'`, `-f -i`. Recognized: "
-    "-i ignore-case (default ON; -I forces case-sensitive), "
-    "-r recursive (no-op — always recursive over the index), "
-    "-n line numbers (no-op — always shown), "
-    "-l files only (one line per unique file, suppress per-hit detail), "
-    "-c count matches per file, "
-    "-v invert match (entities/files with NO match), "
-    "-w word-boundary match, "
-    "-F fixed-string (substring) — same as --substring, "
-    "-E extended regex — same as --regex, "
-    "-H print filename (no-op — always shown)."
-)
 
 
 def _parse_grep_flags(s: str | None) -> dict:
@@ -5564,6 +5576,7 @@ def _split_grep_argv(tokens: list) -> tuple:
     rest are paths. A pattern beginning with `-` requires `--`."""
     flags: list = []
     pattern = None
+    pattern_from_file = False
     paths: list = []
     warnings: list = []
     i = 0
@@ -5579,6 +5592,16 @@ def _split_grep_argv(tokens: list) -> tuple:
         if is_flag:
             # -e PAT: the value IS the pattern.
             base = tok.split("=", 1)[0]
+            # -f FILE / --file=FILE: grep's PATTERN FILE. The patterns come
+            # from the file, so every positional is a path (2026-10-07: the
+            # rmx `-f` bundle is gone and `-f` means what it means to grep).
+            if base in ("-f", "--file"):
+                flags.append(tok)
+                if "=" not in tok and i + 1 < n:
+                    flags.append(str(tokens[i + 1])); i += 1
+                pattern_from_file = True
+                i += 1
+                continue
             if base == "-e" or base == "--regexp":
                 if "=" in tok:
                     pattern = tok.split("=", 1)[1]
@@ -5592,8 +5615,8 @@ def _split_grep_argv(tokens: list) -> tuple:
                 flags.append(str(tokens[i + 1])); i += 1
             i += 1
             continue
-        # non-flag: pattern first, then paths.
-        if pattern is None:
+        # non-flag: pattern first, then paths (all paths under -f FILE).
+        if pattern is None and not pattern_from_file:
             pattern = tok
         else:
             paths.append(tok)
@@ -6031,9 +6054,11 @@ def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
                                 "help_option_names": ["--help"]})
 @click.argument("argv", nargs=-1, type=click.UNPROCESSED)
 @click.option("--regex/--substring", default=False,
-              help="Treat PATTERN as a regex matched against concept names. "
-                   "Default is case-insensitive substring.")
-@click.option("--flags", "-f", "flags", default=None, help=_GREP_FLAGS_HELP)
+              help="Treat PATTERN as a regex. Default is a case-SENSITIVE "
+                   "substring, as in grep; -i ignores case. On the path-less "
+                   "index read a MULTI-WORD pattern also matches its "
+                   "identifier spellings (snake/camel/kebab), "
+                   "case-insensitively.")
 @click.option("--linkage", default=None,
               help="Restrict to one linkage type (e.g. defines, mentions).")
 @click.option("--kind", "-k", type=click.Choice(["doc", "code"]), default=None,
@@ -6056,7 +6081,7 @@ def _filter_rows_by_paths(rows: list[dict], paths: tuple) -> list[dict]:
                    "Learning still works: fallback hits are brokered to "
                    "the daemon writer as a fire-and-forget RPC.")
 @click.pass_context
-def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
+def grep(ctx, argv, regex, linkage, kind, limit, fallback,
          learn, via_replica):
     """Index-backed grep: find concepts whose name matches PATTERN and
     print file:line for every recorded reference. Falls back to `rg` /
@@ -6075,14 +6100,31 @@ def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
     formatting/recursion flags (-n -H -r -o --color …) are ignored with a note;
     an unsupported flag that would change the result set (path filters
     -g/--glob/-t, unknown letters) fails loudly rather than silently mangling
-    the search. `--flags`/`-f` still accepts a quoted bundle for back-compat.
+    the search. `-f FILE` / `--file=FILE` is grep's pattern file; the old
+    `-f/--flags` bundle was removed 2026-10-07 (pass grep flags bare).
     """
     import sys as _sys
+    # The `-f/--flags` bundle is GONE (user, 2026-10-07): it collided with
+    # grep's own `-f FILE`, so `git diff | rmx grep -f '-c' "^+"` meant two
+    # different things (plan-16 spec review r3 #b-r3-1). Bare grep flags have
+    # worked since 0.25.7. `--flags` is refused with a pointer, never read as
+    # something else.
+    for tok in argv:
+        if str(tok) == "--flags" or str(tok).startswith("--flags="):
+            raise click.UsageError(
+                "--flags was removed: pass grep flags directly "
+                "(e.g. `rmx grep -c -i PAT`). `-f FILE` is grep's pattern file.")
     flag_tokens, pattern, path_strs, _w = _split_grep_argv(list(argv))
-    if pattern is None:
+    _pattern_file = any(t.split("=", 1)[0] in ("-f", "--file") for t in flag_tokens)
+    if pattern is None and not _pattern_file:
         raise click.UsageError("grep: no PATTERN given")
-    paths = [Path(p) for p in path_strs]
-    gf = _parse_grep_flags(flags)
+    # The argv SPELLINGS, not `Path` objects (ch-bsd r3 #b-4): `str(Path(
+    # './f0.txt')) == 'f0.txt'`, so converting here collapsed `./f0.txt
+    # f0.txt` into one `-c` row with the SUMMED count — the r2 #b-2 defect
+    # surviving one call above the code that fixed it. grep echoes a path
+    # exactly as given; so does every consumer below.
+    paths = list(path_strs)
+    gf = _parse_grep_flags(None)
     # Pipe mode is decided BEFORE flag folding: it changes which flags are
     # answer-changing (-n/-o/-m/-A… render output when we're standing in for
     # grep, but mean nothing against the index).
@@ -6098,10 +6140,19 @@ def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
         if delegate:
             # Full flag compatibility: a valid grep/rg flag the index can't
             # express bypasses the index — the real tool runs with the
-            # ORIGINAL argv so every flag keeps its native semantics. The
-            # graph still learns from parsed file:line hits.
-            _grep_delegate(list(argv), path_strs, delegate,
-                           learn=learn, piped=piped)
+            # ORIGINAL argv so every flag keeps its native semantics. It
+            # teaches nothing (ch-bsd r6 #s-1), and an EXPLICIT `--learn`
+            # that it cannot honour says so, as the toggle branch does
+            # (ch-bsd r7 #m-4). stdout stays the tool's bytes.
+            try:
+                if (ctx.get_parameter_source("learn")
+                        is click.core.ParameterSource.COMMANDLINE and learn):
+                    click.echo("# rmx: a delegated grep teaches nothing — "
+                               "--learn ignored for this call", err=True)
+            except Exception as e:  # noqa: BLE001 — a note, never a failure
+                click.echo(f"# rmx: --learn note unavailable ({type(e).__name__})",
+                           err=True)
+            _grep_delegate(list(argv), path_strs, delegate, piped=piped)
             return
         # Habitual grep flags (-rn) hit this on every call; the note says
         # nothing actionable, so it only prints under RMX_GREP_VERBOSE=1.
@@ -6248,12 +6299,12 @@ def grep(ctx, argv, regex, flags, linkage, kind, limit, fallback,
 
 
 def _grep_delegate(raw_tokens: list, path_strs: list, reasons: list,
-                   learn: bool = True, piped: bool = False) -> None:
+                   piped: bool = False) -> None:
     """Run the user's grep invocation VERBATIM through the real tool because
     it carries flags the index can't express. rg first (it understands most
     of the surface); on a usage error (exit 2 — e.g. grep-only flags like
-    --include) retry with grep. Output passes through byte-for-byte; hits
-    that parse as file:line still teach the graph (fire-and-forget RPC).
+    --include) retry with grep. Output passes through byte-for-byte, and
+    nothing is taught (ch-bsd r6 #s-1: the output's shape is the user's).
 
     Exit codes follow the tool: 0 hits, 1 no hits, tool's own error text on
     genuinely invalid flags — flag compatibility means the real tool is the
@@ -6302,25 +6353,13 @@ def _grep_delegate(raw_tokens: list, path_strs: list, reasons: list,
     if res.stderr and res.returncode not in (0, 1):
         _sys.stderr.write(res.stderr)
 
-    if learn and res.returncode == 0 and not piped:
-        hits = []
-        for raw in res.stdout.splitlines():
-            parts = raw.split(":", 2)
-            if len(parts) >= 2:
-                try:
-                    hits.append({"file": parts[0], "line": int(parts[1])})
-                except ValueError:
-                    pass
-        if hits:
-            try:
-                from refmatrix import daemon as _dmod
-                _r = _root()
-                # Teach with the pattern-ish token: first non-flag arg.
-                pat = next((x for x in tokens
-                            if not x.startswith("-")), "")
-                _broker_learn_from_grep(_r, pat, hits[:200])
-            except Exception:
-                pass
+    # The delegate TEACHES NOTHING (ch-bsd r6 #s-1, user-approved 2026-10-07).
+    # Its output is whatever shape the user's flags asked for, and every guard
+    # tried here keyed on flag spellings rather than the shape: a default
+    # `--include` grep taught rg's padded `f.yml:  7:` as line 7 of a 3-line
+    # file, `-m 5` taught the concept `query/5`, and both rows are protected,
+    # so prune never reclaims them. Grep is observed, not answered; plan-16
+    # task 16.5 deletes this branch and the learner (16.1) owns teaching.
     raise SystemExit(res.returncode)
 
 
@@ -6373,7 +6412,7 @@ def _resolve_output_shape(gf: dict, paths: list) -> dict:
       * `-n` adds line numbers; without it there are none.
       * `-c` prints a bare count for one target, `file:count` for several.
     """
-    multi = (len(paths) != 1) or any(p.is_dir() for p in paths)
+    multi = (len(paths) != 1) or any(Path(p).is_dir() for p in paths)
     with_filename = gf["with_filename"]
     if with_filename is None:
         with_filename = multi
@@ -6383,6 +6422,142 @@ def _resolve_output_shape(gf: dict, paths: list) -> dict:
         "only_matching": bool(gf["only_matching"]),
         "count": bool(gf["count"]),
     }
+
+
+def argv_order_index(paths: list) -> "tuple[list, dict]":
+    """`([(argv_index, spelling, is_file)], {})` — the argument list, as given.
+
+    grep's contract for named paths is ARGUMENT order: it processes argv
+    left to right, and for a directory argument under `-r` it walks that
+    directory in its OWN order, grouped. `rg`'s fan-out is completion order,
+    nondeterministic, so the divergence reproduces only sometimes — ch-bsd r1
+    #b-2 measured it at 0/40 argv-order holds with 4+ files.
+
+    NO `Path.resolve()` (ch-bsd r2 #b-2). Resolving looked like the obvious
+    identity and was wrong three ways at once: a symlink and its target
+    collapsed into ONE `-c` row carrying the SUMMED count, a directory
+    argument seeded a fabricated `.:0`, and a nonexistent argument seeded
+    `nosuch.txt:0` where grep errors to stderr and exits 2. grep echoes a path
+    exactly as given, so the SPELLING is the identity and `os.path.normpath`
+    is as much normalisation as is safe.
+    """
+    out: list = []
+    for i, p_ in enumerate(paths or []):
+        sp = str(p_)
+        try:
+            is_file = Path(sp).is_file()
+        except (OSError, ValueError):
+            is_file = False
+        out.append((i, sp, is_file))
+    # Second element kept for callers that still unpack a pair; the spelling
+    # IS the display form now, so no separate map is needed.
+    return out, {}
+
+
+def argv_rank(emitted_path: str, argv: list) -> int:
+    """Which ARGUMENT produced this output path.
+
+    An exact spelling match (a named file) wins; otherwise the LONGEST
+    directory argument that is a prefix, so `rmx grep -rn PAT a_dir b.txt`
+    ranks a_dir's walked files before b.txt. Unmatched sorts last.
+    """
+    import os as _os
+
+    if not argv:
+        return 0
+    # The RAW spelling first (ch-bsd r3 #b-4): `f0.txt ./f0.txt` are two
+    # arguments, and `normpath` folds both to `f0.txt`, so every row ranked
+    # with the first and the second argument's rows came out ahead of their
+    # turn.
+    for i, sp, _is_file in argv:
+        if emitted_path == sp:
+            return i
+    em = _os.path.normpath(emitted_path)
+    best = len(argv)
+    best_len = -1
+    for i, sp, _is_file in argv:
+        spn = _os.path.normpath(sp)
+        if em == spn:
+            return i
+        if spn not in (".", "") and em.startswith(spn + _os.sep):
+            if len(spn) > best_len:
+                best, best_len = i, len(spn)
+        elif spn in (".", "") and best_len < 0:
+            best, best_len = i, 0
+    return best
+
+
+def order_triples_by_argv(triples: list, argv: list) -> list:
+    """`(file, line, text)` triples grouped by ARGUMENT order.
+
+    STABLE, and keyed on the argument index ALONE (ch-bsd r2 #b-1). The first
+    cut sorted on `(rank, line)`, and the carve-out was `if not order` — but
+    `rmx grep -rn PAT .` NAMES the directory, so the order was non-empty with
+    one entry, every walked file tied at that rank, and the tiebreak became the
+    LINE NUMBER. That interleaved a walk's files:
+
+        grep -rn        rmx 0.76.0        the first remedy
+        f0:1 f0:3       f2:1 f2:3         f2:1 f0:1 f1:1
+        f1:1 f1:3       f0:1 f0:3         f2:3 f0:3 f1:3
+          grouped         grouped           INTERLEAVED
+
+    Grouping is something no grep has ever broken, and it is the form every
+    rewritten bare grep takes — strictly worse than the build it replaced.
+    A stable sort on the rank alone keeps the tool's own order WITHIN an
+    argument (so a walk is untouched) while still honouring argument order
+    ACROSS arguments. Lines within a file arrive in order from the tool, so
+    they need no key of their own.
+    """
+    if not argv:
+        return list(triples)
+    return sorted(triples, key=lambda tr: argv_rank(tr[0], argv))
+
+
+def argv_count_rows(argv: list) -> list:
+    """The `-c` rows grep prints, zeros included, in argv order.
+
+    A named FILE is one row. A DIRECTORY is one row per file its walk reaches
+    (ch-bsd r3 #b-4): `grep -rc zzz sub` prints `sub/s1.txt:0` and
+    `sub/s2.txt:0`, and before this the dir produced nothing, so the
+    nothing-matched branch fell back to a bare `0` in a filename-shaped
+    answer. Within a directory the order is the sorted walk — grep's own walk
+    order is the filesystem's, which no tool reproduces (accepted at r2).
+
+    A missing argument gets no row (ch-bsd r2 #b-2): grep errors on it and
+    exits 2, and fabricating `nosuch.txt:0` claims it read a file it could
+    not open.
+    """
+    out: list = []
+    for _i, sp, is_file in argv:
+        if is_file:
+            out.append(sp)
+        elif Path(sp).is_dir():
+            out.extend(_walk_files(sp))
+    return out
+
+
+def _walk_files(sp: str) -> list:
+    """The files a recursive grep of directory `sp` reads, spelled the way the
+    tool spells them (`sp/rel`). `rg --files` when rg is the floor, so the
+    universe matches the walk that produced the counts (same ignore rules);
+    `os.walk` otherwise, matching `grep -r`, which ignores nothing."""
+    import os as _os
+    import shutil
+    import subprocess
+
+    rg = shutil.which("rg")
+    if rg:
+        res = subprocess.run([rg, "--files", "--sort", "path", sp],
+                             capture_output=True, text=True)
+        if res.returncode not in (0, 1):
+            raise click.ClickException(
+                f"rg --files {sp} failed: {res.stderr.strip()}")
+        return res.stdout.splitlines()
+    found = []
+    for dirpath, dirnames, filenames in _os.walk(sp):
+        dirnames.sort()
+        found.extend(_os.path.join(dirpath, f) for f in sorted(filenames))
+    return found
 
 
 def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
@@ -6405,10 +6580,12 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
     _tlog.answered_by = _floor_answered_by(paths)
     tool = shutil.which("rg")
     if tool:
-        case_flag = (
-            "-i" if gf["ignore_case"] is True
-            else ("-s" if gf["ignore_case"] is False else "-S")
-        )
+        # grep's case rule: case-SENSITIVE unless `-i`. No flag used to map to
+        # rg's smart-case `-S`, so `rmx grep error e.txt` matched `ERROR here`
+        # and exited 0 where grep exits 1 — on the path every rewritten bare
+        # grep with a named file takes (ch-bsd r3 #b-2). The index read is
+        # case-sensitive since bug-073; the floor beneath it now agrees.
+        case_flag = "-i" if gf["ignore_case"] is True else "-s"
         # ALWAYS -nH. The tool's output is the CANONICAL `file:line:text` this
         # function parses — for the learn broker AND for reshaping below. The
         # caller's shape is applied at render time; asking the TOOL for a
@@ -6447,7 +6624,7 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
         # a prefix-forcer on BSD grep: `grep -rciF PAT file` prints `file:1` even
         # with the H removed, so bug-059 was never fixable by dropping `-H`.
         g_letters = "rHn"
-        if gf["ignore_case"] is not False:
+        if gf["ignore_case"] is True:        # grep's own rule; see rg above
             g_letters += "i"
         if gf["word"]:
             g_letters += "w"
@@ -6462,6 +6639,15 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
         g_letters += "E" if regex else "F"
         cmd = [tool, f"-{g_letters}", pattern] + targets
     res = subprocess.run(cmd, capture_output=True, text=True)
+    # The TOOL's errors are the caller's errors (ch-bsd r3 #m-4). Both rg and
+    # grep exit 2 on an error (a missing or unreadable path) — even when other
+    # operands matched — and this function read neither `res.stderr` nor the
+    # code, so a missing file printed "no matches" and exited 1: absent and
+    # zero could not be told apart. The message goes to stderr verbatim; the
+    # exit status is 2 on every branch below.
+    tool_error = res.returncode == 2
+    if tool_error and res.stderr.strip():
+        click.echo(res.stderr.rstrip("\n"), err=True)
 
     def _banner() -> None:
         """Provenance: ONE stderr line, from ONE place.
@@ -6474,6 +6660,17 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
         """
         click.echo(f"# rmx grep fallback via "
                    f"{'rg' if tool.endswith('/rg') else 'grep'}", err=True)
+
+    # ARGUMENT ORDER, once, for every output shape (ch-bsd r1 #b-2).
+    #
+    # bug-063/064 diagnosed the general cause — "the tool emits
+    # fan-out/completion order" — and then fixed `-l`/`-L` only. On the
+    # deployed build `rmx grep -n alpha b.txt a.txt` still returned a.txt's
+    # rows where grep returns b.txt's, and `-c` was wrong in two ways at once.
+    # A directory walk keeps the tool's own order: re-sorting a walk would
+    # invent an order grep does not promise either.
+    # The argument list, as given — no resolve() (r2 #b-2).
+    argv_list, _ = argv_order_index(paths)
 
     if gf["files_only"] or gf["files_without_match"]:
         # bug-064. `-l`/`-L` are handled HERE, before the empty-output branch
@@ -6489,19 +6686,9 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
         #     empty-output branch inverted the second case too, which is the
         #     half the row did not name.
         listed = [l for l in res.stdout.splitlines() if l.strip()]
-        if paths:
-            # Argument order for named paths. A directory walk keeps the
-            # tool's own order: re-sorting a walk would invent an order grep
-            # does not promise either.
-            rank = {str(Path(p_).resolve()): i for i, p_ in enumerate(paths)}
-
-            def _rank(line: str) -> tuple:
-                try:
-                    return (rank.get(str(Path(line).resolve()), len(rank)),
-                            line)
-                except (OSError, ValueError):
-                    return (len(rank), line)
-            listed.sort(key=_rank)
+        if argv_list:
+            # Stable, rank ONLY — same rule as the line branch (r2 #b-1).
+            listed.sort(key=lambda line: argv_rank(line, argv_list))
 
         if gf["files_without_match"]:
             # The `-L` list cannot say whether anything matched — it is the
@@ -6524,22 +6711,42 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
             for line in listed:
                 click.echo(line)
         if not matched_any:
-            if not listed:
+            if not listed and not tool_error:
                 click.echo("rmx grep: no matches", err=True)
-            raise SystemExit(1)
+            raise SystemExit(2 if tool_error else 1)
         return
 
     if not res.stdout.strip():
         _tlog.cardinality = 0
-        if shape["count"] and not shape["with_filename"]:
-            # `grep -c` prints 0 and exits 1 on no match, and `n=$(grep -c …)`
-            # must still be a number. The count is no longer computed by the
-            # tool, so this branch has to say it.
-            click.echo("0")
-        # grep semantics: silent stdout, exit 1. The note goes to stderr so
+        if shape["count"]:
+            # `grep -c` prints a row per NAMED FILE even when nothing matched,
+            # and exits 1. ch-bsd r2 #b-3: the zero-seeding lived in the
+            # some-matched branch below, so `-c zzz f0 f1` printed NOTHING
+            # where grep prints `f0.txt:0` and `f1.txt:0`, and `-hc` printed a
+            # single `0` where grep prints one per file. Third sibling-branch
+            # miss in one remedy, in the function whose own comment below
+            # already warns that this branch gets the answers wrong.
+            named = argv_count_rows(argv_list)
+            if named and shape["with_filename"]:
+                for sp in named:
+                    click.echo(f"{sp}:0")
+            elif named:
+                for _sp in named:
+                    click.echo("0")
+            elif not argv_list:
+                # No paths at all — the project-root exploration read: one
+                # number, so `n=$(rmx grep -c …)` is still a number.
+                click.echo("0")
+            # Paths were named and none of them yields a row (a missing file,
+            # an empty dir): print NOTHING. A bare `0` there was r3 #b-4 —
+            # `-rc zzz sub` and `-c zzz sub nosuch.txt` answered `0`, a
+            # number grep never prints for a filename-shaped read.
+        # grep semantics: silent stdout, exit 1 — or 2 if the tool errored,
+        # whose own message is already on stderr. The note goes to stderr so
         # a tty user still learns why nothing printed.
-        click.echo("rmx grep: no matches", err=True)
-        raise SystemExit(1)
+        if not tool_error:
+            click.echo("rmx grep: no matches", err=True)
+        raise SystemExit(2 if tool_error else 1)
     # Provenance is one stderr line, not a per-line stdout tag: tagging every
     # hit broke file:line copy-paste and any consumer parsing grep format.
     _banner()
@@ -6580,7 +6787,16 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
                 triples.append((parts[0], int(parts[1]), parts[2]))
             except ValueError:
                 pass
-    fb_hits = [{"file": f, "line": n} for f, n, _ in triples]
+    # The LEARNED copy is absolute (ch-bsd r3 #s-6): the tool printed the argv
+    # spelling, often cwd-relative, and the learned row was later verified
+    # against whatever cwd the reader had. This is the one place that knows the
+    # cwd the tool ran in. `normpath`, not `resolve` — the spelling is the
+    # identity, and a symlink is not its target. The DISPLAY keeps grep's
+    # spelling; only what the graph stores changes.
+    import os as _os
+    _cwd = _os.getcwd()
+    fb_hits = [{"file": _os.path.normpath(_os.path.join(_cwd, f)), "line": n}
+               for f, n, _ in triples]
 
     def _shaped(f: str, n: int, text: str) -> str:
         out = f"{f}:" if shape["with_filename"] else ""
@@ -6588,8 +6804,18 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
             out += f"{n}:"
         return out + text
 
+    # The same argument-order rule the `-l` branch above applies (#b-2).
+    triples = order_triples_by_argv(triples, argv_list)
+
     if shape["count"]:
         counts: dict = {}
+        # A row for EVERY named FILE, zeros included, in argv order. Keyed on
+        # the argv SPELLING, never a resolved path: resolving collapsed a
+        # symlink and its target into one row carrying the SUMMED count, and
+        # fabricated `.:0` for a directory and `nosuch.txt:0` for a missing
+        # file (r2 #b-2).
+        for sp in argv_count_rows(argv_list):
+            counts.setdefault(sp, 0)
         for f, _n, _t in triples:
             counts[f] = counts.get(f, 0) + 1
         rendered = [f"{f}:{c}" if shape["with_filename"] else str(c)
@@ -6602,8 +6828,32 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
     if learn_broker is not None and fb_hits:
         try:
             learn_broker(fb_hits)
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001 — named, never mute
+            # Was a bare `pass` on a memory path (CLAUDE.md#no-silent-
+            # failures; found beside ch-bsd r3 #m-4). Stderr, never stdout.
+            click.echo(f"# rmx: learn failed ({type(e).__name__}) — the graph "
+                       f"did not record {len(fb_hits)} hit(s) for {pattern!r}",
+                       err=True)
+    if tool_error:
+        raise SystemExit(2)
+
+
+def _grep_index_notes(stats: dict, limit) -> None:
+    """Say on STDERR what the index answer left out. stdout stays grep bytes.
+
+    `capped` (ch-bsd r3 #b-1): the verified answer had more rows than
+    `--limit`. Before this an index read said nothing when the cap bit, so 13
+    of 96 read exactly like 13 of 13 — bug-058's shape. `unreadable` (#s-6):
+    rows whose file could not be read were dropped by verification; the count
+    was computed and no caller printed it.
+    """
+    if stats.get("capped"):
+        click.echo(f"rmx grep: index answer capped at --limit {limit} "
+                   "(pass --limit 0 for every row)", err=True)
+    n = int(stats.get("unreadable", 0) or 0)
+    if n:
+        click.echo(f"rmx grep: {n} index row(s) dropped — their file could "
+                   "not be read", err=True)
 
 
 def _grep_run_direct(s, pattern, effective_pattern, regex,
@@ -6615,6 +6865,7 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
     fire-and-forget write — the replica default no longer means the graph
     learns nothing (which made the always-on learning grep a no-op)."""
     rows: list[dict] = []
+    stats: dict = {}
     # Drop-in read: the named files are the corpus, not the learned index.
     # SIBLING of the same rule in `_grep_run` — this is the REPLICA path and
     # therefore the DEFAULT one, which is why an earlier version of this fix
@@ -6625,7 +6876,13 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
         # branch use. This is the DEFAULT path, which is why an earlier fix
         # that touched only `_grep_run` changed nothing in practice.
         rows = s.grep_evidence(effective_pattern, regex=regex, linkage=linkage,
-                               kind=kind, limit=limit)
+                               kind=kind, limit=limit,
+                               # `ILIKE` cannot honour case (bug-073); the row
+                               # verification does, and `-i` must keep the
+                               # case-insensitive rows it would otherwise drop.
+                               ignore_case=gf.get("ignore_case") is True,
+                               verify_stats=stats,
+                               word=bool(gf.get("word")))
 
     if paths:
         rows = _filter_rows_by_paths(rows, paths)
@@ -6634,6 +6891,7 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
         _tlog.cardinality = len(rows)
         _tlog.answered_by = "index"
         _render_grep_rows(rows, gf, limit, source_tag="idx-replica")
+        _grep_index_notes(stats, limit)
         return
 
     if not fallback:
@@ -6664,16 +6922,25 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
 def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
               linkage, kind, limit, fallback, learn, gf, paths, _tlog):
     rows: list[dict] = []
+    stats: dict = {}
     if not _index_may_answer(paths):
         rows = []                     # drop-in read: the FILE is the corpus
     elif daemon_mod.ping(root):
         resp = daemon_mod.call(root, "grep_indexed", {
             "pattern": effective_pattern, "regex": regex,
             "linkage": linkage, "kind": kind, "limit": limit,
+            # The third caller of `grep_evidence`, and the one bug-073's fix
+            # missed: without this the daemon path matched case-sensitively
+            # under `-i` and fell to the floor (ch-bsd r3 #b-2).
+            "ignore_case": gf.get("ignore_case") is True,
+            "word": bool(gf.get("word")),          # -w, ch-bsd r3 #s-7
         }, timeout=60.0)
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
-        rows = resp["result"]["rows"]
+        result = resp["result"]
+        rows = result["rows"]
+        stats = {"capped": bool(result.get("capped")),
+                 "unreadable": int(result.get("unreadable", 0))}
     else:
         # Direct path: only used when daemon is down. Same read as the daemon
         # op and the replica path — `Store.grep_evidence` is the ONE
@@ -6681,7 +6948,13 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
         # (with `~` where the daemon used `regexp_matches`), which is how
         # bug-067 would have needed fixing in three places.
         rows = s.grep_evidence(effective_pattern, regex=regex, linkage=linkage,
-                               kind=kind, limit=limit)
+                               kind=kind, limit=limit,
+                               # `ILIKE` cannot honour case (bug-073); the row
+                               # verification does, and `-i` must keep the
+                               # case-insensitive rows it would otherwise drop.
+                               ignore_case=gf.get("ignore_case") is True,
+                               verify_stats=stats,
+                               word=bool(gf.get("word")))
 
     # PATHS filter: drop rows whose entity path is outside the given targets.
     if paths:
@@ -6691,6 +6964,7 @@ def _grep_run(s, root, daemon_mod, pattern, effective_pattern, regex,
         _tlog.cardinality = len(rows)
         _tlog.answered_by = "index"
         _render_grep_rows(rows, gf, limit, source_tag="idx")
+        _grep_index_notes(stats, limit)
         return
 
     if not fallback:
@@ -6992,6 +7266,12 @@ def learn_status():
     d = _ls.decision(root)
     state = "[green]ON[/]" if d.enabled else "[red]OFF[/]"
     console.print(f"learning {state}  (rule: {d.rule})")
+    if getattr(d, "marker_error", None):
+        # #m-3: the fall-through lands on ON, so an unreadable marker must not
+        # be the quiet half of this surface.
+        console.print(f"[red]marker UNREADABLE[/] {d.marker_error} — learning "
+                      f"is ON because the marker could not be read, not "
+                      f"because it is absent")
     if d.rejected_env is not None:
         # The operator's typo, shown rather than absorbed: a value that is
         # neither on nor off must not read as either answer.
@@ -6999,8 +7279,42 @@ def learn_status():
             f"[yellow]rejected[/] {_ls.ENV_VAR}={d.rejected_env!r} — not one of "
             f"on/off/1/0/true/false/yes/no; it was ignored")
     sm, gm = _ls.store_marker(root), _ls.global_marker()
-    console.print(f"  store  marker: {sm}  {'present' if sm.exists() else '-'}")
-    console.print(f"  global marker: {gm}  {'present' if gm.exists() else '-'}")
+    # `marker_state`, not `exists()` (bug-080): `exists()` says False for a
+    # marker it could not read, which printed "-" one line below the
+    # marker_error saying the opposite.
+    for label, m in (("store ", sm), ("global", gm)):
+        st = _ls.marker_state(m)
+        shown = {"present": "present", "absent": "-"}.get(st, "[red]UNREADABLE[/]")
+        console.print(f"  {label} marker: {m}  {shown}", soft_wrap=True)
+    # The hook copies (rewriter, rmxgrep, rmxrg) cannot print — they report an
+    # unreadable marker to this log instead. Shown here so it is read.
+    log = _ls.switch_log()
+    try:
+        reports = log.read_text().splitlines() if log.exists() else []
+    except OSError as e:
+        reports = [f"0 (could not read {log}: {type(e).__name__})"]
+    # The last 24 h only, with a readable time (ch-bsd r4 MEH): the log is
+    # append-only, and a report from last month is not today's state.
+    import time as _time
+    recent = []
+    malformed = 0
+    for line in reports:
+        head, _, rest = line.partition(" ")
+        try:
+            ts = float(head)
+        except ValueError:
+            malformed += 1          # counted and said, never skipped silently
+            continue
+        if ts == 0 or _time.time() - ts < 86400:
+            recent.append((ts, rest))
+    if malformed:
+        console.print(f"[yellow]hook reports[/] {malformed} malformed line(s) "
+                      f"in {log}", soft_wrap=True)
+    if recent:
+        ts, rest = recent[-1]
+        when = _time.strftime("%Y-%m-%d %H:%M", _time.localtime(ts)) if ts else "?"
+        console.print(f"[yellow]hook reports (24 h)[/] {len(recent)} in {log}; "
+                      f"latest {when}: {rest}", soft_wrap=True)
     if not d.enabled:
         from refmatrix import learn_queue as _lq
         console.print(f"  queued teach records: {_lq.pending_lines(root)} "
@@ -7414,6 +7728,7 @@ def checkpoint():
 def vacuum():
     """Drop empty concepts and tracked files that no longer exist."""
     out = _store(write=True).vacuum()
+    _say_vector_delete_failures(out, "vacuum")
     console.print(
         f"[green]vacuumed[/] dropped {out['concepts_dropped']} empty concepts, "
         f"purged {out['files_purged']} missing files"
@@ -7443,6 +7758,7 @@ def prune_noise(namespace, min_df, max_df_ratio, drop):
         namespaces=tuple(namespace), min_df=min_df,
         max_df_ratio=max_df_ratio, drop=drop,
     )
+    _say_vector_delete_failures(out, "prune-noise")
     if drop:
         console.print(
             f"[green]dropped[/] {out['dropped']} concepts "
@@ -8044,6 +8360,7 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
                     f"[green]synced[/] +{r['added']} ~{r['updated']} "
                     f"-{r['purged']} (touched={r['touched']}) [daemon]"
                 )
+                _say_vector_delete_failures(r, "sync")
             return
         # Daemon-managed store but the daemon isn't reachable (down or
         # restarting). Do NOT open the catalog directly — a direct write
@@ -10020,6 +10337,31 @@ def _run_pagerank(root: Path, partition: str, *, damping: float = 0.85,
     return _op_pagerank(d, args)
 
 
+# Consecutive all-changed batches `rmx embed` retries before it calls the pass
+# partial: a row rewritten on every pass must not spin the loop forever.
+EMBED_CHANGED_RETRIES = 3
+
+
+def _embed_batch_verdict(result: dict, *, changed_streak: int) -> str:
+    """What one `embed` batch means for the loop: "again", "complete", or
+    "partial" (stop, and do NOT stamp the derive pass).
+
+    The loop used to stop on `embedded == 0` and stamp a complete pass. Since
+    the encode runs outside the store lock (ch-bsd r9 #s-1), a batch whose rows
+    ALL changed while the model ran returns `embedded=0` with rows pending, and
+    that exit recorded a complete embed over a partition with rows left (ch-bsd
+    r10 #m-1). `changed_while_encoding` is what tells the two apart."""
+    embedded = int(result.get("embedded", 0))
+    remaining = int(result.get("remaining", 0))
+    if remaining == 0:
+        return "complete"
+    if embedded:
+        return "again"
+    if result.get("changed_while_encoding") and changed_streak < EMBED_CHANGED_RETRIES:
+        return "again"
+    return "partial"
+
+
 def _stamp_derive_pass(root: Path, partition: str, pass_name: str, *,
                        duration_s: "float | None" = None) -> None:
     """Record that `pass_name` finished deriving `partition` (task 15.4).
@@ -10041,7 +10383,15 @@ def _stamp_derive_pass(root: Path, partition: str, pass_name: str, *,
             "duration_s": duration_s}
     try:
         if daemon_mod.ping(root):
-            resp = daemon_mod.call(root, "derive_stamp", args, timeout=30.0)
+            # retries=0 because this is a WRITE (ch-bsd r1 #s-2).
+            # `daemon.call`'s default retries=2 triples the budget AND
+            # re-sends the op: `_op_derive_stamp` appends a
+            # `derive_history` row per call, so a client-side timeout on
+            # a stamp the daemon DID apply would record the same derive
+            # two or three times and corrupt the history this plan added.
+            # The other three new call sites are reads and already pass it.
+            resp = daemon_mod.call(root, "derive_stamp", args,
+                                   timeout=30.0, retries=0)
             if not resp.get("ok"):
                 raise RuntimeError(resp.get("error", "daemon error"))
             return
@@ -10241,6 +10591,7 @@ def embed_cmd(kinds, batch, rebuild, max_batches, gc_mode, dry_run):
             f"(batch={batch}); the first batch warms the model (~134MB)…[/]"
         )
         iters = 0
+        changed_streak = 0
         completed = False
         while True:
             iters += 1
@@ -10277,8 +10628,20 @@ def embed_cmd(kinds, batch, rebuild, max_batches, gc_mode, dry_run):
                 f"[dim]  ⋯ embed batch {iters}: +{embedded} "
                 f"({total_embedded} done, {remaining} left)[/]"
             )
-            if embedded == 0 or remaining == 0:
+            verdict = _embed_batch_verdict(result, changed_streak=changed_streak)
+            changed_streak = (changed_streak + 1
+                              if result.get("changed_while_encoding") and not embedded
+                              else 0)
+            if verdict == "complete":
                 completed = True
+                break
+            if verdict == "partial":
+                # No progress with rows still pending is NOT a complete pass:
+                # the old `embedded == 0` exit stamped one (ch-bsd r10 #m-1).
+                console.print(
+                    f"[yellow]  {remaining} row(s) still pending in {part}; the "
+                    f"embed pass is NOT recorded complete[/]")
+                completed = False
                 break
             if max_batches and iters >= max_batches:
                 # A CAPPED run is a partial derive (task 15.4). Stamping it
@@ -10332,6 +10695,8 @@ def search_dense_cmd(query, k, kinds):
         result = _op_ann_search(d, args)
     if result.get("ok") is False:
         raise click.ClickException(result.get("error", "ann_search failed"))
+    for w in result.get("warnings") or []:
+        click.echo(f"rmx search-dense: {w}", err=True)
 
     hits = result.get("hits", [])
     if not hits:
@@ -10344,13 +10709,16 @@ def search_dense_cmd(query, k, kinds):
     con = s._connect()
     table = Table(show_header=True, header_style="bold")
     table.add_column("rank", justify="right")
-    table.add_column("distance", justify="right")
+    # A reranked answer carries a cross-encoder `score`, not an L2 `distance`
+    # (bug-089: `KeyError: 'distance'` on viascope, whose daemon reranks).
+    reranked = any(h.get("reranked") for h in hits)
+    table.add_column("rerank score" if reranked else "distance", justify="right")
     table.add_column("id", justify="right")
     table.add_column("kind")
     table.add_column("name")
     for rank, h in enumerate(hits, 1):
         eid = h["id"]
-        dist = h["distance"]
+        dist = h["score"] if reranked else h["distance"]
         row = con.execute(
             "SELECT kind, name FROM entities WHERE id = ?", [eid]
         ).fetchone()
@@ -10629,10 +10997,15 @@ def _replica_memory_recall(query: str, *, k: int, kinds: list,
                     ws.append(f"rerank skipped: {rem:.1f}s of the budget left "
                               f"(< {RERANK_MIN_S:g}s); hits unreranked")
                 else:
+                    rr_why: list[str] = []
                     rr = _reranker.shared_reranker(timeout=rem,
-                                                   probe_timeout=min(rem, RERANK_PROBE_S))
+                                                   probe_timeout=min(rem, RERANK_PROBE_S),
+                                                   why=rr_why)
                     if rr is None:
-                        ws.append("rerank skipped: shared worker unavailable; hits unreranked")
+                        # The cause, when the worker was reached and failed
+                        # (ch-bsd r7 #s-1: a ModelNotCached read as "unavailable").
+                        cause = "; ".join(rr_why) or "shared worker unavailable"
+                        ws.append(f"rerank skipped: {cause}; hits unreranked")
                     else:
                         try:
                             docs = _reranker.collect_rerank_docs(
@@ -11796,6 +12169,9 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         hits = resp["result"].get("hits", [])
+        # An unreranked answer says so on stderr (ch-bsd r7 #s-1).
+        for w in resp["result"].get("warnings") or []:
+            click.echo(f"rmx memory recall: {w}", err=True)
     # Best-first by ascending L2 distance so the displayed `score` (cosine
     # similarity, higher = better) decreases monotonically with rank — the
     # column and the row order cannot disagree. The daemon already sorts
@@ -12204,9 +12580,14 @@ def memory_forget(name_or_id):
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         ok = resp["result"]["forgotten"]
+        _say_vector_delete_failures(resp["result"], "memory forget")
     else:
         s = _store()
+        failed0 = getattr(s, "vector_delete_failures", 0)
         ok = s.forget_memory(int(name_or_id) if name_or_id.isdigit() else name_or_id)
+        _say_vector_delete_failures(
+            {"vector_delete_failed": getattr(s, "vector_delete_failures", 0) - failed0},
+            "memory forget")
     if ok:
         console.print(f"[green]forgot[/] {name_or_id}")
     else:
@@ -12228,6 +12609,7 @@ def memory_dedup(dry_run):
     _memory_intent("memory_dedup")
     s = _store(write=True)
     res = s.fold_concept_dups(dry_run=dry_run)
+    _say_vector_delete_failures(res, "memory dedup")
     verb = "would fold" if res.get("dry_run") else "folded"
     console.print(
         f"[green]{verb}[/] {res.get('folded', 0)} concept↔memory dup(s), "
@@ -12604,6 +12986,7 @@ def memory_bulk_forget(ids, names, mtypes, dry_run, yes):
     console.print(
         f"[green]forgot[/] {result.get('forgotten', 0)} memories"
     )
+    _say_vector_delete_failures(result, "memory forget")
 
 
 # --- session-index group (Phase B) ----------------------------------------
@@ -12755,19 +13138,12 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
             console.print(f"[green]memory bridge[/] {memdir} → store:")
             click.echo(sync["report"])
 
-    # Did those rows get VECTORS? (bug-065) A memory the bridge wrote and
-    # nothing embedded is durable and invisible to recall — and recall is how
-    # the next session reaches it, so this line is never silent. The TEXT
-    # comes from the bridge's own renderer, so the `ingest-gmd` report and the
-    # save-state line cannot drift apart.
-    emb = fin.get("embed")
-    if emb:
-        from refmatrix.ingest_gmd import render_memory_embed_line
-        line = render_memory_embed_line(emb)
-        if line:
-            colour = "red" if emb.get("error") else (
-                "yellow" if emb.get("capped") else "green")
-            console.print(f"[{colour}]{rich_escape(line)}[/]")
+    # NOT re-printed here (bug-065 follow-up, caught live in this session's own
+    # save-state): the bridge appends `render_memory_embed_line` to the report
+    # that `click.echo(sync["report"])` just emitted, so printing it again from
+    # `fin["embed"]` said "memory embed: 3 row(s)" TWICE. The structured field
+    # still rides back on the result for MCP callers; the human line comes
+    # from the report, once, from the renderer the bridge itself used.
 
     if commit:
         _ss_sh(["git", "add", "-A"], repo)

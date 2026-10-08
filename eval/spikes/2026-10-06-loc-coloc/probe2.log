@@ -1,0 +1,38 @@
+units 4396 clean terms df>=5: 4767
+
+[1'] top-20 burst*idf (clean): ['txt', 'recorder', 'zone', 'graphify', 'beta', 'internal', 'mjs', 'chore', 'recv_line', 'hop', 'resp', 'packages', 'purge_entity', '_worker', 'worktree', 'consolidated', 'lang', 'enforce', 'specifies', 'permanent']
+
+[2'] subsumption, gated: P(A|B)>=0.8, P(B|A)<0.5, co>=4, dfA<=3% units, NPMI>=0.3
+  pairs: 2454
+   top  render_scripts ⊃ bakes 5/5 dfA=11 npmi=0.88
+   top  backticks ⊃ feedback_focus_note_no_backticks 5/5 dfA=11 npmi=0.88
+   top  _pending ⊃ decremented 5/5 dfA=11 npmi=0.88
+   top  ART ⊃ index_drift 5/5 dfA=11 npmi=0.88
+   top  gui ⊃ uid 6/6 dfA=13 npmi=0.88
+   top  packages ⊃ frameworks 13/13 dfA=27 npmi=0.87
+   top  stories ⊃ foundational 7/7 dfA=16 npmi=0.87
+   top  workerclient ⊃ _lock 6/6 dfA=14 npmi=0.87
+   top  lib ⊃ pyvenv 6/6 dfA=14 npmi=0.87
+   top  estimate_rerank_s ⊃ rerankskipped 6/6 dfA=14 npmi=0.87
+   top  pythonpath ⊃ typing_inspection 16/16 dfA=33 npmi=0.87
+   top  obs ⊃ Observations 5/5 dfA=12 npmi=0.87
+   rand adoption ⊃ xpc_service_name 5/6 dfA=46 npmi=0.65
+   rand lock ⊃ lookalike 4/5 dfA=128 npmi=0.47
+   rand entry ⊃ nosuch 5/6 dfA=118 npmi=0.51
+   rand wedged ⊃ feedback_hub_kickstart_orphan_pileup 4/5 dfA=23 npmi=0.72
+   rand prior ⊃ uncited 5/5 dfA=86 npmi=0.58
+   rand lint ⊃ unclosed 6/7 dfA=107 npmi=0.54
+   rand fail ⊃ lookalike 4/5 dfA=120 npmi=0.48
+   rand channels ⊃ dangerously 6/6 dfA=25 npmi=0.78
+   rand ties ⊃ order_triples_by_argv 5/6 dfA=12 npmi=0.84
+   rand lock ⊃ conflicting 8/9 dfA=128 npmi=0.54
+   rand tholley ⊃ refma 9/9 dfA=89 npmi=0.63
+   rand import ⊃ file__ 5/6 dfA=123 npmi=0.50
+
+[3'] NPMI admission, k=2 support, co>=3, df>=5, sweep tau
+  ['rerank', 'pool', 'latency'] |B_S|=47 cands=1102 admitted by tau={0.3: 468, 0.4: 191, 0.5: 47, 0.6: 8}
+     tau>=0.4 ranked burst*idf*npmi: ['doc_chars', 'install_hub', 'collect_rerank_docs', 'knowable', 'rerank_doc_chars', 'worker', 'reranked', 'slower', 'apply_rerank', 'encoder', 'pipe', 'blamed', 'shared_reranker', 'reranker', 'serialized']
+  ['daemon', 'socket', 'path', 'length'] |B_S|=378 cands=2964 admitted by tau={0.3: 347, 0.4: 24, 0.5: 1, 0.6: 0}
+     tau>=0.4 ranked burst*idf*npmi: ['busy', 'retries', 'timeout', 'ping', 'unix', 'pid', 'daemon_status', 'simulation', 'clickexception', 'timed', 'rpc', '_silentdaemon', 'writer', 'require_daemon', 'detach']
+  ['memory', 'bridge', 'ingest'] |B_S|=232 cands=2374 admitted by tau={0.3: 228, 0.4: 24, 0.5: 1, 0.6: 0}
+     tau>=0.4 ranked burst*idf*npmi: ['sync_disk', 'SessionStart', '_minihub', 'as_memory', 'skipped_index', 'waited_job', 'ss_update_index', 'memory_sync_disk', 'gstack', 'ingest_gmd_sync', 'sync_memory_dir', 'feedback_save_state_means_handoff', 'ingest_gmd_start', 'finalize_save_state', 'death']

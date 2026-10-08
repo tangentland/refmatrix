@@ -73,19 +73,21 @@ class CorpusConflict(RuntimeError):
 
 
 def fetch(split: str = "s") -> Path:
-    """Download the split blob from HuggingFace. Idempotent (hf caches)."""
-    try:
-        from huggingface_hub import hf_hub_download
-    except ImportError:  # a gap, named — not worked around
-        sys.exit("  ! huggingface_hub is not installed in this interpreter.\n"
-                 "    It is the only supported fetch path for this dataset.\n"
-                 "    Install it, or place the blob at "
-                 f"{UPSTREAM / SPLITS[split]} by hand.")
-    UPSTREAM.mkdir(parents=True, exist_ok=True)
+    """The split blob, from DISK only — this script makes no network call.
+
+    It used to call `hf_hub_download`. External calls were removed project-wide
+    on 2026-10-07 (the user: "find all external calls and remove them"), so the
+    one-time download is a deliberate manual step, printed here when the blob
+    is missing, rather than something an eval run does on its own.
+    """
     name = SPLITS[split]
-    print(f"  ~ fetching {HF_REPO}:{name} -> {UPSTREAM}")
-    return Path(hf_hub_download(HF_REPO, name, repo_type="dataset",
-                                local_dir=str(UPSTREAM)))
+    blob = UPSTREAM / name
+    if not blob.exists():
+        sys.exit(f"  ! {blob} is missing. This script does not download.\n"
+                 f"    Fetch it once, by hand:\n"
+                 f"      hf download {HF_REPO} {name} --repo-type dataset "
+                 f"--local-dir {UPSTREAM}")
+    return blob
 
 
 def _turns_to_markdown(session: list[dict]) -> str:
@@ -248,8 +250,6 @@ def stratified_subset(questions: list[dict], *, per_type: int,
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--fetch", action="store_true",
-                    help="download the split from HuggingFace if absent")
     ap.add_argument("--split", default="s", choices=sorted(SPLITS),
                     help="longmemeval_s (default) / _m / _oracle")
     ap.add_argument("--per-type", type=int, default=20,
@@ -258,11 +258,10 @@ def main() -> int:
     a = ap.parse_args()
 
     DATA.mkdir(parents=True, exist_ok=True)
-    blob = UPSTREAM / SPLITS[a.split]
-    if a.fetch and not blob.exists():
-        blob = fetch(a.split)
-    if not blob.exists():
-        sys.exit(f"  ! {blob} missing — run with --fetch")
+    # No `--fetch` flag (ch-bsd r6 #m-4): it said "download" and then refused
+    # to, and the two messages sent the user in a loop. A missing blob prints
+    # the one-time `hf download` line directly.
+    blob = fetch(a.split)
 
     questions = json.loads(blob.read_text(encoding="utf8"))
     print(f"  ~ {len(questions)} questions from {blob.name}")

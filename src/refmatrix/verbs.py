@@ -553,9 +553,19 @@ def context(root: Path, ref: str, *, degree: int = 1, expand: int = 0,
     body = result.get("body")
     if isinstance(body, str):
         try:
-            return _json.loads(body)
+            parsed = _json.loads(body)
         except ValueError:
-            pass
+            parsed = None
+        if isinstance(parsed, dict):
+            # The op's warnings ride beside the body (an unreranked answer,
+            # ch-bsd r6 #s-2); parsing the body must not drop them.
+            if result.get("warnings"):
+                # MERGED with the body's own (score-time) warnings, never
+                # overwriting them (ch-bsd r8 #m-2).
+                parsed["warnings"] = list(parsed.get("warnings") or []) + [
+                    w for w in result["warnings"]
+                    if w not in (parsed.get("warnings") or [])]
+            return parsed
     return result
 
 
@@ -739,6 +749,8 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
                       payload_memory_recall(query, k=ann_k, kinds=kinds, fuse=fuse,
                                             rerank=rerank, partition=partition),
                       timeout=_left(180.0), retries=_retries)
+            # An unreranked answer says so (ch-bsd r7 #s-1).
+            warnings.extend(r.get("warnings") or [])
             hits = sorted(r.get("hits", []), key=lambda h: (
                 h["distance"] if h.get("distance") is not None
                 else -(h.get("score") or 0.0)))

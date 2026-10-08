@@ -142,6 +142,11 @@ def recv_frame(fh) -> tuple[dict, bytes]:
     return obj, _read_exact(fh, nblob) if nblob else b""
 
 
+# The header refill after a respawn (ch-bsd r11/r12): the model is already
+# loaded when it runs, so this only bounds a wedged worker.
+REFILL_TIMEOUT_S = 10.0
+
+
 class WorkerError(RuntimeError):
     """The worker answered, and the answer was an error."""
 
@@ -176,6 +181,15 @@ class WorkerClient:
         self._last_used = 0.0
         self._info: dict = {}
         self._stderr_fh = None
+        # Background warmup state (ch-bsd r11 #b-1): one warmup at a time, and
+        # its failure kept so a budgeted skip can name it.
+        self._warm_guard = threading.Lock()
+        self._warming = False
+        self.warm_error: str | None = None
+        # Set once this client is replaced (hub adoption) or shut down: it then
+        # never spawns again. `close()` alone does not retire — `call` and the
+        # warm thread both respawn a closed client (ch-bsd r12 #s-1).
+        self._retired = False
 
     # ---- logging ------------------------------------------------------
 
@@ -279,6 +293,9 @@ class WorkerClient:
 
     def _ensure(self) -> subprocess.Popen:
         if not self.alive():
+            if self._retired:
+                raise WorkerError(f"{self.role} worker retired (replaced or shut "
+                                  f"down); not respawning")
             self._spawn()
         assert self._proc is not None
         return self._proc
@@ -292,6 +309,10 @@ class WorkerClient:
         with self._lock:
             p = self._proc
             self._proc = None
+            # The header describes the process that is going away. Kept, it made
+            # an evicted worker look warm to a budgeted caller, which then paid
+            # the respawn's cold model load inside its budget (ch-bsd r10 #b-1).
+            self._info = {}
             if p is None:
                 return
             try:
@@ -320,6 +341,23 @@ class WorkerClient:
                     except Exception:
                         pass
                 self._log("closed")
+
+    def retire(self, *, timeout: float = 5.0) -> None:
+        """Close for good: no later call or warmup respawns this client.
+
+        The daemon swaps a private client for the hub's (adoption) and drops it
+        at shutdown, but a budgeted op that captured it before the swap could
+        still `warm_async()` it and spawn a model process nothing tracked
+        (ch-bsd r12 #s-1: one live orphan per such op). Set the flag under the
+        lock so a call or warm already holding it finishes first."""
+        with self._lock:
+            self._retired = True
+            self.close(timeout=timeout)
+
+    @property
+    def warming(self) -> bool:
+        """A background warmup is loading the model right now."""
+        return self._warming
 
     def evict_if_idle(self, idle_s: float) -> bool:
         """Kill the worker if it hasn't been used in `idle_s` seconds.
@@ -377,10 +415,82 @@ class WorkerClient:
                 self.close(timeout=1.0)
                 hdr, out = self._call_once(req, blob, budget)
             self._last_used = time.time()
+            # A respawn (the jetsam case this module exists for) cleared the
+            # header, and only `info()` set it again — which the daemon calls
+            # once, at first use. So after ONE respawn every budgeted rerank
+            # read the warm worker as cold for the daemon's life (ch-bsd r11
+            # #b-1). A scoring op that just succeeded proves the model is
+            # loaded, so the header costs one instant frame here.
+            if not self._info and op not in ("ping", "info"):
+                try:
+                    # Bounded apart from the op: the model is loaded, so the
+                    # header answers at once; a wait this long is a wedge.
+                    ihdr, _ = self._call_once({"op": "info"}, None,
+                                              min(budget, REFILL_TIMEOUT_S))
+                    self._store_info(ihdr)
+                except Exception as exc:  # noqa: BLE001 — logged; the op itself succeeded
+                    self._log(f"header refill after op={op} failed: {exc!r}")
+            # Every scoring reply carries the worker's cost EMA. Folding it into
+            # the cached header keeps `info(nowait=True)` current without a
+            # probe, and a probe is exactly what a budgeted caller cannot wait
+            # for (ch-bsd r10 #b-1/#s-2).
+            if self._info and "cost_s_per_doc" in hdr:
+                self._info = {**self._info,
+                              "cost_s_per_doc": hdr.get("cost_s_per_doc"),
+                              "scored_docs": hdr.get("scored_docs")}
             return hdr, out
 
-    def info(self) -> dict:
+    def reserve(self, timeout: float) -> bool:
+        """Take this worker for the calling thread, waiting at most `timeout`.
+
+        A private worker is ONE process behind ONE lock. A budgeted caller must
+        not queue on that lock for as long as another caller's forward pass
+        takes (r10 #b-1: 3.80 s on a 1.0 s budget), so it asks first and skips
+        when the worker is busy. Pair with `unreserve()`; `call` re-enters the
+        same RLock."""
+        return self._lock.acquire(timeout=max(0.0, float(timeout)))
+
+    def unreserve(self) -> None:
+        self._lock.release()
+
+    def warm_async(self) -> None:
+        """Load the model in the background, once at a time.
+
+        A budgeted caller skips a cold worker rather than paying the load; if
+        nothing else ever loads it, the skip is permanent (ch-bsd r11 #b-1).
+        This is the private half of the hub's `ModelServer.warm`. A failure is
+        kept on `warm_error` so the next skip names it (a ModelNotCached is an
+        operator action, ch-bsd r6 #s-2)."""
+        with self._warm_guard:
+            if self._warming or self._retired:
+                return
+            self._warming = True
+
+        def _warm() -> None:
+            t0 = time.time()
+            try:
+                self.info()
+                self.warm_error = None
+                self._log(f"warm in {time.time() - t0:.1f}s (background)")
+            except Exception as exc:  # noqa: BLE001 — kept and logged, never hidden
+                self.warm_error = f"{type(exc).__name__}: {exc}"
+                self._log(f"background warm failed: {self.warm_error}")
+            finally:
+                with self._warm_guard:
+                    self._warming = False
+
+        threading.Thread(target=_warm, name=f"rmx-warm-{self.role}",
+                         daemon=True).start()
+
+    def info(self, *, timeout: float | None = None, nowait: bool = False) -> dict:
         """Cached `{model, dim, python, prefix}` from the worker.
+
+        `nowait=True` answers from the cache alone, `{}` when the worker is
+        cold, and never touches the process: asking a cold worker loads the
+        model (6-33 s), and asking a busy one waits behind its forward pass.
+        The cost fields stay current because every rerank reply refreshes them
+        (`call`). This is the private half of the hub's lock-free `info`
+        (ch-bsd r10 #b-1/#s-2).
 
         Also verifies the child landed in the same environment as the
         parent. It should be impossible to miss -- we pass the interpreter
@@ -388,11 +498,24 @@ class WorkerClient:
         silent mismatch is expensive to diagnose later, because the symptom
         is a missing-package error rather than a wrong-interpreter one.
         """
+        if nowait:
+            return dict(self._info)
         with self._lock:
             if self._info:
                 return self._info
-            hdr, _ = self.call("info")
+            hdr, _ = self.call("info", timeout=timeout)
+            self._store_info(hdr)
+            return self._info
+
+    def _store_info(self, hdr: dict) -> None:
+        """Cache an info header and check the child landed in our environment.
+
+        A header means the model loaded, so an earlier warmup failure is no
+        longer true; kept, it named a fixed ModelNotCached on the next cold
+        episode (ch-bsd r12 #s-2, H3)."""
+        with self._lock:
             self._info = {k: v for k, v in hdr.items() if k != "ok"}
+            self.warm_error = None
             child_version = self._info.get("version")
             if child_version is not None:
                 from refmatrix import __version__ as _parent_version

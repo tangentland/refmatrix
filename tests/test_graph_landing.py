@@ -94,6 +94,9 @@ def test_context_op_honors_partition_under_ambient_drift(tmp_path):
         # since — the "perma-red" of plan-6 task 6.4 was a stale fake, not a
         # partition bug (bug-034).
         def _st(self): return self.store
+        # No read snapshot: `_op_context` falls back to the writer under
+        # the lock (ch-bsd r8 #s-2 moved the build to the read path).
+        def _open_read_store(self, partition, **kw): return None
 
     resp = _op_context(D(s), {"ref": "Widget", "format": "json", "degree": 1,
                               "partition": "code-proj"})

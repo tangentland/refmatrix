@@ -156,8 +156,12 @@ def test_the_rewriter_checks_the_toggle_without_a_subprocess_or_an_import():
     assert "subprocess" not in body
     assert "import refmatrix" not in body
     assert "shutil.which" not in body
-    # The whole check is an env read and file tests.
-    assert "os.path.exists" in body
+    # The whole check is an env read and STATs — not `os.path.exists`, which
+    # read an unreadable marker as absent and said nothing (bug-080).
+    assert "_marker_present(" in body
+    assert "os.path.exists" not in body
+    helper = script.split("def _marker_present(")[1].split("\ndef ")[0]
+    assert "_os.stat(" in helper and "subprocess" not in helper
 
 
 # ---- the wrapper ---------------------------------------------------------
@@ -188,3 +192,93 @@ def test_the_wrapper_is_plain_grep_when_learning_is_off(project, monkeypatch):
     assert off.returncode == real.returncode
     assert off.stdout == real.stdout
     assert off.stderr == "", f"the index annotated a read it should not have: {off.stderr!r}"
+
+
+# ---- an UNREADABLE marker: same answer as the resolver, and SAID (bug-080) --
+#
+# The resolver (`learn_switch.decision`) answers an unreadable store marker by
+# falling through (a marker that cannot be read has not said "off") and
+# reporting it in `marker_error`. The shell and the rewriter copies used
+# `[ -f ]` / `os.path.exists`, which answer "absent" for an unsearchable dir
+# and say nothing. They cannot print to stderr — the wrapper's output must stay
+# grep's bytes — so they append to `~/.refmatrix/learn-switch.log`, and
+# `rmx learn status` shows it.
+
+_ROOT_UID = hasattr(os, "geteuid") and os.geteuid() == 0
+
+
+def _switch_log(project: Path) -> Path:
+    return project.parent / "home" / ".refmatrix" / "learn-switch.log"
+
+
+@pytest.mark.skipif(_ROOT_UID, reason="root ignores chmod")
+def test_the_rewriter_reports_an_unreadable_store_marker(rendered, project):
+    store = project / ".refmatrix"
+    store.chmod(0)
+    try:
+        out = _rewrite(rendered, "grep -rn alpha src/", project)
+    finally:
+        store.chmod(0o755)
+
+    assert "rmxgrep" in out, "an unreadable marker must not flip the answer"
+    log = _switch_log(project)
+    assert log.exists(), "the unreadable marker was not reported"
+    assert "unreadable" in log.read_text() and str(store) in log.read_text()
+
+
+@pytest.mark.skipif(_ROOT_UID or not shutil.which("grep"),
+                    reason="root ignores chmod / no grep")
+def test_the_wrapper_reports_an_unreadable_store_marker(project):
+    f = project / "t.txt"
+    f.write_text("alpha one\n")
+    store = project / ".refmatrix"
+    store.chmod(0)
+    try:
+        r = _run_wrapper(["-n", "alpha", "t.txt"], project,
+                         {"RMXGREP_MODE": "plain", "RMXGREP_TEACH": "0",
+                          "RMXGREP_RMX": "/usr/bin/true",
+                          "HOME": str(project.parent / "home")})
+    finally:
+        store.chmod(0o755)
+
+    assert r.stdout == "1:alpha one\n" and r.stderr == "", (r.stdout, r.stderr)
+    log = _switch_log(project)
+    assert log.exists() and "unreadable" in log.read_text(), \
+        "the wrapper read an unreadable marker as absent and said nothing"
+
+
+@pytest.mark.skipif(not shutil.which("rg"), reason="no rg on PATH")
+def test_rmxrg_follows_the_toggle_too(project, tmp_path):
+    """`bin/rmxrg` had NO learn check at all (found fixing bug-080's shell
+    sibling): with `RMX_LEARN=0` it still called `rmx grep` in rich mode."""
+    called = tmp_path / "rmx-was-called"
+    stand_in = tmp_path / "rmx"
+    stand_in.write_text(f"#!/bin/sh\ntouch {called}\nexit 0\n")
+    stand_in.chmod(0o755)
+    (project / "t.txt").write_text("alpha one\n")
+    wrapper = Path(__file__).resolve().parents[1] / "bin" / "rmxrg"
+    e = dict(os.environ, RMXGREP_MODE="rich", RMX_LEARN="0",
+             RMXGREP_RMX=str(stand_in), HOME=str(project.parent / "home"))
+    real = subprocess.run(["rg", "-n", "alpha", "t.txt"], capture_output=True,
+                          text=True, cwd=str(project))
+
+    r = subprocess.run(["sh", str(wrapper), "-n", "alpha", "t.txt"],
+                       capture_output=True, text=True, cwd=str(project), env=e)
+
+    assert not called.exists(), "rmxrg called rmx with learning OFF"
+    assert (r.stdout, r.returncode) == (real.stdout, real.returncode)
+
+
+@pytest.mark.skipif(_ROOT_UID, reason="root ignores chmod")
+def test_the_rewriter_reports_at_most_once_a_minute(rendered, project):
+    """The report runs on every Bash call with a grep; a throttle keeps it
+    from writing a line per call. Survived mutation at r4 (no test)."""
+    store = project / ".refmatrix"
+    store.chmod(0)
+    try:
+        for _ in range(3):
+            _rewrite(rendered, "grep -rn alpha src/", project)
+    finally:
+        store.chmod(0o755)
+    lines = _switch_log(project).read_text().splitlines()
+    assert len(lines) == 1, lines

@@ -5,14 +5,19 @@ title: "Helix phase 2, Option B — a versioned edge store so the graph has a pa
 tags: [plan, helix, storage, versioning]
 metadata:
   node_type: plan
-  status: drafting
+  status: superseded
   created: 2026-09-16
 ---
 
 # Proposed Plan: helix phase 2 on a versioned (prolly) edge store {#root}
 
 **Date:** 2026-09-16
-**Status:** Drafting. Q1-Q4 TENTATIVELY APPROVED 2026-09-16. Held at `drafting` deliberately:
+**Status:** SUPERSEDED (user, 2026-10-07: "helix's design supersedes plan 11's"). The helix half of
+[[refmatrix/adr-0004-unified-location-space-index]] replaces this plan's prolly/Merkle versioned
+edge store. It uses snapshot manifests, age-tiered bitmaps, and a term-space alias map in place of
+`same_as` rows. No task spec was ever written, and nothing here was built. The text below is kept
+as history: the Q1-Q4 reasoning and the 62.9 s profiling gate still inform the ADR-0004 helix plan.
+Former status: Drafting. Q1-Q4 TENTATIVELY APPROVED 2026-09-16. Held at `drafting` deliberately:
 the user gated forward movement on the 62.9 s profiling result, which may change the shape of this
 plan or its priority. Task specs are NOT written yet.
 

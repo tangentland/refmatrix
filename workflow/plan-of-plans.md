@@ -28,13 +28,24 @@ current.
 | 8 | plan-8-derived-coverage-notes | in-progress (built; awaiting @ch-bsd) | yes (4) | `workflow/plans/plan-8-derived-coverage-notes.md` | plan 7 (measures it) |
 | 9 | plan-9-context-cost-telemetry | in-progress | yes (3) | `workflow/plans/plan-9-context-cost-telemetry.md` | — |
 | 10 | plan-10-injection-dedup | in-progress (negative result; awaiting BSD clean) | yes (3) | `workflow/plans/plan-10-injection-dedup.md` | plan 9 (its instrument) |
-| 11 | plan-11-helix-phase2-versioned-graph | drafting (storage fork A/B undecided; the pre-registered criterion now reads B — 444 rendered helix rows, 27 sessions, 48% neighbour-role) | no | `workflow/plans/plan-11-helix-phase2-versioned-graph.md` | helix phase 1 (0.55.0) |
+| 11 | plan-11-helix-phase2-versioned-graph | superseded (user 2026-10-07: "helix's design supersedes plan 11's" — ADR-0004's helix half replaces the prolly store; never built) |
 | 12 | plan-12-open-bug-remediation | completed (@ch-bsd CLEAN; deployed 0.72.0; bug-025 acceptance 20/20 reranked) | yes (6) | `workflow/plans/plan-12-open-bug-remediation.md` | — |
-| 13 | plan-13-cross-partition-sweep | drafting (@ch-bsd r1 DIRTY 12 → revised; r2 DIRTY 17, 10 of 12 closed; gate 13.0 must return GO before any build) | yes (7) | `workflow/plans/plan-13-cross-partition-sweep.md` | — |
-| 14 | plan-14-grep-learning-measurement | in-progress (all 4 tasks done; threshold NOT met — index share 18.5% -> 31.7%; bug-067 fixed, bug-068/069/070 filed; awaiting @ch-bsd + the install-hooks decision) | yes (4) | `workflow/plans/plan-14-grep-learning-measurement.md` | plan 9 (its telemetry record) |
-| 15 | plan-15-derive-impact-tracking | completed (15.1-15.4; `rmx derive log/diff/status` live; sessions/embed/pagerank stamp, coverage named per partition kind) | yes (4) | `workflow/plans/plan-15-derive-impact-tracking.md` | plan 14 (same instrument-first shape); bug-039's stamp |
+| 13 | plan-13-cross-partition-sweep | DORMANT (plan review C9: re-scoped onto plan-21's NL ranking harness, task 21.4) | yes | `workflow/plans/plan-13-cross-partition-sweep.md` | 21.4 |
+| 14 | plan-14-grep-learning-measurement | completed (plan review C10: re-measure lives in task 16.4) | yes (4) | `workflow/plans/plan-14-grep-learning-measurement.md` | — |
+| 15 | plan-15-derive-impact-tracking | in-progress (15.1-15.4 all built + deployed at 0.76.0; flipped `completed` before the @ch-bsd gate, which found 15.1's test writing `src/refmatrix/store.py` — ch-bsd r1 #b-3, fixed on `bsd-r1-remedy`; returns to completed after a clean full suite) | yes (4) | `workflow/plans/plan-15-derive-impact-tracking.md` | plan 14 (same instrument-first shape); bug-039's stamp |
+| 16 | plan-16-invisible-grep-shim | drafting (the shim always execs the real grep/rg and only LEARNS, via an argv-faithful background re-run; awaiting user approval + 3 decisions) | no | `workflow/plans/plan-16-invisible-grep-shim.md` | plan 15 (bsd-r1-remedy merged); + tasks 16.7-16.10 for agent `rmx context` usage (user 2026-10-07, exploration `exploration-agent-context-usage`) |
+| 17 | plan-17-nightly-store-maintenance | drafting (task specs 17.1-17.3 written 2026-10-07: vectors_maintain op — orphans, compact, 24 h cleanup, fingerprinted, bounded holds, handle refresh; hub 03:30 tick with catch-up; fleet rollout; spec review next) |
+| 18 | plan-18-duckdb-store-maintenance | drafting stub (split from plan-17 d-3: DuckDB checkpoint/vacuum on the nightly tick; measure first; must respect A/B slot rotation) |
+| 19 | plan-19-adaptive-memory-budget | drafting (plan + task specs 19.1-19.5 written 2026-10-07: pack recall under the ~10k hook limit, exact usage + decaying recency with floors, subject-tiered MEMORY.md, scheduled compile, delivery measurement; spec review next) |
+| 20 | plan-20-concept-similarity-eval | drafting (plan + task specs 20.1-20.3 written 2026-10-07: frozen labelled pairs, signals scored across 6 stores, conditional dense synonyms; read-only; merges target ADR-0004's alias map) |
+| 21 | plan-21-agent-context-usage | drafting (C8: split from plan-16's 16.7-16.10 as 21.1-21.4; C7 recall-event schema in 21.1; C9 ranking harness in 21.4) | yes (4) | `workflow/plans/plan-21-agent-context-usage.md` | 16 (21.3), 23 |
+| 22 | plan-22-audited-removal-and-repair | drafting (C1/C2/C3: one audited path; REPAIR before removal — moved rows re-pointed, ambiguous kept; bug-086 = 22.3; merge writes 22.4 blocked) | yes (4) | `workflow/plans/plan-22-audited-removal-and-repair.md` | 16.6, 23 |
+| 23 | plan-23-bounded-write-harness | drafting (C5: one durable queue + bounded drain + lock-hold fixture; FIRST build of wave 1) | yes (2) | `workflow/plans/plan-23-bounded-write-harness.md` | — |
 
 ## Sequence rationale {#sequence}
+
+**Current order (2026-10-07, user-approved): the five waves in [[plan-review-2026-10-07#order]].** Wave 0: ch-bsd r10 → merge + deploy; bug-093 hotfix done (0.76.3). Wave 1 starts with plan-23. C11: batch hook-regenerating deploys (19.1, 16.2/16.3, 21.3). The numbered rationale below is historical.
+
 
 1. **deploy-runtime** first — until `rmx` runs the deploy tree, every later "deploy + verify" step is fiction.
 2. **hooks-reproducible** — the user's first irritation; also decides how PreCompact calls save-state (feeds plan 5).

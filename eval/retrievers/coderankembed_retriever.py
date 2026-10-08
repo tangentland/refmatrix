@@ -25,14 +25,20 @@ class CodeRankEmbedRetriever:
         max_seq_length: int = 512,
     ):
         try:
-            from sentence_transformers import SentenceTransformer
+            import sentence_transformers  # noqa: F401
         except ImportError as exc:
             raise ImportError(
                 "CodeRankEmbed eval requires sentence-transformers and torch. "
                 "Install with: pip install -r eval/requirements.txt"
             ) from exc
 
-        model = SentenceTransformer(model_name, trust_remote_code=True).to(device)
+        # LOCAL CACHE ONLY, through the one loader src/ uses (ch-bsd r6 #b-2).
+        # The hand-copied env setdefault here ran AFTER the import above, so the
+        # hub had already frozen its offline flag and the model's remote code
+        # made 4 connects to huggingface.co. An uncached model fails here; fetch
+        # it once with `hf download cornstack/CodeRankEmbed`.
+        from refmatrix.models_local import load_local
+        model = load_local("embed", model_name, device, trust_remote_code=True)
         model.max_seq_length = max_seq_length
         if bf16:
             import torch

@@ -5,15 +5,19 @@ title: "Richer derive tracking: per-pass code identity, a history, and what each
 tags: [plan, derive, versioning, observability, store]
 metadata:
   node_type: plan
-  status: completed
+  status: in-progress
   created: 2026-10-06
 ---
 
 # Plan 15: make a derive say what it changed {#root}
 
 **Date:** 2026-10-06
-**Status:** Completed 2026-10-06 — all four tasks shipped (15.1-15.3 at 0.75.0; 15.4 on
-`task-15.4-stamp-coverage`).
+**Status:** In-progress 2026-10-06. All four tasks are built and shipped (15.1-15.3 at 0.75.0,
+15.4 at 0.76.0), but `completed` was flipped BEFORE the `@ch-bsd` gate ran and the gate found
+task 15.1's own test writing `src/refmatrix/store.py` on the real checkout (ch-bsd r1 #b-3 — the
+"full suite green" claim described a tree the suite rewrote 70 s into the run). Fixed on
+`bsd-r1-remedy`; this returns to `completed` only after a full suite whose log describes the
+committed tree.
 
 rel: depends-on -> [[constitution]]
 rel: implements -> [[tdd-governance]]

@@ -1,0 +1,46 @@
+units 6535 terms 19803 edges 247494
+
+[1] spearman(df, burstiness) = 0.349
+top-15 by df:         ['one', 'rmx', 'only', 'daemon', 'every', 'plan', 'memory', 'store', 'refmatrix', 'file', 'fix', 'path', 'never', 'run', 'test']
+top-15 by burst*idf:  ['txt', 'clarification', 'fifo', 'recorder', 'zone', 'rem', 'fatigue', 'nan', 'keyword/pronouns', 'us1', 'plan12', 'rmx8910', 'graphify', 'internal', 'beta']
+top-15 burst*idf, df 10..200: [('txt', 22, 7.2), ('zone', 21, 3.6), ('plan12', 10, 3.1), ('graphify', 11, 3.1), ('internal', 23, 3.3), ('chore', 19, 3.1), ('hop', 11, 2.7), ('packages', 27, 3.1), ('worktree', 50, 3.4), ('consolidated', 26, 2.9), ('enforce', 21, 2.8), ('permanent', 24, 2.8), ('specifies', 16, 2.6), ('feat', 42, 3.0), ('export', 10, 2.3)]
+
+[2] subsumption samples (parent ⊃ child  co/dfB  dfA)
+   one ⊃ write_bytes 5/5 1090
+   one ⊃ versus 5/5 1090
+   one ⊃ upsert_vector 5/5 1090
+   one ⊃ unhandled 5/5 1090
+   one ⊃ uncited 5/5 1090
+   one ⊃ timers 5/5 1090
+   one ⊃ test_save_state_embeds_memories 5/5 1090
+   one ⊃ test_plan12_remedy 5/5 1090
+   one ⊃ test_an_identical_content_rewrite_does_not_fire_the_gate 5/5 1090
+   one ⊃ test_a_directory_walk_is_not_reordered 5/5 1090
+   one ⊃ skipped_index 5/5 1090
+   one ⊃ rmxp4 5/5 1090
+   random sample:
+   under ⊃ rmx_log 5/6 416
+   refmatrix ⊃ test_plan3_remedy_r7 4/5 780
+   cli ⊃ _left 11/13 628
+   degree ⊃ recall_forward 4/5 57
+   test ⊃ eats 6/6 636
+   one ⊃ uncovered 6/7 1090
+   pytest ⊃ clobber 4/5 146
+   only ⊃ write_bytes 4/5 937
+   ch_bsd ⊃ pdt 5/5 173
+   mutations ⊃ lookalike 4/5 104
+   tests ⊃ emptied 6/6 546
+   shared ⊃ project_id 6/7 200
+   total subsumption pairs: 12178
+
+[3] query ['rerank', 'pool', 'latency']: seeds=['rerank', 'pool', 'latency'] |B_S(k=2)|=47 vs |union|=233 (3.6% of units)
+   raw co-occurrence top: ['one', 'every', 'worker', 'hook', 'cost', 'two', 'never', 'real', 'prompt', 'live', 'shared', 'plan']
+   NPMI>=0.3 admitted: 1098 of 1878 candidates; [('capped', 0.68, 18, 46), ('rerank_doc_chars', 0.67, 7, 10), ('live9', 0.67, 4, 4), ('f170a4c', 0.67, 4, 4), ('e7f', 0.67, 4, 4), ('doc_chars', 0.66, 6, 8), ('g13', 0.66, 11, 22), ('collect_rerank_docs', 0.66, 7, 11), ('reranked', 0.64, 14, 37), ('encoder', 0.64, 12, 29), ('test_replica_recall_leg_sends_a_capped_pool_to_the_reranker', 0.64, 3, 3), ('test_plan3_remedy_r4', 0.64, 3, 3)]
+
+[3] query ['daemon', 'socket', 'path', 'length']: seeds=['daemon', 'socket', 'path', 'length'] |B_S(k=2)|=378 vs |union|=1387 (21.2% of units)
+   raw co-occurrence top: ['one', 'rmx', 'only', 'every', 'store', 'cli', 'file', 'fix', 'memory', 'plan', 'refmatrix', 'same']
+   NPMI>=0.3 admitted: 1202 of 4170 candidates; [('ping', 0.57, 111, 191), ('pid', 0.53, 95, 174), ('writer', 0.52, 89, 163), ('busy', 0.51, 89, 170), ('retries', 0.5, 55, 88), ('unix', 0.49, 24, 26), ('probe', 0.49, 104, 237), ('timeout', 0.49, 91, 195), ('rpc', 0.48, 45, 71), ('simulation', 0.48, 34, 48), ('lock', 0.48, 66, 128), ('process', 0.47, 101, 248)]
+
+[3] query ['memory', 'bridge', 'ingest']: seeds=['memory', 'bridge', 'ingest'] |B_S(k=2)|=232 vs |union|=1125 (17.2% of units)
+   raw co-occurrence top: ['rmx', 'daemon', 'store', 'one', 'only', 'every', 'gmd', 'plan', 'fix', 'refmatrix', 'cli', 'file']
+   NPMI>=0.3 admitted: 778 of 3489 candidates; [('sync_memory_dir', 0.54, 21, 27), ('as_memory', 0.52, 15, 18), ('disk', 0.51, 53, 126), ('sessionstart', 0.51, 38, 78), ('f56a365', 0.5, 8, 8), ('gmd', 0.49, 97, 346), ('plan5', 0.49, 7, 7), ('waited_job', 0.48, 6, 6), ('ingest_gmd_sync', 0.47, 12, 17), ('save', 0.47, 59, 178), ('dir', 0.47, 38, 96), ('skipped_index', 0.47, 5, 5)]

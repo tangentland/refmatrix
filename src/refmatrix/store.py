@@ -756,6 +756,171 @@ def derive_code_hash(pass_name: "str | None" = None) -> str:
     return out
 
 
+def evidence_line_matches(text: str, pattern: str, *, regex: bool,
+                          ignore_case: bool, word: bool = False) -> bool:
+    """Does this source line actually hold the pattern the caller asked for?
+
+    `word` is grep's `-w` for a LITERAL pattern (ch-bsd r3 #s-7): a substring
+    check kept `rmx grep -w err` rows on lines holding only `error` — 34 of 34
+    on the live replica. A regex caller's `-w` is already in the pattern
+    (`\\b...\\b`, built by the CLI), so it is not applied twice.
+    """
+    import re as _re
+
+    if word and not regex:
+        return _re.search(rf"\b{_re.escape(pattern)}\b", text,
+                          _re.IGNORECASE if ignore_case else 0) is not None
+    if regex:
+        try:
+            return _re.search(pattern, text,
+                              _re.IGNORECASE if ignore_case else 0) is not None
+        except _re.error:
+            # An unparseable regex cannot verify anything; do not silently
+            # claim the row is good.
+            return False
+    if ignore_case:
+        return pattern.lower() in text.lower()
+    return pattern in text
+
+
+def identifier_variant_regex(pattern: str) -> "re.Pattern | None":
+    """The identifier spellings of a MULTI-WORD literal pattern, as one regex.
+
+    WHY (ch-bsd r3 #b-3). bug-067 lets `roaring bitmap` reach the concept
+    `keyword/roaring_bitmap` through `canonical_name`, and bug-070 chose its
+    predicate by measuring that reach. bug-074's literal line check then
+    dropped every such row, because the line holds the IDENTIFIER
+    (`roaring_bitmap`, `RoaringBitmap`), not the space spelling. On a copy of
+    the live replica five of bug-070's sixteen instrument patterns lost their
+    index answer (`build context`, `scan prompt`, `replica bundle`, ...).
+
+    This keeps the bridge without giving back bug-074's precision: a row is
+    still dropped unless ITS line holds the words joined by `_`, `-`, a space,
+    or nothing (camelCase). Case-insensitive on purpose: identifier spellings
+    differ in case by construction (`RoaringBitmap` vs `roaring_bitmap`).
+
+    Single-word patterns get NO variants, so bug-073's case fidelity holds for
+    `ERROR`, and `error:` (a punctuation canonicalisation, not a spelling one)
+    still needs its colon. None when the pattern has fewer than two words.
+    """
+    import re as _re
+    from refmatrix.identifier import canonicalize_name
+
+    words = [w for w in canonicalize_name(pattern).split("_") if w]
+    if len(words) < 2:
+        return None
+    return _re.compile(r"[_\-\s]?".join(_re.escape(w) for w in words),
+                       _re.IGNORECASE)
+
+
+def verify_evidence_rows(rows: list, pattern: str, *, regex: bool = False,
+                         ignore_case: bool = False,
+                         variants: "re.Pattern | None" = None,
+                         word: bool = False,
+                         stats: "dict | None" = None,
+                         base: "Path | None" = None,
+                         stop_after: "int | None" = None) -> list:
+    """Keep only evidence rows whose `file:line` REALLY contains the pattern.
+
+    WHY (bug-074). An index row is `(path, line)` from `linkage_evidence`, and
+    for a code symbol the semantic ingest attaches a keyword concept to the
+    enclosing SYMBOL'S DEFINITION LINE, not to the line the token is on. So
+    `grep_evidence("error")` returned `brief.py:155` = `def _pairs(...)`, whose
+    function body holds "error" at line 159. Hand-verified, 6 of 6 sampled
+    rows were `def` lines. That is right for a graph ("this symbol mentions
+    this concept") and WRONG for a grep drop-in, which promises lines that
+    match — and it is why precision against a literal control measured 0.000
+    for `error` and 0.087 for `bitmap` while the replay's learned-only rows
+    measured 1.000.
+
+    It also fixes the CASE half (bug-073) at the row level: `c.name ILIKE`
+    cannot honour case, so `rmx grep ERROR` drew 66 rows on a corpus where
+    real grep matches ERROR nowhere. A case-correct line check drops every one
+    of them.
+
+    SAFETY: emptying the result is safe by construction — every caller's shape
+    is `if rows: render; return` followed by the tool floor, so a fully
+    filtered answer degrades to real grep rather than to a false "no matches".
+    That is the property that makes this a filter and not a truncation
+    (bug-058 was a short read that looked successful).
+
+    A row whose file cannot be read is DROPPED and COUNTED, never kept on
+    faith: `stats["unreadable"]` carries the number of such rows READ before
+    `stop_after` stopped the scan (rows past the cap are never read, so their
+    files are never tried) so a caller can say it.
+
+    `variants` (from `identifier_variant_regex`) is the spelling bridge: a
+    row whose line holds none of the literal pattern but one of its
+    identifier spellings is kept.
+   
+    `base` (ch-bsd r4 #b-5): a RELATIVE row path is resolved against it — the
+    project root it was relative to when learned — never against the process
+    cwd. 515 of 747 raw `error` rows on the replica are relative (learned
+    before 321ff97), and reading them against the cwd made the index answer
+    depend on where `rmx grep` ran: 96 rows from the root, 5 from `src/`.
+
+    `stop_after`: stop once that many rows are kept. The caller wants a cap
+    plus one; the remaining rows are never read.
+    """
+    out: list = []
+    cache: dict = {}
+    seen: set = set()
+    unreadable = 0
+    dropped = 0
+    merged = 0
+    for r in rows:
+        path = r.get("path")
+        line = r.get("line")
+        if not path or not line:
+            # Nothing to verify against; a row with no location cannot be
+            # offered as a grep hit.
+            dropped += 1
+            continue
+        # The row is PRINTED with the path it is READ from (ch-bsd r5 #b-1):
+        # bug-084 resolved a relative row for reading and returned it with its
+        # unresolved spelling, so from a subdirectory 7 of 10 printed paths did
+        # not exist and one file split into two `-c` rows.
+        if base is not None and not Path(path).is_absolute():
+            path = str(Path(base) / path)
+            r = {**r, "path": path}
+        lines = cache.get(path)
+        if lines is None:
+            fp = Path(path)
+            try:
+                lines = fp.read_text(errors="replace").splitlines()
+            except OSError:
+                lines = []
+            cache[path] = lines
+        if not lines:
+            unreadable += 1
+            continue
+        idx = int(line) - 1
+        if idx < 0 or idx >= len(lines):
+            dropped += 1
+            continue
+        if evidence_line_matches(lines[idx], pattern, regex=regex,
+                                 ignore_case=ignore_case, word=word) or (
+                variants is not None and variants.search(lines[idx])):
+            # De-duplicated AFTER resolution: a relative and an absolute
+            # spelling of one file are one hit.
+            key = (path, line, r.get("linkage"), r.get("concept"))
+            if key in seen:
+                merged += 1
+                continue
+            seen.add(key)
+            out.append(r)
+            if stop_after is not None and len(out) >= stop_after:
+                break
+        else:
+            dropped += 1
+    if stats is not None:
+        stats["kept"] = len(out)
+        stats["dropped"] = dropped
+        stats["unreadable"] = unreadable
+        stats["merged"] = merged
+    return out
+
+
 def version_key(v: str) -> tuple:
     """Order version strings numerically, not lexicographically.
 
@@ -2799,6 +2964,7 @@ class Store:
             id_list,
         ).fetchall():
             ids_by_kind.setdefault(row["kind"], []).append(int(row["id"]))
+        failed0 = getattr(self, "vector_delete_failures", 0)
         self._drop_lance_for_purge_batch(ids_by_kind)
 
         for eid in id_list:
@@ -2806,6 +2972,9 @@ class Store:
         return {
             "forgotten": len(id_list), "ids": id_list,
             "by_mtype": per_mtype, "dry_run": False,
+            # ch-bsd r8 #s-1: a memory path; the failure reaches the caller.
+            "vector_delete_failed":
+                getattr(self, "vector_delete_failures", 0) - failed0,
         }
 
     def reinforcement_score(
@@ -2920,7 +3089,10 @@ class Store:
 
     def grep_evidence(self, pattern: str, *, regex: bool = False,
                       linkage: "str | None" = None, kind: "str | None" = None,
-                      limit: "int | None" = 100) -> "list[dict]":
+                      limit: "int | None" = 100,
+                      ignore_case: bool = False, verify: bool = True,
+                      verify_stats: "dict | None" = None,
+                      word: bool = False) -> "list[dict]":
         """THE index-backed grep read: concepts whose name matches `pattern`,
         returned as their `linkage_evidence` rows.
 
@@ -2957,6 +3129,7 @@ class Store:
         """
         from refmatrix.identifier import canonicalize_name
 
+        variants = None
         if regex:
             preds = ["regexp_matches(c.name, ?)"]
             params: list = [pattern]
@@ -2965,6 +3138,13 @@ class Store:
             params = [f"%{pattern}%"]
             canon = canonicalize_name(pattern)
             if canon and canon != pattern.strip().lower():
+                # The bridge is engaged, so verification must accept the
+                # spellings it bridges to (ch-bsd r3 #b-3).
+                variants = identifier_variant_regex(pattern)
+                if variants is not None and word:
+                    # `-w` bounds the bridged spelling too (#s-7).
+                    variants = re.compile(rf"\b(?:{variants.pattern})\b",
+                                          variants.flags)
                 # SEGMENT-ANCHORED, not a bare substring (bug-070).
                 #
                 # This predicate exists to bridge a SPELLING: `roaring bitmap`
@@ -3019,18 +3199,71 @@ class Store:
             "JOIN entities c ON c.id = ev.concept_id "
             "JOIN linkage_types lt ON lt.id = ev.linkage_id "
             "WHERE " + " AND ".join(where) +
-            " ORDER BY e.path, ev.line"
+            # A TOTAL order (ch-bsd r4 #b-1): `(path, line)` ties whenever
+            # several concepts share one line, and a non-total order is not
+            # stable between two reads. Every selected column is in the key.
+            " ORDER BY e.path, ev.line, lt.name, c.name, e.name"
         )
-        if limit and limit > 0:
-            # Omitted rather than passed as NULL when there is no cap: a
-            # drop-in read of named paths has its cap deliberately off
-            # (bug-058), and `LIMIT NULL` is not portable.
-            sql += " LIMIT ?"
-            params.append(limit)
+        capped = limit is not None and limit > 0
         self._connect()
-        rows = self._read().execute(sql, tuple(params)).fetchall()
-        return [{"path": r[0], "entity": r[1], "line": r[2],
-                 "linkage": r[3], "concept": r[4]} for r in rows]
+
+        def _fetch(page_sql: str, page_params: list) -> list:
+            rows = self._read().execute(page_sql, tuple(page_params)).fetchall()
+            return [{"path": r[0], "entity": r[1], "line": r[2],
+                     "linkage": r[3], "concept": r[4]} for r in rows]
+
+        if not verify:
+            if capped:
+                # Omitted rather than passed as NULL when there is no cap: a
+                # drop-in read of named paths has its cap deliberately off
+                # (bug-058), and `LIMIT NULL` is not portable.
+                return _fetch(sql + " LIMIT ?", params + [limit])
+            return _fetch(sql, params)
+        # VERIFY each row against the real line (bug-074). The predicate above
+        # picks the right CONCEPTS; it cannot know that a concept's evidence
+        # points at a symbol's `def` line rather than the token's line, nor
+        # that `ILIKE` threw the caller's case away. One line read per distinct
+        # file, cached, and far cheaper than the tool floor this read exists to
+        # avoid. Opt out with `verify=False` for a caller that wants concept
+        # provenance rather than grep-shaped hits.
+        #
+        # The cap counts VERIFIED rows (ch-bsd r3 #b-1). Verifying after a SQL
+        # `LIMIT` spent the cap on `def`-line rows verification then dropped:
+        # on the live replica `rmx grep error` returned 13 of 96 real matches
+        # with exit 0 and nothing on stderr — bug-058's silent short read.
+        #
+        # ONE read, verified LAZILY until `limit + 1` rows are kept (ch-bsd r4
+        # #b-1). The r3 fix paged `LIMIT ? OFFSET ?`, which over a tie-prone
+        # order duplicated one row and lost another at each page boundary, and
+        # was up to 11x slower than a single read (1004 ms vs 87 ms on the
+        # replica): the SELECT is cheap, the line reads are not, so the line
+        # reads are what stop early. The `+ 1` lets `stats["capped"]` say the
+        # cap bit without verifying the rest.
+        stats = verify_stats if verify_stats is not None else {}
+        rows = _fetch(sql, params)
+        # Ordered on the RESOLVED path before the lazy cap (ch-bsd r6 #m-2).
+        # The SQL order sorts the stored spelling and `/` sorts before `s`, so
+        # the cap took every absolute-spelled row first and one file spelled
+        # both ways printed as two runs out of line order. Joining a path is
+        # cheap; the line reads stay lazy.
+        base = self.root.parent
+        for r in rows:
+            p = r["path"]
+            if p and not Path(p).is_absolute():
+                r["path"] = str(base / p)
+        rows.sort(key=lambda r: (r["path"] or "", r["line"] or 0, r["linkage"] or "",
+                                 r["concept"] or "", r["entity"] or ""))
+        cap = int(limit) if capped else None
+        out = verify_evidence_rows(rows, pattern, regex=regex,
+                                   ignore_case=ignore_case, variants=variants,
+                                   word=word, stats=stats,
+                                   base=self.root.parent,
+                                   stop_after=(cap + 1) if cap else None)
+        stats["capped"] = cap is not None and len(out) > cap
+        if cap is not None:
+            stats["kept"] = min(len(out), cap)
+            return out[:cap]
+        return out
 
     def resolve_concept_ids_many(
         self, names: "list[str]",
@@ -3343,49 +3576,70 @@ class Store:
             con.commit()
         return n
 
-    def _drop_lance_for_purge(self, entity_id: int, kind: str) -> bool:
-        """Best-effort: drop entity_id's vector from its (partition, kind)
-        Lance dataset. Paired with `purge_entity` so a DuckDB row deletion
-        also clears the corresponding dense vector instead of leaving an
-        orphan for the next `embed --gc`.
+    def _lance_for_purge(self, kind: str, n: int):
+        """`lance`, or None when the [dense] extra is not installed. A lance
+        that IS installed but fails to import (a missing transitive dependency
+        under `python -I`: `typing_inspection`) is a FAILURE, counted and
+        printed — it used to read as "not installed" and skip every vector
+        delete without a word (ch-bsd r7 #s-2)."""
+        import importlib.util
+        if importlib.util.find_spec("lance") is None:
+            return None
+        try:
+            import lance
+        except Exception as e:  # noqa: BLE001 — named and counted below
+            self._note_vector_delete_failure(kind, n, e)
+            return None
+        return lance
 
-        Skips silently on:
-          - `lance` not importable (no [dense] extra installed)
-          - dataset directory absent (kind never embedded in this partition)
-          - any Lance-side exception (the catalog purge must still proceed
-            even if the vector side fails — worst case stays "orphan, GC
-            reaps later," never "user thinks the row is gone but it isn't")
+    def _note_vector_delete_failure(self, kind: str, n: int, exc: BaseException) -> None:
+        """A failed vector delete leaves `n` orphan vectors for purged ids. The
+        catalog purge still proceeds (the row must go), so the failure is
+        PRINTED with its remedy and COUNTED on `vector_delete_failures`, which
+        sync / prune / fold report (ch-bsd r7 #s-2: it was `except: pass`)."""
+        import sys as _sys
+        self.vector_delete_failures = getattr(self, "vector_delete_failures", 0) + n
+        print(f"rmx: vector delete FAILED for {n} {kind} id(s) in partition "
+              f"{self._partition_name!r} ({type(exc).__name__}: {exc}); their vectors "
+              f"are orphaned until `rmx embed --gc` reaps them (which needs a "
+              f"working `import lance`)", file=_sys.stderr)
+
+    def _drop_lance_for_purge(self, entity_id: int, kind: str) -> bool:
+        """Drop entity_id's vector from its (partition, kind) Lance dataset.
+        Paired with `purge_entity` so a DuckDB row deletion also clears the
+        corresponding dense vector instead of leaving an orphan for the next
+        `embed --gc`.
+
+        Quiet only when there is nothing to delete: `lance` not installed (no
+        [dense] extra) or the dataset directory absent (kind never embedded in
+        this partition). Any other failure is printed and counted
+        (`_note_vector_delete_failure`) and the catalog purge proceeds.
 
         Returns True when a delete was issued, False otherwise.
         """
-        try:
-            import lance
-        except ImportError:
-            return False
         path = self.root / "vectors" / self._partition_name / f"{kind}.lance"
         if not path.exists():
+            return False
+        lance = self._lance_for_purge(kind, 1)
+        if lance is None:
             return False
         try:
             ds = lance.dataset(str(path))
             ds.delete(f"id = {int(entity_id)}")
             return True
-        except Exception:
+        except Exception as e:  # noqa: BLE001 — named and counted
+            self._note_vector_delete_failure(kind, 1, e)
             return False
 
     def _drop_lance_for_purge_batch(
         self, ids_by_kind: "dict[str, list[int]]",
     ) -> int:
-        """Batched form of `_drop_lance_for_purge`: one Lance dataset open
-        per kind, one delete per kind. Used by `bulk_forget_memories` so
-        a 261-id purge pays N dataset opens (one per distinct kind) rather
-        than 261. Same failure semantics as the single-id variant.
-        Returns the number of ids whose Lance row was attempted (count is
-        per-kind input length when the dataset exists and lance is
-        importable; sum across kinds)."""
-        try:
-            import lance
-        except ImportError:
-            return 0
+        """Batched form of `_drop_lance_for_purge`: one Lance dataset open and
+        ONE delete per kind. Since bug-085 it is the only vector delete on file
+        re-sync, concept fold, noise prune and bulk memory forget. Same failure
+        semantics as the single-id variant: quiet only when there is nothing to
+        delete, otherwise printed and counted. Returns the number of ids whose
+        delete was issued."""
         total = 0
         for kind, ids in ids_by_kind.items():
             if not ids:
@@ -3396,14 +3650,42 @@ class Store:
             )
             if not path.exists():
                 continue
+            lance = self._lance_for_purge(kind, len(ids))
+            if lance is None:
+                continue
             try:
                 ds = lance.dataset(str(path))
                 in_list = ",".join(str(int(i)) for i in ids)
                 ds.delete(f"id IN ({in_list})")
                 total += len(ids)
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001 — named and counted
+                self._note_vector_delete_failure(kind, len(ids), e)
         return total
+
+    def _pending_embeddings_where(
+        self, kinds: "list[str] | None",
+    ) -> "tuple[str, list]":
+        """The WHERE for "this row's vector is missing or stale", once.
+
+        Shared by `pending_embeddings` and `pending_embeddings_count` so the
+        list and the COUNT cannot drift — this repo's recurring defect is one
+        rule implemented per call path (bug-058/059/060, and the grep read SQL
+        that existed in three divergent copies until bug-067).
+        """
+        sql = (
+            "FROM entities "
+            "WHERE partition_id = ? "
+            "AND (vectors_updated_at IS NULL "
+            "     OR vectors_updated_at < updated_at "
+            "     OR (vectors_partition IS NOT NULL "
+            "         AND vectors_partition != ?))"
+        )
+        params: list = [self._partition_id, self.partition_name]
+        if kinds:
+            in_list = ",".join("?" * len(kinds))
+            sql += f" AND kind IN ({in_list})"
+            params.extend(kinds)
+        return sql, params
 
     def pending_embeddings(
         self, *, kinds: list[str] | None = None, limit: int | None = None
@@ -3416,26 +3698,39 @@ class Store:
         A NULL `vectors_partition` (rows embedded before this column existed) is
         trusted, so the migration does not trigger a mass re-embed.
         Filtered to `kinds` when provided. `limit` caps the result.
+
+        NOT the way to ask "how many are left" — a `limit` makes the LENGTH of
+        this result a capped number, and reading it as a count is ch-bsd r1
+        #b-1: `len(pending_embeddings(limit=1))` is 0-or-1 by construction and
+        was reported to operators as the remaining row count. Use
+        `pending_embeddings_count`.
         """
         con = self._connect()
-        sql = (
-            "SELECT id, kind, name FROM entities "
-            "WHERE partition_id = ? "
-            "AND (vectors_updated_at IS NULL "
-            "     OR vectors_updated_at < updated_at "
-            "     OR (vectors_partition IS NOT NULL "
-            "         AND vectors_partition != ?))"
-        )
-        params: list = [self._partition_id, self.partition_name]
-        if kinds:
-            in_list = ",".join("?" * len(kinds))
-            sql += f" AND kind IN ({in_list})"
-            params.extend(kinds)
-        sql += " ORDER BY id"
+        where, params = self._pending_embeddings_where(kinds)
+        sql = "SELECT id, kind, name " + where + " ORDER BY id"
         if limit is not None:
             sql += f" LIMIT {int(limit)}"
         rows = con.execute(sql, params).fetchall()
         return [(r[0], r[1], r[2]) for r in rows]
+
+    def pending_embeddings_count(self, *, kinds: list[str] | None = None) -> int:
+        """How many rows still need a vector — a REAL count (ch-bsd r1 #b-1).
+
+        `_op_embed` reported `len(pending_embeddings(limit=1))`, so every
+        surface that printed "N left" could only ever print 0 or 1. At a drain
+        cap the operator read "2048 embedded, 1 still without vectors" with
+        thousands outstanding, and "1 left" is exactly the reading that makes
+        someone skip `rmx embed --kinds memory` — leaving memory rows durable
+        and unreachable, which is bug-065's own harm.
+
+        A COUNT over the same predicate, not a materialised list: the caller
+        wants the number, and pulling N rows to measure N is the cost the
+        `limit=1` was dodging in the first place.
+        """
+        where, params = self._pending_embeddings_where(kinds)
+        row = self._connect().execute("SELECT count(*) " + where,
+                                      params).fetchone()
+        return int(row[0]) if row else 0
 
     def rebuild_entities_indexes(self) -> dict:
         """Rebuild the `entities` table with fresh PRIMARY KEY / UNIQUE
@@ -5598,11 +5893,14 @@ class Store:
             folded += 1
 
         # One Lance delete for the fold, not one per concept (bug-085).
+        failed0 = getattr(self, "vector_delete_failures", 0)
         self._drop_lance_for_purge_batch({"concept": folded_ids})
         if not dry_run and folded:
             self.flush_fragments()
         return {"folded": folded, "edges_migrated": edges_migrated,
-                "dry_run": dry_run}
+                "dry_run": dry_run,
+                "vector_delete_failed":
+                    getattr(self, "vector_delete_failures", 0) - failed0}
 
     def purge_path(self, abs_path: str) -> int:
         """Remove every entity (file + per-function) anchored at abs_path.
@@ -5725,8 +6023,11 @@ class Store:
         names = [r[1] for r in rows]
         if dry_run:
             return {"forgotten": 0, "names": names, "dry_run": True}
+        failed0 = getattr(self, "vector_delete_failures", 0)
         self._bulk_purge_ids([(int(r[0]), r[2], r[1]) for r in rows])
-        return {"forgotten": len(rows), "names": names, "dry_run": False}
+        return {"forgotten": len(rows), "names": names, "dry_run": False,
+                "vector_delete_failed":
+                    getattr(self, "vector_delete_failures", 0) - failed0}
 
     def _bulk_purge_ids(self, info: "list[tuple[int, str, str]]") -> int:
         """Batched purge of `(id, kind, name)` triples — the scalable sibling of
@@ -5748,10 +6049,9 @@ class Store:
         ids_by_kind: dict[str, list[int]] = {}
         for eid, kind, _name in info:
             ids_by_kind.setdefault(kind, []).append(int(eid))
-        try:
-            self._drop_lance_for_purge_batch(ids_by_kind)
-        except Exception:
-            pass
+        # Failures are printed + counted inside (ch-bsd r7 #s-2); the outer
+        # `except: pass` this replaced hid them a second time.
+        self._drop_lance_for_purge_batch(ids_by_kind)
 
         # 2. Bitmap cleanup. Entity-side: gather the (linkage, packed-bit) set
         #    for edges where a killed id is the ENTITY, then discard. Concept-
@@ -5924,8 +6224,14 @@ class Store:
         con.commit()
         return v
 
-    # Rows kept per (partition, pass). 50 is enough to see a release arc and
-    # small enough that the table never becomes the thing you have to prune.
+    # Rows kept per (partition, pass). The NUMBER is a table bound, not a time
+    # window: it is small enough that this table never becomes the thing you
+    # have to prune. It is NOT "a release arc" — that claim was in this comment
+    # through two audits (ch-bsd r1 #s-3, r2 unchanged) and it is wrong by a
+    # wide margin. Measured on this store: 12 gmd derives in 2.66 h, so 50 rows
+    # is roughly ELEVEN HOURS of active development, not a release. Anyone
+    # sizing this for a history question should measure their own derive rate
+    # rather than trust a horizon.
     DERIVE_HISTORY_MAX = 50
 
     def _has_table(self, name: str) -> bool:
@@ -6570,9 +6876,12 @@ class Store:
         if dry_run:
             return {"paths": matched, "files_untracked": len(matched),
                     "entities_purged": len(info), "dry_run": True}
+        failed0 = getattr(self, "vector_delete_failures", 0)
         self._purge_paths(matched, info)
         return {"paths": matched, "files_untracked": len(matched),
-                "entities_purged": len(info), "dry_run": False}
+                "entities_purged": len(info), "dry_run": False,
+                "vector_delete_failed":
+                    getattr(self, "vector_delete_failures", 0) - failed0}
 
     def _entities_for_paths(
         self, paths: "list[str]"
@@ -6619,6 +6928,7 @@ class Store:
         summary dict."""
         from os.path import exists as _exists
         con = self._connect()
+        failed0 = getattr(self, "vector_delete_failures", 0)
 
         # 1. concepts whose every bitmap is empty == no rows in entity_links.
         # Skip protected concepts — those are user-asserted and survive vacuum
@@ -6669,6 +6979,8 @@ class Store:
         return {
             "concepts_dropped": len(empty_concepts),
             "files_purged": len(gone),
+            "vector_delete_failed":
+                getattr(self, "vector_delete_failures", 0) - failed0,
         }
 
     # ---- noise pruning ----------------------------------------------------
@@ -6747,13 +7059,16 @@ class Store:
                         noise_changes.append((c_name, 0))
                         unmarked += 1
         con.commit()
+        failed0 = getattr(self, "vector_delete_failures", 0)
         self._drop_lance_for_purge_batch({"concept": dropped_ids})
+        vector_delete_failed = getattr(self, "vector_delete_failures", 0) - failed0
         for c_name, value in noise_changes:
             self._log_event("noise", kind="concept", name=c_name, value=value)
         return {
             "marked": marked,
             "unmarked": unmarked,
             "dropped": dropped,
+            "vector_delete_failed": vector_delete_failed,
             "kept": seen - marked - dropped,
             "total_seen": seen,
             "min_df": min_df,

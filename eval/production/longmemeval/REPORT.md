@@ -136,7 +136,8 @@ persisted, so embed resumes via `ingest.py --skip init --skip ingest-gmd` withou
 
 ```bash
 cd eval/production/longmemeval
-python3 prepare.py --fetch --split s --per-type 20
+hf download xiaowu0162/longmemeval longmemeval_s --repo-type dataset --local-dir <data>/upstream  # once, by hand (paths.py: HF_REPO, SPLITS)
+python3 prepare.py --split s --per-type 20
 python3 ingest.py
 REFMATRIX_ROOT=<data>/.refmatrix python3 run.py \
     --method context --method scan --subset 20 --depth 50 --at 1,5,10,20 --workers 4

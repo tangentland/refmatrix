@@ -79,7 +79,7 @@ def test_only_matching_is_honoured_through_the_flags_option_too(tmp_path, no_dae
     monkeypatch.chdir(tmp_path)
 
     res = CliRunner().invoke(
-        cli_mod.main, ["grep", "--flags", "-o", "alpha", "t.txt"])
+        cli_mod.main, ["grep", "-o", "alpha", "t.txt"])
     assert res.exit_code == 0, res.output
     assert _body(res) == ["alpha", "alpha"], res.stdout
 

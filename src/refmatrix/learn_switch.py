@@ -33,6 +33,10 @@ from pathlib import Path
 
 # The marker's NAME is the same at both scopes; only its directory differs.
 MARKER_NAME = "learn.off"
+# Where the hook copies (rewriter, rmxgrep, rmxrg) REPORT an unreadable marker
+# (bug-080). They cannot use stderr — a wrapper's output must stay grep's bytes —
+# and the store dir may be the unreadable thing, so it lives under ~/.refmatrix.
+SWITCH_LOG_NAME = "learn-switch.log"
 
 ENV_VAR = "RMX_LEARN"
 
@@ -58,6 +62,13 @@ class Decision:
     enabled: bool
     rule: str
     rejected_env: str | None = None
+    # An UNREADABLE marker file (ch-bsd r1 #m-3). The asymmetry the audit
+    # named: a typo'd `RMX_LEARN` was reported loudly while an `OSError`
+    # reading `learn.off` fell through with a bare `pass`, so an operator who
+    # turned learning OFF and then hit a permission problem got it back ON
+    # with no word. Not an answer — the fall-through is still right, because a
+    # marker that cannot be read has not said "off" — but it is SAID.
+    marker_error: str | None = None
 
 
 def global_marker() -> Path:
@@ -68,6 +79,37 @@ def global_marker() -> Path:
 def store_marker(root: "str | os.PathLike") -> Path:
     """The per-store marker: `<store root>/learn.off`."""
     return Path(root) / MARKER_NAME
+
+
+def _marker_present(p: Path) -> bool:
+    """True if the marker exists, False if it is ABSENT, and RAISE on anything
+    else.
+
+    NOT `Path.exists()` (ch-bsd r3 #m-2): on Python 3.14 it returns False for a
+    PermissionError, so the `except OSError` around it could never run and an
+    unreadable store marker read as "no marker" with no word — found by a test
+    on a real `chmod 000` dir, after the r1 fix had been checked only with
+    `exists` patched to raise. A stat says which of the three it was.
+    """
+    try:
+        os.stat(p)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    return True
+
+
+def switch_log() -> Path:
+    """`~/.refmatrix/learn-switch.log`: the hook copies' unreadable-marker reports."""
+    return Path.home() / ".refmatrix" / SWITCH_LOG_NAME
+
+
+def marker_state(p: Path) -> str:
+    """`present`, `absent` or `unreadable` — for a DISPLAY that must not say
+    "absent" about a marker it could not read (`rmx learn status`, bug-080)."""
+    try:
+        return "present" if _marker_present(p) else "absent"
+    except OSError:
+        return "unreadable"
 
 
 def _env_value() -> "tuple[bool | None, str | None]":
@@ -94,20 +136,28 @@ def decision(root: "str | os.PathLike | None" = None) -> Decision:
     env_enabled, rejected = _env_value()
     if env_enabled is not None:
         return Decision(env_enabled, "env", rejected)
+    problems: list = []
     if root is not None:
         try:
-            if store_marker(root).exists():
+            if _marker_present(store_marker(root)):
                 return Decision(False, "store-marker", rejected)
-        except OSError:
+        except OSError as e:
             # An unreadable store dir is not an answer; fall through to the
-            # scope that is readable rather than inventing one.
-            pass
+            # scope that is readable rather than inventing one — but say so
+            # (#m-3), because the fall-through lands on ON.
+            problems.append(f"{store_marker(root)}: {type(e).__name__}: {e}")
     try:
-        if global_marker().exists():
-            return Decision(False, "global-marker", rejected)
-    except OSError:
-        pass
-    return Decision(True, "default", rejected)
+        if _marker_present(global_marker()):
+            # Carry the STORE marker's read failure even though the global one
+            # answered (ch-bsd r2 MEH): the operator's per-store marker was
+            # unreadable, and the fact that a different scope happened to
+            # supply an answer does not make that disappear.
+            return Decision(False, "global-marker", rejected,
+                            "; ".join(problems) if problems else None)
+    except OSError as e:
+        problems.append(f"{global_marker()}: {type(e).__name__}: {e}")
+    note = "; ".join(problems) if problems else None
+    return Decision(True, "default", rejected, note)
 
 
 def learning_enabled(root: "str | os.PathLike | None" = None) -> bool:

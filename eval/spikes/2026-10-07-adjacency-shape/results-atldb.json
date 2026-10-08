@@ -1,0 +1,136 @@
+{
+  "partition_id": 2,
+  "concepts": 3060,
+  "entities": 544,
+  "edges": 7708,
+  "concept_df": {
+    "p25": 1.0,
+    "p50": 1.0,
+    "p75": 3.0,
+    "p90": 5.0,
+    "p95": 8.0,
+    "p99": 17.409999999999854,
+    "max": 54,
+    "mean": 2.518954248366013,
+    "share_df_le_1": 0.5787581699346406
+  },
+  "entity_degree": {
+    "p25": 2.0,
+    "p50": 5.0,
+    "p75": 16.0,
+    "p90": 40.69999999999999,
+    "p95": 55.0,
+    "p99": 89.57000000000005,
+    "max": 434,
+    "mean": 14.169117647058824
+  },
+  "powerlaw_concept_df": {
+    "xmin": 8,
+    "alpha": 3.0781886382313544,
+    "ks": 0.031002900385676158,
+    "n_tail": 173
+  },
+  "top_hubs": [
+    {
+      "name": "user",
+      "df": 54
+    },
+    {
+      "name": "workflow",
+      "df": 42
+    },
+    {
+      "name": "camera",
+      "df": 37
+    },
+    {
+      "name": "plan",
+      "df": 37
+    },
+    {
+      "name": "file",
+      "df": 31
+    },
+    {
+      "name": "gmd",
+      "df": 30
+    },
+    {
+      "name": "project",
+      "df": 30
+    },
+    {
+      "name": "role_id",
+      "df": 27
+    },
+    {
+      "name": "image_step",
+      "df": 27
+    },
+    {
+      "name": "docs",
+      "df": 26
+    },
+    {
+      "name": "status",
+      "df": 25
+    },
+    {
+      "name": "resolver",
+      "df": 25
+    }
+  ],
+  "edge_share": {
+    "top_0.1pct": 0.017254800207576543,
+    "top_1pct": 0.09937727036844836,
+    "df_le_1": 0.22976128697457188
+  },
+  "roaring_bytes": {
+    "total": 64115,
+    "share_top_1pct": 0.030523278483974108,
+    "share_df_le_1": 0.4972003431334321
+  },
+  "reach": {
+    "all_concepts": {
+      "reach1_mean": 0.07099264705882352,
+      "reach2_mean": 0.262389705882353,
+      "reach2_p50": 0.24632352941176472
+    },
+    "minus_top_0.1pct": {
+      "reach1_mean": 0.06247242647058823,
+      "reach2_mean": 0.24232536764705884,
+      "reach2_p50": 0.1764705882352941
+    },
+    "minus_top_1pct": {
+      "reach1_mean": 0.0432904411764706,
+      "reach2_mean": 0.17371323529411764,
+      "reach2_p50": 0.07904411764705882
+    }
+  },
+  "communities": {
+    "concepts_used": 1258,
+    "df_cap": 17,
+    "projection_edges": 6404,
+    "louvain_modularity": 0.4257115327907221,
+    "n_communities": 97,
+    "largest": [
+      82,
+      61,
+      53,
+      53,
+      45,
+      31,
+      26,
+      23
+    ],
+    "singletons": 67
+  },
+  "compression_bytes": {
+    "today_ids": 64115,
+    "dense_rank_today_order": 63952,
+    "path_locality_order": 64048,
+    "community_order": 63910,
+    "random_order_control": 64376
+  },
+  "elapsed_s": 0.2
+}

@@ -236,6 +236,7 @@ def _in_open_quote(s: str) -> bool:
 # routing without learning.
 _LEARN_ENV = "@LEARN_ENV@"
 _LEARN_MARKER = "@LEARN_MARKER@"
+_LEARN_LOG = "@LEARN_LOG@"
 _LEARN_OFF = @LEARN_OFF_VALUES@
 _LEARN_ON = @LEARN_ON_VALUES@
 
@@ -252,14 +253,55 @@ def _learning_off(cwd):
         # A malformed value decides nothing -- same rule as the resolver.
     d = _os.path.abspath(cwd or _os.getcwd())
     while True:
-        if _os.path.exists(_os.path.join(d, ".refmatrix", _LEARN_MARKER)):
+        if _marker_present(_os.path.join(d, ".refmatrix", _LEARN_MARKER)):
             return True
         parent = _os.path.dirname(d)
         if parent == d:
             break
         d = parent
-    return _os.path.exists(
+    return _marker_present(
         _os.path.expanduser(_os.path.join("~", ".refmatrix", _LEARN_MARKER)))
+
+
+def _marker_present(path):
+    # A STAT, not os.path.exists (bug-080): exists() answers False for a marker
+    # in an unsearchable dir, so an unreadable marker read as absent with no
+    # word. Same answer as the resolver -- an unreadable marker has not said
+    # "off", so it falls through -- but REPORTED, to the log `rmx learn status`
+    # reads; stdout/stderr here belong to Claude Code's hook protocol.
+    import os as _os
+    try:
+        _os.stat(path)
+        return True
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except OSError as e:
+        _report_unreadable(path, e)
+        return False
+
+
+def _report_unreadable(path, err):
+    import os as _os
+    import time as _time
+    log = _os.path.expanduser(_os.path.join("~", ".refmatrix", _LEARN_LOG))
+    try:
+        # At most one line a minute: this runs on every Bash call with a grep.
+        if _time.time() - _os.stat(log).st_mtime < 60:
+            return
+    except OSError:
+        pass
+    try:
+        _os.makedirs(_os.path.dirname(log), exist_ok=True)
+        with open(log, "a") as fh:
+            fh.write("%d rewriter unreadable %s %s\\n"
+                     % (int(_time.time()), path, type(err).__name__))
+    except OSError as e2:
+        # The log is unwritable too. Hook stderr on exit 0 is shown in the
+        # transcript's hook output, never to the tool -- the last place left.
+        import sys as _sys
+        _sys.stderr.write("rmx learn: marker %s unreadable (%s); log %s "
+                          "unwritable (%s)\\n" % (path, type(err).__name__,
+                                                 log, type(e2).__name__))
 
 
 def main() -> None:
@@ -382,6 +424,7 @@ def render_scripts(wrappers: "tuple[str, str] | list | None" = None) -> "dict[st
         REWRITER_TEMPLATE
         .replace("@LEARN_ENV@", _ls.ENV_VAR)
         .replace("@LEARN_MARKER@", _ls.MARKER_NAME)
+        .replace("@LEARN_LOG@", _ls.SWITCH_LOG_NAME)
         .replace("@LEARN_OFF_VALUES@", repr(tuple(sorted(_ls._OFF_VALUES))))
         .replace("@LEARN_ON_VALUES@", repr(tuple(sorted(_ls._ON_VALUES))))
     )

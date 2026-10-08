@@ -991,7 +991,9 @@ class Daemon:
                 setattr(self, cache, None)    # the proxy (or resident model) goes
             try:
                 if w is not None:
-                    w.close(timeout=2.0)
+                    # Retire, not close: an op that captured `w` before the swap
+                    # must not respawn it (ch-bsd r12 #s-1).
+                    getattr(w, "retire", w.close)(timeout=2.0)
             except Exception as exc:  # noqa: BLE001 — the swap already happened
                 self._log(f"{role}: private worker close failed after adoption: "
                           f"{exc!r}")
@@ -1044,8 +1046,12 @@ class Daemon:
                 out[role] = "none"
         return out
 
-    def _reranker(self):
+    def _reranker(self, *, load: bool = False):
         """Lazy cross-encoder reranker, always out-of-process.
+
+        `load=True` loads a cold private model NOW (the startup warmup, already
+        on its own thread); otherwise a cold private worker warms in the
+        background (ch-bsd r11 #b-1).
 
         Unlike the embedder there is no in-process branch. A reranker is a
         SECOND model in a daemon that already jetsams under one; keeping it
@@ -1060,7 +1066,19 @@ class Daemon:
 
         if not rerank_available():
             raise ImportError("sentence-transformers not installed")
-        r = RemoteReranker(self._model_client("rerank"))
+        client = self._model_client("rerank")
+        r = RemoteReranker(client)
+        if (not load and getattr(client, "reserve", None) is not None
+                and not client.info(nowait=True)):
+            # A COLD PRIVATE worker: `model_name` would load the model here,
+            # and `_op_context` calls this before its budget starts — after an
+            # idle eviction that put the full cold load inside the "budgeted"
+            # op (ch-bsd r11 #b-1). Warm in the background; budgeted callers
+            # skip until it lands and name its failure if it fails. Not cached:
+            # the next call, once warm, takes the probing path below.
+            client.warm_async()
+            self._log("reranker: private worker cold; warming in the background")
+            return r
         try:
             name = r.model_name
         except WorkerError as exc:
@@ -1086,7 +1104,9 @@ class Daemon:
             if w is None:
                 continue
             try:
-                w.close(timeout=2.0)
+                # Retired: an in-flight op's warmup must not respawn a worker
+                # after shutdown (ch-bsd r12 #s-1).
+                getattr(w, "retire", w.close)(timeout=2.0)
             except Exception as exc:
                 self._log(f"worker close failed ({attr}): {exc!r}")
             setattr(self, attr, None)
@@ -1160,7 +1180,7 @@ class Daemon:
                 return
             t1 = time.time()
             try:
-                self._reranker()
+                self._reranker(load=True)
                 self._log(f"reranker warm in {time.time() - t1:.1f}s")
             except ImportError:
                 self._log("reranker warmup skipped ([dense] extra not installed)")
@@ -2394,7 +2414,8 @@ class Daemon:
             return "B"
         return None
 
-    def _open_read_store(self, partition: str | None = None) -> "Store | None":
+    def _open_read_store(self, partition: str | None = None, *,
+                         allow_mirror: bool = True) -> "Store | None":
         """Return a Store usable for a single read op.
 
         Resolution order (fastest → safest):
@@ -2414,26 +2435,16 @@ class Daemon:
         already serializes concurrent cursors against the shared
         connection.
         """
-        # Mirror path: zero-latency, no file I/O.
-        mirror = getattr(self, "_mem_mirror", None)
+        # Mirror path: zero-latency, no file I/O. The mirror is ONE shared
+        # Store, so its partition is NOT re-pointed here: re-pointing it
+        # outside the use-lock let a concurrent reader on another partition
+        # re-point it again before this caller's `fn` ran (ch-bsd r9 #b-1:
+        # 39 of 40 context ops answered from the wrong partition).
+        # `_read_with_fallback` binds the partition INSIDE the use-lock.
+        mirror = getattr(self, "_mem_mirror", None) if allow_mirror else None
         if mirror is not None:
             mirror_store = mirror.borrow()
             if mirror_store is not None:
-                # Repoint the partition if the caller wants a different
-                # one — partition_id resolution lives on the Store.
-                if partition is not None and \
-                        partition != mirror_store._partition_name:
-                    try:
-                        with mirror.acquire_use():
-                            row = mirror_store._conn._duck.execute(
-                                "SELECT id FROM partitions WHERE name=?",
-                                (partition,),
-                            ).fetchone()
-                        if row:
-                            mirror_store._partition_name = partition
-                            mirror_store._partition_id = row[0]
-                    except Exception:
-                        pass
                 return mirror_store
         # File-snapshot or slot fallback path.
         from refmatrix.store import Store
@@ -2441,7 +2452,9 @@ class Daemon:
         if snap.exists():
             target = snap
         else:
-            active = self._active_slot or self._read_active_slot()
+            # getattr: `_active_slot` is set at startup; a daemon that never
+            # started (an op called on a bare `Daemon(root)`) reads the marker.
+            active = getattr(self, "_active_slot", None) or self._read_active_slot()
             target = self._replica_file(active)
             if not target.exists():
                 return None
@@ -3013,20 +3026,19 @@ class Daemon:
                         except Exception as rexc:
                             self._log(f"pre-flush repair failed: {rexc!r}")
                             self._fast_exit_if_invalidated(rexc, "pre-flush repair")
-                    total_added = total_updated = total_purged = 0
-                    cancelled = False
+                    reports = []
                     for owner, owner_paths in groups.items():
-                        report = sync_files(
+                        reports.append(sync_files(
                             self._st(), owner_paths,
                             project_root=owner,
                             semantic=self.watch_semantic,
                             cancel_check=self._shutdown_event.is_set,
-                        )
-                        total_added += report["added"]
-                        total_updated += report["updated"]
-                        total_purged += report["purged"]
-                        if report.get("cancelled"):
-                            cancelled = True
+                        ))
+                    tot = _sum_sync_reports(reports)
+                    total_added, total_updated = tot["added"], tot["updated"]
+                    total_purged = tot["purged"]
+                    total_vec_failed = tot["vector_delete_failed"]
+                    cancelled = tot["cancelled"]
                 queued = _enqueue_curator(paths)
                 tail = f" curator+{queued}" if queued else ""
                 cancel_tail = " cancelled" if cancelled else ""
@@ -3034,11 +3046,10 @@ class Daemon:
                 roots_tail = (
                     f" roots={len(groups)}" if len(self.watch_roots) > 1 else ""
                 )
-                self._log(
-                    f"watch flush: paths={len(paths)} +{total_added} "
-                    f"~{total_updated} -{total_purged}"
-                    f"{tail}{cancel_tail}{repair_tail}{roots_tail}"
-                )
+                self._log(_watch_flush_line(
+                    len(paths), total_added, total_updated, total_purged,
+                    tail + cancel_tail + repair_tail + roots_tail,
+                    total_vec_failed))
             except Exception as exc:
                 self._log(f"watch flush failed: {exc!r}")
                 self._fast_exit_if_invalidated(exc, "watch flush")
@@ -4231,6 +4242,7 @@ def _op_grep_indexed(d: Daemon, args: dict) -> dict:
     `regexp_matches` where the CLI used `~`), and the copies had already
     drifted; bug-067's fix would otherwise have had to be written three times.
     """
+    stats: dict = {}
     with d._store_lock:
         rows = d._st().grep_evidence(
             args["pattern"],
@@ -4238,8 +4250,16 @@ def _op_grep_indexed(d: Daemon, args: dict) -> dict:
             linkage=args.get("linkage"),
             kind=args.get("kind"),
             limit=int(args.get("limit", 100) or 0),
+            # Same rule as the CLI's two read paths — one implementation,
+            # three callers (bug-073 / bug-074).
+            ignore_case=bool(args.get("ignore_case", False)),
+            verify_stats=stats,
+            word=bool(args.get("word", False)),
         )
-    return {"rows": rows}
+    # `capped` and `unreadable` travel with the rows so the CLI can say a cap
+    # bit or rows were dropped on the RPC path too (ch-bsd r3 #b-1 / #s-6).
+    return {"rows": rows, "capped": bool(stats.get("capped")),
+            "unreadable": int(stats.get("unreadable", 0))}
 
 
 def _learn_grep_hits(store, pattern: str, hits: list, project_root: Path) -> dict:
@@ -4576,6 +4596,42 @@ def _op_query(d: Daemon, args: dict) -> dict:
         return out
 
 
+def _sum_sync_reports(reports) -> dict:
+    """Totals of one watch flush's per-root `sync_files` reports. A function so
+    the vector-delete ACCUMULATION across roots is pinned, not only the line it
+    feeds (ch-bsd r10 #m-1: mutant V16 dropped the sum and survived)."""
+    tot = {"added": 0, "updated": 0, "purged": 0, "vector_delete_failed": 0,
+           "cancelled": False}
+    for r in reports:
+        tot["added"] += r["added"]
+        tot["updated"] += r["updated"]
+        tot["purged"] += r["purged"]
+        tot["vector_delete_failed"] += r.get("vector_delete_failed") or 0
+        tot["cancelled"] = tot["cancelled"] or bool(r.get("cancelled"))
+    return tot
+
+
+def _watch_flush_line(n_paths: int, added: int, updated: int, purged: int,
+                      tails: str, vec_failed: int) -> str:
+    """The `rmxd.log` line for one watch flush. A function so the vector-
+    delete count it carries is pinned by a test (ch-bsd r9 #s-2): the flush
+    is the hot path bug-085 moved onto the batch helper."""
+    vec_tail = f" vector_delete_FAILED={vec_failed}" if vec_failed else ""
+    return (f"watch flush: paths={n_paths} +{added} ~{updated} -{purged}"
+            f"{tails}{vec_tail}")
+
+
+def _context_rerank_budget_s() -> float:
+    """Seconds the context op's rerank may spend (`RMX_CONTEXT_RERANK_S`,
+    default 3.0). Measured warm: ~0.1 s for 10 docs on the daemon's worker
+    (ch-bsd r8); the hook's shared worker took 1.33 s for 10 (context.py)."""
+    try:
+        v = float(os.environ.get("RMX_CONTEXT_RERANK_S", "3.0"))
+    except ValueError:
+        v = 3.0
+    return v if v > 0 else 3.0
+
+
 def _op_context(d: Daemon, args: dict) -> dict:
     """Build a context bundle and return its rendered form. Read-side
     operations have to route through the daemon too because DuckDB blocks
@@ -4612,14 +4668,50 @@ def _op_context(d: Daemon, args: dict) -> dict:
     # stub daemons in tests and by callers that never built the model
     # machinery. A read op must not hard-require the rerank stage to exist.
     _ctx_rr = None
+    # Surfaced on the answer, not only in rmxd.log (ch-bsd r6 #s-2): the
+    # answer is served unreranked, and a caller must be able to see that it
+    # is — a ModelNotCached here is an operator action, not a log line.
+    warnings: list[str] = []
     if getattr(d, "_maybe_rerank", None) and d._maybe_rerank(args):
         try:
             _ctx_rr = d._reranker()
+            # Bounded per request (ch-bsd r8 #s-2). An over-budget pool is a
+            # RerankSkipped, recorded on bundle.warnings, never a wait.
+            if hasattr(_ctx_rr, "with_budget"):
+                _ctx_rr = _ctx_rr.with_budget(_context_rerank_budget_s())
         except Exception as exc:
             d._log(f"context rerank unavailable: {exc!r}")
-    with d._store_lock, d._st().with_partition(_ctx_part):
-        bundle = build_context(
-            d._st(), ref,
+            warnings.append(f"rerank unavailable, answer is unreranked "
+                            f"({type(exc).__name__}: {exc})")
+
+    # Built on the READ path, as `describe` and `memory_get` are. The read
+    # store is the SNAPSHOT, which trails the writer by the snapshot debounce
+    # (RMX_SNAPSHOT_DEBOUNCE_MS), so a write made just before this call can be
+    # missing from the answer (ch-bsd r9 #m-1). (ch-bsd r8
+    # #s-2): `build_context` runs the rerank's model call, and on the writer
+    # under `_store_lock` that call held every writer behind it — the
+    # lock-holding wedge class of bug-085. `_read_with_fallback` takes the
+    # writer lock only when no read store exists, and the budget above bounds
+    # that case.
+    def _build(rs):
+        rr = _ctx_rr
+        if rr is not None and rs is getattr(d, "store", None):
+            # The read stores lack this partition (created inside the snapshot
+            # debounce) or do not exist yet (boot), so this runs on the WRITER
+            # under `_store_lock`. A rerank here held every writer behind it —
+            # unbounded on a private worker, whose started pass is let finish
+            # (ch-bsd r12 #s-3). Answer unreranked: the op's normal fallback
+            # whenever a rerank is skipped, said on the answer.
+            rr = None
+            # Both causes named: this branch runs for a partition newer than
+            # the snapshot AND at boot / when the snapshot will not open
+            # (ch-bsd r13 #m-1); the store cannot tell which here.
+            warnings.append("rerank skipped: no read snapshot had this partition "
+                            "(created moments ago, or the snapshot is missing or "
+                            "unreadable), so the answer came from the writer and "
+                            "is unreranked")
+        return build_context(
+            rs, ref,
             linkages=linkages,
             max_entities=max_entities,
             max_tokens=max_tokens,
@@ -4630,11 +4722,18 @@ def _op_context(d: Daemon, args: dict) -> dict:
             expand=expand,
             hit_lines=hit_lines,
             grep_backstop=grep_backstop,
-            reranker=_ctx_rr,
+            reranker=rr,
             _entities_explicit=entities_explicit,
             _tokens_explicit=tokens_explicit,
         )
+    # private: the build can spend up to the rerank budget inside `fn`, which
+    # on the shared mirror would hold its single reader lock (ch-bsd r9 #b-2).
+    bundle = _read_with_fallback(d, _ctx_part, _build, private=True, missing="raise")
     body = render_json(bundle) if fmt == "json" else render_text(bundle)
+    # bundle.warnings are IN the body (JSON `warnings`, text `# warning:`);
+    # the op's own `warnings` carry only what the body cannot show (a
+    # reranker that failed to construct). Merging both printed a score-time
+    # degrade twice in text mode (ch-bsd r8 #m-2).
     # Self-heal: if the grep backstop fired (index missed, grep hit), fold the
     # hits into a protected `query/<ref>` concept so the next query hits the
     # index — and survives prune_noise. We hold the writer here (daemon); the
@@ -4656,6 +4755,8 @@ def _op_context(d: Daemon, args: dict) -> dict:
                 d._request_snapshot()
             except Exception as exc:  # learning is best-effort; never fail a read
                 d._log(f"context grep-learn skipped: {exc}")
+    if warnings:
+        return {"body": body, "warnings": warnings}
     return {"body": body}
 
 
@@ -4712,29 +4813,72 @@ def _op_memory_add(d: Daemon, args: dict) -> dict:
     return {"id": eid}
 
 
-def _read_with_fallback(d: Daemon, partition: str, fn):
-    """Run `fn(store)` against the fastest available read path.
+def _read_with_fallback(d: Daemon, partition: str, fn, *, private: bool = False,
+                        missing: str = "empty"):
+    """Run `fn(store)` against the fastest available read path, bound to
+    `partition` for the whole of `fn`.
 
-    Resolution (per `_open_read_store`): in-memory mirror → snapshot
-    file Store → shared writer connection under `_store_lock`.
+    Resolution: in-memory mirror → snapshot-file Store → the shared writer
+    under `_store_lock`.
 
-    When `_open_read_store` returns the in-memory mirror Store, the
-    DuckDB connection is shared across all callers, so `fn` must run
-    under the mirror's `_use_lock` to keep cursors serialized.
+    The mirror is ONE shared Store and DuckDB connection, so `fn` runs under
+    the mirror's use-lock, and the partition is bound INSIDE that same
+    acquisition and restored after (ch-bsd r9 #b-1). A mirror that lacks the
+    partition falls through to the snapshot file rather than answering from
+    whatever partition it was last bound to.
+
+    `private=True` skips the mirror: `fn` gets its own snapshot-file Store
+    and connection. Use it for an op that may run long inside `fn` (the
+    context op's rerank), which would otherwise hold the mirror's single
+    reader lock against every other read (ch-bsd r9 #b-2).
+
+    A partition the read stores lack is resolved against the WRITER (ch-bsd
+    r10 #s-1): the snapshot Store's read-only fast path bound a missing name
+    to id 1, so the op answered from the default partition under the
+    requested name. Created inside the snapshot debounce → `fn` runs on the
+    writer under `_store_lock`. Absent everywhere → `missing="empty"` (the
+    default; a memory partition a fresh project never wrote is normal) runs
+    `fn` bound to an id no row carries, so it sees zero rows;
+    `missing="raise"` raises `ValueError("unknown partition ...")` (the
+    context op: a typo'd `-p` must not read as "no matches").
     """
-    rs = d._open_read_store(partition)
+    mirror = None if private else getattr(d, "_mem_mirror", None)
+    ms = mirror.borrow() if mirror is not None else None
+    if ms is not None:
+        with mirror.acquire_use():
+            row = None
+            if partition is not None:
+                row = ms._conn._duck.execute(
+                    "SELECT id FROM partitions WHERE name=?", (partition,),
+                ).fetchone()
+            if partition is None or row is not None:
+                prev = (ms._partition_name, ms._partition_id)
+                if partition is not None:
+                    ms._partition_name, ms._partition_id = partition, row[0]
+                try:
+                    return fn(ms)
+                finally:
+                    ms._partition_name, ms._partition_id = prev
+        d._log(f"read path: partition {partition!r} not in the mirror; "
+               f"using the snapshot file")
+    rs = d._open_read_store(partition, allow_mirror=False)
     if rs is not None:
-        mirror = getattr(d, "_mem_mirror", None)
-        use_lock = (
-            mirror.acquire_use()
-            if mirror is not None and mirror.borrow() is rs
-            else None
-        )
         try:
-            if use_lock is not None:
-                with use_lock:
-                    return fn(rs)
-            return fn(rs)
+            if partition is None or _has_partition(rs, partition):
+                return fn(rs)
+            # Checked under the writer lock below; if the writer lacks it too,
+            # this already-open read store answers the empty case.
+            with d._store_lock:
+                on_writer = _has_partition(d._st(), partition)
+            if not on_writer:
+                if missing == "raise":
+                    raise ValueError(f"unknown partition {partition!r}")
+                d._log(f"read path: partition {partition!r} does not exist; "
+                       f"answering empty")
+                rs._partition_name, rs._partition_id = partition, _NO_PARTITION_ID
+                return fn(rs)
+            d._log(f"read path: partition {partition!r} is newer than the "
+                   f"snapshot; reading the writer")
         finally:
             try:
                 rs.close()
@@ -4742,8 +4886,32 @@ def _read_with_fallback(d: Daemon, partition: str, fn):
                 pass
     # Fallback: serialize under the write lock so the swap can't close
     # the connection mid-cursor.
-    with d._store_lock, d._st().with_partition(partition):
-        return fn(d.store)
+    with d._store_lock:
+        if partition is not None and not _has_partition(d._st(), partition):
+            if missing == "raise":
+                raise ValueError(f"unknown partition {partition!r}")
+            # `with_partition` would CREATE the row: a read must not.
+            st = d._st()
+            prev = (st._partition_name, st._partition_id)
+            st._partition_name, st._partition_id = partition, _NO_PARTITION_ID
+            try:
+                return fn(d.store)
+            finally:
+                st._partition_name, st._partition_id = prev
+        with d._st().with_partition(partition):
+            return fn(d.store)
+
+
+# A partition id no row carries: a read bound to it sees nothing. Used for a
+# partition that does not exist, instead of the read-only fast path's id 1
+# (the default partition), which answered with another partition's rows
+# (ch-bsd r10 #s-1).
+_NO_PARTITION_ID = -1
+
+
+def _has_partition(store, name: str) -> bool:
+    return store._connect().execute(
+        "SELECT 1 FROM partitions WHERE name=?", (name,)).fetchone() is not None
 
 
 def _op_memory_get(d: Daemon, args: dict) -> dict:
@@ -4818,9 +4986,12 @@ def _op_memory_forget(d: Daemon, args: dict) -> dict:
     if target is None:
         raise ValueError("memory_forget requires 'name' or 'id'")
     with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
+        failed0 = getattr(d._st(), "vector_delete_failures", 0)
         ok = d._st().forget_memory(target)
+        failed = getattr(d._st(), "vector_delete_failures", 0) - failed0
     d._request_snapshot()
-    return {"forgotten": ok}
+    # the count leaves the daemon (ch-bsd r9 #s-2: a single forget dropped it)
+    return {"forgotten": ok, "vector_delete_failed": failed}
 
 
 def _op_memory_retag(d: Daemon, args: dict) -> dict:
@@ -5419,6 +5590,33 @@ def _op_embed(d: Daemon, args: dict) -> dict:
     # recall returns zero hits even after a "successful" rebuild.
     partition = args.get("partition") or d._st()._partition_name
 
+    # One embed op at a time, on a lock of its OWN (ch-bsd r10 #m-1). Since the
+    # encode moved outside `_store_lock`, two concurrent ops (save-state's drain
+    # beside `rmx embed`) selected the SAME pending rows and the shared worker
+    # encoded them twice. Writers are not behind this lock; only other embeds.
+    with _embed_serial(d):
+        return _op_embed_locked(d, args, emb, embmod, kinds, limit, rebuild,
+                                partition)
+
+
+_EMBED_SERIAL_GUARD = threading.Lock()
+
+
+def _embed_serial(d) -> "threading.Lock":
+    """The daemon's embed-op lock, created on first use: `_op_embed` also runs
+    on the CLI's bare `Daemon(root)` and on test shells."""
+    lk = getattr(d, "_embed_serial_lock", None)
+    if lk is None:
+        with _EMBED_SERIAL_GUARD:
+            lk = getattr(d, "_embed_serial_lock", None)
+            if lk is None:
+                lk = threading.Lock()
+                d._embed_serial_lock = lk
+    return lk
+
+
+def _op_embed_locked(d, args, emb, embmod, kinds, limit, rebuild,
+                     partition) -> dict:
     with d._store_lock, d._st().with_partition(partition):
         if rebuild:
             # `pending_embeddings` already skips current rows; for a
@@ -5452,22 +5650,47 @@ def _op_embed(d: Daemon, args: dict) -> dict:
             return {"embedded": 0, "remaining": 0, "skipped_empty": len(rows),
                     "degraded": degraded}
 
-        # Single batch encode keeps the model warm + amortizes the
-        # tokenizer cost. ST handles batching internally.
-        if d._shutdown_event.is_set():
-            return {"embedded": 0, "remaining": len(rows), "cancelled": True}
-        vectors = emb.embed_texts([t for (_eid, _k, t) in triples])
+        # The rows' clocks as of extraction: phase 3 writes a vector only for
+        # a row that did not change while the model ran.
+        eids0 = [t[0] for t in triples]
+        in_e = ",".join("?" * len(eids0))
+        seen_at = dict(d._st()._connect().execute(
+            f"SELECT id, updated_at FROM entities WHERE id IN ({in_e})", eids0,
+        ).fetchall())
 
+    # Phase 2 — the model, OUTSIDE `_store_lock` (ch-bsd r9 #s-1): a 256-text
+    # encode on a busy shared worker held every writer behind it, the
+    # lock-holding wedge class of bug-085. Single batch encode keeps the model
+    # warm and amortizes the tokenizer cost.
+    if d._shutdown_event.is_set():
+        return {"embedded": 0, "remaining": len(rows), "cancelled": True}
+    vectors = emb.embed_texts([t for (_eid, _k, t) in triples])
+
+    # Phase 3 — write back under the lock, skipping any row edited (or
+    # deleted) while the model ran: stamping it would mark a vector of the
+    # OLD text current. It stays pending and the next pass embeds it.
+    with d._store_lock, d._st().with_partition(partition):
+        now_at = dict(d._st()._connect().execute(
+            f"SELECT id, updated_at FROM entities WHERE id IN ({in_e})", eids0,
+        ).fetchall())
+        keep = [i for i, t in enumerate(triples)
+                if t[0] in now_at and now_at[t[0]] == seen_at.get(t[0])]
+        changed = len(triples) - len(keep)
         embedded = 0
         by_kind: dict[str, list[int]] = {}
-        for (eid, kind, _t), idx in zip(triples, range(len(triples))):
-            by_kind.setdefault(kind, []).append(idx)
+        for idx in keep:
+            by_kind.setdefault(triples[idx][1], []).append(idx)
         for kind, idxs in by_kind.items():
             eids = [triples[i][0] for i in idxs]
             sub = vectors[idxs]
             d._st().upsert_vector(eids, sub, kind=kind, dim=emb.dim)
             embedded += len(eids)
-        remaining = len(d._st().pending_embeddings(kinds=kinds, limit=1))
+        # A REAL count, not `len(pending_embeddings(limit=1))` — that was
+        # 0-or-1 by construction and every "N left" surface printed it
+        # (ch-bsd r1 #b-1).
+        remaining = d._st().pending_embeddings_count(kinds=kinds)
+    if changed:
+        d._log(f"embed: {changed} row(s) changed while encoding; left pending")
 
     d._request_snapshot()
     return {
@@ -5477,6 +5700,7 @@ def _op_embed(d: Daemon, args: dict) -> dict:
         "dim": emb.dim,
         "model": emb.model_name,
         "degraded": degraded,
+        "changed_while_encoding": changed,
     }
 
 
@@ -5543,14 +5767,25 @@ def _op_promote_edges(d: "Daemon", args: dict) -> dict:
     return res
 
 
-def _apply_rerank_safe(d: "Daemon", query: str, docs, k: int):
+def _apply_rerank_safe(d: "Daemon", query: str, docs, k: int,
+                       warnings: "list[str] | None" = None):
     """Run the cross-encoder stage, or return None to keep retrieval order.
 
     Every failure mode degrades rather than raises: no [dense] extra, a
     worker that died twice, a model that will not load. Reranking is a
     precision refinement on an answer we already have — it must never be
     the reason a recall returns nothing.
+
+    A degrade is also appended to `warnings`, which the op returns beside its
+    hits (ch-bsd r7 #s-1): the log line alone left a ModelNotCached — an
+    operator action — invisible to every caller of `memory_recall` and
+    `ann_search`.
     """
+    def _warn(msg: str) -> None:
+        d._log(msg)
+        if warnings is not None:
+            warnings.append(msg)
+
     from refmatrix.reranker import apply_rerank
 
     scored, untexted, tail = docs
@@ -5567,16 +5802,30 @@ def _apply_rerank_safe(d: "Daemon", query: str, docs, k: int):
     try:
         rr = d._reranker()
     except ImportError as exc:
-        d._log(f"rerank skipped (dense extra missing): {exc}")
+        _warn(f"rerank skipped (dense extra missing): {exc}; hits unreranked")
         return None
     except Exception as exc:
-        d._log(f"rerank skipped (reranker unavailable): {exc!r}")
+        _warn(f"rerank skipped (reranker unavailable, {type(exc).__name__}: {exc}); "
+              f"hits unreranked")
         return None
     try:
         return apply_rerank(rr, query, scored, untexted, tail, k=k)
     except Exception as exc:
-        d._log(f"rerank failed, keeping retrieval order: {exc!r}")
+        if _is_missing_extra(exc):
+            # The import now fails in the WORKER, on first real use, not in the
+            # daemon's `_reranker()` probe (ch-bsd r12 #m-1): same operator
+            # action, same words.
+            _warn(f"rerank skipped (dense extra missing): {exc}; hits unreranked")
+        else:
+            _warn(f"rerank failed ({type(exc).__name__}: {exc}); hits unreranked")
         return None
+
+
+def _is_missing_extra(exc: BaseException) -> bool:
+    """A worker-side import failure: the [dense] extra is not installed."""
+    return isinstance(exc, ImportError) or (
+        type(exc).__name__ == "WorkerError"
+        and ("ModuleNotFoundError" in str(exc) or "ImportError" in str(exc)))
 
 
 def _op_ann_search(d: Daemon, args: dict) -> dict:
@@ -5642,15 +5891,41 @@ def _op_ann_search(d: Daemon, args: dict) -> dict:
                 d._log(f"rerank doc collect failed: {exc!r}")
                 docs = None
 
+    rr_warnings: list[str] = []
     if want_rerank and docs is not None:
         assert query is not None  # want_rerank requires bool(query)
         # Model call OUTSIDE _store_lock -- see collect_rerank_docs.
-        reranked = _apply_rerank_safe(d, query, docs, k)
+        reranked = _apply_rerank_safe(d, query, docs, k, warnings=rr_warnings)
         if reranked is not None:
             return {"hits": [{"id": eid, "score": sc, "reranked": True}
                              for eid, sc in reranked]}
 
-    return {"hits": [{"id": eid, "distance": dist} for eid, dist in hits[:k]]}
+    out = {"hits": [{"id": eid, "distance": dist} for eid, dist in hits[:k]]}
+    if rr_warnings:
+        out["warnings"] = rr_warnings
+    return out
+
+
+class _PrecomputedQuery:
+    """An embedder stand-in holding ONE precomputed query vector.
+
+    The query is embedded BEFORE `_store_lock` is taken (ch-bsd r9 #s-1: the
+    model call ran inside the lock, so a busy worker held every writer). The
+    recall code under the lock asks this object for the query's vector; any
+    other text is refused loudly, so a later change cannot quietly move a
+    model call back under the lock."""
+
+    def __init__(self, emb, query: str, vec) -> None:
+        self.dim = emb.dim
+        self.model_name = getattr(emb, "model_name", None)
+        self._query = query
+        self._vec = vec
+
+    def embed_texts(self, texts):
+        if list(texts) == [self._query]:
+            return self._vec
+        raise RuntimeError("model call under _store_lock: only the precomputed "
+                           "query vector is available here")
 
 
 def _op_memory_recall(d: Daemon, args: dict) -> dict:
@@ -5690,13 +5965,15 @@ def _op_memory_recall(d: Daemon, args: dict) -> dict:
         except Exception as exc:
             d._log(f"concept prefilter skipped: {exc!r}")
 
+    # The model call happens HERE, outside the lock (ch-bsd r9 #s-1).
+    q_emb = _PrecomputedQuery(emb, query, emb.embed_texts([query]))
     with d._store_lock, d._st().with_partition(partition):
         if fuse:
             hits = hybrid_memory_recall(
-                d._st(), emb, query, k=retrieve_k, kinds=kinds,
+                d._st(), q_emb, query, k=retrieve_k, kinds=kinds,
                 candidate_ids=_cand)
         else:
-            hits = dense_recall(d._st(), emb, query, k=retrieve_k, kinds=kinds,
+            hits = dense_recall(d._st(), q_emb, query, k=retrieve_k, kinds=kinds,
                                 candidate_ids=_cand)
         docs = None
         if want_rerank:
@@ -5707,8 +5984,9 @@ def _op_memory_recall(d: Daemon, args: dict) -> dict:
                 d._log(f"rerank doc collect failed: {exc!r}")
                 docs = None
 
+    rr_warnings: list[str] = []
     if want_rerank and docs is not None:
-        reranked = _apply_rerank_safe(d, query, docs, k)
+        reranked = _apply_rerank_safe(d, query, docs, k, warnings=rr_warnings)
         if reranked is not None:
             return {"hits": [{"id": eid, "score": sc, "fused": bool(fuse),
                               "reranked": True}
@@ -5716,9 +5994,13 @@ def _op_memory_recall(d: Daemon, args: dict) -> dict:
 
     hits = hits[:k]
     if fuse:
-        return {"hits": [{"id": eid, "score": sc, "fused": True}
-                         for eid, sc in hits]}
-    return {"hits": [{"id": eid, "distance": dist} for eid, dist in hits]}
+        out = {"hits": [{"id": eid, "score": sc, "fused": True}
+                        for eid, sc in hits]}
+    else:
+        out = {"hits": [{"id": eid, "distance": dist} for eid, dist in hits]}
+    if rr_warnings:
+        out["warnings"] = rr_warnings
+    return out
 
 
 def _op_part_ctx(d: "Daemon", args: dict):
