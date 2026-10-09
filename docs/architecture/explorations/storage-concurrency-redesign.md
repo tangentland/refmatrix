@@ -257,12 +257,12 @@ bitmaps.
    today (C, D).
 4. **Option A's concurrency:** one writer thread against N cursor writer threads on a cliquet copy.
    Measure conflict rate, throughput, and whether ART errors appear under load.
-6. **BSI value filters** (E): viascope's `bsi.py` ported over refmatrix's entity weights and
-   timestamps on a cliquet copy. Compare a combined "linkage cell AND weight >= w AND recent"
-   with today's DuckDB route.
 5. **Bitmap set algebra:** pyroaring today, against `RoaringIntArray` columns through
    `vortex-data` + DuckDB `read_vortex` (D). This includes whether the intersection happens
    compressed or after decode.
+6. **BSI value filters** (E): viascope's `bsi.py` ported over refmatrix's entity weights and
+   timestamps on a cliquet copy. Compare a combined "linkage cell AND weight >= w AND recent"
+   with today's DuckDB route.
 
 ## Recommendation so far {#recommendation}
 
