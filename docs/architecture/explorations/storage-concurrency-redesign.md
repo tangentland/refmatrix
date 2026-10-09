@@ -213,6 +213,41 @@ Getting it means a Rust-side Vortex encoding (the `vortex-roaring` crate route) 
 custom wheel and a custom DuckDB extension build. That is a toolchain commitment, not a library
 choice. Re-check when `vortex-data` exposes roaring arrays or Python encodings gain serialization.
 
+## Option E: viascope's BSI sidecar, the encoder that WAS built {#option-e}
+
+When ADR-0008's Vortex codec was superseded, viascope built the bitmap encoding as a pyroaring
+**bit-sliced index (BSI)** sidecar next to its Lance datasets. This is
+`src/viascope/storage/bsi.py` (517 lines, `2ba1f7ad3`, 2026-02-07, live today; used by
+`slot_manager`, `data_node` and `bsi_characterization`).
+- **Numeric dimensions** (`_NumericBSI`): 64 bit-slice bitmaps per column. A float64 is stored as
+  its IEEE-754 bits; uints are stored as-is. `gte`/`lte` are bit-serial AND/OR/ANDNOT over the
+  slices, so a range filter is a bitmap.
+- **String dimensions** (`_DictEncodedBSI`): an append-only dictionary (string to index) plus 64
+  slices over the index. 100k distinct values cost 64 bitmaps plus the dict, not 100k bitmaps.
+  Equality is an O(64) AND/ANDNOT walk.
+- **Presence bitmaps** per optional column (`_has_*`), and a single bitmap for booleans.
+- **Lifecycle:** one serialized sidecar file per Lance slot. Row ids are Lance row positions.
+  `build_from_lance` rebuilds it from the dataset, so the sidecar is a derived, disposable index.
+
+**Why it matters here:** refmatrix's bitmaps answer membership ("entities with linkage L to
+concept C"). They cannot answer VALUES: edge weight, `updated_at`, PageRank, derive time,
+confidence. Every value filter goes to DuckDB today. A BSI over those columns makes "members of
+C with weight >= w, touched since t" pure bitmap algebra, composable with the linkage cells and
+with no DuckDB round-trip. It is also the general form of ADR-0004's discrete weight-tier
+bitmaps.
+- With option C it is the read side: viascope already runs Lance plus a BSI sidecar.
+- With A or B it is an additive index layer.
+
+**Caveats when porting:**
+- **Negative floats.** Raw IEEE bits compare correctly as unsigned integers only for non-negative
+  floats: a negative float has the sign bit set, so it sorts above every positive value, in
+  reverse order. Use the order-preserving transform (flip all bits of negatives, set the sign
+  bit of positives), or a fixed-point uint.
+- **Slice count.** The dictionary BSI always keeps 64 slices. `ceil(log2(dict size))` is enough.
+  Empty pyroaring bitmaps are cheap, but each query walks all 64.
+- **Row ids must be stable.** viascope's slots are append-only, so Lance positions work.
+  refmatrix entity ids are already stable integers, so the BSI keys on entity id.
+
 ## Measurements that decide it {#measure}
 
 1. **Small-write rate per op type,** from `facts.log`: what option C or D must batch.
@@ -222,6 +257,9 @@ choice. Re-check when `vortex-data` exposes roaring arrays or Python encodings g
    today (C, D).
 4. **Option A's concurrency:** one writer thread against N cursor writer threads on a cliquet copy.
    Measure conflict rate, throughput, and whether ART errors appear under load.
+6. **BSI value filters** (E): viascope's `bsi.py` ported over refmatrix's entity weights and
+   timestamps on a cliquet copy. Compare a combined "linkage cell AND weight >= w AND recent"
+   with today's DuckDB route.
 5. **Bitmap set algebra:** pyroaring today, against `RoaringIntArray` columns through
    `vortex-data` + DuckDB `read_vortex` (D). This includes whether the intersection happens
    compressed or after decode.
@@ -232,6 +270,7 @@ choice. Re-check when `vortex-data` exposes roaring arrays or Python encodings g
 Weigh **B** once A shows what really crosses partitions. Treat **C** and **D** as the long-horizon
 storage question. Measure them before any ADR. D was checked on 2026-10-08
 ([[#option-d-check]]). The format and DuckDB path work; roaring is NOT reachable from Python 0.88.
-So D needs a Rust encoding build, or waits on upstream.
+So D needs a Rust encoding build, or waits on upstream. **E** (viascope's
+BSI) is the cheapest experiment of all: the code exists, and it composes with any of A-C.
 
 {#recommendation-body}
