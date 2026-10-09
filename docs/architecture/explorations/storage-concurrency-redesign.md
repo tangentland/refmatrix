@@ -248,6 +248,49 @@ bitmaps.
 - **Row ids must be stable.** viascope's slots are append-only, so Lance positions work.
   refmatrix entity ids are already stable integers, so the BSI keys on entity id.
 
+### Where the BSI is slow: measured 2026-10-08 {#option-e-bench}
+
+Setup: viascope's `bsi.py` loaded unmodified from its file, against a numpy-built BSI with the same
+layout. The data is uniform uint64 values in [0, 2^32), queried with `>=` at the median. Script and
+log: `workflow/measurements/bsi-sidecar-2026-10-08/`. All variants return identical result sets.
+
+| | 80k rows | 1M rows |
+|---|---|---|
+| **Build:** viascope as-is (per-row Python `BitMap.add`) | 283 ms | 3,561 ms |
+| **Build:** numpy, 64 slices (bulk `BitMap(ids[mask])`) | 50 ms | 646 ms |
+| **Build:** numpy, 32 slices | 49 ms | 633 ms |
+| **Range query:** viascope | 0.11 ms | 0.69 ms |
+| **Range query:** numpy-built, 64 slices | 0.07 ms | 0.43 ms |
+| **Range query:** 32 slices | 0.06 ms | 0.35 ms |
+| **Range query:** plain numpy scan, for reference | 0.05 ms | 0.99 ms |
+
+- **Queries are not slow.** pyroaring is CRoaring underneath; a 64-slice range query over 1M rows
+  takes under a millisecond. C++ buys nothing on reads.
+- **The build pays a Python tax.** viascope calls `BitMap.add` once per set bit per row, plus a
+  `to_pylist()` per row in `build_from_lance`. A bulk numpy build is 5.5-7x faster with no C++.
+- **What remains is mostly CRoaring constructing 64 bitmaps.** C++ would mainly save the numpy
+  masking passes. A further 2-5x is a guess, not a measurement.
+
+**The user's evidence, 2026-10-08: "the place where python bitmaps were slow is
+cliquedb/thiquet".** cliquedb runs pg_roaringbitmap from PL/pgSQL with no C extension, and thiquet
+queries it. Its `reports/perf-benchmark-2026-07-14.md` at 1M nodes / 12.8M edges:
+- set algebra 22.6 ms;
+- k-hop 47.2 ms p50 and 1.4 s p95, about 7x Neo4j.
+
+The bitmap operations there are C too. The cost is the interpreted loop that drives them: per-row
+or per-hop calls from PL/pgSQL or Python. That matches the build result above. The rule both
+measurements support: **keep the loop in C/C++, and keep each bitmap operation big.** {#option-e-rule}
+
+**So, C++ where the loop is the hot path:**
+- **Per-row incremental adds** (ingest time). Python call overhead dominates there. Batching is the
+  cheaper fix; a small nanobind module over CRoaring is the C++ answer.
+- **Iterative graph walks** (k-hop, PPR-style reach). Each step is a bitmap operation driven by an
+  interpreted loop. This is cliquedb's 1.4 s tail, and refmatrix's `degree` walk is the same
+  shape.
+- **Set algebra inside the query engine.** A DuckDB C++ extension exposing roaring/BSI scalar and
+  aggregate functions would put the bitmap and the loop in the same process as the SQL. That
+  serves options A and C, and it is the larger prize than a faster sidecar build.
+
 ## Measurements that decide it {#measure}
 
 1. **Small-write rate per op type,** from `facts.log`: what option C or D must batch.
@@ -260,9 +303,12 @@ bitmaps.
 5. **Bitmap set algebra:** pyroaring today, against `RoaringIntArray` columns through
    `vortex-data` + DuckDB `read_vortex` (D). This includes whether the intersection happens
    compressed or after decode.
-6. **BSI value filters** (E): viascope's `bsi.py` ported over refmatrix's entity weights and
-   timestamps on a cliquet copy. Compare a combined "linkage cell AND weight >= w AND recent"
-   with today's DuckDB route.
+6. **BSI value filters** (E): a numpy-built BSI (not viascope's per-row build;
+   [[#option-e-bench]]) over refmatrix's entity weights and timestamps on a cliquet copy. Compare a
+   combined "linkage cell AND weight >= w AND recent" with today's DuckDB route.
+7. **Where an interpreted loop drives bitmap operations** (the cliquedb/thiquet shape): profile
+   refmatrix's `degree`/PPR walk and the ingest-time per-row adds. This decides whether a
+   C++/nanobind module or a DuckDB C++ extension is earned.
 
 ## Recommendation so far {#recommendation}
 
