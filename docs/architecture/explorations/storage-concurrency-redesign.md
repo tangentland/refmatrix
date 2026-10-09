@@ -160,12 +160,28 @@ bitmap is a first-class encoding would hold the linkage cells and the entity col
 atomically written file. That is ADR-0008's "atomic slots: index and events always consistent",
 and it ends the bitmap-fragment / DuckDB / Lance three-way consistency problem.
 
-**What must be re-checked first.** All three were the February blockers:
-1. Vortex's Python bindings today: install, ABI, and whether custom encodings can be registered
-   from Python or need Rust.
-2. Its write model. Vortex is a FILE format, so immutable files with no dataset versioning. We
-   would own versioning, compaction and the small-write buffer, the same costs as option C.
-3. Whether DuckDB can scan Vortex files, so the query engine keeps working.
+**State of the February blockers, re-checked 2026-10-08** (web: docs.rs, PyPI, duckdb.org):
+1. **Roaring is an upstream Vortex encoding now.**
+   - The `vortex-roaring` crate provides `RoaringBoolArray` (bool arrays as roaring) and
+     `RoaringIntArray` (integer sets as roaring), with a `Portable` format compatible with other
+     roaring libraries (Java, Go, and so pyroaring's interchange format).
+   - docs.rs shows `vortex-roaring` at 0.21.1, while the Vortex Python package is at 0.88.0. So
+     it is NOT yet established that roaring ships in current Vortex, or that it is reachable from
+     Python.
+   - The crate docs describe no AND/OR/filter kernels over the compressed form. ADR-0008's
+     "set operations without full decompression" would still be ours to build.
+2. **Python bindings: resolved.** `vortex-data` 0.88.0 (2026-10-08) has abi3 wheels for Python
+   3.11-3.14 on macOS arm64, zero-copy Arrow conversion, and a `duckdb` extra. It is an LF AI &
+   Data project under Apache-2.0.
+3. **DuckDB: resolved.** A core DuckDB `vortex` extension (announced 2026-01-23) reads
+   (`read_vortex(...)`) and writes (`COPY ... TO ... (FORMAT vortex)`), with expressions evaluated
+   over compressed segments.
+4. **Write model: still open.** Vortex is a FILE format: immutable files with no dataset
+   versioning or MVCC, the thing viascope chose Lance for. We would own versioning, compaction and
+   the small-write buffer, the same costs as option C.
+
+**First concrete step:** confirm a roaring-encoded column round-trips through `vortex-data` 0.88 in
+Python, and that `read_vortex` filters on it from DuckDB. If either fails, D waits on upstream.
 
 ## Measurements that decide it {#measure}
 
@@ -176,14 +192,16 @@ and it ends the bitmap-fragment / DuckDB / Lance three-way consistency problem.
    today (C, D).
 4. **Option A's concurrency:** one writer thread against N cursor writer threads on a cliquet copy.
    Measure conflict rate, throughput, and whether ART errors appear under load.
-5. **Bitmap set algebra:** pyroaring today, against a Vortex roaring encoding if one can be built
-   from Python (D).
+5. **Bitmap set algebra:** pyroaring today, against `RoaringIntArray` columns through
+   `vortex-data` + DuckDB `read_vortex` (D). This includes whether the intersection happens
+   compressed or after decode.
 
 ## Recommendation so far {#recommendation}
 
 **A first.** It fixes the bug class with no on-disk change, and it absorbs parts of plans 22 and 23.
 Weigh **B** once A shows what really crosses partitions. Treat **C** and **D** as the long-horizon
-storage question. Measure them before any ADR; the first concrete step for D is the three
-re-checks above.
+storage question. Measure them before any ADR. D moved closer on 2026-10-08: the Python bindings
+and DuckDB support now exist, and roaring is an upstream encoding. What remains is the roaring
+round-trip check and the write/versioning model.
 
 {#recommendation-body}
