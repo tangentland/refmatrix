@@ -1,0 +1,7 @@
+cells=2000 memberships=153,805 max_cell=54,696
+vortex encodings: vortex.struct({concept_id=u32?, entity_id=u32?}, len=153805)
+vortex file=337,256 B (write 0.01s) | pyroaring serialized=251,028 B | arrow raw=1,230,440 B
+python round-trip exact: True
+duckdb read_vortex filter concept=67: 54,696 ids in 18.6 ms, matches pyroaring: True
+intersection of two largest cells: duckdb 7,250 ids 5.5 ms | pyroaring 7,250 ids 0.040 ms | equal: True
+duckdb COPY TO vortex: 337256 B; re-read equal: True

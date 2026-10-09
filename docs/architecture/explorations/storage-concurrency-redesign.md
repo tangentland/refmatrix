@@ -180,8 +180,38 @@ and it ends the bitmap-fragment / DuckDB / Lance three-way consistency problem.
    versioning or MVCC, the thing viascope chose Lance for. We would own versioning, compaction and
    the small-write buffer, the same costs as option C.
 
-**First concrete step:** confirm a roaring-encoded column round-trips through `vortex-data` 0.88 in
-Python, and that `read_vortex` filters on it from DuckDB. If either fails, D waits on upstream.
+### Round-trip check, run 2026-10-08 {#option-d-check}
+
+Setup: `vortex-data` 0.88.0, duckdb 1.5.6 with the `vortex` extension, pyroaring and pyarrow, in
+a throwaway venv. Scripts and logs are in `workflow/measurements/vortex-roaring-0.88/`.
+1. **Built-in encodings round-trip, and DuckDB reads them.** A cliquet-shaped workload: 2,000
+   linkage cells over 80k entities, 153,805 memberships, as a long `(concept_id u32, entity_id u32)`
+   table.
+   - Python round-trip: exact.
+   - `read_vortex` filtering one 54,696-id cell: 18.6 ms, identical to pyroaring.
+   - `COPY ... TO (FORMAT vortex)` and re-read: identical.
+   - **File 337 KB, against 251 KB of serialized pyroaring (+34%).**
+   - **Intersecting the two largest cells: 5.5 ms in DuckDB, against 0.04 ms in pyroaring
+     (about 140x slower).**
+2. **There is no roaring encoding in Python 0.88.**
+   - The module exposes no Roaring array type: its encodings are ALP, ALP-RD, FastLanes
+     bit-packed/FoR/delta, FSST, run-end, sparse, dict, ZigZag, byte-bool and sequence.
+   - The compressor never picks roaring for an id set. A 1%-dense set of 80k ids becomes FastLanes
+     bit-packed at 17 bits/id (2.2 KB). A 60%-dense set also becomes bit-packed at **102 KB, where
+     a roaring bitmap container would be about 10 KB**. A boolean mask stays plain bits (10 KB).
+3. **A Python-defined roaring encoding cannot reach a file.**
+   - `vortex.registry.register(cls)` accepts a `PyArray` subclass (with `id` as a class
+     attribute), and an instance constructs.
+   - But `compress` and `io.write` reject it ("not an instance of 'PythonArray'").
+   - The extension binary carries "PythonArray deserialization is not supported", "execution is
+     not supported", "scalar_at ... validity ... not supported".
+   - So Python encodings are in-memory only, and native DuckDB could never decode one anyway.
+
+**Verdict on D today:** the format, the Python bindings and the DuckDB path all work. But the thing
+D is FOR is not reachable from Python 0.88: bitmaps as a native, compressed, operable encoding.
+Getting it means a Rust-side Vortex encoding (the `vortex-roaring` crate route) built into a
+custom wheel and a custom DuckDB extension build. That is a toolchain commitment, not a library
+choice. Re-check when `vortex-data` exposes roaring arrays or Python encodings gain serialization.
 
 ## Measurements that decide it {#measure}
 
@@ -200,8 +230,8 @@ Python, and that `read_vortex` filters on it from DuckDB. If either fails, D wai
 
 **A first.** It fixes the bug class with no on-disk change, and it absorbs parts of plans 22 and 23.
 Weigh **B** once A shows what really crosses partitions. Treat **C** and **D** as the long-horizon
-storage question. Measure them before any ADR. D moved closer on 2026-10-08: the Python bindings
-and DuckDB support now exist, and roaring is an upstream encoding. What remains is the roaring
-round-trip check and the write/versioning model.
+storage question. Measure them before any ADR. D was checked on 2026-10-08
+([[#option-d-check]]). The format and DuckDB path work; roaring is NOT reachable from Python 0.88.
+So D needs a Rust encoding build, or waits on upstream.
 
 {#recommendation-body}

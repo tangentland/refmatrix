@@ -1,0 +1,9 @@
+OK   register: None
+OK   len/dtype: (11429, 'u32')
+OK   to_arrow: [
+  0,
+  7,
+  14
+]
+FAIL compress: TypeError: 'RoaringIds' object is not an instance of 'PythonArray'
+FAIL write file: TypeError: 'RoaringIds' object is not an instance of 'PythonArray'

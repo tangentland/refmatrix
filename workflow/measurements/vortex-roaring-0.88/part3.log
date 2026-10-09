@@ -1,0 +1,17 @@
+== sparse 1% of 80k: nbytes=2,176
+root: fastlanes.bitpacked(u32, len=800) nbytes=2.18 kB (100.00%) [nulls=0, min=237u32, max=79805u32]
+  metadata: bit_width: 17, offset: 0
+  buffer: packed host 2.18 kB (align=4) (100.00%)
+
+   as 80k bool mask: nbytes=10,000 root: vortex.bool(bool, len=80000) nbytes=10 kB (100.00%)   metadata: offset: 0   buffer: bits host 10 kB (align=1) (100.00%) 
+== dense 60% of 80k: nbytes=102,272
+root: fastlanes.bitpacked(u32, len=48000) nbytes=102.27 kB (100.00%) [nulls=0, min=0u32, max=79999u32]
+  metadata: bit_width: 17, offset: 0
+  buffer: packed host 102.27 kB (align=4) (100.00%)
+
+   as 80k bool mask: nbytes=10,000 root: vortex.bool(bool, len=80000) nbytes=10 kB (100.00%)   metadata: offset: 0   buffer: bits host 10 kB (align=1) (100.00%) 
+== run 0..20k: nbytes=0
+root: vortex.sequence(u32, len=20000) nbytes=0 B (0.00%) [strict]
+  metadata: base: 0u32, multiplier: 1i64
+
+   as 80k bool mask: nbytes=10,000 root: vortex.bool(bool, len=80000) nbytes=10 kB (100.00%)   metadata: offset: 0   buffer: bits host 10 kB (align=1) (100.00%) 

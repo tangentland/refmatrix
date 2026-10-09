@@ -1,0 +1,4 @@
+OK   construct: RoaringIds 
+OK   len: int 11429
+FAIL compress: TypeError: 'RoaringIds' object is not an instance of 'PythonArray'
+FAIL write: TypeError: 'RoaringIds' object is not an instance of 'PythonArray'
