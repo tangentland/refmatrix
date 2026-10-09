@@ -6224,6 +6224,24 @@ class Store:
         con.commit()
         return v
 
+    def unstamp_derive(self, pass_name: str) -> bool:
+        """Remove `pass_name`'s stamp from the bound partition; True if one was
+        there.
+
+        For a stamp that is WRONG, never for one that is merely old: bug-098
+        wrote a project ingest's `ingest`/`semantic` stamps into a sessions
+        partition, and `stamp_derive` can only upsert, so the false claim
+        "derived by ingest" outlived the repair. `derive_history` is left
+        alone: it records what ran, including the misattributed run."""
+        con = self._connect()
+        removed = con.execute(
+            "DELETE FROM derive_stamps WHERE partition_id = ? AND pass_name = ? "
+            "RETURNING pass_name",
+            (self._partition_id, pass_name),
+        ).fetchall()
+        con.commit()
+        return bool(removed)
+
     # Rows kept per (partition, pass). The NUMBER is a table bound, not a time
     # window: it is small enough that this table never becomes the thing you
     # have to prune. It is NOT "a release arc" — that claim was in this comment

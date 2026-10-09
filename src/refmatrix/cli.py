@@ -7180,6 +7180,37 @@ def derive_diff(pass_name, as_json):
         console.print(f"  [dim]materialized cache:[/] {moved}")
 
 
+@derive_cmd.command("unstamp")
+@click.argument("pass_name")
+def derive_unstamp_cmd(pass_name):
+    """Remove PASS's derive stamp from the `-p` partition.
+
+    For a stamp that is WRONG, such as bug-098's `ingest`/`semantic` stamps
+    written into a sessions partition no project ingest derives. The history
+    of what ran is kept. Exits non-zero when there was nothing to remove or the
+    partition does not exist."""
+    from refmatrix import daemon as daemon_mod
+    root = _root()
+    part = _resolve_partition()
+    args = {"pass_name": pass_name, "partition": part}
+    if daemon_mod.ping(root):
+        # retries=0: a WRITE (see `_stamp_derive_pass`).
+        resp = daemon_mod.call(root, "derive_unstamp", args, timeout=30.0, retries=0)
+        result = resp.get("result") if resp.get("ok") else {
+            "ok": False, "error": resp.get("error", "daemon error")}
+    else:
+        from refmatrix.daemon import Daemon, _op_derive_unstamp
+        d = Daemon(root)
+        d.store = _store(write=True)
+        result = _op_derive_unstamp(d, args)
+    if not result or result.get("ok") is False:
+        raise click.ClickException((result or {}).get("error", "unstamp failed"))
+    if not result.get("removed"):
+        raise click.ClickException(f"no `{pass_name}` stamp in {part}; nothing removed")
+    console.print(f"removed the `{pass_name}` derive stamp from {part} "
+                  f"(derive history kept)")
+
+
 @derive_cmd.command("status")
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable.")
 def derive_status_cmd(as_json):

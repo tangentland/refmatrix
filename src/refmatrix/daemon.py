@@ -4485,6 +4485,28 @@ def _op_derive_stamp(d: Daemon, args: dict) -> dict:
             "version": version}
 
 
+def _op_derive_unstamp(d: Daemon, args: dict) -> dict:
+    """Remove one pass's stamp from a NAMED partition (bug-098 residue).
+
+    Both arguments are required: an unstamp aimed by default at whatever the
+    daemon happens to be bound to is the shape of the bug it cleans up after.
+    An unknown partition is refused, never created (`with_partition` would
+    INSERT it)."""
+    pass_name = str(args.get("pass_name") or "").strip()
+    part = str(args.get("partition") or "").strip()
+    if not pass_name or not part:
+        return {"ok": False, "error": "pass_name and partition are both required"}
+    with d._store_lock:
+        if not _has_partition(d._st(), part):
+            return {"ok": False, "error": f"unknown partition {part!r}"}
+        with d._st().with_partition(part):
+            removed = d._st().unstamp_derive(pass_name)
+    d._log(f"derive unstamp: pass={pass_name} partition={part} removed={removed}")
+    d._request_snapshot()
+    return {"ok": True, "pass_name": pass_name, "partition": part,
+            "removed": removed}
+
+
 def _op_derive_history(d: Daemon, args: dict) -> dict:
     """Recorded derives for the caller's partition (task 15.2), newest first.
 
@@ -6226,6 +6248,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "derive_status": _op_derive_status,
     "derive_history": _op_derive_history,
     "derive_stamp": _op_derive_stamp,
+    "derive_unstamp": _op_derive_unstamp,
     "compile_pairs": _op_compile_pairs,
     "coref_link": _op_coref_link,
     "merge_verb_aliases": _op_merge_verb_aliases,
