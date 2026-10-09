@@ -9,76 +9,86 @@ metadata:
 
 # Session Handoff for refmatrix {#root}
 
-Date: 2026-10-07 (session 94f97944). Prior handoff archived at
-`workflow/past_handoffs/010-bsd-r3-r6-plan16-specs_2026-10-07.md`.
+Date: 2026-10-07/08 (session 9ff85914). Prior handoff archived at
+`workflow/past_handoffs/011-r6-r9-remedies-0763-plans-17-23_2026-10-07.md`.
 
-rel: supersedes -> [[handoff-010-bsd-r3-r6-plan16-specs]]
+rel: supersedes -> [[handoff-011-r6-r9-remedies-0763-plans-17-23]]
 
 ## State {#state}
 
-- **Branch:** `bsd-r1-remedy`, ~80 commits ahead of `master`, unmerged. The merge gate is a CLEAN
-  ch-bsd round. **Round 10 was launched on `a3a324e..06711cd` and its result is NOT yet read.**
-  Read `workflow/bullshit/` for an r10 report (newer than
-  `2026-10-07-1210-r9-context-read-path-wrong-partition-a3a324e.md`); commit it, then remedy or merge.
-- **Deployed:** master = `aeee560` = **0.76.3** (three hotfixes cherry-picked today):
-  - 0.76.1: bug-085, batched Lance deletes;
-  - 0.76.2: bug-090, a fixed launchd PATH;
-  - 0.76.3: bug-093, the bulk watch semantic pass.
-
-  All 8 daemons are verified on 0.76.3. The hub process is still 0.76.2 (functionally fine).
-- **Lance compacted by hand:** refmatrix 1.3 GB→105 MB, viascope 925→229 MB, cliquedb
-  1.1 GB→62 MB. Backups deleted at the user's request.
-- **Dev venv:** bug-092 is fixed. `.venv-eval` no longer borrows dependencies from the ambient
-  PYTHONPATH.
+- **Branch:** `bsd-r1-remedy`. It is now IDENTICAL to `master` (fast-forwarded each step). There
+  is no branch switch in this tree: another Claude session (pid 4405) lives here.
+- **Deployed:** 0.77.2 on the hub and all 8 daemons, each relaunched and verified. The hub runs
+  one embed worker and one rerank worker.
+- **Pushed:** NO. `master` is about 114 commits ahead of `origin/main`. The auto-mode classifier
+  blocks the push; the user runs
+  `git -C /Users/tholley/claude_tools/refmatrix push origin master:main`.
+- **Stores:** every project partition is re-derived at 0.77.x ("version drift only").
+  sessions-refmatrix is repaired.
 
 {#state-body}
 
 ## What this session did {#did}
 
-- **bug-085 named by py-spy.** Per-entity Lance deletes under `_store_lock`; fixed and deployed.
-  py-spy 0.4.2 is a uv tool at `~/.local/bin`, used with `sudo -n`.
-- **bug-093.** The watch semantic pass did per-row upserts (61 s → 15 s on a `cli.py` re-sync);
-  fixed and deployed.
-- **ch-bsd rounds 6–9 remediated** (round 10 pending):
-  - offline models;
-  - rerank warnings on every route;
-  - context reads on a private snapshot with partition binding under the mirror lock;
-  - a real rerank budget;
-  - no model calls under the lock;
-  - `vector_delete_failed` on every path.
-- **Explorations:** concept similarity, agent context usage, and the adaptive memory budget.
-- **ADR-0004:** its helix half supersedes plan-11 (user). An amendment adds the relation taxonomy
-  from `docs/ideas.txt`, proximity tiers, Aster's counters + adaptive merge, the
-  decay-never-loses-knowledge rules, and the adjacency-shape evidence across six stores (heavy
-  tail; 2-hop saturation not hub-driven; dense ids save 15–42% and ORDER does not).
-- **Specs:** plans 17, 19 and 20, plan-21 (agent context), plan-22 (audited removal + REPAIR),
-  plan-23 (bounded-write harness).
-- **Plan review applied (C1–C12);** `workflow/plan-review-2026-10-07.md` has the wave order.
+1. **ch-bsd r10-r13 on the rerank-budget remedies.** r10 DIRTY 1B, r11 DIRTY 1B, r12 DIRTY 0B,
+   r13 0B with no blocker. Summaries: `remedy-bsd-r9..r12-*.md`.
+   - Context reranks open their own hub connection (`fork`).
+   - Private workers are `reserve()`d, warm in the background, and are `retire()`d at adoption and
+     shutdown.
+   - The hub's `info(nowait)` is lock-free.
+   - An unknown partition answers empty, or raises for context.
+   - Embed ops serialize on their own lock.
+   - A context answer from the writer is unreranked.
+2. **0.77.0:** merged (`5a085be`, conflicts resolved to the branch side, as approved) and deployed.
+   Fleet `reingest --force`; the refmatrix and cliquedb embeds were redone with `--batch 64`
+   (bug-097).
+3. **bug-098, "where are refmatrix's stamps":** a WRITER-side partition race.
+   - Two cooperative ingests kept their `with_partition` binding across `_yield` (the lock
+     release), and three lock-free ops (`_store_health` on every ping, `memory_score`, and the
+     recall prefilter) re-bound the shared writer.
+   - 0.77.1 fixed all of them. `tests/test_ingest_partition_yield_race.py` was RED with 30 rows
+     crossed and the writer re-bound 92x.
+   - sessions-refmatrix was backed up, its stray rows forgotten, and it was re-indexed from its 77
+     cards.
+   - The fix was confirmed on a throwaway store with 80 interleaved job lines.
+4. **0.77.2:** `rmx derive unstamp PASS` (daemon op `derive_unstamp`). Used to remove the two stray
+   `ingest`/`semantic` stamps from sessions-refmatrix.
+5. **Exploration** `docs/architecture/explorations/storage-concurrency-redesign.md`, options A-E:
+   - A: partition-scoped handles on per-op cursors (recommended first).
+   - B: one partition per store.
+   - C: DuckDB read-only over Lance.
+   - D: Vortex roaring. Checked on `vortex-data` 0.88: the format and DuckDB work, but no roaring
+     encoding is reachable from Python.
+   - E: viascope's BSI sidecar. Measured: queries are sub-ms; the build pays a per-row Python tax.
+   - The user's evidence for "slow Python bitmaps" is cliquedb/thiquet (PL/pgSQL loops).
 
 {#did-body}
 
 ## Next {#next}
 
-1. **Read and act on ch-bsd round 10.** Remedy or merge `bsd-r1-remedy` → `master` (`--no-ff`).
-   Then deploy: ff `~/refmatrix`, `rmx hub relaunch-fleet`, `rmx install-hooks --apply --force`.
-2. **Wave 0 (docs):** plan-16 revision 5 + its spec review; spec reviews of plans 17/19/21/22/23.
-3. **Wave 1:** plan-23 first (the harness), then 17.1/17.2, 19.1/19.2, 21.1, and 22.1–22.3
-   (bug-086 is 22.3).
-4. **Needs the user's time:** the 19.5 hook-limit probe (scratch project), and the 20.1 gold-label
-   review.
+1. **Push** (the user).
+2. **Wave 0 (docs)** per `workflow/plan-of-plans.md`: plan-16 rev 5 plus its spec review, and spec
+   reviews of plans 17/19/21/22/23. Option A of the exploration overlaps plans 22/23; fold it in
+   there.
+3. **Wave 1:** plan-23 (the bounded-write harness) first, then 17.1/17.2, 19.1/19.2, 21.1 and
+   22.1-22.3.
+4. **Open bugs:**
+   - bug-096: `rmx reingest` exits 0 on a failed step.
+   - bug-097: a fixed 256-row embed batch against the 45 s op timeout under load.
+5. **Needs the user's time:** the 19.5 hook-limit probe, and the 20.1 gold-label review.
 
 {#next-body}
 
 ## Open, not forgotten {#open}
 
-- **bug-093 follow-ups:** yield the writer between files in the watch flush (plan-23); add an
-  op-start log line per daemon op (unowned).
-- **bug-088:** tests can still reach live sockets. Second sighting today: a test of mine sent a
-  bulk-forget DRY RUN to the live daemon (nothing deleted). The refuse stage is deferred.
-- **bug-089:** fixed on the branch (the `search-dense` reranked render).
-- **bug-091:** an FSEvents timing flake.
-- **bug-081:** fixed by 16.5.
-- The second implicit `npm install` (`eval/memaware/run.sh:39`) is assumed "leave it" and awaits
-  the user's confirmation.
+- **viascope:** `sessions-viascope` holds 40 stray project doc rows dated 2026-06-05 (the older
+  partition bug, not bug-098). Cleanup awaits the user's OK. Recipe: back up, then
+  `rmx -p sessions-viascope forget --kind doc/code`, keeping the 155 memories.
+- **Exploration measurements 1-7** are unmeasured. Option D's next step is a Rust-encoding spike,
+  if the user wants D costed.
+- **The full suite** stays unrun until bug-088 isolates it. Families ran with `RMX_MODEL_SOCK`
+  isolated, and the live-socket recorder stayed at 145.
+- **The backup** `.refmatrix/backups/catalog.read.pre-bug098-repair-20261008-165958.duckdb`
+  (712 MB) can be deleted once the user is satisfied.
 
 {#open-body}
