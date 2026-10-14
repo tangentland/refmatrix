@@ -61,6 +61,39 @@ changes how it is SPENT, not its size.
 Signals already exist: the STM ring, `stm.topic_composites` (`stm.py:790`), files touched, and the
 term overlap between the prompt and the composite's members. No new store state is needed. {#signals}
 
+## Topic cache: returning from a sidetrack is not cold {#topic-cache}
+
+The user, 2026-10-14: "we should cache the stm topic clusters and switch between them when
+sidetracking returns to the topic."
+
+The phase table above treats every low-overlap prompt as **shift** (go broad). That is right for a
+NEW topic and wrong for a RETURN: when the session comes back to a topic it already built up, the
+deep context it had is still the right context, and rebuilding it from a broad scan wastes the
+budget and the turns it took to earn. So **shift** splits in two:
+
+| case | detected by | action |
+|---|---|---|
+| **return** | prompt terms overlap a CACHED, inactive topic cluster | restore that cluster as the active focus; spend the budget deep, as if warm |
+| **new** | overlap with no cached cluster | broad, scoped to the new terms (the old **shift**) |
+
+What already exists (read 2026-10-14, `src/refmatrix/stm.py`):
+- `topic_composites` (`stm.py:790`) and `cluster_focus` (`stm.py:752`) compute the clusters each
+  turn; nothing keeps them once focus moves on.
+- The soft-detour pair (`stm.py:682-742`, `/detour` + `/return`) already snapshots focus and
+  re-warms it. It is MANUAL: the agent or user must bookmark before the sidetrack. The topic cache
+  is the automatic version of it: every cluster that loses focus is snapshotted, keyed by its
+  member set, and a later prompt that matches it re-warms it.
+
+Open design points, for the plan-19 task that owns this:
+- **Cache key and match:** member-set overlap (Jaccard) between the prompt's terms (or the new
+  turn's cluster) and each cached cluster; a threshold, logged raw like the phase inputs.
+- **Bound:** a per-session LRU of N clusters, so the cache cannot grow without limit.
+- **Session scope:** keyed by the envelope `session_id`, never `latest_session` (bug-100), or a
+  return can restore another session's topic.
+- **Measurement:** the event schema records `arm` = fixed / phased / phased+cache, and on a return
+  the restored cluster id, so "the cache helped" is a read-back count and not a story.
+{#topic-cache-body}
+
 ## What must come first {#prereqs}
 
 - **An instrument.** Nothing records whether injected context is USED. Plan-21.1's recall-event
