@@ -69,6 +69,16 @@ rel: depends-on -> [[plan-review-2026-10-14]]
      `/Volumes/littlebig/refmatrix-bug105`, branch `bug-105-fragment-partition`, commits
      0d05525 (cache per binding) → 20c5ab4 (`rmx repair-index --fragments`) → 4fb803b (audit
      remedies). 19 targeted tests, mutants m6-m10 killed, families 740 passed. NOT merged.
+   - **If the session ended before these reported:** their FILE edits still land on disk
+     (uncommitted), but their written reports (id → anchor tables, "still open" lists) were lost.
+     Recover by: `git status` / `git diff --stat` on `workflow/plans/`; lint every touched file
+     (`python3 tools/gmd/lint.py <f>`, `./scripts/lint-gmd.sh`); diff each plan's new
+     `#rev-round-3` table against the round-3 reports' finding ids to see what was answered; for
+     the hotfix, look for `/Volumes/littlebig/refmatrix-bug105/workflow/bullshit/2026-10-14-*-bug105-hotfix-r2-*-4fb803b.md`
+     (verdict at its end). The littlebig volume is an SD card: confirm it is mounted
+     (`ls /Volumes/littlebig`) before touching the clone.
+   - **save-state at 13:45** ran WITHOUT `--commit` (agents mid-edit; `--commit` is `git add -A`)
+     and was backgrounded; confirm with `rmx recall-state`.
 2. **Then:** commit round 3, run round-4 re-reviews (review until clean).
 3. **bug-105, after a CLEAN audit and the user's go:** merge the clone branch to `master` from
    the dev repo (fetch the branch, `--no-ff`), bump version, deploy, back up each store's active
