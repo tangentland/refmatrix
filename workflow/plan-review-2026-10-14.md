@@ -173,3 +173,17 @@ before apply, rename merge-on-collision with an event, learner auto-protect dist
 repair from the alias's own text, a row-level removal primitive, 22.3 AC on bug-086's symptom
 (#s-1..#s-7); read-time marks distinguish reader-rule drops from staleness, sidecar key survives
 `replica_merge` (16 #s-r5-3, #s-r5-4); MEH items. {#t6-fixes}
+
+## Topic 7: grep shim (plan-16 r5, remaining) {#t7}
+
+Findings: 16 r5 #b-r5-2, #s-r5-1, #s-r5-2, #s-r5-6, MEH; dn-1.
+
+| id | decision | by |
+|---|---|---|
+| d7a | dn-1, option (a): `-k`/`--linkage` on a path-less call never runs the grep floor; an index miss exits 1, and a call that would go straight to the floor exits 2 with a message that the option needs the index. Nothing is silently widened. The plan's stated reason is corrected: the blockers are a caller's own `--include` widening the translated globs, BSD glob case-sensitivity, and `--linkage` having no file-level translation — not a "wider kind". | user, 2026-10-14 |
+
+Spec fixes taken without a decision: seed a row that survives bug-074 verification and pre-check
+that the mutated route returns it (#b-r5-2); click parses nothing — `--help` handled by our parser
+only as the first argument, `-ekey` read as `-e key` (#s-r5-1); 16.1's case-insensitive
+`--include` pruning only on recursive calls, so `grep -i PAT dir` keeps exit 2 (#s-r5-2); a
+`spawned_by` field on learner records (#s-r5-6); MEH items. {#t7-fixes}
