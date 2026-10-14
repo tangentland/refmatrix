@@ -2063,8 +2063,8 @@ class Daemon:
                     self._fast_exit_if_invalidated(exc, "learn-queue drain")
                 try:
                     with self._store_lock:
-                        if self.store._dirty_fragments:
-                            n = len(self.store._dirty_fragments)
+                        if self.store.has_dirty_fragments():
+                            n = self.store.dirty_fragment_count()
                             self.store.flush_fragments()
                             self._log(f"periodic flush: {n} fragment(s)")
                 except Exception as exc:

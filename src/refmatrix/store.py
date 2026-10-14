@@ -1088,6 +1088,14 @@ class Store:
         self._fragment_cache.clear()
         self._dirty_by_binding.clear()
 
+    def has_dirty_fragments(self) -> bool:
+        """True when ANY partition binding has unflushed fragments (bug-105 audit #b-1:
+        checking only the current binding's view left `with_partition` writes unflushed)."""
+        return bool(self._dirty_bindings())
+
+    def dirty_fragment_count(self) -> int:
+        return sum(len(v) for v in self._dirty_by_binding.values())
+
     @property
     def partition_name(self) -> str:
         return self._partition_name
@@ -1601,6 +1609,11 @@ class Store:
         update. A daemon bound to `old` should be restarted afterwards."""
         if old == new:
             return
+        # bug-105 audit #b-2: the fragment cache is keyed on (partition_id, name). Persist every
+        # binding's dirty bits under the OLD name first, then drop the cache, so nothing stays
+        # cached under a key the rename makes unreachable.
+        self.flush_fragments()
+        self._clear_fragment_caches()
         con = self._connect()
         if con.execute(
             "SELECT 1 FROM partitions WHERE name=?", (old,)
@@ -1675,6 +1688,12 @@ class Store:
         """
         from contextlib import nullcontext
         _lk = lock if lock is not None else nullcontext()
+
+        # bug-105 audit #b-2/#s-1: persist every binding's dirty bits before the merge
+        # remaps entity ids and drops SRC; the fragment rows are re-homed after it.
+        if not dry_run:
+            self.flush_fragments()
+            self._clear_fragment_caches()
 
         def _tick(phase: str, done: int, total: int) -> None:
             if progress is None:
@@ -1927,6 +1946,12 @@ class Store:
         if self._partition_name == src_name:
             self._partition_name = dst_name
             self._partition_id = dst_id
+        # bug-105 audit #s-1: SRC's fragment rows still sit under the dropped partition id, and
+        # colliding entities were remapped to DST ids. Re-home every bit to its entity's
+        # partition (the same repair `rmx repair-index --fragments` runs; a manifest of any
+        # dropped bit goes to backups/).
+        self._clear_fragment_caches()
+        self.repair_fragments(dry_run=False, manifest_dir=self.root / "backups")
 
         return {
             "src": src_name, "dst": dst_name,
@@ -4237,12 +4262,20 @@ class Store:
                 out[(int(pid), linkage)] = BitMap64.deserialize(bytes(blob))
             return out
         names = dict(con.execute("SELECT name, id FROM partitions").fetchall())
+        self._repair_files_read = []
+        self._repair_unread_dirs = []
         if self.fragments_dir.exists():
             for d in self.fragments_dir.iterdir():
-                if d.is_dir() and d.name in names:
-                    for f in d.glob("*.rb64"):
-                        out[(int(names[d.name]), f.stem)] = BitMap64.deserialize(
-                            f.read_bytes())
+                if not d.is_dir():
+                    continue
+                if d.name not in names:
+                    # A directory for a partition the catalog does not know: its bits cannot
+                    # be attributed, so it is left on disk untouched and reported.
+                    self._repair_unread_dirs.append(str(d))
+                    continue
+                for f in d.glob("*.rb64"):
+                    out[(int(names[d.name]), f.stem)] = BitMap64.deserialize(f.read_bytes())
+                    self._repair_files_read.append(f)
         return out
 
     def _write_all_fragment_rows(self, rows: "dict[tuple[int, str], BitMap64]") -> None:
@@ -4257,8 +4290,7 @@ class Store:
                         "VALUES (?, ?, ?)", [pid, linkage, bm.serialize()])
             return
         names = {i: n for n, i in con.execute("SELECT name, id FROM partitions").fetchall()}
-        for f in self.fragments_dir.rglob("*.rb64"):
-            f.unlink()
+        written = set()
         for (pid, linkage), bm in rows.items():
             if not len(bm) or pid not in names:
                 continue
@@ -4267,6 +4299,11 @@ class Store:
             tmp = d / f"{linkage}.rb64.tmp"
             tmp.write_bytes(bm.serialize())
             tmp.replace(d / f"{linkage}.rb64")
+            written.add(d / f"{linkage}.rb64")
+        # Remove only files this repair READ and did not rewrite (never an unread directory).
+        for f in getattr(self, "_repair_files_read", []):
+            if f not in written and f.exists():
+                f.unlink()
 
     def repair_fragments(self, *, dry_run: bool = True,
                          manifest_dir: "Path | None" = None) -> dict:
@@ -4292,9 +4329,11 @@ class Store:
         Caller holds the writer lock (the daemon op does)."""
         import json as _json
 
-        self.flush_fragments()
+        if not dry_run:
+            self.flush_fragments()
         con = self._connect()
         ent_part = dict(con.execute("SELECT id, partition_id FROM entities").fetchall())
+        concept_ids = {int(r[0]) for r in con.execute("SELECT id FROM concepts").fetchall()}
         names = {int(i): n for i, n in con.execute(
             "SELECT id, name FROM partitions").fetchall()}
         lk = {int(i): _canonical_verb(n) for i, n in con.execute(
@@ -4303,16 +4342,27 @@ class Store:
 
         new: dict = {}
         added_from_links = 0
+        links_skipped = 0
         for eid, lid, cid in con.execute(
             "SELECT entity_id, linkage_id, concept_id FROM entity_links"
         ).fetchall():
             pid = ent_part.get(eid)
             if pid is None or lid not in lk:
+                links_skipped += 1  # counted, never silent (memory-path rule)
                 continue
             new.setdefault((int(pid), lk[lid]), BitMap64()).add(self._pack(cid, eid))
 
         old = self._read_all_fragment_rows()
-        moved = dropped_dead = kept = 0
+        if dry_run:
+            # A dry run must not write (audit #m-1): overlay unflushed cache bits instead of
+            # flushing them, so the report still sees what the next flush would persist.
+            for (pid, pname), dirty in self._dirty_by_binding.items():
+                cache = self._fragment_cache.get((pid, pname), {})
+                for raw in dirty:
+                    bm = cache.get(_canonical_verb(raw))
+                    if bm is not None and pid is not None:
+                        old[(int(pid), _canonical_verb(raw))] = BitMap64(bm)
+        moved = dropped_dead = dropped_dead_concept = kept = 0
         dropped: dict = {}
         for (pid, linkage), bm in old.items():
             canon = _canonical_verb(linkage)
@@ -4321,6 +4371,12 @@ class Store:
                 if tp is None:
                     dropped.setdefault((pid, linkage), BitMap64()).add(bit)
                     dropped_dead += 1
+                    continue
+                if (bit >> _CONCEPT_SHIFT) not in concept_ids:
+                    # The concept is gone (audit #s-2: all 410 "fragment-only" bits on the
+                    # repaired copy had a dead concept). Dropped into the manifest too.
+                    dropped.setdefault((pid, linkage), BitMap64()).add(bit)
+                    dropped_dead_concept += 1
                     continue
                 key = (int(tp), canon)
                 if int(tp) != pid or canon != linkage:
@@ -4338,10 +4394,12 @@ class Store:
         changed = {k for k in set(old) | set(new)
                    if old.get(k, BitMap64()) != new.get(k, BitMap64())}
         manifest = None
-        if dropped or not dry_run:
+        if dropped:
             mdir = Path(manifest_dir) if manifest_dir else self.root / "backups"
             mdir.mkdir(parents=True, exist_ok=True)
-            manifest = mdir / f"fragments-repair-{time.strftime('%Y%m%d-%H%M%S')}.jsonl"
+            stamp = time.strftime('%Y%m%d-%H%M%S') + f"-{int(time.time() * 1000) % 1000:03d}"
+            kind = "dryrun" if dry_run else "applied"
+            manifest = mdir / f"fragments-repair-{stamp}-{kind}.jsonl"
             with manifest.open("w", encoding="utf-8") as f:
                 for (pid, linkage), bm in sorted(dropped.items()):
                     f.write(_json.dumps({
@@ -4357,6 +4415,8 @@ class Store:
             "rows_after": sum(1 for bm in new.values() if len(bm)),
             "rows_changed": len(changed), "kept": kept, "moved": moved,
             "added_from_links": added_from_links, "dropped_dead": dropped_dead,
+            "dropped_dead_concept": dropped_dead_concept, "links_skipped": links_skipped,
+            "unread_dirs": list(getattr(self, "_repair_unread_dirs", [])),
             "manifest": str(manifest) if manifest else None,
         }
 
@@ -4439,7 +4499,7 @@ class Store:
             # and a daemon SIGKILL between ingests left the relational
             # tables ahead of the on-disk bitmaps -- the exact corruption
             # surface that hit viascope earlier.
-            if self._dirty_fragments:
+            if self.has_dirty_fragments():
                 try:
                     self.flush_fragments()
                 except Exception as exc:
