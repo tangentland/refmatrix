@@ -1679,8 +1679,9 @@ class Store:
         saved_queries, tracked_files, dry_run}`, plus `fragments_repair` (the
         repair report, with its manifest path) on a real merge.
 
-        Lock-yield batching: `lock` (a NON-re-entrant context manager, e.g.
-        the daemon's `_store_lock`; never nest it) is acquired PER CHUNK of `chunk`
+        Lock-yield batching (no production caller since bug-105 r4 fenced the live merge,
+        d9ae; kept for the helix plan's merge redesign, d9ac, which is its intended caller):
+        `lock` (a NON-re-entrant context manager, e.g. the daemon's `_store_lock`; never nest it) is acquired PER CHUNK of `chunk`
         collisions/reparents rather than around the whole merge, so queued
         ops (the always-on prompt hooks above all) interleave instead of
         timing out behind a minutes-long merge. `progress(phase, done,
@@ -4390,13 +4391,16 @@ class Store:
                     bm = cache.get(_canonical_verb(raw))
                     if bm is not None and pid is not None:
                         old[(int(pid), _canonical_verb(raw))] = BitMap64(bm)
+        remapped_bits = 0
         if id_map:
             remapped: dict = {}
             for key, bm in old.items():
                 out = BitMap64()
                 for bit in bm:
                     c, e = bit >> _CONCEPT_SHIFT, bit & mask
-                    out.add(self._pack(id_map.get(c, c), id_map.get(e, e)))
+                    nb = self._pack(id_map.get(c, c), id_map.get(e, e))
+                    remapped_bits += nb != bit     # r5 #s5-2: a remap is visible, not "kept"
+                    out.add(nb)
                 remapped[key] = out
             old_for_change = old
             old = remapped
@@ -4456,6 +4460,7 @@ class Store:
             "rows_changed": len(changed), "kept": kept, "moved": moved,
             "added_from_links": added_from_links, "dropped_dead": dropped_dead,
             "dropped_dead_concept": dropped_dead_concept, "links_skipped": links_skipped,
+            "remapped": remapped_bits,
             "unread_dirs": list(getattr(self, "_repair_unread_dirs", [])),
             "manifest": str(manifest) if manifest else None,
         }

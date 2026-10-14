@@ -7,7 +7,7 @@ watchdog respawned the daemon 44s later and took the catalog lock back.
 
 1. hub watchdog maintenance pause (`rmx hub pause`)
 2. merge_partition lock-yield batching (per-chunk lock, join classify)
-3. daemon async job API (partition_merge async=true + job_status)
+3. daemon merge op: a live merge is refused (bug-105 r4, d9ae); dry runs answer
 4. replica-first hook recall (falls back cleanly when legs are missing)
 """
 from __future__ import annotations
@@ -195,13 +195,6 @@ def test_live_merge_is_refused_even_async(store):
     with pytest.raises(ValueError, match="offline"):
         _op_partition_merge(d, {"src": "src-part", "dst": "dst-part", "async": True})
     assert getattr(d, "compactions") == []
-
-
-def test_job_status_unknown_and_listing(store):
-    from refmatrix.daemon import _op_job_status
-    d = _fake_daemon(store)
-    assert "error" in _op_job_status(d, {"job": "nope"})
-    assert _op_job_status(d, {}) == {"jobs": {}}
 
 
 def test_dry_run_never_goes_async(store):

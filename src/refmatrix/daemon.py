@@ -715,8 +715,6 @@ class Daemon:
         # Background jobs (big ops run off the RPC thread so the caller gets
         # an id instead of a 300s socket timeout). id -> {state, phase, done,
         # total, result, error}; states: running | done | error.
-        self._jobs: dict[str, dict] = {}
-        self._jobs_lock = threading.Lock()
         # Read-op refcount + gate. Each `_open_read_store` increments the
         # count; the dedicated read store's wrapper decrements on close
         # and notifies. `_refresh_replica_now` waits on this gate before
@@ -3893,19 +3891,6 @@ def _op_checkpoint(d: Daemon, args: dict) -> dict:
     return {"checkpointed": True, "index_rebuilt": True}
 
 
-def _op_job_status(d: Daemon, args: dict) -> dict:
-    """Status of a background job started by an async big-op (partition_merge
-    with async=true). No `job` arg lists every known job this daemon run."""
-    job_id = args.get("job")
-    with d._jobs_lock:
-        if job_id is None:
-            return {"jobs": {k: dict(v) for k, v in d._jobs.items()}}
-        j = d._jobs.get(job_id)
-        if j is None:
-            return {"error": f"unknown job {job_id!r}"}
-        return {"job": job_id, **dict(j)}
-
-
 def _op_prune_noise(d: Daemon, args: dict) -> dict:
     namespaces = tuple(args.get("namespaces") or ("keyword",))
     min_df = int(args.get("min_df", 2))
@@ -6220,7 +6205,6 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "partition_list": _op_partition_list,
     "partition_rename": _op_partition_rename,
     "partition_merge": _op_partition_merge,
-    "job_status": _op_job_status,
     "prune_noise": _op_prune_noise,
     "set_flag": _op_set_flag,
     "forget": _op_forget,

@@ -201,3 +201,110 @@ def test_daemon_repair_log_line_names_every_counter(live, monkeypatch):
     for field in ("dropped_dead=", "dropped_dead_concept=", "links_skipped=", "unread_dirs=",
                   "manifest="):
         assert field in lines[-1], (field, lines[-1])
+
+
+# ---- r5 (ch-bsd bsd-bug105-hotfix-r5-fccca72) ---------------------------------------------------
+
+def _drop_link(s, eid, cid):
+    s._connect()._duck.execute(
+        "DELETE FROM entity_links WHERE entity_id=? AND concept_id=?", [eid, cid])
+
+
+def _pid(s, name):
+    r = s._connect().execute("SELECT id FROM partitions WHERE name=?", (name,)).fetchone()
+    return None if r is None else int(r[0])
+
+
+def test_r5_both_halves_collided_fragment_only_bit_follows_both_remaps(s):
+    """#s5-2 (r4 probe Q1, adopted): kills N1 (remap the concept half only)."""
+    with s.with_partition("src"):
+        sk = s.add_concept("k"); se = s.upsert_entity(kind="doc", name="o.md")
+        s.link("mentions", sk, se)
+    with s.with_partition("dst"):
+        dk = s.add_concept("k"); de = s.upsert_entity(kind="doc", name="o.md")
+    s.flush_fragments()
+    _drop_link(s, se, sk)
+    rep = s.merge_partition("src", "dst")["fragments_repair"]
+    assert s._pack(dk, de) in _rows(s).get((_pid(s, "dst"), "mentions"), set())
+    assert rep["dropped_dead"] == 0 and rep["dropped_dead_concept"] == 0, rep
+    assert rep["remapped"] >= 1, rep
+
+
+def test_r5_entity_half_only_collided_bit_is_remapped(s):
+    """#s5-2 (r4 probe Q2, adopted)."""
+    with s.with_partition("dst"):
+        dc = s.add_concept("dst-only"); de = s.upsert_entity(kind="doc", name="o.md")
+    with s.with_partition("src"):
+        se = s.upsert_entity(kind="doc", name="o.md")
+        s.link("mentions", dc, se)
+    s.flush_fragments()
+    _drop_link(s, se, dc)
+    rep = s.merge_partition("src", "dst")["fragments_repair"]
+    assert s._pack(dc, de) in _rows(s).get((_pid(s, "dst"), "mentions"), set())
+    assert rep["dropped_dead"] == 0, rep
+
+
+def test_r5_a_remap_only_change_in_an_unmoved_row_is_written(s):
+    """#s5-2 (r4 probe Q3, adopted): kills N2 (changed set computed from the remapped rows)."""
+    with s.with_partition("src"):
+        sk = s.add_concept("k")
+    with s.with_partition("dst"):
+        dk = s.add_concept("k"); x = s.upsert_entity(kind="doc", name="x.md")
+        s.link("mentions", sk, x)
+    s.flush_fragments()
+    dpid = _pid(s, "dst")
+    rep = s.merge_partition("src", "dst")["fragments_repair"]
+    got = _rows(s).get((dpid, "mentions"), set())
+    assert s._pack(dk, x) in got and s._pack(sk, x) not in got, got
+    assert rep["rows_changed"] >= 1 and rep["remapped"] >= 1, rep
+
+
+def test_r5_offline_merge_prints_remapped_and_the_manifest(tmp_path, monkeypatch):
+    """#s5-2 / F4: the offline merge's report names `remapped` and the manifest path."""
+    monkeypatch.delenv("RMX_BACKEND", raising=False)
+    root = tmp_path / "p" / ".refmatrix"; root.parent.mkdir()
+    st = Store(root); st.init()
+    with st.with_partition("src"):
+        c = st.add_concept("k"); e = st.upsert_entity(kind="doc", name="o.md")
+        st.link("mentions", c, e)
+    with st.with_partition("dst"):
+        st.add_concept("k")
+    st.flush_fragments()
+    hid = _pid(st, "src")
+    con = st._connect()._duck
+    blob = con.execute("SELECT blob FROM bitmap_fragments WHERE partition_id=? AND "
+                       "linkage='mentions'", [hid]).fetchone()[0]
+    bm = BitMap64.deserialize(bytes(blob)); bm.add(st._pack(888_888, e))     # a dead concept
+    con.execute("UPDATE bitmap_fragments SET blob=? WHERE partition_id=? AND linkage='mentions'",
+                [bm.serialize(), hid])
+    st.close()
+    monkeypatch.chdir(root.parent)
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+    r = CliRunner().invoke(cli_mod.main, ["partition", "merge", "src", "dst", "-y"])
+    assert r.exit_code == 0, r.output
+    assert "remapped=" in r.output and "manifest:" in r.output, r.output
+    assert "hub resume" in r.output, r.output        # #m5-2: the restart hint, not kickstart -k
+
+
+def test_r5_cli_fence_refuses_a_busy_daemon_too(tmp_path, monkeypatch):
+    """#m5-1: `ping` cannot tell busy from absent; the fence asks require_daemon, so a busy
+    daemon (alive, not answering) is refused, not treated as offline."""
+    from refmatrix import verbs as verbs_mod
+    monkeypatch.delenv("RMX_BACKEND", raising=False)
+    root = tmp_path / "p" / ".refmatrix"; root.parent.mkdir()
+    _seed_two_partitions(root)
+    monkeypatch.chdir(root.parent)
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+
+    def busy(r, **kw):
+        raise verbs_mod.VerbBusyError("daemon busy pid=1")
+    monkeypatch.setattr(verbs_mod, "require_daemon", busy)
+    r = CliRunner().invoke(cli_mod.main, ["partition", "merge", "src", "dst", "-y"])
+    assert r.exit_code != 0 and "busy" in r.output, r.output
+
+
+def test_r5_the_dead_job_api_is_gone():
+    """#b5-1: the fence removed the async merge, the only writer of the daemon's job table, so
+    its reader (`job_status`, `rmx daemon job`) goes too."""
+    assert "job_status" not in dm.OPS
+    assert "job" not in cli_mod.daemon.commands

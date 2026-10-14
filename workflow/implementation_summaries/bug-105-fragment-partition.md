@@ -43,9 +43,11 @@ snapshot (2026-10-14): 538,094 bits in the wrong partition, 466,163 bits for del
   anything but a dry run and `rmx partition merge` refuses with the daemon up. A live merge's
   rebind and SRC drop sat in separate holds of the FIFO writer lock, so queued ops ran bound to
   the dropped partition (r4 #b4-1), and a SRC write between chunks orphaned its entity (#s4-1).
-  The OFFLINE merge (daemon down, no concurrent writer) stays. The redesign belongs to the helix
-  plan, which owns merge (d9ac). The daemon's job API (`job_status`, `rmx daemon job`) now has no
-  producer and is kept for the next async big-op.
+  The OFFLINE merge (daemon down, no concurrent writer) stays; the fence asks `require_daemon`,
+  so a BUSY daemon is refused too (r5 #m5-1). The redesign belongs to the helix plan, which owns
+  merge (d9ac). The daemon's job API (`job_status`, `rmx daemon job`) had no other producer and
+  is removed (r5 #b5-1); `merge_partition`'s `lock`/`progress` parameters are kept for the helix
+  merge, which is named in its docstring. The repair report gains `remapped` (r5 #s5-2).
 
 ## TDD and audits {#tdd}
 
@@ -61,14 +63,27 @@ snapshot (2026-10-14): 538,094 bits in the wrong partition, 466,163 bits for del
 
 ## Deploy and live repair {#deploy}
 
-1. Merge `--no-ff` to `master`, bump the version, deploy (`git -C ~/refmatrix pull --ff-only`,
-   `rmx daemon restart --relaunch`).
-2. Per store: back up the ACTIVE slot (`catalog.<A|B>.duckdb`); the manifest records drops, never
-   moves, so it is not a restore point.
-3. `rmx repair-index --fragments --dry-run`; read every counter (on this repo's copy,
+Corrected after ch-bsd r5 #s5-1 (the first version relaunched one daemon and named no backup
+method).
+
+1. **Merge and deploy.** Merge `--no-ff` to `master`, bump the version, then
+   `git -C ~/refmatrix pull --ff-only origin master`. Relaunch the WHOLE fleet:
+   `rmx hub relaunch-fleet` (one `rmx daemon restart --relaunch` restarts one store and leaves
+   every other daemon on the defective cache; plan-4 r1 #b-6). Verify: `rmx version -v` names
+   `~/refmatrix/src` and the new version; `rmx hub status` lists every store on it.
+2. **Back up each store's active slot, consistently.** A `cp` under a live daemon is not a
+   consistent copy and misses the WAL. Per store: `rmx hub pause <store>`, `rmx daemon stop`,
+   copy `catalog.<active>.duckdb` and its `.wal` if present (the `active` marker names the slot)
+   to `backups/pre-bug105-repair-<date>/`, `rmx daemon start`, `rmx hub resume <store>`. The
+   manifest records drops, never moves, so it is not a restore point.
+3. **Dry run.** `rmx repair-index --fragments --dry-run` (write-free on a live daemon apart from
+   the manifest and one rmxd.log line, r5 Q3); read every counter (on this repo's copy,
    `dropped_dead_concept` about 410).
-4. Apply; a day later dry-run again: a non-zero `moved` measures what the known m-3 gap (links
-   written to the bound partition) regrew.
+4. **Apply.** `rmx repair-index --fragments`. A day later dry-run again: a non-zero `moved`
+   measures what the known m-3 gap (links written to the bound partition) regrew.
+
+An OFFLINE `rmx partition merge` (the only kind now) needs `rmx hub pause` first, or the hub
+respawns the stopped daemon within ~30 s; the CLI's refusal message says so.
 
 ## Open, owned elsewhere {#open}
 

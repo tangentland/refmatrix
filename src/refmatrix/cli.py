@@ -2893,40 +2893,6 @@ def daemon():
     when many hooks fire concurrently."""
 
 
-@daemon.command("job")
-@click.argument("job_id", required=False)
-def daemon_job(job_id: "str | None"):
-    """Status of a daemon background job (e.g. `partition merge --async`).
-    Without JOB_ID, lists every job from this daemon run."""
-    from refmatrix import daemon as daemon_mod
-    root = _root()
-    if not daemon_mod.ping(root):
-        raise click.ClickException("daemon not running")
-    resp = daemon_mod.call(
-        root, "job_status", {"job": job_id} if job_id else {}, timeout=10.0)
-    if not resp.get("ok"):
-        raise click.ClickException(resp.get("error", "daemon error"))
-    result = resp["result"]
-    if "jobs" in result:
-        if not result["jobs"]:
-            console.print("[dim]no jobs this daemon run[/]")
-        for jid, j in result["jobs"].items():
-            console.print(
-                f"  {jid}  {j['state']}  {j.get('op')} "
-                f"{j.get('src')}->{j.get('dst')}  "
-                f"{j.get('phase')} {j.get('done')}/{j.get('total')}")
-        return
-    if result.get("error"):
-        raise click.ClickException(result["error"])
-    console.print(
-        f"job {result['job']}: [bold]{result['state']}[/]  "
-        f"{result.get('phase')} {result.get('done')}/{result.get('total')}")
-    if result.get("result"):
-        console.print(f"  result: {result['result']}")
-    if result.get("error"):
-        console.print(f"  [red]error:[/] {result['error']}")
-
-
 @daemon.command("start")
 @click.option(
     "--watch/--no-watch", default=True,
@@ -4235,11 +4201,21 @@ def partition_merge(src: str, dst: str, dry_run: bool, yes: bool):
     console.print(f"  tracked files:        {result['tracked_files']}")
     if dry_run:
         return
-    if daemon_mod.ping(root):
+    # r5 #m5-1: `ping` cannot tell busy from absent; a busy daemon is still a live writer.
+    from refmatrix import verbs as _verbs
+    try:
+        _verbs.require_daemon(root)
+        live = "running"
+    except _verbs.VerbBusyError:
+        live = "busy (alive, not answering)"
+    except _verbs.VerbAbsentError:
+        live = None
+    if live:
         raise click.ClickException(
-            "live partition merge is disabled (bug-105 #b4-1/#s4-1): stop the daemon "
-            f"(`rmx daemon stop`) and run `rmx partition merge {src} {dst}` offline; the live "
-            "merge is redesigned in the helix plan")
+            f"live partition merge is disabled (bug-105 #b4-1/#s4-1) and the daemon is {live}: "
+            f"`rmx hub pause` (so the hub does not respawn it), `rmx daemon stop`, run "
+            f"`rmx partition merge {src} {dst}` offline, then `rmx hub resume`; the live merge "
+            "is redesigned in the helix plan")
     total = (
         result["entities_reparented"] + result["entities_merged"]
         + result["saved_queries"] + result["tracked_files"]
@@ -4277,14 +4253,14 @@ def partition_merge(src: str, dst: str, dry_run: bool, yes: bool):
             f"fragments repair: moved={fr['moved']} added_from_links={fr['added_from_links']} "
             f"dropped_dead={fr['dropped_dead']} "
             f"dropped_dead_concept={fr['dropped_dead_concept']} "
-            f"links_skipped={fr['links_skipped']}")
+            f"links_skipped={fr['links_skipped']} remapped={fr.get('remapped', 0)}")
         for d in fr.get("unread_dirs") or []:
             console.print(f"  [yellow]unread, left in place:[/] {d}")
         if fr.get("manifest"):
             console.print(f"  manifest: {fr['manifest']}")
     console.print(
-        "[dim]restart the daemon to drop any cached SRC partition "
-        "binding (`rmx daemon launchctl kickstart -k`).[/]"
+        "[dim]offline merge done: start the daemon again (`rmx hub resume`, or "
+        "`rmx daemon start`).[/]"
     )
 
 
