@@ -99,7 +99,7 @@ Findings: 21 #b-1..b-3, #s-1..s-13, MEH; C7.
 | d4a | Events go to a NEW append-only `recall-events.jsonl`, written lock-free like `query.log`. 19.2's counters fold it into DuckDB through plan-23's drain (d2a offset-in-transaction); 21.1's emission does not depend on plan-23. | user, 2026-10-14 |
 | d4b | The C9 ranking-eval gold set is extended to code AND docs now; sessions stay out and plan-13's sessions question is marked dormant with a pointer; AC-3 gets a minimum win and n. | user, 2026-10-14 |
 | d4c | The 21.4 question set is drawn from real NL queries in `query.log` by an agent that never reads the ranking code, approved by the user, and its hash committed into the spec before tuning; the tuner cannot change it. | user, 2026-10-14 |
-| d4d | The 21.3 nudge's latency budget (old d-3) is decided by MEASUREMENT when 21.3 starts: an R0 step times the index-only "is it indexed" lookup and the hook wall time on the real identifier set, against criteria written into the spec BEFORE the run (≤ 100 ms index-only path if reachable; otherwise the nudge is dropped or deferred, never a full bundle in the hook). | user, 2026-10-14 |
+| d4d | The 21.3 nudge's latency budget (old d-3) is decided by MEASUREMENT when 21.3 starts, and the nudge is NOT dropped in advance. R0 times the hook wall time (p50/p95) on the real identifier set, once quiet and once under load, and applies go/no-go ranges written into the spec before the run (see #t4-nudge-ranges). The hook never builds a full context bundle in any range. | user, 2026-10-14 (revised: "I'd rather state multiple go-no-go ranges") |
 | d4e | No habit memory (old d-4): `feedback_rmx_first_retrieval` exists and a voluntary rule is the channel that goes unused; the nudge is the mechanism. | user, 2026-10-14 |
 | d4f | An `agent` invocation source is added, keyed on `CLAUDECODE`; eval harnesses set `internal` explicitly. | user, 2026-10-14 |
 
@@ -112,3 +112,33 @@ cache); fixed-window AC-4 excluding replay rows (#s-3); R3 retargeted to `grep-s
 daemon route of `context` logged (#s-5); no test writes the measured log (#s-7); replica-route
 reranker (#s-8); generator-not-runtime ACs, "tested by" defined or dropped, frozen replay names
 (#s-10..#s-12); MEH items. {#t4-fixes}
+
+Go/no-go ranges for the 21.3 nudge (d4d), on hook wall-time p95, the worse of quiet and loaded:
+
+| p95 | verdict |
+|---|---|
+| ≤ 100 ms | GO: fire inline on every eligible call |
+| 100–300 ms | GO, gated: at most once per symbol per session; report the per-prompt cost |
+| 300 ms–1 s | NOT YET: build a precomputed indexed-symbol set (written at SessionStart / on derive), so the hook check is a set lookup; re-measure, then apply this table again |
+| > 1 s after that | NO-GO in the hook: defer, revisit after Option A's measurement (d2e) |
+{#t4-nudge-ranges}
+
+## Topic 5: memory budget, recall, phased context (plan-19) {#t5}
+
+Findings: 19 #b-1..b-7, #s-1..s-10, MEH; the phased-context exploration and topic cache.
+
+| id | decision | by |
+|---|---|---|
+| d5a | `mtype=subject` rows are excluded from recall by default (opt-in flag); they stay protected and reachable through `--subject`; compile reaps stale subjects. Expanding a subject into its members is deferred. | user, 2026-10-14 |
+| d5b | New task **19.6** (Wave 3) owns phasing AND the topic cache for the whole per-prompt budget (recall + scan-prompt). Depends on 19.1, d5a, 19.5's probe and fixed baseline, and 21.1's fields; plan-21 only measures. Turn count is logged, never a phase signal. | user, 2026-10-14 |
+| d5c | "Asserted" = `type: feedback` or explicitly user-protected (a learner auto-protect does not count), ~16-20% of memories; inbound `rel:` edges are a tie-break only. Measured 2026-10-14 over 326 memory files: has-any-rel 298 (91%), inbound-rel target 222 (68%), inbound ≥ 3 92 (28%), feedback 52 (16%). | user, 2026-10-14 |
+| d5d | 19.5's probe decides PreCompact: if its stdout does not reach the agent, PreCompact stops doing recall and keeps only save-state/promote. Until then PreCompact hits are not counted as delivered. | user, 2026-10-14 |
+
+Spec fixes taken without a decision: no `${RMX_HOOK_BUDGET_CHARS}` interpolation, AC runs with it
+unset (#b-2); operational reachability — run each fold command, page through, find every member
+(#b-3); nonzero floor with `base`/`asserted_floor` defined, AC on a zero-hit memory (#b-4); sum
+`merge_fn` + d2a (#b-5); "use" counted only at explicit agent calls, never recall's internal
+`memory_get` (#b-6); 23.0 (#b-7); per-hook vs per-event cap probe (#s-2); arithmetic fixed
+(#s-3); name-keyed global hits (#s-4); 19.3/19.4 cycle broken (#s-6); stable `unlabeled-N` names
+and stale-subject reaping (#s-7); atomic single-writer index files (#s-8); decay-free `check()`
+(#s-9); MEH items. {#t5-fixes}
