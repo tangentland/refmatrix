@@ -320,3 +320,10 @@ names; 17.2 keeps its own registry (17.2 ≠ 23.1 tick registry); 17.2 `still_ru
 ceiling; arming per (store, step) for every registered step; 17.3 ACs on a synthetic 30k-version
 clone; d8d's predicate owned by 21.1 in `telemetry.py`; the dead-letter file kept with a re-drive.
 {#t9-fixes}
+
+### Approvals after round 2 {#t9-approvals}
+
+| id | decision | by |
+|---|---|---|
+| d9k | The ADR-0004 amendment ([[refmatrix/adr-0004-unified-location-space-index#amend-2026-10-14]]) is APPROVED and folded into `#rule-floor`, `#rule-no-delete` and `#rule-asserted-floor`. | user, 2026-10-14 ("1 - yes") |
+| d9l | 23.4's amended go/no-go ranges are CONFIRMED as written in `task-23.4#ranges`. | user, 2026-10-14 ("2 - yes") |

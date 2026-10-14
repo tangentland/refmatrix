@@ -249,7 +249,8 @@ is a query on roaring bitmaps with no sort. {#amend-model-body}
       lifetime evidence. Knowledge that was used heavily long ago stays findable, ranked below
       current work but present. **The one implementation is task 19.2's decay/floor library**
       (plan review C4, user 2026-10-07): half-life recency over an exact lifetime record, with
-      floor `base * log1p(hits + 2*used)`. Helix's age tiers and touch counters reuse it rather
+      floor `base * (1 + log1p(hits + 2*used))` — never zero, applied at read time over raw counts
+      ([[#a14-floor]], amended 2026-10-14). Helix's age tiers and touch counters reuse it rather
       than defining a second formula. The intropretor step decay in the ADAPT row above is prior
       art, not a rule. {#rule-floor}
    3. **Age tiers are terminal, not evicting.** An edge moves day → week → month → older; "older" is
@@ -259,10 +260,14 @@ is a query on roaring bitmaps with no sort. {#amend-model-body}
       prune. Removal goes only through the ONE explicit, audited path,
       [[plan-22-audited-removal-and-repair]], which repairs before it removes (dry-run → apply,
       manifest, restore). That includes merges, using plan-20's rule (task 22.4). A folded memory
-      stays recallable (plan review C1/C3, user 2026-10-07). {#rule-no-delete}
+      stays recallable (plan review C1/C3, user 2026-10-07). Scoped 2026-10-14
+      ([[#a14-removal-scope]]): `forget`/`memory bulk-forget` are entry points to that path;
+      manifest-backed derived-index cleanup and the listed `untrack`/`prune-noise --drop`
+      exceptions are not knowledge removal. {#rule-no-delete}
    5. **A higher floor for asserted knowledge.** Feedback memories, user-asserted or `protected`
       rows, and `rel:`-anchored GMD nodes keep a higher floor; recency may reorder them, never bury
-      them. {#rule-asserted-floor}
+      them. This defines the FLOOR only; `MEMORY.md`'s fold order is a separate tier
+      ([[#a14-fold-order]], 2026-10-14). {#rule-asserted-floor}
    6. **Never under-count.** Where a sketch is used, use one whose error is one-sided upward
       (Count-Min with conservative update), so error can only make a key look warmer, never falsely
       cold. Small domains (≈500 memories) use EXACT counters: the sketch exists for edge-scale
@@ -339,11 +344,11 @@ without a write per event. {#amend-helix-body}
   Aster's decaying approximate counters and per-key eager/lazy merge; and the gates prior
   measurements impose. The ADR stays Proposed. {#d-2026-10-07-amend}
 
-## Amendment 2026-10-14 (DRAFT — awaiting the user's approval) {#amend-2026-10-14}
+## Amendment 2026-10-14 (APPROVED by the user, 2026-10-14) {#amend-2026-10-14}
 
 Decision d9i of [[plan-review-2026-10-14#t9]]. Drafted from the Wave 0 spec reviews; nothing below
-is in force until the user approves it, after which [[#rule-floor]] and [[#rule-no-delete]] are
-edited to match and this section records the approval.
+was in force until the user approved it (2026-10-14, "1 - yes"); [[#rule-floor]],
+[[#rule-no-delete]] and [[#rule-asserted-floor]] are edited to match.
 
 rel: derives-from -> [[plan-review-2026-10-14#t9]]
 rel: amends -> [[#rule-floor]]

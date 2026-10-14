@@ -13,8 +13,8 @@ metadata:
 # Task 23.4: measure Option A's concurrency before plan-23's code lands {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: Pending (revision round 2, 2026-10-14: ranges amended per ns23-1 and d9d, PROPOSED for
-> the user's confirmation before the run; see [[#rev-round-2]])
+> Status: Pending (revision round 2, 2026-10-14: ranges amended per ns23-1 and d9d, CONFIRMED by the user 2026-10-14 (was PROPOSED for
+> the user's confirmation before the run); see [[#rev-round-2]])
 > Depends on: — (runs in parallel with 23.0; gates nothing in plan-23)
 > Feeds: the d2b revisit (plan-17's per-dataset Lance lock; whether Option A becomes a plan)
 
@@ -107,7 +107,7 @@ plus `with_partition`, under A a per-op cursor handle). {#why-body}
 
 ## Go/no-go ranges (pre-registered) {#ranges}
 
-**PROPOSED, for the user's confirmation before the run (d9d).** Amended in revision round 2 per
+**CONFIRMED by the user, 2026-10-14 (d9d: "2 - yes"); fixed before the run.** Amended in revision round 2 per
 ns23-1; the user confirms or changes these numbers before the first measured run (AC-1), and after
 that they are frozen.
 
@@ -192,6 +192,6 @@ then the measurement script sets `HOME`, `RMX_HOME` and `REFMATRIX_ROOT` into it
 | ns23-1 item 3 (an error at N=1 is a broken run) | [[#ranges]] INVALID row, [[#ac-7]] |
 | ns23-1 item 4 (expected counts; "worst of three") | [[#r3]] (dealing by key), [[#r6]], [[#ranges]] definitions |
 | ns23-1 item 5 (live stat fails on normal activity) | [[#r1]], [[#ac-5]] |
-| d9d (amend first, then present for confirmation) | [[#ranges]] (marked PROPOSED), [[#ac-1]] |
+| d9d (amend first, then present for confirmation) | [[#ranges]] (CONFIRMED 2026-10-14), [[#ac-1]] |
 | nb23-1 (Option A store-state audit lists the fragment cache) | [[#r3]], [[#r7]] |
 | nm17-2 (plan-17 names GO-serial) | [[#ranges]] GO-serial consequence |
