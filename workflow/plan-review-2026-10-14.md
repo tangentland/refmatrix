@@ -60,6 +60,7 @@ Findings: 23 #b-1..b-3, #s-1..s-7, #m-1..m-3; 17 #s-1, #s-7; 22 #s-1, #s-2.
 | d2a | Exactly-once drain: the drain offset is committed in the SAME DuckDB transaction as the batch (option 1), not an event-id dedupe table. Answered "2a - opt"; read as option 1, the recommendation — to be confirmed. | user, 2026-10-14 |
 | d2b | Plan-23 stays first in Wave 1 (after 23.0), with the `bind(batch)` seam; Option A is not folded in. Plan-17 takes no per-dataset Lance lock now; it goes through `bind`, and a revisit is recorded for when Option A lands. | user, 2026-10-14 |
 | d2c | bug-093's between-file yield becomes task **23.3** (after 23.1): a transaction boundary inside `_sync_paths`, the same `bind` seam and write-count tests. | user, 2026-10-14 |
+| d2e | Option A's measurement #4 (one writer thread vs N per-op cursor writer threads on a cliquet copy: conflict rate, throughput, ART errors under load; [[exploration-storage-concurrency-redesign#measure]]) runs in Wave 1 IN PARALLEL with 23.0, so the Option A revisit (d2b) has data before plan-23's code lands. | user, 2026-10-14 |
 | d2d | bug-099 (learn queue unlinks `*.draining` before apply) stays logged; fixed by 23.1. | user, 2026-10-14 |
 
 Spec fixes taken without a decision (proposed, not objected to): per-batch `bind` inside the hold
@@ -69,3 +70,22 @@ required `merge_fn` (#s-2); 17.1 and 22's apply use `bind` + the recorder but no
 (17 #s-1, 22 #s-1/#s-2); real `_FairLock` in tests, every-batch-released AC, recorder required,
 23.2 before 23.1 (#s-4, #s-5); overflow reaches `rmx learn status` through a daemon op (#s-6);
 the MEH items. {#t2-fixes}
+
+## Topic 3: Lance nightly maintenance (plan-17) {#t3}
+
+Findings: 17 #b-1..b-6, #s-1..s-8, MEH.
+
+| id | decision | by |
+|---|---|---|
+| d3a | An orphan vector is one whose entity id is absent from the WHOLE catalog (every partition), not `gc_vectors`' bound-partition-and-kind rule. The orphan list stores the vectors themselves, so a reap can be undone. | user, 2026-10-14 |
+| d3b | The pre-compaction version is tagged and kept until the next successful run; cleanup never removes the tagged version. Not answered directly; accepted as the premise of d3c ("3b mostly covers this") — to be confirmed. | user (implied), 2026-10-14 |
+| d3c | Out-of-daemon readers (`_replica_memory_recall`, `rmx recall`, `memory compile`) are protected by d3b; a reader that hits a missing file retries once on the current version and counts it. No N-newest retention floor. | user, 2026-10-14 |
+| d3d | With no `maintain` stamp, the tick runs a dry run only and reports; the real op starts only after 17.3 writes the stamp by hand (after its dry run and backup). | user, 2026-10-14 |
+| d3e | Maintenance is its own step on 17.2's tick (plan-review C6), not on the queue-alert thread; stores run serially with a per-store budget, and a hub-side timeout is reported as "still running", not "failed". | user, 2026-10-14 |
+
+Spec fixes taken without a decision: drop the phantom handle refresh (#b-1); a parameterized
+`older_than` with a production-24h AC (#b-2); fingerprint before cleanup, gate before any delete,
+restore AC (#b-3); injected roots + 23.0 (#b-5); the never-embedded skip filter becomes a 17.1
+requirement (#b-6); `bind` + recorder, no queue (#s-1, #s-7 per d2b); 17.3 latency on refmatrix,
+cliquedb, thiquet (#s-4); `partition=None` = every partition (#s-5); stores from the registered
+daemon list (#s-6); no in-process fallback, skip counted (#s-8); MEH items. {#t3-fixes}
