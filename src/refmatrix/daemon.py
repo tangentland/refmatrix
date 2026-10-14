@@ -4104,7 +4104,7 @@ def _op_partition_merge(d: Daemon, args: dict) -> dict:
                 with d._jobs_lock:
                     d._jobs[job_id].update(state="done", result=res)
                 d._request_snapshot()
-                d._log(f"merge-done {src}->{dst} job={job_id}")
+                d._log(f"merge-done {src}->{dst} job={job_id} {_merge_repair_line(res)}")
             except Exception as e:
                 with d._jobs_lock:
                     d._jobs[job_id].update(state="error", error=str(e))
@@ -4125,7 +4125,16 @@ def _op_partition_merge(d: Daemon, args: dict) -> dict:
         # must be re-snapshotted from the post-merge catalog.
         d._compact_factslog_if_needed(force=True)
         d._request_snapshot()
+        d._log(f"merge-done {src}->{dst} {_merge_repair_line(result)}")
     return result
+
+
+def _merge_repair_line(res: dict) -> str:
+    """The merge's fragment-repair counts and manifest for rmxd.log (bug-105 r3 #m3-2)."""
+    fr = (res or {}).get("fragments_repair") or {}
+    return (f"fragments_repair moved={fr.get('moved')} dropped_dead={fr.get('dropped_dead')} "
+            f"dropped_dead_concept={fr.get('dropped_dead_concept')} "
+            f"links_skipped={fr.get('links_skipped')} manifest={fr.get('manifest')}")
 
 
 def _op_partition_audit(d: Daemon, args: dict) -> dict:

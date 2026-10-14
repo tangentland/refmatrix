@@ -1676,10 +1676,11 @@ class Store:
 
         `dry_run=True` returns the resolved counts without mutating.
         Returns `{src, dst, entities_reparented, entities_merged,
-        saved_queries, tracked_files, dry_run}`.
+        saved_queries, tracked_files, dry_run}`, plus `fragments_repair` (the
+        repair report, with its manifest path) on a real merge.
 
-        Lock-yield batching: `lock` (any re-enterable context manager, e.g.
-        the daemon's `_store_lock`) is acquired PER CHUNK of `chunk`
+        Lock-yield batching: `lock` (a NON-re-entrant context manager, e.g.
+        the daemon's `_store_lock`; never nest it) is acquired PER CHUNK of `chunk`
         collisions/reparents rather than around the whole merge, so queued
         ops (the always-on prompt hooks above all) interleave instead of
         timing out behind a minutes-long merge. `progress(phase, done,
@@ -1947,9 +1948,6 @@ class Store:
             con.execute("DELETE FROM partitions WHERE id=?", (src_id,))
         con.commit()
 
-        if self._partition_name == src_name:
-            self._partition_name = dst_name
-            self._partition_id = dst_id
         # bug-105 audit #s-1: SRC's fragment rows still sit under the dropped partition id, and
         # colliding entities were remapped to DST ids. Re-home every bit to its entity's
         # partition (the same repair `rmx repair-index --fragments` runs; a manifest of any
@@ -1957,9 +1955,18 @@ class Store:
         # transaction on the shared connection), and FLUSH rather than clear the cache first —
         # an op that ran between chunks may have unlinked a persisted bit, and clearing would
         # discard that unlink so the union repair wrote the bit back from the stale row.
+        # r3 #b3-1: the home-binding rebind runs under the same hold (bug-098 class: a rebind
+        # outside the lock let an interleaved op write under a half-moved binding). r3 #s3-1:
+        # colliding SRC entities became DST ids in every table but the fragments, so the repair
+        # gets the collision map and remaps both halves of each bit instead of dropping them.
         with _lk:
+            if self._partition_name == src_name:
+                self._partition_name = dst_name
+                self._partition_id = dst_id
             self.flush_fragments()
-            repair = self.repair_fragments(dry_run=False, manifest_dir=self.root / "backups")
+            repair = self.repair_fragments(
+                dry_run=False, manifest_dir=self.root / "backups",
+                id_map={int(s): int(d) for s, d, _k, _n in collisions})
 
         return {
             "src": src_name, "dst": dst_name,
@@ -4316,7 +4323,8 @@ class Store:
                 f.unlink()
 
     def repair_fragments(self, *, dry_run: bool = True,
-                         manifest_dir: "Path | None" = None) -> dict:
+                         manifest_dir: "Path | None" = None,
+                         id_map: "dict[int, int] | None" = None) -> dict:
         """Rebuild every bitmap fragment so each bit sits in its entity's partition (bug-105).
 
         The partition-agnostic fragment cache (fixed in this release) left three kinds of
@@ -4336,6 +4344,11 @@ class Store:
         written to a JSONL manifest (`dropped_hex` = serialized BitMap64 per (partition,
         linkage)) before anything changes, so the drop is restorable. `dry_run=True` (the
         default) computes and reports, writes the manifest, changes nothing.
+
+        `id_map` (old entity id -> new id) is applied to BOTH halves of every fragment bit before
+        it is classified: `merge_partition` passes its collisions, whose SRC ids are gone from
+        every table but the fragments (bug-105 r3 #s3-1), so their bits move instead of being
+        dropped as dead.
 
         Caller holds the writer lock (the daemon op does)."""
         import json as _json
@@ -4377,6 +4390,18 @@ class Store:
                     bm = cache.get(_canonical_verb(raw))
                     if bm is not None and pid is not None:
                         old[(int(pid), _canonical_verb(raw))] = BitMap64(bm)
+        if id_map:
+            remapped: dict = {}
+            for key, bm in old.items():
+                out = BitMap64()
+                for bit in bm:
+                    c, e = bit >> _CONCEPT_SHIFT, bit & mask
+                    out.add(self._pack(id_map.get(c, c), id_map.get(e, e)))
+                remapped[key] = out
+            old_for_change = old
+            old = remapped
+        else:
+            old_for_change = old
         moved = dropped_dead = dropped_dead_concept = kept = 0
         dropped: dict = {}
         for (pid, linkage), bm in old.items():
@@ -4406,8 +4431,8 @@ class Store:
         for bm in new.values():
             added_from_links += len(bm - old_all)
 
-        changed = {k for k in set(old) | set(new)
-                   if old.get(k, BitMap64()) != new.get(k, BitMap64())}
+        changed = {k for k in set(old_for_change) | set(new)
+                   if old_for_change.get(k, BitMap64()) != new.get(k, BitMap64())}
         manifest = None
         if dropped:
             mdir = Path(manifest_dir) if manifest_dir else self.root / "backups"
