@@ -100,6 +100,12 @@ whichever session touched STM last. Decided as d9s (user, 2026-10-14: "fix it"),
 
 ## Deploy {#deploy}
 
+r4 additions: no daemon or hub code changed, so `rmx daemon restart --relaunch` delivers nothing
+for bug-109; the hooks pick it up as soon as `~/refmatrix` fast-forwards (editable install).
+Verify by `git -C ~/refmatrix rev-parse HEAD` equal to the merge sha and by
+`stm/by-pid/<claude_pid>.json` appearing after the next prompt. A second main-tree MCP server is
+hosted by IntelliJ (it also runs `.venv-eval`) and needs its own restart.
+
 The hooks run the deployed `~/bin/rmx`; other projects' MCP servers run `~/bin/rmx mcp`. Both get
 the fix on deploy (merge to `master`, fast-forward `~/refmatrix`, `rmx daemon restart --relaunch`)
 plus `/mcp` reconnect.
