@@ -1490,8 +1490,10 @@ def focus_promote_edges(min_w, max_edges, session, dry_run, yes):
     args = {"dry_run": dry_run, "max_edges": max_edges, "sample": 20}
     if min_w is not None:
         args["threshold"] = min_w
-    if session:
-        args["session"] = session
+    # bug-109 r1 #s-3: resolve HERE. The daemon has neither $CLAUDE_PID nor a claude ancestor,
+    # so a session it resolves itself is always the newest ring, another session's whenever two
+    # run at once; this is a durable write.
+    args["session"] = _resolve_stm_session(session, prefer_latest=True)
     if not dry_run and not yes:
         click.confirm(
             "Write co-occurs edges into the durable graph?", abort=True)
@@ -1971,14 +1973,23 @@ def focus_hook(event):
     if event == "input":
         # bug-109: name this turn's session for the Claude process that owns it, so the
         # long-lived MCP server (spawned before any /clear) and Bash-tool CLI runs resolve the
-        # CURRENT session. Loud on failure: the hook's stderr is the only place it can go.
+        # CURRENT session. Every hook ends in `2>/dev/null || true`, so a failure is recorded in
+        # stm/by-pid/_errors.jsonl, never only printed (r1 #b-1).
         if d.get("session_id"):
             try:
                 owner = stm_mod.owner_claude_pid()
                 if owner:
                     stm_mod.write_pid_pointer(_root(), owner, d["session_id"])
+                else:
+                    stm_mod.record_pointer_error(_root(), "no-owner",
+                                                 session=d["session_id"])
             except OSError as e:
                 click.echo(f"rmx focus hook: session pointer not written: {e}", err=True)
+                try:
+                    stm_mod.record_pointer_error(_root(), "write-failed", error=str(e),
+                                                 session=d["session_id"])
+                except OSError:
+                    pass  # the stderr line above is the last channel left
         # Top of a turn: anything still parked from the previous one never
         # completed. Fold it in before recording the new prompt so the
         # abandoned call sits in front of it on the timeline.

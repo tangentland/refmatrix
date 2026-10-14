@@ -73,19 +73,61 @@ def test_mcp_resolves_the_pointer_not_its_frozen_env_or_the_newest_ring(
     second, parallel session C wrote the newest ring. The MCP server's env still says A."""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-A")
     monkeypatch.delenv("RMX_SESSION", raising=False)
-    monkeypatch.setenv("CLAUDE_PID", str(os.getpid()))   # the owner; see the ancestry test below
     _ring(root, "sess-A", age_s=300)
     _ring(root, "sess-B", age_s=60)
     _ring(root, "sess-C", age_s=0)           # newest ring belongs to ANOTHER session
-    stm.write_pid_pointer(root, os.getpid(), "sess-B")
+    stm.write_pid_pointer(root, os.getppid(), "sess-B")   # the server's owner is its parent
     assert verbs.resolve_session(root, None) == "sess-B"
 
 
-def test_mcp_with_no_pointer_never_uses_its_frozen_env(root, long_lived, monkeypatch):
+def test_mcp_with_no_pointer_falls_back_LOUDLY(root, long_lived, monkeypatch):
+    """r1 #b-1/#s-2: with no pointer the long-lived server can only guess (the newest ring). The
+    guess must be labelled and recorded where the hook's `2>/dev/null` cannot swallow it; the old
+    version of this test blessed the misroute and passed on unfixed code."""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-A")
     monkeypatch.delenv("RMX_SESSION", raising=False)
     _ring(root, "sess-C", age_s=0)
-    assert verbs.resolve_session(root, None) != "sess-A"
+    sess, source = verbs.resolve_session_source(root, None)
+    assert sess != "sess-A"
+    assert source == "latest"
+    errs = _errors(root)
+    assert errs and errs[-1]["reason"] == "pointer-unresolved", errs
+
+
+def _errors(root):
+    p = stm.stm_dir(root) / "by-pid" / "_errors.jsonl"
+    return [json.loads(l) for l in p.read_text().splitlines()] if p.exists() else []
+
+
+def test_mcp_owner_is_its_parent_pid_not_an_inherited_claude_pid(root, long_lived, monkeypatch):
+    """r1 #s-1: the spec keys the long-lived server on os.getppid(); an inherited $CLAUDE_PID
+    naming some other Claude must not win."""
+    monkeypatch.delenv("RMX_SESSION", raising=False)
+    monkeypatch.setenv("CLAUDE_PID", "1")
+    stm.write_pid_pointer(root, os.getppid(), "sess-parent")
+    assert verbs.resolve_session_source(root, None) == ("sess-parent", "pointer")
+
+
+def test_a_claude_pid_that_is_not_an_ancestor_is_ignored(monkeypatch):
+    """r1 #s-1: a stale or foreign $CLAUDE_PID (here pid 1, launchd) is not this process's owner."""
+    monkeypatch.setenv("CLAUDE_PID", "1")
+    assert stm.owner_claude_pid() != 1
+
+
+def test_ps_failure_never_writes_a_pointer_that_reads_as_absent(root):
+    """r1 #b-1: a pointer stored with pid_start null is ignored forever, silently. A pid with no
+    process (so `ps` reports nothing) is refused and recorded instead."""
+    dead = 999_999
+    assert stm.write_pid_pointer(root, dead, "sess-X") is False
+    assert not stm.pid_pointer_path(root, dead).exists()
+    assert _errors(root)[-1]["reason"] == "ps-failed"
+
+
+def test_write_verbs_report_where_their_session_came_from(root, long_lived, monkeypatch):
+    monkeypatch.delenv("RMX_SESSION", raising=False)
+    stm.write_pid_pointer(root, os.getppid(), "sess-B")
+    r = verbs.focus_note(root, "why the resolver changed")
+    assert r["session"] == "sess-B" and r["session_source"] == "pointer", r
 
 
 def test_explicit_session_still_wins_over_the_pointer(root, long_lived, monkeypatch):
@@ -95,8 +137,9 @@ def test_explicit_session_still_wins_over_the_pointer(root, long_lived, monkeypa
 
 
 def test_cli_resolves_through_the_claude_pid_pointer(root, monkeypatch):
-    """A Bash-tool `rmx` run: $CLAUDE_PID names the owning Claude process, so CLI and MCP land in
-    the same ring even while another session wrote the newest one."""
+    """A Bash-tool `rmx` run: $CLAUDE_PID names the owning Claude process (an ANCESTOR, r1 #s-1;
+    the test's own pid counts as its own chain), so CLI and MCP land in the same ring even while
+    another session wrote the newest one."""
     monkeypatch.setattr(verbs, "_LONG_LIVED", False)
     monkeypatch.delenv("RMX_SESSION", raising=False)
     monkeypatch.setenv("CLAUDE_PID", str(os.getpid()))
@@ -139,3 +182,25 @@ def test_owner_is_the_nearest_claude_ancestor_when_claude_pid_is_unset(tmp_path)
         capture_output=True, text=True, env=env, timeout=30).stdout.split()
     assert len(out) == 2, out
     assert out[1] == out[0]
+
+
+def test_promote_edges_sends_the_resolved_session_to_the_daemon(root, monkeypatch):
+    """r1 #s-3: `focus promote-edges --apply` resolved its session INSIDE the daemon, which has
+    neither $CLAUDE_PID nor a claude ancestor, so it always took the newest ring. The CLI now
+    resolves it and passes it."""
+    from refmatrix import cli as cli_mod
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+    monkeypatch.delenv("RMX_SESSION", raising=False)
+    monkeypatch.setenv("CLAUDE_PID", str(os.getpid()))
+    _ring(root, "sess-B", age_s=60)
+    _ring(root, "sess-C", age_s=0)
+    stm.write_pid_pointer(root, os.getpid(), "sess-B")
+    sent = {}
+
+    def fake_call(op, args, timeout=0.0):
+        sent.update(args)
+        return {"ok": True, "result": {"would_promote": 0, "pairs": []}}
+    monkeypatch.setattr(cli_mod, "_memory_daemon_call", fake_call)
+    r = CliRunner().invoke(main, ["focus", "promote-edges"])
+    assert r.exit_code == 0, r.output
+    assert sent.get("session") == "sess-B", sent

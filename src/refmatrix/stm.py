@@ -141,48 +141,84 @@ def pid_pointer_path(root: Path, pid: int) -> Path:
     return stm_dir(root) / "by-pid" / f"{int(pid)}.json"
 
 
-def owner_claude_pid() -> int | None:
-    """The Claude Code process this one runs under (bug-109): `$CLAUDE_PID` (set for its Bash-tool
-    children), else the nearest ancestor whose command is `claude` (the MCP server is spawned
-    without `$CLAUDE_PID`, and its parent IS the Claude process). None outside Claude Code."""
-    env = os.environ.get("CLAUDE_PID")
-    if env and env.isdigit():
-        return int(env)
+def _process_table() -> dict[int, tuple[int, str]] | None:
+    """pid -> (ppid, command basename) for every process, from ONE `ps -A` call; None if `ps`
+    cannot run."""
     import subprocess
-    pid = os.getppid()
-    for _ in range(4):
-        if pid <= 1:
-            return None
-        try:
-            out = subprocess.run(["ps", "-o", "ppid=,comm=", "-p", str(pid)], capture_output=True,
-                                 text=True, timeout=2.0).stdout.split(None, 1)
-        except (OSError, subprocess.SubprocessError):
-            return None
-        if len(out) < 2 or not out[0].isdigit():
-            return None
-        if Path(out[1].strip()).name == "claude":
+    try:
+        out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,comm="], capture_output=True,
+                             text=True, timeout=3.0).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    table: dict[int, tuple[int, str]] = {}
+    for line in out.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit():
+            table[int(parts[0])] = (int(parts[1]), Path(parts[2].strip()).name)
+    return table
+
+
+def owner_claude_pid(*, long_lived: bool = False) -> int | None:
+    """The Claude Code process this one runs under (bug-109).
+
+    The long-lived MCP server is spawned BY the Claude process, so its owner is `os.getppid()`
+    (19.0 R5) and nothing in its own environment is consulted (r1 #s-1: an inherited
+    `$CLAUDE_PID` can name an OUTER Claude). A per-call process (a hook, a Bash-tool `rmx`)
+    accepts `$CLAUDE_PID` only when that pid is one of its real ancestors, else takes the nearest
+    ancestor whose command is `claude`. None outside Claude Code."""
+    if long_lived:
+        return os.getppid()
+    table = _process_table()
+    if not table:
+        return None
+    chain, pid = [], os.getpid()
+    for _ in range(16):
+        chain.append(pid)
+        nxt = table.get(pid)
+        if not nxt or nxt[0] <= 1 or nxt[0] in chain:
+            break
+        pid = nxt[0]
+    env = os.environ.get("CLAUDE_PID")
+    if env and env.isdigit() and int(env) in chain:
+        return int(env)
+    for pid in chain[1:]:
+        if table.get(pid, (0, ""))[1] == "claude":
             return pid
-        pid = int(out[0])
     return None
+
+
+def record_pointer_error(root: Path, reason: str, **fields) -> None:
+    """Append one line to `stm/by-pid/_errors.jsonl` (bug-109 r1 #b-1). Every hook ends in
+    `2>/dev/null || true`, so stderr is not a channel: a pointer that was not written, or a
+    resolve that fell back to guessing, is recorded HERE where `rmx` can surface it."""
+    p = stm_dir(root) / "by-pid" / "_errors.jsonl"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"t": time.time(), "reason": reason, **fields}) + "\n")
 
 
 def write_pid_pointer(root: Path, pid: int, session: str) -> bool:
     """Record that Claude process `pid` is now running `session` (bug-109). The input hook calls
     this at the top of every turn, so the first prompt after a `/clear` re-points it. Returns True
-    when the file was (re)written, False when it already named `session`: the common case costs
-    one small read and no `ps` call (session ids are unique, so a pointer still naming this
-    session cannot belong to an earlier holder of the pid)."""
+    when the file was (re)written, False when it already named `session` (the common case: one
+    small read, no `ps` call; session ids are unique, so a pointer still naming this session
+    cannot belong to an earlier holder of the pid) or when it was REFUSED: a pid whose start time
+    `ps` cannot report would be stored with `pid_start: null` and then ignored forever by
+    `read_pid_pointer`, so it is recorded as `ps-failed` instead (r1 #b-1)."""
     p = pid_pointer_path(root, pid)
     try:
         if json.loads(p.read_text(encoding="utf-8")).get("session") == session:
             return False
     except (OSError, ValueError):
         pass
+    start = _proc_start(pid)
+    if start is None:
+        record_pointer_error(root, "ps-failed", pid=int(pid), session=session)
+        return False
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps({"session": session, "pid": int(pid),
-                               "pid_start": _proc_start(pid), "t": time.time()}),
-                   encoding="utf-8")
+    tmp.write_text(json.dumps({"session": session, "pid": int(pid), "pid_start": start,
+                               "t": time.time()}), encoding="utf-8")
     tmp.replace(p)
     return True
 
