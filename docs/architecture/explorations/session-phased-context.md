@@ -96,6 +96,12 @@ Open design points, for the plan-19 task that owns this:
 
 ## What must come first {#prereqs}
 
+- **Clean STM clusters (user, 2026-10-14: "lets add fixes to the STM before the phased context
+  work").** Phase detection and the topic cache both key on STM clusters, and on this session they
+  were led by typos ("aggre"), truncated identifiers from the agent's own heredoc scripts
+  (`re.searc`, `s.repla`), a background subagent's tool calls, and hand-back boilerplate. Task
+  19.0 fixes that first ([[plan-review-2026-10-14#t5-stm-hygiene]]). {#prereq-stm-hygiene}
+
 - **An instrument.** Nothing records whether injected context is USED. Plan-21.1's recall-event
   schema is that instrument; plan-19 needs the same for memory. Without it, "phased beats fixed"
   is a story, not a measurement ([[feedback_causal_story_before_evidence]]). {#prereq-instrument}

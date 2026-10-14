@@ -141,6 +141,7 @@ Findings: 19 #b-1..b-7, #s-1..s-10, MEH; the phased-context exploration and topi
 | d5b | New task **19.6** (Wave 3) owns phasing AND the topic cache for the whole per-prompt budget (recall + scan-prompt). Depends on 19.1, d5a, 19.5's probe and fixed baseline, and 21.1's fields; plan-21 only measures. Turn count is logged, never a phase signal. | user, 2026-10-14 |
 | d5c | "Asserted" = `type: feedback` or explicitly user-protected (a learner auto-protect does not count), ~16-20% of memories; inbound `rel:` edges are a tie-break only. Measured 2026-10-14 over 326 memory files: has-any-rel 298 (91%), inbound-rel target 222 (68%), inbound ≥ 3 92 (28%), feedback 52 (16%). | user, 2026-10-14 |
 | d5d | 19.5's probe decides PreCompact: if its stdout does not reach the agent, PreCompact stops doing recall and keeps only save-state/promote. Until then PreCompact hits are not counted as delivered. | user, 2026-10-14 |
+| d5e | STM cluster quality is fixed BEFORE the phased-context work: new task **19.0 (STM cluster hygiene)**, a hard prerequisite of 19.6, scheduled no later than Wave 2. Scope in #t5-stm-hygiene. | user, 2026-10-14 ("lets add fixes to the STM before the phased context work") |
 
 Spec fixes taken without a decision: no `${RMX_HOOK_BUDGET_CHARS}` interpolation, AC runs with it
 unset (#b-2); operational reachability — run each fold command, page through, find every member
@@ -150,6 +151,30 @@ unset (#b-2); operational reachability — run each fold command, page through, 
 (#s-3); name-keyed global hits (#s-4); 19.3/19.4 cycle broken (#s-6); stable `unlabeled-N` names
 and stale-subject reaping (#s-7); atomic single-writer index files (#s-8); decay-free `check()`
 (#s-9); MEH items. {#t5-fixes}
+
+Task 19.0 scope (d5e), from this session's frozen ring
+(`workflow/review-output/stm-export-db80475a-20261014.jsonl`, 502 events: 416 tool, 27 input,
+22 say, 21 git, 16 reason; gitignored evidence, regenerate with `rmx focus export --json`):
+1. **Agent script bodies are not focus.** 68 tool events carried heredoc/inline scripts; their refs
+   are truncated locals and stdlib calls (`r.get` 32, `re.searc` 21, `collections.Count` 18,
+   `glob.glob` 16, `json.loads` 13, `s.repla` 10, `m.group` 10). Extract refs from a tool event's
+   command line and paths, never from a heredoc or `-c` script body; drop dotted refs whose head is
+   a stdlib module or a short local. Reuse `scan._PROMPT_STOPWORDS` per
+   `feedback_reuse_shared_stoplist`, plus a separate documented code-noise set.
+2. **Subagent tool events are not the parent's focus.** While the decision-log review ran in the
+   background, its `sed`/`python3` calls landed in THIS session's ring (same session id), and the
+   composite's lead topic became its `glob.glob`/`re.findi` members. Record subagent events under
+   the agent's own id (or drop them from the parent's focus graph), keeping them in the ring for
+   provenance.
+3. **Hand-back envelopes are ambient.** `<agent-message` / subagent hand-back text joins
+   `<channel`, `<task-notification`, `[SYSTEM NOTIFICATION` in `is_ambient_text`.
+4. **Typos do not become topic labels.** A prompt token with no corpus match that sits within edit
+   distance 2 of a known term folds to it ("aggre" → agree, "llok" → look); an unmatched,
+   non-code-shaped token can be a member but never a cluster label.
+Acceptance: replay the frozen ring through `rmx focus rebuild --dry-run` (or its successor) and
+the topic labels name this session's real threads (Wave 0, spec reviews, decision walk, test
+isolation, plan-16/19/21/22/23) with none of the junk refs above as a label or member; the same
+replay at HEAD shows the junk (RED). {#t5-stm-hygiene}
 
 ## Topic 6: audited removal and repair (plan-22, plan-16's 16.6) {#t6}
 
