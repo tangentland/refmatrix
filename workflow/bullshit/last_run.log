@@ -4,3 +4,4 @@
 2026-10-14T11:13:20-0700 commit=3104a81 verdict=DIRTY findings=22 (8B/7S/7M) report=2026-10-14-1113-plan22-spec-review-moved-has-no-key-and-repairs-do-not-replay-3104a81.md
 2026-10-14T11:13:22-0700 commit=3104a81 verdict=DIRTY findings=23 (3B/13S/7M) report=2026-10-14-1113-plan21-spec-review-shared-schema-cannot-serve-its-consumers-3104a81.md
 2026-10-14T11:13:27-0700 commit=3104a81 verdict=DIRTY findings=23 (7B/10S/6M) report=2026-10-14-1113-plan19-spec-review-subject-noise-and-vacuous-reachability-3104a81.md
+2026-10-14T11:26:23-0700 commit=cd7c923 verdict=DIRTY findings=15 (2B/6S/7M) report=2026-10-14-1126-plan16-spec-review-r5-routing-mutation-still-blind-and-provenance-cannot-replay-cd7c923.md
