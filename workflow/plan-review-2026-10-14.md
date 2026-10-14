@@ -343,6 +343,7 @@ clone; d8d's predicate owned by 21.1 in `telemetry.py`; the dead-letter file kep
 | d9u | Round-4 spec re-reviews of plans 16/17/19/21/22/23 start at the round-3 commit. | user, 2026-10-14 ("start them") |
 | d9v | 19.6's pre-registered ranges are CONFIRMED as written: the phase thresholds (`w_min` 2, `j_warm` 0.15, `j_return` 0.20), Tables A-D, `N = 8`, `K = 8`, `C = 6`. Settles d9f; 19.6's status lines flip to CONFIRMED after its round-4 re-review lands. | user, 2026-10-14 ("tables confirmed as written") |
 | d9w | `tests/conftest.py` refuses to run when `refmatrix` imports from a different tree than the tests (`.venv-eval`'s editable install silently tested the dev tree from a clone). Shipped on the bug-109 branch (54e13c6), reaches master with it. | user, 2026-10-14 ("yes add the guard") |
+| d9x | Test isolation gets two outer tiers on top of 23.0's in-process sandbox: a separate macOS user `rmxtest` (full suite before any merge to `master`) and a Tart macOS VM (before every deploy, and on any disagreement), written into 23.0 as R7/R8 with AC-7/AC-8. A Linux container cannot exercise launchd or macOS socket limits, so it is not one of them. Operator setup (user, sudoers, Tart install) is proposed and run by the user. | user, 2026-10-14 ("both, write it into 23.0") |
 
 ## The wave list, all waves (2026-10-14) {#t10-waves}
 

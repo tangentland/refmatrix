@@ -14,7 +14,8 @@ metadata:
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
 > Status: Pending (revision round 2, 2026-10-14: AC-4 checks content, ns23-2; see
-> [[#rev-round-2]])
+> [[#rev-round-2]]. Amended after 878647c by d9w/d9x: three isolation tiers, R7-R9, see
+> [[#amend-2026-10-14-lanes]])
 > Depends on: — (the FIRST build of Wave 1, in parallel with 23.4)
 > Blocks: 23.2, 23.1, 23.3, and every Wave 1 task's tests (21.1 needs only this task)
 
@@ -89,6 +90,61 @@ Facts at HEAD `b1c4324` the design depends on:
    (named in the implementation summary with the line it read from the live machine), never
    `--ignore`d or `-k`'d away (CLAUDE.md #system-dependent-tests). {#r6}
 
+## Isolation tiers: in-process, separate user, macOS VM (d9w, d9x) {#amend-2026-10-14-lanes}
+
+Added 2026-10-14 after the round-4 re-review started at 878647c; the next review reads it as new
+text. R1-R6 isolate one test run IN-PROCESS: every run, every developer, every agent. They cannot
+remove what the run shares with the live machine: the same user (so the same `~`, Keychain,
+launchd `gui/<uid>` domain and file permissions), the same kernel, `/tmp` and port namespace. Two
+outer tiers remove those, each for a different gate. Tiers nest: R1-R4 still run inside both.
+
+| tier | where | isolates | runs when |
+|---|---|---|---|
+| 0 in-process (R1-R6, R9) | the developer's own user and venv | env, roots, sockets via the audit hook | every run |
+| 1 separate user (R7) | macOS user `rmxtest` on this Mac | `~`, `~/.refmatrix`, launchd `user/<uid>` domain, file permissions | the full suite before any merge to `master` |
+| 2 macOS VM (R8) | a Tart VM on Apple's Virtualization framework | everything: kernel, `/tmp`, ports, `gui/<uid>` launchd, disk | before every deploy; on a tier-1/tier-0 disagreement |
+
+7. **R7 Tier 1: the separate-user lane.** {#r7}
+   - **Setup, once, by the operator** (needs admin; the script prints the commands and refuses to
+     run them itself): a standard, non-admin user `rmxtest` (`sysadminctl -addUser rmxtest`); a
+     sudoers drop-in allowing `tholley` to run ONLY `scripts/test-lane-user.sh` as `rmxtest`
+     without a password; `rmxtest`'s own `.venv-lane` built from `pyproject.toml`; a READ-ONLY
+     copy of the HuggingFace model cache under `~rmxtest/.cache/huggingface`, loaded offline
+     (`HF_HUB_OFFLINE=1`, the external-calls rule). Recorded in `docs/INTEGRATION.md`.
+   - **Preconditions the script asserts, failing loudly:** `~tholley/.refmatrix`, every
+     registered store's `.refmatrix/` and `~tholley/Library/LaunchAgents` are NOT readable by
+     `rmxtest` (`sudo -u rmxtest test -r <path>` is false for each); the hub port 7777 is not
+     bound by an `rmxtest` process.
+   - **Per run:** `scripts/test-lane-user.sh <sha>` clones that commit into
+     `~rmxtest/lane/<sha>` (`git clone --no-hardlinks`, then checkout), runs the full suite there
+     as `rmxtest` with `PYTHONPATH=<lane>/src` prepended (R9 enforces it), and copies the log back
+     to `workflow/review-output/pytest-lane-user-<sha>.log`. Any test that binds a TCP port binds
+     an ephemeral one; 7777 is in R3's deny set already.
+   - **Known limits, stated, not hidden:** `sudo -u` creates no `gui/<uid>` launchd domain, so a
+     test that bootstraps into `gui/` cannot run here. Each such test is LISTED by the script
+     (from a first run, by test id, with its error) and runs in tier 2; it is never skipped to
+     get green (R6). Same kernel, `/tmp` and ports as the host: R1-R4 still apply.
+8. **R8 Tier 2: the macOS VM lane (Tart).** {#r8}
+   - **Setup, once, by the operator:** install Tart (Cirrus Labs) — a new dependency, so it is
+     proposed and approved, never installed by an agent (CLAUDE.md #no-workarounds). Build one
+     golden image `rmx-golden` from a macOS base image matching the host's major release:
+     auto-login of a test user (so a `gui/<uid>` launchd domain exists), Python 3.14, the lane
+     venv, the offline model cache, SSH enabled. Pulling the base image is the one explicit
+     network step; nothing at run time reaches the network.
+   - **Per run:** `scripts/test-lane-vm.sh <sha>`: `tart clone rmx-golden rmx-run-<sha>` (a
+     copy-on-write clone), `tart run --no-graphics` with the lane clone of `<sha>` shared
+     READ-ONLY, copy it onto the VM disk, run the full suite over SSH, copy the log to
+     `workflow/review-output/pytest-lane-vm-<sha>.log`, `tart stop`, `tart delete`. Nothing on
+     the host is shared writable.
+   - **Limits:** Apple's licence allows at most two macOS VMs per Mac at once; the script refuses
+     a third. Boot time, run time and disk are recorded per run in
+     `workflow/review-output/lane-vm-runs.jsonl` (unmeasured today; the first run measures them).
+9. **R9 The checkout guard (d9w, shipped in bug-109's 54e13c6).** `tests/conftest.py` raises
+   `pytest.UsageError` when `refmatrix.__file__` is not under `<checkout>/src`, because
+   `.venv-eval`'s editable install silently tests the dev tree from any clone. R1's redirect
+   keeps it as its FIRST statement after `_REPO`, so a mis-pointed run never reaches the sandbox
+   at all. Tiers 1 and 2 depend on it to prove which code they ran. {#r9}
+
 ## Acceptance criteria {#acceptance}
 
 1. **Redirect canary.** A test asserts that `taxonomy.user_home()`, `discovery.registry_path()`,
@@ -133,6 +189,20 @@ Facts at HEAD `b1c4324` the design depends on:
      passes the mutated run is the defect. {#ac-4}
 5. **Short root.** A test asserts `len(str(sandbox / "s" / ".refmatrix" / "rmxd.sock")) <= 100`.
    {#ac-5}
+6. **Checkout guard (R9).** Through `pytester`, an inner session whose `sys.path` imports
+   `refmatrix` from a decoy tree fails with `pytest.UsageError` naming both paths, before any test
+   is collected. Mutation: compare against `_REPO` without `/src`; the decoy session must then
+   collect, and the outer test fails. {#ac-6}
+7. **Tier 1 isolation (R7).** On the lane, at one sha: (a) the precondition check fails when any
+   one denied path is made readable by `rmxtest` (operator-run, recorded in the summary); (b) the
+   lane log's collected count equals the developer run's at the same sha, plus the listed
+   `gui/`-only tests (a silently shrunk collection is the defect, not a pass); (c) AC-4's
+   content check over `~tholley`'s four live logs finds 0 lane rows; (d) a deliberately leaking
+   test (writes `~/.refmatrix/query.log`) writes into `~rmxtest`, never `~tholley`. {#ac-7}
+8. **Tier 2 isolation (R8).** On the VM, at the same sha: (a) every test tier 1 listed as
+   `gui/`-only RUNS (none skipped); (b) the pass set equals tier 1's plus those tests, and any
+   difference is reported per test id; (c) after `tart delete`, the host's live logs carry 0 rows
+   from the run (AC-4's check), and `tart list` shows no `rmx-run-*` VM. {#ac-8}
 
 ## Test strategy {#test-strategy}
 
@@ -162,3 +232,11 @@ before/after stat runs outside pytest. Logs go to `workflow/review-output/` (the
 |---|---|
 | ns23-2 (size + mtime of live logs fails on normal activity), #t9-fixes "23.0 AC-4 checks added row content" | [[#r1]] (`RMX_SANDBOX_TAG`), [[#ac-4]] |
 | nm23-2 (d8d predicate owner is `telemetry.py`) | [[#ac-4]] (`telemetry.is_test_artifact_row`, owned by 21.1 R5) |
+
+## Amendment after round 3 (2026-10-14) {#rev-amend-lanes}
+
+| finding / decision | answered at |
+|---|---|
+| d9w (checkout guard; `.venv-eval` editable install tested the dev tree from a clone) | [[#r9]], [[#ac-6]] |
+| d9x (user: "both, write it into 23.0": separate-user lane and Tart macOS VM lane) | [[#amend-2026-10-14-lanes]], [[#r7]], [[#r8]], [[#ac-7]], [[#ac-8]] |
+
