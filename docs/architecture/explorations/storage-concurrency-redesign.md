@@ -291,6 +291,35 @@ measurements support: **keep the loop in C/C++, and keep each bitmap operation b
   aggregate functions would put the bitmap and the loop in the same process as the SQL. That
   serves options A and C, and it is the larger prize than a faster sidecar build.
 
+## Option F: one SQLite file for catalog and vectors (`sqlite-vec`) {#option-f}
+
+Added 2026-10-14 (d9n, user). UNMEASURED. SQLite in WAL mode lets many processes read while one
+writes, so hooks and CLIs could read the live file without the `catalog.read.duckdb` replica. The
+`sqlite-vec` extension (C, no dependencies; pre-1.0 as far as known, version unverified) adds
+`vec0` virtual tables with exact k-NN (L2/cosine), metadata columns filterable during the search,
+and int8/binary quantization.
+
+- **What refmatrix uses Lance for today** (`vectors.py`, read 2026-10-14): exact L2 `nearest` with
+  an optional `id IN (…)` filter and NO ANN index (`create_index` is never called);
+  `merge_insert("id")` upserts; `delete`; one dataset per (partition, kind); 384-dim float32
+  (bge-small). This store: `concept` 76,870 rows, `code` 7,008, `doc` 759, `memory` 432,
+  `sessions-refmatrix/memory` 77. `sqlite-vec`'s exact search covers this feature set.
+- **Buys:** catalog and vectors in one database and one transaction, so the dual-write orphan
+  class (17.1's reap, `vectors_restore`) and the Lance version churn (plan-17) go away;
+  cross-process readers without a replica.
+- **Costs:** SQLite's bulk writes and analytical reads are slower than DuckDB's (the 2026-06-04
+  snapshot-tier note estimated `bulk_link` ~5-10x, an estimate, not a measurement); DuckDB's
+  in-process parallel writers (Option A's premise) are gone; the existing SQLite backend
+  (`backend.py`, opt-in since 2026-05-16) would become the default again.
+- **Does not fix by itself:** bug-098 / bug-105 live in the shared Python binding, above the
+  engine; Option A or an equivalent is still needed.
+- **Feasibility checked:** `.venv-eval`'s Python has SQLite 3.53.1 with extension loading;
+  `sqlite_vec` is not installed.
+- **Measurement F1:** on a copy of this store, the same workload under both engines — ingest
+  (`bulk_link`), `content_rank`, the recall hook's k-NN (k=10 over `concept`), and a concurrent
+  reader during a write — reported with the go/no-go-ranges rule, ranges written before the run.
+{#option-f-body}
+
 ## Measurements that decide it {#measure}
 
 1. **Small-write rate per op type,** from `facts.log`: what option C or D must batch.

@@ -327,6 +327,9 @@ clone; d8d's predicate owned by 21.1 in `telemetry.py`; the dead-letter file kep
 |---|---|---|
 | d9k | The ADR-0004 amendment ([[refmatrix/adr-0004-unified-location-space-index#amend-2026-10-14]]) is APPROVED and folded into `#rule-floor`, `#rule-no-delete` and `#rule-asserted-floor`. | user, 2026-10-14 ("1 - yes") |
 | d9l | 23.4's amended go/no-go ranges are CONFIRMED as written in `task-23.4#ranges`. | user, 2026-10-14 ("2 - yes") |
+| d9m | 23.4's PROCEDURE is corrected under the confirmed numbers (round-3 #ns23-r3-4): the integrity check compares by NAME, not sequence-assigned id; no 60 s cap (runs drain to completion, as the serial reference does); a failed transaction retries in place, in key order; the workload's size and window are pinned; AC-1 orders runs; a positive control proves a correct concurrent run passes. | user, 2026-10-14 ("a - yes") |
+| d9o | The removal paths the approved ADR text omitted (bug-107) are classified: `purge_path` on a deleted/ignored file = derived cleanup WITH a manifest (learned rows go to the manifest, never silently away); sync's GMD legacy purge on a `.md` edit = a BUG, fixed to keep learned rows (16.6's verifier judges them); `vacuum`'s orphan-evidence delete = derived cleanup with a manifest AND a `facts.log` event; `fold_concept_dups` = a merge, a plan-22 entry point owned with merge writes by the helix plan; `unprotect` = not removal, but it writes a `facts.log` event with its source so user and learner actions stay distinguishable. Folded into ADR-0004 `#a14-removal-scope`. | user, 2026-10-14 ("3 - agree") |
+| d9n | Option F (one SQLite file holding catalog and vectors via `sqlite-vec`) is added to the storage exploration as an UNMEASURED option, with a small benchmark task: the same queries on a copy of this store under both engines. | user, 2026-10-14 ("b - yes") |
 
 ## The wave list, all waves (2026-10-14) {#t10-waves}
 

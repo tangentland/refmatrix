@@ -382,6 +382,13 @@ rel: amends -> [[#rule-no-delete]]
    - **`untrack`** (a path the user removed from the corpus) and **`prune-noise --drop`** are
      listed exceptions: each prints what it removes and writes the same manifest form; neither is
      run by a timer or a counter.
+   - **The paths this list first missed** (bug-107; classified by the user 2026-10-14, d9o):
+     `purge_path` for a deleted or ignored file is derived cleanup WITH a manifest (learned rows go
+     to it); sync's GMD legacy purge on a `.md` edit is a BUG and keeps learned rows (16.6's
+     verifier judges them); `vacuum`'s orphan-evidence delete is derived cleanup with a manifest
+     and a `facts.log` event; `fold_concept_dups` is a merge, a plan-22 entry point owned with
+     merge writes by the helix plan; `unprotect` is not removal but writes a `facts.log` event
+     carrying its source.
    {#a14-removal-scope}
 4. **Stale compiled subjects are marked, not removed.** Compile marks a subject `stale`; it stays
    protected and hidden from recall; removal is plan-22's `stale-subject` class (d8a, task 22.1a).
