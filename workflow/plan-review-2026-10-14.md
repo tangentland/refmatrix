@@ -150,3 +150,26 @@ unset (#b-2); operational reachability — run each fold command, page through, 
 (#s-3); name-keyed global hits (#s-4); 19.3/19.4 cycle broken (#s-6); stable `unlabeled-N` names
 and stale-subject reaping (#s-7); atomic single-writer index files (#s-8); decay-free `check()`
 (#s-9); MEH items. {#t5-fixes}
+
+## Topic 6: audited removal and repair (plan-22, plan-16's 16.6) {#t6}
+
+Findings: 22 #b-1..b-8, #s-1..s-7, MEH; 16 r5 #b-r5-1, #s-r5-3..s-r5-5; plan-16 dn-2.
+
+| id | decision | by |
+|---|---|---|
+| d6a | The 48 ambiguous global entities are KEPT, marked ambiguous (plan-22 principle 3, decay rule). This supersedes the 2026-10-07 "forget 611" for those 48 only. | user, 2026-10-14 |
+| d6b | The 476 uniquely verified global rows: rows whose file is under a registered project root MOVE to that project's store; rows under trees no store owns get an AUDITED forget whose manifest keeps the rows (restorable; grep relearns on real use). Supersedes the 2026-10-07 rewrite-in-global (it would put code entities in the memory-only global store, 0.65.0 guard). Needs a cross-store write path. | user, 2026-10-14 |
+| d6c | `query/*` rows with df ≤ 1 and a valid evidence row are NOT a cull class (no removal by counter threshold). | user, 2026-10-14 |
+| d6d | 16.6 is split by dependency: the sidecar table, backfill and read-time marks go to Wave 1 after plan-23; the learn-time provenance write moves into 16.1 (Wave 2); 22.3 (bug-086 + bug-101 rows) and the classes that need no provenance run in Wave 1 without 16.6. Settles plan-16 dn-2 and plan-22 #b-7. | user, 2026-10-14 |
+| d6e | The audit is an MCP verb (read-only); apply is CLI-only behind dry-run + manifest. | user, 2026-10-14 |
+
+Spec fixes taken without a decision: 16.6 records a line hash; "moved" repairs per (concept, file)
+set (#b-1); provenance carries tool + dialect + line hash, pre-provenance rows re-checked under
+the most permissive reading, the verifier speaks grep's dialect (#b-2, 16 #b-r5-1); row-level
+`facts.log` events (evidence delete / re-point / rename) that rebuild and restore replay, restore
+checked by name incl. evidence + protection (#b-3); ablation gate on a copy of THIS store (#b-5);
+empty-learned redefined so it can fail (#b-6); `bind` + two-partition AC, no lossy queue, re-check
+before apply, rename merge-on-collision with an event, learner auto-protect distinguished, alias
+repair from the alias's own text, a row-level removal primitive, 22.3 AC on bug-086's symptom
+(#s-1..#s-7); read-time marks distinguish reader-rule drops from staleness, sidecar key survives
+`replica_merge` (16 #s-r5-3, #s-r5-4); MEH items. {#t6-fixes}
