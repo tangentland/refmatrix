@@ -238,6 +238,12 @@ rel: derives-from -> [[bsd-decision-log-review-a192ba2]]
 | d8f | Privacy (public repo): raw `query.log` question sources (d4c) and raw STM rings (d5e) stay local and gitignored. Only a content hash and a REDACTED fixture (prompts and paths scrubbed) are committed; 19.0 and 21.4 tests run on the redacted fixture. |
 | d8g | Apply interface (amends d6e): one verb on both surfaces (parity test holds); apply requires a manifest id from a prior dry-run in the same store AND `--confirm <manifest-hash>`. The gate is the manifest, not the surface. |
 
+### Added after the close-out {#t8-added}
+
+| id | decision | by |
+|---|---|---|
+| d8h | 19.0 item 2 (subagent events out of the parent's focus) gets a fallback ladder: (1) the hook envelope's subagent id if present; else (2) match a PostToolUse event (tool name + input digest + timestamp window) against the session's `subagents/agent-<id>.jsonl` transcripts, labelled by `agent-<id>.meta.json` (`agentType`, `description`); else (3) keep the event in the ring as `origin: unattributed`, never a cluster label. Attributed events live under `agent:<id>`, out of the parent's focus graph and composite. The TUI status lines are not persisted and are not a source. Owns bug-103. | user, 2026-10-14 ("add the subagent differentiation to plan 19") |
+
 ### Amendments carried without a new decision {#t8-amendments}
 
 - **d1c/d6d:** 22.1 splits; **22.1a** (classes needing no provenance) runs in Wave 1 and feeds
