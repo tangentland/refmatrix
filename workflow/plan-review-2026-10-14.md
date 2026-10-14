@@ -281,3 +281,42 @@ rel: derives-from -> [[bsd-decision-log-review-a192ba2]]
 
 23.0 ∥ 23.4 (Option A measurement) → 23.2 → 23.1 (+ tick registry) → 23.3; after 23.1: 16.6
 Wave-1 slice → 22.1a → 22.2 → 22.5 → 22.3; 17.1 → 17.2; 19.0, 19.1, 19.2; 21.1 needs only 23.0.
+
+## Re-review round (32dde06), answered {#t9}
+
+The three paired re-reviews ([[bsd-plan19-21-spec-rereview-32dde06]],
+[[bsd-plan16-22-spec-rereview-32dde06]], [[bsd-plan23-17-spec-rereview-32dde06]]) all returned
+NEEDS-REVISION. The user, 2026-10-14: "go with your recommendations". Later rows win.
+
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06]]
+rel: derives-from -> [[bsd-plan16-22-spec-rereview-32dde06]]
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-32dde06]]
+
+| id | decision | by |
+|---|---|---|
+| d9a | **bug-105 is hotfixed NOW, ahead of Wave 1** (as bug-093 was): the fragment cache is rebound/keyed with the partition, and every partition's fragments are rebuilt from `entity_links` (derived, loses nothing). Live-store repair is announced and backed up first. Plan-23's `bind` still owns the contract going forward. | user, 2026-10-14 |
+| d9b | Supersedes d8c's "≥ 114 forgotten" (the probe was misread: all 362 verified rows matched under the global store's own root). Global learned rows that read correctly but sit under no project store are decided AFTER 22.5's dry run shows the real split; 22.5 R1 reports the counts and applies nothing for that bucket until the user rules. | user, 2026-10-14 |
+| d9c | plan-17 bulk orphans above the ratio cap: a cap refusal skips the reap but still compacts; release requires `--confirm-orphans <sha of the dry-run orphan list>`. | user, 2026-10-14 |
+| d9d | 23.4's go/no-go ranges are amended first (workload includes `bitmap_fragments` writes; a broken copy is a test failure, not NO-GO; expected counts and "worst of three" defined; no live-file stat), then presented for the user's confirmation before the run. | user, 2026-10-14 |
+| d9e | 19.2 stores raw per-evidence counts; weights and floors apply at READ time. `base` 0.25, `asserted_floor` 1.0, weights 1/2 are accepted as tunable starting defaults. | user, 2026-10-14 |
+| d9f | 19.6's tables A-C and N=8/K=8 are marked PROPOSED; the user confirms them before 19.6 starts (Wave 3, after 19.5's baseline exists). | user, 2026-10-14 |
+| d9g | The 235 legacy fixture rows in the live `query.log` are excluded by exact shape (the `alpha|beta` fixture pattern with no `cwd`) and reported as their own count. | user, 2026-10-14 |
+| d9h | 21.4's question set is drawn from this project's `query.log` only. | user, 2026-10-14 |
+| d9i | One ADR-0004 amendment, drafted by the orchestrator for the user's approval: the floor formula (`base·(1+log1p(…))`, never zero) and removal-path scoping (`forget`, `prune-noise --drop`, `untrack`, `memory bulk-forget` either route through plan-22's audited path or carry a stated exception). | user, 2026-10-14 |
+| d9j | plan-22 can close with 22.4 handed to the future helix plan. | user, 2026-10-14 |
+
+Spec fixes for the next revision round, taken without a decision (from the re-reviews'
+"specs can settle" lists): 19.0 matches subagent events by `tool_use_id` (not a time window) and
+filters refs at `cli._tool_event_fields`; 21.1 events gain `partition`, `cwd`, `root`, one owner
+for `delivered`, one unit (bytes); 19.2's channel enum follows 21.1; AC-6/AC-7 reconciled (legacy
+rows counted in totals with a separate printed count); `used` evidence fully specified incl.
+global destination; 22.1 calls 16.6's verifier, which returns the matching line set and closes
+its three false-stale holes (`-m`, absolute-path `--exclude`, exit 2); 16.6 provenance gets a
+`facts.log` event; 22.2/22.5 update provenance keys; 22.1a's candidate set matches the probe;
+sandbox-safe catalog clones for the census ACs; 16.2 fixture scrubber; 23.1 learn evidence
+insert-if-absent (bug-106); 23.3 stamps a file only after its semantic pass, and takes bug-093's
+op-start log line; 23.0 AC-4 checks added row content, not size/mtime; 17.1 uses 23.1's real
+names; 17.2 keeps its own registry (17.2 ≠ 23.1 tick registry); 17.2 `still_running` gets a
+ceiling; arming per (store, step) for every registered step; 17.3 ACs on a synthetic 30k-version
+clone; d8d's predicate owned by 21.1 in `telemetry.py`; the dead-letter file kept with a re-drive.
+{#t9-fixes}
