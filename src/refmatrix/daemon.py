@@ -5388,7 +5388,10 @@ def _op_repair_fragments(d: Daemon, args: dict) -> dict:
                                        manifest_dir=d.root / "backups")
     d._log(f"repair_fragments dry_run={dry_run} moved={rep['moved']} "
            f"added_from_links={rep['added_from_links']} "
-           f"dropped_dead={rep['dropped_dead']} manifest={rep['manifest']}")
+           f"dropped_dead={rep['dropped_dead']} "
+           f"dropped_dead_concept={rep['dropped_dead_concept']} "
+           f"links_skipped={rep['links_skipped']} unread_dirs={rep['unread_dirs']} "
+           f"manifest={rep['manifest']}")
     if not dry_run and rep["rows_changed"]:
         d._request_snapshot()
     return rep

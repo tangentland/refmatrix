@@ -4287,6 +4287,18 @@ def partition_merge(src: str, dst: str, dry_run: bool, yes: bool,
         f"saved_queries={result['saved_queries']} "
         f"tracked_files={result['tracked_files']}"
     )
+    # bug-105 r2 #s2-1: the merge re-homes fragment bits; its repair report reaches the operator.
+    fr = result.get("fragments_repair")
+    if fr:
+        console.print(
+            f"fragments repair: moved={fr['moved']} added_from_links={fr['added_from_links']} "
+            f"dropped_dead={fr['dropped_dead']} "
+            f"dropped_dead_concept={fr['dropped_dead_concept']} "
+            f"links_skipped={fr['links_skipped']}")
+        for d in fr.get("unread_dirs") or []:
+            console.print(f"  [yellow]unread, left in place:[/] {d}")
+        if fr.get("manifest"):
+            console.print(f"  manifest: {fr['manifest']}")
     console.print(
         "[dim]restart the daemon to drop any cached SRC partition "
         "binding (`rmx daemon launchctl kickstart -k`).[/]"
@@ -9421,7 +9433,12 @@ def repair_index(entities: bool, fragments: bool, dry_run: bool):
             f"[green]fragments repair[/] ({mode}): rows {rep['rows_before']}->"
             f"{rep['rows_after']} changed={rep['rows_changed']} kept={rep['kept']} "
             f"moved={rep['moved']} added_from_links={rep['added_from_links']} "
-            f"dropped_dead={rep['dropped_dead']}")
+            f"dropped_dead={rep['dropped_dead']} "
+            f"dropped_dead_concept={rep['dropped_dead_concept']} "
+            f"links_skipped={rep['links_skipped']}")
+        # r2 #s2-1: a directory the repair could not read is left in place — say so.
+        for d in rep.get("unread_dirs") or []:
+            console.print(f"  [yellow]unread, left in place:[/] {d}")
         if rep.get("manifest"):
             console.print(f"  manifest: {rep['manifest']}")
         return

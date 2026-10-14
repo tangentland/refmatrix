@@ -1690,10 +1690,14 @@ class Store:
         _lk = lock if lock is not None else nullcontext()
 
         # bug-105 audit #b-2/#s-1: persist every binding's dirty bits before the merge
-        # remaps entity ids and drops SRC; the fragment rows are re-homed after it.
+        # remaps entity ids and drops SRC; the fragment rows are re-homed after it. Under the
+        # writer lock (r2 #b2-1): flush_fragments rebinds _partition_id while it writes, and
+        # the daemon's merge op does not hold the lock, so an op interleaving here would write
+        # into whichever partition the flush had bound.
         if not dry_run:
-            self.flush_fragments()
-            self._clear_fragment_caches()
+            with _lk:
+                self.flush_fragments()
+                self._clear_fragment_caches()
 
         def _tick(phase: str, done: int, total: int) -> None:
             if progress is None:
@@ -1949,9 +1953,13 @@ class Store:
         # bug-105 audit #s-1: SRC's fragment rows still sit under the dropped partition id, and
         # colliding entities were remapped to DST ids. Re-home every bit to its entity's
         # partition (the same repair `rmx repair-index --fragments` runs; a manifest of any
-        # dropped bit goes to backups/).
-        self._clear_fragment_caches()
-        self.repair_fragments(dry_run=False, manifest_dir=self.root / "backups")
+        # dropped bit goes to backups/). r2 #b2-1: under the writer lock (the repair opens a
+        # transaction on the shared connection), and FLUSH rather than clear the cache first —
+        # an op that ran between chunks may have unlinked a persisted bit, and clearing would
+        # discard that unlink so the union repair wrote the bit back from the stale row.
+        with _lk:
+            self.flush_fragments()
+            repair = self.repair_fragments(dry_run=False, manifest_dir=self.root / "backups")
 
         return {
             "src": src_name, "dst": dst_name,
@@ -1960,6 +1968,8 @@ class Store:
             "saved_queries": int(sq_count),
             "tracked_files": int(tf_count),
             "dry_run": False,
+            # r2 #s2-1: the repair's counts and manifest path reach the caller.
+            "fragments_repair": repair,
         }
 
     def with_partition(self, name: str):
@@ -4321,7 +4331,8 @@ class Store:
             new(p, L) = bits of entity_links for partition p and linkage L
                         ∪ every fragment bit of L, from any row, whose entity lives in p
 
-        The only bits removed are those whose entity id is absent from `entities`; they are
+        The only bits removed are those whose entity id is absent from `entities`, or whose
+        concept id is absent from both `entities` and `concepts` (a dead concept); they are
         written to a JSONL manifest (`dropped_hex` = serialized BitMap64 per (partition,
         linkage)) before anything changes, so the drop is restorable. `dry_run=True` (the
         default) computes and reports, writes the manifest, changes nothing.
@@ -4333,7 +4344,11 @@ class Store:
             self.flush_fragments()
         con = self._connect()
         ent_part = dict(con.execute("SELECT id, partition_id FROM entities").fetchall())
+        # A concept id is ANY entity id: typed edges and has-part use doc/memory/code entities as
+        # the concept, and only kind='concept' entities have a `concepts` row (r2 #b2-2 — the
+        # concepts-only test called 4,025 live bits dead on a copy). Alive = in either table.
         concept_ids = {int(r[0]) for r in con.execute("SELECT id FROM concepts").fetchall()}
+        concept_ids.update(int(i) for i in ent_part)
         names = {int(i): n for i, n in con.execute(
             "SELECT id, name FROM partitions").fetchall()}
         lk = {int(i): _canonical_verb(n) for i, n in con.execute(
