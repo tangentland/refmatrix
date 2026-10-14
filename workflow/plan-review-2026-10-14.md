@@ -341,6 +341,8 @@ clone; d8d's predicate owned by 21.1 in `telemetry.py`; the dead-letter file kep
 | d9s | MCP session attribution is fixed NOW as a bug (bug-109), ahead of 19.0 R5 / 21.1 R9: the long-lived `rmx mcp` server resolves the session through a pid pointer for its parent Claude process, written by the input hook, and never through its own frozen `CLAUDE_CODE_SESSION_ID`. The specs' resolver signatures stay the target; the fix ships the subset. | user, 2026-10-14 ("4 fix it") |
 | d9t | 22.6 joins the wave list in Wave 1, after 22.2 and alongside 22.5; plan-of-plans row 16 (and row 22) brought current. | user, 2026-10-14 ("yes") |
 | d9u | Round-4 spec re-reviews of plans 16/17/19/21/22/23 start at the round-3 commit. | user, 2026-10-14 ("start them") |
+| d9v | 19.6's pre-registered ranges are CONFIRMED as written: the phase thresholds (`w_min` 2, `j_warm` 0.15, `j_return` 0.20), Tables A-D, `N = 8`, `K = 8`, `C = 6`. Settles d9f; 19.6's status lines flip to CONFIRMED after its round-4 re-review lands. | user, 2026-10-14 ("tables confirmed as written") |
+| d9w | `tests/conftest.py` refuses to run when `refmatrix` imports from a different tree than the tests (`.venv-eval`'s editable install silently tested the dev tree from a clone). Shipped on the bug-109 branch (54e13c6), reaches master with it. | user, 2026-10-14 ("yes add the guard") |
 
 ## The wave list, all waves (2026-10-14) {#t10-waves}
 
