@@ -17,7 +17,8 @@ metadata:
 > Depends on: 19.0 (clean STM clusters, envelope session; d5e); 19.1 (the packer with an
 > allocation knob, and d8a's subject exclusion); 19.5 R1 (per-hook vs per-event cap) and 19.5 R4
 > (the fixed baseline); 21.1 (the recall-event fields this task reads, listed in R7); 23.0
-> (sandbox); and the user's confirmation of the PROPOSED [[#ranges]] (d9f), before any work starts.
+> (sandbox). The user CONFIRMED [[#ranges]] as written (d9v, settling d9f), so no confirmation
+> gate remains.
 > 19.2 is not needed: read-back is scored from 21.1's `used` events and this task's transcript
 > scorer ([[#ranges]]), not from 19.2's counters.
 
@@ -45,17 +46,25 @@ pays is unmeasured; this task measures first and builds against pre-registered r
 
 ## Requirements {#requirements}
 
-0. **R0 Pre-registration, PROPOSED until the user confirms** (d9f). The comparison criteria,
-   the go/no-go tables of [[#ranges]] (A, B, C, D), the phase thresholds of [[#ranges-thresholds]],
-   `N = 8`, `K = 8` and the collapsed-line cap `C = 6` (R9) are PROPOSED numbers. The user confirms or amends them in a decision-log
-   row BEFORE 19.6 starts (Wave 3, after 19.5's baseline exists); no measurement or code of this
-   task runs before that row. After confirmation, changing a band needs a new decision-log row
-   ([[feedback_go_no_go_ranges_not_predrop]], [[project_helix_phase2_decision_criterion]]).
+0. **R0 Pre-registration, CONFIRMED (d9v).** The comparison criteria, the go/no-go tables of
+   [[#ranges]] (A, B, C, D), the phase thresholds of [[#ranges-thresholds]], `N = 8`, `K = 8` and
+   the collapsed-line cap `C = 6` (R9) are CONFIRMED as written by the user (d9v, 2026-10-14,
+   settling d9f); the numbers are unchanged from the round-3 text. Changing a band now needs a
+   new decision-log row ([[feedback_go_no_go_ranges_not_predrop]],
+   [[project_helix_phase2_decision_criterion]]).
 1. **R1 Measure the stable blocks first** ([[exploration-session-phased-context#vi-evidence]]).
    Over a frozen set of real sessions (kept local per d8f; only hashes and counts committed), for
-   each stable block id (`stm-topic-composite`, the recall pack, scan-prompt's bundle): the share
-   of emitted bytes byte-identical to the previous rev of the same id, and the delta-size
-   distribution (delta bytes / block bytes). Table A decides R5/R6.
+   each stable block id (the composite's two blocks `stm-topic-expanded` and
+   `stm-topic-collapsed` (R9), the recall pack, scan-prompt's bundle): the share of emitted bytes
+   byte-identical to the previous rev of the same id, and the delta-size distribution (delta
+   bytes / block bytes). Table A decides R5/R6; "the composite" in Table A's rows means both of
+   its blocks, each judged on its own share. Recorded beside it, for the composite (round-4
+   #s-3), by REPLAYING R9's render over each frozen ring turn by turn:
+   - the per-turn share of collapsed lines byte-identical to the previous turn's;
+   - the per-turn persistence of non-selected LIVE clusters' member sets (Jaccard with the same
+     cluster's previous member set, and the share exactly unchanged), which shows how much of the
+     collapsed lines' stability comes from R9's frozen snapshots rather than from the clustering.
+   These are recorded figures; Table A's bands and verdicts are unchanged (d9v).
 2. **R2 Phase classification, against the STM state BEFORE this prompt** (round-3 #b-2). The
    recall and scan hooks run in parallel with `focus hook --event input`, and `Stm.record` appends
    the input event AND ingests the prompt's terms into `focus.json` in one call
@@ -64,15 +73,18 @@ pays is unmeasured; this task measures first and builds against pre-registered r
    scores, the matched cluster and the cache lookup are ALL computed from ONE
    `stm.pre_prompt_state(root, session, prompt, *, t0)` call (specified in
    [[task-21.1-context-usage-telemetry#req-session]] 21.1 R9; written by 19.0 R7's
-   `snapshot_pre_prompt` before the input hook touches the ring, the graph or the cache). Its
-   `graph` and `topic_cache` are the state before this prompt whichever hook ran first; no phase
-   code reads `focus.json`, the ring or the cache file directly. The event logs `stm_source`.
+   `snapshot_pre_prompt` as the input hook's FIRST state access, before its in-flight sweep and
+   before the input record; round-4 #b-1). Its `graph` and `topic_cache` are the state before
+   this prompt whichever hook ran first; no phase code, and no prompt-time composite render (R9,
+   `composite.build_topic_composite` called from scan-prompt with `graph=` from this call; 19.0
+   R5), reads `focus.json`, the ring or the cache file directly (round-4 #b-2). The event logs
+   `stm_source`.
    - **cold**: no focus topics yet, or the prompt carries no concrete terms;
    - **warm**: the prompt's terms overlap the active topic cluster;
    - **return**: they overlap a CACHED inactive cluster (R3);
    - **new**: they overlap neither.
 
-   "Overlap" uses the PROPOSED thresholds of [[#ranges-thresholds]], applied in that table's
+   "Overlap" uses the CONFIRMED thresholds of [[#ranges-thresholds]] (d9v), applied in that table's
    order. Raw inputs (overlap scores, the matched cluster, thresholds) are logged on every event.
    **Turn count is logged and is never a phase signal** (d5b).
 3. **R3 Topic cache** (#topic-cache). Every cluster that loses focus is snapshotted, keyed by its
@@ -81,7 +93,10 @@ pays is unmeasured; this task measures first and builds against pre-registered r
    `snapshot_pre_prompt` has copied the previous cache into `pre.json` (R2), so a reader never
    sees this prompt's own eviction or restore. A return (Jaccard overlap of the prompt's terms with a cached
    cluster ≥ the threshold, logged raw) restores that cluster as the active focus and spends the
-   budget as warm.
+   budget as warm. A cache entry and R9's collapsed snapshot of the same cluster are ONE record
+   (member set, frozen label, `<cid>`, first-collapse time; round-4 #s-3). The LRU bound `N`
+   applies to what a `return` can restore; the collapsed set keeps every snapshot until its
+   cluster is expanded, showing `C` and counting the rest in `+<m> more` (R9).
 4. **R4 The whole per-prompt budget is allocated by phase**, across memory recall AND
    scan-prompt (d5b). If 19.5 R1 found the cap per event, the phase decides the split of the one
    budget between the two hooks; if per hook, it decides each hook's internal spend (pointers vs
@@ -90,7 +105,12 @@ pays is unmeasured; this task measures first and builds against pre-registered r
 5. **R5 Versioned blocks** (#vi-versioned, #vi-unchanged) — built only in the bands of Table A
    that say so. Every injected stable block carries a stable `id`, a `rev` and the line
    "supersedes earlier revs of `<id>`". A block whose content hash equals the last emitted rev
-   for this session emits `<id> rev N unchanged`. A topic return emits
+   for this session emits `<id> rev N unchanged`. **The versioned unit is the block, and the STM
+   composite is TWO blocks** (round-4 #s-3): `stm-topic-expanded` (the expanded cluster's
+   header with its event count and `L<a>–L<b>` range, members and `rel:` lines; it changes on
+   most warm turns) and `stm-topic-collapsed` (the collapsed lines and the `+<m> more` line, with
+   no count, range, turn or age anywhere in it). Each is hashed and versioned on its own, so a
+   moving expanded header never costs the collapsed block its `unchanged`. A topic return emits
    `re-activate <cluster-id> (rev N)` when that rev is in the window, else the body. The
    session's last-emitted state resets at compaction, and the newest rev is re-sent in full once
    (#vi-compaction).
@@ -122,8 +142,10 @@ pays is unmeasured; this task measures first and builds against pre-registered r
    command, `rmx focus hook --event compact-marker` (round-3 #m-5: the writer is named), which
    this task adds as its OWN generated PreCompact hook entry, separate from the PreCompact recall
    and summarize entries, so it survives if 19.5 R1(c) removes the PreCompact recall; the same
-   command runs from 19.0 R5's `session-start` hook when the SessionStart envelope's `source` is
-   `compact` and R8's probe shows the harness sends one. A test asserts the generated config
+   marker is also written by the `rmx focus hook --event session-start` command (21.1 R9 D4,
+   built by 19.0 or 21.1) when the SessionStart envelope's `source` is `compact` and R8's probe
+   shows the harness sends one. That dispatch inside `--event session-start` is THIS task's
+   change (round-4 #m-3; [[#files-to-modify]]). A test asserts the generated config
    holds the marker entry with and without the PreCompact recall (AC-7f). Every R5 / R6 "known to be in the window" check reads that state; after a
    marker, nothing is in the window and the next emission of each block is a full body.
 8. **R8 Verify the compaction lever.** Whether a PreCompact hook can steer the compaction summary
@@ -135,30 +157,47 @@ pays is unmeasured; this task measures first and builds against pre-registered r
    - **Expanded:** exactly the cluster the phase selects (warm: the overlapping cluster; return:
      the restored one), rendered as today: members plus `rel:` lines under the current depth
      rules (lift-ranked co-occurs, sparse-first LTM).
-   - **Collapsed** (round-3 #s-4): every other cluster, up to a cap, renders as ONE line holding
-     ONLY its frozen label and its stable cluster id: `▸ topic: <label>  (id <cid>)`. Nothing
-     else moves with it: no event count, no ring line range, no turn counter, timestamp, rank or
-     relative age.
-     - **Unchanged, defined.** A cluster is unchanged while its MEMBER SET is unchanged. `<cid>` is
-       a hash of that member set (as 19.4 R6 names unlabeled subjects). `<label>` is FROZEN when
-       the cluster is first rendered collapsed (the head member by focus weight at that moment)
-       and stored with the cluster in the session's last-emitted state; a reorder of member
-       weights (`topic_composites` sorts by `weight`, `stm.py:790-813`) does not change it, and a
-       member-set change mints a new `<cid>` and a new frozen label. So the line's bytes are a
-       function of the member set alone.
+   - **Collapsed** (round-3 #s-4; round-4 #s-3): every other cluster, up to a cap, renders as
+     ONE line holding ONLY its frozen label and its stable cluster id:
+     `▸ topic: <label>  (id <cid>)`. Nothing else moves with it: no event count, no ring line
+     range, no turn counter, timestamp, rank or relative age.
+     - **A collapsed line renders a FROZEN SNAPSHOT, not the live clustering.** The live member
+       set of an untouched cluster is not stable: every recorded input decays every node by
+       `DECAY = 0.85` (`stm.py:37-38`), `focus_graph(top=30)` cuts to the 30 best-scoring nodes,
+       and `cluster_focus` runs label propagation in score order, so an untouched cluster gains
+       or loses members turn to turn. So a cluster is snapshotted the FIRST time it renders
+       collapsed (a cluster that loses focus is R3's cache entry; a cluster first seen
+       collapsed, on cold or as a non-selected cluster, is snapshotted the same way): member set,
+       `<cid>` = a hash of that member set (as 19.4 R6 names unlabeled subjects), `<label>` = its
+       head member by focus weight at that moment, and its first-collapse time, stored in the
+       session's last-emitted state. Later turns render the snapshot; decay, the top-30 cut and
+       label propagation order cannot change its bytes.
+     - **Which live cluster a snapshot stands for.** A non-selected live cluster that shares at
+       least one member with an existing snapshot is represented by that snapshot (no new line);
+       only a live cluster disjoint from every snapshot is snapshotted as new. No new threshold is
+       introduced.
+     - **Re-collapse** (round-4 #s-3). When a snapshot's cluster is expanded (warm on it, or a
+       `return` restores it), the snapshot leaves the collapsed set. When that cluster collapses
+       again, it gets a NEW snapshot: its member set at that moment, a new `<cid>` and label, and a
+       first-collapse time = the re-collapse time. So the cluster that just lost focus, the
+       likeliest `return`, is always among the `C` shown.
      - **Counts and ranges move to the expanded view.** The event count and the `L<a>–L<b>` range
-       are printed only on the EXPANDED cluster's header line and by `rmx focus topics`, never on
-       a collapsed line.
-     - **Cap.** At most `C = 6` collapsed lines (PROPOSED with the other numbers, d9f): the `C`
-       clusters most recently first-collapsed, rendered in a stable order (first-collapsed time,
-       oldest first, ties by `<cid>`), so each shown line keeps its bytes while it stays shown. Beyond `C`, one line
-       `▸ +<m> more topics (rmx focus topics)`; that line changes when `m` changes and is
-       versioned like any other block line (not claimed byte-stable).
+       are printed only on the EXPANDED cluster's header line (block `stm-topic-expanded`, R5)
+       and by `rmx focus topics`, never on a collapsed line.
+     - **Cap.** At most `C = 6` collapsed lines (CONFIRMED with the other numbers, d9v): the `C`
+       snapshots with the most recent first-collapse times, rendered in a stable order
+       (first-collapse time, oldest first, ties by `<cid>`), so each shown line keeps its bytes
+       while it stays shown. Beyond `C`, one line `▸ +<m> more topics (rmx focus topics)`; that
+       line changes when `m` changes and is versioned with its block (not claimed byte-stable).
    - **Cold** (and `new`, which spends breadth): every cluster collapsed (up to `C`); no expanded
      cluster.
    - **The collapsed line is the topic cache's re-expand handle** (R3), and it is BYTE-STABLE
-     across turns while its member set is unchanged, so versioned injection (R5) can send it as
-     "unchanged".
+     across turns until its snapshot leaves the shown set (expanded, or pushed past `C`), so
+     versioned injection (R5) can send the `stm-topic-collapsed` block as "unchanged" on any turn
+     in which no snapshot entered or left the shown `C` and `m` did not change.
+   - **Where the render lives.** `composite.build_topic_composite` (`composite.py:63`), called by
+     scan-prompt (`scan.py:889-894`), not `stm.py`; it reads its graph from `pre_prompt_state`
+     on that prompt-time call (R2; 19.0 R5).
    - **Single-expand vs expand-top-2** is decided by R10's measurement against Table D, not
      assumed.
    - **Prerequisite:** a collapsed line is only its label, so label quality depends on 19.0; a
@@ -171,12 +210,12 @@ pays is unmeasured; this task measures first and builds against pre-registered r
     ([[plan-10-injection-dedup]]), not between STM clusters, and is not cited as an STM-cluster
     number here.
 
-## Pre-registered go/no-go ranges, PROPOSED (d9f) {#ranges}
+## Pre-registered go/no-go ranges, CONFIRMED (d9v) {#ranges}
 
-**Status: PROPOSED.** Every number in this section, plus `N = 8` (R3), `K = 8` (R6) and `C = 6`
-(R9), awaits the
-user's confirmation in a decision-log row before 19.6 starts (R0). Each verdict takes the worse of
-two independent frozen session sets (d4d's quiet/loaded rule applied to session sets).
+**Status: CONFIRMED (d9v).** Every number in this section, plus `N = 8` (R3), `K = 8` (R6) and
+`C = 6` (R9), was confirmed as written by the user on 2026-10-14 (d9v, settling d9f; R0).
+Changing one needs a new decision-log row. Each verdict takes the worse of two independent frozen
+session sets (d4d's quiet/loaded rule applied to session sets).
 
 **Read-back, ONE definition** (re-review #s-4; settles plan-21 open item 2). A delivered memory
 item is READ BACK when, later in the same session, any of these points at it by `name` (or, for a
@@ -191,7 +230,7 @@ counter depends on it. Metric: `readback_per_1k = read-back items / (delivered p
 
 **Phase thresholds (R2, R3):** {#ranges-thresholds}
 
-| phase | rule, applied in this order | proposed number |
+| phase | rule, applied in this order | confirmed number (d9v) |
 |---|---|---|
 | cold | the session has 0 focus topics, or the prompt has 0 concrete terms (terms surviving `scan._PROMPT_STOPWORDS` and 19.0's code-noise set) | — |
 | warm | shared terms with the ACTIVE cluster's members ≥ `w_min`, or Jaccard(prompt terms, active members) ≥ `j_warm` | `w_min = 2`, `j_warm = 0.15` |
@@ -244,8 +283,8 @@ the warm threshold):** {#ranges-d}
 ## Acceptance criteria {#acceptance}
 
 1. Tables A–D, the thresholds and the criteria are committed in this spec, AND the user's
-   confirming decision-log row (d9f) exists, before R1's first run (git history shows the
-   order).
+   confirming decision-log row (d9v, settling d9f) exists, before R1's first run (git history
+   shows the order: d9v is at `224495c`).
 2. R1's table and each verdict are in the implementation summary, computed by a script from the
    frozen sets (hashes committed, sessions local).
 3. **Phase fixtures** (sandbox, fixture rings from 19.0's redacted fixture): an empty ring →
@@ -260,9 +299,13 @@ the warm threshold):** {#ranges-d}
    AC-3 fixtures, and for a `return` fixture whose prompt would also evict the active cluster
    into the cache, the same envelope is classified three ways, as 21.1 AC-8b orders them: the
    input hook (the generated `focus hook --event input`) completed before the classifier starts,
-   after it finishes, and stopped after `Stm.snapshot_pre_prompt` only. All three give the same
-   `phase`, the same `overlap` scores, the same matched cluster and the same
-   `restored_cluster_id`; the first and third log `stm_source=snapshot`. The warm fixture's
+   after it finishes, stopped after `Stm.snapshot_pre_prompt` only, and stopped after the snapshot
+   AND `inflight_sweep()` (21.1 AC-8b's (iv)). Every fixture's seeded in-flight sidecar holds one
+   call parked 120 s ago whose refs overlap the prompt's terms, so the sweep alone would move the
+   overlap (round-4 #b-1). All four give the same `phase`, the same `overlap` scores, the same
+   matched cluster and the same `restored_cluster_id`; all but the reader-first run log
+   `stm_source=snapshot`. The scan-prompt composite rendered on the same runs is byte-identical
+   across the four (its graph comes from the same `pre_prompt_state` call; round-4 #b-2). The warm fixture's
    prompt terms are chosen so that, read from the post-ingest `focus.json`, they WOULD exceed
    `w_min` against a cluster they do not overlap before the prompt (a non-vacuous fixture,
    pre-checked by reading `focus.json` after the input hook).
@@ -284,13 +327,19 @@ the warm threshold):** {#ranges-d}
    then members + `rel:` lines) and exactly 3 collapsed lines, each exactly
    `▸ topic: <label>  (id <cid>)` (a regex over the whole line; no digits outside `<cid>` and the
    label).
-7d. **Tree: collapsed line byte-stable** (R9; round-3 #s-4). Two consecutive turns in which a
-   non-selected cluster's MEMBER SET does not change render that cluster's collapsed line
-   byte-identically (compared as bytes), although between them: THAT cluster is re-touched (a
-   tool event adds to its event count and moves its line range) and its member weights reorder
-   so a different member would be the head by weight; the turn count changes; the active cluster
-   changes. A third turn that adds one member to it renders a new `<cid>` (and a new frozen
-   label line).
+7d. **Tree: collapsed line byte-stable** (R9; round-3 #s-4; round-4 #s-3). Consecutive turns
+   render a collapsed cluster's line byte-identically (compared as bytes), although between them:
+   THAT cluster is re-touched (a tool event adds to its event count and moves its line range) and
+   its member weights reorder so a different member would be the head by weight; the turn count
+   changes; the active cluster changes; and, on a DECAY-ONLY turn (one input that touches none of
+   its members), one of its members falls below the `focus_graph(top=30)` cut and label
+   propagation re-forms the live cluster without it (pre-checked: the live member set differs).
+   The line changes only when its snapshot leaves the collapsed set: after the cluster is expanded
+   and collapses again, it renders a new `<cid>` and a new frozen label.
+   7d2. **Re-collapse is the newest** (round-4 #s-3). With `C` snapshots shown, a cluster expanded
+   by a `return` and then collapsed again (focus moves elsewhere) is rendered among the `C`
+   shown, at the end of the first-collapse order, and the oldest shown snapshot moves into
+   `+<m> more`.
 7e. **Tree: cold expands nothing** (R9). On a cold fixture (no concrete terms) every cluster
    renders collapsed and no `rel:` or member line appears.
 7f. **Window marker** (R8a). After the GENERATED PreCompact marker entry
@@ -302,6 +351,12 @@ the warm threshold):** {#ranges-d}
    collapsed lines and one `▸ +4 more topics` line render; the `C` shown are the most recently
    first-collapsed, in first-collapsed order; adding an 11th cluster drops the oldest shown line
    and leaves the other `C − 1` lines byte-identical.
+7h. **Two composite blocks, versioned apart** (R5; round-4 #s-3; if Table A says GO for the
+   composite). Over three warm turns on one active cluster, each of which re-touches it (its
+   event count and line range move) and changes no collapsed snapshot, `stm-topic-expanded`
+   emits a new rev each turn and `stm-topic-collapsed` emits its body once and then
+   `stm-topic-collapsed rev N unchanged` twice. A turn that adds a new snapshot to the shown set
+   emits a new rev of `stm-topic-collapsed`.
 8. **Isolation.** 23.0's guard records 0 live connects for this task's test files.
 9. **Mutations that must FAIL a test:**
    - phase driven by turn count (AC-7);
@@ -312,6 +367,14 @@ the warm threshold):** {#ranges-d}
    - arm chosen per session instead of per prompt (AC-7b);
    - a threshold moved one step (AC-3b);
    - collapsed lines carrying a turn number or relative age (AC-7d);
+   - collapsed lines rendered from the live clustering instead of the frozen snapshot (AC-7d's
+     decay-only turn: a new `<cid>`);
+   - a re-collapsed cluster keeping its old first-collapse time (AC-7d2: it lands behind
+     `+<m> more`);
+   - the composite versioned as ONE block (AC-7h: the collapsed block never reads `unchanged`);
+   - the composite's prompt-time graph read live instead of from `pre_prompt_state` (AC-3c: the
+     input-hook-first run's composite differs);
+   - the snapshot taken after the in-flight sweep (AC-3c: the sweep's refs move the overlap);
    - collapsed lines carrying the event count or line range (AC-7c's regex; AC-7d's re-touch);
    - the label taken live from the head member by weight instead of frozen (AC-7d's reorder);
    - no cap on collapsed lines, or a cap ordered by recent activity (AC-7g);
@@ -329,8 +392,9 @@ the warm threshold):** {#ranges-d}
 
 | file | change |
 |---|---|
-| `src/refmatrix/stm.py` | phase classification over `pre_prompt_state` (R2) with the thresholds; the topic cache (snapshot, LRU, restore; written after `snapshot_pre_prompt`, R3); the expand/collapse composite render (R9): stable cluster ids, frozen labels, the cap `C` |
-| `src/refmatrix/cli.py` (`focus hook`), `hooks.py` | `--event compact-marker` and its own generated PreCompact entry (R8a) |
+| `src/refmatrix/stm.py` | phase classification over `pre_prompt_state` (R2) with the thresholds; the topic cache (snapshot, LRU, restore; written after `snapshot_pre_prompt`, R3), whose entries are R9's frozen snapshots |
+| `src/refmatrix/composite.py` | the expand/collapse composite render (R9; the render lives here, `composite.py:63`, not in `stm.py`; round-4 #b-2): frozen snapshots, stable cluster ids, frozen labels, re-collapse, the cap `C`; the two blocks `stm-topic-expanded` / `stm-topic-collapsed` (R5); its graph from `pre_prompt_state` on prompt-time calls (R2) |
+| `src/refmatrix/cli.py` (`focus hook`), `hooks.py` | `--event compact-marker` and its own generated PreCompact entry (R8a); the marker dispatch inside `--event session-start` when `source=compact` (R8a; round-4 #m-3) |
 | `src/refmatrix/scan.py` | phase-aware allocation of scan-prompt's spend; block ids and revs |
 | `src/refmatrix/cli.py` / `verbs.py` (`memory recall`) | phase-aware pack allocation; block ids and revs |
 | `src/refmatrix/hooks.py` | pass the envelope to both hooks; arm selection (prompt channels only, R7) |
@@ -398,3 +462,22 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r3-6091648]]
 | round-3 #m-5 (marker writer unnamed; arm for non-prompt channels; carryover) | R8a (`focus hook --event compact-marker`, its own PreCompact entry); R7 (session_start / precompact always `fixed`; carryover stated, same-arm lift printed); AC-7b, AC-7f; mutations |
 | round-3 #m-6 (exploration `#shape` `shift` row; `#decisions` stale) | [[exploration-session-phased-context#shape]] (row replaced by return/new), [[exploration-session-phased-context#decisions]] (closed by d5b) |
 | d9f (tables stay PROPOSED) | R0; [[#ranges]] (unchanged numbers; `C` added as PROPOSED) |
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Answers [[bsd-plan19-21-spec-rereview-r4-878647c]] (the 19.6 side of every id, plus round-3
+#s-4, marked partial) and d9v of [[plan-review-2026-10-14#t11-approvals]]. Code facts re-read at
+write time at HEAD `39dffbb`: `stm.py:37-38` (`DECAY`), `composite.py:63`, `:100-106`,
+`scan.py:889-894`, `cli.py:1971-1981`.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r4-878647c]]
+
+| finding / decision | answered at |
+|---|---|
+| round-4 #b-1 (the snapshot follows the sweep) | R2 (snapshot = the input hook's first state access, before the sweep); AC-3c (a parked call per fixture; four orderings); mutation |
+| round-4 #b-2 (19.6 side: the composite reads the newest ring and the live graph; the render lives in `composite.py`) | R2 (no prompt-time composite render reads `focus.json`); R9 "Where the render lives"; AC-3c (the composite byte-identical across orderings); [[#files-to-modify]] (`composite.py`); mutation. The routing itself is 19.0 R5 ([[task-19.0-stm-cluster-hygiene#rev-round-5]]) |
+| round-4 #s-3 (member set unstable for an untouched cluster; one versioned block; re-collapse undefined) | R9 (collapsed lines render frozen snapshots; which live cluster a snapshot stands for; re-collapse = new snapshot, newest first-collapse time); R3 (the cache entry is the snapshot); R5 (the composite is two blocks, versioned apart); R1 (collapsed-line persistence and live member-set persistence recorded, Table A unchanged); AC-7d (decay-only turn), AC-7d2, AC-7h; mutations; [[exploration-session-phased-context#tree-render]] |
+| round-4 #m-3 (marker dispatch owner; status lines) | R8a and [[#files-to-modify]] (`--event session-start` dispatch on `source=compact` is this task's); status lines flipped (next row). The wave-list item is the decision log's, not this file's |
+| d9v (tables, thresholds, `N`, `K`, `C` CONFIRMED as written) | header; R0; R2; R9 cap; [[#ranges]] heading and status; [[#ranges-thresholds]] column; AC-1. No number changed |
+| round-3 #s-4 (partial) | as round-4 #s-3 |
+| round-3 #b-2 (partial) | as round-4 #b-1 |

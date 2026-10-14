@@ -15,7 +15,8 @@ metadata:
 > Plan: [plan-17-nightly-store-maintenance](../plan-17-nightly-store-maintenance.md)
 > Status: Pending (added 2026-10-14 after commit 32dde06; first reviewed in
 > [[bsd-plan23-17-spec-rereview-r3-6091648]]; revision round 3: ns17-r3-3, ns17-r3-4, nm17-r3-6,
-> see [[#rev-round-3]]. Round 2: [[#rev-round-2]])
+> see [[#rev-round-3]]. Revision round 5: ns17-r4-2, nm17-r4-1, see [[#rev-round-5]]. Round 2:
+> [[#rev-round-2]])
 > Depends on: 17.2 (the hub tick and its `maintenance_steps` registry, NOT 23.1's daemon tick
 > registry), 23.0 (sandbox)
 
@@ -28,6 +29,8 @@ rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06#ns17-5]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#ns17-r3-3]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#ns17-r3-4]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#nm17-r3-6]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#ns17-r4-2]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#nm17-r4-1]]
 
 ## Why {#why}
 
@@ -41,13 +44,15 @@ It is also the one store file that cannot be regenerated from source: learned gr
 protect/noise flags exist only in the catalog and in `facts.log` (curated memories live in
 `~/.claude/projects/…/memory`, backed up separately). So it cannot simply be excluded.
 
-**Why not rotate the live log into daily segments.** The live log is the replication transport:
-the A/B slot offsets are byte positions into it (`daemon.py:2789` `_slot_offset_path`,
-`_write_slot_offset` `:2805`), delta-replay reads from those offsets, and compaction
-(`_compact_factslog_if_needed`, `daemon.py:2274`; `Store.dump_catalog_to_log`, `store.py:7210`)
-rewrites the whole file atomically and resets both offsets. Segmenting it would change the
-offset model, replay, compaction and `rmx rebuild --from-log`. Out of proportion to the goal,
-which is only to give the backup a file that changes once a day.
+**Why not rotate the live log into daily segments.** The live log is the replay source of
+`rmx rebuild --from-log` (`Store.rebuild_index_from_log`), and compaction
+(`_compact_factslog_if_needed`, `daemon.py:2274`; `Store.dump_catalog_to_log`) rewrites the whole
+file atomically. Segmenting it would change replay, compaction and the rebuild. Out of proportion
+to the goal, which is only to give the backup a file that changes once a day. (Round 3 also said
+"delta-replay reads from" the A/B slot offsets. That is false at HEAD `39dffbb`: offsets are
+written, by compaction at `daemon.py:2318-2321` and by the rotation bootstrap at `:2841-2846`,
+but `_read_slot_offset` (`daemon.py:2796`) has no caller, and writer rotation and its refresh
+thread are dropped (`_refresh_replica_now`, `daemon.py:2812-2826`; ns17-r4-2, nm23-r4-2).)
 
 So: the live `facts.log` keeps its contract unchanged and is excluded from Time Machine; a
 once-a-day COPY under `backups/` is what Time Machine backs up. {#why-body}
@@ -109,25 +114,49 @@ once-a-day COPY under `backups/` is what Time Machine backs up. {#why-body}
      from the meta file, and the hub alerts once per stale store on every wake, due or not
      (17.2 `#r8-backup-age`). The exclusion of the live log (R7) is permanent, so this alarm is
      what keeps it safe.
-6. **R6 A restore path that is tested, in this order (ns17-r3-4).** The A/B slot offsets are byte
-   positions into the live `facts.log` (`_slot_offset_path`, `daemon.py:2789`); compaction
-   resets both to the new EOF for exactly this reason (`daemon.py:2318-2321`). Overwriting the
-   live log first would destroy every event since the copy and leave the offsets pointing past EOF
-   or into different bytes. The restore is `scripts/factslog-restore.py <root>` (run with the
-   DEPLOY interpreter; the runbook documents it), which:
-   1. **Rebuilds into a THROWAWAY root first:** copies `backups/facts.log.daily` to
-      `<mkdtemp>/.refmatrix/facts.log` and runs `rmx rebuild --from-log --yes` there with
-      `REFMATRIX_ROOT=<mkdtemp>` (the command rebuilds whatever store `_store()` resolves, so the
-      env var is what keeps it off the live root).
-   2. **Verifies** the throwaway's entity and link counts against the copy's own event counts
-      (AC-3's check), and prints them; a mismatch stops here with nothing changed.
-   3. **Refuses while the store's daemon answers** `daemon_mod.ping(root)` (checked before step 1
-      and again here; the daemon is stopped by hand first). Then it MOVES the live log aside to
-      `facts.log.pre-restore-<ts>` (kept, never deleted), installs the copy as `facts.log` by
-      copy + `fsync` + rename, and writes BOTH `catalog.A.offset` and `catalog.B.offset` to the
-      installed file's size (the new EOF), as compaction does.
-   Up to one day of events is lost from the LOG by design; the catalog itself is the primary copy
-   of the live state and is not touched by this script.
+6. **R6 Restore: two scenarios, each with its own path (ns17-r3-4, ns17-r4-2).** {#r6-restore}
+   The catalog is the authority and the log is re-derivable from it, so which file is restored
+   from which depends on what was lost. The runbook (17.3 R3) names both; the script refuses the
+   case it does not serve.
+   - **(a) The live log is damaged or missing, and the catalog is healthy.** The backup is NOT
+     used: a day-old copy installed beneath a newer catalog would lose that day from the log.
+     The fix is a forced compaction, `rmx compact-log --force` (daemon up: the
+     `compact_factslog` op, `daemon.py:4020`; it rewrites the full log from the catalog by
+     `dump_catalog_to_log`, atomic tmp + rename). Nothing is lost. `scripts/factslog-restore.py`
+     detects this case (an active-slot catalog file exists in the live root and opens) and
+     refuses with the message "catalog present: run `rmx compact-log --force`, not a restore".
+   - **(b) The disaster 17.4 exists for: the catalog is gone.** The catalogs and Lance data
+     are excluded from Time Machine (#why) and so is the live log (R7), so after a machine
+     restore only `backups/` comes back for this store. `scripts/factslog-restore.py <root>`
+     (run with the DEPLOY interpreter) then, in this order:
+     1. **Refuses while the store's daemon answers** `daemon_mod.ping(root)` (checked first and
+        again before step 5; the daemon is stopped by hand).
+     2. **Rebuilds into a THROWAWAY root:** copies `backups/facts.log.daily` to
+        `<mkdtemp>/.refmatrix/facts.log` and runs `rmx rebuild --from-log --yes` there with
+        `REFMATRIX_ROOT=<mkdtemp>` (the command rebuilds whatever store `_store()` resolves, so
+        the env var keeps it off the live root).
+     3. **Verifies** the throwaway's entity, link and learned-evidence counts against the copy's
+        own event counts (AC-3's check) and prints them; a mismatch stops here with the live root
+        unchanged.
+     4. **Moves aside, never deletes,** anything already in the live root that step 5 would
+        replace: `facts.log`, `catalog.A.duckdb`, `catalog.B.duckdb`, `catalog.duckdb`,
+        `catalog.read.duckdb` and their `.wal` files, each renamed to `<name>.pre-restore-<ts>`.
+     5. **Promotes the verified throwaway into the live root:** the throwaway's catalog file is
+        copied (+ `fsync`) to the file the live `Store` will open as its writer slot: if the
+        live root's `active` marker names slot X, `catalog.X.duckdb`; with no marker,
+        `catalog.duckdb` (the daemon's rotation bootstrap then migrates it, as for any
+        pre-rotation store). The copy is installed as the live `facts.log` by copy + `fsync` +
+        rename, so the installed log is the log the promoted catalog was rebuilt from.
+     6. **Writes the slot offsets only as consistent bookkeeping:** both `catalog.A.offset` and
+        `catalog.B.offset` (where present) are set to the installed log's size, as compaction
+        does. Nothing reads them at HEAD (#why), so this is consistency with the promoted slot,
+        not a correctness step, and it has no AC of its own.
+     7. **Prints the follow-up** the operator runs: start the daemon (`rmx daemon start`); Lance
+        vectors are not in the log and are not restored by this script, so the runbook names
+        the store's embed path to regenerate them.
+   Up to one day of events is lost in scenario (b) by design (the copy is daily). Scenario (a)
+   loses nothing. Running the script against a live root is store surgery: the runbook says to
+   announce it and to keep the moved-aside files until the restored store is verified.
 7. **R7 Time Machine exclusion of the live log comes AFTER the copy exists.** 17.3's rollout adds
    `sudo tmutil addexclusion -p <store>/facts.log` for a store only after that store has a
    `backups/facts.log.daily` no older than one day. `backups/` stays included in Time Machine.
@@ -163,8 +192,10 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
    (AC-4); register the step with `requires_arming=True` (AC-7: the unarmed store gets no copy);
    drop the `runs.jsonl` line (AC-7); register the step after `vectors_maintain`, or skip it
    while an earlier step is `still_running` (AC-8); drop the age check (AC-8); the restore script
-   copying over the live log before the throwaway rebuild, or not resetting the offsets (AC-9);
-   the streamed fallback removed (AC-10).
+   copying over the live log before the throwaway rebuild (AC-9);
+   the streamed fallback removed (AC-10); the restore script promoting nothing into the live
+   root (AC-9 scenario (b): the daemon starts with an empty catalog); the restore script
+   installing the copy when a healthy catalog is present (AC-9 scenario (a)).
 7. **AC-7 Step obligations (17.2 R2, ns17-5).** Registered with `requires_arming=False`, the step
    runs for real (a copy appears) on the first due day of an UNARMED store; a dry run writes
    nothing; a second call during a blocked copy returns `already_running`, and `status=True`
@@ -175,14 +206,28 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
    `vectors_maintain` op blocked on an event (17.2 AC-10's shape): on the due day the backup step
    still copies (a new `.daily`, a `runs.jsonl` line). Then the injected clock advances 3 days with
    no step due and with `RMX_HUB_MAINTAIN_AT=off`: the next hub wake publishes exactly one
-   stale-backup alert naming the store; the daemon's `_store_health` reports
-   `factslog_backup_stale: true` with the hub stopped.
-9. **AC-9 The restore runbook (ns17-r3-4).** On a tmp store with a daily copy and later appends:
-   `scripts/factslog-restore.py` with the daemon running refuses and changes nothing; with it
-   stopped, the throwaway rebuild runs and verifies first (a corrupted copy stops the script with
-   the live log untouched); then the live log is at `facts.log.pre-restore-<ts>` byte-identical to
-   before, `facts.log` equals the copy, and both `catalog.A.offset` and `catalog.B.offset` hold
-   the installed file's size. The rebuild never touched the tmp store's own catalog.
+   stale-backup alert naming the store. The daemon side reads its OWN wall clock, which no
+   hub clock injection reaches (nm17-r4-1), so for that clause the test BACK-DATES the meta
+   file instead (17.2 AC-14's shape): `copied_at` in `backups/facts.log.daily.meta.json` is
+   rewritten to 3 days before the daemon's now; then `_store_health` reports
+   `factslog_backup_stale: true` and `factslog_backup_age_h` >= 72 with the hub stopped.
+9. **AC-9 The restore runbook, both scenarios (ns17-r3-4, ns17-r4-2).** {#ac-9}
+   - **Scenario (b), the disaster.** A tmp store whose daemon has run: learned grep rows
+     (`linkage_evidence` rows written by learn) and ordinary rows exist, the daily copy is
+     taken, then more appends. The test then deletes every catalog file (`catalog.*.duckdb`,
+     `catalog.read.duckdb`, their `.wal`) AND the live `facts.log`, keeping `backups/` and the
+     `active` marker, as a Time Machine restore of an excluded store would. With the daemon
+     running the script refuses and changes nothing. With it stopped: the throwaway rebuild
+     runs and verifies first (a corrupted copy stops the script with the live root unchanged);
+     the script promotes the catalog and installs the copy; the test starts the daemon; the
+     store's entity count, link count and learned-evidence row count equal the counts recorded
+     at the copy point (AC-3's), and a read through the daemon returns a learned row.
+   - **Scenario (a), log only.** The same store with its catalog intact and `facts.log`
+     truncated to half: the script refuses with the "run `rmx compact-log --force`" message and
+     changes nothing; `rmx compact-log --force` then restores a log whose replay (AC-3's check)
+     equals the live catalog, with the post-copy appends included.
+   - Until step 5 the script writes nothing in the tmp store's own root, and any file it
+     replaces is at `<name>.pre-restore-<ts>`, byte-identical to before.
 10. **AC-10 Both copy methods (nm17-r3-6).** On the sandbox volume the op reports
     `method: "clone"` when `fclonefileat` succeeds; with a test seam that makes the call return
     `ENOTSUP`, it reports `method: "stream"`, and both copies are byte-identical to the old
@@ -195,8 +240,8 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
 | `src/refmatrix/daemon.py` | `_op_factslog_backup` (R1-R5) |
 | `src/refmatrix/verbs.py` | `factslog_backup` verb (CLI + MCP parity) |
 | `src/refmatrix/hub.py` (17.2 `maintenance_steps`) | register the step, `requires_arming=False` |
-| `scripts/factslog-restore.py` | R6's ordered restore (throwaway rebuild, verify, move aside, install, reset offsets) |
-| `docs/` runbook (17.3) | restore path (R6), exclusion order (R7), the backup-age alarm (R5) |
+| `scripts/factslog-restore.py` | R6's restore: refuses scenario (a); for scenario (b) throwaway rebuild, verify, move aside, promote the catalog, install the log, print the follow-up |
+| `docs/` runbook (17.3) | both restore scenarios (R6: (a) `rmx compact-log --force`, (b) the script, then the daemon start and re-embed), exclusion order (R7), the backup-age alarm (R5) |
 
 ## Test strategy {#test-strategy}
 
@@ -232,3 +277,13 @@ Source: [[bsd-plan23-17-spec-rereview-r3-6091648]] (17.4's first review).
 | ns17-r3-4 (restore runbook overwrites the live log; slot offsets ignored) | R6 (ordered `scripts/factslog-restore.py`; offsets reset to the new EOF), AC-9, [[#files-to-modify]] |
 | nm17-r3-6 (AC-3 compared identical bytes; `fclonefileat` has no binding) | AC-3 (against the source catalog), R3 (the `ctypes` call; fallback reported), AC-10 |
 | nm17-r3-2 (`invoked_by` is the surface) | R1 |
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Source: [[bsd-plan23-17-spec-rereview-r4-878647c]].
+
+| finding / decision | answered at |
+|---|---|
+| ns17-r4-2 (restore never restores the catalog; resets offsets nothing reads; serves no stated failure) | [[#why]] (offsets unread, corrected), [[#r6-restore]] (scenario (a) = forced compaction, refused by the script; scenario (b) = throwaway rebuild, verify, move aside, PROMOTE the catalog, install the log; offsets as bookkeeping only), [[#ac-9]] (both scenarios; learned rows counted after a daemon start), AC-6 mutations, [[#files-to-modify]] |
+| nm17-r4-1 item 1 (AC-8's daemon clause cannot pass under an injected hub clock) | AC-8 (the meta file is back-dated for the daemon clause) |
+

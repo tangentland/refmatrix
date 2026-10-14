@@ -65,10 +65,14 @@ fit is reachable by a printed command that, when run, returns it; decay only dem
 - **Clean STM clusters first (19.0).** Refs come from command lines, not script bodies (fixed at
   `cli._tool_event_fields`, where the junk enters); subagent events are matched by the envelope's
   `tool_use_id` and stay out of the parent's focus; hand-backs are ambient; typos never label a
-  cluster; the session comes from one resolver (bug-100): the hook envelope in per-call
-  processes, a SessionStart-written pointer keyed by the Claude process in the long-lived MCP
-  server (whose `CLAUDE_CODE_SESSION_ID` is frozen at spawn); and the input hook snapshots the
-  pre-prompt STM state before it changes it, so prompt-time readers never race it.
+  cluster; the session comes from one resolver (bug-100), bug-109's
+  `verbs.resolve_session_source` EXTENDED (d9s): the hook envelope, then a pointer keyed by the
+  Claude process (bug-109's, written by the input hook; 19.0/21.1 add the SessionStart writer, a
+  user-level location, cleanup and surfaced errors), with a required `purpose` so writes raise
+  instead of guessing and only labelled reads may fall back to the newest ring; every
+  `latest_session` caller (scan-prompt's enrichment and composite, helix, promote) is routed, an
+  AST test keeps it so; and the input hook snapshots the pre-prompt STM state as its first state
+  access, before its in-flight sweep, so prompt-time readers never race it.
 - **Pack, don't truncate; no subject noise (19.1).**
   - `memory recall --pack` emits one hook line per hit, whole bodies for the top hits while the
     budget allows, and a mode-specific trailer naming what was left out.
@@ -94,8 +98,8 @@ fit is reachable by a printed command that, when run, returns it; decay only dem
   PreCompact (d5d); delivery is read from 21.1's events; the fixed baseline is committed for 19.6.
 - **Phase the per-prompt budget (19.6, Wave 3).** Recall and scan-prompt spend by STM phase,
   the STM composite renders as an expand/collapse tree, returns re-warm from a topic cache, stable
-  blocks are versioned — each built only in the band a pre-registered table allows; the tables are
-  PROPOSED until the user confirms them (d9f).
+  blocks are versioned — each built only in the band a pre-registered table allows; the tables
+  were CONFIRMED as written by the user (d9v).
 
 {#design-body}
 
@@ -120,7 +124,7 @@ fit is reachable by a printed command that, when run, returns it; decay only dem
 | 19.3 | subject-tiered, value-ranked `MEMORY.md` | 2 | executed reachability; tier fold order; clock-free check; atomic triple |
 | 19.4 | compile on 17.2's tick; stale marked; index on write and after compile | 2 (after 17.2) | stale subject kept, hidden; stable slugs; new memory indexed without save-state |
 | 19.5 | probe (first) + delivery measurement + fixed baseline | R1: Wave 1, before 19.1 (a manual probe, no code dependency); R2–R4 after 19.1–19.3 | per-hook/per-event and PreCompact verdicts; `seen` derived from byte spans; before/after from C7 events |
-| 19.6 | phased context, expand/collapse composite, topic cache, versioned injection (recall + scan-prompt) | 3, after the user confirms the PROPOSED tables (d9f) | tables A–D; phase/cache/tree fixtures |
+| 19.6 | phased context, expand/collapse composite, topic cache, versioned injection (recall + scan-prompt) | 3 (tables CONFIRMED, d9v) | tables A–D; phase/cache/tree fixtures |
 
 Task specs: `workflow/plans/plan-19-adaptive-memory-budget-tasks/`.
 
@@ -131,13 +135,13 @@ From [[plan-review-2026-10-14#t8-wave1]]: Wave 1 is 23.0 ∥ 23.4 → 23.2 → 2
 
 | task | depends on |
 |---|---|
-| 19.0 | 23.0. Shares `stm.resolve_session` and `stm.pre_prompt_state` with 21.1 (specified in 21.1 R9); whichever merges first builds them |
+| 19.0 | 23.0; bug-109 MERGED to `master` (d9s; its pointer and `verbs.resolve_session_source` are existing code R5 extends). Shares the resolver's deltas and `stm.pre_prompt_state` with 21.1 (specified in 21.1 R9); whichever merges first builds them |
 | 19.1 | 23.0; 19.5 R1; 21.1 (R11's single emission site and R10's span fields must be merged FIRST: 19.1's pack returns spans to it; round-3 #m-1, an edge [[plan-review-2026-10-14#t10-waves]] lists as parallel bullets); scheduled after 23.1; deploys in the C11 hook window |
 | 19.2 | 19.1; 23.0; 23.1 (`bind(partition_name)`, `tail(log, offset)`, tick registry, offset in transaction); 23.2 (recorder); 21.1 (schema) |
 | 19.3 | 19.2; 23.0 (static catalog copy; no 19.4, no 22.2) |
 | 19.4 | 19.3; 17.2; 23.0 |
 | 19.5 | R1: none. R2–R4: 19.1–19.3, 21.1, 23.0 |
-| 19.6 | 19.0; 19.1 (incl. d8a); 19.5 R1 + R4; 21.1 fields; 23.0; the user's d9f confirmation |
+| 19.6 | 19.0; 19.1 (incl. d8a); 19.5 R1 + R4; 21.1 fields; 23.0 (the d9f confirmation is given: d9v) |
 
 Every test in every task runs in task 23.0's sandbox (d1a/d1b) and asserts 0 live connects.
 
@@ -162,6 +166,9 @@ Every test in every task runs in task 23.0's sandbox (d1a/d1b) and asserts 0 liv
 | d9f | 19.6's tables and N=8/K=8 PROPOSED; the user confirms before 19.6 starts | user, 2026-10-14 |
 | d9i | one ADR-0004 amendment (floor formula; removal-path scoping), drafted by the orchestrator for the user's approval | user, 2026-10-14 |
 | d9k | the ADR-0004 amendment is APPROVED and folded into `#rule-floor`, `#rule-no-delete`, `#rule-asserted-floor` (`3021cd6`) | user, 2026-10-14 |
+| d9r | user-asserted memory, for the decay floor = `metadata.type` `user` or `guardrail` (19.2 R7, AC-9) | user, 2026-10-14 |
+| d9s | MCP session attribution fixed now as bug-109, ahead of 19.0 R5 / 21.1 R9; the specs extend that code | user, 2026-10-14 |
+| d9v | 19.6's ranges, thresholds, `N = 8`, `K = 8`, `C = 6` CONFIRMED as written (settles d9f) | user, 2026-10-14 |
 
 ## Out of scope {#out-of-scope}
 
@@ -183,8 +190,8 @@ Round 2 status of the round-1 list ([[bsd-plan19-21-spec-rereview-32dde06#open-1
    (19.2 R1, R7, AC-17).
 4. **The `replica_merge` offset row:** CLOSED: 23.1 R8 (the larger `offset_bytes` per
    `(queue, segment)`).
-5. **19.6's bands, `N = 8`, `K = 8`, and the phase thresholds:** PROPOSED, the user confirms
-   before 19.6 starts (d9f; 19.6 R0, [[task-19.6-phased-context-and-topic-cache#ranges]]).
+5. **19.6's bands, `N = 8`, `K = 8`, `C = 6` and the phase thresholds:** CONFIRMED as written
+   by the user (d9v, settling d9f; 19.6 R0, [[task-19.6-phased-context-and-topic-cache#ranges]]).
 6. **19.2 R7's constants** (`base = 0.25`, `asserted_floor = 1.0`, weights 1/2): ACCEPTED by d9e
    as tunable starting defaults; the 91%-at-asserted-floor interaction is recorded in 19.2 R7 and
    made visible by `at_floor`.
@@ -276,3 +283,24 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r3-6091648]]
 | round-3 [[bsd-plan19-21-spec-rereview-r3-6091648#open-19]] item 5 (19.6 numbers) | still a user decision (d9f), now over a well-defined classifier (#b-2, #s-4 fixed first); `C = 6` joins the PROPOSED set |
 | round-3 #open-19 "tell the user" (MCP-route session attribution is broken TODAY) | not a spec item: reported to the orchestrator for the user. Today an MCP `rmx_focus_note` / `rmx_save_state` / `rmx_task` resolves through `RMX_SESSION` → `latest_session` (`verbs.py:519-530`), which is right only while one session is active; 19.0 R5 fixes it |
 | nm17-r3-5 (19.4 AC-2 vs `requires_arming=True`) | [[task-19.4-keep-derived-layers-current#rev-round-3]] |
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Answers [[bsd-plan19-21-spec-rereview-r4-878647c]] and d9r / d9s / d9v of
+[[plan-review-2026-10-14#t11-approvals]]. Each touched task carries its own `#rev-round-5` table.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r4-878647c]]
+
+| finding / decision | answered at |
+|---|---|
+| round-4 #b-1 (snapshot after the sweep) | [[task-19.0-stm-cluster-hygiene#rev-round-5]] (R7, AC-6d); [[task-19.6-phased-context-and-topic-cache#rev-round-5]] (R2, AC-3c); [[#design-body]] |
+| round-4 #b-2 (three unrouted `latest_session` callers) | [[task-19.0-stm-cluster-hygiene#rev-round-5]] (R5 caller table, AC-6, AC-6c, AC-6e); 19.6 R2, R9, Files; [[#design-body]] |
+| round-4 #s-1 (bug-109 owns the pointer) | 19.0 header, R5, AC-6b, AC-6c, test strategy; [[#dependencies]] (19.0 row); [[#decisions]] d9s |
+| round-4 #s-2 (`day` on a zone-less `ts`) | [[task-19.2-memory-usage-record#rev-round-5]] (R1, R7, AC-6) |
+| round-4 #s-3 (collapsed line vs unstable member set; one versioned block) | [[task-19.6-phased-context-and-topic-cache#rev-round-5]] (R9 snapshots, re-collapse; R5 two blocks; R1; AC-7d, AC-7d2, AC-7h) |
+| round-4 #m-1, #m-2 | 19.0 R0, R5, R7, AC-6d, AC-6e (and 21.1 R9) |
+| round-4 #m-3 | 19.6 R8a + Files (marker dispatch); status lines flipped (d9v). The `#t10-waves` bullet is the decision log's: handed back to the orchestrator |
+| round-3 #b-1, #b-2, #s-4 (partial) | as round-4 #s-1, #b-1, #s-3 |
+| d9r | 19.2 R7 (already so); [[#decisions]] |
+| d9s | 19.0 R5 (bug-109's deferred items listed); [[#decisions]] |
+| d9v | 19.6 R0, [[task-19.6-phased-context-and-topic-cache#ranges]]; [[#design-body]], [[#tasks]], [[#dependencies]], [[#open-after-revision]] item 5; [[#decisions]] |

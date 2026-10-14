@@ -44,7 +44,13 @@ one without losing knowledge. {#why-body}
      `(partition_name, scope, name)`: the exact lifetime record (ADR-0004 #rule-two-records).
    - `memory_usage_daily(partition_name, scope, name, day, hits, used_memory_get_by_name,
      used_context_by_name, used_focus_note)`, primary key `(partition_name, scope, name, day)`,
-     `day` = the UTC date of the event's `ts`: raw per-day counts, the ONLY input of recency.
+     `day` = the date part of the event's `ts`: raw per-day counts, the ONLY input of recency.
+     **`ts` is UTC by contract** (round-4 #s-2): 21.1 R10 stamps every event's `ts` as fixed-width
+     ISO-8601 UTC with milliseconds and `Z` (`YYYY-MM-DDTHH:MM:SS.mmmZ`), and 21.1 R5's class 0
+     makes any other form `malformed`, so the fold never sees a zone-less `ts`. `day` is
+     `ts[:10]`, read off the string: no zone conversion runs at fold time, so the folding
+     process's `TZ` and DST changes cannot move an event to another `day`. The repo's other
+     timestamps (`query.log`, the STM ring) stay local naive and are never fold keys.
    - **No decayed value is stored anywhere.** The round-2 `recency_*` / `recency_ts` columns are
      withdrawn: a stored decayed sum embeds the fold-time half-life, depends on the order and the
      batching of events (23.1's `TailLog` coalesces by key per tick budget), and moves
@@ -63,7 +69,8 @@ one without losing knowledge. {#why-body}
    - `lifetime_used` is not a column: where a single number is shown (R9, ADR-0004's text) it is
      the read-time sum of the three `used_*` columns.
    - **`first_seen`** (re-review #m-3) = the `ts` of the earliest folded event for that key (min
-     over events, so drop-and-replay and slot merge both reproduce it). A virtual row (R7) has
+     over events, so drop-and-replay and slot merge both reproduce it). The fixed-width UTC form
+     makes string `min` / `max` equal time order (round-4 #s-2). A virtual row (R7) has
      `first_seen = null`; 19.3's tie-breaks use the memory's frontmatter `created`, never
      `first_seen`.
 2. **R2 Exact counts.** Memories are a small domain (329 files on 2026-10-14), so counts are
@@ -142,7 +149,8 @@ one without losing knowledge. {#why-body}
      time (round-3 #s-2).
    - **Recency, at read time only.** For each kind `k`:
      `recency_k(t) = Σ_day count_k(day) · 2^(−max(0, t − mid(day)) / H)`, where `mid(day)` is
-     that UTC day's 12:00 and `H = RMX_MEMORY_RECENCY_HALFLIFE_DAYS` (default 14) is read when the
+     that UTC day's 12:00 as an epoch (computed in UTC, `calendar.timegm`, never `time.mktime`;
+     round-4 #s-2), `t` is an epoch, and `H = RMX_MEMORY_RECENCY_HALFLIFE_DAYS` (default 14) is read when the
      score is computed. Because no stored value embeds `H`, changing `H` re-scores every memory
      exactly, with no rewrite and no replay (AC-17). A day in the future of `t` (clock skew)
      weighs 1, never more. Days with `t − mid(day) > 30·H` are not read (their weight is below
@@ -205,7 +213,13 @@ appended through 21.1's `telemetry.emit_recall_events` with `cwd`/`root` inside 
    again with one batch of 200: all three runs give byte-identical `memory_usage` and
    `memory_usage_daily` tables (exact equality: every stored value is an integer, a min or a
    max), `first_seen` included. A second fold of a log holding the same events in a different
-   order gives the same tables.
+   order gives the same tables. **Zone independence** (round-4 #s-2): the 200 events include 20
+   stamped within 2 h either side of 2026-11-01T09:00:00.000Z (the US fall-back hour, 02:00 PDT →
+   01:00 PST) and 10 within an hour of a UTC midnight; the batch-of-7 replay runs once with
+   `TZ=UTC` and once with `TZ=America/Los_Angeles` (both set in the fold process's environment and
+   applied with `time.tzset()`), and both give byte-identical tables, equal to the batch-of-1 run.
+   Pre-check, recorded before GREEN: a fold that derives `day` through local time (`time.localtime`)
+   gives different `memory_usage_daily` rows under the two zones on this fixture.
 7. **Exactly-once.** Kill the fold between the counter update and COMMIT (an injected fault in
    the transaction): after restart, every count equals the number of events (no loss, no double).
 8. **Global route** (d8e). A global hit and a global `used` (21.1 AC-11c's note) from a project
@@ -274,7 +288,11 @@ appended through 21.1's `telemetry.emit_recall_events` with `cwd`/`root` inside 
     - the fold carrying its own malformed / channel check instead of `row_provenance`'s (AC-16's
       no-own-check assertion);
     - the user-asserted class dropped from the asserted floor (AC-9: a `type: user` memory at
-      10 half-lives below `asserted_floor`).
+      10 half-lives below `asserted_floor`);
+    - `day` derived through local time, or `mid(day)` through `time.mktime` (AC-6's two-zone
+      replay differs);
+    - a zone-less or local `ts` folded instead of rejected as `malformed` (21.1 AC-7 event g;
+      AC-16's no-own-check assertion keeps the rule in `row_provenance`).
 
 ## Files to modify {#files-to-modify}
 
@@ -346,3 +364,17 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r3-6091648]]
 | round-3 #m-1 (stale "pending" ADR wording; user-asserted floor class) | R7 (d9k: approved at `3021cd6`; user-asserted = `metadata.type` `user` / `guardrail`); AC-9; mutation |
 | d9k (ADR-0004 amendment approved) | R7 |
 | cross-plan: 21.1 R5 signature | R5 uses `telemetry.row_provenance(row, *, reader_root, source="events")` exactly as 21.1 R5 states it |
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Answers [[bsd-plan19-21-spec-rereview-r4-878647c]] #s-2 and d9r of
+[[plan-review-2026-10-14#t11-approvals]]. Code facts re-read at HEAD `39dffbb`: every timestamp
+writer stamps local naive `time.strftime("%Y-%m-%dT%H:%M:%S")` (`telemetry.py:281`, `:329`,
+`:425`; `stm.py:260`).
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r4-878647c]]
+
+| finding / decision | answered at |
+|---|---|
+| round-4 #s-2 (`day` = "UTC date" of a zone-less local `ts`) | R1 (`ts` UTC by 21.1 R10's contract, zone-less `ts` malformed by 21.1 R5; `day` = `ts[:10]`, no conversion at fold time; `first_seen` / `last_seen` string order = time order); R7 (`mid(day)` via `calendar.timegm`); AC-6 (two-zone replay across the 2026-11-01 fall-back hour and UTC midnights, with a recorded pre-check); mutations. The producer side: [[task-21.1-context-usage-telemetry#rev-round-5]] |
+| d9r (user-asserted = `metadata.type` `user` or `guardrail`) | R7 asserted floor (already so since round 3); AC-9; mutation. Unchanged |

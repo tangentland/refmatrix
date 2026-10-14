@@ -13,8 +13,8 @@ metadata:
 # Task 23.3: the between-file yield in `_sync_paths` {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: Pending (revision round 3, 2026-10-14: ns23-r3-3, see [[#rev-round-3]]; round 2:
-> nb23-3 and nb23-4, see [[#rev-round-2]])
+> Status: Pending (revision round 5, 2026-10-14: nm23-r4-3, see [[#rev-round-5]]; round 3:
+> ns23-r3-3, see [[#rev-round-3]]; round 2: nb23-3 and nb23-4, see [[#rev-round-2]])
 > Depends on: 23.1 (`bounded_steps`, `bind`), 23.2 (recorder), 23.0 (sandbox)
 
 rel: part-of -> [[plan-23-bounded-write-harness]]
@@ -30,6 +30,7 @@ rel: implements -> [[plan-review-2026-10-14#t9-fixes]]
 rel: related-to -> [[project_sync_mtime_gate_strands_docs]]
 rel: depends-on -> [[feedback_decay_never_loses_knowledge]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#ns23-r3-3]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#nm23-r4-3]]
 
 ## Why {#why}
 
@@ -186,7 +187,17 @@ Added in revision round 3, re-read at HEAD `5a8bf29`:
    is taken FAILS (the line is absent while blocked). {#ac-8}
 9. **Two concurrent syncs (ns23-r3-3).** The same 3 changed files (2 `.py` with docstring
    keywords, 1 ADR `.md`) synced twice at once on a recorded daemon: a watch `_flush` and an
-   `_op_sync_files` started together from two threads. Afterwards the catalog's entities, links,
+   `_op_sync_files` started from two threads, with the race FORCED, not hoped for (nm23-r4-3):
+   - **The barrier.** Sync A's first step's `apply` (through a test seam on the step) blocks on
+     an event until sync B is visibly waiting at its first contention point, then proceeds; a
+     10 s deadline turns a missed barrier into a test failure, never a hang. "Visibly waiting"
+     is read from the real objects, not from timing: with `_sync_mutex` present, B's thread is
+     inside the mutex's `acquire` (the mutex is wrapped in a pass-through that sets an event on
+     `acquire` entry); without it (the mutant), B's `bind` has a ticket in the recorder's
+     `_FairLock` waiter queue (`len(lock._waiters) >= 1` while A holds the lock). Either
+     signal releases A. So B is queued before A's first release in every run, and if the
+     mutex is gone B wins the lock at that release.
+   Afterwards the catalog's entities, links,
    evidence and fragment rows equal ONE sync's (AC-6's row diff), with no duplicate
    `linkage_evidence` row (`SELECT entity_id, linkage_id, concept_id, file, line, count(*) …
    HAVING count(*) > 1` returns 0). The recorder shows the two syncs' steps never interleave
@@ -230,3 +241,12 @@ Source: [[bsd-plan23-17-spec-rereview-r3-6091648]].
 |---|---|
 | ns23-r3-3 (two `_sync_paths` runs interleave per step; plain `add_evidence` in `bulk_apply_records`) | [[#why]] (round-3 facts), [[#r8]] (`_sync_mutex`, lock order, insert-if-absent evidence), [[#ac-9]] |
 | 23.1 contract names (`add_evidence_if_absent`) | [[#r8]]; [[task-23.1-queue-and-drain#r10-contract]] |
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Source: [[bsd-plan23-17-spec-rereview-r4-878647c]].
+
+| finding / decision | answered at |
+|---|---|
+| nm23-r4-3 (AC-9 does not force the race; the no-mutex mutant can pass if A drains first) | [[#ac-9]] (a barrier: A's first step waits until B is in `_sync_mutex.acquire` or holds a `_FairLock` waiter ticket) |
+

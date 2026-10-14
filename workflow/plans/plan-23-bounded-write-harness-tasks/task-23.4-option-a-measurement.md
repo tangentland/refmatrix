@@ -15,7 +15,9 @@ metadata:
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
 > Status: Pending. Ranges CONFIRMED by the user 2026-10-14 (d9l); procedure corrected under the
 > confirmed numbers 2026-10-14 (d9m: integrity by name, no 60 s cap, retry in place, pinned
-> workload, ordered runs, positive control). See [[#rev-round-3]]; round 2: [[#rev-round-2]].
+> workload, ordered runs, positive control) and corrected AGAIN (d9y: dependency-ordered dealing
+> across threads, a differential dead-bit check, the LIVE log's `st_birthtime`; ranges
+> unchanged). See [[#rev-round-5]]; round 3: [[#rev-round-3]]; round 2: [[#rev-round-2]].
 > Depends on: — (runs in parallel with 23.0; gates nothing in plan-23)
 > Feeds: the d2b revisit (plan-17's per-dataset Lance lock; whether Option A becomes a plan)
 
@@ -31,6 +33,8 @@ rel: implements -> [[plan-review-2026-10-14#t9]]
 rel: implements -> [[plan-review-2026-10-14#t9-approvals]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#ns23-r3-4]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#nm23-r3-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#ns23-r4-3]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#nm23-r4-2]]
 
 ## Why {#why}
 
@@ -68,20 +72,43 @@ plus `with_partition`, under A a per-op cursor handle). {#why-body}
    `src/`. No number it produces is reported as refmatrix performance (the benchmark-path rule):
    it measures DuckDB's behaviour on this schema. {#r2}
 3. **R3 Two workloads.**
-   - **Replay (the verdict workload), pinned (d9m).** The LAST 20,000 write events, in file
-     order, of the copied `facts.log` whose `ts` is later than that file's `st_birthtime`. A
-     `facts.log` compaction replaces the file by atomic rename, so the birth time is the last
-     compaction's time; everything before it in the file is a `dump_catalog_to_log` snapshot in
-     dump order, not a workload, and is never replayed. The copy phase records the birth time,
-     the file size and the count of qualifying events. Fewer than 20,000 qualifying events makes
+   - **Replay (the verdict workload), pinned (d9m, d9y).** The LAST 20,000 write events, in file
+     order, of the copied `facts.log` whose `ts` is later than the LIVE `facts.log`'s
+     `st_birthtime`. A `facts.log` compaction replaces the file by atomic rename, so the live
+     file's birth time is the last compaction's time; everything before it in the file is a
+     `dump_catalog_to_log` snapshot in dump order (with historical `ts` values,
+     `store.py:7264-7275`), not a workload, and is never replayed.
+     - **Whose birth time (d9y; ns23-r4-3 item 3).** The copy is a new inode, so its own
+       `st_birthtime` is the copy time; no event is later than it, and a window read from the
+       copy is always empty. The copy phase therefore reads `os.stat(<live facts.log>).st_birthtime`
+       (a `stat`, not an open, so AC-5's two-open count is unchanged) immediately before it opens
+       the live file to copy it, and records it in the jsonl as `live_birthtime`, with the live
+       inode. The copy's own stat is never used for the window. If the live inode changed between
+       the stat and the open (a compaction in that gap), the copy phase retries once and then
+       stops as INVALID.
+     - The copy phase records the live birth time, the file size and the count of qualifying
+       events. Fewer than 20,000 qualifying events makes
      the measurement INVALID (no verdict; the count is reported, and the copy is retaken later).
      The count is the script's `--events` parameter; its verdict value is 20,000 and `--verdict`
      refuses a jsonl recorded with any other value. The smoke test passes a small value.
      Each event maps to ONE transaction over the SQL shapes above.
-     Transactions are dealt to threads by a hash of their row key's NAMES (the entity's
-     `(partition, kind, name)`, or the link's `(src name, linkage, dst name)`), so every write to
-     one key stays on one thread in log order. The shared fragment rows are the only cross-thread
-     contention by design, and every fragment change is a single bit owned by one link key.
+     - **Dealing in dependency order across threads (d9y; ns23-r4-3 item 1).** Transactions are
+       dealt to threads by a hash of their PRIMARY row key's NAMES (the entity's `(partition,
+       kind, name)`, or the link's `(src name, linkage, dst name)`), AND every transaction carries
+       the set of entity NAMES it touches: an entity event touches its own; a link event touches
+       both ends (`src` and `dst`, each as `(partition, kind, name)`); a delete touches its
+       entity. A **per-name log-position barrier** orders them across threads: a transaction at
+       log position `i` does not BEGIN until every transaction at a position `j < i` that touches
+       any of its names has COMMITTED (its retries included). So an entity's create precedes
+       every link to it, and a later delete follows every earlier link, whichever threads they
+       were dealt to. Per-name log order then holds for every name a transaction touches, which
+       makes the end state interleaving-independent BY NAME by construction. The barrier is
+       built once before the run: for each transaction, the log positions of its nearest earlier
+       transaction on each of its names; plus one `threading.Event` per position, set at its
+       commit. A waiting thread blocks on its predecessors' events. A wait is not a conflict and
+       is not counted in R5's conflict rate; total barrier wait per thread is recorded beside it.
+     - The shared fragment rows remain the only cross-thread WRITE contention by design: every
+       fragment change is a single bit owned by one link key.
      What a correct concurrent run MAY still differ in is the entity ids: `entities.id` is
      `DEFAULT nextval('seq_entities_id')` (`duckdb_catalog.py:50`), DuckDB sequences are not
      transactional, so a conflicted or retried create burns an id, and concurrent creates take ids
@@ -108,7 +135,9 @@ plus `with_partition`, under A a per-op cursor handle). {#why-body}
    - A transaction that still conflicts on its 5th attempt is `retry_exhausted`: its key's stream
      halts there (later transactions of that key are not applied), the run continues for the
      other keys, and the end state then differs from the reference, which R6 reports as
-     `integrity_mismatch`. At N = 1 that is INVALID; at N > 1 it is NO-GO, by the confirmed rows
+     `integrity_mismatch`. A transaction whose barrier waits on a halted predecessor is halted
+     too (recorded as `blocked_by_exhausted`), so the run ends instead of waiting forever. At N =
+     1 that is INVALID; at N > 1 it is NO-GO, by the confirmed rows
      as written (a writer that cannot commit after 5 in-place retries is not a viable concurrent
      writer). {#r4}
 5. **R5 Metrics, per run.** Committed write transactions per second; conflict rate (conflicted /
@@ -121,7 +150,7 @@ plus `with_partition`, under A a per-op cursor handle). {#why-body}
    rows; and the end state equals the EXPECTED state (ns23-1 item 4).
    - **Expected state, defined.** Before the measured runs, one reference run applies the same
      pinned transaction list serially, in log order, on a fresh copy. Because writes are dealt by
-     key (R3) and retried in place (R4), a correct concurrent run reaches the same state BY NAME
+     key behind the per-name barrier (R3, d9y) and retried in place (R4), a correct concurrent run reaches the same state BY NAME
      whatever the interleaving. Nothing is re-applied after a run.
    - **Compared BY NAME, never by sequence-assigned id (d9m; ns23-r3-4 item 1).** Per-table row
      counts, and an order-independent content hash per table over name tuples resolved through
@@ -130,8 +159,21 @@ plus `with_partition`, under A a per-op cursor handle). {#why-body}
      - `entity_links`: `(entity's partition name, entity kind, entity name, linkage name,
        concept's partition name, concept name)` plus `weight`;
      - `bitmap_fragments`: every bit of every blob decoded to `(concept_id, entity_id)` and
-       resolved to `(row's partition name, linkage, concept name, entity kind, entity name)`; a
-       bit whose id resolves to no entity is itself a mismatch.
+       resolved to `(row's partition name, linkage, concept name, entity kind, entity name)`.
+     - **Dead bits and unknown-partition rows are DIFFERENTIAL, not absolute (d9y; ns23-r4-3
+       item 2).** A copy of a live snapshot already holds bits whose id resolves to no entity
+       (about 410 dead-concept bits on the census copy, the bug-105 rows under a `partition_id`
+       with no `partitions` row, and bits `purge_entity`'s bound-partition sweeps keep
+       regrowing). So a **census** counts, per `(partition name or unknown id, linkage)`, the
+       bits whose entity is absent from `entities` or whose concept is in neither `entities` nor
+       `concepts` (the bug-105 hotfix's alive predicate), and the rows under an unknown
+       `partition_id`, and records the dead bits whose ids the workload never touches as an id
+       set. It runs on the fresh copy before the reference run (the pre-run census, recorded),
+       after the reference run, and after every measured run. A measured run is a mismatch iff
+       its post-run census differs from the REFERENCE run's post-run census (the counts, and the
+       untouched-id set). Dead bits the pre-run census already held are therefore never a
+       mismatch by themselves; a dead bit that a measured run creates and the reference does not
+       is. The copy is not repaired before the run: its pre-run state is the measurement's input.
      Any difference is `integrity_mismatch`, a lost or duplicated write. {#r6}
 7. **R7 Output.** Raw rows to `workflow/review-output/option-a-measure-<date>.jsonl` (gitignored
    evidence); the verdict, the ranges below, the replay size and the hot-row numbers appended to
@@ -146,8 +188,10 @@ plus `with_partition`, under A a per-op cursor handle). {#why-body}
 in revision round 2 per ns23-1 and d9d, then confirmed as d9l. The procedure they are applied to
 (R3's pinned workload, R4's drain-to-completion and in-place retry, R6's by-name comparison, AC-3's
 positive control, AC-1's run order) was corrected under those same numbers and acknowledged by the
-user as d9m ("a - yes"). Neither the numbers nor the procedure change after this point without a
-new user decision (nm23-r3-1: one status).
+user as d9m ("a - yes"). The procedure was corrected again under the same numbers as d9y ("1 -
+agree": dependency-ordered dealing, a differential dead-bit check, the live log's birth time;
+[[#rev-round-5]]). Neither the numbers nor the procedure change after this point without a new
+user decision and a new spec pin ([[#ac-1]]) (nm23-r3-1: one status).
 
 **Definitions** (ns23-1 item 4):
 - `T(N, k)`: committed transactions per second of run `k ∈ {1, 2, 3}` at N threads.
@@ -177,30 +221,52 @@ Rows are checked top to bottom; the first that matches is the verdict.
 
 ## Acceptance criteria {#acceptance}
 
-1. **Runs are ordered after the confirmation (d9m; ns23-r3-4 item 5).** The ranges (d9l, logged
-   at `3021cd6`, committer time 2026-10-14T13:15:27-07:00) and the procedure (d9m, logged at
-   `5a8bf29`, 13:31:33-07:00) are confirmed; the spec text that implements d9m is the commit that
-   adds `#rev-round-3` to this file (`git log -S'rev-round-3' -- <this file>`). The check orders
-   RUNS, not commits: the `ts` of the FIRST row of every `option-a-measure-*.jsonl` is later than
-   that commit's committer time, and every row records the sha of this spec file's last commit
-   at run start. `--verdict` refuses a jsonl whose first row is earlier, or whose recorded spec
-   sha differs from the one the confirmation names. {#ac-1}
+1. **Runs are ordered after the confirmation, against a NAMED spec sha (d9m, d9y; ns23-r3-4
+   item 5, nm23-r4-2 item 3).** The ranges (d9l, logged at `3021cd6`, committer time
+   2026-10-14T13:15:27-07:00) and the procedure (d9m, logged at `5a8bf29`, 13:31:33-07:00;
+   corrected again as d9y, logged at `ef4fa7c`, 14:15:18-07:00) are confirmed.
+   - **The spec pin.** The procedure text that implements d9y is this file as committed by the
+     round-5 revision. That commit's sha cannot be written into the file it commits, and a
+     `git log -S` search stops returning one commit as soon as a later revision adds or
+     removes the searched string, so neither is the pin. Instead, the commit that lands this
+     revision ALSO adds one row to the decision log ([[plan-review-2026-10-14]]) naming the
+     literal sha: "23.4 procedure pin = `<sha>` (d9y text)". That row is the pin; a later
+     procedure change needs a new user decision AND a new pin row.
+   - The check orders RUNS, not commits: the `ts` of the FIRST row of every
+     `option-a-measure-*.jsonl` is later than the pinned commit's committer time, and every row
+     records `git log -1 --format=%H -- <this file>` at run start. `--verdict` takes the pinned
+     sha as a required literal argument (`--spec-pin <sha>`, copied from the decision row) and
+     refuses a jsonl whose first row is earlier than that commit, or whose recorded spec sha is
+     not that literal value. {#ac-1}
 2. Every run has an R6 integrity row; a run with no integrity row is a failed run, not a pass.
    {#ac-2}
 3. Self-check of the error detector, both directions (pre-registered):
    - **Negative control:** a run against a copy whose `entities` unique index is dropped and a
      duplicate row inserted makes R6's duplicate query non-empty, and the verdict code returns
      NO-GO. A detector that cannot fire would return GO on a corrupt copy.
-   - **Positive control (d9m; ns23-r3-4):** the smoke test at N = 2 over a workload that CREATES
-     entities and contains one forced conflict (two threads made to update one shared fragment
-     row in overlapping transactions) retries in place and passes R6 with NO `integrity_mismatch`,
-     although its entity ids differ from the serial reference's (the test asserts they differ, so
-     the case is real). A detector that only proves it can fire is half a detector.
+   - **Positive control (d9m, d9y; ns23-r3-4, ns23-r4-3):** the smoke test at N = 2 over a
+     workload that CREATES entities and contains one forced conflict (two threads made to update
+     one shared fragment row in overlapping transactions) AND one cross-thread dependency pair
+     (a create of entity `X` dealt to thread 1, followed in log order by a link to `X` dealt to
+     thread 2, and a later delete of another entity `Y` dealt to thread 2 after a link to `Y` on
+     thread 1; the test asserts the dealing put them on different threads, so the case is real).
+     It retries in place, honours the barrier, and passes R6 with NO `integrity_mismatch`,
+     although its entity ids differ from the serial reference's (the test asserts they differ).
+     The smoke fixture's catalog also carries 3 pre-existing dead bits and one row under an
+     unknown `partition_id`; the run is still not a mismatch (the differential check).
+     A detector that only proves it can fire is half a detector.
+   - **Negative control for the differential check (d9y):** a measured run that, by a test seam,
+     sets one extra bit for an entity id that does not exist reports `integrity_mismatch`
+     although the copy's 3 pre-existing dead bits are the same in both runs.
    - Mutations, each must FAIL: R6 hashing `entity_links` / fragments by id → the positive
      control reports `integrity_mismatch`; a conflicted transaction re-applied after the run
      instead of in place, on a stream with an unlink after the conflicted link → the positive
-     control reports `integrity_mismatch`; the duplicate query removed → the negative control
-     returns GO. {#ac-3}
+     control reports `integrity_mismatch`; the per-name barrier removed (dealing by primary key
+     only) → the positive control's cross-thread pair reports `integrity_mismatch` (forced by a
+     seam that delays thread 1's create until thread 2's link has been attempted); the dead-bit
+     check made absolute → the positive control reports `integrity_mismatch` on its 3
+     pre-existing dead bits; the dead-bit check removed → the differential negative control
+     returns no mismatch; the duplicate query removed → the negative control returns GO. {#ac-3}
 4. The verdict is mechanical: `measure_cursor_writers.py --verdict` reads the jsonl and prints the
    matching row of [[#ranges]]; the appended exploration text quotes that output. {#ac-4}
 5. **Live untouched, by the guard, not by stat (ns23-1 item 5).** A live daemon changes the active
@@ -218,7 +284,11 @@ Rows are checked top to bottom; the first that matches is the verdict.
    a dropped table): `--verdict` prints `INVALID` and records no verdict. Mutation: treat it as
    NO-GO FAILS. The same holds for a pinned-workload shortfall (d9m): a fixture `facts.log` with
    fewer than `--events` events after its birth time prints `INVALID` with the count; mutation:
-   replaying the pre-birth snapshot lines to make up the count FAILS. {#ac-7}
+   replaying the pre-birth snapshot lines to make up the count FAILS. A third case (d9y;
+   ns23-r4-3 item 3): a fixture "live" `facts.log` with a known birth time and 30 events after
+   it is COPIED by the copy phase; the window holds those 30 events, read from the live file's
+   birth time, and the jsonl's `live_birthtime` equals the fixture's. Mutation: the window read
+   from the copy's own `st_birthtime` FAILS (0 events, INVALID). {#ac-7}
 
 ## Test strategy {#test-strategy}
 
@@ -269,3 +339,17 @@ Source: [[bsd-plan23-17-spec-rereview-r3-6091648]] and [[plan-review-2026-10-14#
 | nm23-r3-1 (status stated three ways; d9d vs d9l) | [[#root]] header, [[#ranges]] status paragraph, [[#rev-round-2]] note |
 | d9l (ranges confirmed) | [[#ranges]] (numbers unchanged) |
 | d9m (procedure corrected under the confirmed numbers) | [[#r3]], [[#r4]], [[#r6]], [[#ac-1]], [[#ac-3]], [[#ranges]] status |
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Source: [[bsd-plan23-17-spec-rereview-r4-878647c]] and [[plan-review-2026-10-14#t11-approvals]]
+(d9y: the procedure corrected again; the ranges, d9l, unchanged).
+
+| finding / decision | answered at |
+|---|---|
+| ns23-r4-3 item 1 (by-key dealing ignores create/delete → link dependencies), d9y "dependency order" | [[#r3]] (per-name log-position barrier), [[#r4]] (`blocked_by_exhausted`), [[#r6]] (expected state), [[#ac-3]] (cross-thread pair in the positive control; barrier-removed mutation) |
+| ns23-r4-3 item 2 (absolute dead-bit check fires on any live copy), d9y "differential" | [[#r6]] (census before the reference, after the reference and after every run; mismatch = difference from the reference's census), [[#ac-3]] (dead bits in the smoke fixture; differential negative control; two mutations) |
+| ns23-r4-3 item 3 (the copy's `st_birthtime` → 0 events), d9y "the LIVE log's `st_birthtime`" | [[#r3]] ("Whose birth time": `os.stat` of the live file in the copy phase, recorded as `live_birthtime`), [[#ac-7]] third case |
+| nm23-r4-2 item 3 (AC-1's spec sha has nothing to compare against) | [[#ac-1]] (a decision-log pin row names the literal sha; `--spec-pin` compares against it) |
+| d9l (ranges) | [[#ranges]]: unchanged |
+

@@ -71,11 +71,13 @@ Task specs: `workflow/plans/plan-21-agent-context-usage-tasks/`. Waves follow
   Round 2 adds `partition`, `cwd`, `root` (re-review #b-1), byte spans with a separate body span
   (ONE unit, bytes), ONE emission site that owns `delivered` (19.1's pack supplies spans only),
   and the `used` matcher / lookup / global destination (21.1 R5, R9-R12). Round 3 adds ONE
-  session resolver (`stm.resolve_session`: the hook envelope in per-call processes, a
-  SessionStart-written pid pointer in the long-lived MCP server, whose `CLAUDE_CODE_SESSION_ID`
-  is frozen at spawn), ONE pre-prompt snapshot read (`stm.pre_prompt_state`) for every phase
+  session resolver, ONE pre-prompt snapshot read (`stm.pre_prompt_state`) for every phase
   input, the catalog→event `kind` map with `concept`, the recall channel rule, and the attached
-  memory body as its own `kind=memory` item (21.1 R9-R12).
+  memory body as its own `kind=memory` item (21.1 R9-R12). Round 5 (d9s): the resolver is
+  bug-109's existing `verbs.resolve_session_source` and pid pointer, EXTENDED (a required
+  `purpose`, the SessionStart writer, a user-level pointer location, surfaced errors), never
+  rebuilt; the snapshot is the input hook's first state access, before its in-flight sweep; and
+  every event's `ts` is UTC.
   - **Consumers:** 19.2's counters fold the file into DuckDB through plan-23's drain with the
     offset committed in the same transaction (d2a), using 23.1's non-consuming tail reader and
     tick registry (d4a amendment; plan-21 is a listed consumer); it counts `kind=memory` events on
@@ -113,8 +115,9 @@ Task specs: `workflow/plans/plan-21-agent-context-usage-tasks/`. Waves follow
 
 ## Dependencies {#dependencies}
 
-- **21.1** needs only **23.0** (the shared test sandbox, d1a/d1b), per
-  [[plan-review-2026-10-14#t8-wave1]]. It runs in Wave 1. It is the instrument 19.2, 19.5 and 19.6
+- **21.1** needs **23.0** (the shared test sandbox, d1a/d1b), per
+  [[plan-review-2026-10-14#t8-wave1]], and **bug-109 merged to `master`** (d9s): R9 extends its
+  session pointer and resolver as existing code. It runs in Wave 1. It is the instrument 19.2, 19.5 and 19.6
   consume; it does not wait on plan-23's queue (d4a).
 - **21.2** needs 21.1 (to measure) and 23.0. Its replica reads rely on ch-bsd r9's partition
   binding (`09db9a6`).
@@ -203,3 +206,18 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r3-6091648]]
 | round-3 #s-3 (`row_provenance` two test bases; `malformed`) | 21.1 R5, AC-7 |
 | round-3 #m-1 (stale R-numbers; open items 3 and 4) | [[#consolidations]] (R8-R12); [[#decisions]] (d4a R8; d8e R8, R10, R12); [[#open-after-revision]] items 3 and 4 CLOSED |
 | round-3 #m-7 (focus-note edge cases) | 21.1 R12, AC-11f |
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Answers [[bsd-plan19-21-spec-rereview-r4-878647c]] and d9s of
+[[plan-review-2026-10-14#t11-approvals]]. No plan-21 item needs the user.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r4-878647c]]
+
+| finding / decision | answered at |
+|---|---|
+| round-4 #b-1, #b-2, #s-1, #s-2, #m-1, #m-2 (21.1 side) | [[task-21.1-context-usage-telemetry#rev-round-5]] |
+| round-4 #s-1 (dependency on the merge, not a sha) | [[#dependencies]] (21.1); [[#consolidations]] |
+| round-4 #m-3 | not a plan-21 item (19.6; the decision log's wave list) |
+| round-3 #b-1, #b-2 (partial) | as round-4 #s-1, #b-1 |
+| d9s | [[#dependencies]]; [[#consolidations]]; 21.1 R1, R9 |

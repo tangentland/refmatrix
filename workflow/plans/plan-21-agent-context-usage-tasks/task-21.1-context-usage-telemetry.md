@@ -15,8 +15,11 @@ metadata:
 > Plan: [plan-21-agent-context-usage](../plan-21-agent-context-usage.md)
 > Status: Pending (revision after the 2026-10-14 decision log)
 > Wave: 1
-> Depends on: 23.0 only (the shared test sandbox; [[plan-review-2026-10-14#t8-wave1]]). The event
-> emission does NOT depend on plan-23's queue (d4a); only 19.2's fold does.
+> Depends on: 23.0 (the shared test sandbox; [[plan-review-2026-10-14#t8-wave1]]), and bug-109
+> MERGED TO `master` (d9s; round-4 #s-1): R9's session resolver and pid pointer EXTEND bug-109's
+> code as existing code, never rebuild it. A sha list on the bug-109 branch is not the
+> dependency; the merge is. The event emission does NOT depend on plan-23's queue (d4a); only
+> 19.2's fold does.
 
 rel: part-of -> [[plan-21-agent-context-usage]]
 rel: derives-from -> [[exploration-agent-context-usage]]
@@ -27,6 +30,7 @@ rel: depends-on -> [[task-23.0-test-sandbox]]
 rel: related-to -> [[task-19.2-memory-usage-record]]
 rel: related-to -> [[task-19.5-measure-delivery]]
 rel: related-to -> [[exploration-session-phased-context]]
+rel: depends-on -> [[bug_registry]]
 
 ## Why {#why}
 
@@ -55,11 +59,13 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
 
 1. **R1 The MCP server sets its source.** `mcp.serve_stdio` sets `RMX_INVOCATION_SOURCE=mcp` in its
    own process environment before it reads the first request, so every verb it serves and every
-   child it spawns inherits it. (`mcp` is already in `INVOCATION_SOURCES`; bsd #m-1.) It also
-   marks itself long-lived, so every verb it serves resolves its session per call through R9's
-   `stm.resolve_session(…, long_lived=True)`; the server never caches a session id. At startup it
-   removes `CLAUDE_CODE_SESSION_ID` from its own `os.environ`, so a child it spawns cannot inherit
-   the spawn-time id and resolve it as a per-call process would (round-3 #b-1).
+   child it spawns inherits it. (`mcp` is already in `INVOCATION_SOURCES`; bsd #m-1.)
+   - **Existing (bug-109):** `serve_stdio` already sets `verbs._LONG_LIVED = True` before the
+     first request, so every verb it serves resolves its session per call through
+     `verbs.resolve_session_source` (pointer first, R9). This task does not rebuild that.
+   - **Delta (round-3 #b-1; round-4 #s-1):** at startup it also removes `CLAUDE_CODE_SESSION_ID`
+     from its own `os.environ`. No resolver reads that variable (R9), but a child the server
+     spawns must not inherit a spawn-time id that a non-rmx tool could trust.
 2. **R2 An `agent` source with a stated precedence** (d4f; decision-log #m-2). `agent` joins
    `INVOCATION_SOURCES`. `invocation_source()` resolves, in this order:
    1. explicit `RMX_INVOCATION_SOURCE` (hooks: `hook`; MCP: `mcp`; harnesses: `internal`);
@@ -113,7 +119,8 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
    draw) calls `row_provenance`; no reader carries its own copy, and no reader decides
    `malformed` itself (round-3 #s-3). The classes, first match wins:
    0. **`malformed`** (`source="events"` only): the event lacks any of `v`, `stage`, `name`,
-      `channel`, `cwd`, `root`, or its `v` is not 1, or its `channel` is not in R10's enum.
+      `channel`, `cwd`, `root`, `ts`, or its `v` is not 1, or its `channel` is not in R10's enum,
+      or its `ts` is not R10's UTC form (`YYYY-MM-DDTHH:MM:SS.mmmZ`; round-4 #s-2).
       Unparseable lines never reach the function: the reader counts them before classifying (R8).
    1. **`test_artifact`** (round-3 #s-3: keyed on `root`). The row's KEY PATH is its `root`, or
       its `cwd` only when it has no `root`. It is `test_artifact` when `test_base(key path)` is not
@@ -180,83 +187,170 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
    print unparseable lines; they never skip them silently. No other recall log format may be added
    (AC-9).
 9. **R9 Session, turn and identity.** Every event and every `query.log` row resolves `session`
-   through the ONE resolver below; turn is logged, never used as a phase signal (d5b).
+   through the ONE resolver below, with `purpose="event"`; turn is logged, never used as a phase
+   signal (d5b).
    {#req-session}
 
-   **The ONE session resolver** (round-3 #b-1). Live fact, read 2026-10-14: the long-lived
-   `rmx mcp` process (pid 59378, child of the Claude process `CLAUDE_PID=59363`, started
-   2026-10-06 22:27) carries `CLAUDE_CODE_SESSION_ID=b38025a7…` while that Claude process serves
-   session `db80475a…`, which the Bash tool's per-call `CLAUDE_CODE_SESSION_ID` names correctly.
-   An environment variable is a snapshot of its process's birth; after `/resume` or `/clear` the
-   MCP server's copy names a dead session for the rest of its life. Therefore:
-   - **Signature, exact:** `stm.resolve_session(root: Path, *, envelope: dict | None = None,
-     long_lived: bool = False) -> stm.SessionResolution`, a `NamedTuple(session: str | None,
-     source: str)`, `source` ∈ `envelope`, `claude_env`, `pid_pointer`, `rmx_session`, `none`.
-     It is used by every event and `query.log` row here AND by 19.0 R5's STM resolvers
-     ([[task-19.0-stm-cluster-hygiene#requirements]] R5); it is built by whichever of 21.1 and
-     19.0 merges first, and the other imports it unchanged (both run their own ACs against it).
-   - **Per-call processes** (`long_lived=False`: hooks, and CLI runs spawned by the Bash tool):
-     the envelope's `session_id` → `CLAUDE_CODE_SESSION_ID` → the pid pointer for `$CLAUDE_PID`
-     → `RMX_SESSION` → none.
-   - **Long-lived processes** (`long_lived=True`: `rmx mcp`, which re-resolves on EVERY tool call
-     and never caches): the pid pointer for `os.getppid()` (the MCP server's parent IS the Claude
-     process: pid 59378's ppid is 59363) → `RMX_SESSION` → none. `CLAUDE_CODE_SESSION_ID` is never
-     read in a long-lived process.
-   - **The pid pointer.** `<root>/stm/by-pid/<pid>.json` holds `{session_id, pid, pid_start,
-     written_at, hook_source}`, written by tmp + `os.replace`. Writers:
-     - a NEW SessionStart hook entry generated by `hooks.py`, matcher `startup|resume|clear|compact`,
-       command `rmx focus hook --event session-start` (stderr NOT discarded: this is a memory
-       path), which takes `session_id` and `source` from its envelope;
-     - `focus hook --event input`, which rewrites the pointer when its envelope's `session_id`
-       differs from the pointer's (one read per prompt), so a missed SessionStart heals on the
-       next prompt.
-     The writer's Claude pid is `$CLAUDE_PID` when set (the Bash tool's environment has it:
-     `CLAUDE_PID=59363`, read 2026-10-14), else the nearest ancestor within 4 levels whose command
-     basename is `claude` (`ps -o ppid=,comm= -p <pid>`); with neither, nothing is written, one
-     stderr line names the miss, and the miss is counted (`rmx focus show`). 19.0 R0 records
-     which of the two reaches hook processes. `pid_start` is the process start time
-     (`ps -o lstart= -p <pid>`); a reader whose pid's current start time differs (pid reuse)
-     ignores the pointer and counts it (`pid_pointer_stale`).
-   - `stm.latest_session` (`stm.py:127`) is NEVER consulted (bsd #b-1; bug-100's shape). When
-     nothing resolves, rows and events carry `session: null`, and 19.0 R5 states what each
-     write verb does instead (an error, never a dropped or misrouted write).
+   **The ONE session resolver** (round-3 #b-1; round-4 #s-1, #b-2, #m-2; d9s). Live fact, read
+   2026-10-14: the long-lived `rmx mcp` process (pid 59378, child of the Claude process
+   `CLAUDE_PID=59363`) carries `CLAUDE_CODE_SESSION_ID=b38025a7…` while that Claude process
+   serves a later session. An environment variable is a snapshot of its process's birth; after
+   `/resume` or `/clear` the MCP server's copy names a dead session for the rest of its life.
 
-   **The pre-prompt state, race-free** (re-review #s-3; round-3 #b-2). The recall and scan hooks
-   run IN PARALLEL with `focus hook --event input` (`hooks.py` registers them as separate
-   UserPromptSubmit entries, and Claude Code runs an event's hooks in parallel, as the generator's
-   own comment at `hooks.py:263-265` records). `Stm.record` (`stm.py:246-282`) appends the input
-   event AND ingests the prompt's refs into `<session>.focus.json` in the same call, and the ring's
-   `ts` is cut to the second (`stm.py:259`). So EVERY value a prompt-time reader computes from the
-   ring or the graph (the event count, the turn, the topic list, the overlap, 19.6's phase) is
-   n or n+1 by scheduling, not only the turn; and no wall-clock margin on a second-truncated `ts`
-   can separate this prompt from the last. The round-2 rule (`ts < t0 − 1 s`) is WITHDRAWN.
-   Instead, one snapshot, one reader:
+   **Existing code this task extends** (bug-109, read at `320dc82` in
+   `/Volumes/littlebig/refmatrix-bug109`, branch `bug-109-mcp-session`; it reaches this task only
+   through its merge to `master`, and every line number below is re-read after that merge):
+   - `stm.write_pid_pointer(root, pid, session) -> bool` writes `stm/by-pid/<pid>.json` =
+     `{session, pid, pid_start, t}` by tmp + `replace`; an unchanged pointer costs one read and no
+     `ps`; a pid whose start time `ps` cannot report is refused and recorded (`ps-failed`).
+   - `stm.read_pid_pointer(root, pid) -> str | None`: the session, or `None` when the file is
+     missing, unreadable, or its `pid_start` differs from `_proc_start(pid)` (`ps -o lstart=`).
+   - `stm.owner_claude_pid(*, long_lived=False) -> int | None`: long-lived → `os.getppid()`, its
+     own environment ignored; per-call → `$CLAUDE_PID` only when that pid is a real ancestor, else
+     the nearest ancestor whose command is `claude`, over a chain of at most 16 steps built from
+     ONE `ps -A -o pid=,ppid=,comm=` call. (The round-3 "within 4 levels, one `ps` per pid" rule
+     is WITHDRAWN in favour of this.)
+   - `stm.record_pointer_error(root, reason, **fields)` appends `{t, reason, …}` to
+     `stm/by-pid/_errors.jsonl`; reasons `no-owner`, `ps-failed`, `write-failed`,
+     `pointer-unresolved`.
+   - The input branch of `cli.focus_hook` writes the pointer for every envelope with a
+     `session_id`, FIRST, before the in-flight sweep and the ambient check (`cli.py:1973-1992` at
+     `320dc82`).
+   - `verbs._LONG_LIVED` (set by `mcp.serve_stdio`) and
+     `verbs.resolve_session_source(root, session) -> (session, source)`, `source` ∈ `explicit`,
+     `pointer`, `env`, `latest`, `default`; order: explicit → (long-lived: pointer → `RMX_SESSION`;
+     per-call: `RMX_SESSION` → pointer) → newest ring (recorded `pointer-unresolved` when running
+     under Claude) → `default`. Write verbs return `session_source`; `cli.focus_promote_edges`
+     resolves its session in the CLI. Tests: `tests/test_mcp_session_pointer.py`.
+
+   **The resolver as this task specifies it** (19.0 R5 cites it; built by whichever of 21.1 and
+   19.0 merges first as the deltas below, the other imports it unchanged). The resolution ORDER
+   is bug-109's, adopted as written and stated once here; the round-3 order (envelope →
+   `CLAUDE_CODE_SESSION_ID` → pointer → `RMX_SESSION`) is WITHDRAWN.
+   - **Signature, exact (delta D1):** `verbs.resolve_session_source(root: Path, session: str |
+     None = None, *, envelope: dict | None = None, purpose: Literal["write", "read", "event"])
+     -> verbs.SessionResolution`, a `NamedTuple(session: str | None, source: str)`. A NamedTuple
+     unpacks like bug-109's 2-tuple, so its existing callers keep working; `purpose` is
+     REQUIRED (no default), so every caller states what it does with the answer. `source` ∈
+     `explicit`, `envelope`, `pointer`, `env`, `latest`, `default`, `none`. The round-3 name
+     `stm.resolve_session` is not built.
+   - **Order:** `session` (explicit) → `envelope["session_id"]` (source `envelope`; a hook passes
+     its stdin envelope) → long-lived: pointer for `owner_claude_pid(long_lived=True)` →
+     `RMX_SESSION`; per-call: `RMX_SESSION` → pointer for `owner_claude_pid()` → the TAIL of the
+     caller's `purpose`:
+     - `read`: the newest ring (source `latest`, output labelled `(newest ring; not resolved)`),
+       else `default`. This is the ONE allowed `latest_session` call in `src/` (round-4 #m-2);
+       19.0 AC-6e enforces it by an AST scan.
+     - `write`: raises `verbs.SessionUnresolved` naming the sources tried (19.0 R5 states the
+       CLI and MCP outcome). No write reaches `default` or the newest ring (delta D2: bug-109's
+       `latest` / `default` tail is removed for writes).
+     - `event`: `SessionResolution(None, "none")`. Telemetry rows and events (this task),
+       scan-prompt's enrichment and composite, and the helix gate (19.0 R5) use it.
+     In all three, a miss under Claude is recorded `pointer-unresolved`, as today.
+   - **`CLAUDE_CODE_SESSION_ID` is read by no resolver path** (bug-109 already reads it nowhere;
+     R1 also deletes it from the server's environment).
+   - **D3 One pointer location for every store root** (bug-109 r1 #m-4, "the hook and server
+     resolve their store root differently"). The hook writes under `cli._root()` (its cwd's
+     store); the server reads under `mcp._resolve_root(args)` (its spawn cwd's store, or a named
+     `root` / `project`). When the session's cwd moves into another tree, the pointer lands in a
+     store the server never reads. A pointer belongs to a Claude PROCESS, not a store, so pointers
+     and `_errors.jsonl` move to `<hub.global_store_root()>/by-pid/` (`~/.refmatrix/by-pid/`;
+     23.0's sandbox redirects it). `stm.pointer_dir() -> Path` returns it; `write_pid_pointer`,
+     `read_pid_pointer` and `pid_pointer_path` drop their `root` argument. Migration, one
+     release: `read_pid_pointer` falls back to bug-109's `<root>/stm/by-pid/<pid>.json` when the
+     new file is absent, and records `pointer-legacy-location`; nothing writes the old location.
+   - **D4 The SessionStart writer** (bug-109 r1 #m-4). A NEW generated SessionStart entry,
+     matcher `startup|resume|clear|compact`, command `rmx focus hook --event session-start`
+     (stderr NOT discarded: this is a memory path), calls `write_pid_pointer` with the envelope's
+     `session_id`, so after `/clear` the pointer names the new session BEFORE the first prompt.
+     The pointer gains one field, `hook` (`input`, or `session-start:<source>`); readers ignore
+     unknown fields, so bug-109's format `{session, pid, pid_start, t}` is otherwise kept as is
+     (the round-3 names `session_id`, `written_at`, `hook_source` are WITHDRAWN).
+   - **D5 Silent misses recorded.** `read_pid_pointer` records `pointer-stale` (its `pid_start`
+     no longer matches: pid reuse) and `pointer-unreadable` (present but not JSON) instead of
+     returning `None` silently. A missing file is not an error by itself; the resolver's
+     `pointer-unresolved` row covers it.
+   - **D6 `_errors.jsonl` is surfaced** (bug-109 r1 #b-1 left it unread). `rmx focus show`
+     prints one line `session pointer: <reason>=<n> … since <ts>` from it. The SessionStart writer
+     (D4) prints the same line on STDOUT, where SessionStart output reaches the agent, whenever
+     rows were added since the last surfacing (watermark: `by-pid/_errors.seen`, the byte offset
+     last surfaced). Once the file exceeds 1 MB the writer renames it to
+     `_errors.<YYYYMMDD>.jsonl` after surfacing; nothing is deleted.
+   - **D7 `by-pid/` cleanup** (bug-109 r1 #m-4). The SessionStart writer removes pointer files
+     whose pid is absent from ONE `stm._process_table()` call or whose `pid_start` differs, and
+     prints `pruned=<n>` with the surfacing line. A pointer is only a cache of the process
+     relation, so removing a dead process's pointer loses nothing.
+   - **D8 `record_pointer_error` generalized.** With D3 it writes `<pointer_dir>/_errors.jsonl`
+     and drops its `root` argument (a store-scoped row carries `root=` as a field). 19.0 adds the
+     reasons `sweep-failed`, `composite-failed` and `enrichment-unresolved` to the same record, so
+     every STM hook failure reaches D6's surfacing; no new error file is added.
+   - `stm.latest_session` (`stm.py:127` at HEAD) is never called outside the `read` tail (bsd
+     #b-1; bug-100's shape). When nothing resolves, rows and events carry `session: null`.
+
+   **The pre-prompt state, race-free** (re-review #s-3; round-3 #b-2; round-4 #b-1, #m-1). The
+   recall and scan hooks run IN PARALLEL with `focus hook --event input` (`hooks.py` registers
+   them as separate UserPromptSubmit entries, and Claude Code runs an event's hooks in parallel,
+   as the generator's own comment at `hooks.py:263-265` records). The input hook CHANGES the
+   state they read, in two places (read at HEAD, `cli.py:1946-1981`; `stm.py:246-282`,
+   `:331-353`):
+   - `inflight_sweep()` runs first (`cli.py:1976`): every call parked longer than 90 s is
+     `record`ed as an `abandoned` tool event, appended to the ring AND ingested into
+     `<session>.focus.json`. It runs BEFORE the ambient check, so ambient prompts sweep too. Live:
+     17 of session db80475a's 78 recorded prompts directly followed a sweep, 16 with refs.
+   - then `Stm.record("input", …)` (`cli.py:1980-1981`) appends the input event and ingests the
+     prompt's refs; the ring's `ts` is cut to the second (`stm.py:260`).
+
+   So EVERY value a prompt-time reader computes from the ring or the graph (the event count, the
+   turn, the topic list, the overlap, 19.6's phase) depends on scheduling, and no wall-clock
+   margin on a second-truncated `ts` can separate this prompt from the last. The round-2 rule
+   (`ts < t0 − 1 s`) is WITHDRAWN. Instead, one snapshot, one reader:
    - **Signature, exact:** `stm.pre_prompt_state(root: Path, session: str, prompt: str, *,
      t0: float) -> stm.PrePromptState`, a `NamedTuple(graph: dict, topic_cache: dict, turn: int,
      events_n: int, source: str)`, `source` ∈ `snapshot`, `live`. Same ownership rule as the
      resolver (first of 21.1 / 19.0 to merge builds it; 19.0 R7 restates it).
-   - **Writer.** `Stm.record(kind="input", …)`, BEFORE it appends the event or touches the graph,
-     calls `Stm.snapshot_pre_prompt(prompt: str) -> None`, which writes `<session>.pre.json` = `{prompt_sha, wall, turn, events_n, graph, topic_cache}` by
-     tmp + `os.replace`: `prompt_sha` = sha256 of the prompt's UTF-8 bytes, `wall` =
-     `time.time()` (sub-second), `turn` = the graph's `turn` counter before this prompt
-     (`stm.py:427` increments it once per recorded input), `events_n` = the ring's complete lines,
-     `graph` = the focus graph, `topic_cache` = 19.6 R3's cache (`{}` until 19.6). The appended
-     input event gains `prompt_sha` and `t` (sub-second epoch).
-   - **Reader.** It reads the LIVE state first (focus graph, ring complete-line count, topic
-     cache), THEN `pre.json`. If `pre.prompt_sha == sha256(prompt)` and `|pre.wall − t0| ≤ S`, it
-     returns the snapshot's values (`source=snapshot`); else the live values (`source=live`).
-     This is exact because the writer writes `pre.json` before it changes anything: a reader that
-     finds no matching snapshot AFTER reading the live state read a state the input hook had not
-     yet touched. `t0` is `time.time()` read once at process entry.
-   - **`S`, measured, not assumed.** 19.0 R0 measures the start skew between the parallel
-     UserPromptSubmit hooks of one prompt (both log `t0`) over ≥ 50 real prompts; `S` =
-     max(2 s, 3 × the largest measured skew), committed as `stm.PRE_PROMPT_SKEW_S` with the
-     measurement in its docstring. If R0 finds a per-prompt unique field in the UserPromptSubmit
-     envelope, the snapshot is keyed by it instead and `S` is unused. Residual, stated: a prompt
-     textually identical to the previous one and submitted within `S` of it reads the previous
-     prompt's snapshot (one turn stale).
-   - Ambient prompts are never recorded (`cli._is_ambient_prompt`), so they write no snapshot and
-     their readers read the live state, which they never changed.
+   - **Writer: the input hook's FIRST state access, not `Stm.record`** (round-4 #b-1). The input
+     branch of `cli.focus_hook` runs, in this order:
+     1. bug-109's pointer write (existing; no prompt-time reader resolves its session from the
+        pointer, since every hook reader has its envelope, so it is not reader state);
+     2. `s.snapshot_pre_prompt(prompt)` for EVERY non-empty prompt, ambient included;
+     3. `s.inflight_sweep()`; its `except Exception: pass` (`cli.py:1977-1978`) becomes one stderr
+        line plus a `sweep-failed` row (D8);
+     4. when the prompt is not ambient, `s.record("input", prompt[:300])`.
+     `Stm.snapshot_pre_prompt(prompt: str) -> None` writes `<session>.pre.json` = `{prompt_sha,
+     wall, turn, events_n, graph, topic_cache}` by tmp + `os.replace`: `prompt_sha` = sha256 of
+     the prompt's UTF-8 bytes, `wall` = `time.time()` (sub-second), `turn` = the graph's `turn`
+     counter (`stm.py:427` increments it once per recorded input), `events_n` = R9's event count
+     below, `graph` = the focus graph, `topic_cache` = 19.6 R3's cache (`{}` until 19.6).
+     `Stm.record` no longer calls it. The appended input event gains `prompt_sha` and `t`
+     (sub-second epoch).
+   - **`events_n`** counts the ring's complete lines whose `origin` is `parent` or absent (19.0
+     R2's field; round-4 #m-1). Background subagents' PostToolUse events land in the parent ring
+     during the window (19.0 R2 keeps them there), and would otherwise move the count for a reason
+     unrelated to the input hook. Until 19.0 R2 ships, no event carries `origin`, every line
+     counts, and that residual is stated in `--agent-usage`'s footer.
+   - **Reader.** It reads the LIVE state first (focus graph, ring count, topic cache), THEN
+     `pre.json`. If `pre.prompt_sha == sha256(prompt)` and `|pre.wall − t0| ≤ S`, it returns the
+     snapshot's values (`source=snapshot`); else the live values (`source=live`). This is exact
+     because `pre.json` is written before the hook's first change to the ring, the graph or the
+     cache (the sweep included): a reader that finds no matching snapshot AFTER reading the live
+     state read a state the input hook had not yet touched. `t0` is `time.time()` read once at
+     process entry.
+   - **Ambient prompts** (round-4 #b-1). The sweep changes state on an ambient prompt too, so an
+     ambient prompt writes a snapshot like any other (step 2) and its readers match it; only the
+     input event is not recorded. The round-3 sentence "ambient prompts write no snapshot … state
+     they never changed" is WITHDRAWN.
+   - **`S`, measured on the interval the match compares** (round-4 #m-1). The match compares the
+     reader's entry `t0` with the WRITER's `wall`, which is stamped after the writer's imports,
+     envelope parse and pointer write. So 19.0 R0 logs, over ≥ 50 real prompts, the writer's
+     `wall` and each parallel reader's `t0` (keyed by `prompt_sha`), and `S` = max(2 s, 3 × the
+     largest measured `|wall − t0|`), committed as `stm.PRE_PROMPT_SKEW_S` with the measurement
+     in its docstring. If R0 finds a per-prompt unique field in the UserPromptSubmit envelope, the
+     snapshot is keyed by it instead and `S` is unused. Residual, stated: a prompt textually
+     identical to the previous one and submitted within `S` of it reads the previous prompt's
+     snapshot (one turn stale).
+   - **Known limit, stated** (round-4 #m-1). `focus.json` is read-modify-written without a lock
+     (`stm.py:405-424`), so a PostToolUse ingest concurrent with the input hook can lose one of
+     the two updates. This predates the task; the snapshot does not fix it and does not claim to.
 
    **`turn`.** On prompt-time channels (`prompt_recall`, `scan_prompt`): `pre_prompt_state(…).turn`,
    the 0-based ordinal of this prompt among the session's RECORDED prompts (named `recorded_turn`
@@ -268,7 +362,7 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
 
     | field | meaning |
     |---|---|
-    | `v`, `ts`, `session`, `turn`, `query_id` | R9; `query_id` equals the `query.log` row of the same call |
+    | `v`, `ts`, `session`, `turn`, `query_id` | R9; `query_id` equals the `query.log` row of the same call. **`ts` is UTC** (round-4 #s-2): `emit_recall_events` stamps it from ONE `time.time()` per call as ISO-8601 with milliseconds and `Z`, fixed width (`YYYY-MM-DDTHH:MM:SS.mmmZ`), so lexicographic order is time order and no reader depends on its own `TZ` or a DST change. Every other writer in the repo stamps local naive `time.strftime("%Y-%m-%dT%H:%M:%S")` (`telemetry.py:281`, `:329`, `:425`; `stm.py:260`); `query.log` rows keep that legacy form and are joined to events by `query_id`, never by `ts` |
     | `channel` | closed SURFACE enum, the ONE channel enum of C7: `session_start`, `prompt_recall`, `scan_prompt`, `precompact`, `context`, `recall`, `nudge` (bsd #b-2). `invocation` is a separate field with R2's values; `cli`/`mcp` are never channels, and no consumer may list them as channels (19.2 R3 uses this enum verbatim) |
     | `invocation` | R2 |
     | `name`, `entity_id`, `kind` | `name` is the stable key 19.2 counts by (a purge-and-re-add keeps history); `entity_id` is the catalog id at emission (code); `kind` ∈ `code`, `doc`, `concept`, `memory`, `session`, `subject`, mapped from the catalog kind by R10a, never copied raw |
@@ -279,9 +373,9 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
     | `offset_bytes`, `bytes`, `payload_bytes` | `delivered` only. ONE unit for the whole schema: UTF-8 BYTES of the payload the command wrote to stdout (re-review #s-2; #t9-fixes). `offset_bytes` / `bytes`: the byte range of the line or object that NAMES the item; `payload_bytes`: the payload's total size. `delivered` means EMITTED. `seen` is NOT a field: 19.5 R2 derives it from these three and 19.5 R1's measured cap and preview size, and 19.5 is its only deriver |
     | `body_offset_bytes`, `body_bytes` | `delivered` only: the byte range of the item's body when the payload carries it separately from the naming line (19.1's pack appends bodies after all hook lines); null when the payload carries no separate body (the JSON renderer's object already contains it, inside `offset_bytes`/`bytes`) |
     | `arm`, `policy` | allocation arm ∈ `fixed`, `phased`, `phased+cache`, and the allocation policy version. Until 19.6 ships, every emitter writes `arm=fixed`, `policy=fixed-v0`; 19.6 chooses and logs the arm per prompt (d5b) |
-    | `stm_session`, `stm_source`, `stm_events_n`, `focus_topics_n`, `overlap` | the RAW phase inputs at injection, on prompt-time channels (`session_start`, `prompt_recall`, `scan_prompt`, `precompact`): which ring was read (R9's resolver, never `latest_session`); `stm_source` = `pre_prompt_state`'s `source` (`snapshot` / `live`); the ring's event count BEFORE this prompt's input event; the number of `stm.topic_composites` topics of the pre-prompt graph; and the prompt-term ∩ composite-member overlap against that same graph. On `prompt_recall` / `scan_prompt` all four come from ONE `stm.pre_prompt_state` call (R9), never from a second read of the live files. `session_start` and `precompact` have no prompt: they read the live state (`stm_source=live`) and log `overlap: null` |
+    | `stm_session`, `stm_source`, `stm_events_n`, `focus_topics_n`, `overlap` | the RAW phase inputs at injection, on prompt-time channels (`session_start`, `prompt_recall`, `scan_prompt`, `precompact`): which ring was read (R9's resolver, never `latest_session`); `stm_source` = `pre_prompt_state`'s `source` (`snapshot` / `live`); R9's `events_n`: the ring's parent-origin event count BEFORE this prompt's input hook (the sweep's `abandoned` events excluded); the number of `stm.topic_composites` topics of the pre-prompt graph; and the prompt-term ∩ composite-member overlap against that same graph. On `prompt_recall` / `scan_prompt` all four come from ONE `stm.pre_prompt_state` call (R9), never from a second read of the live files. `session_start` and `precompact` have no prompt: they read the live state (`stm_source=live`) and log `overlap: null` |
     | `phase`, `restored_cluster_id` | the label the pre-registered rule computed (`cold`, `warm`, `return`, `new`), and on a topic-cache return the restored cluster id. Null until 19.6 writes them |
-    | `block_id`, `block_sha`, `rev`, `unchanged` | versioned injection ([[exploration-session-phased-context#vi-evidence]]): the emitted block's stable id (`scan-prompt`, `prompt-recall`, `stm-topic-composite`, …) and the sha256 of its body, filled by 21.1's emitters now; `rev` and `unchanged` are null until 19.6's versioned blocks write them. The byte-identical share is recomputable from `block_sha` + `payload_bytes` before 19.6 lands |
+    | `block_id`, `block_sha`, `rev`, `unchanged` | versioned injection ([[exploration-session-phased-context#vi-evidence]]): the emitted block's stable id (`scan-prompt`, `prompt-recall`, and 19.6 R9's two composite blocks `stm-topic-expanded` / `stm-topic-collapsed`, …) and the sha256 of its body, filled by 21.1's emitters now; `rev` and `unchanged` are null until 19.6's versioned blocks write them. The byte-identical share is recomputable from `block_sha` + `payload_bytes` before 19.6 lands |
     | `evidence`, `ref_query_id`, `lag_turns` | `used` only: what showed the use, which delivered event it points back to, and after how many turns |
 
     The field list above is exported as `telemetry.RECALL_EVENT_FIELDS_V1` (a tuple of names) and
@@ -395,10 +489,11 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
         more than one `(kind, scope)` key (for example a `memory` and a `code` item of the same
         name), the note emits one `used` per key, each pointing to its own delivered event; 19.2
         counts only the `kind=memory` one.
-    - **Whose session.** The caller's session is R9's resolver's: on the MCP route
-      (`rmx_memory`, `rmx_context`, `rmx_focus_note`) the pid pointer of the MCP server's parent,
-      re-read on every call, never the server's spawn-time `CLAUDE_CODE_SESSION_ID` (round-3 #b-1).
-      With no resolved session, no `used` is emitted (counted, `used_no_session`).
+    - **Whose session.** The caller's session is R9's resolver's, with `purpose="event"`: on the
+      MCP route (`rmx_memory`, `rmx_context`, `rmx_focus_note`) the pid pointer of the MCP
+      server's parent, re-read on every call, never the server's spawn-time
+      `CLAUDE_CODE_SESSION_ID` (round-3 #b-1). With no resolved session, no `used` is emitted
+      (counted, `used_no_session`); the newest ring is never used.
     - **The delivered set (the lookup).** `telemetry.delivered_in_session(session, *, root,
       global_root) -> dict[(name, kind, scope), event]` reads `recall-events.jsonl` of `root` and
       of `global_root` BACKWARDS from the end in 64 KB blocks, keeping `stage=delivered` events
@@ -428,33 +523,56 @@ line counts are unchanged.
    `query.log` row with `invocation=mcp`, `kind=context`, `source=context-mcp`, a non-null
    `query_id`, and `session` equal to the session of the pid pointer the test wrote for the
    server's parent (the test process) through the GENERATED SessionStart hook command. RED at
-   HEAD (no row).
+   post-bug-109 `master`: the failing assertion is the row count (no `context-mcp` row exists).
 
-   **1b. Session switch under ONE long-lived server** (round-3 #b-1). The test starts `rmx mcp`
-   with `CLAUDE_CODE_SESSION_ID=A` in its environment and keeps it running. It feeds the generated
-   SessionStart hook command (`rmx focus hook --event session-start`, `CLAUDE_PID` = the test
-   process's pid, the server's parent) an envelope `{session_id: A, source: startup}`, then a
-   second one `{session_id: B, source: clear}`. After the switch, on the SAME server process:
-   - an `rmx_context` call logs a `context-mcp` row with `session == B`;
-   - an `rmx_focus_note` lands in B's ring (A's ring line count unchanged);
-   - with a memory `feedback_alpha_rule` delivered in B (a `prompt_recall` run through the
-     generated hook with B's envelope), an `rmx_focus_note` naming it emits one `used` event with
-     `session == B` and `ref_query_id` = that delivery's `query_id`.
-   With the pointer file deleted and no `RMX_SESSION`, the next `rmx_context` row carries
-   `session: null` and `rmx_focus_note` returns a tool error (19.0 R5), not a write to A's ring.
-   RED at HEAD (the server has no per-call resolution).
+   **1b. Session switch under ONE long-lived server** (round-3 #b-1; re-baselined in round 4
+   #s-1 against post-bug-109 `master`, which already re-points the server from the INPUT hook).
+   The test extends `tests/test_mcp_session_pointer.py` (bug-109's file; no parallel file). It
+   starts `rmx mcp` with `CLAUDE_CODE_SESSION_ID=A` in its environment and keeps it running.
+   - **Generator (RED at post-109 `master`; failing assertion: the entry is absent).** The
+     generated hook config holds a SessionStart entry, matcher `startup|resume|clear|compact`,
+     running `rmx focus hook --event session-start` without `2>/dev/null`.
+   - **Switch BEFORE any prompt (RED at post-109 `master`; failing assertion: `session == B`).**
+     That generated command, fed `{session_id: A, source: startup}` then
+     `{session_id: B, source: clear}` with the test process as the Claude owner (the server's
+     parent), and NO input-hook run after the clear: an `rmx_context` call logs a `context-mcp`
+     row with `session == B`; an `rmx_focus_note` lands in B's ring (A's ring line count
+     unchanged); the pointer file's `hook` field reads `session-start:clear`.
+   - **`used` after the switch (RED: no `used` events exist).** With a memory
+     `feedback_alpha_rule` delivered in B (a `prompt_recall` run through the generated hook with
+     B's envelope), an `rmx_focus_note` naming it emits one `used` event with `session == B` and
+     `ref_query_id` = that delivery's `query_id`.
+   - **Unresolved write (RED at post-109 `master`; failing assertion: A's ring line count
+     unchanged).** With the pointer file deleted and no `RMX_SESSION`, the next `rmx_context` row
+     carries `session: null`, and `rmx_focus_note` returns a `SessionUnresolved` tool error;
+     bug-109 instead writes the note to the newest ring.
+   - **Regression guard, GREEN at post-109 `master` and not counted as RED:** the input-hook
+     re-point (`focus hook --event input` with B's envelope) still switches the server to B.
 2. **CLI routes.** On a tmp store, `rmx context X` forced down each of the replica, daemon and
    direct routes writes exactly one row with the route's `source`. RED at HEAD for
    `context-daemon` (no row).
 3. **Precedence.** `invocation_source()` returns, for the env combinations
    {explicit `hook` + `CLAUDECODE`, `CLAUDECODE` alone, tty alone, none}: `hook`, `agent`,
    `interactive`, `unknown`. RED at HEAD on `CLAUDECODE` alone (returns `unknown`).
-4. **Session never guessed.** Two subprocesses in ONE tmp root with different
-   `CLAUDE_CODE_SESSION_ID`s, plus a newer STM ring for a third session id on disk, log disjoint
-   `session` values equal to their own ids; with no envelope, no `CLAUDE_CODE_SESSION_ID`, no pid
-   pointer for `$CLAUDE_PID` and no `RMX_SESSION`, `session` is null, not the third ring's id. A
-   pointer whose `pid_start` does not match the live process's start time is ignored (`session`
-   null) and counted as `pid_pointer_stale`.
+4. **Session never guessed** (round-4 #s-1: bug-109's names). Two `rmx scan-prompt` runs in ONE
+   tmp root, fed envelopes with different `session_id`s, plus a newer STM ring for a third
+   session id on disk, log disjoint `session` values equal to their own envelopes' ids. With no
+   envelope, no pointer for the owner and no `RMX_SESSION` (and `CLAUDE_CODE_SESSION_ID` set to
+   the third id, which no path reads), `session` is null, not the third ring's id, and
+   `_errors.jsonl` gains one `pointer-unresolved` row. A pointer whose `pid_start` does not match
+   the live process's start time is ignored (`session` null) and recorded as `pointer-stale`.
+   RED at post-109 `master`: the failing assertions are `session is None` (bug-109 returns the
+   newest ring, source `latest`) and the `pointer-stale` row (bug-109 returns `None` silently).
+
+   **4b. Pointer location, SessionStart surfacing and cleanup** (D3, D6, D7; bug-109 r1 #m-4).
+   (i) The input hook run with cwd in tree X writes the pointer under the sandbox's global
+   `by-pid/`; an MCP server spawned with cwd in tree Y resolves it. (ii) A pointer present only at
+   bug-109's legacy `<root>/stm/by-pid/` resolves once and records `pointer-legacy-location`.
+   (iii) With three `_errors.jsonl` rows added since the watermark, the generated SessionStart
+   command prints one stdout line naming their reasons and counts, and a second run prints none.
+   (iv) A pointer for a pid absent from the process table is removed by the SessionStart run and
+   `pruned=1` is printed. RED at post-109 `master` for each leg (no global location, no
+   SessionStart entry).
 5. **`grep-stdin` cardinality.** `printf 'a\nb\nc\nd\n' | rmx grep -E 'a|b|c'` logs a
    `grep-stdin` row with `cardinality=3`. RED at HEAD (`null`).
 6. **The frozen fixture** (bsd #s-3). A REDACTED copy of this project's `query.log` and `cli.log`
@@ -488,10 +606,11 @@ line counts are unchanged.
    - a live-tree row (`root` = `/Users/x/proj/.refmatrix`) read by a reader at `R` is NOT
      `test_artifact` (`attributed`).
 
-   **Event leg** (round-3 #s-3). The same five rows written as events, with c-e stripped of
-   `cwd`/`root`, plus (f) an event whose `channel` is `cli`, classified by
-   `row_provenance(…, source="events")`: c-f are `malformed`, a and b as above; the event reader
-   prints `malformed=4 unparseable=<n>` and folds only b. A test asserts that the report, 19.2's
+   **Event leg** (round-3 #s-3; round-4 #s-2). The same five rows written as events, with c-e
+   stripped of `cwd`/`root`, plus (f) an event whose `channel` is `cli` and (g) b with its `ts` in
+   the legacy local naive form (`2026-10-14T14:04:41`, no `Z`), classified by
+   `row_provenance(…, source="events")`: c-g are `malformed`, a and b as above; the event reader
+   prints `malformed=5 unparseable=<n>` and folds only b. A test asserts that the report, 19.2's
    fold module and 21.4's draw script import `row_provenance` from `telemetry`, define no
    predicate of their own, and contain no check for missing `cwd`/`root` or for the channel enum
    (the `malformed` rule lives only in the function).
@@ -521,20 +640,32 @@ line counts are unchanged.
      `policy == "fixed-v0"`, `block_id` is the surface's id (`scan-prompt`, `prompt-recall`), and
      `block_sha` == sha256 of the exact stdout bytes of that block.
 
-   **8b. Every phase input is order-independent** (re-review #s-3; round-3 #b-2). The seeded
-   ring's prompt terms are chosen so this prompt's own terms CHANGE the graph (they join an
-   active topic). The same `memory recall` envelope, and separately the same `scan-prompt`
-   envelope, is run three ways against copies of the seeded store:
+   **8b. Every phase input is order-independent** (re-review #s-3; round-3 #b-2; round-4 #b-1).
+   The seeded ring's prompt terms are chosen so this prompt's own terms CHANGE the graph (they
+   join an active topic), AND the seeded in-flight sidecar holds one call parked 120 s ago (more
+   than the sweep's 90 s) whose refs also join the active topic, so the sweep changes the ring
+   count and the graph before the input record does. The same `memory recall` envelope, and
+   separately the same `scan-prompt` envelope, is run four ways against copies of the seeded
+   store:
    - (i) the input hook (`focus hook --event input`, the generated command, same envelope) runs to
      completion BEFORE the reader starts;
    - (ii) it runs AFTER the reader finishes;
-   - (iii) only its first step has run: the test calls `Stm.snapshot_pre_prompt(prompt)`, the
-     public method `Stm.record(kind="input")` calls before it appends (R9's writer is these two
-     steps, so no test-only switch exists in `src/`), runs the reader, then completes the record.
-   All three log identical `turn` (5), `stm_events_n`, `focus_topics_n` and `overlap`, equal to
-   (ii)'s values, with `stm_source` `snapshot` in (i) and (iii) and `live` in (ii). An earlier
-   prompt with IDENTICAL text whose `pre.json` `wall` is `stm.PRE_PROMPT_SKEW_S + 1` s old is
-   not matched (`stm_source` `live`) and is counted in `turn`.
+   - (iii) only its first state step has run: the test calls `Stm.snapshot_pre_prompt(prompt)`,
+     runs the reader, then `s.inflight_sweep()` and `s.record("input", prompt)`;
+   - (iv) the snapshot AND the sweep have run, the input record has not: the reader runs between
+     `inflight_sweep()` and `record("input")`.
+   R9's writer is these public steps in this order, so no test-only switch exists in `src/`. All
+   four log identical `turn` (5), `stm_events_n` (the seeded count, the swept call EXCLUDED),
+   `focus_topics_n` and `overlap`, equal to (ii)'s values, with `stm_source` `snapshot` in (i),
+   (iii) and (iv) and `live` in (ii). An earlier prompt with IDENTICAL text whose `pre.json`
+   `wall` is `stm.PRE_PROMPT_SKEW_S + 1` s old is not matched (`stm_source` `live`) and is counted
+   in `turn`.
+   - **Ambient leg.** An ambient prompt (`<task-notification …>`) with the same parked call: (i)
+     and (ii) log identical `stm_events_n` and `focus_topics_n`, (i) with `stm_source=snapshot`,
+     and the ring gains the swept event but no input event.
+   - **Pre-check, recorded before GREEN:** in the seeded copy, running the input hook changes the
+     ring count by 2 (one swept, one input) and the graph's member set of the active topic, so the
+     fixture is not vacuous.
 
    **8c. Every channel's emitter, through its real entry point** (round-3 #b-3). On the AC-8
    store, each of these appends its own channel's events, checked per channel for the event set
@@ -615,11 +746,18 @@ line counts are unchanged.
       the write; the caller-side assertion fails);
     - `context-daemon` route row removed (AC-2);
     - `CLAUDECODE` checked before the explicit env (AC-3);
-    - `session` falling back to `stm.latest_session` (AC-4);
+    - `session` falling back to `stm.latest_session` for `purpose="event"` (AC-4);
     - the MCP server resolving its session once at spawn, or from `CLAUDE_CODE_SESSION_ID`
       (AC-1b: the row, the note and the `used` land on A);
-    - the pid pointer not rewritten on a `clear` SessionStart (AC-1b);
-    - the pointer's `pid_start` check dropped (AC-4: the stale pointer resolves);
+    - the pid pointer not rewritten on a `clear` SessionStart (AC-1b's switch-before-prompt leg);
+    - a `write` resolution keeping bug-109's newest-ring tail (AC-1b's unresolved-write leg);
+    - the pointer's `pid_start` check dropped (AC-4: the stale pointer resolves), or the stale
+      pointer returning `None` without its `pointer-stale` row (AC-4);
+    - the pointer written under the hook's own store root instead of `stm.pointer_dir()` (AC-4b
+      (i));
+    - `_errors.jsonl` not surfaced by the SessionStart writer, or surfaced twice (AC-4b (iii));
+    - `ts` stamped in local time or without `Z` (AC-7's event g is folded; 19.2 AC-6's two-zone
+      replay differs);
     - `grep-stdin` cardinality left unset (AC-5);
     - `phase=start` rows counted (AC-6: 68, not 34);
     - each reader given its own copy of the predicate (AC-7);
@@ -653,6 +791,12 @@ line counts are unchanged.
     - any phase input (`turn`, `stm_events_n`, `focus_topics_n`, `overlap`) read from the live
       files instead of the one `pre_prompt_state` call (AC-8b: run (i) differs from (ii));
     - `pre.json` written AFTER the ring append or the graph ingest (AC-8b: run (iii) differs);
+    - the snapshot taken inside `record("input")`, after the sweep (round-4 #b-1; AC-8b: (i) and
+      (ii) disagree on `stm_events_n` by the swept call, and (iv) differs);
+    - the snapshot skipped for ambient prompts (AC-8b ambient leg: (i) reads the post-sweep
+      state);
+    - `events_n` counting `origin: agent:<id>` lines once 19.0 R2 ships (19.0 AC-6d's subagent
+      leg);
     - the snapshot matched on `prompt_sha` alone without the `wall` window (AC-8b: the older
       identical prompt is matched);
     - global hits written to the project file (AC-10);
@@ -672,9 +816,11 @@ line counts are unchanged.
 
 | file | change |
 |---|---|
-| `src/refmatrix/mcp.py` | set the env in `serve_stdio` before the first request; mark the process long-lived and drop `CLAUDE_CODE_SESSION_ID` from its env; resolve the session per tool call (R1, R9) |
-| `src/refmatrix/stm.py` | `resolve_session` + `SessionResolution` and the pid pointer reader; `snapshot_pre_prompt`, `pre_prompt_state` + `PrePromptState`, `PRE_PROMPT_SKEW_S`; input events gain `prompt_sha` and `t` (R9). Built here or by 19.0, whichever merges first |
-| `src/refmatrix/hooks.py`, `cli.py` (`focus hook`) | the generated SessionStart entry `rmx focus hook --event session-start` (matcher `startup\|resume\|clear\|compact`, stderr kept) that writes the pid pointer; the input hook's pointer refresh (R9) |
+| `src/refmatrix/mcp.py` | set `RMX_INVOCATION_SOURCE=mcp` in `serve_stdio` before the first request and drop `CLAUDE_CODE_SESSION_ID` from its env (R1). `verbs._LONG_LIVED = True` and the per-call resolution are bug-109's, existing |
+| `src/refmatrix/verbs.py` (resolver) | EXTEND bug-109's `resolve_session_source`: `SessionResolution`, `envelope=`, required `purpose=` and its three tails, `SessionUnresolved` (D1, D2); bug-109's `resolve_session` str wrapper is removed, its callers pass `purpose` |
+| `src/refmatrix/stm.py` | EXTEND bug-109's pointer code: `pointer_dir()` and the user-level location with the legacy read (D3), the `hook` field (D4), `pointer-stale` / `pointer-unreadable` rows (D5), `record_pointer_error` without `root` (D8), the `_errors.jsonl` surfacing and watermark (D6), the prune (D7). NEW: `snapshot_pre_prompt`, `pre_prompt_state` + `PrePromptState`, `PRE_PROMPT_SKEW_S`; input events gain `prompt_sha` and `t` (R9). Built here or by 19.0, whichever merges first |
+| `src/refmatrix/hooks.py`, `cli.py` (`focus hook`, `focus show`) | the generated SessionStart entry `rmx focus hook --event session-start` (matcher `startup\|resume\|clear\|compact`, stderr kept) that writes the pointer, surfaces `_errors.jsonl` and prunes (D4, D6, D7); the input branch reordered: pointer write (existing) → `snapshot_pre_prompt` → sweep (failure recorded) → input record (R9); `focus show` prints the pointer-error line (D6) |
+| `tests/test_mcp_session_pointer.py` | EXTENDED, not paralleled (bug-109's file): AC-1b, AC-4, AC-4b |
 | `src/refmatrix/store.py` | `find_memory_any_partition` (`:2504`) returns the chosen row's partition name (R11) |
 | `src/refmatrix/telemetry.py` | `agent` source + precedence; `session`/`query_id`/`cwd`/`root` on rows; `row_provenance` + `is_test_artifact_row` (R5); the `--agent-usage` report; `RECALL_EVENT_FIELDS_V1`; `emit_recall_events` (the ONE writer, R11); `delivered_in_session` (R12's lookup); `event_kind` (R10a); `recall_channel` (R11); `turn` from `pre_prompt_state` (R9) |
 | `src/refmatrix/verbs.py` | caller-side row + events for `context` (`:538`) and `memory_recall` (MCP route); `used` emission in `context`, `memory` `get` action (`:1102`) and `focus_note` (`:908`) |
@@ -690,11 +836,15 @@ line counts are unchanged.
   dir). Subprocess tests additionally pass `HOME`, `REFMATRIX_ROOT` and `RMX_HUB_MODELS=0`
   explicitly, because bug-088's recorder cannot see a child's connects. Each test asserts the live
   log line counts above are unchanged; no test writes the log this task measures (bsd #s-7).
-- **RED first** (`feedback_red_test_must_fail_at_head`): AC-1, AC-2 (`context-daemon`), AC-3
-  (`CLAUDECODE`), AC-1b, AC-4, AC-5, AC-7, AC-8, AC-8b, AC-8c, AC-8d, AC-10, AC-11a-f and AC-12
-  are run against HEAD before any `src/`
-  change and the failing assertion is recorded. AC-6 fails at HEAD because `--agent-usage` does not
-  parse. No AC is admitted that passes at HEAD.
+- **RED first** (`feedback_red_test_must_fail_at_head`), against post-bug-109 `master` (round-4
+  #s-1), not against the pre-bug-109 tree: AC-1, AC-2 (`context-daemon`), AC-3 (`CLAUDECODE`),
+  AC-1b (its four RED legs; its input-hook leg is a GREEN regression guard), AC-4, AC-4b, AC-5,
+  AC-7, AC-8, AC-8b, AC-8c, AC-8d, AC-10, AC-11a-f and AC-12 are run before any `src/` change
+  and the FAILING ASSERTION is recorded, by name. A test that fails only because a click choice
+  (`--event session-start`) or a keyword (`purpose=`) does not exist yet is RED for the wrong
+  reason: each such AC first asserts on observable state (the generated config, a row, a ring
+  line count) so the recorded failure is that assertion. AC-6 fails at HEAD because
+  `--agent-usage` does not parse. No AC is admitted that passes at post-109 `master`.
 - **Hook path:** AC-8 runs the command string `hooks.py` GENERATES for UserPromptSubmit, not a
   hand-written one, so a generator change that drops the emitter is caught.
 
@@ -764,3 +914,31 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r3-6091648]]
 | round-3 #m-7 (focus-note sentence-final names; one name, two keys) | R12 `focus_note` edge cases; AC-11f; mutations |
 | round-3 [[bsd-plan19-21-spec-rereview-r3-6091648#cross-plan]] (session source, phase inputs, `kind`, classifier rows) | R9, R10, R10a, R5: the signatures 19.0 R5/R7, 19.2 R5 and 19.6 R2 cite are the ones above |
 | cross-plan: 23.0 AC-4's `telemetry.is_test_artifact_row(row)` | R5: the new `source` keyword defaults to `query_log`, so the call stays valid as written |
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Answers [[bsd-plan19-21-spec-rereview-r4-878647c]] (every id, plus the round-3 ids it marks
+partial) and d9s / d9r / d9v of [[plan-review-2026-10-14#t11-approvals]]. Code facts re-read at
+write time: HEAD `39dffbb` (`src/` identical to `master` `a434f51`): `cli.py:1946-1981` (the
+input branch: sweep at `:1976`, its `except … pass` at `:1977-1978`, ambient check `:1980`),
+`stm.py:127`, `:246-282`, `:260`, `:331-353`, `:405-427`, `telemetry.py:281`, `:329`, `:425`,
+`mcp.py:49-67`, `cli.py:84-107`, `hub.py:100`; bug-109 at `320dc82` in
+`/Volumes/littlebig/refmatrix-bug109` (READ ONLY): `stm.py` pointer functions, `verbs.py:521-566`,
+`cli.py:1973-2002`, `mcp.py` `serve_stdio`, its implementation summary and its ch-bsd r1 report.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r4-878647c]]
+
+| finding / decision | answered at |
+|---|---|
+| round-4 #b-1 (snapshot taken after the input hook's sweep; ambient prompts sweep too; no AC seeds a parked call) | [[#req-session]] "The pre-prompt state": writer = the input hook's first state access (pointer → snapshot → sweep → record), ambient prompts snapshot, the round-3 ambient sentence withdrawn; AC-8b (a parked call whose refs join the active topic, orderings i-iv, ambient leg, non-vacuous pre-check); mutations (snapshot after the sweep; ambient snapshot skipped). The 19.0 side: [[task-19.0-stm-cluster-hygiene#rev-round-5]] |
+| round-4 #b-2 (three `latest_session` callers never routed; "NEVER" false) | [[#req-session]] resolver: `purpose` tails, the `read` tail the ONE allowed call; the per-caller routing and the AST allow-list are 19.0 R5 and AC-6e ([[task-19.0-stm-cluster-hygiene#rev-round-5]]) |
+| round-4 #s-1 (bug-109 owns the pointer; specs planned to build it) | header (depends on bug-109 MERGED to `master`); R1 (`_LONG_LIVED` existing; delta = env var drop); [[#req-session]] "Existing code this task extends" (bug-109's names, fields and order, adopted) and deltas D1-D8; AC-1, AC-1b, AC-4 re-baselined on post-109 `master` with the failing assertion named; AC-4b; [[#files-to-modify]] (extend, never rebuild; `tests/test_mcp_session_pointer.py` extended); [[#test-strategy]]. bug-109's registry row exists (`workflow/bug_registry.md`, status open) |
+| round-4 #s-2 (`ts` zone undefined) | R10 `ts` row (UTC, ms, `Z`, fixed width; `query.log` keeps its legacy form, joined by `query_id`); R5 class 0 (`ts` form); AC-7 event g; mutation. The fold side: [[task-19.2-memory-usage-record#rev-round-5]] |
+| round-4 #m-1 (`S` interval; background subagent appends; `focus.json` lock) | [[#req-session]] `S` measured as writer `wall` − reader `t0`; `events_n` parent-origin only (residual stated until 19.0 R2); the `focus.json` lock stated as a known limit |
+| round-4 #m-2 (the read fallback IS a `latest_session` consult) | [[#req-session]] resolver: the `read` tail named as the ONE allowed use; R12 "Whose session" uses `purpose="event"` |
+| round-4 #m-3 | not a 21.1 item (19.6 Files; the wave list in the decision log; 19.6 status lines) |
+| round-3 #b-1 (partial via d9s) | as round-4 #s-1 above |
+| round-3 #b-2 (partial) | as round-4 #b-1 above |
+| round-3 #s-4 (partial) | not a 21.1 item; R10 `block_id` now names 19.6 R9's two composite blocks ([[task-19.6-phased-context-and-topic-cache#rev-round-5]]) |
+| d9s | header; R1; [[#req-session]] |
+| d9r, d9v | not 21.1 items (19.2 R7; 19.6) |

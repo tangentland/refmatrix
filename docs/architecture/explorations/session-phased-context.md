@@ -119,9 +119,13 @@ tree form spends it where the phase says:
   on the expanded cluster's header (revised 2026-10-14 after the round-3 spec review: a count or
   range on the collapsed line changes whenever its cluster is re-touched, so the line was not
   byte-stable). At most a capped number of collapsed lines render. The line is the HANDLE the
-  topic cache re-expands on a return (#topic-cache), and it is byte-stable while its member set
-  is unchanged, so versioned injection sends it as "unchanged" (#versioned-injection). Task 19.6
-  R9 holds the exact rule.
+  topic cache re-expands on a return (#topic-cache). Revised again after the round-4 review: the
+  LIVE member set of an untouched cluster drifts every turn (recency decay, the top-30 cut,
+  score-ordered label propagation), so a collapsed line renders a snapshot frozen when the
+  cluster first collapsed, not the live clustering; a cluster that is expanded and collapses
+  again gets a new snapshot. The composite is versioned as TWO blocks, the expanded cluster and
+  the collapsed lines, so the moving expanded header does not stop the collapsed block from
+  being sent as "unchanged" (#versioned-injection). Task 19.6 R5 and R9 hold the exact rule.
 - **Labels need 19.0 first:** a collapsed line is only its label, so a junk label (`re.searc`)
   makes the whole line useless; this is the strongest case yet for the STM hygiene prerequisite.
 

@@ -13,8 +13,8 @@ metadata:
 # Task 17.3: fleet rollout {#root}
 
 > Plan: [plan-17-nightly-store-maintenance](../plan-17-nightly-store-maintenance.md)
-> Status: Pending (revision round 3, 2026-10-14: ns17-r3-2, nm17-r3-2, nm17-r3-4; see
-> [[#rev-round-3]]. Round 2: ns17-3, ns17-5, ns17-6, d9c; see [[#rev-round-2]])
+> Status: Pending (revision round 5, 2026-10-14: ns17-r4-2's runbook text, see [[#rev-round-5]];
+> revision round 3: ns17-r3-2, nm17-r3-2, nm17-r3-4; see [[#rev-round-3]]. Round 2: ns17-3, ns17-5, ns17-6, d9c; see [[#rev-round-2]])
 > Depends on: 17.1, 17.2, 17.4; deployed
 
 rel: part-of -> [[plan-17-nightly-store-maintenance]]
@@ -114,9 +114,13 @@ been compacted. {#why-body}
    - `docs/PERFORMANCE.md` gets the maintenance section (schedule, arming, the tag rollback
      point, the orphan list and `rmx vectors restore`, including `id_map` for restores with new
      ids).
-   - The `facts.log` restore runbook documents 17.4 R6's ordered `scripts/factslog-restore.py`
-     (throwaway rebuild and verify first; live log moved aside, never overwritten; both slot
-     offsets reset) and the backup-age alarm (17.2 R8).
+   - The `facts.log` restore runbook documents 17.4 R6's two scenarios
+     ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r4-2): (a) a damaged live log under
+     a healthy catalog is fixed by `rmx compact-log --force`, never by the backup; (b) a lost
+     catalog is restored by `scripts/factslog-restore.py` (daemon stopped; throwaway rebuild and
+     verify first; existing files moved aside, never overwritten; the verified catalog promoted
+     into the live root's writer slot and the copy installed as its log), then the daemon start
+     and the re-embed. It also documents the backup-age alarm (17.2 R8).
    - `docs/INDEX.md` and the ARCHITECTURE index.
    - The plan-17 decisions (d-1..d-4, d2b, d3a..d3e) are recorded in the implementation summary.
 4. **R4 Watch one night.** After the first scheduled 03:30 run with the fleet armed, `hub.log` and
@@ -181,3 +185,12 @@ Source: [[bsd-plan23-17-spec-rereview-r3-6091648]].
 | nm17-r3-2 (arm gate needs the earlier dry run) | [[#r1-hand-run]] step 5 |
 | nm17-r3-4 (clone daemon with tmp `HOME`; build time; no shortening) | [[#r2-measure]] steps 5-6 |
 | ns17-r3-4 (restore runbook order) | [[#r3-docs]] (the runbook documents 17.4 R6's script) |
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Source: [[bsd-plan23-17-spec-rereview-r4-878647c]].
+
+| finding / decision | answered at |
+|---|---|
+| ns17-r4-2 (the runbook restored the wrong thing; offsets unread) | [[#r3-docs]] (both scenarios; no offset step) |
+
