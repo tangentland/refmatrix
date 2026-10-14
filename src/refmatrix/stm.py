@@ -316,39 +316,52 @@ def record_pointer_error(root: Path, reason: str, **fields) -> bool:
 
 
 def read_pointer_errors(root: Path, *, since: float = 0.0) -> list[dict]:
-    """The recorded pointer failures at or after `since` (epoch seconds), oldest first."""
+    """The recorded pointer failures at or after `since` (epoch seconds), oldest first.
+
+    r3 #m-2: a line that is not a JSON object with a numeric `t` used to raise out of here and
+    take down `rmx recall-state`. It is returned as a `{"reason": "unreadable-line"}` row (its
+    time is unknown, so the window does not apply), counted, never skipped silently."""
     p = stm_dir(root) / "by-pid" / "_errors.jsonl"
     out: list[dict] = []
     try:
-        for line in p.read_text(encoding="utf-8").splitlines():
-            try:
-                row = json.loads(line)
-            except ValueError:
-                continue
-            if float(row.get("t", 0)) >= since:
-                out.append(row)
+        lines = p.read_text(encoding="utf-8").splitlines()
     except OSError:
         return []
+    for n, line in enumerate(lines, 1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+            t = float(row["t"]) if isinstance(row, dict) else None
+        except (ValueError, TypeError, KeyError):
+            t = None
+        if t is None:
+            out.append({"reason": "unreadable-line", "line": n})
+        elif t >= since:
+            out.append(row)
     return out
 
 
 def write_pid_pointer(root: Path, pid: int, session: str) -> bool:
     """Record that Claude process `pid` is now running `session` (bug-109). The input hook calls
     this at the top of every turn, so the first prompt after a `/clear` re-points it. Returns True
-    when the file was (re)written, False when it already named `session` (the common case: one
-    small read; session ids are unique, so a pointer still naming this session cannot belong to
-    an earlier holder of the pid) or when it was REFUSED: a pid whose start time cannot be read
-    would be stored with `pid_start: null` and then ignored forever by `read_pid_pointer`, so it
-    is recorded as `ps-failed` instead (r1 #b-1). Never creates a store (r2 #s-1)."""
+    when the file was (re)written, False when it already named `session` AND this process
+    incarnation (the common case: one small read plus a ~1 us kernel lookup) or when it was
+    REFUSED: a pid whose start time cannot be read would be stored with `pid_start: null` and
+    then ignored forever by `read_pid_pointer`, so it is recorded as `ps-failed` instead (r1
+    #b-1). Never creates a store (r2 #s-1). r3 #s-1: the shortcut compares `pid_start` too, or a
+    pointer for the current session in an older format (r1 stored `ps lstart`) reads as stale
+    for the whole session and is never repaired."""
     if not Path(root).is_dir():
         return False
     p = pid_pointer_path(root, pid)
-    try:
-        if json.loads(p.read_text(encoding="utf-8")).get("session") == session:
-            return False
-    except (OSError, ValueError):
-        pass
     start = _proc_start(pid)
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+        if start is not None and d.get("session") == session and d.get("pid_start") == start:
+            return False
+    except (OSError, ValueError, AttributeError):
+        pass
     if start is None:
         stm_dir(root).mkdir(exist_ok=True)
         record_pointer_error(root, "ps-failed", pid=int(pid), session=session)

@@ -328,3 +328,193 @@ def test_recall_state_report_carries_the_pointer_anomaly(root, tmp_path):
     stm.record_pointer_error(root, "pointer-unresolved", owner=1)
     rep = handoff.compose_recall_state(s, root, repo=tmp_path, memdir=tmp_path / "mem")
     assert any("session-pointer" in a for a in rep["anomalies"]), rep["anomalies"]
+
+
+# ---- r3 (ch-bsd bsd-bug109-r3-261c574) --------------------------------------------------------
+# Each pin below names the r3 mutant it kills (workflow/review-output/bug109-r3remedy-mutations.log).
+
+def test_kernel_lookup_reads_the_real_ppid_and_needs_no_subprocess(monkeypatch):
+    """r3 #b-1 P1: a wrong `proc_bsdinfo` ppid offset made the walk stop at length 1, and the `ps`
+    fallback then hid it. Under a real $CLAUDE_PID the owner lookup runs NO subprocess at all, and
+    the struct's ppid is the kernel's."""
+    import subprocess
+    calls = []
+    orig = subprocess.run
+
+    def spy(*a, **kw):
+        calls.append(a)
+        return orig(*a, **kw)
+    monkeypatch.setattr(subprocess, "run", spy)
+    monkeypatch.setenv("CLAUDE_PID", str(os.getppid()))
+    assert stm._proc_info(os.getpid())[0] == os.getppid()
+    assert stm.owner_lookup() == (os.getppid(), "found")
+    assert calls == [], calls
+
+
+def test_hook_records_a_failed_lookup_as_failed_not_no_owner(root, monkeypatch):
+    """r3 #b-1 P3: the hook half of r2 #b-1. A lookup that FAILED is unknown, not absent."""
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+    monkeypatch.setattr(stm, "owner_lookup", lambda: (None, "failed"))
+    stm.stm_dir(root).mkdir(parents=True, exist_ok=True)
+    env = {"session_id": "sess-B", "prompt": "a prompt", "hook_event_name": "UserPromptSubmit"}
+    r = CliRunner().invoke(main, ["focus", "hook", "--event", "input"], input=json.dumps(env))
+    assert r.exit_code == 0, r.output
+    assert _errors(root)[-1]["reason"] == "owner-lookup-failed", _errors(root)
+
+
+def test_hook_records_a_pointer_write_that_raised(root, monkeypatch):
+    """r3 #b-1 P5 (r2 N4): the hook's stderr goes to /dev/null, so an OSError writing the pointer
+    must land in the sink as `write-failed`."""
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+    monkeypatch.setattr(stm, "owner_lookup", lambda: (os.getpid(), "found"))
+
+    def boom(*a, **kw):
+        raise OSError("disk full")
+    monkeypatch.setattr(stm, "write_pid_pointer", boom)
+    stm.stm_dir(root).mkdir(parents=True, exist_ok=True)
+    env = {"session_id": "sess-B", "prompt": "a prompt", "hook_event_name": "UserPromptSubmit"}
+    r = CliRunner().invoke(main, ["focus", "hook", "--event", "input"], input=json.dumps(env))
+    assert r.exit_code == 0, r.output
+    row = _errors(root)[-1]
+    assert row["reason"] == "write-failed" and "disk full" in row["error"], row
+
+
+def test_a_set_claude_pid_makes_a_guess_recorded(root, monkeypatch):
+    """r3 #b-1 P6: with no owner found but $CLAUDE_PID set, this process may run under Claude, so
+    the newest-ring guess is recorded (r2 #b-1)."""
+    monkeypatch.setattr(verbs, "_LONG_LIVED", False)
+    monkeypatch.delenv("RMX_SESSION", raising=False)
+    monkeypatch.setenv("CLAUDE_PID", "424242")
+    monkeypatch.setattr(stm, "owner_lookup", lambda: (None, "none"))
+    _ring(root, "sess-C", age_s=0)
+    assert verbs.resolve_session_source(root, None) == ("sess-C", "latest")
+    errs = _errors(root)
+    assert len(errs) == 1 and errs[0]["reason"] == "pointer-unresolved", errs
+
+
+def test_the_sink_never_raises_and_neither_does_the_resolve(root, long_lived, monkeypatch):
+    """r3 #b-1 P8 (r2 #s-1): an unwritable sink returns False, and the read that recorded through it
+    still resolves."""
+    monkeypatch.delenv("RMX_SESSION", raising=False)
+    (stm.stm_dir(root) / "by-pid" / "_errors.jsonl").mkdir(parents=True)   # open("a") -> OSError
+    assert stm.record_pointer_error(root, "pointer-unresolved") is False
+    _ring(root, "sess-C", age_s=0)
+    assert verbs.resolve_session_source(root, None) == ("sess-C", "latest")
+
+
+def test_the_sink_is_capped(root):
+    """r3 P7: past 256 KiB the oldest half is dropped, so a hook firing every turn cannot grow the
+    file without bound."""
+    p = stm.stm_dir(root) / "by-pid" / "_errors.jsonl"
+    p.parent.mkdir(parents=True)
+    line = json.dumps({"t": time.time(), "reason": "pointer-unresolved", "pad": "x" * 200}) + "\n"
+    p.write_text(line * ((stm._ERRORS_MAX_BYTES // len(line)) + 50))
+    before = p.stat().st_size
+    assert before > stm._ERRORS_MAX_BYTES
+    assert stm.record_pointer_error(root, "pointer-unresolved") is True
+    assert p.stat().st_size < before * 0.6, (before, p.stat().st_size)
+
+
+def test_the_anomaly_reads_only_the_window(root):
+    """r3 P9: a failure older than the window is history, not an anomaly."""
+    from refmatrix import handoff
+    p = stm.stm_dir(root) / "by-pid" / "_errors.jsonl"
+    p.parent.mkdir(parents=True)
+    p.write_text(json.dumps({"t": time.time() - 3 * 86400, "reason": "no-owner"}) + "\n")
+    assert handoff.session_pointer_anomalies(root) == []
+
+
+def test_native_installer_binary_counts_as_claude():
+    """r3 P12: the native installer runs `.../claude/versions/<x.y.z>`, whose name is the version."""
+    assert stm._is_claude("/Users/u/.local/share/claude/versions/2.1.290")
+    assert stm._is_claude("/usr/local/bin/claude")
+    assert not stm._is_claude("/Users/u/.local/share/other/versions/2.1.290")
+    assert not stm._is_claude("/bin/bash")
+
+
+@pytest.mark.skipif(not __import__("sys").platform == "darwin", reason="libproc start format")
+def test_pid_start_resolves_below_one_second():
+    """r3 P13: two incarnations of one pid inside the same second must not share a start stamp."""
+    import re
+    assert re.fullmatch(r"\d+\.\d{6}", stm._proc_start(os.getpid())), stm._proc_start(os.getpid())
+
+
+def test_save_state_reports_its_source(root, long_lived, monkeypatch, tmp_path):
+    """r3 #b-1 P4 (r2 N5): save_state is a write verb and carries `session_source` too."""
+    monkeypatch.delenv("RMX_SESSION", raising=False)
+    stm.write_pid_pointer(root, os.getppid(), "sess-B")
+    r = verbs.save_state(root, dry_run=True, promote=False, lint=False, sync=False,
+                         memory_dir=str(tmp_path / "mem"))
+    assert r.get("session") == "sess-B" and r.get("session_source") == "pointer", r
+
+
+@pytest.mark.parametrize("argv, verb", [
+    (["task", "push", "a task"], "task"),
+    (["save-state", "--dry-run", "--no-lint", "--no-promote", "--no-sync"], "save_state"),
+])
+def test_cli_task_and_save_state_let_the_verb_resolve(root, monkeypatch, argv, verb):
+    """r3 #b-1 P10/P11 (r2 #s-2): the CLI must hand the verb the raw `--session` (None here), or a
+    guess is labelled `explicit`."""
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+    monkeypatch.delenv("RMX_SESSION", raising=False)
+    seen = {}
+
+    def spy(r, **kw):
+        seen["session"] = kw.get("session", "MISSING")
+        raise verbs.VerbError("stop after capture")
+    monkeypatch.setattr(verbs, verb, spy)
+    r = CliRunner().invoke(main, argv)
+    assert "stop after capture" in r.output, r.output
+    assert seen == {"session": None}, seen
+
+
+# ---- r3 SKETCHY / MEH remedies (RED at 261c574) -----------------------------------------------
+
+def test_a_stale_pointer_for_the_current_session_is_rewritten(root):
+    """r3 #s-1: the same-session shortcut never compared `pid_start`, so a pointer from an older
+    build (r1 wrote `ps lstart`) naming the CURRENT session stayed stale all session, and every
+    resolve guessed."""
+    pid = os.getpid()
+    p = stm.pid_pointer_path(root, pid)
+    p.parent.mkdir(parents=True)
+    p.write_text(json.dumps({"session": "sess-H", "pid": pid,
+                             "pid_start": "Tue Oct  6 22:27:56 2026", "t": 0}))
+    assert stm.read_pid_pointer(root, pid) is None
+    assert stm.write_pid_pointer(root, pid, "sess-H") is True
+    assert stm.read_pid_pointer(root, pid) == "sess-H"
+    assert stm.write_pid_pointer(root, pid, "sess-H") is False      # now the shortcut holds
+
+
+def test_a_malformed_sink_line_does_not_break_recall_state(root, tmp_path):
+    """r3 #m-2: a non-dict line or a non-numeric `t` raised out of `read_pointer_errors` and took
+    down `rmx recall-state`. Unreadable lines are counted, not skipped silently."""
+    from refmatrix import handoff
+    s = stm.Stm(root, "sess-B")
+    s.record("input", "a prompt")
+    p = stm.stm_dir(root) / "by-pid" / "_errors.jsonl"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("[1, 2]\n" + json.dumps({"t": "soon", "reason": "x"}) + "\nnot json\n")
+    stm.record_pointer_error(root, "pointer-unresolved", owner=1)
+    rep = handoff.compose_recall_state(s, root, repo=tmp_path, memdir=tmp_path / "mem")
+    msg = [a for a in rep["anomalies"] if "session-pointer" in a]
+    assert msg and "pointer-unresolved x1" in msg[0] and "3 unreadable" in msg[0], msg
+
+
+def test_the_anomaly_says_calls_not_writes(root):
+    """r3 #m-1: a READ that guesses records the same row as a write, so the anomaly cannot claim
+    writes."""
+    from refmatrix import handoff
+    stm.stm_dir(root).mkdir(parents=True, exist_ok=True)
+    stm.record_pointer_error(root, "pointer-unresolved", owner=1)
+    a = handoff.session_pointer_anomalies(root)
+    assert a and "STM calls may have used a guessed session" in a[0], a
+
+
+def test_only_unreadable_lines_still_surface(root):
+    """r3 #m-2: a log holding nothing but garbage is itself an anomaly, not an empty report."""
+    from refmatrix import handoff
+    p = stm.stm_dir(root) / "by-pid" / "_errors.jsonl"
+    p.parent.mkdir(parents=True)
+    p.write_text("[1, 2]\n")
+    assert handoff.session_pointer_anomalies(root) == [
+        "session-pointer log has 1 unreadable line(s); see stm/by-pid/_errors.jsonl"]

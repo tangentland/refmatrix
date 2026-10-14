@@ -507,18 +507,26 @@ def _latest_savestate(memdir: Path, *, head_chars: int = 1800) -> dict | None:
 
 def session_pointer_anomalies(root: Path, *, window_s: float = 86400.0) -> list[str]:
     """bug-109 r2 #s-2: the reader for `stm/by-pid/_errors.jsonl`. A session-pointer failure in
-    the last day means some STM write may have gone to a guessed session; recall-state says so,
-    with the count per reason and where to look."""
+    the last day means some STM call may have resolved a guessed session; recall-state says so,
+    with the count per reason and where to look. r3 #m-1: rows do not say whether the call was a
+    read or a write, so the text says "calls". r3 #m-2: unreadable lines are counted, apart."""
     import time as _t
     from collections import Counter
     from refmatrix import stm as stm_mod
     rows = stm_mod.read_pointer_errors(root, since=_t.time() - window_s)
-    if not rows:
+    bad = sum(1 for r in rows if r.get("reason") == "unreadable-line")
+    rows = [r for r in rows if r.get("reason") != "unreadable-line"]
+    if not rows and not bad:
         return []
+    if not rows:
+        return [f"session-pointer log has {bad} unreadable line(s); see stm/by-pid/_errors.jsonl"]
     by = Counter(str(r.get("reason")) for r in rows)
     parts = ", ".join(f"{k} x{v}" for k, v in by.most_common())
-    return [f"{len(rows)} session-pointer failure(s) in 24h ({parts}): STM writes may have used "
-            f"a guessed session; see stm/by-pid/_errors.jsonl"]
+    msg = (f"{len(rows)} session-pointer failure(s) in 24h ({parts}): STM calls may have used "
+           f"a guessed session")
+    if bad:
+        msg += f"; {bad} unreadable line(s) in the log"
+    return [msg + "; see stm/by-pid/_errors.jsonl"]
 
 
 def compose_recall_state(s, root: Path, *, repo: Path, memdir: Path) -> dict:
