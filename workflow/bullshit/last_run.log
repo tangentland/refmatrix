@@ -9,3 +9,6 @@
 2026-10-14T12:42:12-0700 commit=32dde06 verdict=DIRTY findings=18 (5B/7S/6M) report=2026-10-14-1242-plan19-21-spec-rereview-schema-consumers-and-subagent-window-32dde06.md
 2026-10-14T12:45:19-0700 commit=32dde06 verdict=DIRTY findings=18 (4B/6S/8M) report=2026-10-14-1245-plan16-22-spec-rereview-verifier-conflict-and-misread-probe-32dde06.md
 2026-10-14T12:46:22-0700 commit=32dde06 verdict=DIRTY findings=20 (4B/8S/8M) report=2026-10-14-1246-plan23-17-spec-rereview-fragment-cache-unbound-and-learn-not-idempotent-32dde06.md
+2026-10-14T13:22:11-0700 commit=6091648 verdict=DIRTY findings=17 (1B/8S/8M) report=2026-10-14-1322-plan23-17-r3-spec-rereview-hotfix-binding-leaks-and-id-bound-oracle-6091648.md
+2026-10-14T13:24:43-0700 commit=6091648 verdict=DIRTY findings=15 (3B/4S/8M) report=2026-10-14-1324-plan19-21-r3-spec-rereview-mcp-session-and-racy-phase-inputs-6091648.md
+2026-10-14T13:26:36-0700 commit=6091648 verdict=DIRTY findings=15 (3B/6S/6M) report=2026-10-14-1326-plan16-22-r3-spec-rereview-probe-walk-unreproducible-and-shifted-sets-removed-6091648.md
