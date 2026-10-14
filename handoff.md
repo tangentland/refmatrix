@@ -43,6 +43,12 @@ rel: depends-on -> [[plan-review-2026-10-14]]
    d8a/d8b replace the unsound d5a/d5c; d8c-d8g revisit d6b, d1c, 19 #s-4, privacy, apply gate.
    Exploration gained **versioned injection** (supersede by id+rev, one-line unchanged,
    keyframe+delta text patches; hooks can only append, the KV cache cannot be patched).
+6. **Afternoon:** decision-log review answered (#t8, d8a-d8h); revision rounds 1-2 and re-review
+   rounds 2-3 (findings 118 → 56 → 47; BULLSHIT 33 → 13 → 7); ADR-0004 amendment approved (d9k);
+   23.4 ranges confirmed + procedure fixed (d9l, d9m); option F in the storage exploration (d9n);
+   removal paths classified (d9o); one all-waves list (#t10-waves); Time Machine exclusions run
+   (load 26 → 6); stale backups deleted; bug-105 found live (195k foreign bits) and hotfixed in a
+   littlebig clone; bugs 103-107 logged.
 5. **Decision walk** with the user, topic by topic, in `workflow/plan-review-2026-10-14.md`
    (d1a..d7a). Headlines: 23.0 test sandbox is Wave 1's first build; Option A's measurement #4 runs
    in parallel with it; plan-23 first with a `bind(batch)` seam; drain offset in the batch's
@@ -53,21 +59,28 @@ rel: depends-on -> [[plan-review-2026-10-14]]
 
 ## Next {#next}
 
-1. **Spec revisions IN FLIGHT at save time** (2026-10-14 ~12:40): six background agents, one per
-   plan (16 rev 6, 17, 19, 21, 22, 23), each editing only its own plan files from the decision log
-   `workflow/plan-review-2026-10-14.md` (d1a..d8g; #t8 close-out wins over earlier rows). New task
-   specs expected: 23.0, 23.3, 23.4, 22.1a, 22.5, 19.0, 19.6. Brief:
-   scratchpad `revise-brief.md` (session-local). If the session ended before they finished, check
-   `git status` for partial edits in `workflow/plans/plan-{16,17,19,21,22,23}*` before trusting them.
-2. **Then:** lint, update `workflow/plan-of-plans.md` to #t8-wave1, commit, and run the ch-bsd
-   re-review of all six revised plans (user asked for it).
-3. **Then merge** `wave0-spec-reviews` → `master` (`--no-ff`) once the re-review is clean or its
-   findings are answered.
-4. **Wave 1** per #t8-wave1: 23.0 ∥ 23.4 → 23.2 → 23.1 (+ tick registry) → 23.3; then 16.6 slice →
-   22.1a → 22.2 → 22.5 → 22.3; 17.1 → 17.2; 19.0/19.1/19.2; 21.1 (needs only 23.0).
-5. **Open bugs:** bug-096, bug-097, bug-099..104.
-6. **Needs the user's time:** the 19.5 hook-limit probe, the 20.1 gold-label review, the 21.4
-   question-set approval (d4c/d8f).
+1. **IN FLIGHT at save time (2026-10-14 ~13:45):**
+   - Spec **revision round 3**: three background agents (23+17, 16+22, 19+21), docs only, editing
+     `workflow/plans/plan-{16,17,19,21,22,23}*` from the round-3 re-reviews
+     (`workflow/bullshit/2026-10-14-13{22,24,26}-*-r3-*-6091648.md`) and
+     `workflow/plan-review-2026-10-14.md` #t9-approvals (d9k..d9o) + #t10-waves. Uncommitted;
+     check `git status` before trusting partial edits. Brief: scratchpad `revise3-brief.md`.
+   - **bug-105 hotfix round-2 audit** (ch-bsd) in the littlebig CLONE
+     `/Volumes/littlebig/refmatrix-bug105`, branch `bug-105-fragment-partition`, commits
+     0d05525 (cache per binding) → 20c5ab4 (`rmx repair-index --fragments`) → 4fb803b (audit
+     remedies). 19 targeted tests, mutants m6-m10 killed, families 740 passed. NOT merged.
+2. **Then:** commit round 3, run round-4 re-reviews (review until clean).
+3. **bug-105, after a CLEAN audit and the user's go:** merge the clone branch to `master` from
+   the dev repo (fetch the branch, `--no-ff`), bump version, deploy, back up each store's active
+   slot, `rmx repair-index --fragments --dry-run` per store, read counts, apply. Rehearsal on a
+   copy: 538,094 bits moved, 104,283 restored from entity_links, 466,163 dead bits to the
+   manifest, 0 foreign/dead after, idempotent, ~2 s.
+4. **At review end:** the user wants ONE consolidated document
+   (`plan-review-2026-10-14#final-doc`).
+5. **Waiting on the user later:** 19.6 PROPOSED tables (after the b-2/s-4 race fixes); d9b no-owner
+   global rows (after 22.5's dry run); 19.5 probe, 20.1 labels, 21.4 question-set approval.
+6. **Open bugs:** 096, 097, 099-107 (105 hotfix pending deploy; 107 = learned rows purged outside
+   plan-22, classified by d9o).
 
 {#next-body}
 
