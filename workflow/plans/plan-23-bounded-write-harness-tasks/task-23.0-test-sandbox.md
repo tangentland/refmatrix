@@ -136,6 +136,9 @@ outer tiers remove those, each for a different gate. Tiers nest: R1-R4 still run
      READ-ONLY, copy it onto the VM disk, run the full suite over SSH, copy the log to
      `workflow/review-output/pytest-lane-vm-<sha>.log`, `tart stop`, `tart delete`. Nothing on
      the host is shared writable.
+   - **Host (d9aa):** the user's M1 Mac mini, once it is running, so the VM lane never competes
+     with the workstation and runs on real arm64 Apple hardware. Until then, the workstation hosts
+     it. The script takes `--host <ssh-target>` and runs Tart there; nothing else changes.
    - **Limits:** Apple's licence allows at most two macOS VMs per Mac at once; the script refuses
      a third. Boot time, run time and disk are recorded per run in
      `workflow/review-output/lane-vm-runs.jsonl` (unmeasured today; the first run measures them).
@@ -239,4 +242,5 @@ before/after stat runs outside pytest. Logs go to `workflow/review-output/` (the
 |---|---|
 | d9w (checkout guard; `.venv-eval` editable install tested the dev tree from a clone) | [[#r9]], [[#ac-6]] |
 | d9x (user: "both, write it into 23.0": separate-user lane and Tart macOS VM lane) | [[#amend-2026-10-14-lanes]], [[#r7]], [[#r8]], [[#ac-7]], [[#ac-8]] |
+| d9aa (user: the M1 Mac mini hosts tier 2 once running) | [[#r8]] Host |
 
