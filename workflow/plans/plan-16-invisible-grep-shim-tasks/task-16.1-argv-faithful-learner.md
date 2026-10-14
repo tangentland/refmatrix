@@ -29,6 +29,20 @@ rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
 rel: depends-on -> [[task-16.6-learned-row-validation]]
 rel: derives-from -> [[plan-review-2026-10-14#t6]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+rel: derives-from -> [[plan-review-2026-10-14#t9]]
+rel: amends -> [[bsd-plan16-22-spec-rereview-32dde06]]
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+Answers [[bsd-plan16-22-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]] where they touch
+16.1's provenance write.
+
+| finding / decision | answered in |
+|---|---|
+| re-review b-2 / #t9-fixes (provenance gets a `facts.log` event) | R10 [[#r10]] (the write logs `learned_provenance`; a different-rules re-teach logs only those events); AC-15 |
+| re-review b-1 (verify-time filter of `match_argv`) | R10: `match_argv` recorded whole, filtered by 16.6 R2; AC-15 `-rl --exclude` row |
+| re-review m-1 (no `python` dialect) | R10's dialect mapping is the whole enum (16.6 R1) |
+| re-review m-4 (one hash function) | R10 `line_hash` = `learned_verify.hash_line` |
 
 ## Revision 6 changelog {#revision-6}
 
@@ -219,7 +233,9 @@ and no narrower. {#why-lead}
   1. Compute the set of `(concept, entity, line)` the record would add.
   2. If every one already exists, RETURN BEFORE `add_concept`, `upsert_entity`, `link` or
      `add_evidence`. No `facts.log` event is written.
-  3. Otherwise write only the missing evidence rows. `add_evidence` is an unconditional INSERT,
+  3. Otherwise write only the missing evidence rows, through `Store.add_evidence_if_absent`
+     (plan-23 task 23.1 `#r9`, keyed on `(entity_id, linkage_id, concept_id, file, line)`; bug-106).
+     Today's `add_evidence` is an unconditional INSERT,
      and `upsert_entity` appends `entity` and `protect` events.
 - **`kind` from `corpus.CODE_EXTS`,** not the hardcoded 13-suffix set at `daemon.py:4281`.
   Identity is `(partition, kind, name)`, so a `.sh`/`.tsx`/`.sql` file otherwise becomes a second,
@@ -276,19 +292,23 @@ for a case-sensitive `rmx grep`.
   - `dialect`: grep `-F`/`--fixed-strings` → `fixed`, `-E`/`--extended-regexp` → `ere`, else `bre`;
     rg `-F` → `fixed`, `-P`/`--pcre2` → `pcre2`, else `rust`; tokens naming more than one dialect →
     `mixed`. Informational: 16.6 R2 always re-runs `tool`.
-  - `line_hash` = sha256 hex of the TEXT bytes after `LINE:` in the canonical output, without the
-    line terminator (16.6 R3).
+  - `line_hash` = `learned_verify.hash_line(raw)` of the TEXT bytes after `LINE:` in the canonical
+    output, without the line terminator (16.6 R3; one hash function for every reader).
+  - `match_argv` is recorded WHOLE, cutoffs and file-selection tokens included. 16.6 R2 filters it
+    at verify time ([[task-16.6-learned-row-validation#r2-argv]]); the learner never pre-filters.
 - `_learn_grep_hits` writes one `learned_evidence` row per evidence row it adds, `origin=learner`,
-  through `Store.add_learned_provenance` (16.6 R1), in the SAME transaction as `add_evidence`. It
-  replaces 16.6 R1b's `legacy-writer` call on this path.
+  through `Store.add_learned_provenance` (16.6 R1), in the SAME transaction as `add_evidence`;
+  that call also logs one `learned_provenance` event per inserted row (16.6 R1d), so a rebuild
+  restores the provenance. It replaces 16.6 R1b's `legacy-writer` call on this path.
 - **The context backstop** (`daemon.py:4795-4806`) passes its provenance to `_learn_grep_hits`:
   `origin=context-backstop`, `spawned_by=context-backstop`, `tool` = `rg` or `grep` as
   `context.py:912-926` chose, `bin` = that path, `match_argv` = its kept tokens (`-i -F`, `-w` when
   set, and every `-e TERM`), `dialect=fixed`, `line_hash` from the line read at learn time.
 - **Idempotence (R4) covers the sidecar.** The all-present short-circuit tests the evidence rows
   AND their sidecar rows under this record's `rules_sha`. A re-teach under the same rules writes
-  nothing. A re-teach under different rules (`-i` after none) writes only the missing sidecar rows,
-  no evidence row and no `facts.log` event.
+  nothing. A re-teach under different rules (`-i` after none) writes only the missing sidecar rows
+  and their `learned_provenance` events (16.6 R1d): no evidence row and no `evidence`, `entity`,
+  `protect` or `link` event.
 
 ## Acceptance criteria {#acceptance}
 
@@ -357,7 +377,10 @@ for a case-sensitive `rmx grep`.
     `spawned_by` as passed, and `line_hash` = sha256 of the file's line; 16.6 R2 verifies both
     `ok`. `grep -F 'a|b'` records `dialect=fixed`, `match_argv=['-F']`; `-l` records `['-m', '1']`.
     A learned evidence row with no sidecar row after the drain: 0. Re-teaching the same argv writes
-    nothing (AC-12 holds with the sidecar); re-teaching with `-i` adds sidecar rows only.
+    nothing (AC-12 holds with the sidecar); re-teaching with `-i` adds sidecar rows only, and
+    `facts.log` grows by exactly one `learned_provenance` event per added sidecar row (no other op).
+    `grep -rl --exclude='*<parent>*' PAT dir` records `match_argv` with the `--exclude` and
+    `['-m','1']` tokens, and 16.6 R2 still verifies its rows `ok` (16.6 AC-3 d/e).
 16. **`spawned_by` (s-r5-6).** Each of `--spawned-by shim`, `grep-tool-hook`, `rmx-grep` lands in the
     log record and the sidecar; a missing `--spawned-by` gives `skipped reason=bad-spawned-by`.
 

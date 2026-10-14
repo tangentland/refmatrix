@@ -38,7 +38,10 @@ unknown. Hard-coding an unmeasured limit is the bug-042 shape. {#why-body}
 1. **R1 Threshold probe** (in a SCRATCH project, never this repo's settings).
    - (a) **Per hook.** A throwaway UserPromptSubmit hook emits 9,000 / 9,900 / 10,000 / 10,100 /
      11,000 chars of numbered lines; a Claude Code session records which arrive whole and which
-     as a preview, and the unit (chars vs bytes, via a multibyte payload).
+     as a preview, the unit (chars vs bytes, via a multibyte payload), and the PREVIEW size (how
+     many leading bytes of an over-cap payload the agent sees). Both the cap and the preview are
+     recorded in BYTES as well as in the measured unit, since every event offset is in bytes
+     (21.1 R10).
    - (b) **Per event** (19 #s-2). Two hooks on ONE UserPromptSubmit event, 5,000 + 6,000 chars:
      both whole → the cap is per hook; either previewed → per event. The verdict is recorded.
    - (c) **PreCompact** (19 #s-1, d5d). A PreCompact hook emits a unique marker line; after a
@@ -46,8 +49,10 @@ unknown. Hard-coding an unmeasured limit is the bug-042 shape. {#why-body}
      stdout reaches the agent; absent → it does not, and 19.1 R4 drops the PreCompact recall
      (keeping only save-state / promote), and 19.2 never counts PreCompact as `delivered`.
    - The result table goes into [[reference_hook_output_10k_cap]] (a memory overwrite or amend per
-     MEMORY-RULES) and sets `DEFAULT_HOOK_BUDGET_CHARS` (limit minus a 5% margin; if per event,
-     19.1 R1's per-event formula).
+     MEMORY-RULES) and sets `DEFAULT_HOOK_BUDGET_BYTES` (the cap in bytes minus a 5% margin; if
+     per event, 19.1 R1's per-event formula), and records R1(c)'s verdict as the committed
+     constant `PRECOMPACT_STDOUT_DELIVERED` in `src/refmatrix/hooks.py` (`True` / `False`; `None`
+     until this probe runs), which 19.1 R4's generator and 19.2 R3's fold read.
 2. **R2 Delivery metric, read from the C7 events** (19 #m-6). For each channel (SessionStart,
    per-prompt, PreCompact if R1(c) keeps it, scan-prompt) on the 20-prompt set of 19.1 AC-2:
    - **before** (today's hooks): distinct memories named inside the delivered payload, which is
@@ -56,11 +61,25 @@ unknown. Hard-coding an unmeasured limit is the bug-042 shape. {#why-body}
      `retrieved` events of the same `query_id`, and cross-checked against the names counted in
      the payload (the two counts must agree, or the run fails).
    - "Memory" excludes `mtype=subject` and `session/*` rows (d8a).
+   - **`seen`, derived here and only here** (re-review #s-2; plan-21 `#consolidations`). For each
+     `delivered` event, with `cap` and `preview` from R1 in bytes: if the call's `payload_bytes ≤
+     cap`, the item is seen; else it is seen only if `offset_bytes + bytes ≤ preview` (the naming
+     line fell inside the preview), and its body is seen only if `body_offset_bytes +
+     body_bytes ≤ preview`. If R1 found the cap PER EVENT, `payload_bytes` above is the sum of
+     both UserPromptSubmit payloads of that prompt (scan-prompt + recall, joined by `session` and
+     `turn`), and the other hook's payload is assumed to come FIRST, so `seen` is a lower bound and
+     is labelled so. If R1 found the harness counts characters, byte offsets over-state position,
+     so `seen` is again a lower bound, labelled so. The table reports, per channel: emitted,
+     seen, and seen/emitted; scan-prompt's tail under a per-event cap is visible as emitted but
+     not seen.
 3. **R3 Index reach.** The number of memories named in `MEMORY.md` before and after 19.3, and
    19.3 R4's executed reachability result.
-4. **R4 The fixed baseline for 19.6** (d5b). R2's "after" numbers, per channel, plus scan-prompt's
-   delivered size, are written to `eval/production/memory_delivery/baseline-fixed.json` (counts
-   and sizes only, no prompt text) and committed. 19.6 compares against this file, not a re-run.
+4. **R4 The fixed baseline for 19.6** (d5b). R2's "after" numbers, per channel (emitted, seen,
+   distinct memories), plus scan-prompt's delivered size, are written to
+   `eval/production/memory_delivery/baseline-fixed.json` (counts and sizes only, no prompt text)
+   and committed. It holds NO read-back data, by design (re-review #s-4): 19.6 scores read-back
+   on a live concurrent `fixed` arm (19.6 Table C) and uses this file only as its validity check
+   (19.6 [[task-19.6-phased-context-and-topic-cache#ranges-c]]).
 5. **R5 The production path.** Every number comes from the CLI commands the hooks run, in task
    23.0's sandbox, on catalog and memory-dir COPIES (and a tmp global store copy for the
    `--scope both` leg). No measurement connects to a live socket.
@@ -70,9 +89,15 @@ unknown. Hard-coding an unmeasured limit is the bug-042 shape. {#why-body}
 1. The probe's table (size → whole / preview; unit; per hook vs per event; PreCompact verdict) is
    in the reference memory and the implementation summary, and 19.1's default and PreCompact
    branch derive from it.
-2. The before/after table per channel shows the median distinct memories delivered; 19.1 AC-2
-   (≥ 5x) is judged from it. The `delivered` event counts equal the payload name counts on every
-   prompt.
+2. The before/after table per channel shows the median distinct memories delivered and the
+   emitted / seen counts; 19.1 AC-2 (≥ 5x) is judged from it. The `delivered` event counts equal
+   the payload name counts on every prompt.
+2b. **`seen` derivation** (unit-tested in the script's tests, sandboxed): a 12,000-byte payload
+   with `cap` 10,000 and `preview` 2,048 marks only the items whose naming line ends at or before
+   byte 2,048 as seen; a 9,000-byte payload marks all as seen; under a per-event cap, a
+   6,000-byte scan-prompt payload plus a 5,000-byte recall payload marks the recall items seen
+   only within `preview − 6,000` (none). Mutation: deriving `seen` as `offset_bytes + bytes ≤ cap`
+   on an over-cap payload fails the first case.
 3. The scan-prompt budget (2,000 tokens) is recorded with its delivered size, and any follow-up is
    named in the summary (19.6 owns the split, d5b).
 4. `baseline-fixed.json` exists, is committed, and holds no prompt text.
@@ -103,3 +128,13 @@ counts disagree.
 | d5b (fixed baseline for 19.6) | R4, AC-4 |
 | d8a (subjects not counted as memories) | R2 |
 | d8f (prompt text stays local) | R4, [[#files]] |
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+Answers [[bsd-plan19-21-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9-fixes]].
+
+| finding / decision | answered at |
+|---|---|
+| re-review #s-2 (19.5 never derives `seen`; units) / #t9-fixes "one unit (bytes)" | R1(a) (cap and preview in bytes), R2 (`seen` derived only here, lower-bound rules), AC-2, AC-2b |
+| re-review #s-4 (19.6's baseline holds no read-back) | R4 (no read-back by design; 19.6 Table C scores a live `fixed` arm and uses this file as a validity check) |
+| re-review #m-2 (PreCompact constant unnamed) | R1 (`hooks.PRECOMPACT_STDOUT_DELIVERED`) |

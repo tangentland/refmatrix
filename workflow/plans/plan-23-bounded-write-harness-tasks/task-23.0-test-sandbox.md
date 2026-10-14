@@ -13,7 +13,8 @@ metadata:
 # Task 23.0: the shared test sandbox {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: Pending (revision after the 2026-10-14 decision log)
+> Status: Pending (revision round 2, 2026-10-14: AC-4 checks content, ns23-2; see
+> [[#rev-round-2]])
 > Depends on: — (the FIRST build of Wave 1, in parallel with 23.4)
 > Blocks: 23.2, 23.1, 23.3, and every Wave 1 task's tests (21.1 needs only this task)
 
@@ -23,6 +24,8 @@ rel: derives-from -> [[plan-review-2026-10-14#t1]]
 rel: derives-from -> [[plan-review-2026-10-14#t8-revisited]]
 rel: evidence-for -> [[bug_registry#registry]]
 rel: related-to -> [[project_suite_reaches_live_sockets]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06#ns23-2]]
+rel: implements -> [[plan-review-2026-10-14#t9-fixes]]
 
 ## Why {#why}
 
@@ -49,7 +52,9 @@ Facts at HEAD `b1c4324` the design depends on:
    that imports `refmatrix`, creates ONE short sandbox root (`tempfile.mkdtemp(prefix="rmx-",
    dir="/tmp")`, so `<root>/<store>/.refmatrix/rmxd.sock` stays under macOS's ~104-byte
    `sun_path`) and sets `HOME`, `RMX_HOME` (global root, registry, taxonomy, hub sockets) and
-   `RMX_SANDBOX_ROOT` to paths inside it. `PATH` is pinned so `rmx` resolves to
+   `RMX_SANDBOX_ROOT` to paths inside it. When `RMX_SANDBOX_TAG` is set (AC-4's wrapper sets it to
+   6 random hex characters), the prefix becomes `rmx-<tag>-`, so every path the sandbox creates
+   carries the run's tag. `PATH` is pinned so `rmx` resolves to
    `.venv-eval/bin/rmx`, never the deploy `~/bin/rmx`. The REAL paths are captured first, for R3's
    deny set only. {#r1}
 2. **R2 Store roots injected.** An autouse fixture sets `REFMATRIX_ROOT` to a per-test path under
@@ -100,10 +105,32 @@ Facts at HEAD `b1c4324` the design depends on:
    path, and a test spawns `rmx` with `REFMATRIX_ROOT` pointed at the repo's real `.refmatrix/`.
    Both children exit nonzero with `SandboxViolation` on stderr. Mutation: drop the `PYTHONPATH`
    entry; the children must then connect (or fail differently), and the test must fail. {#ac-3}
-4. **Whole-suite proof.** A wrapper script OUTSIDE pytest stats the live `~/.refmatrix/query.log`,
-   `~/.refmatrix/facts.log`, the repo's `.refmatrix/query.log` and `facts.log` (size + mtime) before
-   and after a full suite run captured to `workflow/review-output/pytest-sandbox.log`. All four are
-   unchanged, and the touches log gains 0 lines. {#ac-4}
+4. **Whole-suite proof, by content (ns23-2).** The live logs change from normal activity during a
+   13-minute run (the re-review saw the repo's `query.log` and `facts.log` written at 12:42 and
+   12:43 while it only read), so size and mtime cannot be the check. A wrapper script OUTSIDE
+   pytest, `scripts/sandbox-proof.sh`:
+   - draws a fresh `RMX_SANDBOX_TAG` and runs the full suite with it, captured to
+     `workflow/review-output/pytest-sandbox.log`;
+   - before the run, records each live log's `(inode, size)`: `~/.refmatrix/query.log`,
+     `~/.refmatrix/facts.log`, and the repo's `.refmatrix/query.log` and `facts.log`;
+   - after the run, reads the DELTA of each log (the bytes past the recorded size; if the inode
+     changed because a compaction rewrote `facts.log`, the whole new file) and FAILS if any delta
+     line contains the run's tag, the string `/pytest-of-`, or the sandbox root, or (for
+     `query.log`) has the d9g fixture shape: a learn/grep row with the `alpha|beta` pattern and no
+     `cwd`. Once 21.1 has landed, every delta row also goes through
+     `telemetry.is_test_artifact_row(row)` (21.1 R5, the one shared d8d predicate in
+     `telemetry.py`, nm23-2), and a true result fails the check;
+   - prints, per log, the delta line count and the number of rows that failed;
+   - and the touches log gains 0 lines.
+   Live activity during the run (other sessions' greps, the watcher) adds rows that carry none of
+   these markers, so it cannot fail the check. A leaked sandbox row carries the tag (every sandbox
+   path does), a pytest temp path, or the fixture shape; a leak with none of these is a new shape
+   and is added to the check when found.
+   - Pre-registered detector check, with no live write: the wrapper takes `--live-logs <dir>`
+     (default: the four real paths). Pointed at a decoy directory holding copies of the four logs,
+     with one grep test mutated to write its `query.log` row into the decoy (`REFMATRIX_ROOT` at a
+     decoy store), the wrapper must FAIL on that tagged or fixture-shaped row. A detector that
+     passes the mutated run is the defect. {#ac-4}
 5. **Short root.** A test asserts `len(str(sandbox / "s" / ".refmatrix" / "rmxd.sock")) <= 100`.
    {#ac-5}
 
@@ -128,3 +155,10 @@ before/after stat runs outside pytest. Logs go to `workflow/review-output/` (the
 | d8d (23.0 prevents new fixture rows) | [[#r5]], [[#ac-4]] |
 | 23 #s-7 (kill and sandbox unspecified, bug-088) | [[#r3]], [[#r4]]; 23.1's test strategy |
 | bug-088 omissions (viascope store, `::1:7777`) | [[#r3]] |
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+| finding / decision | answered at |
+|---|---|
+| ns23-2 (size + mtime of live logs fails on normal activity), #t9-fixes "23.0 AC-4 checks added row content" | [[#r1]] (`RMX_SANDBOX_TAG`), [[#ac-4]] |
+| nm23-2 (d8d predicate owner is `telemetry.py`) | [[#ac-4]] (`telemetry.is_test_artifact_row`, owned by 21.1 R5) |

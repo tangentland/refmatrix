@@ -16,13 +16,15 @@ metadata:
 > Status: Pending (revision after the 2026-10-14 decision log) — BLOCKED until ADR-0004's helix
 > implementation plan defines the term-space alias map, and plan-20 recommends a merge rule. That
 > helix plan does not exist yet (`plan-review-2026-10-07` `#gaps`, "No plan yet"; 22 #m-5).
-> Whether plan-22 can close with this task handed over is listed in
-> [[plan-22-audited-removal-and-repair#open-after-revision]] 3.
+> **Hand-over (d9j, user 2026-10-14):** plan-22 may close with this task handed to the future
+> ADR-0004 helix implementation plan; when that plan is written it takes this spec as its merge
+> task, and plan-22's engine (22.2) is its only removal/repair path.
 
 rel: part-of -> [[plan-22-audited-removal-and-repair]]
 rel: depends-on -> [[plan-20-concept-similarity-eval]]
 rel: depends-on -> [[refmatrix/adr-0004-unified-location-space-index]]
 rel: depends-on -> [[task-22.2-repair-then-remove]]
+rel: derives-from -> [[plan-review-2026-10-14#t9]]
 
 ## Requirements (to be completed when unblocked) {#requirements}
 
@@ -44,3 +46,9 @@ Owner of ADR-0004 `#rule-no-delete`'s "merge" path. {#owner}
 |---|---|
 | 22 #m-5 (blocks on a plan that does not exist; plan close) | [[#root]] |
 | d8g, 22 #b-8 clause, d1a/d1b | R3, R4 |
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+| finding / decision | answered in |
+|---|---|
+| d9j (plan-22 closes with 22.4 handed to the helix plan; re-review open item 3, plan-22 r1 m-5) | [[#root]] hand-over note |

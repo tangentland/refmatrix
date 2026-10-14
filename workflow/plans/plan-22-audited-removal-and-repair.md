@@ -13,9 +13,10 @@ metadata:
 # Plan 22: audited removal and repair {#root}
 
 **Date:** 2026-10-07 (revised 2026-10-14 after the Wave 0 decision log)
-**Status:** Drafting — revision after the 2026-10-14 decision log. Task specs 22.1a, 22.1, 22.2,
-22.3, 22.4 (blocked) and 22.5 are written; all are "Pending (revision after the 2026-10-14 decision
-log)".
+**Status:** Drafting — revision round 2 (2026-10-14) for the re-review
+[[bsd-plan16-22-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]] ([[#rev-round-2]]). Task
+specs 22.1a, 22.1, 22.2, 22.3, 22.4 (blocked; handed to the helix plan on close, d9j) and 22.5 are
+written.
 **Origin:** the plan review's C1/C2/C3, applied by the user on 2026-10-07: "apply all the
 consolidations, don't delete moves repair them if possible". Revised from
 [[bsd-plan22-spec-review-3104a81]] (22 findings) and the decisions of
@@ -73,7 +74,10 @@ Out of scope, stated so the wording matches the ADR (#m-7):
 - the 235 pytest fixture rows in the live `query.log` (d8d): not catalog rows; mark-and-filter by
   readers, the log stays append-only. Plan-22 removes nothing from any log file.
 - the user-explicit, named-selector commands (`forget`, `memory bulk-forget`, `untrack`) and the
-  counter-threshold `prune-noise --drop`: listed in [[#open-after-revision]], not absorbed here.
+  counter-threshold `prune-noise --drop`: not absorbed here. d9i decides that ONE ADR-0004
+  amendment, drafted by the orchestrator for the user's approval, scopes them (each either routes
+  through this plan's audited path or carries a stated exception). That amendment is PENDING and is
+  not written in this plan's files ([[#open-after-revision]] 4).
 
 {#scope-body}
 
@@ -84,7 +88,8 @@ Out of scope, stated so the wording matches the ADR (#m-7):
 2. **Repair first.**
    - A row that can be made correct is re-pointed or moved, never deleted: lines that moved inside
      the same file (repaired per `(concept, file)` set, #b-1); a relative path that resolves
-     uniquely (moved to its owning store, or forgotten-restorable when no store owns it, d6b/d8c);
+     uniquely (moved to its owning store, d6b; when no project store owns it, held until the user
+     rules on the dry-run counts, d9b);
      an alias whose canonical is named in its own text (#s-5).
    - Removal is only for rows with no correct form.
 3. **An ambiguous row is kept, never guessed.** A path that resolves under several roots, or a
@@ -100,7 +105,7 @@ Out of scope, stated so the wording matches the ADR (#m-7):
    concept classes are in scope. The apply never clears `protected` on an entity that survives it;
    protection leaves only with a whole-entity purge of a learned-only entity (#s-4).
 6. **Bounded writes without the lossy queue.** The apply is a bounded step loop over an in-memory
-   plan, each batch bound through plan-23's `bind(batch)` seam inside its own hold, counted by the
+   plan, each batch bound through plan-23's `bind(partition_name)` seam inside its own hold, counted by the
    23.2 recorder, with one Lance finalize per kind after the loop (#s-1, #s-2).
 7. **Tests are sandboxed by task 23.0** (d1a/d1b). No test in this plan reaches `~/.refmatrix` or a
    registered live store; the live applies (22.5, 22.3) are operator steps after a user-confirmed
@@ -128,10 +133,10 @@ concept classes do not live under `rmx learn` (#m-6).
 |---|---|---|---|
 | 22.1a | 1 | provenance-free classes: `orphan-root` (incl. root-`ambiguous`), `missing-file`, `duplicate`, `orphan-alias`, `stale-subject`; the `removal_audit` verb | fixture row per class; probe split reproduced on a global copy; independent recount equals audit count; audit writes nothing |
 | 22.2 | 1 | the engine: repair/move/remove primitives, row-level `facts.log` events in both replay paths, manifest + intent log + restore, `bind` + recorder, ablation gate on a copy of THIS store, `removal_apply`/`removal_restore` | rebuild reproduces post-apply; restore equal by name incl. evidence, protection, vectors; two-partition AC; gate refuses on a masked delta and on a store lacking the candidates |
-| 22.5 | 1 | cross-store move: copy → verify → forget across two daemons, manifest-backed, idempotent | crash at each step leaves no loss and no duplicate; collision merges; only named roots |
-| 22.3 | 1 | first apply, live global store: 563 removed, 48 kept ambiguous, 1,655 pytest-tmp entities removed; the 476 handed to 22.5 | total global `unreadable` over a pre-registered pattern set drops to the residual explained by class; memory count unchanged |
-| 22.1 | 2 | flag-sensitive classes: `ok`, `moved` (per `(concept, file)` set), `grown`/`shrunk`, `stale-line`, `out-of-range`, `unverifiable`, `empty-learned` | two-hit shift ends re-pointed with 0 `ambiguous`; pre-provenance `-i` row stays `ok`; `empty-learned` recount exact |
-| 22.4 | blocked | merge writes into the alias map | blocked until ADR-0004's helix plan defines the alias map and plan-20 supplies the rule |
+| 22.5 | 1 | cross-store move: copy → verify → forget across two daemons, manifest-backed, idempotent, sidecar rows travelling with their evidence; the no-owner buckets reported and held until the user rules (d9b) | crash at each step leaves no loss and no duplicate; collision merges; only named store roots; nothing applied to a `pending` no-owner bucket |
+| 22.3 | 1 | first apply, live global store: `orphan-root:unresolved` removed (measured; 563 was the probe's no-verifying-file count, which included rows still readable today), 48 kept ambiguous, 1,655 pytest-tmp entities removed; resolved and `home-readable` entities handed to 22.5 (the no-owner ones held for the user's ruling, d9b) | total global `unreadable` over a pre-registered pattern set drops to the residual explained by class; memory count unchanged |
+| 22.1 | 2 | flag-sensitive classes: `ok`, `moved` (per `(concept, file)` set), `grown`/`shrunk`, `stale-line`, `out-of-range`, `unverifiable`, `empty-learned`; every row decided by 16.6's `learned_verify` (no matcher here); 16.6's read-time marks read for ordering and reporting | two-hit shift ends re-pointed with 0 `ambiguous`; BRE, POSIX-class and `\<…\>` rows `ok`; exit 2 `unverifiable`; pre-provenance `-i` row stays `ok`; marked rows listed; `empty-learned` recount exact |
+| 22.4 | blocked; handed over on close (d9j) | merge writes into the alias map | blocked until ADR-0004's helix plan defines the alias map and plan-20 supplies the rule; that plan takes it over |
 
 Task specs: `workflow/plans/plan-22-audited-removal-and-repair-tasks/`.
 
@@ -142,14 +147,17 @@ Wave 1: 23.0 ∥ 23.4 → 23.2 → 23.1 (+ tick registry) → 23.3; after 23.1: 
 
 - 22.1a needs: 23.0 (sandbox), 16.6's Wave-1 slice (sidecar + backfill + read-time marks, d6d;
   16.6 no longer depends on 16.1).
-- 22.2 needs: 22.1a (classifier output contract), 23.1 (`bind(batch)`, `bounded_steps`), 23.2 (the
-  write-count recorder).
+- 22.2 needs: 22.1a (classifier output contract), 16.6's Wave-1 slice
+  (`move_learned_provenance`, the sidecar's `facts.log` events), 21.1 R5 (`telemetry.row_provenance`,
+  for the gate's query set; d8d's owner per `#t9-fixes`), 23.1 (`bind(partition_name)`, `bounded_steps`),
+  23.2 (the write-count recorder).
 - 22.5 needs: 22.2 (engine, manifest, events, removal primitive).
 - 22.3 needs: 22.5 (the 476), 22.2, 22.1a; the user's confirmation of the dry-run counts.
 - 22.1 (Wave 2) needs: 16.1's learn-time provenance write (tool + dialect + flags + line hash,
   d6d); it extends 22.2's engine with the `moved` / `stale-line` / `out-of-range` repairs and
   removals.
-- 22.4: blocked (see its spec).
+- 22.4: blocked (see its spec); plan-22 may reach `completed` with it handed to the helix plan
+  (d9j).
 
 Plan-16's 16.6 is owned by the plan-16 revision; this plan references it and does not edit it.
 
@@ -157,6 +165,7 @@ rel: depends-on -> [[task-16.6-learned-row-validation]]
 rel: depends-on -> [[task-16.1-argv-faithful-learner]]
 rel: depends-on -> [[task-23.1-queue-and-drain]]
 rel: depends-on -> [[task-23.2-lock-hold-fixture]]
+rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 
 ## Decisions {#decisions}
 
@@ -167,44 +176,75 @@ rel: depends-on -> [[task-23.2-lock-hold-fixture]]
 | d-3 | the concept classes (`orphan-alias`, `empty-learned`, `stale-subject`) pass an ablation gate on a COPY of the store they live in before apply; no count is presumed (the "747" is withdrawn, #b-6) | exploration C1; #t6-fixes #b-5 |
 | d-4 | plan-17's nightly orphan-VECTOR reap stays in plan-17 (derived-index garbage, logged, with a recoverable list and a ratio cap) | user 2026-10-07; d3a |
 | d-5 | the 48 ambiguous global entities are KEPT and listed as ambiguous | d6a |
-| d-6 | the 476 uniquely verified global entities MOVE to the project store whose root contains the resolved file; those under no store root get an audited, restorable forget (22.5); this knowingly changes those rows from "recovered" (2026-10-07) to "forgotten, restorable" | d6b, d8c |
+| d-6 | the uniquely verified global entities MOVE to the project store whose root contains the resolved file (22.5). AMENDED by d9b: rows that read correctly today but lie under no project store (22.5's `no project store` and `global root only` buckets) are decided by the user AFTER 22.5's dry run shows the real split; nothing is applied to them until then. d8c's "≥ 114 forgotten" is withdrawn (the probe was misread: all 362 `$HOME`-verified entities matched under the global store's own root) | d6b, d8c, d9b |
 | d-7 | `query/*` with df ≤ 1 and a valid row is not a cull class | d6c |
 | d-8 | 22.1 splits; 22.1a runs in Wave 1 without 16.1 | d6d; #t8-amendments |
 | d-9 | one verb per action on both surfaces; apply needs manifest id + `--confirm <manifest-hash>` + an explicitly named root | d6e, d8g, 22 #b-8 |
 | d-10 | 22.3 removes the 1,655 pytest entities; the 235 `query.log` rows are NOT a plan-22 removal | d1c, d8d |
+| d-11 | THE verifier for learned rows is 16.6's `learned_verify` (re-run the recorded tool; line-set API; named-subset permissive reading for rows without rules); plan-22 carries no matcher | re-review b-4; `#t9-fixes` |
+| d-12 | plan-22 may close with 22.4 handed to the future helix plan | d9j |
 
 ## Open after revision {#open-after-revision}
 
-Gaps the 2026-10-14 decision log does not settle. Listed, not decided.
+Revision round 2 (2026-10-14) settled every item the re-review said the specs or the orchestrator
+could settle, and records the user's answers from [[plan-review-2026-10-14#t9]]. Kept by number so
+earlier links still resolve.
 
-1. **Owner of d8d's mark-and-filter.** d8d says every `query.log` / `recall-events.jsonl` reader
-   skips pytest-tmp rows through one shared predicate. No task owns that predicate. Plan-22
-   removes no log rows and does not take it.
-2. **The 362 `$HOME`-relative rows and d8c's "≥ 114".** The probe verified 362 entities under
-   `/Users/tholley`, the global store's own parent, not under a project store root. d8c reads them
-   as "under a registered root". If the 362 are in the 476 and no project root contains their
-   files, they fall into the forget bucket, and the forget count can exceed 114 by up to 362.
-   22.5 R1 computes the real split; the user must see it before the apply (DL #b-4).
-3. **Plan-22's close (#m-5).** Whether plan-22 can reach `completed` with 22.4 handed to the
-   ADR-0004 helix plan (which does not exist yet), or stays open until that plan lands.
-4. **ADR-0004 "only" vs the explicit-selector commands (#m-7).** `forget`, `memory bulk-forget`,
-   `untrack` stay as user-explicit commands, and `prune-noise --drop` is a df-threshold removal
-   that the decay rule forbids. Whether the ADR wording narrows to "policy or class-based removal",
-   or those commands are routed through a manifest, is an ADR decision. The ADR sentence that scopes
-   derived-vector reaping (DL #s-7) is also an ADR edit, not in this plan's files.
-5. **Plan-16 table row (#m-3).** `plan-16-invisible-grep-shim.md` still says 16.6 "removes every
-   non-`ok` class"; that file belongs to the plan-16 revision.
-6. **Where "marked ambiguous" persists (d6a).** This revision persists it in every manifest and
-   recomputes it on every audit. A durable per-row mark would be a column in 16.6's sidecar, which
-   plan-22 does not own.
-7. **Which plan-19 task sets the `stale` subject mark (d8a).** `stale-subject` is inert until it
-   exists.
-8. **Exclusions of the candidate-root walk.** [[task-22.1a-provenance-free-classes#r1]] names a
-   pre-registered exclusion list for the suffix walk; the user has not confirmed it.
-9. **Pre-existing protections with no attributable source (DL #b-2).** 22.2 R5 treats them as
-   `unknown` = asserted (the safe direction: the entity is not purged, its learned rows may still
-   be removed). DL #b-2 asked the user to choose between a backfill rule and "unknown = asserted";
-   d8b removed plan-19's need for the source but did not answer that choice for plan-22.
+1. **Owner of d8d's mark-and-filter — SETTLED (`#t9-fixes`; re-review s-6).** Task 21.1 owns it in
+   `telemetry.py` (`telemetry.row_provenance`, `telemetry.is_test_artifact_row`); 22.2 R7 calls it
+   and carries no copy ([[task-22.2-repair-then-remove#r7]]).
+2. **The 362 and d8c's "≥ 114" — SETTLED by d9b.** All 362 `$HOME`-verified entities matched under
+   the global store's own root, none under the 7 project roots, so "≥ 114" was a misreading and is
+   withdrawn (not a lower bound). 22.5 R1 reports the real split (`move`, `no project store`,
+   `global root only`, `held`) and applies NOTHING to the no-owner buckets until the user rules
+   ([[task-22.5-cross-store-move#r1]]). **Waiting on the user, after the dry run.**
+3. **Plan close — SETTLED by d9j.** Plan-22 can reach `completed` with 22.4 handed to the future
+   helix plan ([[task-22.4-merge-writes#root]]).
+4. **ADR-0004 "only" vs the explicit-selector commands — DECIDED (d9i), amendment PENDING.** One
+   ADR-0004 amendment (the floor formula; removal-path scoping for `forget`, `prune-noise --drop`,
+   `untrack`, `memory bulk-forget`, and the derived-vector reaping sentence of DL #s-7) is drafted
+   by the orchestrator for the user's approval. It is not written in this plan's files; [[#scope]]
+   matches it once approved.
+5. **Plan-16 table row — SETTLED (re-review m-3).** The plan-16 16.6 row says "nothing here
+   removes a row".
+6. **Where "marked ambiguous" persists — SETTLED (no user decision).** In every manifest, recomputed
+   on every audit; no sidecar column.
+7. **Plan-19's `stale` mark — SETTLED (re-review m-3).** Plan-19's 19.4 R5 writes it.
+8. **Walk exclusions — user confirms, non-blocking.** 22.1a AC-5b prints the probe reproduction
+   (exclusions OFF) and the applied split (exclusions ON) side by side with the delta; the user sees
+   it with the 22.5 dry run.
+9. **Protections with no attributable source — SETTLED (re-review m-3).** On the global store every
+   `protect` event on the in-scope entities directly follows an `entity` event (re-review
+   `#ev-facts`), so the `unknown` bucket is empty there; "unknown = asserted" stays the safe
+   default for project stores ([[task-22.2-repair-then-remove#r5]]).
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+Answers [[bsd-plan16-22-spec-rereview-32dde06]] (plan-22: b-4, s-1, s-2, s-5, m-3, m-5, m-7, m-8;
+shared b-2, b-3, s-3, s-6, m-4; the r1 partials b-2, b-3, b-4, m-7 and the open m-5) and
+[[plan-review-2026-10-14#t9]] (d9b, d9i, d9j, `#t9-fixes`). Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| b-4 (22.1's Python translation vs 16.6's re-run; line-set API) | [[task-22.1-audit-classes#r1-verify]]; d-11 |
+| b-3 (16.6's marks have no reader) | [[task-22.1-audit-classes#r1-marks]] |
+| b-2 (sidecar not replayable; 22.2 AC-3) | [[task-22.2-repair-then-remove#r3]]; 22.2 AC-3; 16.6 R1d |
+| s-1 (22.1a candidate set; duplicate candidates) | [[task-22.1a-provenance-free-classes#r1]]; 22.1a AC-5 |
+| s-2, d9b ("≥ 114" misread; readable-today rows) | [[task-22.5-cross-store-move#r1]]; [[task-22.1a-provenance-free-classes#r1-outcome]]; d-6; [[#open-after-revision]] 2 |
+| s-3 (census ACs vs the 23.0 sandbox) | 22.1a AC-5/6/7, 22.1 AC-6, 22.3 R1: sandbox test + operator census on a `cp` of `catalog.read.duckdb` |
+| s-5 (repairs change sidecar keys) | [[task-22.2-repair-then-remove#r2]] (owner); [[task-22.5-cross-store-move#r2]] (`learned_import`) |
+| s-6 (d8d predicate unowned) | [[#open-after-revision]] 1; [[task-22.2-repair-then-remove#r7]] |
+| m-3 (items 5, 7, 9 settled) | [[#open-after-revision]] 5, 7, 9 |
+| m-4 (vocabulary) | 22.1 `unverifiable` = 16.6's `UNVERIFIABLE_REASONS`; class names shared |
+| m-5 (`N` across readings) | [[task-22.1-audit-classes#r1]]; 22.1 AC-4b |
+| m-7 (displacement by construction) | [[task-22.2-repair-then-remove#r7]]; 22.2 AC-10 |
+| m-8 (two root spellings) | [[task-22.2-repair-then-remove#r8]]; 22.3 R3; 22.5 R5 |
+| r1 m-5 (plan close with 22.4), d9j | [[#open-after-revision]] 3; d-12; [[task-22.4-merge-writes#root]] |
+| r1 m-7 (ADR "only"), d9i | [[#scope]]; [[#open-after-revision]] 4 (amendment pending, orchestrator) |
+| `#t9-fixes` rows for plan-22 | the rows above |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-32dde06]]
+rel: derives-from -> [[plan-review-2026-10-14#t9]]
 
 ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
 

@@ -67,10 +67,14 @@ Task specs: `workflow/plans/plan-21-agent-context-usage-tasks/`. Waves follow
   `bytes` / `payload_bytes`, so `seen` is derived against any cap), #s-2 (phase fields: `arm`,
   `policy`, the raw phase inputs, `restored_cluster_id`), d8e (`scope`), and the versioned-injection
   fields `block_id`, `rev`, `unchanged` ([[exploration-session-phased-context#vi-evidence]]).
+  Round 2 adds `partition`, `cwd`, `root` (re-review #b-1), byte spans with a separate body span
+  (ONE unit, bytes), ONE emission site that owns `delivered` (19.1's pack supplies spans only),
+  and the `used` matcher / lookup / global destination (21.1 R5, R9-R12).
   - **Consumers:** 19.2's counters fold the file into DuckDB through plan-23's drain with the
     offset committed in the same transaction (d2a), using 23.1's non-consuming tail reader and
-    tick registry (d4a amendment; plan-21 is a listed consumer). 19.5 compares `delivered` with
-    derived `seen`. 19.6 reads the phase fields (d5b). 21.3 AC-4 and 21.1's report read `session`.
+    tick registry (d4a amendment; plan-21 is a listed consumer); it counts `kind=memory` events on
+    21.1's channel enum (19.2 R3). 19.5 R2 is the only deriver of `seen` and compares it with
+    `delivered`. 19.6 reads the phase fields (d5b). 21.3 AC-4 and 21.1's report read `session`.
   - **21.1's emission does not depend on plan-23** (d4a): it appends to a file; only the fold does.
   - The file is the retained replay source and is never rotated away before it is folded
     (d2a amendment).
@@ -125,31 +129,22 @@ Task specs: `workflow/plans/plan-21-agent-context-usage-tasks/`. Waves follow
 
 ## Open after revision {#open-after-revision}
 
-Gaps this revision found that the decision log does not settle. Listed, not decided.
+Round 2 status of the round-1 list ([[bsd-plan19-21-spec-rereview-32dde06#open-21]]):
 
-1. **Legacy rows without `cwd`.** d8d's predicate keys on a row's cwd or root. `query.log` rows at
-   HEAD carry neither (`telemetry.log_query.__exit__`), so the 235 legacy fixture rows in
-   `~/.refmatrix/query.log` cannot be matched by it. 21.1 R5 adds `cwd`/`root` to new rows and
-   counts unattributable legacy rows separately; whether legacy rows are then excluded by shape
-   (e.g. the `alpha|beta` body) or left counted is open.
-2. **Who emits transcript-derived `used` evidence.** 21.1 emits `used` for the evidences it can see
-   at call time (`context_by_name`, `memory_get_by_name`, `focus_note`). `file_read` and
-   `cited_in_answer` need a transcript scorer; d5b gives 19.6 the phasing and says "plan-21 only
-   measures", but no row names the scorer's owner.
-3. **Exploration corrections.** bsd #s-4 and #s-8 ask that
-   [[exploration-agent-context-usage#telemetry]] (the `-E` bullet) and `#replay` (the reranker
-   caveat) be corrected, and #s-3 that its "68 recalls" read 34. That file is outside this
-   revision's edit set.
-4. **plan-13's pointer.** d4b marks plan-13's sessions question dormant "by pointer"; this plan
-   carries the pointer ([[#consolidations]]), but plan-13's own header and its plan-of-plans row
-   still say "re-scoped onto 21.4".
-5. **19.2 R3's channel enum.** bsd #b-2 asks that 19.2 R3 adopt 21.1's surface enum
-   (`invocation` separate). That edit belongs to the plan-19 revision.
-6. **The 21.4 source log.** d8f settles what is committed; this revision names the project's
-   `.refmatrix/query.log` as the draw source (the global log holds other trees' queries, bsd
-   decision-log #s-8). The user has not confirmed project-only.
-7. **MCP tools beyond context and recall.** 21.1 R4 narrows the report to context, grep and recall
-   (bsd #s-5's first option). Logging every MCP verb at `mcp._verb_tool` is not planned.
+1. **Legacy rows without `cwd`:** SETTLED. Legacy rows are counted with a printed
+   `legacy_unattributed` count; the 235 `alpha|beta` fixture rows are excluded by exact shape as
+   `legacy_fixture_rows` (d9g): 21.1 R5, AC-6, AC-7.
+2. **Transcript-scorer owner:** SETTLED. 19.6's `score_readback.py`
+   ([[task-19.6-phased-context-and-topic-cache#ranges]]), offline, never appending to the live
+   log; 21.1 R12 reserves the evidence names.
+3. **Exploration corrections** ([[exploration-agent-context-usage#telemetry]] `-E` bullet,
+   `#replay` reranker caveat, "68 → 34"): STILL OPEN, spec-settlable but outside this pair's edit
+   set (the exploration file); no decision is needed.
+4. **plan-13's pointer:** STILL OPEN for the same reason (plan-13's header and its plan-of-plans
+   row are outside this pair's edit set); this plan carries the pointer ([[#consolidations]]).
+5. **19.2 R3's channel enum:** SETTLED in 19.2 R3 (21.1's enum verbatim; `cli`/`mcp` removed).
+6. **21.4 source log:** SETTLED, project log only (d9h): 21.4 R1.
+7. **MCP tools beyond context and recall:** CLOSED by the narrowing (bsd r1 #s-5 option 1).
 
 ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
 
@@ -169,3 +164,19 @@ Gaps this revision found that the decision log does not settle. Listed, not deci
 | decision-log #m-6 (MEH ids enumerated) | each task's revision table lists m-1..m-7 by id |
 | #t8-wave1 | [[#tasks]], [[#dependencies]] |
 | unsettled gaps | [[#open-after-revision]] |
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+Answers [[bsd-plan19-21-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]] /
+[[plan-review-2026-10-14#t9-fixes]].
+
+| finding / decision | answered at |
+|---|---|
+| re-review #b-1 (schema side) | [[#consolidations]]; [[task-21.1-context-usage-telemetry#rev-round-2]] |
+| re-review #b-2; d9g | 21.1 R5, AC-6, AC-7; [[#open-after-revision]] 1 |
+| re-review #b-5 (emitter side) | 21.1 R12, AC-11a-d |
+| re-review #s-1, #s-2, #s-3 | 21.1 R9-R11, AC-8, AC-8b; 19.1 R8; 19.5 R2 |
+| re-review #s-7, #m-6 | [[task-21.3-indexed-symbol-nudge#rev-round-2]] |
+| re-review #m-4; d9h | [[task-21.4-surfaces-and-nl-ranking#rev-round-2]] |
+| re-review #open-21 items 1-7 | [[#open-after-revision]] |
+| #t9-fixes "d8d's predicate owned by 21.1 in `telemetry.py`" | 21.1 R5 (`row_provenance`, `is_test_artifact_row`, exact signatures) |

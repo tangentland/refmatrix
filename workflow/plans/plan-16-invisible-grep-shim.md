@@ -13,7 +13,8 @@ metadata:
 # Plan 16: the grep shim stops answering and only watches {#root}
 
 **Date:** 2026-10-06
-**Status:** Drafting (revision after the 2026-10-14 decision log). Task specs revision 6
+**Status:** Drafting (revision round 2, 2026-10-14: 16.2 and 16.6 revised for the re-review
+`bsd-plan16-22-spec-rereview-32dde06`, [[#rev-round-2]]). Task specs revision 6
 (2026-10-14) answers spec review r5 `bsd-plan16-spec-review-r5-cd7c923` (NEEDS-REVISION: 2
 BULLSHIT, 6 SKETCHY, 7 MEH, plus r4's partials) and every 2026-10-14 decision that touches plan-16
 (d6d, d7a, #t6-fixes, #t7-fixes, #t8-amendments; [[#revision-6]]). Both former decisions-needed are
@@ -154,7 +155,7 @@ Specs go in `workflow/plans/plan-16-invisible-grep-shim-tasks/` before approval.
 | 16.3 | Grep-tool hook rebuilt from the tool's real rg argv (`--hidden`, VCS globs, constants pinned); every doc/help surface | taught set equals the tool's captured RESPONSE; paging inputs do not kill; no stale claim anywhere |
 | 16.4 | measurement, historical + forward (learner log joined to transcripts) | precision ≥ 0.99 / recall ≥ 0.95 (micro, timeouts counted) on COMPLETE outputs only, gated at n ≥ 30 else `insufficient-n`; no carve-out; a gate shown able to fail; routes measured |
 | 16.5 | explicit `rmx grep` with paths or a pipe execs the real grep + learner; path-less keeps the index read with a pruned `grep -r` floor; rmx options parsed from the raw argv with a per-route table; the Python re-implementation (argv order, `-c` rows, stdin filter, delegate) is DELETED | differential 100% incl. round 4's cases, bug-081 and the `--`/`-e`/`--file` rows; every d-4 cell has a case; nothing beyond the tool's bytes; deletions verified by `rg -w` |
-| 16.6 | **Wave-1 slice (d6d), after plan-23's 23.1, no dependency on 16.1:** the `learned_evidence` sidecar keyed on the evidence row's identity + `rules_sha` (survives `replica_merge`), a verifier that re-runs the recorded tool (never Python `re`), read-time marks that record staleness under the row's own rules (never a reader-rule drop) through plan-23's queue, the backfill, and legacy-writer rows until 16.1 lands. The learn-time write is 16.1 R10. The audit, repair and removal engine MOVED to [[plan-22-audited-removal-and-repair]] (plan review C1-C3, user 2026-10-07); nothing here removes a row | sidecar rows join after a merge; BRE-taught rows verify `ok`; a reader-rule drop writes no mark; backfill on a catalog COPY leaves no learned row without provenance; marks applied in bounded batches; overflow counted |
+| 16.6 | **Wave-1 slice (d6d), after plan-23's 23.1, no dependency on 16.1:** the `learned_evidence` sidecar keyed on the evidence row's identity + `rules_sha` (survives `replica_merge`; replayable from `facts.log` through a `learned_provenance` event), THE verifier for learned rows (`learned_verify`: re-runs the recorded tool with only pattern-semantics tokens, returns the matching line set, exit 2 is `unverifiable`; a named-subset permissive reading for rows without rules), read-time marks that record staleness under the row's own rules (never a reader-rule drop) through plan-23's queue and that plan-22's 22.1 reads, the backfill, and legacy-writer rows until 16.1 lands. The learn-time write is 16.1 R10. The audit, repair and removal engine MOVED to [[plan-22-audited-removal-and-repair]] (plan review C1-C3, user 2026-10-07); nothing here removes a row | sidecar rows join after a merge and survive a rebuild; BRE, POSIX-class, cutoff and absolute-exclude rows verify `ok`; exit 2 is never `stale-line`; a reader-rule drop writes no mark; backfill leaves no learned row without provenance; marks applied in bounded batches; overflow counted |
 
 ## Waves and dependencies {#waves}
 
@@ -162,7 +163,7 @@ From [[plan-review-2026-10-14#t8-wave1]] and d6d. Plan-16 has tasks in two waves
 
 | wave | order | depends on |
 |---|---|---|
-| 1 | **16.6 Wave-1 slice**, after plan-23's 23.1 (`23.0 ∥ 23.4 → 23.2 → 23.1`); it feeds plan-22's `22.1a → 22.2 → 22.5 → 22.3` | plan-23 23.1 (queue, `bind(batch)` drain), 23.0 (sandbox). NOT 16.1 (#t8-amendments d1c/d6d) |
+| 1 | **16.6 Wave-1 slice**, after plan-23's 23.1 (`23.0 ∥ 23.4 → 23.2 → 23.1`); it feeds plan-22's `22.1a → 22.2 → 22.5 → 22.3` | plan-23 23.1 (queue, `bind(partition_name)` drain), 23.0 (sandbox). NOT 16.1 (#t8-amendments d1c/d6d) |
 | 2 | **16.1 → 16.2 ∥ 16.3 → 16.5**; 16.4's acceptance run after 16.2 is deployed | 16.1 depends on the 16.6 slice (its R10 writes the sidecar), so there is no Wave 1 → Wave 2 inversion |
 
 Every plan-16 test runs inside plan-23 task 23.0's shared sandbox (d1a/d1b).
@@ -216,6 +217,31 @@ Next gate: `@ch-bsd` spec review r6 of task specs 16.1–16.6 revision 6, then `
 
 rel: derives-from -> [[plan-review-2026-10-14#t6]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+Answers [[bsd-plan16-22-spec-rereview-32dde06]] (plan-16: 3 BULLSHIT, 1 SKETCHY, 3 MEH, the b-r5-1
+partial, the shared s-3 and m-4) and [[plan-review-2026-10-14#t9]] (`#t9-fixes`). Verdict at the
+re-review: 16.1, 16.3, 16.4 and 16.5 approvable; 16.2 and 16.6 revised here.
+
+| finding / decision | answered in |
+|---|---|
+| b-1 (re-run calls matching rows stale) | [[task-16.6-learned-row-validation#r2-argv]], [[task-16.6-learned-row-validation#r2]]; 16.6 AC-3, AC-3b |
+| b-2 (sidecar not replayable) | [[task-16.6-learned-row-validation#r1d]]; [[task-16.1-argv-faithful-learner#r10]]; 16.6 AC-9 |
+| b-3 (marks have no reader) | [[task-16.6-learned-row-validation#r4-reader]]; [[task-22.1-audit-classes#r1-marks]] |
+| b-4 (cross-plan verifier conflict; line-set API) | [[task-16.6-learned-row-validation#r2]]; [[#open-after-revision]] 1 |
+| s-3 (census ACs vs the 23.0 sandbox) | 16.6 AC-5 (5a sandbox, 5b operator census on a copied read snapshot) |
+| s-4 (16.2 fixture unscrubbed; d8f) | [[task-16.2-invisible-shim#ac-1-fixture]] |
+| s-5 (repairs move sidecar keys) | [[task-16.6-learned-row-validation#r1]] (`move_learned_provenance`, owners named in 22.2/22.5) |
+| m-1 (dialect premise) | [[#open-after-revision]] 3; 16.6 R1 |
+| m-2 (stale open item 4; plan-of-plans rows) | [[#open-after-revision]] 4 (plan-of-plans cells handed to the orchestrator) |
+| m-4 (vocabulary; "22.1b"; `root` setter) | 16.6 [[task-16.6-learned-row-validation#rev-round-2]] |
+| m-6 (AC-6 count) | 16.6 AC-6 |
+| r5 b-r5-1 (partial) | closed by b-1, b-2, b-4 |
+| #t9-fixes rows for plan-16 (verifier + line set + three holes; `facts.log` event; sandbox-safe clones; scrubber) | the rows above |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-32dde06]]
+rel: derives-from -> [[plan-review-2026-10-14#t9]]
 
 ## Revision 6 changelog {#revision-6}
 
@@ -291,24 +317,23 @@ rel: amends -> [[plan-review-2026-10-07#gaps]]
 
 ## Open after revision {#open-after-revision}
 
-Gaps this revision found that the decision log does not settle. Listed, not decided.
+Revision round 2 (2026-10-14) closed all four items the revision-6 list carried; the re-review
+classified none of them as a user decision ([[bsd-plan16-22-spec-rereview-32dde06#open-16]]).
+Kept by number so earlier links still resolve.
 
-1. **Two verifiers for rows with recorded rules: a cross-plan conflict.** 16.6 R2
-   (`learned_verify`) RE-RUNS the recorded tool on the file (r5 b-r5-1's first fix; Python `re`
-   never used for those rows). Plan-22's concurrent revision of 22.1 (`#r1-verify`, read
-   2026-10-14, not edited here) instead translates the recorded dialect to Python `re` and keeps
-   `evidence_line_matches` as the one matcher. r5 allowed that only if the spec names the subset
-   Python can evaluate and marks the rest `unverifiable`. One verifier must be chosen and both
-   specs aligned; until then, 16.6 R4's drain and plan-22's audit can classify the same row
-   differently. Also for plan-22: R4's `stale_seen` is a lower bound (#m-3) and must not be
-   thresholded as an exact count.
-2. **16.6 R1b touches `_learn_grep_hits` in Wave 1.** r5's s-r5-5 offered "the old ping's writes
-   also get a provenance row OR are re-backfilled"; this revision takes the first (a
-   `legacy-writer` sidecar row, no tool/dialect/hash), because a re-backfill needs a schedule the
-   log does not give. d6d moves "the learn-time provenance write" to 16.1; the user may prefer the
-   re-backfill reading.
-3. **The dialect enum extends the log's four.** #t6-fixes names BRE/ERE/fixed/python; rg is a
-   learner tool (16.3), so 16.6 R1 adds `rust`, `pcre2` and `mixed`. The verifier re-runs `tool`
-   either way, so this is informational, but it is wider than the log's list.
-4. **Wave lists outside this plan.** `plan-review-2026-10-07#order` and `workflow/plan-of-plans.md`
-   still list only 16.1-16.5; they are outside this revision's files.
+1. **Two verifiers — CLOSED.** 16.6 R2 (re-run the recorded tool) is THE verifier; plan-22's 22.1
+   calls it and carries no matcher of its own. 16.6 R2 exposes `matching_lines` (the line set 22.1
+   classifies on) and closes its three false-stale holes; rows without rules use 16.6's
+   `permissive_matching_lines`, which names its subset. `stale_seen` is read by 22.1 for ordering
+   and reporting only, as a lower bound ([[task-16.6-learned-row-validation#r2]],
+   [[task-16.6-learned-row-validation#r4-reader]], [[task-22.1-audit-classes#r1-verify]]).
+2. **16.6 R1b vs a re-backfill — CLOSED, R1b kept.** It is strictly more informative (`learned_at`,
+   `root`) and closes the window; d6d moved only the RULE-bearing write to 16.1. 16.6 AC-6 now
+   counts distinct evidence identities (m-6).
+3. **The dialect enum — CLOSED, premise withdrawn (m-1).** `#t6-fixes` names no enum. The enum is
+   exactly what 16.1 R10 writes (`bre`, `ere`, `fixed`, `rust`, `pcre2`, `mixed`); `python` and its
+   dead verifier branch are gone ([[task-16.6-learned-row-validation#r1]]).
+4. **Wave lists — CLOSED here (m-2).** `workflow/plan-of-plans.md` already lists the 16.6 slice in
+   Wave 1 and marks `plan-review-2026-10-07#order` superseded. Two plan-of-plans cells still lag
+   (row 16's "+ tasks 16.7-16.10", which moved to plan-21; row 22's task count). That file is
+   outside this plan's files and is handed to the orchestrator, not edited here.

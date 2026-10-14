@@ -59,10 +59,13 @@ ranks`) so those callers reuse it rather than building their own.
    - **Strata:** code (gold = a `path:line` of a definition) and doc (gold = a GMD `doc-id#anchor`
      section). n = 40: ≥ 20 code, ≥ 15 doc, each reported separately. Sessions and memories are not
      gold.
-   - **Source:** real NL queries from this project's `.refmatrix/query.log` (`kind=context` NL rows
-     and concept-OR grep rows with their eventual answers), filtered by 21.1's
-     `is_test_artifact_row` and with `invocation=internal` rows and the 2026-10-07T11:06:35-11:07:13
-     replay window excluded. The global log is not a source (it holds other trees' queries).
+   - **Source: this project's `.refmatrix/query.log` ONLY** (d9h, the user, 2026-10-14). Real NL
+     queries (`kind=context` NL rows and concept-OR grep rows with their eventual answers),
+     classified by 21.1's `telemetry.row_provenance(row, reader_root=<this project's store
+     root>)`: `test_artifact` and `legacy_fixture` rows are dropped (`legacy_unattributed` rows,
+     i.e. every row written before 21.1, are eligible, per 21.1 R5's totals rule), with
+     `invocation=internal` rows and the 2026-10-07T11:06:35-11:07:13 replay window excluded. The
+     global `~/.refmatrix/query.log` is never read (it holds other trees' queries).
    - **Who drafts:** a dedicated agent whose brief forbids reading the ranking code
      (`src/refmatrix/context.py`, `src/refmatrix/reranker.py`, and the rerank ops in `daemon.py`);
      its tool-call list is kept with the set's provenance, and a check fails the set if any Read of
@@ -74,6 +77,13 @@ ranks`) so those callers reuse it rather than building their own.
      [[#frozen-hash]], and a REDACTED fixture (absolute paths, hostnames and non-refmatrix tree names
      scrubbed; the question text otherwise kept) with its own sha256. All runs and tests use the
      redacted fixture.
+   - **The question-text exception, stated** (re-review #m-4). d8f and
+     [[feedback_no_raw_prompts_in_public_repo]] say prompts are scrubbed. This set keeps question
+     TEXT because the questions are the agent's own queries about THIS repo's code and docs (the
+     content the public repo already holds), not user prompts, and because a hashed question
+     cannot be re-run. The gate is the user's approval of the redacted set (above), which
+     reviews every kept question; a question that quotes a user prompt, a person, a host or
+     another tree is dropped at approval, not scrubbed.
 2. **R2 Measure both routes.** hit@1 / hit@5 for the daemon route (reranked) and the CLI replica
    route (not reranked), against an `rg -n` baseline the agent would have written, per stratum. The
    runner sets `RMX_INVOCATION_SOURCE=internal` (d4f) and runs on a catalog copy taken from the
@@ -160,3 +170,13 @@ descriptions; `workflow/plans/plan-16-invisible-grep-shim.md`.
 | d4f (harness sets `internal`) | R2; AC-5 |
 | bsd #m-5 (C11) | R4 last bullet |
 | #t4-fixes "replica-route reranker for 21.4" | R3 third candidate |
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+Answers [[bsd-plan19-21-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]].
+
+| finding / decision | answered at |
+|---|---|
+| d9h (question set from this project's `query.log` only) | R1 source |
+| re-review #b-2 / d9g (legacy rows, fixture rows) as they reach the draw | R1 source (`row_provenance` classes) |
+| re-review #m-4 (question text kept) | R1 "question-text exception" |

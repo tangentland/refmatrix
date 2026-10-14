@@ -13,14 +13,18 @@ metadata:
 # Task 17.3: fleet rollout {#root}
 
 > Plan: [plan-17-nightly-store-maintenance](../plan-17-nightly-store-maintenance.md)
-> Status: Pending (revision after the 2026-10-14 decision log)
-> Depends on: 17.1, 17.2; deployed
+> Status: Pending (revision round 2, 2026-10-14: ns17-3, ns17-5, ns17-6, d9c; see [[#rev-round-2]])
+> Depends on: 17.1, 17.2, 17.4; deployed
 
 rel: part-of -> [[plan-17-nightly-store-maintenance]]
 rel: depends-on -> [[task-17.1-vectors-maintain-op]]
 rel: depends-on -> [[task-17.2-hub-nightly-tick]]
 rel: derives-from -> [[bsd-plan17-spec-review-3104a81#s-4]]
 rel: derives-from -> [[plan-review-2026-10-14#t3]]
+rel: depends-on -> [[task-17.4-factslog-backup-snapshot]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06#ns17-6]]
+rel: implements -> [[plan-review-2026-10-14#t9]]
+rel: related-to -> [[feedback_generated_data_off_watched_tree]]
 
 ## Why {#why}
 
@@ -37,9 +41,19 @@ been compacted. {#why-body}
    viascope, refmatrix, orderly, cliquedb), through the deployed `rmx` and its daemon only:
    1. `rmx vectors maintain --dry-run`; read the report (orphans, `missing`, cap refusals);
    2. back up `vectors/` with an APFS clone (`cp -c -R`) to `vectors.bak-<date>-maintain`;
-   3. `rmx vectors maintain`; read the report; an `ok:false` or `refused:*` stops the rollout for
-      that store and is reported to the user before anything else;
-   4. `rmx hub maintain arm --root <root>`.
+   3. `rmx vectors maintain`; read the report; an `ok:false` (a fingerprint mismatch, a failure)
+      stops the rollout for that store and is reported to the user before anything else;
+   4. a `refused:orphan_cap` dataset is expected on at least this repo (the plan's own 559 of
+      5,495, 10.2 %, is above the 5 % cap, ns17-3). Compaction still ran (17.1 R6). The dataset,
+      its orphan count and the dry run's `orphan_list_sha` are shown to the user; ONLY after the
+      user confirms, `rmx vectors maintain --confirm-orphans <sha>` is run by hand (d9c). A
+      `refused:orphan_confirm_mismatch` means the set moved; dry-run again and re-show it;
+   5. `rmx hub maintain arm --root <root> --step vectors_maintain --run-id <the run_id of step
+      3's (or step 4's) successful hand run>` (17.2 R7). Only steps this task hand-ran are armed:
+      `factslog_backup` needs no arming (17.2 R7 table); 19.4's and plan-18's steps are armed by
+      their own rollouts;
+   6. after the store's first `factslog_backup` copy exists and is no older than one day,
+      `sudo tmutil addexclusion -p <store>/facts.log` (17.4 R7; the user runs the `sudo`).
 
    A store whose daemon does not answer is skipped and counted; it is not run in-process.
    Backups are deleted only after the user confirms (this replaces the old "after N days").
@@ -47,22 +61,36 @@ been compacted. {#why-body}
    thiquet"). {#r2-measure}
    - **Every store, before/after:** vectors bytes, versions per dataset, orphans reaped, `missing`,
      per-dataset hold seconds, `check_s`.
-   - **Latency on refmatrix, cliquedb and thiquet:** one watch-flush re-sync of a large file
-     (`src/refmatrix/store.py`-sized), timed before and after the hand run, with `code.lance`'s
-     version count recorded at each timing.
-     - The latency comparison is ASSERTED only for a store whose `code.lance` had ≥ 10,000
-       versions before the run (r7's effect lives near 61k versions; below that both numbers are
-       small and the comparison cannot fail). If none of the three qualifies at rollout time, the
-       comparison runs on a throwaway clone with ≥ 30,000 versions (a 2026-10-07
-       `vectors.bak-20261007-precompact` if one still exists), under a short `mkdtemp()` root off
-       every watched tree, never the live store.
-     - thiquet (≤ 5 versions) is the small-store control: its maintenance must take the R5 skip
-       path, and its `check_s` is recorded.
-   - The global store is memory-only (no filesystem ingest), so it gets no latency leg.
-   - **No-match re-sync** (17.1 R9): on the ≥ 30k-version clone, a re-sync of a file whose ids
-     carry no vector commits 0 Lance versions.
-   - **Hold bound** (spec review #s-1): cliquedb's `concept.lance` step (or the clone's largest
-     dataset) holds `_store_lock` < 60 s, read from the op's report.
+   - **Real stores give the before/after table only.** No live store will have ≥ 10,000
+     `code.lance` versions at rollout (the fleet was compacted on 2026-10-07 and regrows at about
+     25-37 versions per day per busy dataset), and no 2026-10-07 `vectors.bak-*` backup exists
+     (the re-review's `find` under cliquedb, viascope, this repo and `~/refmatrix` returned none,
+     ns17-6). thiquet (≤ 5 versions) is the small-store control: its maintenance must take the
+     17.1 R5 skip path, and its `check_s` is recorded. The global store is memory-only, so it gets
+     no latency leg.
+   - **The synthetic clone is the stated default for the latency, no-match and hold legs**
+     (ns17-6, #t9-fixes). `scripts/plan17-versioned-clone.py`, run with the DEPLOY interpreter:
+     1. `mkdtemp(prefix="rmx17-", dir="/tmp")`, a short root OFF every watched tree;
+     2. copy this repo's lock-free read snapshot (`catalog.read.duckdb`) and `vectors/` into it
+        (`cp -c -R`, read-only on the source), laid out as a store whose active slot is the
+        snapshot copy;
+     3. commit 30,000 single-row upsert / delete cycles to the clone's `code.lance` with `lance`
+        directly (no `Store`, no daemon), and record the version count (≥ 30,000);
+     4. start a throwaway daemon on the clone with `rmx daemon start --standalone --no-watch`
+        (never launchd: `--standalone` forks a plain process and never defers to a LaunchAgent,
+        `cli.py:2930-2962`) and `HOME`, `RMX_HOME`
+        and `REFMATRIX_ROOT` inside the tmp dir (off the live hub and registry), through the
+        deployed `rmx`, same version, so no version handshake fires; it is stopped before the
+        clone is deleted.
+   - **Latency (on the clone):** one re-sync of `src/refmatrix/store.py` (copied into the clone's
+     project tree) through the throwaway daemon, timed before and after `rmx vectors maintain`
+     on the clone, with `code.lance`'s version count recorded at each timing.
+   - **No-match re-sync** (17.1 R9, on the clone): a re-sync of a file whose ids carry no vector
+     commits 0 Lance versions.
+   - **Hold bound** (spec review #s-1): the clone's largest dataset step, and every real store's
+     steps, hold `_store_lock` < 60 s, read from the op report's `hold_s`.
+   - The clone is deleted at the end of the task; its version count, timings and the script's
+     log go to `workflow/review-output/plan17-rollout-clone.log`.
 3. **R3 Docs.**
    - `docs/PERFORMANCE.md` gets the maintenance section (schedule, arming, the tag rollback
      point, the orphan list and `rmx vectors restore`).
@@ -76,14 +104,18 @@ been compacted. {#why-body}
 ## Acceptance criteria {#acceptance}
 
 1. The before/after table for all 8 stores is in the implementation summary.
-2. On the store or clone with ≥ 10,000 pre-run `code.lance` versions, the after-run re-sync latency
-   is ≤ 1/5 of the before-run latency. Fails if maintenance did not compact.
-3. The no-match re-sync on the clone commits 0 Lance versions.
+2. On the synthetic clone (≥ 30,000 pre-run `code.lance` versions, recorded), the after-run
+   re-sync latency is ≤ 1/5 of the before-run latency. Fails if maintenance did not compact; a
+   clone with fewer than 30,000 versions fails the AC instead of being waived.
+3. The no-match re-sync on the clone commits 0 Lance versions (version count before = after).
 4. Every reported hold is < 60 s; any hold ≥ 60 s is a finding in the summary, not averaged away.
 5. Each store is armed only after its dry run, backup and hand run succeeded (order visible in the
-   rollout log).
+   rollout log), and each arm names the `run_id` of that hand run (17.2 R7 refuses otherwise).
+   Every `--confirm-orphans` run is preceded in the log by the user's confirmation.
 6. One scheduled night observed and reported.
 7. Backups removed only after the user confirms.
+8. No store's `facts.log` is excluded from Time Machine before its `backups/facts.log.daily`
+   exists and is no older than one day (17.4 R7).
 
 ## Test strategy {#test-strategy}
 
@@ -105,3 +137,13 @@ sandbox (decisions d1a/d1b). Every measurement command's output is captured to
 | #t3-fixes (latency on refmatrix, cliquedb, thiquet) | [[#r2-measure]] |
 | d3c (reader retries observed) | R4 |
 | d1a/d1b (23.0) | [[#test-strategy]] |
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+| finding / decision | answered at |
+|---|---|
+| ns17-6 (latency and no-match ACs had no input), #t9-fixes "17.3 ACs on a synthetic 30k-version clone" | [[#r2-measure]], AC-2, AC-3 |
+| ns17-3, d9c (the cap trips on this repo; release by `--confirm-orphans`) | [[#r1-hand-run]] step 4, AC-5 |
+| ns17-5 (arm only what was hand-run, by `run_id`) | [[#r1-hand-run]] step 5, AC-5 |
+| nm17-4 / 17.4 R7 (Time Machine exclusion after the copy exists) | [[#r1-hand-run]] step 6, AC-8 |
+| ns17-2 (hold seconds from 23.1's `hold_s`) | [[#r2-measure]] hold bound |

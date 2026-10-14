@@ -13,12 +13,18 @@ metadata:
 # Task 17.2: the nightly tick {#root}
 
 > Plan: [plan-17-nightly-store-maintenance](../plan-17-nightly-store-maintenance.md)
-> Status: Pending (revision after the 2026-10-14 decision log)
-> Depends on: 17.1; 23.1 (tick-registry step interface); 23.0 (test sandbox)
+> Status: Pending (revision round 2, 2026-10-14: re-review [[bsd-plan23-17-spec-rereview-32dde06]];
+> see [[#rev-round-2]])
+> Depends on: 17.1; 23.0 (test sandbox). NOT on 23.1: the hub's `maintenance_steps` is its own
+> registry, not 23.1's daemon `tick_registry` (ns17-1).
 
 rel: part-of -> [[plan-17-nightly-store-maintenance]]
 rel: depends-on -> [[task-17.1-vectors-maintain-op]]
-rel: depends-on -> [[task-23.1-queue-and-drain]]
+rel: depends-on -> [[task-23.0-test-sandbox]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06#ns17-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06#ns17-4]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06#ns17-5]]
+rel: implements -> [[plan-review-2026-10-14#t9-fixes]]
 rel: related-to -> [[project_bus_retention_global_queues]]
 rel: depends-on -> [[feedback_daemon_call_retries_multiply_timeouts]]
 rel: derives-from -> [[bsd-plan17-spec-review-3104a81]]
@@ -52,20 +58,33 @@ single-flight op. Decision d3d makes an unarmed store dry-run only. {#why-body}
      first tick after wake runs a missed night) and no stacking (at most one attempt per store per
      step per scheduled day, however many nights were missed).
    - The clock (`now: Callable[[], datetime]`) is injected.
-2. **R2 The step registry** (plan-review C6; R7 of the old spec). {#r2-registry}
-   A run calls an ordered list of registered per-store steps, each a `(name, callable(root,
-   dry_run) → result)` with its own budget, using the step interface of plan-23 23.1's tick
-   registry. `vectors_maintain` (17.1) is the first step; 19.4's memory compile and plan-18's
-   DuckDB step register into it. A failure in one step does not skip the store's other steps.
+2. **R2 The step registry: the hub's own `maintenance_steps`** (plan-review C6; ns17-1).
+   {#r2-registry}
+   - It is NOT 23.1's `Daemon.tick_registry`, and shares nothing with it: that one runs in each
+     store daemon every 30 s under ONE 5 s budget for drains and tails; this one runs in the hub
+     once per scheduled day under a per-store budget of minutes. C6's "one tick, one stamp store"
+     means THIS hub tick and `maintain.json`; d4a's "one registry" means the daemon's tick.
+   - `maintenance_steps.register(MaintenanceStep(name, op, args, requires_arming, reason))`, in a
+     fixed order. `op` is a daemon op name; `args(root, dry_run, today) -> dict` builds its
+     arguments (`today` is the injected clock's local date); `requires_arming: bool` and `reason`
+     are stated by the registrant (R7).
+   - **Every registered op must:** accept `dry_run` and `invoked_by="hub"`; be single-flight with
+     the 17.1 R11 reply shape (`already_running`) and answer `status=True` lock-free; and append
+     one line per completed run to the store's `<root>/maintain/runs.jsonl` (17.1 R12 shape, its
+     own `step` name). A step that cannot meet these is not registered.
+   - Registrants: `vectors_maintain` (17.1, first), `factslog_backup` (17.4), 19.4's memory
+     compile, plan-18's DuckDB step. A failure in one step does not skip the store's other
+     steps.
 3. **R3 Roots: the registered daemon list, injected** (spec review #b-5, #s-6). {#r3-roots}
    - The run takes `roots: Callable[[], list[Path]]`. The production default is the registered
      daemon list: the launchd-supervised roots (`discovery._roots_from_launchd()`,
      `discovery.py:70`, 8 today including the global store), sorted by resolved path. It is NOT
      `registry.json` (3 stores) and NOT `discover_roots()` (which adds the cwd root).
-   - Per root: supervised = it came from a launchd plist; running = `daemon_mod.ping(root)`
-     answers; paused = `Watchdog.is_paused(root)` (`hub.py:221`). A root that is paused, not
-     running or not supervised is skipped, named and counted in the summary (`skipped:paused`,
-     `skipped:not_running`). Nothing runs in-process for a skipped store.
+   - Per root: running = `daemon_mod.ping(root)` answers; paused = `Watchdog.is_paused(root)`
+     (`hub.py:221`). A root that is paused or not running is skipped, named and counted in the
+     summary (`skipped:paused`, `skipped:not_running`). Nothing runs in-process for a skipped
+     store. There is no `not_supervised` outcome: every root comes from a plist by construction
+     (nm17-2).
 4. **R4 The call: retries=0, per-store budget, still-running is not failure** (d3e and its
    close-out amendment; decision review #s-6). {#r4-call}
    - Each step call is `daemon.call(root, op, args, timeout=RMX_MAINTAIN_STORE_TIMEOUT_S
@@ -74,28 +93,55 @@ single-flight op. Decision d3d makes an unarmed store dry-run only. {#why-body}
      `failed`, and never counts toward R5. The hub then polls `vectors_maintain(status=True)`
      every 30 s until the store reports idle or the per-store budget
      `RMX_MAINTAIN_STORE_BUDGET_S` (default 1800) is spent; the op is never re-sent.
-   - Strictly serial: the next store does not start while one is `still_running`. If the budget
-     is spent with the store still running, the run stops; the remaining due stores are reported
+   - Serial: the next store does not start while one is `still_running`. If the budget is spent
+     with the store still running, the run stops; the remaining due stores are reported
      `deferred` and stay due for the next tick, and the still-running store's final report is
      read through `status=True` on the next tick and stamped then.
+   - **The ceiling (ns17-4).** A (store, step) still running across `RMX_MAINTAIN_STUCK_AFTER`
+     (default 2) consecutive per-store budgets becomes outcome `stuck`: one alert is published to
+     `global:queues` at once (it does not wait for `RMX_MAINTAIN_ALERT_AFTER`), it is never
+     re-sent while its daemon still answers `already_running`, and it STOPS BLOCKING: the run
+     moves on to the next store in the same tick. Serial order is a load rule, not a safety rule;
+     the stores are separate daemons. When the stuck daemon later reports idle, its report is
+     read, stamped, and `stuck` is cleared with one `hub.log` line.
 5. **R5 Failure isolation and alert** (spec review #m-5). {#r5-alert}
    A `failed` or `refused` outcome is logged and counted per (store, step), and the next store
    still runs. After `RMX_MAINTAIN_ALERT_AFTER` (default 3) consecutive failed runs of one
    (store, step), one alert is published to `global:queues`; a success resets the count and the
-   alert. An `orphan_cap` refusal (17.1 R6) alerts on its first occurrence.
+   alert. An `orphan_cap` refusal (17.1 R6) alerts on its first occurrence and names the dataset
+   and the release (`rmx vectors maintain --dry-run`, then `--confirm-orphans <sha>` by hand,
+   d9c). A `stuck` outcome alerts per R4.
 6. **R6 Report** (spec review #m-4). {#r6-report}
    One summary per run to `global:queues`: per outcome (`ok`, `dry_run:unarmed`, `skipped:*`,
-   `refused:*`, `failed`, `still_running`, `deferred`) the store names; bytes reclaimed; `orphans`
+   `refused:*`, `failed`, `still_running`, `stuck`, `deferred`) the store names; bytes reclaimed; `orphans`
    reaped; `missing` re-queued; holds over `RMX_MAINTAIN_HOLD_S`. Per-store detail goes to
    `hub.log`.
-7. **R7 Unarmed = dry run** (spec review #s-3; d3d). {#r7-unarmed}
-   - A (store, step) with no `armed_at` stamp runs with `dry_run=True` only, reported
-     `dry_run:unarmed`. Its `last_attempt` is stamped, so the dry run happens once per scheduled
-     day.
-   - `rmx hub maintain arm --root <root> [--step vectors_maintain]` writes `armed_at` for that
-     (store, step), under R1's lock. It is the only writer of `armed_at`; 17.3 runs it by hand after
-     its dry run, backup and hand run. `rmx hub maintain disarm` clears it. CLI-only pending the
-     verb-class ruling (plan `#open-after-revision` item 4).
+7. **R7 Arming, per (store, step), for every registered step** (spec review #s-3; d3d; ns17-5;
+   d8g). {#r7-unarmed}
+   - Each step declares `requires_arming` with a reason:
+
+     | step | `requires_arming` | reason |
+     |---|---|---|
+     | `vectors_maintain` (17.1) | true | it deletes (orphans, old versions); d3d |
+     | `factslog_backup` (17.4) | false | a copy that never deletes the last good copy and touches no store state (17.4 R5) |
+     | 19.4 memory compile | stated by 19.4 | 19.4 owns its value and reason |
+     | plan-18 DuckDB step | stated by plan-18 | plan-18 owns its value and reason |
+
+     A step registered without both fields fails registration (an `AssertionError` at hub start,
+     logged), so no step can arrive with an unstated policy.
+   - A (store, step) with `requires_arming=true` and no `armed_at` stamp runs with `dry_run=True`
+     only, reported `dry_run:unarmed`. Its `last_attempt` is stamped, so the dry run happens once
+     per scheduled day. A step with `requires_arming=false` runs for real from its first day.
+   - **Arming is one verb on both surfaces, gated by a hand run** (d8g: the gate is the record,
+     not the surface; the verbs rule). Verb `hub_maintain_arm(root, step, run_id)`: CLI
+     `rmx hub maintain arm --root <root> --step <step> --run-id <id>`, MCP parity through the
+     verb-parity test. It reads `<root>/maintain/runs.jsonl` (17.1 R12) and refuses unless that
+     file holds a line with this `run_id`, this `step`, `invoked_by: "hand"`, `dry_run: false` and
+     `ok: true`. On success it writes `armed_at` and `armed_by_run` for that (store, step), under
+     R1's lock; it is the only writer of `armed_at`. `hub_maintain_disarm(root, step)` clears it
+     and needs no run id. This settles the plan's former open item 4 (an agent can call the verb,
+     but only after a real, successful hand run of that exact step on that store, which is the
+     d3d order).
 
 ## Acceptance criteria {#acceptance}
 
@@ -112,9 +158,10 @@ daemons with short roots.
    maintained.
 4. **AC-4 skips.** A paused store and a stopped store are skipped, named and counted; a failing
    store does not stop the next.
-5. **AC-5 unarmed.** A store with no stamp gets `dry_run=True` (its Lance version count and bytes
-   are unchanged) and is reported `dry_run:unarmed`; after `rmx hub maintain arm` it gets the
-   real op on the next due day.
+5. **AC-5 unarmed.** A store with no `vectors_maintain` stamp gets `dry_run=True` (its Lance
+   version count and bytes are unchanged) and is reported `dry_run:unarmed`; after a successful
+   hand run and `rmx hub maintain arm --step vectors_maintain --run-id <that run>` it gets the real
+   op on the next due day.
 6. **AC-6 retries and single-flight.** A tmp daemon whose `vectors_maintain` blocks past the
    timeout receives the op exactly ONCE (counted daemon-side by 17.1 R11's state), the outcome is
    `still_running`, the failure count is unchanged, and the second store is not called until the
@@ -124,13 +171,33 @@ daemons with short roots.
 8. **AC-8 alert.** Three consecutive failures of one (store, step) give exactly one alert; a
    success resets it. A vectors step that succeeds and a second registered step that fails on the
    same store: only the failing step's count rises, and only it is due again next day.
-9. **AC-9 pre-registered mutations, each must FAIL a named AC:**
+9. **AC-10 stuck ceiling (ns17-4).** Two stores; store 1's op never returns (blocks on an event
+   the test never sets) and answers `already_running` to `status=True`. With budget B and
+   `RMX_MAINTAIN_STUCK_AFTER=2`: tick 1 ends with store 1 `still_running` and store 2 `deferred`;
+   tick 2 ends with store 1 `stuck`, exactly one `stuck` alert on `global:queues`, store 2 RUN
+   (its op received once), and store 1's op still received exactly once in total. Releasing the
+   event: the next tick stamps store 1's report and clears `stuck`.
+10. **AC-11 per-step arming (ns17-5).** One unarmed store with two registered test steps,
+    `requires_arming=true` and `false`: the first is called with `dry_run=True`, the second with
+    `dry_run=False`, on the first due day. Registering a step without `requires_arming` fails hub
+    start with the named error.
+11. **AC-12 the arm gate (ns17-5, d8g).** On a tmp store with `runs.jsonl`:
+    - arm with the `run_id` of a successful non-dry hand run of that step → `armed_at` written;
+    - arm with a dry run's id, a failed run's id, a `hub` run's id, another step's id, or an
+      unknown id → refused, no stamp written;
+    - the verb is reachable through both the CLI and MCP (the verb-parity test lists it) and
+      behaves identically through both.
+12. **AC-9 pre-registered mutations, each must FAIL a named AC:**
    - no catch-up → AC-1;
    - stacking runs after sleep → AC-1;
    - maintenance moved back onto `_queue_alert_loop` → AC-2;
    - `discover_roots()` used as the default with the injection removed → AC-3;
    - the pause ignored → AC-4;
    - unarmed stores run for real → AC-5;
+   - the `stuck` ceiling removed (still_running forever, others deferred) → AC-10;
+   - `requires_arming` ignored (every unarmed step dry-runs, or every step runs for real) → AC-11;
+   - the arm verb not checking `runs.jsonl` (any `run_id` accepted) → AC-12;
+   - the arm verb CLI-only (no MCP twin) → AC-12 (verb parity);
    - default `retries` → AC-6;
    - a timeout counted as failed → AC-6;
    - stamps keyed by store only → AC-8.
@@ -139,8 +206,8 @@ daemons with short roots.
 
 | file | change |
 |---|---|
-| `src/refmatrix/hub.py` | `_maintain_loop`, the schedule check, the step registry, the stamps, the summary |
-| `src/refmatrix/cli.py` | `rmx hub maintain arm` / `disarm` |
+| `src/refmatrix/hub.py` | `_maintain_loop`, the schedule check, `maintenance_steps`, the stamps, the `stuck` ceiling, the summary |
+| `src/refmatrix/verbs.py`, `cli.py`, `mcp.py` | `hub_maintain_arm` / `hub_maintain_disarm` verbs on both surfaces |
 
 ## Test strategy {#test-strategy}
 
@@ -164,5 +231,15 @@ daemons with short roots.
 | d3d | [[#r7-unarmed]], AC-5 |
 | d3e + close-out (retries=0, single-flight) | [[#r1-schedule]], [[#r4-call]], AC-6, AC-7 |
 | decision review #s-6 | [[#r4-call]], AC-6 |
-| plan-review C6 / 23.1 tick registry | [[#r2-registry]] (open item 1 in the plan) |
+| plan-review C6 / 23.1 tick registry | [[#r2-registry]] (settled in round 2: two registries) |
 | d1a/d1b (23.0) | [[#test-strategy]] |
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+| finding / decision | answered at |
+|---|---|
+| ns17-1 (17.2's registry is not 23.1's; phantom dependency), #t9-fixes "17.2 keeps its own registry" | header, [[#r2-registry]] |
+| ns17-4 (`still_running` has no ceiling), #t9-fixes | [[#r4-call]] (the ceiling), [[#r5-alert]], AC-10 |
+| ns17-5 (arming only for vectors; verb class), #t9-fixes "arming per (store, step) for every registered step", d8g | [[#r2-registry]] (op obligations), [[#r7-unarmed]], AC-11, AC-12 |
+| d9c (cap release named in the alert) | [[#r5-alert]] |
+| nm17-2 (`skipped:not_supervised` unreachable) | [[#r3-roots]] |

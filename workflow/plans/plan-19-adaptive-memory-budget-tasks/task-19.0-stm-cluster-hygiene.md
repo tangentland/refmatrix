@@ -33,11 +33,19 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
 (2026-10-14) those clusters were led by junk, read off the frozen ring (502 events: 416 tool,
 27 input, 22 say, 21 git, 16 reason):
 
-- **Script bodies (bug-104).** 68 tool events carried heredoc / `-c` scripts. `_extract_refs`
-  (`stm.py:840`) reads the whole tool `detail`, so truncated locals and stdlib calls became
-  concepts: `r.get` 32, `re.searc` 21, `collections.Count` 18, `glob.glob` 16, `json.loads` 13,
-  `s.repla` 10, `m.group` 10. `is_junk_ref` (`stm.py:90`) gates ids, hex, uuids and deep paths
-  only.
+- **Script bodies (bug-104).** 68 tool events carried heredoc / `-c` scripts. The refs come from
+  `cli._tool_event_fields` (`cli.py:1906`): for a Bash call with no `file_path`, it runs
+  `stm._PATH_RE.findall(cmd)` over the WHOLE command, heredoc body included (`cli.py:1923-1927`;
+  `_PATH_RE` = `[\w./-]+\.[A-Za-z]{1,5}`, `stm.py:53`, which matches `re.searc`, `r.get`,
+  `collections.Count`), and the hook stores them on the event. So truncated locals and stdlib
+  calls became concepts: `r.get` 32, `re.searc` 21, `collections.Count` 18, `glob.glob` 16,
+  `json.loads` 13, `s.repla` 10, `m.group` 10. `_extract_refs` (`stm.py:840`) is NOT the cause:
+  it runs only when a caller passes no refs (re-review #b-4). `Stm.rebuild_focus`
+  (`stm.py:447-480`) replays each event's STORED `refs`, filtered only by `is_junk_ref`
+  (`stm.py:90`, which gates ids, hex, uuids and deep paths only), so a replay of the ring never
+  re-runs extraction. Read off the frozen ring at `3357c44`: all 416 tool events carry `detail`
+  (the verbatim command, cut at `DETAIL_MAX` = 600 chars, `stm.py:43`); 58 of them carry one of
+  the junk refs above in their stored `refs`.
 - **Subagent events (bug-103).** The background decision-log review's `sed`/`python3` calls landed
   in the parent's ring under the parent's session id; the composite's lead topic became
   `glob.glob, m.group, re.findi, re.searc`.
@@ -61,49 +69,78 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
    whether R2's rung 1 is live; rungs 2 and 3 are built either way. The probe is a measurement,
    not a story ([[feedback_causal_story_before_evidence]]); bug-103's causal line is re-stated
    from it.
-1. **R1 Script bodies are not focus** (bug-104). For a `tool` event, refs are extracted from the
-   command line and the paths it names, never from a heredoc body (`<<EOF … EOF`, `<<'EOF'`) or
+1. **R1 Script bodies are not focus** (bug-104; re-review #b-4). ONE function,
+   `stm.command_refs(cmd: str) -> list[str]`, extracts a Bash command's refs from the command
+   line and the paths it names, never from a heredoc body (`<<EOF … EOF`, `<<'EOF'`, `<<-EOF`) or
    an inline script argument (`python3 -c`, `bash -c`, `node -e`, `perl -e`). Dotted refs whose
    head is a stdlib module (`re`, `json`, `glob`, `collections`, `os`, `sys`, `pathlib`, …) or a
    local of ≤ 2 chars (`r.`, `s.`, `m.`) are dropped. The token gate reuses
    `scan._PROMPT_STOPWORDS` ([[feedback_reuse_shared_stoplist]]); the stdlib heads and short-local
    rule live in ONE separate, documented code-noise set next to it, not a second stoplist.
-2. **R2 Subagent tool events are not the parent's focus** (bug-103; d8h). Every PostToolUse
-   event is given an `origin` by this ladder, first rung that resolves wins:
+   - **Hook path (the cause).** `cli._tool_event_fields` calls `stm.command_refs(cmd)` in place
+     of `_PATH_RE.findall(cmd)` (`cli.py:1923-1927`), for both the PreToolUse park and the
+     PostToolUse record. This is what stops new junk (AC-1b).
+   - **Rebuild path (past rings).** `Stm.rebuild_focus` RE-EXTRACTS: for a `tool` event whose
+     `detail` is a command string (not a JSON object), its refs are recomputed as
+     `stm.command_refs(detail)`; for every other event it keeps the stored refs. Both pass through
+     `is_junk_ref` and the code-noise set. Since `detail` is cut at 600 chars and the command line
+     precedes its heredoc body, the cut can only drop body text or trailing paths (an
+     under-extraction, the safe direction). So AC-1's replay exercises R1's extraction, not only
+     a drop list; the code-noise set is tested on its own by AC-1c.
+2. **R2 Subagent tool events are not the parent's focus** (bug-103; d8h; re-review #b-3). Every
+   PostToolUse event is given an `origin` by this ladder, first rung that resolves wins. The
+   event stores `origin` and the envelope's `tool_use_id` (new ring fields; old events without
+   `origin` read as `parent`).
    - **Rung 1, the envelope.** If R0 shows the envelope identifies the subagent (an `agent_id`,
      or a `transcript_path` under `<session-id>/subagents/agent-<agentId>.jsonl`), the event's
      origin is `agent:<agentId>`.
-   - **Rung 2, the subagent transcripts.** Otherwise the hook looks in
-     `<projects dir>/<project-slug>/<session-id>/subagents/`, where each subagent writes its own
-     full transcript `agent-<agentId>.jsonl` (every tool call, with its input and a timestamp)
-     and an `agent-<agentId>.meta.json` (`agentType`, `description`, `toolUseId`, `spawnDepth`,
-     `requestShape`). The directory comes from the envelope's parent `transcript_path`
-     (`<projects dir>/<slug>/<session-id>.jsonl`), else from `$HOME/.claude/projects/<slug>`.
-     The event is attributed to agent X when exactly ONE `tool_use` entry, across that session's
-     subagent transcripts, matches on all three of:
-     - `tool_name`;
-     - the input digest: sha256 of the tool input as canonical JSON (sorted keys, no
-       whitespace);
-     - timestamp within ± `W = 2 s` of the event.
-
-     Its origin is then `agent:<agentId>`, and its label is `<agentType>: <description>` from
-     the meta file. A missing or unreadable meta file leaves the label as `agent:<agentId>` and
-     is counted. Two or more matching agents is not a match (rung 3).
-   - **Rung 3, unattributed.** If no rung resolves while some subagent transcript of the session
-     was written within the window, the event's origin is `unattributed`. It stays in the ring
-     and may be a member, but is never a cluster label. If no subagent transcript was written
-     within the window, the event is the parent's (`origin: parent`).
+   - **Rung 2, the exact key: `tool_use_id`.** The PostToolUse (and PreToolUse) envelope carries
+     `tool_use_id`; `cli._tool_call_key` (`cli.py:1893-1903`) already prefers it, and every key in
+     the live `*.inflight.json` sidecars is a `toolu_…` id. Each subagent writes its own
+     transcript `<projects dir>/<slug>/<session-id>/subagents/agent-<agentId>.jsonl`, whose
+     assistant entries hold `tool_use` content blocks with `id` = that same `toolu_…` value and
+     an `agentId` field, plus `agent-<agentId>.meta.json` (`agentType`, `description`,
+     `toolUseId`, `spawnDepth`, `requestShape`, `requestNonInteractive`). Verified read-only on
+     session db80475a's 20 subagent pairs at `3357c44`. The directory comes from the envelope's
+     parent `transcript_path` (`<projects dir>/<slug>/<session-id>.jsonl`), else from
+     `$HOME/.claude/projects/<slug>`. The event is `agent:<agentId>` when a `tool_use` block with
+     `id == tool_use_id` is found in exactly one subagent transcript (its line's `agentId` must
+     equal the file's; a mismatch is counted and falls to rung 3). No time window is involved:
+     a call that ran 45 s is matched like one that ran 0.1 s. Its label is
+     `<agentType>: <description>` from the meta file; a missing or unreadable meta file leaves
+     the label `agent:<agentId>` and is counted.
+   - **Rung 2b, digest + window, only when the envelope has NO `tool_use_id`** (the `h:` fallback
+     key of `_tool_call_key`). A match is exactly ONE `tool_use` entry across the session's
+     subagent transcripts with equal `tool_name`, equal input digest (sha256 of the tool input as
+     canonical JSON: sorted keys, no whitespace), and an entry timestamp within ± `W = 2 s` of the
+     PreToolUse PARK time `t_pre` (the `t` that `Stm.inflight_begin`, `stm.py:309`, records and
+     `inflight_end` returns), never of the PostToolUse time: the transcript entry is written when
+     the call is ISSUED, the PostToolUse event after it finishes. With no parked record, rung 2b
+     does not run (counted `no_park`) and the event goes to rung 3.
+   - **Rung 3, parent or unattributed.**
+     - With a `tool_use_id`: if the bounded search below COMPLETED (every candidate file read back
+       to its lower bound, no cap hit) and found no block with that id, the call was not issued by
+       any subagent: `origin: parent`. If the search hit the cap, `origin: unattributed`.
+     - Without a `tool_use_id` (rung 2b found no single match): `origin: unattributed` when any
+       subagent of the session is RUNNING, else `parent`. A subagent is running when its meta file
+       exists and the tail of its transcript holds a `tool_use` block with no later
+       `tool_result` for that id (an open call), never judged by mtime.
+     - An `unattributed` event stays in the ring and may be a member, but is never a cluster
+       label.
 
    The rest of R2:
    - **Effect.** Events with origin `agent:<id>` stay in the parent's ring for provenance, keyed
      `agent:<id>`, and are excluded from the parent's focus graph and composites.
      `rmx focus topics` renders each agent active in the window as ONE line,
      `background: <label>`, never as members of the parent's topics.
-   - **Cost bound (inside the hook's latency budget).** Rung 2 opens only the
-     `agent-*.jsonl` files whose mtime is ≥ event ts − W. It reads each from the end in 64 KB
-     blocks, back to the first entry older than event ts − W, with a hard cap of 1 MB per event
-     across all files. Hitting the cap ends the search as rung 3 and is counted. It never reads
-     a whole transcript and never reads the parent's transcript.
+   - **Cost bound (inside the hook's latency budget).** The lower bound is `t_lo = t_pre − 5 s`
+     (the park time; with no park, `event ts − 120 s`, counted `no_park`). Rungs 2 and 2b open only
+     the `agent-*.jsonl` files whose mtime is ≥ `t_lo` (a transcript that issued the call was
+     written at or after issue time, so its mtime cannot be older). Each is read from the end in
+     64 KB blocks, back to the first entry older than `t_lo`, stopping early when the id is found,
+     with a hard cap of 1 MB per event across all files. Hitting the cap ends the search as rung 3
+     (`unattributed`) and is counted. It never reads a whole transcript and never reads the
+     parent's transcript.
    - **Counted.** The focus hook keeps per-session counts of events by origin and rung (and of
      cap hits). `rmx focus show` prints them (there is no `focus status` command), so
      attribution failures are visible, not silent.
@@ -146,69 +183,101 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
    the projects dir: `<session-id>.jsonl` (the parent), `<session-id>/subagents/agent-<id>.jsonl`
    and `agent-<id>.meta.json` (one subagent, the decision-log review). Both are REDACTED copies:
    prompt text and paths are scrubbed, while tool names, inputs, digests and timestamps keep the
-   shape the match needs. The raw transcripts stay local; only their sha256s are committed, in
-   the fixture's README. The matching ring events are part of the ring fixture above. The
-   subagent's events in the fixture carry its refs on the COMMAND LINE (for example the
-   `sed -n … src/refmatrix/daemon.py` target), as well as the frozen `glob.glob` / `m.group` /
-   `re.findi` set, so that R1 alone cannot clear them and AC-4 isolates R2.
+   shape the match needs, and every `tool_use` block keeps its `id`. The raw transcripts stay
+   local; only their sha256s are committed, in the fixture's README. Beside them,
+   `envelopes.jsonl`: the PreToolUse / PostToolUse envelope pairs of the replay, in recorded
+   order, REBUILT by the committed build script from the transcripts' `tool_use` blocks
+   (`tool_name`, `tool_input`, `tool_use_id` = the block's `id`, `session_id` = the PARENT's id,
+   `transcript_path` = the parent's), interleaved with the parent's own calls. The ring at HEAD
+   stores no `tool_use_id`, so subagent separation is tested THROUGH THE HOOK on these envelopes,
+   not by replaying stored events. The subagent's calls carry refs on the COMMAND LINE (for
+   example the `sed -n … src/refmatrix/daemon.py` target), so R1 alone cannot clear them and AC-4
+   isolates R2. The fixture's subagent is the decision-log review, whose meta reads
+   `agentType: "ch-bsd"`, `description: "BSD review of decision log"` (re-review #evidence).
 
 ## Acceptance criteria {#acceptance}
 
-Every AC runs on the redacted fixture, replayed with `rmx focus rebuild --dry-run --root <tmp>`
-(a pure file op, no daemon) into `topic_composites(graph, k=5)`. A "label" is a composite's head
-member as `rmx focus topics` renders it.
+AC-1, AC-2 and AC-3 replay the redacted ring fixture with `rmx focus rebuild --dry-run --root
+<tmp>` (a pure file op, no daemon) into `topic_composites(graph, k=5)`; that rebuild RE-EXTRACTS
+tool refs per R1. AC-1b and AC-4..AC-4e drive the HOOK (`rmx focus hook --event tool-pre` /
+`--event tool`, the production write path) with envelopes on stdin. A "label" is a composite's
+head member as `rmx focus topics` renders it.
 
-1. **No junk** (frozen list, written before GREEN). None of `r.get`, `re.searc`,
+1. **No junk, replay** (frozen list, written before GREEN). None of `r.get`, `re.searc`,
    `collections.Count`, `glob.glob`, `json.loads`, `s.repla`, `m.group`, `re.findi` is a label or
    a member of any top-5 composite. Neither `aggre` nor `llok` is a label.
+   1b. **No junk, hook path** (re-review #b-4). `rmx focus hook --event tool` fed a recorded
+   PostToolUse(Bash) envelope whose command is `python3 - <<'EOF'` + a body using `re.search`,
+   `r.get` and `collections.Counter` + `EOF`, run against `src/refmatrix/daemon.py` named on the
+   command line, stores an event whose `refs` contain `src/refmatrix/daemon.py` and none of the
+   body's tokens. The same for `python3 -c '<body>'`. RED at HEAD (the stored refs hold
+   `re.searc`, `r.get`, `collections.Count`).
+   1c. **Code-noise set alone.** `stm.command_refs("cat r.get m.group json.loads foo_bar.py")`
+   returns `["foo_bar.py"]`: the stdlib-head and short-local rule applies to command-line tokens
+   too, independent of the heredoc rule.
 2. **The real threads lead** (frozen list, written before GREEN). Each of the thread terms
    `plan-review-2026-10-14`, `plan-19`, `plan-21`, `plan-23` is a substring of at least one top-5
    label.
 3. **RED at HEAD.** The same replay at HEAD fails AC-1 (at least one listed junk ref is a label or
    member). The failing run's output is captured to `workflow/review-output/` before any `src/`
    change, per [[feedback_red_test_must_fail_at_head]].
-4. **Subagent separation** (d8h). Replaying the subagent fixture:
-   - none of the subagent's refs (its command-line refs and `glob.glob`, `m.group`, `re.findi`)
-     is a member or label of any parent topic composite;
-   - the ring still holds those events, keyed `agent:<id>`;
-   - `rmx focus topics` shows one `background: general-purpose: <description>` line.
+4. **Subagent separation, by id** (d8h; re-review #b-3). Feeding the subagent fixture's
+   `envelopes.jsonl` through the hook, then `rmx focus topics`:
+   - none of the subagent's refs (its command-line refs) is a member or label of any parent
+     topic composite;
+   - the ring holds those events with `origin: agent:<id>` and their `tool_use_id`;
+   - `rmx focus topics` shows exactly one line
+     `background: ch-bsd: BSD review of decision log` (the fixture meta's `agentType` and
+     `description`).
 
    Pre-check before GREEN, recorded: with R1 built and R2 disabled, this AC fails.
-4b. **No over-attribution.** A parent event with the same `tool_name` as a subagent call inside
-    the window but a different input stays `origin: parent`. An event matching two agents is
+4b. **No over-attribution.** A parent call with the same `tool_name` and the same input as a
+    subagent call, issued within 1 s of it but with its own `tool_use_id`, stays
+    `origin: parent`. In the no-id leg (rung 2b), an event matching two agents is
     `unattributed`, a member at most, never a label.
 4c. **Rung 1.** If R0 found an agent id in the envelope, an envelope fixture carrying it
     attributes the event without opening any transcript (zero files opened). If R0 found none,
     this AC is recorded as not applicable, with the probe's field list.
-4d. **Cost bound.** In a subagents dir with 10 transcripts of 5 MB each, 9 of them with stale
-    mtimes, attributing one event opens exactly 1 file and reads ≤ 1 MB (counted by the reader,
-    not timed). A transcript with no entry inside the window and over 1 MB ends as a counted
-    cap hit, as rung 3.
+4d. **Cost bound.** In a subagents dir with 10 transcripts of 5 MB each, 9 of them with mtimes
+    older than `t_lo`, attributing one event opens exactly 1 file and reads ≤ 1 MB (counted by the
+    reader, not timed). A transcript over 1 MB with no matching id and no entry older than `t_lo`
+    within the cap ends as a counted cap hit, `unattributed`.
+4e. **Long calls** (re-review #b-3). A subagent Bash call whose `tool_use` entry is timestamped
+    10 s before its PostToolUse envelope (and a second one 45 s before, the measured maximum),
+    with the transcript otherwise idle, is attributed `agent:<id>` by rung 2. In the no-id leg,
+    the same 10 s call is matched by rung 2b against the PARK time and attributed too.
 5. **Hand-back ambient.** An `<agent-message …>` input event is dropped from the focus graph and
    kept in the ring.
 6. **Envelope session.** Two rings in one tmp STM dir; the envelope names the OLDER-mtime ring;
    scan-prompt's enrichment and the verb resolver read the envelope's ring. With no envelope,
    `CLAUDE_CODE_SESSION_ID` or `RMX_SESSION`, enrichment is skipped and the skip is printed.
 7. **Mutations that must FAIL a test:**
-   - extract refs from the heredoc body again;
-   - drop the stdlib-head rule;
+   - extract refs from the heredoc body again in `stm.command_refs` (AC-1 and AC-1b);
+   - `_tool_event_fields` back on `_PATH_RE.findall(cmd)` (AC-1b);
+   - `rebuild_focus` replaying stored refs instead of re-extracting (AC-1: the fixture's stored
+     refs hold the junk);
+   - drop the stdlib-head rule (AC-1c);
    - remove `<agent-message` from `is_ambient_text`;
    - fold tokens of length 4;
    - restore the `latest_session` fallback on the scan enrichment path;
    - route subagent events into the parent's focus graph;
-   - drop the rung-2 transcript match (AC-4);
-   - match on `tool_name` alone without the input digest (AC-4b);
-   - read whole transcripts, or ignore the mtime filter (AC-4d).
+   - drop the rung-2 id match (AC-4);
+   - rung 2 matching on a ±2 s window around the PostToolUse time instead of the id (AC-4e);
+   - rung 2b measured from the PostToolUse time instead of the park time (AC-4e, no-id leg);
+   - match on `tool_name` alone without the input digest (AC-4b, no-id leg);
+   - rung 3 judging "running" by mtime (AC-4e: the idle transcript would read as not running);
+   - read whole transcripts, or ignore the mtime filter (AC-4d);
+   - the AC-4 literal rendered from a constant `general-purpose` instead of the meta file.
 
 ## Files to modify {#files-to-modify}
 
 | file | change |
 |---|---|
-| `src/refmatrix/stm.py` | `_extract_refs` command-line-only for tool events; code-noise set; `is_ambient_text`; typo label rule; subagent key per R0 |
+| `src/refmatrix/stm.py` | `command_refs` (R1; the ONE extractor for Bash commands); `rebuild_focus` re-extracts from `detail`; code-noise set; `is_ambient_text`; typo label rule; `origin` / `tool_use_id` ring fields; subagent key per R0 |
 | `src/refmatrix/scan.py` | enrichment session from the envelope (R5); the code-noise set beside `_PROMPT_STOPWORDS` |
 | `src/refmatrix/verbs.py` | session resolver (R5) |
-| `src/refmatrix/cli.py` (`focus_hook`, `focus_rebuild`, `focus show`) | pass the envelope's session; run R2's ladder; rebuild drops hand-backs; origin counts |
-| `src/refmatrix/stm.py` (subagent attribution) | R2's rungs 2–3: transcript tail reader, input digest, meta label, `background:` rendering |
+| `src/refmatrix/cli.py` (`_tool_event_fields` `:1906`, `focus_hook` `:1946`, `focus_rebuild`, `focus show`) | `_tool_event_fields` calls `stm.command_refs` (the bug-104 cause, `:1923-1927`); pass the envelope's session and `tool_use_id`; run R2's ladder with the park time from `inflight_end`; rebuild drops hand-backs; origin counts |
+| `src/refmatrix/stm.py` (subagent attribution) | R2's rungs 2, 2b, 3: transcript tail reader, id lookup, input digest, open-call check, meta label, `background:` rendering |
 | `tests/fixtures/stm/ring-db80475a-redacted.jsonl`, `tests/fixtures/stm/subagent-db80475a/`, their build script | R6 |
 
 ## Test strategy {#test-strategy}
@@ -217,7 +286,7 @@ member as `rmx focus topics` renders it.
   registry, injected store roots, the conftest guard that fails a test touching `~/.refmatrix` or
   a registered live store). Replays use `--root <tmp>`; no daemon is needed. Each test file
   asserts 0 live connects through 23.0's guard.
-- **RED first:** AC-3 is run and its failure recorded before GREEN.
+- **RED first:** AC-3 and AC-1b are run and their failures recorded before GREEN.
 - **R0** is a manual probe in a scratch project, recorded in the implementation summary; it is not
   a pytest.
 - No mocks of `stm`; fixture rings only.
@@ -244,3 +313,17 @@ Phasing, the topic cache and versioned injection (19.6). Re-scoring past rings i
 | RED at HEAD | AC-3 |
 | d1a/d1b (23.0 sandbox) | [[#test-strategy]] |
 | #t8-wave1 (19.0 needs only 23.0) | header |
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+Answers [[bsd-plan19-21-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9-fixes]] ("19.0
+matches subagent events by `tool_use_id` (not a time window) and filters refs at
+`cli._tool_event_fields`"). Code facts read at `3357c44`: `cli.py:1893-1903`, `:1906`,
+`:1923-1927`, `:1946`; `stm.py:43`, `:53`, `:309`, `:447-480`, `:840`; the subagent transcript and
+meta shape on session db80475a.
+
+| finding / decision | answered at |
+|---|---|
+| re-review #b-3 (±2 s window misses 41% of calls; rung 3 re-admits them; exact key ignored; AC-4 literal) | R2 rung 2 (`tool_use_id`), rung 2b (park time), rung 3 (completed-search / open-call rules); cost bound (`t_lo` from the park time); AC-4 (`background: ch-bsd: …`), AC-4b, AC-4d, AC-4e; mutations |
+| re-review #b-4 (wrong mechanism named; replay cannot fail on the hook defect) | [[#why]] (cause = `cli._tool_event_fields`); R1 (`stm.command_refs`, hook path + rebuild re-extraction stated); AC-1, AC-1b, AC-1c; mutations; [[#files-to-modify]] |
+| d8h (ladder) | R2, now with the exact key ahead of the fuzzy rung (#t9-fixes) |

@@ -26,6 +26,18 @@ rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
 rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
 rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+rel: derives-from -> [[plan-review-2026-10-14#t8-revisited]]
+rel: derives-from -> [[plan-review-2026-10-14#t9]]
+rel: amends -> [[bsd-plan16-22-spec-rereview-32dde06]]
+rel: depends-on -> [[feedback_no_raw_prompts_in_public_repo]]
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+Answers [[bsd-plan16-22-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]].
+
+| finding / decision | answered in |
+|---|---|
+| re-review s-4 (real transcript greps committed unscrubbed) / d8f / #t9-fixes "16.2 fixture scrubber" | AC-1 [[#ac-1-fixture]] (raw extraction gitignored, sha256 committed, scrubber, privacy test + mutation); [[#files-to-modify]]; [[#tests]] |
 
 ## Revision 6 changelog {#revision-6}
 
@@ -188,7 +200,8 @@ test that spawns `rmx` from PATH. {#r6}
 ## Acceptance criteria {#acceptance}
 
 1. **The differential (100%, no allowlist).** The corpus is `tests/fixtures/grep_differential.txt`:
-   at least 40 invocations replayed from real transcript greps, plus the edge cases below.
+   at least 40 invocations derived from real transcript greps THROUGH THE SCRUBBER ([[#ac-1-fixture]]),
+   plus the edge cases below.
    - For each case, `rmxgrep ARGS` vs `/usr/bin/grep ARGS` and `rmxrg ARGS` vs `rg ARGS` must match
      byte-for-byte on stdout, stderr and the exit code.
    - Run inside a project with learning ON and `RMXGREP_MODE=rich` exported.
@@ -198,6 +211,29 @@ test that spawns `rmx` from PATH. {#r6}
      - `-l -L -o -h -C 2 -m 1 -q`;
      - a `:` filename; `./f` beside `f`; a no-match (exit 1); `--color=always`.
    - The test fails at the first differing byte and prints both sides.
+   **1-fixture. The fixture is scrubbed; only it and a hash are committed (s-4, d8f).**
+   {#ac-1-fixture}
+   - The raw extraction (argv lists from this machine's transcripts) is written to
+     `workflow/review-output/grep-differential-raw.jsonl`, which is gitignored
+     (`workflow/review-output/` in `.gitignore`). It is never committed.
+   - `tests/fixtures/grep_differential.source.sha256` (committed) holds the sha256 of that raw file,
+     so the fixture's provenance is checkable on this machine without publishing it.
+   - `scripts/scrub_grep_differential.py` (committed) turns the raw file into the committed fixture:
+     - every path operand and path-valued flag value (`--include`, `--exclude`, `--exclude-dir`,
+       `-g`) is rewritten onto the sandbox fixture tree `tests/fixtures/grep_tree/` (a missing-file
+       case keeps its "missing" role under a `missing-*` name);
+     - every pattern keeps its metacharacter skeleton verbatim (backslash escapes, `[[:class:]]`,
+       anchors, brackets, quantifiers, alternation) and has each alphanumeric run that is not a
+       word of this repo's own `src/` replaced by a placeholder drawn from a fixed vocabulary that
+       `grep_tree/` contains, consistently within one invocation;
+     - flags are kept verbatim (they are grep's, not the user's).
+   - **Privacy test** (`tests/test_grep_shim_differential.py::test_fixture_is_scrubbed`): the
+     committed fixture contains none of `/Users/`, `/home/`, `~/`, `atollogy`, `bdep`, `enduris`,
+     `tholley`, and every path token resolves under `tests/fixtures/grep_tree/` or is a `missing-*`
+     name. Mutation "commit the raw extraction, unscrubbed" FAILS it (the raw file holds
+     `/Users/` paths).
+   - The summary records how many of the replayed cases produce at least one hit on `grep_tree/`;
+     at least half must, or the vocabulary is planted into `grep_tree/` until they do.
 2. **Power of the differential.** Run against the CURRENT rich-mode shim first. The summary records
    which cases differ there. At minimum `\b`, `^`, the missing file and `-rc` must differ, or the
    corpus cannot see the class this plan removes.
@@ -246,7 +282,8 @@ test that spawns `rmx` from PATH. {#r6}
 | `src/refmatrix/hooks.py` | bashrc + env block without `RMXGREP_MODE`; removal on merge; `check()` extended (new code) |
 | `src/refmatrix/search_hooks.py` | guard/docstring text |
 | `src/refmatrix/cli.py` | `learn status`: throttled count, retired-env line; install-hooks `--help` text |
-| tests in R6; `tests/test_grep_shim_differential.py`, `tests/fixtures/grep_differential.txt` (new); a conftest guard against PATH `rmx` | |
+| tests in R6; `tests/test_grep_shim_differential.py`, `tests/fixtures/grep_differential.txt`, `tests/fixtures/grep_differential.source.sha256`, `tests/fixtures/grep_tree/` (new); a conftest guard against PATH `rmx` | |
+| `scripts/scrub_grep_differential.py` (new) | the scrubber of [[#ac-1-fixture]]; the raw extraction stays in gitignored `workflow/review-output/` |
 | `workflow/test_mock_registry.md` | the sleeping stand-in (AC-3) |
 
 ## Deploy note {#deploy}
@@ -262,6 +299,7 @@ refreshes the rewriter (bug-080 changed it). The handoff names both steps.
 - Real binaries, `shell=False`, list argv. A shell control gets rewritten by the PreToolUse hook.
 - Pre-registered mutations:
   - restore the rich branch: AC-1 fails;
+  - commit the unscrubbed raw extraction as the fixture: AC-1's privacy test fails;
   - run the learner in the foreground: AC-3 fails;
   - key the stamp on argv only: AC-6 fails;
   - drop `RMXGREP_MODE` removal from the merge: AC-8 fails;

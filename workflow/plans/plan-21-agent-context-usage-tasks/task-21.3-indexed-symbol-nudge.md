@@ -47,7 +47,12 @@ task starts, against bands written before the run; the nudge is not dropped in a
    the GENERATED hook command (interpreter start included: the clock is the hook's WALL time, as
    Claude Code waits on it) with a recorded PostToolUse envelope on stdin, over the real
    identifier set: 21.2's [[task-21.2-precise-identifier-context#frozen-set]] plus every
-   identifier-shaped grep pattern in 21.1's redacted fixture. It runs on a sandboxed catalog copy:
+   identifier-shaped grep pattern (R1's regex) of `kind=grep` rows in the LOCAL raw project
+   `.refmatrix/query.log` up to `2026-10-07T11:06:35` (AC-6's cut). 21.1's committed fixture
+   cannot supply them: its bodies are sha256-replaced (re-review #s-7). Per d8f the extracted
+   list stays local (gitignored, beside `REPORT.md`); committed are its count and the sha256 of
+   the sorted, newline-joined list, so a holder of the raw log can rebuild it byte-identically.
+   It runs on a sandboxed catalog copy:
    - **quiet:** no other `rmx` work running;
    - **loaded:** while the copy's daemon re-syncs this tree's largest source file and 4 `rmx
      context` calls run concurrently.
@@ -60,7 +65,7 @@ task starts, against bands written before the run; the nudge is not dropped in a
    |---|---|
    | ≤ 100 ms | GO: fire inline on every eligible call |
    | 100–300 ms | GO, gated: at most once per symbol per session; report the per-prompt cost |
-   | 300 ms–1 s | NOT YET: build a precomputed indexed-symbol set (written at SessionStart / on derive), so the hook check is a set lookup; re-measure, then apply this table again |
+   | 300 ms–1 s | NOT YET: build a precomputed indexed-symbol set (written at SessionStart / on derive), so the hook check is a set lookup; re-measure, then apply this table again. Annotation: the d4d amendment and R6 make the DAEMON, on derive, the only writer; SessionStart may only request a rebuild (re-review #m-6) |
    | > 1 s after that | NO-GO in the hook. Revisited only if 21.3 is re-planned (amendment: no longer "after d2e") |
 
    The measured numbers and the verdict are committed to `REPORT.md` before the first nudge commit.
@@ -186,3 +191,12 @@ counts are unchanged.
 | bsd #m-6 (parser for three inputs; 16.1 undeclared) | R1; header; AC-3 |
 | d4e (no habit memory) | [[#why]] |
 | decision-log #m-2 (adoption by channel, not invocation) | AC-6 |
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+Answers [[bsd-plan19-21-spec-rereview-32dde06]].
+
+| finding / decision | answered at |
+|---|---|
+| re-review #s-7 (R0's identifiers drawn from a hashed fixture) | R0 (local raw project log, count + sha256 committed, d8f) |
+| re-review #m-6 (band row 3 "written at SessionStart / on derive") | R0 table row 3 annotation; R6 |

@@ -13,7 +13,8 @@ metadata:
 # Plan 23: the bounded-write harness {#root}
 
 **Date:** 2026-10-07, revised 2026-10-14.
-**Status:** Drafting (revision after the 2026-10-14 decision log). Task specs 23.0-23.4 are written.
+**Status:** Drafting (revision round 2 after the 32dde06 re-review and #t9; [[#rev-round-2]]).
+Task specs 23.0-23.4 are written.
 This is Wave 1's FIRST build: plans 16 (16.6's Wave 1 slice), 17, 19 and 22 consume it, and every
 Wave 1 test runs in 23.0's sandbox.
 **Origin:** the plan review's C5, applied by the user on 2026-10-07; revised from the Wave 0
@@ -29,6 +30,8 @@ rel: derives-from -> [[project_daemon_wedge_per_entity_lance_delete]]
 rel: related-to -> [[project_grep_learn_wall_and_queue]]
 rel: related-to -> [[project_bug098_writer_partition_race]]
 rel: related-to -> [[exploration-storage-concurrency-redesign]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06]]
+rel: derives-from -> [[plan-review-2026-10-14#t9]]
 
 ## Why {#why}
 
@@ -44,7 +47,8 @@ bug-098 (a writer resuming into another op's partition).
 Four specs each re-derived the cure: the 0.72.3 `learn_queue`, 16.6 R4's marks, 19.2's usage
 events, 17.1's per-dataset holds. Built once, every writer uses one tested mechanism: a `bind` seam
 that takes the lock and the partition together per batch, one transaction per hold with its
-offset inside it, a recorder that counts holds AND writes, and one tick registry. The tests that
+offset inside it, a recorder that counts holds AND writes, and one tick registry. The binding is
+every piece of state keyed by the partition: the id AND the fragment cache (bug-105, d9a). The tests that
 prove it run in a sandbox that cannot reach a live store (bug-088, bug-101). {#why-body}
 
 ## Tasks {#tasks}
@@ -54,11 +58,11 @@ Order ([[plan-review-2026-10-14#t8-wave1]]): **23.0 ∥ 23.4 → 23.2 → 23.1 (
 
 | task | what | acceptance (summary) |
 |---|---|---|
-| [[task-23.0-test-sandbox]] | `$HOME`, `RMX_HOME`, registry and LaunchAgents redirected before `refmatrix` is imported; store roots injected; an audit-hook guard that REFUSES any touch of a live store, in the suite and in every spawned child | canaries prove every root resolver lands in the sandbox; live paths are refused in-process and in children (mutations fail); a full run leaves the live logs byte-unchanged |
-| [[task-23.4-option-a-measurement]] | Option A measurement #4: one writer thread vs N per-op cursor writers on a cliquet copy, go/no-go ranges confirmed before the run | the verdict is mechanical from the ranges; an error detector that is proven to fire; the live store untouched |
+| [[task-23.0-test-sandbox]] | `$HOME`, `RMX_HOME`, registry and LaunchAgents redirected before `refmatrix` is imported; store roots injected; an audit-hook guard that REFUSES any touch of a live store, in the suite and in every spawned child | canaries prove every root resolver lands in the sandbox; live paths are refused in-process and in children (mutations fail); a full run adds no tagged, pytest-path or fixture-shaped row to any live log (content, not size) |
+| [[task-23.4-option-a-measurement]] | Option A measurement #4: one writer thread vs N per-op cursor writers on a cliquet copy, workload including `bitmap_fragments` upserts; go/no-go ranges PROPOSED, confirmed by the user before the run | the verdict is mechanical from the ranges; an error at N=1 is INVALID, not NO-GO; an error detector that is proven to fire; the live store untouched by the audit guard |
 | [[task-23.2-lock-hold-fixture]] | `lock_free_during(lock)`, a `HoldRecorder` on the real `_FairLock` that counts holds, DuckDB statements and Lance versions, markers that fail on zero holds | reverting r8 #s-2 / r9 #s-1 fails; re-introducing bug-085's and bug-093's per-row writes fails; no test keeps its own probe |
-| [[task-23.1-queue-and-drain]] | `bounded.py`: `bind` + one transaction per hold (fragments and offset inside it) under three front-ends (`drain(queue)`, `tail(log)`, `bounded_steps(items)`); stop paths, error policy, finalize; the tick registry with one budget; `queue_status` op; learn re-based | two-partition competitor AC; exactly-once under five injected faults; bug-099 RED→GREEN; finalize once; tail never mutates its file; overflow printed by `rmx learn status` |
-| [[task-23.3-sync-between-file-yield]] | `_sync_paths` on `bounded_steps`: one transaction per file, the lock released between files, the partition bound per step | competitor wins between files; never released inside a transaction; write counts flat in concept count; same graph as HEAD |
+| [[task-23.1-queue-and-drain]] | `bounded.py`: `bind(partition_name)` (lookup-only, fragment cache partition-correct) + one `batch_transaction` per hold (fragments and offset inside it) under three front-ends (`drain(queue)`, `tail(log)`, `bounded_steps(items)`); stop paths, error policy, finalize, per-hold `hold_s`; the daemon tick registry with one budget; `queue_status` / `queue_redrive`; learn re-based with insert-if-absent evidence | two-partition competitor AC on rows AND fragment rows; exactly-once under five injected faults; learn crash-replay counts evidence rows; bug-099 RED→GREEN; finalize once; tail never mutates its file; overflow printed by `rmx learn status` |
+| [[task-23.3-sync-between-file-yield]] | `_sync_paths` on `bounded_steps`: one transaction per step, the lock released between steps, the partition bound per step, each file stamped in its LAST step; bug-093's op-start log line | competitor wins between files; never released inside a transaction; write counts flat in concept count; a crash, cancel or budget stop before the semantic steps loses nothing; same graph as HEAD |
 
 {#tasks-body}
 
@@ -70,7 +74,7 @@ Order ([[plan-review-2026-10-14#t8-wave1]]): **23.0 ∥ 23.4 → 23.2 → 23.1 (
 | `tail(TailLog)` | an append-only log shared with other readers; never rotated, unlinked or rewritten | offset in the batch transaction; reads to the last complete newline | 19.2's fold of `recall-events.jsonl` (d4a) |
 | `bounded_steps(items)` | an in-memory list | none claimed; the consumer recovers (manifest, mtime gate) | 17.1 datasets, 22.2 apply, 23.3 sync |
 
-All three run each batch as `with bind(partition_name): with handle.transaction(): apply;
+All three run each batch as `with bind(partition_name): with handle.batch_transaction(): apply;
 flush fragments; write offset`, through the same stop paths, error policy, hold alarm and
 `finalize`, and are observed by 23.2's recorder. Under Option A, `bind` becomes a per-op cursor
 handle and no consumer changes. {#core-body}
@@ -79,10 +83,10 @@ handle and no consumer changes. {#core-body}
 
 | consumer | uses | note |
 |---|---|---|
-| learn (`learn_queue`) | `drain`, `scope="segment"`, idempotent, `batch=1` | re-based in 23.1; bug-099 fixed (d2d) |
+| learn (`learn_queue`) | `drain`, `scope="segment"`, `idempotent=True` checked by 23.1 AC-16, `batch=1` | re-based in 23.1; bug-099 fixed (d2d); evidence insert-if-absent (bug-106) |
 | 16.6 Wave 1 slice (marks) | `drain`, `bind`, recorder | its overflow is counted and printed; 16.6 reads `stale_seen` as a lower bound |
 | 19.2 (usage counters) | `tail` over `recall-events.jsonl`, SUM `merge_fn`, tick registrant | d4a; its `memory_usage` `replica_merge` rule is 19.2 R6 |
-| 17.1 (per-dataset maintenance) | `bounded_steps`, `bind`, recorder; no queue, no per-dataset Lance lock | d2b; revisit triggered by 23.4's verdict |
+| 17.1 (per-dataset maintenance) | `bounded_steps` (one dataset per step, `batch=1`), `bind(partition_name)`, `RunResult.hold_s`, recorder; no queue, no per-dataset Lance lock | d2b; revisit triggered by 23.4's verdict. 17.2's hub `maintenance_steps` is NOT 23.1's daemon `tick_registry` |
 | 22.2 (repair / removal apply) | `bounded_steps`, `bind`, recorder, `finalize` (one Lance delete per kind) | no lossy queue (#t2-fixes, 22 #s-1/#s-2) |
 | 23.3 (bug-093 between-file yield) | `bounded_steps`, `bind`, recorder | d2c |
 | plan-21 | 21.1 PRODUCES `recall-events.jsonl` lock-free and does not depend on plan-23's code (d4a); plan-21's tests need only 23.0 | the consumer edge 23 #s-3 asked for |
@@ -101,27 +105,40 @@ rel: depends-on -> [[plan-review-2026-10-14#t8-wave1]]
 
 ## Open after revision {#open-after-revision}
 
-Gaps the decision log does not settle; listed, not decided.
+Round 2 status (2026-10-14): item 1 waits on the user; items 2-5 are settled by the specs
+(re-review #open-23) and kept below as history.
 
-1. **23.4's numbers.** d2e / #t8-amendments require go/no-go ranges written before the run but give
-   no numbers. [[task-23.4-option-a-measurement#ranges]] proposes them (conflict ≤ 1 % and ≥ 1.5×
-   at N=4 → GO; 1-5 % or 1.1-1.5× → GO-serial; any ART error, > 5 %, or < 1.1× → NO-GO). The
-   user confirms or changes them before the run (23.4 AC-1).
-2. **d2a for learn.** Learn keeps whole-segment coalescing (N greps → M patterns) with one pattern
+1. **23.4's numbers (OPEN, user).** Amended per ns23-1 and d9d (fragment rows in the workload;
+   concurrency decoupled from binding removal; an error at N=1 is INVALID; speedup and conflict
+   rate defined) and PROPOSED in [[task-23.4-option-a-measurement#ranges]]: conflict ≤ 1 % and
+   speedup ≥ 1.5× → GO; conflict > 5 %, speedup < 1.1×, or any error / integrity mismatch at N > 1
+   → NO-GO; otherwise GO-serial. The user confirms or changes them before the run (23.4 AC-1).
+2. **SETTLED (nb23-2, bug-106): the premise below was false** (`add_evidence` is a plain INSERT).
+   Learn keeps segment coalescing; its evidence write becomes insert-if-absent
+   ([[task-23.1-queue-and-drain#r9]] 5) and `idempotent=True` is checked by
+   [[task-23.1-queue-and-drain#ac-16]]. Original text: **d2a for learn.** Learn keeps whole-segment coalescing (N greps → M patterns) with one pattern
    per hold, so 23.1 commits the covered PREFIX per hold, and a crash can re-apply an entry whose
    lines lie past it. Its effects stay exactly-once only because learn's writes are idempotent
    (set bits, insert-if-absent evidence); the harness refuses that mode for any non-idempotent
    queue. Confirm this reading of d2a for learn, or require window coalescing (which gives up
    most of learn's coalescing).
-3. **d8d's shared predicate has no named owner.** d8d says every `query.log` /
+3. **SETTLED (nm23-2): `telemetry.is_test_artifact_row` in `telemetry.py`, owned by 21.1 R5;**
+   23.0 AC-4 and 19.2's fold import it. Original text: **d8d's shared predicate has no named
+   owner.** d8d says every `query.log` /
    `recall-events.jsonl` reader skips pytest-temp-dir rows through ONE shared predicate. 23.1's
    `tail` returns rows raw and leaves filtering to the consumer (19.2 R5 applies it). Where the
    predicate lives (`bounded.py`, `telemetry`, or 21.1) is not decided.
-4. **Dead-lettering is new behaviour.** 23.1 R2 replaces "log and skip a failed batch" (learn
+4. **SETTLED (nm23-1): counted, retained forever, re-drivable** ([[task-23.1-queue-and-drain#r6]] 7).
+   Original text: **Dead-lettering is new behaviour.** 23.1 R2 replaces "log and skip a failed batch" (learn
    today) with a counted dead-letter file, so no batch is silently lost or blocks the queue. No
    decision names it; confirm, or name the policy you want.
-5. **bug-093's other open item**, the watch flush's op-start log line, is in the bug row but not in
-   d2c; 23.3 does not take it.
+5. **SETTLED (nb23-4): 23.3 takes it** ([[task-23.3-sync-between-file-yield#r7]], AC-8). Original
+   text: **bug-093's other open item**, the watch flush's op-start log line, is in the bug row but
+   not in d2c; 23.3 does not take it.
+6. **Registry rows for the docs step (not edited here):** the bug-099 row still says the decision
+   is "pending with the user"; d2a decided it (nm23-3). The bug-105 and bug-106 rows name plan-23
+   as spec owner; their owner anchors are [[task-23.1-queue-and-drain#r1]] and
+   [[task-23.1-queue-and-drain#r9]].
 
 ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
 
@@ -153,3 +170,23 @@ Gaps the decision log does not settle; listed, not decided.
 | decision-log #m-3 (16.6 on the overflow-dropping queue) | [[task-23.1-queue-and-drain#r3]] 6, [[#consumers]] |
 | decision-log #m-5 (d2a confirmation) | the "1 - yes agree" answered "Confirm d2a and d3b?" ([[plan-review-2026-10-14#t8-amendments-body]]); d2a is taken as confirmed |
 | decision-log #m-6 (enumerate the MEH ids) | 23 #m-1, #m-2, #m-3 and decision-log #m-3, #m-5, #m-6 are each listed in this table |
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+Source: [[bsd-plan23-17-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]] (d9a, d9d) with
+[[plan-review-2026-10-14#t9-fixes]].
+
+| finding / decision | answered at |
+|---|---|
+| nb23-1 (fragment cache unbound; auto-create) | [[#why]], [[#tasks]], [[task-23.1-queue-and-drain#r1]], [[task-23.1-queue-and-drain#ac-3]] |
+| d9a (bug-105 hotfix now; 23.1 owns the contract) | [[task-23.1-queue-and-drain#r1]] 1 |
+| nb23-2 (learn not idempotent), bug-106 | [[#consumers]], [[#open-after-revision]] 2, [[task-23.1-queue-and-drain#r9]], [[task-23.1-queue-and-drain#ac-16]] |
+| nb23-3 (23.3 stamps before semantics) | [[#tasks]], [[task-23.3-sync-between-file-yield#r4]], [[task-23.3-sync-between-file-yield#ac-5]] |
+| nb23-4 (bug-093 op-start line unowned) | [[#open-after-revision]] 5, [[task-23.3-sync-between-file-yield#r7]] |
+| ns23-1 (23.4 ranges unsound in five places), d9d | [[#open-after-revision]] 1, [[task-23.4-option-a-measurement#rev-round-2]] |
+| ns23-2 (23.0 AC-4 size/mtime) | [[#tasks]], [[task-23.0-test-sandbox#ac-4]] |
+| nm23-1 (dead-letter) | [[#open-after-revision]] 4, [[task-23.1-queue-and-drain#r6]] |
+| nm23-2 (d8d predicate owner) | [[#open-after-revision]] 3, [[task-23.0-test-sandbox#ac-4]] |
+| nm23-3 (stale bug-099 row) | [[#open-after-revision]] 6 (for the docs step; registry not edited by a spec revision) |
+| nm23-4 (name the batch primitive) | [[#core]], [[task-23.1-queue-and-drain#r1]] 3 |
+| ns17-1, ns17-2 (the contract plan-17 consumes) | [[#consumers]], [[task-23.1-queue-and-drain#r10-contract]] |

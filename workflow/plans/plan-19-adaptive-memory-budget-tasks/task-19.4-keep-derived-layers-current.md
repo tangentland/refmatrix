@@ -72,6 +72,13 @@ rel: specified-by -> [[bsd-plan19-spec-review-3104a81]]
    (`rmx memory get subject_<slug>`) and listed by `rmx memory list --type subject` with its
    stale mark. A stale subject that regains members is unmarked. Removal of a stale subject goes
    ONLY through plan-22's audited path (dry-run → manifest → apply); compile has no delete call.
+   - **Who audits the accumulation** (re-review #s-6; reference only, not built here): R6's
+     hash-named subjects mean a membership change mints a new subject and marks the old one
+     stale, so stale rows accrete. Their reviewer is plan-22's `stale-subject` audit class
+     ([[task-22.1a-provenance-free-classes#r1]], unit ENTITY), which reports them and is inert
+     until this task writes the mark; any removal is that plan's apply, behind its ablation gate.
+     This task only makes the growth visible: every compile run reports `stale_total`,
+     `stale_new` and `stale_unmarked`, and AC-4b bounds the growth per run.
 6. **R6 Stable names for unlabeled clusters** (19 #s-7). An unlabeled cluster's slug is
    `unlabeled-<h>`, `<h>` = the first 8 hex chars of sha256 over its sorted member names, so the
    name is independent of cluster order. A changed membership is a different subject; the old
@@ -82,8 +89,10 @@ rel: specified-by -> [[bsd-plan19-spec-review-3104a81]]
 ## Acceptance criteria {#acceptance}
 
 All ACs run in task 23.0's sandbox: a tmp memory dir passed explicitly, tmp stores, and a tmp
-registry. 17.2's tick enumerates only the sandbox registry, so the step never reaches a live
-store's subject graph.
+registry. 17.2's tick runs only over its INJECTED roots (17.2 `#r3-roots`), so the step never
+reaches a live store's subject graph. This step registers with 17.2's hub step registry with
+`requires_arming=True` (reason: it rewrites `MEMORY.md` and compiled subjects, user-visible state),
+so it dry-runs until a hand run's `run_id` arms it (17.2 `#r7-unarmed`).
 
 1. **Bridge writes the index.** Writing a new memory file into the tmp memory dir and running only
    the SessionStart bridge (no save-state) produces an index that names the new memory.
@@ -96,6 +105,11 @@ store's subject graph.
    still exists, is `protected`, carries `stale = true`, is absent from `rmx memory recall`
    (with and without `--include-subjects`) and from `MEMORY.md`, and `rmx memory get subject_S`
    returns it.
+4b. **Bounded stale growth.** A re-compile in which exactly one unlabeled cluster gains one member
+   (all other memberships unchanged) creates exactly ONE new `unlabeled-<h>` subject and marks
+   exactly ONE subject stale; a re-compile with no membership change creates and marks none. The
+   run summary reports `stale_new = 1` and `stale_total` incremented by 1 in the first case, 0 in
+   the second. Mutation: minting a new hash slug when only cluster ORDER changed fails this AC.
 5. **Stable slugs.** A re-compile that reorders clusters (same memberships, different order)
    leaves every printed `--subject` command in `MEMORY.md` returning its printed members.
 6. **Index after compile.** After the compile step, `memory_index.check` against the new snapshot
@@ -138,3 +152,11 @@ store's subject graph.
 | 19 #m-1 (`cli.py:12695`) | [[#why]] |
 | d3e amendment applied to this step (retries, single-flight) | R1, AC-2 |
 | plan-22 #m-7 (one removal path) | R5 |
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+Answers [[bsd-plan19-21-spec-rereview-32dde06]].
+
+| finding / decision | answered at |
+|---|---|
+| re-review #s-6 (stale subjects accrete; no reviewer named) | R5 "Who audits the accumulation" (plan-22's `stale-subject` class, reference only); AC-4b |

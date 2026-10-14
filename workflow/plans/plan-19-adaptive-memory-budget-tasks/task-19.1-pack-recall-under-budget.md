@@ -14,7 +14,8 @@ metadata:
 > Plan: [plan-19-adaptive-memory-budget](../plan-19-adaptive-memory-budget.md)
 > Status: Pending (revision after the 2026-10-14 decision log)
 > Depends on: 23.0 (test sandbox); 19.5 R1 (the threshold probe: the default budget, per-hook vs
-> per-event, and the PreCompact verdict); 21.1 (the named emitters and event schema, R8). Scheduled after 23.1 in the Wave 1 order
+> per-event, and the PreCompact verdict; a manual probe that runs in Wave 1 BEFORE 19.1, see the
+> plan's [[plan-19-adaptive-memory-budget#tasks]] row for 19.5; re-review #m-1); 21.1 (the named emitters and event schema, R8). Scheduled after 23.1 in the Wave 1 order
 > ([[plan-review-2026-10-14#t8-wave1]]). Its hook change deploys in the C11 batched hook-install
 > window with 16.2/16.3 and 21.3, not alone.
 
@@ -45,11 +46,16 @@ its own baseline at RED time on the sandbox copy. {#why-baselines}
 
 ## Requirements {#requirements}
 
-1. **R1 `--max-chars N`** on `rmx memory recall` (and the verb): the rendered payload is ≤ N
-   **characters**, the unit the harness counts (the bug-045 lesson). When `--pack` is given
-   without `--max-chars`, N is `RMX_HOOK_BUDGET_CHARS` if set to an integer, else the built-in
-   constant `DEFAULT_HOOK_BUDGET_CHARS` (9,500 until 19.5 R1 measures it). A set but non-integer
-   env value is an error naming the variable, not a silent fallback.
+1. **R1 `--max-bytes N`** on `rmx memory recall` (and the verb `max_bytes`): the rendered
+   payload is ≤ N **UTF-8 bytes**. ONE unit for the budget, the event offsets (21.1 R10) and
+   19.5's `seen` derivation ([[plan-review-2026-10-14#t9-fixes]]; re-review #s-2). Why bytes is
+   safe whichever unit the harness counts: for any UTF-8 text the byte count is ≥ the character
+   count, so a payload within N bytes is within N characters too. A char-counting harness (the
+   bug-045 unit, for the `MEMORY.md` loader) therefore never sees an over-budget payload; the cost
+   is under-filling by the multibyte share, which 19.5 R2 reports. When `--pack` is given without
+   `--max-bytes`, N is `RMX_HOOK_BUDGET_BYTES` if set to an integer, else the built-in constant
+   `DEFAULT_HOOK_BUDGET_BYTES` (9,500 until 19.5 R1 measures it). A set but non-integer env value
+   is an error naming the variable, not a silent fallback.
    - If 19.5 R1 finds the cap is PER EVENT, the per-prompt default is the measured limit minus 5%
      minus scan-prompt's measured maximum output on the same event, and the spec records both
      numbers.
@@ -91,13 +97,21 @@ its own baseline at RED time on the sandbox copy. {#why-baselines}
    and never returns a same-named project row.
 7. **R7 No silent drop; arithmetic.** For every payload: (distinct hits named, one hook line each)
    + (the trailer's N) = hits retrieved; bodies ⊆ named.
-8. **R8 The pack emits `delivered` events** (21.1 R11: "19.1's pack joins later as an emitter of
-   `prompt_recall`, owned by 19.1"). Through 21.1's named emitter for its channel
-   (`session_start`, `prompt_recall`, `precompact`, `recall`), the packer emits one `delivered`
-   event per hit it NAMED (hook line), carrying `name`, `entity_id`, `scope` and the call's
-   `query_id`; trimmed hits stay `retrieved` only (21.1 already emits those). A global hit's event
-   goes to the global root's `recall-events.jsonl` per 21.1 R8. The emitter's failure is printed,
-   never silent, and never fails the hook.
+8. **R8 The pack RETURNS byte spans; it emits nothing** (re-review #s-1, #s-2; one owner of
+   `delivered` = 21.1, [[task-21.1-context-usage-telemetry#requirements]] R11). `--pack` REPLACES
+   21.1's JSON renderer on the hook argv; like it, the packer returns, per hit it NAMED, the
+   span record `{name, entity_id, kind, scope, partition, offset_bytes, bytes, body_offset_bytes,
+   body_bytes}`:
+   - `offset_bytes` / `bytes`: the byte range of the hit's hook line (R3(b)), newline included;
+   - `body_offset_bytes` / `body_bytes`: the byte range of its body (R3(c)) when one was
+     appended, else null;
+   - plus `payload_bytes`, the total.
+
+   21.1's single emission site in `memory recall` turns these into one `delivered` event per
+   named hit (and its own `retrieved` events for every retrieved hit), with the call's
+   `query_id`, routing global hits to the global root's file (21.1 R8). The packer calls no
+   telemetry writer; a packer that also emits doubles `delivered` (AC-6). The emission's failure
+   is 21.1 R8's printed line, never silent, never failing the hook.
 
 ## Acceptance criteria {#acceptance}
 
@@ -105,7 +119,8 @@ All ACs run in task 23.0's sandbox on a COPY of this project's catalog and memor
 the CLI (the production path), with `--scope project` unless the global leg is under test (then a
 tmp global store holding a copy of the global memories).
 
-1. **Budget.** For each hook argv, `len(payload) ≤ N` for N ∈ {2000, 5000, 9500}.
+1. **Budget.** For each hook argv, `len(payload.encode("utf-8")) ≤ N` for N ∈ {2000, 5000,
+   9500}, on a fixture whose hooks and bodies contain `—` and `→`.
 2. **Reach.** On the 20-prompt set (`eval/production/memory_delivery/prompts.local.jsonl`, 20 user
    prompts from session db80475a's input events; kept local per d8f, its sha256 committed in
    `eval/production/memory_delivery/PROMPTS.sha256`), the number of DISTINCT memories named in
@@ -117,13 +132,18 @@ tmp global store holding a copy of the global memories).
      share of the gain is visible.
 3. **No subject noise** (d8a). On `"whats next?"`, the per-prompt pack contains 0 rows of
    `mtype=subject` (pre-check: the same prompt at HEAD returns ≥ 1, recorded).
-   `--include-subjects` brings live subjects back; a subject marked `stale` stays out.
+   `--include-subjects` brings live subjects back; a subject marked `stale` stays out. The stale
+   subject is SEEDED in the fixture with 19.4 R5's field, `metadata.stale = true` plus
+   `stale_since`, so this AC does not wait on 19.4 (Wave 2; re-review #m-1).
 4. **Unset variable.** The generated argv for each of the three hooks, RUN with
-   `RMX_HOOK_BUDGET_CHARS` unset, exits 0 and its payload is ≤ `DEFAULT_HOOK_BUDGET_CHARS`.
+   `RMX_HOOK_BUDGET_BYTES` unset, exits 0 and its payload is ≤ `DEFAULT_HOOK_BUDGET_BYTES` bytes.
 5. **Arithmetic.** R7 holds on every payload of AC-1 and AC-2.
-6. **Delivered events.** A pack naming 7 of 12 retrieved hits leaves 12 `retrieved` and 7
-   `delivered` events with one shared `query_id`; a global hit's `delivered` event is in the tmp
-   global root's file with `scope=global`.
+6. **Delivered events.** A pack naming 7 of 12 retrieved hits (3 with bodies) leaves exactly 12
+   `retrieved` and 7 `delivered` events with one shared `query_id` (not 14: one emission site);
+   for each `delivered` event, the payload bytes at `[offset_bytes, offset_bytes + bytes)` are
+   that hit's hook line, and for the 3 bodied hits the bytes at `[body_offset_bytes,
+   body_offset_bytes + body_bytes)` are its body; the other 4 have null body fields. A global
+   hit's `delivered` event is in the tmp global root's file with `scope=global`.
 7. **Global pointer.** With a project row and a global row both named `X`, a global hit's printed
    fetch command returns the global row.
 8. `rmx install-hooks --check` is clean after `--apply` in the sandbox, and the generated recall
@@ -133,9 +153,12 @@ tmp global store holding a copy of the global memories).
    - bodies before hook lines;
    - a cut body;
    - a missing trailer count;
-   - counting bytes instead of chars (fixture with `—`/`→`);
+   - counting chars instead of bytes (AC-1: the `—`/`→` fixture is within N chars but over N
+     bytes);
+   - the packer calling the telemetry writer itself (AC-6: 14, not 7);
+   - spans in characters (AC-6: the byte ranges miss on the multibyte fixture);
    - the hook generator keeping `--json`;
-   - interpolating `${RMX_HOOK_BUDGET_CHARS}` into the argv (AC-4);
+   - interpolating `${RMX_HOOK_BUDGET_BYTES}` into the argv (AC-4);
    - dropping the `subject` exclusion (AC-3);
    - counting a body as a second named hit (AC-5);
    - `memory get --scope global` falling back to the project row (AC-7);
@@ -145,8 +168,8 @@ tmp global store holding a copy of the global memories).
 
 | file | change |
 |---|---|
-| `src/refmatrix/cli.py` (`memory recall`, `memory get`) | `--max-chars`, `--pack`, `--include-subjects`, the packer; `memory get --scope` |
-| `src/refmatrix/verbs.py` (`memory_recall`, `rmx_memory` get) | `max_chars` / `pack` / `include_subjects` passthrough; default `exclude_mtype` adds `subject`; `scope` on get |
+| `src/refmatrix/cli.py` (`memory recall`, `memory get`) | `--max-bytes`, `--pack` (returns spans to 21.1's emission site), `--include-subjects`, the packer; `memory get --scope` |
+| `src/refmatrix/verbs.py` (`memory_recall`, `rmx_memory` get) | `max_bytes` / `pack` / `include_subjects` passthrough; default `exclude_mtype` adds `subject`; `scope` on get |
 | `src/refmatrix/hooks.py` (`:277`, `:313`, `:340`) | `--pack`, the raised `--k`, PreCompact per 19.5 R1 |
 | `src/refmatrix/memory_index.py` | export the curated-hook lookup (`.memory_hooks.json`) for reuse |
 | `eval/production/memory_delivery/` | the AC-2 script; `PROMPTS.sha256` |
@@ -160,7 +183,7 @@ tmp global store holding a copy of the global memories).
   explicitly. The SessionStart argv runs with `--scope project` unless a tmp global store is set
   up for it.
 - **RED first:** run the generated SessionStart argv on a fixture store with 30 memories (bodies
-  ~2 KB each) plus 5 subject rows; assert `len(out) ≤ 9500`, ≥ 20 distinct non-subject names, and
+  ~2 KB each) plus 5 subject rows; assert `len(out.encode()) ≤ 9500`, ≥ 20 distinct non-subject names, and
   0 subject rows. It fails today: JSON, unbounded, subjects included.
 - **Unit tests for the packer:** ordering, whole bodies only, trailer arithmetic, trailer quoting
   of a multi-line query, a multibyte fixture.
@@ -191,3 +214,13 @@ its members: not planned here; see 19.6's out-of-scope (d8a).
 | 19 #m-5 | R3(d) |
 | d8f (prompt set kept local, hash committed) | AC-2 |
 | #t8-wave1 | header |
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+Answers [[bsd-plan19-21-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9-fixes]].
+
+| finding / decision | answered at |
+|---|---|
+| re-review #s-1 (`delivered` claimed three ways) / #t9-fixes "one owner for `delivered`" | R8 (the pack returns spans; 21.1 R11's single site emits); AC-6 (12 / 7, not 14); mutation |
+| re-review #s-2 (units clash; no offsets) / #t9-fixes "one unit (bytes)" | R1 (`--max-bytes`, `RMX_HOOK_BUDGET_BYTES`, `DEFAULT_HOOK_BUDGET_BYTES`; why bytes is safe under a char cap); R8 (hook-line and body spans); AC-1, AC-4, AC-6; mutations |
+| re-review #m-1 (stale field from a Wave 2 task; 19.5 R1 in no wave) | AC-3 (seeded `metadata.stale`); header (19.5 R1 in Wave 1 before 19.1); plan [[plan-19-adaptive-memory-budget#tasks]] |
