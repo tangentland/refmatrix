@@ -89,3 +89,26 @@ restore AC (#b-3); injected roots + 23.0 (#b-5); the never-embedded skip filter 
 requirement (#b-6); `bind` + recorder, no queue (#s-1, #s-7 per d2b); 17.3 latency on refmatrix,
 cliquedb, thiquet (#s-4); `partition=None` = every partition (#s-5); stores from the registered
 daemon list (#s-6); no in-process fallback, skip counted (#s-8); MEH items. {#t3-fixes}
+
+## Topic 4: recall-event schema (plan-21, shared with plan-19) {#t4}
+
+Findings: 21 #b-1..b-3, #s-1..s-13, MEH; C7.
+
+| id | decision | by |
+|---|---|---|
+| d4a | Events go to a NEW append-only `recall-events.jsonl`, written lock-free like `query.log`. 19.2's counters fold it into DuckDB through plan-23's drain (d2a offset-in-transaction); 21.1's emission does not depend on plan-23. | user, 2026-10-14 |
+| d4b | The C9 ranking-eval gold set is extended to code AND docs now; sessions stay out and plan-13's sessions question is marked dormant with a pointer; AC-3 gets a minimum win and n. | user, 2026-10-14 |
+| d4c | The 21.4 question set is drawn from real NL queries in `query.log` by an agent that never reads the ranking code, approved by the user, and its hash committed into the spec before tuning; the tuner cannot change it. | user, 2026-10-14 |
+| d4d | The 21.3 nudge's latency budget (old d-3) is decided by MEASUREMENT when 21.3 starts: an R0 step times the index-only "is it indexed" lookup and the hook wall time on the real identifier set, against criteria written into the spec BEFORE the run (≤ 100 ms index-only path if reachable; otherwise the nudge is dropped or deferred, never a full bundle in the hook). | user, 2026-10-14 |
+| d4e | No habit memory (old d-4): `feedback_rmx_first_retrieval` exists and a voluntary rule is the channel that goes unused; the nudge is the mechanism. | user, 2026-10-14 |
+| d4f | An `agent` invocation source is added, keyed on `CLAUDECODE`; eval harnesses set `internal` explicitly. | user, 2026-10-14 |
+
+Spec fixes taken without a decision: `session` (envelope → `CLAUDE_CODE_SESSION_ID` →
+`RMX_SESSION`, never `latest_session`), `turn`, `query_id` (#b-1); `name` + `entity_id`, `channel`
+surface enum separate from `invocation` (#b-2); named emitters per surface and an AC through a real
+hook command (#b-3); `emitted` vs `seen` with `offset_bytes`/`bytes` (#s-1); phased fields `arm`
+(fixed / phased / phased+cache), `policy`, raw phase inputs, restored cluster id (#s-2, topic
+cache); fixed-window AC-4 excluding replay rows (#s-3); R3 retargeted to `grep-stdin` (#s-4); CLI
+daemon route of `context` logged (#s-5); no test writes the measured log (#s-7); replica-route
+reranker (#s-8); generator-not-runtime ACs, "tested by" defined or dropped, frozen replay names
+(#s-10..#s-12); MEH items. {#t4-fixes}
