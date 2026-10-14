@@ -13,7 +13,8 @@ metadata:
 # Task 16.1: the argv-faithful learner {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision round 3, 2026-10-14, answering the r3 re-review
+> Status: Pending (revision round 5, 2026-10-14, answering the r4 re-review
+> `bsd-plan16-22-spec-rereview-r4-878647c`, [[#rev-round-5]]; revision round 3, answering the r3 re-review
 > `bsd-plan16-22-spec-rereview-r3-6091648`, [[#rev-round-3]]; revision 6 answered spec review r5
 > `bsd-plan16-spec-review-r5-cd7c923`)
 > **Wave:** 2 (plan-16's chain 16.1 → 16.2 ∥ 16.3 → 16.5; [[plan-16-invisible-grep-shim#waves]]).
@@ -34,6 +35,17 @@ rel: derives-from -> [[plan-review-2026-10-14#t9]]
 rel: amends -> [[bsd-plan16-22-spec-rereview-32dde06]]
 rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
 rel: related-to -> [[task-16.5-explicit-grep-hands-off#r0]]
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Answers [[bsd-plan16-22-spec-rereview-r4-878647c]] where it touches 16.1. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| r4 m-3 (queue record omits `locale`; the drain runs in C) | [[#r10]] lead-in list |
+| r4 m-4 (rg short value letters miss `E` and `j`) | [[#r1-clusters]] rg letters and table rows; AC-1d rg rows + mutation; 16.6 [[task-16.6-learned-row-validation#r2-argv]] |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
 
 ## Revision round 3 (2026-10-14) {#rev-round-3}
 
@@ -162,7 +174,12 @@ and no narrower. {#why-lead}
   a cluster. So, before any token is classified, ONE function, `grep_learn.expand_short_clusters(
   tool, argv) -> list[str]`, rewrites every short cluster into single-letter tokens, left to
   right, with the tool's short value letters: grep `e f m A B C d D` (this table's `value`
-  column), rg `e f g m t T A B C d M r`. A value letter ends the cluster; the rest of the token,
+  column), rg `e f E g j m t T A B C d M r` (every short letter `rg --help` 15.1.0 shows with a
+  value; r4 m-4 added `E` ENCODING and `j` NUM: without them `-Eutf8` expanded to `-E -u -t f8`
+  and taught under a wrong argv, and `-j4` killed the teach). rg's table gains the rows `-E ENC`,
+  `--encoding=ENC`, `--encoding ENC` (keep: match; the encoding decides which bytes the pattern
+  sees) and `-j N`, `--threads=N`, `--threads N` (drop: shape), matching 16.6 R2's lists
+  ([[task-16.6-learned-row-validation#r2-argv]]). A value letter ends the cluster; the rest of the token,
   if any, is its value as a SEPARATE token (`-rnie` + `PAT` → `-r -n -i -e PAT`; `-ekey` →
   `-e key`; `-rm2` → `-r -m 2`). A token after `--`, a long flag, a bare `-`, and grep's
   `-NUM` (a token of digits only, a drop:shape row) are not clusters. A letter that is in no
@@ -319,7 +336,9 @@ for a case-sensitive `rmx grep`.
 
 **R10. Learn-time provenance (d6d: moved here from 16.6 R1; #t6-fixes; b-r5-1).** {#r10}
 - The learner's queue record carries, per record: `tool`, `bin`, `dialect`, `match_argv`,
-  `spawned_by`, `root` (= `project_root`), `pattern`; and per hit: `file`, `line`, `line_hash`.
+  `locale`, `spawned_by`, `root` (= `project_root`), `pattern`; and per hit: `file`, `line`,
+  `line_hash`. `locale` is in the record because the drain runs in the DAEMON, whose environment
+  is launchd's C (r4 m-3): the drain writes the record's value, never its own.
   - `match_argv` = the MATCH-class and CUTOFF-class tokens R1 kept, in order, AFTER R1's cluster
     expansion ([[#r1-clusters]]): one token per flag, a short flag's value as the next token
     (`-rli` records `['-r','-m','1','-i']`; `-ekey` records `['-e','key']`), a long `=` form as
@@ -368,7 +387,11 @@ for a case-sensitive `rmx grep`.
      `grep -rnie alpha .` the same as `grep -r -n -i -e alpha .`; `grep -rq alpha .` is killed
      (`-q`); `grep -rk alpha .` is `skipped reason=unknown-flag:-k`. Mutations: "classify the
      cluster as one token" FAILS (every row becomes `unknown-flag:-rn`); "split clusters without
-     the value letters" FAILS the `-rnie` row (`-e` loses its value `alpha`).
+     the value letters" FAILS the `-rnie` row (`-e` loses its value `alpha`). rg rows (r4 m-4):
+     `rg -Eutf8 alpha .` records `match_argv=['-E','utf8']` and teaches the same set as
+     `rg -E utf8 alpha .`; `rg -j4 alpha .` teaches the same set as `rg alpha .` (`-j 4`
+     dropped). Mutation "rg value letters without `E` and `j`" FAILS both rows (the first teaches
+     under `-E -u -t f8`, the second kills the teach with an `unknown-flag` reason).
    - **1c (m-r5-5).** Every long `value` flag in its SPACE form classifies as its `=` form does:
      `grep -r --include '*.py' alpha .`, `--exclude-dir build`, `--regexp alpha`, `--max-count 1`,
      `--after-context 1`, `--file pats.txt` (kill) each produce the same outcome and taught set as

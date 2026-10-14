@@ -13,7 +13,9 @@ metadata:
 # Plan 16: the grep shim stops answering and only watches {#root}
 
 **Date:** 2026-10-06
-**Status:** Drafting (revision round 3, 2026-10-14: 16.1 and 16.6 revised for the r3 re-review
+**Status:** Drafting (revision round 5, 2026-10-14: 16.1 and 16.6 revised for the r4 re-review
+`bsd-plan16-22-spec-rereview-r4-878647c` and d9ab, [[#rev-round-5]]; revision round 3 revised
+16.1 and 16.6 for the r3 re-review
 `bsd-plan16-22-spec-rereview-r3-6091648`, [[#rev-round-3]]; round 2 revised 16.2 and 16.6 for
 `bsd-plan16-22-spec-rereview-32dde06`, [[#rev-round-2]]). Task specs revision 6
 (2026-10-14) answers spec review r5 `bsd-plan16-spec-review-r5-cd7c923` (NEEDS-REVISION: 2
@@ -219,6 +221,26 @@ Next gate: `@ch-bsd` spec review r6 of task specs 16.1–16.6 revision 6, then `
 
 rel: derives-from -> [[plan-review-2026-10-14#t6]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Answers [[bsd-plan16-22-spec-rereview-r4-878647c]] (plan-16: m-3, m-4; shared b-2, s-3, m-1, m-2;
+the r3 partial s-6) and d9ab ([[plan-review-2026-10-14#t11-approvals]]). Verdict at r4: 16.2-16.5
+approvable; 16.1 and 16.6 revised here. Plan-22's findings are answered in
+[[plan-22-audited-removal-and-repair#rev-round-5]].
+
+| finding / decision | answered in |
+|---|---|
+| b-2 / d9ab (the compactor drops the sidecar's events) | [[task-16.6-learned-row-validation#r1d]] the dump emits `learned_provenance`; 16.6 AC-9b; `source` on `protect` is 22.6 R6's |
+| s-3 (census `HOME` redirect empties the deny set and `home_base`) | [[task-16.6-learned-row-validation#r7]] steps 4-5; 16.6 AC-5c |
+| m-1 (probe outside the procedure) | [[task-16.6-learned-row-validation#r7]] `--census probe-reproduction` |
+| m-2 (compaction and the churn bound) | [[task-16.6-learned-row-validation#r7]] step 4 header |
+| m-3 (locale details) | [[task-16.6-learned-row-validation#r2]] `setlocale` probe; 16.6 R1 `rules_sha` serialization; [[task-16.1-argv-faithful-learner#r10]] `locale` in the queue record |
+| m-4 (rg `-E`, `-j`) | [[task-16.1-argv-faithful-learner#r1-clusters]]; [[task-16.6-learned-row-validation#r2-argv]] |
+| r3 s-6 (partial) | closed by s-3 |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
+rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
 
 ## Revision round 3 (2026-10-14) {#rev-round-3}
 

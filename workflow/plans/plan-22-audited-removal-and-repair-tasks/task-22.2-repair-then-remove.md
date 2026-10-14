@@ -13,12 +13,13 @@ metadata:
 # Task 22.2: the repair-then-remove engine {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 3, 2026-10-14; [[#rev-round-3]])
+> Status: Pending (revision round 5, 2026-10-14; [[#rev-round-5]]; round 3 in [[#rev-round-3]])
 > Wave: 1, after 22.1a (#t8-wave1).
 > Depends on: 22.1a (plan manifest contract); 16.6 Wave-1 slice (`move_learned_provenance` and the
 > sidecar events); 21.1 R5 (`telemetry.row_provenance`, for R7's query set); 23.1 (`bind(partition_name)`, `bounded_steps`); 23.2 (the
-> write-count recorder); 23.0 (test sandbox). 22.1 (Wave 2) later adds the flag-sensitive classes
-> to the engine's input; the primitives below already cover them.
+> write-count recorder); 23.0 (test sandbox); 17.1 (`vectors_restore(..., id_map=)`, R4, d9z);
+> 22.6 R6 (`entities.protect_source`, R5, d9ab). 22.1 (Wave 2) later adds the flag-sensitive
+> classes to the engine's input; the primitives below already cover them.
 
 rel: part-of -> [[plan-22-audited-removal-and-repair]]
 rel: depends-on -> [[task-22.1a-provenance-free-classes]]
@@ -77,7 +78,8 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
    - **Link and entity removal.** A `mentions` link is unlinked (existing `unlink` event) only
      when no evidence row remains for its `(concept, entity)`. An entity is purged through
      `_bulk_purge_ids` (`store.py:6032`, entity-level, tombstoned) ONLY when it has no link of any
-     kind, no `tracked_files` row and no ingest evidence. `_bulk_purge_ids` is never called on an
+     kind, no `tracked_files` row and no ingest evidence, AND it is unprotected or its
+     `protect_source` is `learner` (R5, d9ab). `_bulk_purge_ids` is never called on an
      entity with an ingest link (it deletes all `entity_links` and `tracked_files`), with ONE
      exception: a member of a SELECTOR plan ([[task-22.6-removal-entry-points#r1]]), which the
      user named explicitly through `forget` / `memory forget` / `memory bulk-forget`; its intent
@@ -105,9 +107,26 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
      `intent` record with the full before-state of every row the batch touches; after the batch's
      transaction commits, a `commit` record (22 #s-2). The before-state is enough to rebuild
      every removed row by itself (r3 b-3), so it holds:
-     - per touched ENTITY, its whole `entities` row except `id`: `partition`, `kind`, `name`,
-       `path`, `tldr`, `meta`, `canonical_name`, `protected`, `noise`, `created_at`,
-       `updated_at`, and whether a vector existed;
+     - per touched ENTITY, its whole `entities` row, its OLD `id` included as `old_id` (d9z):
+       `old_id`, `partition`, `kind`, `name`, `path`, `tldr`, `meta`, `canonical_name`,
+       `protected`, `protect_source` ([[task-22.6-removal-entry-points#r6]]; NULL when
+       unattributed), `noise`, `created_at`, `updated_at`, `vectors_updated_at`,
+       `vectors_partition`, and whether a vector existed;
+     - per touched entity that HAS a vector, the vector itself (d9z), in the vectors file
+       `<root>/removal/<apply_id>.vectors.jsonl` (`<root>` the store root, `<apply_id>` this
+       manifest's id; 17.1 R10 reads only `<root>/maintain/` and `<root>/removal/`), one line per
+       entity in 17.1 R6's orphan-list format, exactly
+       ([[task-17.1-vectors-maintain-op#r10-restore]];
+       [[plan-17-nightly-store-maintenance#open-after-revision]] item 3): `run_id` (=
+       `<apply_id>`), `ts` (write time, ISO-8601), `partition` (NAME at removal time), `kind`,
+       `id` (the OLD entity id), `dim` (from the dataset schema), `vector` (`list[float]`, read
+       from the Lance row, byte-equal on round trip), `dataset_version` (the Lance version it
+       was read from). Each line is read inside the batch's hold, appended and fsynced before
+       the batch's transaction commits, and so always BEFORE R6's finalize deletes any vector
+       of that kind; a failed read or write aborts the batch, and so the finalize (22.6 R8, no
+       silent failure). An entity whose catalog stamp says it had a vector but whose dataset
+       holds none (a plan-17 reap took it first) is recorded `vector_missing_at_intent` and
+       counted;
      - per MEMORY entity, its `memory_content` row (`content`, `mtype`, `tags`, `metadata`,
        `created_at`, `updated_at`; `duckdb_catalog.py:89`);
      - its `tracked_files` rows, when the plan removes them (a selector member only, R2);
@@ -120,10 +139,21 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
      re-inserts removals, from the manifest alone. It does not depend on `facts.log` replay (the
      global log is not a faithful source, 22 #m-4), and it emits the inverse events so a later
      rebuild agrees.
-   - Restored entities get new ids; restore is checked by NAME. Vectors are restored first from
-     plan-17's orphan list through `vectors_restore` (17.1 `#r10-restore`) when the reaped vector is
-     there, and otherwise by re-embedding every restored entity whose manifest says it had one,
-     through the shared embedder (DL #s-7: the vector may meanwhile have been reaped).
+   - Restored entities get new ids; restore is checked by NAME. **Vectors (d9z):** after the
+     entities are re-inserted, restore builds `id_map = {old_id: new_id}` from the manifest's
+     `old_id` and the re-inserted entity's id (looked up by `(partition, kind, name)`), and calls
+     17.1's verb with the caller-facing part of its exact signature (`vectors_restore(
+     orphan_file: str, ids: list[int] | None = None, id_map: dict[int, int] | None = None,
+     dry_run: bool = False, *, invoked_by: str) -> dict`; `invoked_by` is set by 17.1's adapter,
+     R1): `vectors_restore("removal/<apply_id>.vectors.jsonl", id_map=id_map)`, with NO 23.1
+     `bind` held (17.1 R10 takes its own per-dataset `bind`; the lock is not re-entrant)
+     ([[task-17.1-vectors-maintain-op#r10-restore]]). Each vector is re-inserted under the NEW id
+     with no model call. Its per-dataset report is printed and recorded in the manifest:
+     `present` (a newer vector exists and wins) is reported; `dim` (the dataset's dimension
+     changed since) is re-embedded; `absent` cannot happen after a successful re-insert and is an
+     ERROR, never skipped. A `vector_missing_at_intent` entity is restored from a plan-17 orphan
+     list (`<root>/maintain/orphans-<run_id>.jsonl`, with the same `id_map`) when one holds its
+     old id, else re-embedded through the shared embedder; both are counted (DL #s-7).
    - A partial apply (an `intent` with no `commit`) is restorable: restore applies an inverse only
      where the catalog holds that row's post-state.
 5. **R5 Never ingest-owned; protection (22 #s-4; DL #b-2; d8b).** {#r5}
@@ -131,15 +161,50 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
      its `tracked_files` row and its `protected` flag. Only its learned evidence rows change.
    - The engine never clears `protected` on an entity that survives the apply. Protection leaves
      only with a whole-entity purge of a learned-only entity, and the manifest restores it.
-   - **Learner auto-protect distinguished.** Going forward, the `protect` event carries `source`:
-     `upsert` from `upsert_entity(protected=True)` (`store.py:2183`), `user` from
-     `set_entity_flag` / `set_flag_by_selector` (`store.py:6003`). Replay ignores the field. For
-     existing protections the source is attributed from `facts.log`: `upsert` iff every `protect`
-     event for the name directly follows an `entity` event for the same name; anything else,
-     including a name the log does not hold, is `unknown` and counts as asserted. A learned-only
-     entity whose protection is `user` or `unknown` is NOT purged; its learned rows may still be
-     removed, and the entity is reported. (d8b: plan-19 no longer needs this source, so 19.3 does
-     not depend on 22.2.)
+   - **Learner auto-protect distinguished (d9ab, r4 b-2).** A protection's origin is trusted ONLY
+     from (a) an explicit `source` on its `protect` event, persisted in the catalog's
+     `entities.protect_source` and re-emitted by the compactor
+     ([[task-22.6-removal-entry-points#r6]]), or (b) a CLI/MCP command record naming the entity.
+     Everything else is USER-ASSERTED.
+     - Only `protect_source = 'learner'` (written only by `_learn_grep_hits`,
+       `daemon.py:4295`) makes a learned-only entity purgeable as a learner auto-protection.
+     - Command records: `cli.log`'s `argv` for `rmx protect`, `add-entity` and `add-concept`
+       (without `--no-protect`) name a USER protection. MCP calls write no command record today
+       (no call log in `mcp.py` or `verbs.py`, read at `7f2014a`); MCP protections are
+       attributed through the event's `source` (`user`) once 22.6 R6 lands.
+     - **Log adjacency is NEVER evidence.** `dump_catalog_to_log` (`store.py:7210`) writes every
+       `protect` directly after its own `entity` (`store.py:7272-7284`), so in a compacted log
+       adjacency is the compactor's signature, not the learner's. Round 3's "`upsert` iff every
+       `protect` follows its `entity`" rule is WITHDRAWN.
+     - A learned-only entity whose protection is user-asserted is NEVER removed by a class plan:
+       its learned rows may still be removed (R9), the entity itself stays, protected, and is
+       listed in the manifest as `kept: asserted-protection` with its counts. Only the user's
+       explicit selector entry point ([[task-22.6-removal-entry-points#r1]]) removes such an
+       entity.
+     - Replay ignores `source` for the flag itself and restores `protect_source` from it.
+       (d8b: plan-19 no longer needs this source, so 19.3 does not depend on 22.2.)
+   - **The pre-build count (d9ab), taken 2026-10-14 14:30 PDT, read-only.** Copies of each
+     store's `catalog.read.duckdb`, `facts.log` and `cli.log` in a fresh `mktemp -d` under the
+     session scratchpad, opened with `duckdb.connect(read_only=True)` from `.venv-eval`; no
+     `rmx`, no socket, no live file opened; the copies were deleted after the count. "Learned-only"
+     = an entity with learned evidence, no other evidence, no `tracked_files` row at its path, and
+     no link other than a `query/*` `mentions` link.
+
+     | store | protected entities | of them learned-only | pytest-tmp learned-only | `protect` events with `source` | rule A (adjacency, round 3): learner | rule B (d9ab): learner | rule B: user-asserted |
+     |---|---|---|---|---|---|---|---|
+     | this repo (`refmatrix` partition) | 2,256 | 426 | 0 | 0 | 2,256 (all; 426 learned-only) | 0 | 2,256 (426 learned-only) |
+     | global (`global` partition) | 4,946 | 4,793 | 1,655 | 0 | 4,946 (all; 4,793 learned-only) | 0 | 4,946 (4,793 learned-only) |
+
+     Every `protect` event in both logs follows its own `entity` (2,303 / 2,303 here, 5,024 /
+     5,024 global): this repo's log was compacted at 14:00:44 today, the global log on
+     2026-10-07 01:13:11. The only CLI protect records (`rmx protect crud_probe`,
+     `daemon_crud_probe`, 2026-06-11) name entities that are no longer protected. So under d9ab
+     NO existing protection is learner-attributed: class plans may remove learned ROWS from all
+     4,793 + 426 learned-only entities, but no existing entity is purged as a class member; new
+     protections become purgeable once 22.6 R6 records `source=learner`. For information only
+     (not a rule): treating a `cli.log` `rmx grep PATTERN` record as a learner record for the
+     concept `query/PATTERN` would attribute 217 of this repo's 426 and 90 of the global 4,793
+     learned-only entities (none of the 1,655 pytest-tmp ones).
 6. **R6 Bounded, bound per batch, re-checked (22 #s-1, #s-2; #t2-fixes).** {#r6}
    - The apply is a bounded step loop over the in-memory plan through plan-23's `bounded_steps`,
      NOT the coalescing, overflow-dropping queue (`drain(queue)`): no repair or removal can be
@@ -180,7 +245,10 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
      the verb-parity test holds.
    - Apply requires a manifest id from a prior `removal_audit` of the SAME store (root, partition
      and catalog identity recorded in the plan) AND `--confirm <sha256 of that plan file>`;
-     either missing or mismatched → refusal, nothing written.
+     either missing or mismatched → refusal, nothing written. For a 22.6 SELECTOR plan the
+     confirm value is instead its selection hash, rebuilt and compared at confirm time
+     ([[task-22.6-removal-entry-points#r1]], r4 s-4), so an unrelated write between plan and
+     confirm does not refuse; R6's per-row re-check still skips anything that changed.
    - Apply refuses any store root not named on its own command line (`--root`, and for 22.5
      `--target-root`); no root is discovered or defaulted.
    - **One spelling of "root" (m-8).** Every `--root`/`--target-root` names a STORE root: the
@@ -197,7 +265,9 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
    confirmed 22.6 plan. **`ambiguous` (any sub-class), `unverifiable` and
    `orphan-root:unverifiable` (22.1a, r3 s-3) are never removed.** `orphan-root:home-readable`
    (22.1a; rows that read correctly today under no project store) is not a removal class: nothing
-   is applied to it until the user rules on 22.5 R1's dry-run counts (d9b). {#r9}
+   is applied to it until the user rules on 22.5 R1's dry-run counts (d9b). An entity whose
+   protection is user-asserted (R5, d9ab) is never removed by a class plan; only its learned rows
+   are. {#r9}
 
 ## Acceptance criteria {#acceptance}
 
@@ -224,12 +294,28 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
    (with `path`) and a memory entity. Mutations: "intent record without `path`/`tldr`/`meta`"
    FAILS it (the restored file entity has `path` NULL); "intent record without
    `memory_content`" FAILS it (the restored memory has no body).
+
+   **4b. Vectors restored by `id_map`, no model call (d9z).** The fixture plan removes two
+   learned-only entities with vectors and one with a catalog stamp but no Lance row. After
+   `--apply` then `restore`: the manifest's `.vectors.jsonl` holds the two vectors under their
+   OLD ids in 17.1's orphan-list form; restore calls `vectors_restore(orphan_file, id_map=...)`;
+   the two restored entities (NEW ids) carry byte-equal vectors; the 23.0 sandbox records zero
+   connects to `models.sock` for them; the stamped-but-missing one is counted
+   `vector_missing_at_intent` and re-embedded. Mutations: "omit `id_map`" FAILS it (17.1 reports
+   both `absent` and no vector is restored); "manifest without the vector side file" FAILS it.
 5. **Ingest untouched (22 #s-6).** A shared learned+ingested file entity with a `missing-file`
    learned row keeps its ingest links and its `tracked_files` row byte-equal. Mutation: removing
    through `_bulk_purge_ids` must FAIL.
-6. **Protection (22 #s-4).** A user-protected (`set_flag_by_selector`) entity with learned rows
-   stays protected and is not purged; an entity with no attributable protect event is reported,
-   not purged.
+6. **Protection (22 #s-4; d9ab).** A user-protected (`set_flag_by_selector`) entity with learned
+   rows stays protected and is not purged; an entity with no attributable protect event is
+   reported, not purged. **6b (r4 b-2).** Three learned-only fixture entities, each with one
+   `missing-file` learned row: X protected by `_learn_grep_hits` (`protect_source='learner'`), Y
+   protected by `rmx protect Y` (`source=user`, a `cli.log` record), Z whose only protect event
+   directly follows its `entity` event with no `source` (the compacted-log shape, written by
+   running `dump_catalog_to_log` on a store whose `protect_source` column is NULL). The apply
+   removes all three learned rows, purges X, keeps Y and Z protected and lists both
+   `kept: asserted-protection`. Mutation "attribute by adjacency (round 3's rule)" FAILS it (Z
+   purged); mutation "`protect_source` NULL counts as learner" FAILS it.
 7. **Rename merge.** Renaming onto an existing name merges: one entity remains, it carries both
    entities' evidence and links, `protected` is the max, every moved evidence row's sidecar rows
    join it under the new `entity_id`, and an `entity_rename{merged:true}` event is logged.
@@ -319,4 +405,21 @@ Answers [[bsd-plan16-22-spec-rereview-r3-6091648]] and d9k/d9o
 
 rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
 rel: derives-from -> [[plan-review-2026-10-14#t9-approvals]]
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Answers [[bsd-plan16-22-spec-rereview-r4-878647c]] and d9ab/d9z
+([[plan-review-2026-10-14#t11-approvals]]). Later rows win over round 3.
+
+| finding / decision | answered in |
+|---|---|
+| r4 b-2 / d9ab (adjacency reads every compacted protection as `upsert`) | [[#r5]]: origin only from `source` (`entities.protect_source`, 22.6 R6) or a CLI/MCP command record; adjacency withdrawn; user-asserted entities never class-removed, their learned rows may be; [[#r2]] purge rule; [[#r9]]; AC-6b + two mutations |
+| d9ab pre-build count | [[#r5]] table: under d9ab 0 existing protections are learner-attributed (repo 2,256 / 426 learned-only; global 4,946 / 4,793 learned-only incl. 1,655 pytest-tmp); under the withdrawn rule all were |
+| d9ab compactor companion | owned by [[task-22.6-removal-entry-points#r6]] (`source`) and [[task-16.6-learned-row-validation#r1d]] (`learned_provenance`), each with a compact-then-rebuild AC |
+| d9z (`vectors_restore`'s `id_map` gets its caller) | [[#r4]]: `old_id` and the vector in the manifest (`.vectors.jsonl`, 17.1's orphan-list form); restore calls `vectors_restore(orphan_file, ids=None, id_map=..., dry_run=False)`; AC-4b + two mutations |
+| r4 s-4 (selector confirm hash vs live writes) | [[#r8]]: a selector plan confirms by its selection hash (22.6 R1) |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
+rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
+rel: depends-on -> [[task-17.1-vectors-maintain-op#r10-restore]]
 

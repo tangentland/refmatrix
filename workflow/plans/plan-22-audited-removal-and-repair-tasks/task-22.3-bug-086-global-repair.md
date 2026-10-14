@@ -13,7 +13,7 @@ metadata:
 # Task 22.3: the global-store repair {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 3, 2026-10-14; [[#rev-round-3]])
+> Status: Pending (revision round 5, 2026-10-14; [[#rev-round-5]]; round 3 in [[#rev-round-3]])
 > Wave: 1, last of plan-22's Wave-1 chain (16.6 slice → 22.1a → 22.2 → 22.5 → 22.3; #t8-wave1).
 > Depends on: 22.1a, 22.2, 22.5 (the 476 resolved entities), 23.1, 23.0; the user's confirmation
 > of the dry-run counts. The remedy that stopped new relative global rows is deployed (0.77.x).
@@ -43,7 +43,11 @@ replaced by the 2026-10-14 decisions:
   the same ruling (d9b); only the rest, `orphan-root:unresolved`, are forgotten here through the
   audited path, restorable;
 - the 1,655 `pytest-of-*` tmp entities the suite wrote into the live global store (22 #b-8; 143,108
-  `facts.log` events, `query/ERROR` and `query/alpha`) are removed in the same audited apply (d1c);
+  `facts.log` events, `query/ERROR` and `query/alpha`) lose their learned rows in the same audited
+  apply (d1c). Under d9ab their protection is user-asserted (0 of the 1,655 carry a learner
+  `source` or a learner command record; the count is in [[task-22.2-repair-then-remove#r5]]), so
+  the ENTITIES themselves are kept, protected, and listed `kept: asserted-protection`; removing
+  them is the user's explicit selector step ([[#r6]]);
 - the 235 fixture rows in the live `query.log` are NOT removed here: they are log rows, not catalog
   rows (d8d, mark-and-filter by readers). {#why-body}
 
@@ -67,7 +71,9 @@ replaced by the 2026-10-14 decisions:
 3. **R3 Apply through 22.2.** `rmx removal apply --root ~/.refmatrix --manifest ID --confirm
    HASH`. `--root` is the global STORE root, `~/.refmatrix`, the value 22.2 R8 compares with the
    daemon's `Path(d.root)` (m-8); `$HOME` is refused. Removals are row-level with events and the
-   intent-log manifest; entities are purged only under 22.2 R2/R5. The 48 are written into the
+   intent-log manifest; entities are purged only under 22.2 R2/R5, so (d9ab) no existing global
+   entity is purged by this class apply: the `orphan-root:unresolved` and pytest-tmp entities lose
+   their learned rows and are listed `kept: asserted-protection` with their counts. The 48 are written into the
    manifest's `kept: ambiguous` list with all their candidate roots (d6a); the `home-readable`
    entities into `held_for_ruling` (d9b). No relative row is rewritten into an absolute global
    entity (22 #s-3).
@@ -76,6 +82,15 @@ replaced by the 2026-10-14 decisions:
 5. **R5 The pytest concepts.** `query/ERROR` and `query/alpha` keep any link that is not a
    pytest-tmp entity; the concepts themselves are not removed by this task (an emptied concept is
    an `empty-learned` candidate for a later 22.1 audit, behind the gate).
+6. **R6 The entity shells are the user's selector step (d9ab).** {#r6} After the class apply, the
+   operator prints the `kept: asserted-protection` entities per bucket (pytest-tmp,
+   `orphan-root:unresolved`) with their counts: each now has no learned row left. Removing them
+   is NOT part of the class apply. If the user wants them gone, it is an explicit selector plan
+   through 22.6's entry point ([[task-22.6-removal-entry-points#r1]]), built and shown to the
+   user, e.g. `rmx removal audit --root ~/.refmatrix --selector forget --like '%/pytest-of-%'`,
+   then applied only with `--confirm <hash>` the user gives; restorable. The bug-086 symptom
+   (AC-2) does not depend on this step: `unreadable` comes from evidence rows, which the class
+   apply already removed.
 
 ## Acceptance criteria {#acceptance}
 
@@ -94,7 +109,9 @@ replaced by the 2026-10-14 decisions:
 4. **Restorable.** On the backup clone (never live), `restore` of the manifest returns the
    pre-apply state by name (22.2 AC-4).
 5. **Nothing kept is lost.** All 48 ambiguous entities are present after the apply, with their
-   rows.
+   rows; every `kept: asserted-protection` entity is present and still protected (d9ab), with 0
+   learned rows. Mutation (rehearsal fixture) "purge a learned-only entity whose `protect_source`
+   is NULL" FAILS it.
 6. **Only the named root.** The apply was invoked with `--root` naming the global store; a dry
    rehearsal in the sandbox shows the op refuses without it (22.2 AC-11).
 
@@ -143,3 +160,15 @@ Answers [[bsd-plan16-22-spec-rereview-r3-6091648]]. Later rows win.
 | r3 s-6 (census procedure) | R1 cites [[task-16.6-learned-row-validation#r7]] |
 
 rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Carries [[bsd-plan16-22-spec-rereview-r4-878647c]] b-2 and d9ab
+([[plan-review-2026-10-14#t11-approvals]]) into this task. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| r4 b-2 / d9ab (no existing protection is learner-attributed; user-asserted entities are never class-removed) | [[#why]] pytest bullet; R3; [[#r6]] the shells are an explicit selector step; AC-5 + mutation; counts in [[task-22.2-repair-then-remove#r5]] |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
+rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]

@@ -12,7 +12,7 @@ metadata:
 # Task 22.1a: the provenance-free audit classes {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 3, 2026-10-14; [[#rev-round-3]])
+> Status: Pending (revision round 5, 2026-10-14; [[#rev-round-5]]; round 3 in [[#rev-round-3]])
 > Wave: 1, after 23.1 and 16.6's Wave-1 slice (d6d; #t8-amendments; #t8-wave1).
 > Depends on: 23.0 (test sandbox), 16.6 Wave-1 slice (sidecar + backfill). NOT on 16.1.
 > Feeds: 22.2 → 22.5 → 22.3; 22.6 (the selector mode of `removal_audit`).
@@ -84,8 +84,13 @@ rel: related-to -> [[project_global_relative_rows_repair]]
        `$HOME/github/atollogy/bdep/_frameworks_and_libraries/` (vendored code), with
        `followlinks=False`. `$HOME/<rel>` is NOT a candidate here. The trees, the prune set and
        `home_base` are explicit inputs recorded in the plan manifest (`candidate_trees`,
-       `walk_prunes`, `home_base`), defaulting to `Path.home()`-relative values in production, so
-       the census ([[task-16.6-learned-row-validation#r7]]) can walk the real trees read-only.
+       `walk_prunes`, `home_base`), defaulting to `Path.home()`-relative values in the DAEMON op
+       only. The census ([[task-16.6-learned-row-validation#r7]]) runs with `HOME` redirected, so
+       it never takes a default: it REFUSES a classifier census unless `--candidate-trees` and
+       `--home-base` are given explicitly (the real home, read from
+       `pwd.getpwuid(os.getuid()).pw_dir`), and prints both in its log header (r4 s-3). Without
+       that, `home_base` would default to the redirect and move every `home-readable` entity into
+       a removal class.
        The deploy tree `~/refmatrix` is not under any of the three trees.
      - **De-duplication (s-1).** Classifier candidates are de-duplicated by `os.path.realpath`
        before counting: one file reached two ways (a symlink, or overlapping trees) is ONE
@@ -206,11 +211,15 @@ rel: related-to -> [[project_global_relative_rows_repair]]
      probe's three real trees (walked read-only):
      1. **The reproduction:** the committed probe script on the copy. Printed: the walk's file
         count `W` and its drift from 972,849 (pre-registered tolerance ±1%; outside it the line
-        reads `walk-drift`); the six probe counts (`verified@0/1/2`, `cands@0/1/2`) beside the
+        reads `walk-drift`); run as `scripts/census_on_copy.py --census probe-reproduction`
+        ([[task-16.6-learned-row-validation#r7]], which lists it), so the reproduction runs inside
+        the ONE census procedure (r4 m-1); the six probe counts (`verified@0/1/2`, `cands@0/1/2`) beside the
         probe's (563 / 476 / 48; 417 / 518 / 152 of 1,087) and the per-bucket delta `Δ_b`.
      2. **The churn bound.** The probe recorded counts only, never per-entity outcomes, so a
         per-entity difference cannot be attributed. The census instead counts the entities whose
-        inputs changed after `2026-10-07T09:31:35Z`: `C` = population entities with any
+        inputs changed after the INSTANT `2026-10-07T09:29Z`, the mtime of the catalog snapshot
+        the probe read (r4 m-2: not the run time `09:31:35Z`; the 2.5-minute gap is named, not
+        ignored): `C` = population entities with any
         `entity`, `tombstone`, `evidence` or `unlink` event after that instant (read-only parse of
         the copied `facts.log`), plus entities that left or joined the population; `M` = entities
         with a classifier OR probe candidate whose mtime or birthtime is after it. An entity whose
@@ -219,6 +228,14 @@ rel: related-to -> [[project_global_relative_rows_repair]]
         `reproduced` iff `Σ_b |Δ_b| ≤ 2·(C + M)` over the three `verified@` buckets, else `drift`.
         A candidate file DELETED since the probe is not observable today; the census says so in
         its output.
+        **Compaction (r4 m-2, b-2).** `C` reads `tombstone`/`unlink` events and population
+        leavers from the copied log, and the daemon's periodic compaction
+        (`dump_catalog_to_log`, [[task-22.6-removal-entry-points#r6]]) erases both. The census
+        prints the copied log's birth time and the last `facts.log compaction` line of the
+        store's `rmxd.log` (read in place, read-only), and when either falls after the instant
+        it labels `C` `undercounted (log compacted after the probe)` and prints the verdict as
+        `reproduced (C undercounted)` or `drift (C undercounted)`. The global log's last
+        compaction was 2026-10-07T01:13:11 local, before the instant (read 2026-10-14).
      3. **The applied split** (the classifier through `classify_provenance_free` on the same
         copy): every R1 outcome with entity and row counts, `orphan-root:unverifiable` by reason,
         and the per-bucket delta against the reproduction.
@@ -235,6 +252,20 @@ rel: related-to -> [[project_global_relative_rows_repair]]
 7. **pytest rows.** 7a: a sandbox fixture entity under a `/pytest-of-<user>/` path classifies
    `missing-file`. 7b (operator census, as 5b): on the global copy, `missing-file` includes every
    entity whose path contains `/pytest-of-` (1,655 at the review; recount exact).
+
+## Files to modify {#files-to-modify}
+
+r4 m-1: this task's own file list.
+
+| File | Change |
+|------|--------|
+| `src/refmatrix/removal_audit.py` (new) | `classify_provenance_free(conn, inputs) -> AuditPlan` (R1-R3); the plan manifest writer (R4); 22.1 and 22.6 extend it |
+| `src/refmatrix/verbs.py` | the `removal_audit` verb (R4); `mcp.py` generates `rmx_removal_audit` from `verbs.VERBS` (`mcp.py:73-84`), so the verb-parity test covers it |
+| `src/refmatrix/daemon.py` | the `removal_audit` read op over the read snapshot (R3) |
+| `src/refmatrix/cli.py` | `rmx removal audit` (R4) |
+| `eval/spikes/global_relative_resolve_probe.py` (new) | the recovered probe ([[#appendix-probe]]); only the catalog path and `$HOME` become arguments; a header names its origin and the sha256 above |
+| `scripts/census_on_copy.py` (16.6's) | the `probe-reproduction` and `provenance-free` census names (16.6 R7 owns the script) |
+| `tests/test_removal_audit.py` (new) | AC-1..AC-4, AC-5a, AC-6a, AC-7a |
 
 ## Test strategy {#test-strategy}
 
@@ -292,13 +323,36 @@ Answers [[bsd-plan16-22-spec-rereview-r3-6091648]]. Later rows win over round 2.
 
 rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
 
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Answers [[bsd-plan16-22-spec-rereview-r4-878647c]] where it touches 22.1a. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| r4 m-1 (appendix not byte-exact; probe outside the procedure; no file list) | [[#appendix-probe]] byte-exact with sha256, line and tool-use id; AC-5b item 1 runs as `--census probe-reproduction` (listed in [[task-16.6-learned-row-validation#r7]]); [[#files-to-modify]] |
+| r4 m-2 (churn bound needs an uncompacted log; the instant is the snapshot) | AC-5b item 2: instant = `09:29Z` snapshot mtime; compaction check and the `undercounted` label |
+| r4 s-3 (census `HOME` redirect empties `home_base`) | [[#r1-applied]]: the census refuses a classifier run without explicit `--candidate-trees` / `--home-base`; 16.6 R7 owns the script and its AC |
+| r3 s-6 (partial: census procedure) | closed with s-3 in [[task-16.6-learned-row-validation#r7]] |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
+
 ## Appendix: the recovered probe {#appendix-probe}
 
-Verbatim from the transcript named in [[#r1-probe]] (2026-10-07T09:31:35Z); `S` was a scratch dir
-holding a copy of the global catalog. The committed census script keeps these rules and changes
+The heredoc body of the transcript's Bash call named in [[#r1-probe]], BYTE-EXACT (r4 m-1):
+`b38025a7-964a-49ec-bdbf-8f7e34918303.jsonl` line 2687 (1-based; the r4 report counts it 0-based
+as 2686), tool-use id `toolu_01AoQVrMA99DaazFFhpJEi53`, `2026-10-07T09:31:35.988Z`; its result is
+line 2688. The body between the `<<'EOF'` line and the `EOF` terminator, with its final newline,
+is 1,962 bytes, sha256 `c096e7ae6bb5491d0856f18a6d848b75dd29a89111a46f2cd0f773bad195598a`
+(re-extracted and re-hashed for this revision). The fenced block below is exactly those bytes.
+`S` was a scratch dir holding a `cp -L` of the global `catalog.read.duckdb`, taken by the call at
+line 2659 (`toolu_015vVzPVkr2736oJwNYa41BB`, `09:30:06Z`), whose listing shows that snapshot's
+mtime as `Oct  7 02:29` local (`09:29Z`). The committed census script keeps these rules and changes
 only how `S` and `H` are supplied.
 
 ```python
+import sys, re, os, time, duckdb
+from pathlib import Path
+from collections import Counter, defaultdict
 S = Path(sys.argv[1]); H = Path.home()
 con = duckdb.connect(str(S/".refmatrix/catalog.duckdb"), read_only=True)
 rows = con.execute("""select e.id, e.path, ev.line, c.name from entities e
@@ -307,8 +361,7 @@ rows = con.execute("""select e.id, e.path, ev.line, c.name from entities e
 ents = defaultdict(list)
 for eid, path, line, cname in rows: ents[(eid, path)].append((line, cname))
 t=time.time(); bybase = defaultdict(list); nfiles=0
-SKIP = {"node_modules", "__pycache__", ".git", ".venv", ".venv-eval", "venv", ".tox", "build",
-        "dist", ".refmatrix"}
+SKIP = {"node_modules", "__pycache__", ".git", ".venv", ".venv-eval", "venv", ".tox", "build", "dist", ".refmatrix"}
 for top in ("github", "claude_tools", "enduris"):
     for dp, dns, fns in os.walk(H/top):
         dns[:] = [d for d in dns if d not in SKIP]
@@ -326,6 +379,7 @@ def lines_of(p):
     return cache[p]
 res = Counter()
 for (eid, rel), evs in ents.items():
+    # candidates: home-relative first, then suffix matches anywhere walked
     cands = set()
     if (H/rel).exists(): cands.add(str(H/rel))
     suf = "/" + rel.lstrip("./")
@@ -334,11 +388,9 @@ for (eid, rel), evs in ents.items():
     ver = []
     for p in cands:
         L = lines_of(p)
-        if L and any(1 <= (ln or 0) <= len(L) and matches(L[ln-1], cn.split("/",1)[1]
-                     if cn.startswith("query/") else cn) for ln, cn in evs):
+        if L and any(1 <= (ln or 0) <= len(L) and matches(L[ln-1], cn.split("/",1)[1] if cn.startswith("query/") else cn) for ln, cn in evs):
             ver.append(p)
     res["verified@%d" % min(len(ver),2)] += 1
     res["cands@%d" % min(len(cands),2)] += 1
 print(dict(res))
 ```
-

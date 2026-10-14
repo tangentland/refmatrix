@@ -44,7 +44,14 @@ rel: related-to -> [[task-22.6-removal-entry-points]]
    edges, purges the concept) as a MERGE: a plan-22 entry point owned with merge writes by the
    helix plan. So the helix plan takes it over with this spec, and it becomes an entry point to
    R3's path. Until then it is unchanged, and 22.6 R7 lists it as an unrouted merge path in every
-   `removal_audit --list` ([[task-22.6-removal-entry-points#r7]]).
+   `removal_audit --list` ([[task-22.6-removal-entry-points#r7]]). Its surfaces are `rmx memory
+   dedup` (`cli.py:12628`) and MCP `rmx_memory` action `dedup` (`verbs.py:1029`) (r4 m-6).
+   **`merge_partition` travels with it (d9ac).** `Store.merge_partition` (`store.py:1606`; it
+   deletes source `memory_content` at `:1765` and source entities at `:1812`) is a MERGE entry
+   point owned by the same helix plan. Its dropped fragment bits already go to a manifest through
+   the bug-105 hotfix (`repair_fragments(..., manifest_dir=...)`, branch
+   `bug-105-fragment-partition`), which the helix plan builds on once it is merged to `master`.
+   22.6 R7 lists it as `merge-partition` in `removal_audit --list`.
 
 Owner of ADR-0004 `#rule-no-delete`'s "merge" path. {#owner}
 
@@ -66,3 +73,13 @@ Owner of ADR-0004 `#rule-no-delete`'s "merge" path. {#owner}
 | finding / decision | answered in |
 |---|---|
 | d9o (`fold_concept_dups` = a merge, plan-22 entry point owned by the helix plan) | [[#r5]]; [[task-22.6-removal-entry-points#r7]] |
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+| finding / decision | answered in |
+|---|---|
+| d9ac / r4 s-2 (`merge_partition` is a helix-owned merge entry point) | [[#r5]]; [[task-22.6-removal-entry-points#r7]] |
+| r4 m-6 (real command names) | [[#r5]] |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
+rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]

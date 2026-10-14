@@ -13,7 +13,7 @@ metadata:
 # Task 22.1: the flag-sensitive audit classes {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 3, 2026-10-14; [[#rev-round-3]])
+> Status: Pending (revision round 5, 2026-10-14; [[#rev-round-5]]; round 3 in [[#rev-round-3]])
 > Wave: 2 (d6d). The provenance-free classes moved to [[task-22.1a-provenance-free-classes]]
 > (Wave 1).
 > Depends on: 22.1a (verb, plan manifest format), 22.2 (engine), 16.6 Wave-1 slice (sidecar +
@@ -49,29 +49,41 @@ rel: depends-on -> [[task-23.4-option-a-measurement]]
      `N = {10, 29}` while the pattern still matches). So no row is classified by `line ∉ N`. Every
      set is paired, in this order, with every line numbered by 16.6's `split_lines` (`b"\n"`,
      r3 m-2):
+     **The hash is a PAIRING key, never a staleness proof (r4 b-1).** A hash that is on no line
+     of `N` says only that the line's text changed, and the commonest edit there is (an argument,
+     a comment, a rename around the hit, reformatting) changes the text and keeps the match. So
+     no step below removes a row because of its hash; only step 4's leftovers are removable.
      1. **Fixed points.** A row of `O` whose line is in `N` stays, if it has no `line_hash` or its
         hash equals `hash_line` of that line. A hashed row whose line is in `N` but whose hash
-        differs is NOT a fixed point (another hit landed on its line; its own text moved).
-     2. **Hashed rows** left over pair with the unclaimed line of `N` whose hash equals theirs:
-        exactly one such line → re-point; several → `ambiguous` (kept); none → `stale-line`
-        regardless of what else matches (its text is gone from the file).
-     3. **Unhashed rows** left over pair with the unclaimed lines of `N` in line order, i-th to
-        i-th, up to the shorter of the two lists → re-point. Without a hash the old text is not
-        known, so a pairing may land a row on a NEW hit instead of its moved text; the row then
-        still names a line that matches, nothing is removed, and the unpaired line is reported.
+        differs is not a fixed point YET (another hit may have landed on its line and its own
+        text moved): it goes to step 2.
+     2. **Hashed rows** left over pair with the unclaimed lines of `N` by EQUAL hash: exactly one
+        such line → re-point; several → `ambiguous` (kept); none → the row FALLS THROUGH to step
+        3, unpaired. A hash on no line never makes a row `stale-line`.
+     3. **Every row still unpaired, hashed or not,** pairs with the unclaimed lines of `N` in line
+        order, i-th to i-th, up to the shorter of the two lists → re-point (a pairing onto the
+        row's own recorded line is a STAY: no write, no event). Without a matching hash the old
+        text is not known, so a pairing may land a row on a NEW hit instead of its moved text;
+        the row then still names a line that matches, nothing is removed, and the unpaired line
+        is reported. The row's recorded `line_hash` is not rewritten here (16.1 R10 records it at
+        learn time; a re-teach records the new reading).
      4. **Leftovers.** Rows of `O` still unpaired (more old rows than unclaimed lines) are
         `stale-line`, labelled `out-of-range` when their recorded line is past the end of the file
         (r3 m-3: this is 22.1's ONLY use of `out-of-range`; 16.6's per-row verdict of the same
         name feeds its marks, never this classification). Lines of `N` still unclaimed are
         REPORTED, never added (adding is learning, which grep does on real use).
+     This agrees with 16.6's per-row judgement of the same row: a row whose line was edited but
+     still matches its own rules is `changed` → `ok` there
+     ([[task-16.6-learned-row-validation#r4]]) and a stay or a re-point here.
    - **Set classes** (precedence top to bottom): `shrunk` — at least one row is `stale-line` /
      `out-of-range`; `grown` — none, and at least one line of `N` is reported; `moved` — neither,
      and at least one row is re-pointed; `ok` — every row is a fixed point. `ambiguous` and
      `unverifiable` rows are kept inside any class. A row is removed by 22.2 only as `stale-line`
      or `out-of-range`.
-   - `stale-line` (row) — unpaired after step 4, or a hashed row whose hash is on no line of `N`.
-     With the union rule above, the pattern may still match elsewhere in the file; those lines
-     are already claimed by other rows or reported.
+   - `stale-line` (row) — unpaired after step 4, and nothing else (r4 b-1: round 3's "or a
+     hashed row whose hash is on no line of `N`" is WITHDRAWN). With the union rule above, the
+     pattern may still match elsewhere in the file; those lines are already claimed by other rows
+     or reported.
    - `unverifiable` — 16.6's verifier returned `Unverifiable(reason)` for a reading the row needs,
      with `reason` in `learned_verify.UNVERIFIABLE_REASONS` (`no-rules`, `bin-missing`, `timeout`,
      `tool-error`, `permissive-subset`, `unreadable`, `locale-missing`): one definition shared
@@ -173,14 +185,21 @@ rel: depends-on -> [[task-23.4-option-a-measurement]]
      29): `shrunk`, rows end at `{10, 29}`: one fixed point, one re-point, exactly one
      `stale-line`, 0 `ambiguous`.
    - **5b, delete, hashed.** The same edit with hashes recorded: row 10 stays, row 30 re-points to
-     29 by its hash, row 20 is `stale-line` (its hash is on no line).
+     29 by its hash, row 20 falls through step 2 (its hash is on no line), finds no unclaimed line
+     in step 3, and is the one `stale-line` leftover of step 4.
    - **5c, insert plus a new hit.** Hits `{10, 20}`; one line is inserted at the top and a new hit
      is appended at the end (`N = {11, 21, 50}`): `grown`, two re-points (`10 → 11`, `20 → 21`),
      line 50 reported, 0 rows removed, 0 rows added.
    - **5d, past the end.** Hits `{10, 20}` in a file truncated to 15 lines that still holds the
      first hit: row 10 stays, row 20 is labelled `out-of-range` (a leftover past EOF).
+   - **5e, edited in place, still matching (r4 b-1).** Hits `{10, 20}`, both hashed; line 10 is
+     edited in place (`x = foo()` → `x = foo(1)`) and still matches; `N = {10, 20}`. Row 20 is a
+     fixed point; row 10 falls through step 2 and pairs with line 10 in step 3 (a stay). The set
+     is `ok` or `moved`, 0 rows are `stale-line`, 0 are removed by 22.2, and row 10 still names
+     line 10.
    Mutation "`line ∉ N` → `stale-line`" FAILS 5a (two removed) and 5c (both rows removed);
-   mutation "fixed point by line only, ignoring a differing hash" FAILS 5b.
+   mutation "fixed point by line only, ignoring a differing hash" FAILS 5b; mutation "hash on no
+   line of `N` → `stale-line`" (round 3's text) FAILS 5e (row 10 removed).
 6. **`empty-learned` can fail (22 #b-6, #m-1; s-3).**
    - **6a, sandbox test.** A concept with one `ok` row and df 1 is NOT a member; a concept whose
      only rows are `missing-file` IS; on a sandbox fixture store the count equals an independent
@@ -244,4 +263,15 @@ Answers [[bsd-plan16-22-spec-rereview-r3-6091648]]. Later rows win over round 2.
 | r3 s-1 (locale) | `UNVERIFIABLE_REASONS` gains `locale-missing` (16.6 R2's tuple, unchanged here) |
 
 rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Answers [[bsd-plan16-22-spec-rereview-r4-878647c]] where it touches 22.1. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| r4 b-1 (step 2 removes every hashed row whose line was edited and still matches) | [[#r1]] "The hash is a PAIRING key, never a staleness proof": step 2 falls through, step 3 pairs every unpaired row, step 4 leftovers only; the `stale-line` bullet withdraws round 3's hash clause; AC-5b restated, new AC-5e + mutation |
+| r4 conflict 1 (22.1 step 2 vs 16.6 R4 / AC-4) | [[#r1]] closing paragraph: the same row is `ok` in 16.6 and a stay/re-point here |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
 

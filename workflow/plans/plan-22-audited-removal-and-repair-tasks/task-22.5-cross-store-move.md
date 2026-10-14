@@ -12,7 +12,7 @@ metadata:
 # Task 22.5: the cross-store move {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 3, 2026-10-14; [[#rev-round-3]])
+> Status: Pending (revision round 5, 2026-10-14; [[#rev-round-5]]; round 3 in [[#rev-round-3]])
 > Wave: 1, after 22.2 and ahead of 22.3 (d8c; #t8-wave1).
 > Depends on: 22.1a (`orphan-root:resolved` with its absolute path), 22.2 (engine, primitives,
 > events, manifest, restore, apply interface), 23.1 (`bind`), 23.2 (recorder), 23.0 (sandbox).
@@ -91,6 +91,10 @@ rel: motivates -> [[task-22.3-bug-086-global-repair]]
       same `(partition, kind, name)` MERGE exactly as 22.2's `rename_entity` merge (evidence and
       links attach, `protected` = max, ingest state untouched). Idempotent by row identity: a
       re-sent batch adds nothing.
+      - **The protection's source travels (d9ab).** The imported entity takes the global
+        entity's `protect_source` ([[task-22.6-removal-entry-points#r6]]), NULL included, unless
+        the target entity is already protected with a non-NULL source, which is kept. A NULL
+        (user-asserted) protection stays user-asserted in the target.
       - **Sidecar rows travel with their evidence (s-5; owner: this op).** Every global sidecar
         row of a copied identity is written in the target, in the same transaction as its
         evidence row, through 16.6's `Store.add_learned_provenance` with the TARGET's key
@@ -104,16 +108,22 @@ rel: motivates -> [[task-22.3-bug-086-global-repair]]
       verifies (22.1a's permissive reading). A row that fails to verify on the target is NOT
       forgotten in global; it is reported and the batch stays `copied`, not `verified`.
    4. **Forget** in global through 22.2's engine (row-level `remove_evidence`, then the entity
-      purge rule of 22.2 R2), only for rows whose target verify succeeded.
+      purge rule of 22.2 R2), only for rows whose target verify succeeded. **A move is not a
+      removal (d9ab).** The global entity of a fully verified batch is purged even when its
+      protection is user-asserted, because the entity, its protection and its `protect_source`
+      now exist in the target (step 2); the manifest records it as `moved`, never as
+      `removed`. An entity with any row that did not verify stays in global, protected.
    - Every cross-daemon call uses `retries=0` and a single-flight guard per manifest
      (`feedback_daemon_call_retries_multiply_timeouts`); a timeout re-reads state, it never
      re-sends blindly.
    - **Crash rule:** re-running `apply` with the same manifest resumes from the last recorded step
      of each batch. A crash after copy and before forget leaves a duplicate that the resume removes
      from global only after verify; it never loses a row.
-3. **R3 Vectors (DL #s-7).** The target store embeds the moved entities through its normal embed
-   path (shared embedder); the global vectors are dropped with the forget and recorded in the
-   manifest as "had a vector", so restore re-embeds ([[task-22.2-repair-then-remove#r4]]). {#r3}
+3. **R3 Vectors (DL #s-7; d9z).** The target store embeds the moved entities through its normal
+   embed path (shared embedder). The global vectors are dropped with the forget, and the intent
+   record keeps each entity's OLD id and its vector in the manifest's `.vectors.jsonl`
+   ([[task-22.2-repair-then-remove#r4]]), so restore re-inserts them in global through
+   `vectors_restore(orphan_file, id_map=...)` with no model call. {#r3}
 4. **R4 Audited forget for no-owner rows, only on the user's ruling (d9b).** Runs only for a
    manifest whose `no_owner_ruling` is `forget`. Through 22.2 unchanged: manifest with the full
    rows (sidecar rows included), restorable with `removal_restore`. {#r4}
@@ -205,3 +215,15 @@ Answers [[bsd-plan16-22-spec-rereview-r3-6091648]]. Later rows win; d9b is uncha
 | d9b | unchanged: buckets 2a, 2b and 3 held until the user rules |
 
 rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Carries d9ab and d9z ([[plan-review-2026-10-14#t11-approvals]]) into the move. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| d9ab (origin only from `source`; user-asserted entities never class-removed) | [[#r2]] step 2 (the source travels), step 4 (a move is not a removal) |
+| d9z (manifest keeps the old id and the vector) | [[#r3]] |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
+rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]

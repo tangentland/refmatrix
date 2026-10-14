@@ -12,7 +12,7 @@ metadata:
 # Task 22.6: removal entry points and the bug-107 paths {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (created in revision round 3, 2026-10-14; [[#rev-round-3]])
+> Status: Pending (created in revision round 3, 2026-10-14; revised in round 5, [[#rev-round-5]])
 > Wave: 1, after 22.2 (it needs the engine, the intent-record form and restore); parallel to
 > 22.5. R4 (the sync edit fix) needs only 16.6's Wave-1 slice and may land first.
 > Depends on: 22.2 (engine, primitives, R4 intent-record form, `removal_restore`), 22.1a
@@ -44,7 +44,7 @@ rel: depends-on -> [[feedback_decay_never_loses_knowledge]]
 rel: depends-on -> [[feedback_store_calls_via_daemon]]
 rel: related-to -> [[task-22.4-merge-writes]]
 
-## Facts at HEAD (`5a8bf29`, read-only) {#facts}
+## Facts at HEAD (`5a8bf29`, read-only; re-read at `7f2014a` below) {#facts}
 
 - `rmx forget` (`cli.py:4567`, `forget_cmd`) previews with `forget_by_selector(dry_run=True)`
   (`store.py:6011`) and deletes on `--yes` or a prompt; it has no MCP surface.
@@ -66,6 +66,31 @@ rel: related-to -> [[task-22.4-merge-writes]]
 - `set_entity_flag` (`store.py:5976`) logs a `protect` (or `noise`) event per row with `kind`,
   `name`, `value`; no source.
 
+**Re-read at `7f2014a` (round 5; `src/` unchanged since `b1c4324`):**
+- Sync's branches: ignored path `sync.py:203`; `not ap.exists() or not is_supported`
+  `sync.py:209` (it also purges files that EXIST with an unsupported extension; the learner gives
+  `kind="doc"` to every non-code hit, `daemon.py:4322`); the GMD legacy purge guard
+  `sync.py:231`; the non-GMD purge-before-re-add `sync.py:241`.
+- `rmx ingest`'s twin of the GMD legacy purge: `ingest.py:1179-1180`.
+- `rmx sync --invalidate P`: `purge_path` on every named path, existing or not
+  (`cli.py:8433-8434`).
+- `ingest_gmd --as-memory`: a raw `DELETE FROM entities ... kind='doc'` (`ingest_gmd.py:891-896`),
+  no tombstone, links and evidence left behind.
+- `merge_partition` (`store.py:1606`): deletes source `memory_content` (`:1765`) and source
+  entities (`:1812`).
+- Daemon ops that delete on the socket today: `prune_noise` (`daemon.py:3899`), `forget`
+  (`:4384`), `untrack` (`:4398`), `memory_forget` (`:5061`), `memory_bulk_forget` (`:5117`).
+- CLI: `forget` `cli.py:4567`, `untrack` `:4607`, `prune-noise` `:7769`, `memory forget`
+  `:12597` (its `@click.confirmation_option` at `:12599` IS its `--yes`; the daemon-down
+  fallback `s = _store(); s.forget_memory(...)` at `:12616-12618`), `memory dedup` `:12628`
+  (`fold_concept_dups`, `store.py:5808`; MCP `rmx_memory` action `dedup`, `verbs.py:1029`),
+  `memory bulk-forget` `:12932`.
+- The compactor: `Daemon._compact_factslog_if_needed` (`daemon.py:2274`) calls
+  `Store.dump_catalog_to_log` (`store.py:7210`), which REPLACES `facts.log` with a snapshot of
+  `linkage_type`, `entity`, `protect`, `noise`, `memory_content`, `link`, `evidence` and `track`
+  events; each `protect` follows its own `entity` (`store.py:7279-7285`) and carries no `source`.
+  This repo's log was compacted at 14:00:44 today.
+
 ## Requirements {#requirements}
 
 1. **R1 Selector entry points: `forget`, `memory forget`, `memory bulk-forget` (d9k).** {#r1}
@@ -82,8 +107,27 @@ rel: related-to -> [[task-22.4-merge-writes]]
      - **with `--confirm <sha256>`**: rebuild the plan from the same selector; if its hash differs
        (the selection changed since), refuse and write nothing; else apply it through 22.2's
        engine (`removal_apply`), restorable with `removal_restore`.
+     - **The confirm hash is the SELECTION, not the plan file (r4 s-4).** It is the sha256 of the
+       canonical JSON (`sort_keys`, `separators=(",",":")`) of `{entry_point, selector,
+       members}`, where `selector` is the selector arguments verbatim and `members` is the list,
+       sorted by `(partition, kind, name)`, of each member's `(partition, kind, name)` and its row
+       counts (links, evidence rows, sidecar rows, `memory_content` 0/1, `tracked_files` rows,
+       vector 0/1). It holds NO catalog identity, snapshot version, timestamp, manifest id or
+       path. So an unrelated write between plan and confirm (a sync, a learn, an STM promote, a
+       snapshot rotation) does not refuse; a write that changes WHAT would be removed does.
+       The plan file records this hash beside 22.1a R4's catalog identity, which is informational
+       here.
      - `--yes`/`-y` and the click confirmation prompt are REMOVED: a flag that deletes without a
        manifest is the second path the ADR forbids. Passing `--yes` exits 2 naming `--confirm`.
+     - **Below the CLI (r4 s-4).** The daemon ops `forget` (`daemon.py:4384`), `memory_forget`
+       (`:5061`) and `memory_bulk_forget` (`:5117`) stop deleting on `dry_run=false`: they accept
+       either `dry_run=true` (the selection preview, unchanged) or a `{manifest, confirm}` pair
+       they hand to `removal_apply`; any other call is refused with an error naming
+       `rmx removal`. `untrack` (`:4398`) and `prune_noise` (`:3899`) write R2's cleanup manifest
+       inside the op before any delete, so a raw socket call gets the same manifest as the CLI.
+     - **No daemon-down fallback.** `rmx memory forget`'s `s = _store(); s.forget_memory(...)`
+       (`cli.py:12616-12618`) is removed: with the daemon down the command exits nonzero naming
+       the daemon, as every other write does (`feedback_store_calls_via_daemon`).
    - A selector member is removed whole (entity, links, evidence, sidecar rows, `memory_content`,
      `tracked_files`, vector), through `_bulk_purge_ids` / `bulk_forget_memories`' delete, inside
      22.2's batch loop, with 22.2 R4's intent record holding every row first (22.2 R2's selector
@@ -94,15 +138,23 @@ rel: related-to -> [[task-22.4-merge-writes]]
    records for every row it removes, then prints the manifest id, the counts per row kind, and
    `rmx removal restore --manifest <id>` as the way back. `removal_restore` accepts a cleanup
    manifest exactly as it accepts an apply manifest. Neither is ever run by a timer or a counter.
-3. **R3 Deleted or ignored file: derived cleanup with a manifest (d9o).** {#r3} `purge_path` for
-   a path that no longer exists or that is now ignored (sync's two branches, and `vacuum` step 2's
-   dead tracked paths) first writes a cleanup manifest (R2's form) holding every LEARNED row under
+3. **R3 Missing or ignored file: derived cleanup with a manifest (d9o).** {#r3} `purge_path` for
+   a path that no longer EXISTS or that is now IGNORED (sync's `should_ignore` branch,
+   `sync.py:203`; the MISSING half of `sync.py:209`; `vacuum` step 2's dead tracked paths) first
+   writes a cleanup manifest (R2's form) holding every LEARNED row under
    that path: each learned evidence row with its sidecar rows, the `query/*` `mentions` links, and
    any learned-only entity whole (with `protected` and its source). The learned rows are then
    removed through 22.2's row-level primitives (`remove_evidence` with `keep=0`, then the entity
    rule of 22.2 R2), so each removal has its `evidence_remove` event and the sidecar rows leave in
    the same transaction. Ingest-derived rows are purged as today. Restorable with
    `removal_restore`.
+   - **An existing file with an unsupported extension is NOT this branch (r4 s-2).** Today
+     `sync.py:209` treats `not ap.exists() or not is_supported` alike. The learner teaches any
+     non-code hit as `kind="doc"` (`daemon.py:4322`), so 100 of this repo's 706 learned entities
+     sit on unsupported extensions (`.log` 70, `.json` 14, none 7; r4 count). The branch splits:
+     a MISSING file is R3; an EXISTING unsupported file keeps its learned rows exactly as R4
+     keeps them (ingest-derived rows, if any, are purged), because an edit, or no edit, is not a
+     deletion (d9p).
 4. **R4 Sync's edit purges keep learned rows: bug-107 fixed (d9o).** {#r4} Both edit branches of
    sync (the GMD dispatch's legacy purge of the relpath-named `doc` entity, and the non-GMD
    "purge before re-add") call `purge_path(abs, keep_learned=True)`, which purges what ingest
@@ -113,8 +165,31 @@ rel: related-to -> [[task-22.4-merge-writes]]
    have shifted, and 16.6's verifier and 22.1's set rule judge them (d9o). No tombstone is logged
    for the kept entity; the purged ingest rows log their events as today, so a rebuild agrees with
    the live store. The d9o text names only the GMD purge; the non-GMD "purge before re-add" is the
-   same act on a learned row (an edit is not a deletion), so it gets the same rule; the revision
-   report names this for the orchestrator to record on bug-107.
+   same act on a learned row (an edit is not a deletion), so it gets the same rule (d9p).
+   - **The two branches are NOT the same call (r4 s-1).**
+     - **Non-GMD** (`sync.py:241`; the EXISTING-unsupported half of `sync.py:209`, R3): the
+       learner's relpath entity IS the file entity sync re-adds (both `upsert_entity(kind,
+       name=rel, path=abs)`), so `purge_path(abs, keep_learned=True)` is right there: it purges
+       the per-function entities and the ingest rows, keeps the file entity (same id) and its
+       learned rows.
+     - **GMD** (`sync.py:231`, and its twin on the `rmx ingest` path, `ingest.py:1179-1180`):
+       `purge_path` is NEVER called. Every entity the GMD pass owns at that path (the doc-id
+       `doc` entity and every `{#anchor}` `concept`, all with `path=str(path)`,
+       `ingest_gmd.py:964-967`, `:1015-1018`) is left alone: `purge_entity` would unlink their
+       inbound `rel:` edges from OTHER docs, which re-ingesting this doc does not re-create. The
+       branch instead calls `Store.purge_legacy_relpath_doc(rel, abs)`, which touches ONLY the
+       relpath-named `doc` entity: it deletes that entity's non-learned links and evidence (with
+       their events), and then purges the entity itself (tombstoned) only if no learned row is
+       left on it; a learned relpath entity is kept with its id, learned rows, sidecar rows,
+       `query/*` links and `protected` flag.
+     - **The guard (r4 s-1).** The GMD guard (`sync.py:231`, `ingest.py:1179`) fires only when
+       the relpath-named `doc` entity carries at least one non-learned row (an ingest link, an
+       ingest evidence row, or a `tracked_files` row at its path for the legacy tree pass). A
+       relpath entity whose rows are all learned does not fire it, so a learned GMD doc costs no
+       purge on every later edit (this repo has 241 such docs, r3).
+   - **`rmx sync --invalidate P` is a re-ingest (r4 s-2).** `cli.py:8433-8434` calls
+     `purge_path` on every named path; it becomes: an EXISTING path is re-ingested under this
+     requirement's rules (learned rows kept), a MISSING path goes to R3 (manifest).
 5. **R5 `vacuum`'s orphan-evidence delete: manifest plus `facts.log` event (d9o).** {#r5}
    - Step 3 first writes a cleanup manifest (R2's form) of every `linkage_evidence` row whose
      entity is gone, with the sidecar rows of each identity, then deletes them, and logs one
@@ -127,20 +202,63 @@ rel: related-to -> [[task-22.4-merge-writes]]
      deleted, it is counted `orphan_drop_skipped_live`.
    - After R3 and R4, learned rows stop becoming orphans on sync; step 3 drains the legacy ones
      and anything a non-plan-22 purge still leaves. Each drop is counted and printed by `vacuum`.
-6. **R6 `unprotect` writes its source (d9o).** {#r6} Every `protect` event, value `true` or
-   `false`, carries `source`: `upsert` (`upsert_entity(protected=True)`), `user`
-   (`set_entity_flag` / `set_flag_by_selector` from the CLI or MCP), or `removal` (plan-22's
-   engine, apply or restore). It is the field 22.2 R5 defines for protections, extended to the
-   unprotect direction. Replay ignores it; 22.2 R5's attribution reads it where present and falls
-   back to its log-adjacency rule for older events.
-7. **R7 `fold_concept_dups` is not built here (d9o).** {#r7} It is a merge, an entry point to
-   plan-22 owned with merge writes by the future helix plan: it travels with 22.4's hand-over
-   ([[task-22.4-merge-writes#root]], d9j). Until then `rmx fold-concept-dups` is unchanged and
-   is listed by `rmx removal audit --list` as an unrouted merge path, so it is visible, not
-   forgotten.
+6. **R6 Every protection records its source, and the compactor keeps it (d9o, d9ab; r4 b-2).**
+   {#r6}
+   - **The field.** Every `protect` event, value `true` or `false`, carries `source`, set by the
+     CALLER, never inferred:
+     - `learner`: only `_learn_grep_hits` (`daemon.py:4295`, its `add_concept` and
+       `upsert_entity(protected=True)` calls);
+     - `user`: a CLI or MCP command (`rmx protect` / `unprotect` through `set_flag_by_selector`,
+       `store.py:6003`; `rmx add-entity` / `add-concept` and their MCP tools; `link --protect`;
+       `memory add` with protect);
+     - `system`: other internal protected writes (compiled subjects, `store.py:2633`);
+     - `removal`: plan-22's engine, apply or restore.
+     `upsert_entity`, `add_concept`, `link` and `set_entity_flag` take a keyword
+     `protect_source`; a protected write without one logs no `source`, and that protection is
+     user-asserted (22.2 R5): the safe default.
+   - **Persisted.** A nullable `entities.protect_source` column, added by `Store.init`'s existing
+     additive-column migration (`store.py:1230-1310`, beside `vectors_partition`), holds the
+     source of the protection in force (NULL = unattributed). Live writes set it; replay sets it
+     from each `protect` event's `source` (NULL when absent); unprotect clears it.
+   - **The compactor keeps it (d9ab companion 1).** `dump_catalog_to_log` (`store.py:7210`)
+     emits `source` = `protect_source` on every `protect` event it writes (`store.py:7279-7285`),
+     omitting the key when NULL. Without this the field lasts only until the next periodic
+     compaction (`daemon.py:2274`; this repo compacted three times on 2026-10-14).
+   - **The rule for every new event field or table plans 16 and 22 add:** it has a
+     `dump_catalog_to_log` clause and a compact-then-rebuild AC. 16.6 R1d does this for
+     `learned_provenance` ([[task-16.6-learned-row-validation#r1d]]); 22.2's row-level ops change
+     state the dump already captures (an `evidence_remove` leaves no row to emit).
+   - Replay ignores `source` for the flag value. 22.2 R5's attribution reads `protect_source`
+     and `cli.log` command records only; the log-adjacency rule is withdrawn (d9ab).
+7. **R7 Merge entry points are not built here (d9o, d9ac).** {#r7} Two paths are MERGES, entry
+   points to plan-22 owned with merge writes by the future helix plan; both travel with 22.4's
+   hand-over ([[task-22.4-merge-writes#r5]], d9j):
+   - `fold_concept_dups` (`store.py:5808`), surfaced as `rmx memory dedup` (`cli.py:12628`) and
+     MCP `rmx_memory` action `dedup` (`verbs.py:1029`) (r4 m-6: there is no
+     `rmx fold-concept-dups`);
+   - `merge_partition` (`store.py:1606`; it deletes source `memory_content`, `:1765`, and source
+     entities, `:1812`). Its dropped fragment bits go to a manifest through the bug-105 hotfix
+     (read-only in `/Volumes/littlebig/refmatrix-bug105`, branch `bug-105-fragment-partition`,
+     `fb285cc`: `merge_partition` runs `repair_fragments(..., manifest_dir=<root>/backups)`, which
+     writes `fragments-repair-<stamp>-<kind>.jsonl`). This task builds on that code once the
+     hotfix is MERGED TO MASTER, as existing code; it plans no second copy of it (d9ac).
+   Until then both are unchanged, and `rmx removal audit --list` prints each as an unrouted
+   merge path (`memory dedup`, `merge-partition`), so they are visible, not forgotten.
 8. **R8 No silent failures.** {#r8} Every entry point prints its counts per row kind; a manifest
    write failure aborts the removal before any row changes (the manifest is written first); every
    skipped row is counted with its reason.
+9. **R9 Every other removal path, classified (r4 s-2, d9ac).** {#r9} With R1-R7 and plan-22
+   [[plan-22-audited-removal-and-repair#scope]], these are the remaining paths, each with its
+   class:
+
+   | path (at `7f2014a`) | class | rule |
+   |---|---|---|
+   | `ingest.py:1179-1180` (the `rmx ingest` twin of sync's GMD legacy purge) | re-ingest, a bug-107 twin | R4's GMD branch and guard, unchanged in every other respect |
+   | `rmx sync --invalidate P` (`cli.py:8433-8434`) | re-ingest | R4 for an existing path (learned rows kept); R3 for a missing one |
+   | sync's `not ap.exists() or not is_supported` (`sync.py:209`) | split | missing → R3 (manifest); existing-unsupported → keeps learned rows (R3's sub-bullet, R4's rule) |
+   | `ingest_gmd --as-memory`'s raw `DELETE FROM entities ... kind='doc'` (`ingest_gmd.py:891-896`) | derived conversion (doc → memory for the same file) | becomes `purge_entity` (tombstoned, links and evidence unlinked with their events, so a rebuild cannot resurrect the row); any learned row on that entity first goes to an R2-form cleanup manifest |
+   | `merge_partition` (`store.py:1606`) | merge entry point, helix plan (d9ac) | R7 |
+   | `fold_concept_dups` (`store.py:5808`) | merge entry point, helix plan (d9o) | R7 |
 
 ## Acceptance criteria {#acceptance}
 
@@ -149,6 +267,17 @@ rel: related-to -> [[task-22.4-merge-writes]]
    `--confirm <that hash>` removes the entity; `--confirm` with a hash taken before a second
    matching entity was added refuses and writes nothing; `--yes` exits 2. Mutation "keep `--yes`
    as a direct delete" FAILS it.
+
+   **1b. An unrelated write does not refuse (r4 s-4).** Between plan and `--confirm`, the test
+   syncs an unrelated file, teaches an unrelated `query/y`, and rotates the read snapshot: the
+   confirm applies. Mutation "hash the whole plan file (catalog identity included)" FAILS it.
+
+   **1c. No removal below the CLI (r4 s-4).** A raw `forget` op with `dry_run=false` and no
+   confirmed manifest, and the same for `memory_forget` and `memory_bulk_forget`, is refused and
+   writes nothing (catalog hash and `facts.log` unchanged); a raw `untrack` op writes its cleanup
+   manifest before any row changes. With the daemon stopped, `rmx memory forget X` exits nonzero
+   and opens no `Store()` (the 23.0 audit hook records no catalog open). Mutations "keep the
+   direct-delete `forget` op" and "keep the `_store()` fallback" each FAIL it.
 2. **bulk-forget restores bodies.** `memory bulk-forget --mtype observation --confirm <hash>` on
    three memories, then `removal restore`, returns all three by NAME with equal `memory_content`
    (`content`, `mtype`, `tags`, `metadata`), links and vectors (22.2 AC-4's comparison). The same
@@ -167,9 +296,25 @@ rel: related-to -> [[task-22.4-merge-writes]]
 5. **Edit keeps learned rows (R4, bug-107).** A GMD `.md` and a `.py` file, each with a learned row
    and a sidecar row, are edited (a line inserted above the hit) and synced: each file entity
    keeps its id, its learned evidence row, its `query/*` `mentions` link, its sidecar row and its
-   `protected` flag; its ingest rows are re-derived; a rebuild on a sandbox copy agrees. Then
-   22.1's audit classifies the shifted row `moved`, never removed. Mutations "plain `purge_path`
-   in the GMD branch" and "plain `purge_path` in the non-GMD branch" each FAIL it.
+   `protected` flag; its ingest rows are re-derived; a rebuild on a sandbox copy agrees. No
+   `evidence_remove` or `tombstone` event is logged for the kept rows, and 16.6's
+   `learned_verify.matching_lines` on each edited file holds the hit's shifted line, so 22.1's
+   set rule (Wave 2; its AC-5c) will re-point it (r4 m-5: this AC needs nothing from Wave 2).
+   Mutations "plain `purge_path` in the GMD branch" and "plain `purge_path` in the non-GMD branch"
+   each FAIL it.
+
+   **5b. A GMD edit keeps the doc graph (r4 s-1).** Two GMD docs, A and B, where B has a `rel:`
+   edge to an anchor of A, and A also carries a learned relpath row. A is edited and synced
+   (and, separately, re-ingested with `rmx ingest`): A's doc-id entity id and every anchor id are
+   unchanged, B's inbound `rel:` edge to A's anchor survives, and A's learned relpath entity keeps
+   its id. A second edit of A logs no purge of the relpath entity (the guard does not fire on an
+   all-learned relpath entity). Mutations "`purge_path(abs, keep_learned=True)` in the GMD branch"
+   (anchor ids change, B's edge is lost) and "guard fires on any relpath entity" each FAIL it.
+
+   **5c. Existing unsupported file and `--invalidate` (r4 s-2).** A learned row on an existing
+   `x.log` survives a sync of `x.log`; `rmx sync --invalidate a.py` on an existing `a.py` keeps
+   its learned row; `--invalidate` on a deleted path writes R3's manifest. Mutation "existing
+   unsupported file → plain `purge_path`" FAILS it.
 6. **vacuum drop is logged and replayable (R5).** A store holding two orphaned learned evidence
    rows (one with a sidecar row) is vacuumed: the cleanup manifest holds both rows and the sidecar
    row; `facts.log` holds two `evidence_orphan_drop` events; a rebuild on a sandbox copy agrees
@@ -177,10 +322,21 @@ rel: related-to -> [[task-22.4-merge-writes]]
    row deletes nothing and counts `orphan_drop_skipped_live`. Mutation "delete without an event"
    FAILS the rebuild clause.
 7. **unprotect source (R6).** `rmx unprotect X` logs a `protect` event with `value=false,
-   source=user`; a 22.2 restore that re-protects logs `source=removal`. Mutation "no source on
-   value=false" FAILS it.
-8. **The fold path is visible (R7).** `rmx removal audit --list` on a store prints
-   `fold-concept-dups` as an unrouted merge path.
+   source=user`; a 22.2 restore that re-protects logs `source=removal`; a learn logs
+   `source=learner`. Mutation "no source on value=false" FAILS it.
+
+   **7b. The source survives compaction (r4 b-2, d9ab).** Protect L through `_learn_grep_hits`
+   and U through `rmx protect U`; run `dump_catalog_to_log` (the compactor, `daemon.py:2274`'s
+   call), then `rebuild_index_from_log` on a sandbox copy: `entities.protect_source` is
+   `learner` for L and `user` for U, and the compacted log's two `protect` events carry those
+   `source` values. Mutation "dump without `source`" FAILS it (both NULL after the rebuild, so
+   22.2 R5 reads L as user-asserted).
+8. **The merge paths are visible (R7; r4 m-6; d9ac).** `rmx removal audit --list` on a store
+   prints `memory dedup` (MCP `rmx_memory` `dedup`) and `merge-partition` as unrouted merge paths.
+9. **The remaining paths (R9).** The `ingest_gmd --as-memory` conversion of a doc that has a
+   learned row writes a cleanup manifest holding it and logs a `tombstone` for the doc entity; a
+   rebuild on a sandbox copy does not resurrect the doc entity. Mutation "keep the raw DELETE"
+   FAILS it.
 
 ## Test strategy {#test-strategy}
 
@@ -198,8 +354,14 @@ mutation is pre-registered and must turn its test RED.
 | `src/refmatrix/cli.py` | `forget`, `memory forget`, `memory bulk-forget`: plan without `--confirm`, apply with it, `--yes` refused; `untrack`, `prune-noise --drop`: manifest first |
 | `src/refmatrix/verbs.py` | `memory_forget`, `memory_bulk_forget`: the same plan/confirm contract (MCP parity) |
 | `src/refmatrix/store.py` | `purge_path(..., keep_learned=)`; R3 manifest + row-level removal of learned rows; `vacuum` steps 2-3 manifest + `evidence_orphan_drop`; `protect` events carry `source`; replay of `evidence_orphan_drop` in the one pass |
-| `src/refmatrix/sync.py` | both edit branches call `purge_path(..., keep_learned=True)` |
-| `tests/test_removal_entry_points.py` (new) | AC-1..AC-8 |
+| `src/refmatrix/sync.py` | non-GMD edit and existing-unsupported branches call `purge_path(..., keep_learned=True)`; the GMD branch calls `purge_legacy_relpath_doc` behind the narrowed guard (R4) |
+| `src/refmatrix/ingest.py` | the GMD legacy purge twin (`:1179-1180`): R4's GMD rule and guard |
+| `src/refmatrix/ingest_gmd.py` | `--as-memory`: the raw DELETE becomes `purge_entity` with an R2-form manifest for learned rows (R9) |
+| `src/refmatrix/daemon.py` | `forget` / `memory_forget` / `memory_bulk_forget` ops: preview or confirmed manifest only; `untrack` / `prune_noise` ops write the manifest first (R1, R2); `_learn_grep_hits` passes `protect_source='learner'` (R6) |
+| `src/refmatrix/cli.py` (also) | `sync --invalidate` as a re-ingest (R4); `memory forget` without the `_store()` fallback (R1) |
+| `src/refmatrix/store.py` (also) | `entities.protect_source` column + `protect_source` keyword on the protect writers; `dump_catalog_to_log` emits `source` (R6); `purge_legacy_relpath_doc` (R4) |
+| `tests/test_removal_entry_points.py` (new) | AC-1..AC-9 |
+| `tests/test_learned_evidence.py` (16.6's) | 16.6 AC-11's test is REWRITTEN by this task (r4 m-5): from R3/R5 on, `purge_path` of a missing file and `vacuum` move the sidecar row into a manifest (AC-4, AC-6) instead of leaving it; AC-11 keeps only its `orphaned_provenance` count for paths this task does not route |
 
 ## Revision round 3 (2026-10-14) {#rev-round-3}
 
@@ -216,3 +378,22 @@ d9o ([[plan-review-2026-10-14#t9-approvals]]).
 | d9o `unprotect` = event with source | [[#r6]]; AC-7 |
 | d9o `fold_concept_dups` = merge entry point, helix plan | [[#r7]]; 22.4's hand-over; AC-8 |
 | r3 s-5 (sidecar orphaned silently by purges) | [[#r3]], [[#r5]]; 16.6 R1e's interim |
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Answers [[bsd-plan16-22-spec-rereview-r4-878647c]] and d9ab/d9ac
+([[plan-review-2026-10-14#t11-approvals]]). Later rows win over round 3.
+
+| finding / decision | answered in |
+|---|---|
+| r4 b-2 / d9ab (compaction drops `source`; adjacency attributes every protection) | [[#r6]]: caller-set `source` (`learner` only from `_learn_grep_hits`), persisted in `entities.protect_source`, emitted by `dump_catalog_to_log`; the "new field ⇒ dump clause + compact-then-rebuild AC" rule; AC-7b + mutation; 22.2 R5 |
+| r4 s-1 (GMD branch purges the doc-id entity, anchors and inbound `rel:` edges on every edit) | [[#r4]] "The two branches are NOT the same call": GMD branch never calls `purge_path`; `purge_legacy_relpath_doc`; narrowed guard; AC-5b + two mutations |
+| r4 s-2 / d9ac (unclassified removal paths) | [[#r9]] table (`ingest.py:1179-1180`, `sync --invalidate`, `sync.py:209` split, `ingest_gmd.py:891-896`); [[#r3]] "missing or ignored"; [[#r4]] `--invalidate`; [[#r7]] `merge_partition` (helix merge entry point, d9ac); AC-5c, AC-8, AC-9 |
+| r4 s-4 (confirm hash vs live writes; daemon ops stay direct-delete; daemon-down fallback) | [[#r1]] selection hash, "Below the CLI", "No daemon-down fallback"; AC-1b, AC-1c + mutations; `daemon.py` in [[#files-to-modify]] |
+| r4 m-5 (AC-5 needs Wave 2; 16.6 AC-11 will start failing) | AC-5 uses 16.6's `matching_lines`, not 22.1; [[#files-to-modify]] rewrites 16.6 AC-11's test; [[task-16.6-learned-row-validation#acceptance]] AC-11 scoped |
+| r4 m-6 (`rmx fold-concept-dups` does not exist) | [[#r7]], AC-8: `rmx memory dedup` / MCP `rmx_memory` `dedup` |
+| r3 s-5 (partial: sync and vacuum remove learned rows) | closed by the s-1 and s-2 rows |
+| line numbers | [[#facts]] re-read at `7f2014a` |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
+rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
