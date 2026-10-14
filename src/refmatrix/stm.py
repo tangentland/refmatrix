@@ -124,6 +124,81 @@ def session_id() -> str:
     return os.environ.get("RMX_SESSION") or "default"
 
 
+def _proc_start(pid: int) -> str | None:
+    """The start time `ps` reports for `pid`, or None when no such process exists. Two processes
+    that held the same pid at different times have different start times, so a pid pointer is
+    trusted only while this still matches what it recorded (bug-109)."""
+    import subprocess
+    try:
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(int(pid))],
+                             capture_output=True, text=True, timeout=2.0)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    return out.stdout.strip() or None
+
+
+def pid_pointer_path(root: Path, pid: int) -> Path:
+    return stm_dir(root) / "by-pid" / f"{int(pid)}.json"
+
+
+def owner_claude_pid() -> int | None:
+    """The Claude Code process this one runs under (bug-109): `$CLAUDE_PID` (set for its Bash-tool
+    children), else the nearest ancestor whose command is `claude` (the MCP server is spawned
+    without `$CLAUDE_PID`, and its parent IS the Claude process). None outside Claude Code."""
+    env = os.environ.get("CLAUDE_PID")
+    if env and env.isdigit():
+        return int(env)
+    import subprocess
+    pid = os.getppid()
+    for _ in range(4):
+        if pid <= 1:
+            return None
+        try:
+            out = subprocess.run(["ps", "-o", "ppid=,comm=", "-p", str(pid)], capture_output=True,
+                                 text=True, timeout=2.0).stdout.split(None, 1)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if len(out) < 2 or not out[0].isdigit():
+            return None
+        if Path(out[1].strip()).name == "claude":
+            return pid
+        pid = int(out[0])
+    return None
+
+
+def write_pid_pointer(root: Path, pid: int, session: str) -> bool:
+    """Record that Claude process `pid` is now running `session` (bug-109). The input hook calls
+    this at the top of every turn, so the first prompt after a `/clear` re-points it. Returns True
+    when the file was (re)written, False when it already named `session`: the common case costs
+    one small read and no `ps` call (session ids are unique, so a pointer still naming this
+    session cannot belong to an earlier holder of the pid)."""
+    p = pid_pointer_path(root, pid)
+    try:
+        if json.loads(p.read_text(encoding="utf-8")).get("session") == session:
+            return False
+    except (OSError, ValueError):
+        pass
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps({"session": session, "pid": int(pid),
+                               "pid_start": _proc_start(pid), "t": time.time()}),
+                   encoding="utf-8")
+    tmp.replace(p)
+    return True
+
+
+def read_pid_pointer(root: Path, pid: int) -> str | None:
+    """The session Claude process `pid` is running, per its pointer; None when there is no
+    pointer, it is unreadable, or the pid now belongs to a different process."""
+    try:
+        d = json.loads(pid_pointer_path(root, pid).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not d.get("session") or d.get("pid_start") != _proc_start(pid):
+        return None
+    return str(d["session"])
+
+
 def latest_session(root: Path) -> str | None:
     """The session id whose event ring was written most recently, or None if
     no STM exists yet. Lets read surfaces (`focus tail/context`, save-state)

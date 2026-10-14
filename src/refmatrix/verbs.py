@@ -516,15 +516,35 @@ def annotate_hit(m: dict, h: dict) -> dict:
     return m
 
 
+# Set by `rmx mcp` (`mcp.serve_stdio`): this process outlives the Claude session it was spawned
+# in, so nothing in its own environment names the CURRENT session (bug-109).
+_LONG_LIVED = False
+
+
 def resolve_session(root: Path, session: "str | None") -> str:
-    """Explicit session, else $RMX_SESSION (what the hooks export), else the
-    most-recently-written STM ring (the active Claude session a spawned
-    process cannot name), else the default id. Reads and writes MUST resolve
-    identically — the CLI's `_resolve_stm_session(prefer_latest=True)` is
-    this function."""
+    """Explicit session, else the owning Claude process's pid pointer, else $RMX_SESSION, else
+    the most-recently-written STM ring, else the default id. Reads and writes MUST resolve
+    identically — the CLI's `_resolve_stm_session(prefer_latest=True)` is this function.
+
+    bug-109 (2026-10-14): the MCP server is spawned once per Claude process, so after `/clear`
+    its `CLAUDE_CODE_SESSION_ID` names the OLD session, and the newest ring is another session's
+    whenever two run at once. The input hook writes `stm/by-pid/<claude_pid>.json` at the top of
+    every turn; every caller under Claude Code resolves through it. The long-lived server checks
+    it BEFORE `$RMX_SESSION` (its env is frozen at spawn) and never reads its own
+    `CLAUDE_CODE_SESSION_ID`."""
     import os
     from refmatrix import stm as stm_mod
-    return (session or os.environ.get("RMX_SESSION")
+    if session:
+        return session
+
+    def _pointer() -> "str | None":
+        pid = stm_mod.owner_claude_pid()
+        return stm_mod.read_pid_pointer(root, pid) if pid else None
+
+    if _LONG_LIVED:
+        return (_pointer() or os.environ.get("RMX_SESSION")
+                or stm_mod.latest_session(root) or stm_mod.session_id())
+    return (os.environ.get("RMX_SESSION") or _pointer()
             or stm_mod.latest_session(root) or stm_mod.session_id())
 
 

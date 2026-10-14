@@ -311,6 +311,8 @@ def _ensure_channel_bridge() -> None:
 
 def serve_stdio() -> None:
     """Read newline-delimited JSON-RPC from stdin, write responses to stdout."""
+    from refmatrix import verbs as _verbs
+    _verbs._LONG_LIVED = True   # bug-109: resolve the session per call, never from our spawn env
     for line in sys.stdin:
         line = line.strip()
         if not line:

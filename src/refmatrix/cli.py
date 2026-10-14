@@ -1969,6 +1969,16 @@ def focus_hook(event):
                          detail=detail)
         return
     if event == "input":
+        # bug-109: name this turn's session for the Claude process that owns it, so the
+        # long-lived MCP server (spawned before any /clear) and Bash-tool CLI runs resolve the
+        # CURRENT session. Loud on failure: the hook's stderr is the only place it can go.
+        if d.get("session_id"):
+            try:
+                owner = stm_mod.owner_claude_pid()
+                if owner:
+                    stm_mod.write_pid_pointer(_root(), owner, d["session_id"])
+            except OSError as e:
+                click.echo(f"rmx focus hook: session pointer not written: {e}", err=True)
         # Top of a turn: anything still parked from the previous one never
         # completed. Fold it in before recording the new prompt so the
         # abandoned call sits in front of it on the timeline.
