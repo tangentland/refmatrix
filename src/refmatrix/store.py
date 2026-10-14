@@ -1047,17 +1047,46 @@ class Store:
         # See `transaction()`. True = we've issued BEGIN; subsequent
         # nested scopes are no-ops.
         self._in_transaction: bool = False
-        # Lazy-loaded fragment cache: linkage_name -> BitMap64. Populated on
-        # first read/write of any concept under that linkage; flushed back to
-        # disk via flush_fragments() (called from close()). The Store is bound
-        # to one partition for its lifetime, so the cache is implicitly
-        # partition-scoped.
-        self._fragments: dict[str, BitMap64] = {}
-        self._dirty_fragments: set[str] = set()
+        # Lazy-loaded fragment cache, one per partition binding:
+        # (partition_id, partition_name) -> {linkage_name -> BitMap64}, plus the
+        # matching dirty sets. `_fragments` / `_dirty_fragments` are properties
+        # that return the CURRENT binding's view. bug-105 (2026-10-14): this was
+        # one dict keyed by linkage only, on the assumption that "the Store is
+        # bound to one partition for its lifetime". It is not — `with_partition`
+        # and several daemon paths rebind `_partition_id` — so a fragment loaded
+        # under partition A absorbed B's links and was flushed under whichever
+        # partition was bound at flush time (195,003 of 422,811 bits of the live
+        # `sessions-refmatrix mentions` fragment belonged to another partition).
+        # Keying on the binding makes every rebind, however it is done, switch
+        # caches; `flush_fragments` writes every binding's dirty set under its
+        # own partition.
+        self._fragment_cache: dict[tuple, dict[str, BitMap64]] = {}
+        self._dirty_by_binding: dict[tuple, set[str]] = {}
         # When True, _log_event is a no-op. Used by rebuild_index_from_log so
         # replaying events through link()/upsert_entity() doesn't duplicate
         # them back into the log.
         self._replay_mode = False
+
+    def _fragment_binding(self) -> tuple:
+        """The cache key for the current partition binding (bug-105)."""
+        if self._partition_id is None:
+            self._connect()
+        return (self._partition_id, self._partition_name)
+
+    @property
+    def _fragments(self) -> "dict[str, BitMap64]":
+        return self._fragment_cache.setdefault(self._fragment_binding(), {})
+
+    @property
+    def _dirty_fragments(self) -> "set[str]":
+        return self._dirty_by_binding.setdefault(self._fragment_binding(), set())
+
+    def _dirty_bindings(self) -> "list[tuple]":
+        return [k for k, v in self._dirty_by_binding.items() if v]
+
+    def _clear_fragment_caches(self) -> None:
+        self._fragment_cache.clear()
+        self._dirty_by_binding.clear()
 
     @property
     def partition_name(self) -> str:
@@ -4130,6 +4159,21 @@ class Store:
         `bitmap_fragments` table. Empty fragments are removed in both modes.
         """
         self._invalidate_content_rank_caches()
+        bindings = self._dirty_bindings()
+        if not bindings:
+            return
+        # Flush every binding's dirty set under its OWN partition (bug-105):
+        # rebind to each in turn, then restore the caller's binding.
+        prev = (self._partition_id, self._partition_name)
+        try:
+            for pid, pname in bindings:
+                self._partition_id, self._partition_name = pid, pname
+                self._flush_current_binding()
+        finally:
+            self._partition_id, self._partition_name = prev
+
+    def _flush_current_binding(self) -> None:
+        """Persist the dirty fragments of the currently bound partition."""
         if not self._dirty_fragments:
             return
         if self._backend.kind == "duckdb":
@@ -7588,8 +7632,7 @@ class Store:
             self.db_path.unlink()
         for f in self.fragments_dir.rglob("*.rb64"):
             f.unlink()
-        self._fragments.clear()
-        self._dirty_fragments.clear()
+        self._clear_fragment_caches()
 
         self.init()
 
