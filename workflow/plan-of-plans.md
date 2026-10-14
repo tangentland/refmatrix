@@ -44,7 +44,7 @@ current.
 
 ## Sequence rationale {#sequence}
 
-**Current order (2026-10-14, user-approved): [[plan-review-2026-10-14#t8-wave1]] for Wave 1** — 23.0 ∥ 23.4 → 23.2 → 23.1 (+ tick registry) → 23.3; then 16.6 slice → 22.1a → 22.2 → 22.5 → 22.3; 17.1 → 17.2; 19.0/19.1/19.2; 21.1 (needs only 23.0). Later waves per [[plan-review-2026-10-07#order]] as amended by the 2026-10-14 decision log (19.6 Wave 3, after 19.0). Superseded: **(2026-10-07) the five waves in [[plan-review-2026-10-07#order]].** Wave 0: ch-bsd r10 → merge + deploy; bug-093 hotfix done (0.76.3). Wave 1 starts with plan-23. C11: batch hook-regenerating deploys (19.1, 16.2/16.3, 21.3). The numbered rationale below is historical.
+**Current order (2026-10-14, user-approved): [[plan-review-2026-10-14#t10-waves]] for EVERY wave** (bug-105 hotfix first; Wave 1 starts with 23.0 ∥ 23.4). Superseded: (2026-10-07) [[plan-review-2026-10-07#order]]. The numbered rationale below is historical.
 
 
 1. **deploy-runtime** first — until `rmx` runs the deploy tree, every later "deploy + verify" step is fiction.

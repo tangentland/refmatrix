@@ -327,3 +327,43 @@ clone; d8d's predicate owned by 21.1 in `telemetry.py`; the dead-letter file kep
 |---|---|---|
 | d9k | The ADR-0004 amendment ([[refmatrix/adr-0004-unified-location-space-index#amend-2026-10-14]]) is APPROVED and folded into `#rule-floor`, `#rule-no-delete` and `#rule-asserted-floor`. | user, 2026-10-14 ("1 - yes") |
 | d9l | 23.4's amended go/no-go ranges are CONFIRMED as written in `task-23.4#ranges`. | user, 2026-10-14 ("2 - yes") |
+
+## The wave list, all waves (2026-10-14) {#t10-waves}
+
+The user, 2026-10-14: "fix the drift now". This list SUPERSEDES [[plan-review-2026-10-07#order]]
+for every wave; it is derived from each revised task spec's own header and `Depends on:` line
+(read 2026-10-14), not from the 10-07 list. Hard dependencies are in the specs; this is the
+order of record.
+
+rel: supersedes -> [[plan-review-2026-10-07#order]]
+
+- **Wave 0 (done 2026-10-14; this log)** — spec reviews and revisions of plans 16/17/19/21/22/23,
+  the ADR-0004 amendment (d9k), 23.4's ranges (d9l). Still waiting on the user's time: the 19.5
+  R1 hook-limit probe, the 20.1 gold labelling, the 21.4 question-set approval.
+- **Hotfix (now, ahead of Wave 1)** — bug-105 (d9a): fragment cache follows the partition binding,
+  `rmx repair-index --fragments`, live repair after deploy.
+- **Wave 1**
+  - 23.0 (test sandbox) ∥ 23.4 (Option A measurement; its verdict triggers the d2b revisit).
+  - 23.2 → 23.1 (+ tick registry, `add_evidence_if_absent`) → 23.3 (sync between-file yield).
+  - 21.1 (recall-event schema; needs only 23.0).
+  - 19.5 R1 (the probe) → 19.1 → 19.2; 19.0 (STM hygiene; needs only 23.0, no later than Wave 2).
+  - After 23.1: 17.1 → 17.2 → 17.4; 16.6 Wave-1 slice → 22.1a → 22.2 → 22.5 → 22.3.
+- **Wave 2**
+  - 16.1 (learn-time provenance write) → 16.2 ∥ 16.3 → 16.5; 22.1 (classes that need 16.1's
+    provenance).
+  - 19.3 → 19.4 (a registered, arming-gated step on 17.2's registry); 19.0 if not done in Wave 1.
+  - 17.3 (fleet rollout, after 17.1/17.2/17.4 deploy).
+- **Wave 3**
+  - 16.4 (measurement; closes plan-14).
+  - 21.2 → 21.3 (its R0 band decides the nudge) ∥ 21.4 (NL ranking, code+docs gold set).
+  - 19.6 (phased context, topic cache, tree render, versioned injection), after 19.0, 19.1, 19.5's
+    baseline and 21.1; its PROPOSED tables confirmed by the user first (d9f).
+- **Wave 4**
+  - 20.2 → 20.3 (after the user's 20.1 labels).
+  - plan-18 (catalog CHECKPOINT) as a 17.2 step, after its task specs are written.
+  - Draft the ADR-0004 helix plan: inherits 22.4 (merge writes, d9j), 19.2's raw counts with
+    read-time weights, 17.2's step registry, plan-20's merge rule, the approved amendment.
+- **Wave 5** — build the helix: age tiers, manifests, the alias map and merge writes.
+- **Dormant** — plan-13 (waits on a sessions gold set; d4b). **Closed into others** — plan-14
+  (by 16.4).
+{#t10-waves-body}
