@@ -4226,6 +4226,140 @@ class Store:
                 )
             self._dirty_fragments.discard(raw)
 
+    def _read_all_fragment_rows(self) -> "dict[tuple[int, str], BitMap64]":
+        """Every persisted fragment as {(partition_id, linkage): BitMap64}, in both backends."""
+        con = self._connect()
+        out: dict = {}
+        if self._backend.kind == "duckdb":
+            for pid, linkage, blob in con._duck.execute(
+                "SELECT partition_id, linkage, blob FROM bitmap_fragments"
+            ).fetchall():
+                out[(int(pid), linkage)] = BitMap64.deserialize(bytes(blob))
+            return out
+        names = dict(con.execute("SELECT name, id FROM partitions").fetchall())
+        if self.fragments_dir.exists():
+            for d in self.fragments_dir.iterdir():
+                if d.is_dir() and d.name in names:
+                    for f in d.glob("*.rb64"):
+                        out[(int(names[d.name]), f.stem)] = BitMap64.deserialize(
+                            f.read_bytes())
+        return out
+
+    def _write_all_fragment_rows(self, rows: "dict[tuple[int, str], BitMap64]") -> None:
+        """Replace EVERY persisted fragment with `rows` (empty bitmaps are not written)."""
+        con = self._connect()
+        if self._backend.kind == "duckdb":
+            con._duck.execute("DELETE FROM bitmap_fragments")
+            for (pid, linkage), bm in sorted(rows.items()):
+                if len(bm):
+                    con._duck.execute(
+                        "INSERT INTO bitmap_fragments(partition_id, linkage, blob) "
+                        "VALUES (?, ?, ?)", [pid, linkage, bm.serialize()])
+            return
+        names = {i: n for n, i in con.execute("SELECT name, id FROM partitions").fetchall()}
+        for f in self.fragments_dir.rglob("*.rb64"):
+            f.unlink()
+        for (pid, linkage), bm in rows.items():
+            if not len(bm) or pid not in names:
+                continue
+            d = self.fragments_dir / names[pid]
+            d.mkdir(parents=True, exist_ok=True)
+            tmp = d / f"{linkage}.rb64.tmp"
+            tmp.write_bytes(bm.serialize())
+            tmp.replace(d / f"{linkage}.rb64")
+
+    def repair_fragments(self, *, dry_run: bool = True,
+                         manifest_dir: "Path | None" = None) -> dict:
+        """Rebuild every bitmap fragment so each bit sits in its entity's partition (bug-105).
+
+        The partition-agnostic fragment cache (fixed in this release) left three kinds of
+        damage: bits of one partition's entities flushed into another partition's row,
+        `entity_links` rows whose bit never reached the right row, and bits for entities that
+        no longer exist. A census of a copy of the live read snapshot (2026-10-14) found
+        538,094 foreign bits, 120,759 links missing from their fragment and 466,163 dead-entity
+        bits — and also 74 own-partition bits and 442 foreign bits that exist ONLY in fragment
+        rows, with no `entity_links` row. So a plain rebuild from `entity_links` would lose
+        real bits; this repair is a union that loses none:
+
+            new(p, L) = bits of entity_links for partition p and linkage L
+                        ∪ every fragment bit of L, from any row, whose entity lives in p
+
+        The only bits removed are those whose entity id is absent from `entities`; they are
+        written to a JSONL manifest (`dropped_hex` = serialized BitMap64 per (partition,
+        linkage)) before anything changes, so the drop is restorable. `dry_run=True` (the
+        default) computes and reports, writes the manifest, changes nothing.
+
+        Caller holds the writer lock (the daemon op does)."""
+        import json as _json
+
+        self.flush_fragments()
+        con = self._connect()
+        ent_part = dict(con.execute("SELECT id, partition_id FROM entities").fetchall())
+        names = {int(i): n for i, n in con.execute(
+            "SELECT id, name FROM partitions").fetchall()}
+        lk = {int(i): _canonical_verb(n) for i, n in con.execute(
+            "SELECT id, name FROM linkage_types").fetchall()}
+        mask = (1 << _CONCEPT_SHIFT) - 1
+
+        new: dict = {}
+        added_from_links = 0
+        for eid, lid, cid in con.execute(
+            "SELECT entity_id, linkage_id, concept_id FROM entity_links"
+        ).fetchall():
+            pid = ent_part.get(eid)
+            if pid is None or lid not in lk:
+                continue
+            new.setdefault((int(pid), lk[lid]), BitMap64()).add(self._pack(cid, eid))
+
+        old = self._read_all_fragment_rows()
+        moved = dropped_dead = kept = 0
+        dropped: dict = {}
+        for (pid, linkage), bm in old.items():
+            canon = _canonical_verb(linkage)
+            for bit in bm:
+                tp = ent_part.get(bit & mask)
+                if tp is None:
+                    dropped.setdefault((pid, linkage), BitMap64()).add(bit)
+                    dropped_dead += 1
+                    continue
+                key = (int(tp), canon)
+                if int(tp) != pid or canon != linkage:
+                    moved += 1
+                else:
+                    kept += 1
+                new.setdefault(key, BitMap64()).add(bit)
+        # Bits that were in NO old row at all: restored purely from entity_links.
+        old_all = BitMap64()
+        for bm in old.values():
+            old_all |= bm
+        for bm in new.values():
+            added_from_links += len(bm - old_all)
+
+        changed = {k for k in set(old) | set(new)
+                   if old.get(k, BitMap64()) != new.get(k, BitMap64())}
+        manifest = None
+        if dropped or not dry_run:
+            mdir = Path(manifest_dir) if manifest_dir else self.root / "backups"
+            mdir.mkdir(parents=True, exist_ok=True)
+            manifest = mdir / f"fragments-repair-{time.strftime('%Y%m%d-%H%M%S')}.jsonl"
+            with manifest.open("w", encoding="utf-8") as f:
+                for (pid, linkage), bm in sorted(dropped.items()):
+                    f.write(_json.dumps({
+                        "partition_id": pid, "partition": names.get(pid),
+                        "linkage": linkage, "dropped": len(bm),
+                        "dropped_hex": bm.serialize().hex()}) + "\n")
+        if not dry_run and changed:
+            with self.transaction():
+                self._write_all_fragment_rows(new)
+            self._clear_fragment_caches()
+        return {
+            "dry_run": dry_run, "rows_before": len(old),
+            "rows_after": sum(1 for bm in new.values() if len(bm)),
+            "rows_changed": len(changed), "kept": kept, "moved": moved,
+            "added_from_links": added_from_links, "dropped_dead": dropped_dead,
+            "manifest": str(manifest) if manifest else None,
+        }
+
     @staticmethod
     def _pack(concept_id: int, entity_id: int) -> int:
         return (concept_id << _CONCEPT_SHIFT) | entity_id

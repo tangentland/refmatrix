@@ -9376,7 +9376,15 @@ def install_hooks(git, claude, briefing, agent_env, search, apply, force, scope,
                    "and secondary indexes in-band (the 2026-09-14 phantom-leaf "
                    "recipe). Daemon-routed when the daemon is up; offline "
                    "otherwise. Aborts on real duplicate rows.")
-def repair_index(entities: bool):
+@click.option("--fragments", "fragments", is_flag=True,
+              help="Rebuild every bitmap fragment so each bit sits in its entity's "
+                   "partition (bug-105): moves foreign bits, restores bits only in "
+                   "entity_links, drops bits of deleted entities into a manifest under "
+                   ".refmatrix/backups/. Daemon-routed when the daemon is up.")
+@click.option("--dry-run", "dry_run", is_flag=True,
+              help="With --fragments: report the counts and write the manifest, change "
+                   "nothing.")
+def repair_index(entities: bool, fragments: bool, dry_run: bool):
     """Drop + recreate idx_entity_links_lk_concept to fix DuckDB secondary
     index drift. Daemon does this on every startup; this command is for
     triage when the index drifts mid-session ('Failed to delete all rows
@@ -9387,6 +9395,36 @@ def repair_index(entities: bool):
     when `.refmatrix/repair.needed` exists)."""
     from refmatrix import daemon as daemon_mod
     root = _root()
+    if fragments:
+        from refmatrix import verbs as _verbs
+        try:
+            _verbs.require_daemon(root)
+            daemon_up = True
+        except _verbs.VerbBusyError as e:
+            raise click.ClickException(f"{e} — repair skipped; retry when the daemon is idle")
+        except _verbs.VerbAbsentError:
+            daemon_up = False
+        if daemon_up:
+            resp = daemon_mod.call(root, "repair_fragments", {"dry_run": dry_run},
+                                   timeout=600.0, retries=0)
+            if not resp.get("ok"):
+                raise click.ClickException(resp.get("error", "daemon error"))
+            rep = resp["result"]
+        else:
+            s = _store_rw()
+            try:
+                rep = s.repair_fragments(dry_run=dry_run, manifest_dir=root / "backups")
+            finally:
+                s.close()
+        mode = "dry run — nothing changed" if rep["dry_run"] else "applied"
+        console.print(
+            f"[green]fragments repair[/] ({mode}): rows {rep['rows_before']}->"
+            f"{rep['rows_after']} changed={rep['rows_changed']} kept={rep['kept']} "
+            f"moved={rep['moved']} added_from_links={rep['added_from_links']} "
+            f"dropped_dead={rep['dropped_dead']}")
+        if rep.get("manifest"):
+            console.print(f"  manifest: {rep['manifest']}")
+        return
     if entities:
         from refmatrix import verbs as _verbs
         from refmatrix.store import RepairAbort

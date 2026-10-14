@@ -5375,6 +5375,25 @@ def _op_repair_entities(d: Daemon, args: dict) -> dict:
     return rep
 
 
+def _op_repair_fragments(d: Daemon, args: dict) -> dict:
+    """In-band bitmap fragment repair (`rmx repair-index --fragments`, bug-105).
+
+    Moves every fragment bit into its entity's partition, restores bits that exist only
+    in `entity_links`, and drops bits whose entity is gone, writing those to a manifest
+    under `<store>/backups/` first. `dry_run` (default True) reports and changes nothing.
+    Under the writer lock; a real repair requests a snapshot so readers see it."""
+    dry_run = bool(args.get("dry_run", True))
+    with d._store_lock:
+        rep = d.store.repair_fragments(dry_run=dry_run,
+                                       manifest_dir=d.root / "backups")
+    d._log(f"repair_fragments dry_run={dry_run} moved={rep['moved']} "
+           f"added_from_links={rep['added_from_links']} "
+           f"dropped_dead={rep['dropped_dead']} manifest={rep['manifest']}")
+    if not dry_run and rep["rows_changed"]:
+        d._request_snapshot()
+    return rep
+
+
 def _op_replica_refresh(d: Daemon, args: dict) -> dict:
     """Force an immediate snapshot of primary → replica .duckdb file."""
     result = d._refresh_replica_now()
@@ -6288,6 +6307,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "subject_leaves": _op_subject_leaves,
     "stop": _op_stop,
     "repair_entities": _op_repair_entities,
+    "repair_fragments": _op_repair_fragments,
 }
 
 # Ops dispatched to the small `cli_pool` — latency-sensitive, mostly
