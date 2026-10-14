@@ -50,3 +50,22 @@ dir redirected to a tmp dir BEFORE `refmatrix` is imported; store roots injected
 cannot find live stores; spawned `rmx` children refuse any socket outside the tmp dir (bug-088's
 refuse stage); a conftest guard fails any test that touches `~/.refmatrix` or a registered live
 store. {#t1-scope}
+
+## Topic 2: write harness and concurrency {#t2}
+
+Findings: 23 #b-1..b-3, #s-1..s-7, #m-1..m-3; 17 #s-1, #s-7; 22 #s-1, #s-2.
+
+| id | decision | by |
+|---|---|---|
+| d2a | Exactly-once drain: the drain offset is committed in the SAME DuckDB transaction as the batch (option 1), not an event-id dedupe table. Answered "2a - opt"; read as option 1, the recommendation — to be confirmed. | user, 2026-10-14 |
+| d2b | Plan-23 stays first in Wave 1 (after 23.0), with the `bind(batch)` seam; Option A is not folded in. Plan-17 takes no per-dataset Lance lock now; it goes through `bind`, and a revisit is recorded for when Option A lands. | user, 2026-10-14 |
+| d2c | bug-093's between-file yield becomes task **23.3** (after 23.1): a transaction boundary inside `_sync_paths`, the same `bind` seam and write-count tests. | user, 2026-10-14 |
+| d2d | bug-099 (learn queue unlinks `*.draining` before apply) stays logged; fixed by 23.1. | user, 2026-10-14 |
+
+Spec fixes taken without a decision (proposed, not objected to): per-batch `bind` inside the hold
+with a two-partition competitor AC (#b-1); a write-count recorder and a finalize step (#b-3); one
+event per hold by default with drain budget, shutdown stop, error policy and requeue (#s-1); a
+required `merge_fn` (#s-2); 17.1 and 22's apply use `bind` + the recorder but not the lossy queue
+(17 #s-1, 22 #s-1/#s-2); real `_FairLock` in tests, every-batch-released AC, recorder required,
+23.2 before 23.1 (#s-4, #s-5); overflow reaches `rmx learn status` through a daemon op (#s-6);
+the MEH items. {#t2-fixes}
