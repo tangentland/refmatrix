@@ -13,12 +13,15 @@ metadata:
 # Plan 16: the grep shim stops answering and only watches {#root}
 
 **Date:** 2026-10-06
-**Status:** Drafting. Task specs revision 5 (2026-10-14) answers spec review r4
-`bsd-plan16-spec-review-r4-33809ab` (NEEDS-REVISION: 2 BULLSHIT, 7 SKETCHY, 8 MEH; [[#revision-5]]).
-The precision gate is KEPT by user decision, scored on complete outputs with a minimum n and a
-forward-collected oracle. Awaiting spec review r5 before `approved`; [[#decisions-needed]] lists
-what the user must confirm. No plan-16 code yet, except the `-f/--flags` removal (`d559567`, d-4),
-which landed ahead of 16.5. `bsd-r1-remedy` has merged to `master`.
+**Status:** Drafting (revision after the 2026-10-14 decision log). Task specs revision 6
+(2026-10-14) answers spec review r5 `bsd-plan16-spec-review-r5-cd7c923` (NEEDS-REVISION: 2
+BULLSHIT, 6 SKETCHY, 7 MEH, plus r4's partials) and every 2026-10-14 decision that touches plan-16
+(d6d, d7a, #t6-fixes, #t7-fixes, #t8-amendments; [[#revision-6]]). Both former decisions-needed are
+settled ([[#decisions-needed]]). 16.6 is split by dependency: its Wave-1 slice runs after plan-23's
+23.1; 16.1-16.5 are Wave 2 ([[#waves]]). The precision gate is KEPT by user decision, scored on
+complete outputs with a minimum n and a forward-collected oracle. Awaiting spec review r6 before
+`approved`. No plan-16 code yet, except the `-f/--flags` removal (`d559567`, d-4), which landed
+ahead of 16.5. `bsd-r1-remedy` has merged to `master`.
 
 rel: depends-on -> [[plan-15-derive-impact-tracking]]
 rel: derives-from -> [[plan-14-grep-learning-measurement]]
@@ -27,6 +30,10 @@ rel: amends -> [[feedback_rmxgrep_no_plain_escape]]
 rel: related-to -> [[project_grep_surface_defect_family]]
 rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
 rel: related-to -> [[plan-review-2026-10-07]]
+rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
+rel: derives-from -> [[plan-review-2026-10-14]]
+rel: depends-on -> [[plan-23-bounded-write-harness]]
+rel: depends-on -> [[task-23.0-test-sandbox]]
 
 ## Why {#why}
 
@@ -107,12 +114,17 @@ are needed. Full spec: task 16.1. {#learner}
   - Every call appends one record to `<store_root>/grep-learn.log`, and the learner opens no
     `Store`.
 - **The dedicated Grep tool uses it too.** `grep-tool-teach.sh` (PostToolUse(Grep)) calls the same
-  learner, so all three surfaces learn from one implementation.
+  learner, so all three surfaces learn from one implementation. Each spawner names itself
+  (`--spawned-by shim | grep-tool-hook | rmx-grep`, 16.1 R6), so 16.4 attributes records by route.
+- **It writes provenance at learn time** (16.1 R10, moved from 16.6 by d6d): every taught evidence
+  row gets a `learned_evidence` sidecar row with the tool, binary, dialect, kept match tokens and
+  the matched line's hash, so a later re-check can replay the caller's own rules (16.6 R2).
 
 **The explicit command (task 16.5, user decision 2026-10-07).** With paths or a pipe, `rmx grep`
 execs the real grep plus the learner, exactly like the shim. Only the path-less `rmx grep PAT` still
 answers, from the index, with a corpus-pruned `grep -r` floor. rmx's own options are parsed from the
-RAW argv by one parser (click drops `--`, probed), and each has a row per route (exec, index,
+RAW argv by one parser and click parses nothing, not even `--help` (click drops `--`, and a
+declared `--help` ate `-e --help`; both probed). Each option has a row per route (exec, index,
 floor) in 16.5's d-4 table. The Python re-implementation of grep's output, where four audit rounds
 kept finding sibling bugs, is deleted. {#explicit}
 
@@ -137,12 +149,25 @@ Specs go in `workflow/plans/plan-16-invisible-grep-shim-tasks/` before approval.
 
 | Task | Builds | Acceptance (sketch) |
 |---|---|---|
-| 16.1 | `grep_learn.py` behind the hidden `rmx grep-learn` (not a verb); `corpus.py` predicate; `_learn_grep_hits` dedupe | flag fidelity with proven power; cutoffs honoured; corpus-only; entity identity under symlinked cwd; detached; slots; switch on `store_root`; idempotent store |
+| 16.1 | `grep_learn.py` behind the hidden `rmx grep-learn` (not a verb); `corpus.py` predicate; `_learn_grep_hits` dedupe; learn-time provenance into 16.6's sidecar (R10, d6d); `spawned_by` | flag fidelity with proven power (space forms included); cutoffs honoured; corpus-only; pruning only on recursive re-runs; entity identity under symlinked cwd; detached; slots; switch on `store_root`; idempotent store; provenance on every taught row |
 | 16.2 | invisible shim in both wrappers; cwd+argv throttle, counted; `RMXGREP_TEACH` retired via the log; generators + `check()` extended | differential 100% byte-identical with power shown on the current shim; caller never delayed; overhead with the REAL learner |
 | 16.3 | Grep-tool hook rebuilt from the tool's real rg argv (`--hidden`, VCS globs, constants pinned); every doc/help surface | taught set equals the tool's captured RESPONSE; paging inputs do not kill; no stale claim anywhere |
 | 16.4 | measurement, historical + forward (learner log joined to transcripts) | precision ≥ 0.99 / recall ≥ 0.95 (micro, timeouts counted) on COMPLETE outputs only, gated at n ≥ 30 else `insufficient-n`; no carve-out; a gate shown able to fail; routes measured |
 | 16.5 | explicit `rmx grep` with paths or a pipe execs the real grep + learner; path-less keeps the index read with a pruned `grep -r` floor; rmx options parsed from the raw argv with a per-route table; the Python re-implementation (argv order, `-c` rows, stdin filter, delegate) is DELETED | differential 100% incl. round 4's cases, bug-081 and the `--`/`-e`/`--file` rows; every d-4 cell has a case; nothing beyond the tool's bytes; deletions verified by `rg -w` |
-| 16.6 | grep-learned rows carry provenance (sidecar `learned_evidence`, written by 16.1's writer), read-time verification queues `stale_seen` marks (plan-23's queue), backfill of pre-16.6 rows. The audit, repair and removal engine MOVED to [[plan-22-audited-removal-and-repair]] (plan review C1-C3, user 2026-10-07) | provenance on every new learned row; backfill on a catalog COPY leaves no learned row without provenance; marks applied in bounded batches |
+| 16.6 | **Wave-1 slice (d6d), after plan-23's 23.1, no dependency on 16.1:** the `learned_evidence` sidecar keyed on the evidence row's identity + `rules_sha` (survives `replica_merge`), a verifier that re-runs the recorded tool (never Python `re`), read-time marks that record staleness under the row's own rules (never a reader-rule drop) through plan-23's queue, the backfill, and legacy-writer rows until 16.1 lands. The learn-time write is 16.1 R10. The audit, repair and removal engine MOVED to [[plan-22-audited-removal-and-repair]] (plan review C1-C3, user 2026-10-07); nothing here removes a row | sidecar rows join after a merge; BRE-taught rows verify `ok`; a reader-rule drop writes no mark; backfill on a catalog COPY leaves no learned row without provenance; marks applied in bounded batches; overflow counted |
+
+## Waves and dependencies {#waves}
+
+From [[plan-review-2026-10-14#t8-wave1]] and d6d. Plan-16 has tasks in two waves.
+
+| wave | order | depends on |
+|---|---|---|
+| 1 | **16.6 Wave-1 slice**, after plan-23's 23.1 (`23.0 ∥ 23.4 → 23.2 → 23.1`); it feeds plan-22's `22.1a → 22.2 → 22.5 → 22.3` | plan-23 23.1 (queue, `bind(batch)` drain), 23.0 (sandbox). NOT 16.1 (#t8-amendments d1c/d6d) |
+| 2 | **16.1 → 16.2 ∥ 16.3 → 16.5**; 16.4's acceptance run after 16.2 is deployed | 16.1 depends on the 16.6 slice (its R10 writes the sidecar), so there is no Wave 1 → Wave 2 inversion |
+
+Every plan-16 test runs inside plan-23 task 23.0's shared sandbox (d1a/d1b).
+
+rel: derives-from -> [[plan-review-2026-10-14#t8-wave1]]
 
 Tasks 16.7–16.10 (the agent's `rmx context` usage) moved to [[plan-21-agent-context-usage]] as 21.1–21.4 (plan review C8, user 2026-10-07), so that review loop and 16.1–16.5's do not block each other.
 
@@ -171,25 +196,66 @@ Tasks 16.7–16.10 (the agent's `rmx context` usage) moved to [[plan-21-agent-co
 tty, so greps already run the real tool plus today's flag-stripped ping until 16.2 ships. The 63
 env-sensitive tests pass under it (`workflow/review-output/rmxgrep-mode-plain.log`). {#interim}
 
-Next gate: `@ch-bsd` spec review r5 of task specs 16.1–16.6 revision 5, the user's answers to
-[[#decisions-needed]], then `approved`.
+Next gate: `@ch-bsd` spec review r6 of task specs 16.1–16.6 revision 6, then `approved`.
 
-## Decisions needed (user) {#decisions-needed}
+## Decisions needed (user) — both SETTLED 2026-10-14 {#decisions-needed}
 
-Revision 5 did not invent these; each is a spec default that the user may confirm or overrule.
+1. **`-k/--kind` and `--linkage` on the path-less floor (b-r4-1). SETTLED by d7a** (user,
+   2026-10-14), verbatim from [[plan-review-2026-10-14#t7]]: "dn-1, option (a): `-k`/`--linkage` on
+   a path-less call never runs the grep floor; an index miss exits 1, and a call that would go
+   straight to the floor exits 2 with a message that the option needs the index. Nothing is
+   silently widened. The plan's stated reason is corrected: the blockers are a caller's own
+   `--include` widening the translated globs, BSD glob case-sensitivity, and `--linkage` having no
+   file-level translation — not a "wider kind"." Revision 5's stated reason ("a wider reading of
+   kind") is withdrawn. ([[task-16.5-explicit-grep-hands-off#d7a]]) {#dn-1}
+2. **Where 16.6's remaining half lives (C1). SETTLED by d6d** (user, 2026-10-14): neither option
+   as stated. 16.6 is split by dependency: the sidecar table, backfill and read-time marks are a
+   Wave-1 slice after plan-23 (with no dependency on 16.1, #t8-amendments); the learn-time
+   provenance write moves into 16.1 (R10, Wave 2). This also settles plan-22 #b-7.
+   ([[task-16.6-learned-row-validation#split]], [[#waves]]) {#dn-2}
 
-1. **`-k/--kind` and `--linkage` on the path-less floor (b-r4-1).** Spec default, read from d-4's
-   "never silently dropped": an index miss under `-k`/`--linkage` runs NO floor (prints `rmx grep: no
-   indexed matches (-k/--linkage: no grep floor)`, exit 1), and a call routed straight to the floor
-   is refused (exit 2). The alternative is to translate `-k code` into `--include` globs of
-   `CODE_EXTS` on the floor. That is a wider reading of "kind" than the index's, so the spec does not
-   choose it. ([[task-16.5-explicit-grep-hands-off#d-4]]) {#dn-1}
-2. **Where 16.6's remaining half lives (C1).** The plan review said "16.1 keeps only the provenance
-   write". Plan-22 (22.1 depends on "16.6 R1/R5") and plan-23 (consumes "16.6 R4") read that as
-   "plan-16 keeps the learner-side writes", so 16.6 stays a task (provenance, marks, backfill).
-   Alternatively fold it into 16.1. ([[task-16.6-learned-row-validation#split]]) {#dn-2}
+rel: derives-from -> [[plan-review-2026-10-14#t6]]
+rel: derives-from -> [[plan-review-2026-10-14#t7]]
 
-## Revision 5 changelog {#revision-5}
+## Revision 6 changelog {#revision-6}
+
+Every r5 finding, the r4 partials it carried, the plan-22 review items naming plan-16, and the
+2026-10-14 decision-log rows and review items that touch plan-16, by id.
+
+| finding / decision | answered in |
+|---|---|
+| r5 b-r5-1 (16.6 provenance cannot replay the caller's rules) | [[task-16.6-learned-row-validation#r1]], [[task-16.6-learned-row-validation#r2]], [[task-16.1-argv-faithful-learner#r10]] |
+| r5 b-r5-2 (AC-5b's BRE-routing mutation cannot fire) | [[task-16.5-explicit-grep-hands-off#ac-5-seed]] |
+| r5 s-r5-1, r4 b-r4-2 (partial) (click still parses `--help`; `-k` cluster rule) | [[task-16.5-explicit-grep-hands-off#r0]] |
+| r5 s-r5-2, r4 s-r4-7 (partial) (16.2 AC-4b vs 16.1 R1b's `--include` pruning) | [[task-16.1-argv-faithful-learner#r1b]]; 16.2 AC-4b kept ([[task-16.2-invisible-shim#revision-6]]) |
+| r5 s-r5-3 (marks record reader-rule drops) | [[task-16.6-learned-row-validation#r4]] |
+| r5 s-r5-4 (sidecar on `evidence_rowid`) | [[task-16.6-learned-row-validation#r1]], [[task-16.6-learned-row-validation#r1c]] |
+| r5 s-r5-5, plan-22 #b-7, decision-log review #b-3 (16.6 unscheduled; Wave 1 → Wave 2 inversion) | [[#waves]]; [[task-16.6-learned-row-validation#split]]; 16.6 header |
+| r5 s-r5-6 (route 2 absorbs Grep-tool and `rmx grep` records) | [[task-16.1-argv-faithful-learner#r6]]; [[task-16.4-measurement#r1-forward]]; 16.2/16.3/16.5 pass `--spawned-by` |
+| r5 m-r5-1 (`handed-off` mis-read) | [[task-16.5-explicit-grep-hands-off#r6]] |
+| r5 m-r5-2 (AC-5d/5f miss pattern absent from disk) | [[task-16.5-explicit-grep-hands-off#acceptance]] 5d/5f |
+| r5 m-r5-3 (index-flag folder and format sets unnamed) | [[task-16.5-explicit-grep-hands-off#r3]], [[task-16.5-explicit-grep-hands-off#r4]] |
+| r5 m-r5-4 (`spawn()`'s interpreter) | [[task-16.2-invisible-shim#r2b]]; [[task-16.5-explicit-grep-hands-off#sandbox]] |
+| r5 m-r5-5 (space-form rows) | [[task-16.1-argv-faithful-learner#r1-space-forms]] |
+| r5 m-r5-6 (`$` rule after shlex) | [[task-16.4-measurement#r1-forward]] |
+| r5 m-r5-7 (truncated floor exit) | [[task-16.5-explicit-grep-hands-off#d-4]], [[task-16.5-explicit-grep-hands-off#r3]] |
+| plan-22 #b-1 (no line hash) | [[task-16.6-learned-row-validation#r3]]; [[task-16.1-argv-faithful-learner#r10]] |
+| plan-22 #b-2 (no flags on rows) | [[task-16.6-learned-row-validation#r1]] (rules recorded); pre-provenance rows are plan-22's most-permissive re-check ([[task-16.6-learned-row-validation#r2]]) |
+| plan-22 #s-6 (no row identity; unstable rowid) | [[task-16.6-learned-row-validation#r1]] |
+| plan-22 #m-3 (this file said 16.6 prunes) | [[#tasks]] row 16.6 (closed in r5; re-checked: no prune text) |
+| decision-log review #m-3 (`stale_seen` on a lossy queue) | [[task-16.6-learned-row-validation#r4-lower-bound]] |
+| decision-log review #s-1 (only the sidecar got a `replica_merge` fix) | [[task-16.6-learned-row-validation#r1c]] (sidecar); the other tables are plan-23's |
+| decision-log review #m-6 (MEH ids enumerated) | this table lists every r5 MEH id (m-r5-1..m-r5-7) |
+| d6d, #t8-amendments d1c/d6d | [[#waves]], [[#dn-2]], [[task-16.6-learned-row-validation#split]], [[task-16.1-argv-faithful-learner#r10]] |
+| d7a | [[#dn-1]], [[task-16.5-explicit-grep-hands-off#d7a]] |
+| #t6-fixes (line hash; tool + dialect + hash; reader-rule drops vs staleness; key survives `replica_merge`) | 16.6 R1-R4; 16.1 R10 |
+| #t7-fixes (seed + pre-check; click parses nothing; recursive-only pruning, AC-4b kept; `spawned_by`; the MEH list) | 16.5 AC-5 / R0; 16.1 R1b / R6; 16.2 AC-4b; 16.4 R1; the m-r5 rows above |
+| bug-102 (`--context` space-value, `cli.py:5540`) | [[task-16.1-argv-faithful-learner#r1]] (`value` column); 16.5 R4 deletes the set, R8 marks it fixed |
+| d1a/d1b (tests in 23.0's sandbox) | each task's test strategy; [[#waves]] |
+
+rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
+
+## Revision 5 changelog (history) {#revision-5}
 
 | finding (r4) | answered in |
 |---|---|
@@ -222,3 +288,27 @@ rel: amends -> [[plan-review-2026-10-07#gaps]]
   shim today, through the `grep()`/`rg()` functions that `BASH_ENV` defines in
   `agent-bashrc.sh`. They become invisible along with everything else. Shells outside the agent are
   untouched.
+
+## Open after revision {#open-after-revision}
+
+Gaps this revision found that the decision log does not settle. Listed, not decided.
+
+1. **Two verifiers for rows with recorded rules: a cross-plan conflict.** 16.6 R2
+   (`learned_verify`) RE-RUNS the recorded tool on the file (r5 b-r5-1's first fix; Python `re`
+   never used for those rows). Plan-22's concurrent revision of 22.1 (`#r1-verify`, read
+   2026-10-14, not edited here) instead translates the recorded dialect to Python `re` and keeps
+   `evidence_line_matches` as the one matcher. r5 allowed that only if the spec names the subset
+   Python can evaluate and marks the rest `unverifiable`. One verifier must be chosen and both
+   specs aligned; until then, 16.6 R4's drain and plan-22's audit can classify the same row
+   differently. Also for plan-22: R4's `stale_seen` is a lower bound (#m-3) and must not be
+   thresholded as an exact count.
+2. **16.6 R1b touches `_learn_grep_hits` in Wave 1.** r5's s-r5-5 offered "the old ping's writes
+   also get a provenance row OR are re-backfilled"; this revision takes the first (a
+   `legacy-writer` sidecar row, no tool/dialect/hash), because a re-backfill needs a schedule the
+   log does not give. d6d moves "the learn-time provenance write" to 16.1; the user may prefer the
+   re-backfill reading.
+3. **The dialect enum extends the log's four.** #t6-fixes names BRE/ERE/fixed/python; rg is a
+   learner tool (16.3), so 16.6 R1 adds `rust`, `pcre2` and `mixed`. The verifier re-runs `tool`
+   either way, so this is informational, but it is wider than the log's list.
+4. **Wave lists outside this plan.** `plan-review-2026-10-07#order` and `workflow/plan-of-plans.md`
+   still list only 16.1-16.5; they are outside this revision's files.

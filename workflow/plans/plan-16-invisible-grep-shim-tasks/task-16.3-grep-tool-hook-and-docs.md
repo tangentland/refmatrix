@@ -13,8 +13,10 @@ metadata:
 # Task 16.3: Grep-tool hook on the learner, and the docs {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision 5, after spec review r4 `bsd-plan16-spec-review-r4-33809ab`)
-> Depends on: [[task-16.1-argv-faithful-learner]]
+> Status: Pending (revision after the 2026-10-14 decision log; revision 6, answering spec review
+> r5 `bsd-plan16-spec-review-r5-cd7c923`)
+> **Wave:** 2 ([[plan-16-invisible-grep-shim#waves]]).
+> Depends on: [[task-16.1-argv-faithful-learner]]. Tests run in plan-23 task 23.0's sandbox.
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
 rel: depends-on -> [[task-16.1-argv-faithful-learner]]
@@ -22,6 +24,18 @@ rel: amends -> [[bsd-plan16-spec-review-b587621]]
 rel: amends -> [[bsd-plan16-spec-rereview-42a5521]]
 rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
 rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
+rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
+rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision 6 changelog {#revision-6}
+
+Answers spec review r5 ([[bsd-plan16-spec-review-r5-cd7c923]]), which found 16.3 needing no change
+of its own (AC-9's mutation was probed able to fire), and the 2026-10-14 decision log.
+
+| finding / decision | answered in |
+|---|---|
+| r5 s-r5-6 / #t7-fixes (`spawned_by` on learner records, so 16.4 can join Grep-tool records to Grep `tool_use`s) | R1 [[#r1]] (`--spawned-by grep-tool-hook`); AC-1 asserts it; mutation |
+| d1a/d1b (tests sandboxed by task 23.0) | [[#test-strategy]] |
 
 ## Revision 5 changelog {#revision-5}
 
@@ -48,7 +62,9 @@ inputs was killed (#b-3). {#why-lead}
 ## Requirements {#requirements}
 
 **R1. Rebuild the tool's own rg argv, from the tool's own code, pinned by a captured payload.**
-The hook calls `rmx grep-learn --tool rg --bin "$RG_ABS" --cwd "$CWD" -- <argv>`.
+The hook calls `rmx grep-learn --tool rg --bin "$RG_ABS" --cwd "$CWD" --spawned-by grep-tool-hook
+-- <argv>`. `--spawned-by grep-tool-hook` lets 16.4 join this record to the Grep `tool_use`, not
+read it as route 2 (s-r5-6).
 
 **Binary resolution (#s-n5).** `TEACH_TEMPLATE` is a bash script, and hooks inherit `BASH_ENV`.
 Measured: `bash -c 'command -v rg'` prints `rg`, the agent-bashrc FUNCTION. So:
@@ -144,6 +160,7 @@ each (`feedback_verify_memory_by_recall_not_get`). {#r4}
    - The taught `(file, line)` set equals what the tool RETURNED (content mode, line-addressed),
      corpus-filtered. In files mode, the taught file set equals the returned file set.
    - The control is the tool's response. It is never `rg` run on the mapped argv.
+   - The learner's record carries `spawned_by=grep-tool-hook` (s-r5-6).
 2. **Dot-directory hit.** A fixture hit under `.github/x.yml` is taught. It is in the corpus only if
    `corpus.is_relevant` allows it; otherwise it is counted `out_of_corpus`, and the test asserts
    whichever the predicate says, explicitly.
@@ -183,6 +200,10 @@ each (`feedback_verify_memory_by_recall_not_get`). {#r4}
 
 ## Test strategy {#test-strategy}
 
+- **Sandbox (d1a/d1b).** Every test runs inside plan-23 task 23.0's shared sandbox (`$HOME`,
+  global root, registry and LaunchAgents dir in a tmp dir before `refmatrix` is imported; spawned
+  `rmx` children refuse sockets outside it; the conftest guard fails any touch of `~/.refmatrix` or
+  a registered live store), with `store_root` in a tmp project under a SHORT `mkdtemp()` root.
 - The rendered `TEACH_TEMPLATE` script is run with each captured payload on stdin, using the real
   rg and a real `store_root`. Assertions are on the learner's log and queue, compared against the
   captured `tool_response`.
@@ -194,4 +215,5 @@ each (`feedback_verify_memory_by_recall_not_get`). {#r4}
   - remove the single-file-filter branch: AC-9 fails (the `.py` hits are taught);
   - write `no-rg` from the hook instead of calling the learner: AC-5c fails;
   - use `command -v` for `RG_ABS`: AC-5b fails;
-  - hardcode a stale VCS list: AC-5 fails against the live extraction. {#tests}
+  - hardcode a stale VCS list: AC-5 fails against the live extraction;
+  - omit `--spawned-by grep-tool-hook`: AC-1's `spawned_by` assertion fails. {#tests}

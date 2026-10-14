@@ -1,49 +1,155 @@
 ---
 gmd: "0.1"
 id: plan-23-bounded-write-harness
-title: "Plan 23: one durable queue, one bounded drain, one lock-hold probe — built once, used by every writer"
-tags: [plan, daemon, queue, lock, harness, bug-085]
+title: "Plan 23: a test sandbox, then one bind/recorder core (durable drain, non-consuming tail, bounded steps) with one tick registry — built once, used by every writer"
+tags: [plan, daemon, queue, lock, harness, sandbox, partition, bug-085, bug-093, bug-098, bug-099]
 metadata:
   node_type: plan
   status: drafting
   created: 2026-10-07
+  updated: 2026-10-14
 ---
 
 # Plan 23: the bounded-write harness {#root}
 
-**Date:** 2026-10-07
-**Status:** Drafting. Task specs 23.1–23.2 are written. This is wave 1's FIRST build, because plans
-17, 19, 16.6 and 22 consume it.
-**Origin:** the plan review's C5, applied by the user on 2026-10-07.
+**Date:** 2026-10-07, revised 2026-10-14.
+**Status:** Drafting (revision after the 2026-10-14 decision log). Task specs 23.0-23.4 are written.
+This is Wave 1's FIRST build: plans 16 (16.6's Wave 1 slice), 17, 19 and 22 consume it, and every
+Wave 1 test runs in 23.0's sandbox.
+**Origin:** the plan review's C5, applied by the user on 2026-10-07; revised from the Wave 0
+decision log.
 
 rel: derives-from -> [[plan-review-2026-10-07]]
+rel: derives-from -> [[plan-review-2026-10-14#t1]]
+rel: derives-from -> [[plan-review-2026-10-14#t2]]
+rel: derives-from -> [[plan-review-2026-10-14#t8]]
+rel: derives-from -> [[bsd-plan23-spec-review-3104a81]]
+rel: derives-from -> [[bsd-decision-log-review-a192ba2]]
 rel: derives-from -> [[project_daemon_wedge_per_entity_lance_delete]]
 rel: related-to -> [[project_grep_learn_wall_and_queue]]
+rel: related-to -> [[project_bug098_writer_partition_race]]
+rel: related-to -> [[exploration-storage-concurrency-redesign]]
 
 ## Why {#why}
 
-Every wedge today was the same shape: per-event writes, or one long hold of `_store_lock`.
+Every wedge so far had one of two shapes: many small writes inside one hold of `_store_lock`, or
+one long hold.
 - bug-085: one Lance delete per entity.
-- bug-093: one upsert per concept.
+- bug-093: one upsert per concept, and one watch flush holding the lock across all its files.
 - r9 #s-1: model calls under the lock.
 
-Four new specs each re-derive the cure: a durable append-only queue, a bounded drain that yields
-the writer, and a test that proves the lock is free.
-- the 0.72.3 `learn_queue`;
-- 16.6 R4's marks;
-- 19.2 R4's usage events;
-- 17.1 R3's per-dataset holds.
+And every yield added to cure them has to keep the writer's partition binding, or it re-creates
+bug-098 (a writer resuming into another op's partition).
 
-Built once, every writer uses the same tested mechanism, and a fix lands in one place.
-{#why-body}
+Four specs each re-derived the cure: the 0.72.3 `learn_queue`, 16.6 R4's marks, 19.2's usage
+events, 17.1's per-dataset holds. Built once, every writer uses one tested mechanism: a `bind` seam
+that takes the lock and the partition together per batch, one transaction per hold with its
+offset inside it, a recorder that counts holds AND writes, and one tick registry. The tests that
+prove it run in a sandbox that cannot reach a live store (bug-088, bug-101). {#why-body}
 
 ## Tasks {#tasks}
 
+Order ([[plan-review-2026-10-14#t8-wave1]]): **23.0 ∥ 23.4 → 23.2 → 23.1 (+ tick registry) →
+23.3.**
+
 | task | what | acceptance (summary) |
 |---|---|---|
-| 23.1 | `refmatrix/bounded.py`: a generic durable JSONL queue (append without the lock, coalesce by key, cap with a counted overflow) + a bounded drain (batch size N, one `_store_lock` hold per batch, the writer yielded between batches, a per-batch time bound with a warning); `learn_queue` re-based on it with no behaviour change | `learn_queue`'s existing tests pass unchanged; a drain of 1,000 events takes ⌈1000/N⌉ holds, each ≤ the bound |
-| 23.2 | the shared test fixture: a `lock_free_during(fn)` probe (a thread acquires the lock from inside the work), a hold-time recorder, and a pytest plugin marker that fails a test whose code path holds the lock past a bound | the probe catches the r8 #s-2 / r9 #s-1 shapes when the fix is reverted (mutation); adopted by the existing lock tests |
+| [[task-23.0-test-sandbox]] | `$HOME`, `RMX_HOME`, registry and LaunchAgents redirected before `refmatrix` is imported; store roots injected; an audit-hook guard that REFUSES any touch of a live store, in the suite and in every spawned child | canaries prove every root resolver lands in the sandbox; live paths are refused in-process and in children (mutations fail); a full run leaves the live logs byte-unchanged |
+| [[task-23.4-option-a-measurement]] | Option A measurement #4: one writer thread vs N per-op cursor writers on a cliquet copy, go/no-go ranges confirmed before the run | the verdict is mechanical from the ranges; an error detector that is proven to fire; the live store untouched |
+| [[task-23.2-lock-hold-fixture]] | `lock_free_during(lock)`, a `HoldRecorder` on the real `_FairLock` that counts holds, DuckDB statements and Lance versions, markers that fail on zero holds | reverting r8 #s-2 / r9 #s-1 fails; re-introducing bug-085's and bug-093's per-row writes fails; no test keeps its own probe |
+| [[task-23.1-queue-and-drain]] | `bounded.py`: `bind` + one transaction per hold (fragments and offset inside it) under three front-ends (`drain(queue)`, `tail(log)`, `bounded_steps(items)`); stop paths, error policy, finalize; the tick registry with one budget; `queue_status` op; learn re-based | two-partition competitor AC; exactly-once under five injected faults; bug-099 RED→GREEN; finalize once; tail never mutates its file; overflow printed by `rmx learn status` |
+| [[task-23.3-sync-between-file-yield]] | `_sync_paths` on `bounded_steps`: one transaction per file, the lock released between files, the partition bound per step | competitor wins between files; never released inside a transaction; write counts flat in concept count; same graph as HEAD |
 
-Consumers: 16.6 R4 (marks), 19.2 R4 (usage), 17.1 R3 (per-dataset holds), 22.2 R5 (repair and
-removal writes), and the bug-093 follow-up (yield between files in the watch flush).
-{#consumers}
+{#tasks-body}
+
+## The one core, three front-ends {#core}
+
+| front-end | input | durability | consumers |
+|---|---|---|---|
+| `drain(BoundedQueue)` | a JSONL queue appended without a lock; required `key_fn` + `merge_fn`; overflow counted | segments kept until their last offset commits; offset in the batch transaction | learn (23.1 R9), 16.6 R4 marks |
+| `tail(TailLog)` | an append-only log shared with other readers; never rotated, unlinked or rewritten | offset in the batch transaction; reads to the last complete newline | 19.2's fold of `recall-events.jsonl` (d4a) |
+| `bounded_steps(items)` | an in-memory list | none claimed; the consumer recovers (manifest, mtime gate) | 17.1 datasets, 22.2 apply, 23.3 sync |
+
+All three run each batch as `with bind(partition_name): with handle.transaction(): apply;
+flush fragments; write offset`, through the same stop paths, error policy, hold alarm and
+`finalize`, and are observed by 23.2's recorder. Under Option A, `bind` becomes a per-op cursor
+handle and no consumer changes. {#core-body}
+
+## Consumers {#consumers}
+
+| consumer | uses | note |
+|---|---|---|
+| learn (`learn_queue`) | `drain`, `scope="segment"`, idempotent, `batch=1` | re-based in 23.1; bug-099 fixed (d2d) |
+| 16.6 Wave 1 slice (marks) | `drain`, `bind`, recorder | its overflow is counted and printed; 16.6 reads `stale_seen` as a lower bound |
+| 19.2 (usage counters) | `tail` over `recall-events.jsonl`, SUM `merge_fn`, tick registrant | d4a; its `memory_usage` `replica_merge` rule is 19.2 R6 |
+| 17.1 (per-dataset maintenance) | `bounded_steps`, `bind`, recorder; no queue, no per-dataset Lance lock | d2b; revisit triggered by 23.4's verdict |
+| 22.2 (repair / removal apply) | `bounded_steps`, `bind`, recorder, `finalize` (one Lance delete per kind) | no lossy queue (#t2-fixes, 22 #s-1/#s-2) |
+| 23.3 (bug-093 between-file yield) | `bounded_steps`, `bind`, recorder | d2c |
+| plan-21 | 21.1 PRODUCES `recall-events.jsonl` lock-free and does not depend on plan-23's code (d4a); plan-21's tests need only 23.0 | the consumer edge 23 #s-3 asked for |
+
+{#consumers-body}
+
+## Dependencies {#dependencies}
+
+- 23.0 and 23.4: none; they run in parallel.
+- 23.2 → 23.0. 23.1 → 23.2, 23.0. 23.3 → 23.1.
+- Downstream (from [[plan-review-2026-10-14#t8-wave1]]): after 23.1, 16.6's Wave 1 slice → 22.1a →
+  22.2 → 22.5 → 22.3; 17.1 → 17.2; 19.0, 19.1, 19.2. 21.1 needs only 23.0.
+- 23.1 is NOT gated on 23.4 (decision-log #s-2). 23.4's verdict triggers the d2b revisit.
+
+rel: depends-on -> [[plan-review-2026-10-14#t8-wave1]]
+
+## Open after revision {#open-after-revision}
+
+Gaps the decision log does not settle; listed, not decided.
+
+1. **23.4's numbers.** d2e / #t8-amendments require go/no-go ranges written before the run but give
+   no numbers. [[task-23.4-option-a-measurement#ranges]] proposes them (conflict ≤ 1 % and ≥ 1.5×
+   at N=4 → GO; 1-5 % or 1.1-1.5× → GO-serial; any ART error, > 5 %, or < 1.1× → NO-GO). The
+   user confirms or changes them before the run (23.4 AC-1).
+2. **d2a for learn.** Learn keeps whole-segment coalescing (N greps → M patterns) with one pattern
+   per hold, so 23.1 commits the covered PREFIX per hold, and a crash can re-apply an entry whose
+   lines lie past it. Its effects stay exactly-once only because learn's writes are idempotent
+   (set bits, insert-if-absent evidence); the harness refuses that mode for any non-idempotent
+   queue. Confirm this reading of d2a for learn, or require window coalescing (which gives up
+   most of learn's coalescing).
+3. **d8d's shared predicate has no named owner.** d8d says every `query.log` /
+   `recall-events.jsonl` reader skips pytest-temp-dir rows through ONE shared predicate. 23.1's
+   `tail` returns rows raw and leaves filtering to the consumer (19.2 R5 applies it). Where the
+   predicate lives (`bounded.py`, `telemetry`, or 21.1) is not decided.
+4. **Dead-lettering is new behaviour.** 23.1 R2 replaces "log and skip a failed batch" (learn
+   today) with a counted dead-letter file, so no batch is silently lost or blocks the queue. No
+   decision names it; confirm, or name the policy you want.
+5. **bug-093's other open item**, the watch flush's op-start log line, is in the bug row but not in
+   d2c; 23.3 does not take it.
+
+## Revision (2026-10-14 decision log) {#rev-2026-10-14}
+
+| finding / decision | answered at |
+|---|---|
+| d1a, d1b (sandbox first; task 23.0) | [[#tasks]], [[task-23.0-test-sandbox]] |
+| #t1-scope | [[task-23.0-test-sandbox#requirements]] |
+| d2a (offset in the batch's transaction) | [[task-23.1-queue-and-drain#r3]], [[#core]] |
+| #t8-amendments d2a (fragments, `replica_merge`, retention) | [[task-23.1-queue-and-drain#r7]], [[task-23.1-queue-and-drain#r8]], [[task-23.1-queue-and-drain#r4]] |
+| d2b (plan-23 first with `bind`; plan-17 through `bind`; revisit) | [[#core]], [[#consumers]], [[task-23.4-option-a-measurement#ranges]] |
+| d2c (task 23.3) | [[task-23.3-sync-between-file-yield]] |
+| d2d (bug-099 via 23.1) | [[task-23.1-queue-and-drain#ac-5]] |
+| d2e + #t8-amendments d2b/d2e (task 23.4, ∥ 23.0, ranges first, verdict triggers the revisit) | [[task-23.4-option-a-measurement]], [[#dependencies]], [[#open-after-revision]] 1 |
+| d4a + #t8-amendments d4a (tail reader; tick registry; one budget; `bounded_steps` vs `drain`; plan-21 as consumer) | [[#core]], [[#consumers]], [[task-23.1-queue-and-drain#r4]], [[task-23.1-queue-and-drain#r6]] |
+| #t2-fixes (all clauses) | [[task-23.1-queue-and-drain#rev-2026-10-14]], [[task-23.2-lock-hold-fixture#rev-2026-10-14]] |
+| #t8-wave1 (order) | [[#tasks]], [[#dependencies]] |
+| 23 #b-1, #b-2, #b-3 | [[task-23.1-queue-and-drain#rev-2026-10-14]], [[task-23.2-lock-hold-fixture#r3]] |
+| 23 #s-1, #s-2, #s-3, #s-6 | [[task-23.1-queue-and-drain#rev-2026-10-14]]; #s-3 also [[#consumers]] |
+| 23 #s-4, #s-5 | [[task-23.2-lock-hold-fixture#rev-2026-10-14]], [[task-23.1-queue-and-drain#ac-1]] |
+| 23 #s-7 | [[task-23.0-test-sandbox]], each task's test strategy |
+| 23 #m-1, #m-2 | [[task-23.2-lock-hold-fixture#r1]], [[task-23.2-lock-hold-fixture#r6]] |
+| 23 #m-3 | [[task-23.1-queue-and-drain#r9]] |
+| 23 #option-a (neutral; cut the seam) | [[#core]], [[task-23.4-option-a-measurement#why]] |
+| decision-log #s-1 | [[task-23.1-queue-and-drain#r3]] 7, [[task-23.1-queue-and-drain#r7]], [[task-23.1-queue-and-drain#r8]] |
+| decision-log #s-2 | [[task-23.4-option-a-measurement]] |
+| decision-log #s-3 (23 #s-3 was uncited) | [[#core]], [[task-23.1-queue-and-drain#r6]], [[task-23.3-sync-between-file-yield#r1]] |
+| decision-log #b-6 item 2 (d2b revisit unscheduled) | [[task-23.4-option-a-measurement#ranges]] |
+| decision-log #b-3 (Wave 1 order) | [[#dependencies]] |
+| decision-log #m-3 (16.6 on the overflow-dropping queue) | [[task-23.1-queue-and-drain#r3]] 6, [[#consumers]] |
+| decision-log #m-5 (d2a confirmation) | the "1 - yes agree" answered "Confirm d2a and d3b?" ([[plan-review-2026-10-14#t8-amendments-body]]); d2a is taken as confirmed |
+| decision-log #m-6 (enumerate the MEH ids) | 23 #m-1, #m-2, #m-3 and decision-log #m-3, #m-5, #m-6 are each listed in this table |

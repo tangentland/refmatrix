@@ -13,10 +13,12 @@ metadata:
 # Task 16.4: measurement {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision 5, after spec review r4 `bsd-plan16-spec-review-r4-33809ab`; precision
-> gate KEPT by user decision 2026-10-07, scored on complete outputs only, with a forward-collected
-> oracle)
-> Depends on: [[task-16.1-argv-faithful-learner]], [[task-16.2-invisible-shim]]
+> Status: Pending (revision after the 2026-10-14 decision log; revision 6, answering spec review
+> r5 `bsd-plan16-spec-review-r5-cd7c923`). The precision gate is KEPT by user decision 2026-10-07,
+> scored on complete outputs only, with a forward-collected oracle.
+> **Wave:** 2, after 16.2 ships ([[plan-16-invisible-grep-shim#waves]]).
+> Depends on: [[task-16.1-argv-faithful-learner]], [[task-16.2-invisible-shim]]. Tests run in
+> plan-23 task 23.0's sandbox.
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
 rel: depends-on -> [[task-16.2-invisible-shim]]
@@ -25,6 +27,19 @@ rel: amends -> [[bsd-plan16-spec-review-b587621]]
 rel: amends -> [[bsd-plan16-spec-rereview-42a5521]]
 rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
 rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
+rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
+rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision 6 changelog {#revision-6}
+
+Answers spec review r5 ([[bsd-plan16-spec-review-r5-cd7c923]]) and the 2026-10-14 decision log
+([[plan-review-2026-10-14]]).
+
+| finding / decision | answered in |
+|---|---|
+| r5 s-r5-6 / #t7-fixes (route 2 absorbs Grep-tool and explicit `rmx grep` learner records; `spawned_by`) | R1 step 4 [[#r1-forward]]: records split by 16.1 R6's `spawned_by`; Grep-tool records join to Grep `tool_use`s, `rmx-grep` records to `rmx grep` segments; route 2 counts `spawned_by=shim` only. AC-3 rows; mutation |
+| r5 m-r5-6 / #t7-fixes MEH ("$ rule before quote stripping") | R1 step 3: the `$`/backtick test reads the RAW segment text, before `shlex` removes quotes; `$` inside single quotes is literal. AC-3 rows; mutation |
+| d1a/d1b (tests sandboxed by task 23.0) | [[#test-strategy]] |
 
 ## Revision 5 changelog {#revision-5}
 
@@ -86,23 +101,37 @@ ships: the learner's own log record makes attribution exact. {#why-lead}
   3.6% whose argv pattern is not a literal substring of the text because of escaped quotes. So:
   1. **Tokens, not text.** Each segment is split with POSIX `shlex` (quotes removed, NO expansion).
      A segment `shlex` cannot split is `unattributable`.
-  2. **Candidates.** A record is a candidate for a segment when its `ts` falls inside the tool
-     call's window, its `cwd` equals the segment's cwd (R1 historical rule; compared after
-     `realpath` on both sides), and its PATTERN operand equals one of the segment's shlex tokens.
-     The escaped-quote case now matches, because the quotes are gone.
+  2. **Candidates, by spawner (s-r5-6).** Every forward record carries 16.1 R6's `spawned_by`, and
+     it is joined only to the call shape its spawner observes:
+     - `spawned_by=shim`: candidate for a Bash `grep`/`rg` segment when its `ts` falls inside the
+       tool call's window, its `cwd` equals the segment's cwd (R1 historical rule; compared after
+       `realpath` on both sides), and its PATTERN operand equals one of the segment's shlex tokens.
+       The escaped-quote case matches, because the quotes are gone.
+     - `spawned_by=rmx-grep`: the same rule against Bash segments that lead with `rmx grep` (the
+       first two shlex tokens are `rmx` or a path ending in `/rmx`, then `grep`).
+     - `spawned_by=grep-tool-hook`: candidate for a Grep `tool_use` when its `ts` is inside that
+       call's window, its `cwd` equals the message cwd, and the `-e` value in its `argv` equals the
+       call's `tool_input.pattern`.
   3. **Buckets for a segment**, each counted and reported:
      - `attributed` — exactly one candidate;
      - `ambiguous` — two or more candidates;
-     - `unattributable` — the segment's pattern token carries `$` or a backtick, or the segment sits
-       inside `for`/`while`/`xargs` (one segment, N records), or `shlex` failed. **An
+     - `unattributable` — the segment's pattern token carries an EXPANDING `$` or backtick, or the
+       segment sits inside `for`/`while`/`xargs` (one segment, N records), or `shlex` failed.
+       **The `$` test reads the RAW text, before quote stripping (m-r5-6):** shlex turns `'alpha$'`
+       and `"$x"` into `alpha$` and `$x` alike (probed in r5). A `$` or backtick inside SINGLE
+       quotes is literal, so `grep 'alpha$' f` stays attributable; one unquoted or inside double
+       quotes expands, so `grep "$x" f` is unattributable. **An
        unattributable segment is NEVER route 3** and never counted in `unobserved_share`'s
        numerator or denominator;
      - `throttled-explained` — zero candidates, and a keyed line explains it ([[#r1-keyed]]);
      - `unobserved` — zero candidates, no keyed line, and the segment is not unattributable.
        Only these are route 3.
-  4. **Routes.** Route 1 = an `attributed` record. Route 2 = a learner record that is a candidate
-     for NO segment of any tool call in its window (it ran inside a script; m-n7: defined by the
-     join, not by text equality). Route 3 = `unobserved` segments.
+  4. **Routes.** Route 1 = an `attributed` `spawned_by=shim` record. Route 2 = a
+     `spawned_by=shim` learner record that is a candidate for NO segment of any tool call in its
+     window (it ran inside a script; m-n7: defined by the join, not by text equality). Route 3 =
+     `unobserved` segments. Grep-tool and `rmx-grep` records are NEVER route 2 (s-r5-6): they are
+     reported in their own buckets (`grep-tool attributed/unmatched`, `rmx-grep
+     attributed/unmatched`), and an unmatched one is a join failure to list, not a script.
   5. **Learn-off is a known confound (s-r4-5).** A learn-off shim exit writes nothing (16.2 AC-5,
      by design: learning off means no writes), so a segment run with learning off reads as
      `unobserved`. `unobserved_share` is therefore an UPPER bound; the report says so, and lists
@@ -211,7 +240,12 @@ This deferral is anchored to that date and to this task. It is not open-ended.
    - a `$var` pattern and a `for … do grep …` loop, each `unattributable` and NOT route 3;
    - a zero-candidate segment with a matching keyed line (`throttled-explained`) and one without
      (`unobserved`, route 3);
-   - a learner record with no candidate segment (route 2);
+   - a learner record with no candidate segment (route 2), `spawned_by=shim`;
+   - a `spawned_by=grep-tool-hook` record that joins to the fixture's Grep `tool_use` (not route 2)
+     and a `spawned_by=rmx-grep` record that joins to a `rmx grep -rn alpha src` Bash segment (not
+     route 2) (s-r5-6);
+   - `grep 'alpha$' f` (attributable: `$` in single quotes) and `grep "$x" f` (unattributable)
+     (m-r5-6);
    - a Grep-tool call;
    - a subagent transcript;
    - an `Output too large` result.
@@ -236,7 +270,10 @@ This deferral is anchored to that date and to this task. It is not open-ended.
 
 ## Test strategy {#test-strategy}
 
-AC-3, AC-4, AC-5 and AC-7 run in the suite. Full runs log to `workflow/review-output/`.
+AC-3, AC-4, AC-5 and AC-7 run in the suite, inside plan-23 task 23.0's shared sandbox (d1a/d1b:
+`$HOME`, global root, registry and LaunchAgents dir in a tmp dir before `refmatrix` is imported;
+the conftest guard fails any touch of `~/.refmatrix` or a registered live store). The arms' throwaway
+stores (R2) are built inside that sandbox too. Full runs log to `workflow/review-output/`.
 
 Pre-registered mutations:
 - restore the unseen-but-verified carve-out: AC-4 fails;
@@ -245,4 +282,7 @@ Pre-registered mutations:
 - count `unattributable` segments as route 3: AC-3's `$var`/loop cases fail;
 - join on raw text instead of shlex tokens: AC-3's escaped-quote case fails;
 - join keyed lines without the cwd: AC-3's keyed-line cases fail (a keyed line from another cwd
-  must not explain). {#tests}
+  must not explain);
+- count every candidate-less record as route 2 regardless of `spawned_by`: AC-3's Grep-tool and
+  `rmx-grep` rows fail;
+- apply the `$` rule after shlex: AC-3's `'alpha$'` row reads unattributable and fails. {#tests}

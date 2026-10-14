@@ -2,7 +2,7 @@
 gmd: "0.1"
 id: plan-19-adaptive-memory-budget
 title: "Plan 19: memory reaches the agent within budget, ranked by use, grouped by subject, and never lost"
-tags: [plan, memory, recall, hooks, budget, memory-index, adaptive]
+tags: [plan, memory, recall, hooks, budget, memory-index, adaptive, stm]
 metadata:
   node_type: plan
   status: drafting
@@ -11,8 +11,9 @@ metadata:
 
 # Plan 19: adaptive memory under the context budgets {#root}
 
-**Date:** 2026-10-07
-**Status:** Drafting. Task specs 19.1–19.5 are written; spec review is next.
+**Date:** 2026-10-07; revised 2026-10-14 after the Wave 0 decision log.
+**Status:** Drafting. Task specs 19.0–19.6 are revised after
+[[plan-review-2026-10-14]]; a spec re-review is next.
 **Origin:** the user, 2026-10-07: "we need a way to automatically optimize memory storage and
 retrieval to make it adaptive to keep more than the byte limit". Decisions are recorded in
 [[exploration-adaptive-memory-budget]]: B + A + D now, a new plan, and first after the remedy merge.
@@ -22,93 +23,203 @@ rel: depends-on -> [[refmatrix/adr-0004-unified-location-space-index]]
 rel: depends-on -> [[feedback_decay_never_loses_knowledge]]
 rel: depends-on -> [[reference_hook_output_10k_cap]]
 rel: related-to -> [[plan-17-nightly-store-maintenance]]
+rel: depends-on -> [[plan-23-bounded-write-harness]]
+rel: depends-on -> [[plan-21-agent-context-usage]]
+rel: amends -> [[plan-review-2026-10-14#t5]]
+rel: specified-by -> [[bsd-plan19-spec-review-3104a81]]
+rel: specified-by -> [[bsd-decision-log-review-a192ba2]]
+rel: related-to -> [[exploration-session-phased-context]]
 
 ## Why {#why}
 
 Memory reaches the agent through budgeted channels, and today most of what they produce never
 arrives:
-- **SessionStart recall** (`hooks.py:277`, `--session-start --k 10 --json`) emitted **26,567 B**.
-- **Per-prompt recall** (`hooks.py:313`, `--stdin-json --k 5 --json`) emitted **16,347 B**.
+- **SessionStart recall** (`hooks.py:277`, `--session-start --k 10 --json`) emitted **26,567 B**
+  in October and 16,629 B on 2026-10-14.
+- **Per-prompt recall** (`hooks.py:313`, `--stdin-json --k 5 --json`) emitted **16,347 B**
+  (15,153 B on a 2026-10-14 sample).
 - Claude Code delivers hook output whole only up to about **10k chars**
-  ([[reference_hook_output_10k_cap]]). Above that, the agent gets a ~2 KB preview. So about 1 of 10
-  and 1 of 5 hits are seen, and the rest is produced and paid for unread.
-- **`MEMORY.md`** is at 22,812 / 24,000 chars (95%). It folds projects by **file mtime**
+  ([[reference_hook_output_10k_cap]]). Above that, the agent gets a ~2 KB preview.
+- What does arrive is often noise: on `"whats next?"` all 5 per-prompt hits were label-only
+  compiled `subject_*` rows.
+- **`MEMORY.md`** holds 22,368 / 24,000 chars (2026-10-14). It folds projects by **file mtime**
   (`memory_index.py:275`), never by value; feedback never folds.
 - **Nothing records which memories are used**: no recall count, no last-recalled, and 0
-  memory-recall rows in `query.log`. Every selection rule is recency or a hand-fixed order.
+  memory-recall rows in `query.log`.
+- The STM clusters that phased context would key on are led by script-body junk, a subagent's
+  tool calls and typos (bug-103, bug-104).
 
+These figures drift; every AC freezes its own baseline at RED time on a sandbox copy.
 {#why-body}
 
 ## Goal {#goal}
 
 Every injection channel delivers as much memory as fits under its real budget, chosen by measured
 use, and grouped so one line can stand for many memories. Nothing is lost: a memory that does not
-fit is reachable by name, by subject or by recall, and decay only demotes
-([[feedback_decay_never_loses_knowledge]]).
+fit is reachable by a printed command that, when run, returns it; decay only demotes
+([[feedback_decay_never_loses_knowledge]]); derived subject nodes are marked, never reaped
+(ADR-0004 #rule-no-delete).
 
 ## Design {#design}
 
-- **Pack, don't truncate (19.1).**
-  - `memory recall --max-chars N --pack` emits a compact text payload: one hook line per hit
-    (name, title, one-line hook, id), full bodies for the top hits only while the budget allows,
-    and a trailer naming what was left out and how to fetch it.
-  - The hooks use it with N under the measured harness threshold (default 9,500, env
-    `RMX_HOOK_BUDGET_CHARS`). `k` stops being the binding constraint: the budget is.
-- **Count use, exactly and without losing anything (19.2).**
-  - Every memory gets a lifetime record that never decays (`first_seen`, `last_seen`,
-    `lifetime_hits`, `lifetime_used`) and a decaying recency score with a floor.
-  - Memories are a small domain (≈500 rows), so the counts are EXACT, not sketched.
-  - Recall hits and uses are appended to a queue (the `learn_queue` pattern, no lock) and drained
-    in batches by the daemon tick. That avoids a write per event, the bug-085 lesson.
-- **Subject-tiered, value-ranked index (19.3).**
-  - `MEMORY.md` renders one line per compiled subject, with its top members inline by score.
-  - Folding is by score, not mtime. Feedback and other asserted memories have a higher floor and
-    fold only behind it.
-  - Every folded memory stays reachable through its subject line and through recall.
-- **Keep the derived layers current (19.4).**
-  - Memory compile runs on a schedule: plan-17's nightly tick, or on save-state until that tick
-    exists.
-  - The index is regenerated on every memory write the bridge sees, and at SessionStart, not only
-    at save-state.
-- **Measure delivery, not production (19.5).** Per channel: distinct memories VISIBLE to the agent
-  (inside the delivered payload) before and after, and the harness threshold probed directly.
+- **Clean STM clusters first (19.0).** Refs come from command lines, not script bodies; subagent
+  events stay out of the parent's focus; hand-backs are ambient; typos never label a cluster; the
+  session comes from the hook envelope (bug-100).
+- **Pack, don't truncate; no subject noise (19.1).**
+  - `memory recall --pack` emits one hook line per hit, whole bodies for the top hits while the
+    budget allows, and a mode-specific trailer naming what was left out.
+  - The budget defaults to `RMX_HOOK_BUDGET_CHARS` or a built-in constant set by 19.5's probe;
+    the hook argv never interpolates a variable.
+  - `mtype=subject` rows are excluded from recall by default (opt-in flag); `--subject` reaches
+    members.
+- **Count use, exactly (19.2).** A name-keyed lifetime record that never decays and a decaying
+  recency with a nonzero floor. Events are 21.1's `recall-events.jsonl` rows, folded by a
+  non-consuming tail reader on plan-23's tick, the offset committed in the batch transaction
+  (d2a). Global hits are counted in the global store (d8e).
+- **Subject-tiered, value-ranked index (19.3).** One line per live subject; fold by score in tiers
+  (rest → curated-inbound → feedback, d8b); reachability is checked by running each printed
+  command; renders read a score snapshot, not the clock; index files are written atomically under
+  one lock.
+- **Keep the derived layers current (19.4).** Compile runs as a step on plan-17's nightly tick
+  (no save-state fallback, C6), names unlabeled clusters stably, marks stale subjects, and
+  regenerates the index; the bridge regenerates it on every memory write.
+- **Measure delivery, not production (19.5).** The probe settles per-hook vs per-event and
+  PreCompact (d5d); delivery is read from 21.1's events; the fixed baseline is committed for 19.6.
+- **Phase the per-prompt budget (19.6, Wave 3).** Recall and scan-prompt spend by STM phase,
+  returns re-warm from a topic cache, stable blocks are versioned — each built only in the band a
+  pre-registered table allows.
 
 {#design-body}
 
 ## What we give up {#tradeoffs}
 
-- **The hooks stop emitting JSON.** The JSON output (`--json`) stays for programmatic callers, but
-  the hooks switch to `--pack` text. A consumer that parsed hook JSON would break. None exists:
-  the hook output goes only to the agent's context.
-- **Bodies are no longer always inline.** The top 1–2 hits carry bodies; the rest carry a hook line
-  and a fetch pointer. That trade is deliberate: 10 hook lines the agent sees beat 10 bodies it
-  does not.
+- **The hooks stop emitting JSON.** `--json` stays for programmatic callers; the hooks switch to
+  `--pack` text. No consumer parses hook JSON: the output goes only to the agent's context.
+- **Bodies are no longer always inline.** The top hits carry bodies; the rest carry a hook line
+  and a fetch pointer.
+- **Subject rows leave recall.** A label-only subject row is reachable by name and through
+  `--subject`, not as a recall hit.
 
 {#tradeoffs-body}
 
 ## Tasks {#tasks}
 
-| task | what | acceptance (summary) |
-|---|---|---|
-| 19.1 | `--max-chars` / `--pack` for `memory recall`; hooks use it | each hook's payload ≤ budget; visible distinct memories ≥ 5x today on the same prompts |
-| 19.2 | exact lifetime + decaying recency usage record, queued and drained | hits and uses counted exactly; decay never below the floor; no write under `_store_lock` per event |
-| 19.3 | subject-tiered, value-ranked `MEMORY.md` | fits the cap with more memories reachable; no memory unreachable; asserted floor holds |
-| 19.4 | compile on schedule; index on every bridged write and at SessionStart | a new memory appears in the index without a save-state; subjects refresh nightly |
-| 19.5 | delivery measurement + harness threshold probe | before/after table per channel in the implementation summary |
+| task | what | wave | acceptance (summary) |
+|---|---|---|---|
+| 19.0 | STM cluster hygiene (bug-100, bug-103, bug-104) | 1 (after 23.0; no later than 2) | redacted-fixture replay: no listed junk in the top-5 composites, listed thread terms lead; RED at HEAD |
+| 19.1 | `--pack` / `--max-chars`, subjects excluded, hooks use it | 1 (after 23.1) | payload ≤ budget; ≥ 5x distinct memories; 0 subject rows; argv runs with the env unset |
+| 19.2 | exact lifetime + decaying recency, folded from `recall-events.jsonl` | 1 (after 23.1, 21.1) | sum not dedupe; recall ≠ use; drop-and-replay identical; global hits in global store; floor > 0 |
+| 19.3 | subject-tiered, value-ranked `MEMORY.md` | 2 | executed reachability; tier fold order; clock-free check; atomic triple |
+| 19.4 | compile on 17.2's tick; stale marked; index on write and after compile | 2 (after 17.2) | stale subject kept, hidden; stable slugs; new memory indexed without save-state |
+| 19.5 | probe (first) + delivery measurement + fixed baseline | R1 first; R2–R4 after 19.1–19.3 | per-hook/per-event and PreCompact verdicts; before/after from C7 events |
+| 19.6 | phased context, topic cache, versioned injection (recall + scan-prompt) | 3 | pre-registered tables A–C; phase/cache fixtures |
 
 Task specs: `workflow/plans/plan-19-adaptive-memory-budget-tasks/`.
+
+## Dependencies {#dependencies}
+
+From [[plan-review-2026-10-14#t8-wave1]]: Wave 1 is 23.0 ∥ 23.4 → 23.2 → 23.1 (+ tick registry)
+→ 23.3, with 19.0, 19.1 and 19.2 after 23.1, except **19.0, which needs only 23.0**.
+
+| task | depends on |
+|---|---|
+| 19.0 | 23.0 |
+| 19.1 | 23.0; 19.5 R1; 21.1 (emitters, R8); scheduled after 23.1; deploys in the C11 hook window |
+| 19.2 | 19.1; 23.0; 23.1 (`bind(batch)`, `tail(log, offset)`, tick registry, offset in transaction); 23.2 (recorder); 21.1 (schema) |
+| 19.3 | 19.2; 23.0 (static catalog copy; no 19.4, no 22.2) |
+| 19.4 | 19.3; 17.2; 23.0 |
+| 19.5 | R1: none. R2–R4: 19.1–19.3, 21.1, 23.0 |
+| 19.6 | 19.0; 19.1 (incl. d8a); 19.5 R1 + R4; 21.1 fields; 23.0; 19.2 for the `used` read-back |
+
+Every test in every task runs in task 23.0's sandbox (d1a/d1b) and asserts 0 live connects.
 
 ## Decisions {#decisions}
 
 | # | decision | source |
 |---|---|---|
 | d-1 | B (packing) + A (usage) + D (subjects) now | user, 2026-10-07 |
-| d-2 | budget = just under the harness's whole-delivery limit (~10k chars), measured, configurable | user ("as high as 10k"), 2026-10-07 |
-| d-3 | low-value feedback may fold behind a floor; never lost | user rule "decay is fine, losing knowledge is bad", 2026-10-07 |
+| d-2 | budget = just under the harness's whole-delivery limit (~10k chars), measured, configurable | user, 2026-10-07 |
+| d-3 | low-value feedback may fold behind a floor; never lost | user, 2026-10-07 |
 | d-4 | own plan; subjects compiled on plan-17's tick | user, 2026-10-07 |
+| d8a | subjects excluded from recall by default (opt-in); compile MARKS stale subjects, protected and hidden; removal only via plan-22; expansion listed in 19.6 out-of-scope (replaces d5a) | user, 2026-10-14 |
+| d5b | task 19.6, Wave 3, phasing + topic cache + versioned injection over recall AND scan-prompt; turn logged, never a signal; pre-registered ranges | user, 2026-10-14 |
+| d8b | FLOOR keeps ADR-0004 #rule-asserted-floor; FOLD ORDER tier feedback → curated-inbound → rest (replaces d5c) | user, 2026-10-14 |
+| d5d | 19.5's probe decides PreCompact; until then PreCompact is `retrieved`, never `delivered` | user, 2026-10-14 |
+| d5e | task 19.0, STM cluster hygiene, before 19.6, no later than Wave 2 | user, 2026-10-14 |
+| d8e | global hits counted in the global store, keyed by name; event carries `scope`; drop-and-replay AC | user, 2026-10-14 |
+| d2a/d4a | 19.2 folds `recall-events.jsonl` through plan-23's drain, offset in the batch transaction; sum `merge_fn` | user, 2026-10-14 |
+| d8f | raw STM rings and prompt sources stay local; hashes and redacted fixtures are committed | user, 2026-10-14 |
+| d8h | 19.0 R2 differentiates subagents by a ladder: envelope id → match against `<session>/subagents/agent-*.jsonl` (tool name + input digest + ±window; meta.json label) → `origin: unattributed`; `agent:<id>` events kept in the ring, out of the parent's focus | user, 2026-10-14 |
 
 ## Out of scope {#out-of-scope}
 
-- Concept-level counters and helix age tiers: ADR-0004's helix plan.
+- Concept-level counters and helix age tiers: ADR-0004's helix plan (they import 19.2's library).
 - Changing what memories ARE (the GMD format, MEMORY-RULES): this plan changes selection and
   delivery only.
+- Removing any memory or subject row: plan-22's audited path only.
+- Expanding a subject hit into its members: not planned (19.6 out-of-scope, d8a).
+
+## Open after revision {#open-after-revision}
+
+Gaps the decision log does not settle; listed, not decided.
+
+1. **ADR-0004 #rule-floor's formula text.** The ADR spells the floor `base * log1p(hits +
+   2*used)`, which is 0 at zero counts. 19.2 R7 uses `base · (1 + log1p(…))` per #t5-fixes
+   (19 #b-4). The ADR text needs an amendment; no task or decision names its owner.
+2. **Cross-plan contracts read from 21.1's uncommitted revision.** 19.1 R8 and 19.2 R3–R5 rely
+   on 21.1's revised R5 (`telemetry.is_test_artifact_row`, d8d), R8 (global hits appended to the
+   global root's file; the log never truncated or rotated), R11 (19.1's pack as the
+   `prompt_recall` emitter) and R12 (`used` evidence kinds), as they stood in the working tree on
+   2026-10-14. If 21.1's re-review changes any of them, 19.1/19.2 must be re-checked.
+3. **`used` evidence breadth.** 21.1 R12 counts `context_by_name` and `focus_note` as `used`;
+   19.2 folds every `used` event into a never-decaying, 2x-weighted counter. Whether all three
+   evidence kinds should weigh the same in the floor is not decided by the log.
+4. **The d2a amendment's `replica_merge` rule for the drain OFFSET row** is plan-23's; 19.2 R6
+   covers only the `memory_usage` counters.
+5. **19.6's bands** (Tables A–C, `N = 8`, `K = 8`) are proposed in this revision to satisfy d5b's
+   pre-registration; the user has not yet confirmed the numbers.
+6. **19.2 R7's constants** (`base = 0.25`, `asserted_floor = 1.0`, event weights 1/2) are set in
+   this revision because 19 #b-4 required numbers; they are not a user decision.
+
+## Revision (2026-10-14 decision log) {#rev-2026-10-14}
+
+| finding / decision | answered at |
+|---|---|
+| 19 #b-1; d8a | [[task-19.1-pack-recall-under-budget#requirements]] R2; [[task-19.4-keep-derived-layers-current#requirements]] R5 |
+| 19 #b-2 | [[task-19.1-pack-recall-under-budget#requirements]] R1, R4 |
+| 19 #b-3 | [[task-19.3-subject-tiered-index#requirements]] R4 |
+| 19 #b-4 | [[task-19.2-memory-usage-record#requirements]] R7; 19.3 R2–R3; [[#open-after-revision]] 1 |
+| 19 #b-5; d2a; d4a | 19.2 R5 |
+| 19 #b-6 | 19.2 R3 |
+| 19 #b-7; d1a/d1b | every task's test strategy; [[#dependencies]] |
+| 19 #s-1; d5d | 19.5 R1(c); 19.1 R4; 19.2 R3 |
+| 19 #s-2 | 19.5 R1(b); 19.1 R1 |
+| 19 #s-3 | 19.1 R3, R7, AC-2 |
+| 19 #s-4; d8e | 19.2 R1, R4, R5, AC-6, AC-8; 19.1 R6 |
+| 19 #s-5; d8b | 19.3 R3, AC-3 |
+| 19 #s-6 | [[#dependencies]]; task headers |
+| 19 #s-7; d8a | 19.4 R3, R5, R6; 19.3 R1 |
+| 19 #s-8 | 19.3 R5, R8; 19.4 R2 |
+| 19 #s-9 | 19.3 R7 |
+| 19 #s-10; d5b | [[task-19.6-phased-context-and-topic-cache#requirements]] R4, R7 |
+| 19 #m-1 | 19.3 Why (`:351`); 19.4 Why (`cli.py:12695`) |
+| 19 #m-2 | [[#why-body]]; 19.1 #why-baselines; 19.3 AC-1 |
+| 19 #m-3 | [[#design-body]] (save-state fallback removed) |
+| 19 #m-4 | 19.1 header (C11 window) |
+| 19 #m-5 | 19.1 R3(d) |
+| 19 #m-6 | 19.5 R2 |
+| 19 #placement | 19.6 R2 (pre-prompt state), R0 (pre-registration), R4 (scan-prompt owner) |
+| d5b | 19.6 |
+| d5e; #t5-stm-hygiene; d5e amendments | [[task-19.0-stm-cluster-hygiene#requirements]] |
+| d8h | 19.0 R0, R2, R6, AC-4..AC-4d |
+| d8f | 19.0 R6; 19.1 AC-2; 19.5 R4; 19.6 R1 |
+| decision-log #b-1 | 19.4 R5, AC-4 |
+| decision-log #b-2 | 19.2 R7 (floor keeps the ADR definition); 19.3 R3 (separate fold tier); 19.3 header (no 22.2 dependency) |
+| decision-log #b-6 item 3 | 19.6 out-of-scope |
+| decision-log #s-1 | 19.2 R5 (retention), R6 (`replica_merge`) |
+| decision-log #s-3 | 19.2 R5 (tail reader, tick registry) |
+| decision-log #s-4 | 19.2 R4 |
+| decision-log #s-10 | 19.0 R0, R5, R6, AC-1, AC-2 |
+| decision-log #m-1 | 19.0 R4 |
+| decision-log #m-6 | this table enumerates 19 #m-1..#m-6 by id |
+| #t8-wave1 | [[#dependencies]], [[#tasks]] |

@@ -13,8 +13,10 @@ metadata:
 # Task 16.2: the invisible shim {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision 5, after spec review r4 `bsd-plan16-spec-review-r4-33809ab`)
-> Depends on: [[task-16.1-argv-faithful-learner]]
+> Status: Pending (revision after the 2026-10-14 decision log; revision 6, answering spec review
+> r5 `bsd-plan16-spec-review-r5-cd7c923`)
+> **Wave:** 2 ([[plan-16-invisible-grep-shim#waves]]).
+> Depends on: [[task-16.1-argv-faithful-learner]]. Tests run in plan-23 task 23.0's sandbox.
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
 rel: depends-on -> [[task-16.1-argv-faithful-learner]]
@@ -22,6 +24,20 @@ rel: amends -> [[bsd-plan16-spec-review-b587621]]
 rel: amends -> [[bsd-plan16-spec-rereview-42a5521]]
 rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
 rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
+rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
+rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision 6 changelog {#revision-6}
+
+Answers spec review r5 ([[bsd-plan16-spec-review-r5-cd7c923]]) and the 2026-10-14 decision log
+([[plan-review-2026-10-14]]).
+
+| finding / decision | answered in |
+|---|---|
+| r5 s-r5-2 / r4 s-r4-7 (AC-4b cannot pass under 16.1 R1b's `--include` pruning) / #t7-fixes "keep 16.2 AC-4b" | AC-4b kept as written; it passes because 16.1 R1b now prunes only recursive re-runs ([[task-16.1-argv-faithful-learner#r1b]]); new mutation |
+| r5 s-r5-6 / #t7-fixes (`spawned_by` on learner records) | R2 [[#r2]] passes `--spawned-by shim`; AC-4 asserts it |
+| r5 m-r5-4 / #t7-fixes MEH (`grep_learn.spawn()`'s interpreter unnamed) | R2b [[#r2b]] (`sys.executable -m refmatrix.cli grep-learn`); the parity test asserts it |
+| d1a/d1b (tests sandboxed by task 23.0) | sandbox rule [[#r6]]; [[#test-strategy]] |
 
 ## Revision 5 changelog {#revision-5}
 
@@ -78,8 +94,10 @@ This task deletes the rich branch and replaces the ping with 16.1's learner. {#r
   straight to the exec. This is what bounds process STARTS: a 1,000-file loop costs globs, not 1,000 Python starts
   at 0.14 s each.
 - When the slots and the throttle (R3) both say go:
-- Start `"$RMX" grep-learn --tool grep --bin "$REAL_ABS" --cwd "$PWD" [--retired-env
-  RMXGREP_TEACH] -- "$@"` with stdin, stdout and stderr on `/dev/null`, backgrounded.
+- Start `"$RMX" grep-learn --tool grep --bin "$REAL_ABS" --cwd "$PWD" --spawned-by shim
+  [--retired-env RMXGREP_TEACH] -- "$@"` with stdin, stdout and stderr on `/dev/null`,
+  backgrounded (`rmxrg` passes `--tool rg`). `--spawned-by shim` is what lets 16.4 count route 2
+  from shim records only (s-r5-6).
 - Detaching, the slot cap and logging all belong to the learner (16.1 R0/R0b/R6); the shell does no
   more than start it. `/bin/sh`'s `&` alone does not give the child its own process group, so the
   learner's `os.setsid()` is what does (#s-1). {#r2}
@@ -96,6 +114,11 @@ row.
   `os.path.realpath($PWD) == os.path.realpath(os.getcwd())`, else `os.getcwd()`. The learner itself
   still resolves `realpath(cwd)` for paths (16.1 R2); only the throttle key and the `--cwd` text
   follow this rule.
+- **The Python spawn's interpreter (m-r5-4).** `grep_learn.spawn()` starts
+  `[sys.executable, "-m", "refmatrix.cli", "grep-learn", …, "--spawned-by", "rmx-grep", …]`
+  (`cli.py` has a `__main__` block), never `shutil.which("rmx")`: a PATH `rmx` is the DEPLOY build,
+  and under `.venv-eval` tests it would run deploy code against the sandbox. The parity test asserts
+  `argv[0] == sys.executable`, and 16.5's spawn guard checks the binary as well as `store_root`.
 - The parity table has a symlinked-cwd row (process started in a symlinked directory with `PWD`
   set to the symlink spelling) and a stale-`PWD` row (`PWD` names another directory); both sides
   must produce the same key.
@@ -154,7 +177,10 @@ row.
 | `test_learn_toggle_hook.py` (wrapper cases) | both wrappers; `RMXGREP_MODE` dropped from envs |
 | docstrings in `test_rewriter_wrapper_resolution.py`, `test_grep_argv_order_e2e.py` | rich-mode wording updated |
 
-**Sandbox rule (#s-11).** Every test that runs a wrapper sets `RMXGREP_RMX` to a sandbox path or
+**Sandbox rule (#s-11; d1a/d1b).** Every test runs inside plan-23 task 23.0's shared sandbox
+(`$HOME`, global root, registry and LaunchAgents dir in a tmp dir before `refmatrix` is imported;
+spawned `rmx` children refuse sockets outside it; the conftest guard fails any touch of
+`~/.refmatrix` or a registered live store). On top of it, every test that runs a wrapper sets `RMXGREP_RMX` to a sandbox path or
 sets `RMX_LEARN=0`. Once d-2 lands, `RMXGREP_TEACH=0` no longer prevents a spawn. An unset
 `RMXGREP_RMX` runs the DEPLOY `rmx` on PATH, which the hard rules forbid. A conftest guard fails any
 test that spawns `rmx` from PATH. {#r6}
@@ -180,11 +206,12 @@ test that spawns `rmx` from PATH. {#r6}
    1 s with the real tool's bytes and `$?`.
 4. **The learner runs and gets the binary.** With the real learner, one `rmxgrep -ri PAT dir` call
    gives, within 5 s, a `grep-learn.log` record with `outcome=taught`, `bin` equal to the shim's
-   resolved `$REAL`, and a queue record equal to the corpus-filtered `/usr/bin/grep -rniH --null PAT
+   resolved `$REAL`, `spawned_by=shim`, and a queue record equal to the corpus-filtered `/usr/bin/grep -rniH --null PAT
    dir`.
    - **4b (s-r4-7).** `rmxgrep -i PAT dir` WITHOUT `-r` prints grep's own `Is a directory`, exit 2
      (probed on BSD 2.6.0), and the learner records `outcome=skipped reason=tool-error` with nothing
-     queued. The learner never adds `-r`.
+     queued. The learner never adds `-r`, and its non-recursive re-run carries no pruning flags
+     (16.1 R1b, s-r5-2), so grep's exit 2 survives into the re-run.
 5. **Early exits, BOTH wrappers.** Outside a project, rmx missing, piped stdin, `RMX_LEARN=0`, and a
    store marker: each gives byte-exact output, no log record and no stamp. Covers `rmxrg` explicitly.
 6. **Throttle and slots.**
@@ -231,6 +258,7 @@ refreshes the rewriter (bug-080 changed it). The handoff names both steps.
 
 ## Test strategy {#test-strategy}
 
+- Inside plan-23 task 23.0's sandbox (d1a/d1b), plus the sandbox rule in [[#r6]].
 - Real binaries, `shell=False`, list argv. A shell control gets rewritten by the PreToolUse hook.
 - Pre-registered mutations:
   - restore the rich branch: AC-1 fails;
@@ -240,5 +268,9 @@ refreshes the rewriter (bug-080 changed it). The handoff names both steps.
   - remove the slot check: AC-6 (busy case) fails;
   - write a byte instead of a keyed line: AC-6 fails;
   - the learner adds `-r` for a directory operand: AC-4b fails;
+  - the learner adds 16.1 R1b's `--include`s to a non-recursive re-run: AC-4b fails (`no-hits`,
+    exit 1, probed in r5);
+  - the shim omits `--spawned-by shim`: AC-4 fails (and 16.1 AC-16's refusal fires);
+  - `grep_learn.spawn()` resolves `rmx` from PATH: the parity test's `argv[0]` row fails;
   - key the Python spawn on `os.getcwd()`: the parity test's symlinked-cwd row fails;
   - remove `rmxrg`'s learning-off block: AC-5 fails. {#tests}
