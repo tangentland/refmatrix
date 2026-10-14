@@ -28,17 +28,30 @@ whichever session touched STM last. Decided as d9s (user, 2026-10-14: "fix it"),
 ## The fix {#fix}
 
 - **Pointer.** `stm/by-pid/<claude_pid>.json` = `{session, pid, pid_start, t}`. The input hook
-  (`focus hook --event input`) writes it at the top of every turn; an unchanged pointer costs one
-  read and no `ps`. A pid reuse is caught by `ps lstart`; a pid whose start `ps` cannot report is
-  REFUSED and recorded, never stored with a null start.
+  (`focus hook --event input`) writes it at the top of every turn. Process facts (parent,
+  executable, start time) come from the kernel with no subprocess (macOS libproc
+  `proc_pidinfo`/`proc_pidpath`, ~1 us; Linux `/proc`), so the hook's owner lookup is ~3 ms
+  instead of the r1 `ps -A` (~60 ms, could time out under load). A pid reuse is caught by the
+  kernel start time; a pid whose start cannot be read is REFUSED and recorded, never stored with a
+  null start.
 - **Owner.** The long-lived server: `os.getppid()` (19.0 R5), its environment ignored. A per-call
-  process: `$CLAUDE_PID` only if it is a real ancestor, else the nearest `claude` ancestor; one
-  `ps -A` call builds the chain.
+  process (`stm.owner_lookup() -> (pid, status)`): `$CLAUDE_PID` only if it is a real ancestor
+  (Claude Code sets it per child); else the NEAREST ancestor that is Claude by executable
+  (`.../claude`, or the native installer's `.../claude/versions/<x.y.z>`, whose kernel name is the
+  version) or by argv[0] (one `ps` call, only on this rare path: an npm CLI runs as `node`).
+  `status` distinguishes `none` (a plain terminal) from `failed` (the lookup could not run): r2
+  #b-1, UNKNOWN is not absent.
 - **Resolution** (`verbs.resolve_session_source` → `(session, source)`): explicit; then the
   pointer before `$RMX_SESSION` in the server, after it in the CLI; then the newest ring; then
   `default`. Under Claude, a fallback to the newest ring is recorded in
   `stm/by-pid/_errors.jsonl` (`pointer-unresolved`) because every hook ends in
-  `2>/dev/null || true`; the hook records `no-owner`, `ps-failed` and `write-failed` there too.
+  `2>/dev/null || true`; the hook records `no-owner`, `owner-lookup-failed`, `ps-failed` and
+  `write-failed` there too. A resolve records `owner-lookup-failed`, or `pointer-unresolved` when
+  this process is the server, has a Claude owner, or carries `$CLAUDE_PID`; a plain terminal
+  guesses silently, having no pointer to miss. The sink writes only into a store whose STM dir
+  exists and never raises (r2 #s-1: a read must not create `<cwd>/.refmatrix`), is capped at
+  256 KiB, and has a reader: `rmx recall-state` reports the last day's failures as an anomaly.
+  CLI writes no longer pass a pre-resolved session as explicit, so their source is real (r2 #s-2).
   `rmx_focus_note`, `rmx_task` (push/pop/swap), `rmx_change_subject` and `rmx_save_state` return
   `session_source`.
 - **`focus promote-edges`** resolves the session in the CLI and sends it; the daemon has no
@@ -53,7 +66,11 @@ whichever session touched STM last. Decided as d9s (user, 2026-10-14: "fix it"),
   (`bug109-r1-red.log`).
 - GREEN: 15 passed (`bug109-r1-green.log`); STM/MCP/verbs/session/hook/handoff/save-state/promote
   families 249 passed (`bug109-r1-families.log`).
-- Mutations: `bug109-mutations.log` (r0, 6 killed), `bug109-r1-mutations.log`.
+- r2: 9 more tests, 6 RED at 320dc82 and 3 that pin behaviour 320dc82 already had (source on
+  task/change_subject, CLI env-before-pointer, deep-chain walk) (`bug109-r2-red.log`); 25 GREEN
+  (`bug109-r2-green.log`); families 259 passed (`bug109-r2-families.log`).
+- Mutations: `bug109-mutations.log` (r0, 6 killed), `bug109-r1-mutations.log`,
+  `bug109-r2-mutations.log`.
 
 ## Open, owned elsewhere {#open}
 

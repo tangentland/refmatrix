@@ -204,3 +204,116 @@ def test_promote_edges_sends_the_resolved_session_to_the_daemon(root, monkeypatc
     r = CliRunner().invoke(main, ["focus", "promote-edges"])
     assert r.exit_code == 0, r.output
     assert sent.get("session") == "sess-B", sent
+
+
+# ---- r2 (ch-bsd bsd-bug109-r2-320dc82) --------------------------------------------------------
+
+def test_a_failed_process_lookup_is_recorded_not_mistaken_for_a_plain_terminal(root, monkeypatch):
+    """r2 #b-1: when the process lookup itself fails, the owner is UNKNOWN, not absent. The resolve
+    must record it, not fall silently to the newest ring the way a plain terminal does."""
+    monkeypatch.setattr(verbs, "_LONG_LIVED", False)
+    monkeypatch.delenv("RMX_SESSION", raising=False)
+    monkeypatch.setattr(stm, "_proc_info", lambda pid: None)       # every lookup fails
+    monkeypatch.setattr(stm, "_ps_comm_chain", lambda: None)        # and so does the ps fallback
+    _ring(root, "sess-C", age_s=0)
+    sess, source = verbs.resolve_session_source(root, None)
+    assert source == "latest"
+    assert _errors(root)[-1]["reason"] == "owner-lookup-failed", _errors(root)
+
+
+def test_outside_claude_nothing_is_recorded(root, monkeypatch):
+    """r2 #s-2 / N1: a plain terminal (no $CLAUDE_PID, no claude ancestor) guesses silently, by
+    design: there is no pointer to miss."""
+    monkeypatch.setattr(verbs, "_LONG_LIVED", False)
+    monkeypatch.delenv("RMX_SESSION", raising=False)
+    monkeypatch.delenv("CLAUDE_PID", raising=False)
+    monkeypatch.setattr(stm, "owner_lookup", lambda: (None, "none"))
+    _ring(root, "sess-C", age_s=0)
+    assert verbs.resolve_session_source(root, None) == ("sess-C", "latest")
+    assert _errors(root) == []
+
+
+def test_a_read_never_creates_a_store(tmp_path, long_lived, monkeypatch):
+    """r2 #s-1: recording an error must not mkdir <cwd>/.refmatrix (it would hijack cli._root())
+    nor fail the read when the root is unwritable."""
+    monkeypatch.delenv("RMX_SESSION", raising=False)
+    ghost = tmp_path / "nostore" / ".refmatrix"
+    verbs.resolve_session_source(ghost, None)
+    assert not ghost.exists()
+
+
+def test_cli_note_reports_the_real_source_not_explicit(root, monkeypatch):
+    """r2 #s-2: the CLI resolved the session itself and passed it in as explicit, so a guess was
+    labelled `explicit`. It now lets the verb resolve and label."""
+    from refmatrix import verbs as v
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+    monkeypatch.delenv("RMX_SESSION", raising=False)
+    seen = {}
+    orig = v.focus_note
+
+    def spy(r, text, *, session=None):
+        seen["session"] = session
+        return orig(r, text, session=session)
+    monkeypatch.setattr(v, "focus_note", spy)
+    r = CliRunner().invoke(main, ["focus", "note", "a reason"])
+    assert r.exit_code == 0, r.output
+    assert seen["session"] is None
+
+
+@pytest.mark.parametrize("verb_call", [
+    lambda root: verbs.task(root, action="push", desc="t1"),
+    lambda root: verbs.change_subject(root, "a subject"),
+])
+def test_every_stm_write_verb_reports_its_source(root, long_lived, monkeypatch, verb_call):
+    """r2 #s-3 (N5-N7): `session_source` rides on every write verb, not only focus_note."""
+    monkeypatch.delenv("RMX_SESSION", raising=False)
+    stm.write_pid_pointer(root, os.getppid(), "sess-B")
+    r = verb_call(root)
+    assert r.get("session_source") == "pointer", r
+
+
+def test_cli_lets_an_explicit_rmx_session_beat_the_pointer(root, monkeypatch):
+    """r2 #s-3 (N9): per-call CLI order is env before pointer; the server's is the reverse."""
+    monkeypatch.setattr(verbs, "_LONG_LIVED", False)
+    monkeypatch.setenv("RMX_SESSION", "sess-env")
+    monkeypatch.setenv("CLAUDE_PID", str(os.getpid()))
+    stm.write_pid_pointer(root, os.getpid(), "sess-B")
+    assert verbs.resolve_session_source(root, None) == ("sess-env", "env")
+
+
+def test_hook_without_an_owner_records_no_owner(root, monkeypatch):
+    """r2 #s-3 (N3)."""
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+    monkeypatch.setattr(stm, "owner_lookup", lambda: (None, "none"))
+    (stm.stm_dir(root)).mkdir(parents=True, exist_ok=True)
+    env = {"session_id": "sess-B", "prompt": "a prompt", "hook_event_name": "UserPromptSubmit"}
+    r = CliRunner().invoke(main, ["focus", "hook", "--event", "input"], input=json.dumps(env))
+    assert r.exit_code == 0, r.output
+    assert _errors(root)[-1]["reason"] == "no-owner"
+
+
+def test_owner_walk_reaches_claude_through_a_deep_chain(tmp_path):
+    """r2 #s-3 (N10): a real hook is python -> sh -> claude, a Bash-tool CLI is python -> bash ->
+    bash -> claude. Three shell layers between the child and `claude` must still resolve."""
+    import shutil
+    import subprocess
+    import sys
+    fake = tmp_path / "claude"
+    shutil.copy("/bin/sh", fake)
+    code = "from refmatrix import stm; print(stm.owner_claude_pid())"
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PID"}
+    inner = f'"{sys.executable}" -c "{code}"; :'
+    cmd = f"echo $$; /bin/sh -c '/bin/sh -c '\"'\"'{inner}'\"'\"'; :'; :"
+    out = subprocess.run([str(fake), "-c", cmd], capture_output=True, text=True, env=env,
+                         timeout=30).stdout.split()
+    assert len(out) == 2 and out[1] == out[0], out
+
+
+def test_recall_state_surfaces_pointer_errors(root):
+    """r2 #s-2: `_errors.jsonl` had no reader. recall-state names recent pointer failures as an
+    anomaly."""
+    from refmatrix import handoff
+    stm.stm_dir(root).mkdir(parents=True, exist_ok=True)
+    stm.record_pointer_error(root, "pointer-unresolved", owner=1)
+    anomalies = handoff.session_pointer_anomalies(root)
+    assert anomalies and "pointer" in anomalies[0], anomalies

@@ -539,7 +539,10 @@ def resolve_session_source(root: Path, session: "str | None") -> "tuple[str, str
     from refmatrix import stm as stm_mod
     if session:
         return session, "explicit"
-    owner = stm_mod.owner_claude_pid(long_lived=_LONG_LIVED)
+    if _LONG_LIVED:
+        owner, status = os.getppid(), "found"
+    else:
+        owner, status = stm_mod.owner_lookup()
     ptr = stm_mod.read_pid_pointer(root, owner) if owner else None
     env = os.environ.get("RMX_SESSION")
     if _LONG_LIVED:
@@ -552,7 +555,12 @@ def resolve_session_source(root: Path, session: "str | None") -> "tuple[str, str
             return env, "env"
         if ptr:
             return ptr, "pointer"
-    if _LONG_LIVED or owner:
+    # r2 #b-1: UNKNOWN is not absent. A failed process lookup, or a set $CLAUDE_PID, means this
+    # process may well run under Claude, so the guess is recorded; only a plain terminal (no
+    # owner found, lookup worked, no $CLAUDE_PID) guesses silently, having no pointer to miss.
+    if status == "failed":
+        stm_mod.record_pointer_error(root, "owner-lookup-failed", long_lived=_LONG_LIVED)
+    elif _LONG_LIVED or owner or os.environ.get("CLAUDE_PID"):
         stm_mod.record_pointer_error(root, "pointer-unresolved", owner=owner,
                                      long_lived=_LONG_LIVED)
     latest = stm_mod.latest_session(root)

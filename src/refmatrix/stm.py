@@ -124,26 +124,87 @@ def session_id() -> str:
     return os.environ.get("RMX_SESSION") or "default"
 
 
-def _proc_start(pid: int) -> str | None:
-    """The start time `ps` reports for `pid`, or None when no such process exists. Two processes
-    that held the same pid at different times have different start times, so a pid pointer is
-    trusted only while this still matches what it recorded (bug-109)."""
-    import subprocess
+def _proc_info(pid: int) -> "tuple[int, str, str] | None":
+    """`(ppid, executable path, start)` for `pid` with no subprocess, or None when the process is
+    gone or the lookup is unavailable (bug-109 r2). macOS: libproc `proc_pidinfo` +
+    `proc_pidpath` (~1 us; the `ps` it replaces cost ~60 ms per hook under load and could time
+    out). Linux: /proc. `start` is the kernel start time, unique per process incarnation."""
+    import sys
     try:
-        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(int(pid))],
-                             capture_output=True, text=True, timeout=2.0)
-    except (OSError, subprocess.SubprocessError, ValueError):
+        pid = int(pid)
+    except (TypeError, ValueError):
         return None
-    return out.stdout.strip() or None
+    if pid <= 0:
+        return None
+    if sys.platform == "darwin":
+        lib = _libproc()
+        if lib is None:
+            return None
+        import ctypes
+        info = _BSDInfo()
+        if lib.proc_pidinfo(pid, 3, 0, ctypes.byref(info), ctypes.sizeof(info)) != \
+                ctypes.sizeof(info):
+            return None
+        buf = ctypes.create_string_buffer(4096)
+        n = lib.proc_pidpath(pid, buf, 4096)
+        path = buf.value.decode("utf-8", "replace") if n > 0 else \
+            info.comm.decode("utf-8", "replace")
+        return int(info.ppid), path, f"{info.start_sec}.{info.start_usec:06d}"
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+        fields = stat[stat.rindex(")") + 2:].split()
+        try:
+            path = os.readlink(f"/proc/{pid}/exe")
+        except OSError:
+            path = stat[stat.index("(") + 1:stat.rindex(")")]
+        return int(fields[1]), path, fields[19]
+    except (OSError, ValueError, IndexError):
+        return None
 
 
-def pid_pointer_path(root: Path, pid: int) -> Path:
-    return stm_dir(root) / "by-pid" / f"{int(pid)}.json"
+_LIBPROC = None
 
 
-def _process_table() -> dict[int, tuple[int, str]] | None:
-    """pid -> (ppid, command basename) for every process, from ONE `ps -A` call; None if `ps`
-    cannot run."""
+def _libproc():
+    global _LIBPROC, _BSDInfo
+    if _LIBPROC is None:
+        import ctypes
+
+        class _Info(ctypes.Structure):   # struct proc_bsdinfo, 136 bytes
+            _fields_ = [("_h", ctypes.c_uint32 * 4), ("ppid", ctypes.c_uint32),
+                        ("_ids", ctypes.c_uint32 * 7), ("comm", ctypes.c_char * 16),
+                        ("name", ctypes.c_char * 32), ("_m", ctypes.c_uint32 * 5),
+                        ("nice", ctypes.c_int32), ("start_sec", ctypes.c_uint64),
+                        ("start_usec", ctypes.c_uint64)]
+        _BSDInfo = _Info
+        try:
+            _LIBPROC = ctypes.CDLL("/usr/lib/libproc.dylib")
+        except OSError:
+            _LIBPROC = False
+    return _LIBPROC or None
+
+
+_BSDInfo = None
+
+
+def _is_claude(path: str) -> bool:
+    """A Claude Code executable: `.../claude`, or the native installer's versioned binary
+    `.../claude/versions/<x.y.z>` (whose kernel name is the version, not `claude`)."""
+    p = Path(path)
+    return p.name == "claude" or p.parent.name == "versions" and p.parent.parent.name == "claude"
+
+
+def _proc_start(pid: int) -> str | None:
+    """The start time of `pid`, or None when no such process exists. Two processes that held the
+    same pid at different times have different start times, so a pid pointer is trusted only
+    while this still matches what it recorded (bug-109)."""
+    info = _proc_info(pid)
+    return info[2] if info else None
+
+
+def _ps_comm_chain() -> "list[tuple[int, str]] | None":
+    """Fallback ancestor chain `[(pid, comm), ...]` from `ps`, whose `comm` is argv[0] (`claude`
+    for an npm-installed CLI running under `node`). None when `ps` cannot run."""
     import subprocess
     try:
         out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,comm="], capture_output=True,
@@ -155,56 +216,132 @@ def _process_table() -> dict[int, tuple[int, str]] | None:
         parts = line.split(None, 2)
         if len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit():
             table[int(parts[0])] = (int(parts[1]), Path(parts[2].strip()).name)
-    return table
-
-
-def owner_claude_pid(*, long_lived: bool = False) -> int | None:
-    """The Claude Code process this one runs under (bug-109).
-
-    The long-lived MCP server is spawned BY the Claude process, so its owner is `os.getppid()`
-    (19.0 R5) and nothing in its own environment is consulted (r1 #s-1: an inherited
-    `$CLAUDE_PID` can name an OUTER Claude). A per-call process (a hook, a Bash-tool `rmx`)
-    accepts `$CLAUDE_PID` only when that pid is one of its real ancestors, else takes the nearest
-    ancestor whose command is `claude`. None outside Claude Code."""
-    if long_lived:
-        return os.getppid()
-    table = _process_table()
     if not table:
         return None
     chain, pid = [], os.getpid()
     for _ in range(16):
-        chain.append(pid)
-        nxt = table.get(pid)
-        if not nxt or nxt[0] <= 1 or nxt[0] in chain:
+        if pid not in table:
             break
-        pid = nxt[0]
+        chain.append((pid, table[pid][1]))
+        if table[pid][0] <= 1 or table[pid][0] in [c[0] for c in chain]:
+            break
+        pid = table[pid][0]
+    return chain
+
+
+def pid_pointer_path(root: Path, pid: int) -> Path:
+    return stm_dir(root) / "by-pid" / f"{int(pid)}.json"
+
+
+def owner_lookup() -> "tuple[int | None, str]":
+    """`(owner_pid, status)`, status one of `found`, `none` (not under Claude Code: a plain
+    terminal, a daemon) or `failed` (the process table could not be read, so the owner is
+    UNKNOWN, not absent: r2 #b-1).
+
+    `$CLAUDE_PID` wins only when it names a real ancestor (Claude Code sets it per child; an
+    inherited one can name an OUTER Claude, r1 #s-1); else the nearest ancestor whose
+    executable is Claude's; else, when the kernel lookup is unavailable, the `ps` argv[0]
+    chain."""
+    chain: list[int] = []
+    paths: dict[int, str] = {}
+    pid = os.getpid()
+    for _ in range(16):
+        info = _proc_info(pid)
+        if info is None:
+            break
+        chain.append(pid)
+        paths[pid] = info[1]
+        if info[0] <= 1 or info[0] in chain:
+            break
+        pid = info[0]
+    if len(chain) < 2:
+        ps = _ps_comm_chain()
+        if not ps:
+            return None, "failed"
+        chain = [c[0] for c in ps]
+        env = os.environ.get("CLAUDE_PID")
+        if env and env.isdigit() and int(env) in chain:
+            return int(env), "found"
+        for cpid, comm in ps[1:]:
+            if comm == "claude":
+                return cpid, "found"
+        return None, "none"
     env = os.environ.get("CLAUDE_PID")
     if env and env.isdigit() and int(env) in chain:
-        return int(env)
-    for pid in chain[1:]:
-        if table.get(pid, (0, ""))[1] == "claude":
-            return pid
-    return None
+        return int(env), "found"     # the common case under Claude: no subprocess at all
+    # No usable $CLAUDE_PID (the rare path): the NEAREST ancestor that is Claude by executable
+    # OR by argv[0] (an npm-installed CLI runs as `node`; a re-exec keeps argv[0]), so one `ps`
+    # call supplies the argv[0] names.
+    argv0 = dict(_ps_comm_chain() or [])
+    for cpid in chain[1:]:
+        if _is_claude(paths.get(cpid, "")) or argv0.get(cpid) == "claude":
+            return cpid, "found"
+    return None, "none"
 
 
-def record_pointer_error(root: Path, reason: str, **fields) -> None:
+def owner_claude_pid(*, long_lived: bool = False) -> int | None:
+    """The Claude Code process this one runs under (bug-109). The long-lived MCP server is
+    spawned BY the Claude process, so its owner is `os.getppid()` (19.0 R5) and nothing in its
+    own environment is consulted. A per-call process: `owner_lookup()`."""
+    if long_lived:
+        return os.getppid()
+    return owner_lookup()[0]
+
+
+_ERRORS_MAX_BYTES = 256 * 1024
+
+
+def record_pointer_error(root: Path, reason: str, **fields) -> bool:
     """Append one line to `stm/by-pid/_errors.jsonl` (bug-109 r1 #b-1). Every hook ends in
     `2>/dev/null || true`, so stderr is not a channel: a pointer that was not written, or a
-    resolve that fell back to guessing, is recorded HERE where `rmx` can surface it."""
+    resolve that fell back to guessing, is recorded HERE, and `rmx recall-state` reports it.
+
+    Only into a store whose STM dir already exists, and never raising (r2 #s-1): a READ must not
+    create `<cwd>/.refmatrix` (it would hijack `cli._root()`) or fail on an unwritable root.
+    Bounded: past 256 KiB the oldest half is dropped. Returns whether the line was written."""
+    d = stm_dir(root)
+    if not d.is_dir():
+        return False
+    p = d / "by-pid" / "_errors.jsonl"
+    try:
+        p.parent.mkdir(exist_ok=True)
+        if p.exists() and p.stat().st_size > _ERRORS_MAX_BYTES:
+            lines = p.read_text(encoding="utf-8").splitlines(keepends=True)
+            p.write_text("".join(lines[len(lines) // 2:]), encoding="utf-8")
+        with p.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"t": time.time(), "reason": reason, **fields}) + "\n")
+        return True
+    except OSError:
+        return False
+
+
+def read_pointer_errors(root: Path, *, since: float = 0.0) -> list[dict]:
+    """The recorded pointer failures at or after `since` (epoch seconds), oldest first."""
     p = stm_dir(root) / "by-pid" / "_errors.jsonl"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with p.open("a", encoding="utf-8") as f:
-        f.write(json.dumps({"t": time.time(), "reason": reason, **fields}) + "\n")
+    out: list[dict] = []
+    try:
+        for line in p.read_text(encoding="utf-8").splitlines():
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if float(row.get("t", 0)) >= since:
+                out.append(row)
+    except OSError:
+        return []
+    return out
 
 
 def write_pid_pointer(root: Path, pid: int, session: str) -> bool:
     """Record that Claude process `pid` is now running `session` (bug-109). The input hook calls
     this at the top of every turn, so the first prompt after a `/clear` re-points it. Returns True
     when the file was (re)written, False when it already named `session` (the common case: one
-    small read, no `ps` call; session ids are unique, so a pointer still naming this session
-    cannot belong to an earlier holder of the pid) or when it was REFUSED: a pid whose start time
-    `ps` cannot report would be stored with `pid_start: null` and then ignored forever by
-    `read_pid_pointer`, so it is recorded as `ps-failed` instead (r1 #b-1)."""
+    small read; session ids are unique, so a pointer still naming this session cannot belong to
+    an earlier holder of the pid) or when it was REFUSED: a pid whose start time cannot be read
+    would be stored with `pid_start: null` and then ignored forever by `read_pid_pointer`, so it
+    is recorded as `ps-failed` instead (r1 #b-1). Never creates a store (r2 #s-1)."""
+    if not Path(root).is_dir():
+        return False
     p = pid_pointer_path(root, pid)
     try:
         if json.loads(p.read_text(encoding="utf-8")).get("session") == session:
@@ -213,6 +350,7 @@ def write_pid_pointer(root: Path, pid: int, session: str) -> bool:
         pass
     start = _proc_start(pid)
     if start is None:
+        stm_dir(root).mkdir(exist_ok=True)
         record_pointer_error(root, "ps-failed", pid=int(pid), session=session)
         return False
     p.parent.mkdir(parents=True, exist_ok=True)

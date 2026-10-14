@@ -1417,7 +1417,8 @@ def focus_note(text):
     session (see the briefing's 'Capture your reasoning' rule). Refs in the
     note enter the focus graph."""
     from refmatrix import verbs as _verbs
-    ev = _verbs.focus_note(_root(), text, session=_resolve_stm_session(None, prefer_latest=True))
+    # bug-109 r2 #s-2: let the verb resolve, so a guessed session is labelled, not "explicit"
+    ev = _verbs.focus_note(_root(), text, session=None)
     console.print(f"[blue]✎ noted[/]  [dim]{', '.join(ev['refs'][:6]) or '—'}[/]")
 
 
@@ -1671,7 +1672,7 @@ def focus_change_subject(label, session):
     recallable across sessions. Idempotent for the same label."""
     from refmatrix import verbs as _verbs
     rec = _verbs.change_subject(
-        _root(), label, session=_resolve_stm_session(session, prefer_latest=True))
+        _root(), label, session=session)
     console.print(
         f"[green]subject[/] {rec['label']} "
         f"[dim](slug={rec['subject']}, id={rec.get('id')})[/] — focus scoped; "
@@ -1977,12 +1978,13 @@ def focus_hook(event):
         # stm/by-pid/_errors.jsonl, never only printed (r1 #b-1).
         if d.get("session_id"):
             try:
-                owner = stm_mod.owner_claude_pid()
+                owner, status = stm_mod.owner_lookup()
                 if owner:
                     stm_mod.write_pid_pointer(_root(), owner, d["session_id"])
                 else:
-                    stm_mod.record_pointer_error(_root(), "no-owner",
-                                                 session=d["session_id"])
+                    stm_mod.record_pointer_error(
+                        _root(), "owner-lookup-failed" if status == "failed" else "no-owner",
+                        session=d["session_id"])
             except OSError as e:
                 click.echo(f"rmx focus hook: session pointer not written: {e}", err=True)
                 try:
@@ -2067,7 +2069,7 @@ def _task_verb(action: str, *, session: "str | None" = None, **kw) -> dict:
     from refmatrix import verbs as _verbs
     try:
         return _verbs.task(_root(), action=action,
-                           session=_resolve_stm_session(session, prefer_latest=True), **kw)
+                           session=session, **kw)
     except _verbs.VerbError as e:
         raise click.ClickException(str(e))
 
@@ -13126,7 +13128,6 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
 
     root = _root()
     repo = root.parent
-    sess = _resolve_stm_session(session, prefer_latest=True)
     today = _time.strftime("%Y-%m-%d")
     from refmatrix import verbs as _verbs
 
@@ -13135,7 +13136,7 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
     # the CLI-only git post-step.
     try:
         res = _verbs.save_state(root, message=message, promote=promote,
-                                dry_run=dry_run, session=sess,
+                                dry_run=dry_run, session=session,
                                 memory_dir=str(memory_dir) if memory_dir else None,
                                 lint=not no_lint, sync=not no_sync)
     except _verbs.VerbError as e:
@@ -13148,7 +13149,8 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
         return
 
     console.print(f"[green]save-state[/] {res['target']}  "
-                  f"[dim]({res['events']} events, session {sess})[/]")
+                  f"[dim]({res['events']} events, session {res.get('session')}, "
+                  f"{res.get('session_source')})[/]")
 
     fin = res
     lint_out = fin.get("lint")
