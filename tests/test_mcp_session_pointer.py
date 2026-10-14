@@ -317,3 +317,14 @@ def test_recall_state_surfaces_pointer_errors(root):
     stm.record_pointer_error(root, "pointer-unresolved", owner=1)
     anomalies = handoff.session_pointer_anomalies(root)
     assert anomalies and "pointer" in anomalies[0], anomalies
+
+
+def test_recall_state_report_carries_the_pointer_anomaly(root, tmp_path):
+    """r2 #s-2, through the real composer (M16): the reader is wired into recall-state's
+    anomalies, not merely defined."""
+    from refmatrix import handoff
+    s = stm.Stm(root, "sess-B")
+    s.record("input", "a prompt")
+    stm.record_pointer_error(root, "pointer-unresolved", owner=1)
+    rep = handoff.compose_recall_state(s, root, repo=tmp_path, memdir=tmp_path / "mem")
+    assert any("session-pointer" in a for a in rep["anomalies"]), rep["anomalies"]
