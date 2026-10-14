@@ -1,1 +1,6 @@
 2026-10-07T16:25:32-0700 commit=dcf7115 verdict=DIRTY findings=3 (0B/1S/2M) report=2026-10-07-1625-r13-retire-holds-startup-pin-misses-dcf7115.md
+2026-10-14T11:10:30-0700 commit=3104a81 verdict=DIRTY findings=13 (3B/7S/3M) report=2026-10-14-1110-plan23-spec-review-binding-exactly-once-and-the-unseen-wedge-3104a81.md
+2026-10-14T11:11:26-0700 commit=3104a81 verdict=DIRTY findings=19 (6B/8S/5M) report=2026-10-14-1111-plan17-spec-review-phantom-handle-and-circular-orphan-proof-3104a81.md
+2026-10-14T11:13:20-0700 commit=3104a81 verdict=DIRTY findings=22 (8B/7S/7M) report=2026-10-14-1113-plan22-spec-review-moved-has-no-key-and-repairs-do-not-replay-3104a81.md
+2026-10-14T11:13:22-0700 commit=3104a81 verdict=DIRTY findings=23 (3B/13S/7M) report=2026-10-14-1113-plan21-spec-review-shared-schema-cannot-serve-its-consumers-3104a81.md
+2026-10-14T11:13:27-0700 commit=3104a81 verdict=DIRTY findings=23 (7B/10S/6M) report=2026-10-14-1113-plan19-spec-review-subject-noise-and-vacuous-reachability-3104a81.md
