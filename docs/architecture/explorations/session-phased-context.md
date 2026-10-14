@@ -94,6 +94,37 @@ Open design points, for the plan-19 task that owns this:
   the restored cluster id, so "the cache helped" is a read-back count and not a story.
 {#topic-cache-body}
 
+## Rendering: an expand/collapse tree, active cluster open {#tree-render}
+
+The user, 2026-10-14: "should the stm context be like a expanded/collapsed filesystem display
+where the current cluster is expanded and the others collapsed into one line summaries?"
+
+Yes. Today's composite renders its top-3 topic clusters at roughly equal depth (members plus
+`rel:` lines each), which spends the budget evenly across threads the prompt is not about. The
+tree form spends it where the phase says:
+
+```
+▾ topic: plan-23 drain / bind  (active · 42 events · L380–L472)
+    members: plan-23-bounded-write-harness, task-23.1, bind(batch), bug-105, …
+    rel: …  (the current depth rules: lift-ranked co-occurs, sparse-first LTM)
+▸ topic: Time Machine exclusions  (18 events · L455–L470 · id c7f2)
+▸ topic: decision walk d1a–d9j    (96 events · L120–L410 · id 3a91)
+```
+
+- **Expanded:** exactly the cluster the phase selects (warm: the overlapping cluster; return: the
+  restored one; cold: none expanded, every line collapsed, which is the breadth view).
+- **Collapsed:** one line each (label, event count, line range, stable cluster id), a few tokens
+  apiece. The line is the HANDLE the topic cache re-expands on a return (#topic-cache), and it is
+  byte-stable across turns, so versioned injection sends it as "unchanged" (#versioned-injection).
+- **Labels need 19.0 first:** a collapsed line is only its label, so a junk label (`re.searc`)
+  makes the whole line useless; this is the strongest case yet for the STM hygiene prerequisite.
+
+A correction to the premise: the measured near-zero overlap (median carried 0.000) is plan-10's,
+between CONSECUTIVE scan-prompt content hits ([[injection-overlap]]), not between STM clusters.
+Cross-cluster overlap of STM members has not been measured; 19.6 measures it (how often a
+prompt's terms hit 0, 1 or ≥ 2 clusters) before choosing single-expand vs. expand-top-2.
+{#tree-render-body}
+
 ## Versioned injection: supersede by convention, never re-send unchanged {#versioned-injection}
 
 The user, 2026-10-14: "is there a way to flag incoming context to be a replacements for entries in
