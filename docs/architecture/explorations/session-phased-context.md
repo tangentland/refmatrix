@@ -94,6 +94,53 @@ Open design points, for the plan-19 task that owns this:
   the restored cluster id, so "the cache helped" is a read-back count and not a story.
 {#topic-cache-body}
 
+## Versioned injection: supersede by convention, never re-send unchanged {#versioned-injection}
+
+The user, 2026-10-14: "is there a way to flag incoming context to be a replacements for entries in
+the session kv cache?" No. A hook can only APPEND (UserPromptSubmit / SessionStart stdout,
+`additionalContext`); the prompt cache is keyed on the exact prefix and the transcript is
+append-only, so nothing a hook emits can retract or replace an earlier block. Only compaction,
+`/clear`, and the harness's own context management remove context. A stale block already in the
+prefix is cheap to re-read (cached); what it costs is window space and attention. So the levers
+are: tell the model which copy is current, and stop paying for copies that did not change.
+{#vi-premise}
+
+Design (owned by 19.6, d5b):
+1. **Every injected block is versioned.** A stable `id` plus `rev` in its header, and one line:
+   "supersedes earlier revs of `<id>`". The STM composite already carries `id: stm-topic-composite`
+   and `turn: N`; recall packs, the topic-cache restore and the scan-prompt bundle get the same.
+   The model treats the newest rev as authoritative, as `rel: supersedes` already works in GMD.
+   {#vi-versioned}
+2. **Unchanged means one line.** When a block's content hash equals the last emitted rev for this
+   session, emit `<id> rev N unchanged` instead of the body. A topic-cache RETURN emits
+   `re-activate <cluster-id> (rev N)` when that rev is still in the window, and the body only when
+   it may have been compacted away. {#vi-unchanged}
+3. **Compaction keeps only the newest rev.** Whether a PreCompact hook can steer the compaction
+   summary is UNVERIFIED; check it before relying on it. Without it, the newest rev after a
+   compaction is re-sent in full once (the session's last-emitted state resets at compaction).
+   {#vi-compaction}
+
+4. **Text patches, keyframe + delta.** The user, 2026-10-14: "can we pass patches to kv entries?"
+   Not to the KV cache itself: each cached key/value depends on every token before it, so changing
+   one position means recomputing everything after it, and no API exposes the cache. What CAN be
+   sent is a textual patch against a named rev: `<id> rev 22 = rev 21 + {add: …, drop: …}`. The
+   model applies it by reading. Rules, video-codec style: a delta is only against a rev known to
+   be in the window; a full KEYFRAME every K revs and after any compaction; a delta larger than
+   ~half the block is sent as a keyframe instead. The measurement in #vi-evidence adds the delta
+   size distribution, and the read-back check ("did the agent use the patched state correctly")
+   decides whether deltas are trusted or only "unchanged" lines are used. {#vi-delta}
+
+Where the evidence stands: plan-10's 10.1 measured consecutive scan-prompt CONTENT HITS and found
+median carried 0.000 against a pre-registered 0.40 ([[injection-overlap]]), so dedup of
+scan-prompt's ranked entries does not pay. That measurement did not cover the STABLE blocks —
+the STM composite, recall packs, topic restores — which are near-identical across turns by design.
+19.6 measures those first, with the go/no-go-ranges rule
+([[feedback_go_no_go_ranges_not_predrop]]): the share of emitted bytes that are byte-identical to
+the previous rev of the same id, over a frozen set of real sessions. The event schema (d4a) gets
+`block_id`, `rev`, `unchanged: bool` so the saving is a count, not a story. {#vi-evidence}
+
+rel: related-to -> [[plan-10-injection-dedup]]
+
 ## What must come first {#prereqs}
 
 - **Clean STM clusters (user, 2026-10-14: "lets add fixes to the STM before the phased context

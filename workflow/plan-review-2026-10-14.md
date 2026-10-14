@@ -212,3 +212,66 @@ that the mutated route returns it (#b-r5-2); click parses nothing — `--help` h
 only as the first argument, `-ekey` read as `-e key` (#s-r5-1); 16.1's case-insensitive
 `--include` pruning only on recursive calls, so `grep -i PAT dir` keeps exit 2 (#s-r5-2); a
 `spawned_by` field on learner records (#s-r5-6); MEH items. {#t7-fixes}
+
+## Close-out: the decision-log review, answered {#t8}
+
+[[bsd-decision-log-review-a192ba2]] (DIRTY 6B/10S/6M; 15 sound, 13 needs-amend, 2 unsound). The
+user, 2026-10-14: "I agree with your other recommendations". Where a row below changes an earlier
+decision, the later row wins.
+
+rel: derives-from -> [[bsd-decision-log-review-a192ba2]]
+
+### Unsound decisions, replaced {#t8-replaced}
+
+| id | replaces | decision |
+|---|---|---|
+| d8a | d5a "compile reaps stale subjects" | Compile MARKS stale subjects `stale`; they stay protected and are hidden from recall; removal only through plan-22's audited path (ADR-0004 #rule-no-delete; 19 #s-7 as written). Subject expansion stays deferred and is listed in 19.6's out-of-scope, not left unowned. |
+| d8b | d5c "asserted = feedback or user-protected" | Two signals, decoupled. The FLOOR (protection against loss) keeps ADR-0004 #rule-asserted-floor's definition unchanged (feedback, protected, `rel:`-anchored). FOLD ORDER in `MEMORY.md` uses a separate tier: feedback (52) → memories linked from curated (feedback/project/reference) memories → the rest. Folding loses nothing (operational reachability, 19 #b-3), so a narrow tier is safe. Measured 2026-10-14 over 329 files: curated-inbound 178; feedback ∪ curated-inbound 192 (58%). No user-vs-learner protect distinction is needed, so 22 #s-4 no longer blocks 19.3. |
+
+### Revisited {#t8-revisited}
+
+| id | decision |
+|---|---|
+| d8c | d6b amended: "registered roots" = the registered daemon list (8 stores), not `registry.json` (3). The cross-store move is a new task **22.5** (copy → verify → forget across two daemons, through daemon ops, manifest-backed) ahead of 22.3. Rows under no store's root (≥ 114 of the 476: the 8 roots verify only 362) get an AUDITED forget whose manifest keeps them restorable; this knowingly changes them from "recovered" (2026-10-07) to "forgotten, restorable". |
+| d8d | The 235 fixture rows in the live `query.log` are not catalog rows, so 22.3 cannot remove them (amends d1c). Mark-and-filter: every `query.log` / `recall-events.jsonl` reader skips rows whose cwd or root is a pytest temp dir (one shared predicate); the log stays append-only history. 23.0 prevents new ones. |
+| d8e | A recall hit on a GLOBAL memory is counted in the global store, keyed by name; the event carries `scope` (19 #s-4). The drop-and-replay AC is restored. |
+| d8f | Privacy (public repo): raw `query.log` question sources (d4c) and raw STM rings (d5e) stay local and gitignored. Only a content hash and a REDACTED fixture (prompts and paths scrubbed) are committed; 19.0 and 21.4 tests run on the redacted fixture. |
+| d8g | Apply interface (amends d6e): one verb on both surfaces (parity test holds); apply requires a manifest id from a prior dry-run in the same store AND `--confirm <manifest-hash>`. The gate is the manifest, not the surface. |
+
+### Amendments carried without a new decision {#t8-amendments}
+
+- **d1c/d6d:** 22.1 splits; **22.1a** (classes needing no provenance) runs in Wave 1 and feeds
+  22.2 → 22.5 → 22.3. 16.6's leftover dependency on 16.1 is removed (the Wave 1 slice is R4/R5 +
+  sidecar). (Review #b-3.)
+- **d2a:** exactly-once covers only what is inside the one DuckDB transaction. Add: bitmap
+  fragments flushed after COMMIT get a failure that is surfaced and retried, not printed;
+  `replica_merge` must not roll back the offset table or the 19.2 counters on conflict;
+  `recall-events.jsonl` is the retained replay source (never rotated away before it is folded).
+- **d2b/d2e:** the Option A measurement becomes task **23.4** (Wave 1, ∥ 23.0) with go/no-go ranges
+  written before it runs. The d2b revisit trigger is 23.4's verdict, not "Option A lands".
+- **d3a:** keep the orphan RATIO CAP (refuse a reap above it), and add a restore op that reads the
+  orphan list back (17 #b-4).
+- **d3e:** the hub calls maintenance with `retries=0` and single-flight per store, so a timed-out op
+  is never re-sent onto a running compaction (`feedback_daemon_call_retries_multiply_timeouts`).
+- **d4a:** a non-consuming tail reader for `recall-events.jsonl`, and plan-23's TICK REGISTRY
+  (one registry, one shared budget; `bounded_steps` vs `drain(queue)`; plan-21 listed as a
+  consumer). Closes 23 #s-3, which no decision had cited.
+- **d4d:** the precomputed indexed-symbol set has ONE owner (the daemon, written on derive; the
+  hook only reads). The "> 1 s" band no longer waits on d2e (a write-concurrency measurement); it
+  means no-go in the hook, revisited only if 21.3 is re-planned.
+- **d5e (19.0):** owns bug-100; verifies the hook envelope identifies subagents BEFORE item 2
+  relies on it (else: separate by `agent_id` from the transcript path, or drop tool events whose
+  `session_id` has a live subagent marker); objective acceptance — the redacted fixture's top-5
+  topic labels contain none of the listed junk refs and each of a pre-listed set of thread terms;
+  typo folding skips tokens of length ≤ 4 and identifier-shaped tokens (`ann`, `lru`).
+- **22 #b-8:** apply refuses any root not named on its command line.
+- **19 #s-7:** see d8a.
+- **MEH:** the review's m-1..m-6, and plan-22 #m-7 (ADR-0004 "only" vs `forget`/`prune-noise`,
+  answered by d8a's audited-path rule), are carried by id into the spec revisions. m-5: the
+  "1 - yes agree" confirmation answered the question "Confirm d2a and d3b?" (2026-10-14).
+{#t8-amendments-body}
+
+### Wave 1 order after the close-out {#t8-wave1}
+
+23.0 ∥ 23.4 (Option A measurement) → 23.2 → 23.1 (+ tick registry) → 23.3; after 23.1: 16.6
+Wave-1 slice → 22.1a → 22.2 → 22.5 → 22.3; 17.1 → 17.2; 19.0, 19.1, 19.2; 21.1 needs only 23.0.
