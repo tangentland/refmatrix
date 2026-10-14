@@ -306,7 +306,7 @@ def record_pointer_error(root: Path, reason: str, **fields) -> bool:
     try:
         p.parent.mkdir(exist_ok=True)
         if p.exists() and p.stat().st_size > _ERRORS_MAX_BYTES:
-            lines = p.read_text(encoding="utf-8").splitlines(keepends=True)
+            lines = p.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
             p.write_text("".join(lines[len(lines) // 2:]), encoding="utf-8")
         with p.open("a", encoding="utf-8") as f:
             f.write(json.dumps({"t": time.time(), "reason": reason, **fields}) + "\n")
@@ -324,7 +324,8 @@ def read_pointer_errors(root: Path, *, since: float = 0.0) -> list[dict]:
     p = stm_dir(root) / "by-pid" / "_errors.jsonl"
     out: list[dict] = []
     try:
-        lines = p.read_text(encoding="utf-8").splitlines()
+        # r4 #m-1: a non-UTF-8 byte becomes U+FFFD, so its line fails to parse and is COUNTED below
+        lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         return []
     for n, line in enumerate(lines, 1):
@@ -335,7 +336,7 @@ def read_pointer_errors(root: Path, *, since: float = 0.0) -> list[dict]:
             t = float(row["t"]) if isinstance(row, dict) else None
         except (ValueError, TypeError, KeyError):
             t = None
-        if t is None:
+        if t is None or t != t:          # NaN is unreadable too, not silently out of window
             out.append({"reason": "unreadable-line", "line": n})
         elif t >= since:
             out.append(row)
@@ -380,6 +381,8 @@ def read_pid_pointer(root: Path, pid: int) -> str | None:
     try:
         d = json.loads(pid_pointer_path(root, pid).read_text(encoding="utf-8"))
     except (OSError, ValueError):
+        return None
+    if not isinstance(d, dict):   # r4 #m-1: unreadable; the next input hook rewrites it
         return None
     if not d.get("session") or d.get("pid_start") != _proc_start(pid):
         return None

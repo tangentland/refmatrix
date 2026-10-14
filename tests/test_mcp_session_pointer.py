@@ -518,3 +518,43 @@ def test_only_unreadable_lines_still_surface(root):
     p.write_text("[1, 2]\n")
     assert handoff.session_pointer_anomalies(root) == [
         "session-pointer log has 1 unreadable line(s); see stm/by-pid/_errors.jsonl"]
+
+
+# ---- r4 (ch-bsd bsd-bug109-r4-ab19016): the remedy's own guards, pinned -------------------------
+
+def _sink(root):
+    return stm.stm_dir(root) / "by-pid" / "_errors.jsonl"
+
+
+def test_the_sink_trim_keeps_the_newest_half(root, monkeypatch):
+    """r4 Q1: past the cap the OLDEST half goes; the cap test only measured size."""
+    stm.stm_dir(root).mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(stm, "_ERRORS_MAX_BYTES", 2000)
+    for i in range(80):
+        stm.record_pointer_error(root, "pointer-unresolved", seq=i)
+    seqs = [json.loads(l)["seq"] for l in _sink(root).read_text().splitlines()]
+    assert seqs[-1] == 79 and 0 not in seqs, seqs[:3]
+
+
+def test_a_non_dict_pointer_is_rewritten_not_fatal(root):
+    """r4 Q2 / #m-1: a pointer file holding a JSON list must not crash the hook or the resolve."""
+    pid = os.getpid()
+    p = stm.pid_pointer_path(root, pid)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("[1, 2]")
+    assert stm.read_pid_pointer(root, pid) is None
+    assert stm.write_pid_pointer(root, pid, "sess-A") is True
+    assert stm.read_pid_pointer(root, pid) == "sess-A"
+
+
+@pytest.mark.parametrize("bad", [b'{"reason": "no-t"}\n', b'{"t": null}\n', b'{"t": NaN}\n',
+                                 b'\xff\xfe not utf-8\n'])
+def test_every_corrupt_sink_line_is_counted_never_raised(root, bad):
+    """r4 Q10/Q11 + #m-1: missing `t` (KeyError), null `t` (TypeError), NaN `t` (was dropped
+    uncounted) and a non-UTF-8 byte (was UnicodeDecodeError out of recall-state)."""
+    stm.stm_dir(root).mkdir(parents=True, exist_ok=True)
+    _sink(root).parent.mkdir(parents=True, exist_ok=True)
+    _sink(root).write_bytes(bad)
+    rows = stm.read_pointer_errors(root, since=0.0)
+    assert rows == [{"reason": "unreadable-line", "line": 1}], rows
+    stm.record_pointer_error(root, "pointer-unresolved")   # the append path must not raise either
