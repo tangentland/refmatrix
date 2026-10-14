@@ -189,8 +189,10 @@ def test_p5_daemon_sync_and_async_merge_carry_fragments_repair(live):
     assert st["state"] == "done", st
     assert "fragments_repair" in st["result"], st
     log = (root / "rmxd.log").read_text() if (root / "rmxd.log").exists() else ""
-    merge_lines = [l for l in log.splitlines() if "merge-done" in l or "partition_merge" in l]
-    assert any("dropped_dead_concept=" in l for l in merge_lines), merge_lines
+    merge_lines = [l for l in log.splitlines() if "merge-done" in l]
+    # one line per merge, sync AND async, each naming the repair (r3 #m3-2)
+    for pair in ("src->dst", "src2->dst"):
+        assert any(pair in l and "dropped_dead_concept=" in l for l in merge_lines), (pair, merge_lines)
 
 
 def test_p6_cli_partition_merge_prints_the_repair_on_the_daemon_up_path(live, monkeypatch):
