@@ -89,7 +89,7 @@ rel: supersedes -> [[handoff-011-r6-r9-remedies-0763-plans-17-23]]
 - **The full suite** stays unrun until bug-088 isolates it. Families ran with `RMX_MODEL_SOCK`
   isolated, and the live-socket recorder stayed at 145.
 - **The bug-098 backup** `catalog.read.pre-bug098-repair-*.duckdb` (712 MB) was deleted 2026-10-14 by
-  the user's OK. `.refmatrix/backups/vectors-sessions-refmatrix-20261008-165958/` from the same
-  repair remains, awaiting a decision.
+  the user's OK, and so was `vectors-sessions-refmatrix-20261008-165958/` (268 KB) from the same
+  repair. `.refmatrix/backups/` is empty.
 
 {#open-body}
