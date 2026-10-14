@@ -349,6 +349,7 @@ clone; d8d's predicate owned by 21.1 in `telemetry.py`; the dead-letter file kep
 | d9aa | The user's M1 Mac mini hosts 23.0's tier-2 macOS VM lane once it is running (real arm64 Apple hardware, off the workstation); until then the workstation hosts it. A hackintosh is rejected: x86 diverges from the arm64 production builds, Intel macOS ends at 26, and it breaks the macOS licence. | user, 2026-10-14 ("I have a m1 mac mini") |
 | d9ab | A protection's origin is trusted ONLY from an explicit `source` on its event or a CLI/MCP command record; anything else (every protection that survived a `facts.log` compaction) is user-asserted and never auto-removed; its learned rows may still be removed. Two companions: the compactor (`dump_catalog_to_log`) must keep `source` and the learned-evidence events from now on, and a read-only count on a store copy of what each rule classifies is taken before the rule is built. Round-4 16/22 #b-2. | user, 2026-10-14 ("1- a") |
 | d9ac | `merge_partition` is a MERGE entry point owned by the future helix plan, as d9o made `fold_concept_dups`; its dropped fragment bits already go to a manifest (bug-105). Round-4 16/22 #s-2. | user, 2026-10-14 ("2- a") |
+| d9ad | 23.4 procedure pin = `d454bf9` (the d9y procedure text as written in `task-23.4-option-a-measurement` at that commit). 23.4 AC-1 runs with `--spec-pin d454bf9` and compares against this row. | orchestrator, recording d9y (user, 2026-10-14) |
 
 ## The wave list, all waves (2026-10-14) {#t10-waves}
 
@@ -363,12 +364,15 @@ rel: supersedes -> [[plan-review-2026-10-07#order]]
   the ADR-0004 amendment (d9k), 23.4's ranges (d9l). Still waiting on the user's time: the 19.5
   R1 hook-limit probe, the 20.1 gold labelling, the 21.4 question-set approval.
 - **Hotfix (now, ahead of Wave 1)** — bug-105 (d9a): fragment cache follows the partition binding,
-  `rmx repair-index --fragments`, live repair after deploy.
+  `rmx repair-index --fragments`, live repair after deploy. bug-109 (d9s): the MCP server resolves
+  the CURRENT session through a per-Claude-process pointer. 23.1 waits for bug-105's merge; 19.0
+  and 21.1 wait for bug-109's (they extend its code).
 - **Wave 1**
   - 23.0 (test sandbox) ∥ 23.4 (Option A measurement; its verdict triggers the d2b revisit).
   - 23.2 → 23.1 (+ tick registry, `add_evidence_if_absent`) → 23.3 (sync between-file yield).
-  - 21.1 (recall-event schema; needs only 23.0).
-  - 19.5 R1 (the probe) → 19.1 → 19.2; 19.0 (STM hygiene; needs only 23.0, no later than Wave 2).
+  - 21.1 (recall-event schema; needs 23.0 and bug-109 merged) → 19.1 (19.1 consumes 21.1's events).
+  - 19.5 R1 (the probe) → 19.1 → 19.2; 19.0 (STM hygiene; needs 23.0 and bug-109 merged, no later
+    than Wave 2).
   - After 23.1: 17.1 → 17.2 → 17.4; 16.6 Wave-1 slice → 22.1a → 22.2 → (22.5 ∥ 22.6) → 22.3 (d9t).
 - **Wave 2**
   - 16.1 (learn-time provenance write) → 16.2 ∥ 16.3 → 16.5; 22.1 (classes that need 16.1's
