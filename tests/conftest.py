@@ -7,6 +7,26 @@ import pytest
 _REPO = Path(__file__).resolve().parents[1]
 
 
+def _assert_tested_code_is_this_checkout() -> None:
+    """Refuse to run when `refmatrix` imports from a different tree than these tests.
+
+    `.venv-eval` holds an editable install of the dev tree, so a suite run from a clone or
+    worktree without `PYTHONPATH=<checkout>/src` silently tests the DEV tree's code and reports
+    green (seen 2026-10-14 in the bug-105 littlebig clone: the r2 tests failed on missing
+    attributes of the wrong module; a clean run would have passed on code it never loaded).
+    """
+    import refmatrix
+    loaded = Path(refmatrix.__file__).resolve().parent
+    expected = (_REPO / "src" / "refmatrix").resolve()
+    if loaded != expected:
+        raise pytest.UsageError(
+            f"tests in {_REPO} would exercise refmatrix from {loaded}; "
+            f"set PYTHONPATH={_REPO / 'src'} (prepend) so the checkout under test is imported")
+
+
+_assert_tested_code_is_this_checkout()
+
+
 def _pyc_guard():
     """Load `tools/pyc_guard.py` by path — `tools/` is not a package."""
     spec = importlib.util.spec_from_file_location(
