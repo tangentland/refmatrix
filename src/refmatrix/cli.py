@@ -4192,13 +4192,7 @@ def partition_rename(old: str, new: str):
                    "reparented + merged.")
 @click.option("--yes", "-y", is_flag=True,
               help="Skip the confirmation prompt. Use after a --dry-run.")
-@click.option("--async", "run_async", is_flag=True,
-              help="Submit as a daemon background job and return the job id "
-                   "immediately instead of blocking on the RPC. Progress "
-                   "streams to rmxd.log (merge-progress lines); poll with "
-                   "`rmx daemon job <id>`. Needs the daemon up.")
-def partition_merge(src: str, dst: str, dry_run: bool, yes: bool,
-                    run_async: bool):
+def partition_merge(src: str, dst: str, dry_run: bool, yes: bool):
     """Merge SRC partition into DST. Drops SRC on success.
 
     Built for the `memory-<project>` → `<project>` consolidation: the
@@ -4207,7 +4201,10 @@ def partition_merge(src: str, dst: str, dry_run: bool, yes: bool,
     DST and prefer the longer memory_content body. Lance vectors +
     bitmap fragments move filesystem-side.
 
-    Always run --dry-run first to see the impact.
+    Always run --dry-run first to see the impact. A real merge runs OFFLINE only: with
+    the daemon up it is refused (bug-105 r4, d9ae: a live merge's rebind and SRC drop sit in
+    separate writer-lock holds, so queued ops run bound to the dropped partition; the helix
+    plan redesigns it). `rmx daemon stop`, merge, then start the daemon again.
     """
     from refmatrix import daemon as daemon_mod
     root = _root()
@@ -4238,6 +4235,11 @@ def partition_merge(src: str, dst: str, dry_run: bool, yes: bool,
     console.print(f"  tracked files:        {result['tracked_files']}")
     if dry_run:
         return
+    if daemon_mod.ping(root):
+        raise click.ClickException(
+            "live partition merge is disabled (bug-105 #b4-1/#s4-1): stop the daemon "
+            f"(`rmx daemon stop`) and run `rmx partition merge {src} {dst}` offline; the live "
+            "merge is redesigned in the helix plan")
     total = (
         result["entities_reparented"] + result["entities_merged"]
         + result["saved_queries"] + result["tracked_files"]
@@ -4251,36 +4253,17 @@ def partition_merge(src: str, dst: str, dry_run: bool, yes: bool,
         console.print("[yellow]aborted[/]")
         return
 
-    if daemon_mod.ping(root):
-        resp = daemon_mod.call(
-            root, "partition_merge",
-            {"src": src, "dst": dst, "dry_run": False, "async": run_async},
-            timeout=3600.0,
-        )
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        result = resp["result"]
-        if run_async and result.get("job"):
-            console.print(
-                f"[green]merge submitted[/] job={result['job']}  "
-                f"poll: `rmx daemon job {result['job']}`  "
-                f"progress: merge-progress lines in rmxd.log")
-            return
-    else:
-        if run_async:
-            raise click.ClickException(
-                "--async needs the daemon up (the job runs inside it)")
-        s = _store()
-        try:
-            result = s.merge_partition(src, dst, dry_run=False)
-        except ValueError as e:
-            raise click.ClickException(str(e))
-        # Daemon-down path: merge_partition emits no log events; snapshot the
-        # log from the post-merge catalog so replay stays faithful.
-        try:
-            s.dump_catalog_to_log()
-        except Exception as e:
-            console.print(f"[yellow]warn:[/] post-merge log snapshot failed: {e}")
+    s = _store()
+    try:
+        result = s.merge_partition(src, dst, dry_run=False)
+    except ValueError as e:
+        raise click.ClickException(str(e))
+    # Offline merge: merge_partition emits no log events; snapshot the log from the
+    # post-merge catalog so replay stays faithful.
+    try:
+        s.dump_catalog_to_log()
+    except Exception as e:
+        console.print(f"[yellow]warn:[/] post-merge log snapshot failed: {e}")
     console.print(
         f"[green]merged[/] reparented={result['entities_reparented']} "
         f"merged={result['entities_merged']} "

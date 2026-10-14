@@ -197,6 +197,20 @@ def read_repair_marker(root: Path) -> "dict | None":
         return {"table": "unknown"}
 
 
+def _periodic_flush(store, lock, log) -> int:
+    """The flush tick's body: under the writer lock, flush when ANY partition binding has dirty
+    fragment bits, not only the home binding (bug-105 audit #b-1: a guard that looked at the
+    home binding left another binding's bits unflushed until shutdown). Returns the number of
+    dirty fragments flushed (0 when none)."""
+    with lock:
+        if not store.has_dirty_fragments():
+            return 0
+        n = store.dirty_fragment_count()
+        store.flush_fragments()
+        log(f"periodic flush: {n} fragment(s)")
+        return n
+
+
 class _FairLock:
     """Strict-FIFO mutex with the same surface as `threading.Lock`.
 
@@ -2062,11 +2076,7 @@ class Daemon:
                     self._log(f"learn-queue drain tick failed: {exc!r}")
                     self._fast_exit_if_invalidated(exc, "learn-queue drain")
                 try:
-                    with self._store_lock:
-                        if self.store.has_dirty_fragments():
-                            n = self.store.dirty_fragment_count()
-                            self.store.flush_fragments()
-                            self._log(f"periodic flush: {n} fragment(s)")
+                    _periodic_flush(self.store, self._store_lock, self._log)
                 except Exception as exc:
                     self._log(f"periodic flush failed: {exc!r}")
                     self._fast_exit_if_invalidated(exc, "periodic flush")
@@ -4057,84 +4067,24 @@ def _op_partition_rename(d: Daemon, args: dict) -> dict:
 
 
 def _op_partition_merge(d: Daemon, args: dict) -> dict:
-    """Merge SRC partition into DST. Drops SRC on success. See
-    `Store.merge_partition` for the full semantics — collisions remap
-    child rows to DST and prefer the longer memory_content body.
+    """Preview a merge of SRC into DST (`dry_run=True`); a LIVE merge is refused.
 
-    Driven by the memory partition consolidation (memory-<project>
-    → <project>) that closes the cross-partition wikilink resolution
-    gap. `dry_run=True` returns the same shape minus the mutation."""
+    bug-105 r4 (2026-10-14, d9ae): a merge inside the running daemon cannot be made safe in the
+    hotfix. Its partition rebind and the SRC drop run in separate holds of the FIFO writer lock,
+    so every op queued behind the merge runs bound to the partition the merge just deleted
+    (#b4-1, the bug-098 class), and a write naming SRC between merge chunks orphans its entity
+    (#s4-1). With the daemon down there is no concurrent writer, so `rmx partition merge` runs
+    OFFLINE (`Store.merge_partition`, `lock=None`). The live merge is redesigned by the helix
+    plan, which owns merge (d9ac)."""
     src = args["src"]
     dst = args["dst"]
-    dry_run = bool(args.get("dry_run"))
-
-    def _progress(job_id=None):
-        def cb(phase: str, done: int, total: int) -> None:
-            d._log(f"merge-progress {phase} {done}/{total} {src}->{dst}")
-            if job_id is not None:
-                with d._jobs_lock:
-                    j = d._jobs.get(job_id)
-                    if j is not None:
-                        j.update(phase=phase, done=done, total=total)
-        return cb
-
-    if args.get("async") and not dry_run:
-        # Background job: return an id now; the merge takes the store lock
-        # per chunk (lock-yield), so queued ops interleave while it runs.
-        import uuid
-        job_id = uuid.uuid4().hex[:12]
-        with d._jobs_lock:
-            d._jobs[job_id] = {"state": "running", "op": "partition_merge",
-                               "src": src, "dst": dst,
-                               "phase": "classify", "done": 0, "total": 0,
-                               "result": None, "error": None}
-
-        def _run() -> None:
-            try:
-                res = d._st().merge_partition(
-                    src, dst, dry_run=False,
-                    lock=d._store_lock, progress=_progress(job_id))
-                # The merge rewrites rows with direct SQL and emits NO log
-                # events (facts.log audit 2026-09-06): without this snapshot
-                # the log keeps describing the pre-merge partition layout and
-                # every log-replay consumer silently diverges. The log is the
-                # replication boundary — restructurings must be followed by a
-                # forced snapshot-compaction.
-                d._compact_factslog_if_needed(force=True)
-                with d._jobs_lock:
-                    d._jobs[job_id].update(state="done", result=res)
-                d._request_snapshot()
-                d._log(f"merge-done {src}->{dst} job={job_id} {_merge_repair_line(res)}")
-            except Exception as e:
-                with d._jobs_lock:
-                    d._jobs[job_id].update(state="error", error=str(e))
-                d._log(f"merge-error {src}->{dst} job={job_id}: {e}")
-
-        threading.Thread(target=_run, name=f"rmx-merge-{job_id}",
-                         daemon=True).start()
-        return {"job": job_id, "async": True}
-
-    # Synchronous path: same lock-yield chunking, caller blocks for the
-    # result. The lock is taken per chunk INSIDE merge_partition — not here —
-    # so hooks and reads interleave with a long merge instead of timing out.
-    result = d._st().merge_partition(
-        src, dst, dry_run=dry_run,
-        lock=d._store_lock, progress=_progress())
-    if not dry_run:
-        # See the async branch: merge_partition is log-invisible, so the log
-        # must be re-snapshotted from the post-merge catalog.
-        d._compact_factslog_if_needed(force=True)
-        d._request_snapshot()
-        d._log(f"merge-done {src}->{dst} {_merge_repair_line(result)}")
-    return result
-
-
-def _merge_repair_line(res: dict) -> str:
-    """The merge's fragment-repair counts and manifest for rmxd.log (bug-105 r3 #m3-2)."""
-    fr = (res or {}).get("fragments_repair") or {}
-    return (f"fragments_repair moved={fr.get('moved')} dropped_dead={fr.get('dropped_dead')} "
-            f"dropped_dead_concept={fr.get('dropped_dead_concept')} "
-            f"links_skipped={fr.get('links_skipped')} manifest={fr.get('manifest')}")
+    if not args.get("dry_run"):
+        raise ValueError(
+            f"live partition merge is disabled (bug-105 #b4-1/#s4-1): stop the daemon "
+            f"(`rmx daemon stop`) and run `rmx partition merge {src} {dst}` offline; the live "
+            f"merge is redesigned in the helix plan")
+    with d._store_lock:
+        return d._st().merge_partition(src, dst, dry_run=True)
 
 
 def _op_partition_audit(d: Daemon, args: dict) -> dict:

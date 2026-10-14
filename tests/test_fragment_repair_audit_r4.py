@@ -1,0 +1,203 @@
+"""bug-105 hotfix round-4 audit regressions (ch-bsd `bsd-bug105-hotfix-r4-fb285cc`, 2026-10-14).
+
+Round 4 found that a LIVE `partition merge` cannot be made safe inside this hotfix: moving the
+home-binding rebind into a later hold of the FIFO writer lock hands every queued op a binding
+that names the partition the merge just deleted (#b4-1, the bug-098 class), and a write naming
+SRC between merge chunks orphans its entity (#s4-1). The user's decision d9ae: ship the REPAIR,
+FENCE the live merge (the daemon refuses it; an offline merge with the daemon down has no
+concurrent writer), and move the merge redesign to the helix plan, which owns merge (d9ac).
+
+It also found four repair-path mutants alive for a third round (#b4-2): the daemon's periodic
+flush guard (M1), the `links_skipped` count (M11), the SQLite repair's delete list (M12) and the
+canonical verb on the entity_links side (M14), plus unpinned operator output (M24, M25).
+"""
+import shutil
+import tempfile
+import threading
+from pathlib import Path
+
+import pytest
+from click.testing import CliRunner
+from pyroaring import BitMap64
+
+from refmatrix import cli as cli_mod
+from refmatrix import daemon as dm
+from refmatrix.store import Store
+
+
+@pytest.fixture
+def s(tmp_path, monkeypatch):
+    monkeypatch.delenv("RMX_BACKEND", raising=False)
+    st = Store(tmp_path / ".refmatrix", backend="duckdb"); st.init()
+    yield st
+    st.close()
+
+
+def _rows(s):
+    con = s._connect()
+    out = {}
+    for pid, L, blob in con._duck.execute(
+            "SELECT partition_id, linkage, blob FROM bitmap_fragments").fetchall():
+        out[(pid, L)] = {int(b) for b in BitMap64.deserialize(bytes(blob))}
+    return out
+
+
+def _seed_two_partitions(root: Path) -> None:
+    st = Store(root); st.init()
+    with st.with_partition("src"):
+        c = st.add_concept("k"); st.link("mentions", c, st.upsert_entity(kind="doc", name="o.md"))
+    with st.with_partition("dst"):
+        st.add_concept("k")
+    st.flush_fragments(); st.close()
+
+
+@pytest.fixture
+def live(monkeypatch):
+    base = Path(tempfile.mkdtemp(prefix="r4f-", dir="/tmp"))
+    home = base / "h"; home.mkdir()
+    for k, v in {"HOME": str(home), "RMX_HOME": str(home / ".refmatrix"),
+                 "RMX_SHARED_MODELS": "0", "RMX_MODEL_SOCK": str(base / "m.sock")}.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.delenv("RMX_BACKEND", raising=False)
+    root = base / "p" / ".refmatrix"; root.parent.mkdir()
+    _seed_two_partitions(root)
+    pid = dm.spawn_daemon_subprocess(root, watch_root=[])
+    assert pid and dm.ping(root)
+    try:
+        yield root
+    finally:
+        dm.stop_daemon(root); shutil.rmtree(base, ignore_errors=True)
+
+
+# ---- the fence (d9ae) --------------------------------------------------------------------------
+
+def test_daemon_refuses_a_live_merge_sync_and_async(live):
+    for extra in ({}, {"async": True}):
+        r = dm.call(live, "partition_merge", {"src": "src", "dst": "dst", "dry_run": False,
+                                              **extra}, timeout=60.0)
+        assert not r.get("ok"), r
+        assert "offline" in r.get("error", ""), r
+    res = dm.call(live, "partition_list", {}, timeout=30.0)["result"]
+    rows = res.get("rows", res) if isinstance(res, dict) else res
+    names = {p["name"] if isinstance(p, dict) else p for p in rows}
+    assert {"src", "dst"} <= names, names          # nothing was merged
+
+
+def test_daemon_still_answers_a_dry_run_merge(live):
+    r = dm.call(live, "partition_merge", {"src": "src", "dst": "dst", "dry_run": True},
+                timeout=60.0)
+    assert r.get("ok") and r["result"]["dry_run"] is True, r
+
+
+def test_cli_merge_with_the_daemon_up_is_refused(live, monkeypatch):
+    monkeypatch.chdir(live.parent)
+    monkeypatch.setenv("REFMATRIX_ROOT", str(live))
+    r = CliRunner().invoke(cli_mod.main, ["partition", "merge", "src", "dst", "-y"])
+    assert r.exit_code != 0, r.output
+    assert "offline" in r.output, r.output
+
+
+def test_offline_cli_merge_runs_and_prints_the_repair(tmp_path, monkeypatch):
+    """With no daemon there is no concurrent writer, so the offline merge stays available and
+    still prints its fragment repair (pins the CLI print, M22/M23)."""
+    monkeypatch.delenv("RMX_BACKEND", raising=False)
+    root = tmp_path / "p" / ".refmatrix"; root.parent.mkdir()
+    _seed_two_partitions(root)
+    monkeypatch.chdir(root.parent)
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+    r = CliRunner().invoke(cli_mod.main, ["partition", "merge", "src", "dst", "-y"])
+    assert r.exit_code == 0, r.output
+    assert "fragments repair:" in r.output and "dropped_dead_concept=" in r.output, r.output
+
+
+# ---- M1: the daemon's periodic flush guard spans every binding ---------------------------------
+
+def test_periodic_flush_persists_another_bindings_dirty_bits(s):
+    with s.with_partition("p"):
+        pid = s.partition_id
+        c = s.add_concept("k"); e = s.upsert_entity(kind="doc", name="a.md")
+        s.link("mentions", c, e)                 # dirty under ('p'), NOT flushed
+    logs = []
+    n = dm._periodic_flush(s, threading.Lock(), logs.append)
+    assert n >= 1, logs
+    assert s._pack(c, e) in _rows(s).get((pid, "mentions"), set())
+
+
+# ---- M11: an entity_links row whose entity is gone is counted, not dropped silently ------------
+
+def test_links_skipped_counts_a_link_to_a_missing_entity(s, tmp_path):
+    c = s.add_concept("k"); e = s.upsert_entity(kind="doc", name="a.md")
+    s.link("mentions", c, e); s.flush_fragments()
+    con = s._connect()._duck
+    lid = con.execute("SELECT id FROM linkage_types WHERE name='mentions'").fetchone()[0]
+    con.execute("INSERT INTO entity_links (entity_id, linkage_id, concept_id) VALUES (?, ?, ?)",
+                [987_654, lid, c])
+    rep = s.repair_fragments(dry_run=True, manifest_dir=tmp_path / "m")
+    assert rep["links_skipped"] == 1, rep
+
+
+# ---- M14: a legacy non-canonical linkage name lands in the canonical fragment -------------------
+
+def test_repair_files_a_legacy_snake_verb_link_under_the_canonical_kebab_name(s, tmp_path):
+    c = s.add_concept("k"); e = s.upsert_entity(kind="doc", name="a.md")
+    con = s._connect()._duck
+    con.execute("INSERT INTO linkage_types (id, name) VALUES (9001, 'related_to')")
+    con.execute("INSERT INTO entity_links (entity_id, linkage_id, concept_id) VALUES (?, 9001, ?)",
+                [e, c])
+    s._clear_fragment_caches()
+    s.repair_fragments(dry_run=False, manifest_dir=tmp_path / "m")
+    rows = _rows(s)
+    assert s._pack(c, e) in rows.get((s.partition_id, "related-to"), set()), rows
+    assert (s.partition_id, "related_to") not in rows, rows
+
+
+# ---- M12: the SQLite repair deletes only files it read, ON THE WRITE PATH -----------------------
+
+def test_sqlite_repair_that_writes_keeps_an_unread_dir(tmp_path, monkeypatch):
+    """The r1 test never changed a row, so the write (and its delete list) never ran."""
+    monkeypatch.delenv("RMX_BACKEND", raising=False)
+    st = Store(tmp_path / ".refmatrix", backend="sqlite"); st.init()
+    try:
+        with st.with_partition("p"):
+            c = st.add_concept("k"); e = st.upsert_entity(kind="doc", name="a.md")
+        home_dir = st.fragments_dir / st.partition_name
+        home_dir.mkdir(parents=True, exist_ok=True)
+        (home_dir / "mentions.rb64").write_bytes(BitMap64([st._pack(c, e)]).serialize())  # foreign
+        unread = st.fragments_dir / "gone-partition"
+        unread.mkdir(parents=True, exist_ok=True)
+        (unread / "mentions.rb64").write_bytes(BitMap64([st._pack(c, e)]).serialize())
+        rep = st.repair_fragments(dry_run=False, manifest_dir=tmp_path / "m")
+        assert rep["moved"] >= 1 and rep["rows_changed"] >= 1, rep    # the write path ran
+        assert (unread / "mentions.rb64").exists()
+        assert str(unread) in rep["unread_dirs"]
+    finally:
+        st.close()
+
+
+# ---- M24 / M25: the operator sees every counter --------------------------------------------------
+
+def test_cli_repair_lists_unread_dirs(tmp_path, monkeypatch):
+    monkeypatch.setenv("RMX_BACKEND", "sqlite")
+    root = tmp_path / "p" / ".refmatrix"; root.parent.mkdir()
+    st = Store(root, backend="sqlite"); st.init()
+    st.add_concept("k"); st.flush_fragments()
+    unread = st.fragments_dir / "gone-partition"
+    unread.mkdir(parents=True, exist_ok=True)
+    (unread / "mentions.rb64").write_bytes(BitMap64([1]).serialize())
+    st.close()
+    monkeypatch.chdir(root.parent)
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+    r = CliRunner().invoke(cli_mod.main, ["repair-index", "--fragments", "--dry-run"])
+    assert r.exit_code == 0, r.output
+    assert "unread, left in place" in r.output and "gone-partition" in r.output, r.output
+
+
+def test_daemon_repair_log_line_names_every_counter(live, monkeypatch):
+    r = dm.call(live, "repair_fragments", {"dry_run": True}, timeout=120.0)
+    assert r.get("ok"), r
+    log = (live / "rmxd.log").read_text()
+    lines = [l for l in log.splitlines() if "repair_fragments dry_run=" in l]
+    assert lines, log[-2000:]
+    for field in ("dropped_dead=", "dropped_dead_concept=", "links_skipped=", "unread_dirs=",
+                  "manifest="):
+        assert field in lines[-1], (field, lines[-1])

@@ -169,49 +169,8 @@ def live(monkeypatch):
         dm.stop_daemon(root); shutil.rmtree(base, ignore_errors=True)
 
 
-def test_p5_daemon_sync_and_async_merge_carry_fragments_repair(live):
-    root = live
-    r = dm.call(root, "partition_merge", {"src": "src", "dst": "dst", "dry_run": False},
-                timeout=60.0)
-    assert r.get("ok"), r
-    fr = r["result"].get("fragments_repair")
-    assert fr is not None and "dropped_dead_concept" in fr and "links_skipped" in fr, r
-    a = dm.call(root, "partition_merge",
-                {"src": "src2", "dst": "dst", "dry_run": False, "async": True}, timeout=60.0)
-    assert a.get("ok"), a
-    job = a["result"]["job"]
-    deadline = time.time() + 30; st = {}
-    while time.time() < deadline:
-        st = dm.call(root, "job_status", {"job": job}, timeout=10.0)["result"]
-        if st["state"] in ("done", "error"):
-            break
-        time.sleep(0.1)
-    assert st["state"] == "done", st
-    assert "fragments_repair" in st["result"], st
-    log = (root / "rmxd.log").read_text() if (root / "rmxd.log").exists() else ""
-    merge_lines = [l for l in log.splitlines() if "merge-done" in l]
-    # one line per merge, sync AND async, each naming the repair (r3 #m3-2)
-    for pair in ("src->dst", "src2->dst"):
-        assert any(pair in l and "dropped_dead_concept=" in l for l in merge_lines), (pair, merge_lines)
-
-
-def test_p6_cli_partition_merge_prints_the_repair_on_the_daemon_up_path(live, monkeypatch):
-    from click.testing import CliRunner
-    from refmatrix import cli as cli_mod
-    monkeypatch.chdir(live.parent)
-    monkeypatch.setenv("REFMATRIX_ROOT", str(live))
-    r = CliRunner().invoke(cli_mod.main, ["partition", "merge", "src", "dst", "-y"])
-    print(r.output)
-    assert r.exit_code == 0, r.output
-    assert "fragments repair:" in r.output and "dropped_dead_concept=" in r.output, r.output
-    r2 = CliRunner().invoke(cli_mod.main, ["partition", "merge", "src2", "dst", "-y", "--async"])
-    print(r2.output)
-    assert r2.exit_code == 0, r2.output
-    job = r2.output.split("job=")[1].split()[0]
-    time.sleep(2)
-    r3 = CliRunner().invoke(cli_mod.main, ["daemon", "job", job])
-    print(r3.output)
-    assert "fragments_repair" in r3.output, r3.output
+# P5 and P6 drove a LIVE daemon merge, which bug-105 r4 fenced (d9ae); the fence and the
+# offline merge's report are pinned in test_fragment_repair_audit_r4.py.
 
 
 # ---- P7: merge collisions — fragment bits are never remapped src_eid -> dst_eid ---------------
