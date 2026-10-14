@@ -13,10 +13,11 @@ metadata:
 # Plan 22: audited removal and repair {#root}
 
 **Date:** 2026-10-07 (revised 2026-10-14 after the Wave 0 decision log)
-**Status:** Drafting — revision round 2 (2026-10-14) for the re-review
-[[bsd-plan16-22-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]] ([[#rev-round-2]]). Task
-specs 22.1a, 22.1, 22.2, 22.3, 22.4 (blocked; handed to the helix plan on close, d9j) and 22.5 are
-written.
+**Status:** Drafting — revision round 3 (2026-10-14) for the r3 re-review
+[[bsd-plan16-22-spec-rereview-r3-6091648]] and the approvals d9k/d9o
+([[plan-review-2026-10-14#t9-approvals]]; [[#rev-round-3]]); round 2 in [[#rev-round-2]]. Task
+specs 22.1a, 22.1, 22.2, 22.3, 22.4 (blocked; handed to the helix plan on close, d9j), 22.5 and
+22.6 (new in round 3) are written.
 **Origin:** the plan review's C1/C2/C3, applied by the user on 2026-10-07: "apply all the
 consolidations, don't delete moves repair them if possible". Revised from
 [[bsd-plan22-spec-review-3104a81]] (22 findings) and the decisions of
@@ -33,6 +34,9 @@ rel: depends-on -> [[task-16.6-learned-row-validation]]
 rel: depends-on -> [[plan-23-bounded-write-harness]]
 rel: related-to -> [[plan-20-concept-similarity-eval]]
 rel: related-to -> [[refmatrix/adr-0004-unified-location-space-index]]
+rel: implements -> [[refmatrix/adr-0004-unified-location-space-index#rule-no-delete]]
+rel: implements -> [[refmatrix/adr-0004-unified-location-space-index#a14-removal-scope]]
+rel: derives-from -> [[plan-review-2026-10-14#t9-approvals]]
 rel: related-to -> [[plan-17-nightly-store-maintenance]]
 rel: amends -> [[project_global_relative_rows_repair]]
 
@@ -58,26 +62,39 @@ predicate whose count is measured, not assumed (#b-6). {#why-not-df}
 
 ## Scope of "the one path" {#scope}
 
-ADR-0004 `#rule-no-delete` says removal goes "only" through one audited path. Per d8a, plan-22 is
-that path for every POLICY or CLASS-based removal of knowledge rows in any store:
+ADR-0004 `#rule-no-delete`, as amended and APPROVED (d9k, folded at `3021cd6`, scoped by
+`#a14-removal-scope`), says knowledge removal goes only through one audited path. Per d8a and d9k,
+plan-22 is that path for every POLICY or CLASS-based removal of knowledge rows in any store, AND
+for the user's explicit removal commands:
 - grep-learned evidence rows, their file entities and `query/*` concepts;
 - the concept free culls (`orphan-alias`, `empty-learned`);
 - bug-086's global relative rows and the 1,655 pytest-tmp entities in the live global store (d1c,
   as amended by d8d);
 - stale compiled subjects: plan-19's compile only MARKS them `stale` (protected, recall-invisible);
   their removal, if ever, is a plan-22 class (`stale-subject`, [[task-22.1a-provenance-free-classes#r1]]);
-- concept merges (22.4, blocked).
+- concept merges (22.4, blocked), with `fold_concept_dups` as a merge entry point (d9o; 22.4 R5);
+- **the selector entry points (d9k): `rmx forget`, `rmx memory forget`, `rmx memory bulk-forget`**
+  build a plan manifest and need `--confirm <hash>`; restorable (task 22.6 R1).
+
+**The paths ADR-0004 classifies outside the confirm (d9k, d9o), each owned by a task here:**
+
+| path | classification | owner |
+|---|---|---|
+| `rmx untrack`, `rmx prune-noise --drop` | listed exceptions: print what they remove, write the same manifest form first | 22.6 R2 |
+| `purge_path` on a deleted or ignored file (sync; `vacuum` step 2) | derived cleanup WITH a manifest; learned rows go to it | 22.6 R3 |
+| sync's GMD legacy purge on a `.md` edit (and the non-GMD purge-before-re-add, the same act) | a BUG (bug-107), fixed to keep learned rows; 16.6's verifier judges them | 22.6 R4 |
+| `vacuum`'s orphan-evidence delete | derived cleanup with a manifest AND a `facts.log` event | 22.6 R5 |
+| `unprotect` | not removal; its `protect` event carries `source` | 22.6 R6 |
+| `fold_concept_dups` | a merge; plan-22 entry point owned with merge writes by the helix plan | 22.4 R5 (handed over, d9j) |
+| plan-17's orphan-vector reap; the bug-105 fragment repair | derived-index cleanup with a manifest (ADR text) | plan-17; the bug-105 hotfix |
 
 Out of scope, stated so the wording matches the ADR (#m-7):
 - plan-17's reap of DERIVED orphan vectors (d-4 below): derived-index garbage, restorable from its
   orphan list, not knowledge rows;
 - the 235 pytest fixture rows in the live `query.log` (d8d): not catalog rows; mark-and-filter by
   readers, the log stays append-only. Plan-22 removes nothing from any log file.
-- the user-explicit, named-selector commands (`forget`, `memory bulk-forget`, `untrack`) and the
-  counter-threshold `prune-noise --drop`: not absorbed here. d9i decides that ONE ADR-0004
-  amendment, drafted by the orchestrator for the user's approval, scopes them (each either routes
-  through this plan's audited path or carries a stated exception). That amendment is PENDING and is
-  not written in this plan's files ([[#open-after-revision]] 4).
+- *(round 2, superseded by d9k/d9o):* the explicit-selector commands were "not absorbed here",
+  pending the amendment. The amendment is approved, and the table above is the scope.
 
 {#scope-body}
 
@@ -131,12 +148,13 @@ concept classes do not live under `rmx learn` (#m-6).
 
 | task | wave | what | acceptance (summary) |
 |---|---|---|---|
-| 22.1a | 1 | provenance-free classes: `orphan-root` (incl. root-`ambiguous`), `missing-file`, `duplicate`, `orphan-alias`, `stale-subject`; the `removal_audit` verb | fixture row per class; probe split reproduced on a global copy; independent recount equals audit count; audit writes nothing |
+| 22.1a | 1 | provenance-free classes: `orphan-root` (incl. root-`ambiguous`, `home-readable`, `unverifiable`), `missing-file`, `duplicate`, `orphan-alias`, `stale-subject`; the `removal_audit` verb | fixture row per class; the recovered probe re-run on a global copy with a churn-bounded `reproduced`/`drift` verdict beside the applied split; independent recount equals audit count; audit writes nothing |
 | 22.2 | 1 | the engine: repair/move/remove primitives, row-level `facts.log` events in both replay paths, manifest + intent log + restore, `bind` + recorder, ablation gate on a copy of THIS store, `removal_apply`/`removal_restore` | rebuild reproduces post-apply; restore equal by name incl. evidence, protection, vectors; two-partition AC; gate refuses on a masked delta and on a store lacking the candidates |
 | 22.5 | 1 | cross-store move: copy → verify → forget across two daemons, manifest-backed, idempotent, sidecar rows travelling with their evidence; the no-owner buckets reported and held until the user rules (d9b) | crash at each step leaves no loss and no duplicate; collision merges; only named store roots; nothing applied to a `pending` no-owner bucket |
-| 22.3 | 1 | first apply, live global store: `orphan-root:unresolved` removed (measured; 563 was the probe's no-verifying-file count, which included rows still readable today), 48 kept ambiguous, 1,655 pytest-tmp entities removed; resolved and `home-readable` entities handed to 22.5 (the no-owner ones held for the user's ruling, d9b) | total global `unreadable` over a pre-registered pattern set drops to the residual explained by class; memory count unchanged |
+| 22.3 | 1 | first apply, live global store: `orphan-root:unresolved` removed (`orphan-root:unverifiable` kept) (measured; 563 was the probe's no-verifying-file count, which included rows still readable today), 48 kept ambiguous, 1,655 pytest-tmp entities removed; resolved and `home-readable` entities handed to 22.5 (the no-owner ones held for the user's ruling, d9b) | total global `unreadable` over a pre-registered pattern set drops to the residual explained by class; memory count unchanged |
 | 22.1 | 2 | flag-sensitive classes: `ok`, `moved` (per `(concept, file)` set), `grown`/`shrunk`, `stale-line`, `out-of-range`, `unverifiable`, `empty-learned`; every row decided by 16.6's `learned_verify` (no matcher here); 16.6's read-time marks read for ordering and reporting | two-hit shift ends re-pointed with 0 `ambiguous`; BRE, POSIX-class and `\<…\>` rows `ok`; exit 2 `unverifiable`; pre-provenance `-i` row stays `ok`; marked rows listed; `empty-learned` recount exact |
-| 22.4 | blocked; handed over on close (d9j) | merge writes into the alias map | blocked until ADR-0004's helix plan defines the alias map and plan-20 supplies the rule; that plan takes it over |
+| 22.4 | blocked; handed over on close (d9j) | merge writes into the alias map; `fold_concept_dups` as a merge entry point (d9o) | blocked until ADR-0004's helix plan defines the alias map and plan-20 supplies the rule; that plan takes it over |
+| 22.6 | 1 (after 22.2; parallel to 22.5) | entry points (`forget`, `memory forget`, `memory bulk-forget` with `--confirm`; `untrack`, `prune-noise --drop` manifest first) and the bug-107 paths (deleted/ignored-file purge with manifest; sync edits keep learned rows; `vacuum` orphan drop with manifest + event; `unprotect` source) | `forget` without `--confirm` writes nothing; bulk-forget restores bodies; edit keeps learned rows and a rebuild agrees; vacuum drops are logged and replayable |
 
 Task specs: `workflow/plans/plan-22-audited-removal-and-repair-tasks/`.
 
@@ -158,6 +176,10 @@ Wave 1: 23.0 ∥ 23.4 → 23.2 → 23.1 (+ tick registry) → 23.3; after 23.1: 
   removals.
 - 22.4: blocked (see its spec); plan-22 may reach `completed` with it handed to the helix plan
   (d9j).
+- 22.6 needs: 22.2 (engine, intent-record form, restore), 22.1a (`removal_audit`), 16.6's Wave-1
+  slice. Its R4 (sync edits keep learned rows) needs only the 16.6 slice and may land first. The
+  order of record (`#t10-waves`) does not list 22.6 yet; adding it after 22.2 in Wave 1 is an
+  orchestrator edit (that file is outside this plan).
 
 Plan-16's 16.6 is owned by the plan-16 revision; this plan references it and does not edit it.
 
@@ -183,6 +205,9 @@ rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 | d-10 | 22.3 removes the 1,655 pytest entities; the 235 `query.log` rows are NOT a plan-22 removal | d1c, d8d |
 | d-11 | THE verifier for learned rows is 16.6's `learned_verify` (re-run the recorded tool; line-set API; named-subset permissive reading for rows without rules); plan-22 carries no matcher | re-review b-4; `#t9-fixes` |
 | d-12 | plan-22 may close with 22.4 handed to the future helix plan | d9j |
+| d-13 | `forget`, `memory forget` and `memory bulk-forget` are entry points to this path (plan manifest + `--confirm`); `untrack` and `prune-noise --drop` are listed exceptions writing the same manifest form first; the intent record restores memory bodies and whole entity rows | d9k; r3 b-3; 22.6, 22.2 R4 |
+| d-14 | the bug-107 paths as d9o classifies them (table in [[#scope]]) | d9o; 22.6 |
+| d-15 | the probe's walk and line check are the RECOVERED script's, a census reproduction only; the applied split uses the classifier's walk and 16.6's reading; a reproduction mismatch is reported (`drift`), never a blocking gate | r3 b-1; 22.1a R1 |
 
 ## Open after revision {#open-after-revision}
 
@@ -200,23 +225,47 @@ earlier links still resolve.
    ([[task-22.5-cross-store-move#r1]]). **Waiting on the user, after the dry run.**
 3. **Plan close — SETTLED by d9j.** Plan-22 can reach `completed` with 22.4 handed to the future
    helix plan ([[task-22.4-merge-writes#root]]).
-4. **ADR-0004 "only" vs the explicit-selector commands — DECIDED (d9i), amendment PENDING.** One
-   ADR-0004 amendment (the floor formula; removal-path scoping for `forget`, `prune-noise --drop`,
-   `untrack`, `memory bulk-forget`, and the derived-vector reaping sentence of DL #s-7) is drafted
-   by the orchestrator for the user's approval. It is not written in this plan's files; [[#scope]]
-   matches it once approved.
+4. **ADR-0004 "only" vs the explicit-selector commands — SETTLED (d9k, d9o).** The amendment is
+   APPROVED and folded into `#rule-no-delete` / `#a14-removal-scope`; [[#scope]] follows it, and
+   task 22.6 owns every path it names (r3 b-3, s-5).
 5. **Plan-16 table row — SETTLED (re-review m-3).** The plan-16 16.6 row says "nothing here
    removes a row".
 6. **Where "marked ambiguous" persists — SETTLED (no user decision).** In every manifest, recomputed
    on every audit; no sidecar column.
 7. **Plan-19's `stale` mark — SETTLED (re-review m-3).** Plan-19's 19.4 R5 writes it.
-8. **Walk exclusions — user confirms, non-blocking.** 22.1a AC-5b prints the probe reproduction
-   (exclusions OFF) and the applied split (exclusions ON) side by side with the delta; the user sees
-   it with the 22.5 dry run.
+8. **Walk exclusions — SETTLED by the spec (r3 b-1, `#open-22` item 8).** The probe's walk is
+   RECOVERED, not inferred ([[task-22.1a-provenance-free-classes#r1-probe]]); the classifier's walk
+   is named separately ([[task-22.1a-provenance-free-classes#r1-applied]]). 22.1a AC-5b prints the
+   reproduction (with its `reproduced`/`drift` verdict) and the applied split side by side; the
+   user sees both with the 22.5 dry run.
 9. **Protections with no attributable source — SETTLED (re-review m-3).** On the global store every
    `protect` event on the in-scope entities directly follows an `entity` event (re-review
    `#ev-facts`), so the `unknown` bucket is empty there; "unknown = asserted" stays the safe
    default for project stores ([[task-22.2-repair-then-remove#r5]]).
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan16-22-spec-rereview-r3-6091648]] (plan-22: b-1, b-2, b-3, s-6, m-3, m-4; shared
+s-3, s-4, s-5, m-1, m-2) and [[plan-review-2026-10-14#t9-approvals]] (d9k, d9o). d9b is unchanged.
+Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| b-1 (22.1a AC-5b gate unsatisfiable) | [[task-22.1a-provenance-free-classes#r1-probe]] (probe recovered), [[task-22.1a-provenance-free-classes#r1-applied]], 22.1a AC-5a/5b; d-15; [[#open-after-revision]] 8 |
+| b-2 (shifted rows removed) | [[task-22.1-audit-classes#r1]] set rule; 22.1 AC-5; [[task-22.2-repair-then-remove#r1]] |
+| b-3 / d9k (forget and bulk-forget unowned; manifest cannot restore bodies, path, tldr, meta) | [[#scope]]; [[task-22.6-removal-entry-points#r1]], [[task-22.6-removal-entry-points#r2]]; [[task-22.2-repair-then-remove#r4]] + AC-4; d-13; [[#open-after-revision]] 4 |
+| s-5 → d9o (sync purge, `vacuum`, fold, `unprotect`) | [[#scope]] table; [[task-22.6-removal-entry-points]] R3-R7; [[task-22.4-merge-writes#r5]]; 16.6 R1e; d-14 |
+| s-3 (`Unverifiable` entity in a removal class) | [[task-22.1a-provenance-free-classes#r1-outcome]] `orphan-root:unverifiable`; 22.2 R9; 22.5 R1; 22.3 R1 |
+| s-4 (union AC cannot fail) | 22.1 AC-4b; 16.6 AC-3h |
+| s-6 (census procedure) | [[task-16.6-learned-row-validation#r7]] (owned by plan-16, used here); 22.1a R3, 22.1 R5 |
+| m-1 (one replay pass) | [[task-22.2-repair-then-remove#r3]]; 16.6 R1d |
+| m-2 (line splitting) | 16.6 R2 `split_lines`; 22.1a / 22.1 cite it |
+| m-3 (`out-of-range` two predicates) | [[task-22.1-audit-classes#r1]] step 4 |
+| m-4 (bucket 2 mixes readable and unreadable) | [[task-22.5-cross-store-move#r1]] buckets 2a / 2b |
+| d9b | unchanged ([[#open-after-revision]] 2) |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
+rel: derives-from -> [[plan-review-2026-10-14#t9-approvals]]
 
 ## Revision round 2 (2026-10-14) {#rev-round-2}
 

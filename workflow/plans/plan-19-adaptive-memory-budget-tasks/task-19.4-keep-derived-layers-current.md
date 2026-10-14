@@ -90,15 +90,29 @@ rel: specified-by -> [[bsd-plan19-spec-review-3104a81]]
 
 All ACs run in task 23.0's sandbox: a tmp memory dir passed explicitly, tmp stores, and a tmp
 registry. 17.2's tick runs only over its INJECTED roots (17.2 `#r3-roots`), so the step never
-reaches a live store's subject graph. This step registers with 17.2's hub step registry with
-`requires_arming=True` (reason: it rewrites `MEMORY.md` and compiled subjects, user-visible state),
-so it dry-runs until a hand run's `run_id` arms it (17.2 `#r7-unarmed`).
+reaches a live store's subject graph. This step registers with 17.2's hub step registry as
+`MaintenanceStep(name="memory_compile", op="memory_compile", …, requires_arming=True, reason=…)`
+(reason: it rewrites `MEMORY.md` and compiled subjects, user-visible state), so it dry-runs until a
+hand run's `run_id` arms it (17.2 `#r7-unarmed`). Per 17.2 R2, the op accepts `dry_run` and
+`invoked_by`, answers `status=True`, and appends one `runs.jsonl` line per completed run with
+`step: "memory_compile"`.
 
 1. **Bridge writes the index.** Writing a new memory file into the tmp memory dir and running only
    the SessionStart bridge (no save-state) produces an index that names the new memory.
-2. **Scheduled step.** On 17.2's tick (injected clock), the compile step runs once per scheduled
-   day per sandbox store, through the `memory_compile` op (plan + apply), and appears in the run
-   summary; a second call during a run returns `already_running`.
+2. **Scheduled step, unarmed then armed** (nm17-r3-5). On 17.2's tick (injected clock), per
+   sandbox store:
+   - **Unarmed (day 1).** The compile step runs once on the scheduled day with `dry_run=True`
+     (plan only): the run summary reports it `dry_run:unarmed`, and `MEMORY.md` and the compiled
+     subject rows are byte-identical before and after.
+   - **Arm, in 17.2's order.** By hand through the CLI verb: a dry run of `memory_compile`, then a
+     real run, each appending its `runs.jsonl` line (17.1 R12 shape, `step: "memory_compile"`,
+     `invoked_by: "cli"` set by the adapter); then `rmx hub maintain arm --root <store> --step
+     memory_compile --run-id <the real run's run_id>` writes `armed_at`. Arming with the dry run's
+     id, or with a real run's id that has no earlier dry-run line, is refused (17.2
+     `#r7-unarmed`).
+   - **Armed (day 2).** The step runs once through the `memory_compile` op (plan + apply), the
+     index and subjects change as the plan says, and the summary reports `ok`.
+   - A second call during a run returns `already_running`.
 3. **Reachable after compile.** A compile that moves memory X out of every subject leaves X
    reachable (19.3 R4's executed check passes).
 4. **Stale marked, not removed** (d8a). A re-compile after which subject S has 0 leaves: S's row
@@ -118,6 +132,7 @@ so it dry-runs until a hand run's `run_id` arms it (17.2 `#r7-unarmed`).
 8. **Mutations that must FAIL a test:**
    - the bridge not regenerating the index (AC-1);
    - the step not registered (AC-2);
+   - the step registered with `requires_arming=False` (AC-2: day 1 applies, `MEMORY.md` changes);
    - `retries` left at the default (AC-2's single-flight check);
    - compile deleting a stale subject (AC-4);
    - a stale subject visible in recall (AC-4);
@@ -130,7 +145,7 @@ so it dry-runs until a hand run's `run_id` arms it (17.2 `#r7-unarmed`).
 |---|---|
 | `src/refmatrix/ingest_gmd.py` | regenerate the index after a memory batch (R2) |
 | `src/refmatrix/consolidate.py` | stale marking (R5), stable unlabeled slugs (R6) |
-| `src/refmatrix/daemon.py`, `verbs.py` | the `memory_compile` (plan + apply) op and verb, single-flight; index regeneration after apply |
+| `src/refmatrix/daemon.py`, `verbs.py` | the `memory_compile` (plan + apply) op and verb, single-flight; `dry_run` / `invoked_by` / `status=True` and its `runs.jsonl` line (17.2 R2); index regeneration after apply |
 | `src/refmatrix/hub.py` / plan-17's tick | the compile step registered, `retries=0` |
 
 ## Test strategy {#test-strategy}
@@ -160,3 +175,14 @@ Answers [[bsd-plan19-21-spec-rereview-32dde06]].
 | finding / decision | answered at |
 |---|---|
 | re-review #s-6 (stale subjects accrete; no reviewer named) | R5 "Who audits the accumulation" (plan-22's `stale-subject` class, reference only); AC-4b |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan23-17-spec-rereview-r3-6091648#nm17-r3-5]] (the 23+17 round-3 review, which
+named this plan-19 file).
+
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648]]
+
+| finding / decision | answered at |
+|---|---|
+| nm17-r3-5 (AC-2 asserted plan + apply on the scheduled day for a step declared `requires_arming=True`) | [[#acceptance]] preamble (`MaintenanceStep(name="memory_compile", …)`, 17.2 R2's op duties); AC-2 (day 1 `dry_run:unarmed`, byte-identical outputs; hand dry run then real run, then 17.2's `hub_maintain_arm` with the real run's id, matching 17.2's current order gate; day 2 plan + apply); mutation; [[#files-to-modify]] |

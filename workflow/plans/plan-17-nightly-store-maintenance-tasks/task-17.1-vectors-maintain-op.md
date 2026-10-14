@@ -13,8 +13,8 @@ metadata:
 # Task 17.1: the `vectors_maintain` and `vectors_restore` ops {#root}
 
 > Plan: [plan-17-nightly-store-maintenance](../plan-17-nightly-store-maintenance.md)
-> Status: Pending (revision round 2, 2026-10-14: re-review [[bsd-plan23-17-spec-rereview-32dde06]],
-> d9c; see [[#rev-round-2]])
+> Status: Pending (revision round 3, 2026-10-14: re-review [[bsd-plan23-17-spec-rereview-r3-6091648]]
+> (ns17-r3-1, ns17-r3-2, nm17-r3-1, nm17-r3-2); see [[#rev-round-3]]. Round 2: [[#rev-round-2]])
 > Depends on: 23.0 (test sandbox), 23.2 (hold + write-count recorder), 23.1 (`bounded_steps`,
 > `bind(partition_name)`, `RunResult.hold_s`; [[task-23.1-queue-and-drain#r10-contract]]). 17.2
 > schedules it.
@@ -31,6 +31,10 @@ rel: related-to -> [[exploration-storage-concurrency-redesign#option-a]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06#ns17-2]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06#ns17-3]]
 rel: implements -> [[plan-review-2026-10-14#t9]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#ns17-r3-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#ns17-r3-2]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#nm17-r3-1]]
+rel: related-to -> [[task-22.2-repair-then-remove]]
 
 ## Why {#why}
 
@@ -58,9 +62,12 @@ vector of an entity that lives in another partition or kind. This task does not 
 
 1. **R1 Verbs + daemon ops, every partition, no in-process fallback.** {#r1-verb}
    - `vectors_maintain(partition=None, kinds=None, dry_run=False, older_than_s=86400,
-     status=False)` and `vectors_restore(orphan_file, ids=None, dry_run=False)`, each a verb with a
-     daemon op, CLI (`rmx vectors maintain`, `rmx vectors restore`) and MCP parity (the
-     verb-parity test).
+     status=False, confirm_orphans=None, invoked_by=…)` and `vectors_restore(orphan_file,
+     ids=None, id_map=None, dry_run=False, invoked_by=…)`, each a verb with a daemon op, CLI
+     (`rmx vectors maintain`, `rmx vectors restore`) and MCP parity (the verb-parity test). The
+     restore signature, exactly: `vectors_restore(orphan_file: str, ids: list[int] | None = None,
+     id_map: dict[int, int] | None = None, dry_run: bool = False) -> dict` (R10; plan-22's 22.2
+     calls it with `id_map`).
    - `older_than_s` is the d-2 window, env-overridable by `RMX_MAINTAIN_OLDER_THAN_S`; the
      production default is 86400.
    - `partition=None` means EVERY partition directory under `<root>/vectors/` (today
@@ -70,10 +77,13 @@ vector of an entity that lives in another partition or kind. This task does not 
      writer's current binding (spec review #s-5; ns17-2). A directory whose name has no
      `partitions` row is reported `refused:unknown_partition` and left untouched (`bind` raises
      `UnknownPartition` and never creates one, 23.1 R1.1).
-   - `confirm_orphans: str | None = None` releases a capped reap (R6, d9c). Same parameter on the
-     verb, the op, the CLI (`--confirm-orphans <sha>`) and MCP; the hub never passes it.
-   - `invoked_by: "hand" | "hub"` (default `"hand"`; 17.2 passes `"hub"`) is recorded in the run
-     ledger (R12).
+   - `confirm_orphans: list[str] | None = None` releases capped reaps, one sha PER DATASET (R6,
+     d9c, ns17-r3-2). Same parameter on the verb, the op, the CLI (`--confirm-orphans <sha>`,
+     repeatable) and MCP; the hub never passes it.
+   - `invoked_by: "cli" | "mcp" | "hub"` names the SURFACE and is set by the adapter, not by the
+     caller: the CLI adapter passes `"cli"`, the MCP adapter `"mcp"`, 17.2 `"hub"` (nm17-r3-2;
+     it replaces round 2's `"hand"` default, which every surface inherited). It is recorded in the
+     run ledger (R12); a "hand run" below means `invoked_by` in `{"cli", "mcp"}`.
    - The CLI calls the daemon only. When `daemon_mod.ping(root)` fails it exits non-zero with
      `daemon not answering; vectors maintain never runs in-process` and changes nothing. It never
      builds a `Daemon(root)` in-process (the `embed --gc` fallback at `cli.py:10544-10549` is the
@@ -154,17 +164,28 @@ vector of an entity that lives in another partition or kind. This task does not 
      gate, with expected B = A (nothing was reaped). So a capped dataset's version count still
      falls every night instead of regrowing toward bug-085. The cap is the guard the fingerprint
      arithmetic cannot be (that arithmetic only checks what was chosen).
-   - **Releasing the cap (d9c).** Every run that computes orphans (a dry run included) writes the
-     candidate list to `<root>/maintain/orphans-candidates-<run_id>.jsonl` (`{partition, kind,
-     id}` per line, sorted) and reports `orphan_list_sha` = sha256 of that file's bytes, per
-     dataset. A hand run with `confirm_orphans=<sha>` recomputes the candidate list at run time;
-     if its sha equals the given one, the cap is lifted for that dataset in that run and every
-     candidate is reaped (with the orphan list WITH vectors, as below); if the sha differs (the
-     set changed since the dry run), the reap is refused `refused:orphan_confirm_mismatch` and
-     compaction still runs. The gate is the list, not the surface (d8g's shape): the parameter
-     exists on CLI and MCP alike, and only a list someone has seen can be confirmed. 17.3 runs it
-     by hand; the hub never does. This is the release for 22.5's moves and 22.3's audited forgets
-     too.
+   - **Releasing the cap (d9c, ns17-r3-2): per dataset, and by intersection.**
+     - Every run that computes orphans (a dry run included) writes ONE candidate file PER DATASET,
+       `<root>/maintain/orphans-candidates-<run_id>-<partition>-<kind>.jsonl` (`{partition, kind,
+       id}` per line, sorted by id), and reports that dataset's `orphan_list_sha` = sha256 of
+       that file's bytes. The sha and the file are one thing, and one dataset.
+     - A hand run with `confirm_orphans=[sha, …]` first resolves every sha to its candidate file
+       under `<root>/maintain/`. A sha that matches no file refuses the WHOLE call before any
+       dataset step (`ok:false`, `unknown_confirm_sha: [<sha>]`), so a typo changes nothing.
+     - For a dataset with a confirmed file, the reap set is the INTERSECTION of the confirmed
+       file's ids and the CURRENT whole-catalog orphans of that dataset (recomputed at run time).
+       Every id in it was seen by the user and is still absent from every partition, so the reap
+       is safe; the cap is lifted for exactly that set. A confirmed id that is no longer an orphan
+       (its entity came back) is not reaped and is reported `confirmed_not_orphan`. Orphans that
+       are NEW since the dry run are not covered by the confirmation: they obey the cap on their
+       own, as in any run (reaped when under it, refused and listed in a fresh candidate file
+       when over it), and the outcome names them (`new_since_confirm: n`).
+     - So churn between the dry run and the confirmation (a watcher re-sync, R9's NULL-stamp
+       vectors) never forces a re-confirmation loop: the confirmed set is reaped and only the new
+       ones wait.
+     - The gate is the list, not the surface (d8g's shape): the parameter exists on CLI and MCP
+       alike, and only a list someone has seen can be confirmed. 17.3 runs it by hand; the hub
+       never does. This is the release for 22.5's moves and 22.3's audited forgets too.
    - **Orphan list.** Before the delete, every orphan is appended to
      `<root>/maintain/orphans-<run_id>.jsonl` as `{run_id, ts, partition, kind, id, dim,
      vector: [float…], dataset_version}`, then fsynced. A failed write aborts the reap. The format
@@ -188,12 +209,29 @@ vector of an entity that lives in another partition or kind. This task does not 
    `ds.delete`, so it commits no version. A vector whose row had a NULL stamp is left behind and
    becomes a whole-catalog orphan once the row is purged; the next `vectors_maintain` reaps it into
    the orphan list.
-10. **R10 Restore op** (decision d3a close-out amendment; decision review #b-5). {#r10-restore}
-    `vectors_restore(orphan_file, ids=None)` reads the list, checks `dim` against the dataset
-    schema, and upserts the vector of every listed id whose entity is in the catalog NOW (any
-    partition). Ids still absent are reported `not_restored: absent` and left in the list (a
-    restore of them would only be reaped again). It runs through the same `bind(batch)` hold as
-    R3 and never touches the embedder.
+10. **R10 Restore op** (decision d3a close-out amendment; decision review #b-5; ns17-r3-1).
+    {#r10-restore}
+    `vectors_restore(orphan_file, ids=None, id_map=None, dry_run=False)` reads the list
+    (`ids` narrows it to those OLD ids) and never touches the embedder.
+    - **`id_map: dict[int, int] | None`** maps an orphan list's OLD id to the NEW id its entity
+      has now. Plan-22's 22.2 restores removed entities with NEW ids ("restore is checked by
+      NAME", [[task-22.2-repair-then-remove#r4]]) and passes `old_id → new_id` from its
+      manifest. Lance rows carry only `id`, `vector` and `updated_at` (`vectors.py:32-41`) and the
+      orphan list carries no name, so without the map no restored entity's vector could ever be
+      found again (ns17-r3-1).
+    - For each listed row: the target id is `id_map[old]` when the map has it, else `old`. The
+      target dataset is `vectors/<the target entity's partition NAME>/<its kind>.lance`, read
+      from the catalog NOW (any partition), so a vector follows its entity if 22.5 moved it.
+      `dim` is checked against that dataset's schema (a mismatch is `not_restored: dim`).
+    - The vector is upserted under the target id only when the target entity exists now AND has
+      no vector yet; an existing vector is never overwritten (`not_restored: present`, a newer
+      embedding wins). A target entity that is absent is `not_restored: absent` and the row stays
+      in the list (restoring it would only be reaped again). The row's `vectors_updated_at` stamp
+      is set on the restored entity.
+    - Each target dataset is written in ONE hold through `bind(partition_name)` (the target
+      partition's NAME), entered once per dataset (nm17-r3-1: not "`bind(batch)`"). Restore is NOT
+      a `bounded_steps` run, so it has no `hold_s`, `cancel` or budget; it reports per dataset the
+      restored, absent, present and dim counts and its hold seconds measured around `bind`.
 11. **R11 Single-flight per store** (decision d3e close-out amendment; decision review #s-6).
     {#r11-single-flight}
     A `vectors_maintain` or `vectors_restore` call that arrives while one is running on the same
@@ -207,7 +245,8 @@ vector of an entity that lives in another partition or kind. This task does not 
 12. **R12 The run ledger** (ns17-5, the arming gate's input). {#r12-ledger}
     Every completed `vectors_maintain` run appends one line to `<root>/maintain/runs.jsonl`:
     `{run_id, step: "vectors_maintain", invoked_by, dry_run, ok, started_at, finished_at,
-    outcomes: {dataset: outcome}}`, fsynced. 17.2's arm verb reads it. The file is kept forever.
+    outcomes: {dataset: outcome}}`, fsynced. `invoked_by` is the surface (`cli` / `mcp` / `hub`,
+    R1), so the arm gate can require a dry run BEFORE the real hand run (17.2 R7, nm17-r3-2). 17.2's arm verb reads it. The file is kept forever.
     Every step registered on 17.2's `maintenance_steps` writes the same line shape with its own
     `step` name (17.2 R2).
 
@@ -247,16 +286,31 @@ All fixtures are real Lance datasets in tmp stores inside the 23.0 sandbox.
    - 60 orphans out of 100 rows, a 300-version dataset: the reap is refused
      (`refused:orphan_cap`), 0 orphans deleted, the fingerprint equals A, AND the version count
      after the run is lower than before (compaction and cleanup ran).
-   - A dry run reports `orphan_list_sha`; a hand run with `confirm_orphans=<that sha>` reaps all
-     60 (orphan list with vectors, fingerprint B = A minus the 60).
-   - A stale sha (one more orphan created after the dry run) → `refused:orphan_confirm_mismatch`,
-     0 deleted, compaction ran.
+   - A dry run reports `orphan_list_sha` per dataset; a hand run with `confirm_orphans=[that sha]`
+     reaps all 60 (orphan list with vectors, fingerprint B = A minus the 60).
+   - **Churn after the dry run (ns17-r3-2).** After the dry run, one NEW orphan is created and one
+     of the 60 gets its entity back; the cap is set to 0 (`RMX_MAINTAIN_ORPHAN_CAP_N=0`,
+     `RMX_MAINTAIN_ORPHAN_CAP_PCT=0`), so any unconfirmed orphan is over it. The hand run with the
+     dry run's sha reaps the 59 confirmed ids still orphaned, leaves the new one (refused by the
+     cap and written to a fresh candidate file), reports `confirmed_not_orphan: 1` and
+     `new_since_confirm: 1`, and the outcome names the new id. Fingerprint B = A minus exactly
+     the 59. The id whose entity came back keeps its vector.
+   - **Per dataset.** Two capped datasets; confirming only dataset X's sha reaps X's set and
+     leaves dataset Y refused `refused:orphan_cap`. A sha that matches no candidate file refuses
+     the whole call (`unknown_confirm_sha`) with no dataset touched.
    - A catalog with 0 entities → `refused:catalog_empty`, nothing deleted.
    - A `vectors/` directory with no `partitions` row → `refused:unknown_partition`, and the
      `partitions` row count is unchanged.
-9. **AC-8 (restore round trip).** Reap 20 orphans, re-insert 15 of their entity rows with the same
-   ids, run `vectors_restore`: 15 vectors restored with byte-equal vectors, 5 reported `absent`;
-   the fingerprint over the 15 equals their pre-reap contribution.
+9. **AC-8 (restore round trip, same ids).** Reap 20 orphans, re-insert 15 of their entity rows
+   with the same ids, run `vectors_restore`: 15 vectors restored with byte-equal vectors, 5
+   reported `absent`; the fingerprint over the 15 equals their pre-reap contribution.
+   - **AC-8b (new ids, the 22.2 case; ns17-r3-1).** Reap 20 orphans; re-create 15 of their
+     entities by NAME with NEW ids (as 22.2's restore does), 3 of them in the OTHER partition;
+     run `vectors_restore(orphan_file, id_map={old: new for the 15})`: the 15 vectors are
+     byte-equal under the NEW ids, the 3 sit in the other partition's dataset, 5 are `absent`,
+     and no vector was written under any old id. A second restore with the same map reports 15
+     `present` and writes nothing. Mutation: `id_map` ignored (restore by old id) FAILS (15
+     `absent`).
 10. **AC-9 (no-match filter).** A re-sync of a file none of whose ids carry `vectors_updated_at`
     commits zero Lance versions (dataset version unchanged); a file with one embedded id commits
     exactly one per kind.
@@ -265,12 +319,13 @@ All fixtures are real Lance datasets in tmp stores inside the 23.0 sandbox.
     `_store_lock` (a `compact` seam that blocks on an event), `vectors_maintain(status=True)` and
     the second call each return within 1 s (nm17-1). The CLI with the daemon down exits non-zero
     and no Lance version changes.
-12. **AC-13 (run ledger).** A dry run, a hand run and a hub-invoked run each append one
-    `runs.jsonl` line with the right `invoked_by`, `dry_run` and `ok`; a run that fails at the
-    fingerprint gate appends `ok: false`.
-12. **AC-11 (no model).** The 23.0 sandbox records zero connects to `models.sock` and zero
-    embedder constructions during a run.
-13. **AC-12 (pre-registered mutations, each must FAIL a named AC):**
+12. **AC-13 (run ledger).** A CLI dry run, a CLI run, an MCP run and a hub-invoked run each append
+    one `runs.jsonl` line with `invoked_by` = `cli` / `cli` / `mcp` / `hub`, and the right
+    `dry_run` and `ok`; a run that fails at the fingerprint gate appends `ok: false`. A caller
+    cannot set `invoked_by` through either surface.
+13. **AC-11 (no model).** The 23.0 sandbox records zero connects to `models.sock` and zero
+    embedder constructions during a run (maintain and restore).
+14. **AC-12 (pre-registered mutations, each must FAIL a named AC):**
     - default `older_than_s` changed to 0 → AC-1b;
     - cleanup moved before fingerprint B → AC-2;
     - the restore of `v_reaped` on mismatch removed → AC-2;
@@ -278,7 +333,15 @@ All fixtures are real Lance datasets in tmp stores inside the 23.0 sandbox.
     - orphans computed against the bound partition (+ kind) → AC-6;
     - the ratio cap removed → AC-7;
     - a cap refusal that also skips compaction → AC-7 (the version count does not fall);
-    - `confirm_orphans` accepted without comparing the sha → AC-7 (stale sha reaps);
+    - `confirm_orphans` accepted without resolving the sha to its file → AC-7 (the unknown sha
+      reaps);
+    - the confirmed reap not intersected with the current orphans → AC-7 (the id whose entity came
+      back loses its vector);
+    - one candidate file per run instead of per dataset → AC-7 (per-dataset case);
+    - `id_map` ignored by restore → AC-8b;
+    - restore overwriting an existing vector → AC-8b (second restore);
+    - the `runs.jsonl` line dropped → AC-13;
+    - `invoked_by` taken from the caller instead of the adapter → AC-13;
     - `bind` by partition id, or a `bind` that auto-creates → AC-7 (unknown partition);
     - the status / single-flight check taking `_store_lock` → AC-10;
     - hold seconds taken from anything but `RunResult.hold_s` → AC-4;
@@ -351,3 +414,15 @@ All fixtures are real Lance datasets in tmp stores inside the 23.0 sandbox.
 | nm17-1 (status / single-flight lock-free) | [[#r11-single-flight]], AC-10 |
 | nm17-2 (`compact` seam is in-process) | AC-2 |
 | nb23-1 (bind never creates a partition) | [[#r1-verb]], AC-7 |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Source: [[bsd-plan23-17-spec-rereview-r3-6091648]].
+
+| finding / decision | answered at |
+|---|---|
+| ns17-r3-1 (`vectors_restore` by id vs 22.2's new ids; dlr #s-7 for real) | [[#r1-verb]] (exact signature), [[#r10-restore]] (`id_map`, target dataset by the entity's partition and kind, never overwrite), AC-8b, AC-12 |
+| ns17-r3-2 (`--confirm-orphans` sha per run vs per dataset; churn loops) | [[#r1-verb]] (`confirm_orphans: list[str]`), [[#r6-orphans]] (per-dataset files; intersection; new orphans obey the cap; unknown sha refuses the call), AC-7, AC-12 |
+| nm17-r3-1 (R10 `bind(batch)`; two items numbered 12; no mutation for AC-13) | [[#r10-restore]] (`bind(partition_name)` once per dataset, no `hold_s`/`cancel`/budget), [[#acceptance]] numbering, AC-12 (`runs.jsonl` line dropped → AC-13) |
+| nm17-r3-2 (`invoked_by` defaults to "hand" on every surface) | [[#r1-verb]], [[#r12-ledger]], AC-13; the gate is [[task-17.2-hub-nightly-tick#r7-unarmed]] |
+| d9c (release form) | [[#r6-orphans]] |

@@ -65,7 +65,10 @@ fit is reachable by a printed command that, when run, returns it; decay only dem
 - **Clean STM clusters first (19.0).** Refs come from command lines, not script bodies (fixed at
   `cli._tool_event_fields`, where the junk enters); subagent events are matched by the envelope's
   `tool_use_id` and stay out of the parent's focus; hand-backs are ambient; typos never label a
-  cluster; the session comes from the hook envelope (bug-100).
+  cluster; the session comes from one resolver (bug-100): the hook envelope in per-call
+  processes, a SessionStart-written pointer keyed by the Claude process in the long-lived MCP
+  server (whose `CLAUDE_CODE_SESSION_ID` is frozen at spawn); and the input hook snapshots the
+  pre-prompt STM state before it changes it, so prompt-time readers never race it.
 - **Pack, don't truncate; no subject noise (19.1).**
   - `memory recall --pack` emits one hook line per hit, whole bodies for the top hits while the
     budget allows, and a mode-specific trailer naming what was left out.
@@ -75,8 +78,9 @@ fit is reachable by a printed command that, when run, returns it; decay only dem
   - `mtype=subject` rows are excluded from recall by default (opt-in flag); `--subject` reaches
     members.
 - **Count use, exactly (19.2).** A name-keyed record of RAW per-evidence counts that never decay,
-  and decaying per-kind recencies; weights, the nonzero floor and the asserted floor apply at READ
-  time (d9e). Events are 21.1's `recall-events.jsonl` rows, folded by a
+  plus raw per-day counts; recency (under a read-time half-life), weights, the nonzero floor and
+  the asserted floor are all computed at READ time (d9e), so no stored value depends on a
+  parameter or on how events were batched. Events are 21.1's `recall-events.jsonl` rows, folded by a
   non-consuming tail reader on plan-23's tick, the offset committed in the batch transaction
   (d2a). Global hits are counted in the global store (d8e).
 - **Subject-tiered, value-ranked index (19.3).** One line per live subject; fold by score in tiers
@@ -111,8 +115,8 @@ fit is reachable by a printed command that, when run, returns it; decay only dem
 | task | what | wave | acceptance (summary) |
 |---|---|---|---|
 | 19.0 | STM cluster hygiene (bug-100, bug-103, bug-104) | 1 (after 23.0; no later than 2) | redacted-fixture replay: no listed junk in the top-5 composites, listed thread terms lead; RED at HEAD |
-| 19.1 | `--pack` / `--max-chars`, subjects excluded, hooks use it | 1 (after 23.1) | payload ≤ budget; ≥ 5x distinct memories; 0 subject rows; argv runs with the env unset |
-| 19.2 | exact lifetime + decaying recency, folded from `recall-events.jsonl` | 1 (after 23.1, 21.1) | sum not dedupe; recall ≠ use; drop-and-replay identical; global hits in global store; floor > 0 |
+| 19.1 | `--pack` / `--max-bytes`, subjects excluded, hooks use it | 1 (after 23.1) | payload ≤ budget; ≥ 5x distinct memories; 0 subject rows; argv runs with the env unset |
+| 19.2 | exact lifetime + raw per-day counts (recency at read time), folded from `recall-events.jsonl` | 1 (after 23.1, 21.1) | sum not dedupe; recall ≠ use; drop-and-replay identical; global hits in global store; floor > 0 |
 | 19.3 | subject-tiered, value-ranked `MEMORY.md` | 2 | executed reachability; tier fold order; clock-free check; atomic triple |
 | 19.4 | compile on 17.2's tick; stale marked; index on write and after compile | 2 (after 17.2) | stale subject kept, hidden; stable slugs; new memory indexed without save-state |
 | 19.5 | probe (first) + delivery measurement + fixed baseline | R1: Wave 1, before 19.1 (a manual probe, no code dependency); R2–R4 after 19.1–19.3 | per-hook/per-event and PreCompact verdicts; `seen` derived from byte spans; before/after from C7 events |
@@ -127,8 +131,8 @@ From [[plan-review-2026-10-14#t8-wave1]]: Wave 1 is 23.0 ∥ 23.4 → 23.2 → 2
 
 | task | depends on |
 |---|---|
-| 19.0 | 23.0 |
-| 19.1 | 23.0; 19.5 R1; 21.1 (emitters, R8); scheduled after 23.1; deploys in the C11 hook window |
+| 19.0 | 23.0. Shares `stm.resolve_session` and `stm.pre_prompt_state` with 21.1 (specified in 21.1 R9); whichever merges first builds them |
+| 19.1 | 23.0; 19.5 R1; 21.1 (R11's single emission site and R10's span fields must be merged FIRST: 19.1's pack returns spans to it; round-3 #m-1, an edge [[plan-review-2026-10-14#t10-waves]] lists as parallel bullets); scheduled after 23.1; deploys in the C11 hook window |
 | 19.2 | 19.1; 23.0; 23.1 (`bind(partition_name)`, `tail(log, offset)`, tick registry, offset in transaction); 23.2 (recorder); 21.1 (schema) |
 | 19.3 | 19.2; 23.0 (static catalog copy; no 19.4, no 22.2) |
 | 19.4 | 19.3; 17.2; 23.0 |
@@ -157,6 +161,7 @@ Every test in every task runs in task 23.0's sandbox (d1a/d1b) and asserts 0 liv
 | d9e | 19.2 stores raw per-evidence counts; weights and floors at read time; `base` 0.25, `asserted_floor` 1.0, weights 1/2 are tunable starting defaults | user, 2026-10-14 |
 | d9f | 19.6's tables and N=8/K=8 PROPOSED; the user confirms before 19.6 starts | user, 2026-10-14 |
 | d9i | one ADR-0004 amendment (floor formula; removal-path scoping), drafted by the orchestrator for the user's approval | user, 2026-10-14 |
+| d9k | the ADR-0004 amendment is APPROVED and folded into `#rule-floor`, `#rule-no-delete`, `#rule-asserted-floor` (`3021cd6`) | user, 2026-10-14 |
 
 ## Out of scope {#out-of-scope}
 
@@ -170,10 +175,8 @@ Every test in every task runs in task 23.0's sandbox (d1a/d1b) and asserts 0 liv
 
 Round 2 status of the round-1 list ([[bsd-plan19-21-spec-rereview-32dde06#open-19]]):
 
-1. **ADR-0004 #rule-floor's formula text:** PENDING, owner named. d9i: one ADR-0004 amendment
-   (the floor `base·(1+log1p(…))`, never zero, plus removal-path scoping) is drafted by the
-   orchestrator for the user's approval. 19.2 R7 implements the amended formula and references
-   the amendment; this pair does not edit the ADR.
+1. **ADR-0004 #rule-floor's formula text:** SETTLED by d9k (`3021cd6`): `#rule-floor` now reads
+   `base * (1 + log1p(hits + 2*used))`, at read time over raw counts, which 19.2 R7 implements.
 2. **21.1's uncommitted revision:** MOOT. 21.1 is committed; round 2 re-read the producer
    field by field (19.2 R3, AC-16).
 3. **`used` evidence weights:** SETTLED by d9e: raw per-evidence counts, weights at read time
@@ -249,3 +252,27 @@ Answers [[bsd-plan19-21-spec-rereview-32dde06]], [[plan-review-2026-10-14#t9]] (
 | re-review #open-19 items 1-6; d9i | [[#open-after-revision]] |
 | user, 2026-10-14: expand/collapse composite | [[#design-body]]; 19.6 R9, R10, Table D |
 | prior partials 19 r1 #b-4, #b-6 | 19.2 R7 (+ d9i pending ADR text); 21.1 R12 + 19.2 R3 |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan19-21-spec-rereview-r3-6091648]], [[plan-review-2026-10-14#t9-approvals]]
+(d9k) and the 23+17 round-3 note on 19.4 ([[bsd-plan23-17-spec-rereview-r3-6091648#nm17-r3-5]]).
+Each touched task carries its own `#rev-round-3` table.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r3-6091648]]
+
+| finding / decision | answered at |
+|---|---|
+| round-3 #b-1 (19.0 R5: the MCP server's session id is frozen at spawn) | [[task-19.0-stm-cluster-hygiene#rev-round-3]] (R5, R0, AC-6b, AC-6c); the resolver is specified once in 21.1 R9; [[#design-body]] |
+| round-3 #b-2 (19.6 phase inputs read a graph the input hook already changed) | [[task-19.0-stm-cluster-hygiene#rev-round-3]] (R7, AC-6d); [[task-19.6-phased-context-and-topic-cache#rev-round-3]] (R2, R3, AC-3c) |
+| round-3 #s-2 (decay vs a sum `merge_fn`; `H` not read-time) | [[task-19.2-memory-usage-record#rev-round-3]]; [[#design-body]]; [[#tasks]] |
+| round-3 #s-3 (19.2 side) | 19.2 R5, AC-16 |
+| round-3 #s-4 (19.6 collapsed line) | [[task-19.6-phased-context-and-topic-cache#rev-round-3]] (R9, AC-7c, AC-7d, AC-7g; `C` PROPOSED) |
+| round-3 #m-1 (`--max-chars`, "character budget", pending ADR wording, user-asserted floor, 21.1 → 19.1 edge) | [[#tasks]] (`--max-bytes`); 19.1 title; [[#open-after-revision]] item 1 and [[#decisions]] d9k; 19.2 R7; [[#dependencies]] (19.1 row) |
+| round-3 #m-2, #m-4 | 19.0 R1, R2, R0; AC-1d, AC-4f |
+| round-3 #m-3 | 19.1 AC-1, AC-6 |
+| round-3 #m-5, #m-6 | 19.6 R7, R8a, AC-7b, AC-7f; [[exploration-session-phased-context#shape]], `#decisions`, `#tree-render` |
+| round-3 #m-8 | 19.5 R1(a), R2; 19.1 AC-2 |
+| round-3 [[bsd-plan19-21-spec-rereview-r3-6091648#open-19]] item 5 (19.6 numbers) | still a user decision (d9f), now over a well-defined classifier (#b-2, #s-4 fixed first); `C = 6` joins the PROPOSED set |
+| round-3 #open-19 "tell the user" (MCP-route session attribution is broken TODAY) | not a spec item: reported to the orchestrator for the user. Today an MCP `rmx_focus_note` / `rmx_save_state` / `rmx_task` resolves through `RMX_SESSION` → `latest_session` (`verbs.py:519-530`), which is right only while one session is active; 19.0 R5 fixes it |
+| nm17-r3-5 (19.4 AC-2 vs `requires_arming=True`) | [[task-19.4-keep-derived-layers-current#rev-round-3]] |

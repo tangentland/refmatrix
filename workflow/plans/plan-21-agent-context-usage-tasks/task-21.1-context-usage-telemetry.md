@@ -55,7 +55,11 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
 
 1. **R1 The MCP server sets its source.** `mcp.serve_stdio` sets `RMX_INVOCATION_SOURCE=mcp` in its
    own process environment before it reads the first request, so every verb it serves and every
-   child it spawns inherits it. (`mcp` is already in `INVOCATION_SOURCES`; bsd #m-1.)
+   child it spawns inherits it. (`mcp` is already in `INVOCATION_SOURCES`; bsd #m-1.) It also
+   marks itself long-lived, so every verb it serves resolves its session per call through R9's
+   `stm.resolve_session(…, long_lived=True)`; the server never caches a session id. At startup it
+   removes `CLAUDE_CODE_SESSION_ID` from its own `os.environ`, so a child it spawns cannot inherit
+   the spawn-time id and resolve it as a per-call process would (round-3 #b-1).
 2. **R2 An `agent` source with a stated precedence** (d4f; decision-log #m-2). `agent` joins
    `INVOCATION_SOURCES`. `invocation_source()` resolves, in this order:
    1. explicit `RMX_INVOCATION_SOURCE` (hooks: `hook`; MCP: `mcp`; harnesses: `internal`);
@@ -91,26 +95,43 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      apply to new rows.
 5. **R5 One shared row classifier** (d8d, d9g; owner: this task, in `telemetry.py`, per
    [[plan-review-2026-10-14#t9-fixes]]). Signatures, exact:
-   - `telemetry.row_provenance(row: dict, *, reader_root: Path | None = None) -> str`, returning
-     one of `attributed`, `test_artifact`, `legacy_fixture`, `legacy_unattributed`;
-   - `telemetry.is_test_artifact_row(row: dict, *, reader_root: Path | None = None) -> bool`,
-     which is `row_provenance(...) == "test_artifact"` and nothing else.
+   - `telemetry.row_provenance(row: dict, *, reader_root: Path | None = None,
+     source: Literal["query_log", "events"] = "query_log") -> str`, returning one of
+     `attributed`, `test_artifact`, `legacy_fixture`, `legacy_unattributed`, and, for
+     `source="events"` only, `malformed`;
+   - `telemetry.is_test_artifact_row(row: dict, *, reader_root: Path | None = None,
+     source: Literal["query_log", "events"] = "query_log") -> bool`, which is
+     `row_provenance(...) == "test_artifact"` and nothing else.
 
    `reader_root=None` means a LIVE reader (no test base), which is how 23.0 AC-4 calls it,
    `telemetry.is_test_artifact_row(row)`, on rows added to the live logs during a suite run
-   ([[task-23.0-test-sandbox]]). Readers that fold or report one store pass that store's root.
+   ([[task-23.0-test-sandbox]]); the defaults keep that call valid as written. Readers that fold
+   or report one store pass that store's root; readers of `recall-events.jsonl` pass
+   `source="events"`.
 
    EVERY reader of `query.log` and `recall-events.jsonl` (R7's report, 19.2's fold, 21.4's question
-   draw) calls `row_provenance`; no reader carries its own copy. The classes, first match wins:
-   1. **`test_artifact`**: the row has `cwd` or `root`, and the TEST BASE of either differs from
-      the test base of `reader_root`. `test_base(p)` is: the path up to and including the
-      `pytest-<N>` component that follows a `pytest-of-<user>` component; else, for a path under
-      `/tmp` or `/private/tmp` whose first component below it starts with `rmx-` (23.0's sandbox
-      root, `tempfile.mkdtemp(prefix="rmx-", dir="/tmp")`), that `rmx-*` directory; else `None`.
-      A live reader (`reader_root` None, or `test_base(reader_root) is None`) therefore drops every
-      test-tree row, and a
-      sandbox reader keeps its OWN sandbox's rows and drops any other test tree's. This is why the
-      predicate takes `reader_root`: a sandbox test of 19.2's fold must fold its own events.
+   draw) calls `row_provenance`; no reader carries its own copy, and no reader decides
+   `malformed` itself (round-3 #s-3). The classes, first match wins:
+   0. **`malformed`** (`source="events"` only): the event lacks any of `v`, `stage`, `name`,
+      `channel`, `cwd`, `root`, or its `v` is not 1, or its `channel` is not in R10's enum.
+      Unparseable lines never reach the function: the reader counts them before classifying (R8).
+   1. **`test_artifact`** (round-3 #s-3: keyed on `root`). The row's KEY PATH is its `root`, or
+      its `cwd` only when it has no `root`. It is `test_artifact` when `test_base(key path)` is not
+      `None` and differs from `test_base(reader_root)`. `test_base(p)` is: the path up to and
+      including the `pytest-<N>` component that follows a `pytest-of-<user>` component; else, for
+      a path under `/tmp` or `/private/tmp` whose first component below it starts with `rmx-`
+      (23.0's sandbox root, `tempfile.mkdtemp(prefix="rmx-", dir="/tmp")`), that `rmx-*`
+      directory; else `None`.
+      - **Why `root`, not `cwd`.** One test run has two test bases: 23.0's store roots under
+        `/tmp/rmx-*`, and pytest's `tmp_path` under `/private/var/folders/…/pytest-of-<u>/
+        pytest-<N>`, while in-process emission runs with cwd = the repo (base `None`). The root is
+        the store the row was written for; the cwd is incidental. Keyed on `root`, a sandbox test
+        whose cwd is `tmp_path` or the repo, writing to a sandbox store, folds its own events
+        (the intent of `reader_root`), and the live store still drops every test tree's rows.
+      - **A row with no test base is never a test artifact.** A live-tree row (base `None`) read
+        by a sandbox reader is classified by classes 2-4, not as `test_artifact`: such a row in a
+        sandbox log can only come from a broken redirect, which 23.0 R3 refuses and 23.0 AC-4
+        detects; this function does not rename it.
    2. **`legacy_fixture`** (d9g): the row has NEITHER `cwd` NOR `root`, `kind == "grep"` and
       `body == "alpha|beta"` exactly (string equality; `alpha`, `alpha|GAMMA`, `alpha.beta` do
       not match). Read-only check at `3357c44` (2026-10-14): `~/.refmatrix/query.log` holds
@@ -124,9 +145,9 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
    counted in every total. `test_artifact` and `legacy_fixture` rows are NOT counted. Every
    reader prints all three non-`attributed` counts on their own line, as `excluded_test_rows=<n>
    legacy_fixture_rows=<n> legacy_unattributed=<n>`, so nothing is silently included or dropped.
-   A `recall-events.jsonl` event always carries `cwd` and `root` (R10), so an event with neither
-   is malformed: readers count it as `malformed` with the unparseable lines (R8) and never fold
-   it.
+   A `recall-events.jsonl` event always carries `cwd` and `root` (R10), so an event without them
+   is `malformed` by class 0 (classes 2 and 3 never apply to events); event readers print
+   `malformed=<n> unparseable=<n>` beside the line above and never fold either.
 6. **R6 `grep-stdin` cardinality** (bsd #s-4, retargeted). The stdin filter path (`cli.py:6202`)
    sets `cardinality` to the number of lines it emitted. The `-E` replica-path claim is dropped:
    it does not reproduce at HEAD (live `-E` row 2026-10-14T11:08:31 logged `cardinality: 15`).
@@ -158,25 +179,91 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
    and the command continues (telemetry never fails the command it describes). Readers count and
    print unparseable lines; they never skip them silently. No other recall log format may be added
    (AC-9).
-9. **R9 Session, turn and identity.** Every event and every `query.log` row
-   resolves `session` from, in order: the hook envelope's `session_id` → `CLAUDE_CODE_SESSION_ID`
-   → `RMX_SESSION` → null. `stm.latest_session` (`stm.py:127`) is NEVER consulted (bsd #b-1;
-   bug-100's shape). Turn is logged, never used as a phase signal (d5b). {#req-session}
+9. **R9 Session, turn and identity.** Every event and every `query.log` row resolves `session`
+   through the ONE resolver below; turn is logged, never used as a phase signal (d5b).
+   {#req-session}
 
-   **`turn`, race-free** (re-review #s-3). The recall and scan hooks run IN PARALLEL with
-   `focus hook --event input` (`hooks.py` registers them as separate UserPromptSubmit entries, and
-   Claude Code runs an event's hooks in parallel, as the generator's own comment at
-   `hooks.py:263-265` records), so "input events in the ring at emission" is n or n+1 by
-   scheduling. Defined instead: `turn` = the number of `input` events in the session's ring whose
-   `ts` is strictly less than `t0 − 1 s`, where `t0` is the emitting process's start time
-   (`time.time()` read once, before the ring is opened). This prompt's own input event, if the
-   parallel hook already wrote it, has `ts ≥ t0 − 1 s` (both hooks start on the same event) and is
-   excluded; every earlier prompt is at least one turn older and is included. It is therefore the
-   0-based ordinal of this prompt among the session's RECORDED prompts; ambient prompts are never
-   recorded (`cli._is_ambient_prompt`), so they never advance it, and the field says so in its
-   name in the report (`recorded_turn`). Null when the session has no ring. Non-prompt channels
-   (`context`, `recall`, `nudge`, and `used` events) use the same rule. `lag_turns` (R12) is the
-   difference of two such values.
+   **The ONE session resolver** (round-3 #b-1). Live fact, read 2026-10-14: the long-lived
+   `rmx mcp` process (pid 59378, child of the Claude process `CLAUDE_PID=59363`, started
+   2026-10-06 22:27) carries `CLAUDE_CODE_SESSION_ID=b38025a7…` while that Claude process serves
+   session `db80475a…`, which the Bash tool's per-call `CLAUDE_CODE_SESSION_ID` names correctly.
+   An environment variable is a snapshot of its process's birth; after `/resume` or `/clear` the
+   MCP server's copy names a dead session for the rest of its life. Therefore:
+   - **Signature, exact:** `stm.resolve_session(root: Path, *, envelope: dict | None = None,
+     long_lived: bool = False) -> stm.SessionResolution`, a `NamedTuple(session: str | None,
+     source: str)`, `source` ∈ `envelope`, `claude_env`, `pid_pointer`, `rmx_session`, `none`.
+     It is used by every event and `query.log` row here AND by 19.0 R5's STM resolvers
+     ([[task-19.0-stm-cluster-hygiene#requirements]] R5); it is built by whichever of 21.1 and
+     19.0 merges first, and the other imports it unchanged (both run their own ACs against it).
+   - **Per-call processes** (`long_lived=False`: hooks, and CLI runs spawned by the Bash tool):
+     the envelope's `session_id` → `CLAUDE_CODE_SESSION_ID` → the pid pointer for `$CLAUDE_PID`
+     → `RMX_SESSION` → none.
+   - **Long-lived processes** (`long_lived=True`: `rmx mcp`, which re-resolves on EVERY tool call
+     and never caches): the pid pointer for `os.getppid()` (the MCP server's parent IS the Claude
+     process: pid 59378's ppid is 59363) → `RMX_SESSION` → none. `CLAUDE_CODE_SESSION_ID` is never
+     read in a long-lived process.
+   - **The pid pointer.** `<root>/stm/by-pid/<pid>.json` holds `{session_id, pid, pid_start,
+     written_at, hook_source}`, written by tmp + `os.replace`. Writers:
+     - a NEW SessionStart hook entry generated by `hooks.py`, matcher `startup|resume|clear|compact`,
+       command `rmx focus hook --event session-start` (stderr NOT discarded: this is a memory
+       path), which takes `session_id` and `source` from its envelope;
+     - `focus hook --event input`, which rewrites the pointer when its envelope's `session_id`
+       differs from the pointer's (one read per prompt), so a missed SessionStart heals on the
+       next prompt.
+     The writer's Claude pid is `$CLAUDE_PID` when set (the Bash tool's environment has it:
+     `CLAUDE_PID=59363`, read 2026-10-14), else the nearest ancestor within 4 levels whose command
+     basename is `claude` (`ps -o ppid=,comm= -p <pid>`); with neither, nothing is written, one
+     stderr line names the miss, and the miss is counted (`rmx focus show`). 19.0 R0 records
+     which of the two reaches hook processes. `pid_start` is the process start time
+     (`ps -o lstart= -p <pid>`); a reader whose pid's current start time differs (pid reuse)
+     ignores the pointer and counts it (`pid_pointer_stale`).
+   - `stm.latest_session` (`stm.py:127`) is NEVER consulted (bsd #b-1; bug-100's shape). When
+     nothing resolves, rows and events carry `session: null`, and 19.0 R5 states what each
+     write verb does instead (an error, never a dropped or misrouted write).
+
+   **The pre-prompt state, race-free** (re-review #s-3; round-3 #b-2). The recall and scan hooks
+   run IN PARALLEL with `focus hook --event input` (`hooks.py` registers them as separate
+   UserPromptSubmit entries, and Claude Code runs an event's hooks in parallel, as the generator's
+   own comment at `hooks.py:263-265` records). `Stm.record` (`stm.py:246-282`) appends the input
+   event AND ingests the prompt's refs into `<session>.focus.json` in the same call, and the ring's
+   `ts` is cut to the second (`stm.py:259`). So EVERY value a prompt-time reader computes from the
+   ring or the graph (the event count, the turn, the topic list, the overlap, 19.6's phase) is
+   n or n+1 by scheduling, not only the turn; and no wall-clock margin on a second-truncated `ts`
+   can separate this prompt from the last. The round-2 rule (`ts < t0 − 1 s`) is WITHDRAWN.
+   Instead, one snapshot, one reader:
+   - **Signature, exact:** `stm.pre_prompt_state(root: Path, session: str, prompt: str, *,
+     t0: float) -> stm.PrePromptState`, a `NamedTuple(graph: dict, topic_cache: dict, turn: int,
+     events_n: int, source: str)`, `source` ∈ `snapshot`, `live`. Same ownership rule as the
+     resolver (first of 21.1 / 19.0 to merge builds it; 19.0 R7 restates it).
+   - **Writer.** `Stm.record(kind="input", …)`, BEFORE it appends the event or touches the graph,
+     calls `Stm.snapshot_pre_prompt(prompt: str) -> None`, which writes `<session>.pre.json` = `{prompt_sha, wall, turn, events_n, graph, topic_cache}` by
+     tmp + `os.replace`: `prompt_sha` = sha256 of the prompt's UTF-8 bytes, `wall` =
+     `time.time()` (sub-second), `turn` = the graph's `turn` counter before this prompt
+     (`stm.py:427` increments it once per recorded input), `events_n` = the ring's complete lines,
+     `graph` = the focus graph, `topic_cache` = 19.6 R3's cache (`{}` until 19.6). The appended
+     input event gains `prompt_sha` and `t` (sub-second epoch).
+   - **Reader.** It reads the LIVE state first (focus graph, ring complete-line count, topic
+     cache), THEN `pre.json`. If `pre.prompt_sha == sha256(prompt)` and `|pre.wall − t0| ≤ S`, it
+     returns the snapshot's values (`source=snapshot`); else the live values (`source=live`).
+     This is exact because the writer writes `pre.json` before it changes anything: a reader that
+     finds no matching snapshot AFTER reading the live state read a state the input hook had not
+     yet touched. `t0` is `time.time()` read once at process entry.
+   - **`S`, measured, not assumed.** 19.0 R0 measures the start skew between the parallel
+     UserPromptSubmit hooks of one prompt (both log `t0`) over ≥ 50 real prompts; `S` =
+     max(2 s, 3 × the largest measured skew), committed as `stm.PRE_PROMPT_SKEW_S` with the
+     measurement in its docstring. If R0 finds a per-prompt unique field in the UserPromptSubmit
+     envelope, the snapshot is keyed by it instead and `S` is unused. Residual, stated: a prompt
+     textually identical to the previous one and submitted within `S` of it reads the previous
+     prompt's snapshot (one turn stale).
+   - Ambient prompts are never recorded (`cli._is_ambient_prompt`), so they write no snapshot and
+     their readers read the live state, which they never changed.
+
+   **`turn`.** On prompt-time channels (`prompt_recall`, `scan_prompt`): `pre_prompt_state(…).turn`,
+   the 0-based ordinal of this prompt among the session's RECORDED prompts (named `recorded_turn`
+   in the report). On every other channel and on `used` events (they run while the agent answers,
+   after the UserPromptSubmit hooks have finished): the live graph's `turn − 1`, the ordinal of the
+   prompt being answered; `session_start` before any prompt logs `−1`. Null when the session has
+   no ring or no session resolved. `lag_turns` (R12) is the difference of two such values.
 10. **R10 The event fields.** One event per item per stage. The schema is versioned (`v: 1`).
 
     | field | meaning |
@@ -184,7 +271,7 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
     | `v`, `ts`, `session`, `turn`, `query_id` | R9; `query_id` equals the `query.log` row of the same call |
     | `channel` | closed SURFACE enum, the ONE channel enum of C7: `session_start`, `prompt_recall`, `scan_prompt`, `precompact`, `context`, `recall`, `nudge` (bsd #b-2). `invocation` is a separate field with R2's values; `cli`/`mcp` are never channels, and no consumer may list them as channels (19.2 R3 uses this enum verbatim) |
     | `invocation` | R2 |
-    | `name`, `entity_id`, `kind` | `name` is the stable key 19.2 counts by (a purge-and-re-add keeps history); `entity_id` is the catalog id at emission (code); `kind` ∈ `code`, `doc`, `memory`, `session`, `subject` |
+    | `name`, `entity_id`, `kind` | `name` is the stable key 19.2 counts by (a purge-and-re-add keeps history); `entity_id` is the catalog id at emission (code); `kind` ∈ `code`, `doc`, `concept`, `memory`, `session`, `subject`, mapped from the catalog kind by R10a, never copied raw |
     | `scope` | `project` or `global` (d8e) |
     | `partition` | the partition NAME the item's row was read from (for example `intuition` for project memories), resolved by the emitter from the hit row, never from the store's currently bound partition (bug-098's shape). 19.2 R1 keys on it and 23.1 R1.2 cuts batches on it. Never null on `retrieved` / `delivered` / `used`; an emitter that cannot resolve it writes no event for that item and counts the miss on stderr |
     | `cwd`, `root` | the emitting process's cwd and its resolved store root (the file the event is appended to belongs to `root`'s store, or to the global root for `scope=global`). R5's classifier reads them; they are never null (re-review #b-1) |
@@ -192,7 +279,7 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
     | `offset_bytes`, `bytes`, `payload_bytes` | `delivered` only. ONE unit for the whole schema: UTF-8 BYTES of the payload the command wrote to stdout (re-review #s-2; #t9-fixes). `offset_bytes` / `bytes`: the byte range of the line or object that NAMES the item; `payload_bytes`: the payload's total size. `delivered` means EMITTED. `seen` is NOT a field: 19.5 R2 derives it from these three and 19.5 R1's measured cap and preview size, and 19.5 is its only deriver |
     | `body_offset_bytes`, `body_bytes` | `delivered` only: the byte range of the item's body when the payload carries it separately from the naming line (19.1's pack appends bodies after all hook lines); null when the payload carries no separate body (the JSON renderer's object already contains it, inside `offset_bytes`/`bytes`) |
     | `arm`, `policy` | allocation arm ∈ `fixed`, `phased`, `phased+cache`, and the allocation policy version. Until 19.6 ships, every emitter writes `arm=fixed`, `policy=fixed-v0`; 19.6 chooses and logs the arm per prompt (d5b) |
-    | `stm_session`, `stm_events_n`, `focus_topics_n`, `overlap` | the RAW phase inputs at injection, on prompt-time channels (`session_start`, `prompt_recall`, `scan_prompt`, `precompact`): which ring was read (R9's session, never `latest_session`), its event count, the number of `stm.topic_composites` topics, and the prompt-term ∩ composite-member overlap |
+    | `stm_session`, `stm_source`, `stm_events_n`, `focus_topics_n`, `overlap` | the RAW phase inputs at injection, on prompt-time channels (`session_start`, `prompt_recall`, `scan_prompt`, `precompact`): which ring was read (R9's resolver, never `latest_session`); `stm_source` = `pre_prompt_state`'s `source` (`snapshot` / `live`); the ring's event count BEFORE this prompt's input event; the number of `stm.topic_composites` topics of the pre-prompt graph; and the prompt-term ∩ composite-member overlap against that same graph. On `prompt_recall` / `scan_prompt` all four come from ONE `stm.pre_prompt_state` call (R9), never from a second read of the live files. `session_start` and `precompact` have no prompt: they read the live state (`stm_source=live`) and log `overlap: null` |
     | `phase`, `restored_cluster_id` | the label the pre-registered rule computed (`cold`, `warm`, `return`, `new`), and on a topic-cache return the restored cluster id. Null until 19.6 writes them |
     | `block_id`, `block_sha`, `rev`, `unchanged` | versioned injection ([[exploration-session-phased-context#vi-evidence]]): the emitted block's stable id (`scan-prompt`, `prompt-recall`, `stm-topic-composite`, …) and the sha256 of its body, filled by 21.1's emitters now; `rev` and `unchanged` are null until 19.6's versioned blocks write them. The byte-identical share is recomputable from `block_sha` + `payload_bytes` before 19.6 lands |
     | `evidence`, `ref_query_id`, `lag_turns` | `used` only: what showed the use, which delivered event it points back to, and after how many turns |
@@ -200,6 +287,26 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
     The field list above is exported as `telemetry.RECALL_EVENT_FIELDS_V1` (a tuple of names) and
     every emitter writes every field (null where the table allows null). 19.2's fold imports the
     tuple; a consumer that keys on a field not in it fails its own test (19.2 AC-16).
+
+    **R10a The `kind` map** (round-3 #s-1). Read at HEAD: the catalog's entity `kind` column takes
+    `code`, `doc`, `concept` and `memory` (`cli.py:10272` `_DEFAULT_EMBED_KINDS`;
+    `partitions.py:27`); `function` / `class` are `is_a` concepts (`kind/function`), not entity
+    kinds; session cards and subjects are memory rows told apart by `mtype`. One function,
+    `telemetry.event_kind(entity_kind: str, mtype: str | None) -> str | None`, the only place the
+    map lives:
+
+    | catalog `kind` | `mtype` | event `kind` |
+    |---|---|---|
+    | `code` | any | `code` |
+    | `doc` | any | `doc` |
+    | `concept` | any | `concept` |
+    | `memory` | `subject` | `subject` |
+    | `memory` | `session` | `session` |
+    | `memory` | any other or null | `memory` |
+    | anything else | any | `None`: no event for that item; the emitter prints one stderr line per call with the count (`unmapped_kind=<n>`) |
+
+    A scan-prompt or context anchor that is a concept node is a `concept` item; a memory BODY that
+    the payload carries for it (R11's attached body) is a separate `memory` item.
 
 11. **R11 Named emitters** (bsd #b-3). Each surface below emits `retrieved` for every item its
     retrieval returned and `delivered` for every item in the payload it wrote:
@@ -226,6 +333,33 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
     therefore a producer of spans that this emission site consumes, not a second emitter; 19.2
     consumes the events. A renderer that emits on its own doubles `delivered` (19.1 AC-6, AC-8
     here).
+
+    **How the recall emission site picks its channel** (round-3 #b-3). One function,
+    `telemetry.recall_channel(*, session_start: bool, stdin_json: bool, recent: bool,
+    invocation: str) -> str`, first match wins:
+    1. `--session-start` → `session_start`;
+    2. `--stdin-json` → `prompt_recall`;
+    3. `--recent` with `invocation == "hook"` → `precompact` (the only generated hook that runs
+       `--recent` is PreCompact's, `hooks.py:340`; a test pins that by scanning the generated
+       config, AC-8c);
+    4. anything else (an agent's or a human's `rmx memory recall <q>` / `--recent`, the MCP
+       `rmx_memory_recall`) → `recall`.
+
+    **What scan-prompt and context deliver** (round-3 #b-3, #s-1). Read at HEAD: `scan.py` has no
+    memory or partition retrieval of its own; memory text reaches its payload, and `rmx context`'s,
+    only through `context.py:230-243`, where an anchor that resolved to a concept/doc/code node
+    gets the same-named memory's body attached via `store.find_memory_any_partition`
+    (`store.py:2504`). So:
+    - each code / doc / concept item is a `delivered` event with its R10a kind and the partition of
+      the row it was read from (the store's project partition for code and docs);
+    - an attached memory body is ONE more `delivered` event: `kind` = R10a's map of that memory
+      row (`memory`), `name` = the memory's name, `partition` = the memory row's own partition (for
+      example `intuition`, or `memory-<project>`), `offset_bytes` / `bytes` = the anchor's naming
+      line, `body_offset_bytes` / `body_bytes` = the attached body's span. 19.2 R3 counts these
+      as hits. `find_memory_any_partition` returns `get_memory(id)`'s dict, chosen across
+      partitions by longest content; this task makes the returned dict carry the chosen row's
+      partition NAME (`partition`), so the event never takes the bound partition (bug-098's
+      shape).
 12. **R12 `used` events, fully specified** (bsd #s-2; re-review #b-5; #t9-fixes). Emitted only by
     an explicit call whose `invocation` is NOT `hook` (a `hook` call never emits `used`, so the
     helix confound cannot recur), and only when the named item is in the session's DELIVERED SET
@@ -239,9 +373,13 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
       `verbs.py:766`) and the daemon op `_op_memory_get` never emit (19 #b-6).
     - **`context_by_name`**: `verbs.context` (`verbs.py:538`, the MCP route) and the three CLI
       context routes of R3, when the call's `ref`, stripped, equals a delivered `name` exactly
-      (case-sensitive) AND the context call's resolved anchor entity has that same `name` and the
-      same `kind` as the delivered event. A code symbol that shares a memory's name therefore never
-      counts as a use of the memory.
+      (case-sensitive) AND this context call DELIVERED an item of that same `name` and the same
+      `kind` as the delivered event: either its anchor (by R10a's kind), or, for `kind=memory`,
+      the memory body it attached to a concept/doc/code anchor (R11; round-3 #s-1). So the
+      documented common case, `rmx context <slug>` landing on the thin concept node with the
+      memory's body attached, IS a use of the memory; a code symbol that shares a memory's name
+      and gets no memory body attached is not. One context call emits at most one `used` per
+      `(name, kind, scope)`.
     - **`focus_note`**: `verbs.focus_note` (`verbs.py:908`; the CLI `rmx focus note`, `cli.py:1411`,
       and the MCP `rmx_focus_note` both call it). The MATCHER, exact: the note text is scanned for
       (a) whole-token occurrences of a delivered `name`, where a token boundary is any character
@@ -249,7 +387,18 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
       `[[<doc>]]` / `[[<doc>#<anchor>]]` whose `<doc>` equals a delivered `name`. Each distinct
       matched name emits ONE `used` event per note, however often it occurs. Only names of
       length ≥ 6 or containing one of `_ . -` are matchable, so a short delivered name (`run`,
-      `rank`) cannot fire on prose.
+      `rank`) cannot fire on prose. Edge cases, stated (round-3 #m-7):
+      - **Sentence-final names.** `.` is a token character, so `…applied feedback_alpha_rule.`
+        yields the token `feedback_alpha_rule.` and does NOT match. That under-counts, the safe
+        direction for a never-decaying counter; the matcher does not strip punctuation.
+      - **One name, several delivered keys.** When a matched name is in the delivered set under
+        more than one `(kind, scope)` key (for example a `memory` and a `code` item of the same
+        name), the note emits one `used` per key, each pointing to its own delivered event; 19.2
+        counts only the `kind=memory` one.
+    - **Whose session.** The caller's session is R9's resolver's: on the MCP route
+      (`rmx_memory`, `rmx_context`, `rmx_focus_note`) the pid pointer of the MCP server's parent,
+      re-read on every call, never the server's spawn-time `CLAUDE_CODE_SESSION_ID` (round-3 #b-1).
+      With no resolved session, no `used` is emitted (counted, `used_no_session`).
     - **The delivered set (the lookup).** `telemetry.delivered_in_session(session, *, root,
       global_root) -> dict[(name, kind, scope), event]` reads `recall-events.jsonl` of `root` and
       of `global_root` BACKWARDS from the end in 64 KB blocks, keeping `stage=delivered` events
@@ -277,8 +426,23 @@ line counts are unchanged.
 1. **MCP route.** An MCP `rmx_context` call through the real stdio server (a subprocess; `HOME` =
    tmp, `REFMATRIX_ROOT` = tmp, `RMX_HUB_MODELS=0`, short root for `sun_path`) produces exactly one
    `query.log` row with `invocation=mcp`, `kind=context`, `source=context-mcp`, a non-null
-   `query_id`, and `session` equal to the `CLAUDE_CODE_SESSION_ID` the test set. RED at HEAD (no
-   row).
+   `query_id`, and `session` equal to the session of the pid pointer the test wrote for the
+   server's parent (the test process) through the GENERATED SessionStart hook command. RED at
+   HEAD (no row).
+
+   **1b. Session switch under ONE long-lived server** (round-3 #b-1). The test starts `rmx mcp`
+   with `CLAUDE_CODE_SESSION_ID=A` in its environment and keeps it running. It feeds the generated
+   SessionStart hook command (`rmx focus hook --event session-start`, `CLAUDE_PID` = the test
+   process's pid, the server's parent) an envelope `{session_id: A, source: startup}`, then a
+   second one `{session_id: B, source: clear}`. After the switch, on the SAME server process:
+   - an `rmx_context` call logs a `context-mcp` row with `session == B`;
+   - an `rmx_focus_note` lands in B's ring (A's ring line count unchanged);
+   - with a memory `feedback_alpha_rule` delivered in B (a `prompt_recall` run through the
+     generated hook with B's envelope), an `rmx_focus_note` naming it emits one `used` event with
+     `session == B` and `ref_query_id` = that delivery's `query_id`.
+   With the pointer file deleted and no `RMX_SESSION`, the next `rmx_context` row carries
+   `session: null` and `rmx_focus_note` returns a tool error (19.0 R5), not a write to A's ring.
+   RED at HEAD (the server has no per-call resolution).
 2. **CLI routes.** On a tmp store, `rmx context X` forced down each of the replica, daemon and
    direct routes writes exactly one row with the route's `source`. RED at HEAD for
    `context-daemon` (no row).
@@ -287,8 +451,10 @@ line counts are unchanged.
    `interactive`, `unknown`. RED at HEAD on `CLAUDECODE` alone (returns `unknown`).
 4. **Session never guessed.** Two subprocesses in ONE tmp root with different
    `CLAUDE_CODE_SESSION_ID`s, plus a newer STM ring for a third session id on disk, log disjoint
-   `session` values equal to their own ids; with no envelope, no `CLAUDE_CODE_SESSION_ID` and no
-   `RMX_SESSION`, `session` is null, not the third ring's id.
+   `session` values equal to their own ids; with no envelope, no `CLAUDE_CODE_SESSION_ID`, no pid
+   pointer for `$CLAUDE_PID` and no `RMX_SESSION`, `session` is null, not the third ring's id. A
+   pointer whose `pid_start` does not match the live process's start time is ignored (`session`
+   null) and counted as `pid_pointer_stale`.
 5. **`grep-stdin` cardinality.** `printf 'a\nb\nc\nd\n' | rmx grep -E 'a|b|c'` logs a
    `grep-stdin` row with `cardinality=3`. RED at HEAD (`null`).
 6. **The frozen fixture** (bsd #s-3). A REDACTED copy of this project's `query.log` and `cli.log`
@@ -309,38 +475,97 @@ line counts are unchanged.
    with `kind=grep`, `body="foo"`; (d) a legacy row with `kind=grep`, `body="alpha|beta"`;
    (e) a legacy row with `kind=grep`, `body="alpha"`. `--agent-usage` counts 3 (b, c, e) and
    prints `excluded_test_rows=1 legacy_fixture_rows=1 legacy_unattributed=2`. Unit cases of
-   `row_provenance`: a row whose `root` is ANOTHER `/tmp/rmx-*` sandbox is `test_artifact` for a
-   reader at `R` and for a reader at a non-temp root; a row from `R`'s own sandbox is
-   `attributed` for a reader at `R`. The same five rows written as events (with `cwd`/`root`
-   removed from c-e) are classified by the same function: c-e are `malformed` and never folded.
-   A test asserts that the report, 19.2's fold module and 21.4's draw script import
-   `row_provenance` from `telemetry` and define no predicate of their own.
-8. **Real emitters** (bsd #b-3). On a tmp store with 10 indexed memories in partition
-   `intuition` and a seeded STM ring for the envelope's session (5 recorded inputs, 2 focus
-   topics), one real `rmx scan-prompt` run and one real `rmx memory recall --stdin-json` run,
-   each fed a recorded UserPromptSubmit envelope on stdin through the GENERATED hook command line
-   (not a direct function call), run with cwd = the tmp project dir, append to
-   `recall-events.jsonl`:
+   `row_provenance`:
+   - a row whose `root` is ANOTHER `/tmp/rmx-*` sandbox is `test_artifact` for a reader at `R`
+     and for a reader at a non-temp root; a row from `R`'s own sandbox is `attributed` for a
+     reader at `R`;
+   - **two test bases** (round-3 #s-3): a row with `root` inside `R`'s sandbox and `cwd` =
+     `/private/var/folders/x/pytest-of-u/pytest-7/test_b0` is `attributed` for a reader at `R`;
+     the same with `cwd` = the repo is `attributed`; a row with `root` in pytest temp and `cwd`
+     inside `R` is `test_artifact` for a reader at `R`;
+   - a row with `cwd` in pytest temp and no `root` is `test_artifact` for a reader at `R` (the
+     cwd fallback);
+   - a live-tree row (`root` = `/Users/x/proj/.refmatrix`) read by a reader at `R` is NOT
+     `test_artifact` (`attributed`).
+
+   **Event leg** (round-3 #s-3). The same five rows written as events, with c-e stripped of
+   `cwd`/`root`, plus (f) an event whose `channel` is `cli`, classified by
+   `row_provenance(…, source="events")`: c-f are `malformed`, a and b as above; the event reader
+   prints `malformed=4 unparseable=<n>` and folds only b. A test asserts that the report, 19.2's
+   fold module and 21.4's draw script import `row_provenance` from `telemetry`, define no
+   predicate of their own, and contain no check for missing `cwd`/`root` or for the channel enum
+   (the `malformed` rule lives only in the function).
+8. **Real emitters** (bsd #b-3). On a tmp store whose PROJECT partition holds an indexed code
+   and doc corpus (each item's naming line preceded by `—` in its rendered text, see AC-8d) and
+   whose partition `intuition` holds 10 indexed memories, plus a seeded STM ring for the
+   envelope's session (5 recorded inputs, 2 focus topics), one real `rmx scan-prompt` run and one
+   real `rmx memory recall --stdin-json` run, each fed a recorded UserPromptSubmit envelope on
+   stdin through the GENERATED hook command line (not a direct function call), run with cwd = the
+   tmp project dir, append to `recall-events.jsonl`:
    - per surface, one `retrieved` event per retrieved item and one `delivered` event per emitted
      item, all sharing that call's `query_id` and the envelope's `session_id`;
    - `offset_bytes + bytes ≤ payload_bytes`, `payload_bytes` equal to the BYTES the command wrote
      to stdout, and for every `delivered` event the payload's bytes in
      `[offset_bytes, offset_bytes + bytes)` contain the item's `name`;
-   - a run whose payload carries 3 of 10 retrieved items logs exactly 10 `retrieved` and 3
+   - a recall run whose payload carries 3 of 10 retrieved items logs exactly 10 `retrieved` and 3
      `delivered`;
-   - every event carries `partition == "intuition"`, `cwd` == the tmp project dir, `root` == the
-     tmp store root, and every field of `telemetry.RECALL_EVENT_FIELDS_V1` as a key;
+   - **partition, per leg** (round-3 #b-3): every `memory recall` event carries
+     `partition == "intuition"`; every scan-prompt code/doc event carries the PROJECT partition's
+     name, and its `kind` is R10a's map of the row (`code`, `doc`, `concept`); scan-prompt's memory
+     case is AC-11e's attached body, not this leg;
+   - every event carries `cwd` == the tmp project dir, `root` == the tmp store root, and every
+     field of `telemetry.RECALL_EVENT_FIELDS_V1` as a key;
    - **phase and versioned-injection fields** (re-review #s-3): on both prompt-time channels,
      `stm_session` == the envelope's session, `stm_events_n` == the seeded ring's event count,
      `focus_topics_n` == 2, `overlap` is a non-null number, `arm == "fixed"`,
      `policy == "fixed-v0"`, `block_id` is the surface's id (`scan-prompt`, `prompt-recall`), and
      `block_sha` == sha256 of the exact stdout bytes of that block.
 
-   **8b. Turn race** (re-review #s-3). The same `memory recall` envelope is run twice against the
-   seeded ring: once with this prompt's `input` event written into the ring BEFORE the recall
-   process starts reading it (ts = now), once with it written AFTER. Both runs log the same
-   `turn` (5). An `input` event with a ts 30 s old (an earlier prompt with identical text) is
-   counted.
+   **8b. Every phase input is order-independent** (re-review #s-3; round-3 #b-2). The seeded
+   ring's prompt terms are chosen so this prompt's own terms CHANGE the graph (they join an
+   active topic). The same `memory recall` envelope, and separately the same `scan-prompt`
+   envelope, is run three ways against copies of the seeded store:
+   - (i) the input hook (`focus hook --event input`, the generated command, same envelope) runs to
+     completion BEFORE the reader starts;
+   - (ii) it runs AFTER the reader finishes;
+   - (iii) only its first step has run: the test calls `Stm.snapshot_pre_prompt(prompt)`, the
+     public method `Stm.record(kind="input")` calls before it appends (R9's writer is these two
+     steps, so no test-only switch exists in `src/`), runs the reader, then completes the record.
+   All three log identical `turn` (5), `stm_events_n`, `focus_topics_n` and `overlap`, equal to
+   (ii)'s values, with `stm_source` `snapshot` in (i) and (iii) and `live` in (ii). An earlier
+   prompt with IDENTICAL text whose `pre.json` `wall` is `stm.PRE_PROMPT_SKEW_S + 1` s old is
+   not matched (`stm_source` `live`) and is counted in `turn`.
+
+   **8c. Every channel's emitter, through its real entry point** (round-3 #b-3). On the AC-8
+   store, each of these appends its own channel's events, checked per channel for the event set
+   (`retrieved` count, `delivered` count, `channel`, `kind`, `partition`, shared `query_id`):
+   - `session_start`: the GENERATED SessionStart recall command, with a SessionStart envelope;
+   - `precompact`: the GENERATED PreCompact recall command (`--recent`, under
+     `RMX_INVOCATION_SOURCE=hook`); a test scans the generated hook config and asserts that this
+     is the only generated command combining `memory recall` with `--recent`;
+   - `recall`: an agent `rmx memory recall <q>` (`CLAUDECODE=1`) AND an agent `rmx memory recall
+     --recent` (channel `recall`, not `precompact`: invocation is `agent`);
+   - `context`: an MCP `rmx_context` call through the stdio server (AC-1's harness) and a CLI
+     `rmx context` call;
+   - `nudge`: not this task's emitter. 21.3 owns the nudge hook (Wave 3) and its AC-2 runs the
+     GENERATED PostToolUse hook and asserts one `channel=nudge` `delivered` event, with the
+     emitter-removal mutation registered there ([[task-21.3-indexed-symbol-nudge#acceptance]]);
+   - `scan_prompt` and `prompt_recall`: AC-8.
+   Each channel's leg fails if that channel's emitter call is removed.
+
+   **8d. The multibyte fixture reaches a non-ASCII byte path** (round-3 #b-3, #m-3). Read at
+   HEAD: `memory recall --json` prints `json.dumps(rows, indent=2)` with the default
+   `ensure_ascii=True` (`cli.py:12110`, `:12322`), so its payload is ASCII and byte offsets equal
+   character offsets there: a chars-vs-bytes mutation cannot fail on the recall leg until 19.1's
+   `--pack` text replaces it (19.1 AC-1 and AC-6 own that leg). The text payload of `scan-prompt`
+   (the hook's format) carries raw UTF-8. AC-8d therefore asserts, on the scan-prompt leg:
+   - the payload's stdout bytes contain at least one byte ≥ 0x80 BEFORE the first delivered
+     span's `offset_bytes` (a guard that the fixture is not vacuous; it fails if the corpus loses
+     its `—`);
+   - the multibyte excess before the LAST delivered span (bytes minus characters up to it) is ≥ 6
+     (three `—`), larger than any naming line's slack in the fixture, recorded as a pre-check;
+   - every delivered span's bytes contain its `name` (AC-8's check), which a character-counted
+     offset fails by at least 6 bytes.
 9. **One format.** A test enumerates every writer of a `*.jsonl` file under `src/refmatrix/` and
    fails on any new file name that carries recall items other than `recall-events.jsonl`.
 10. **Global scope** (d8e). A recall that returns one project and one global memory appends the
@@ -365,13 +590,36 @@ line counts are unchanged.
     - **11d lookup bound.** With 6 MB of other sessions' events appended after the delivery, the
       lookup reads ≤ 4 MB per file (counted by the reader), emits no `used`, and increments
       `used_lookup_cap_hits`.
-12. **Mutations that must FAIL a test** (pre-registered):
+    - **11e the concept-anchor case** (round-3 #s-1). The tmp store holds a memory
+      `feedback_gamma_rule` in `intuition` AND a concept node of the same name in the project
+      partition (as the bridge produces: the title spawns a concept). `rmx context
+      feedback_gamma_rule` anchors on the concept and attaches the memory body; its events are one
+      `delivered` `kind=concept` (project partition) and one `delivered` `kind=memory`
+      (`partition == "intuition"`, body span set). After a `prompt_recall` delivered that memory
+      in `S`, the same `rmx context` call by the agent emits exactly one `used`, `kind=memory`,
+      `evidence=context_by_name`. With the memory deleted (concept only, no body attached), the
+      call emits no `kind=memory` `used`.
+    - **11f focus-note edges** (round-3 #m-7). In `S`, with `feedback_alpha_rule` delivered as a
+      memory: the note `applied feedback_alpha_rule.` emits none (sentence-final, under-count
+      stated); with a code symbol `feedback_alpha_rule` ALSO delivered by `scan_prompt`, the note
+      `applied feedback_alpha_rule now` emits two `used` events, one per key (`memory`, `code`).
+
+12. **The `kind` map** (round-3 #s-1). `telemetry.event_kind` returns R10a's value for every row
+    of its table, and `None` (with the stderr count) for an unknown kind. After ingesting AC-8's
+    tmp corpus, a test enumerates the distinct entity `kind` values and, for memory rows, their
+    `mtype` values, and asserts every pair maps to a non-`None` kind, so a new catalog kind fails
+    here, not silently.
+13. **Mutations that must FAIL a test** (pre-registered):
     - the MCP env set after the first verb call (AC-1);
     - the `query.log` row written inside `_op_context` under the lock (AC-1: a lock-held probe sees
       the write; the caller-side assertion fails);
     - `context-daemon` route row removed (AC-2);
     - `CLAUDECODE` checked before the explicit env (AC-3);
     - `session` falling back to `stm.latest_session` (AC-4);
+    - the MCP server resolving its session once at spawn, or from `CLAUDE_CODE_SESSION_ID`
+      (AC-1b: the row, the note and the `used` land on A);
+    - the pid pointer not rewritten on a `clear` SessionStart (AC-1b);
+    - the pointer's `pid_start` check dropped (AC-4: the stale pointer resolves);
     - `grep-stdin` cardinality left unset (AC-5);
     - `phase=start` rows counted (AC-6: 68, not 34);
     - each reader given its own copy of the predicate (AC-7);
@@ -379,22 +627,42 @@ line counts are unchanged.
       AC-7 counts 1): the AC-6 / AC-7 pair fails together;
     - the d9g shape loosened to `body` containing `alpha` (AC-7: row e excluded);
     - `reader_root` ignored, so a sandbox reader drops its own rows (AC-7's own-sandbox case);
-    - each surface's emitter removed, one at a time (AC-8);
+    - the classifier keyed on `cwd` instead of `root` (AC-7's two-test-base case: a sandbox row
+      with a pytest-temp cwd becomes `test_artifact`);
+    - a base-`None` row classified `test_artifact` for a sandbox reader (AC-7's live-tree case);
+    - the `malformed` rule moved out of `row_provenance` into a reader (AC-7's import/no-check
+      assertion), or the channel-enum check dropped from it (AC-7: event f folded);
+    - each surface's emitter removed, one at a time: `scan_prompt`, `prompt_recall` (AC-8);
+      `session_start`, `precompact`, `recall`, `context` (AC-8c, one leg each); `nudge` is
+      registered in 21.3's list (its AC-2);
+    - `recall_channel` mapping `--recent` to `precompact` without the `hook` check (AC-8c: the
+      agent's `--recent` logs `precompact`);
     - `delivered` logged for every retrieved item (AC-8: 10, not 3);
     - the JSON renderer emitting its own `delivered` events beside the single emission site
       (AC-8: 6, not 3);
     - `partition` dropped from the emitter, or taken from the store's bound partition instead of
-      the hit row (AC-8 seeds the hits in `intuition` while the CLI's bound partition is the
-      default);
+      the hit row (AC-8 seeds the recall hits in `intuition` while the CLI's bound partition is
+      the default; AC-11e's attached body lives in `intuition` while its concept anchor is in the
+      project partition);
     - `cwd` / `root` dropped from events (AC-8; AC-7's event leg);
-    - offsets counted in characters (AC-8: the seeded memories' hooks contain `—`, so the byte
-      range check fails);
+    - offsets counted in characters (AC-8d, on the scan-prompt leg: ≥ 6 bytes of multibyte excess
+      precede the last span, so its name check fails; the recall leg's JSON is ASCII and is NOT
+      claimed here, 19.1 AC-1/AC-6 own the `--pack` leg);
     - an emitter writing null phase fields or a `block_sha` of anything but its stdout bytes
       (AC-8);
-    - `turn` counted over every input event present at emission (AC-8b: 5 vs 6);
+    - any phase input (`turn`, `stm_events_n`, `focus_topics_n`, `overlap`) read from the live
+      files instead of the one `pre_prompt_state` call (AC-8b: run (i) differs from (ii));
+    - `pre.json` written AFTER the ring append or the graph ingest (AC-8b: run (iii) differs);
+    - the snapshot matched on `prompt_sha` alone without the `wall` window (AC-8b: the older
+      identical prompt is matched);
     - global hits written to the project file (AC-10);
     - `used` emitted for `invocation=hook` (AC-11a);
     - `context_by_name` matching without the kind check (AC-11b);
+    - `context_by_name` matching the anchor only, not the attached memory body (AC-11e: no `used`);
+    - an attached memory body logged with the concept's kind or partition (AC-11e);
+    - the `focus_note` matcher stripping trailing punctuation (AC-11f: the sentence-final note
+      emits one), or emitting one event per name instead of per key (AC-11f: 1, not 2);
+    - an unknown catalog kind copied raw instead of mapped (AC-12);
     - the `focus_note` matcher as a substring match (AC-11c: `feedback_alpha_rules`), or emitting
       per occurrence (AC-11c: 3, not 2);
     - a global `used` written to the project file (AC-11c);
@@ -404,8 +672,11 @@ line counts are unchanged.
 
 | file | change |
 |---|---|
-| `src/refmatrix/mcp.py` | set the env in `serve_stdio` before the first request |
-| `src/refmatrix/telemetry.py` | `agent` source + precedence; `session`/`query_id`/`cwd`/`root` on rows; `row_provenance` + `is_test_artifact_row` (R5); the `--agent-usage` report; `RECALL_EVENT_FIELDS_V1`; `emit_recall_events` (the ONE writer, R11); `delivered_in_session` (R12's lookup); the race-free `turn` (R9) |
+| `src/refmatrix/mcp.py` | set the env in `serve_stdio` before the first request; mark the process long-lived and drop `CLAUDE_CODE_SESSION_ID` from its env; resolve the session per tool call (R1, R9) |
+| `src/refmatrix/stm.py` | `resolve_session` + `SessionResolution` and the pid pointer reader; `snapshot_pre_prompt`, `pre_prompt_state` + `PrePromptState`, `PRE_PROMPT_SKEW_S`; input events gain `prompt_sha` and `t` (R9). Built here or by 19.0, whichever merges first |
+| `src/refmatrix/hooks.py`, `cli.py` (`focus hook`) | the generated SessionStart entry `rmx focus hook --event session-start` (matcher `startup\|resume\|clear\|compact`, stderr kept) that writes the pid pointer; the input hook's pointer refresh (R9) |
+| `src/refmatrix/store.py` | `find_memory_any_partition` (`:2504`) returns the chosen row's partition name (R11) |
+| `src/refmatrix/telemetry.py` | `agent` source + precedence; `session`/`query_id`/`cwd`/`root` on rows; `row_provenance` + `is_test_artifact_row` (R5); the `--agent-usage` report; `RECALL_EVENT_FIELDS_V1`; `emit_recall_events` (the ONE writer, R11); `delivered_in_session` (R12's lookup); `event_kind` (R10a); `recall_channel` (R11); `turn` from `pre_prompt_state` (R9) |
 | `src/refmatrix/verbs.py` | caller-side row + events for `context` (`:538`) and `memory_recall` (MCP route); `used` emission in `context`, `memory` `get` action (`:1102`) and `focus_note` (`:908`) |
 | `src/refmatrix/cli.py` | `context-daemon` row; `grep-stdin` cardinality; `--agent-usage`/`--until`/`--by-session`; events on the CLI context and recall routes; `used` on `memory get`'s replica fall-through (`:11326`) and the three CLI context routes |
 | `src/refmatrix/scan.py` | `scan_prompt` emitter with payload byte spans, `partition`, and raw phase inputs |
@@ -420,7 +691,8 @@ line counts are unchanged.
   explicitly, because bug-088's recorder cannot see a child's connects. Each test asserts the live
   log line counts above are unchanged; no test writes the log this task measures (bsd #s-7).
 - **RED first** (`feedback_red_test_must_fail_at_head`): AC-1, AC-2 (`context-daemon`), AC-3
-  (`CLAUDECODE`), AC-4, AC-5, AC-7, AC-8, AC-8b, AC-10, AC-11a-d are run against HEAD before any `src/`
+  (`CLAUDECODE`), AC-1b, AC-4, AC-5, AC-7, AC-8, AC-8b, AC-8c, AC-8d, AC-10, AC-11a-f and AC-12
+  are run against HEAD before any `src/`
   change and the failing assertion is recorded. AC-6 fails at HEAD because `--agent-usage` does not
   parse. No AC is admitted that passes at HEAD.
 - **Hook path:** AC-8 runs the command string `hooks.py` GENERATES for UserPromptSubmit, not a
@@ -471,3 +743,24 @@ Answers [[bsd-plan19-21-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]
 | re-review #s-3 (phase / `block_sha` ACs; `turn` race) | R9 (race-free `turn`); AC-8 phase clause; AC-8b; mutations |
 | plan-21 open item 2 (transcript scorer owner) | R12 reserved evidences (19.6's offline scorer; never appended to the live log) |
 | cross-plan: 23.0 AC-4 calls `telemetry.is_test_artifact_row(row)` | R5 (`reader_root` optional; `None` = a live reader), so the call 23.0 names is valid as written |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan19-21-spec-rereview-r3-6091648]]. Code facts re-read at `636b210` (read-only):
+`hooks.py:209-213`, `:270-290`, `:301-345`; `stm.py:123-140`, `:246-282`, `:405-445`;
+`verbs.py:519-530`; `cli.py:1060-1078`, `:1964`, `:12110`, `:12322`; `context.py:225-243`;
+`store.py:2504-2524`; `scan.py:970-980`; the live MCP process (`rmx mcp` pid 59378, ppid 59363 =
+`CLAUDE_PID`).
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r3-6091648]]
+
+| finding / decision | answered at |
+|---|---|
+| round-3 #b-1 (the MCP server's `CLAUDE_CODE_SESSION_ID` is frozen at spawn) | R1 (long-lived, per-call resolution, env var dropped); [[#req-session]] R9 (`stm.resolve_session`, the pid pointer, its two writers, pid-reuse check; ownership shared with 19.0 R5); R12 "Whose session"; AC-1 (pointer session), AC-1b (A→B under one server), AC-4 (stale pointer); mutations |
+| round-3 #b-2 (sibling phase inputs racy; second-truncated `ts`) | R9 pre-prompt state (`snapshot_pre_prompt` before append/ingest; `pre_prompt_state` reads live then snapshot; `S` measured by 19.0 R0; the `t0 − 1 s` rule withdrawn); R9 `turn` per channel; R10 (`stm_source`; all four inputs from one call); AC-8b (three orderings, all inputs, both prompt-time surfaces); mutations |
+| round-3 #b-3 (five emitters untested; ASCII JSON; scan-prompt partition; no channel rule) | R11 `recall_channel`; R11 "What scan-prompt and context deliver"; AC-8 (per-leg partition: project partition for scan-prompt); AC-8c (each channel through its real entry point; nudge in 21.3 AC-2); AC-8d (non-ASCII guard on scan-prompt; recall leg's JSON escaping stated, `--pack` leg is 19.1's); mutations (one per channel) |
+| round-3 #s-1 (`kind` map; concept-anchored memory body) | R10 `kind` row; R10a (`event_kind`, the table incl. `concept`); R11 (attached body = a `kind=memory` delivered item with its own partition; `find_memory_any_partition` returns it); R12 `context_by_name`; AC-11e; AC-12; mutations |
+| round-3 #s-3 (two test bases; vacuous `cwd` mutation; `malformed` not returned) | R5 (key path = `root`, `cwd` only without `root`; base-`None` rows never `test_artifact`; class 0 `malformed` with `source="events"`); AC-7 (two-test-base, cwd-fallback and live-tree cases; event leg with f); mutations. 19.2 AC-16 carries the fold-side case |
+| round-3 #m-7 (focus-note sentence-final names; one name, two keys) | R12 `focus_note` edge cases; AC-11f; mutations |
+| round-3 [[bsd-plan19-21-spec-rereview-r3-6091648#cross-plan]] (session source, phase inputs, `kind`, classifier rows) | R9, R10, R10a, R5: the signatures 19.0 R5/R7, 19.2 R5 and 19.6 R2 cite are the ones above |
+| cross-plan: 23.0 AC-4's `telemetry.is_test_artifact_row(row)` | R5: the new `source` keyword defaults to `query_log`, so the call stays valid as written |

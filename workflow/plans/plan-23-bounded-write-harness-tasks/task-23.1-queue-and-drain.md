@@ -13,8 +13,9 @@ metadata:
 # Task 23.1: queue, tail, bounded steps, and the tick registry {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: Pending (revision round 2, 2026-10-14: re-review [[bsd-plan23-17-spec-rereview-32dde06]]
-> and decisions d9a / #t9-fixes; see [[#rev-round-2]])
+> Status: Pending (revision round 3, 2026-10-14: re-review [[bsd-plan23-17-spec-rereview-r3-6091648]]
+> (nb23-r3-1, ns23-r3-1, ns23-r3-2, nm23-r3-2) and the bug-105 hotfix's audit remedies; see
+> [[#rev-round-3]]. Round 2: [[#rev-round-2]])
 > Depends on: 23.0 (test sandbox), 23.2 (hold + write-count recorder)
 > Blocks: 23.3; 16.6's Wave 1 slice; 22.2 (and so 22.5, 22.3); 17.1; 19.2
 > Not gated on 23.4: the `bind` seam serves either verdict (decision-log #s-2).
@@ -33,6 +34,10 @@ rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06#nb23-1]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06#nb23-2]]
 rel: implements -> [[plan-review-2026-10-14#t9]]
 rel: implements -> [[plan-review-2026-10-14#t9-fixes]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#nb23-r3-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#ns23-r3-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#ns23-r3-2]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#nm23-r3-2]]
 
 ## Facts at HEAD `b1c4324` this spec builds on {#facts}
 
@@ -75,6 +80,45 @@ Added in revision round 2, each re-read at HEAD `3357c44`:
 - **The live store is already contaminated.** The re-review's census of a tmp copy of this repo's
   read snapshot found fragment bits under the wrong partition (`sessions-refmatrix mentions`
   195,003 of 422,811). The repair is bug-105's hotfix (d9a), not this task.
+
+Added in revision round 3, read read-only in the hotfix clone `/Volumes/littlebig/refmatrix-bug105`
+(branch `bug-105-fragment-partition`, commits `0d05525`, `20c5ab4`, `4fb803b`; line numbers are the
+clone's at `4fb803b`), and at HEAD `5a8bf29` for the rest:
+- **The hotfix's cache.** `Store._fragment_cache: dict[(partition_id, partition_name), dict[str,
+  BitMap64]]` and `_dirty_by_binding: dict[(partition_id, partition_name), set[str]]`
+  (`store.py:1063-1064`). `_fragments` and `_dirty_fragments` are PROPERTIES that return the
+  CURRENT binding's view (`store.py:1076-1082`). `flush_fragments` (`:4174`) iterates
+  `_dirty_bindings()` and writes each binding's dirty set under its own partition, then restores
+  the caller's binding.
+- **The guards read every binding** (`4fb803b`, audit #b-1). `Store.has_dirty_fragments()` and
+  `Store.dirty_fragment_count()` (`store.py:1091-1097`) span every binding; `_runner`'s periodic
+  flush (`daemon.py:2066`) and `Store.transaction`'s post-commit flush (`store.py:4502`) call them.
+  No caller outside `store.py` reads `_dirty_fragments` any more.
+- **Rename and merge keep their bits** (`4fb803b`, audit #b-2/#s-1). `rename_partition`
+  (`store.py:1599`) calls `flush_fragments()` then `_clear_fragment_caches()` BEFORE it renames,
+  so the name in the key can never split one partition into two caches. `merge_partition`
+  (`store.py:1648`, real runs only) flushes every binding and clears the cache before it remaps
+  entity ids and drops SRC (`:1692`), and at the end clears the cache again and calls
+  `repair_fragments(dry_run=False, manifest_dir=root / "backups")` (`:1949-1954`), which re-homes
+  every bit of the dropped SRC id to its entity's partition.
+- **The repair is a union with a manifest, not a rebuild** (`20c5ab4` + `4fb803b`;
+  `store.py:4308`). Each partition's fragment becomes the UNION of the `entity_links` bits of its
+  entities and every existing fragment bit whose entity lives in it (moved there if it sat under
+  another partition). Only two kinds of bit are dropped: a bit whose ENTITY is gone
+  (`dropped_dead`) and a bit whose CONCEPT is gone (`dropped_dead_concept`); both go to a JSONL
+  manifest under `backups/fragments-repair-<stamp>-{dryrun|applied}.jsonl`, written before any
+  change. Dry run is the default and writes nothing (it overlays unflushed cache bits instead of
+  flushing). Skipped `entity_links` rows are counted (`links_skipped`); fragment directories of
+  unknown partitions are left on disk and reported (`unread_dirs`). Its docstring records why a
+  pure rebuild from `entity_links` was rejected: on the census copy it would have lost 74
+  own-partition bits and 442 foreign bits that existed only in fragment rows (nm23-r3-2).
+- **`facts.log` events are appended at once, inside any open transaction.** `Store._log_event`
+  (`store.py:1080`) opens the log and appends; `link` logs its `link` event (`:4366`) and
+  `add_evidence` its `evidence` event (`:5293`) right after their statements, whether or not a
+  transaction is open. `rebuild_index_from_log` replays `link` / `unlink` / `evidence` events
+  (`store.py:7648`, `:7676-7681`), and the A/B slots delta-replay from byte offsets into the same
+  file (`daemon.py:2789` `_slot_offset_path`). A batch that rolls back therefore leaves events for
+  rows the catalog never committed (ns23-r3-2).
 {#facts-body}
 
 ## Requirements {#requirements}
@@ -94,20 +138,42 @@ Added in revision round 2, each re-read at HEAD `3357c44`:
      `UnknownPartition(name)` BEFORE any row is written, and the `partitions` table is unchanged
      (nb23-1).
    - **The binding is every piece of state keyed by the partition, not only the id** (nb23-1,
-     bug-105, d9a). Entering and leaving a binding must leave the fragment cache partition-correct:
-     every `_fragments` / `_dirty_fragments` entry belongs to exactly one `partition_id`, every
-     load reads that partition's row, and every flush writes each dirty entry under ITS OWN
-     `partition_id`, never under the id bound at flush time. Two mechanisms meet this, and the AC
-     (AC-3b) is the same for both: (a) key the cache and the dirty set by `(partition_id,
-     linkage)`; or (b) have `with_partition` keep a per-partition cache and swap it on entry and
-     exit, with the outgoing partition's dirty entries kept under the outgoing id. bug-105's
-     hotfix (d9a) lands one of them before Wave 1. If it has merged when 23.1 starts, 23.1 uses
-     that mechanism unchanged and AC-3b is its regression test through `bind`. If it has not,
-     23.1 implements (a). Either way the contract is 23.1's from then on: it lives in `store.py`
-     inside the seam, never in a consumer.
-   - The live store's existing cross-partition bits are repaired by the hotfix (a derived rebuild
-     of every partition's `bitmap_fragments` from `entity_links`, announced and backed up first,
-     d9a). 23.1 ships no repair of its own.
+     nb23-r3-1, bug-105, d9a). That includes the state that DECIDES whether to flush, and every op
+     that changes a partition's name or id. The mechanism is bug-105's hotfix (`0d05525`,
+     `4fb803b`; [[#facts]] round 3), ADOPTED with AC-3b and AC-3d as the regression tests it must
+     pass (no longer "unchanged"; nb23-r3-1). Its contract, which 23.1 owns from then on, inside
+     `store.py` and never in a consumer:
+     1. **Per-binding cache.** `_fragment_cache` and `_dirty_by_binding` are keyed by the binding
+        `(partition_id, partition_name)`; `_fragments` / `_dirty_fragments` are views of the
+        CURRENT binding only, so any rebind switches caches however it is done. Every load reads
+        the bound partition's row.
+     2. **Every flush writes each binding's dirty set under ITS OWN `partition_id`**
+        (`flush_fragments` over `_dirty_bindings()`), never under the id bound at flush time, and
+        restores the caller's binding.
+     3. **Every "is anything dirty" test spans every binding.** `has_dirty_fragments()` and
+        `dirty_fragment_count()` are the only such tests: `_runner`'s periodic flush,
+        `Store.transaction`'s post-commit flush, R1.3's pre-flush, R6's tick and R7 use them. No
+        code outside `store.py`'s cache internals reads `_dirty_fragments` or `_fragments` (a
+        binding-local view) to decide a flush; AC-3d (v) checks it by search.
+     4. **An op that changes a partition's name or id first flushes every binding, then clears the
+        cache.** The name is part of the key, which is sound only under this rule: `rename_partition`
+        flushes and clears before it renames; `merge_partition` (real runs) flushes and clears
+        before it remaps entity ids and drops SRC, and at its end clears again and runs
+        `repair_fragments(dry_run=False, manifest_dir=root / "backups")`, so no bit stays under the
+        dropped id and every remapped entity's bit is re-homed. Any future op that renames,
+        merges, drops or renumbers a partition follows the same rule.
+     5. If the hotfix has merged when 23.1 starts, 23.1 builds on it. If it has not, 23.1's first
+        commit carries `0d05525`, `20c5ab4` and `4fb803b` (or their equivalent) before any
+        `bounded.py` code, and AC-3d is RED against HEAD's linkage-keyed cache first.
+   - **The live store's existing cross-partition bits** are repaired by the hotfix's
+     `rmx repair-index --fragments` (`Store.repair_fragments`), announced and backed up first
+     (d9a). It is NOT "a rebuild from `entity_links`" (nm23-r3-2, correcting this spec's round-2
+     text and d9a's wording): it is the UNION of the `entity_links` bits and every existing
+     fragment bit, each moved to its entity's partition, and it drops only bits whose entity or
+     concept is gone, into a manifest written first. That is derived-index cleanup with a manifest
+     under ADR-0004 `#rule-no-delete` (d9k). No later task may "simplify" it into the lossy
+     rebuild; a pure `entity_links` rebuild would have lost 516 bits on the census copy. 23.1 ships
+     no repair of its own.
 2. **Batches carry partition NAMES, never ids** (r10 #s-1's id-1 fallback). `bind` resolves the
    name and raises on an unknown one; there is no fallback to partition 1. A batch never spans two
    partitions: the front-end cuts a batch at every partition change.
@@ -116,15 +182,34 @@ Added in revision round 2, each re-read at HEAD `3357c44`:
    INSIDE the transaction (DuckDB `bitmap_fragments`) → the front-end's offset row is written (R3,
    R4) → `COMMIT`.
    - `Store.batch_transaction()` is a NEW primitive (nm23-4), not a change to
-     `Store.transaction`: `BEGIN`; yield; flush every dirty fragment entry (each under its own
-     `partition_id`, R1.1); the caller's offset write; `COMMIT`. It RAISES
-     `NestedTransaction` if `_in_transaction` is already true, so it can never silently fall into
-     `Store.transaction`'s nested no-op and move the flush back after `COMMIT`. `Store.transaction`
-     keeps its post-`COMMIT` flush outside the harness (R7). Relational
-   rows, bitmap fragments and the offset are atomic (d2a + its amendment). If anything raises, the
-   transaction rolls back, AND the in-memory fragment cache entries the batch dirtied (each a
-   `(partition_id, linkage)` entry, R1.1) are dropped so they reload from the database (a
-   rolled-back batch must not leave bits in the cache that the catalog does not hold). The harness refuses the SQLite backend with an error naming it.
+     `Store.transaction`. Its steps, in order:
+     1. **Pre-flush (ns23-r3-1).** If `has_dirty_fragments()`, flush EVERY binding's dirty set
+        in its own commit (the ordinary `flush_fragments`), under the same hold, BEFORE `BEGIN`.
+        Those bits came from earlier committed writes (a `link()` outside the harness leaves its
+        fragment for `_runner`'s periodic flush). A pre-flush failure raises before `BEGIN`: the
+        batch is not applied, `fragment_flush_failures` is incremented, the entries stay dirty,
+        and the run takes the `on_error` path (R2). After it, `has_dirty_fragments()` is False;
+        the core asserts that at `BEGIN`.
+     2. `BEGIN`; yield to `apply`.
+     3. Flush every dirty entry, each under its own `partition_id` (R1.1). Because the dirty set
+        was empty at `BEGIN`, every entry flushed here is the batch's own.
+     4. The caller's offset write; `COMMIT`.
+     5. **Events after `COMMIT` (ns23-r3-2).** While `batch_transaction` is open, `_log_event` and
+        `_log_events` append to an in-memory buffer instead of `facts.log`. After `COMMIT` the
+        buffer is appended in ONE write (`_log_events`). On rollback it is discarded. So no
+        `facts.log` event exists for a row that a rollback removed, and a retry emits each
+        event once.
+
+     It RAISES `NestedTransaction` if `_in_transaction` is already true, so it can never silently
+     fall into `Store.transaction`'s nested no-op and move the flush back after `COMMIT`.
+     `Store.transaction` keeps its post-`COMMIT` flush outside the harness (R7). Relational rows,
+     bitmap fragments and the offset are atomic (d2a + its amendment). If anything raises after
+     `BEGIN`, the transaction rolls back, the event buffer is discarded, AND the cache entries
+     the batch dirtied are dropped so they reload from the database (a rolled-back batch must not
+     leave bits in the cache that the catalog does not hold). Dropping is exact because step 1
+     left no other dirty entry in any binding: no earlier committed bit is dropped, and no other
+     binding's entry is un-dirtied by a flush that the rollback then un-writes (ns23-r3-1). The
+     harness refuses the SQLite backend with an error naming it.
 4. **`prepare(batch)`** (optional) runs OFF the lock before each hold: re-stats, file reads, record
    building (16.6 R4's pre-step; 23.3's semantic records). It must not touch the writer
    connection.
@@ -197,6 +282,15 @@ Every front-end takes the same keyword set, all named:
    transaction: relational rows, `bitmap_fragments` rows, the offset. Lance writes are not in it;
    a consumer that writes Lance does it in `finalize`, which is re-run while `finalize_pending` is
    set and must be idempotent.
+   - **`facts.log` is post-commit (ns23-r3-2).** A batch's events are written only after its
+     `COMMIT` (R1.3 step 5), never for a rolled-back batch, so neither `rebuild_index_from_log`
+     nor the A/B slot delta-replay can resurrect a rolled-back link or duplicate a rolled-back
+     evidence row. The residual, stated: a SIGKILL in the one `write` between `COMMIT` and the
+     append loses that batch's events (at most once; never a phantom). The catalog is the
+     authority (the `_log_event` docstring), and the next `facts.log` compaction
+     (`dump_catalog_to_log`) re-derives the log from the catalog, which closes the gap. This is
+     the better failure than today's: a missing event is re-derived, a phantom one is replayed
+     into the other slot.
 
 ### R4 `TailLog` + `tail(log, …)`: the non-consuming reader (d4a) {#r4}
 
@@ -223,7 +317,9 @@ says so.
 
 1. `Daemon.tick_registry.register(name, runner, *, kind)`, `kind ∈ {"drain", "tail",
    "bounded_steps"}`, in a fixed registration order. `_runner` calls `tick_registry.run()` where it
-   calls `_drain_learn_queue()` today; the periodic fragment flush stays after it, every tick.
+   calls `_drain_learn_queue()` today; the periodic fragment flush stays after it, every tick,
+   guarded by `has_dirty_fragments()` (every binding), never by the binding-local
+   `_dirty_fragments` (nb23-r3-1, R1.1 item 3).
 2. ONE budget for all registrants together: `LEARN_DRAIN_BUDGET_S` (default 5 s) keeps its name so
    existing tests that patch it still work; each registrant gets what the ones before it left.
 3. Start rotates round-robin: a tick starts at the registrant after the one that exhausted the
@@ -286,7 +382,8 @@ not edit them.
    `(entity_id, linkage_id, concept_id, file, line)` (one `INSERT … SELECT … WHERE NOT EXISTS`;
    no schema change, because the table already holds duplicates and a unique index would fail to
    build). It returns whether it inserted, and emits the `facts.log` `evidence` event ONLY when it
-   did. `_learn_grep_hits` uses it for every `(file, line)`. `add_evidence` itself is unchanged
+   did (inside the harness, into R1.3's post-commit buffer, so a rolled-back insert leaves no
+   event). `_learn_grep_hits` uses it for every `(file, line)`. `add_evidence` itself is unchanged
    for its other callers. This also stops today's duplication when the same pattern is learned
    twice with no crash. The duplicates already in live stores are plan-22's to audit (bug-106
    row). Plan-16's 16.1 R4 ("write only the missing evidence rows") builds on this method.
@@ -308,6 +405,10 @@ Every consumer task (16.6, 17.1, 19.2, 22.2, 23.3) names these, and only these:
 | `RunResult` | R1.5, including `hold_s` and `finalize_ran` | |
 | `Daemon.tick_registry` | `register(name, runner, *, kind)` | the DAEMON tick only (R6). The hub's nightly steps are a different registry, plan-17's `maintenance_steps` |
 | `queue_status`, `queue_redrive` | daemon ops + verbs | R6.5, R6.7 |
+| `Store.batch_transaction` | `batch_transaction() -> ContextManager[None]`; raises `NestedTransaction` | R1.3: pre-flush, `BEGIN`, in-transaction flush, offset, `COMMIT`, post-commit events |
+| `Store.has_dirty_fragments`, `Store.dirty_fragment_count` | `has_dirty_fragments() -> bool`, `dirty_fragment_count() -> int` | every binding (R1.1 item 3); the only "anything dirty" tests |
+| `Store.add_evidence_if_absent` | `add_evidence_if_absent(linkage, concept_id, entity_id, *, file, line, span_end=None, detail=None) -> bool` | R9.5; also used by 23.3's semantic writes ([[task-23.3-sync-between-file-yield#r8]]) and 16.1 R4 |
+| `Store.repair_fragments` | `repair_fragments(*, dry_run=True, manifest_dir=None) -> dict` | the hotfix's union-with-manifest repair (R1.1); not re-implemented by 23.1 |
 
 Where an earlier spec says "`bind(batch)`", it means `bind(partition_name)` entered once per batch.
 
@@ -339,6 +440,31 @@ Holds and writes are counted by 23.2's `HoldRecorder` on a REAL `_FairLock` inst
    - **AC-3c no auto-create.** `bind("no-such-partition")` raises `UnknownPartition`, and
      `SELECT count(*) FROM partitions` is the same before and after. Mutation: `bind` calling
      `with_partition(name)` with the default `create=True` FAILS (the count rises).
+   - **AC-3d the binding leaks AC-3b cannot see (nb23-r3-1).** AC-3b reopens after a clean close,
+     and `close()` flushes every binding, so each case below reads the `bitmap_fragments` ROW by
+     SQL (a fresh cursor on the store's connection, decoded with pyroaring) BEFORE any close, and
+     never through the cache. Partitions `home` (the at-rest binding) and `pb`.
+     - (i) **Other binding dirty at the tick.** Link one `pb` entity under `with_partition("pb")`
+       outside any transaction and return to `home`, which is clean. One `_runner` tick (the
+       periodic flush). `pb`'s `mentions` row holds the bit.
+     - (ii) **Rename.** Link `a` in `pb` (left dirty), `rename_partition("pb", "pc")`, link `b`
+       in `pc`, flush. The row holds both `a`'s and `b`'s bits and equals the bitmap rebuilt from
+       `pc`'s `entity_links`.
+     - (iii) **Merge.** Link in `pb` (left dirty), `merge_partition("pb", "home")`. `SELECT count(*)
+       FROM bitmap_fragments WHERE partition_id NOT IN (SELECT id FROM partitions)` is 0, and
+       `home`'s row holds `pb`'s bit (re-homed).
+     - (iv) **Other binding dirty at transaction exit.** Inside one `Store.transaction()`, link a
+       `pb` entity under `with_partition("pb")`; exit `with_partition`, then the transaction, with
+       `home` clean. `pb`'s row holds the bit after the transaction's post-commit flush.
+     - (v) **No binding-local guard.** A search of `src/` for `_dirty_fragments` and `_fragments`
+       outside `store.py`'s cache-internal methods (the two properties, `_dirty_bindings`,
+       `_clear_fragment_caches`, `link`/`unlink`/`_load_fragment`/`flush_fragments` and the
+       repair) returns nothing.
+     Mutations, each must FAIL the named case: `_runner`'s guard back on `_dirty_fragments` → (i);
+     `rename_partition` without its pre-flush and cache clear → (ii); `merge_partition` without its
+     pre-flush → (iii); `merge_partition` without its closing `repair_fragments` → (iii) (a row
+     under the dropped id); `Store.transaction`'s post-commit guard back on `_dirty_fragments` →
+     (iv); a new `if self.store._dirty_fragments:` added in `daemon.py` → (v).
 4. **Exactly-once across the windows (d2a, 23 #b-2).** A COUNTING `apply` (adds the event count to
    one counter row) over 600 events, `batch=100`. A fault is injected at each of: (a) after
    `apply`, before the offset write; (b) after the offset write, before `COMMIT`; (c) after
@@ -349,7 +475,15 @@ Holds and writes are counted by 23.2's `HoldRecorder` on a REAL `_FairLock` inst
    exactly, and the fragment cache equals the database's `bitmap_fragments` rows. Mutations, each
    must FAIL: the offset written in its own autocommit after `COMMIT` (double count at (c)); the
    offset written before the batch (loss at (a)); fragments flushed after `COMMIT` (loss at (d));
-   the cache not dropped on rollback. {#ac-4}
+   the cache not dropped on rollback.
+   - **(f) Pre-existing dirty bits survive a rollback (ns23-r3-1).** Before the batch, one
+     committed but unflushed `link` in `(pa, mentions)` and one in `(pb, mentions)` (outside the
+     harness, so they wait for the periodic flush). The batch also links into `(pa, mentions)` and
+     faults at (b). After recovery (no close in between), both rows read by SQL contain their
+     pre-existing bit, and each equals the bitmap rebuilt from its partition's `entity_links`.
+     Mutation: `batch_transaction` without the pre-flush FAILS (the `pa` bit is dropped with the
+     batch's entry, and the `pb` entry was flushed inside the rolled-back transaction and
+     un-dirtied). {#ac-4}
 5. **bug-099 (RED at HEAD).** Enqueue 3 learn records; drain in a spawned child that `os._exit`s
    after the rotate, before any apply; restart. At HEAD: 0 learned rows and 0 pending (the loss).
    After 23.1: 3 patterns applied, 0 pending, no pattern applied twice. A legacy `*.draining` file
@@ -396,6 +530,16 @@ Holds and writes are counted by 23.2's `HoldRecorder` on a REAL `_FairLock` inst
     from `entity_links`. A second, crash-free learn of the same three patterns adds 0 evidence
     rows and 0 `evidence` events. Mutation: `_learn_grep_hits` back on the plain `add_evidence`
     INSERT FAILS (rows > D). {#ac-16}
+    - **AC-16b a kill INSIDE a hold (ns23-r3-2).** The same three patterns. The spawned child
+      `os._exit(137)`s inside hold 2, after its first `add_evidence_if_absent` and its first `link`
+      and before `COMMIT`. A fresh `Daemon` + `Store` drains to completion. Then `facts.log`
+      holds exactly D `evidence` events for the learn rows (none from the killed hold twice), and
+      every `link` event in it names a link present in `entity_links` (no event for a link the
+      rollback removed). A second case kills after `COMMIT` and before the event append: the
+      catalog holds hold 2's rows, `facts.log` lacks hold 2's events (the stated at-most-once
+      residual, R3.7), and after a forced `facts.log` compaction the log's `evidence` count is D.
+      Mutation: `_log_event` appending to `facts.log` at once inside `batch_transaction` (no
+      buffer) FAILS the first case (D + hold 2's events).
 17. **Dead-letter re-drive.** One learn batch fails non-fatally (dead-lettered, AC-7); the fault is
     removed; `rmx learn redrive` reports 1 line; the next drain applies it; the dead-letter file is
     gone and its `*.redriven.jsonl` copy holds the line. Mutation: a redrive that unlinks the
@@ -459,3 +603,18 @@ Holds and writes are counted by 23.2's `HoldRecorder` on a REAL `_FairLock` inst
 | nm23-4 (name the batch primitive; no silent nesting) | [[#r1]] 3, [[#ac-18]] |
 | ns17-2 (17.1's names; per-hold seconds) | [[#r1]] 5 (`hold_s`), [[#r10-contract]], [[#ac-19]] |
 | ns17-1 (daemon tick registry vs hub step registry) | [[#r10-contract]] (`Daemon.tick_registry` is daemon-only) |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Source: [[bsd-plan23-17-spec-rereview-r3-6091648]] and the bug-105 hotfix's audit remedies
+(`4fb803b`, read read-only in the clone).
+
+| finding / decision | answered at |
+|---|---|
+| nb23-r3-1 (hotfix adopted "unchanged" but leaks: binding-local guards, name in the key, merge under a dropped id; AC-3b blind) | [[#facts]] (round 3), [[#r1]] 1 (the five-point contract; "adopted, with AC-3d"), [[#r6]] 1, [[#r10-contract]], [[#ac-3]] AC-3d (i)-(v) with six mutations |
+| ns23-r3-1 (rollback drops pre-batch dirty bits and un-dirties other bindings) | [[#r1]] 3 (step 1 pre-flush before `BEGIN`; exact drop), [[#ac-4]] (f) |
+| ns23-r3-2 (`facts.log` events inside holds that roll back) | [[#facts]] (round 3), [[#r1]] 3 (step 5 post-commit buffer), [[#r3]] 7 (event log post-commit; residual stated), [[#r9]] 5, [[#ac-16]] AC-16b |
+| nm23-r3-2 (repair described as "rebuilt from `entity_links`") | [[#facts]] (round 3), [[#r1]] 1 (union with manifest; d9a's wording corrected) |
+| d9a (bug-105 hotfix now; 23.1 owns the contract) | [[#r1]] 1 item 5 (built on, or carried as the first commit) |
+| d9k (ADR-0004 `#rule-no-delete`: manifest-backed derived cleanup) | [[#r1]] 1 (the repair's classification) |
+| ns23-r3-3 (23.3 uses `add_evidence_if_absent`) | [[#r10-contract]] (`Store.add_evidence_if_absent` row); [[task-23.3-sync-between-file-yield#r8]] |

@@ -12,10 +12,10 @@ metadata:
 # Task 22.1a: the provenance-free audit classes {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 2, 2026-10-14; [[#rev-round-2]])
+> Status: Pending (revision round 3, 2026-10-14; [[#rev-round-3]])
 > Wave: 1, after 23.1 and 16.6's Wave-1 slice (d6d; #t8-amendments; #t8-wave1).
 > Depends on: 23.0 (test sandbox), 16.6 Wave-1 slice (sidecar + backfill). NOT on 16.1.
-> Feeds: 22.2 → 22.5 → 22.3.
+> Feeds: 22.2 → 22.5 → 22.3; 22.6 (the selector mode of `removal_audit`).
 
 Split out of 22.1 by d6d and #t8-amendments: these classes are decidable without learn-time
 provenance (the 2026-10-07 probe decided `orphan-root` without it), so bug-086's repair is not
@@ -26,6 +26,7 @@ rel: part-of -> [[plan-22-audited-removal-and-repair]]
 rel: derives-from -> [[plan-review-2026-10-14#t8-amendments]]
 rel: derives-from -> [[plan-review-2026-10-14#t9]]
 rel: amends -> [[bsd-plan16-22-spec-rereview-32dde06]]
+rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
 rel: depends-on -> [[task-23.4-option-a-measurement]]
 rel: depends-on -> [[task-16.6-learned-row-validation]]
 rel: depends-on -> [[plan-23-bounded-write-harness]]
@@ -40,45 +41,87 @@ rel: related-to -> [[project_global_relative_rows_repair]]
      where learned rows are not relative to the store's project root, i.e. the global store
      (bug-086's shape: the producer wrote global rows relative to the cwd or to
      `Path(root).parent` = `$HOME`, `cli.py:667`, `daemon.py:2136`). Resolution procedure, named
-     exactly (22 #b-4):
-     - **Candidate set = the probe's, exactly (s-1).** For a relative entity name `rel`, the
-       candidates are the files found by a suffix walk over the three trees `~/github`,
-       `~/claude_tools` and `~/enduris` (the 2026-10-07 probe,
-       `workflow/review-output/global-relative-resolve-probe.log`, `walked 972849 files`) whose
-       path ends with `/rel`. `$HOME/<rel>` is NOT added as a candidate (the probe's walk pass did
-       not add it; its 476 / 48 / 563 split is the walk's). The trees and the home directory are
-       explicit inputs recorded in the plan manifest (`candidate_trees`, `home_base`), defaulting
-       to `Path.home()`-relative values in production, so a sandbox daemon reading a copied catalog
-       can walk the real trees read-only.
-     - **De-duplication (s-1).** Candidates are de-duplicated by `os.path.realpath` before
-       counting: one file reached two ways (a symlink, or overlapping trees) is ONE candidate, so
-       it cannot turn a `verified@1` entity into `ambiguous:root`.
-     - **Walk exclusions** (pre-registered, OFF for the probe reproduction, ON for the applied
-       split, the two splits reported side by side): `.git/`, `.venv*/`, `node_modules/`,
-       `__pycache__/`, `.refmatrix/`, `.claude/worktrees/`,
-       `~/github/atollogy/bdep/_frameworks_and_libraries/`. The deploy tree `~/refmatrix` is not
-       under any of the three trees.
+     exactly (22 #b-4). Two walks are named, never confused: the PROBE's (a census reproduction,
+     [[#r1-probe]]) and the CLASSIFIER's (the applied split, [[#r1-applied]]).
+     - **The probe, recovered (r3 b-1).** {#r1-probe} The 2026-10-07 probe script was never
+       committed, but its source survives verbatim in the session transcript
+       `b38025a7-964a-49ec-bdbf-8f7e34918303.jsonl` (the Bash call at `2026-10-07T09:31:35Z` that
+       `tee -a`'d `workflow/review-output/global-relative-resolve-probe.log`); it is reproduced in
+       [[#appendix-probe]]. Its rules, read from that source (not inferred from a file count):
+       - **population:** every entity whose `path` is non-empty and does not start with `/`,
+         joined to EVERY `linkage_evidence` row of it (any `detail`) and its concept, grouped by
+         `(id, path)` (1,087 at the probe);
+       - **walk:** `os.walk` (default `followlinks=False`) over `$HOME/github`,
+         `$HOME/claude_tools`, `$HOME/enduris`, pruning DIRECTORY NAMES in exactly `{node_modules,
+         __pycache__, .git, .venv, .venv-eval, venv, .tox, build, dist, .refmatrix}`. Hidden
+         files and every other hidden directory (`.claude/`, `.github/`, …) ARE walked;
+       - **candidates:** `$HOME/<rel>` when it exists, PLUS every walked path with the same
+         basename that ends with `"/" + rel.lstrip("./")`; de-duplicated by STRING equality (a
+         Python set), not by `realpath`;
+       - **line check:** the candidate is read with `read_text(errors="replace").splitlines()`;
+         it verifies when, for any `(line, concept)` of the entity, `1 <= line <= len(lines)` and
+         `re.search(pat, lines[line-1])` holds, case-sensitively, where `pat` is the concept name
+         after `query/` (the whole name otherwise); on `re.error` the check is `pat in text`;
+       - **outcome:** `verified@min(n, 2)` and `cands@min(n, 2)`.
+       - **Measured 2026-10-14 (this revision, read-only `os.walk`, no store opened):** the
+         probe's walk visits **973,157** files today against **972,849** at the probe (+308,
+         +0.03%). The re-review's fitted rule (prune every hidden entry, `node_modules`,
+         `__pycache__`) visits 975,474: close, but it is not the probe's rule and is superseded by
+         the recovered source.
+       - **Round 2's "`$HOME/<rel>` is NOT a candidate" is WITHDRAWN.** The walk pass added it
+         (`if (H/rel).exists(): cands.add(str(H/rel))`). It stays out of the CLASSIFIER's
+         candidate set ([[#r1-applied]]), where the same file is the readable-today attribute.
+       - The reproduction is an OPERATOR census tool, never the classifier: this task commits the
+         recovered source as `eval/spikes/global_relative_resolve_probe.py` (verbatim rules; only
+         the catalog path and `$HOME` become arguments; a header names its origin). Its Python
+         `re` line check reproduces a historical measurement; `src/` carries no copy of it and
+         d-11 (one verifier for learned rows) governs every class this task assigns.
+     - **The classifier's candidate set (the applied split).** {#r1-applied} For a relative entity
+       name `rel`, the candidates are the files found by a suffix walk over the recorded
+       `candidate_trees` (default the three trees above) under the PROBE's directory-name prune set
+       (with `.venv*` as a glob), PLUS two path-prefix prunes: `<tree>/**/.claude/worktrees/`
+       (worktree copies of the same tree; each turns `verified@1` into `verified@2`) and
+       `$HOME/github/atollogy/bdep/_frameworks_and_libraries/` (vendored code), with
+       `followlinks=False`. `$HOME/<rel>` is NOT a candidate here. The trees, the prune set and
+       `home_base` are explicit inputs recorded in the plan manifest (`candidate_trees`,
+       `walk_prunes`, `home_base`), defaulting to `Path.home()`-relative values in production, so
+       the census ([[task-16.6-learned-row-validation#r7]]) can walk the real trees read-only.
+       The deploy tree `~/refmatrix` is not under any of the three trees.
+     - **De-duplication (s-1).** Classifier candidates are de-duplicated by `os.path.realpath`
+       before counting: one file reached two ways (a symlink, or overlapping trees) is ONE
+       candidate, so it cannot turn a `verified@1` entity into `ambiguous:root`.
      - **Verification** per candidate: the file exists and at least one of the entity's recorded
        lines holds the `query/<pattern>` text under 16.6's permissive reading,
        `learned_verify.permissive_matching_lines(file_abs, pattern)`
        ([[task-16.6-learned-row-validation#r2-permissive]]: case-insensitive; literal OR regex;
-       plus `identifier_variant_regex`, `store.py:786`). This needs no provenance, and 22.1a
-       carries no matcher of its own. A candidate whose reading is `Unverifiable` does not count
-       as verified and is recorded with its reason.
+       plus `identifier_variant_regex`, `store.py:786`; lines split on `b"\n"` as grep splits
+       them, never `str.splitlines()`, r3 m-2). This needs no provenance, and 22.1a carries no
+       matcher of its own. A candidate whose reading is `Unverifiable` does not count as verified
+       and is recorded with its reason; the entity's outcome then follows [[#r1-outcome]]'s
+       `unverifiable` rule, never the removal rule (r3 s-3).
      - **Readable today (d9b; re-review s-2).** Separately from the candidate count, every entity
        records whether `home_base/<rel>` exists and verifies under the same reading: that is
        where `grep_evidence` resolves global rows TODAY (`Path(root).parent`, `cli.py:667`,
        `daemon.py:2136`), so such a row is not bug-086's symptom. The attribute never changes the
-       probe-reproduction counts; it only routes the applied split ([[#r1-outcome]]).
-     - **Outcome** per entity, applied split: {#r1-outcome}
-       - `verified@1` → `orphan-root:resolved` with the absolute path recorded for 22.5; when the
-         entity is also readable today at a DIFFERENT realpath, it is `ambiguous:root` instead
-         (two live readings, d6a).
-       - `verified@≥2` → `ambiguous:root` (kept, all candidates recorded; d6a).
-       - `verified@0` and readable today → `orphan-root:home-readable`: NOT a removal class. It is
-         handed to 22.5 R1, which reports it as its own bucket and applies nothing to it until the
-         user rules (d9b).
-       - `verified@0` and not readable today → `orphan-root:unresolved` (removal candidate).
+       probe reproduction; it only routes the applied split ([[#r1-outcome]]).
+     - **Outcome** per entity, applied split, in this order of precedence: {#r1-outcome}
+       1. `verified@1` → `orphan-root:resolved` with the absolute path recorded for 22.5; when the
+          entity is also readable today at a DIFFERENT realpath, it is `ambiguous:root` instead
+          (two live readings, d6a).
+       2. `verified@≥2` → `ambiguous:root` (kept, all candidates recorded; d6a).
+       3. `verified@0` and readable today → `orphan-root:home-readable`: NOT a removal class. It is
+          handed to 22.5 R1, which reports it as its own bucket and applies nothing to it until the
+          user rules (d9b).
+       4. **`verified@0`, not readable today, and at least one reading (at a candidate or at
+          `home_base/<rel>`) returned `Unverifiable` → `orphan-root:unverifiable` (r3 s-3).** NOT a
+          removal class: kept, counted by reason (`UNVERIFIABLE_REASONS`), and carried to 22.5 as
+          held. An entity whose patterns are all in the permissive subset (`a\|b`,
+          `[[:space:]]`, `\<x\>`) can never verify anywhere, so without this rule it would fall
+          into the removal class below. The global log holds 26 such relative entities (of 2,999
+          relative global learned entities; r3 `#ev-subset`); the count on the copy is measured by
+          AC-5b, not assumed.
+       5. `verified@0`, not readable today, every reading returned a set → `orphan-root:unresolved`
+          (removal candidate).
      - The rows of a resolved entity travel with it, including any row that did not verify; they
        are re-checked by 22.1 in their new store, never dropped here.
    - `missing-file` (unit: ENTITY) — a learned file entity whose absolute path does not exist (the
@@ -104,19 +147,28 @@ rel: related-to -> [[project_global_relative_rows_repair]]
    It enqueues NO `stale_seen` marks (those belong to 16.6's grep read path). Its only output is the
    plan manifest file `.refmatrix/removal/<id>.plan.jsonl` plus its sha256, which 22.2's apply
    requires (d8g). {#r3}
+   - **One classifier, two callers (r3 s-6).** The classes are computed by ONE pure function,
+     `removal_audit.classify_provenance_free(conn, inputs) -> AuditPlan`, where `conn` is a
+     read-only DuckDB connection to a catalog file and `inputs` carries `store_root`, `partition`,
+     `candidate_trees`, `walk_prunes` and `home_base`. The daemon op passes the connection its
+     read-snapshot ops already use; the operator census passes `duckdb.connect(<copy>,
+     read_only=True)` through the ONE census procedure,
+     [[task-16.6-learned-row-validation#r7]]. No census constructs `Daemon` or `Store`.
 4. **R4 Verb and output (d6e as amended by d8g; 22 #m-6).** `removal_audit` is a verb exposed as
    `rmx removal audit --root R` and as the MCP tool `rmx_removal_audit`. Output: counts per class
    and per `query/*` pattern; `--list` for members; `--json` for the plan. The plan manifest
    records: store root, partition, catalog identity (active slot + snapshot version), the
-   walk's `candidate_trees`, `home_base` and exclusions, every member with its class, its recorded
-   resolution and its readable-today attribute.
+   walk's `candidate_trees`, `walk_prunes` and `home_base`, every member with its class, its
+   recorded resolution, its readable-today attribute and (for `orphan-root:unverifiable`) its
+   `Unverifiable` reasons.
    Exit 0 when the scan completes; any unreadable input is counted and printed, never skipped
    silently. {#r4}
 
 ## Acceptance criteria {#acceptance}
 
 1. **One row per class.** A sandbox fixture with one member of each class (incl.
-   `ambiguous:root`, `orphan-root:home-readable`, `orphan-alias:repairable`,
+   `ambiguous:root`, `orphan-root:home-readable`, `orphan-root:unverifiable`,
+   `orphan-alias:repairable`,
    `orphan-alias:unrepairable`, `shared`) audits each
    member to exactly its class; the resolved `orphan-root` records the right absolute path.
 2. **Case-variant canonical (22 #s-5).** An alias `alias of 'Store'` with only `store` existing
@@ -127,31 +179,59 @@ rel: related-to -> [[project_global_relative_rows_repair]]
 4. **Read-only.** With the daemon tick stopped, an audit leaves the catalog file hash, every Lance
    dataset version, the learn/mark queue files and `facts.log` byte-identical; only
    `.refmatrix/removal/` gains the plan file. Mutation: an audit that enqueues one mark must FAIL.
-5. **Probe reproduced (22 #b-4, #m-1, s-1).**
-   - **5a, sandbox test (gates).** A fixture global store and a fixture tree set: a relative
-     entity whose file is reachable through a symlink AND directly resolves `verified@1`
-     (mutation "no realpath de-dup" FAILS it: it reads `verified@2`); a `verified@0` entity whose
-     `home_base/<rel>` verifies classifies `orphan-root:home-readable`, never
-     `orphan-root:unresolved` (mutation "drop the readable-today attribute" FAILS it); with
-     exclusions OFF and `home_base` unused, the fixture's split equals its hand-computed split
-     exactly (mutation "add `home_base/<rel>` as a candidate" FAILS it).
-   - **5b, operator census (not a suite test; s-3).** The operator copies
-     `~/.refmatrix/catalog.read.duckdb` with `cp` into a short tmp dir off every watched tree (the
-     procedure of [[task-23.4-option-a-measurement#r1]]: never the writer slot, no `Store()` on a
-     live root, no `rmx` call, no socket), records its mtime and size, and runs the audit on the
-     copy through a sandbox daemon with `candidate_trees` = the probe's three real trees (walked
-     read-only). With exclusions OFF the audit reports the 2026-10-07 split 476 / 48 / 563 of
-     1,087; every difference is listed by entity with its cause: created or tombstoned after
-     2026-10-07 (named from a read-only parse of the global `facts.log`), or a file changed since
-     (mtime after 2026-10-07). An unexplained difference fails the census and blocks 22.5/22.3.
-     Beside it the audit prints the APPLIED split (exclusions ON, the readable-today routing) and
-     the delta between the two, per bucket; the applied split is the one 22.5 and 22.3 use. Output:
-     `workflow/review-output/22.1a-global-census.log`, cited in the summary.
+5. **Probe reproduced (22 #b-4, #m-1, s-1; r3 b-1, s-3).**
+   - **5a, sandbox tests (gate).**
+     - *Classifier.* A fixture global store and a fixture tree set: a relative entity whose file
+       is reachable through a symlink AND directly resolves `verified@1` (mutation "no realpath
+       de-dup" FAILS it: it reads `verified@2`); a `verified@0` entity whose `home_base/<rel>`
+       verifies classifies `orphan-root:home-readable`, never `orphan-root:unresolved` (mutation
+       "drop the readable-today attribute" FAILS it); a candidate under
+       `<tree>/x/.claude/worktrees/` is not walked (mutation "drop the worktree prune" FAILS it:
+       `ambiguous:root`); the fixture's applied split equals its hand-computed split exactly
+       (mutation "add `home_base/<rel>` as a candidate" FAILS it).
+     - *Unverifiable is never removed (r3 s-3).* A relative entity whose only pattern is `a\|b`
+       (no candidate decides, `home_base/<rel>` absent) classifies `orphan-root:unverifiable`
+       with reason `permissive-subset`, never `orphan-root:unresolved`. Mutation "Unverifiable
+       counts as not verified" FAILS it.
+     - *Reproduction script.* `eval/spikes/global_relative_resolve_probe.py` run on a fixture
+       catalog and fixture trees gives the hand-computed probe-rule counts (`verified@*`,
+       `cands@*`, walked file count). The fixture holds: a candidate that is a hidden FILE under a
+       hidden directory other than the pruned names (walked: mutation "prune every hidden entry",
+       the re-review's fitted rule, FAILS); a candidate under `.venv/` (pruned); an entity whose
+       only candidate is `$HOME/<rel>` (counted: mutation "omit `$HOME/<rel>`" FAILS); a line that
+       matches only case-insensitively (not verified: mutation "case-insensitive check" FAILS).
+   - **5b, operator census (not a suite test; s-3, s-6).** On a copy of the global store's
+     `catalog.read.duckdb` and `facts.log`, made and read by the ONE census procedure
+     ([[task-16.6-learned-row-validation#r7]]), the operator runs, with `candidate_trees` = the
+     probe's three real trees (walked read-only):
+     1. **The reproduction:** the committed probe script on the copy. Printed: the walk's file
+        count `W` and its drift from 972,849 (pre-registered tolerance ±1%; outside it the line
+        reads `walk-drift`); the six probe counts (`verified@0/1/2`, `cands@0/1/2`) beside the
+        probe's (563 / 476 / 48; 417 / 518 / 152 of 1,087) and the per-bucket delta `Δ_b`.
+     2. **The churn bound.** The probe recorded counts only, never per-entity outcomes, so a
+        per-entity difference cannot be attributed. The census instead counts the entities whose
+        inputs changed after `2026-10-07T09:31:35Z`: `C` = population entities with any
+        `entity`, `tombstone`, `evidence` or `unlink` event after that instant (read-only parse of
+        the copied `facts.log`), plus entities that left or joined the population; `M` = entities
+        with a classifier OR probe candidate whose mtime or birthtime is after it. An entity whose
+        inputs did not change classifies identically under the same rules, and each changed
+        entity moves at most one unit out of one bucket and into another, so the verdict is
+        `reproduced` iff `Σ_b |Δ_b| ≤ 2·(C + M)` over the three `verified@` buckets, else `drift`.
+        A candidate file DELETED since the probe is not observable today; the census says so in
+        its output.
+     3. **The applied split** (the classifier through `classify_provenance_free` on the same
+        copy): every R1 outcome with entity and row counts, `orphan-root:unverifiable` by reason,
+        and the per-bucket delta against the reproduction.
+     The census gates on its OUTPUT being complete (items 1-3, the copy's sha256, mtime and
+     size), never on equality: `reproduced` or `drift`, with the numbers, is shown to the user
+     beside 22.5's dry run, and the applied split is what 22.5 and 22.3 use (and AC-6b recounts
+     independently). Output: `workflow/review-output/22.1a-global-census.log`, cited in the
+     summary.
 6. **Independent recount (22 #m-1).** 6a: on sandbox fixture stores, each class count equals an
    independent SQL recount of its predicate, exactly. 6b (operator census, as 5b): on copies of
    this repo's and the global `catalog.read.duckdb`, each class count equals the independent
-   recount on the same copy; the exploration's 9,182 orphan aliases is printed beside it as drift,
-   not used as a bound.
+   recount on the same copy (copy and read per [[task-16.6-learned-row-validation#r7]]); the
+   exploration's 9,182 orphan aliases is printed beside it as drift, not used as a bound.
 7. **pytest rows.** 7a: a sandbox fixture entity under a `/pytest-of-<user>/` path classifies
    `missing-file`. 7b (operator census, as 5b): on the global copy, `missing-file` includes every
    entity whose path contains `/pytest-of-` (1,655 at the review; recount exact).
@@ -161,11 +241,12 @@ rel: related-to -> [[project_global_relative_rows_repair]]
 All tests run inside task 23.0's sandbox (d1a/d1b): `$HOME`, the global root, the registry and
 LaunchAgents redirected to a short `mkdtemp` before `refmatrix` is imported; in-process `Daemon` +
 `Store`; no `rmx` subprocess; the 23.0 conftest guard fails any touch of `~/.refmatrix` or a live
-store. No suite test reads a live catalog: AC-5b, 6b and 7b are OPERATOR census steps on a `cp`
-of the `catalog.read.duckdb` lock-free snapshot (23.4 R1's procedure), read through a sandbox
-daemon pointed at the copy, logged under `workflow/review-output/` and cited in the summary (s-3);
-AC-5a, 6a and 7a are the gating sandbox tests. Every listed mutation is pre-registered and must turn
-its test RED.
+store. No suite test reads a live catalog: AC-5b, 6b and 7b are OPERATOR census steps through the
+ONE census procedure ([[task-16.6-learned-row-validation#r7]]: `cp` of the `catalog.read.duckdb`
+snapshot into a short `/tmp` dir, read through `duckdb.connect(read_only=True)` by the production
+classifier, no `Daemon`, no `Store()`, no `rmx`, no socket), logged under `workflow/review-output/`
+and cited in the summary; AC-5a, 6a and 7a are the gating sandbox tests. Every listed mutation is
+pre-registered and must turn its test RED.
 
 ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
 
@@ -195,3 +276,69 @@ Answers [[bsd-plan16-22-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]
 | re-review b-4 (one verifier) | [[#r1]] verification calls 16.6's `permissive_matching_lines`; no matcher here |
 | re-review m-3 item 7 (plan-19's `stale` mark) | [[#r1]] `stale-subject` names 19.4 R5 as the writer |
 | plan-22 r1 b-4 (partial) | closed by the s-1 row |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan16-22-spec-rereview-r3-6091648]]. Later rows win over round 2.
+
+| finding / decision | answered in |
+|---|---|
+| r3 b-1 (AC-5b gate unsatisfiable: the probe's walk had exclusions; the verification rule was unrecorded) | [[#r1-probe]] (probe source RECOVERED from the transcript: its exact prune set, `$HOME/<rel>` candidate, case-sensitive `re.search` line check; 973,157 files today vs 972,849); [[#appendix-probe]]; AC-5a reproduction-script fixtures + three mutations; AC-5b churn-bounded `reproduced`/`drift`, gating on completeness only |
+| r3 b-1 (round 2's "`$HOME/<rel>` is not a candidate") | withdrawn in [[#r1-probe]]; it stays out of the classifier's set [[#r1-applied]] |
+| r3 s-3 (an `Unverifiable`-only entity falls into a removal class; the subset is not rare) | [[#r1-outcome]] item 4 `orphan-root:unverifiable` (kept, held, counted by reason; 26 such relative global entities in the log); AC-1, AC-5a + mutation; 22.2 R9; 22.5 R1 |
+| r3 s-6 (census "through a sandbox daemon" has no procedure) | [[#r3]] one pure classifier over a read-only connection; AC-5b/6b/7b and [[#test-strategy]] cite [[task-16.6-learned-row-validation#r7]] |
+| r3 m-2 (line splitting) | [[#r1]] verification: lines split on `b"\n"` (16.6 R2) |
+| r3 `#open-22` item 8 (walk exclusions: spec-settleable) | settled by [[#r1-probe]] / [[#r1-applied]]; the two walks are reported side by side in AC-5b |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
+
+## Appendix: the recovered probe {#appendix-probe}
+
+Verbatim from the transcript named in [[#r1-probe]] (2026-10-07T09:31:35Z); `S` was a scratch dir
+holding a copy of the global catalog. The committed census script keeps these rules and changes
+only how `S` and `H` are supplied.
+
+```python
+S = Path(sys.argv[1]); H = Path.home()
+con = duckdb.connect(str(S/".refmatrix/catalog.duckdb"), read_only=True)
+rows = con.execute("""select e.id, e.path, ev.line, c.name from entities e
+  join linkage_evidence ev on ev.entity_id=e.id join entities c on c.id=ev.concept_id
+  where e.path is not null and e.path<>'' and substr(e.path,1,1)<>'/'""").fetchall()
+ents = defaultdict(list)
+for eid, path, line, cname in rows: ents[(eid, path)].append((line, cname))
+t=time.time(); bybase = defaultdict(list); nfiles=0
+SKIP = {"node_modules", "__pycache__", ".git", ".venv", ".venv-eval", "venv", ".tox", "build",
+        "dist", ".refmatrix"}
+for top in ("github", "claude_tools", "enduris"):
+    for dp, dns, fns in os.walk(H/top):
+        dns[:] = [d for d in dns if d not in SKIP]
+        for f in fns:
+            bybase[f].append(os.path.join(dp, f)); nfiles += 1
+print(f"walked {nfiles} files in {time.time()-t:.1f}s")
+def matches(text, pat):
+    try: return re.search(pat, text) is not None
+    except re.error: return pat in text
+cache = {}
+def lines_of(p):
+    if p not in cache:
+        try: cache[p] = Path(p).read_text(errors="replace").splitlines()
+        except OSError: cache[p] = None
+    return cache[p]
+res = Counter()
+for (eid, rel), evs in ents.items():
+    cands = set()
+    if (H/rel).exists(): cands.add(str(H/rel))
+    suf = "/" + rel.lstrip("./")
+    for p in bybase.get(os.path.basename(rel), []):
+        if p.endswith(suf): cands.add(p)
+    ver = []
+    for p in cands:
+        L = lines_of(p)
+        if L and any(1 <= (ln or 0) <= len(L) and matches(L[ln-1], cn.split("/",1)[1]
+                     if cn.startswith("query/") else cn) for ln, cn in evs):
+            ver.append(p)
+    res["verified@%d" % min(len(ver),2)] += 1
+    res["cands@%d" % min(len(cands),2)] += 1
+print(dict(res))
+```
+

@@ -13,8 +13,9 @@ metadata:
 # Task 17.4: daily facts.log backup copy {#root}
 
 > Plan: [plan-17-nightly-store-maintenance](../plan-17-nightly-store-maintenance.md)
-> Status: Pending (added 2026-10-14 after commit 32dde06; checked in revision round 2 against the
-> 32dde06 re-review's plan-17 findings, see [[#rev-round-2]]; its first review is the next round)
+> Status: Pending (added 2026-10-14 after commit 32dde06; first reviewed in
+> [[bsd-plan23-17-spec-rereview-r3-6091648]]; revision round 3: ns17-r3-3, ns17-r3-4, nm17-r3-6,
+> see [[#rev-round-3]]. Round 2: [[#rev-round-2]])
 > Depends on: 17.2 (the hub tick and its `maintenance_steps` registry, NOT 23.1's daemon tick
 > registry), 23.0 (sandbox)
 
@@ -24,6 +25,9 @@ rel: depends-on -> [[task-23.0-test-sandbox]]
 rel: related-to -> [[project_factslog_audit_verdict]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06#nm17-4]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06#ns17-5]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#ns17-r3-3]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#ns17-r3-4]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#nm17-r3-6]]
 
 ## Why {#why}
 
@@ -57,10 +61,13 @@ once-a-day COPY under `backups/` is what Time Machine backs up. {#why-body}
    global store.
    - **Registration** (ns17-5): `MaintenanceStep(name="factslog_backup", op="factslog_backup",
      requires_arming=False, reason="a copy; never deletes the last good copy; no store state
-     changes")`. It therefore runs for real from its first scheduled day and needs no
-     `hub_maintain_arm`.
+     changes")`, registered FIRST on `maintenance_steps` (17.2 R2, ns17-r3-3). It therefore runs
+     for real from its first scheduled day, needs no `hub_maintain_arm`, and runs before, and
+     independently of, every other step on the same store: a `still_running`, `stuck`, failed or
+     refused `vectors_maintain` (or any later step) never stops the day's copy (17.2 R2).
    - **The step obligations of 17.2 R2:** `dry_run=True` reports what it would copy (source
-     inode and size, target path) and writes nothing; `invoked_by` is accepted; single-flight
+     inode and size, target path) and writes nothing; `invoked_by` (`cli` / `mcp` / `hub`, set by
+     the adapter, 17.1 R1) is accepted and recorded; single-flight
      with the 17.1 R11 reply shape, and `status=True` answered from an in-process run state
      without `_store_lock`; every completed run appends one `<root>/maintain/runs.jsonl` line
      with `step: "factslog_backup"` (17.1 R12 shape).
@@ -85,14 +92,42 @@ once-a-day COPY under `backups/` is what Time Machine backs up. {#why-body}
    values, the op writes nothing and reports `skipped: unchanged`, so an idle store's backup file
    does not change and Time Machine copies nothing for it. If `copied_day` equals `today`, it
    reports `skipped: already-today`.
+   - **The clone call, stated (nm17-r3-6).** Python has no `fclonefileat` binding. The op calls
+     it through `ctypes`: `libc = ctypes.CDLL(None, use_errno=True)`;
+     `libc.fclonefileat(c_int(src_fd), c_int(AT_FDCWD = -2), c_char_p(tmp_path_bytes),
+     c_uint32(0))`; a non-zero return reads `ctypes.get_errno()`. `ENOTSUP` / `EXDEV` (a volume
+     without clones) falls back to the streamed copy and reports `method: "stream"`; any other
+     errno is a named failure (R5). The report says which method ran (`clone` / `stream`).
 5. **R5 No silent failure.** Any failure (missing log, ENOSPC, rename error) is returned as a
    named error, counted in the (store, step) stamp, and reaches 17.2's per-step alert
    (`#r5-alert`). The previous good copy is never deleted by a failed run. A run that is still
    running past 17.2's ceiling becomes `stuck` like any other step (17.2 R4).
-6. **R6 A restore path that is tested.** The runbook names the restore:
-   `cp backups/facts.log.daily facts.log` with the daemon stopped, then `rmx rebuild --from-log`
-   into a THROWAWAY root first. Up to one day of events is lost by design; the catalog itself is
-   the primary copy of the live state.
+   - **A copy that stops being made is loud too (ns17-r3-3).** R5's errors cover runs that
+     execute. The copy can also stop without any run failing: `RMX_HUB_MAINTAIN_AT=off`, the hub
+     down or its thread dead, or a step that never gets called. That is caught by AGE, not by a
+     run: the daemon's health reports `factslog_backup_age_h` / `factslog_backup_stale` (over 48 h)
+     from the meta file, and the hub alerts once per stale store on every wake, due or not
+     (17.2 `#r8-backup-age`). The exclusion of the live log (R7) is permanent, so this alarm is
+     what keeps it safe.
+6. **R6 A restore path that is tested, in this order (ns17-r3-4).** The A/B slot offsets are byte
+   positions into the live `facts.log` (`_slot_offset_path`, `daemon.py:2789`); compaction
+   resets both to the new EOF for exactly this reason (`daemon.py:2318-2321`). Overwriting the
+   live log first would destroy every event since the copy and leave the offsets pointing past EOF
+   or into different bytes. The restore is `scripts/factslog-restore.py <root>` (run with the
+   DEPLOY interpreter; the runbook documents it), which:
+   1. **Rebuilds into a THROWAWAY root first:** copies `backups/facts.log.daily` to
+      `<mkdtemp>/.refmatrix/facts.log` and runs `rmx rebuild --from-log --yes` there with
+      `REFMATRIX_ROOT=<mkdtemp>` (the command rebuilds whatever store `_store()` resolves, so the
+      env var is what keeps it off the live root).
+   2. **Verifies** the throwaway's entity and link counts against the copy's own event counts
+      (AC-3's check), and prints them; a mismatch stops here with nothing changed.
+   3. **Refuses while the store's daemon answers** `daemon_mod.ping(root)` (checked before step 1
+      and again here; the daemon is stopped by hand first). Then it MOVES the live log aside to
+      `facts.log.pre-restore-<ts>` (kept, never deleted), installs the copy as `facts.log` by
+      copy + `fsync` + rename, and writes BOTH `catalog.A.offset` and `catalog.B.offset` to the
+      installed file's size (the new EOF), as compaction does.
+   Up to one day of events is lost from the LOG by design; the catalog itself is the primary copy
+   of the live state and is not touched by this script.
 7. **R7 Time Machine exclusion of the live log comes AFTER the copy exists.** 17.3's rollout adds
    `sudo tmutil addexclusion -p <store>/facts.log` for a store only after that store has a
    `backups/facts.log.daily` no older than one day. `backups/` stays included in Time Machine.
@@ -111,9 +146,13 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
    - A compaction swaps the log mid-copy: the copy equals the OLD file's first `size_at_open`
      bytes cut to its last newline (the descriptor pins the old inode), byte for byte. A copy of
      the new file, or a mix, fails.
-3. **AC-3 Replay equivalence.** `rmx rebuild --from-log` on a tmp root seeded from the copy yields
-   the same entity and link counts as the source store at the copy's size (a log replayed to the
-   same byte offset).
+3. **AC-3 Replay equivalence against the SOURCE catalog (nm17-r3-6).** A test writer drives a tmp
+   `Store`; at a quiesced point the test records the SOURCE catalog's entity and link counts and
+   a name-keyed hash of `entities` and `entity_links`, then the op copies the log, then the writer
+   resumes and appends more. `rmx rebuild --from-log` on a tmp root seeded from the copy yields
+   exactly the recorded counts and hash (the copy replays to the catalog state at the copy's
+   offset, not merely to "whatever the same bytes replay to"). Mutation: a copy that includes the
+   post-copy appends FAILS (counts above the recorded ones).
 4. **AC-4 Unchanged means untouched.** With no appends since the last copy, the backup file's
    mtime and inode do not change.
 5. **AC-5 Failure is loud and non-destructive.** With `backups/` made read-only, the op returns a
@@ -122,12 +161,32 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
    (AC-2); drop the newline truncation (AC-2); copy by path instead of by the open descriptor
    (AC-2 compaction case); delete `.prev` before the rename (AC-5); skip the unchanged check
    (AC-4); register the step with `requires_arming=True` (AC-7: the unarmed store gets no copy);
-   drop the `runs.jsonl` line (AC-7).
+   drop the `runs.jsonl` line (AC-7); register the step after `vectors_maintain`, or skip it
+   while an earlier step is `still_running` (AC-8); drop the age check (AC-8); the restore script
+   copying over the live log before the throwaway rebuild, or not resetting the offsets (AC-9);
+   the streamed fallback removed (AC-10).
 7. **AC-7 Step obligations (17.2 R2, ns17-5).** Registered with `requires_arming=False`, the step
    runs for real (a copy appears) on the first due day of an UNARMED store; a dry run writes
    nothing; a second call during a blocked copy returns `already_running`, and `status=True`
    returns within 1 s; each completed run appends one `runs.jsonl` line with
    `step: "factslog_backup"`.
+
+8. **AC-8 The copy is independent and its absence is loud (ns17-r3-3).** One tmp store, its
+   `vectors_maintain` op blocked on an event (17.2 AC-10's shape): on the due day the backup step
+   still copies (a new `.daily`, a `runs.jsonl` line). Then the injected clock advances 3 days with
+   no step due and with `RMX_HUB_MAINTAIN_AT=off`: the next hub wake publishes exactly one
+   stale-backup alert naming the store; the daemon's `_store_health` reports
+   `factslog_backup_stale: true` with the hub stopped.
+9. **AC-9 The restore runbook (ns17-r3-4).** On a tmp store with a daily copy and later appends:
+   `scripts/factslog-restore.py` with the daemon running refuses and changes nothing; with it
+   stopped, the throwaway rebuild runs and verifies first (a corrupted copy stops the script with
+   the live log untouched); then the live log is at `facts.log.pre-restore-<ts>` byte-identical to
+   before, `facts.log` equals the copy, and both `catalog.A.offset` and `catalog.B.offset` hold
+   the installed file's size. The rebuild never touched the tmp store's own catalog.
+10. **AC-10 Both copy methods (nm17-r3-6).** On the sandbox volume the op reports
+    `method: "clone"` when `fclonefileat` succeeds; with a test seam that makes the call return
+    `ENOTSUP`, it reports `method: "stream"`, and both copies are byte-identical to the old
+    inode's prefix cut at its last newline (AC-2's check).
 
 ## Files to modify {#files-to-modify}
 
@@ -136,7 +195,8 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
 | `src/refmatrix/daemon.py` | `_op_factslog_backup` (R1-R5) |
 | `src/refmatrix/verbs.py` | `factslog_backup` verb (CLI + MCP parity) |
 | `src/refmatrix/hub.py` (17.2 `maintenance_steps`) | register the step, `requires_arming=False` |
-| `docs/` runbook (17.3) | restore path (R6), exclusion order (R7) |
+| `scripts/factslog-restore.py` | R6's ordered restore (throwaway rebuild, verify, move aside, install, reset offsets) |
+| `docs/` runbook (17.3) | restore path (R6), exclusion order (R7), the backup-age alarm (R5) |
 
 ## Test strategy {#test-strategy}
 
@@ -161,3 +221,14 @@ Checked against the 32dde06 re-review's plan-17 findings it inherits (nm17-4).
 | ns17-4 (`stuck` ceiling applies to every step) | R5 |
 | a vacuous mutation found in this check: "copy by path" could not fail an AC that accepted a prefix of either file | R3 (`fclonefileat` from the descriptor), AC-2 (old file only) |
 | R4's "values recorded at the last copy" had no stated home; "already-today" had no source of `today` | R1 (`today` from the caller), R4 (meta file) |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Source: [[bsd-plan23-17-spec-rereview-r3-6091648]] (17.4's first review).
+
+| finding / decision | answered at |
+|---|---|
+| ns17-r3-3 (no staleness alarm after the TM exclusion; step order) | R1 (registered FIRST, independent of later steps), R5 (age alarm), AC-8; 17.2 [[task-17.2-hub-nightly-tick#r2-registry]], [[task-17.2-hub-nightly-tick#r8-backup-age]] |
+| ns17-r3-4 (restore runbook overwrites the live log; slot offsets ignored) | R6 (ordered `scripts/factslog-restore.py`; offsets reset to the new EOF), AC-9, [[#files-to-modify]] |
+| nm17-r3-6 (AC-3 compared identical bytes; `fclonefileat` has no binding) | AC-3 (against the source catalog), R3 (the `ctypes` call; fallback reported), AC-10 |
+| nm17-r3-2 (`invoked_by` is the surface) | R1 |

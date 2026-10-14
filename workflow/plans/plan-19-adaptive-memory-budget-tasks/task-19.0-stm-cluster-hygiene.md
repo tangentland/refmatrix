@@ -68,7 +68,20 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
    `transcript_path` distinct from the parent's, or any other subagent marker. The result decides
    whether R2's rung 1 is live; rungs 2 and 3 are built either way. The probe is a measurement,
    not a story ([[feedback_causal_story_before_evidence]]); bug-103's causal line is re-stated
-   from it.
+   from it. The same probe also records (round-3 #b-1, #b-2, #m-4):
+   - **Hook environment.** In a PostToolUse, a UserPromptSubmit and a SessionStart hook process:
+     whether `CLAUDE_PID` is set and equals the Claude process's pid, and whether
+     `CLAUDE_CODE_SESSION_ID` is set and equals the envelope's `session_id` AFTER a `/clear`
+     (the long-lived `rmx mcp` keeps its spawn-time value, [[task-21.1-context-usage-telemetry#req-session]];
+     a hook may or may not). This decides which branch of R5's pointer writer finds the Claude
+     pid (`$CLAUDE_PID` or the ancestor walk).
+   - **Id on disk at PostToolUse time.** For ≥ 10 subagent calls, whether the `tool_use` block
+     with `id == tool_use_id` is already in the subagent transcript when the parent's
+     PostToolUse hook runs (the round-3 review saw it there DURING the call). Rung 2 relies on it.
+   - **UserPromptSubmit envelope and hook skew.** Every field of the UserPromptSubmit envelope
+     (is there a per-prompt unique id?), and, over ≥ 50 real prompts, the start-time skew between
+     the parallel UserPromptSubmit hooks of one prompt (each logs `time.time()` at entry). This
+     sets `stm.PRE_PROMPT_SKEW_S` (R7), or retires it if a per-prompt id exists.
 1. **R1 Script bodies are not focus** (bug-104; re-review #b-4). ONE function,
    `stm.command_refs(cmd: str) -> list[str]`, extracts a Bash command's refs from the command
    line and the paths it names, never from a heredoc body (`<<EOF … EOF`, `<<'EOF'`, `<<-EOF`) or
@@ -84,9 +97,15 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
      `detail` is a command string (not a JSON object), its refs are recomputed as
      `stm.command_refs(detail)`; for every other event it keeps the stored refs. Both pass through
      `is_junk_ref` and the code-noise set. Since `detail` is cut at 600 chars and the command line
-     precedes its heredoc body, the cut can only drop body text or trailing paths (an
-     under-extraction, the safe direction). So AC-1's replay exercises R1's extraction, not only
-     a drop list; the code-noise set is tested on its own by AC-1c.
+     precedes its heredoc body, the cut drops body text or trailing paths. So AC-1's replay
+     exercises R1's extraction, not only a drop list; the code-noise set is tested on its own by
+     AC-1c.
+   - **Unterminated scripts** (round-3 #m-2). The cut can leave a heredoc with no closing
+     delimiter, or a `-c '…` / `-e "…` argument with no closing quote. Rule: an unterminated
+     heredoc runs from its `<<` marker to the END of the string, and an unterminated quoted
+     script argument runs from its opening quote to the end of the string; both are body, never
+     command line. So a cut can only remove refs (under-extraction, the safe direction), never
+     turn body text into command-line refs (AC-1d).
 2. **R2 Subagent tool events are not the parent's focus** (bug-103; d8h; re-review #b-3). Every
    PostToolUse event is given an `origin` by this ladder, first rung that resolves wins. The
    event stores `origin` and the envelope's `tool_use_id` (new ring fields; old events without
@@ -105,7 +124,12 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
      parent `transcript_path` (`<projects dir>/<slug>/<session-id>.jsonl`), else from
      `$HOME/.claude/projects/<slug>`. The event is `agent:<agentId>` when a `tool_use` block with
      `id == tool_use_id` is found in exactly one subagent transcript (its line's `agentId` must
-     equal the file's; a mismatch is counted and falls to rung 3). No time window is involved:
+     equal the file's; a mismatch is counted and falls to rung 3). **The match is structured**
+     (round-3 #m-4): a line counts only when it parses as JSON and one of its
+     `message.content[]` blocks has `type == "tool_use"` and `id == tool_use_id`. The cost bound's
+     backward block scan may use a byte search for the id to FIND candidate lines, but a byte hit
+     is only a candidate: the round-3 probe found in-flight ids quoted inside another subagent's
+     `tool_result` text, which must never match. No time window is involved:
      a call that ran 45 s is matched like one that ran 0.1 s. Its label is
      `<agentType>: <description>` from the meta file; a missing or unreadable meta file leaves
      the label `agent:<agentId>` and is counted.
@@ -160,12 +184,30 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
      is the first member that is not such a token).
    - Before GREEN, the fold rate is measured on the redacted fixture (R6) and recorded: folds
      fired / tokens eligible, and every fold pair listed.
-5. **R5 The session comes from the envelope, never the newest ring** (bug-100). Every resolver of
-   "this session" used by STM (scan-prompt's enrichment at `scan.py:535-537`, the verb resolver at
-   `verbs.py:528`, the focus hook) takes the hook envelope's `session_id`, then
-   `CLAUDE_CODE_SESSION_ID`, then `RMX_SESSION`. `latest_session` is not consulted on those paths;
-   when none of the three is present the enrichment is skipped and counted (a stderr line naming
-   the skip), never guessed.
+5. **R5 The session comes from one resolver, never the newest ring** (bug-100; round-3 #b-1).
+   Every resolver of "this session" used by STM (scan-prompt's enrichment at `scan.py:535-537`,
+   the verb resolver `verbs.resolve_session` at `verbs.py:519-530` and its CLI twin
+   `cli._resolve_stm_session` at `cli.py:1060-1078`, the focus hook at `cli.py:1964`) calls
+   `stm.resolve_session(root, *, envelope=None, long_lived=False) -> stm.SessionResolution`,
+   specified ONCE in [[task-21.1-context-usage-telemetry#req-session]] (21.1 R9): per-call
+   processes go envelope → `CLAUDE_CODE_SESSION_ID` → the pid pointer for `$CLAUDE_PID` →
+   `RMX_SESSION`; the long-lived `rmx mcp` goes pid pointer for `os.getppid()` → `RMX_SESSION`,
+   re-resolved per tool call, never reading its spawn-time `CLAUDE_CODE_SESSION_ID` (live: pid
+   59378 holds `b38025a7…` while serving `db80475a…`). The pid pointer
+   (`<root>/stm/by-pid/<pid>.json`) is written by the generated SessionStart hook
+   `rmx focus hook --event session-start` (`startup|resume|clear|compact`) and refreshed by the
+   input hook. Whichever of 19.0 and 21.1 merges first builds it; the other imports it.
+   `latest_session` is not consulted on any of these paths. When nothing resolves:
+   - **Enrichment** (scan-prompt): skipped, one stderr line naming the skip, counted.
+   - **Write verbs** (`save_state`, `focus_note`, `change_subject`, `task` push/pop/swap, on CLI
+     and MCP): raise `verbs.SessionUnresolved` naming the sources tried. The CLI exits 2 with that
+     line; the MCP tool returns it as a tool error. Nothing is written to `default`, to the
+     newest ring, or anywhere else: no dropped write and no misrouted one.
+   - **Read verbs** (`focus`, `task list` / `current`, `recall_state`, CLI `focus tail` /
+     `context` / `size`): read the newest ring and say so in their output
+     (`session: <id> (newest ring; not resolved)`). A read cannot misattribute a write, and a plain
+     terminal keeps its convenience, labelled.
+   - An explicit `--session` (CLI) or `session` argument (verb) always wins over the resolver.
 6. **R6 A redacted, committed fixture** (d8f). The raw ring
    `workflow/review-output/stm-export-db80475a-20261014.jsonl` (gitignored; sha256
    `517fd359b1b1ff617e9bc3267365f08da65580fd9be0204ad4d2fc8723beecd1`, 502 lines) stays local.
@@ -195,6 +237,16 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
    isolates R2. The fixture's subagent is the decision-log review, whose meta reads
    `agentType: "ch-bsd"`, `description: "BSD review of decision log"` (re-review #evidence).
 
+7. **R7 The pre-prompt snapshot** (round-3 #b-2). `Stm.record(kind="input")` first calls
+   `Stm.snapshot_pre_prompt(prompt)`, which writes `<session>.pre.json` (prompt sha256,
+   sub-second `wall`, the graph's `turn` and the ring's event count before this prompt, the
+   focus graph, 19.6's topic cache) by tmp + `os.replace`, and only then appends the event (which
+   gains `prompt_sha` and a sub-second `t`) and ingests. Readers call
+   `stm.pre_prompt_state(root, session, prompt, *, t0) -> stm.PrePromptState`. Both are specified
+   ONCE in [[task-21.1-context-usage-telemetry#req-session]] (21.1 R9, "The pre-prompt state");
+   same first-to-merge ownership as R5. `stm.PRE_PROMPT_SKEW_S` comes from R0's skew measurement.
+   This task's own prompt-time reader, scan-prompt's STM enrichment, reads through it.
+
 ## Acceptance criteria {#acceptance}
 
 AC-1, AC-2 and AC-3 replay the redacted ring fixture with `rmx focus rebuild --dry-run --root
@@ -215,6 +267,11 @@ head member as `rmx focus topics` renders it.
    1c. **Code-noise set alone.** `stm.command_refs("cat r.get m.group json.loads foo_bar.py")`
    returns `["foo_bar.py"]`: the stdlib-head and short-local rule applies to command-line tokens
    too, independent of the heredoc rule.
+   1d. **Unterminated scripts** (round-3 #m-2). `stm.command_refs` on
+   `"sed -n 1,5p src/refmatrix/daemon.py; python3 - <<'EOF'\nimport collections\nx = foo_baz.py"`
+   (no closing `EOF`) and on `"python3 -c 'import re; open(\"foo_baz.py\")"` (no closing quote)
+   returns `["src/refmatrix/daemon.py"]` and `[]`: `foo_baz.py` sits in the unterminated body and
+   is never a ref. The same through `rebuild_focus` on a 600-char-cut `detail`.
 2. **The real threads lead** (frozen list, written before GREEN). Each of the thread terms
    `plan-review-2026-10-14`, `plan-19`, `plan-21`, `plan-23` is a substring of at least one top-5
    label.
@@ -246,11 +303,33 @@ head member as `rmx focus topics` renders it.
     10 s before its PostToolUse envelope (and a second one 45 s before, the measured maximum),
     with the transcript otherwise idle, is attributed `agent:<id>` by rung 2. In the no-id leg,
     the same 10 s call is matched by rung 2b against the PARK time and attributed too.
+4f. **Structured match only** (round-3 #m-4). A subagent transcript whose ONLY occurrence of
+    the envelope's `tool_use_id` is inside a `tool_result` block's text (another agent quoting
+    it), and a second transcript holding the real `tool_use` block, attributes the event to the
+    second agent. With the second transcript absent, the event is not attributed to the first
+    (rung 3: `parent` after a completed search).
 5. **Hand-back ambient.** An `<agent-message …>` input event is dropped from the focus graph and
    kept in the ring.
 6. **Envelope session.** Two rings in one tmp STM dir; the envelope names the OLDER-mtime ring;
    scan-prompt's enrichment and the verb resolver read the envelope's ring. With no envelope,
-   `CLAUDE_CODE_SESSION_ID` or `RMX_SESSION`, enrichment is skipped and the skip is printed.
+   `CLAUDE_CODE_SESSION_ID`, pid pointer or `RMX_SESSION`, enrichment is skipped and the skip is
+   printed.
+   6b. **Session switch under one long-lived MCP server** (round-3 #b-1). 21.1 AC-1b's harness
+   (`rmx mcp` started with `CLAUDE_CODE_SESSION_ID=A`; the generated SessionStart hook fed
+   `{session_id: A, source: startup}`, then `{session_id: B, source: clear}`, with `CLAUDE_PID` =
+   the test's pid). After the switch, on the same server: `rmx_focus_note`, `rmx_task push` and
+   `rmx_save_state` write to B's ring / checkpoint (A's ring line count unchanged), and
+   `rmx_focus` reads B. A third envelope `{session_id: A, source: resume}` switches them back.
+   6c. **Unresolved writes fail loudly** (round-3 #b-1). With no pointer, no `RMX_SESSION`, and
+   (CLI leg) no `CLAUDE_CODE_SESSION_ID`: `rmx focus note x` exits 2 naming the sources tried;
+   MCP `rmx_focus_note` and `rmx_save_state` return a tool error; no ring in the STM dir changes
+   (line counts and mtimes compared); `rmx focus tail` prints the newest ring with
+   `(newest ring; not resolved)`.
+   6d. **Snapshot before mutation** (round-3 #b-2). `rmx focus hook --event input` fed an
+   envelope whose prompt adds new terms: afterwards `<session>.pre.json` holds the prompt's
+   sha256, the graph `turn` and ring event count from BEFORE the call, and a graph equal to the
+   `focus.json` copied before the call; the ring's last event carries `prompt_sha` and a float
+   `t`. 21.1 AC-8b covers the readers.
 7. **Mutations that must FAIL a test:**
    - extract refs from the heredoc body again in `stm.command_refs` (AC-1 and AC-1b);
    - `_tool_event_fields` back on `_PATH_RE.findall(cmd)` (AC-1b);
@@ -260,6 +339,11 @@ head member as `rmx focus topics` renders it.
    - remove `<agent-message` from `is_ambient_text`;
    - fold tokens of length 4;
    - restore the `latest_session` fallback on the scan enrichment path;
+   - the MCP server reading `CLAUDE_CODE_SESSION_ID`, or resolving once at spawn (AC-6b);
+   - a write verb with no resolved session writing to `default` or the newest ring (AC-6c);
+   - `snapshot_pre_prompt` called after the append or the ingest (AC-6d);
+   - an unterminated heredoc or quote treated as ending at the cut (AC-1d: `foo_baz.py` admitted);
+   - rung 2 matching the id as text anywhere in a line (AC-4f: the quoting agent wins);
    - route subagent events into the parent's focus graph;
    - drop the rung-2 id match (AC-4);
    - rung 2 matching on a ±2 s window around the PostToolUse time instead of the id (AC-4e);
@@ -275,7 +359,9 @@ head member as `rmx focus topics` renders it.
 |---|---|
 | `src/refmatrix/stm.py` | `command_refs` (R1; the ONE extractor for Bash commands); `rebuild_focus` re-extracts from `detail`; code-noise set; `is_ambient_text`; typo label rule; `origin` / `tool_use_id` ring fields; subagent key per R0 |
 | `src/refmatrix/scan.py` | enrichment session from the envelope (R5); the code-noise set beside `_PROMPT_STOPWORDS` |
-| `src/refmatrix/verbs.py` | session resolver (R5) |
+| `src/refmatrix/verbs.py` | `resolve_session` delegates to `stm.resolve_session` (R5); `SessionUnresolved` on write verbs; the read verbs' `(newest ring; not resolved)` label |
+| `src/refmatrix/stm.py` (session, snapshot) | `resolve_session` / `SessionResolution`, the pid pointer; `snapshot_pre_prompt`, `pre_prompt_state`, `PRE_PROMPT_SKEW_S` (R5, R7; specified in 21.1 R9; built here or by 21.1, whichever merges first) |
+| `src/refmatrix/hooks.py`, `src/refmatrix/mcp.py` | the generated SessionStart entry `rmx focus hook --event session-start` (`startup\|resume\|clear\|compact`, stderr kept); the MCP server's per-call resolution (21.1 R1) |
 | `src/refmatrix/cli.py` (`_tool_event_fields` `:1906`, `focus_hook` `:1946`, `focus_rebuild`, `focus show`) | `_tool_event_fields` calls `stm.command_refs` (the bug-104 cause, `:1923-1927`); pass the envelope's session and `tool_use_id`; run R2's ladder with the park time from `inflight_end`; rebuild drops hand-backs; origin counts |
 | `src/refmatrix/stm.py` (subagent attribution) | R2's rungs 2, 2b, 3: transcript tail reader, id lookup, input digest, open-call check, meta label, `background:` rendering |
 | `tests/fixtures/stm/ring-db80475a-redacted.jsonl`, `tests/fixtures/stm/subagent-db80475a/`, their build script | R6 |
@@ -286,7 +372,8 @@ head member as `rmx focus topics` renders it.
   registry, injected store roots, the conftest guard that fails a test touching `~/.refmatrix` or
   a registered live store). Replays use `--root <tmp>`; no daemon is needed. Each test file
   asserts 0 live connects through 23.0's guard.
-- **RED first:** AC-3 and AC-1b are run and their failures recorded before GREEN.
+- **RED first:** AC-3, AC-1b, AC-1d, AC-4f, AC-6b, AC-6c and AC-6d are run and their failures
+  recorded before GREEN.
 - **R0** is a manual probe in a scratch project, recorded in the implementation summary; it is not
   a pytest.
 - No mocks of `stm`; fixture rings only.
@@ -327,3 +414,20 @@ meta shape on session db80475a.
 | re-review #b-3 (±2 s window misses 41% of calls; rung 3 re-admits them; exact key ignored; AC-4 literal) | R2 rung 2 (`tool_use_id`), rung 2b (park time), rung 3 (completed-search / open-call rules); cost bound (`t_lo` from the park time); AC-4 (`background: ch-bsd: …`), AC-4b, AC-4d, AC-4e; mutations |
 | re-review #b-4 (wrong mechanism named; replay cannot fail on the hook defect) | [[#why]] (cause = `cli._tool_event_fields`); R1 (`stm.command_refs`, hook path + rebuild re-extraction stated); AC-1, AC-1b, AC-1c; mutations; [[#files-to-modify]] |
 | d8h (ladder) | R2, now with the exact key ahead of the fuzzy rung (#t9-fixes) |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan19-21-spec-rereview-r3-6091648]]. Code facts re-read at `636b210` (read-only):
+`verbs.py:519-530` (the resolver: `RMX_SESSION` → `latest_session`), `cli.py:1060-1078`,
+`:1964`; `stm.py:123-140`, `:246-282` (append then ingest, `ts` to the second), `:405-445`
+(`focus.json` written by tmp + `replace`; `turn` incremented per input); `hooks.py:145-147`,
+`:209-213`, `:270-290`; the live `rmx mcp` (pid 59378, ppid 59363 = `CLAUDE_PID`).
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r3-6091648]]
+
+| finding / decision | answered at |
+|---|---|
+| round-3 #b-1 (19.0 R5 promotes a variable frozen in the MCP server; write verbs on no session) | R5 (one resolver, `stm.resolve_session`, specified in 21.1 R9; pid pointer + SessionStart writer; per-verb outcome when unresolved: write verbs raise, reads label the newest ring); R0 (hook env: `CLAUDE_PID`, current session id); AC-6, AC-6b (A→B under one server), AC-6c; mutations; [[#files-to-modify]] |
+| round-3 #b-2 (phase inputs read a graph the input hook already changed; second-truncated `ts`) | R7 (`snapshot_pre_prompt` before the append and ingest; `pre_prompt_state`; specified in 21.1 R9); R0 (UserPromptSubmit fields; hook skew sets `PRE_PROMPT_SKEW_S`); AC-6d; mutation. Readers: 21.1 AC-8b, 19.6 AC-3c |
+| round-3 #m-2 (the 600-char cut and an unterminated heredoc / quote) | R1 "Unterminated scripts"; AC-1d; mutation |
+| round-3 #m-4 (rung 2 structured match; two more R0 facts) | R2 rung 2 (structured `tool_use` block match; byte hits are only candidates); R0 (id on disk at PostToolUse time; hook env); AC-4f; mutation |

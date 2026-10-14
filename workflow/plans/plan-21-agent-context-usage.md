@@ -60,7 +60,8 @@ Task specs: `workflow/plans/plan-21-agent-context-usage-tasks/`. Waves follow
 
 ## Consolidations this plan carries (plan review) {#consolidations}
 
-- **C7, one recall-event schema.** 21.1 R6–R9 define it for every consumer, in a NEW append-only
+- **C7, one recall-event schema.** 21.1 R8–R12 (with R10a's `kind` map) define it for every
+  consumer, in a NEW append-only
   `recall-events.jsonl` written lock-free like `query.log` (d4a). The field set closes bsd #b-1
   (`session`, `turn`, `query_id`), #b-2 (`name` + `entity_id` + `kind`; `channel` is a closed
   SURFACE enum, separate from `invocation`), #s-1 (`delivered` = emitted, with `offset_bytes` /
@@ -69,7 +70,12 @@ Task specs: `workflow/plans/plan-21-agent-context-usage-tasks/`. Waves follow
   fields `block_id`, `rev`, `unchanged` ([[exploration-session-phased-context#vi-evidence]]).
   Round 2 adds `partition`, `cwd`, `root` (re-review #b-1), byte spans with a separate body span
   (ONE unit, bytes), ONE emission site that owns `delivered` (19.1's pack supplies spans only),
-  and the `used` matcher / lookup / global destination (21.1 R5, R9-R12).
+  and the `used` matcher / lookup / global destination (21.1 R5, R9-R12). Round 3 adds ONE
+  session resolver (`stm.resolve_session`: the hook envelope in per-call processes, a
+  SessionStart-written pid pointer in the long-lived MCP server, whose `CLAUDE_CODE_SESSION_ID`
+  is frozen at spawn), ONE pre-prompt snapshot read (`stm.pre_prompt_state`) for every phase
+  input, the catalog→event `kind` map with `concept`, the recall channel rule, and the attached
+  memory body as its own `kind=memory` item (21.1 R9-R12).
   - **Consumers:** 19.2's counters fold the file into DuckDB through plan-23's drain with the
     offset committed in the same transaction (d2a), using 23.1's non-consuming tail reader and
     tick registry (d4a amendment; plan-21 is a listed consumer); it counts `kind=memory` events on
@@ -88,7 +94,7 @@ Task specs: `workflow/plans/plan-21-agent-context-usage-tasks/`. Waves follow
 
 ## Decisions this plan carries (2026-10-14) {#decisions}
 
-- **d4a** — the sink: 21.1 R6.
+- **d4a** — the sink: 21.1 R8.
 - **d4b** — code + doc gold, sessions out, minimum win and n: 21.4 R1, AC-3; this plan
   [[#consolidations]].
 - **d4c**, constrained by **d8f** — the question set is drawn from real `query.log` NL queries by an
@@ -102,7 +108,8 @@ Task specs: `workflow/plans/plan-21-agent-context-usage-tasks/`. Waves follow
 - **d4f** — the `agent` invocation source: 21.1 R2.
 - **d8d** — one shared pytest-temp-dir predicate for every `query.log` / `recall-events.jsonl`
   reader: 21.1 R5.
-- **d8e** — `scope` on every event; a global hit is counted in the global store: 21.1 R7, R8.
+- **d8e** — `scope` on every event; a global hit is counted in the global store: 21.1 R8, R10,
+  R12.
 
 ## Dependencies {#dependencies}
 
@@ -138,10 +145,9 @@ Round 2 status of the round-1 list ([[bsd-plan19-21-spec-rereview-32dde06#open-2
    ([[task-19.6-phased-context-and-topic-cache#ranges]]), offline, never appending to the live
    log; 21.1 R12 reserves the evidence names.
 3. **Exploration corrections** ([[exploration-agent-context-usage#telemetry]] `-E` bullet,
-   `#replay` reranker caveat, "68 → 34"): STILL OPEN, spec-settlable but outside this pair's edit
-   set (the exploration file); no decision is needed.
-4. **plan-13's pointer:** STILL OPEN for the same reason (plan-13's header and its plan-of-plans
-   row are outside this pair's edit set); this plan carries the pointer ([[#consolidations]]).
+   `#replay` reranker caveat, "68 → 34"): CLOSED. Made in `69c5dc4` (round-3 #m-1 verified the
+   diff: 34 recalls, the `-E` claim struck, the replica-route reranker caveat).
+4. **plan-13's pointer:** CLOSED. `69c5dc4` edited plan-13's header and its plan-of-plans row.
 5. **19.2 R3's channel enum:** SETTLED in 19.2 R3 (21.1's enum verbatim; `cli`/`mcp` removed).
 6. **21.4 source log:** SETTLED, project log only (d9h): 21.4 R1.
 7. **MCP tools beyond context and recall:** CLOSED by the narrowing (bsd r1 #s-5 option 1).
@@ -180,3 +186,20 @@ Answers [[bsd-plan19-21-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]
 | re-review #m-4; d9h | [[task-21.4-surfaces-and-nl-ranking#rev-round-2]] |
 | re-review #open-21 items 1-7 | [[#open-after-revision]] |
 | #t9-fixes "d8d's predicate owned by 21.1 in `telemetry.py`" | 21.1 R5 (`row_provenance`, `is_test_artifact_row`, exact signatures) |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan19-21-spec-rereview-r3-6091648]]. No plan-21 item needs the user
+([[bsd-plan19-21-spec-rereview-r3-6091648#open-21]]).
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r3-6091648]]
+
+| finding / decision | answered at |
+|---|---|
+| round-3 #b-1 (21.1 R9/R12: the MCP server's session id is frozen at spawn) | [[task-21.1-context-usage-telemetry#rev-round-3]] (R1, R9 resolver + pid pointer, R12, AC-1, AC-1b, AC-4); [[#consolidations]] |
+| round-3 #b-2 (21.1 R10 sibling phase inputs racy) | 21.1 R9 pre-prompt state, R10, AC-8b |
+| round-3 #b-3 (AC-8 mutations vacuous; channel rule; scan-prompt partition) | 21.1 R11, AC-8, AC-8c, AC-8d; [[task-21.3-indexed-symbol-nudge#rev-round-3]] (the nudge leg) |
+| round-3 #s-1 (`kind` map; concept-anchored memory body) | 21.1 R10a, R11, R12, AC-11e, AC-12 |
+| round-3 #s-3 (`row_provenance` two test bases; `malformed`) | 21.1 R5, AC-7 |
+| round-3 #m-1 (stale R-numbers; open items 3 and 4) | [[#consolidations]] (R8-R12); [[#decisions]] (d4a R8; d8e R8, R10, R12); [[#open-after-revision]] items 3 and 4 CLOSED |
+| round-3 #m-7 (focus-note edge cases) | 21.1 R12, AC-11f |

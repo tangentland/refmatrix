@@ -13,7 +13,8 @@ metadata:
 # Plan 16: the grep shim stops answering and only watches {#root}
 
 **Date:** 2026-10-06
-**Status:** Drafting (revision round 2, 2026-10-14: 16.2 and 16.6 revised for the re-review
+**Status:** Drafting (revision round 3, 2026-10-14: 16.1 and 16.6 revised for the r3 re-review
+`bsd-plan16-22-spec-rereview-r3-6091648`, [[#rev-round-3]]; round 2 revised 16.2 and 16.6 for
 `bsd-plan16-22-spec-rereview-32dde06`, [[#rev-round-2]]). Task specs revision 6
 (2026-10-14) answers spec review r5 `bsd-plan16-spec-review-r5-cd7c923` (NEEDS-REVISION: 2
 BULLSHIT, 6 SKETCHY, 7 MEH, plus r4's partials) and every 2026-10-14 decision that touches plan-16
@@ -35,6 +36,7 @@ rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
 rel: derives-from -> [[plan-review-2026-10-14]]
 rel: depends-on -> [[plan-23-bounded-write-harness]]
 rel: depends-on -> [[task-23.0-test-sandbox]]
+rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
 
 ## Why {#why}
 
@@ -150,12 +152,12 @@ Specs go in `workflow/plans/plan-16-invisible-grep-shim-tasks/` before approval.
 
 | Task | Builds | Acceptance (sketch) |
 |---|---|---|
-| 16.1 | `grep_learn.py` behind the hidden `rmx grep-learn` (not a verb); `corpus.py` predicate; `_learn_grep_hits` dedupe; learn-time provenance into 16.6's sidecar (R10, d6d); `spawned_by` | flag fidelity with proven power (space forms included); cutoffs honoured; corpus-only; pruning only on recursive re-runs; entity identity under symlinked cwd; detached; slots; switch on `store_root`; idempotent store; provenance on every taught row |
+| 16.1 | `grep_learn.py` behind the hidden `rmx grep-learn` (not a verb); `corpus.py` predicate; `_learn_grep_hits` dedupe; short clusters expanded before classification; learn-time provenance into 16.6's sidecar (R10, d6d) incl. the caller's locale; `spawned_by` | flag fidelity with proven power (space forms included); cutoffs honoured; corpus-only; pruning only on recursive re-runs; entity identity under symlinked cwd; detached; slots; switch on `store_root`; idempotent store; provenance on every taught row |
 | 16.2 | invisible shim in both wrappers; cwd+argv throttle, counted; `RMXGREP_TEACH` retired via the log; generators + `check()` extended | differential 100% byte-identical with power shown on the current shim; caller never delayed; overhead with the REAL learner |
 | 16.3 | Grep-tool hook rebuilt from the tool's real rg argv (`--hidden`, VCS globs, constants pinned); every doc/help surface | taught set equals the tool's captured RESPONSE; paging inputs do not kill; no stale claim anywhere |
 | 16.4 | measurement, historical + forward (learner log joined to transcripts) | precision ≥ 0.99 / recall ≥ 0.95 (micro, timeouts counted) on COMPLETE outputs only, gated at n ≥ 30 else `insufficient-n`; no carve-out; a gate shown able to fail; routes measured |
 | 16.5 | explicit `rmx grep` with paths or a pipe execs the real grep + learner; path-less keeps the index read with a pruned `grep -r` floor; rmx options parsed from the raw argv with a per-route table; the Python re-implementation (argv order, `-c` rows, stdin filter, delegate) is DELETED | differential 100% incl. round 4's cases, bug-081 and the `--`/`-e`/`--file` rows; every d-4 cell has a case; nothing beyond the tool's bytes; deletions verified by `rg -w` |
-| 16.6 | **Wave-1 slice (d6d), after plan-23's 23.1, no dependency on 16.1:** the `learned_evidence` sidecar keyed on the evidence row's identity + `rules_sha` (survives `replica_merge`; replayable from `facts.log` through a `learned_provenance` event), THE verifier for learned rows (`learned_verify`: re-runs the recorded tool with only pattern-semantics tokens, returns the matching line set, exit 2 is `unverifiable`; a named-subset permissive reading for rows without rules), read-time marks that record staleness under the row's own rules (never a reader-rule drop) through plan-23's queue and that plan-22's 22.1 reads, the backfill, and legacy-writer rows until 16.1 lands. The learn-time write is 16.1 R10. The audit, repair and removal engine MOVED to [[plan-22-audited-removal-and-repair]] (plan review C1-C3, user 2026-10-07); nothing here removes a row | sidecar rows join after a merge and survive a rebuild; BRE, POSIX-class, cutoff and absolute-exclude rows verify `ok`; exit 2 is never `stale-line`; a reader-rule drop writes no mark; backfill leaves no learned row without provenance; marks applied in bounded batches; overflow counted |
+| 16.6 | **Wave-1 slice (d6d), after plan-23's 23.1, no dependency on 16.1:** the `learned_evidence` sidecar keyed on the evidence row's identity + `rules_sha` (survives `replica_merge`; replayable from `facts.log` through a `learned_provenance` event), THE verifier for learned rows (`learned_verify`: re-runs the recorded tool with only pattern-semantics tokens, returns the matching line set, exit 2 is `unverifiable`; the recorded locale pinned, value arity honoured; a named-subset permissive reading for rows without rules), the ONE census procedure (R7), read-time marks that record staleness under the row's own rules (never a reader-rule drop) through plan-23's queue and that plan-22's 22.1 reads, the backfill, and legacy-writer rows until 16.1 lands. The learn-time write is 16.1 R10. The audit, repair and removal engine MOVED to [[plan-22-audited-removal-and-repair]] (plan review C1-C3, user 2026-10-07); nothing here removes a row | sidecar rows join after a merge and survive a rebuild; BRE, POSIX-class, cutoff and absolute-exclude rows verify `ok`; exit 2 is never `stale-line`; a reader-rule drop writes no mark; backfill leaves no learned row without provenance; marks applied in bounded batches; overflow counted |
 
 ## Waves and dependencies {#waves}
 
@@ -217,6 +219,27 @@ Next gate: `@ch-bsd` spec review r6 of task specs 16.1–16.6 revision 6, then `
 
 rel: derives-from -> [[plan-review-2026-10-14#t6]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan16-22-spec-rereview-r3-6091648]] (plan-16: s-1, s-2, m-2, m-6; shared s-3, s-4,
+s-5, s-6, m-1, m-5) and d9o ([[plan-review-2026-10-14#t9-approvals]]). Verdict at r3: 16.2-16.5
+approvable; 16.1 and 16.6 revised here.
+
+| finding / decision | answered in |
+|---|---|
+| s-1 (locale not recorded; daemon verifies in C) | [[task-16.1-argv-faithful-learner#r10]] `locale`; [[task-16.6-learned-row-validation#r1]] `locale` in `rules_sha`; [[task-16.6-learned-row-validation#r2]] constructed env, `locale-missing`; 16.6 AC-3i |
+| s-2 (clusters; arity) | [[task-16.1-argv-faithful-learner#r1-clusters]]; [[task-16.6-learned-row-validation#r2-argv]]; 16.1 AC-1d; 16.6 AC-3b |
+| s-3 (permissive subset not rare) | [[task-16.6-learned-row-validation#r2-permissive]] (counts cited); 22.1a `orphan-root:unverifiable` |
+| s-4 (union AC cannot fail) | 16.6 AC-3h (disagreeing readings, both orders) |
+| s-5 → d9o (purges and the sidecar) | [[task-16.6-learned-row-validation#r1e]]; [[task-22.6-removal-entry-points]] owns the paths |
+| s-6 (census procedure) | [[task-16.6-learned-row-validation#r7]] (the ONE procedure, owned here, used by plan-22) |
+| m-1 (one replay pass) | [[task-16.6-learned-row-validation#r1d]]; 16.6 AC-9 |
+| m-2 (contract details), m-6 (`bin` pinned) | [[task-16.6-learned-row-validation#r2]] |
+| m-5 (plan-of-plans row 16) | [[#open-after-revision]] 4: still an orchestrator edit, outside this plan's files |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
+rel: derives-from -> [[plan-review-2026-10-14#t9-approvals]]
 
 ## Revision round 2 (2026-10-14) {#rev-round-2}
 
@@ -336,4 +359,5 @@ Kept by number so earlier links still resolve.
 4. **Wave lists — CLOSED here (m-2).** `workflow/plan-of-plans.md` already lists the 16.6 slice in
    Wave 1 and marks `plan-review-2026-10-07#order` superseded. Two plan-of-plans cells still lag
    (row 16's "+ tasks 16.7-16.10", which moved to plan-21; row 22's task count). That file is
-   outside this plan's files and is handed to the orchestrator, not edited here.
+   outside this plan's files and is handed to the orchestrator, not edited here. Round 3 (r3
+   m-5): still lagging at `6091648`; still handed to the orchestrator.

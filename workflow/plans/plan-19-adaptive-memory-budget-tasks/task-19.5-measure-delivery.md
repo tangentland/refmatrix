@@ -41,7 +41,11 @@ unknown. Hard-coding an unmeasured limit is the bug-042 shape. {#why-body}
      as a preview, the unit (chars vs bytes, via a multibyte payload), and the PREVIEW size (how
      many leading bytes of an over-cap payload the agent sees). Both the cap and the preview are
      recorded in BYTES as well as in the measured unit, since every event offset is in bytes
-     (21.1 R10).
+     (21.1 R10). **Which number is "in bytes"** (round-3 #m-8): if the harness measures in
+     CHARACTERS, `cap` and `preview` in bytes are the measured character NUMBERS taken as byte
+     counts (a payload of N bytes never has more than N characters, so it is the conservative
+     reading); they are never the byte length of the probe's own multibyte payload. If the
+     harness measures bytes, they are the measured byte numbers.
    - (b) **Per event** (19 #s-2). Two hooks on ONE UserPromptSubmit event, 5,000 + 6,000 chars:
      both whole → the cap is per hook; either previewed → per event. The verdict is recorded.
    - (c) **PreCompact** (19 #s-1, d5d). A PreCompact hook emits a unique marker line; after a
@@ -56,7 +60,9 @@ unknown. Hard-coding an unmeasured limit is the bug-042 shape. {#why-body}
 2. **R2 Delivery metric, read from the C7 events** (19 #m-6). For each channel (SessionStart,
    per-prompt, PreCompact if R1(c) keeps it, scan-prompt) on the 20-prompt set of 19.1 AC-2:
    - **before** (today's hooks): distinct memories named inside the delivered payload, which is
-     the whole output when under the limit, else its first 2 KB;
+     the whole output when its size is ≤ R1's `cap`, else its first `preview` bytes, with `cap`
+     and `preview` the SAME R1 measurements (in bytes, as defined in R1) that `seen` uses below
+     (round-3 #m-8: no constant 2 KB);
    - **after** (19.1–19.3): distinct memories per 21.1's `delivered` events, compared with the
      `retrieved` events of the same `query_id`, and cross-checked against the names counted in
      the payload (the two counts must agree, or the run fails).
@@ -138,3 +144,13 @@ Answers [[bsd-plan19-21-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9-
 | re-review #s-2 (19.5 never derives `seen`; units) / #t9-fixes "one unit (bytes)" | R1(a) (cap and preview in bytes), R2 (`seen` derived only here, lower-bound rules), AC-2, AC-2b |
 | re-review #s-4 (19.6's baseline holds no read-back) | R4 (no read-back by design; 19.6 Table C scores a live `fixed` arm and uses this file as a validity check) |
 | re-review #m-2 (PreCompact constant unnamed) | R1 (`hooks.PRECOMPACT_STDOUT_DELIVERED`) |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan19-21-spec-rereview-r3-6091648]].
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r3-6091648]]
+
+| finding / decision | answered at |
+|---|---|
+| round-3 #m-8 (a constant 2 KB "before" preview beside the measured `seen` preview; "the cap in bytes" ambiguous under a character harness) | R1(a) (bytes = the measured character numbers taken as bytes when the harness counts characters); R2 "before" (the same measured `cap` and `preview` as `seen`) |

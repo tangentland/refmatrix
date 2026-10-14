@@ -13,7 +13,8 @@ metadata:
 # Plan 23: the bounded-write harness {#root}
 
 **Date:** 2026-10-07, revised 2026-10-14.
-**Status:** Drafting (revision round 2 after the 32dde06 re-review and #t9; [[#rev-round-2]]).
+**Status:** Drafting (revision round 3 after the 6091648 re-review, d9l and d9m; [[#rev-round-3]].
+Round 2: [[#rev-round-2]]).
 Task specs 23.0-23.4 are written.
 This is Wave 1's FIRST build: plans 16 (16.6's Wave 1 slice), 17, 19 and 22 consume it, and every
 Wave 1 test runs in 23.0's sandbox.
@@ -32,6 +33,8 @@ rel: related-to -> [[project_bug098_writer_partition_race]]
 rel: related-to -> [[exploration-storage-concurrency-redesign]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06]]
 rel: derives-from -> [[plan-review-2026-10-14#t9]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648]]
+rel: derives-from -> [[plan-review-2026-10-14#t9-approvals]]
 
 ## Why {#why}
 
@@ -48,7 +51,10 @@ Four specs each re-derived the cure: the 0.72.3 `learn_queue`, 16.6 R4's marks, 
 events, 17.1's per-dataset holds. Built once, every writer uses one tested mechanism: a `bind` seam
 that takes the lock and the partition together per batch, one transaction per hold with its
 offset inside it, a recorder that counts holds AND writes, and one tick registry. The binding is
-every piece of state keyed by the partition: the id AND the fragment cache (bug-105, d9a). The tests that
+every piece of state keyed by the partition: the id AND the fragment cache (bug-105, d9a), the
+guards that decide whether to flush, and every op that renames or merges a partition (nb23-r3-1).
+A rolled-back batch leaves nothing behind: no cache bit, no dropped earlier bit, no `facts.log`
+event (ns23-r3-1, ns23-r3-2). The tests that
 prove it run in a sandbox that cannot reach a live store (bug-088, bug-101). {#why-body}
 
 ## Tasks {#tasks}
@@ -59,10 +65,10 @@ Order ([[plan-review-2026-10-14#t8-wave1]]): **23.0 ∥ 23.4 → 23.2 → 23.1 (
 | task | what | acceptance (summary) |
 |---|---|---|
 | [[task-23.0-test-sandbox]] | `$HOME`, `RMX_HOME`, registry and LaunchAgents redirected before `refmatrix` is imported; store roots injected; an audit-hook guard that REFUSES any touch of a live store, in the suite and in every spawned child | canaries prove every root resolver lands in the sandbox; live paths are refused in-process and in children (mutations fail); a full run adds no tagged, pytest-path or fixture-shaped row to any live log (content, not size) |
-| [[task-23.4-option-a-measurement]] | Option A measurement #4: one writer thread vs N per-op cursor writers on a cliquet copy, workload including `bitmap_fragments` upserts; go/no-go ranges PROPOSED, confirmed by the user before the run | the verdict is mechanical from the ranges; an error at N=1 is INVALID, not NO-GO; an error detector that is proven to fire; the live store untouched by the audit guard |
+| [[task-23.4-option-a-measurement]] | Option A measurement #4: one writer thread vs N per-op cursor writers on a cliquet copy, a pinned 20,000-event workload including `bitmap_fragments` upserts, drained to completion with in-place retry; go/no-go ranges CONFIRMED (d9l), procedure corrected (d9m) | the verdict is mechanical from the ranges; integrity compared by NAME; an error at N=1 is INVALID, not NO-GO; the detector proven to fire AND a correct N=2 run proven to pass; runs ordered after the confirmation; the live store untouched by the audit guard |
 | [[task-23.2-lock-hold-fixture]] | `lock_free_during(lock)`, a `HoldRecorder` on the real `_FairLock` that counts holds, DuckDB statements and Lance versions, markers that fail on zero holds | reverting r8 #s-2 / r9 #s-1 fails; re-introducing bug-085's and bug-093's per-row writes fails; no test keeps its own probe |
-| [[task-23.1-queue-and-drain]] | `bounded.py`: `bind(partition_name)` (lookup-only, fragment cache partition-correct) + one `batch_transaction` per hold (fragments and offset inside it) under three front-ends (`drain(queue)`, `tail(log)`, `bounded_steps(items)`); stop paths, error policy, finalize, per-hold `hold_s`; the daemon tick registry with one budget; `queue_status` / `queue_redrive`; learn re-based with insert-if-absent evidence | two-partition competitor AC on rows AND fragment rows; exactly-once under five injected faults; learn crash-replay counts evidence rows; bug-099 RED→GREEN; finalize once; tail never mutates its file; overflow printed by `rmx learn status` |
-| [[task-23.3-sync-between-file-yield]] | `_sync_paths` on `bounded_steps`: one transaction per step, the lock released between steps, the partition bound per step, each file stamped in its LAST step; bug-093's op-start log line | competitor wins between files; never released inside a transaction; write counts flat in concept count; a crash, cancel or budget stop before the semantic steps loses nothing; same graph as HEAD |
+| [[task-23.1-queue-and-drain]] | `bounded.py`: `bind(partition_name)` (lookup-only; the bug-105 hotfix's per-binding cache, all-binding guards and rename/merge flush adopted as the contract) + one `batch_transaction` per hold (pre-flush before `BEGIN`; fragments and offset inside it; `facts.log` events after `COMMIT`) under three front-ends (`drain(queue)`, `tail(log)`, `bounded_steps(items)`); stop paths, error policy, finalize, per-hold `hold_s`; the daemon tick registry with one budget; `queue_status` / `queue_redrive`; learn re-based with insert-if-absent evidence | two-partition competitor AC on rows AND fragment rows; AC-3d (other binding dirty at tick and at transaction exit, rename, merge); exactly-once under five injected faults; learn crash-replay counts evidence rows; bug-099 RED→GREEN; finalize once; tail never mutates its file; overflow printed by `rmx learn status` |
+| [[task-23.3-sync-between-file-yield]] | `_sync_paths` on `bounded_steps`: one transaction per step, the lock released between steps, the partition bound per step, each file stamped in its LAST step; one sync at a time per store (`_sync_mutex`), insert-if-absent semantic evidence; bug-093's op-start log line | competitor wins between files; two concurrent syncs equal one; never released inside a transaction; write counts flat in concept count; a crash, cancel or budget stop before the semantic steps loses nothing; same graph as HEAD |
 
 {#tasks-body}
 
@@ -105,10 +111,14 @@ rel: depends-on -> [[plan-review-2026-10-14#t8-wave1]]
 
 ## Open after revision {#open-after-revision}
 
-Round 2 status (2026-10-14): item 1 waits on the user; items 2-5 are settled by the specs
-(re-review #open-23) and kept below as history.
+Round 3 status (2026-10-14): items 1-5 are settled; item 6 is a docs chore outside spec files.
+Original text kept as history.
 
-1. **23.4's numbers (OPEN, user).** Amended per ns23-1 and d9d (fragment rows in the workload;
+1. **SETTLED (d9l, d9m).** The ranges are CONFIRMED as written (d9l) and the procedure is
+   corrected under them (d9m: integrity by name, no 60 s cap, retry in place in key order, a pinned
+   20,000-event workload, AC-1 orders runs, a positive control;
+   [[task-23.4-option-a-measurement#rev-round-3]]). Nothing about 23.4 waits on the user.
+   Original text: **23.4's numbers (OPEN, user).** Amended per ns23-1 and d9d (fragment rows in the workload;
    concurrency decoupled from binding removal; an error at N=1 is INVALID; speedup and conflict
    rate defined) and PROPOSED in [[task-23.4-option-a-measurement#ranges]]: conflict ≤ 1 % and
    speedup ≥ 1.5× → GO; conflict > 5 %, speedup < 1.1×, or any error / integrity mismatch at N > 1
@@ -135,8 +145,11 @@ Round 2 status (2026-10-14): item 1 waits on the user; items 2-5 are settled by 
 5. **SETTLED (nb23-4): 23.3 takes it** ([[task-23.3-sync-between-file-yield#r7]], AC-8). Original
    text: **bug-093's other open item**, the watch flush's op-start log line, is in the bug row but
    not in d2c; 23.3 does not take it.
-6. **Registry rows for the docs step (not edited here):** the bug-099 row still says the decision
-   is "pending with the user"; d2a decided it (nm23-3). The bug-105 and bug-106 rows name plan-23
+6. **Registry rows for the docs step (not edited here; still open after round 3):** the bug-099
+   row (`workflow/bug_registry.md`) still says the decision is "pending with the user"; d2a decided
+   it (nm23-3, carried as open by the r3 re-review). The bug-105 row should record the hotfix's
+   audit remedies (`4fb803b`: all-binding guards, rename/merge flush, dead-concept drops) and that
+   23.1 adopts them with AC-3d. The bug-105 and bug-106 rows name plan-23
    as spec owner; their owner anchors are [[task-23.1-queue-and-drain#r1]] and
    [[task-23.1-queue-and-drain#r9]].
 
@@ -190,3 +203,20 @@ Source: [[bsd-plan23-17-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]
 | nm23-3 (stale bug-099 row) | [[#open-after-revision]] 6 (for the docs step; registry not edited by a spec revision) |
 | nm23-4 (name the batch primitive) | [[#core]], [[task-23.1-queue-and-drain#r1]] 3 |
 | ns17-1, ns17-2 (the contract plan-17 consumes) | [[#consumers]], [[task-23.1-queue-and-drain#r10-contract]] |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Source: [[bsd-plan23-17-spec-rereview-r3-6091648]] and [[plan-review-2026-10-14#t9-approvals]]
+(d9l, d9m).
+
+| finding / decision | answered at |
+|---|---|
+| nb23-r3-1 (hotfix adopted "unchanged" still leaks the binding) | [[#why]], [[#tasks]], [[task-23.1-queue-and-drain#r1]] 1, [[task-23.1-queue-and-drain#ac-3]] AC-3d |
+| ns23-r3-1 (rollback drops pre-batch dirty bits) | [[#why]], [[task-23.1-queue-and-drain#r1]] 3, [[task-23.1-queue-and-drain#ac-4]] (f) |
+| ns23-r3-2 (`facts.log` events of rolled-back holds) | [[#why]], [[task-23.1-queue-and-drain#r3]] 7, [[task-23.1-queue-and-drain#ac-16]] AC-16b |
+| ns23-r3-3 (23.3 concurrent syncs; plain evidence insert) | [[#tasks]], [[task-23.3-sync-between-file-yield#r8]], [[task-23.3-sync-between-file-yield#ac-9]] |
+| ns23-r3-4 (23.4 oracle by id; 60 s cap; post-run re-apply; unpinned workload; AC-1 orders commits), d9m | [[#tasks]], [[#open-after-revision]] 1, [[task-23.4-option-a-measurement#rev-round-3]] |
+| nm23-r3-1 (23.4 status stated three ways) | [[#open-after-revision]] 1, [[task-23.4-option-a-measurement#ranges]] |
+| nm23-r3-2 (repair described as a rebuild) | [[task-23.1-queue-and-drain#r1]] 1 |
+| nm23-3 (stale bug-099 row; carried open) | [[#open-after-revision]] 6 (docs chore, registry not edited) |
+| d9l (23.4 ranges confirmed) | [[#open-after-revision]] 1 |

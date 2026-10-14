@@ -12,7 +12,8 @@ metadata:
 
 # Plan 17: nightly store maintenance from the hub {#root}
 
-> Status: DRAFTING, revision round 2 after the 32dde06 re-review and #t9 ([[#rev-round-2]]); first
+> Status: DRAFTING, revision round 3 after the 6091648 re-review ([[#rev-round-3]]); round 2 after
+> the 32dde06 re-review and #t9 ([[#rev-round-2]]); first
 > revised after the 2026-10-14 decision log ([[#rev-2026-10-14]]). The user asked
 > on 2026-10-07: "we should add a nightly compaction job to the hub process to keep projects lean
 > and fast". Task specs 17.1-17.3 are rewritten against the spec review
@@ -32,6 +33,7 @@ rel: related-to -> [[plan-18-duckdb-store-maintenance]]
 rel: related-to -> [[task-19.4-keep-derived-layers-current]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06]]
 rel: derives-from -> [[plan-review-2026-10-14#t9]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648]]
 
 ## Why {#why}
 
@@ -95,7 +97,8 @@ refmatrix ever compacts a dataset or removes its old versions. No `compact_files
   1. fingerprint (a): rows + an order-independent, per-id subtractable hash of (id, vector);
   2. tag the current version as the run's rollback point ([[#d3b]]);
   3. compute orphans against the WHOLE catalog ([[#d3a]]); above the ratio cap, skip the REAP only
-     (compaction and cleanup still run) unless a hand run confirms the dry run's orphan-list sha
+     (compaction and cleanup still run) unless a hand run confirms that dataset's dry-run
+     orphan-list sha, which releases the confirmed ids that are STILL orphans
      ([[#d9c]]); write the orphan list WITH vectors; reap;
   4. `compact_files()`;
   5. fingerprint (b), compared with (a) minus the reaped orphans. A mismatch restores the post-reap
@@ -104,7 +107,9 @@ refmatrix ever compacts a dataset or removes its old versions. No `compact_files
      error_if_tagged_old_versions=False)`, which never removes a tagged version; then the PREVIOUS
      successful run's tag is released.
 - **A restore op** reads an orphan list back and re-upserts the vectors of ids whose entity is in
-  the catalog again ([[#d3a]], the #t8 amendment).
+  the catalog again ([[#d3a]], the #t8 amendment), under the SAME id or, through `id_map`, under
+  the NEW id a name-checked restore gave it (plan-22's 22.2), in the dataset of the entity's
+  current partition and kind; it never overwrites an existing vector.
 - **The hub only schedules**, on its OWN maintenance thread with its OWN step registry,
   `maintenance_steps` (plan-review C6; [[#d3e]]), not on the queue-alert thread and not on 23.1's
   daemon `tick_registry`:
@@ -115,10 +120,15 @@ refmatrix ever compacts a dataset or removes its old versions. No `compact_files
   - skips paused and not-running stores, and names them;
   - a (store, step) still running across two per-store budgets becomes `stuck`, alerts once and
     stops blocking the other stores;
+  - per store, the steps run in registration order with the `facts.log` backup FIRST, and they
+    are independent: a later step runs even when an earlier one is still running or stuck,
+    unless it declares `after_idle` on it;
+  - a stale daily `facts.log` copy (over 48 h) alerts on every hub wake, due or not, and shows
+    in the daemon's health without the hub;
   - stamps per (store, step) in `~/.refmatrix/maintain.json`; each step declares
     `requires_arming`; an unarmed (store, step) that requires arming runs a DRY RUN only
     ([[#d3d]]); arming is the `hub_maintain_arm` verb, gated by the `run_id` of a successful hand
-    run;
+    run that follows a successful dry run of the same step;
   - logs per-store results to `hub.log`;
   - publishes one summary to `global:queues`, which bus retention already bounds.
 - **No silent failures.** A failed store is logged and counted in the summary, and the next store
@@ -145,10 +155,10 @@ rel: depends-on -> [[task-23.2-lock-hold-fixture]]
 
 | task | what | acceptance (summary; the task spec is authoritative) | depends on |
 |---|---|---|---|
-| 17.1 | `vectors_maintain` + `vectors_restore` daemon ops, verbs, CLI/MCP, on 23.1's `bounded_steps` with `bind(partition_name)`: whole-catalog orphans with a ratio cap that skips only the reap and a `--confirm-orphans <sha>` release, orphan list with vectors, tagged rollback point, fingerprint gate before any cleanup, every partition by name, lock-free single-flight, a `runs.jsonl` ledger, no in-process fallback, no-match delete filter, reader retry | `older_than_s=0` → versions 1; default 24 h keeps a fresh version; forced mismatch → restored, old versions on disk; cross-partition entity's vector survives; capped dataset still compacts, matching sha reaps, stale sha refused; reap → restore round-trips; competitor wins between datasets, `hold_s` per dataset; a reader opened before the pass scans to the end; a no-match re-sync commits 0 versions; pre-registered mutations FAIL | 23.0, 23.2, 23.1 |
-| 17.2 | hub maintenance thread with its own `maintenance_steps`: 03:30 + catch-up, injected roots and clock, serial with per-store budget, `retries=0`, still-running vs failed with a `stuck` ceiling, (store, step) stamps, per-step `requires_arming`, the `hub_maintain_arm` verb gated by a hand-run `run_id`, summary | one run per scheduled day; catch-up exactly once; alert interval ≤ 0 still maintains; an unarmed step that requires arming dry-runs, one that does not runs; a blocking op is received once and becomes `stuck` on the second budget while the next store runs; arm refused without a matching hand run; zero connects outside the sandbox; pre-registered mutations FAIL | 17.1, 23.0 |
+| 17.1 | `vectors_maintain` + `vectors_restore` daemon ops, verbs, CLI/MCP, on 23.1's `bounded_steps` with `bind(partition_name)`: whole-catalog orphans with a ratio cap that skips only the reap and a `--confirm-orphans <sha>` release, orphan list with vectors, tagged rollback point, fingerprint gate before any cleanup, every partition by name, lock-free single-flight, a `runs.jsonl` ledger, no in-process fallback, no-match delete filter, reader retry | `older_than_s=0` → versions 1; default 24 h keeps a fresh version; forced mismatch → restored, old versions on disk; cross-partition entity's vector survives; capped dataset still compacts, a confirmed per-dataset sha reaps the confirmed ids still orphaned and leaves new ones to the cap; reap → restore round-trips, by same id and by `id_map` to new ids; competitor wins between datasets, `hold_s` per dataset; a reader opened before the pass scans to the end; a no-match re-sync commits 0 versions; pre-registered mutations FAIL | 23.0, 23.2, 23.1 |
+| 17.2 | hub maintenance thread with its own `maintenance_steps`: 03:30 + catch-up, injected roots and clock, serial with per-store budget, `retries=0`, still-running vs failed with a `stuck` ceiling, (store, step) stamps, per-step `requires_arming`, the `hub_maintain_arm` verb gated by a hand-run `run_id`, summary | one run per scheduled day; catch-up exactly once; alert interval ≤ 0 still maintains; an unarmed step that requires arming dry-runs, one that does not runs; the backup runs first and a blocked step does not stop later ones; a stale backup alerts once; a blocking op is received once and becomes `stuck` on the second budget while the next store runs; arm refused without a matching hand run; zero connects outside the sandbox; pre-registered mutations FAIL | 17.1, 23.0 |
 | 17.3 | fleet rollout over the 8 registered daemons: dry run, backup, hand run, user-confirmed orphan release, arm by `run_id`, Time Machine exclusion after the first backup copy; measure on a synthetic ≥ 30k-version clone; docs | before/after table per store; latency ratio ≤ 1/5 and a 0-version no-match re-sync on the synthetic clone; holds < 60 s; one night observed; backups removed only after the user confirms | 17.1, 17.2, 17.4 deployed |
-| 17.4 | `factslog_backup` step on 17.2's `maintenance_steps` (`requires_arming=False`): once-a-day copy of `facts.log` to `backups/facts.log.daily` (+ `.prev`), lock-free from an open descriptor, skipped when unchanged; the live log is then excluded from Time Machine (added 2026-10-14, user) | one copy per injected day; the copy equals the old inode's prefix under a concurrent compaction; replay-equivalent; unchanged = untouched; loud non-destructive failure; runs unarmed, single-flight, ledger line; pre-registered mutations FAIL | 17.2, 23.0 |
+| 17.4 | `factslog_backup` step on 17.2's `maintenance_steps` (`requires_arming=False`): once-a-day copy of `facts.log` to `backups/facts.log.daily` (+ `.prev`), lock-free from an open descriptor, skipped when unchanged; the live log is then excluded from Time Machine (added 2026-10-14, user) | one copy per injected day; the copy equals the old inode's prefix under a concurrent compaction; replays to the source catalog's state; still copies while `vectors_maintain` blocks; stale alert; ordered restore resets both slot offsets; unchanged = untouched; loud non-destructive failure; runs unarmed, single-flight, ledger line; pre-registered mutations FAIL | 17.2, 23.0 |
 
 rel: specifies -> [[task-17.4-factslog-backup-snapshot]]
 
@@ -231,8 +241,8 @@ rel: specifies -> [[task-17.4-factslog-backup-snapshot]]
 
 ## Open after revision {#open-after-revision}
 
-Round 2 status (2026-10-14): items 1, 2 and 4 are settled (below); item 3 is settled by spec on
-plan-22's side, outside this plan's files. Original text kept as history.
+Round 3 status (2026-10-14): items 1-5 are settled (below); item 6 is a note for the plan-19
+pair. Original text kept as history.
 
 1. **SETTLED (ns17-1): two registries.** 17.2's hub `maintenance_steps` and 23.1's daemon
    `tick_registry` differ in process, signature and budget scale; 17.2 no longer depends on 23.1
@@ -247,10 +257,13 @@ plan-22's side, outside this plan's files. Original text kept as history.
    audited forgets can orphan more than max(50, 5 %) of a global dataset in one night. The cap then
    refuses every night and alerts. The log does not say how such a reap is released (a hand-run
    override, a 22.x manifest hand-off, or a raised cap for that dataset).
-3. **SETTLED BY SPEC, plan-22's side (nm17-3):** 22.2's restore calls `vectors_restore` over the
-   orphan lists whose ids it restores; that edit belongs to plan-22's revision, and the ADR-0004
-   scoping sentence goes through the usual ADR approval (the d9i amendment is the natural
-   carrier). Plan-17's half (the stable list format, the restore op) is done. Original text:
+3. **SETTLED BY SPEC (nm17-3, ns17-r3-1):** 22.2's restore gives entities NEW ids, so
+   `vectors_restore` takes `id_map: dict[int, int] | None` (old id → new id) and restores the
+   vector under the new id ([[task-17.1-vectors-maintain-op#r10-restore]], AC-8b). The exact
+   signature both plans name is `vectors_restore(orphan_file: str, ids: list[int] | None = None,
+   id_map: dict[int, int] | None = None, dry_run: bool = False) -> dict`; 22.2 passes the map
+   from its manifest (plan-22's revision names the parameter). ADR-0004 `#rule-no-delete` (d9k)
+   scopes the reap as manifest-backed derived cleanup. Original text:
    **Restore across plans** (decision review #s-7): whether 22.2's restore AC brings vectors back
    by reading 17.1's orphan list or by re-embedding, and the ADR-0004 `#rule-no-delete` sentence
    that scopes derived-vector reaping as restorable maintenance. Neither is a plan-17 file.
@@ -260,6 +273,15 @@ plan-22's side, outside this plan's files. Original text kept as history.
    of `rmx hub maintain arm`** (17.2 R7). d3d says the stamp is written "by
    hand"; an MCP twin would let an agent arm a store. The CLI-only verb class is unowned in the
    decision review (#s-5, d8g), so 17.2 ships it CLI-only pending that ruling.
+5. **SETTLED BY SPEC (ns17-r3-3, ns17-r3-4): 17.4's exclusion safety.** The backup is the first,
+   independent step; a stale copy alerts by age whether or not a run happened
+   ([[task-17.2-hub-nightly-tick#r8-backup-age]]); the restore runbook rebuilds into a throwaway
+   root first, moves the live log aside and resets both slot offsets
+   ([[task-17.4-factslog-backup-snapshot#requirements]] R6).
+6. **For the plan-19 pair (not edited here; nm17-r3-5):** 19.4 AC-2 still asserts plan + apply on
+   the scheduled day for a step it registers with `requires_arming=True`; under 17.2 R7 it runs
+   dry until armed. 19.4 AC-2 should arm it first by a hand-run `run_id` (after a dry run, per
+   17.2 R7's round-3 gate) or assert `dry_run:unarmed`.
 
 ## Revision round 2 (2026-10-14) {#rev-round-2}
 
@@ -279,3 +301,21 @@ Source: [[bsd-plan23-17-spec-rereview-32dde06]] (ns17-1..6, nm17-1..4) and
 | nm17-3 (vectors half of restore unowned on plan-22's side) | [[#open-after-revision]] 3 (plan-22's revision) |
 | nm17-4 (17.4 landed unreviewed, no revision row) | [[#tasks]] 17.4 row, [[#dependencies]], [[task-17.4-factslog-backup-snapshot#rev-round-2]] |
 | nb23-1 (`bind` never creates a partition) | [[task-17.1-vectors-maintain-op#r1-verb]] |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Source: [[bsd-plan23-17-spec-rereview-r3-6091648]] (0 BULLSHIT, 4 SKETCHY, 6 MEH for plan-17).
+
+| finding / decision | answered at |
+|---|---|
+| ns17-r3-1 (`vectors_restore` by id vs 22.2's new ids) | [[#design]], [[#tasks]] 17.1 row, [[#open-after-revision]] 3, [[task-17.1-vectors-maintain-op#r10-restore]] |
+| ns17-r3-2 (`--confirm-orphans` per run vs per dataset; churn loop) | [[#design]] step 3, [[#tasks]] 17.1 row, [[task-17.1-vectors-maintain-op#r6-orphans]], [[task-17.3-fleet-rollout#r1-hand-run]] |
+| ns17-r3-3 (no staleness alarm; intra-store step order) | [[#design]], [[#tasks]], [[#open-after-revision]] 5, [[task-17.2-hub-nightly-tick#r2-registry]], [[task-17.2-hub-nightly-tick#r8-backup-age]], [[task-17.4-factslog-backup-snapshot#rev-round-3]] |
+| ns17-r3-4 (restore runbook overwrites the live log; offsets) | [[#tasks]] 17.4 row, [[#open-after-revision]] 5, [[task-17.4-factslog-backup-snapshot#rev-round-3]] |
+| nm17-r3-1 (17.1 R10 `bind(batch)`; AC numbering; AC-13 mutation) | [[task-17.1-vectors-maintain-op#rev-round-3]] |
+| nm17-r3-2 (arm gate proves a run, not d3d's order) | [[#design]], [[task-17.2-hub-nightly-tick#r7-unarmed]] |
+| nm17-r3-3 (R4 polls `vectors_maintain` for every step) | [[task-17.2-hub-nightly-tick#r4-call]] |
+| nm17-r3-4 (17.3 clone `HOME`; build time) | [[task-17.3-fleet-rollout#r2-measure]] |
+| nm17-r3-5 (19.4 AC-2 vs `requires_arming`) | [[#open-after-revision]] 6 (plan-19's file; not edited) |
+| nm17-r3-6 (17.4 AC-3 identical bytes; `fclonefileat` binding) | [[task-17.4-factslog-backup-snapshot#rev-round-3]] |
+| nm17-3 / dlr #s-7 (restore across plans, partial in r3) | [[#open-after-revision]] 3 |

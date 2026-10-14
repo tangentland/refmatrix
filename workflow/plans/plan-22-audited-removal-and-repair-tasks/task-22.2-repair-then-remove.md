@@ -13,7 +13,7 @@ metadata:
 # Task 22.2: the repair-then-remove engine {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 2, 2026-10-14; [[#rev-round-2]])
+> Status: Pending (revision round 3, 2026-10-14; [[#rev-round-3]])
 > Wave: 1, after 22.1a (#t8-wave1).
 > Depends on: 22.1a (plan manifest contract); 16.6 Wave-1 slice (`move_learned_provenance` and the
 > sidecar events); 21.1 R5 (`telemetry.row_provenance`, for R7's query set); 23.1 (`bind(partition_name)`, `bounded_steps`); 23.2 (the
@@ -29,6 +29,8 @@ rel: depends-on -> [[feedback_store_calls_via_daemon]]
 rel: derives-from -> [[plan-review-2026-10-14#t6-fixes]]
 rel: derives-from -> [[plan-review-2026-10-14#t9]]
 rel: amends -> [[bsd-plan16-22-spec-rereview-32dde06]]
+rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
+rel: motivates -> [[task-22.6-removal-entry-points]]
 rel: depends-on -> [[task-16.6-learned-row-validation]]
 rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 rel: related-to -> [[plan-17-nightly-store-maintenance]]
@@ -38,8 +40,10 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
 1. **R1 Repairs** (user, 2026-10-07: "don't delete moves, repair them if possible"). {#r1}
    - `moved` (from 22.1, per `(concept, file)` set) → each row's `line` re-pointed to its paired
      new line through the re-point primitive ([[#r2]]). The row, its link, its sidecar row and the
-     entity's protection are kept. `grown`/`shrunk` sets: surviving lines stay; only lines with no
-     match left are removed (as `stale-line`).
+     entity's protection are kept. `grown`/`shrunk` sets: every row follows 22.1's pairing
+     ([[task-22.1-audit-classes#r1]], r3 b-2): fixed points stay, paired rows are re-pointed, and
+     only the rows 22.1 leaves unpaired (`stale-line` / `out-of-range`) are removed. A row is never
+     removed because its old line number is outside the new set.
    - `duplicate` → collapse each row identity to one row. Nothing distinct is lost.
    - `orphan-root:resolved` → handed to 22.5's cross-store move (d6b/d8c). The engine never
      rewrites a relative global row into an absolute global entity (the global store is
@@ -74,20 +78,44 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
      when no evidence row remains for its `(concept, entity)`. An entity is purged through
      `_bulk_purge_ids` (`store.py:6032`, entity-level, tombstoned) ONLY when it has no link of any
      kind, no `tracked_files` row and no ingest evidence. `_bulk_purge_ids` is never called on an
-     entity with an ingest link (it deletes all `entity_links` and `tracked_files`).
+     entity with an ingest link (it deletes all `entity_links` and `tracked_files`), with ONE
+     exception: a member of a SELECTOR plan ([[task-22.6-removal-entry-points#r1]]), which the
+     user named explicitly through `forget` / `memory forget` / `memory bulk-forget`; its intent
+     record then holds every row `_bulk_purge_ids` deletes (R4), so restore returns them.
 3. **R3 Row-level `facts.log` events, replayed (22 #b-3).** The replay knows only entity-level
    `tombstone` and append-only `evidence` today (`_apply_event_body`, `store.py:7460`; the LWW pass
    in `rebuild_index_from_log`, `store.py:7566`). Add three ops, keyed by NAME (never by id):
    `evidence_remove{linkage, c, e_kind, e, file, line, keep}`, `evidence_repoint{…identity,
-   new_line}`, `entity_rename{kind, from, to, merged}`. Both replay paths apply them in log order
-   after the `evidence` appends they refer to. The sidecar's own events (16.6 R1d:
-   `learned_provenance`, `learned_provenance_move`) are logged by the same call, so a rebuild
-   reproduces the sidecar too (b-2). {#r3}
+   new_line}`, `entity_rename{kind, from, to, merged}`. The sidecar's own events (16.6 R1d:
+   `learned_provenance`, `learned_provenance_move`) are logged by the same call, AFTER the
+   evidence op's own event, so a rebuild reproduces the sidecar too (b-2). {#r3}
+   - **ONE post-evidence pass, in log order (r3 m-1).** Both replay paths apply, after the
+     `evidence` appends, ONE pass over the log in `facts.log` order holding every row-level op:
+     `learned_provenance`, `learned_provenance_move` (16.6), `evidence_remove`,
+     `evidence_repoint`, `entity_rename` (here) and `evidence_orphan_drop`
+     ([[task-22.6-removal-entry-points#r5]]). Never a pass per op family: a re-point replayed
+     before its row's `learned_provenance` event would leave that event no evidence row at the
+     recorded line (`unresolved_provenance`), and the provenance would be lost. The same list
+     and order is stated in [[task-16.6-learned-row-validation#r1d]].
+   - On replay, `evidence_repoint` and `entity_rename` move only `linkage_evidence` rows; the
+     sidecar keys move only from their own `learned_provenance_move` events. `evidence_remove`
+     also removes the identity's sidecar rows (16.6 R1d).
 4. **R4 Manifest and restore (22 #b-3, #m-4; DL #s-7).** {#r4}
    - The manifest `.refmatrix/removal/<id>.apply.jsonl` is an INTENT LOG: before each batch, an
-     `intent` record with the full before-state of every row the batch touches (evidence rows with
-     `file`/`line`/`detail`, sidecar rows, link weights, entity `protected`/`noise`, whether a
-     vector existed); after the batch's transaction commits, a `commit` record (22 #s-2).
+     `intent` record with the full before-state of every row the batch touches; after the batch's
+     transaction commits, a `commit` record (22 #s-2). The before-state is enough to rebuild
+     every removed row by itself (r3 b-3), so it holds:
+     - per touched ENTITY, its whole `entities` row except `id`: `partition`, `kind`, `name`,
+       `path`, `tldr`, `meta`, `canonical_name`, `protected`, `noise`, `created_at`,
+       `updated_at`, and whether a vector existed;
+     - per MEMORY entity, its `memory_content` row (`content`, `mtype`, `tags`, `metadata`,
+       `created_at`, `updated_at`; `duckdb_catalog.py:89`);
+     - its `tracked_files` rows, when the plan removes them (a selector member only, R2);
+     - every evidence row (`file`, `line`, `span_end`, `detail`, multiplicity) and its sidecar
+       rows (every column);
+     - every link (linkage name, other end by name, weight).
+     This is ONE record form for every manifest plan-22 writes: class plans, 22.5's moves, and
+     22.6's selector plans and derived-cleanup manifests.
    - `removal_restore` reverts repairs (re-point back, un-collapse, rename back / un-merge) and
      re-inserts removals, from the manifest alone. It does not depend on `facts.log` replay (the
      global log is not a faithful source, 22 #m-4), and it emits the inverse events so a later
@@ -165,10 +193,11 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
    - All writes go through daemon ops; no CLI path opens `Store()` on a live store.
 9. **R9 Removals,** only for members with no correct form: `stale-line`, `out-of-range`,
    `missing-file` learned rows (22.1/22.1a); `orphan-root:unresolved`; `orphan-alias:unrepairable`
-   and `empty-learned` / `stale-subject` after the gate passes. **`ambiguous` (any sub-class) and
-   `unverifiable` are never removed.** `orphan-root:home-readable` (22.1a; rows that read correctly
-   today under no project store) is not a removal class: nothing is applied to it until the user
-   rules on 22.5 R1's dry-run counts (d9b). {#r9}
+   and `empty-learned` / `stale-subject` after the gate passes; the selector members of a
+   confirmed 22.6 plan. **`ambiguous` (any sub-class), `unverifiable` and
+   `orphan-root:unverifiable` (22.1a, r3 s-3) are never removed.** `orphan-root:home-readable`
+   (22.1a; rows that read correctly today under no project store) is not a removal class: nothing
+   is applied to it until the user rules on 22.5 R1's dry-run counts (d9b). {#r9}
 
 ## Acceptance criteria {#acceptance}
 
@@ -178,16 +207,23 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
    row left on an old key. Mutations: `moved` deleted instead of repaired must FAIL; "re-point
    without moving the sidecar" must FAIL the join.
 2. **Dry run writes nothing.** Catalog hash, Lance versions, queue files, `facts.log` unchanged.
-3. **Replay (22 #b-3; b-2).** `--apply`, then `rebuild_index_from_log` on a copy, reproduces the
-   post-apply state INCLUDING every evidence row's `(file, line)`, every rename, and EQUAL sidecar
-   rows (every column but 16.6's three mark columns). Mutations: an apply that skips the new log
-   events must FAIL; a re-point that skips the `learned_provenance_move` event must FAIL the
-   sidecar equality.
-4. **Restore by name (22 #b-3; DL #s-7).** `--apply` then `restore` gives, compared by NAME, equal
-   entity sets with equal `protected`/`noise`, equal `(linkage, concept, entity, weight)` tuples,
-   equal evidence rows (`file`, `line`, `detail`, multiplicity), equal sidecar rows, and a vector
-   for every entity that had one. A by-id comparison is not used. Restore of a run killed between
-   an `intent` and its `commit` also returns the pre-apply state.
+3. **Replay (22 #b-3; b-2; r3 m-1).** `--apply`, then `rebuild_index_from_log` on a copy,
+   reproduces the post-apply state INCLUDING every evidence row's `(file, line)`, every rename, and
+   EQUAL sidecar rows (every column but 16.6's three mark columns). The fixture re-points a row
+   whose `learned_provenance` event precedes the re-point in the log. Mutations: an apply that
+   skips the new log events must FAIL; a re-point that skips the `learned_provenance_move` event
+   must FAIL the sidecar equality; "replay 22.2's ops in their own pass before the provenance ops"
+   must FAIL it (`unresolved_provenance` > 0, the re-pointed row loses its sidecar row).
+4. **Restore by name (22 #b-3; DL #s-7; r3 b-3).** `--apply` then `restore` gives, compared by
+   NAME, equal entity sets with equal `path`, `tldr`, `meta`, `canonical_name`,
+   `protected`/`noise`; equal `memory_content` rows (`content`, `mtype`, `tags`, `metadata`) for
+   memory entities; equal `(linkage, concept, entity, weight)` tuples; equal evidence rows
+   (`file`, `line`, `detail`, multiplicity); equal sidecar rows; and a vector for every entity
+   that had one. A by-id comparison is not used. Restore of a run killed between an `intent` and
+   its `commit` also returns the pre-apply state. The fixture plan holds a learned file entity
+   (with `path`) and a memory entity. Mutations: "intent record without `path`/`tldr`/`meta`"
+   FAILS it (the restored file entity has `path` NULL); "intent record without
+   `memory_content`" FAILS it (the restored memory has no body).
 5. **Ingest untouched (22 #s-6).** A shared learned+ingested file entity with a `missing-file`
    learned row keeps its ingest links and its `tracked_files` row byte-equal. Mutation: removing
    through `_bulk_purge_ids` must FAIL.
@@ -219,10 +255,11 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
     The sandbox global store named by its store root is accepted. Each refusal writes nothing.
     Mutations: defaulting the root must FAIL; "compare against the project root" must FAIL the
     accepted case.
-12. **Ambiguous and home-readable kept (d6a, d9b).** A plan holding an `ambiguous:root`, an
-    `unverifiable` and an `orphan-root:home-readable` member applies nothing to any of them.
-    Mutations: removing an `ambiguous` member must FAIL; removing a `home-readable` member must
-    FAIL.
+12. **Ambiguous, unverifiable and home-readable kept (d6a, d9b; r3 s-3).** A plan holding an
+    `ambiguous:root`, an `unverifiable`, an `orphan-root:unverifiable` and an
+    `orphan-root:home-readable` member applies nothing to any of them. Mutations: removing an
+    `ambiguous` member must FAIL; removing a `home-readable` member must FAIL; removing an
+    `orphan-root:unverifiable` member must FAIL.
 13. **One Lance finalize per kind** per apply (recorder), not one per batch.
 
 ## Test strategy {#test-strategy}
@@ -266,3 +303,20 @@ Answers [[bsd-plan16-22-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]
 | re-review m-8 (two spellings of the global root) | [[#r8]] "One spelling of root"; AC-11 |
 | d9b (no-owner rows readable today: nothing applied until the user rules) | [[#r9]]; AC-12 |
 | plan-22 r1 b-3 (partial: sidecar not replayable) | closed by the b-2 row and 16.6 R1d |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan16-22-spec-rereview-r3-6091648]] and d9k/d9o
+([[plan-review-2026-10-14#t9-approvals]]). Later rows win over round 2.
+
+| finding / decision | answered in |
+|---|---|
+| r3 b-3 / d9k (the manifest cannot restore memory bodies or entity `path`/`tldr`/`meta`) | [[#r4]] the ONE intent-record form (whole entity row, `memory_content`, `tracked_files` for selector members); AC-4 + two mutations; [[#r2]] selector exception; [[task-22.6-removal-entry-points]] |
+| r3 b-2 (shifted rows removed) | [[#r1]] `grown`/`shrunk` follow 22.1's pairing |
+| r3 m-1 (one replay pass) | [[#r3]] one post-evidence pass in log order (same list as 16.6 R1d); AC-3 + mutation |
+| r3 s-3 (`Unverifiable`-only entities) | [[#r9]] `orphan-root:unverifiable` never removed; AC-12 + mutation |
+| d9o (`evidence_orphan_drop`, selector plans, derived-cleanup manifests use this engine) | [[#r3]], [[#r4]], [[#r9]]; owned by 22.6 |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
+rel: derives-from -> [[plan-review-2026-10-14#t9-approvals]]
+

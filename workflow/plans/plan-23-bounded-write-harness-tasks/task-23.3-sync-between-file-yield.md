@@ -13,8 +13,8 @@ metadata:
 # Task 23.3: the between-file yield in `_sync_paths` {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: Pending (revision round 2, 2026-10-14: re-review findings nb23-3 and nb23-4; see
-> [[#rev-round-2]])
+> Status: Pending (revision round 3, 2026-10-14: ns23-r3-3, see [[#rev-round-3]]; round 2:
+> nb23-3 and nb23-4, see [[#rev-round-2]])
 > Depends on: 23.1 (`bounded_steps`, `bind`), 23.2 (recorder), 23.0 (sandbox)
 
 rel: part-of -> [[plan-23-bounded-write-harness]]
@@ -29,6 +29,7 @@ rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06#nb23-4]]
 rel: implements -> [[plan-review-2026-10-14#t9-fixes]]
 rel: related-to -> [[project_sync_mtime_gate_strands_docs]]
 rel: depends-on -> [[feedback_decay_never_loses_knowledge]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#ns23-r3-3]]
 
 ## Why {#why}
 
@@ -66,6 +67,19 @@ Added in revision round 2, re-read at HEAD `3357c44`:
 - **bug-093's op-start log line.** The watch `_flush` (`daemon.py:3000`) logs only AFTER the sync,
   through `_watch_flush_line` (`daemon.py:4666`). A wedged flush therefore leaves no line saying
   what it started. The bug-093 row lists this as still open, and no task owned it (nb23-4).
+
+Added in revision round 3, re-read at HEAD `5a8bf29`:
+- **The outer lock is today's only sync serializer** (ns23-r3-3). The watcher's `_flush`
+  (`daemon.py:3000`), `_op_sync_files` (`:3338`) and `_op_sync_since` (`:3707`) each hold
+  `_store_lock` for the whole sync, so two syncs never interleave. `daemon.py` has no other sync
+  mutex (its other plain lock, `_async_lock` at `:700`, guards async-op bookkeeping). Once R3
+  drops the outer hold, a watch flush and a git post-commit `sync_since` over the same
+  just-edited file would interleave at step granularity: both purge and re-ingest it, then both
+  apply its semantics.
+- **Semantic evidence is a plain INSERT.** `ingest_records.apply_record` (`ingest_records.py:323`)
+  and `bulk_apply_records` (`:461`) write evidence through `Store.add_evidence` (`store.py:5267`,
+  a plain `INSERT INTO linkage_evidence`; the table has no unique key). A semantic step applied
+  twice therefore duplicates its evidence rows (bug-106's shape on the sync path).
 {#why-body}
 
 ## Requirements {#requirements}
@@ -115,6 +129,23 @@ Added in revision round 2, re-read at HEAD `3357c44`:
    and `_op_sync_since` log the same shape (`sync_files start: …`, `sync_since start: …`). After
    this task the bug-093 row's open items are both closed by 23.3 (the docs step updates the row).
    {#r7}
+8. **R8 One sync at a time per store, and idempotent semantic evidence (ns23-r3-3).** {#r8}
+   - **`sync_mutex`.** `Daemon._sync_mutex` is a plain `threading.Lock`, NOT `_store_lock`. The
+     three daemon sites (watch `_flush`, `_op_sync_files`, `_op_sync_since`) hold it across ONE
+     whole `_sync_paths` run (every `bounded_steps` step of it). A second sync waits for it; it
+     does not coalesce (a waiting sync re-stats its own paths when it starts, and the mtime gate
+     skips what the first one already applied and stamped). `serial_bind(store)` callers get the
+     same guarantee from a process-local mutex owned by `serial_bind`.
+   - **Lock order.** `_sync_mutex` is taken BEFORE any `bind` hold and is never acquired while
+     `_store_lock` is held, so it cannot deadlock against the writer. Between steps the writer is
+     still released to every NON-sync op (AC-1 is unchanged); only another sync waits.
+   - **R7's start line** is logged before the mutex is taken, so a sync blocked behind another
+     sync also leaves its `start` line.
+   - **Evidence insert-if-absent.** `apply_record` and `bulk_apply_records` write evidence through
+     23.1's `Store.add_evidence_if_absent` ([[task-23.1-queue-and-drain#r10-contract]], same
+     signature and `facts.log` rule), not the plain `add_evidence`. With the mutex this is a
+     second guard: a semantic step that is re-applied (a re-sync after a stop, R4) adds no
+     duplicate evidence row. `add_evidence` itself is unchanged for its other callers.
 
 ## Acceptance criteria {#acceptance}
 
@@ -153,6 +184,17 @@ Added in revision round 2, re-read at HEAD `3357c44`:
    (in the tmp root) already holds `watch flush start: 5 files, roots=[…]`, and the completion
    line follows after the competitor releases. Mutation: log the start line after the first hold
    is taken FAILS (the line is absent while blocked). {#ac-8}
+9. **Two concurrent syncs (ns23-r3-3).** The same 3 changed files (2 `.py` with docstring
+   keywords, 1 ADR `.md`) synced twice at once on a recorded daemon: a watch `_flush` and an
+   `_op_sync_files` started together from two threads. Afterwards the catalog's entities, links,
+   evidence and fragment rows equal ONE sync's (AC-6's row diff), with no duplicate
+   `linkage_evidence` row (`SELECT entity_id, linkage_id, concept_id, file, line, count(*) …
+   HAVING count(*) > 1` returns 0). The recorder shows the two syncs' steps never interleave
+   (every step of one precedes every step of the other), while a third, non-sync competitor still
+   wins between consecutive steps. Mutations, each must FAIL: no `_sync_mutex` (steps interleave;
+   duplicate evidence rows); `_sync_mutex` taken inside the first `bind` hold (23.2's
+   `LockDeadlock`, or the competitor never wins); `bulk_apply_records` back on the plain
+   `add_evidence` together with the mutex removed (duplicate rows). {#ac-9}
 
 ## Test strategy {#test-strategy}
 
@@ -179,3 +221,12 @@ Logs: `workflow/review-output/pytest-sync-yield.log`.
 | nb23-3 (stamp before semantics; AC-5 asserted the loss), #t9-fixes "23.3 stamps a file only after its semantic pass" | [[#why]] (round-2 facts), [[#r1]], [[#r4]], [[#ac-5]] |
 | nb23-4 (bug-093 op-start line unowned), #t9-fixes "takes bug-093's op-start log line" | [[#r7]], [[#ac-8]] |
 | ns17-2 / 23.1 contract names (`bounded_steps`, `batch_transaction`) | [[#r1]] |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Source: [[bsd-plan23-17-spec-rereview-r3-6091648]].
+
+| finding / decision | answered at |
+|---|---|
+| ns23-r3-3 (two `_sync_paths` runs interleave per step; plain `add_evidence` in `bulk_apply_records`) | [[#why]] (round-3 facts), [[#r8]] (`_sync_mutex`, lock order, insert-if-absent evidence), [[#ac-9]] |
+| 23.1 contract names (`add_evidence_if_absent`) | [[#r8]]; [[task-23.1-queue-and-drain#r10-contract]] |

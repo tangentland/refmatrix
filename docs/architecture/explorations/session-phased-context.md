@@ -7,6 +7,7 @@ metadata:
   node_type: exploration
   status: in-progress
   created: 2026-10-14
+  updated: 2026-10-14
 ---
 
 # Exploration: session-phased context injection {#root}
@@ -56,7 +57,7 @@ changes how it is SPENT, not its size.
 |---|---|---|
 | **cold** | no STM focus yet, or prompt carries no concrete terms | breadth: handoff Next, active plans, open bugs + bsd findings, subject headers. Pointers over snippets. |
 | **warm** | focus topics exist and the prompt overlaps them | depth: graph neighbors of touched files/symbols, `--expand` lines, report anchors. Snippets over pointers. |
-| **shift** | prompt terms barely overlap the current topics | breadth again, scoped to the new terms. |
+| **return** / **new** | prompt terms barely overlap the current topics | split in two by [[#topic-cache]]: **return** restores a cached cluster and spends deep; **new** spends breadth, scoped to the new terms. (This row read **shift** until 2026-10-14; the split superseded it.) |
 
 Signals already exist: the STM ring, `stm.topic_composites` (`stm.py:790`), files touched, and the
 term overlap between the prompt and the composite's members. No new store state is needed. {#signals}
@@ -107,15 +108,20 @@ tree form spends it where the phase says:
 ▾ topic: plan-23 drain / bind  (active · 42 events · L380–L472)
     members: plan-23-bounded-write-harness, task-23.1, bind(batch), bug-105, …
     rel: …  (the current depth rules: lift-ranked co-occurs, sparse-first LTM)
-▸ topic: Time Machine exclusions  (18 events · L455–L470 · id c7f2)
-▸ topic: decision walk d1a–d9j    (96 events · L120–L410 · id 3a91)
+▸ topic: Time Machine exclusions  (id c7f2)
+▸ topic: decision walk d1a–d9j  (id 3a91)
 ```
 
 - **Expanded:** exactly the cluster the phase selects (warm: the overlapping cluster; return: the
   restored one; cold: none expanded, every line collapsed, which is the breadth view).
-- **Collapsed:** one line each (label, event count, line range, stable cluster id), a few tokens
-  apiece. The line is the HANDLE the topic cache re-expands on a return (#topic-cache), and it is
-  byte-stable across turns, so versioned injection sends it as "unchanged" (#versioned-injection).
+- **Collapsed:** one line each, holding only a label frozen at first collapse and the stable
+  cluster id (a hash of the member set), a few tokens apiece; counts and line ranges appear only
+  on the expanded cluster's header (revised 2026-10-14 after the round-3 spec review: a count or
+  range on the collapsed line changes whenever its cluster is re-touched, so the line was not
+  byte-stable). At most a capped number of collapsed lines render. The line is the HANDLE the
+  topic cache re-expands on a return (#topic-cache), and it is byte-stable while its member set
+  is unchanged, so versioned injection sends it as "unchanged" (#versioned-injection). Task 19.6
+  R9 holds the exact rule.
 - **Labels need 19.0 first:** a collapsed line is only its label, so a junk label (`re.searc`)
   makes the whole line useless; this is the strongest case yet for the STM hygiene prerequisite.
 
@@ -196,7 +202,11 @@ rel: related-to -> [[plan-10-injection-dedup]]
 - **plan-21:** 21.1's event schema must record the phase at injection time, so the comparison is
   possible without a second instrument.
 
-## Decisions pending {#decisions}
+## Decisions {#decisions}
 
-1. Accept the placement above (task in plan-19, schema field in plan-21), or a separate plan.
-2. Whether turn count is kept as a tiebreaker signal at all.
+Both items this section listed as pending were closed by the user on 2026-10-14 (decision d5b,
+[[plan-review-2026-10-14]]):
+
+1. Placement: ACCEPTED as above. The work is task 19.6 in plan-19, and the schema fields are in
+   plan-21's task 21.1.
+2. Turn count: logged on every event, and NEVER a phase signal (not even as a tiebreaker).

@@ -13,7 +13,7 @@ metadata:
 # Task 22.3: the global-store repair {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 2, 2026-10-14; [[#rev-round-2]])
+> Status: Pending (revision round 3, 2026-10-14; [[#rev-round-3]])
 > Wave: 1, last of plan-22's Wave-1 chain (16.6 slice → 22.1a → 22.2 → 22.5 → 22.3; #t8-wave1).
 > Depends on: 22.1a, 22.2, 22.5 (the 476 resolved entities), 23.1, 23.0; the user's confirmation
 > of the dry-run counts. The remedy that stopped new relative global rows is deployed (0.77.x).
@@ -27,6 +27,7 @@ rel: derives-from -> [[plan-review-2026-10-14#t1]]
 rel: derives-from -> [[plan-review-2026-10-14#t8-revisited]]
 rel: derives-from -> [[plan-review-2026-10-14#t9]]
 rel: amends -> [[bsd-plan16-22-spec-rereview-32dde06]]
+rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
 
 ## Why {#why}
 
@@ -48,13 +49,16 @@ replaced by the 2026-10-14 decisions:
 
 ## Requirements {#requirements}
 
-1. **R1 Audit on a copy, then re-audit live.** Run `removal_audit` (22.1a) on a `cp` of the global
-   store's `catalog.read.duckdb` snapshot (22.1a AC-5b's operator procedure; s-3), not on a clone
-   of a writer slot. The plan's buckets (applied split, counts measured, the probe's figures only
-   for comparison): `orphan-root:unresolved` (removed here), `orphan-root:home-readable` (held by
-   22.5 for the user's ruling, d9b), `ambiguous:root` (≈ 48, kept), `missing-file` under
+1. **R1 Audit on a copy, then re-audit live.** Run 22.1a's classifier on a `cp` of the global
+   store's `catalog.read.duckdb` snapshot through the ONE census procedure
+   ([[task-16.6-learned-row-validation#r7]]; s-3, r3 s-6), not on a clone of a writer slot. The
+   plan's buckets (applied split, counts measured, the probe's figures only for comparison):
+   `orphan-root:unresolved` (removed here), `orphan-root:home-readable` (held by 22.5 for the
+   user's ruling, d9b), `orphan-root:unverifiable` (kept, held, counted by reason; r3 s-3),
+   `ambiguous:root` (≈ 48, kept), `missing-file` under
    `/pytest-of-` (≈ 1,655), `orphan-root:resolved` (moved by 22.5, or still `held` /
-   `held_for_ruling`). The probe split must be reproduced as 22.1a AC-5b states. Then
+   `held_for_ruling`). The probe reproduction is reported as 22.1a AC-5b states (`reproduced`
+   or `drift`, with its numbers, shown to the user beside the dry run; r3 b-1). Then
    `removal_audit` runs against the live global daemon (read-only) to produce the manifest the
    apply will take; its counts must match the copy's within the drift it explains.
 2. **R2 Backup and confirmation.** An APFS clone of `~/.refmatrix` is taken before the apply and
@@ -76,13 +80,14 @@ replaced by the 2026-10-14 decisions:
 ## Acceptance criteria {#acceptance}
 
 1. **Counts confirmed.** The copy's and the live dry run's per-bucket counts are reported, the probe
-   split is reproduced (22.1a AC-5), and the user's confirmation of the counts and the manifest
-   hash is recorded before the apply.
+   reproduction's verdict (`reproduced` or `drift`, 22.1a AC-5b) is printed beside them, and the
+   user's confirmation of the counts and the manifest hash is recorded before the apply.
 2. **The symptom, not the touched rows (22 #s-7).** A pattern set is pre-registered in the dry-run
    manifest before the apply: `ERROR`, `alpha`, plus every `query/*` pattern linked to an
    `orphan-root` or pytest-tmp entity. For that set, the TOTAL global `unreadable` count reported by
    `rmx grep` is measured before and after. After: every residual `unreadable` row is explained by
-   class (the 48 `ambiguous:root`, 22.5's `held` / `held_for_ruling` rows, or a named new row),
+   class (the 48 `ambiguous:root`, the `orphan-root:unverifiable` rows, 22.5's `held` /
+   `held_for_ruling` rows, or a named new row),
    and the count of
    unexplained residuals is 0. bug-086 is marked `fixed` only on that result.
 3. **Memory untouched.** R4's count and hashes are equal.
@@ -126,3 +131,15 @@ carry its other plan-22 items into this task.
 | re-review m-8 (`--root ~/.refmatrix` vs `$HOME`) | R3 (the store root; `$HOME` refused); 22.2 R8 |
 | d9b / re-review s-2 (rows readable today under no project store) | [[#why]]; R1 `home-readable` bucket held; R3 `held_for_ruling`; AC-2 residual classes |
 | re-review s-3 (census on a live clone) | R1 audits a `cp` of `catalog.read.duckdb` (22.1a AC-5b) |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan16-22-spec-rereview-r3-6091648]]. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| r3 b-1 (the reproduction gate could not pass) | R1, AC-1: the reproduction's verdict is reported, the applied split is applied (22.1a AC-5b) |
+| r3 s-3 (`orphan-root:unverifiable`) | R1 bucket (kept, held); AC-2 residual class |
+| r3 s-6 (census procedure) | R1 cites [[task-16.6-learned-row-validation#r7]] |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]

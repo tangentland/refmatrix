@@ -12,7 +12,7 @@ metadata:
 # Task 22.5: the cross-store move {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 2, 2026-10-14; [[#rev-round-2]])
+> Status: Pending (revision round 3, 2026-10-14; [[#rev-round-3]])
 > Wave: 1, after 22.2 and ahead of 22.3 (d8c; #t8-wave1).
 > Depends on: 22.1a (`orphan-root:resolved` with its absolute path), 22.2 (engine, primitives,
 > events, manifest, restore, apply interface), 23.1 (`bind`), 23.2 (recorder), 23.0 (sandbox).
@@ -38,6 +38,7 @@ rel: depends-on -> [[feedback_daemon_call_retries_multiply_timeouts]]
 rel: derives-from -> [[plan-review-2026-10-14#t8-revisited]]
 rel: derives-from -> [[plan-review-2026-10-14#t9]]
 rel: amends -> [[bsd-plan16-22-spec-rereview-32dde06]]
+rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
 rel: depends-on -> [[task-16.6-learned-row-validation]]
 rel: amends -> [[project_global_relative_rows_repair]]
 rel: motivates -> [[task-22.3-bug-086-global-repair]]
@@ -60,11 +61,18 @@ rel: motivates -> [[task-22.3-bug-086-global-repair]]
      `lib/python3.10`), so the user can rule on what they are:
      1. `move → <store>` (per target store): `orphan-root:resolved` (22.1a) under a target's
         project root;
-     2. `no project store`: `orphan-root:resolved` under NO target's project root;
+     2. `no project store`: `orphan-root:resolved` under NO target's project root, SPLIT by
+        22.1a's readable-today attribute (r3 m-4): `2a readable today` (the row also reads
+        correctly at `$HOME/<rel>`, where global rows resolve today) and `2b unreadable today`
+        (bug-086's symptom: the walk found the file, `$HOME/<rel>` does not hold it). d9b's
+        ruling is about readable rows; the user rules on 2a and 2b as separate numbers;
      3. `global root only`: `orphan-root:home-readable` (22.1a): no walk candidate verified, but
         the row reads correctly today at `$HOME/<rel>`, the global store's own resolution base;
-     4. `held (target daemon down)`.
-   - **Buckets 2 and 3 are held for the user (d9b).** The plan manifest records
+     4. `held (target daemon down)`;
+     5. `held (unverifiable)`: `orphan-root:unverifiable` (22.1a, r3 s-3): no candidate decided
+        and at least one reading was `Unverifiable` (counted by reason). Never moved, never
+        forgotten by this task; reported every run.
+   - **Buckets 2 (2a and 2b) and 3 are held for the user (d9b).** The plan manifest records
      `no_owner_ruling: pending`. An apply of a `pending` manifest performs bucket 1 only and counts
      buckets 2 and 3 as `held_for_ruling`; it never forgets them. After the user rules, a new dry
      run records `--no-owner-ruling forget|keep` in the manifest (and so in its hash, d8g):
@@ -124,10 +132,13 @@ rel: motivates -> [[task-22.3-bug-086-global-repair]]
 1. **Split (s-2, d9b).** On a sandbox with three project stores (one nested in another), a global
    fixture store, and injected launchd roots INCLUDING the global store's own root: the dry run
    assigns each resolved entity to the deepest containing project root; puts a resolved entity
-   under no project root in `no project store`; puts a `home-readable` entity in `global root
-   only`; puts a down store's rows in `held`; never picks the global store as a target; and prints
-   entity and row counts per bucket with the prefix breakdown. Mutation "count the global store's
-   root as a project root" FAILS it (the `no project store` entity is assigned to global).
+   under no project root in `no project store`, in `2a` when its `$HOME/<rel>` reads correctly and
+   in `2b` when it does not (r3 m-4); puts a `home-readable` entity in `global root only`; puts a
+   down store's rows in `held`; puts an `orphan-root:unverifiable` entity in `held
+   (unverifiable)`; never picks the global store as a target; and prints entity and row counts per
+   bucket with the prefix breakdown. Mutations: "count the global store's root as a project root"
+   FAILS it (the `no project store` entity is assigned to global); "one `no project store`
+   bucket" FAILS the 2a/2b split; "forget `orphan-root:unverifiable` with bucket 2" FAILS it.
 
    **1b. Nothing applied to the no-owner buckets until the ruling (d9b).** Applying a `pending`
    manifest moves bucket 1 and leaves every bucket-2 and bucket-3 row in global byte-equal
@@ -182,3 +193,15 @@ d9b supersedes d8c's "≥ 114 forgotten".
 | re-review s-5 / #t9-fixes "22.2/22.5 update provenance keys" | [[#r2]] step 2 "Sidecar rows travel with their evidence" (owner: `learned_import`); AC-3 |
 | re-review m-4 (16.6's `root` NULL "until 22.3") | [[#r2]] step 2 sets `root` to the target's project root |
 | re-review m-8 (root spellings) | [[#r1]] store roots vs project roots; [[#r5]]; 22.2 R8 |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan16-22-spec-rereview-r3-6091648]]. Later rows win; d9b is unchanged.
+
+| finding / decision | answered in |
+|---|---|
+| r3 m-4 (bucket 2 mixes readable-today and unreadable rows) | [[#r1]] bucket 2 split into 2a / 2b, ruled on separately; AC-1 + mutation |
+| r3 s-3 (`orphan-root:unverifiable`) | [[#r1]] bucket 5 `held (unverifiable)`; AC-1 + mutation |
+| d9b | unchanged: buckets 2a, 2b and 3 held until the user rules |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]

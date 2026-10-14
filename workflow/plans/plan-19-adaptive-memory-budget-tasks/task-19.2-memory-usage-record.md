@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: task-19.2-memory-usage-record
-title: "Task 19.2: every memory carries an exact lifetime usage record and a decaying recency score with a nonzero floor, folded exactly-once from recall-events.jsonl"
+title: "Task 19.2: every memory carries an exact lifetime usage record and raw per-day counts from which a decaying recency score with a nonzero floor is computed at read time, folded exactly-once from recall-events.jsonl"
 tags: [task, memory, usage, decay, counters]
 metadata:
   node_type: task
@@ -38,21 +38,28 @@ one without losing knowledge. {#why-body}
 
 ## Requirements {#requirements}
 
-1. **R1 A sidecar table, keyed by names, holding RAW counts** (d9e). `memory_usage(
-   partition_name, scope, name, first_seen, last_seen, lifetime_hits, used_memory_get_by_name,
-   used_context_by_name, used_focus_note, recency_hits, recency_used_memory_get_by_name,
-   recency_used_context_by_name, recency_used_focus_note, recency_ts)`, primary key
-   `(partition_name, scope, name)`.
+1. **R1 Two sidecar tables, keyed by names, holding ONLY raw counts** (d9e; round-3 #s-2).
+   - `memory_usage(partition_name, scope, name, first_seen, last_seen, lifetime_hits,
+     used_memory_get_by_name, used_context_by_name, used_focus_note)`, primary key
+     `(partition_name, scope, name)`: the exact lifetime record (ADR-0004 #rule-two-records).
+   - `memory_usage_daily(partition_name, scope, name, day, hits, used_memory_get_by_name,
+     used_context_by_name, used_focus_note)`, primary key `(partition_name, scope, name, day)`,
+     `day` = the UTC date of the event's `ts`: raw per-day counts, the ONLY input of recency.
+   - **No decayed value is stored anywhere.** The round-2 `recency_*` / `recency_ts` columns are
+     withdrawn: a stored decayed sum embeds the fold-time half-life, depends on the order and the
+     batching of events (23.1's `TailLog` coalesces by key per tick budget), and moves
+     `recency_ts` backward on a clock-skewed event. Every stored number here is an integer count,
+     a `min`, or a `max`, so the fold is commutative and associative: any order and any batch
+     boundary give the same rows, exactly.
    - **NOT in `memory_content.metadata`.** Re-ingesting a memory file rewrites that metadata.
    - **Keyed by memory name, not entity id**, so a purge-and-re-add keeps its history.
    - **Keyed by partition NAME, not `partition_id`**: a partition rebuild (bug-098's repair)
      reassigns the integer. The name is the event's `partition` field (21.1 R10), never the
      daemon's currently bound partition.
-   - **Raw, unweighted, per evidence.** Every stored number is an exact count of events (the
-     `lifetime_*` / `used_*` columns) or a decayed count of events of ONE kind (the `recency_*`
-     columns), each event weighing 1. No weight, base or floor is stored; they apply at READ time
+   - **Raw, unweighted, per evidence.** Every count is an exact count of events of ONE kind,
+     each event weighing 1. No weight, base, floor or half-life is stored; they apply at READ time
      (R7). A future evidence kind (21.1 R12's reserved `file_read` / `cited_in_answer`) is a
-     migration adding its own pair of columns, never folded into an existing one.
+     migration adding its own column to BOTH tables, never folded into an existing one.
    - `lifetime_used` is not a column: where a single number is shown (R9, ADR-0004's text) it is
      the read-time sum of the three `used_*` columns.
    - **`first_seen`** (re-review #m-3) = the `ts` of the earliest folded event for that key (min
@@ -106,50 +113,64 @@ one without losing knowledge. {#why-body}
      events (23.1 cuts a batch at every partition change; never `with_partition` across a yield,
      the bug-098 race), and the new offset (`queue_offsets`, segment = the file name) is
      committed in the SAME DuckDB transaction as the counter updates.
-   - The batch `merge_fn` SUMS: two `delivered` events for one name add 2. No coalesce-by-key, no
-     dedupe.
+   - `key_fn` = `(partition_name, scope, name, day)`; the batch `merge_fn` SUMS each count and
+     takes `min` / `max` of the events' `ts` (for `first_seen` / `last_seen`): two `delivered`
+     events for one name add 2. It never dedupes. Because every merged value is a sum, a min or a
+     max, the result does not depend on how 23.1 cuts or coalesces batches (round-3 #s-2).
    - There is no overflow drop: the log is append-only and the fold resumes from its offset.
    - Every row is classified by 21.1 R5's `telemetry.row_provenance(row, reader_root=<this
-     store's root>)`; only `attributed` events are folded. `test_artifact` rows are skipped and
-     counted; events without `cwd`/`root` are `malformed` and skipped and counted (events never
-     have legacy classes: every v1 event carries both fields). Because the classifier compares
-     test bases with `reader_root`, a sandbox store folds its own sandbox's events, and the live
-     store drops any test tree's (re-review #b-1).
+     store's root>, source="events")`; only `attributed` events are folded. `test_artifact` and
+     `malformed` rows (the function decides both; this module carries no check of its own) are
+     skipped and counted; unparseable lines are counted before classification. The classifier
+     keys on the event's `root` (its `cwd` only when `root` is absent; round-3 #s-3), so a sandbox
+     store folds its own events whatever the emitting process's cwd (pytest `tmp_path`, the
+     repo), and the live store drops any test tree's (re-review #b-1).
    - `recall-events.jsonl` is the retained replay source (the d2a amendment): 21.1 R8 makes it
      append-only, never truncated or rotated by any writer, which AC-6's drop-and-replay relies
      on.
-6. **R6 Survives a slot merge.** `replica_merge` gets a rule for `memory_usage`: on a conflict
-   between slots, take the elementwise max of `lifetime_hits`, each `used_*` column and
-   `last_seen`, the min of `first_seen` (nulls last), and the four `recency_*` columns with
-   `recency_ts` together from the row with the later `recency_ts`. It never keeps an older A-side
-   row over a newer one (decision-log #s-1). 23.1 R8's `queue_offsets` rule (the larger
+6. **R6 Survives a slot merge.** `replica_merge` gets a rule for both tables: on a conflict
+   between slots, `memory_usage` takes the elementwise max of `lifetime_hits`, each `used_*`
+   column and `last_seen`, and the min of `first_seen` (nulls last); `memory_usage_daily` takes
+   the elementwise max of each count per `(partition_name, scope, name, day)`. It never keeps an
+   older A-side row over a newer one (decision-log #s-1). 23.1 R8's `queue_offsets` rule (the larger
    `offset_bytes`) is plan-23's and is not repeated here.
 7. **R7 Decay and floor, computed at READ time** (d9e). This module is the ONE decay/floor
    library (plan review C4); helix's age tiers import it, and no other formula may be added.
-   - **Fold time (raw only).** On each counted event of kind `k` (hits, or one `used` evidence):
-     every `recency_*` column of the row is decayed to the event's `ts`, then `recency_k += 1`, and
-     `recency_ts ← ts`. All components share one `recency_ts`, so decaying them together is exact.
-   - `decayed(r, r_ts, t) = r · 2^(−(t − r_ts) / H)`, `H = RMX_MEMORY_RECENCY_HALFLIFE_DAYS`
-     (default 14), read at read time, so `H` can change without a rewrite.
+   - **Fold time (raw only).** Each counted event of kind `k` (a hit, or one `used` evidence)
+     adds 1 to `k` in its `memory_usage` row and in its `memory_usage_daily` row for its UTC day,
+     and folds its `ts` into `first_seen` (min) and `last_seen` (max). Nothing is decayed at fold
+     time (round-3 #s-2).
+   - **Recency, at read time only.** For each kind `k`:
+     `recency_k(t) = Σ_day count_k(day) · 2^(−max(0, t − mid(day)) / H)`, where `mid(day)` is
+     that UTC day's 12:00 and `H = RMX_MEMORY_RECENCY_HALFLIFE_DAYS` (default 14) is read when the
+     score is computed. Because no stored value embeds `H`, changing `H` re-scores every memory
+     exactly, with no rewrite and no replay (AC-17). A day in the future of `t` (clock skew)
+     weighs 1, never more. Days with `t − mid(day) > 30·H` are not read (their weight is below
+     2^−30 per event); that skip is the one approximation, and it never touches the lifetime
+     columns. The per-day quantisation moves an event by at most 12 h, a factor of at most
+     2^(0.5/H) (2.5% at `H = 14`); `H` below 1 day is refused.
    - **Read time.** `score(row, t, *, params=DEFAULT_SCORE_PARAMS)` in `memory_usage.py`:
      - `W = w_hit · lifetime_hits + Σ_e w_e · used_e`;
      - `floor = base · (1 + log1p(W))` (never zero; 19 #b-4);
      - asserted floor (d8b: ADR-0004 #rule-asserted-floor's definition, unchanged): a memory that
-       is `type: feedback`, or `protected`, or `rel:`-anchored (it carries or is the target of a
-       `rel:` edge) has `floor_eff = max(floor, asserted_floor)`, else `floor_eff = floor`;
-     - `recency_effective(t) = max(floor_eff, decayed(w_hit · recency_hits + Σ_e w_e ·
-       recency_used_e, recency_ts, t))`.
+       is `type: feedback`, or user-asserted, or `protected`, or `rel:`-anchored (it carries or is
+       the target of a `rel:` edge) has `floor_eff = max(floor, asserted_floor)`, else
+       `floor_eff = floor`. **User-asserted**, mapped (round-3 #m-1): a memory whose frontmatter
+       `metadata.type` is `user` or `guardrail` (MEMORY-RULES' types for the user's own facts and
+       enforced rules); there is no other user-asserted marker in the catalog;
+     - `recency_effective(t) = max(floor_eff, w_hit · recency_hits(t) + Σ_e w_e ·
+       recency_used_e(t))`.
    - **Defaults** (d9e, accepted as tunable starting defaults): `DEFAULT_SCORE_PARAMS = {base:
      0.25, asserted_floor: 1.0, w_hit: 1, w_e: 2 for every evidence}`. Changing any of them, or
-     `H`, rewrites no row and needs no replay (AC-17).
+     `H`, rewrites no row and needs no replay (AC-17), because no stored value depends on them.
    - **Known interaction, recorded not hidden** (re-review #s-5): with these defaults 298 of 326
      memory files (91%, measured 2026-10-14) carry a `rel:` and sit at `asserted_floor = 1.0`,
      the score of one fresh delivery; for them 19.3's order is decided by memories with ≥ 2 recent
      deliveries or uses, and otherwise falls to the `created` tie-break. `rmx memory usage` prints
      the `at_floor` count (R9) so this is visible, and because the parameters are read-time a
-     re-tune is a one-line change. The ADR text for the floor is the orchestrator's pending
-     ADR-0004 amendment (d9i, [[plan-19-adaptive-memory-budget#open-after-revision]] item 1);
-     this task implements the amended formula above, not the current `log1p`-only text.
+     re-tune is a one-line change. The ADR text for the floor is ADR-0004 #rule-floor as amended
+     and APPROVED on 2026-10-14 (d9k, `3021cd6`): `base * (1 + log1p(hits + 2*used))`, at read
+     time over raw counts, which is the formula above.
    - **A memory with no events** has a virtual row: every count 0, `first_seen = null`, so
      `recency_effective = floor_eff ≥ base`. No write is needed to create it.
    - The `lifetime_hits` and `used_*` columns never decay.
@@ -177,8 +198,14 @@ appended through 21.1's `telemetry.emit_recall_events` with `cwd`/`root` inside 
 4. **Purge between append and fold.** Append an event for X, purge and re-add X's file (new
    entity id), fold: the count lands on name X.
 5. **Re-ingest.** Re-ingesting X's file (the bridge) leaves its `memory_usage` row byte-identical.
-6. **Drop and replay** (d8e). Fold 200 events; drop the `memory_usage` table and reset the fold's
-   offset; replay from offset 0: identical rows, `first_seen` included.
+6. **Drop and replay, any batching** (d8e; round-3 #s-2). 200 events over 40 UTC days, for 12
+   names, with 15 events out of `ts` order (an event older than ones already appended, as
+   parallel appenders produce). Fold them with 23.1's tick budget set so batches hold 1 event,
+   then drop BOTH tables, reset the fold's offset and replay from offset 0 with batches of 7, then
+   again with one batch of 200: all three runs give byte-identical `memory_usage` and
+   `memory_usage_daily` tables (exact equality: every stored value is an integer, a min or a
+   max), `first_seen` included. A second fold of a log holding the same events in a different
+   order gives the same tables.
 7. **Exactly-once.** Kill the fold between the counter update and COMMIT (an injected fault in
    the transaction): after restart, every count equals the number of events (no loss, no double).
 8. **Global route** (d8e). A global hit and a global `used` (21.1 AC-11c's note) from a project
@@ -187,7 +214,9 @@ appended through 21.1's `telemetry.emit_recall_events` with `cwd`/`root` inside 
    nothing for them.
 9. **Floor.** A never-recalled memory has `recency_effective > 0`. With the clock advanced 10
    half-lives, a memory with 1 hit and 1 use has `recency_effective == floor > 0` and unchanged
-   lifetime columns. A feedback memory never ranks below `asserted_floor`.
+   lifetime columns. A feedback memory, a `type: user` memory and a `type: guardrail` memory with
+   no `rel:` edge each never rank below `asserted_floor`; a `type: project` memory with no `rel:`
+   edge and no protection does (round-3 #m-1).
 10. **Slot merge.** Two slots with diverging `memory_usage` rows merge to the R6 rule's row.
 11. **Torn tail.** A log whose last line has no newline: the fold stops before it and reads it
     whole on the next tick.
@@ -205,13 +234,22 @@ appended through 21.1's `telemetry.emit_recall_events` with `cwd`/`root` inside 
 16. **Real emitters, one contract** (re-review #b-1; cross-plan). The fold runs over the
     `recall-events.jsonl` that 21.1 AC-8's harness writes (the GENERATED hook commands, real
     `scan-prompt` and `memory recall`, memories seeded in partition `intuition`, cwd in the
-    sandbox): every `delivered` memory event lands on `("intuition", "project", name)`. One extra
-    event with `cwd`/`root` under `/private/var/folders/x/pytest-of-u/pytest-7/t0` is skipped and
-    counted as a test artifact. A test asserts that every field the fold reads is a member of
-    `telemetry.RECALL_EVENT_FIELDS_V1`.
-17. **Read-time parameters** (d9e). Folding 50 events, then scoring with `w_e = 5` and
-    `base = 0.1` instead of the defaults: the stored rows are byte-identical before and after,
-    and the scores change exactly as R7's formula predicts.
+    sandbox): every `delivered` memory event lands on `("intuition", "project", name)`. Three
+    extra events, each with its expected class stated (round-3 #s-3):
+    - (x) `root` inside this sandbox store, `cwd` = `/private/var/folders/x/pytest-of-u/pytest-7/t0`
+      (an in-process emission from a pytest `tmp_path` cwd): `attributed`, FOLDED (+1 hit);
+    - (y) `root` and `cwd` both under `/private/var/folders/x/pytest-of-u/pytest-7/t0`:
+      `test_artifact`, skipped and counted;
+    - (z) `root` under ANOTHER `/tmp/rmx-*` sandbox, `cwd` inside this sandbox: `test_artifact`,
+      skipped and counted.
+    A test asserts that every field the fold reads is a member of
+    `telemetry.RECALL_EVENT_FIELDS_V1`, and that the fold module calls
+    `row_provenance(…, source="events")` and holds no `cwd` / `root` / channel check of its own.
+17. **Read-time parameters** (d9e; round-3 #s-2). Folding 50 events over 20 days, then scoring
+    with `w_e = 5`, `base = 0.1`, and `H = 7` instead of the defaults: the stored rows of both
+    tables are byte-identical before and after, and each score equals the value the test computes
+    INDEPENDENTLY from its own list of the 50 events (each event decayed from its day's `mid` to
+    `t` under the new `H`), to 1e-9 relative. The same check under `H = 28`.
 18. **Mutations that must FAIL a test:**
     - decay applied to `lifetime_hits` or a `used_*` column;
     - the floor's `1 +` removed (AC-9's never-recalled case);
@@ -226,17 +264,26 @@ appended through 21.1's `telemetry.emit_recall_events` with `cwd`/`root` inside 
     - `replica_merge` keeping the A-side row (AC-10);
     - the drain taking one hold per event (AC-12);
     - weights applied at fold time (AC-17: stored rows change);
-    - `cwd` ignored by the classifier call (AC-16's pytest-temp event folded);
-    - `reader_root` passed as the live root in the sandbox (AC-16: every own event skipped).
+    - any decayed value stored at fold time, or `H` read at fold time (AC-17 under `H = 7`: the
+      score disagrees with the independent computation; AC-6: batchings differ);
+    - `merge_fn` keeping the LAST value for a key instead of summing (AC-3; AC-6's batch-of-200
+      run);
+    - the classifier keyed on `cwd` instead of `root` (AC-16: event x skipped; the `cwd` fallback
+      for rows without `root` is 21.1 AC-7's, since every v1 event carries `root`);
+    - `reader_root` passed as the live root in the sandbox (AC-16: every own event skipped);
+    - the fold carrying its own malformed / channel check instead of `row_provenance`'s (AC-16's
+      no-own-check assertion);
+    - the user-asserted class dropped from the asserted floor (AC-9: a `type: user` memory at
+      10 half-lives below `asserted_floor`).
 
 ## Files to modify {#files-to-modify}
 
 | file | change |
 |---|---|
-| `src/refmatrix/store.py` | the `memory_usage` table (migration, raw per-evidence columns), batch upsert |
+| `src/refmatrix/store.py` | the `memory_usage` and `memory_usage_daily` tables (migration, raw per-evidence integer columns), batch upsert (sum / min / max) |
 | `src/refmatrix/memory_usage.py` (new) | the fold consumer (`TailLog` + `row_provenance`), the read-time `score()` with `DEFAULT_SCORE_PARAMS` (the ONE decay/floor library) |
 | `src/refmatrix/hooks.py` | the `PRECOMPACT_STDOUT_DELIVERED` constant (value set by 19.5 R1) |
-| `src/refmatrix/replica_merge.py` | the `memory_usage` merge rule (R6) |
+| `src/refmatrix/replica_merge.py` | the merge rule for both tables (R6) |
 | `src/refmatrix/daemon.py` | register the fold in plan-23's tick registry |
 | `src/refmatrix/verbs.py`, `cli.py`, `mcp.py` | `rmx memory usage` and its verb (emission is 19.1 R8 and 21.1 R11/R12) |
 
@@ -284,3 +331,18 @@ Answers [[bsd-plan19-21-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]
 | d9e (raw per-evidence counts; weights and floors at read time; defaults tunable) | R1, R7 (`score`, `DEFAULT_SCORE_PARAMS`); AC-17; mutation |
 | d9i (ADR-0004 floor amendment, drafted by the orchestrator, pending) | R7 (implements the amended formula; reference only) |
 | 23.1 names (cross-plan contract) | R5 (`tick_registry.register(..., kind="tail")`, `TailLog`, `bind(partition_name)`, `queue_offsets`); R6 |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan19-21-spec-rereview-r3-6091648]] and [[plan-review-2026-10-14#t9-approvals]]
+(d9k).
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r3-6091648]]
+
+| finding / decision | answered at |
+|---|---|
+| round-3 #s-2 (a sum `merge_fn` cannot carry per-event decay; `H` baked in at fold time; clock-skewed events) | R1 (two raw tables; `memory_usage_daily` per UTC day; no stored decayed value; round-2 `recency_*` withdrawn); R5 (`key_fn` with `day`; sum / min / max merge); R6 (merge rule for both tables); R7 (fold adds only; recency computed at read time from daily counts under the read-time `H`; skew weighs ≤ 1; the 30·H read cut and day quantisation stated); AC-6 (three batchings + reordered log, exact), AC-17 (`H` varied, independent computation); mutations |
+| round-3 #s-3 (19.2 side: two test bases; vacuous `cwd` mutation; `malformed` in the reader) | R5 (`row_provenance(…, source="events")` decides `test_artifact` and `malformed`; root-keyed); AC-16 (events x, y, z with stated classes; no own check); mutations |
+| round-3 #m-1 (stale "pending" ADR wording; user-asserted floor class) | R7 (d9k: approved at `3021cd6`; user-asserted = `metadata.type` `user` / `guardrail`); AC-9; mutation |
+| d9k (ADR-0004 amendment approved) | R7 |
+| cross-plan: 21.1 R5 signature | R5 uses `telemetry.row_provenance(row, *, reader_root, source="events")` exactly as 21.1 R5 states it |

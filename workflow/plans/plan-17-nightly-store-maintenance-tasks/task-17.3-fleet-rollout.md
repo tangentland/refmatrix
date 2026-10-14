@@ -13,7 +13,8 @@ metadata:
 # Task 17.3: fleet rollout {#root}
 
 > Plan: [plan-17-nightly-store-maintenance](../plan-17-nightly-store-maintenance.md)
-> Status: Pending (revision round 2, 2026-10-14: ns17-3, ns17-5, ns17-6, d9c; see [[#rev-round-2]])
+> Status: Pending (revision round 3, 2026-10-14: ns17-r3-2, nm17-r3-2, nm17-r3-4; see
+> [[#rev-round-3]]. Round 2: ns17-3, ns17-5, ns17-6, d9c; see [[#rev-round-2]])
 > Depends on: 17.1, 17.2, 17.4; deployed
 
 rel: part-of -> [[plan-17-nightly-store-maintenance]]
@@ -25,6 +26,8 @@ rel: depends-on -> [[task-17.4-factslog-backup-snapshot]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-32dde06#ns17-6]]
 rel: implements -> [[plan-review-2026-10-14#t9]]
 rel: related-to -> [[feedback_generated_data_off_watched_tree]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#nm17-r3-4]]
+rel: related-to -> [[feedback_external_calls_policy]]
 
 ## Why {#why}
 
@@ -44,12 +47,15 @@ been compacted. {#why-body}
    3. `rmx vectors maintain`; read the report; an `ok:false` (a fingerprint mismatch, a failure)
       stops the rollout for that store and is reported to the user before anything else;
    4. a `refused:orphan_cap` dataset is expected on at least this repo (the plan's own 559 of
-      5,495, 10.2 %, is above the 5 % cap, ns17-3). Compaction still ran (17.1 R6). The dataset,
-      its orphan count and the dry run's `orphan_list_sha` are shown to the user; ONLY after the
-      user confirms, `rmx vectors maintain --confirm-orphans <sha>` is run by hand (d9c). A
-      `refused:orphan_confirm_mismatch` means the set moved; dry-run again and re-show it;
+      5,495, 10.2 %, is above the 5 % cap, ns17-3). Compaction still ran (17.1 R6). Each capped
+      dataset, its orphan count and ITS dry-run `orphan_list_sha` are shown to the user; ONLY
+      after the user confirms, `rmx vectors maintain --confirm-orphans <sha> [--confirm-orphans
+      <sha> …]` (one per confirmed dataset) is run by hand (d9c). It reaps the confirmed ids that
+      are still orphans (17.1 R6's intersection, ns17-r3-2); orphans new since the dry run are
+      named in the outcome and follow the cap, so no re-confirmation loop arises;
    5. `rmx hub maintain arm --root <root> --step vectors_maintain --run-id <the run_id of step
-      3's (or step 4's) successful hand run>` (17.2 R7). Only steps this task hand-ran are armed:
+      3's (or step 4's) successful hand run>` (17.2 R7; the gate also finds step 1's earlier
+      successful dry run in `runs.jsonl`, nm17-r3-2). Only steps this task hand-ran are armed:
       `factslog_backup` needs no arming (17.2 R7 table); 19.4's and plan-18's steps are armed by
       their own rollouts;
    6. after the store's first `factslog_backup` copy exists and is no older than one day,
@@ -82,6 +88,19 @@ been compacted. {#why-body}
         and `REFMATRIX_ROOT` inside the tmp dir (off the live hub and registry), through the
         deployed `rmx`, same version, so no version handshake fires; it is stopped before the
         clone is deleted.
+     5. **Models (nm17-r3-4).** A tmp `HOME` moves the model cache path, and models load from the
+        local cache only (`feedback_external_calls_policy`; `models_local.py:50` sets
+        `HF_HUB_OFFLINE=1`). The clone daemon therefore runs with NO model: `RMX_NO_EMBED_WARMUP=1`
+        (`daemon.py:1161`) and `HF_HOME` left inside the tmp dir, so it can neither download nor
+        write into the real cache. The timed re-sync measures the purge / Lance delete path (the
+        bug-085 cost this plan bounds), not embedding; an embed attempt fails offline and is
+        counted in the log, which states "no model". There is no "embedding off" switch at HEAD
+        (`5a8bf29`); if the re-sync turns out to wait on an embed, that is a gap reported to the
+        user, not worked around.
+     6. **Build time, stated (nm17-r3-4).** 30,000 single-row Lance commits are expected to take
+        on the order of tens of minutes (each commit writes a manifest; the 2026-10-07 store grew
+        ~61k versions over weeks of normal use); the script logs its rate every 1,000 commits and
+        the total. The AC FAILS rather than being shortened: no smaller clone is substituted.
    - **Latency (on the clone):** one re-sync of `src/refmatrix/store.py` (copied into the clone's
      project tree) through the throwaway daemon, timed before and after `rmx vectors maintain`
      on the clone, with `code.lance`'s version count recorded at each timing.
@@ -91,9 +110,13 @@ been compacted. {#why-body}
      steps, hold `_store_lock` < 60 s, read from the op report's `hold_s`.
    - The clone is deleted at the end of the task; its version count, timings and the script's
      log go to `workflow/review-output/plan17-rollout-clone.log`.
-3. **R3 Docs.**
+3. **R3 Docs.** {#r3-docs}
    - `docs/PERFORMANCE.md` gets the maintenance section (schedule, arming, the tag rollback
-     point, the orphan list and `rmx vectors restore`).
+     point, the orphan list and `rmx vectors restore`, including `id_map` for restores with new
+     ids).
+   - The `facts.log` restore runbook documents 17.4 R6's ordered `scripts/factslog-restore.py`
+     (throwaway rebuild and verify first; live log moved aside, never overwritten; both slot
+     offsets reset) and the backup-age alarm (17.2 R8).
    - `docs/INDEX.md` and the ARCHITECTURE index.
    - The plan-17 decisions (d-1..d-4, d2b, d3a..d3e) are recorded in the implementation summary.
 4. **R4 Watch one night.** After the first scheduled 03:30 run with the fleet armed, `hub.log` and
@@ -147,3 +170,14 @@ sandbox (decisions d1a/d1b). Every measurement command's output is captured to
 | ns17-5 (arm only what was hand-run, by `run_id`) | [[#r1-hand-run]] step 5, AC-5 |
 | nm17-4 / 17.4 R7 (Time Machine exclusion after the copy exists) | [[#r1-hand-run]] step 6, AC-8 |
 | ns17-2 (hold seconds from 23.1's `hold_s`) | [[#r2-measure]] hold bound |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Source: [[bsd-plan23-17-spec-rereview-r3-6091648]].
+
+| finding / decision | answered at |
+|---|---|
+| ns17-r3-2 (per-dataset sha; intersection release) | [[#r1-hand-run]] step 4 |
+| nm17-r3-2 (arm gate needs the earlier dry run) | [[#r1-hand-run]] step 5 |
+| nm17-r3-4 (clone daemon with tmp `HOME`; build time; no shortening) | [[#r2-measure]] steps 5-6 |
+| ns17-r3-4 (restore runbook order) | [[#r3-docs]] (the runbook documents 17.4 R6's script) |

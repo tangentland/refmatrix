@@ -13,8 +13,9 @@ metadata:
 # Task 16.6: the learned-evidence sidecar, its verifier, read-time marks and the backfill {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision round 2, 2026-10-14, answering the re-review
-> `bsd-plan16-22-spec-rereview-32dde06` and `plan-review-2026-10-14#t9`; [[#rev-round-2]]).
+> Status: Pending (revision round 3, 2026-10-14, answering the r3 re-review
+> `bsd-plan16-22-spec-rereview-r3-6091648` and `plan-review-2026-10-14#t9-approvals` (d9k, d9o);
+> [[#rev-round-3]]; round 2 in [[#rev-round-2]]).
 > Revision 6 of plan-16's specs was the first revision of 16.6 after its first spec review (r5,
 > `bsd-plan16-spec-review-r5-cd7c923`).
 > The user asked for it on 2026-10-07: "rmx grep learning entries should be cullable and/or at
@@ -35,6 +36,9 @@ rel: related-to -> [[project_global_relative_rows_repair]]
 rel: amends -> [[plan-review-2026-10-07#contradictions]]
 rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
 rel: amends -> [[bsd-plan16-22-spec-rereview-32dde06]]
+rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
+rel: derives-from -> [[plan-review-2026-10-14#t9-approvals]]
+rel: related-to -> [[task-22.6-removal-entry-points]]
 rel: derives-from -> [[plan-review-2026-10-14#t6]]
 rel: derives-from -> [[plan-review-2026-10-14#t9]]
 rel: derives-from -> [[plan-review-2026-10-14#t8-amendments]]
@@ -44,6 +48,24 @@ rel: motivates -> [[task-22.2-repair-then-remove]]
 rel: motivates -> [[task-22.3-bug-086-global-repair]]
 rel: specifies -> [[task-22.1-audit-classes#r1-verify]]
 rel: related-to -> [[task-23.4-option-a-measurement]]
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan16-22-spec-rereview-r3-6091648]] and d9k/d9o
+([[plan-review-2026-10-14#t9-approvals]]). Later rows win over round 2 and revision 6.
+
+| finding / decision | answered in |
+|---|---|
+| r3 s-1 (re-run ignores the locale; launchd daemons run in C) | R1 `locale` column, part of `rules_sha`; R2 `matching_lines` env pinned to the recorded locale, scrubbed of `GREP_*`; `locale-missing` reason; AC-3i + mutation |
+| r3 s-2 (clusters; value arity in the token filter) | R2 [[#r2-argv]] arity walk (a value flag consumes its value); `match_argv` holds 16.1's EXPANDED tokens ([[task-16.1-argv-faithful-learner#r1-clusters]]); an unclassifiable token is `no-rules`; AC-3b arity rows + mutation |
+| r3 s-3 ("rare by construction" is false) | R2 [[#r2-permissive]] sentence replaced by the measured counts (1,511 of 31,608 distinct rows here, 4.8%; 69 of 495 global `query/*` concepts) |
+| r3 s-4 (the union AC cannot fail) | AC-3h: readings that DISAGREE (`-F` vs `-E`), reading order stated (ascending `rules_sha`), two sets so each order is exercised; mutations "first reading only" and "last reading only" |
+| r3 s-5 → d9o (purges orphan the sidecar; who deletes it) | R1e [[#r1e]]: no path deletes a sidecar row silently; until 22.6 lands, orphaned sidecar rows are KEPT and counted; 22.6 owns the d9o paths; AC-11 |
+| r3 s-6 (census "through a sandbox daemon" has no procedure) | R7 [[#r7]]: ONE census procedure (copy + `duckdb.connect(read_only=True)` + the production function; no `Daemon`, no `Store()`); R5 `backfill_selection`; AC-5b, AC-5c |
+| r3 m-1 (one replay pass; AC-9's impossible state) | R1d one post-evidence pass over every row-level op in log order (the same list as [[task-22.2-repair-then-remove#r3]]); AC-9 seeds the evidence row at the new identity first |
+| r3 m-2 (`--no-config`; `SidecarRow`/`Key`/`Verdict`; `no-rules` trigger; line splitting) | R2 contract block (types defined), rg drop list, `no-rules` triggers, `b"\n"` line split |
+| r3 m-3 (`out-of-range` two predicates) | R2 `verify`: the per-row `out-of-range` verdict feeds R4's marks only; 22.1 labels leftover rows of its set rule ([[task-22.1-audit-classes#r1]]) |
+| r3 m-6 (rg on PATH) | R1 `bin`: absolute PATH-resolved path recorded, never re-resolved; AC-3j + mutation |
 
 ## Revision round 2 (2026-10-14) {#rev-round-2}
 
@@ -171,13 +193,14 @@ One row per (evidence row, reading). Columns:
 | column | meaning |
 |---|---|
 | `entity_id`, `linkage_id`, `concept_id`, `file`, `line` | the evidence row's identity, the same five values as its `linkage_evidence` row (plan-22 #s-6's row identity) |
-| `rules_sha` | sha256 hex of the canonical JSON `[tool, dialect, match_argv]`; the literal `none` when the row has no recorded rules (backfill, legacy writer) |
+| `rules_sha` | sha256 hex of the canonical JSON `[tool, dialect, match_argv, locale]` (r3 s-1); the literal `none` when the row has no recorded rules (backfill, legacy writer) |
 | `origin` | `learner` (16.1 R10), `context-backstop` (16.1 R10), `legacy-writer` (R1b), `backfill` (R5) |
 | `source` | `grep-learn` |
 | `learned_at` | epoch seconds; NULL for `backfill` (unknown, never invented) |
 | `root` | the absolute PROJECT root the row was learned under (the store root's parent); NULL in the global store. The only writer that sets it on a global-origin row is plan-22's 22.5 `learned_import`, which sets it to the TARGET project root as it copies the row (m-4) |
 | `pattern` | the pattern as the tool received it |
-| `tool`, `bin` | `grep` / `rg` and the absolute binary that produced the hit; NULL when unknown |
+| `tool`, `bin` | `grep` / `rg` and the absolute binary that produced the hit; NULL when unknown. `bin` is the PATH-resolved absolute path the learner exec'd (16.1 R1 `--bin`), recorded as is (not `realpath`'d, so a Homebrew upgrade that keeps the `bin` symlink keeps the row verifiable) and NEVER re-resolved through `PATH` at verify time (r3 m-6: the launchd `PATH` puts `/opt/local/bin` first, so re-resolving could pick another `rg`) |
+| `locale` | grep rows: the learner's `LC_ALL`, `LC_CTYPE` and `LANG` as a JSON object of the three names (a value or `null` each), read from the learner's environment, which is the caller's (r3 s-1: BSD grep's `.`, `-i`, `-w` and POSIX classes follow `LC_CTYPE`; probed, `a.b` on `a—b`, `-i café` on `CAFÉ` and `na[[:alpha:]]ve` on `naïve` match under `en_US.UTF-8` and miss under C). rg rows: `null` (rg matched in both locales, probed). Part of `rules_sha`. NULL for `rules_sha=none` rows |
 | `dialect` | `bre`, `ere`, `fixed` (grep), `rust`, `pcre2` (rg), `mixed` when the kept tokens name more than one; NULL when unknown. These are exactly the values 16.1 R10 writes; there is no `python` value (m-1). Informational: R2 always re-runs `tool` itself |
 | `match_argv` | the kept MATCH-class and CUTOFF-class tokens verbatim, in order, as 16.1 R1's table kept them (JSON list). Recorded whole; R2 FILTERS it at verify time ([[#r2-argv]]) |
 | `line_hash` | `learned_verify.hash_line(raw)` of the matched line's bytes as the tool printed them, without the line terminator ([[#r3]]); NULL when not recorded |
@@ -225,6 +248,32 @@ with no event is wiped by every `rmx rebuild-index` and every `rebuild_index` da
   result as `marks_reset`).
 - plan-22's `evidence_remove` replay removes the matching sidecar rows by the same identity
   ([[task-22.2-repair-then-remove#r3]]).
+- **ONE post-evidence pass, in log order (r3 m-1).** The rebuild pass and `_apply_event_body`
+  apply every row-level op in ONE pass over the log, in `facts.log` order, after the `evidence`
+  appends: `learned_provenance`, `learned_provenance_move` (this task), `evidence_remove`,
+  `evidence_repoint`, `entity_rename` ([[task-22.2-repair-then-remove#r3]]) and
+  `evidence_orphan_drop` ([[task-22.6-removal-entry-points#r5]]). Never one pass per op family: a
+  re-point replayed before its row's `learned_provenance` would leave that event no evidence row
+  at the recorded line (`unresolved_provenance`), and the provenance would be lost. A row-level
+  evidence op moves or removes only `linkage_evidence` rows on replay, except `evidence_remove`,
+  which also removes the identity's sidecar rows; sidecar KEY moves replay only from their own
+  `learned_provenance_move` events, which the live primitive appends AFTER its evidence event in
+  the same call.
+
+**R1e. Purges never drop a sidecar row silently (r3 s-5, d9o).** {#r1e}
+Today `purge_entity` (`store.py:5692`) and `purge_path` (`store.py:5905`) delete learned file
+entities whatever `protected` says and leave their `linkage_evidence` rows behind (no FK,
+`duckdb_catalog.py:162`); `vacuum` step 3 then deletes those rows with no event
+(`store.py:6993`). The user classified each path (d9o,
+[[refmatrix/adr-0004-unified-location-space-index#a14-removal-scope]]), and
+[[task-22.6-removal-entry-points]] owns every one of them. This task's part:
+- None of `purge_entity`, `purge_path`, `_bulk_purge_ids` or `vacuum` deletes a
+  `learned_evidence` row in this slice. A sidecar row whose five identity columns join no
+  `linkage_evidence` row is KEPT and counted `orphaned_provenance` by `rmx learn status` (R6),
+  whatever made it so; it is never read as a verdict.
+- 22.6 replaces that interim: the sync edit paths keep learned rows (so no orphan arises there),
+  and the deleted/ignored-file purge and `vacuum`'s orphan-evidence delete write a manifest that
+  carries the sidecar rows of every identity they remove, with a `facts.log` event.
 
 **R1b. No new evidence row without a sidecar row, from the day this slice lands (s-r5-5).** {#r1b}
 Between this Wave-1 slice and 16.1, today's writer keeps teaching. So `_learn_grep_hits`, in the
@@ -257,28 +306,63 @@ exact names and signatures:
 @dataclass(frozen=True)
 class Rules:                       # one sidecar reading
     tool: str                      # "grep" | "rg"
-    bin: str                       # absolute path
+    bin: str                       # absolute path as recorded; never re-resolved via PATH
     dialect: str | None            # informational only
-    match_argv: tuple[str, ...]    # as recorded (R1)
+    match_argv: tuple[str, ...]    # as recorded (R1): 16.1's EXPANDED tokens
     pattern: str | None
+    locale: tuple[tuple[str, str | None], ...] | None   # (("LANG", v), ("LC_ALL", v),
+                                                        #  ("LC_CTYPE", v)); None for rg
     @property
-    def rules_sha(self) -> str: ...
+    def rules_sha(self) -> str: ...  # sha256 of canonical JSON [tool, dialect, match_argv, locale]
+
+Key = tuple[int, int, int, str, int]   # (entity_id, linkage_id, concept_id, file, line):
+                                       # the evidence row's five identity columns
+
+@dataclass(frozen=True)
+class SidecarRow:                  # one learned_evidence row, every R1 column
+    key: Key
+    rules_sha: str                 # "none" when the row has no recorded rules
+    rules: Rules | None            # None iff rules_sha == "none"
+    pattern: str | None
+    line_hash: str | None
+    root: str | None
 
 @dataclass(frozen=True)
 class Unverifiable:
     reason: str                    # one of UNVERIFIABLE_REASONS
 
-UNVERIFIABLE_REASONS = ("no-rules", "bin-missing", "timeout", "tool-error",
-                        "permissive-subset", "unreadable")
+@dataclass(frozen=True)
+class Verdict:                     # ONE per evidence row (Key): the union over its readings
+    kind: str                      # "ok" | "stale-line" | "missing-file" | "out-of-range"
+                                   # | "unverifiable"
+    reason: str | None             # set iff kind == "unverifiable" (first reason, R2 order)
+    readings: tuple[str, ...]      # the rules_sha values consulted, ascending
 
+UNVERIFIABLE_REASONS = ("no-rules", "bin-missing", "timeout", "tool-error",
+                        "permissive-subset", "unreadable", "locale-missing")
+
+def verify_argv(tool: str, match_argv: tuple[str, ...]) -> tuple[str, ...] | Unverifiable: ...
 def matching_lines(file_abs: Path, rules: Rules, *, timeout_s: float = 5.0
                    ) -> frozenset[int] | Unverifiable: ...
 def permissive_matching_lines(file_abs: Path, pattern: str
                               ) -> frozenset[int] | Unverifiable: ...
+def split_lines(data: bytes) -> list[bytes]: ...     # the ONE line split (b"\n"), 1-based use
 def hash_line(raw: bytes) -> str: ...
 def verify(rows: Iterable[SidecarRow], project_root: Path
            ) -> dict[Key, Verdict]: ...      # built on matching_lines
 ```
+
+- **`no-rules` (r3 m-2)** is returned for a recorded-rules reading that cannot be replayed: its
+  `pattern` is NULL and its filtered tokens carry no `-e`/`--regexp`, or `verify_argv` meets a
+  token it cannot classify (an unexpanded short cluster, an unknown token). It is never returned
+  for a `none` reading, which goes to `permissive_matching_lines`.
+- **Line numbering, one rule (r3 m-2).** `split_lines` splits the file's BYTES on `b"\n"` only;
+  a final `b"\n"` ends the last line and does not open an empty one; nothing else (`\x0c`,
+  `\r`, `\x0b`, `\x1c-\x1e`, `\u2028`) splits. That is grep's numbering (probed: a file
+  `one\x0ctwo\nthree target` is line 2 to grep and line 3 to `str.splitlines()`).
+  `permissive_matching_lines`, `verify`'s `out-of-range` test, R4's current-line hash and
+  plan-22's hash pairing all number lines through it; `str.splitlines()` is never used on a
+  learned row's file.
 
 Verdicts (one vocabulary with plan-22, m-4): `ok`, `stale-line`, `missing-file`, `out-of-range`,
 `unverifiable` (with its reason).
@@ -288,12 +372,23 @@ Verdicts (one vocabulary with plan-22, m-4): `ok`, `stale-line`, `missing-file`,
   grep; `-nH --null --no-heading --color never --no-config` for rg), then `-e <pattern>` (omitted
   when the filtered tokens already carry `-e`/`--regexp`, as the context backstop's rows do), then
   `-- <file_abs>`, with `stdin=/dev/null`, `cwd` = the file's directory and a per-file timeout. It
+  runs with a CONSTRUCTED environment, never the caller's (r3 s-1): exactly the recorded
+  `locale` names that have a value (unset ones absent), plus `PATH=/usr/bin:/bin`; nothing else is
+  inherited, so `GREP_OPTIONS`, `GREP_COLOR`, `GREP_COLORS` and `RIPGREP_CONFIG_PATH` can never
+  reach the re-run. When a recorded locale value is not in `locale -a` (read once per process),
+  the reading is `Unverifiable("locale-missing")`, because BSD grep would fall back to C silently.
+  `bin` is exec'd by its recorded absolute path (r3 m-6). It
   parses `file\0LINE:` records and returns every LINE. Python `re` is never used for a row with
   rules. `verify` calls it once per `(file, rules_sha)` and shares the set across that file's rows;
   22.1 classifies `moved`/`grown`/`shrunk` on the same set.
 - **Verify-time token filter (b-1.1, b-1.2).** {#r2-argv} `match_argv` is recorded whole (R1), but
   only PATTERN-SEMANTICS tokens are replayed; the file was already selected and a cutoff only
-  hides lines:
+  hides lines. `verify_argv` walks the tokens LEFT TO RIGHT with 16.1 R1's `value` column: a
+  value-taking flag (kept or dropped) consumes its value token WITH it (`['-e','-r']` keeps both;
+  `['--exclude','x']`, rg `['-g','!x']` and `['-m','1']` drop both), so a value is never
+  classified as a flag (r3 s-2; probed: `grep -e -r` matches the line `-r here`). `match_argv`
+  holds 16.1's EXPANDED tokens ([[task-16.1-argv-faithful-learner#r1-clusters]]), so no cluster
+  reaches the filter; one that does is `Unverifiable("no-rules")`, never guessed:
   - grep keeps: `-i --ignore-case -y -w --word-regexp -x --line-regexp -F --fixed-strings -E
     --extended-regexp -G --basic-regexp -e PAT --regexp=PAT --regexp PAT -a --text -U --binary
     --binary-files=V --binary-files V`;
@@ -304,8 +399,8 @@ Verdicts (one vocabulary with plan-22, m-4): `ok`, `stale-line`, `missing-file`,
     recorded as `-m 1`) and every file-selection token (`-r -R --recursive -S -O -p` for grep, where
     `-S` is a symlink flag, `--include --exclude --exclude-dir --include-dir -d -D --directories
     --devices -I --mmap`; rg `-g --glob --iglob -t --type -T --type-not -u -uu -uuu --hidden
-    --no-ignore* -L --follow -d --max-depth`). The filter is per tool (grep `-S` is dropped, rg
-    `-S` is kept). Without it, `-l` re-runs as `-m 1` and hides a still-matching later line, and
+    --no-ignore* -L --follow -d --max-depth`, and `--no-config`, which the canonical tail always
+    carries (r3 m-2)). The filter is per tool (grep `-S` is dropped, rg `-S` is kept). Without it, `-l` re-runs as `-m 1` and hides a still-matching later line, and
     BSD grep matches `--exclude` against the WHOLE absolute operand, so an exclude that names a
     parent directory prints nothing (both probed in the re-review, `#ev-verifier`).
   - The filter is a pure function `verify_argv(tool, match_argv) -> tuple[str, ...]`, unit-tested
@@ -324,14 +419,24 @@ Verdicts (one vocabulary with plan-22, m-4): `ok`, `stale-line`, `missing-file`,
   second fix): a pattern containing a BRE/POSIX/rg construct Python reads differently (`\|`,
   `\(`, `\)`, `\{`, `\}`, `\<`, `\>`, `[[:`, `\p{`, `\P{`) gets
   `Unverifiable("permissive-subset")`, because Python `re` COMPILES `[[:digit:]]` and `\<foo\>` and
-  silently mis-matches them (`#ev-verifier`). Such rows are rare by construction: since 0.65.1
-  (`583ad1c`) `cli.py:6168-6178` refuses BRE escapes on the teach path, so pre-provenance rows were
-  never taught from them.
+  silently mis-matches them (`#ev-verifier`). Such rows are NOT rare (r3 s-3): 1,511 of the 31,608
+  distinct `(file, line, pattern)` rows taught in this repo's `facts.log` (4.8%) and 69 of the 495
+  global `query/*` concepts hold a subset construct (the r3 re-review's read-only parse). Some
+  predate 0.65.1; others are later, because `cli.py:6168-6178` refuses `\[|(){}]` in substring
+  mode only, never POSIX classes or `-E` escapes. They stay `unverifiable` (kept, counted by
+  reason) until a re-teach records rules for them; the subset check over-flags ERE `\(`, which is
+  conservative (kept, never removed). Every consumer treats `permissive-subset` as a KEEP verdict,
+  never as "not verified" (22.1a `orphan-root:unverifiable`).
 - **`verify`** decides `missing-file` (unreadable or missing; `Unverifiable("unreadable")` when
-  the stat itself errors) and `out-of-range` (line > file length) before any re-run; then a row is
+  the stat itself errors) and `out-of-range` (line > the `split_lines` count) before any re-run.
+  That per-row `out-of-range` verdict is what R4's marks record; plan-22's 22.1 does not classify
+  with it, it labels the leftover rows of its own set rule (r3 m-3,
+  [[task-22.1-audit-classes#r1]]). Then a row is
   `ok` when its line is in the UNION of its readings' sets, `stale-line` when every reading
   returned a set and the line is in none, and `unverifiable` (first reason) when it is in none and
-  at least one reading was `Unverifiable` (m-5's union rule, also used by 22.1). A `none` reading
+  at least one reading was `Unverifiable` (m-5's union rule, also used by 22.1). Readings are
+  consulted in ascending `rules_sha` order, and the union does not depend on that order (r3 s-4);
+  the order fixes only which `Unverifiable` reason is reported first. A `none` reading
   goes through `permissive_matching_lines`; a row whose only reading is `none` is therefore decided
   here too, not left to plan-22.
 - The verifier is subprocess-bound, so it runs in R4's drain pre-step and in plan-22's audit,
@@ -384,7 +489,10 @@ line as current).
 
 **R5. Provenance backfill (d6d Wave 1).** {#r5}
 One idempotent routine, `backfill_learned_provenance(store, rows=None)`, run once as a migration
-(a daemon op, through `bind(partition_name)` in bounded batches) and by R1b for the writer's own new rows:
+(a daemon op, through `bind(partition_name)` in bounded batches) and by R1b for the writer's own new rows.
+Its selection is a pure read, `backfill_selection(conn, project_root: Path | None) -> list[Row]`
+over a DuckDB connection, which the routine calls and the R7 census calls on a read-only copy
+(r3 s-6):
 - selects `linkage_evidence` rows with `detail LIKE 'learned from grep%'` that have no sidecar row;
 - inserts, through `add_learned_provenance` (so each row also gets its `learned_provenance` event,
   R1d), `origin=backfill`, `source='grep-learn'`, `rules_sha=none`, `learned_at` NULL, `pattern`
@@ -397,9 +505,34 @@ One idempotent routine, `backfill_learned_provenance(store, rows=None)`, run onc
 A second run inserts 0 rows and logs 0 events.
 
 **R6. No silent failures.** {#r6} Every skipped, unreadable, unverifiable (per
-`UNVERIFIABLE_REASONS`), unparsed, orphaned, unresolved-on-replay or overflowed row is counted per
+`UNVERIFIABLE_REASONS`), unparsed, orphaned (`orphaned_provenance`, R1e), unresolved-on-replay or
+overflowed row is counted per
 reason and printed (`rmx learn status`, the backfill op's result, the merge's result, the rebuild's
 result). Project rule: memory-path discipline applies to the store.
+
+**R7. The ONE census procedure (r3 s-6).** {#r7} Every operator census in plans 16 and 22 (16.6
+AC-5b; 22.1a AC-5b/6b/7b; 22.1 AC-6b; 22.3 R1's audit on a copy) uses this procedure and no other.
+It is a read-only copy read by the PRODUCTION function; it never constructs `Daemon` or `Store`.
+This task owns the script, `scripts/census_on_copy.py`, because 16.6 is the first census in the
+wave order (`#t10-waves`).
+1. `T=$(mktemp -d /tmp/rmxc-XXXXXX)`: short, and off every watched tree.
+2. `cp -p <store_root>/catalog.read.duckdb "$T/catalog.duckdb"` (the lock-free read snapshot;
+   never `catalog.A/B.duckdb`, never the `active` slot). When the census names causes from the
+   log, also `cp -p <store_root>/facts.log "$T/facts.log"`. No `rmx` call, no socket, no
+   `Store()` on the live root (23.4 R1's copy phase, [[task-23.4-option-a-measurement#r1]]).
+3. `HOME="$T/home" RMX_HOME="$T/home/.refmatrix" .venv-eval/bin/python scripts/census_on_copy.py
+   --census <name> --catalog "$T/catalog.duckdb" [--facts "$T/facts.log"]
+   (--project-root P | --global) [census arguments] --out workflow/review-output/<name>.log`.
+4. Before importing `refmatrix`, the script installs 23.0's audit hook (23.4 R1: before 23.0
+   lands, the same hook copied into the script) with a deny set of every store root in the
+   registered daemon list, every rmx socket and `:7777`. It writes a header to the log: the
+   source paths, and the mtime, size and sha256 of each copy.
+5. It opens `duckdb.connect("$T/catalog.duckdb", read_only=True)` ONCE and calls the census's
+   production function on that connection: `backfill_selection` (16.6),
+   `removal_audit.classify_provenance_free` (22.1a), `removal_audit.classify_flag_sensitive`
+   (22.1). Files on disk (the project tree, the walked trees) are read in place, read-only.
+6. It prints the counts, writes them to `--out`, and exits nonzero on any error (counted and
+   printed, never swallowed). `$T` is removed only after the log is written.
 
 ## Acceptance criteria {#acceptance}
 
@@ -425,14 +558,35 @@ result). Project rule: memory-path discipline applies to the store.
    - f. **tool error:** a grep row with pattern `a\{` and an rg row with pattern `a{` (both exit 2,
      no output) → `unverifiable` with reason `tool-error`, kept, counted;
    - g. a row whose `bin` does not exist → `unverifiable` (`bin-missing`), kept, counted;
-   - h. a two-reading row (`none` + `-i`) whose line matches only case-insensitively → `ok` (union).
+   - h. **readings that disagree (r3 s-4).** Two sets, each row carrying two readings, `-F` and
+     `-E`, of one pattern: set 1, pattern `a.c` on a line `abc` (only `-E` holds it); set 2,
+     pattern `a+c` on a line `x a+c y` (only `-F` holds it). Both rows → `ok` (union). Readings
+     are consulted in ascending `rules_sha`, so one set has its matching reading first and the
+     other last; the test asserts that both orders occur. The `none` reading is NOT used here: it
+     is case-insensitive and regex-or-literal, so it would hold both lines alone;
+   - i. **locale (r3 s-1).** A grep row recorded with `locale={"LANG":"en_US.UTF-8", "LC_ALL":
+     null, "LC_CTYPE": null}`, pattern `a.b`, on a line `a—b`, verified from a process whose
+     environment has NO `LANG`/`LC_*` (the test deletes them, as launchd's plist sets only `PATH`)
+     → `ok`; the same row with `locale` naming a locale absent from `locale -a` → `unverifiable`
+     (`locale-missing`), never `stale-line`;
+   - j. **bin pinned (r3 m-6).** An rg row recorded with the absolute `bin` of the real rg,
+     verified with a `PATH` whose first `rg` is a fixture script that exits 2 → `ok`.
    Pre-registered mutations, each FAILS this AC: "verify with `evidence_line_matches`" (a, c
    become `stale-line`); "replay `match_argv` whole" (d, e become `stale-line`); "map rc 2 to the
-   empty set" (f becomes `stale-line`). No row in a-h may ever classify `stale-line`.
+   empty set" (f becomes `stale-line`); "`N` from the first reading only" and "`N` from the last
+   reading only" (h: one of the two sets becomes `stale-line`); "inherit the verifier's
+   environment" (i becomes `stale-line`); "re-resolve `bin` through `PATH`" (j becomes
+   `unverifiable`). No row in a-j may ever classify `stale-line`.
 
-   **3b. The token filter is total.** `verify_argv` assigns every keep:match and keep:cutoff token of
-   16.1 R1's table, for both tools, to exactly one of keep/drop; an unassigned token fails the test.
-   Mutation "drop grep `-i` instead of `-S`" FAILS row b.
+   **3b. The token filter is total and consumes values.** `verify_argv` assigns every keep:match
+   and keep:cutoff token of 16.1 R1's table, for both tools, to exactly one of keep/drop; an
+   unassigned token fails the test. Arity rows, each verified end to end `ok` (r3 s-2): grep
+   `match_argv=['-e','-r']`, pattern NULL, on a line `-r here`; grep `['--exclude','x']`; rg
+   `['-g','!x']`; grep `['-m','1']` with a matching later line. An unexpanded cluster
+   `['-rn']` → `unverifiable` (`no-rules`). Mutations: "drop grep `-i` instead of `-S`" FAILS row
+   b; "filter per token without consuming values" FAILS the `['-e','-r']` row (the pattern
+   becomes the next token, rc 1, `stale-line`) and the `['--exclude','x']` row (`x` replayed as a
+   pattern operand).
 
    **3c. The permissive reading names its subset.** A `none` row with pattern `foo\|bar` (or
    `[[:digit:]]`) → `unverifiable` (`permissive-subset`), never `stale-line`; a `none` row whose
@@ -457,13 +611,15 @@ result). Project rule: memory-path discipline applies to the store.
      run inserts 0 and logs 0 events; an unparsable `detail` is counted, not skipped silently.
      Mutation "skip rows silently" FAILS it.
    - **5b, operator census (not a suite test; the 23.0 guard forbids a live store in pytest).**
-     The operator copies each target store's lock-free read snapshot `catalog.read.duckdb` with
-     `cp` into a short tmp dir off every watched tree (the procedure of
-     [[task-23.4-option-a-measurement#r1]]: never the writer slot, no `Store()` on a live root, no
-     `rmx` call, no socket), records the snapshot's mtime and size, runs the backfill on the copy
-     through a sandbox daemon, and logs counts (rows, sidecar rows inserted, `unparsed_detail`,
+     Through R7's procedure, on each target store's copy, `backfill_selection` reports the rows
+     the backfill WOULD insert (learned evidence rows, distinct identities, `unparsed_detail`,
      global rows with `root` NULL) to `workflow/review-output/16.6-backfill-census.log`, cited in
      the implementation summary. The census is a measurement, not a gate.
+   - **5c, the census reads like production (r3 s-6).** In the sandbox, R7's script run on a `cp`
+     of a fixture store's `catalog.read.duckdb` reports the same counts the backfill daemon op
+     then inserts on that store, and the audit hook's open log shows no open outside `$T`, the
+     fixture tree and read-only imports. Mutation "the census re-implements the selection SQL
+     with one predicate changed (`detail LIKE 'learned%'`)" FAILS it.
 6. **No window before 16.1 (R1b; m-6).** After this slice, a `learn_from_grep` op on a tmp store,
    run twice with the same hits, writes evidence rows (duplicates included: `add_evidence` is still
    an unconditional INSERT until 16.1) and one `legacy-writer` sidecar row per DISTINCT evidence
@@ -474,17 +630,28 @@ result). Project rule: memory-path discipline applies to the store.
    `_store_lock`" FAILS it (the probe sees a hold on the read path).
 8. **Overflow is counted (#m-3).** Enqueueing past the queue cap leaves `rmx learn status` printing
    `marks dropped (overflow): N` equal to plan-23's overflow counter.
-9. **Rebuild keeps provenance (b-2).** Write learned rows with sidecar rows under two readings,
-   then apply `move_learned_provenance` to one identity, then run `rebuild_index_from_log` on a
+9. **Rebuild keeps provenance (b-2; r3 m-1).** Write learned rows with sidecar rows under two
+   readings; seed a `linkage_evidence` row at the NEW identity through `add_evidence` (so its
+   `evidence` event is logged; a sidecar row never sits on a key with no evidence row, R1), then
+   apply `move_learned_provenance` to the old identity, then run `rebuild_index_from_log` on a
    sandbox COPY of the store: the sidecar after the rebuild equals the sidecar before it on every
    column except the three mark columns (which are NULL/0, counted `marks_reset`), and the moved
    row sits at its new identity. The same holds through `_apply_event_body` replay. Mutations "no
-   `learned_provenance` event" and "no `learned_provenance_move` event" each FAIL it.
+   `learned_provenance` event" and "no `learned_provenance_move` event" each FAIL it, and so does
+   "replay the move events in their own pass before the `learned_provenance` events" (the moved
+   reading is counted `unresolved_provenance`).
 10. Mutations that must FAIL a test, each with its AC above: sidecar on `rowid` (2); sidecar not
     merged (2); Python `re` verifier (3); `match_argv` replayed whole (3); rc 2 read as no-match
-    (3); filter drops a pattern token (3b); permissive subset check removed (3c); mark every
-    reader drop (4); backfill skips silently (5a); remove R1b (6); inline mark (7); overflow
-    uncounted (8); no provenance event (9); no move event (9).
+    (3); first/last reading only (3h); inherited env (3i); `bin` re-resolved (3j); filter drops a
+    pattern token (3b); filter ignores arity (3b); permissive subset check removed (3c); mark
+    every reader drop (4); backfill skips silently (5a); census selection re-implemented (5c);
+    remove R1b (6); inline mark (7); overflow uncounted (8); no provenance event (9); no move
+    event (9); move events replayed in their own pass (9); purge deletes or hides an orphaned
+    sidecar row (11).
+11. **Orphaned sidecar rows are kept and counted (R1e; r3 s-5).** On a sandbox store with a
+    learned row and its sidecar row, `purge_path` of the file leaves the sidecar row in place
+    and `rmx learn status` prints `orphaned_provenance: 1`; `vacuum` leaves it too. Mutation
+    "`purge_entity` deletes the sidecar rows by `entity_id` without a manifest" FAILS it.
 
 The audit/prune/repair acceptance moved to plan-22. {#acceptance-moved}
 
@@ -497,8 +664,9 @@ The audit/prune/repair acceptance moved to plan-22. {#acceptance-moved}
 | `src/refmatrix/learned_verify.py` (new) | R2: `Rules`, `Unverifiable`, `UNVERIFIABLE_REASONS`, `verify_argv`, `matching_lines`, `permissive_matching_lines`, `hash_line`, `verify` |
 | `src/refmatrix/replica_merge.py` | table lists + the sidecar step (R1c) |
 | `src/refmatrix/daemon.py` | R4 drain consumer (pre-step + batch apply) on plan-23's drain; R5 backfill op; R1b call in `_learn_grep_hits` |
-| `src/refmatrix/cli.py` | `rmx learn status`: mark counts ("at least"), overflow, unverifiable-by-reason/unparsed counts |
-| `tests/test_learned_evidence.py` (new) | AC-1, AC-2, AC-4..9 |
+| `src/refmatrix/cli.py` | `rmx learn status`: mark counts ("at least"), overflow, unverifiable-by-reason/unparsed counts, `orphaned_provenance` |
+| `scripts/census_on_copy.py` (new) | R7: the ONE census procedure (copy header, audit hook, read-only connection, production functions) |
+| `tests/test_learned_evidence.py` (new) | AC-1, AC-2, AC-4..9, AC-11; AC-5c |
 | `tests/test_learned_verify.py` (new) | AC-3, AC-3b, AC-3c |
 
 ## Test strategy {#test-strategy}
@@ -510,9 +678,9 @@ The audit/prune/repair acceptance moved to plan-22. {#acceptance-moved}
   SHORT `mkdtemp()` root.
 - Real `Store`, real `Daemon`, real `/usr/bin/grep` and `rg` for R2 (skipped with a printed reason
   when absent). The rebuild AC runs on a COPY made inside the sandbox.
-- **Census (s-3).** No test reads a live catalog. AC-5b is an operator step on a `cp` of the
-  `catalog.read.duckdb` snapshot (23.4 R1's procedure), logged under `workflow/review-output/`;
-  every AC that gates is a sandbox fixture test.
+- **Census (s-3, r3 s-6).** No test reads a live catalog. AC-5b is an operator step through R7's
+  procedure, logged under `workflow/review-output/`; AC-5c proves in the sandbox that the
+  procedure reads through the production function. Every AC that gates is a sandbox test.
 - The drain ACs use plan-23's 23.2 lock-hold fixture, not a timer.
 - Pre-registered mutations: [[#acceptance]] item 9.
 

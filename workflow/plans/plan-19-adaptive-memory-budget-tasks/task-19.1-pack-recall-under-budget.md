@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: task-19.1-pack-recall-under-budget
-title: "Task 19.1: memory recall packs its hits under a character budget, without subject noise, and the hooks use it"
+title: "Task 19.1: memory recall packs its hits under a UTF-8 byte budget, without subject noise, and the hooks use it"
 tags: [task, memory, recall, hooks, budget]
 metadata:
   node_type: task
@@ -121,13 +121,21 @@ tmp global store holding a copy of the global memories).
 
 1. **Budget.** For each hook argv, `len(payload.encode("utf-8")) ≤ N` for N ∈ {2000, 5000,
    9500}, on a fixture whose hooks and bodies contain `—` and `→`.
+   - **Multibyte density, stated** (round-3 #m-3). Each fixture hook line and body carries at
+     least 4 of `—` / `→` (3 bytes, 1 character each: 2 bytes of excess apiece), so for every N
+     the payload's multibyte excess (UTF-8 bytes minus characters) is larger than the largest
+     slack the greedy packer leaves below N (the length of the longest whole line or body it
+     could not fit). A character-counting packer therefore fills past N bytes on every N.
+   - **Pre-check, recorded before GREEN:** run the chars-counting mutation and record, per N, the
+     payload's byte length (> N) and its excess vs. slack; an N where the mutation stays ≤ N makes
+     the fixture too sparse, and the fixture is densified before the AC is admitted.
 2. **Reach.** On the 20-prompt set (`eval/production/memory_delivery/prompts.local.jsonl`, 20 user
    prompts from session db80475a's input events; kept local per d8f, its sha256 committed in
    `eval/production/memory_delivery/PROMPTS.sha256`), the number of DISTINCT memories named in
    the delivered payload is ≥ 5x today's.
    - "Memory" excludes `mtype=subject` and `session/*` rows.
    - Today = the current per-prompt argv (k=5, `--json`), delivered per 19.5's rule (the whole
-     output when under the limit, else its first 2 KB). After = the new argv (k=12, `--pack`).
+     output when ≤ 19.5 R1's measured `cap`, else its first `preview` bytes; round-3 #m-8). After = the new argv (k=12, `--pack`).
    - Also reported, not gated: the same comparison at equal k=12 (JSON vs pack), so packing's
      share of the gain is visible.
 3. **No subject noise** (d8a). On `"whats next?"`, the per-prompt pack contains 0 rows of
@@ -142,7 +150,12 @@ tmp global store holding a copy of the global memories).
    `retrieved` and 7 `delivered` events with one shared `query_id` (not 14: one emission site);
    for each `delivered` event, the payload bytes at `[offset_bytes, offset_bytes + bytes)` are
    that hit's hook line, and for the 3 bodied hits the bytes at `[body_offset_bytes,
-   body_offset_bytes + body_bytes)` are its body; the other 4 have null body fields. A global
+   body_offset_bytes + body_bytes)` are its body; the other 4 have null body fields. The fixture
+   places ≥ 3 `—` before the LAST hook line and in every body (≥ 6 bytes of excess before each
+   checked span, more than any span's own slack), so spans counted in characters miss on every
+   bodied hit; recorded as a pre-check like AC-1's. This is the `--pack` leg of 21.1's
+   chars-vs-bytes mutation: the JSON renderer is ASCII-escaped, so 21.1 cannot test it there
+   ([[task-21.1-context-usage-telemetry#acceptance]] AC-8d). A global
    hit's `delivered` event is in the tmp global root's file with `scope=global`.
 7. **Global pointer.** With a project row and a global row both named `X`, a global hit's printed
    fetch command returns the global row.
@@ -224,3 +237,18 @@ Answers [[bsd-plan19-21-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9-
 | re-review #s-1 (`delivered` claimed three ways) / #t9-fixes "one owner for `delivered`" | R8 (the pack returns spans; 21.1 R11's single site emits); AC-6 (12 / 7, not 14); mutation |
 | re-review #s-2 (units clash; no offsets) / #t9-fixes "one unit (bytes)" | R1 (`--max-bytes`, `RMX_HOOK_BUDGET_BYTES`, `DEFAULT_HOOK_BUDGET_BYTES`; why bytes is safe under a char cap); R8 (hook-line and body spans); AC-1, AC-4, AC-6; mutations |
 | re-review #m-1 (stale field from a Wave 2 task; 19.5 R1 in no wave) | AC-3 (seeded `metadata.stale`); header (19.5 R1 in Wave 1 before 19.1); plan [[plan-19-adaptive-memory-budget#tasks]] |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan19-21-spec-rereview-r3-6091648]]. Code fact re-read at `636b210`:
+`cli.py:12110` and `:12322` print `json.dumps(rows, indent=2)` with the default `ensure_ascii`, so
+today's hook JSON is ASCII.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r3-6091648]]
+
+| finding / decision | answered at |
+|---|---|
+| round-3 #m-1 (title said "a character budget") | front-matter title (UTF-8 byte budget; R1 is `--max-bytes`) |
+| round-3 #m-3 (multibyte density for the chars-vs-bytes mutations) | AC-1 (density rule + recorded pre-check), AC-6 (≥ 6 bytes of excess before each checked span; pre-check) |
+| round-3 #b-3 (21.1's chars mutation cannot fail on the ASCII JSON renderer) | AC-6 owns the `--pack` leg of that mutation |
+| round-3 #m-8 (one preview definition) | AC-2 "Today" uses 19.5 R1's measured `cap` / `preview`, not 2 KB |

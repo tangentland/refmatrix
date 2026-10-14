@@ -13,8 +13,9 @@ metadata:
 # Task 16.1: the argv-faithful learner {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision after the 2026-10-14 decision log; revision 6, answering spec review
-> r5 `bsd-plan16-spec-review-r5-cd7c923`)
+> Status: Pending (revision round 3, 2026-10-14, answering the r3 re-review
+> `bsd-plan16-22-spec-rereview-r3-6091648`, [[#rev-round-3]]; revision 6 answered spec review r5
+> `bsd-plan16-spec-review-r5-cd7c923`)
 > **Wave:** 2 (plan-16's chain 16.1 → 16.2 ∥ 16.3 → 16.5; [[plan-16-invisible-grep-shim#waves]]).
 > Depends on: [[task-16.6-learned-row-validation]]'s Wave-1 slice (the `learned_evidence` table and
 > `Store.add_learned_provenance`, which R10 writes through), and through it plan-23's 23.1 queue.
@@ -31,6 +32,18 @@ rel: derives-from -> [[plan-review-2026-10-14#t6]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
 rel: derives-from -> [[plan-review-2026-10-14#t9]]
 rel: amends -> [[bsd-plan16-22-spec-rereview-32dde06]]
+rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
+rel: related-to -> [[task-16.5-explicit-grep-hands-off#r0]]
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan16-22-spec-rereview-r3-6091648]] where it touches 16.1. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| r3 s-1 (the learner's locale is not recorded; the daemon verifies in C) | R10 `locale` (part of `rules_sha`, 16.6 R1); R1 `GREP_OPTIONS` kills the teach; AC-15 locale rows + mutation |
+| r3 s-2 (short clusters `-rn`/`-rl`/`-rni`; value arity) | R1 [[#r1-clusters]] (ONE shared cluster walk, expansion before classification); R10 records the EXPANDED tokens; AC-1d rows + mutations; 16.6 R2 arity walk |
+| r3 m-6 (rg resolved through `PATH`) | R1 `--bin` is recorded as given (absolute, never re-resolved); 16.6 R1 `bin` |
 
 ## Revision round 2 (2026-10-14) {#rev-round-2}
 
@@ -120,6 +133,9 @@ and no narrower. {#why-lead}
 
 **R1. Re-run the caller's binary with the caller's MATCHING rules and CUTOFFS.**
 - The shim passes `--bin ABS` (#s-6): its resolved `$REAL`, or for 16.3 the `type -P rg` result.
+  R10 records exactly this path (absolute, as `PATH` resolved it for the caller, not
+  `realpath`'d); 16.6 R2 execs it by that path and never re-resolves `rg`/`grep` through `PATH`
+  (r3 m-6).
 - The learner execs exactly that binary, with `stdin=/dev/null` and in `cwd`.
 - Tokens are classified from ONE table per tool. Short AND long forms, including `--opt=value`,
   are rows of their own (#s-n3).
@@ -141,6 +157,24 @@ and no narrower. {#why-lead}
     `-ekey` is `-e key`, probed in r5).
   - This column is also the fix for bug-102: `--context` is NOT a space-value flag (`cli.py:5540`'s
     `_GREP_VALUE_FLAGS` wrongly lists it; 16.5 R4 deletes that set).
+- **Short clusters are EXPANDED before classification (r3 s-2).** {#r1-clusters} Agents type
+  `-rn`, `-rl`, `-rni` and `-rnie PAT` far more often than separate flags, and no table row holds
+  a cluster. So, before any token is classified, ONE function, `grep_learn.expand_short_clusters(
+  tool, argv) -> list[str]`, rewrites every short cluster into single-letter tokens, left to
+  right, with the tool's short value letters: grep `e f m A B C d D` (this table's `value`
+  column), rg `e f g m t T A B C d M r`. A value letter ends the cluster; the rest of the token,
+  if any, is its value as a SEPARATE token (`-rnie` + `PAT` → `-r -n -i -e PAT`; `-ekey` →
+  `-e key`; `-rm2` → `-r -m 2`). A token after `--`, a long flag, a bare `-`, and grep's
+  `-NUM` (a token of digits only, a drop:shape row) are not clusters. A letter that is in no
+  row kills the teach as `unknown-flag:-<letter>`. The value letters are ONE exported constant
+  per tool; 16.5 R0 reads the same grep constant to find rmx's `-k` and leaves grep's tokens
+  unchanged in `grep_argv`, so the expansion happens here, once. Classification, R1b's recursion
+  test, R10's `match_argv` and the 16.6 verifier all see only the expanded tokens.
+- **`GREP_OPTIONS` kills the teach (r3 s-1).** BSD grep reads `GREP_OPTIONS` from the
+  environment as extra tokens, which the recorded argv would not carry. A non-empty
+  `GREP_OPTIONS` in the learner's environment gives `outcome=skipped reason=grep-options-env`.
+  The re-run's environment otherwise is the caller's (inherited through the shim), so the hits
+  are what the caller's locale matched; R10 records that locale.
 - **Every long flag in the `value` column has its SPACE form as a row of its own (m-r5-5),** beside
   its `=` form, in the class its `=` form has: `--include G`, `--exclude G`, `--exclude-dir G`,
   `--include-dir G`, `--regexp PAT`, `--directories ACT`, `--devices ACT` (keep: match);
@@ -286,9 +320,17 @@ for a case-sensitive `rmx grep`.
 **R10. Learn-time provenance (d6d: moved here from 16.6 R1; #t6-fixes; b-r5-1).** {#r10}
 - The learner's queue record carries, per record: `tool`, `bin`, `dialect`, `match_argv`,
   `spawned_by`, `root` (= `project_root`), `pattern`; and per hit: `file`, `line`, `line_hash`.
-  - `match_argv` = the MATCH-class and CUTOFF-class tokens R1 kept, verbatim and in order (the
-    cutoff as re-run, so `-l` is recorded as `-m 1`). Pruning flags (R1b) and the appended
-    canonical tokens are NOT in it.
+  - `match_argv` = the MATCH-class and CUTOFF-class tokens R1 kept, in order, AFTER R1's cluster
+    expansion ([[#r1-clusters]]): one token per flag, a short flag's value as the next token
+    (`-rli` records `['-r','-m','1','-i']`; `-ekey` records `['-e','key']`), a long `=` form as
+    typed (`--exclude=G` stays one token, `--exclude G` stays two). The cutoff is recorded as
+    re-run, so `-l` is `-m 1`. Pruning flags (R1b) and the appended canonical tokens are NOT in
+    it.
+  - `locale` (r3 s-1): for `tool=grep`, the learner's `LC_ALL`, `LC_CTYPE` and `LANG` (each its
+    value or `null`), read from its own environment, which is the caller's; for `tool=rg`,
+    `null`. It is part of `rules_sha` (16.6 R1), so one argv taught under two locales is two
+    readings. The context backstop records the DAEMON's values (its grep re-run is the daemon's,
+    and so is its verify).
   - `dialect`: grep `-F`/`--fixed-strings` → `fixed`, `-E`/`--extended-regexp` → `ere`, else `bre`;
     rg `-F` → `fixed`, `-P`/`--pcre2` → `pcre2`, else `rust`; tokens naming more than one dialect →
     `mixed`. Informational: 16.6 R2 always re-runs `tool`.
@@ -321,6 +363,12 @@ for a case-sensitive `rmx grep`.
    - (c) **RED.** Each case fails against a stub that drops the flag, by SET DIFFERENCE, not by
      `ImportError`.
    - **1b.** 16.3's rendered argv for every captured payload classifies with zero unknown tokens.
+   - **1d (r3 s-2).** Clusters expand before classification: `grep -rn alpha .` teaches the same
+     set as `grep -r -n alpha .`; `grep -rli alpha .` the same as `grep -r -l -i alpha .`;
+     `grep -rnie alpha .` the same as `grep -r -n -i -e alpha .`; `grep -rq alpha .` is killed
+     (`-q`); `grep -rk alpha .` is `skipped reason=unknown-flag:-k`. Mutations: "classify the
+     cluster as one token" FAILS (every row becomes `unknown-flag:-rn`); "split clusters without
+     the value letters" FAILS the `-rnie` row (`-e` loses its value `alpha`).
    - **1c (m-r5-5).** Every long `value` flag in its SPACE form classifies as its `=` form does:
      `grep -r --include '*.py' alpha .`, `--exclude-dir build`, `--regexp alpha`, `--max-count 1`,
      `--after-context 1`, `--file pats.txt` (kill) each produce the same outcome and taught set as
@@ -379,8 +427,12 @@ for a case-sensitive `rmx grep`.
     A learned evidence row with no sidecar row after the drain: 0. Re-teaching the same argv writes
     nothing (AC-12 holds with the sidecar); re-teaching with `-i` adds sidecar rows only, and
     `facts.log` grows by exactly one `learned_provenance` event per added sidecar row (no other op).
-    `grep -rl --exclude='*<parent>*' PAT dir` records `match_argv` with the `--exclude` and
-    `['-m','1']` tokens, and 16.6 R2 still verifies its rows `ok` (16.6 AC-3 d/e).
+    `grep -rl --exclude='*<parent>*' PAT dir` records `match_argv` = `['-r','-m','1',
+    '--exclude=*<parent>*']` (the EXPANDED cluster, r3 s-2), and 16.6 R2 still verifies its rows
+    `ok` (16.6 AC-3 d/e).
+    **Locale (r3 s-1).** The same `grep a.b f.md` taught once with `LANG=en_US.UTF-8` and once
+    with no `LANG`/`LC_*` records two sidecar readings with different `locale` and `rules_sha`;
+    a `GREP_OPTIONS=-i` caller is `skipped reason=grep-options-env`.
 16. **`spawned_by` (s-r5-6).** Each of `--spawned-by shim`, `grep-tool-hook`, `rmx-grep` lands in the
     log record and the sidecar; a missing `--spawned-by` gives `skipped reason=bad-spawned-by`.
 
@@ -427,5 +479,9 @@ for a case-sensitive `rmx grep`.
 | hash the `file:line:` prefix instead of the TEXT | AC-15 (`line_hash` mismatch) |
 | record the pruning flags in `match_argv` | AC-15 (`match_argv=[]`) |
 | default a missing `--spawned-by` to `shim` | AC-16 |
+| classify a short cluster as one token | AC-1d (`unknown-flag:-rn`) |
+| expand clusters without the value letters | AC-1d (`-rnie` row) |
+| leave `locale` out of `rules_sha` | AC-15 locale row (one reading, not two) |
+| ignore `GREP_OPTIONS` | AC-15 (`-i` hits taught under recorded rules without `-i`) |
 
 {#tests}

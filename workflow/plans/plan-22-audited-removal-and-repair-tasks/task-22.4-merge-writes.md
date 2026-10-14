@@ -25,6 +25,8 @@ rel: depends-on -> [[plan-20-concept-similarity-eval]]
 rel: depends-on -> [[refmatrix/adr-0004-unified-location-space-index]]
 rel: depends-on -> [[task-22.2-repair-then-remove]]
 rel: derives-from -> [[plan-review-2026-10-14#t9]]
+rel: derives-from -> [[plan-review-2026-10-14#t9-approvals]]
+rel: related-to -> [[task-22.6-removal-entry-points]]
 
 ## Requirements (to be completed when unblocked) {#requirements}
 
@@ -37,6 +39,12 @@ rel: derives-from -> [[plan-review-2026-10-14#t9]]
    intent-logged manifest, `removal_restore` by name, `bind` per batch, the ablation gate on a
    copy of the same store.
 4. **R4** Tests run in task 23.0's sandbox (d1a/d1b).
+5. **R5 `fold_concept_dups` travels with this task (d9o).** {#r5} The user classified
+   `fold_concept_dups` (`store.py:5808`: folds a concept into the same-named memory, migrates its
+   edges, purges the concept) as a MERGE: a plan-22 entry point owned with merge writes by the
+   helix plan. So the helix plan takes it over with this spec, and it becomes an entry point to
+   R3's path. Until then it is unchanged, and 22.6 R7 lists it as an unrouted merge path in every
+   `removal_audit --list` ([[task-22.6-removal-entry-points#r7]]).
 
 Owner of ADR-0004 `#rule-no-delete`'s "merge" path. {#owner}
 
@@ -52,3 +60,9 @@ Owner of ADR-0004 `#rule-no-delete`'s "merge" path. {#owner}
 | finding / decision | answered in |
 |---|---|
 | d9j (plan-22 closes with 22.4 handed to the helix plan; re-review open item 3, plan-22 r1 m-5) | [[#root]] hand-over note |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+| finding / decision | answered in |
+|---|---|
+| d9o (`fold_concept_dups` = a merge, plan-22 entry point owned by the helix plan) | [[#r5]]; [[task-22.6-removal-entry-points#r7]] |

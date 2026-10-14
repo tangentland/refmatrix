@@ -13,8 +13,8 @@ metadata:
 # Task 17.2: the nightly tick {#root}
 
 > Plan: [plan-17-nightly-store-maintenance](../plan-17-nightly-store-maintenance.md)
-> Status: Pending (revision round 2, 2026-10-14: re-review [[bsd-plan23-17-spec-rereview-32dde06]];
-> see [[#rev-round-2]])
+> Status: Pending (revision round 3, 2026-10-14: re-review [[bsd-plan23-17-spec-rereview-r3-6091648]]
+> (ns17-r3-3, nm17-r3-2, nm17-r3-3); see [[#rev-round-3]]. Round 2: [[#rev-round-2]])
 > Depends on: 17.1; 23.0 (test sandbox). NOT on 23.1: the hub's `maintenance_steps` is its own
 > registry, not 23.1's daemon `tick_registry` (ns17-1).
 
@@ -31,6 +31,10 @@ rel: derives-from -> [[bsd-plan17-spec-review-3104a81]]
 rel: derives-from -> [[plan-review-2026-10-14#t3]]
 rel: derives-from -> [[plan-review-2026-10-14#t8-amendments]]
 rel: related-to -> [[task-19.4-keep-derived-layers-current]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#ns17-r3-3]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#nm17-r3-2]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#nm17-r3-3]]
+rel: related-to -> [[plan-18-duckdb-store-maintenance#contract-2026-10-14]]
 
 ## Why {#why}
 
@@ -49,7 +53,10 @@ single-flight op. Decision d3d makes an unarmed store dry-run only. {#why-body}
    - A dedicated hub thread `_maintain_loop` wakes every `RMX_HUB_MAINTAIN_TICK_S` (default 300)
      and is started regardless of `RMX_HUB_QUEUE_ALERT_INTERVAL`. `RMX_HUB_MAINTAIN_AT` (default
      `03:30` local; `off` disables) is read at start; `off` writes one `hub.log` line
-     `maintenance disabled (RMX_HUB_MAINTAIN_AT=off)`.
+     `maintenance disabled (RMX_HUB_MAINTAIN_AT=off)` that also names every store whose live
+     `facts.log` is excluded from Time Machine (`tmutil isexcluded <root>/facts.log`), because
+     with `off` no daily copy is made for them (ns17-r3-3). `off` disables the STEPS only; the
+     thread keeps running R8's backup-age check.
    - Stamps live in `~/.refmatrix/maintain.json`, keyed by (store root, step name):
      `{armed_at, last_attempt, last_success, consecutive_failures, last_outcome}`. Writes are
      atomic (tmp + rename) under an `fcntl` lock on `maintain.json.lock`, shared with R7's CLI.
@@ -64,17 +71,30 @@ single-flight op. Decision d3d makes an unarmed store dry-run only. {#why-body}
      store daemon every 30 s under ONE 5 s budget for drains and tails; this one runs in the hub
      once per scheduled day under a per-store budget of minutes. C6's "one tick, one stamp store"
      means THIS hub tick and `maintain.json`; d4a's "one registry" means the daemon's tick.
-   - `maintenance_steps.register(MaintenanceStep(name, op, args, requires_arming, reason))`, in a
-     fixed order. `op` is a daemon op name; `args(root, dry_run, today) -> dict` builds its
-     arguments (`today` is the injected clock's local date); `requires_arming: bool` and `reason`
-     are stated by the registrant (R7).
+   - `maintenance_steps.register(MaintenanceStep(name, op, args, requires_arming, reason,
+     after_idle=()))`, in a fixed order. `op` is a daemon op name; `args(root, dry_run, today) ->
+     dict` builds its arguments (`today` is the injected clock's local date); `requires_arming:
+     bool` and `reason` are stated by the registrant (R7); `after_idle: tuple[str, ...]` names
+     earlier steps this one must not overlap (below).
    - **Every registered op must:** accept `dry_run` and `invoked_by="hub"`; be single-flight with
      the 17.1 R11 reply shape (`already_running`) and answer `status=True` lock-free; and append
      one line per completed run to the store's `<root>/maintain/runs.jsonl` (17.1 R12 shape, its
      own `step` name). A step that cannot meet these is not registered.
-   - Registrants: `vectors_maintain` (17.1, first), `factslog_backup` (17.4), 19.4's memory
-     compile, plan-18's DuckDB step. A failure in one step does not skip the store's other
-     steps.
+   - **Registration order** (ns17-r3-3): `factslog_backup` (17.4) FIRST, because it is cheap,
+     lock-free and non-destructive and it is the only copy of the live log once 17.3 excludes it
+     from Time Machine; then `vectors_maintain` (17.1); then 19.4's memory compile; then
+     plan-18's DuckDB step.
+   - **A store's steps are independent** (ns17-r3-3; plan-18 `#contract-2026-10-14` asked). Per
+     store, the hub calls each DUE step in registration order:
+     - after an earlier step's `ok`, `failed`, `refused`, `dry_run:unarmed` or `skipped:*`, the
+       next step runs;
+     - after an earlier step's `still_running` (R4) or `stuck`, the next step STILL runs at once,
+       unless it names that step in `after_idle`; such a step is reported `deferred` for this
+       store and stays due for the next tick. No plan-17 step declares `after_idle` (the backup
+       copies from an open descriptor and is consistent under any concurrent write, 17.4 R2;
+       `vectors_maintain` takes `_store_lock` in its own daemon). Plan-18 states whether its
+       CHECKPOINT needs `after_idle=("factslog_backup",)` or more;
+     - so nothing on one store, a hung compaction included, can stop the same store's backup.
 3. **R3 Roots: the registered daemon list, injected** (spec review #b-5, #s-6). {#r3-roots}
    - The run takes `roots: Callable[[], list[Path]]`. The production default is the registered
      daemon list: the launchd-supervised roots (`discovery._roots_from_launchd()`,
@@ -90,9 +110,12 @@ single-flight op. Decision d3d makes an unarmed store dry-run only. {#why-body}
    - Each step call is `daemon.call(root, op, args, timeout=RMX_MAINTAIN_STORE_TIMEOUT_S
      (default 600), retries=0)`.
    - A timeout, or an `already_running` reply (17.1 R11), is outcome `still_running`, never
-     `failed`, and never counts toward R5. The hub then polls `vectors_maintain(status=True)`
-     every 30 s until the store reports idle or the per-store budget
-     `RMX_MAINTAIN_STORE_BUDGET_S` (default 1800) is spent; the op is never re-sent.
+     `failed`, and never counts toward R5. The hub moves on to the store's next step (R2); after
+     the store's last step it polls EACH still-running step through THAT step's own op with
+     `status=True` (`factslog_backup(status=True)`, plan-18's op, …; nm17-r3-3: not
+     `vectors_maintain` for every step) every 30 s, until every one reports idle or the
+     per-store budget `RMX_MAINTAIN_STORE_BUDGET_S` (default 1800) is spent; an op is never
+     re-sent.
    - Serial: the next store does not start while one is `still_running`. If the budget is spent
      with the store still running, the run stops; the remaining due stores are reported
      `deferred` and stay due for the next tick, and the still-running store's final report is
@@ -110,7 +133,7 @@ single-flight op. Decision d3d makes an unarmed store dry-run only. {#why-body}
    (store, step), one alert is published to `global:queues`; a success resets the count and the
    alert. An `orphan_cap` refusal (17.1 R6) alerts on its first occurrence and names the dataset
    and the release (`rmx vectors maintain --dry-run`, then `--confirm-orphans <sha>` by hand,
-   d9c). A `stuck` outcome alerts per R4.
+   once per capped dataset, d9c). A `stuck` outcome alerts per R4.
 6. **R6 Report** (spec review #m-4). {#r6-report}
    One summary per run to `global:queues`: per outcome (`ok`, `dry_run:unarmed`, `skipped:*`,
    `refused:*`, `failed`, `still_running`, `stuck`, `deferred`) the store names; bytes reclaimed; `orphans`
@@ -136,12 +159,31 @@ single-flight op. Decision d3d makes an unarmed store dry-run only. {#why-body}
      not the surface; the verbs rule). Verb `hub_maintain_arm(root, step, run_id)`: CLI
      `rmx hub maintain arm --root <root> --step <step> --run-id <id>`, MCP parity through the
      verb-parity test. It reads `<root>/maintain/runs.jsonl` (17.1 R12) and refuses unless that
-     file holds a line with this `run_id`, this `step`, `invoked_by: "hand"`, `dry_run: false` and
-     `ok: true`. On success it writes `armed_at` and `armed_by_run` for that (store, step), under
+     file holds a line with this `run_id`, this `step`, `invoked_by` in `{"cli", "mcp"}` (a hand
+     run on either surface; never `"hub"`), `dry_run: false` and `ok: true`, AND an EARLIER line
+     (in file order) of the same `step` with `dry_run: true` and `ok: true` (nm17-r3-2: the gate
+     proves d3d's ORDER, dry run then real run, not only a successful real run). `invoked_by` is
+     set by the adapter, never by the caller (17.1 R1). On success it writes `armed_at` and `armed_by_run` for that (store, step), under
      R1's lock; it is the only writer of `armed_at`. `hub_maintain_disarm(root, step)` clears it
      and needs no run id. This settles the plan's former open item 4 (an agent can call the verb,
      but only after a real, successful hand run of that exact step on that store, which is the
      d3d order).
+
+8. **R8 The backup-age alarm** (ns17-r3-3). {#r8-backup-age}
+   - Each store daemon's `_store_health` (`daemon.py:3739`) reports `factslog_backup_age_h`,
+     read from `<root>/backups/facts.log.daily.meta.json`'s `copied_at` (17.4 R4), and
+     `factslog_backup_stale: true` when the age is over `RMX_FACTSLOG_BACKUP_STALE_H` (default
+     48) or no copy exists. That surface needs no hub: `rmx daemon status` shows it with the hub
+     down.
+   - `rmx hub status` reports `factslog_backup_age_h` per registered store.
+   - On EVERY `_maintain_loop` wake (every `RMX_HUB_MAINTAIN_TICK_S`), whether or not any step
+     is due, and with `RMX_HUB_MAINTAIN_AT=off` too, the hub reads every registered root's meta
+     file and publishes ONE alert to `global:queues` per store whose age is over the threshold,
+     naming the store, the age and whether its live `facts.log` is excluded from Time Machine.
+     The alert is not repeated while the store stays stale; a fresh copy clears it with one
+     `hub.log` line.
+   - What this cannot see, stated: with the hub down, no alert is published; the daemon's health
+     surface still reports the staleness.
 
 ## Acceptance criteria {#acceptance}
 
@@ -185,9 +227,26 @@ daemons with short roots.
     - arm with the `run_id` of a successful non-dry hand run of that step → `armed_at` written;
     - arm with a dry run's id, a failed run's id, a `hub` run's id, another step's id, or an
       unknown id → refused, no stamp written;
+    - arm with the id of a successful CLI (or MCP) real run that has NO earlier successful dry run
+      of that step in `runs.jsonl` → refused (nm17-r3-2); after a dry run and a second real run,
+      arming with the second run's id succeeds;
     - the verb is reachable through both the CLI and MCP (the verb-parity test lists it) and
       behaves identically through both.
-12. **AC-9 pre-registered mutations, each must FAIL a named AC:**
+12. **AC-13 step order and independence (ns17-r3-3, nm17-r3-3).** One store, three registered
+    steps in production order: `factslog_backup`, then a test `vectors_maintain` op that blocks on
+    an event the test never sets (the AC-10 shape), then a third test step; a fourth test step
+    declares `after_idle=("vectors_maintain",)`. One due tick: the backup copies first (a new
+    `.daily` exists), `vectors_maintain` is `still_running`, the third step RUNS (its op received
+    once), the fourth is `deferred`. The hub's status polls go to `vectors_maintain`'s own op
+    only, never to the other steps' ops with `vectors_maintain`'s name. With
+    `factslog_backup` itself made to block, the later steps still run.
+13. **AC-14 backup-age alarm (ns17-r3-3).** A store whose meta file says the copy is 3 days old
+    and no step due (the injected clock before 03:30): the next wake publishes exactly one
+    stale-backup alert naming the store; the following wakes publish none; a fresh copy clears it
+    with one `hub.log` line. The same with `RMX_HUB_MAINTAIN_AT=off`, whose disable line names
+    the stores whose live log is excluded. `_store_health` on that daemon reports
+    `factslog_backup_stale: true` with the hub stopped.
+14. **AC-9 pre-registered mutations, each must FAIL a named AC:**
    - no catch-up → AC-1;
    - stacking runs after sleep → AC-1;
    - maintenance moved back onto `_queue_alert_loop` → AC-2;
@@ -197,6 +256,14 @@ daemons with short roots.
    - the `stuck` ceiling removed (still_running forever, others deferred) → AC-10;
    - `requires_arming` ignored (every unarmed step dry-runs, or every step runs for real) → AC-11;
    - the arm verb not checking `runs.jsonl` (any `run_id` accepted) → AC-12;
+   - the arm gate without the earlier-dry-run condition → AC-12 (a real run with no dry run
+     before it arms);
+   - a later step skipped while an earlier one is `still_running` → AC-13;
+   - `factslog_backup` registered after `vectors_maintain` → AC-13 (no copy while vectors
+     blocks);
+   - every still-running step polled through `vectors_maintain(status=True)` → AC-13;
+   - `after_idle` ignored → AC-13 (the fourth step runs);
+   - the backup-age check run only on due ticks, or not under `off` → AC-14;
    - the arm verb CLI-only (no MCP twin) → AC-12 (verb parity);
    - default `retries` → AC-6;
    - a timeout counted as failed → AC-6;
@@ -243,3 +310,15 @@ daemons with short roots.
 | ns17-5 (arming only for vectors; verb class), #t9-fixes "arming per (store, step) for every registered step", d8g | [[#r2-registry]] (op obligations), [[#r7-unarmed]], AC-11, AC-12 |
 | d9c (cap release named in the alert) | [[#r5-alert]] |
 | nm17-2 (`skipped:not_supervised` unreachable) | [[#r3-roots]] |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Source: [[bsd-plan23-17-spec-rereview-r3-6091648]].
+
+| finding / decision | answered at |
+|---|---|
+| ns17-r3-3 (no staleness alarm after the TM exclusion; intra-store step order unstated; plan-18's order question) | [[#r1-schedule]] (`off` names excluded stores), [[#r2-registry]] (backup FIRST; steps independent; `after_idle`), [[#r4-call]], [[#r8-backup-age]], AC-13, AC-14, AC-9; 17.4 AC-8 |
+| nm17-r3-2 (arm gate proves a run, not d3d's order; `invoked_by` defaults to "hand") | [[#r7-unarmed]] (earlier dry-run line; surface-valued `invoked_by`), AC-12, AC-9 |
+| nm17-r3-3 (R4 polls `vectors_maintain(status=True)` for every step) | [[#r4-call]], AC-13 |
+| nm17-r3-5 (19.4 AC-2 vs its own `requires_arming=True`) | not edited here (plan-19's file); handed to the 19/21 pair, see [[plan-17-nightly-store-maintenance#open-after-revision]] 6 |
+| d9c (release per capped dataset) | [[#r5-alert]] |

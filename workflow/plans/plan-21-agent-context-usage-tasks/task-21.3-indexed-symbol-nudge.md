@@ -152,7 +152,10 @@ counts are unchanged.
    - the nudge written into the tool output instead of the hook context (AC-2 asserts grep's
      stdout is byte-identical with and without the hook);
    - `build_context` called from the hook (a test asserts it is never imported by `nudge.py`);
-   - (R6 band only) the hook writing the set (AC-7).
+   - (R6 band only) the hook writing the set (AC-7);
+   - the `channel=nudge` `delivered` append removed from `nudge.py` (AC-2: no event), the nudge
+     leg of 21.1's per-channel emitter mutations ([[task-21.1-context-usage-telemetry#acceptance]]
+     AC-8c, round-3 #b-3).
 
 ## Files to modify {#files-to-modify}
 
@@ -200,3 +203,11 @@ Answers [[bsd-plan19-21-spec-rereview-32dde06]].
 |---|---|
 | re-review #s-7 (R0's identifiers drawn from a hashed fixture) | R0 (local raw project log, count + sha256 committed, d8f) |
 | re-review #m-6 (band row 3 "written at SessionStart / on derive") | R0 table row 3 annotation; R6 |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan19-21-spec-rereview-r3-6091648]].
+
+| finding / decision | answered at |
+|---|---|
+| round-3 #b-3 (the nudge emitter's removal mutation, one of 21.1's seven channels) | [[#acceptance]] AC-8 mutation list (the `channel=nudge` append removed, caught by AC-2) |
