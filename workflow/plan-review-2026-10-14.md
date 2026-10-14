@@ -24,6 +24,14 @@ rel: derives-from -> [[bsd-plan22-spec-review-3104a81]]
 rel: derives-from -> [[bsd-plan23-spec-review-3104a81]]
 rel: related-to -> [[exploration-session-phased-context]]
 
+## Close-out {#close-out}
+
+The user, 2026-10-14: "have bsd review our decisions when we're done". When the last topic is
+decided, a `@ch-bsd` review of THIS decision log runs before any spec is revised: are the decisions
+consistent with each other, with the findings they answer, with ADR-0004 and the memory rules
+(decay never loses knowledge, store calls via daemon), and does any "taken without a decision" fix
+hide a real decision? Its findings are answered here first; the spec revisions follow.
+
 ## Topics {#topics}
 
 1. Test isolation (all reports).
