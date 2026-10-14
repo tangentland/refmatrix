@@ -65,7 +65,7 @@ Findings: 23 #b-1..b-3, #s-1..s-7, #m-1..m-3; 17 #s-1, #s-7; 22 #s-1, #s-2.
 
 | id | decision | by |
 |---|---|---|
-| d2a | Exactly-once drain: the drain offset is committed in the SAME DuckDB transaction as the batch (option 1), not an event-id dedupe table. Answered "2a - opt"; read as option 1, the recommendation — to be confirmed. | user, 2026-10-14 |
+| d2a | Exactly-once drain: the drain offset is committed in the SAME DuckDB transaction as the batch (option 1), not an event-id dedupe table. Answered "2a - opt"; read as option 1 and CONFIRMED by the user ("1 - yes agree"). | user, 2026-10-14 |
 | d2b | Plan-23 stays first in Wave 1 (after 23.0), with the `bind(batch)` seam; Option A is not folded in. Plan-17 takes no per-dataset Lance lock now; it goes through `bind`, and a revisit is recorded for when Option A lands. | user, 2026-10-14 |
 | d2c | bug-093's between-file yield becomes task **23.3** (after 23.1): a transaction boundary inside `_sync_paths`, the same `bind` seam and write-count tests. | user, 2026-10-14 |
 | d2e | Option A's measurement #4 (one writer thread vs N per-op cursor writer threads on a cliquet copy: conflict rate, throughput, ART errors under load; [[exploration-storage-concurrency-redesign#measure]]) runs in Wave 1 IN PARALLEL with 23.0, so the Option A revisit (d2b) has data before plan-23's code lands. | user, 2026-10-14 |
@@ -86,7 +86,7 @@ Findings: 17 #b-1..b-6, #s-1..s-8, MEH.
 | id | decision | by |
 |---|---|---|
 | d3a | An orphan vector is one whose entity id is absent from the WHOLE catalog (every partition), not `gc_vectors`' bound-partition-and-kind rule. The orphan list stores the vectors themselves, so a reap can be undone. | user, 2026-10-14 |
-| d3b | The pre-compaction version is tagged and kept until the next successful run; cleanup never removes the tagged version. Not answered directly; accepted as the premise of d3c ("3b mostly covers this") — to be confirmed. | user (implied), 2026-10-14 |
+| d3b | The pre-compaction version is tagged and kept until the next successful run; cleanup never removes the tagged version. First implied by d3c ("3b mostly covers this"), then CONFIRMED by the user ("1 - yes agree"). | user, 2026-10-14 |
 | d3c | Out-of-daemon readers (`_replica_memory_recall`, `rmx recall`, `memory compile`) are protected by d3b; a reader that hits a missing file retries once on the current version and counts it. No N-newest retention floor. | user, 2026-10-14 |
 | d3d | With no `maintain` stamp, the tick runs a dry run only and reports; the real op starts only after 17.3 writes the stamp by hand (after its dry run and backup). | user, 2026-10-14 |
 | d3e | Maintenance is its own step on 17.2's tick (plan-review C6), not on the queue-alert thread; stores run serially with a per-store budget, and a hub-side timeout is reported as "still running", not "failed". | user, 2026-10-14 |

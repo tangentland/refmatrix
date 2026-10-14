@@ -52,8 +52,8 @@ rel: depends-on -> [[plan-review-2026-10-14]]
 1. **Answer the ch-bsd review of the decision log** (running at save time; report will be
    `workflow/bullshit/2026-10-14-*-decision-log-review-*-a192ba2.md`). Merge its ledger, bring
    any decision it flags back to the user.
-2. **Two flagged assumptions to confirm with the user:** d2a ("2a - opt" read as option 1) and
-   d3b (implied by d3c).
+2. **Flagged assumptions confirmed** by the user: d2a (offset in the batch transaction) and d3b
+   (tagged pre-compaction version). STM hygiene (task 19.0, d5e) accepted before phased context.
 3. **Revise the specs** of plans 16/17/19/21/22/23 from the decision log (new tasks 23.0, 23.3,
    19.6; 16.6 split); spec re-reviews; merge `wave0-spec-reviews` → `master`.
 4. **Wave 1** per the decision log: 23.0 ∥ Option A measurement #4 → plan-23 → the rest.
