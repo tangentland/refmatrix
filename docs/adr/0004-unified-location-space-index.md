@@ -339,6 +339,51 @@ without a write per event. {#amend-helix-body}
   Aster's decaying approximate counters and per-key eager/lazy merge; and the gates prior
   measurements impose. The ADR stays Proposed. {#d-2026-10-07-amend}
 
+## Amendment 2026-10-14 (DRAFT — awaiting the user's approval) {#amend-2026-10-14}
+
+Decision d9i of [[plan-review-2026-10-14#t9]]. Drafted from the Wave 0 spec reviews; nothing below
+is in force until the user approves it, after which [[#rule-floor]] and [[#rule-no-delete]] are
+edited to match and this section records the approval.
+
+rel: derives-from -> [[plan-review-2026-10-14#t9]]
+rel: amends -> [[#rule-floor]]
+rel: amends -> [[#rule-no-delete]]
+
+1. **The floor formula is never zero.** [[#rule-floor]]'s `base * log1p(hits + 2*used)` is 0 for a
+   memory that has never been recalled, which contradicts "a floor, never zero" and made the
+   never-recalled memories fold first (plan-19 review #b-4). The formula becomes
+   `base * (1 + log1p(hits + 2*used))`. Task 19.2 stores the raw per-evidence counts and applies
+   `base`, the weights and the floor at READ time (`DEFAULT_SCORE_PARAMS`, starting values
+   `base` 0.25, `asserted_floor` 1.0, weights 1 and 2, tunable without data loss; d9e).
+   {#a14-floor}
+2. **The asserted floor and the fold order are two signals.** [[#rule-asserted-floor]]'s
+   definition (feedback, user-asserted or `protected`, `rel:`-anchored) stays the FLOOR, the
+   protection against loss. `MEMORY.md`'s fold ORDER is a separate, narrower tier (feedback →
+   memories linked from curated memories → the rest), because the floor definition covers ~91% of
+   memories and cannot order them. Folding loses nothing: every folded memory stays reachable by
+   a command its fold line prints (d8b). {#a14-fold-order}
+3. **"The ONE removal path" is scoped.** [[#rule-no-delete]] says removal goes only through
+   plan-22. Today `rmx forget`, `rmx memory bulk-forget`, `rmx untrack` and `rmx prune-noise
+   --drop` also remove rows. Proposed scoping:
+   - **Knowledge removal** (an entity, a learned row, a memory, a protection) goes through plan-22's
+     audited path: dry run → manifest → `--confirm <hash>` → apply → restore. `forget` and
+     `memory bulk-forget` become entry points to it (they build the manifest and require the
+     confirm), not a second path.
+   - **Derived-index cleanup** is NOT knowledge removal when the thing removed is recomputable
+     from a kept source or points at nothing, and it is allowed outside plan-22 only with a
+     manifest written before the change: plan-17's orphan-vector reap (the entity is gone from the
+     whole catalog; vectors kept in the orphan list, `vectors_restore`), and the bug-105 fragment
+     repair (bits of deleted entities, kept in the repair manifest).
+   - **`untrack`** (a path the user removed from the corpus) and **`prune-noise --drop`** are
+     listed exceptions: each prints what it removes and writes the same manifest form; neither is
+     run by a timer or a counter.
+   {#a14-removal-scope}
+4. **Stale compiled subjects are marked, not removed.** Compile marks a subject `stale`; it stays
+   protected and hidden from recall; removal is plan-22's `stale-subject` class (d8a, task 22.1a).
+   {#a14-stale-subjects}
+
+{#amend-2026-10-14-body}
+
 ## Open questions {#open}
 
 - Typed expansion: which relation types, at which depth (1–3), under which lift/budget gates,
