@@ -39,7 +39,11 @@ rel: depends-on -> [[plan-review-2026-10-14]]
    - bugs logged: bug-099 (learn queue loses a batch on SIGKILL), bug-100 (`latest_session`
      cross-session STM), bug-101 (suite wrote 1,655 pytest entities into the live global store),
      bug-102 (`--context` treated as space-valued).
-4. **Decision walk** with the user, topic by topic, in `workflow/plan-review-2026-10-14.md`
+4. **Decision-log review** (ch-bsd, DIRTY 6B/10S/6M) answered in the log's #t8 close-out:
+   d8a/d8b replace the unsound d5a/d5c; d8c-d8g revisit d6b, d1c, 19 #s-4, privacy, apply gate.
+   Exploration gained **versioned injection** (supersede by id+rev, one-line unchanged,
+   keyframe+delta text patches; hooks can only append, the KV cache cannot be patched).
+5. **Decision walk** with the user, topic by topic, in `workflow/plan-review-2026-10-14.md`
    (d1a..d7a). Headlines: 23.0 test sandbox is Wave 1's first build; Option A's measurement #4 runs
    in parallel with it; plan-23 first with a `bind(batch)` seam; drain offset in the batch's
    DuckDB transaction; new `recall-events.jsonl`; 19.6 owns phasing + topic cache; 16.6 split by
@@ -49,17 +53,21 @@ rel: depends-on -> [[plan-review-2026-10-14]]
 
 ## Next {#next}
 
-1. **Answer the ch-bsd review of the decision log** (running at save time; report will be
-   `workflow/bullshit/2026-10-14-*-decision-log-review-*-a192ba2.md`). Merge its ledger, bring
-   any decision it flags back to the user.
-2. **Flagged assumptions confirmed** by the user: d2a (offset in the batch transaction) and d3b
-   (tagged pre-compaction version). STM hygiene (task 19.0, d5e) accepted before phased context.
-3. **Revise the specs** of plans 16/17/19/21/22/23 from the decision log (new tasks 23.0, 23.3,
-   19.6; 16.6 split); spec re-reviews; merge `wave0-spec-reviews` → `master`.
-4. **Wave 1** per the decision log: 23.0 ∥ Option A measurement #4 → plan-23 → the rest.
-5. **Open bugs:** bug-096, bug-097, bug-099..102.
+1. **Spec revisions IN FLIGHT at save time** (2026-10-14 ~12:40): six background agents, one per
+   plan (16 rev 6, 17, 19, 21, 22, 23), each editing only its own plan files from the decision log
+   `workflow/plan-review-2026-10-14.md` (d1a..d8g; #t8 close-out wins over earlier rows). New task
+   specs expected: 23.0, 23.3, 23.4, 22.1a, 22.5, 19.0, 19.6. Brief:
+   scratchpad `revise-brief.md` (session-local). If the session ended before they finished, check
+   `git status` for partial edits in `workflow/plans/plan-{16,17,19,21,22,23}*` before trusting them.
+2. **Then:** lint, update `workflow/plan-of-plans.md` to #t8-wave1, commit, and run the ch-bsd
+   re-review of all six revised plans (user asked for it).
+3. **Then merge** `wave0-spec-reviews` → `master` (`--no-ff`) once the re-review is clean or its
+   findings are answered.
+4. **Wave 1** per #t8-wave1: 23.0 ∥ 23.4 → 23.2 → 23.1 (+ tick registry) → 23.3; then 16.6 slice →
+   22.1a → 22.2 → 22.5 → 22.3; 17.1 → 17.2; 19.0/19.1/19.2; 21.1 (needs only 23.0).
+5. **Open bugs:** bug-096, bug-097, bug-099..104.
 6. **Needs the user's time:** the 19.5 hook-limit probe, the 20.1 gold-label review, the 21.4
-   question-set approval (d4c).
+   question-set approval (d4c/d8f).
 
 {#next-body}
 
