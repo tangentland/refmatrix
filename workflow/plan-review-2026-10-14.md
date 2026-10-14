@@ -331,6 +331,17 @@ clone; d8d's predicate owned by 21.1 in `telemetry.py`; the dead-letter file kep
 | d9o | The removal paths the approved ADR text omitted (bug-107) are classified: `purge_path` on a deleted/ignored file = derived cleanup WITH a manifest (learned rows go to the manifest, never silently away); sync's GMD legacy purge on a `.md` edit = a BUG, fixed to keep learned rows (16.6's verifier judges them); `vacuum`'s orphan-evidence delete = derived cleanup with a manifest AND a `facts.log` event; `fold_concept_dups` = a merge, a plan-22 entry point owned with merge writes by the helix plan; `unprotect` = not removal, but it writes a `facts.log` event with its source so user and learner actions stay distinguishable. Folded into ADR-0004 `#a14-removal-scope`. | user, 2026-10-14 ("3 - agree") |
 | d9n | Option F (one SQLite file holding catalog and vectors via `sqlite-vec`) is added to the storage exploration as an UNMEASURED option, with a small benchmark task: the same queries on a copy of this store under both engines. | user, 2026-10-14 ("b - yes") |
 
+### Approvals after round 3 {#t11-approvals}
+
+| id | decision | by |
+|---|---|---|
+| d9p | Sync keeps learned rows on ANY edit of a file that still exists, not only a `.md` edit: the non-GMD path also calls `purge_path` before re-adding a changed file, and an edit is not a deletion. 22.6 R4 owns it; 16.6's verifier judges the kept rows. Extends d9o and bug-107. | user, 2026-10-14 ("1 - agree") |
+| d9q | `rmx memory forget` (and `memory bulk-forget`) are removal entry points under ADR-0004's knowledge-removal rule: plan without `--confirm`, apply only with a matching hash, `--yes` refused (22.6 R1). | user, 2026-10-14 ("2 - agree") |
+| d9r | A user-asserted memory, for the decay floor, is one whose `metadata.type` is `user` or `guardrail` (19.2 R7, AC-9). | user, 2026-10-14 ("3 - agree") |
+| d9s | MCP session attribution is fixed NOW as a bug (bug-109), ahead of 19.0 R5 / 21.1 R9: the long-lived `rmx mcp` server resolves the session through a pid pointer for its parent Claude process, written by the input hook, and never through its own frozen `CLAUDE_CODE_SESSION_ID`. The specs' resolver signatures stay the target; the fix ships the subset. | user, 2026-10-14 ("4 fix it") |
+| d9t | 22.6 joins the wave list in Wave 1, after 22.2 and alongside 22.5; plan-of-plans row 16 (and row 22) brought current. | user, 2026-10-14 ("yes") |
+| d9u | Round-4 spec re-reviews of plans 16/17/19/21/22/23 start at the round-3 commit. | user, 2026-10-14 ("start them") |
+
 ## The wave list, all waves (2026-10-14) {#t10-waves}
 
 The user, 2026-10-14: "fix the drift now". This list SUPERSEDES [[plan-review-2026-10-07#order]]
@@ -350,7 +361,7 @@ rel: supersedes -> [[plan-review-2026-10-07#order]]
   - 23.2 → 23.1 (+ tick registry, `add_evidence_if_absent`) → 23.3 (sync between-file yield).
   - 21.1 (recall-event schema; needs only 23.0).
   - 19.5 R1 (the probe) → 19.1 → 19.2; 19.0 (STM hygiene; needs only 23.0, no later than Wave 2).
-  - After 23.1: 17.1 → 17.2 → 17.4; 16.6 Wave-1 slice → 22.1a → 22.2 → 22.5 → 22.3.
+  - After 23.1: 17.1 → 17.2 → 17.4; 16.6 Wave-1 slice → 22.1a → 22.2 → (22.5 ∥ 22.6) → 22.3 (d9t).
 - **Wave 2**
   - 16.1 (learn-time provenance write) → 16.2 ∥ 16.3 → 16.5; 22.1 (classes that need 16.1's
     provenance).
