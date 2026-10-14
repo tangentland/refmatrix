@@ -1,1 +1,1 @@
-2026-10-14T14:37:56-0700 commit=320dc82 verdict=DIRTY findings=7 (1B/3S/3M) report=2026-10-14-1437-bug109-r2-ps-failure-silent-and-reads-create-stores-320dc82.md
+2026-10-14T14:55:08-0700 commit=261c574 verdict=DIRTY findings=6 (1B/2S/3M) report=2026-10-14-1455-bug109-r3-pins-claimed-not-landed-261c574.md

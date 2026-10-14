@@ -33,7 +33,9 @@ whichever session touched STM last. Decided as d9s (user, 2026-10-14: "fix it"),
   `proc_pidinfo`/`proc_pidpath`, ~1 us; Linux `/proc`), so the hook's owner lookup is ~3 ms
   instead of the r1 `ps -A` (~60 ms, could time out under load). A pid reuse is caught by the
   kernel start time; a pid whose start cannot be read is REFUSED and recorded, never stored with a
-  null start.
+  null start. The hook skips the rewrite only when the pointer names this session AND this
+  process's start time (r3 #s-1), so an old-format or stale pointer for the current session is
+  repaired on the next turn instead of reading as stale all session.
 - **Owner.** The long-lived server: `os.getppid()` (19.0 R5), its environment ignored. A per-call
   process (`stm.owner_lookup() -> (pid, status)`): `$CLAUDE_PID` only if it is a real ancestor
   (Claude Code sets it per child); else the NEAREST ancestor that is Claude by executable
@@ -50,7 +52,9 @@ whichever session touched STM last. Decided as d9s (user, 2026-10-14: "fix it"),
   this process is the server, has a Claude owner, or carries `$CLAUDE_PID`; a plain terminal
   guesses silently, having no pointer to miss. The sink writes only into a store whose STM dir
   exists and never raises (r2 #s-1: a read must not create `<cwd>/.refmatrix`), is capped at
-  256 KiB, and has a reader: `rmx recall-state` reports the last day's failures as an anomaly.
+  256 KiB, and has a reader: `rmx recall-state` reports the last day's failures as an anomaly
+  ("STM calls may have used a guessed session": rows do not say read or write, r3 #m-1). A
+  malformed line is counted as `unreadable-line`, never raised out of recall-state (r3 #m-2).
   CLI writes no longer pass a pre-resolved session as explicit, so their source is real (r2 #s-2).
   `rmx_focus_note`, `rmx_task` (push/pop/swap), `rmx_change_subject` and `rmx_save_state` return
   `session_source`.
@@ -69,8 +73,18 @@ whichever session touched STM last. Decided as d9s (user, 2026-10-14: "fix it"),
 - r2: 9 more tests, 6 RED at 320dc82 and 3 that pin behaviour 320dc82 already had (source on
   task/change_subject, CLI env-before-pointer, deep-chain walk) (`bug109-r2-red.log`); 25 GREEN
   (`bug109-r2-green.log`); families 259 passed (`bug109-r2-families.log`).
+- r3 (ch-bsd `bsd-bug109-r3-261c574`, BULLSHIT: 12/13 mutants survived, r2 N4/N5 among them):
+  17 more tests. 13 pins (P1, P3-P13; P2 was already killed) pass at 261c574 by design and are
+  proven by mutation below; 4 are RED at 261c574 for the right reasons (`bug109-r3remedy-red.log`:
+  stale same-session pointer not rewritten, `AttributeError` on a `[1, 2]` sink line, unreadable
+  lines not surfaced, "writes" wording). GREEN 42/42 (`bug109-r3remedy-green.log`); families
+  276 passed (`bug109-r3remedy-families.log`; the brief's `test_focus*`/`test_handoff*`/
+  `test_promote*` globs match no file in this tree).
 - Mutations: `bug109-mutations.log` (r0, 6 killed), `bug109-r1-mutations.log`,
-  `bug109-r2-mutations.log`.
+  `bug109-r2-mutations.log`, `bug109-r3remedy-mutations.log` (the r3 ch-bsd script extended with
+  R1-R4 for the r3 fixes, `bug109-r3remedy-mut.py`): **17/17 killed** (P1-P13, R1-R4), each
+  restored with `git checkout --`, `__pycache__` cleared, tree clean after the run. P1 is killed
+  by the zero-subprocess assertion, so the `ps` fallback can no longer mask a bad struct offset.
 
 ## Open, owned elsewhere {#open}
 
@@ -79,9 +93,22 @@ whichever session touched STM last. Decided as d9s (user, 2026-10-14: "fix it"),
 - `focus record` / `focus clear` bypass the resolver (pre-existing, r1 #m-3).
 - No SessionStart pointer write, the hook/server store-root split, and `stm/by-pid/` cleanup are
   19.0 R5's (r1 #m-4).
+- Per-row `verb=`/`write=` in the sink, so the anomaly can count write guesses only: 21.1 R9 D6
+  (r3 #m-1, anchored). The 19.0 R5 / 21.1 R9 citations of removed code (`_process_table`,
+  `ps lstart`) are re-read at this branch's merge sha before either starts (r3 #m-3; the specs
+  live in another tree).
 
 ## Deploy {#deploy}
 
-The hook runs the deployed `~/bin/rmx`; the MCP server runs `.venv-eval/bin/rmx` and reloads only
-on `/mcp` reconnect. Deploy first, then reconnect `/mcp`; until both run the new code the old
-newest-ring behaviour stays.
+The hooks run the deployed `~/bin/rmx`; other projects' MCP servers run `~/bin/rmx mcp`. Both get
+the fix on deploy (merge to `master`, fast-forward `~/refmatrix`, `rmx daemon restart --relaunch`)
+plus `/mcp` reconnect.
+
+**This project's MCP server is different (r3 #s-2).** Its `.mcp.json` runs
+`.venv-eval/bin/rmx mcp`, which imports the MAIN checkout's `src`
+(`/Users/tholley/claude_tools/refmatrix`), not the deploy tree. So the fix reaches the session
+that reported bug-109 only after `master` is merged into the branch that checkout is on (today
+`wave0-spec-reviews`, a shared tree: with the peer session's agreement, never a branch switch),
+followed by `/mcp` reconnect. Until then that server keeps base behaviour (newest ring,
+unlabelled, nothing recorded); no regression, but no fix. Verify with `rmx_focus_note` returning
+`session_source: pointer`.
