@@ -7,13 +7,13 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-06
-  revised: 2026-10-07
+  revised: 2026-10-14
 ---
 
 # Task 16.2: the invisible shim {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision 4, after spec review r3 `bsd-plan16-spec-review-r3-c8278b1`)
+> Status: Pending (revision 5, after spec review r4 `bsd-plan16-spec-review-r4-33809ab`)
 > Depends on: [[task-16.1-argv-faithful-learner]]
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
@@ -21,6 +21,17 @@ rel: depends-on -> [[task-16.1-argv-faithful-learner]]
 rel: amends -> [[bsd-plan16-spec-review-b587621]]
 rel: amends -> [[bsd-plan16-spec-rereview-42a5521]]
 rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
+rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
+
+## Revision 5 changelog {#revision-5}
+
+Answers spec review r4 ([[bsd-plan16-spec-review-r4-33809ab]]).
+
+| finding | answered in |
+|---|---|
+| s-r4-4 one keyed-line format (R2/AC-6 said "one byte") | R2 [[#r2]], R3 [[#r3]] (line format with the cwd; `learn status` prints LINE counts), AC-6 |
+| s-r4-7 AC-4 `rmxgrep -i PAT dir` cannot pass | AC-4 (`-ri`), AC-4b (`-i` on a dir = `reason=tool-error`), mutation |
+| m-r4-5 `$PWD` vs `getcwd` in the parity test | R2b [[#r2b]] (cwd rule + symlinked-cwd row) |
 
 ## Why {#why}
 
@@ -63,8 +74,8 @@ This task deletes the rich branch and replaces the ping with 16.1's learner. {#r
 - **Slot check before spawning (#s-n9).** The shim counts the slot dirs under
   `<store_root>/.grep-learn-slots/` (16.1 R0b) that are fresher than 60 s, using a shell glob and
   `find -mmin`. If the count is at least `RMX_GREP_LEARN_MAX_INFLIGHT` (default 2), the shim does
-  not spawn: it appends one byte to `<store_root>/.rmxgrep-teach/busy` and goes straight to the
-  exec. This is what bounds process STARTS: a 1,000-file loop costs globs, not 1,000 Python starts
+  not spawn: it appends one keyed LINE (R3's format) to `<store_root>/.rmxgrep-teach/busy` and goes
+  straight to the exec. This is what bounds process STARTS: a 1,000-file loop costs globs, not 1,000 Python starts
   at 0.14 s each.
 - When the slots and the throttle (R3) both say go:
 - Start `"$RMX" grep-learn --tool grep --bin "$REAL_ABS" --cwd "$PWD" [--retired-env
@@ -73,22 +84,36 @@ This task deletes the rich branch and replaces the ping with 16.1's learner. {#r
   more than start it. `/bin/sh`'s `&` alone does not give the child its own process group, so the
   learner's `os.setsid()` is what does (#s-1). {#r2}
 
-**R2b. Two implementations of the spawn rules, one parity test (#s-r3-3).** The shims are shell
-and `rmx grep` (16.5) is Python, so "one shared function" cannot be literal. The throttle key, the
-slot count and the learn-switch read are implemented twice: in `bin/rmxgrep`/`bin/rmxrg` and in
+**R2b. Two implementations of the spawn rules, one parity test (#s-r3-3).** {#r2b} The shims are
+shell and `rmx grep` (16.5) is Python, so "one shared function" cannot be literal. The throttle key,
+the slot count and the learn-switch read are implemented twice: in `bin/rmxgrep`/`bin/rmxrg` and in
 `grep_learn.spawn()`. `tests/test_spawn_parity.py` feeds a table of (cwd, argv, slot state, marker
-state) to both and asserts the same decision and the same stamp path for every row.
+state) to both and asserts the same decision, the same stamp path and the same keyed line for every
+row.
+- **The cwd rule (m-r4-5).** The shim keys on the LOGICAL `$PWD`; Python's `os.getcwd()` is
+  PHYSICAL (probed: cwd `/tmp` gives `$PWD=/tmp`, `os.getcwd()=/private/tmp`). So
+  `grep_learn.spawn()` uses `os.environ["PWD"]` when it is set and
+  `os.path.realpath($PWD) == os.path.realpath(os.getcwd())`, else `os.getcwd()`. The learner itself
+  still resolves `realpath(cwd)` for paths (16.1 R2); only the throttle key and the `--cwd` text
+  follow this rule.
+- The parity table has a symlinked-cwd row (process started in a symlinked directory with `PWD`
+  set to the symlink spelling) and a stale-`PWD` row (`PWD` names another directory); both sides
+  must produce the same key.
 
 **R3. Throttle keyed on what the search IS, and counted (#s-3).**
 - The stamp key is `cksum` of `printf '%s\0' "$PWD" "$@"`: the cwd plus NUL-joined argv. `"a b"`
   and `a b` no longer collide, and the same relative argv in two directories counts as two
   searches.
 - `RMXGREP_TEACH_TTL_MIN` stays as the throttle window.
-- Every throttled call appends one LINE `<epoch> <cksum>` to `<store_root>/.rmxgrep-teach/throttled`
-  (busy: `.../busy`). Keyed lines, not bytes (#s-r3-7): 16.4's route oracle can then tell a
-  throttled or busy grep from an unobserved one. `rmx learn
-  status` prints that file's size, and the `busy` file's (R2), since their last rotation. A
+- Every throttled call appends one LINE to `<store_root>/.rmxgrep-teach/throttled`, and every busy
+  skip (R2) one line to `.../busy`, in ONE format (s-r4-4):
+  `<epoch> <cksum> <PWD>\n` — the epoch in whole seconds, the R3 key, then the logical cwd as the
+  REST of the line (a cwd may contain spaces; a newline in a cwd is replaced by `?`). Keyed lines,
+  not bytes (#s-r3-7): 16.4 joins them by epoch window plus cwd (16.4 R1), never by argv.
+- `rmx learn status` prints each file's LINE count since its last rotation (not its size). A
   throttled or busy grep is a counted skip, not an invisible one.
+- No other writer uses these two files (16.3's missing-rg case goes through the learner's own log,
+  16.3 R1).
 - Both counters rotate at 1 MB. Stamps older than 24 h are pruned by the learner (16.1 R9). {#r3}
 
 **R4. `RMXGREP_TEACH` is retired (d-2) (#m-2).**
@@ -153,16 +178,22 @@ test that spawns `rmx` from PATH. {#r6}
 3. **The caller is never delayed.** The `RMXGREP_RMX` stand-in's `grep-learn` sleeps 5 s (an
    external process, registered in the mock registry). `rmxgrep pat file | cat` returns in under
    1 s with the real tool's bytes and `$?`.
-4. **The learner runs and gets the binary.** With the real learner, one `rmxgrep -i PAT dir` call
+4. **The learner runs and gets the binary.** With the real learner, one `rmxgrep -ri PAT dir` call
    gives, within 5 s, a `grep-learn.log` record with `outcome=taught`, `bin` equal to the shim's
    resolved `$REAL`, and a queue record equal to the corpus-filtered `/usr/bin/grep -rniH --null PAT
    dir`.
+   - **4b (s-r4-7).** `rmxgrep -i PAT dir` WITHOUT `-r` prints grep's own `Is a directory`, exit 2
+     (probed on BSD 2.6.0), and the learner records `outcome=skipped reason=tool-error` with nothing
+     queued. The learner never adds `-r`.
 5. **Early exits, BOTH wrappers.** Outside a project, rmx missing, piped stdin, `RMX_LEARN=0`, and a
    store marker: each gives byte-exact output, no log record and no stamp. Covers `rmxrg` explicitly.
 6. **Throttle and slots.**
    - With 2 fresh slot dirs present (held by two sleeping stand-in learners), a third call does not
-     spawn, `busy` grows by one byte, and the output is byte-identical.
-   - The same cwd and argv twice within the TTL gives one spawn and one byte in `throttled`.
+     spawn, `busy` gains exactly one line `<epoch> <cksum> <PWD>` whose `cksum` equals
+     `printf '%s\0' "$PWD" "$@" | cksum`'s, and the output is byte-identical.
+   - The same cwd and argv twice within the TTL gives one spawn and one such line in `throttled`.
+   - A cwd containing a space round-trips through the line (16.4's join reads it back).
+   - `rmx learn status` prints the two line counts.
    - The same argv from two cwds gives two spawns.
    - `"a b"` vs `a b` gives two spawns.
 7. **`RMXGREP_TEACH` retired.** `RMXGREP_TEACH=0` exported: stderr is byte-identical, the learner
@@ -207,4 +238,7 @@ refreshes the rewriter (bug-080 changed it). The handoff names both steps.
   - key the stamp on argv only: AC-6 fails;
   - drop `RMXGREP_MODE` removal from the merge: AC-8 fails;
   - remove the slot check: AC-6 (busy case) fails;
+  - write a byte instead of a keyed line: AC-6 fails;
+  - the learner adds `-r` for a directory operand: AC-4b fails;
+  - key the Python spawn on `os.getcwd()`: the parity test's symlinked-cwd row fails;
   - remove `rmxrg`'s learning-off block: AC-5 fails. {#tests}

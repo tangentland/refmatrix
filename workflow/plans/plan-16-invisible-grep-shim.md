@@ -7,22 +7,26 @@ metadata:
   node_type: plan
   status: drafting
   created: 2026-10-06
+  revised: 2026-10-14
 ---
 
 # Plan 16: the grep shim stops answering and only watches {#root}
 
 **Date:** 2026-10-06
-**Status:** Drafting. Task specs revision 3 (2026-10-07) addresses the spec re-review
-`bsd-plan16-spec-rereview-42a5521` (NEEDS-REVISION: 2 prior findings open, 18 new). The precision
-gate is KEPT by user decision, scored on complete outputs with a minimum n and a forward-collected
-oracle. Awaiting a third review before `approved`. No code yet. Sequenced after `bsd-r1-remedy`
-merges.
+**Status:** Drafting. Task specs revision 5 (2026-10-14) answers spec review r4
+`bsd-plan16-spec-review-r4-33809ab` (NEEDS-REVISION: 2 BULLSHIT, 7 SKETCHY, 8 MEH; [[#revision-5]]).
+The precision gate is KEPT by user decision, scored on complete outputs with a minimum n and a
+forward-collected oracle. Awaiting spec review r5 before `approved`; [[#decisions-needed]] lists
+what the user must confirm. No plan-16 code yet, except the `-f/--flags` removal (`d559567`, d-4),
+which landed ahead of 16.5. `bsd-r1-remedy` has merged to `master`.
 
 rel: depends-on -> [[plan-15-derive-impact-tracking]]
 rel: derives-from -> [[plan-14-grep-learning-measurement]]
 rel: derives-from -> [[bsd-r1-remedy-r3-bb5b97f]]
 rel: amends -> [[feedback_rmxgrep_no_plain_escape]]
 rel: related-to -> [[project_grep_surface_defect_family]]
+rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
+rel: related-to -> [[plan-review-2026-10-07]]
 
 ## Why {#why}
 
@@ -34,7 +38,8 @@ the `rg` floor when one is. So rmx stands in for grep on every agent search. {#t
 Standing in has been the single largest source of defects in this project. Each item below gave a
 wrong grep answer to every script and agent on the machine:
 
-- bug-058 to bug-066, bug-073 and bug-074 (the drop-in family);
+- bug-058, 059, 060, 062, 063, 064 and 066, bug-073 and bug-074 (the drop-in family; bug-061 and
+  bug-065 are NOT drop-in bugs, per task 16.5 #why);
 - ch-bsd r3's four blockers (bug-076 to bug-079);
 - the `\b` false negative found on 2026-10-06, where `/usr/bin/grep -c 'self.root\b'` prints 26
   and exits 0 while deployed `rmx grep` prints `0` and exits 1.
@@ -106,8 +111,10 @@ are needed. Full spec: task 16.1. {#learner}
 
 **The explicit command (task 16.5, user decision 2026-10-07).** With paths or a pipe, `rmx grep`
 execs the real grep plus the learner, exactly like the shim. Only the path-less `rmx grep PAT` still
-answers, from the index, with a corpus-pruned `grep -r` floor. The Python re-implementation of
-grep's output, where four audit rounds kept finding sibling bugs, is deleted. {#explicit}
+answers, from the index, with a corpus-pruned `grep -r` floor. rmx's own options are parsed from the
+RAW argv by one parser (click drops `--`, probed), and each has a row per route (exec, index,
+floor) in 16.5's d-4 table. The Python re-implementation of grep's output, where four audit rounds
+kept finding sibling bugs, is deleted. {#explicit}
 
 ## What we give up {#tradeoffs}
 
@@ -134,8 +141,8 @@ Specs go in `workflow/plans/plan-16-invisible-grep-shim-tasks/` before approval.
 | 16.2 | invisible shim in both wrappers; cwd+argv throttle, counted; `RMXGREP_TEACH` retired via the log; generators + `check()` extended | differential 100% byte-identical with power shown on the current shim; caller never delayed; overhead with the REAL learner |
 | 16.3 | Grep-tool hook rebuilt from the tool's real rg argv (`--hidden`, VCS globs, constants pinned); every doc/help surface | taught set equals the tool's captured RESPONSE; paging inputs do not kill; no stale claim anywhere |
 | 16.4 | measurement, historical + forward (learner log joined to transcripts) | precision ≥ 0.99 / recall ≥ 0.95 (micro, timeouts counted) on COMPLETE outputs only, gated at n ≥ 30 else `insufficient-n`; no carve-out; a gate shown able to fail; routes measured |
-| 16.5 | explicit `rmx grep` with paths or a pipe execs the real grep + learner; path-less keeps the index read with a pruned `grep -r` floor; the Python re-implementation (argv order, `-c` rows, stdin filter, delegate) is DELETED | differential 100% incl. round 4's cases and bug-081; nothing beyond the tool's bytes; deletions verified by `rg -l` |
-| 16.6 | grep-learned rows carry provenance (sidecar `learned_evidence`), read-time verification queues `stale_seen` marks, `rmx learn audit` classifies, `rmx learn prune` (dry run by default) removes every non-`ok` class; never purges an ingest-owned entity (user ask + decisions 2026-10-07) | one row per class audited exactly; dry run byte-identical; prune ≤ K Lance deletes, bounded lock hold measured; global `orphan-root` ≈ bug-086's count on a catalog COPY |
+| 16.5 | explicit `rmx grep` with paths or a pipe execs the real grep + learner; path-less keeps the index read with a pruned `grep -r` floor; rmx options parsed from the raw argv with a per-route table; the Python re-implementation (argv order, `-c` rows, stdin filter, delegate) is DELETED | differential 100% incl. round 4's cases, bug-081 and the `--`/`-e`/`--file` rows; every d-4 cell has a case; nothing beyond the tool's bytes; deletions verified by `rg -w` |
+| 16.6 | grep-learned rows carry provenance (sidecar `learned_evidence`, written by 16.1's writer), read-time verification queues `stale_seen` marks (plan-23's queue), backfill of pre-16.6 rows. The audit, repair and removal engine MOVED to [[plan-22-audited-removal-and-repair]] (plan review C1-C3, user 2026-10-07) | provenance on every new learned row; backfill on a catalog COPY leaves no learned row without provenance; marks applied in bounded batches |
 
 Tasks 16.7–16.10 (the agent's `rmx context` usage) moved to [[plan-21-agent-context-usage]] as 21.1–21.4 (plan review C8, user 2026-10-07), so that review loop and 16.1–16.5's do not block each other.
 
@@ -155,16 +162,47 @@ Tasks 16.7–16.10 (the agent's `rmx context` usage) moved to [[plan-21-agent-co
 
 4. **(2026-10-07, revised the same day) The `-f/--flags` bundle is REMOVED** (user: "change the
    grep to not use -flags"), superseding option B's translation of it. Done in code ahead of 16.5
-   (commit after 92c374c): `--flags` is refused with a pointer, `-f FILE`/`--file=FILE` is grep's
-   pattern file. 16.5's remaining d-4 rows (index-only options on the hand-off route and on the
-   floor) are re-specified in revision 5. {#d-4}
+   (`d559567`): `--flags` is refused with a pointer, `-f FILE`/`--file=FILE` is grep's pattern
+   file. 16.5's remaining d-4 rows (index-only options on the hand-off route, the index route and
+   the floor) are re-specified in revision 5 ([[task-16.5-explicit-grep-hands-off#d-4]]). {#d-4}
 
 **Interim (user, 2026-10-06):** `RMXGREP_MODE=plain` in `~/.claude/settings.json` and
 `.claude/settings.local.json`. Any value other than `rich` is auto, and the agent shell is not a
 tty, so greps already run the real tool plus today's flag-stripped ping until 16.2 ships. The 63
 env-sensitive tests pass under it (`workflow/review-output/rmxgrep-mode-plain.log`). {#interim}
 
-Next gate: task specs 16.1–16.5 revision 4; `@ch-bsd` spec review, then `approved`.
+Next gate: `@ch-bsd` spec review r5 of task specs 16.1–16.6 revision 5, the user's answers to
+[[#decisions-needed]], then `approved`.
+
+## Decisions needed (user) {#decisions-needed}
+
+Revision 5 did not invent these; each is a spec default that the user may confirm or overrule.
+
+1. **`-k/--kind` and `--linkage` on the path-less floor (b-r4-1).** Spec default, read from d-4's
+   "never silently dropped": an index miss under `-k`/`--linkage` runs NO floor (prints `rmx grep: no
+   indexed matches (-k/--linkage: no grep floor)`, exit 1), and a call routed straight to the floor
+   is refused (exit 2). The alternative is to translate `-k code` into `--include` globs of
+   `CODE_EXTS` on the floor. That is a wider reading of "kind" than the index's, so the spec does not
+   choose it. ([[task-16.5-explicit-grep-hands-off#d-4]]) {#dn-1}
+2. **Where 16.6's remaining half lives (C1).** The plan review said "16.1 keeps only the provenance
+   write". Plan-22 (22.1 depends on "16.6 R1/R5") and plan-23 (consumes "16.6 R4") read that as
+   "plan-16 keeps the learner-side writes", so 16.6 stays a task (provenance, marks, backfill).
+   Alternatively fold it into 16.1. ([[task-16.6-learned-row-validation#split]]) {#dn-2}
+
+## Revision 5 changelog {#revision-5}
+
+| finding (r4) | answered in |
+|---|---|
+| m-r4-1 stale header, out-of-scope bullet, #why bug list | this file: status line, [[#out-of-scope]] bullet 2, [[#cost]] list |
+| b-r4-1, b-r4-2, s-r4-1, s-r4-2, s-r4-3, s-r4-6, m-r4-3, m-r4-6 | [[task-16.5-explicit-grep-hands-off#revision-5]] |
+| s-r4-4, s-r4-7, m-r4-5 | [[task-16.2-invisible-shim#revision-5]] (and 16.3, 16.1 for s-r4-4) |
+| s-r4-4, m-r4-2, m-r4-4 | [[task-16.3-grep-tool-hook-and-docs#revision-5]] |
+| s-r4-5, m-r4-7 | [[task-16.4-measurement#revision-5]] |
+| m-r4-2, m-r4-8, `ts` (s-r4-5) | [[task-16.1-argv-faithful-learner#revision-5]] |
+| plan review C1/C2/C3 (16.6) | [[task-16.6-learned-row-validation#revision-5]] |
+| gaps: "plan-16 header says revision 3" | this file's status line |
+
+rel: amends -> [[plan-review-2026-10-07#gaps]]
 
 ## Out of scope {#out-of-scope}
 
@@ -174,9 +212,12 @@ Next gate: task specs 16.1–16.5 revision 4; `@ch-bsd` spec review, then `appro
   in a command with a heredoc. Capturing it would reopen d-3. Task 16.4 measures its share as
   `unobserved_share`, and the decision is revisited if that share is large.
 
-- Fixing `rmx grep`'s own drop-in gaps beyond what r3 already fixed (`\b`/`\<` BRE escapes, the
-  missing-path exit code, `-w` verification). Each is logged in `workflow/bug_registry.md` and
-  belongs to the explicit command's backlog. The shim no longer exposes them.
+- *(Superseded by task 16.5, kept as history.)* This bullet once put `rmx grep`'s own drop-in gaps
+  (`\b`/`\<` BRE escapes, the missing-path exit code, `-w` verification) out of scope as "the
+  explicit command's backlog". Task 16.5 now brings them IN scope: named-path and pipe calls exec
+  the real grep, BRE patterns route to the grep floor, and 16.5 R8 marks bug-081 fixed and the
+  named-path rows superseded. Nothing of the explicit command's drop-in surface remains out of
+  scope.
 - A PATH-level `grep` alias. CORRECTION (task 16.2): scripts the agent runs under bash DO reach the
   shim today, through the `grep()`/`rg()` functions that `BASH_ENV` defines in
   `agent-bashrc.sh`. They become invisible along with everything else. Shells outside the agent are

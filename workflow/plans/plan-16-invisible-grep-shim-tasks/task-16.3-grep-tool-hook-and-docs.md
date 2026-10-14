@@ -7,13 +7,13 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-06
-  revised: 2026-10-07
+  revised: 2026-10-14
 ---
 
 # Task 16.3: Grep-tool hook on the learner, and the docs {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision 4, after spec review r3 `bsd-plan16-spec-review-r3-c8278b1`)
+> Status: Pending (revision 5, after spec review r4 `bsd-plan16-spec-review-r4-33809ab`)
 > Depends on: [[task-16.1-argv-faithful-learner]]
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
@@ -21,6 +21,17 @@ rel: depends-on -> [[task-16.1-argv-faithful-learner]]
 rel: amends -> [[bsd-plan16-spec-review-b587621]]
 rel: amends -> [[bsd-plan16-spec-rereview-42a5521]]
 rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
+rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
+
+## Revision 5 changelog {#revision-5}
+
+Answers spec review r4 ([[bsd-plan16-spec-review-r4-33809ab]]).
+
+| finding | answered in |
+|---|---|
+| s-r4-4 `<epoch> no-rg` in the `busy` log, from a hook with no `store_root` | R1 binary resolution [[#r1]]: the hook always calls the learner; a missing rg is the learner's `skipped reason=no-binary` record. AC-5c |
+| m-r4-2 glob cell "contains `{`" vs "BOTH `{` and `}`" | R1 glob row: one rule (BOTH) |
+| m-r4-4 the single-file branch has no AC | AC-9 + mutation |
 
 ## Why {#why}
 
@@ -42,8 +53,12 @@ The hook calls `rmx grep-learn --tool rg --bin "$RG_ABS" --cwd "$CWD" -- <argv>`
 **Binary resolution (#s-n5).** `TEACH_TEMPLATE` is a bash script, and hooks inherit `BASH_ENV`.
 Measured: `bash -c 'command -v rg'` prints `rg`, the agent-bashrc FUNCTION. So:
 - `RG_ABS` is `type -P rg`, which resolves PATH only and never a function (probed: prints
-  `/opt/local/bin/rg` under `BASH_ENV`). If it is EMPTY (rg not on PATH), the hook does not spawn
-  and appends `<epoch> no-rg` to the `busy` log, so the skip is counted (#m-r3-3).
+  `/opt/local/bin/rg` under `BASH_ENV`).
+- **A missing rg is the learner's record, not a second log format (s-r4-4).** The hook ALWAYS
+  calls the learner. If `RG_ABS` is empty (rg not on PATH) it passes `--bin ""`; the learner, which
+  resolves `store_root` from `--cwd` (R2), writes its one JSONL record `outcome=skipped
+  reason=no-binary` (16.1 R1) and runs nothing. The hook writes nothing itself and needs no
+  `store_root`; the shim's `busy`/`throttled` files keep their single meaning (16.2 R3).
 - The `rmx` call runs under `env -u BASH_ENV`.
 - The test runs with `BASH_ENV` set to a file that defines `rg()`, so a function-resolving build
   fails it.
@@ -70,7 +85,7 @@ The argv is:
 | always (tool constant) | `--no-config`, `--hidden`, `--glob=!<d>` for each VCS dir the tool excludes (`.git .svn .hg .bzr .jj .sl` in 2.1.292), `--max-columns=500` |
 | `pattern` | `-e PATTERN` |
 | `path` (default: the cwd) | trailing operand |
-| `glob` | the tool's own SPLIT (#s-n4): split on whitespace, then split each piece on commas UNLESS the piece contains `{`; one `--glob=<piece>` per piece. A piece is kept whole only if it contains BOTH `{` and `}` (#m-r3-3, read from the binary). `*.ts,*.tsx` and `*.py *.md` become two globs; `*.{ts,tsx}` stays one. |
+| `glob` | the tool's own SPLIT (#s-n4): split on whitespace; then a piece that contains BOTH `{` and `}` is kept whole, and every other piece is split on commas (#m-r3-3, read from the binary; m-r4-2: this is the only rule). One `--glob=<piece>` per piece. `*.ts,*.tsx` and `*.py *.md` become two globs; `*.{ts,tsx}` stays one; `a{,b` (no `}`) splits on its comma. |
 | `type` | `-t TYPE` |
 | `-i: true` | `-i` |
 | `multiline: true` | `-U --multiline-dotall` |
@@ -143,12 +158,19 @@ each (`feedback_verify_memory_by_recall_not_get`). {#r4}
    the test.
 5b. **Binary resolution.** With `BASH_ENV` defining `rg()`, the learner's log record carries an
    ABSOLUTE `bin`.
+5c. **No rg (s-r4-4).** With `PATH` holding no `rg`, a payload yields exactly one learner record
+   `outcome=skipped reason=no-binary` in `<store_root>/grep-learn.log`, and the shim's
+   `.rmxgrep-teach/busy` file is unchanged.
 6. **The hook never touches the tool result.** It exits 0 within 100 ms while the learner sleeps
    (16.2 AC-3's stand-in).
 7. **No stale claims.** A test scans the rendered templates, the briefing, the PRIMER header,
    `README.md` and the `--help` strings for `rich`, `RMXGREP_MODE` and "answers from the index" in a
    grep/rg context, and fails on any.
 8. **GMD lint 0 errors; `install-hooks --check` clean.**
+9. **Single-file filter (m-r4-4).** Two captured-shape payloads: `{path: <file>, glob: "*.nomatch"}`
+   and `{path: <file>, type: "rust"}` on a `.py` file that contains the pattern. The tool returns
+   nothing for both; each yields `outcome=skipped reason=single-file-filter`, nothing queued. A third
+   payload, `{path: <file>}` alone, teaches (the branch is narrow).
 
 ## Files to modify {#files-to-modify}
 
@@ -169,5 +191,7 @@ each (`feedback_verify_memory_by_recall_not_get`). {#r4}
   - drop the `glob` mapping: AC-1 fails on a glob payload;
   - add `offset` to unknown: AC-3b fails;
   - drop the glob split: AC-3 fails;
+  - remove the single-file-filter branch: AC-9 fails (the `.py` hits are taught);
+  - write `no-rg` from the hook instead of calling the learner: AC-5c fails;
   - use `command -v` for `RG_ABS`: AC-5b fails;
   - hardcode a stale VCS list: AC-5 fails against the live extraction. {#tests}

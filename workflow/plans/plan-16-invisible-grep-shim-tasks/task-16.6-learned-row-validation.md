@@ -7,19 +7,61 @@ metadata:
   node_type: task
   status: drafting
   created: 2026-10-07
+  revised: 2026-10-14
 ---
 
-# Task 16.6: validate and cull grep-learned rows {#root}
+# Task 16.6: provenance and read-time marks for grep-learned rows (audit, repair and removal moved to plan-22) {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: DRAFTING, with the decisions taken (user, 2026-10-07; [[#decisions]]). The user asked for
-> it on 2026-10-07: "rmx grep learning entries should be cullable and/or at least have a validation
-> process to check for stale entries". Next: spec review with 16.1-16.5.
+> Status: Drafting (revision 5, after spec review r4 `bsd-plan16-spec-review-r4-33809ab` and the
+> plan review's C1-C3; 16.6 itself has not yet been spec-reviewed). The user asked for it on
+> 2026-10-07: "rmx grep learning entries should be cullable and/or at least have a validation
+> process to check for stale entries". The CULL half of that ask now lives in plan-22
+> ([[#split]]); this task keeps the half the learner owns. Next: spec review with 16.1-16.5.
 > Depends on: 16.1, which is the only writer that survives plan-16.
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
 rel: depends-on -> [[task-16.1-argv-faithful-learner]]
 rel: related-to -> [[project_global_relative_rows_repair]]
+rel: depends-on -> [[plan-23-bounded-write-harness]]
+rel: amends -> [[plan-review-2026-10-07#contradictions]]
+rel: motivates -> [[plan-22-audited-removal-and-repair]]
+rel: motivates -> [[task-22.1-audit-classes]]
+rel: motivates -> [[task-22.2-repair-then-remove]]
+rel: motivates -> [[task-22.3-bug-086-global-repair]]
+
+## Revision 5 changelog {#revision-5}
+
+Applies the plan review's C1/C2/C3 ([[plan-review-2026-10-07#contradictions]]; user 2026-10-07:
+"apply all the consolidations, don't delete moves repair them if possible"). Nothing was deleted:
+every moved requirement and decision is kept below, marked with where it now lives.
+
+| item | answered in |
+|---|---|
+| C1 the audit/prune engine moves to ONE audited removal plan | [[#split]]; R2/R3 [[#requirements]] point to plan-22 22.1/22.2 |
+| C2 bug-086 has two vehicles | [[#split]]: plan-22 task 22.3 is the only one; R5 leaves global roots NULL for it |
+| C3 `moved` rows deleted by default | [[#d-c]] amended (repair, never delete); [[#d-c-review]] closed by the user's answer |
+| plan-16 header + table row (m-r4-1 family) | plan [[plan-16-invisible-grep-shim#tasks]] row 16.6 re-scoped |
+
+## What stays in plan-16, what plan-22 owns {#split}
+
+C1 says "16.1 keeps only the provenance write". Plan-22's own specs read that as "plan-16 keeps
+the learner-side writes": task 22.1 depends on "16.6 R1/R5", and plan-23 lists "16.6 R4's marks" as
+a consumer. This task follows those dependencies; the writer is still 16.1's `_learn_grep_hits`.
+Whether R1/R4/R5 should be folded INTO task 16.1 rather than kept as 16.6 is listed in the plan's
+`#decisions-needed`.
+
+| item | owner | where |
+|---|---|---|
+| R1 provenance sidecar written at learn time | plan-16 (this task) | R1 below; [[#d-a]] |
+| R4 read-time `last_verified_at` / `stale_seen` marks, queued | plan-16 (this task), through plan-23's queue | R4 below; [[#d-b]] |
+| R5 provenance backfill (project roots; global roots NULL) | plan-16 (this task) | R5 below |
+| R6 loud counting on every leg above | plan-16 (this task) | R6 below |
+| `rmx learn audit` and its classes (`ok`, `moved`, `ambiguous`, `stale-line`, `out-of-range`, `missing-file`, `duplicate`, `orphan-root`, + `orphan-alias`, `empty-learned`) | plan-22 | [[task-22.1-audit-classes]] |
+| repair (`moved` re-pointed, `duplicate` collapsed, `orphan-root` resolved) then removal of what cannot be repaired; manifest; tombstones; ablation gate | plan-22 | [[task-22.2-repair-then-remove]] |
+| bug-086's global repair (476 re-pointed, 611 removed) | plan-22 | [[task-22.3-bug-086-global-repair]] |
+
+rel: realizes -> [[plan-review-2026-10-07#contradictions]]
 
 ## Why {#why}
 
@@ -113,10 +155,11 @@ The audit/prune/repair acceptance moved to plan-22. {#acceptance-moved}
   remains the default.
 - **d-d. Scope: inside plan-16, after 16.1** {#d-d}, reviewed in the same spec rounds.
 
-**For the spec review (ch-bsd r7 #m-5):** `moved` is the one class whose row could be re-pointed
-(the same text is now on another line) instead of deleted. d-c stands as decided. Whether
-`prune --repoint-moved` belongs in 16.6 is a question for the review to put to the user, not a
-change made here. {#d-c-review}
+**For the spec review (ch-bsd r7 #m-5) — ANSWERED by the user 2026-10-07:** `moved` is the one
+class whose row could be re-pointed (the same text is now on another line) instead of deleted. The
+original question was whether `prune --repoint-moved` belongs in 16.6. The user's answer ("don't
+delete moves, repair them if possible") made re-pointing the DEFAULT and moved it, with the whole
+engine, to [[task-22.2-repair-then-remove]] R1. Kept here as history. {#d-c-review}
 
 The read-time marks (d-b) are writes on a READ path, so they never take `_store_lock` inline. They
 queue the way the learn queue does (`learn_queue.py`), and the daemon tick drains them in bounded

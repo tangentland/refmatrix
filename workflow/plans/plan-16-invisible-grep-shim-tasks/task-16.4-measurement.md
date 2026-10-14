@@ -7,13 +7,13 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-06
-  revised: 2026-10-07
+  revised: 2026-10-14
 ---
 
 # Task 16.4: measurement {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision 4, after spec review r3 `bsd-plan16-spec-review-r3-c8278b1`; precision
+> Status: Pending (revision 5, after spec review r4 `bsd-plan16-spec-review-r4-33809ab`; precision
 > gate KEPT by user decision 2026-10-07, scored on complete outputs only, with a forward-collected
 > oracle)
 > Depends on: [[task-16.1-argv-faithful-learner]], [[task-16.2-invisible-shim]]
@@ -24,6 +24,18 @@ rel: derives-from -> [[plan-14-grep-learning-measurement]]
 rel: amends -> [[bsd-plan16-spec-review-b587621]]
 rel: amends -> [[bsd-plan16-spec-rereview-42a5521]]
 rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
+rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
+
+## Revision 5 changelog {#revision-5}
+
+Answers spec review r4 ([[bsd-plan16-spec-review-r4-33809ab]]).
+
+| finding | answered in |
+|---|---|
+| s-r4-5 both joins kept; route 2 by text equality (m-n7); zero-candidate segments read as route 3; `ts` undefined; learn-off unevaluable | R1 [[#r1-forward]]: the exact-join text is DELETED; one approximate join on shlex tokens; routes re-defined; an `unattributable` bucket that is never route 3; `ts` from 16.1 R6; learn-off reported as a known confound. AC-3 rows |
+| s-r4-4 no join rule for keyed lines | R1 [[#r1-keyed]]: epoch window + cwd, `throttled-explained`, no argv equality |
+| m-r4-7 one snapshot vs per-commit; models socket | R2 [[#r2]]: at most 10 snapshots, nearest-later + line-hash rule, private local-cache models (`RMX_SHARED_MODELS=0`), no hub socket |
+| m-r4-6 (16.5's BRE concepts) | R4 metric `bre_concept_share` |
 
 ## Why {#why}
 
@@ -58,42 +70,68 @@ ships: the learner's own log record makes attribution exact. {#why-lead}
   - The cwd is the message cwd, adjusted for a leading `cd X &&` or `cd X;`. Any other in-command
     directory change is counted as `cwd-uncertain` and excluded.
 - **Forward (#s-n10).** After 16.2 ships, every observed grep leaves a `grep-learn.log` record with
-  `ts`, `cwd`, `argv`, `argv_sha` and `bin`. A transcript command is ATTRIBUTED to a learner record
-  when the record's `argv`, joined, equals one of the command's grep segments, its `cwd` matches,
-  and its `ts` falls within the tool call's window.
-  - Attribution is exact even for multi-segment commands: each segment has its own record.
-  - It is also the ROUTE oracle. A grep segment with a record was observed (route 1 or 2). A
-    segment with no record and no learn-off, throttle or busy explanation was unobserved (route 3).
-  - Route 2 is a record whose `argv` appears in no top-level segment, i.e. it ran inside a script
-    (#m-n7).
+  `ts`, `cwd`, `argv`, `argv_sha` and `bin`; `ts` is the learner's START (16.1 R6). The transcript
+  holds SHELL TEXT and the record holds EXPANDED argv, so attribution is the approximate join below
+  — there is no exact (argv-equality) join (s-r4-5: the revision-4 sentence claiming one is
+  deleted).
 - **Multi-segment historical commands** cannot be attributed and are EXCLUDED and counted.
 - **rmx-rendered historical outputs are EXCLUDED and counted (#s-r3-6).** Of 37 complete-looking
   historical invocations, 28 carry rmx rendering markers: `# rmx`, the `[linkage]  concept` row
   shape, `rmx grep:` notes, `# rmx grep fallback via rg`. Scoring the learner against rmx's own old
   output would grade it on rmx's old bugs. About 9 historical invocations remain, so the gate in
   practice rests on the forward oracle.
-- **Forward join, honestly approximate (#s-r3-7).** The transcript holds SHELL TEXT and the learner
-  record holds EXPANDED argv, so equality fails for `$`, backticks, globs, loops and `xargs`
-  (probed: 117, 109 and 134 commands respectively). The join therefore:
-  1. matches a learner record to a tool call when the record's `ts` (written by the learner at
-     START, before the re-run) falls inside the call's window and its `cwd` matches;
-  2. requires the record's PATTERN operand to appear literally in the segment's text;
-  3. marks a call with two or more candidate records for one segment as `ambiguous`, excluded and
-     counted.
-
-  Throttled and busy greps leave keyed lines (16.2 R3), so they are distinguishable from
-  unobserved ones.
+- **Forward join, honestly approximate (#s-r3-7, s-r4-5).** {#r1-forward} Equality fails for `$`,
+  backticks, globs, loops and `xargs` (probed: 117, 109 and 134 commands respectively). r4 measured,
+  over 2,824 producing segments: 8.5% ambiguous, 5.3% in a loop, 2.4% with a `$`/backtick pattern,
+  3.6% whose argv pattern is not a literal substring of the text because of escaped quotes. So:
+  1. **Tokens, not text.** Each segment is split with POSIX `shlex` (quotes removed, NO expansion).
+     A segment `shlex` cannot split is `unattributable`.
+  2. **Candidates.** A record is a candidate for a segment when its `ts` falls inside the tool
+     call's window, its `cwd` equals the segment's cwd (R1 historical rule; compared after
+     `realpath` on both sides), and its PATTERN operand equals one of the segment's shlex tokens.
+     The escaped-quote case now matches, because the quotes are gone.
+  3. **Buckets for a segment**, each counted and reported:
+     - `attributed` — exactly one candidate;
+     - `ambiguous` — two or more candidates;
+     - `unattributable` — the segment's pattern token carries `$` or a backtick, or the segment sits
+       inside `for`/`while`/`xargs` (one segment, N records), or `shlex` failed. **An
+       unattributable segment is NEVER route 3** and never counted in `unobserved_share`'s
+       numerator or denominator;
+     - `throttled-explained` — zero candidates, and a keyed line explains it ([[#r1-keyed]]);
+     - `unobserved` — zero candidates, no keyed line, and the segment is not unattributable.
+       Only these are route 3.
+  4. **Routes.** Route 1 = an `attributed` record. Route 2 = a learner record that is a candidate
+     for NO segment of any tool call in its window (it ran inside a script; m-n7: defined by the
+     join, not by text equality). Route 3 = `unobserved` segments.
+  5. **Learn-off is a known confound (s-r4-5).** A learn-off shim exit writes nothing (16.2 AC-5,
+     by design: learning off means no writes), so a segment run with learning off reads as
+     `unobserved`. `unobserved_share` is therefore an UPPER bound; the report says so, and lists
+     any `RMX_LEARN`/marker change the harness can see in `grep-learn.log` gaps.
+- **Keyed lines (s-r4-4).** {#r1-keyed} 16.2 R3 writes `<epoch> <cksum> <PWD>` to `throttled` and
+  `busy`. A zero-candidate segment is `throttled-explained` when a line in either file has its epoch
+  inside the tool call's window and its `PWD` equals the segment's cwd (after `realpath`). No argv
+  or `cksum` recomputation is attempted (it would need the expanded argv). One keyed line explains
+  at most one segment; the surplus is counted.
 - **Storage.** The corpus file lives off the watched tree. Summary statistics only are committed.
 
-**R2. Arms on one snapshot,** built through the production ingest into a throwaway store with no
-hub registration.
+**R2. Arms on bounded snapshots (m-r4-7),** each built through the production ingest into a
+throwaway store with no hub registration. {#r2}
+- **Models.** The throwaway ingest embeds. It runs with `RMX_SHARED_MODELS=0` (a private worker,
+  never the hub's live `models.sock`; `92c374c` logged 66 test touches of that socket) and
+  `HF_HUB_OFFLINE=1`; models load from the local cache only, and `ModelNotCached` is a loud failure
+  of the run, never a skip.
 - **A (old):** a `git worktree` at the pre-16.2 sha, with its own venv. The old shim runs with
   `RMXGREP_RMX` pinned to THAT venv's `rmx` (#m-n5), because the old ping execs `$RMX grep --limit
   3` after `cd "$root"`, so replaying it with today's `rmx` is not what ran.
 - **B (new):** `grep_learn` on the full argv.
 - Both drain through the real `Daemon._drain_learn_queue`.
-- The snapshot is the tree at the transcript's commit (`git log` before the timestamp). Where that
-  cannot be determined, the invocation is counted as `drifted` and excluded from the line metrics.
+- **Snapshot count (m-r4-7).** The candidate snapshot for an invocation is the tree at the
+  transcript's commit (`git log` before the timestamp). The transcript span covers 366 commits, so
+  the harness builds AT MOST 10 snapshots: the commits holding the most complete invocations,
+  largest n first (`RMX_GREP_EVAL_MAX_SNAPSHOTS`, default 10, printed in the report). An invocation
+  at any other commit is scored on the NEAREST LATER built snapshot only if every one of its seen
+  pairs' line hashes matches there (R3); otherwise it is `drifted`, excluded from the line metrics
+  and counted. An invocation whose commit cannot be determined is `drifted`.
 
 **R3. The oracle: what the agent SAW, on COMPLETE outputs only (#b-n1).**
 - An invocation is **complete** when all of these hold:
@@ -126,7 +164,9 @@ hub registration.
 | share_recall_lt_1 | complete invocations with any seen pair untaught / n_complete | reported, with each case listed |
 | recall_visible | same as recall_B, over the visible prefix of incomplete invocations | reported |
 | precision_A, recall_A, taught_invocations (A vs B) | same definitions for arm A | reported, not gated (#m-n5: 31 of 72 recent old pings exited 2) |
-| unobserved_share | route-3 segments / all grep segments (forward oracle) | reported; the cost of d-3 |
+| unobserved_share | `unobserved` segments / (all grep segments − `unattributable`) (forward oracle); an upper bound (learn-off confound, R1) | reported; the cost of d-3 |
+| attribution buckets | counts of `attributed`, `ambiguous`, `unattributable`, `throttled-explained`, `unobserved`, and route-2 records | reported |
+| bre_concept_share | taught `query/*` concepts whose pattern carries a BRE meta / all taught concepts (16.5 R3: `rmx grep` never reads them) | reported |
 | forgone_index_share | path-less invocations the pre-16.2 rich path answered from the index, replayed in arm A's worktree in rich mode on a snapshot store that has NOT seen arm B's teaching / all | reported; the cost of d-1 |
 | timeouts | learner `outcome=timeout` / observed | reported; 16.1 R1b claims it is near 0 |
 | shim_overhead | 16.2 AC-9 | as 16.2 |
@@ -167,6 +207,11 @@ This deferral is anchored to that date and to this task. It is not open-ended.
    - a quoted `grep`;
    - a git command containing grep;
    - a two-grep command, with and without matching learner records;
+   - an escaped-quote pattern (`grep "a\"b" f`) that attributes through shlex tokens;
+   - a `$var` pattern and a `for … do grep …` loop, each `unattributable` and NOT route 3;
+   - a zero-candidate segment with a matching keyed line (`throttled-explained`) and one without
+     (`unobserved`, route 3);
+   - a learner record with no candidate segment (route 2);
    - a Grep-tool call;
    - a subagent transcript;
    - an `Output too large` result.
@@ -196,4 +241,8 @@ AC-3, AC-4, AC-5 and AC-7 run in the suite. Full runs log to `workflow/review-ou
 Pre-registered mutations:
 - restore the unseen-but-verified carve-out: AC-4 fails;
 - drop the n gate: AC-5 fails;
-- score precision on incomplete invocations: AC-3's pipe case is wrongly scored. {#tests}
+- score precision on incomplete invocations: AC-3's pipe case is wrongly scored;
+- count `unattributable` segments as route 3: AC-3's `$var`/loop cases fail;
+- join on raw text instead of shlex tokens: AC-3's escaped-quote case fails;
+- join keyed lines without the cwd: AC-3's keyed-line cases fail (a keyed line from another cwd
+  must not explain). {#tests}
