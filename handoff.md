@@ -66,7 +66,7 @@ rel: supersedes -> [[handoff-011-r6-r9-remedies-0763-plans-17-23]]
 
 ## Next {#next}
 
-1. **Push** (the user).
+1. **Pushed** 2026-10-14 (`1452875..a434f51`). Wave 0 runs on `wave0-spec-reviews`.
 2. **Wave 0 (docs)** per `workflow/plan-of-plans.md`: plan-16 rev 5 plus its spec review, and spec
    reviews of plans 17/19/21/22/23. Option A of the exploration overlaps plans 22/23; fold it in
    there.
@@ -81,14 +81,15 @@ rel: supersedes -> [[handoff-011-r6-r9-remedies-0763-plans-17-23]]
 
 ## Open, not forgotten {#open}
 
-- **viascope:** `sessions-viascope` holds 40 stray project doc rows dated 2026-06-05 (the older
-  partition bug, not bug-098). Cleanup awaits the user's OK. Recipe: back up, then
-  `rmx -p sessions-viascope forget --kind doc/code`, keeping the 155 memories.
+- **viascope (done 2026-10-14):** the 40 stray doc rows in `sessions-viascope` were forgotten
+  after a backup (`viascope/.refmatrix/backups/catalog.read.pre-sessions-forget-20261014-105529.duckdb`,
+  306 MB); memories 155 before and after. The backup can go once the user is satisfied.
 - **Exploration measurements 1-7** are unmeasured. Option D's next step is a Rust-encoding spike,
   if the user wants D costed.
 - **The full suite** stays unrun until bug-088 isolates it. Families ran with `RMX_MODEL_SOCK`
   isolated, and the live-socket recorder stayed at 145.
-- **The backup** `.refmatrix/backups/catalog.read.pre-bug098-repair-20261008-165958.duckdb`
-  (712 MB) can be deleted once the user is satisfied.
+- **The bug-098 backup** `catalog.read.pre-bug098-repair-*.duckdb` (712 MB) was deleted 2026-10-14 by
+  the user's OK. `.refmatrix/backups/vectors-sessions-refmatrix-20261008-165958/` from the same
+  repair remains, awaiting a decision.
 
 {#open-body}
