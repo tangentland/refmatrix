@@ -370,3 +370,13 @@ rel: supersedes -> [[plan-review-2026-10-07#order]]
 - **Dormant** — plan-13 (waits on a sessions gold set; d4b). **Closed into others** — plan-14
   (by 16.4).
 {#t10-waves-body}
+
+## Deliverable when the review converges {#final-doc}
+
+The user, 2026-10-14: "at the end of all this review, I would like a separate consolidated
+document created". When every Wave 0 re-review is clean (or its remaining items are explicitly
+deferred), write ONE standalone document that does not require reading this log, the reports or
+the revision tables: the final decisions (d1a..d9o and any later rows) in their latest form only,
+the plan-by-plan contract that came out (tasks, waves, cross-plan interfaces), the approved ADR
+changes, what is still open and who owns it, and the review history in one summary table.
+{#final-doc-body}
