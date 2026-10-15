@@ -4381,15 +4381,16 @@ class Store:
             if pid is None or lid not in lk:
                 links_skipped += 1  # counted, never silent (memory-path rule)
                 # The orphan-row share of links_skipped, named on its own (bug-111 r1 #1): these
-                # rows await an audited removal and must stay visible until it runs.
+                # rows await plan 22's audited removal (the `dangling-link` class, task 22.1a R1
+                # + 22.2 R9, d9an) and must stay visible until it runs.
                 links_dead_entity += pid is None
                 continue
             if int(cid) not in concept_ids:
                 # bug-111: the same liveness gate the fragment half applies below. Without it an
                 # orphan entity_links row (its concept deleted by a path that bypassed
                 # purge_entity) came back as a bit on every apply and every dry run re-flagged it
-                # as dropped_dead_concept. The row itself is left alone (its removal is an
-                # audited removal, not a fragment repair) and stays visible in this count.
+                # as dropped_dead_concept. The row itself is left alone (its removal is plan 22's
+                # `dangling-link` class, task 22.1a R1 + 22.2 R9, d9an) and stays visible here.
                 links_dead_concept += 1
                 continue
             new.setdefault((int(pid), lk[lid]), BitMap64()).add(self._pack(cid, eid))
@@ -6321,17 +6322,25 @@ class Store:
         entity purged under a foreign binding kept its bit in its own partition. Each partition is
         visited through `with_partition`, so its bits land in its own per-binding cache and dirty
         set (bug-105) and the next flush writes them under the right partition. Caller holds the
-        writer lock."""
+        writer lock.
+
+        The binding is swapped directly, as `flush_fragments` does, from ONE read of `partitions`
+        (bug-111 r2 #1): `with_partition` ran an `INSERT OR IGNORE` + commit + a by-name lookup
+        per partition per purge (+25-28% on 200 purges, 3.75 ms each) and lacks
+        `_ensure_partition`'s damaged-zonemap fallback, so a bad zonemap would have made every
+        purge raise."""
         canon_bits: dict[str, list[int]] = {}
         for ln, bits in bits_by_ln.items():
             canon_bits.setdefault(_canonical_verb(ln), []).extend(bits)
         ranges = [(kid << _CONCEPT_SHIFT, (kid + 1) << _CONCEPT_SHIFT) for kid in ids]
         linkages = [lk["name"] for lk in self.list_linkages()]
-        names = [r[0] for r in self._connect().execute(
-            "SELECT name FROM partitions ORDER BY id").fetchall()]
+        bindings = [(int(r[0]), r[1]) for r in self._connect().execute(
+            "SELECT id, name FROM partitions ORDER BY id").fetchall()]
         n = 0
-        for pname in names:
-            with self.with_partition(pname):
+        prev = (self._partition_id, self._partition_name)
+        try:
+            for pid, pname in bindings:
+                self._partition_id, self._partition_name = pid, pname
                 for ln in linkages:
                     frag = self._load_fragment(ln)
                     changed = False
@@ -6347,6 +6356,8 @@ class Store:
                             n += 1
                     if changed:
                         self._dirty_fragments.add(ln)
+        finally:
+            self._partition_id, self._partition_name = prev
         return n
 
     def _bulk_purge_ids(self, info: "list[tuple[int, str, str]]") -> int:
