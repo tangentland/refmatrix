@@ -5,7 +5,7 @@ title: "Plan 19: memory reaches the agent within budget, ranked by use, grouped 
 tags: [plan, memory, recall, hooks, budget, memory-index, adaptive, stm]
 metadata:
   node_type: plan
-  status: drafting
+  status: approved
   created: 2026-10-07
   updated: 2026-10-15
 ---

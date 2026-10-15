@@ -5,7 +5,7 @@ title: "Plan 21: the agent uses rmx context because it answers — telemetry, pr
 tags: [plan, context, agent, telemetry, ranking]
 metadata:
   node_type: plan
-  status: drafting
+  status: approved
   created: 2026-10-07
   updated: 2026-10-15
 ---
