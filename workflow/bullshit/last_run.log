@@ -35,3 +35,4 @@
 2026-10-15T03:48:54-0700 commit=29e335a verdict=DIRTY findings=8 (0B/2S/6M) report=2026-10-15-0350-plan16-22-r9-spec-diffcheck-orphan-drop-cannot-name-a-dead-concept-29e335a.md
 2026-10-15T03:47:10-0700 commit=b84fd8d verdict=DIRTY findings=10 (2B/4S/4M) report=2026-10-15-0347-plan23-17-r9-spec-diffcheck-snapshot-drops-dirty-bits-and-bug112-gate-pins-the-bug-b84fd8d.md
 2026-10-15T03:54:18-0700 commit=b84fd8d verdict=DIRTY findings=21 (5B/8S/8M) report=2026-10-15-0351-plan18-r1-spec-review-foreign-wal-rollback-and-lost-interrupt-b84fd8d.md
+2026-10-15T04:03:31-0700 commit=462bd0b verdict=DIRTY findings=10 (3B/4S/3M) report=2026-10-15-0403-bugs112-113-118-r1-462bd0b.md
