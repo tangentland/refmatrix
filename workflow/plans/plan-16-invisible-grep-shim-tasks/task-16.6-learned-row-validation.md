@@ -14,7 +14,9 @@ metadata:
 # Task 16.6: the learned-evidence sidecar, its verifier, read-time marks and the backfill {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision round 8, 2026-10-15, answering the r8 re-review
+> Status: Pending (revision round 9, 2026-10-15, answering the r9 diff check
+> `bsd-plan16-22-spec-diffcheck-r9-29e335a` s-2, m-1, m-5 and d9bu, [[#rev-round-9]]; revision
+> round 8, 2026-10-15, answering the r8 re-review
 > `bsd-plan16-22-spec-rereview-r8-23ad703` b-1, m-1, m-3, m-5 and d9bl, [[#rev-round-8]]; revision
 > round 7, 2026-10-15, answering the r7 re-review
 > `bsd-plan16-22-spec-rereview-r7-331b414` b-1 (d9av) and d9ay, [[#rev-round-7]]; revision round 6,
@@ -57,6 +59,22 @@ rel: motivates -> [[task-22.2-repair-then-remove]]
 rel: motivates -> [[task-22.3-bug-086-global-repair]]
 rel: specifies -> [[task-22.1-audit-classes#r1-verify]]
 rel: related-to -> [[task-23.4-option-a-measurement]]
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r9-29e335a]] where it touches 16.6 (s-2, m-5) and d9bu
+([[plan-review-2026-10-14#t12-approvals]]). Code claims re-read at `428267f` (`src/` unchanged
+since `23ad703`). Later rows win over round 8.
+
+| finding / decision | answered in |
+|---|---|
+| r9 s-2 / d9bu (the incremental replay path has no caller, and the specs kept extending it) | NEW [[#r1f]]: this slice DELETES `Store.apply_log_delta`, `_apply_one_event`, `_apply_event_body` and `_replay_concept` (its only caller is `_apply_event_body`), the unused `daemon.REPLICA_REBUILD_DELTA_BYTES`, the test that drives the path, and every prose mention, with a scan that fails if any comes back (AC-12). Every clause extending the path is dropped: [[#r1d]] "both replay paths", the "two paths agree on KINDED events only" paragraph (bug-120 closes by removal), the incremental sentence of "The order, concretely", the incremental half of the resolver, `row_skips` "on both paths", AC-9's "same holds through `_apply_event_body`", AC-9d check 3's `_apply_event_body` half; [[#files-to-modify]]. The rebuild is the one replay path |
+| r9 m-5 (two AC-9d clauses mis-fire on legitimate code) | AC-9d check 3 scoped to the link and row passes of `rebuild_index_from_log` (Pass 3's memory-body membership test named as allowed); check 4 states the parameters come from `row_key(ev)` (`k = row_key(ev)`, then `k[5]`, `k[6]`) |
+| r9 m-1 (22.2's helper stops calling the legacy rule) | AC-9d check 2's caller list drops `_row_op_c_kinds`; that helper reads `edge_records.LEGACY_PREFERRED_KIND` (22.2 R3 makes the constant public) |
+| ns17-r9-2 (coordinator: every new `facts.log` op this task adds is listed against 17.4's `scripts/factslog-restore.py` `FOLD_OPS`) | [[#files-to-modify]] `scripts/factslog-restore.py` row |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r9-29e335a]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Revision round 8 (2026-10-15) {#rev-round-8}
 
@@ -318,23 +336,21 @@ with no event is wiped by every `rmx rebuild-index` and every `rebuild_index` da
 - **Event `learned_provenance_move`** `{linkage, c_kind, c, e_kind, e, file, line, to: {e_kind, e,
   file, line, root}}` from `move_learned_provenance` (plan-22's repairs and import), built by the
   same `row_event`. The concept end does not move, so `to` carries no `c_kind`.
-- **Both replay paths apply them:** `Store._apply_event_body` (reached from `apply_log_delta`)
-  and the rebuild pass (`Store.rebuild_index_from_log`, which today collects `evidence` events
-  in its pass 2, resolves their concept kind in Pass 2b (bug-117) and applies them in pass 3,
-  after entities, protections and links). The two new ops join the `evidence` appends in the ONE
-  row pass below, in timestamp order (d9av), resolving names to ids at apply time through the
-  one resolver of [[#r1d-one-format]]. An event whose evidence row does not exist at apply time
-  is counted `unresolved_provenance` and printed, never dropped silently.
-  - **The two paths agree on KINDED events only (r8 m-3).** An event with `c_kind` resolves
-    exactly on both paths. A LEGACY event (an `evidence` append written before 0.78.3) follows
-    each path's own resolver: the rebuild applies `edge_records.resolve_legacy_kind` over every
-    kind LOGGED for the name in the partition, tombstoned keys included (Pass 2b's
-    `kinds_by_name`); the incremental `Store._replay_concept` applies it over the kinds in the
-    LIVE catalog. With a tombstoned `concept X` and a live `doc X`, a legacy edge `c = X`
-    attaches to `doc X` incrementally and resolves to `concept` (then skipped dead) on a
-    rebuild. Plan-22's tombstones create exactly that state. The impact is low today
-    (`apply_log_delta` has no caller, d9ao); the difference is a bug-registry item for the
-    orchestrator, not a requirement of this task ([[#rev-round-8]]).
+- **The rebuild applies them; it is the ONE replay path (d9bu).** `Store.rebuild_index_from_log`
+  today collects `evidence` events in its pass 2, resolves their concept kind in Pass 2b
+  (bug-117) and applies them in pass 3, after entities, protections and links. The two new ops
+  join the `evidence` appends in the ONE row pass below, in timestamp order (d9av), resolving
+  names to ids at apply time through the one resolver of [[#r1d-one-format]]. An event whose
+  evidence row does not exist at apply time is counted `unresolved_provenance` and printed,
+  never dropped silently. The incremental path (`apply_log_delta` → `_apply_one_event` →
+  `_apply_event_body`) has no caller and is DELETED by this slice ([[#r1f]]); no op gets a
+  branch there.
+  - **One resolver, so legacy events resolve one way (r8 m-3, closed by d9bu).** Round 8 stated
+    that a LEGACY event (an `evidence` append written before 0.78.3) resolved over the LOGGED
+    kinds on a rebuild but over the LIVE kinds in `_replay_concept`. With `_replay_concept`
+    deleted ([[#r1f]]), the only resolver left is `edge_records.resolve_c_kind` over Pass 2b's
+    `kinds_by_name` (every kind LOGGED for the name in the partition, tombstoned keys included).
+    bug-120 closes by removal of the second resolver.
 - **The compactor keeps the sidecar (r4 b-2; d9ab companion 1).** The daemon's periodic
   `facts.log` compaction (`Daemon._compact_factslog_if_needed`, every 1,800 s
   once the log passes 256 MiB; this repo's log compacted three times on 2026-10-14) REPLACES the
@@ -355,8 +371,8 @@ with no event is wiped by every `rmx rebuild-index` and every `rebuild_index` da
 - plan-22's `evidence_remove` replay removes the matching sidecar rows by the same identity
   ([[task-22.2-repair-then-remove#r3]]).
 - **ONE row pass, appends and row ops together, in TIMESTAMP order (d9av; r7 b-1; replaces round
-  3's "after the `evidence` appends, in log order").** The rebuild pass and `_apply_event_body`
-  apply the `evidence` appends and every row-level op in ONE pass: `evidence`,
+  3's "after the `evidence` appends, in log order").** The rebuild pass applies the `evidence`
+  appends and every row-level op in ONE pass: `evidence`,
   `learned_provenance`, `learned_provenance_move` (this task), `evidence_remove`,
   `evidence_repoint`, `entity_rename` ([[task-22.2-repair-then-remove#r3]]) and
   `evidence_orphan_drop` ([[task-22.6-removal-entry-points#r5]]), ordered by `ts` with ties broken
@@ -375,10 +391,9 @@ with no event is wiped by every `rmx rebuild-index` and every `rebuild_index` da
     `Store._row_pass_events(events, partition)`, takes the appends AFTER Pass 2b's resolution
     (every item carries `c_kind`) plus the row ops, returns them in the sorted order, and pass 3
     applies them in that order (AC-9c), still counting `evidence_skipped_dead` for an append whose
-    end does not resolve. The incremental path applies each event as it reads it, in log byte
-    order, which interleaves them already (`apply_log_delta` has no caller in `src/` at
-    `23ad703`; writer rotation is dropped, d9ao). Cited by symbol; the line numbers are
-    `23ad703`'s.
+    end does not resolve. There is no second ordering to keep in step: the incremental path is
+    deleted ([[#r1f]], d9bu; writer rotation, its only reason, was dropped by d9ao). Cited by
+    symbol; the line numbers are `23ad703`'s.
   - **One spelling, one key, one resolver, one counter (d9bl; r8 b-1).** {#r1d-one-format} Every
     row-level op plans 16 and 22 add is the same shape (an edge's two ends by name, plus a row
     identity), so it is built, keyed, resolved and counted by ONE function each, which this
@@ -409,18 +424,17 @@ with no event is wiped by every `rmx rebuild-index` and every `rebuild_index` da
       in that partition, tombstoned keys included. Pass 2b's link loop, its evidence loop, and the row pass for any
       row op that reaches it without `c_kind` (a hand-edited log) call it; the row pass then
       resolves ends with `name_to_id[(c_kind, c)]` and `name_to_id[(e_kind, e)]`, never a
-      literal kind. Incremental: every `EDGE_OPS` and `ROW_OPS` branch of `_apply_event_body`
-      resolves its concept end through `Store._replay_concept(ev)` and its entity end through
-      `get_entity(e_kind, e)`; `_replay_concept` itself calls `resolve_c_kind` with the LIVE
-      catalog's kinds for the name (the only difference between the paths is that kinds set,
-      r8 m-3, stated below). Write side: plan-22's live primitives pick the kind(s) a row op
-      names through ONE method, 22.2's `Store._row_op_c_kinds`
-      ([[task-22.2-repair-then-remove#r3]]); this slice's learner rows are always `concept`.
-    - *Counter.* Every row-pass skip, on both paths, is counted through ONE helper,
+      literal kind. There is no incremental resolver: `_replay_concept` is deleted with the
+      path that called it ([[#r1f]], d9bu). Write side: plan-22's live primitives pick the
+      kind(s) a row op names through ONE method, 22.2's `Store._row_op_c_kinds`
+      ([[task-22.2-repair-then-remove#r3]]), which reads the constant
+      `edge_records.LEGACY_PREFERRED_KIND` and does not call the legacy rule (r9 m-1); this
+      slice's learner rows are always `concept`.
+    - *Counter.* Every row-pass skip of the rebuild is counted through ONE helper,
       `Store._row_skip(counts, op, reason)`, into one `row_skips: {op: {reason: n}}` dict
       (`reason` in `skipped_dead`, `unresolved`, `no_row`, `skipped_live`) that the rebuild
-      returns beside bug-117's `links_*` / `evidence_*` counters and `apply_log_delta` adds to its
-      `skipped_unresolved` total. The names the ACs print are views of it:
+      returns beside bug-117's `links_*` / `evidence_*` counters. The rebuild is the only
+      replay path (d9bu), so `row_skips` has one writer. The names the ACs print are views of it:
       `unresolved_provenance` = the `no_row` count of `learned_provenance` plus
       `learned_provenance_move`; `orphan_drop_skipped_live` = `evidence_orphan_drop`'s
       `skipped_live` (22.6 R5).
@@ -448,6 +462,34 @@ entities whatever `protected` says and leave their `linkage_evidence` rows behin
 - 22.6 replaces that interim: the sync edit paths keep learned rows (so no orphan arises there),
   and the deleted/ignored-file purge and `vacuum`'s orphan-evidence delete write a manifest that
   carries the sidecar rows of every identity they remove, with a `facts.log` event.
+
+**R1f. The incremental replay path is deleted; the rebuild is the one replay path (d9bu; r9
+s-2).** {#r1f}
+`Store.apply_log_delta` is the only caller of `Store._apply_one_event`, which is the only caller
+of `Store._apply_event_body`, which is the only caller of `Store._replay_concept`; nothing in
+`src/` calls `apply_log_delta` (re-read at `428267f`: its one remaining mention is the
+`REPLICA_REBUILD_DELTA_BYTES` comment, `daemon.py:516`, which describes the writer rotation d9ao
+dropped). Plans 16 and 22 kept adding branches to it, each new code on an unreachable path kept
+alive only by tests, and its separate resolver read LIVE kinds where the rebuild reads LOGGED
+kinds (bug-120). This slice, in the same commit as [[#r1d]]:
+- **Deletes** `apply_log_delta`, `_apply_one_event`, `_apply_event_body` and `_replay_concept`
+  from `store.py` (`_replay_concept` is d9bu's chain one level down: its only caller is
+  `_apply_event_body`, and its `resolve_legacy_kind` call is the third of the three today);
+  `REPLICA_REBUILD_DELTA_BYTES` and its comment from `daemon.py` (read nowhere; its env var
+  `RMX_REPLICA_REBUILD_DELTA_BYTES` goes with it).
+- **Deletes their tests:** `test_the_incremental_replay_resolves_non_concept_rows` in
+  `tests/test_bug117_rebuild_non_concept.py` (the rebuild tests of that file stay unchanged).
+- **Rewrites the prose that names them:** the `add_memory` comment ("Replayed by
+  `_apply_one_event` + `rebuild_index_from_log`", `store.py:2531`) names `rebuild_index_from_log`
+  only; the module docstring of `tests/test_memory_content_log.py` ("`apply_log_delta` /
+  `rebuild_index_from_log` reconstruct bodies") names the rebuild only.
+- **Adds no replacement.** A future incremental replay is a new design under a new decision,
+  built on the rebuild's resolver and row pass, not a revival of this one.
+- **A check that can fail (AC-12):** a test scans `src/refmatrix/**/*.py` as TEXT (so a comment
+  or docstring counts) and `tests/**/*.py` as AST (attribute and name references, so the scan's
+  own string list does not trip it) for the names `apply_log_delta`, `_apply_one_event`,
+  `_apply_event_body`, `_replay_concept`, `REPLICA_REBUILD_DELTA_BYTES`; any hit fails with its
+  `path:line`. bug-120 closes as "retired by d9bu" in the registry (the orchestrator's row).
 
 **R1b. No new evidence row without a sidecar row, from the day this slice lands (s-r5-5).** {#r1b}
 Between this Wave-1 slice and 16.1, today's writer keeps teaching. So `_learn_grep_hits`, in the
@@ -878,7 +920,7 @@ wave order (`#t10-waves`).
    apply `move_learned_provenance` to the old identity, then run `rebuild_index_from_log` on a
    sandbox COPY of the store: the sidecar after the rebuild equals the sidecar before it on every
    column except the three mark columns (which are NULL/0, counted `marks_reset`), and the moved
-   row sits at its new identity. The same holds through `_apply_event_body` replay. Mutations "no
+   row sits at its new identity (the rebuild is the one replay path, d9bu). Mutations "no
    `learned_provenance` event" and "no `learned_provenance_move` event" each FAIL it, and so does
    "replay the move events in their own pass before the `learned_provenance` events" (the moved
    reading is counted `unresolved_provenance`).
@@ -924,13 +966,20 @@ wave order (`#t10-waves`).
      1. no dict display whose `"op"` key holds a constant in `ROW_OPS` exists outside
         `edge_records.row_event`;
      2. `resolve_legacy_kind` is called in `src/refmatrix/` only from
-        `edge_records.resolve_c_kind`, and Pass 2b, `Store._replay_concept` and (once 22.2
-        lands) `Store._row_op_c_kinds` call `resolve_c_kind`;
-     3. every branch of `_apply_event_body` for an op in `EDGE_OPS ∪ ROW_OPS` calls
-        `_replay_concept`, and neither `_apply_event_body` nor `rebuild_index_from_log` calls
-        `get_entity` or indexes `name_to_id` with a constant kind;
-     4. the row-op apply code calls `edge_records.row_key` and builds no identity tuple of its
-        own (no tuple display holding both a `"file"` and a `"line"` subscript of an event);
+        `edge_records.resolve_c_kind`, and Pass 2b and the row pass call `resolve_c_kind`
+        (`_replay_concept` is deleted, [[#r1f]]; 22.2's `_row_op_c_kinds` reads the constant
+        `edge_records.LEGACY_PREFERRED_KIND` and calls neither, r9 m-1);
+     3. scoped to the code that resolves EDGE ends (r9 m-5): inside the link pass and the row
+        pass of `rebuild_index_from_log` (the `EDGE_OPS ∪ ROW_OPS` events), no call of
+        `get_entity` and no `name_to_id` subscript or membership test whose kind element is a
+        constant; the kind comes from the event (`c_kind` / `e_kind` after Pass 2b). Outside
+        that scope by name, and allowed: Pass 3's memory-body block (`("memory", key[1]) not in
+        name_to_id`), which resolves a `memory_content` body, not an edge end. There is no
+        `_apply_event_body` half (deleted, [[#r1f]]);
+     4. the row-op apply code calls `edge_records.row_key` and takes every identity value from
+        it (`k = row_key(ev)`, then `k[5]`, `k[6]` for `file` and `line`, including the SQL
+        parameter tuple `evidence_remove`'s DELETE needs); it reads no `"file"` or `"line"`
+        subscript (or `.get`) of an event directly (r9 m-5);
      5. `row_skips` is written only inside `Store._row_skip`.
    - Mutations, each FAILS it: "the row pass reads the appends before Pass 2b" (the legacy
      append's `c_kind` is None, `row_key` differs, `unresolved_provenance` is 1); "a row-op site
@@ -949,7 +998,8 @@ wave order (`#t10-waves`).
     row event, a row op resolving `c` as kind `concept`, a second legacy resolver, a per-branch
     counter (9d); dump without `learned_evidence` (9b);
     census defaults `home_base` / deny set derived after the redirect (5c); purge deletes or
-    hides an orphaned sidecar row (11).
+    hides an orphaned sidecar row (11); keep any of the four incremental methods, a comment
+    naming one, or the incremental test (12).
 11. **Orphaned sidecar rows are kept and counted (R1e; r3 s-5).** On a sandbox store with a
     learned row and its sidecar row, `purge_path` of the file leaves the sidecar row in place
     and `rmx learn status` prints `orphaned_provenance: 1`; `vacuum` leaves it too. Mutation
@@ -960,6 +1010,15 @@ wave order (`#t10-waves`).
     ([[task-22.6-removal-entry-points#files-to-modify]]): it keeps the `orphaned_provenance`
     count for any orphan a non-routed path still leaves, and drops the "purge leaves the row"
     clause.
+12. **The incremental replay path is gone (R1f; d9bu, r9 s-2).** The scan of [[#r1f]] runs over
+    `src/refmatrix/` (text) and `tests/` (AST) and finds none of `apply_log_delta`,
+    `_apply_one_event`, `_apply_event_body`, `_replay_concept`, `REPLICA_REBUILD_DELTA_BYTES`;
+    `tests/test_bug117_rebuild_non_concept.py`'s rebuild tests pass unchanged. Mutations, each
+    FAILS it: "keep `apply_log_delta` (or any one of the four)" (the text scan names its `def`
+    line); "delete the methods but leave the `add_memory` comment naming `_apply_one_event`"
+    (the text scan); "keep the incremental test" (the AST scan names its `dst.apply_log_delta`
+    attribute). A scan run over a fixture tree holding one `def apply_log_delta` proves the scan
+    itself can fail.
 
 The audit/prune/repair acceptance moved to plan-22. {#acceptance-moved}
 
@@ -968,15 +1027,19 @@ The audit/prune/repair acceptance moved to plan-22. {#acceptance-moved}
 | File | Change |
 |------|--------|
 | `src/refmatrix/duckdb_catalog.py` | `learned_evidence` DDL + primary key |
-| `src/refmatrix/store.py` | `dump_catalog_to_log` emits one `learned_provenance` event per sidecar row after each partition's `evidence` events, with its evidence row's `ts` (R1d, r4 b-2, d9av); `add_learned_provenance` (+ `learned_provenance` events); `move_learned_provenance` (+ `learned_provenance_move` event); both ops in `_apply_event_body` and in `rebuild_index_from_log`'s ONE timestamp-ordered row pass, which replaces pass 3's separate `evidence_events` loop and keeps Pass 2b (`_row_pass_events`, R1d, d9av; r8 m-1); Pass 2b calling `edge_records.resolve_c_kind`; `_row_skip` / `row_skips` ([[#r1d-one-format]], d9bl); `verify_evidence_rows` stats split (`missing_file`, `out_of_range`, `reader_rule`); `grep_evidence` enqueues R4 candidates for learned rows |
+| `src/refmatrix/store.py` | `dump_catalog_to_log` emits one `learned_provenance` event per sidecar row after each partition's `evidence` events, with its evidence row's `ts` (R1d, r4 b-2, d9av); `add_learned_provenance` (+ `learned_provenance` events); `move_learned_provenance` (+ `learned_provenance_move` event); DELETE `apply_log_delta`, `_apply_one_event`, `_apply_event_body`, `_replay_concept` and rewrite the `add_memory` comment that names them ([[#r1f]], d9bu); both ops in `rebuild_index_from_log`'s ONE timestamp-ordered row pass, which replaces pass 3's separate `evidence_events` loop and keeps Pass 2b (`_row_pass_events`, R1d, d9av; r8 m-1); Pass 2b calling `edge_records.resolve_c_kind`; `_row_skip` / `row_skips` ([[#r1d-one-format]], d9bl); `verify_evidence_rows` stats split (`missing_file`, `out_of_range`, `reader_rule`); `grep_evidence` enqueues R4 candidates for learned rows |
 | `src/refmatrix/edge_records.py` | `ROW_OPS` (this slice's two ops), `row_event`, `row_key`, `resolve_c_kind` (Pass 2b's rule, extracted) ([[#r1d-one-format]], d9bl); 22.2 and 22.6 add their ops to `ROW_OPS` |
 | `src/refmatrix/learned_verify.py` (new) | R2: `Rules`, `Unverifiable`, `UNVERIFIABLE_REASONS`, `verify_argv`, `matching_lines`, `permissive_matching_lines`, `hash_line`, `verify` |
 | `src/refmatrix/replica_merge.py` | none: R1c is RETIRED (d9ay) |
-| `src/refmatrix/daemon.py` | R4 drain consumer (pre-step + batch apply) on plan-23's drain; R5 backfill op; R1b call in `_learn_grep_hits` |
+| `src/refmatrix/daemon.py` | DELETE `REPLICA_REBUILD_DELTA_BYTES` and its comment ([[#r1f]], d9bu); R4 drain consumer (pre-step + batch apply) on plan-23's drain; R5 backfill op; R1b call in `_learn_grep_hits` |
 | `src/refmatrix/cli.py` | `rmx learn status`: mark counts ("at least"), overflow, unverifiable-by-reason/unparsed counts, `orphaned_provenance` |
 | `scripts/census_on_copy.py` (new) | R7: the ONE census procedure (real home from `pwd` first, deny set, copy header incl. log birth time and last compaction, audit hook, read-only connection, production functions, explicit classifier inputs, `probe-reproduction`, `dangling-link`) |
 | `tests/test_learned_evidence.py` (new) | AC-1, AC-4..9, AC-9b, AC-9c, AC-9d, AC-11 (rewritten by 22.6, r4 m-5); AC-5c (AC-2 RETIRED, d9ay) |
 | `tests/test_learned_verify.py` (new) | AC-3, AC-3b, AC-3c |
+| `tests/test_bug117_rebuild_non_concept.py` | DELETE `test_the_incremental_replay_resolves_non_concept_rows` ([[#r1f]], d9bu); the rebuild tests stay unchanged |
+| `tests/test_memory_content_log.py` | module docstring names `rebuild_index_from_log` only ([[#r1f]]) |
+| `tests/test_incremental_replay_retired.py` (new) | AC-12: the text + AST scan and its fixture-tree self-check |
+| `scripts/factslog-restore.py` (plan-17 task 17.4's) | `learned_provenance`, `learned_provenance_move` added to `FOLD_OPS` with its fold handling, in the same commit as the replay branch: 17.4's AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s op set, and an op missing from it fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
 
 ## Test strategy {#test-strategy}
 

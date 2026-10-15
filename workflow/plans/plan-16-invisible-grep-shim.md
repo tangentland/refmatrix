@@ -14,7 +14,10 @@ metadata:
 # Plan 16: the grep shim stops answering and only watches {#root}
 
 **Date:** 2026-10-06
-**Status:** Drafting (revision round 8, 2026-10-15: today's `learn.off` operator state is
+**Status:** Drafting (revision round 9, 2026-10-15: 16.6 deletes the uncalled incremental replay
+path and every spec clause that extended it (d9bu; the rebuild is the one replay path), AC-9d's
+checks are scoped, and 16.3 R5 lands over bug-118's one hook renderer, for the r9 diff check
+`bsd-plan16-22-spec-diffcheck-r9-29e335a`, [[#rev-round-9]]; revision round 8, 2026-10-15: today's `learn.off` operator state is
 stated and owned (d9bj: 16.3 retires `enforce-rmx-grep.sh`'s redirect, `learn.off` comes off only
 after 16.2 and 16.3 deploy together, 16.4's window opens after that flip), and 16.6's row events
 carry `c_kind` through one builder, key, resolver and counter (d9bl), for the r8 re-review
@@ -202,6 +205,12 @@ it feeds the passive shim and nothing redirects a corpus grep to `rmx grep`. The
 `rmx learn on --global` (the marker is the user's; no task removes it), and the handoff of that
 deploy names the step. 16.4's measurement window opens only after the flip
 ([[task-16.4-measurement#r0]]).
+**No `rmx learn on` in ANY scope (global or project) before 16.3 is deployed (r9 m-3).** Once
+bug-118's fix deploys, the generator propagates an optional project hook's exit status, so
+`enforce-rmx-grep.sh` really BLOCKS (exit 2) wherever no `learn.off` marker covers the project.
+Today the global marker covers every project; removing it, or a project-scope `learn on`, before
+16.3 retires the script turns every corpus grep there into a block. Every deploy handoff between
+bug-118's deploy and 16.3's states this line.
 
 rel: derives-from -> [[plan-review-2026-10-14#t8-wave1]]
 
@@ -252,6 +261,22 @@ Next gate: `@ch-bsd` spec review r6 of task specs 16.1–16.6 revision 6, then `
 
 rel: derives-from -> [[plan-review-2026-10-14#t6]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r9-29e335a]] where it touches plan-16 (s-2 and m-5 in
+16.6, m-3 in 16.3) and d9bu ([[plan-review-2026-10-14#t12-approvals]]). Plan-22's findings are
+answered in [[plan-22-audited-removal-and-repair#rev-round-9]]. Code read at `428267f`; the bug-118
+branch read at `462bd0b`.
+
+| finding / decision | answered in |
+|---|---|
+| s-2 / d9bu (the incremental replay path has no caller; the specs kept extending it; bug-120's Planned cell cited a task that declined it) | [[task-16.6-learned-row-validation#r1f]] (16.6 deletes `apply_log_delta`, `_apply_one_event`, `_apply_event_body`, `_replay_concept`, their test and every mention, with a scan that can fail, AC-12); every clause extending the path dropped from 16.6 R1d and AC-9 / AC-9d; bug-120 closes by removal (the registry row is the orchestrator's) |
+| m-5 (AC-9d checks 3 and 4 mis-fire) | 16.6 AC-9d check 3 scoped to the link and row passes (memory-body test allowed by name); check 4 takes values from `row_key` |
+| m-3 (16.3 R5 vs bug-118) | [[task-16.3-grep-tool-hook-and-docs#r5]] (`tests/test_bug118_optional_hook_exit.py`, one tuple through `_optional_project_hook`, prose sweep, AC-10 note); [[#learn-flip]] (no `rmx learn on` in any scope before 16.3 deploys) |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r9-29e335a]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Revision round 8 (2026-10-15) {#rev-round-8}
 

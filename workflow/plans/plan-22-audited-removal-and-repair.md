@@ -14,7 +14,10 @@ metadata:
 # Plan 22: audited removal and repair {#root}
 
 **Date:** 2026-10-07 (revised 2026-10-14 after the Wave 0 decision log)
-**Status:** Drafting — revision round 8 (2026-10-15) for the r8 re-review
+**Status:** Drafting — revision round 9 (2026-10-15) for the r9 diff check
+[[bsd-plan16-22-spec-diffcheck-r9-29e335a]] (both-dead vacuum orphans, the drop's partition
+field, the live-primitive kind helper, and the retired incremental replay path, d9bu;
+[[#rev-round-9]]); revision round 8 (2026-10-15) for the r8 re-review
 [[bsd-plan16-22-spec-rereview-r8-23ad703]] (the row ops after bug-117, 0.78.3) and the approvals
 d9bk/d9bl ([[plan-review-2026-10-14#t12-approvals]]; [[#rev-round-8]]); round 7 for the r7
 re-review [[bsd-plan16-22-spec-rereview-r7-331b414]] and d9av/d9aw/d9ay ([[#rev-round-7]]); round 6 (r6 re-review, d9aq/d9ar) in
@@ -240,6 +243,9 @@ rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 | d-26 | restore re-checks every recorded dead id (never re-inserts a row onto an id that is live now) and maps every old id the same manifest restores through its `id_map`, surviving rows included | r7 s-1, s-2 |
 | d-27 | every row-level event plans 16/22 add (`evidence_remove`, `evidence_repoint`, `unlink`, `evidence_orphan_drop`, `learned_provenance`, `learned_provenance_move`) names its concept end as `(c_kind, c)`, built by ONE builder (`edge_records.row_event`, or `edge_event` for `unlink`), matched by ONE key (`edge_records.row_key`), resolved by ONE function (`edge_records.resolve_c_kind`, the bug-117 legacy rule) and counted by ONE helper (`row_skips`); an AST test holds every site to them | d9bl; r8 b-1 |
 | d-28 | `evidence_orphan_drop` decides "dead" on a rebuild by the LOG timeline (latest `tombstone` vs latest `entity` event at or before the op), matching on `(linkage, c_kind, c, file, line, detail)`; `purge_entity` still deletes no evidence | d9bk; r8 s-1 |
+| d-29 | the rebuild is the ONE replay path: the uncalled incremental path (`apply_log_delta` → `_apply_one_event` → `_apply_event_body`, and `_replay_concept`) is deleted by 16.6 R1f, no plan-22 op gets a branch there, and bug-120 closes by removal | d9bu; r9 s-2 |
+| d-30 | a vacuum orphan whose concept is also dead is named by 22.1a's `names_from_log` and its drop keyed on each covering logged key (22.2 R9 step 4's keying, incl. the appends' `partition` field); a nameless one logs no event and is counted `orphan_drop_nameless` | r9 s-1, m-4 |
+| d-31 | a live primitive's extra row op is the constant `LEGACY_PREFERRED_KIND` (not the legacy rule over live kinds) whenever the catalog kind differs and the live concept holds 0 or 1 identical copies, carrying `keep = n`; `legacy_misresolved` only for `n >= 2` | r9 m-1, m-2 |
 
 ## Open after revision {#open-after-revision}
 
@@ -282,6 +288,24 @@ earlier links still resolve.
    source, which attributes 217 of this repo's and 90 of the global store's learned-only
    protections to the learner; those are purgeable whole when they are class members, and 22.3
    prints its count before the live apply ([[task-22.3-bug-086-global-repair#r3]]).
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r9-29e335a]] (plan-22: s-1, s-2, m-1, m-2, m-4; m-3 and
+m-5 are plan-16's, [[plan-16-invisible-grep-shim#rev-round-9]]; m-6 is the registry's, the
+orchestrator's) and d9bu ([[plan-review-2026-10-14#t12-approvals]]). Code claims re-read at
+`428267f`; `src/` is unchanged since `23ad703`. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| s-1 (both-dead vacuum orphans cannot be named; 5,341 on cliquedb) | [[task-22.6-removal-entry-points#r5-both-dead]]; 22.6 AC-6c; d-30 |
+| s-2 / d9bu (the incremental replay path has no caller) | [[task-16.6-learned-row-validation#r1f]] deletes it; [[task-22.2-repair-then-remove#r3]] ("Both replay paths", the incremental order and resolver sentences, "two paths agree", the incremental counter and `unlink` sentence dropped), 22.2 AC-3f's incremental clause dropped, [[task-22.6-removal-entry-points#r5-timeline]]'s catalog-check branch dropped; d-29 |
+| m-1 (`_row_op_c_kinds` read LIVE kinds) | [[task-22.2-repair-then-remove#r3]] "Which kind a LIVE primitive's op names"; 22.2 AC-3f run 3; d-31 |
+| m-2 (`keep = n`) | [[task-22.2-repair-then-remove#r3]]; 22.2 AC-3f run 2; d-31 |
+| m-4 (the drop's `partition` field) | [[task-22.6-removal-entry-points#r5]] "The partition field"; 22.6 AC-6b variant; d-30 |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r9-29e335a]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Revision round 8 (2026-10-15) {#rev-round-8}
 

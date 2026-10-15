@@ -14,8 +14,8 @@ metadata:
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
 > Status: Pending (created in revision round 3, 2026-10-14; revised in round 5, [[#rev-round-5]],
-> round 6, 2026-10-15, [[#rev-round-6]], round 7, 2026-10-15, [[#rev-round-7]], and round 8,
-> 2026-10-15, [[#rev-round-8]])
+> round 6, 2026-10-15, [[#rev-round-6]], round 7, 2026-10-15, [[#rev-round-7]], round 8,
+> 2026-10-15, [[#rev-round-8]], and round 9, 2026-10-15, [[#rev-round-9]])
 > Wave: 1, after 22.2 (it needs the engine, the intent-record form and restore); parallel to
 > 22.5. R4 (the sync edit fix) needs only 16.6's Wave-1 slice and may land first.
 > Depends on: 22.2 (engine, primitives, R4 intent-record form, `removal_restore`), 22.1a
@@ -236,14 +236,42 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
      dead_entity_id, n, manifest}` event per identity, built by 16.6's
      `edge_records.row_event` with `c_kind` (this task adds the op to `edge_records.ROW_OPS`;
      [[task-16.6-learned-row-validation#r1d-one-format]], d9bl; r8 b-1). `linkage` and the
-     concept end are by NAME, the concept's kind(s) through 22.2's one helper
-     `Store._row_op_c_kinds` (one event per returned kind, [[task-22.2-repair-then-remove#r3]]);
-     the entity has no name left, so its end is null and its dead id and the manifest id are
-     recorded instead.
+     concept end are by NAME; the entity has no name left, so its end is null and its dead id and
+     the manifest id are recorded instead. The concept end is keyed by exactly one of two rules,
+     by whether the concept is alive (r9 s-1):
+     - **Live concept.** Its kind(s) come from 22.2's one helper `Store._row_op_c_kinds`, one
+       event per returned pair, carrying the pair's `c_kind` and no `keep` (the drop deletes
+       every matching copy whose entity was dead at `T`, [[#r5-timeline]]; no live entity holds
+       a copy of an orphan, so the helper's `concept` pair always has `n = 0`;
+       [[task-22.2-repair-then-remove#r3]]). `_row_op_c_kinds` is called ONLY for a live
+       concept.
+     - **Both ends dead (r9 s-1).** {#r5-both-dead} An orphan whose CONCEPT id is dead too has
+       no catalog name and no catalog kind (cliquedb: 5,341 of its 7,599 vacuum orphans;
+       refmatrix r6 copy: 2,679). It is named by 22.1a's dead-id naming
+       ([[task-22.1a-provenance-free-classes#r1-dangling]], covering per
+       [[task-22.1a-provenance-free-classes#r1-covering]]), the same `names_from_log` 22.2 R9
+       uses, never a second naming. A NAMED or `unnamed:reborn` concept logs the drop on EACH
+       logged key that covers the row, with THAT key's `c_kind` and `c`, exactly as 22.2 R9
+       step 4 keys its events ([[task-22.2-repair-then-remove#r9-dangling]]). A NAMELESS
+       concept (`unnamed:none` / `unnamed:ambiguous`) logs NO event, because no logged name lets
+       a rebuild re-attach the row (22.2 R9 step 5's reason); the row is still deleted with its
+       manifest entry, and counted `orphan_drop_nameless` and printed by `vacuum`. No kind is
+       ever invented and `row_event` is never called with an empty `c_kind`.
+   - **The partition field (r9 m-4).** `_log_event` adds no partition (`store.py:1119`), a
+     compacted log's appends carry `partition: p` and live-shape appends carry none, and the row
+     pass runs per partition. So each drop event carries the `partition` field of the
+     `facts.log` appends it answers, exactly as they carry it (present with that value, or
+     absent), never the vacuum's binding: 22.2 R9 step 4's rule
+     ([[task-22.2-repair-then-remove#r9-dangling]]). Per orphan identity and per key from the
+     rules above, ONE drop per DISTINCT partition field among that identity's logged appends on
+     that key. `vacuum` finds those appends in ONE read-only scan of `facts.log` for the orphan
+     identities (a set lookup per line; the same scan feeds the naming above). An identity with
+     NO logged append logs no event (a rebuild cannot re-create it) and is counted
+     `orphan_drop_unlogged` and printed.
    - **"Dead" is decided on the LOG timeline in a rebuild (d9bk; r8 s-1).** {#r5-timeline} Replay
-     applies the op inside the ONE timestamp-ordered row pass (d9av;
-     [[task-22.2-repair-then-remove#r3]], [[task-16.6-learned-row-validation#r1d]]). On the
-     rebuild path, `evidence_orphan_drop` at `T` deletes each copy appended at or before `T`
+     applies the op inside the ONE timestamp-ordered row pass of the rebuild, the one replay
+     path (d9av, d9bu; [[task-22.2-repair-then-remove#r3]],
+     [[task-16.6-learned-row-validation#r1d]]). `evidence_orphan_drop` at `T` deletes each copy appended at or before `T`
      whose `(linkage, c_kind, c, file, line, detail)` matches (the concept-side fields of
      `edge_records.row_key`, plus `detail`) AND whose own `(partition, e_kind, e)` was DEAD at
      `T`: its latest `tombstone` at or before `T` is at or after its latest `entity` event at or
@@ -253,8 +281,8 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
      is counted `orphan_drop_skipped_live` (16.6's `row_skips`). The materialized catalog is NOT
      the test: the rebuild materializes every surviving entity before the row pass, so "exists at
      that point" would mean "exists at the end of the log", and a re-created entity would keep
-     its pre-vacuum copies (the doubling of AC-6b). The incremental path keeps the catalog check:
-     in log byte order "at that point" is literal.
+     its pre-vacuum copies (the doubling of AC-6b). There is no other replay path to give a
+     catalog check to: the incremental path is deleted (16.6 R1f, d9bu; r9 s-2).
    - A copy whose entity the log still shows ALIVE at `T` because it was raw-deleted without a
      tombstone (bug-111's shape) is not dropped by the rebuild and is counted
      `orphan_drop_skipped_live`; the rebuild resurrects that entity anyway, which is 22.2 R9's
@@ -413,6 +441,27 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
    `orphan_drop_skipped_live == 0` and `evidence_unresolved == 0`. Mutation "orphan-drop checks the
    materialized catalog" FAILS it (the T2 drop sees the re-created `D` alive and skips: the copy
    holds 2). The `c_kind` half of the match is 16.6 AC-9d's (one `row_key`, one builder).
+   *Variant on a compacted non-default partition (r9 m-4):* the same five steps in a sandbox
+   store whose doc `D` lives in partition `p` (not the default), with `dump_catalog_to_log`
+   (the compactor's call) run after step (1), so `D`'s `evidence` append carries
+   `partition: p`. The `evidence_orphan_drop` event carries `partition: p`, and the copy holds 1
+   copy, equal to live. Mutation "drop without the appends' partition field" FAILS it (the drop
+   lands in the default partition's pass, matches nothing there, and the copy holds 2).
+
+   **6c. Both ends dead (r9 s-1).** On a sandbox store, two orphan evidence rows whose concept
+   is dead too: (a) concept end a DOC `N` whose `entity` event is in `facts.log`, then
+   tombstoned, so 22.1a names it; (b) concept end a doc `Z` written with logging off and then
+   raw-deleted, so no event names it (`unnamed:none`). Both entity ends are purged. After
+   `vacuum`: both rows are gone from `linkage_evidence` and both are in the cleanup manifest;
+   `facts.log` holds exactly ONE `evidence_orphan_drop`, keyed on `N`'s logged key (`c_kind:
+   doc`, `c: N`); `vacuum` prints `orphan_drop_nameless: 1`; nothing raised. Then, on a copy,
+   `N` and `Z` and both entity ends are re-created live by `upsert_entity` (no re-ingest, so no
+   new append) and a rebuild runs: it holds neither
+   row, equal to live, with `orphan_drop_skipped_live == 0`. Mutations, each FAILS it: "skip
+   both-dead rows without a count" (the counter is 0); "key a dead concept's drop as
+   `concept`" (the drop lands on a key no append resolves to, and the copy re-attaches `N`'s
+   row to the re-created doc `N`); "call `_row_op_c_kinds` for a dead concept" (it has no
+   `catalog_kind`: `row_event` raises and `vacuum` aborts).
 7. **unprotect source (R6).** `rmx unprotect X` logs a `protect` event with `value=false,
    source=user`; a 22.2 restore that re-protects logs `source=removal`; a learn logs
    `source=learner`. Mutation "no source on value=false" FAILS it.
@@ -471,15 +520,16 @@ mutation is pre-registered and must turn its test RED.
 | `src/refmatrix/removal_audit.py` (22.1a's module, which holds `classify_provenance_free`) | selector mode of `removal_audit`; cleanup-manifest writer (R2's form, shared with 22.2 R4) |
 | `src/refmatrix/cli.py` | `forget`, `memory forget`, `memory bulk-forget`: plan without `--confirm`, apply with it, `--yes` refused; `untrack`, `prune-noise --drop`: manifest first |
 | `src/refmatrix/verbs.py` | `memory_forget`, `memory_bulk_forget`: the same plan/confirm contract (MCP parity) |
-| `src/refmatrix/store.py` | `purge_path(..., keep_learned=)`; R3 manifest + row-level removal of learned rows; `vacuum` steps 2-3 manifest + `evidence_orphan_drop` (with `c_kind`, through `row_event` and `_row_op_c_kinds`); `protect` events carry `source`; replay of `evidence_orphan_drop` in the one pass, the rebuild's dead-at-`T` rule on per-key `entity` / `tombstone` timelines ([[#r5-timeline]]) |
+| `src/refmatrix/store.py` | `purge_path(..., keep_learned=)`; R3 manifest + row-level removal of learned rows; `vacuum` steps 2-3 manifest + `evidence_orphan_drop` (with `c_kind`, through `row_event`; a live concept's kinds through `_row_op_c_kinds`, a dead concept's through 22.1a's `names_from_log` on the logged key, nameless counted `orphan_drop_nameless`; the appends' `partition` field from one log scan, unlogged counted `orphan_drop_unlogged`; [[#r5]], r9 s-1, m-4); `protect` events carry `source`; replay of `evidence_orphan_drop` in the one pass, the rebuild's dead-at-`T` rule on per-key `entity` / `tombstone` timelines ([[#r5-timeline]]) |
 | `src/refmatrix/edge_records.py` | `evidence_orphan_drop` added to 16.6's `ROW_OPS` (the one op with a null entity end) |
+| `scripts/factslog-restore.py` (plan-17 task 17.4's) | `evidence_orphan_drop` added to `FOLD_OPS` with its fold handling, in the same commit as the replay branch: 17.4's AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s op set, and an op missing from it fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
 | `src/refmatrix/sync.py` | non-GMD edit and existing-unsupported branches call `purge_path(..., keep_learned=True)`; the GMD branch calls `purge_legacy_relpath_doc` behind the narrowed guard (R4) |
 | `src/refmatrix/ingest.py` | the GMD legacy purge twin (`:1179-1180`): R4's GMD rule and guard |
 | `src/refmatrix/ingest_gmd.py` | `--as-memory`: the raw DELETE becomes `purge_entity` with an R2-form manifest for learned rows (R9) |
 | `src/refmatrix/daemon.py` | `forget` / `memory_forget` / `memory_bulk_forget` ops: preview or confirmed manifest only; `untrack` / `prune_noise` ops write the manifest first (R1, R2); `_learn_grep_hits` passes `protect_source='learner'` (R6) |
 | `src/refmatrix/cli.py` (also) | `sync --invalidate` as a re-ingest (R4); `memory forget` without the `_store()` fallback (R1) |
 | `src/refmatrix/store.py` (also) | `entities.protect_source` column + `protect_source` keyword on the protect writers; `dump_catalog_to_log` emits `source` (R6); `purge_legacy_relpath_doc` (R4) |
-| `tests/test_removal_entry_points.py` (new) | AC-1..AC-9, AC-6b, AC-9b, AC-9c |
+| `tests/test_removal_entry_points.py` (new) | AC-1..AC-9, AC-6b (and its partition variant), AC-6c, AC-9b, AC-9c |
 | `tests/test_learned_evidence.py` (16.6's) | 16.6 AC-11's test is REWRITTEN by this task (r4 m-5): from R3/R5 on, `purge_path` of a missing file and `vacuum` move the sidecar row into a manifest (AC-4, AC-6) instead of leaving it; AC-11 keeps only its `orphaned_provenance` count for paths this task does not route |
 
 ## Revision round 3 (2026-10-14) {#rev-round-3}
@@ -563,3 +613,19 @@ is unchanged from `23ad703` to the revision's HEAD. Later rows win over round 7.
 rel: amends -> [[bsd-plan16-22-spec-rereview-r8-23ad703]]
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 rel: depends-on -> [[task-16.6-learned-row-validation#r1d-one-format]]
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r9-29e335a]] where it touches 22.6 (s-1, s-2, m-4) and
+d9bu ([[plan-review-2026-10-14#t12-approvals]]). Code claims re-read at `428267f` (`src/`
+unchanged since `23ad703`). Later rows win over round 8.
+
+| finding / decision | answered in |
+|---|---|
+| r9 s-1 (an orphan whose concept is also dead has no name and no kind; 5,341 of cliquedb's 7,599 vacuum orphans) | [[#r5-both-dead]]: named by 22.1a's `names_from_log` (no second naming), the drop logged on each covering logged key with that key's `c_kind` and `c` (22.2 R9 step 4's keying); nameless logs no event and is counted `orphan_drop_nameless`; `_row_op_c_kinds` only for a live concept; AC-6c (named + nameless) with three mutations; [[#files-to-modify]] |
+| r9 s-2 / d9bu (the incremental replay path has no caller) | [[#r5-timeline]]: "The incremental path keeps the catalog check" DROPPED; the rebuild is the one replay path (16.6 R1f deletes the incremental one) |
+| r9 m-4 (no rule for the drop's `partition` field) | [[#r5]] "The partition field": the appends' field as they carry it (22.2 R9 step 4's rule, cited), one drop per distinct field, one log scan, `orphan_drop_unlogged` counted; AC-6b variant on a compacted non-default partition + mutation "drop without the appends' partition field" |
+| ns17-r9-2 (coordinator: every new `facts.log` op this task adds is listed against 17.4's `scripts/factslog-restore.py` `FOLD_OPS`) | [[#files-to-modify]] `scripts/factslog-restore.py` row |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r9-29e335a]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]

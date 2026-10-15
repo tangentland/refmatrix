@@ -16,7 +16,8 @@ metadata:
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
 > Status: Pending (revision after the 2026-10-14 decision log; revision 6, answering spec review
 > r5 `bsd-plan16-spec-review-r5-cd7c923`; revision round 8, 2026-10-15: R5 retires
-> `enforce-rmx-grep.sh`'s redirect, d9bj, [[#rev-round-8]])
+> `enforce-rmx-grep.sh`'s redirect, d9bj, [[#rev-round-8]]; revision round 9, 2026-10-15: R5
+> lands over bug-118's one renderer, [[#rev-round-9]])
 > **Wave:** 2 ([[plan-16-invisible-grep-shim#waves]]).
 > Depends on: [[task-16.1-argv-faithful-learner]]. Tests run in plan-23 task 23.0's sandbox.
 
@@ -28,6 +29,20 @@ rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
 rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
 rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r9-29e335a]] m-3. Read on the bug-118 branch
+(`bugs-112-113-118`, `/Volumes/littlebig/refmatrix-bugs112-118`, `462bd0b`):
+`hooks._optional_project_hook`, `hooks._add_enforce_entries` and
+`tests/test_bug118_optional_hook_exit.py`; and at `428267f`: `.claude/hooks/hooks.env:10`,
+`.claude/hooks/hooks.env.example:11`, `src/refmatrix/telemetry.py:192`.
+
+| finding | answered in |
+|---|---|
+| r9 m-3 (R5 collides with bug-118's test; AC-10's `\|\| true` note goes stale; three prose sites missed; deploy ordering) | [[#r5]]: removal is one name out of `_add_enforce_entries`' tuple, which renders through bug-118's one helper `_optional_project_hook`; `tests/test_bug118_optional_hook_exit.py` updated (name out of `SCRIPTS`, a new assertion that it is NOT rendered even with `enforce=True`); prose sweep adds `hooks.env`, `hooks.env.example`, `telemetry.py`; AC-10's exit-code assertion is primary and its parenthetical rewritten for post-bug-118; [[#files-to-modify]]; the deploy ordering is stated in [[plan-16-invisible-grep-shim#learn-flip]] |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r9-29e335a]]
 
 ## Revision round 8 (2026-10-15) {#rev-round-8}
 
@@ -176,14 +191,29 @@ answered) and the cli-pool load bug-115 removed; today it stands down only becau
 set (`0611d2f`), so the user's flip would re-arm it ([[plan-16-invisible-grep-shim#today-learn-off]]).
 This task retires it, in the same deploy as 16.2 (d9bj, [[plan-16-invisible-grep-shim#learn-flip]]):
 - the script is deleted from `.claude/hooks/`, and `_add_enforce_entries` no longer emits its
-  entry (its `enforce`/auto branch and the `install-hooks --help` text that names it go with it);
+  entry (its `enforce`/auto branch and the `install-hooks --help` text that names it go with it).
+  Once bug-118's fix is merged (branch `bugs-112-113-118`), the PreToolUse(Bash) entries are
+  rendered from ONE name tuple through ONE helper, `hooks._optional_project_hook` (`if [ -x P ];
+  then P; fi`), so the retirement is removing `enforce-rmx-grep.sh` from that tuple, never a
+  second rendering path or a special case (r9 m-3). If 16.3 lands first, bug-118's merge carries
+  the same removal; whichever lands second resolves to the tuple without the name;
+- `tests/test_bug118_optional_hook_exit.py` (bug-118's) drops `enforce-rmx-grep.sh` from its
+  `SCRIPTS` tuple (its other two scripts keep the exit-2 / absent / pass cases and the AST check
+  for a second rendering) and gains one assertion: with `enforce=True` and a stub
+  `enforce-rmx-grep.sh` on disk, no rendered command names it (r9 m-3);
 - its name STAYS in `_RMX_HOOK_SIGNATURES`, so `rmx install-hooks --apply --force` recognises an
   already-installed entry as rmx's and reaps it (`.claude/settings.json` carries one today);
 - `tests/test_hooks_reproducible.py` and `tests/test_plan2_remedy.py`, which assert the entry is
   rendered, are rewritten to assert it is NOT rendered and that a stale installed one is reaped;
 - the `learn.off` stand-down it carries goes with it: with nothing to redirect, the marker has
   no meaning for this hook. Asking the index by name stays in the R3 prose (`rmx context`,
-  `rmx grep`, `rmx_search`), never as a block.
+  `rmx grep`, `rmx_search`), never as a block;
+- the prose that describes the redirect is rewritten (r9 m-3): `.claude/hooks/hooks.env:10` and
+  `.claude/hooks/hooks.env.example:11` ("Bare grep into these is redirected to rmx by
+  enforce-rmx-grep") say the corpus roots scope what grep TEACHES; `telemetry.py:192`'s
+  docstring drops `enforce-rmx-grep.sh` from its list of hooks that never reach `cli.log`.
+  AC-7's stale-claim scan adds the string `enforce-rmx-grep` over `src/refmatrix/` and
+  `.claude/hooks/` (the `_RMX_HOOK_SIGNATURES` entry is the one allowed hit, by name).
 The cat-herder baseline template ships the same script upstream; that copy is the template
 owner's, and the summary records the divergence. {#r5}
 
@@ -228,10 +258,12 @@ owner's, and the summary records the divergence. {#r5}
     are run on the payload `{"tool_input": {"command": "grep -rn X src"}}`: none exits 2 and none
     prints "Corpus grep redirected"; the rendered config holds no `enforce-rmx-grep.sh` entry;
     `install-hooks --apply --force` on a settings file that holds the old entry removes it, and
-    `install-hooks --check` is then clean. Mutation "keep the redirect" (restore the script and its
-    entry) FAILS it on the stderr message and the rendered entry (the generator's `|| true`
-    wrapper turns the script's exit 2 into 0, so the exit code alone cannot see it; r8's
-    out-of-scope observation, left to the orchestrator).
+    `install-hooks --check` is then clean. The PRIMARY assertion is the exit code: no rendered
+    hook exits 2. Mutation "keep the redirect" (restore the script and its entry) FAILS it on the
+    exit code, the stderr message and the rendered entry. (Before bug-118 the generator's
+    `|| true` wrapper turned the script's exit 2 into 0, so the exit code could not see it; after
+    bug-118's one renderer, `_optional_project_hook`, it can. If this AC runs on a tree without
+    bug-118, the stderr and rendered-entry clauses still fail the mutation.)
 
 ## Files to modify {#files-to-modify}
 
@@ -241,7 +273,8 @@ owner's, and the summary records the divergence. {#r5}
 | `src/refmatrix/hooks.py`, `src/refmatrix/cli.py` | briefing, bashrc, `--help`, docstrings |
 | PRIMER generator, `README.md`, `docs/{INTEGRATION,SYSTEM,ARCHITECTURE}.md`, `workflow/development_resources.md` | prose |
 | `tests/test_grep_tool_teach.py`, `tests/fixtures/grep_tool_*.json`, `tests/fixtures/grep_tool_constants.txt` (new) | AC-1..7 |
-| `.claude/hooks/enforce-rmx-grep.sh` (deleted); `src/refmatrix/hooks.py` (`_add_enforce_entries`, docstring; `_RMX_HOOK_SIGNATURES` kept); `src/refmatrix/cli.py` (`install-hooks --help`); `tests/test_hooks_reproducible.py`, `tests/test_plan2_remedy.py` (rewritten); `tests/test_grep_tool_teach.py` | R5, AC-10 |
+| `.claude/hooks/enforce-rmx-grep.sh` (deleted); `src/refmatrix/hooks.py` (`_add_enforce_entries`' name tuple, `_optional_project_hook`'s docstring, docstring; `_RMX_HOOK_SIGNATURES` kept); `src/refmatrix/cli.py` (`install-hooks --help`); `tests/test_hooks_reproducible.py`, `tests/test_plan2_remedy.py` (rewritten); `tests/test_bug118_optional_hook_exit.py` (name out of `SCRIPTS`, not-rendered assertion; r9 m-3); `tests/test_grep_tool_teach.py` | R5, AC-10 |
+| `.claude/hooks/hooks.env`, `.claude/hooks/hooks.env.example`, `src/refmatrix/telemetry.py` (docstring at `:192`) | R5 prose sweep (r9 m-3) |
 
 ## Test strategy {#test-strategy}
 

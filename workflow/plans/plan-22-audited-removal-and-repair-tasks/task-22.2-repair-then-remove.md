@@ -14,7 +14,7 @@ metadata:
 # Task 22.2: the repair-then-remove engine {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 8, 2026-10-15; [[#rev-round-8]]; round 7 in [[#rev-round-7]], round 6 in
+> Status: Pending (revision round 9, 2026-10-15; [[#rev-round-9]]; round 8 in [[#rev-round-8]]; round 7 in [[#rev-round-7]], round 6 in
 > [[#rev-round-6]], round 5
 > in [[#rev-round-5]], round 3 in [[#rev-round-3]])
 > Wave: 1, after 22.1a (#t8-wave1).
@@ -112,8 +112,9 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
      restore of the purge re-attaches these rows to the restored concept (R4, r7 s-2). This holds
      for every purge the engine runs: class members, 22.5's moves and 22.6's selector members.
 3. **R3 Row-level `facts.log` events, replayed (22 #b-3).** The replay knows only entity-level
-   `tombstone` and append-only `evidence` today (`Store._apply_event_body`; the LWW pass in
-   `Store.rebuild_index_from_log`). Add three ops, keyed by NAME (never by id):
+   `tombstone` and append-only `evidence` today (the LWW pass in `Store.rebuild_index_from_log`,
+   the ONE replay path: the uncalled incremental path is deleted by 16.6 R1f, d9bu). Add three
+   ops, keyed by NAME (never by id):
    `evidence_remove{linkage, c_kind, c, e_kind, e, file, line, detail, keep, ingest_ok}` (`detail`
    and `ingest_ok` added in round 7, r7 m-4; `c_kind` in round 8, r8 b-1),
    `evidence_repoint{linkage, c_kind, c, e_kind, e, file, line, new_line}`, both built by
@@ -123,7 +124,7 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
    `learned_provenance`, `learned_provenance_move`) are logged by the same call, AFTER the
    evidence op's own event, so a rebuild reproduces the sidecar too (b-2). {#r3}
    - **ONE row pass, appends and row ops together, in TIMESTAMP order (d9av; r7 b-1; replaces
-     round 3's "after the `evidence` appends").** Both replay paths apply the `evidence` appends
+     round 3's "after the `evidence` appends").** The rebuild applies the `evidence` appends
      and every row-level op in ONE pass: `evidence` (the append), `learned_provenance`,
      `learned_provenance_move` (16.6), `evidence_remove`, `evidence_repoint`, `entity_rename`
      (here) and `evidence_orphan_drop` ([[task-22.6-removal-entry-points#r5]]), ordered by `ts`
@@ -140,11 +141,10 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
        partition after entities, protections and links (counting `evidence_skipped_dead`). The
        row pass replaces only pass 3's loop and takes the appends AFTER Pass 2b
        ([[task-16.6-learned-row-validation#r1d]], r8 m-1): per partition, it walks the evidence
-       appends and row ops of that partition in the sorted order. The incremental path
-       (`Store.apply_log_delta` → `_apply_one_event` → `_apply_event_body`) applies each event as
-       it reads it, in log byte order, which already interleaves appends and row ops
-       (`apply_log_delta` has no caller in `src/` at `23ad703`: its only user, writer rotation, is
-       dropped, d9ao; it stays tested).
+       appends and row ops of that partition in the sorted order. There is no second replay path
+       to keep in step: `Store.apply_log_delta` → `_apply_one_event` → `_apply_event_body` had no
+       caller (its only user, writer rotation, was dropped by d9ao) and 16.6 R1f deletes it
+       (d9bu, r9 s-2); this task adds no branch to it.
      - *Within a call.* A primitive's sidecar event follows its evidence event in the same call
        (same `ts` from `_log_events`, or a later one from `_log_event`), so the tie-break by log
        position keeps it after; the learned provenance still follows its evidence row.
@@ -163,8 +163,8 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
        end as `(e_kind, e)`, spelled with `edge_records.edge_fields(linkage, c_kind, c, e_kind, e,
        **extra)` through 16.6's one builder `edge_records.row_event`; `edge_event` is not used,
        because it accepts only `link` / `unlink` / `evidence`. The op resolves its ends exactly
-       as the `evidence` replay of the same row does: by `(c_kind, c)` (rebuild:
-       `name_to_id[(c_kind, c)]`; incremental: `Store._replay_concept`). A legacy append (no
+       as the `evidence` replay of the same row does: by `(c_kind, c)`, through
+       `name_to_id[(c_kind, c)]`. A legacy append (no
        `c_kind`) is resolved by the ONE rule, `edge_records.resolve_legacy_kind`, through 16.6's
        `edge_records.resolve_c_kind` (Pass 2b), before the row pass matches identities by
        `edge_records.row_key`. A row op is never written without `c_kind` (`row_event` raises).
@@ -177,29 +177,43 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
        picks `concept` whenever a `concept` of that name is logged, so a row live on `doc A` is
        rebuilt onto a live `concept A` (a pre-existing bug-117 residue; a compaction ends it,
        since `dump_catalog_to_log` re-emits every live row kinded). The primitives cannot tell
-       the two apart without reading the log, so ONE method,
-       `Store._row_op_c_kinds(c_name, catalog_kind) -> tuple[str, ...]`, returns
-       `(catalog_kind,)`, plus the kind `edge_records.resolve_c_kind(None, c_name, partition,
-       <kinds of c_name in the live partition>)` returns (the one legacy rule, through the one
-       resolver) when that is another kind whose entity does NOT hold an identical row; R2's primitives
-       log one op per returned kind. On a rebuild the extra op removes (re-points) exactly the
-       copies the legacy rule put on the other key, and matches nothing when the appends are
-       kinded; incrementally it finds no row and is counted `no_row`. When the other kind's
-       entity does hold an identical row, no extra op is logged and the row is counted
-       `legacy_misresolved` and printed. [[#r9]]'s events need no such helper: the audit read the
-       log, so each event names the key it answers exactly. AC-3f.
-     - *The two paths agree on kinded events only (r8 m-3).* Every row op is kinded, so both
-       paths resolve it the same way. A LEGACY append follows each path's resolver: the rebuild
-       resolves over every kind LOGGED for the name (tombstoned keys included), the incremental
-       path over the kinds in the LIVE catalog; with a tombstoned `concept X` (which [[#r9]]
-       logs) and a live `doc X`, a legacy edge `c = X` attaches to `doc X` incrementally and is
-       skipped dead on a rebuild. Low impact today (`apply_log_delta` has no caller, d9ao); a
-       bug-registry row for it is the orchestrator's ([[#rev-round-8]]).
-     - *Counters (r8 m-4).* On the rebuild path every skip is counted, never raised: bug-117's
+       the two apart without reading the log. They need not (r9 m-1): the legacy rule can
+       mis-resolve a name ONLY to `concept` (`resolve_legacy_kind` returns `concept` whenever one
+       is logged, live or tombstoned), so the LIVE kinds are the wrong input (a tombstoned
+       `concept X`, which [[#r9]] itself logs, is invisible to them) and no log read is needed.
+       ONE method, `Store._row_op_c_kinds(c_name, catalog_kind, row) -> tuple[tuple[str, int],
+       ...]`, returns `(c_kind, keep)` pairs:
+       - always `(catalog_kind, keep)` with the caller's `keep`;
+       - plus `(edge_records.LEGACY_PREFERRED_KIND, n)` when `catalog_kind` differs from
+         `edge_records.LEGACY_PREFERRED_KIND` (today's private `_LEGACY_PREFERRED_KIND`, made
+         public by this task) and `n`, the number of copies identical to `row` (same `linkage`,
+         `e_kind`, `e`, `file`, `line`, `detail`) that the LIVE entity of that kind and name holds,
+         is 0 or 1 (`n = 0` also when no such live entity exists) (r9 m-1, m-2: `keep = n`).
+       - When `n >= 2` no extra pair is returned, and the row is counted `legacy_misresolved` and
+         printed (the rebuild holds one copy more than live there; a compaction ends it, since
+         `dump_catalog_to_log` re-emits every live row kinded).
+
+       R2's primitives log one op per returned pair. On a rebuild, under the timestamp order,
+       the extra op at `T` acts on the `concept` key's copies appended at or before `T`: the
+       live concept's own `n` copies plus every legacy copy the rule put there, and `keep = n`
+       collapses them to the `n` live holds (r9 m-2). When the appends are kinded, or no
+       `concept` of that name was ever logged, the extra op matches nothing and the rebuild
+       counts it `no_row` (harmless). The helper does NOT call `resolve_c_kind` or
+       `resolve_legacy_kind`: it reads the one constant the rule is built on, so there is still
+       one legacy rule (16.6 AC-9d check 2). Rows a primitive RE-POINTS are learned rows, whose
+       concept is always `concept` (16.6 R1d), so `evidence_repoint` never gets an extra pair in
+       practice; if it did, `n` must be 0 (a repoint has no `keep`), else it counts
+       `legacy_misresolved`. [[#r9]]'s events need no such helper: the audit read the log, so
+       each event names the key it answers exactly. AC-3f.
+     - *One resolver (r8 m-3, closed by d9bu).* Round 8 recorded that a LEGACY append resolved
+       over LOGGED kinds on a rebuild and over LIVE kinds incrementally (bug-120). The
+       incremental path and its `_replay_concept` are deleted (16.6 R1f), so the rebuild's
+       `edge_records.resolve_c_kind` over Pass 2b's logged kinds is the only resolver; bug-120
+       closes by removal.
+     - *Counters (r8 m-4).* The rebuild counts every skip, never raises: bug-117's
        `links_skipped_dead`, `evidence_skipped_dead`, `links_unresolved`,
        `evidence_unresolved`, and, for the row ops, 16.6's one `row_skips` dict (through
-       `Store._row_skip`). The incremental path's total stays `skipped_unresolved`
-       (`apply_log_delta`).
+       `Store._row_skip`), rebuild-only (d9bu).
    - On replay, `evidence_repoint` and `entity_rename` move only `linkage_evidence` rows; the
      sidecar keys move only from their own `learned_provenance_move` events. `evidence_remove`
      also removes the identity's sidecar rows (16.6 R1d).
@@ -212,10 +226,7 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
      key into its resolved kind by largest `ts`), and `evidence_remove`, already in the one pass
      above. A kindless `unlink` would go through Pass 2b's legacy rule, which picks `concept`
      whenever a `concept` of that name is logged, and land on another key than the kinded `link`
-     it answers; the old link would then revive on re-creation (AC-3b's mutation). The
-     incremental path (`Store.apply_log_delta` → `_apply_one_event` → `_apply_event_body`)
-     resolves the same events by name; against a catalog that no longer holds the endpoint they
-     resolve to nothing and are counted `skipped_unresolved`, never raised. Round 5's `link_remove{linkage, entity_id, concept_id}` is WITHDRAWN: a rebuild
+     it answers; the old link would then revive on re-creation (AC-3b's mutation). Round 5's `link_remove{linkage, entity_id, concept_id}` is WITHDRAWN: a rebuild
      re-assigns every id through `upsert_entity`, so an id-keyed event matches nothing after it
      (or an unrelated row that now holds the id), and no replay path read it.
 4. **R4 Manifest and restore (22 #b-3, #m-4; DL #s-7).** {#r4}
@@ -713,23 +724,33 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
    "tombstone only, no `evidence_remove`" (round 6's branch: copy 2 re-attaches the old row to
    the re-created `A`); "`evidence_remove` applied after all appends" (copy 3 loses the row).
 
-   **3f. A legacy append against a kinded remove (r8 b-1).** Doc `A` and concept `A` both live in
-   the default partition; `B`'s `rel:` evidence row to doc `A` is held live, and its `evidence`
-   event in `facts.log` is LEGACY (no `c_kind`, written as a pre-0.78.3 log holds it). Asserted
-   precondition: a rebuild of a copy BEFORE the apply attaches `B`'s row to `concept A` (the one
-   legacy rule picks `concept`), the bug-117 residue the helper exists for. `A` (the doc) is
-   purged through this engine (R2's concept-side rule): `Store._row_op_c_kinds("A", "doc")`
-   returns `("doc", "concept")` (concept `A` holds no identical row), and the apply logs one
-   `evidence_remove` per kind. A rebuild on a copy then holds no `B` row to either `A`, equal to
-   live, with `evidence_unresolved == 0`; the incremental replay of the same delta counts the
-   `concept` op `no_row`. A second run gives concept `A` an identical row of its own (same `B`,
-   `file`, `line`, `detail`) before the purge: the helper returns `("doc",)`, the apply prints
-   `legacy_misresolved=1`, and concept `A`'s own row survives on the live store (once) and on the
-   copy (twice: its own append plus the misresolved legacy one; that counted divergence is the
-   residue a compaction ends). Mutations, each FAILS it: "a row op names only the catalog kind"
-   (the first copy holds `B`'s row on concept `A`); "the extra kind is logged even when its
-   entity holds an identical row" (the second run's copy holds concept `A`'s row 0 times, live
-   once).
+   **3f. A legacy append against a kinded remove (r8 b-1; r9 m-1, m-2).** Doc `A` and concept `A`
+   both live in the default partition; `B`'s `rel:` evidence row to doc `A` is held live, and its
+   `evidence` event in `facts.log` is LEGACY (no `c_kind`, written as a pre-0.78.3 log holds it).
+   Asserted precondition: a rebuild of a copy BEFORE the apply attaches `B`'s row to `concept A`
+   (the one legacy rule picks `concept`), the bug-117 residue the helper exists for. `A` (the doc)
+   is purged through this engine (R2's concept-side rule). Every copy below is rebuilt with
+   `rebuild_index_from_log` (the one replay path, d9bu) and reports `evidence_unresolved == 0`.
+   1. *Concept `A` holds no identical row.* `Store._row_op_c_kinds("A", "doc", row)` returns
+      `(("doc", 0), ("concept", 0))`, and the apply logs one `evidence_remove` per pair. A rebuild
+      on a copy holds no `B` row to either `A`, equal to live.
+   2. *Concept `A` holds ONE identical row of its own* (same `B`, `file`, `line`, `detail`) before
+      the purge: the helper returns `(("doc", 0), ("concept", 1))`, the apply prints
+      `legacy_misresolved=0`, and concept `A`'s row is held once on the live store AND once on
+      the copy (the `keep: 1` op collapses its own append and the misresolved legacy one, r9
+      m-2). A variant with TWO identical copies on concept `A` returns `(("doc", 0),)` and prints
+      `legacy_misresolved=1` (the counted residue a compaction ends).
+   3. *A tombstoned concept, live kinds blind to it (r9 m-1).* `concept A` is created and
+      tombstoned in the log (so no LIVE concept `A` exists); doc `A` holds `B`'s legacy row.
+      Purge doc `A`: the helper returns `(("doc", 0), ("concept", 0))` although the live kinds
+      for `A` are `{doc}`. Then re-create `concept A`. A rebuild on a copy holds no `B` row on
+      `concept A`, equal to live.
+
+   Mutations, each FAILS it: "a row op names only the catalog kind" (run 1's copy holds `B`'s
+   row on concept `A`); "`keep: 0` on the concept op" (run 2's copy holds concept `A`'s row 0
+   times, live once); "the helper reads LIVE kinds through the legacy rule" (round 8's helper:
+   run 3 logs only the `doc` op, and the copy revives `B`'s legacy row on the re-created
+   `concept A`, which live does not hold).
 4. **Restore by name (22 #b-3; DL #s-7; r3 b-3).** `--apply` then `restore` gives, compared by
    NAME, equal entity sets with equal `path`, `tldr`, `meta`, `canonical_name`,
    `protected`/`noise`; equal `memory_content` rows (`content`, `mtype`, `tags`, `metadata`) for
@@ -857,8 +878,9 @@ r6 m-7: this task's own file list (symbols read at `3d3c798`).
 
 | File | Change |
 |------|--------|
-| `src/refmatrix/store.py` | the R2 primitives (`remove_evidence(..., ingest_ok=)`, `repoint_evidence`, `rename_entity`) and R2's concept-side evidence rule before a purge; `remove_dangling_links` and `remove_dangling_evidence` (R9, built on `_clear_purged_bits`; reborn and per-`link`-key partition rules, r7); the R3 ops in `_apply_event_body` and in `rebuild_index_from_log`'s one timestamp-ordered row pass (16.6 R1d builds the pass; d9av); R4's restore of `link_row` / `evidence_row` with the dead-id re-check and the `id_map` re-attach (r7 s-1, s-2); `Store._row_op_c_kinds`, the one helper naming a live primitive's op kind(s), and every row-op event through `row_event` / every `unlink` through `edge_event` with `c_kind` (r8 b-1) |
-| `src/refmatrix/edge_records.py` | `evidence_remove` and `evidence_repoint` added to 16.6's `ROW_OPS`, built by `row_event` (r8 b-1, d9bl) |
+| `src/refmatrix/store.py` | the R2 primitives (`remove_evidence(..., ingest_ok=)`, `repoint_evidence`, `rename_entity`) and R2's concept-side evidence rule before a purge; `remove_dangling_links` and `remove_dangling_evidence` (R9, built on `_clear_purged_bits`; reborn and per-`link`-key partition rules, r7); the R3 ops in `rebuild_index_from_log`'s one timestamp-ordered row pass (no `_apply_event_body` branch: 16.6 R1f deletes it, d9bu) (16.6 R1d builds the pass; d9av); R4's restore of `link_row` / `evidence_row` with the dead-id re-check and the `id_map` re-attach (r7 s-1, s-2); `Store._row_op_c_kinds`, the one helper naming a live primitive's op `(c_kind, keep)` pairs (r9 m-1, m-2), and every row-op event through `row_event` / every `unlink` through `edge_event` with `c_kind` (r8 b-1) |
+| `src/refmatrix/edge_records.py` | `evidence_remove` and `evidence_repoint` added to 16.6's `ROW_OPS`, built by `row_event` (r8 b-1, d9bl); `_LEGACY_PREFERRED_KIND` renamed to the public `LEGACY_PREFERRED_KIND` (read by `resolve_legacy_kind` and by `Store._row_op_c_kinds`, r9 m-1) |
+| `scripts/factslog-restore.py` (plan-17 task 17.4's) | `evidence_remove`, `evidence_repoint`, `entity_rename` added to `FOLD_OPS` with its fold handling, in the same commit as the replay branch: 17.4's AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s op set, and an op missing from it fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
 | `src/refmatrix/removal_apply.py` (new) | the R6 batch loop over `bounded_steps` (incl. the per-partition and `none` batches), R4's intent log and restore, R7's gate, R5's attribution incl. [[#r5-grep-record]] |
 | `src/refmatrix/verbs.py` | `removal_apply`, `removal_restore` (R8); `mcp.py` generates their tools from `verbs.VERBS` |
 | `src/refmatrix/daemon.py` | the apply and restore ops under the writer lock (R6, R8) |
@@ -1022,3 +1044,19 @@ bug-117); `src/` is unchanged from `23ad703` to the revision's HEAD. Later rows 
 rel: amends -> [[bsd-plan16-22-spec-rereview-r8-23ad703]]
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 rel: depends-on -> [[task-16.6-learned-row-validation#r1d-one-format]]
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r9-29e335a]] where it touches 22.2 (s-2, m-1, m-2) and
+d9bu ([[plan-review-2026-10-14#t12-approvals]]). Code claims re-read at `428267f` (`src/`
+unchanged since `23ad703`). Later rows win over round 8.
+
+| finding / decision | answered in |
+|---|---|
+| r9 s-2 / d9bu (the incremental replay path has no caller; the specs kept extending it) | [[#r3]]: the rebuild is the one replay path (16.6 R1f deletes `apply_log_delta`, `_apply_one_event`, `_apply_event_body`, `_replay_concept`); dropped: "Both replay paths", the incremental sentence of "Where the order comes from", the `_replay_concept` half of "How the ends resolve", the "two paths agree on kinded events only" paragraph (now "One resolver", bug-120 closed by removal), the incremental counter, the incremental sentence of "No op keyed by id"; AC-3f's incremental clause; [[#files-to-modify]] (no `_apply_event_body` branch) |
+| r9 m-1 (`_row_op_c_kinds` read LIVE kinds; a tombstoned `concept` slipped through) | [[#r3]] "Which kind a LIVE primitive's op names": the extra `concept` pair whenever `catalog_kind` is not `concept` and the live concept holds 0 or 1 identical copies, from the public constant `edge_records.LEGACY_PREFERRED_KIND`, no legacy-rule call; AC-3f run 3 + mutation "the helper reads LIVE kinds through the legacy rule"; [[#files-to-modify]] `edge_records.py` |
+| r9 m-2 (AC-3f's second-run divergence avoidable) | [[#r3]]: the concept op carries `keep = n` (`n` in 0, 1); `legacy_misresolved` only for `n >= 2`; AC-3f run 2 asserts copy equals live (once), its two-copy variant keeps the counter tested; mutation "`keep: 0` on the concept op" |
+| ns17-r9-2 (coordinator: every new `facts.log` op this task adds is listed against 17.4's `scripts/factslog-restore.py` `FOLD_OPS`) | [[#files-to-modify]] `scripts/factslog-restore.py` row |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r9-29e335a]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
