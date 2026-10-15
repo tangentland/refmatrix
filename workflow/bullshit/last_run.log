@@ -36,3 +36,7 @@
 2026-10-15T03:47:10-0700 commit=b84fd8d verdict=DIRTY findings=10 (2B/4S/4M) report=2026-10-15-0347-plan23-17-r9-spec-diffcheck-snapshot-drops-dirty-bits-and-bug112-gate-pins-the-bug-b84fd8d.md
 2026-10-15T03:54:18-0700 commit=b84fd8d verdict=DIRTY findings=21 (5B/8S/8M) report=2026-10-15-0351-plan18-r1-spec-review-foreign-wal-rollback-and-lost-interrupt-b84fd8d.md
 2026-10-15T04:03:31-0700 commit=462bd0b verdict=DIRTY findings=10 (3B/4S/3M) report=2026-10-15-0403-bugs112-113-118-r1-462bd0b.md
+2026-10-15T04:04:03-0700 commit=f6400aa verdict=DIRTY findings=8 (0B/3S/5M) report=2026-10-15-0404-plan19-21-r10-spec-diffcheck-h5-order-inverted-and-23-0-interfaces-unprovided-f6400aa.md
+2026-10-15T04:06:25-0700 commit=0dc2da3 verdict=DIRTY findings=7 (0B/0S/7M) report=2026-10-15-0406-plan23-17-r10-spec-diffcheck-approval-ready-holder-ident-ambiguous-and-handoff-mutation-vacuous-0dc2da3.md
+2026-10-15T04:08:30-0700 commit=451b505 verdict=DIRTY findings=7 (0B/3S/4M) report=2026-10-15-0408-plan16-22-r10-spec-diffcheck-vacuum-drop-keys-on-the-wrong-evidence-451b505.md
+2026-10-15T04:10:12-0700 commit=34ac5cd verdict=DIRTY findings=3 (0B/1S/2M) report=2026-10-15-0410-task18-1-measurement-r2-34ac5cd.md
