@@ -186,6 +186,7 @@ def test_both_cli_read_paths_find_the_learned_concept(daemon, monkeypatch, layou
         (daemon.root / "active").write_text("A\n")
     monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
     monkeypatch.chdir(proj)
+    monkeypatch.delenv("REFMATRIX_ROOT", raising=False)  # 23.0 R2: cwd walk
 
     res = CliRunner().invoke(cli_mod.main, ["grep", "--no-fallback", "--",
                                             "roaring bitmap"])

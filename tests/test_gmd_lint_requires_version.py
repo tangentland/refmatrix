@@ -18,6 +18,7 @@ visible where a reader will be.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -115,7 +116,13 @@ def test_the_repo_scope_is_clean_under_the_stricter_gate():
     """The gate is only worth having if the tree it guards passes it. Runs the
     real `scripts/lint-gmd.sh`, which is what the commit gate invokes."""
     root = Path(__file__).resolve().parents[1]
+    # 23.0 R6: the script adds `$HOME/.claude/projects/<slug>/memory` to its scope (the ledger
+    # cites memory ids); under the sandbox `$HOME` is redirected, so the REAL home is passed --
+    # a read of the curated memory files, which are not in the sandbox's deny set.
+    env = dict(os.environ)
+    if os.environ.get("RMX_SANDBOX_REAL_HOME"):
+        env["HOME"] = os.environ["RMX_SANDBOX_REAL_HOME"]
     r = subprocess.run(["./scripts/lint-gmd.sh"], cwd=str(root),
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, env=env)
     errors = [l for l in (r.stdout + r.stderr).splitlines() if ": error" in l]
     assert not errors, "in-scope GMD errors:\n" + "\n".join(errors[:20])

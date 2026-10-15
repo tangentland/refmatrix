@@ -32,6 +32,7 @@ def proj(tmp_path, monkeypatch):
     s.init()
     s.close()
     monkeypatch.chdir(d)
+    monkeypatch.delenv("REFMATRIX_ROOT", raising=False)  # 23.0 R2: cwd walk
     return d
 
 

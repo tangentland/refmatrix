@@ -104,6 +104,7 @@ def test_the_cli_says_when_the_index_answer_was_capped(store, monkeypatch, layou
         (store.root / "active").write_text("A\n")
     monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
     monkeypatch.chdir(proj)
+    monkeypatch.delenv("REFMATRIX_ROOT", raising=False)  # 23.0 R2: cwd walk
 
     res = CliRunner().invoke(cli_mod.main, ["grep", "--no-fallback",
                                             "--limit", "2", "--", "error"])
@@ -172,6 +173,7 @@ def test_a_relative_row_verifies_regardless_of_the_cwd(store, tmp_path, monkeypa
 
     for cwd in (proj, proj / "src", elsewhere):
         monkeypatch.chdir(cwd)
+        monkeypatch.delenv("REFMATRIX_ROOT", raising=False)  # 23.0 R2: cwd walk
         rows = store.grep_evidence("error")
         assert [r["line"] for r in rows] == [2], f"cwd={cwd}: {rows}"
         # ...and PRINTED with a path that exists from this cwd (r5 #b-1).
@@ -201,6 +203,7 @@ def test_a_relative_row_is_printed_resolved_and_merged(store, tmp_path, monkeypa
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
+    monkeypatch.delenv("REFMATRIX_ROOT", raising=False)  # 23.0 R2: cwd walk
 
     stats: dict = {}
     rows = store.grep_evidence("error", verify_stats=stats)
@@ -235,6 +238,7 @@ def test_the_cap_and_the_order_follow_the_resolved_path(store, tmp_path, monkeyp
         store.link("mentions", c, e)
         store.add_evidence("mentions", c, e, file=f, line=ln)
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("REFMATRIX_ROOT", raising=False)  # 23.0 R2: cwd walk
 
     rows = store.grep_evidence("error", limit=None)
     assert [(r["path"], r["line"]) for r in rows] == [

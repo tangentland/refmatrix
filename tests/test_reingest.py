@@ -58,6 +58,7 @@ def test_reingest_runs_code_then_memory_in_order(tmp_path, monkeypatch):
 
     # init + reingest resolve the store root from cwd.
     monkeypatch.chdir(proj)
+    monkeypatch.delenv("REFMATRIX_ROOT", raising=False)  # 23.0 R2: cwd walk
     runner = CliRunner()
     assert runner.invoke(main, ["init"], catch_exceptions=False).exit_code == 0
 
@@ -97,6 +98,7 @@ def test_reingest_skip_flags_short_circuit(tmp_path, monkeypatch):
     proj.mkdir()
     (proj / "code.py").write_text("x = 1\n")
     monkeypatch.chdir(proj)
+    monkeypatch.delenv("REFMATRIX_ROOT", raising=False)  # 23.0 R2: cwd walk
     runner = CliRunner()
     assert runner.invoke(main, ["init"], catch_exceptions=False).exit_code == 0
     r = runner.invoke(

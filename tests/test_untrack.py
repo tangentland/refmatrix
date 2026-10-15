@@ -102,6 +102,7 @@ def test_untrack_emits_replayable_event(tmp_path, monkeypatch):
 def test_cli_untrack_requires_a_selector(tmp_path, monkeypatch):
     _seed(tmp_path)
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("REFMATRIX_ROOT", raising=False)  # 23.0 R2: cwd walk
     r = CliRunner().invoke(main, ["untrack"])
     assert r.exit_code != 0
     assert "refusing to untrack" in r.output
@@ -111,6 +112,7 @@ def test_cli_untrack_dry_run_then_apply(tmp_path, monkeypatch):
     s, keep, junk = _seed(tmp_path)
     s.close()
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("REFMATRIX_ROOT", raising=False)  # 23.0 R2: cwd walk
     like = str(tmp_path / "IDE.app") + "/%"
 
     r = CliRunner().invoke(main, ["untrack", "--like", like, "--dry-run"])

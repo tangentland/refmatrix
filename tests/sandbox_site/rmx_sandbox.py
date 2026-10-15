@@ -41,7 +41,9 @@ import json
 import os
 import plistlib
 import pwd
+import runpy
 import shutil
+import socket
 import sys
 import tempfile
 import threading
@@ -50,7 +52,10 @@ from pathlib import Path
 SITE_DIR = Path(__file__).resolve().parent
 DENY_FILE = "deny.json"
 HUB_PORT = 7777
-CHILD_EXIT = 86
+# The two child exit codes, named once. Plans 19 (19.0 AC-6f) and 21 (21.3 AC-5) assert "a
+# deny-set dial exits 86" in their control legs, so 86 is an interface, not a detail.
+CHILD_EXIT = 86      # a child touched a deny-set target (or has no deny set): refused
+PRELOAD_EXIT = 87    # the $RMX_SANDBOX_PRELOAD script raised (or is not an absolute .py)
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "0.0.0.0", "::",
                             "::ffff:127.0.0.1", "ip6-localhost"})
 TOUCHES_REL = Path("workflow") / "review-output" / "live-socket-touches.log"
@@ -69,7 +74,8 @@ class SandboxViolation(Exception):
 RECORD: dict = {}
 NO_TEST = "<no-test>"
 
-_STATE = {"deny": None, "mode": "raise", "installed": False, "outer": None, "sandbox": None}
+_STATE = {"deny": None, "mode": "raise", "installed": False, "outer": None, "sandbox": None,
+          "connect_log": None}
 _local = threading.local()
 
 
@@ -159,7 +165,10 @@ def make_root(env=None) -> Path:
     env = os.environ if env is None else env
     tag = env.get("RMX_SANDBOX_TAG")
     prefix = f"rmx-{tag}-" if tag else "rmx-"
-    root = Path(tempfile.mkdtemp(prefix=prefix, dir="/tmp"))
+    # RESOLVED (`/private/tmp/...` on macOS): code that compares a resolved cwd with an
+    # unresolved `Path.home()` (cli._root_from_projects_slug) mis-resolved under `/tmp`'s
+    # symlink, which no real home has (found 2026-10-15 in the first full sandboxed run).
+    root = Path(os.path.realpath(tempfile.mkdtemp(prefix=prefix, dir="/tmp")))
     atexit.register(_remove_root, root)
     return root
 
@@ -426,6 +435,8 @@ def _hook(event, args):
         return
     if event != "socket.connect" and event not in _PATH_EVENTS:
         return
+    if event == "socket.connect" and _STATE["connect_log"]:
+        _log_unix_connect(args)
     target = violation(event, args, deny, dir_fd_relative=_caller_is_fd_walker())
     if target is None:
         return
@@ -445,6 +456,25 @@ def _hook(event, args):
     finally:
         _local.busy = False
     raise SandboxViolation(msg)
+
+
+def _log_unix_connect(args) -> None:
+    """`$RMX_SANDBOX_CONNECT_LOG`: one `path<TAB>pid` line per AF_UNIX connect, written BEFORE
+    the deny check so a refused dial is logged too (ch-bsd plan-19/21 r9 s9-3, r10 s10-3).
+
+    It lives in THIS hook because CPython imports only the first `sitecustomize` on the path:
+    plan-19's 19.0 AC-6f cannot ship a second one, so the connect census converges here."""
+    if len(args) < 2 or getattr(args[0], "family", None) != socket.AF_UNIX:
+        return
+    path = _as_path(args[1])
+    if path is None:
+        return
+    _local.busy = True
+    try:
+        with open(_STATE["connect_log"], "a") as fh:
+            fh.write(f"{path}\t{os.getpid()}\n")
+    finally:
+        _local.busy = False
 
 
 def install(deny: dict, mode: str) -> None:
@@ -480,7 +510,34 @@ def install_from_env() -> None:
             if p:
                 add |= _variants(Path(p))
         deny = dict(deny, paths=sorted(set(deny["paths"]) | add))
+    log = os.environ.get("RMX_SANDBOX_CONNECT_LOG") or None
+    if log is not None and violation("open", (log,), deny) is not None:
+        # The log is written with the hook's re-entry guard up, i.e. unchecked: a log path
+        # inside the deny set would be a write into a live store that nothing refuses.
+        sys.stderr.write(f"SandboxViolation: RMX_SANDBOX_CONNECT_LOG={log} is a denied path\n")
+        sys.stderr.flush()
+        os._exit(CHILD_EXIT)
+    _STATE["connect_log"] = log
     install(deny, mode="exit")
+    _run_preload(os.environ.get("RMX_SANDBOX_PRELOAD"))
+
+
+def _run_preload(path: "str | None") -> None:
+    """`$RMX_SANDBOX_PRELOAD`: an ABSOLUTE `.py` path run with `runpy.run_path` AFTER the hook
+    is installed, so whatever it does is already refused like the child's own code. 21.3 AC-5
+    injects its deadline delay this way (a second sitecustomize would never be imported). A
+    preload that is not an absolute `.py`, or raises, exits the child PRELOAD_EXIT (87) with the
+    cause on stderr -- never a child that runs without the setup its test asked for."""
+    if not path:
+        return
+    try:
+        if not (os.path.isabs(path) and path.endswith(".py")):
+            raise ValueError(f"RMX_SANDBOX_PRELOAD must be an absolute .py path, got {path!r}")
+        runpy.run_path(path, run_name="__rmx_sandbox_preload__")
+    except BaseException as exc:  # SystemExit included: the child must not continue half-set
+        sys.stderr.write(f"SandboxPreloadError: {path}: {type(exc).__name__}: {exc}\n")
+        sys.stderr.flush()
+        os._exit(PRELOAD_EXIT)
 
 
 # ---- AC-4: the content check over live logs ---------------------------------------------
