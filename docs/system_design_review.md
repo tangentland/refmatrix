@@ -225,7 +225,8 @@ rel: evidence-for -> [[PERFORMANCE]]
   is not release until the process is respawned — `restart --relaunch`
   verifies the new pid AND version.
 - **Big ops starving always-on surfaces.** A partition merge once blew
-  every prompt-hook deadline. Fix: lock-yield batching, async job API,
+  every prompt-hook deadline. Fix: lock-yield batching (the async job API was removed with the
+  live merge, bug-105 r4/r5),
   replica-first hook reads, hub maintenance pause. The invariant is now
   stated as a rule: big ops must not block the always-on surfaces.
 

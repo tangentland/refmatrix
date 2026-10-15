@@ -1047,17 +1047,54 @@ class Store:
         # See `transaction()`. True = we've issued BEGIN; subsequent
         # nested scopes are no-ops.
         self._in_transaction: bool = False
-        # Lazy-loaded fragment cache: linkage_name -> BitMap64. Populated on
-        # first read/write of any concept under that linkage; flushed back to
-        # disk via flush_fragments() (called from close()). The Store is bound
-        # to one partition for its lifetime, so the cache is implicitly
-        # partition-scoped.
-        self._fragments: dict[str, BitMap64] = {}
-        self._dirty_fragments: set[str] = set()
+        # Lazy-loaded fragment cache, one per partition binding:
+        # (partition_id, partition_name) -> {linkage_name -> BitMap64}, plus the
+        # matching dirty sets. `_fragments` / `_dirty_fragments` are properties
+        # that return the CURRENT binding's view. bug-105 (2026-10-14): this was
+        # one dict keyed by linkage only, on the assumption that "the Store is
+        # bound to one partition for its lifetime". It is not — `with_partition`
+        # and several daemon paths rebind `_partition_id` — so a fragment loaded
+        # under partition A absorbed B's links and was flushed under whichever
+        # partition was bound at flush time (195,003 of 422,811 bits of the live
+        # `sessions-refmatrix mentions` fragment belonged to another partition).
+        # Keying on the binding makes every rebind, however it is done, switch
+        # caches; `flush_fragments` writes every binding's dirty set under its
+        # own partition.
+        self._fragment_cache: dict[tuple, dict[str, BitMap64]] = {}
+        self._dirty_by_binding: dict[tuple, set[str]] = {}
         # When True, _log_event is a no-op. Used by rebuild_index_from_log so
         # replaying events through link()/upsert_entity() doesn't duplicate
         # them back into the log.
         self._replay_mode = False
+
+    def _fragment_binding(self) -> tuple:
+        """The cache key for the current partition binding (bug-105)."""
+        if self._partition_id is None:
+            self._connect()
+        return (self._partition_id, self._partition_name)
+
+    @property
+    def _fragments(self) -> "dict[str, BitMap64]":
+        return self._fragment_cache.setdefault(self._fragment_binding(), {})
+
+    @property
+    def _dirty_fragments(self) -> "set[str]":
+        return self._dirty_by_binding.setdefault(self._fragment_binding(), set())
+
+    def _dirty_bindings(self) -> "list[tuple]":
+        return [k for k, v in self._dirty_by_binding.items() if v]
+
+    def _clear_fragment_caches(self) -> None:
+        self._fragment_cache.clear()
+        self._dirty_by_binding.clear()
+
+    def has_dirty_fragments(self) -> bool:
+        """True when ANY partition binding has unflushed fragments (bug-105 audit #b-1:
+        checking only the current binding's view left `with_partition` writes unflushed)."""
+        return bool(self._dirty_bindings())
+
+    def dirty_fragment_count(self) -> int:
+        return sum(len(v) for v in self._dirty_by_binding.values())
 
     @property
     def partition_name(self) -> str:
@@ -1572,6 +1609,11 @@ class Store:
         update. A daemon bound to `old` should be restarted afterwards."""
         if old == new:
             return
+        # bug-105 audit #b-2: the fragment cache is keyed on (partition_id, name). Persist every
+        # binding's dirty bits under the OLD name first, then drop the cache, so nothing stays
+        # cached under a key the rename makes unreachable.
+        self.flush_fragments()
+        self._clear_fragment_caches()
         con = self._connect()
         if con.execute(
             "SELECT 1 FROM partitions WHERE name=?", (old,)
@@ -1634,10 +1676,12 @@ class Store:
 
         `dry_run=True` returns the resolved counts without mutating.
         Returns `{src, dst, entities_reparented, entities_merged,
-        saved_queries, tracked_files, dry_run}`.
+        saved_queries, tracked_files, dry_run}`, plus `fragments_repair` (the
+        repair report, with its manifest path) on a real merge.
 
-        Lock-yield batching: `lock` (any re-enterable context manager, e.g.
-        the daemon's `_store_lock`) is acquired PER CHUNK of `chunk`
+        Lock-yield batching (no production caller since bug-105 r4 fenced the live merge,
+        d9ae; kept for the helix plan's merge redesign, d9ac, which is its intended caller):
+        `lock` (a NON-re-entrant context manager, e.g. the daemon's `_store_lock`; never nest it) is acquired PER CHUNK of `chunk`
         collisions/reparents rather than around the whole merge, so queued
         ops (the always-on prompt hooks above all) interleave instead of
         timing out behind a minutes-long merge. `progress(phase, done,
@@ -1646,6 +1690,16 @@ class Store:
         """
         from contextlib import nullcontext
         _lk = lock if lock is not None else nullcontext()
+
+        # bug-105 audit #b-2/#s-1: persist every binding's dirty bits before the merge
+        # remaps entity ids and drops SRC; the fragment rows are re-homed after it. Under the
+        # writer lock when one is given (r2 #b2-1): flush_fragments rebinds _partition_id while
+        # it writes. Since bug-105 r4 the only caller is the OFFLINE merge (`lock=None`, no
+        # concurrent writer); the lock path is the helix merge's (d9ac).
+        if not dry_run:
+            with _lk:
+                self.flush_fragments()
+                self._clear_fragment_caches()
 
         def _tick(phase: str, done: int, total: int) -> None:
             if progress is None:
@@ -1895,9 +1949,25 @@ class Store:
             con.execute("DELETE FROM partitions WHERE id=?", (src_id,))
         con.commit()
 
-        if self._partition_name == src_name:
-            self._partition_name = dst_name
-            self._partition_id = dst_id
+        # bug-105 audit #s-1: SRC's fragment rows still sit under the dropped partition id, and
+        # colliding entities were remapped to DST ids. Re-home every bit to its entity's
+        # partition (the same repair `rmx repair-index --fragments` runs; a manifest of any
+        # dropped bit goes to backups/). r2 #b2-1: under the writer lock (the repair opens a
+        # transaction on the shared connection), and FLUSH rather than clear the cache first —
+        # an op that ran between chunks may have unlinked a persisted bit, and clearing would
+        # discard that unlink so the union repair wrote the bit back from the stale row.
+        # r3 #b3-1: the home-binding rebind runs under the same hold (bug-098 class: a rebind
+        # outside the lock let an interleaved op write under a half-moved binding). r3 #s3-1:
+        # colliding SRC entities became DST ids in every table but the fragments, so the repair
+        # gets the collision map and remaps both halves of each bit instead of dropping them.
+        with _lk:
+            if self._partition_name == src_name:
+                self._partition_name = dst_name
+                self._partition_id = dst_id
+            self.flush_fragments()
+            repair = self.repair_fragments(
+                dry_run=False, manifest_dir=self.root / "backups",
+                id_map={int(s): int(d) for s, d, _k, _n in collisions})
 
         return {
             "src": src_name, "dst": dst_name,
@@ -1906,6 +1976,8 @@ class Store:
             "saved_queries": int(sq_count),
             "tracked_files": int(tf_count),
             "dry_run": False,
+            # r2 #s2-1: the repair's counts and manifest path reach the caller.
+            "fragments_repair": repair,
         }
 
     def with_partition(self, name: str):
@@ -4130,6 +4202,21 @@ class Store:
         `bitmap_fragments` table. Empty fragments are removed in both modes.
         """
         self._invalidate_content_rank_caches()
+        bindings = self._dirty_bindings()
+        if not bindings:
+            return
+        # Flush every binding's dirty set under its OWN partition (bug-105):
+        # rebind to each in turn, then restore the caller's binding.
+        prev = (self._partition_id, self._partition_name)
+        try:
+            for pid, pname in bindings:
+                self._partition_id, self._partition_name = pid, pname
+                self._flush_current_binding()
+        finally:
+            self._partition_id, self._partition_name = prev
+
+    def _flush_current_binding(self) -> None:
+        """Persist the dirty fragments of the currently bound partition."""
         if not self._dirty_fragments:
             return
         if self._backend.kind == "duckdb":
@@ -4181,6 +4268,202 @@ class Store:
                     [pid, linkage, frag.serialize()],
                 )
             self._dirty_fragments.discard(raw)
+
+    def _read_all_fragment_rows(self) -> "dict[tuple[int, str], BitMap64]":
+        """Every persisted fragment as {(partition_id, linkage): BitMap64}, in both backends."""
+        con = self._connect()
+        out: dict = {}
+        if self._backend.kind == "duckdb":
+            for pid, linkage, blob in con._duck.execute(
+                "SELECT partition_id, linkage, blob FROM bitmap_fragments"
+            ).fetchall():
+                out[(int(pid), linkage)] = BitMap64.deserialize(bytes(blob))
+            return out
+        names = dict(con.execute("SELECT name, id FROM partitions").fetchall())
+        self._repair_files_read = []
+        self._repair_unread_dirs = []
+        if self.fragments_dir.exists():
+            for d in self.fragments_dir.iterdir():
+                if not d.is_dir():
+                    continue
+                if d.name not in names:
+                    # A directory for a partition the catalog does not know: its bits cannot
+                    # be attributed, so it is left on disk untouched and reported.
+                    self._repair_unread_dirs.append(str(d))
+                    continue
+                for f in d.glob("*.rb64"):
+                    out[(int(names[d.name]), f.stem)] = BitMap64.deserialize(f.read_bytes())
+                    self._repair_files_read.append(f)
+        return out
+
+    def _write_all_fragment_rows(self, rows: "dict[tuple[int, str], BitMap64]") -> None:
+        """Replace EVERY persisted fragment with `rows` (empty bitmaps are not written)."""
+        con = self._connect()
+        if self._backend.kind == "duckdb":
+            con._duck.execute("DELETE FROM bitmap_fragments")
+            for (pid, linkage), bm in sorted(rows.items()):
+                if len(bm):
+                    con._duck.execute(
+                        "INSERT INTO bitmap_fragments(partition_id, linkage, blob) "
+                        "VALUES (?, ?, ?)", [pid, linkage, bm.serialize()])
+            return
+        names = {i: n for n, i in con.execute("SELECT name, id FROM partitions").fetchall()}
+        written = set()
+        for (pid, linkage), bm in rows.items():
+            if not len(bm) or pid not in names:
+                continue
+            d = self.fragments_dir / names[pid]
+            d.mkdir(parents=True, exist_ok=True)
+            tmp = d / f"{linkage}.rb64.tmp"
+            tmp.write_bytes(bm.serialize())
+            tmp.replace(d / f"{linkage}.rb64")
+            written.add(d / f"{linkage}.rb64")
+        # Remove only files this repair READ and did not rewrite (never an unread directory).
+        for f in getattr(self, "_repair_files_read", []):
+            if f not in written and f.exists():
+                f.unlink()
+
+    def repair_fragments(self, *, dry_run: bool = True,
+                         manifest_dir: "Path | None" = None,
+                         id_map: "dict[int, int] | None" = None) -> dict:
+        """Rebuild every bitmap fragment so each bit sits in its entity's partition (bug-105).
+
+        The partition-agnostic fragment cache (fixed in this release) left three kinds of
+        damage: bits of one partition's entities flushed into another partition's row,
+        `entity_links` rows whose bit never reached the right row, and bits for entities that
+        no longer exist. A census of a copy of the live read snapshot (2026-10-14) found
+        538,094 foreign bits, 120,759 links missing from their fragment and 466,163 dead-entity
+        bits — and also 74 own-partition bits and 442 foreign bits that exist ONLY in fragment
+        rows, with no `entity_links` row. So a plain rebuild from `entity_links` would lose
+        real bits; this repair is a union that loses none:
+
+            new(p, L) = bits of entity_links for partition p and linkage L
+                        ∪ every fragment bit of L, from any row, whose entity lives in p
+
+        The only bits removed are those whose entity id is absent from `entities`, or whose
+        concept id is absent from both `entities` and `concepts` (a dead concept); they are
+        written to a JSONL manifest (`dropped_hex` = serialized BitMap64 per (partition,
+        linkage)) before anything changes, so the drop is restorable. `dry_run=True` (the
+        default) computes and reports, writes the manifest, changes nothing.
+
+        `id_map` (old entity id -> new id) is applied to BOTH halves of every fragment bit before
+        it is classified: `merge_partition` passes its collisions, whose SRC ids are gone from
+        every table but the fragments (bug-105 r3 #s3-1), so their bits move instead of being
+        dropped as dead.
+
+        Caller holds the writer lock (the daemon op does)."""
+        import json as _json
+
+        if not dry_run:
+            self.flush_fragments()
+        con = self._connect()
+        ent_part = dict(con.execute("SELECT id, partition_id FROM entities").fetchall())
+        # A concept id is ANY entity id: typed edges and has-part use doc/memory/code entities as
+        # the concept, and only kind='concept' entities have a `concepts` row (r2 #b2-2 — the
+        # concepts-only test called 4,025 live bits dead on a copy). Alive = in either table.
+        concept_ids = {int(r[0]) for r in con.execute("SELECT id FROM concepts").fetchall()}
+        concept_ids.update(int(i) for i in ent_part)
+        names = {int(i): n for i, n in con.execute(
+            "SELECT id, name FROM partitions").fetchall()}
+        lk = {int(i): _canonical_verb(n) for i, n in con.execute(
+            "SELECT id, name FROM linkage_types").fetchall()}
+        mask = (1 << _CONCEPT_SHIFT) - 1
+
+        new: dict = {}
+        added_from_links = 0
+        links_skipped = 0
+        for eid, lid, cid in con.execute(
+            "SELECT entity_id, linkage_id, concept_id FROM entity_links"
+        ).fetchall():
+            pid = ent_part.get(eid)
+            if pid is None or lid not in lk:
+                links_skipped += 1  # counted, never silent (memory-path rule)
+                continue
+            new.setdefault((int(pid), lk[lid]), BitMap64()).add(self._pack(cid, eid))
+
+        old = self._read_all_fragment_rows()
+        if dry_run:
+            # A dry run must not write (audit #m-1): overlay unflushed cache bits instead of
+            # flushing them, so the report still sees what the next flush would persist.
+            for (pid, pname), dirty in self._dirty_by_binding.items():
+                cache = self._fragment_cache.get((pid, pname), {})
+                for raw in dirty:
+                    bm = cache.get(_canonical_verb(raw))
+                    if bm is not None and pid is not None:
+                        old[(int(pid), _canonical_verb(raw))] = BitMap64(bm)
+        remapped_bits = 0
+        if id_map:
+            remapped: dict = {}
+            for key, bm in old.items():
+                out = BitMap64()
+                for bit in bm:
+                    c, e = bit >> _CONCEPT_SHIFT, bit & mask
+                    nb = self._pack(id_map.get(c, c), id_map.get(e, e))
+                    remapped_bits += nb != bit     # r5 #s5-2: visible; overlaps kept/moved, pre-dedup
+                    out.add(nb)
+                remapped[key] = out
+            old_for_change = old
+            old = remapped
+        else:
+            old_for_change = old
+        moved = dropped_dead = dropped_dead_concept = kept = 0
+        dropped: dict = {}
+        for (pid, linkage), bm in old.items():
+            canon = _canonical_verb(linkage)
+            for bit in bm:
+                tp = ent_part.get(bit & mask)
+                if tp is None:
+                    dropped.setdefault((pid, linkage), BitMap64()).add(bit)
+                    dropped_dead += 1
+                    continue
+                if (bit >> _CONCEPT_SHIFT) not in concept_ids:
+                    # The concept is gone (audit #s-2: all 410 "fragment-only" bits on the
+                    # repaired copy had a dead concept). Dropped into the manifest too.
+                    dropped.setdefault((pid, linkage), BitMap64()).add(bit)
+                    dropped_dead_concept += 1
+                    continue
+                key = (int(tp), canon)
+                if int(tp) != pid or canon != linkage:
+                    moved += 1
+                else:
+                    kept += 1
+                new.setdefault(key, BitMap64()).add(bit)
+        # Bits that were in NO old row at all: restored purely from entity_links.
+        old_all = BitMap64()
+        for bm in old.values():
+            old_all |= bm
+        for bm in new.values():
+            added_from_links += len(bm - old_all)
+
+        changed = {k for k in set(old_for_change) | set(new)
+                   if old_for_change.get(k, BitMap64()) != new.get(k, BitMap64())}
+        manifest = None
+        if dropped:
+            mdir = Path(manifest_dir) if manifest_dir else self.root / "backups"
+            mdir.mkdir(parents=True, exist_ok=True)
+            stamp = time.strftime('%Y%m%d-%H%M%S') + f"-{int(time.time() * 1000) % 1000:03d}"
+            kind = "dryrun" if dry_run else "applied"
+            manifest = mdir / f"fragments-repair-{stamp}-{kind}.jsonl"
+            with manifest.open("w", encoding="utf-8") as f:
+                for (pid, linkage), bm in sorted(dropped.items()):
+                    f.write(_json.dumps({
+                        "partition_id": pid, "partition": names.get(pid),
+                        "linkage": linkage, "dropped": len(bm),
+                        "dropped_hex": bm.serialize().hex()}) + "\n")
+        if not dry_run and changed:
+            with self.transaction():
+                self._write_all_fragment_rows(new)
+            self._clear_fragment_caches()
+        return {
+            "dry_run": dry_run, "rows_before": len(old),
+            "rows_after": sum(1 for bm in new.values() if len(bm)),
+            "rows_changed": len(changed), "kept": kept, "moved": moved,
+            "added_from_links": added_from_links, "dropped_dead": dropped_dead,
+            "dropped_dead_concept": dropped_dead_concept, "links_skipped": links_skipped,
+            "remapped": remapped_bits,
+            "unread_dirs": list(getattr(self, "_repair_unread_dirs", [])),
+            "manifest": str(manifest) if manifest else None,
+        }
 
     @staticmethod
     def _pack(concept_id: int, entity_id: int) -> int:
@@ -4261,7 +4544,7 @@ class Store:
             # and a daemon SIGKILL between ingests left the relational
             # tables ahead of the on-disk bitmaps -- the exact corruption
             # surface that hit viascope earlier.
-            if self._dirty_fragments:
+            if self.has_dirty_fragments():
                 try:
                     self.flush_fragments()
                 except Exception as exc:
@@ -7588,8 +7871,7 @@ class Store:
             self.db_path.unlink()
         for f in self.fragments_dir.rglob("*.rb64"):
             f.unlink()
-        self._fragments.clear()
-        self._dirty_fragments.clear()
+        self._clear_fragment_caches()
 
         self.init()
 

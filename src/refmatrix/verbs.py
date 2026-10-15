@@ -516,16 +516,63 @@ def annotate_hit(m: dict, h: dict) -> dict:
     return m
 
 
-def resolve_session(root: Path, session: "str | None") -> str:
-    """Explicit session, else $RMX_SESSION (what the hooks export), else the
-    most-recently-written STM ring (the active Claude session a spawned
-    process cannot name), else the default id. Reads and writes MUST resolve
-    identically — the CLI's `_resolve_stm_session(prefer_latest=True)` is
-    this function."""
+# Set by `rmx mcp` (`mcp.serve_stdio`): this process outlives the Claude session it was spawned
+# in, so nothing in its own environment names the CURRENT session (bug-109).
+_LONG_LIVED = False
+
+
+def resolve_session_source(root: Path, session: "str | None") -> "tuple[str, str]":
+    """`(session, source)`, source one of explicit / pointer / env / latest / default.
+
+    Order: explicit, else the owning Claude process's pid pointer, else $RMX_SESSION, else the
+    most-recently-written STM ring, else the default id. The long-lived server checks the pointer
+    BEFORE `$RMX_SESSION` (its env is frozen at spawn) and never reads its own
+    `CLAUDE_CODE_SESSION_ID`; a per-call CLI lets an explicit `$RMX_SESSION` win.
+
+    bug-109 (2026-10-14): the MCP server is spawned once per Claude process, so after `/clear`
+    its `CLAUDE_CODE_SESSION_ID` names the OLD session, and the newest ring is another session's
+    whenever two run at once. The input hook writes `stm/by-pid/<claude_pid>.json` at the top of
+    every turn. r1 #b-1: when this process runs under Claude (or is the long-lived server) and
+    no pointer resolves, the fallback to the newest ring is a GUESS, so it is recorded in
+    `stm/by-pid/_errors.jsonl` and the source says `latest`; write verbs return it."""
     import os
     from refmatrix import stm as stm_mod
-    return (session or os.environ.get("RMX_SESSION")
-            or stm_mod.latest_session(root) or stm_mod.session_id())
+    if session:
+        return session, "explicit"
+    if _LONG_LIVED:
+        owner, status = os.getppid(), "found"
+    else:
+        owner, status = stm_mod.owner_lookup()
+    ptr = stm_mod.read_pid_pointer(root, owner) if owner else None
+    env = os.environ.get("RMX_SESSION")
+    if _LONG_LIVED:
+        if ptr:
+            return ptr, "pointer"
+        if env:
+            return env, "env"
+    else:
+        if env:
+            return env, "env"
+        if ptr:
+            return ptr, "pointer"
+    # r2 #b-1: UNKNOWN is not absent. A failed process lookup, or a set $CLAUDE_PID, means this
+    # process may well run under Claude, so the guess is recorded; only a plain terminal (no
+    # owner found, lookup worked, no $CLAUDE_PID) guesses silently, having no pointer to miss.
+    if status == "failed":
+        stm_mod.record_pointer_error(root, "owner-lookup-failed", long_lived=_LONG_LIVED)
+    elif _LONG_LIVED or owner or os.environ.get("CLAUDE_PID"):
+        stm_mod.record_pointer_error(root, "pointer-unresolved", owner=owner,
+                                     long_lived=_LONG_LIVED)
+    latest = stm_mod.latest_session(root)
+    if latest:
+        return latest, "latest"
+    return stm_mod.session_id(), "default"
+
+
+def resolve_session(root: Path, session: "str | None") -> str:
+    """The session only; see `resolve_session_source`. Reads and writes MUST resolve
+    identically — the CLI's `_resolve_stm_session(prefer_latest=True)` is this function."""
+    return resolve_session_source(root, session)[0]
 
 
 # ---- the verbs -------------------------------------------------------------
@@ -842,7 +889,7 @@ def save_state(root: Path, *, message: str | None = None,
     import time as _time
     from refmatrix import handoff, stm as stm_mod
     repo = Path(root).parent
-    sess = resolve_session(root, session)
+    sess, session_source = resolve_session_source(root, session)
     s = stm_mod.Stm(root, sess)
     memdir = (Path(memory_dir).resolve() if memory_dir
               else handoff.default_memory_dir(repo))
@@ -851,6 +898,7 @@ def save_state(root: Path, *, message: str | None = None,
         today=_time.strftime("%Y-%m-%d"), message=message,
         promote=promote, dry_run=dry_run)
     res["session"] = sess
+    res["session_source"] = session_source
     res["memory_dir"] = str(memdir)
     res["subject"] = s.get_subject()
     if dry_run:
@@ -907,9 +955,10 @@ def focus(root: Path, *, top: int = 20, session: str | None = None) -> dict:
       "alias for `text`.", aliases={"note": "text"})
 def focus_note(root: Path, text: str, *, session: str | None = None) -> dict:
     from refmatrix import stm as stm_mod
-    s = stm_mod.Stm(root, resolve_session(root, session))
+    sess, source = resolve_session_source(root, session)
+    s = stm_mod.Stm(root, sess)
     ev = s.record("reason", str(text)[:800])
-    return {"noted": True, "session": s.session,
+    return {"noted": True, "session": s.session, "session_source": source,
             "refs": ev.get("refs", [])[:6]}
 
 
@@ -920,7 +969,8 @@ def focus_note(root: Path, text: str, *, session: str | None = None) -> dict:
 def change_subject(root: Path, label: str, *,
                    session: str | None = None) -> dict:
     from refmatrix import daemon as daemon_mod, stm as stm_mod
-    s = stm_mod.Stm(root, resolve_session(root, session))
+    sess, source = resolve_session_source(root, session)
+    s = stm_mod.Stm(root, sess)
     rec = s.set_subject(label)
     part = memory_partition(root)
     eid = None
@@ -935,7 +985,7 @@ def change_subject(root: Path, label: str, *,
         s2 = Store(root)
         with s2.with_partition(part):
             eid = s2.upsert_subject(label)["id"]
-    return {"subject": rec["subject"], "label": rec["label"], "id": eid,
+    return {"session_source": source, "subject": rec["subject"], "label": rec["label"], "id": eid,
             "session": s.session}
 
 
@@ -976,19 +1026,24 @@ def task(root: Path, *, action: typing.Literal["push", "pop", "list", "current",
          desc: str | None = None, selector: str | None = None,
          session: str | None = None) -> dict:
     from refmatrix import stm as stm_mod
-    s = stm_mod.Stm(root, resolve_session(root, session))
+    sess, source = resolve_session_source(root, session)
+    s = stm_mod.Stm(root, sess)
+
+    def _src(r):
+        # r1 #b-1: a write's session provenance travels with its result
+        return {**r, "session_source": source} if isinstance(r, dict) else r
     if action == "push":
         if not desc:
             raise VerbError("task push requires 'desc'")
-        return s.task_push(desc)
+        return _src(s.task_push(desc))
     if action == "pop":
-        return s.task_pop(selector)
+        return _src(s.task_pop(selector))
     if action == "list":
         return {"tasks": s.task_list()}
     if action == "current":
         return {"current": s.task_current()}
     if action == "swap":
-        return s.task_swap()
+        return _src(s.task_swap())
     raise VerbError(f"unknown task action {action!r}")
 
 
