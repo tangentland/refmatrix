@@ -163,6 +163,31 @@ def test_a_request_inside_its_deadline_still_runs(tmp_path, monkeypatch):
         bg.shutdown(wait=True)
 
 
+def test_a_write_past_its_deadline_still_runs(tmp_path, monkeypatch):
+    """The safety half of bug-116: a client that timed out on a WRITE has not withdrawn it
+    (`focus summarize --promote` says "the daemon may still complete it"). Only reads drop."""
+    d = _daemon(tmp_path)
+    cli = ThreadPoolExecutor(max_workers=1)
+    bg = ThreadPoolExecutor(max_workers=1)
+    ran = []
+    import refmatrix.daemon as dmod
+    monkeypatch.setitem(dmod.OPS, "bug116_write", lambda dd, a: ran.append(1) or {"w": 1})
+    gate = threading.Event()
+    bg.submit(gate.wait, 10)
+    try:
+        t, box = _dispatch_async(d, {"op": "bug116_write", "args": {}, "deadline_s": 0.2},
+                                 cli, bg)
+        time.sleep(0.5)
+        gate.set()
+        t.join(3)
+        assert ran == [1], "a write was dropped at its caller's deadline"
+        assert box.get("resp") == {"ok": True, "result": {"w": 1}}, box
+    finally:
+        gate.set()
+        cli.shutdown(wait=True)
+        bg.shutdown(wait=True)
+
+
 def _silent_server(path: Path):
     """Accepts, reads the request, never answers. Counts connections."""
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
