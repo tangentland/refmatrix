@@ -9,102 +9,72 @@ metadata:
 
 # Session Handoff for refmatrix {#root}
 
-Date: 2026-10-14 (session db80475a). Prior handoff archived at
-`workflow/past_handoffs/012-r10-r13-remedies-0770-0772-storage-explore_2026-10-08.md`.
+Date: 2026-10-14 (session 742dab0d). Prior handoff archived at
+`workflow/past_handoffs/013-wave0-reviews-bug105-hotfix_2026-10-14.md`.
 
-rel: supersedes -> [[handoff-012-r10-r13-remedies-0770-0772-storage-explore]]
+rel: supersedes -> [[handoff-013-wave0-reviews-bug105-hotfix]]
 rel: depends-on -> [[plan-review-2026-10-14]]
 
 ## State {#state}
 
-- **Branch:** `wave0-spec-reviews` (off `master` a434f51); docs only, NOT merged to `master`.
-  Merge `--no-ff` after the decision-log review is answered and the specs are revised.
-- **Deployed:** unchanged, 0.77.2 (no code this session).
-- **Pushed:** `master` → `origin/main` at a434f51 (2026-10-14). The branch is not pushed.
-- **Cleanup done:** `sessions-viascope` 40 stray doc rows forgotten (backup in viascope
-  `.refmatrix/backups/`); both bug-098 repair backups deleted; refmatrix `.refmatrix/backups/` empty.
+- **Released 0.78.0** (bug-105 + bug-109): `master` = `origin/main` = `ddce097` (8ea8f03 + a docs
+  link fix), deploy tree `~/refmatrix` = ddce097, fleet relaunched (all 8 stores + hub on 0.78.0,
+  hub under launchd pid 35580 at the time). PUSHED.
+- **Branch:** `wave0-spec-reviews` (docs; master merged in at 7b4ad71 so this checkout's
+  `.venv-eval` MCP server runs bug-109). NOT pushed. Merge `--no-ff` to `master` when Wave 0's
+  reviews close.
+- **Clones:** `/Volumes/littlebig/refmatrix-bug105`, `-bug109`, `-release` (work done; keep or
+  delete at will). Their branches are also in the dev repo (`bug-105-fragment-partition`,
+  `bug-109-mcp-session`); never delete branches.
+- **bug-105 live repair applied** 19:09 to refmatrix, cliquedb, cliquet, viascope; the other four
+  stores were clean. Fragments: refmatrix 12.48→5.06 MB, viascope 11.33→5.01 MB. Pre-repair slot
+  backups (~1.3 GB) in each store's `backups/pre-bug105-repair-20261014/`.
 
 {#state-body}
 
 ## What this session did {#did}
 
-1. **r13 confirmed closed** (536e824 on master; L6/L1 killed; 108 passed).
-2. **Exploration** `docs/architecture/explorations/session-phased-context.md`: phase injected
-   context by STM state (cold / warm / return / new), plus the user's **topic cache** (a return
-   from a sidetrack re-warms the cached STM cluster).
-3. **Wave 0 docs:**
-   - plan-16 revision 5 (cd7c923), answering spec review r4;
-   - ch-bsd spec reviews, all NEEDS-REVISION: plan-16 r5 (2B/6S/7M), 17 (6B/8S/5M),
-     19 (7B/10S/6M), 21 (3B/13S/7M), 22 (8B/7S/7M), 23 (3B/7S/3M). Ledgers merged.
-   - bugs logged: bug-099 (learn queue loses a batch on SIGKILL), bug-100 (`latest_session`
-     cross-session STM), bug-101 (suite wrote 1,655 pytest entities into the live global store),
-     bug-102 (`--context` treated as space-valued).
-4. **Decision-log review** (ch-bsd, DIRTY 6B/10S/6M) answered in the log's #t8 close-out:
-   d8a/d8b replace the unsound d5a/d5c; d8c-d8g revisit d6b, d1c, 19 #s-4, privacy, apply gate.
-   Exploration gained **versioned injection** (supersede by id+rev, one-line unchanged,
-   keyframe+delta text patches; hooks can only append, the KV cache cannot be patched).
-6. **Afternoon:** decision-log review answered (#t8, d8a-d8h); revision rounds 1-2 and re-review
-   rounds 2-3 (findings 118 → 56 → 47; BULLSHIT 33 → 13 → 7); ADR-0004 amendment approved (d9k);
-   23.4 ranges confirmed + procedure fixed (d9l, d9m); option F in the storage exploration (d9n);
-   removal paths classified (d9o); one all-waves list (#t10-waves); Time Machine exclusions run
-   (load 26 → 6); stale backups deleted; bug-105 found live (195k foreign bits) and hotfixed in a
-   littlebig clone; bugs 103-107 logged.
-5. **Decision walk** with the user, topic by topic, in `workflow/plan-review-2026-10-14.md`
-   (d1a..d7a). Headlines: 23.0 test sandbox is Wave 1's first build; Option A's measurement #4 runs
-   in parallel with it; plan-23 first with a `bind(batch)` seam; drain offset in the batch's
-   DuckDB transaction; new `recall-events.jsonl`; 19.6 owns phasing + topic cache; 16.6 split by
-   dependency; the 48 ambiguous global rows kept, the 476 moved to their owning stores.
+1. **Wave 0 spec revisions, rounds 3-5** for plans 16/17/19/21/22/23, with ch-bsd re-reviews r4
+   (all DIRTY: 10, 8, 12 findings) answered by round 5 (d454bf9, ef4abfa). Round-6 re-reviews NOT
+   yet run.
+2. **Decisions d9p-d9am** in `workflow/plan-review-2026-10-14.md` (`#t11-approvals`), including
+   d9v (19.6 tables confirmed), d9w/d9x/d9aa (test isolation: conftest checkout guard, `rmxtest`
+   user lane, Tart macOS VM lane hosted on the user's M1 Mac mini), d9ab (protection origin only
+   from `source`/command records), d9ac/d9ae (live partition merge fenced; merge redesign is the
+   helix plan's), d9ag (23.1 R1.6 held-writer-lock check ADOPTED).
+3. **bug-105** through six ch-bsd rounds (fragment cache per binding, union repair, live merge
+   fenced, job API removed, `remapped` counter); **bug-109** through four (per-Claude-process
+   session pointer, kernel process lookup via libproc, `_errors.jsonl` surfaced by recall-state).
+4. **Release + deploy + push + live repair** as in [[#state]]; bugs 108 (flaky WAL-lock test),
+   110 (a live daemon's snapshot copy drops its own DuckDB lock) and 111 (a `part-of` bit to a
+   long-deleted id regrew on cliquedb within seconds of the repair) logged.
 
 {#did-body}
 
 ## Next {#next}
 
-1. **IN FLIGHT at save time (2026-10-14 ~13:45):**
-   - Spec **revision round 3**: three background agents (23+17, 16+22, 19+21), docs only, editing
-     `workflow/plans/plan-{16,17,19,21,22,23}*` from the round-3 re-reviews
-     (`workflow/bullshit/2026-10-14-13{22,24,26}-*-r3-*-6091648.md`) and
-     `workflow/plan-review-2026-10-14.md` #t9-approvals (d9k..d9o) + #t10-waves. Uncommitted;
-     check `git status` before trusting partial edits. Brief: scratchpad `revise3-brief.md`.
-   - **bug-105 hotfix round-2 audit** (ch-bsd) in the littlebig CLONE
-     `/Volumes/littlebig/refmatrix-bug105`, branch `bug-105-fragment-partition`, commits
-     0d05525 (cache per binding) → 20c5ab4 (`rmx repair-index --fragments`) → 4fb803b (audit
-     remedies). 19 targeted tests, mutants m6-m10 killed, families 740 passed. NOT merged.
-   - **If the session ended before these reported:** their FILE edits still land on disk
-     (uncommitted), but their written reports (id → anchor tables, "still open" lists) were lost.
-     Recover by: `git status` / `git diff --stat` on `workflow/plans/`; lint every touched file
-     (`python3 tools/gmd/lint.py <f>`, `./scripts/lint-gmd.sh`); diff each plan's new
-     `#rev-round-3` table against the round-3 reports' finding ids to see what was answered; for
-     the hotfix, look for `/Volumes/littlebig/refmatrix-bug105/workflow/bullshit/2026-10-14-*-bug105-hotfix-r2-*-4fb803b.md`
-     (verdict at its end). The littlebig volume is an SD card: confirm it is mounted
-     (`ls /Volumes/littlebig`) before touching the clone.
-   - **save-state at 13:45** ran WITHOUT `--commit` (agents mid-edit; `--commit` is `git add -A`)
-     and was backgrounded; confirm with `rmx recall-state`.
-2. **Then:** commit round 3, run round-4 re-reviews (review until clean).
-3. **bug-105, after a CLEAN audit and the user's go:** merge the clone branch to `master` from
-   the dev repo (fetch the branch, `--no-ff`), bump version, deploy, back up each store's active
-   slot, `rmx repair-index --fragments --dry-run` per store, read counts, apply. Rehearsal on a
-   copy: 538,094 bits moved, 104,283 restored from entity_links, 466,163 dead bits to the
-   manifest, 0 foreign/dead after, idempotent, ~2 s.
-4. **At review end:** the user wants ONE consolidated document
+1. **~2026-10-15: follow-up dry run** per store (`export REFMATRIX_ROOT=<store>`;
+   `rmx repair-index --fragments --dry-run`): a non-zero `moved` is m-3 regrowth; watch cliquedb's
+   `dropped_dead_concept` (bug-111). Then, with the user's OK, delete the
+   `backups/pre-bug105-repair-20261014/` copies.
+2. **Round-6 spec re-reviews** of plans 16/17/19/21/22/23 at the round-5 commits (ch-bsd, one per
+   pair, docs only), then revise until clean; then the ONE consolidated document the user asked for
    (`plan-review-2026-10-14#final-doc`).
-5. **Waiting on the user later:** 19.6 PROPOSED tables (after the b-2/s-4 race fixes); d9b no-owner
-   global rows (after 22.5's dry run); 19.5 probe, 20.1 labels, 21.4 question-set approval.
-6. **Open bugs:** 096, 097, 099-107 (105 hotfix pending deploy; 107 = learned rows purged outside
-   plan-22, classified by d9o).
+3. **19.6 status lines** already say CONFIRMED (d9v); 23.1 R1.6 is ADOPTED (d9ag) — check the
+   spec text says so in round 6.
+4. **Open bugs:** 096, 097, 099-104, 106-108, 110, 111.
+5. **IntelliJ Claude session:** its MCP server (pid 5555) was killed; it respawns on 0.78.0 when
+   that session reconnects `/mcp` or restarts.
 
 {#next-body}
 
 ## Open, not forgotten {#open}
 
-- **STM cluster quality** (observed 2026-10-14, `rmx focus topics`): typos become topic labels
-  ("aggre"), truncated identifiers from the agent's own heredoc scripts become concepts
-  (`s.repla`, `re.searc`, `collections.Count`), and `<agent-message` hand-backs are not ambient.
-  A topic cache built on these clusters would restore noise; raised with the user as a 19.6
-  prerequisite, not yet decided.
-- **Exploration measurements 1-7** are unmeasured except #4, now scheduled (d2e).
-- **The full suite** stays unrun until 23.0 / bug-088 isolates it; bug-101 shows it has written
-  into the live global store.
-- **viascope backup** `catalog.read.pre-sessions-forget-20261014-105529.duckdb` (306 MB) can go
-  once the user is satisfied.
+- The full test suite still reaches live sockets (bug-101); 23.0's sandbox and the `rmxtest` /
+  Tart lanes fix it. All verification this session used targeted families in littlebig clones
+  (`PYTHONPATH=<clone>/src` prepended; the new conftest guard enforces it).
+- `test_upgrade.py` fails in any clone that borrows `.venv-eval` (environmental; passes in the
+  main tree).
+- `workflow/bullshit/IMPRESSIONS.md` is far past its 50-line cap; consolidation not done.
 
 {#open-body}
