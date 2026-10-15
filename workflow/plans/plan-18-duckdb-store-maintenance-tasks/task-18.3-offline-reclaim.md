@@ -175,9 +175,10 @@ facts L1-L6 in [[task-18.2-catalog-maintain-step#facts]]. The facts this design 
   a slot is current to. A rewrite under the same slot letter carries the same rows, so the
   offset stays true and is not touched.
 - **I10 Every reopen writes a WAL, and DuckDB replays a FOREIGN WAL silently**
-  ([[bsd-plan18-r1-spec-review-b84fd8d#b-1]], `p3b_wal.py`, duckdb 1.5.3). `Store.init()` runs
-  `UPDATE linkage_types SET inverse_of=…` on every open (`store.py:1199-1206`); after a reopen
-  on orderly's copy the slot's `.wal` was 1,204 bytes. A WAL written against the NEW file, left
+  ([[bsd-plan18-r1-spec-review-b84fd8d#b-1]], `p3b_wal.py`, duckdb 1.5.3). Every writer open
+  writes a WAL (1,204 bytes on orderly's copy; 1,175 on the r3 probe Store). The
+  `linkage_types` UPDATE in `Store.init()` is not the writer: with unchanged values it logs
+  nothing (ch-bsd plan-18 r3 `p1c`). A WAL written against the NEW file, left
   beside the slot when the OLD inode is restored, is replayed into the old file on the next
   open without an error: DuckDB logs deletes by row id and a rewrite renumbers row ids, so the
   probe's restored file came back with 52,038 rows for 50,000 and rows deleted in the old file
@@ -417,7 +418,7 @@ verb rmx_catalog_reclaim ──> daemon op catalog_reclaim
          through `backend.open_duckdb`, so a registered stale holder of the old inode is closed
          first (I4). `check_new` (step 11) runs on the new connection right after
          `open_duckdb` returns and BEFORE the open's first write (ch-bsd r2 N-B1): `_connect`
-         runs `init_catalog` and `Store.init()` runs the `linkage_types` UPDATE (I10). If the
+         runs `init_catalog`, and every writer open writes a WAL (I10; the `linkage_types` UPDATE is not the writer). If the
          connection is the cached OLD database (I4), that write would land in a WAL at
          `<slot>.wal` beside the NEW inode, and a SIGKILL before R6 B would replay it into the
          new file (r1 B-1 in reverse). A refused `verify` has written nothing; the reopen's own
@@ -490,7 +491,10 @@ verb rmx_catalog_reclaim ──> daemon op catalog_reclaim
      - `rewrite.start_value >` the max, in the rewrite, of every column whose
        `column_default` is `nextval('<that sequence>')` (`duckdb_columns()`; an empty table
        or no such column makes this leg vacuous). This is the property ids depend on: the
-       rewrite's next id is above every id it holds.
+       rewrite's next id is above every id it holds. A column belongs to a sequence when its
+       `column_default` contains `nextval('…')` whose last dotted identifier, unquoted, is
+       that sequence's name. A `nextval(` default that resolves to no sequence in the set is
+       reported as a difference (fail closed).
 
      A sequence with `increment_by ≤ 0` or `cycle = true` is reported as a difference (none
      exists in `duckdb_catalog.SEQUENCES` at `b381b6d`; the gate fails closed on a shape it
@@ -510,6 +514,11 @@ verb rmx_catalog_reclaim ──> daemon op catalog_reclaim
      and `CatalogHold.swap` asserts that no `<slot>.wal` exists at each replace it makes,
      forward or back (R4 Phase B). So a crash at any point (SIGKILL, power loss, an exit)
      leaves a slot that a boot opens with every row and no foreign replay.
+     This holds for every connection the process opened through `backend.open_duckdb`, which
+     bug-112's AST guard makes every file-backed one. An UNREGISTERED writer (AC-4 b2's planted
+     holder) that commits after step 9 leaves its WAL beside the new inode until R6 B step 2, and
+     a crash in that window replays it (ch-bsd plan-18 r3 `p2`: a deleted row reappeared). The
+     sentinel detects such a holder; it cannot make that window crash-safe.
    - **A: Phase A fails** (gate difference, deadline, statement error). The writer was never
      closed. `DETACH` and the partial-file removal run in a `finally` OUTSIDE the
      `interruptible` block, after it has joined its timer and reset its flag (R4; ch-bsd r2
@@ -619,7 +628,10 @@ verb rmx_catalog_reclaim ──> daemon op catalog_reclaim
      **18.3 adds exactly one keyword**, `verify: Callable[[Connection], None] | None = None`
      (ch-bsd r2 N-B1). `_reopen_writer` hands it to the new Store, and `Store._connect` runs it
      on the DuckDB write connection right after `self._backend.connect(…)` returns and BEFORE
-     `init_catalog`, so before `init_catalog` or `Store.init()` writes anything (R4 step 10). A
+     `init_catalog`, so before `init_catalog` or `Store.init()` writes anything (R4 step 10).
+     It runs once: `_connect` clears it after the first successful run, so a later reconnect of
+     the same Store never re-runs a check whose sentinel step 11 has dropped (ch-bsd plan-18 r3
+     N3-M3). A
      raise takes the existing `_force_close_store` path. Nothing else in the signature or the
      order changes.
      - **The lock assertion** stays the branch's `.locked()`. 23.1 R1.6 tightens it to
@@ -675,8 +687,11 @@ verb rmx_catalog_reclaim ──> daemon op catalog_reclaim
      - the init slot rebind, inline in `Daemon.serve_forever` at HEAD, extracted into
        `Daemon._rebind_init_slot` and ported: one `_catalog_hold("init_rebind", …)` whose body
        runs HEAD's statements in HEAD's order through `h.checkpoint()`, `h.close_writer()` and
-       `h.reopen_writer(self._active_slot)`, and on a raise the legacy fallback above (23.1
-       R1.6 item 4 already moves the rebind under `_store_lock`). This removes the staged
+       `h.reopen_writer(self._active_slot)`. A `close_writer()` error is logged as HEAD's
+       `init slot rebind: close failed` line and the reopen is still attempted; only a reopen
+       failure takes the legacy fallback above (HEAD logs a close failure and still rebinds,
+       `daemon.py:1829-1862` on the bug branch at `69ea55b`; ch-bsd plan-18 r3 N3-M4). 23.1
+       R1.6 item 4 already moves the rebind under `_store_lock`. This removes the staged
        exemption `Daemon.serve_forever` of 18.2 R11;
      - both `Daemon._bootstrap_rotation_if_needed` branches. Their copies go through the
        helper's `copy_out`, and the legacy branch's in-process `shutil.copy2` goes with them.
@@ -692,8 +707,8 @@ verb rmx_catalog_reclaim ──> daemon op catalog_reclaim
        23.5 AC-5 (two holds, nothing lost, the ts-order refusal and its counter) stays green
        after the port.
 
-     Behaviour is unchanged at each site, including the init rebind's legacy fallback and its
-     loud log line, and each gets a hold-ring entry and the one alarm.
+     Behaviour is unchanged at each site, including the init rebind's close-failure path (it
+     logs `close failed` and still rebinds) and its legacy fallback with its loud log line, and each gets a hold-ring entry and the one alarm.
    - **After 18.3** (checked by AC-14, over EVERY `src/refmatrix/*.py`, exemptions by
      qualified function name; ch-bsd r2 N-B2):
      - a CHECKPOINT statement constant (18.2 R11's rule) appears only in the `CatalogHold`
@@ -896,7 +911,9 @@ asserts the second rehearsal's band is A1 or A2 before it confirms.
      `[6, …, 6]`);
    - (seq-b) `gate_seam` rebuilds the rewrite's `seq_entities_id` at
      `START <live last_value>` while the max `entities.id` equals that value (drop the column
-     default, drop the sequence, re-create it, restore the default, the order
+     default, drop the sequence, re-create it, restore the default with the identical text
+     `nextval('seq_entities_id')`, and the seam asserts the columns leg is equal before the
+     compare, the order
      `init_catalog`'s docstring requires; the seam asserts the rewrite's `start_value` before
      the compare, so the variant is not vacuous): `failed:gate` naming the sequence;
    - (seq-c) a fixture sequence no column defaults to (`fp_seq`, `nextval` three times) is
@@ -956,7 +973,11 @@ asserts the second rehearsal's band is A1 or A2 before it confirms.
      `backend.open_duckdb`, so the fix's stale-holder close cannot see it and the reopen gets
      the cached old database (I4). The test proves the guard, not the fix: the reopen's
      `verify` finds no sentinel table → `rolled_back:sentinel` (the outcome names `sentinel`,
-     not a later step), with (a)'s assertions, and the slot has no `.wal` after the run. Then a
+     not a later step), with (a)'s assertions, and the slot has no `.wal` after the run.
+     R6 B step 2 moved nothing: there is no `backups/catalog.<S>.reclaim-failed-<run_id>.duckdb.wal`,
+     and the rollback's log line reports a foreign WAL of 0 bytes (the reopen's `verify` refused
+     before the open's first write, so the cached instance wrote no WAL beside the new inode).
+     Then a
      write op (`upsert_entity`) is answered, the test SIGKILLs the daemon, and a fresh boot
      sees that entity (ch-bsd r2 N-B1).
    - (b2) **The holder also wrote** (the q2b shape). As (b), and the raw holder runs one
@@ -979,7 +1000,9 @@ asserts the second rehearsal's band is A1 or A2 before it confirms.
      - the sentinel read-back removed, with the `total_blocks` check, FAILS (b): the cached
        old database passes `verify`, so the first thing to fail is the sentinel `DROP`, and the
        outcome is not `rolled_back:sentinel`;
-     - the read-back moved after `init()` FAILS AC-6's (fwd-I4) point;
+     - the read-back moved after `init()` FAILS (b): the open's write goes through the cached
+       old instance into a `<slot>.wal` beside the new inode (measured 1,175 bytes), step 2
+       moves it, and the `reclaim-failed-<run_id>.duckdb.wal` file exists;
      - the sentinel left in the slot FAILS AC-1 (the R5 gate of the slot against the backup
        then differs by one table).
 5. **AC-5 (a rollback that fails).** The daemon runs as a subprocess. `reopen_seam` fails the
@@ -1000,15 +1023,11 @@ asserts the second rehearsal's band is A1 or A2 before it confirms.
    - **(fwd-I4), the reverse of r1 B-1** (ch-bsd r2 N-B1): AC-4 (b)'s unregistered holder in
      the daemon process; the reopen's `verify` refuses; SIGKILL after that refused reopen and
      before R6 B step 1. The boot opens the gated new file with no WAL from the old instance.
-     **Fixture precondition:** for this point to tell `verify`-before-`init` from
-     `verify`-after-`init`, the open's own write must change the gate when replayed into the new
-     file. `Store.init()`'s write is the `linkage_types` UPDATE, and `linkage_types` is never
-     purged, so on the plain fixture its row ids may match in both files and the replay may be
-     benign. The fixture therefore deletes and re-inserts the default `linkage_types` rows
-     before its CHECKPOINT (so the rewrite renumbers them), and the test's setup PROVES the
-     precondition on a scratch copy outside the product: replaying a WAL of `Store.init()`
-     taken on the old file into the rewrite changes the R5 gate (or fails the open). If the
-     setup proof does not hold, the AC fails as a broken fixture; it is never reported green.
+     The point asserts the R5 gate after the boot. It kills nothing on its own: the open's
+     write replays content-neutral (ch-bsd plan-18 r3 N3-B1, `p1`: the `linkage_types` UPDATE
+     writes no WAL when its values are unchanged, and the 1,175-byte open WAL replayed into the
+     rewrite left the gate equal on three fixtures). The verify-after-`init()` mutation is
+     killed by AC-4 (b).
    - **Rollback points** (ch-bsd r1 B-1; the identity check forced to fail after the reopen):
      after the reopened writer writes (the seam deletes one row and re-inserts it with the
      same values: logically neutral, but the WAL logs the delete by row id, and the fixture's
@@ -1032,8 +1051,6 @@ asserts the second rehearsal's band is A1 or A2 before it confirms.
      restoring replace, the run exits 2 and writes `reclaim_disabled`, the kill point is never
      reached, and the second reclaim is refused `refused:reclaim_disabled`;
    - step 2 alone → AC-4 (b2); step 1 alone → AC-4 (a2);
-   - the reopen's `verify` moved after `init()` FAILS (fwd-I4) (the old instance's WAL beside
-     the new inode is replayed at the boot);
    - the residue sweep removed FAILS (the second reclaim fails on the sentinel, and the gate
      differs by one table).
 7. **AC-7 (production path = 18.1's path; 18.1 R4).** On 18.1's AC-2 fixture (200/80 MiB,
@@ -1122,7 +1139,8 @@ asserts the second rehearsal's band is A1 or A2 before it confirms.
       `Daemon._run_pending_repair`, `_op_repair_entities`, the compaction's hold-2 function):
       no `_store_lock` / `_snapshot_lock` reference in any of them, and exactly one
       `_catalog_hold` call reachable from each op;
-    - a CHECKPOINT statement constant only at R8's named sites and 18.2's permanent
+    - a CHECKPOINT statement (18.2 R11's two-leg rule, inherited unchanged; ch-bsd plan-18 r3
+      N3-B2) only at R8's named sites and 18.2's permanent
       exemptions, and 18.2's STAGED exemption list is EMPTY (the init rebind, the bootstrap
       and `cli.compact` are ported or retired);
     - no `_copy_out_of_process(` call outside the helper and `_op_replica_merge`;
@@ -1164,8 +1182,8 @@ asserts the second rehearsal's band is A1 or A2 before it confirms.
     command (`feedback_mutation_must_fail_not_hang`). {#ac-17}
     - the gate removed, or any one gate leg removed → AC-2;
     - the consecutive-deadline count not persisted → AC-3;
-    - the sentinel read-back removed → AC-4 (b); the read-back moved after `init()` → AC-6
-      (fwd-I4); the sentinel left in the slot → AC-1;
+    - the sentinel read-back removed → AC-4 (b); the read-back moved after `init()` → AC-4
+      (b); the sentinel left in the slot → AC-1;
     - no CHECKPOINT after the rollback reopen → AC-4 (b2);
     - the post-release write-through check removed → AC-18;
     - no deadline interrupt, R6 A's cleanup inside the `interruptible` block, or the flag not
@@ -1363,8 +1381,10 @@ From ch-bsd plan-18 r2 ([[bsd-plan18-r2-spec-diffcheck-cb7bf5b]]; probes under
 `/private/tmp/claude-501/p18r2/`) and ch-bsd 18.1 r2
 ([[bsd-plan18-task18-1-measurement-r2-34ac5cd]]). The bug branch
 (`/Volumes/littlebig/refmatrix-bugs112-118`) was read, not edited. Every mutation registered or
-moved here was reasoned against the code it must reject; the one whose kill depends on a fixture
-property not yet run is marked as such (AC-6 fwd-I4).
+moved here was reasoned against the code it must reject; the one whose kill depended on a fixture
+property not yet run was marked as such (AC-6 fwd-I4). Round 4: that property was run (ch-bsd
+plan-18 r3 N3-B1, `p1`) and it does not hold; the kill moved to AC-4 (b) (see
+[[#rev-round-4]]).
 
 | finding | change |
 |---|---|
@@ -1378,3 +1398,20 @@ property not yet run is marked as such (AC-6 fwd-I4).
 | N-M1 | [[#r3-preconditions]] (h) clears `reclaim_inflight` after the sentinel drop |
 | 18.1 r2 S-1 (the sequence leg needs fresh opens) | [[#r5-gate]]: the session-stable sequence leg (`start ≥ live last`, `start >` max of every `nextval` column); [[#ac-2]] (seq-a/b/c) on a session that has issued ids, three mutations |
 | 18.1 r2 M-2 | [[#ac-7]] cites the script at `8281a7f`; its tolerance `max(2 %, 512 KiB)` was already in place |
+
+## Revision round 4 {#rev-round-4}
+
+From ch-bsd plan-18 r3 ([[bsd-plan18-r3-spec-diffcheck-1318b30]]; probes under
+`/private/tmp/claude-501/p18r3/`). The replacement text of N3-B1 was applied verbatim; N3-M1 to
+N3-M4 are one sentence each. No probe was re-run for this round.
+
+rel: derives-from -> [[bsd-plan18-r3-spec-diffcheck-1318b30]]
+
+| finding | change |
+|---|---|
+| N3-B1 (AC-6 fwd-I4 cannot kill "verify moved after `init()`": the open's write replays content-neutral) | [[#ac-6]]: the fixture-precondition paragraph replaced by the statement that fwd-I4 kills nothing on its own, and the verify-after-`init()` mutation bullet deleted; [[#ac-4]] (b): R6 B step 2 moved nothing (no `reclaim-failed-<run_id>.duckdb.wal`, a 0-byte foreign WAL in the log line); AC-4's mutation re-pointed to (b) (the 1,175-byte WAL moved by step 2); [[#ac-17]]: → AC-4 (b); [[#facts]] I10: every writer open writes a WAL, and the `linkage_types` UPDATE is not the writer; [[#rev-round-3]]'s "not yet run" line corrected |
+| N3-B2 (inherited) | [[#ac-14]]: the CHECKPOINT statement is 18.2 R11's two-leg rule, inherited unchanged |
+| N3-M1 (the sequence leg's literal `nextval` match passes vacuously) | [[#r5-gate]]: a column belongs to a sequence by the parsed last dotted identifier, and an unresolved `nextval(` default is a difference (fail closed); [[#ac-2]] (seq-b): the seam restores `nextval('seq_entities_id')` verbatim and asserts the columns leg equal before the compare |
+| N3-M2 (the R6 invariant is false under an unregistered holder) | [[#r6-rollback]] invariant scoped to connections opened through `backend.open_duckdb` (bug-112's AST guard); the unregistered-holder crash window stated as detected, not crash-safe |
+| N3-M3 (`verify` re-run on a reconnect) | [[#r8-one-helper]]: `verify` runs once; `_connect` clears it after the first successful run |
+| N3-M4 (the init-rebind port changed HEAD's close-error behaviour) | [[#r8-one-helper]] Ports: a `close_writer()` error is logged as HEAD's `close failed` line and the reopen is still attempted; only a reopen failure takes the legacy fallback; "behaviour is unchanged" now names that path |

@@ -427,10 +427,13 @@ liveness facts this step depends on:
         `Daemon.__init__` declaration, in any module; `_store_lock` is referenced inside no
         function on the catalog list (`daemon.Daemon._snapshot_catalog`,
         `daemon._op_checkpoint`, `daemon._op_catalog_maintain`, and 18.3's additions to it);
-      - **the CHECKPOINT rule.** A CHECKPOINT statement is any string constant (an
-        `ast.Constant`, or a literal part of an f-string) matching
-        `^\s*(FORCE\s+)?CHECKPOINT\b`, case-insensitive; docstrings are not statements and are
-        skipped. One may appear only in `catalog_maint.CatalogHold.checkpoint` / `snapshot` /
+      - **the CHECKPOINT rule** (two legs, ch-bsd plan-18 r3 N3-B2). A CHECKPOINT statement is
+        (1) any non-docstring string constant, or literal part of an f-string, matching
+        `^\s*(FORCE\s+)?CHECKPOINT\b` CASE-SENSITIVELY; or (2) the first argument of a call whose
+        attribute is `execute`, `executemany`, `sql` or `_exec`, as a constant or an f-string literal
+        part, matching the same pattern case-INsensitively. The op name `"checkpoint"` (the `OPS` key,
+        `scheduler.ALLOWED_OPS`, `cli.schedule_add`'s choice, `cli.checkpoint`'s call and message, and
+        the `{"error": "checkpoint"}` return value) is not a statement under either leg. One may appear only in `catalog_maint.CatalogHold.checkpoint` / `snapshot` /
         `rewrite_into` (and 18.3's `drop_sentinel` and child entry point), or in a function on
         one of two exemption lists the test holds as named constants:
         - **permanent** (each with its reason, [[task-18.3-offline-reclaim#facts]] I1):
@@ -444,7 +447,10 @@ liveness facts this step depends on:
 
         This is the census at `master` `b381b6d` (`src/refmatrix/*.py`, SQL CHECKPOINT
         constants): the seven functions above plus `_snapshot_catalog` and `_op_checkpoint`,
-        which 18.2 ports. So the rule is green on 18.2's own correct code, and a CHECKPOINT
+        which 18.2 ports, exactly 10 constants in these 9 functions (measured: both legs flag
+        exactly these 10 constants and no other, `census2.py`; a single case-insensitive leg
+        also flags the six op-name and message constants above, two of them at module level).
+        So the rule is green on 18.2's own correct code, and a CHECKPOINT
         added to any other function, in any module (`store.py`, `backend.py`, a new module),
         is red;
       - from each op on the catalog list, exactly ONE `_catalog_hold` call is reachable,
@@ -672,7 +678,8 @@ All tests run in the 23.0 sandbox, on real tmp daemons with short roots, with 23
     d._store_lock:` inside `catalog_maint.py` (the code moved out of `daemon.py`) FAILS (AST); a
     raw `.execute("CHECKPOINT")` in a `Store` method called from the body FAILS (AST:
     `store.py` is walked, and the method is on neither exemption list); the same statement in a
-    function of `backend.py` FAILS (AST, any module); a second `catalog_state.json` writer
+    function of `backend.py` FAILS (AST, any module); a lowercase `con.execute("checkpoint")` in
+    a `Store` method FAILS (leg 2; ch-bsd plan-18 r3 N3-B2); a second `catalog_state.json` writer
     (`(root / "maintain" / "catalog_state.json").write_text(…)`, or a `state_path()` helper
     returning `… / STATE_FILE`) FAILS (the state-writer rule: a second constant, or a reference
     outside the two functions); the helper taking `_store_lock` before `_snapshot_lock`
@@ -747,3 +754,16 @@ reasoned against the code it must reject; the census below was read at `master` 
 | N-B2 (the rule is red at 18.2 GREEN and cannot see `store.py`) | [[#r11-hold-helper]] "The bypass rule": the walk covers EVERY `src/refmatrix/*.py`; exemptions by qualified function name; a CHECKPOINT is a SQL-statement string constant (`^\s*(FORCE\s+)?CHECKPOINT\b`, f-string parts included, docstrings skipped); a PERMANENT list (`Store.rebuild_entities_indexes`, `cli.merge_verb_aliases`, `_op_replica_merge`, `replica_merge.merge_slots`) and a STAGED list (`Daemon.serve_forever` for the inline init rebind, `Daemon._bootstrap_rotation_if_needed`, `cli.compact`), which 18.3 AC-14 requires EMPTY; the census at `b381b6d` is stated so the rule is green on 18.2's correct code. [[#ac-17]] and [[#ac-14]]: the `store.py` mutation now fails as written, plus a `backend.py` variant |
 | N-M2 (the state-writer check was attributed to AC-17 but absent; a path match is defeatable) | [[#r13-state]]: one string-constant rule (`catalog_maint.STATE_FILE`, referenced only in `update_state` / `read_state`, no path helper); [[#ac-17]] lists it with the mutation "a second writer FAILS" |
 | N-M3 (23.5 item 4's flush-order AST not carried) | [[#r8-snapshot-hold]]: the assertion moves to `CatalogHold.snapshot`; [[#ac-12]] lists it and a flush-after-CHECKPOINT mutation |
+
+## Revision round 4 {#rev-round-4}
+
+From ch-bsd plan-18 r3 ([[bsd-plan18-r3-spec-diffcheck-1318b30]]; probes under
+`/private/tmp/claude-501/p18r3/`, `census2.py` measured at `master` `b381b6d`). The replacement
+text was applied verbatim.
+
+rel: derives-from -> [[bsd-plan18-r3-spec-diffcheck-1318b30]]
+
+| finding | change |
+|---|---|
+| N3-B2 (the single case-insensitive CHECKPOINT rule flags six op-name and message strings, two at module level) | [[#r11-hold-helper]]: the two-leg rule (leg 1 any non-docstring constant, case-sensitive; leg 2 the first argument of `execute` / `executemany` / `sql` / `_exec`, case-insensitive); the op name is a statement under neither leg; the census stated as exactly 10 constants in the 9 functions named, measured by `census2.py`. [[#ac-17]]: the mutation "a lowercase `con.execute("checkpoint")` in a `Store` method FAILS (leg 2)". 18.3 AC-14 inherits the rule unchanged |
+
