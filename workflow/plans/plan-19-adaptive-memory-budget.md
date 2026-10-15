@@ -31,9 +31,13 @@ four interfaces this plan fixes, so every spec choice below is made with them in
    d9bm; round-9 #s9-1), so helix can recompute topic identity, including which live cluster
    each snapshot stands for, from the cache alone by importing `match_snapshots`; `topic_match`
    is `dict[str, str]` keyed by `stm.cluster_cid(members)` (the one member-set hash that also
-   names `<cid>`), one reader `stm.load_topic_cache` reads a missing file or `pre.json`'s `{}`
-   as the empty cache, every record is eligible whatever its `state`, and the file holds at most
-   64 records (round-10 #m10-1);
+   names `<cid>`;
+   `stm.cluster_cid(members) = hashlib.sha256("\n".join(sorted(members)).encode("utf-8"))
+   .hexdigest()[:8]`, round-11 #m11-4), one reader `stm.load_topic_cache` reads a missing file or `pre.json`'s `{}`
+   as the empty cache, every record is eligible whatever its `state`, and the input hook's second
+   write leaves at most `TOPIC_CACHE_MAX = 64` records (PROVISIONAL, d9ca; the 8 newest and every
+   matched or `expanded` record are never evicted, an uncovered overflow is counted
+   `topic-cache-over-cap`; round-10 #m10-1, round-11 #m11-3);
 3. 21.1's recall events, including the versioned-injection fields (`block_id`, `block_sha`,
    `rev`, `unchanged`) that 19.6 fills;
 4. 19.2's usage record (raw per-evidence counts, read-time decay).
@@ -442,3 +446,20 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r10-f6400aa]]
 | r10 #s10-3 (the two sandbox env interfaces had no provider) | [[task-23.0-test-sandbox#rev-amend-r10]] (R4 (a)-(c), AC-3 legs, per d9bx); [[task-19.0-stm-cluster-hygiene#rev-round-10]] |
 | r10 #m10-5 (residue) | [[task-19.0-stm-cluster-hygiene#rev-round-10]]; [[task-19.2-memory-usage-record#rev-round-10]]; [[task-21.1-context-usage-telemetry#rev-round-10]] |
 | user rule: converge repeated shapes into one function, with a bypass check that can fail | 19.6 `cluster_cid`, `load_topic_cache`, the one-call AST check; 21.1 `proc_identity`, `OUTCOMES_BY_KIND`; 23.0's one sandbox hook now specifies both env interfaces |
+
+## Revision round 11 (2026-10-15) {#rev-round-11}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r11-954f601]] (1 SKETCHY, 6 MEH; edit-level, no
+decision). Each touched task carries its own `#rev-round-11` table.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r11-954f601]]
+
+| finding | answered at |
+|---|---|
+| r11 #s11-1 (AC-2b's listener scripts missed the partition probe) | [[task-21.1-context-usage-telemetry#rev-round-11]] |
+| r11 #m11-1 (the `"nudge"` tuple lacked `error`) | [[task-21.3-indexed-symbol-nudge#rev-round-11]] |
+| r11 #m11-2 (migration claim on a `None` identity; set (1)'s line unasserted) | [[task-21.1-context-usage-telemetry#rev-round-11]] |
+| r11 #m11-3 (record-cap candidate set) | [[task-19.6-phased-context-and-topic-cache#rev-round-11]]; header interface 2 |
+| r11 #m11-4 (`cluster_cid` serialization; 19.4 build row) | [[task-19.6-phased-context-and-topic-cache#rev-round-11]]; [[task-19.4-keep-derived-layers-current#rev-round-11]]; header interface 2 |
+| r11 #m11-5 (AC-6f vacuous without a load proof) | [[task-19.0-stm-cluster-hygiene#rev-round-11]] |
+| r11 #m11-6 (text residue) | [[task-19.6-phased-context-and-topic-cache#rev-round-11]]; [[task-21.1-context-usage-telemetry#rev-round-11]] |

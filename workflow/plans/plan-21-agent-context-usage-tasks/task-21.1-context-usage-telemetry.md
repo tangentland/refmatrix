@@ -127,23 +127,25 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      `socket.timeout` map to `skipped_budget`, and any other `OSError` maps to `error` (the hook
      still degrades, exit 0 and `[]`). The degrade path sets `t.outcome, t.error =
      classify_outcome(type(e), e, budgeted=True)` on its `log_query` handle, and `__exit__` uses
-     a set `t.outcome` in place of its own classification. **Two routes reach the degrade path**
-     (round-10 #s10-2): (1) `require_daemon(root, retries=0)` (`cli.py:12226`) raising
-     `VerbBusyError` when `discovery.daemon_status` finds the ping failed AND the pid file names a
-     live process whose argv contains "rmx" or "refmatrix" (`busy`, `discovery.py:189-226`); this
-     is the route a budget skip takes, classified `skipped_budget`. (A failed ping with no such
-     pid file is `VerbAbsentError`, which raises `ClickException` even in hook mode,
-     `cli.py:12230-12234`; it is not a degrade and is unchanged here.) (2) The recall op's own
-     `_memory_daemon_call` (`cli.py:12241-12244`), whose transport `OSError`s (a refused connect)
-     are classified `error`. **`json.JSONDecodeError` joins that tuple** (round-10 #s10-2): a peer
+     a set `t.outcome` in place of its own classification. **Every `VerbBusyError` reaches the
+     degrade path** (round-11 #s11-1, replacing round 10's "two routes"): `_left`'s deadline
+     (`cli.py:12007`), the partition probe's catch (`:12195`), the replica leg (`:12214`) and
+     `require_daemon`'s busy classification (`:12226`; `discovery.daemon_status` finds the ping
+     failed AND the pid file names a live process whose argv contains "rmx" or "refmatrix",
+     `discovery.py:189-226`). Each is classified `skipped_budget`. (A failed ping with no such pid
+     file is `VerbAbsentError`, which raises `ClickException` even in hook mode,
+     `cli.py:12230-12234`; it is not a degrade and is unchanged here.) The recall op's transport
+     `OSError` and `json.JSONDecodeError` (`_memory_daemon_call`, `:12241`) are classified
+     `error`. Under `budgeted=True`, the `OSError` test runs BEFORE the existing
+     `BrokenPipeError` → `consumer-closed` mapping (`telemetry.py:110-113`), so a daemon-socket
+     broken pipe is `error`, not `consumer-closed`. **`json.JSONDecodeError` joins that tuple** (round-10 #s10-2): a peer
      that closes mid-answer makes `daemon.call` parse an empty line and raise it
      (`daemon.py:662-668`), a `ValueError` the tuple misses today, so the hook dies with a
      traceback instead of degrading; it is classified `error` (exit 0, `[]`, one row), never
      silently. **The verb (MCP) route cannot be split by type** (round-10 #s10-2): `verbs._call`
      (`verbs.py:216-218`) wraps EVERY transport exception as `VerbBusyError`, so rows written on
-     that route are classified with `budgeted=False` (no `skipped_budget` there) unless the verb
-     layer gains the same typed split; that change is out of this task's scope and is not
-     claimed.
+     that route are classified with `budgeted=False` by design (round-11 #m11-6): an MCP call
+     carries no hook budget, and a busy daemon there is an `error` the agent saw.
      **Validated where it is written** (round-9 #m9-5): `log_query.__exit__` checks the final
      `outcome` against `telemetry.OUTCOMES_BY_KIND.get(kind, CALL_OUTCOMES)`, where
      `OUTCOMES_BY_KIND: dict[str, tuple[str, ...]]` is DEFINED here (round-10 #m10-4) with no
@@ -508,7 +510,10 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
        exists:
        1. **claims it** (round-8 #nm-2) by `os.rename` to `R/stm/by-pid/_errors.migrating.<own
           pid>.<start_token(own pid_start)>.jsonl` (round-9 #m9-4; own pid_start =
-          `proc_identity(os.getpid())[1]`, round-10 #m10-2); a loser of a concurrent
+          `proc_identity(os.getpid())[1]`, round-10 #m10-2). When `proc_identity(os.getpid())`
+          is `None` (round-11 #m11-2), the migration does not claim and prints `migration
+          skipped: process lookup unavailable`; the legacy file is left in place for the next
+          SessionStart; a loser of a concurrent
           claim gets `FileNotFoundError`, counts it (`migrate-claim-lost`, printed) and migrates
           nothing. Crash recovery: before claiming, and only when `liveness_available()`, it
           adopts a `_errors.migrating.<pid>.<token>.jsonl` in `R/stm/by-pid/` ONLY when
@@ -926,15 +931,20 @@ line counts are unchanged.
    `context-daemon` (no row).
    **2b. A skipped call is a row** (round-8 #nm-5). The sandbox daemon socket path
    (`daemon.socket_path(<tmp root>)`, `daemon.py:527`) is held by a test-owned unix listener that
-   accepts and never replies (a plain `socket.socket(AF_UNIX)`, not a mock of `src/`). **Busy
+   accepts and never replies (a plain `socket.socket(AF_UNIX)`, not a mock of `src/`).
+   In the non-budget and mid-answer legs below (round-11 #s11-1) the test listener is an op dispatcher: it reads each request
+   line and answers by its `op`: `ping` gets `{"ok": true}`, and `partition_list` gets
+   `{"ok": true, "result": {"rows": []}}`. It records the op sequence. At HEAD the hook's traffic
+   is `ping` (the legacy-partition probe, `cli.py:11202`), `partition_list` (`:11208`), `ping`
+   (`require_daemon`, `:12226`), then `memory_recall`. **Busy
    precondition** (round-10 #s10-2): the sandbox root's daemon pid file
    (`daemon.pid_path(<tmp root>)`) names a live helper process the test spawns whose argv
    contains "rmx" (`[sys.executable, "-c", "import time; time.sleep(60)",
    "rmx-sandbox-helper"]`), and the test asserts `discovery.daemon_status(<tmp root>,
    retries=0)["busy"] is True` before the hook runs, so the leg cannot pass through another path
    (with no such pid file the route is `VerbAbsentError`, a `ClickException`). The row's
-   `skipped_budget` comes from `require_daemon`'s `VerbBusyError` under `budgeted=True` (R4's
-   route 1). The GENERATED per-prompt recall command, fed a UserPromptSubmit envelope, exits 0
+   `skipped_budget` comes from `require_daemon`'s `VerbBusyError` under `budgeted=True` (one of
+   R4's `VerbBusyError` sources). The GENERATED per-prompt recall command, fed a UserPromptSubmit envelope, exits 0
    with `[]`, and
    the store's `query.log` gains exactly one `kind=recall` row with `outcome=skipped_budget`,
    `budget_s=5` and the envelope's `session`, and `recall-events.jsonl` gains no event for it; the
@@ -942,16 +952,20 @@ line counts are unchanged.
    both rows prints `prompt_recall: ok=1 skipped_budget=1 error=0`, and run with no daemon and
    no listener prints `expired_reads: unavailable (daemon down)`, never `0`. **Non-budget leg**
    (round-9 #m9-5; round-10 #s10-2: the round-9 accept-and-close listener failed the ping, so
-   the run stopped at `require_daemon` as absent and never reached the recall op): the test
-   listener answers exactly ONE ping with a valid reply (the line `{"ok": true}`, what
-   `daemon.ping` checks, `daemon.py:571-596`), then closes its listening socket and leaves the
-   socket file in place, so the recall op's connect raises `ConnectionRefusedError` (an
-   `OSError`, R4's route 2). The same command exits 0 with `[]` and logs exactly one
-   `kind=recall` row with `outcome=error` (not `skipped_budget`) and no recall event.
-   **Mid-answer leg** (round-10 #s10-2): the listener answers the ping, then accepts the recall
-   connection and closes it without a reply; `daemon.call` raises `json.JSONDecodeError`; the
-   command exits 0 with `[]` (no traceback on stderr) and logs one `kind=recall` row with
-   `outcome=error`. **Validation leg:** a `log_query` handle given `t.outcome = "timeout"` writes
+   the run stopped at `require_daemon` as absent and never reached the recall op): the dispatcher
+   listener, after answering the SECOND `ping` (round-11 #s11-1), closes its listening socket
+   and leaves the socket file in place, so the `memory_recall` connect raises
+   `ConnectionRefusedError` (an `OSError`, classified `error` by R4). Assert: the recorded ops
+   are exactly [`ping`, `partition_list`, `ping`]; exit 0 and `[]`; exactly one `kind=recall`
+   row with `outcome=error` (not `skipped_budget`) and `error` starting `ConnectionRefusedError`;
+   and no recall event.
+   **Mid-answer leg** (round-10 #s10-2; round-11 #s11-1): on `memory_recall`, the dispatcher
+   listener reads the full request line, then closes without replying, so the client's `recv`
+   sees EOF and `json.loads(b"")` raises (reading first removes the `sendall` race, a
+   `BrokenPipeError` or `ECONNRESET`). Assert: the recorded ops are exactly [`ping`,
+   `partition_list`, `ping`, `memory_recall`]; exit 0, `[]`, and no traceback on stderr; one
+   `kind=recall` row with `outcome=error` and `error` starting `JSONDecodeError`.
+   **Validation leg:** a `log_query` handle given `t.outcome = "timeout"` writes
    `outcome=error`, `error="outcome-invalid: timeout"`, and `--agent-usage` prints
    `outcome-invalid=1`. RED at HEAD: no `kind=recall` row is written at all (the failing
    assertion is the row count).
@@ -1066,8 +1080,10 @@ line counts are unchanged.
    **Pruning:** a `consumed` entry whose `t_max` the test sets to 25 h ago is gone after the
    next run, and that owner's rows (also 25 h old) are not printed again. With
    `stm._proc_info` monkeypatched to return `None` for every pid (in process, as (iv-b)), the
-   run prints `ended_sessions skipped: process lookup unavailable` and the per-root file is
-   unchanged.
+   run prints `ended_sessions skipped: process lookup unavailable` and `own rows skipped:
+   process lookup unavailable` (round-11 #m11-2), and, with a legacy `_errors.jsonl` present,
+   `migration skipped: process lookup unavailable`, with the legacy file and the owner's
+   watermark file unchanged; the per-root file is unchanged.
    (x) **One writer, concurrent** (round-8 #nm-2; round-9 #m9-3). Two processes each append
    2,000 rows through `record_pointer_error` while the file halves at least THREE times (about
    800 KB against 256 KiB, so earlier `errors-truncated` rows are themselves dropped): the
@@ -1371,6 +1387,12 @@ line counts are unchanged.
     - (round 10, #s10-2) `json.JSONDecodeError` left out of the degrade tuple (AC-2b's
       mid-answer leg: a traceback and a nonzero exit); the busy precondition dropped (AC-2b:
       the `busy` assertion fails before the hook runs);
+    - (round 11, #s11-1) the listener's op sequence drifts (a new daemon contact before
+      `require_daemon`): AC-2b's sequence assertion fails, so the leg cannot silently stop short
+      again; a daemon-socket `BrokenPipeError` mapped to `consumer-closed` under `budgeted=True`
+      (R4: the `OSError` test runs first);
+    - (round 11, #m11-2) the migration claiming with `proc_identity(os.getpid())` `None`
+      (AC-4b (ix): a `TypeError` traceback, no `migration skipped` line);
     - (round 10, #m10-2) a new function calling `_proc_start(` for a start value instead of
       `proc_identity` (AC-4b (xii)(b));
     - (round 10, #m10-3) `unseen_dropped` rolled up unconditionally like `dropped` (AC-4b (x)'s
@@ -1704,3 +1726,19 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r10-f6400aa]]
 | r10 #m10-5 (the `--stdin-json` row leg missing from (xiii)'s RED list) | AC-4b RED list: the `--stdin-json` leg's `envelope-unreadable` row is RED |
 | user rule: converge repeated shapes into one function, with a bypass check that can fail | `proc_identity` (the one start accessor; (xii)(b)'s planted `_proc_start(` fixture still fails it); `OUTCOMES_BY_KIND` (the one outcome table, validated at write time) |
 
+
+## Revision round 11 (2026-10-15) {#rev-round-11}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r11-954f601]] for 21.1: #s11-1, #m11-2 and the 21.1 part
+of #m11-6. Edit-level; no decision. Code facts as cited by the report: `cli.py:11202`, `:11208`
+(the legacy-partition probe's `ping` and `partition_list`), `:12007`, `:12195`, `:12214`,
+`:12226`, `:12241` (the `VerbBusyError` sources and the recall op), `telemetry.py:110-113` (the
+`BrokenPipeError` → `consumer-closed` mapping).
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r11-954f601]]
+
+| finding | answered at |
+|---|---|
+| r11 #s11-1 (AC-2b's listeners modelled [ping, recall]; the hook sends [ping, `partition_list`, ping, `memory_recall`], so both legs ended in `VerbAbsentError`) | AC-2b: the listener is an op dispatcher (`ping` → `{"ok": true}`, `partition_list` → empty rows) that records the op sequence; non-budget leg closes after the SECOND ping and asserts ops [`ping`, `partition_list`, `ping`] and `error` starting `ConnectionRefusedError`; mid-answer leg reads the request then closes, asserts all four ops and `error` starting `JSONDecodeError`; R4: every `VerbBusyError` source named (`_left`, the partition probe, the replica leg, `require_daemon`), and under `budgeted=True` the `OSError` test runs before the `BrokenPipeError` → `consumer-closed` mapping; mutations (op-sequence drift; broken pipe as `consumer-closed`) |
+| r11 #m11-2 (the migration claim's `proc_identity(...)[1]` raises on `None`; set (1)'s line unasserted) | D6 migration step 1: `None` → no claim, `migration skipped: process lookup unavailable`, legacy file kept; AC-4b (ix) asserts `own rows skipped` and `migration skipped` lines with the legacy file and watermark unchanged; mutation |
+| r11 #m11-6 (21.1 R4's verb-route hedge) | R4: the verb route is classified `budgeted=False` by design (an MCP call carries no hook budget; a busy daemon there is an `error` the agent saw) |

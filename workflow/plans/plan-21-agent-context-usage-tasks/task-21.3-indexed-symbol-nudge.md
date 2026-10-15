@@ -99,9 +99,11 @@ task starts, against bands written before the run; the nudge is not dropped in a
      `gated` (no callers/tests), `not_identifier`, `not_indexed`, `skipped_budget` (the deadline
      expired; the ONE budget-skip value of `telemetry.CALL_OUTCOMES`, 21.1 R4, renamed from this
      task's round-6 `timeout` so 21.1's report and 19.5 read one vocabulary), `disabled` (R4),
-     `stale_set` (R6), and the 21.1 fields. **The vocabulary has one home** (round-10 #m10-4):
+     `stale_set` (R6), `error` (an exception in the hook, classified by `log_query.__exit__`;
+     round-11 #m11-1), and the 21.1 fields. **The vocabulary has one home** (round-10 #m10-4):
      this task adds `telemetry.OUTCOMES_BY_KIND["nudge"] = ("fired", "dedup", "gated",
-     "not_identifier", "not_indexed", "disabled", "stale_set", "skipped_budget")` to the table
+     "not_identifier", "not_indexed", "disabled", "stale_set", "skipped_budget", "error")` to the
+     table
      21.1 R4 defines, and `nudge.py` writes the row through `telemetry.log_query(kind="nudge")`
      with `t.outcome` set, the ONLY place 21.1's write-time validation runs; no other route
      writes a `kind=nudge` row.
@@ -280,3 +282,12 @@ rel: depends-on -> [[task-23.0-test-sandbox#rev-amend-r10]]
 | r10 #m10-4 (`NUDGE_OUTCOMES` had no home in R3 or the Files table; the row's write route unstated; 21.1 named a constant before 21.3 exists) | R3: the `"nudge"` entry of 21.1's `telemetry.OUTCOMES_BY_KIND` (the round-9 name `NUDGE_OUTCOMES` is WITHDRAWN), written through `telemetry.log_query(kind="nudge")` with `t.outcome` set; [[#files-to-modify]] (`telemetry.py` row; `nudge.py`'s route); mutations (an outcome outside the entry; the entry missing) |
 | r10 #s10-3 (21.3 side: "naming the module" for a module in a tmp dir) | AC-5: `$RMX_SANDBOX_PRELOAD` is an absolute path to a test-owned `.py` file, run after the refusal; provider [[task-23.0-test-sandbox#rev-amend-r10]] |
 
+## Revision round 11 (2026-10-15) {#rev-round-11}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r11-954f601#m11-1]]. Edit-level; no decision.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r11-954f601]]
+
+| finding | answered at |
+|---|---|
+| r11 #m11-1 (the `"nudge"` tuple had no `error`, so a nudge that raised was rewritten to `outcome-invalid: error` and lost its exception text) | R3: `"error"` appended to `OUTCOMES_BY_KIND["nudge"]`, and `error` (an exception in the hook) added to the prose outcome list |

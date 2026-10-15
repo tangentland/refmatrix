@@ -581,6 +581,11 @@ head member as `rmx focus topics` renders it.
      23.0 interface and is blocked until that amendment lands).
      Each command runs with `RMX_SANDBOX_CONNECT_LOG=<tmp>/connects.log`; after the runs the
      file is empty. This sees EVERY unix socket, including ones no listener anticipates.
+     Each command also runs with `RMX_SANDBOX_PRELOAD=<tmp>/mark.py` (round-11 #m11-5), a
+     test-owned file that appends its pid to `<tmp>/loaded.log` (23.0 R4 (b),
+     [[task-23.0-test-sandbox#rev-amend-r10]]). `loaded.log` gains at least one line per command
+     run, so an empty `connects.log` cannot come from a child that never installed the hook (a
+     `-I` / `-E` / `-S` shebang, or a different `rmx` on `PATH`).
      **Two control legs, same environment except the log path, run first:** each control runs
      with `RMX_SANDBOX_CONNECT_LOG=<tmp>/control.log`, never `<tmp>/connects.log`, so the
      controls' lines cannot make the hook assertion fail (round-10 #m10-5): (1) a child
@@ -895,3 +900,14 @@ rel: depends-on -> [[task-23.0-test-sandbox#rev-amend-r10]]
 |---|---|
 | r10 #m10-5 (the connect-log controls and the hook runs shared one log file; the `say` envelope carried no `session_id`) | AC-6f: the controls write `<tmp>/control.log`, the hook runs `<tmp>/connects.log`; the deny-set control also asserts its target is logged; the `say` envelope carries a test `session_id` (D9's `require_session=True`) |
 | r10 #s10-3 (`$RMX_SANDBOX_CONNECT_LOG` has no provider) | AC-6f now cites 23.0's amendment ([[task-23.0-test-sandbox#rev-amend-r10]]): the log is written for every `AF_UNIX` connect BEFORE the deny check, and 86 is `CHILD_EXIT`; AC-6f stays blocked until that amendment lands |
+
+## Revision round 11 (2026-10-15) {#rev-round-11}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r11-954f601#m11-5]]. Edit-level; no decision.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r11-954f601]]
+rel: depends-on -> [[task-23.0-test-sandbox#rev-amend-r10]]
+
+| finding | answered at |
+|---|---|
+| r11 #m11-5 (AC-6f's empty `connects.log` passes vacuously when a hook command's interpreter never loaded 23.0's hook) | AC-6f: each command also runs with `RMX_SANDBOX_PRELOAD=<tmp>/mark.py`, which appends its pid to `<tmp>/loaded.log`; at least one `loaded.log` line per command run is required |

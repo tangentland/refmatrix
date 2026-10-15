@@ -151,13 +151,16 @@ pays is unmeasured; this task measures first and builds against pre-registered r
    **Record cap** (round-10 #m10-1). The ONLY removal of a record: the file holds at most
    `TOPIC_CACHE_MAX = 64` records (= 8 × `N`, adding no free constant; R1's replay records the
    per-session maximum count and file size against it). The input hook's SECOND write (after the
-   input record, beside the LRU update) evicts, while the cache holds more than 64, the
-   `collapsed` record with the oldest first-collapse `turn` (ties by the smaller `<cid>`) that
-   this prompt's `topic_match` does not map to; an `expanded` record is never evicted. Each
-   eviction is counted `topic-cache-evicted` on the input hook's event, never silently. Eviction
-   runs outside `derive_snapshots`, which stays pure; between prompts the file holds at most 64
-   records plus that prompt's new snapshots. With 64 > 8 records kept, eviction never touches the
-   8 newest, so it never moves `topic_hubs`.
+   input record, beside the LRU update) evicts, while the cache holds more than 64, the oldest
+   candidate (round-11 #m11-3). A candidate is a `collapsed` record that this prompt's
+   `topic_match` does not map to and that is not among the 8 newest by `topic_hubs`' order.
+   "Oldest" is the exact reverse of that order: the smallest `turn`, ties going to the LARGER
+   `<cid>`. An `expanded` record is never evicted. When no candidate remains, eviction stops,
+   and the overflow is counted `topic-cache-over-cap=<n>` on the same event. `topic_hubs` is
+   therefore unchanged by construction. Each eviction is counted `topic-cache-evicted` on the
+   input hook's event, never silently. Eviction runs outside `derive_snapshots`, which stays
+   pure; after the second write the file holds at most 64 records (plus any counted over-cap);
+   between the input hook's two writes it may also hold that prompt's new snapshots.
    The writer always writes `schema: 1`; ONE reader, `stm.load_topic_cache(raw: dict | None,
    where: str) -> dict`, applies the check for every reader (`pre_prompt_state` for both the file
    and `pre.json`'s copy, `derive_snapshots`'s callers, helix):
@@ -244,9 +247,9 @@ pays is unmeasured; this task measures first and builds against pre-registered r
        or loses members turn to turn. So every live cluster of the pre-prompt graph that no
        snapshot represents is snapshotted by the INPUT HOOK, inside `snapshot_pre_prompt`, from
        the graph it is copying (R3; round-6 #s-2), never by the render: member set, `<cid>` =
-       `stm.cluster_cid(members) -> str`, the ONE member-set hash (the first 8 hex chars of
-       sha256 over the sorted member names, the formula 19.4 R6 uses for unlabeled subjects;
-       round-10 #m10-1), `<label>` = its head member
+       `stm.cluster_cid(members) -> str`, the ONE member-set hash
+       (`hashlib.sha256("\n".join(sorted(members)).encode("utf-8")).hexdigest()[:8]`, round-11
+       #m11-4; the formula 19.4 R6 uses for unlabeled subjects; round-10 #m10-1), `<label>` = its head member
        by focus weight in that graph, and its first-collapse time = that graph's integer `turn`
        (not a clock, so the writer and a live-path reader derive the same value). A cluster that
        loses focus is R3's cache entry and gets its snapshot the same way. Later turns render the
@@ -571,10 +574,11 @@ the warm threshold):** {#ranges-d}
    are unchanged afterwards (no reader rewrote it). **Missing and sentinel legs** (round-10
    #m10-1): with NO cache file, `pre_prompt_state` raises nothing and returns an empty
    `topic_cache` and an empty `topic_match` (`{}`); a `pre.json` whose `topic_cache` is `{}`
-   (21.1's pre-19.6 sentinel) reads as the empty cache, not a raise. **Record-cap leg:** a
-   cache of 64 records (one `expanded`, the oldest) plus a prompt that snapshots 2 new clusters
-   leaves 64 records after the input hook's second write: the 2 OLDEST `collapsed` records are
-   gone, the `expanded` one is kept, and the event counts `topic-cache-evicted` = 2.
+   (21.1's pre-19.6 sentinel) reads as the empty cache, not a raise. **Record-cap leg**
+   (round-11 #m11-3): a cache of 64 records (the oldest `expanded`; the second-oldest
+   represented by a third live cluster on this prompt) plus 2 new clusters leaves 64 records.
+   The 3rd- and 4th-oldest records are gone; the `expanded` record and the matched record are
+   kept; `topic-cache-evicted` = 2; every `<cid>` in `topic_match` is in the written cache.
 8. **Isolation.** 23.0's guard records 0 live connects for this task's test files.
 9. **Mutations that must FAIL a test:**
    - phase driven by turn count (AC-7);
@@ -632,7 +636,9 @@ the warm threshold):** {#ranges-d}
    - (round 10, #m10-1) a missing cache file or the `{}` sentinel raising (AC-7i2's missing and
      sentinel legs); no record cap, or the cap evicting an `expanded` record (AC-7i2's
      record-cap leg); `match_snapshots` skipping `expanded` records (AC-7i H6's next prompt:
-     the expanded cluster gets a new `<cid>`);
+     the cluster maps to S2, not S3; round-11 #m11-6);
+   - (round 11, #m11-3) the cap evicting a record `topic_match` maps to (AC-7i2: the matched
+     record is gone);
    - the replay script or the render carrying its own identity predicate, assignment or
      Jaccard (AC-7i's import check);
    - the marker written only by the PreCompact recall command (AC-7f with the recall entry
@@ -810,3 +816,17 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r10-f6400aa]]
 | r10 #s10-1 (H5 put {`hub1`, `hub2`, `b`} first, the one order in which the only possible mutant, a per-cluster `derive_snapshots`, survives; no AC asserted one `match_snapshots` call) | AC-7i H5 runs BOTH input orders (N1 first kills the per-cluster mutant; the other pins order-freedom); AC-7i import check: `derive_snapshots`'s body holds exactly one `match_snapshots` call, outside any `for` / `while` / comprehension, with a planted looping fixture as its failing control; mutation restated |
 | r10 #m10-1 (`topic_match` serialization, a missing cache file and the `{}` sentinel, no record bound, eligibility vs `state`; an undecidable import-check clause) | R9: `topic_match: dict[str, str]` keyed by `stm.cluster_cid(members)`, the one member-set hash that also names `<cid>`; R3: `state` does not affect eligibility; the record cap `TOPIC_CACHE_MAX = 64` (= 8 × `N`; oldest `collapsed` unmatched record evicted in the second write, `expanded` never, counted `topic-cache-evicted`); the ONE reader `stm.load_topic_cache` (missing file and `{}` read as the empty cache; anything else without `schema: 1` raises); R1 records the per-session maximum record count and file size; AC-7i H6 next-prompt leg; AC-7i2 missing-file, sentinel and record-cap legs; AC-7i import check: the literal-`4` clause dropped, replaced by "no `HUB_MIN_SNAPSHOTS` outside `stm.py`" and the replay's exact `stm` import set; mutations; header; [[#files-to-modify]] |
 | user rule: converge repeated shapes into one function, with a bypass check that can fail | `cluster_cid` (one member-set hash for `<cid>` and the map's keys), `load_topic_cache` (one reader check for the file and `pre.json`); the one-call AST check has its own planted failing fixture |
+
+## Revision round 11 (2026-10-15) {#rev-round-11}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r11-954f601]] for 19.6: #m11-3, the 19.6 side of #m11-4,
+and the 19.6 part of #m11-6. Edit-level; no decision. Helix-facing (d9ca): the cap rule and the
+hash serialization are pinned here before merge, so no post-merge decision row is needed.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r11-954f601]]
+
+| finding | answered at |
+|---|---|
+| r11 #m11-3 (record cap: the hub-window claim was conditional; tie order not the reverse of "newest"; no-candidate case unstated; "unmatched" untested; "between prompts" wording) | R3 "Record cap": candidates exclude the 8 newest by `topic_hubs`' order; "oldest" = the exact reverse (smallest `turn`, ties to the LARGER `<cid>`); no candidate → stop and count `topic-cache-over-cap=<n>`; the after-second-write bound restated; AC-7i2 record-cap leg with a matched old record; mutation (the cap evicting a matched record); plan header item 2 |
+| r11 #m11-4 (19.6 side: `cluster_cid`'s byte serialization) | R9: `hashlib.sha256("\n".join(sorted(members)).encode("utf-8")).hexdigest()[:8]`, identical to [[task-19.4-keep-derived-layers-current#rev-round-11]]; plan header item 2 |
+| r11 #m11-6 (19.6 mutation parenthetical) | mutation list: with S3 skipped, the cluster maps to S2, not S3 |

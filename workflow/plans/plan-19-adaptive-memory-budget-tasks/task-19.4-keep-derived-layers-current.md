@@ -98,7 +98,9 @@ rel: specified-by -> [[bsd-plan19-spec-review-3104a81]]
      This task only makes the growth visible: every compile run reports `stale_total`,
      `stale_new` and `stale_unmarked`, and AC-4b bounds the growth per run.
 6. **R6 Stable names for unlabeled clusters** (19 #s-7). An unlabeled cluster's slug is
-   `unlabeled-<h>`, `<h>` = `stm.cluster_cid(members)` (19.6 R9; ONE member-set hash shared with the topic cache — d9ca), the first 8 hex chars of sha256 over its sorted member names, so the
+   `unlabeled-<h>`, `<h>` = `stm.cluster_cid(members)` (19.6 R9; ONE member-set hash shared with the topic cache — d9ca),
+   `hashlib.sha256("\n".join(sorted(members)).encode("utf-8")).hexdigest()[:8]` (round-11
+   #m11-4: the `"\n"` join keeps {`ab`, `c`} and {`a`, `bc`} apart), so the
    name is independent of cluster order. A changed membership is a different subject; the old
    one is marked stale by R5.
 7. **R7 Loud.** Every path reports compiled / skipped / failed / marked-stale with counts (no
@@ -180,6 +182,7 @@ hand run's `run_id` arms it (17.2 `#r7-unarmed`). Per 17.2 R2, the op accepts `d
 | `src/refmatrix/daemon.py`, `verbs.py` | the `memory_compile` (plan + apply) op and verb, single-flight; `dry_run` / `invoked_by` / `status=True` and its `runs.jsonl` line (17.2 R2); index regeneration after apply in the same op, reading the writer store inside the apply's `_store_lock` block (R3; 19.3 R5) |
 | `src/refmatrix/ingest_gmd.py` / `daemon.py` (`_run_ingest_gmd_body`, `:3535`, run by `_op_ingest_gmd` `:3651` and `_op_ingest_gmd_start` `:3670`) | the bridge's index regeneration at the end of the ingest job reads the writer store under `_store_lock`, after its last write (R2; 19.3 R5) |
 | `src/refmatrix/hub.py` / plan-17's tick | the compile step registered, `retries=0` |
+| `src/refmatrix/stm.py` | `cluster_cid(members)`, 19.6 R9's ONE member-set hash (d9ca); built here or by 19.6, whichever merges first (round-11 #m11-4) |
 
 ## Test strategy {#test-strategy}
 
@@ -249,3 +252,14 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r8-23ad703]]
 |---|---|
 | round-8 #nm-6 (the "`retries` left at the default" mutation is equivalent since 0.78.2) | R1 (the 0.78.2 behaviour stated; `retries=0` kept as defence for connect-timeout and post-send reset/decode retries; single-flight named as the guard); mutation replaced by "single-flight guard removed" (AC-2) |
 | round-8 #nm-7 (`daemon.py:5180`, `:6251`, `:3450`, `:5191`, `:3566`, `:3585`) | R1 (`:5265`, `:6336`); R2 (`:3535`); R3 (`:5276`); [[#files-to-modify]] (`:3535`, `:3651`, `:3670`) |
+
+## Revision round 11 (2026-10-15) {#rev-round-11}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r11-954f601#m11-4]] (19.4 side). Edit-level; no decision.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r11-954f601]]
+rel: depends-on -> [[task-19.6-phased-context-and-topic-cache#rev-round-11]]
+
+| finding | answered at |
+|---|---|
+| r11 #m11-4 (`cluster_cid`'s byte serialization unpinned; no 19.4 Files row builds it if 19.4 merges first) | R6: `hashlib.sha256("\n".join(sorted(members)).encode("utf-8")).hexdigest()[:8]`, the same formula as 19.6 R9; [[#files-to-modify]] (`stm.py` row: built here or by 19.6, whichever merges first) |
