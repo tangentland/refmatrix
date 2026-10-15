@@ -61,7 +61,10 @@ LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "0.0.0.0", "::",
 TOUCHES_REL = Path("workflow") / "review-output" / "live-socket-touches.log"
 # Test modules whose refusals are DELIBERATE probes (AC-2/AC-3/R3). The proof wrapper's
 # "touches log gains 0 lines" check (AC-4) excludes exactly these and nothing else.
-DELIBERATE_PROBE_MODULES = ("tests/test_sandbox_refusal.py::", "tests/test_sandbox_children.py::")
+# test_sandbox_child_extensions.py joined 2026-10-15 (ch-test-engineer): its refused dials are
+# the #rev-amend-r10 AC-3 legs, attributed through the child's inherited PYTEST_CURRENT_TEST.
+DELIBERATE_PROBE_MODULES = ("tests/test_sandbox_refusal.py::", "tests/test_sandbox_children.py::",
+                            "tests/test_sandbox_child_extensions.py::")
 
 
 class SandboxViolation(Exception):

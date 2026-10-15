@@ -68,8 +68,13 @@ def _new_touches(since: int) -> list[str]:
 
 
 def _run_inner(pytester, body: str):
+    """`-vv`: pytest truncates a short-summary `FAILED` line to the terminal width unless the
+    verbosity is >= 2. Under `| tee` (the mandated run form) the width is 80, and
+    `FAILED test_inner.py::test_connect_real_global_daemon_socket - rmx_sandbox.Sa...` cut the
+    exception name `_assert_refused` looks for (found 2026-10-15: 3 false failures in the
+    first full sandboxed run; passed only with COLUMNS=200)."""
     pytester.makepyfile(test_inner=body)
-    return pytester.runpytest("-p", "no:cacheprovider", "-rf")
+    return pytester.runpytest("-p", "no:cacheprovider", "-rf", "-vv")
 
 
 def _assert_refused(result, touches: list[str], expect: dict[str, str]) -> None:
@@ -223,3 +228,107 @@ def test_record_only_connect_is_gone():
     """R3: 'The record-only `_recording_connect` is replaced by it.'"""
     src = (_REPO / "tests" / "conftest.py").read_text()
     assert "_recording_connect" not in src, "the record-only connect is still installed"
+
+
+# ---- d9bo #5: a swallowed violation still fails its test ---------------------------------
+
+
+class _ConftestReportHook:
+    """Carries THIS checkout's `conftest.pytest_runtest_makereport` (the function object pytest
+    registered, so a change to it is what runs) into an inner session as a plugin."""
+
+
+def _conftest_report_hook(config) -> _ConftestReportHook:
+    want = (_REPO / "tests" / "conftest.py").resolve()
+    for plugin in config.pluginmanager.get_plugins():
+        f = getattr(plugin, "__file__", None)
+        if f and Path(f).resolve() == want:
+            hook = _ConftestReportHook()
+            hook.pytest_runtest_makereport = plugin.pytest_runtest_makereport
+            return hook
+    raise AssertionError(f"{want} is not a registered plugin of this session")
+
+
+def test_a_swallowed_violation_still_fails_its_test(pytester, pytestconfig):
+    """d9bo #5: every violation is appended to a per-test record AND raised; the conftest's
+    `pytest_runtest_makereport` fails any test whose record is non-empty, so code under test
+    that eats the raise (`except Exception: pass`, a best-effort thread) cannot turn a live
+    touch into a pass. `SandboxViolation` is not an `OSError`, so an `except OSError` site does
+    not even catch it.
+
+    The inner session runs IN this process (the audit hook and the record are process-global)
+    with the conftest's own report hook as a plugin; `test_clean_control` must still pass, so
+    the flip is per test, not per session. Verified by probe only before 2026-10-15
+    (`task-23.0-probes.log`, mutation M6); committed by ch-test-engineer.
+
+    Mutations (task-23.0-testgaps-mutations.log): the flip disabled -> the three swallowing
+    tests pass; `SandboxViolation(OSError)` -> the `except OSError` leg reports EATEN."""
+    _require_sandbox()
+    denied = str(_real_home() / ".refmatrix" / "query.log")
+    before = _touches_size()
+    pytester.makepyfile(test_inner_swallow=f'''
+import threading
+
+import pytest
+
+DENIED = {denied!r}
+
+
+def _read():
+    with open(DENIED, "r"):
+        pass
+
+
+def test_swallowed_by_except_exception():
+    try:
+        _read()
+    except Exception:
+        pass
+
+
+def test_swallowed_in_a_best_effort_thread():
+    def work():
+        try:
+            _read()
+        except Exception:
+            pass
+    t = threading.Thread(target=work)
+    t.start()
+    t.join()
+
+
+def test_except_oserror_does_not_eat_it():
+    caught = None
+    try:
+        try:
+            _read()
+        except OSError:
+            pytest.fail("EATEN-BY-EXCEPT-OSERROR")
+    except Exception as exc:
+        caught = type(exc).__name__
+    assert caught == "SandboxViolation", caught
+
+
+def test_clean_control():
+    assert True
+''')
+    result = pytester.runpytest("-p", "no:cacheprovider", "-rf", "-vv",
+                                plugins=[_conftest_report_hook(pytestconfig)])
+    out = result.stdout.str() + result.stderr.str()
+    reports = {r.nodeid.rsplit("::", 1)[-1]: r
+               for r in result.reprec.getreports("pytest_runtest_logreport") if r.when == "call"}
+    control = reports.get("test_clean_control")
+    assert control is not None and control.passed, (
+        f"the control failed: the flip is not per test\n{out[-3000:]}")
+    for name in ("test_swallowed_by_except_exception", "test_swallowed_in_a_best_effort_thread",
+                 "test_except_oserror_does_not_eat_it"):
+        rep = reports.get(name)
+        assert rep is not None and rep.failed, (
+            f"{name} passed with a swallowed violation\n{out[-3000:]}")
+        text = str(rep.longrepr)
+        assert "EATEN-BY-EXCEPT-OSERROR" not in text, f"{name}: an except OSError ate it: {text}"
+        assert "SandboxViolation (swallowed by the code under test)" in text, f"{name}: {text}"
+        assert denied in text, f"{name}: the record does not name the target: {text}"
+    result.assert_outcomes(failed=3, passed=1)
+    logged = [t for t in _new_touches(before) if denied in t]
+    assert len(logged) >= 3, f"touches log missed a swallowed violation: {logged}"

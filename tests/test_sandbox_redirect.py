@@ -24,6 +24,8 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+pytest_plugins = ["pytester"]
+
 _REPO = Path(__file__).resolve().parents[1]
 
 
@@ -181,3 +183,67 @@ def test_grep_query_log_row_lands_in_the_sandbox(tmp_path, monkeypatch):
     CliRunner().invoke(cli_mod.main, ["grep", token, "t.txt"])
     hits = [p for p in root.rglob("query.log") if token in p.read_text(errors="replace")]
     assert hits, f"no query.log under {root} carries the grep row for {token!r}"
+
+
+# ---- d9bo learn.off AC: the real home's learn switch does not reach a sandboxed test -------
+
+
+def test_real_global_learn_off_is_invisible_to_a_sandboxed_test(pytester, tmp_path,
+                                                                monkeypatch):
+    """d9bo (user 2026-10-15, "the learn-off noise"): with the real `~/.refmatrix/learn.off`
+    present, a sandboxed test sees learning ON by the shipped default. Before the sandbox, 17
+    baseline failures carried `learning-disabled` because the operator's global marker reached
+    every test through the real `$HOME`.
+
+    The "real" home is a DECOY carrying a `learn.off`, handed to a fresh sandbox through its
+    real-home indirection (`RMX_SANDBOX_REAL_HOME`): the inner session loads THIS checkout's
+    `tests/conftest.py` as a plugin (`-p conftest`, not a copy, so a change to it is what runs),
+    which builds a new root and redirects `HOME` away from the decoy. The inner test asserts the
+    decoy marker is really there and that `learn_switch.decision()` answers (True, "default").
+    Nothing live is read: the deny set is inherited from this session's `deny.json`.
+    Verified by probe only before 2026-10-15 (`task-23.0-probes.log`); committed by
+    ch-test-engineer."""
+    _require_sandbox()
+    decoy = tmp_path / "decoy-home"
+    (decoy / ".refmatrix").mkdir(parents=True)
+    marker = decoy / ".refmatrix" / "learn.off"
+    marker.write_text("# decoy: rmx learn off --global\n")
+    # The decoy is BOTH the inner session's starting `$HOME` and its protected real home: if
+    # the redirect did not move `HOME`, `Path.home()` would find the marker and answer OFF.
+    monkeypatch.setenv("HOME", str(decoy))
+    monkeypatch.setenv("RMX_SANDBOX_REAL_HOME", str(decoy))
+    monkeypatch.delenv("RMX_LEARN", raising=False)
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join(
+        [str(_REPO / "tests"), os.environ.get("PYTHONPATH", "")]))
+    pytester.makepyfile(test_learn_inner=f'''
+import os
+from pathlib import Path
+
+from refmatrix import learn_switch
+
+import rmx_sandbox
+
+DECOY = {str(decoy)!r}
+OUTER_ROOT = {str(_require_sandbox())!r}
+
+
+def test_learning_is_on_by_default():
+    # The inner session IS sandboxed, by a fresh root of its own (the conftest plugin ran).
+    root = Path(os.environ["RMX_SANDBOX_ROOT"]).resolve()
+    assert rmx_sandbox._STATE["sandbox"] is not None, "conftest's enter() did not run"
+    assert root != Path(OUTER_ROOT).resolve(), "no fresh sandbox root"
+    assert Path.home().resolve().is_relative_to(root), (Path.home(), root)
+    real = Path(os.environ["RMX_SANDBOX_REAL_HOME"])
+    assert real == Path(DECOY), real
+    assert (real / ".refmatrix" / "learn.off").is_file(), "the decoy marker is missing"
+    for root in (None, os.environ["REFMATRIX_ROOT"]):
+        d = learn_switch.decision(root)
+        assert (d.enabled, d.rule) == (True, "default"), (root, d)
+    assert learn_switch.learning_enabled(os.environ["REFMATRIX_ROOT"])
+''')
+    result = pytester.runpytest_subprocess("-p", "conftest", "-p", "no:cacheprovider", "-vv",
+                                           timeout=300)
+    out = result.stdout.str() + result.stderr.str()
+    assert result.ret == 0, out[-4000:]
+    result.assert_outcomes(passed=1)
+    assert marker.is_file(), "the inner sandbox removed the decoy marker"
