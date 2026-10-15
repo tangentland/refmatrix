@@ -530,7 +530,7 @@ verb rmx_catalog_reclaim ──> daemon op catalog_reclaim
    - **B: Phase B fails** (close error, WAL present, link or replace error, reopen error,
      identity mismatch). This path runs still inside the hold, IN THIS ORDER:
      1. **Close the reopened writer**, if step 10 opened one: `h.close_writer()` (its close
-        checkpoints and removes the WAL that `init()` wrote, I10).
+        checkpoints and removes the WAL the open wrote, I10).
      2. **No foreign WAL.** Require `<slot>.wal` to be absent or 0 bytes. If it is not,
         `os.replace(<slot>.wal, backups/catalog.<S>.reclaim-failed-<run_id>.duckdb.wal)`
         BEFORE the restore, with one log line naming its size.
@@ -975,7 +975,7 @@ asserts the second rehearsal's band is A1 or A2 before it confirms.
      `verify` finds no sentinel table → `rolled_back:sentinel` (the outcome names `sentinel`,
      not a later step), with (a)'s assertions, and the slot has no `.wal` after the run.
      R6 B step 2 moved nothing: there is no `backups/catalog.<S>.reclaim-failed-<run_id>.duckdb.wal`,
-     and the rollback's log line reports a foreign WAL of 0 bytes (the reopen's `verify` refused
+     and R6 B step 2 emitted no foreign-WAL log line (the reopen's `verify` refused
      before the open's first write, so the cached instance wrote no WAL beside the new inode).
      Then a
      write op (`upsert_entity`) is answered, the test SIGKILLs the daemon, and a fresh boot
@@ -1415,3 +1415,11 @@ rel: derives-from -> [[bsd-plan18-r3-spec-diffcheck-1318b30]]
 | N3-M2 (the R6 invariant is false under an unregistered holder) | [[#r6-rollback]] invariant scoped to connections opened through `backend.open_duckdb` (bug-112's AST guard); the unregistered-holder crash window stated as detected, not crash-safe |
 | N3-M3 (`verify` re-run on a reconnect) | [[#r8-one-helper]]: `verify` runs once; `_connect` clears it after the first successful run |
 | N3-M4 (the init-rebind port changed HEAD's close-error behaviour) | [[#r8-one-helper]] Ports: a `close_writer()` error is logged as HEAD's `close failed` line and the reopen is still attempted; only a reopen failure takes the legacy fallback; "behaviour is unchanged" now names that path |
+
+## Revision round 5 {#rev-round-5}
+
+Answers [[bsd-plan18-r4-closing-diffcheck-c4ef0a8]] verbatim: N4-S1 (AC-4 (b): "R6 B step 2 emitted
+no foreign-WAL log line" replaces the unproducible "foreign WAL of 0 bytes" clause) and N4-M1 (R6 B
+step 1: "the WAL the open wrote", per I10).
+
+rel: derives-from -> [[bsd-plan18-r4-closing-diffcheck-c4ef0a8]]

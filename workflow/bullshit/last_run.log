@@ -47,3 +47,5 @@
 2026-10-15T04:33:44-0700 commit=a0c0060 verdict=CLEAN findings=0 (0B/0S/0M) report=2026-10-15-0433-plan19-21-r13-closing-diffcheck-a0c0060.md
 2026-10-15T04:37:49-0700 commit=2352e52 verdict=DIRTY findings=3 (0B/2S/1M) report=2026-10-15-0436-plan16-22-r12-spec-diffcheck-count-guard-cannot-tell-incarnations-and-merge-rule-mutation-vacuous-2352e52.md
 2026-10-15T04:46:07-0700 commit=1318b30 verdict=DIRTY findings=6 (2B/0S/4M) report=2026-10-15-0444-plan18-r3-spec-diffcheck-fwd-i4-kill-is-benign-and-checkpoint-rule-flags-op-names-1318b30.md
+2026-10-15T04:51:17-0700 commit=c4ef0a8 verdict=DIRTY findings=2 (0B/1S/1M) report=2026-10-15-0451-plan18-r4-closing-diffcheck-c4ef0a8.md
+2026-10-15T04:51:28-0700 commit=69ea55b verdict=DIRTY findings=7 (0B/2S/5M) report=2026-10-15-0451-bugs112-113-118-r2-69ea55b.md
