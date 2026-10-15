@@ -4372,12 +4372,26 @@ class Store:
         new: dict = {}
         added_from_links = 0
         links_skipped = 0
+        links_dead_concept = 0
+        links_dead_entity = 0
         for eid, lid, cid in con.execute(
             "SELECT entity_id, linkage_id, concept_id FROM entity_links"
         ).fetchall():
             pid = ent_part.get(eid)
             if pid is None or lid not in lk:
                 links_skipped += 1  # counted, never silent (memory-path rule)
+                # The orphan-row share of links_skipped, named on its own (bug-111 r1 #1): these
+                # rows await plan 22's audited removal (the `dangling-link` class, task 22.1a R1
+                # + 22.2 R9, d9an) and must stay visible until it runs.
+                links_dead_entity += pid is None
+                continue
+            if int(cid) not in concept_ids:
+                # bug-111: the same liveness gate the fragment half applies below. Without it an
+                # orphan entity_links row (its concept deleted by a path that bypassed
+                # purge_entity) came back as a bit on every apply and every dry run re-flagged it
+                # as dropped_dead_concept. The row itself is left alone (its removal is plan 22's
+                # `dangling-link` class, task 22.1a R1 + 22.2 R9, d9an) and stays visible here.
+                links_dead_concept += 1
                 continue
             new.setdefault((int(pid), lk[lid]), BitMap64()).add(self._pack(cid, eid))
 
@@ -4460,6 +4474,7 @@ class Store:
             "rows_changed": len(changed), "kept": kept, "moved": moved,
             "added_from_links": added_from_links, "dropped_dead": dropped_dead,
             "dropped_dead_concept": dropped_dead_concept, "links_skipped": links_skipped,
+            "links_dead_concept": links_dead_concept, "links_dead_entity": links_dead_entity,
             "remapped": remapped_bits,
             "unread_dirs": list(getattr(self, "_repair_unread_dirs", [])),
             "manifest": str(manifest) if manifest else None,
@@ -6036,28 +6051,13 @@ class Store:
             """,
             (entity_id,),
         ).fetchall()
-        n = 0
-        # Drop the entity from every (linkage, concept) row it appears in.
+        # Drop the entity from every (linkage, concept) row it appears in, and — if it is also a
+        # concept — clear its whole prefix row, in EVERY partition (bug-111 r1 #3).
+        bits_by_ln: dict[str, list[int]] = {}
         for r in rows:
-            ln = r["name"]
-            cid = r["concept_id"]
-            frag = self._load_fragment(ln)
-            bit = self._pack(cid, entity_id)
-            if bit in frag:
-                frag.discard(bit)
-                self._dirty_fragments.add(ln)
-                n += 1
+            bits_by_ln.setdefault(r["name"], []).append(self._pack(r["concept_id"], entity_id))
+        n = self._clear_purged_bits(bits_by_ln, [entity_id])
         con.execute("DELETE FROM entity_links WHERE entity_id=?", (entity_id,))
-        # If the entity is also a concept (its id appears as the high-32-bit
-        # prefix of bits in any fragment), clear that whole row too.
-        prefix_start = entity_id << _CONCEPT_SHIFT
-        prefix_end = (entity_id + 1) << _CONCEPT_SHIFT
-        for ln in (lk["name"] for lk in self.list_linkages()):
-            frag = self._load_fragment(ln)
-            if frag.range_cardinality(prefix_start, prefix_end) > 0:
-                frag.remove_range(prefix_start, prefix_end)
-                self._dirty_fragments.add(ln)
-                n += 1
         # Forward index rows where this id is the concept side also go.
         con.execute("DELETE FROM entity_links WHERE concept_id=?", (entity_id,))
         con.execute("DELETE FROM entities WHERE id=?", (entity_id,))
@@ -6312,6 +6312,54 @@ class Store:
                 "vector_delete_failed":
                     getattr(self, "vector_delete_failures", 0) - failed0}
 
+    def _clear_purged_bits(self, bits_by_ln: "dict[str, list[int]]", ids: "list[int]") -> int:
+        """Discard purged entities' bits, and clear the concept-prefix row of every purged id, in
+        EVERY partition's fragments. Returns bits discarded + prefix rows cleared.
+
+        bug-111 r1 #3 (2026-10-14): both purge paths loaded only the CURRENT binding's fragments,
+        but `entity_links` is global. An entity linked as part-of a doc in another partition kept
+        its bit there after the doc was purged — a dead-concept bit, bug-111's own symptom — and an
+        entity purged under a foreign binding kept its bit in its own partition. Each partition is
+        visited through `with_partition`, so its bits land in its own per-binding cache and dirty
+        set (bug-105) and the next flush writes them under the right partition. Caller holds the
+        writer lock.
+
+        The binding is swapped directly, as `flush_fragments` does, from ONE read of `partitions`
+        (bug-111 r2 #1): `with_partition` ran an `INSERT OR IGNORE` + commit + a by-name lookup
+        per partition per purge (+25-28% on 200 purges, 3.75 ms each) and lacks
+        `_ensure_partition`'s damaged-zonemap fallback, so a bad zonemap would have made every
+        purge raise."""
+        canon_bits: dict[str, list[int]] = {}
+        for ln, bits in bits_by_ln.items():
+            canon_bits.setdefault(_canonical_verb(ln), []).extend(bits)
+        ranges = [(kid << _CONCEPT_SHIFT, (kid + 1) << _CONCEPT_SHIFT) for kid in ids]
+        linkages = [lk["name"] for lk in self.list_linkages()]
+        bindings = [(int(r[0]), r[1]) for r in self._connect().execute(
+            "SELECT id, name FROM partitions ORDER BY id").fetchall()]
+        n = 0
+        prev = (self._partition_id, self._partition_name)
+        try:
+            for pid, pname in bindings:
+                self._partition_id, self._partition_name = pid, pname
+                for ln in linkages:
+                    frag = self._load_fragment(ln)
+                    changed = False
+                    for bit in canon_bits.get(_canonical_verb(ln), ()):
+                        if bit in frag:
+                            frag.discard(bit)
+                            changed = True
+                            n += 1
+                    for start, end in ranges:
+                        if frag.range_cardinality(start, end) > 0:
+                            frag.remove_range(start, end)
+                            changed = True
+                            n += 1
+                    if changed:
+                        self._dirty_fragments.add(ln)
+        finally:
+            self._partition_id, self._partition_name = prev
+        return n
+
     def _bulk_purge_ids(self, info: "list[tuple[int, str, str]]") -> int:
         """Batched purge of `(id, kind, name)` triples — the scalable sibling of
         `purge_entity`. One-pass bitmap-fragment cleanup + chunked SQL deletes +
@@ -6349,21 +6397,7 @@ class Store:
             ).fetchall():
                 bits_by_ln.setdefault(r["ln"], []).append(
                     self._pack(int(r["cid"]), int(r["eid"])))
-        for ln in (lk["name"] for lk in self.list_linkages()):
-            frag = self._load_fragment(ln)
-            changed = False
-            for bit in bits_by_ln.get(ln, ()):
-                if bit in frag:
-                    frag.discard(bit)
-                    changed = True
-            for kid in ids:
-                start = kid << _CONCEPT_SHIFT
-                end = (kid + 1) << _CONCEPT_SHIFT
-                if frag.range_cardinality(start, end) > 0:
-                    frag.remove_range(start, end)
-                    changed = True
-            if changed:
-                self._dirty_fragments.add(ln)
+        self._clear_purged_bits(bits_by_ln, ids)
 
         # 3. Chunked SQL deletes. tracked_files first (needs entities.path).
         for ck in _chunks(ids):

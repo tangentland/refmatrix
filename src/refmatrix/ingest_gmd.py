@@ -499,6 +499,8 @@ class IngestStats:
     skipped_non_gmd: int = 0                       # strict mode: no `gmd:` frontmatter
     skipped_unparseable: list[tuple[Path, str]] = field(default_factory=list)
     skipped_index: list[str] = field(default_factory=list)   # MEMORY.md: an index, not a memory
+    # --as-memory replaces a prior kind='doc' entity; a purge that failed is counted (bug-111).
+    doc_drop_failed: list[tuple[Path, str]] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         """The counters, structurally — for the daemon result and the
@@ -507,7 +509,8 @@ class IngestStats:
                 "mentions": self.mentions, "unresolved": len(self.unresolved),
                 "skipped_non_gmd": self.skipped_non_gmd,
                 "skipped_unparseable": [[str(p), e] for p, e in self.skipped_unparseable],
-                "skipped_index": list(self.skipped_index)}
+                "skipped_index": list(self.skipped_index),
+                "doc_drop_failed": [[str(p), e] for p, e in self.doc_drop_failed]}
 
     def report(self) -> str:
         lines = [
@@ -523,6 +526,10 @@ class IngestStats:
             lines.append(f"  {p}: {err}")
         if len(self.skipped_unparseable) > 20:
             lines.append(f"  ... and {len(self.skipped_unparseable) - 20} more")
+        if self.doc_drop_failed:
+            lines.append(f"doc_drop_failed: {len(self.doc_drop_failed)}")
+            for p, err in self.doc_drop_failed[:20]:
+                lines.append(f"  {p}: {err}")
         if self.linkage_types_added:
             lines.append(
                 "new linkage types: "
@@ -887,19 +894,30 @@ def ingest_gmd_paths(
             # (typical: a previous `rmx ingest-gmd` without --as-memory).
             # Leaves the (partition, kind=memory, name) slot free for
             # add_memory below. Idempotent — no-op when none exists.
+            # Through purge_entity, never a bare DELETE: the raw row delete
+            # left the doc's entity_links rows (both sides), fragment bits and
+            # vector naming a dead id, which the fragment repair later turned
+            # back into bits (bug-111, cliquedb 2026-10-14).
+            # Matched on path as well as name (r1 #4): a project doc in the same partition whose
+            # GMD id equals a memory file's id is a different file and is not this one's prior row.
             try:
-                store._connect().execute(
-                    "DELETE FROM entities WHERE partition_id = ? "
-                    "AND kind = 'doc' AND name = ?",
-                    (store._partition_id, doc.doc_id),
-                )
-                store._connect().commit()
+                vec_failed0 = getattr(store, "vector_delete_failures", 0)
+                for (old_id,) in store._connect().execute(
+                    "SELECT id FROM entities WHERE partition_id = ? "
+                    "AND kind = 'doc' AND name = ? AND path IN (?, ?)",
+                    (store._partition_id, doc.doc_id, str(path), str(Path(path).resolve())),
+                ).fetchall():
+                    store.purge_entity(int(old_id))
+                vec_failed = getattr(store, "vector_delete_failures", 0) - vec_failed0
+                if vec_failed:
+                    # purge_entity prints and counts a failed Lance delete on the store; the
+                    # ingest result names it too (r1 #5).
+                    raise RuntimeError(f"{vec_failed} vector delete(s) failed")
             except Exception as exc:
-                if verbose:
-                    print(
-                        f"  warn: doc->memory cleanup failed for "
-                        f"{doc.doc_id}: {exc!r}"
-                    )
+                # Counted and printed, never verbose-only (memory-path rule).
+                stats.doc_drop_failed.append((path, repr(exc)))
+                print(f"  warn: doc->memory cleanup failed for "
+                      f"{doc.doc_id}: {exc!r}")
             try:
                 raw_text = path.read_text(encoding="utf-8")
                 fm_lines = raw_text.splitlines()

@@ -16,3 +16,7 @@
 2026-10-14T14:08:13-0700 commit=878647c verdict=DIRTY findings=10 (1B/5S/4M) report=2026-10-14-1408-plan23-17-r4-spec-rereview-superseded-hotfix-contract-and-callerless-id-map-878647c.md
 2026-10-14T14:14:39-0700 commit=878647c verdict=DIRTY findings=12 (2B/4S/6M) report=2026-10-14-1414-plan16-22-r4-spec-rereview-hash-proof-deletes-edited-rows-and-compaction-erases-provenance-878647c.md
 2026-10-14T16:13:20-0700 commit=ab19016 verdict=DIRTY findings=4 (0B/1S/3M) report=2026-10-14-1613-bug109-r4-pins-landed-guards-unpinned-ab19016.md
+2026-10-14T20:48:18-0700 commit=60893d3 verdict=DIRTY findings=6 (1B/2S/3M) report=2026-10-14-2048-bug110-lock-held-tests-now-fail-60893d3.md
+2026-10-14T20:47:02-0700 commit=0f268f5 verdict=DIRTY findings=6 (2B/1S/3M) report=2026-10-14-2047-bug111-repair-dead-links-0f268f5.md
+2026-10-14T21:35:15-0700 commit=1fb6c0e verdict=DIRTY findings=4 (0B/2S/2M) report=2026-10-14-2135-bug110-r2-stale-snapshot-is-the-replica-cache-1fb6c0e.md
+2026-10-14T22:24:26-0700 commit=129366b verdict=DIRTY findings=5 (0B/2S/3M) report=2026-10-14-2224-bug111-r2-remedy-129366b.md
