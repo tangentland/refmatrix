@@ -31,6 +31,8 @@ if TYPE_CHECKING:
 
 from pyroaring import BitMap, BitMap64
 
+from refmatrix.edge_records import edge_event, edge_fields, resolve_legacy_kind
+
 _CONCEPT_WORD_SPLIT_RE = re.compile(r"[\s_\-]+")
 
 
@@ -4662,8 +4664,7 @@ class Store:
             if cn and en:
                 self._log_event(
                     "link",
-                    linkage=linkage, c=cn[1],
-                    e_kind=en[0], e=en[1], weight=weight,
+                    **edge_fields(linkage, cn[0], cn[1], en[0], en[1], weight=weight),
                 )
                 if protect:
                     self._log_event("protect", kind=cn[0], name=cn[1], value=1)
@@ -4694,7 +4695,7 @@ class Store:
         if present and cn and en:
             self._log_event(
                 "unlink",
-                linkage=linkage, c=cn[1], e_kind=en[0], e=en[1],
+                **edge_fields(linkage, cn[0], cn[1], en[0], en[1]),
             )
         return present
 
@@ -4867,10 +4868,9 @@ class Store:
                 cn = names.get(concept_id)
                 en = names.get(entity_id)
                 if cn and en:
-                    events.append({
-                        "op": "link", "linkage": linkage, "c": cn[1],
-                        "e_kind": en[0], "e": en[1], "weight": weight,
-                    })
+                    events.append(edge_event(
+                        "link", linkage, cn[0], cn[1], en[0], en[1], weight=weight,
+                    ))
             self._log_events(events)
         return added_total
 
@@ -4905,8 +4905,7 @@ class Store:
                     if en:
                         self._log_event(
                             "link",
-                            linkage=linkage, c=cn[1],
-                            e_kind=en[0], e=en[1], weight=None,
+                            **edge_fields(linkage, cn[0], cn[1], en[0], en[1], weight=None),
                         )
         return added
 
@@ -5589,8 +5588,8 @@ class Store:
             if cn and en:
                 self._log_event(
                     "evidence",
-                    linkage=linkage, c=cn[1], e_kind=en[0], e=en[1],
-                    file=file, line=line, span_end=span_end, detail=detail,
+                    **edge_fields(linkage, cn[0], cn[1], en[0], en[1],
+                                  file=file, line=line, span_end=span_end, detail=detail),
                 )
 
     def get_evidence(
@@ -6078,12 +6077,12 @@ class Store:
             for linkage, c_kind, c_name in es_pairs:
                 self._log_event(
                     "unlink",
-                    linkage=linkage, c=c_name, e_kind=kind, e=name,
+                    **edge_fields(linkage, c_kind, c_name, kind, name),
                 )
             for linkage, e_kind, e_name in cs_pairs:
                 self._log_event(
                     "unlink",
-                    linkage=linkage, c=name, e_kind=e_kind, e=e_name,
+                    **edge_fields(linkage, kind, name, e_kind, e_name),
                 )
             self._log_event("tombstone", kind=kind, name=name)
         return n
@@ -7635,7 +7634,7 @@ class Store:
                 # entities on replay even if regenerated on a different clock.
                 for row in con.execute(
                     """
-                    SELECT lt.name AS linkage, c.name AS c_name,
+                    SELECT lt.name AS linkage, c.kind AS c_kind, c.name AS c_name,
                            e.kind AS e_kind, e.name AS e_name,
                            el.weight AS weight,
                            GREATEST(c.updated_at, e.updated_at) AS ts
@@ -7649,16 +7648,15 @@ class Store:
                     (pid, pid),
                 ):
                     emit({
-                        "ts": row["ts"], "op": "link", "partition": pname,
-                        "linkage": row["linkage"], "c": row["c_name"],
-                        "e_kind": row["e_kind"], "e": row["e_name"],
-                        "weight": row["weight"],
+                        "ts": row["ts"], "partition": pname,
+                        **edge_event("link", row["linkage"], row["c_kind"], row["c_name"],
+                                     row["e_kind"], row["e_name"], weight=row["weight"]),
                     })
                     counts["link"] += 1
 
                 for row in con.execute(
                     """
-                    SELECT lt.name AS linkage, c.name AS c_name,
+                    SELECT lt.name AS linkage, c.kind AS c_kind, c.name AS c_name,
                            e.kind AS e_kind, e.name AS e_name,
                            ev.file, ev.line, ev.span_end, ev.detail,
                            GREATEST(c.updated_at, e.updated_at) AS ts
@@ -7672,11 +7670,11 @@ class Store:
                     (pid, pid),
                 ):
                     emit({
-                        "ts": row["ts"], "op": "evidence", "partition": pname,
-                        "linkage": row["linkage"], "c": row["c_name"],
-                        "e_kind": row["e_kind"], "e": row["e_name"],
-                        "file": row["file"], "line": row["line"],
-                        "span_end": row["span_end"], "detail": row["detail"],
+                        "ts": row["ts"], "partition": pname,
+                        **edge_event("evidence", row["linkage"], row["c_kind"],
+                                     row["c_name"], row["e_kind"], row["e_name"],
+                                     file=row["file"], line=row["line"],
+                                     span_end=row["span_end"], detail=row["detail"]),
                     })
                     counts["evidence"] += 1
 
@@ -7774,6 +7772,23 @@ class Store:
                 return self._apply_event_body(ev)
         return self._apply_event_body(ev)
 
+    def _replay_concept(self, ev: dict):
+        """The concept end of an edge event, in the active partition (bug-117).
+
+        `c_kind` names it exactly. An event written before `c_kind` existed falls back to
+        `edge_records.resolve_legacy_kind` over the kinds that hold that name here: a `concept`
+        wins, else a name held by ONE kind; ambiguous or missing returns None, which the caller
+        counts as `skipped_unresolved`. Before this, every concept end was looked up as kind
+        `concept`, so each GMD `rel:` edge (a doc or memory end) was dropped on replay."""
+        kind = ev.get("c_kind")
+        if kind:
+            return self.get_entity(kind, ev["c"])
+        kinds = [r[0] for r in self._connect().execute(
+            "SELECT DISTINCT kind FROM entities WHERE partition_id=? AND name=?",
+            (self._partition_id, ev["c"])).fetchall()]
+        kind = resolve_legacy_kind(kinds)
+        return self.get_entity(kind, ev["c"]) if kind else None
+
     def _apply_event_body(self, ev: dict) -> bool:
         """Apply a single facts.log event to self's active partition. Returns
         True if applied, False if the event couldn't be resolved (e.g. link
@@ -7824,21 +7839,21 @@ class Store:
                 )
                 return True
             if op == "link":
-                c = self.get_entity("concept", ev["c"])
+                c = self._replay_concept(ev)
                 e = self.get_entity(ev["e_kind"], ev["e"])
                 if c is None or e is None:
                     return False
                 self.link(ev["linkage"], c.id, e.id, weight=ev.get("weight"))
                 return True
             if op == "unlink":
-                c = self.get_entity("concept", ev["c"])
+                c = self._replay_concept(ev)
                 e = self.get_entity(ev["e_kind"], ev["e"])
                 if c is None or e is None:
                     return False
                 self.unlink(ev["linkage"], c.id, e.id)
                 return True
             if op == "evidence":
-                c = self.get_entity("concept", ev["c"])
+                c = self._replay_concept(ev)
                 e = self.get_entity(ev["e_kind"], ev["e"])
                 if c is None or e is None:
                     return False
@@ -7990,7 +8005,10 @@ class Store:
                 if prev is None or ts > prev[0]:
                     noise_lww[key] = (ts, int(ev.get("value", 1)))
             elif op in ("link", "unlink"):
-                key = (part, ev["linkage"], ev["c"], ev["e_kind"], ev["e"])
+                # `c_kind` is None on an event written before bug-117's fix; resolved below,
+                # once every entity name in the log is known.
+                key = (part, ev["linkage"], ev.get("c_kind"), ev["c"],
+                       ev["e_kind"], ev["e"])
                 prev = link_state.get(key)
                 if prev is None or ts > prev[0]:
                     link_state[key] = (ts, op, ev.get("weight"))
@@ -8012,6 +8030,41 @@ class Store:
                 if prev is None or ts > prev[0]:
                     memory_content_lww[key] = (ts, ev)
 
+        # Pass 2b (bug-117): a legacy edge event names its concept end by NAME only. Resolve it
+        # with the one legacy rule (`edge_records.resolve_legacy_kind`) over every kind that name
+        # has in the partition, then merge it with any kind-carrying event for the same edge
+        # (largest ts wins). An ambiguous or missing name is COUNTED, never guessed.
+        kinds_by_name: dict[tuple[str, str], set[str]] = {}
+        for (p_, k_, n_) in entity_state:
+            kinds_by_name.setdefault((p_, n_), set()).add(k_)
+        links_unresolved = 0
+        merged_links: dict[tuple, tuple[float, str, float | None]] = {}
+        for key, val in link_state.items():
+            p_, lk_, ck_, cn_, ek_, en_ = key
+            if ck_ is None:
+                ck_ = resolve_legacy_kind(kinds_by_name.get((p_, cn_), ()))
+                if ck_ is None:
+                    if val[1] == "link":
+                        links_unresolved += 1
+                    continue
+            k2 = (p_, lk_, ck_, cn_, ek_, en_)
+            prev = merged_links.get(k2)
+            if prev is None or val[0] > prev[0]:
+                merged_links[k2] = val
+        link_state = merged_links
+        evidence_unresolved = 0
+        resolved_evidence: list[dict] = []
+        for ev in evidence_events:
+            ck_ = ev.get("c_kind")
+            if not ck_:
+                p_ = ev.get("partition") or dpart
+                ck_ = resolve_legacy_kind(kinds_by_name.get((p_, ev["c"]), ()))
+                if ck_ is None:
+                    evidence_unresolved += 1
+                    continue
+            resolved_evidence.append({**ev, "c_kind": ck_})
+        evidence_events = resolved_evidence
+
         # Pass 3: materialize, with logging suppressed to avoid the rebuild
         # appending duplicate events to the same log we're replaying. Work
         # one partition at a time under `with_partition` (auto-creates the
@@ -8019,6 +8072,12 @@ class Store:
         counts = {
             "entities": 0, "links": 0, "evidence": 0,
             "tracked": 0, "memory_content": 0,
+            # bug-117: nothing a rebuild skips is silent. `*_unresolved` = a legacy event whose
+            # concept name is ambiguous or missing; `*_skipped_dead` = an end that did not
+            # survive (tombstoned or never created).
+            "links_unresolved": links_unresolved,
+            "evidence_unresolved": evidence_unresolved,
+            "links_skipped_dead": 0, "evidence_skipped_dead": 0,
         }
         self._replay_mode = True
         try:
@@ -8076,10 +8135,11 @@ class Store:
                     for key, (_, op, weight) in link_state.items():
                         if key[0] != pname or op != "link":
                             continue
-                        _, linkage, c_name, e_kind, e_name = key
-                        cid = name_to_id.get(("concept", c_name))
+                        _, linkage, c_kind, c_name, e_kind, e_name = key
+                        cid = name_to_id.get((c_kind, c_name))
                         eid = name_to_id.get((e_kind, e_name))
                         if cid is None or eid is None:
+                            counts["links_skipped_dead"] += 1
                             continue
                         self.link(linkage, cid, eid, weight=weight)
                         counts["links"] += 1
@@ -8087,9 +8147,10 @@ class Store:
                     for ev in evidence_events:
                         if (ev.get("partition") or dpart) != pname:
                             continue
-                        cid = name_to_id.get(("concept", ev["c"]))
+                        cid = name_to_id.get((ev["c_kind"], ev["c"]))
                         eid = name_to_id.get((ev["e_kind"], ev["e"]))
                         if cid is None or eid is None:
+                            counts["evidence_skipped_dead"] += 1
                             continue
                         self.add_evidence(
                             ev["linkage"], cid, eid,
@@ -8130,4 +8191,8 @@ class Store:
             "tracked": counts["tracked"],
             "memory_content": counts["memory_content"],
             "events_replayed": len(events),
+            "links_unresolved": counts["links_unresolved"],
+            "evidence_unresolved": counts["evidence_unresolved"],
+            "links_skipped_dead": counts["links_skipped_dead"],
+            "evidence_skipped_dead": counts["evidence_skipped_dead"],
         }
