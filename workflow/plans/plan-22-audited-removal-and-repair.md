@@ -14,7 +14,10 @@ metadata:
 # Plan 22: audited removal and repair {#root}
 
 **Date:** 2026-10-07 (revised 2026-10-14 after the Wave 0 decision log)
-**Status:** Drafting — revision round 12 (2026-10-15) for the r12 diff check
+**Status:** Drafting — revision round 13 (2026-10-15) for d9cg (a restore restates every
+evidence row it re-attaches in place with a `restored_from`-tagged append, absorbed on a rebuild
+when the purged incarnation's copy is still held; [[#rev-round-13]]); revision round 12
+(2026-10-15) for the r12 diff check
 [[bsd-plan16-22-spec-diffcheck-r12-2352e52]] (revival decided by REVERSAL: purge tombstones
 carry `manifest`, restore's `entity` events `restored_from`, one revivable predicate for the
 vacuum, the rebuild and 17.4's fold; the `L > N` count guard removed; AC-6d's vacuous merge-rule
@@ -258,6 +261,7 @@ rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 | d-31 | a live primitive's extra row op is the constant `LEGACY_PREFERRED_KIND` (not the legacy rule over live kinds) whenever the catalog kind differs and the live concept of that name IN THE ROW'S PARTITION holds 0 or 1 identical copies, carrying `keep = n`; `legacy_misresolved` only for `n >= 2`; the helper takes only rows with a live, named entity end | r9 m-1, m-2; r10 m-2 |
 | d-32 | every new `facts.log` op plans 16/22 add carries a STATED fold rule in 17.4's `FOLD_OPS` (`evidence_remove` reduces to `keep`; `evidence_orphan_drop` removes what d-28 selects; `evidence_repoint`, `learned_provenance`, `learned_provenance_move` count-neutral, named as ignored; `entity_rename` renames; on a merge, evidence moves while links and entities follow their own `unlink` / `link` / `tombstone` events, AMENDED in round 11), and 22.6 AC-6d proves the fold's counts equal the rebuild's, over 22.2 AC-3's and AC-7's logs and 22.6 AC-6e's too (AMENDED in round 12: AC-6d's "round 10's merge rule" mutation is deleted, vacuous under the set fold) | r10 s-3; r11 s-2; d9cc; r12 s-2; d9cf |
 | d-33 | revival is decided by REVERSAL, never by a count: every `tombstone` a manifest-writing purge logs carries `manifest: <apply_id>`, every `entity` event a restore logs for an `id_map` key carries `restored_from: <apply_id>` (both spelled and read only through `edge_records.reversal_fields` / `reversal_of`), and a tombstone of the same entity key that such an event follows is reversed; ONE function, `edge_records.revivable`, decides revival for the vacuum scan, the rebuild's row pass and 17.4's fold, and an AST test (22.6 AC-6f) holds the three callers to it | d9cf (supersedes d9cc (ii)); r12 s-1 |
+| d-34 | a restore never re-attaches an evidence row silently: for every row 22.2 R4's `id_map` re-attaches in place it logs one `restored_from`-tagged `evidence` append (built by `edge_records.edge_event`, with `c_kind`, both ends by name, `partition`), always, so a rebuild of a log compacted between the purge and the restore holds what live holds; the append RESTATES the purged incarnation's copy: ONE function, `edge_records.restated_copy`, absorbs it into that copy when still held (same `row_key` plus `detail`, appended before the `M` tombstone, every tombstone between reversed) and adds a copy otherwise, called by `revivable`'s three callers; idempotence by row key rejected (multiplicity, other incarnations); 22.2 AC-4e | d9cg (supersedes round 7's no-event rule for evidence); round 13 |
 
 ## Open after revision {#open-after-revision}
 
@@ -301,6 +305,20 @@ earlier links still resolve.
    protections to the learner; those are purgeable whole when they are class members, and 22.3
    prints its count before the live apply ([[task-22.3-bug-086-global-repair#r3]]).
 
+## Revision round 13 (2026-10-15) {#rev-round-13}
+
+Answers the round-12 open item ([[#rev-round-12]] last row, now CLOSED) under d9cg
+([[plan-review-2026-10-14#t12-approvals]]; PROVISIONAL until its ch-bsd loop is clean). `src/`
+unchanged. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| d9cg (the restore logs an `evidence` append for every row it re-attaches in place) | [[task-22.2-repair-then-remove#r4-restate]]; 22.2 AC-4e (purge, compact, restore, rebuild multiset == live; concept-end, uncompacted, multiplicity and re-purge variants; mutation "re-attach without logging" traced: 0 against live 1); d-34 |
+| the restating append vs the original append on an uncompacted log (no double count) | [[task-22.6-removal-entry-points#r5-restated-fn]]: absorb into the purged incarnation's still-held copy, else add; one function beside `revivable`, same three callers; 22.6 AC-6d, AC-6e (re-traced), AC-6f, AC-9c amended ([[task-22.6-removal-entry-points#rev-round-13]]) |
+| open, raised by the reviser | links re-attached in place and the learned-row sidecar meet the same compaction gap; not covered by d9cg ([[task-22.6-removal-entry-points#rev-round-13]] last row) |
+
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+
 ## Revision round 12 (2026-10-15) {#rev-round-12}
 
 Answers [[bsd-plan16-22-spec-diffcheck-r12-2352e52]] (plan-22: s-1, s-2, m-1; plan-16 is
@@ -314,7 +332,7 @@ SUPERSEDES d9cc (ii). `src/` unchanged. Later rows win.
 | s-1 / d9cf (the `L > N` count guard cannot tell which incarnation a restore re-attached, F5) | [[task-22.2-repair-then-remove#r4-reversal]] (`manifest` on purge tombstones, `restored_from` on restore's `entity` events, one builder and reader); [[task-22.6-removal-entry-points#r5-timeline]] and [[task-22.6-removal-entry-points#r5-revivable-fn]] (one predicate, three callers); [[task-22.6-removal-entry-points#r5-reattach-guard]] (guard removed); 22.6 AC-6e variant 2 and compacted variant, two new mutations, AC-6f (AST check); 17.4 [[task-17.4-factslog-backup-snapshot#r6-restore]] step 3 names the shared predicate; d-28, d-30 amended, d-33 added |
 | s-2 (AC-6d's merge-rule mutation is vacuous under 17.4's set fold) | 22.6 AC-6d (deleted, one-sentence note); [[task-22.6-removal-entry-points#rev-round-11]] s-2(iii) rationale corrected; d-32 amended |
 | m-1 (`N` per concept) | moot under d9cf: no count exists |
-| open, raised by the reviser (not a report finding) | a compaction between a purge and its restore loses the re-attached row on a rebuild (the dump omits orphan rows; restore re-attaches with no event): [[task-22.6-removal-entry-points#rev-round-12]] last row; needs an orchestrator ruling |
+| CLOSED in round 13 by d9cg ([[#rev-round-13]]); was open, raised by the reviser (not a report finding) | a compaction between a purge and its restore loses the re-attached row on a rebuild (the dump omits orphan rows; restore re-attaches with no event): [[task-22.6-removal-entry-points#rev-round-12]] last row; answered by d9cg, [[task-22.2-repair-then-remove#r4-restate]] |
 
 rel: amends -> [[bsd-plan16-22-spec-diffcheck-r12-2352e52]]
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
