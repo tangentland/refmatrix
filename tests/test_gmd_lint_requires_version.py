@@ -112,16 +112,25 @@ def test_memory_index_keeps_its_by_name_exemption(tmp_path):
 
 # ---- the repo's own tree must satisfy the gate it ships -------------------
 
-def test_the_repo_scope_is_clean_under_the_stricter_gate():
+def test_the_repo_scope_is_clean_under_the_stricter_gate(tmp_path):
     """The gate is only worth having if the tree it guards passes it. Runs the
     real `scripts/lint-gmd.sh`, which is what the commit gate invokes."""
     root = Path(__file__).resolve().parents[1]
     # 23.0 R6: the script adds `$HOME/.claude/projects/<slug>/memory` to its scope (the ledger
-    # cites memory ids); under the sandbox `$HOME` is redirected, so the REAL home is passed --
-    # a read of the curated memory files, which are not in the sandbox's deny set.
-    env = dict(os.environ)
-    if os.environ.get("RMX_SANDBOX_REAL_HOME"):
-        env["HOME"] = os.environ["RMX_SANDBOX_REAL_HOME"]
+    # cites memory ids). The child gets a DECOY home holding a COPY of exactly that one memory
+    # dir -- never the real `HOME` (ch-bsd r1 m3, 2026-10-15: handing the child the real home
+    # was a documented way out of the sandbox). No memory dir for this checkout's slug (a
+    # clone) -> none is copied, and the refs surface as dangling-doc, as the script intends.
+    import shutil
+    slug = str(root).replace("/", "-").replace("_", "-")
+    real_mem = (Path(os.environ["RMX_SANDBOX_REAL_HOME"]) / ".claude" / "projects" / slug
+                / "memory")
+    home = tmp_path / "home"
+    home.mkdir()
+    if real_mem.is_dir():
+        shutil.copytree(real_mem, home / ".claude" / "projects" / slug / "memory")
+    env = dict(os.environ, HOME=str(home))
+    assert Path(env["HOME"]).resolve() != Path(os.environ["RMX_SANDBOX_REAL_HOME"]).resolve()
     r = subprocess.run(["./scripts/lint-gmd.sh"], cwd=str(root),
                        capture_output=True, text=True, env=env)
     errors = [l for l in (r.stdout + r.stderr).splitlines() if ": error" in l]

@@ -87,6 +87,7 @@ def test_connect_log_writes_one_line_for_an_allowed_socket(tmp_path, short_dir):
     assert target == path and pid.isdigit(), lines
 
 
+@pytest.mark.sandbox_probe
 def test_a_refused_dial_is_logged_and_exits_child_exit(tmp_path):
     _require_sandbox()
     log = tmp_path / "connect.log"
@@ -132,6 +133,7 @@ def test_connect_log_ignores_tcp(tmp_path):
 # ---- (b) the preload --------------------------------------------------------------------
 
 
+@pytest.mark.sandbox_probe
 def test_preload_runs_after_the_hook_and_cannot_bypass_it(tmp_path):
     _require_sandbox()
     marker = tmp_path / "preloaded"
@@ -143,6 +145,7 @@ def test_preload_runs_after_the_hook_and_cannot_bypass_it(tmp_path):
     assert "CONNECTED" not in r.stdout
 
 
+@pytest.mark.sandbox_probe
 def test_a_preload_that_dials_a_denied_socket_is_refused(tmp_path):
     """The preload runs AFTER `install_from_env()`: its own dial is refused like the child's."""
     _require_sandbox()

@@ -15,12 +15,17 @@ refuses it. The model code itself is real.
 """
 from __future__ import annotations
 
+import os
 import socket
 from pathlib import Path
 
 import pytest
 
-HF_HUB = Path.home() / ".cache" / "huggingface" / "hub"
+# The cache the loaders actually read: `huggingface_hub` resolves `$HF_HOME/hub`. NOT
+# `Path.home()`: task 23.0's sandbox redirects `HOME`, and these 12 tests (the offline-load
+# guards) silently skipped as "not cached" (ch-bsd r1 b2, 2026-10-15). The sandbox exports the
+# real, read-only cache as `HF_HOME` (R1); a KeyError here means no sandbox ran.
+HF_HUB = Path(os.environ["HF_HOME"]) / "hub"
 
 
 @pytest.fixture

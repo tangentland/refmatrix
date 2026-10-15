@@ -94,6 +94,7 @@ def _assert_refused(result, touches: list[str], expect: dict[str, str]) -> None:
 # ---- AC-2: the three named probes ------------------------------------------------------
 
 
+@pytest.mark.sandbox_probe
 def test_inner_probes_on_live_paths_fail_with_sandbox_violation(pytester):
     """AC-2: connect to the real `~/.refmatrix/rmxd.sock`, open the real
     `~/.refmatrix/query.log` for append, connect to `::1:7777` -- each FAILS with
@@ -137,6 +138,7 @@ def test_connect_ipv6_hub_port():
 # ---- R3: the rest of the deny set --------------------------------------------------------
 
 
+@pytest.mark.sandbox_probe
 def test_inner_probes_on_the_rest_of_the_deny_set_fail(pytester):
     """R3: a READ of the real `facts.log`, any path under this repo's own `.refmatrix/`
     (whether or not it exists), a connect to 127.0.0.1:7777 and localhost:7777, and an
@@ -200,6 +202,7 @@ def _registered_daemon_roots() -> list[Path]:
     return out
 
 
+@pytest.mark.sandbox_probe
 def test_inner_probes_on_registered_store_roots_fail(pytester):
     """R3: every root in the real registered daemon list is denied, including the stores the
     record-only guard never knew about. A host with no registered daemon (a tier-2 VM) has
@@ -249,6 +252,7 @@ def _conftest_report_hook(config) -> _ConftestReportHook:
     raise AssertionError(f"{want} is not a registered plugin of this session")
 
 
+@pytest.mark.sandbox_probe
 def test_a_swallowed_violation_still_fails_its_test(pytester, pytestconfig):
     """d9bo #5: every violation is appended to a per-test record AND raised; the conftest's
     `pytest_runtest_makereport` fails any test whose record is non-empty, so code under test

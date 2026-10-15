@@ -21,6 +21,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 _REPO = Path(__file__).resolve().parents[1]
 
 
@@ -49,6 +51,7 @@ def test_children_get_the_sandbox_site_on_pythonpath():
     assert (site / "sitecustomize.py").is_file()
 
 
+@pytest.mark.sandbox_probe
 def test_python_child_connecting_to_the_real_hub_socket_is_refused():
     """AC-3: `<venv>/bin/python -c` connecting to the real `~/.refmatrix/hub.sock` exits
     nonzero with SandboxViolation on stderr -- the refusal happens IN the child."""
@@ -68,6 +71,7 @@ def test_python_child_connecting_to_the_real_hub_socket_is_refused():
     assert "SandboxViolation" in r.stderr, r.stderr[-2000:]
 
 
+@pytest.mark.sandbox_probe
 def test_rmx_child_on_the_repos_live_store_is_refused(tmp_path):
     """AC-3: `rmx` with REFMATRIX_ROOT at a denied store exits nonzero with SandboxViolation on
     stderr. d9bo #4 (2026-10-15): the store is a DECOY the test builds with `Store.init()` --
