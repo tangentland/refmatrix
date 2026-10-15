@@ -14,12 +14,17 @@ metadata:
 
 > Plan: [plan-18-duckdb-store-maintenance](../plan-18-duckdb-store-maintenance.md)
 > Status: Pending (spec written 2026-10-15; revised the same day for the 18.1 verdict, see
-> [[#rev-18-1-verdict]]; not yet reviewed)
+> [[#rev-18-1-verdict]]; revision round 2 the same day for ch-bsd plan-18 r1, see
+> [[#rev-round-2]]; re-review pending)
 > Wave: 4 ([[plan-review-2026-10-14#t10-waves]]: "plan-18 as a 17.2 step").
 > Depends on: 17.2 (the `maintenance_steps` registry, `maintain.json`, the step obligations of
 > 17.2 R2); 17.1 R11 / R12 (the single-flight reply and `runs.jsonl` line shapes it copies);
-> 23.0 (test sandbox); 23.2 (`recorded_daemon`, the per-hold statement counts); 18.1 (DONE: its
-> Table B verdict made `growth` the band mode, d9bg, and its `file_bytes` are the baselines).
+> 23.0 (test sandbox); 23.2 (`recorded_daemon`, the per-hold statement counts); 23.5
+> (`Daemon._inflight`, the ONE `lock hold:` alarm in `_FairLock`'s release, `pin_to` and the
+> snapshot's fragment flush; its [[task-23.5-read-path-and-holder-bounds#cross-plan-18]] list is
+> carried into R8 and R11); 23.1 R1.6 (`_FairLock.held_by_current_thread`); 18.1 (DONE: its
+> Table B verdict made `growth` the band mode, d9bg, and its `rewrite_bytes` are the baselines,
+> d9bq).
 > Not on 23.1: the step is store-wide and partition-free, so it takes `_store_lock` directly
 > (through the shared helper, [[#r11-hold-helper]]) and does not go through
 > `bind(partition_name)` (R2).
@@ -38,6 +43,9 @@ rel: related-to -> [[task-23.1-queue-and-drain#r1]]
 rel: related-to -> [[project_bus_retention_global_queues]]
 rel: depends-on -> [[feedback_causal_story_before_evidence]]
 rel: derives-from -> [[bsd-plan18-task18-1-measurement-r1-8a93ab1]]
+rel: derives-from -> [[bsd-plan18-r1-spec-review-b84fd8d]]
+rel: depends-on -> [[task-23.5-read-path-and-holder-bounds#cross-plan-18]]
+rel: depends-on -> [[task-23.1-queue-and-drain#r1-6-proposed]]
 
 ## Why {#why}
 
@@ -49,14 +57,17 @@ does three things:
 - **It measures free space nightly.** Nothing reports it today, and `store_bytes` counts a
   bloated writer twice (18.1 F5).
 - **It turns that into a hot hub row** when 18.1's bands say a reclaim is due.
-- **It times every CHECKPOINT that holds `_store_lock`,** its own and the snapshot tick's. That
-  gives the long holds a number.
+- **It times every catalog-maintenance hold the daemon runs:** its own, the snapshot tick's and
+  `_op_checkpoint`'s at 18.2, and the rest of 18.3 R8's port list after 18.3. That gives the
+  long holds a number. The CHECKPOINTs that stay off the helper are named, each with its reason,
+  in [[task-18.3-offline-reclaim#facts]] I1 (ch-bsd r1 S-1).
 
 Live evidence for that last point, stated as observed, with its cause NOT measured
 (`feedback_causal_story_before_evidence`):
 
 - On 2026-10-15 rmxd.log shows `facts.log compacted 294090489 -> 264498314 bytes` at 00:11:15.
-  That compaction runs `dump_catalog_to_log()` under `_store_lock` (`daemon.py:2346-2354`).
+  That compaction runs `dump_catalog_to_log()` under `_store_lock` (`daemon.py:2380-2389` at
+  `23ad703`).
 - Then rmxd.log shows nothing until `pool drain disp: timed out after 10s, 3 of 20 workers still
   running (in flight: stats, stats, stats)` at 00:13:16.
 - hub.log shows `graceful stop … 'stop_op': 'skipped: not answering ping (SIGTERM sent now)'`
@@ -74,29 +85,34 @@ Two decisions of 2026-10-15 shape the rest:
 - **d9bg / d9bq: band on growth against the live size.** 18.1 found every store B-disagree: `f`
   under-reads `r` by 0.115 to 0.657 on 7 stores and over-reads on thiquet (f 0.550, r 0.272);
   no cause is claimed (d9bq). The band is therefore growth, and its baseline is each store's
-  18.1 `rewrite_bytes`, its LIVE size (R5). `file_bytes ≥ 2 ×` that baseline is exactly
-  Table A's A2 edge, `r ≥ 0.50`, so the four stores 18.1 found due flag on the first night.
-  Growth needs only a `stat`, so the band is known every night without a hold.
+  18.1 `rewrite_bytes`, its LIVE size (R5). The band is A2 when `file_bytes ≥ 2 ×` that
+  baseline AND `file_bytes − baseline ≥ 64 MiB` (Table A's floor; d9bw a). At the instant the
+  baseline is measured that is Table A's A2 edge (`r ≥ 0.50` with `reclaimable ≥ 64 MiB`). It
+  stays close to it only because an A0 rehearsal re-seeds the baseline (R5), so a store that
+  grows legitimately does not keep a false hot row. Growth needs only a `stat`, so the band is
+  known every night without a hold.
 
 The step's three CHECKPOINT-holding siblings (the snapshot tick, `_op_checkpoint`, and 18.3's
 reclaim) share one helper instead of four hand-spelled holds (R11; the user's rule, 2026-10-15:
 converge repeated shapes into one function). {#why-body}
 
-## Facts at HEAD `55f043d` (`src/` unchanged through `0611d2f`) {#facts}
+## Facts at HEAD `23ad703` (`src/` unchanged through `7c8d6c5`) {#facts}
 
-The catalog facts F1-F7 are in [[task-18.1-catalog-measurement#facts]]. The lock and liveness
-facts this step depends on:
+Re-cited in revision round 2 (ch-bsd r1 M-1): the first draft cited `55f043d`, and `daemon.py`
+changed after it (bug-115/116, `607d759`, `1c86d9c`). `git diff 23ad703 7c8d6c5 -- src` is
+empty. The catalog facts F1-F7 are in [[task-18.1-catalog-measurement#facts]]. The lock and
+liveness facts this step depends on:
 
-- **L1 `_FairLock`** (`daemon.py:242`) is strict FIFO and supports
-  `acquire(blocking=True, timeout=None) -> bool` (`:268`); a waiter that times out withdraws from
+- **L1 `_FairLock`** (`daemon.py:247`) is strict FIFO and supports
+  `acquire(blocking=True, timeout=None) -> bool` (`:273`); a waiter that times out withdraws from
   the queue. It is not re-entrant.
 - **L2 How a long hold becomes a restart** (read from code; the 00:11-00:13 incident's cause is
   not measured):
-  - `stats` is in `CLI_OPS` (`daemon.py:6264`) and its handler takes `_store_lock`
-    (`_op_stats`, `:3731-3732`). The hub's alert tick calls it for every store
-    (`hub.py:630-659`).
+  - `stats` is in `CLI_OPS` (`daemon.py:6361`) and its handler takes `_store_lock`
+    (`_op_stats`, `:3816-3817`). The hub's queue gather calls it for every store
+    (`_gather_queues`, `hub.py:612`; the call `:624`).
   - The heartbeat file is touched only when a no-op submitted to the 4-worker cli pool COMPLETES
-    (`_start_heartbeat`, `:1305-1339`). So when every cli worker is queued on `_store_lock`, the
+    (`_start_heartbeat`, `:1323-1360`). So when every cli worker is queued on `_store_lock`, the
     heartbeat stops.
   - The hub restarts a daemon whose ping misses `RMX_HUB_WATCH_GRACE_MISSES` (3) ticks of
     `RMX_HUB_WATCH_INTERVAL` (15 s) with a heartbeat older than `HEARTBEAT_STALE_S` (60 s)
@@ -107,17 +123,17 @@ facts this step depends on:
 - **L3 The snapshot's hold** (18.1 F1) is CHECKPOINT + child `cp` + `os.replace`, inside one
   `_store_lock` hold, after every write burst. Nothing times it. The `cp` of this store's 835 MB
   snapshot takes 0.16-0.20 s warm (18.1 F7). The CHECKPOINT's share is unmeasured.
-- **L4 What NOT to call.** `_op_checkpoint` (`daemon.py:3871`) rebuilds
+- **L4 What NOT to call.** `_op_checkpoint` (`daemon.py:3956`) rebuilds
   `idx_entity_links_lk_concept` (776,359 rows here) inside its hold. `Store.vacuum`
-  (`store.py:7260`) is row deletion, not space reclamation (18.1 F3).
-- **L5 The facts.log compaction** is size-gated at 256 MiB (`_factslog_threshold`, `:2267`).
-  It has a 10 % minimum-reclaim floor (`_FACTSLOG_MIN_RECLAIM`, `:2302`) and runs on its own 30-min
-  thread (`_start_factslog_compact_tick`, `:2380`). At ~00:20 this store's `facts.log` was
+  (`store.py:7259`) is row deletion, not space reclamation (18.1 F3).
+- **L5 The facts.log compaction** is size-gated at 256 MiB (`_factslog_threshold`, `:2301`).
+  It has a 10 % minimum-reclaim floor (`_FACTSLOG_MIN_RECLAIM`, `:2336`) and runs on its own 30-min
+  thread (`_start_factslog_compact_tick`, `:2428`). At ~00:20 this store's `facts.log` was
   283,937,960 bytes, above the 268,435,456 threshold again. The 00:11 run reclaimed 10.06 %, so
   no floor was set (18.1 F4). That compaction is not this plan's; it is a lock holder this step
   must not stack behind (R2 c).
 - **L6 Alerts already have a home.** The hub's queue row carries only actionable health keys
-  (`hub.py:648-659`). `_queue_row_is_hot` (`:1231`) and `_hot_signature` (`:1211`) decide when a
+  (built in `_gather_queues`, `hub.py:612-662`). `_queue_row_is_hot` (`:1231`) and `_hot_signature` (`:1211`) decide when a
   hot row is news (news on arrival or on a material change, with a rare re-assert; bug-048). 17.2
   R5 alerts only on consecutive `failed` / `refused` outcomes (plus `orphan_cap` and `stuck`), so
   a step's informational signal belongs in health, not in 17.2.
@@ -167,8 +183,9 @@ facts this step depends on:
      The CHECKPOINT's own seconds are `checkpoint_s` (the helper's `checkpoint()` times it).
    - (f) **Lock-free after.** `stat` the slot and `.wal` again: `file_bytes_after`,
      `wal_bytes_after`. Then compute `f = free_blocks / total_blocks` and the band (R5), write
-     `<root>/maintain/catalog_state.json` (atomic tmp + rename), append the ledger line (R6),
-     and log one `rmxd.log` line with `hold_s`, `wait_s`, `checkpoint_s`, `f` and the band.
+     `<root>/maintain/catalog_state.json` through the ONE state writer
+     `catalog_maint.update_state` ([[#r13-state]]), append the ledger line (R6), and log one
+     `rmxd.log` line with `hold_s`, `wait_s`, `checkpoint_s`, `f` and the band.
    - **Why not `bind`.** 23.1's `bind(partition_name)` binds a partition inside the hold for
      partition-scoped writes ([[task-23.1-queue-and-drain#r1]]). A CHECKPOINT is store-wide and
      binds nothing. So the step takes `_store_lock` through the helper, as `_snapshot_catalog`
@@ -184,8 +201,8 @@ facts this step depends on:
    | band | `hold_s` of one run | action |
    |---|---|---|
    | D0 | `≤ RMX_CATALOG_HOLD_ALARM_S` (2) | `ok` |
-   | D1 | `2 < hold_s ≤ RMX_CATALOG_HOLD_MAX_S` (10) | `ok` plus `hold_alarm` in the report and a `rmxd.log` warning |
-   | D2 | `hold_s > 10` | `ok` plus `hold_over`. `catalog_state.json` gets `checkpoint_disabled: {since, hold_s, run_id}`. Every later run with `invoked_by="hub"` skips the CHECKPOINT and reads only the PRAGMA (`checkpoint: "disabled_hold_over"`). Health carries `catalog_hold_over: true`, which makes the hub row hot (R7). A hand run (`cli` / `mcp`) with `checkpoint=True` whose `hold_s ≤ 10` clears the flag. |
+   | D1 | `2 < hold_s ≤ RMX_CATALOG_HOLD_MAX_S` (10) | `ok` plus `hold_alarm` in the report; the `rmxd.log` warning is 23.5 R4's ONE `lock hold:` line, fired for this label at 2 s (R11 "The alarm") |
+   | D2 | `hold_s > 10` | `ok` plus `hold_over`. `catalog_state.json` gets `checkpoint_disabled: {since, hold_s, run_id}` (through `update_state`, R13). Every later run with `invoked_by="hub"` skips the CHECKPOINT and reads only the PRAGMA (`checkpoint: "disabled_hold_over"`). Health carries `catalog_hold_over: true`, which makes the hub row hot (R7). A hand run (`cli` / `mcp`) with `checkpoint=True` whose `hold_s ≤ 10` clears the flag. |
 
    - **Why these numbers** (from L2, not from data): 2 s is the hub's ping timeout, so a shorter
      hold cannot make a ping miss. 10 s is a sixth of the 60 s heartbeat staleness that, with the
@@ -201,13 +218,19 @@ facts this step depends on:
    selects how the band is read. Its default is `growth`, because 18.1's fleet row is
    B-disagree on all 8 stores. {#r5-band}
    - `growth` (default): `catalog_reclaim_due` and band `A2` when `file_bytes ≥ 2 ×
-     baseline_file_bytes`, else `A0`. With a baseline equal to the live size, that is
-     `r ≥ 0.50`, Table A's A2 edge. It is computed from R2 (a)'s `stat` alone, so it is
-     current on every run, including a `skipped:no_reason` one. With no baseline the band is
-     `unknown`.
+     baseline_file_bytes` AND `file_bytes − baseline_file_bytes ≥ RMX_CATALOG_RECLAIM_FLOOR_BYTES`
+     (64 MiB, Table A's A0 floor; d9bw a), else `A0`. At the instant the baseline is measured
+     that is Table A's A2 edge (`r ≥ 0.50` and `reclaimable ≥ 64 MiB`). It is NOT that edge
+     afterwards: live data can grow, and only the re-seed below keeps the two close
+     (ch-bsd r1 B-3 corrected d9bq's "exactly"). It is computed from R2 (a)'s `stat` alone, so
+     it is current on every run, including a `skipped:no_reason` one. With no baseline the band
+     is `unknown`.
+     - Without the floor, cliquet (18.1: file 74,723,328, rewrite 31,207,424, reclaimable
+       43.5 MB, Table A A0) flagged A2 on night one, and every night after, with a rehearsal
+       that a hand confirm would refuse `refused:band_a0`. The floor makes it A0 (AC-16).
    - **The baseline is the live size, a measured `rewrite_bytes`.** It lives in
      `<root>/maintain/catalog_state.json` as `baseline_file_bytes`, `baseline_at` and
-     `baseline_source`, and it is set in exactly three ways:
+     `baseline_source`, and it is set in exactly four ways:
      - **From 18.1** (the rollout, R10): a hand run with `baseline_from=<path>` reads that 18.1
        report (the jsonl of the run the plan's verdict cites), takes the line whose `root`
        equals this store's root, and writes that line's `rewrite_bytes` (the median of its
@@ -222,6 +245,12 @@ facts this step depends on:
        Band `unknown` is 18.3's reason to run that rehearsal.
      - **A reclaim** resets it to the new file's `rewrite_bytes`
        (`baseline_source: "reclaim:<run_id>"`; [[task-18.3-offline-reclaim#r7-after]]).
+     - **An A0 rehearsal re-seeds it** (d9bw a). A rehearsal whose Table A band is A0 writes its
+       median `rewrite_bytes` as the baseline (`baseline_source: "rehearsal:<run_id>"`), the
+       same kind of number the rehearsal seed above already writes: a measured live size.
+       So a store that grew legitimately from 177 to 354 MiB of live data (r ≈ 0) is A2 for
+       at most one night: that night's rehearsal measures it A0 and re-seeds, and the next night
+       is A0 with no rehearsal ([[task-18.3-offline-reclaim#ac-11]] (f)).
 
      Nothing else moves it. A `file_bytes` is never used as a baseline: it is the bloated size,
      and growth against it would flag refmatrix only at r ≈ 0.89 and global at r ≈ 0.93
@@ -251,18 +280,29 @@ facts this step depends on:
      `.wal`. There is no DuckDB call and no `_store_lock`. 18.3 adds `backup_bytes`.
    - `catalog_wal_large` is computed live from that `stat` (`wal_bytes > RMX_CATALOG_WAL_MAX_BYTES`),
      so a growing WAL shows without waiting for the night.
-   - The hub's row builder (`hub.py:648-659`) copies `catalog_reclaim_due`, `catalog_wal_large` and
+   - The hub's row builder (`_gather_queues`, `hub.py:612-662`) copies `catalog_reclaim_due`, `catalog_wal_large` and
      `catalog_hold_over` into the row only when true. `_queue_row_is_hot` (`:1231`) treats each as
      hot, and `_hot_signature` (`:1211`) lists each as a reason. Each therefore alerts once on
      arrival and re-asserts at the existing cadence (bug-048), with no new alert mechanism.
 8. **R8 Measure the CHECKPOINT that already runs.** `_snapshot_catalog` (`daemon.py:2669` at
    `23ad703`; its hold is `:2700-2721`, its CHECKPOINT `:2702`) is ported onto the helper
    (R11) with the label `snapshot` and `snapshot=True`. The helper then times its hold and its
-   CHECKPOINT, keeps both in the per-label ring covering the last 24 h (read lock-free by R7),
-   and logs one `rmxd.log` line when the hold exceeds D1's 2 s edge. The snapshot's behaviour
-   does not change: the same statements in the same order, the read-only link swing and the
-   mirror refresh after the release, and the same error returns. This is the baseline the
-   nightly hold is compared against, and the only number for L3. {#r8-snapshot-hold}
+   CHECKPOINT and keeps both in the per-label ring covering the last 24 h (read lock-free by
+   R7). A hold over D1's 2 s edge is logged by 23.5 R4's one `lock hold:` line (R11 "The
+   alarm"), not by a line of the helper's own. The snapshot's behaviour does not change, and
+   "behaviour" includes 23.5's additions to it
+   ([[task-23.5-read-path-and-holder-bounds#cross-plan-18]] items 3 and 4):
+   - inside the `_store_lock` body, `if store.has_dirty_fragments(): store.flush_fragments()`
+     BEFORE the CHECKPOINT (a flush error returns `{"error": "flush"}` with one log line);
+   - the same statements in the same order and the same error returns;
+   - with `pin_to`, the live log's size `L0` read inside the `_store_lock` body after the copy
+     and the `os.replace`, and the result's `log_size` and `pinned`;
+   - the read-only link swing, the mirror refresh and the `pin_to` link AFTER `_store_lock` is
+     released but BEFORE `_snapshot_lock` is released, as at HEAD (`daemon.py:2692-2738`). They
+     are the helper's `after_locked` callbacks (R11), never its `after` ones.
+
+   This is the baseline the nightly hold is compared against, and the only number for L3.
+   {#r8-snapshot-hold}
 9. **R9 Registration on 17.2** ([[task-17.2-hub-nightly-tick#r2-registry]],
    [[task-17.2-hub-nightly-tick#r7-unarmed]]). {#r9-register}
    - `MaintenanceStep(name="catalog_maintain", op="catalog_maintain", args=lambda root,
@@ -308,42 +348,84 @@ facts this step depends on:
     file operation, each spelled out by hand ([[task-18.3-offline-reclaim#facts]] I1). This
     step would add a seventh. Instead, 18.2 builds the helper and puts three of them on it, and
     18.3 extends it and moves the rest. {#r11-hold-helper}
-    - **Where.** A new module `src/refmatrix/catalog_maint.py` holds `CatalogHold` and the SQL
-      routines. `Daemon._catalog_hold(label: str, body: Callable[[CatalogHold], dict], *,
-      snapshot: bool = False, lock_wait_s: float | None = None, deadline_s: float | None =
-      None, after: Sequence[Callable[[dict], None]] = ()) -> dict` is the only entry point.
+    - **Where.** A new module `src/refmatrix/catalog_maint.py` holds `CatalogHold`, the SQL
+      routines and the state writer (R13). `Daemon._catalog_hold(label: str, body:
+      Callable[[CatalogHold], dict], *, snapshot: bool = False, lock_wait_s: float | None =
+      None, after_locked: Sequence[Callable[[dict], None]] = (), after:
+      Sequence[Callable[[dict], None]] = ()) -> dict` is the only entry point. (The first draft's
+      `deadline_s` parameter is gone: 18.3 arms its deadline inside the body, after its
+      uninterruptible steps, through `CatalogHold.interruptible`; ch-bsd r1 B-2 / M-4.)
+    - **The holder is named through 23.5** ([[task-23.5-read-path-and-holder-bounds#cross-plan-18]]
+      item 1). For its whole hold the helper enters `Daemon._inflight(label)` (an `InflightEntry`
+      with `kind="tick"`), so 23.5 R4's `writer_holder` and its `WriterBusy` message name the
+      label. The helper keeps no holder registry of its own. When one thread holds two entries
+      (an op such as `catalog_maintain` called through the cli pool, plus the helper's tick
+      entry), 23.5 R4's `writer_holder` names the most recently registered (inner) one, so the
+      label and its alarm threshold below are the helper's, not the outer op's (ch-bsd 23/17
+      r10).
     - **The locks.** With `snapshot=True` it takes `_snapshot_lock` and THEN `_store_lock`,
       the snapshot tick's order (`daemon.py:2692`, `:2700`). Otherwise it takes `_store_lock`
       alone. `lock_wait_s=None` blocks, as the snapshot tick does today; a number bounds both
       waits together and returns `{"outcome": "skipped:lock_busy", "wait_s": …}` with no body
-      call. It releases in a `finally`.
+      call. A timeout on `_snapshot_lock` returns before `_store_lock` is touched, so a
+      `snapshot=True` caller never holds `_store_lock` while it waits for `_snapshot_lock`
+      (AC-17's lock-order case observes exactly this). Each lock is released in its own
+      `finally`, `_store_lock` first.
     - **The numbers.** `wait_s` and `hold_s` come from `time.monotonic()` around the acquire
-      and the hold, plus per-step seconds from `CatalogHold.mark(name)`. They are pushed to a
-      per-label ring covering 24 h, behind its own `threading.Lock` and read lock-free by R7.
-      One `rmxd.log` line is written for any hold over D1's 2 s edge, whatever the label.
-    - **The deadline.** `deadline_s` arms a timer that calls `interrupt()` on the writer
-      connection if the body has not called `h.end_interruptible()` by then. 18.2 passes none;
-      18.3 uses it.
-    - **What `CatalogHold` offers at 18.2:** `con` (the writer connection), `checkpoint()`
+      and the `_store_lock` hold, plus per-step seconds from `CatalogHold.mark(name)`. They are
+      pushed to a per-label ring covering 24 h, behind its own `threading.Lock` and read
+      lock-free by R7. The ring is a measurement ledger, not an alarm.
+    - **The alarm** ([[task-23.5-read-path-and-holder-bounds#cross-plan-18]] item 2). The helper
+      writes no `rmxd.log` line of its own for a long hold. 23.5 R4's `lock hold: <label> <s>s`
+      line, fired in `_FairLock`'s release, is the one alarm. Plan-18's 2 s edge (D1) is a
+      per-label threshold on that alarm: 18.2 registers `snapshot`, `checkpoint_op` and
+      `catalog_maintain` (18.3 adds its labels) at `RMX_CATALOG_HOLD_ALARM_S` in the
+      label → seconds map that 23.5's release path reads. That is not a second line.
+    - **ONE statement path.** Every statement `CatalogHold` runs goes through
+      `CatalogHold._exec(sql, params=())`. 18.3 adds the deadline check to that one method, so
+      no statement can skip it (B-2). The module functions that the rehearsal child also runs
+      (18.3's `rewrite_into`, `gate`) take an executor, not a raw connection: `h._exec` in the
+      hold, a plain executor in the child.
+    - **What `CatalogHold` offers at 18.2:** `store` (the bound writer `Store`), `checkpoint()`
       (timed into `checkpoint_s`), `database_size()` (the PRAGMA row), `copy_out(src, dst)`
       (`_copy_out_of_process`), `replace(src, dst)` (`os.replace` plus an `fsync` of the parent
-      directory), `snapshot()` (the snapshot tick's locked body: CHECKPOINT, child copy to
-      `.tmp`, replace) and `mark(name)`. 18.3 adds `rewrite_into`, `gate`, `close_writer`,
-      `swap` and `reopen_writer`.
-    - **`after` callbacks** run after the release, in order, with the body's result. They are
-      for the work that must not hold the lock: the read-only link swing, the mirror refresh,
-      `_request_snapshot()`, state files and ledger lines. An exception in one is logged and
-      counted in the result (`after_errors`), and the rest still run.
+      directory), `snapshot(pin_to=None)` (the snapshot tick's locked body as R8 states it:
+      dirty-fragment flush, CHECKPOINT, child copy to `.tmp`, replace, `L0`), and `mark(name)`.
+      18.3 adds `interruptible`, `rewrite_into`, `gate`, `close_writer`, `swap`,
+      `reopen_writer` and `drop_sentinel`.
+    - **Two callback phases** (ch-bsd r1 S-2). Each runs in order with the body's result. An
+      exception in one is logged and counted in the result (`after_errors`), and the rest still
+      run.
+      - `after_locked` (only with `snapshot=True`): after `_store_lock` is released and BEFORE
+        `_snapshot_lock` is released. This is where HEAD runs the read-only link swing and the
+        mirror refresh (`daemon.py:2692-2738`), and where 23.5's `pin_to` link must land.
+      - `after`: after both locks are released. For `_request_snapshot()`, state files, ledger
+        lines and child checks.
     - **The callers at 18.2:**
-      - `_snapshot_catalog`: label `snapshot`, `snapshot=True`, body `h.snapshot()`, after =
-        the link swing and the mirror refresh. Its debounce and its return dict are unchanged
-        (R8).
+      - `_snapshot_catalog`: label `snapshot`, `snapshot=True`, body `h.snapshot(pin_to)`,
+        `after_locked` = the link swing, the mirror refresh and the `pin_to` link. Its debounce
+        and its return dict are unchanged (R8).
       - `_op_checkpoint`: label `checkpoint_op`, body = its DROP/CREATE INDEX plus
-        `h.checkpoint()`, after = `_request_snapshot()`. Behaviour unchanged; it now has a
+        `h.checkpoint()`, `after` = `_request_snapshot()`. Behaviour unchanged; it now has a
         measured hold.
       - `catalog_maintain`: label `catalog_maintain` (R2).
-    - **Not here:** the boot sites and `_bootstrap_rotation_if_needed` (18.3 R8 moves them,
-      with the swap half); `_op_replica_merge` (fenced, d9ae; bug-113 open; the helix plan's).
+    - **Not here:** the boot sites, `_bootstrap_rotation_if_needed`, the two entities-rebuild
+      holds and 23.5's compaction hold 2 (18.3 R8 moves them, with the swap half);
+      `_op_replica_merge` (fenced, d9ae; 18.3 R8 names its exemption and its reopen).
+    - **The bypass rule** (ch-bsd r1 S-1; AC-17). An AST walk over `daemon.py` AND
+      `catalog_maint.py`:
+      - in `catalog_maint.py`, `_store_lock` and `_snapshot_lock` are referenced nowhere, and
+        `.execute(` appears only in the executors (`CatalogHold._exec` and the child's);
+      - in `daemon.py`, `_snapshot_lock` is referenced only inside `_catalog_hold` (and its
+        `__init__` declaration), and `_store_lock` is referenced inside no function on the
+        catalog list (`_snapshot_catalog`, `_op_checkpoint`, `_op_catalog_maintain`, and 18.3's
+        additions to it);
+      - the `"CHECKPOINT"` literal appears only in `CatalogHold.checkpoint` / `snapshot` /
+        `rewrite_into` (and 18.3's `drop_sentinel` and child entry point), plus the named
+        exemptions of [[task-18.3-offline-reclaim#facts]] I1, each matched by its function name;
+      - from each op on the catalog list, exactly ONE `_catalog_hold` call is reachable,
+        walking the calls into `catalog_maint.py` (ch-bsd r1 M-7: the routine with the
+        `checkpoint` seam, not the op, holds the call).
 12. **R12 The reason gate** (d9bc: "we should have a reason to run"). The hold runs only for a
     reason, and every run says which reason it had, or why it had none. {#r12-reason}
 
@@ -363,6 +445,20 @@ facts this step depends on:
     - The D2 downgrade (R4) still applies: a `wal_unfolded` hub run on a store with
       `checkpoint_disabled` reads only the PRAGMA.
 
+13. **R13 ONE locked writer for `catalog_state.json`** (ch-bsd r1 S-5). The file holds safety
+    latches (`checkpoint_disabled`, and 18.3's `reclaim_disabled`, `reclaim_hold_over`,
+    `rewrite_too_slow`, `reclaim_inflight`) as well as the band and the baseline, and two ops
+    (this step and 18.3's reclaim, hand and hub runs, and 18.3's `after` callbacks outside any
+    hold) write it. {#r13-state}
+    - `catalog_maint.update_state(root, mutate: Callable[[dict], None]) -> dict` is the only
+      writer. Under a process-wide `threading.Lock` it reads the file, calls `mutate` on the
+      dict, writes a tmp file with a unique name (`catalog_state.json.<pid>.<thread>.<n>.tmp`),
+      `fsync`s it, renames it over the file, and `fsync`s the directory. It returns the new
+      dict. A read-only `catalog_maint.read_state(root)` needs no lock (the rename is atomic).
+    - Every write of the file in 18.2 and 18.3 is an `update_state` call that sets or clears
+      only its own keys. An AST check (AC-17) finds no other `open(…, "w")`, `write_text` or
+      `os.replace` onto a `catalog_state.json` path.
+
 ## Acceptance criteria {#acceptance}
 
 All tests run in the 23.0 sandbox, on real tmp daemons with short roots, with 23.2's
@@ -375,9 +471,12 @@ All tests run in the 23.0 sandbox, on real tmp daemons with short roots, with 23
    - exactly ONE recorded hold for the run, whose duration is within 50 ms of the reported
      `hold_s`.
 
+   A second variant (ch-bsd r1 M-5) runs the same hand run while a competitor thread holds
+   `_store_lock` for 0.5 s first (released on a timer): the reported `wait_s ≥ 0.45`, and the
+   recorded hold is still within 50 ms of `hold_s`.
+
    Mutations: CHECKPOINT and PRAGMA in two holds FAILS (two holds); `hold_s` measured around the
-   whole op, wait included, FAILS (more than 50 ms off with a competitor holding the lock 0.5 s
-   first). {#ac-1}
+   whole op, wait included, FAILS the competitor variant (about 0.5 s off). {#ac-1}
 2. **AC-2 (only the two statements).** The run is marked `max_writes_per_hold(statements=2)`.
    Mutations: calling `_op_checkpoint`'s body (DROP/CREATE INDEX + CHECKPOINT) FAILS (4
    statements); adding `Store.vacuum` FAILS. {#ac-2}
@@ -433,15 +532,26 @@ All tests run in the 23.0 sandbox, on real tmp daemons with short roots, with 23
     publish nothing. Clearing the state clears the key. In `free_ratio` mode the AC-1 fixture of
     18.1 (90 % deleted) gives A2 on `f`. Mutation: the key missing from `_hot_signature` FAILS
     (no news on arrival for an already-hot row). {#ac-11}
-12. **AC-12 (the snapshot's hold is measured).** The test wraps `_copy_out_of_process` in a seam
-    that sleeps 0.2 s (it is not the function under test) and triggers a write op. Health then
-    reports `snapshot_hold_s_last ≥ 0.2` and `snapshot_checkpoint_s_last ≤
-    snapshot_hold_s_last`. Mutation: the hold timed around the CHECKPOINT only FAILS
-    (`< 0.2`). {#ac-12}
+12. **AC-12 (the snapshot's hold is measured, and its behaviour kept).** The test wraps
+    `_copy_out_of_process` in a seam that sleeps 0.2 s (it is not the function under test) and
+    triggers a write op. {#ac-12}
+    - Health then reports `snapshot_hold_s_last ≥ 0.2` and `snapshot_checkpoint_s_last ≤
+      snapshot_hold_s_last`.
+    - **The `after_locked` phase** (ch-bsd r1 S-2). A seam on the mem mirror's `refresh()`
+      records `_snapshot_lock.locked()` and whether the current thread holds `_store_lock`:
+      `True` and `False`. A snapshot run with `pin_to` has the `pin_to` link on disk with the
+      new snapshot's inode when `_snapshot_lock` is next acquired by another thread, and its
+      result carries `log_size` and `pinned: true`.
+    - A dirty fragment present before the tick is in the snapshot copy (23.5 R1.9's flush).
+
+    Mutations: the hold timed around the CHECKPOINT only FAILS (`< 0.2`); the link swing and
+    mirror refresh moved to `after` FAILS (`_snapshot_lock.locked()` is `False` in the seam);
+    the flush dropped from `snapshot()` FAILS (the fragment is missing from the copy).
 13. **AC-13 (pre-registered constants).** Defaults: `RMX_CATALOG_WAL_MAX_BYTES` 64 MiB,
     `RMX_CATALOG_LOCK_WAIT_S` 30, `RMX_CATALOG_HOLD_ALARM_S` 2, `RMX_CATALOG_HOLD_MAX_S` 10.
     `RMX_CATALOG_WAL_FOLD_BYTES` 16 MiB, `RMX_CATALOG_BAND_MODE` `growth` (18.1's Table B
-    fleet verdict, d9bg), and the growth factor 2. Changing one FAILS this test. {#ac-13}
+    fleet verdict, d9bg), the growth factor 2, and `RMX_CATALOG_RECLAIM_FLOOR_BYTES` 64 MiB
+    (Table A's floor, d9bw a). Changing one FAILS this test. {#ac-13}
 14. **AC-14 (pre-registered mutations, each must FAIL a named AC).** {#ac-14}
     - two holds → AC-1;
     - hold measured with the wait → AC-1;
@@ -458,9 +568,14 @@ All tests run in the 23.0 sandbox, on real tmp daemons with short roots, with 23
     - snapshot hold timed around the CHECKPOINT only → AC-12;
     - any constant changed → AC-13;
     - an unconditional hub CHECKPOINT, or a run with no `reasons` logged → AC-15;
-    - a baseline taken from `file_bytes`, or overwritten by `--baseline-from` → AC-16;
-    - a hand-spelled hold left in `_snapshot_catalog` or `_op_checkpoint`, or inverted lock
-      order → AC-17.
+    - a baseline taken from `file_bytes`, overwritten by `--baseline-from`, or the 64 MiB floor
+      dropped from the growth band → AC-16;
+    - a hand-spelled hold left in `_snapshot_catalog` or `_op_checkpoint`, a
+      `with d._store_lock:` inside `catalog_maint.py`, inverted lock order, the holder not
+      registered through `_inflight`, or a second hold-alarm line → AC-17;
+    - link swing / mirror refresh moved to `after`, or the flush dropped from `snapshot()` →
+      AC-12;
+    - `catalog_state.json` written without `update_state`'s lock → AC-18.
 15. **AC-15 (the reason gate; d9bc).** In 17.2's harness, three hub runs on three tmp stores: {#ac-15}
     - (a) a 0-byte WAL and no growth: `skipped:no_reason`, zero recorded holds, and the ledger
       and `rmxd.log` lines carry `reasons: []` and a `reason_detail` naming both numbers;
@@ -479,21 +594,49 @@ All tests run in the 23.0 sandbox, on real tmp daemons with short roots, with 23
     - A store with no baseline reports band `unknown`.
     - With the fixture's 18.1 numbers for refmatrix (file 827,338,752; rewrite 185,348,096),
       the band is A2 on the first run.
+    - With the fixture's 18.1 numbers for cliquet (file 74,723,328; rewrite 31,207,424; file
+      ≥ 2 × rewrite but file − rewrite = 43.5 MB < 64 MiB), the band is A0 (Table A's A0;
+      ch-bsd r1 B-3). The r2 line (rewrite 31,469,568) gives A0 as well.
 
     Mutations: `file_bytes` as the baseline FAILS (refmatrix is A0); an overwriting
-    `--baseline-from` FAILS.
-17. **AC-17 (one helper).** {#ac-17}
-    - An AST test over `daemon.py`: `_snapshot_catalog`, `_op_checkpoint` and
-      `_op_catalog_maintain` contain no `_store_lock` or `_snapshot_lock` reference and no
-      `"CHECKPOINT"` literal; each calls `_catalog_hold` once.
+    `--baseline-from` FAILS; the 64 MiB floor dropped FAILS (cliquet is A2).
+17. **AC-17 (one helper, and the checks that it stays one).** {#ac-17}
+    - **The AST walk** of R11 "The bypass rule", over `daemon.py` AND `catalog_maint.py`
+      (ch-bsd r1 S-1): no `_store_lock` / `_snapshot_lock` reference in `catalog_maint.py`; none
+      in the catalog-list functions of `daemon.py`; `_snapshot_lock` only in `_catalog_hold`;
+      the `"CHECKPOINT"` literal only in the named `CatalogHold` methods and the named
+      exemptions; `.execute(` in `catalog_maint.py` only in the executors; and exactly one
+      `_catalog_hold` call reachable from each catalog-list op, walking into
+      `catalog_maint.py` (ch-bsd r1 M-7).
     - Health reports a hold ring entry for each of the labels `snapshot`, `checkpoint_op` and
       `catalog_maintain` after one of each runs.
+    - **The holder is named** (23.5 item 1). While a `catalog_maintain` seam blocks inside the
+      hold, `stats(include_health=True)` reports `writer_holder.op == "catalog_maintain"`.
+    - **One alarm** (23.5 item 2). With the label threshold at 0.1 s and a 0.3 s seam, `rmxd.log`
+      gains exactly ONE line for the hold, and it is 23.5 R4's `lock hold: catalog_maintain`
+      line.
+    - **Lock order, by an observable that can fail** (ch-bsd r1 B-4). A competitor thread holds
+      ONLY `_snapshot_lock`, on an event. A test body run through
+      `d._catalog_hold("order_probe", body, snapshot=True, lock_wait_s=1)` returns
+      `skipped:lock_busy` with no body call. During that second a write op (`upsert_entity`)
+      completes in under 0.5 s, and 23.2's recorder shows no `_store_lock` acquisition by the
+      helper's thread.
     - A write burst during a `catalog_maintain` hold (the seam blocks on an event) completes
       both within 5 s of the release.
 
-    Mutations: a hand-spelled hold left in `_op_checkpoint` FAILS (AST); the helper taking
-    `_store_lock` before `_snapshot_lock` with `snapshot=True` FAILS (a deadlock, caught by the
-    5 s bound and reported as a failure, not a hang).
+    Mutations: a hand-spelled hold left in `_op_checkpoint` FAILS (AST); a `with
+    d._store_lock:` inside `catalog_maint.py` (the code moved out of `daemon.py`) FAILS (AST); a
+    raw `.execute("CHECKPOINT")` in a `Store` method called from the body FAILS (AST, the
+    literal outside the named sites); the helper taking `_store_lock` before `_snapshot_lock`
+    with `snapshot=True` FAILS the lock-order case (the write op blocks for the full second, and
+    the recorder shows the helper's thread holding `_store_lock`); no `_inflight` entry FAILS
+    (`writer_holder` is `untracked thread …`); a helper-owned hold log line FAILS (two lines).
+18. **AC-18 (one state writer; ch-bsd r1 S-5).** Two threads call `update_state` with seams that
+    interleave them (A reads, then B reads, writes `reclaim_disabled`, then A writes `band`):
+    the file afterwards holds BOTH keys. A `catalog_maintain` run and a test write of
+    `reclaim_disabled` interleaved the same way keep both. Mutation: `update_state` without its
+    lock FAILS (one key is lost); a tmp name without the thread part FAILS (the two writers
+    rename one tmp file). {#ac-18}
 
 ## Test strategy {#test-strategy}
 
@@ -508,13 +651,13 @@ All tests run in the 23.0 sandbox, on real tmp daemons with short roots, with 23
 
 | file | change |
 |---|---|
-| `src/refmatrix/catalog_maint.py` | new: `CatalogHold` and its 18.2 methods (R11) |
-| `src/refmatrix/daemon.py` | `Daemon._catalog_hold` and its hold ring (R11); `_op_catalog_maintain` + its routine (R2, `checkpoint` seam, reason gate R12), run state (R3), `catalog_state.json` with the baseline (R5), `runs.jsonl` line (R6), `_store_health` `catalog` block (R7); `_snapshot_catalog` and `_op_checkpoint` ported onto the helper (R8, R11) |
+| `src/refmatrix/catalog_maint.py` | new: `CatalogHold` and its 18.2 methods, the one executor `_exec` (R11); `update_state` / `read_state` (R13) |
+| `src/refmatrix/daemon.py` | `Daemon._catalog_hold` (with `_inflight`, `after_locked` / `after`, the per-label alarm thresholds) and its hold ring (R11); `_op_catalog_maintain` + its routine (R2, `checkpoint` seam, reason gate R12), run state (R3), `catalog_state.json` with the baseline (R5), `runs.jsonl` line (R6), `_store_health` `catalog` block (R7); `_snapshot_catalog` and `_op_checkpoint` ported onto the helper (R8, R11) |
 | `src/refmatrix/verbs.py` | `rmx_catalog_maintain`, the closed `invoked_by` set |
 | `src/refmatrix/cli.py` | `catalog` group, `rmx catalog maintain` (daemon-only) |
 | `src/refmatrix/mcp.py` | the tool, through the verb (parity test) |
 | `src/refmatrix/hub.py` | the step's registration on `maintenance_steps` (R9); the three row keys, `_queue_row_is_hot`, `_hot_signature` (R7) |
-| `tests/test_catalog_maintain.py`, `tests/test_hub_catalog_step.py`, `tests/test_catalog_hold.py` | new: AC-1..AC-17 |
+| `tests/test_catalog_maintain.py`, `tests/test_hub_catalog_step.py`, `tests/test_catalog_hold.py` | new: AC-1..AC-18 |
 | CLI tree (`scripts/gen-cli-tree.py` output) | regenerated for the new group |
 
 ## Revision 2026-10-15 (18.1 verdict) {#rev-18-1-verdict}
@@ -527,3 +670,21 @@ All tests run in the 23.0 sandbox, on real tmp daemons with short roots, with 23
 | the user's convergence rule | [[#r11-hold-helper]]: one `_catalog_hold` helper; the snapshot tick (R8) and `_op_checkpoint` ported onto it; 18.3 extends it; [[#ac-17]] |
 | 18.3's tick step | R9 names it; this step never calls the reclaim, so AC-1's one hold stands |
 | line numbers | R7, R8 and R9 cite `daemon.py` at `23ad703` |
+
+## Revision round 2 {#rev-round-2}
+
+From ch-bsd plan-18 r1 ([[bsd-plan18-r1-spec-review-b84fd8d]]) and the rulings d9bw (with
+d9bp-d9bv) in [[plan-review-2026-10-14]]; 23.5's hand-off list
+([[task-23.5-read-path-and-holder-bounds#cross-plan-18]]) carried in.
+
+| finding | change |
+|---|---|
+| B-3 (growth flags A2 where Table A says A0; a frozen baseline) / d9bw a | [[#r5-band]]: A2 needs `file − baseline ≥ 64 MiB` as well; an A0 rehearsal re-seeds the baseline (a fourth source); "exactly r ≥ 0.50" corrected in [[#why]] and R5; [[#ac-13]] pins the floor; [[#ac-16]] gains the cliquet row (A0) and the floor mutation |
+| B-4 (the lock-order mutation could not fail) | [[#r11-hold-helper]] "The locks": a `_snapshot_lock` timeout returns before `_store_lock` is touched; [[#ac-17]]'s lock-order case: a competitor holds ONLY `_snapshot_lock`, a `snapshot=True` hold returns `skipped:lock_busy`, a write op completes meanwhile, and the recorder shows no `_store_lock` acquisition by the helper |
+| B-2 / M-4 (deadline) | R11: `deadline_s` removed from `_catalog_hold`; ONE statement path `CatalogHold._exec` that 18.3 gives the per-statement deadline check; 18.3 adds `interruptible` |
+| S-1 (AST bypassable; census misses three CHECKPOINTs) | R11 "The bypass rule": the walk covers `daemon.py` AND `catalog_maint.py`, `.execute(` only in executors, the literal only at named sites and named exemptions (18.3 I1); [[#ac-17]] mutations: a lock in `catalog_maint.py`, a CHECKPOINT in a `Store` method; [[#why]] no longer claims "every CHECKPOINT that holds `_store_lock`" |
+| S-2 (23.5's obligations; `after` drops HEAD's `_snapshot_lock` ordering) | R11: `_inflight(label)` registration, no helper alarm line (a per-label threshold on 23.5 R4's one alarm), `after_locked` + `after` phases, `snapshot(pin_to)` with the fragment flush and `L0`; [[#r8-snapshot-hold]] names them as behaviour; R4 D1's warning is 23.5's line; [[#ac-12]] asserts `_snapshot_lock` held during the mirror refresh, `pin_to`, the flush; [[#ac-17]] the holder name and the one alarm; header depends on 23.5 and 23.1 R1.6 |
+| S-5 (two ops read-modify-write `catalog_state.json`) | new [[#r13-state]] `update_state` under a process-wide lock; R2 (f) and R4 D2 use it; new [[#ac-18]] |
+| M-1 (stale lines, false "src unchanged") | [[#facts]] re-cited at `23ad703` (unchanged through `7c8d6c5`); L1-L6, R7 and `#why` lines updated |
+| M-5 (AC-1's wait mutation had no competitor) | [[#ac-1]] gains the 0.5 s competitor variant |
+| M-7 ("each calls `_catalog_hold` once" vs AC-5's seam split) | [[#ac-17]]: exactly one `_catalog_hold` call reachable from each op, walking into `catalog_maint.py` |
