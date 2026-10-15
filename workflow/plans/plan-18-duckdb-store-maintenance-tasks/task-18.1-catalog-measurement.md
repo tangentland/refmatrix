@@ -5,7 +5,7 @@ title: "Task 18.1: measure every fleet catalog on a copy — free blocks, a time
 tags: [task, duckdb, catalog, measurement, maintenance, pre-registered]
 metadata:
   node_type: task
-  status: in-progress
+  status: completed
   created: 2026-10-15
   updated: 2026-10-15
 ---
@@ -13,7 +13,7 @@ metadata:
 # Task 18.1: measure the fleet's catalogs on copies {#root}
 
 > Plan: [plan-18-duckdb-store-maintenance](../plan-18-duckdb-store-maintenance.md)
-> Status: IN-PROGRESS (d9br). Script `8a93ab1`, then the ch-bsd r1/r2 remedies `886386b`,
+> Status: COMPLETED 2026-10-15 (ch-bsd r3 CLEAN `8281a7f`; branch `task-18.1-catalog-measurement`, merges with the next release). Script `8a93ab1`, then the ch-bsd r1/r2 remedies `886386b`,
 > `34ac5cd` and `8281a7f` (clone `/Volumes/littlebig/refmatrix-task-18.1`, branch
 > `task-18.1-catalog-measurement`). Fleet report: `workflow/review-output/plan18-catalog-measure-20261015-r2.md`
 > (GMD id `plan18-catalog-measure-20261015-r2`). Verdict [[plan-18-duckdb-store-maintenance#verdict-18-1]].
