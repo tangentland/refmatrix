@@ -5,7 +5,7 @@ title: "bug-115/116: liveness off the work pool, expired reads dropped, no re-se
 tags: [implementation-summary, bug-115, bug-116, daemon, liveness, heartbeat, timeout, hooks]
 metadata:
   node_type: implementation-summary
-  status: in-review
+  status: complete
   created: 2026-10-15
   updated: 2026-10-15
 ---
@@ -48,6 +48,13 @@ recovered on its own. Seven agents were running; cli.log for the hour: 945 `focu
   loop is off until plan 16's passive shim exists; `rmx learn off --global` was set live, and the
   project's `enforce-rmx-grep.sh` stands down while the marker exists).
 
+## The compaction floor {#compaction}
+
+A PRODUCTIVE facts.log compaction that still leaves the log over the 256 MiB gate now re-arms the
+floor at `new_size * 1.25`. Before, only an unproductive one did, so refmatrix (minimal log about
+265-277 MB) rewrote its whole log under `_store_lock` every 30 minutes; the 00:43 hold cost a
+Stop-hook promote its 5 s reply.
+
 ## Not fixed here {#not-fixed}
 
 The read stall itself: a writer holding `_store_lock` for tens of seconds still blocks every
@@ -58,5 +65,14 @@ asks which plan owns the non-harness holders (`_op_stats`, the compaction tick) 
 
 - RED at `c7129e6`: `tests/test_bug115_liveness_under_load.py`, 6 of 7 fail for the named reason,
   the control passes (`workflow/review-output/bug115-red.log`).
-- GREEN: 7 of 7 (`bug115-green.log`); full suite in `bug115-full.log`; mutations in
-  `bug115-mutations.log`.
+- GREEN: 18 of 18 across `test_bug115_liveness_under_load.py` and `test_factslog_compaction.py`
+  (`bug115-green3.log`). Mutations M1-M9 all killed (`bug115-mutations.log`).
+- Full suite, 4 shards, compared against `master` `c7129e6` by ERROR TEXT (not by name): 43 vs 43,
+  identical messages, 0 new. The 43 are environmental at both commits (clone-only failures and
+  tests that read the real `~/.refmatrix/learn.off`, set live 2026-10-15).
+- **A process failure, recorded:** `5a8619f` says it holds the compaction floor fix but carries
+  only the tests. The mutation restore (`git checkout -- daemon.py`) reverted to a commit made
+  before the fix was committed. The comparison above caught it (the two new tests failed with the
+  RED error); `1c86d9c` re-applies it. Feedback memory `feedback_mutation_commit_must_hold_the_fix`.
+- Also in `1c86d9c` (ch-bsd 23/17 r7): `CLI_WRITE_OPS` (`partition_add`, `partition_rename`,
+  `stop`) are exempt from the deadline drop; M9 kills it.
