@@ -7,7 +7,7 @@ watchdog respawned the daemon 44s later and took the catalog lock back.
 
 1. hub watchdog maintenance pause (`rmx hub pause`)
 2. merge_partition lock-yield batching (per-chunk lock, join classify)
-3. daemon async job API (partition_merge async=true + job_status)
+3. daemon merge op: a live merge is refused (bug-105 r4, d9ae); dry runs answer
 4. replica-first hook recall (falls back cleanly when legs are missing)
 """
 from __future__ import annotations
@@ -174,8 +174,6 @@ def _fake_daemon(store):
     d.store = store
     d._st = lambda: store  # Daemon._st narrows the Optional store
     d._store_lock = threading.Lock()
-    d._jobs = {}
-    d._jobs_lock = threading.Lock()
     d._log = lambda _msg: None
     d._request_snapshot = lambda: None
     # Restructuring ops force a log snapshot (unlogged-write-paths fix);
@@ -186,32 +184,15 @@ def _fake_daemon(store):
     return cast("Daemon", d)
 
 
-def test_async_merge_returns_job_id_then_completes(store):
-    from refmatrix.daemon import _op_partition_merge, _op_job_status
+def test_live_merge_is_refused_even_async(store):
+    """bug-105 r4 (d9ae): the daemon no longer runs a live merge, sync or async; the merge
+    redesign belongs to the helix plan. The job API it fed was removed with it (r5 #b5-1)."""
+    from refmatrix.daemon import _op_partition_merge
     _two_partitions(store, n=5)
     d = _fake_daemon(store)
-    out = _op_partition_merge(
-        d, {"src": "src-part", "dst": "dst-part", "async": True})
-    job = out.get("job")
-    assert job and out.get("async") is True
-    deadline = time.time() + 10
-    st: dict = {"state": "timeout"}
-    while time.time() < deadline:
-        st = _op_job_status(d, {"job": job})
-        if st["state"] in ("done", "error"):
-            break
-        time.sleep(0.05)
-    assert st["state"] == "done", st
-    assert st["result"]["entities_merged"] >= 5
-    # The merge is log-invisible; success MUST force a snapshot-compaction.
-    assert getattr(d, "compactions") == [{"force": True}]
-
-
-def test_job_status_unknown_and_listing(store):
-    from refmatrix.daemon import _op_job_status
-    d = _fake_daemon(store)
-    assert "error" in _op_job_status(d, {"job": "nope"})
-    assert _op_job_status(d, {}) == {"jobs": {}}
+    with pytest.raises(ValueError, match="offline"):
+        _op_partition_merge(d, {"src": "src-part", "dst": "dst-part", "async": True})
+    assert getattr(d, "compactions") == []
 
 
 def test_dry_run_never_goes_async(store):

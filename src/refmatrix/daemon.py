@@ -197,6 +197,20 @@ def read_repair_marker(root: Path) -> "dict | None":
         return {"table": "unknown"}
 
 
+def _periodic_flush(store, lock, log) -> int:
+    """The flush tick's body: under the writer lock, flush when ANY partition binding has dirty
+    fragment bits, not only the home binding (bug-105 audit #b-1: a guard that looked at the
+    home binding left another binding's bits unflushed until shutdown). Returns the number of
+    dirty fragments flushed (0 when none)."""
+    with lock:
+        if not store.has_dirty_fragments():
+            return 0
+        n = store.dirty_fragment_count()
+        store.flush_fragments()
+        log(f"periodic flush: {n} fragment(s)")
+        return n
+
+
 class _FairLock:
     """Strict-FIFO mutex with the same surface as `threading.Lock`.
 
@@ -698,11 +712,6 @@ class Daemon:
         self._store_lock = _FairLock()
         self._async_flush_pending = False
         self._async_lock = threading.Lock()
-        # Background jobs (big ops run off the RPC thread so the caller gets
-        # an id instead of a 300s socket timeout). id -> {state, phase, done,
-        # total, result, error}; states: running | done | error.
-        self._jobs: dict[str, dict] = {}
-        self._jobs_lock = threading.Lock()
         # Read-op refcount + gate. Each `_open_read_store` increments the
         # count; the dedicated read store's wrapper decrements on close
         # and notifies. `_refresh_replica_now` waits on this gate before
@@ -2062,11 +2071,7 @@ class Daemon:
                     self._log(f"learn-queue drain tick failed: {exc!r}")
                     self._fast_exit_if_invalidated(exc, "learn-queue drain")
                 try:
-                    with self._store_lock:
-                        if self.store._dirty_fragments:
-                            n = len(self.store._dirty_fragments)
-                            self.store.flush_fragments()
-                            self._log(f"periodic flush: {n} fragment(s)")
+                    _periodic_flush(self.store, self._store_lock, self._log)
                 except Exception as exc:
                     self._log(f"periodic flush failed: {exc!r}")
                     self._fast_exit_if_invalidated(exc, "periodic flush")
@@ -3883,19 +3888,6 @@ def _op_checkpoint(d: Daemon, args: dict) -> dict:
     return {"checkpointed": True, "index_rebuilt": True}
 
 
-def _op_job_status(d: Daemon, args: dict) -> dict:
-    """Status of a background job started by an async big-op (partition_merge
-    with async=true). No `job` arg lists every known job this daemon run."""
-    job_id = args.get("job")
-    with d._jobs_lock:
-        if job_id is None:
-            return {"jobs": {k: dict(v) for k, v in d._jobs.items()}}
-        j = d._jobs.get(job_id)
-        if j is None:
-            return {"error": f"unknown job {job_id!r}"}
-        return {"job": job_id, **dict(j)}
-
-
 def _op_prune_noise(d: Daemon, args: dict) -> dict:
     namespaces = tuple(args.get("namespaces") or ("keyword",))
     min_df = int(args.get("min_df", 2))
@@ -4057,75 +4049,25 @@ def _op_partition_rename(d: Daemon, args: dict) -> dict:
 
 
 def _op_partition_merge(d: Daemon, args: dict) -> dict:
-    """Merge SRC partition into DST. Drops SRC on success. See
-    `Store.merge_partition` for the full semantics — collisions remap
-    child rows to DST and prefer the longer memory_content body.
+    """Preview a merge of SRC into DST (`dry_run=True`); a LIVE merge is refused.
 
-    Driven by the memory partition consolidation (memory-<project>
-    → <project>) that closes the cross-partition wikilink resolution
-    gap. `dry_run=True` returns the same shape minus the mutation."""
+    bug-105 r4 (2026-10-14, d9ae): a merge inside the running daemon cannot be made safe in the
+    hotfix. Its partition rebind and the SRC drop run in separate holds of the FIFO writer lock,
+    so every op queued behind the merge runs bound to the partition the merge just deleted
+    (#b4-1, the bug-098 class), and a write naming SRC between merge chunks orphans its entity
+    (#s4-1). With the daemon down there is no concurrent writer, so `rmx partition merge` runs
+    OFFLINE (`Store.merge_partition`, `lock=None`). The live merge is redesigned by the helix
+    plan, which owns merge (d9ac)."""
     src = args["src"]
     dst = args["dst"]
-    dry_run = bool(args.get("dry_run"))
-
-    def _progress(job_id=None):
-        def cb(phase: str, done: int, total: int) -> None:
-            d._log(f"merge-progress {phase} {done}/{total} {src}->{dst}")
-            if job_id is not None:
-                with d._jobs_lock:
-                    j = d._jobs.get(job_id)
-                    if j is not None:
-                        j.update(phase=phase, done=done, total=total)
-        return cb
-
-    if args.get("async") and not dry_run:
-        # Background job: return an id now; the merge takes the store lock
-        # per chunk (lock-yield), so queued ops interleave while it runs.
-        import uuid
-        job_id = uuid.uuid4().hex[:12]
-        with d._jobs_lock:
-            d._jobs[job_id] = {"state": "running", "op": "partition_merge",
-                               "src": src, "dst": dst,
-                               "phase": "classify", "done": 0, "total": 0,
-                               "result": None, "error": None}
-
-        def _run() -> None:
-            try:
-                res = d._st().merge_partition(
-                    src, dst, dry_run=False,
-                    lock=d._store_lock, progress=_progress(job_id))
-                # The merge rewrites rows with direct SQL and emits NO log
-                # events (facts.log audit 2026-09-06): without this snapshot
-                # the log keeps describing the pre-merge partition layout and
-                # every log-replay consumer silently diverges. The log is the
-                # replication boundary — restructurings must be followed by a
-                # forced snapshot-compaction.
-                d._compact_factslog_if_needed(force=True)
-                with d._jobs_lock:
-                    d._jobs[job_id].update(state="done", result=res)
-                d._request_snapshot()
-                d._log(f"merge-done {src}->{dst} job={job_id}")
-            except Exception as e:
-                with d._jobs_lock:
-                    d._jobs[job_id].update(state="error", error=str(e))
-                d._log(f"merge-error {src}->{dst} job={job_id}: {e}")
-
-        threading.Thread(target=_run, name=f"rmx-merge-{job_id}",
-                         daemon=True).start()
-        return {"job": job_id, "async": True}
-
-    # Synchronous path: same lock-yield chunking, caller blocks for the
-    # result. The lock is taken per chunk INSIDE merge_partition — not here —
-    # so hooks and reads interleave with a long merge instead of timing out.
-    result = d._st().merge_partition(
-        src, dst, dry_run=dry_run,
-        lock=d._store_lock, progress=_progress())
-    if not dry_run:
-        # See the async branch: merge_partition is log-invisible, so the log
-        # must be re-snapshotted from the post-merge catalog.
-        d._compact_factslog_if_needed(force=True)
-        d._request_snapshot()
-    return result
+    if not args.get("dry_run"):
+        raise ValueError(
+            f"live partition merge is disabled (bug-105 #b4-1/#s4-1): `rmx hub pause`, "
+            f"`rmx daemon stop`, run `rmx partition merge {src} {dst}` offline, then "
+            f"`rmx hub resume`; the live "
+            f"merge is redesigned in the helix plan")
+    with d._store_lock:
+        return d._st().merge_partition(src, dst, dry_run=True)
 
 
 def _op_partition_audit(d: Daemon, args: dict) -> dict:
@@ -5375,6 +5317,28 @@ def _op_repair_entities(d: Daemon, args: dict) -> dict:
     return rep
 
 
+def _op_repair_fragments(d: Daemon, args: dict) -> dict:
+    """In-band bitmap fragment repair (`rmx repair-index --fragments`, bug-105).
+
+    Moves every fragment bit into its entity's partition, restores bits that exist only
+    in `entity_links`, and drops bits whose entity is gone, writing those to a manifest
+    under `<store>/backups/` first. `dry_run` (default True) reports and changes nothing.
+    Under the writer lock; a real repair requests a snapshot so readers see it."""
+    dry_run = bool(args.get("dry_run", True))
+    with d._store_lock:
+        rep = d.store.repair_fragments(dry_run=dry_run,
+                                       manifest_dir=d.root / "backups")
+    d._log(f"repair_fragments dry_run={dry_run} moved={rep['moved']} "
+           f"added_from_links={rep['added_from_links']} "
+           f"dropped_dead={rep['dropped_dead']} "
+           f"dropped_dead_concept={rep['dropped_dead_concept']} "
+           f"links_skipped={rep['links_skipped']} unread_dirs={rep['unread_dirs']} "
+           f"manifest={rep['manifest']}")
+    if not dry_run and rep["rows_changed"]:
+        d._request_snapshot()
+    return rep
+
+
 def _op_replica_refresh(d: Daemon, args: dict) -> dict:
     """Force an immediate snapshot of primary → replica .duckdb file."""
     result = d._refresh_replica_now()
@@ -6239,7 +6203,6 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "partition_list": _op_partition_list,
     "partition_rename": _op_partition_rename,
     "partition_merge": _op_partition_merge,
-    "job_status": _op_job_status,
     "prune_noise": _op_prune_noise,
     "set_flag": _op_set_flag,
     "forget": _op_forget,
@@ -6288,6 +6251,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "subject_leaves": _op_subject_leaves,
     "stop": _op_stop,
     "repair_entities": _op_repair_entities,
+    "repair_fragments": _op_repair_fragments,
 }
 
 # Ops dispatched to the small `cli_pool` — latency-sensitive, mostly

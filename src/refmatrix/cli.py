@@ -2916,40 +2916,6 @@ def daemon():
     when many hooks fire concurrently."""
 
 
-@daemon.command("job")
-@click.argument("job_id", required=False)
-def daemon_job(job_id: "str | None"):
-    """Status of a daemon background job (e.g. `partition merge --async`).
-    Without JOB_ID, lists every job from this daemon run."""
-    from refmatrix import daemon as daemon_mod
-    root = _root()
-    if not daemon_mod.ping(root):
-        raise click.ClickException("daemon not running")
-    resp = daemon_mod.call(
-        root, "job_status", {"job": job_id} if job_id else {}, timeout=10.0)
-    if not resp.get("ok"):
-        raise click.ClickException(resp.get("error", "daemon error"))
-    result = resp["result"]
-    if "jobs" in result:
-        if not result["jobs"]:
-            console.print("[dim]no jobs this daemon run[/]")
-        for jid, j in result["jobs"].items():
-            console.print(
-                f"  {jid}  {j['state']}  {j.get('op')} "
-                f"{j.get('src')}->{j.get('dst')}  "
-                f"{j.get('phase')} {j.get('done')}/{j.get('total')}")
-        return
-    if result.get("error"):
-        raise click.ClickException(result["error"])
-    console.print(
-        f"job {result['job']}: [bold]{result['state']}[/]  "
-        f"{result.get('phase')} {result.get('done')}/{result.get('total')}")
-    if result.get("result"):
-        console.print(f"  result: {result['result']}")
-    if result.get("error"):
-        console.print(f"  [red]error:[/] {result['error']}")
-
-
 @daemon.command("start")
 @click.option(
     "--watch/--no-watch", default=True,
@@ -4215,13 +4181,7 @@ def partition_rename(old: str, new: str):
                    "reparented + merged.")
 @click.option("--yes", "-y", is_flag=True,
               help="Skip the confirmation prompt. Use after a --dry-run.")
-@click.option("--async", "run_async", is_flag=True,
-              help="Submit as a daemon background job and return the job id "
-                   "immediately instead of blocking on the RPC. Progress "
-                   "streams to rmxd.log (merge-progress lines); poll with "
-                   "`rmx daemon job <id>`. Needs the daemon up.")
-def partition_merge(src: str, dst: str, dry_run: bool, yes: bool,
-                    run_async: bool):
+def partition_merge(src: str, dst: str, dry_run: bool, yes: bool):
     """Merge SRC partition into DST. Drops SRC on success.
 
     Built for the `memory-<project>` → `<project>` consolidation: the
@@ -4230,7 +4190,10 @@ def partition_merge(src: str, dst: str, dry_run: bool, yes: bool,
     DST and prefer the longer memory_content body. Lance vectors +
     bitmap fragments move filesystem-side.
 
-    Always run --dry-run first to see the impact.
+    Always run --dry-run first to see the impact. A real merge runs OFFLINE only: with
+    the daemon up it is refused (bug-105 r4, d9ae: a live merge's rebind and SRC drop sit in
+    separate writer-lock holds, so queued ops run bound to the dropped partition; the helix
+    plan redesigns it). `rmx hub pause`, `rmx daemon stop`, merge, then `rmx hub resume`.
     """
     from refmatrix import daemon as daemon_mod
     root = _root()
@@ -4261,6 +4224,21 @@ def partition_merge(src: str, dst: str, dry_run: bool, yes: bool,
     console.print(f"  tracked files:        {result['tracked_files']}")
     if dry_run:
         return
+    # r5 #m5-1: `ping` cannot tell busy from absent; a busy daemon is still a live writer.
+    from refmatrix import verbs as _verbs
+    try:
+        _verbs.require_daemon(root)
+        live = "running"
+    except _verbs.VerbBusyError:
+        live = "busy (alive, not answering)"
+    except _verbs.VerbAbsentError:
+        live = None
+    if live:
+        raise click.ClickException(
+            f"live partition merge is disabled (bug-105 #b4-1/#s4-1) and the daemon is {live}: "
+            f"`rmx hub pause` (so the hub does not respawn it), `rmx daemon stop`, run "
+            f"`rmx partition merge {src} {dst}` offline, then `rmx hub resume`; the live merge "
+            "is redesigned in the helix plan")
     total = (
         result["entities_reparented"] + result["entities_merged"]
         + result["saved_queries"] + result["tracked_files"]
@@ -4274,45 +4252,38 @@ def partition_merge(src: str, dst: str, dry_run: bool, yes: bool,
         console.print("[yellow]aborted[/]")
         return
 
-    if daemon_mod.ping(root):
-        resp = daemon_mod.call(
-            root, "partition_merge",
-            {"src": src, "dst": dst, "dry_run": False, "async": run_async},
-            timeout=3600.0,
-        )
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        result = resp["result"]
-        if run_async and result.get("job"):
-            console.print(
-                f"[green]merge submitted[/] job={result['job']}  "
-                f"poll: `rmx daemon job {result['job']}`  "
-                f"progress: merge-progress lines in rmxd.log")
-            return
-    else:
-        if run_async:
-            raise click.ClickException(
-                "--async needs the daemon up (the job runs inside it)")
-        s = _store()
-        try:
-            result = s.merge_partition(src, dst, dry_run=False)
-        except ValueError as e:
-            raise click.ClickException(str(e))
-        # Daemon-down path: merge_partition emits no log events; snapshot the
-        # log from the post-merge catalog so replay stays faithful.
-        try:
-            s.dump_catalog_to_log()
-        except Exception as e:
-            console.print(f"[yellow]warn:[/] post-merge log snapshot failed: {e}")
+    s = _store()
+    try:
+        result = s.merge_partition(src, dst, dry_run=False)
+    except ValueError as e:
+        raise click.ClickException(str(e))
+    # Offline merge: merge_partition emits no log events; snapshot the log from the
+    # post-merge catalog so replay stays faithful.
+    try:
+        s.dump_catalog_to_log()
+    except Exception as e:
+        console.print(f"[yellow]warn:[/] post-merge log snapshot failed: {e}")
     console.print(
         f"[green]merged[/] reparented={result['entities_reparented']} "
         f"merged={result['entities_merged']} "
         f"saved_queries={result['saved_queries']} "
         f"tracked_files={result['tracked_files']}"
     )
+    # bug-105 r2 #s2-1: the merge re-homes fragment bits; its repair report reaches the operator.
+    fr = result.get("fragments_repair")
+    if fr:
+        console.print(
+            f"fragments repair: moved={fr['moved']} added_from_links={fr['added_from_links']} "
+            f"dropped_dead={fr['dropped_dead']} "
+            f"dropped_dead_concept={fr['dropped_dead_concept']} "
+            f"links_skipped={fr['links_skipped']} remapped={fr.get('remapped', 0)}")
+        for d in fr.get("unread_dirs") or []:
+            console.print(f"  [yellow]unread, left in place:[/] {d}")
+        if fr.get("manifest"):
+            console.print(f"  manifest: {fr['manifest']}")
     console.print(
-        "[dim]restart the daemon to drop any cached SRC partition "
-        "binding (`rmx daemon launchctl kickstart -k`).[/]"
+        "[dim]offline merge done: start the daemon again (`rmx hub resume`, or "
+        "`rmx daemon start`).[/]"
     )
 
 
@@ -9399,7 +9370,15 @@ def install_hooks(git, claude, briefing, agent_env, search, apply, force, scope,
                    "and secondary indexes in-band (the 2026-09-14 phantom-leaf "
                    "recipe). Daemon-routed when the daemon is up; offline "
                    "otherwise. Aborts on real duplicate rows.")
-def repair_index(entities: bool):
+@click.option("--fragments", "fragments", is_flag=True,
+              help="Rebuild every bitmap fragment so each bit sits in its entity's "
+                   "partition (bug-105): moves foreign bits, restores bits only in "
+                   "entity_links, drops bits of deleted entities into a manifest under "
+                   ".refmatrix/backups/. Daemon-routed when the daemon is up.")
+@click.option("--dry-run", "dry_run", is_flag=True,
+              help="With --fragments: report the counts and write the manifest, change "
+                   "nothing.")
+def repair_index(entities: bool, fragments: bool, dry_run: bool):
     """Drop + recreate idx_entity_links_lk_concept to fix DuckDB secondary
     index drift. Daemon does this on every startup; this command is for
     triage when the index drifts mid-session ('Failed to delete all rows
@@ -9410,6 +9389,41 @@ def repair_index(entities: bool):
     when `.refmatrix/repair.needed` exists)."""
     from refmatrix import daemon as daemon_mod
     root = _root()
+    if fragments:
+        from refmatrix import verbs as _verbs
+        try:
+            _verbs.require_daemon(root)
+            daemon_up = True
+        except _verbs.VerbBusyError as e:
+            raise click.ClickException(f"{e} — repair skipped; retry when the daemon is idle")
+        except _verbs.VerbAbsentError:
+            daemon_up = False
+        if daemon_up:
+            resp = daemon_mod.call(root, "repair_fragments", {"dry_run": dry_run},
+                                   timeout=600.0, retries=0)
+            if not resp.get("ok"):
+                raise click.ClickException(resp.get("error", "daemon error"))
+            rep = resp["result"]
+        else:
+            s = _store_rw()
+            try:
+                rep = s.repair_fragments(dry_run=dry_run, manifest_dir=root / "backups")
+            finally:
+                s.close()
+        mode = "dry run — nothing changed" if rep["dry_run"] else "applied"
+        console.print(
+            f"[green]fragments repair[/] ({mode}): rows {rep['rows_before']}->"
+            f"{rep['rows_after']} changed={rep['rows_changed']} kept={rep['kept']} "
+            f"moved={rep['moved']} added_from_links={rep['added_from_links']} "
+            f"dropped_dead={rep['dropped_dead']} "
+            f"dropped_dead_concept={rep['dropped_dead_concept']} "
+            f"links_skipped={rep['links_skipped']}")
+        # r2 #s2-1: a directory the repair could not read is left in place — say so.
+        for d in rep.get("unread_dirs") or []:
+            console.print(f"  [yellow]unread, left in place:[/] {d}")
+        if rep.get("manifest"):
+            console.print(f"  manifest: {rep['manifest']}")
+        return
     if entities:
         from refmatrix import verbs as _verbs
         from refmatrix.store import RepairAbort
