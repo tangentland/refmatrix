@@ -68,7 +68,8 @@ The deleter of ids 2791202-2791209 predates the current code and cannot be named
 - **#4:** the as-memory doc drop matches `path` as well as `name`.
 - **#5:** a failed vector delete during the drop counts in `doc_drop_failed`.
 - **#1:** `links_dead_entity` names the orphan share of `links_skipped`. The removal itself is a
-  deferral row whose owner (a plan-22 dangling-link class) is **proposed to the user, not decided**.
+  deferral row owned by plan 22's `dangling-link` class (d9an, user 2026-10-14: 22.1a audits, 22.2
+  removes through the manifest).
 - RED against `0f268f5`'s `src/`: 7 of 7 new tests fail; GREEN 10 of 10 (`bug111-r1-red.log`,
   `bug111-r1-green.log`).
 
