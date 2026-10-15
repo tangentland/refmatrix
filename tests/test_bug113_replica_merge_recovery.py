@@ -154,7 +154,7 @@ def test_a_failed_merge_closes_every_connection(tmp_path, where):
 
 # ---- 3. the daemon op -----------------------------------------------------
 
-def _daemon(tmp_path: Path):
+def _daemon(tmp_path: Path, writer: str = "A"):
     from refmatrix import daemon as dm
     from refmatrix.store import Store
     root = Path(__import__("tempfile").mkdtemp(prefix="rmx", dir="/tmp")) / ".refmatrix"
@@ -162,11 +162,11 @@ def _daemon(tmp_path: Path):
     a, b = _slots(tmp_path)
     shutil.copyfile(a, root / "catalog.A.duckdb")
     shutil.copyfile(b, root / "catalog.B.duckdb")
-    (root / "active").write_text("A")
+    (root / "active").write_text(writer)
     d = dm.Daemon(root, partition="proj")
     d._log = lambda msg: None
     d.store = Store(root, partition="proj")
-    assert d.store.db_path.name == "catalog.A.duckdb"
+    assert d.store.db_path.name == f"catalog.{writer}.duckdb"
     d.store.init()
     d.store._connect()
     return d, root
@@ -303,15 +303,17 @@ def test_writer_lost_exits_2_from_a_real_serving_daemon(tmp_path, degrade_s):
 
 # ---- ch-bsd r1 b-2: the swap-failure exit reopens the writer ---------------
 
+@pytest.mark.parametrize("writer", ["A", "B"])
 @pytest.mark.parametrize("fail_at", ["replace", "copy2"])
-def test_op_swap_failure_leaves_the_writer_reopened_and_locked(tmp_path, monkeypatch, fail_at):
+def test_op_swap_failure_leaves_the_writer_reopened_and_locked(tmp_path, monkeypatch, fail_at,
+                                                                 writer):
     """The swap installs the merge on A (os.replace), then copies A to B
     (shutil.copy2). Either failing returned `swap: …` with the writer still
     force-closed. Fault injection on the two filesystem calls only."""
     import os
     import shutil as _sh
     from refmatrix import daemon as dm
-    d, root = _daemon(tmp_path)
+    d, root = _daemon(tmp_path, writer)
     if fail_at == "replace":
         real = os.replace
 
@@ -329,7 +331,19 @@ def test_op_swap_failure_leaves_the_writer_reopened_and_locked(tmp_path, monkeyp
         assert r.get("ok") is False, r
         assert "swap" in r["error"], r
         monkeypatch.undo()
-        _assert_writer_open_and_locked(d, root)
+        # A holds the merge once os.replace ran (copy2 failed): the writer is
+        # A and the partial B is gone for the rotation repair to re-clone.
+        # If the replace itself failed nothing moved: the writer is the old one.
+        expect = "A" if fail_at == "copy2" else writer
+        assert d.store is not None and d.store._conn is not None, "writer left closed"
+        assert d.store.db_path.name == f"catalog.{expect}.duckdb"
+        assert (root / "active").read_text().strip() == expect
+        ok, err = _child_can_open(root / f"catalog.{expect}.duckdb")
+        assert not ok and "lock" in err.lower(), err
+        if fail_at == "copy2":
+            assert not (root / "catalog.B.duckdb").exists()
+        else:
+            assert not (root / "catalog.merge.tmp.duckdb").exists()
     finally:
         d.store.close()
 
