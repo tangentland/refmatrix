@@ -58,8 +58,9 @@ Stop-hook promote its 5 s reply.
 ## Not fixed here {#not-fixed}
 
 The read stall itself: a writer holding `_store_lock` for tens of seconds still blocks every
-lock-taking read. Bounding writer holds is 23.3 (sync yields between files) and 23.1; the r7 review
-asks which plan owns the non-harness holders (`_op_stats`, the compaction tick) — a user decision.
+lock-taking read. Bounding writer holds is 23.3 (sync yields between files) and 23.1; the
+non-harness holders (`_op_stats` and the other lock-taking cli reads, the compaction tick) are
+plan 23's by d9az, specified as task 23.5.
 
 ## Verification {#verification}
 
