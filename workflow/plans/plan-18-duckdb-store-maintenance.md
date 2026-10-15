@@ -28,7 +28,7 @@ rel: related-to -> [[plan-review-2026-10-07#consolidations]]
 ## 18.1 verdict (run 2026-10-15) {#verdict-18-1}
 
 18.1 ran on copies of all 8 registered snapshots
-(`workflow/review-output/plan18-catalog-measure-20261015.md`). Every gate passed.
+(`workflow/review-output/plan18-catalog-measure-20261015.md`; re-run after the ch-bsd r1 remedy as `…-20261015-r2.md` under the nine-leg fingerprint gate, same bands and verdict). Every gate passed.
 
 | store | A | B | C | writer MiB -> rewrite MiB |
 |---|---|---|---|---|
