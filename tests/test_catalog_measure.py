@@ -373,3 +373,19 @@ def test_rows_record_duckdb_version_and_store_name(tmp_path, scratch, monkeypatc
     md = out.with_suffix(".md").read_text()
     assert f"| global |" in md and f"| {duckdb.__version__} |" in md
     assert mc.store_name(Path("/x/y/.refmatrix"), home=Path("/elsewhere")) == "y"
+
+
+def test_children_on_different_duckdb_builds_are_an_error_row(tmp_path, scratch, monkeypatch):
+    """`hash()` and the file format are build-specific: a gate comparing fingerprints from two
+    duckdb builds proves nothing, so the row refuses (ch-bsd r1 #m-4)."""
+    root = _root(tmp_path, "v", rows=300)
+    real = mc._child
+
+    def other_build(python, *args, step, **kw):
+        out = real(python, *args, step=step, **kw)
+        return {**out, "duckdb_version": "0.0.0"} if step == "rewrite" else out
+
+    monkeypatch.setattr(mc, "_child", other_build)
+    rows, _, code = mc.run([root], scratch, tmp_path / "out" / "rep")
+    assert code == 1 and rows[0]["step"] == "version"
+    assert "0.0.0" in rows[0]["error"] and not scratch.exists()
