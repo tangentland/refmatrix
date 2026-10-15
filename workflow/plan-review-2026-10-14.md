@@ -359,6 +359,7 @@ clone; d8d's predicate owned by 21.1 in `telemetry.py`; the dead-letter file kep
 | d9ak | Protected entities no class plan may remove: (a) their learned rows are removed, the entities stay listed `kept: asserted-protection`, removable only through an explicit 22.6 `--confirm` plan; AND (b) a `cli.log` `rmx grep P` record counts as learner evidence for concept `query/P` (217 here, 90 global; none of the 1,655 pytest-tmp). | user, 2026-10-14 ("7 a and b") |
 | d9al | 22.5 cross-store move: the global entity is purged after a fully verified move even when user-protected, because its protection and `protect_source` are copied to the target (a move is not a removal). | user, 2026-10-14 ("8-a") |
 | d9am | Protection `source` vocabulary: `learner`, `user`, `system`, `removal`, set by the caller; `upsert` is dropped (`rmx add-entity` also uses that path). | user, 2026-10-14 ("9-agree") |
+| d9an | Plan 22 gains a `dangling-link` class: an `entity_links` row whose entity or concept id exists in neither `entities` nor `concepts`. 22.1a audits it, 22.2 removes it through the manifest. It is the owner of the bug-111 deferral (cliquedb: 5,298 dead-entity + 8 dead-concept rows on 2026-10-14). | user, 2026-10-14 ("add the dangling type to p22") |
 
 ## The wave list, all waves (2026-10-14) {#t10-waves}
 

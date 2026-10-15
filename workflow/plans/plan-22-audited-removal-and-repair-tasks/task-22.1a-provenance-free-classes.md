@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: task-22.1a-provenance-free-classes
-title: "Task 22.1a: the audit's provenance-free classes (orphan-root, missing-file, duplicate, orphan-alias, stale-subject) and the read-only removal_audit verb"
+title: "Task 22.1a: the audit's provenance-free classes (orphan-root, missing-file, duplicate, orphan-alias, stale-subject, dangling-link) and the read-only removal_audit verb"
 tags: [task, audit, grep-learning, concepts, bug-086, wave-1]
 metadata:
   node_type: task
@@ -143,6 +143,18 @@ rel: related-to -> [[project_global_relative_rows_repair]]
      the target (it folds case and `_-`, `identifier.py:49`).
    - `stale-subject` (unit: ENTITY) — a compiled subject marked `stale` by plan-19's compile (d8a;
      the writer is plan-19's 19.4 R5). The audit only reports it.
+   - `dangling-link` (unit: LINK ROW; d9an) — an `entity_links` row with a dead endpoint.
+     `dangling-link:entity` when its `entity_id` is in neither `entities` nor `concepts`;
+     `dangling-link:concept` when its `concept_id` is in neither (a row with both dead is
+     `:entity`). "Alive" is EXACTLY `Store.repair_fragments`'s definition (`entities` ∪
+     `concepts`; a typed edge's concept may be a doc, memory or code entity, bug-105 r2 #b2-2),
+     so the class counts equal that repair's `links_dead_entity` / `links_dead_concept` on the
+     same catalog. Each member records `(entity_id, linkage, concept_id)`, its weight and which
+     endpoint is dead. Such a row has no correct form: its other endpoint was deleted by a path
+     that bypassed `purge_entity` (bug-111). It is not an evidence row, so [[#r2]] does not
+     exempt it; a dangling row whose LIVE endpoint is ingest-owned is still a member (the dead
+     side has no owner). Measured on a copy of cliquedb's read snapshot, 2026-10-14: 5,298
+     `:entity` rows across 64 dead ids and 8 `:concept` rows, all `part-of`. {#r1-dangling}
 2. **R2 Ingest is out of scope.** No class selects an ingested evidence row (`detail` not
    `learned from grep…`), a `tracked_files` row, or an entity with an ingest link. A learned file
    entity that is also ingested is reported `shared` and never becomes `missing-file` or
@@ -252,6 +264,16 @@ rel: related-to -> [[project_global_relative_rows_repair]]
 7. **pytest rows.** 7a: a sandbox fixture entity under a `/pytest-of-<user>/` path classifies
    `missing-file`. 7b (operator census, as 5b): on the global copy, `missing-file` includes every
    entity whose path contains `/pytest-of-` (1,655 at the review; recount exact).
+8. **Dangling links (d9an).** 8a: a sandbox fixture holds one `entity_links` row to a deleted
+   entity, one to a deleted concept, one whose concept is a live DOC entity (no `concepts` row),
+   and one with both endpoints dead. The audit classifies them `dangling-link:entity`,
+   `dangling-link:concept`, not a member, and `dangling-link:entity`, and its counts equal
+   `repair_fragments(dry_run=True)`'s `links_dead_entity` and `links_dead_concept` on the same
+   store. Mutation "concept alive = `concepts` only" FAILS (the live-doc row becomes a member);
+   mutation "a second liveness definition in `removal_audit`" is refused by review: the
+   predicate is shared with the repair. 8b (operator census, as 5b): on copies of cliquedb's and
+   this repo's read snapshots the counts are printed beside the repair's counters; equal, or the
+   census says `drift`.
 
 ## Files to modify {#files-to-modify}
 
@@ -265,7 +287,8 @@ r4 m-1: this task's own file list.
 | `src/refmatrix/cli.py` | `rmx removal audit` (R4) |
 | `eval/spikes/global_relative_resolve_probe.py` (new) | the recovered probe ([[#appendix-probe]]); only the catalog path and `$HOME` become arguments; a header names its origin and the sha256 above |
 | `scripts/census_on_copy.py` (16.6's) | the `probe-reproduction` and `provenance-free` census names (16.6 R7 owns the script) |
-| `tests/test_removal_audit.py` (new) | AC-1..AC-4, AC-5a, AC-6a, AC-7a |
+| `tests/test_removal_audit.py` (new) | AC-1..AC-4, AC-5a, AC-6a, AC-7a, AC-8a |
+| `src/refmatrix/store.py` | the endpoint-liveness predicate shared by `repair_fragments` and `classify_provenance_free` (AC-8) |
 
 ## Test strategy {#test-strategy}
 
@@ -335,6 +358,14 @@ Answers [[bsd-plan16-22-spec-rereview-r4-878647c]] where it touches 22.1a. Later
 | r3 s-6 (partial: census procedure) | closed with s-3 in [[task-16.6-learned-row-validation#r7]] |
 
 rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
+
+## Revision: dangling-link (2026-10-14, d9an) {#rev-dangling}
+
+| finding / decision | answered in |
+|---|---|
+| d9an; bug-111 r1 #1 (an unanchored deferral: no plan-22 class named `entity_links` rows with a dead endpoint) | [[#r1-dangling]]; AC-8; 22.2 R9 removes it |
+
+rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
 
 ## Appendix: the recovered probe {#appendix-probe}
 

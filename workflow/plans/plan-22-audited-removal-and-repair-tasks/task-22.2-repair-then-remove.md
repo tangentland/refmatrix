@@ -261,7 +261,11 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
    - All writes go through daemon ops; no CLI path opens `Store()` on a live store.
 9. **R9 Removals,** only for members with no correct form: `stale-line`, `out-of-range`,
    `missing-file` learned rows (22.1/22.1a); `orphan-root:unresolved`; `orphan-alias:unrepairable`
-   and `empty-learned` / `stale-subject` after the gate passes; the selector members of a
+   and `empty-learned` / `stale-subject` after the gate passes; `dangling-link` (22.1a, d9an)
+   through `remove_dangling_links(rows)`, which deletes exactly the listed `entity_links` rows and
+   any fragment bit they still own, writes each row (with its weight) to the apply manifest
+   ([[#r4]]) so restore re-inserts it, and logs one `link_remove{linkage, entity_id, concept_id}`
+   event per row (by id: the dead endpoint has no name to key on); the selector members of a
    confirmed 22.6 plan. **`ambiguous` (any sub-class), `unverifiable` and
    `orphan-root:unverifiable` (22.1a, r3 s-3) are never removed.** `orphan-root:home-readable`
    (22.1a; rows that read correctly today under no project store) is not a removal class: nothing
@@ -270,6 +274,12 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
    are. {#r9}
 
 ## Acceptance criteria {#acceptance}
+
+- **Dangling links (d9an).** On the 22.1a AC-8a fixture, `--apply` removes the three members, and
+  a following `repair_fragments(dry_run=True)` reports `links_dead_entity == 0` and
+  `links_dead_concept == 0`; `restore` puts all three rows back with their weights. Mutation
+  "remove without writing the manifest" FAILS the restore; mutation "also remove the live-doc
+  row" FAILS the count.
 
 1. **Moved, not deleted (s-5).** On a fixture plan with a two-row `moved` set, both rows end on
    their new lines with link and protection intact and 0 rows deleted, and every sidecar row of the
@@ -423,3 +433,11 @@ rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
 rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
 rel: depends-on -> [[task-17.1-vectors-maintain-op#r10-restore]]
 
+## Revision: dangling-link (2026-10-14, d9an) {#rev-dangling}
+
+| finding / decision | answered in |
+|---|---|
+| d9an; bug-111 r1 #1 | [[#r9]] `remove_dangling_links`; the dangling-link AC |
+
+rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
+rel: depends-on -> [[task-22.1a-provenance-free-classes#r1-dangling]]
