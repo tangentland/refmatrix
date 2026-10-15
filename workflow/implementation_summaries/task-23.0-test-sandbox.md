@@ -134,14 +134,16 @@ Second full run, clone at `7ba1dd4` (`workflow/review-output/task-23.0-full.log`
 2771 passed, 37 skipped** (21:21). Baseline: main tree at `23ad703`
 (`pytest-baseline-23ad703.log`): 32 failed, 2776 passed. Compared by test id AND error text:
 
-- **All 32 baseline failures are gone.** 17 carry the learn.off signature verbatim
+- **31 of the 32 baseline failures are gone** (corrected by [[#bsd-r1-remedy]] s4; this line
+  first said all 32). 17 carry the learn.off signature verbatim
   (`learning-disabled`, `learn drain: skipped (learning-disabled)`, `assert 0 == N` on learned
   rows): test_learn_queue (6), test_learn_broker_bounded (3), test_grep learn_from_grep (3),
   test_daemon_learn_guard (2), test_plan4_remedy degraded learn, test_grep_answered_by,
   test_grep_backstop. 14 more are the hook copies that read
   `$HOME/.refmatrix/learn.off` (`search_hooks.py:380`): test_search_hooks rewriter (9),
   test_rmxgrep (3), test_grep_stdin_dialect rmxrg (2) -- consistent with the redirect, not
-  individually traced. test_brief_real_daemon was a DuckDB `Could not set lock` conflict.
+  individually traced. test_brief_real_daemon was NOT fixed: it SKIPS in a clone (no `.venv-eval`)
+  and, with `.venv-eval` linked, still fails with the baseline's DuckDB `Could not set lock` (s4).
 - **New, 23, none caused by the sandbox's behaviour:**
   - 19 "dev tree" refusals (test_upgrade 4, test_plan4_remedy_r2 10, test_plan4_remedy_r3 2,
     test_plan1_remedy 2, test_onboard_huballd_curator 1): `.venv-eval` belongs to the main tree
@@ -191,3 +193,86 @@ removed); d9bo #5 in `tests/test_sandbox_refusal.py::test_a_swallowed_violation_
 the learn.off AC in `tests/test_sandbox_redirect.py::test_real_global_learn_off_is_invisible_to_a_sandboxed_test`.
 `DELIBERATE_PROBE_MODULES` gains the new module. Mutations under the decoy-home gate
 (`task-23.0-testgaps-mutations.log`): 15 killed, 1 equivalent (MX9, replaced by MX9b, killed).
+
+## ch-bsd r1 remedy (2026-10-15) {#bsd-r1-remedy}
+
+rel: derives-from -> [[bsd-task23-0-sandbox-r1-ccdefef#findings]]
+
+Commits `3b3c6b5` (RED tests), `a26364f` (fix), `5eea0e1` (the take_record pin), `acb885f`
+(venv bin first, shim second). RED at ccdefef's sandbox: `workflow/review-output/r1-red-ccdefef.log`
+(26 failed: the 5 relative `shutil` ops copied, moved and deleted a denied decoy store; the child
+refusal with an ignored exit code passed; a quoted `/pytest-of-` row was flagged; `os.kill(-1,
+15)` was allowed; the rest on the missing helpers). Every run below went through the auditor's
+decoy gate (`gate2.py`, repo decoy on, real HF cache): 0 decoy accepts, 0 live-log rows, 0
+unexpected touches lines, 9/9 live pids alive.
+
+- **b1** -- `violation(..., fd_walk=)`: the bare-name exemption applies only to `open` / `os.*`
+  events raised from `shutil._rmtree_safe_fd` / `_rmtree_safe_fd_step` (by function name), and
+  only to a name with no separator; `shutil.*` events are never exempt. Pinned both ways:
+  relative `copyfile`, `copy2`, `move`, `rmtree`, `copytree` on a denied store exit 86 and change
+  nothing; `remove_tree` with the cwd beside a denied `.refmatrix` still removes its tree.
+- **b2** -- `test_models_offline` reads `$HF_HOME/hub` (12 run again); `test_cctree_web`'s
+  `a_session` writes a synthetic transcript under the sandbox `~/.claude/projects/<slug>/` (5);
+  the deploy-tree test builds a stand-in home whose wrapper is this checkout's `bin/rmxgrep` (1;
+  its stale-sibling leg asserted the LIVE deploy state and is dropped). `rmx_sandbox.SkipGate`,
+  registered by the conftest, fails the session on any skip not named in `ALLOWED_SKIPS`: the 19
+  clone-only skips (18 `.venv-eval`-gated end-to-end tests + `test_repo_hooks_in_sync`), allowed
+  ONLY in a checkout without `.venv-eval/` -- in the main tree the list is empty, matching the
+  baseline's 0 skips.
+- **s1** -- at teardown an un-owned touches-log line from another pid naming the test fails it.
+  A `sandbox_probe` marker replaces `DELIBERATE_PROBE_MODULES`; probe OWNERSHIP:
+  `RMX_SANDBOX_PROBE` holds the owner's test id and every touches line (a child's too) carries it
+  in a sixth field. AC-4 excludes owned lines; the child check excludes only lines the test
+  itself owns. `child_env` also carries `PYTEST_CURRENT_TEST`, so a bare-env child is attributed.
+- **s2** -- a record under an in-process inner test's id is charged to the outer test
+  (`take_record` via `RECORD_OUTER`; fails it unless it is a `sandbox_probe`);
+  `pytest_sessionfinish` fails on ANY leftover (`drain_record`), tested with the conftest's own
+  hook on an inner-id key and a `<no-test>` key.
+- **s3** -- a child given `env={"PATH": ...}` only exits 86, is attributed to the test, and its
+  `Path.home()` is under the sandbox root.
+- **s4** -- [[#results]] corrected: 31 of 32. `test_brief_real_daemon` (linked run
+  `r1-remedy-linked.log`) fails with the baseline text `_duckdb.IOException: ... Could not set lock
+  on file "/private/tmp/bd.*/.refmatrix/catalog.A.duckdb": Conflicting lock is held` -- a
+  pre-existing tmp-store lock race, not the sandbox. No bug-registry row exists; for the
+  orchestrator to log in the main tree.
+- **s5** -- `leak_reasons` matches `/pytest-of-` only in `path` / `cwd` / `root` fields (any depth
+  of a JSON row). The run tag stays a whole-line match: it is drawn per run, so no existing
+  document can quote it. The whole-suite `scripts/sandbox-proof.sh` run is to be done in the MAIN
+  tree after merge.
+- **s6** -- `tests/sandbox_site/bin/launchctl`, on the sandbox `PATH` right after the venv bin
+  (the venv stays first: `subproc._worker_env` pins it, and the first full run caught the shim
+  displacing it): read-only verbs exec the next `launchctl` on `PATH`; any other verb is refused
+  (exit 86, touches line). `spawn_violation()` is the ONE spawn rule, shared by the shim and the
+  audit hook: no mutating `launchctl` (`sh -c` scripts parsed too), no `kill` of a live pid or
+  `-1`, no spawn cwd in a denied root. `os.kill` / `os.killpg` with a non-zero signal on a live
+  pid, its group or `-1` is refused. Live pids: each store root's `rmxd.pid` and each protected
+  home's `hub.pid`, read by `build_deny` before the redirect.
+- **m1** a child with `RMX_SANDBOX_DENY_EXTRA` still refuses the protected home; **m2** resolved
+  by the marker; **m3** the lint test's child gets a decoy home holding a COPY of exactly the
+  memory dir `lint-gmd.sh` scans, never the real `HOME` -- still clone-only failing with the same
+  546 dangling-doc errors (the clone's directory name breaks doc-id resolution; a copied memory
+  dir does not change it), provable only by the main-tree run; **m4** a spawn whose cwd is in a
+  denied root is refused before the fork; **m5** `rmx_sandbox.expect_sandbox_violation()`.
+
+**Mutations** (`workflow/review-output/r1-mut-*.log`; committed first, `git checkout` restore after
+each, pycache cleared, all under the gate) -- 18 of 18 KILLED: MB1a (exemption back to
+any-relative-in-shutil.py: 5 shutil legs + pure rule), MB1b (no exemption: own-rmtree leg + 44
+fixture errors), MB2 (gate sees nothing), MS1 (child touches unread), MS1o (ownership ignored),
+MS2a (pre-remedy NO_TEST-only pop), MC (exit status not set: both legs), MS2b (inner records not
+charged), MA (`_SPAWN_ENV = {}`: s3, m4, launchctl legs), MS5, MCL (check_logs counts nothing),
+MS6a (launchctl verbs unchecked), MS6b (signals unchecked), MS6c (no pid capture), MS6d (shim off
+PATH; re-run after the PATH fix), MF (extra replaces the deny set), MM4, MM5.
+
+**Full suite** (decoy gate, clone without `.venv-eval`): `r1-remedy-full.log` -- 21 failed, 2832
+passed, 19 skipped (= the pinned list; SkipGate silent). Failure set = the auditor's
+`bsd-23.0-r1-decoy-full2.log` minus test_brief_real_daemon (skipped here, pinned) plus
+`test_subproc_workers::test_worker_env_pins_the_venv` (the shim-first PATH; fixed in `acb885f`,
+verified `r1-green-path.log`). The 19 "DEV TREE" refusals and the lint test have identical error
+text to the auditor's run (clone artifacts). After `acb885f`: `r1-remedy-full2.log` -- **20 failed, 2833 passed, 19 skipped** (21:32): exactly
+the 19 DEV TREE refusals + the lint test, every one a clone artifact; 0 decoy accepts, 0 live-log
+rows, 0 unexpected touches lines, 9/9 live pids alive.
+
+**Limits added** (module docstring): non-Python reach is seen only through the `launchctl` shim --
+a shell builtin `kill`, an absolute `/bin/launchctl` in a shell script, `pkill`/`killall` by name
+and `lsof` are not refused; a captured pid later reused is refused (a spurious failure, never a
+reach). **s7** (tiers 1/2 unexecuted) is the orchestrator's decision; AC-7/AC-8 stay open.
