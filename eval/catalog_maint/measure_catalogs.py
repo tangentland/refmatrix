@@ -15,6 +15,8 @@ Safety rules, each from an incident:
 - bug-112: a second in-process `duckdb.connect` to a path returns the cached database. Every
   DuckDB statement runs in a child process; the parent never imports duckdb.
 - It never reads a writer slot and never connects to a socket.
+- It deletes only the per-store work dirs it made (ch-bsd r1 #m-3), never the scratch dir's
+  other contents.
 
 Evaluation code, not product (task-18.1 R1).
 """
@@ -27,6 +29,7 @@ import shutil
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -51,6 +54,90 @@ _CAT = "/bin/cat"
 REHEARSALS = 3
 
 
+# ---- the catalog fingerprint and its gate (one shape, reused by 18.3) ---------------------
+
+
+def _rows(con, sql: str, params: list) -> list:
+    return [list(r) for r in con.execute(sql, params).fetchall()]
+
+
+def catalog_fingerprint(con) -> dict:
+    """Everything a rewrite must carry over, from an open DuckDB connection's current database.
+
+    One leg per part of the catalog; `gate(a, b)` compares two fingerprints leg by leg. Why every
+    leg (ch-bsd task-18.1 r1 #s-3, 2026-10-15): the r1 gate checked only counts, sequence values,
+    index NAMES and constraint COUNTS, so a changed DEFAULT (the `nextval` ids depend on), CHECK
+    text, index definition, a new view/macro/type, or any value edit that kept the counts passed.
+    The content leg is an order-independent `sum(hash(row))` per table — a SUM, not `bit_xor`,
+    so a pair of duplicate rows cannot cancel out. `hash()` is DuckDB-version-specific: compare
+    fingerprints taken by the same duckdb build (the measurement records `duckdb_version`).
+    Plan-18.3's reclaim gates its swap on this function; it must not grow a second gate.
+    Values are lists/dicts/scalars only, so a fingerprint compares equal after a JSON round trip.
+    """
+    db = con.execute("SELECT current_database()").fetchone()[0]
+    p = [db]
+    rows, content = {}, {}
+    for schema, name in con.execute(
+            "SELECT schema_name, table_name FROM duckdb_tables() "
+            "WHERE database_name = ? ORDER BY 1, 2", p).fetchall():
+        n, h = con.execute(
+            f'SELECT count(*), sum(hash(_fp_row_)::HUGEINT) FROM "{schema}"."{name}" _fp_row_'
+        ).fetchone()
+        rows[f"{schema}.{name}"] = n
+        content[f"{schema}.{name}"] = None if h is None else int(h)
+    columns: dict = {}
+    for s, t, *rest in _rows(con,
+            "SELECT schema_name, table_name, column_index, column_name, data_type, "
+            "column_default, is_nullable FROM duckdb_columns() WHERE database_name = ? "
+            "ORDER BY 1, 2, 3", p):
+        columns.setdefault(f"{s}.{t}", []).append(rest)
+    constraints: dict = {}
+    for s, t, *rest in _rows(con,
+            "SELECT schema_name, table_name, constraint_type, constraint_text, "
+            "list_sort(constraint_column_names) FROM duckdb_constraints() "
+            "WHERE database_name = ? ORDER BY ALL", p):
+        constraints.setdefault(f"{s}.{t}", []).append(rest)
+    return {
+        "rows": rows,
+        "content": content,
+        "columns": columns,
+        "constraints": constraints,
+        "indexes": {f"{s}.{n}": [t, sql] for s, n, t, sql in _rows(con,
+            "SELECT schema_name, index_name, table_name, sql FROM duckdb_indexes() "
+            "WHERE database_name = ?", p)},
+        "sequences": {f"{s}.{n}": rest for s, n, *rest in _rows(con,
+            "SELECT schema_name, sequence_name, start_value, min_value, max_value, "
+            "increment_by, cycle, last_value FROM duckdb_sequences() "
+            "WHERE database_name = ?", p)},
+        "views": {f"{s}.{n}": sql for s, n, sql in _rows(con,
+            "SELECT schema_name, view_name, sql FROM duckdb_views() "
+            "WHERE database_name = ? AND NOT internal", p)},
+        "macros": {f"{s}.{n}": sorted(map(str, defs)) for s, n, defs in _rows(con,
+            "SELECT schema_name, function_name, list(function_type || ':' || "
+            "coalesce(macro_definition, '')) FROM duckdb_functions() "
+            "WHERE database_name = ? AND NOT internal GROUP BY ALL", p)},
+        "types": {f"{s}.{n}": [lt, labels] for s, n, lt, labels in _rows(con,
+            "SELECT schema_name, type_name, logical_type, labels FROM duckdb_types() "
+            "WHERE database_name = ? AND NOT internal", p)},
+    }
+
+
+def gate(before: dict, after: dict) -> list[str]:
+    """Every difference between two fingerprints, leg by leg; empty means the gate passes.
+    A leg present on one side only is itself a difference (a fingerprint never drops a leg)."""
+    diffs = []
+    for leg in sorted(set(before) | set(after)):
+        a_leg, b_leg = before.get(leg), after.get(leg)
+        if a_leg is None or b_leg is None:
+            diffs.append(f"{leg}: missing from {'copy' if a_leg is None else 'rewrite'}")
+            continue
+        for key in sorted(set(a_leg) | set(b_leg)):
+            a, b = a_leg.get(key), b_leg.get(key)
+            if a != b:
+                diffs.append(f"{leg} {key}: copy={a} rewrite={b}")
+    return diffs
+
+
 # ---- child side: every DuckDB statement runs here ----------------------------------------
 
 
@@ -62,25 +149,12 @@ def _child_measure(path: str) -> dict:
         size = con.execute(
             "SELECT block_size, total_blocks, used_blocks, free_blocks "
             "FROM pragma_database_size() WHERE database_name = ?", [db]).fetchone()
-        tables = {}
-        for schema, name in con.execute(
-                "SELECT schema_name, table_name FROM duckdb_tables() "
-                "WHERE database_name = ? ORDER BY 1, 2", [db]).fetchall():
-            q = f'SELECT count(*) FROM "{schema}"."{name}"'
-            tables[f"{schema}.{name}"] = con.execute(q).fetchone()[0]
-        seqs = {f"{s}.{n}": v for s, n, v in con.execute(
-            "SELECT schema_name, sequence_name, last_value FROM duckdb_sequences() "
-            "WHERE database_name = ?", [db]).fetchall()}
-        idx = sorted(r[0] for r in con.execute(
-            "SELECT index_name FROM duckdb_indexes() WHERE database_name = ?", [db]).fetchall())
-        cons = {f"{t}:{ct}": n for t, ct, n in con.execute(
-            "SELECT table_name, constraint_type, count(*) FROM duckdb_constraints() "
-            "WHERE database_name = ? GROUP BY ALL ORDER BY 1, 2", [db]).fetchall()}
+        fp = catalog_fingerprint(con)
     finally:
         con.close()
-    return {"pid": os.getpid(), "block_size": size[0], "total_blocks": size[1],
-            "used_blocks": size[2], "free_blocks": size[3], "tables": tables,
-            "sequences": seqs, "indexes": idx, "constraints": cons}
+    return {"pid": os.getpid(), "duckdb_version": duckdb.__version__, "block_size": size[0],
+            "total_blocks": size[1], "used_blocks": size[2], "free_blocks": size[3],
+            "fingerprint": fp}
 
 
 def _child_rewrite(path: str, target: str) -> dict:
@@ -98,7 +172,8 @@ def _child_rewrite(path: str, target: str) -> dict:
         dt = time.monotonic() - t0
     finally:
         con.close()
-    return {"pid": os.getpid(), "rewrite_s": dt, "rewrite_bytes": os.path.getsize(target)}
+    return {"pid": os.getpid(), "duckdb_version": duckdb.__version__, "rewrite_s": dt,
+            "rewrite_bytes": os.path.getsize(target)}
 
 
 def _child_main(argv: list[str]) -> int:
@@ -184,59 +259,67 @@ def _is_noisy(times: list[float]) -> bool:
     return max(times) > BANDS["noisy_ratio"] * statistics.median(times)
 
 
-def gate(before: dict, after: dict) -> list[str]:
-    """Every difference between the copy and its rewrite; empty means the gate passes."""
-    diffs = []
-    for t in sorted(set(before["tables"]) | set(after["tables"])):
-        a, b = before["tables"].get(t), after["tables"].get(t)
-        if a != b:
-            diffs.append(f"table {t}: copy={a} rewrite={b}")
-    for s in sorted(set(before["sequences"]) | set(after["sequences"])):
-        a, b = before["sequences"].get(s), after["sequences"].get(s)
-        if a != b:
-            diffs.append(f"sequence {s}: copy={a} rewrite={b}")
-    if before["indexes"] != after["indexes"]:
-        diffs.append(f"indexes: copy={before['indexes']} rewrite={after['indexes']}")
-    if before["constraints"] != after["constraints"]:
-        diffs.append(f"constraints: copy={before['constraints']} "
-                     f"rewrite={after['constraints']}")
-    return diffs
+def store_name(root: Path, *, home: Path | None = None) -> str:
+    """The report's name for a store, from its root path (ch-bsd r1 #m-4: the global store
+    `~/.refmatrix` was reported as the user's name, `parent.name`)."""
+    root = Path(root)
+    if root.expanduser().resolve() == ((home or Path.home()) / ".refmatrix").resolve():
+        return "global"
+    return root.parent.name if root.name == ".refmatrix" else root.name
 
 
 def measure_root(root: Path, scratch: Path, *, python: str,
                  min_reclaim_bytes: int = BANDS["min_reclaim_bytes"],
                  before_gate: Callable[[Path], None] | None = None,
-                 time_hook: Callable[[int, float], float] | None = None) -> dict:
-    """One row. Failures raise StepError; the caller turns them into a counted error row."""
-    row: dict = {"root": str(root), **stat_root(root)}
+                 time_hook: Callable[[int, float], float] | None = None,
+                 bytes_hook: Callable[[int, int], int] | None = None) -> dict:
+    """One row. Failures raise; the caller turns them into a counted error row.
+
+    The copies live in a work dir made fresh for this root under `scratch` and removed in a
+    `finally`, whatever happens (ch-bsd r1 #m-3: r1 removed the whole scratch dir the user
+    passed, and an uncaught exception left ~800 MB of copies behind)."""
+    row: dict = {"root": str(root), "store": store_name(root), **stat_root(root)}
     snap = root / "catalog.read.duckdb"
     if not snap.exists():
         raise StepError("snapshot", "no snapshot")
-    work = scratch / (root.parent.name or "root")
-    work.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix=f"{row['store']}-", dir=scratch))
+    try:
+        return _measure_copy(row, snap, work, python=python,
+                             min_reclaim_bytes=min_reclaim_bytes, before_gate=before_gate,
+                             time_hook=time_hook, bytes_hook=bytes_hook)
+    finally:
+        shutil.rmtree(work)
+
+
+def _measure_copy(row: dict, snap: Path, work: Path, *, python: str, min_reclaim_bytes: int,
+                  before_gate: Callable[[Path], None] | None,
+                  time_hook: Callable[[int, float], float] | None,
+                  bytes_hook: Callable[[int, int], int] | None) -> dict:
     copy = work / "snap.duckdb"
     copy_snapshot(snap, copy)
     row["as_of"] = datetime.fromtimestamp(copy.stat().st_mtime).isoformat(timespec="seconds")
     row["file_bytes"] = copy.stat().st_size
     m = _child(python, "measure", str(copy), step="measure")
+    row["duckdb_version"] = m["duckdb_version"]
     row["pids"] = {"measure": m["pid"]}
     for k in ("block_size", "total_blocks", "used_blocks", "free_blocks"):
         row[k] = m[k]
-    row["rows"] = sum(m["tables"].values())
+    row["rows"] = sum(m["fingerprint"]["rows"].values())
 
     runs: list[dict] = []
-    run_ix = 0
 
     def batch() -> list[float]:
-        nonlocal run_ix
         times = []
         for _ in range(REHEARSALS):
-            tgt = work / f"rewrite{run_ix}.duckdb"
+            ix = len(runs)
+            tgt = work / f"rewrite{ix}.duckdb"
             res = _child(python, "rewrite", str(copy), str(tgt), step="rewrite")
-            s = time_hook(run_ix, res["rewrite_s"]) if time_hook else res["rewrite_s"]
-            runs.append({**res, "rewrite_s": s, "target": tgt})
+            s = time_hook(ix, res["rewrite_s"]) if time_hook else res["rewrite_s"]
+            nb = bytes_hook(ix, res["rewrite_bytes"]) if bytes_hook else res["rewrite_bytes"]
+            runs.append({**res, "rewrite_s": s, "rewrite_bytes": nb, "target": tgt})
             times.append(s)
-            run_ix += 1
+            if ix:          # keep only the newest rewrite on disk; the gate reads it
+                runs[ix - 1]["target"].unlink()
         return times
 
     times = batch()
@@ -244,14 +327,19 @@ def measure_root(root: Path, scratch: Path, *, python: str,
     if _is_noisy(times):
         row["rehearsal_reruns"] = 1
         times = batch()
+    versions = {m["duckdb_version"], *(r["duckdb_version"] for r in runs)}
+    if len(versions) != 1:
+        raise StepError("version", f"children ran different duckdb builds: {sorted(versions)}")
     row["rewrite_s_all"] = [round(r["rewrite_s"], 3) for r in runs]
+    # Band C reads the final batch's median (AC-8); the in-daemon ceiling reads the worst run of
+    # ANY batch, the noisy first one included (ch-bsd r1 #m-2).
     row["rewrite_s_median"] = round(statistics.median(times), 3)
-    row["rewrite_s_max"] = round(max(times), 3)
+    row["rewrite_s_max"] = round(max(r["rewrite_s"] for r in runs), 3)
+    # The rewrite's size varies run to run (~1.3 % on refmatrix, r1 #s-5): report the median.
+    row["rewrite_bytes_all"] = [r["rewrite_bytes"] for r in runs]
+    row["rewrite_bytes"] = int(statistics.median(row["rewrite_bytes_all"]))
     last = runs[-1]
-    row["rewrite_bytes"] = last["rewrite_bytes"]
     row["pids"]["rewrite"] = last["pid"]
-    for r in runs[:-1]:
-        r["target"].unlink(missing_ok=True)
 
     final = work / "rewrite.duckdb"
     os.replace(last["target"], final)
@@ -259,7 +347,7 @@ def measure_root(root: Path, scratch: Path, *, python: str,
         before_gate(final)
     g = _child(python, "measure", str(final), step="gate")
     row["pids"]["gate"] = g["pid"]
-    diffs = gate(m, g)
+    diffs = gate(m["fingerprint"], g["fingerprint"])
     row["gate"] = "fail" if diffs else "pass"
     if diffs:
         row["gate_diffs"] = diffs
@@ -299,23 +387,37 @@ def verdict(rows: list[dict]) -> dict:
 
 def run(roots: list[Path], scratch: Path, out: Path, *, python: str = sys.executable,
         **kw) -> tuple[list[dict], dict, int]:
-    rows = []
-    for root in roots:
-        try:
-            rows.append(measure_root(Path(root), scratch, python=python, **kw))
-        except StepError as e:
-            rows.append({"root": str(root), "error": e.msg, "step": e.step})
-        except (OSError, subprocess.SubprocessError, ValueError) as e:
-            rows.append({"root": str(root), "error": f"{type(e).__name__}: {e}",
-                         "step": "unexpected"})
-    v = verdict(rows)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with open(out.with_suffix(".jsonl"), "w") as fh:
-        for r in rows:
-            fh.write(json.dumps(r, default=str) + "\n")
-    out.with_suffix(".md").write_text(render_md(rows, v))
-    if scratch.exists():
-        shutil.rmtree(scratch)
+    """Measure every root; the report is ALWAYS written, and every root gets a row (R6).
+
+    Any exception from one root becomes that root's error row (ch-bsd r1 #m-3: a `KeyError`
+    used to abort the run with no report). Only this run's per-store work dirs are deleted;
+    `scratch` itself is removed only if this run created it and it is empty."""
+    roots = [Path(r) for r in roots]
+    created = not scratch.exists()
+    scratch.mkdir(parents=True, exist_ok=True)
+    rows: list[dict] = []
+    try:
+        for root in roots:
+            try:
+                rows.append(measure_root(root, scratch, python=python, **kw))
+            except StepError as e:
+                rows.append({"root": str(root), "store": store_name(root), "error": e.msg,
+                             "step": e.step})
+            except Exception as e:  # noqa: BLE001 - every failure is a counted row, R6
+                rows.append({"root": str(root), "store": store_name(root),
+                             "error": f"{type(e).__name__}: {e}", "step": "unexpected"})
+    finally:
+        for root in roots[len(rows):]:   # an interrupt still leaves a row per root
+            rows.append({"root": str(root), "store": store_name(root),
+                         "error": "not measured: run interrupted", "step": "interrupted"})
+        v = verdict(rows)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out.with_suffix(".jsonl"), "w") as fh:
+            for r in rows:
+                fh.write(json.dumps(r, default=str) + "\n")
+        out.with_suffix(".md").write_text(render_md(rows, v))
+        if created and not any(scratch.iterdir()):
+            scratch.rmdir()
     failed = sum(1 for r in rows if r.get("error"))
     print(f"measured {len(rows) - failed}/{len(rows)} stores; failed={failed}; "
           f"verdict: {v['verdict']}")
@@ -336,20 +438,20 @@ def render_md(rows: list[dict], v: dict) -> str:
         "rel: implements -> [[task-18.1-catalog-measurement]]", "",
         "## Per store {#stores}", "",
         "| store | file MiB | rewrite MiB | reclaimable MiB | f | r | A | B | median s | max s "
-        "| C | gate |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| C | gate | duckdb |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
-        name = Path(r["root"]).parent.name
+        name = r["store"]
         if r.get("error"):
             lines.append(f"| {name} | error: {r['error']} (step {r['step']}) "
-                         "| | | | | | | | | | |")
+                         "| | | | | | | | | | | |")
             continue
         lines.append(
             f"| {name} | {_mb(r['file_bytes'])} | {_mb(r['rewrite_bytes'])} "
             f"| {_mb(r['reclaimable'])} | {r['f']:.3f} | {r['r']:.3f} | {r['band_a']} "
             f"| {r['band_b']} | {r['rewrite_s_median']} | {r['rewrite_s_max']} "
-            f"| {r['band_c']} | {r['gate']} |")
+            f"| {r['band_c']} | {r['gate']} | {r['duckdb_version']} |")
     lines += ["", "## Fleet verdict {#verdict}", ""]
     lines += [f"- **{k}:** {val}" for k, val in v.items()]
     lines += ["", "## Bands (pre-registered, task-18.1 R3) {#bands}", ""]
