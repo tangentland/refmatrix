@@ -539,7 +539,8 @@ def test_build_deny_captures_the_live_pids_from_the_real_pid_files(tmp_path, mon
         plistlib.dumps({"EnvironmentVariables": {"REFMATRIX_ROOT": str(other)}}))
     monkeypatch.setattr(rmx_sandbox, "_account_home", lambda: home)
     deny = rmx_sandbox.build_deny(repo, env={"HOME": str(home)})
-    assert deny["pids"] == [111, 222, 333], deny["pids"]
+    # Superset: the 7777 listener (the live hub, via lsof -- ch-bsd r2) is captured too.
+    assert {111, 222, 333} <= set(deny["pids"]), deny["pids"]
     assert any(p.endswith("/other/.refmatrix") for p in deny["paths"]), deny["paths"]
 
 
@@ -549,3 +550,39 @@ def test_this_sessions_deny_set_carries_a_pid_list():
     deny = json.loads((root / rmx_sandbox.DENY_FILE).read_text())
     assert isinstance(deny.get("pids"), list), deny.keys()
     assert all(isinstance(p, int) for p in deny["pids"])
+
+
+@pytest.fixture
+def tcp_listener_child():
+    """A child THIS test owns, listening on a loopback TCP port; yields `(pid, port)`."""
+    p = subprocess.Popen(
+        [sys.executable, "-c",
+         "import socket, sys, time\n"
+         "s = socket.socket(); s.bind(('127.0.0.1', 0)); s.listen(4)\n"
+         "print(s.getsockname()[1], flush=True)\n"
+         "time.sleep(120)\n"],
+        stdout=subprocess.PIPE, text=True)
+    try:
+        port = int(p.stdout.readline().strip())
+        yield p.pid, port
+    finally:
+        p.kill()
+        p.wait(timeout=30)
+
+
+def test_build_deny_captures_the_listener_on_every_deny_port(tmp_path, monkeypatch,
+                                                             tcp_listener_child):
+    """ch-bsd r2 (2026-10-15): the live hub writes no `hub.pid` on this host, so the pid-file
+    capture alone left it signalable. `build_deny` also asks `lsof` who LISTENS on each deny port
+    (7777 and `RMX_SANDBOX_HUB_PORT`); the listener here is a child this test owns on a
+    deny-extra port, and `os.kill(pid, 15)` on it is then refused by the pure rule."""
+    _require_sandbox()
+    pid, port = tcp_listener_child
+    home = tmp_path / "home"
+    (home / ".refmatrix").mkdir(parents=True)
+    monkeypatch.setattr(rmx_sandbox, "_account_home", lambda: home)
+    deny = rmx_sandbox.build_deny(tmp_path / "repo",
+                                  env={"HOME": str(home), "RMX_SANDBOX_HUB_PORT": str(port)})
+    assert port in deny["ports"], deny["ports"]
+    assert pid in deny["pids"], (pid, deny["pids"])
+    assert rmx_sandbox.violation("os.kill", (pid, 15), deny) == f"pid {pid}"

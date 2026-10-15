@@ -65,7 +65,7 @@ Each read the live machine; each is fixed, none skipped.
 |---|---|---|
 | `test_derive_surface.py` (10), `test_grep_case_every_path.py` (3), `test_grep_learned_reachable.py` (2), `test_grep_verify_before_cap.py` (2), `test_reingest.py::test_reingest_runs_code_then_memory_in_order`, `test_untrack.py::test_cli_untrack_dry_run_then_apply` | nothing live: they chdir into their own store and need the cwd walk, which R2's `REFMATRIX_ROOT` now overrides | `monkeypatch.delenv("REFMATRIX_ROOT")` next to each `monkeypatch.chdir` (R2's rule) |
 | `test_agent_env.py::test_bashrc_section_parses_and_grep_function_calls_the_wrapper` | `[ -x "$HOME/refmatrix/bin/rmxgrep" ]` -- the DEPLOY tree's wrapper (`hooks.py:916`) | a stand-in `$HOME/refmatrix/bin/rmxgrep` under `tmp_path` |
-| `test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate` | `$HOME/.claude/projects/<slug>/memory` (`scripts/lint-gmd.sh` scope) | the lint subprocess gets `RMX_SANDBOX_REAL_HOME` as `HOME` (memory files are not in the deny set). Fails in ANY clone anyway (557 errors on the host, slug of the clone path); unproven until a main-tree run |
+| `test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate` | `$HOME/.claude/projects/<slug>/memory` (`scripts/lint-gmd.sh` scope) | the lint subprocess gets a DECOY home holding a copy of only `.claude/projects/<slug>/memory`, never the real `HOME` (ch-bsd r1 m3, [[#bsd-r1-remedy]]; this row first handed it `RMX_SANDBOX_REAL_HOME`). Fails in ANY clone anyway (546 dangling-doc, the clone's directory name); unproven until a main-tree run |
 | `test_mcp_memory_recall_routing.py::test_root_decodes_projects_slug_to_project_store` | none: `cli._root_from_projects_slug` compares a RESOLVED cwd with an UNRESOLVED `Path.home()`, which only a symlinked home (`/tmp`) exposes | the sandbox root is `realpath`ed. The latent `src/` defect is FLAGGED, not fixed (out of scope) |
 
 ## The deny set and the redirect {#deny}
@@ -276,3 +276,10 @@ rows, 0 unexpected touches lines, 9/9 live pids alive.
 a shell builtin `kill`, an absolute `/bin/launchctl` in a shell script, `pkill`/`killall` by name
 and `lsof` are not refused; a captured pid later reused is refused (a spurious failure, never a
 reach). **s7** (tiers 1/2 unexecuted) is the orchestrator's decision; AC-7/AC-8 stay open.
+
+**ch-bsd r2 (2026-10-15)** -- `build_deny` also captures, before the redirect, the pids
+`/usr/sbin/lsof -nP -t -iTCP:<p> -sTCP:LISTEN` returns for every deny port (7777 and
+`RMX_SANDBOX_HUB_PORT`): the live hub writes no `hub.pid` on this host. An lsof failure is printed
+and the run proceeds with pid-file pids only. Pinned by
+`test_build_deny_captures_the_listener_on_every_deny_port` (a child-owned listener on a deny-extra
+port; `os.kill(pid, 15)` refused). The `#r6-fixes` lint row now states the decoy home (r2 MEH).

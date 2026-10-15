@@ -189,10 +189,43 @@ def live_pids(roots, homes) -> list:
     return sorted(out)
 
 
+LSOF = "/usr/sbin/lsof"
+
+
+def listener_pids(ports) -> list:
+    """The pids LISTENING on each TCP port, from `lsof -nP -t -iTCP:<p> -sTCP:LISTEN` (ch-bsd r2,
+    2026-10-15): the live hub writes no `hub.pid` on this host, so the pid files alone left it
+    signalable. lsof exits 1 with no output when nothing listens (not a failure); any other
+    failure is PRINTED and the run proceeds with the pid-file pids only."""
+    import subprocess
+    out = set()
+    for port in sorted(ports):
+        argv = [LSOF, "-nP", "-t", f"-iTCP:{port}", "-sTCP:LISTEN"]
+        try:
+            r = subprocess.run(argv, capture_output=True, text=True, timeout=20)
+        except (OSError, subprocess.SubprocessError) as exc:
+            sys.stderr.write(f"rmx sandbox: {' '.join(argv)} failed ({exc}); listener pids for "
+                             f"port {port} NOT captured, pid files only\n")
+            continue
+        if r.returncode not in (0, 1) or (r.returncode == 1 and r.stderr.strip()):
+            sys.stderr.write(f"rmx sandbox: {' '.join(argv)} exited {r.returncode}: "
+                             f"{r.stderr.strip()[:200]}; listener pids for port {port} NOT "
+                             f"captured, pid files only\n")
+            continue
+        for tok in r.stdout.split():
+            try:
+                out.add(int(tok))
+            except ValueError:
+                sys.stderr.write(f"rmx sandbox: lsof printed a non-pid {tok!r} for port "
+                                 f"{port}\n")
+    return sorted(out)
+
+
 def build_deny(repo: Path, env=None) -> dict:
     """R3's ONE deny set, from the real paths. Read BEFORE the audit hook is installed (the
     registry and the plists name the stores the hook will then refuse). `pids` (S6): the live
-    daemons and hubs those paths name, which `os.kill` / a spawned `kill` may not signal."""
+    daemons and hubs those paths name, plus whatever listens on a deny port (`lsof`), which
+    `os.kill` / a spawned `kill` may not signal."""
     env = os.environ if env is None else env
     homes = [real_home(env)]
     if _account_home() not in homes:
@@ -211,7 +244,7 @@ def build_deny(repo: Path, env=None) -> dict:
         # the real 7777 stays denied either way.
         ports.add(int(env["RMX_SANDBOX_HUB_PORT"]))
     return {"paths": sorted(paths), "ports": sorted(ports),
-            "pids": live_pids(sorted(roots), homes),
+            "pids": sorted(set(live_pids(sorted(roots), homes)) | set(listener_pids(ports))),
             "touches": str(repo / TOUCHES_REL)}
 
 
