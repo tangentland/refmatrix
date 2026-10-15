@@ -8,6 +8,7 @@ metadata:
   status: pending
   created: 2026-10-06
   revised: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Task 16.4: measurement {#root}
@@ -16,7 +17,9 @@ metadata:
 > Status: Pending (revision after the 2026-10-14 decision log; revision 6, answering spec review
 > r5 `bsd-plan16-spec-review-r5-cd7c923`). The precision gate is KEPT by user decision 2026-10-07,
 > scored on complete outputs only, with a forward-collected oracle.
-> **Wave:** 2, after 16.2 ships ([[plan-16-invisible-grep-shim#waves]]).
+> **Wave:** 2, after 16.2 ships ([[plan-16-invisible-grep-shim#waves]]); its acceptance window
+> opens only after 16.2 and 16.3 deploy together AND the user runs `rmx learn on --global` (R0,
+> d9bj; revision round 8, [[#rev-round-8]]).
 > Depends on: [[task-16.1-argv-faithful-learner]], [[task-16.2-invisible-shim]]. Tests run in
 > plan-23 task 23.0's sandbox.
 
@@ -29,6 +32,20 @@ rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
 rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
 rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan16-22-spec-rereview-r8-23ad703]] s-2 where it touches 16.4, and d9bj
+([[plan-review-2026-10-14#t12-approvals]]). Read at `23ad703`: `learn_switch.decision` (env, store
+marker, global marker, default; it returns the deciding rule). `learn_switch` keeps no record of
+when a marker was removed, so the flip time comes from the deploy handoff.
+
+| finding / decision | answered in |
+|---|---|
+| r8 s-2 / d9bj (16.4 cannot collect while `learn.off` is set; the window must open after the flip and print the decision) | [[#r0]] (window after 16.2 + 16.3 deploy and `rmx learn on --global`; `--window-start`; the decision in the header; `learning-off` / `no-window` rows never a verdict); R5 acceptance-run sentence and the closure rule anchored to the flip; AC-8 + mutation; header Wave line |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r8-23ad703]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Revision 6 changelog {#revision-6}
 
@@ -75,6 +92,21 @@ So the gate has a pre-registered minimum n. A FORWARD oracle grows that n from r
 ships: the learner's own log record makes attribution exact. {#why-lead}
 
 ## Requirements {#requirements}
+
+**R0. The window opens after the learn-switch flip (d9bj; r8 s-2).** {#r0} Since 2026-10-15 the
+global `learn.off` marker is set ([[plan-16-invisible-grep-shim#today-learn-off]]): the shims take
+their learning-off exit and spawn no learner, so a forward window opened while it is set holds no
+learner record and `n_complete` stays 0, a vacuous acceptance. So:
+- the acceptance window opens only after 16.2 and 16.3 are deployed together and the user has run
+  `rmx learn on --global` ([[plan-16-invisible-grep-shim#learn-flip]]); the deploy handoff records
+  the flip's time, and the harness takes it as `--window-start` (forward records with an earlier
+  `ts` are not scored as acceptance data);
+- the harness header prints `learn_switch.decision(<store_root>)` for the measured store
+  (`enabled`, the deciding `rule` (`env`, `store-marker`, `global-marker`, `default`) and its
+  `note`), read at run time, before any scoring;
+- when that decision is OFF, or no `--window-start` is given, the run still writes its dated row
+  but labels it `learning-off` (or `no-window`): its verdict is never `pass` or `fail`, and it can
+  never be the acceptance run.
 
 **R1. Corpus, historical and forward.**
 - **Historical.** The project's transcripts, plus their `subagents/` transcripts.
@@ -203,7 +235,7 @@ throwaway store with no hub registration. {#r2}
 If B misses an evaluated gate, the plan is re-decided. Thresholds are not edited after a run.
 
 **Closure rule (#s-r3-9).** plan-16 cannot move to `completed` while `n_complete < 30`. If 14 days
-after 16.2 is deployed the forward oracle still has `n_complete < 30`, the harness's dated row says
+after the flip (R0) the forward oracle still has `n_complete < 30`, the harness's dated row says
 so and the precision decision goes back to the user, with the n reached and the remaining options.
 This deferral is anchored to that date and to this task. It is not open-ended.
 
@@ -211,7 +243,8 @@ This deferral is anchored to that date and to this task. It is not open-ended.
 - The harness takes `--since` and re-scores historical plus forward data. Each run appends a dated
   row to the report's results table.
 - The gate verdict is stated per run, with the n it was evaluated on.
-- The first run after 16.2 ships is the plan's acceptance run. Later runs track drift.
+- The first run after the flip (R0) whose header reads the switch ON is the plan's acceptance
+  run. Later runs track drift.
 
 **R6. The report** is `docs/measurements/grep-observed-learning.md` (GMD), holding:
 - the metrics with their verdicts and n;
@@ -259,6 +292,12 @@ This deferral is anchored to that date and to this task. It is not open-ended.
 6. A 20-pair hand-check of taught rows against real lines is listed in the report.
 7. **Smoke test.** On 3 complete invocations over a fixture tree, arm A's `-i` case has lower
    recall than arm B's.
+8. **Learning off is labelled, never scored (R0; d9bj).** In the sandbox with a global
+   `learn.off` marker, a harness run prints `enabled=False rule=global-marker` in its header and
+   writes a row labelled `learning-off` with no gate verdict, even when fixture data would pass;
+   with the marker removed and `--window-start` given, the same run prints `enabled=True
+   rule=default` and evaluates the gates. A run with no `--window-start` is labelled `no-window`.
+   Mutation "score regardless of the switch" FAILS it (the marker run reports a verdict).
 
 ## Files to modify {#files-to-modify}
 

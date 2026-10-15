@@ -8,12 +8,14 @@ metadata:
   status: pending
   created: 2026-10-07
   revised: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Task 22.2: the repair-then-remove engine {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 7, 2026-10-15; [[#rev-round-7]]; round 6 in [[#rev-round-6]], round 5
+> Status: Pending (revision round 8, 2026-10-15; [[#rev-round-8]]; round 7 in [[#rev-round-7]], round 6 in
+> [[#rev-round-6]], round 5
 > in [[#rev-round-5]], round 3 in [[#rev-round-3]])
 > Wave: 1, after 22.1a (#t8-wave1).
 > Depends on: 22.1a (plan manifest contract); 16.6 Wave-1 slice (`move_learned_provenance` and the
@@ -77,7 +79,8 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
        dangling-evidence rows carry a `rel:` detail, r7 `#code-facts`). An AST test pins that list
        (AC-3c). Every `evidence_remove` event carries the row's `detail` as part of its identity, so
        replay deletes only rows with that exact `detail`, and applies the learned guard unless the
-       event carries `ingest_ok: true`.
+       event carries `ingest_ok: true`. The event names the concept end as `(c_kind, c)`, the
+       kind(s) given by R3's one helper `Store._row_op_c_kinds` (r8 b-1; [[#r3]]).
    - `repoint_evidence(identity, new_line)` — updates `line` (and `span_end` by the same offset),
      and moves the identity's sidecar rows to the new `line`.
    - `rename_entity(kind, old, new)` — for an in-store `orphan-root` repair. **Merge on collision:**
@@ -102,7 +105,8 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
      Before such a purge, in the same batch, the engine records those rows in the intent record
      (R4's `evidence_row` form, with the concept named and its `old_id`, since it is still alive at
      intent time) and removes them through `remove_evidence(identity, keep=0, ingest_ok=True)`,
-     which logs `evidence_remove` by name (with `detail` and `ingest_ok`). With R3's timestamp
+     which logs `evidence_remove` by name (with `c_kind`, `detail` and `ingest_ok`; the purged
+     concept's own kind, a `doc` for every `rel:` target). With R3's timestamp
      order (d9av) that event deletes on replay only the copies appended at or before it, so an
      identical row a later re-ingest of the other entity writes survives a rebuild (AC-3d). A
      restore of the purge re-attaches these rows to the restored concept (R4, r7 s-2). This holds
@@ -110,9 +114,12 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
 3. **R3 Row-level `facts.log` events, replayed (22 #b-3).** The replay knows only entity-level
    `tombstone` and append-only `evidence` today (`Store._apply_event_body`; the LWW pass in
    `Store.rebuild_index_from_log`). Add three ops, keyed by NAME (never by id):
-   `evidence_remove{linkage, c, e_kind, e, file, line, detail, keep, ingest_ok}` (`detail` and
-   `ingest_ok` added in round 7, r7 m-4), `evidence_repoint{…identity, new_line}`,
-   `entity_rename{kind, from, to, merged}`. The sidecar's own events (16.6 R1d:
+   `evidence_remove{linkage, c_kind, c, e_kind, e, file, line, detail, keep, ingest_ok}` (`detail`
+   and `ingest_ok` added in round 7, r7 m-4; `c_kind` in round 8, r8 b-1),
+   `evidence_repoint{linkage, c_kind, c, e_kind, e, file, line, new_line}`, both built by
+   16.6's `edge_records.row_event` and added to `edge_records.ROW_OPS` by this task
+   ([[task-16.6-learned-row-validation#r1d-one-format]], d9bl), and
+   `entity_rename{kind, from, to, merged}`, which names no edge and is not a row event. The sidecar's own events (16.6 R1d:
    `learned_provenance`, `learned_provenance_move`) are logged by the same call, AFTER the
    evidence op's own event, so a rebuild reproduces the sidecar too (b-2). {#r3}
    - **ONE row pass, appends and row ops together, in TIMESTAMP order (d9av; r7 b-1; replaces
@@ -125,21 +132,25 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
      after `T` (a re-learned row, a re-ingested `rel:` edge) is applied after it and survives,
      exactly as the live store keeps it. The same rule, list and order is stated in
      [[task-16.6-learned-row-validation#r1d]], which builds the pass (this task adds its ops).
-     - *Where the order comes from (read at `77ac38f`).* `Store.rebuild_index_from_log` sorts
-       every event with `events.sort(key=lambda e: e.get("ts", 0))` (`store.py:7926`), a stable
-       sort, so equal `ts` keep their log order; today it then collects `evidence` events into
-       `evidence_events` (`:7998`) and applies them in pass 3 per partition (`:8087`), after
-       entities, protections and links. The row pass replaces that `evidence_events` loop: per
-       partition, it walks the evidence appends and row ops of that partition in the sorted
-       order. The incremental path (`Store.apply_log_delta` → `_apply_one_event` →
-       `_apply_event_body`) applies each event as it reads it, in log byte order, which already
-       interleaves appends and row ops (`apply_log_delta` has no caller in `src/` at `77ac38f`:
-       its only user, writer rotation, is dropped, d9ao; it stays tested).
+     - *Where the order comes from (re-read at `23ad703`, 0.78.3; r8 m-5).*
+       `Store.rebuild_index_from_log` sorts every event with `events.sort(key=lambda e:
+       e.get("ts", 0))` (`store.py:7941`), a stable sort, so equal `ts` keep their log order; its
+       pass 2 collects `evidence` events into `evidence_events`, Pass 2b (bug-117) resolves each
+       legacy one's `c_kind` (counting `evidence_unresolved`), and pass 3 applies them per
+       partition after entities, protections and links (counting `evidence_skipped_dead`). The
+       row pass replaces only pass 3's loop and takes the appends AFTER Pass 2b
+       ([[task-16.6-learned-row-validation#r1d]], r8 m-1): per partition, it walks the evidence
+       appends and row ops of that partition in the sorted order. The incremental path
+       (`Store.apply_log_delta` → `_apply_one_event` → `_apply_event_body`) applies each event as
+       it reads it, in log byte order, which already interleaves appends and row ops
+       (`apply_log_delta` has no caller in `src/` at `23ad703`: its only user, writer rotation, is
+       dropped, d9ao; it stays tested).
      - *Within a call.* A primitive's sidecar event follows its evidence event in the same call
        (same `ts` from `_log_events`, or a later one from `_log_event`), so the tie-break by log
        position keeps it after; the learned provenance still follows its evidence row.
      - *Compaction is unaffected.* `Store.dump_catalog_to_log` gives each `evidence` event the
-       synthetic `ts` `GREATEST(c.updated_at, e.updated_at)` (read at `77ac38f`) and a compacted
+       synthetic `ts` `GREATEST(c.updated_at, e.updated_at)` (re-read at `23ad703`; since 0.78.3 each
+       dumped edge event also carries `c_kind`) and a compacted
        log holds no `evidence_remove`, so the pass has nothing to order there; any row op logged
        after the compaction has a later `ts` than every dumped append. 16.6 R1d gives each dumped
        `learned_provenance` event its evidence row's `ts`, emitted after it.
@@ -147,23 +158,64 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
        would leave that event no evidence row at the recorded line (`unresolved_provenance`), and
        the provenance would be lost (r3 m-1). Never a remove pass after all appends: it deletes a
        row the live store re-created after the remove (r7 b-1; AC-3d).
-     - *How `c` resolves.* Each row op resolves `c` exactly as the `evidence` replay of the same
-       row does: as kind `concept` (`store.py:8090` rebuild, `:7841` incremental). A row whose
-       concept is a doc or memory entity is never rebuilt from its `evidence` event (r7
-       `#code-facts`, a pre-existing replay gap this plan does not change), so its row op also
-       resolves nothing there and is counted `skipped_unresolved`, never raised.
+     - *How the ends resolve (r8 b-1, d9bl; replaces round 7's "as kind `concept`", which
+       bug-117 made false).* Every row op carries the concept end as `(c_kind, c)` and the entity
+       end as `(e_kind, e)`, spelled with `edge_records.edge_fields(linkage, c_kind, c, e_kind, e,
+       **extra)` through 16.6's one builder `edge_records.row_event`; `edge_event` is not used,
+       because it accepts only `link` / `unlink` / `evidence`. The op resolves its ends exactly
+       as the `evidence` replay of the same row does: by `(c_kind, c)` (rebuild:
+       `name_to_id[(c_kind, c)]`; incremental: `Store._replay_concept`). A legacy append (no
+       `c_kind`) is resolved by the ONE rule, `edge_records.resolve_legacy_kind`, through 16.6's
+       `edge_records.resolve_c_kind` (Pass 2b), before the row pass matches identities by
+       `edge_records.row_key`. A row op is never written without `c_kind` (`row_event` raises).
+       Doc, memory and code concept ends replay since 0.78.3 (bug-117), so a row op on a `rel:`
+       evidence row (a `doc` concept, the dominant case: all 14,745 cliquedb dangling-evidence
+       rows) resolves and acts on a rebuild; AC-3c, AC-3d and AC-3f prove it.
+     - *Which kind a LIVE primitive's op names (r8 b-1; one helper).* A row op must name the key
+       a rebuild holds the copies under. For an append written since 0.78.3 that is the
+       catalog row's own kind. For a LEGACY append the rebuild uses the one legacy rule, which
+       picks `concept` whenever a `concept` of that name is logged, so a row live on `doc A` is
+       rebuilt onto a live `concept A` (a pre-existing bug-117 residue; a compaction ends it,
+       since `dump_catalog_to_log` re-emits every live row kinded). The primitives cannot tell
+       the two apart without reading the log, so ONE method,
+       `Store._row_op_c_kinds(c_name, catalog_kind) -> tuple[str, ...]`, returns
+       `(catalog_kind,)`, plus the kind `edge_records.resolve_c_kind(None, c_name, partition,
+       <kinds of c_name in the live partition>)` returns (the one legacy rule, through the one
+       resolver) when that is another kind whose entity does NOT hold an identical row; R2's primitives
+       log one op per returned kind. On a rebuild the extra op removes (re-points) exactly the
+       copies the legacy rule put on the other key, and matches nothing when the appends are
+       kinded; incrementally it finds no row and is counted `no_row`. When the other kind's
+       entity does hold an identical row, no extra op is logged and the row is counted
+       `legacy_misresolved` and printed. [[#r9]]'s events need no such helper: the audit read the
+       log, so each event names the key it answers exactly. AC-3f.
+     - *The two paths agree on kinded events only (r8 m-3).* Every row op is kinded, so both
+       paths resolve it the same way. A LEGACY append follows each path's resolver: the rebuild
+       resolves over every kind LOGGED for the name (tombstoned keys included), the incremental
+       path over the kinds in the LIVE catalog; with a tombstoned `concept X` (which [[#r9]]
+       logs) and a live `doc X`, a legacy edge `c = X` attaches to `doc X` incrementally and is
+       skipped dead on a rebuild. Low impact today (`apply_log_delta` has no caller, d9ao); a
+       bug-registry row for it is the orchestrator's ([[#rev-round-8]]).
+     - *Counters (r8 m-4).* On the rebuild path every skip is counted, never raised: bug-117's
+       `links_skipped_dead`, `evidence_skipped_dead`, `links_unresolved`,
+       `evidence_unresolved`, and, for the row ops, 16.6's one `row_skips` dict (through
+       `Store._row_skip`). The incremental path's total stays `skipped_unresolved`
+       (`apply_log_delta`).
    - On replay, `evidence_repoint` and `entity_rename` move only `linkage_evidence` rows; the
      sidecar keys move only from their own `learned_provenance_move` events. `evidence_remove`
      also removes the identity's sidecar rows (16.6 R1d).
    - **No op keyed by id, ever (r6 b-1, d9aq).** The dangling removal of [[#r9]] adds NO op. It
-     logs only existing, name-keyed events: `tombstone{kind, name}` and `unlink{linkage, c, e_kind,
-     e}`, which `rebuild_index_from_log` resolves in its LWW pass (pass 2: a tombstone whose `ts`
-     is at or after the key's latest `entity` event drops the entity; the latest of `link` /
-     `unlink` per `(partition, linkage, c, e_kind, e)` wins), and `evidence_remove`, already in
-     the one pass above. The incremental path (`Store.apply_log_delta` → `_apply_one_event` →
-     `_apply_event_body`) resolves the same events by name; against a catalog that no longer
-     holds the endpoint they resolve to nothing and are counted `skipped_unresolved`, never
-     raised. Round 5's `link_remove{linkage, entity_id, concept_id}` is WITHDRAWN: a rebuild
+     logs only existing, name-keyed events: `tombstone{kind, name}` and `unlink{linkage, c_kind,
+     c, e_kind, e}` (built by `edge_records.edge_event("unlink", …)` with a non-empty `c_kind`,
+     r8 b-1), which `rebuild_index_from_log` resolves in its LWW pass (pass 2: a tombstone whose
+     `ts` is at or after the key's latest `entity` event drops the entity; the latest of `link` /
+     `unlink` per `(partition, linkage, c_kind, c, e_kind, e)` wins, Pass 2b merging a legacy
+     key into its resolved kind by largest `ts`), and `evidence_remove`, already in the one pass
+     above. A kindless `unlink` would go through Pass 2b's legacy rule, which picks `concept`
+     whenever a `concept` of that name is logged, and land on another key than the kinded `link`
+     it answers; the old link would then revive on re-creation (AC-3b's mutation). The
+     incremental path (`Store.apply_log_delta` → `_apply_one_event` → `_apply_event_body`)
+     resolves the same events by name; against a catalog that no longer holds the endpoint they
+     resolve to nothing and are counted `skipped_unresolved`, never raised. Round 5's `link_remove{linkage, entity_id, concept_id}` is WITHDRAWN: a rebuild
      re-assigns every id through `upsert_entity`, so an id-keyed event matches nothing after it
      (or an unrelated row that now holds the id), and no replay path read it.
 4. **R4 Manifest and restore (22 #b-3, #m-4; DL #s-7).** {#r4}
@@ -455,7 +507,15 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
        the evidence side: 4,778 dead concept ids, 0 named, 896 reborn (843 fully covered, 53 on
        part of their rows), 3,882 none ([[task-22.1a-provenance-free-classes#r1-dangling]]).
        Round 6 said the 8 were ids "whose rows no single logged name covers"; that was false
-       (r7 m-1).
+       (r7 m-1). **Covering and reborn by the one legacy rule (r8 m-2).** An event covers a key
+       `(p, k, n)` only when its `c_kind` is `k`, or it is legacy and
+       `edge_records.resolve_legacy_kind` over the kinds LOGGED for `n` in `p` returns `k`
+       (22.1a condition (iii)); the reborn entities of a dead id are EVERY live key a covering
+       event names that way, not one "best" key. Re-measured on the same cliquedb copy
+       ([[task-22.1a-provenance-free-classes#r1-dangling]]): still 896 evidence-side reborn, 381
+       of them covered by more than one live key (r7's best-key split depended on set order), 47
+       carrying a row the reborn entity does not hold (121 `(row, key)` pairs, every one a row a
+       `doc` of the same name holds live while the legacy rule resolves the name to `concept`).
      - *`remove_dangling_links(members)` and `remove_dangling_evidence(members)`* (new `Store`
        methods, [[#files-to-modify]]), under a batch hold (R6), in this order per member:
        1. **Re-check** inside the hold: the row still exists and its dead side is still dead under
@@ -470,21 +530,29 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
        4. **Log by name, never by id.** Each event carries the `partition` field of the
           `facts.log` event it answers, exactly as that event carries it (present with that value,
           or absent), never the batch's binding (R6), since rebuild keys events by
-          `(partition or its bound partition, …)` (`store.py:7931`, `:7953`) and `_log_event` adds
-          no partition itself (r7 m-3):
+          `(partition or its bound partition, …)` (`rebuild_index_from_log`'s `dpart` and `part`,
+          `store.py:7946`, `:7968` at `23ad703`) and `_log_event` adds no partition itself (r7
+          m-3). Each event names the concept end as `(c_kind, c)` (r8 b-1, d9bl): the `c_kind`
+          of the KEY it answers, which for a legacy `link` / `evidence` event is the kind Pass 2b
+          resolves it to (16.6's `edge_records.resolve_c_kind`, the one legacy rule), so the event
+          lands on the key a rebuild holds:
           - **NAMED dead endpoint:** once per apply, one `tombstone{kind, name}` with the partition
             field of its surviving `entity` event.
           - **Link row whose both ends are then named** (the live end by its catalog name, the
-            dead end by its log name): one `unlink{linkage, c, e_kind, e}` per DISTINCT last-wins
-            `link` key that answers the row, each with that `link` event's partition field (r7
+            dead end by its log name): one `unlink{linkage, c_kind, c, e_kind, e}` per DISTINCT
+            last-wins `link` key that answers the row (`c_kind` = that key's kind: the dead
+            concept's logged key kind for a dead concept side, the live concept's catalog kind
+            otherwise), each with that `link` event's partition field (r7
             m-3: a compacted `entity` event may carry `partition` while later live `link` events
             do not, and an `unlink` keyed on the entity's partition would not override the
             live-shape key; if the name were later re-created in the bound partition the old link
             would revive). A later re-creation of the name then does not revive the old link (the
             latest of `link`/`unlink` wins).
           - **Evidence row of a NAMED dead concept:** the concept's tombstone AND one
-            `evidence_remove{linkage, c, e_kind, e, file, line, detail, keep: 0, ingest_ok}` by
-            name (d9av; r7 b-1), through `remove_evidence(identity, keep=0, ingest_ok=True)`.
+            `evidence_remove{linkage, c_kind, c, e_kind, e, file, line, detail, keep: 0,
+            ingest_ok}` by name (d9av; r7 b-1), `c_kind` the dead concept's logged key kind (a
+            `doc` for a `rel:` target), through `remove_evidence(identity, keep=0,
+            ingest_ok=True)`.
             Under R3's timestamp order the remove deletes on replay only the copies appended at or
             before it: if the concept's name is re-created later and the old `evidence` events
             re-resolve, the remove still drops them (the live store does not hold them), while an
@@ -492,22 +560,32 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
             holds it). Round 6's "tombstone only" branch, and its caveat that a re-created name
             re-attaches the old rows, are WITHDRAWN: that rested on the remove pass running after
             every append (AC-3e).
-          - **`unnamed:reborn` (r7 m-1):** the best-covering key has a live catalog row, so NO
-            tombstone (it would drop the reborn entity on a rebuild: its `ts` would be later than
-            the reborn entity's `entity` event). For each dead row the reborn entity does NOT
-            hold and whose last-wins event on the reborn key is a `link` (link side), or that a
-            logged `evidence` event under the reborn name covers (evidence side), one `unlink` /
-            `evidence_remove` by name as above; a dead row the reborn entity DOES hold logs
-            nothing (the rebuild converges on the reborn entity, which holds the same row, and an
-            `unlink` or `evidence_remove` on its key would delete that live row on a rebuild).
-            Each reborn member is counted `reborn` in the apply report, with `reborn_unlinked` /
-            `reborn_evidence_removed` for the rows that got an event. On cliquedb that is 1 row
-            today at most (id 2791206's 3,459th row; 0 whose last word is `link`, r7 m-1).
+          - **`unnamed:reborn` (r7 m-1; per row and per live covering key, r8 m-2):** a
+            covering key has a live catalog row, so NO tombstone (it would drop the reborn entity
+            on a rebuild: its `ts` would be later than the reborn entity's `entity` event). For
+            each dead row and each LIVE key that covers it (22.1a condition (iii): `c_kind`
+            equal, or the one legacy rule over the logged kinds), when that key's entity does NOT
+            hold the row and the key's last-wins event for the row is a `link` (link side), or a
+            logged `evidence` event covers it (evidence side), one `unlink` / `evidence_remove`
+            by name keyed on THAT key's kind, as above; a row the key's entity DOES hold logs
+            nothing for that key (the rebuild converges on it, and an `unlink` or
+            `evidence_remove` on its key would delete that live row on a rebuild). A row that
+            another kind of the same name holds live while the legacy rule resolves the name to
+            this key is also counted `legacy_misresolved` and printed: the rebuild resolves its
+            legacy events to the other kind, which a compaction ends (`dump_catalog_to_log`
+            re-emits every live row with its `c_kind`), not this engine. Each reborn member is
+            counted `reborn` in the apply report, with `reborn_unlinked` /
+            `reborn_evidence_removed` for the rows that got an event. On cliquedb: link side 1 row
+            at most (id 2791206's 3,459th row; 0 whose last word is `link`, r7 m-1); evidence
+            side 121 `evidence_remove` events on 47 dead ids, all 121 `legacy_misresolved` (10
+            names live as both `doc` and `concept`; the doc holds every one), measured on the r6
+            copy, whose log holds 0 kinded `evidence` events (r8 m-2).
        5. **A NAMELESS dead endpoint (`unnamed:none` / `unnamed:ambiguous`) logs nothing, by
           design.** No name covers its rows in its own partition: the log either names no key for
           it, or names several that no single one wins. So a rebuild cannot re-create the
           endpoint ONTO those rows (link and evidence replay need both names in the rebuilt
-          catalog, and pass 3 skips a row whose `cid` or `eid` does not resolve), and the deleted
+          catalog, and pass 3 skips and COUNTS a row whose `cid` or `eid` does not resolve:
+          `links_skipped_dead` / `evidence_skipped_dead`, bug-117, r8 m-4), and the deleted
           row cannot come back from the log. There is also nothing to key an event on, and an
           id-keyed event would match nothing after a rebuild re-assigns ids ([[#r3]]). Round 6's
           reason, "no `entity` event that a rebuild would act on names it", described the 8
@@ -538,25 +616,35 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
    **3b. Dangling-link replay (r6 b-1, d9aq).** Sandbox store with two partitions, `p1` (the
    default) and `p2`. Its `facts.log` holds, for doc `D` in `p2`, an `entity` event carrying
    `partition: p2` (the compacted-log shape) and two `link` events (`mentions` from concept `X`,
-   `part-of` from concept `Y`), and no tombstone; `D`'s `entities` row is then deleted by raw SQL
+   `part-of` from DOC `Y`, its event carrying `c_kind: doc`), and no tombstone; the log also holds
+   a `concept` named `Y` in `p2` (r8 b-1); `D`'s `entities` row is then deleted by raw SQL
    (bug-111's shape), leaving its two `entity_links` rows dangling. A third `entity_links` row
    names an id that no `entity` event ever named (nameless). Steps: `removal_audit`, `--apply`,
    then `cp` the store and run `rebuild_index_from_log` on the copy. Expected: the live store and
    the copy each hold 0 `entity_links` rows with a dead endpoint, and `repair_fragments(dry_run=
    True)` on each reports `links_dead_entity == 0` and `links_dead_concept == 0`; the copy holds
-   NO entity named `D` in any partition and no link to `X` or `Y` from one; `facts.log` gained
-   exactly one `tombstone{kind: doc, name: D, partition: p2}` and two name-keyed `unlink` events,
-   and no event at all for the nameless row; the apply report reads `named=1 nameless=1`.
+   NO entity named `D` in any partition and no link to `X` or `Y` from one; the copy's rebuild
+   reports `links_skipped_dead == 0` and `links_unresolved == 0` (r8 m-4: every `link` key of `D`
+   is answered by its `unlink`, so pass 3 has nothing dead to skip); `facts.log` gained exactly
+   one `tombstone{kind: doc, name: D, partition: p2}` and two name-keyed `unlink` events, each
+   with the `c_kind` of the `link` it answers (`concept` for `X`, `doc` for `Y`), and no event at
+   all for the nameless row; the apply report reads `named=1 nameless=1`.
    Mutations, each FAILS it: "log `link_remove` by id" (no tombstone: the copy resurrects `D`
    with both links); "no tombstone for the named dead endpoint" (unlinks only: the copy
    resurrects `D`); "tombstone without the `entity` event's partition field" (it keys on `p1`:
-   the copy resurrects `D` in `p2`).
+   the copy resurrects `D` in `p2`); "tombstone only, no `unlink`" (the first copy reports
+   `links_skipped_dead == 2`, r8 m-4).
    **Partition of the `unlink` (r7 m-3).** `D`'s `mentions` `link` event from `X` carries NO
    `partition` field (the live shape) while its `entity` event carries `partition: p2`; after the
    apply the test re-creates a doc named `D` in `p1` (the bound partition) and rebuilds a second
    copy: that copy holds no `mentions` link from `X` to the new `D`. Mutation "key the `unlink`
    on the `entity` event's partition" FAILS it (the `unlink` keys on `p2`, the live-shape `link`
    key on `p1` still wins, and the old link revives onto the new `D`).
+   **Kind of the `unlink` (r8 b-1).** After the apply the test also re-creates a doc named `D` in
+   `p2` and rebuilds a third copy: it holds no `part-of` link from doc `Y` to the new `D`.
+   Mutation "`unlink` without `c_kind`" FAILS it (Pass 2b's legacy rule resolves the kindless
+   `unlink` to `(concept, Y)`, the kinded `(doc, Y)` `link` key keeps its `link`, and the old link
+   revives onto the new `D`).
    **Reborn (r7 m-1).** A dead id `R0` whose two rows' logged name `R` was re-created under a new
    id: the live `R` holds one of `R0`'s rows; the other row's last-wins event under `R` is a `link`.
    The audit labels `R0` `unnamed:reborn`; the apply logs NO tombstone for `R`, ONE `unlink` (for
@@ -571,30 +659,41 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
    R9 now states). `removal_audit` lists it `dangling-evidence`; `--apply` removes it; afterwards 0
    `linkage_evidence` rows have a live entity and a dead concept, `B`'s other rows are byte-equal,
    and a rebuild on a copy resurrects neither `A` nor the row; `restore` puts the row back with
-   `A`'s old id (R4's `evidence_row`). A second fixture purges a concept through this engine (R2's
-   rule): 0 dangling-evidence rows result. Mutations: "drop the `dangling-evidence` sub-class"
+   `A`'s old id (R4's `evidence_row`). A second fixture purges a DOC `A2` (a `rel:` target of
+   `B`; r8 b-1: the dominant shape) through this engine (R2's rule): 0 dangling-evidence rows
+   result, the logged `evidence_remove` carries `c_kind: doc`, and a rebuild on a copy holds no
+   `B` row to `A2`, with `evidence_unresolved == 0` and `evidence_skipped_dead` equal to the
+   number of `evidence` events naming `A2` in the fixture's log (`A2` is tombstoned, so each is
+   skipped and counted, none silently; r8 m-4). Mutations: "drop the `dangling-evidence` sub-class"
    FAILS it (the row stays); "purge without first removing the concept-side evidence rows"
    (R2) FAILS the second fixture; "the learned guard applies to `ingest_ok` callers too" (r7
-   m-4) FAILS both (the `rel:` row is not matched and stays). An AST test asserts that
+   m-4) FAILS both (the `rel:` row is not matched and stays); "row ops resolve `c` as kind
+   `concept`" (r8 b-1) FAILS the second fixture's re-creation clause in AC-3d. An AST test asserts that
    `remove_evidence(..., ingest_ok=True)` is called only from R2's concept-side rule and
    `remove_dangling_evidence`; mutation "a third caller passes `ingest_ok=True`" FAILS it.
 
    **3d. A removal followed by a re-creation survives the rebuild (d9av; r7 b-1).** Two
    fixtures, each ending with `rebuild_index_from_log` on a copy that must EQUAL the live store
    on `linkage_evidence` (multiset of rows by name), on the sidecar (every column but 16.6's
-   mark columns) and with `unresolved_provenance == 0`:
+   mark columns) and with `unresolved_provenance == 0` and `evidence_unresolved == 0` (r8 m-4):
    - *Learned (the branch switch).* File `F` has one learned row `(mentions, query/P, F, 12)`
      with its sidecar row (`F` learned-only, `protect_source='learner'`). `F` is deleted and a
      `missing-file` apply removes the row (`evidence_remove`) and purges `F` (`tombstone`). `F`
      is re-created with the same line and `P` is learned again: the learner writes the
      identical row (`entity F`, `evidence`, `learned_provenance` events, all later than the
      remove). Live: 1 row, 1 sidecar row. The copy: the same.
-   - *Ingest, through R2.* The AC-3c second fixture's engine purge of concept `A` (kind
-     `concept`: rebuild resolves an evidence row's concept only as kind `concept`,
-     `store.py:8090`) removes `B`'s `rel:` evidence to `A`. Then `A` is re-created and `B` is
-     edited and re-synced, writing the identical evidence row. Live: 1 row. The copy: the same.
-   Mutation "`evidence_remove` applied after all appends" (round 6's pass order) FAILS both (the
-   copy deletes the re-created row; the learned fixture also counts `unresolved_provenance` 1).
+   - *Ingest, through R2.* The AC-3c second fixture's engine purge of DOC `A2` (r8 b-1: a `rel:`
+     target, the dominant case; round 7 chose kind `concept` only because the rebuild then
+     resolved every concept end as `concept`, which bug-117 ended in 0.78.3) removes `B`'s
+     `rel:` evidence to `A2`, logging `evidence_remove{c_kind: doc, …}`. Then `A2` is re-created
+     and `B` is edited and re-synced, writing the identical evidence row. Live: 1 row. The copy:
+     the same.
+   Mutations, each FAILS it: "`evidence_remove` applied after all appends" (round 6's pass
+   order) FAILS both (the copy deletes the re-created row; the learned fixture also counts
+   `unresolved_provenance` 1); "row ops resolve `c` as kind `concept`" (r8 b-1) FAILS the ingest
+   fixture BEFORE the re-sync: a copy rebuilt right after `A2` is re-created holds `B`'s OLD row
+   on the new `A2` (the remove resolved nothing, the old `doc` append re-attaches), while live
+   holds none.
 
    **3e. The named dead-concept branch can fail (r7 b-1).** `B`'s evidence row names concept
    `A` (kind `concept`, with an `entity` event and an `evidence` event covering the row, so `A`
@@ -606,9 +705,31 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
    2. after `A` is re-created live (`B` untouched): the copy holds `A` and NOT `B`'s old row
       (the live store does not hold it);
    3. after `B` is re-ingested, writing the identical row: the copy holds the row once.
+   Each copy's rebuild reports `evidence_unresolved == 0`; copy 1 reports
+   `evidence_skipped_dead` equal to `B`'s appends to `A` the remove did not cover (0 in the
+   fixture, r8 m-4). `A` stays kind `concept` here (r8 b-1: AC-3c/3d cover `doc`, so both kinds
+   are covered).
    Mutations, each FAILS it: "no tombstone for a named dead concept" (copy 1 resurrects `A`);
    "tombstone only, no `evidence_remove`" (round 6's branch: copy 2 re-attaches the old row to
    the re-created `A`); "`evidence_remove` applied after all appends" (copy 3 loses the row).
+
+   **3f. A legacy append against a kinded remove (r8 b-1).** Doc `A` and concept `A` both live in
+   the default partition; `B`'s `rel:` evidence row to doc `A` is held live, and its `evidence`
+   event in `facts.log` is LEGACY (no `c_kind`, written as a pre-0.78.3 log holds it). Asserted
+   precondition: a rebuild of a copy BEFORE the apply attaches `B`'s row to `concept A` (the one
+   legacy rule picks `concept`), the bug-117 residue the helper exists for. `A` (the doc) is
+   purged through this engine (R2's concept-side rule): `Store._row_op_c_kinds("A", "doc")`
+   returns `("doc", "concept")` (concept `A` holds no identical row), and the apply logs one
+   `evidence_remove` per kind. A rebuild on a copy then holds no `B` row to either `A`, equal to
+   live, with `evidence_unresolved == 0`; the incremental replay of the same delta counts the
+   `concept` op `no_row`. A second run gives concept `A` an identical row of its own (same `B`,
+   `file`, `line`, `detail`) before the purge: the helper returns `("doc",)`, the apply prints
+   `legacy_misresolved=1`, and concept `A`'s own row survives on the live store (once) and on the
+   copy (twice: its own append plus the misresolved legacy one; that counted divergence is the
+   residue a compaction ends). Mutations, each FAILS it: "a row op names only the catalog kind"
+   (the first copy holds `B`'s row on concept `A`); "the extra kind is logged even when its
+   entity holds an identical row" (the second run's copy holds concept `A`'s row 0 times, live
+   once).
 4. **Restore by name (22 #b-3; DL #s-7; r3 b-3).** `--apply` then `restore` gives, compared by
    NAME, equal entity sets with equal `path`, `tldr`, `meta`, `canonical_name`,
    `protected`/`noise`; equal `memory_content` rows (`content`, `mtype`, `tags`, `metadata`) for
@@ -736,7 +857,8 @@ r6 m-7: this task's own file list (symbols read at `3d3c798`).
 
 | File | Change |
 |------|--------|
-| `src/refmatrix/store.py` | the R2 primitives (`remove_evidence(..., ingest_ok=)`, `repoint_evidence`, `rename_entity`) and R2's concept-side evidence rule before a purge; `remove_dangling_links` and `remove_dangling_evidence` (R9, built on `_clear_purged_bits`; reborn and per-`link`-key partition rules, r7); the R3 ops in `_apply_event_body` and in `rebuild_index_from_log`'s one timestamp-ordered row pass (16.6 R1d builds the pass; d9av); R4's restore of `link_row` / `evidence_row` with the dead-id re-check and the `id_map` re-attach (r7 s-1, s-2) |
+| `src/refmatrix/store.py` | the R2 primitives (`remove_evidence(..., ingest_ok=)`, `repoint_evidence`, `rename_entity`) and R2's concept-side evidence rule before a purge; `remove_dangling_links` and `remove_dangling_evidence` (R9, built on `_clear_purged_bits`; reborn and per-`link`-key partition rules, r7); the R3 ops in `_apply_event_body` and in `rebuild_index_from_log`'s one timestamp-ordered row pass (16.6 R1d builds the pass; d9av); R4's restore of `link_row` / `evidence_row` with the dead-id re-check and the `id_map` re-attach (r7 s-1, s-2); `Store._row_op_c_kinds`, the one helper naming a live primitive's op kind(s), and every row-op event through `row_event` / every `unlink` through `edge_event` with `c_kind` (r8 b-1) |
+| `src/refmatrix/edge_records.py` | `evidence_remove` and `evidence_repoint` added to 16.6's `ROW_OPS`, built by `row_event` (r8 b-1, d9bl) |
 | `src/refmatrix/removal_apply.py` (new) | the R6 batch loop over `bounded_steps` (incl. the per-partition and `none` batches), R4's intent log and restore, R7's gate, R5's attribution incl. [[#r5-grep-record]] |
 | `src/refmatrix/verbs.py` | `removal_apply`, `removal_restore` (R8); `mcp.py` generates their tools from `verbs.VERBS` |
 | `src/refmatrix/daemon.py` | the apply and restore ops under the writer lock (R6, R8) |
@@ -874,9 +996,29 @@ round 6.
 | d9ay (16.6 R1c retired) | [[#r2]] cites 16.6 R1's collapse rule, not R1c |
 | r7 m-5 (23.4's census trails plan-22) | not this task's: plan-23's owner updates [[task-23.4-option-a-measurement]] |
 
-The rebuild's resolution of an evidence row's concept only as kind `concept` (r7 `#code-facts`)
-is pre-existing and unchanged here; [[#r3]] states how the row ops inherit it.
+Round 7 closed here with a note that the rebuild resolved an evidence row's concept only as kind
+`concept` (r7 `#code-facts`) and that this was pre-existing and unchanged. bug-117 (0.78.3,
+`391ffeb`) closed that gap after round 7 was written; the note is deleted in round 8 and
+[[#r3]] "How the ends resolve" now follows the 0.78.3 code ([[#rev-round-8]]).
 
 rel: amends -> [[bsd-plan16-22-spec-rereview-r7-331b414]]
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 rel: depends-on -> [[task-16.6-learned-row-validation#r1d]]
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan16-22-spec-rereview-r8-23ad703]] where it touches 22.2 (b-1, m-2, m-3, m-4, m-5)
+and d9bl ([[plan-review-2026-10-14#t12-approvals]]). Code claims re-read at `23ad703` (0.78.3,
+bug-117); `src/` is unchanged from `23ad703` to the revision's HEAD. Later rows win over round 7.
+
+| finding / decision | answered in |
+|---|---|
+| r8 b-1 / d9bl (R3 resolved `c` "as kind `concept`" and called doc/memory rows "never rebuilt"; every name-keyed op lacked `c_kind`) | [[#r3]] event list (`evidence_remove`, `evidence_repoint` carry `c_kind`, built by 16.6's `row_event`, in `ROW_OPS`); "How the ends resolve" rewritten (by `(c_kind, c)`, legacy appends by the one rule through `edge_records.resolve_c_kind`, identities by `row_key`); "Which kind a LIVE primitive's op names" (`Store._row_op_c_kinds`, one helper); "No op keyed by id": `unlink` carries `c_kind`, LWW key `(partition, linkage, c_kind, c, e_kind, e)`; [[#r2]] `remove_evidence` and the concept-side rule name `c_kind`; [[#r9-dangling]] step 4 (every event takes the `c_kind` of the key it answers; `unlink`, `evidence_remove`); AC-3b (`Y` a doc with a `concept Y` logged; mutation "`unlink` without `c_kind`"), AC-3c second fixture and AC-3d ingest fixture on a DOC (mutation "row ops resolve `c` as kind `concept`"), AC-3e kept on `concept`, new AC-3f (legacy append vs kinded remove, two mutations); [[#rev-round-7]] closing note deleted; [[#files-to-modify]] |
+| r8 m-2 (naming and reborn by the one legacy rule; the 15 two-kind names) | [[#r9-dangling]] naming paragraph (covering by `c_kind` or the legacy rule over LOGGED kinds; every live covering key, not one best key) and step 4's reborn rule (per row and per live covering key; `legacy_misresolved`); re-measured on the r6 cliquedb copy: 896 reborn, 381 on more than one live key, 47 with 121 rows to remove, all 121 legacy-misresolved; the rule is owned by [[task-22.1a-provenance-free-classes#r1-dangling]] |
+| r8 m-3 (legacy resolution differs between the paths) | [[#r3]] "The two paths agree on kinded events only"; the bug-registry row is the orchestrator's |
+| r8 m-4 (the rebuild's counters) | [[#r3]] "Counters"; [[#r9-dangling]] step 5 (skips counted, `links_skipped_dead` / `evidence_skipped_dead`); AC-3b (`links_skipped_dead == 0`, mutation "tombstone only, no `unlink`" fails directly), AC-3c, AC-3d, AC-3e, AC-3f (`evidence_unresolved`, `evidence_skipped_dead`) |
+| r8 m-5 (line pins shifted under 0.78.3) | [[#r3]] re-read at `23ad703` (`store.py:7941` sort, Pass 2b, pass 3 by symbol); [[#r9-dangling]] step 4 (`:7946`, `:7968`) |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r8-23ad703]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+rel: depends-on -> [[task-16.6-learned-row-validation#r1d-one-format]]

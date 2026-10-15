@@ -7,12 +7,14 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Task 22.1a: the provenance-free audit classes {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 7, 2026-10-15; [[#rev-round-7]]; round 6 in [[#rev-round-6]], round 5
+> Status: Pending (revision round 8, 2026-10-15; [[#rev-round-8]]; round 7 in [[#rev-round-7]]; round 6 in
+> [[#rev-round-6]], round 5
 > in [[#rev-round-5]], round 3 in [[#rev-round-3]])
 > Wave: 1, after 23.1 and 16.6's Wave-1 slice (d6d; #t8-amendments; #t8-wave1).
 > Depends on: 23.0 (test sandbox), 16.6 Wave-1 slice (sidecar + backfill). NOT on 16.1.
@@ -200,13 +202,26 @@ rel: related-to -> [[project_global_relative_rows_repair]]
        linkage and live-end name on the other side, IN THE KEY'S OWN PARTITION (r7 m-3): the
        covering event's effective partition (its `partition` field, or the default partition
        when absent) equals the key's, because a rebuild resolves a `link` or `evidence` event
-       only through its own partition's names. `D` is NAMED when exactly one key qualifies and
-       no other dead id claims that key. Otherwise it is NAMELESS, in one of three labels counted
-       apart (r7 m-1):
-       - `unnamed:reborn` — the logged key that covers the most of `D`'s live-end rows (at
-         least one) satisfies (i) and (iii)'s partition rule but HAS a catalog row: the name was
-         re-created under a new id. 22.2 R9 tombstones nothing for it and logs an event only for a
-         dead row the reborn entity does not hold ([[task-22.2-repair-then-remove#r9-dangling]]);
+       only through its own partition's names. **Which key an event covers is decided by the
+       one legacy rule (r8 m-2, d9bl).** {#r1-covering} The ENTITY end of an event always carries
+       `e_kind`, so it covers `(p, e_kind, e)` exactly. Its CONCEPT end covers `(p, k, n)` iff its
+       `c_kind == k`, or it is legacy (no `c_kind`) and
+       `edge_records.resolve_legacy_kind(<kinds logged for n in p>)` returns `k`, where the kinds
+       logged for `n` are every kind with an `entity` event for `(p, ·, n)`, tombstoned keys
+       included, exactly the rebuild's Pass 2b `kinds_by_name` (the audit computes it with the
+       same `edge_records.resolve_c_kind` the rebuild calls, 16.6
+       [[task-16.6-learned-row-validation#r1d-one-format]]; no rule of its own). A legacy event
+       the rule returns None for covers nothing and is counted `legacy_unresolved`. `D` is NAMED
+       when exactly one key qualifies and no other dead id claims that key. Otherwise it is
+       NAMELESS, in one of three labels counted apart (r7 m-1):
+       - `unnamed:reborn` — at least one key that covers one of `D`'s live-end rows (by the rule
+         above) satisfies (i) and (iii)'s partition rule but HAS a catalog row: the name was
+         re-created under a new id. Its reborn entities are EVERY such live covering key, not
+         one "best" key (r8 m-2: on the cliquedb copy 381 of the 896 evidence-side reborn ids are
+         covered by more than one live key, and round 7's "the key that covers the most" broke
+         ties by set order, so its 711 / 170 / 15 split moved between runs). 22.2 R9 tombstones
+         nothing for it and logs an event only for a dead row a live covering key's entity does
+         not hold, keyed on that key ([[task-22.2-repair-then-remove#r9-dangling]]);
        - `unnamed:ambiguous` — more than one key qualifies, or the one key is claimed by another
          dead id;
        - `unnamed:none` — every other case.
@@ -247,6 +262,23 @@ rel: related-to -> [[project_global_relative_rows_repair]]
        whose rows one logged `c` name covers fully, 53 partly; every one of those names is live
        in the catalog: 711 as `concept` only, 170 as `doc` only, 15 as both); 3,882 `unnamed:none` (no
        `evidence` event covers any of their rows).
+       **Re-measured for round 8 by the one legacy rule (r8 m-2),** on the same r6 copy
+       (`clique.duckdb`, `clique.facts.log`; read-only, `.venv-eval/bin/python -I`,
+       `duckdb read_only=True`, `edge_records.resolve_legacy_kind` imported from the dev tree;
+       scripts `scratchpad/r8/ev15c.py` to `ev15g.py`, logs beside them). The copy's log predates
+       0.78.3: it holds 0 kinded `evidence` events, so every covering event is legacy. Per dead
+       concept id: 3,882 `unnamed:none` and 896 `unnamed:reborn` (unchanged); 381 of the 896 are
+       covered by more than one live key; 0 covering events are `legacy_unresolved`. Per row:
+       14,733 distinct dead rows, 1,995 covered; of the `(row, live covering key)` pairs, 2,744 are
+       held by that key's entity and 121 are not, on 47 dead ids. All 121 are LEGACY
+       MISRESOLUTIONS: each covering name (10 names, e.g. `pseudocode-delta-merge`) is live as
+       both a `doc` and a `concept`, the rule resolves it to `concept`, and the `doc` holds the
+       row live (0 rows held by the `concept`). Round 7's "15 as both" was one draw of the
+       tie-broken best key; with ties made explicit the best-key count of two-kind reborn ids is
+       0, and the two-kind names sit only on tied ids. A rebuild of today's store would already
+       re-attach those 121 rows to the `concept` (bug-117's legacy rule), whatever plan-22 does;
+       22.2 R9 removes them from the `concept` key and counts them `legacy_misresolved`; a
+       compaction (`dump_catalog_to_log`, kinded since 0.78.3) ends the case.
 2. **R2 Ingest is out of scope.** No class selects an ingested evidence row (`detail` not
    `learned from grep…`), a `tracked_files` row, or an entity with an ingest link. A learned file
    entity that is also ingested is reported `shared` and never becomes `missing-file` or
@@ -385,6 +417,20 @@ rel: related-to -> [[project_global_relative_rows_repair]]
      `entity` event carries `partition: p2` → `unnamed:none` (the covering event is in another
      partition). Mutations, each FAILS it: "count reborn as `unnamed:none`" (the reborn count is
      0, the recount says 1); "ignore the covering event's partition" (`P0` reads NAMED).
+     **Covering by the one legacy rule (r8 m-2).** A `linkage_evidence` row of a live entity
+     whose concept is a dead id `K0`, and two logged `evidence` events covering it under name
+     `N`: one LEGACY (no `c_kind`), one with `c_kind: doc`. `N` is live as both a `doc` and a
+     `concept` (each with an `entity` event); the doc holds the row live, the concept does not.
+     The audit labels `K0` `unnamed:reborn` with two live covering keys, `(doc, N)` from the
+     kinded event and `(concept, N)` from the legacy one (the rule over logged kinds
+     `{doc, concept}` returns `concept`), and reports one row to remove on `(concept, N)` and
+     `legacy_misresolved = 1`. A third event, legacy, under a name logged as both `doc` and
+     `code` (no `concept`) covers nothing and is counted `legacy_unresolved = 1`. Mutations, each
+     FAILS it: "a legacy event covers every kind of its name" (`(doc, N)` is also reported from
+     the legacy event, and the row count to remove changes); "a kinded event is resolved by the
+     legacy rule" (the `c_kind: doc` event covers `(concept, N)`); "resolve over the LIVE
+     catalog's kinds" (a tombstoned `concept M` with a live `doc M`: the legacy event covers
+     `(doc, M)` instead of the dead `(concept, M)` the rebuild resolves to).
      Each class count equals an INDEPENDENT SQL recount written in the test (not imported from
      `src/`), and equals `repair_fragments(dry_run=True)`'s `links_dead_entity` /
      `links_dead_concept` on the same store. Mutations, each FAILS it: "concept alive =
@@ -406,9 +452,12 @@ rel: related-to -> [[project_global_relative_rows_repair]]
      constructed for it. The run passes `--default-partition` (each store's bound partition, its
      own name for a project store) and the header prints it (r7 m-3). Reference reading for
      cliquedb ([[#r1-dangling]]): 5,298 / 7 / 1 / 0 / 14,745; link side 64 dead ids, 56 named, 8
-     reborn, 0 none, 0 ambiguous; evidence side 4,778 dead concept ids, 0 named, 896 reborn,
-     3,882 none, 0 ambiguous; 56 would-resurrect, 0 unclaimed (r7 m-1: round 6's "8 nameless"
-     were the 8 reborn).
+     reborn, 0 none, 0 ambiguous; evidence side 4,778 dead concept ids, 0 named, 896 reborn
+     (381 on more than one live key; 47 with a row to remove, 121 `(row, key)` pairs, all
+     `legacy_misresolved`), 3,882 none, 0 ambiguous, 0 `legacy_unresolved`; 56 would-resurrect,
+     0 unclaimed (r7 m-1: round 6's "8 nameless" were the 8 reborn; r8 m-2 for the evidence-side
+     split). The census also prints the log's legacy and kinded edge-event counts (0 kinded on
+     the r6 copy).
    - **8c, one predicate (mechanical, not review; r7 m-2).** An AST test asserts:
      - over the WHOLE `removal_audit` module (every function, helpers included, since a helper
        called from `_classify_dangling` could hold a second liveness set):
@@ -596,6 +645,21 @@ for (eid, rel), evs in ents.items():
     res["cands@%d" % min(len(cands),2)] += 1
 print(dict(res))
 ```
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan16-22-spec-rereview-r8-23ad703]] where it touches 22.1a (m-2) and d9bl
+([[plan-review-2026-10-14#t12-approvals]]). Code claims re-read at `23ad703` (0.78.3,
+`edge_records.resolve_legacy_kind`, rebuild Pass 2b). Later rows win over round 7.
+
+| finding / decision | answered in |
+|---|---|
+| r8 m-2 (naming and reborn must use the one legacy rule; the 15 two-kind reborn names) | [[#r1-covering]] (an event covers by `c_kind`, or a legacy one by `resolve_legacy_kind` over the LOGGED kinds through the rebuild's own `edge_records.resolve_c_kind`; `legacy_unresolved`); `unnamed:reborn` now names every live covering key, not one best key; "Measured" re-measured (896 reborn, 381 on more than one live key, 47 ids / 121 rows to remove, all legacy misresolutions on 10 two-kind names; round 7's "15 as both" was a tie-break artefact); AC-8a covering row + three mutations; AC-8b reference reading |
+| r8 b-1 / d9bl (one format, one resolver) | [[#r1-covering]] uses 16.6's resolver; the apply-side spelling is [[task-22.2-repair-then-remove#r3]] |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r8-23ad703]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+rel: depends-on -> [[task-16.6-learned-row-validation#r1d-one-format]]
 
 ## Revision round 7 (2026-10-15) {#rev-round-7}
 

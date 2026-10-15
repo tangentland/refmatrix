@@ -8,13 +8,15 @@ metadata:
   status: pending
   created: 2026-10-06
   revised: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Task 16.2: the invisible shim {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
 > Status: Pending (revision after the 2026-10-14 decision log; revision 6, answering spec review
-> r5 `bsd-plan16-spec-review-r5-cd7c923`)
+> r5 `bsd-plan16-spec-review-r5-cd7c923`; revision round 8, 2026-10-15, the operator state,
+> [[#rev-round-8]])
 > **Wave:** 2 ([[plan-16-invisible-grep-shim#waves]]).
 > Depends on: [[task-16.1-argv-faithful-learner]]. Tests run in plan-23 task 23.0's sandbox.
 
@@ -30,6 +32,19 @@ rel: derives-from -> [[plan-review-2026-10-14#t8-revisited]]
 rel: derives-from -> [[plan-review-2026-10-14#t9]]
 rel: amends -> [[bsd-plan16-22-spec-rereview-32dde06]]
 rel: depends-on -> [[feedback_no_raw_prompts_in_public_repo]]
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan16-22-spec-rereview-r8-23ad703]] s-2 where it touches 16.2, and d9bj
+([[plan-review-2026-10-14#t12-approvals]]). Marker state read 2026-10-15: `~/.refmatrix/learn.off`
+present, this repo's `.refmatrix/learn.off` absent.
+
+| finding / decision | answered in |
+|---|---|
+| r8 s-2 / d9bj (stale "today" text; `learn.off` set; no flip owner) | [[#rich]] (the operator state, this task does not remove the marker); [[#deploy]] (deploy with 16.3, then the user's `rmx learn on --global`); the flip is [[plan-16-invisible-grep-shim#learn-flip]] |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r8-23ad703]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Revision round 2 (2026-10-14) {#rev-round-2}
 
@@ -80,10 +95,16 @@ Answers spec review r4 ([[bsd-plan16-spec-review-r4-33809ab]]).
    This plan does not try to capture route 3, which would reopen d-3. Task 16.4 measures its share.
    {#routes}
 
-Today routes 1 and 2 run with `RMXGREP_MODE=rich` from the generators. The interim since
-2026-10-06 is `plain`, set by the user in `~/.claude/settings.json` and `.claude/settings.local.json`.
-That value is already auto, so today's wrapper takes its real-tool path plus the flag-stripped ping.
-This task deletes the rich branch and replaces the ping with 16.1's learner. {#rich}
+The generators render routes 1 and 2 with `RMXGREP_MODE=rich`. The interim since 2026-10-06 is
+`plain`, set by the user in `~/.claude/settings.json` and `.claude/settings.local.json`; that value
+is already auto, so the wrapper takes its real-tool path plus the flag-stripped ping. **Since
+2026-10-15 none of that runs** (r8 s-2): the global `learn.off` marker is set, so route 1's
+rewrite stands down, and route 2's shims take R1's learning-off exit straight to the real tool,
+with no ping and no learner ([[plan-16-invisible-grep-shim#today-learn-off]]). This task deletes
+the rich branch and replaces the ping with 16.1's learner; it does NOT remove the marker. The
+switch comes back on only after this task and 16.3 deploy together, by the user's `rmx learn on
+--global` (d9bj, [[plan-16-invisible-grep-shim#learn-flip]]); this task's deploy note names that
+step. {#rich}
 
 ## Requirements {#requirements}
 
@@ -291,7 +312,10 @@ test that spawns `rmx` from PATH. {#r6}
 `~/.claude/settings.json` (user scope) is never edited by rmx. After the deploy, the user deletes the
 `RMXGREP_MODE` key from its `env` block; its current value is `"plain"`. Until then R1 makes it
 inert. The bashrc section is refreshed only by `rmx install-hooks --apply --force`, which also
-refreshes the rewriter (bug-080 changed it). The handoff names both steps.
+refreshes the rewriter (bug-080 changed it). The handoff names both steps, and a third (d9bj;
+r8 s-2): this task deploys TOGETHER with 16.3, and only then does the user run `rmx learn on
+--global`; until that flip the shims keep exiting to the real tool with no learner, so a deploy
+alone teaches nothing and 16.4 has no window.
 
 ## Test strategy {#test-strategy}
 

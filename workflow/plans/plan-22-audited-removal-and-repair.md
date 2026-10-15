@@ -8,14 +8,16 @@ metadata:
   status: drafting
   created: 2026-10-07
   revised: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Plan 22: audited removal and repair {#root}
 
 **Date:** 2026-10-07 (revised 2026-10-14 after the Wave 0 decision log)
-**Status:** Drafting — revision round 7 (2026-10-15) for the r7 re-review
-[[bsd-plan16-22-spec-rereview-r7-331b414]] and the approvals d9av/d9aw/d9ay
-([[plan-review-2026-10-14#t12-approvals]]; [[#rev-round-7]]); round 6 (r6 re-review, d9aq/d9ar) in
+**Status:** Drafting — revision round 8 (2026-10-15) for the r8 re-review
+[[bsd-plan16-22-spec-rereview-r8-23ad703]] (the row ops after bug-117, 0.78.3) and the approvals
+d9bk/d9bl ([[plan-review-2026-10-14#t12-approvals]]; [[#rev-round-8]]); round 7 for the r7
+re-review [[bsd-plan16-22-spec-rereview-r7-331b414]] and d9av/d9aw/d9ay ([[#rev-round-7]]); round 6 (r6 re-review, d9aq/d9ar) in
 [[#rev-round-6]]; round 5 (r4 re-review, d9ab/d9ac/d9z)
 in [[#rev-round-5]], round 3 in [[#rev-round-3]], round 2 in [[#rev-round-2]]. Task
 specs 22.1a, 22.1, 22.2, 22.3, 22.4 (blocked; handed to the helix plan on close, d9j), 22.5 and
@@ -236,6 +238,8 @@ rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 | d-24 | replay applies `evidence` appends and row-level ops together in TIMESTAMP order (ties by log position): an `evidence_remove` / `unlink` at `T` affects only what was appended at or before `T`, never a row re-learned or re-ingested after it; a named dead concept's evidence row therefore logs `evidence_remove` by name beside the tombstone | d9av; r7 b-1 |
 | d-25 | 22.3's live global apply purges the learned-only members d-22 attributes to the learner (≤ 90), printing the count before the apply for the user | d9aw; r7 s-3 |
 | d-26 | restore re-checks every recorded dead id (never re-inserts a row onto an id that is live now) and maps every old id the same manifest restores through its `id_map`, surviving rows included | r7 s-1, s-2 |
+| d-27 | every row-level event plans 16/22 add (`evidence_remove`, `evidence_repoint`, `unlink`, `evidence_orphan_drop`, `learned_provenance`, `learned_provenance_move`) names its concept end as `(c_kind, c)`, built by ONE builder (`edge_records.row_event`, or `edge_event` for `unlink`), matched by ONE key (`edge_records.row_key`), resolved by ONE function (`edge_records.resolve_c_kind`, the bug-117 legacy rule) and counted by ONE helper (`row_skips`); an AST test holds every site to them | d9bl; r8 b-1 |
+| d-28 | `evidence_orphan_drop` decides "dead" on a rebuild by the LOG timeline (latest `tombstone` vs latest `entity` event at or before the op), matching on `(linkage, c_kind, c, file, line, detail)`; `purge_entity` still deletes no evidence | d9bk; r8 s-1 |
 
 ## Open after revision {#open-after-revision}
 
@@ -278,6 +282,25 @@ earlier links still resolve.
    source, which attributes 217 of this repo's and 90 of the global store's learned-only
    protections to the learner; those are purgeable whole when they are class members, and 22.3
    prints its count before the live apply ([[task-22.3-bug-086-global-repair#r3]]).
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan16-22-spec-rereview-r8-23ad703]] (plan-22: b-1, s-1, m-2..m-5; s-2 and m-1 are
+plan-16's, [[plan-16-invisible-grep-shim#rev-round-8]]) and [[plan-review-2026-10-14#t12-approvals]]
+(d9bk, d9bl). Code claims re-read at `23ad703` (0.78.3, bug-117); `src/` is unchanged from
+`23ad703` to the revision's HEAD. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| b-1 / d9bl (the row ops predate bug-117: "as kind `concept`", no `c_kind`) | [[task-22.2-repair-then-remove#r3]] (event spellings, "How the ends resolve", the one kind-naming helper `_row_op_c_kinds`, `unlink` with `c_kind`), [[task-22.2-repair-then-remove#r9-dangling]] step 4; [[task-22.6-removal-entry-points#r5]]; the shared builder, key, resolver and counter in [[task-16.6-learned-row-validation#r1d-one-format]]; 22.2 AC-3b..3f, 16.6 AC-9d; d-27 |
+| s-1 / d9bk (the orphan drop's "at that point" on a rebuild) | [[task-22.6-removal-entry-points#r5-timeline]]; 22.6 AC-6b; d-28 |
+| m-2 (naming and reborn by the one legacy rule) | [[task-22.1a-provenance-free-classes#r1-covering]], re-measured counts in [[task-22.1a-provenance-free-classes#r1-dangling]]; [[task-22.2-repair-then-remove#r9-dangling]] reborn rule per row and per live covering key |
+| m-3 (incremental vs rebuild legacy resolution) | [[task-22.2-repair-then-remove#r3]], [[task-16.6-learned-row-validation#r1d]] qualified; bug-registry row left to the orchestrator |
+| m-4 (the rebuild's counters) | 22.2 R3 "Counters", R9 step 5; 22.2 AC-3b..3f, 22.6 AC-6b, AC-9c |
+| m-5 (pins) | 22.2 R3, R9; 22.6 [[task-22.6-removal-entry-points#facts]]; 16.6 R1d |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r8-23ad703]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Revision round 7 (2026-10-15) {#rev-round-7}
 

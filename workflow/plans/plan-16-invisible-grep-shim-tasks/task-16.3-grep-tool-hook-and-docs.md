@@ -8,13 +8,15 @@ metadata:
   status: pending
   created: 2026-10-06
   revised: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Task 16.3: Grep-tool hook on the learner, and the docs {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
 > Status: Pending (revision after the 2026-10-14 decision log; revision 6, answering spec review
-> r5 `bsd-plan16-spec-review-r5-cd7c923`)
+> r5 `bsd-plan16-spec-review-r5-cd7c923`; revision round 8, 2026-10-15: R5 retires
+> `enforce-rmx-grep.sh`'s redirect, d9bj, [[#rev-round-8]])
 > **Wave:** 2 ([[plan-16-invisible-grep-shim#waves]]).
 > Depends on: [[task-16.1-argv-faithful-learner]]. Tests run in plan-23 task 23.0's sandbox.
 
@@ -26,6 +28,19 @@ rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
 rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
 rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan16-22-spec-rereview-r8-23ad703]] s-2 where it touches 16.3, and d9bj
+([[plan-review-2026-10-14#t12-approvals]]). Read at `23ad703`: `.claude/hooks/enforce-rmx-grep.sh`
+(`0611d2f`), `hooks._add_enforce_entries`, `hooks._RMX_HOOK_SIGNATURES`.
+
+| finding / decision | answered in |
+|---|---|
+| r8 s-2 / d9bj (16.3 owns `enforce-rmx-grep.sh`: retire or re-point; the user chose retire) | [[#r5]] (script deleted, entry no longer rendered, signature kept so `--force` reaps it, two tests rewritten); AC-10 + mutation; [[#files-to-modify]] |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r8-23ad703]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Revision 6 changelog {#revision-6}
 
@@ -152,6 +167,26 @@ observed. {#r3}
 `feedback_grep_is_observed_not_answered` are both in the store, with a recall for a phrase unique to
 each (`feedback_verify_memory_by_recall_not_get`). {#r4}
 
+**R5. Retire `enforce-rmx-grep.sh`'s redirect (d9bj; r8 s-2).** The project hook
+`.claude/hooks/enforce-rmx-grep.sh` (a cat-herder enforcement script, wired by the generator in
+`hooks._add_enforce_entries` as a PreToolUse(Bash) entry whenever the script exists, and listed in
+`hooks._RMX_HOOK_SIGNATURES`) answers a corpus grep with exit 2 and "Corpus grep redirected — use
+rmx …", sending the agent back to `rmx grep`. That is the opposite of d-1 (grep is observed, not
+answered) and the cli-pool load bug-115 removed; today it stands down only because `learn.off` is
+set (`0611d2f`), so the user's flip would re-arm it ([[plan-16-invisible-grep-shim#today-learn-off]]).
+This task retires it, in the same deploy as 16.2 (d9bj, [[plan-16-invisible-grep-shim#learn-flip]]):
+- the script is deleted from `.claude/hooks/`, and `_add_enforce_entries` no longer emits its
+  entry (its `enforce`/auto branch and the `install-hooks --help` text that names it go with it);
+- its name STAYS in `_RMX_HOOK_SIGNATURES`, so `rmx install-hooks --apply --force` recognises an
+  already-installed entry as rmx's and reaps it (`.claude/settings.json` carries one today);
+- `tests/test_hooks_reproducible.py` and `tests/test_plan2_remedy.py`, which assert the entry is
+  rendered, are rewritten to assert it is NOT rendered and that a stale installed one is reaped;
+- the `learn.off` stand-down it carries goes with it: with nothing to redirect, the marker has
+  no meaning for this hook. Asking the index by name stays in the R3 prose (`rmx context`,
+  `rmx grep`, `rmx_search`), never as a block.
+The cat-herder baseline template ships the same script upstream; that copy is the template
+owner's, and the summary records the divergence. {#r5}
+
 ## Acceptance criteria {#acceptance}
 
 1. **Fidelity against the TOOL's output, not the mapping's (#b-3).**
@@ -188,6 +223,15 @@ each (`feedback_verify_memory_by_recall_not_get`). {#r4}
    and `{path: <file>, type: "rust"}` on a `.py` file that contains the pattern. The tool returns
    nothing for both; each yields `outcome=skipped reason=single-file-filter`, nothing queued. A third
    payload, `{path: <file>}` alone, teaches (the branch is narrow).
+10. **No redirect (R5; d9bj).** In the sandbox with NO `learn.off` marker in either scope
+    (`learn_switch.decision()` reads `default`), the PreToolUse(Bash) hooks the generator renders
+    are run on the payload `{"tool_input": {"command": "grep -rn X src"}}`: none exits 2 and none
+    prints "Corpus grep redirected"; the rendered config holds no `enforce-rmx-grep.sh` entry;
+    `install-hooks --apply --force` on a settings file that holds the old entry removes it, and
+    `install-hooks --check` is then clean. Mutation "keep the redirect" (restore the script and its
+    entry) FAILS it on the stderr message and the rendered entry (the generator's `|| true`
+    wrapper turns the script's exit 2 into 0, so the exit code alone cannot see it; r8's
+    out-of-scope observation, left to the orchestrator).
 
 ## Files to modify {#files-to-modify}
 
@@ -197,6 +241,7 @@ each (`feedback_verify_memory_by_recall_not_get`). {#r4}
 | `src/refmatrix/hooks.py`, `src/refmatrix/cli.py` | briefing, bashrc, `--help`, docstrings |
 | PRIMER generator, `README.md`, `docs/{INTEGRATION,SYSTEM,ARCHITECTURE}.md`, `workflow/development_resources.md` | prose |
 | `tests/test_grep_tool_teach.py`, `tests/fixtures/grep_tool_*.json`, `tests/fixtures/grep_tool_constants.txt` (new) | AC-1..7 |
+| `.claude/hooks/enforce-rmx-grep.sh` (deleted); `src/refmatrix/hooks.py` (`_add_enforce_entries`, docstring; `_RMX_HOOK_SIGNATURES` kept); `src/refmatrix/cli.py` (`install-hooks --help`); `tests/test_hooks_reproducible.py`, `tests/test_plan2_remedy.py` (rewritten); `tests/test_grep_tool_teach.py` | R5, AC-10 |
 
 ## Test strategy {#test-strategy}
 

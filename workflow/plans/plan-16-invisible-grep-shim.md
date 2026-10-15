@@ -8,12 +8,17 @@ metadata:
   status: drafting
   created: 2026-10-06
   revised: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Plan 16: the grep shim stops answering and only watches {#root}
 
 **Date:** 2026-10-06
-**Status:** Drafting (revision round 7, 2026-10-15: 16.6 R1d's one row pass replays `evidence`
+**Status:** Drafting (revision round 8, 2026-10-15: today's `learn.off` operator state is
+stated and owned (d9bj: 16.3 retires `enforce-rmx-grep.sh`'s redirect, `learn.off` comes off only
+after 16.2 and 16.3 deploy together, 16.4's window opens after that flip), and 16.6's row events
+carry `c_kind` through one builder, key, resolver and counter (d9bl), for the r8 re-review
+`bsd-plan16-22-spec-rereview-r8-23ad703`, [[#rev-round-8]]; revision round 7, 2026-10-15: 16.6 R1d's one row pass replays `evidence`
 appends and row ops together in timestamp order (d9av, lockstep with 22.2 R3) and 16.6 R1c is
 retired (d9ay), for the r7 re-review `bsd-plan16-22-spec-rereview-r7-331b414`, which made plan-16
 approvable together with that R1d edit, [[#rev-round-7]]; revision round 6, 2026-10-15: 16.6 R7 names the `dangling-link` census and
@@ -51,6 +56,19 @@ Today every bare `grep`/`rg` an agent runs through the Bash tool is rewritten to
 by the PreToolUse hook, and the agent shell exports `RMXGREP_MODE=rich`. In rich mode the shim
 calls `rmx grep`, which answers from the index when no path is named and from its own rendering of
 the `rg` floor when one is. So rmx stands in for grep on every agent search. {#today}
+
+**The operator state since 2026-10-15 (r8 s-2).** That paragraph describes the shipped design, not
+what runs today. The user's instruction of 2026-10-15 ("block the grep rewrite until the passive
+version exists") set the GLOBAL learn switch off: `~/.refmatrix/learn.off` exists (written 00:29;
+this repo's `.refmatrix/learn.off` does not). With it set, `learn_switch.decision()` returns
+`global-marker`, and every route stands down: route 1's rewrite (`grep-rewrite-guard.sh`) and the
+Grep-tool teach hook exit early (`search_hooks.py`, "The learn switch, both scopes"); route 2's
+shims take their learning-off exit to the real tool (16.2 R1); the daemon drains nothing; and the
+project hook `.claude/hooks/enforce-rmx-grep.sh`, which `hooks._add_enforce_entries` wires as a
+PreToolUse(Bash) hook and which REDIRECTS every corpus grep to `rmx grep`, stands down only
+because of the same marker (`0611d2f`). Removing the marker today would re-arm that redirect,
+the cli-pool load bug-115 removed and the opposite of [[#d-1]]. So the switch stays off until the
+passive shim and the redirect's retirement ship together (d9bj, [[#waves]]). {#today-learn-off}
 
 Standing in has been the single largest source of defects in this project. Each item below gave a
 wrong grep answer to every script and agent on the machine:
@@ -161,8 +179,8 @@ Specs go in `workflow/plans/plan-16-invisible-grep-shim-tasks/` before approval.
 |---|---|---|
 | 16.1 | `grep_learn.py` behind the hidden `rmx grep-learn` (not a verb); `corpus.py` predicate; `_learn_grep_hits` dedupe; short clusters expanded before classification; learn-time provenance into 16.6's sidecar (R10, d6d) incl. the caller's locale; `spawned_by` | flag fidelity with proven power (space forms included); cutoffs honoured; corpus-only; pruning only on recursive re-runs; entity identity under symlinked cwd; detached; slots; switch on `store_root`; idempotent store; provenance on every taught row |
 | 16.2 | invisible shim in both wrappers; cwd+argv throttle, counted; `RMXGREP_TEACH` retired via the log; generators + `check()` extended | differential 100% byte-identical with power shown on the current shim; caller never delayed; overhead with the REAL learner |
-| 16.3 | Grep-tool hook rebuilt from the tool's real rg argv (`--hidden`, VCS globs, constants pinned); every doc/help surface | taught set equals the tool's captured RESPONSE; paging inputs do not kill; no stale claim anywhere |
-| 16.4 | measurement, historical + forward (learner log joined to transcripts) | precision ≥ 0.99 / recall ≥ 0.95 (micro, timeouts counted) on COMPLETE outputs only, gated at n ≥ 30 else `insufficient-n`; no carve-out; a gate shown able to fail; routes measured |
+| 16.3 | Grep-tool hook rebuilt from the tool's real rg argv (`--hidden`, VCS globs, constants pinned); every doc/help surface; `enforce-rmx-grep.sh`'s redirect RETIRED (d9bj) | taught set equals the tool's captured RESPONSE; paging inputs do not kill; no stale claim anywhere; with no marker, a corpus `grep -rn X src` is not redirected |
+| 16.4 | measurement, historical + forward (learner log joined to transcripts); window opens after `rmx learn on --global` (d9bj) | precision ≥ 0.99 / recall ≥ 0.95 (micro, timeouts counted) on COMPLETE outputs only, gated at n ≥ 30 else `insufficient-n`; no carve-out; a gate shown able to fail; routes measured |
 | 16.5 | explicit `rmx grep` with paths or a pipe execs the real grep + learner; path-less keeps the index read with a pruned `grep -r` floor; rmx options parsed from the raw argv with a per-route table; the Python re-implementation (argv order, `-c` rows, stdin filter, delegate) is DELETED | differential 100% incl. round 4's cases, bug-081 and the `--`/`-e`/`--file` rows; every d-4 cell has a case; nothing beyond the tool's bytes; deletions verified by `rg -w` |
 | 16.6 | **Wave-1 slice (d6d), after plan-23's 23.1, no dependency on 16.1:** the `learned_evidence` sidecar keyed on the evidence row's identity + `rules_sha` (replayable from `facts.log` through a `learned_provenance` event, in ONE timestamp-ordered row pass with the `evidence` appends, d9av; the `replica_merge` step R1c is RETIRED, d9ay), THE verifier for learned rows (`learned_verify`: re-runs the recorded tool with only pattern-semantics tokens, returns the matching line set, exit 2 is `unverifiable`; the recorded locale pinned, value arity honoured; a named-subset permissive reading for rows without rules), the ONE census procedure (R7), read-time marks that record staleness under the row's own rules (never a reader-rule drop) through plan-23's queue and that plan-22's 22.1 reads, the backfill, and legacy-writer rows until 16.1 lands. The learn-time write is 16.1 R10. The audit, repair and removal engine MOVED to [[plan-22-audited-removal-and-repair]] (plan review C1-C3, user 2026-10-07); nothing here removes a row | sidecar rows survive a rebuild and a compaction, and the row pass is one timestamp order; BRE, POSIX-class, cutoff and absolute-exclude rows verify `ok`; exit 2 is never `stale-line`; a reader-rule drop writes no mark; backfill leaves no learned row without provenance; marks applied in bounded batches; overflow counted |
 
@@ -173,9 +191,17 @@ From [[plan-review-2026-10-14#t8-wave1]] and d6d. Plan-16 has tasks in two waves
 | wave | order | depends on |
 |---|---|---|
 | 1 | **16.6 Wave-1 slice**, after plan-23's 23.1 (`23.0 ∥ 23.4 → 23.2 → 23.1`); it feeds plan-22's `22.1a → 22.2 → 22.5 → 22.3` | plan-23 23.1 (queue, `bind(partition_name)` drain), 23.0 (sandbox). NOT 16.1 (#t8-amendments d1c/d6d) |
-| 2 | **16.1 → 16.2 ∥ 16.3 → 16.5**; 16.4's acceptance run after 16.2 is deployed | 16.1 depends on the 16.6 slice (its R10 writes the sidecar), so there is no Wave 1 → Wave 2 inversion |
+| 2 | **16.1 → 16.2 ∥ 16.3 → 16.5**; 16.2 and 16.3 DEPLOY TOGETHER, then the user runs `rmx learn on --global` (d9bj), then 16.4's acceptance window opens | 16.1 depends on the 16.6 slice (its R10 writes the sidecar), so there is no Wave 1 → Wave 2 inversion |
 
 Every plan-16 test runs inside plan-23 task 23.0's shared sandbox (d1a/d1b).
+
+**The learn-switch flip (d9bj; r8 s-2).** {#learn-flip} `learn.off` comes off only after 16.2 (the
+passive shim) and 16.3 (which retires `enforce-rmx-grep.sh`'s redirect,
+[[task-16.3-grep-tool-hook-and-docs#r5]]) are deployed TOGETHER, so the rewrite returns only when
+it feeds the passive shim and nothing redirects a corpus grep to `rmx grep`. The USER runs
+`rmx learn on --global` (the marker is the user's; no task removes it), and the handoff of that
+deploy names the step. 16.4's measurement window opens only after the flip
+([[task-16.4-measurement#r0]]).
 
 rel: derives-from -> [[plan-review-2026-10-14#t8-wave1]]
 
@@ -226,6 +252,24 @@ Next gate: `@ch-bsd` spec review r6 of task specs 16.1–16.6 revision 6, then `
 
 rel: derives-from -> [[plan-review-2026-10-14#t6]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan16-22-spec-rereview-r8-23ad703]] where it touches plan-16 (s-2; b-1, m-1, m-3,
+m-5 in 16.6) and d9bj, d9bl ([[plan-review-2026-10-14#t12-approvals]]). Plan-22's findings are
+answered in [[plan-22-audited-removal-and-repair#rev-round-8]]. Code and marker state read at
+`23ad703`; `src/` is unchanged from `23ad703` to the revision's HEAD.
+
+| finding / decision | answered in |
+|---|---|
+| s-2 / d9bj (`learn.off` is set globally; no owner for the flip; the redirect re-arms) | [[#today-learn-off]] (the operator state); [[#learn-flip]] and [[#waves]] row 2 (16.2 + 16.3 deploy together, then the user's `rmx learn on --global`); [[task-16.2-invisible-shim#rich]] (stale "today" text); [[task-16.3-grep-tool-hook-and-docs#r5]] (retire `enforce-rmx-grep.sh`'s redirect) + its AC; [[task-16.4-measurement#r0]] (window opens after the flip; switch decision in the header; `learning-off` runs refused) |
+| b-1 / d9bl (16.6's row events lack `c_kind`; one format, one resolver) | [[task-16.6-learned-row-validation#r1d]], [[task-16.6-learned-row-validation#r1d-one-format]]; 16.6 AC-9d |
+| m-1 (the row pass keeps Pass 2b) | [[task-16.6-learned-row-validation#r1d]]; 16.6 AC-9c |
+| m-3 (incremental vs rebuild legacy resolution) | [[task-16.6-learned-row-validation#r1d]] qualified |
+| m-5 (pins) | [[task-16.6-learned-row-validation#r1d]] re-read at `23ad703` |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r8-23ad703]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Revision round 7 (2026-10-15) {#rev-round-7}
 
