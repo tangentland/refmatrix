@@ -79,7 +79,7 @@ standing "silent drop on a memory path" pattern (impression imp-consolidated-091
 fixed the quoted site (`write_pid_pointer`) while the sibling `ps` call keeps the bug
 (imp-fix-at-quoted-line).
 
-rel: contradicts -> [[claude-md#no-silent-failures]]
+rel: contradicts -> [[claude#no-silent-failures]]
 
 ### SKETCHY: read verbs now write; one `rmx_focus` read creates `<cwd>/.refmatrix` and hijacks `_root()`, and an unwritable root turns a read into PermissionError {#s-1}
 
@@ -110,7 +110,7 @@ configured in only one project scope. refmatrix is public, though.
 - Catch `OSError` around the record in `resolve_session_source`, falling back to one stderr line,
   so the log can never fail a read.
 
-rel: contradicts -> [[claude-md#no-silent-failures]]
+rel: contradicts -> [[claude#no-silent-failures]]
 
 ### SKETCHY: `_errors.jsonl` is write-only and unbounded, and the CLI write paths label a guessed session `explicit` {#s-2}
 
@@ -150,7 +150,7 @@ works there. On the CLI and hook write paths the guess is visible only in a file
 remedy also followed my r1 one-line prescription ("record to a sink, label the source") verbatim,
 and that prescription was narrower than the rule ("counted and printed").
 
-rel: contradicts -> [[claude-md#no-silent-failures]]
+rel: contradicts -> [[claude#no-silent-failures]]
 
 ### SKETCHY: 9 of 11 r2 mutants survive; the record gate, the hook records, three labels and the walk depth are unpinned {#s-3}
 
@@ -253,5 +253,5 @@ This diff did not cause it. It has no bug_registry row; log one.
 
 DIRTY — 7 findings (1 BULLSHIT, 3 SKETCHY, 3 MEH). Merge-blocking: [[#b-1]].
 
-rel: contradicts -> [[claude-md#no-silent-failures]]
+rel: contradicts -> [[claude#no-silent-failures]]
 rel: evidence-for -> [[task-19.0-stm-cluster-hygiene]]
