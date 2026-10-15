@@ -13,7 +13,9 @@ metadata:
 # Task 16.6: the learned-evidence sidecar, its verifier, read-time marks and the backfill {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision round 6, 2026-10-15, answering the r6 re-review
+> Status: Pending (revision round 7, 2026-10-15, answering the r7 re-review
+> `bsd-plan16-22-spec-rereview-r7-331b414` b-1 (d9av) and d9ay, [[#rev-round-7]]; revision round 6,
+> 2026-10-15, answering the r6 re-review
 > `bsd-plan16-22-spec-rereview-r6-0e77da3` m-3 and m-6, [[#rev-round-6]]; revision round 5,
 > answering the r4 re-review
 > `bsd-plan16-22-spec-rereview-r4-878647c` and d9ab, [[#rev-round-5]]; revision round 3,
@@ -52,6 +54,22 @@ rel: motivates -> [[task-22.2-repair-then-remove]]
 rel: motivates -> [[task-22.3-bug-086-global-repair]]
 rel: specifies -> [[task-22.1-audit-classes#r1-verify]]
 rel: related-to -> [[task-23.4-option-a-measurement]]
+
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Answers [[bsd-plan16-22-spec-rereview-r7-331b414]] where it touches 16.6, and d9av/d9ay
+([[plan-review-2026-10-14#t12-approvals]]). The r7 verdict made plan-16 approvable only together
+with the lockstep R1d edit (b-1). Code claims re-read at `77ac38f`. Later rows win over round 6.
+
+| finding / decision | answered in |
+|---|---|
+| r7 b-1 / d9av (the one pass replayed every row op after ALL `evidence` appends, so a rebuild deleted a row re-learned after its removal) | [[#r1d]] "ONE row pass, appends and row ops together, in TIMESTAMP order" (stable `ts` sort, ties by log position, `_row_pass_events`), the "Both replay paths" bullet, and the compactor's `learned_provenance` `ts`; AC-9c (order function + end to end) with two mutations; [[#files-to-modify]]; the same rule in [[task-22.2-repair-then-remove#r3]] |
+| d9ay (16.6 R1c is a slot-merge path) | [[#r1c]] RETIRED, anchor kept, reason (writer rotation dropped; bug-113), history kept; AC-2 RETIRED, its `rowid` mutation moved to AC-1; AC-10 list; [[#r1]] keeps the collapse rule; [[#r6]]; [[#split]] row; [[#files-to-modify]] |
+| r7 m-3 (a census has no "store's default" partition) | [[#r7]] `--census dangling-link` requires `--default-partition`, printed in the header |
+| r6 b-1 row of round 6 ("no change here") | superseded by the b-1 / d9av row above |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r7-331b414]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Revision round 6 (2026-10-15) {#rev-round-6}
 
@@ -167,7 +185,7 @@ change runs in Wave 1 after plan-23's 23.1; the learn-time provenance write move
 |---|---|---|
 | R1 sidecar table `learned_evidence`, its key and its writer API | this task (Wave 1) | [[#r1]] |
 | R1b legacy-writer rows until 16.1 lands | this task (Wave 1) | [[#r1b]] |
-| R1c `replica_merge` carries the sidecar | this task (Wave 1) | [[#r1c]] |
+| R1c `replica_merge` carries the sidecar | RETIRED (d9ay): writer rotation is dropped and `replica_merge` is broken (bug-113) | [[#r1c]] |
 | R2 the dialect-faithful verifier | this task (Wave 1) | [[#r2]] |
 | R4 read-time `last_verified_at` / `stale_seen` marks, queued | this task (Wave 1), through plan-23's queue | [[#r4]] |
 | R5 provenance backfill (project roots; global roots NULL) | this task (Wave 1) | [[#r5]] |
@@ -250,8 +268,8 @@ One row per (evidence row, reading). Columns:
   its readings passes.
 - **Writer API:** `Store.add_learned_provenance(rows)` inserts with `ON CONFLICT DO NOTHING` on the
   key, inside the caller's transaction, and logs one `learned_provenance` event per row it actually
-  inserted ([[#r1d]]). It is the only INSERT path of the table besides R1c's merge; R4's drain
-  updates only the mark columns. 16.1 R10 calls it from `_learn_grep_hits`; R1b and R5 call it
+  inserted ([[#r1d]]). It is the only INSERT path of the table (R1c's merge step is RETIRED,
+  d9ay); R4's drain updates only the mark columns. 16.1 R10 calls it from `_learn_grep_hits`; R1b and R5 call it
   here.
 - **Key-column updates belong to plan-22 (s-5).** Every plan-22 primitive that changes a column of
   this key moves the sidecar row in the SAME transaction and logs it: 22.2's `repoint_evidence`
@@ -260,9 +278,10 @@ One row per (evidence row, reading). Columns:
   [[task-22.2-repair-then-remove#r2]] and [[task-22.5-cross-store-move#r2]]; this task supplies the
   table, the key and the `Store.move_learned_provenance(old_identity, new_identity)` helper they
   call (an UPDATE of the key columns on every reading of that identity, plus one
-  `learned_provenance_move` event). When the new key already exists, the two rows collapse as R1c
-  collapses them (earlier `learned_at` wins the non-mark columns, `stale_seen` = max, `last_mark`
-  from the later `last_verified_at`).
+  `learned_provenance_move` event). When the new key already exists, the two rows collapse:
+  earlier `learned_at` wins the non-mark columns (NULLs last), `last_verified_at` = max,
+  `stale_seen` = max, `last_mark` from the row with the later `last_verified_at` (the rule R1c
+  stated for the merge, kept here when R1c was retired, d9ay).
 - The DDL lives in `duckdb_catalog.py` beside `linkage_evidence`. `linkage_evidence` is untouched,
   so the migration is additive and reversible (d-a).
 
@@ -277,16 +296,19 @@ with no event is wiped by every `rmx rebuild-index` and every `rebuild_index` da
   line, root}}` from `move_learned_provenance` (plan-22's repairs and import).
 - **Both replay paths apply them:** `Store._apply_event_body` (reached from `apply_log_delta`)
   and the rebuild pass (`Store.rebuild_index_from_log`, which today collects `evidence` events
-  in its pass 2 and applies them in pass 3, after entities, protections and links). The two new ops are collected the same way and applied AFTER the evidence
-  events, in log order, resolving names to ids at apply time. An event whose evidence row does not
-  exist at apply time is counted `unresolved_provenance` and printed, never dropped silently.
+  in its pass 2 and applies them in pass 3, after entities, protections and links). The two new
+  ops join the `evidence` appends in the ONE row pass below, in timestamp order (d9av),
+  resolving names to ids at apply time. An event whose evidence row does not exist at apply time
+  is counted `unresolved_provenance` and printed, never dropped silently.
 - **The compactor keeps the sidecar (r4 b-2; d9ab companion 1).** The daemon's periodic
   `facts.log` compaction (`Daemon._compact_factslog_if_needed`, every 1,800 s
   once the log passes 256 MiB; this repo's log compacted three times on 2026-10-14) REPLACES the
   log with `Store.dump_catalog_to_log`'s snapshot, which today emits no
   sidecar event. So `dump_catalog_to_log` emits, per partition, one `learned_provenance` event per
   `learned_evidence` row (every non-mark column, keyed by name as above), AFTER that partition's
-  `evidence` events, so the post-evidence pass resolves them. The snapshot holds current state,
+  `evidence` events and with the `ts` of its own evidence row's dumped event (the dump's
+  synthetic `GREATEST(c.updated_at, e.updated_at)`, read at `77ac38f`), so in the timestamp-ordered
+  row pass it ties with that append and follows it by log position (d9av). The snapshot holds current state,
   so no `learned_provenance_move` is needed: the dumped event already names the row's current
   key. Without this, the first `rebuild_index_from_log` after a compaction rebuilds an EMPTY
   sidecar, and every learner row loses its tool, argv, locale and hash for good.
@@ -295,17 +317,35 @@ with no event is wiped by every `rmx rebuild-index` and every `rebuild_index` da
   result as `marks_reset`).
 - plan-22's `evidence_remove` replay removes the matching sidecar rows by the same identity
   ([[task-22.2-repair-then-remove#r3]]).
-- **ONE post-evidence pass, in log order (r3 m-1).** The rebuild pass and `_apply_event_body`
-  apply every row-level op in ONE pass over the log, in `facts.log` order, after the `evidence`
-  appends: `learned_provenance`, `learned_provenance_move` (this task), `evidence_remove`,
+- **ONE row pass, appends and row ops together, in TIMESTAMP order (d9av; r7 b-1; replaces round
+  3's "after the `evidence` appends, in log order").** The rebuild pass and `_apply_event_body`
+  apply the `evidence` appends and every row-level op in ONE pass: `evidence`,
+  `learned_provenance`, `learned_provenance_move` (this task), `evidence_remove`,
   `evidence_repoint`, `entity_rename` ([[task-22.2-repair-then-remove#r3]]) and
-  `evidence_orphan_drop` ([[task-22.6-removal-entry-points#r5]]). Never one pass per op family: a
-  re-point replayed before its row's `learned_provenance` would leave that event no evidence row
-  at the recorded line (`unresolved_provenance`), and the provenance would be lost. A row-level
-  evidence op moves or removes only `linkage_evidence` rows on replay, except `evidence_remove`,
-  which also removes the identity's sidecar rows; sidecar KEY moves replay only from their own
-  `learned_provenance_move` events, which the live primitive appends AFTER its evidence event in
-  the same call.
+  `evidence_orphan_drop` ([[task-22.6-removal-entry-points#r5]]), ordered by `ts` with ties broken
+  by log position. A row op at `T` therefore acts only on the copies appended at or before `T`:
+  an `evidence_remove` at `T1` followed by an identical re-learned row at `T2` (a branch switch
+  re-creates the file) leaves the `T2` row and its `learned_provenance` standing after a rebuild,
+  as they stand live. Round 3's pass, which ran every row op after ALL appends, deleted the `T2`
+  row on a rebuild and counted its provenance `unresolved_provenance` (r7 b-1).
+  - *The order, concretely (read at `77ac38f`).* `rebuild_index_from_log` already sorts every
+    event by `ts` with a stable sort (`events.sort(key=lambda e: e.get("ts", 0))`, `store.py:7926`),
+    so equal `ts` keep their log order. The row pass replaces today's separate
+    `evidence_events` list (`:7998`) and its per-partition loop in pass 3 (`:8087`): per
+    partition, ONE function, `Store._row_pass_events(events, partition)`, returns that
+    partition's `evidence` appends and row ops in the sorted order, and pass 3 applies them in
+    that order (AC-9c). The incremental path applies each event as it reads it, in log byte
+    order, which interleaves them already (`apply_log_delta` has no caller in `src/` at
+    `77ac38f`; writer rotation is dropped, d9ao).
+  - Within one call, a primitive's sidecar event follows its evidence event (same `ts` from
+    `_log_events`, or a later one), so the provenance still follows its row.
+  - Never one pass per op family: a re-point replayed before its row's `learned_provenance` would
+    leave that event no evidence row at the recorded line (`unresolved_provenance`), and the
+    provenance would be lost (r3 m-1).
+  A row-level evidence op moves or removes only `linkage_evidence` rows on replay, except
+  `evidence_remove`, which also removes the identity's sidecar rows; sidecar KEY moves replay only
+  from their own `learned_provenance_move` events, which the live primitive appends AFTER its
+  evidence event in the same call.
 
 **R1e. Purges never drop a sidecar row silently (r3 s-5, d9o).** {#r1e}
 Today `Store.purge_entity` and `Store.purge_path` delete learned file
@@ -329,7 +369,18 @@ just inserted: `origin=legacy-writer`, `rules_sha=none`, `learned_at` = now, `ro
 tool, dialect or hash is known on today's path); 16.1 R10 replaces this call. `legacy-writer` rows
 are verified like backfilled rows (R2's `none` reading, `permissive_matching_lines`, [[#r2-permissive]]).
 
-**R1c. `replica_merge` carries the sidecar (s-r5-4).** {#r1c}
+**R1c. `replica_merge` carries the sidecar (s-r5-4): RETIRED (d9ay).** {#r1c}
+**RETIRED (d9ay, round 7; as d9ao retired 23.1 R8).** Nothing in this task implements or tests
+this requirement, and `replica_merge.py` is not in this task's file list. Reason: writer rotation
+is dropped (`Daemon._refresh_replica_now`, `daemon.py:2814` at `77ac38f`, is a no-op and the
+refresh thread is not started), so no live path produces two diverged slots for a merge to
+reconcile; and `replica_merge` is broken on every real store (bug-113, open: its target is built
+by `duckdb_catalog.init_catalog`, which lacks `entities.vectors_partition`, and it merges an
+explicit table list), so an AC built on `init_catalog` slots would pass while the production
+command fails. The sidecar's key collapse rule that R1c stated lives on in [[#r1]]
+(`move_learned_provenance`). If a later plan revives slot merging, it adds `learned_evidence` to
+`merge_slots`' table list with its own AC through `_op_replica_merge` on `Store.init()` slots.
+Original text, kept as history:
 - `learned_evidence` is added to the merge's table lists (`replica_merge.py:88`, `:433`, `:530` at
   `b1c4324`).
 - A new step after step 9 (`replica_merge.py:335-355`) rebuilds it from both slots with the SAME
@@ -561,8 +612,9 @@ A second run inserts 0 rows and logs 0 events.
 **R6. No silent failures.** {#r6} Every skipped, unreadable, unverifiable (per
 `UNVERIFIABLE_REASONS`), unparsed, orphaned (`orphaned_provenance`, R1e), unresolved-on-replay or
 overflowed row is counted per
-reason and printed (`rmx learn status`, the backfill op's result, the merge's result, the rebuild's
-result). Project rule: memory-path discipline applies to the store.
+reason and printed (`rmx learn status`, the backfill op's result, the rebuild's result; the
+merge's result went with R1c, RETIRED by d9ay).
+Project rule: memory-path discipline applies to the store.
 
 **R7. The ONE census procedure (r3 s-6).** {#r7} Every operator census in plans 16 and 22 (16.6
 AC-5b; 22.1a AC-5b/6b/7b, including its probe reproduction, and AC-8b's `dangling-link` census;
@@ -610,7 +662,10 @@ wave order (`#t10-waves`).
      `removal_audit._classify_dangling` (22.1a,
      [[task-22.1a-provenance-free-classes#r1-dangling]]) on the copy, so it REQUIRES `--facts`
      (the dead-end naming reads the copied `facts.log`; a missing `--facts` exits nonzero). It
-     walks no tree, so `--candidate-trees` / `--home-base` do not apply. It also reads
+     walks no tree, so `--candidate-trees` / `--home-base` do not apply; it REQUIRES
+     `--default-partition` (the partition an event without a `partition` field belongs to, the
+     store's bound partition; a census has no `Store` to read it from) and prints it in the
+     header (r7 m-3; a missing value exits nonzero). It also reads
      `<store_root>/rmxd.log` in place, read-only, for the latest `repair_fragments dry_run=` line
      and prints that line with its timestamp beside the class counts (22.1a AC-8b). It
      constructs no `Store`: it never calls `repair_fragments`.
@@ -622,11 +677,17 @@ wave order (`#t10-waves`).
 1. **Key and readings.** A row taught under two readings (`-i` and none) has two sidecar rows with
    different `rules_sha`, both joining the one `linkage_evidence` row on the five identity
    columns. `add_learned_provenance` of the same key twice leaves one row and logs one event.
-2. **Merge survival (s-r5-4).** Two slots, each with learned rows, one of whose entities is
-   deduplicated (remapped) by the merge. After `replica_merge`, every sidecar row joins exactly one
-   `linkage_evidence` row, the sidecar row count equals the distinct-key count of both inputs, and
-   `stale_seen` is the max of the two inputs. Mutation "key the sidecar on `rowid`" and mutation
-   "leave `learned_evidence` out of the merge's table lists" each FAIL it.
+   Mutation "key the sidecar on `rowid`" (d-a's superseded shape) FAILS it: the sidecar row then
+   carries no five identity columns, so the join on them finds nothing (moved here from AC-2 when
+   AC-2 was retired, d9ay; a rebuild also renumbers `rowid`, so AC-9 fails under it too).
+2. **RETIRED (d9ay) with R1c.** No test is written for it, and it is not in the test list.
+   Reason: [[#r1c]] (rotation dropped, no producer of diverged slots; `replica_merge` broken,
+   bug-113). Original text, kept as history: "Merge survival (s-r5-4). Two slots, each with
+   learned rows, one of whose entities is deduplicated (remapped) by the merge. After
+   `replica_merge`, every sidecar row joins exactly one `linkage_evidence` row, the sidecar row
+   count equals the distinct-key count of both inputs, and `stale_seen` is the max of the two
+   inputs. Mutation "key the sidecar on `rowid`" and mutation "leave `learned_evidence` out of the
+   merge's table lists" each FAIL it."
 3. **The re-run verifier (b-r5-1, b-1, b-4).** Sidecar rows recorded as 16.1 R10 records them
    (`tool=grep`, `bin=/usr/bin/grep`; rg rows with the `rg` on PATH, resolved to an absolute path).
    Each row below must verify as stated, and `matching_lines` must return the stated set:
@@ -741,13 +802,30 @@ wave order (`#t10-waves`).
    `unresolved_provenance` is 0, and the compacted log holds one `learned_provenance` event per
    sidecar row. Mutation "dump without `learned_evidence`" FAILS it (the rebuilt sidecar is
    empty).
-10. Mutations that must FAIL a test, each with its AC above: sidecar on `rowid` (2); sidecar not
-    merged (2); Python `re` verifier (3); `match_argv` replayed whole (3); rc 2 read as no-match
+
+   **9c. The row pass is one timestamp order (d9av; r7 b-1).** `Store._row_pass_events` on a
+   fixture event list for one partition: `evidence` E1 (ts 1), `learned_provenance` P1 (ts 1,
+   after E1 in the log), `learned_provenance_move` M1 (ts 2), `evidence` E2 (ts 3),
+   `learned_provenance` P2 (ts 3), and an `evidence` E3 at ts 2 that the log holds AFTER E2 (a
+   writer whose clock lagged). It returns exactly `[E1, P1, M1, E3, E2, P2]`: ts order, ties by
+   log position, appends and row ops interleaved. An AST check asserts that
+   `rebuild_index_from_log` applies its evidence appends and row ops only through
+   `_row_pass_events` (no separate `evidence_events` loop is left in pass 3). Mutations, each
+   FAILS it: "appends first, then the row ops" (round 3's pass: the function returns `[E1, E3,
+   E2, P1, M1, P2]`); "file order, not `ts`" (E3 lands after P2); "keep the separate
+   `evidence_events` loop" (the AST check). With this slice's ops alone the two orders rebuild
+   the same state (no 16.6 op removes a row, and an append before its time can only resolve
+   more provenance), so the end-to-end proof that the order matters is 22.2 AC-3d / AC-3e, which
+   add `evidence_remove` to this pass and fail under "appends first".
+10. Mutations that must FAIL a test, each with its AC above: sidecar on `rowid` (1; was 2);
+    sidecar not merged (2: RETIRED with R1c, d9ay); Python `re` verifier (3);
+    `match_argv` replayed whole (3); rc 2 read as no-match
     (3); first/last reading only (3h); inherited env (3i); `bin` re-resolved (3j); filter drops a
     pattern token (3b); filter ignores arity (3b); permissive subset check removed (3c); mark
     every reader drop (4); backfill skips silently (5a); census selection re-implemented (5c);
     remove R1b (6); inline mark (7); overflow uncounted (8); no provenance event (9); no move
-    event (9); move events replayed in their own pass (9); dump without `learned_evidence` (9b);
+    event (9); move events replayed in their own pass (9); appends first, then the row ops (9c);
+    file order, not `ts` (9c); dump without `learned_evidence` (9b);
     census defaults `home_base` / deny set derived after the redirect (5c); purge deletes or
     hides an orphaned sidecar row (11).
 11. **Orphaned sidecar rows are kept and counted (R1e; r3 s-5).** On a sandbox store with a
@@ -768,13 +846,13 @@ The audit/prune/repair acceptance moved to plan-22. {#acceptance-moved}
 | File | Change |
 |------|--------|
 | `src/refmatrix/duckdb_catalog.py` | `learned_evidence` DDL + primary key |
-| `src/refmatrix/store.py` | `dump_catalog_to_log` emits one `learned_provenance` event per sidecar row after each partition's `evidence` events (R1d, r4 b-2); `add_learned_provenance` (+ `learned_provenance` events); `move_learned_provenance` (+ `learned_provenance_move` event); both ops in `_apply_event_body` and in `rebuild_index_from_log`'s pass; `verify_evidence_rows` stats split (`missing_file`, `out_of_range`, `reader_rule`); `grep_evidence` enqueues R4 candidates for learned rows |
+| `src/refmatrix/store.py` | `dump_catalog_to_log` emits one `learned_provenance` event per sidecar row after each partition's `evidence` events, with its evidence row's `ts` (R1d, r4 b-2, d9av); `add_learned_provenance` (+ `learned_provenance` events); `move_learned_provenance` (+ `learned_provenance_move` event); both ops in `_apply_event_body` and in `rebuild_index_from_log`'s ONE timestamp-ordered row pass, which replaces the separate `evidence_events` loop (`_row_pass_events`, R1d, d9av); `verify_evidence_rows` stats split (`missing_file`, `out_of_range`, `reader_rule`); `grep_evidence` enqueues R4 candidates for learned rows |
 | `src/refmatrix/learned_verify.py` (new) | R2: `Rules`, `Unverifiable`, `UNVERIFIABLE_REASONS`, `verify_argv`, `matching_lines`, `permissive_matching_lines`, `hash_line`, `verify` |
-| `src/refmatrix/replica_merge.py` | table lists + the sidecar step (R1c) |
+| `src/refmatrix/replica_merge.py` | none: R1c is RETIRED (d9ay) |
 | `src/refmatrix/daemon.py` | R4 drain consumer (pre-step + batch apply) on plan-23's drain; R5 backfill op; R1b call in `_learn_grep_hits` |
 | `src/refmatrix/cli.py` | `rmx learn status`: mark counts ("at least"), overflow, unverifiable-by-reason/unparsed counts, `orphaned_provenance` |
 | `scripts/census_on_copy.py` (new) | R7: the ONE census procedure (real home from `pwd` first, deny set, copy header incl. log birth time and last compaction, audit hook, read-only connection, production functions, explicit classifier inputs, `probe-reproduction`, `dangling-link`) |
-| `tests/test_learned_evidence.py` (new) | AC-1, AC-2, AC-4..9, AC-9b, AC-11 (rewritten by 22.6, r4 m-5); AC-5c |
+| `tests/test_learned_evidence.py` (new) | AC-1, AC-4..9, AC-9b, AC-9c, AC-11 (rewritten by 22.6, r4 m-5); AC-5c (AC-2 RETIRED, d9ay) |
 | `tests/test_learned_verify.py` (new) | AC-3, AC-3b, AC-3c |
 
 ## Test strategy {#test-strategy}

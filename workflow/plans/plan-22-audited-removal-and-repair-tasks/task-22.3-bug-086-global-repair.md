@@ -13,7 +13,8 @@ metadata:
 # Task 22.3: the global-store repair {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 5, 2026-10-14; [[#rev-round-5]]; round 3 in [[#rev-round-3]])
+> Status: Pending (revision round 7, 2026-10-15; [[#rev-round-7]]; round 5 in [[#rev-round-5]], round 3
+> in [[#rev-round-3]])
 > Wave: 1, last of plan-22's Wave-1 chain (16.6 slice → 22.1a → 22.2 → 22.5 → 22.3; #t8-wave1).
 > Depends on: 22.1a, 22.2, 22.5 (the 476 resolved entities), 23.1, 23.0; the user's confirmation
 > of the dry-run counts. The remedy that stopped new relative global rows is deployed (0.77.x).
@@ -45,9 +46,14 @@ replaced by the 2026-10-14 decisions:
 - the 1,655 `pytest-of-*` tmp entities the suite wrote into the live global store (22 #b-8; 143,108
   `facts.log` events, `query/ERROR` and `query/alpha`) lose their learned rows in the same audited
   apply (d1c). Under d9ab their protection is user-asserted (0 of the 1,655 carry a learner
-  `source` or a learner command record; the count is in [[task-22.2-repair-then-remove#r5]]), so
-  the ENTITIES themselves are kept, protected, and listed `kept: asserted-protection`; removing
-  them is the user's explicit selector step ([[#r6]]);
+  `source`, a learner command record or, under d9ak(b), a `cli.log` grep record; the counts are
+  in [[task-22.2-repair-then-remove#r5]]), so the ENTITIES themselves are kept, protected, and
+  listed `kept: asserted-protection`; removing them is the user's explicit selector step
+  ([[#r6]]);
+- the learned-only global entities that d9ak(b)'s rule (c) attributes to the learner (a matching
+  `rmx grep` record in `~/.refmatrix/cli.log`; 90 of the store's 4,793 learned-only protected
+  entities on 2026-10-14) are purgeable whole when they are members of this apply; the plan
+  prints how many are before the apply and the user sees that count first (d9aw, [[#r3]]);
 - the 235 fixture rows in the live `query.log` are NOT removed here: they are log rows, not catalog
   rows (d8d, mark-and-filter by readers). {#why-body}
 
@@ -68,15 +74,33 @@ replaced by the 2026-10-14 decisions:
 2. **R2 Backup and confirmation.** An APFS clone of `~/.refmatrix` is taken before the apply and
    its path recorded in the manifest. The user confirms the live dry-run counts per bucket and the
    manifest hash before the apply.
-3. **R3 Apply through 22.2.** `rmx removal apply --root ~/.refmatrix --manifest ID --confirm
-   HASH`. `--root` is the global STORE root, `~/.refmatrix`, the value 22.2 R8 compares with the
-   daemon's `Path(d.root)` (m-8); `$HOME` is refused. Removals are row-level with events and the
-   intent-log manifest; entities are purged only under 22.2 R2/R5, so (d9ab) no existing global
-   entity is purged by this class apply: the `orphan-root:unresolved` and pytest-tmp entities lose
-   their learned rows and are listed `kept: asserted-protection` with their counts. The 48 are written into the
-   manifest's `kept: ambiguous` list with all their candidate roots (d6a); the `home-readable`
-   entities into `held_for_ruling` (d9b). No relative row is rewritten into an absolute global
-   entity (22 #s-3).
+3. **R3 Apply through 22.2.** {#r3} `rmx removal apply --root ~/.refmatrix --manifest ID
+   --confirm HASH`. `--root` is the global STORE root, `~/.refmatrix`, the value 22.2 R8 compares
+   with the daemon's `Path(d.root)` (m-8); `$HOME` is refused. Removals are row-level with events
+   and the intent-log manifest; entities are purged only under 22.2 R2/R5:
+   - **Learner-attributed members are purged whole (d9aw; r7 s-3).** A member that is
+     learned-only and whose protection 22.2 R5 attributes to the learner is purged whole
+     (entity, learned rows, sidecar rows, vector; restorable from the manifest). On the global
+     store no protection carries a `source` and no command record names one (22.2 R5's table),
+     so every such member is attributed by rule (c), a matching `rmx grep` record in the global
+     store's own `cli.log` ([[task-22.2-repair-then-remove#r5-grep-record]]). It is listed
+     `purged: learner (cli.log grep)` with the record's pattern. The bound is 90: on 2026-10-14
+     rule (c) attributed 90 of the global store's learned-only protected entities, class
+     members or not, and none of the 1,655 pytest-tmp ones.
+   - **The count comes first.** The live dry run (R1) prints, per bucket, `learner-attributed
+     (cli.log grep): N` and the list, beside the other counts; R2's confirmation by the user
+     covers that number. Inside its hold the apply re-classifies each member (22.2 R6), so a
+     member whose attribution changed since the dry run is skipped and counted
+     `changed_since_audit`; it never purges more than the N the user saw.
+   - **Every other member keeps its entity.** A member whose protection is user-asserted (no
+     `source`, no command record, no matching grep record) loses only its learned rows and is
+     listed `kept: asserted-protection` with its counts: the pytest-tmp entities and the rest of
+     `orphan-root:unresolved`.
+   - The 48 are written into the manifest's `kept: ambiguous` list with all their candidate
+     roots (d6a); the `home-readable` entities into `held_for_ruling` (d9b). No relative row is
+     rewritten into an absolute global entity (22 #s-3).
+   - Round 5's sentence "(d9ab) no existing global entity is purged by this class apply" is
+     WITHDRAWN: d9ak(b)'s rule (c) makes up to 90 of them purgeable (r7 s-3).
 4. **R4 Unchanged memory.** The global store's `kind=memory` row count and content hashes are equal
    before and after.
 5. **R5 The pytest concepts.** `query/ERROR` and `query/alpha` keep any link that is not a
@@ -96,7 +120,9 @@ replaced by the 2026-10-14 decisions:
 
 1. **Counts confirmed.** The copy's and the live dry run's per-bucket counts are reported, the probe
    reproduction's verdict (`reproduced` or `drift`, 22.1a AC-5b) is printed beside them, and the
-   user's confirmation of the counts and the manifest hash is recorded before the apply.
+   user's confirmation of the counts and the manifest hash is recorded before the apply. The
+   counts include, per bucket, `learner-attributed (cli.log grep): N` with its list (d9aw), and
+   N ≤ 90.
 2. **The symptom, not the touched rows (22 #s-7).** A pattern set is pre-registered in the dry-run
    manifest before the apply: `ERROR`, `alpha`, plus every `query/*` pattern linked to an
    `orphan-root` or pytest-tmp entity. For that set, the TOTAL global `unreadable` count reported by
@@ -108,10 +134,18 @@ replaced by the 2026-10-14 decisions:
 3. **Memory untouched.** R4's count and hashes are equal.
 4. **Restorable.** On the backup clone (never live), `restore` of the manifest returns the
    pre-apply state by name (22.2 AC-4).
-5. **Nothing kept is lost.** All 48 ambiguous entities are present after the apply, with their
-   rows; every `kept: asserted-protection` entity is present and still protected (d9ab), with 0
-   learned rows. Mutation (rehearsal fixture) "purge a learned-only entity whose `protect_source`
-   is NULL" FAILS it.
+5. **Nothing kept is lost; only the attributed are purged (d9ab, d9aw).** All 48 ambiguous
+   entities are present after the apply, with their rows; every `kept: asserted-protection`
+   entity is present and still protected, with 0 learned rows; every `purged: learner (cli.log
+   grep)` entity is absent, its rows are in the manifest, and the number purged equals the N
+   printed before the apply (AC-1). The rehearsal fixture's global store holds three
+   `orphan-root:unresolved` learned-only entities with NULL `protect_source`: G, linked from
+   `query/foo`, with a `["grep", "-n", "foo", ...]` record in the fixture's `cli.log`; K, linked
+   from `query/bar`, with no grep record for `bar`; U, linked from `query/foo`, with a
+   `["protect", "U"]` command record. Expected: N = 1 printed; G purged; K and U kept,
+   protected, 0 learned rows. Mutations, each FAILS it: "purge a NULL-source entity with no grep
+   record and no command record" (K purged); "ignore `cli.log` grep records" (G kept, N = 0);
+   "a grep record beats a user command record" (U purged).
 6. **Only the named root.** The apply was invoked with `--root` naming the global store; a dry
    rehearsal in the sandbox shows the op refuses without it (22.2 AC-11).
 
@@ -172,3 +206,17 @@ Carries [[bsd-plan16-22-spec-rereview-r4-878647c]] b-2 and d9ab
 
 rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
 rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
+
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Answers [[bsd-plan16-22-spec-rereview-r7-331b414]] s-3 and d9aw
+([[plan-review-2026-10-14#t12-approvals]]). Round 6 did not touch this task; d9ak(b) stopped at
+22.2. Later rows win over round 5.
+
+| finding / decision | answered in |
+|---|---|
+| r7 s-3 / d9aw (R3 said no existing global entity is purged; AC-5's mutation tested the opposite of rule (c)) | [[#r3]] learner-attributed members purged whole, count printed first and confirmed, the rest `kept: asserted-protection`, round 5's sentence withdrawn; [[#why]] bullet; AC-1 count; AC-5 rewritten (G/K/U fixture) with the mutation restated as "purge a NULL-source entity with no grep record and no command record" plus two more |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r7-331b414]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+rel: depends-on -> [[task-22.2-repair-then-remove#r5-grep-record]]

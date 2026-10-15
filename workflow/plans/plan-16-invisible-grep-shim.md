@@ -13,7 +13,10 @@ metadata:
 # Plan 16: the grep shim stops answering and only watches {#root}
 
 **Date:** 2026-10-06
-**Status:** Drafting (revision round 6, 2026-10-15: 16.6 R7 names the `dangling-link` census and
+**Status:** Drafting (revision round 7, 2026-10-15: 16.6 R1d's one row pass replays `evidence`
+appends and row ops together in timestamp order (d9av, lockstep with 22.2 R3) and 16.6 R1c is
+retired (d9ay), for the r7 re-review `bsd-plan16-22-spec-rereview-r7-331b414`, which made plan-16
+approvable together with that R1d edit, [[#rev-round-7]]; revision round 6, 2026-10-15: 16.6 R7 names the `dangling-link` census and
 cites code by symbol, for the r6 re-review `bsd-plan16-22-spec-rereview-r6-0e77da3`, which found
 plan-16 APPROVABLE, [[#rev-round-6]]; revision round 5, 2026-10-14: 16.1 and 16.6 revised for the r4 re-review
 `bsd-plan16-22-spec-rereview-r4-878647c` and d9ab, [[#rev-round-5]]; revision round 3 revised
@@ -161,7 +164,7 @@ Specs go in `workflow/plans/plan-16-invisible-grep-shim-tasks/` before approval.
 | 16.3 | Grep-tool hook rebuilt from the tool's real rg argv (`--hidden`, VCS globs, constants pinned); every doc/help surface | taught set equals the tool's captured RESPONSE; paging inputs do not kill; no stale claim anywhere |
 | 16.4 | measurement, historical + forward (learner log joined to transcripts) | precision ≥ 0.99 / recall ≥ 0.95 (micro, timeouts counted) on COMPLETE outputs only, gated at n ≥ 30 else `insufficient-n`; no carve-out; a gate shown able to fail; routes measured |
 | 16.5 | explicit `rmx grep` with paths or a pipe execs the real grep + learner; path-less keeps the index read with a pruned `grep -r` floor; rmx options parsed from the raw argv with a per-route table; the Python re-implementation (argv order, `-c` rows, stdin filter, delegate) is DELETED | differential 100% incl. round 4's cases, bug-081 and the `--`/`-e`/`--file` rows; every d-4 cell has a case; nothing beyond the tool's bytes; deletions verified by `rg -w` |
-| 16.6 | **Wave-1 slice (d6d), after plan-23's 23.1, no dependency on 16.1:** the `learned_evidence` sidecar keyed on the evidence row's identity + `rules_sha` (survives `replica_merge`; replayable from `facts.log` through a `learned_provenance` event), THE verifier for learned rows (`learned_verify`: re-runs the recorded tool with only pattern-semantics tokens, returns the matching line set, exit 2 is `unverifiable`; the recorded locale pinned, value arity honoured; a named-subset permissive reading for rows without rules), the ONE census procedure (R7), read-time marks that record staleness under the row's own rules (never a reader-rule drop) through plan-23's queue and that plan-22's 22.1 reads, the backfill, and legacy-writer rows until 16.1 lands. The learn-time write is 16.1 R10. The audit, repair and removal engine MOVED to [[plan-22-audited-removal-and-repair]] (plan review C1-C3, user 2026-10-07); nothing here removes a row | sidecar rows join after a merge and survive a rebuild; BRE, POSIX-class, cutoff and absolute-exclude rows verify `ok`; exit 2 is never `stale-line`; a reader-rule drop writes no mark; backfill leaves no learned row without provenance; marks applied in bounded batches; overflow counted |
+| 16.6 | **Wave-1 slice (d6d), after plan-23's 23.1, no dependency on 16.1:** the `learned_evidence` sidecar keyed on the evidence row's identity + `rules_sha` (replayable from `facts.log` through a `learned_provenance` event, in ONE timestamp-ordered row pass with the `evidence` appends, d9av; the `replica_merge` step R1c is RETIRED, d9ay), THE verifier for learned rows (`learned_verify`: re-runs the recorded tool with only pattern-semantics tokens, returns the matching line set, exit 2 is `unverifiable`; the recorded locale pinned, value arity honoured; a named-subset permissive reading for rows without rules), the ONE census procedure (R7), read-time marks that record staleness under the row's own rules (never a reader-rule drop) through plan-23's queue and that plan-22's 22.1 reads, the backfill, and legacy-writer rows until 16.1 lands. The learn-time write is 16.1 R10. The audit, repair and removal engine MOVED to [[plan-22-audited-removal-and-repair]] (plan review C1-C3, user 2026-10-07); nothing here removes a row | sidecar rows survive a rebuild and a compaction, and the row pass is one timestamp order; BRE, POSIX-class, cutoff and absolute-exclude rows verify `ok`; exit 2 is never `stale-line`; a reader-rule drop writes no mark; backfill leaves no learned row without provenance; marks applied in bounded batches; overflow counted |
 
 ## Waves and dependencies {#waves}
 
@@ -223,6 +226,22 @@ Next gate: `@ch-bsd` spec review r6 of task specs 16.1–16.6 revision 6, then `
 
 rel: derives-from -> [[plan-review-2026-10-14#t6]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Answers [[bsd-plan16-22-spec-rereview-r7-331b414]] where it touches plan-16 (verdict: approvable
+only together with the lockstep 16.6 R1d edit of b-1) and d9av/d9ay
+([[plan-review-2026-10-14#t12-approvals]]). Plan-22's findings are answered in
+[[plan-22-audited-removal-and-repair#rev-round-7]].
+
+| finding / decision | answered in |
+|---|---|
+| b-1 / d9av (16.6 R1d's pass ran every row op after all appends) | [[task-16.6-learned-row-validation#r1d]] ONE row pass in timestamp order; 16.6 AC-9c; lockstep with [[task-22.2-repair-then-remove#r3]] |
+| d9ay (16.6 R1c, a slot-merge path) | [[task-16.6-learned-row-validation#r1c]] RETIRED; 16.6 AC-2 retired; [[#tasks]] row 16.6 |
+| m-3 (census default partition) | [[task-16.6-learned-row-validation#r7]] `--default-partition` |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r7-331b414]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Revision round 6 (2026-10-15) {#rev-round-6}
 

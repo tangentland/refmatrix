@@ -13,9 +13,10 @@ metadata:
 # Plan 22: audited removal and repair {#root}
 
 **Date:** 2026-10-07 (revised 2026-10-14 after the Wave 0 decision log)
-**Status:** Drafting — revision round 6 (2026-10-15) for the r6 re-review
-[[bsd-plan16-22-spec-rereview-r6-0e77da3]] and the approvals d9aq/d9ar
-([[plan-review-2026-10-14#t12-approvals]]; [[#rev-round-6]]); round 5 (r4 re-review, d9ab/d9ac/d9z)
+**Status:** Drafting — revision round 7 (2026-10-15) for the r7 re-review
+[[bsd-plan16-22-spec-rereview-r7-331b414]] and the approvals d9av/d9aw/d9ay
+([[plan-review-2026-10-14#t12-approvals]]; [[#rev-round-7]]); round 6 (r6 re-review, d9aq/d9ar) in
+[[#rev-round-6]]; round 5 (r4 re-review, d9ab/d9ac/d9z)
 in [[#rev-round-5]], round 3 in [[#rev-round-3]], round 2 in [[#rev-round-2]]. Task
 specs 22.1a, 22.1, 22.2, 22.3, 22.4 (blocked; handed to the helix plan on close, d9j), 22.5 and
 22.6 (new in round 3) are written.
@@ -162,7 +163,7 @@ concept classes do not live under `rmx learn` (#m-6).
 | 22.1a | 1 | provenance-free classes: `orphan-root` (incl. root-`ambiguous`, `home-readable`, `unverifiable`), `missing-file`, `duplicate`, `orphan-alias`, `stale-subject`, `dangling-link` and `dangling-evidence` (store scope, dead end named from `facts.log`); the `removal_audit` verb | fixture row per class; the recovered probe re-run on a global copy with a churn-bounded `reproduced`/`drift` verdict beside the applied split; independent recount equals audit count; one liveness predicate shared with `repair_fragments` (AST check); audit writes nothing |
 | 22.2 | 1 | the engine: repair/move/remove primitives, row-level `facts.log` events in both replay paths, manifest + intent log + restore, `bind` + recorder, ablation gate on a copy of THIS store, `removal_apply`/`removal_restore`; dangling-row removal; with 22.6 R6 in its slice | rebuild reproduces post-apply; a rebuild after a dangling removal resurrects no dead endpoint; restore equal by name incl. evidence, protection, vectors, dangling rows; two-partition AC; gate refuses on a masked delta and on a store lacking the candidates |
 | 22.5 | 1 | cross-store move: copy → verify → forget across two daemons, manifest-backed, idempotent, sidecar rows travelling with their evidence; the no-owner buckets reported and held until the user rules (d9b) | crash at each step leaves no loss and no duplicate; collision merges; only named store roots; nothing applied to a `pending` no-owner bucket |
-| 22.3 | 1 | first apply, live global store: `orphan-root:unresolved` removed (`orphan-root:unverifiable` kept) (measured; 563 was the probe's no-verifying-file count, which included rows still readable today), 48 kept ambiguous, the 1,655 pytest-tmp entities' learned rows removed (the entities kept as user-asserted under d9ab; removing them is the user's selector step); resolved and `home-readable` entities handed to 22.5 (the no-owner ones held for the user's ruling, d9b) | total global `unreadable` over a pre-registered pattern set drops to the residual explained by class; memory count unchanged |
+| 22.3 | 1 | first apply, live global store: `orphan-root:unresolved` removed (`orphan-root:unverifiable` kept) (measured; 563 was the probe's no-verifying-file count, which included rows still readable today), 48 kept ambiguous, the 1,655 pytest-tmp entities' learned rows removed (the entities kept as user-asserted under d9ab; removing them is the user's selector step); learned-only members that a `cli.log` grep record attributes to the learner purged whole (≤ 90; the count printed and shown to the user before the apply, d9aw); resolved and `home-readable` entities handed to 22.5 (the no-owner ones held for the user's ruling, d9b) | total global `unreadable` over a pre-registered pattern set drops to the residual explained by class; memory count unchanged |
 | 22.1 | 2 | flag-sensitive classes: `ok`, `moved` (per `(concept, file)` set), `grown`/`shrunk`, `stale-line`, `out-of-range`, `unverifiable`, `empty-learned`; every row decided by 16.6's `learned_verify` (no matcher here); 16.6's read-time marks read for ordering and reporting | two-hit shift ends re-pointed with 0 `ambiguous`; BRE, POSIX-class and `\<…\>` rows `ok`; exit 2 `unverifiable`; pre-provenance `-i` row stays `ok`; marked rows listed; `empty-learned` recount exact |
 | 22.4 | blocked; handed over on close (d9j) | merge writes into the alias map; `fold_concept_dups` as a merge entry point (d9o) | blocked until ADR-0004's helix plan defines the alias map and plan-20 supplies the rule; that plan takes it over |
 | 22.6 | 1 (after 22.2; parallel to 22.5) | entry points (`forget`, `memory forget`, `memory bulk-forget` with `--confirm`; `untrack`, `prune-noise --drop` manifest first) and the bug-107 paths (deleted/ignored-file purge with manifest; sync edits keep learned rows; `vacuum` orphan drop with manifest + event; `unprotect` source) | `forget` without `--confirm` writes nothing; bulk-forget restores bodies; edit keeps learned rows and a rebuild agrees; vacuum drops are logged and replayable |
@@ -224,7 +225,7 @@ rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 | d-13 | `forget`, `memory forget` and `memory bulk-forget` are entry points to this path (plan manifest + `--confirm`); `untrack` and `prune-noise --drop` are listed exceptions writing the same manifest form first; the intent record restores memory bodies and whole entity rows | d9k; r3 b-3; 22.6, 22.2 R4 |
 | d-14 | the bug-107 paths as d9o classifies them (table in [[#scope]]) | d9o; 22.6 |
 | d-15 | the probe's walk and line check are the RECOVERED script's, a census reproduction only; the applied split uses the classifier's walk and 16.6's reading; a reproduction mismatch is reported (`drift`), never a blocking gate | r3 b-1; 22.1a R1 |
-| d-16 | a protection's origin is trusted only from its event's `source` (persisted, kept by the compactor) or a CLI/MCP command record; everything else is user-asserted and never class-removed, its learned rows may be (counts in 22.2 R5: 0 existing protections are learner-attributed) | d9ab; r4 b-2 |
+| d-16 | a protection's origin is trusted only from its event's `source` (persisted, kept by the compactor) or a CLI/MCP command record (AMENDED by d9ak(b), d-22: or a `cli.log` grep record); everything else is user-asserted and never class-removed, its learned rows may be (counts in 22.2 R5: 0 existing protections are learner-attributed by `source` or command record; 217 here and 90 global by the grep record) | d9ab; r4 b-2; d9ak |
 | d-17 | `merge_partition` is a merge entry point owned by the helix plan, as `fold_concept_dups` | d9ac; r4 s-2 |
 | d-18 | the intent record keeps each removed entity's old id and vector; restore calls `vectors_restore(..., id_map=)` | d9z |
 | d-19 | the line hash pairs rows; it never proves a row stale | r4 b-1 |
@@ -232,6 +233,9 @@ rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 | d-21 | `linkage_evidence` rows of a live entity whose concept is dead are the `dangling-evidence` sub-class, audited and removed as d-20; 22.2's own purges remove concept-side evidence first | d9ar; r6 s-3 |
 | d-22 | protections no class plan may remove are user-asserted ones (their learned rows go); a `cli.log` `rmx grep P` record is learner evidence for `query/P` and its learned-only entities (217 here, 90 global) | d9ak; r6 s-4 |
 | d-23 | a fully verified cross-store move purges the global entity even when user-protected (protection and source travel); the protection `source` vocabulary is `learner`, `user`, `system`, `removal` | d9al, d9am |
+| d-24 | replay applies `evidence` appends and row-level ops together in TIMESTAMP order (ties by log position): an `evidence_remove` / `unlink` at `T` affects only what was appended at or before `T`, never a row re-learned or re-ingested after it; a named dead concept's evidence row therefore logs `evidence_remove` by name beside the tombstone | d9av; r7 b-1 |
+| d-25 | 22.3's live global apply purges the learned-only members d-22 attributes to the learner (≤ 90), printing the count before the apply for the user | d9aw; r7 s-3 |
+| d-26 | restore re-checks every recorded dead id (never re-inserts a row onto an id that is live now) and maps every old id the same manifest restores through its `id_map`, surviving rows included | r7 s-1, s-2 |
 
 ## Open after revision {#open-after-revision}
 
@@ -270,6 +274,32 @@ earlier links still resolve.
    all 4,946 global (4,793 learned-only, 1,655 of them pytest-tmp) and all 2,256 here (426
    learned-only) are user-asserted. Their learned rows may be removed; the entities stay unless
    the user names them through a selector plan ([[task-22.3-bug-086-global-repair#r6]]).
+   **AMENDED by d9ak(b) and d9aw (round 7, r7 s-3):** the `cli.log` grep record is a third
+   source, which attributes 217 of this repo's and 90 of the global store's learned-only
+   protections to the learner; those are purgeable whole when they are class members, and 22.3
+   prints its count before the live apply ([[task-22.3-bug-086-global-repair#r3]]).
+
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Answers [[bsd-plan16-22-spec-rereview-r7-331b414]] (plan-22: b-1, s-1, s-2, s-3, m-1..m-4; m-5 is
+plan-23's) and [[plan-review-2026-10-14#t12-approvals]] (d9av, d9aw, d9ay). Code claims re-read at
+`77ac38f`. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| b-1 / d9av (`evidence_remove` replayed after later appends: a rebuild deletes rows the live store holds) | [[task-22.2-repair-then-remove#r3]] one row pass in timestamp order; [[task-16.6-learned-row-validation#r1d]] (same pass, lockstep); [[task-22.2-repair-then-remove#r9-dangling]] step 4 (named dead concept: `evidence_remove` by name too); [[task-22.6-removal-entry-points#r3]]; 22.2 AC-3d, AC-3e, 22.6 AC-4 clause; d-24 |
+| s-1 (restore re-inserts a dead id a rebuild may have reused) | [[task-22.2-repair-then-remove#r4]] dead-id re-check (`restore_dead_id_reused`); 22.2 AC-4c; d-26 |
+| s-2 (restored concept under a new id, its inbound rows under the old one) | [[task-22.2-repair-then-remove#r4]] `id_map` re-attach (re-inserted and surviving rows); 22.2 AC-4d, 22.6 AC-9c; d-26 |
+| s-3 / d9aw (22.3 and 22.2 R5 still said no existing entity is purged) | [[task-22.3-bug-086-global-repair#r3]], 22.3 AC-1, AC-5; [[task-22.2-repair-then-remove#r5]] stale sentence deleted; [[#tasks]] row 22.3; d-16 amended, d-25; [[#open-after-revision]] item 9 amended |
+| m-1 (the 8 "nameless" are reborn) | [[task-22.1a-provenance-free-classes#r1-dangling]] `unnamed:reborn` and the measured counts; [[task-22.2-repair-then-remove#r9-dangling]] reborn rule and step 5's reason; 22.1a AC-8a/8b, 22.2 AC-3b |
+| m-2 (AC-8c scope; the predicate's maps; the bit half) | [[task-22.1a-provenance-free-classes#r1-dangling]] "One shared predicate"; 22.1a AC-8c |
+| m-3 (`unlink` partition; naming partition; census default partition; `facts_path`) | [[task-22.2-repair-then-remove#r9-dangling]] step 4; [[task-22.1a-provenance-free-classes#r1-dangling]], [[task-22.1a-provenance-free-classes#r3]]; [[task-16.6-learned-row-validation#r7]] `--default-partition`; 22.1a AC-8a/8b, 22.2 AC-3b |
+| m-4 (R2's concept-side rule vs the learned-row guard) | [[task-22.2-repair-then-remove#r2]] `ingest_ok=True`, two named callers, `detail` in the event; 22.2 AC-3c |
+| m-5 (23.4's census count and `dead-linkage` case) | plan-23's owner ([[task-23.4-option-a-measurement]]); not edited here |
+| d9ay (16.6 R1c retired) | [[task-16.6-learned-row-validation#r1c]]; 22.2 R2's collapse rule now cites 16.6 R1 |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r7-331b414]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Revision round 6 (2026-10-15) {#rev-round-6}
 

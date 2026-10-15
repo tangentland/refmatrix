@@ -12,8 +12,8 @@ metadata:
 # Task 22.1a: the provenance-free audit classes {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 6, 2026-10-15; [[#rev-round-6]]; round 5 in [[#rev-round-5]], round 3 in
-> [[#rev-round-3]])
+> Status: Pending (revision round 7, 2026-10-15; [[#rev-round-7]]; round 6 in [[#rev-round-6]], round 5
+> in [[#rev-round-5]], round 3 in [[#rev-round-3]])
 > Wave: 1, after 23.1 and 16.6's Wave-1 slice (d6d; #t8-amendments; #t8-wave1).
 > Depends on: 23.0 (test sandbox), 16.6 Wave-1 slice (sidecar + backfill). NOT on 16.1.
 > Feeds: 22.2 → 22.5 → 22.3; 22.6 (the selector mode of `removal_audit`).
@@ -170,12 +170,22 @@ rel: related-to -> [[project_global_relative_rows_repair]]
        concept is dead under the same predicate (any `detail`: a `rel:` edge's ingest evidence is
        the common case). A row whose ENTITY is dead is not a member: it is `vacuum` step 3's, made
        auditable by [[task-22.6-removal-entry-points#r5]].
-     - **One shared predicate (r6 m-3).** `store.link_liveness(con) -> LinkLiveness` loads the
-       three id sets from any DuckDB connection (the writer's, a read snapshot's, a census copy's),
-       and `LinkLiveness.dead_side(entity_id, linkage_id, concept_id) -> "entity" | "linkage" |
-       "concept" | None` applies the table above. `Store.repair_fragments` and
-       `removal_audit._classify_dangling(conn, inputs)` both call them; neither carries its own
-       liveness SQL (AC-8c).
+     - **One shared predicate (r6 m-3; r7 m-2).** `store.link_liveness(con) -> LinkLiveness` loads,
+       from any DuckDB connection (the writer's, a read snapshot's, a census copy's), the ONLY
+       liveness and naming data either caller reads:
+       - `entity: dict[int, tuple[partition_name, kind, name]]` (every `entities` row; the
+         entity-side liveness set and the partition and name the audit records for a live end);
+       - `concept_ids: frozenset[int]` (`entities` ∪ `concepts`, the concept-side set);
+       - `linkage: dict[int, str]` (`linkage_types` id → canonical name).
+       `LinkLiveness.dead_side(entity_id, linkage_id, concept_id) -> "entity" | "linkage" |
+       "concept" | None` applies the table above; `linkage_id=None` skips the linkage column, for
+       a fragment BIT, whose linkage is its fragment row's name. Both halves of
+       `Store.repair_fragments` call it: the `entity_links` loop (today `ent_part` and
+       `concept_ids` at `store.py:4360-4388`, read at `77ac38f`) and the bit loop (today
+       `ent_part.get(bit & mask)` and `… not in concept_ids` at `:4428` and `:4433`), which reads
+       the bit's live partition from `LinkLiveness.entity`. `removal_audit._classify_dangling(conn,
+       inputs)` calls it and takes every linkage name, live-end partition and live-end name from
+       its maps, so the module needs no SQL over those three tables at all (AC-8c).
      - **Store scope (r6 s-2).** `entity_links` and `linkage_evidence` have no partition column
        (`duckdb_catalog.py`'s DDL), a dead endpoint has no partition, and a both-dead row (7 on
        cliquedb) belongs to none. So both sub-classes are audited ONCE per store, whatever
@@ -187,11 +197,23 @@ rel: related-to -> [[project_global_relative_rows_repair]]
        no tombstone at or after their latest one, (ii) have no catalog row, and (iii) carry, for
        EVERY member row of `D` whose other end is alive, a last-wins `link` event (for a
        dangling-evidence row, an `evidence` event at the same `file`/`line`) with that row's
-       linkage and live-end name on the other side. `D` is NAMED when exactly one key qualifies
-       and no other dead id claims that key; otherwise it is NAMELESS (`unnamed:none` or
-       `unnamed:ambiguous`, counted apart). Partition comparison uses each event's `partition`
-       field, or the store's default when absent, as `rebuild_index_from_log` does. A both-dead
-       row is named through its dead entity's other rows, when it has any.
+       linkage and live-end name on the other side, IN THE KEY'S OWN PARTITION (r7 m-3): the
+       covering event's effective partition (its `partition` field, or the default partition
+       when absent) equals the key's, because a rebuild resolves a `link` or `evidence` event
+       only through its own partition's names. `D` is NAMED when exactly one key qualifies and
+       no other dead id claims that key. Otherwise it is NAMELESS, in one of three labels counted
+       apart (r7 m-1):
+       - `unnamed:reborn` — the logged key that covers the most of `D`'s live-end rows (at
+         least one) satisfies (i) and (iii)'s partition rule but HAS a catalog row: the name was
+         re-created under a new id. 22.2 R9 tombstones nothing for it and logs an event only for a
+         dead row the reborn entity does not hold ([[task-22.2-repair-then-remove#r9-dangling]]);
+       - `unnamed:ambiguous` — more than one key qualifies, or the one key is claimed by another
+         dead id;
+       - `unnamed:none` — every other case.
+       "The default partition" is an explicit input, never discovered: the daemon op passes its
+       store's bound partition (`rebuild_index_from_log` uses the same value, `store.py:7931`),
+       and the census takes `--default-partition` and prints it in its header (r7 m-3). A
+       both-dead row is named through its dead entity's other rows, when it has any.
      - Each member records `(entity_id, linkage, concept_id)` (plus `file`, `line`, `detail`,
        multiplicity for an evidence row), its weight (NULL kept), which side is dead, the live
        end's partition or `none`, and `names_from_log`. [[#r2]] does not exempt either sub-class:
@@ -211,8 +233,20 @@ rel: related-to -> [[project_global_relative_rows_repair]]
        Round 5's "8 `:concept` rows, all `part-of`" counted the 7 both-dead rows twice. Naming on
        the cliquedb copy (re-derived 2026-10-15 from the r6 auditor's copies, read-only): 56 of
        the 64 dead entity ids are NAMED, each by a distinct one of the 56 doc keys a rebuild would
-       resurrect; 0 ambiguous; 8 nameless (ids 2791202-2791209); 0 would-resurrect keys
-       unclaimed.
+       resurrect; 0 ambiguous; 0 would-resurrect keys unclaimed; and 8 `unnamed:reborn`, 0
+       `unnamed:none` (r7 m-1). The 8 (ids 2791202-2791209) are `cliquedb/architecture-index` and
+       its seven section concepts (`#root`, `#entry-points`, `#topic-docs`, `#adr`, `#concepts`,
+       `#explorations`, `#tech-stack`), each LIVE again under a new id (3219330-3219337) that
+       carries the same rows: 7 are fully covered by their name's `link` events (4/4, 10/10,
+       81/81, 112/112, 9/9, 474/474, 13/13 rows held by the reborn entity), the eighth (`#adr`) on
+       3,458 of its 3,459 rows (r7 `#spot-check`, `scratchpad/r7/naming3.log`). Round 6 called
+       them "8 nameless … whose rows no single logged name covers"; that reason was false.
+       Evidence side (measured for round 7 on the same r6 copies, read-only, `.venv-eval/bin/python
+       -I`, `duckdb read_only=True`; script `scratchpad/r7-reviser/evreborn.py`): the 14,745
+       dangling-evidence rows hang on 4,778 dead concept ids; 0 NAMED; 896 `unnamed:reborn` (843
+       whose rows one logged `c` name covers fully, 53 partly; every one of those names is live
+       in the catalog: 711 as `concept` only, 170 as `doc` only, 15 as both); 3,882 `unnamed:none` (no
+       `evidence` event covers any of their rows).
 2. **R2 Ingest is out of scope.** No class selects an ingested evidence row (`detail` not
    `learned from grep…`), a `tracked_files` row, or an entity with an ingest link. A learned file
    entity that is also ingested is reported `shared` and never becomes `missing-file` or
@@ -227,9 +261,11 @@ rel: related-to -> [[project_global_relative_rows_repair]]
    - **One classifier, two callers (r3 s-6).** The classes are computed by ONE pure function,
      `removal_audit.classify_provenance_free(conn, inputs) -> AuditPlan`, where `conn` is a
      read-only DuckDB connection to a catalog file and `inputs` carries `store_root`, `partition`,
-     `candidate_trees`, `walk_prunes` and `home_base`. The dangling sub-classes ignore
-     `partition` and take the store's `facts.log` path instead ([[#r1-dangling]], store scope;
-     r6 s-2). The daemon op passes the connection its
+     `candidate_trees`, `walk_prunes`, `home_base`, `facts_path` and `default_partition` (the
+     last two added in round 7, r7 m-3: the dangling naming reads them, and round 6 used
+     `facts_path` without listing it). The dangling sub-classes ignore `partition` and read
+     `facts_path` and `default_partition` instead ([[#r1-dangling]], store scope; r6 s-2); a
+     missing `facts_path` or `default_partition` is an error for them, never a default. The daemon op passes the connection its
      read-snapshot ops already use; the operator census passes `duckdb.connect(<copy>,
      read_only=True)` through the ONE census procedure,
      [[task-16.6-learned-row-validation#r7]]. No census constructs `Daemon` or `Store`.
@@ -342,6 +378,13 @@ rel: related-to -> [[project_global_relative_rows_repair]]
      (`dead-linkage=1`), `dangling-link:entity` (the planted id: the entity side ignores
      `concepts`), `dangling-link:entity` ×2 for `E2` (`unnamed:none`: no one name covers both
      rows), `dangling-evidence` (its entity's partition), and not a member (vacuum's).
+     **Reborn and per-partition naming (r7 m-1, m-3).** Two more rows: a row of a dead id `R0`
+     whose logged name `R` has an `entity` event and a covering `link` event AND a live catalog
+     row (re-created) → `dangling-link:entity`, `unnamed:reborn`; a row of a dead id `P0` whose
+     only covering `link` event carries no `partition` field (so the bound `p1`) while its name's
+     `entity` event carries `partition: p2` → `unnamed:none` (the covering event is in another
+     partition). Mutations, each FAILS it: "count reborn as `unnamed:none`" (the reborn count is
+     0, the recount says 1); "ignore the covering event's partition" (`P0` reads NAMED).
      Each class count equals an INDEPENDENT SQL recount written in the test (not imported from
      `src/`), and equals `repair_fragments(dry_run=True)`'s `links_dead_entity` /
      `links_dead_concept` on the same store. Mutations, each FAILS it: "concept alive =
@@ -352,21 +395,37 @@ rel: related-to -> [[project_global_relative_rows_repair]]
    - **8b, operator census (not a suite test; as 5b).** `--census dangling-link`
      ([[task-16.6-learned-row-validation#r7]]) on copies of cliquedb's and this repo's
      `catalog.read.duckdb` and `facts.log` prints, per store: the class counts (`:entity`,
-     both-dead, `:concept`, `dead-linkage`, `dangling-evidence`); the naming counts (dead ids,
-     `named`, `unnamed:none`, `unnamed:ambiguous`); `would_resurrect` (keys with an untombstoned
+     both-dead, `:concept`, `dead-linkage`, `dangling-evidence`); the naming counts, link side
+     and evidence side apart (dead ids, `named`, `unnamed:reborn`, `unnamed:none`,
+     `unnamed:ambiguous`); `would_resurrect` (keys with an untombstoned
      `entity` event and no catalog row) and how many of them a dead id claims
      (`would_resurrect_unclaimed` = the rest); and, beside the counts, the live repair's counters
      read from the latest `repair_fragments dry_run=` line of `<store_root>/rmxd.log` (written by
      `daemon._op_repair_fragments`; read in place, read-only, with that line's timestamp), labelled
      `equal`, `drift`, or `no-counter` when the log holds no such line. No `Store` is
-     constructed for it. Reference reading for cliquedb (r6, [[#r1-dangling]]): 5,298 / 7 / 1 /
-     0 / 14,745; 64 dead ids, 56 named, 8 nameless; 56 would-resurrect, 0 unclaimed.
-   - **8c, one predicate (mechanical, not review).** An AST test over `src/refmatrix/` asserts:
-     `removal_audit._classify_dangling` calls `store.link_liveness` and `LinkLiveness.dead_side`
-     and holds no string constant naming `entities`, `concepts` or `linkage_types`;
-     `Store.repair_fragments` calls `LinkLiveness.dead_side` and builds no `concept_ids` set of
-     its own. Mutation "an inline `SELECT id FROM concepts` in `_classify_dangling`" FAILS it;
-     mutation "the repair keeps its own `concept_ids` set" FAILS it.
+     constructed for it. The run passes `--default-partition` (each store's bound partition, its
+     own name for a project store) and the header prints it (r7 m-3). Reference reading for
+     cliquedb ([[#r1-dangling]]): 5,298 / 7 / 1 / 0 / 14,745; link side 64 dead ids, 56 named, 8
+     reborn, 0 none, 0 ambiguous; evidence side 4,778 dead concept ids, 0 named, 896 reborn,
+     3,882 none, 0 ambiguous; 56 would-resurrect, 0 unclaimed (r7 m-1: round 6's "8 nameless"
+     were the 8 reborn).
+   - **8c, one predicate (mechanical, not review; r7 m-2).** An AST test asserts:
+     - over the WHOLE `removal_audit` module (every function, helpers included, since a helper
+       called from `_classify_dangling` could hold a second liveness set):
+       `_classify_dangling` calls `store.link_liveness` and `LinkLiveness.dead_side`; no string
+       constant holds an anti-join against those tables (case-insensitive `NOT IN (SELECT id
+       FROM entities|concepts|linkage_types …)` or `NOT EXISTS (SELECT … FROM entities|concepts|
+       linkage_types …)`); and no set, frozenset or dict is built from a WHOLE-TABLE id query
+       (`SELECT [DISTINCT] id[, …] FROM entities|concepts|linkage_types` with no `WHERE`), which
+       is what a liveness set is. Table names and filtered queries stay legal: the other classes
+       of this module read `entities` for their own members;
+     - in `Store.repair_fragments`: both the `entity_links` loop and the bit loop call
+       `LinkLiveness.dead_side`, and the method holds no `SELECT id FROM concepts`, no `SELECT
+       id, partition_id FROM entities` and no name `concept_ids` or `ent_part` of its own.
+     Mutations, each FAILS it: "an inline `SELECT id FROM concepts` in `_classify_dangling`"; "a
+     helper `_live_ids(conn)` in `removal_audit` that builds the id set and is called from
+     `_classify_dangling`" (the per-function check of round 6 passed it); "the repair keeps its
+     own `concept_ids` set for the bit loop" (the bit half, `store.py:4433` at `77ac38f`).
 
 ## Files to modify {#files-to-modify}
 
@@ -537,3 +596,17 @@ for (eid, rel), evs in ents.items():
     res["cands@%d" % min(len(cands),2)] += 1
 print(dict(res))
 ```
+
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Answers [[bsd-plan16-22-spec-rereview-r7-331b414]] where it touches 22.1a (m-1, m-2, m-3).
+Code claims re-read at `77ac38f`. Later rows win over round 6.
+
+| finding / decision | answered in |
+|---|---|
+| r7 m-1 (the 8 "nameless" ids are reborn; the audit had no label for it; the evidence side has the same shape) | [[#r1-dangling]] `unnamed:reborn` label; "Measured" corrected (8 reborn link-side; 896 reborn and 3,882 none evidence-side, measured for this round); AC-8a reborn row + mutation; AC-8b reference reading; the apply rule is [[task-22.2-repair-then-remove#r9-dangling]] |
+| r7 m-2 (AC-8c too broad and too narrow; the names; the bit half) | [[#r1-dangling]] "One shared predicate": `LinkLiveness` carries the id→(partition, kind, name) and linkage id→name maps; both halves of `repair_fragments` (rows and bits) call `dead_side`; AC-8c over the whole module, forbidding `NOT IN (SELECT id …)` and id-set construction, three mutations |
+| r7 m-3 (naming without a partition; "the store's default" undefined for a census; `facts_path` unlisted) | [[#r1-dangling]] condition (iii) per partition, the default partition an explicit input; [[#r3]] `inputs.facts_path`, `inputs.default_partition`; AC-8a partition row + mutation; AC-8b `--default-partition`; the census flag is in [[task-16.6-learned-row-validation#r7]] |
+| r7 b-1 / d9av, s-1, s-2, s-3 | not this task's: [[task-22.2-repair-then-remove#rev-round-7]], [[task-22.3-bug-086-global-repair#rev-round-7]] |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r7-331b414]]

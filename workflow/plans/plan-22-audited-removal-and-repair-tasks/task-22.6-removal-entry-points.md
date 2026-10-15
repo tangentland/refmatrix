@@ -12,8 +12,8 @@ metadata:
 # Task 22.6: removal entry points and the bug-107 paths {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (created in revision round 3, 2026-10-14; revised in round 5, [[#rev-round-5]], and
-> round 6, 2026-10-15, [[#rev-round-6]])
+> Status: Pending (created in revision round 3, 2026-10-14; revised in round 5, [[#rev-round-5]],
+> round 6, 2026-10-15, [[#rev-round-6]], and round 7, 2026-10-15, [[#rev-round-7]])
 > Wave: 1, after 22.2 (it needs the engine, the intent-record form and restore); parallel to
 > 22.5. R4 (the sync edit fix) needs only 16.6's Wave-1 slice and may land first.
 > Depends on: 22.2 (engine, primitives, R4 intent-record form, `removal_restore`), 22.1a
@@ -166,6 +166,12 @@ above are pinned to their shas; the requirements below cite by SYMBOL.
    rule of 22.2 R2), so each removal has its `evidence_remove` event and the sidecar rows leave in
    the same transaction. Ingest-derived rows are purged as today. Restorable with
    `removal_restore`.
+   - **A file that comes back (r7 b-1, d9av).** A branch switch deletes a file and re-creates it,
+     and the next grep re-learns the identical row. Replay applies `evidence` appends and row ops
+     together in timestamp order ([[task-22.2-repair-then-remove#r3]]), so this R3's
+     `evidence_remove` at `T1` deletes on a rebuild only the copies appended at or before `T1`;
+     the re-learned row (appended at `T2`) and its `learned_provenance` survive, as they do live
+     (AC-4).
    - **An existing file with an unsupported extension is NOT this branch (r4 s-2).** Today
      `sync.py:209` treats `not ap.exists() or not is_supported` alike. The learner teaches any
      non-code hit as `kind="doc"` (`daemon._learn_grep_hits`), so 100 of this repo's 706 learned entities
@@ -216,7 +222,7 @@ above are pinned to their shas; the requirements below cite by SYMBOL.
      `evidence_orphan_drop{linkage, c, dead_entity_id, file, line, detail, n, manifest}` event per
      identity (`linkage` and `c` by NAME; the entity has no name left, so its dead id and the
      manifest id are recorded instead).
-   - Replay applies it inside the ONE post-evidence pass ([[task-22.2-repair-then-remove#r3]],
+   - Replay applies it inside the ONE timestamp-ordered row pass (d9av; [[task-22.2-repair-then-remove#r3]],
      [[task-16.6-learned-row-validation#r1d]]): it deletes rows matching `(linkage, c, file, line,
      detail)` whose entity does not exist at that point; a match on a live entity is never
      deleted, it is counted `orphan_drop_skipped_live`.
@@ -329,6 +335,11 @@ above are pinned to their shas; the requirements below cite by SYMBOL.
    `rebuild_index_from_log` on a sandbox copy agrees with the live store on learned rows; restore
    returns the learned row and sidecar row. Mutation "plain `purge_path`" FAILS it (no manifest
    row; the sidecar row orphaned).
+   **The file comes back (r7 b-1, d9av).** Continuing the fixture: the file is re-created with
+   the same line, synced, and the same pattern is learned again (the identical learned row and
+   sidecar row). A rebuild on a second copy equals the live store: 1 learned row, 1 sidecar row,
+   `unresolved_provenance == 0`. Mutation "`evidence_remove` applied after all appends" FAILS it
+   (the copy deletes the re-learned row and counts its provenance unresolved).
 5. **Edit keeps learned rows (R4, bug-107).** A GMD `.md` and a `.py` file, each with a learned row
    and a sidecar row, are edited (a line inserted above the hit) and synced: each file entity
    keeps its id, its learned evidence row, its `query/*` `mentions` link, its sidecar row and its
@@ -386,6 +397,19 @@ above are pinned to their shas; the requirements below cite by SYMBOL.
    dead-concept rows without a manifest" FAILS it (the row disappears with no manifest record and
    no restore); mutation "drop the `dangling-evidence` sub-class" FAILS it (the row stays).
 
+   **9c. Restoring a purge outside the engine re-attaches the rows that name it (r7 s-2).** As
+   9b's first steps: concept `A` (kind `concept`) and doc `B`, `B` carrying a `rel:` evidence row
+   whose concept is `A`; `A` is dropped by `rmx untrack` of its file (R2; its cleanup manifest
+   holds only `A`'s own rows) and, in a second run, by the `--as-memory` conversion (R9). Before
+   the `dangling-evidence` class runs, `removal restore` of that manifest re-creates `A` under a
+   NEW id and, through 22.2 R4's `id_map` rule, updates `B`'s SURVIVING row to `A`'s new id in
+   place, logs no `evidence` event for it, and counts it `restore_reattached`. Afterwards,
+   compared by name, `B`'s evidence to `A` is present once, 0 `dangling-evidence` rows exist, and
+   a rebuild on a copy holds the row once. Mutations, each FAILS it: "keep the recorded old id
+   when the same manifest restores that entity" (`B`'s row still names the dead id: 1
+   `dangling-evidence` row, which the class would later delete while `A` is alive); "log an
+   `evidence` event for a re-attached surviving row" (the rebuilt copy holds the row twice).
+
 ## Test strategy {#test-strategy}
 
 All tests run inside task 23.0's sandbox (d1a/d1b): redirected `$HOME`/global root/registry/
@@ -408,7 +432,7 @@ mutation is pre-registered and must turn its test RED.
 | `src/refmatrix/daemon.py` | `forget` / `memory_forget` / `memory_bulk_forget` ops: preview or confirmed manifest only; `untrack` / `prune_noise` ops write the manifest first (R1, R2); `_learn_grep_hits` passes `protect_source='learner'` (R6) |
 | `src/refmatrix/cli.py` (also) | `sync --invalidate` as a re-ingest (R4); `memory forget` without the `_store()` fallback (R1) |
 | `src/refmatrix/store.py` (also) | `entities.protect_source` column + `protect_source` keyword on the protect writers; `dump_catalog_to_log` emits `source` (R6); `purge_legacy_relpath_doc` (R4) |
-| `tests/test_removal_entry_points.py` (new) | AC-1..AC-9, AC-9b |
+| `tests/test_removal_entry_points.py` (new) | AC-1..AC-9, AC-9b, AC-9c |
 | `tests/test_learned_evidence.py` (16.6's) | 16.6 AC-11's test is REWRITTEN by this task (r4 m-5): from R3/R5 on, `purge_path` of a missing file and `vacuum` move the sidecar row into a manifest (AC-4, AC-6) instead of leaving it; AC-11 keeps only its `orphaned_provenance` count for paths this task does not route |
 
 ## Revision round 3 (2026-10-14) {#rev-round-3}
@@ -462,3 +486,16 @@ reflected since round 5 but not cited. Later rows win over round 5.
 rel: amends -> [[bsd-plan16-22-spec-rereview-r6-0e77da3]]
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
+
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Answers [[bsd-plan16-22-spec-rereview-r7-331b414]] where it touches 22.6 (b-1, s-2) and d9av
+([[plan-review-2026-10-14#t12-approvals]]). Later rows win over round 6.
+
+| finding / decision | answered in |
+|---|---|
+| r7 b-1 / d9av (R3's `evidence_remove` deleted, on a rebuild, a row re-learned after the file came back) | the replay order is fixed in [[task-22.2-repair-then-remove#r3]] and [[task-16.6-learned-row-validation#r1d]]; [[#r3]] "A file that comes back"; AC-4 clause + mutation "`evidence_remove` applied after all appends" |
+| r7 s-2 (restoring `untrack`, R3 or the `--as-memory` conversion could not re-attach the rows that name the purged entity) | 22.2 R4's `id_map` rule ([[task-22.2-repair-then-remove#r4]]) covers SURVIVING rows; AC-9c (both entry points) + two mutations |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r7-331b414]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
