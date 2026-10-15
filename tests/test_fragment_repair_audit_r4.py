@@ -109,7 +109,7 @@ def test_offline_cli_merge_runs_and_prints_the_repair(tmp_path, monkeypatch):
     r = CliRunner().invoke(cli_mod.main, ["partition", "merge", "src", "dst", "-y"])
     assert r.exit_code == 0, r.output
     assert "fragments repair:" in r.output and "dropped_dead_concept=" in r.output, r.output
-    assert "links_dead_concept=" in r.output, r.output   # bug-111
+    assert "links_dead_concept=" in r.output and "links_dead_entity=" in r.output, r.output
 
 
 # ---- M1: the daemon's periodic flush guard spans every binding ---------------------------------
@@ -201,7 +201,7 @@ def test_daemon_repair_log_line_names_every_counter(live, monkeypatch):
     lines = [l for l in log.splitlines() if "repair_fragments dry_run=" in l]
     assert lines, log[-2000:]
     for field in ("dropped_dead=", "dropped_dead_concept=", "links_skipped=", "unread_dirs=",
-                  "manifest=", "links_dead_concept="):          # bug-111
+                  "manifest=", "links_dead_concept=", "links_dead_entity="):  # bug-111
         assert field in lines[-1], (field, lines[-1])
 
 

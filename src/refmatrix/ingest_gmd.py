@@ -898,13 +898,21 @@ def ingest_gmd_paths(
             # left the doc's entity_links rows (both sides), fragment bits and
             # vector naming a dead id, which the fragment repair later turned
             # back into bits (bug-111, cliquedb 2026-10-14).
+            # Matched on path as well as name (r1 #4): a project doc in the same partition whose
+            # GMD id equals a memory file's id is a different file and is not this one's prior row.
             try:
+                vec_failed0 = getattr(store, "vector_delete_failures", 0)
                 for (old_id,) in store._connect().execute(
                     "SELECT id FROM entities WHERE partition_id = ? "
-                    "AND kind = 'doc' AND name = ?",
-                    (store._partition_id, doc.doc_id),
+                    "AND kind = 'doc' AND name = ? AND path IN (?, ?)",
+                    (store._partition_id, doc.doc_id, str(path), str(Path(path).resolve())),
                 ).fetchall():
                     store.purge_entity(int(old_id))
+                vec_failed = getattr(store, "vector_delete_failures", 0) - vec_failed0
+                if vec_failed:
+                    # purge_entity prints and counts a failed Lance delete on the store; the
+                    # ingest result names it too (r1 #5).
+                    raise RuntimeError(f"{vec_failed} vector delete(s) failed")
             except Exception as exc:
                 # Counted and printed, never verbose-only (memory-path rule).
                 stats.doc_drop_failed.append((path, repr(exc)))

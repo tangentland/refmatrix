@@ -92,3 +92,107 @@ def test_as_memory_ingest_replacing_a_doc_entity_leaves_no_orphan_links(s, tmp_p
     assert orphans == 0, "the as-memory doc drop left entity_links rows naming a deleted id"
     rep = s.repair_fragments(dry_run=True, manifest_dir=tmp_path / "m")
     assert rep["dropped_dead"] == 0 and rep["dropped_dead_concept"] == 0, rep
+
+
+# ---- ch-bsd r1 (bsd-bug111-repair-dead-links-0f268f5) -------------------------------------------
+
+def _cross_partition_part_of(s: Store) -> tuple[int, int]:
+    """Doc D in partition `mem`; entity E in the default partition; E part-of D (probe1)."""
+    s.add_linkage_type("part-of")
+    with s.with_partition("mem"):
+        d = s.upsert_entity(kind="doc", name="d.md")
+    e = s.upsert_entity(kind="concept", name="e")
+    s.link("part-of", d, e); s.flush_fragments()
+    return d, e
+
+
+def test_purge_clears_a_concept_bit_that_lives_in_another_partition(s, tmp_path):
+    d, e = _cross_partition_part_of(s)
+    with s.with_partition("mem"):
+        s.purge_entity(d)
+    s.flush_fragments()
+    rep = s.repair_fragments(dry_run=True, manifest_dir=tmp_path / "m")
+    assert rep["dropped_dead_concept"] == 0 and rep["dropped_dead"] == 0, rep
+
+
+def test_purge_under_a_foreign_binding_clears_the_entitys_own_bit(s, tmp_path):
+    d, e = _cross_partition_part_of(s)
+    with s.with_partition("mem"):
+        s.purge_entity(e)                      # E lives in the default partition
+    s.flush_fragments()
+    rep = s.repair_fragments(dry_run=True, manifest_dir=tmp_path / "m")
+    assert rep["dropped_dead"] == 0 and rep["dropped_dead_concept"] == 0, rep
+
+
+def test_bulk_purge_clears_bits_in_every_partition(s, tmp_path):
+    d, e = _cross_partition_part_of(s)
+    with s.with_partition("mem"):
+        s._bulk_purge_ids([(d, "doc", "d.md")])
+    s.flush_fragments()
+    rep = s.repair_fragments(dry_run=True, manifest_dir=tmp_path / "m")
+    assert rep["dropped_dead_concept"] == 0 and rep["dropped_dead"] == 0, rep
+
+
+def test_links_dead_entity_counts_the_orphan_share_of_links_skipped(s, tmp_path):
+    c = s.add_concept("k"); e = s.upsert_entity(kind="doc", name="a.md")
+    s.add_linkage_type("mentions"); s.link("mentions", c, e); s.flush_fragments()
+    con = s._connect()._duck
+    lid = con.execute("SELECT id FROM linkage_types WHERE name='mentions'").fetchone()[0]
+    con.execute("INSERT INTO entity_links (entity_id, linkage_id, concept_id) VALUES (?, ?, ?)",
+                [987_654, lid, c])
+    rep = s.repair_fragments(dry_run=True, manifest_dir=tmp_path / "m")
+    assert rep["links_dead_entity"] == 1 and rep["links_skipped"] == 1, rep
+
+
+def _memo(tmp_path, name="note", sub="mem"):
+    md = tmp_path / sub / f"{name}.md"
+    md.parent.mkdir(parents=True, exist_ok=True)
+    md.write_text(f'---\ngmd: "0.1"\nid: {name}\ntitle: "N"\ntags: [t]\n---\n'
+                  f"# N {{#root}}\n\n## Part {{#part}}\n\nBody.\n")
+    return md
+
+
+def test_a_failed_doc_drop_is_counted_reported_printed_and_bridged(s, tmp_path, monkeypatch,
+                                                                     capsys):
+    from refmatrix.cli import _bridge_stats
+
+    md = _memo(tmp_path)
+    ingest_gmd_paths(s, [md])
+
+    def _boom(*a, **k):
+        raise RuntimeError("purge refused")
+    monkeypatch.setattr(s, "purge_entity", _boom)
+    stats = ingest_gmd_paths(s, [md], as_memory=True)       # verbose stays False
+    assert len(stats.doc_drop_failed) == 1, stats.doc_drop_failed
+    assert "purge refused" in stats.doc_drop_failed[0][1]
+    assert stats.as_dict()["doc_drop_failed"][0][0] == str(md)
+    assert "doc_drop_failed: 1" in stats.report()
+    assert "doc->memory cleanup failed" in capsys.readouterr().out
+    out: dict = {}
+    _bridge_stats(out, stats.as_dict())
+    assert out["doc_drop_failed"] and out["doc_drop_failed"][0]["path"] == str(md), out
+
+
+def test_a_failed_vector_delete_counts_as_a_failed_doc_drop(s, tmp_path, monkeypatch):
+    md = _memo(tmp_path)
+    ingest_gmd_paths(s, [md])
+    real = s.purge_entity
+
+    def _lance_fails(eid, **k):
+        s.vector_delete_failures = getattr(s, "vector_delete_failures", 0) + 1
+        return real(eid, **k)
+    monkeypatch.setattr(s, "purge_entity", _lance_fails)
+    stats = ingest_gmd_paths(s, [md], as_memory=True)
+    assert len(stats.doc_drop_failed) == 1 and "vector delete" in stats.doc_drop_failed[0][1]
+
+
+def test_as_memory_ingest_does_not_purge_a_same_id_doc_at_another_path(s, tmp_path):
+    project_doc = _memo(tmp_path, sub="docs")             # project doc, GMD id "note"
+    memory_file = _memo(tmp_path, sub="mem")               # memory file, same id
+    ingest_gmd_paths(s, [project_doc])
+    con = s._connect()._duck
+    before = con.execute("SELECT id FROM entities WHERE kind='doc' AND name='note'").fetchall()
+    assert len(before) == 1
+    ingest_gmd_paths(s, [memory_file], as_memory=True)
+    after = con.execute("SELECT id FROM entities WHERE kind='doc' AND name='note'").fetchall()
+    assert after == before, "a different file's doc entity was purged by name alone"

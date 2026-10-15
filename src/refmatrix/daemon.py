@@ -5333,7 +5333,8 @@ def _op_repair_fragments(d: Daemon, args: dict) -> dict:
            f"dropped_dead={rep['dropped_dead']} "
            f"dropped_dead_concept={rep['dropped_dead_concept']} "
            f"links_skipped={rep['links_skipped']} "
-           f"links_dead_concept={rep['links_dead_concept']} unread_dirs={rep['unread_dirs']} "
+           f"links_dead_concept={rep['links_dead_concept']} "
+           f"links_dead_entity={rep['links_dead_entity']} unread_dirs={rep['unread_dirs']} "
            f"manifest={rep['manifest']}")
     if not dry_run and rep["rows_changed"]:
         d._request_snapshot()

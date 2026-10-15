@@ -207,6 +207,6 @@ def test_p8_cli_repair_index_fragments_dry_run_then_apply_daemon_up(live, monkey
         print("$ rmx " + " ".join(argv) + "\n" + r.output)
         assert r.exit_code == 0, r.output
         assert "dropped_dead_concept=" in r.output and "links_skipped=" in r.output, r.output
-        assert "links_dead_concept=" in r.output, r.output   # bug-111
+        assert "links_dead_concept=" in r.output and "links_dead_entity=" in r.output, r.output
     log = (live / "rmxd.log").read_text()
     print("RMXD:\n" + "\n".join(l for l in log.splitlines() if "repair_fragments" in l))
