@@ -34,3 +34,4 @@
 2026-10-15T03:44:04-0700 commit=ebccb20 verdict=DIRTY findings=11 (0B/4S/7M) report=2026-10-15-0344-plan19-21-r9-spec-diffcheck-identity-assignment-has-no-home-and-t-watermark-drops-live-rows-ebccb20.md
 2026-10-15T03:48:54-0700 commit=29e335a verdict=DIRTY findings=8 (0B/2S/6M) report=2026-10-15-0350-plan16-22-r9-spec-diffcheck-orphan-drop-cannot-name-a-dead-concept-29e335a.md
 2026-10-15T03:47:10-0700 commit=b84fd8d verdict=DIRTY findings=10 (2B/4S/4M) report=2026-10-15-0347-plan23-17-r9-spec-diffcheck-snapshot-drops-dirty-bits-and-bug112-gate-pins-the-bug-b84fd8d.md
+2026-10-15T03:54:18-0700 commit=b84fd8d verdict=DIRTY findings=21 (5B/8S/8M) report=2026-10-15-0351-plan18-r1-spec-review-foreign-wal-rollback-and-lost-interrupt-b84fd8d.md
