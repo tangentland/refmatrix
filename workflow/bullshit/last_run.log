@@ -23,3 +23,6 @@
 2026-10-14T23:53:41-0700 commit=0e77da3 verdict=DIRTY findings=7 (2B/3S/2M) report=2026-10-14-2350-plan19-21-r6-spec-rereview-bug109-baseline-is-r1-and-summarize-promote-unrouted-0e77da3.md
 2026-10-14T23:53:39-0700 commit=0e77da3 verdict=DIRTY findings=9 (0B/5S/4M) report=2026-10-14-2353-plan23-17-r6-spec-rereview-r1-6-still-proposed-and-writer-lock-lost-on-reopen-0e77da3.md
 2026-10-14T23:54:53-0700 commit=0e77da3 verdict=DIRTY findings=12 (1B/4S/7M) report=2026-10-14-2354-plan16-22-r6-spec-rereview-dangling-link-removal-is-undone-by-rebuild-0e77da3.md
+2026-10-15T00:20:14-0700 commit=3d3c798 verdict=DIRTY findings=11 (2B/5S/4M) report=2026-10-15-0020-plan20-spec-review-cooccurrence-blind-across-ingest-paths-and-gold-too-small-3d3c798.md
+2026-10-15T00:29:17-0700 commit=331b414 verdict=DIRTY findings=8 (0B/4S/4M) report=2026-10-15-0029-plan19-21-r7-spec-rereview-one-member-identity-survives-small-clusters-and-global-error-log-unscoped-331b414.md
+2026-10-15T00:33:01-0700 commit=331b414 verdict=DIRTY findings=9 (1B/2S/6M) report=2026-10-15-0031-plan23-17-r7-spec-rereview-named-safe-close-swallows-the-new-check-331b414.md
