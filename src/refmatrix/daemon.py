@@ -65,6 +65,11 @@ HEARTBEAT_INTERVAL_S = float(os.environ.get("RMX_HEARTBEAT_S", "5") or "5")
 # hub watchdog and the daemon's own adoption/reap decisions (one number).
 HEARTBEAT_STALE_S = float(os.environ.get("RMX_HUB_HEARTBEAT_STALE_S", "60") or "60")
 
+
+class DeadlineExceeded(Exception):
+    """A queued READ whose caller's `deadline_s` passed before a worker reached it
+    (bug-116). Raised instead of running the op; the dispatcher answers with it."""
+
 # ONE stop grace for every supervisor — the plist's ExitTimeOut is the
 # source (ch-bsd plan-4 r3 #b-1: the hub waited 45 s, launchd 5 s, the CLI
 # 5 s; nobody had put the numbers beside the ~50 s drain).
@@ -624,27 +629,40 @@ def call(root: Path, op: str, args: dict | None = None,
       * empty-line response (`JSONDecodeError`) — socket closed before
         write, typical of a daemon restart racing the call.
       * `ConnectionResetError` / `BrokenPipeError` — peer reset.
-      * `TimeoutError` from the socket — daemon held `_store_lock`
-        longer than the caller's patience.
+      * `TimeoutError` while CONNECTING — the accept backlog was full.
+    A timeout AFTER the request was sent is never retried (bug-116): the daemon
+    has the request and is working on it or queuing it, so a re-send doubled the
+    work and tripled the caller's wait (a hook's `--timeout 5` measured 15-18 s,
+    2026-10-15 cli.log). The request carries `deadline_s` = `timeout`, and the
+    daemon drops a queued READ once that has passed.
     Each retry doubles the backoff. Backoff is bounded: total wait
     is `retry_backoff * (2^retries - 1)` (default ~150 ms across
     2 retries). Long enough to absorb a swap window; short enough
     not to compound CLI latency.
     """
     sock = socket_path(root)
-    payload = json.dumps({"op": op, "args": args or {}}).encode() + b"\n"
+    payload = json.dumps({"op": op, "args": args or {},
+                          "deadline_s": float(timeout)}).encode() + b"\n"
     last_exc: Exception | None = None
     backoff = retry_backoff
     for attempt in range(retries + 1):
+        sent = False
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
                 s.settimeout(timeout)
                 s.connect(str(sock))
                 s.sendall(payload)
+                sent = True
                 data = _recv_line(s, timeout)
             return json.loads(data)
+        except (socket.timeout, TimeoutError) as exc:
+            last_exc = exc
+            if sent or attempt >= retries:
+                break
+            time.sleep(backoff)
+            backoff *= 2
         except (json.JSONDecodeError, ConnectionResetError, BrokenPipeError,
-                socket.timeout, TimeoutError, ConnectionRefusedError) as exc:
+                ConnectionRefusedError) as exc:
             last_exc = exc
             if attempt >= retries:
                 break
@@ -1340,6 +1358,22 @@ class Daemon:
         self._heartbeat_touch()  # first touch synchronously: alive from line one
         self._heartbeat_thread = _t.Thread(target=_runner, name="rmxd-heartbeat", daemon=True)
         self._heartbeat_thread.start()
+
+    def _note_expired_read(self, op: str, late_s: float) -> None:
+        """Count a read dropped at its caller's deadline (bug-116) and say so, at most
+        one log line a minute with the running total, so a hook storm is visible
+        without one line per dropped read."""
+        with self._inflight_lock:
+            n = self.__dict__.get("_expired_reads", 0) + 1
+            self._expired_reads = n
+            last = self.__dict__.get("_expired_logged_at", 0.0)
+            now = time.monotonic()
+            due = now - last >= 60.0
+            if due:
+                self._expired_logged_at = now
+        if due:
+            self._log(f"dropped expired read(s): total={n} (latest {op}, "
+                      f"{late_s:.1f}s past its caller's deadline in the cli queue)")
 
     def _heartbeat_touch(self, _f=None) -> None:
         """Touch the heartbeat; a beat that cannot write is SAID, once per
@@ -3169,15 +3203,47 @@ class Daemon:
             handler = OPS.get(op)
             if handler is None:
                 resp = {"ok": False, "error": f"unknown op: {op!r}"}
+            elif op == "ping":
+                # Liveness is answered HERE, on the dispatcher thread, never from a work
+                # pool (bug-115). `ping` takes no lock and reads one cached identity; queued
+                # FIFO behind four multi-second reads it went unanswered, and the hub read a
+                # busy daemon as wedged (2026-10-15 00:13:18 restart). A deadlock in the cli
+                # pool is still caught: the heartbeat ticks only on cli-pool completions.
+                resp = {"ok": True, "result": handler(self, args)}
             else:
-                target_pool = cli_pool if op in CLI_OPS else bg_pool
+                is_cli = op in CLI_OPS
+                target_pool = cli_pool if is_cli else bg_pool
+                # The caller's patience (bug-116). A READ whose caller has stopped
+                # waiting is never started: its answer has no reader, and running it
+                # holds a cli worker the next caller needs. Writes are never dropped —
+                # a client that timed out on a write has not withdrawn the write.
+                deadline_s = req.get("deadline_s")
+                expires = (time.monotonic() + float(deadline_s)
+                           if is_cli and isinstance(deadline_s, (int, float)) and deadline_s > 0
+                           else None)
+                run = handler
+                if expires is not None:
+                    def run(d, a, _h=handler, _exp=expires, _op=op):
+                        late = time.monotonic() - _exp
+                        if late > 0:
+                            self._note_expired_read(_op, late)
+                            raise DeadlineExceeded(
+                                f"deadline exceeded: {_op} waited past its caller's "
+                                f"{float(deadline_s):g}s budget in the cli queue; not run")
+                        return _h(d, a)
                 try:
                     with self._inflight_lock:
                         self._inflight_seq += 1
                         token = self._inflight_seq
                         self._inflight_ops[token] = (op, time.time())
                     try:
-                        fut = target_pool.submit(handler, self, args)
+                        fut = target_pool.submit(run, self, args)
+                        if is_cli:
+                            # Any cli completion proves the pool is serving, so it beats
+                            # (bug-115). The heartbeat's own no-op joins the BACK of the
+                            # queue; with a queue deeper than the 60 s stale window that
+                            # read a draining pool as a wedge.
+                            fut.add_done_callback(self._heartbeat_touch)
                         result = fut.result()
                     finally:
                         # THIS call's token — popping by name cleared a
@@ -3185,6 +3251,10 @@ class Daemon:
                         with self._inflight_lock:
                             self._inflight_ops.pop(token, None)
                     resp = {"ok": True, "result": result}
+                except DeadlineExceeded as exc:
+                    # Counted and logged (rate-limited) in `_note_expired_read`; not a
+                    # fault of the op, so it never reaches the invalidation check.
+                    resp = {"ok": False, "error": str(exc)}
                 except Exception as exc:
                     self._log(f"op {op} raised: {exc!r}")
                     resp = {"ok": False, "error": str(exc)}
