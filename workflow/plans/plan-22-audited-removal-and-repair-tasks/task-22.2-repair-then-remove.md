@@ -14,7 +14,7 @@ metadata:
 # Task 22.2: the repair-then-remove engine {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 14, 2026-10-15; [[#rev-round-14]]; round 13 in [[#rev-round-13]]; round 12 in [[#rev-round-12]]; round 11 in [[#rev-round-11]]; round 10 in [[#rev-round-10]]; round 9 in [[#rev-round-9]]; round 8 in [[#rev-round-8]]; round 7 in [[#rev-round-7]], round 6 in
+> Status: Pending (revision round 17, 2026-10-15; [[#rev-round-17]]; round 16 in [[#rev-round-16]]; round 15 in [[#rev-round-15]]; revision round 14, 2026-10-15; [[#rev-round-14]]; round 13 in [[#rev-round-13]]; round 12 in [[#rev-round-12]]; round 11 in [[#rev-round-11]]; round 10 in [[#rev-round-10]]; round 9 in [[#rev-round-9]]; round 8 in [[#rev-round-8]]; round 7 in [[#rev-round-7]], round 6 in
 > [[#rev-round-6]], round 5
 > in [[#rev-round-5]], round 3 in [[#rev-round-3]])
 > Wave: 1, after 22.1a (#t8-wave1).
@@ -484,7 +484,8 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
        `evidence` append, so this rule does not reach its sidecar rows. A row re-inserted
        DANGLING is catalog-only, and so are its sidecar rows: restore inserts them through
        `Store.add_learned_provenance(rows, log=False)`, the one non-logging call, whose only
-       caller is this branch (16.6 AC-9d's site list pins it). A later rebuild drops both,
+       caller is this branch (16.6 AC-9d check 6 pins the single caller, d9cl; AC-4c's sidecar leg
+       pins the catalog-only keep, round 17). A later rebuild drops both,
        counted beside the row's own drop (d9cj; round 16).
        - *One insert, one event.* Each sidecar row is re-inserted through 16.6's
          `Store.add_learned_provenance` (the table's only INSERT path, 16.6 R1; 22.5 R2's
@@ -989,6 +990,16 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
    `restore_dead_id_reused`, and the live entity holding that id has no new link or evidence row.
    Mutation "re-insert without the dead-id check" FAILS it (the row becomes a live link between
    unrelated entities, and the "still dangling" assertion fails on it).
+   *Sidecar leg (d9cj; r14 s-1; round 17; [[#r4-reinsert-sidecar]]):* AC-4c's dangling
+   `evidence_row` carries a learned `detail` and one 16.6 sidecar row (its concept purged by an
+   engine run whose restore does not re-create it, so the dead-id re-check reaches step (3)).
+   After the restore, the catalog holds the dangling row and its sidecar row, equal to the
+   manifest's on every column except 16.6's three mark columns. `facts.log` gained no `evidence`
+   and no `learned_provenance` event, and `restore_sidecar_reinserted` is 0. A rebuild on a copy
+   holds neither, counted with the row's own skip. Mutations, each FAILS it: "restore the
+   dangling sidecar with `log=True`" (a `learned_provenance` event is logged; for a nameless dead
+   concept, `row_event` raises on an empty `c_kind` and the restore aborts); "skip the dangling
+   sidecar" (the catalog holds 0 sidecar rows against the manifest's 1).
 
    **4d. Restore re-attaches rows that name a restored entity by its old id (r7 s-2).** Concept
    `A` (kind `concept`) and doc `B`, `B` carrying a `rel:` evidence row whose concept is `A`. `A`
@@ -1463,3 +1474,17 @@ with the report's replacement text verbatim. `src/` unchanged. Later rows win.
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 rel: derives-from -> [[bsd-plan16-22-spec-diffcheck-r13-be965bb]]
 rel: depends-on -> [[task-16.6-learned-row-validation#r1]]
+
+## Revision round 17 (2026-10-15) {#rev-round-17}
+
+Applies [[bsd-plan16-22-spec-diffcheck-r14-ccf472d#s-1]] under d9cj and d9cl
+([[plan-review-2026-10-14#t12-approvals]]), with the report's replacement text verbatim.
+`src/` unchanged. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| r14 s-1 (d9cj's single-caller pin named a 16.6 AC-9d check that did not exist; no AC restored a dangling `evidence_row` carrying a sidecar row) | AC-4c's sidecar leg (catalog holds the dangling row and its sidecar row, no `evidence` / `learned_provenance` event, `restore_sidecar_reinserted` 0, a rebuild holds neither) with mutations "restore the dangling sidecar with `log=True`" and "skip the dangling sidecar"; [[#r4-reinsert-sidecar]]'s parenthesis points at both pins; the single-caller pin is 16.6 AC-9d check 6 ([[task-16.6-learned-row-validation#rev-amend-d9cl]], d9cl) |
+
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+rel: derives-from -> [[bsd-plan16-22-spec-diffcheck-r14-ccf472d]]
+rel: depends-on -> [[task-16.6-learned-row-validation#rev-amend-d9cl]]

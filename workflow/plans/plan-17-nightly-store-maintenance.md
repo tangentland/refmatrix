@@ -5,7 +5,7 @@ title: "Plan 17: the hub keeps every store lean — nightly vector compaction, o
 tags: [plan, hub, daemon, lance, maintenance, performance]
 metadata:
   node_type: plan
-  status: drafting
+  status: approved
   created: 2026-10-07
   updated: 2026-10-15
 ---

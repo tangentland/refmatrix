@@ -34,13 +34,13 @@ current.
 | 14 | plan-14-grep-learning-measurement | completed (plan review C10: re-measure lives in task 16.4) | yes (4) | `workflow/plans/plan-14-grep-learning-measurement.md` | — |
 | 15 | plan-15-derive-impact-tracking | in-progress (15.1-15.4 all built + deployed at 0.76.0; flipped `completed` before the @ch-bsd gate, which found 15.1's test writing `src/refmatrix/store.py` — ch-bsd r1 #b-3, fixed on `bsd-r1-remedy`; returns to completed after a clean full suite) | yes (4) | `workflow/plans/plan-15-derive-impact-tracking.md` | plan 14 (same instrument-first shape); bug-039's stamp |
 | 16 | plan-16-invisible-grep-shim | APPROVED 2026-10-15 (d9ck; ch-bsd r13 `be965bb`; 16.1-16.6; no `rmx learn on` before 16.3 deploys) | yes (6) | `workflow/plans/plan-16-invisible-grep-shim.md` | plan 15 (bsd-r1-remedy merged); plan-23 (23.1) for the 16.6 Wave-1 slice |
-| 17 | plan-17-nightly-store-maintenance | drafting (revised 2026-10-14 from the decision log: whole-catalog orphans + ratio cap + `vectors_restore`, tagged pre-compaction version, fingerprint before delete, own tick step, retries=0 single-flight, unarmed dry-run; ch-bsd re-review next) |
-| 18 | plan-18-duckdb-store-maintenance | drafting stub (split from plan-17 d-3: DuckDB checkpoint/vacuum on the nightly tick; measure first; must respect A/B slot rotation) |
+| 17 | plan-17-nightly-store-maintenance | APPROVED 2026-10-15 (d9cn; ch-bsd r10 approval-ready)
+| 18 | plan-18-duckdb-store-maintenance | APPROVED specs 2026-10-15 (d9co; 18.1 completed; Wave 4)
 | 19 | plan-19-adaptive-memory-budget | APPROVED 2026-10-15 (d9ce; ch-bsd r13 CLEAN `a0c0060`; 19.0-19.6 approval-ready; helix substrate per d9bi; execution of 19.0 AC-6f waits on 23.0 merge)
 | 20 | plan-20-concept-similarity-eval | drafting (plan + task specs 20.1-20.3 written 2026-10-07: frozen labelled pairs, signals scored across 6 stores, conditional dense synonyms; read-only; merges target ADR-0004's alias map) |
 | 21 | plan-21-agent-context-usage | APPROVED 2026-10-15 (d9ce; ch-bsd r13 CLEAN `a0c0060`; 21.1-21.4 approval-ready; 21.3 AC-5 execution waits on 23.0 merge) | yes (4) | `workflow/plans/plan-21-agent-context-usage.md` | 16 (21.3), 23 |
-| 22 | plan-22-audited-removal-and-repair | drafting (round 3, 2026-10-14: 22.1, 22.1a, 22.2-22.6; 22.6 = removal entry points (d9k, d9o, d9p, d9q); calls 16.6's verifier; d9b no-owner bucket waits on the user after 22.5's dry run; ch-bsd round-4 re-review next) | yes (7) | `workflow/plans/plan-22-audited-removal-and-repair.md` | 16.6, 23 |
-| 23 | plan-23-bounded-write-harness | drafting (revised 2026-10-14: NEW 23.0 test sandbox, 23.3 sync between-file yield, 23.4 Option A measurement; `bind(batch)`, offset in the batch transaction, write-count recorder, tick registry; FIRST build of wave 1; ch-bsd re-review next) | yes (2) | `workflow/plans/plan-23-bounded-write-harness.md` | — |
+| 22 | plan-22-audited-removal-and-repair | APPROVED 2026-10-15 (d9cm; ch-bsd r15 CLEAN `8fbfb0c`) | yes (7) | `workflow/plans/plan-22-audited-removal-and-repair.md` | 16.6, 23 |
+| 23 | plan-23-bounded-write-harness | APPROVED 2026-10-15 (d9cn; ch-bsd r10 approval-ready; 23.5 gated on bug-112 merge) | yes (2) | `workflow/plans/plan-23-bounded-write-harness.md` | — |
 
 ## Sequence rationale {#sequence}
 

@@ -14,7 +14,8 @@ metadata:
 # Task 16.6: the learned-evidence sidecar, its verifier, read-time marks and the backfill {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision round 14, 2026-10-15, d9ch (b): the dump's dead-end sidecar skip
+> Status: Pending (amendment d9cl, 2026-10-15: AC-9d check 6, the single `log=False` caller,
+> [[#rev-amend-d9cl]]; revision round 14, 2026-10-15, d9ch (b): the dump's dead-end sidecar skip
 > stated, [[#rev-round-14]]; revision round 11, 2026-10-15, answering the r11 diff check
 > `bsd-plan16-22-spec-diffcheck-r11-d8188ee` s-1(i) and d9cc, [[#rev-round-11]]; revision round
 > 10, 2026-10-15, answering the r10 diff check
@@ -64,6 +65,20 @@ rel: motivates -> [[task-22.2-repair-then-remove]]
 rel: motivates -> [[task-22.3-bug-086-global-repair]]
 rel: specifies -> [[task-22.1-audit-classes#r1-verify]]
 rel: related-to -> [[task-23.4-option-a-measurement]]
+
+## Amendment (d9cl) {#rev-amend-d9cl}
+
+Additive amendment to this APPROVED task, signed off as d9cl
+([[plan-review-2026-10-14#t12-approvals]]), answering
+[[bsd-plan16-22-spec-diffcheck-r14-ccf472d#s-1]]. No requirement changes; `src/` unchanged.
+
+| finding / decision | answered in |
+|---|---|
+| r14 s-1 / d9cl (d9cj's single-caller rule for `log=False` cited an AC-9d check that did not exist) | AC-9d mechanical check 6: `add_learned_provenance(..., log=False)` at exactly one site, 22.2 R4's dangling re-insert branch in `removal_apply.py`; mutation "a second `log=False` caller" (check 6); AC-10 list |
+
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r14-ccf472d]]
+rel: related-to -> [[task-22.2-repair-then-remove#r4-reinsert-sidecar]]
 
 ## Revision round 14 (2026-10-15) {#rev-round-14}
 
@@ -1044,12 +1059,15 @@ wave order (`#t10-waves`).
         it (`k = row_key(ev)`, then `k[5]`, `k[6]` for `file` and `line`, including the SQL
         parameter tuple `evidence_remove`'s DELETE needs); it reads no `"file"` or `"line"`
         subscript (or `.get`) of an event directly (r9 m-5);
-     5. `row_skips` is written only inside `Store._row_skip`.
+     5. `row_skips` is written only inside `Store._row_skip`;
+     6. `Store.add_learned_provenance` is called with `log=False` at exactly one site in
+        `src/refmatrix/`, 22.2 R4's dangling re-insert branch in `removal_apply.py` (d9cj);
+        every other call passes no `log` argument (d9cl, [[#rev-amend-d9cl]]).
    - Mutations, each FAILS it: "the row pass reads the appends before Pass 2b" (the legacy
      append's `c_kind` is None, `row_key` differs, `unresolved_provenance` is 1); "a row-op site
      spells its event as a dict literal" (check 1); "a row op resolves `c` as kind `concept`"
      (check 3); "a second `resolve_legacy_kind` call in the row pass" (check 2); "a row-op
-     branch keeps its own counter" (check 5).
+     branch keeps its own counter" (check 5); "a second `log=False` caller" (check 6, d9cl).
 10. Mutations that must FAIL a test, each with its AC above: sidecar on `rowid` (1; was 2);
     sidecar not merged (2: RETIRED with R1c, d9ay); Python `re` verifier (3);
     `match_argv` replayed whole (3); rc 2 read as no-match
@@ -1060,7 +1078,7 @@ wave order (`#t10-waves`).
     event (9); move events replayed in their own pass (9); appends first, then the row ops (9c);
     file order, not `ts` (9c); the row pass reads the appends before Pass 2b, a dict-literal
     row event, a row op resolving `c` as kind `concept`, a second legacy resolver, a per-branch
-    counter (9d); dump without `learned_evidence` (9b);
+    counter, a second `log=False` caller (9d); dump without `learned_evidence` (9b);
     census defaults `home_base` / deny set derived after the redirect (5c); purge deletes or
     hides an orphaned sidecar row (11); keep any of the four incremental methods, a comment
     naming one, or the incremental test (12).

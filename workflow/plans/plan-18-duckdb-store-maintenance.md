@@ -5,7 +5,7 @@ title: "Plan 18: DuckDB catalog maintenance (checkpoint / vacuum) on the nightly
 tags: [plan, hub, daemon, duckdb, maintenance]
 metadata:
   node_type: plan
-  status: drafting
+  status: approved
   created: 2026-10-07
   updated: 2026-10-15
 ---

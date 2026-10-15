@@ -5,7 +5,7 @@ title: "Plan 22: one audited path for every repair and removal — repair first,
 tags: [plan, removal, repair, audit, grep-learning, concepts, bug-086, bug-101]
 metadata:
   node_type: plan
-  status: drafting
+  status: approved
   created: 2026-10-07
   revised: 2026-10-14
   updated: 2026-10-15
