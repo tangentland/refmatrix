@@ -369,6 +369,17 @@ while [ -n "$d" ] && [ "$d" != "/" ]; do
 done
 [ -z "$root" ] && exit 0
 
+# The learn switch, both scopes (`rmx learn off [--global]`). This hook exists only to
+# teach, so with learning off it has nothing to do, and the `rmx grep` it spawns would
+# still cost the daemon an index read (bug-115; the user turned the loop off 2026-10-15
+# until plan 16's passive shim exists). RMX_LEARN, when set, wins, as in learn_switch.
+case "${RMX_LEARN:-}" in
+    0|off|false|no) exit 0 ;;
+    1|on|true|yes) ;;
+    *) [ -e "$root/.refmatrix/learn.off" ] && exit 0
+       [ -e "$HOME/.refmatrix/learn.off" ] && exit 0 ;;
+esac
+
 # Throttle: one ping per pattern per TTL (default 5 min), same stamp scheme
 # as the rmxgrep wrappers.
 ttl="${RMXGREP_TEACH_TTL_MIN:-5}"
