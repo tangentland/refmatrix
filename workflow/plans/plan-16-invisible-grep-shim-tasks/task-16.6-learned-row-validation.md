@@ -14,7 +14,9 @@ metadata:
 # Task 16.6: the learned-evidence sidecar, its verifier, read-time marks and the backfill {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision round 9, 2026-10-15, answering the r9 diff check
+> Status: Pending (revision round 10, 2026-10-15, answering the r10 diff check
+> `bsd-plan16-22-spec-diffcheck-r10-451b505` s-1 (AC-9d check 2), s-3, m-3 and d9bz,
+> [[#rev-round-10]]; revision round 9, 2026-10-15, answering the r9 diff check
 > `bsd-plan16-22-spec-diffcheck-r9-29e335a` s-2, m-1, m-5 and d9bu, [[#rev-round-9]]; revision
 > round 8, 2026-10-15, answering the r8 re-review
 > `bsd-plan16-22-spec-rereview-r8-23ad703` b-1, m-1, m-3, m-5 and d9bl, [[#rev-round-8]]; revision
@@ -59,6 +61,21 @@ rel: motivates -> [[task-22.2-repair-then-remove]]
 rel: motivates -> [[task-22.3-bug-086-global-repair]]
 rel: specifies -> [[task-22.1-audit-classes#r1-verify]]
 rel: related-to -> [[task-23.4-option-a-measurement]]
+
+## Revision round 10 (2026-10-15) {#rev-round-10}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r10-451b505]] where it touches 16.6 (s-1's AC-9d caller
+list, s-3, m-3) and d9bz ([[plan-review-2026-10-14#t12-approvals]]). `src/` unchanged since
+`23ad703`. Later rows win over round 9.
+
+| finding / decision | answered in |
+|---|---|
+| r10 s-1 / d9bz (22.6's vacuum keys every orphan drop on the orphan's own appends) | [[#r1d-one-format]] "Resolver" names the vacuum scan as a `resolve_c_kind` caller; AC-9d check 2's caller list is Pass 2b, the row pass and the vacuum scan, and `vacuum` calls neither `_row_op_c_kinds` nor `names_from_log` |
+| r10 s-3 (`FOLD_OPS` rows named no fold rule) | [[#files-to-modify]] `scripts/factslog-restore.py` row: `learned_provenance` and `learned_provenance_move` are count-neutral (sidecar only), named as ignored; 22.6 AC-6d checks fold == rebuild |
+| r10 m-3 (AC-12's `tests/` scan could not see docstrings; self-check exercised one mode) | [[#r1f]]: the `tests/` AST scan also matches string constants, excluding the scan's own module; the text scan widened to `scripts/` and `eval/`; AC-12 adds the docstring mutation and a two-mode fixture-tree self-check |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r10-451b505]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Revision round 9 (2026-10-15) {#rev-round-9}
 
@@ -428,8 +445,11 @@ with no event is wiped by every `rmx rebuild-index` and every `rebuild_index` da
       path that called it ([[#r1f]], d9bu). Write side: plan-22's live primitives pick the
       kind(s) a row op names through ONE method, 22.2's `Store._row_op_c_kinds`
       ([[task-22.2-repair-then-remove#r3]]), which reads the constant
-      `edge_records.LEGACY_PREFERRED_KIND` and does not call the legacy rule (r9 m-1); this
-      slice's learner rows are always `concept`.
+      `edge_records.LEGACY_PREFERRED_KIND` and does not call the legacy rule (r9 m-1); 22.6's
+      `vacuum` keys each orphan drop on the orphan's own appends from its one log scan and
+      resolves a legacy append's kind through `edge_records.resolve_c_kind` over the logged
+      kinds it collects, Pass 2b's map ([[task-22.6-removal-entry-points#r5-own-appends]], d9bz;
+      r10 s-1); this slice's learner rows are always `concept`.
     - *Counter.* Every row-pass skip of the rebuild is counted through ONE helper,
       `Store._row_skip(counts, op, reason)`, into one `row_skips: {op: {reason: n}}` dict
       (`reason` in `skipped_dead`, `unresolved`, `no_row`, `skipped_live`) that the rebuild
@@ -485,11 +505,14 @@ kinds (bug-120). This slice, in the same commit as [[#r1d]]:
   `rebuild_index_from_log` reconstruct bodies") names the rebuild only.
 - **Adds no replacement.** A future incremental replay is a new design under a new decision,
   built on the rebuild's resolver and row pass, not a revival of this one.
-- **A check that can fail (AC-12):** a test scans `src/refmatrix/**/*.py` as TEXT (so a comment
-  or docstring counts) and `tests/**/*.py` as AST (attribute and name references, so the scan's
-  own string list does not trip it) for the names `apply_log_delta`, `_apply_one_event`,
-  `_apply_event_body`, `_replay_concept`, `REPLICA_REBUILD_DELTA_BYTES`; any hit fails with its
-  `path:line`. bug-120 closes as "retired by d9bu" in the registry (the orchestrator's row).
+- **A check that can fail (AC-12):** a test scans `src/refmatrix/**/*.py`, `scripts/**/*.py`
+  and `eval/**/*.py` (not `eval/datasets/`; 0 hits in `scripts/` and `eval/` today, and the
+  benchmark path is the production path) as TEXT (so a comment or docstring counts), and
+  `tests/**/*.py` as AST for the names `apply_log_delta`, `_apply_one_event`,
+  `_apply_event_body`, `_replay_concept`, `REPLICA_REBUILD_DELTA_BYTES`. The AST scan matches
+  `Name` and `Attribute` nodes AND string `Constant` nodes containing a name (so a docstring
+  or a re-added prose mention counts; r10 m-3), and excludes the scan's own module, whose
+  name list is itself string constants. Any hit fails with its `path:line`. bug-120 closes as "retired by d9bu" in the registry (the orchestrator's row).
 
 **R1b. No new evidence row without a sidecar row, from the day this slice lands (s-r5-5).** {#r1b}
 Between this Wave-1 slice and 16.1, today's writer keeps teaching. So `_learn_grep_hits`, in the
@@ -966,9 +989,12 @@ wave order (`#t10-waves`).
      1. no dict display whose `"op"` key holds a constant in `ROW_OPS` exists outside
         `edge_records.row_event`;
      2. `resolve_legacy_kind` is called in `src/refmatrix/` only from
-        `edge_records.resolve_c_kind`, and Pass 2b and the row pass call `resolve_c_kind`
-        (`_replay_concept` is deleted, [[#r1f]]; 22.2's `_row_op_c_kinds` reads the constant
-        `edge_records.LEGACY_PREFERRED_KIND` and calls neither, r9 m-1);
+        `edge_records.resolve_c_kind`, and the callers of `resolve_c_kind` are exactly Pass 2b,
+        the row pass and 22.6's `vacuum` log scan (r10 s-1, d9bz: the scan keys each orphan drop
+        on the orphan's own appends); `_replay_concept` is deleted ([[#r1f]]); 22.2's
+        `_row_op_c_kinds` reads the constant `edge_records.LEGACY_PREFERRED_KIND` and calls
+        neither (r9 m-1), and `vacuum` calls neither `_row_op_c_kinds` nor 22.1a's
+        `names_from_log`;
      3. scoped to the code that resolves EDGE ends (r9 m-5): inside the link pass and the row
         pass of `rebuild_index_from_log` (the `EDGE_OPS ∪ ROW_OPS` events), no call of
         `get_entity` and no `name_to_id` subscript or membership test whose kind element is a
@@ -1010,15 +1036,21 @@ wave order (`#t10-waves`).
     ([[task-22.6-removal-entry-points#files-to-modify]]): it keeps the `orphaned_provenance`
     count for any orphan a non-routed path still leaves, and drops the "purge leaves the row"
     clause.
-12. **The incremental replay path is gone (R1f; d9bu, r9 s-2).** The scan of [[#r1f]] runs over
-    `src/refmatrix/` (text) and `tests/` (AST) and finds none of `apply_log_delta`,
+12. **The incremental replay path is gone (R1f; d9bu, r9 s-2; r10 m-3).** The scan of
+    [[#r1f]] runs over `src/refmatrix/`, `scripts/` and `eval/` (text) and `tests/` (AST:
+    names, attributes and string constants, its own module excluded) and finds none of `apply_log_delta`,
     `_apply_one_event`, `_apply_event_body`, `_replay_concept`, `REPLICA_REBUILD_DELTA_BYTES`;
     `tests/test_bug117_rebuild_non_concept.py`'s rebuild tests pass unchanged. Mutations, each
     FAILS it: "keep `apply_log_delta` (or any one of the four)" (the text scan names its `def`
     line); "delete the methods but leave the `add_memory` comment naming `_apply_one_event`"
     (the text scan); "keep the incremental test" (the AST scan names its `dst.apply_log_delta`
-    attribute). A scan run over a fixture tree holding one `def apply_log_delta` proves the scan
-    itself can fail.
+    attribute); "rewrite the methods away but leave `tests/test_memory_content_log.py`'s
+    docstring naming `apply_log_delta`" (the AST scan's string-constant match). The
+    fixture-tree self-check runs BOTH modes (r10 m-3): under `tmp_path`, a `src/` file holding
+    `def apply_log_delta` must give a TEXT hit, and a `tests/` file holding
+    `dst.apply_log_delta(...)` must give an AST attribute hit and one holding a docstring
+    naming `_apply_one_event` an AST constant hit (a `def` is a `FunctionDef`, which the
+    `Name` / `Attribute` match does not see, so the text mode carries that case).
 
 The audit/prune/repair acceptance moved to plan-22. {#acceptance-moved}
 
@@ -1038,8 +1070,8 @@ The audit/prune/repair acceptance moved to plan-22. {#acceptance-moved}
 | `tests/test_learned_verify.py` (new) | AC-3, AC-3b, AC-3c |
 | `tests/test_bug117_rebuild_non_concept.py` | DELETE `test_the_incremental_replay_resolves_non_concept_rows` ([[#r1f]], d9bu); the rebuild tests stay unchanged |
 | `tests/test_memory_content_log.py` | module docstring names `rebuild_index_from_log` only ([[#r1f]]) |
-| `tests/test_incremental_replay_retired.py` (new) | AC-12: the text + AST scan and its fixture-tree self-check |
-| `scripts/factslog-restore.py` (plan-17 task 17.4's) | `learned_provenance`, `learned_provenance_move` added to `FOLD_OPS` with its fold handling, in the same commit as the replay branch: 17.4's AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s op set, and an op missing from it fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
+| `tests/test_incremental_replay_retired.py` (new) | AC-12: the text scan (`src/refmatrix/`, `scripts/`, `eval/`) + AST scan (`tests/`, names, attributes and string constants) and its two-mode fixture-tree self-check (r10 m-3) |
+| `scripts/factslog-restore.py` (plan-17 task 17.4's) | `learned_provenance`, `learned_provenance_move` added to `FOLD_OPS`, each with its stated fold rule (r10 s-3): COUNT-NEUTRAL, named in `FOLD_OPS` as ignored for the `entities` / `links` / `evidence` counts, because both touch only the `learned_evidence` sidecar, which 17.4's count check does not compare; 22.6 AC-6d runs the fold-equals-rebuild check over logs holding them. In the same commit as the replay branch: 17.4's AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s op set, and an op missing from it fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
 
 ## Test strategy {#test-strategy}
 

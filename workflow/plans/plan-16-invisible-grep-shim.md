@@ -14,7 +14,11 @@ metadata:
 # Plan 16: the grep shim stops answering and only watches {#root}
 
 **Date:** 2026-10-06
-**Status:** Drafting (revision round 9, 2026-10-15: 16.6 deletes the uncalled incremental replay
+**Status:** Drafting (revision round 10, 2026-10-15: 16.6's AC-12 scan sees docstrings and
+self-checks both modes, its `FOLD_OPS` rows state their fold rule, AC-9d check 2 names 22.6's
+vacuum scan as a `resolve_c_kind` caller (d9bz), and 16.3's merge-order clause carries the test
+half, for the r10 diff check `bsd-plan16-22-spec-diffcheck-r10-451b505`, [[#rev-round-10]];
+revision round 9, 2026-10-15: 16.6 deletes the uncalled incremental replay
 path and every spec clause that extended it (d9bu; the rebuild is the one replay path), AC-9d's
 checks are scoped, and 16.3 R5 lands over bug-118's one hook renderer, for the r9 diff check
 `bsd-plan16-22-spec-diffcheck-r9-29e335a`, [[#rev-round-9]]; revision round 8, 2026-10-15: today's `learn.off` operator state is
@@ -261,6 +265,23 @@ Next gate: `@ch-bsd` spec review r6 of task specs 16.1–16.6 revision 6, then `
 
 rel: derives-from -> [[plan-review-2026-10-14#t6]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision round 10 (2026-10-15) {#rev-round-10}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r10-451b505]] where it touches plan-16 (s-1's AC-9d caller
+list, s-3's 16.6 rows, and m-3 in 16.6; m-4 in 16.3) and d9bz
+([[plan-review-2026-10-14#t12-approvals]]). Plan-22's findings are answered in
+[[plan-22-audited-removal-and-repair#rev-round-10]].
+
+| finding / decision | answered in |
+|---|---|
+| s-1 / d9bz (22.6's vacuum keys every orphan drop on the orphan's own appends) | [[task-16.6-learned-row-validation#r1d-one-format]] "Resolver"; 16.6 AC-9d check 2's caller list (Pass 2b, the row pass, the vacuum scan) |
+| s-3 (`FOLD_OPS` rows named no fold rule) | [[task-16.6-learned-row-validation#files-to-modify]]: `learned_provenance` / `learned_provenance_move` count-neutral, named as ignored; fold == rebuild is 22.6 AC-6d |
+| m-3 (AC-12 could not see docstrings) | [[task-16.6-learned-row-validation#r1f]]: string constants scanned in `tests/`, text scan widened to `scripts/` and `eval/`, two-mode self-check; AC-12 |
+| m-4 (16.3 merge order, the test half) | [[task-16.3-grep-tool-hook-and-docs#r5]] |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r10-451b505]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Revision round 9 (2026-10-15) {#rev-round-9}
 

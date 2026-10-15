@@ -14,7 +14,7 @@ metadata:
 # Task 22.2: the repair-then-remove engine {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 9, 2026-10-15; [[#rev-round-9]]; round 8 in [[#rev-round-8]]; round 7 in [[#rev-round-7]], round 6 in
+> Status: Pending (revision round 10, 2026-10-15; [[#rev-round-10]]; round 9 in [[#rev-round-9]]; round 8 in [[#rev-round-8]]; round 7 in [[#rev-round-7]], round 6 in
 > [[#rev-round-6]], round 5
 > in [[#rev-round-5]], round 3 in [[#rev-round-3]])
 > Wave: 1, after 22.1a (#t8-wave1).
@@ -186,9 +186,17 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
        - always `(catalog_kind, keep)` with the caller's `keep`;
        - plus `(edge_records.LEGACY_PREFERRED_KIND, n)` when `catalog_kind` differs from
          `edge_records.LEGACY_PREFERRED_KIND` (today's private `_LEGACY_PREFERRED_KIND`, made
-         public by this task) and `n`, the number of copies identical to `row` (same `linkage`,
-         `e_kind`, `e`, `file`, `line`, `detail`) that the LIVE entity of that kind and name holds,
-         is 0 or 1 (`n = 0` also when no such live entity exists) (r9 m-1, m-2: `keep = n`).
+         public by this task) and `n`, the number of copies identical to `row` that the LIVE
+         `concept` of that name IN THE ROW'S PARTITION holds (`UNIQUE(partition, kind, name)`
+         makes it at most one entity), is 0 or 1 (`n = 0` also when no such live entity exists)
+         (r9 m-1, m-2: `keep = n`; r10 m-2: the partition). "Identical" means the same
+         `linkage`, the same entity end BY NAME (`e_kind`, `e` of `row`'s live entity), and the
+         same `file`, `line`, `detail`. It is defined only for a row whose entity end is a live,
+         named entity: every caller is a live primitive acting on such a row. An orphan row
+         (its entity end has no name) is never passed: 22.6's `vacuum` keys an orphan drop on
+         the orphan's own appends and does not call this helper
+         ([[task-22.6-removal-entry-points#r5-own-appends]], d9bz), and the helper RAISES on a
+         row whose `entity_id` has no live entity rather than guess.
        - When `n >= 2` no extra pair is returned, and the row is counted `legacy_misresolved` and
          printed (the rebuild holds one copy more than live there; a compaction ends it, since
          `dump_catalog_to_log` re-emits every live row kinded).
@@ -880,7 +888,7 @@ r6 m-7: this task's own file list (symbols read at `3d3c798`).
 |------|--------|
 | `src/refmatrix/store.py` | the R2 primitives (`remove_evidence(..., ingest_ok=)`, `repoint_evidence`, `rename_entity`) and R2's concept-side evidence rule before a purge; `remove_dangling_links` and `remove_dangling_evidence` (R9, built on `_clear_purged_bits`; reborn and per-`link`-key partition rules, r7); the R3 ops in `rebuild_index_from_log`'s one timestamp-ordered row pass (no `_apply_event_body` branch: 16.6 R1f deletes it, d9bu) (16.6 R1d builds the pass; d9av); R4's restore of `link_row` / `evidence_row` with the dead-id re-check and the `id_map` re-attach (r7 s-1, s-2); `Store._row_op_c_kinds`, the one helper naming a live primitive's op `(c_kind, keep)` pairs (r9 m-1, m-2), and every row-op event through `row_event` / every `unlink` through `edge_event` with `c_kind` (r8 b-1) |
 | `src/refmatrix/edge_records.py` | `evidence_remove` and `evidence_repoint` added to 16.6's `ROW_OPS`, built by `row_event` (r8 b-1, d9bl); `_LEGACY_PREFERRED_KIND` renamed to the public `LEGACY_PREFERRED_KIND` (read by `resolve_legacy_kind` and by `Store._row_op_c_kinds`, r9 m-1) |
-| `scripts/factslog-restore.py` (plan-17 task 17.4's) | `evidence_remove`, `evidence_repoint`, `entity_rename` added to `FOLD_OPS` with its fold handling, in the same commit as the replay branch: 17.4's AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s op set, and an op missing from it fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
+| `scripts/factslog-restore.py` (plan-17 task 17.4's) | `evidence_remove`, `evidence_repoint`, `entity_rename` added to `FOLD_OPS`, each with its stated fold rule (r10 s-3), folded in the rebuild's `(ts, log position)` order: `evidence_remove` reduces the copies of its key (`row_key` plus `detail`, in its `partition` field) appended at or before it to its `keep`; `evidence_repoint` is count-neutral (it moves a copy's `file` / `line`, the evidence count is unchanged) and is named in `FOLD_OPS` as ignored for the counts; `entity_rename` renames the entity key in the fold's name map and, when `merged` is true (the [[#r2]] collision), merges the two keys as `rename_entity` does: the entity count drops by one once the old key has no link left, and its links and evidence count under the surviving key. 22.6 AC-6d proves the fold's counts equal the rebuild's on AC-3d's and AC-3f's logs ([[task-22.6-removal-entry-points#acceptance]]). In the same commit as the replay branch: 17.4's AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s op set, and an op missing from it fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
 | `src/refmatrix/removal_apply.py` (new) | the R6 batch loop over `bounded_steps` (incl. the per-partition and `none` batches), R4's intent log and restore, R7's gate, R5's attribution incl. [[#r5-grep-record]] |
 | `src/refmatrix/verbs.py` | `removal_apply`, `removal_restore` (R8); `mcp.py` generates their tools from `verbs.VERBS` |
 | `src/refmatrix/daemon.py` | the apply and restore ops under the writer lock (R6, R8) |
@@ -1060,3 +1068,18 @@ unchanged since `23ad703`). Later rows win over round 8.
 
 rel: amends -> [[bsd-plan16-22-spec-diffcheck-r9-29e335a]]
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+
+## Revision round 10 (2026-10-15) {#rev-round-10}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r10-451b505]] where it touches 22.2 (m-2, s-3) and
+d9bz ([[plan-review-2026-10-14#t12-approvals]]). `src/` unchanged since `23ad703`. Later rows
+win over round 9.
+
+| finding / decision | answered in |
+|---|---|
+| r10 m-2 (`_row_op_c_kinds`'s `n` lost its partition; "identical" undefined for an orphan) | [[#r3]] "Which kind a LIVE primitive's op names": `n` counted on the live `concept` of that name in the ROW'S partition; "identical" defined (entity end by name) and only for a live, named entity end; the helper raises on an orphan row; 22.6's vacuum no longer calls it (r10 s-1, d9bz) |
+| r10 s-3 (the `FOLD_OPS` row named no fold rule) | [[#files-to-modify]] `scripts/factslog-restore.py` row: the fold rule of `evidence_remove` (reduce to `keep`), `evidence_repoint` (count-neutral, named ignored), `entity_rename` (rename; merge on collision as [[#r2]]); the fold-equals-rebuild check is 22.6 AC-6d over this task's AC-3d / AC-3f logs |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r10-451b505]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+rel: depends-on -> [[task-17.4-factslog-backup-snapshot#r6-restore]]

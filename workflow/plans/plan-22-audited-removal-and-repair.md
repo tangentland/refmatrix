@@ -14,7 +14,10 @@ metadata:
 # Plan 22: audited removal and repair {#root}
 
 **Date:** 2026-10-07 (revised 2026-10-14 after the Wave 0 decision log)
-**Status:** Drafting — revision round 9 (2026-10-15) for the r9 diff check
+**Status:** Drafting — revision round 10 (2026-10-15) for the r10 diff check
+[[bsd-plan16-22-spec-diffcheck-r10-451b505]] (every vacuum drop keys on the orphan's own
+appends; the tombstone-after-copy predicate, d9bz; stated fold rules; [[#rev-round-10]]);
+revision round 9 (2026-10-15) for the r9 diff check
 [[bsd-plan16-22-spec-diffcheck-r9-29e335a]] (both-dead vacuum orphans, the drop's partition
 field, the live-primitive kind helper, and the retired incremental replay path, d9bu;
 [[#rev-round-9]]); revision round 8 (2026-10-15) for the r8 re-review
@@ -242,10 +245,11 @@ rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 | d-25 | 22.3's live global apply purges the learned-only members d-22 attributes to the learner (≤ 90), printing the count before the apply for the user | d9aw; r7 s-3 |
 | d-26 | restore re-checks every recorded dead id (never re-inserts a row onto an id that is live now) and maps every old id the same manifest restores through its `id_map`, surviving rows included | r7 s-1, s-2 |
 | d-27 | every row-level event plans 16/22 add (`evidence_remove`, `evidence_repoint`, `unlink`, `evidence_orphan_drop`, `learned_provenance`, `learned_provenance_move`) names its concept end as `(c_kind, c)`, built by ONE builder (`edge_records.row_event`, or `edge_event` for `unlink`), matched by ONE key (`edge_records.row_key`), resolved by ONE function (`edge_records.resolve_c_kind`, the bug-117 legacy rule) and counted by ONE helper (`row_skips`); an AST test holds every site to them | d9bl; r8 b-1 |
-| d-28 | `evidence_orphan_drop` decides "dead" on a rebuild by the LOG timeline (latest `tombstone` vs latest `entity` event at or before the op), matching on `(linkage, c_kind, c, file, line, detail)`; `purge_entity` still deletes no evidence | d9bk; r8 s-1 |
+| d-28 | `evidence_orphan_drop` at `T` deletes a matching copy (on `(linkage, c_kind, c, file, line, detail)`) only if the copy's entity key has a `tombstone` AFTER the copy and at or before `T`, on the LOG timeline; the vacuum scan applies the same test with `T` = now, so it logs a drop only for a copy a rebuild would revive (AMENDED by d9bz: d9bk's "dead at `T`", latest tombstone vs latest entity event, missed re-creation before the vacuum); `purge_entity` still deletes no evidence | d9bk, d9bz; r8 s-1, r10 s-2 |
 | d-29 | the rebuild is the ONE replay path: the uncalled incremental path (`apply_log_delta` → `_apply_one_event` → `_apply_event_body`, and `_replay_concept`) is deleted by 16.6 R1f, no plan-22 op gets a branch there, and bug-120 closes by removal | d9bu; r9 s-2 |
-| d-30 | a vacuum orphan whose concept is also dead is named by 22.1a's `names_from_log` and its drop keyed on each covering logged key (22.2 R9 step 4's keying, incl. the appends' `partition` field); a nameless one logs no event and is counted `orphan_drop_nameless` | r9 s-1, m-4 |
-| d-31 | a live primitive's extra row op is the constant `LEGACY_PREFERRED_KIND` (not the legacy rule over live kinds) whenever the catalog kind differs and the live concept holds 0 or 1 identical copies, carrying `keep = n`; `legacy_misresolved` only for `n >= 2` | r9 m-1, m-2 |
+| d-30 | every vacuum orphan drop, live or dead concept, is keyed on the orphan's OWN revivable appends from the one log scan (lookup key `(linkage, file, line, detail)`, distinct keys loaded), one drop per distinct `(partition field, c_kind, c)`, a legacy append's kind through `edge_records.resolve_c_kind` over the logged kinds; `names_from_log` and `_row_op_c_kinds` are not on the vacuum path; an unresolved legacy append is counted `orphan_drop_unresolved`, an orphan key with no revivable append `orphan_drop_unlogged` (REWORDED in round 10: round 9's `names_from_log` naming could not name a purged concept) | r9 s-1, m-4; r10 s-1, m-1; d9bz |
+| d-31 | a live primitive's extra row op is the constant `LEGACY_PREFERRED_KIND` (not the legacy rule over live kinds) whenever the catalog kind differs and the live concept of that name IN THE ROW'S PARTITION holds 0 or 1 identical copies, carrying `keep = n`; `legacy_misresolved` only for `n >= 2`; the helper takes only rows with a live, named entity end | r9 m-1, m-2; r10 m-2 |
+| d-32 | every new `facts.log` op plans 16/22 add carries a STATED fold rule in 17.4's `FOLD_OPS` (`evidence_remove` reduces to `keep`; `evidence_orphan_drop` removes what d-28 selects; `evidence_repoint`, `learned_provenance`, `learned_provenance_move` count-neutral, named as ignored; `entity_rename` renames and merges on collision), and 22.6 AC-6d proves the fold's counts equal the rebuild's | r10 s-3 |
 
 ## Open after revision {#open-after-revision}
 
@@ -288,6 +292,24 @@ earlier links still resolve.
    source, which attributes 217 of this repo's and 90 of the global store's learned-only
    protections to the learner; those are purgeable whole when they are class members, and 22.3
    prints its count before the live apply ([[task-22.3-bug-086-global-repair#r3]]).
+
+## Revision round 10 (2026-10-15) {#rev-round-10}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r10-451b505]] (plan-22: s-1, s-2, s-3, m-1, m-2; m-3 and
+m-4 are plan-16's, [[plan-16-invisible-grep-shim#rev-round-10]], and s-3's 16.6 rows are there
+too) and d9bz ([[plan-review-2026-10-14#t12-approvals]]; PROVISIONAL until its ch-bsd loop is
+clean). `src/` unchanged since `23ad703`. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| s-1 / d9bz (`names_from_log` cannot name a both-dead orphan; AC-6c(a) could not pass) | [[task-22.6-removal-entry-points#r5-own-appends]], [[task-22.6-removal-entry-points#r5-both-dead]]; 22.6 AC-6c rewritten; 16.6 AC-9d check 2's caller list; d-30 reworded |
+| s-2 / d9bz (dead-at-`T` misses re-creation before the vacuum) | [[task-22.6-removal-entry-points#r5-timeline]] (tombstone after the copy and at or before `T`, same test in scan and rebuild; `orphan_drop_skipped_live` per op); 22.6 AC-6 and AC-6b swapped / today's-shape variants; d-28 amended |
+| s-3 (`FOLD_OPS` rows named no fold rule) | the `scripts/factslog-restore.py` rows of [[task-22.2-repair-then-remove#files-to-modify]], [[task-22.6-removal-entry-points#files-to-modify]] and [[task-16.6-learned-row-validation#files-to-modify]]; 22.6 AC-6d; d-32 |
+| m-1 (scan key, key-only load, streaming manifest) | [[task-22.6-removal-entry-points#r5-scan]], [[task-22.6-removal-entry-points#r5]]; d-30 |
+| m-2 (`n`'s partition; "identical" for an orphan) | [[task-22.2-repair-then-remove#r3]]; d-31 |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r10-451b505]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Revision round 9 (2026-10-15) {#rev-round-9}
 

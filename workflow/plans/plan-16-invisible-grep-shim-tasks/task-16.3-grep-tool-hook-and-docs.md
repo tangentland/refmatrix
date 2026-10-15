@@ -17,7 +17,8 @@ metadata:
 > Status: Pending (revision after the 2026-10-14 decision log; revision 6, answering spec review
 > r5 `bsd-plan16-spec-review-r5-cd7c923`; revision round 8, 2026-10-15: R5 retires
 > `enforce-rmx-grep.sh`'s redirect, d9bj, [[#rev-round-8]]; revision round 9, 2026-10-15: R5
-> lands over bug-118's one renderer, [[#rev-round-9]])
+> lands over bug-118's one renderer, [[#rev-round-9]]; revision round 10, 2026-10-15: the
+> merge-order clause carries the test half, [[#rev-round-10]])
 > **Wave:** 2 ([[plan-16-invisible-grep-shim#waves]]).
 > Depends on: [[task-16.1-argv-faithful-learner]]. Tests run in plan-23 task 23.0's sandbox.
 
@@ -29,6 +30,17 @@ rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
 rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
 rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision round 10 (2026-10-15) {#rev-round-10}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r10-451b505]] m-4. bug-118 is unmerged (master
+`b381b6d`, per the report).
+
+| finding | answered in |
+|---|---|
+| r10 m-4 (merge order covered `hooks.py` only; if 16.3 lands first, bug-118's test file is not on master yet) | [[#r5]]: if 16.3 lands before bug-118 merges, bug-118's merge carries the `SCRIPTS` edit and the not-rendered assertion; whichever lands second resolves to the tuple and the test without the name |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r10-451b505]]
 
 ## Revision round 9 (2026-10-15) {#rev-round-9}
 
@@ -196,7 +208,10 @@ This task retires it, in the same deploy as 16.2 (d9bj, [[plan-16-invisible-grep
   rendered from ONE name tuple through ONE helper, `hooks._optional_project_hook` (`if [ -x P ];
   then P; fi`), so the retirement is removing `enforce-rmx-grep.sh` from that tuple, never a
   second rendering path or a special case (r9 m-3). If 16.3 lands first, bug-118's merge carries
-  the same removal; whichever lands second resolves to the tuple without the name;
+  the same removal AND the test edit below (the `SCRIPTS` edit and the not-rendered assertion:
+  `tests/test_bug118_optional_hook_exit.py` does not exist on master until bug-118 merges;
+  master is `b381b6d` and bug-118 is unmerged, r10 m-4); whichever lands second resolves to the
+  tuple without the name and to the test without it;
 - `tests/test_bug118_optional_hook_exit.py` (bug-118's) drops `enforce-rmx-grep.sh` from its
   `SCRIPTS` tuple (its other two scripts keep the exit-2 / absent / pass cases and the AST check
   for a second rendering) and gains one assertion: with `enforce=True` and a stub
