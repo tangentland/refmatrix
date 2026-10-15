@@ -197,6 +197,34 @@ def read_repair_marker(root: Path) -> "dict | None":
         return {"table": "unknown"}
 
 
+_CP = "/bin/cp"
+
+
+def _copy_out_of_process(src: Path, dst: Path, *, timeout_s: float = 600.0) -> None:
+    """Byte-copy `src` to `dst` in a CHILD process, never through a descriptor of our own.
+
+    bug-110 (2026-10-14, ch-bsd bug-105 r5 #s5-3): DuckDB guards a database file with a POSIX
+    `fcntl` lock, and POSIX record locks belong to the (process, file) pair — ANY `close()` of
+    ANY descriptor for that file in this process drops them. The snapshot's in-process
+    `shutil.copy2` of the live writer slot therefore released the daemon's lock on its first
+    run, and a second process could open the slot and commit. A child's descriptors are its
+    own: its close cannot touch our locks (and fork does not inherit them). `cp -p` keeps
+    `copy2`'s metadata semantics. Raises OSError on failure so callers keep their error path; a
+    failed copy can leave a PARTIAL `dst` (a full volume wrote 23 of 40 MB, r1 #s-2), so callers
+    must not install `dst` when this raises. `/bin/cp` by absolute path: the launchd PATH puts
+    user bin dirs ahead of /bin (r1 #m-2).
+    """
+    import subprocess
+    try:
+        proc = subprocess.run([_CP, "-p", str(src), str(dst)],
+                              capture_output=True, text=True, timeout=timeout_s)
+    except subprocess.TimeoutExpired as exc:
+        raise OSError(errno.ETIMEDOUT, f"cp {src} -> {dst} timed out after {timeout_s}s") from exc
+    if proc.returncode != 0:
+        raise OSError(errno.EIO, f"cp {src} -> {dst} exited {proc.returncode}: "
+                                 f"{proc.stderr.strip()}")
+
+
 def _periodic_flush(store, lock, log) -> int:
     """The flush tick's body: under the writer lock, flush when ANY partition binding has dirty
     fragment bits, not only the home binding (bug-105 audit #b-1: a guard that looked at the
@@ -2515,39 +2543,6 @@ class Daemon:
             or "internal error" in msg
         )
 
-    def _rebuild_slot_from(self, source_slot: str, target_slot: str,
-                           log_offset: int) -> None:
-        """Overwrite `target_slot`'s catalog file with a fresh copy of
-        `source_slot`'s. Used to recover an invalidated reader slot.
-
-        Assumes no live DuckDB connection on either side at call time.
-        Resets both offset markers so the next refresh tick treats both
-        slots as caught up to `log_offset`.
-        """
-        import shutil as _shutil
-        source_path = self._replica_file(source_slot)
-        target_path = self._replica_file(target_slot)
-        # Drop stale target + its WAL so DuckDB sees a clean snapshot
-        # after the copy. Unlink is safe — the slot was already locked
-        # out of the rotation by the invalidation.
-        for p in (target_path,
-                  target_path.with_name(target_path.name + ".wal")):
-            try:
-                if p.exists() or p.is_symlink():
-                    p.unlink()
-            except OSError as exc:
-                self._log(f"rebuild unlink {p.name} failed: {exc!r}")
-        _shutil.copy2(source_path, target_path)
-        try:
-            self._write_slot_offset(source_slot, log_offset)
-            self._write_slot_offset(target_slot, log_offset)
-        except Exception as exc:
-            self._log(f"rebuild offset reset failed: {exc!r}")
-        self._log(
-            f"rebuilt slot {target_slot} from {source_slot} "
-            f"(log_offset={log_offset})"
-        )
-
     def _read_only_link(self) -> Path:
         """Symlink the daemon maintains pointing at the current READER
         (inactive) slot. In-process Stores that need to read while the
@@ -2629,7 +2624,10 @@ class Daemon:
 
         CHECKPOINT flushes WAL into the main file, then a file-level copy
         produces a self-contained snapshot — no second DuckDB process,
-        no shared-lock attach. Atomic via tmp + os.replace.
+        no shared-lock attach. Atomic via tmp + os.replace. The copy runs
+        in a child process (`_copy_out_of_process`): an in-process copy
+        closes a descriptor of the live slot and drops our DuckDB lock
+        (bug-110).
 
         Debounced by RMX_SNAPSHOT_DEBOUNCE_MS (default 250ms). The
         background snapshot tick is the normal driver; ad-hoc calls
@@ -2651,7 +2649,6 @@ class Daemon:
                 }
             snap_path = self._snapshot_file()
             tmp_path = snap_path.with_name(snap_path.name + ".tmp")
-            import shutil as _shutil
             with self._store_lock:
                 try:
                     self.store._connect().execute("CHECKPOINT")
@@ -2666,7 +2663,7 @@ class Daemon:
                     ):
                         if p.exists() or p.is_symlink():
                             p.unlink()
-                    _shutil.copy2(src, tmp_path)
+                    _copy_out_of_process(src, tmp_path)
                     os.replace(tmp_path, snap_path)
                 except OSError as exc:
                     self._log(f"snapshot copy failed: {exc!r}")
@@ -2873,13 +2870,16 @@ class Daemon:
             try:
                 with self._store_lock:
                     if self.store is not None:
+                        # close() in its own finally (bug-110 r1 #m-3): a CHECKPOINT that raised
+                        # used to skip it, and the in-process copy then ran with the store open.
                         try:
                             self.store._connect().execute("CHECKPOINT")
                             self.store.flush_fragments()
+                        except Exception as exc:
+                            self._log(f"rotation slot repair: pre-copy checkpoint failed: {exc!r}")
+                        finally:
                             self.store.close()
-                        except Exception:
-                            pass
-                    shutil.copy2(survivor_path, missing_path)
+                    _copy_out_of_process(survivor_path, missing_path)
                     marker = self._active_marker()
                     current = (marker.read_text().strip()
                                if marker.exists() else "")
