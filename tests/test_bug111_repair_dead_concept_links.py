@@ -196,3 +196,66 @@ def test_as_memory_ingest_does_not_purge_a_same_id_doc_at_another_path(s, tmp_pa
     ingest_gmd_paths(s, [memory_file], as_memory=True)
     after = con.execute("SELECT id FROM entities WHERE kind='doc' AND name='note'").fetchall()
     assert after == before, "a different file's doc entity was purged by name alone"
+
+
+# ---- ch-bsd r2 (bsd-bug111-r2-remedy-129366b) ----------------------------------------------------
+
+def test_links_dead_entity_is_not_links_skipped_when_a_linkage_is_unknown(s, tmp_path):
+    """D1: an unknown-linkage row is skipped but its entity is alive — not an orphan."""
+    c = s.add_concept("k"); e = s.upsert_entity(kind="doc", name="a.md")
+    s.add_linkage_type("mentions"); s.link("mentions", c, e); s.flush_fragments()
+    con = s._connect()._duck
+    lid = con.execute("SELECT id FROM linkage_types WHERE name='mentions'").fetchone()[0]
+    con.execute("INSERT INTO entity_links (entity_id, linkage_id, concept_id) VALUES (?, ?, ?)",
+                [987_654, lid, c])                                   # dead entity
+    con.execute("INSERT INTO entity_links (entity_id, linkage_id, concept_id) VALUES (?, ?, ?)",
+                [e, 99_999, c])                                      # unknown linkage, live entity
+    rep = s.repair_fragments(dry_run=True, manifest_dir=tmp_path / "m")
+    assert rep["links_skipped"] == 2 and rep["links_dead_entity"] == 1, rep
+
+
+def test_purge_never_upserts_a_partition(s, monkeypatch):
+    """r2 #1: the per-partition clear swaps the binding directly; `with_partition` (an INSERT OR
+    IGNORE + commit + lookup per partition per purge, and no damaged-zonemap fallback) is not on
+    the purge path."""
+    d, e = _cross_partition_part_of(s)
+
+    def _no(*a, **k):
+        raise AssertionError("purge went through with_partition")
+    monkeypatch.setattr(s, "with_partition", _no)
+    s.purge_entity(e)
+    s._bulk_purge_ids([(d, "doc", "d.md")])
+    assert s.partition_name == s._partition_name  # binding restored
+
+
+def _linked_dir(tmp_path):
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    return real, link
+
+
+def test_doc_drop_matches_a_doc_stored_under_the_symlinked_path(s, tmp_path):
+    """I2: both ingests pass the symlinked path; the stored path is the unresolved string."""
+    real, link = _linked_dir(tmp_path)
+    md = _memo(real, sub=".")
+    via = link / md.name
+    ingest_gmd_paths(s, [via])
+    con = s._connect()._duck
+    assert con.execute("SELECT path FROM entities WHERE kind='doc' AND name='note'"
+                       ).fetchone()[0] == str(via)
+    ingest_gmd_paths(s, [via], as_memory=True)
+    assert con.execute("SELECT count(*) FROM entities WHERE kind='doc' AND name='note'"
+                       ).fetchone()[0] == 0
+
+
+def test_doc_drop_matches_a_doc_stored_under_the_resolved_path(s, tmp_path):
+    """I3: the doc was ingested by its real path, the memory bridge passes the symlinked one."""
+    real, link = _linked_dir(tmp_path)
+    md = _memo(real, sub=".")
+    ingest_gmd_paths(s, [md.resolve()])
+    ingest_gmd_paths(s, [link / md.name], as_memory=True)
+    con = s._connect()._duck
+    assert con.execute("SELECT count(*) FROM entities WHERE kind='doc' AND name='note'"
+                       ).fetchone()[0] == 0

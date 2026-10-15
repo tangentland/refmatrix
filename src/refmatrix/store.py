@@ -6321,17 +6321,25 @@ class Store:
         entity purged under a foreign binding kept its bit in its own partition. Each partition is
         visited through `with_partition`, so its bits land in its own per-binding cache and dirty
         set (bug-105) and the next flush writes them under the right partition. Caller holds the
-        writer lock."""
+        writer lock.
+
+        The binding is swapped directly, as `flush_fragments` does, from ONE read of `partitions`
+        (bug-111 r2 #1): `with_partition` ran an `INSERT OR IGNORE` + commit + a by-name lookup
+        per partition per purge (+25-28% on 200 purges, 3.75 ms each) and lacks
+        `_ensure_partition`'s damaged-zonemap fallback, so a bad zonemap would have made every
+        purge raise."""
         canon_bits: dict[str, list[int]] = {}
         for ln, bits in bits_by_ln.items():
             canon_bits.setdefault(_canonical_verb(ln), []).extend(bits)
         ranges = [(kid << _CONCEPT_SHIFT, (kid + 1) << _CONCEPT_SHIFT) for kid in ids]
         linkages = [lk["name"] for lk in self.list_linkages()]
-        names = [r[0] for r in self._connect().execute(
-            "SELECT name FROM partitions ORDER BY id").fetchall()]
+        bindings = [(int(r[0]), r[1]) for r in self._connect().execute(
+            "SELECT id, name FROM partitions ORDER BY id").fetchall()]
         n = 0
-        for pname in names:
-            with self.with_partition(pname):
+        prev = (self._partition_id, self._partition_name)
+        try:
+            for pid, pname in bindings:
+                self._partition_id, self._partition_name = pid, pname
                 for ln in linkages:
                     frag = self._load_fragment(ln)
                     changed = False
@@ -6347,6 +6355,8 @@ class Store:
                             n += 1
                     if changed:
                         self._dirty_fragments.add(ln)
+        finally:
+            self._partition_id, self._partition_name = prev
         return n
 
     def _bulk_purge_ids(self, info: "list[tuple[int, str, str]]") -> int:
