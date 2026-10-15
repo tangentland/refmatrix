@@ -14,7 +14,7 @@ metadata:
 # Task 22.2: the repair-then-remove engine {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 11, 2026-10-15; [[#rev-round-11]]; round 10 in [[#rev-round-10]]; round 9 in [[#rev-round-9]]; round 8 in [[#rev-round-8]]; round 7 in [[#rev-round-7]], round 6 in
+> Status: Pending (revision round 12, 2026-10-15; [[#rev-round-12]]; round 11 in [[#rev-round-11]]; round 10 in [[#rev-round-10]]; round 9 in [[#rev-round-9]]; round 8 in [[#rev-round-8]]; round 7 in [[#rev-round-7]], round 6 in
 > [[#rev-round-6]], round 5
 > in [[#rev-round-5]], round 3 in [[#rev-round-3]])
 > Wave: 1, after 22.1a (#t8-wave1).
@@ -328,6 +328,34 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
        `evidence` event already names the endpoint by name and the restored entity's `entity`
        event makes a rebuild re-attach it (a second `evidence` event would double the row on a
        rebuild). Each re-attached row is counted `restore_reattached` by kind.
+     - **A restore REVERSES the purge it undoes, by manifest id (d9cf, superseding d9cc (ii);
+       r12 s-1).** {#r4-reversal} Every `tombstone` a manifest-writing purge logs (this engine's
+       batches; [[task-22.6-removal-entry-points#r2]] `untrack` / `prune-noise --drop`,
+       [[task-22.6-removal-entry-points#r3]], the `--as-memory` conversion of
+       [[task-22.6-removal-entry-points#r9]]) carries `manifest: <apply_id>`. The `entity` event
+       restore logs for every entity whose old id is a key of THIS restore's `id_map` (re-created,
+       or found live by name, as the **Vectors (d9z)** bullet below builds the map) carries `restored_from:
+       <apply_id>`. From that event on, a tombstone of the SAME entity key `(partition, kind,
+       name)` whose `manifest` it names is REVERSED: the incarnation it purged had its surviving
+       copies re-attached in place by this `id_map`, with no new append
+       ([[task-22.6-removal-entry-points#r5-timeline]]). A tombstone with no `manifest` (a purge
+       outside plan-22) is never reversed.
+       - *Spelling: one builder.* Both fields are spelled ONLY by
+         `edge_records.reversal_fields(*, manifest: str | None = None, restored_from: str | None
+         = None) -> dict` (it returns only the keys whose value is not None) and read ONLY by
+         `edge_records.reversal_of(ev: dict) -> tuple[str | None, str | None]`. The two tombstone
+         writers (`Store.purge_entity`, `Store._bulk_purge_ids`) take a keyword `manifest=` and
+         splice `reversal_fields(manifest=...)` into their `tombstone` event; restore's
+         `upsert_entity` call takes `restored_from=` and splices `reversal_fields(restored_from=
+         ...)` into its `entity` event. The literal `"restored_from"` appears in no other `src/`
+         module or in `scripts/factslog-restore.py`, and every `tombstone` write in `store.py`
+         splices `reversal_fields` (22.6 AC-6f's AST check).
+       - *Additive.* Replay, the compactor and 17.4's fold ignore both fields except inside the
+         ONE revivable predicate, `edge_records.revivable`
+         ([[task-22.6-removal-entry-points#r5-timeline]]). `dump_catalog_to_log` emits neither:
+         a compacted log holds no `tombstone` for a reversal to cancel and no copy of a purged
+         incarnation, so omitting both is exact (22.6 R6's "new field" rule; its compact-then-
+         rebuild AC is 22.6 AC-6e's compacted variant).
      - Only this manifest's `id_map` is used: a dead id that another manifest's restore
        re-created is not this restore's to map, and step (2) above then finds it dead (its new
        id differs) and re-inserts the row dangling, counted, for the `dangling-evidence` class.
@@ -899,10 +927,10 @@ r6 m-7: this task's own file list (symbols read at `3d3c798`).
 
 | File | Change |
 |------|--------|
-| `src/refmatrix/store.py` | the R2 primitives (`remove_evidence(..., ingest_ok=)`, `repoint_evidence`, `rename_entity`, whose merge logs `unlink` / `link` per re-attached link, r11 s-2) and R2's concept-side evidence rule before a purge; `remove_dangling_links` and `remove_dangling_evidence` (R9, built on `_clear_purged_bits`; reborn and per-`link`-key partition rules, r7); the R3 ops in `rebuild_index_from_log`'s one timestamp-ordered row pass (no `_apply_event_body` branch: 16.6 R1f deletes it, d9bu) (16.6 R1d builds the pass; d9av); R4's restore of `link_row` / `evidence_row` with the dead-id re-check and the `id_map` re-attach (r7 s-1, s-2); `Store._row_op_c_kinds`, the one helper naming a live primitive's op `(c_kind, keep)` pairs (r9 m-1, m-2), and every row-op event through `row_event` / every `unlink` through `edge_event` with `c_kind` (r8 b-1) |
-| `src/refmatrix/edge_records.py` | `evidence_remove` and `evidence_repoint` added to 16.6's `ROW_OPS`, built by `row_event` (r8 b-1, d9bl); `_LEGACY_PREFERRED_KIND` renamed to the public `LEGACY_PREFERRED_KIND` (read by `resolve_legacy_kind` and by `Store._row_op_c_kinds`, r9 m-1) |
+| `src/refmatrix/store.py` | `manifest=` on `purge_entity` / `_bulk_purge_ids` (and the `purge_path` callers that write a manifest), spliced into the `tombstone` event; `restored_from=` on `upsert_entity`, spliced into restore's `entity` events; both through `edge_records.reversal_fields` ([[#r4-reversal]]; d9cf, r12 s-1); the R2 primitives (`remove_evidence(..., ingest_ok=)`, `repoint_evidence`, `rename_entity`, whose merge logs `unlink` / `link` per re-attached link, r11 s-2) and R2's concept-side evidence rule before a purge; `remove_dangling_links` and `remove_dangling_evidence` (R9, built on `_clear_purged_bits`; reborn and per-`link`-key partition rules, r7); the R3 ops in `rebuild_index_from_log`'s one timestamp-ordered row pass (no `_apply_event_body` branch: 16.6 R1f deletes it, d9bu) (16.6 R1d builds the pass; d9av); R4's restore of `link_row` / `evidence_row` with the dead-id re-check and the `id_map` re-attach (r7 s-1, s-2); `Store._row_op_c_kinds`, the one helper naming a live primitive's op `(c_kind, keep)` pairs (r9 m-1, m-2), and every row-op event through `row_event` / every `unlink` through `edge_event` with `c_kind` (r8 b-1) |
+| `src/refmatrix/edge_records.py` | `reversal_fields` / `reversal_of`, the one builder and reader of `manifest` on purge tombstones and `restored_from` on restore's `entity` events ([[#r4-reversal]]; d9cf, r12 s-1; the predicate that reads them, `revivable`, is 22.6's); `evidence_remove` and `evidence_repoint` added to 16.6's `ROW_OPS`, built by `row_event` (r8 b-1, d9bl); `_LEGACY_PREFERRED_KIND` renamed to the public `LEGACY_PREFERRED_KIND` (read by `resolve_legacy_kind` and by `Store._row_op_c_kinds`, r9 m-1) |
 | `scripts/factslog-restore.py` (plan-17 task 17.4's) | `evidence_remove`, `evidence_repoint`, `entity_rename` added to `FOLD_OPS`, each with its stated fold rule (r10 s-3), folded in the rebuild's `(ts, log position)` order: `evidence_remove` reduces the copies of its key (`row_key` plus `detail`, in its `partition` field) appended at or before it to its `keep`; `evidence_repoint` is count-neutral (it moves a copy's `file` / `line`, the evidence count is unchanged) and is named in `FOLD_OPS` as ignored for the counts; `entity_rename` renames the entity key in the fold's name map and, when `merged` is true (the [[#r2]] collision), moves the old key's evidence copies to the surviving key (count-neutral for `evidence`); links follow their own `unlink` / `link` events and the entity count follows the old key's own `tombstone`, so the rename itself changes neither (r11 s-2, d9cc: evidence moves; links and entities follow their own events). 22.6 AC-6d proves the fold's counts equal the rebuild's on AC-3's, AC-3d's, AC-3f's and AC-7's logs ([[task-22.6-removal-entry-points#acceptance]]). In the same commit as the replay branch: 17.4's AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s op set, and an op missing from it fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
-| `src/refmatrix/removal_apply.py` (new) | the R6 batch loop over `bounded_steps` (incl. the per-partition and `none` batches), R4's intent log and restore, R7's gate, R5's attribution incl. [[#r5-grep-record]] |
+| `src/refmatrix/removal_apply.py` (new) | the R6 batch loop over `bounded_steps` (incl. the per-partition and `none` batches), each batch's purges called with `manifest=<apply_id>`; R4's intent log and restore, restore's `entity` events with `restored_from=<apply_id>` for every `id_map` key ([[#r4-reversal]]; d9cf, r12 s-1), R7's gate, R5's attribution incl. [[#r5-grep-record]] |
 | `src/refmatrix/verbs.py` | `removal_apply`, `removal_restore` (R8); `mcp.py` generates their tools from `verbs.VERBS` |
 | `src/refmatrix/daemon.py` | the apply and restore ops under the writer lock (R6, R8) |
 | `src/refmatrix/cli.py` | `rmx removal apply`, `rmx removal restore` (R8) |
@@ -1110,3 +1138,19 @@ clean). `src/` unchanged since `23ad703`. Later rows win over round 10.
 
 rel: amends -> [[bsd-plan16-22-spec-diffcheck-r11-d8188ee]]
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+
+## Revision round 12 (2026-10-15) {#rev-round-12}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r12-2352e52]] where it touches 22.2 (s-1 (i) and the
+files rows) under d9cf ([[plan-review-2026-10-14#t12-approvals]]; PROVISIONAL until its ch-bsd
+loop is clean), which SUPERSEDES d9cc (ii), the `L > N` count guard. `src/` unchanged. Later rows
+win over round 11.
+
+| finding / decision | answered in |
+|---|---|
+| r12 s-1 (i) / d9cf (a count cannot tell which incarnation a restore re-attached, F5; only the restore knows which purge it undid) | [[#r4-reversal]]: `manifest: <apply_id>` on every manifest-writing purge's `tombstone`, `restored_from: <apply_id>` on restore's `entity` event for every `id_map` key, matched per entity key; one builder and one reader in `edge_records`; additive, read only by 22.6's `edge_records.revivable`; the dump emits neither (exact, stated); [[#files-to-modify]] `store.py`, `edge_records.py`, `removal_apply.py` rows |
+| reviser's tightening of the report's text | the report's reversal test names the manifest only; [[#r4-reversal]] also requires the `entity` event to be the SAME entity key as the tombstone, because one manifest purges many entities: keyed per entity, a reversal cancels only the tombstone of the entity whose surviving rows that `id_map` re-attached, and a partial restore (22.2 R4's "partial apply" bullet) reverses only what it re-attached |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r12-2352e52]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+rel: depends-on -> [[task-22.6-removal-entry-points#r5-timeline]]

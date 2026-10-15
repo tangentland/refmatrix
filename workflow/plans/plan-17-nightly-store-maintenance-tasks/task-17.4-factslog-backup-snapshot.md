@@ -18,7 +18,8 @@ metadata:
 > see [[#rev-round-3]]. Revision round 5: ns17-r4-2, nm17-r4-1, see [[#rev-round-5]]. Revision
 > round 6: ns17-r6-1, see [[#rev-round-6]]. Revision round 7: nm17-r7-1, see [[#rev-round-7]].
 > Revision round 9: ns17-r9-1, ns17-r9-2, nm-x-r9-1, see [[#rev-round-9]]. Revision round 10:
-> nm17-r10-1, see [[#rev-round-10]].
+> nm17-r10-1, see [[#rev-round-10]]. Revision round 12: plan-22's shared revivable predicate
+> (d9cf), see [[#rev-round-12]].
 > Round 2: [[#rev-round-2]])
 > Depends on: 17.2 (the hub tick and its `maintenance_steps` registry, NOT 23.1's daemon tick
 > registry), 23.0 (sandbox)
@@ -207,8 +208,11 @@ once-a-day COPY under `backups/` is what Time Machine backs up. {#why-body}
            only when both ends are alive. The fold parses every line STRICTLY and fails on a
            non-JSON line, so it does not inherit replay's silent skip of such a line
            (bug-119, `store.py:7936-7940`). It reuses `edge_records` (the one edge-record
-           format, bug-117) for the edge key and the legacy kind rule, so only the fold loop is
-           independent, not the event spelling. It runs on the cut copy (step 2), so a torn
+           format, bug-117) for the edge key and the legacy kind rule, and, when it folds
+           plan-22's `evidence_orphan_drop`, for the one revivable predicate
+           `edge_records.revivable` (a tombstone a later restore reversed does not count; d9cf,
+           [[task-22.6-removal-entry-points#r5-revivable-fn]]), so only the fold loop is
+           independent, not the event spelling or that predicate. It runs on the cut copy (step 2), so a torn
            final line never reaches it; a non-JSON INTERIOR line still fails it.
            - **The fold's op set is replay's op set (ns17-r9-2).** The fold dispatches on a
              module-level `FOLD_OPS: frozenset[str]` (every op it handles, folded into the counts or
@@ -516,3 +520,19 @@ Source: [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3]] (diff check of round 9 at `
 | nm17-r10-1 (the unknown-op fixture `evidence_remove` is an op Wave 1 adds to replay; the case flips when it lands) | [[#ac-9]] (fixture op is the reserved test-only name `__rmx_test_unknown_op__`; the test asserts it is absent from the AST-read dispatch set and from `FOLD_OPS` before it runs) |
 
 rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#nm17-r10-1]]
+
+## Revision round 12 (2026-10-15) {#rev-round-12}
+
+Source: plan-22's round 12 ([[bsd-plan16-22-spec-diffcheck-r12-2352e52]], decision d9cf in
+[[plan-review-2026-10-14#t12-approvals]]). Not a plan-17 finding: plan-22 22.6 makes ONE
+revivable predicate, `edge_records.revivable`, the test the vacuum scan, the rebuild and this
+task's fold all call, and its AST check (22.6 AC-6f) reads `scripts/factslog-restore.py`. The
+fold rule itself stays in plan-22's files tables (ns17-r9-2's split). The round-10 table above is
+unchanged history.
+
+| finding | answered at |
+|---|---|
+| d9cf (the fold must call the shared revivable predicate, not a copy) | [[#r6-restore]] step 3: the reuse sentence names `edge_records.revivable` beside the edge key and the legacy kind rule |
+
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+rel: related-to -> [[task-22.6-removal-entry-points#r5-revivable-fn]]
