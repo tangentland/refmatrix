@@ -13,7 +13,7 @@ metadata:
 # bug-109: MCP session attribution {#root}
 
 rel: implements -> [[plan-review-2026-10-14#t11-approvals]]
-rel: related-to -> [[task-19.0-stm-cluster-hygiene#r5]]
+rel: related-to -> [[task-19.0-stm-cluster-hygiene#requirements]]
 rel: related-to -> [[task-21.1-context-usage-telemetry#req-session]]
 
 ## The defect {#defect}

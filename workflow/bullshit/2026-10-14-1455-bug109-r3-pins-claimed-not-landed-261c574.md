@@ -118,7 +118,7 @@ test_task_cli_session, test_save_state, test_mcp_write, test_stm, test_subject, 
 
 **Pattern match:** YES. imp-heal-runs-once, imp-route-named-helper-tested, and the r2 #s-3 row.
 
-rel: contradicts -> [[claude-md#task-completion-workflow]]
+rel: contradicts -> [[claude#task-completion-workflow]]
 
 ### SKETCHY: the hook's same-session shortcut never repairs a pointer whose `pid_start` no longer matches, so an older-build pointer stays stale for the whole session {#s-1}
 
@@ -151,7 +151,7 @@ same harness on a fresh root gave 0 rows. `bug109-r3-bsd-sim.log` §2 isolates i
 **Fix (2 lines):** take the shortcut only when `session` matches AND `pid_start == _proc_start(pid)`.
 Pin it with an old-format pointer for the current session, which the hook must rewrite.
 
-rel: contradicts -> [[claude-md#no-silent-failures]]
+rel: contradicts -> [[claude#no-silent-failures]]
 
 ### SKETCHY: merge plus deploy does not reach the MCP server that bug-109 was found in {#s-2}
 
@@ -240,6 +240,6 @@ own dependency line ("the merge, not a sha") already requires this.
 
 DIRTY — 6 findings (1 BULLSHIT, 2 SKETCHY, 3 MEH). Merge-blocking: [[#b-1]] (test pins; escalated).
 
-rel: contradicts -> [[claude-md#no-silent-failures]]
+rel: contradicts -> [[claude#no-silent-failures]]
 rel: evidence-for -> [[task-19.0-stm-cluster-hygiene]]
 rel: evidence-for -> [[task-21.1-context-usage-telemetry]]

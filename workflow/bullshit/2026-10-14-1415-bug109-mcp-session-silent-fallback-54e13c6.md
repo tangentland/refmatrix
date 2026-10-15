@@ -84,7 +84,7 @@ no `claude` within 4 hops give `owner None` → `resolved sess-C` (the other ses
 **Pattern match:** YES. See feedback_no_silent_failures and the 0.66.1 bridge audit (bsd-0661 #bs-1):
 the same silent skip on a memory path.
 
-rel: contradicts -> [[claude-md#no-silent-failures]]
+rel: contradicts -> [[claude#no-silent-failures]]
 
 ### SKETCHY: owner resolution trusts an inherited `$CLAUDE_PID` and a comm-name match, not the spec's `os.getppid()` {#s-1}
 
@@ -226,5 +226,5 @@ happen, the old newest-ring behaviour remains, and per [[#b-1]] nothing shows it
 
 DIRTY — 9 findings (1 BULLSHIT, 3 SKETCHY, 5 MEH). Merge-blocking: [[#b-1]].
 
-rel: contradicts -> [[claude-md#no-silent-failures]]
+rel: contradicts -> [[claude#no-silent-failures]]
 rel: evidence-for -> [[task-19.0-stm-cluster-hygiene]]

@@ -126,7 +126,7 @@ writes, and their behaviour is correct at HEAD. So the gap is one of discipline,
 
 **Pattern match:** YES. imp-route-named-helper-tested, imp-heal-runs-once, r3 #b-1.
 
-rel: contradicts -> [[claude-md#task-completion-workflow]]
+rel: contradicts -> [[claude#task-completion-workflow]]
 
 ### MEH: corrupt input still raises on two read paths; the write side got the guard, the read side did not {#m-1}
 
@@ -148,7 +148,7 @@ All three need corruption or a hand edit, because the writers emit atomic, ASCII
   `unreadable-line` row.
 - Treat a non-finite `t` as unreadable.
 
-rel: contradicts -> [[claude-md#no-silent-failures]]
+rel: contradicts -> [[claude#no-silent-failures]]
 
 ### MEH: no full-suite run is recorded on the branch {#m-2}
 
@@ -197,6 +197,6 @@ the merge commit. Record the log in the summary.
 
 DIRTY — 4 findings (0 BULLSHIT, 1 SKETCHY, 3 MEH). No merge blocker. Safe to merge and deploy: yes.
 
-rel: contradicts -> [[claude-md#no-silent-failures]]
+rel: contradicts -> [[claude#no-silent-failures]]
 rel: evidence-for -> [[task-19.0-stm-cluster-hygiene]]
 rel: evidence-for -> [[task-21.1-context-usage-telemetry]]
