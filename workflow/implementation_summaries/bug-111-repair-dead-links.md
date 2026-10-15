@@ -55,8 +55,28 @@ The deleter of ids 2791202-2791209 predates the current code and cannot be named
 - GREEN: 3 passed (`bug111-green.log`); fragment/repair/gmd/merge/partition family in
   `bug111-family.log`.
 
+## Round 1 (ch-bsd `bsd-bug111-repair-dead-links-0f268f5`) {#round-1}
+
+- **#3, the same class one layer down.** `purge_entity` and `_bulk_purge_ids` cleared bits only
+  in the CURRENT binding's fragments, while `entity_links` is global. Purging a doc in partition
+  `mem` that an entity in another partition was part-of left a dead-concept bit, bug-111's own
+  symptom. Both paths now share `Store._clear_purged_bits`, which visits every partition through
+  `with_partition`. The same fix clears an entity's own bit when it is purged under a foreign
+  binding.
+- **#2:** `doc_drop_failed` is tested (count, `as_dict`, `report`, unconditional print) and
+  carried by `_bridge_stats` into the structured bridge result.
+- **#4:** the as-memory doc drop matches `path` as well as `name`.
+- **#5:** a failed vector delete during the drop counts in `doc_drop_failed`.
+- **#1:** `links_dead_entity` names the orphan share of `links_skipped`. The removal itself is a
+  deferral row whose owner (a plan-22 dangling-link class) is **proposed to the user, not decided**.
+- RED against `0f268f5`'s `src/`: 7 of 7 new tests fail; GREEN 10 of 10 (`bug111-r1-red.log`,
+  `bug111-r1-green.log`).
+
+{#round-1-body}
+
 ## Live follow-up {#live}
 
 After deploy, one applied `rmx repair-index --fragments` on cliquedb drops the bit for good. The
 manifest records it, and the next dry run reads `dropped_dead_concept=0` with
-`links_dead_concept=1`. The 5,298 + 8 orphan `entity_links` rows stay until an audited removal.
+`links_dead_concept=1` and `links_dead_entity=5298`. Those orphan `entity_links` rows stay until
+an audited removal ([[deferral_registry#registry]]).
