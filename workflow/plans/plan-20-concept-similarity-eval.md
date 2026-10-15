@@ -43,7 +43,7 @@ map belongs to ADR-0004's helix plan.
 
 The free culls (9,182 orphan aliases, 747 empty protected `query/*` rows) go through
 [[plan-22-audited-removal-and-repair]] (the ONE audited path, which repairs first and gates
-concept culls on an ablation check), not this plan's. Merge writes are task 22.4. No concept is removed on a similarity score: decay and similarity
+concept culls on an ablation check), not this plan's. Merge writes were plan-22 task 22.4; since 2026-10-14 (d9j) they belong to the future ADR-0004 helix plan, and 22.4 is closed into it. No concept is removed on a similarity score: decay and similarity
 may demote, never delete. {#scope-body}
 
 ## Tasks {#tasks}
@@ -62,3 +62,15 @@ may demote, never delete. {#scope-body}
 | d-2 | free culls via plan-22 (originally "via 16.6"; moved by plan review C1) | user, 2026-10-07 |
 | d-3 | gold labels: the gmd-curator agent proposes, the user reviews a 50-pair sample before the set freezes | default taken (exploration d-3 unanswered); revisable at spec review |
 | d-4 | distributions measured on more than one project (cliquedb, viascope, cliquet, atldb, orderly, refmatrix) | user, 2026-10-07 ("use more than refmatrix's project") |
+
+## Drift notes (2026-10-14) {#drift-2026-10-14}
+
+- Every test and evaluation in this plan runs inside plan-23 task 23.0's sandbox (d1a/d1b); the
+  labelled pair set (20.1) is built from a COPY of a store's read snapshot, never a live catalog.
+- Raw labelled pairs drawn from real stores stay local; only their hash and a redacted fixture are
+  committed (d8f).
+- Usage counters referenced here are 19.2's raw per-evidence counts with weights and floors applied
+  at read time (d9e; ADR-0004 `#a14-floor`).
+- Wave placement: [[plan-review-2026-10-14#t10-waves]] (Wave 4).
+
+rel: depends-on -> [[plan-review-2026-10-14#t10-waves]]

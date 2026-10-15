@@ -61,6 +61,8 @@ rel: related-to -> [[refmatrix/adr-0004-unified-location-space-index]]
 
 ## Execution order {#order}
 
+> **Superseded 2026-10-14** by [[plan-review-2026-10-14#t10-waves]] for every wave; kept as history.
+
 - **Wave 0 (now)**
   - ch-bsd round 10 → CLEAN → merge + deploy the remedy branch.
   - **bug-093 hotfix (added by me).** The deployed daemon wedges on every large-file edit (the

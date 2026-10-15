@@ -9,86 +9,54 @@ metadata:
 
 # Session Handoff for refmatrix {#root}
 
-Date: 2026-10-07/08 (session 9ff85914). Prior handoff archived at
-`workflow/past_handoffs/011-r6-r9-remedies-0763-plans-17-23_2026-10-07.md`.
+Date: 2026-10-15 (session d6dcee49). Prior handoff archived at
+`workflow/past_handoffs/015-0781-0783-release-wave0-r6-r7_2026-10-15.md`.
 
-rel: supersedes -> [[handoff-011-r6-r9-remedies-0763-plans-17-23]]
+rel: supersedes -> [[handoff-015-0781-0783-release-wave0-r6-r7]]
+rel: depends-on -> [[plan-review-2026-10-14]]
 
 ## State {#state}
 
-- **Branch:** `bsd-r1-remedy`. It is now IDENTICAL to `master` (fast-forwarded each step). There
-  is no branch switch in this tree: another Claude session (pid 4405) lives here.
-- **Deployed:** 0.77.2 on the hub and all 8 daemons, each relaunched and verified. The hub runs
-  one embed worker and one rerank worker.
-- **Pushed:** NO. `master` is about 114 commits ahead of `origin/main`. The auto-mode classifier
-  blocks the push; the user runs
-  `git -C /Users/tholley/claude_tools/refmatrix push origin master:main`.
-- **Stores:** every project partition is re-derived at 0.77.x ("version drift only").
-  sessions-refmatrix is repaired.
+- **Wave 0 is CLOSED.** Every Wave 0-1 plan is APPROVED after its ch-bsd loop (rounds 8-15):
+  plans 16 (d9ck), 17 + 23 (d9cn), 19 + 21 (d9ce), 22 (d9cm), plan-18 specs (d9co; 18.1
+  COMPLETED). Decisions d9be-d9cp in `workflow/plan-review-2026-10-14.md`; settled ones CONFIRMED.
+- **Branch:** `wave0-spec-reviews` (NOT pushed; merges `--no-ff` to master with the release).
+  `master` = `origin/main` = deploy = `b381b6d` (0.78.3). Nothing deployed this session.
+- **Code ready or in flight (littlebig clones; branches pushed to the dev repo when clean):**
+  - `task-18.1-catalog-measurement` (`8281a7f`) — ch-bsd r3 CLEAN; in dev repo; merges with release.
+  - `bugs-112-113-118` (`/Volumes/littlebig/refmatrix-bugs112-118`, `a2911a3` + MEH remedy in
+    flight) — ch-bsd r3 mergeable/deployable; 3 MEH being fixed (m-r3-1 facts.log compaction
+    after copy2 swap failure — do not ship without it). Includes cherry-pick of 0611d2f.
+  - `task-23.0-test-sandbox` (`/Volumes/littlebig/refmatrix-task-23.0`, `ccdefef` + r1 remedy in
+    flight) — ch-bsd r1 DIRTY 2B (shutil relative-path bypass; 18 silent skips); merges on tier 0
+    + decoy evidence once clean (d9cp).
+- `learn.off` global marker still SET (d9bj: off until 16.2+16.3 deploy; no `rmx learn on`).
 
 {#state-body}
 
-## What this session did {#did}
-
-1. **ch-bsd r10-r13 on the rerank-budget remedies.** r10 DIRTY 1B, r11 DIRTY 1B, r12 DIRTY 0B,
-   r13 0B with no blocker. Summaries: `remedy-bsd-r9..r12-*.md`.
-   - Context reranks open their own hub connection (`fork`).
-   - Private workers are `reserve()`d, warm in the background, and are `retire()`d at adoption and
-     shutdown.
-   - The hub's `info(nowait)` is lock-free.
-   - An unknown partition answers empty, or raises for context.
-   - Embed ops serialize on their own lock.
-   - A context answer from the writer is unreranked.
-2. **0.77.0:** merged (`5a085be`, conflicts resolved to the branch side, as approved) and deployed.
-   Fleet `reingest --force`; the refmatrix and cliquedb embeds were redone with `--batch 64`
-   (bug-097).
-3. **bug-098, "where are refmatrix's stamps":** a WRITER-side partition race.
-   - Two cooperative ingests kept their `with_partition` binding across `_yield` (the lock
-     release), and three lock-free ops (`_store_health` on every ping, `memory_score`, and the
-     recall prefilter) re-bound the shared writer.
-   - 0.77.1 fixed all of them. `tests/test_ingest_partition_yield_race.py` was RED with 30 rows
-     crossed and the writer re-bound 92x.
-   - sessions-refmatrix was backed up, its stray rows forgotten, and it was re-indexed from its 77
-     cards.
-   - The fix was confirmed on a throwaway store with 80 interleaved job lines.
-4. **0.77.2:** `rmx derive unstamp PASS` (daemon op `derive_unstamp`). Used to remove the two stray
-   `ingest`/`semantic` stamps from sessions-refmatrix.
-5. **Exploration** `docs/architecture/explorations/storage-concurrency-redesign.md`, options A-E:
-   - A: partition-scoped handles on per-op cursors (recommended first).
-   - B: one partition per store.
-   - C: DuckDB read-only over Lance.
-   - D: Vortex roaring. Checked on `vortex-data` 0.88: the format and DuckDB work, but no roaring
-     encoding is reachable from Python.
-   - E: viascope's BSI sidecar. Measured: queries are sub-ms; the build pays a per-row Python tax.
-   - The user's evidence for "slow Python bitmaps" is cliquedb/thiquet (PL/pgSQL loops).
-
-{#did-body}
-
 ## Next {#next}
 
-1. **Push** (the user).
-2. **Wave 0 (docs)** per `workflow/plan-of-plans.md`: plan-16 rev 5 plus its spec review, and spec
-   reviews of plans 17/19/21/22/23. Option A of the exploration overlaps plans 22/23; fold it in
-   there.
-3. **Wave 1:** plan-23 (the bounded-write harness) first, then 17.1/17.2, 19.1/19.2, 21.1 and
-   22.1-22.3.
-4. **Open bugs:**
-   - bug-096: `rmx reingest` exits 0 on a failed step.
-   - bug-097: a fixed 256-row embed batch against the 45 s op timeout under load.
-5. **Needs the user's time:** the 19.5 hook-limit probe, and the 20.1 gold-label review.
+1. Finish the two remedies above, re-review each to CLEAN (ch-bsd), then ONE release: merge
+   bugs-112-113-118 + task-23.0 + task-18.1 into master (`--no-ff`), reconcile registry numbering
+   (main tree has bug-119..128; the bug branch numbered 122/123 directly after 118), bump version,
+   full suite in the main tree (now sandboxed — should lose the 32 baseline failures), run
+   `scripts/sandbox-proof.sh` once (d9cp/S5), deploy (user approved: ff ~/refmatrix,
+   `rmx daemon restart --relaunch`, hub `rmx hub stop` + one `launchctl kickstart`), push.
+2. **User question open:** bump `.venv-eval` duckdb 1.5.2 -> 1.5.3 (pyproject pins >=1.5.3;
+   1.5.2 crashed on a stale-reader close before the drain fix).
+3. Wave 1 implementation per d9bi: 21.1 -> 19.0/19.1 -> 19.2, 19.6 (helix substrate); 23.1/23.3;
+   23.5 after bug-112 merges.
+4. Frozen inactive slot recovery (atldb/refmatrix/viascope) — needs bug-125 (merge leaves
+   derived tables empty) fixed first; then dry-run on littlebig copies.
+5. 23.0 tiers 1/2 (rmxtest user, Tart VM) need operator setup.
 
 {#next-body}
 
-## Open, not forgotten {#open}
+## Lessons recorded {#lessons}
 
-- **viascope:** `sessions-viascope` holds 40 stray project doc rows dated 2026-06-05 (the older
-  partition bug, not bug-098). Cleanup awaits the user's OK. Recipe: back up, then
-  `rmx -p sessions-viascope forget --kind doc/code`, keeping the 155 memories.
-- **Exploration measurements 1-7** are unmeasured. Option D's next step is a Rust-encoding spike,
-  if the user wants D costed.
-- **The full suite** stays unrun until bug-088 isolates it. Families ran with `RMX_MODEL_SOCK`
-  isolated, and the live-socket recorder stayed at 145.
-- **The backup** `.refmatrix/backups/catalog.read.pre-bug098-repair-20261008-165958.duckdb`
-  (712 MB) can be deleted once the user is satisfied.
+- `feedback_follow_approval_pattern_wave01`, `feedback_bsd_iterate_before_surfacing`,
+  `feedback_converge_repeated_shapes`.
+- PATTERN `workflow/bullshit/2026-10-15-PATTERN-prereg-check-unrun-census.md`: a bypass rule or
+  mutation registered without running it against the code fails three rounds running.
 
-{#open-body}
+{#lessons-body}

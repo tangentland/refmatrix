@@ -99,7 +99,7 @@ def merge_slots(
                 raise MergeRefused(
                     "slots disagree on partition identity — " + "; ".join(clashes)
                     + ". Partition ids reach every table; the merge refuses rather "
-                      "than guess (bug-123)")
+                      "than guess (bug-128)")
             a_counts, b_counts, max_entity, max_partition, max_lt = _probe(
                 a_ro, b_ro, tables)
         finally:
@@ -155,7 +155,7 @@ def _unlink_target(target_path: Path) -> None:
 
 class MergeRefused(RuntimeError):
     """The two slots cannot be merged safely; raised before anything is
-    written, naming why (bug-123)."""
+    written, naming why (bug-128)."""
 
 
 def _columns(con, table: str, db: "str | None" = None) -> "list[str]":
@@ -186,7 +186,7 @@ def _partition_collisions(a_ro, b_ro) -> "list[str]":
     """partitions.name is UNIQUE and partition ids reach every table, so a
     name held under different ids (or an id under different names) cannot be
     merged by `id NOT IN` — the B rows were dropped or the insert failed
-    (bug-123). Returns one description per clash; `merge_slots` refuses on a
+    (bug-128). Returns one description per clash; `merge_slots` refuses on a
     non-empty list, `audit_slots` reports it as drift (ch-bsd r2 m-r2-1)."""
     return _partition_clashes(
         dict(a_ro.execute("SELECT name, id FROM partitions").fetchall()),
@@ -205,7 +205,7 @@ def _partition_clashes(pa: "dict[str, int]", pb: "dict[str, int]") -> "list[str]
 
 
 def _merge_linkage_types(con) -> None:
-    """linkage_types by NAME (bug-123): refmatrix's own snapshot vs its stale
+    """linkage_types by NAME (bug-128): refmatrix's own snapshot vs its stale
     slot A failed `Duplicate key "name: part-of"` — one name, different ids.
     A's rows go in as they are; each B row maps to A's id for the same name,
     else keeps its id when free, else gets a fresh one. `remap_lk_b(old_id,

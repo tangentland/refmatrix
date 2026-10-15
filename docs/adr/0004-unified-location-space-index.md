@@ -249,7 +249,8 @@ is a query on roaring bitmaps with no sort. {#amend-model-body}
       lifetime evidence. Knowledge that was used heavily long ago stays findable, ranked below
       current work but present. **The one implementation is task 19.2's decay/floor library**
       (plan review C4, user 2026-10-07): half-life recency over an exact lifetime record, with
-      floor `base * log1p(hits + 2*used)`. Helix's age tiers and touch counters reuse it rather
+      floor `base * (1 + log1p(hits + 2*used))` — never zero, applied at read time over raw counts
+      ([[#a14-floor]], amended 2026-10-14). Helix's age tiers and touch counters reuse it rather
       than defining a second formula. The intropretor step decay in the ADAPT row above is prior
       art, not a rule. {#rule-floor}
    3. **Age tiers are terminal, not evicting.** An edge moves day → week → month → older; "older" is
@@ -259,10 +260,14 @@ is a query on roaring bitmaps with no sort. {#amend-model-body}
       prune. Removal goes only through the ONE explicit, audited path,
       [[plan-22-audited-removal-and-repair]], which repairs before it removes (dry-run → apply,
       manifest, restore). That includes merges, using plan-20's rule (task 22.4). A folded memory
-      stays recallable (plan review C1/C3, user 2026-10-07). {#rule-no-delete}
+      stays recallable (plan review C1/C3, user 2026-10-07). Scoped 2026-10-14
+      ([[#a14-removal-scope]]): `forget`/`memory bulk-forget` are entry points to that path;
+      manifest-backed derived-index cleanup and the listed `untrack`/`prune-noise --drop`
+      exceptions are not knowledge removal. {#rule-no-delete}
    5. **A higher floor for asserted knowledge.** Feedback memories, user-asserted or `protected`
       rows, and `rel:`-anchored GMD nodes keep a higher floor; recency may reorder them, never bury
-      them. {#rule-asserted-floor}
+      them. This defines the FLOOR only; `MEMORY.md`'s fold order is a separate tier
+      ([[#a14-fold-order]], 2026-10-14). {#rule-asserted-floor}
    6. **Never under-count.** Where a sketch is used, use one whose error is one-sided upward
       (Count-Min with conservative update), so error can only make a key look warmer, never falsely
       cold. Small domains (≈500 memories) use EXACT counters: the sketch exists for edge-scale
@@ -338,6 +343,58 @@ without a write per event. {#amend-helix-body}
   relation taxonomy mapped onto L0–L3; proximity tiers as a tier family; directory/extension facets;
   Aster's decaying approximate counters and per-key eager/lazy merge; and the gates prior
   measurements impose. The ADR stays Proposed. {#d-2026-10-07-amend}
+
+## Amendment 2026-10-14 (APPROVED by the user, 2026-10-14) {#amend-2026-10-14}
+
+Decision d9i of [[plan-review-2026-10-14#t9]]. Drafted from the Wave 0 spec reviews; nothing below
+was in force until the user approved it (2026-10-14, "1 - yes"); [[#rule-floor]],
+[[#rule-no-delete]] and [[#rule-asserted-floor]] are edited to match.
+
+rel: derives-from -> [[plan-review-2026-10-14#t9]]
+rel: amends -> [[#rule-floor]]
+rel: amends -> [[#rule-no-delete]]
+
+1. **The floor formula is never zero.** [[#rule-floor]]'s `base * log1p(hits + 2*used)` is 0 for a
+   memory that has never been recalled, which contradicts "a floor, never zero" and made the
+   never-recalled memories fold first (plan-19 review #b-4). The formula becomes
+   `base * (1 + log1p(hits + 2*used))`. Task 19.2 stores the raw per-evidence counts and applies
+   `base`, the weights and the floor at READ time (`DEFAULT_SCORE_PARAMS`, starting values
+   `base` 0.25, `asserted_floor` 1.0, weights 1 and 2, tunable without data loss; d9e).
+   {#a14-floor}
+2. **The asserted floor and the fold order are two signals.** [[#rule-asserted-floor]]'s
+   definition (feedback, user-asserted or `protected`, `rel:`-anchored) stays the FLOOR, the
+   protection against loss. `MEMORY.md`'s fold ORDER is a separate, narrower tier (feedback →
+   memories linked from curated memories → the rest), because the floor definition covers ~91% of
+   memories and cannot order them. Folding loses nothing: every folded memory stays reachable by
+   a command its fold line prints (d8b). {#a14-fold-order}
+3. **"The ONE removal path" is scoped.** [[#rule-no-delete]] says removal goes only through
+   plan-22. Today `rmx forget`, `rmx memory bulk-forget`, `rmx untrack` and `rmx prune-noise
+   --drop` also remove rows. Proposed scoping:
+   - **Knowledge removal** (an entity, a learned row, a memory, a protection) goes through plan-22's
+     audited path: dry run → manifest → `--confirm <hash>` → apply → restore. `forget` and
+     `memory bulk-forget` become entry points to it (they build the manifest and require the
+     confirm), not a second path.
+   - **Derived-index cleanup** is NOT knowledge removal when the thing removed is recomputable
+     from a kept source or points at nothing, and it is allowed outside plan-22 only with a
+     manifest written before the change: plan-17's orphan-vector reap (the entity is gone from the
+     whole catalog; vectors kept in the orphan list, `vectors_restore`), and the bug-105 fragment
+     repair (bits of deleted entities, kept in the repair manifest).
+   - **`untrack`** (a path the user removed from the corpus) and **`prune-noise --drop`** are
+     listed exceptions: each prints what it removes and writes the same manifest form; neither is
+     run by a timer or a counter.
+   - **The paths this list first missed** (bug-107; classified by the user 2026-10-14, d9o):
+     `purge_path` for a deleted or ignored file is derived cleanup WITH a manifest (learned rows go
+     to it); sync's GMD legacy purge on a `.md` edit is a BUG and keeps learned rows (16.6's
+     verifier judges them); `vacuum`'s orphan-evidence delete is derived cleanup with a manifest
+     and a `facts.log` event; `fold_concept_dups` is a merge, a plan-22 entry point owned with
+     merge writes by the helix plan; `unprotect` is not removal but writes a `facts.log` event
+     carrying its source.
+   {#a14-removal-scope}
+4. **Stale compiled subjects are marked, not removed.** Compile marks a subject `stale`; it stays
+   protected and hidden from recall; removal is plan-22's `stale-subject` class (d8a, task 22.1a).
+   {#a14-stale-subjects}
+
+{#amend-2026-10-14-body}
 
 ## Open questions {#open}
 

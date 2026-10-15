@@ -1,44 +1,222 @@
 ---
 gmd: "0.1"
 id: task-22.3-bug-086-global-repair
-title: "Task 22.3: bug-086 as the first apply — repair the global store's relative learned rows, remove only the unrecoverable"
-tags: [task, repair, global-store, bug-086]
+title: "Task 22.3: bug-086 as the first live apply — the global store's unresolvable relative rows and the 1,655 pytest-tmp entities, with the 48 ambiguous kept"
+tags: [task, repair, global-store, bug-086, bug-101, wave-1]
 metadata:
   node_type: task
   status: pending
   created: 2026-10-07
+  revised: 2026-10-14
 ---
 
 # Task 22.3: the global-store repair {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending
-> Depends on: 22.1, 22.2; the remedy merge deployed
+> Status: Pending (revision round 7, 2026-10-15; [[#rev-round-7]]; round 5 in [[#rev-round-5]], round 3
+> in [[#rev-round-3]])
+> Wave: 1, last of plan-22's Wave-1 chain (16.6 slice → 22.1a → 22.2 → 22.5 → 22.3; #t8-wave1).
+> Depends on: 22.1a, 22.2, 22.5 (the 476 resolved entities), 23.1, 23.0; the user's confirmation
+> of the dry-run counts. The remedy that stopped new relative global rows is deployed (0.77.x).
 
 rel: part-of -> [[plan-22-audited-removal-and-repair]]
-rel: related-to -> [[project_global_relative_rows_repair]]
+rel: depends-on -> [[task-22.1a-provenance-free-classes]]
+rel: depends-on -> [[task-22.2-repair-then-remove]]
+rel: depends-on -> [[task-22.5-cross-store-move]]
+rel: amends -> [[project_global_relative_rows_repair]]
+rel: derives-from -> [[plan-review-2026-10-14#t1]]
+rel: derives-from -> [[plan-review-2026-10-14#t8-revisited]]
+rel: derives-from -> [[plan-review-2026-10-14#t9]]
+rel: amends -> [[bsd-plan16-22-spec-rereview-32dde06]]
+rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
 
 ## Why {#why}
 
-The global store (`~/.refmatrix`) holds 1,087 relative learned entities with 5,159 evidence rows.
-About 700 read as unreadable on every global grep (bug-086). The user decided on 2026-10-07: after
-the new code deploys, recover the 476 that verify uniquely and forget the 611 that cannot. That
-decision becomes this plan's first apply, replacing the standalone daemon op. {#why-body}
+The global store (`~/.refmatrix`) holds 1,087 relative learned entities (probe log; the 5,159
+evidence rows are a sourced, not re-measured, figure). About 700 read as unreadable on every global
+grep (bug-086; probe `exists@0: 695`). The 2026-10-07 decision ("recover 476, forget 611") is
+replaced by the 2026-10-14 decisions:
+- the 48 ambiguous entities are KEPT (d6a);
+- the uniquely verified entities (476 at the probe) are handled by [[task-22.5-cross-store-move]]
+  (d6b/d8c); those under no project store are held there until the user rules (d9b);
+- of the entities with no verifying walk candidate (563 at the probe), those that still read
+  correctly today at `$HOME/<rel>` are `orphan-root:home-readable` (22.1a) and are held by 22.5 for
+  the same ruling (d9b); only the rest, `orphan-root:unresolved`, are forgotten here through the
+  audited path, restorable;
+- the 1,655 `pytest-of-*` tmp entities the suite wrote into the live global store (22 #b-8; 143,108
+  `facts.log` events, `query/ERROR` and `query/alpha`) lose their learned rows in the same audited
+  apply (d1c). Under d9ab their protection is user-asserted (0 of the 1,655 carry a learner
+  `source`, a learner command record or, under d9ak(b), a `cli.log` grep record; the counts are
+  in [[task-22.2-repair-then-remove#r5]]), so the ENTITIES themselves are kept, protected, and
+  listed `kept: asserted-protection`; removing them is the user's explicit selector step
+  ([[#r6]]);
+- the learned-only global entities that d9ak(b)'s rule (c) attributes to the learner (a matching
+  `rmx grep` record in `~/.refmatrix/cli.log`; 90 of the store's 4,793 learned-only protected
+  entities on 2026-10-14) are purgeable whole when they are members of this apply; the plan
+  prints how many are before the apply and the user sees that count first (d9aw, [[#r3]]);
+- the 235 fixture rows in the live `query.log` are NOT removed here: they are log rows, not catalog
+  rows (d8d, mark-and-filter by readers). {#why-body}
 
 ## Requirements {#requirements}
 
-1. **R1** Run `audit` (22.1) on a COPY of the global catalog. The `orphan-root` rows with a unique
-   verifying root become repair candidates (expected ≈ 476 entities); the rest are removal
-   candidates (≈ 611).
-2. **R2** Back up the global store (an APFS clone) before the apply. The user confirms the dry-run
-   counts first.
-3. **R3** Apply through 22.2. Repairs rewrite to absolute paths, removals are tombstoned, and the
-   manifest is kept.
-4. **R4** Verify: a global grep over the repaired concepts reports 0 unreadable for them, and the
-   memory rows of the global store are untouched (count before == after).
+1. **R1 Audit on a copy, then re-audit live.** Run 22.1a's classifier on a `cp` of the global
+   store's `catalog.read.duckdb` snapshot through the ONE census procedure
+   ([[task-16.6-learned-row-validation#r7]]; s-3, r3 s-6), not on a clone of a writer slot. The
+   plan's buckets (applied split, counts measured, the probe's figures only for comparison):
+   `orphan-root:unresolved` (removed here), `orphan-root:home-readable` (held by 22.5 for the
+   user's ruling, d9b), `orphan-root:unverifiable` (kept, held, counted by reason; r3 s-3),
+   `ambiguous:root` (≈ 48, kept), `missing-file` under
+   `/pytest-of-` (≈ 1,655), `orphan-root:resolved` (moved by 22.5, or still `held` /
+   `held_for_ruling`). The probe reproduction is reported as 22.1a AC-5b states (`reproduced`
+   or `drift`, with its numbers, shown to the user beside the dry run; r3 b-1). Then
+   `removal_audit` runs against the live global daemon (read-only) to produce the manifest the
+   apply will take; its counts must match the copy's within the drift it explains.
+2. **R2 Backup and confirmation.** An APFS clone of `~/.refmatrix` is taken before the apply and
+   its path recorded in the manifest. The user confirms the live dry-run counts per bucket and the
+   manifest hash before the apply.
+3. **R3 Apply through 22.2.** {#r3} `rmx removal apply --root ~/.refmatrix --manifest ID
+   --confirm HASH`. `--root` is the global STORE root, `~/.refmatrix`, the value 22.2 R8 compares
+   with the daemon's `Path(d.root)` (m-8); `$HOME` is refused. Removals are row-level with events
+   and the intent-log manifest; entities are purged only under 22.2 R2/R5:
+   - **Learner-attributed members are purged whole (d9aw; r7 s-3).** A member that is
+     learned-only and whose protection 22.2 R5 attributes to the learner is purged whole
+     (entity, learned rows, sidecar rows, vector; restorable from the manifest). On the global
+     store no protection carries a `source` and no command record names one (22.2 R5's table),
+     so every such member is attributed by rule (c), a matching `rmx grep` record in the global
+     store's own `cli.log` ([[task-22.2-repair-then-remove#r5-grep-record]]). It is listed
+     `purged: learner (cli.log grep)` with the record's pattern. The bound is 90: on 2026-10-14
+     rule (c) attributed 90 of the global store's learned-only protected entities, class
+     members or not, and none of the 1,655 pytest-tmp ones.
+   - **The count comes first.** The live dry run (R1) prints, per bucket, `learner-attributed
+     (cli.log grep): N` and the list, beside the other counts; R2's confirmation by the user
+     covers that number. Inside its hold the apply re-classifies each member (22.2 R6), so a
+     member whose attribution changed since the dry run is skipped and counted
+     `changed_since_audit`; it never purges more than the N the user saw.
+   - **Every other member keeps its entity.** A member whose protection is user-asserted (no
+     `source`, no command record, no matching grep record) loses only its learned rows and is
+     listed `kept: asserted-protection` with its counts: the pytest-tmp entities and the rest of
+     `orphan-root:unresolved`.
+   - The 48 are written into the manifest's `kept: ambiguous` list with all their candidate
+     roots (d6a); the `home-readable` entities into `held_for_ruling` (d9b). No relative row is
+     rewritten into an absolute global entity (22 #s-3).
+   - Round 5's sentence "(d9ab) no existing global entity is purged by this class apply" is
+     WITHDRAWN: d9ak(b)'s rule (c) makes up to 90 of them purgeable (r7 s-3).
+4. **R4 Unchanged memory.** The global store's `kind=memory` row count and content hashes are equal
+   before and after.
+5. **R5 The pytest concepts.** `query/ERROR` and `query/alpha` keep any link that is not a
+   pytest-tmp entity; the concepts themselves are not removed by this task (an emptied concept is
+   an `empty-learned` candidate for a later 22.1 audit, behind the gate).
+6. **R6 The entity shells are the user's selector step (d9ab).** {#r6} After the class apply, the
+   operator prints the `kept: asserted-protection` entities per bucket (pytest-tmp,
+   `orphan-root:unresolved`) with their counts: each now has no learned row left. Removing them
+   is NOT part of the class apply. If the user wants them gone, it is an explicit selector plan
+   through 22.6's entry point ([[task-22.6-removal-entry-points#r1]]), built and shown to the
+   user, e.g. `rmx removal audit --root ~/.refmatrix --selector forget --like '%/pytest-of-%'`,
+   then applied only with `--confirm <hash>` the user gives; restorable. The bug-086 symptom
+   (AC-2) does not depend on this step: `unreadable` comes from evidence rows, which the class
+   apply already removed.
 
 ## Acceptance criteria {#acceptance}
 
-1. The dry-run counts on the copy are reported, and the user confirms them before the apply.
-2. After the apply: the repaired rows verify; the removed rows are in the manifest; the memory
-   count is unchanged; bug-086 is `fixed`.
+1. **Counts confirmed.** The copy's and the live dry run's per-bucket counts are reported, the probe
+   reproduction's verdict (`reproduced` or `drift`, 22.1a AC-5b) is printed beside them, and the
+   user's confirmation of the counts and the manifest hash is recorded before the apply. The
+   counts include, per bucket, `learner-attributed (cli.log grep): N` with its list (d9aw), and
+   N ≤ 90.
+2. **The symptom, not the touched rows (22 #s-7).** A pattern set is pre-registered in the dry-run
+   manifest before the apply: `ERROR`, `alpha`, plus every `query/*` pattern linked to an
+   `orphan-root` or pytest-tmp entity. For that set, the TOTAL global `unreadable` count reported by
+   `rmx grep` is measured before and after. After: every residual `unreadable` row is explained by
+   class (the 48 `ambiguous:root`, the `orphan-root:unverifiable` rows, 22.5's `held` /
+   `held_for_ruling` rows, or a named new row),
+   and the count of
+   unexplained residuals is 0. bug-086 is marked `fixed` only on that result.
+3. **Memory untouched.** R4's count and hashes are equal.
+4. **Restorable.** On the backup clone (never live), `restore` of the manifest returns the
+   pre-apply state by name (22.2 AC-4).
+5. **Nothing kept is lost; only the attributed are purged (d9ab, d9aw).** All 48 ambiguous
+   entities are present after the apply, with their rows; every `kept: asserted-protection`
+   entity is present and still protected, with 0 learned rows; every `purged: learner (cli.log
+   grep)` entity is absent, its rows are in the manifest, and the number purged equals the N
+   printed before the apply (AC-1). The rehearsal fixture's global store holds three
+   `orphan-root:unresolved` learned-only entities with NULL `protect_source`: G, linked from
+   `query/foo`, with a `["grep", "-n", "foo", ...]` record in the fixture's `cli.log`; K, linked
+   from `query/bar`, with no grep record for `bar`; U, linked from `query/foo`, with a
+   `["protect", "U"]` command record. Expected: N = 1 printed; G purged; K and U kept,
+   protected, 0 learned rows. Mutations, each FAILS it: "purge a NULL-source entity with no grep
+   record and no command record" (K purged); "ignore `cli.log` grep records" (G kept, N = 0);
+   "a grep record beats a user command record" (U purged).
+6. **Only the named root.** The apply was invoked with `--root` naming the global store; a dry
+   rehearsal in the sandbox shows the op refuses without it (22.2 AC-11).
+
+## Test strategy {#test-strategy}
+
+The engine's tests are 22.2's and 22.5's, inside task 23.0's sandbox (d1a/d1b). This task adds a
+sandbox rehearsal: a fixture global store seeded with relative, ambiguous, pytest-tmp and memory
+rows, run through the exact command sequence of R1-R3 against an in-process daemon with
+`$HOME`/global root redirected; no `rmx` subprocess, the 23.0 guard active. The live apply is an
+operator step (R2), never run by a test. Mutation for AC-2: measuring `unreadable` only over the
+rows the apply touched must FAIL on the rehearsal fixture (it hides a seeded residual).
+
+## Revision (2026-10-14 decision log) {#rev-2026-10-14}
+
+| finding / decision | answered in |
+|---|---|
+| d1c as amended by d8d (1,655 removed here; 235 log rows not) | [[#why]], [[#requirements]] R1, R5 |
+| d6a (48 kept) | R3; AC-5 |
+| d6b / d8c (476 via 22.5) | [[#why]]; R1 |
+| d6d (Wave 1, no 16.6 R1) | [[#root]] |
+| 22 #b-4 (count composition, probe reproduced) | R1; AC-1 |
+| 22 #b-8 (pytest rows; explicit root) | [[#why]]; R3; AC-6; [[#test-strategy]] |
+| 22 #s-3 (no rewrite into global) | R3 |
+| 22 #s-7 (symptom AC) | AC-2 |
+| DL #b-3 (rewrite R3; 22.3's prerequisites in Wave 1) | [[#root]]; R3 |
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+The re-review found 22.3 sound "modulo m-8" ([[bsd-plan16-22-spec-rereview-32dde06]]); these rows
+carry its other plan-22 items into this task.
+
+| finding / decision | answered in |
+|---|---|
+| re-review m-8 (`--root ~/.refmatrix` vs `$HOME`) | R3 (the store root; `$HOME` refused); 22.2 R8 |
+| d9b / re-review s-2 (rows readable today under no project store) | [[#why]]; R1 `home-readable` bucket held; R3 `held_for_ruling`; AC-2 residual classes |
+| re-review s-3 (census on a live clone) | R1 audits a `cp` of `catalog.read.duckdb` (22.1a AC-5b) |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan16-22-spec-rereview-r3-6091648]]. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| r3 b-1 (the reproduction gate could not pass) | R1, AC-1: the reproduction's verdict is reported, the applied split is applied (22.1a AC-5b) |
+| r3 s-3 (`orphan-root:unverifiable`) | R1 bucket (kept, held); AC-2 residual class |
+| r3 s-6 (census procedure) | R1 cites [[task-16.6-learned-row-validation#r7]] |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
+
+## Revision round 5 (2026-10-14) {#rev-round-5}
+
+Carries [[bsd-plan16-22-spec-rereview-r4-878647c]] b-2 and d9ab
+([[plan-review-2026-10-14#t11-approvals]]) into this task. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| r4 b-2 / d9ab (no existing protection is learner-attributed; user-asserted entities are never class-removed) | [[#why]] pytest bullet; R3; [[#r6]] the shells are an explicit selector step; AC-5 + mutation; counts in [[task-22.2-repair-then-remove#r5]] |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
+rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
+
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Answers [[bsd-plan16-22-spec-rereview-r7-331b414]] s-3 and d9aw
+([[plan-review-2026-10-14#t12-approvals]]). Round 6 did not touch this task; d9ak(b) stopped at
+22.2. Later rows win over round 5.
+
+| finding / decision | answered in |
+|---|---|
+| r7 s-3 / d9aw (R3 said no existing global entity is purged; AC-5's mutation tested the opposite of rule (c)) | [[#r3]] learner-attributed members purged whole, count printed first and confirmed, the rest `kept: asserted-protection`, round 5's sentence withdrawn; [[#why]] bullet; AC-1 count; AC-5 rewritten (G/K/U fixture) with the mutation restated as "purge a NULL-source entity with no grep record and no command record" plus two more |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r7-331b414]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+rel: depends-on -> [[task-22.2-repair-then-remove#r5-grep-record]]

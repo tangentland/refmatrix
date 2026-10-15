@@ -408,7 +408,7 @@ def test_memory_content_set_list_is_target_and_source_columns(tmp_path):
         con.close()
 
 
-# ---- ch-bsd r1 s-3 / bug-123: linkage_types collide by name ----------------
+# ---- ch-bsd r1 s-3 / bug-128: linkage_types collide by name ----------------
 
 def _relink(path: Path, renames: "dict[str, int]", links: "list[tuple]") -> None:
     """Move named linkage rows to new ids (as two slots that seeded or added
@@ -433,7 +433,7 @@ def _relink(path: Path, renames: "dict[str, int]", links: "list[tuple]") -> None
 
 
 def test_merge_remaps_linkage_ids_that_collide_by_name(tmp_path):
-    """bug-123: refmatrix's own snapshot vs its stale slot A failed `Duplicate
+    """bug-128: refmatrix's own snapshot vs its stale slot A failed `Duplicate
     key "name: part-of"` — one linkage name, different ids per slot. The merge
     keys linkage_types by NAME and remaps B's linkage_id in every referencing
     table, so every link keeps the linkage it named."""
