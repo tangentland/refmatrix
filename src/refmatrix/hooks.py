@@ -364,6 +364,22 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
     return block
 
 
+def _optional_project_hook(script: str) -> str:
+    """THE rendering of an optional project hook under `.claude/hooks/`.
+
+    Exit status = the script's own status when it is present and executable,
+    0 when it is absent. bug-118 (ch-bsd plan-16/22 r8, 2026-10-15): the
+    generator used `[ -x P ] && P || true`, whose `|| true` turned the enforce
+    hooks' blocking `exit 2` into 0, so `enforce-test-to-file.sh` and
+    `enforce-rmx-grep.sh` never blocked. No stderr redirect either: a gate's
+    message is the point of the gate. Every site routes through here;
+    `tests/test_bug118_optional_hook_exit.py` AST-checks for a second
+    rendering.
+    """
+    path = f'"$CLAUDE_PROJECT_DIR/.claude/hooks/{script}"'
+    return f"if [ -x {path} ]; then {path}; fi"
+
+
 def _add_enforce_entries(block: dict, project_root: "Path | None",
                          enforce: "bool | None") -> None:
     if enforce is False or (enforce is None and project_root is None):
@@ -376,24 +392,16 @@ def _add_enforce_entries(block: dict, project_root: "Path | None",
             return True                      # forced: emit whether or not the script is on disk yet
         return bool(rel is not None and rel.exists())
 
-    pre = []
-    if want(hd / "enforce-test-to-file.sh" if hd else None):
-        pre.append({"type": "command", "command":
-                    '[ -x "$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-test-to-file.sh" ] '
-                    '&& "$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-test-to-file.sh" || true'})
-    if want(hd / "enforce-rmx-grep.sh" if hd else None):
-        pre.append({"type": "command", "command":
-                    '[ -x "$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-rmx-grep.sh" ] '
-                    '&& "$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-rmx-grep.sh" || true'})
+    pre = [{"type": "command", "command": _optional_project_hook(n)}
+           for n in ("enforce-test-to-file.sh", "enforce-rmx-grep.sh")
+           if want(hd / n if hd else None)]
     if pre:
         block["hooks"].setdefault("PreToolUse", []).append(
             {"matcher": "Bash", "hooks": pre})
     if want(hd / "adr-gate.sh" if hd else None):
         block["hooks"].setdefault("PostToolUse", []).append({
             "matcher": "Edit|Write|MultiEdit|NotebookEdit",
-            "hooks": [{"type": "command", "command":
-                       '[ -x "$CLAUDE_PROJECT_DIR/.claude/hooks/adr-gate.sh" ] '
-                       '&& "$CLAUDE_PROJECT_DIR/.claude/hooks/adr-gate.sh" 2>/dev/null || true'}],
+            "hooks": [{"type": "command", "command": _optional_project_hook("adr-gate.sh")}],
         })
     if want(p20 / "compile_guardrails.py" if p20 else None):
         # The compiler seeds guardrail memories through the bridge — a memory

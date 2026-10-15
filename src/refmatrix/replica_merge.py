@@ -27,11 +27,13 @@ from __future__ import annotations
 
 import os
 import time
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
 import duckdb
 
+from refmatrix.backend import open_duckdb
 from refmatrix.duckdb_catalog import init_catalog
 
 
@@ -79,14 +81,87 @@ def merge_slots(
     t0 = time.monotonic()
 
     # ---- 1. Probe source state -----------------------------------------
-    a_ro = duckdb.connect(str(a_path), read_only=True)
-    b_ro = duckdb.connect(str(b_path), read_only=True)
-
     tables = (
         "partitions", "linkage_types", "entities", "concepts",
         "memory_content", "entity_links", "tracked_files",
         "linkage_evidence", "saved_queries", "bitmap_fragments",
     )
+    # Every connection this function opens is closed on every exit path
+    # (bug-113): a connection left open after an error kept slot A ATTACHed,
+    # and the daemon's writer reopen then failed "Unique file handle
+    # conflict" — leaving the live writer closed and unlocked.
+    a_ro = open_duckdb(a_path, read_only=True)
+    try:
+        b_ro = open_duckdb(b_path, read_only=True)
+        try:
+            a_counts, b_counts, max_entity, max_partition, max_lt = _probe(
+                a_ro, b_ro, tables)
+        finally:
+            b_ro.close()
+    finally:
+        a_ro.close()
+
+    # ---- 2. Open target + attach sources -------------------------------
+    if dry_run:
+        # Dry-run still needs a temp DB to compute the merge plan, but
+        # we can use :memory: and skip the file writes.
+        con = open_duckdb(":memory:")
+    else:
+        _unlink_target(target_path)
+        con = open_duckdb(target_path)
+    try:
+        merged_counts, remap_a, remap_b, fresh_alloc_count = _merge_into(
+            con, a_path, b_path, tables, dry_run=dry_run,
+            max_entity=max_entity, max_partition=max_partition, max_lt=max_lt)
+    except BaseException:
+        con.close()
+        if not dry_run:
+            _unlink_target(target_path)          # never leave a half-built merge
+        raise
+    con.close()
+
+    elapsed_ms = int((time.monotonic() - t0) * 1000)
+    target_size = None
+    if not dry_run and target_path.exists():
+        target_size = target_path.stat().st_size
+
+    return {
+        "a_counts": a_counts,
+        "b_counts": b_counts,
+        "merged_counts": merged_counts,
+        "remap": {
+            "a_loser_count": len(remap_a),
+            "b_loser_count": len(remap_b),
+            "fresh_alloc_edge_cases": fresh_alloc_count,
+        },
+        "elapsed_ms": elapsed_ms,
+        "target_size_bytes": target_size,
+        "dry_run": dry_run,
+    }
+
+
+def _unlink_target(target_path: Path) -> None:
+    """Remove a merge target and its WAL (a stale or half-built file)."""
+    for p in (target_path, target_path.with_name(target_path.name + ".wal")):
+        if p.exists():
+            p.unlink()
+
+
+def _columns(con, table: str) -> "list[str]":
+    """The target table's columns, in order — read off the catalog, never
+    hand-listed (a hand-listed SET dropped `vectors_partition`, bug-113)."""
+    return [r[0] for r in con.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = ? AND table_catalog = current_database() "
+        "AND table_schema = 'main' ORDER BY ordinal_position", [table]).fetchall()]
+
+
+def _set_all(con, table: str, src: str, key: str) -> str:
+    return ",\n            ".join(
+        f"{c} = {src}.{c}" for c in _columns(con, table) if c != key)
+
+
+def _probe(a_ro, b_ro, tables) -> tuple:
     a_counts = {t: _table_count(a_ro, t) for t in tables}
     b_counts = {t: _table_count(b_ro, t) for t in tables}
 
@@ -102,23 +177,15 @@ def merge_slots(
         _scalar(a_ro.execute("SELECT COALESCE(MAX(id),0) FROM linkage_types")),
         _scalar(b_ro.execute("SELECT COALESCE(MAX(id),0) FROM linkage_types")),
     )
-    a_ro.close()
-    b_ro.close()
+    return a_counts, b_counts, max_entity, max_partition, max_lt
 
-    # ---- 2. Open target + attach sources -------------------------------
-    if dry_run:
-        # Dry-run still needs a temp DB to compute the merge plan, but
-        # we can use :memory: and skip the file writes.
-        con = duckdb.connect(":memory:")
-    else:
-        if target_path.exists():
-            target_path.unlink()
-        # Also drop a stale .wal if one happens to be lying next to it.
-        wal = target_path.with_name(target_path.name + ".wal")
-        if wal.exists():
-            wal.unlink()
-        con = duckdb.connect(str(target_path))
 
+def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
+                max_entity: int, max_partition: int, max_lt: int) -> tuple:
+    """Build the merge on `con` (the target). Rows are copied BY NAME: the
+    target's schema is `init_catalog`'s, the Store's own (bug-113), and a
+    positional `SELECT *` silently misplaces same-typed columns whenever a
+    slot's column order differs."""
     init_catalog(con, sequence_starts={
         "seq_partitions_id":    max_partition + 1,
         "seq_entities_id":      max_entity + REMAP_HEADROOM + 1,
@@ -129,15 +196,15 @@ def merge_slots(
     con.execute(f"ATTACH '{b_path}' AS b (READ_ONLY)")
 
     # ---- 3. Lookup tables: partitions + linkage_types ------------------
-    con.execute("INSERT INTO partitions SELECT * FROM a.partitions")
+    con.execute("INSERT INTO partitions BY NAME SELECT * FROM a.partitions")
     con.execute("""
-        INSERT INTO partitions
+        INSERT INTO partitions BY NAME
         SELECT * FROM b.partitions
         WHERE id NOT IN (SELECT id FROM partitions)
     """)
-    con.execute("INSERT INTO linkage_types SELECT * FROM a.linkage_types")
+    con.execute("INSERT INTO linkage_types BY NAME SELECT * FROM a.linkage_types")
     con.execute("""
-        INSERT INTO linkage_types
+        INSERT INTO linkage_types BY NAME
         SELECT * FROM b.linkage_types
         WHERE id NOT IN (SELECT id FROM linkage_types)
     """)
@@ -185,45 +252,34 @@ def merge_slots(
 
     # ---- 5. entities: drop losers, union, newer-wins on shared ids -----
     con.execute("""
-        INSERT INTO entities
+        INSERT INTO entities BY NAME
         SELECT ae.* FROM a.entities ae
         LEFT JOIN remap_a r ON r.loser_id = ae.id
         WHERE r.loser_id IS NULL
     """)
     con.execute("""
-        INSERT INTO entities
+        INSERT INTO entities BY NAME
         SELECT be.* FROM b.entities be
         LEFT JOIN remap_b r ON r.loser_id = be.id
         LEFT JOIN entities m ON m.id = be.id
         WHERE r.loser_id IS NULL AND m.id IS NULL
     """)
-    con.execute("""
+    con.execute(f"""
         UPDATE entities AS m
-        SET partition_id = be.partition_id,
-            kind = be.kind,
-            path = be.path,
-            name = be.name,
-            tldr = be.tldr,
-            meta = be.meta,
-            created_at = be.created_at,
-            updated_at = be.updated_at,
-            protected = be.protected,
-            noise = be.noise,
-            canonical_name = be.canonical_name,
-            vectors_updated_at = be.vectors_updated_at
+        SET {_set_all(con, "entities", "be", "id")}
         FROM b.entities be
         WHERE m.id = be.id AND be.updated_at > m.updated_at
     """)
 
     # ---- 6. concepts: drop loser ids, union --------------------------
     con.execute("""
-        INSERT INTO concepts
+        INSERT INTO concepts BY NAME
         SELECT ac.* FROM a.concepts ac
         LEFT JOIN remap_a r ON r.loser_id = ac.id
         WHERE r.loser_id IS NULL
     """)
     con.execute("""
-        INSERT INTO concepts
+        INSERT INTO concepts BY NAME
         SELECT bc.* FROM b.concepts bc
         LEFT JOIN remap_b r ON r.loser_id = bc.id
         LEFT JOIN concepts m ON m.id = bc.id
@@ -233,27 +289,22 @@ def merge_slots(
     # ---- 7. memory_content: newer-wins on entity_id; remap losers ------
     # 7a. Insert non-loser-side memory_content rows from each slot.
     con.execute("""
-        INSERT INTO memory_content
+        INSERT INTO memory_content BY NAME
         SELECT mc.* FROM a.memory_content mc
         LEFT JOIN remap_a r ON r.loser_id = mc.entity_id
         WHERE r.loser_id IS NULL
     """)
     con.execute("""
-        INSERT INTO memory_content
+        INSERT INTO memory_content BY NAME
         SELECT mc.* FROM b.memory_content mc
         LEFT JOIN remap_b r ON r.loser_id = mc.entity_id
         LEFT JOIN memory_content m ON m.entity_id = mc.entity_id
         WHERE r.loser_id IS NULL AND m.entity_id IS NULL
     """)
     # 7b. For shared entity_id rows, pull in B's content when newer.
-    con.execute("""
+    con.execute(f"""
         UPDATE memory_content AS m
-        SET content = bc.content,
-            mtype = bc.mtype,
-            tags = bc.tags,
-            metadata = bc.metadata,
-            created_at = bc.created_at,
-            updated_at = bc.updated_at
+        SET {_set_all(con, "memory_content", "bc", "entity_id")}
         FROM b.memory_content bc
         WHERE m.entity_id = bc.entity_id AND bc.updated_at > m.updated_at
     """)
@@ -310,7 +361,7 @@ def merge_slots(
 
     # ---- 8. entity_links: remap both id columns, dedup by PK ----------
     con.execute("""
-        INSERT INTO entity_links
+        INSERT INTO entity_links BY NAME
         SELECT COALESCE(ra_e.canonical_id, al.entity_id) AS entity_id,
                al.linkage_id,
                COALESCE(ra_c.canonical_id, al.concept_id) AS concept_id,
@@ -321,7 +372,7 @@ def merge_slots(
         ON CONFLICT (entity_id, linkage_id, concept_id) DO NOTHING
     """)
     con.execute("""
-        INSERT INTO entity_links
+        INSERT INTO entity_links BY NAME
         SELECT COALESCE(rb_e.canonical_id, bl.entity_id) AS entity_id,
                bl.linkage_id,
                COALESCE(rb_c.canonical_id, bl.concept_id) AS concept_id,
@@ -334,7 +385,7 @@ def merge_slots(
 
     # ---- 9. linkage_evidence: no PK, UNION DISTINCT with remap --------
     con.execute("""
-        INSERT INTO linkage_evidence
+        INSERT INTO linkage_evidence BY NAME
         SELECT DISTINCT * FROM (
             SELECT COALESCE(ra_e.canonical_id, le.entity_id) AS entity_id,
                    le.linkage_id,
@@ -355,8 +406,8 @@ def merge_slots(
     """)
 
     # ---- 10. tracked_files: composite PK, newer last_synced wins ------
-    con.execute("INSERT INTO tracked_files SELECT * FROM a.tracked_files ON CONFLICT DO NOTHING")
-    con.execute("INSERT INTO tracked_files SELECT * FROM b.tracked_files ON CONFLICT DO NOTHING")
+    con.execute("INSERT INTO tracked_files BY NAME SELECT * FROM a.tracked_files ON CONFLICT DO NOTHING")
+    con.execute("INSERT INTO tracked_files BY NAME SELECT * FROM b.tracked_files ON CONFLICT DO NOTHING")
     con.execute("""
         UPDATE tracked_files AS m
         SET mtime = bt.mtime, last_synced = bt.last_synced
@@ -367,13 +418,13 @@ def merge_slots(
     """)
 
     # ---- 11. saved_queries: composite PK, A wins on conflict ---------
-    con.execute("INSERT INTO saved_queries SELECT * FROM a.saved_queries ON CONFLICT DO NOTHING")
-    con.execute("INSERT INTO saved_queries SELECT * FROM b.saved_queries ON CONFLICT DO NOTHING")
+    con.execute("INSERT INTO saved_queries BY NAME SELECT * FROM a.saved_queries ON CONFLICT DO NOTHING")
+    con.execute("INSERT INTO saved_queries BY NAME SELECT * FROM b.saved_queries ON CONFLICT DO NOTHING")
 
     # ---- 12. bitmap_fragments: copy union; daemon recomputes ---------
-    con.execute("INSERT INTO bitmap_fragments SELECT * FROM a.bitmap_fragments")
+    con.execute("INSERT INTO bitmap_fragments BY NAME SELECT * FROM a.bitmap_fragments")
     con.execute("""
-        INSERT INTO bitmap_fragments
+        INSERT INTO bitmap_fragments BY NAME
         SELECT * FROM b.bitmap_fragments b
         WHERE NOT EXISTS (
             SELECT 1 FROM bitmap_fragments m
@@ -389,26 +440,7 @@ def merge_slots(
     con.execute("DETACH b")
     if not dry_run:
         con.execute("CHECKPOINT")
-    con.close()
-
-    elapsed_ms = int((time.monotonic() - t0) * 1000)
-    target_size = None
-    if not dry_run and target_path.exists():
-        target_size = target_path.stat().st_size
-
-    return {
-        "a_counts": a_counts,
-        "b_counts": b_counts,
-        "merged_counts": merged_counts,
-        "remap": {
-            "a_loser_count": len(remap_a),
-            "b_loser_count": len(remap_b),
-            "fresh_alloc_edge_cases": fresh_alloc_count,
-        },
-        "elapsed_ms": elapsed_ms,
-        "target_size_bytes": target_size,
-        "dry_run": dry_run,
-    }
+    return merged_counts, remap_a, remap_b, fresh_alloc_count
 
 
 def audit_via_writer(
@@ -522,19 +554,43 @@ def audit_slots(a_path: Path, b_path: Path) -> dict[str, Any]:
     """Lightweight read-only drift detector — counts per-table row diffs +
     entity (p,k,n) collisions. No mutation. Cheap; runs in well under a
     second on a multi-100-MB catalog."""
-    a_ro = duckdb.connect(str(a_path), read_only=True)
-    b_ro = duckdb.connect(str(b_path), read_only=True)
     tables = (
         "partitions", "linkage_types", "entities", "concepts",
         "memory_content", "entity_links", "tracked_files",
         "linkage_evidence", "saved_queries", "bitmap_fragments",
     )
-    a_counts = {t: _table_count(a_ro, t) for t in tables}
-    b_counts = {t: _table_count(b_ro, t) for t in tables}
-    a_ro.close()
-    b_ro.close()
+    # Closed on every path, as in merge_slots (bug-113).
+    with closing(open_duckdb(a_path, read_only=True)) as a_ro, \
+            closing(open_duckdb(b_path, read_only=True)) as b_ro:
+        a_counts, b_counts, *_ = _probe(a_ro, b_ro, tables)
 
-    mem = duckdb.connect(":memory:")
+    with closing(duckdb.connect(":memory:")) as mem:
+        a_only, b_only, same_id_diff_payload, pkn_collisions, mc_a_only, mc_b_only = \
+            _audit_overlap(mem, a_path, b_path)
+
+    diffs = [t for t in tables if a_counts[t] != b_counts[t]]
+
+    return {
+        "a_counts": a_counts,
+        "b_counts": b_counts,
+        "tables_with_diff": diffs,
+        "entities": {
+            "a_only_ids": a_only,
+            "b_only_ids": b_only,
+            "same_id_diff_payload": same_id_diff_payload,
+            "pkn_collisions_different_ids": pkn_collisions,
+        },
+        "memory_content": {
+            "a_only_entity_ids": mc_a_only,
+            "b_only_entity_ids": mc_b_only,
+        },
+        "drift_detected": bool(
+            diffs or a_only or b_only or same_id_diff_payload or pkn_collisions
+        ),
+    }
+
+
+def _audit_overlap(mem, a_path: Path, b_path: Path) -> tuple:
     mem.execute(f"ATTACH '{a_path}' AS a (READ_ONLY)")
     mem.execute(f"ATTACH '{b_path}' AS b (READ_ONLY)")
 
@@ -565,25 +621,4 @@ def audit_slots(a_path: Path, b_path: Path) -> dict[str, Any]:
     mc_b_only = _scalar(mem.execute(
         "SELECT COUNT(*) FROM b.memory_content WHERE entity_id NOT IN (SELECT entity_id FROM a.memory_content)"
     ))
-    mem.close()
-
-    diffs = [t for t in tables if a_counts[t] != b_counts[t]]
-
-    return {
-        "a_counts": a_counts,
-        "b_counts": b_counts,
-        "tables_with_diff": diffs,
-        "entities": {
-            "a_only_ids": a_only,
-            "b_only_ids": b_only,
-            "same_id_diff_payload": same_id_diff_payload,
-            "pkn_collisions_different_ids": pkn_collisions,
-        },
-        "memory_content": {
-            "a_only_entity_ids": mc_a_only,
-            "b_only_entity_ids": mc_b_only,
-        },
-        "drift_detected": bool(
-            diffs or a_only or b_only or same_id_diff_payload or pkn_collisions
-        ),
-    }
+    return a_only, b_only, same_id_diff_payload, pkn_collisions, mc_a_only, mc_b_only

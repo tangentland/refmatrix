@@ -10,6 +10,7 @@ from pathlib import Path
 
 import duckdb
 
+from refmatrix.backend import open_duckdb
 from refmatrix.duckdb_catalog import (
     SEQUENCES,
     TABLE_LOAD_ORDER,
@@ -56,7 +57,7 @@ def migrate_catalog(
             )
         duckdb_path.unlink()
 
-    con = duckdb.connect(str(duckdb_path))
+    con = open_duckdb(duckdb_path)
     try:
         con.execute("INSTALL sqlite_scanner")
         con.execute("LOAD sqlite_scanner")

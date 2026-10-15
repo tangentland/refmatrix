@@ -1440,6 +1440,26 @@ class Daemon:
             self._fast_exit_if_invalidated(exc, where)
         _t.Thread(target=_later, name="rmxd-deferred-exit", daemon=True).start()
 
+    def _writer_lost(self, where: str, exc: BaseException) -> None:
+        """The writer could not be reopened: this daemon holds no lock on its
+        own catalog, so another process could open it (bug-113). Log, stop
+        serving, and exit after RMX_DEGRADE_EXIT_S (default 2) so the op's
+        reply flushes first; launchd respawns a daemon that takes the lock."""
+        import threading as _t
+        self._log(f"writer-lost: {where}: {exc!r}; daemon exiting for respawn")
+        self._shutdown_event.set()
+        self._stop = True
+        delay = float(os.environ.get("RMX_DEGRADE_EXIT_S", "2") or "2")
+
+        def _later():
+            time.sleep(delay)
+            try:
+                if self.log_fh is not None:
+                    self.log_fh.flush()
+            finally:
+                os._exit(2)
+        _t.Thread(target=_later, name="rmxd-writer-lost-exit", daemon=True).start()
+
     def _fast_exit_if_invalidated(self, exc: BaseException, where: str) -> None:
         """If `exc` looks like DuckDB index-drift / DB-invalidation,
         log + exit hard so the supervisor can spawn a fresh daemon
@@ -5482,6 +5502,30 @@ def _op_replica_audit(d: Daemon, args: dict) -> dict:
     return report
 
 
+def _reopen_writer_after_merge(d: Daemon, slot: str, where: str) -> "str | None":
+    """THE writer reopen for every `_op_replica_merge` exit (bug-113).
+
+    The merge closes the writer, so an exit that does not reopen it leaves the
+    live slot unlocked: another process can open it (ch-bsd bug-110 r1 #s-1).
+    Opens the Store on `slot` and its connection — the DuckDB file lock — then
+    repoints the read replica. Returns None on success. On failure the daemon
+    holds no lock on its own catalog and cannot serve writes safely, so it
+    hands off to `_writer_lost` (exit for the supervisor's respawn) and
+    returns the error for the op's reply."""
+    try:
+        st = Store(d.root, partition=d.partition)
+        st.db_path = d._replica_file(slot)
+        st.init()
+        st._connect()
+    except Exception as exc:
+        d._writer_lost(f"replica merge ({where}): writer reopen on slot {slot}", exc)
+        return f"writer reopen on slot {slot} FAILED ({exc!r}); daemon exiting for respawn"
+    d.store = st
+    d._active_slot = slot
+    d._refresh_read_only_link()
+    return None
+
+
 def _op_replica_merge(d: Daemon, args: dict) -> dict:
     """Merge slots A and B into one canonical catalog and atomically install
     it on both slots. Drift recovery for unlogged-write data loss.
@@ -5569,35 +5613,22 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
         # it before reopening the writer.
         tmp_target = d.root / "catalog.merge.tmp.duckdb"
         try:
-            report = rm.merge_slots(a_path, b_path, tmp_target)
+            # bug-113: `dry_run` was never passed, so a dry run built the
+            # whole merge on disk. merge_slots closes every connection it
+            # opened and removes a half-built target on any error.
+            report = rm.merge_slots(a_path, b_path, tmp_target, dry_run=dry_run)
         except Exception as exc:
-            try:
-                d.store = Store(d.root, partition=d.partition)
-                d.store.db_path = d._replica_file(prev_writer)
-                d.store.init()
-                d._active_slot = prev_writer
-                d._refresh_read_only_link()
-            except Exception as rexc:
-                d._log(f"merge: failed AND reopen failed: {rexc!r}")
-            return {"enabled": True, "ok": False,
-                    "error": f"merge build: {exc!r}"}
+            err = f"merge build: {exc!r}"
+            rerr = _reopen_writer_after_merge(d, prev_writer, "merge build failed")
+            if rerr:
+                err += f"; {rerr}"
+            return {"enabled": True, "ok": False, "error": err}
 
         if dry_run:
-            # Throw away the merged file; reopen the prior writer slot.
-            try:
-                if tmp_target.exists():
-                    tmp_target.unlink()
-            except OSError as exc:
-                d._log(f"dry_run: unlink tmp_target: {exc!r}")
-            try:
-                d.store = Store(d.root, partition=d.partition)
-                d.store.db_path = d._replica_file(prev_writer)
-                d.store.init()
-                d._active_slot = prev_writer
-                d._refresh_read_only_link()
-            except Exception as exc:
-                return {"enabled": True, "ok": False,
-                        "error": f"dry_run reopen: {exc!r}"}
+            # Nothing was written; reopen the prior writer slot.
+            rerr = _reopen_writer_after_merge(d, prev_writer, "dry run")
+            if rerr:
+                return {"enabled": True, "ok": False, "error": f"dry_run reopen: {rerr}"}
             elapsed_ms = int((time.monotonic() - t0) * 1000)
             report["enabled"] = True
             report["ok"] = True
@@ -5637,17 +5668,10 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
             return {"enabled": True, "ok": False,
                     "error": f"swap: {exc!r}"}
 
-        # 4. Reopen writer on slot A.
-        try:
-            d.store = Store(d.root, partition=d.partition)
-            d.store.db_path = d._replica_file("A")
-            d.store.init()
-        except Exception as exc:
-            return {"enabled": True, "ok": False,
-                    "error": f"post-merge reopen: {exc!r}"}
-
-        # 5. Point read replica at B.
-        d._refresh_read_only_link()
+        # 4. Reopen writer on slot A; 5. point the read replica at B.
+        rerr = _reopen_writer_after_merge(d, "A", "post-merge")
+        if rerr:
+            return {"enabled": True, "ok": False, "error": f"post-merge reopen: {rerr}"}
 
     # merge_slots wrote the union with direct SQL — zero log events — so
     # facts.log still describes a pre-merge slot. Snapshot it from the merged
