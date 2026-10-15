@@ -181,3 +181,13 @@ session with `"-vv"` in `_run_inner` (pytest does not truncate at verbosity 2), 
   ch-test-engineer.
 - AC-4's `telemetry.is_test_artifact_row` hook-in belongs to 21.1 (it owns the predicate); the
   check here keys on the tag, `/pytest-of-` and the d9g shape.
+
+## Test gaps closed (ch-test-engineer, 2026-10-15) {#testgaps-closed}
+
+Commit `b977831`. [[#red-defect]]: `_run_inner` passes `-vv` (RED 3 failed at `4292e18` under
+`| tee`, GREEN after). [[#limits]]'s three uncommitted items are now tests: the round-10 legs in
+`tests/test_sandbox_child_extensions.py` (10, exits by name, one literal pin, listener dirs
+removed); d9bo #5 in `tests/test_sandbox_refusal.py::test_a_swallowed_violation_still_fails_its_test`;
+the learn.off AC in `tests/test_sandbox_redirect.py::test_real_global_learn_off_is_invisible_to_a_sandboxed_test`.
+`DELIBERATE_PROBE_MODULES` gains the new module. Mutations under the decoy-home gate
+(`task-23.0-testgaps-mutations.log`): 15 killed, 1 equivalent (MX9, replaced by MX9b, killed).
