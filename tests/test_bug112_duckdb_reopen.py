@@ -258,9 +258,16 @@ def test_every_file_attach_goes_through_attach_file():
             if isinstance(fn, ast.FunctionDef) and fn.name == "attach_file" \
                     and py.name == "backend.py":
                 allowed |= {id(n) for n in ast.walk(fn)}
+        # ch-bsd r3 m-r3-2: DuckDB SQL is case-insensitive, so the head of an
+        # f-string (never prose) is matched in any case: f"attach {p!r} as x".
+        fhead = re.compile(r"^\s*ATTACH\s", re.I)
+        heads = {id(j.values[0]) for j in ast.walk(tree)
+                 if isinstance(j, ast.JoinedStr) and j.values
+                 and isinstance(j.values[0], ast.Constant)}
         for n in ast.walk(tree):
             if isinstance(n, ast.Constant) and isinstance(n.value, str) \
-                    and (quoted.search(n.value) or leading.search(n.value)) \
+                    and (quoted.search(n.value) or leading.search(n.value)
+                         or (id(n) in heads and fhead.search(n.value))) \
                     and id(n) not in allowed:
                 stray.append(f"{py.relative_to(SRC)}:{n.lineno}")
     assert not stray, f"file ATTACH outside backend.attach_file: {stray}"
@@ -656,3 +663,38 @@ def test_shut_waits_for_statements_in_flight_and_refuses_new_ones(tmp_path):
     th.join(30)
     assert out.get("v") == 2, out
     assert inst.base_closed
+
+
+def test_a_drain_that_times_out_is_logged_as_deferred_not_closed(tmp_path, caplog, monkeypatch):
+    """ch-bsd r3 m-r3-3: after a drain timeout `shut` defers the close, but the
+    caller still logged "interrupted and closed". The statement is held in
+    flight at the protocol level; the drain budget is shortened (a module
+    constant) so the timeout path is taken."""
+    import logging
+    import threading
+    import time
+    monkeypatch.setattr(backend_mod, "_DRAIN_S", 0.2)
+    p = tmp_path / "catalog.A.duckdb"
+    _make(p, 1)
+    r = DuckDBBackend().connect(p, read_only=True)
+    inst = r._duck._inst
+    inst.enter()
+    _replace(p, 2)
+    out: dict = {}
+
+    def write_open():
+        w = DuckDBBackend().connect(p)
+        out["v"] = w.execute("SELECT v FROM t").fetchone()[0]
+        w.close()
+
+    with caplog.at_level(logging.WARNING, logger="refmatrix.backend"):
+        th = threading.Thread(target=write_open)
+        th.start()
+        time.sleep(0.6)
+        assert not inst.base_closed
+        inst.leave()                                  # the deferred close happens here
+        th.join(30)
+    msgs = [x.getMessage() for x in caplog.records]
+    assert any("DEFERRED" in m for m in msgs), msgs
+    assert not any("interrupted and closed" in m for m in msgs), msgs
+    assert out.get("v") == 2 and inst.base_closed

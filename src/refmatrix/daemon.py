@@ -708,6 +708,16 @@ def _recv_line(s: socket.socket, timeout: float,
 LEARN_DRAIN_BUDGET_S = float(os.environ.get("RMX_LEARN_DRAIN_BUDGET_S") or 5.0)
 
 
+class SlotRepairError(RuntimeError):
+    """`Daemon._repair_missing_slot_locked` failed; `stage` says where —
+    "clone" (the copy of the surviving slot) or "reopen" (the writer reopen
+    after it). ch-bsd r3 m-r3-3: one message for both named the wrong event."""
+
+    def __init__(self, stage: str, msg: str):
+        super().__init__(f"{stage}: {msg}")
+        self.stage = stage
+
+
 class Daemon:
     def __init__(self, root: Path, *, partition: str | None = None,
                  watch_root: "Path | list[Path] | None" = None,
@@ -1496,9 +1506,13 @@ class Daemon:
         current = marker.read_text().strip() if marker.exists() else ""
         if current not in ("A", "B") or not self._replica_file(current).exists():
             marker.write_text(survivor)
-        self._reopen_writer(marker.read_text().strip())
+        try:
+            self._reopen_writer(marker.read_text().strip())
+        except Exception as exc:
+            raise SlotRepairError("reopen", f"writer reopen after cloning {survivor} -> "
+                                  f"{missing} failed") from exc
         if clone_exc is not None:
-            raise clone_exc
+            raise SlotRepairError("clone", f"clone {survivor} -> {missing} failed") from clone_exc
         log_size = self.store.log_path.stat().st_size \
             if self.store.log_path.exists() else 0
         self._write_slot_offset("A", log_size)
@@ -5703,6 +5717,7 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
         # os.replace for atomicity within a filesystem. Drop stale .wal
         # files on both slots so DuckDB sees a clean snapshot.
         installed_a = False
+        swap_failed: "dict | None" = None
         try:
             for slot in ("A", "B"):
                 slot_path = d._replica_file(slot)
@@ -5763,20 +5778,47 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
                 # merge/audit and the reader link do not wait for a restart.
                 try:
                     d._repair_missing_slot_locked("A", "B")
-                except Exception as rexc:
-                    d._log(f"merge: swap failed: re-clone of catalog.B.duckdb failed: {rexc!r}")
-                    err += (f"; catalog.B.duckdb is missing and its re-clone failed ({rexc!r}): "
-                            "restart the daemon to re-clone it from A")
+                except SlotRepairError as rexc:
+                    # ch-bsd r3 m-r3-3: say WHICH stage failed
+                    d._log(f"merge: swap failed: B repair failed at the {rexc.stage} stage: "
+                           f"{rexc!r}")
+                    if rexc.stage == "clone":
+                        err += (f"; catalog.B.duckdb is missing and its re-clone failed "
+                                f"({rexc.__cause__!r}): restart the daemon to re-clone it from A")
+                    else:
+                        err += (f"; the writer reopen on A after re-cloning B failed "
+                                f"({rexc.__cause__!r})")
                     if d.store is None or getattr(d.store, "_conn", None) is None:
-                        rerr = _reopen_writer_after_merge(d, "A", "re-clone failed")
+                        rerr = _reopen_writer_after_merge(d, "A", "B repair failed")
                         if rerr:
                             err += f"; {rerr}"
-            return {"enabled": True, "ok": False, "error": err}
+            swap_failed = {"enabled": True, "ok": False, "error": err,
+                           "_compact": installed_a and d.store is not None
+                           and getattr(d.store, "_conn", None) is not None}
 
-        # 4. Reopen writer on slot A; 5. point the read replica at B.
-        rerr = _reopen_writer_after_merge(d, "A", "post-merge")
-        if rerr:
-            return {"enabled": True, "ok": False, "error": f"post-merge reopen: {rerr}"}
+        if swap_failed is None:
+            # 4. Reopen writer on slot A; 5. point the read replica at B.
+            rerr = _reopen_writer_after_merge(d, "A", "post-merge")
+            if rerr:
+                return {"enabled": True, "ok": False, "error": f"post-merge reopen: {rerr}"}
+
+    if swap_failed is not None:
+        # ch-bsd r3 m-r3-1: once A holds the merge and the writer is open on it,
+        # the store IS post-merge whatever the swap did to B — so facts.log is
+        # re-snapshotted exactly as on success, or a rebuild from the log drops
+        # the rows the merge recovered. (Outside `_store_lock`: the compaction
+        # takes it itself.)
+        if swap_failed.pop("_compact"):
+            try:
+                d._compact_factslog_if_needed(force=True)
+            except Exception as cexc:
+                d._log(f"merge: swap failed: facts.log snapshot of the merged A failed: {cexc!r}")
+                swap_failed["error"] += (f"; facts.log snapshot of the merged catalog failed "
+                                         f"({cexc!r}): a rebuild from the log would drop the "
+                                         "merged rows until it is compacted")
+        else:
+            swap_failed.pop("_compact", None)
+        return swap_failed
 
     # merge_slots wrote the union with direct SQL — zero log events — so
     # facts.log still describes a pre-merge slot. Snapshot it from the merged

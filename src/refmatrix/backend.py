@@ -171,7 +171,10 @@ class _ROInstance:
         self.base_closed = True
         self.base.close()
 
-    def shut(self, *, interrupt: bool) -> None:
+    def shut(self, *, interrupt: bool) -> bool:
+        """Stop, interrupt, drain, close. Returns True when the instance is
+        closed now, False when the close is deferred to the last running
+        statement (ch-bsd r3 m-r3-3: the caller logged "closed" either way)."""
         with self.cv:
             self.closed = True
             live = list(self.handles)
@@ -186,10 +189,8 @@ class _ROInstance:
             if self.cv.wait_for(lambda: self.inflight == 0, timeout=_DRAIN_S):
                 if not self.base_closed:
                     self._close_base_locked()
-            else:
-                _log.warning("open_duckdb: %d statement(s) still running on a reader of "
-                             "replaced file %s after %.1fs; it closes when they finish",
-                             self.inflight, self.key, _DRAIN_S)
+                return True
+            return False
 
 
 def _drop_handle(inst: _ROInstance, cur, ref) -> None:
@@ -303,11 +304,17 @@ def _close_stale_holders(key: str, p: str) -> int:
         _log.warning("open_duckdb: closed a writer of replaced file %s (inode %d -> %d) "
                      "before reopening it for write (bug-112)", p, fid[1], now[1])
     for inst in stale_r:
-        inst.shut(interrupt=True)
+        old_ino = inst.fid[1] if inst.fid else -1
+        if inst.shut(interrupt=True):
+            _log.warning("open_duckdb: interrupted and closed a reader of replaced file %s "
+                         "(inode %d -> %d) before reopening it for write (bug-112)",
+                         p, old_ino, now[1])
+        else:
+            _log.warning("open_duckdb: interrupted a reader of replaced file %s (inode %d -> "
+                         "%d); %d statement(s) still running after %.1fs, so its close is "
+                         "DEFERRED to the last of them (bug-112)",
+                         p, old_ino, now[1], inst.inflight, _DRAIN_S)
         closed += 1
-        _log.warning("open_duckdb: interrupted and closed a reader of replaced file %s "
-                     "(inode %d -> %d) before reopening it for write (bug-112)",
-                     p, inst.fid[1] if inst.fid else -1, now[1])
     return closed
 
 

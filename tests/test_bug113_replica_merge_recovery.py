@@ -530,6 +530,9 @@ def test_copy2_swap_failure_reclones_b_and_keeps_the_writer(tmp_path, monkeypatc
     import shutil as _sh
     from refmatrix import daemon as dm
     d, root = _daemon(tmp_path, "B")
+    # a live store always has a facts.log; this one describes neither slot's
+    # seeded rows (they were written with direct SQL, as the merge writes)
+    d.store.log_path.write_text("")
 
     def bad_copy2(src, dst, *a, **k):
         raise OSError(28, "No space left on device (injected)")
@@ -549,6 +552,13 @@ def test_copy2_swap_failure_reclones_b_and_keeps_the_writer(tmp_path, monkeypatc
         assert d.store.db_path.name == "catalog.A.duckdb"
         ok, err = _child_can_open(root / "catalog.A.duckdb")
         assert not ok and "lock" in err.lower(), err
+        # ch-bsd r3 m-r3-1: merge_slots writes the union with direct SQL and
+        # logs zero events, so facts.log must be re-snapshotted from the merged
+        # catalog (as the success path does) or a rebuild from the log drops
+        # the recovered rows. `b-only.md` exists only in slot B's rows.
+        log = d.store.log_path
+        assert log.exists() and "b-only.md" in log.read_text(), \
+            "facts.log still describes a pre-merge slot"
     finally:
         d.store.close()
 
@@ -588,3 +598,35 @@ def test_audit_via_writer_reports_partition_collisions_as_drift(tmp_path):
         w.close()
     assert rep["drift_detected"] is True
     assert rep.get("partition_collisions") and "collide" in " ".join(rep["partition_collisions"]), rep
+
+
+def test_copy2_swap_failure_whose_repair_reopen_fails_names_the_reopen(tmp_path, monkeypatch):
+    """ch-bsd r3 m-r3-3: when the reopen INSIDE the B repair raised, the op
+    said "re-clone of catalog.B.duckdb failed … restart". The second
+    `_reopen_writer` call (the repair's) is made to fail once; the clone ran."""
+    import shutil as _sh
+    from refmatrix import daemon as dm
+    d, root = _daemon(tmp_path, "A")
+    real = d._reopen_writer
+    calls = []
+
+    def flaky_reopen(slot=None):
+        calls.append(slot)
+        if len(calls) == 2:
+            raise OSError("simulated reopen failure inside the B repair")
+        return real(slot)
+
+    def bad_copy2(*a, **k):
+        raise OSError(28, "No space left on device (injected)")
+    monkeypatch.setattr(_sh, "copy2", bad_copy2)
+    monkeypatch.setattr(d, "_reopen_writer", flaky_reopen)
+    try:
+        r = dm._op_replica_merge(d, {"dry_run": False})
+        assert r.get("ok") is False, r
+        assert "writer reopen on A after re-cloning B failed" in r["error"], r
+        assert "re-clone failed" not in r["error"], r
+        assert (root / "catalog.B.duckdb").exists()
+        monkeypatch.undo()
+        _assert_writer_open_and_locked(d, root)
+    finally:
+        d.store.close()
