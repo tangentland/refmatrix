@@ -23,9 +23,13 @@ four interfaces this plan fixes, so every spec choice below is made with them in
 1. `stm.pre_prompt_state` / `PrePromptState` and the pre-prompt snapshot (19.0 R7, 21.1 R9): the
    race-free STM state before a prompt;
 2. 19.6's topic cache and frozen snapshots (`<cid>` = hash of the member set, frozen label,
-   first-collapse `turn`; one writer, one home), with identity decided by the pure
-   `stm.derive_snapshots(graph, cache)`, `stm.topic_hubs(cache)` and `stm.snapshot_eligible`
-   (d9ax amended by d9bm), so helix can recompute topic identity from the cache alone;
+   first-collapse `turn`; one writer, one home; the cache file carries `schema: 1` and each
+   record a `state`), with identity decided by the pure `stm.derive_snapshots(graph, cache) ->
+   (cache, topic_match)`, `stm.match_snapshots(live, cache) -> {idx: cid or None}` (the ONE
+   assignment: hubs once, defined order, highest J, one live cluster per snapshot),
+   `stm.topic_hubs(cache)`, `stm.snapshot_eligible` and `stm.member_jaccard` (d9ax amended by
+   d9bm; round-9 #s9-1), so helix can recompute topic identity, including which live cluster
+   each snapshot stands for, from the cache alone by importing `match_snapshots`;
 3. 21.1's recall events, including the versioned-injection fields (`block_id`, `block_sha`,
    `rev`, `unchanged`) that 19.6 fills;
 4. 19.2's usage record (raw per-evidence counts, read-time decay).
@@ -197,7 +201,7 @@ Every test in every task runs in task 23.0's sandbox (d1a/d1b) and asserts 0 liv
 | d9ax | 19.6 R9 snapshot identity = ≥ 2 shared members AND Jaccard ≥ `j_return` (0.20); `j_return` (d9v) now has a second use, acknowledged | user, 2026-10-15 |
 | d9ay | d9ao's retirement extends to 19.2 R6 / AC-10 (slot merge); [[#open-after-revision]] item 4 corrected | user, 2026-10-15 |
 | d9bi | plan 19 is the helix substrate: it leads Wave 1 after 23.0; 19.6 moves to directly after its dependencies; helix consumes 19.x's outputs (header) | user, 2026-10-15 |
-| d9bm | AMENDS d9ax: identity needs ≥ 2 shared members, ≥ 1 of them NOT a hub, AND J ≥ `j_return`; hub = member of ≥ ⌈8/2⌉ = 4 of the cache's 8 newest snapshots (d9bm writes "K = 8"; the cache bound is `N` = 8 in 19.6); `derive_snapshots` stays pure. PROVISIONAL until its ch-bsd loop is clean | orchestrator on the user's pattern, 2026-10-15, from ch-bsd r8 #ns-1 |
+| d9bm | AMENDS d9ax: identity needs ≥ 2 shared members, ≥ 1 of them NOT a hub, AND J ≥ `j_return`; hub = member of ≥ ⌈8/2⌉ = 4 of the cache's 8 newest snapshots; the cache bound `N` = 8 (19.6 R3); `derive_snapshots` stays pure. PROVISIONAL until its ch-bsd loop is clean | orchestrator on the user's pattern, 2026-10-15, from ch-bsd r8 #ns-1 |
 
 ## Out of scope {#out-of-scope}
 
@@ -401,3 +405,19 @@ rel: implements -> [[plan-review-2026-10-14#t12-approvals]]
 | round-8 #nm-7 (cite drift) | the `#rev-round-8` tables of 19.0, 19.1, 19.2, 19.3, 19.4 and 21.1; [[#open-after-revision]] item 4 (`daemon.py:2862`) |
 | d9bi (helix substrate; 19.6 pulled forward) | header ("Helix substrate": the four interfaces and the decision-row rule); [[#tasks]] 19.6 wave; [[#decisions]] d9bi; [[task-19.6-phased-context-and-topic-cache#rev-round-8]] header |
 | user rule: converge repeated shapes into one function | 19.6 `topic_hubs` / `snapshot_eligible`; 21.1 `owner_alive`, `_append_error_rows`, `read_hook_envelope`, `CALL_OUTCOMES`; each with an AST or import bypass check |
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r9-ebccb20]] (4 SKETCHY, 7 MEH; edit-level, no decision).
+Each touched task carries its own `#rev-round-9` table.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r9-ebccb20]]
+
+| finding | answered at |
+|---|---|
+| r9 #s9-1 (the identity assignment has no single home; helix-facing) | [[task-19.6-phased-context-and-topic-cache#rev-round-9]]; header interface 2 (`match_snapshots`, `member_jaccard`, `topic_match`, cache `schema: 1`); 21.1 R9 `PrePromptState.topic_match` ([[task-21.1-context-usage-telemetry#rev-round-9]]) |
+| r9 #s9-2, #s9-4, #m9-1 to #m9-5 | [[task-21.1-context-usage-telemetry#rev-round-9]] |
+| r9 #s9-3 (a second `sitecustomize` collides with 23.0's) | [[task-19.0-stm-cluster-hygiene#rev-round-9]] (AC-6f uses 23.0's one sandbox hook through `$RMX_SANDBOX_CONNECT_LOG`; two control legs) |
+| r9 #m9-6 | [[task-19.2-memory-usage-record#rev-round-9]] |
+| r9 #m9-7 | [[#decisions]] d9bm (the "K = 8" parenthetical deleted); 19.6 R9; [[task-19.0-stm-cluster-hygiene#rev-round-9]] (AC-6 RED sentences split; AC-6f `--event say`) |
+| user rule: converge repeated shapes into one function, each with a bypass check that can fail | 19.6 `match_snapshots`, `member_jaccard`; 21.1 `liveness_available`, `errors_log_path`, `HOOK_PROMPT_KEYS`, `read_hook_envelope(prose_ok=)`, `CALL_OUTCOMES` validated in `log_query`; 23.0's one sandbox hook; each check carries a control leg that makes it fail |

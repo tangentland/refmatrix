@@ -473,16 +473,17 @@ head member as `rmx focus topics` renders it.
    `RMX_SESSION`, enrichment and composite are skipped, no `default`-ring term appears anywhere in
    the payload, and the skip is recorded (`enrichment-unresolved`); with the composite
    forced to raise, the payload carries no composite and `_errors.jsonl` gains a
-   `composite-failed` row. **Envelope legs** (round-8 #nm-4), through the GENERATED
+   `composite-failed` row. RED at post-bug-109 `master` for this leg: the failing assertion is
+   the composite block's topics, which name the NEWER ring's terms. **Envelope legs** (round-8 #nm-4), through the GENERATED
    `focus hook --event input` command (run as generated, suffix included, so the production
    path is the one tested): an envelope with a prompt and no `session_id`, and separately one
    with `"session_id": ""`, each add exactly one `envelope-no-session` row with `root` = the
    sandbox root and `owner` = the test pid (`CLAUDE_PID` set as in AC-6c), write no ring and no
    `pre.json` (STM dir listing compared), and the row appears in `rmx recall-state`'s STM-hook
-   clause; stdin `not json` adds one `envelope-unreadable` row and writes nothing. RED at
-   post-109 `master`: the failing assertion is the row count (the hook writes the `default`
-   ring, or returns silently on bad JSON). RED at post-bug-109 `master`: the failing assertion is the composite
-   block's topics, which name the NEWER ring's terms.
+   clause; stdin `not json` adds one `envelope-unreadable` row and writes nothing (the STM hooks
+   call 21.1 D9's reader with `prose_ok=False`). RED at post-bug-109 `master` for the envelope
+   legs: the failing assertion is the row count (the hook writes the `default` ring, or returns
+   silently on bad JSON).
    6b. **Session switch under one long-lived MCP server** (round-3 #b-1; re-baselined on
    post-bug-109 `master`, round-4 #s-1). 21.1 AC-1b's harness, extending
    `tests/test_mcp_session_pointer.py`: `rmx mcp` started with `CLAUDE_CODE_SESSION_ID=A`; the
@@ -558,25 +559,37 @@ head member as `rmx focus topics` renders it.
    6f. **The STM hooks open no daemon or hub socket** (round-7 #m-1; round-8 #nm-3). The commands
    run are exactly the generated command strings whose argv contains `focus hook --event <e>` for
    `e` ∈ `session-start` (once 21.1 R9 D4's entry exists), `input` (with a parked call to sweep and
-   a prompt), `tool-pre` and `tool`, taken from `hooks.py`'s generated block; the other commands
+   a prompt), `tool-pre`, `tool` and `say` (the Stop entry, `hooks.py:153`, fed an envelope
+   whose `transcript_path` is a tmp transcript holding one assistant message, so the
+   `s.record("say", …)` branch at `cli.py:2005-2011` runs; round-9 #m9-7), taken from
+   `hooks.py`'s generated block; the other commands
    of those events (`rmx scan-prompt`, `rmx memory recall`, `rmx sync --flush-queue`,
    `rmx curator status`) dial the daemon legitimately and are NOT run here. Each command is run
    with its trailing `2>/dev/null || true` removed: the test asserts the generated string ends
    with exactly that suffix and strips it (no regex guess), because under `|| true` "exited 0"
-   is always true and the suffix hides the stderr this AC reads. Two detectors, both test-owned
-   (no mock of `src/`; 23.0's audit hook still refuses every live target):
-   - **a connect logger:** a test-only `sitecustomize.py`, placed on the child's `PYTHONPATH`
-     beside 23.0 R4's ([[task-23.0-test-sandbox#r4]]), adds an audit hook that appends every
-     `socket.connect` event whose socket family is `AF_UNIX` (target path included) to
-     `<tmp>/connects.log`; after the runs the file is empty. This sees EVERY unix socket,
-     including ones no listener anticipates;
+   is always true and the suffix hides the stderr this AC reads. Two detectors (no mock of
+   `src/`; 23.0's audit hook still refuses every live target):
+   - **the connect log, 23.0's interface** (round-9 #s9-3). Python imports ONE `sitecustomize`,
+     so this AC adds none: 23.0 R4's `tests/sandbox_site/sitecustomize.py`
+     ([[task-23.0-test-sandbox#r4]]) appends the target of every `AF_UNIX` `socket.connect` to
+     the file named by `$RMX_SANDBOX_CONNECT_LOG` when that variable is set (23.0 is extended
+     to provide this; this AC consumes it as a 23.0 interface and is blocked until it lands).
+     Each command runs with `RMX_SANDBOX_CONNECT_LOG=<tmp>/connects.log`; after the runs the
+     file is empty. This sees EVERY unix socket, including ones no listener anticipates.
+     **Two control legs, same environment, run first:** (1) a child `python -c` that connects
+     to a test-owned listener in the tmp dir writes exactly ONE line naming that path (the
+     detector can fail); (2) a child that dials a deny-set path (the real
+     `~/.refmatrix/hub.sock` path string) still exits 86, 23.0's child-refusal exit, so the
+     refusal is still loaded beside the logger. If either control fails, the AC fails before
+     the hook commands run;
    - **listeners** (`socket.socket(AF_UNIX)`, bound and listening) at every path a daemon or hub
      client in the sandbox would dial: `daemon.socket_path(<sandbox root>)` (`daemon.py:527`),
      `daemon.socket_path(hub.global_store_root())` (the GLOBAL store's daemon, `hub.py:100`; a
      sandbox path, so 23.0's hook allows it), `hub.hub_sock_path()` (`hub.py:88`) and
      `modelsrv.model_sock_path()` (`modelsrv.py:45`, `$RMX_MODEL_SOCK` set to a sandbox path); a
      non-blocking `accept()` on each returns nothing.
-   Each un-suffixed command exits 0 with EMPTY stderr. Mutations: an input hook that calls
+   Each un-suffixed command exits 0 with EMPTY stderr. (`say` reads its transcript and calls no
+   daemon today, so it is a regression leg like `input`.) Mutations: an input hook that calls
    `daemon.call(root, "ping")` (the project listener accepts and the log has a line), and one that
    calls `daemon.call(hub.global_store_root(), "ping")` (only the global listener and the log see
    it; at round 7 this mutant passed). This is a regression guard for `input`, `tool-pre` and
@@ -846,3 +859,18 @@ rel: related-to -> [[task-23.0-test-sandbox]]
 | round-8 #ns-2 (R5's Stop row named SessionStart surfacing as the durable channel, which reached only the same process) | holds as written now that 21.1 D6 surfaces a dead owner's rows as `ended_sessions` in its root ([[task-21.1-context-usage-telemetry#rev-round-8]]) |
 | round-8 #nm-7 (`daemon.py:522`) | AC-6f (`:527`) |
 | user rule: converge repeated shapes | the focus hook's envelope parse joins 21.1 D9's one reader (AST check 21.1 AC-4b (xii)(c)); the generated-suffix question joins bug-118's one renderer rather than a second wrapper |
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r9-ebccb20#s9-3]] and the 19.0 part of
+[[bsd-plan19-21-spec-diffcheck-r9-ebccb20#m9-7]]. Edit-level; no decision. Code facts read at
+HEAD (`hooks.py:153` the Stop `--event say` entry; `cli.py:2005-2011` its branch).
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r9-ebccb20]]
+rel: depends-on -> [[task-23.0-test-sandbox#r4]]
+
+| finding | answered at |
+|---|---|
+| r9 #s9-3 (a second test-only `sitecustomize` cannot coexist with 23.0 R4's: one of the two is silently absent) | AC-6f: no second `sitecustomize`; the connect log is 23.0 R4's ONE sandbox hook, enabled by `$RMX_SANDBOX_CONNECT_LOG` (cited as a 23.0 interface; 23.0 is extended to provide it); two control legs run first (a connect to a test listener logs exactly one line; a deny-set dial still exits 86) |
+| r9 #m9-7 (two RED sentences spliced in AC-6; no `--event say` in AC-6f) | AC-6: the composite RED sits under the envelope-session leg, the row-count RED under the envelope legs; AC-6f runs the Stop entry's `focus hook --event say` with a tmp transcript |
+| r9 #s9-4 (19.0 side) | AC-6's `not json` leg names 21.1 D9's `prose_ok=False` for the STM hooks |

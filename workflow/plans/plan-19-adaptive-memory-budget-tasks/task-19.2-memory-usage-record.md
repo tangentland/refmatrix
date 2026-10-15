@@ -253,10 +253,14 @@ appended through 21.1's `telemetry.emit_recall_events` with `cwd`/`root` inside 
     merge to the R6 rule's row."
 11. **Torn tail.** A log whose last line has no newline: the fold stops before it and reads it
     whole on the next tick.
-12. **Lock holds.** 1,000 events fold in ≤ 2 `bind` holds per 500 events, measured with 23.2's
-    recorder on a real `_FairLock`; every batch releases. **Hold length** (round-8 #nm-5): the
-    run's 23.1 `RunResult.max_hold_s` ([[task-23.1-queue-and-drain#r1]], R1 item 5) is ≤ 0.5 s, and equals
-    the recorder's largest measured hold for the same run. The fold's holds take the same
+12. **Lock holds.** 1,000 events fold in EXACTLY 2 batch `bind` holds (batch size 500),
+    measured with 23.2's recorder on a real `_FairLock`; every batch releases. The count is
+    asserted structurally (`holds == 2`; round-9 #m9-6), so a one-hold fold fails on any machine
+    speed; a finalize hold, if the fold takes one, is recorded under its own label and asserted
+    as exactly one, outside the 2. **Hold length** (round-8 #nm-5): the run's 23.1
+    `RunResult.max_hold_s` ([[task-23.1-queue-and-drain#r1]], R1 item 5) is ≤ 0.5 s, and is
+    within 50 ms of the recorder's largest measured hold for the same run (the two are
+    different clocks; the tolerance is 23.1 AC-19's). The fold's holds take the same
     `_store_lock` as `_op_memory_recall` (`daemon.py:6108`), whose per-prompt hook budget is 5 s
     (21.1 R3); 0.5 s keeps one fold hold at a tenth of it. The bound is stated here for this
     task's fold; who owns bounded holds in general stays plan 23's (d9az).
@@ -302,8 +306,9 @@ appended through 21.1's `telemetry.emit_recall_events` with `cwd`/`root` inside 
     - (RETIRED, d9ay: "`replica_merge` keeping the A-side row (AC-10)"; R6 and AC-10 are
       retired, so this mutation has no test to fail);
     - the drain taking one hold per event (AC-12);
-    - (round 8) the fold committing all 1,000 events in one hold, or the batch size raised so one
-      hold exceeds 0.5 s (AC-12: `max_hold_s` over the bound);
+    - (round 8) the fold committing all 1,000 events in one hold (AC-12: `holds == 2` fails,
+      structurally; round-9 #m9-6), or the batch size raised so one hold exceeds 0.5 s (AC-12:
+      `max_hold_s` over the bound);
     - weights applied at fold time (AC-17: stored rows change);
     - any decayed value stored at fold time, or `H` read at fold time (AC-17 under `H = 7`: the
       score disagrees with the independent computation; AC-6: batchings differ);
@@ -434,3 +439,13 @@ rel: depends-on -> [[task-23.1-queue-and-drain]]
 |---|---|
 | round-8 #nm-5 (19.2 side: AC-12 bounds the number of holds, not their duration; the fold competes with `_op_memory_recall` for `_store_lock`) | AC-12 (`RunResult.max_hold_s` ≤ 0.5 s, equal to the recorder's largest hold; the bound's ownership stays plan 23's, d9az); mutation |
 | round-8 #nm-7 (`daemon.py:2814-2828`) | R6 (`:2862-2876`, read at `23ad703`) |
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r9-ebccb20#m9-6]]. Edit-level; no decision.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r9-ebccb20]]
+
+| finding | answered at |
+|---|---|
+| r9 #m9-6 (`max_hold_s` "equals" the recorder across two clocks; the one-hold mutant killed only by timing) | AC-12 (`holds == 2` asserted structurally, a finalize hold labelled apart; `max_hold_s` within 50 ms of the recorder, 23.1 AC-19's tolerance); mutations (the one-hold mutant now fails on the count) |

@@ -273,3 +273,17 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r8-23ad703]]
 | round-8 #nm-5 (a budget skip is invisible) | [[task-21.1-context-usage-telemetry#rev-round-8]] (R3, R4 `outcome` / `budget_s`, R7, AC-2b); [[task-21.3-indexed-symbol-nudge#rev-round-8]] (deadline as `timeout`, `retries=0`; `skipped_budget`) |
 | round-8 #nm-7 (21.1 cites) | [[task-21.1-context-usage-telemetry#rev-round-8]] |
 | round-8 #ns-1, #nm-3, #nm-6; d9bm, d9bi | not plan-21 items ([[plan-19-adaptive-memory-budget#rev-round-8]]) |
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r9-ebccb20]] (edit-level, no decision). Each touched task
+carries its own `#rev-round-9` table.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r9-ebccb20]]
+
+| finding | answered at |
+|---|---|
+| r9 #s9-2, #s9-4, #m9-1 to #m9-5; the `CALL_OUTCOMES` sibling (the existing `outcome` values) | [[task-21.1-context-usage-telemetry#rev-round-9]] |
+| r9 #s9-1 (21.1 side: `PrePromptState.topic_match`) | [[task-21.1-context-usage-telemetry#rev-round-9]]; the rule itself is [[task-19.6-phased-context-and-topic-cache#rev-round-9]] |
+| sibling of r9 #s9-3 (21.3 AC-5's second `sitecustomize`) | [[task-21.3-indexed-symbol-nudge#rev-round-9]] (needs 23.0's preload interface) |
+| r9 #s9-3, #m9-6, #m9-7 | not plan-21 items ([[plan-19-adaptive-memory-budget#rev-round-9]]) |

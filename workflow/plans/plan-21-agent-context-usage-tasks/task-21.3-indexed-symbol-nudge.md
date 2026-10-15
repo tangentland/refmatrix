@@ -138,8 +138,16 @@ counts are unchanged.
 4. **Silent where it should be.** `grep -rn "error|warn" .` (not identifier-shaped), a grep for an
    unindexed token, and a symbol with no callers or tests yield no line, with outcomes
    `not_identifier`, `not_indexed`, `gated`.
-5. **Deadline.** With the lookup artificially delayed past the deadline (a `sitecustomize.py` the test
-   puts on the hook subprocess's `PYTHONPATH` wraps the lookup with a sleep; no `src/` flag), the hook prints nothing and writes `outcome=skipped_budget`.
+5. **Deadline.** With the lookup artificially delayed past the deadline, the hook prints nothing
+   and writes `outcome=skipped_budget`. The delay is a test-owned module that wraps the lookup
+   with a sleep (no `src/` flag), loaded in the hook subprocess by 23.0 R4's ONE sandbox
+   `sitecustomize` through a preload variable (`$RMX_SANDBOX_PRELOAD`, naming the module), NOT
+   by a second `sitecustomize.py` on `PYTHONPATH` (round 9, the sibling of
+   [[bsd-plan19-21-spec-diffcheck-r9-ebccb20#s9-3]]: Python imports one `sitecustomize`, so a
+   second one either drops 23.0's refusal from the child or never loads). A control leg in the
+   same environment: a child dialling a deny-set path still exits 86 (23.0's refusal is
+   loaded). This AC consumes the preload as a 23.0 interface and is blocked until 23.0 provides
+   it.
 6. **Usage before/after.** `rmx telemetry --agent-usage --by-session` over ≥ 3 sessions before and
    ≥ 3 after the deploy reports `invocation=agent` context calls per session (21.1 R2/R7), split by
    whether a `nudge` event preceded them in the session. The table and the verdict (rise or not)
@@ -231,3 +239,17 @@ rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 |---|---|
 | round-8 #nm-5 (21.3 clause: a daemon lookup should carry the hook's deadline) | R3 (deadline passed as `timeout` with `retries=0` when the lookup is a daemon read) |
 | user rule: one outcome vocabulary | R3 (`timeout` renamed `skipped_budget`, from `telemetry.CALL_OUTCOMES`, 21.1 R4); AC-5 (`outcome=skipped_budget`) |
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+No round-9 finding names 21.3. One sibling of
+[[bsd-plan19-21-spec-diffcheck-r9-ebccb20#s9-3]] is answered here, and 21.1's round-9
+`CALL_OUTCOMES` change is noted.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r9-ebccb20]]
+rel: depends-on -> [[task-23.0-test-sandbox#r4]]
+
+| finding | answered at |
+|---|---|
+| sibling of r9 #s9-3 (AC-5's deadline delay was a second test `sitecustomize.py`, the same collision with 23.0 R4's) | AC-5: the delay module is loaded by 23.0's one sandbox hook through `$RMX_SANDBOX_PRELOAD` (a 23.0 interface, not yet in 23.0's text); deny-set control leg |
+| r9 #m9-5 (21.1 side) | R3's nudge values are validated by 21.1's `log_query` as `telemetry.NUDGE_OUTCOMES` for `kind=nudge` ([[task-21.1-context-usage-telemetry#rev-round-9]]); this task owns that tuple's members (`fired`, `dedup`, `gated`, `not_identifier`, `not_indexed`, `disabled`, `stale_set`, plus `skipped_budget` from `CALL_OUTCOMES`) |

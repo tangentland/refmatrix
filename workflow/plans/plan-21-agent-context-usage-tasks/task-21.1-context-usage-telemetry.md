@@ -111,13 +111,30 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      of that call (R7);
    - `cwd` and `root`: the process cwd and the resolved store root, so d8d's predicate (R5) can
      apply to new rows;
-   - on `kind=recall` and `kind=context` rows (round-8 #nm-5): `outcome` ∈
-     `telemetry.CALL_OUTCOMES = ("ok", "skipped_budget", "error")` (`ok`: an answer was rendered,
-     however many items; `skipped_budget`: the call's budget expired before an answer, the
-     `_degrade_or_raise` path; `error`: any other failure) and `budget_s` (the call's `--timeout`,
-     or null when it has none). `CALL_OUTCOMES` is the ONE outcome vocabulary for a budgeted
-     call: 21.3's nudge row uses the same `skipped_budget` value for its deadline (its round-6
-     `timeout` value is renamed, [[task-21.3-indexed-symbol-nudge#rev-round-8]]).
+   - on `kind=recall` and `kind=context` rows (round-8 #nm-5): the EXISTING `outcome` field
+     (bug-052: every row already carries `ok` / `empty` / `consumer-closed` / `error`, set by
+     `telemetry.classify_outcome` in `log_query.__exit__`, `telemetry.py:13`, `:96-118`, `:423`)
+     gains one value, and `budget_s` (the call's `--timeout`, or null when it has none) is added.
+     `telemetry.CALL_OUTCOMES = ("ok", "empty", "consumer-closed", "error", "skipped_budget")` is
+     the ONE vocabulary (round-9 #m9-5: the round-8 three-value tuple left out the four values
+     every row already uses). `ok`: an answer was rendered, however many items;
+     `skipped_budget`: the call's budget expired before an answer; `error`: any other failure.
+     **Classified by exception type, in the one classifier** (round-9 #m9-5): the
+     `_degrade_or_raise` path catches `(VerbBusyError, TimeoutError, socket.timeout, OSError)`
+     (`cli.py:12241-12244`), so "the degrade path" is not a budget test: a refused or reset
+     connection degrades too. `classify_outcome(exc_type, exc_val, *, budgeted: bool = False)`
+     gains the keyword: with `budgeted=True`, `VerbBusyError`, `TimeoutError` and
+     `socket.timeout` map to `skipped_budget`, and any other `OSError` maps to `error` (the hook
+     still degrades, exit 0 and `[]`). The degrade path sets `t.outcome, t.error =
+     classify_outcome(type(e), e, budgeted=True)` on its `log_query` handle, and `__exit__` uses
+     a set `t.outcome` in place of its own classification.
+     **Validated where it is written** (round-9 #m9-5): `log_query.__exit__` checks the final
+     `outcome` against `CALL_OUTCOMES`, plus 21.3's nudge values for `kind=nudge`
+     (`telemetry.NUDGE_OUTCOMES`, owned by 21.3 R3); an unknown value is written as `outcome =
+     "error"` with `error = "outcome-invalid: <value>"`, never silently kept or dropped, and
+     `rmx telemetry --agent-usage` prints `outcome-invalid=<n>` when n > 0. 21.3's nudge row
+     uses the same `skipped_budget` value for its deadline (its round-6 `timeout` value is
+     renamed, [[task-21.3-indexed-symbol-nudge#rev-round-8]]).
 5. **R5 One shared row classifier** (d8d, d9g; owner: this task, in `telemetry.py`, per
    [[plan-review-2026-10-14#t9-fixes]]). Signatures, exact:
    - `telemetry.row_provenance(row: dict, *, reader_root: Path | None = None,
@@ -384,14 +401,25 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
        surfaced for that owner; a file whose `pid_start` differs from the owner's is ignored (pid
        reuse). The writer surfaces `read_pointer_errors(owner=(P, P_start), since=<that t>)` minus
        rows with `t` equal to it, so one session's SessionStart never surfaces, or consumes,
-       another LIVE session's rows. **(2) its ROOT's ended-session rows:** rows with `root` = R
-       (the hook's `cli._root()`) whose owner is DEAD, `stm.owner_alive(owner, owner_start) is
-       False`, with `t` above the per-root watermark `<pointer_dir>/_errors.seen.root.<h>` (`h` =
-       `sha1(str(R)).hexdigest()[:12]`) holding `{root, t}`; a file whose `root` is not R is a
-       hash collision, counted (`watermark-collision`) and treated as absent. They print as ONE
-       line `ended_sessions: <reason>=<n> … (see rmx recall-state)` and are consumed by advancing
-       that watermark. Rows of a live other owner are neither printed nor consumed (round-7
-       #s-2's guarantee kept). A dead owner's row is therefore shown at most twice, once to each
+       another LIVE session's rows. **(2) its ROOT's ended-session rows, consumed by OWNER**
+       (round-9 #s9-2: a per-root `t` watermark over a liveness-filtered set loses rows. Live
+       owner A writes at t = 10, ended owner B at t = 20; the next SessionStart prints B's row
+       and moves the watermark to 20; when A ends, its row at t = 10 is never selected, the
+       normal case with two sessions in this shared tree). A dead owner writes no more rows, so
+       "every row of `(pid, pid_start)`" is a closed set and is consumed as one. The per-root
+       file `<pointer_dir>/_errors.seen.root.<h>` (`h` = `sha1(str(R)).hexdigest()[:12]`) holds
+       `{root, consumed: [[pid, pid_start, t_max], …]}`; a file whose `root` is not R is a hash
+       collision, counted (`watermark-collision`) and treated as absent. Set (2) = the rows of
+       `read_pointer_errors(root=R, since=now − 24 h)` whose owner is DEAD
+       (`stm.owner_alive(owner, owner_start) is False`) and whose `(owner, owner_start)` is not
+       in `consumed`, or is in it with `t` above that entry's `t_max` (a row stamped with a dead
+       owner later, by an orphaned child of it, is still shown once). They print as ONE line
+       `ended_sessions: <reason>=<n> … (see rmx recall-state)`; printing adds or updates each
+       owner's entry, `t_max` = the largest `t` printed for it, in the SAME lock hold that
+       selected the rows. An entry whose `t_max` is older than the 24 h recall window
+       (`handoff.py:508`, `window_s=86400.0`) is pruned in that hold; its rows are then all
+       outside the `since` window, so pruning cannot re-surface them. Rows of a live other owner
+       are neither printed nor consumed (round-7 #s-2's guarantee kept). A dead owner's row is therefore shown at most twice, once to each
        audience: to its own process (set 1, at a `clear` / `compact` before it exited) and to the
        next session that starts in its root (set 2).
        - **Unowned rows** (round-8 #nm-1). A row whose `owner` is null, OR whose `owner_start` is
@@ -401,16 +429,26 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
          cannot be decided. Unowned rows are reported by recall-state and `focus topics` for
          their root, and the SessionStart line adds `unowned_in_root=<n> (see rmx recall-state)`
          for its root's last 24 h without consuming them; they are in neither set.
-       - **`stm.owner_alive(pid: int | None, pid_start: str | None) -> bool | None`**, ONE
-         predicate: `None` when `pid` or `pid_start` is null, or when the lookup is unavailable
-         (`_proc_start(os.getpid())` is itself `None`, D7's guard); else `_proc_start(pid) ==
-         pid_start`. Set (2) and D7's prune call it; none
-         calls `_proc_start` to judge liveness itself (AC-4b (xii)'s AST check). When it is
-         `None` for the lookup reason, set (2) is not computed, nothing is consumed, and the line
-         reads `ended_sessions skipped: process lookup unavailable` (otherwise every live owner
-         would read as dead and another session would consume its rows).
-       - **Claimed under the lock.** Each watermark (per owner, per root) is read, its rows
-         selected and the watermark advanced inside ONE hold of D8's `_errors.lock`, and the
+       - **`stm.owner_alive(pid: int | None, pid_start: str | None = None, *, start_token: str
+         | None = None) -> bool | None`**, ONE predicate: `None` when `pid` is null or both
+         `pid_start` and `start_token` are null (UNOWNED, nothing else); else
+         `_proc_start(pid) == pid_start`, or, given `start_token`,
+         `stm.start_token(_proc_start(pid)) == start_token` (`start_token(s)` =
+         `sha1(s).hexdigest()[:8]`, `None` for `None`; D6's migration claim names carry it).
+         **Lookup availability is a separate function** (round-9 #m9-1: one `None` for "unowned"
+         and for "lookup unavailable" left the guard no allowed way to run).
+         `stm.liveness_available() -> bool` is `_proc_start(os.getpid()) is not None`, called
+         ONCE per SessionStart run by D6 (before set (2) and the claim adoption) and by D7
+         (before the prune). Set (2), D7's prune, D6's claim adoption and `read_pid_pointer`
+         (`owner_alive(pid, d.get("pid_start")) is True`, replacing its private comparison at
+         `stm.py:387`) call `owner_alive`; none calls `_proc_start` to judge liveness itself
+         (AC-4b (xii)'s AST check). When `liveness_available()` is `False`, set (2) is not
+         computed, nothing is consumed or adopted, and the line reads `ended_sessions skipped:
+         process lookup unavailable` (otherwise every live owner would read as dead and another
+         session would consume its rows).
+       - **Claimed under the lock.** Each watermark (per owner) and the per-root `consumed`
+         file are read, their rows selected and the file advanced inside ONE hold of D8's
+         `_errors.lock`, and the
          lines are printed after the release, so two SessionStarts in one root at the same time
          (two sessions in this shared tree) print each set-(2) row once between them.
        bug-109's in-place halving (`stm.py:308-310`) moves every byte offset, so an offset
@@ -419,8 +457,14 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      - **The bound is kept, and its deletions are counted per scope.** The 256 KiB halving stays
        (the round-5 1 MB rename and "nothing is deleted" are WITHDRAWN: the halving deletes rows,
        and it fires long before 1 MB). When it halves, `record_pointer_error` first appends one row
-       `{reason: "errors-truncated", t, dropped: <n lines removed>, oldest_kept_t,
+       `{reason: "errors-truncated", t, dropped: <n>, oldest_kept_t,
        dropped_by_root: {<root>: n}, unseen_dropped: {"<pid>:<pid_start>": n}}` to the kept half.
+       **Counts roll up** (round-9 #m9-3: a later halving drops earlier `errors-truncated` rows,
+       and their counts would leave the file): `dropped` = the removed rows OTHER than
+       `errors-truncated` rows, plus the sum of the removed `errors-truncated` rows' `dropped`;
+       `dropped_by_root` and `unseen_dropped` likewise add the removed rows' maps key by key. So
+       at any time the file's non-truncation row count plus the sum of `dropped` over its
+       `errors-truncated` rows equals every row ever appended.
        `unseen_dropped` counts, per owner, the removed rows of that owner with `t` above its
        watermark file at halving time (no file: all of them), so an owner's SessionStart line
        reports exactly how many of ITS unsurfaced rows were lost; `dropped` stays the total line
@@ -431,17 +475,24 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
        for its own root `R` (`cli._root()` of the hook's cwd), when `R/stm/by-pid/_errors.jsonl`
        exists:
        1. **claims it** (round-8 #nm-2) by `os.rename` to `R/stm/by-pid/_errors.migrating.<own
-          pid>.jsonl`; a loser of a concurrent claim gets `FileNotFoundError`, counts it
-          (`migrate-claim-lost`, printed) and migrates nothing. Crash recovery: before claiming,
-          it adopts any `_errors.migrating.<pid>.jsonl` in `R/stm/by-pid/` whose mtime is older
-          than 60 s (a claim file names a pid but no start time, so liveness cannot be judged by
-          `owner_alive`; a live migration finishes in well under 60 s) by renaming it to its own
-          claim name, so a crash leaves no orphan behind;
+          pid>.<start_token(own pid_start)>.jsonl` (round-9 #m9-4); a loser of a concurrent
+          claim gets `FileNotFoundError`, counts it (`migrate-claim-lost`, printed) and migrates
+          nothing. Crash recovery: before claiming, and only when `liveness_available()`, it
+          adopts a `_errors.migrating.<pid>.<token>.jsonl` in `R/stm/by-pid/` ONLY when
+          `owner_alive(pid, start_token=token) is False` (its claimant is dead), by renaming it
+          to its own claim name, so a crash leaves no orphan behind. The round-8 "mtime older
+          than 60 s" rule is WITHDRAWN: `os.rename` preserves mtime, and a legacy log last
+          appended days ago made a live claim look abandoned at once. A claim whose owner is
+          alive, or unknown (`None`), is left alone. A final rename (step 3) that hits
+          `FileNotFoundError` (an adopter took the file) is counted as `migrate-claim-lost` and
+          prints no `migrated=` count;
        2. appends each parseable legacy row through D8's ONE writer with its ORIGINAL `t`, plus
           `root = R` and `migrated_from = <legacy path>` (legacy rows have no `owner_start`, so
           they are UNOWNED by D6's rule: they surface in recall-state for `R`, never on an
           owner's SessionStart and never as `ended_sessions`), and one `{reason:
-          "legacy-unreadable", n}` row scoped to `R` when the legacy file held unparseable lines;
+          "legacy-unreadable", n}` row scoped to `R` when the legacy file held unparseable lines, whose
+          `t` is the legacy file's mtime (read before the claim rename; round-9 #m9-4), so a
+          repeated run's `(t, reason)` check matches it;
        3. renames the claim file to `R/stm/by-pid/_errors.migrated.jsonl` ONLY when every append
           returned `True`; otherwise it leaves the claim file, prints `migration incomplete:
           <n> rows not written (global store root absent or unwritable)` on stderr, and the next
@@ -461,13 +512,15 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      `stm._process_table()` is WITHDRAWN), and prints `pruned=<n>` with the surfacing line.
      Per-root watermark files `_errors.seen.root.<h>` (round-8 #ns-2) are kept: one small file
      per root that ever had a session, keyed by root, not by a process that dies; one is removed
-     only when its `root` path no longer exists (counted in `pruned`). If `_proc_start(os.getpid())`
-     is itself `None`, the lookup is unavailable, nothing is pruned, and the line reads
+     only when its `root` path no longer exists (counted in `pruned`). If `stm.liveness_available()`
+     is `False` (round-9 #m9-1), nothing is pruned, and the line reads
      `prune skipped: process lookup unavailable` (otherwise every live pointer would be removed).
      A pointer is only a cache of the process relation, and a watermark only of what its process
      was shown, so removing a dead process's files loses nothing.
    - **D8 `record_pointer_error` generalized** (round-7 #s-2). With D3 it writes
-     `<pointer_dir>/_errors.jsonl`. Its signature becomes `record_pointer_error(reason: str, *,
+     `<pointer_dir>/_errors.jsonl`, named once by `stm.errors_log_path() -> Path` (round-9
+     #m9-2): every reader and writer, and `handoff`'s report text, take the path from it. Its
+     signature becomes `record_pointer_error(reason: str, *,
      root: Path, owner: int | None, **fields) -> bool`: `root` no longer locates the file, it is
      the row's SCOPE, and is required; `owner` is the Claude pid the caller resolved (`None` when
      it found none), and the writer adds `owner_start = _proc_start(owner)`. The existing call
@@ -497,11 +550,19 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
        - A failure to take the lock or to write is returned as `False` and, at every call site
          that has a stderr, printed once; the input hook's existing stderr line (`cli.py:1985`
          path) covers its rows.
-       - **Bypass check:** an AST test lists every string constant in `src/refmatrix/` that
-         contains `_errors.` and every `open(` / `write_text(` / `os.replace(` call whose path
-         argument derives from one, and requires each to sit inside the allow-listed `stm.py`
-         functions (`_errors_locked`, `_append_error_rows`, `read_pointer_errors`, the watermark
-         read/advance, the migration, D7's prune), so a second writer fails the suite.
+       - **Bypass check, scoped to WRITES** (round-9 #m9-2: at HEAD `handoff.py:509`, `:522`,
+         `:529` and `verbs.py:537` hold `_errors.jsonl` in docstrings and messages, and D6
+         requires handoff's text to name the path, so a check on every string constant fails at
+         GREEN). An AST test lists every WRITE operation in `src/refmatrix/` (`open(` with a mode
+         containing `w`, `a` or `x`; `.write_text(`; `.write_bytes(`; `os.replace(`;
+         `os.rename(`; `.unlink(`) whose path expression contains a string constant with
+         `_errors`, or a call of `errors_log_path()` or `pointer_dir()`, and requires each to sit
+         inside the allow-listed `stm.py` functions (`_errors_locked`, `_append_error_rows`, the
+         watermark and `consumed` advance, the migration, D7's prune); docstrings and message
+         strings are not write operations and are not listed. A second check requires that no
+         module outside `stm.py` joins `"_errors.jsonl"` onto a path (handoff calls
+         `errors_log_path()`). **The check can fail:** run on a fixture module holding
+         `open(pointer_dir() / "_errors.jsonl", "a")`, it reports that line.
    - **D9 ONE hook-envelope reader** (round-8 #nm-4; the user's rule). Hook stdin envelopes are
      parsed in three places today, each with its own silent fallback: `cli.focus_hook`
      (`cli.py:1963-1966`, `except Exception: return`, then `d.get("session_id") or
@@ -510,23 +571,48 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      prompt only, the session dropped). One function replaces the envelope parse in all three
      and in the two new readers (`focus hook --event session-start`, D4; `focus summarize
      --envelope-stdin`, 19.0 R5): `stm.read_hook_envelope(raw: str, *, root: Path, hook: str,
-     require_session: bool) -> dict | None`. It returns the envelope dict; on unparseable or
-     non-object input it prints ONE stderr line and records `envelope-unreadable` (D8-scoped:
-     `root`, `owner` from `owner_lookup()`), returning `None`; with `require_session=True` and a
-     falsy `session_id` (missing, `None` or `""`) it prints one stderr line and records
-     `envelope-no-session`, returning `None`. The STM hooks (`focus hook` every event, session-start,
-     `summarize --envelope-stdin`) pass `require_session=True`; scan-prompt and `memory recall
-     --stdin-json` pass `False` (their session falls through R9's resolver with
-     `envelope=<the dict>`, `purpose="event"`, which records its own miss) and read `prompt`
-     from the returned dict, keeping today's raw-prose fallback for non-JSON stdin OUTSIDE the
-     envelope path (`_resolve_query`'s "looked like JSON but isn't" branch is unchanged). Because
+     require_session: bool, prose_ok: bool) -> stm.HookEnvelope`, a `NamedTuple(envelope: dict
+     | None, prose: str | None)` with one property, `prompt` (round-9 #s9-4).
+     - **Raw text is valid input on two of the callers today** (round-9 #s9-4):
+       `scan.read_stdin_prompt` treats `JSONDecodeError` as prose ("We accept either the
+       envelope or raw text", `scan.py:1036-1054`), and `_resolve_query` without `--stdin-json`
+       treats `{`-prefixed text that fails `json.loads` as prose (`cli.py:9001-9010`). So with
+       `prose_ok=True`, unparseable or non-object input returns `HookEnvelope(None,
+       raw.strip())` and records NOTHING (a prompt like `fix the {braces` is not an error).
+     - With `prose_ok=False`, unparseable or non-object input prints ONE stderr line, records
+       `envelope-unreadable` (D8-scoped: `root`, `owner` from `owner_lookup()`) and returns
+       `HookEnvelope(None, None)`. With `require_session=True` and a falsy `session_id`
+       (missing, `None` or `""`) it prints one stderr line, records `envelope-no-session` and
+       returns `HookEnvelope(None, None)`.
+     - **Callers:** the STM hooks (`focus hook` every event, session-start, `summarize
+       --envelope-stdin`) pass `require_session=True, prose_ok=False`; scan-prompt and
+       `_resolve_query` without `--stdin-json` pass `require_session=False, prose_ok=True`;
+       `--stdin-json` passes `require_session=False, prose_ok=False` and keeps its
+       `ClickException("--stdin-json: invalid JSON on stdin")` after the row is recorded. The
+       non-STM callers' session falls through R9's resolver with `envelope=<the dict>`,
+       `purpose="event"`, which records its own miss. No caller parses stdin itself: the prose
+       fallback lives INSIDE `read_hook_envelope`, so (xii)(c) holds as written (the round-8
+       phrase "OUTSIDE the envelope path" is WITHDRAWN; it contradicted (xii)(c)).
+     - **ONE prompt-key tuple** (round-9 #s9-4): `stm.HOOK_PROMPT_KEYS = ("prompt",
+       "user_prompt", "text", "message")`, scan's four keys. `HookEnvelope.prompt` is `prose`
+       when it is set, else the first key of `HOOK_PROMPT_KEYS` whose value in `envelope` is a
+       string (stripped), else `""`. **Behaviour change, recorded:** `_resolve_query` today reads
+       `prompt` only (`cli.py:9011`), so an envelope carrying only `text` now yields that text
+       instead of `""`; and `scan.read_stdin_prompt` today returns the RAW JSON text for an
+       object with none of the four keys, which now yields `""`. Claude Code's envelopes carry
+       `prompt`, so neither change touches a generated hook's input. No module outside `stm.py`
+       names `"user_prompt"` or reads `"prompt"` from a stdin envelope (AC-4b (xii)(c)). Because
      the generated focus entries end `2>/dev/null || true` (`hooks.py:131-147`), the row, not the
      stderr line, is the durable channel there; the suffix itself is not changed by this task
      (bug-118 in `workflow/bug_registry.md` is converging the generator's hook-command wrapper;
      any change to that suffix goes through bug-118's ONE renderer, not a second one here).
      **Bypass check:** an AST test lists every `json.load(sys.stdin)` / `json.loads(<stdin
-     read>)` in `cli.py` and `scan.py` and requires none outside `read_hook_envelope`'s callers'
-     single call. The grep-guard (`search_hooks.py:309`) and the enqueue one-liner
+     read>)` in `cli.py` and `scan.py` and requires none outside `read_hook_envelope`; it also
+     requires that no module outside `stm.py` contains the constant `"user_prompt"`, and lists
+     every `.get("prompt")` / `["prompt"]` in `cli.py` and `scan.py` as a set equality with a
+     list kept in the test (none of them on a stdin envelope), so a new private prompt read
+     fails until it is reviewed. **The check can fail:** run on a fixture holding
+     `json.loads(sys.stdin.read())`, it reports that line. The grep-guard (`search_hooks.py:309`) and the enqueue one-liner
      (`hooks.py:111`) parse PreToolUse / PostToolUse envelopes for a tool command, not a session,
      and are out of this task's scope (stated in [[#rev-round-8]]).
    - `stm.latest_session` (`stm.py:392` at HEAD) is never called outside the `read` tail (bsd
@@ -552,7 +638,9 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
    (`ts < t0 − 1 s`) is WITHDRAWN. Instead, one snapshot, one reader:
    - **Signature, exact:** `stm.pre_prompt_state(root: Path, session: str, prompt: str, *,
      t0: float) -> stm.PrePromptState`, a `NamedTuple(graph: dict, topic_cache: dict, turn: int,
-     events_n: int, source: str)`, `source` ∈ `snapshot`, `live`. Same ownership rule as the
+     events_n: int, source: str, topic_match: dict)`, `source` ∈ `snapshot`, `live`;
+     `topic_match` is 19.6 R9's completed live-cluster-to-snapshot map (`{}` until 19.6;
+     round-9 #s9-1). Same ownership rule as the
      resolver (first of 21.1 / 19.0 to merge builds it; 19.0 R7 restates it).
    - **Writer: the input hook's FIRST state access, not `Stm.record`** (round-4 #b-1). The input
      branch of `cli.focus_hook` runs, in this order:
@@ -565,10 +653,11 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
         abandoned call never enters the parent's graph;
      4. when the prompt is not ambient, `s.record("input", prompt[:300])`.
      `Stm.snapshot_pre_prompt(prompt: str) -> None` writes `<session>.pre.json` = `{prompt_sha,
-     wall, turn, events_n, graph, topic_cache}` by tmp + `os.replace`: `prompt_sha` = sha256 of
+     wall, turn, events_n, graph, topic_cache, topic_match}` by tmp + `os.replace`: `prompt_sha` = sha256 of
      the prompt's UTF-8 bytes, `wall` = `time.time()` (sub-second), `turn` = the graph's `turn`
      counter (`stm.py:692` increments it once per recorded input), `events_n` = R9's event count
-     below, `graph` = the focus graph, `topic_cache` = 19.6 R3's cache (`{}` until 19.6).
+     below, `graph` = the focus graph, `topic_cache` = 19.6 R3's cache (`{}` until 19.6), `topic_match` = 19.6 R9's map (`{}` until
+     19.6).
      `Stm.record` no longer calls it. The appended input event gains `prompt_sha` and `t`
      (sub-second epoch).
    - **`events_n`** counts the ring's complete lines whose `origin` is `parent` or absent (19.0
@@ -807,8 +896,13 @@ line counts are unchanged.
    `budget_s=5` and the envelope's `session`, and `recall-events.jsonl` gains no event for it; the
    same run against a live sandbox daemon logs `outcome=ok`. `rmx telemetry --agent-usage` over
    both rows prints `prompt_recall: ok=1 skipped_budget=1 error=0`, and run with no daemon and
-   no listener prints `expired_reads: unavailable (daemon down)`, never `0`. RED at HEAD: no `kind=recall`
-   row is written at all (the failing assertion is the row count).
+   no listener prints `expired_reads: unavailable (daemon down)`, never `0`. **Non-budget leg**
+   (round-9 #m9-5): a listener that accepts and closes each connection at once makes the same
+   command log exactly one `kind=recall` row with `outcome=error` (not `skipped_budget`) and no
+   recall event. **Validation leg:** a `log_query` handle given `t.outcome = "timeout"` writes
+   `outcome=error`, `error="outcome-invalid: timeout"`, and `--agent-usage` prints
+   `outcome-invalid=1`. RED at HEAD: no `kind=recall` row is written at all (the failing
+   assertion is the row count).
 3. **Precedence.** `invocation_source()` returns, for the env combinations
    {explicit `hook` + `CLAUDECODE`, `CLAUDECODE` alone, tty alone, none}: `hook`, `agent`,
    `interactive`, `unknown`. RED at HEAD on `CLAUDECODE` alone (returns `unknown`).
@@ -862,7 +956,8 @@ line counts are unchanged.
    deleted). After (iii), N further rows owned by the test pid are written until the file crosses
    `_ERRORS_MAX_BYTES` and halves once. The next SessionStart run prints each SURVIVING owned row
    with `t` above the watermark exactly once, plus the `errors-truncated` row whose `dropped`
-   equals the removed line count (the test counts lines before and after) and whose
+   equals the removed row count (the test counts lines before and after; the file held no
+   earlier `errors-truncated` row, so nothing rolls up here, D6) and whose
    `unseen_dropped["<test pid>:<start>"]` equals the removed owned rows with `t` above the
    watermark; surfaced rows + `unseen_dropped` = N (the three surfaced rows dropped by the halving
    are in `dropped`, not in `unseen_dropped`).
@@ -903,38 +998,70 @@ line counts are unchanged.
    `sweep-failed` row: recall-state prints a session-pointer clause counting 1 with the
    "could not be resolved" text, and an STM-hook clause counting `sweep-failed x1` whose text
    contains none of the words `session`, `guessed`, `newest`.
-   (ix) **Ended sessions** (round-8 #ns-2). A helper process P2 (started by the test, with
-   `CLAUDE_PID` = P2 for its own child) writes one `pointer-unresolved` row scoped to X, then
-   exits and is reaped; a second helper P3 stays alive and writes one row scoped to X. P1's
-   generated SessionStart run in X prints `ended_sessions: pointer-unresolved=1` exactly once and
-   does not print P3's row; a second P1 run prints no `ended_sessions` line; recall-state in X
-   still reports all rows (consumption is the SessionStart surface's only). After P3 exits, the
-   next run prints P3's row as `ended_sessions` once. With `stm._proc_info` monkeypatched to
-   return `None` for every pid (in process, as (iv-b)), the run prints `ended_sessions skipped:
-   process lookup unavailable` and the per-root watermark file is unchanged.
-   (x) **One writer, concurrent** (round-8 #nm-2). Two processes each append 2,000 rows through
-   `record_pointer_error` while the file crosses `_ERRORS_MAX_BYTES` at least once: the file's
-   line count plus the sum of every `errors-truncated` row's `dropped` equals 4,000 plus the
-   number of `errors-truncated` rows written (no append lost to a halving), and every line
-   parses.
-   (xi) **Migration claimed once** (round-8 #nm-2). Two SessionStart runs in X started together
-   (a barrier file releases both) over a legacy log of two rows: the global log gains exactly two
-   migrated rows; one run prints `migrated=2`, the other `migrate-claim-lost=1`. With the global
-   store root absent, a run appends nothing, leaves `_errors.migrating.<pid>.jsonl` in place
-   (no `.migrated`), and prints `migration incomplete`; after the root is created, a run started
-   more than 60 s later by the file's mtime (the test sets it with `os.utime`) adopts it and
-   migrates both rows.
+   (ix) **Ended sessions** (round-8 #ns-2; reordered in round 9, #s9-2, so the older row
+   belongs to the owner that is still alive). In this order:
+   1. a helper process P3 (started by the test, with `CLAUDE_PID` = P3 for its own child)
+      writes one `pointer-unresolved` row scoped to X FIRST and stays alive;
+   2. a helper P2, the same way, then writes one row scoped to X (a larger `t`), exits and is
+      reaped;
+   3. P1's generated SessionStart run in X prints `ended_sessions: pointer-unresolved=1`
+      exactly once (P2's row) and does not print P3's; the per-root file's `consumed` holds
+      exactly `[P2, P2_start, <P2's row t>]`;
+   4. a second P1 run prints no `ended_sessions` line;
+   5. P3 exits; the next run prints P3's row as `ended_sessions` once, although its `t` is
+      BELOW P2's; a further run prints none.
+   recall-state in X still reports all rows (consumption is the SessionStart surface's only).
+   **Pruning:** a `consumed` entry whose `t_max` the test sets to 25 h ago is gone after the
+   next run, and that owner's rows (also 25 h old) are not printed again. With
+   `stm._proc_info` monkeypatched to return `None` for every pid (in process, as (iv-b)), the
+   run prints `ended_sessions skipped: process lookup unavailable` and the per-root file is
+   unchanged.
+   (x) **One writer, concurrent** (round-8 #nm-2; round-9 #m9-3). Two processes each append
+   2,000 rows through `record_pointer_error` while the file halves at least THREE times (about
+   800 KB against 256 KiB, so earlier `errors-truncated` rows are themselves dropped): the
+   file's count of rows other than `errors-truncated` plus the sum of `dropped` over the
+   `errors-truncated` rows still in the file equals 4,000 exactly (no append lost to a halving,
+   no count lost with a dropped truncation row); the same identity holds per root over
+   `dropped_by_root`; and every line parses.
+   (xi) **Migration claimed once** (round-8 #nm-2; round-9 #m9-4). The legacy log's mtime is
+   set to one DAY old (`os.utime`) before two SessionStart runs in X are started together (a
+   barrier file releases both) over it (two rows): the global log gains exactly two migrated
+   rows; exactly one run prints `migrated=2`, the other `migrate-claim-lost=1`, and neither
+   adopts the other's live claim. With the global store root absent, a run appends nothing,
+   leaves `_errors.migrating.<pid>.<token>.jsonl` in place (no `.migrated`), prints `migration
+   incomplete` and exits; after the root is created, the next run adopts that claim (its pid is
+   dead: `owner_alive(pid, start_token=token) is False`) and migrates both rows. A claim file
+   named with the pid and token of a LIVE helper process is not adopted. A `legacy-unreadable`
+   row is migrated once across two runs (its `t` is the legacy file's mtime).
    (xii) **Bypass checks** (round-8 #nm-2, #nm-4; the user's converge rule). AST scans of
-   `src/refmatrix/`: (a) every string constant containing `_errors.` and every file write
-   derived from one sits inside D8's allow-listed `stm.py` functions; (b) the set of functions
-   that call `_proc_start(` equals {`owner_alive`, `write_pid_pointer`, `read_pid_pointer`,
-   `record_pointer_error` (the D8 `owner_start` stamp)}, so a prune or a surfacing path cannot
-   judge liveness on its own; (c) no `json.load(sys.stdin)` / `json.loads(` of a stdin read in `cli.py` or `scan.py`
-   outside `read_hook_envelope`. Each list is a set equality with a list kept in the test.
+   `src/refmatrix/`: (a) every WRITE operation on an `_errors` path (D8's list: write-mode
+   `open`, `write_text`, `write_bytes`, `os.replace`, `os.rename`, `unlink`, whose path holds an
+   `_errors` constant or derives from `errors_log_path()` / `pointer_dir()`) sits inside D8's
+   allow-listed `stm.py` functions; docstrings and messages are not listed (round-9 #m9-2);
+   (b) the set of functions that call `_proc_start(` equals {`owner_alive`,
+   `liveness_available`, `write_pid_pointer`, `record_pointer_error` (the D8 `owner_start`
+   stamp)} (round-9 #m9-1: `read_pid_pointer` goes through `owner_alive`), and the set that
+   call `_proc_info(` equals {`_proc_start`, `owner_lookup`} (`stm.py:201`, `:249`), so a
+   prune, a surfacing path or a pointer read cannot judge liveness on its own; (c) no
+   `json.load(sys.stdin)` / `json.loads(` of a stdin read in `cli.py` or `scan.py` outside
+   `read_hook_envelope`, and D9's prompt-key check. Each list is a set equality with a list
+   kept in the test, and each check is also run on a planted fixture module that it must
+   report (a write-mode `open` of `_errors.jsonl`; a `_proc_start(` call in a new function; a
+   `json.loads(sys.stdin.read())`), so none of the three can pass vacuously.
+   (xiii) **Prose is not an error** (round-9 #s9-4). `printf 'fix the {braces' | rmx
+   scan-prompt` (and the same text piped to `rmx memory recall` without `--stdin-json`) adds no
+   row to `_errors.jsonl`, and the prompt the command uses equals `fix the {braces`. The same
+   text to `rmx memory recall --stdin-json` exits nonzero with the existing `--stdin-json:
+   invalid JSON on stdin` message AND adds one `envelope-unreadable` row. An envelope
+   `{"text": "abc"}` yields the prompt `abc` on both the scan-prompt and the recall path (one
+   `HOOK_PROMPT_KEYS`).
    RED at post-109 `master` for (i)-(v), (vii) and (viii) (no global location, no SessionStart
    entry, no scope fields, one clause); (vi) is RED (no migration: the legacy rows are read in
    place and the file is not renamed); (ii)'s first assertion is RED (bug-109 resolves the
-   legacy pointer). (ix)-(xi) are RED (no dead-owner set, no lock, no claim). (xii) is RED on
+   legacy pointer). (ix)-(xi) are RED (no dead-owner set, no lock, no claim). (xiii)'s
+   `{"text": "abc"}` recall leg is RED (`_resolve_query` reads `prompt` only); its prose legs are
+   GREEN regression guards at `master` (no envelope reader records anything today) and are not
+   counted as RED. (xii) is RED on
    all three: (a) the halving's `write_text` in `record_pointer_error` sits outside any
    `_errors_locked` (which does not exist); (b) `owner_alive` does not exist, so the function
    set differs; (c) `cli.focus_hook`, `cli._resolve_query` and `scan.read_stdin_prompt` parse
@@ -1158,8 +1285,31 @@ line counts are unchanged.
     - (round 8) dead-owner rows never surfaced (AC-4b (ix): no `ended_sessions` line);
     - live other-owner rows surfaced in `ended_sessions` (AC-4b (ix): P3's row prints while P3
       lives);
-    - the per-root watermark not advanced, or advanced outside the lock (AC-4b (ix): the second
-      run prints the line again; (xi)'s concurrent pair prints it twice);
+    - the per-root `consumed` set not advanced, or advanced outside the lock (AC-4b (ix): the
+      second run prints the line again);
+    - (round 9, #s9-2) the round-8 per-root `t` watermark kept instead of `consumed` owners
+      (AC-4b (ix) step 5: P3's row, older than P2's, is never printed);
+    - `consumed` entries never pruned, or pruned without the `since` window (AC-4b (ix)
+      pruning leg: the file keeps the 25 h entry, or that owner's rows print again);
+    - (round 9, #s9-4) `prose_ok` ignored (AC-4b (xiii): the brace prompt adds a row);
+    - `_resolve_query` keeping its own `prompt`-only read (AC-4b (xiii): `{"text": "abc"}`
+      yields `""` on the recall path);
+    - (round 9, #m9-1) `read_pid_pointer` comparing `_proc_start` itself, or a new caller of
+      `_proc_info` (AC-4b (xii)(b));
+    - `liveness_available` folded back into `owner_alive`'s `None` (AC-4b (iv-b), (ix): the
+      unowned rows and the unavailable lookup are no longer told apart; (xii)(b)'s set
+      differs);
+    - (round 9, #m9-2) handoff building its own `_errors.jsonl` path (AC-4b (xii)(a)'s second
+      check);
+    - (round 9, #m9-3) a halving that does not roll up the dropped truncation rows' counts
+      (AC-4b (x): the identity falls short of 4,000);
+    - (round 9, #m9-4) claim adoption by mtime (AC-4b (xi): the one-day-old legacy file makes
+      the second run adopt the first's live claim, and `migrated=2` prints twice or the counts
+      split); a `legacy-unreadable` row stamped with the run's clock (AC-4b (xi): it migrates
+      twice);
+    - (round 9, #m9-5) a non-budget `OSError` classified as `skipped_budget` (AC-2b's
+      non-budget leg); `log_query` keeping an outcome outside `CALL_OUTCOMES` (AC-2b's
+      validation leg);
     - `ended_sessions` computed when the lookup is unavailable (AC-4b (ix): live rows consumed,
       the watermark moves);
     - a row with null `owner_start` matched by its `owner` (AC-4b (vii) `ps-failed` sub-leg: it is
@@ -1236,12 +1386,12 @@ line counts are unchanged.
 |---|---|
 | `src/refmatrix/mcp.py` | set `RMX_INVOCATION_SOURCE=mcp` in `serve_stdio` before the first request and drop `CLAUDE_CODE_SESSION_ID` from its env (R1). `verbs._LONG_LIVED = True` and the per-call resolution are bug-109's, existing |
 | `src/refmatrix/verbs.py` (resolver) | EXTEND bug-109's `resolve_session_source`: `SessionResolution`, `envelope=`, required `purpose=` and its three tails, `SessionUnresolved` (D1, D2); bug-109's `resolve_session` str wrapper is removed, its callers pass `purpose` |
-| `src/refmatrix/stm.py` | EXTEND bug-109's pointer code: `pointer_dir()` and the user-level location, no legacy read (D3); the `hook` field (D4); `pointer-stale` / `pointer-unreadable` rows (D5); `record_pointer_error(reason, *, root, owner, **fields)` writing scoped rows (`root`, `owner`, `owner_start`) and, when it halves, the `errors-truncated` row with `dropped_by_root` / `unseen_dropped` (D8, D6); `read_pointer_errors(*, root=None, owner=None, since)` over the new location only, scope-filtered, `unscoped-row` counted (D6); the per-owner `t`-keyed watermark `_errors.seen.<pid>` (D6); the one-shot migration of a root's legacy log and pointers (D6, D3); the prune of pointers and watermark files through `owner_alive` (D7). Round 8: `owner_alive` (D6); the per-root watermark `_errors.seen.root.<h>` and the `ended_sessions` set (D6, #ns-2); unowned = null `owner` or null `owner_start` (D6, #nm-1); `_errors_locked` + `_append_error_rows`, the ONE locked writer, tmp + `os.replace` halving, the migration's claim-by-rename and append-before-rename order (D8, D6, #nm-2); `read_hook_envelope` (D9, #nm-4). NEW: `snapshot_pre_prompt`, `pre_prompt_state` + `PrePromptState`, `PRE_PROMPT_SKEW_S`; input events gain `prompt_sha` and `t` (R9). Built here or by 19.0, whichever merges first |
+| `src/refmatrix/stm.py` | EXTEND bug-109's pointer code: `pointer_dir()` and the user-level location, no legacy read (D3); the `hook` field (D4); `pointer-stale` / `pointer-unreadable` rows (D5); `record_pointer_error(reason, *, root, owner, **fields)` writing scoped rows (`root`, `owner`, `owner_start`) and, when it halves, the `errors-truncated` row with `dropped_by_root` / `unseen_dropped` (D8, D6); `read_pointer_errors(*, root=None, owner=None, since)` over the new location only, scope-filtered, `unscoped-row` counted (D6); the per-owner `t`-keyed watermark `_errors.seen.<pid>` (D6); the one-shot migration of a root's legacy log and pointers (D6, D3); the prune of pointers and watermark files through `owner_alive` (D7). Round 8: `owner_alive` (D6); the per-root watermark `_errors.seen.root.<h>` and the `ended_sessions` set (D6, #ns-2); unowned = null `owner` or null `owner_start` (D6, #nm-1); `_errors_locked` + `_append_error_rows`, the ONE locked writer, tmp + `os.replace` halving, the migration's claim-by-rename and append-before-rename order (D8, D6, #nm-2); `read_hook_envelope` (D9, #nm-4). Round 9: set (2) consumed by owner, `{root, consumed: [[pid, pid_start, t_max]]}`, 24 h prune (D6, #s9-2); `HookEnvelope`, `prose_ok`, `HOOK_PROMPT_KEYS` (D9, #s9-4); `liveness_available`, `owner_alive(…, start_token=)`, `start_token`, `read_pid_pointer` through `owner_alive` (D6, D7, #m9-1); `errors_log_path` (D8, #m9-2); truncation-count roll-up (D6, #m9-3); claim name with the start token, adoption only of a dead claimant, `legacy-unreadable` `t` = legacy mtime (D6, #m9-4). NEW: `snapshot_pre_prompt`, `pre_prompt_state` + `PrePromptState`, `PRE_PROMPT_SKEW_S`; input events gain `prompt_sha` and `t` (R9). Built here or by 19.0, whichever merges first |
 | `src/refmatrix/hooks.py`, `cli.py` (`focus hook`, `focus topics`) | the generated SessionStart entry `rmx focus hook --event session-start` (matcher `startup\|resume\|clear\|compact`, stderr kept) that writes the pointer, migrates its root's legacy files once, surfaces its owner's rows AND its root's ended-session rows and prunes (D3, D4, D6, D7); every envelope parse through `stm.read_hook_envelope` (D9: `focus hook`, `_resolve_query`, `scan.read_stdin_prompt`); the input branch reordered: pointer write (existing) → `snapshot_pre_prompt` → sweep (failure recorded) → input record (R9); `focus topics` (`cli.py:1234`) prints the scoped clauses as its last line, also with no topics (D6; round-7 #m-4 (b)) |
-| `src/refmatrix/handoff.py` (`session_pointer_anomalies`, `:508-529`) | EXTENDED, not paralleled (round-6 #b-1): reads `<pointer_dir>/_errors.jsonl` through `read_pointer_errors(root=root, …)`, no legacy read (round-7 #s-3); prints the session-pointer clause, the STM-hook clause and the truncation clause apart (round-7 #s-2); its text names the new path (D6) |
+| `src/refmatrix/handoff.py` (`session_pointer_anomalies`, `:508-529`) | EXTENDED, not paralleled (round-6 #b-1): reads `<pointer_dir>/_errors.jsonl` through `read_pointer_errors(root=root, …)` and names it through `stm.errors_log_path()` (round-9 #m9-2), no legacy read (round-7 #s-3); prints the session-pointer clause, the STM-hook clause and the truncation clause apart (round-7 #s-2); its text names the new path (D6) |
 | `tests/test_mcp_session_pointer.py` | EXTENDED, not paralleled (bug-109's file): AC-1b, AC-4, AC-4b |
 | `src/refmatrix/store.py` | `find_memory_any_partition` (`:2578`) returns the chosen row's partition name (R11) |
-| `src/refmatrix/telemetry.py` | `CALL_OUTCOMES`; `outcome` + `budget_s` on recall and context rows, a skipped call still writing its row (R3, R4; #nm-5); `agent` source + precedence; `session`/`query_id`/`cwd`/`root` on rows; `row_provenance` + `is_test_artifact_row` (R5); the `--agent-usage` report; `RECALL_EVENT_FIELDS_V1`; `emit_recall_events` (the ONE writer, R11); `delivered_in_session` (R12's lookup); `event_kind` (R10a); `recall_channel` (R11); `turn` from `pre_prompt_state` (R9) |
+| `src/refmatrix/telemetry.py` | `CALL_OUTCOMES` (the existing four `outcome` values plus `skipped_budget`); `classify_outcome(…, budgeted=)` classifying by exception type; `log_query` honouring a set `t.outcome` and rewriting an outcome outside the vocabulary to `error` / `outcome-invalid` (round-9 #m9-5); `budget_s` on recall and context rows, a skipped call still writing its row (R3, R4; #nm-5); `agent` source + precedence; `session`/`query_id`/`cwd`/`root` on rows; `row_provenance` + `is_test_artifact_row` (R5); the `--agent-usage` report; `RECALL_EVENT_FIELDS_V1`; `emit_recall_events` (the ONE writer, R11); `delivered_in_session` (R12's lookup); `event_kind` (R10a); `recall_channel` (R11); `turn` from `pre_prompt_state` (R9) |
 | `src/refmatrix/verbs.py` | caller-side row + events for `context` (`:585`) and `memory_recall` (MCP route); `used` emission in `context`, `memory` `get` action (`:1157`) and `focus_note` (`:956`) |
 | `src/refmatrix/cli.py` | `context-daemon` row; `grep-stdin` cardinality; `--agent-usage`/`--until`/`--by-session`; events on the CLI context and recall routes; `used` on `memory get`'s replica fall-through (`cli.memory_get`, `:11371`) and the three CLI context routes |
 | `src/refmatrix/scan.py` | `scan_prompt` emitter with payload byte spans, `partition`, and raw phase inputs |
@@ -1444,3 +1594,25 @@ rel: related-to -> [[bug_registry]]
 | round-8 #nm-5 (a budget skip is invisible in telemetry; the daemon's own drop unreconciled) | R3 (a skipped call writes its row); R4 (`outcome` ∈ `CALL_OUTCOMES` = ok / skipped_budget / error, `budget_s`, on recall and context rows; one vocabulary shared with 21.3); R7 (outcomes per channel; `expired_reads` from `_op_stats`, `unavailable` when the daemon is down); AC-2b; mutations; [[#files-to-modify]] (`telemetry.py`, `daemon.py`). Consumed by [[task-19.5-measure-delivery#rev-round-8]]; 21.3's clause: [[task-21.3-indexed-symbol-nudge#rev-round-8]] |
 | round-8 #nm-7 (cites drifted; four already wrong at r7) | one cite-refresh pass, symbol + line read at `23ad703`: [[#why]] (`daemon.py:4714`, `verbs.py:585`, `cli.py:5149`, `:5097-5098`, `:5228`, `:6199`); R3 (`cli.py:10763`, `search_dense_cmd`); R6 (`:6199`); R7 (`:7518`); R9 (`hooks.py:265-266`); R10a (`cli.py:10317`); R11 (`store.py:2578`); R12 (`cli.memory_get` `:11371`, `verbs.py:1157`, `:813`, `:585`, `:956`); AC-8d (`cli.py:12155`, `:12367`); [[#files-to-modify]] |
 | user rule: converge repeated shapes; flag other duplicates | D6 `owner_alive`; D8 `_append_error_rows`; D9 `read_hook_envelope`; R4 `CALL_OUTCOMES`; each with an AST or test bypass check (AC-4b (xii), AC-2b). Flagged, NOT converged here (out of scope): the PreToolUse/PostToolUse envelope parses in `search_hooks.py:309` (grep guard, plan 16's) and the enqueue one-liner `hooks.py:111` (a `python3 -c` string, not module code); the generated focus entries' `2>/dev/null \|\| true` suffix (bug-118's renderer) |
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r9-ebccb20]] for 21.1: #s9-2, #s9-4, #m9-1 to #m9-5, and
+the 21.1 side of #s9-1. Edit-level; no decision. Code facts read at HEAD by symbol, then line:
+`scan.py:1036-1054`, `cli.py:8995-9013`, `cli.py:12236-12244`, `stm.py:127`, `:201`, `:249`,
+`:359`, `:387`, `telemetry.py:13`, `:96-118`, `:423`, `handoff.py:505-530`, `verbs.py:535-537`.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r9-ebccb20]]
+
+| finding | answered at |
+|---|---|
+| r9 #s9-2 (a per-root `t` watermark over a liveness-filtered set loses an older live owner's rows; AC-4b (ix)'s order hid it) | D6 set (2) consumed by OWNER: `{root, consumed: [[pid, pid_start, t_max]]}`, rows above an entry's `t_max` still shown, entries pruned past the 24 h window with the read bounded by the same window; "Claimed under the lock"; AC-4b (ix) reordered (P3 live writes first; P3's older row printed once after it exits; pruning leg); mutations (the `t`-only watermark) |
+| r9 #s9-4 (D9 records prose as `envelope-unreadable`; "fallback outside the envelope path" contradicts (xii)(c); prompt keys diverge) | D9 `read_hook_envelope(…, prose_ok=)` → `HookEnvelope(envelope, prose)` with `.prompt`; the prose fallback moved inside; callers' flags; `--stdin-json` keeps its `ClickException`; `stm.HOOK_PROMPT_KEYS` = scan's four keys, the behaviour change on each path recorded; bypass check extended; AC-4b (xiii) (brace prompt, `--stdin-json`, `{"text": …}`); mutations |
+| r9 #m9-1 (`owner_alive`'s `None` conflates unowned and unavailable; `read_pid_pointer`'s private check; `_proc_info` unchecked) | D6 `liveness_available()` (once per run, D6 and D7); `owner_alive(…, start_token=)`; `read_pid_pointer` through `owner_alive`; D7; AC-4b (xii)(b) sets {`owner_alive`, `liveness_available`, `write_pid_pointer`, `record_pointer_error`} and {`_proc_start`, `owner_lookup`} for `_proc_info(`; mutations |
+| r9 #m9-2 (the `_errors.` constant check fails at GREEN on docstrings and D6's required text) | D8 `stm.errors_log_path()`; the bypass check scoped to write operations, with a planted-fixture control; handoff takes the path from it ([[#files-to-modify]]); AC-4b (xii)(a); mutation |
+| r9 #m9-3 (AC-4b (x)'s identity breaks once a halving drops an earlier truncation row) | D6 roll-up: `dropped`, `dropped_by_root`, `unseen_dropped` add the removed truncation rows' counts; `dropped` counts non-truncation rows, so the identity is "non-truncation rows + Σ `dropped` = rows appended" (no `+ T` term, which no reader could count once truncation rows are dropped); AC-4b (x) at three or more halvings, per-root identity too; (iii-b) wording; mutation |
+| r9 #m9-4 (claim adoption by mtime adopts live claims; final-rename `FileNotFoundError` unhandled; `legacy-unreadable` not idempotent; (xi) blind) | D6 step 1 claim name `<pid>.<start_token>`, adoption only when `owner_alive(…) is False`, mtime rule withdrawn; final-rename loss counted `migrate-claim-lost`; `legacy-unreadable` `t` = the legacy file's mtime; AC-4b (xi) with a one-day-old legacy file, a live-claimant leg and the idempotent unreadable row; mutations |
+| r9 #m9-5 (`skipped_budget` = "the degrade path" mislabels refused connections; `CALL_OUTCOMES` unguarded) | R4: classification by exception type in `classify_outcome(…, budgeted=True)`; `log_query.__exit__` validates against `CALL_OUTCOMES` (plus 21.3's `NUDGE_OUTCOMES` for `kind=nudge`) and rewrites an unknown value to `error` / `outcome-invalid`; AC-2b non-budget and validation legs; mutations; [[#files-to-modify]] |
+| r9 sibling (found while answering #m9-5): `CALL_OUTCOMES` omitted the outcome values every `query.log` row already carries (`empty`, `consumer-closed`; bug-052, `telemetry.py:13`) | R4: the tuple is the existing four plus `skipped_budget`, and the one classifier is the existing `classify_outcome`, extended, not a second one |
+| r9 #s9-1 (21.1 side) | R9 `PrePromptState.topic_match` and `pre.json`'s `topic_match` (`{}` until 19.6), the carrier of 19.6 R9's assignment ([[task-19.6-phased-context-and-topic-cache#rev-round-9]]) |
+| user rule: converge repeated shapes into one function, each with a bypass check that can fail | `liveness_available`, `errors_log_path`, `HOOK_PROMPT_KEYS`, `read_hook_envelope(prose_ok=)`, `classify_outcome(budgeted=)`; each AST check in (xii) is also run on a planted fixture it must report; `log_query` validates at write time |

@@ -17,9 +17,12 @@ metadata:
 > Wave: pulled from Wave 3 to directly after its own dependencies (d9bi, 2026-10-15; was Wave 3,
 > d5b). **Helix substrate (d9bi):** the helix plan (Wave 4 draft) builds on this task's frozen
 > snapshots (`<cid>`, label, first-collapse `turn`), its topic cache (one writer, one home) and
-> its versioned blocks (`block_id`, `rev`, `unchanged` in 21.1's events). `derive_snapshots` and
-> `topic_hubs` (R9) are pure functions of (graph, cache), so helix can recompute identity from
-> the cache alone; a change to either signature after merge needs a decision-log row naming helix.
+> its versioned blocks (`block_id`, `rev`, `unchanged` in 21.1's events). `derive_snapshots`,
+> `match_snapshots`, `topic_hubs`, `snapshot_eligible` and `member_jaccard` (R9) are pure
+> functions of their arguments, and the cache file carries `schema: 1` (R3), so helix can
+> recompute identity, including WHICH live cluster each snapshot stands for, from the cache alone
+> by importing `stm.match_snapshots` (round-9 #s9-1); a change to any of these signatures or to
+> the cache schema after merge needs a decision-log row naming helix.
 > Depends on: 19.0 (clean STM clusters, envelope session; d5e); 19.1 (the packer with an
 > allocation knob, and d8a's subject exclusion); 19.5 R1 (per-hook vs per-event cap) and 19.5 R4
 > (the fixed baseline); 21.1 (the recall-event fields this task reads, listed in R7); 23.0
@@ -68,16 +71,19 @@ pays is unmeasured; this task measures first and builds against pre-registered r
    #s-3), by REPLAYING R9's render over each frozen ring turn by turn:
    - the per-turn share of collapsed lines byte-identical to the previous turn's;
    - the per-turn persistence of non-selected LIVE clusters' member sets (Jaccard with the same
-     cluster's previous member set, and the share exactly unchanged), which shows how much of the
+     cluster's previous member set, computed by `stm.member_jaccard`, and the share exactly
+     unchanged), which shows how much of the
      collapsed lines' stability comes from R9's frozen snapshots rather than from the clustering;
    - the share of non-selected live clusters represented by a snapshot they share exactly TWO
      members with, and of those the share where exactly ONE shared member is not a hub (the
      residual R9 states under d9bm), so a stability figure produced by the identity rule rather
      than by the clustering is visible (round-6 #s-2; round-7 #s-1, d9ax; round-8 #ns-1, d9bm).
      "Hub" is R9's cache-relative definition, computed at each replayed turn by calling
-     `stm.topic_hubs(cache)` on that turn's replayed cache; the replay script imports
-     `stm.topic_hubs` and `stm.snapshot_eligible` and defines no hub or identity predicate of its
-     own (AC-7i's import check). A one-member representation and a hub-only representation
+     `stm.topic_hubs(cache)` on that turn's replayed cache; WHICH snapshot represents a live
+     cluster is `stm.match_snapshots(live, cache)` on that turn's replayed input cache (round-9
+     #s9-1). The replay script imports `stm.match_snapshots`, `stm.member_jaccard` and
+     `stm.topic_hubs`, and defines no hub, identity, assignment or Jaccard computation of its own
+     (AC-7i's import check). A one-member representation and a hub-only representation
      cannot occur under R9's rule (≥ 2 shared members, ≥ 1 of them not a hub); AC-7i pins both,
      so neither is a measured residual.
    These are recorded figures; Table A's bands and verdicts are unchanged (d9v). The round-7
@@ -120,13 +126,23 @@ pays is unmeasured; this task measures first and builds against pre-registered r
    phrase "stored in the session's last-emitted state" is WITHDRAWN). Two writes, in the input
    hook's order (21.1 R9):
    - **in step 2, `snapshot_pre_prompt`:** the new snapshots R9 derives from the graph being
-     copied (`stm.derive_snapshots(graph, cache) -> cache`, a pure function of those two values)
-     are added, and the result is written into BOTH `pre.json`'s `topic_cache` and the cache file;
+     copied (`stm.derive_snapshots(graph, cache) -> (cache, topic_match)`, a pure function of
+     those two values; `topic_match` is R9's completed assignment, below) are added, and the
+     cache is written into BOTH `pre.json`'s `topic_cache` and the cache file, with
+     `topic_match` beside it in `pre.json`;
    - **after the input record:** this prompt's eviction, restore, expansion and re-collapse,
      which a reader never sees for this prompt.
    `pre_prompt_state` on its `live` path (no matching `pre.json`, the reader ran first) calls the
    same `derive_snapshots` on the live graph and cache in memory and writes nothing, so every
-   ordering of the hooks sees the same snapshot set. 19.6 extends `snapshot_pre_prompt` and
+   ordering of the hooks sees the same snapshot set and the same `topic_match`
+   (`PrePromptState.topic_match`, round-9 #s9-1).
+   **Cache file contract (round-9 #s9-1; helix reads it).** The file is
+   `{"schema": 1, "snapshots": [...]}`; each record holds its member set (sorted), `<cid>`, frozen
+   label, first-collapse `turn` and a `state` field (`collapsed` / `expanded`). Expansion flips
+   `state`; it never removes the record (only R3's LRU bound decides what a `return` restores).
+   The writer always writes `schema: 1`; a reader (`pre_prompt_state`, `derive_snapshots`'s
+   callers, helix) that meets a missing or different `schema` raises `ValueError` naming the
+   file and the value it found, and never reinterprets the records (AC-7i2). 19.6 extends `snapshot_pre_prompt` and
    `pre_prompt_state` (21.1 R9) for this; scan-prompt and the render write no STM file. A return (Jaccard overlap of the prompt's terms with a cached
    cluster ≥ the threshold, logged raw) restores that cluster as the active focus and spends the
    budget as warm. A cache entry and R9's collapsed snapshot of the same cluster are ONE record
@@ -218,23 +234,47 @@ pays is unmeasured; this task measures first and builds against pre-registered r
        cluster is that topic"). All three conditions are required; one shared member never
        establishes identity, whatever the Jaccard, and neither do shared hubs alone.
        - **Hub, defined cache-relatively (d9bm).** `stm.topic_hubs(cache) -> frozenset[str]` is
-         the set of refs that are members of **≥ 4** of the cache's **8 newest** snapshots
-         (newest by first-collapse `turn`, ties by the smaller `<cid>`). 4 = ⌈8/2⌉ over the
-         cache bound `N = 8` (R3; CONFIRMED, d9v), so the rule adds no constant. (d9bm's text
-         writes "K = 8"; in this spec `K` is R6's keyframe interval and the cache bound is `N`,
-         also 8: the number is the same, the name here is `N`.) A cache with fewer than 4
-         snapshots has no hubs. The hub set is computed ONCE per `derive_snapshots` call from
-         the cache AS PASSED IN, before that call adds any snapshot, so the result does not
+         the set of refs that are members of **≥ 4** (`stm.HUB_MIN_SNAPSHOTS`) of the cache's
+         **8 newest** snapshots (newest by first-collapse `turn`, ties by the smaller `<cid>`).
+         4 = ⌈8/2⌉ over the cache bound `N = 8` (R3; CONFIRMED, d9v), so the rule adds no
+         constant. **Its input is every snapshot record in the cache, whatever its `state`**
+         (round-9 #s9-1): a snapshot whose cluster is expanded leaves the collapsed SET but stays
+         a record (R3's cache contract) and still counts toward the 8 newest. A cache with fewer
+         than 4 snapshot records has no hubs. The hub set is computed ONCE per `derive_snapshots` call (inside
+         its one `match_snapshots` call) from the cache AS PASSED IN, before that call adds any snapshot, so the result does not
          depend on the order in which live clusters are matched, and `derive_snapshots(graph,
          cache)` stays a pure function of its two arguments (no read, no clock).
+       - **One Jaccard.** `stm.member_jaccard(a: frozenset, b: frozenset) -> float` is the only
+         member-set Jaccard (0.0 for two empty sets); `snapshot_eligible`, the assignment
+         below and R1's replay call it (round-9 #s9-1).
        - **One predicate.** `stm.snapshot_eligible(live: frozenset, snap: frozenset, hubs:
-         frozenset) -> bool` is the only place the three conditions live; `derive_snapshots`,
-         `pre_prompt_state`'s live path (through `derive_snapshots`) and R1's replay script call
-         it, and none carries its own copy (AC-7i's import check). Among eligible snapshots the live cluster is
-       represented by the highest-Jaccard one; ties go to the newest first-collapse time, then
-       the smaller `<cid>`. Each snapshot represents at most one live cluster per prompt (the
-       highest-Jaccard one; the others go on down their own lists). A live cluster with no
-       eligible snapshot is snapshotted as new. The round-5 rule "shares at least one member" is
+         frozenset) -> bool` is the only place the three conditions live; only
+         `match_snapshots` calls it, and nothing carries its own copy (AC-7i's import check).
+       - **One assignment** (round-9 #s9-1). `stm.match_snapshots(live: list[frozenset], cache)
+         -> dict[int, str | None]` maps each index of `live` to the `<cid>` of the snapshot
+         that represents it, or `None` (snapshot as new). It is the ONLY home of the
+         assignment, and it is pure:
+         1. it computes `topic_hubs(cache)` ONCE, on the cache as passed in;
+         2. it processes the live clusters in a DEFINED order: descending member count, ties by
+            the sorted member tuple (lexicographic), whatever order `live` arrives in;
+         3. for each live cluster in that order, the eligible snapshots (`snapshot_eligible`)
+            not yet taken are ranked by `member_jaccard` descending, ties to the newest
+            first-collapse `turn`, then the smaller `<cid>`; the first is assigned and taken.
+            Each snapshot represents at most one live cluster per prompt; a later live cluster
+            whose best snapshot is taken goes on down its own list.
+         `derive_snapshots(graph, cache)` clusters the graph, calls `match_snapshots` once,
+         snapshots every `None` entry as new, and returns the new cache with `topic_match`: the
+         completed map, keyed by the sorted member tuple of each live cluster, valued by its
+         `<cid>` (existing or new). `topic_match` is carried in `pre.json` and on
+         `PrePromptState.topic_match` (R3), because the render sees only the POST-derive cache,
+         whose hub set may differ from the input cache's, so a render-side recomputation could
+         disagree with the writer. The render reads `topic_match` to know which snapshot stands
+         for the EXPANDED cluster and leaves it out of the collapsed set on this prompt (the
+         cache's own expansion update is written after the input record, so it does not yet
+         show it). R1's replay calls `match_snapshots` on each replayed input cache. Helix
+         imports it (plan-19 header, interface 2). No other code assigns live clusters to
+         snapshots (AC-7i's import check).
+       - **History.** The round-5 rule "shares at least one member" is
        WITHDRAWN: hub refs (`src/refmatrix/cli.py`, `daemon.py`) sit in most clusters of this
        repo, so one shared member hid every later topic behind an old line. Jaccard alone
        (round 6) did not close it for small clusters: with ONE shared member, J ≥ 0.20 exactly
@@ -466,14 +506,35 @@ the warm threshold):** {#ranges-d}
    | H1 | 4 snapshots S1 = {`hub1`, `hub2`, `a`}, S2 = {`hub1`, `hub2`, `p`}, S3 = {`hub1`, `hub2`, `q`}, S4 = {`hub1`, `hub2`, `r`} | {`hub1`, `hub2`, `b`} | own line: vs every Si 2 shared, both hubs, J = 2/4 |
    | H2 | the H1 cache | {`hub1`, `a`, `c`} | represented by S1: shared {`hub1`, `a`}, `a` not a hub, J = 2/4; S2-S4 share 1 member |
    | H3 (control) | S1-S3 only (3 snapshots: no hubs) | {`hub1`, `hub2`, `b`} | represented (by S3, the newest of the J = 2/4 ties): with 3 snapshots `hub1`/`hub2` are not hubs |
-   | H5 (one hub set per call) | S1-S3 (no hubs) | TWO live clusters in one call, run with each of the two matching orders (the spec's result is the same in both; the mutant's differs when N1 is matched first): N1 = {`hub1`, `hub2`, `n1`..`n8`} (10 members; J = 2/11 with each Si: own line, a NEW snapshot holding `hub1`/`hub2`), then {`hub1`, `hub2`, `b`} | N1 own line; {`hub1`, `hub2`, `b`} represented by S3: the hub set is the INPUT cache's (3 snapshots, empty), not the 4 the call produces |
+   | H5 (one hub set per call) | S1-S3 (no hubs) | TWO live clusters in one call, passed to `derive_snapshots` with {`hub1`, `hub2`, `b`} FIRST in the graph's cluster list: N1 = {`hub1`, `hub2`, `n1`..`n8`} (10 members; J = 2/11 with each Si: own line, a NEW snapshot holding `hub1`/`hub2`) and {`hub1`, `hub2`, `b`}. `match_snapshots`'s defined order (descending member count) processes N1 first whatever the input order (round-9 #s9-1), so the mid-call-recompute mutant always sees 4 snapshots holding `hub1`/`hub2` when it reaches the second cluster | N1 own line; {`hub1`, `hub2`, `b`} represented by S3: the hub set is the INPUT cache's (3 snapshots, empty), not the 4 the call produces |
    | H4 (window) | 10 snapshots; `hub1` and `hub2` are members of the 2 OLDEST and the 2 NEWEST only (4 of 10, 2 of the 8 newest), each other snapshot a disjoint triple | {`hub1`, `hub2`, `b`} | represented by the newest snapshot holding both: they are not hubs in the 8-newest window |
 
    For each leg the test asserts `stm.topic_hubs(cache)` on the input cache (H1, H2: {`hub1`,
-   `hub2`}; H3, H4, H5: empty) before asserting the render. **Import check:** a test parses R1's replay script and
-   `composite.py` and asserts each imports `topic_hubs` / `snapshot_eligible` from `stm` and
-   defines no function computing a member-set Jaccard or a hub set of its own. RED at HEAD: no
-   collapsed render exists.
+   `hub2`}; H3, H4, H5: empty) and the `stm.match_snapshots` map before asserting the render.
+   H6 (the expanded cluster's snapshot; round-9 #s9-1): the H3 cache with the phase `warm` on
+   {`hub1`, `hub2`, `b`}: `topic_match` maps it to S3, and the collapsed block holds S1 and S2
+   and NOT S3 on this same prompt (the cache's own `state` flip is written after the input
+   record). H7 (the cache contract): the H1 cache with S2's `state` = `expanded` still yields
+   `topic_hubs` = {`hub1`, `hub2`}. H8 (the defined order): one snapshot S = {`a`, `b`, `c`,
+   `d`}; `live` passed as [{`a`, `b`, `y`}, {`a`, `b`, `c`, `x`}] (both eligible: J = 2/5 and
+   3/5). The map is {1: S's `<cid>`, 0: `None`}: the 4-member cluster is processed first and
+   takes S, the 3-member one gets its own line; the same map results with `live` reversed.
+   **Import check** (round-9 #s9-1; AST over R1's replay script, `composite.py` and every
+   `src/refmatrix` module except `stm.py`):
+   - the replay script imports `match_snapshots`, `member_jaccard` and `topic_hubs` from
+     `stm`; `composite.py` imports none of `match_snapshots`, `snapshot_eligible`,
+     `topic_hubs` or `member_jaccard` and reads `topic_match` from `PrePromptState`;
+   - no call of `snapshot_eligible` outside `stm.match_snapshots`;
+   - no expression of the shape `len(A & B) / len(A | B)` (or `.intersection` / `.union`)
+     and no use of the literal `4` or of `HUB_MIN_SNAPSHOTS` against a snapshot count,
+     outside `stm.py`.
+   **The check can fail:** run on a fixture module holding `len(a & b) / len(a | b)`, it
+   reports that line; run on a fixture calling `snapshot_eligible` directly, it reports that
+   call. RED at HEAD: no collapsed render exists.
+7i2. **Cache schema** (R3; round-9 #s9-1). The cache file the input hook writes has
+   `schema == 1`. A cache file with `schema: 2`, and one with no `schema` key, each make
+   `pre_prompt_state` raise `ValueError` naming the path and the value found; the file's bytes
+   are unchanged afterwards (no reader rewrote it).
 8. **Isolation.** 23.0's guard records 0 live connects for this task's test files.
 9. **Mutations that must FAIL a test:**
    - phase driven by turn count (AC-7);
@@ -519,8 +580,16 @@ the warm threshold):** {#ranges-d}
    - hubs counted over every cached snapshot instead of the 8 newest (AC-7i H4: own line);
    - the hub set recomputed after each snapshot `derive_snapshots` adds in the same call (AC-7i
      H5: the second live cluster gets its own line);
-   - the replay script or the render carrying its own identity predicate (AC-7i's import
-     check);
+   - (round 9, #s9-1) `match_snapshots` processing `live` in input order instead of the
+     defined order (AC-7i H8: the 3-member cluster takes S);
+   - an expanded snapshot dropped from `topic_hubs`'s input (AC-7i H7: the hub set loses
+     `hub1`/`hub2`);
+   - the render showing the expanded cluster's snapshot as a collapsed line (AC-7i H6);
+   - the render recomputing the assignment on the post-derive cache instead of reading
+     `topic_match` (AC-7i's import check);
+   - a reader accepting an unknown cache `schema` (AC-7i2);
+   - the replay script or the render carrying its own identity predicate, assignment or
+     Jaccard (AC-7i's import check);
    - the marker written only by the PreCompact recall command (AC-7f with the recall entry
      removed);
    - `session_start` / `precompact` randomized across arms (AC-7b);
@@ -532,8 +601,8 @@ the warm threshold):** {#ranges-d}
 
 | file | change |
 |---|---|
-| `src/refmatrix/stm.py` | phase classification over `pre_prompt_state` (R2) with the thresholds; the topic cache (snapshot, LRU, restore), whose entries are R9's frozen snapshots and whose ONLY writer is the input hook (R3; round-6 #s-2): `derive_snapshots(graph, cache)` (pure; the identity rule through `snapshot_eligible`: ≥ 2 shared members, ≥ 1 of them not a hub, AND Jaccard ≥ `j_return`, d9ax amended by d9bm), `topic_hubs(cache)` (pure; ≥ 4 of the 8 newest snapshots) and `snapshot_eligible(live, snap, hubs)`, each the only copy of its rule, called and stored by `snapshot_pre_prompt` and called in memory by `pre_prompt_state`'s live path; eviction / restore / expansion / re-collapse written after the input record |
-| `src/refmatrix/composite.py` | the expand/collapse composite render (R9; the render lives here, `composite.py:63`, not in `stm.py`; round-4 #b-2): frozen snapshots read from `pre_prompt_state(…).topic_cache`, never written here (round-6 #s-2), stable cluster ids, frozen labels, the cap `C`; the two blocks `stm-topic-expanded` / `stm-topic-collapsed` (R5); its graph from `pre_prompt_state` on prompt-time calls (R2) |
+| `src/refmatrix/stm.py` | phase classification over `pre_prompt_state` (R2) with the thresholds; the topic cache (snapshot, LRU, restore), whose entries are R9's frozen snapshots and whose ONLY writer is the input hook (R3; round-6 #s-2): `derive_snapshots(graph, cache) -> (cache, topic_match)` (pure; calls `match_snapshots` once), `match_snapshots(live, cache) -> {idx: cid or None}` (pure; the ONE assignment: hubs once, defined order, highest J, tie-breaks, one live cluster per snapshot; round-9 #s9-1), `member_jaccard(a, b)` (the ONE member-set Jaccard), `topic_hubs(cache)` (pure; ≥ 4 of the 8 newest snapshot records, any `state`) and `snapshot_eligible(live, snap, hubs)` (≥ 2 shared members, ≥ 1 of them not a hub, AND Jaccard ≥ `j_return`, d9ax amended by d9bm), each the only copy of its rule; the cache file's `schema: 1` and its reader check; called and stored by `snapshot_pre_prompt` and called in memory by `pre_prompt_state`'s live path; eviction / restore / expansion / re-collapse written after the input record |
+| `src/refmatrix/composite.py` | the expand/collapse composite render (R9; the render lives here, `composite.py:63`, not in `stm.py`; round-4 #b-2): frozen snapshots read from `pre_prompt_state(…).topic_cache` and the assignment from `PrePromptState.topic_match` (the expanded cluster's snapshot left out of the collapsed set; round-9 #s9-1), never written here (round-6 #s-2), stable cluster ids, frozen labels, the cap `C`; the two blocks `stm-topic-expanded` / `stm-topic-collapsed` (R5); its graph from `pre_prompt_state` on prompt-time calls (R2) |
 | `src/refmatrix/cli.py` (`focus hook`), `hooks.py` | `--event compact-marker` and its own generated PreCompact entry (R8a); the marker dispatch inside `--event session-start` when `source=compact` (R8a; round-4 #m-3) |
 | `src/refmatrix/scan.py` | phase-aware allocation of scan-prompt's spend; block ids and revs |
 | `src/refmatrix/cli.py` / `verbs.py` (`memory recall`) | phase-aware pack allocation; block ids and revs |
@@ -666,3 +735,17 @@ rel: implements -> [[plan-review-2026-10-14#t12-approvals]]
 | round-8 #ns-1; d9bm (d9ax's stated residual, two shared HUB members, is 63-73% of its matches; "hub" undefined for R1) | R9 "Which live cluster a snapshot stands for" (≥ 2 shared, ≥ 1 not a hub, J ≥ `j_return`; hub = member of ≥ 4 of the cache's 8 newest snapshots, computed once per call from the cache as passed in; `stm.topic_hubs` and `stm.snapshot_eligible` the only copies; d9bm's "K" named `N` here, same number; residual restated); R1 (the figure defined through `stm.topic_hubs` on the replayed cache; the round-8 proxy measurement recorded); [[#ranges-thresholds]] `return` row (d9bm); AC-7i (hub legs H1-H5 with `topic_hubs` asserted; import check); mutations (hub exclusion dropped; hubs excluded from the count; threshold 3 / 5; all snapshots instead of 8 newest; hub set recomputed mid-call (H5); private predicate); [[#files-to-modify]] (`stm.py`) |
 | d9bi (plan 19 is the helix substrate; 19.6 pulled forward) | header (wave; the helix-facing interfaces named, and the rule that changing them after merge needs a decision row) |
 | user rule: converge repeated shapes into one function | R9 (`topic_hubs`, `snapshot_eligible`: one copy each, used by the input-hook writer, `pre_prompt_state`'s live path and R1's replay; AC-7i import check) |
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r9-ebccb20#s9-1]] and the 19.6 part of
+[[bsd-plan19-21-spec-diffcheck-r9-ebccb20#m9-7]]. Edit-level; no decision. This unblocks the
+helix topic-cache interface. No code fact is new: no collapsed render exists at HEAD.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r9-ebccb20]]
+
+| finding | answered at |
+|---|---|
+| r9 #s9-1 (the identity ASSIGNMENT has no single home; the import check demands dead imports; H5's kill is order-dependent; `topic_hubs`'s input and the cache schema unstated) | R9 "One Jaccard" (`stm.member_jaccard`), "One assignment" (`stm.match_snapshots(live, cache) -> {idx: cid or None}`: hubs once, defined order by descending size then sorted members, highest J, tie-breaks, one live cluster per snapshot); `derive_snapshots` returns `(cache, topic_match)`; the render reads `PrePromptState.topic_match` rather than recomputing on the post-derive cache (why stated); `topic_hubs` counts every snapshot record whatever its `state`; R3 cache contract (`schema: 1`, `state` field, reader raises on another schema); R1 (the replay imports `match_snapshots`, `member_jaccard`, `topic_hubs`); header (helix interface); AC-7i H5 (the defined order processes N1 first; "each of the two matching orders" dropped), H6 (expanded snapshot left out of the collapsed set), H7 (expanded records count toward hubs), H8 (order leg); import check rewritten with its own failing control; AC-7i2 (schema); mutations; [[#files-to-modify]] |
+| r9 #m9-7 (stale "K = 8" note) | R9 hub bullet: the parenthetical deleted (d9bm now reads `N = 8`) |
+| user rule: converge repeated shapes into one function, each with a bypass check that can fail | `match_snapshots` and `member_jaccard` are the one assignment and the one Jaccard; AC-7i's import check reports a planted intersection-over-union expression and a direct `snapshot_eligible` call |
