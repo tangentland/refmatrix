@@ -279,7 +279,10 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      In all three, a miss is recorded exactly as bug-109 records it today (`verbs.py:561-565`):
      `owner-lookup-failed` when `owner_lookup()` returned `failed`; `pointer-unresolved` when an
      owner was found, `$CLAUDE_PID` is set, or the process is long-lived; nothing in a plain
-     terminal, which has no pointer to miss.
+     terminal, which has no pointer to miss. "All three" is pinned per purpose (round-7 #s-4):
+     AC-4 asserts the row for `event`, `read` and `write`, because for a `write` miss under a
+     hook (exit 1, 19.0 R5) the row is the only durable channel; each row carries D8's `root` and
+     `owner` scope.
    - **`CLAUDE_CODE_SESSION_ID` is read by no resolver path** (bug-109 already reads it nowhere;
      R1 also deletes it from the server's environment).
    - **D3 One pointer location for every store root** (bug-109 r1 #m-4, "the hook and server
@@ -291,9 +294,17 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      `hub.py:100`; 23.0's sandbox redirects it). NEW `stm.pointer_dir() -> Path` returns it, and
      creates only `by-pid/` itself, only when `global_store_root()` already exists (the r2 #s-1
      rule kept: no read creates a store). `write_pid_pointer`, `read_pid_pointer` and
-     `pid_pointer_path` drop their `root` argument. Migration, one release: `read_pid_pointer`
-     falls back to bug-109's `<root>/stm/by-pid/<pid>.json` when the new file is absent, and
-     records `pointer-legacy-location`; nothing writes the old pointer location.
+     `pid_pointer_path` drop `root` as the pointer's LOCATION (`write_pid_pointer` and
+     `read_pid_pointer` keep a keyword-only `root` that only scopes the error rows they write,
+     D8). **Migration, one shot, no legacy read**
+     (round-7 #s-3; the round-6 "one release" fallback and its `pointer-legacy-location` reason
+     are WITHDRAWN): `read_pid_pointer` reads only `<pointer_dir>/<pid>.json`. bug-109's
+     `<root>/stm/by-pid/<pid>.json` files are never read: a pointer is a cache of the process
+     relation (D7's own words), and the input hook writes the new-location pointer FIRST on every
+     envelope with a `session_id` (`cli.py:1979-1993`), before any MCP call of that turn, so no
+     resolution depends on a legacy file. The SessionStart writer's one-shot migration (D6)
+     deletes its own root's legacy pointer files, counted. Nothing writes the old location, and
+     no `src/` path reads it.
    - **D4 The SessionStart writer** (bug-109 r1 #m-4). A NEW generated SessionStart entry,
      matcher `startup|resume|clear|compact`, command `rmx focus hook --event session-start`
      (stderr NOT discarded: this is a memory path), calls `write_pid_pointer` with the envelope's
@@ -305,41 +316,96 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      no longer matches: pid reuse) and `pointer-unreadable` (present but not a JSON object)
      instead of returning `None` silently (`stm.py:383-388` today). A missing file is not an error
      by itself; the resolver's row covers it.
-   - **D6 The EXISTING reader follows the log; one more surface** (round-6 #b-1). bug-109's
-     `handoff.session_pointer_anomalies` (`handoff.py:508-529`) already surfaces the log in
-     `rmx recall-state`; D6 extends it, it adds no second reader:
-     - `stm.read_pointer_errors` drops its `root` argument and reads `<pointer_dir>/_errors.jsonl`
-       and, for one release, bug-109's `<root>/stm/by-pid/_errors.jsonl` when a `legacy_root=` is
-       given, merging the two by `t`. `session_pointer_anomalies(root)` passes `legacy_root=root`,
-       and its text names the new path. Without this, D3 + D8 would leave recall-state reading a
-       file that never gains another row: the one existing report of guessed sessions would go
-       quiet with no error.
-     - `rmx focus show` prints the same one line, `session pointer: <reason>=<n> … since <ts>`.
-     - The SessionStart writer (D4) prints that line on STDOUT, where SessionStart output reaches
-       the agent, whenever rows were added since the last surfacing. **The watermark is keyed on
-       `t`, not on a byte offset:** `by-pid/_errors.seen` holds the largest `t` already surfaced,
-       and the writer surfaces `read_pointer_errors(since=<that t>)` minus rows with `t` equal to
-       it. bug-109's in-place halving (`stm.py:308-310`) moves every byte offset, so an offset
-       watermark would skip rows or surface them twice; a `t` watermark is unaffected.
-       Unreadable lines carry no `t` and are counted on every surfacing, apart, as recall-state
-       already counts them.
-     - **The bound is kept, and its deletions are counted.** The 256 KiB halving stays (the round-5
-       1 MB rename and "nothing is deleted" are WITHDRAWN: the halving deletes rows, and it fires
-       long before 1 MB). When it halves, `record_pointer_error` first appends one row
-       `{reason: "errors-truncated", dropped: <n lines>, oldest_kept_t: <t>}` to the kept half, so
-       every surface reports that rows were dropped and how many.
-   - **D7 `by-pid/` cleanup** (bug-109 r1 #m-4). The SessionStart writer removes each pointer file
-     whose `_proc_start(pid)` (`stm.py:197-202`, one kernel lookup per pid; there is no
-     process-table call in `src/`, and the round-5 name `stm._process_table()` is WITHDRAWN) is
-     `None` or differs from its `pid_start`, and prints `pruned=<n>` with the surfacing line. If
-     `_proc_start(os.getpid())` is itself `None`, the lookup is unavailable, nothing is pruned, and
-     the line reads `prune skipped: process lookup unavailable` (otherwise every live pointer
-     would be removed). A pointer is only a cache of the process relation, so removing a dead
-     process's pointer loses nothing.
-   - **D8 `record_pointer_error` generalized.** With D3 it writes `<pointer_dir>/_errors.jsonl`
-     and drops its `root` argument (a store-scoped row carries `root=` as a field). 19.0 adds the
-     reasons `sweep-failed`, `composite-failed` and `enrichment-unresolved` to the same record, so
-     every STM hook failure reaches D6's surfaces; no new error file is added.
+   - **D6 The EXISTING reader follows the log, scoped; one more surface** (round-6 #b-1;
+     round-7 #s-2, #s-3, #m-4). bug-109's `handoff.session_pointer_anomalies`
+     (`handoff.py:508-529`) already surfaces the log in `rmx recall-state`; D6 extends it, it adds
+     no second reader. D3 makes the log ONE user-level file for every project and every Claude
+     process, so every reader filters by scope (round-7 #s-2: without it, recall-state in project
+     X counted project Y's rows, and the first SessionStart anywhere consumed every session's rows):
+     - **Every row is scoped at write time** (D8): `root` (the writer's store root, resolved, as a
+       string) and `owner` / `owner_start` (the Claude pid the writer resolved and its
+       `_proc_start`, or `null` when it found none, as in `no-owner` and `owner-lookup-failed`).
+       The one global row is `errors-truncated` (below), which carries per-scope counts instead.
+     - `stm.read_pointer_errors(*, root: Path | None = None, owner: tuple[int, str] | None =
+       None, since: float = 0.0) -> list[dict]` reads `<pointer_dir>/_errors.jsonl` only (no
+       legacy file: round-7 #s-3, see the migration below). With `root=`, it returns rows whose
+       `root` equals it; with `owner=` (`(pid, pid_start)`), rows whose `owner` and `owner_start`
+       equal it; with both, rows matching both. A row with no `root` field (a writer defect, or a
+       pre-migration row) is returned as `{"reason": "unscoped-row", …}` to every scoped reader,
+       counted apart like `unreadable-line`, never attributed silently to the reader's scope.
+     - `session_pointer_anomalies(root)` calls `read_pointer_errors(root=root, since=now −
+       24 h)` and prints up to three clauses, so its existing "guessed session" text stays true:
+       (1) **session-pointer failures** (every reason other than those in (2) and (3)): count per
+       reason, then "the session could not be resolved: reads used the labelled newest ring,
+       writes were refused, events carry `session: null`"; (2) **STM hook failures**
+       (`sweep-failed`, `composite-failed`, `enrichment-unresolved`): count per reason, with no
+       session wording; (3) **dropped by truncation**: the sum of `dropped_by_root[root]` over the
+       window's `errors-truncated` rows. Unreadable lines and `unscoped-row`s are counted apart, as
+       today. Its text names the new path.
+     - `rmx focus topics` (`cli.py:1234`, no required argument) prints the same clauses for the
+       current root as its last line, also when it prints "no topics yet" (round-7 #m-4 (b): the
+       round-6 surface `rmx focus show` takes a required `LINE`, `cli.py:1210`, so it was not a
+       status surface).
+     - **The SessionStart writer (D4) surfaces its OWNER's rows on STDOUT**, where SessionStart
+       output reaches the agent, whenever rows were added since that owner's last surfacing.
+       **The watermark is per owner and keyed on `t`, not on a byte offset:**
+       `<pointer_dir>/_errors.seen.<pid>` holds `{pid_start, t}`, the largest `t` already
+       surfaced for that owner; a file whose `pid_start` differs from the owner's is ignored (pid
+       reuse). The writer surfaces `read_pointer_errors(owner=(P, P_start), since=<that t>)` minus
+       rows with `t` equal to it, so one session's SessionStart never surfaces, or consumes,
+       another session's rows. Rows with `owner: null` belong to no session: recall-state and
+       `focus topics` report them for their root, and the SessionStart line adds
+       `unowned_in_root=<n> (see rmx recall-state)` for its root's last 24 h without consuming
+       them. bug-109's in-place halving (`stm.py:308-310`) moves every byte offset, so an offset
+       watermark would skip rows or surface them twice; a `t` watermark is unaffected. Unreadable
+       lines carry no `t` and are counted on every surfacing, apart.
+     - **The bound is kept, and its deletions are counted per scope.** The 256 KiB halving stays
+       (the round-5 1 MB rename and "nothing is deleted" are WITHDRAWN: the halving deletes rows,
+       and it fires long before 1 MB). When it halves, `record_pointer_error` first appends one row
+       `{reason: "errors-truncated", t, dropped: <n lines removed>, oldest_kept_t,
+       dropped_by_root: {<root>: n}, unseen_dropped: {"<pid>:<pid_start>": n}}` to the kept half.
+       `unseen_dropped` counts, per owner, the removed rows of that owner with `t` above its
+       watermark file at halving time (no file: all of them), so an owner's SessionStart line
+       reports exactly how many of ITS unsurfaced rows were lost; `dropped` stays the total line
+       count. A reader surfaces the `errors-truncated` row when its own scope has a non-zero count
+       in it.
+     - **One-shot migration of bug-109's files** (round-7 #s-3, the user's choice; the round-6
+       "for one release" legacy read and `legacy_root=` are WITHDRAWN). The SessionStart writer,
+       for its own root `R` (`cli._root()` of the hook's cwd), when `R/stm/by-pid/_errors.jsonl`
+       exists: appends each parseable legacy row to `<pointer_dir>/_errors.jsonl` with its
+       ORIGINAL `t`, plus `root = R` and `migrated_from = <legacy path>` (legacy rows have no
+       `owner_start`, so they surface in recall-state for `R`, never on an owner's SessionStart);
+       appends one `{reason: "legacy-unreadable", n}` row scoped to `R` when the legacy file held
+       unparseable lines; then renames the legacy file to `R/stm/by-pid/_errors.migrated.jsonl`.
+       It is idempotent: a legacy row whose `(t, reason)` already appears in the new log with the
+       same `migrated_from` is not appended again, so a run interrupted between the append and the
+       rename repeats nothing. It then deletes `R/stm/by-pid/<pid>.json` legacy pointers (D3) and
+       prints `migrated=<rows> legacy_pointers_dropped=<n>` with the surfacing line. No `src/`
+       path reads `R/stm/by-pid/` at any time, so there is no legacy read path to remove later.
+       Stated limit: a root where no Claude session starts after the deploy keeps its legacy file
+       on disk, unmigrated and unread; its rows were reported by recall-state for 24 h only, so
+       what is lost is at most one day of that root's report.
+   - **D7 `by-pid/` cleanup** (bug-109 r1 #m-4; round-7 #s-2). The SessionStart writer removes
+     each pointer file, and each `_errors.seen.<pid>` watermark file, whose `_proc_start(pid)`
+     (`stm.py:197-202`, one kernel lookup per pid; there is no process-table call in `src/`, and
+     the round-5 name `stm._process_table()` is WITHDRAWN) is `None` or differs from its
+     `pid_start`, and prints `pruned=<n>` with the surfacing line. If `_proc_start(os.getpid())`
+     is itself `None`, the lookup is unavailable, nothing is pruned, and the line reads
+     `prune skipped: process lookup unavailable` (otherwise every live pointer would be removed).
+     A pointer is only a cache of the process relation, and a watermark only of what its process
+     was shown, so removing a dead process's files loses nothing.
+   - **D8 `record_pointer_error` generalized** (round-7 #s-2). With D3 it writes
+     `<pointer_dir>/_errors.jsonl`. Its signature becomes `record_pointer_error(reason: str, *,
+     root: Path, owner: int | None, **fields) -> bool`: `root` no longer locates the file, it is
+     the row's SCOPE, and is required; `owner` is the Claude pid the caller resolved (`None` when
+     it found none), and the writer adds `owner_start = _proc_start(owner)`. The existing call
+     sites hold both: the input hook its `_root()` and `owner_lookup()` result (`cli.py:1985`,
+     `:1991`), the resolver its `root` and `owner` (`verbs.py:562`, `:564`); `write_pid_pointer`'s
+     `ps-failed` row (`stm.py:368`) has its `pid` as the owner and takes `root` from its caller
+     as a scope keyword (D3 removed `root` only as the pointer's location). 19.0 adds the
+     reasons `sweep-failed`, `composite-failed` and `enrichment-unresolved` to the same record,
+     scoped the same way, so every STM hook failure reaches D6's surfaces; no new error file is
+     added.
    - `stm.latest_session` (`stm.py:392` at HEAD) is never called outside the `read` tail (bsd
      #b-1; bug-100's shape). When nothing resolves, rows and events carry `session: null`.
 
@@ -632,25 +698,77 @@ line counts are unchanged.
    the newest ring, source `latest`) and the `pointer-stale` row (bug-109 returns `None`
    silently). The lookup-failed leg is a GREEN regression guard for the row (bug-109 writes
    `owner-lookup-failed` today, `verbs.py:561-562`) and is not counted as RED.
+   **Read and write legs** (round-7 #s-4: the row was pinned for `event` only, so a resolver that
+   records only for `event` survived). Same `CLAUDE_PID` setup, no pointer for the test pid, no
+   `RMX_SESSION`, two rings on disk: (a) `rmx focus note x` (a `write`) exits 2 with ONE stderr
+   line naming the sources tried, both rings' line counts are unchanged, and `_errors.jsonl`
+   gains exactly one `pointer-unresolved` row with `owner` = the test pid and `root` = the tmp
+   root; (b) `rmx focus tail` (a `read`) prints the newest ring labelled `(newest ring; not
+   resolved)` and adds exactly one such row. Each row's delta is counted per command, and both
+   rows appear in `handoff.compose_recall_state`'s anomalies for that root under the
+   session-pointer clause (D6). RED at post-109 `master`, failing assertion: (a)'s newer ring's
+   line count (bug-109 writes the note there and exits 0); (b) is a GREEN regression guard for
+   the row (bug-109 records it on its `latest` fall-through) and is not counted as RED. Every row
+   asserted in this AC carries `root` = the tmp root and `owner_start` = the test process's
+   `_proc_start` (D8).
 
-   **4b. Pointer location, surfacing and cleanup** (D3, D6, D7; bug-109 r1 #m-4; round-6 #b-1).
+   **4b. Pointer location, surfacing, scope, migration and cleanup** (D3, D6, D7, D8; bug-109 r1
+   #m-4; round-6 #b-1; round-7 #s-2, #s-3, #m-4 (a)). Every child runs with `CLAUDE_PID` set as in
+   AC-4.
    (i) The input hook run with cwd in tree X writes the pointer under the sandbox's global
-   `by-pid/`; an MCP server spawned with cwd in tree Y resolves it. (ii) A pointer present only at
-   bug-109's legacy `<root>/stm/by-pid/` resolves once and records `pointer-legacy-location`.
-   (iii) With three `_errors.jsonl` rows added since the watermark, the generated SessionStart
-   command prints one stdout line naming their reasons and counts, and a second run prints none.
-   (iii-b) After those rows, enough further rows are written to cross `_ERRORS_MAX_BYTES` and
-   trigger the halving; the next SessionStart run prints exactly the rows newer than the
-   watermark (none twice, none skipped) plus `errors-truncated` with the dropped count.
-   (iv) A pointer for a pid that no longer exists (a child process the test started and reaped) is
-   removed by the SessionStart run and `pruned=1` is printed. (iv-b) With `stm._proc_info`
-   monkeypatched in the test to return `None` for every pid, the prune (called in process) removes
-   no pointer and prints `prune skipped: process lookup unavailable`. (v) **recall-state reads the new
-   location:** a row written through `record_pointer_error` (now under the global `by-pid/`)
-   appears in `handoff.compose_recall_state`'s anomalies and in `rmx recall-state`'s output.
-   (vi) A row present only in bug-109's legacy `<root>/stm/by-pid/_errors.jsonl` also appears
-   there, for this release. RED at post-109 `master` for (i)-(v) (no global location, no
-   SessionStart entry); (vi) is a GREEN regression guard, not counted as RED.
+   `by-pid/`; an MCP server spawned with cwd in tree Y resolves it.
+   (ii) **Legacy pointer dropped, not read** (round-7 #s-3). A pointer present only at bug-109's
+   legacy `X/stm/by-pid/<test pid>.json` is NOT read: `resolve_session_source(X, None,
+   purpose="event")` returns `(None, "none")` and records `pointer-unresolved`. The first
+   SessionStart run in X deletes that file and prints `legacy_pointers_dropped=1`; an input hook
+   with an envelope then writes the new-location pointer, and the same call resolves it.
+   (iii) With three rows owned by the test pid added since its watermark, the generated
+   SessionStart command prints one stdout line naming their reasons and counts, and a second run
+   prints none.
+   (iii-b) **Halving** (round-7 #m-4 (a): the round-6 text asked for rows the halving had
+   deleted). After (iii), N further rows owned by the test pid are written until the file crosses
+   `_ERRORS_MAX_BYTES` and halves once. The next SessionStart run prints each SURVIVING owned row
+   with `t` above the watermark exactly once, plus the `errors-truncated` row whose `dropped`
+   equals the removed line count (the test counts lines before and after) and whose
+   `unseen_dropped["<test pid>:<start>"]` equals the removed owned rows with `t` above the
+   watermark; surfaced rows + `unseen_dropped` = N (the three surfaced rows dropped by the halving
+   are in `dropped`, not in `unseen_dropped`).
+   (iv) A pointer AND an `_errors.seen.<pid>` file for a pid that no longer exists (a child process
+   the test started and reaped) are removed by the SessionStart run and `pruned=2` is printed.
+   (iv-b) With `stm._proc_info` monkeypatched in the test to return `None` for every pid, the
+   prune (called in process) removes no file and prints `prune skipped: process lookup
+   unavailable`.
+   (v) **recall-state reads the new location:** a row written through `record_pointer_error`
+   (now under the global `by-pid/`) with `root` = X appears in `handoff.compose_recall_state`'s
+   anomalies and in `rmx recall-state`'s output for X, and in `rmx focus topics`' last line for X
+   (a store with no topics included: the line follows "no topics yet").
+   (vi) **One-shot migration** (round-7 #s-3). A legacy `X/stm/by-pid/_errors.jsonl` holding two
+   parseable rows (`t` = now − 1 h and now − 2 h) and one unparseable line: the first SessionStart
+   run in X appends the two rows to the global log with their ORIGINAL `t`, `root` = X and
+   `migrated_from` = the legacy path, plus one `legacy-unreadable` row with `n = 1`, renames the
+   file to `X/stm/by-pid/_errors.migrated.jsonl`, and prints `migrated=2`; `rmx recall-state` in
+   X then reports both rows. A second run migrates nothing (`migrated=0`, the global log's line
+   count unchanged). An interrupted run (the test restores the legacy name after the first run,
+   so the rows are present in both files) appends nothing again and renames the file. After the
+   migration no read of `X/stm/by-pid/` happens: the test removes read permission on that
+   directory and recall-state for X still succeeds with the same counts.
+   (vii) **Scope** (round-7 #s-2). Two sandbox roots X and Y, one `pointer-unresolved` row scoped
+   to each: `rmx recall-state` in X reports exactly X's row, in Y exactly Y's. Two owners: P1 =
+   the test process, P2 = a helper process the test starts that runs the SessionStart hook as its
+   own child with `CLAUDE_PID` = P2. One row owned by each. P1's SessionStart run surfaces only
+   P1's row and writes only `_errors.seen.<P1>`; P2's run afterwards still surfaces P2's row. One
+   `no-owner` row (owner `null`) scoped to X is surfaced by neither run (each prints
+   `unowned_in_root=1` for X) and is reported by recall-state in X. A row written with no `root`
+   field is counted as `unscoped-row` in both X's and Y's recall-state, never under either's
+   pointer clause.
+   (viii) **Two clauses** (round-7 #s-2). In X, one `pointer-unresolved` row and one
+   `sweep-failed` row: recall-state prints a session-pointer clause counting 1 with the
+   "could not be resolved" text, and an STM-hook clause counting `sweep-failed x1` whose text
+   contains none of the words `session`, `guessed`, `newest`.
+   RED at post-109 `master` for (i)-(v), (vii) and (viii) (no global location, no SessionStart
+   entry, no scope fields, one clause); (vi) is RED (no migration: the legacy rows are read in
+   place and the file is not renamed); (ii)'s first assertion is RED (bug-109 resolves the
+   legacy pointer).
 5. **`grep-stdin` cardinality.** `printf 'a\nb\nc\nd\n' | rmx grep -E 'a|b|c'` logs a
    `grep-stdin` row with `cardinality=3`. RED at HEAD (`null`).
 6. **The frozen fixture** (bsd #s-3). A REDACTED copy of this project's `query.log` and `cli.log`
@@ -839,8 +957,31 @@ line counts are unchanged.
     - the halving without its `errors-truncated` row (AC-4b (iii-b));
     - `session_pointer_anomalies` left reading `<root>/stm/by-pid/` (AC-4b (v): the new-location
       row is absent from recall-state);
-    - the legacy `_errors.jsonl` dropped from the merged read before its release ends (AC-4b
-      (vi));
+    - (WITHDRAWN round 7: "the legacy `_errors.jsonl` dropped from the merged read before its
+      release ends"; there is no legacy read, round-7 #s-3);
+    - the legacy pointer still read as a fallback (AC-4b (ii): it resolves);
+    - the migration stamping migrated rows with the migration time instead of their original `t`
+      (AC-4b (vi): the rows' `t` differ from the fixture's);
+    - the migration appending without the `(t, reason, migrated_from)` check (AC-4b (vi): the
+      interrupted run duplicates the rows);
+    - the migration leaving the legacy file in place (AC-4b (vi): no `_errors.migrated.jsonl`,
+      and the second run reports `migrated=2` again);
+    - `read_pointer_errors` ignoring `root=` (AC-4b (vii): X's recall-state counts Y's row);
+    - one global watermark file instead of one per owner (AC-4b (vii): P2's row is consumed by
+      P1's run);
+    - the SessionStart writer surfacing `owner: null` rows as its own (AC-4b (vii): they are
+      printed and consumed);
+    - an unscoped row attributed to the reader's root (AC-4b (vii): it is counted under X's
+      pointer clause);
+    - the "could not be resolved" text applied to STM hook failures, or one combined count
+      (AC-4b (viii));
+    - `unseen_dropped` counting rows at or below the watermark (AC-4b (iii-b): surfaced +
+      `unseen_dropped` exceeds N);
+    - the prune leaving `_errors.seen.<pid>` files of dead pids (AC-4b (iv): `pruned=1`);
+    - `rmx focus topics` printing the pointer line only when topics exist (AC-4b (v): the
+      no-topics store);
+    - the resolver recording the miss only for `purpose="event"` (or `event` and `read`)
+      (AC-4 write leg: no row for `focus note`);
     - the prune removing pointers when `_proc_start` is unavailable for every pid (AC-4b (iv-b):
       the live pointer is removed);
     - the resolver recording nothing when `owner_lookup()` fails (AC-4's lookup-failed leg);
@@ -906,9 +1047,9 @@ line counts are unchanged.
 |---|---|
 | `src/refmatrix/mcp.py` | set `RMX_INVOCATION_SOURCE=mcp` in `serve_stdio` before the first request and drop `CLAUDE_CODE_SESSION_ID` from its env (R1). `verbs._LONG_LIVED = True` and the per-call resolution are bug-109's, existing |
 | `src/refmatrix/verbs.py` (resolver) | EXTEND bug-109's `resolve_session_source`: `SessionResolution`, `envelope=`, required `purpose=` and its three tails, `SessionUnresolved` (D1, D2); bug-109's `resolve_session` str wrapper is removed, its callers pass `purpose` |
-| `src/refmatrix/stm.py` | EXTEND bug-109's pointer code: `pointer_dir()` and the user-level location with the legacy read (D3), the `hook` field (D4), `pointer-stale` / `pointer-unreadable` rows (D5), `record_pointer_error` without `root` (D8) and its counted `errors-truncated` row when it halves; `read_pointer_errors` over the new location plus the legacy file (D6); the `t`-keyed watermark (D6); the prune by `_proc_start` (D7). NEW: `snapshot_pre_prompt`, `pre_prompt_state` + `PrePromptState`, `PRE_PROMPT_SKEW_S`; input events gain `prompt_sha` and `t` (R9). Built here or by 19.0, whichever merges first |
-| `src/refmatrix/hooks.py`, `cli.py` (`focus hook`, `focus show`) | the generated SessionStart entry `rmx focus hook --event session-start` (matcher `startup\|resume\|clear\|compact`, stderr kept) that writes the pointer, surfaces `_errors.jsonl` and prunes (D4, D6, D7); the input branch reordered: pointer write (existing) → `snapshot_pre_prompt` → sweep (failure recorded) → input record (R9); `focus show` prints the pointer-error line (D6) |
-| `src/refmatrix/handoff.py` (`session_pointer_anomalies`, `:508-529`) | EXTENDED, not paralleled (round-6 #b-1): reads `<pointer_dir>/_errors.jsonl` and, for one release, the legacy `<root>/stm/by-pid/_errors.jsonl` through `read_pointer_errors(legacy_root=root)`; its text names the new path (D6) |
+| `src/refmatrix/stm.py` | EXTEND bug-109's pointer code: `pointer_dir()` and the user-level location, no legacy read (D3); the `hook` field (D4); `pointer-stale` / `pointer-unreadable` rows (D5); `record_pointer_error(reason, *, root, owner, **fields)` writing scoped rows (`root`, `owner`, `owner_start`) and, when it halves, the `errors-truncated` row with `dropped_by_root` / `unseen_dropped` (D8, D6); `read_pointer_errors(*, root=None, owner=None, since)` over the new location only, scope-filtered, `unscoped-row` counted (D6); the per-owner `t`-keyed watermark `_errors.seen.<pid>` (D6); the one-shot migration of a root's legacy log and pointers (D6, D3); the prune by `_proc_start` of pointers and watermark files (D7). NEW: `snapshot_pre_prompt`, `pre_prompt_state` + `PrePromptState`, `PRE_PROMPT_SKEW_S`; input events gain `prompt_sha` and `t` (R9). Built here or by 19.0, whichever merges first |
+| `src/refmatrix/hooks.py`, `cli.py` (`focus hook`, `focus topics`) | the generated SessionStart entry `rmx focus hook --event session-start` (matcher `startup\|resume\|clear\|compact`, stderr kept) that writes the pointer, migrates its root's legacy files once, surfaces its owner's rows and prunes (D3, D4, D6, D7); the input branch reordered: pointer write (existing) → `snapshot_pre_prompt` → sweep (failure recorded) → input record (R9); `focus topics` (`cli.py:1234`) prints the scoped clauses as its last line, also with no topics (D6; round-7 #m-4 (b)) |
+| `src/refmatrix/handoff.py` (`session_pointer_anomalies`, `:508-529`) | EXTENDED, not paralleled (round-6 #b-1): reads `<pointer_dir>/_errors.jsonl` through `read_pointer_errors(root=root, …)`, no legacy read (round-7 #s-3); prints the session-pointer clause, the STM-hook clause and the truncation clause apart (round-7 #s-2); its text names the new path (D6) |
 | `tests/test_mcp_session_pointer.py` | EXTENDED, not paralleled (bug-109's file): AC-1b, AC-4, AC-4b |
 | `src/refmatrix/store.py` | `find_memory_any_partition` (`:2504`) returns the chosen row's partition name (R11) |
 | `src/refmatrix/telemetry.py` | `agent` source + precedence; `session`/`query_id`/`cwd`/`root` on rows; `row_provenance` + `is_test_artifact_row` (R5); the `--agent-usage` report; `RECALL_EVENT_FIELDS_V1`; `emit_recall_events` (the ONE writer, R11); `delivered_in_session` (R12's lookup); `event_kind` (R10a); `recall_channel` (R11); `turn` from `pre_prompt_state` (R9) |
@@ -936,6 +1077,11 @@ line counts are unchanged.
   `--agent-usage` does not parse. No AC is admitted that passes at post-109 `master`.
 - **Hook path:** AC-8 runs the command string `hooks.py` GENERATES for UserPromptSubmit, not a
   hand-written one, so a generator change that drops the emitter is caught.
+- **No daemon from the STM hooks** (round-7 #m-1). The SessionStart writer (D4, D6, D7) is file
+  work only, like the input hook's additions (R3, R8 write caller-side). Its leg of the
+  "0 daemon connects" check is [[task-19.0-stm-cluster-hygiene#acceptance]] AC-6f, which runs the
+  generated `session-start`, `input`, `tool-pre` and `tool` entries against listening sockets at
+  every daemon and hub path; whichever of 19.0 / 21.1 merges first builds that test.
 
 ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
 
@@ -1054,3 +1200,29 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r6-0e77da3]]
 | round-6 #m-1 (citations stale since the merge) | [[#req-session]] "Existing code" and "The pre-prompt state" (`cli.py:1974-2004`, sweep `:1998-2001`, except `:2000-2001`, record `:2003-2004`; `stm.py:525`, `:692`, `:705-710`; `latest_session` `stm.py:392`); the resolver's owner call named `owner_lookup()`. bug-109's registry row is `fixed` (the round-5 row above said open) |
 | round-6 #m-2 (the 21.1 → 19.1 edge one-sided) | `rel: related-to -> [[task-19.1-pack-recall-under-budget]]`; header "Downstream" line |
 | round-6 #b-2, #s-2, #s-3 | not 21.1 items (19.0 R5, 19.6, 19.3 / 19.4) |
+
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Answers [[bsd-plan19-21-spec-rereview-r7-331b414]] (the 21.1 side of #s-2, #s-3, #s-4, #m-1 and
+#m-4 (a), (b)). The user took the recommended one-shot migration for #s-3
+([[plan-review-2026-10-14#t12-approvals]], round-7 item 2); #s-2 and #s-4 needed no decision.
+Code facts read at write time at HEAD `77ac38f` (its `src/` equals the review's `331b414`):
+`stm.py:197-202`, `:291-343` (halving `:308-310`), `:368`; `cli.py:1209-1210` (`focus show`
+takes `LINE`), `:1234-1276` (`focus topics`, its "no topics yet" early return), `:1974-2004`
+(`record_pointer_error` at `:1985`, `:1991`); `verbs.py:540-569` (rows at `:562`, `:564`);
+`handoff.py:508-529`. bug-115/116 ship as 0.78.2 (ping on the dispatcher, heartbeat on cli
+completions, expired reads dropped, `daemon.call` sends `deadline_s` and does not re-send after a
+send): that bounds what a daemon call from a hook would cost, and the "0 daemon connects" check
+still stands, because these hooks should make none.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r7-331b414]]
+
+| finding / decision | answered at |
+|---|---|
+| round-7 #s-2 (the user-level log and its watermark are unscoped: recall-state counts other projects' rows; the first SessionStart anywhere consumes every session's rows; "guessed session" text over hook failures) | [[#req-session]] D6 (every row scoped; `read_pointer_errors(*, root, owner, since)`; `unscoped-row` counted apart; three clauses in `session_pointer_anomalies`; per-owner watermark `_errors.seen.<pid>` keyed on `t` and `pid_start`; `owner: null` rows reported by root, never consumed; `errors-truncated` carries `dropped_by_root` and `unseen_dropped`), D7 (watermark files pruned), D8 (`record_pointer_error(reason, *, root, owner)`; `owner_start`; every call site named); AC-4b (vii), (viii); mutations; [[#files-to-modify]] (`stm.py`, `handoff.py`) |
+| round-7 #s-3 (two "for one release" legacy reads with no removal task) | D3 (legacy pointers never read; `pointer-legacy-location` withdrawn); D6 "One-shot migration" (original `t`, `root`, `migrated_from`; `legacy-unreadable`; rename to `_errors.migrated.jsonl`; idempotent; legacy pointers deleted; no legacy read path at any time; the unvisited-root limit stated); AC-4b (ii), (vi) rewritten as migration legs; mutations (the round-6 legacy-read mutation withdrawn; five new); [[#files-to-modify]] |
+| round-7 #s-4 (21.1 half: the miss row pinned for `event` only) | [[#req-session]] "Order" (all three purposes pinned); AC-4 read and write legs (`CLAUDE_PID` = test pid; one row each with `owner`, `root`; visible in `compose_recall_state`); mutation (records only for `event`). The 19.0 half (AC-6c's hook leg): [[task-19.0-stm-cluster-hygiene#rev-round-7]] |
+| round-7 #m-1 (21.1 side: the SessionStart writer's daemon cost) | [[#test-strategy]] (file work only; its "0 daemon connects" leg is 19.0 AC-6f) |
+| round-7 #m-4 (a) (AC-4b (iii-b) asked for rows the halving deleted) | AC-4b (iii-b) (surviving rows once; `dropped` = removed lines; `unseen_dropped` = removed owned rows above the watermark; surfaced + `unseen_dropped` = N) |
+| round-7 #m-4 (b) (`focus show` takes a required `LINE`) | D6 (`rmx focus topics` prints the clauses, also with no topics); AC-4b (v); [[#files-to-modify]] |
+| round-7 #s-1, #m-2, #m-3, #m-4 (c), (d); d9ax, d9ay | not 21.1 items: [[task-19.6-phased-context-and-topic-cache#rev-round-7]], [[task-19.0-stm-cluster-hygiene#rev-round-7]], [[task-19.2-memory-usage-record#rev-round-7]] |

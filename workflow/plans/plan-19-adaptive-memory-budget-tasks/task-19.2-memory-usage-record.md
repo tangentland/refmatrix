@@ -69,9 +69,9 @@ one without losing knowledge. {#why-body}
    - `lifetime_used` is not a column: where a single number is shown (R9, ADR-0004's text) it is
      the read-time sum of the three `used_*` columns.
    - **`first_seen`** (re-review #m-3) = the `ts` of the earliest folded event for that key (min
-     over events, so drop-and-replay and slot merge both reproduce it). The fixed-width UTC form
-     makes string `min` / `max` equal time order (round-4 #s-2). A virtual row (R7) has
-     `first_seen = null`; 19.3's tie-breaks use the memory's frontmatter `created`, never
+     over events, so drop-and-replay reproduces it; the slot-merge path is RETIRED, R6, d9ay).
+     The fixed-width UTC form makes string `min` / `max` equal time order (round-4 #s-2). A
+     virtual row (R7) has `first_seen = null`; 19.3's tie-breaks use the memory's frontmatter `created`, never
      `first_seen`.
 2. **R2 Exact counts.** Memories are a small domain (329 files on 2026-10-14), so counts are
    exact; no sketch (#rule-no-undercount).
@@ -135,12 +135,27 @@ one without losing knowledge. {#why-body}
    - `recall-events.jsonl` is the retained replay source (the d2a amendment): 21.1 R8 makes it
      append-only, never truncated or rotated by any writer, which AC-6's drop-and-replay relies
      on.
-6. **R6 Survives a slot merge.** `replica_merge` gets a rule for both tables: on a conflict
-   between slots, `memory_usage` takes the elementwise max of `lifetime_hits`, each `used_*`
-   column and `last_seen`, and the min of `first_seen` (nulls last); `memory_usage_daily` takes
-   the elementwise max of each count per `(partition_name, scope, name, day)`. It never keeps an
-   older A-side row over a newer one (decision-log #s-1). 23.1 R8's `queue_offsets` rule (the larger
-   `offset_bytes`) is plan-23's and is not repeated here.
+6. **R6 Survives a slot merge: RETIRED (d9ay).** Nothing in 19.2 implements or tests this
+   requirement, and `replica_merge.py` leaves the Files table. d9ay extends d9ao's retirement of
+   23.1 R8 ([[task-23.1-queue-and-drain#r8]]) to this slot-merge path, for the same reasons, read
+   at HEAD `77ac38f`:
+   - **No producer of diverged slots.** Writer rotation is dropped:
+     `Daemon._refresh_replica_now` (`daemon.py:2814-2828`) is a no-op returning
+     `{"enabled": False, … "rotation dropped (snapshot-tier read path)"}`, and the refresh thread
+     is not started, so no live path leaves two slots with diverging `memory_usage` rows. The
+     frozen inactive slots predate both tables, so no slot pair holds diverged rows of them.
+   - **The merge itself is broken (bug-113, open).** `replica_merge.merge_slots` builds its target
+     through `duckdb_catalog.init_catalog`, which lacks `entities.vectors_partition`, and fails on
+     every real store; an AC built on `init_catalog` slots would pass while the production command
+     fails.
+   - If a later plan revives slot merging, it adds `memory_usage` and `memory_usage_daily` to
+     both `init_catalog` and `merge_slots`' table list and writes its own AC through
+     `_op_replica_merge` on `Store.init()` slots; bug-113 is not a 19.2 dependency.
+   - Original text, kept as history: "`replica_merge` gets a rule for both tables: on a conflict
+     between slots, `memory_usage` takes the elementwise max of `lifetime_hits`, each `used_*`
+     column and `last_seen`, and the min of `first_seen` (nulls last); `memory_usage_daily` takes
+     the elementwise max of each count per `(partition_name, scope, name, day)`. It never keeps an
+     older A-side row over a newer one (decision-log #s-1)."
 7. **R7 Decay and floor, computed at READ time** (d9e). This module is the ONE decay/floor
    library (plan review C4); helix's age tiers import it, and no other formula may be added.
    - **Fold time (raw only).** Each counted event of kind `k` (a hit, or one `used` evidence)
@@ -231,7 +246,10 @@ appended through 21.1's `telemetry.emit_recall_events` with `cwd`/`root` inside 
    lifetime columns. A feedback memory, a `type: user` memory and a `type: guardrail` memory with
    no `rel:` edge each never rank below `asserted_floor`; a `type: project` memory with no `rel:`
    edge and no protection does (round-3 #m-1).
-10. **Slot merge.** Two slots with diverging `memory_usage` rows merge to the R6 rule's row.
+10. **RETIRED (d9ay) with R6.** No test is written for it, and it is not in the test list.
+    Reason: R6 (rotation dropped, no producer of diverged slots; bug-113 breaks `replica_merge`).
+    Original text, kept as history: "**Slot merge.** Two slots with diverging `memory_usage` rows
+    merge to the R6 rule's row."
 11. **Torn tail.** A log whose last line has no newline: the fold stops before it and reads it
     whole on the next tick.
 12. **Lock holds.** 1,000 events fold in ≤ 2 `bind` holds per 500 events, measured with 23.2's
@@ -275,7 +293,8 @@ appended through 21.1's `telemetry.emit_recall_events` with `cwd`/`root` inside 
     - counting `kind=code` deliveries (AC-15);
     - the offset committed after the batch transaction (AC-7);
     - the project fold counting a global hit or use (AC-8);
-    - `replica_merge` keeping the A-side row (AC-10);
+    - (RETIRED, d9ay: "`replica_merge` keeping the A-side row (AC-10)"; R6 and AC-10 are
+      retired, so this mutation has no test to fail);
     - the drain taking one hold per event (AC-12);
     - weights applied at fold time (AC-17: stored rows change);
     - any decayed value stored at fold time, or `H` read at fold time (AC-17 under `H = 7`: the
@@ -301,7 +320,6 @@ appended through 21.1's `telemetry.emit_recall_events` with `cwd`/`root` inside 
 | `src/refmatrix/store.py` | the `memory_usage` and `memory_usage_daily` tables (migration, raw per-evidence integer columns), batch upsert (sum / min / max) |
 | `src/refmatrix/memory_usage.py` (new) | the fold consumer (`TailLog` + `row_provenance`), the read-time `score()` with `DEFAULT_SCORE_PARAMS` (the ONE decay/floor library) |
 | `src/refmatrix/hooks.py` | the `PRECOMPACT_STDOUT_DELIVERED` constant (value set by 19.5 R1) |
-| `src/refmatrix/replica_merge.py` | the merge rule for both tables (R6) |
 | `src/refmatrix/daemon.py` | register the fold in plan-23's tick registry |
 | `src/refmatrix/verbs.py`, `cli.py`, `mcp.py` | `rmx memory usage` and its verb (emission is 19.1 R8 and 21.1 R11/R12) |
 
@@ -378,3 +396,18 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r4-878647c]]
 |---|---|
 | round-4 #s-2 (`day` = "UTC date" of a zone-less local `ts`) | R1 (`ts` UTC by 21.1 R10's contract, zone-less `ts` malformed by 21.1 R5; `day` = `ts[:10]`, no conversion at fold time; `first_seen` / `last_seen` string order = time order); R7 (`mid(day)` via `calendar.timegm`); AC-6 (two-zone replay across the 2026-11-01 fall-back hour and UTC midnights, with a recorded pre-check); mutations. The producer side: [[task-21.1-context-usage-telemetry#rev-round-5]] |
 | d9r (user-asserted = `metadata.type` `user` or `guardrail`) | R7 asserted floor (already so since round 3); AC-9; mutation. Unchanged |
+
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Answers d9ay of [[plan-review-2026-10-14#t12-approvals]] (raised by the plan-23/17 round-7
+re-review, #ns-x-r7-1): d9ao's retirement of 23.1 R8 / AC-13 extends to this task's slot-merge
+path. No round-7 plan-19/21 finding names 19.2. Code facts read at write time at HEAD `77ac38f`:
+`daemon.py:2814-2828` (`_refresh_replica_now`, a no-op); bug-113's registry row (open; the
+`init_catalog` target lacks `entities.vectors_partition`).
+
+rel: implements -> [[plan-review-2026-10-14#t12-approvals]]
+rel: derives-from -> [[task-23.1-queue-and-drain#r8]]
+
+| finding / decision | answered at |
+|---|---|
+| d9ay (19.2 R6 / AC-10 merge memory-usage rows through `replica_merge`, which nothing feeds and bug-113 breaks) | R6 RETIRED (reason, original text kept, revival conditions); AC-10 RETIRED (original text kept); the AC-10 mutation marked retired; R1 `first_seen` (slot merge no longer claimed); [[#files-to-modify]] (`replica_merge.py` row removed). Older revision tables that cite R6 / AC-10 are history and keep their text |

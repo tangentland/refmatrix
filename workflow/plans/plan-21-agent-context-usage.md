@@ -237,3 +237,20 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r6-0e77da3]]
 | round-6 #s-1 (21.1 side: the sweep step gives swept calls an origin) | [[task-21.1-context-usage-telemetry#rev-round-6]]; built in 19.0 |
 | round-6 #m-2 (19.1 missing as a consumer; one-sided edge) | [[#dependencies]] (21.1 bullet names 19.1 as merging after it); 21.1 `rel: related-to -> [[task-19.1-pack-recall-under-budget]]` |
 | round-6 #b-2, #s-2, #s-3 | not plan-21 items ([[plan-19-adaptive-memory-budget#rev-round-6]]) |
+
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Answers [[bsd-plan19-21-spec-rereview-r7-331b414]]. The user took the recommended one-shot
+migration for #s-3 ([[plan-review-2026-10-14#t12-approvals]], round-7 item 2); no other plan-21
+item needed a decision (d9ax and d9ay are plan-19's).
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r7-331b414]]
+
+| finding / decision | answered at |
+|---|---|
+| round-7 #s-2 (the user-level error log and its watermark have no scope) | [[task-21.1-context-usage-telemetry#rev-round-7]] (D6 scoped reader, three clauses, per-owner watermark; D7; D8 scoped writer; AC-4b (vii), (viii)) |
+| round-7 #s-3 (two "for one release" legacy reads with no removal task); one-shot migration | [[task-21.1-context-usage-telemetry#rev-round-7]] (D3, D6 migration; AC-4b (ii), (vi)) |
+| round-7 #s-4 (21.1 side: the miss row pinned for `event` only) | [[task-21.1-context-usage-telemetry#rev-round-7]] (R9 "Order"; AC-4 read and write legs) |
+| round-7 #m-1 (21.1 side: SessionStart writer) | 21.1 test strategy (file work only; 19.0 AC-6f's `session-start` leg) |
+| round-7 #m-4 (a), (b) | [[task-21.1-context-usage-telemetry#rev-round-7]] (AC-4b (iii-b); `rmx focus topics` as the surface) |
+| round-7 #s-1, #m-2, #m-3, #m-4 (c), (d); d9ax, d9ay | not plan-21 items ([[plan-19-adaptive-memory-budget#rev-round-7]]) |

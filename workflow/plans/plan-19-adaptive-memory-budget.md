@@ -68,7 +68,8 @@ fit is reachable by a printed command that, when run, returns it; decay only dem
   cluster; the session comes from one resolver (bug-100), bug-109's
   `verbs.resolve_session_source` EXTENDED (d9s): the hook envelope, then a pointer keyed by the
   Claude process (bug-109's, written by the input hook; 19.0/21.1 add the SessionStart writer, a
-  user-level location, cleanup and surfaced errors), with a required `purpose` so writes raise
+  user-level location whose error rows are scoped to their root and owner, a one-shot migration
+  of bug-109's per-root files, cleanup and surfaced errors), with a required `purpose` so writes raise
   instead of guessing and only labelled reads may fall back to the newest ring; every
   `latest_session` caller (scan-prompt's enrichment and composite, helix, promote) is routed, and
   so is every command behind the CLI helper `_resolve_stm_session`, which now takes a required
@@ -100,7 +101,9 @@ fit is reachable by a printed command that, when run, returns it; decay only dem
 - **Measure delivery, not production (19.5).** The probe settles per-hook vs per-event and
   PreCompact (d5d); delivery is read from 21.1's events; the fixed baseline is committed for 19.6.
 - **Phase the per-prompt budget (19.6, Wave 3).** Recall and scan-prompt spend by STM phase,
-  the STM composite renders as an expand/collapse tree, returns re-warm from a topic cache, stable
+  the STM composite renders as an expand/collapse tree (a frozen collapsed line stands for a live
+  cluster only when they share ≥ 2 members AND Jaccard ≥ `j_return`, d9ax), returns re-warm from a
+  topic cache, stable
   blocks are versioned — each built only in the band a pre-registered table allows; the tables
   were CONFIRMED as written by the user (d9v).
 
@@ -172,6 +175,8 @@ Every test in every task runs in task 23.0's sandbox (d1a/d1b) and asserts 0 liv
 | d9r | user-asserted memory, for the decay floor = `metadata.type` `user` or `guardrail` (19.2 R7, AC-9) | user, 2026-10-14 |
 | d9s | MCP session attribution fixed now as bug-109, ahead of 19.0 R5 / 21.1 R9; the specs extend that code | user, 2026-10-14 |
 | d9v | 19.6's ranges, thresholds, `N = 8`, `K = 8`, `C = 6` CONFIRMED as written (settles d9f) | user, 2026-10-14 |
+| d9ax | 19.6 R9 snapshot identity = ≥ 2 shared members AND Jaccard ≥ `j_return` (0.20); `j_return` (d9v) now has a second use, acknowledged | user, 2026-10-15 |
+| d9ay | d9ao's retirement extends to 19.2 R6 / AC-10 (slot merge); [[#open-after-revision]] item 4 corrected | user, 2026-10-15 |
 
 ## Out of scope {#out-of-scope}
 
@@ -191,8 +196,13 @@ Round 2 status of the round-1 list ([[bsd-plan19-21-spec-rereview-32dde06#open-1
    field by field (19.2 R3, AC-16).
 3. **`used` evidence weights:** SETTLED by d9e: raw per-evidence counts, weights at read time
    (19.2 R1, R7, AC-17).
-4. **The `replica_merge` offset row:** CLOSED: 23.1 R8 (the larger `offset_bytes` per
-   `(queue, segment)`).
+4. **The `replica_merge` offset row:** RETIRED, not closed by 23.1 R8 (round 7, d9ay; the
+   earlier text "CLOSED: 23.1 R8 (the larger `offset_bytes` per `(queue, segment)`)" was made
+   false by d9ao). 23.1 R8 / AC-13 are RETIRED (d9ao, [[task-23.1-queue-and-drain#r8]]) and 19.2
+   R6 / AC-10 with them (d9ay, [[task-19.2-memory-usage-record#rev-round-7]]): writer rotation is
+   dropped (`_refresh_replica_now`, `daemon.py:2814`, a no-op), so nothing produces diverged
+   slots, and bug-113 breaks `replica_merge` on every real store. No slot-merge rule is owed by
+   plan 19; a plan that revives slot merging writes one for its tables then.
 5. **19.6's bands, `N = 8`, `K = 8`, `C = 6` and the phase thresholds:** CONFIRMED as written
    by the user (d9v, settling d9f; 19.6 R0, [[task-19.6-phased-context-and-topic-cache#ranges]]).
 6. **19.2 R7's constants** (`base = 0.25`, `asserted_floor = 1.0`, weights 1/2): ACCEPTED by d9e
@@ -326,3 +336,25 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r6-0e77da3]]
 | round-6 #s-3 (in-daemon render reads the stale replica; bug-112) | [[task-19.3-subject-tiered-index#rev-round-6]] (R5); [[task-19.4-keep-derived-layers-current#rev-round-6]] (R2, R3, AC-1-AC-3) |
 | round-6 #m-1 (citations stale since the merge) | 19.0, 19.4 and 21.1 `#rev-round-6` tables |
 | round-6 #m-2 (21.1 → 19.1 edge one-sided; stale clause) | [[#dependencies]] (19.1 row: the "parallel bullets" clause replaced); 21.1 `rel: related-to -> [[task-19.1-pack-recall-under-budget]]` |
+
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Answers [[bsd-plan19-21-spec-rereview-r7-331b414]] and the user's round-7 decisions d9ax (19.6
+identity, option (a)) and d9ay (19.2's slot-merge path retired), plus the one-shot migration
+choice for #s-3 ([[plan-review-2026-10-14#t12-approvals]]). Each touched task carries its own
+`#rev-round-7` table; code facts were read at HEAD `77ac38f`, whose `src/` equals the review's
+`331b414`.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r7-331b414]]
+rel: implements -> [[plan-review-2026-10-14#t12-approvals]]
+
+| finding / decision | answered at |
+|---|---|
+| round-7 #s-1; d9ax (one hub member merges small clusters; `j_return` reused) | [[task-19.6-phased-context-and-topic-cache#rev-round-7]] (R9, R1, `#ranges-thresholds`, AC-7i, mutations); [[#design-body]]; [[#decisions]] d9ax |
+| round-7 #s-2 (the user-level error log and watermark unscoped) | [[task-21.1-context-usage-telemetry#rev-round-7]] (D6-D8, AC-4b (vii), (viii)); [[task-19.0-stm-cluster-hygiene#rev-round-7]] (R5 deferred items, Files); [[#design-body]] |
+| round-7 #s-3 (two "one release" legacy reads); the user's one-shot migration | [[task-21.1-context-usage-telemetry#rev-round-7]] (D3, D6, AC-4b (ii), (vi)); 19.0 Files and R5 deferred items |
+| round-7 #s-4 (a `write` miss never pinned to its row) | [[task-19.0-stm-cluster-hygiene#rev-round-7]] (R5 Stop row, AC-6c); [[task-21.1-context-usage-telemetry#rev-round-7]] (AC-4 read and write legs) |
+| round-7 #m-1 (sweep unbounded in total; "no daemon calls" unasserted; user note: bug-115/116 in 0.78.2) | [[task-19.0-stm-cluster-hygiene#rev-round-7]] (R2 `SWEEP_READ_CAP`, AC-4d, AC-6f); 21.1 test strategy |
+| round-7 #m-2, #m-3, #m-4 (b)-(d) | [[task-19.0-stm-cluster-hygiene#rev-round-7]] |
+| round-7 #m-4 (a), (b) (21.1 side) | [[task-21.1-context-usage-telemetry#rev-round-7]] |
+| d9ay (19.2 R6 / AC-10 retired; "CLOSED: 23.1 R8" corrected) | [[task-19.2-memory-usage-record#rev-round-7]]; [[#open-after-revision]] item 4; [[#decisions]] d9ay |
