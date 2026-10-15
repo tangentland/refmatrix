@@ -1693,9 +1693,9 @@ class Store:
 
         # bug-105 audit #b-2/#s-1: persist every binding's dirty bits before the merge
         # remaps entity ids and drops SRC; the fragment rows are re-homed after it. Under the
-        # writer lock (r2 #b2-1): flush_fragments rebinds _partition_id while it writes, and
-        # the daemon's merge op does not hold the lock, so an op interleaving here would write
-        # into whichever partition the flush had bound.
+        # writer lock when one is given (r2 #b2-1): flush_fragments rebinds _partition_id while
+        # it writes. Since bug-105 r4 the only caller is the OFFLINE merge (`lock=None`, no
+        # concurrent writer); the lock path is the helix merge's (d9ac).
         if not dry_run:
             with _lk:
                 self.flush_fragments()
@@ -4399,7 +4399,7 @@ class Store:
                 for bit in bm:
                     c, e = bit >> _CONCEPT_SHIFT, bit & mask
                     nb = self._pack(id_map.get(c, c), id_map.get(e, e))
-                    remapped_bits += nb != bit     # r5 #s5-2: a remap is visible, not "kept"
+                    remapped_bits += nb != bit     # r5 #s5-2: visible; overlaps kept/moved, pre-dedup
                     out.add(nb)
                 remapped[key] = out
             old_for_change = old

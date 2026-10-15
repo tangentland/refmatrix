@@ -52,14 +52,13 @@ snapshot (2026-10-14): 538,094 bits in the wrong partition, 466,163 bits for del
 ## TDD and audits {#tdd}
 
 - Tests: `tests/test_fragment_partition_scope.py`, `test_fragment_repair_audit.py` (r1),
-  `_r2.py`, `_r3.py`, `_r4.py`; each round's new tests RED at the previous commit
-  (`workflow/review-output/bug105-*-red.log`).
-- Families (fragment/partition/merge/snapshot/ingest-yield): 536 passed, 4 skipped at 325d702
-  (`bug105-r5-families.log`). Known flake bug-108 is not in this code.
-- Mutations: `bug105-mutant*.log`, `bug105-r4-mutations.log`, `bug105-r5-mutations.log` (8/8
-  killed, including the four repair-path survivors M1/M11/M12/M14).
-- ch-bsd rounds r1 (20c5ab4), r2 (4fb803b), r3 (27b3653), r4 (fb285cc): reports under
-  `workflow/bullshit/`.
+  `_r2.py`, `_r3.py`, `_r4.py` (r4, r5 and r6 pins, including the auditor's probes P1-P4); each
+  round's new tests RED at the previous commit (`workflow/review-output/bug105-*-red.log`).
+- Families (fragment/partition/merge/snapshot/ingest-yield, verb + MCP parity, hooks, and the
+  generated-docs check that r6 found missing from the list): see `bug105-r7-families.log`.
+- Mutations: `bug105-mutant*.log`, `bug105-r4-mutations.log`, `bug105-r5-mutations.log`,
+  `bug105-r6-mutations.log`; F3/M5 are near-equivalent offline (r5/r6).
+- ch-bsd rounds r1 (20c5ab4) through r6 (fe7abea): reports under `workflow/bullshit/`.
 
 ## Deploy and live repair {#deploy}
 
@@ -71,6 +70,10 @@ method).
    `rmx hub relaunch-fleet` (one `rmx daemon restart --relaunch` restarts one store and leaves
    every other daemon on the defective cache; plan-4 r1 #b-6). Verify: `rmx version -v` names
    `~/refmatrix/src` and the new version; `rmx hub status` lists every store on it.
+Steps 2-4 run as ONE block per store, because `rmx daemon stop/start` and `rmx repair-index`
+take no store argument: they act on `REFMATRIX_ROOT` or the cwd's store (r6 #m6-2). Begin each
+block with `export REFMATRIX_ROOT=<project>/.refmatrix` (the global store: `~/.refmatrix`).
+
 2. **Back up each store's active slot, consistently.** A `cp` under a live daemon is not a
    consistent copy and misses the WAL. Per store: `rmx hub pause <store>`, `rmx daemon stop`,
    copy `catalog.<active>.duckdb` and its `.wal` if present (the `active` marker names the slot)

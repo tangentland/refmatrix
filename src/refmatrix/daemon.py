@@ -712,9 +712,6 @@ class Daemon:
         self._store_lock = _FairLock()
         self._async_flush_pending = False
         self._async_lock = threading.Lock()
-        # Background jobs (big ops run off the RPC thread so the caller gets
-        # an id instead of a 300s socket timeout). id -> {state, phase, done,
-        # total, result, error}; states: running | done | error.
         # Read-op refcount + gate. Each `_open_read_store` increments the
         # count; the dedicated read store's wrapper decrements on close
         # and notifies. `_refresh_replica_now` waits on this gate before
@@ -4065,8 +4062,9 @@ def _op_partition_merge(d: Daemon, args: dict) -> dict:
     dst = args["dst"]
     if not args.get("dry_run"):
         raise ValueError(
-            f"live partition merge is disabled (bug-105 #b4-1/#s4-1): stop the daemon "
-            f"(`rmx daemon stop`) and run `rmx partition merge {src} {dst}` offline; the live "
+            f"live partition merge is disabled (bug-105 #b4-1/#s4-1): `rmx hub pause`, "
+            f"`rmx daemon stop`, run `rmx partition merge {src} {dst}` offline, then "
+            f"`rmx hub resume`; the live "
             f"merge is redesigned in the helix plan")
     with d._store_lock:
         return d._st().merge_partition(src, dst, dry_run=True)

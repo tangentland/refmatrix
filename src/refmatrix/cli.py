@@ -4170,7 +4170,7 @@ def partition_merge(src: str, dst: str, dry_run: bool, yes: bool):
     Always run --dry-run first to see the impact. A real merge runs OFFLINE only: with
     the daemon up it is refused (bug-105 r4, d9ae: a live merge's rebind and SRC drop sit in
     separate writer-lock holds, so queued ops run bound to the dropped partition; the helix
-    plan redesigns it). `rmx daemon stop`, merge, then start the daemon again.
+    plan redesigns it). `rmx hub pause`, `rmx daemon stop`, merge, then `rmx hub resume`.
     """
     from refmatrix import daemon as daemon_mod
     root = _root()

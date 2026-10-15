@@ -174,8 +174,6 @@ def _fake_daemon(store):
     d.store = store
     d._st = lambda: store  # Daemon._st narrows the Optional store
     d._store_lock = threading.Lock()
-    d._jobs = {}
-    d._jobs_lock = threading.Lock()
     d._log = lambda _msg: None
     d._request_snapshot = lambda: None
     # Restructuring ops force a log snapshot (unlogged-write-paths fix);
@@ -188,7 +186,7 @@ def _fake_daemon(store):
 
 def test_live_merge_is_refused_even_async(store):
     """bug-105 r4 (d9ae): the daemon no longer runs a live merge, sync or async; the merge
-    redesign belongs to the helix plan. The job API stays for the next async big-op."""
+    redesign belongs to the helix plan. The job API it fed was removed with it (r5 #b5-1)."""
     from refmatrix.daemon import _op_partition_merge
     _two_partitions(store, n=5)
     d = _fake_daemon(store)

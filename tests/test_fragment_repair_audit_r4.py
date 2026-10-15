@@ -11,6 +11,7 @@ It also found four repair-path mutants alive for a third round (#b4-2): the daem
 flush guard (M1), the `links_skipped` count (M11), the SQLite repair's delete list (M12) and the
 canonical verb on the entity_links side (M14), plus unpinned operator output (M24, M25).
 """
+import re
 import shutil
 import tempfile
 import threading
@@ -311,3 +312,86 @@ def test_r5_the_dead_job_api_is_gone():
     its reader (`job_status`, `rmx daemon job`) goes too."""
     assert "job_status" not in dm.OPS
     assert "job" not in cli_mod.daemon.commands
+
+
+# ---- r6 (ch-bsd bsd-bug105-hotfix-r6-fe7abea): the auditor's probes P1-P4, adopted ------------
+
+def _seq_require(monkeypatch, seq):
+    """require_daemon answers from `seq` in order: 'absent' | 'busy' | 'up'."""
+    from refmatrix import verbs as verbs_mod
+    calls = []
+
+    def fake(root, **kw):
+        state = seq[min(len(calls), len(seq) - 1)]
+        calls.append(state)
+        if state == "absent":
+            raise verbs_mod.VerbAbsentError("daemon not running")
+        if state == "busy":
+            raise verbs_mod.VerbBusyError("daemon busy pid=1")
+        return {"up": True}
+    monkeypatch.setattr(verbs_mod, "require_daemon", fake)
+    return calls
+
+
+def _offline_root(tmp_path, monkeypatch):
+    monkeypatch.delenv("RMX_BACKEND", raising=False)
+    root = tmp_path / "p" / ".refmatrix"; root.parent.mkdir()
+    _seed_two_partitions(root)
+    monkeypatch.chdir(root.parent)
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+    return root
+
+
+def test_p1_fence_refuses_a_daemon_that_turned_busy_after_the_preview(tmp_path, monkeypatch):
+    """Kills F5: preview offline (absent), the FENCE sees busy -> its own refusal."""
+    root = _offline_root(tmp_path, monkeypatch)
+    calls = _seq_require(monkeypatch, ["absent", "busy"])
+    r = CliRunner().invoke(cli_mod.main, ["partition", "merge", "src", "dst", "-y"])
+    assert r.exit_code != 0, r.output
+    assert "live partition merge is disabled" in r.output and "busy" in r.output, (calls, r.output)
+    st = Store(root)
+    names = {n for (n,) in st._connect().execute("SELECT name FROM partitions").fetchall()}
+    st.close()
+    assert {"src", "dst"} <= names, names
+
+
+def test_p2_fence_refusal_names_hub_pause(tmp_path, monkeypatch):
+    """Pins #m5-2's refusal text: preview offline, the fence sees an up daemon."""
+    _offline_root(tmp_path, monkeypatch)
+    _seq_require(monkeypatch, ["absent", "up"])
+    r = CliRunner().invoke(cli_mod.main, ["partition", "merge", "src", "dst", "-y"])
+    assert r.exit_code != 0, r.output
+    assert "hub pause" in r.output and "hub resume" in r.output, r.output
+
+
+def test_p3_remapped_counts_exactly_the_rewritten_bits(s):
+    """`remapped` == number of fragment bits whose (concept, entity) pack changed: one
+    collided bit with both halves remapped -> exactly 1; an untouched DST bit -> 0."""
+    with s.with_partition("src"):
+        sk = s.add_concept("k"); se = s.upsert_entity(kind="doc", name="o.md")
+        s.link("mentions", sk, se)
+    with s.with_partition("dst"):
+        dk = s.add_concept("k"); de = s.upsert_entity(kind="doc", name="o.md")
+        other = s.add_concept("other"); y = s.upsert_entity(kind="doc", name="y.md")
+        s.link("mentions", other, y)
+    s.flush_fragments()
+    before = _rows(s)
+    expect = 0
+    idmap = {sk: dk, se: de}
+    mask = (1 << 32) - 1
+    for _k, bits in before.items():
+        for b in bits:
+            c, e = b >> 32, b & mask
+            if c in idmap or e in idmap:
+                expect += 1
+    rep = s.merge_partition("src", "dst")["fragments_repair"]
+    assert rep["remapped"] == expect and expect >= 1, (rep, expect, before)
+
+
+def test_p4_offline_merge_cli_prints_the_true_remapped_count(tmp_path, monkeypatch):
+    """Kills R5 (CLI prints a constant): the seed's one collided bit prints remapped=1+."""
+    root = _offline_root(tmp_path, monkeypatch)
+    r = CliRunner().invoke(cli_mod.main, ["partition", "merge", "src", "dst", "-y"])
+    assert r.exit_code == 0, r.output
+    m = re.search(r"remapped=(\d+)", r.output)
+    assert m and int(m.group(1)) >= 1, r.output
