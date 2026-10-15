@@ -418,10 +418,12 @@ def _nonexistent_label() -> str:
     return f"gui/{os.getuid()}/com.refmatrix.sbx-absent-{uuid.uuid4().hex[:12]}"
 
 
-def test_the_launchctl_shim_is_first_on_the_sandbox_path():
+def test_the_launchctl_shim_is_the_launchctl_on_the_sandbox_path():
+    """s6: `launchctl` resolves to the shim; the venv's bin stays first (subproc pins it)."""
     _require_sandbox()
     import shutil
     assert shutil.which("launchctl") == str(rmx_sandbox.BIN_DIR / "launchctl")
+    assert os.environ["PATH"].split(os.pathsep)[0] == os.path.dirname(sys.executable)
 
 
 @pytest.mark.sandbox_probe

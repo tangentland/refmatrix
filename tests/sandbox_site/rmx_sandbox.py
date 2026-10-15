@@ -257,7 +257,7 @@ def sandbox_env(root: Path, real: Path, base=None) -> dict:
     `HOME` moves first because `launchctl.LAUNCH_AGENTS_DIR` is computed at IMPORT time;
     `RMX_HOME` is the global store, registry, taxonomy and hub sockets; `REFMATRIX_ROOT` is a
     session default under the sandbox (the autouse fixture replaces it per test, R2); `PATH`
-    pins `rmx` to the interpreter's own venv, never `~/bin/rmx` (the deploy build), behind
+    pins `rmx` to the interpreter's own venv, never `~/bin/rmx` (the deploy build), then
     `BIN_DIR`'s `launchctl` shim (S6: a non-Python `launchctl bootout` is refused too); the
     model cache stays the real one (read-only, offline) because the suite loads models.
     `PYTHONPATH` gains `tests/sandbox_site` so every child installs the same refusal (R4)."""
@@ -276,7 +276,9 @@ def sandbox_env(root: Path, real: Path, base=None) -> dict:
         "RMX_SANDBOX_REAL_HOME": str(real),
         "REFMATRIX_ROOT": str(root / "r" / "session" / ".refmatrix"),
         "HF_HOME": base.get("HF_HOME") or str(real / ".cache" / "huggingface"),
-        "PATH": os.pathsep.join([str(BIN_DIR), venv_bin] + path),
+        # The venv stays FIRST (code under test pins it there, `subproc._worker_env`); the shim
+        # dir is second, ahead of `/bin` -- the venv carries no `launchctl`.
+        "PATH": os.pathsep.join([venv_bin, str(BIN_DIR)] + path),
         "PYTHONPATH": os.pathsep.join(pp),
     }
 
