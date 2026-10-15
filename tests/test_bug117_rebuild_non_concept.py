@@ -201,3 +201,21 @@ def test_the_ingest_recorder_uses_the_edge_format_and_keeps_span_end(tmp_path):
     rows = con.execute("SELECT line, span_end FROM linkage_evidence").fetchall()
     assert (3, 9) in [tuple(r) for r in rows], rows
     s.close()
+
+
+def test_one_name_held_by_two_kinds_keeps_both_edges(tmp_path, log_on):
+    """The kind is part of the edge's identity: a doc and a memory both named `notes`, each
+    linked, are two edges. Keyed by name alone they collapse into one ambiguous key and both
+    are lost (mutation M9)."""
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    d = s.upsert_entity(kind="doc", name="notes")
+    m = s.upsert_entity(kind="memory", name="notes")
+    code = s.upsert_entity(kind="code", name="src/a.py")
+    s.link("mentions", d, code)
+    s.link("mentions", m, code, weight=0.4)
+    before = _links(s)
+    out = s.rebuild_index_from_log()
+    assert _links(s) == before, f"lost: {before - _links(s)}"
+    assert out["links_unresolved"] == 0, out
+    s.close()
