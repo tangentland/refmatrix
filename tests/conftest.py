@@ -48,7 +48,15 @@ import rmx_sandbox  # noqa: E402
 _SANDBOX = rmx_sandbox.enter(_REPO)
 rmx_sandbox.redirect(_SANDBOX)
 
-from refmatrix import cli as _cli  # noqa: E402  (the first refmatrix import: after the redirect)
+# The FIRST refmatrix import, and deliberately `launchctl`: `LAUNCH_AGENTS_DIR` is the one path
+# computed at IMPORT time, so it is the one a reorder above would freeze on the live home. It
+# is checked here, fail-closed, for every run -- a one-file run never reaches AC-1's canary, and
+# `launchctl.install` writes plists into that directory.
+from refmatrix import launchctl as _launchctl  # noqa: E402
+from refmatrix import cli as _cli  # noqa: E402
+
+rmx_sandbox.assert_under_sandbox(_SANDBOX, {"launchctl.LAUNCH_AGENTS_DIR":
+                                            _launchctl.LAUNCH_AGENTS_DIR})
 
 
 def _pyc_guard():

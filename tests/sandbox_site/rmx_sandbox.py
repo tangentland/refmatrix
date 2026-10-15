@@ -249,6 +249,18 @@ def redirect(sb: dict) -> None:
     sb["redirected"] = True
 
 
+def assert_under_sandbox(sb: dict, paths: dict) -> None:
+    """Fail the session (pytest.UsageError) if any named path escaped the sandbox root."""
+    root = os.path.realpath(str(sb["root"]))
+    bad = {k: str(v) for k, v in paths.items()
+           if not (os.path.realpath(str(v)) + "/").startswith(root + "/")}
+    if bad:
+        import pytest
+        raise pytest.UsageError(
+            f"sandbox: paths outside {root} after the redirect (was a refmatrix import moved "
+            f"above it?): {bad}")
+
+
 _counter = {"n": 0}
 
 
