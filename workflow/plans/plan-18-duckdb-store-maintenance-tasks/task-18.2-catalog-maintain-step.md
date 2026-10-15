@@ -15,7 +15,8 @@ metadata:
 > Plan: [plan-18-duckdb-store-maintenance](../plan-18-duckdb-store-maintenance.md)
 > Status: Pending (spec written 2026-10-15; revised the same day for the 18.1 verdict, see
 > [[#rev-18-1-verdict]]; revision round 2 the same day for ch-bsd plan-18 r1, see
-> [[#rev-round-2]]; re-review pending)
+> [[#rev-round-2]]; revision round 3 for ch-bsd plan-18 r2, see [[#rev-round-3]]; re-review
+> pending)
 > Wave: 4 ([[plan-review-2026-10-14#t10-waves]]: "plan-18 as a 17.2 step").
 > Depends on: 17.2 (the `maintenance_steps` registry, `maintain.json`, the step obligations of
 > 17.2 R2); 17.1 R11 / R12 (the single-flight reply and `runs.jsonl` line shapes it copies);
@@ -46,6 +47,7 @@ rel: derives-from -> [[bsd-plan18-task18-1-measurement-r1-8a93ab1]]
 rel: derives-from -> [[bsd-plan18-r1-spec-review-b84fd8d]]
 rel: depends-on -> [[task-23.5-read-path-and-holder-bounds#cross-plan-18]]
 rel: depends-on -> [[task-23.1-queue-and-drain#r1-6-proposed]]
+rel: derives-from -> [[bsd-plan18-r2-spec-diffcheck-cb7bf5b]]
 
 ## Why {#why}
 
@@ -293,7 +295,10 @@ liveness facts this step depends on:
    "behaviour" includes 23.5's additions to it
    ([[task-23.5-read-path-and-holder-bounds#cross-plan-18]] items 3 and 4):
    - inside the `_store_lock` body, `if store.has_dirty_fragments(): store.flush_fragments()`
-     BEFORE the CHECKPOINT (a flush error returns `{"error": "flush"}` with one log line);
+     BEFORE the CHECKPOINT (a flush error returns `{"error": "flush"}` with one log line). 23.5
+     R7's flush-order AST assertion moves with the body: it walks `CatalogHold.snapshot`, not
+     `_snapshot_catalog`, and is retargeted in the port's commit, not deleted (23.5 item 4;
+     ch-bsd plan-18 r2 N-M3; AC-12);
    - the same statements in the same order and the same error returns;
    - with `pin_to`, the live log's size `L0` read inside the `_store_lock` body after the copy
      and the `os.replace`, and the result's `log_size` and `pinned`;
@@ -412,19 +417,38 @@ liveness facts this step depends on:
     - **Not here:** the boot sites, `_bootstrap_rotation_if_needed`, the two entities-rebuild
       holds and 23.5's compaction hold 2 (18.3 R8 moves them, with the swap half);
       `_op_replica_merge` (fenced, d9ae; 18.3 R8 names its exemption and its reopen).
-    - **The bypass rule** (ch-bsd r1 S-1; AC-17). An AST walk over `daemon.py` AND
-      `catalog_maint.py`:
-      - in `catalog_maint.py`, `_store_lock` and `_snapshot_lock` are referenced nowhere, and
+    - **The bypass rule** (ch-bsd r1 S-1, r2 N-B2; AC-17). An AST walk over EVERY
+      `src/refmatrix/*.py` (a fixed file list let a lock or a CHECKPOINT moved one module over
+      pass, r2 N-B2). Every exemption is a QUALIFIED function name (`module.Class.method` or
+      `module.function`), never a file or a line:
+      - in `catalog_maint`, `_store_lock` and `_snapshot_lock` are referenced nowhere, and
         `.execute(` appears only in the executors (`CatalogHold._exec` and the child's);
-      - in `daemon.py`, `_snapshot_lock` is referenced only inside `_catalog_hold` (and its
-        `__init__` declaration), and `_store_lock` is referenced inside no function on the
-        catalog list (`_snapshot_catalog`, `_op_checkpoint`, `_op_catalog_maintain`, and 18.3's
-        additions to it);
-      - the `"CHECKPOINT"` literal appears only in `CatalogHold.checkpoint` / `snapshot` /
-        `rewrite_into` (and 18.3's `drop_sentinel` and child entry point), plus the named
-        exemptions of [[task-18.3-offline-reclaim#facts]] I1, each matched by its function name;
+      - `_snapshot_lock` is referenced only in `daemon.Daemon._catalog_hold` and its
+        `Daemon.__init__` declaration, in any module; `_store_lock` is referenced inside no
+        function on the catalog list (`daemon.Daemon._snapshot_catalog`,
+        `daemon._op_checkpoint`, `daemon._op_catalog_maintain`, and 18.3's additions to it);
+      - **the CHECKPOINT rule.** A CHECKPOINT statement is any string constant (an
+        `ast.Constant`, or a literal part of an f-string) matching
+        `^\s*(FORCE\s+)?CHECKPOINT\b`, case-insensitive; docstrings are not statements and are
+        skipped. One may appear only in `catalog_maint.CatalogHold.checkpoint` / `snapshot` /
+        `rewrite_into` (and 18.3's `drop_sentinel` and child entry point), or in a function on
+        one of two exemption lists the test holds as named constants:
+        - **permanent** (each with its reason, [[task-18.3-offline-reclaim#facts]] I1):
+          `store.Store.rebuild_entities_indexes`, `cli.merge_verb_aliases`,
+          `daemon._op_replica_merge`, `replica_merge.merge_slots`;
+        - **staged**, each marked with the task that removes it: `daemon.Daemon.serve_forever`
+          (the init slot rebind is inline there at HEAD; pending 18.3 R8),
+          `daemon.Daemon._bootstrap_rotation_if_needed` (pending 18.3 R8), `cli.compact`
+          (pending 18.3 R10). [[task-18.3-offline-reclaim#ac-14]] asserts the staged list is
+          EMPTY.
+
+        This is the census at `master` `b381b6d` (`src/refmatrix/*.py`, SQL CHECKPOINT
+        constants): the seven functions above plus `_snapshot_catalog` and `_op_checkpoint`,
+        which 18.2 ports. So the rule is green on 18.2's own correct code, and a CHECKPOINT
+        added to any other function, in any module (`store.py`, `backend.py`, a new module),
+        is red;
       - from each op on the catalog list, exactly ONE `_catalog_hold` call is reachable,
-        walking the calls into `catalog_maint.py` (ch-bsd r1 M-7: the routine with the
+        walking the calls into `catalog_maint` (ch-bsd r1 M-7: the routine with the
         `checkpoint` seam, not the op, holds the call).
 12. **R12 The reason gate** (d9bc: "we should have a reason to run"). The hold runs only for a
     reason, and every run says which reason it had, or why it had none. {#r12-reason}
@@ -456,8 +480,15 @@ liveness facts this step depends on:
       `fsync`s it, renames it over the file, and `fsync`s the directory. It returns the new
       dict. A read-only `catalog_maint.read_state(root)` needs no lock (the rename is atomic).
     - Every write of the file in 18.2 and 18.3 is an `update_state` call that sets or clears
-      only its own keys. An AST check (AC-17) finds no other `open(…, "w")`, `write_text` or
-      `os.replace` onto a `catalog_state.json` path.
+      only its own keys. **The enforcement is a string-constant rule** (ch-bsd r2 N-M2; AC-17),
+      because a rule that matches writes "onto a `catalog_state.json` path" misses
+      `p = state_path(root); p.write_text(…)`: across every `src/refmatrix/*.py`, the only
+      non-docstring string constant containing `catalog_state` is the one assignment
+      `catalog_maint.STATE_FILE = "catalog_state.json"`, and the name `STATE_FILE` is referenced
+      only inside `catalog_maint.update_state` and `catalog_maint.read_state`. There is no path
+      helper; a log line says "catalog state", not the file name. Any second writer must then
+      either spell the name (a second constant), reference `STATE_FILE` (outside the two
+      functions), or go through a helper that does one of those, and each fails the rule.
 
 ## Acceptance criteria {#acceptance}
 
@@ -543,10 +574,16 @@ All tests run in the 23.0 sandbox, on real tmp daemons with short roots, with 23
       new snapshot's inode when `_snapshot_lock` is next acquired by another thread, and its
       result carries `log_size` and `pinned: true`.
     - A dirty fragment present before the tick is in the snapshot copy (23.5 R1.9's flush).
+    - **The flush-order AST** (23.5 R7's assertion, moved by the port; ch-bsd r2 N-M3): in
+      `catalog_maint.CatalogHold.snapshot`, the `flush_fragments` call precedes the
+      `checkpoint()` call in source order. 23.5 R7's test that walked `_snapshot_catalog` is
+      retargeted to this function, not deleted.
 
     Mutations: the hold timed around the CHECKPOINT only FAILS (`< 0.2`); the link swing and
     mirror refresh moved to `after` FAILS (`_snapshot_lock.locked()` is `False` in the seam);
-    the flush dropped from `snapshot()` FAILS (the fragment is missing from the copy).
+    the flush dropped from `snapshot()` FAILS (the fragment is missing from the copy); the flush
+    moved after the CHECKPOINT FAILS (the flush-order AST, and the copy, which is the file
+    without its WAL, misses the fragment).
 13. **AC-13 (pre-registered constants).** Defaults: `RMX_CATALOG_WAL_MAX_BYTES` 64 MiB,
     `RMX_CATALOG_LOCK_WAIT_S` 30, `RMX_CATALOG_HOLD_ALARM_S` 2, `RMX_CATALOG_HOLD_MAX_S` 10.
     `RMX_CATALOG_WAL_FOLD_BYTES` 16 MiB, `RMX_CATALOG_BAND_MODE` `growth` (18.1's Table B
@@ -573,9 +610,11 @@ All tests run in the 23.0 sandbox, on real tmp daemons with short roots, with 23
     - a hand-spelled hold left in `_snapshot_catalog` or `_op_checkpoint`, a
       `with d._store_lock:` inside `catalog_maint.py`, inverted lock order, the holder not
       registered through `_inflight`, or a second hold-alarm line → AC-17;
-    - link swing / mirror refresh moved to `after`, or the flush dropped from `snapshot()` →
-      AC-12;
-    - `catalog_state.json` written without `update_state`'s lock → AC-18.
+    - link swing / mirror refresh moved to `after`, the flush dropped from `snapshot()`, or the
+      flush moved after the CHECKPOINT → AC-12;
+    - `catalog_state.json` written without `update_state`'s lock → AC-18;
+    - a CHECKPOINT in a `Store` method or in any module outside the named sites, or a second
+      `catalog_state.json` writer → AC-17.
 15. **AC-15 (the reason gate; d9bc).** In 17.2's harness, three hub runs on three tmp stores: {#ac-15}
     - (a) a 0-byte WAL and no growth: `skipped:no_reason`, zero recorded holds, and the ledger
       and `rmxd.log` lines carry `reasons: []` and a `reason_detail` naming both numbers;
@@ -601,13 +640,18 @@ All tests run in the 23.0 sandbox, on real tmp daemons with short roots, with 23
     Mutations: `file_bytes` as the baseline FAILS (refmatrix is A0); an overwriting
     `--baseline-from` FAILS; the 64 MiB floor dropped FAILS (cliquet is A2).
 17. **AC-17 (one helper, and the checks that it stays one).** {#ac-17}
-    - **The AST walk** of R11 "The bypass rule", over `daemon.py` AND `catalog_maint.py`
-      (ch-bsd r1 S-1): no `_store_lock` / `_snapshot_lock` reference in `catalog_maint.py`; none
-      in the catalog-list functions of `daemon.py`; `_snapshot_lock` only in `_catalog_hold`;
-      the `"CHECKPOINT"` literal only in the named `CatalogHold` methods and the named
-      exemptions; `.execute(` in `catalog_maint.py` only in the executors; and exactly one
-      `_catalog_hold` call reachable from each catalog-list op, walking into
-      `catalog_maint.py` (ch-bsd r1 M-7).
+    - **The AST walk** of R11 "The bypass rule", over EVERY `src/refmatrix/*.py` (ch-bsd r1
+      S-1, r2 N-B2), exemptions by qualified function name: no `_store_lock` / `_snapshot_lock`
+      reference in `catalog_maint`; none in the catalog-list functions; `_snapshot_lock` only in
+      `Daemon._catalog_hold` (and `Daemon.__init__`); a CHECKPOINT statement constant only in the
+      named `CatalogHold` methods, the permanent exemptions and the STAGED exemptions
+      (`Daemon.serve_forever`, `Daemon._bootstrap_rotation_if_needed`, `cli.compact`, each
+      marked "pending 18.3 R8 / R10"); `.execute(` in `catalog_maint` only in the executors;
+      and exactly one `_catalog_hold` call reachable from each catalog-list op, walking into
+      `catalog_maint` (ch-bsd r1 M-7). The test is green at 18.2 GREEN on the census of R11.
+    - **One state writer, statically** (R13; ch-bsd r2 N-M2): the only non-docstring string
+      constant containing `catalog_state` in `src/refmatrix` is `catalog_maint.STATE_FILE`'s,
+      and `STATE_FILE` is referenced only in `update_state` and `read_state`.
     - Health reports a hold ring entry for each of the labels `snapshot`, `checkpoint_op` and
       `catalog_maintain` after one of each runs.
     - **The holder is named** (23.5 item 1). While a `catalog_maintain` seam blocks inside the
@@ -626,8 +670,12 @@ All tests run in the 23.0 sandbox, on real tmp daemons with short roots, with 23
 
     Mutations: a hand-spelled hold left in `_op_checkpoint` FAILS (AST); a `with
     d._store_lock:` inside `catalog_maint.py` (the code moved out of `daemon.py`) FAILS (AST); a
-    raw `.execute("CHECKPOINT")` in a `Store` method called from the body FAILS (AST, the
-    literal outside the named sites); the helper taking `_store_lock` before `_snapshot_lock`
+    raw `.execute("CHECKPOINT")` in a `Store` method called from the body FAILS (AST:
+    `store.py` is walked, and the method is on neither exemption list); the same statement in a
+    function of `backend.py` FAILS (AST, any module); a second `catalog_state.json` writer
+    (`(root / "maintain" / "catalog_state.json").write_text(…)`, or a `state_path()` helper
+    returning `… / STATE_FILE`) FAILS (the state-writer rule: a second constant, or a reference
+    outside the two functions); the helper taking `_store_lock` before `_snapshot_lock`
     with `snapshot=True` FAILS the lock-order case (the write op blocks for the full second, and
     the recorder shows the helper's thread holding `_store_lock`); no `_inflight` entry FAILS
     (`writer_holder` is `untracked thread …`); a helper-owned hold log line FAILS (two lines).
@@ -688,3 +736,14 @@ d9bp-d9bv) in [[plan-review-2026-10-14]]; 23.5's hand-off list
 | M-1 (stale lines, false "src unchanged") | [[#facts]] re-cited at `23ad703` (unchanged through `7c8d6c5`); L1-L6, R7 and `#why` lines updated |
 | M-5 (AC-1's wait mutation had no competitor) | [[#ac-1]] gains the 0.5 s competitor variant |
 | M-7 ("each calls `_catalog_hold` once" vs AC-5's seam split) | [[#ac-17]]: exactly one `_catalog_hold` call reachable from each op, walking into `catalog_maint.py` |
+
+## Revision round 3 {#rev-round-3}
+
+From ch-bsd plan-18 r2 ([[bsd-plan18-r2-spec-diffcheck-cb7bf5b]]). Each mutation added here was
+reasoned against the code it must reject; the census below was read at `master` `b381b6d`.
+
+| finding | change |
+|---|---|
+| N-B2 (the rule is red at 18.2 GREEN and cannot see `store.py`) | [[#r11-hold-helper]] "The bypass rule": the walk covers EVERY `src/refmatrix/*.py`; exemptions by qualified function name; a CHECKPOINT is a SQL-statement string constant (`^\s*(FORCE\s+)?CHECKPOINT\b`, f-string parts included, docstrings skipped); a PERMANENT list (`Store.rebuild_entities_indexes`, `cli.merge_verb_aliases`, `_op_replica_merge`, `replica_merge.merge_slots`) and a STAGED list (`Daemon.serve_forever` for the inline init rebind, `Daemon._bootstrap_rotation_if_needed`, `cli.compact`), which 18.3 AC-14 requires EMPTY; the census at `b381b6d` is stated so the rule is green on 18.2's correct code. [[#ac-17]] and [[#ac-14]]: the `store.py` mutation now fails as written, plus a `backend.py` variant |
+| N-M2 (the state-writer check was attributed to AC-17 but absent; a path match is defeatable) | [[#r13-state]]: one string-constant rule (`catalog_maint.STATE_FILE`, referenced only in `update_state` / `read_state`, no path helper); [[#ac-17]] lists it with the mutation "a second writer FAILS" |
+| N-M3 (23.5 item 4's flush-order AST not carried) | [[#r8-snapshot-hold]]: the assertion moves to `CatalogHold.snapshot`; [[#ac-12]] lists it and a flush-after-CHECKPOINT mutation |

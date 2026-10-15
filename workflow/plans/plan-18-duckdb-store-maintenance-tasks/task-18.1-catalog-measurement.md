@@ -13,7 +13,11 @@ metadata:
 # Task 18.1: measure the fleet's catalogs on copies {#root}
 
 > Plan: [plan-18-duckdb-store-maintenance](../plan-18-duckdb-store-maintenance.md)
-> Status: IN-PROGRESS (d9br: ch-bsd r1 remedy; script `8a93ab1`; verdict [[plan-18-duckdb-store-maintenance#verdict-18-1]]; amendments d9bh)
+> Status: IN-PROGRESS (d9br). Script `8a93ab1`, then the ch-bsd r1/r2 remedies `886386b`,
+> `34ac5cd` and `8281a7f` (clone `/Volumes/littlebig/refmatrix-task-18.1`, branch
+> `task-18.1-catalog-measurement`). Fleet report: `workflow/review-output/plan18-catalog-measure-20261015-r2.md`
+> (GMD id `plan18-catalog-measure-20261015-r2`). Verdict [[plan-18-duckdb-store-maintenance#verdict-18-1]].
+> The amendments d9bh, d9br and d9bv are folded into this body ([[#rev-round-3]]).
 > Wave: 4 ([[plan-review-2026-10-14#t10-waves]]). It is read-only on copies and changes no
 > `src/` file, so it CAN run earlier if the user says so (plan open question Q2).
 > Depends on: 23.0 (the script's tests run in the sandbox). Nothing else: no daemon op, no store
@@ -29,6 +33,7 @@ rel: related-to -> [[plan-review-2026-10-07#consolidations]]
 rel: related-to -> [[plan-review-2026-10-14#t12-approvals]]
 rel: motivates -> [[task-18.3-offline-reclaim]]
 rel: motivates -> [[task-18.2-catalog-maintain-step]]
+rel: derives-from -> [[bsd-plan18-task18-1-measurement-r2-34ac5cd]]
 
 ## Why {#why}
 
@@ -126,18 +131,40 @@ Read 2026-10-15 from `src/refmatrix/` and by `stat` of the live files. No live s
      a live root (bug-110: a close drops the daemon's lock), it never connects to a socket, and it
      never reads a writer slot. The snapshot's mtime is recorded as the measurement's `as_of`.
    - **One child process per copy, for every DuckDB statement** (bug-112: a second in-process
-     `duckdb.connect` to a path returns the cached database). Child 1 measures:
-     `PRAGMA database_size` (`block_size`, `total_blocks`, `used_blocks`, `free_blocks`); per table
-     the row count; `duckdb_sequences()` (name, last value); `duckdb_indexes()` names;
-     `duckdb_constraints()` counts per table.
-   - **The rewrite rehearsal.** Child 2 opens the copy and runs
-     `ATTACH '<scratch>/<store>/rewrite.duckdb' AS n`, `COPY FROM DATABASE snap TO n`,
-     `CHECKPOINT n`, `DETACH n`. `rewrite_s` is `time.monotonic()` around those four statements.
-     The rehearsal runs three times on fresh targets. It reports the median and max `rewrite_s`
-     and `rewrite_bytes` (the new file's size).
-   - **The gate.** Child 3 opens `rewrite.duckdb` and compares it with child 1's numbers: every
-     table's row count, every sequence's last value, the index name set and the constraint
-     counts must be equal. A store whose gate fails gets no band (R3).
+     `duckdb.connect` to a path returns the cached database). Child 1 opens the copy read-only
+     and measures `PRAGMA database_size` (`block_size`, `total_blocks`, `used_blocks`,
+     `free_blocks`) and the copy's `catalog_fingerprint` (below). Every child reports its
+     `duckdb.__version__`; children on different builds make the store an error row (d9br), and
+     each row records `duckdb_version`.
+   - **The rewrite rehearsal.** Child 2 opens the copy READ-WRITE (d9bh: a read-only connection
+     attaches its target read-only) and runs `ATTACH '<work>/rewrite.duckdb' AS n`,
+     `COPY FROM DATABASE snap TO n`, `CHECKPOINT n`, `DETACH n`. `rewrite_s` is
+     `time.monotonic()` around those four statements. The rehearsal runs three times on fresh
+     targets. It reports `rewrite_s` as the median of the runs and `rewrite_s_max` as the max over
+     EVERY run (a noisy first batch included), and `rewrite_bytes` as the MEDIAN of the runs'
+     new-file sizes (d9br; one rewrite's size moves in whole 256 KiB blocks).
+   - **The gate** (d9br). Child 3 opens `rewrite.duckdb` read-only, and the gate is
+     `gate(catalog_fingerprint(copy), catalog_fingerprint(rewrite))`, empty on a pass. The
+     fingerprint has NINE legs, each compared key by key:
+     - `rows`: per table, `count(*)`;
+     - `content`: per table, an order-independent `sum(hash(row)::HUGEINT)` over every column
+       (a SUM, not `bit_xor`, so duplicate rows cannot cancel);
+     - `columns`: per table, `duckdb_columns()` index, name, `data_type`, `column_default`,
+       `is_nullable`;
+     - `constraints`: per table, `duckdb_constraints()` type, `constraint_text` and sorted column
+       names;
+     - `indexes`: `duckdb_indexes()` table and `sql`;
+     - `sequences`: `duckdb_sequences()` start, min, max, increment, cycle and `last_value`;
+     - `views`, `macros`, `types`: the non-internal `duckdb_views()` sql,
+       `duckdb_functions()` macro definitions and `duckdb_types()`.
+
+     A leg missing on one side is itself a difference. **Precondition** (ch-bsd 18.1 r2 S-1,
+     `8281a7f`): both fingerprints come from FRESH opens of checkpointed files. On a connection
+     that has issued sequence values, `duckdb_sequences()` reports `start_value` / `last_value`
+     differently from a fresh open of the same state, so the `sequences` leg is not comparable
+     on a live session. 18.3 gates a live session and therefore defines that leg on
+     session-stable invariants ([[task-18.3-offline-reclaim#r5-gate]]); the leg is never dropped.
+     A store whose gate fails gets no band (R3).
    - **Derived values.** `f = free_blocks / total_blocks`; `r = 1 − rewrite_bytes / file_bytes`
      (`file_bytes` is the copy's size); `reclaimable = file_bytes − rewrite_bytes`. The reclaim
      estimate is `r`, which comes from the rewrite. `f` is the cheap proxy that 18.2 can read
@@ -146,7 +173,10 @@ Read 2026-10-15 from `src/refmatrix/` and by `stat` of the live files. No live s
    per store with every R1 field and its band. `…-<YYYYMMDD>.md` is a GMD report: the per-store
    table, each band with the edge it fell in, and the fleet verdict (R5). The scratch copies and
    rewrite files are deleted after the report is written; they are copies, and the live files
-   are untouched. {#r2}
+   are untouched. Each store works in its own `mkdtemp` dir under `scratch`, removed in a
+   `finally`; the script never removes `scratch` itself (d9br). A re-run on the same day writes a
+   suffixed report whose GMD id is its file stem (`…-<YYYYMMDD>-r2`), so two reports never share
+   a node id. {#r2}
 3. **R3 Pre-registered bands** (`feedback_go_no_go_ranges_not_predrop`). These are written
    2026-10-15, before any fleet run. The script holds them as one constant table, and AC-7 pins
    its literal values to this section. Changing an edge after the run needs a user decision row
@@ -201,8 +231,9 @@ Read 2026-10-15 from `src/refmatrix/` and by `stat` of the live files. No live s
    also serving. The report states whether that holds; nothing builds it.
 4. **R4 The production path is this path** (`feedback_measure_the_path_users_run`). If 18.3 is
    built, its own rehearsal runs on the same copy through ITS production routine. The result must
-   land within ±25 % of this task's median `rewrite_s` and within 1 % of `rewrite_bytes`
-   ([[task-18.3-offline-reclaim#acceptance]] AC-7). If it does not, 18.1's verdict is re-taken
+   land within ±25 % of this task's median `rewrite_s` and within `max(2 %, 512 KiB)` of its
+   median `rewrite_bytes` (d9br as amended by d9bv: the r2 fleet re-run measured a 3-run spread
+   of up to 2.17 %, in whole 262,144-byte blocks; [[task-18.3-offline-reclaim#acceptance]] AC-7). If it does not, 18.1's verdict is re-taken
    with the production routine before any live reclaim. {#r4}
 5. **R5 The verdict and its hand-off.** The implementer runs the script once over the 8
    registered roots (copies only; announced to the user first, because it reads every store's
@@ -215,7 +246,9 @@ Read 2026-10-15 from `src/refmatrix/` and by `stat` of the live files. No live s
    - any store A1/A2 with C2 → that store is named for the helix plan and excluded from 18.3;
    - the Table B fleet row sets 18.2's `RMX_CATALOG_BAND_MODE` default.
 6. **R6 No silent failure.** A store whose copy, a child, or the gate fails becomes a row with
-   `error` and the failing step. It is counted, and the remaining stores are still measured. The
+   `error` and the failing step; any `Exception` raised for one root becomes that root's row,
+   and an interrupt still writes a row per root (d9br). It is counted, and the remaining stores
+   are still measured. The
    script exits 1 if any store failed, and the verdict is `INCOMPLETE`: no fleet-wide band is
    applied until every store has a row. {#r6}
 
@@ -225,22 +258,43 @@ All tests run inside the 23.0 sandbox, on tmp roots whose catalog files are real
 written by `Store.init()` plus synthetic rows. No test reads a live root.
 
 1. **AC-1 (reclaim found and measured).** A tmp root has a `catalog.read.duckdb` with 200,000
-   `entities` rows, 90 % of them deleted and checkpointed (the F2 shape). The row reports
-   `f ≥ 0.80`, `r ≥ 0.80`, `reclaimable > 0`, a passing gate and band A2 (with the test's
-   64 MiB edge scaled down through the script's `min_reclaim_bytes` parameter, whose default is
-   pinned by AC-7). A second root with no deletes gets `r < 0.20` and band A0. {#ac-1}
+   `entities` rows, 95 % of them deleted and checkpointed (the F2 shape; d9bh/d9br: at 90 % `r`
+   sat on the 0.80 edge and failed 1 run in 8, at 95 % it measured 0.874-0.887). The row's
+   `total_blocks` / `used_blocks` / `free_blocks` equal the test's own `PRAGMA database_size`
+   reading of the file and `f` equals `free / total` from it (a `free := used` fails). The row
+   reports `r ≥ 0.80`, `0 < f ≤ r` (on the real schema the index blocks keep `f` near 0.6, so
+   `f ≥ 0.80` cannot hold; d9bh), `reclaimable > 0`, a passing gate, `rewrite_bytes` equal to
+   the median of its runs, and band A2 (with the test's 64 MiB edge scaled down through the
+   script's `min_reclaim_bytes` parameter, whose default is pinned by AC-7). A second root of
+   200,000 rows with no deletes (a margin fixture: at 20,000 rows block steps moved `r` to 0.04,
+   at 200,000 it stayed ≤ 0.014) gets `r < 0.20` and band A0. {#ac-1}
 2. **AC-2 (r is the rewrite, not the proxy).** The pure derive function is given
-   `file_bytes=100 MiB, rewrite_bytes=40 MiB, free_blocks=10, total_blocks=100` and returns
-   `r = 0.60`, `f = 0.10`, band A2 and B-disagree. Mutation: `r := f` FAILS (band A0,
+   `file_bytes=200 MiB, rewrite_bytes=80 MiB, free_blocks=10, total_blocks=100` and returns
+   `r = 0.60`, `f = 0.10`, band A2 and B-disagree (d9bh: 100/40 MiB gave 60 MiB reclaimable,
+   under Table A's own 64 MiB edge). Mutation: `r := f` FAILS (band A0,
    B-agree). {#ac-2}
 3. **AC-3 (the live root is untouched).** The sandbox records zero socket connects. Over the run,
    every file under the injected root keeps its (name, size, mtime_ns, inode). The copy's argv
    recorded by the test's subprocess spy is `["/bin/cp", "-p", <snapshot>, <scratch copy>]`.
    Mutations: an in-process `shutil.copy2` FAILS (no `/bin/cp` argv); reading the writer slot
    instead of the snapshot FAILS (the argv names `catalog.<S>.duckdb`). {#ac-3}
-4. **AC-4 (the gate can fail).** A test hook deletes one row from `rewrite.duckdb` before child 3
-   runs. The row says `gate: fail` with the table and both counts, it has no band, and the exit
-   code is 1. Mutation: the gate removed FAILS (the row is banded). {#ac-4}
+4. **AC-4 (the gate can fail, one variant per leg; d9br).** A test hook changes
+   `rewrite.duckdb` before child 3 runs, and CHECKPOINTs it. Each variant's row says
+   `gate: fail` with a diff naming its leg and object, has no band, and the exit code is 1:
+   - `rows`: one row deleted (the diff names the table and both counts);
+   - `content`: one non-key value changed, counts equal (no `rows` diff);
+   - `columns`: one column's type changed; separately one column's DEFAULT changed;
+   - `constraints`: a NOT NULL dropped; separately `check-text`, the table rebuilt with
+     `CHECK (a > 1)` in place of `CHECK (a > 0)` over the same rows (ONLY the constraint diff);
+   - `indexes`: an index re-created under the same name on a different column;
+   - `sequences`: one `nextval`;
+   - `views`, `macros`, `types`: one of each added.
+
+   A further test pins the precondition (r2 S-1): a fingerprint of an in-session connection that
+   has issued a sequence value differs from a fresh read of its own rewrite ONLY on the
+   `sequences` leg, and a fresh reopen of the same file matches exactly.
+   Mutations: the gate removed FAILS (the row is banded); each leg removed in turn FAILS its own
+   variant; `constraint_text` dropped from the query FAILS `check-text`. {#ac-4}
 5. **AC-5 (one opener per path; bug-112).** Every DuckDB statement runs in a child. The test
    asserts child 1, child 2 and child 3 each report a pid different from the parent's, and that
    a spy on `duckdb.connect` in the parent process counts zero calls. Mutation: measuring
@@ -274,3 +328,20 @@ written by `Store.init()` plus synthetic rows. No test reads a live root.
 | `tests/test_catalog_measure.py` | new: AC-1..AC-8 |
 | `workflow/review-output/plan18-catalog-measure-<date>.{jsonl,md,log}` | the fleet run's output (R2, R5) |
 | `workflow/plans/plan-18-duckdb-store-maintenance.md` | the verdict (R5) |
+
+## Revision round 3 {#rev-round-3}
+
+From ch-bsd 18.1 r2 ([[bsd-plan18-task18-1-measurement-r2-34ac5cd]]) M-2 and S-1: the
+decision rows d9bh, d9br and d9bv in [[plan-review-2026-10-14]] are folded into the body, so the
+spec no longer contradicts the code at `8281a7f`.
+
+| source | change |
+|---|---|
+| r2 M-2 (status pointer) | header status: script commits `886386b`, `34ac5cd`, `8281a7f`; report `…-20261015-r2.md`, id `plan18-catalog-measure-20261015-r2` |
+| d9br / r2 M-2 (gate) | [[#r1]] "The gate": the nine-leg `catalog_fingerprint`, a missing leg is a difference; child 1 measures the fingerprint; per-row `duckdb_version` and the mixed-build refusal |
+| r2 S-1 (fresh-open precondition) | [[#r1]] "The gate" states it and points 18.3 at its session-stable sequence leg; [[#ac-4]] pins it with a test |
+| d9br (medians, max over every run) | [[#r1]] rehearsal: `rewrite_bytes` = median, `rewrite_s_max` over every run; [[#r2]] per-store `mkdtemp` + `finally`; [[#r6]] any `Exception` / interrupt is a row |
+| d9bh (AC-1, AC-2, read-write rewrite child) | [[#ac-1]] 95 %, pinned block counts, `0 < f ≤ r`, 200,000-row margin fixture; [[#ac-2]] 200/80 MiB; [[#r1]] the rewrite child opens read-write |
+| d9br / r2 M-1 (one variant per leg) | [[#ac-4]] one variant per leg, including `check-text` |
+| d9bv (bytes tolerance) | [[#r4]] `max(2 %, 512 KiB)` |
+| r2 M-2 (report id) | [[#r2]] a same-day re-run's GMD id is its suffixed stem |
