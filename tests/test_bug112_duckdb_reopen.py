@@ -618,3 +618,41 @@ def test_serve_forever_attaches_the_backend_log_and_detaches_it_on_shutdown(tmp_
                        capture_output=True, text=True, timeout=120)
     assert "serving handlers=1" in r.stdout, (r.stdout, r.stderr[-2000:])
     assert "at-exit handlers=0 code=0" in r.stdout, (r.stdout, r.stderr[-2000:])
+
+
+def test_shut_waits_for_statements_in_flight_and_refuses_new_ones(tmp_path):
+    """The drain protocol behind s-r2-1, made deterministic: a statement is
+    held in flight at the protocol level (`enter` without `leave`, as a
+    reader inside execute would be). While it runs, the stale instance must
+    NOT be closed (closing under a running statement crashed 1.5.2) and no
+    new statement may start on it; when it leaves, the instance closes and
+    the write open proceeds on the new file."""
+    import threading
+    import time
+    p = tmp_path / "catalog.A.duckdb"
+    _make(p, 1)
+    running = DuckDBBackend().connect(p, read_only=True)
+    other = DuckDBBackend().connect(p, read_only=True)
+    inst = running._duck._inst
+    inst.enter()                                  # a statement in flight
+    _replace(p, 2)
+    out: dict = {}
+
+    def write_open():
+        w = DuckDBBackend().connect(p)
+        out["v"] = w.execute("SELECT v FROM t").fetchone()[0]
+        w.close()
+
+    th = threading.Thread(target=write_open)
+    th.start()
+    time.sleep(0.3)
+    try:
+        assert not inst.base_closed, "instance closed under a statement in flight"
+        with pytest.raises(duckdb.ConnectionException) as ei:
+            other.execute("SELECT v FROM t")
+        assert "replaced" in str(ei.value)
+    finally:
+        inst.leave()
+    th.join(30)
+    assert out.get("v") == 2, out
+    assert inst.base_closed
