@@ -1,0 +1,8 @@
+#!/bin/sh
+# Task 23.0 S6 (ch-bsd r1, 2026-10-15): first on the sandbox PATH. `HUB_LABEL` and the daemon
+# labels are global, so a sandboxed `launchctl bootout` / `bootstrap` / `kickstart` acts on the
+# LIVE hub and daemons whatever HOME says. Read-only verbs pass through to the next launchctl on
+# PATH; every other verb is refused (touches-log line, exit 86) by rmx_sandbox.shim_launchctl,
+# the same spawn rule the audit hook applies to a Python spawn.
+here="$(cd "$(dirname "$0")" && pwd)"
+exec python3 "$here/../rmx_sandbox.py" launchctl "$@"

@@ -26,10 +26,20 @@ per-test record AND raised, and the conftest fails any test whose record is non-
 the hook writes the touches log and `os._exit(86)`; the test id comes from
 `PYTEST_CURRENT_TEST`.
 
+ch-bsd r1 (2026-10-15) added: the spawn rule (`spawn_violation()`: no spawn whose cwd is in
+a denied root, no mutating `launchctl`, no `kill` of a live pid) shared by the audit hook and
+the `bin/launchctl` shim; `os.kill` / `os.killpg` of a live daemon or hub pid (captured at
+`enter()` from their pid files) refused; probe ownership (`PROBE_ENV`) in place of a module
+allowlist; and the narrowed fd-walk exemption (`violation()`).
+
 Limits, stated (not hidden): the audit hook sees what CPython audits. A C library that opens a
 file itself (DuckDB's `duckdb.connect`, Lance) raises no `open` event, so a live catalog opened
 ONLY through DuckDB is caught by the redirect (R1/R2), not by the refusal. `os.stat` /
-`os.path.exists` are not audited either (a probe of existence is not refused).
+`os.path.exists` are not audited either (a probe of existence is not refused). A non-Python
+process is seen only through the `launchctl` shim on `PATH`: a shell's builtin `kill`, an
+absolute `/bin/launchctl` from a shell script, `pkill` / `killall` by name, and `lsof` are not
+refused. A pid captured at `enter()` that is reused later is refused too (a spurious failure,
+never a reach).
 
 This file must import under any Python 3 a test may spawn (a hook script's `/usr/bin/python3`
 gets `sitecustomize` through PYTHONPATH too), so it uses no syntax newer than 3.8.
@@ -42,6 +52,7 @@ import os
 import plistlib
 import pwd
 import runpy
+import shlex
 import shutil
 import socket
 import sys
@@ -59,12 +70,26 @@ PRELOAD_EXIT = 87    # the $RMX_SANDBOX_PRELOAD script raised (or is not an abso
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "0.0.0.0", "::",
                             "::ffff:127.0.0.1", "ip6-localhost"})
 TOUCHES_REL = Path("workflow") / "review-output" / "live-socket-touches.log"
-# Test modules whose refusals are DELIBERATE probes (AC-2/AC-3/R3). The proof wrapper's
-# "touches log gains 0 lines" check (AC-4) excludes exactly these and nothing else.
-# test_sandbox_child_extensions.py joined 2026-10-15 (ch-test-engineer): its refused dials are
-# the #rev-amend-r10 AC-3 legs, attributed through the child's inherited PYTEST_CURRENT_TEST.
-DELIBERATE_PROBE_MODULES = ("tests/test_sandbox_refusal.py::", "tests/test_sandbox_children.py::",
-                            "tests/test_sandbox_child_extensions.py::")
+# A DELIBERATE refusal (a test marked `sandbox_probe`, or code inside
+# `expect_sandbox_violation()`) runs with this variable set to the OWNER's test id; every
+# touches-log line written then -- in-process or by a child, which inherits it -- carries that
+# owner in its sixth field. AC-4's "touches log gains 0 lines" check excludes owned lines; the
+# conftest's child-touch check excludes only lines the test ITSELF owns (an in-process inner
+# test under a probe is not a probe). This replaced a module allowlist
+# (`DELIBERATE_PROBE_MODULES`, ch-bsd r1 m2/s1, 2026-10-15): an accidental touch by ANY test
+# in those three modules was excluded too.
+PROBE_ENV = "RMX_SANDBOX_PROBE"
+# `tests/sandbox_site/bin/`: the `launchctl` shim (S6), first on the sandbox `PATH`.
+BIN_DIR = SITE_DIR / "bin"
+HUB_PID = "hub.pid"          # refmatrix.hub.HUB_PID, under the real `~/.refmatrix/`
+DAEMON_PID = "rmxd.pid"      # every store root's daemon pid file
+# `launchctl` subcommands that change nothing (ch-bsd r1 s6): everything else -- bootout,
+# bootstrap, kickstart, load, unload, enable, disable, kill, remove, submit, ... -- is refused.
+# `HUB_LABEL` and the daemon labels are GLOBAL, so a sandboxed `install_hub` would boot out
+# the LIVE hub whatever `HOME` says.
+LAUNCHCTL_READ_ONLY = frozenset({"print", "print-cache", "print-disabled", "list", "blame",
+                                 "help", "version", "error", "managerpid", "manageruid",
+                                 "managername", "hostinfo", "getenv"})
 
 
 class SandboxViolation(Exception):
@@ -134,9 +159,40 @@ def _variants(p: Path) -> set:
     return out
 
 
+def read_pid(path: Path) -> "int | None":
+    """The pid in a `rmxd.pid` / `hub.pid` (first token), or None when there is no file. A file
+    that exists but does not parse is NAMED on stderr, not dropped silently."""
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        sys.stderr.write(f"rmx sandbox: cannot read pid file {path}: {exc}\n")
+        return None
+    try:
+        return int(text.split()[0])
+    except (ValueError, IndexError):
+        sys.stderr.write(f"rmx sandbox: pid file {path} does not hold a pid: {text[:40]!r}\n")
+        return None
+
+
+def live_pids(roots, homes) -> list:
+    """The live processes a test must never signal (ch-bsd r1 s6): every store root's daemon
+    (`rmxd.pid`) and every protected home's hub (`~/.refmatrix/hub.pid`). Read with the real
+    paths, BEFORE the redirect and before the hook refuses those directories."""
+    out = set()
+    for f in [Path(r) / DAEMON_PID for r in roots] + [Path(h) / ".refmatrix" / HUB_PID
+                                                     for h in homes]:
+        pid = read_pid(f)
+        if pid is not None and pid > 0:
+            out.add(pid)
+    return sorted(out)
+
+
 def build_deny(repo: Path, env=None) -> dict:
     """R3's ONE deny set, from the real paths. Read BEFORE the audit hook is installed (the
-    registry and the plists name the stores the hook will then refuse)."""
+    registry and the plists name the stores the hook will then refuse). `pids` (S6): the live
+    daemons and hubs those paths name, which `os.kill` / a spawned `kill` may not signal."""
     env = os.environ if env is None else env
     homes = [real_home(env)]
     if _account_home() not in homes:
@@ -155,6 +211,7 @@ def build_deny(repo: Path, env=None) -> dict:
         # the real 7777 stays denied either way.
         ports.add(int(env["RMX_SANDBOX_HUB_PORT"]))
     return {"paths": sorted(paths), "ports": sorted(ports),
+            "pids": live_pids(sorted(roots), homes),
             "touches": str(repo / TOUCHES_REL)}
 
 
@@ -200,7 +257,8 @@ def sandbox_env(root: Path, real: Path, base=None) -> dict:
     `HOME` moves first because `launchctl.LAUNCH_AGENTS_DIR` is computed at IMPORT time;
     `RMX_HOME` is the global store, registry, taxonomy and hub sockets; `REFMATRIX_ROOT` is a
     session default under the sandbox (the autouse fixture replaces it per test, R2); `PATH`
-    pins `rmx` to the interpreter's own venv, never `~/bin/rmx` (the deploy build); the
+    pins `rmx` to the interpreter's own venv, never `~/bin/rmx` (the deploy build), behind
+    `BIN_DIR`'s `launchctl` shim (S6: a non-Python `launchctl bootout` is refused too); the
     model cache stays the real one (read-only, offline) because the suite loads models.
     `PYTHONPATH` gains `tests/sandbox_site` so every child installs the same refusal (R4)."""
     base = os.environ if base is None else base
@@ -209,7 +267,8 @@ def sandbox_env(root: Path, real: Path, base=None) -> dict:
     if str(SITE_DIR) not in pp:
         pp.insert(0, str(SITE_DIR))
     venv_bin = os.path.dirname(sys.executable)
-    path = [p for p in base.get("PATH", "").split(os.pathsep) if p and p != venv_bin]
+    path = [p for p in base.get("PATH", "").split(os.pathsep)
+            if p and p not in (venv_bin, str(BIN_DIR))]
     return {
         "HOME": str(home),
         "RMX_HOME": str(home / ".refmatrix"),
@@ -217,7 +276,7 @@ def sandbox_env(root: Path, real: Path, base=None) -> dict:
         "RMX_SANDBOX_REAL_HOME": str(real),
         "REFMATRIX_ROOT": str(root / "r" / "session" / ".refmatrix"),
         "HF_HOME": base.get("HF_HOME") or str(real / ".cache" / "huggingface"),
-        "PATH": os.pathsep.join([venv_bin] + path),
+        "PATH": os.pathsep.join([str(BIN_DIR), venv_bin] + path),
         "PYTHONPATH": os.pathsep.join(pp),
     }
 
@@ -311,6 +370,11 @@ def child_env(env) -> None:
         env["PYTHONPATH"] = os.pathsep.join(pp)
     for k in ("RMX_SANDBOX_ROOT", "RMX_SANDBOX_REAL_HOME"):
         env.setdefault(k, os.environ.get(k, want[k]))
+    # The attribution travels too (ch-bsd r1 s1/s3): a child given `env={"PATH": ...}` would
+    # otherwise log its refusal as `<no-test>`, which no test's child-touch check reads.
+    for k in (PROBE_ENV, "PYTEST_CURRENT_TEST"):
+        if os.environ.get(k):
+            env.setdefault(k, os.environ[k])
     if "HOME" not in env:
         env["HOME"] = os.environ.get("HOME", want["HOME"])
         env.setdefault("RMX_HOME", os.environ.get("RMX_HOME", want["RMX_HOME"]))
@@ -332,7 +396,17 @@ _PATH_EVENTS = {
     "shutil.chown": (0,), "sqlite3.connect": (0,), "glob.glob": (0,),
     "pathlib.Path.glob": (0,), "pathlib.Path.rglob": (0,),
 }
-_SPAWN_EVENTS = {"subprocess.Popen": 3, "os.posix_spawn": 2, "os.exec": 2}
+# event -> (argv index, cwd index or None). The env (R4) is the last argument of each.
+_SPAWN_EVENTS = {"subprocess.Popen": (1, 2), "os.posix_spawn": (1, None),
+                 "os.exec": (1, None)}
+_SPAWN_ENV = {"subprocess.Popen": 3, "os.posix_spawn": 2, "os.exec": 2}
+_KILL_EVENTS = ("os.kill", "os.killpg")
+# shutil's fd-based tree walk (3.12-3.14): it opens, unlinks and rmdirs entries by BARE NAME
+# relative to a directory DESCRIPTOR, which the `open` / `os.*` audit events do not carry.
+_FD_WALK_FUNCS = frozenset({"_rmtree_safe_fd", "_rmtree_safe_fd_step"})
+_SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh"})
+_CMD_LEAD = frozenset({";", "&&", "||", "|", "&", "(", "then", "do", "else", "exec",
+                       "command", "env", "nohup", "time"})
 
 
 def _as_path(v) -> "str | None":
@@ -354,27 +428,154 @@ def _path_denied(path: str, deny_paths) -> bool:
     return False
 
 
-def violation(event: str, args, deny: dict, dir_fd_relative: bool = False) -> "str | None":
+def _bare_name(raw) -> bool:
+    """A single directory entry name (no separator): what an fd-relative walk passes."""
+    if isinstance(raw, bytes):
+        return b"/" not in raw
+    return isinstance(raw, str) and os.sep not in raw
+
+
+def _argv(v) -> list:
+    if isinstance(v, (str, bytes, os.PathLike)):
+        v = [v]
+    out = []
+    try:
+        for a in v:
+            if isinstance(a, (bytes, os.PathLike)):
+                a = os.fsdecode(os.fspath(a))
+            out.append(str(a))
+    except TypeError:
+        return []
+    return out
+
+
+def _commands(argv: list) -> list:
+    """Each command an argv runs: the argv itself, plus every command of a `sh -c` script
+    (split with shell punctuation, so `a; launchctl bootout x` yields the second)."""
+    cmds = [argv]
+    if argv and os.path.basename(argv[0]) in _SHELLS and "-c" in argv[1:]:
+        i = argv.index("-c", 1)
+        if i + 1 < len(argv):
+            lex = shlex.shlex(argv[i + 1], posix=True, punctuation_chars=True)
+            lex.whitespace_split = True
+            try:
+                toks = list(lex)
+            except ValueError:
+                toks = argv[i + 1].split()
+            cur: list = []
+            for t in toks + [";"]:
+                if t in _CMD_LEAD:
+                    if cur:
+                        cmds.append(cur)
+                    cur = []
+                elif "=" in t and not cur:
+                    continue                     # `VAR=val cmd ...`
+                else:
+                    cur.append(t)
+    return cmds
+
+
+def _kill_targets(args: list) -> "list | None":
+    """The pids a `kill` argv signals, or None for signal 0 / a listing (they change
+    nothing). `kill -1 PID` is SIGHUP to PID; a `-1` AFTER the options is every process."""
+    rest = list(args)
+    while rest and rest[0].startswith("-") and rest[0] != "--":
+        opt = rest.pop(0)
+        if opt in ("-l", "-L"):
+            return None
+        if opt in ("-s", "-n"):
+            if rest and rest.pop(0) == "0":
+                return None
+        elif opt[1:] in ("0", "s0"):
+            return None
+        break
+    if rest and rest[0] == "--":
+        rest.pop(0)
+    out = []
+    for a in rest:
+        try:
+            out.append(int(a))
+        except ValueError:
+            continue
+    return out
+
+
+def _signal_violation(pid: int, sig, deny: dict) -> "str | None":
+    """Signal 0 (an existence probe) is allowed; any other signal to a live pid, to the group
+    of one (`-pid`), or to every process (`-1`) is refused."""
+    try:
+        if int(sig) == 0:
+            return None
+    except (TypeError, ValueError):
+        pass
+    pids = deny.get("pids") or ()
+    if pid == -1:
+        return "pid -1 (every process)"
+    if pid in pids or (pid < -1 and -pid in pids):
+        return f"pid {pid}"
+    return None
+
+
+def spawn_violation(argv, cwd, deny: dict) -> "str | None":
+    """THE spawn rule (ch-bsd r1 s6, m4), shared by the audit hook (every Python spawn) and the
+    `launchctl` shim (every shell spawn that finds the shim on `PATH`): a child may not start
+    with its cwd inside a denied root, run a mutating `launchctl` verb, or `kill` a live pid."""
+    if cwd is not None:
+        p = _as_path(cwd)
+        if p is not None and _path_denied(p, deny["paths"]):
+            return f"cwd {p}"
+    for cmd in _commands(_argv(argv)):
+        if not cmd:
+            continue
+        name = os.path.basename(cmd[0])
+        if name == "launchctl":
+            verb = cmd[1] if len(cmd) > 1 else ""
+            if verb not in LAUNCHCTL_READ_ONLY:
+                return f"launchctl {verb or '(no verb)'}"
+        elif name == "kill":
+            for pid in _kill_targets(cmd[1:]) or ():
+                v = _signal_violation(pid, 15, deny)
+                if v is not None:
+                    return f"kill {v}"
+    return None
+
+
+def violation(event: str, args, deny: dict, fd_walk: bool = False) -> "str | None":
     """THE deny rule: the live target this event touches, or None.
 
-    Pure: no I/O, no audited call (it runs inside the audit hook). `dir_fd_relative`: the
-    caller opens bare names relative to a directory DESCRIPTOR (shutil's fd-based rmtree and
-    copytree), which the `open` audit event does not carry, so a relative name cannot be
+    Pure: no I/O, no audited call (it runs inside the audit hook). `fd_walk`: the event was
+    raised from shutil's fd-based tree walk (`_FD_WALK_FUNCS`), which opens entries by bare
+    name relative to a directory DESCRIPTOR the event does not carry, so a bare name cannot be
     resolved against the cwd. Found 2026-10-15 on the first GREEN run: the sandbox's own
     cleanup `rmtree` opened its `.refmatrix` subdir by bare name with the cwd at the repo and
-    read as the repo's live store. The absolute root of that traversal is checked by the
-    `shutil.rmtree` / `shutil.copytree` event itself."""
+    read as the repo's live store. The exemption is that narrow and no wider (ch-bsd r1 b1:
+    it once covered every relative path raised anywhere in `shutil.py`, so
+    `shutil.copyfile(".refmatrix/catalog.read.duckdb", x)` from the repo cwd went through
+    unrefused and unlogged): it never applies to a `shutil.*` event -- whose path is the
+    walk's root, checked here -- nor to a name with a separator."""
     idx = _PATH_EVENTS.get(event)
     if idx is not None:
+        exempt = fd_walk and (event == "open" or event.startswith("os."))
         for i in idx:
             if i < len(args):
                 raw = args[i]
-                if dir_fd_relative and isinstance(raw, (str, bytes)) and not os.path.isabs(raw):
+                if exempt and _bare_name(raw):
                     continue
                 p = _as_path(raw)
                 if p is not None and _path_denied(p, deny["paths"]):
                     return p
         return None
+    if event in _KILL_EVENTS and len(args) >= 2 and isinstance(args[0], int):
+        pid = args[0]
+        if event == "os.killpg" and pid > 1:
+            pid = -pid                        # the group, as `kill -PGID` names it
+        return _signal_violation(pid, args[1], deny)
+    spawn = _SPAWN_EVENTS.get(event)
+    if spawn is not None:
+        ai, ci = spawn
+        argv = args[ai] if ai < len(args) else None
+        cwd = args[ci] if ci is not None and ci < len(args) else None
+        return spawn_violation(argv if argv is not None else (), cwd, deny)
     if event == "socket.connect" and len(args) >= 2:
         addr = args[1]
         if isinstance(addr, tuple) and len(addr) >= 2:
@@ -391,18 +592,16 @@ def violation(event: str, args, deny: dict, dir_fd_relative: bool = False) -> "s
     return None
 
 
-_FD_WALKERS = (os.sep + "shutil.py",)
-
-
-def _caller_is_fd_walker() -> bool:
-    """True when the Python frame that triggered the event is in `shutil` (fd-relative
-    traversal; see `violation`). Frame 0 is this function, 1 the hook, 2 the caller of the
-    audited C function."""
+def _in_fd_walk() -> bool:
+    """True when the Python frame that raised the event is shutil's fd-based walk (see
+    `violation`), identified by FUNCTION, not by file: frame 0 is this function, 1 the hook,
+    2 the caller of the audited C function."""
     try:
         f = sys._getframe(2)
     except ValueError:
         return False
-    return f.f_code.co_filename.endswith(_FD_WALKERS)
+    return (f.f_code.co_name in _FD_WALK_FUNCS
+            and f.f_code.co_filename.endswith(os.sep + "shutil.py"))
 
 
 def current_test() -> str:
@@ -419,30 +618,165 @@ def set_outer_test(nodeid: "str | None") -> None:
 
 
 def _touch_line(event: str, target: str, test_id: str) -> str:
+    """`pid  test  outer  event  target  owner` -- owner is the test id of the deliberate probe
+    this ran under (`PROBE_ENV`), else `-`."""
     outer = _STATE["outer"] or test_id
-    return f"{os.getpid()}\t{test_id}\t{outer}\t{event}\t{target}\n"
+    owner = (os.environ.get(PROBE_ENV) or "-").replace("\t", " ")
+    return f"{os.getpid()}\t{test_id}\t{outer}\t{event}\t{target}\t{owner}\n"
+
+
+def parse_touch(line: str) -> "dict | None":
+    """One touches-log line as fields (the ONE parser: the AC-4 check and the conftest's
+    child-touch check both read it). Lines written before the flag field have none."""
+    parts = line.rstrip("\n").split("\t")
+    if len(parts) < 5:
+        return None
+    try:
+        pid = int(parts[0])
+    except ValueError:
+        return None
+    owner = parts[5] if len(parts) > 5 and parts[5] not in ("", "-") else None
+    return {"pid": pid, "test": parts[1], "outer": parts[2], "event": parts[3],
+            "target": parts[4], "probe": owner is not None, "owner": owner}
+
+
+def touches_size(deny: dict) -> int:
+    try:
+        return os.path.getsize(deny["touches"])
+    except FileNotFoundError:
+        return 0
+
+
+def touches_since(path: str, since: int) -> list:
+    """Touches-log lines past byte `since` (all of them if the log shrank)."""
+    try:
+        size = os.path.getsize(path)
+    except FileNotFoundError:
+        return []
+    with open(path, "rb") as fh:
+        fh.seek(since if size >= since else 0)
+        return fh.read().decode(errors="replace").splitlines()
+
+
+def child_touches(path: str, since: int, nodeid: str, own_pid: int) -> list:
+    """ch-bsd r1 s1: refusals a CHILD of test `nodeid` logged since `since` that were not
+    deliberate. A child exits `CHILD_EXIT`; a spawner that ignores the code (a best-effort
+    hook, `check=False`, a detached daemon) would otherwise let the test pass."""
+    out = []
+    for ln in touches_since(path, since):
+        t = parse_touch(ln)
+        if (t is not None and t["pid"] != own_pid and t["owner"] != nodeid
+                and nodeid in (t["test"], t["outer"])):
+            out.append(ln)
+    return out
+
+
+# Which outer test an in-process `pytester` inner test's record belongs to (ch-bsd r1 s2): the
+# inner key is never popped by the outer report hook, so it is collected through this map.
+RECORD_OUTER: dict = {}
+
+
+def take_record(nodeid: str) -> tuple:
+    """Pop `nodeid`'s own violations and those of any in-process inner test run under it:
+    `(own, inner)`."""
+    own = RECORD.pop(nodeid, None) or []
+    inner = []
+    for k in [k for k, o in RECORD_OUTER.items() if o == nodeid]:
+        del RECORD_OUTER[k]
+        inner += [f"{k}: {h}" for h in RECORD.pop(k, None) or []]
+    return own, inner
+
+
+def drain_record() -> dict:
+    """Everything still recorded (ch-bsd r1 s2: `pytest_sessionfinish` fails on ANY leftover,
+    not only `NO_TEST`), emptied."""
+    left = {k: v for k, v in RECORD.items() if v}
+    RECORD.clear()
+    RECORD_OUTER.clear()
+    return left
+
+
+class probe_scope:
+    """Mark everything inside as a DELIBERATE refusal probe owned by test `owner`:
+    `PROBE_ENV` is set, so each touches-log line (this process's, and every child's -- it
+    inherits the variable) names the owner. Used by the `sandbox_probe` marker (whole test)
+    and by `expect_sandbox_violation()` (one block). `owner=None` is a no-op scope."""
+
+    def __init__(self, owner: "str | None"):
+        self.enabled = bool(owner)
+        self.owner = owner
+        self.prev = None
+
+    def __enter__(self):
+        if self.enabled:
+            self.prev = os.environ.get(PROBE_ENV)
+            os.environ[PROBE_ENV] = str(self.owner)
+        return self
+
+    def __exit__(self, *exc):
+        if self.enabled:
+            if self.prev is None:
+                os.environ.pop(PROBE_ENV, None)
+            else:
+                os.environ[PROBE_ENV] = self.prev
+        return False
+
+
+class expect_sandbox_violation:
+    """`with expect_sandbox_violation() as got:` -- the block MUST trigger at least one
+    in-process refusal (ch-bsd r1 m5). Inside it the refusal is a probe (flagged lines); the
+    raise is caught here, and the block's record entries are consumed, so the conftest does
+    not flip the test. `got` lists the refusals. No refusal -> AssertionError. Any other
+    exception propagates."""
+
+    def __init__(self):
+        self.got: list = []
+
+    def __enter__(self):
+        self._test = current_test()
+        self._before = len(RECORD.get(self._test, []))
+        self._scope = probe_scope(os.environ.get(PROBE_ENV) or self._test)
+        self._scope.__enter__()
+        return self.got
+
+    def __exit__(self, etype, exc, tb):
+        self._scope.__exit__(etype, exc, tb)
+        hits = RECORD.get(self._test, [])
+        self.got.extend(hits[self._before:])
+        del hits[self._before:]
+        if not hits:
+            RECORD.pop(self._test, None)
+        if etype is not None and not issubclass(etype, SandboxViolation):
+            return False
+        if not self.got:
+            raise AssertionError("expected a SandboxViolation in this block; none was raised")
+        return True
 
 
 def _hook(event, args):
     deny = _STATE["deny"]
     if deny is None or getattr(_local, "busy", False):
         return
-    spawn_idx = _SPAWN_EVENTS.get(event)
-    if spawn_idx is not None:
-        if spawn_idx < len(args):
-            _local.busy = True
-            try:
-                child_env(args[spawn_idx])
-            finally:
-                _local.busy = False
-        return
-    if event != "socket.connect" and event not in _PATH_EVENTS:
+    env_idx = _SPAWN_ENV.get(event)
+    if env_idx is not None and env_idx < len(args):
+        _local.busy = True
+        try:
+            child_env(args[env_idx])
+        finally:
+            _local.busy = False
+    if (env_idx is None and event not in _KILL_EVENTS and event != "socket.connect"
+            and event not in _PATH_EVENTS):
         return
     if event == "socket.connect" and _STATE["connect_log"]:
         _log_unix_connect(args)
-    target = violation(event, args, deny, dir_fd_relative=_caller_is_fd_walker())
+    target = violation(event, args, deny, fd_walk=_in_fd_walk())
     if target is None:
         return
+    _refuse(event, target, deny)
+
+
+def _refuse(event: str, target: str, deny: dict) -> None:
+    """Log the touch, then: exit `CHILD_EXIT` (a child), or record it and raise (pytest)."""
     _local.busy = True
     try:
         test_id = current_test()
@@ -456,6 +790,8 @@ def _hook(event, args):
             sys.stderr.flush()
             os._exit(CHILD_EXIT)
         RECORD.setdefault(test_id, []).append(f"{event} {target}")
+        if _STATE["outer"] and _STATE["outer"] != test_id:
+            RECORD_OUTER[test_id] = _STATE["outer"]
     finally:
         _local.busy = False
     raise SandboxViolation(msg)
@@ -546,24 +882,52 @@ def _run_preload(path: "str | None") -> None:
 # ---- AC-4: the content check over live logs ---------------------------------------------
 
 
+PATH_FIELDS = ("path", "cwd", "root")
+
+
+def _path_field_values(row) -> list:
+    """Every string under a `path` / `cwd` / `root` key, at any depth of a JSON row."""
+    out: list = []
+    stack = [row]
+    while stack:
+        v = stack.pop()
+        if isinstance(v, dict):
+            for k, x in v.items():
+                if k in PATH_FIELDS and isinstance(x, str):
+                    out.append(x)
+                elif k in PATH_FIELDS and isinstance(x, list):
+                    out += [y for y in x if isinstance(y, str)]
+                else:
+                    stack.append(x)
+        elif isinstance(v, list):
+            stack.extend(v)
+    return out
+
+
 def leak_reasons(line: str, tag: str, log_name: str) -> list:
     """Why one delta line of a live log is a sandbox leak (ns23-2: content, not size/mtime).
 
-    A leaked row carries the run's tag (every sandbox path does), a pytest temp path, or --
-    for `query.log` -- the d9g fixture shape: a learn/grep row whose body has `alpha|beta`
-    and no `cwd`. Live activity carries none of these."""
+    A leaked row carries the run's tag (every sandbox path does), a pytest temp path in a PATH
+    field, or -- for `query.log` -- the d9g fixture shape: a learn/grep row whose body has
+    `alpha|beta` and no `cwd`. Live activity carries none of these.
+
+    `/pytest-of-` is matched in the row's `path` / `cwd` / `root` fields only (ch-bsd r1 s5,
+    2026-10-15): the live watcher ingesting a ch-bsd ledger that QUOTES bug-101's
+    `/private/var/folders/.../pytest-of-tholley/...` put that text in a facts.log row's free
+    text and failed the check on live activity. The run tag stays a whole-line match: it is
+    drawn fresh per run, so no pre-existing document can quote it."""
     out = []
+    try:
+        row = json.loads(line)
+    except ValueError:
+        row = None
     # The tag as it appears in a sandbox path (`rmx-<tag>-`), never the bare 6 hex digits,
     # which a sha in an unrelated facts.log row matches by chance.
     if tag and f"rmx-{tag}-" in line:
         out.append("run tag")
-    if "/pytest-of-" in line:
+    if any("/pytest-of-" in v for v in _path_field_values(row)):
         out.append("pytest temp path")
     if log_name == "query.log":
-        try:
-            row = json.loads(line)
-        except ValueError:
-            row = None
         if (isinstance(row, dict) and str(row.get("kind", "")) in ("learn", "grep")
                 and "alpha|beta" in str(row.get("body", "")) and not row.get("cwd")):
             out.append("d9g fixture shape")
@@ -609,24 +973,98 @@ def check_logs(snap: dict, tag: str, touches: str, touches_size: int) -> int:
             print(f"  LEAK in {path} ({', '.join(reasons)}): {ln[:300]}")
         bad_total += len(bad)
     unexpected = []
-    if os.path.exists(touches):
-        with open(touches, "rb") as fh:
-            fh.seek(touches_size if os.path.getsize(touches) >= touches_size else 0)
-            for ln in fh.read().decode(errors="replace").splitlines():
-                parts = ln.split("\t")
-                outer = parts[2] if len(parts) >= 5 else ln
-                if not outer.startswith(DELIBERATE_PROBE_MODULES):
-                    unexpected.append(ln)
+    for ln in touches_since(touches, touches_size):
+        t = parse_touch(ln)
+        if t is None or not t["probe"]:
+            unexpected.append(ln)
     print(f"{touches}: unexpected_new_lines={len(unexpected)}")
     for ln in unexpected[:5]:
         print(f"  TOUCH {ln}")
     return bad_total + len(unexpected)
 
 
+# ---- R6: no silent scope shrink ---------------------------------------------------------
+
+
+class SkipGate:
+    """A pytest plugin (ch-bsd r1 b2, 2026-10-15): the session FAILS when a test skipped that
+    is not named in `allowed` (`nodeid -> why`). 18 pre-existing tests began to skip under the
+    sandbox because each skip condition read a HOME-derived path; the baseline run skipped
+    none, and nothing noticed. A skip is a test that stopped running, so each one is named.
+
+    Per session (an instance per config), so an in-process `pytester` inner session's skips
+    never reach the outer gate."""
+
+    def __init__(self, allowed: dict):
+        self.allowed = dict(allowed)
+        self.skipped: dict = {}
+
+    def _note(self, report) -> None:
+        if report.skipped and not hasattr(report, "wasxfail"):
+            lr = report.longrepr
+            why = lr[2] if isinstance(lr, tuple) and len(lr) == 3 else str(lr)
+            self.skipped[report.nodeid] = why
+
+    def pytest_runtest_logreport(self, report):
+        self._note(report)
+
+    def pytest_collectreport(self, report):
+        self._note(report)
+
+    def unexpected(self) -> dict:
+        return {k: v for k, v in self.skipped.items() if k not in self.allowed}
+
+    def pytest_sessionfinish(self, session, exitstatus):
+        bad = self.unexpected()
+        if not bad:
+            return
+        tw = session.config.get_terminal_writer()
+        tw.line(f"SkipGate: {len(bad)} skip(s) not in the pinned list (tests/conftest.py "
+                f"ALLOWED_SKIPS); a skip is a test that stopped running:", red=True)
+        for k, v in sorted(bad.items()):
+            tw.line(f"  SKIPPED-UNPINNED {k}: {v}", red=True)
+        import pytest
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
+def _next_on_path(name: str) -> str:
+    """The `name` the shim stands in front of: the first on `PATH` that is not in `BIN_DIR`
+    (so an outer shim -- a decoy gate's -- still sees the call), else `/bin/<name>`."""
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        if not d or os.path.realpath(d) == os.path.realpath(str(BIN_DIR)):
+            continue
+        cand = os.path.join(d, name)
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return os.path.join("/bin", name)
+
+
+def shim_launchctl(args) -> int:
+    """`tests/sandbox_site/bin/launchctl` (ch-bsd r1 s6): a read-only verb execs the real
+    `launchctl`; anything else is refused through the same `spawn_violation()` the audit hook
+    uses, with a touches-log line and `CHILD_EXIT`. Fail closed: no deny set, no launchctl."""
+    root = os.environ.get("RMX_SANDBOX_ROOT")
+    deny_file = Path(root) / DENY_FILE if root else None
+    if deny_file is None or not deny_file.is_file():
+        sys.stderr.write(f"SandboxViolation: launchctl shim has no deny set at {deny_file}\n")
+        return CHILD_EXIT
+    deny = json.loads(deny_file.read_text())
+    _STATE["deny"], _STATE["mode"] = deny, "exit"
+    argv = ["launchctl"] + list(args)
+    target = spawn_violation(argv, None, deny)
+    if target is not None:
+        _refuse("launchctl", target, deny)          # exits CHILD_EXIT
+    real = _next_on_path("launchctl")
+    os.execv(real, [real] + list(args))
+    return 0                                         # not reached
+
+
 def _main(argv) -> int:
-    """`python rmx_sandbox.py snapshot OUT LOG...` / `check SNAP TAG TOUCHES TOUCHES_SIZE`.
-    The shell wrappers (sandbox-proof.sh, the lane scripts) call these; the logic lives
-    here once."""
+    """`python rmx_sandbox.py snapshot OUT LOG...` / `check SNAP TAG TOUCHES TOUCHES_SIZE` /
+    `launchctl ARGS...` (the S6 shim). The shell wrappers (sandbox-proof.sh, the lane scripts,
+    `bin/launchctl`) call these; the logic lives here once."""
+    if argv and argv[0] == "launchctl":
+        return shim_launchctl(argv[1:])
     if len(argv) >= 3 and argv[0] == "snapshot":
         Path(argv[1]).write_text(json.dumps(snapshot(argv[2:])))
         return 0

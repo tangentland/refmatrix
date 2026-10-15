@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -170,13 +171,82 @@ def _sandbox_store_root(monkeypatch):
     rmx_sandbox.remove_tree(root.parent)
 
 
+# R6 (ch-bsd r1 b2, 2026-10-15): every skip is NAMED here, or the session fails
+# (`rmx_sandbox.SkipGate`). The main-tree baseline run (pytest-baseline-23ad703.log) skips
+# none; the entries are CLONE-ONLY: a littlebig clone has no `.venv-eval/` of its own (the
+# dev `rmx` those end-to-end tests spawn) and its hooks are installed for another checkout.
+# They are allowed ONLY in a checkout without `.venv-eval/`: in the main tree each of them
+# skipping fails the session like any other unpinned skip.
+_CLONE_NO_VENV = "clone-only: the dev venv rmx (<checkout>/.venv-eval/bin/rmx) is not built"
+_CLONE_HOOKS = "clone-only: the installed hooks belong to another checkout of this commit"
+_CLONE_ONLY_SKIPS = {
+    "tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon":
+        _CLONE_NO_VENV,
+    "tests/test_brief_real_daemon.py::test_brief_runs_end_to_end_through_a_real_daemon":
+        _CLONE_NO_VENV,
+    "tests/test_brief_real_daemon.py::test_saved_briefs_do_not_grow_the_corpus_on_rerun":
+        _CLONE_NO_VENV,
+    "tests/test_brief_real_daemon.py::test_the_gmd_flag_does_not_crash_through_a_real_daemon":
+        _CLONE_NO_VENV,
+    "tests/test_grep_argv_order_e2e.py::test_a_directory_walk_keeps_its_files_GROUPED":
+        _CLONE_NO_VENV,
+    "tests/test_grep_argv_order_e2e.py::test_a_named_file_still_wins_its_argv_slot_against_a_walk":
+        _CLONE_NO_VENV,
+    "tests/test_grep_argv_order_e2e.py::test_named_paths_come_back_in_argument_order_not_fanout_order":
+        _CLONE_NO_VENV,
+    "tests/test_grep_argv_order_e2e.py::test_the_tool_itself_is_the_one_that_scrambles":
+        _CLONE_NO_VENV,
+    "tests/test_grep_count_rows_e2e.py::test_a_directory_with_no_match_gets_a_zero_row_per_file":
+        _CLONE_NO_VENV,
+    "tests/test_grep_count_rows_e2e.py::test_a_directory_with_some_matches_keeps_its_zero_rows":
+        _CLONE_NO_VENV,
+    "tests/test_grep_count_rows_e2e.py::test_a_missing_file_beside_a_directory_is_not_a_bare_zero":
+        _CLONE_NO_VENV,
+    "tests/test_grep_count_rows_e2e.py::test_a_missing_file_beside_a_match_still_exits_2":
+        _CLONE_NO_VENV,
+    "tests/test_grep_count_rows_e2e.py::test_a_missing_file_exits_2_and_says_so":
+        _CLONE_NO_VENV,
+    "tests/test_grep_count_rows_e2e.py::test_two_spellings_keep_their_own_prefix_on_n":
+        _CLONE_NO_VENV,
+    "tests/test_grep_count_rows_e2e.py::test_two_spellings_of_one_file_are_two_rows":
+        _CLONE_NO_VENV,
+    "tests/test_grep_evidence_verified.py::test_a_fully_filtered_answer_falls_through_to_the_floor":
+        _CLONE_NO_VENV,
+    "tests/test_grep_learning_replay.py::test_arm_a_learns_and_arm_b_learns_exactly_nothing":
+        _CLONE_NO_VENV,
+    "tests/test_grep_no_flag_bundle.py::test_the_documented_pipe_count_works_with_a_bare_flag":
+        _CLONE_NO_VENV,
+    "tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated":
+        _CLONE_HOOKS,
+}
+ALLOWED_SKIPS = {} if (_REPO / ".venv-eval").is_dir() else dict(_CLONE_ONLY_SKIPS)
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "sandbox_probe: a DELIBERATE refusal probe (task 23.0). Its touches-log lines (and its "
+        "children's) name it as their owner, so AC-4's proof and the child-touch check accept "
+        "them; its in-process inner-session violations are expected. Nothing else is exempt.")
+    if not config.pluginmanager.has_plugin("rmx_skip_gate"):
+        config.pluginmanager.register(rmx_sandbox.SkipGate(ALLOWED_SKIPS), "rmx_skip_gate")
+
+
+_TOUCHES_AT = pytest.StashKey[int]()
+
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_protocol(item, nextitem):
-    """Name the OUTER test in the touches log: an in-process `pytester` inner test overwrites
-    `PYTEST_CURRENT_TEST` for the duration of its own run."""
+    """Name the OUTER test in the touches log (an in-process `pytester` inner test overwrites
+    `PYTEST_CURRENT_TEST` for the duration of its own run); note where the touches log ended
+    (the child-touch check reads from there); a `sandbox_probe` test runs inside
+    `probe_scope()`, so its deliberate refusals are flagged as such."""
     rmx_sandbox.set_outer_test(item.nodeid)
+    item.stash[_TOUCHES_AT] = rmx_sandbox.touches_size(_SANDBOX["deny"])
+    probe = item.get_closest_marker("sandbox_probe") is not None
     try:
-        yield
+        with rmx_sandbox.probe_scope(item.nodeid if probe else None):
+            yield
     finally:
         rmx_sandbox.set_outer_test(None)
 
@@ -185,20 +255,45 @@ def pytest_runtest_protocol(item, nextitem):
 def pytest_runtest_makereport(item, call):
     """d9bo #5: a violation is raised AND recorded per test; a test whose record is non-empty
     FAILS even when the code under test swallowed the raise (`except Exception: pass`, a
-    best-effort thread)."""
+    best-effort thread).
+
+    ch-bsd r1 (2026-10-15) added two more ways a refusal could pass unseen:
+    - s2: an in-process `pytester` inner test records under its OWN node id, which no report
+      hook popped -- it is now charged to the outer test (unless the outer test is a
+      `sandbox_probe`, whose inner probes are the point);
+    - s1: a CHILD exits `CHILD_EXIT` and writes the touches log; a spawner that ignores the
+      code let the test pass. At teardown, an unflagged line from another pid naming this test
+      fails it."""
     outcome = yield
     rep = outcome.get_result()
-    hits = rmx_sandbox.RECORD.pop(item.nodeid, None)
-    if hits and not rep.failed:
+    own, inner = rmx_sandbox.take_record(item.nodeid)
+    probe = item.get_closest_marker("sandbox_probe") is not None
+    why = []
+    if own:
+        why.append(f"SandboxViolation (swallowed by the code under test) during {rep.when}: "
+                   + "; ".join(own))
+    if inner and not probe:
+        why.append("SandboxViolation in an in-process inner session: " + "; ".join(inner))
+    since = item.stash.get(_TOUCHES_AT, None)       # None: not run through the hook above
+    if rep.when == "teardown" and since is not None:
+        kids = rmx_sandbox.child_touches(_SANDBOX["deny"]["touches"], since, item.nodeid,
+                                         os.getpid())
+        if kids:
+            why.append(f"SandboxViolation in a child process (it exited "
+                       f"{rmx_sandbox.CHILD_EXIT}; its spawner did not fail the test): "
+                       + "; ".join(kids[:5]))
+    if why and not rep.failed:
         rep.outcome = "failed"
-        rep.longrepr = (f"SandboxViolation (swallowed by the code under test) during "
-                        f"{rep.when}: " + "; ".join(hits))
+        rep.longrepr = "\n".join(why)
 
 
 def pytest_sessionfinish(session, exitstatus):
-    """A violation outside any test (collection, a thread between tests) fails the run."""
-    stray = rmx_sandbox.RECORD.pop(rmx_sandbox.NO_TEST, None)
+    """ANY violation still recorded fails the run (ch-bsd r1 s2): one outside any test
+    (collection, a thread between tests), or one under a key no report hook popped (a
+    background thread in the window after a test's teardown report)."""
+    stray = rmx_sandbox.drain_record()
     if stray:
         session.config.get_terminal_writer().line(
-            f"SandboxViolation outside any test: {'; '.join(stray)}", red=True)
+            "SandboxViolation outside any reported test: "
+            + "; ".join(f"{k}: {', '.join(v)}" for k, v in sorted(stray.items())), red=True)
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
