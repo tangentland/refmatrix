@@ -12,7 +12,8 @@ metadata:
 # Task 22.6: removal entry points and the bug-107 paths {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (created in revision round 3, 2026-10-14; revised in round 5, [[#rev-round-5]])
+> Status: Pending (created in revision round 3, 2026-10-14; revised in round 5, [[#rev-round-5]], and
+> round 6, 2026-10-15, [[#rev-round-6]])
 > Wave: 1, after 22.2 (it needs the engine, the intent-record form and restore); parallel to
 > 22.5. R4 (the sync edit fix) needs only 16.6's Wave-1 slice and may land first.
 > Depends on: 22.2 (engine, primitives, R4 intent-record form, `removal_restore`), 22.1a
@@ -91,6 +92,23 @@ rel: related-to -> [[task-22.4-merge-writes]]
   events; each `protect` follows its own `entity` (`store.py:7279-7285`) and carries no `source`.
   This repo's log was compacted at 14:00:44 today.
 
+**Re-read at `3d3c798` (round 6, r6 m-6; 0.78.1 merged bug-111 and bug-105).** The line numbers
+above are pinned to their shas; the requirements below cite by SYMBOL.
+- `ingest_gmd --as-memory` (the `as_memory` branch of `ingest_gmd.ingest_gmd_paths`) no longer
+  runs a raw DELETE: it calls `store.purge_entity` for each `doc` entity matched on name AND path
+  (bug-111 r1 #4). So it tombstones, unlinks the links with their events and clears every
+  partition's bits; what is left for R9 is the learned-row manifest.
+- `Store.purge_entity` and `Store._bulk_purge_ids` delete NO `linkage_evidence` row, on either
+  side; `Store.vacuum` step 3 deletes only rows whose ENTITY is gone (r6 `#ev-evidence-orphans`:
+  14,745 cliquedb and 5,920 refmatrix rows with a live entity and a dead concept).
+- `merge_partition`: the bug-105 hotfix is merged (0.78.0); `daemon._op_partition_merge` now
+  refuses a LIVE merge (`dry_run=True` preview only; d9ae), and `rmx partition merge` runs
+  `Store.merge_partition` offline.
+- Moved since `7f2014a` (read at `3d3c798`): `dump_catalog_to_log` (`store.py:7527`),
+  `_bulk_purge_ids` (`:6363`), `vacuum` (`:7260`), `set_flag_by_selector` (`:6286`),
+  `purge_entity` (`:5990`), `Daemon._compact_factslog_if_needed` (`daemon.py:2307`),
+  `_learn_grep_hits` (`daemon.py:4237`).
+
 ## Requirements {#requirements}
 
 1. **R1 Selector entry points: `forget`, `memory forget`, `memory bulk-forget` (d9k).** {#r1}
@@ -119,11 +137,11 @@ rel: related-to -> [[task-22.4-merge-writes]]
        here.
      - `--yes`/`-y` and the click confirmation prompt are REMOVED: a flag that deletes without a
        manifest is the second path the ADR forbids. Passing `--yes` exits 2 naming `--confirm`.
-     - **Below the CLI (r4 s-4).** The daemon ops `forget` (`daemon.py:4384`), `memory_forget`
-       (`:5061`) and `memory_bulk_forget` (`:5117`) stop deleting on `dry_run=false`: they accept
+     - **Below the CLI (r4 s-4).** The daemon ops `forget` (`daemon._op_forget`), `memory_forget`
+       (`_op_memory_forget`) and `memory_bulk_forget` (`_op_memory_bulk_forget`) stop deleting on `dry_run=false`: they accept
        either `dry_run=true` (the selection preview, unchanged) or a `{manifest, confirm}` pair
        they hand to `removal_apply`; any other call is refused with an error naming
-       `rmx removal`. `untrack` (`:4398`) and `prune_noise` (`:3899`) write R2's cleanup manifest
+       `rmx removal`. `untrack` (`_op_untrack`) and `prune_noise` (`_op_prune_noise`) write R2's cleanup manifest
        inside the op before any delete, so a raw socket call gets the same manifest as the CLI.
      - **No daemon-down fallback.** `rmx memory forget`'s `s = _store(); s.forget_memory(...)`
        (`cli.py:12616-12618`) is removed: with the daemon down the command exits nonzero naming
@@ -150,14 +168,16 @@ rel: related-to -> [[task-22.4-merge-writes]]
    `removal_restore`.
    - **An existing file with an unsupported extension is NOT this branch (r4 s-2).** Today
      `sync.py:209` treats `not ap.exists() or not is_supported` alike. The learner teaches any
-     non-code hit as `kind="doc"` (`daemon.py:4322`), so 100 of this repo's 706 learned entities
+     non-code hit as `kind="doc"` (`daemon._learn_grep_hits`), so 100 of this repo's 706 learned entities
      sit on unsupported extensions (`.log` 70, `.json` 14, none 7; r4 count). The branch splits:
      a MISSING file is R3; an EXISTING unsupported file keeps its learned rows exactly as R4
      keeps them (ingest-derived rows, if any, are purged), because an edit, or no edit, is not a
      deletion (d9p).
 4. **R4 Sync's edit purges keep learned rows: bug-107 fixed (d9o).** {#r4} Both edit branches of
-   sync (the GMD dispatch's legacy purge of the relpath-named `doc` entity, and the non-GMD
-   "purge before re-add") call `purge_path(abs, keep_learned=True)`, which purges what ingest
+   sync keep learned rows, through two DIFFERENT calls (r6 m-5): the non-GMD "purge before
+   re-add" calls `purge_path(abs, keep_learned=True)`, and the GMD dispatch's legacy purge of the
+   relpath-named `doc` entity calls `Store.purge_legacy_relpath_doc(rel, abs)` and never
+   `purge_path` (the sub-bullet below). `purge_path(abs, keep_learned=True)` purges what ingest
    derived from the file (per-function entities, ingest links, ingest evidence) and KEEPS: every
    evidence row whose `detail` begins `learned from grep`, its sidecar rows, the `query/*`
    `mentions` links those rows hang on, the file entity they sit on (same id, so the sidecar key is
@@ -206,10 +226,10 @@ rel: related-to -> [[task-22.4-merge-writes]]
    {#r6}
    - **The field.** Every `protect` event, value `true` or `false`, carries `source`, set by the
      CALLER, never inferred:
-     - `learner`: only `_learn_grep_hits` (`daemon.py:4295`, its `add_concept` and
+     - `learner`: only `daemon._learn_grep_hits` (its `add_concept` and
        `upsert_entity(protected=True)` calls);
      - `user`: a CLI or MCP command (`rmx protect` / `unprotect` through `set_flag_by_selector`,
-       `store.py:6003`; `rmx add-entity` / `add-concept` and their MCP tools; `link --protect`;
+       `Store.set_flag_by_selector`; `rmx add-entity` / `add-concept` and their MCP tools; `link --protect`;
        `memory add` with protect);
      - `system`: other internal protected writes (compiled subjects, `store.py:2633`);
      - `removal`: plan-22's engine, apply or restore.
@@ -220,10 +240,13 @@ rel: related-to -> [[task-22.4-merge-writes]]
      additive-column migration (`store.py:1230-1310`, beside `vectors_partition`), holds the
      source of the protection in force (NULL = unattributed). Live writes set it; replay sets it
      from each `protect` event's `source` (NULL when absent); unprotect clears it.
-   - **The compactor keeps it (d9ab companion 1).** `dump_catalog_to_log` (`store.py:7210`)
-     emits `source` = `protect_source` on every `protect` event it writes (`store.py:7279-7285`),
-     omitting the key when NULL. Without this the field lasts only until the next periodic
-     compaction (`daemon.py:2274`; this repo compacted three times on 2026-10-14).
+   - **The compactor keeps it (d9ab companion 1).** `Store.dump_catalog_to_log` emits `source` =
+     `protect_source` on every `protect` event it writes, omitting the key when NULL. Without this
+     the field lasts only until the next periodic compaction
+     (`Daemon._compact_factslog_if_needed`; this repo compacted three times on 2026-10-14).
+   - **The vocabulary is d9am's** (user, 2026-10-14): exactly `learner`, `user`, `system`,
+     `removal`, set by the caller; round 3's `upsert` value is dropped (`rmx add-entity` also
+     writes through `upsert_entity`, so the value could not tell the learner from the user).
    - **The rule for every new event field or table plans 16 and 22 add:** it has a
      `dump_catalog_to_log` clause and a compact-then-rebuild AC. 16.6 R1d does this for
      `learned_provenance` ([[task-16.6-learned-row-validation#r1d]]); 22.2's row-level ops change
@@ -240,10 +263,14 @@ rel: related-to -> [[task-22.4-merge-writes]]
      entities, `:1812`). Its dropped fragment bits go to a manifest through the bug-105 hotfix
      (read-only in `/Volumes/littlebig/refmatrix-bug105`, branch `bug-105-fragment-partition`,
      `fb285cc`: `merge_partition` runs `repair_fragments(..., manifest_dir=<root>/backups)`, which
-     writes `fragments-repair-<stamp>-<kind>.jsonl`). This task builds on that code once the
-     hotfix is MERGED TO MASTER, as existing code; it plans no second copy of it (d9ac).
-   Until then both are unchanged, and `rmx removal audit --list` prints each as an unrouted
-   merge path (`memory dedup`, `merge-partition`), so they are visible, not forgotten.
+     writes `fragments-repair-<stamp>-<kind>.jsonl`). That hotfix is MERGED (0.78.0, read at
+     `3d3c798`); this task plans no second copy of it (d9ac). Since d9ae the LIVE merge is
+     fenced: `daemon._op_partition_merge` answers only `dry_run=True`, and `rmx partition merge`
+     runs `Store.merge_partition` offline with the daemon down; the helix plan redesigns the live
+     merge.
+   Until the helix plan takes them, both are unchanged, and `rmx removal audit --list` prints
+   each as an unrouted merge path (`memory dedup`, `merge-partition`), so they are visible, not
+   forgotten.
 8. **R8 No silent failures.** {#r8} Every entry point prints its counts per row kind; a manifest
    write failure aborts the removal before any row changes (the manifest is written first); every
    skipped row is counted with its reason.
@@ -256,9 +283,18 @@ rel: related-to -> [[task-22.4-merge-writes]]
    | `ingest.py:1179-1180` (the `rmx ingest` twin of sync's GMD legacy purge) | re-ingest, a bug-107 twin | R4's GMD branch and guard, unchanged in every other respect |
    | `rmx sync --invalidate P` (`cli.py:8433-8434`) | re-ingest | R4 for an existing path (learned rows kept); R3 for a missing one |
    | sync's `not ap.exists() or not is_supported` (`sync.py:209`) | split | missing → R3 (manifest); existing-unsupported → keeps learned rows (R3's sub-bullet, R4's rule) |
-   | `ingest_gmd --as-memory`'s raw `DELETE FROM entities ... kind='doc'` (`ingest_gmd.py:891-896`) | derived conversion (doc → memory for the same file) | becomes `purge_entity` (tombstoned, links and evidence unlinked with their events, so a rebuild cannot resurrect the row); any learned row on that entity first goes to an R2-form cleanup manifest |
-   | `merge_partition` (`store.py:1606`) | merge entry point, helix plan (d9ac) | R7 |
-   | `fold_concept_dups` (`store.py:5808`) | merge entry point, helix plan (d9o) | R7 |
+   | `ingest_gmd --as-memory`'s doc drop (at `7f2014a` a raw `DELETE FROM entities ... kind='doc'`, `ingest_gmd.py:891-896`; since 0.78.1 `store.purge_entity` per doc matched on name and path, in `ingest_gmd_paths`'s `as_memory` branch) | derived conversion (doc → memory for the same file) | the `purge_entity` half is DONE (bug-111): tombstoned, and its LINKS unlinked with their `unlink` events, so a rebuild cannot resurrect the doc or its links. What is left here: any learned row on that entity first goes to an R2-form cleanup manifest. `purge_entity` deletes NO `linkage_evidence` row (r6 s-3, corrected): the doc's own evidence rows are `vacuum` step 3's (R5), and other entities' evidence rows naming it as their concept become `dangling-evidence` members (22.1a, d9ar) that 22.2 R9 removes |
+   | `merge_partition` (`Store.merge_partition`; live merge fenced, d9ae) | merge entry point, helix plan (d9ac) | R7 |
+   | `fold_concept_dups` (`Store.fold_concept_dups`) | merge entry point, helix plan (d9o) | R7 |
+
+   **What a purge leaves behind (r6 s-3, d9ar).** Round 5 said `purge_entity` leaves "links and
+   evidence unlinked with their events". It unlinks LINKS only. Every `Store.purge_entity` /
+   `Store._bulk_purge_ids` call, on every path in this table and in R1-R5, leaves (a) the purged
+   entity's own evidence rows, for `vacuum` step 3 (R5), and (b) every evidence row of another
+   entity that names it as its concept, a `dangling-evidence` member. 22.2's engine removes (b)
+   before its own purges ([[task-22.2-repair-then-remove#r2]]); for the purges of paths outside
+   the engine, (b) is drained by the `dangling-evidence` class
+   ([[task-22.1a-provenance-free-classes#r1-dangling]]), never silently.
 
 ## Acceptance criteria {#acceptance}
 
@@ -326,8 +362,8 @@ rel: related-to -> [[task-22.4-merge-writes]]
    `source=learner`. Mutation "no source on value=false" FAILS it.
 
    **7b. The source survives compaction (r4 b-2, d9ab).** Protect L through `_learn_grep_hits`
-   and U through `rmx protect U`; run `dump_catalog_to_log` (the compactor, `daemon.py:2274`'s
-   call), then `rebuild_index_from_log` on a sandbox copy: `entities.protect_source` is
+   and U through `rmx protect U`; run `dump_catalog_to_log` (the compactor,
+   `Daemon._compact_factslog_if_needed`'s call), then `rebuild_index_from_log` on a sandbox copy: `entities.protect_source` is
    `learner` for L and `user` for U, and the compacted log's two `protect` events carry those
    `source` values. Mutation "dump without `source`" FAILS it (both NULL after the rebuild, so
    22.2 R5 reads L as user-asserted).
@@ -335,8 +371,20 @@ rel: related-to -> [[task-22.4-merge-writes]]
    prints `memory dedup` (MCP `rmx_memory` `dedup`) and `merge-partition` as unrouted merge paths.
 9. **The remaining paths (R9).** The `ingest_gmd --as-memory` conversion of a doc that has a
    learned row writes a cleanup manifest holding it and logs a `tombstone` for the doc entity; a
-   rebuild on a sandbox copy does not resurrect the doc entity. Mutation "keep the raw DELETE"
-   FAILS it.
+   rebuild on a sandbox copy does not resurrect the doc entity. Mutations: "no learned-row
+   manifest" FAILS it (the new half); "restore the raw DELETE" FAILS it (a regression guard: the
+   tombstone half holds since 0.78.1).
+
+   **9b. A purge leaves dead-concept evidence, and the class drains it (r6 s-3, d9ar).** Docs A
+   and B, B carrying a `rel:` edge to A (an evidence row of B whose concept is A). A is dropped
+   by each path that purges through `Store.purge_entity` outside 22.2's engine (the
+   `--as-memory` conversion; `rmx untrack` of A's file through R2): immediately after, the test
+   asserts that B's evidence row still names A's dead id (the corrected R9 sentence: purge does
+   not delete evidence). Then `rmx removal audit` lists it `dangling-evidence`, and the confirmed
+   apply leaves 0 `linkage_evidence` rows with a live entity and a dead concept; `vacuum` alone
+   leaves the row (step 3 keys on the entity). Mutation "`vacuum` step 3 also deletes
+   dead-concept rows without a manifest" FAILS it (the row disappears with no manifest record and
+   no restore); mutation "drop the `dangling-evidence` sub-class" FAILS it (the row stays).
 
 ## Test strategy {#test-strategy}
 
@@ -360,7 +408,7 @@ mutation is pre-registered and must turn its test RED.
 | `src/refmatrix/daemon.py` | `forget` / `memory_forget` / `memory_bulk_forget` ops: preview or confirmed manifest only; `untrack` / `prune_noise` ops write the manifest first (R1, R2); `_learn_grep_hits` passes `protect_source='learner'` (R6) |
 | `src/refmatrix/cli.py` (also) | `sync --invalidate` as a re-ingest (R4); `memory forget` without the `_store()` fallback (R1) |
 | `src/refmatrix/store.py` (also) | `entities.protect_source` column + `protect_source` keyword on the protect writers; `dump_catalog_to_log` emits `source` (R6); `purge_legacy_relpath_doc` (R4) |
-| `tests/test_removal_entry_points.py` (new) | AC-1..AC-9 |
+| `tests/test_removal_entry_points.py` (new) | AC-1..AC-9, AC-9b |
 | `tests/test_learned_evidence.py` (16.6's) | 16.6 AC-11's test is REWRITTEN by this task (r4 m-5): from R3/R5 on, `purge_path` of a missing file and `vacuum` move the sidecar row into a manifest (AC-4, AC-6) instead of leaving it; AC-11 keeps only its `orphaned_provenance` count for paths this task does not route |
 
 ## Revision round 3 (2026-10-14) {#rev-round-3}
@@ -396,4 +444,21 @@ Answers [[bsd-plan16-22-spec-rereview-r4-878647c]] and d9ab/d9ac
 | line numbers | [[#facts]] re-read at `7f2014a` |
 
 rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
+rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Answers [[bsd-plan16-22-spec-rereview-r6-0e77da3]] where it touches 22.6, and d9ar
+([[plan-review-2026-10-14#t12-approvals]]); cites d9am ([[plan-review-2026-10-14#t11-approvals]]),
+reflected since round 5 but not cited. Later rows win over round 5.
+
+| finding / decision | answered in |
+|---|---|
+| r6 s-3 / d9ar (R9 said `purge_entity` unlinks evidence; purges leave dead-concept rows) | [[#r9]] `ingest_gmd` row corrected and "What a purge leaves behind"; [[#facts]] re-read; AC-9b + two mutations; the class is [[task-22.1a-provenance-free-classes#r1-dangling]], its removal [[task-22.2-repair-then-remove#r9-dangling]] |
+| r6 m-5 (R4's lead names one call for both branches) | [[#r4]] lead: two different calls |
+| r6 m-6 (`ingest_gmd` row and `merge_partition` stale since 0.78.1; line numbers) | [[#facts]] "Re-read at `3d3c798`"; [[#r9]] table; [[#r7]] (hotfix merged, live merge fenced, d9ae); [[#r1]], [[#r3]] (its existing-unsupported sub-bullet), [[#r6]], AC-7b cite by symbol |
+| d9am (protection `source` vocabulary; `upsert` dropped) | [[#r6]] "The vocabulary is d9am's" |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r6-0e77da3]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]

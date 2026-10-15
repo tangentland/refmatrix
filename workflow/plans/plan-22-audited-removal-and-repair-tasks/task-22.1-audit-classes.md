@@ -13,7 +13,8 @@ metadata:
 # Task 22.1: the flag-sensitive audit classes {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 5, 2026-10-14; [[#rev-round-5]]; round 3 in [[#rev-round-3]])
+> Status: Pending (revision round 6, 2026-10-15; [[#rev-round-6]]; round 5 in [[#rev-round-5]], round 3 in
+> [[#rev-round-3]])
 > Wave: 2 (d6d). The provenance-free classes moved to [[task-22.1a-provenance-free-classes]]
 > (Wave 1).
 > Depends on: 22.1a (verb, plan manifest format), 22.2 (engine), 16.6 Wave-1 slice (sidecar +
@@ -33,7 +34,7 @@ rel: depends-on -> [[task-23.4-option-a-measurement]]
 ## Requirements {#requirements}
 
 1. **R1 Learned-row classes, per `(concept, file)` SET (22 #b-1).** The learner writes a row for
-   EVERY hit line (`_learn_grep_hits`, `daemon.py:4295`); 97.7% of distinct learned rows in this
+   EVERY hit line (`daemon._learn_grep_hits`); 97.7% of distinct learned rows in this
    repo's log sit in a multi-line pair. So classification is per `(concept, file)` set, never per
    row: the pattern is re-run over the file under the verification rule ([[#r1-verify]]), giving
    the current matching line set `N`; the recorded set is `O`. {#r1}
@@ -77,7 +78,9 @@ rel: depends-on -> [[task-23.4-option-a-measurement]]
      ([[task-16.6-learned-row-validation#r4]]) and a stay or a re-point here.
    - **Set classes** (precedence top to bottom): `shrunk` — at least one row is `stale-line` /
      `out-of-range`; `grown` — none, and at least one line of `N` is reported; `moved` — neither,
-     and at least one row is re-pointed; `ok` — every row is a fixed point. `ambiguous` and
+     and at least one row is re-pointed (a step-3 STAY is not a re-point: it writes nothing);
+     `ok` — every row is a fixed point (step 1) or a stay (step 3) (r6 m-4: round 5's "every row
+     is a fixed point" left a set holding a stay in no class). `ambiguous` and
      `unverifiable` rows are kept inside any class. A row is removed by 22.2 only as `stale-line`
      or `out-of-range`.
    - `stale-line` (row) — unpaired after step 4, and nothing else (r4 b-1: round 3's "or a
@@ -151,7 +154,10 @@ rel: depends-on -> [[task-23.4-option-a-measurement]]
    the set classifies `moved`, and after 22.2's apply both rows sit at 12 and 22 with 0 rows
    `ambiguous` and 0 rows deleted. Mutation: a per-row "exactly one other line" rule must FAIL.
 2. **Hash pairing.** With hashes recorded, swapping the two hit lines re-points by hash (each row
-   follows its own text). Mutation: pairing by order when hashes exist must FAIL.
+   follows its own text). Mutations: pairing by order when hashes exist must FAIL; "fixed point
+   by line only, ignoring a differing hash" must FAIL (both lines are still in `N`, so each row
+   would stay on the OTHER row's text; r6 m-4 moved this mutation here from AC-5b, where it
+   changes nothing).
 3. **Pre-provenance `-i` row (22 #b-2).** A row without provenance whose line matches only
    case-insensitively classifies `ok`, not `stale-line`. Mutation: verifying under the defaults
    must FAIL.
@@ -195,11 +201,11 @@ rel: depends-on -> [[task-23.4-option-a-measurement]]
    - **5e, edited in place, still matching (r4 b-1).** Hits `{10, 20}`, both hashed; line 10 is
      edited in place (`x = foo()` → `x = foo(1)`) and still matches; `N = {10, 20}`. Row 20 is a
      fixed point; row 10 falls through step 2 and pairs with line 10 in step 3 (a stay). The set
-     is `ok` or `moved`, 0 rows are `stale-line`, 0 are removed by 22.2, and row 10 still names
-     line 10.
+     is `ok` (r6 m-4), 0 rows are `stale-line`, 0 are removed by 22.2, 22.2's apply writes
+     nothing for the set, and row 10 still names line 10.
    Mutation "`line ∉ N` → `stale-line`" FAILS 5a (two removed) and 5c (both rows removed);
-   mutation "fixed point by line only, ignoring a differing hash" FAILS 5b; mutation "hash on no
-   line of `N` → `stale-line`" (round 3's text) FAILS 5e (row 10 removed).
+   mutation "hash on no line of `N` → `stale-line`" (round 3's text) FAILS 5e (row 10 removed);
+   mutation "a stay counts as a re-point" FAILS 5e (the set reads `moved`).
 6. **`empty-learned` can fail (22 #b-6, #m-1; s-3).**
    - **6a, sandbox test.** A concept with one `ok` row and df 1 is NOT a member; a concept whose
      only rows are `missing-file` IS; on a sandbox fixture store the count equals an independent
@@ -275,3 +281,13 @@ Answers [[bsd-plan16-22-spec-rereview-r4-878647c]] where it touches 22.1. Later 
 
 rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
 
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Answers [[bsd-plan16-22-spec-rereview-r6-0e77da3]] where it touches 22.1. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| r6 m-4 (a mutation attached to an AC it cannot fail; a stay has no set class) | [[#r1]] `ok` = every row a fixed point or a stay; AC-2 takes the "fixed point by line only" mutation; AC-5e asserts `ok` + mutation "a stay counts as a re-point" |
+| r6 m-6 (line numbers) | [[#r1]] cites `daemon._learn_grep_hits` by symbol |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r6-0e77da3]]

@@ -13,7 +13,9 @@ metadata:
 # Task 16.6: the learned-evidence sidecar, its verifier, read-time marks and the backfill {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision round 5, 2026-10-14, answering the r4 re-review
+> Status: Pending (revision round 6, 2026-10-15, answering the r6 re-review
+> `bsd-plan16-22-spec-rereview-r6-0e77da3` m-3 and m-6, [[#rev-round-6]]; revision round 5,
+> answering the r4 re-review
 > `bsd-plan16-22-spec-rereview-r4-878647c` and d9ab, [[#rev-round-5]]; revision round 3,
 > answering the r3 re-review
 > `bsd-plan16-22-spec-rereview-r3-6091648` and `plan-review-2026-10-14#t9-approvals` (d9k, d9o);
@@ -50,6 +52,19 @@ rel: motivates -> [[task-22.2-repair-then-remove]]
 rel: motivates -> [[task-22.3-bug-086-global-repair]]
 rel: specifies -> [[task-22.1-audit-classes#r1-verify]]
 rel: related-to -> [[task-23.4-option-a-measurement]]
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Answers [[bsd-plan16-22-spec-rereview-r6-0e77da3]] where it touches 16.6 (verdict for plan-16:
+APPROVABLE; only m-3's census name and m-6's line numbers reach this file). Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| r6 m-3 (22.1a AC-8b has no census procedure) | [[#r7]] "The dangling-row census is named" (`--census dangling-link`, `--facts` required, `rmxd.log` read in place, no `Store`); [[#files-to-modify]] |
+| r6 m-6 (unpinned line numbers ~300 lines off) | [[#r1d]], AC-9b and [[#files-to-modify]] cite `rebuild_index_from_log`, `_apply_event_body`, `dump_catalog_to_log`, `_compact_factslog_if_needed` by symbol; [[#r1e]] cites `purge_entity`, `purge_path`, `vacuum` by symbol; [[#why]]'s `daemon.py:4295` stays, pinned to `b1c4324` |
+| r6 b-1 / d9aq (no id-keyed op) | no change here: 22.2's dangling removal adds no op, so [[#r1d]]'s one-pass list is unchanged ([[task-22.2-repair-then-remove#r3]]) |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r6-0e77da3]]
 
 ## Revision round 5 (2026-10-14) {#rev-round-5}
 
@@ -252,7 +267,7 @@ One row per (evidence row, reading). Columns:
   so the migration is additive and reversible (d-a).
 
 **R1d. The sidecar is replayable from `facts.log` (b-2).** {#r1d}
-`rebuild_index_from_log` (`store.py:7566`) unlinks the catalog and replays `facts.log` only; a table
+`Store.rebuild_index_from_log` unlinks the catalog and replays `facts.log` only; a table
 with no event is wiped by every `rmx rebuild-index` and every `rebuild_index` daemon op. So:
 - **Event `learned_provenance`**, keyed by NAME, never by id: `{linkage, c, e_kind, e, file, line,
   rules_sha, origin, source, learned_at, root, pattern, tool, bin, dialect, match_argv, line_hash,
@@ -260,15 +275,15 @@ with no event is wiped by every `rmx rebuild-index` and every `rebuild_index` da
   same `_log_enabled()` switch every event has), after the evidence events of the same call.
 - **Event `learned_provenance_move`** `{linkage, c, e_kind, e, file, line, to: {e_kind, e, file,
   line, root}}` from `move_learned_provenance` (plan-22's repairs and import).
-- **Both replay paths apply them:** `_apply_event_body` (`store.py:7460`) and the rebuild pass
-  (`store.py:7566`, which today collects `evidence` events at `:7681` and applies them at
-  `:7771`, after entities, protections and links). The two new ops are collected the same way and applied AFTER the evidence
+- **Both replay paths apply them:** `Store._apply_event_body` (reached from `apply_log_delta`)
+  and the rebuild pass (`Store.rebuild_index_from_log`, which today collects `evidence` events
+  in its pass 2 and applies them in pass 3, after entities, protections and links). The two new ops are collected the same way and applied AFTER the evidence
   events, in log order, resolving names to ids at apply time. An event whose evidence row does not
   exist at apply time is counted `unresolved_provenance` and printed, never dropped silently.
 - **The compactor keeps the sidecar (r4 b-2; d9ab companion 1).** The daemon's periodic
-  `facts.log` compaction (`Daemon._compact_factslog_if_needed`, `daemon.py:2274`, every 1,800 s
+  `facts.log` compaction (`Daemon._compact_factslog_if_needed`, every 1,800 s
   once the log passes 256 MiB; this repo's log compacted three times on 2026-10-14) REPLACES the
-  log with `Store.dump_catalog_to_log`'s snapshot (`store.py:7210`), which today emits no
+  log with `Store.dump_catalog_to_log`'s snapshot, which today emits no
   sidecar event. So `dump_catalog_to_log` emits, per partition, one `learned_provenance` event per
   `learned_evidence` row (every non-mark column, keyed by name as above), AFTER that partition's
   `evidence` events, so the post-evidence pass resolves them. The snapshot holds current state,
@@ -293,10 +308,9 @@ with no event is wiped by every `rmx rebuild-index` and every `rebuild_index` da
   the same call.
 
 **R1e. Purges never drop a sidecar row silently (r3 s-5, d9o).** {#r1e}
-Today `purge_entity` (`store.py:5692`) and `purge_path` (`store.py:5905`) delete learned file
+Today `Store.purge_entity` and `Store.purge_path` delete learned file
 entities whatever `protected` says and leave their `linkage_evidence` rows behind (no FK,
-`duckdb_catalog.py:162`); `vacuum` step 3 then deletes those rows with no event
-(`store.py:6993`). The user classified each path (d9o,
+`duckdb_catalog.py:162`); `Store.vacuum` step 3 then deletes those rows with no event. The user classified each path (d9o,
 [[refmatrix/adr-0004-unified-location-space-index#a14-removal-scope]]), and
 [[task-22.6-removal-entry-points]] owns every one of them. This task's part:
 - None of `purge_entity`, `purge_path`, `_bulk_purge_ids` or `vacuum` deletes a
@@ -551,8 +565,8 @@ reason and printed (`rmx learn status`, the backfill op's result, the merge's re
 result). Project rule: memory-path discipline applies to the store.
 
 **R7. The ONE census procedure (r3 s-6).** {#r7} Every operator census in plans 16 and 22 (16.6
-AC-5b; 22.1a AC-5b/6b/7b, including its probe reproduction; 22.1 AC-6b; 22.3 R1's audit on a
-copy) uses this procedure and no other.
+AC-5b; 22.1a AC-5b/6b/7b, including its probe reproduction, and AC-8b's `dangling-link` census;
+22.1 AC-6b; 22.3 R1's audit on a copy) uses this procedure and no other.
 It is a read-only copy read by the PRODUCTION function; it never constructs `Daemon` or `Store`.
 This task owns the script, `scripts/census_on_copy.py`, because 16.6 is the first census in the
 wave order (`#t10-waves`).
@@ -592,6 +606,14 @@ wave order (`#t10-waves`).
      ([[task-22.1a-provenance-free-classes#appendix-probe]]) on the copy, with `--home-base` as
      its `H`. It is the one census that is not a production function, and it is listed here so
      22.1a AC-5b runs inside this procedure, with this header and this audit hook.
+   - **The dangling-row census is named (r6 m-3).** `--census dangling-link` calls
+     `removal_audit._classify_dangling` (22.1a,
+     [[task-22.1a-provenance-free-classes#r1-dangling]]) on the copy, so it REQUIRES `--facts`
+     (the dead-end naming reads the copied `facts.log`; a missing `--facts` exits nonzero). It
+     walks no tree, so `--candidate-trees` / `--home-base` do not apply. It also reads
+     `<store_root>/rmxd.log` in place, read-only, for the latest `repair_fragments dry_run=` line
+     and prints that line with its timestamp beside the class counts (22.1a AC-8b). It
+     constructs no `Store`: it never calls `repair_fragments`.
 6. It prints the counts, writes them to `--out`, and exits nonzero on any error (counted and
    printed, never swallowed). `$T` is removed only after the log is written.
 
@@ -714,7 +736,7 @@ wave order (`#t10-waves`).
 
    **9b. Compact, then rebuild (r4 b-2).** On a sandbox store with sidecar rows under two
    readings, one of them moved by `move_learned_provenance`, run `dump_catalog_to_log` (the
-   compactor's call, `daemon.py:2274`), then `rebuild_index_from_log` on a sandbox copy: the
+   compactor's call, `Daemon._compact_factslog_if_needed`), then `rebuild_index_from_log` on a sandbox copy: the
    sidecar equals the pre-compaction sidecar on every column except the three mark columns,
    `unresolved_provenance` is 0, and the compacted log holds one `learned_provenance` event per
    sidecar row. Mutation "dump without `learned_evidence`" FAILS it (the rebuilt sidecar is
@@ -746,12 +768,12 @@ The audit/prune/repair acceptance moved to plan-22. {#acceptance-moved}
 | File | Change |
 |------|--------|
 | `src/refmatrix/duckdb_catalog.py` | `learned_evidence` DDL + primary key |
-| `src/refmatrix/store.py` | `dump_catalog_to_log` (`store.py:7210`) emits one `learned_provenance` event per sidecar row after each partition's `evidence` events (R1d, r4 b-2); `add_learned_provenance` (+ `learned_provenance` events); `move_learned_provenance` (+ `learned_provenance_move` event); both ops in `_apply_event_body` and in `rebuild_index_from_log`'s pass; `verify_evidence_rows` stats split (`missing_file`, `out_of_range`, `reader_rule`); `grep_evidence` enqueues R4 candidates for learned rows |
+| `src/refmatrix/store.py` | `dump_catalog_to_log` emits one `learned_provenance` event per sidecar row after each partition's `evidence` events (R1d, r4 b-2); `add_learned_provenance` (+ `learned_provenance` events); `move_learned_provenance` (+ `learned_provenance_move` event); both ops in `_apply_event_body` and in `rebuild_index_from_log`'s pass; `verify_evidence_rows` stats split (`missing_file`, `out_of_range`, `reader_rule`); `grep_evidence` enqueues R4 candidates for learned rows |
 | `src/refmatrix/learned_verify.py` (new) | R2: `Rules`, `Unverifiable`, `UNVERIFIABLE_REASONS`, `verify_argv`, `matching_lines`, `permissive_matching_lines`, `hash_line`, `verify` |
 | `src/refmatrix/replica_merge.py` | table lists + the sidecar step (R1c) |
 | `src/refmatrix/daemon.py` | R4 drain consumer (pre-step + batch apply) on plan-23's drain; R5 backfill op; R1b call in `_learn_grep_hits` |
 | `src/refmatrix/cli.py` | `rmx learn status`: mark counts ("at least"), overflow, unverifiable-by-reason/unparsed counts, `orphaned_provenance` |
-| `scripts/census_on_copy.py` (new) | R7: the ONE census procedure (real home from `pwd` first, deny set, copy header incl. log birth time and last compaction, audit hook, read-only connection, production functions, explicit classifier inputs, `probe-reproduction`) |
+| `scripts/census_on_copy.py` (new) | R7: the ONE census procedure (real home from `pwd` first, deny set, copy header incl. log birth time and last compaction, audit hook, read-only connection, production functions, explicit classifier inputs, `probe-reproduction`, `dangling-link`) |
 | `tests/test_learned_evidence.py` (new) | AC-1, AC-2, AC-4..9, AC-9b, AC-11 (rewritten by 22.6, r4 m-5); AC-5c |
 | `tests/test_learned_verify.py` (new) | AC-3, AC-3b, AC-3c |
 

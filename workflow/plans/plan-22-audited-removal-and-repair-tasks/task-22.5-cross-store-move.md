@@ -12,7 +12,8 @@ metadata:
 # Task 22.5: the cross-store move {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 5, 2026-10-14; [[#rev-round-5]]; round 3 in [[#rev-round-3]])
+> Status: Pending (revision round 6, 2026-10-15, citations only; [[#rev-round-6]]; round 5 in
+> [[#rev-round-5]], round 3 in [[#rev-round-3]])
 > Wave: 1, after 22.2 and ahead of 22.3 (d8c; #t8-wave1).
 > Depends on: 22.1a (`orphan-root:resolved` with its absolute path), 22.2 (engine, primitives,
 > events, manifest, restore, apply interface), 23.1 (`bind`), 23.2 (recorder), 23.0 (sandbox).
@@ -227,3 +228,17 @@ Carries d9ab and d9z ([[plan-review-2026-10-14#t11-approvals]]) into the move. L
 
 rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
 rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Cites decisions round 5 reflected without naming them ([[bsd-plan16-22-spec-rereview-r6-0e77da3]]
+`#prior-status`, `#s-4`); no requirement text changes here.
+
+| finding / decision | answered in |
+|---|---|
+| d9al (the global entity is purged after a fully verified move even when user-protected; its protection and `protect_source` are copied; a move is not a removal) | [[#r2]] step 2 ("The protection's source travels") and step 4 (reflected since round 5) |
+| r6 s-3 / d9ar (purges leave dead-concept evidence) | step 4's forget runs through 22.2's engine, whose purge rule now removes concept-side evidence first ([[task-22.2-repair-then-remove#r2]]) |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r6-0e77da3]]
+rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]

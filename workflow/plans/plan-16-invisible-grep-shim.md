@@ -13,7 +13,9 @@ metadata:
 # Plan 16: the grep shim stops answering and only watches {#root}
 
 **Date:** 2026-10-06
-**Status:** Drafting (revision round 5, 2026-10-14: 16.1 and 16.6 revised for the r4 re-review
+**Status:** Drafting (revision round 6, 2026-10-15: 16.6 R7 names the `dangling-link` census and
+cites code by symbol, for the r6 re-review `bsd-plan16-22-spec-rereview-r6-0e77da3`, which found
+plan-16 APPROVABLE, [[#rev-round-6]]; revision round 5, 2026-10-14: 16.1 and 16.6 revised for the r4 re-review
 `bsd-plan16-22-spec-rereview-r4-878647c` and d9ab, [[#rev-round-5]]; revision round 3 revised
 16.1 and 16.6 for the r3 re-review
 `bsd-plan16-22-spec-rereview-r3-6091648`, [[#rev-round-3]]; round 2 revised 16.2 and 16.6 for
@@ -221,6 +223,19 @@ Next gate: `@ch-bsd` spec review r6 of task specs 16.1–16.6 revision 6, then `
 
 rel: derives-from -> [[plan-review-2026-10-14#t6]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Answers [[bsd-plan16-22-spec-rereview-r6-0e77da3]] where it touches plan-16 (verdict: APPROVABLE
+for 16.1-16.6; every r4 item closed). Plan-22's findings are answered in
+[[plan-22-audited-removal-and-repair#rev-round-6]].
+
+| finding / decision | answered in |
+|---|---|
+| m-3 (22.1a AC-8b's census has no procedure) | [[task-16.6-learned-row-validation#r7]] `--census dangling-link`; [[task-16.6-learned-row-validation#rev-round-6]] |
+| m-6 (stale line numbers) | 16.6 [[task-16.6-learned-row-validation#r1d]], [[task-16.6-learned-row-validation#r1e]], AC-9b and its file list cite by symbol |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r6-0e77da3]]
 
 ## Revision round 5 (2026-10-14) {#rev-round-5}
 

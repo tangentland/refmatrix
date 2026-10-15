@@ -12,7 +12,8 @@ metadata:
 # Task 22.1a: the provenance-free audit classes {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 5, 2026-10-14; [[#rev-round-5]]; round 3 in [[#rev-round-3]])
+> Status: Pending (revision round 6, 2026-10-15; [[#rev-round-6]]; round 5 in [[#rev-round-5]], round 3 in
+> [[#rev-round-3]])
 > Wave: 1, after 23.1 and 16.6's Wave-1 slice (d6d; #t8-amendments; #t8-wave1).
 > Depends on: 23.0 (test sandbox), 16.6 Wave-1 slice (sidecar + backfill). NOT on 16.1.
 > Feeds: 22.2 → 22.5 → 22.3; 22.6 (the selector mode of `removal_audit`).
@@ -143,22 +144,81 @@ rel: related-to -> [[project_global_relative_rows_repair]]
      the target (it folds case and `_-`, `identifier.py:49`).
    - `stale-subject` (unit: ENTITY) — a compiled subject marked `stale` by plan-19's compile (d8a;
      the writer is plan-19's 19.4 R5). The audit only reports it.
-   - `dangling-link` (unit: LINK ROW; d9an) — an `entity_links` row with a dead endpoint.
-     `dangling-link:entity` when its `entity_id` is in neither `entities` nor `concepts`;
-     `dangling-link:concept` when its `concept_id` is in neither (a row with both dead is
-     `:entity`). "Alive" is EXACTLY `Store.repair_fragments`'s definition (`entities` ∪
-     `concepts`; a typed edge's concept may be a doc, memory or code entity, bug-105 r2 #b2-2),
-     so the class counts equal that repair's `links_dead_entity` / `links_dead_concept` on the
-     same catalog. Each member records `(entity_id, linkage, concept_id)`, its weight and which
-     endpoint is dead. Such a row has no correct form: its other endpoint was deleted by a path
-     that bypassed `purge_entity` (bug-111). It is not an evidence row, so [[#r2]] does not
-     exempt it; a dangling row whose LIVE endpoint is ingest-owned is still a member (the dead
-     side has no owner). Measured on a copy of cliquedb's read snapshot, 2026-10-14: 5,298
-     `:entity` rows across 64 dead ids and 8 `:concept` rows, all `part-of`. {#r1-dangling}
+   - `dangling-link` (unit: LINK ROW; d9an) and `dangling-evidence` (unit: EVIDENCE ROW; d9ar):
+     a row with a dead endpoint. Such a row has no correct form: its other endpoint was deleted by
+     a path that bypassed `purge_entity` (bug-111), or by a purge, since neither
+     `Store.purge_entity` nor `Store._bulk_purge_ids` deletes a `linkage_evidence` row (read at
+     `3d3c798`). 22.2 R9 removes both ([[task-22.2-repair-then-remove#r9-dangling]]). {#r1-dangling}
+     - **The liveness predicate is the one `Store.repair_fragments` runs (r6 m-2)**, side by side
+       for each column, in the code's order:
+
+       | column | alive when (the repair, read at `3d3c798`) | NOT consulted |
+       |---|---|---|
+       | `entity_id` | in `entities` (the repair's `ent_part`) | `concepts` |
+       | `linkage_id` | in `linkage_types` | — |
+       | `concept_id` | in `entities` ∪ `concepts` (a typed edge's concept may be a doc, memory or code entity, bug-105 r2 #b2-2) | — |
+
+       A link row is `dangling-link:entity` when its entity is dead (whatever its linkage and
+       concept; the repair counts it `links_dead_entity`), else NOT a member and counted
+       `dead-linkage` when its linkage is dead (the repair counts it under `links_skipped` only
+       and never checks its concept), else `dangling-link:concept` when its concept is dead
+       (`links_dead_concept`). Round 5's "`entities` ∪ `concepts` on the entity side" was not the
+       code; the two differ only for a `concepts` row with no `entities` row, which the schema
+       rules out by convention (the `concepts` DDL in `store.py`: `id` "equals entities.id where
+       kind='concept'"; not an enforced key) and both stores hold 0 of. `dead-linkage` rows: 0 on both stores (r6); they are printed, never removed here.
+     - **`dangling-evidence` (d9ar)** is a `linkage_evidence` row whose entity is ALIVE and whose
+       concept is dead under the same predicate (any `detail`: a `rel:` edge's ingest evidence is
+       the common case). A row whose ENTITY is dead is not a member: it is `vacuum` step 3's, made
+       auditable by [[task-22.6-removal-entry-points#r5]].
+     - **One shared predicate (r6 m-3).** `store.link_liveness(con) -> LinkLiveness` loads the
+       three id sets from any DuckDB connection (the writer's, a read snapshot's, a census copy's),
+       and `LinkLiveness.dead_side(entity_id, linkage_id, concept_id) -> "entity" | "linkage" |
+       "concept" | None` applies the table above. `Store.repair_fragments` and
+       `removal_audit._classify_dangling(conn, inputs)` both call them; neither carries its own
+       liveness SQL (AC-8c).
+     - **Store scope (r6 s-2).** `entity_links` and `linkage_evidence` have no partition column
+       (`duckdb_catalog.py`'s DDL), a dead endpoint has no partition, and a both-dead row (7 on
+       cliquedb) belongs to none. So both sub-classes are audited ONCE per store, whatever
+       `inputs.partition` says, over the whole table, exactly as the repair counts. Each member
+       records its LIVE end's partition, or `none` when both ends are dead; 22.2 R6 batches by it.
+     - **Naming the dead end from `facts.log` (r6 b-1, d9aq).** For each dead id `D`, the audit
+       reads the store's `facts.log` (read-only; the census reads its copy) and computes
+       `names_from_log(D)`: the `(partition, kind, name)` keys that (i) have an `entity` event and
+       no tombstone at or after their latest one, (ii) have no catalog row, and (iii) carry, for
+       EVERY member row of `D` whose other end is alive, a last-wins `link` event (for a
+       dangling-evidence row, an `evidence` event at the same `file`/`line`) with that row's
+       linkage and live-end name on the other side. `D` is NAMED when exactly one key qualifies
+       and no other dead id claims that key; otherwise it is NAMELESS (`unnamed:none` or
+       `unnamed:ambiguous`, counted apart). Partition comparison uses each event's `partition`
+       field, or the store's default when absent, as `rebuild_index_from_log` does. A both-dead
+       row is named through its dead entity's other rows, when it has any.
+     - Each member records `(entity_id, linkage, concept_id)` (plus `file`, `line`, `detail`,
+       multiplicity for an evidence row), its weight (NULL kept), which side is dead, the live
+       end's partition or `none`, and `names_from_log`. [[#r2]] does not exempt either sub-class:
+       the dead side has no owner, so a row whose LIVE end is ingest-owned is still a member.
+     - **Measured (r6 m-1),** on copies of the read snapshots, 2026-10-14 23:43-23:45
+       (`bsd-plan16-22-spec-rereview-r6-0e77da3` `#ev-dangling`, `#ev-evidence-orphans`):
+
+       | store | `dangling-link:entity` | of them both-dead | `dangling-link:concept` | `dangling-evidence` |
+       |---|---|---|---|---|
+       | cliquedb | 5,298 (64 dead ids) | 7 | 1 | 14,745 |
+       | refmatrix | 0 | 0 | 0 | 5,920 |
+
+       cliquedb's `:entity` rows by linkage: `mentions` 5,184, `part-of` 63, `related-to` 33,
+       `amends` 7, `reinforces` 5, `depends-on` 5, `supersedes` 1 (379 with a NULL weight); its
+       one `:concept` row is `part-of`. These equal the live daemon's `repair_fragments` counters
+       (`links_dead_concept=1 links_dead_entity=5298`, its `rmxd.log` at 2026-10-14T23:43:03).
+       Round 5's "8 `:concept` rows, all `part-of`" counted the 7 both-dead rows twice. Naming on
+       the cliquedb copy (re-derived 2026-10-15 from the r6 auditor's copies, read-only): 56 of
+       the 64 dead entity ids are NAMED, each by a distinct one of the 56 doc keys a rebuild would
+       resurrect; 0 ambiguous; 8 nameless (ids 2791202-2791209); 0 would-resurrect keys
+       unclaimed.
 2. **R2 Ingest is out of scope.** No class selects an ingested evidence row (`detail` not
    `learned from grep…`), a `tracked_files` row, or an entity with an ingest link. A learned file
    entity that is also ingested is reported `shared` and never becomes `missing-file` or
-   `orphan-root:unresolved` as a whole; only its learned rows are classified. {#r2}
+   `orphan-root:unresolved` as a whole; only its learned rows are classified. The two dangling
+   sub-classes are the stated exception ([[#r1-dangling]]): they select a row by its DEAD side,
+   ingest-derived or not, and never touch the live end's other rows. {#r2}
 3. **R3 Read-only, defined (22 #m-2).** The audit is a daemon READ op over the lock-free read
    snapshot. It writes no catalog row, no Lance version, no queue entry and no `facts.log` event.
    It enqueues NO `stale_seen` marks (those belong to 16.6's grep read path). Its only output is the
@@ -167,7 +227,9 @@ rel: related-to -> [[project_global_relative_rows_repair]]
    - **One classifier, two callers (r3 s-6).** The classes are computed by ONE pure function,
      `removal_audit.classify_provenance_free(conn, inputs) -> AuditPlan`, where `conn` is a
      read-only DuckDB connection to a catalog file and `inputs` carries `store_root`, `partition`,
-     `candidate_trees`, `walk_prunes` and `home_base`. The daemon op passes the connection its
+     `candidate_trees`, `walk_prunes` and `home_base`. The dangling sub-classes ignore
+     `partition` and take the store's `facts.log` path instead ([[#r1-dangling]], store scope;
+     r6 s-2). The daemon op passes the connection its
      read-snapshot ops already use; the operator census passes `duckdb.connect(<copy>,
      read_only=True)` through the ONE census procedure,
      [[task-16.6-learned-row-validation#r7]]. No census constructs `Daemon` or `Store`.
@@ -177,7 +239,8 @@ rel: related-to -> [[project_global_relative_rows_repair]]
    records: store root, partition, catalog identity (active slot + snapshot version), the
    walk's `candidate_trees`, `walk_prunes` and `home_base`, every member with its class, its
    recorded resolution, its readable-today attribute and (for `orphan-root:unverifiable`) its
-   `Unverifiable` reasons.
+   `Unverifiable` reasons. A dangling member carries its own `partition` (live end, or `none`) and
+   its `names_from_log`; the manifest's one `partition` field does not scope them (r6 s-2).
    Exit 0 when the scan completes; any unreadable input is counted and printed, never skipped
    silently. {#r4}
 
@@ -264,16 +327,46 @@ rel: related-to -> [[project_global_relative_rows_repair]]
 7. **pytest rows.** 7a: a sandbox fixture entity under a `/pytest-of-<user>/` path classifies
    `missing-file`. 7b (operator census, as 5b): on the global copy, `missing-file` includes every
    entity whose path contains `/pytest-of-` (1,655 at the review; recount exact).
-8. **Dangling links (d9an).** 8a: a sandbox fixture holds one `entity_links` row to a deleted
-   entity, one to a deleted concept, one whose concept is a live DOC entity (no `concepts` row),
-   and one with both endpoints dead. The audit classifies them `dangling-link:entity`,
-   `dangling-link:concept`, not a member, and `dangling-link:entity`, and its counts equal
-   `repair_fragments(dry_run=True)`'s `links_dead_entity` and `links_dead_concept` on the same
-   store. Mutation "concept alive = `concepts` only" FAILS (the live-doc row becomes a member);
-   mutation "a second liveness definition in `removal_audit`" is refused by review: the
-   predicate is shared with the repair. 8b (operator census, as 5b): on copies of cliquedb's and
-   this repo's read snapshots the counts are printed beside the repair's counters; equal, or the
-   census says `drift`.
+8. **Dangling rows (d9an, d9ar; r6 s-2, m-3).**
+   - **8a, sandbox test.** A store with two partitions, `p1` (bound) and `p2`. Its `entity_links`
+     holds: a row to a deleted entity whose live concept is in `p2`; a row to a deleted concept
+     whose live entity is in `p2`; a row whose concept is a live DOC entity (no `concepts` row);
+     a row with both endpoints dead; a row with a live entity and a `linkage_id` absent from
+     `linkage_types`; a row whose entity id has a `concepts` row but no `entities` row (planted);
+     and two rows of a second dead id `E2`, one to the first row's live concept `X` and one to a
+     concept `Z` no logged name links. Its `linkage_evidence` holds a row of a live entity whose concept was
+     purged with `purge_entity`, and a row whose entity is dead. Its `facts.log` names the first
+     row's dead entity (an `entity` event, a matching `link` event, no tombstone). The audit, run
+     with `partition = p1`, classifies them `dangling-link:entity` (partition `p2`, NAMED),
+     `dangling-link:concept` (`p2`), not a member, `dangling-link:entity` (`none`), not a member
+     (`dead-linkage=1`), `dangling-link:entity` (the planted id: the entity side ignores
+     `concepts`), `dangling-link:entity` ×2 for `E2` (`unnamed:none`: no one name covers both
+     rows), `dangling-evidence` (its entity's partition), and not a member (vacuum's).
+     Each class count equals an INDEPENDENT SQL recount written in the test (not imported from
+     `src/`), and equals `repair_fragments(dry_run=True)`'s `links_dead_entity` /
+     `links_dead_concept` on the same store. Mutations, each FAILS it: "concept alive =
+     `concepts` only" (the live-doc row becomes a member); "entity alive = `entities` ∪
+     `concepts`" (the planted id is no longer a member); "audit only the bound
+     partition" (the `p2` and `none` members are missed and the recount differs);
+     "name by any one row's link event" (`E2` takes the first row's name through `X`).
+   - **8b, operator census (not a suite test; as 5b).** `--census dangling-link`
+     ([[task-16.6-learned-row-validation#r7]]) on copies of cliquedb's and this repo's
+     `catalog.read.duckdb` and `facts.log` prints, per store: the class counts (`:entity`,
+     both-dead, `:concept`, `dead-linkage`, `dangling-evidence`); the naming counts (dead ids,
+     `named`, `unnamed:none`, `unnamed:ambiguous`); `would_resurrect` (keys with an untombstoned
+     `entity` event and no catalog row) and how many of them a dead id claims
+     (`would_resurrect_unclaimed` = the rest); and, beside the counts, the live repair's counters
+     read from the latest `repair_fragments dry_run=` line of `<store_root>/rmxd.log` (written by
+     `daemon._op_repair_fragments`; read in place, read-only, with that line's timestamp), labelled
+     `equal`, `drift`, or `no-counter` when the log holds no such line. No `Store` is
+     constructed for it. Reference reading for cliquedb (r6, [[#r1-dangling]]): 5,298 / 7 / 1 /
+     0 / 14,745; 64 dead ids, 56 named, 8 nameless; 56 would-resurrect, 0 unclaimed.
+   - **8c, one predicate (mechanical, not review).** An AST test over `src/refmatrix/` asserts:
+     `removal_audit._classify_dangling` calls `store.link_liveness` and `LinkLiveness.dead_side`
+     and holds no string constant naming `entities`, `concepts` or `linkage_types`;
+     `Store.repair_fragments` calls `LinkLiveness.dead_side` and builds no `concept_ids` set of
+     its own. Mutation "an inline `SELECT id FROM concepts` in `_classify_dangling`" FAILS it;
+     mutation "the repair keeps its own `concept_ids` set" FAILS it.
 
 ## Files to modify {#files-to-modify}
 
@@ -287,8 +380,10 @@ r4 m-1: this task's own file list.
 | `src/refmatrix/cli.py` | `rmx removal audit` (R4) |
 | `eval/spikes/global_relative_resolve_probe.py` (new) | the recovered probe ([[#appendix-probe]]); only the catalog path and `$HOME` become arguments; a header names its origin and the sha256 above |
 | `scripts/census_on_copy.py` (16.6's) | the `probe-reproduction` and `provenance-free` census names (16.6 R7 owns the script) |
-| `tests/test_removal_audit.py` (new) | AC-1..AC-4, AC-5a, AC-6a, AC-7a, AC-8a |
-| `src/refmatrix/store.py` | the endpoint-liveness predicate shared by `repair_fragments` and `classify_provenance_free` (AC-8) |
+| `tests/test_removal_audit.py` (new) | AC-1..AC-4, AC-5a, AC-6a, AC-7a, AC-8a, AC-8c |
+| `src/refmatrix/store.py` | `link_liveness(con) -> LinkLiveness` and `LinkLiveness.dead_side`, the ONE endpoint predicate; `Store.repair_fragments` rewritten to call it ([[#r1-dangling]], AC-8c) |
+| `src/refmatrix/removal_audit.py` (also) | `_classify_dangling(conn, inputs)`: both sub-classes, store scope, the `facts.log` naming ([[#r1-dangling]]) |
+| `scripts/census_on_copy.py` (also) | the `dangling-link` census name (AC-8b; 16.6 R7 lists it) |
 
 ## Test strategy {#test-strategy}
 
@@ -366,6 +461,23 @@ rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
 | d9an; bug-111 r1 #1 (an unanchored deferral: no plan-22 class named `entity_links` rows with a dead endpoint) | [[#r1-dangling]]; AC-8; 22.2 R9 removes it |
 
 rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Answers [[bsd-plan16-22-spec-rereview-r6-0e77da3]] where it touches 22.1a, and d9aq/d9ar
+([[plan-review-2026-10-14#t12-approvals]]). Later rows win over round 5 and the d9an revision.
+
+| finding / decision | answered in |
+|---|---|
+| r6 b-1 / d9aq (the removal needs the dead end's NAME; measure it first) | [[#r1-dangling]] "Naming the dead end from `facts.log`" (every-row intersection, injective, nameless counted); AC-8a naming mutation; AC-8b naming and would-resurrect counts |
+| r6 s-2 (no partition; partition-scoped audit misses both-dead rows) | [[#r1-dangling]] "Store scope"; [[#r3]] and [[#r4]] partition notes; AC-8a two-partition fixture + mutation "audit only the bound partition" |
+| r6 s-3 / d9ar (`dangling-evidence`) | [[#r1-dangling]] the sub-class; [[#r2]] exception; AC-8a evidence rows; 22.2 removes it |
+| r6 m-1 (counts: 1 `:concept`, 7 both-dead; linkage split) | [[#r1-dangling]] "Measured" table and split |
+| r6 m-2 (liveness text is not the code) | [[#r1-dangling]] predicate table, incl. `dead-linkage` |
+| r6 m-3 (AC-8 compares a function with itself; 8b has no procedure) | AC-8a independent recount; AC-8c AST check + two mutations; AC-8b `--census dangling-link` reading `rmxd.log`; [[#files-to-modify]] |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r6-0e77da3]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Appendix: the recovered probe {#appendix-probe}
 
