@@ -65,16 +65,31 @@ Every in-process byte copy of a catalog file in `src/`:
   refuses the main-file lock every run. **bug-108 is bug-110 seen from the test side.** The tests
   now force a snapshot and read it from a child process, as a CLI read does: 10 of 10 runs green
   (`bug110-r1-savestate-x10.log`).
-- **A reader inside the test process saw a stale snapshot** after a forced one. Same inode, while
-  a fresh subprocess saw the committed stamps. No leaked Python DuckDB connection was found, so
-  the mechanism is unnamed. Filed as bug-112, because long-lived readers (the MCP server, the hub)
-  read snapshots in-process.
+- **A reader inside the test process saw an OLD snapshot** after a forced one. I first wrote
+  "same inode, mechanism unnamed"; ch-bsd r2 measured it with `lsof`: DIFFERENT inodes. The test
+  process held the replaced, unlinked file open through `search._REPLICA_CACHE` (filled by
+  `verbs.memory_partition` → `cached_replica`), and DuckDB's `duckdb.connect()` instance cache
+  hands that database to any later connect of the same path in the process. `gc` cannot see
+  DuckDB's pybind connection objects, which is why I found no leak. `cached_replica` itself
+  re-checks on every call, and the 4 live `rmx mcp` processes and the hub hold no duckdb fds, so
+  today it is a LATENT defect for any second in-process opener. Filed as bug-112.
 - **#s-2:** tests for a failing copy (a partial tmp is never installed; the previous snapshot is
   kept), a hanging copy and `-p`. Mutants M2 (returncode check), M4 (`-p`) and M5 (timeout) are
   each killed (`bug110-r1-mutations.log`).
 - **#m-1, #m-2, #m-3:** as in the inventory above.
 
 {#round-1-body}
+
+## Round 2 (ch-bsd `bsd-bug110-r2-stale-snapshot-is-the-replica-cache-1fb6c0e`) {#round-2}
+
+- **#s-1-r2:** the child read returns the memory names, and the two "no row without a vector"
+  tests assert the expected names before asserting that nothing is pending. Mutation "snapshot
+  frozen at boot" now fails all 3 dense tests; before this change it failed 1.
+- **#s-2-r2:** `test_survivor_clone_closes_the_store_even_when_the_checkpoint_raises`. Mutation
+  "close back inside the try" fails it (`bug110-r2-mutation.log`).
+- **#m-1-r2:** the bug-112 text above and the test docstring now carry the measured mechanism.
+
+{#round-2-body}
 
 ## Deploy note {#deploy}
 

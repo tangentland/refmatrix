@@ -55,7 +55,13 @@ root, part, what, arg = Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
 s = Store(root, read_only=True, partition=part)
 try:
     if what == "pending":
-        out = [list(r) for r in s.pending_embeddings(kinds=["memory"])]
+        # The names too (bug-110 r2 #s-1-r2): `pending == []` alone also passes on a stale or empty
+        # snapshot that holds no memory rows at all.
+        names = sorted(r[0] for r in s._connect().execute(
+            "SELECT name FROM entities WHERE kind = 'memory' AND partition_id = ?",
+            (s.partition_id,)).fetchall())
+        out = {"names": names,
+               "pending": [list(r) for r in s.pending_embeddings(kinds=["memory"])]}
     else:
         row = s._connect().execute("SELECT name FROM entities WHERE id = ?", (int(arg),)).fetchone()
         out = row[0] if row else None
@@ -71,9 +77,11 @@ def _read_snapshot(root: Path, part: str, what: str, arg: str = "") -> object:
     bug-110: these tests opened `Store(root)` on the live writer slot while the fixture's daemon
     held it. That only worked because the snapshot's in-process copy had dropped the daemon's
     DuckDB lock, and it failed ~1 run in 5 on the WAL lock instead (bug-108). With the lock held
-    the open is refused every time. A reader inside THIS process saw a stale snapshot even after
-    a forced one (bug-112, mechanism not yet named), so the read runs in a child, as the CLI's
-    does."""
+    the open is refused every time. A reader inside THIS process saw an OLD snapshot even after a
+    forced one: `verbs.memory_partition` had filled `search._REPLICA_CACHE`, whose open connection
+    holds the replaced (unlinked) file, and DuckDB's `duckdb.connect()` instance cache hands that
+    database to any later connect of the same path in the process (bug-112, named by ch-bsd r2).
+    So the read runs in a child, as the CLI's does."""
     import json
     import os
     import subprocess
@@ -177,7 +185,9 @@ def test_no_memory_row_is_left_without_a_vector(live):
     assert fin["embed"]["error"] is None, fin["embed"]
 
     part = verbs.memory_partition(root)
-    pending = _read_snapshot(root, part, "pending")
+    got = _read_snapshot(root, part, "pending")
+    assert {"savestate_a", "other_note"} <= set(got["names"]), got
+    pending = got["pending"]
     assert pending == [], f"{len(pending)} memory row(s) have no vector"
 
 
@@ -198,7 +208,9 @@ def test_a_bare_ingest_gmd_as_memory_embeds_too(live):
     assert "memory embed" in monkeypatch_free.output, monkeypatch_free.output
 
     part = verbs.memory_partition(root)
-    assert _read_snapshot(root, part, "pending") == []
+    got = _read_snapshot(root, part, "pending")
+    assert "hook_written_note" in got["names"], got
+    assert got["pending"] == [], got
 
 
 def test_a_non_memory_ingest_gmd_does_not_embed(quiet, monkeypatch):

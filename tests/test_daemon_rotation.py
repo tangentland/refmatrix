@@ -129,3 +129,28 @@ def test_refresh_replica_now_is_dropped_noop(tmp_path):
     assert res.get("enabled") is False
     assert "dropped" in (res.get("reason") or "")
     assert d._active_slot == before
+
+
+def test_survivor_clone_closes_the_store_even_when_the_checkpoint_raises(tmp_path):
+    """bug-110 r1 #m-3 / r2 #s-2-r2: close() used to sit inside the CHECKPOINT's `except: pass`,
+    so a CHECKPOINT that raised (an invalidated instance) skipped it and the copy ran with the
+    store open; the reopen then got the invalidated instance back from DuckDB's connect cache."""
+    d = _make_daemon(tmp_path)
+    b = d._replica_file("B")
+    b.write_bytes(b"FRESH-B-DATA")
+    (d.root / "active").write_text("B")
+    old = d.store
+    closed: list = []
+    real_close, real_connect = old.close, old._connect
+
+    class _Raises:
+        def execute(self, sql, *a, **k):
+            if sql.strip().upper() == "CHECKPOINT":
+                raise RuntimeError("database has been invalidated")
+            return real_connect().execute(sql, *a, **k)
+
+    old._connect = lambda: _Raises()
+    old.close = lambda: (closed.append(True), real_close())[1]
+    d._bootstrap_rotation_if_needed()
+    assert closed, "the store was not closed before the survivor copy"
+    assert d._replica_file("A").read_bytes() == b"FRESH-B-DATA"
