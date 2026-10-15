@@ -9,7 +9,8 @@ Each test calls `_require_sandbox()` first: at a HEAD without the sandbox it fai
 child is ever spawned against a live path.
 
 Mutation (AC-3, pre-registered): drop the `PYTHONPATH` entry -> the children connect (or fail
-differently) and these tests fail. That mutation run reaches the live paths by design.
+differently) and these tests fail. d9bo #3 (2026-10-15): that mutation run reaches only decoys
+(the outer `HOME` on a decoy home with a listening `hub.sock`; AC-3(b)'s decoy store).
 """
 from __future__ import annotations
 
@@ -24,7 +25,11 @@ _REPO = Path(__file__).resolve().parents[1]
 
 
 def _real_home() -> Path:
-    return Path(pwd.getpwuid(os.getuid()).pw_dir)
+    """The home the sandbox protects, as the conftest captured it (`RMX_SANDBOX_REAL_HOME`).
+    d9bo #3: the AC-3 mutation gate puts the OUTER `HOME` on a decoy home with a listening
+    decoy `hub.sock`, so the mutated child connects to the decoy, never the live hub."""
+    v = os.environ.get("RMX_SANDBOX_REAL_HOME")
+    return Path(v) if v else Path(pwd.getpwuid(os.getuid()).pw_dir)
 
 
 def _require_sandbox() -> Path:
@@ -63,19 +68,27 @@ def test_python_child_connecting_to_the_real_hub_socket_is_refused():
     assert "SandboxViolation" in r.stderr, r.stderr[-2000:]
 
 
-def test_rmx_child_on_the_repos_live_store_is_refused():
-    """AC-3: `rmx` with REFMATRIX_ROOT at the repo's real `.refmatrix/` exits nonzero with
-    SandboxViolation on stderr. `daemon status` reads the store's pid/marker files and pings
-    its socket -- read-only even when the refusal is mutated away. A clone has no repo store,
-    so there the real global home (also in the deny set) stands in for it."""
+def test_rmx_child_on_the_repos_live_store_is_refused(tmp_path):
+    """AC-3: `rmx` with REFMATRIX_ROOT at a denied store exits nonzero with SandboxViolation on
+    stderr. d9bo #4 (2026-10-15): the store is a DECOY the test builds with `Store.init()` --
+    never the repo's real root, so the mutated run touches nothing live, and it works in a
+    clone and the tier-2 VM alike. The decoy is named to the child's deny set through
+    `RMX_SANDBOX_DENY_EXTRA` (additive only). A `rmxd.pid` naming this process makes
+    `daemon status` READ a file in the store (a fresh store holds none it would read)."""
     _require_sandbox()
-    target = _REPO / ".refmatrix"
-    if not target.is_dir():
-        target = _real_home() / ".refmatrix"
+    from refmatrix.store import Store
+    target = tmp_path / "decoy" / ".refmatrix"
+    s = Store(target)
+    try:
+        s.init()
+    finally:
+        s.close()
+    (target / "rmxd.pid").write_text(f"{os.getpid()}\n")
     rmx = shutil.which("rmx")
     assert rmx, "no rmx on PATH"
     env = dict(os.environ)
     env["REFMATRIX_ROOT"] = str(target)
+    env["RMX_SANDBOX_DENY_EXTRA"] = str(target)
     env["REFMATRIX_NO_TELEMETRY"] = "1"     # no cli.log row even if the refusal is mutated away
     r = subprocess.run([rmx, "daemon", "status"], capture_output=True, text=True, env=env,
                        timeout=120)

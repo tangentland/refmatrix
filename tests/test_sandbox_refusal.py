@@ -11,8 +11,10 @@ conftest installed (process-global, irremovable) is the thing under test. Each o
 there, and nothing live is opened or connected.
 
 Mutation (AC-2, pre-registered): put back the record-only connect -> the inner probes connect /
-open for real and PASS, so `assert_outcomes(failed=...)` fails here. That mutation run touches
-the live paths by design; run it only with the hub and global daemon in a state you accept.
+open and PASS, so `assert_outcomes(failed=...)` fails here. d9bo #3 (2026-10-15): the mutation
+run never reaches a live path -- it runs with the OUTER `HOME` on a decoy home holding listening
+decoy `rmxd.sock`/`hub.sock` and decoy logs, and `RMX_SANDBOX_HUB_PORT` on a decoy listener, so
+"the probes then connect" is asserted against the decoys.
 """
 from __future__ import annotations
 
@@ -30,7 +32,18 @@ _TOUCHES = _REPO / "workflow" / "review-output" / "live-socket-touches.log"
 
 
 def _real_home() -> Path:
-    return Path(pwd.getpwuid(os.getuid()).pw_dir)
+    """The home the sandbox protects, as the conftest captured it (`RMX_SANDBOX_REAL_HOME`).
+
+    d9bo #3 (2026-10-15): the AC-2 mutation gate runs with the OUTER `HOME` on a decoy home
+    holding listening decoy sockets and logs, so a mutated run reaches the decoys, never the
+    live machine. In a normal run this is the account's real home."""
+    v = os.environ.get("RMX_SANDBOX_REAL_HOME")
+    return Path(v) if v else Path(pwd.getpwuid(os.getuid()).pw_dir)
+
+
+def _hub_port() -> int:
+    """7777, or the decoy listener's port in the AC-2 mutation gate (d9bo #3)."""
+    return int(os.environ.get("RMX_SANDBOX_HUB_PORT") or 7777)
 
 
 def _require_sandbox() -> Path:
@@ -82,10 +95,12 @@ def test_inner_probes_on_live_paths_fail_with_sandbox_violation(pytester):
     SandboxViolation and the touches log names it."""
     _require_sandbox()
     real = str(_real_home())
+    port = _hub_port()
     before = _touches_size()
     result = _run_inner(pytester, f'''
 import os, socket
 REAL = {real!r}
+PORT = {port!r}
 
 def test_connect_real_global_daemon_socket():
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -103,14 +118,14 @@ def test_connect_ipv6_hub_port():
     s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
     s.settimeout(0.5)
     try:
-        s.connect(("::1", 7777))
+        s.connect(("::1", PORT))
     finally:
         s.close()
 ''')
     _assert_refused(result, _new_touches(before), {
         "test_connect_real_global_daemon_socket": "rmxd.sock",
         "test_append_real_global_query_log": "query.log",
-        "test_connect_ipv6_hub_port": "7777",
+        "test_connect_ipv6_hub_port": str(port),
     })
 
 

@@ -1,5 +1,5 @@
 import importlib.util
-import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -8,15 +8,23 @@ _REPO = Path(__file__).resolve().parents[1]
 
 
 def _assert_tested_code_is_this_checkout() -> None:
-    """Refuse to run when `refmatrix` imports from a different tree than these tests.
+    """Refuse to run when `refmatrix` would import from a different tree than these tests.
 
     `.venv-eval` holds an editable install of the dev tree, so a suite run from a clone or
     worktree without `PYTHONPATH=<checkout>/src` silently tests the DEV tree's code and reports
     green (seen 2026-10-14 in the bug-105 littlebig clone: the r2 tests failed on missing
     attributes of the wrong module; a clean run would have passed on code it never loaded).
+
+    Resolved with `find_spec`, NOT an import (task 23.0 R9, d9bo #6): importing `refmatrix`
+    here would compute `launchctl.LAUNCH_AGENTS_DIR` from the real `$HOME` before the sandbox
+    redirect below, and a mis-pointed run must never reach the sandbox at all.
     """
-    import refmatrix
-    loaded = Path(refmatrix.__file__).resolve().parent
+    spec = importlib.util.find_spec("refmatrix")
+    if spec is None or spec.origin is None:
+        raise pytest.UsageError(
+            f"tests in {_REPO} cannot find `refmatrix`; "
+            f"set PYTHONPATH={_REPO / 'src'} (prepend) so the checkout under test is imported")
+    loaded = Path(spec.origin).resolve().parent
     expected = (_REPO / "src" / "refmatrix").resolve()
     if loaded != expected:
         raise pytest.UsageError(
@@ -25,6 +33,22 @@ def _assert_tested_code_is_this_checkout() -> None:
 
 
 _assert_tested_code_is_this_checkout()
+
+# ---- task 23.0: the sandbox (R1-R4), BEFORE the first `refmatrix` import -----------------
+#
+# bug-088 (72 in-process connects to live sockets in one run) and bug-101 (143,108 facts.log
+# events + 235 query.log fixture rows written into the LIVE global store) share one cause: the
+# suite ran with the developer's real `$HOME`. `enter()` captures the real paths, writes the
+# deny set and turns the audit-hook refusal on; `redirect()` is the R1 env assignments. The
+# logic lives once, in tests/sandbox_site/rmx_sandbox.py, shared with every child process
+# (sitecustomize.py) and the proof/lane scripts.
+sys.path.insert(0, str(_REPO / "tests" / "sandbox_site"))
+import rmx_sandbox  # noqa: E402
+
+_SANDBOX = rmx_sandbox.enter(_REPO)
+rmx_sandbox.redirect(_SANDBOX)
+
+from refmatrix import cli as _cli  # noqa: E402  (the first refmatrix import: after the redirect)
 
 
 def _pyc_guard():
@@ -68,7 +92,6 @@ def _reset_cli_partition_override():
     on one tmp store pinned the NEXT test's bridge to the wrong partition
     (found 2026-09-14: `test_sync_disk_alias_fails_loud…` → five `live`
     bridge tests looked up rows in a partition nothing wrote to)."""
-    from refmatrix import cli as _cli
     yield
     _cli._partition_override = None
 
@@ -100,44 +123,74 @@ def source_of(mod, name: str) -> str:
     return "\n".join(lines[start:end])
 
 
-# ---- the suite must not reach LIVE sockets (2026-10-07) ----------------------
+# ---- task 23.0 R2/R3: a per-test store root, and a violation fails its test --------------
 #
-# Two project-daemon wedges on 2026-10-07 (bug-085) each happened during a
-# full-suite run, and the stuck daemon held 10 client connections on its live
-# socket. Nothing here isolates `_root()`: tests run from the repo, so a CLI
-# call that does not chdir resolves the LIVE `.refmatrix/`. This guard RECORDS
-# every connect to a live socket with the test that made it, so the offenders
-# are named by evidence, not guessed. (Record mode; refusing comes after the
-# list is known.)
-
-_LIVE_UNIX = {
-    str(_REPO / ".refmatrix" / "rmxd.sock"),
-    str(Path.home() / ".refmatrix" / "rmxd.sock"),
-    str(Path.home() / ".refmatrix" / "hub.sock"),
-    str(Path.home() / ".refmatrix" / "models.sock"),
-}
-_LIVE_TCP = {("127.0.0.1", 7777), ("localhost", 7777)}
-_LIVE_LOG = _REPO / "workflow" / "review-output" / "live-socket-touches.log"
-_current_test = {"id": "<collection>"}
+# The record-only connect recorder of 2026-10-07 named bug-088's offenders by evidence and let
+# every one of them through. The refusal is now the audit hook `rmx_sandbox.enter()` installed
+# above (it also writes workflow/review-output/live-socket-touches.log); what lives here is the
+# per-test half.
 
 
-def pytest_runtest_setup(item):
-    _current_test["id"] = item.nodeid
+def _init_store(root: Path) -> None:
+    from refmatrix.store import Store
+    s = Store(root)
+    try:
+        s.init()
+    finally:
+        s.close()
 
 
-def pytest_configure(config):
-    import socket as _socket
-    real = _socket.socket.connect
+# The sandbox's global store EXISTS, as the live one does: before the sandbox a bare `rmx`
+# from a tmp cwd fell back to the live `~/.refmatrix` store (bug-101's 235 query.log rows came
+# from exactly that), so tests written against it expect a store there.
+_init_store(Path(_SANDBOX["root"]) / "h" / ".refmatrix")
 
-    def _recording_connect(self, address):
-        hit = None
-        if self.family == _socket.AF_UNIX and str(address) in _LIVE_UNIX:
-            hit = str(address)
-        elif isinstance(address, tuple) and tuple(address[:2]) in _LIVE_TCP:
-            hit = f"{address[0]}:{address[1]}"
-        if hit is not None:
-            with open(_LIVE_LOG, "a") as fh:
-                fh.write(f"{os.getpid()}\t{_current_test['id']}\t{hit}\n")
-        return real(self, address)
 
-    _socket.socket.connect = _recording_connect
+@pytest.fixture(autouse=True)
+def _sandbox_store_root(monkeypatch):
+    """R2: `REFMATRIX_ROOT` names a fresh per-test store under the sandbox, so `_root()` from
+    the repo cwd can never walk to the repo's live `.refmatrix/`. A test that needs the cwd
+    walk chdirs into its own tmp dir and `delenv`s this itself.
+
+    The store is INITIALIZED (~40 ms): before the sandbox `_root()` always resolved to a store
+    that existed (the repo's live one, or the live global), and R5's grep tests write their
+    `query.log` row through it -- into the sandbox now. Removed at teardown (2 MB each)."""
+    root = rmx_sandbox.new_store_root(_SANDBOX["root"])
+    _init_store(root)
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+    yield
+    rmx_sandbox.remove_tree(root.parent)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    """Name the OUTER test in the touches log: an in-process `pytester` inner test overwrites
+    `PYTEST_CURRENT_TEST` for the duration of its own run."""
+    rmx_sandbox.set_outer_test(item.nodeid)
+    try:
+        yield
+    finally:
+        rmx_sandbox.set_outer_test(None)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """d9bo #5: a violation is raised AND recorded per test; a test whose record is non-empty
+    FAILS even when the code under test swallowed the raise (`except Exception: pass`, a
+    best-effort thread)."""
+    outcome = yield
+    rep = outcome.get_result()
+    hits = rmx_sandbox.RECORD.pop(item.nodeid, None)
+    if hits and not rep.failed:
+        rep.outcome = "failed"
+        rep.longrepr = (f"SandboxViolation (swallowed by the code under test) during "
+                        f"{rep.when}: " + "; ".join(hits))
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """A violation outside any test (collection, a thread between tests) fails the run."""
+    stray = rmx_sandbox.RECORD.pop(rmx_sandbox.NO_TEST, None)
+    if stray:
+        session.config.get_terminal_writer().line(
+            f"SandboxViolation outside any test: {'; '.join(stray)}", red=True)
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
