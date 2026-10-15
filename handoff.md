@@ -9,72 +9,73 @@ metadata:
 
 # Session Handoff for refmatrix {#root}
 
-Date: 2026-10-14 (session 742dab0d). Prior handoff archived at
-`workflow/past_handoffs/013-wave0-reviews-bug105-hotfix_2026-10-14.md`.
+Date: 2026-10-15 (session 40728f23). Prior handoff archived at
+`workflow/past_handoffs/014-bug105-bug109-release-wave0-r5_2026-10-14.md`.
 
-rel: supersedes -> [[handoff-013-wave0-reviews-bug105-hotfix]]
+rel: supersedes -> [[handoff-014-bug105-bug109-release-wave0-r5]]
 rel: depends-on -> [[plan-review-2026-10-14]]
 
 ## State {#state}
 
-- **Released 0.78.0** (bug-105 + bug-109): `master` = `origin/main` = `ddce097` (8ea8f03 + a docs
-  link fix), deploy tree `~/refmatrix` = ddce097, fleet relaunched (all 8 stores + hub on 0.78.0,
-  hub under launchd pid 35580 at the time). PUSHED.
-- **Branch:** `wave0-spec-reviews` (docs; master merged in at 7b4ad71 so this checkout's
-  `.venv-eval` MCP server runs bug-109). NOT pushed. Merge `--no-ff` to `master` when Wave 0's
-  reviews close.
-- **Clones:** `/Volumes/littlebig/refmatrix-bug105`, `-bug109`, `-release` (work done; keep or
-  delete at will). Their branches are also in the dev repo (`bug-105-fragment-partition`,
-  `bug-109-mcp-session`); never delete branches.
-- **bug-105 live repair applied** 19:09 to refmatrix, cliquedb, cliquet, viascope; the other four
-  stores were clean. Fragments: refmatrix 12.48→5.06 MB, viascope 11.33→5.01 MB. Pre-repair slot
-  backups (~1.3 GB) in each store's `backups/pre-bug105-repair-20261014/`.
+- **Released 0.78.1, 0.78.2, 0.78.3** this session, each deployed (all 8 stores + hub) and PUSHED.
+  `master` = `origin/main` = deploy tree `~/refmatrix` = **`b381b6d`** (0.78.3).
+- **Branch:** `wave0-spec-reviews` at the master merge `b638c5f` (0.78.3 merged in). NOT pushed by
+  design; merges `--no-ff` to `master` when Wave 0's reviews close.
+- **Live operator state:** `rmx learn off --global` (`~/.refmatrix/learn.off`) is SET: the grep
+  rewrite and the learn drain are off until plan 16's passive shim exists (user, 2026-10-15). The
+  project's `enforce-rmx-grep.sh` stands down while the marker exists (`0611d2f`). Undo with
+  `rmx learn on --global`.
+- **Clones on littlebig:** `refmatrix-bug110`, `-bug111`, `-bug115`, `-bug117`, `-base115`
+  (master baseline), `-release` (merge point), `-task-23.0` (23.0 RED tests at `e9b1765`, GREEN not
+  started). Their branches are in the dev repo; never delete branches.
+- **Backups:** `cliquedb/.refmatrix/backups/pre-bug111-repair-20261014/` (242 MB) kept; all
+  `pre-bug105-repair-20261014` copies deleted (user OK).
 
 {#state-body}
 
 ## What this session did {#did}
 
-1. **Wave 0 spec revisions, rounds 3-5** for plans 16/17/19/21/22/23, with ch-bsd re-reviews r4
-   (all DIRTY: 10, 8, 12 findings) answered by round 5 (d454bf9, ef4abfa). Round-6 re-reviews NOT
-   yet run.
-2. **Decisions d9p-d9am** in `workflow/plan-review-2026-10-14.md` (`#t11-approvals`), including
-   d9v (19.6 tables confirmed), d9w/d9x/d9aa (test isolation: conftest checkout guard, `rmxtest`
-   user lane, Tart macOS VM lane hosted on the user's M1 Mac mini), d9ab (protection origin only
-   from `source`/command records), d9ac/d9ae (live partition merge fenced; merge redesign is the
-   helix plan's), d9ag (23.1 R1.6 held-writer-lock check ADOPTED).
-3. **bug-105** through six ch-bsd rounds (fragment cache per binding, union repair, live merge
-   fenced, job API removed, `remapped` counter); **bug-109** through four (per-Claude-process
-   session pointer, kernel process lookup via libproc, `_errors.jsonl` surfaced by recall-state).
-4. **Release + deploy + push + live repair** as in [[#state]]; bugs 108 (flaky WAL-lock test),
-   110 (a live daemon's snapshot copy drops its own DuckDB lock) and 111 (a `part-of` bit to a
-   long-deleted id regrew on cliquedb within seconds of the repair) logged.
+1. **bug-110/111 → 0.78.1** (snapshot copy out of process keeps the DuckDB lock; repair stops
+   restoring dead-concept bits, as-memory doc drop through `purge_entity`). cliquedb live fragment
+   repair applied (dry run after: `changed=0 dropped_dead_concept=0`).
+2. **bug-115/116 → 0.78.2** after a hub-watchdog restart of a BUSY daemon (00:13:18): `ping` on the
+   dispatcher thread, heartbeat on every cli completion, cli READS dropped past the caller's
+   `deadline_s` (writes never, `CLI_WRITE_OPS`), `daemon.call` never re-sends after send, facts.log
+   compaction floor re-armed when still over the gate (it re-fired every 30 min), teach hook honours
+   `learn.off`. Live: 8 concurrent `context` reads, ping 0-46 ms.
+3. **bug-117 → 0.78.3:** ONE edge-record format (`edge_records.py`) for facts.log and the ingest
+   recorder; every edge event names `c_kind`; both replay paths resolve the concept by
+   (kind, name), legacy events by a counted rule. refmatrix log: 3,054 links + 736 evidence rows a
+   rebuild would have dropped now resolve.
+4. **Wave 0 rounds 6 and 7** for plans 16/17/19/21/22/23 (all revisions committed), plan-18 task
+   specs 18.1-18.3 written, plan-20 first review (DIRTY 11; revision deferred to after Wave 2,
+   d9bd), new task **23.5** (read path + lock-holder bounds, d9az). Decisions **d9an-d9bd**.
+5. **23.0 + 23.2 APPROVED** (d9at); 23.0 RED tests written (`e9b1765` in the clone).
 
 {#did-body}
 
 ## Next {#next}
 
-1. **~2026-10-15: follow-up dry run** per store (`export REFMATRIX_ROOT=<store>`;
-   `rmx repair-index --fragments --dry-run`): a non-zero `moved` is m-3 regrowth; watch cliquedb's
-   `dropped_dead_concept` (bug-111). Then, with the user's OK, delete the
-   `backups/pre-bug105-repair-20261014/` copies.
-2. **Round-6 spec re-reviews** of plans 16/17/19/21/22/23 at the round-5 commits (ch-bsd, one per
-   pair, docs only), then revise until clean; then the ONE consolidated document the user asked for
-   (`plan-review-2026-10-14#final-doc`).
-3. **19.6 status lines** already say CONFIRMED (d9v); 23.1 R1.6 is ADOPTED (d9ag) — check the
-   spec text says so in round 6.
-4. **Open bugs:** 096, 097, 099-104, 106-108, 110, 111.
-5. **IntelliJ Claude session:** its MCP server (pid 5555) was killed; it respawns on 0.78.0 when
-   that session reconnects `/mcp` or restarts.
+1. **Round-8 spec re-reviews** of plans 16/17/19/21/22/23 at `b638c5f` (one ch-bsd per pair, docs
+   only), including the NEW task 23.5 (never reviewed). Round 7 left every pair needing only an
+   edit pass; d9ba (23.4 pin) changed the census order — the user was told.
+2. **23.0 GREEN** in `/Volumes/littlebig/refmatrix-task-23.0`; settle the 7 spec ambiguities the
+   RED writer raised first (two are safety: mutation runs touch live sockets; swallowed violations).
+3. **18.1 measurement** (d9bb: run now, read-only on copies) when the machine is quiet; Q1/Q3 are
+   decided on its bands; 18.2 runs only with a measured reason (d9bc).
+4. **Open bugs:** 112 (in-process DuckDB per-path cache serves a replaced snapshot), 113
+   (`replica merge --dry-run` leaves the writer unlocked), plus the older open rows.
+5. **Frozen inactive slots** (d9ao): by-name census of atldb / refmatrix / viascope inactive slots,
+   then recover (after bug-113) or discard.
+6. **cliquedb** reports "gmd derived by code that has since CHANGED — `rmx reingest --force`"; not
+   run.
 
 {#next-body}
 
-## Open, not forgotten {#open}
+## Lessons recorded {#lessons}
 
-- The full test suite still reaches live sockets (bug-101); 23.0's sandbox and the `rmxtest` /
-  Tart lanes fix it. All verification this session used targeted families in littlebig clones
-  (`PYTHONPATH=<clone>/src` prepended; the new conftest guard enforces it).
-- `test_upgrade.py` fails in any clone that borrows `.venv-eval` (environmental; passes in the
-  main tree).
-- `workflow/bullshit/IMPRESSIONS.md` is far past its 50-line cap; consolidation not done.
+- `feedback_compare_failures_by_error_not_name` — baseline failures compared by `E` text.
+- `feedback_mutation_commit_must_hold_the_fix` — `5a8619f` claimed a fix it did not hold; the
+  pre-mutation commit must contain `src/`, and the fix is grepped after the restore.
 
-{#open-body}
+{#lessons-body}
