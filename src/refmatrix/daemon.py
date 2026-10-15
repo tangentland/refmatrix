@@ -2397,8 +2397,22 @@ class Daemon:
                 f"({ratio:.1%}) — at its minimal size; floor set to "
                 f"{new_floor} bytes (no auto-compaction until it grows past)"
             )
+        elif threshold > 0 and new_size >= threshold:
+            # Productive, but the compacted log is STILL over the size gate, so the plain
+            # gate would re-fire on the very next tick and rewrite the whole log under
+            # `_store_lock` again. Live 2026-10-15: 294 -> 264 MB at 00:11, 323 -> 277 MB
+            # at 00:43, every 30 minutes, and the 00:43 hold cost a Stop-hook promote its
+            # reply (bug-115). Pause until the log has really regrown.
+            new_floor = int(new_size * self._FACTSLOG_REGROW)
+            self._write_factslog_floor(new_floor)
+            self._log(
+                f"facts.log compaction reclaimed {reclaimed} bytes ({ratio:.1%}) but "
+                f"left {new_size} bytes, over the {threshold}-byte gate; floor set to "
+                f"{new_floor} bytes (no auto-compaction until it grows past)"
+            )
         else:
-            # Productive again — drop any floor so the plain size gate governs.
+            # Productive and back under the gate — drop any floor so the plain size
+            # gate governs.
             new_floor = 0
             if self._read_factslog_floor():
                 self._write_factslog_floor(0)
@@ -3219,7 +3233,8 @@ class Daemon:
                 # a client that timed out on a write has not withdrawn the write.
                 deadline_s = req.get("deadline_s")
                 expires = (time.monotonic() + float(deadline_s)
-                           if is_cli and isinstance(deadline_s, (int, float)) and deadline_s > 0
+                           if is_cli and op not in CLI_WRITE_OPS
+                           and isinstance(deadline_s, (int, float)) and deadline_s > 0
                            else None)
                 run = handler
                 if expires is not None:
@@ -6331,6 +6346,12 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
 # else (ingest, sync, prune, vacuum, checkpoint, large list ops, learn-
 # on-miss writebacks) goes to `bg_pool`. `stop` is cli because we want
 # it to take effect immediately even while bg work is in flight.
+# The cli-pool ops that WRITE (or stop the daemon). Interactive, so they share the cli pool,
+# but bug-116's deadline drop never applies to them: a caller that timed out on a write has
+# not withdrawn it (ch-bsd 23/17 r7 found `partition_add` / `partition_rename` were dropped).
+CLI_WRITE_OPS: frozenset[str] = frozenset({"partition_add", "partition_rename", "stop"})
+
+
 CLI_OPS: set[str] = {
     # A status surface asks it on every invocation, and the store most likely
     # to be stale is the one with a fat ingest in the bg pool (plan-12 #s-2).

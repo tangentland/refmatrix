@@ -279,3 +279,27 @@ def test_grep_tool_teach_hook_stands_down_while_learning_is_off(tmp_path):
                    capture_output=True, timeout=10)
     time.sleep(0.5)
     assert calls.exists(), "control: the hook must spawn when learning is on"
+
+
+@pytest.mark.parametrize("op", ["partition_add", "partition_rename"])
+def test_a_cli_pool_write_past_its_deadline_still_runs(tmp_path, monkeypatch, op):
+    """ch-bsd 23/17 r7: two WRITES live on the cli pool; the deadline drop must skip them."""
+    d = _daemon(tmp_path)
+    cli = ThreadPoolExecutor(max_workers=1)
+    bg = ThreadPoolExecutor(max_workers=1)
+    ran = []
+    import refmatrix.daemon as dmod
+    monkeypatch.setitem(dmod.OPS, op, lambda dd, a: ran.append(1) or {"w": 1})
+    gate = threading.Event()
+    cli.submit(gate.wait, 10)
+    try:
+        t, box = _dispatch_async(d, {"op": op, "args": {}, "deadline_s": 0.2}, cli, bg)
+        time.sleep(0.5)
+        gate.set()
+        t.join(3)
+        assert ran == [1], f"{op} was dropped at its caller's deadline"
+        assert box.get("resp") == {"ok": True, "result": {"w": 1}}, box
+    finally:
+        gate.set()
+        cli.shutdown(wait=True)
+        bg.shutdown(wait=True)
