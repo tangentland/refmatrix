@@ -361,6 +361,15 @@ clone; d8d's predicate owned by 21.1 in `telemetry.py`; the dead-letter file kep
 | d9am | Protection `source` vocabulary: `learner`, `user`, `system`, `removal`, set by the caller; `upsert` is dropped (`rmx add-entity` also uses that path). | user, 2026-10-14 ("9-agree") |
 | d9an | Plan 22 gains a `dangling-link` class: an `entity_links` row whose entity or concept id exists in neither `entities` nor `concepts`. 22.1a audits it, 22.2 removes it through the manifest. It is the owner of the bug-111 deferral (cliquedb: 5,298 dead-entity + 8 dead-concept rows on 2026-10-14). | user, 2026-10-14 ("add the dangling type to p22") |
 
+### Approvals after round 6 (0e77da3) {#t12-approvals}
+
+| id | decision | by |
+|---|---|---|
+| d9ao | 23.1 R8 and AC-13 (merging two slots' `queue_offsets` through `replica_merge`) are RETIRED: writer rotation is dropped (`_refresh_replica_now` is a no-op), so nothing produces diverged slots any more, and the frozen inactive slots predate the queue tables. The frozen slots are a separate item: `rmx replica audit` (2026-10-15) found rows only in the inactive slot on atldb (502 ids), refmatrix (3,183 ids, 60 `memory_content`) and viascope (113,985 ids, 124 `memory_content`), by id; a by-name census decides recover (after bug-113) or discard. Round-6 23/17 #ns23-r6-3, option (b). | user, 2026-10-15 ("all four - i agree") |
+| d9ap | 23.4's procedure handles dangling `entity_links` rows (an id resolving to no `entities` or `concepts` row, d9an): they are counted in the differential census (count plus the untouched id set), excluded from the by-name hash explicitly, and seeded into the AC-3 fixture; a resolver that raises is a mutation that must fail. The procedure pin moves to the revision commit (new pin row). Round-6 23/17 #ns23-r6-4. | user, 2026-10-15 ("all four - i agree") |
+| d9aq | d9an's removal is replay-safe: for each dead endpoint whose `entity` event survives in `facts.log`, 22.2 logs a `tombstone` BY NAME, and the row an `unlink` by name; a dead endpoint the log cannot name logs nothing (stated). A rebuild after the removal yields 0 dangling rows and no resurrected endpoint (AC). The id-keyed `link_remove` event is withdrawn. Round-6 16/22 #b-1. | user, 2026-10-15 ("all four - i agree") |
+| d9ar | `linkage_evidence` rows whose concept is dead (14,745 on cliquedb, 5,920 on refmatrix) become a `dangling-evidence` sub-class beside `dangling-link`: same audit (22.1a), same manifest removal (22.2). 22.6 R9's claim that `purge_entity` unlinks evidence is corrected. Round-6 16/22 #s-3. | user, 2026-10-15 ("all four - i agree") |
+
 ## The wave list, all waves (2026-10-14) {#t10-waves}
 
 The user, 2026-10-14: "fix the drift now". This list SUPERSEDES [[plan-review-2026-10-07#order]]
