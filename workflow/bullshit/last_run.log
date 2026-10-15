@@ -1,1 +1,2 @@
 2026-10-14T20:48:18-0700 commit=60893d3 verdict=DIRTY findings=6 (1B/2S/3M) report=2026-10-14-2048-bug110-lock-held-tests-now-fail-60893d3.md
+2026-10-14T20:47:02-0700 commit=0f268f5 verdict=DIRTY findings=6 (2B/1S/3M) report=2026-10-14-2047-bug111-repair-dead-links-0f268f5.md
