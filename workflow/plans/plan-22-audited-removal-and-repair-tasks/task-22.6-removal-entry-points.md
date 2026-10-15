@@ -15,8 +15,8 @@ metadata:
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
 > Status: Pending (created in revision round 3, 2026-10-14; revised in round 5, [[#rev-round-5]],
 > round 6, 2026-10-15, [[#rev-round-6]], round 7, 2026-10-15, [[#rev-round-7]], round 8,
-> 2026-10-15, [[#rev-round-8]], round 9, 2026-10-15, [[#rev-round-9]], and round 10,
-> 2026-10-15, [[#rev-round-10]])
+> 2026-10-15, [[#rev-round-8]], round 9, 2026-10-15, [[#rev-round-9]], round 10,
+> 2026-10-15, [[#rev-round-10]], and round 11, 2026-10-15, [[#rev-round-11]])
 > Wave: 1, after 22.2 (it needs the engine, the intent-record form and restore); parallel to
 > 22.5. R4 (the sync edit fix) needs only 16.6's Wave-1 slice and may land first.
 > Depends on: 22.2 (engine, primitives, R4 intent-record form, `removal_restore`), 22.1a
@@ -233,12 +233,13 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
 5. **R5 `vacuum`'s orphan-evidence delete: manifest plus `facts.log` event (d9o).** {#r5}
    - Step 3 first writes a cleanup manifest (R2's form) of every `linkage_evidence` row whose
      entity is gone, with the sidecar rows of each identity, then deletes them, and logs
-     `evidence_orphan_drop{linkage, c_kind, c, e_kind: null, e: null, file, line, detail,
+     `evidence_orphan_drop{linkage, c_kind, c, e_kind, e, file, line, detail,
      dead_entity_id, n, manifest}` events, each built by 16.6's `edge_records.row_event` with
      `c_kind` (this task adds the op to `edge_records.ROW_OPS`;
-     [[task-16.6-learned-row-validation#r1d-one-format]], d9bl; r8 b-1). `linkage` and the
-     concept end are by NAME; the entity has no name left, so its end is null and its dead id and
-     the manifest id are recorded instead. The manifest is written STREAMING (one row at a time
+     [[task-16.6-learned-row-validation#r1d-one-format]], d9bl; r8 b-1). `linkage` and both
+     ends are by NAME: its end is the matched append's `(e_kind, e)`, the old incarnation's
+     name as the append wrote it (d9cc, superseding round 8's null entity end; r11 s-1), and the
+     dead id and the manifest id are recorded beside it. The manifest is written STREAMING (one row at a time
      from the DuckDB cursor, never materialized as a list): on the refmatrix store it holds
      834,201 rows, written inside `_op_vacuum`'s `d._store_lock` hold (r10 m-1).
    - **One keying rule for every orphan, live or dead concept: the orphan's OWN appends (d9bz;
@@ -247,13 +248,34 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
      off that append; it never derives it from the catalog. Per orphan key
      `(linkage, file, line, detail)` ([[#r5-scan]]), the one log scan collects the `evidence`
      appends that match it AND pass the revivable predicate ([[#r5-timeline]], evaluated with
-     `T` = now). The vacuum logs ONE drop per DISTINCT `(partition field, c_kind, c)` among
-     them:
+     `T` = now). The vacuum logs ONE drop per DISTINCT `(partition field, c_kind, c, e_kind,
+     e)` among them. The entity end comes from the append itself (its old incarnation's name).
+     The rebuild matches the drop on the full `edge_records.row_key` plus `detail`, so a drop
+     never touches another entity's copy on the same key (d9cc, superseding d9cb(b); r11 s-1
+     F4):
      - `c_kind` is the append's own; for a LEGACY append (no `c_kind`) it is
        `edge_records.resolve_c_kind(None, c, p, kinds_by_name)` over the kinds LOGGED for `c` in
        `p`, `kinds_by_name` collected by the same scan exactly as Pass 2b builds it, so the
        drop carries the kind a rebuild resolves the append to, by construction (16.6 AC-9d check
-       2 names the scan as a `resolve_c_kind` caller).
+       2 names the scan as a `resolve_c_kind` caller). A legacy append resolved over the kinds
+       logged up to the vacuum can miss a same-name `concept` logged later; accepted as narrow
+       (d9cb(c)): compaction ends legacy appends, and r11 measured 0 drifts over 66,100
+       (cliquedb) and 253,023 (refmatrix) legacy appends, every `evidence` append in both logs.
+     - **A copy a restore re-attached is not revivable (d9cc (ii), superseding d9cb(b)'s
+       live-concept `c`-match, which closed 1 of r11's 4 measured shapes; r11 s-1).**
+       {#r5-reattach-guard} For a matched revivable append whose entity key `(partition,
+       e_kind, e)` is LIVE now, the scan compares two counts. `L` is the number of copies
+       identical to the append (same `linkage`, `c`, `file`, `line`, `detail`) that the live
+       entity of that name holds. `N` is the number of that entity key's matched appends with
+       no tombstone after them. When `L > N`, the surplus copy is one 22.2 R4's `id_map`
+       re-attached in place with no new append ([[task-22.2-repair-then-remove#r4]]): the
+       append is not collected, and it is counted `orphan_drop_reattached` (once per such
+       append) and printed. An orphan key whose every revivable append is re-attached logs no
+       drop and is also counted `orphan_drop_unlogged`. The catalog lookup is bounded by the
+       matched appends (one `linkage_evidence` count per live entity key among them). AC-6b's
+       swapped variant is the guard's boundary (`L = N = 1`: the re-ingested copy has its own
+       untombstoned append, so the T0 append is collected and the drop logged); AC-6e is its
+       firing case.
      - The `partition` field is the append's, exactly as it carries it (present with that value,
        or absent), never the vacuum's binding (r9 m-4): `_log_event` adds no partition
        (`store.py:1119`), a compacted log's appends carry `partition: p` and live-shape appends
@@ -271,7 +293,8 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
        vacuum path; the helper is for a LIVE primitive's row, whose entity end has a name
        ([[task-22.2-repair-then-remove#r3]]).
      - **What logs nothing, counted and printed by `vacuum` (r10 s-1, s-2).** A legacy append
-       that `resolve_c_kind` resolves to None contributes no drop and is counted
+       that `resolve_c_kind` resolves to None (among the revivable appends only; a
+       non-revivable append is never resolved) contributes no drop and is counted
        `orphan_drop_unresolved` (once per such append). An orphan key with NO revivable append
        (no append at all: written with logging off; or only appends whose entity key has no
        tombstone after them: a live holder's row sharing the key, or bug-111's raw-delete
@@ -301,8 +324,8 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
      r10 s-2).** {#r5-timeline} Replay applies the op inside the ONE timestamp-ordered row pass
      of the rebuild, the one replay path (d9av, d9bu; [[task-22.2-repair-then-remove#r3]],
      [[task-16.6-learned-row-validation#r1d]]). `evidence_orphan_drop` at `T` deletes each copy
-     appended at log position `a` at or before `T` whose `(linkage, c_kind, c, file, line,
-     detail)` matches (the concept-side fields of `edge_records.row_key`, plus `detail`) AND
+     appended at log position `a` at or before `T` whose `edge_records.row_key` (both ends by
+     name, plus `file` and `line`) and `detail` match the op's (d9cc; r11 s-1) AND
      whose entity key `(partition, e_kind, e)` has a `tombstone` AFTER `a` and at or before `T`,
      in the row pass's `(ts, log position)` order: the incarnation that appended the copy was
      later purged. The vacuum scan applies the SAME predicate with `T` = now, so a drop is
@@ -328,7 +351,7 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
        other replay path: the incremental path is deleted (16.6 R1f, d9bu; r9 s-2).
    - **The fold (r10 s-3).** 17.4's `scripts/factslog-restore.py` folds `evidence_orphan_drop`
      with the same predicate: it removes, from the evidence count, the copies matching the op's
-     key that were appended at or before it and whose entity key has a `tombstone` after the
+     key (the full `row_key` plus `detail`, entity end included; d9cc) that were appended at or before it and whose entity key has a `tombstone` after the
      copy and at or before the op ([[#files-to-modify]]; AC-6d).
    - `purge_entity` keeps deleting no evidence (round 6 stands; d9bk rejected purge removing
      its own evidence rows, which would widen every purge manifest).
@@ -513,7 +536,7 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
    (`doc` and `code`), so `resolve_c_kind` returns None.
    After `vacuum`: all three rows are gone from `linkage_evidence` and all three are in the
    cleanup manifest; `facts.log` holds exactly ONE `evidence_orphan_drop`, keyed `(c_kind: doc,
-   c: N)` from (a)'s own append; `vacuum` prints `orphan_drop_unlogged: 1` (b) and
+   c: N)` and (a)'s entity end, from (a)'s own append; `vacuum` prints `orphan_drop_unlogged: 1` (b) and
    `orphan_drop_unresolved: 1` (c); nothing raised. Then, on a copy, `N` and (a)'s entity end
    are re-created live by `upsert_entity` (no re-ingest, so no new append) and a rebuild runs:
    it holds no (a) row, equal to live, with `orphan_drop_skipped_live == 0`.
@@ -528,12 +551,50 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
 
    **6d. 17.4's fold equals the rebuild on the new ops (r10 s-3).** 22.6 is the last of 16.6,
    22.2 and 22.6 to land, so it owns the check. `scripts/factslog-restore.py`'s independent
-   fold, run over the facts logs of 22.2 AC-3d, 22.2 AC-3f (all three runs), and AC-6b (base,
-   swapped and partition variants), reports `entities` / `links` / `evidence` counts EQUAL to
+   fold, run over the facts logs of 22.2 AC-3d, 22.2 AC-3f (all three runs), AC-6b (base,
+   swapped and partition variants), 22.2 AC-3's replay fixture (re-point,
+   `learned_provenance_move`, rename) and 22.2 AC-7's merge (r11 s-2), reports `entities` / `links` / `evidence` counts EQUAL to
    `rebuild_index_from_log`'s on a copy of each. Mutations, each FAILS it: "the fold ignores
    `evidence_remove`" (AC-3d's evidence count differs); "the fold ignores
    `evidence_orphan_drop`" (AC-6b's evidence count is one higher); "the fold drops on
-   dead-at-`T`" (the swapped variant's count differs).
+   dead-at-`T`" (the swapped variant's count differs); "the fold keeps a merged rename's links
+   and entity on the old key", spelled as round 10's merge rule, which the fold must not hold
+   (r11 s-2): on `entity_rename{merged}` the fold drops the entity count by one and moves the
+   old key's links (AC-7's `entities` count is one lower than the rebuild's, because the old
+   key's own `tombstone` already removed it); "the fold ignores `entity_rename`" (AC-7's
+   `evidence` count is lower by the moved rows: the unmoved copies sit on the tombstoned old
+   key and count dead). A fold that ignores the rename's `link` / `unlink` pair is not a
+   distinct mutation: the fold applies those events generically, by edge key. The missing
+   events themselves are 22.2 AC-7's mutation (live versus rebuild), since a log without them
+   misleads the fold and the rebuild alike.
+
+   **6e. A restore's re-attached row survives a later vacuum (r11 s-1; d9cc, superseding
+   d9cb(b)).** On a sandbox store: doc `E` holds a `rel:` evidence row to doc `C` (an ingest
+   row, so no `keep_learned` exemption applies); its `evidence` append is `a0`. `rmx untrack`
+   of `E`'s file tombstones `E` and leaves the row orphaned (purge deletes no evidence), and
+   `removal restore` of that manifest re-creates `E` and re-attaches the surviving row in place
+   (22.2 R4's `id_map`, AC-9c's path; no new append). A second entity `X` holds an
+   identical-key row (same `linkage`, `file`, `line`, `detail`) on the SAME concept `C`; it
+   was written with logging off and then raw-deleted, so `X`'s row is an orphan.
+   `vacuum` deletes `X`'s row (in the manifest), logs NO `evidence_orphan_drop`, and prints
+   `orphan_drop_reattached: 1` and `orphan_drop_unlogged: 1` (`a0` is revivable, since `E`'s
+   tombstone follows it, but `E` is live with `L = 1` against `N = 0`). A rebuild on a copy
+   holds `E`'s row once, equal to live, with `orphan_drop_skipped_live == 0`.
+   *Variant:* the same, plus a third entity, doc `X'`, that holds the key on `C` through a LOGGED
+   append `a1` and is then purged with a tombstone (its row orphaned). `vacuum` logs ONE drop,
+   keyed `(…, c_kind: doc, c: C, e_kind: doc, e: X')`, and prints `orphan_drop_reattached: 1`;
+   a rebuild on a copy holds `E`'s row once, equal to live.
+   Mutations, each FAILS it:
+   - "drop without the entity end" (the rebuild matches on the concept side only): the
+     variant's `X'` drop also matches `a0`'s copy, which has `E`'s tombstone after it and
+     before the drop, so the copy loses `E`'s row;
+   - "no `L > N` guard": the base collects `a0` and logs a drop keyed `e: E`, which deletes
+     `a0`'s copy on the rebuild, so the copy loses `E`'s row;
+   - "d9cb(b)'s `c`-match only" (collect when the append's `c` matches the orphan's live
+     concept): `X` shares `C`, so the base collects `a0` exactly as with no guard, and the copy
+     loses `E`'s row.
+   Boundary (AC-6b swapped): mutation "guard on `L >= N`" FAILS AC-6b's swapped variant (the
+   T0 append is not collected, no drop is logged, and the copy holds 2).
 7. **unprotect source (R6).** `rmx unprotect X` logs a `protect` event with `value=false,
    source=user`; a 22.2 restore that re-protects logs `source=removal`; a learn logs
    `source=learner`. Mutation "no source on value=false" FAILS it.
@@ -592,16 +653,16 @@ mutation is pre-registered and must turn its test RED.
 | `src/refmatrix/removal_audit.py` (22.1a's module, which holds `classify_provenance_free`) | selector mode of `removal_audit`; cleanup-manifest writer (R2's form, shared with 22.2 R4) |
 | `src/refmatrix/cli.py` | `forget`, `memory forget`, `memory bulk-forget`: plan without `--confirm`, apply with it, `--yes` refused; `untrack`, `prune-noise --drop`: manifest first |
 | `src/refmatrix/verbs.py` | `memory_forget`, `memory_bulk_forget`: the same plan/confirm contract (MCP parity) |
-| `src/refmatrix/store.py` | `purge_path(..., keep_learned=)`; R3 manifest + row-level removal of learned rows; `vacuum` steps 2-3: the streaming cleanup manifest; the ONE read-only streaming `facts.log` scan over the DISTINCT orphan keys `(linkage, file, line, detail)` ([[#r5-scan]]); `evidence_orphan_drop` (with `c_kind`, through `row_event`) keyed on each orphan's OWN revivable appends, one per distinct `(partition field, c_kind, c)`, a legacy append's kind through `edge_records.resolve_c_kind` over the scan's logged `kinds_by_name`; `orphan_drop_unresolved` and `orphan_drop_unlogged` counted and printed; no `names_from_log` or `_row_op_c_kinds` call ([[#r5-own-appends]]; r10 s-1, m-1; d9bz); `protect` events carry `source`; replay of `evidence_orphan_drop` in the one pass under the revivable predicate (a tombstone of the copy's entity key after the copy and at or before `T`) on per-key `tombstone` timelines, `orphan_drop_skipped_live` per op ([[#r5-timeline]]; r10 s-2) |
-| `src/refmatrix/edge_records.py` | `evidence_orphan_drop` added to 16.6's `ROW_OPS` (the one op with a null entity end) |
-| `scripts/factslog-restore.py` (plan-17 task 17.4's) | `evidence_orphan_drop` added to `FOLD_OPS` with its fold rule (r10 s-3): it removes from the evidence count the copies matching its key (`linkage`, `c_kind`, `c`, `file`, `line`, `detail`, its `partition` field) appended at or before it whose entity key has a `tombstone` after the copy and at or before the op, folded in the same `(ts, log position)` order as the rebuild; AC-6d proves fold == rebuild. In the same commit as the replay branch: 17.4's AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s op set, and an op missing from it fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
+| `src/refmatrix/store.py` | `purge_path(..., keep_learned=)`; R3 manifest + row-level removal of learned rows; `vacuum` steps 2-3: the streaming cleanup manifest; the ONE read-only streaming `facts.log` scan over the DISTINCT orphan keys `(linkage, file, line, detail)` ([[#r5-scan]]); `evidence_orphan_drop` (with `c_kind`, through `row_event`) keyed on each orphan's OWN revivable appends, one per distinct `(partition field, c_kind, c, e_kind, e)` (the entity end from the append; d9cc, r11 s-1), the `L > N` re-attach guard counted `orphan_drop_reattached` ([[#r5-reattach-guard]]), a legacy append's kind through `edge_records.resolve_c_kind` over the scan's logged `kinds_by_name`; `orphan_drop_unresolved` and `orphan_drop_unlogged` counted and printed; no `names_from_log` or `_row_op_c_kinds` call ([[#r5-own-appends]]; r10 s-1, m-1; d9bz); `protect` events carry `source`; replay of `evidence_orphan_drop` in the one pass under the revivable predicate (a tombstone of the copy's entity key after the copy and at or before `T`) on per-key `tombstone` timelines, `orphan_drop_skipped_live` per op ([[#r5-timeline]]; r10 s-2) |
+| `src/refmatrix/edge_records.py` | `evidence_orphan_drop` added to 16.6's `ROW_OPS` |
+| `scripts/factslog-restore.py` (plan-17 task 17.4's) | `evidence_orphan_drop` added to `FOLD_OPS` with its fold rule (r10 s-3): it removes from the evidence count the copies matching its key (`row_key`: `linkage`, `c_kind`, `c`, `e_kind`, `e`, `file`, `line`; plus `detail` and its `partition` field; d9cc) appended at or before it whose entity key has a `tombstone` after the copy and at or before the op, folded in the same `(ts, log position)` order as the rebuild; AC-6d proves fold == rebuild. In the same commit as the replay branch: 17.4's AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s op set, and an op missing from it fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
 | `src/refmatrix/sync.py` | non-GMD edit and existing-unsupported branches call `purge_path(..., keep_learned=True)`; the GMD branch calls `purge_legacy_relpath_doc` behind the narrowed guard (R4) |
 | `src/refmatrix/ingest.py` | the GMD legacy purge twin (`:1179-1180`): R4's GMD rule and guard |
 | `src/refmatrix/ingest_gmd.py` | `--as-memory`: the raw DELETE becomes `purge_entity` with an R2-form manifest for learned rows (R9) |
 | `src/refmatrix/daemon.py` | `forget` / `memory_forget` / `memory_bulk_forget` ops: preview or confirmed manifest only; `untrack` / `prune_noise` ops write the manifest first (R1, R2); `_learn_grep_hits` passes `protect_source='learner'` (R6) |
 | `src/refmatrix/cli.py` (also) | `sync --invalidate` as a re-ingest (R4); `memory forget` without the `_store()` fallback (R1) |
 | `src/refmatrix/store.py` (also) | `entities.protect_source` column + `protect_source` keyword on the protect writers; `dump_catalog_to_log` emits `source` (R6); `purge_legacy_relpath_doc` (R4) |
-| `tests/test_removal_entry_points.py` (new) | AC-1..AC-9, AC-6b (base, swapped, today's-shape and partition variants), AC-6c (and its kind variant), AC-6d (fold == rebuild over 22.2 AC-3d/3f and AC-6b's logs), AC-9b, AC-9c |
+| `tests/test_removal_entry_points.py` (new) | AC-1..AC-9, AC-6b (base, swapped, today's-shape and partition variants), AC-6c (and its kind variant), AC-6d (fold == rebuild over 22.2 AC-3, AC-3d/3f, AC-7 and AC-6b's logs), AC-6e (and its variant), AC-9b, AC-9c |
 | `tests/test_learned_evidence.py` (16.6's) | 16.6 AC-11's test is REWRITTEN by this task (r4 m-5): from R3/R5 on, `purge_path` of a missing file and `vacuum` move the sidecar row into a manifest (AC-4, AC-6) instead of leaving it; AC-11 keeps only its `orphaned_provenance` count for paths this task does not route |
 
 ## Revision round 3 (2026-10-14) {#rev-round-3}
@@ -716,7 +777,29 @@ clean). Measurements cited are the report's (`scan.py`, `keyload.log`, `revive.p
 | r10 s-3 (the `FOLD_OPS` row named no fold rule; nothing compared the fold with the rebuild) | [[#r5]] "The fold"; [[#files-to-modify]] `scripts/factslog-restore.py` row states the rule; new AC-6d (fold counts == rebuild counts on 22.2 AC-3d/3f and AC-6b's logs, three mutations) |
 | r10 m-1 (scan key and load shape unnamed) | [[#r5-scan]]: lookup key `(linkage, file, line, detail)`, DISTINCT keys loaded (371 MiB vs 1.0 GiB measured), timelines and `kinds_by_name` in the same pass; [[#r5]] manifest written streaming (834,201 rows on refmatrix) |
 | r10 m-2 (the helper's `n` for an orphan) | the "helper's `concept` pair always has `n = 0`" sentence deleted with the live-concept bullet; the partition and "identical" definitions are in [[task-22.2-repair-then-remove#r3]] |
+| d9cb (a) per-op `skipped_live`; (b) re-attach guard; (c) legacy drift accepted; (d) helper raises on an orphan (cited in round 11, r11 m-1) | (a) [[#r5-timeline]]; (b) SUPERSEDED by d9cc: [[#r5-reattach-guard]] per r11 s-1; (c) the `c_kind` bullet of [[#r5-own-appends]] (0 drifts over 66,100 + 253,023 legacy appends, r11); (d) [[task-22.2-repair-then-remove#r3]] |
 
 rel: amends -> [[bsd-plan16-22-spec-diffcheck-r10-451b505]]
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 rel: depends-on -> [[task-17.4-factslog-backup-snapshot#r6-restore]]
+
+## Revision round 11 (2026-10-15) {#rev-round-11}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r11-d8188ee]] where it touches 22.6 (s-1, s-2(iii),
+m-1, m-2) under d9cc ([[plan-review-2026-10-14#t12-approvals]]; PROVISIONAL until its ch-bsd
+loop is clean), which SUPERSEDES d9cb(b). Measurements cited are the report's (`ownapp.py`,
+`reattach_model.py`; fixtures F1-F4, L1-L3). `src/` unchanged since `23ad703`. Later rows win
+over round 10.
+
+| finding / decision | answered in |
+|---|---|
+| r11 s-1(i) / d9cc (i) (the drop's key too coarse on the entity: a correctly logged drop deleted a re-attached holder's copy, F4) | [[#r5]] event spelled with `e_kind, e` (the matched append's entity end; "its end is null" removed); [[#r5-own-appends]] one drop per distinct `(partition field, c_kind, c, e_kind, e)`; [[#r5-timeline]] and "The fold" match the full `row_key` plus `detail`; [[#files-to-modify]] `store.py`, `edge_records.py` ("null entity end" removed; 16.6's `ROW_OPS` wording matches, [[task-16.6-learned-row-validation#rev-round-11]]) and `factslog-restore.py` rows |
+| r11 s-1(ii) / d9cc (ii) (d9cb(b)'s live-concept `c`-match closed F1 only; F2 is 47,118 of refmatrix's 55,242 live-holder appends) | [[#r5-reattach-guard]]: `L > N` guard, `orphan_drop_reattached` counted and printed, the all-re-attached key counted `orphan_drop_unlogged`; AC-6b swapped named as the `L = N` boundary |
+| r11 s-1(iii) / d9cc (iii) (AC-9c and AC-6 never met in one fixture) | new AC-6e (base, variant, the three mutations, each traced to the copy that is lost) + boundary mutation "guard on `L >= N`" on AC-6b swapped; [[#files-to-modify]] tests row; plan-22 d-30 |
+| r11 s-2(iii) (AC-6d held no rename or re-point log) | AC-6d fixtures add 22.2 AC-3's replay fixture and AC-7's merge. The prescribed mutation "the fold keeps a merged rename's links on the old key" is spelled as round 10's merge rule (entity count dropped by one, links moved), because a fold that only skips the rename's `link` / `unlink` pair is no mutation: it applies those events by edge key, and 17.4's fold counts an edge only when both ends are alive, so links left on the tombstoned old key never count. Traced: the merge rule makes AC-7's `entities` one lower. Added "the fold ignores `entity_rename`" (AC-7's `evidence` lower). The missing `link` / `unlink` events are caught live-vs-rebuild in 22.2 AC-7 ([[task-22.2-repair-then-remove#rev-round-11]]) |
+| r11 m-1 (d9cb not cited; (c) not noted) | [[#rev-round-10]] d9cb row; [[#r5-own-appends]] `c_kind` bullet notes d9cb(c) accepted as narrow with r11's 0-drift measurement |
+| r11 m-2 ("unresolved" ambiguous about the revivable filter) | [[#r5-own-appends]] "What logs nothing": among the revivable appends only |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r11-d8188ee]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+rel: depends-on -> [[task-22.2-repair-then-remove#r4]]

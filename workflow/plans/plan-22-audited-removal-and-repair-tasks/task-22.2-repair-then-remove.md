@@ -14,7 +14,7 @@ metadata:
 # Task 22.2: the repair-then-remove engine {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 10, 2026-10-15; [[#rev-round-10]]; round 9 in [[#rev-round-9]]; round 8 in [[#rev-round-8]]; round 7 in [[#rev-round-7]], round 6 in
+> Status: Pending (revision round 11, 2026-10-15; [[#rev-round-11]]; round 10 in [[#rev-round-10]]; round 9 in [[#rev-round-9]]; round 8 in [[#rev-round-8]]; round 7 in [[#rev-round-7]], round 6 in
 > [[#rev-round-6]], round 5
 > in [[#rev-round-5]], round 3 in [[#rev-round-3]])
 > Wave: 1, after 22.1a (#t8-wave1).
@@ -85,7 +85,10 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
      and moves the identity's sidecar rows to the new `line`.
    - `rename_entity(kind, old, new)` — for an in-store `orphan-root` repair. **Merge on collision:**
      when `(partition, kind, new)` exists (`UNIQUE(partition, kind, name)`), the old entity's
-     evidence rows and links re-attach to the existing entity, `protected` becomes the max of the
+     evidence rows and links re-attach to the existing entity. Each re-attached link logs
+     `unlink` of its old key and `link` of its new key through `edge_records.edge_event` (with
+     `c_kind`), so the LWW pass moves it on a rebuild; `entity_rename` replays evidence only
+     ([[#r3]]; r11 s-2, d9cc). `protected` becomes the max of the
      two, every re-attached evidence identity's sidecar rows move to the new `entity_id`, and the
      old entity is purged only once it has no link left.
    - **Link and entity removal.** A `mentions` link is unlinked (existing `unlink` event) only
@@ -223,7 +226,10 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
        `evidence_unresolved`, and, for the row ops, 16.6's one `row_skips` dict (through
        `Store._row_skip`), rebuild-only (d9bu).
    - On replay, `evidence_repoint` and `entity_rename` move only `linkage_evidence` rows; the
-     sidecar keys move only from their own `learned_provenance_move` events. `evidence_remove`
+     sidecar keys move only from their own `learned_provenance_move` events. A merged rename's
+     links move only through their own `unlink` / `link` events ([[#r2]]) and the old entity
+     leaves only through its own `tombstone` (`_bulk_purge_ids`), so `entity_rename` itself
+     moves neither (r11 s-2). `evidence_remove`
      also removes the identity's sidecar rows (16.6 R1d).
    - **No op keyed by id, ever (r6 b-1, d9aq).** The dangling removal of [[#r9]] adds NO op. It
      logs only existing, name-keyed events: `tombstone{kind, name}` and `unlink{linkage, c_kind,
@@ -841,6 +847,13 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
 7. **Rename merge.** Renaming onto an existing name merges: one entity remains, it carries both
    entities' evidence and links, `protected` is the max, every moved evidence row's sidecar rows
    join it under the new `entity_id`, and an `entity_rename{merged:true}` event is logged.
+   Each re-attached link logs `unlink` of its old key and `link` of its new key (with `c_kind`),
+   and `rebuild_index_from_log` on a copy equals live by name on `entities`, `entity_links` and
+   `linkage_evidence` (r11 s-2); the fixture's old entity links at least one concept the
+   surviving entity does not. Mutation "re-attach links without logging `unlink` / `link`"
+   FAILS it: the old key's latest event is still `link`, its entity is tombstoned, so the
+   rebuild skips those links as dead (`links_skipped_dead` > 0) and holds none of them on the
+   surviving key, while live holds every one.
 8. **Two partitions (22 #s-1).** With a competitor that binds the store's other partition between
    batches, 0 rows of the other partition change (recorder + row diff). Mutation: binding once
    before the loop must FAIL.
@@ -886,9 +899,9 @@ r6 m-7: this task's own file list (symbols read at `3d3c798`).
 
 | File | Change |
 |------|--------|
-| `src/refmatrix/store.py` | the R2 primitives (`remove_evidence(..., ingest_ok=)`, `repoint_evidence`, `rename_entity`) and R2's concept-side evidence rule before a purge; `remove_dangling_links` and `remove_dangling_evidence` (R9, built on `_clear_purged_bits`; reborn and per-`link`-key partition rules, r7); the R3 ops in `rebuild_index_from_log`'s one timestamp-ordered row pass (no `_apply_event_body` branch: 16.6 R1f deletes it, d9bu) (16.6 R1d builds the pass; d9av); R4's restore of `link_row` / `evidence_row` with the dead-id re-check and the `id_map` re-attach (r7 s-1, s-2); `Store._row_op_c_kinds`, the one helper naming a live primitive's op `(c_kind, keep)` pairs (r9 m-1, m-2), and every row-op event through `row_event` / every `unlink` through `edge_event` with `c_kind` (r8 b-1) |
+| `src/refmatrix/store.py` | the R2 primitives (`remove_evidence(..., ingest_ok=)`, `repoint_evidence`, `rename_entity`, whose merge logs `unlink` / `link` per re-attached link, r11 s-2) and R2's concept-side evidence rule before a purge; `remove_dangling_links` and `remove_dangling_evidence` (R9, built on `_clear_purged_bits`; reborn and per-`link`-key partition rules, r7); the R3 ops in `rebuild_index_from_log`'s one timestamp-ordered row pass (no `_apply_event_body` branch: 16.6 R1f deletes it, d9bu) (16.6 R1d builds the pass; d9av); R4's restore of `link_row` / `evidence_row` with the dead-id re-check and the `id_map` re-attach (r7 s-1, s-2); `Store._row_op_c_kinds`, the one helper naming a live primitive's op `(c_kind, keep)` pairs (r9 m-1, m-2), and every row-op event through `row_event` / every `unlink` through `edge_event` with `c_kind` (r8 b-1) |
 | `src/refmatrix/edge_records.py` | `evidence_remove` and `evidence_repoint` added to 16.6's `ROW_OPS`, built by `row_event` (r8 b-1, d9bl); `_LEGACY_PREFERRED_KIND` renamed to the public `LEGACY_PREFERRED_KIND` (read by `resolve_legacy_kind` and by `Store._row_op_c_kinds`, r9 m-1) |
-| `scripts/factslog-restore.py` (plan-17 task 17.4's) | `evidence_remove`, `evidence_repoint`, `entity_rename` added to `FOLD_OPS`, each with its stated fold rule (r10 s-3), folded in the rebuild's `(ts, log position)` order: `evidence_remove` reduces the copies of its key (`row_key` plus `detail`, in its `partition` field) appended at or before it to its `keep`; `evidence_repoint` is count-neutral (it moves a copy's `file` / `line`, the evidence count is unchanged) and is named in `FOLD_OPS` as ignored for the counts; `entity_rename` renames the entity key in the fold's name map and, when `merged` is true (the [[#r2]] collision), merges the two keys as `rename_entity` does: the entity count drops by one once the old key has no link left, and its links and evidence count under the surviving key. 22.6 AC-6d proves the fold's counts equal the rebuild's on AC-3d's and AC-3f's logs ([[task-22.6-removal-entry-points#acceptance]]). In the same commit as the replay branch: 17.4's AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s op set, and an op missing from it fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
+| `scripts/factslog-restore.py` (plan-17 task 17.4's) | `evidence_remove`, `evidence_repoint`, `entity_rename` added to `FOLD_OPS`, each with its stated fold rule (r10 s-3), folded in the rebuild's `(ts, log position)` order: `evidence_remove` reduces the copies of its key (`row_key` plus `detail`, in its `partition` field) appended at or before it to its `keep`; `evidence_repoint` is count-neutral (it moves a copy's `file` / `line`, the evidence count is unchanged) and is named in `FOLD_OPS` as ignored for the counts; `entity_rename` renames the entity key in the fold's name map and, when `merged` is true (the [[#r2]] collision), moves the old key's evidence copies to the surviving key (count-neutral for `evidence`); links follow their own `unlink` / `link` events and the entity count follows the old key's own `tombstone`, so the rename itself changes neither (r11 s-2, d9cc: evidence moves; links and entities follow their own events). 22.6 AC-6d proves the fold's counts equal the rebuild's on AC-3's, AC-3d's, AC-3f's and AC-7's logs ([[task-22.6-removal-entry-points#acceptance]]). In the same commit as the replay branch: 17.4's AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s op set, and an op missing from it fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
 | `src/refmatrix/removal_apply.py` (new) | the R6 batch loop over `bounded_steps` (incl. the per-partition and `none` batches), R4's intent log and restore, R7's gate, R5's attribution incl. [[#r5-grep-record]] |
 | `src/refmatrix/verbs.py` | `removal_apply`, `removal_restore` (R8); `mcp.py` generates their tools from `verbs.VERBS` |
 | `src/refmatrix/daemon.py` | the apply and restore ops under the writer lock (R6, R8) |
@@ -1083,3 +1096,17 @@ win over round 9.
 rel: amends -> [[bsd-plan16-22-spec-diffcheck-r10-451b505]]
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 rel: depends-on -> [[task-17.4-factslog-backup-snapshot#r6-restore]]
+
+## Revision round 11 (2026-10-15) {#rev-round-11}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r11-d8188ee]] where it touches 22.2 (s-2 (i), (ii))
+under d9cc ([[plan-review-2026-10-14#t12-approvals]]; PROVISIONAL until its ch-bsd loop is
+clean). `src/` unchanged since `23ad703`. Later rows win over round 10.
+
+| finding / decision | answered in |
+|---|---|
+| r11 s-2(i) / d9cc (a merged rename's re-attached links had no event; R3 replays only evidence) | [[#r2]] `rename_entity`: each re-attached link logs `unlink` (old key) and `link` (new key) through `edge_event` with `c_kind`; [[#r3]] "On replay": links and the old entity follow their own events; AC-7 adds live == rebuild by name and the mutation "re-attach links without logging `unlink` / `link`" (traced: the rebuild dead-skips the old key's links); [[#files-to-modify]] `store.py` row |
+| r11 s-2(ii) (the `entity_rename` fold rule claimed links and an entity-count drop the rebuild does not make) | [[#files-to-modify]] `scripts/factslog-restore.py` row: "evidence moves; links and entities follow their own events"; 22.6 AC-6d runs over AC-3's and AC-7's logs ([[task-22.6-removal-entry-points#rev-round-11]]) |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r11-d8188ee]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]

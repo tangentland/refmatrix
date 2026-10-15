@@ -14,7 +14,9 @@ metadata:
 # Task 16.6: the learned-evidence sidecar, its verifier, read-time marks and the backfill {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision round 10, 2026-10-15, answering the r10 diff check
+> Status: Pending (revision round 11, 2026-10-15, answering the r11 diff check
+> `bsd-plan16-22-spec-diffcheck-r11-d8188ee` s-1(i) and d9cc, [[#rev-round-11]]; revision round
+> 10, 2026-10-15, answering the r10 diff check
 > `bsd-plan16-22-spec-diffcheck-r10-451b505` s-1 (AC-9d check 2), s-3, m-3 and d9bz,
 > [[#rev-round-10]]; revision round 9, 2026-10-15, answering the r9 diff check
 > `bsd-plan16-22-spec-diffcheck-r9-29e335a` s-2, m-1, m-5 and d9bu, [[#rev-round-9]]; revision
@@ -61,6 +63,20 @@ rel: motivates -> [[task-22.2-repair-then-remove]]
 rel: motivates -> [[task-22.3-bug-086-global-repair]]
 rel: specifies -> [[task-22.1-audit-classes#r1-verify]]
 rel: related-to -> [[task-23.4-option-a-measurement]]
+
+## Revision round 11 (2026-10-15) {#rev-round-11}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r11-d8188ee]] where it touches 16.6 (s-1(i), the
+`ROW_OPS` wording) under d9cc ([[plan-review-2026-10-14#t12-approvals]]; PROVISIONAL until its
+ch-bsd loop is clean; d9cc SUPERSEDES d9cb(b)). `src/` unchanged since `23ad703`. Later rows win
+over round 10.
+
+| finding / decision | answered in |
+|---|---|
+| r11 s-1(i) / d9cc (the drop carries the matched append's entity end; the rebuild matches the full `row_key` plus `detail`) | [[#r1d-one-format]] "Spelling": "the one op whose entity end is null" removed, `row_event` raises on a None entity end for every op; "Key": `evidence_orphan_drop` matches the full `row_key` plus `detail` ("concept-side fields only" removed); AC-9d's builder clause raises on `e=None` for every op |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r11-d8188ee]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Revision round 10 (2026-10-15) {#rev-round-10}
 
@@ -422,16 +438,17 @@ with no event is wiped by every `rmx rebuild-index` and every `rebuild_index` da
       an `op` not in `ROW_OPS` and on an empty `c_kind` (a row op is never written without
       `c_kind`). `edge_event` is not used for them: it accepts only `EDGE_OPS`. This slice puts
       `learned_provenance` and `learned_provenance_move` in `ROW_OPS`; 22.2 adds
-      `evidence_remove` and `evidence_repoint`; 22.6 adds `evidence_orphan_drop`, the one op
-      whose entity end is null (its entity has no name left; `row_event` allows `e_kind = e =
-      None` for that op only). `entity_rename{kind, from, to, merged}` names no edge and stays
+      `evidence_remove` and `evidence_repoint`; 22.6 adds `evidence_orphan_drop`, which carries the
+      matched append's entity end `(e_kind, e)` like every other row op (d9cc, r11 s-1: the
+      append that wrote the copy names its entity by name, so no row op has a null entity end
+      and `row_event` raises on `e_kind` or `e` None for every op). `entity_rename{kind, from, to, merged}` names no edge and stays
       outside `ROW_OPS`. A name-keyed `unlink` (22.2 R9) is an `EDGE_OPS` event, built by
       `edge_event("unlink", …)` with a non-empty `c_kind`.
     - *Key.* `edge_records.row_key(ev) -> (linkage, c_kind, c, e_kind, e, file, line)`, the ONE
       identity the row pass matches an op against the appends with, and the identity
       `add_learned_provenance` / `move_learned_provenance` name. An op that also matches on
-      `detail` (`evidence_remove`, `evidence_orphan_drop`) compares it in addition;
-      `evidence_orphan_drop` compares the concept-side fields only. The rebuild's link LWW key
+      `detail` (`evidence_remove`, `evidence_orphan_drop`) compares the full `row_key` plus
+      `detail` (d9cc: a drop never touches another entity's copy on the same key). The rebuild's link LWW key
       stays `(partition, linkage, c_kind, c, e_kind, e)`, Pass 2's, which is `row_key`'s first
       five fields.
     - *Resolver.* Rebuild: Pass 2b's per-event rule is extracted into ONE function,
@@ -977,7 +994,7 @@ wave order (`#t10-waves`).
 
    **9d. One spelling, one key, one resolver, one counter (d9bl; r8 b-1, m-1).**
    - *The builder.* `row_event` raises on `op="link"` (not a row op), on `c_kind=None` and on
-     `c_kind=""`, and on `e=None` for any op but `evidence_orphan_drop`; it returns the
+     `c_kind=""`, and on `e=None` for every op, `evidence_orphan_drop` included (d9cc); it returns the
      `edge_fields` order for each op in `ROW_OPS`.
    - *Pass 2b feeds the row pass.* A sandbox log holds a LEGACY `evidence` append (no `c_kind`)
      for `(mentions, query/P, F, 12)`, written as a pre-0.78.3 log would hold it, followed by
