@@ -12,7 +12,8 @@ metadata:
 
 # Plan 17: nightly store maintenance from the hub {#root}
 
-> Status: DRAFTING, revision round 6 after the 0e77da3 re-review ([[#rev-round-6]]); revision
+> Status: DRAFTING, revision round 7 after the 331b414 re-review ([[#rev-round-7]]); revision
+> round 6 after the 0e77da3 re-review ([[#rev-round-6]]); revision
 > round 5 after the 878647c re-review and d9z ([[#rev-round-5]]);
 > revision round 3 after the 6091648 re-review ([[#rev-round-3]]); round 2 after
 > the 32dde06 re-review and #t9 ([[#rev-round-2]]); first
@@ -28,6 +29,7 @@ rel: related-to -> [[project_bus_retention_global_queues]]
 rel: derives-from -> [[plan-review-2026-10-14#t3]]
 rel: derives-from -> [[plan-review-2026-10-14#t8]]
 rel: derives-from -> [[bsd-plan17-spec-review-3104a81]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414]]
 rel: derives-from -> [[bsd-decision-log-review-a192ba2]]
 rel: depends-on -> [[plan-23-bounded-write-harness]]
 rel: related-to -> [[exploration-storage-concurrency-redesign#option-a]]
@@ -162,8 +164,8 @@ rel: depends-on -> [[task-23.2-lock-hold-fixture]]
 |---|---|---|---|
 | 17.1 | `vectors_maintain` + `vectors_restore` daemon ops, verbs, CLI/MCP, on 23.1's `bounded_steps` with `bind(partition_name)`: whole-catalog orphans with a ratio cap that skips only the reap and a `--confirm-orphans <sha>` release, orphan list with vectors, tagged rollback point, fingerprint gate before any cleanup, every partition by name, lock-free single-flight, a `runs.jsonl` ledger, no in-process fallback, no-match delete filter, reader retry | `older_than_s=0` → versions 1; default 24 h keeps a fresh version; forced mismatch → restored, old versions on disk; cross-partition entity's vector survives; capped dataset still compacts, a confirmed per-dataset sha reaps the confirmed ids still orphaned and leaves new ones to the cap; reap → restore round-trips, by same id and by `id_map` to new ids; competitor wins between datasets, `hold_s` per dataset; a reader opened before the pass scans to the end; a no-match re-sync commits 0 versions; pre-registered mutations FAIL | 23.0, 23.2, 23.1 |
 | 17.2 | hub maintenance thread with its own `maintenance_steps`: 03:30 + catch-up, injected roots and clock, serial with per-store budget, `retries=0`, still-running vs failed with a `stuck` ceiling, (store, step) stamps, per-step `requires_arming`, the `hub_maintain_arm` verb gated by a hand-run `run_id`, summary | one run per scheduled day; catch-up exactly once; alert interval ≤ 0 still maintains; an unarmed step that requires arming dry-runs, one that does not runs; the backup runs first and a blocked step does not stop later ones; a stale backup alerts once; a blocking op is received once and becomes `stuck` on the second budget while the next store runs; arm refused without a matching hand run; zero connects outside the sandbox; pre-registered mutations FAIL | 17.1, 23.0 |
-| 17.3 | fleet rollout over the 8 registered daemons: dry run, backup, hand run, user-confirmed orphan release, arm by `run_id`, Time Machine exclusion after the first backup copy; measure on a synthetic ≥ 30k-version clone; docs | before/after table per store; latency ratio ≤ 1/5 and a 0-version no-match re-sync on the synthetic clone; holds < 60 s; one night observed; backups removed only after the user confirms | 17.1, 17.2, 17.4 deployed |
-| 17.4 | `factslog_backup` step on 17.2's `maintenance_steps` (`requires_arming=False`): once-a-day copy of `facts.log` to `backups/facts.log.daily` (+ `.prev`), lock-free from an open descriptor, skipped when unchanged; the live log is then excluded from Time Machine (added 2026-10-14, user) | one copy per injected day; the copy equals the old inode's prefix under a concurrent compaction; replays to the source catalog's state; still copies while `vectors_maintain` blocks; stale alert; restore: a damaged log under a healthy catalog is a forced compaction, a lost catalog with an intact live log is rebuilt from the LIVE log (nothing lost), a lost catalog and log is rebuilt from the copy, verified and promoted, and the daemon then holds the copy's learned rows; the daemon refusal and a read-only catalog probe come first; unchanged = untouched; loud non-destructive failure; runs unarmed, single-flight, ledger line; pre-registered mutations FAIL | 17.2, 23.0 |
+| 17.3 | fleet rollout over the 8 registered daemons: dry run, backup, hand run, user-confirmed orphan release, arm by `run_id`, Time Machine exclusion after the first backup copy; measure on a synthetic ≥ 30k-version clone; docs | before/after table per store; latency ratio ≤ 1/5 and a 0-version no-match re-sync on the synthetic clone; holds < `HEARTBEAT_STALE_S − 2 × HEARTBEAT_INTERVAL_S` (50 s; round 7); one night observed; backups removed only after the user confirms | 17.1, 17.2, 17.4 deployed |
+| 17.4 | `factslog_backup` step on 17.2's `maintenance_steps` (`requires_arming=False`): once-a-day copy of `facts.log` to `backups/facts.log.daily` (+ `.prev`), lock-free from an open descriptor, skipped when unchanged; the live log is then excluded from Time Machine (added 2026-10-14, user) | one copy per injected day; the copy equals the old inode's prefix under a concurrent compaction; replays to the source catalog's state; still copies while `vectors_maintain` blocks; stale alert; restore: a damaged log under a healthy catalog is a forced compaction, a lost catalog with an intact, parsing live log is rebuilt from the LIVE log (nothing lost; the copy only if that rebuild fails verification), a lost catalog with a lost or unparseable log is rebuilt from the copy, verified and promoted, and the daemon then holds the copy's learned rows; the daemon refusal and a read-only catalog probe come first; unchanged = untouched; loud non-destructive failure; runs unarmed, single-flight, ledger line; pre-registered mutations FAIL | 17.2, 23.0 |
 
 rel: specifies -> [[task-17.4-factslog-backup-snapshot]]
 
@@ -300,7 +302,11 @@ the third restore scenario. Original text kept as history.
    - **The call.** After `removal_restore` re-inserts the entities by name and they have NEW
      ids, it builds `id_map = {old_id: new_id}` from the manifest's `old_id` and the restored
      rows, and calls `vectors_restore("removal/<apply_id>.vectors.jsonl", id_map=id_map,
-     invoked_by="removal_restore")` in-process (nm17-r6-1) with no 23.1 `bind` held (restore takes its own per-dataset `bind`, 17.1 R10; the lock is not
+     invoked_by="removal_restore")` in-process (nm17-r6-1). **Round 7 (nm17-r7-2): the
+     in-process entry point is the op function, `_op_vectors_restore(d, {"orphan_file": …,
+     "id_map": …}, in_process_caller="removal_restore")`, not the verb** (a verb is a socket
+     client of the same daemon; 17.1 R1), and the closed-set check is in the op; 22.2 R4's
+     "verb" wording is plan-22's to align. The call is made with no 23.1 `bind` held (restore takes its own per-dataset `bind`, 17.1 R10; the lock is not
      re-entrant). `present` means a newer vector already exists and wins; `dim` (the dataset's
      dimension changed since the removal) cannot be restored from the file and is re-embedded;
      `absent` cannot happen after a successful re-insert and is reported as an error, not
@@ -404,3 +410,15 @@ history.
 | nm17-r6-1 (item 3 trails plan-22; `invoked_by` has no value for 22.2's in-process call) | [[#open-after-revision]] 3 (WRITTEN, both sides; the call carries `invoked_by="removal_restore"`), [[task-17.1-vectors-maintain-op#rev-round-6]]; 22.2 R4 names the value (plan-22's file, not edited here) |
 | nm17-r6-2 (R9's no-match filter misses the single-id delete the memory bridge now uses) | [[task-17.1-vectors-maintain-op#rev-round-6]] |
 
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Source: [[bsd-plan23-17-spec-rereview-r7-331b414]] (plan-17: 0 BULLSHIT, 0 SKETCHY, 3 MEH;
+round 6: 3 of 3 closed). The user bounded the holds per the report (nm17-r7-3: "≤ 50 s or
+30 s", citing the coupling); this revision takes the watchdog-derived 50 s. Code facts re-read
+at HEAD `77ac38f`. The round-6 table above is unchanged history.
+
+| finding / decision | answered at |
+|---|---|
+| nm17-r7-1 (17.4 AC-9's second (c) run is class (b); the fallback unreachable; the lock discriminator; the ART-index precedent) | [[#tasks]] 17.4 row, [[task-17.4-factslog-backup-snapshot#rev-round-7]], [[task-17.3-fleet-rollout#rev-round-7]] (runbook text) |
+| nm17-r7-2 (`removal_restore`'s entry point unnamed; the verb is a socket client of its own daemon) | [[task-17.1-vectors-maintain-op#rev-round-7]]; 22.2 R4's "calls the verb in-process" wording is plan-22's to align |
+| nm17-r7-3 (17.3's < 60 s bound equals the heartbeat-stale threshold) | [[#tasks]] 17.3 row, [[task-17.3-fleet-rollout#rev-round-7]], [[task-17.1-vectors-maintain-op#rev-round-7]] (alarm default); the reads' wait on the lock itself is plan-23's (d9az, [[task-23.5-read-path-and-holder-bounds]]) |

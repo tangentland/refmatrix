@@ -13,7 +13,8 @@ metadata:
 # Task 17.1: the `vectors_maintain` and `vectors_restore` ops {#root}
 
 > Plan: [plan-17-nightly-store-maintenance](../plan-17-nightly-store-maintenance.md)
-> Status: Pending (revision round 6, 2026-10-15: re-review [[bsd-plan23-17-spec-rereview-r6-0e77da3]]
+> Status: Pending (revision round 7, 2026-10-15: re-review [[bsd-plan23-17-spec-rereview-r7-331b414]]
+> (nm17-r7-2, and nm17-r7-3's alarm default); see [[#rev-round-7]]. Revision round 6, 2026-10-15: re-review [[bsd-plan23-17-spec-rereview-r6-0e77da3]]
 > (nm17-r6-1, nm17-r6-2); see [[#rev-round-6]]. Round 5, 2026-10-14: re-review
 > [[bsd-plan23-17-spec-rereview-r4-878647c]] (ns17-r4-1 with d9z option a, nm17-r4-1); see
 > [[#rev-round-5]]. Round 3: [[#rev-round-3]].
@@ -43,6 +44,9 @@ rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#nm17-r4-1]]
 rel: implements -> [[plan-review-2026-10-14#t11-approvals]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3#nm17-r6-1]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3#nm17-r6-2]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414#nm17-r7-2]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414#nm17-r7-3]]
+rel: related-to -> [[feedback_daemon_call_retries_multiply_timeouts]]
 
 ## Why {#why}
 
@@ -83,7 +87,8 @@ vector of an entity that lives in another partition or kind. This task does not 
      (below), never by a surface caller: the CLI options and the MCP tool schema do not expose
      it. What a surface caller passes is everything before the `*`. The ONE in-process caller
      with no adapter, plan-22's `removal_restore`, passes `orphan_file`, `id_map` AND
-     `invoked_by="removal_restore"` itself (R10, d9z; nm17-r6-1; 22.2 R4 names the value).
+     `invoked_by="removal_restore"` itself (R10, d9z; nm17-r6-1; 22.2 R4 names the value),
+     through the op FUNCTION, not the verb (below, nm17-r7-2).
    - `older_than_s` is the d-2 window, env-overridable by `RMX_MAINTAIN_OLDER_THAN_S`; the
      production default is 86400.
    - `partition=None` means EVERY partition directory under `<root>/vectors/` (today
@@ -100,11 +105,26 @@ vector of an entity that lives in another partition or kind. This task does not 
      adapter, not by the caller: the CLI adapter passes `"cli"`, the MCP adapter `"mcp"`, 17.2
      `"hub"` (nm17-r3-2; it replaces round 2's `"hand"` default, which every surface inherited).
      **`"removal_restore"` is the in-process caller value (nm17-r6-1):** 22.2's `removal_restore`
-     runs inside the daemon and calls the `vectors_restore` verb in-process (no adapter), so it
-     passes this value itself; it is valid for `vectors_restore` only. The verb layer checks the
-     value against this closed set (`vectors_maintain`: `cli` / `mcp` / `hub`;
-     `vectors_restore`: those plus `removal_restore`) and raises `ValueError` naming the value
-     otherwise, so no caller can invent one. It is recorded in the run ledger (R12); a "hand run"
+     runs inside the daemon, so it passes this value itself; it is valid for `vectors_restore`
+     only.
+   - **The in-process entry point is the op function, called directly (nm17-r7-2).**
+     `removal_restore` calls `_op_vectors_restore(d, args, *, in_process_caller=
+     "removal_restore")` on its own `Daemon` object, NOT the `vectors_restore` verb: every verb
+     reaches the daemon through `daemon_mod.call` (`verbs.py:208-215`), which from inside a
+     daemon op is a socket round trip into the same daemon, takes a second pool worker, and is
+     bounded only by `daemon.call`'s timeout × (retries + 1)
+     (`feedback_daemon_call_retries_multiply_timeouts`). The call is made OUTSIDE any
+     `_store_lock` hold of the caller: the op's `bounded_steps` takes the lock per step through
+     `bind`, and `_FairLock` is not re-entrant.
+   - **The closed-set check lives in the OP, so both paths run it (nm17-r7-2).** The verb
+     forwards `invoked_by` in the op's `args` unchanged. `_op_vectors_maintain` /
+     `_op_vectors_restore` check it: from the wire (`args["invoked_by"]`) the allowed set is
+     `cli` / `mcp` / `hub` for both ops; `removal_restore` is accepted ONLY through the
+     keyword-only `in_process_caller` argument, which the socket dispatcher (`OPS` handlers are
+     called as `handler(d, args)`) can never pass. Anything else raises `ValueError` naming the
+     value, so no caller, in-process or on the socket, can invent a value or claim
+     `removal_restore` over the wire. The verb layer keeps its own early check of the same
+     wire set (a faster error), but the op's check is the authority. It is recorded in the run ledger (R12); a "hand run"
      below means `invoked_by` in `{"cli", "mcp"}`, so a `removal_restore` line is never a hand
      run.
    - The CLI calls the daemon only. When `daemon_mod.ping(root)` fails it exits non-zero with
@@ -150,8 +170,12 @@ vector of an entity that lives in another partition or kind. This task does not 
      `batch_transaction` (23.1 R3.7's boundary); recovery from a crash mid-step is the tag
      (R2 b) plus the orphan list (R6), which is why `bounded_steps` (no durability claim) fits.
    - Every hold's seconds come from `RunResult.hold_s` (23.1 R1.5): `hold_s[i]` is dataset `i`'s
-     hold, and R7 reports it per dataset. A hold over `RMX_MAINTAIN_HOLD_S` (default 60) is the
-     23.1 hold alarm: a warning in the report and `rmxd.log`, never a stop.
+     hold, and R7 reports it per dataset. A hold over `RMX_MAINTAIN_HOLD_S` is the 23.1 hold
+     alarm: a warning in the report and `rmxd.log`, never a stop. Its default is no longer a
+     flat 60 (nm17-r7-3): it is `HEARTBEAT_STALE_S − 2 × HEARTBEAT_INTERVAL_S` (50 s at the
+     defaults), computed at op start from the daemon's constants, the same bound 17.3 checks
+     ([[task-17.3-fleet-rollout#r2-measure]]): a hold that long stops the heartbeat for as
+     long as cli reads wait on `_store_lock`, and 60 s equalled the watchdog's stale threshold.
    - No per-dataset Lance lock (d2b); the Option A revisit is recorded in the plan, triggered by
      23.4's verdict.
 4. **R4 Out-of-daemon readers retry once and count it** (spec review #b-1; decision d3c; decision
@@ -259,8 +283,10 @@ vector of an entity that lives in another partition or kind. This task does not 
       each removed entity's OLD id, and before its finalize deletes their vectors it writes them
       to `<root>/removal/<apply_id>.vectors.jsonl` in the R6 format; its restore builds
       `{old_id: new_id}` from the manifest after the name-checked re-insert and calls
-      `vectors_restore(<that file>, id_map=…, invoked_by="removal_restore")` in-process (R1;
-      nm17-r6-1). Lance rows carry only `id`, `vector` and
+      `_op_vectors_restore(d, {"orphan_file": <that file>, "id_map": …}, in_process_caller=
+      "removal_restore")` in-process, the op function and not the verb (R1; nm17-r6-1,
+      nm17-r7-2; 22.2 R4's wording, "calls the `vectors_restore` verb in-process", is plan-22's
+      to align). Lance rows carry only `id`, `vector` and
       `updated_at` (`vectors.py:32-41`) and the file carries no name, so without the map no
       restored entity's vector could ever be found again (ns17-r3-1). The exact fields 22.2 must
       write are listed in the plan's cross-plan note ([[plan-17-nightly-store-maintenance#open-after-revision]]
@@ -390,13 +416,20 @@ All fixtures are real Lance datasets in tmp stores inside the 23.0 sandbox.
     `vectors_restore` and an MCP one each append one `step: "vectors_restore"` line with their
     `invoked_by` and counts (nm17-r4-1), and 17.2's arm gate given only those lines refuses to
     arm `vectors_maintain`. A caller cannot set `invoked_by` through either surface.
-    - **The in-process value (nm17-r6-1).** An in-process `vectors_restore(<file>, id_map=…,
-      invoked_by="removal_restore")` on a tmp `Daemon` appends one `step: "vectors_restore"`
-      line with `invoked_by: "removal_restore"`; the arm gate given only that line refuses to
-      arm. `vectors_restore(…, invoked_by="hand")` and `vectors_maintain(…,
-      invoked_by="removal_restore")` each raise `ValueError` and append nothing. Mutation: a
-      verb that accepts any `invoked_by` string → this case FAILS (the invented value is
-      recorded).
+    - **The in-process value, through the entry point 22.2 uses (nm17-r6-1, nm17-r7-2).** On a
+      recorded tmp `Daemon` (23.2's `recorded_daemon`, so a nested lock raises `LockDeadlock`
+      instead of hanging), `_op_vectors_restore(d, {"orphan_file": <file>, "id_map": …},
+      in_process_caller="removal_restore")` appends one `step: "vectors_restore"` line with
+      `invoked_by: "removal_restore"`, opens NO socket connection (the 23.0 sandbox's connect
+      log is empty for the daemon's socket during the call), and the arm gate given only that
+      line refuses to arm. Refusals, each raising `ValueError` and appending nothing:
+      `_op_vectors_restore(d, {…, "invoked_by": "hand"})`; `_op_vectors_maintain(d, {…},
+      in_process_caller="removal_restore")`; and over the SOCKET, a raw
+      `daemon_mod.call(root, "vectors_restore", {…, "invoked_by": "removal_restore"})` (the
+      wire cannot claim the in-process value). Mutations, each must FAIL this case: the check
+      only in the verb (the raw socket call and the `"hand"` op call are accepted and
+      recorded); an op that reads `removal_restore` from `args` (the raw socket call is
+      accepted); the in-process call routed through the verb (a socket connect is logged).
 13. **AC-11 (no model).** The 23.0 sandbox records zero connects to `models.sock` and zero
     embedder constructions during a run (maintain and restore).
 14. **AC-12 (pre-registered mutations, each must FAIL a named AC):**
@@ -438,10 +471,10 @@ All fixtures are real Lance datasets in tmp stores inside the 23.0 sandbox.
 |---|---|
 | `src/refmatrix/vectors.py` | dimension from schema; fingerprint; tag/compact/cleanup/restore helpers; the retry-once reader helper |
 | `src/refmatrix/store.py` | the maintain and restore routines (whole-catalog orphan query, cap, orphan list); the no-match filter in `_drop_lance_for_purge_batch` and `_drop_lance_for_purge` (R9) |
-| `src/refmatrix/verbs.py` | the closed `invoked_by` set per verb, `removal_restore` for `vectors_restore` only (R1) |
+| `src/refmatrix/verbs.py` | the verbs forward `invoked_by` in the op's args; an early check of the wire set `cli` / `mcp` / `hub` (R1; the op's check is the authority, nm17-r7-2) |
 | `src/refmatrix/daemon.py`, `verbs.py`, `cli.py`, `mcp.py` | the ops with single-flight, verbs, CLI (no fallback), MCP |
 | `src/refmatrix/cli.py`, `consolidate.py`, `telemetry.py` | readers use the retry helper; `lance_retries` on the `cli.log` row |
-| `src/refmatrix/daemon.py` | the `runs.jsonl` ledger (R12); `confirm_orphans`, `invoked_by` |
+| `src/refmatrix/daemon.py` | the `runs.jsonl` ledger (R12); `confirm_orphans`; the closed `invoked_by` check in `_op_vectors_maintain` / `_op_vectors_restore`, with `removal_restore` only through the keyword-only `in_process_caller` (R1, nm17-r7-2); the `RMX_MAINTAIN_HOLD_S` default from the heartbeat constants (R3, nm17-r7-3) |
 
 ## Test strategy {#test-strategy}
 
@@ -528,3 +561,12 @@ the orchestrator's brief for [[plan-review-2026-10-14#t12-approvals]]. Code fact
 | nm17-r6-1 (`invoked_by` has no value for 22.2's in-process `vectors_restore` call; plan item 3 stale) | [[#r1-verb]], [[#r10-restore]] (the call names the value; 22.2's side now written) (`removal_restore`, the in-process caller value, valid for `vectors_restore` only; the closed set is checked, `ValueError` otherwise), AC-13 (in-process case; mutation), AC-12 list; 22.2 R4 names the value ([[task-22.2-repair-then-remove#r4]], plan-22's file); plan item 3: [[plan-17-nightly-store-maintenance#open-after-revision]] |
 | nm17-r6-2 (R9's filter covers the batch delete only; since bug-111 the memory bridge drops docs through the single-id delete) | [[#r9-no-match-filter]] (`_drop_lance_for_purge` filtered too; line numbers re-read), AC-9 (single-id case; mutation), AC-12 list, [[#files-to-modify]] |
 
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Source: [[bsd-plan23-17-spec-rereview-r7-331b414]] (plan-17: 0 BULLSHIT, 0 SKETCHY, 3 MEH).
+Code facts re-read at HEAD `77ac38f`. The round-6 table above is unchanged history.
+
+| finding / decision | answered at |
+|---|---|
+| nm17-r7-2 ("calls the `vectors_restore` verb in-process" names no entry point; the verb is a socket client of the same daemon) | [[#r1-verb]] (the op function, called directly, outside any `_store_lock` hold; the closed-set check moved into the op; `removal_restore` only through a keyword the socket cannot pass), [[#r10-restore]] (the call written as the op call; 22.2 R4's wording is plan-22's to align), [[#acceptance]] AC-13 (in-process case through that entry point, no socket connect, a raw socket claim refused; three mutations), [[#files-to-modify]] |
+| nm17-r7-3 (the hold bound equals the heartbeat-stale threshold) | [[#r3-holds]] (`RMX_MAINTAIN_HOLD_S` default = `HEARTBEAT_STALE_S − 2 × HEARTBEAT_INTERVAL_S`, 50 s); the bound itself: [[task-17.3-fleet-rollout#rev-round-7]] |

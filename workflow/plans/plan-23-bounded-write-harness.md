@@ -7,16 +7,17 @@ metadata:
   node_type: plan
   status: drafting
   created: 2026-10-07
-  updated: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Plan 23: the bounded-write harness {#root}
 
 **Date:** 2026-10-07, revised 2026-10-14.
-**Status:** Drafting (revision round 6 after the 0e77da3 re-review and d9ag/d9ao/d9ap;
+**Status:** Drafting (revision round 7 after the 331b414 re-review and d9az, which adds task
+23.5; [[#rev-round-7]]. Round 6 after the 0e77da3 re-review and d9ag/d9ao/d9ap;
 [[#rev-round-6]]. Round 5 after the 878647c re-review, d9y and the writer-handle
 idea: [[#rev-round-5]]. Round 3: [[#rev-round-3]]. Round 2: [[#rev-round-2]]).
-Task specs 23.0-23.4 are written.
+Task specs 23.0-23.5 are written (23.5 is new in round 7 and not yet reviewed).
 This is Wave 1's FIRST build: plans 16 (16.6's Wave 1 slice), 17, 19 and 22 consume it, and every
 Wave 1 test runs in 23.0's sandbox.
 **Origin:** the plan review's C5, applied by the user on 2026-10-07; revised from the Wave 0
@@ -40,6 +41,7 @@ rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c]]
 rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3]]
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414]]
 
 ## Why {#why}
 
@@ -65,15 +67,16 @@ prove it run in a sandbox that cannot reach a live store (bug-088, bug-101). {#w
 ## Tasks {#tasks}
 
 Order ([[plan-review-2026-10-14#t8-wave1]]): **23.0 ∥ 23.4 → 23.2 → 23.1 (+ tick registry) →
-23.3.**
+23.3 ∥ 23.5.** 23.5 (d9az, round 7) also waits for bug-115/116 (0.78.2) merged to `master`.
 
 | task | what | acceptance (summary) |
 |---|---|---|
 | [[task-23.0-test-sandbox]] | `$HOME`, `RMX_HOME`, registry and LaunchAgents redirected before `refmatrix` is imported; store roots injected; an audit-hook guard that REFUSES any touch of a live store, in the suite and in every spawned child | canaries prove every root resolver lands in the sandbox; live paths are refused in-process and in children (mutations fail); a full run adds no tagged, pytest-path or fixture-shaped row to any live log (content, not size) |
-| [[task-23.4-option-a-measurement]] | Option A measurement #4: one writer thread vs N per-op cursor writers on a cliquet copy, a pinned 20,000-event workload including `bitmap_fragments` upserts, drained to completion with in-place retry; go/no-go ranges CONFIRMED (d9l), procedure corrected (d9m, d9y, and d9ap: dangling `entity_links` rows counted, not hashed; new pin) | the verdict is mechanical from the ranges; integrity compared by NAME; an error at N=1 is INVALID, not NO-GO; the detector proven to fire AND a correct N=2 run proven to pass; runs ordered after the confirmation; the live store untouched by the audit guard |
+| [[task-23.4-option-a-measurement]] | Option A measurement #4: one writer thread vs N per-op cursor writers on a cliquet copy, a pinned 20,000-event workload including `bitmap_fragments` upserts, drained to completion with in-place retry; go/no-go ranges CONFIRMED (d9l), procedure corrected (d9m, d9y, and d9ap: dangling `entity_links` rows counted, not hashed; new pin; round 7: the `dead-linkage` sub-class added and the cliquedb count corrected, pin d9ba) | the verdict is mechanical from the ranges; integrity compared by NAME; an error at N=1 is INVALID, not NO-GO; the detector proven to fire AND a correct N=2 run proven to pass; runs ordered after the confirmation; the live store untouched by the audit guard |
 | [[task-23.2-lock-hold-fixture]] | `lock_free_during(lock)`, a `HoldRecorder` on the real `_FairLock` that counts holds, DuckDB statements and Lance versions, markers that fail on zero holds | reverting r8 #s-2 / r9 #s-1 fails; re-introducing bug-085's and bug-093's per-row writes fails; no test keeps its own probe |
 | [[task-23.1-queue-and-drain]] | starts only after the bug-105 hotfix is MERGED TO `master`; `bounded.py`: `bind(partition_name)` (lookup-only; the merged hotfix's per-binding cache, all-binding guards, rename/merge flush, merge's fragment work under the writer lock, live-concept predicate adopted as the contract; a held-writer-lock check ADOPTED (d9ag), wired through one writer-Store installer) + one `batch_transaction` per hold (pre-flush before `BEGIN`; fragments and offset inside it; `facts.log` events after `COMMIT`) under three front-ends (`drain(queue)`, `tail(log)`, `bounded_steps(items)`); stop paths, error policy, finalize, per-hold `hold_s`; the daemon tick registry with one budget; `queue_status` / `queue_redrive`; learn re-based with insert-if-absent evidence | two-partition competitor AC on rows AND fragment rows; AC-3d (the merged hotfix suite, five files, as cases (ii)-(ix), 23.1's tick and decision-search cases); the writer-lock check survives every writer reopen (AC-20); a rolled-back batch leaves no phantom fragment bit; lost post-commit events re-derived at the next boot; exactly-once under five injected faults; learn crash-replay counts evidence rows; bug-099 RED→GREEN; finalize once; tail never mutates its file; overflow printed by `rmx learn status` |
 | [[task-23.3-sync-between-file-yield]] | `_sync_paths` on `bounded_steps`: one transaction per step, the lock released between steps, the partition bound per step, each file stamped in its LAST step; one sync at a time per store (`_sync_mutex`), insert-if-absent semantic evidence; bug-093's op-start log line | competitor wins between files; two concurrent syncs equal one; never released inside a transaction; write counts flat in concept count; a crash, cancel or budget stop before the semantic steps loses nothing; same graph as HEAD |
+| [[task-23.5-read-path-and-holder-bounds]] | d9az: the non-harness `_store_lock` holders. The 11 cli READ ops that take the lock today move to `_read_with_fallback` (mirror / snapshot); the 3 cli ops that need the writer wait at most `min(deadline, RMX_CLI_WRITER_WAIT_S)` and answer "writer busy" naming the holder; `context`'s learn write goes to the learn queue; the compaction tick dumps off the lock between two short holds; every hold over an alarm names its holder; the wait is clamped under the heartbeat's stale window | reads answer and the heartbeat stays fresh through a 10 s writer hold (`_op_stats` back on the lock FAILS); an AST rule over every `CLI_OPS` handler; compaction loses no event written during the dump; the clamp; a census of every holder's hold length |
 
 {#tasks-body}
 
@@ -108,12 +111,39 @@ handle and no consumer changes. {#core-body}
 
 - 23.0 and 23.4: none; they run in parallel.
 - 23.2 → 23.0. 23.1 → 23.2, 23.0, and the bug-105 hotfix MERGED TO `master` (not a sha list;
-  nb23-r4-1). 23.3 → 23.1.
+  nb23-r4-1). 23.3 → 23.1. 23.5 → 23.1, 23.2, 23.0, and bug-115/116 (0.78.2) MERGED TO `master`
+  (round 7, d9az).
 - Downstream (from [[plan-review-2026-10-14#t8-wave1]]): after 23.1, 16.6's Wave 1 slice → 22.1a →
   22.2 → 22.5 → 22.3; 17.1 → 17.2; 19.0, 19.1, 19.2. 21.1 needs only 23.0.
 - 23.1 is NOT gated on 23.4 (decision-log #s-2). 23.4's verdict triggers the d2b revisit.
 
 rel: depends-on -> [[plan-review-2026-10-14#t8-wave1]]
+
+## Scope added by d9az (round 7) {#scope-d9az}
+
+The user's decision d9az ([[plan-review-2026-10-14#t12-approvals]]): plan-23 OWNS the
+non-harness `_store_lock` holders, `_op_stats` and the other lock-taking cli-pool reads and the
+facts.log compaction tick, and the heartbeat's coupling to the cli pool. Both 2026-10-15
+incidents went through that coupling ([[bsd-plan23-17-spec-rereview-r7-331b414#live-evidence]]).
+It is task [[task-23.5-read-path-and-holder-bounds]], kept out of 23.1 so the harness, which
+blocks 16.6, 17.1, 19.2 and 22.2, does not grow.
+- **What 0.78.2 (bug-115/116) already does:** `ping` on the dispatcher thread; a heartbeat on
+  every cli-pool completion; a queued cli op dropped, said, once its caller's `deadline_s` has
+  passed before a worker reaches it; no re-send after a sent request.
+- **What 23.5 still does:** no cli op waits on `_store_lock` without a bound. Reads go to the
+  mirror / snapshot (`_read_with_fallback`); the three cli ops that need the writer wait at most
+  `min(deadline, RMX_CLI_WRITER_WAIT_S)` and answer "writer busy" with the holder's name;
+  `context`'s learn write goes to the learn queue; the compaction tick's dump runs off the lock
+  between two short holds; every long hold names its holder. Writer holds themselves are bounded
+  where they live: harness writers by 23.1, `sync` and the watch flush by 23.3 (the 80-110 s
+  shape of the second incident), plan-17's maintenance steps by 17.1 / 17.3. Once reads stop
+  waiting on the writer, a writer hold no longer parks the cli pool, so the heartbeat stops
+  depending on it.
+- **Correction to the list d9az was given:** `replica_relink` does not take `_store_lock` at
+  HEAD (its docstring says so, `daemon.py:5354`), so the lock-taking cli ops are 15, not 16
+  ([[task-23.5-read-path-and-holder-bounds#facts]]).
+
+rel: implements -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Open after revision {#open-after-revision}
 
@@ -170,6 +200,16 @@ Original text kept as history.
    `rmx replica audit` found (2026-10-15) are a SEPARATE item under d9ao (a by-name census decides
    recover-after-bug-113 or discard); plan-23 does not own it, and bug-113 is not a 23.1
    dependency ([[task-23.1-queue-and-drain#r8]]).
+   - **Cross-plan (round 7, not plan-23's to close):** the r7 re-review's ns-x-r7-1 finds that
+     d9ao's reasons apply equally to 19.2 R6 / AC-10 and 16.6 R1c, which still build on
+     `replica_merge`; plans 19 and 16 own that decision
+     ([[bsd-plan23-17-spec-rereview-r7-331b414#ns-x-r7-1]]).
+9. **SETTLED (d9az, round 7): plan-23 owns the non-harness lock holders** ([[#scope-d9az]],
+   [[task-23.5-read-path-and-holder-bounds]]). 23.5 is a new spec and needs its own review.
+10. **Pin row needed (round 7):** 23.4's procedure text changed (r7 plan-16/22 m-5: the
+    `dead-linkage` sub-class and the corrected cliquedb count), so the orchestrator records
+    d9ba = the round-7 revision commit as 23.4's new procedure pin
+    ([[task-23.4-option-a-measurement#rev-round-7]]).
 
 ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
 
@@ -271,3 +311,20 @@ applied. The round-5 table above is unchanged history.
 | ns23-r6-4 (23.4's by-name hash has no rule for dangling `entity_links`), d9ap | [[#tasks]] 23.4 row, [[task-23.4-option-a-measurement#rev-round-6]] |
 | nm23-r6-1 (hotfix moved again: d9ae fence, fifth test file, bug-111) | [[#tasks]] 23.1 row, [[task-23.1-queue-and-drain#rev-round-6]] |
 | nm23-r6-2 (boot compaction "in the same hold" vs a non-re-entrant lock) | [[task-23.1-queue-and-drain#rev-round-6]] |
+
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Source: [[bsd-plan23-17-spec-rereview-r7-331b414]], [[plan-review-2026-10-14#t12-approvals]]
+(d9az), and the plan-16/22 r7 re-review's m-5, which it assigned to plan-23
+([[bsd-plan16-22-spec-rereview-r7-331b414#m-5]]). The round-6 table above is unchanged history.
+
+| finding / decision | answered at |
+|---|---|
+| nb23-r7-1 (the "named safe" census route; a raise inside `Store.close()`'s bare `except`) | [[task-23.1-queue-and-drain#rev-round-7]] |
+| ns23-r7-1 (purge's check after its Lance delete) | [[task-23.1-queue-and-drain#rev-round-7]] |
+| nm23-r7-1 (the one-installer AST rule) | [[task-23.1-queue-and-drain#rev-round-7]] |
+| nm23-r7-2 (`HoldRecorder` lacks `held_by_current_thread`) | [[task-23.1-queue-and-drain#rev-round-7]] (23.1 owns the one-method edit; 23.2's approved spec is not reopened) |
+| nm23-r7-3 (AC-3b's dangling row is alive) | [[task-23.1-queue-and-drain#rev-round-7]] |
+| ns-x-r7-1 (19.2 / 16.6 on `replica_merge`) | cross-reference only: [[#open-after-revision]] 8; owned by plans 19 and 16 |
+| d9az (non-harness holders; heartbeat coupling) | [[#root]] status, [[#tasks]] (23.5 row, order), [[#dependencies]], [[#scope-d9az]], [[#open-after-revision]] 9, [[task-23.5-read-path-and-holder-bounds]] |
+| plan-16/22 r7 m-5 (23.4 cites "8 dead-concept"; no `dead-linkage` case) | [[#tasks]] 23.4 row, [[#open-after-revision]] 10 (new pin d9ba), [[task-23.4-option-a-measurement#rev-round-7]] |

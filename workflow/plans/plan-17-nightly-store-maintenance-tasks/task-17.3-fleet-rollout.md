@@ -13,7 +13,8 @@ metadata:
 # Task 17.3: fleet rollout {#root}
 
 > Plan: [plan-17-nightly-store-maintenance](../plan-17-nightly-store-maintenance.md)
-> Status: Pending (revision round 6, 2026-10-15: ns17-r6-1's third restore scenario, see
+> Status: Pending (revision round 7, 2026-10-15: nm17-r7-3's hold bound from the watchdog and
+> nm17-r7-1's runbook text, see [[#rev-round-7]]; revision round 6, 2026-10-15: ns17-r6-1's third restore scenario, see
 > [[#rev-round-6]]; revision round 5, 2026-10-14: ns17-r4-2's runbook text, see [[#rev-round-5]];
 > revision round 3: ns17-r3-2, nm17-r3-2, nm17-r3-4; see [[#rev-round-3]]. Round 2: ns17-3, ns17-5, ns17-6, d9c; see [[#rev-round-2]])
 > Depends on: 17.1, 17.2, 17.4; deployed
@@ -29,6 +30,9 @@ rel: implements -> [[plan-review-2026-10-14#t9]]
 rel: related-to -> [[feedback_generated_data_off_watched_tree]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#nm17-r3-4]]
 rel: related-to -> [[feedback_external_calls_policy]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414#nm17-r7-3]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414#nm17-r7-1]]
+rel: related-to -> [[task-23.5-read-path-and-holder-bounds]]
 
 ## Why {#why}
 
@@ -107,8 +111,26 @@ been compacted. {#why-body}
      on the clone, with `code.lance`'s version count recorded at each timing.
    - **No-match re-sync** (17.1 R9, on the clone): a re-sync of a file whose ids carry no vector
      commits 0 Lance versions.
-   - **Hold bound** (spec review #s-1): the clone's largest dataset step, and every real store's
-     steps, hold `_store_lock` < 60 s, read from the op report's `hold_s`.
+   - **Hold bound** (spec review #s-1; nm17-r7-3): the clone's largest dataset step, and every
+     real store's steps, hold `_store_lock` for less than
+     `HOLD_BOUND_S = HEARTBEAT_STALE_S − 2 × HEARTBEAT_INTERVAL_S` (50 s at the defaults,
+     `daemon.py:63`, `:66`), read from the op report's `hold_s`. The bound comes from the
+     watchdog, not a round number. The coupling, at HEAD `77ac38f`: the heartbeat is a no-op
+     submitted to the 4-worker cli pool and the file is touched only when it completes
+     (`daemon.py:1319-1337`); cli reads such as `stats` take `_store_lock` unbounded
+     (`daemon.py:3732`), so four of them queued behind one maintenance hold stop the beat for
+     the whole hold; the hub restarts after `WATCHDOG_GRACE_MISSES` (3) missed pings AND a
+     heartbeat older than `HEARTBEAT_STALE_S` (60 s) (`hub.py:305-317`). Round 6's "< 60 s"
+     equalled the stale threshold with no margin: a 59.9 s hold under hook load (17.2's catch-up
+     runs at wake, not only at 03:30) crosses it by the next 5 s tick, and the watchdog
+     restarts the daemon mid-step. Two heartbeat intervals of margin cover one tick of skew on
+     each side. 0.78.2 (bug-115/116: `ping` on the dispatcher thread, a beat on every cli
+     completion) narrows the restart to a saturated dispatcher but does not remove it, and
+     23.5 removes the reads' wait on the lock ([[task-23.5-read-path-and-holder-bounds#r6]]);
+     until 23.5 is deployed fleet-wide this bound is the margin, and after it the bound is kept
+     because 17.1's holds still serialize every writer. The script computes `HOLD_BOUND_S` from
+     the deployed daemon's constants (env overrides included) and prints it beside the
+     holds.
    - The clone is deleted at the end of the task; its version count, timings and the script's
      log go to `workflow/review-output/plan17-rollout-clone.log`.
 3. **R3 Docs.** {#r3-docs}
@@ -117,11 +139,15 @@ been compacted. {#why-body}
      ids).
    - The `facts.log` restore runbook documents 17.4 R6's three scenarios
      ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r4-2, ns17-r6-1) and its
-     classification (daemon refusal first; read-only catalog probe, a lock error = daemon up;
-     live-log parse probe): (a) a damaged live log under a healthy catalog is fixed by
-     `rmx compact-log --force`, never by the backup; (c) a lost or unopenable catalog with an
-     intact live log is rebuilt from the LIVE log (the backup only if the live log fails
-     verification; the script prints the source); (b) a lost catalog AND live log is restored
+     classification (daemon refusal first; read-only catalog probe, a lock error, told by its
+     message "Could not set lock on file", = daemon up; live-log parse probe): (a) a damaged
+     live log under a healthy catalog is fixed by `rmx compact-log --force`, never by the
+     backup; a daemon crash-looping on a catalog that still OPENS (the 2026-09-14 ART-index
+     shape, `project_refmatrix_entities_index_crashloop_0914`) is also class (a) and is fixed
+     by the offline table rebuild, never by a restore or a compaction (nm17-r7-1); (c) a lost
+     or unopenable catalog with an intact, parsing live log is rebuilt from the LIVE log (the
+     backup only if that rebuild fails verification; the script prints the source); (b) a
+     lost catalog AND a missing or unparseable live log is restored
      from the backup copy by `scripts/factslog-restore.py` (daemon stopped; throwaway rebuild
      and verify first; existing files moved aside, never overwritten; the verified catalog
      promoted into the live root's writer slot and the source installed as its log), then the
@@ -140,7 +166,9 @@ been compacted. {#why-body}
    re-sync latency is ≤ 1/5 of the before-run latency. Fails if maintenance did not compact; a
    clone with fewer than 30,000 versions fails the AC instead of being waived.
 3. The no-match re-sync on the clone commits 0 Lance versions (version count before = after).
-4. Every reported hold is < 60 s; any hold ≥ 60 s is a finding in the summary, not averaged away.
+4. Every reported hold is < `HOLD_BOUND_S` (50 s at the defaults; computed and printed by the
+   script, nm17-r7-3); any hold ≥ `HOLD_BOUND_S` is a finding in the summary, not averaged
+   away. A hold of 55 s FAILS this AC (it passed round 6's "< 60 s").
 5. Each store is armed only after its dry run, backup and hand run succeeded (order visible in the
    rollout log), and each arm names the `run_id` of that hand run (17.2 R7 refuses otherwise).
    Every `--confirm-orphans` run is preceded in the log by the user's confirmation.
@@ -207,3 +235,12 @@ Source: [[bsd-plan23-17-spec-rereview-r6-0e77da3]].
 |---|---|
 | ns17-r6-1 (a lost catalog with an intact live log was routed to the day-old backup) | [[#r3-docs]] (three scenarios and the classification) |
 
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Source: [[bsd-plan23-17-spec-rereview-r7-331b414]]. Code facts re-read at HEAD `77ac38f`; 0.78.2
+read on its branch (`607d759`). The round-6 table above is unchanged history.
+
+| finding / decision | answered at |
+|---|---|
+| nm17-r7-3 (the < 60 s hold bound equals the heartbeat-stale threshold; the heartbeat is a no-op on the 4-worker cli pool) | [[#r2-measure]] hold bound (`HOLD_BOUND_S = HEARTBEAT_STALE_S − 2 × HEARTBEAT_INTERVAL_S`, 50 s; the coupling cited in code; what 0.78.2 and 23.5 change), [[#acceptance]] AC-4 (55 s now FAILS) |
+| nm17-r7-1 (the ART-index precedent misfiled under (c); the lock discriminator unnamed) | [[#r3-docs]] (lock error told by its message; the crash-loop shape is class (a), fixed by the offline table rebuild; (b) covers an unparseable live log); the script side is [[task-17.4-factslog-backup-snapshot#rev-round-7]] |

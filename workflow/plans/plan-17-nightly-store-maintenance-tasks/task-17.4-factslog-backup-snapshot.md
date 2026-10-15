@@ -16,7 +16,8 @@ metadata:
 > Status: Pending (added 2026-10-14 after commit 32dde06; first reviewed in
 > [[bsd-plan23-17-spec-rereview-r3-6091648]]; revision round 3: ns17-r3-3, ns17-r3-4, nm17-r3-6,
 > see [[#rev-round-3]]. Revision round 5: ns17-r4-2, nm17-r4-1, see [[#rev-round-5]]. Revision
-> round 6: ns17-r6-1, see [[#rev-round-6]]. Round 2: [[#rev-round-2]])
+> round 6: ns17-r6-1, see [[#rev-round-6]]. Revision round 7: nm17-r7-1, see [[#rev-round-7]].
+> Round 2: [[#rev-round-2]])
 > Depends on: 17.2 (the hub tick and its `maintenance_steps` registry, NOT 23.1's daemon tick
 > registry), 23.0 (sandbox)
 
@@ -32,6 +33,8 @@ rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#nm17-r3-6]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#ns17-r4-2]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#nm17-r4-1]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3#ns17-r6-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414#nm17-r7-1]]
+rel: related-to -> [[project_refmatrix_entities_index_crashloop_0914]]
 
 ## Why {#why}
 
@@ -128,22 +131,36 @@ once-a-day COPY under `backups/` is what Time Machine backs up. {#why-body}
         at once. Read-only, so the probe never replays a WAL into the file or writes anything.
         A DuckDB lock-conflict error (another process holds the file, for example a daemon
         whose socket no longer answers) is classified **"daemon up"** and refused, never read
-        as "does not open".
+        as "does not open". **The discriminator is the message, not the class (nm17-r7-1):** a
+        lock conflict and a corrupt header are BOTH `duckdb.IOException` (DuckDB 1.5.2/1.5.3,
+        the r7 re-review's run), so the script tests the exception text for
+        `Could not set lock on file`; any other open or probe error is "does not open".
      3. **Probe the live log.** `facts.log` is present and PARSES: every line up to its last
         newline is a JSON object with an event `op` (a torn final line is ignored, as R3 cuts
         a copy).
      The classes: the catalog opens → **(a)**; the catalog is absent or fails to open, and the
      live log is present and parses → **(c)**; the catalog is absent or fails to open, and the
-     live log is missing or fails to parse → **(b)**.
+     live log is missing or fails to parse → **(b)**. The parse probe runs BEFORE the class is
+     chosen, so a live log with a non-JSON line is class (b), never (c) (nm17-r7-1); (b) then
+     prints `source: backup (live log failed to parse: line <N>)`, or
+     `source: backup (live log missing)`.
    - **(a) The live log is damaged or missing, and the catalog is healthy.** The backup is NOT
      used: a day-old copy installed beneath a newer catalog would lose that day from the log.
      The fix is a forced compaction, `rmx compact-log --force` (daemon up: the
      `compact_factslog` op; it rewrites the full log from the catalog by
      `dump_catalog_to_log`, atomic tmp + rename). Nothing is lost. The script refuses this
-     class with the message "catalog present: run `rmx compact-log --force`, not a restore".
+     class with the message "catalog present: not a restore. A damaged log: run `rmx
+     compact-log --force`. A daemon that crash-loops on this catalog: the offline table
+     rebuild (runbook), not a restore".
+     - **The 2026-09-14 ART-index crash loop is class (a), not (c) (nm17-r7-1).** That catalog
+       OPENED and served reads; its phantom index entries failed only on writes
+       (`project_refmatrix_entities_index_crashloop_0914`), so the read-only `count(*)` probe
+       classifies it (a). Its fix was the offline table rebuild, not a restore and not a
+       compaction against a crash-looping daemon; the refusal message above names it. Round
+       6 cited it as a (c) precedent; that citation is withdrawn.
    - **(c) The catalog is lost or unopenable, and the live log is intact (ns17-r6-1).** The
-     precedents are the 2026-09-14 ART-index crash loop and a catalog deleted with its log
-     kept. The live log is the NEWEST copy of every event, so the rebuild source is the LIVE
+     shapes are a catalog deleted with its log kept, and a catalog file that no longer opens
+     (a corrupt header). The live log is the NEWEST copy of every event, so the rebuild source is the LIVE
      log, not the backup: the script runs the (b) sequence below with `<source>` = a copy of
      the live `facts.log` (copied into the throwaway, never moved first). If that throwaway
      fails verification (step 3), the script falls back to the backup copy, says so, and runs
@@ -255,7 +272,8 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
      store's entity count, link count and learned-evidence row count equal the counts recorded
      at the copy point (AC-3's), and a read through the daemon returns a learned row.
    - **Scenario (a), log only.** The same store with its catalog intact and `facts.log`
-     truncated to half: the script refuses with the "run `rmx compact-log --force`" message and
+     truncated to half: the script refuses with the message beginning "catalog present: not a
+     restore" (naming both `rmx compact-log --force` and the offline table rebuild) and
      changes nothing; `rmx compact-log --force` then restores a log whose replay (AC-3's check)
      equals the live catalog, with the post-copy appends included.
    - **Scenario (c), catalog lost, live log intact (ns17-r6-1).** The same store as (b), the
@@ -264,14 +282,31 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
      live `facts.log` is kept. The script classifies (c), prints `source: live`, rebuilds,
      verifies and promotes; after a daemon start the entity, link and learned-evidence counts
      equal the counts recorded at the END (post-copy appends included), which exceed AC-3's
-     copy-point counts. A second run of the case with the live log's middle line also
-     corrupted prints `source: backup (live log failed …)` and ends at the copy-point counts.
-     Mutation: (c) routed to the backup copy FAILS (the post-copy appends are missing).
+     copy-point counts. Mutation: (c) routed to the backup copy FAILS (the post-copy appends
+     are missing).
+   - **The unparseable live log is class (b) (nm17-r7-1; replaces round 6's second (c) run).**
+     The same corrupted catalog, and the live log's middle line overwritten with non-JSON
+     bytes: the script classifies (b) (the parse probe fails BEFORE any rebuild), prints
+     `source: backup (live log failed to parse: line <N>)` with N the corrupted line's number,
+     and ends at the copy-point counts. Mutation: a parse probe that skips unparseable lines
+     (so the class is (c)) FAILS (the printed source is `live` or the fallback message, not
+     the parse message, and the counts differ).
+   - **(c)'s verify-fail fallback is reached (nm17-r7-1).** The same corrupted catalog, and a
+     live log that PARSES but fails verification: one appended, well-formed `link` event whose
+     entity name has no `entity` event, so the throwaway's rebuild skips it (the rebuild loop
+     skips a link whose endpoint does not resolve, `store.py:8079-8085`) and its link count is
+     one short of the source's link-event count. The script classifies (c), the throwaway
+     fails verification, and the script prints `source: backup (live log failed verification:
+     <reason>)`, rebuilds from the backup and ends at the copy-point counts; the live
+     `facts.log` is moved aside byte-identical. Mutation: the fallback removed (the script
+     stops after the failed verify) FAILS (no promote: the active slot is still the zeroed
+     file, and the post-run daemon start cannot read the copy-point counts).
    - **The lock case (ns17-r6-1).** No daemon socket (ping fails), but a child process holds
      the healthy catalog open read-write: the script refuses with "daemon up (catalog locked)"
      and changes nothing (every file byte-identical, no `.pre-restore-*` file). Mutations: a
      lock error classified as "does not open" FAILS (the script goes on to (c) and moves files
-     aside); the probe opened read-write FAILS (in a second case with a stopped store whose
+     aside); a classifier keyed on the exception CLASS (`duckdb.IOException` = locked) FAILS
+     the zeroed-header (c) case (it refuses as "daemon up"); the probe opened read-write FAILS (in a second case with a stopped store whose
      catalog has an un-checkpointed `.wal`, the catalog file's bytes change across a refused
      (a) run).
    - Until step 5 the script writes nothing in the tmp store's own root, and any file it
@@ -343,3 +378,11 @@ Source: [[bsd-plan23-17-spec-rereview-r6-0e77da3]]. The round-5 table above is u
 |---|---|
 | ns17-r6-1 (restore classifies by "the catalog opens" alone; a lost catalog with an intact live log loses up to a day; the probe has no position or mode) | [[#r6-restore]] (classification for every scenario: ping refusal first, READ-ONLY catalog probe with a lock error = "daemon up", live-log parse probe; new scenario (c): rebuild from the LIVE log, backup only as a stated fallback, `source:` printed), [[#ac-9]] (scenario (c) and the lock case; three mutations), AC-6 mutation list |
 
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Source: [[bsd-plan23-17-spec-rereview-r7-331b414]]. Code facts re-read at HEAD `77ac38f`. The
+round-6 table above is unchanged history.
+
+| finding / decision | answered at |
+|---|---|
+| nm17-r7-1 (AC-9's second (c) run is class (b) by R6's own probe; the (c) fallback is unreachable by any AC; the lock discriminator unnamed; the ART-index precedent misfiled) | [[#r6-restore]] (the message `Could not set lock on file` is the discriminator; an unparseable log is (b) with its own `source:` line; the ART-index crash loop is class (a), fixed by the offline table rebuild, and the refusal message names it; (c)'s precedents restated), [[#ac-9]] (the unparseable-log run reclassified to (b); a new (c) run whose log parses but fails verification reaches the fallback; three mutations: the skip-bad-lines probe, the fallback removed, the class-keyed lock test) |

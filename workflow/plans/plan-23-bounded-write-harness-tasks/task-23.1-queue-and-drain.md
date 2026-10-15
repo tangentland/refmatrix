@@ -13,7 +13,10 @@ metadata:
 # Task 23.1: queue, tail, bounded steps, and the tick registry {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: Pending (revision round 6, 2026-10-15: re-review [[bsd-plan23-17-spec-rereview-r6-0e77da3]]
+> Status: Pending (revision round 7, 2026-10-15: re-review [[bsd-plan23-17-spec-rereview-r7-331b414]]
+> (nb23-r7-1, ns23-r7-1, nm23-r7-1, nm23-r7-2, nm23-r7-3); see [[#rev-round-7]]. The non-harness
+> lock holders d9az gives plan-23 are task 23.5's, not this task's. Revision round 6,
+> 2026-10-15: re-review [[bsd-plan23-17-spec-rereview-r6-0e77da3]]
 > (ns23-r6-1, ns23-r6-2, ns23-r6-3, nm23-r6-1, nm23-r6-2) with d9ag and d9ao; see
 > [[#rev-round-6]]. Round 5, 2026-10-14: re-review [[bsd-plan23-17-spec-rereview-r4-878647c]]
 > (nb23-r4-1, ns23-r4-1, ns23-r4-2, nm23-r4-1, nm23-r4-2) and the user's writer-handle idea
@@ -57,6 +60,11 @@ rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3#ns23-r6-3]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3#nm23-r6-1]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3#nm23-r6-2]]
 rel: implements -> [[plan-review-2026-10-14#t12-approvals]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414#nb23-r7-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414#ns23-r7-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414#nm23-r7-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414#nm23-r7-2]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414#nm23-r7-3]]
 
 ## Facts at HEAD `b1c4324` this spec builds on {#facts}
 
@@ -229,6 +237,41 @@ correction pass, nm23-r6-1):
 - Line moves since round 5: `_FairLock` `daemon.py:242` (was 200), `_read_slot_offset` `:2798`,
   `_refresh_replica_now` `:2814`, `_load_fragment` `store.py:4152` (its decision at `:4164`),
   `_flush_current_binding` `:4218` (decision at `:4220`).
+
+Added in revision round 7, read at HEAD `77ac38f` (`src/` unchanged since `0e77da3`):
+- **The shutdown close takes no lock and its flush failure is swallowed (nb23-r7-1).**
+  `serve_forever`'s finally closes the writer on a new thread `rmxd-close`: `_do_close` runs
+  `self._st().close()` (`daemon.py:2018-2020`) with no `_store_lock`, bounded by
+  `close_budget`; a captured error is logged as "store close failed" (`:2037-2038`).
+  `Store.close()` runs `try: self.flush_fragments() except Exception: pass`
+  (`store.py:2173-2176`) before it closes the read view and the connection, each in its own
+  bare `except: pass` (`:2177-2188`). So a `WriterLockNotHeld` raised by the flush never
+  reaches `close_err`, and the bits dirtied since the last periodic tick are dropped unsaid.
+- **The init slot rebind runs unlocked (nb23-r7-1).** `serve_forever`'s rebind
+  (`daemon.py:1727-1732`) runs `CHECKPOINT`, `flush_fragments()` and `close()` in one `try`
+  whose `except` logs "init slot rebind: close failed" and so skips `close()` when the flush
+  raises; it is under no lock. Both `_bootstrap_rotation_if_needed` branches already wrap
+  the same sequence in `with self._store_lock:` (`:2871`, `:2911`).
+- **Purge writes Lance before it reaches the rebind (ns23-r7-1).** `purge_entity`
+  (`store.py:5990`) calls `_drop_lance_for_purge` at `:6015` and `_clear_purged_bits` only at
+  `:6059`; `_bulk_purge_ids` (`:6363`) drops Lance at `:6385` and clears bits at `:6400`;
+  `purge_path` (`:6188`) calls `_drop_lance_for_purge_batch` at `:6207` and then
+  `purge_entity(…, _skip_lance=True)` per id. A Lance delete commits a version even with no
+  match (Lance 6.0.1, the r7 re-review's run).
+- **Every `store` attribute assignment in `daemon.py` (nm23-r7-1):** the 8 `Store(…)` sites of
+  round 6 and one annotated declaration, `self.store: Store | None = None` in
+  `Daemon.__init__` (`daemon.py:728`, an `ast.AnnAssign`, not an `ast.Assign`). `cli.py` sets
+  `d.store` on in-process `Daemon` objects at 7 sites (`cli.py:7201`, `:10170`, `:10412`,
+  `:10476`, `:10592`, `:10694`, `:10770`); those daemons never serve a socket and never get a
+  `writer_lock`, so they are outside R1.6's rule (item 2's "no `writer_lock`" case).
+- **23.2's `HoldRecorder` surface is closed (nm23-r7-2).** [[task-23.2-lock-hold-fixture#r2]]
+  lists `acquire`, `release`, `locked`, `__enter__`, `__exit__`; it was approved (d9at)
+  before `_FairLock.held_by_current_thread` existed, so a recorded daemon would answer R1.6's
+  check with `AttributeError`.
+- **A concept entity has a `concepts` row (nm23-r7-3).** The `concepts` DDL
+  (`store.py:282`: id "equals entities.id where kind='concept'"), with inserts at `:1860`,
+  `:2246`, `:2421-2429`; the 0.78.1 gate (`store.py:4388`) calls a concept dead only if its id
+  is in neither `entities` nor `concepts`.
 {#facts-body}
 
 ## Requirements {#requirements}
@@ -387,8 +430,12 @@ correction pass, nm23-r6-1):
       after `ev.wait` returns True, since `release` hands ownership to it), cleared in
       `_pass_or_release_locked` before hand-off or release, and read by a new
       `held_by_current_thread() -> bool`. The timeout-race branch (handed the lock, then passes
-      it on) never leaves `_owner` set to itself. 23.2's `HoldRecorder` forwards
-      `held_by_current_thread` like the rest of the surface.
+      it on) never leaves `_owner` set to itself. **23.1 itself edits 23.2's `HoldRecorder`
+      (nm23-r7-2):** 23.2's approved surface (d9at) is closed and lacks the method, so 23.1 adds
+      one explicit pass-through, `HoldRecorder.held_by_current_thread()` returning the wrapped
+      lock's answer, in `tests/lockhold.py` ([[#files]]). It is an explicit method, not a
+      `__getattr__` catch-all, so the recorder's surface stays a list a reader can check, and an
+      attribute the wrapped lock lacks still raises.
    2. **The Store knows the lock, on EVERY writer Store, resolved at check time (ns23-r6-2).**
       - `Store.writer_lock: Callable[[], Lock] | None` (default `None`) is a zero-argument
         callable that returns the lock to check, not a lock captured at open time. The Daemon
@@ -401,9 +448,15 @@ correction pass, nm23-r6-1):
         their `self.store = Store(…)` / `d.store = Store(…)` assignment, at the same position
         (construct, install, then `db_path` and `init()` as today), so no site's failure
         behaviour changes. Any future writer-Store site uses it too.
-      - An AST test over `daemon.py` asserts that no assignment whose target is an attribute
-        named `store` and whose value is a `Store(…)` call exists outside
-        `_install_writer_store` (AC-20).
+      - An AST test over `daemon.py` asserts that no assignment to an attribute named `store`
+        exists outside `_install_writer_store`, WHATEVER its value (nm23-r7-1): any
+        `ast.Assign` or `ast.AugAssign` target, any `ast.AnnAssign` target with a value, any
+        tuple-unpacking element, and any `setattr(<x>, "store", …)` call. Round 6's rule
+        matched only `x.store = Store(…)`, so `st = Store(…); …; self.store = st` passed it.
+        Exactly one exemption, by location AND shape: the declaration
+        `self.store: Store | None = None` in `Daemon.__init__` ([[#facts]] round 7; an
+        `AnnAssign` whose value is the constant `None`). `cli.py`'s in-process `d.store = …`
+        sites are outside the rule (no `writer_lock`; [[#facts]] round 7) (AC-20).
       - A Store with no `writer_lock` (in-process CLI, offline merge, `serial_bind`, a test
         `Store`) skips the check: it has no lock to hold.
    3. **The check.** `Store._require_writer_lock(site: str)` raises `WriterLockNotHeld(site)`
@@ -417,12 +470,41 @@ correction pass, nm23-r6-1):
       restore (which runs right after its `acquire`), and the offline merge end block's
       SRC → DST move (`store.py:1966`; a no-op check there today, since an offline Store has no
       `writer_lock`, but it binds the helix plan's live merge).
-   4. **First run = census.** Before the check is switched on, one full-suite run with the check
-      in WARN mode (log the site and the stack, do not raise) lists every call site that reaches
-      these methods unlocked. Each is either moved under the lock or named in the implementation
-      summary with why it is safe (for example `Store.close()` at daemon shutdown after every op
-      has stopped, or `serve_forever`'s init slot rebind flush at `:1729`, which runs before the
-      socket is bound at `:1807`). Only then does the check raise.
+      - **Purge checks FIRST, before any write (ns23-r7-1).** `purge_entity`, `_bulk_purge_ids`
+        and `purge_path` call `_require_writer_lock("purge")` as their first statement, before
+        any Lance delete or SQL statement. The rebind check in `_clear_purged_bits` stays. A
+        check only at the rebind fires AFTER the Lance delete ([[#facts]] round 7): the entity
+        keeps its row and its non-NULL `vectors_updated_at`, so `pending_embeddings` never
+        re-queues it and its vector is gone.
+   4. **First run = census; every site it finds is MOVED UNDER THE LOCK (nb23-r7-1).** Before
+      the check is switched on, one full-suite run with the check in WARN mode (log the site and
+      the stack, do not raise) lists every call site that reaches these methods unlocked. Every
+      site is moved under the lock. There is no "named safe" route: a site left unlocked still
+      raises once the check is on, and at the two sites round 6 offered as "safe" that raise
+      lands inside an `except` that hides it. Only then does the check raise. Round 6's text
+      ("each is either moved under the lock or named in the implementation summary with why it
+      is safe (for example `Store.close()` at daemon shutdown …, or `serve_forever`'s init slot
+      rebind flush at `:1729` …)") is withdrawn. The two known sites, specified:
+      - **Shutdown close.** `_do_close` (`daemon.py:2018`) runs
+        `self._store_lock.acquire(timeout=<close_budget minus 0.5 s, floor 0>)` around
+        `self._st().close()` and releases in a `finally`. On a timeout it does NOT call
+        `close()` (the process exit releases the file locks, as the existing close-timeout
+        path already relies on) and logs one line, `store close: writer lock not acquired in
+        <s>s; <n> dirty fragment(s) NOT flushed`, with `n = dirty_fragment_count()`; it never
+        skips silently.
+      - **Init slot rebind.** The `CHECKPOINT` + `flush_fragments()` + `close()` sequence at
+        `daemon.py:1727-1732` and the reopen through `_install_writer_store` run inside
+        `with self._store_lock:`, as both `_bootstrap_rotation_if_needed` branches already do
+        (`:2871`, `:2911`). `close()` moves to its own `finally` inside that hold (the bug-110
+        r1 #m-3 shape at `:2873-2881`), so a failed flush no longer skips the close.
+      - **`Store.close()` stops swallowing the check (nb23-r7-1).** Its flush step catches
+        `WriterLockNotHeld` separately: it runs the read-view and connection closes (the file
+        lock must still be released), then RE-RAISES the `WriterLockNotHeld`, which
+        `_do_close`'s `close_err` path logs as "store close failed". Any OTHER exception from
+        that flush is no longer `pass`: it is appended to a new `Store.close_errors: list[str]`
+        and the read-view and connection closes still run; `_do_close` logs each entry. The
+        connection-close steps keep their own isolation (their comment's reason, a
+        FatalException-invalidated catalog, is unchanged).
    5. **Scope: the THREAD lock only (ns23-r6-2, bug-110).** The check proves which thread holds
       `_store_lock`. It is blind to DuckDB's `fcntl` lock on the slot file, which belongs to the
       (process, file) pair and is dropped by ANY in-process `close()` of a descriptor for that
@@ -698,8 +780,11 @@ contributes no bit and is never deleted by 23.1's code.
      reopens the catalog: `pa`'s `bitmap_fragments` row for `mentions` holds no bit whose entity's
      `partition_id` is `pb`'s, `pb`'s row holds none of `pa`'s, and each row equals the bitmap
      rebuilt from that partition's ALIVE `entity_links` rows (the alive-links oracle). The
-     fixture carries one dangling `(pa, mentions)` row (its concept's `entities` row deleted by
-     SQL before the drain, bypassing purge); after the drain it is still in `entity_links` and
+     fixture carries one dangling `(pa, mentions)` row whose concept is dead under item 6: before
+     the drain, by SQL that bypasses purge, the concept's `concepts` row AND its `entities` row
+     are both deleted (nm23-r7-3: deleting only the `entities` row leaves the id in `concepts`,
+     which keeps the concept ALIVE under item 6 and the 0.78.1 gate, so "its bit is in no row"
+     would fail against correct code). After the drain the row is still in `entity_links` and
      its bit is in no row. The check is a SQL + pyroaring census over the
      ROWS, not the cache. Mutations, each must FAIL: the cache keyed by linkage only (HEAD's
      shape); a flush that writes every dirty entry under the id bound at flush time.
@@ -892,10 +977,28 @@ contributes no bit and is never deleted by 23.1's code.
       `flush_fragments()`, `repair_fragments(dry_run=False)`, `with_partition("pb")`,
       `Store.transaction()`, `batch_transaction()` and `purge_entity(<id>)` each raise
       `WriterLockNotHeld` when called from a thread without the lock, and write nothing (the
-      `bitmap_fragments`, `partitions` and `entities` rows are unchanged; for `purge_entity` the
-      raise comes from `_clear_purged_bits`' rebind, nm23-r6-1). Each succeeds under
+      `bitmap_fragments`, `partitions` and `entities` rows are unchanged). Each succeeds under
       `with d._store_lock:`. A Store with no `writer_lock` runs all six unlocked (the in-process
       path).
+    - **Purge writes NOTHING, Lance included (ns23-r7-1).** The purge case is run three times,
+      once each through `purge_entity(<id>)`, `_bulk_purge_ids([<id>…])` and
+      `purge_path(<abs>)`, on an entity WITH a stored vector. Each raises from its first-line
+      check (R1.6 item 3), and after the raise: the entity's Lance dataset `version` is
+      unchanged, `ann_search` / a direct Lance read still returns that id's vector, its
+      `vectors_updated_at` is unchanged, and the three catalog tables are unchanged.
+    - **Shutdown keeps the last dirty bit (nb23-r7-1).** A recorded daemon serves on a short
+      tmp socket with the periodic flush tick disabled (interval far above the test's length).
+      One `link` under `with d._store_lock:` leaves a dirty `(home, mentions)` fragment; then
+      `d.stop` with no tick in between. After a fresh `Store` opens the slot, the
+      `bitmap_fragments` row (read by SQL) holds the bit, and `rmxd.log` has no "store close"
+      error line. A second case holds `_store_lock` from a test thread across the whole stop:
+      `rmxd.log` has the line `store close: writer lock not acquired in …; 1 dirty fragment(s)
+      NOT flushed`.
+    - **Init rebind under the lock.** A recorded daemon booted, check ON, on a store whose
+      active slot file exists while its Store opened `catalog.duckdb` (the condition at
+      `daemon.py:1722-1726`) takes the rebind: `rmxd.log` has `init slot rebind: db_path -> …`
+      and NO `init slot rebind: close failed` line, and the recorder shows the rebind's
+      flush and close inside one hold by the booting thread.
     - **The check survives a reopen (ns23-r6-2).** On the same recorded daemon, with no slot
       files, `d._bootstrap_rotation_if_needed()` closes the writer and reopens it on slot A (the
       `:2924` site); then, with `A` removed, it reopens through the asymmetric-repair site
@@ -903,25 +1006,53 @@ contributes no bit and is never deleted by 23.1's code.
       happened) and `flush_fragments()` from an unlocked thread still raises
       `WriterLockNotHeld`. (These sites, not `_op_replica_merge`'s, because bug-113 makes the
       replica-merge reopen fail; its three sites are covered by the AST case.)
-    - **One installer, by AST.** A test parses `daemon.py` and finds no `Assign` whose target is
-      an `Attribute` named `store` and whose value is a `Call` to `Store`, outside
-      `Daemon._install_writer_store`.
+    - **One installer, by AST (nm23-r7-1).** A test parses `daemon.py` and finds no assignment
+      to an `Attribute` named `store` (`Assign`, `AugAssign`, `AnnAssign` with a value, a
+      tuple-unpacking element, or `setattr(…, "store", …)`), whatever its value, outside
+      `Daemon._install_writer_store`, except the one `AnnAssign` of `None` in
+      `Daemon.__init__`. The test also asserts that exemption matches exactly one node, so a
+      second `None` declaration elsewhere fails it.
     - **A lock replaced after install is the lock checked.** After the writer Store is
       installed, the test assigns a fresh 23.2 `HoldRecorder` to `d._store_lock` (the shape of a
       recorder installed after the Store opened): an op under `with d._store_lock:` (the new
       recorder) succeeds, and an unlocked `flush_fragments()` raises.
-    - The WARN-mode census run's site list is in the implementation summary, every site
-      resolved.
+    - The WARN-mode census run's site list is in the implementation summary, and every site on
+      it is MOVED UNDER THE LOCK (nb23-r7-1; no site is resolved by naming it safe). A second
+      WARN-mode run after the moves lists zero sites; its log is captured beside the first.
     - Mutations, each must FAIL: the check removed from `flush_fragments`; `_owner` not set on
       the woken-waiter path (the holder reports False and every op under the lock raises); one
       of the 8 sites assigning `self.store = Store(…)` directly instead of through the helper
       (FAILS the AST case, and, at `:2924` or `:2888`, the reopen case); `writer_lock` captured
       as the lock object at install time instead of a callable (FAILS the replaced-lock case:
       the op under the new recorder raises); the check removed from `_clear_purged_bits` (FAILS the
-      `purge_entity` case: the purge writes unlocked). Round 5's "merge's end block taken out of
+      `purge_entity` case: the purge writes unlocked); **round 7 (nm23-r7-1, ns23-r7-1,
+      nb23-r7-1, nm23-r7-2):** the `:5557` site rewritten as the two-statement
+      `st = Store(…); …; d.store = st` (FAILS the AST case; round 6's rule passed it); the purge
+      check kept ONLY in `_clear_purged_bits` (FAILS the purge case: the Lance `version` is
+      +1 and the vector is gone, for each of the three entry points); `_do_close` calling
+      `close()` without taking the lock (FAILS the shutdown case: the check raises inside
+      `close()`, the bit is missing from the row); `Store.close()` swallowing
+      `WriterLockNotHeld` as before (FAILS the shutdown case: the bit is missing AND no
+      "store close failed" line); the init rebind left outside `with self._store_lock:`
+      (FAILS the init-rebind case: a "close failed" line); `HoldRecorder` without
+      `held_by_current_thread` (FAILS the replaced-lock case with `AttributeError` instead of
+      the expected results). Round 5's "merge's end block taken out of
       its `with _lk:`" is DROPPED: since the d9ae fence that path runs only offline with no
       `writer_lock`, so the check cannot see it; the hotfix suite's (ix) still pins the offline
       merge's lock rule (nm23-r6-1). {#ac-20}
+
+## Files to modify {#files}
+
+Added in revision round 7 (nb23-r7-1, nm23-r7-2), so the edits the round-6 text implied have an
+owner. Not exhaustive for R1-R9's new modules; it names every EXISTING file 23.1 changes.
+
+| file | change |
+|---|---|
+| `src/refmatrix/bounded.py` (new) | R1-R6's core, front-ends and tick registry |
+| `src/refmatrix/store.py` | `with_partition(create=)`; `batch_transaction`; the event buffer; `writer_lock` + `_require_writer_lock` at R1.6 item 3's sites, purge's three first-line checks included; `Store.close()`'s flush step no longer swallows `WriterLockNotHeld` and records other errors in `close_errors` (R1.6 item 4); `add_evidence_if_absent`; `fragment_flush_failures` |
+| `src/refmatrix/daemon.py` | `_FairLock` owner + `held_by_current_thread`; `_install_writer_store` at the 8 sites; `_do_close` under a bounded `_store_lock` acquire; the init slot rebind inside `with self._store_lock:`; `_compact_factslog_locked`; the boot `events_pending` check; `tick_registry`; `queue_status` / `queue_redrive`; learn re-based |
+| `src/refmatrix/learn_queue.py`, `verbs.py`, `cli.py`, `mcp.py` | R9; `rmx learn status` / `redrive` and their verbs |
+| `tests/lockhold.py` | `HoldRecorder.held_by_current_thread()`, one explicit pass-through (R1.6 item 1; nm23-r7-2). 23.2's other surface is unchanged |
 
 ## Test strategy {#test-strategy}
 
@@ -1020,3 +1151,21 @@ table above is unchanged history.
 | nm23-r6-1 (hotfix moved: d9ae fence, fifth test file, bug-111's links gate and direct purge rebind; item 7 correction not done) | [[#facts]] round 6, [[#r1]] 1 items 5 and 7 (correction pass) and the repair bullet, [[#r1-6-proposed]] (merge dropped from the live-writer list; `_clear_purged_bits` added to item 3), [[#r6]] 1 (`_periodic_flush` kept), [[#acceptance]] preamble (alive-links oracle), [[#ac-3]] (AC-3b dangling fixture row; AC-3d five files, case (x)), [[#ac-4]], [[#ac-16]], [[#ac-20]] (`purge_entity` case; the fenced-merge mutant dropped) |
 | nm23-r6-2 (boot compaction "in the same hold" vs the non-re-entrant lock) | [[#facts]] round 6, [[#r3]] 7 step 3 (`_compact_factslog_locked()` factored out; read, compact and clear in ONE hold), [[#ac-16]] AC-16b (self-deadlock mutation) |
 
+
+## Revision round 7 (2026-10-15) {#rev-round-7}
+
+Source: [[bsd-plan23-17-spec-rereview-r7-331b414]]. Code facts re-read at HEAD `77ac38f`
+(`src/` unchanged since `0e77da3`). d9az (plan-23 owns the non-harness `_store_lock` holders and
+the heartbeat's coupling to the cli pool) is answered by a NEW task,
+[[task-23.5-read-path-and-holder-bounds]], not here: 23.1 stays the harness. The round-6 table
+above is unchanged history.
+
+| finding / decision | answered at |
+|---|---|
+| nb23-r7-1 (the "named safe" census route; the check raises inside `Store.close()`'s bare `except` at shutdown and inside the init rebind's `try`) | [[#facts]] round 7, [[#r1-6-proposed]] item 4 (route withdrawn; every site moved under the lock; `_do_close` under a bounded acquire with a logged dirty count on timeout; the init rebind in `with self._store_lock:` with `close()` in a `finally`; `Store.close()` re-raises `WriterLockNotHeld` after closing and records other flush errors), [[#ac-20]] (shutdown case, its lock-held variant, init-rebind case, second census run with zero sites; three mutations), [[#files]] |
+| ns23-r7-1 (purge's check fires after its Lance delete; the AC cannot see Lance) | [[#facts]] round 7, [[#r1-6-proposed]] item 3 (first-line checks in `purge_entity`, `_bulk_purge_ids`, `purge_path`; the rebind check kept), [[#ac-20]] (purge case ×3 entry points asserts the Lance `version`, the vector and `vectors_updated_at`; mutation "check only at the rebind") |
+| nm23-r7-1 (the AST rule matches only `x.store = Store(…)`) | [[#facts]] round 7 (the `AnnAssign` at `daemon.py:728`; `cli.py`'s in-process sites out of scope), [[#r1-6-proposed]] item 2 (any assignment form, any value; one exemption by location and shape), [[#ac-20]] (AST case; mutation: the two-statement form at `:5557`) |
+| nm23-r7-2 (`HoldRecorder`'s approved surface lacks `held_by_current_thread`) | [[#facts]] round 7, [[#r1-6-proposed]] item 1 (23.1 adds one explicit pass-through in `tests/lockhold.py`; 23.2's approved spec is not reopened), [[#files]], [[#ac-20]] (mutation) |
+| nm23-r7-3 (AC-3b's dangling fixture row is alive by its `concepts` row) | [[#facts]] round 7, [[#ac-3]] AC-3b (delete the concept from `concepts` AND `entities`) |
+| ns-x-r7-1 (19.2 R6/AC-10 and 16.6 R1c still build on `replica_merge` after d9ao) | not owned here: plans 19 and 16 own it ([[bsd-plan23-17-spec-rereview-r7-331b414#ns-x-r7-1]]). 23.1's side is unchanged: [[#r8]] stays RETIRED and names no consumer rule as live |
+| d9az (non-harness holders; heartbeat coupling) | [[task-23.5-read-path-and-holder-bounds]]; plan [[plan-23-bounded-write-harness#scope-d9az]] |
