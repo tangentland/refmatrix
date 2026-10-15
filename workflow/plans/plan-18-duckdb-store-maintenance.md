@@ -12,20 +12,38 @@ metadata:
 
 # Plan 18: DuckDB store maintenance {#root}
 
-> Status: DRAFTING. Task specs 18.1-18.3 were written 2026-10-15 at the user's request; they wait
-> for a ch-bsd spec review and then the user's approval. Split out of plan-17 by the user on
-> 2026-10-07 (plan-17 d-3). Plan-17 keeps the Lance vectors lean; this plan does the same for the
-> DuckDB catalog.
-> **Scope kept MINIMAL** (plan review C12, user 2026-10-07): measure + `CHECKPOINT` as a step on
-> plan-17's tick. No slot-rewrite VACUUM until ADR-0004's helix plan decides whether snapshot
-> manifests replace A/B slot reconciliation. 18.3, an offline rewrite, is CONDITIONAL on the
-> user lifting C12 for it ([[#questions]] Q1).
+> Status: DRAFTING. 18.1 ran 2026-10-15 and is IN-PROGRESS (ch-bsd r1 remedy, d9br;
+> [[#verdict-18-1]]). 18.2 and 18.3 were rewritten 2026-10-15 for the 18.1 verdict (d9be-d9bt):
+> 18.3 is an IN-DAEMON rewrite-and-swap on one shared hold helper (`Daemon._catalog_hold`, built
+> by 18.2 R11), gated on bug-112's fix; there is no offline route. C12 is lifted (d9be). Split
+> out of plan-17 by the user on 2026-10-07 (plan-17 d-3). Plan-17 keeps the Lance vectors lean;
+> this plan does the same for the DuckDB catalog.
 
 rel: depends-on -> [[plan-17-nightly-store-maintenance]]
 rel: specifies -> [[task-18.1-catalog-measurement]]
 rel: specifies -> [[task-18.2-catalog-maintain-step]]
 rel: specifies -> [[task-18.3-offline-reclaim]]
 rel: related-to -> [[plan-review-2026-10-07#consolidations]]
+
+## 18.1 verdict (run 2026-10-15) {#verdict-18-1}
+
+18.1 ran on copies of all 8 registered snapshots
+(`workflow/review-output/plan18-catalog-measure-20261015.md`). Every gate passed.
+
+| store | A | B | C | writer MiB -> rewrite MiB |
+|---|---|---|---|---|
+| refmatrix | A2 | disagree | C0 (1.94 s) | 789.0 -> 176.8 |
+| global | A2 | disagree | C0 (0.42 s) | 241.8 -> 34.0 |
+| cliquedb | A2 | disagree | C0 (1.05 s) | 230.5 -> 99.8 |
+| viascope | A1 | disagree | C0 (1.74 s) | 291.5 -> 158.3 |
+| cliquet, orderly, atldb, thiquet | A0 | disagree | C0 | under 64 MiB each |
+
+Fleet verdict: a reclaim pays on 4 stores, so C12 is lifted (d9be). Every rewrite is under 2 s,
+so 18.3 becomes an in-daemon rewrite-and-swap gated on bug-112 and 23.1 R1.6 (d9bf). 18.2 bands
+on growth, because the free-block proxy disagrees everywhere (d9bg). The 18.1 spec amendments
+are d9bh. Q1-Q4 below are answered by d9be-d9bg, amended by d9bp-d9br after ch-bsd 18.1 r1.
+
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Why {#why}
 
@@ -64,20 +82,22 @@ So C12's "measure + CHECKPOINT" by itself reclaims nothing. The plan becomes:
   (`project_slot_drift_root_cause_fixed`). That probably means a rewrite into the inactive slot plus
   an atomic swap, not an in-place VACUUM. **Answer:** writer rotation is dropped and the inactive
   slots are frozen evidence (d9ao), so 18.3 must NOT write into the inactive slot. It rewrites
-  the writer slot into a new file offline and swaps it under the same slot letter, with the
-  `active` marker unchanged ([[task-18.3-offline-reclaim#r6-untouched]]).
+  the writer slot into a sibling new file INSIDE the daemon (d9bf) and swaps it under the same
+  slot letter, with the `active` marker unchanged ([[task-18.3-offline-reclaim#r13-untouched]]).
 - **Daemon op shape:** the same rules as plan-17's `vectors_maintain`: under `_store_lock`, bounded,
   fingerprinted, and scheduled by plan-17's hub tick. **Answer:** 18.2 has ONE bounded hold with a
   lock-wait timeout and a WAL gate, and is single-flight. 18.3's gate is the fingerprint. The
-  reclaim is not on the tick ([[task-18.3-offline-reclaim#r9-not-nightly]]).
+  reclaim is a separate, armed tick step whose reason is 18.2's growth band
+  ([[task-18.3-offline-reclaim#r9-tick-step]]). Both build on one catalog-hold helper
+  ([[task-18.2-catalog-maintain-step#r11-hold-helper]]).
 
 ## Tasks {#tasks}
 
 | task | what | acceptance (summary; the spec is authoritative) | wave / depends on |
 |---|---|---|---|
 | 18.1 | `eval/catalog_maint/measure_catalogs.py`. It copies each registered store's snapshot in a child, then in fresh children reads `PRAGMA database_size`, times a 3× `COPY FROM DATABASE` rehearsal and gates it. Its pre-registered Tables A-C give a per-store band and a fleet verdict. | Finds and bands a 90 %-deleted fixture; `r` comes from the rewrite, not the proxy; the live root is untouched (no socket, no descriptor, `/bin/cp` argv); the gate can fail; one opener per path; a failed store is counted (`INCOMPLETE`); the band constants are pinned; mutations FAIL | Wave 4 (read-only, could run earlier: Q2) / 23.0 |
-| 18.2 | `catalog_maintain` daemon op + verb + CLI/MCP, registered last on 17.2's `maintenance_steps` with `requires_arming=False` and `after_idle` on `vectors_maintain` / `memory_compile`. It has a WAL gate and a bounded lock wait, ONE hold of CHECKPOINT + PRAGMA, and hold bands (Table D) that downgrade to PRAGMA-only. Health and the hub row get `catalog_reclaim_due` / `catalog_wal_large` / `catalog_hold_over`. The snapshot tick's own CHECKPOINT hold is timed. | One hold within 50 ms of the recorder; 2 statements; `skipped:lock_busy` within 2 s behind a 10 s holder; `refused:wal_large`; D2 downgrade persisted and cleared only by a hand run; lock-free status; dry run; no fallback; `invoked_by`; registration and order; hot-row news; snapshot hold measured; constants pinned; mutations FAIL | Wave 4 / 17.2, 17.1 R11-R12 shapes, 23.0, 23.2, 18.1 (band-mode default only) |
-| 18.3 | CONDITIONAL. `rmx catalog reclaim`: a rehearsal on a copy; then a confirmed offline run that pauses the watchdog (must succeed), stops the daemon, holds `daemon.lock`, rewrites and gates in children, swaps under the same slot letter, kickstarts through launchd, post-checks and rolls back on any mismatch. `rmx compact` is retired onto it. | Round trip (≥ 50 % smaller, counts and hashes equal, sequence continues, marker / frozen slot / `facts.log` untouched, backup kept); gate failure; rollback, and a failed rollback stays paused; preconditions refuse before any stop; `daemon.lock` excludes starts; no in-process descriptor; matches 18.1's rehearsal; ledger; mutations FAIL | Wave 4 / 18.1 verdict + Q1, 18.2, 23.0 (tiers 2-3 for launchd) |
+| 18.2 | ONE catalog-hold helper (`catalog_maint.CatalogHold`, `Daemon._catalog_hold`), with the snapshot tick and `_op_checkpoint` ported onto it; the `catalog_maintain` daemon op + verb + CLI/MCP on it, registered on 17.2's `maintenance_steps` with `requires_arming=False` (Q4, d9bg) and `after_idle` on `vectors_maintain` / `memory_compile`. REASON-GATED (d9bc): a hold only for `hand` or `wal_unfolded`, else `skipped:no_reason` with the reason logged. Bands on GROWTH against the store's live size (18.1 `rewrite_bytes`, reset by each reclaim; d9bq), which is exactly `r ≥ 0.50`. WAL gate, bounded lock wait, one hold of CHECKPOINT + PRAGMA, Table D hold bands with a downgrade. Health and the hub row get `catalog_reclaim_due` / `catalog_wal_large` / `catalog_hold_over`. | One hold within 50 ms of the recorder; 2 statements; `skipped:lock_busy` within 2 s behind a 10 s holder; `refused:wal_large`; D2 downgrade; lock-free status; dry run; no fallback; `invoked_by`; registration and order; hot-row news; snapshot hold measured; constants pinned (`growth`); reason gate (no hold without a reason); baseline from `rewrite_bytes`, never overwritten by a file; one helper (AST, lock order); mutations FAIL | Wave 4 / 17.2, 17.1 R11-R12 shapes, 23.0, 23.2, 18.1 (its re-taken jsonl for the baselines, d9br) |
+| 18.3 | IN-DAEMON reclaim (d9bf, amended by d9bp; PROVISIONAL). `rmx catalog reclaim`: an idle rehearsal on a snapshot copy in children; then a confirmed real run as ONE hold on 18.2's helper: flush, CHECKPOINT, `COPY FROM DATABASE` into a sibling new file, the shared six-leg gate (d9br), a sentinel row, close, link the old slot to `backups/`, `os.replace`, reopen through 23.1's `_install_writer_store`, sentinel read-back + identity check, snapshot refresh; rollback on any failure, fast exit if the rollback fails. Phase A is interrupted past a 5 s budget. A LOADED measurement (tmp daemon, 6 readers) decides feasibility per store; a store over 5 s is `refused:rewrite_too_slow` and goes to the helix plan (no offline route). After a hand run per store, an ARMED tick step uses 18.2's A2 band as its reason. The init rebind and both rotation-bootstrap branches move onto the helper; `rmx compact` is retired onto the verb. | Round trip in the daemon (≥ 50 % smaller, gate equal, pid unchanged, ONE hold, sequence continues, post-run writes reach the new file, frozen slot / marker / `facts.log` / offsets / `vectors/` untouched, backup kept); one gate variant per leg; deadline interrupt and `rewrite_too_slow`; rollback including a cached-old-database reopen caught by the sentinel; failed rollback exits 2 and reboots whole; crash consistency at every swap point; rehearsal and real run match 18.1 (2 %, ±25 %); preconditions refuse before any hold; hold over 10 s disables; F5 (snapshot refreshed, `store_bytes` falls, no stale inode held); armed, reason-gated tick step with a one-backup cap; surfaces; `rmx compact` retired; one helper (AST); lock order; bug-112's swap write-loss reproduced against the fix; loaded measurement on the product path; mutations FAIL | Wave 4 / bug-112 FIX merged (branch `bugs-112-113-118`), 23.1 R1.6, 18.2, 17.2, 23.0, 23.2; R14's loaded verdict before the rollout |
 
 ## Pre-registered thresholds (2026-10-15, before any data) {#thresholds}
 
@@ -97,7 +117,12 @@ Each band has an action. Changing an edge after 18.1's run needs a user decision
   - C2: `> 120 s` → refused; the store goes to the helix plan;
   - noisy: `max > 1.5 × median` → re-run once.
 
-  An in-daemon reclaim would need every store `≤ 5 s`. That is recorded and not built.
+  An in-daemon reclaim would need every store `≤ 5 s`. Recorded 2026-10-15 before the run; after
+  the run d9bf chose the in-daemon reclaim, and d9bp applies the 5 s edge to a LOADED full-hold
+  measurement ([[task-18.3-offline-reclaim#r14-loaded]]), not to 18.1's idle rewrite time. A
+  store over it gets Table C's `refused:rewrite_too_slow` and goes to the helix plan; there is no
+  offline route ([[task-18.3-offline-reclaim#r11-offline-route]]). Table C's 30 / 120 s edges
+  gate nothing now (Q3 moot, d9be).
 - **Table D, the nightly step's `_store_lock` hold**, measured in production by `time.monotonic()`
   around the one hold and checked against 23.2's recorder in tests
   ([[task-18.2-catalog-maintain-step#r4-hold]]):
@@ -133,11 +158,14 @@ rel: depends-on -> [[task-17.2-hub-nightly-tick]]
 ### How the specs meet it (2026-10-15) {#contract-answers}
 
 - **Registered step:** 18.2 registers `catalog_maintain` on `maintenance_steps`, last
-  ([[task-18.2-catalog-maintain-step#r9-register]]). The reclaim is not a step (18.3 R9).
+  ([[task-18.2-catalog-maintain-step#r9-register]]). The reclaim is a SECOND step,
+  `catalog_reclaim`, registered after it with `requires_arming=True` and 18.2's A2 band as its
+  reason ([[task-18.3-offline-reclaim#r9-tick-step]]).
 - **`requires_arming`:** 18.2 declares `False`, against the contract's expected `True`, with
   this reason: the step's CHECKPOINT is the statement the snapshot tick already runs unarmed
-  after every write, plus a metadata PRAGMA. It deletes and rewrites nothing. The deleting action
-  (18.3) is a hand run gated by a rehearsal record. Put to the user as Q4.
+  after every write, plus a metadata PRAGMA. It deletes and rewrites nothing, and it runs only
+  for a reason (d9bc). The file-replacing action (18.3) is armed per store by a hand rehearsal +
+  hand real run. Q4 answered by d9bg: `False` stands.
 - **`retries=0`, single-flight:** 17.2 makes the call. 18.2 R3 gives the 17.1 R11 reply shape and
   a lock-free status.
 - **Order against 17.4: DROPPED, with the reason** (closes plan-17
@@ -151,22 +179,37 @@ rel: depends-on -> [[task-17.2-hub-nightly-tick]]
   checkpointed every store since. 18.3 records the `repair-index --fragments --dry-run` summary
   before a reclaim.
 - **Tests:** every 18.x AC runs in the 23.0 sandbox. 18.1 and 18.3 work on copies or synthetic
-  catalogs only; 18.3's launchd path runs in 23.0's tier-2/3 lanes.
+  catalogs only. 18.3 no longer stops or starts a daemon, so it has no launchd path to test; its
+  exit-code and SIGKILL ACs run the tmp daemon as a subprocess.
 
 ## Open questions for the user {#questions}
 
+All four are ANSWERED (2026-10-15). The rows are kept as asked, with the answer under each.
+
 1. **Q1 — lift C12 for 18.3?** If 18.1 finds any store in A1/A2 with C0/C1: may a hand-run,
-   OFFLINE rewrite of the writer slot be built? It would keep the same slot letter, leave the
-   frozen slots alone, and keep the old file as a backup. C12's premise, A/B slot
-   reconciliation, is gone with writer rotation (d9ao). If no, 18.3 closes.
-2. **Q2 — run 18.1 before Wave 4?** It is read-only (child `cp` of each snapshot to a scratch dir,
-   under 2 GB in total) and changes no `src/` file. Running it now would tell whether 18.3 exists
-   before Wave 4 plans around it.
-3. **Q3 — confirm Table C's edges** (30 s / 120 s of offline downtime). They are judgement, not
-   derived. Tables A, B and D are derived from code or stated in their rows.
-4. **Q4 — `requires_arming=False` for `catalog_maintain`** (against the contract's expected
-   `True`). If the user prefers `True` for uniformity, each of 8 stores needs one hand dry run, one
-   hand real run, and an arm before the step runs for real.
+   OFFLINE rewrite of the writer slot be built? **Answer: yes, C12 is lifted (d9be)**, and the
+   reclaim is reshaped to run IN the daemon (d9bf), amended by d9bp: bug-112's fix + a sentinel
+   read-back gate the swap, feasibility is a loaded measurement, and there is no offline route.
+2. **Q2 — run 18.1 before Wave 4?** **Answer: yes (d9bb).** It ran 2026-10-15; its ch-bsd r1
+   remedy and a re-taken fleet run are pending (d9br).
+3. **Q3 — confirm Table C's edges** (30 s / 120 s of offline downtime). **Answer: moot (d9be).**
+   They stay as pre-registered; nothing is near them, and with the offline route gone they gate
+   nothing.
+4. **Q4 — `requires_arming=False` for `catalog_maintain`.** **Answer: `False` stands (d9bg)**,
+   because d9bc makes every run reason-gated. 18.3's `catalog_reclaim` step is `True`; that
+   difference is 18.3's open question Q-A.
+
+### Opened by the 2026-10-15 revision {#questions-rev}
+
+Recommended answers are in [[task-18.3-offline-reclaim#open-questions]]:
+
+- **Q-A:** `requires_arming=True` for the reclaim step. Recommended: yes.
+- **Q-C:** put `facts.log` compaction on the same helper (a 23.1/23.5 amendment). Recommended:
+  yes.
+- **Q-D:** where the 5 s deadline falls. Recommended: Phase A only; the whole hold is measured
+  against 10 s.
+- **Q-E:** accept the in-daemon COPY's memory (884 MiB peak on refmatrix). Recommended: yes,
+  stated per store, with a 2 GiB user-decision edge.
 
 ## Observed while writing the specs (handed on, not this plan's) {#observed}
 
@@ -179,3 +222,19 @@ rel: depends-on -> [[task-17.2-hub-nightly-tick]]
   answering. How long that compaction holds the lock, and what held the daemon from 00:11:15 to
   00:13:16, are not measured. That is plan-23/plan-17 territory (the lock-hold recorder) and the
   orchestrator's to route. 18.2 only avoids stacking behind it.
+
+## Revision 2026-10-15 (18.1 verdict) {#rev-18-1-verdict}
+
+Specs revised by ch-architect for the 18.1 verdict and ch-bsd 18.1 r1. The `#verdict-18-1`
+section and the status lines are the orchestrator's and were not edited here.
+
+| source | change |
+|---|---|
+| d9be | [[#questions]] Q1 and Q3 answered; [[#thresholds]] Table C note |
+| d9bf + d9bp (PROVISIONAL) | [[#tasks]] 18.3 row rewritten (in-daemon, sentinel, loaded feasibility, no offline route); [[#open]] slot-rotation and op-shape answers; [[#contract-answers]] (a second registered step; no launchd tests) |
+| d9bg + d9bq (PROVISIONAL) | [[#tasks]] 18.2 row (growth on `rewrite_bytes`, reason gate); Q4 answered |
+| d9bc | 18.2 R12 (the reason gate), and 18.3 R9's trigger |
+| d9br (PROVISIONAL) | one six-leg gate shared by 18.1 and 18.3; 2 % bytes tolerance |
+| the user's convergence rule | [[task-18.2-catalog-maintain-step#r11-hold-helper]], used by 18.3 R8 |
+| anchors | the plan links to `#r6-untouched` / `#r9-not-nightly` move to [[task-18.3-offline-reclaim#r13-untouched]] / [[task-18.3-offline-reclaim#r9-tick-step]] |
+| new questions | [[#questions-rev]] |

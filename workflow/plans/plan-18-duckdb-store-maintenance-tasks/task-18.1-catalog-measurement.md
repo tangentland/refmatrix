@@ -5,7 +5,7 @@ title: "Task 18.1: measure every fleet catalog on a copy — free blocks, a time
 tags: [task, duckdb, catalog, measurement, maintenance, pre-registered]
 metadata:
   node_type: task
-  status: pending
+  status: in-progress
   created: 2026-10-15
   updated: 2026-10-15
 ---
@@ -13,7 +13,7 @@ metadata:
 # Task 18.1: measure the fleet's catalogs on copies {#root}
 
 > Plan: [plan-18-duckdb-store-maintenance](../plan-18-duckdb-store-maintenance.md)
-> Status: Pending (spec written 2026-10-15; not yet reviewed)
+> Status: IN-PROGRESS (d9br: ch-bsd r1 remedy; script `8a93ab1`; verdict [[plan-18-duckdb-store-maintenance#verdict-18-1]]; amendments d9bh)
 > Wave: 4 ([[plan-review-2026-10-14#t10-waves]]). It is read-only on copies and changes no
 > `src/` file, so it CAN run earlier if the user says so (plan open question Q2).
 > Depends on: 23.0 (the script's tests run in the sandbox). Nothing else: no daemon op, no store
