@@ -33,7 +33,7 @@ from typing import Any
 
 import duckdb
 
-from refmatrix.backend import open_duckdb
+from refmatrix.backend import attach_file, open_duckdb
 from refmatrix.duckdb_catalog import init_catalog
 
 
@@ -147,21 +147,95 @@ def _unlink_target(target_path: Path) -> None:
             p.unlink()
 
 
-def _columns(con, table: str) -> "list[str]":
-    """The target table's columns, in order — read off the catalog, never
-    hand-listed (a hand-listed SET dropped `vectors_partition`, bug-113)."""
+class MergeRefused(RuntimeError):
+    """The two slots cannot be merged safely; raised before anything is
+    written, naming why (bug-123)."""
+
+
+def _columns(con, table: str, db: "str | None" = None) -> "list[str]":
+    """A table's columns, in order, in database `db` (default: the target) —
+    read off the catalog, never hand-listed (a hand-listed SET dropped
+    `vectors_partition`, bug-113)."""
     return [r[0] for r in con.execute(
-        "SELECT column_name FROM information_schema.columns "
-        "WHERE table_name = ? AND table_catalog = current_database() "
-        "AND table_schema = 'main' ORDER BY ordinal_position", [table]).fetchall()]
+        "SELECT column_name FROM duckdb_columns() "
+        "WHERE database_name = COALESCE(?, current_database()) AND schema_name = 'main' "
+        "AND table_name = ? ORDER BY column_index", [db, table]).fetchall()]
 
 
-def _set_all(con, table: str, src: str, key: str) -> str:
+def _set_all(con, table: str, src_db: str, src: str, key: str) -> str:
+    """The SET list of a newer-wins UPDATE from source slot `src_db`: every
+    target column; `col = src.col` where the source has it, `col = NULL` where
+    it predates the column — the winning row exactly as that slot would read
+    after the upgrade ALTER, and the same value a BY NAME insert of it gets. A
+    slot older than the schema (the global store's 2026-06-20 B has no
+    `vectors_partition`) failed the whole merge when a missing column was
+    named (ch-bsd r1 b-3)."""
+    have = set(_columns(con, table, src_db))
     return ",\n            ".join(
-        f"{c} = {src}.{c}" for c in _columns(con, table) if c != key)
+        f"{c} = {src}.{c}" if c in have else f"{c} = NULL"
+        for c in _columns(con, table) if c != key)
+
+
+def _refuse_partition_collisions(a_ro, b_ro) -> None:
+    """partitions.name is UNIQUE and partition ids reach every table, so a
+    name held under different ids (or an id under different names) cannot be
+    merged by `id NOT IN` — the B rows were dropped or the insert failed.
+    Refuse before anything is written, naming the partitions (bug-123)."""
+    pa = dict(a_ro.execute("SELECT name, id FROM partitions").fetchall())
+    pb = dict(b_ro.execute("SELECT name, id FROM partitions").fetchall())
+    by_name = sorted(f"{n!r}: A id {pa[n]}, B id {pb[n]}"
+                     for n in pa.keys() & pb.keys() if pa[n] != pb[n])
+    ia = {v: k for k, v in pa.items()}
+    ib = {v: k for k, v in pb.items()}
+    by_id = sorted(f"id {i}: A {ia[i]!r}, B {ib[i]!r}"
+                   for i in ia.keys() & ib.keys() if ia[i] != ib[i])
+    if by_name or by_id:
+        raise MergeRefused(
+            "slots disagree on partition identity — " + "; ".join(by_name + by_id)
+            + ". Partition ids reach every table; the merge refuses rather than "
+              "guess (bug-123)")
+
+
+def _merge_linkage_types(con) -> None:
+    """linkage_types by NAME (bug-123): refmatrix's own snapshot vs its stale
+    slot A failed `Duplicate key "name: part-of"` — one name, different ids.
+    A's rows go in as they are; each B row maps to A's id for the same name,
+    else keeps its id when free, else gets a fresh one. `remap_lk_b(old_id,
+    new_id)` carries every changed B id to the referencing tables
+    (entity_links, linkage_evidence, linkage_types.inverse_of)."""
+    con.execute("INSERT INTO linkage_types BY NAME SELECT * FROM a.linkage_types")
+    con.execute("CREATE TEMP TABLE remap_lk_b (old_id BIGINT, new_id BIGINT)")
+    a_by_name = dict(con.execute("SELECT name, id FROM linkage_types").fetchall())
+    b_rows = con.execute("SELECT id, name FROM b.linkage_types ORDER BY id").fetchall()
+    next_id = max(set(a_by_name.values()) | {bid for bid, _ in b_rows} | {0}) + 1
+    remap = {}
+    taken: set = set(a_by_name.values())
+    for bid, name in b_rows:
+        if name in a_by_name:
+            tgt = a_by_name[name]
+        elif bid not in taken:
+            tgt = bid
+        else:
+            tgt, next_id = next_id, next_id + 1
+        taken.add(tgt)
+        if tgt != bid:
+            remap[bid] = tgt
+    if remap:
+        con.executemany("INSERT INTO remap_lk_b VALUES (?, ?)", list(remap.items()))
+    con.execute("""
+        INSERT INTO linkage_types BY NAME
+        SELECT bl.* EXCLUDE (id, inverse_of),
+               COALESCE(r.new_id, bl.id) AS id,
+               COALESCE(ri.new_id, bl.inverse_of) AS inverse_of
+        FROM b.linkage_types bl
+        LEFT JOIN remap_lk_b r ON r.old_id = bl.id
+        LEFT JOIN remap_lk_b ri ON ri.old_id = bl.inverse_of
+        WHERE bl.name NOT IN (SELECT name FROM a.linkage_types)
+    """)
 
 
 def _probe(a_ro, b_ro, tables) -> tuple:
+    _refuse_partition_collisions(a_ro, b_ro)
     a_counts = {t: _table_count(a_ro, t) for t in tables}
     b_counts = {t: _table_count(b_ro, t) for t in tables}
 
@@ -189,11 +263,12 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
     init_catalog(con, sequence_starts={
         "seq_partitions_id":    max_partition + 1,
         "seq_entities_id":      max_entity + REMAP_HEADROOM + 1,
-        "seq_linkage_types_id": max_lt + 1,
+        # headroom: B linkage names that lose their id to A get fresh ids
+        "seq_linkage_types_id": max_lt + REMAP_HEADROOM + 1,
     })
 
-    con.execute(f"ATTACH '{a_path}' AS a (READ_ONLY)")
-    con.execute(f"ATTACH '{b_path}' AS b (READ_ONLY)")
+    attach_file(con, a_path, "a")
+    attach_file(con, b_path, "b")
 
     # ---- 3. Lookup tables: partitions + linkage_types ------------------
     con.execute("INSERT INTO partitions BY NAME SELECT * FROM a.partitions")
@@ -202,12 +277,7 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
         SELECT * FROM b.partitions
         WHERE id NOT IN (SELECT id FROM partitions)
     """)
-    con.execute("INSERT INTO linkage_types BY NAME SELECT * FROM a.linkage_types")
-    con.execute("""
-        INSERT INTO linkage_types BY NAME
-        SELECT * FROM b.linkage_types
-        WHERE id NOT IN (SELECT id FROM linkage_types)
-    """)
+    _merge_linkage_types(con)
 
     # ---- 4. Build entity-id remap --------------------------------------
     coll_rows = con.execute("""
@@ -266,7 +336,7 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
     """)
     con.execute(f"""
         UPDATE entities AS m
-        SET {_set_all(con, "entities", "be", "id")}
+        SET {_set_all(con, "entities", "b", "be", "id")}
         FROM b.entities be
         WHERE m.id = be.id AND be.updated_at > m.updated_at
     """)
@@ -304,60 +374,30 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
     # 7b. For shared entity_id rows, pull in B's content when newer.
     con.execute(f"""
         UPDATE memory_content AS m
-        SET {_set_all(con, "memory_content", "bc", "entity_id")}
+        SET {_set_all(con, "memory_content", "b", "bc", "entity_id")}
         FROM b.memory_content bc
         WHERE m.entity_id = bc.entity_id AND bc.updated_at > m.updated_at
     """)
     # 7c. Loser-side mc rows: redirect entity_id via remap; insert when
     # canonical has no mc yet, then overwrite when loser's mc is newer.
-    con.execute("""
-        INSERT INTO memory_content
-            (entity_id, content, mtype, tags, metadata, created_at, updated_at)
-        SELECT r.canonical_id, mc.content, mc.mtype, mc.tags, mc.metadata,
-               mc.created_at, mc.updated_at
-        FROM a.memory_content mc JOIN remap_a r ON r.loser_id = mc.entity_id
-        LEFT JOIN memory_content m ON m.entity_id = r.canonical_id
-        WHERE m.entity_id IS NULL
-    """)
-    con.execute("""
-        UPDATE memory_content AS m
-        SET content = sub.content,
-            mtype = sub.mtype,
-            tags = sub.tags,
-            metadata = sub.metadata,
-            created_at = sub.created_at,
-            updated_at = sub.updated_at
-        FROM (
-            SELECT r.canonical_id, mc.content, mc.mtype, mc.tags,
-                   mc.metadata, mc.created_at, mc.updated_at
-            FROM a.memory_content mc JOIN remap_a r ON r.loser_id = mc.entity_id
-        ) sub
-        WHERE m.entity_id = sub.canonical_id AND sub.updated_at > m.updated_at
-    """)
-    con.execute("""
-        INSERT INTO memory_content
-            (entity_id, content, mtype, tags, metadata, created_at, updated_at)
-        SELECT r.canonical_id, mc.content, mc.mtype, mc.tags, mc.metadata,
-               mc.created_at, mc.updated_at
-        FROM b.memory_content mc JOIN remap_b r ON r.loser_id = mc.entity_id
-        LEFT JOIN memory_content m ON m.entity_id = r.canonical_id
-        WHERE m.entity_id IS NULL
-    """)
-    con.execute("""
-        UPDATE memory_content AS m
-        SET content = sub.content,
-            mtype = sub.mtype,
-            tags = sub.tags,
-            metadata = sub.metadata,
-            created_at = sub.created_at,
-            updated_at = sub.updated_at
-        FROM (
-            SELECT r.canonical_id, mc.content, mc.mtype, mc.tags,
-                   mc.metadata, mc.created_at, mc.updated_at
-            FROM b.memory_content mc JOIN remap_b r ON r.loser_id = mc.entity_id
-        ) sub
-        WHERE m.entity_id = sub.canonical_id AND sub.updated_at > m.updated_at
-    """)
+    # Column lists come from the catalogs (a slot may predate a column).
+    for side, remap_t in (("a", "remap_a"), ("b", "remap_b")):
+        con.execute(f"""
+            INSERT INTO memory_content BY NAME
+            SELECT mc.* EXCLUDE (entity_id), r.canonical_id AS entity_id
+            FROM {side}.memory_content mc JOIN {remap_t} r ON r.loser_id = mc.entity_id
+            LEFT JOIN memory_content m ON m.entity_id = r.canonical_id
+            WHERE m.entity_id IS NULL
+        """)
+        con.execute(f"""
+            UPDATE memory_content AS m
+            SET {_set_all(con, "memory_content", side, "sub", "entity_id")}
+            FROM (
+                SELECT mc.* EXCLUDE (entity_id), r.canonical_id
+                FROM {side}.memory_content mc JOIN {remap_t} r ON r.loser_id = mc.entity_id
+            ) sub
+            WHERE m.entity_id = sub.canonical_id AND sub.updated_at > m.updated_at
+        """)
 
     # ---- 8. entity_links: remap both id columns, dedup by PK ----------
     con.execute("""
@@ -374,12 +414,13 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
     con.execute("""
         INSERT INTO entity_links BY NAME
         SELECT COALESCE(rb_e.canonical_id, bl.entity_id) AS entity_id,
-               bl.linkage_id,
+               COALESCE(rl.new_id, bl.linkage_id) AS linkage_id,
                COALESCE(rb_c.canonical_id, bl.concept_id) AS concept_id,
                bl.weight
         FROM b.entity_links bl
         LEFT JOIN remap_b rb_e ON rb_e.loser_id = bl.entity_id
         LEFT JOIN remap_b rb_c ON rb_c.loser_id = bl.concept_id
+        LEFT JOIN remap_lk_b rl ON rl.old_id = bl.linkage_id
         ON CONFLICT (entity_id, linkage_id, concept_id) DO NOTHING
     """)
 
@@ -396,12 +437,13 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
             LEFT JOIN remap_a ra_c ON ra_c.loser_id = le.concept_id
             UNION ALL
             SELECT COALESCE(rb_e.canonical_id, le.entity_id) AS entity_id,
-                   le.linkage_id,
+                   COALESCE(rl.new_id, le.linkage_id) AS linkage_id,
                    COALESCE(rb_c.canonical_id, le.concept_id) AS concept_id,
                    le.file, le.line, le.span_end, le.detail
             FROM b.linkage_evidence le
             LEFT JOIN remap_b rb_e ON rb_e.loser_id = le.entity_id
             LEFT JOIN remap_b rb_c ON rb_c.loser_id = le.concept_id
+            LEFT JOIN remap_lk_b rl ON rl.old_id = le.linkage_id
         )
     """)
 
@@ -468,7 +510,7 @@ def audit_via_writer(
     # name the writer happens to be using. Also DETACH at the end so a
     # follow-up audit doesn't see a stale ATTACH.
     alias = "_audit_reader"
-    writer_conn.execute(f"ATTACH '{reader_path}' AS {alias} (READ_ONLY)")
+    attach_file(writer_conn, reader_path, alias)
     try:
         writer_counts = {
             t: _scalar(writer_conn.execute(f'SELECT COUNT(*) FROM "{t}"'))
@@ -591,8 +633,8 @@ def audit_slots(a_path: Path, b_path: Path) -> dict[str, Any]:
 
 
 def _audit_overlap(mem, a_path: Path, b_path: Path) -> tuple:
-    mem.execute(f"ATTACH '{a_path}' AS a (READ_ONLY)")
-    mem.execute(f"ATTACH '{b_path}' AS b (READ_ONLY)")
+    attach_file(mem, a_path, "a")
+    attach_file(mem, b_path, "b")
 
     # Entity id-overlap shape
     a_only = _scalar(mem.execute(

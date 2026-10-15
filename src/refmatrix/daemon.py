@@ -462,7 +462,8 @@ class _MemMirror:
         mc = s._conn._duck
         # ATTACH the snapshot in read-only mode and clone every table
         # in `main` schema. Skip information_schema/system tables.
-        mc.execute(f"ATTACH '{snap}' AS src (READ_ONLY)")
+        from refmatrix.backend import attach_file
+        attach_file(mc, snap, "src", read_only=True)
         try:
             # `duckdb_tables()` enumerates tables across all attached DBs
             # — information_schema views aren't reachable through an
@@ -1440,25 +1441,72 @@ class Daemon:
             self._fast_exit_if_invalidated(exc, where)
         _t.Thread(target=_later, name="rmxd-deferred-exit", daemon=True).start()
 
-    def _writer_lost(self, where: str, exc: BaseException) -> None:
-        """The writer could not be reopened: this daemon holds no lock on its
-        own catalog, so another process could open it (bug-113). Log, stop
-        serving, and exit after RMX_DEGRADE_EXIT_S (default 2) so the op's
-        reply flushes first; launchd respawns a daemon that takes the lock."""
-        import threading as _t
-        self._log(f"writer-lost: {where}: {exc!r}; daemon exiting for respawn")
-        self._shutdown_event.set()
-        self._stop = True
-        delay = float(os.environ.get("RMX_DEGRADE_EXIT_S", "2") or "2")
+    WRITER_LOST_EXIT_CODE = 2
 
-        def _later():
-            time.sleep(delay)
-            try:
-                if self.log_fh is not None:
-                    self.log_fh.flush()
-            finally:
-                os._exit(2)
-        _t.Thread(target=_later, name="rmxd-writer-lost-exit", daemon=True).start()
+    def _writer_lost(self, reason: str) -> None:
+        """THE writer-lost exit (bug-113; decision d9bw(d) — plan-18.3's
+        in-daemon reclaim uses this one too). The writer could not be reopened,
+        so this daemon holds no lock on its own catalog and another process
+        could open it. Log one line, then `os._exit(2)` IMMEDIATELY, still
+        holding `_store_lock`: no timer, no `_stop`, no graceful shutdown. The
+        graceful path ends in `os._exit(0)`, and launchd's KeepAlive
+        {SuccessfulExit=0} does not respawn a 0 exit (ch-bsd r1 b-1: an idle
+        daemon's shutdown beat the old 2 s timer and stayed down). The op's
+        reply is lost — the client sees the socket close; the log line is the
+        record."""
+        try:
+            self._log(f"writer-lost: {reason}; exiting {self.WRITER_LOST_EXIT_CODE} "
+                      "for the supervisor's respawn")
+            if self.log_fh is not None:
+                self.log_fh.flush()
+        finally:
+            os._exit(self.WRITER_LOST_EXIT_CODE)
+
+    def _install_writer_store(self, st: "Store", slot: str) -> None:
+        """THE install of an opened writer Store (plan-23.1 R1.6 builds on this
+        name): the daemon's store, its active slot, and the read replica link."""
+        self.store = st
+        self._active_slot = slot
+        self._refresh_read_only_link()
+
+    def _reopen_writer(self, slot: "str | None" = None) -> None:
+        """THE writer reopen: open the Store on `slot` (default: the active
+        slot) and its connection — the DuckDB file lock, via
+        `backend.open_duckdb` — then install it. Caller holds `_store_lock`."""
+        assert self._store_lock.locked(), "_reopen_writer needs _store_lock held"
+        slot = slot or self._active_slot or self._read_active_slot()
+        st = Store(self.root, partition=self.partition)
+        st.db_path = self._replica_file(slot)
+        try:
+            st.init()
+            st._connect()
+        except BaseException:
+            Daemon._force_close_store(st)
+            raise
+        self._install_writer_store(st, slot)
+
+    def _attach_backend_log(self) -> None:
+        """Route the `refmatrix.backend` logger (open_duckdb's stale-holder
+        warnings) into rmxd.log (ch-bsd r1 m-2); it had no handler here."""
+        import logging as _logging
+        daemon = self
+
+        class _ToDaemonLog(_logging.Handler):
+            def emit(self, record: _logging.LogRecord) -> None:
+                daemon._log(f"backend: {record.getMessage()}")
+
+        self._backend_log_handler = _ToDaemonLog(level=_logging.WARNING)
+        lg = _logging.getLogger("refmatrix.backend")
+        lg.addHandler(self._backend_log_handler)
+        if lg.level == _logging.NOTSET or lg.level > _logging.WARNING:
+            lg.setLevel(_logging.WARNING)
+
+    def _detach_backend_log(self) -> None:
+        import logging as _logging
+        h = getattr(self, "_backend_log_handler", None)
+        if h is not None:
+            _logging.getLogger("refmatrix.backend").removeHandler(h)
+            self._backend_log_handler = None
 
     def _fast_exit_if_invalidated(self, exc: BaseException, where: str) -> None:
         """If `exc` looks like DuckDB index-drift / DB-invalidation,
@@ -1677,6 +1725,7 @@ class Daemon:
             return 0
 
         self.log_fh = self.log_fh or (self.root / LOG_NAME).open("a", encoding="utf-8")
+        self._attach_backend_log()
         self._log(f"daemon starting pid={os.getpid()} root={self.root}")
         pid_path(self.root).write_text(str(os.getpid()))
         try:
@@ -5503,26 +5552,18 @@ def _op_replica_audit(d: Daemon, args: dict) -> dict:
 
 
 def _reopen_writer_after_merge(d: Daemon, slot: str, where: str) -> "str | None":
-    """THE writer reopen for every `_op_replica_merge` exit (bug-113).
-
-    The merge closes the writer, so an exit that does not reopen it leaves the
-    live slot unlocked: another process can open it (ch-bsd bug-110 r1 #s-1).
-    Opens the Store on `slot` and its connection — the DuckDB file lock — then
-    repoints the read replica. Returns None on success. On failure the daemon
-    holds no lock on its own catalog and cannot serve writes safely, so it
-    hands off to `_writer_lost` (exit for the supervisor's respawn) and
-    returns the error for the op's reply."""
+    """Every `_op_replica_merge` exit reopens the writer here (bug-113): the
+    merge closes the writer, and an exit that does not reopen it leaves the
+    live slot unlocked (ch-bsd bug-110 r1 #s-1). Delegates to THE reopen
+    (`Daemon._reopen_writer`) and, when that fails, to THE writer-lost exit
+    (`Daemon._writer_lost`), which does not return. Returns None on success;
+    the error string is reached only where `_writer_lost` is replaced (tests)."""
     try:
-        st = Store(d.root, partition=d.partition)
-        st.db_path = d._replica_file(slot)
-        st.init()
-        st._connect()
+        d._reopen_writer(slot)
     except Exception as exc:
-        d._writer_lost(f"replica merge ({where}): writer reopen on slot {slot}", exc)
+        d._writer_lost(f"replica merge ({where}): writer reopen on slot {slot} "
+                       f"failed: {exc!r}")
         return f"writer reopen on slot {slot} FAILED ({exc!r}); daemon exiting for respawn"
-    d.store = st
-    d._active_slot = slot
-    d._refresh_read_only_link()
     return None
 
 
@@ -5642,6 +5683,7 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
         # 3. Atomic swap: replace BOTH slots with the merged file. Use
         # os.replace for atomicity within a filesystem. Drop stale .wal
         # files on both slots so DuckDB sees a clean snapshot.
+        installed_a = False
         try:
             for slot in ("A", "B"):
                 slot_path = d._replica_file(slot)
@@ -5654,6 +5696,7 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
                 if slot == "A":
                     # First slot uses os.replace from the temp file.
                     os.replace(tmp_target, slot_path)
+                    installed_a = True
                 else:
                     # Second slot gets a fresh copy of the now-installed A.
                     _shutil.copy2(d._replica_file("A"), slot_path)
@@ -5664,9 +5707,39 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
             d._active_marker().write_text("A")
             d._active_slot = "A"
         except Exception as exc:
+            # ch-bsd r1 b-2: this exit returned with the writer force-closed.
             d._log(f"merge: swap failed: {exc!r}")
-            return {"enabled": True, "ok": False,
-                    "error": f"swap: {exc!r}"}
+            if installed_a:
+                # A holds the merge; B is a partial copy. Remove B so the
+                # rotation slot repair re-clones it from A, and make A the
+                # writer it now is.
+                b_slot = d._replica_file("B")
+                for leftover in (b_slot, b_slot.with_name(b_slot.name + ".wal")):
+                    try:
+                        leftover.unlink()
+                    except FileNotFoundError:
+                        pass
+                    except OSError as uexc:
+                        d._log(f"merge: swap failed: unlink partial {leftover.name}: {uexc!r}")
+                try:
+                    d._write_slot_offset("A", log_end_offset)
+                    d._active_marker().write_text("A")
+                except OSError as mexc:
+                    d._log(f"merge: swap failed: promote A: {mexc!r}")
+                reopen_slot = "A"
+            else:
+                try:
+                    tmp_target.unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError as uexc:
+                    d._log(f"merge: swap failed: unlink {tmp_target.name}: {uexc!r}")
+                reopen_slot = prev_writer
+            err = f"swap: {exc!r}"
+            rerr = _reopen_writer_after_merge(d, reopen_slot, "swap failed")
+            if rerr:
+                err += f"; {rerr}"
+            return {"enabled": True, "ok": False, "error": err}
 
         # 4. Reopen writer on slot A; 5. point the read replica at B.
         rerr = _reopen_writer_after_merge(d, "A", "post-merge")

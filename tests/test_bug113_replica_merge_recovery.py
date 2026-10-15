@@ -227,7 +227,7 @@ def test_op_whose_writer_cannot_reopen_hands_off_to_writer_lost(tmp_path, monkey
     from refmatrix import daemon as dm
     d, root = _daemon(tmp_path)
     lost = []
-    d._writer_lost = lambda where, exc: lost.append((where, repr(exc)))
+    d._writer_lost = lambda reason: lost.append(reason)
 
     class _NoOpenStore(dm.Store):
         def init(self):
@@ -237,7 +237,7 @@ def test_op_whose_writer_cannot_reopen_hands_off_to_writer_lost(tmp_path, monkey
     r = dm._op_replica_merge(d, {"dry_run": True})
     assert r.get("ok") is False, r
     assert "FAILED" in r["error"] and "respawn" in r["error"], r
-    assert lost and "slot A" in lost[0][0], lost
+    assert lost and "slot A" in lost[0], lost
 
 
 def test_op_real_merge_installs_on_both_slots_and_keeps_the_writer(tmp_path):
@@ -253,3 +253,218 @@ def test_op_real_merge_installs_on_both_slots_and_keeps_the_writer(tmp_path):
         assert {"shared.md", "a-only.md", "b-only.md"} <= names
     finally:
         d.store.close()
+
+
+# ---- ch-bsd r1 b-1: the writer-lost exit is deterministic -----------------
+
+_WL_CHILD = r'''
+import sys, threading, time
+from pathlib import Path
+from refmatrix import daemon as dm
+from refmatrix.store import Store
+root = Path(sys.argv[1])
+Store(root).init()
+d = dm.Daemon(root)
+def trig():
+    for _ in range(600):
+        if dm.ping(root):
+            break
+        time.sleep(0.05)
+    try:
+        d._writer_lost("test: simulated reopen failure")
+    except TypeError:                      # the r1 shape: (where, exc)
+        d._writer_lost("test: simulated reopen failure", RuntimeError("simulated"))
+threading.Thread(target=trig, daemon=True).start()
+d.serve_forever()
+'''
+
+
+@pytest.mark.parametrize("degrade_s", ["0.2", "8"])
+def test_writer_lost_exits_2_from_a_real_serving_daemon(tmp_path, degrade_s):
+    """ch-bsd r1 b-1: `_writer_lost` set `_stop` and slept before os._exit(2);
+    the serve loop's graceful shutdown ends in os._exit(0) and won whenever it
+    finished first (RMX_DEGRADE_EXIT_S=8: exit 0). launchd's KeepAlive
+    {SuccessfulExit=0} does not respawn a 0 exit, so the daemon stayed down.
+    The real `serve_forever` runs in a child; its exit status must be 2."""
+    import os
+    import tempfile
+    root = Path(tempfile.mkdtemp(prefix="rmx", dir="/tmp")) / ".refmatrix"
+    root.mkdir()
+    home = Path(tempfile.mkdtemp(prefix="rmxh", dir="/tmp"))
+    env = dict(os.environ, HOME=str(home), RMX_HOME=str(home / ".refmatrix"),
+               RMX_DEGRADE_EXIT_S=degrade_s, HF_HUB_OFFLINE="1",
+               PYTHONPATH=str(Path(__file__).resolve().parents[1] / "src"))
+    r = subprocess.run([sys.executable, "-c", _WL_CHILD, str(root)], env=env,
+                       capture_output=True, text=True, timeout=120)
+    log = (root / "rmxd.log").read_text() if (root / "rmxd.log").exists() else ""
+    assert r.returncode == 2, (r.returncode, log[-2000:], r.stderr[-2000:])
+    assert "writer-lost" in log, log[-2000:]
+
+
+# ---- ch-bsd r1 b-2: the swap-failure exit reopens the writer ---------------
+
+@pytest.mark.parametrize("fail_at", ["replace", "copy2"])
+def test_op_swap_failure_leaves_the_writer_reopened_and_locked(tmp_path, monkeypatch, fail_at):
+    """The swap installs the merge on A (os.replace), then copies A to B
+    (shutil.copy2). Either failing returned `swap: …` with the writer still
+    force-closed. Fault injection on the two filesystem calls only."""
+    import os
+    import shutil as _sh
+    from refmatrix import daemon as dm
+    d, root = _daemon(tmp_path)
+    if fail_at == "replace":
+        real = os.replace
+
+        def bad_replace(src, dst, *a, **k):
+            if str(dst).endswith("catalog.A.duckdb"):
+                raise OSError(28, "No space left on device (injected)")
+            return real(src, dst, *a, **k)
+        monkeypatch.setattr(dm.os, "replace", bad_replace)
+    else:
+        def bad_copy2(src, dst, *a, **k):
+            raise OSError(28, "No space left on device (injected)")
+        monkeypatch.setattr(_sh, "copy2", bad_copy2)
+    try:
+        r = dm._op_replica_merge(d, {"dry_run": False})
+        assert r.get("ok") is False, r
+        assert "swap" in r["error"], r
+        monkeypatch.undo()
+        _assert_writer_open_and_locked(d, root)
+    finally:
+        d.store.close()
+
+
+# ---- ch-bsd r1 b-3: a stale source slot lacks the newest column ------------
+
+def _drop_newest_column(path: Path) -> None:
+    """Make a slot as old as the 2026-06-20 global B: no `vectors_partition`.
+    DuckDB refuses DROP COLUMN while indexes depend on the table, so the
+    indexes are dropped and recreated around it."""
+    con = duckdb.connect(str(path))
+    idx = con.execute("SELECT index_name, sql FROM duckdb_indexes() "
+                      "WHERE table_name = 'entities' AND sql IS NOT NULL").fetchall()
+    for name, _ in idx:
+        con.execute(f'DROP INDEX "{name}"')
+    con.execute("ALTER TABLE entities DROP COLUMN vectors_partition")
+    for _, sql in idx:
+        con.execute(sql)
+    con.close()
+
+
+@pytest.mark.parametrize("stale", ["a", "b"])
+@pytest.mark.parametrize("dry_run", [True, False])
+def test_merge_slots_merges_a_slot_older_than_the_schema(tmp_path, stale, dry_run):
+    """The global store's live shape: writer A current, B from 2026-06-20
+    without `entities.vectors_partition`. `SET vectors_partition =
+    be.vectors_partition` failed 'Table "be" does not have a column named
+    "vectors_partition"'. A column the winning source lacks is set NULL."""
+    from refmatrix.replica_merge import merge_slots
+    a, b = _slots(tmp_path)
+    _drop_newest_column(a if stale == "a" else b)
+    out = tmp_path / "merged.duckdb"
+    report = merge_slots(a, b, out, dry_run=dry_run)
+    assert report["merged_counts"]["entities"] == 3
+    if not dry_run:
+        con = duckdb.connect(str(out), read_only=True)
+        try:
+            vp = dict(con.execute("SELECT name, vectors_partition FROM entities").fetchall())
+        finally:
+            con.close()
+        # the newer B row wins; a stale side contributes NULL, never a crash
+        assert vp["shared.md"] == (None if stale == "b" else "pb")
+
+
+def test_memory_content_set_list_is_target_and_source_columns(tmp_path):
+    from refmatrix.replica_merge import merge_slots
+    a, b = _slots(tmp_path)
+    for path, upd in ((a, 5.0), (b, 9.0)):
+        con = duckdb.connect(str(path))
+        con.execute("INSERT INTO memory_content(entity_id, content, mtype, created_at, updated_at) "
+                    "VALUES (100, ?, 'observation', 1.0, ?)", [f"c{upd}", upd])
+        con.close()
+    con = duckdb.connect(str(b))
+    con.execute("ALTER TABLE memory_content DROP COLUMN tags")
+    con.close()
+    out = tmp_path / "merged.duckdb"
+    merge_slots(a, b, out)
+    con = duckdb.connect(str(out), read_only=True)
+    try:
+        assert con.execute("SELECT content FROM memory_content WHERE entity_id=100").fetchone()[0] == "c9.0"
+    finally:
+        con.close()
+
+
+# ---- ch-bsd r1 s-3 / bug-123: linkage_types collide by name ----------------
+
+def _relink(path: Path, renames: "dict[str, int]", links: "list[tuple]") -> None:
+    """Move named linkage rows to new ids (as two slots that seeded or added
+    linkages in a different order do), then add entity_links/evidence."""
+    con = duckdb.connect(str(path))
+    for name, new_id in renames.items():
+        row = con.execute("SELECT id, directed, inverse_of, description FROM linkage_types "
+                          "WHERE name = ?", [name]).fetchone()
+        if row is None:
+            con.execute("INSERT INTO linkage_types(id, name, directed) VALUES (?, ?, 1)",
+                        [new_id, name])
+        else:
+            con.execute("DELETE FROM linkage_types WHERE name = ?", [name])
+            con.execute("INSERT INTO linkage_types(id, name, directed, inverse_of, description) "
+                        "VALUES (?, ?, ?, ?, ?)", [new_id, name, row[1], row[2], row[3]])
+    for eid, lk_name, cid in links:
+        lid = con.execute("SELECT id FROM linkage_types WHERE name=?", [lk_name]).fetchone()[0]
+        con.execute("INSERT INTO entity_links VALUES (?, ?, ?, 1.0)", [eid, lid, cid])
+        con.execute("INSERT INTO linkage_evidence(entity_id, linkage_id, concept_id, file, line) "
+                    "VALUES (?, ?, ?, 'f.md', 1)", [eid, lid, cid])
+    con.close()
+
+
+def test_merge_remaps_linkage_ids_that_collide_by_name(tmp_path):
+    """bug-123: refmatrix's own snapshot vs its stale slot A failed `Duplicate
+    key "name: part-of"` — one linkage name, different ids per slot. The merge
+    keys linkage_types by NAME and remaps B's linkage_id in every referencing
+    table, so every link keeps the linkage it named."""
+    from refmatrix.replica_merge import merge_slots
+    a, b = _slots(tmp_path)
+    _relink(a, {"alpha-lk": 900, "beta-lk": 901, "part-of": 950}, [(100, "alpha-lk", 101), (101, "part-of", 100)])
+    _relink(b, {"beta-lk": 900, "gamma-lk": 901, "part-of": 902},
+            [(100, "beta-lk", 102), (102, "gamma-lk", 100), (102, "part-of", 100)])
+    out = tmp_path / "merged.duckdb"
+    merge_slots(a, b, out)
+    con = duckdb.connect(str(out), read_only=True)
+    try:
+        names = [r[0] for r in con.execute("SELECT name FROM linkage_types").fetchall()]
+        assert len(names) == len(set(names))
+        links = set(con.execute(
+            "SELECT el.entity_id, lt.name, el.concept_id FROM entity_links el "
+            "JOIN linkage_types lt ON lt.id = el.linkage_id").fetchall())
+        assert {(100, "alpha-lk", 101), (101, "part-of", 100), (100, "beta-lk", 102),
+                (102, "gamma-lk", 100), (102, "part-of", 100)} <= links, links
+        ev = set(con.execute(
+            "SELECT le.entity_id, lt.name, le.concept_id FROM linkage_evidence le "
+            "JOIN linkage_types lt ON lt.id = le.linkage_id").fetchall())
+        assert (102, "gamma-lk", 100) in ev and (100, "beta-lk", 102) in ev, ev
+        orphans = con.execute("SELECT count(*) FROM entity_links el LEFT JOIN linkage_types lt "
+                              "ON lt.id = el.linkage_id WHERE lt.id IS NULL").fetchone()[0]
+        assert orphans == 0
+    finally:
+        con.close()
+
+
+def test_merge_refuses_partitions_that_collide_by_name_with_a_named_diagnosis(tmp_path):
+    """The sibling shape (partitions.name is UNIQUE too). Partition ids reach
+    every table, so the merge refuses with a diagnosis naming the partition —
+    before anything is written — rather than a bare constraint error."""
+    from refmatrix.replica_merge import merge_slots
+    a, b = _slots(tmp_path)
+    con = duckdb.connect(str(b))
+    con.execute("INSERT INTO partitions(id, name, kind, created_at) VALUES (77, 'collide', 'repo', 1.0)")
+    con.close()
+    con = duckdb.connect(str(a))
+    con.execute("INSERT INTO partitions(id, name, kind, created_at) VALUES (78, 'collide', 'repo', 1.0)")
+    con.close()
+    out = tmp_path / "merged.duckdb"
+    with pytest.raises(Exception) as ei:
+        merge_slots(a, b, out)
+    assert type(ei.value).__name__ == "MergeRefused", repr(ei.value)
+    assert "collide" in str(ei.value)
+    assert not out.exists()

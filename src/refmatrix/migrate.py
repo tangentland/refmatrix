@@ -10,7 +10,7 @@ from pathlib import Path
 
 import duckdb
 
-from refmatrix.backend import open_duckdb
+from refmatrix.backend import attach_file, open_duckdb
 from refmatrix.duckdb_catalog import (
     SEQUENCES,
     TABLE_LOAD_ORDER,
@@ -61,9 +61,7 @@ def migrate_catalog(
     try:
         con.execute("INSTALL sqlite_scanner")
         con.execute("LOAD sqlite_scanner")
-        con.execute(
-            f"ATTACH '{sqlite_path}' AS {SQLITE_ALIAS} (TYPE SQLITE, READ_ONLY)"
-        )
+        attach_file(con, sqlite_path, SQLITE_ALIAS, read_only=True, db_type="SQLITE")
         # Compute sequence starts BEFORE creating tables — DuckDB can't ALTER
         # a sequence once a table column DEFAULTs to it, so we have to set
         # the START value at create time. Each sequence opens at one past the
