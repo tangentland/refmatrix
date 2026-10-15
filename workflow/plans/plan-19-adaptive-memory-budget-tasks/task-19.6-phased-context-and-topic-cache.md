@@ -63,7 +63,10 @@ pays is unmeasured; this task measures first and builds against pre-registered r
    - the per-turn share of collapsed lines byte-identical to the previous turn's;
    - the per-turn persistence of non-selected LIVE clusters' member sets (Jaccard with the same
      cluster's previous member set, and the share exactly unchanged), which shows how much of the
-     collapsed lines' stability comes from R9's frozen snapshots rather than from the clustering.
+     collapsed lines' stability comes from R9's frozen snapshots rather than from the clustering;
+   - the share of non-selected live clusters represented by a snapshot they share exactly ONE
+     member with (round-6 #s-2), so a stability figure produced by the identity rule rather than
+     by the clustering is visible.
    These are recorded figures; Table A's bands and verdicts are unchanged (d9v).
 2. **R2 Phase classification, against the STM state BEFORE this prompt** (round-3 #b-2). The
    recall and scan hooks run in parallel with `focus hook --event input`, and `Stm.record` appends
@@ -89,9 +92,19 @@ pays is unmeasured; this task measures first and builds against pre-registered r
    **Turn count is logged and is never a phase signal** (d5b).
 3. **R3 Topic cache** (#topic-cache). Every cluster that loses focus is snapshotted, keyed by its
    member set, in a per-session LRU of `N = 8` clusters, keyed by the session of 19.0 R5's
-   resolver (never `latest_session`). The cache file is updated only by the input hook, AFTER
-   `snapshot_pre_prompt` has copied the previous cache into `pre.json` (R2), so a reader never
-   sees this prompt's own eviction or restore. A return (Jaccard overlap of the prompt's terms with a cached
+   resolver (never `latest_session`). **One writer, one home** (round-6 #s-2): the cache file is
+   written only by the input hook, and it is the ONLY home of R9's collapsed snapshots (the round-5
+   phrase "stored in the session's last-emitted state" is WITHDRAWN). Two writes, in the input
+   hook's order (21.1 R9):
+   - **in step 2, `snapshot_pre_prompt`:** the new snapshots R9 derives from the graph being
+     copied (`stm.derive_snapshots(graph, cache) -> cache`, a pure function of those two values)
+     are added, and the result is written into BOTH `pre.json`'s `topic_cache` and the cache file;
+   - **after the input record:** this prompt's eviction, restore, expansion and re-collapse,
+     which a reader never sees for this prompt.
+   `pre_prompt_state` on its `live` path (no matching `pre.json`, the reader ran first) calls the
+   same `derive_snapshots` on the live graph and cache in memory and writes nothing, so every
+   ordering of the hooks sees the same snapshot set. 19.6 extends `snapshot_pre_prompt` and
+   `pre_prompt_state` (21.1 R9) for this; scan-prompt and the render write no STM file. A return (Jaccard overlap of the prompt's terms with a cached
    cluster ≥ the threshold, logged raw) restores that cluster as the active focus and spends the
    budget as warm. A cache entry and R9's collapsed snapshot of the same cluster are ONE record
    (member set, frozen label, `<cid>`, first-collapse time; round-4 #s-3). The LRU bound `N`
@@ -165,21 +178,30 @@ pays is unmeasured; this task measures first and builds against pre-registered r
        set of an untouched cluster is not stable: every recorded input decays every node by
        `DECAY = 0.85` (`stm.py:37-38`), `focus_graph(top=30)` cuts to the 30 best-scoring nodes,
        and `cluster_focus` runs label propagation in score order, so an untouched cluster gains
-       or loses members turn to turn. So a cluster is snapshotted the FIRST time it renders
-       collapsed (a cluster that loses focus is R3's cache entry; a cluster first seen
-       collapsed, on cold or as a non-selected cluster, is snapshotted the same way): member set,
-       `<cid>` = a hash of that member set (as 19.4 R6 names unlabeled subjects), `<label>` = its
-       head member by focus weight at that moment, and its first-collapse time, stored in the
-       session's last-emitted state. Later turns render the snapshot; decay, the top-30 cut and
-       label propagation order cannot change its bytes.
-     - **Which live cluster a snapshot stands for.** A non-selected live cluster that shares at
-       least one member with an existing snapshot is represented by that snapshot (no new line);
-       only a live cluster disjoint from every snapshot is snapshotted as new. No new threshold is
-       introduced.
+       or loses members turn to turn. So every live cluster of the pre-prompt graph that no
+       snapshot represents is snapshotted by the INPUT HOOK, inside `snapshot_pre_prompt`, from
+       the graph it is copying (R3; round-6 #s-2), never by the render: member set, `<cid>` = a
+       hash of that member set (as 19.4 R6 names unlabeled subjects), `<label>` = its head member
+       by focus weight in that graph, and its first-collapse time = that graph's integer `turn`
+       (not a clock, so the writer and a live-path reader derive the same value). A cluster that
+       loses focus is R3's cache entry and gets its snapshot the same way. Later turns render the
+       snapshot; decay, the top-30 cut and label propagation order cannot change its bytes. The
+       render (`composite.py`) reads snapshots only from `pre_prompt_state(…).topic_cache`.
+     - **Which live cluster a snapshot stands for** (round-6 #s-2). A live cluster is represented
+       by the snapshot with the highest Jaccard(live member set, snapshot member set), provided
+       it is ≥ `j_return` (0.20, CONFIRMED in [[#ranges-thresholds]], d9v; the threshold a
+       `return` already uses to say "this cached cluster is that topic"); ties go to the newest
+       first-collapse time, then the smaller `<cid>`. Each snapshot represents at most one live
+       cluster per prompt (the highest-Jaccard one; the others go on down their own lists). A live
+       cluster with no snapshot at ≥ `j_return` is snapshotted as new. The round-5 rule "shares at
+       least one member" is WITHDRAWN: hub refs (`src/refmatrix/cli.py`, `daemon.py`) sit in most
+       clusters of this repo, so one shared member hid every later topic behind an old line.
+       Residual, stated: two clusters whose member sets total ≤ 5 can still reach 0.20 through
+       one shared member; R1's one-member share reports how often.
      - **Re-collapse** (round-4 #s-3). When a snapshot's cluster is expanded (warm on it, or a
        `return` restores it), the snapshot leaves the collapsed set. When that cluster collapses
        again, it gets a NEW snapshot: its member set at that moment, a new `<cid>` and label, and a
-       first-collapse time = the re-collapse time. So the cluster that just lost focus, the
+       first-collapse time = the graph's `turn` at the re-collapse. So the cluster that just lost focus, the
        likeliest `return`, is always among the `C` shown.
      - **Counts and ranges move to the expanded view.** The event count and the `L<a>–L<b>` range
        are printed only on the EXPANDED cluster's header line (block `stm-topic-expanded`, R5)
@@ -196,8 +218,8 @@ pays is unmeasured; this task measures first and builds against pre-registered r
      versioned injection (R5) can send the `stm-topic-collapsed` block as "unchanged" on any turn
      in which no snapshot entered or left the shown `C` and `m` did not change.
    - **Where the render lives.** `composite.build_topic_composite` (`composite.py:63`), called by
-     scan-prompt (`scan.py:889-894`), not `stm.py`; it reads its graph from `pre_prompt_state`
-     on that prompt-time call (R2; 19.0 R5).
+     scan-prompt (`scan.py:888-894`), not `stm.py`; it reads its graph AND its snapshots from the
+     one `pre_prompt_state` call on that prompt-time call (R2, R3; 19.0 R5), and writes nothing.
    - **Single-expand vs expand-top-2** is decided by R10's measurement against Table D, not
      assumed.
    - **Prerequisite:** a collapsed line is only its label, so label quality depends on 19.0; a
@@ -305,7 +327,13 @@ the warm threshold):** {#ranges-d}
    overlap (round-4 #b-1). All four give the same `phase`, the same `overlap` scores, the same
    matched cluster and the same `restored_cluster_id`; all but the reader-first run log
    `stm_source=snapshot`. The scan-prompt composite rendered on the same runs is byte-identical
-   across the four (its graph comes from the same `pre_prompt_state` call; round-4 #b-2). The warm fixture's
+   across the four (its graph comes from the same `pre_prompt_state` call; round-4 #b-2), and
+   this is asserted on the composite BYTES for two fixtures in particular (round-6 #s-2): the
+   evicting `return` fixture, and a fixture whose pre-prompt graph holds a non-selected cluster no
+   snapshot represents yet, so its snapshot is derived on this prompt. On the second, in the run
+   stopped after `snapshot_pre_prompt`, `pre.json`'s `topic_cache` already holds that cluster's
+   snapshot, and the reader-first run (no `pre.json` match) renders the same line from its
+   in-memory derivation. The warm fixture's
    prompt terms are chosen so that, read from the post-ingest `focus.json`, they WOULD exceed
    `w_min` against a cluster they do not overlap before the prompt (a non-vacuous fixture,
    pre-checked by reading `focus.json` after the input hook).
@@ -357,6 +385,13 @@ the warm threshold):** {#ranges-d}
    emits a new rev each turn and `stm-topic-collapsed` emits its body once and then
    `stm-topic-collapsed rev N unchanged` twice. A turn that adds a new snapshot to the shown set
    emits a new rev of `stm-topic-collapsed`.
+7i. **A shared hub member does not merge topics** (R9 identity; round-6 #s-2). With a snapshot
+   S = {`src/refmatrix/cli.py`, `a`, `b`, `c`}: a new live cluster {`src/refmatrix/cli.py`, `x`,
+   `y`, `z`} (Jaccard 1/7) renders its OWN collapsed line, with its own `<cid>` and label; a live
+   cluster {`a`, `b`, `c`, `d`} (Jaccard 3/5) is represented by S (no new line). Boundary, against
+   a snapshot {`a`, `b`, `c`}: a live cluster {`a`, `d`, `e`} (Jaccard exactly 0.20) is
+   represented by it; {`a`, `d`, `e`, `f`} (Jaccard 1/6) gets its own line. RED at HEAD: no
+   collapsed render exists.
 8. **Isolation.** 23.0's guard records 0 live connects for this task's test files.
 9. **Mutations that must FAIL a test:**
    - phase driven by turn count (AC-7);
@@ -381,6 +416,14 @@ the warm threshold):** {#ranges-d}
    - any phase input read from `focus.json` / the ring / the cache file instead of
      `pre_prompt_state` (AC-3c: the input-hook-first run reads `warm`);
    - the cache updated before `snapshot_pre_prompt` (AC-3c's evicting `return` fixture);
+   - snapshots written by the render in scan-prompt instead of by `snapshot_pre_prompt` (AC-3c's
+     new-cluster fixture: `pre.json`'s `topic_cache` lacks the snapshot);
+   - `pre_prompt_state`'s live path not deriving snapshots (AC-3c's new-cluster fixture: the
+     reader-first composite lacks the line, so its bytes differ);
+   - the snapshot identity rule back to "≥ 1 shared member" (AC-7i: the hub-sharing cluster has
+     no line of its own);
+   - the identity threshold moved off `j_return` by one step either way (AC-7i's 0.20 / 1/6
+     boundary flips);
    - the marker written only by the PreCompact recall command (AC-7f with the recall entry
      removed);
    - `session_start` / `precompact` randomized across arms (AC-7b);
@@ -392,8 +435,8 @@ the warm threshold):** {#ranges-d}
 
 | file | change |
 |---|---|
-| `src/refmatrix/stm.py` | phase classification over `pre_prompt_state` (R2) with the thresholds; the topic cache (snapshot, LRU, restore; written after `snapshot_pre_prompt`, R3), whose entries are R9's frozen snapshots |
-| `src/refmatrix/composite.py` | the expand/collapse composite render (R9; the render lives here, `composite.py:63`, not in `stm.py`; round-4 #b-2): frozen snapshots, stable cluster ids, frozen labels, re-collapse, the cap `C`; the two blocks `stm-topic-expanded` / `stm-topic-collapsed` (R5); its graph from `pre_prompt_state` on prompt-time calls (R2) |
+| `src/refmatrix/stm.py` | phase classification over `pre_prompt_state` (R2) with the thresholds; the topic cache (snapshot, LRU, restore), whose entries are R9's frozen snapshots and whose ONLY writer is the input hook (R3; round-6 #s-2): `derive_snapshots(graph, cache)` (pure; the Jaccard ≥ `j_return` identity rule), called and stored by `snapshot_pre_prompt` and called in memory by `pre_prompt_state`'s live path; eviction / restore / expansion / re-collapse written after the input record |
+| `src/refmatrix/composite.py` | the expand/collapse composite render (R9; the render lives here, `composite.py:63`, not in `stm.py`; round-4 #b-2): frozen snapshots read from `pre_prompt_state(…).topic_cache`, never written here (round-6 #s-2), stable cluster ids, frozen labels, the cap `C`; the two blocks `stm-topic-expanded` / `stm-topic-collapsed` (R5); its graph from `pre_prompt_state` on prompt-time calls (R2) |
 | `src/refmatrix/cli.py` (`focus hook`), `hooks.py` | `--event compact-marker` and its own generated PreCompact entry (R8a); the marker dispatch inside `--event session-start` when `source=compact` (R8a; round-4 #m-3) |
 | `src/refmatrix/scan.py` | phase-aware allocation of scan-prompt's spend; block ids and revs |
 | `src/refmatrix/cli.py` / `verbs.py` (`memory recall`) | phase-aware pack allocation; block ids and revs |
@@ -481,3 +524,18 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r4-878647c]]
 | d9v (tables, thresholds, `N`, `K`, `C` CONFIRMED as written) | header; R0; R2; R9 cap; [[#ranges]] heading and status; [[#ranges-thresholds]] column; AC-1. No number changed |
 | round-3 #s-4 (partial) | as round-4 #s-3 |
 | round-3 #b-2 (partial) | as round-4 #b-1 |
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Answers [[bsd-plan19-21-spec-rereview-r6-0e77da3#s-2]] (the only round-6 finding on 19.6). No
+round-6 decision-log row names plan 19; the identity rule reuses `j_return`, a number already
+CONFIRMED by d9v, so no band or threshold changes. Code facts read at write time at HEAD
+`3d3c798`: `composite.py:63`, `:103`; `scan.py:888-894`; `stm.py:38` (`DECAY`), `:692` (`turn`),
+`:705-710`.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r6-0e77da3]]
+
+| finding / decision | answered at |
+|---|---|
+| round-6 #s-2 (two writers and two homes for the frozen snapshot; "≥ 1 shared member" merges new topics into old lines through hub refs) | R3 ("One writer, one home": the input hook only, the topic cache only; `derive_snapshots` in `snapshot_pre_prompt`, and in memory on `pre_prompt_state`'s live path; "last-emitted state" withdrawn as a snapshot home); R9 (snapshot creation by the input hook from the copied graph; first-collapse time = the graph's `turn`; identity by Jaccard ≥ `j_return` with ties; the round-5 rule withdrawn; residual stated; "Where the render lives": reads and writes nothing else); R1 (one-member representation share recorded); AC-3c (composite bytes asserted on the evicting `return` and a new-cluster fixture; `pre.json` holds the derived snapshot); AC-7i (hub-only share gets its own line; 0.20 / 1/6 boundary); mutations; [[#files-to-modify]] (`stm.py`, `composite.py`) |
+| round-6 #b-1, #b-2, #s-1, #s-3, #m-1, #m-2 | not 19.6 items: [[task-19.0-stm-cluster-hygiene#rev-round-6]], [[task-19.3-subject-tiered-index#rev-round-6]], [[task-19.4-keep-derived-layers-current#rev-round-6]], [[plan-19-adaptive-memory-budget#rev-round-6]] |

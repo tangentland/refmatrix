@@ -70,8 +70,11 @@ fit is reachable by a printed command that, when run, returns it; decay only dem
   Claude process (bug-109's, written by the input hook; 19.0/21.1 add the SessionStart writer, a
   user-level location, cleanup and surfaced errors), with a required `purpose` so writes raise
   instead of guessing and only labelled reads may fall back to the newest ring; every
-  `latest_session` caller (scan-prompt's enrichment and composite, helix, promote) is routed, an
-  AST test keeps it so; and the input hook snapshots the pre-prompt STM state as its first state
+  `latest_session` caller (scan-prompt's enrichment and composite, helix, promote) is routed, and
+  so is every command behind the CLI helper `_resolve_stm_session`, which now takes a required
+  `purpose` (the Stop and PreCompact hooks' per-turn `focus summarize --promote` resolves from
+  its stdin envelope as a `write`); an AST test keeps it so; a subagent's call swept as abandoned
+  gets an origin like any other; and the input hook snapshots the pre-prompt STM state as its first state
   access, before its in-flight sweep, so prompt-time readers never race it.
 - **Pack, don't truncate; no subject noise (19.1).**
   - `memory recall --pack` emits one hook line per hit, whole bodies for the top hits while the
@@ -136,7 +139,7 @@ From [[plan-review-2026-10-14#t8-wave1]]: Wave 1 is 23.0 ∥ 23.4 → 23.2 → 2
 | task | depends on |
 |---|---|
 | 19.0 | 23.0; bug-109 MERGED to `master` (d9s; its pointer and `verbs.resolve_session_source` are existing code R5 extends). Shares the resolver's deltas and `stm.pre_prompt_state` with 21.1 (specified in 21.1 R9); whichever merges first builds them |
-| 19.1 | 23.0; 19.5 R1; 21.1 (R11's single emission site and R10's span fields must be merged FIRST: 19.1's pack returns spans to it; round-3 #m-1, an edge [[plan-review-2026-10-14#t10-waves]] lists as parallel bullets); scheduled after 23.1; deploys in the C11 hook window |
+| 19.1 | 23.0; 19.5 R1; 21.1 (R11's single emission site and R10's span fields must be merged FIRST: 19.1's pack returns spans to it; round-3 #m-1; [[plan-review-2026-10-14#t10-waves]] orders 21.1 → 19.1 since `734dc5f`, and both task specs carry the edge); scheduled after 23.1; deploys in the C11 hook window |
 | 19.2 | 19.1; 23.0; 23.1 (`bind(partition_name)`, `tail(log, offset)`, tick registry, offset in transaction); 23.2 (recorder); 21.1 (schema) |
 | 19.3 | 19.2; 23.0 (static catalog copy; no 19.4, no 22.2) |
 | 19.4 | 19.3; 17.2; 23.0 |
@@ -304,3 +307,22 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r4-878647c]]
 | d9r | 19.2 R7 (already so); [[#decisions]] |
 | d9s | 19.0 R5 (bug-109's deferred items listed); [[#decisions]] |
 | d9v | 19.6 R0, [[task-19.6-phased-context-and-topic-cache#ranges]]; [[#design-body]], [[#tasks]], [[#dependencies]], [[#open-after-revision]] item 5; [[#decisions]] |
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Answers [[bsd-plan19-21-spec-rereview-r6-0e77da3]]. No round-6 decision-log row names plan 19
+([[plan-review-2026-10-14#t12-approvals]]: d9ao-d9ar are plans 16/17/22/23); nothing here needs
+the user. Each touched task carries its own `#rev-round-6` table; code facts were read at HEAD
+`3d3c798` (`src/` = `master` `c7129e6`, bug-109 r1-r4 merged).
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r6-0e77da3]]
+
+| finding / decision | answered at |
+|---|---|
+| round-6 #b-1 (bug-109 read at r1, not as merged) | [[task-19.0-stm-cluster-hygiene#rev-round-6]] (header, R0, R5 "Existing code" and deferred items, Files); the deltas and their ACs: [[task-21.1-context-usage-telemetry#rev-round-6]] |
+| round-6 #b-2 (the CLI helper's 15 callers unrouted, the Stop hook's promote among them) | [[task-19.0-stm-cluster-hygiene#rev-round-6]] (R5 helper + table, AC-6c, AC-6e, mutations); [[#design-body]] |
+| round-6 #s-1 (swept calls bypass the origin ladder) | [[task-19.0-stm-cluster-hygiene#rev-round-6]] (R2 "Swept calls", AC-4g, AC-4h); 21.1 R9 step 3; [[#design-body]] |
+| round-6 #s-2 (frozen snapshot: two writers; "≥ 1 shared member") | [[task-19.6-phased-context-and-topic-cache#rev-round-6]] (R3, R9, R1, AC-3c, AC-7i) |
+| round-6 #s-3 (in-daemon render reads the stale replica; bug-112) | [[task-19.3-subject-tiered-index#rev-round-6]] (R5); [[task-19.4-keep-derived-layers-current#rev-round-6]] (R2, R3, AC-1-AC-3) |
+| round-6 #m-1 (citations stale since the merge) | 19.0, 19.4 and 21.1 `#rev-round-6` tables |
+| round-6 #m-2 (21.1 → 19.1 edge one-sided; stale clause) | [[#dependencies]] (19.1 row: the "parallel bullets" clause replaced); 21.1 `rel: related-to -> [[task-19.1-pack-recall-under-budget]]` |

@@ -18,8 +18,10 @@ metadata:
 > Depends on: 23.0 (the shared test sandbox; [[plan-review-2026-10-14#t8-wave1]]), and bug-109
 > MERGED TO `master` (d9s; round-4 #s-1): R9's session resolver and pid pointer EXTEND bug-109's
 > code as existing code, never rebuild it. A sha list on the bug-109 branch is not the
-> dependency; the merge is. The event emission does NOT depend on plan-23's queue (d4a); only
-> 19.2's fold does.
+> dependency; the merge is (it landed: `0c7d0e0`, 0.78.0; R9 is re-read against it in round 6).
+> The event emission does NOT depend on plan-23's queue (d4a); only 19.2's fold does.
+> Downstream: 19.1 merges AFTER this task (19.1's pack returns byte spans to R11's single
+> emission site; [[plan-review-2026-10-14#t10-waves]] orders 21.1 → 19.1).
 
 rel: part-of -> [[plan-21-agent-context-usage]]
 rel: derives-from -> [[exploration-agent-context-usage]]
@@ -29,6 +31,7 @@ rel: depends-on -> [[plan-23-bounded-write-harness]]
 rel: depends-on -> [[task-23.0-test-sandbox]]
 rel: related-to -> [[task-19.2-memory-usage-record]]
 rel: related-to -> [[task-19.5-measure-delivery]]
+rel: related-to -> [[task-19.1-pack-recall-under-budget]]
 rel: related-to -> [[exploration-session-phased-context]]
 rel: depends-on -> [[bug_registry]]
 
@@ -197,31 +200,58 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
    serves a later session. An environment variable is a snapshot of its process's birth; after
    `/resume` or `/clear` the MCP server's copy names a dead session for the rest of its life.
 
-   **Existing code this task extends** (bug-109, read at `320dc82` in
-   `/Volumes/littlebig/refmatrix-bug109`, branch `bug-109-mcp-session`; it reaches this task only
-   through its merge to `master`, and every line number below is re-read after that merge):
-   - `stm.write_pid_pointer(root, pid, session) -> bool` writes `stm/by-pid/<pid>.json` =
-     `{session, pid, pid_start, t}` by tmp + `replace`; an unchanged pointer costs one read and no
-     `ps`; a pid whose start time `ps` cannot report is refused and recorded (`ps-failed`).
-   - `stm.read_pid_pointer(root, pid) -> str | None`: the session, or `None` when the file is
-     missing, unreadable, or its `pid_start` differs from `_proc_start(pid)` (`ps -o lstart=`).
-   - `stm.owner_claude_pid(*, long_lived=False) -> int | None`: long-lived → `os.getppid()`, its
-     own environment ignored; per-call → `$CLAUDE_PID` only when that pid is a real ancestor, else
-     the nearest ancestor whose command is `claude`, over a chain of at most 16 steps built from
-     ONE `ps -A -o pid=,ppid=,comm=` call. (The round-3 "within 4 levels, one `ps` per pid" rule
-     is WITHDRAWN in favour of this.)
-   - `stm.record_pointer_error(root, reason, **fields)` appends `{t, reason, …}` to
-     `stm/by-pid/_errors.jsonl`; reasons `no-owner`, `ps-failed`, `write-failed`,
-     `pointer-unresolved`.
-   - The input branch of `cli.focus_hook` writes the pointer for every envelope with a
-     `session_id`, FIRST, before the in-flight sweep and the ambient check (`cli.py:1973-1992` at
-     `320dc82`).
-   - `verbs._LONG_LIVED` (set by `mcp.serve_stdio`) and
-     `verbs.resolve_session_source(root, session) -> (session, source)`, `source` ∈ `explicit`,
-     `pointer`, `env`, `latest`, `default`; order: explicit → (long-lived: pointer → `RMX_SESSION`;
-     per-call: `RMX_SESSION` → pointer) → newest ring (recorded `pointer-unresolved` when running
-     under Claude) → `default`. Write verbs return `session_source`; `cli.focus_promote_edges`
-     resolves its session in the CLI. Tests: `tests/test_mcp_session_pointer.py`.
+   **Existing code this task extends** (bug-109 as MERGED: r1 `320dc82` plus the r2-r4 remedies
+   `0760fb7`, `9fe45fa`, `8cc9c71`, merged at `0c7d0e0`, released in 0.78.0; round-6 #b-1).
+   Every name and line below is read from `src/` at HEAD `3d3c798`, whose `src/` equals `master`
+   `c7129e6`:
+   - **Process lookup, no subprocess on the common path.** `stm._proc_info(pid) -> (ppid,
+     executable path, start) | None` (`stm.py:127-165`): macOS through libproc `proc_pidinfo` and
+     `proc_pidpath`, Linux through `/proc`; `start` is the kernel start time. `stm._proc_start(pid)`
+     (`:197-202`) is its third field. `stm._is_claude(path)` (`:190-194`) recognises Claude by
+     executable path. `stm._ps_comm_chain()` (`:205-229`), ONE `ps -A -o pid=,ppid=,comm=` call,
+     is used only as the argv[0] fallback.
+   - `stm.owner_lookup() -> (pid | None, status)` (`:236-279`), `status` ∈ `found`, `none`,
+     `failed`. It walks the kernel chain (≤ 16 steps). If that chain has fewer than 2 entries it
+     falls back to `_ps_comm_chain()`, and returns `failed` when `ps` gives nothing. Otherwise:
+     `$CLAUDE_PID` when it is in the chain, else the nearest ancestor that `_is_claude` or whose
+     argv[0] is `claude`, else `none`. `stm.owner_claude_pid(*, long_lived)` (`:282-288`) is a
+     thin wrapper (long-lived → `os.getppid()`, else `owner_lookup()[0]`); the resolver calls
+     `owner_lookup()` directly (`verbs.py:545`).
+   - `stm.pid_pointer_path(root, pid)` (`:232`) = `<root>/stm/by-pid/<pid>.json`.
+     `stm.write_pid_pointer(root, pid, session) -> bool` (`:346-375`) writes `{session, pid,
+     pid_start, t}` by tmp + `replace`; it skips the write when the file already names this session
+     AND this `pid_start`; it refuses a pid whose start time cannot be read and records `ps-failed`
+     (`:368`); it never creates a store. `stm.read_pid_pointer(root, pid)` (`:378-389`) returns
+     `None` SILENTLY on a missing, unreadable or non-object file and on a `pid_start` mismatch.
+   - **The error log.** `stm.record_pointer_error(root, reason, **fields) -> bool` (`:294-315`)
+     appends `{t, reason, …}` to `<root>/stm/by-pid/_errors.jsonl`, only when the store's STM dir
+     exists, never raising. It is bounded by `_ERRORS_MAX_BYTES = 256 * 1024` (`:291`): past that it
+     rewrites the file IN PLACE keeping the newer half of its lines (`:308-310`), so rows are
+     deleted and byte offsets move. `stm.read_pointer_errors(root, *, since)` (`:318-343`) returns
+     rows with `t ≥ since`, and every unparseable line as `{"reason": "unreadable-line"}`.
+   - **Reasons written at HEAD:** `no-owner` and `owner-lookup-failed` (input hook,
+     `cli.py:1985-1987`), `write-failed` (`cli.py:1991`), `ps-failed` (`stm.py:368`),
+     `owner-lookup-failed` and `pointer-unresolved` (resolver, `verbs.py:561-565`). A resolver miss
+     in a plain terminal (lookup worked, no owner, no `$CLAUDE_PID`, not long-lived) records
+     NOTHING (`verbs.py:558-565`).
+   - **The log is already surfaced.** `handoff.session_pointer_anomalies(root, *, window_s=86400)`
+     (`handoff.py:508-529`) reads `read_pointer_errors` for the last 24 h and returns one line with
+     the count per reason (unreadable lines counted apart); `handoff.compose_recall_state` adds it
+     to the anomalies (`handoff.py:569`), so `rmx recall-state` reports pointer failures today.
+     Tests: `tests/test_mcp_session_pointer.py` (`test_recall_state_surfaces_pointer_errors`,
+     `test_the_anomaly_reads_only_the_window`, among others).
+   - The input branch of `cli.focus_hook` (`cli.py:1974-2004`): pointer write `:1979-1993` (for
+     every envelope with a `session_id`, FIRST), sweep `:1998-2001`, input record `:2003-2004`.
+   - `verbs._LONG_LIVED` (set by `mcp.serve_stdio`) and `verbs.resolve_session_source(root,
+     session) -> (session, source)` (`verbs.py:524-569`), `source` ∈ `explicit`, `pointer`, `env`,
+     `latest`, `default`; order: explicit → (long-lived: pointer for `os.getppid()` →
+     `RMX_SESSION`; per-call: `RMX_SESSION` → pointer for `owner_lookup()`'s pid) → newest ring
+     (`latest_session`, `:566`) → `default`. The str wrapper `verbs.resolve_session` (`:572-575`)
+     is called by `cli._resolve_stm_session` (`cli.py:1072`), `verbs.focus` (`verbs.py:934`) and
+     `verbs.recall_state` (`:1068`); the write verbs `save_state` (`:892`), `focus_note` (`:958`),
+     `change_subject` (`:972`) and `task` (`:1029`, every action) call `resolve_session_source`
+     and return `session_source`. `cli.focus_promote_edges` resolves its session in the CLI
+     (`cli.py:1497`).
 
    **The resolver as this task specifies it** (19.0 R5 cites it; built by whichever of 21.1 and
    19.0 merges first as the deltas below, the other imports it unchanged). The resolution ORDER
@@ -235,9 +265,9 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      `explicit`, `envelope`, `pointer`, `env`, `latest`, `default`, `none`. The round-3 name
      `stm.resolve_session` is not built.
    - **Order:** `session` (explicit) → `envelope["session_id"]` (source `envelope`; a hook passes
-     its stdin envelope) → long-lived: pointer for `owner_claude_pid(long_lived=True)` →
-     `RMX_SESSION`; per-call: `RMX_SESSION` → pointer for `owner_claude_pid()` → the TAIL of the
-     caller's `purpose`:
+     its stdin envelope) → long-lived: pointer for `os.getppid()` → `RMX_SESSION`; per-call:
+     `RMX_SESSION` → pointer for the pid `owner_lookup()` returns → the TAIL of the caller's
+     `purpose`:
      - `read`: the newest ring (source `latest`, output labelled `(newest ring; not resolved)`),
        else `default`. This is the ONE allowed `latest_session` call in `src/` (round-4 #m-2);
        19.0 AC-6e enforces it by an AST scan.
@@ -246,7 +276,10 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
        `latest` / `default` tail is removed for writes).
      - `event`: `SessionResolution(None, "none")`. Telemetry rows and events (this task),
        scan-prompt's enrichment and composite, and the helix gate (19.0 R5) use it.
-     In all three, a miss under Claude is recorded `pointer-unresolved`, as today.
+     In all three, a miss is recorded exactly as bug-109 records it today (`verbs.py:561-565`):
+     `owner-lookup-failed` when `owner_lookup()` returned `failed`; `pointer-unresolved` when an
+     owner was found, `$CLAUDE_PID` is set, or the process is long-lived; nothing in a plain
+     terminal, which has no pointer to miss.
    - **`CLAUDE_CODE_SESSION_ID` is read by no resolver path** (bug-109 already reads it nowhere;
      R1 also deletes it from the server's environment).
    - **D3 One pointer location for every store root** (bug-109 r1 #m-4, "the hook and server
@@ -254,11 +287,13 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      store); the server reads under `mcp._resolve_root(args)` (its spawn cwd's store, or a named
      `root` / `project`). When the session's cwd moves into another tree, the pointer lands in a
      store the server never reads. A pointer belongs to a Claude PROCESS, not a store, so pointers
-     and `_errors.jsonl` move to `<hub.global_store_root()>/by-pid/` (`~/.refmatrix/by-pid/`;
-     23.0's sandbox redirects it). `stm.pointer_dir() -> Path` returns it; `write_pid_pointer`,
-     `read_pid_pointer` and `pid_pointer_path` drop their `root` argument. Migration, one
-     release: `read_pid_pointer` falls back to bug-109's `<root>/stm/by-pid/<pid>.json` when the
-     new file is absent, and records `pointer-legacy-location`; nothing writes the old location.
+     and `_errors.jsonl` move to `<hub.global_store_root()>/by-pid/` (`~/.refmatrix/by-pid/`,
+     `hub.py:100`; 23.0's sandbox redirects it). NEW `stm.pointer_dir() -> Path` returns it, and
+     creates only `by-pid/` itself, only when `global_store_root()` already exists (the r2 #s-1
+     rule kept: no read creates a store). `write_pid_pointer`, `read_pid_pointer` and
+     `pid_pointer_path` drop their `root` argument. Migration, one release: `read_pid_pointer`
+     falls back to bug-109's `<root>/stm/by-pid/<pid>.json` when the new file is absent, and
+     records `pointer-legacy-location`; nothing writes the old pointer location.
    - **D4 The SessionStart writer** (bug-109 r1 #m-4). A NEW generated SessionStart entry,
      matcher `startup|resume|clear|compact`, command `rmx focus hook --event session-start`
      (stderr NOT discarded: this is a memory path), calls `write_pid_pointer` with the envelope's
@@ -267,38 +302,60 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      unknown fields, so bug-109's format `{session, pid, pid_start, t}` is otherwise kept as is
      (the round-3 names `session_id`, `written_at`, `hook_source` are WITHDRAWN).
    - **D5 Silent misses recorded.** `read_pid_pointer` records `pointer-stale` (its `pid_start`
-     no longer matches: pid reuse) and `pointer-unreadable` (present but not JSON) instead of
-     returning `None` silently. A missing file is not an error by itself; the resolver's
-     `pointer-unresolved` row covers it.
-   - **D6 `_errors.jsonl` is surfaced** (bug-109 r1 #b-1 left it unread). `rmx focus show`
-     prints one line `session pointer: <reason>=<n> … since <ts>` from it. The SessionStart writer
-     (D4) prints the same line on STDOUT, where SessionStart output reaches the agent, whenever
-     rows were added since the last surfacing (watermark: `by-pid/_errors.seen`, the byte offset
-     last surfaced). Once the file exceeds 1 MB the writer renames it to
-     `_errors.<YYYYMMDD>.jsonl` after surfacing; nothing is deleted.
-   - **D7 `by-pid/` cleanup** (bug-109 r1 #m-4). The SessionStart writer removes pointer files
-     whose pid is absent from ONE `stm._process_table()` call or whose `pid_start` differs, and
-     prints `pruned=<n>` with the surfacing line. A pointer is only a cache of the process
-     relation, so removing a dead process's pointer loses nothing.
+     no longer matches: pid reuse) and `pointer-unreadable` (present but not a JSON object)
+     instead of returning `None` silently (`stm.py:383-388` today). A missing file is not an error
+     by itself; the resolver's row covers it.
+   - **D6 The EXISTING reader follows the log; one more surface** (round-6 #b-1). bug-109's
+     `handoff.session_pointer_anomalies` (`handoff.py:508-529`) already surfaces the log in
+     `rmx recall-state`; D6 extends it, it adds no second reader:
+     - `stm.read_pointer_errors` drops its `root` argument and reads `<pointer_dir>/_errors.jsonl`
+       and, for one release, bug-109's `<root>/stm/by-pid/_errors.jsonl` when a `legacy_root=` is
+       given, merging the two by `t`. `session_pointer_anomalies(root)` passes `legacy_root=root`,
+       and its text names the new path. Without this, D3 + D8 would leave recall-state reading a
+       file that never gains another row: the one existing report of guessed sessions would go
+       quiet with no error.
+     - `rmx focus show` prints the same one line, `session pointer: <reason>=<n> … since <ts>`.
+     - The SessionStart writer (D4) prints that line on STDOUT, where SessionStart output reaches
+       the agent, whenever rows were added since the last surfacing. **The watermark is keyed on
+       `t`, not on a byte offset:** `by-pid/_errors.seen` holds the largest `t` already surfaced,
+       and the writer surfaces `read_pointer_errors(since=<that t>)` minus rows with `t` equal to
+       it. bug-109's in-place halving (`stm.py:308-310`) moves every byte offset, so an offset
+       watermark would skip rows or surface them twice; a `t` watermark is unaffected.
+       Unreadable lines carry no `t` and are counted on every surfacing, apart, as recall-state
+       already counts them.
+     - **The bound is kept, and its deletions are counted.** The 256 KiB halving stays (the round-5
+       1 MB rename and "nothing is deleted" are WITHDRAWN: the halving deletes rows, and it fires
+       long before 1 MB). When it halves, `record_pointer_error` first appends one row
+       `{reason: "errors-truncated", dropped: <n lines>, oldest_kept_t: <t>}` to the kept half, so
+       every surface reports that rows were dropped and how many.
+   - **D7 `by-pid/` cleanup** (bug-109 r1 #m-4). The SessionStart writer removes each pointer file
+     whose `_proc_start(pid)` (`stm.py:197-202`, one kernel lookup per pid; there is no
+     process-table call in `src/`, and the round-5 name `stm._process_table()` is WITHDRAWN) is
+     `None` or differs from its `pid_start`, and prints `pruned=<n>` with the surfacing line. If
+     `_proc_start(os.getpid())` is itself `None`, the lookup is unavailable, nothing is pruned, and
+     the line reads `prune skipped: process lookup unavailable` (otherwise every live pointer
+     would be removed). A pointer is only a cache of the process relation, so removing a dead
+     process's pointer loses nothing.
    - **D8 `record_pointer_error` generalized.** With D3 it writes `<pointer_dir>/_errors.jsonl`
      and drops its `root` argument (a store-scoped row carries `root=` as a field). 19.0 adds the
      reasons `sweep-failed`, `composite-failed` and `enrichment-unresolved` to the same record, so
-     every STM hook failure reaches D6's surfacing; no new error file is added.
-   - `stm.latest_session` (`stm.py:127` at HEAD) is never called outside the `read` tail (bsd
+     every STM hook failure reaches D6's surfaces; no new error file is added.
+   - `stm.latest_session` (`stm.py:392` at HEAD) is never called outside the `read` tail (bsd
      #b-1; bug-100's shape). When nothing resolves, rows and events carry `session: null`.
 
    **The pre-prompt state, race-free** (re-review #s-3; round-3 #b-2; round-4 #b-1, #m-1). The
    recall and scan hooks run IN PARALLEL with `focus hook --event input` (`hooks.py` registers
    them as separate UserPromptSubmit entries, and Claude Code runs an event's hooks in parallel,
    as the generator's own comment at `hooks.py:263-265` records). The input hook CHANGES the
-   state they read, in two places (read at HEAD, `cli.py:1946-1981`; `stm.py:246-282`,
-   `:331-353`):
-   - `inflight_sweep()` runs first (`cli.py:1976`): every call parked longer than 90 s is
+   state they read, in two places (re-read at HEAD `3d3c798` in round 6: `cli.py:1974-2004`;
+   `stm.Stm.record` `stm.py:511-544`, `inflight_sweep` `:596-618`):
+   - `inflight_sweep()` runs first (`cli.py:1998-2001`): every call parked longer than 90 s is
      `record`ed as an `abandoned` tool event, appended to the ring AND ingested into
      `<session>.focus.json`. It runs BEFORE the ambient check, so ambient prompts sweep too. Live:
      17 of session db80475a's 78 recorded prompts directly followed a sweep, 16 with refs.
-   - then `Stm.record("input", …)` (`cli.py:1980-1981`) appends the input event and ingests the
-     prompt's refs; the ring's `ts` is cut to the second (`stm.py:260`).
+   - then `Stm.record("input", …)` (`cli.py:2003-2004`) appends the input event and ingests the
+     prompt's refs (`_ingest_into_graph`, `stm.py:705-710`); the ring's `ts` is cut to the second
+     (`stm.py:525`).
 
    So EVERY value a prompt-time reader computes from the ring or the graph (the event count, the
    turn, the topic list, the overlap, 19.6's phase) depends on scheduling, and no wall-clock
@@ -313,13 +370,15 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      1. bug-109's pointer write (existing; no prompt-time reader resolves its session from the
         pointer, since every hook reader has its envelope, so it is not reader state);
      2. `s.snapshot_pre_prompt(prompt)` for EVERY non-empty prompt, ambient included;
-     3. `s.inflight_sweep()`; its `except Exception: pass` (`cli.py:1977-1978`) becomes one stderr
-        line plus a `sweep-failed` row (D8);
+     3. `s.inflight_sweep()`; its `except Exception: pass` (`cli.py:2000-2001`) becomes one stderr
+        line plus a `sweep-failed` row (D8); each swept call is given an `origin` by 19.0 R2's
+        ladder before it is recorded (19.0 R2 "Swept calls"; round-6 #s-1), so a subagent's
+        abandoned call never enters the parent's graph;
      4. when the prompt is not ambient, `s.record("input", prompt[:300])`.
      `Stm.snapshot_pre_prompt(prompt: str) -> None` writes `<session>.pre.json` = `{prompt_sha,
      wall, turn, events_n, graph, topic_cache}` by tmp + `os.replace`: `prompt_sha` = sha256 of
      the prompt's UTF-8 bytes, `wall` = `time.time()` (sub-second), `turn` = the graph's `turn`
-     counter (`stm.py:427` increments it once per recorded input), `events_n` = R9's event count
+     counter (`stm.py:692` increments it once per recorded input), `events_n` = R9's event count
      below, `graph` = the focus graph, `topic_cache` = 19.6 R3's cache (`{}` until 19.6).
      `Stm.record` no longer calls it. The appended input event gains `prompt_sha` and `t`
      (sub-second epoch).
@@ -349,7 +408,7 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      identical to the previous one and submitted within `S` of it reads the previous prompt's
      snapshot (one turn stale).
    - **Known limit, stated** (round-4 #m-1). `focus.json` is read-modify-written without a lock
-     (`stm.py:405-424`), so a PostToolUse ingest concurrent with the input hook can lose one of
+     (`stm.py:705-710`: `_load_graph`, `_apply_turn`, `_save_graph`), so a PostToolUse ingest concurrent with the input hook can lose one of
      the two updates. This predates the task; the snapshot does not fix it and does not claim to.
 
    **`turn`.** On prompt-time channels (`prompt_recall`, `scan_prompt`): `pre_prompt_state(…).turn`,
@@ -554,25 +613,44 @@ line counts are unchanged.
 3. **Precedence.** `invocation_source()` returns, for the env combinations
    {explicit `hook` + `CLAUDECODE`, `CLAUDECODE` alone, tty alone, none}: `hook`, `agent`,
    `interactive`, `unknown`. RED at HEAD on `CLAUDECODE` alone (returns `unknown`).
-4. **Session never guessed** (round-4 #s-1: bug-109's names). Two `rmx scan-prompt` runs in ONE
-   tmp root, fed envelopes with different `session_id`s, plus a newer STM ring for a third
-   session id on disk, log disjoint `session` values equal to their own envelopes' ids. With no
-   envelope, no pointer for the owner and no `RMX_SESSION` (and `CLAUDE_CODE_SESSION_ID` set to
-   the third id, which no path reads), `session` is null, not the third ring's id, and
-   `_errors.jsonl` gains one `pointer-unresolved` row. A pointer whose `pid_start` does not match
-   the live process's start time is ignored (`session` null) and recorded as `pointer-stale`.
-   RED at post-109 `master`: the failing assertions are `session is None` (bug-109 returns the
-   newest ring, source `latest`) and the `pointer-stale` row (bug-109 returns `None` silently).
+4. **Session never guessed** (round-4 #s-1: bug-109's names; round-6 #b-1: owner pinned). Two
+   `rmx scan-prompt` runs in ONE tmp root, fed envelopes with different `session_id`s, plus a
+   newer STM ring for a third session id on disk, log disjoint `session` values equal to their own
+   envelopes' ids. Every child in this AC runs with `CLAUDE_PID` = the test process's pid, a real
+   ancestor of the child, so `owner_lookup()` returns `(test pid, "found")` whatever terminal or
+   Claude process the suite itself runs under (without it, bug-109 records nothing in a plain
+   terminal and the row assertion below would depend on the runner). With no envelope, no pointer
+   for that owner and no `RMX_SESSION` (and `CLAUDE_CODE_SESSION_ID` set to the third id, which no
+   path reads), `session` is null, not the third ring's id, and `_errors.jsonl` gains exactly one
+   `pointer-unresolved` row naming `owner` = the test pid. A pointer whose `pid_start` does not
+   match the live process's start time is ignored (`session` null) and recorded as
+   `pointer-stale`. **Lookup-failed leg** (in process): with `stm._proc_info` and
+   `stm._ps_comm_chain` monkeypatched in the TEST to return `None` (a dependency of the function
+   under test, registered in `workflow/test_mock_registry.md`), `verbs.resolve_session_source(root,
+   None, purpose="event")` returns `(None, "none")` and adds exactly one `owner-lookup-failed`
+   row. RED at post-109 `master`: the failing assertions are `session is None` (bug-109 returns
+   the newest ring, source `latest`) and the `pointer-stale` row (bug-109 returns `None`
+   silently). The lookup-failed leg is a GREEN regression guard for the row (bug-109 writes
+   `owner-lookup-failed` today, `verbs.py:561-562`) and is not counted as RED.
 
-   **4b. Pointer location, SessionStart surfacing and cleanup** (D3, D6, D7; bug-109 r1 #m-4).
+   **4b. Pointer location, surfacing and cleanup** (D3, D6, D7; bug-109 r1 #m-4; round-6 #b-1).
    (i) The input hook run with cwd in tree X writes the pointer under the sandbox's global
    `by-pid/`; an MCP server spawned with cwd in tree Y resolves it. (ii) A pointer present only at
    bug-109's legacy `<root>/stm/by-pid/` resolves once and records `pointer-legacy-location`.
    (iii) With three `_errors.jsonl` rows added since the watermark, the generated SessionStart
    command prints one stdout line naming their reasons and counts, and a second run prints none.
-   (iv) A pointer for a pid absent from the process table is removed by the SessionStart run and
-   `pruned=1` is printed. RED at post-109 `master` for each leg (no global location, no
-   SessionStart entry).
+   (iii-b) After those rows, enough further rows are written to cross `_ERRORS_MAX_BYTES` and
+   trigger the halving; the next SessionStart run prints exactly the rows newer than the
+   watermark (none twice, none skipped) plus `errors-truncated` with the dropped count.
+   (iv) A pointer for a pid that no longer exists (a child process the test started and reaped) is
+   removed by the SessionStart run and `pruned=1` is printed. (iv-b) With `stm._proc_info`
+   monkeypatched in the test to return `None` for every pid, the prune (called in process) removes
+   no pointer and prints `prune skipped: process lookup unavailable`. (v) **recall-state reads the new
+   location:** a row written through `record_pointer_error` (now under the global `by-pid/`)
+   appears in `handoff.compose_recall_state`'s anomalies and in `rmx recall-state`'s output.
+   (vi) A row present only in bug-109's legacy `<root>/stm/by-pid/_errors.jsonl` also appears
+   there, for this release. RED at post-109 `master` for (i)-(v) (no global location, no
+   SessionStart entry); (vi) is a GREEN regression guard, not counted as RED.
 5. **`grep-stdin` cardinality.** `printf 'a\nb\nc\nd\n' | rmx grep -E 'a|b|c'` logs a
    `grep-stdin` row with `cardinality=3`. RED at HEAD (`null`).
 6. **The frozen fixture** (bsd #s-3). A REDACTED copy of this project's `query.log` and `cli.log`
@@ -756,6 +834,16 @@ line counts are unchanged.
     - the pointer written under the hook's own store root instead of `stm.pointer_dir()` (AC-4b
       (i));
     - `_errors.jsonl` not surfaced by the SessionStart writer, or surfaced twice (AC-4b (iii));
+    - the watermark kept as a byte offset (AC-4b (iii-b): after the halving, rows are skipped or
+      repeated);
+    - the halving without its `errors-truncated` row (AC-4b (iii-b));
+    - `session_pointer_anomalies` left reading `<root>/stm/by-pid/` (AC-4b (v): the new-location
+      row is absent from recall-state);
+    - the legacy `_errors.jsonl` dropped from the merged read before its release ends (AC-4b
+      (vi));
+    - the prune removing pointers when `_proc_start` is unavailable for every pid (AC-4b (iv-b):
+      the live pointer is removed);
+    - the resolver recording nothing when `owner_lookup()` fails (AC-4's lookup-failed leg);
     - `ts` stamped in local time or without `Z` (AC-7's event g is folded; 19.2 AC-6's two-zone
       replay differs);
     - `grep-stdin` cardinality left unset (AC-5);
@@ -818,8 +906,9 @@ line counts are unchanged.
 |---|---|
 | `src/refmatrix/mcp.py` | set `RMX_INVOCATION_SOURCE=mcp` in `serve_stdio` before the first request and drop `CLAUDE_CODE_SESSION_ID` from its env (R1). `verbs._LONG_LIVED = True` and the per-call resolution are bug-109's, existing |
 | `src/refmatrix/verbs.py` (resolver) | EXTEND bug-109's `resolve_session_source`: `SessionResolution`, `envelope=`, required `purpose=` and its three tails, `SessionUnresolved` (D1, D2); bug-109's `resolve_session` str wrapper is removed, its callers pass `purpose` |
-| `src/refmatrix/stm.py` | EXTEND bug-109's pointer code: `pointer_dir()` and the user-level location with the legacy read (D3), the `hook` field (D4), `pointer-stale` / `pointer-unreadable` rows (D5), `record_pointer_error` without `root` (D8), the `_errors.jsonl` surfacing and watermark (D6), the prune (D7). NEW: `snapshot_pre_prompt`, `pre_prompt_state` + `PrePromptState`, `PRE_PROMPT_SKEW_S`; input events gain `prompt_sha` and `t` (R9). Built here or by 19.0, whichever merges first |
+| `src/refmatrix/stm.py` | EXTEND bug-109's pointer code: `pointer_dir()` and the user-level location with the legacy read (D3), the `hook` field (D4), `pointer-stale` / `pointer-unreadable` rows (D5), `record_pointer_error` without `root` (D8) and its counted `errors-truncated` row when it halves; `read_pointer_errors` over the new location plus the legacy file (D6); the `t`-keyed watermark (D6); the prune by `_proc_start` (D7). NEW: `snapshot_pre_prompt`, `pre_prompt_state` + `PrePromptState`, `PRE_PROMPT_SKEW_S`; input events gain `prompt_sha` and `t` (R9). Built here or by 19.0, whichever merges first |
 | `src/refmatrix/hooks.py`, `cli.py` (`focus hook`, `focus show`) | the generated SessionStart entry `rmx focus hook --event session-start` (matcher `startup\|resume\|clear\|compact`, stderr kept) that writes the pointer, surfaces `_errors.jsonl` and prunes (D4, D6, D7); the input branch reordered: pointer write (existing) → `snapshot_pre_prompt` → sweep (failure recorded) → input record (R9); `focus show` prints the pointer-error line (D6) |
+| `src/refmatrix/handoff.py` (`session_pointer_anomalies`, `:508-529`) | EXTENDED, not paralleled (round-6 #b-1): reads `<pointer_dir>/_errors.jsonl` and, for one release, the legacy `<root>/stm/by-pid/_errors.jsonl` through `read_pointer_errors(legacy_root=root)`; its text names the new path (D6) |
 | `tests/test_mcp_session_pointer.py` | EXTENDED, not paralleled (bug-109's file): AC-1b, AC-4, AC-4b |
 | `src/refmatrix/store.py` | `find_memory_any_partition` (`:2504`) returns the chosen row's partition name (R11) |
 | `src/refmatrix/telemetry.py` | `agent` source + precedence; `session`/`query_id`/`cwd`/`root` on rows; `row_provenance` + `is_test_artifact_row` (R5); the `--agent-usage` report; `RECALL_EVENT_FIELDS_V1`; `emit_recall_events` (the ONE writer, R11); `delivered_in_session` (R12's lookup); `event_kind` (R10a); `recall_channel` (R11); `turn` from `pre_prompt_state` (R9) |
@@ -942,3 +1031,26 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r4-878647c]]
 | round-3 #s-4 (partial) | not a 21.1 item; R10 `block_id` now names 19.6 R9's two composite blocks ([[task-19.6-phased-context-and-topic-cache#rev-round-5]]) |
 | d9s | header; R1; [[#req-session]] |
 | d9r, d9v | not 21.1 items (19.2 R7; 19.6) |
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Answers [[bsd-plan19-21-spec-rereview-r6-0e77da3]] (the 21.1 side of #b-1, #s-1, #m-1, #m-2).
+No round-6 decision-log row names plan 21 ([[plan-review-2026-10-14#t12-approvals]] holds
+d9ao-d9ar, all plans 16/17/22/23). Code facts read at write time at HEAD `3d3c798` (`src/`
+identical to `master` `c7129e6`, which carries bug-109 r1-r4, merged at `0c7d0e0`):
+`stm.py:127-165`, `:190-202`, `:205-229`, `:232`, `:236-279`, `:282-288`, `:291`, `:294-315`
+(halving `:308-310`), `:318-343`, `:346-375` (`ps-failed` `:368`), `:378-389`, `:392`,
+`:511-544` (`ts` `:525`), `:596-618`, `:692`, `:705-710`; `cli.py:1072`, `:1497`, `:1974-2004`
+(owner reasons `:1985-1987`, `write-failed` `:1991`); `verbs.py:524-575` (owner lookup `:545`,
+the plain-terminal branch `:558-565`), `:892`, `:934`, `:958`, `:972`, `:1029`, `:1068`;
+`handoff.py:508-529`, `:569`; `hub.py:100`.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r6-0e77da3]]
+
+| finding / decision | answered at |
+|---|---|
+| round-6 #b-1 (the spec extended bug-109 as it stood at r1, not as merged) | header (merge landed); [[#req-session]] "Existing code this task extends" rewritten from `master` (`_proc_info` / `owner_lookup` and its three statuses, `owner-lookup-failed`, `read_pointer_errors`, `handoff.session_pointer_anomalies`, `_ERRORS_MAX_BYTES` and its in-place halving); "Order" names `owner_lookup()` and bug-109's exact recording rule; D3 (`pointer_dir()` creates only `by-pid/`); D5; D6 rewritten (extends `session_pointer_anomalies` with a legacy read, `t`-keyed watermark, halving kept and counted; "left it unread", the 1 MB rename and "nothing is deleted" withdrawn); D7 (`_proc_start` per pid; `_process_table` withdrawn; prune skipped when the lookup is unavailable); AC-4 (owner pinned by `CLAUDE_PID`; lookup-failed leg); AC-4b (iii-b), (iv-b), (v), (vi); mutations; [[#files-to-modify]] (`handoff.py` added; `stm.py` row) |
+| round-6 #s-1 (the sweep bypasses the origin ladder) | [[#req-session]] "The pre-prompt state" writer step 3 (each swept call gets 19.0 R2's origin). Built and tested in 19.0 ([[task-19.0-stm-cluster-hygiene#rev-round-6]]) |
+| round-6 #m-1 (citations stale since the merge) | [[#req-session]] "Existing code" and "The pre-prompt state" (`cli.py:1974-2004`, sweep `:1998-2001`, except `:2000-2001`, record `:2003-2004`; `stm.py:525`, `:692`, `:705-710`; `latest_session` `stm.py:392`); the resolver's owner call named `owner_lookup()`. bug-109's registry row is `fixed` (the round-5 row above said open) |
+| round-6 #m-2 (the 21.1 → 19.1 edge one-sided) | `rel: related-to -> [[task-19.1-pack-recall-under-budget]]`; header "Downstream" line |
+| round-6 #b-2, #s-2, #s-3 | not 21.1 items (19.0 R5, 19.6, 19.3 / 19.4) |

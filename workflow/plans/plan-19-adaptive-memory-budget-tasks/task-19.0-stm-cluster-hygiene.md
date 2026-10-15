@@ -15,7 +15,8 @@ metadata:
 > Status: Pending (revision after the 2026-10-14 decision log)
 > Depends on: 23.0 (the test sandbox, d1a/d1b), and bug-109 MERGED TO `master` (d9s; round-4
 > #s-1): R5 EXTENDS bug-109's session pointer and resolver as existing code and never rebuilds
-> them; the dependency is the merge, not a sha on the bug-109 branch. Scheduled no later than
+> them; the dependency is the merge, not a sha on the bug-109 branch (it landed: `0c7d0e0`,
+> 0.78.0, bug-109 r1-r4; round 6 re-read R0, R5 and R7 against it). Scheduled no later than
 > Wave 2 (d5e); in the Wave 1 order it runs once 23.0 is in
 > ([[plan-review-2026-10-14#t8-wave1]]). Hard prerequisite of 19.6.
 
@@ -37,14 +38,15 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
 27 input, 22 say, 21 git, 16 reason):
 
 - **Script bodies (bug-104).** 68 tool events carried heredoc / `-c` scripts. The refs come from
-  `cli._tool_event_fields` (`cli.py:1906`): for a Bash call with no `file_path`, it runs
-  `stm._PATH_RE.findall(cmd)` over the WHOLE command, heredoc body included (`cli.py:1923-1927`;
+  `cli._tool_event_fields` (`cli.py:1909`; lines re-read at HEAD `3d3c798` in round 6): for a Bash
+  call with no `file_path`, it runs `stm._PATH_RE.findall(cmd)` over the WHOLE command, heredoc
+  body included (`cli.py:1926-1930`;
   `_PATH_RE` = `[\w./-]+\.[A-Za-z]{1,5}`, `stm.py:53`, which matches `re.searc`, `r.get`,
   `collections.Count`), and the hook stores them on the event. So truncated locals and stdlib
   calls became concepts: `r.get` 32, `re.searc` 21, `collections.Count` 18, `glob.glob` 16,
-  `json.loads` 13, `s.repla` 10, `m.group` 10. `_extract_refs` (`stm.py:840`) is NOT the cause:
+  `json.loads` 13, `s.repla` 10, `m.group` 10. `_extract_refs` (`stm.py:1105`) is NOT the cause:
   it runs only when a caller passes no refs (re-review #b-4). `Stm.rebuild_focus`
-  (`stm.py:447-480`) replays each event's STORED `refs`, filtered only by `is_junk_ref`
+  (`stm.py:712-745`) replays each event's STORED `refs`, filtered only by `is_junk_ref`
   (`stm.py:90`, which gates ids, hex, uuids and deep paths only), so a replay of the ring never
   re-runs extraction. Read off the frozen ring at `3357c44`: all 416 tool events carry `detail`
   (the verbatim command, cut at `DETAIL_MAX` = 600 chars, `stm.py:43`); 58 of them carry one of
@@ -55,16 +57,18 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
 - **Hand-backs.** `is_ambient_text` (`stm.py:106`) drops `<channel`, `<task-notification`,
   `[SYSTEM NOTIFICATION`, but not `<agent-message` hand-back envelopes.
 - **Typos.** Unmatched prompt tokens (`aggre`, `llok`) became cluster labels.
-- **Another session's ring (bug-100).** `latest_session` (`stm.py:127`) resolves "the session" as
-  the newest ring by mtime. Its callers, found by a scan of `src/` (round-4 #b-2; read at HEAD
-  and at bug-109's `320dc82`): scan-prompt's STM enrichment (`scan.py:535-537`), the scan-prompt
-  STM composite (`composite.py:103`, called with no session at `scan.py:889-894`), the helix
-  stale gate (`helix.py:96`), `promote_focus_edges` (`promote.py:161`), and the verb resolver
-  (`verbs.py:528` at HEAD; bug-109's `resolve_session_source` tail, `verbs.py:558` at
-  `320dc82`). So with two sessions on one project one session's prompt can be seeded with the
-  other's focus. The topic cache is session-scoped, so 19.6 cannot ship on it. bug-109 (d9s)
-  fixes the MCP write path's SOURCE (a per-Claude-process pointer) but keeps the newest ring as
-  its last fallback and leaves every other caller above as it is.
+- **Another session's ring (bug-100).** `latest_session` (`stm.py:392`) resolves "the session" as
+  the newest ring by mtime. Its direct callers, found by a scan of `src/` at HEAD `3d3c798`
+  (round-4 #b-2): scan-prompt's STM enrichment (`scan.py:537`), the scan-prompt STM composite
+  (`composite.py:103`, called with no session at `scan.py:888-894`), the helix stale gate
+  (`helix.py:96`), `promote_focus_edges` (`promote.py:161`), and the tail of bug-109's verb
+  resolver `resolve_session_source` (`verbs.py:566`). That tail is reached in turn by every
+  `prefer_latest=True` CLI command through `cli._resolve_stm_session` (`cli.py:1072`), 15 call
+  sites, five of which write (round-6 #b-2; R5's table). So with two sessions on one project one
+  session's prompt can be seeded with the other's focus, and a write can land in the other's
+  ring. The topic cache is session-scoped, so 19.6 cannot ship on it. bug-109 (d9s) fixes the MCP
+  write path's SOURCE (a per-Claude-process pointer) but keeps the newest ring as its last
+  fallback and leaves every other caller above as it is.
 
 {#why-body}
 
@@ -79,9 +83,12 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
    not a story ([[feedback_causal_story_before_evidence]]); bug-103's causal line is re-stated
    from it. The same probe also records (round-3 #b-1, #b-2, #m-4):
    - **Hook environment.** In a PostToolUse, a UserPromptSubmit and a SessionStart hook process:
-     whether `CLAUDE_PID` is set, equals the Claude process's pid and is a real ancestor, and
-     which branch of bug-109's `owner_claude_pid()` (`$CLAUDE_PID` or the `claude`-ancestor
-     walk) returns the owner. `CLAUDE_CODE_SESSION_ID` is recorded for the record only: no
+     whether `CLAUDE_PID` is set, equals the Claude process's pid and is a real ancestor; the
+     status `stm.owner_lookup()` returns (`found`, `none`, `failed`; `stm.py:236-279`, the
+     function the resolver calls at `verbs.py:545`); and, for `found`, which of its three
+     branches produced the owner: `$CLAUDE_PID` found in the kernel ancestor chain, the nearest
+     ancestor recognised by executable path (`_is_claude`) or by `ps` argv[0], or the `ps`-only
+     chain used when the kernel chain has fewer than 2 entries (`_ps_comm_chain`). `CLAUDE_CODE_SESSION_ID` is recorded for the record only: no
      resolver reads it ([[task-21.1-context-usage-telemetry#req-session]]).
    - **Id on disk at PostToolUse time.** For ≥ 10 subagent calls, whether the `tool_use` block
      with `id == tool_use_id` is already in the subagent transcript when the parent's
@@ -102,7 +109,7 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
    `scan._PROMPT_STOPWORDS` ([[feedback_reuse_shared_stoplist]]); the stdlib heads and short-local
    rule live in ONE separate, documented code-noise set next to it, not a second stoplist.
    - **Hook path (the cause).** `cli._tool_event_fields` calls `stm.command_refs(cmd)` in place
-     of `_PATH_RE.findall(cmd)` (`cli.py:1923-1927`), for both the PreToolUse park and the
+     of `_PATH_RE.findall(cmd)` (`cli.py:1926-1930`), for both the PreToolUse park and the
      PostToolUse record. This is what stops new junk (AC-1b).
    - **Rebuild path (past rings).** `Stm.rebuild_focus` RE-EXTRACTS: for a `tool` event whose
      `detail` is a command string (not a JSON object), its refs are recomputed as
@@ -125,7 +132,7 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
      or a `transcript_path` under `<session-id>/subagents/agent-<agentId>.jsonl`), the event's
      origin is `agent:<agentId>`.
    - **Rung 2, the exact key: `tool_use_id`.** The PostToolUse (and PreToolUse) envelope carries
-     `tool_use_id`; `cli._tool_call_key` (`cli.py:1893-1903`) already prefers it, and every key in
+     `tool_use_id`; `cli._tool_call_key` (`cli.py:1896-1906`) already prefers it, and every key in
      the live `*.inflight.json` sidecars is a `toolu_…` id. Each subagent writes its own
      transcript `<projects dir>/<slug>/<session-id>/subagents/agent-<agentId>.jsonl`, whose
      assistant entries hold `tool_use` content blocks with `id` = that same `toolu_…` value and
@@ -148,7 +155,7 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
      key of `_tool_call_key`). A match is exactly ONE `tool_use` entry across the session's
      subagent transcripts with equal `tool_name`, equal input digest (sha256 of the tool input as
      canonical JSON: sorted keys, no whitespace), and an entry timestamp within ± `W = 2 s` of the
-     PreToolUse PARK time `t_pre` (the `t` that `Stm.inflight_begin`, `stm.py:309`, records and
+     PreToolUse PARK time `t_pre` (the `t` that `Stm.inflight_begin`, `stm.py:574-586`, records and
      `inflight_end` returns), never of the PostToolUse time: the transcript entry is written when
      the call is ISSUED, the PostToolUse event after it finishes. With no parked record, rung 2b
      does not run (counted `no_park`) and the event goes to rung 3.
@@ -168,6 +175,32 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
      `agent:<id>`, and are excluded from the parent's focus graph and composites.
      `rmx focus topics` renders each agent active in the window as ONE line,
      `background: <label>`, never as members of the parent's topics.
+   - **Swept calls** (round-6 #s-1). `Stm.inflight_sweep` (`stm.py:596-618`) records every call
+     parked longer than 90 s as a `tool` event with `abandoned: true` and the refs it was parked
+     with, into the ring AND the graph, at the parent's next prompt. A background subagent's
+     calls park in the PARENT's sidecar (their PreToolUse envelope carries the parent's
+     `session_id`), so a subagent call that runs past 90 s, hangs or is denied would enter the
+     parent's focus through the sweep: bug-103 by a second door. So:
+     - the park record (`Stm.inflight_begin`, `stm.py:574-586`, called from the `tool-pre` branch
+       of `cli.focus_hook`) also stores the envelope's `tool_use_id` (already the key when present,
+       `cli._tool_call_key`), its `transcript_path`, `tool_name` and rung 2b's input digest;
+     - the sweep runs THIS ladder on each swept call with `t_pre` = the park's `t`: rung 1 when
+       the stored fields carry R0's subagent marker, rung 2 by id (the subagent transcript holds
+       the `tool_use` block from issue time; R0 records that it does), rung 2b only for an `h:`
+       key, rung 3 as above. An `agent:<id>` swept event stays in the ring with its origin and is
+       not ingested into the parent's graph; an `unattributed` one may be a member, never a label;
+     - each swept call's search obeys the cost bound above, and its counts join the hook's origin
+       counts in `rmx focus show`;
+     - a park record written before this change (no stored fields) is swept as `unattributed`,
+       counted.
+   - **A long call is no longer recorded twice** (round-6 #s-1; predates this plan). A call still
+     RUNNING at the sweep is recorded `abandoned`, and recorded AGAIN when its PostToolUse
+     arrives: `inflight_end` (`stm.py:588-594`) finds nothing, and the PostToolUse branch
+     (`cli.py:2013` onward) records regardless, so its refs are ingested twice. The sweep keeps
+     the swept keys in a `swept` list in the sidecar (bounded like the sidecar, `INFLIGHT_BUDGET`
+     = 64, `stm.py:45`); a PostToolUse whose key is in that list records its event ring-only, with
+     `late: true` and the swept record's `origin`, and does NOT ingest its refs into the graph.
+     The ring keeps both lines for provenance.
    - **Cost bound (inside the hook's latency budget).** The lower bound is `t_lo = t_pre − 5 s`
      (the park time; with no park, `event ts − 120 s`, counted `no_park`). Rungs 2 and 2b open only
      the `agent-*.jsonl` files whose mtime is ≥ `t_lo` (a transcript that issued the call was
@@ -196,41 +229,64 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
    - Before GREEN, the fold rate is measured on the redacted fixture (R6) and recorded: folds
      fired / tokens eligible, and every fold pair listed.
 5. **R5 The session comes from one resolver; the newest ring only for labelled reads** (bug-100;
-   round-3 #b-1; round-4 #b-2, #s-1, #m-2; d9s).
-   - **Existing code** (bug-109, read at `320dc82`; this task starts after its merge to `master`
-     and re-reads every line number then): `stm.write_pid_pointer`, `stm.read_pid_pointer`,
-     `stm.owner_claude_pid(long_lived=)`, `stm.record_pointer_error` → `stm/by-pid/_errors.jsonl`,
-     the pointer `stm/by-pid/<pid>.json` = `{session, pid, pid_start, t}` written by the input
-     hook, `verbs._LONG_LIVED`, and `verbs.resolve_session_source(root, session) ->
-     (session, source)`. Its tests live in `tests/test_mcp_session_pointer.py`, which this task
-     EXTENDS.
+   round-3 #b-1; round-4 #b-2, #s-1, #m-2; round-6 #b-1, #b-2; d9s).
+   - **Existing code** (bug-109 as MERGED: r1-r4, merged at `0c7d0e0`, 0.78.0; round-6 #b-1).
+     Read at HEAD `3d3c798` (`src/` = `master` `c7129e6`); the full list, with lines, is
+     [[task-21.1-context-usage-telemetry#req-session]] "Existing code this task extends". In
+     short: `stm._proc_info` reads the kernel (libproc / `/proc`, `stm.py:127-165`);
+     `stm.owner_lookup()` (`:236-279`) returns `(pid, found | none | failed)`, recognising Claude
+     by executable path (`_is_claude`, `:190`) with `ps` only as an argv[0] fallback
+     (`_ps_comm_chain`, `:205`); `stm.write_pid_pointer` / `read_pid_pointer` (`:346`, `:378`)
+     keep `<root>/stm/by-pid/<pid>.json` = `{session, pid, pid_start, t}`;
+     `stm.record_pointer_error` (`:294`) appends to `<root>/stm/by-pid/_errors.jsonl`, bounded at
+     `_ERRORS_MAX_BYTES` = 256 KiB by an in-place halving (`:291`, `:308-310`), with reasons
+     `no-owner`, `owner-lookup-failed`, `write-failed`, `ps-failed`, `pointer-unresolved`;
+     `stm.read_pointer_errors` (`:318`); `handoff.session_pointer_anomalies` (`handoff.py:508`),
+     called by `compose_recall_state` (`:569`), already reports those rows in `rmx recall-state`;
+     `verbs._LONG_LIVED` and `verbs.resolve_session_source(root, session) -> (session, source)`
+     (`verbs.py:524-569`, owner from `owner_lookup()` at `:545`). Its tests live in
+     `tests/test_mcp_session_pointer.py`, which this task EXTENDS.
    - **The resolver** is bug-109's `verbs.resolve_session_source`, EXTENDED as specified ONCE in
      [[task-21.1-context-usage-telemetry#req-session]] (21.1 R9, deltas D1-D8): bug-109's order;
      a `SessionResolution` NamedTuple; `envelope=`; a REQUIRED `purpose` ∈ `write`, `read`,
      `event`; the user-level pointer location; the SessionStart writer; recorded stale and
-     unreadable pointers; surfaced `_errors.jsonl`; `by-pid/` cleanup. Whichever of 19.0 and 21.1
-     merges first builds the deltas; the other imports them. `CLAUDE_CODE_SESSION_ID` is read by
-     no path.
-   - **Every caller, by purpose** (the list comes from a scan of `src/` for `latest_session(` and
-     for `resolve_session`, not from memory; AC-6e keeps it closed):
+     unreadable pointers; the EXISTING recall-state reader following the log to its new location
+     (D6); `by-pid/` cleanup. Whichever of 19.0 and 21.1 merges first builds the deltas; the other
+     imports them. `CLAUDE_CODE_SESSION_ID` is read by no path.
+   - **`cli._resolve_stm_session(explicit, *, purpose)` and `cli._stm(session=None, *, purpose)`**
+     (round-6 #b-2; today `cli.py:1062-1078` and `:1081-1083`, with `prefer_latest`). `purpose`
+     is a REQUIRED keyword of both, with no default; `prefer_latest` and the `prefer_latest=False`
+     branch (`$RMX_SESSION` → `default`, `:1073-1078`) are removed. `_resolve_stm_session` calls
+     `resolve_session_source(_root(), explicit, purpose=purpose)` and returns its session, raising
+     `SessionUnresolved` for a `write`. Neither helper picks a purpose: each of its callers states
+     its own, per the table.
+   - **Every caller, by purpose.** The list comes from a scan of `src/` for calls of
+     `latest_session`, `resolve_session_source`, `resolve_session`, `_resolve_stm_session` and
+     `_stm`, to every level (round-6 #b-2: round 5's scan stopped at the helper, which fans out to
+     15 call sites), not from memory; AC-6e keeps it closed. Lines are HEAD `3d3c798`.
 
-     | caller (read at HEAD; bug-109 lines at `320dc82`) | purpose | when nothing resolves |
+     | caller | purpose | when nothing resolves |
      |---|---|---|
      | scan-prompt STM enrichment, `scan.py:535-537` | `event` (session from the envelope) | skipped; one stderr line and an `enrichment-unresolved` row (21.1 D8) |
-     | scan-prompt STM composite, `composite.build_topic_composite` (`composite.py:103`), called at `scan.py:889-894` | `event`; on this prompt-time call scan-prompt passes `session=` and `graph=pre_prompt_state(…).graph` (R7), so the composite never reads the live `focus_graph()` | no composite; the skip is recorded like the enrichment's |
+     | scan-prompt STM composite, `composite.build_topic_composite` (`composite.py:63`, its `latest_session` default at `:103`), called at `scan.py:888-894` | `event`; on this prompt-time call scan-prompt passes `session=` and `graph=pre_prompt_state(…).graph` (R7), so the composite never reads the live `focus_graph()` | no composite; the skip is recorded like the enrichment's |
      | the composite's `except Exception: comp = ""` (`scan.py:893-894`) | — | becomes one stderr line plus a `composite-failed` row (21.1 D8), never a silent `""` |
      | helix stale gate, `helix._current_session` (`helix.py:84-98`) | `event`; scan-prompt passes the session it resolved | the gate excludes no session's touches and annotates nothing that turn, counted; its docstring's false claim "the hook exports RMX_SESSION" is corrected |
-     | `promote.promote_focus_edges` (`promote.py:161`) and the daemon op `promote_edges` | `session` becomes a REQUIRED argument: the op refuses a call without one instead of taking the newest ring | the CLI decides (next row) |
-     | `rmx focus promote-edges` (`cli.focus_promote_edges`; bug-109 already resolves in the CLI, `cli.py:1490-1496` at `320dc82`) | `--apply`: `write`; `--dry-run`: `read` | `--apply`: `SessionUnresolved`, exit 2, nothing promoted |
-     | `rmx focus record` (`cli.py:1091-1094` at `320dc82`) and `rmx focus clear` (`cli.py:1624-1627`), both `_stm()` with `prefer_latest=False` today, so `RMX_SESSION` → `default` (bug-109 r1 #m-3) | `write` | `SessionUnresolved`, exit 2; `focus clear` no longer clears the `default` ring while claiming "this session" |
-     | `cli._resolve_stm_session` (`cli.py:1062-1078` at `320dc82`) | its `prefer_latest=True` path calls the resolver with the purpose its caller states; its `prefer_latest=False` branch is removed | per purpose |
-     | write verbs `save_state`, `focus_note`, `change_subject`, `task` push/pop/swap (CLI and MCP) | `write` | `verbs.SessionUnresolved` naming the sources tried; CLI exit 2 with that line; MCP tool error; nothing written to `default`, to the newest ring or anywhere else |
-     | read verbs `focus`, `task list` / `current` (`verbs.py:926`, `:1060` at `320dc82` still call the str wrapper `resolve_session`), `recall_state`, CLI `focus tail` / `context` / `size` | `read` | the newest ring, labelled `session: <id> (newest ring; not resolved)` |
-     | the focus hook (`cli.py:1964` at HEAD: `d.get("session_id") or stm_mod.session_id()`) | explicit envelope session | no envelope `session_id`: the hook records nothing and prints one stderr line, instead of writing to `default` |
+     | `promote.promote_focus_edges` (`promote.py:140`, default at `:161`) and the daemon op `promote_edges` | `session` becomes a REQUIRED argument: the op refuses a call without one instead of taking the newest ring | the CLI decides (next row) |
+     | `rmx focus promote-edges` (`cli.focus_promote_edges`, resolves in the CLI at `cli.py:1497`) | `--apply`: `write`; `--dry-run`: `read` | `--apply`: `SessionUnresolved`, exit 2, nothing promoted |
+     | `rmx focus summarize` (`cli.py:1297`) | `--promote`: `write` (it writes the `session/digest` memory); without: `read` | `--promote`: `SessionUnresolved`, exit 2, no digest written (under `--envelope-stdin`, exit 1: next row) |
+     | the generated Stop entry `rmx focus summarize --promote --timeout 5` (`hooks.py:202`) and PreCompact entry `… --timeout 30` (`hooks.py:334`) | `write`, session from the hook's stdin envelope: both entries gain `--envelope-stdin`, which reads the envelope JSON on stdin and passes it as `envelope=` (the field `focus hook` reads at `cli.py:1967`), so the session is the one the hook already holds | no envelope `session_id` and no pointer: no digest written; one stderr line; EXIT 1, not 2, under `--envelope-stdin`, because exit 2 from a Stop hook is the harness's "block the stop" signal and would feed the line back to the model as an instruction; the resolver's own row records the miss |
+     | `rmx focus detour` (`cli.py:1589`) and `rmx focus return` (`:1614`): write focus marks | `write` | `SessionUnresolved`, exit 2, no mark written or consumed |
+     | `rmx focus clear-subject` (`cli.py:1724`): writes subject state | `write` | `SessionUnresolved`, exit 2, subject state unchanged |
+     | `rmx focus rebuild` with no `--all` / `--session` (`cli.py:1556`) | without `--dry-run`: `write` (rewrites `focus.json`); with `--dry-run`: `read` | write: `SessionUnresolved`, exit 2, no graph rewritten |
+     | `rmx focus record` (`cli.py:1091-1094`) and `rmx focus clear` (`:1624-1628`), both `_stm()` with no purpose today, so `RMX_SESSION` → `default` (bug-109 r1 #m-3) | `write` | `SessionUnresolved`, exit 2; `focus clear` no longer clears the `default` ring while claiming "this session" |
+     | `rmx focus tail` (`:1103`), `context` (`:1121`, then `_stm(sess)` at `:1122` with the session it resolved), `export` (`:1191`), `show` (`:1218`), `topics` (`:1245`), `detours` (`:1599`), `subject` (`:1687`), `size` (`:1735`), and `rmx recall-state` (`:13260`) | `read` | the newest ring, labelled `session: <id> (newest ring; not resolved)` |
+     | write verbs `save_state` (`verbs.py:892`), `focus_note` (`:958`), `change_subject` (`:972`), and `task` push / pop / swap (`:1029`; the one call serves every action, so it passes `purpose="read" if action in ("list", "current") else "write"`) (CLI and MCP) | `write` | `verbs.SessionUnresolved` naming the sources tried; CLI exit 2 with that line; MCP tool error; nothing written to `default`, to the newest ring or anywhere else |
+     | read verbs `focus` (`verbs.py:934`), `recall_state` (`:1068`), both through the str wrapper `resolve_session` today, and `task` list / current (`:1029`) | `read` | the newest ring, labelled |
+     | the focus hook (`cli.py:1967`: `d.get("session_id") or stm_mod.session_id()`) | explicit envelope session | no envelope `session_id`: the hook records nothing and prints one stderr line, instead of writing to `default` |
 
      The `read` tail is the ONE allowed `latest_session` call in `src/` (round-4 #m-2): it
      exists so a plain terminal keeps its convenience, labelled. bug-109's str wrapper
-     `verbs.resolve_session` is removed and its callers pass `purpose`.
+     `verbs.resolve_session` (`verbs.py:572-575`) is removed and its callers pass `purpose`.
    - **bug-109's deferred items, owned here** (its auditor's r1 #m-1..#m-4; d9s):
      - `composite.py:103` and `helix.py:96` read the newest ring: the table above;
      - `focus record` / `focus clear` bypass the resolver: the table above;
@@ -239,8 +295,10 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
        hook's cwd, `mcp._resolve_root(args)` from the server's spawn cwd): 21.1 R9 D3 moves the
        pointer to the user-level `by-pid/` directory, read by every root;
      - `stm/by-pid/` cleanup: 21.1 R9 D7;
-     - nothing surfaces `_errors.jsonl`: 21.1 R9 D6 (`rmx focus show`, and the SessionStart
-       writer's stdout line).
+     - the error log's surfacing: bug-109 r2 ALREADY surfaces it in `rmx recall-state`
+       (`handoff.session_pointer_anomalies`). What is owned here is keeping that surface working
+       when D3 / D8 move the file (21.1 R9 D6 extends `session_pointer_anomalies`, AC-4b (v),
+       (vi)), plus the two new surfaces (`rmx focus show`, the SessionStart writer's stdout).
    - An explicit `--session` (CLI) or `session` argument (verb) always wins over the resolver.
 6. **R6 A redacted, committed fixture** (d8f). The raw ring
    `workflow/review-output/stm-export-db80475a-20261014.jsonl` (gitignored; sha256
@@ -272,8 +330,9 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
    `agentType: "ch-bsd"`, `description: "BSD review of decision log"` (re-review #evidence).
 
 7. **R7 The pre-prompt snapshot, the input hook's FIRST state access** (round-3 #b-2; round-4
-   #b-1, #m-1). The input branch of `cli.focus_hook` (`cli.py:1971-1981` at HEAD) today runs
-   `inflight_sweep()` (`:1976`), which `record`s every call parked > 90 s as an `abandoned` tool
+   #b-1, #m-1). The input branch of `cli.focus_hook` (`cli.py:1974-2004` at HEAD `3d3c798`: pointer
+   write `:1979-1993`, sweep `:1998-2001`, input record `:2003-2004`) today runs `inflight_sweep()`
+   (`stm.py:596-618`), which `record`s every call parked > 90 s as an `abandoned` tool
    event into the ring AND the graph, BEFORE the ambient check and before `record("input")`. The
    new order, specified ONCE in [[task-21.1-context-usage-telemetry#req-session]] (21.1 R9, "The
    pre-prompt state"):
@@ -281,8 +340,9 @@ Phase detection and the topic cache (19.6) key on STM topic clusters. In session
    2. `Stm.snapshot_pre_prompt(prompt)` for every non-empty prompt, ambient included: writes
       `<session>.pre.json` (prompt sha256, sub-second `wall`, the graph's `turn`, the ring's
       parent-origin event count, the focus graph, 19.6's topic cache) by tmp + `os.replace`;
-   3. `inflight_sweep()`; its `except Exception: pass` (`cli.py:1977-1978`) becomes one stderr
-      line and a `sweep-failed` row (21.1 R9 D8);
+   3. `inflight_sweep()`, which gives each swept call an `origin` by R2's ladder (R2 "Swept
+      calls"); its `except Exception: pass` (`cli.py:2000-2001`) becomes one stderr line and a
+      `sweep-failed` row (21.1 R9 D8);
    4. if not ambient, `record("input", …)`; the event gains `prompt_sha` and a sub-second `t`.
    `Stm.record` does not call the snapshot. Readers call `stm.pre_prompt_state(root, session,
    prompt, *, t0) -> stm.PrePromptState`; same first-to-merge ownership as R5.
@@ -351,6 +411,19 @@ head member as `rmx focus topics` renders it.
     it), and a second transcript holding the real `tool_use` block, attributes the event to the
     second agent. With the second transcript absent, the event is not attributed to the first
     (rung 3: `parent` after a completed search).
+4g. **Swept subagent call** (round-6 #s-1). Through the hook: a PreToolUse envelope from the
+    subagent fixture (its `tool_use_id` present in the subagent transcript, refs on the command
+    line) is parked by `--event tool-pre`, the sidecar's `t` is set 120 s back by the test, and
+    the parent's `--event input` then sweeps it. The ring holds the swept event with
+    `abandoned: true` and `origin: agent:<id>`; none of its refs is a member or label of any parent
+    composite; `rmx focus topics` shows the `background:` line. Non-vacuous control: a PARENT call
+    parked and swept the same way is `origin: parent` and its refs ARE members. RED at post-109
+    `master`: the subagent call's refs are members of the parent's top composite.
+4h. **Late completion recorded once in the graph** (round-6 #s-1). A parent call parked 120 s
+    back is swept, then its PostToolUse arrives. The ring holds two lines for it (`abandoned`,
+    then `late: true`), and each of its refs' node weights in `focus.json` after the PostToolUse
+    equals the weight right after the sweep. RED at post-109 `master`: the weights rise (the
+    second ingest).
 5. **Hand-back ambient.** An `<agent-message …>` input event is dropped from the focus graph and
    kept in the ring.
 6. **Envelope session.** Two rings in one tmp STM dir; the envelope names the OLDER-mtime ring;
@@ -381,6 +454,18 @@ head member as `rmx focus topics` renders it.
    with `(newest ring; not resolved)`. RED at post-109 `master`, failing assertions: the newest
    ring's line count (bug-109 writes the note there) and the `default` ring (`focus record` /
    `focus clear` write or clear it).
+   **The other CLI writes** (round-6 #b-2), same setup, two rings on disk: `rmx focus summarize
+   --promote`, `rmx focus detour x`, `rmx focus return`, `rmx focus clear-subject` and `rmx focus
+   rebuild` (no `--all`, `--session` or `--dry-run`) each exit 2 naming the sources tried; no
+   `session/digest` memory is written (the sandbox store's `focus_summary_*` memory count is
+   compared), no focus mark, subject file or `focus.json` changes (mtimes and bytes compared).
+   **The hook entries:** the generated Stop and PreCompact summarize commands carry
+   `--envelope-stdin`; fed `{session_id: <the OLDER ring's id>}` they promote
+   `focus_summary_<that id's slug>` and not the newer ring's; fed an envelope with no
+   `session_id`, they exit 1 (not 2) and write no digest. RED at post-109 `master`, failing
+   assertions: the generated commands lack `--envelope-stdin` (asserted on the config first);
+   `focus summarize --promote` writes `focus_summary_<newest ring's slug>`; `focus detour x` adds a
+   mark to the newest ring.
    6d. **Snapshot before every mutation** (round-3 #b-2; round-4 #b-1). The seeded store holds an
    in-flight sidecar with one call parked 120 s ago whose refs join the active topic.
    `rmx focus hook --event input` fed an envelope whose prompt adds new terms: afterwards
@@ -394,9 +479,18 @@ head member as `rmx focus topics` renders it.
    6e. **No `latest_session` caller outside the allow-list** (round-4 #b-2, #m-2). A test parses
    every module under `src/refmatrix/` (AST, not text) and lists every call whose function is
    named `latest_session` (a `Name` or an `Attribute`); the list must equal exactly one site,
-   the `read` tail inside `verbs.resolve_session_source`. A second AST check lists every call of
-   `resolve_session_source` and fails on one without a literal `purpose=` keyword. RED at
-   post-109 `master`: `composite.py`, `helix.py`, `promote.py` and `scan.py` are listed.
+   the `read` tail inside `verbs.resolve_session_source`. A second AST check (round-6 #b-2) lists
+   every call of `resolve_session_source`, `_resolve_stm_session` and `_stm`. Each must carry a
+   `purpose=` keyword whose value is a string constant (`"write"`, `"read"`, `"event"`) or a
+   conditional expression whose two branches are such constants (`focus summarize`,
+   `promote-edges`, `rebuild`, the `task` verb). Exactly two calls are allow-listed to pass the
+   bare name `purpose` through: `_resolve_stm_session`'s call of `resolve_session_source`, and
+   `_stm`'s call of `_resolve_stm_session`. Any other value fails, and so does a `purpose`
+   parameter with a default on either helper. The set of enclosing functions found must equal
+   R5's table, so a new caller fails until it is given a row. RED at post-109 `master`:
+   `composite.py`, `helix.py`, `promote.py` and `scan.py` are listed by the first check, and the
+   second finds 19 `_stm` / `_resolve_stm_session` calls with no `purpose=` (18 in commands, plus
+   `_stm`'s own call at `cli.py:1083`).
 7. **Mutations that must FAIL a test:**
    - extract refs from the heredoc body again in `stm.command_refs` (AC-1 and AC-1b);
    - `_tool_event_fields` back on `_PATH_RE.findall(cmd)` (AC-1b);
@@ -415,6 +509,22 @@ head member as `rmx focus topics` renders it.
    - `promote_focus_edges` defaulting to `latest_session` again, or `promote-edges --apply`
      resolving with `purpose="read"` (AC-6c: an edge is written; AC-6e);
    - `focus record` / `focus clear` back on `_stm()` without the resolver (AC-6c);
+   - `_resolve_stm_session` passing a hard-coded `purpose="read"` instead of its caller's (AC-6e
+     accepts the literal; AC-6c fails: `focus summarize --promote` writes a digest named after the
+     newest ring);
+   - `focus summarize` resolving with `purpose="read"` on `--promote` (AC-6c: the digest is
+     written);
+   - the Stop / PreCompact summarize entries without `--envelope-stdin` (AC-6c: the generated
+     config, and the older-ring envelope promotes the newer ring);
+   - `--envelope-stdin`'s unresolved exit left at 2 (AC-6c: the hook leg's exit code);
+   - `focus detour` / `return` / `clear-subject` / `rebuild` resolving with `read` (AC-6c: a mark
+     or file changes);
+   - a `purpose` default restored on `_resolve_stm_session` or `_stm` (AC-6e);
+   - the sweep recording a swept call without running the origin ladder (AC-4g: the subagent's
+     refs become members);
+   - the park record without `tool_use_id` / `transcript_path` (AC-4g: the swept call ends
+     `unattributed`, a member);
+   - a late PostToolUse ingested into the graph again (AC-4h: the weights rise);
    - the MCP server reading `CLAUDE_CODE_SESSION_ID`, or resolving once at spawn (AC-6b);
    - a write verb with no resolved session writing to `default` or the newest ring (AC-6c);
    - `snapshot_pre_prompt` called after the append or the ingest (AC-6d);
@@ -442,10 +552,11 @@ head member as `rmx focus topics` renders it.
 | `src/refmatrix/promote.py`, `daemon.py` (`promote_edges` op) | `session` required; the op refuses a call without one (R5) |
 | `src/refmatrix/verbs.py` | EXTEND bug-109's `resolve_session_source` per 21.1 R9 D1-D2 (`purpose`, `SessionResolution`, `SessionUnresolved`); remove the str wrapper `resolve_session`; the read verbs' `(newest ring; not resolved)` label |
 | `src/refmatrix/stm.py` (session, snapshot) | EXTEND bug-109's pointer code per 21.1 R9 D3-D8; NEW `snapshot_pre_prompt`, `pre_prompt_state`, `PRE_PROMPT_SKEW_S` (R5, R7; specified in 21.1 R9; built here or by 21.1, whichever merges first) |
-| `src/refmatrix/hooks.py` | the generated SessionStart entry `rmx focus hook --event session-start` (`startup\|resume\|clear\|compact`, stderr kept; 21.1 R9 D4). The MCP server's per-call resolution is bug-109's, existing |
-| `src/refmatrix/cli.py` (`_tool_event_fields` `:1906`, `focus_hook` `:1946`, `focus_rebuild`, `focus show`, `focus record`, `focus clear`, `focus promote-edges`, `_resolve_stm_session`) | `_tool_event_fields` calls `stm.command_refs` (the bug-104 cause, `:1923-1927`); pass the envelope's session and `tool_use_id`; run R2's ladder with the park time from `inflight_end`; the input branch's order (R7); `--event session-start`; rebuild drops hand-backs; origin counts and the pointer-error line in `focus show`; `focus record` / `focus clear` / `promote-edges` through the resolver (R5) |
+| `src/refmatrix/hooks.py` | the generated SessionStart entry `rmx focus hook --event session-start` (`startup\|resume\|clear\|compact`, stderr kept; 21.1 R9 D4); the Stop (`:202`) and PreCompact (`:334`) summarize entries gain `--envelope-stdin` (R5; round-6 #b-2). The MCP server's per-call resolution is bug-109's, existing |
+| `src/refmatrix/handoff.py` (`session_pointer_anomalies`, `:508-529`) | EXTENDED, not paralleled (round-6 #b-1): follows the error log to `stm.pointer_dir()` and reads the legacy `<root>/stm/by-pid/_errors.jsonl` for one release (21.1 R9 D6) |
+| `src/refmatrix/cli.py` (`_tool_event_fields` `:1909`, `focus_hook` `:1949`, `_resolve_stm_session` `:1062`, `_stm` `:1081`, and every command in R5's table) | `_tool_event_fields` calls `stm.command_refs` (the bug-104 cause, `:1923-1927`); pass the envelope's session and `tool_use_id`; run R2's ladder with the park time from `inflight_end`; the input branch's order (R7); `--event session-start`; rebuild drops hand-backs; origin counts and the pointer-error line in `focus show`; `_resolve_stm_session` / `_stm` with a required `purpose`, each caller stating its own; `focus summarize --envelope-stdin` (exit 1 when unresolved under it); `focus record` / `clear` / `promote-edges` / `summarize` / `detour` / `return` / `clear-subject` / `rebuild` and the read commands through the resolver per R5's table; the `tool-pre` park stores `tool_use_id`, `transcript_path`, `tool_name` and the input digest, and a PostToolUse whose key was swept records ring-only with `late: true` (R2) |
 | `tests/test_mcp_session_pointer.py` | EXTENDED (bug-109's file, no parallel file): AC-6b, AC-6c |
-| `src/refmatrix/stm.py` (subagent attribution) | R2's rungs 2, 2b, 3: transcript tail reader, id lookup, input digest, open-call check, meta label, `background:` rendering |
+| `src/refmatrix/stm.py` (subagent attribution) | R2's rungs 2, 2b, 3: transcript tail reader, id lookup, input digest, open-call check, meta label, `background:` rendering; `inflight_begin` stores the ladder's fields, `inflight_sweep` runs the ladder per swept call and keeps the bounded `swept` key list (R2 "Swept calls") |
 | `tests/fixtures/stm/ring-db80475a-redacted.jsonl`, `tests/fixtures/stm/subagent-db80475a/`, their build script | R6 |
 
 ## Test strategy {#test-strategy}
@@ -454,8 +565,8 @@ head member as `rmx focus topics` renders it.
   registry, injected store roots, the conftest guard that fails a test touching `~/.refmatrix` or
   a registered live store). Replays use `--root <tmp>`; no daemon is needed. Each test file
   asserts 0 live connects through 23.0's guard.
-- **RED first**, against post-bug-109 `master` (round-4 #s-1): AC-3, AC-1b, AC-1d, AC-4f, AC-6,
-  AC-6b, AC-6c, AC-6d and AC-6e are run and their FAILING ASSERTIONS recorded by name before
+- **RED first**, against post-bug-109 `master` (round-4 #s-1): AC-3, AC-1b, AC-1d, AC-4f, AC-4g,
+  AC-4h, AC-6, AC-6b, AC-6c, AC-6d and AC-6e are run and their FAILING ASSERTIONS recorded by name before
   GREEN. A test that fails only because `--event session-start` is not a click choice, or
   `purpose=` not a keyword, is RED for the wrong reason
   ([[feedback_red_test_must_fail_at_head]]); each such AC asserts on observable state first
@@ -542,3 +653,27 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r4-878647c]]
 | d9s: bug-109's deferred items listed in R5 | R5 "bug-109's deferred items, owned here" (composite/helix newest ring; `focus record` / `focus clear`; SessionStart writer; hook vs server store root; `by-pid/` cleanup; `_errors.jsonl` surfacing) |
 | round-3 #b-1 (partial via d9s) | as round-4 #s-1 |
 | round-3 #b-2 (partial) | as round-4 #b-1 |
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Answers [[bsd-plan19-21-spec-rereview-r6-0e77da3]] (the 19.0 side of #b-1, #b-2, #s-1, #m-1).
+No round-6 decision-log row names plan 19 ([[plan-review-2026-10-14#t12-approvals]], d9ao-d9ar,
+covers plans 16/17/22/23). Code facts read at write time at HEAD `3d3c798` (`src/` identical to
+`master` `c7129e6`, bug-109 r1-r4 merged at `0c7d0e0`), plus an AST scan of `src/refmatrix/` for
+calls of `latest_session`, `resolve_session_source`, `resolve_session`, `_resolve_stm_session` and
+`_stm` (32 calls): `stm.py:45`, `:127-165`, `:190`, `:205`, `:236-279`, `:291-343`, `:346`,
+`:378`, `:392`, `:574-586`, `:588-594`, `:596-618`, `:712-745`, `:1105`; `cli.py:1062-1083`,
+`:1091-1094`, `:1103`-`:1735` (R5's rows), `:1896-1906`, `:1909`, `:1926-1930`, `:1949`, `:1967`,
+`:1974-2004`, `:2013`, `:13260`; `hooks.py:202`, `:334`; `verbs.py:524-575`, `:892`, `:934`,
+`:958`, `:972`, `:1029`, `:1068`; `handoff.py:508-529`, `:569`; `scan.py:537`, `:888-894`;
+`composite.py:63`, `:103`; `helix.py:84-98`; `promote.py:140`, `:161`.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r6-0e77da3]]
+
+| finding / decision | answered at |
+|---|---|
+| round-6 #b-1 (bug-109 read at r1, not as merged; recall-state's pointer report silenced by D3/D8) | header (merge landed); R0 (probe names `owner_lookup()`'s statuses and branches); R5 "Existing code" rewritten from `master` (`_proc_info`, `owner_lookup`, `owner-lookup-failed`, `read_pointer_errors`, `handoff.session_pointer_anomalies`, `_ERRORS_MAX_BYTES` halving); R5 "bug-109's deferred items" ("nothing surfaces" removed: the item is keeping recall-state's reader working after the move); [[#files-to-modify]] (`handoff.py` added). The deltas themselves (D6 `t` watermark, counted halving, legacy read; D7 `_proc_start`) and their ACs are 21.1's: [[task-21.1-context-usage-telemetry#rev-round-6]] |
+| round-6 #b-2 (`_resolve_stm_session`'s 15 `prefer_latest=True` callers, five of them writes incl. the Stop hook's per-turn promote, had no purpose; AC-6e pushed toward `purpose="read"` in the helper) | [[#why]] (second-level callers); R5 (`_resolve_stm_session` / `_stm` take a REQUIRED `purpose`; one table row per caller: summarize `--promote` / not, the Stop and PreCompact entries with `--envelope-stdin` and exit 1, detour, return, clear-subject, rebuild, the nine read commands, the `task` verb by action); AC-6c (the other CLI writes; the hook entries); AC-6e (second check covers the helpers; two pass-through calls allow-listed; caller set equals the table); mutations (hard-coded `purpose="read"` in the helper, and five more); [[#files-to-modify]] (`cli.py`, `hooks.py`) |
+| round-6 #s-1 (swept calls carry no origin; long calls recorded twice) | R2 "Swept calls" (the park stores the ladder's fields; the sweep runs the ladder) and "A long call is no longer recorded twice" (`swept` list, `late: true`, ring-only); R7 step 3; AC-4g, AC-4h; [[#test-strategy]]; mutations; [[#files-to-modify]] |
+| round-6 #m-1 (citations stale since the merge) | [[#why]], R0, R1, R2, R5, R7 re-read at `3d3c798` (`cli.py:1974-2004`, sweep `:1998-2001`, record `:2003-2004`; `owner_lookup()` at `verbs.py:545`, not `owner_claude_pid()`). bug-109's registry row is `fixed` (the round-5 row above said open) |
+| round-6 #m-2, #s-2, #s-3 | not 19.0 items: [[plan-19-adaptive-memory-budget#rev-round-6]], [[task-19.6-phased-context-and-topic-cache#rev-round-6]], [[task-19.3-subject-tiered-index#rev-round-6]], [[task-19.4-keep-derived-layers-current#rev-round-6]] |

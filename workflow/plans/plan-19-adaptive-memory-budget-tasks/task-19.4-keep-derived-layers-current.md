@@ -25,7 +25,7 @@ rel: specified-by -> [[bsd-plan19-spec-review-3104a81]]
 
 ## Why {#why}
 
-- `rmx memory compile --apply` (`cli.py:12695`) runs only by hand, so subjects go stale as
+- `rmx memory compile --apply` (`cli.py:12696-12740`, re-read at `3d3c798`) runs only by hand, so subjects go stale as
   memories accrue.
 - `consolidate.apply_plan` unlinks the compiler's own prior leaves and relinks them, but never
   touches a subject NODE that lost every member: on a nightly schedule each label drift leaves
@@ -45,7 +45,7 @@ rel: specified-by -> [[bsd-plan19-spec-review-3104a81]]
    - No second stamp file and no save-state fallback: 17.2's `maintain.json` holds the only
      stamps.
    - A hub-callable daemon op `memory_compile` PLANS and applies (today only
-     `memory_compile_apply` is a daemon op, `daemon.py:5238`, registered at `:6286`; planning
+     `memory_compile_apply` is a daemon op, `daemon.py:5180`, registered at `:6251`; planning
      runs CLI-side). It is a verb too (verb-parity test).
    - The hub calls it with `retries=0`, and the op is single-flight per store: a second call while
      one runs returns `already_running`, so a timed-out call is never re-sent onto a running
@@ -57,11 +57,22 @@ rel: specified-by -> [[bsd-plan19-spec-review-3104a81]]
      project root>)`, never from the bridge's target path (a subdirectory such as `impressions/`
      or a single file resolves to the same root). A store with no project memory root (the
      global store) skips regeneration and reports the skip.
-   - Inside the daemon the render reads the replica directly (19.3 R5), and writes through 19.3
-     R8's atomic, locked triple.
-3. **R3 Compile regenerates the index.** After a successful apply, the compile step regenerates
-   `MEMORY.md` for that store's memory root (R2's resolution), so subject lines are never stale
-   until the next memory write.
+   - Inside the daemon the render's subjects, members and scores are read from the WRITER store
+     (`d._st()` under `d._store_lock`, bound to the memory partition) at the end of the ingest
+     job, after its last memory write: `_run_ingest_gmd_body` (`daemon.py:3450`), which both the
+     synchronous `_op_ingest_gmd` and the detached `_op_ingest_gmd_start` run (19.3 R5; round-6
+     #s-3), never from the replica, the in-memory mirror, `search.cached_replica` or
+     `Store(read_only=True)`: each lags the write by the snapshot debounce, and the last two are
+     bug-112's openers. It writes through 19.3 R8's atomic, locked triple, outside the store
+     lock.
+3. **R3 Compile regenerates the index.** After a successful apply, the compile op regenerates
+   `MEMORY.md` for that store's memory root (R2's resolution) IN THE SAME OP, reading subjects,
+   members and scores from `d._st()` inside the apply's own `with d._store_lock,
+   d._st().with_partition(…)` block (the block `_op_memory_compile_apply` holds today,
+   `daemon.py:5191`) and rendering after it (19.3 R5; round-6 #s-3). So the index names exactly
+   the subjects the apply wrote, with no wait on the snapshot tick, and subject lines are never
+   stale until the next memory write. The round-5 wording ("the render reads the replica") was
+   false by construction: the replica is regenerated after the op returns.
 4. **R4 Compile never loses.** Compile only re-files `part-of` edges between subjects and members.
    A memory that leaves every subject renders in its type section (19.3 R1). No memory and no
    subject node is removed.
@@ -98,7 +109,10 @@ hand run's `run_id` arms it (17.2 `#r7-unarmed`). Per 17.2 R2, the op accepts `d
 `step: "memory_compile"`.
 
 1. **Bridge writes the index.** Writing a new memory file into the tmp memory dir and running only
-   the SessionStart bridge (no save-state) produces an index that names the new memory.
+   the SessionStart bridge (no save-state) produces an index that names the new memory. The
+   sandbox daemon runs with `RMX_SNAPSHOT_DEBOUNCE_MS=60000` (round-6 #s-3), so the replica is
+   certainly older than the write: the index is read right after the bridge op returns, with no
+   sleep and no retry.
 2. **Scheduled step, unarmed then armed** (nm17-r3-5). On 17.2's tick (injected clock), per
    sandbox store:
    - **Unarmed (day 1).** The compile step runs once on the scheduled day with `dry_run=True`
@@ -111,10 +125,14 @@ hand run's `run_id` arms it (17.2 `#r7-unarmed`). Per 17.2 R2, the op accepts `d
      id, or with a real run's id that has no earlier dry-run line, is refused (17.2
      `#r7-unarmed`).
    - **Armed (day 2).** The step runs once through the `memory_compile` op (plan + apply), the
-     index and subjects change as the plan says, and the summary reports `ok`.
+     index and subjects change as the plan says, and the summary reports `ok`. Under
+     `RMX_SNAPSHOT_DEBOUNCE_MS=60000`, `MEMORY.md` read straight after the op returns (no sleep,
+     no retry) names every subject the plan created (round-6 #s-3).
    - A second call during a run returns `already_running`.
 3. **Reachable after compile.** A compile that moves memory X out of every subject leaves X
-   reachable (19.3 R4's executed check passes).
+   reachable (19.3 R4's executed check passes), checked against the `MEMORY.md` the same op
+   wrote, under `RMX_SNAPSHOT_DEBOUNCE_MS=60000` and with no sleep or retry: the index no longer
+   lists X under its old subject (round-6 #s-3).
 4. **Stale marked, not removed** (d8a). A re-compile after which subject S has 0 leaves: S's row
    still exists, is `protected`, carries `stale = true`, is absent from `rmx memory recall`
    (with and without `--include-subjects`) and from `MEMORY.md`, and `rmx memory get subject_S`
@@ -137,7 +155,11 @@ hand run's `run_id` arms it (17.2 `#r7-unarmed`). Per 17.2 R2, the op accepts `d
    - compile deleting a stale subject (AC-4);
    - a stale subject visible in recall (AC-4);
    - slugs by cluster order (AC-5);
-   - the over-budget path silent.
+   - the over-budget path silent;
+   - the in-op render reading through `search.cached_replica` (or `d._open_read_store`, or
+     `Store(read_only=True)`) straight after the apply or the bridge write (AC-1: the new memory
+     is absent; AC-2 day 2: a new subject is absent; AC-3: X is still listed under its old
+     subject).
 
 ## Files to modify {#files-to-modify}
 
@@ -145,7 +167,8 @@ hand run's `run_id` arms it (17.2 `#r7-unarmed`). Per 17.2 R2, the op accepts `d
 |---|---|
 | `src/refmatrix/ingest_gmd.py` | regenerate the index after a memory batch (R2) |
 | `src/refmatrix/consolidate.py` | stale marking (R5), stable unlabeled slugs (R6) |
-| `src/refmatrix/daemon.py`, `verbs.py` | the `memory_compile` (plan + apply) op and verb, single-flight; `dry_run` / `invoked_by` / `status=True` and its `runs.jsonl` line (17.2 R2); index regeneration after apply |
+| `src/refmatrix/daemon.py`, `verbs.py` | the `memory_compile` (plan + apply) op and verb, single-flight; `dry_run` / `invoked_by` / `status=True` and its `runs.jsonl` line (17.2 R2); index regeneration after apply in the same op, reading the writer store inside the apply's `_store_lock` block (R3; 19.3 R5) |
+| `src/refmatrix/ingest_gmd.py` / `daemon.py` (`_run_ingest_gmd_body`, `:3450`, run by `_op_ingest_gmd` `:3566` and `_op_ingest_gmd_start` `:3585`) | the bridge's index regeneration at the end of the ingest job reads the writer store under `_store_lock`, after its last write (R2; 19.3 R5) |
 | `src/refmatrix/hub.py` / plan-17's tick | the compile step registered, `retries=0` |
 
 ## Test strategy {#test-strategy}
@@ -186,3 +209,17 @@ rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648]]
 | finding / decision | answered at |
 |---|---|
 | nm17-r3-5 (AC-2 asserted plan + apply on the scheduled day for a step declared `requires_arming=True`) | [[#acceptance]] preamble (`MaintenanceStep(name="memory_compile", …)`, 17.2 R2's op duties); AC-2 (day 1 `dry_run:unarmed`, byte-identical outputs; hand dry run then real run, then 17.2's `hub_maintain_arm` with the real run's id, matching 17.2's current order gate; day 2 plan + apply); mutation; [[#files-to-modify]] |
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Answers [[bsd-plan19-21-spec-rereview-r6-0e77da3#s-3]] (the 19.4 side) and the stale citations
+of #m-1 in this file. Code facts read at write time at HEAD `3d3c798`: `daemon.py:1782`, `:2451-2460`,
+`:2693`, `:2708-2716` (the tick sleeps `RMX_SNAPSHOT_DEBOUNCE_MS` after a write), `:3450`, `:3566`,
+`:3585`, `:5180-5193`, `:6251`; `search.py:38`; `cli.py:12696-12740`.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r6-0e77da3]]
+
+| finding / decision | answered at |
+|---|---|
+| round-6 #s-3 (R2 / R3's in-daemon render reads the stale replica; "never stale" false; bug-112) | R2 (writer store under `_store_lock`, same op, after the bridge's last write); R3 (same op as the apply, inside its `_store_lock` block, render after; the round-5 wording withdrawn); AC-1, AC-2 (day 2), AC-3 (no sleep or retry, `RMX_SNAPSHOT_DEBOUNCE_MS=60000`); mutation (render through `cached_replica` / the mirror / `Store(read_only=True)`); [[#files-to-modify]]. The rule itself: [[task-19.3-subject-tiered-index#rev-round-6]] |
+| round-6 #m-1 (citations stale since the merge) | [[#why]] (`cli.py:12696-12740`); R1 (`daemon.py:5180`, `:6251`) |

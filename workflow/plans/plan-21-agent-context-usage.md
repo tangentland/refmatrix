@@ -117,8 +117,10 @@ Task specs: `workflow/plans/plan-21-agent-context-usage-tasks/`. Waves follow
 
 - **21.1** needs **23.0** (the shared test sandbox, d1a/d1b), per
   [[plan-review-2026-10-14#t8-wave1]], and **bug-109 merged to `master`** (d9s): R9 extends its
-  session pointer and resolver as existing code. It runs in Wave 1. It is the instrument 19.2, 19.5 and 19.6
-  consume; it does not wait on plan-23's queue (d4a).
+  session pointer and resolver as existing code (merged at `0c7d0e0`, 0.78.0). It runs in Wave 1.
+  It is the instrument 19.2, 19.5 and 19.6 consume, and 19.1 must merge AFTER it (19.1's pack
+  returns byte spans to 21.1 R11's single emission site; [[plan-review-2026-10-14#t10-waves]]
+  orders 21.1 → 19.1). It does not wait on plan-23's queue (d4a).
 - **21.2** needs 21.1 (to measure) and 23.0. Its replica reads rely on ch-bsd r9's partition
   binding (`09db9a6`).
 - **21.3** needs 16.1 (the argv parser), 16.2 (the shim removes the old stderr hint), 21.1 (the
@@ -221,3 +223,17 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r4-878647c]]
 | round-4 #m-3 | not a plan-21 item (19.6; the decision log's wave list) |
 | round-3 #b-1, #b-2 (partial) | as round-4 #s-1, #b-1 |
 | d9s | [[#dependencies]]; [[#consolidations]]; 21.1 R1, R9 |
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Answers [[bsd-plan19-21-spec-rereview-r6-0e77da3]]. No round-6 decision-log row names plan 21
+([[plan-review-2026-10-14#t12-approvals]]); nothing here needs the user.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r6-0e77da3]]
+
+| finding / decision | answered at |
+|---|---|
+| round-6 #b-1, #m-1 (21.1 side: bug-109 read at r1; D3/D6/D7; AC-4/4b; stale lines) | [[task-21.1-context-usage-telemetry#rev-round-6]] |
+| round-6 #s-1 (21.1 side: the sweep step gives swept calls an origin) | [[task-21.1-context-usage-telemetry#rev-round-6]]; built in 19.0 |
+| round-6 #m-2 (19.1 missing as a consumer; one-sided edge) | [[#dependencies]] (21.1 bullet names 19.1 as merging after it); 21.1 `rel: related-to -> [[task-19.1-pack-recall-under-budget]]` |
+| round-6 #b-2, #s-2, #s-3 | not plan-21 items ([[plan-19-adaptive-memory-budget#rev-round-6]]) |
