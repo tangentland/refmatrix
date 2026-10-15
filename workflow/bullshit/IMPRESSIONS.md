@@ -174,3 +174,5 @@ rel: related-to -> [[#imp-route-named-helper-tested]]
 rel: related-to -> [[#imp-route-named-helper-tested]]
 - 2026-10-14 (bug-111 r1): A REPAIR IS A WRITER. The "regrowth" a dry run flagged six seconds after an apply was the repair's own links half re-adding what its fragment half dropped. When a repair is a union of two sources, run each source through the SAME liveness gate, and re-run apply->dry-run->dry-run as a fixed-point test. Also: the purge the fix routes to is itself partition-scoped on the concept side, so "use purge_entity" does not by itself close the class. {#imp-repair-is-a-writer}
 rel: related-to -> [[#imp-remedy-guards-unpinned]]
+- 2026-10-14 (bug-111 r2): A SCOPE HELPER IS NOT FREE IN A LOOP. `with_partition` was built for one rebind per op; called per purged id, it upserts a partition row and looks it up by name each time (no-op inserts on the ON-CONFLICT crash class, no zonemap fallback). When a remedy reuses a context manager inside a per-entity loop, read what its enter does and swap the raw binding instead. {#imp-scope-helper-in-a-loop}
+rel: related-to -> [[#imp-repair-is-a-writer]]

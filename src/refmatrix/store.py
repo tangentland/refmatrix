@@ -4381,15 +4381,16 @@ class Store:
             if pid is None or lid not in lk:
                 links_skipped += 1  # counted, never silent (memory-path rule)
                 # The orphan-row share of links_skipped, named on its own (bug-111 r1 #1): these
-                # rows await an audited removal and must stay visible until it runs.
+                # rows await plan 22's audited removal (the `dangling-link` class, task 22.1a R1
+                # + 22.2 R9, d9an) and must stay visible until it runs.
                 links_dead_entity += pid is None
                 continue
             if int(cid) not in concept_ids:
                 # bug-111: the same liveness gate the fragment half applies below. Without it an
                 # orphan entity_links row (its concept deleted by a path that bypassed
                 # purge_entity) came back as a bit on every apply and every dry run re-flagged it
-                # as dropped_dead_concept. The row itself is left alone (its removal is an
-                # audited removal, not a fragment repair) and stays visible in this count.
+                # as dropped_dead_concept. The row itself is left alone (its removal is plan 22's
+                # `dangling-link` class, task 22.1a R1 + 22.2 R9, d9an) and stays visible here.
                 links_dead_concept += 1
                 continue
             new.setdefault((int(pid), lk[lid]), BitMap64()).add(self._pack(cid, eid))

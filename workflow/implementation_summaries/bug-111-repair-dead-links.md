@@ -75,6 +75,23 @@ The deleter of ids 2791202-2791209 predates the current code and cannot be named
 
 {#round-1-body}
 
+## Round 2 (ch-bsd `bsd-bug111-r2-remedy-129366b`) {#round-2}
+
+- **#1:** `_clear_purged_bits` swaps the partition binding directly from one `partitions` read,
+  as `flush_fragments` does. It no longer goes through `with_partition`, which cost an
+  `INSERT OR IGNORE` + commit + lookup per partition per purge (+25-28% on 200 purges) and had
+  no damaged-zonemap fallback. Pinned by `test_purge_never_upserts_a_partition`.
+- **#2:** the surviving mutants D1 (`links_dead_entity` vs an unknown linkage) and I2/I3 (each
+  half of the symlink path match) now each fail a test; W (back to `with_partition`) fails 4
+  (`bug111-r2-mutations.log`).
+- **#3 (MEH, open):** a doc row stored under a RELATIVE path (89 on the refmatrix copy) is not
+  matched by the as-memory drop, and no counter names that. The memory bridge passes absolute
+  paths, so no live pair exists today.
+- **#4:** the deferral row cites the 22.1a anchor as text until `wave0-spec-reviews` merges;
+  the store comments name the task.
+
+{#round-2-body}
+
 ## Live follow-up {#live}
 
 After deploy, one applied `rmx repair-index --fragments` on cliquedb drops the bit for good. The
