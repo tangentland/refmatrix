@@ -50,3 +50,4 @@
 2026-10-15T04:51:17-0700 commit=c4ef0a8 verdict=DIRTY findings=2 (0B/1S/1M) report=2026-10-15-0451-plan18-r4-closing-diffcheck-c4ef0a8.md
 2026-10-15T04:51:28-0700 commit=69ea55b verdict=DIRTY findings=7 (0B/2S/5M) report=2026-10-15-0451-bugs112-113-118-r2-69ea55b.md
 2026-10-15T04:56:06-0700 commit=8281a7f verdict=CLEAN findings=0 (0B/0S/0M) report=2026-10-15-0456-task18-1-measurement-r3-8281a7f.md
+2026-10-15T05:10:04-0700 commit=be965bb verdict=DIRTY findings=3 (0B/2S/1M) report=2026-10-15-0510-plan16-22-r13-closing-diffcheck-absorb-mark-blocks-re-purge-and-scan-skips-the-absorbing-copy-be965bb.md

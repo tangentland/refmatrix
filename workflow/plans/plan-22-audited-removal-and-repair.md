@@ -14,7 +14,8 @@ metadata:
 # Plan 22: audited removal and repair {#root}
 
 **Date:** 2026-10-07 (revised 2026-10-14 after the Wave 0 decision log)
-**Status:** Drafting — revision round 14 (2026-10-15) for d9ch (a restore re-logs every link
+**Status:** Drafting — revision round 15 (2026-10-15) for d9ci (a restore re-logs every
+learned sidecar row it RE-INSERTS with a manifest evidence row; [[#rev-round-15]]); revision round 14 (2026-10-15) for d9ch (a restore re-logs every link
 and every learned sidecar row it re-attaches in place; [[#rev-round-14]]); revision round 13
 (2026-10-15) for d9cg (a restore restates every
 evidence row it re-attaches in place with a `restored_from`-tagged append, absorbed on a rebuild
@@ -265,6 +266,7 @@ rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 | d-33 | revival is decided by REVERSAL, never by a count: every `tombstone` a manifest-writing purge logs carries `manifest: <apply_id>`, every `entity` event a restore logs for an `id_map` key carries `restored_from: <apply_id>` (both spelled and read only through `edge_records.reversal_fields` / `reversal_of`), and a tombstone of the same entity key that such an event follows is reversed; ONE function, `edge_records.revivable`, decides revival for the vacuum scan, the rebuild's row pass and 17.4's fold, and an AST test (22.6 AC-6f) holds the three callers to it | d9cf (supersedes d9cc (ii)); r12 s-1 |
 | d-34 | a restore never re-attaches an evidence row silently: for every row 22.2 R4's `id_map` re-attaches in place it logs one `restored_from`-tagged `evidence` append (built by `edge_records.edge_event`, with `c_kind`, both ends by name, `partition`), always, so a rebuild of a log compacted between the purge and the restore holds what live holds; the append RESTATES the purged incarnation's copy: ONE function, `edge_records.restated_copy`, absorbs it into that copy when still held (same `row_key` plus `detail`, appended before the `M` tombstone, every tombstone between reversed) and adds a copy otherwise, called by `revivable`'s three callers; idempotence by row key rejected (multiplicity, other incarnations); 22.2 AC-4e | d9cg (supersedes round 7's no-event rule for evidence); round 13 |
 | d-35 | no row type is re-attached silently: for every LINK 22.2 R4's `id_map` re-attaches in place the restore logs one `link` event (`edge_records.edge_event`, with `weight`, `c_kind`, `partition`; a set member, so count-neutral with no absorb rule), and for every 16.6 sidecar row of a re-attached evidence identity one `learned_provenance` event (`row_event`, after its restating append, same `ts`; a no-op on the sidecar's primary key when the original still resolves), because 16.6 R1d's dump skips dead-end sidecar rows (stated, counted `provenance_not_dumped`); at HEAD no purge leaves an in-place link (both columns deleted), so the link half covers rows another route puts there; 22.2 AC-4e link and sidecar legs | d9ch; round 14 |
+| d-36 | every row the restore puts back is logged, re-attached in place or re-inserted: for every sidecar row 22.2 R4 re-inserts with a manifest evidence row (an `evidence_row` whose dead side its `id_map` maps, re-inserted live; any other evidence row a restore re-inserts LIVE with its sidecar rows; a dangling re-insert is not reached, raised in [[task-22.2-repair-then-remove#rev-round-15]]) the restore inserts it through 16.6's `Store.add_learned_provenance`, whose one `learned_provenance` event (`row_event`) is the re-log, after the row's own plain `evidence` append, same `ts`; no absorb rule (the purge's `evidence_remove` deleted the old copy and its sidecar, live and on replay); counted `restore_sidecar_reinserted`; 22.2 AC-4e dead-side re-insert sidecar leg | d9ci; round 15 |
 
 ## Open after revision {#open-after-revision}
 
@@ -308,6 +310,20 @@ earlier links still resolve.
    protections to the learner; those are purgeable whole when they are class members, and 22.3
    prints its count before the live apply ([[task-22.3-bug-086-global-repair#r3]]).
 
+## Revision round 15 (2026-10-15) {#rev-round-15}
+
+Closes the round-14 open item ([[#rev-round-14]] last row) under d9ci
+([[plan-review-2026-10-14#t12-approvals]]; PROVISIONAL until its ch-bsd loop is clean). `src/`
+unchanged. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| d9ci (the sidecar rows of an evidence row the restore re-inserts from the manifest) | [[task-22.2-repair-then-remove#r4-reinsert-sidecar]]: inserted through 16.6's `add_learned_provenance`, its one `learned_provenance` event the re-log, after the row's plain `evidence` append, same `ts`; [[task-22.2-repair-then-remove#rev-round-15]]; d-36 |
+| d9ci AC | 22.2 AC-4e dead-side re-insert sidecar leg (uncompacted and compacted), mutations "re-insert without re-logging the sidecar" and "re-log the re-inserted sidecar before the row's append" |
+| raised, not ruled | the sidecar rows of a row re-inserted DANGLING (catalog-only, no event) have no named insert path, since 16.6's only INSERT path logs ([[task-22.2-repair-then-remove#rev-round-15]] last row) |
+
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+
 ## Revision round 14 (2026-10-15) {#rev-round-14}
 
 Closes the round-13 open item ([[#rev-round-13]] last row) under d9ch
@@ -319,7 +335,7 @@ unchanged. Later rows win.
 | d9ch (a) (a link re-attached in place logs a `link` event) | [[task-22.2-repair-then-remove#r4-relink]] *Links*; 22.2 AC-4e link leg (planted in-place row; at HEAD no purge leaves one, "Reach at HEAD"), mutations "re-attach a link without logging" and "log the re-attached link without `weight`"; d-35 |
 | d9ch (b) (the sidecar of a re-attached learned row) | 16.6 R1d's dump skips dead-end sidecar rows, now stated ([[task-16.6-learned-row-validation#rev-round-14]]); [[task-22.2-repair-then-remove#r4-relink]] *Sidecar rows*; 22.2 AC-4e sidecar leg, mutations "re-attach the sidecar without re-logging it" and "log the sidecar event before the restating append"; d-35 |
 | d9ch (c) | [[task-17.4-factslog-backup-snapshot#r6-restore]] step 3 names `restated_copy` beside `revivable` |
-| raised, not ruled | sidecar rows a restore RE-INSERTS with an `evidence_row` have no named event ([[task-22.2-repair-then-remove#rev-round-14]] last row) |
+| CLOSED in round 15 by d9ci ([[#rev-round-15]]); was: raised, not ruled | sidecar rows a restore RE-INSERTS with an `evidence_row` have no named event ([[task-22.2-repair-then-remove#rev-round-14]] last row) |
 
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 

@@ -5,7 +5,7 @@ title: "Invisible grep shim: the real tool always answers, the graph learns in t
 tags: [plan, grep, hooks, learning, drop-in]
 metadata:
   node_type: plan
-  status: drafting
+  status: approved
   created: 2026-10-06
   revised: 2026-10-14
   updated: 2026-10-15
