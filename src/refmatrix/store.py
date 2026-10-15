@@ -4372,12 +4372,21 @@ class Store:
         new: dict = {}
         added_from_links = 0
         links_skipped = 0
+        links_dead_concept = 0
         for eid, lid, cid in con.execute(
             "SELECT entity_id, linkage_id, concept_id FROM entity_links"
         ).fetchall():
             pid = ent_part.get(eid)
             if pid is None or lid not in lk:
                 links_skipped += 1  # counted, never silent (memory-path rule)
+                continue
+            if int(cid) not in concept_ids:
+                # bug-111: the same liveness gate the fragment half applies below. Without it an
+                # orphan entity_links row (its concept deleted by a path that bypassed
+                # purge_entity) came back as a bit on every apply and every dry run re-flagged it
+                # as dropped_dead_concept. The row itself is left alone (its removal is an
+                # audited removal, not a fragment repair) and stays visible in this count.
+                links_dead_concept += 1
                 continue
             new.setdefault((int(pid), lk[lid]), BitMap64()).add(self._pack(cid, eid))
 
@@ -4460,7 +4469,7 @@ class Store:
             "rows_changed": len(changed), "kept": kept, "moved": moved,
             "added_from_links": added_from_links, "dropped_dead": dropped_dead,
             "dropped_dead_concept": dropped_dead_concept, "links_skipped": links_skipped,
-            "remapped": remapped_bits,
+            "links_dead_concept": links_dead_concept, "remapped": remapped_bits,
             "unread_dirs": list(getattr(self, "_repair_unread_dirs", [])),
             "manifest": str(manifest) if manifest else None,
         }
