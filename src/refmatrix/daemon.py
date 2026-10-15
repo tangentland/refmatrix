@@ -197,6 +197,9 @@ def read_repair_marker(root: Path) -> "dict | None":
         return {"table": "unknown"}
 
 
+_CP = "/bin/cp"
+
+
 def _copy_out_of_process(src: Path, dst: Path, *, timeout_s: float = 600.0) -> None:
     """Byte-copy `src` to `dst` in a CHILD process, never through a descriptor of our own.
 
@@ -206,11 +209,14 @@ def _copy_out_of_process(src: Path, dst: Path, *, timeout_s: float = 600.0) -> N
     `shutil.copy2` of the live writer slot therefore released the daemon's lock on its first
     run, and a second process could open the slot and commit. A child's descriptors are its
     own: its close cannot touch our locks (and fork does not inherit them). `cp -p` keeps
-    `copy2`'s metadata semantics. Raises OSError on failure so callers keep their error path.
+    `copy2`'s metadata semantics. Raises OSError on failure so callers keep their error path; a
+    failed copy can leave a PARTIAL `dst` (a full volume wrote 23 of 40 MB, r1 #s-2), so callers
+    must not install `dst` when this raises. `/bin/cp` by absolute path: the launchd PATH puts
+    user bin dirs ahead of /bin (r1 #m-2).
     """
     import subprocess
     try:
-        proc = subprocess.run(["cp", "-p", str(src), str(dst)],
+        proc = subprocess.run([_CP, "-p", str(src), str(dst)],
                               capture_output=True, text=True, timeout=timeout_s)
     except subprocess.TimeoutExpired as exc:
         raise OSError(errno.ETIMEDOUT, f"cp {src} -> {dst} timed out after {timeout_s}s") from exc
@@ -2537,38 +2543,6 @@ class Daemon:
             or "internal error" in msg
         )
 
-    def _rebuild_slot_from(self, source_slot: str, target_slot: str,
-                           log_offset: int) -> None:
-        """Overwrite `target_slot`'s catalog file with a fresh copy of
-        `source_slot`'s. Used to recover an invalidated reader slot.
-
-        Assumes no live DuckDB connection on either side at call time.
-        Resets both offset markers so the next refresh tick treats both
-        slots as caught up to `log_offset`.
-        """
-        source_path = self._replica_file(source_slot)
-        target_path = self._replica_file(target_slot)
-        # Drop stale target + its WAL so DuckDB sees a clean snapshot
-        # after the copy. Unlink is safe — the slot was already locked
-        # out of the rotation by the invalidation.
-        for p in (target_path,
-                  target_path.with_name(target_path.name + ".wal")):
-            try:
-                if p.exists() or p.is_symlink():
-                    p.unlink()
-            except OSError as exc:
-                self._log(f"rebuild unlink {p.name} failed: {exc!r}")
-        _copy_out_of_process(source_path, target_path)   # source may be the live writer (bug-110)
-        try:
-            self._write_slot_offset(source_slot, log_offset)
-            self._write_slot_offset(target_slot, log_offset)
-        except Exception as exc:
-            self._log(f"rebuild offset reset failed: {exc!r}")
-        self._log(
-            f"rebuilt slot {target_slot} from {source_slot} "
-            f"(log_offset={log_offset})"
-        )
-
     def _read_only_link(self) -> Path:
         """Symlink the daemon maintains pointing at the current READER
         (inactive) slot. In-process Stores that need to read while the
@@ -2896,13 +2870,16 @@ class Daemon:
             try:
                 with self._store_lock:
                     if self.store is not None:
+                        # close() in its own finally (bug-110 r1 #m-3): a CHECKPOINT that raised
+                        # used to skip it, and the in-process copy then ran with the store open.
                         try:
                             self.store._connect().execute("CHECKPOINT")
                             self.store.flush_fragments()
+                        except Exception as exc:
+                            self._log(f"rotation slot repair: pre-copy checkpoint failed: {exc!r}")
+                        finally:
                             self.store.close()
-                        except Exception:
-                            pass
-                    shutil.copy2(survivor_path, missing_path)
+                    _copy_out_of_process(survivor_path, missing_path)
                     marker = self._active_marker()
                     current = (marker.read_text().strip()
                                if marker.exists() else "")

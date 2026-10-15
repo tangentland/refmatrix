@@ -86,3 +86,60 @@ def test_snapshot_is_a_readable_copy_of_the_writer(tmp_path):
             ro.close()
     finally:
         s.close()
+
+
+# ---- ch-bsd r1 (bsd-bug110-lock-held-tests-now-fail-60893d3) #s-2: the copy's failure paths -----
+
+def _fake_cp(tmp_path: Path, body: str) -> str:
+    script = tmp_path / "fakecp.sh"
+    script.write_text("#!/bin/sh\n" + body + "\n")
+    script.chmod(0o755)
+    return str(script)
+
+
+def test_a_failed_copy_installs_no_snapshot_and_keeps_the_previous_one(tmp_path, monkeypatch):
+    """A full volume makes cp exit 1 after writing part of the file. The partial tmp must never
+    replace the snapshot readers use."""
+    import refmatrix.daemon as dm
+
+    s = Store(tmp_path, backend="duckdb")
+    s._connect()
+    try:
+        d = _bare_daemon(tmp_path, s)
+        good = d._snapshot_catalog(force=True)
+        snap = Path(good["snapshot_path"])
+        before = snap.read_bytes()
+        # Writes a truncated tmp (the destination is the last argument), then fails.
+        monkeypatch.setattr(dm, "_CP", _fake_cp(
+            tmp_path, 'for a; do dst="$a"; done; printf partial > "$dst"; '
+                      'echo "No space left on device" >&2; exit 1'))
+        out = d._snapshot_catalog(force=True)
+        assert out.get("error") == "copy", out
+        assert "No space left on device" in out["detail"], out
+        assert snap.read_bytes() == before, "a partial copy replaced the snapshot"
+    finally:
+        s.close()
+
+
+def test_a_copy_that_hangs_times_out_as_an_oserror(tmp_path, monkeypatch):
+    import refmatrix.daemon as dm
+
+    src = tmp_path / "src.bin"
+    src.write_bytes(b"x" * 1024)
+    monkeypatch.setattr(dm, "_CP", _fake_cp(tmp_path, "sleep 30"))
+    import pytest
+    with pytest.raises(OSError, match="timed out"):
+        dm._copy_out_of_process(src, tmp_path / "dst.bin", timeout_s=0.5)
+
+
+def test_the_copy_preserves_mtime_like_copy2(tmp_path):
+    import os
+    import refmatrix.daemon as dm
+
+    src = tmp_path / "src.bin"
+    src.write_bytes(b"y" * 4096)
+    os.utime(src, (1_700_000_000, 1_700_000_000))
+    dst = tmp_path / "dst.bin"
+    dm._copy_out_of_process(src, dst)
+    assert dst.read_bytes() == src.read_bytes()
+    assert int(dst.stat().st_mtime) == 1_700_000_000
