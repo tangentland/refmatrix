@@ -17,7 +17,8 @@ metadata:
 > [[bsd-plan23-17-spec-rereview-r3-6091648]]; revision round 3: ns17-r3-3, ns17-r3-4, nm17-r3-6,
 > see [[#rev-round-3]]. Revision round 5: ns17-r4-2, nm17-r4-1, see [[#rev-round-5]]. Revision
 > round 6: ns17-r6-1, see [[#rev-round-6]]. Revision round 7: nm17-r7-1, see [[#rev-round-7]].
-> Revision round 9: ns17-r9-1, ns17-r9-2, nm-x-r9-1, see [[#rev-round-9]].
+> Revision round 9: ns17-r9-1, ns17-r9-2, nm-x-r9-1, see [[#rev-round-9]]. Revision round 10:
+> nm17-r10-1, see [[#rev-round-10]].
 > Round 2: [[#rev-round-2]])
 > Depends on: 17.2 (the hub tick and its `maintenance_steps` registry, NOT 23.1's daemon tick
 > registry), 23.0 (sandbox)
@@ -385,10 +386,14 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
      (a) run).
    - **The fold's op set is pinned to replay's (ns17-r9-2).** The AST test of R6 step 3 passes
      at HEAD (the dispatch set equals `FOLD_OPS`). Mutations, each must FAIL: one op removed
-     from `FOLD_OPS` (the set test); a fixture live log carrying one event with
-     `op: "evidence_remove"` (not yet in replay) makes the script print `unknown event op
-     evidence_remove at line <N>` and fail verification; with the unknown-op check replaced by
-     a skip, that case FAILS (the script prints `source: live`).
+     from `FOLD_OPS` (the set test); a fixture live log carrying one event with the RESERVED
+     test-only op `op: "__rmx_test_unknown_op__"` makes the script print `unknown event op
+     __rmx_test_unknown_op__ at line <N>` and fail verification; with the unknown-op check
+     replaced by a skip, that case FAILS (the script prints `source: live`). The name is
+     reserved so no replay ever dispatches it (nm17-r10-1: a real future op such as d9bl's
+     `evidence_remove` lands in Wave 1 beside 17.4 and would flip the case), and the test
+     first asserts it is ABSENT from the AST-read dispatch set of `rebuild_index_from_log`
+     (and from `FOLD_OPS`), so the precondition cannot silently go false.
    - **The verify parses `--json`, not console text (nm-x-r9-1).** The script calls
      `rmx rebuild --from-log --yes --json` and reads the counters from one JSON object.
      Mutation: a test seam that makes the console renderer wrap each `<key>: <value>` line
@@ -493,10 +498,21 @@ Source: [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d]] (diff check of round 8 at `9
 | finding | answered at |
 |---|---|
 | ns17-r9-1 (the strict fold fails on the torn final line the parse probe tolerates; after a crash every (c) restore falls back to the day-old backup) | [[#r6-restore]] step 2 (the copy cut at its last newline by one `_cut_copy`, shared with the probe; `cut <n> torn byte(s)` printed; rebuild, fold and install all use the cut copy), [[#ac-9]] (the main (c) run ends with a torn half-line; the uncut-copy mutation), [[#files-to-modify]] |
-| ns17-r9-2 (the independent fold diverges silently when replay gains an event op) | [[#r6-restore]] step 3 (`FOLD_OPS`; an unknown op fails verification naming it; an AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s dispatch set), [[#ac-9]] (set test, `evidence_remove` fixture, skip mutation), [[#files-to-modify]]. Plan-22's files tables listing `scripts/factslog-restore.py` beside each new op is a plan-22 edit, not made here; the AST test makes it fail loudly if missed |
+| ns17-r9-2 (the independent fold diverges silently when replay gains an event op) | [[#r6-restore]] step 3 (`FOLD_OPS`; an unknown op fails verification naming it; an AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s dispatch set), [[#ac-9]] (set test, unknown-op fixture, skip mutation), [[#files-to-modify]]. Plan-22's files tables listing `scripts/factslog-restore.py` beside each new op is a plan-22 edit, not made here; the AST test makes it fail loudly if missed |
 | nm-x-r9-1 (bug-119 names a dead path; its planned fix would fail every post-crash rebuild; 17.4 parsed rich output) | [[#r6-restore]] (bug-119's scope: `apply_log_delta` RETIRED by d9bu, the rebuild is the one replay path, a torn final line `tail_torn_bytes` exit 0 vs a corrupt interior line exit non-zero), step 3.1 (`rmx rebuild --from-log --json`), [[#ac-9]], [[#files-to-modify]]. The bug-119 row in `workflow/bug_registry.md` is outside this task's files; its text is for the registry owner |
 | user rule: converge repeated shapes into one function, with bypass checks that can fail | one cut (`_cut_copy`) for the probe and the rebuild; one op set (`FOLD_OPS`) pinned to replay's dispatch by an AST test that fails on drift |
 
 rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#ns17-r9-1]]
 rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#ns17-r9-2]]
 rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#nm-x-r9-1]]
+
+## Revision round 10 (2026-10-15) {#rev-round-10}
+
+Source: [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3]] (diff check of round 9 at `0dc2da3`; HEAD
+`c8ff69d`; 17.4 APPROVAL-READY). The round-9 table above is unchanged history.
+
+| finding | answered at |
+|---|---|
+| nm17-r10-1 (the unknown-op fixture `evidence_remove` is an op Wave 1 adds to replay; the case flips when it lands) | [[#ac-9]] (fixture op is the reserved test-only name `__rmx_test_unknown_op__`; the test asserts it is absent from the AST-read dispatch set and from `FOLD_OPS` before it runs) |
+
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#nm17-r10-1]]

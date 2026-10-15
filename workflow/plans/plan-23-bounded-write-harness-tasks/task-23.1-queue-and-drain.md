@@ -21,7 +21,8 @@ metadata:
 > (ns23-r6-1, ns23-r6-2, ns23-r6-3, nm23-r6-1, nm23-r6-2) with d9ag and d9ao; see
 > [[#rev-round-6]]. Round 5, 2026-10-14: re-review [[bsd-plan23-17-spec-rereview-r4-878647c]]
 > (nb23-r4-1, ns23-r4-1, ns23-r4-2, nm23-r4-1, nm23-r4-2) and the user's writer-handle idea
-> (R1.6, ADOPTED (d9ag)); see [[#rev-round-5]]. **Owner hand-off amended by 23.5 R4 (round 9):** `_FairLock` sets `_owner` under `_mu` in `_pass_or_release_locked`; the woken waiter does not write it — build R1.6 item 1 to that order ([[task-23.5-read-path-and-holder-bounds#r4]]). Round 3: [[#rev-round-3]]. Round 2: [[#rev-round-2]])
+> (R1.6, ADOPTED (d9ag)); see [[#rev-round-5]]. Revision round 10, 2026-10-15: R1.6 item 1 and
+its mutation synced to 23.5 R4's owner order (nm23-r10-5); see [[#rev-round-10]]. **Owner hand-off amended by 23.5 R4 (round 9):** `_FairLock` sets `_owner` under `_mu` in `_pass_or_release_locked`; the woken waiter does not write it — build R1.6 item 1 to that order ([[task-23.5-read-path-and-holder-bounds#r4]]). Round 3: [[#rev-round-3]]. Round 2: [[#rev-round-2]])
 > Depends on: 23.0 (test sandbox), 23.2 (hold + write-count recorder), and **the bug-105 hotfix
 > MERGED TO `master`** (branch `bug-105-fragment-partition`, at whatever sha its last clean
 > ch-bsd audit closes on, with its five test files; merged in 0.78.0, [[#facts]] round 6). 23.1 does not start before that merge, and
@@ -446,11 +447,12 @@ Added in revision round 8, read at HEAD `23ad703` (0.78.3; bug-115/116 and bug-1
    the d9ae fence its chunked yield runs only offline with `lock=None` (a Store with no
    `writer_lock`), and the live merge belongs to the helix plan (d9ac), which inherits this
    check (nm23-r6-1). The requirement:
-   1. **`_FairLock` gains an owner.** `_owner: int | None`, set to `threading.get_ident()` by the
-      thread that ends up holding the lock (the fast path in `acquire`, and the woken waiter
-      after `ev.wait` returns True, since `release` hands ownership to it), cleared in
-      `_pass_or_release_locked` before hand-off or release, and read by a new
-      `held_by_current_thread() -> bool`. The timeout-race branch (handed the lock, then passes
+   1. **`_FairLock` gains an owner.** `_owner: int | None` is the ident of the thread that holds
+      the lock. It is set by the fast path in `acquire` (`threading.get_ident()`), and by
+      `_pass_or_release_locked` under `_mu` to the chosen waiter's ident before `ev.set()`
+      (`_waiters` holds `(ev, ident)` pairs; 23.5 R4, [[task-23.5-read-path-and-holder-bounds#r4]]);
+      the woken waiter does not write it. It is cleared in `_pass_or_release_locked` on a plain
+      release (no waiter), and read by a new `held_by_current_thread() -> bool`. The timeout-race branch (handed the lock, then passes
       it on) never leaves `_owner` set to itself. **23.1 itself edits 23.2's `HoldRecorder`
       (nm23-r7-2):** 23.2's approved surface (d9at) is closed and lacks the method, so 23.1 adds
       one explicit pass-through, `HoldRecorder.held_by_current_thread()` returning the wrapped
@@ -1053,8 +1055,9 @@ contributes no bit and is never deleted by 23.1's code.
     - The WARN-mode census run's site list is in the implementation summary, and every site on
       it is MOVED UNDER THE LOCK (nb23-r7-1; no site is resolved by naming it safe). A second
       WARN-mode run after the moves lists zero sites; its log is captured beside the first.
-    - Mutations, each must FAIL: the check removed from `flush_fragments`; `_owner` not set on
-      the woken-waiter path (the holder reports False and every op under the lock raises); one
+    - Mutations, each must FAIL: the check removed from `flush_fragments`; `_owner` not set at
+      hand-off in `_pass_or_release_locked` (the woken waiter holds the lock but reports False,
+      and every op under the lock raises); one
       of the 8 sites assigning `self.store = Store(…)` directly instead of through the helper
       (FAILS the AST case, and, at `:2924` or `:2888`, the reopen case); `writer_lock` captured
       as the lock object at install time instead of a callable (FAILS the replaced-lock case:
@@ -1219,3 +1222,15 @@ Source: [[bsd-plan23-17-spec-rereview-r8-23ad703]]. Code facts re-read at HEAD `
 
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r8-23ad703#ns23-r8-4]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r8-23ad703#nm23-r8-4]]
+
+## Revision round 10 (2026-10-15) {#rev-round-10}
+
+Source: [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#nm23-r10-5]] (pointer finding against 23.1;
+23.1 READY, unchanged design). The round-8 table above is unchanged history.
+
+| finding | answered at |
+|---|---|
+| nm23-r10-5 (R1.6 item 1 and its mutation still state the old owner order: the woken waiter sets `_owner` after `ev.wait`) | [[#r1-6-proposed]] item 1 (set by the fast path in `acquire` and by `_pass_or_release_locked` under `_mu` to the chosen waiter's ident before `ev.set()`; the woken waiter does not write it), [[#ac-20]] (mutation: "`_owner` not set at hand-off in `_pass_or_release_locked`"); matches [[task-23.5-read-path-and-holder-bounds#r4]] |
+
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#nm23-r10-5]]
+rel: derives-from -> [[task-23.5-read-path-and-holder-bounds#r4]] {sync: "owner order"}

@@ -20,16 +20,20 @@ metadata:
 > under d9bn ([[plan-review-2026-10-14#t12-approvals]], PROVISIONAL until its ch-bsd loop is
 > clean); see [[#rev-round-8]]. Revision round 9 (2026-10-15): diff check
 > [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d]] (nb23-r9-1/2, ns23-r9-1/2, nm23-r9-1..3); see
-> [[#rev-round-9]].
+> [[#rev-round-9]]. Revision round 10 (2026-10-15): diff check
+> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3]] (nm23-r10-1..5, all MEH); see [[#rev-round-10]].
 > Depends on: 23.0 (sandbox), 23.2 (recorder), 23.1 (`_FairLock` owner, R1.6 item 1; the learn
 > drain, R9; `_compact_factslog_locked`, R3.7). **bug-115/116 (0.78.2) merged to `master`:
 > SATISFIED** (`607d759`, `1c86d9c` and bug-117's `391ffeb` are ancestors of `master` `b381b6d`;
 > HEAD `23ad703`). **bug-112 FIXED and reachable from `master`: OPEN, a HARD gate (nb23-r9-2;
 > the same gate as 18.3's header).** The fix is in flight on branch `bugs-112-113-118`
-> (`7c38c46`, `0fed0d5`; clone `/Volumes/littlebig/refmatrix-bugs112-118`), which is NOT an
-> ancestor of `master` at `b84fd8d`. 23.5 is not implemented before `git merge-base
-> --is-ancestor <fix sha> master` succeeds; that command's output is recorded in the
-> implementation summary.
+> (`7c38c46`, `0fed0d5`, `462bd0b` so far; clone `/Volumes/littlebig/refmatrix-bugs112-118`),
+> which is NOT an ancestor of `master` at `b84fd8d`. The branch will gain more commits before it
+> merges (d9bw(d) adds `_writer_lost`), so the gate names no branch commit: it names **the merge
+> commit that lands bugs-112-113-118 on master**. 23.5 is not implemented before `git merge-base
+> --is-ancestor <the merge commit that lands bugs-112-113-118 on master> master` succeeds; that
+> sha is read from `git log --merges master` at gate time, and the command and its output are
+> recorded in the implementation summary.
 > Runs in parallel with 23.3 after 23.1. Blocks nothing in Wave 1; 17.3's hold bound
 > ([[task-17.3-fleet-rollout#r2-measure]]) cites the same coupling.
 > **Stands alone (ns23-r9-1).** 23.5 is Wave 1; plan-18 is Wave 4. Nothing here waits on 18.2 or
@@ -269,10 +273,19 @@ maintenance holds (17.1 / 17.3), plan-18's catalog maintenance and its swap (18.
       {#r1-helper}
       - **The refusal is typed on the wire (ns23-r9-2).** `code` is `"writer_busy"` for
         `WriterBusy` and `"deadline"` for `DeadlineExceeded`. `verbs._call` raises
-        `VerbBusyError(<error>)` when `r.get("code")` is one of them (one frozenset,
-        `verbs.BUSY_CODES`, read by `_call` only), and plain `VerbError` otherwise, so MCP
-        tools and hooks retry or report a busy writer and never string-match the message or
-        treat it as absent. {#r1-typed-refusal}
+        `VerbBusyError(<error>)` when `r.get("code")` is one of them, and plain `VerbError`
+        otherwise, so MCP tools and hooks retry or report a busy writer and never string-match
+        the message or treat it as absent.
+        - **One reader of the code (nm23-r10-3).** `verbs.BUSY_CODES` (one frozenset) is read
+          by ONE helper, `verbs._raise_for_answer(r, op, root)`: it returns on `ok: true`,
+          raises `VerbBusyError` when `r.get("code") in BUSY_CODES`, and raises `VerbError`
+          otherwise. It has two callers: `verbs._call`, and `verbs.memory_partition`'s
+          answered-error branch (`verbs.py` ~:261-278), which today logs and returns the
+          project default for ANY `ok: false`. After this task that branch calls
+          `_raise_for_answer`; a `VerbBusyError` propagates (a busy answer is never turned into
+          a guessed partition, the split-brain family the function exists to prevent,
+          bsd-plan3-r4 #s-4), and only a non-busy `VerbError` keeps the logged project
+          default. No other site reads `code` or `BUSY_CODES`. {#r1-typed-refusal}
    2. **`_read_with_fallback`'s `writer_wait_s` becomes a REQUIRED keyword** (no default). The
       three bg-pool callers (`_op_top_concepts`, `_op_memory_facets`, `_op_memory_brief`) pass
       `writer_wait_s=None` explicitly; on the bg pool an unbounded wait parks no cli worker. A
@@ -401,7 +414,13 @@ maintenance holds (17.1 / 17.3), plan-18's catalog maintenance and its swap (18.
        amends 23.1 R1.6 item 1's owner write (one site, in `_FairLock`).
    - **The name.** `writer_holder` = the `_inflight_ops` entry whose `ident` equals the owner's
      ident: `{op, held_s}`; an owner with no entry reports `{op: "untracked thread <name>",
-     held_s}`, never null. `stats(include_health=True)` reports it, and R1's / R2's
+     held_s}`, never null. **One thread can carry several entries (nm23-r10-1)**: a bg op
+     (`kind="op"`) that enters `Daemon._inflight(<name>)` (`snapshot` → `_snapshot_catalog`,
+     `compact_factslog` → `compact`, and later plan-18's `_catalog_hold(<label>)`) has two
+     entries with the same ident. Then `writer_holder` names the MOST RECENTLY REGISTERED one
+     (the innermost `Daemon._inflight`, by registration order, never dict iteration order);
+     `held_s` comes from the lock's `_owner_since`; the `lock hold:` alarm's label, and any
+     per-label threshold ([[#cross-plan-18]] item 2), use the same entry. `stats(include_health=True)` reports it, and R1's / R2's
      `WriterBusy` message uses it.
    - **The alarm.** At release, a hold longer than `RMX_HOLD_ALARM_S` (default 10 s) logs one
      `rmxd.log` line `lock hold: <op> <s>s`.
@@ -453,8 +472,13 @@ maintenance holds (17.1 / 17.3), plan-18's catalog maintenance and its swap (18.
      `updated_at` lies past every tail event's `ts` (an import, a clock step back) would refuse
      every compaction while the tail is non-empty, which under load is always. The daemon
      counts CONSECUTIVE `ts-order` refusals (reset by a successful compaction) and reports
-     `factslog_compaction_refused: <n>` in `stats(include_health)`; the hub shows it as a hot
-     row when `n >= 1`. A refusal never retries in a loop: the next attempt is the next tick.
+     `factslog_compaction_refused: <n>` in `stats(include_health)["health"]` (the dict
+     `_store_health` returns). The hub carries only health keys it names into a queue row
+     (`hub.py` ~:640-700), so it copies `factslog_compaction_refused` into the store's row when
+     `>= 1`, and both `_queue_row_is_hot` and `_hot_signature` (`hub.py:1211`, `:1231`) name the
+     key, so the row is hot with that reason and a change in the count is a new signature
+     (nm23-r10-4; the pattern 18.2 R7 spells out). A refusal never retries in a loop: the next
+     attempt is the next tick.
    - 23.1's BOOT check (before the socket binds, no cli pool yet) keeps
      `_compact_factslog_locked()` in one hold (23.1 R3.7); this task changes only the paths
      that run while clients are served.
@@ -513,7 +537,9 @@ plan-18 reviser. This task does not edit plan-18's files; this list is the hand-
 1. **Register the holder through `Daemon._inflight(<label>)`.** `_catalog_hold` enters
    `Daemon._inflight(label)` (an `InflightEntry` with `kind="tick"`) for its whole hold, so
    23.5 R4's `writer_holder` and `WriterBusy` message name it. It keeps no holder registry of
-   its own. (18.2 R11 at `b84fd8d` does not mention `_inflight`.)
+   its own. Called from an op (`catalog_maintain`), its thread carries two entries; R4 names
+   the most recently registered one, so the helper's label (not the op's) is the holder and
+   the key of any per-label threshold (nm23-r10-1). (18.2 R11 at `b84fd8d` does not mention `_inflight`.)
 2. **No second hold alarm.** 23.5 R4's `lock hold: <label> <s>s` line, fired in
    `_FairLock`'s release, is the one alarm for every holder. 18.2 R11's own "one `rmxd.log`
    line for any hold over D1's 2 s edge" is withdrawn; if plan-18 needs its 2 s edge, it is a
@@ -576,13 +602,28 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
      `rmx_memory_search` called through the MCP adapter (the `verbs` path, not
      `daemon.call`) on a partition absent from the snapshot raises `VerbBusyError` (asserted
      by class, not by message), and the raw response carries `code: "writer_busy"`; the same
-     call with `deadline_s` already past yields `code: "deadline"` and `VerbBusyError`. A spy
-     on `Store.__init__` in the client process records no client-side `Store(` open.
+     A spy on `Store.__init__` in the client process records no client-side `Store(` open.
+   - **The deadline code, observed on the raw wire (nm23-r10-3).** `daemon.call` sends
+     `deadline_s = timeout` and uses the same value as its socket timeout, so a `deadline`
+     answer can never reach `_call` before its own transport timeout; the verb path cannot see
+     it. The case therefore sends a RAW request (the test's own socket client) with
+     `deadline_s=0.2` and a 5 s read timeout, behind a cli pool blocked for 0.5 s by a seam,
+     and asserts the answer carries `code: "deadline"`. Its mapping is asserted on
+     `verbs._raise_for_answer` directly: a `{"ok": false, "code": "deadline", …}` dict raises
+     `VerbBusyError`.
+   - **`memory_partition` never guesses on a busy answer (nm23-r10-3).** With no replica
+     reachable (the bootstrap branch) and a daemon that answers `partition_list` with
+     `code: "writer_busy"` (the `_open_read_store`-returns-None seam, so `partition_list`
+     reaches the writer fallback during the hold), `verbs.memory_partition(root, timeout=5)`
+     raises `VerbBusyError` and returns no name. With a non-busy answered error (an unknown-op
+     answer, no `code`), it still returns the project default and logs the warning.
    Mutations, each must FAIL: `replica_audit` on a plain `with d._store_lock:` (no answer within
    1.5 s); `_cli_writer_wait` ignoring `_op_ctx.expires` (the 0.5 s case takes 1 s);
    `partition_add` left in `CLI_OPS` (the AST case, and with 4 concurrent calls the 8-client
    reads miss 1 s); `code` dropped from the refusal response (the MCP case gets a plain
-   `VerbError`). {#ac-2}
+   `VerbError`, and the raw-deadline case finds no `code`); `memory_partition`'s answered
+   branch left returning the project default for every `ok: false` instead of calling
+   `_raise_for_answer` (the `writer_busy` case returns a name). {#ac-2}
 3. **The rule is static and transitive (R7).** The AST test passes after R1-R3. Mutations, each
    must FAIL it: `with d._store_lock:` added to `_op_list_linkages`; a new module-level helper
    `_peek(d)` that does `with d._store_lock:` called from `_op_list_linkages` (the transitive
@@ -619,14 +660,23 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
    - **Refusals are counted (nm23-r9-3 d).** A catalog row whose `updated_at` is set 1 h in the
      future, then three compaction attempts with a non-empty tail: each is refused, and
      `stats(include_health=True)` reports `factslog_compaction_refused: 3`; after the row is
-     corrected, the next compaction succeeds and the counter is 0. Mutation: the counter not
-     incremented FAILS (it reads 0 after three refusals). {#ac-5}
+     corrected, the next compaction succeeds and the counter is 0. After the three refusals the
+     hub's queue row for the store (one hub poll against the sandbox daemon) is hot, and its
+     reason names `factslog_compaction_refused` (nm23-r10-4). Mutations, each must FAIL: the
+     counter not incremented (it reads 0 after three refusals); the hub not copying the key into
+     the row (the row is not hot). {#ac-5}
 6. **Holders are named (R4) and health reads the read path (R1.6; ns23-r8-1, nm23-r8-2).**
    With `RMX_HOLD_ALARM_S=0.5`, a test-registered BG-pool op takes a 1 s hold (a cli op that
    took the lock would fail R7): `rmxd.log` has `lock hold: <that op> 1.…s`. During a second
    such hold, `stats(include_health=True)` answers within 1 s with `writer_holder.op` equal to
    the holder's op, `held_s` ≥ the elapsed time, and `memory_read_ok: true` (read from the
    snapshot, not the writer). A compaction tick's tail hold is reported as `compact`.
+   - **The innermost entry names the holder (nm23-r10-1).** A test-registered bg op takes the
+     lock and, inside the hold, enters `Daemon._inflight("inner")` (its thread then has two
+     entries); during that hold `stats(include_health=True)` reports
+     `writer_holder.op == "inner"`, and with `RMX_HOLD_ALARM_S=0.5` the release logs
+     `lock hold: inner …`. Mutation: the FIRST matching entry instead of the last FAILS
+     (`writer_holder.op` is the outer op's name).
    Mutations, each must FAIL: no op name recorded (`writer_holder.op` is null or "untracked");
    the ident set on the dispatcher thread instead of the worker (`writer_holder.op` is
    "untracked thread rmxd-bg-…"); `_store_health` called inside the outer `stats` `fn` with
@@ -635,10 +685,16 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
    `acquire_use()` a BOUNDED acquire (2 s, then it raises `TimeoutError("mirror use-lock")`),
    so the nested call raises inside the op, `stats` answers an error naming the use-lock, and
    the case asserts on that answer; no worker stays parked and teardown completes.
-   - **No hand-off window in `holder()` (R4; nm23-r9-3 a).** Two threads contend `_FairLock`
-     2,000 times with hand-offs; a sampler thread calls `holder()` in a tight loop throughout.
-     No sample returns `(None, …)` while `_held` is true. Mutation: the owner set by the woken
-     waiter after `ev.wait` (23.1's original order) FAILS (samples see a null owner).
+   - **No hand-off window in `holder()` (R4; nm23-r9-3 a; nm23-r10-2).** Two threads contend
+     `_FairLock` 2,000 times; each acquire HOLDS the lock at least 100 µs
+     (`time.sleep(0.0001)` inside) so the other thread is queued at release; a sampler thread
+     calls `holder()` in a tight loop throughout. The test counts hand-offs (a waiter woken by
+     `_pass_or_release_locked`, through a test seam counter on `_FairLock`) and requires at
+     least 1,000; fewer FAILS the case as vacuous (the r10 measurement: a tight
+     acquire/release loop under the GIL hands off almost never, and the old order then shows
+     0 null-owner samples). No sample returns `(None, …)` while `_held` is true. Mutation: the
+     owner set by the woken waiter after `ev.wait` (23.1's original order) FAILS (samples see a
+     null owner).
    - **Both `_inflight_ops` readers use the new value (nm23-r9-1).** `_drain_pool` times out
      with one op and one tick in flight: its log line names both and raises nothing; the
      updated `tests/test_inflight_registry.py` and `tests/test_daemon_shutdown_drain.py` pass.
@@ -651,9 +707,15 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
    - **Bitmap freshness (nb23-r9-1).** With `RMX_DAEMON_FLUSH_S=3600` (no periodic flush in
      the window) and no other write after it, a `link` op of entity E under
      `<linkage>:<concept>`, then `query "<linkage>:<concept>"` through the daemon returns E
-     within `RMX_SNAPSHOT_DEBOUNCE_MS` + 1 s; likewise `grep_indexed` returns a hit learned
-     by one `learn` op (its bitmap bit) within the same bound. Mutation: `_snapshot_catalog`
-     without R1.9's flush FAILS (E is absent from the `query` answer after the bound).
+     within `RMX_SNAPSHOT_DEBOUNCE_MS` + 1 s. Then an `unlink` op of E under the same pair
+     (`_op_unlink`, also non-transactional), and `query` no longer returns E within the same
+     bound. Mutation: `_snapshot_catalog` without R1.9's flush FAILS (E is absent from the
+     `query` answer after the link, and still present after the unlink).
+   - **Regression coverage, not R1.9 coverage (nm23-r10-4).** `grep_indexed` returns a hit
+     learned by one `learn` op (its bitmap bit) within the same bound. The learn drain applies
+     the hit inside 23.1's `batch_transaction`, whose COMMIT flushes fragments, so this case
+     passes with or without R1.9; it guards the learn path's freshness only. R1.9's
+     discriminating cases are the non-transactional `link` and `unlink` above.
    - On a fixture with one tracked file touched after its sync, `stats(include_stale=True)`
      (served off the snapshot) reports the same `stale_files` list as the writer's
      `stale_files()` read by the test under the lock, after one debounce. No branch: the spec
@@ -685,8 +747,8 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
 |---|---|
 | `src/refmatrix/daemon.py` | R1 (`_cli_read`; `WriterBusy`; `_note_expired_read` → `_note_refused`; the 11 read ops, the 10 `_read_with_fallback` sites and `_store_health`'s 2 on `_cli_read`; `writer_wait_s` required; `snapshot` out of `CLI_OPS`; `_op_stats` in three steps; `_store_health` and `_memory_partition` off the writer connection; `MIRROR_OPS`), R2 (`partition_add` / `partition_rename` out of `CLI_OPS`; `CLI_WRITE_OPS = {"stop"}`; the worker-side wrapper and `_op_ctx`; `_cli_writer_wait`; `_cli_writer_lock` in `replica_audit`), R3 (`context` enqueues), R4 (`_inflight_ops` 3-field value; `Daemon._inflight(name)`; `_FairLock._owner_since` + `holder()`; alarm; `writer_holder`), R5 (`_snapshot_catalog(pin_to=)`; two-hold compaction with the ts-order refusal), R6 (clamp) |
 | `src/refmatrix/daemon.py` (round 9) | R1.1 `code` on the refusal from `_note_refused`; R1.9 the flush in `_snapshot_catalog`'s hold; R4 `InflightEntry` read by `_final_flush` AND `_drain_pool`, `_FairLock` hand-off sets the owner under `_mu`; R5 `factslog_compaction_refused` counter in `stats(include_health)`; R6 `_heartbeat_params()` |
-| `src/refmatrix/verbs.py` | `BUSY_CODES`; `_call` raises `VerbBusyError` on a busy `code` (R1.1; ns23-r9-2) |
-| `src/refmatrix/hub.py` | `factslog_compaction_refused >= 1` as a hot row (R5; nm23-r9-3 d) |
+| `src/refmatrix/verbs.py` | `BUSY_CODES`; ONE `_raise_for_answer(r, op, root)` read by `_call` and by `memory_partition`'s answered branch (R1.1; ns23-r9-2, nm23-r10-3) |
+| `src/refmatrix/hub.py` | copy `factslog_compaction_refused` into the store's queue row when `>= 1`; `_queue_row_is_hot` and `_hot_signature` name it (R5; nm23-r9-3 d, nm23-r10-4) |
 | `src/refmatrix/store.py` | the dump-to-path form of `dump_catalog_to_log` that also returns its largest `ts` (R5.2) |
 | `tests/lockhold.py` | `HoldRecorder.holder()`, one explicit pass-through (R4; nm23-r8-2). 23.2's other surface is unchanged |
 | `tests/test_inflight_registry.py`, `tests/test_daemon_shutdown_drain.py` | 2-tuples → `InflightEntry`; the `== {}` assertion filters `kind == "op"` (R4; nm23-r9-1) |
@@ -765,3 +827,24 @@ rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#ns23-r9-2]]
 rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#nm23-r9-1]]
 rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#nm23-r9-2]]
 rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#nm23-r9-3]]
+
+## Revision round 10 (2026-10-15) {#rev-round-10}
+
+Source: [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3]] (diff check of round 9 at `0dc2da3`; HEAD
+`c8ff69d`; APPROVAL-READY, 7 MEH). Spec-text edits only; no design change. The round-9 table
+above is unchanged history.
+
+| finding | answered at |
+|---|---|
+| nm23-r10-1 (`writer_holder` ambiguous when one thread carries two entries) | [[#r4]] ("The name": the most recently registered entry; `held_s` from `_owner_since`; the alarm label and per-label threshold use it), [[#ac-6]] (the `inner` case; first-match mutation) |
+| nm23-r10-2 (the hand-off mutation passes vacuously without forced contention) | [[#ac-6]] (each acquire holds ≥ 100 µs; ≥ 1,000 counted hand-offs through a seam counter, fewer fails as vacuous) |
+| nm23-r10-3 (`memory_partition` turns a busy answer into a guessed partition; the `deadline` code unobservable through the verb path) | [[#r1-typed-refusal]] (ONE `verbs._raise_for_answer` used by `_call` and `memory_partition`), [[#ac-2]] (`memory_partition` `writer_busy` case; raw-request `deadline` case; two mutations), [[#files]] |
+| nm23-r10-4 (AC-7's `grep_indexed` half cannot fail under R1.9's mutation; the hub row has no AC or key path) | [[#ac-7]] (`grep_indexed` marked regression coverage; an `unlink` case added to the discriminating `link` case), [[#r5]] (the counter in the `health` dict; the hub copies it; `_queue_row_is_hot` / `_hot_signature` name it), [[#ac-5]] (hot-row case; key-not-copied mutation), [[#files]] |
+| nm23-r10-5 (23.1's body states the old owner order) | [[task-23.1-queue-and-drain#rev-round-10]] (R1.6 item 1 and its mutation synced to [[#r4]]'s order) |
+| r10 approval note (the gate must name the MERGE sha) | [[#root]] header (the merge commit that lands bugs-112-113-118 on master, read from `git log --merges master`) |
+
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#nm23-r10-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#nm23-r10-2]]
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#nm23-r10-3]]
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#nm23-r10-4]]
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#approval]]
