@@ -27,3 +27,6 @@
 2026-10-15T00:29:17-0700 commit=331b414 verdict=DIRTY findings=8 (0B/4S/4M) report=2026-10-15-0029-plan19-21-r7-spec-rereview-one-member-identity-survives-small-clusters-and-global-error-log-unscoped-331b414.md
 2026-10-15T00:33:01-0700 commit=331b414 verdict=DIRTY findings=9 (1B/2S/6M) report=2026-10-15-0031-plan23-17-r7-spec-rereview-named-safe-close-swallows-the-new-check-331b414.md
 2026-10-15T00:34:28-0700 commit=331b414 verdict=DIRTY findings=9 (1B/3S/5M) report=2026-10-15-0032-plan16-22-r7-spec-rereview-evidence-remove-replays-after-later-appends-331b414.md
+2026-10-15T03:18:12-0700 commit=23ad703 verdict=DIRTY findings=8 (1B/2S/5M) report=2026-10-15-0318-plan16-22-r8-spec-rereview-row-ops-predate-bug117-c-kind-23ad703.md
+2026-10-15T03:20:32-0700 commit=23ad703 verdict=DIRTY findings=9 (0B/2S/7M) report=2026-10-15-0320-plan19-21-r8-spec-rereview-hub-pairs-still-carry-identity-and-sessionstart-sees-only-its-own-process-23ad703.md
+2026-10-15T03:20:08-0700 commit=23ad703 verdict=DIRTY findings=11 (1B/5S/5M) report=2026-10-15-0320-plan23-17-r8-spec-rereview-cli-ops-reach-the-lock-through-helpers-23ad703.md
