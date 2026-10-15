@@ -13,7 +13,8 @@ metadata:
 # Task 23.1: queue, tail, bounded steps, and the tick registry {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: Pending (revision round 7, 2026-10-15: re-review [[bsd-plan23-17-spec-rereview-r7-331b414]]
+> Status: Pending (revision round 8, 2026-10-15: re-review [[bsd-plan23-17-spec-rereview-r8-23ad703]]
+> (ns23-r8-4, nm23-r8-4); see [[#rev-round-8]]. Revision round 7, 2026-10-15: re-review [[bsd-plan23-17-spec-rereview-r7-331b414]]
 > (nb23-r7-1, ns23-r7-1, nm23-r7-1, nm23-r7-2, nm23-r7-3); see [[#rev-round-7]]. The non-harness
 > lock holders d9az gives plan-23 are task 23.5's, not this task's. Revision round 6,
 > 2026-10-15: re-review [[bsd-plan23-17-spec-rereview-r6-0e77da3]]
@@ -272,6 +273,26 @@ Added in revision round 7, read at HEAD `77ac38f` (`src/` unchanged since `0e77d
   (`store.py:282`: id "equals entities.id where kind='concept'"), with inserts at `:1860`,
   `:2246`, `:2421-2429`; the 0.78.1 gate (`store.py:4388`) calls a concept dead only if its id
   is in neither `entities` nor `concepts`.
+
+Added in revision round 8, read at HEAD `23ad703` (0.78.3; bug-115/116 and bug-117 merged):
+- **Shutdown flushes BEFORE it closes (ns23-r8-4).** `serve_forever`'s stop path calls
+  `Daemon._final_flush` (`daemon.py:1478`, called at `:2033`), which takes `_store_lock` under
+  a bounded acquire and flushes the dirty fragments; only then does the `finally` start
+  `_do_close` on `rmxd-close` (`:2052`). On a contended lock `_final_flush` logs `final flush
+  skipped: _store_lock contended …; in flight: <ops from _inflight_ops>` (`:1520-1541`). So
+  at HEAD a bit dirtied before the stop is normally already in `bitmap_fragments` when
+  `Store.close()` runs, and round 7's "the bits dirtied since the last periodic tick are
+  dropped unsaid" overstated the impact: the silent swallow in `Store.close()`
+  (`store.py`, `Store.close`, its first `try: self.flush_fragments() except Exception: pass`)
+  is real, its loss is the residue `_final_flush` did not cover. AC-20's shutdown case
+  therefore asserts the MECHANISM (who flushes, under which lock), not the outcome.
+- **Line moves since round 7** (src moved under the spec, `77ac38f` → `23ad703`; this spec now
+  cites by symbol, and these are the HEAD lines): `_do_close` `:2018` → `:2052`; the init slot
+  rebind `:1727-1732` → `:1757-1766`; `srv.bind` `:1807` → `:1841`; the 8 writer-Store sites
+  1665/1734/1757/2888/2924/5490/5508/5557 → 1699/1768/1791/2936/2972/5575/5593/5642; the
+  `self.store: Store | None = None` declaration `:728` → `:746`; `_compact_factslog_if_needed`'s
+  `with self._store_lock:` `:2346` → `:2380`. Round 6/7 text above keeps its `77ac38f` numbers
+  as history.
 {#facts-body}
 
 ## Requirements {#requirements}
@@ -485,15 +506,16 @@ Added in revision round 7, read at HEAD `77ac38f` (`src/` unchanged since `0e77d
       ("each is either moved under the lock or named in the implementation summary with why it
       is safe (for example `Store.close()` at daemon shutdown …, or `serve_forever`'s init slot
       rebind flush at `:1729` …)") is withdrawn. The two known sites, specified:
-      - **Shutdown close.** `_do_close` (`daemon.py:2018`) runs
+      - **Shutdown close.** `_do_close` (the nested function in `serve_forever`'s shutdown
+        `finally`, run on thread `rmxd-close`; `daemon.py:2052` at `23ad703`) runs
         `self._store_lock.acquire(timeout=<close_budget minus 0.5 s, floor 0>)` around
         `self._st().close()` and releases in a `finally`. On a timeout it does NOT call
         `close()` (the process exit releases the file locks, as the existing close-timeout
         path already relies on) and logs one line, `store close: writer lock not acquired in
         <s>s; <n> dirty fragment(s) NOT flushed`, with `n = dirty_fragment_count()`; it never
         skips silently.
-      - **Init slot rebind.** The `CHECKPOINT` + `flush_fragments()` + `close()` sequence at
-        `daemon.py:1727-1732` and the reopen through `_install_writer_store` run inside
+      - **Init slot rebind.** The `CHECKPOINT` + `flush_fragments()` + `close()` sequence in
+        `serve_forever`'s init slot rebind (`daemon.py:1757-1766` at `23ad703`) and the reopen through `_install_writer_store` run inside
         `with self._store_lock:`, as both `_bootstrap_rotation_if_needed` branches already do
         (`:2871`, `:2911`). `close()` moves to its own `finally` inside that hold (the bug-110
         r1 #m-3 shape at `:2873-2881`), so a failed flush no longer skips the close.
@@ -986,14 +1008,24 @@ contributes no bit and is never deleted by 23.1's code.
       check (R1.6 item 3), and after the raise: the entity's Lance dataset `version` is
       unchanged, `ann_search` / a direct Lance read still returns that id's vector, its
       `vectors_updated_at` is unchanged, and the three catalog tables are unchanged.
-    - **Shutdown keeps the last dirty bit (nb23-r7-1).** A recorded daemon serves on a short
-      tmp socket with the periodic flush tick disabled (interval far above the test's length).
-      One `link` under `with d._store_lock:` leaves a dirty `(home, mentions)` fragment; then
-      `d.stop` with no tick in between. After a fresh `Store` opens the slot, the
-      `bitmap_fragments` row (read by SQL) holds the bit, and `rmxd.log` has no "store close"
-      error line. A second case holds `_store_lock` from a test thread across the whole stop:
-      `rmxd.log` has the line `store close: writer lock not acquired in …; 1 dirty fragment(s)
-      NOT flushed`.
+    - **Shutdown closes under the lock: the mechanism, not the outcome (nb23-r7-1,
+      ns23-r8-4).** `_final_flush` already flushes under a bounded acquire before `_do_close`
+      ([[#facts]] round 8), so "the bit is in the row after the stop" holds with or without
+      this task and is not the assertion. A recorded daemon serves on a short tmp socket with
+      the periodic flush tick disabled. The test wraps `Store.flush_fragments` with a spy that
+      records `(threading.current_thread().name, d._store_lock.held_by_current_thread())` and
+      then calls the real method. One `link` leaves a dirty fragment; then `d.stop`. The spy's
+      record for the flush that `Store.close()` runs is `("rmxd-close", True)`, and `rmxd.log`
+      has no "store close failed" line. A second case holds `_store_lock` from a test thread
+      across the whole stop: `_final_flush` logs its "final flush skipped" line, `close()` is
+      never called (the spy records no `rmxd-close` entry), and `rmxd.log` has `store close:
+      writer lock not acquired in …; 1 dirty fragment(s) NOT flushed`.
+    - **`Store.close()` re-raises after it closes (ns23-r8-4).** A Store-level case, no daemon:
+      a tmp `Store` with `writer_lock` installed (a `_FairLock` the test owns) and one dirty
+      fragment. `close()` called from a thread that does NOT hold that lock raises
+      `WriterLockNotHeld`; after the raise `st._conn is None` (the connection was closed) and
+      the fragment's `bitmap_fragments` row, read by a fresh `Store`, is unchanged from before
+      the call.
     - **Init rebind under the lock.** A recorded daemon booted, check ON, on a store whose
       active slot file exists while its Store opened `catalog.duckdb` (the condition at
       `daemon.py:1722-1726`) takes the rebind: `rmxd.log` has `init slot rebind: db_path -> …`
@@ -1004,7 +1036,9 @@ contributes no bit and is never deleted by 23.1's code.
       `:2924` site); then, with `A` removed, it reopens through the asymmetric-repair site
       (`:2888`). After each, `d.store` is a different object from before (a reopen really
       happened) and `flush_fragments()` from an unlocked thread still raises
-      `WriterLockNotHeld`. (These sites, not `_op_replica_merge`'s, because bug-113 makes the
+      `WriterLockNotHeld`. (The `:2924` and `:2888` labels are round 6's lines at `77ac38f`: the
+      legacy-bootstrap and the asymmetric-repair `Store(…)` sites of
+      `_bootstrap_rotation_if_needed`, `:2972` and `:2936` at `23ad703`. These sites, not `_op_replica_merge`'s, because bug-113 makes the
       replica-merge reopen fail; its three sites are covered by the AST case.)
     - **One installer, by AST (nm23-r7-1).** A test parses `daemon.py` and finds no assignment
       to an `Attribute` named `store` (`Assign`, `AugAssign`, `AnnAssign` with a value, a
@@ -1026,14 +1060,16 @@ contributes no bit and is never deleted by 23.1's code.
       as the lock object at install time instead of a callable (FAILS the replaced-lock case:
       the op under the new recorder raises); the check removed from `_clear_purged_bits` (FAILS the
       `purge_entity` case: the purge writes unlocked); **round 7 (nm23-r7-1, ns23-r7-1,
-      nb23-r7-1, nm23-r7-2):** the `:5557` site rewritten as the two-statement
+      nb23-r7-1, nm23-r7-2):** the third `d.store = Store(…)` in `_op_replica_merge` (its
+      reopen after the swap; `:5642` at `23ad703`) rewritten as the two-statement
       `st = Store(…); …; d.store = st` (FAILS the AST case; round 6's rule passed it); the purge
       check kept ONLY in `_clear_purged_bits` (FAILS the purge case: the Lance `version` is
       +1 and the vector is gone, for each of the three entry points); `_do_close` calling
-      `close()` without taking the lock (FAILS the shutdown case: the check raises inside
-      `close()`, the bit is missing from the row); `Store.close()` swallowing
-      `WriterLockNotHeld` as before (FAILS the shutdown case: the bit is missing AND no
-      "store close failed" line); the init rebind left outside `with self._store_lock:`
+      `close()` without taking the lock (FAILS the shutdown case: the spy records
+      `("rmxd-close", False)` and `rmxd.log` has a "store close failed" line);
+      **round 8 (ns23-r8-4):** `Store.close()` swallowing `WriterLockNotHeld` as before (FAILS
+      the Store-level case: no raise); `Store.close()` re-raising BEFORE its read-view and
+      connection closes (FAILS the Store-level case: `st._conn` is still open); the init rebind left outside `with self._store_lock:`
       (FAILS the init-rebind case: a "close failed" line); `HoldRecorder` without
       `held_by_current_thread` (FAILS the replaced-lock case with `AttributeError` instead of
       the expected results). Round 5's "merge's end block taken out of
@@ -1169,3 +1205,17 @@ above is unchanged history.
 | nm23-r7-3 (AC-3b's dangling fixture row is alive by its `concepts` row) | [[#facts]] round 7, [[#ac-3]] AC-3b (delete the concept from `concepts` AND `entities`) |
 | ns-x-r7-1 (19.2 R6/AC-10 and 16.6 R1c still build on `replica_merge` after d9ao) | not owned here: plans 19 and 16 own it ([[bsd-plan23-17-spec-rereview-r7-331b414#ns-x-r7-1]]). 23.1's side is unchanged: [[#r8]] stays RETIRED and names no consumer rule as live |
 | d9az (non-harness holders; heartbeat coupling) | [[task-23.5-read-path-and-holder-bounds]]; plan [[plan-23-bounded-write-harness#scope-d9az]] |
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Source: [[bsd-plan23-17-spec-rereview-r8-23ad703]]. Code facts re-read at HEAD `23ad703`
+(0.78.3). The round-7 table above is unchanged history; d9bn's read-path rulings are 23.5's
+([[task-23.5-read-path-and-holder-bounds#rev-round-8]]), not this task's.
+
+| finding / decision | answered at |
+|---|---|
+| ns23-r8-4 (AC-20's shutdown case passes on the pre-existing `_final_flush`; the "close() swallows" mutation is exercised by neither case) | [[#facts]] round 8 (`_final_flush` named; round 7's impact claim corrected), [[#ac-20]] (shutdown case asserts the mechanism: a `flush_fragments` spy reads `("rmxd-close", True)`; a Store-level case: `close()` from a thread without the lock raises `WriterLockNotHeld`, `_conn is None`, the row unchanged; two round-8 mutations, swallow and re-raise-before-close; "bit missing" dropped as a stated failure) |
+| nm23-r8-4 (line drift `77ac38f` → `23ad703`; AC-20 cites the `:5557` site by number) | [[#facts]] round 8 (the HEAD line map), [[#r1-6-proposed]] item 4 (`_do_close`, the init rebind cited by symbol), [[#ac-20]] (the replica-merge site named by symbol; the bootstrap sites' HEAD lines) |
+
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r8-23ad703#ns23-r8-4]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r8-23ad703#nm23-r8-4]]

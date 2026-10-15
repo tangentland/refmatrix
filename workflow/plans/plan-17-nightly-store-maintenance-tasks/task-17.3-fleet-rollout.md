@@ -115,10 +115,11 @@ been compacted. {#why-body}
      real store's steps, hold `_store_lock` for less than
      `HOLD_BOUND_S = HEARTBEAT_STALE_S − 2 × HEARTBEAT_INTERVAL_S` (50 s at the defaults,
      `daemon.py:63`, `:66`), read from the op report's `hold_s`. The bound comes from the
-     watchdog, not a round number. The coupling, at HEAD `77ac38f`: the heartbeat is a no-op
-     submitted to the 4-worker cli pool and the file is touched only when it completes
-     (`daemon.py:1319-1337`); cli reads such as `stats` take `_store_lock` unbounded
-     (`daemon.py:3732`), so four of them queued behind one maintenance hold stop the beat for
+     watchdog, not a round number. The coupling, at HEAD `23ad703` (round 8, nm23-r8-4): the
+     heartbeat tick submits a no-op to the 4-worker cli pool and, since 0.78.2, every cli-pool
+     completion also touches the file (`Daemon._start_heartbeat`, `daemon.py:1323-1358`;
+     `Daemon._handle`'s `fut.add_done_callback(self._heartbeat_touch)`); cli reads such as
+     `stats` take `_store_lock` unbounded (`_op_stats`, `daemon.py:3817`), so four of them queued behind one maintenance hold stop the beat for
      the whole hold; the hub restarts after `WATCHDOG_GRACE_MISSES` (3) missed pings AND a
      heartbeat older than `HEARTBEAT_STALE_S` (60 s) (`hub.py:305-317`). Round 6's "< 60 s"
      equalled the stale threshold with no margin: a 59.9 s hold under hook load (17.2's catch-up
@@ -244,3 +245,14 @@ read on its branch (`607d759`). The round-6 table above is unchanged history.
 |---|---|
 | nm17-r7-3 (the < 60 s hold bound equals the heartbeat-stale threshold; the heartbeat is a no-op on the 4-worker cli pool) | [[#r2-measure]] hold bound (`HOLD_BOUND_S = HEARTBEAT_STALE_S − 2 × HEARTBEAT_INTERVAL_S`, 50 s; the coupling cited in code; what 0.78.2 and 23.5 change), [[#acceptance]] AC-4 (55 s now FAILS) |
 | nm17-r7-1 (the ART-index precedent misfiled under (c); the lock discriminator unnamed) | [[#r3-docs]] (lock error told by its message; the crash-loop shape is class (a), fixed by the offline table rebuild; (b) covers an unparseable live log); the script side is [[task-17.4-factslog-backup-snapshot#rev-round-7]] |
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Source: [[bsd-plan23-17-spec-rereview-r8-23ad703]]. Code facts re-read at HEAD `23ad703`. The
+round-7 table above is unchanged history.
+
+| finding / decision | answered at |
+|---|---|
+| nm23-r8-4 (line drift: 17.3 cited `daemon.py:1319-1337` and `:3732`) | [[#r2-measure]] hold bound (cited by symbol + HEAD line: `Daemon._start_heartbeat` `:1323-1358`, `_op_stats` `:3817`; 0.78.2's completion touch named) |
+
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r8-23ad703#nm23-r8-4]]

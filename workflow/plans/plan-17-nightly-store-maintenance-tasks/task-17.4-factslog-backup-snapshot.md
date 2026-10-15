@@ -177,9 +177,31 @@ once-a-day COPY under `backups/` is what Time Machine backs up. {#why-body}
         `<mkdtemp>/.refmatrix/facts.log` and runs `rmx rebuild --from-log --yes` there with
         `REFMATRIX_ROOT=<mkdtemp>` (the command rebuilds whatever store `_store()` resolves, so
         the env var keeps it off the live root).
-     3. **Verifies** the throwaway's entity, link and learned-evidence counts against the
-        source's own event counts (AC-3's check) and prints them; a mismatch stops here with the
-        live root unchanged (in (c), it triggers the backup fallback instead).
+     3. **Verifies** the throwaway with three checks, ALL required (ns17-r8-1). A restore has
+        no source catalog, and raw event counts never equal rebuilt row counts on a real live
+        log (a dump plus re-links, unlinks and tombstones), so the check is neither AC-3's
+        catalog comparison nor an event count:
+        1. `rmx rebuild --from-log --yes` exits 0 (it prints each counter of
+           `Store.rebuild_index_from_log`'s result as `<key>: <value>`, `cli.py:9797-9800`;
+           the script parses those lines).
+        2. Its reported `links_unresolved` and `evidence_unresolved` are both 0. Those count a
+           legacy event (no `c_kind`) whose concept name is missing or held by more than one
+           non-`concept` kind (`edge_records.resolve_legacy_kind` returns `None`;
+           `store.py:8040-8064`, bug-117): an edge the rebuild could not place.
+        3. The rebuilt `entities`, `links` and `evidence` counts equal an INDEPENDENT fold of
+           `<source>` written in the script with replay's rules: events in `ts` order (a stable
+           sort, as `store.py:7941`); an entity alive unless its last event is a tombstone; the
+           last `link` / `unlink` per edge key decides the edge; an edge or evidence row counts
+           only when both ends are alive. The fold parses every line STRICTLY and fails on a
+           non-JSON line, so it does not inherit replay's silent skip of such a line
+           (bug-119, `store.py:7936-7940`). It reuses `edge_records` (the one edge-record
+           format, bug-117) for the edge key and the legacy kind rule, so only the fold loop is
+           independent, not the event spelling.
+        `links_skipped_dead` and `evidence_skipped_dead` (an edge whose end was tombstoned or
+        never had an `entity` event, `store.py:8141-8143`, `:8152-8154`) are PRINTED, never a
+        failure: they are normal in every live log. The script prints all three checks' values;
+        a failed check stops here with the live root unchanged (in (c), it triggers the backup
+        fallback instead).
      4. **Moves aside, never deletes,** anything already in the live root that step 5 would
         replace: `facts.log`, `catalog.A.duckdb`, `catalog.B.duckdb`, `catalog.duckdb`,
         `catalog.read.duckdb` and their `.wal` files, each renamed to `<name>.pre-restore-<ts>`.
@@ -291,16 +313,27 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
      and ends at the copy-point counts. Mutation: a parse probe that skips unparseable lines
      (so the class is (c)) FAILS (the printed source is `live` or the fallback message, not
      the parse message, and the counts differ).
-   - **(c)'s verify-fail fallback is reached (nm17-r7-1).** The same corrupted catalog, and a
-     live log that PARSES but fails verification: one appended, well-formed `link` event whose
-     entity name has no `entity` event, so the throwaway's rebuild skips it (the rebuild loop
-     skips a link whose endpoint does not resolve, `store.py:8079-8085`) and its link count is
-     one short of the source's link-event count. The script classifies (c), the throwaway
-     fails verification, and the script prints `source: backup (live log failed verification:
-     <reason>)`, rebuilds from the backup and ends at the copy-point counts; the live
-     `facts.log` is moved aside byte-identical. Mutation: the fallback removed (the script
-     stops after the failed verify) FAILS (no promote: the active slot is still the zeroed
-     file, and the post-run daemon start cannot read the copy-point counts).
+   - **Normal skips do not fail verification (ns17-r8-1).** In the main (c) run above, the
+     post-copy appends also tombstone one entity that carries a link and one learned evidence
+     row. The script prints `links_skipped_dead: 1` and `evidence_skipped_dead: 1`, still
+     prints `source: live`, and the end counts match the independent fold. Mutation: a verify
+     that fails on `*_skipped_dead > 0` FAILS (it falls back to the backup and the post-copy
+     appends are missing).
+   - **(c)'s verify-fail fallback is reached (nm17-r7-1, ns17-r8-1).** The same corrupted
+     catalog, and a live log that PARSES but fails verification for a reason a real log can
+     have: after the daily copy, two `entity` events of two different non-`concept` kinds
+     (`doc` and `memory`) that share one name in the partition, then one LEGACY `link` event
+     (no `c_kind`, the pre-0.78.3 spelling) whose concept end is that name.
+     `resolve_legacy_kind` returns `None` for it, so the rebuild exits 0 with
+     `links_unresolved: 1` (round 7's fixture, a link to a name with no `entity` event, is a
+     normal `links_skipped_dead` at 0.78.3 and no longer discriminates; withdrawn). The script
+     classifies (c), check 2 fails, and the script prints `source: backup (live log failed
+     verification: links_unresolved=1)`, rebuilds from the backup and ends at the copy-point
+     counts (the backup holds none of the three events); the live `facts.log` is moved aside
+     byte-identical. Mutations, each must FAIL: the fallback removed (the script stops after
+     the failed verify: no promote, the active slot is still the zeroed file, and the post-run
+     daemon start cannot read the copy-point counts); a verify that ignores `links_unresolved`
+     (no fallback; the script prints `source: live`).
    - **The lock case (ns17-r6-1).** No daemon socket (ping fails), but a child process holds
      the healthy catalog open read-write: the script refuses with "daemon up (catalog locked)"
      and changes nothing (every file byte-identical, no `.pre-restore-*` file). Mutations: a
@@ -386,3 +419,14 @@ round-6 table above is unchanged history.
 | finding / decision | answered at |
 |---|---|
 | nm17-r7-1 (AC-9's second (c) run is class (b) by R6's own probe; the (c) fallback is unreachable by any AC; the lock discriminator unnamed; the ART-index precedent misfiled) | [[#r6-restore]] (the message `Could not set lock on file` is the discriminator; an unparseable log is (b) with its own `source:` line; the ART-index crash loop is class (a), fixed by the offline table rebuild, and the refusal message names it; (c)'s precedents restated), [[#ac-9]] (the unparseable-log run reclassified to (b); a new (c) run whose log parses but fails verification reaches the fallback; three mutations: the skip-bad-lines probe, the fallback removed, the class-keyed lock test) |
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Source: [[bsd-plan23-17-spec-rereview-r8-23ad703]]. Code facts re-read at HEAD `23ad703`
+(0.78.3: bug-117's rebuild counters). The round-7 table above is unchanged history.
+
+| finding / decision | answered at |
+|---|---|
+| ns17-r8-1 (step 3's verify is undefined for a real live log; at 0.78.3 the (c) fallback fixture is a normal `links_skipped_dead`; replay drops a non-JSON line silently) | [[#r6-restore]] step 3 (three required checks: exit 0, `*_unresolved == 0`, counts equal an independent strict fold; `*_skipped_dead` printed, never a failure), [[#ac-9]] (a normal-skips case with its mutation; the fallback fixture is a legacy kindless `link` whose name two non-`concept` kinds hold, `links_unresolved: 1`; a mutation that ignores `links_unresolved`); the silent skip is logged as bug-119 in `workflow/bug_registry.md` |
+
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r8-23ad703#ns17-r8-1]]

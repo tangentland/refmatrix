@@ -420,16 +420,21 @@ All fixtures are real Lance datasets in tmp stores inside the 23.0 sandbox.
       recorded tmp `Daemon` (23.2's `recorded_daemon`, so a nested lock raises `LockDeadlock`
       instead of hanging), `_op_vectors_restore(d, {"orphan_file": <file>, "id_map": …},
       in_process_caller="removal_restore")` appends one `step: "vectors_restore"` line with
-      `invoked_by: "removal_restore"`, opens NO socket connection (the 23.0 sandbox's connect
-      log is empty for the daemon's socket during the call), and the arm gate given only that
-      line refuses to arm. Refusals, each raising `ValueError` and appending nothing:
+      `invoked_by: "removal_restore"`, opens NO socket connection, and the arm gate given only
+      that line refuses to arm. **The instrument is this case's own (nm17-r8-1):** 23.0 R3's
+      audit hook records only connects whose target is in its DENY set
+      ([[task-23.0-test-sandbox#r3]]), and a tmp daemon's socket is not in it, so that log is
+      empty either way. For the call's duration the test installs a `sys.addaudithook` that
+      counts `socket.connect` events whose address equals the tmp daemon's socket path (an
+      audit hook cannot be removed, so it gates on a flag the test sets and clears around the
+      call), and asserts the count is 0. Refusals, each raising `ValueError` and appending nothing:
       `_op_vectors_restore(d, {…, "invoked_by": "hand"})`; `_op_vectors_maintain(d, {…},
       in_process_caller="removal_restore")`; and over the SOCKET, a raw
       `daemon_mod.call(root, "vectors_restore", {…, "invoked_by": "removal_restore"})` (the
       wire cannot claim the in-process value). Mutations, each must FAIL this case: the check
       only in the verb (the raw socket call and the `"hand"` op call are accepted and
       recorded); an op that reads `removal_restore` from `args` (the raw socket call is
-      accepted); the in-process call routed through the verb (a socket connect is logged).
+      accepted); the in-process call routed through the verb (the counter reads ≥ 1).
 13. **AC-11 (no model).** The 23.0 sandbox records zero connects to `models.sock` and zero
     embedder constructions during a run (maintain and restore).
 14. **AC-12 (pre-registered mutations, each must FAIL a named AC):**
@@ -570,3 +575,14 @@ Code facts re-read at HEAD `77ac38f`. The round-6 table above is unchanged histo
 |---|---|
 | nm17-r7-2 ("calls the `vectors_restore` verb in-process" names no entry point; the verb is a socket client of the same daemon) | [[#r1-verb]] (the op function, called directly, outside any `_store_lock` hold; the closed-set check moved into the op; `removal_restore` only through a keyword the socket cannot pass), [[#r10-restore]] (the call written as the op call; 22.2 R4's wording is plan-22's to align), [[#acceptance]] AC-13 (in-process case through that entry point, no socket connect, a raw socket claim refused; three mutations), [[#files-to-modify]] |
 | nm17-r7-3 (the hold bound equals the heartbeat-stale threshold) | [[#r3-holds]] (`RMX_MAINTAIN_HOLD_S` default = `HEARTBEAT_STALE_S − 2 × HEARTBEAT_INTERVAL_S`, 50 s); the bound itself: [[task-17.3-fleet-rollout#rev-round-7]] |
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Source: [[bsd-plan23-17-spec-rereview-r8-23ad703]] (plan-17 for this task: 1 MEH). Code facts
+re-read at HEAD `23ad703`. The round-7 table above is unchanged history.
+
+| finding / decision | answered at |
+|---|---|
+| nm17-r8-1 (AC-13's "the 23.0 sandbox's connect log is empty for the daemon's socket" names a log that records only DENY-set connects) | [[#acceptance]] AC-13 in-process case (its own `sys.addaudithook` counter of `socket.connect` to the tmp daemon's socket path, asserted 0; the verb-routed mutation now reads "counter ≥ 1") |
+
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r8-23ad703#nm17-r8-1]]
