@@ -350,9 +350,11 @@ One row per (evidence row, reading). Columns:
   DuckDB's `rowid`, which `replica_merge` rewrites (s-r5-4). Two readings of one row (`grep -i foo`
   and `grep foo` both teach `query/foo`) are two sidecar rows; R2 calls the row `ok` when ANY of
   its readings passes.
-- **Writer API:** `Store.add_learned_provenance(rows)` inserts with `ON CONFLICT DO NOTHING` on the
+- **Writer API:** `Store.add_learned_provenance(rows, log=True)` inserts with `ON CONFLICT DO NOTHING` on the
   key, inside the caller's transaction, and logs one `learned_provenance` event per row it actually
-  inserted ([[#r1d]]). It is the only INSERT path of the table (R1c's merge step is RETIRED,
+  inserted ([[#r1d]]). `log=False` is the one non-logging call: its only caller is 22.2 R4's
+  restore of a row re-inserted DANGLING, whose sidecar rows are catalog-only like the row
+  ([[task-22.2-repair-then-remove#r4-reinsert-sidecar]]; d9cj). It is the only INSERT path of the table (R1c's merge step is RETIRED,
   d9ay); R4's drain updates only the mark columns. 16.1 R10 calls it from `_learn_grep_hits`; R1b and R5 call it
   here.
 - **Key-column updates belong to plan-22 (s-5).** Every plan-22 primitive that changes a column of

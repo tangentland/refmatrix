@@ -325,10 +325,12 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
        restore may re-attach a concept end, 22.2 AC-4e's concept-end variant); watched from the
        first matched append of a key on, it holds every tombstone a later restating append of
        that key can name, since the copy that append absorbs is itself an earlier matched
-       append. For a matched append carrying `restored_from` it asks
-       `edge_records.restated_copy` over the earlier matched, unabsorbed appends of the same
-       `row_key` plus `detail` (d9cg, [[#r5-restated-fn]]). After the pass
-       it asks `edge_records.revivable` of each matched, unabsorbed append with `T` = the end
+       append. For a matched append carrying `restored_from: M` it asks
+       `edge_records.restated_copy` over the earlier matched appends of the same
+       `row_key` plus `detail` not yet absorbed for `M` (d9cg, [[#r5-restated-fn]]). After the pass
+       it asks `edge_records.revivable` of each matched append the pass holds as a copy (a
+       tagged append that was absorbed holds none and is skipped; the copy it was absorbed into
+       is judged like any other) with `T` = the end
        of the log ([[#r5-timeline]]). Only the entity keys of matched appends are
        watched, so the state is bounded by the matched appends.
      - Measured (r10 `scan.py`, deploy interpreter): about 1 s per pass (0.4 s cliquedb 192 MiB,
@@ -367,14 +369,14 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
        append adds a copy is decided by `edge_records.restated_copy(tagged: Pos, manifest: str,
        held: list[Pos], timelines: list[KeyTimeline]) -> Pos | None`: `held` are the positions
        of the copies the caller holds with the same `row_key` plus `detail` (the `partition`
-       field not compared) and not yet absorbed; `timelines` are those of the row's ends whose
+       field not compared) and not yet absorbed by another tagged append carrying the same `M`; `timelines` are those of the row's ends whose
        key holds a `tombstone` carrying `manifest == M` before `tagged` (one, or both when `M`
        purged both ends; none on a log compacted since the purge). It returns the EARLIEST held
        copy `c` such that, on every given timeline, `c` precedes the `M` tombstone `t_M` and
        `revivable(c, timeline, T)` is False with `T` = `KeyTimeline.before(t_M)` (the latest
        observed position strictly before `t_M`; every tombstone between `c` and `t_M` was
        reversed by then), so the copy belongs to the incarnation `M` purged. The caller then
-       adds nothing (the copy keeps its own position and fields and is marked absorbed); on
+       adds nothing (the copy keeps its own position and fields and is marked absorbed for `M`); on
        None (no timeline, or no qualifying copy) the tagged append adds a copy at its own
        position. It reads `restored_from` through `reversal_of` and reuses `revivable`, so a
        reversal means one thing everywhere: the incarnation's copy stayed in place, and the
@@ -654,6 +656,10 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
    restore` of `M2` only. `vacuum` logs ONE drop keyed `e: E`, which matches `a(-1)` only
    (`M1`'s tombstone is not reversed), and prints `orphan_drop_reattached: 1` (`a0`). A
    rebuild on a copy holds `E`'s row once, equal to live.
+   *Variant 3 (restored, then purged again; r13 F7):* the base's restore, then `untrack` again
+   (`M2`, never restored), `vacuum`, then the file is re-tracked (append `a1`). `vacuum` logs ONE
+   drop keyed `e: E`, which matches `a0` (`M2`'s tombstone after it is not reversed), and prints
+   `orphan_drop_reattached: 0`. A rebuild on a copy holds `E`'s row once, equal to live.
    *Compacted variant (R6's "new field" rule for `manifest` / `restored_from`):* the base, with
    `dump_catalog_to_log` run after the restore and before `vacuum`. The compacted log carries
    neither field and no tombstone; `vacuum` logs no drop and prints `orphan_drop_unlogged: 1`
@@ -684,7 +690,10 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
      `E`'s row; the mutation FAILS on the base's other clauses: a drop is logged where none may
      be, `orphan_drop_reattached` is 0 (expected 1), and the rebuild reports
      `orphan_drop_skipped_live: 1` (expected 0) (r12 re-trace; round 11 traced the lost copy,
-     which d9cf's shared predicate now prevents).
+     which d9cf's shared predicate now prevents);
+   - "the scan skips the copy a tagged append was absorbed into" (r13 s-2; round 16): variant 3
+     logs no drop and the copy holds 2 against live's 1; the base prints
+     `orphan_drop_reattached: 0` (expected 1).
    Round 11's boundary mutation "guard on `L >= N`" is RETIRED with the guard (d9cf); AC-6b's
    swapped variant stays as the predicate's boundary (its mutation "dead-at-`T`").
 
@@ -780,7 +789,7 @@ mutation is pre-registered and must turn its test RED.
 | `src/refmatrix/daemon.py` | `forget` / `memory_forget` / `memory_bulk_forget` ops: preview or confirmed manifest only; `untrack` / `prune_noise` ops write the manifest first (R1, R2); `_learn_grep_hits` passes `protect_source='learner'` (R6) |
 | `src/refmatrix/cli.py` (also) | `sync --invalidate` as a re-ingest (R4); `memory forget` without the `_store()` fallback (R1) |
 | `src/refmatrix/store.py` (also) | `entities.protect_source` column + `protect_source` keyword on the protect writers; `dump_catalog_to_log` emits `source` (R6); `purge_legacy_relpath_doc` (R4) |
-| `tests/test_removal_entry_points.py` (new) | AC-1..AC-9, AC-6b (base, swapped, today's-shape and partition variants), AC-6c (and its kind variant), AC-6d (fold == rebuild over 22.2 AC-3, AC-3d/3f, AC-7 and AC-6b's logs), AC-6d also over AC-6e's logs, AC-6e (base, variants 1 and 2, compacted variant), AC-6f (the AST check of the one predicate and of `restated_copy`), AC-9b, AC-9c, and 22.2 AC-4e (purge, compact, restore, rebuild; built on `untrack`, so it lands here; d9cg) |
+| `tests/test_removal_entry_points.py` (new) | AC-1..AC-9, AC-6b (base, swapped, today's-shape and partition variants), AC-6c (and its kind variant), AC-6d (fold == rebuild over 22.2 AC-3, AC-3d/3f, AC-7 and AC-6b's logs), AC-6d also over AC-6e's logs, AC-6e (base, variants 1, 2 and 3, compacted variant), AC-6f (the AST check of the one predicate and of `restated_copy`), AC-9b, AC-9c, and 22.2 AC-4e (purge, compact, restore, rebuild; built on `untrack`, so it lands here; d9cg) |
 | `tests/test_learned_evidence.py` (16.6's) | 16.6 AC-11's test is REWRITTEN by this task (r4 m-5): from R3/R5 on, `purge_path` of a missing file and `vacuum` move the sidecar row into a manifest (AC-4, AC-6) instead of leaving it; AC-11 keeps only its `orphaned_provenance` count for paths this task does not route |
 
 ## Revision round 3 (2026-10-14) {#rev-round-3}
@@ -976,3 +985,17 @@ unchanged. No requirement of this task changes: the rule is 22.2's restore.
 
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 rel: depends-on -> [[task-22.2-repair-then-remove#r4-relink]]
+
+## Revision round 16 (2026-10-15) {#rev-round-16}
+
+Applies [[bsd-plan16-22-spec-diffcheck-r13-be965bb]] s-1 and s-2 under d9cj
+([[plan-review-2026-10-14#t12-approvals]]; PROVISIONAL until its ch-bsd loop is clean), with the
+report's replacement text verbatim. `src/` unchanged. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| r13 s-1 (the absorb mark was global) | [[#r5-restated-fn]]: `held` excludes only copies absorbed by another tagged append carrying the same `M`, and an absorbed copy is "marked absorbed for `M`"; [[#r5-scan]]: `restated_copy` over the earlier matched appends not yet absorbed for `M`; the AC is 22.2 AC-4e's two-manifest variant and its mutation ([[task-22.2-repair-then-remove#rev-round-16]]) |
+| r13 s-2 (the scan skipped the copy a restore was absorbed into: AC-6e's counters read 0, and F7 held 2 against 1) | [[#r5-scan]]: `revivable` judges every matched append the pass holds as a copy; an absorbed tagged append holds none and is skipped, its absorbing copy is judged; AC-6e variant 3 + mutation "the scan skips the copy a tagged append was absorbed into"; [[#files-to-modify]] tests row |
+
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+rel: derives-from -> [[bsd-plan16-22-spec-diffcheck-r13-be965bb]]
