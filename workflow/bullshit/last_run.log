@@ -26,3 +26,4 @@
 2026-10-15T00:20:14-0700 commit=3d3c798 verdict=DIRTY findings=11 (2B/5S/4M) report=2026-10-15-0020-plan20-spec-review-cooccurrence-blind-across-ingest-paths-and-gold-too-small-3d3c798.md
 2026-10-15T00:29:17-0700 commit=331b414 verdict=DIRTY findings=8 (0B/4S/4M) report=2026-10-15-0029-plan19-21-r7-spec-rereview-one-member-identity-survives-small-clusters-and-global-error-log-unscoped-331b414.md
 2026-10-15T00:33:01-0700 commit=331b414 verdict=DIRTY findings=9 (1B/2S/6M) report=2026-10-15-0031-plan23-17-r7-spec-rereview-named-safe-close-swallows-the-new-check-331b414.md
+2026-10-15T00:34:28-0700 commit=331b414 verdict=DIRTY findings=9 (1B/3S/5M) report=2026-10-15-0032-plan16-22-r7-spec-rereview-evidence-remove-replays-after-later-appends-331b414.md
