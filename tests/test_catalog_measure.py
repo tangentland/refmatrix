@@ -39,8 +39,9 @@ def _root(base: Path, name: str, *, rows: int = 0, keep_ids: int | None = None,
           snapshot: bool = True, probe: bool = False) -> Path:
     """A `.refmatrix` root whose `catalog.read.duckdb` is a real Store catalog plus synthetic
     `entities` rows; `keep_ids` deletes every id above it and checkpoints (the F2 shape).
-    `probe` adds an index-free table the AC-4 type / NOT NULL variants can ALTER (DuckDB refuses
-    those ALTERs on a table other entries depend on, e.g. `entities`)."""
+    `probe` adds an index-free table the AC-4 type / NOT NULL / CHECK variants can ALTER (DuckDB
+    refuses those ALTERs on a table other entries depend on, e.g. `entities`; the type change
+    goes on `c` because the CHECK depends on `a`)."""
     root = base / name / ".refmatrix"
     s = Store(root, backend="duckdb")
     s.init()
@@ -48,8 +49,9 @@ def _root(base: Path, name: str, *, rows: int = 0, keep_ids: int | None = None,
     cat = root / "catalog.duckdb"
     if probe:
         con = duckdb.connect(str(cat))
-        con.execute("CREATE TABLE fp_probe (a INTEGER NOT NULL, b VARCHAR)")
-        con.execute("INSERT INTO fp_probe VALUES (1, 'x'), (2, 'y')")
+        con.execute("CREATE TABLE fp_probe (a INTEGER NOT NULL CHECK (a > 0), b VARCHAR, "
+                    "c INTEGER)")
+        con.execute("INSERT INTO fp_probe VALUES (2, 'x', 1), (3, 'y', 2)")
         con.close()
     if rows:
         con = duckdb.connect(str(cat))
@@ -179,10 +181,18 @@ def test_ac4_gate_can_fail(tmp_path, scratch):
 _AC4_VARIANTS = {
     "content": (["UPDATE entities SET tldr = tldr || 'x' "
                  "WHERE id = (SELECT min(id) FROM entities)"], "content main.entities:"),
-    "column-type": (["ALTER TABLE fp_probe ALTER COLUMN a TYPE BIGINT"], "columns main.fp_probe:"),
+    "column-type": (["ALTER TABLE fp_probe ALTER COLUMN c TYPE BIGINT"], "columns main.fp_probe:"),
     "column-default": (["ALTER TABLE entities ALTER COLUMN meta SET DEFAULT 'x'"],
                        "columns main.entities:"),
     "constraint": (["ALTER TABLE fp_probe ALTER COLUMN a DROP NOT NULL"],
+                   "constraints main.fp_probe:"),
+    # Same rows, same columns, same constraint TYPES; only the CHECK's text moves (r2 #m-1:
+    # the NOT NULL variant removes a whole row, so `constraint_type` alone still caught it).
+    "check-text": (["CREATE TABLE fp_probe2 (a INTEGER NOT NULL CHECK (a > 1), b VARCHAR, "
+                    "c INTEGER)",
+                    "INSERT INTO fp_probe2 SELECT * FROM fp_probe",
+                    "DROP TABLE fp_probe",
+                    "ALTER TABLE fp_probe2 RENAME TO fp_probe"],
                    "constraints main.fp_probe:"),
     "index-sql": (["DROP INDEX idx_entities_noise",
                    "CREATE INDEX idx_entities_noise ON entities(protected)"],
@@ -212,6 +222,8 @@ def test_ac4_every_gate_leg_can_fail(tmp_path, scratch, variant):
     assert any(d.startswith(prefix) for d in row["gate_diffs"]), row["gate_diffs"]
     if variant == "content":     # the content leg, not the count, caught it
         assert not any(d.startswith("rows ") for d in row["gate_diffs"])
+    if variant == "check-text":  # ONLY the constraint text differs
+        assert all(d.startswith("constraints main.fp_probe:") for d in row["gate_diffs"])
     assert "band_a" not in row and v["verdict"] == "INCOMPLETE"
 
 
@@ -389,3 +401,53 @@ def test_children_on_different_duckdb_builds_are_an_error_row(tmp_path, scratch,
     rows, _, code = mc.run([root], scratch, tmp_path / "out" / "rep")
     assert code == 1 and rows[0]["step"] == "version"
     assert "0.0.0" in rows[0]["error"] and not scratch.exists()
+
+
+def test_fingerprint_sequence_leg_needs_fresh_opens(tmp_path):
+    """The documented precondition of `catalog_fingerprint` (ch-bsd 18.1 r2 #s-1): a
+    connection that has issued a sequence value (the daemon's writer shape: a fresh open of a
+    checkpointed file, then one insert) differs from a fresh read of its own rewrite ONLY on
+    the sequences leg; reopened fresh, the same file matches the rewrite exactly."""
+    src, rw = tmp_path / "live.duckdb", tmp_path / "rewrite.duckdb"
+    con = duckdb.connect(str(src))
+    con.execute("CREATE SEQUENCE sq START 1")
+    con.execute("CREATE TABLE t (i BIGINT DEFAULT nextval('sq'), v INTEGER)")
+    con.execute("INSERT INTO t (v) SELECT range FROM range(5)")
+    con.close()
+
+    def fresh(path: Path) -> dict:
+        c = duckdb.connect(str(path), read_only=True)
+        try:
+            return mc.catalog_fingerprint(c)
+        finally:
+            c.close()
+
+    live = duckdb.connect(str(src))
+    try:
+        live.execute("INSERT INTO t (v) VALUES (99)")          # the daemon issues an id
+        in_session = mc.catalog_fingerprint(live)
+        db = live.execute("SELECT current_database()").fetchone()[0]
+        live.execute(f"ATTACH '{rw}' AS n")
+        live.execute(f'COPY FROM DATABASE "{db}" TO n')
+        live.execute("CHECKPOINT n")
+        live.execute("DETACH n")
+    finally:
+        live.close()
+    rewrite = fresh(rw)
+    diffs = mc.gate(in_session, rewrite)
+    assert diffs and all(d.startswith("sequences main.sq:") for d in diffs), diffs
+    assert mc.gate(fresh(src), rewrite) == []
+
+
+def test_report_id_is_the_report_stem_and_render_from_reuses_rows(tmp_path, scratch):
+    """ch-bsd 18.1 r2 #m-2: a re-run's report reused the earlier report's GMD id."""
+    root = _root(tmp_path, "r", rows=300)
+    out = tmp_path / "out" / "plan18-catalog-measure-20991231-r9"
+    mc.run([root], scratch, out)
+    md = out.with_suffix(".md").read_text()
+    assert "\nid: plan18-catalog-measure-20991231-r9\n" in md
+    again = tmp_path / "out" / "re-rendered"
+    assert mc.main(["--out", str(again), "--render-from", str(out.with_suffix(".jsonl"))]) == 0
+    md2 = again.with_suffix(".md").read_text()
+    assert "\nid: re-rendered\n" in md2
+    assert md2.split("## Per store")[1] == md.split("## Per store")[1]

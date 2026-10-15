@@ -73,6 +73,14 @@ def catalog_fingerprint(con) -> dict:
     fingerprints taken by the same duckdb build (the measurement records `duckdb_version`).
     Plan-18.3's reclaim gates its swap on this function; it must not grow a second gate.
     Values are lists/dicts/scalars only, so a fingerprint compares equal after a JSON round trip.
+
+    PRECONDITION: both fingerprints come from FRESH opens of checkpointed files (18.1 reads each
+    in its own read-only child). On a connection that has already issued sequence values (a
+    daemon's writer, or a session that created the sequence), `duckdb_sequences()` reports
+    start/last_value differently from a fresh open of the same state, so the `sequences` leg
+    differs from a fresh read of its own rewrite although the data is right (duckdb 1.5.2 and
+    1.5.3; ch-bsd 18.1 r2 #s-1, pinned by a test). Gating a live in-session connection needs a
+    sequence leg defined on session-stable invariants (18.3 R5) — do NOT drop the leg instead.
     """
     db = con.execute("SELECT current_database()").fetchone()[0]
     p = [db]
@@ -415,7 +423,7 @@ def run(roots: list[Path], scratch: Path, out: Path, *, python: str = sys.execut
         with open(out.with_suffix(".jsonl"), "w") as fh:
             for r in rows:
                 fh.write(json.dumps(r, default=str) + "\n")
-        out.with_suffix(".md").write_text(render_md(rows, v))
+        out.with_suffix(".md").write_text(render_md(rows, v, doc_id=out.name))
         if created and not any(scratch.iterdir()):
             scratch.rmdir()
     failed = sum(1 for r in rows if r.get("error"))
@@ -428,10 +436,13 @@ def _mb(n) -> str:
     return "-" if n is None else f"{n / MiB:,.1f}"
 
 
-def render_md(rows: list[dict], v: dict) -> str:
+def render_md(rows: list[dict], v: dict, *, doc_id: str) -> str:
+    """`doc_id` is the report's GMD node id — `run` passes the report's file stem, so a re-run
+    written to a new path never reuses an earlier report's id (ch-bsd 18.1 r2 #m-2: the r2
+    report carried r1's `plan18-catalog-measure-20261015`)."""
     day = datetime.now().strftime("%Y%m%d")
     lines = [
-        "---", 'gmd: "0.1"', f"id: plan18-catalog-measure-{day}",
+        "---", 'gmd: "0.1"', f"id: {doc_id}",
         f'title: "Plan-18 task 18.1 fleet catalog measurement {day}"',
         "tags: [plan-18, duckdb, catalog, measurement]", "---", "",
         f"# Task 18.1 fleet catalog measurement {day} {{#root}}", "",
@@ -466,11 +477,20 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--root", action="append", type=Path,
                     help="a .refmatrix root (repeatable); default: the launchd-registered set")
-    ap.add_argument("--scratch", type=Path, required=True)
+    ap.add_argument("--scratch", type=Path)
     ap.add_argument("--out", type=Path, required=True, help="report path, no suffix")
+    ap.add_argument("--render-from", type=Path,
+                    help="re-render <out>.md from an existing rows .jsonl; measures nothing")
     ap.add_argument("--python", default=sys.executable,
                     help="interpreter for the DuckDB children (match the stores' duckdb)")
     a = ap.parse_args(argv)
+    if a.render_from:
+        rows = [json.loads(x) for x in a.render_from.read_text().splitlines() if x.strip()]
+        a.out.with_suffix(".md").write_text(render_md(rows, verdict(rows), doc_id=a.out.name))
+        print(f"rendered {len(rows)} rows from {a.render_from} -> {a.out.with_suffix('.md')}")
+        return 0
+    if a.scratch is None:
+        ap.error("--scratch is required to measure")
     roots = a.root
     if not roots:
         from refmatrix import discovery
