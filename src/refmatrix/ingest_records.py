@@ -22,6 +22,10 @@ Symbolic ref grammar:
   @adr:<NNNN>                ADR by 4-digit number (resolved via map)
   @ref:<key>                 path-resolved ref (resolves at apply time)
 
+Edge ops (link, weighted_link, evidence) use the ONE edge-record format of
+`edge_records` (`linkage`, `c_kind`, `c`, `e_kind`, `e`, ...), the same fields facts.log
+events carry; here `c` / `e` may still be symbolic @-refs and a kind is None until apply.
+
 The record is intentionally JSON-friendly so it can pickle through a
 ProcessPoolExecutor in the future. ThreadPoolExecutor is enough today
 since regex + ast both release the GIL.
@@ -31,6 +35,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from refmatrix.edge_records import edge_event, edge_fields
 
 
 @dataclass
@@ -155,18 +161,15 @@ class RecordingStore:
         self, linkage: str, c: str, e: str,
         weight: float | None = None, protect: bool = False,
     ) -> bool:
-        self.record.ops.append({
-            "op": "link", "linkage": linkage,
-            "src": c, "dst": e, "weight": weight,
-        })
+        self.record.ops.append(edge_event("link", linkage, None, c, None, e, weight=weight))
         return True
 
     def weighted_link(
         self, linkage: str, c: str, e: str, weight: float,
     ) -> bool:
         self.record.ops.append({
-            "op": "weighted_link", "linkage": linkage,
-            "src": c, "dst": e, "weight": weight,
+            "op": "weighted_link",
+            **edge_fields(linkage, None, c, None, e, weight=weight),
         })
         return True
 
@@ -179,11 +182,8 @@ class RecordingStore:
         ops so the applier replays them through one `deferred_links()` flush
         (which itself calls the real `bulk_link`) — same first-wins conflict
         semantics as the direct path."""
-        for linkage, src, dst, weight in items:
-            self.record.ops.append({
-                "op": "link", "linkage": linkage,
-                "src": src, "dst": dst, "weight": weight,
-            })
+        for linkage, c, e, weight in items:
+            self.record.ops.append(edge_event("link", linkage, None, c, None, e, weight=weight))
         return len(items)
 
     def add_evidence(
@@ -191,11 +191,11 @@ class RecordingStore:
         file: str | None = None, line: int | None = None,
         span_end: int | None = None, detail: str | None = None,
     ) -> None:
-        self.record.ops.append({
-            "op": "evidence", "linkage": linkage,
-            "src": c, "dst": e,
-            "file": file, "line": line, "detail": detail,
-        })
+        # `span_end` used to be accepted here and dropped; the shared edge format carries it.
+        self.record.ops.append(edge_event(
+            "evidence", linkage, None, c, None, e,
+            file=file, line=line, span_end=span_end, detail=detail,
+        ))
 
     # ---- deferred path resolution ---------------------------------------
 
@@ -308,8 +308,8 @@ def apply_record(
         for op in record.ops:
             if op["op"] == "add_linkage_type":
                 continue
-            src = _resolve(op["src"])
-            dst = _resolve(op["dst"])
+            src = _resolve(op["c"])
+            dst = _resolve(op["e"])
             if src is None or dst is None:
                 continue
             kind = op["op"]
@@ -323,7 +323,7 @@ def apply_record(
                 s.add_evidence(
                     op["linkage"], src, dst,
                     file=op.get("file"), line=op.get("line"),
-                    detail=op.get("detail"),
+                    span_end=op.get("span_end"), detail=op.get("detail"),
                 )
             n += 1
     return n
@@ -446,8 +446,8 @@ def bulk_apply_records(
             for op in rec.ops:
                 if op["op"] == "add_linkage_type":
                     continue
-                src = _resolve(op["src"])
-                dst = _resolve(op["dst"])
+                src = _resolve(op["c"])
+                dst = _resolve(op["e"])
                 if src is None or dst is None:
                     continue
                 kind = op["op"]
@@ -461,7 +461,7 @@ def bulk_apply_records(
                     s.add_evidence(
                         op["linkage"], src, dst,
                         file=op.get("file"), line=op.get("line"),
-                        detail=op.get("detail"),
+                        span_end=op.get("span_end"), detail=op.get("detail"),
                     )
                 n += 1
     return n
