@@ -62,7 +62,7 @@ def test_sql_extracts_ddl_body_refs_and_calls(tmp_path):
     assert defined["index"] == "idx_users_email"
     assert defined["schema"] == "app"
 
-    links = {(op["linkage"], op["src"], op["dst"])
+    links = {(op["linkage"], op["c"], op["e"])
              for op in rec.ops if op["op"] == "link"}
     fn = "@sub:code/spec.sql::touch_user"
     # body table references -> mentions (FROM/UPDATE/INTO), builtins skipped
@@ -122,7 +122,7 @@ def test_sql_top_level_call_sites_attributed_to_file(tmp_path):
     p = Path(tmp_path) / "spec.sql"
     p.write_text(sql)
     rec = _build_sql_record(p, Path(tmp_path))
-    calls = {(op["src"], op["dst"]) for op in rec.ops
+    calls = {(op["c"], op["e"]) for op in rec.ops
              if op["op"] == "link" and op["linkage"] == "calls"}
     fn = "@sub:code/spec.sql::caller_fn"
     # in-body call site (unchanged)

@@ -97,6 +97,11 @@ def test_the_compacted_log_rebuilds_non_concept_rows_too(tmp_path, log_on):
     _seed_non_concept(s)
     before_links, before_ev = _links(s), _evidence(s)
     s.dump_catalog_to_log()
+    dumped = [json.loads(l) for l in s.log_path.read_text().splitlines()]
+    # The legacy fallback would rescue these unique names, so assert the dump itself names
+    # the kind; otherwise a dump that forgot `c_kind` passes this test by accident.
+    assert all(ev.get("c_kind") for ev in dumped if ev.get("op") in ("link", "evidence")), \
+        [ev for ev in dumped if ev.get("op") in ("link", "evidence") and not ev.get("c_kind")]
     s.rebuild_index_from_log()
     assert _links(s) == before_links
     assert _evidence(s) == before_ev
@@ -175,4 +180,24 @@ def test_new_link_and_evidence_events_carry_the_concept_kind(tmp_path, log_on):
     for ev in evs:
         if ev.get("op") in ("link", "unlink", "evidence"):
             assert ev.get("c_kind"), ev
+    s.close()
+
+
+def test_the_ingest_recorder_uses_the_edge_format_and_keeps_span_end(tmp_path):
+    """The parallel-ingest recorder spelled an edge `src` / `dst` and silently dropped
+    `span_end` from evidence. It now writes the one edge format (`edge_records`), so a
+    recorded evidence row reaches the store with every field it was given."""
+    from refmatrix.ingest_records import RecordingStore, apply_record
+    rs = RecordingStore("a.md", str(tmp_path / "a.md"))
+    c = rs.add_concept("parser")
+    rs.add_evidence("mentions", c, "@doc", file="a.md", line=3, span_end=9)
+    rec = rs.record
+    ev = [op for op in rec.ops if op["op"] == "evidence"][0]
+    assert {"linkage", "c_kind", "c", "e_kind", "e"} <= set(ev), ev
+    s = Store(tmp_path / ".refmatrix")
+    s.init()
+    apply_record(s, rec)
+    con = s._connect()
+    rows = con.execute("SELECT line, span_end FROM linkage_evidence").fetchall()
+    assert (3, 9) in [tuple(r) for r in rows], rows
     s.close()
