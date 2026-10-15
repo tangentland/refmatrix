@@ -630,3 +630,45 @@ def test_copy2_swap_failure_whose_repair_reopen_fails_names_the_reopen(tmp_path,
         _assert_writer_open_and_locked(d, root)
     finally:
         d.store.close()
+
+
+# ---- ch-bsd r4 m-r4-1: a slot-repair error names its cause -----------------
+
+def _enospc(*a, **k):
+    raise OSError(28, "No space left on device (injected)")
+
+
+def test_startup_slot_repair_failure_logs_the_errno(tmp_path, monkeypatch):
+    """The startup asymmetric repair logs `rotation slot repair failed:
+    {exc!r}`; with SlotRepairError's message lacking the cause that line said
+    only "clone: clone A -> B failed" — no errno. `_copy_out_of_process` (the
+    out-of-process copy, a collaborator) fails with ENOSPC."""
+    from refmatrix import daemon as dm
+    d, root = _daemon(tmp_path, "A")
+    lines: list = []
+    d._log = lines.append
+    (root / "catalog.B.duckdb").unlink()
+    monkeypatch.setattr(dm, "_copy_out_of_process", _enospc)
+    try:
+        d._bootstrap_rotation_if_needed()
+        failed = [l for l in lines if "rotation slot repair failed" in l]
+        assert failed and "No space left on device" in failed[0], lines
+        assert d.store is not None and d.store._conn is not None   # writer reopened
+    finally:
+        d.store.close()
+
+
+def test_merge_b_repair_failure_log_line_names_the_errno(tmp_path, monkeypatch):
+    import shutil as _sh
+    from refmatrix import daemon as dm
+    d, root = _daemon(tmp_path, "A")
+    lines: list = []
+    d._log = lines.append
+    monkeypatch.setattr(_sh, "copy2", _enospc)
+    monkeypatch.setattr(dm, "_copy_out_of_process", _enospc)
+    try:
+        dm._op_replica_merge(d, {"dry_run": False})
+        repair = [l for l in lines if "B repair failed" in l]
+        assert repair and "No space left on device" in repair[0], lines
+    finally:
+        d.store.close()

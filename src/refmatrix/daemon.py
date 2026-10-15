@@ -711,10 +711,12 @@ LEARN_DRAIN_BUDGET_S = float(os.environ.get("RMX_LEARN_DRAIN_BUDGET_S") or 5.0)
 class SlotRepairError(RuntimeError):
     """`Daemon._repair_missing_slot_locked` failed; `stage` says where —
     "clone" (the copy of the surviving slot) or "reopen" (the writer reopen
-    after it). ch-bsd r3 m-r3-3: one message for both named the wrong event."""
+    after it). ch-bsd r3 m-r3-3: one message for both named the wrong event.
+    The message carries the cause (ch-bsd r4 m-r4-1): both log sites print
+    `{exc!r}`, and without it they lost the errno (ENOSPC, EACCES, …)."""
 
-    def __init__(self, stage: str, msg: str):
-        super().__init__(f"{stage}: {msg}")
+    def __init__(self, stage: str, msg: str, cause: BaseException):
+        super().__init__(f"{stage}: {msg}: {cause!r}")
         self.stage = stage
 
 
@@ -1510,9 +1512,10 @@ class Daemon:
             self._reopen_writer(marker.read_text().strip())
         except Exception as exc:
             raise SlotRepairError("reopen", f"writer reopen after cloning {survivor} -> "
-                                  f"{missing} failed") from exc
+                                  f"{missing} failed", exc) from exc
         if clone_exc is not None:
-            raise SlotRepairError("clone", f"clone {survivor} -> {missing} failed") from clone_exc
+            raise SlotRepairError("clone", f"clone {survivor} -> {missing} failed",
+                                  clone_exc) from clone_exc
         log_size = self.store.log_path.stat().st_size \
             if self.store.log_path.exists() else 0
         self._write_slot_offset("A", log_size)
