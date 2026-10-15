@@ -45,8 +45,9 @@ rel: depends-on -> [[plan-review-2026-10-14]]
    dev repo's `master`. Then deploy: `git -C ~/refmatrix pull --ff-only origin master`,
    `rmx daemon restart --relaunch` fleet-wide, hub `rmx hub stop` + one `launchctl kickstart`,
    verify `rmx version -v`, push to GitHub from dev.
-2. 23.0 r1 remedy running (`/Volumes/littlebig/refmatrix-task-23.0`); re-review to CLEAN, then a
-   0.79.1 release; then `scripts/sandbox-proof.sh` once on the main tree (d9cp).
+2. 23.0 is CLEAN (ch-bsd r3, `d9ec741`; branch `task-23.0-test-sandbox` in the dev repo). Ship as
+   0.79.1 after 0.79.0 lands (merge `--no-ff`, bump, full suite now sandboxed); then
+   `scripts/sandbox-proof.sh` once on the main tree (d9cp). Tiers 1/2 need operator setup.
 3. **User question open:** bump `.venv-eval` duckdb 1.5.2 -> 1.5.3.
 4. Wave 1 implementation per d9bi: 21.1 -> 19.0/19.1 -> 19.2, 19.6; 23.1/23.3; 23.5 after 0.79.0
    lands (bug-112 merge gate).
