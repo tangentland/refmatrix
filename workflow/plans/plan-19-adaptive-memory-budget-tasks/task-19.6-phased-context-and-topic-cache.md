@@ -7,13 +7,19 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Task 19.6: phased context, topic cache and versioned injection {#root}
 
 > Plan: [plan-19-adaptive-memory-budget](../plan-19-adaptive-memory-budget.md)
 > Status: Pending (revision after the 2026-10-14 decision log)
-> Wave: 3 (d5b).
+> Wave: pulled from Wave 3 to directly after its own dependencies (d9bi, 2026-10-15; was Wave 3,
+> d5b). **Helix substrate (d9bi):** the helix plan (Wave 4 draft) builds on this task's frozen
+> snapshots (`<cid>`, label, first-collapse `turn`), its topic cache (one writer, one home) and
+> its versioned blocks (`block_id`, `rev`, `unchanged` in 21.1's events). `derive_snapshots` and
+> `topic_hubs` (R9) are pure functions of (graph, cache), so helix can recompute identity from
+> the cache alone; a change to either signature after merge needs a decision-log row naming helix.
 > Depends on: 19.0 (clean STM clusters, envelope session; d5e); 19.1 (the packer with an
 > allocation knob, and d8a's subject exclusion); 19.5 R1 (per-hook vs per-event cap) and 19.5 R4
 > (the fixed baseline); 21.1 (the recall-event fields this task reads, listed in R7); 23.0
@@ -65,16 +71,26 @@ pays is unmeasured; this task measures first and builds against pre-registered r
      cluster's previous member set, and the share exactly unchanged), which shows how much of the
      collapsed lines' stability comes from R9's frozen snapshots rather than from the clustering;
    - the share of non-selected live clusters represented by a snapshot they share exactly TWO
-     members with, and of those the share where both shared members are hub refs (round-6 #s-2;
-     round-7 #s-1, d9ax), so a stability figure produced by the identity rule rather than by the
-     clustering is visible. A one-member representation cannot occur under R9's identity rule
-     (≥ 2 shared members, d9ax); AC-7i pins that, so it is not a measured residual any more.
+     members with, and of those the share where exactly ONE shared member is not a hub (the
+     residual R9 states under d9bm), so a stability figure produced by the identity rule rather
+     than by the clustering is visible (round-6 #s-2; round-7 #s-1, d9ax; round-8 #ns-1, d9bm).
+     "Hub" is R9's cache-relative definition, computed at each replayed turn by calling
+     `stm.topic_hubs(cache)` on that turn's replayed cache; the replay script imports
+     `stm.topic_hubs` and `stm.snapshot_eligible` and defines no hub or identity predicate of its
+     own (AC-7i's import check). A one-member representation and a hub-only representation
+     cannot occur under R9's rule (≥ 2 shared members, ≥ 1 of them not a hub); AC-7i pins both,
+     so neither is a measured residual.
    These are recorded figures; Table A's bands and verdicts are unchanged (d9v). The round-7
    measurement that motivated d9ax (copies of the 59 live focus graphs, 2026-10-15: 111 of 238
    clusters have ≤ 3 members; in 163 of 493 same-graph pairs the sizes sum to ≤ 6, so ONE shared
    member reached J ≥ 0.20) is why the rule needs two members, not a band on this figure: the
    user chose option (a), which needs no new number
-   ([[bsd-plan19-21-spec-rereview-r7-331b414#s-1]]).
+   ([[bsd-plan19-21-spec-rereview-r7-331b414#s-1]]). The round-8 measurement that motivated
+   d9bm (copies of the 60 live focus graphs, 2026-10-15, hubs approximated as refs in ≥ 20% of
+   the graphs): of the 426 cross-session pairs d9ax still represented, 310 (73%) shared hub
+   members only, 136 of 217 (63%) with noise stripped; the hub rule cuts 426 to 116 on that
+   proxy ([[bsd-plan19-21-spec-rereview-r8-23ad703#ns-1]]). The cache-relative hub figure is
+   this R1's to record.
 2. **R2 Phase classification, against the STM state BEFORE this prompt** (round-3 #b-2). The
    recall and scan hooks run in parallel with `focus hook --event input`, and `Stm.record` appends
    the input event AND ingests the prompt's terms into `focus.json` in one call
@@ -194,12 +210,27 @@ pays is unmeasured; this task measures first and builds against pre-registered r
        loses focus is R3's cache entry and gets its snapshot the same way. Later turns render the
        snapshot; decay, the top-30 cut and label propagation order cannot change its bytes. The
        render (`composite.py`) reads snapshots only from `pre_prompt_state(…).topic_cache`.
-     - **Which live cluster a snapshot stands for** (round-6 #s-2; round-7 #s-1, d9ax). A
-       snapshot is ELIGIBLE for a live cluster only when the two member sets share **at least 2
-       members AND** Jaccard(live member set, snapshot member set) ≥ `j_return` (0.20, CONFIRMED
-       in [[#ranges-thresholds]], d9v; the threshold a `return` already uses to say "this cached
-       cluster is that topic"). Both conditions are required; one shared member never
-       establishes identity, whatever the Jaccard. Among eligible snapshots the live cluster is
+     - **Which live cluster a snapshot stands for** (round-6 #s-2; round-7 #s-1, d9ax; round-8
+       #ns-1, d9bm, which AMENDS d9ax). A snapshot is ELIGIBLE for a live cluster only when the
+       two member sets share **at least 2 members, AT LEAST ONE of which is not a hub, AND**
+       Jaccard(live member set, snapshot member set) ≥ `j_return` (0.20, CONFIRMED in
+       [[#ranges-thresholds]], d9v; the threshold a `return` already uses to say "this cached
+       cluster is that topic"). All three conditions are required; one shared member never
+       establishes identity, whatever the Jaccard, and neither do shared hubs alone.
+       - **Hub, defined cache-relatively (d9bm).** `stm.topic_hubs(cache) -> frozenset[str]` is
+         the set of refs that are members of **≥ 4** of the cache's **8 newest** snapshots
+         (newest by first-collapse `turn`, ties by the smaller `<cid>`). 4 = ⌈8/2⌉ over the
+         cache bound `N = 8` (R3; CONFIRMED, d9v), so the rule adds no constant. (d9bm's text
+         writes "K = 8"; in this spec `K` is R6's keyframe interval and the cache bound is `N`,
+         also 8: the number is the same, the name here is `N`.) A cache with fewer than 4
+         snapshots has no hubs. The hub set is computed ONCE per `derive_snapshots` call from
+         the cache AS PASSED IN, before that call adds any snapshot, so the result does not
+         depend on the order in which live clusters are matched, and `derive_snapshots(graph,
+         cache)` stays a pure function of its two arguments (no read, no clock).
+       - **One predicate.** `stm.snapshot_eligible(live: frozenset, snap: frozenset, hubs:
+         frozenset) -> bool` is the only place the three conditions live; `derive_snapshots`,
+         `pre_prompt_state`'s live path (through `derive_snapshots`) and R1's replay script call
+         it, and none carries its own copy (AC-7i's import check). Among eligible snapshots the live cluster is
        represented by the highest-Jaccard one; ties go to the newest first-collapse time, then
        the smaller `<cid>`. Each snapshot represents at most one live cluster per prompt (the
        highest-Jaccard one; the others go on down their own lists). A live cluster with no
@@ -212,10 +243,13 @@ pays is unmeasured; this task measures first and builds against pre-registered r
        acknowledged (d9ax):** d9v confirmed 0.20 as the prompt-terms-vs-cached-cluster `return`
        threshold; d9ax makes the same number the member-set identity threshold too, so a change
        to `j_return` now moves both rules and needs a decision-log row that names both.
-       **Residual, stated:** two clusters that share two HUB members (for example `cli.py` and
-       `daemon.py`) and one other member each, {hub1, hub2, a} vs {hub1, hub2, b} (J = 2/4), are
-       still one line; R1 records how often a representation rests on exactly two shared members,
-       and on two hub members.
+       **Residual, stated (d9bm):** the round-7 residual, two clusters sharing two HUB members
+       and one other member each ({hub1, hub2, a} vs {hub1, hub2, b}, J = 2/4), now gets its own
+       line. What remains is a pair resting on one hub and ONE non-hub ({hub1, a, x} vs
+       {hub1, a, y}, J = 2/4), which shares a real topic member; and a ref that is a hub by
+       frequency in the whole repo but in fewer than 4 of the 8 newest snapshots counts as a
+       non-hub. R1 records the share of representations resting on exactly one non-hub
+       member.
      - **Re-collapse** (round-4 #s-3). When a snapshot's cluster is expanded (warm on it, or a
        `return` restores it), the snapshot leaves the collapsed set. When that cluster collapses
        again, it gets a NEW snapshot: its member set at that moment, a new `<cid>` and label, and a
@@ -274,7 +308,7 @@ counter depends on it. Metric: `readback_per_1k = read-back items / (delivered p
 |---|---|---|
 | cold | the session has 0 focus topics, or the prompt has 0 concrete terms (terms surviving `scan._PROMPT_STOPWORDS` and 19.0's code-noise set) | — |
 | warm | shared terms with the ACTIVE cluster's members ≥ `w_min`, or Jaccard(prompt terms, active members) ≥ `j_warm` | `w_min = 2`, `j_warm = 0.15` |
-| return | not warm, and Jaccard(prompt terms, a CACHED cluster's members) ≥ `j_return`, the highest-Jaccard cached cluster wins (ties: most recently cached) | `j_return = 0.20`; second use (d9ax, acknowledged by the user 2026-10-15): R9's snapshot identity, together with ≥ 2 shared members |
+| return | not warm, and Jaccard(prompt terms, a CACHED cluster's members) ≥ `j_return`, the highest-Jaccard cached cluster wins (ties: most recently cached) | `j_return = 0.20`; second use (d9ax, acknowledged by the user 2026-10-15; amended by d9bm): R9's snapshot identity, together with ≥ 2 shared members of which ≥ 1 is not a hub (hub: member of ≥ 4 of the cache's 8 newest snapshots, R9) |
 | new | none of the above | — |
 
 **Table A — unchanged lines (R1's byte-identical share, per block id):** {#ranges-a}
@@ -421,8 +455,25 @@ the warm threshold):** {#ranges-d}
    | {`a`..`g`} (7) | {`a`, `b`, `h`..`k`} (6) | 2 | 2/11 ≈ 0.182 | own line |
 
    The test computes each pair's shared count and Jaccard from the fixture and asserts them
-   against the table's columns before asserting the render, so a fixture typo cannot pass. RED at
-   HEAD: no collapsed render exists.
+   against the table's columns before asserting the render, so a fixture typo cannot pass. Each
+   of these legs has ONE snapshot, so `topic_hubs` is empty (fewer than 4 snapshots) and the hub
+   condition is inert in them; the hub legs below pin it.
+
+   **Hub legs** (round-8 #ns-1, d9bm). The cache is the fixture; the live cluster is one:
+
+   | leg | cache (first-collapse order, oldest first) | live cluster | expected |
+   |---|---|---|---|
+   | H1 | 4 snapshots S1 = {`hub1`, `hub2`, `a`}, S2 = {`hub1`, `hub2`, `p`}, S3 = {`hub1`, `hub2`, `q`}, S4 = {`hub1`, `hub2`, `r`} | {`hub1`, `hub2`, `b`} | own line: vs every Si 2 shared, both hubs, J = 2/4 |
+   | H2 | the H1 cache | {`hub1`, `a`, `c`} | represented by S1: shared {`hub1`, `a`}, `a` not a hub, J = 2/4; S2-S4 share 1 member |
+   | H3 (control) | S1-S3 only (3 snapshots: no hubs) | {`hub1`, `hub2`, `b`} | represented (by S3, the newest of the J = 2/4 ties): with 3 snapshots `hub1`/`hub2` are not hubs |
+   | H5 (one hub set per call) | S1-S3 (no hubs) | TWO live clusters in one call, run with each of the two matching orders (the spec's result is the same in both; the mutant's differs when N1 is matched first): N1 = {`hub1`, `hub2`, `n1`..`n8`} (10 members; J = 2/11 with each Si: own line, a NEW snapshot holding `hub1`/`hub2`), then {`hub1`, `hub2`, `b`} | N1 own line; {`hub1`, `hub2`, `b`} represented by S3: the hub set is the INPUT cache's (3 snapshots, empty), not the 4 the call produces |
+   | H4 (window) | 10 snapshots; `hub1` and `hub2` are members of the 2 OLDEST and the 2 NEWEST only (4 of 10, 2 of the 8 newest), each other snapshot a disjoint triple | {`hub1`, `hub2`, `b`} | represented by the newest snapshot holding both: they are not hubs in the 8-newest window |
+
+   For each leg the test asserts `stm.topic_hubs(cache)` on the input cache (H1, H2: {`hub1`,
+   `hub2`}; H3, H4, H5: empty) before asserting the render. **Import check:** a test parses R1's replay script and
+   `composite.py` and asserts each imports `topic_hubs` / `snapshot_eligible` from `stm` and
+   defines no function computing a member-set Jaccard or a hub set of its own. RED at HEAD: no
+   collapsed render exists.
 8. **Isolation.** 23.0's guard records 0 live connects for this task's test files.
 9. **Mutations that must FAIL a test:**
    - phase driven by turn count (AC-7);
@@ -460,6 +511,16 @@ the warm threshold):** {#ranges-d}
    - the identity threshold lowered to 0.19 (AC-7i: the 4/21 leg is represented) or to 0.18
      (round-7 #s-1: the 2/11 leg is represented; at round 6 this mutant survived, no pair sat in
      (1/6, 0.20));
+   - (round 8, d9bm) the hub exclusion dropped, i.e. d9ax's rule (AC-7i H1: represented);
+   - hubs excluded from the shared COUNT, i.e. ≥ 2 shared NON-hub members required (AC-7i H2:
+     own line);
+   - the hub threshold lowered to 3 (AC-7i H3: own line) or raised to 5 (AC-7i H1:
+     represented);
+   - hubs counted over every cached snapshot instead of the 8 newest (AC-7i H4: own line);
+   - the hub set recomputed after each snapshot `derive_snapshots` adds in the same call (AC-7i
+     H5: the second live cluster gets its own line);
+   - the replay script or the render carrying its own identity predicate (AC-7i's import
+     check);
    - the marker written only by the PreCompact recall command (AC-7f with the recall entry
      removed);
    - `session_start` / `precompact` randomized across arms (AC-7b);
@@ -471,7 +532,7 @@ the warm threshold):** {#ranges-d}
 
 | file | change |
 |---|---|
-| `src/refmatrix/stm.py` | phase classification over `pre_prompt_state` (R2) with the thresholds; the topic cache (snapshot, LRU, restore), whose entries are R9's frozen snapshots and whose ONLY writer is the input hook (R3; round-6 #s-2): `derive_snapshots(graph, cache)` (pure; the identity rule: ≥ 2 shared members AND Jaccard ≥ `j_return`, d9ax), called and stored by `snapshot_pre_prompt` and called in memory by `pre_prompt_state`'s live path; eviction / restore / expansion / re-collapse written after the input record |
+| `src/refmatrix/stm.py` | phase classification over `pre_prompt_state` (R2) with the thresholds; the topic cache (snapshot, LRU, restore), whose entries are R9's frozen snapshots and whose ONLY writer is the input hook (R3; round-6 #s-2): `derive_snapshots(graph, cache)` (pure; the identity rule through `snapshot_eligible`: ≥ 2 shared members, ≥ 1 of them not a hub, AND Jaccard ≥ `j_return`, d9ax amended by d9bm), `topic_hubs(cache)` (pure; ≥ 4 of the 8 newest snapshots) and `snapshot_eligible(live, snap, hubs)`, each the only copy of its rule, called and stored by `snapshot_pre_prompt` and called in memory by `pre_prompt_state`'s live path; eviction / restore / expansion / re-collapse written after the input record |
 | `src/refmatrix/composite.py` | the expand/collapse composite render (R9; the render lives here, `composite.py:63`, not in `stm.py`; round-4 #b-2): frozen snapshots read from `pre_prompt_state(…).topic_cache`, never written here (round-6 #s-2), stable cluster ids, frozen labels, the cap `C`; the two blocks `stm-topic-expanded` / `stm-topic-collapsed` (R5); its graph from `pre_prompt_state` on prompt-time calls (R2) |
 | `src/refmatrix/cli.py` (`focus hook`), `hooks.py` | `--event compact-marker` and its own generated PreCompact entry (R8a); the marker dispatch inside `--event session-start` when `source=compact` (R8a; round-4 #m-3) |
 | `src/refmatrix/scan.py` | phase-aware allocation of scan-prompt's spend; block ids and revs |
@@ -589,3 +650,19 @@ rel: implements -> [[plan-review-2026-10-14#t12-approvals]]
 | finding / decision | answered at |
 |---|---|
 | round-7 #s-1; d9ax (one hub member still merges small clusters; residual misstated; R1 figure with no decision; `j_return` reused unacknowledged; the 0.18 mutant survives) | R9 "Which live cluster a snapshot stands for" (eligible only with ≥ 2 shared members AND J ≥ `j_return`; the one-member bound corrected to a size sum ≤ 6, union ≤ 5; `j_return`'s second use acknowledged; the residual restated as two shared hub members); [[#ranges-thresholds]] `return` row (second use, d9ax); R1 (the recorded figure is now the two-shared-member share; the one-member case is closed by construction, not banded: option (a) needs no new number); AC-7i (one fixture per leg: {hub, a}/{hub, b} and the 1/5 pair now get their own line, 2/4 and 2/10 represented, 4/21 and 2/11 own line; shared count and Jaccard asserted from the fixture); mutations (Jaccard alone; ≥ 3 shared; 0.21; 0.19; 0.18) |
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan19-21-spec-rereview-r8-23ad703#ns-1]] (the only round-8 finding on 19.6) with
+decision d9bm ([[plan-review-2026-10-14#t12-approvals]]; PROVISIONAL until its ch-bsd loop is
+clean), which AMENDS d9ax, and records d9bi (19.6 is the helix substrate and moves up the wave
+order). No code fact is new: no collapsed render exists at HEAD `23ad703`.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r8-23ad703]]
+rel: implements -> [[plan-review-2026-10-14#t12-approvals]]
+
+| finding / decision | answered at |
+|---|---|
+| round-8 #ns-1; d9bm (d9ax's stated residual, two shared HUB members, is 63-73% of its matches; "hub" undefined for R1) | R9 "Which live cluster a snapshot stands for" (≥ 2 shared, ≥ 1 not a hub, J ≥ `j_return`; hub = member of ≥ 4 of the cache's 8 newest snapshots, computed once per call from the cache as passed in; `stm.topic_hubs` and `stm.snapshot_eligible` the only copies; d9bm's "K" named `N` here, same number; residual restated); R1 (the figure defined through `stm.topic_hubs` on the replayed cache; the round-8 proxy measurement recorded); [[#ranges-thresholds]] `return` row (d9bm); AC-7i (hub legs H1-H5 with `topic_hubs` asserted; import check); mutations (hub exclusion dropped; hubs excluded from the count; threshold 3 / 5; all snapshots instead of 8 newest; hub set recomputed mid-call (H5); private predicate); [[#files-to-modify]] (`stm.py`) |
+| d9bi (plan 19 is the helix substrate; 19.6 pulled forward) | header (wave; the helix-facing interfaces named, and the rule that changing them after merge needs a decision row) |
+| user rule: converge repeated shapes into one function | R9 (`topic_hubs`, `snapshot_eligible`: one copy each, used by the input-hook writer, `pre_prompt_state`'s live path and R1's replay; AC-7i import check) |

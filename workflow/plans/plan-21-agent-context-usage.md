@@ -7,7 +7,7 @@ metadata:
   node_type: plan
   status: drafting
   created: 2026-10-07
-  updated: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Plan 21: agent context usage {#root}
@@ -254,3 +254,22 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r7-331b414]]
 | round-7 #m-1 (21.1 side: SessionStart writer) | 21.1 test strategy (file work only; 19.0 AC-6f's `session-start` leg) |
 | round-7 #m-4 (a), (b) | [[task-21.1-context-usage-telemetry#rev-round-7]] (AC-4b (iii-b); `rmx focus topics` as the surface) |
 | round-7 #s-1, #m-2, #m-3, #m-4 (c), (d); d9ax, d9ay | not plan-21 items ([[plan-19-adaptive-memory-budget#rev-round-7]]) |
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan19-21-spec-rereview-r8-23ad703]]. No plan-21 item needed a user decision:
+#ns-2's fix restores the round-6 intent (an automatic SessionStart surface) inside round 7's
+scope rule. d9bm and d9bi are plan-19's; d9bi makes 21.1 part of the helix substrate (its events
+and its pre-prompt state), named in [[plan-19-adaptive-memory-budget#root]]'s header.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r8-23ad703]]
+
+| finding / decision | answered at |
+|---|---|
+| round-8 #ns-2 (per-owner SessionStart surfacing reaches only the same process) | [[task-21.1-context-usage-telemetry#rev-round-8]] (D6 two sets, `ended_sessions`, per-root watermark, `owner_alive`; D7; AC-4b (ix)) |
+| round-8 #nm-1 (`ps-failed` rows unmatchable) | [[task-21.1-context-usage-telemetry#rev-round-8]] (D6 unowned rule; AC-4b (vii) sub-leg) |
+| round-8 #nm-2 (unlocked machine-wide log; migration race and order) | [[task-21.1-context-usage-telemetry#rev-round-8]] (D8 one locked writer; D6 migration claim; AC-4b (x), (xi), (xii)) |
+| round-8 #nm-4 (21.1 side) | [[task-21.1-context-usage-telemetry#rev-round-8]] (D9 one hook-envelope reader) |
+| round-8 #nm-5 (a budget skip is invisible) | [[task-21.1-context-usage-telemetry#rev-round-8]] (R3, R4 `outcome` / `budget_s`, R7, AC-2b); [[task-21.3-indexed-symbol-nudge#rev-round-8]] (deadline as `timeout`, `retries=0`; `skipped_budget`) |
+| round-8 #nm-7 (21.1 cites) | [[task-21.1-context-usage-telemetry#rev-round-8]] |
+| round-8 #ns-1, #nm-3, #nm-6; d9bm, d9bi | not plan-21 items ([[plan-19-adaptive-memory-budget#rev-round-8]]) |

@@ -7,6 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
+  updated: 2026-10-15
 ---
 
 # Task 19.2: memory usage, counted exactly, decayed safely {#root}
@@ -140,7 +141,7 @@ one without losing knowledge. {#why-body}
    23.1 R8 ([[task-23.1-queue-and-drain#r8]]) to this slot-merge path, for the same reasons, read
    at HEAD `77ac38f`:
    - **No producer of diverged slots.** Writer rotation is dropped:
-     `Daemon._refresh_replica_now` (`daemon.py:2814-2828`) is a no-op returning
+     `Daemon._refresh_replica_now` (`daemon.py:2862-2876` at `23ad703`) is a no-op returning
      `{"enabled": False, … "rotation dropped (snapshot-tier read path)"}`, and the refresh thread
      is not started, so no live path leaves two slots with diverging `memory_usage` rows. The
      frozen inactive slots predate both tables, so no slot pair holds diverged rows of them.
@@ -253,7 +254,12 @@ appended through 21.1's `telemetry.emit_recall_events` with `cwd`/`root` inside 
 11. **Torn tail.** A log whose last line has no newline: the fold stops before it and reads it
     whole on the next tick.
 12. **Lock holds.** 1,000 events fold in ≤ 2 `bind` holds per 500 events, measured with 23.2's
-    recorder on a real `_FairLock`; every batch releases.
+    recorder on a real `_FairLock`; every batch releases. **Hold length** (round-8 #nm-5): the
+    run's 23.1 `RunResult.max_hold_s` ([[task-23.1-queue-and-drain#r1]], R1 item 5) is ≤ 0.5 s, and equals
+    the recorder's largest measured hold for the same run. The fold's holds take the same
+    `_store_lock` as `_op_memory_recall` (`daemon.py:6108`), whose per-prompt hook budget is 5 s
+    (21.1 R3); 0.5 s keeps one fold hold at a tenth of it. The bound is stated here for this
+    task's fold; who owns bounded holds in general stays plan 23's (d9az).
 13. **PreCompact.** With `PRECOMPACT_STDOUT_DELIVERED is None` (and with it `False`), `delivered`
     events with channel `precompact` leave every count unchanged and appear in
     `skipped_precompact`; with it `True` they count.
@@ -296,6 +302,8 @@ appended through 21.1's `telemetry.emit_recall_events` with `cwd`/`root` inside 
     - (RETIRED, d9ay: "`replica_merge` keeping the A-side row (AC-10)"; R6 and AC-10 are
       retired, so this mutation has no test to fail);
     - the drain taking one hold per event (AC-12);
+    - (round 8) the fold committing all 1,000 events in one hold, or the batch size raised so one
+      hold exceeds 0.5 s (AC-12: `max_hold_s` over the bound);
     - weights applied at fold time (AC-17: stored rows change);
     - any decayed value stored at fold time, or `H` read at fold time (AC-17 under `H = 7`: the
       score disagrees with the independent computation; AC-6: batchings differ);
@@ -411,3 +419,18 @@ rel: derives-from -> [[task-23.1-queue-and-drain#r8]]
 | finding / decision | answered at |
 |---|---|
 | d9ay (19.2 R6 / AC-10 merge memory-usage rows through `replica_merge`, which nothing feeds and bug-113 breaks) | R6 RETIRED (reason, original text kept, revival conditions); AC-10 RETIRED (original text kept); the AC-10 mutation marked retired; R1 `first_seen` (slot merge no longer claimed); [[#files-to-modify]] (`replica_merge.py` row removed). Older revision tables that cite R6 / AC-10 are history and keep their text |
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan19-21-spec-rereview-r8-23ad703]] #nm-5 (19.2's fold hold is bounded in number,
+not in length, against the recall it competes with) and #nm-7 (one cite). Code facts read at
+write time at HEAD `23ad703`: `daemon.py:2862-2876` (`_refresh_replica_now`), `:6067`
+(`_op_memory_recall`), `:6108` (its `_store_lock` hold); 23.1 R1 item 5's `RunResult.max_hold_s`.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r8-23ad703]]
+rel: depends-on -> [[task-23.1-queue-and-drain]]
+
+| finding / decision | answered at |
+|---|---|
+| round-8 #nm-5 (19.2 side: AC-12 bounds the number of holds, not their duration; the fold competes with `_op_memory_recall` for `_store_lock`) | AC-12 (`RunResult.max_hold_s` ≤ 0.5 s, equal to the recorder's largest hold; the bound's ownership stays plan 23's, d9az); mutation |
+| round-8 #nm-7 (`daemon.py:2814-2828`) | R6 (`:2862-2876`, read at `23ad703`) |

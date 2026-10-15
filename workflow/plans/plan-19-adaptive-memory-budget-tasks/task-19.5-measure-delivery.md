@@ -7,6 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
+  updated: 2026-10-15
 ---
 
 # Task 19.5: measure delivery, not production {#root}
@@ -78,6 +79,13 @@ unknown. Hard-coding an unmeasured limit is the bug-042 shape. {#why-body}
      so `seen` is again a lower bound, labelled so. The table reports, per channel: emitted,
      seen, and seen/emitted; scan-prompt's tail under a per-event cap is visible as emitted but
      not seen.
+   - **A skipped recall is attempted, with 0 delivered** (round-8 #nm-5). A per-prompt or
+     SessionStart recall whose 21.1 `query.log` row carries `outcome=skipped_budget` (its budget
+     expired; 21.1 R3, R4) counts as an ATTEMPTED prompt with 0 delivered and 0 seen, reported on
+     its own line per channel (`skipped_budget=<n>`), apart from a prompt with no recall row at
+     all ("no recall", for example an empty prompt) and from `outcome=error`. The prompt
+     denominator of every per-prompt figure is attempted prompts, so a loaded daemon lowers the
+     figure instead of vanishing from it.
 3. **R3 Index reach.** The number of memories named in `MEMORY.md` before and after 19.3, and
    19.3 R4's executed reachability result.
 4. **R4 The fixed baseline for 19.6** (d5b). R2's "after" numbers, per channel (emitted, seen,
@@ -154,3 +162,17 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r3-6091648]]
 | finding / decision | answered at |
 |---|---|
 | round-3 #m-8 (a constant 2 KB "before" preview beside the measured `seen` preview; "the cap in bytes" ambiguous under a character harness) | R1(a) (bytes = the measured character numbers taken as bytes when the harness counts characters); R2 "before" (the same measured `cap` and `preview` as `seen`) |
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan19-21-spec-rereview-r8-23ad703]] #nm-5 (19.5 side: a budget skip must not be
+read as "recall ran, delivered 0" or dropped from the denominator). The field is 21.1's
+([[task-21.1-context-usage-telemetry#rev-round-8]]: `outcome` ∈ `ok`, `skipped_budget`, `error`
+and `budget_s` on recall and context rows).
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r8-23ad703]]
+rel: depends-on -> [[task-21.1-context-usage-telemetry]]
+
+| finding / decision | answered at |
+|---|---|
+| round-8 #nm-5 (19.5 consumes 21.1's `outcome`) | R2 ("A skipped recall is attempted, with 0 delivered": `skipped_budget` counted apart per channel, in the attempted denominator, distinct from "no recall" and `error`) |

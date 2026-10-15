@@ -7,6 +7,7 @@ metadata:
   node_type: plan
   status: drafting
   created: 2026-10-07
+  updated: 2026-10-15
 ---
 
 # Plan 19: adaptive memory under the context budgets {#root}
@@ -14,6 +15,22 @@ metadata:
 **Date:** 2026-10-07; revised 2026-10-14 after the Wave 0 decision log.
 **Status:** Drafting. Task specs 19.0–19.6 are revised after
 [[plan-review-2026-10-14]]; a spec re-review is next.
+**Helix substrate (d9bi, the user 2026-10-15: "I want the context adaptive/variable stm
+handling in-place so we can build helix on top of that substrate").** Plan 19 LEADS Wave 1 after
+23.0 (19.0 and 21.1 → 19.1 → 19.2 ahead of plans 16/17/22), and 19.6 is pulled from Wave 3 to
+directly after its own dependencies. The helix plan (a Wave 4 draft, not yet a file) consumes
+four interfaces this plan fixes, so every spec choice below is made with them in view:
+1. `stm.pre_prompt_state` / `PrePromptState` and the pre-prompt snapshot (19.0 R7, 21.1 R9): the
+   race-free STM state before a prompt;
+2. 19.6's topic cache and frozen snapshots (`<cid>` = hash of the member set, frozen label,
+   first-collapse `turn`; one writer, one home), with identity decided by the pure
+   `stm.derive_snapshots(graph, cache)`, `stm.topic_hubs(cache)` and `stm.snapshot_eligible`
+   (d9ax amended by d9bm), so helix can recompute topic identity from the cache alone;
+3. 21.1's recall events, including the versioned-injection fields (`block_id`, `block_sha`,
+   `rev`, `unchanged`) that 19.6 fills;
+4. 19.2's usage record (raw per-evidence counts, read-time decay).
+A change to any of the four after it merges needs a decision-log row that names helix.
+
 **Origin:** the user, 2026-10-07: "we need a way to automatically optimize memory storage and
 retrieval to make it adaptive to keep more than the byte limit". Decisions are recorded in
 [[exploration-adaptive-memory-budget]]: B + A + D now, a new plan, and first after the remedy merge.
@@ -102,7 +119,9 @@ fit is reachable by a printed command that, when run, returns it; decay only dem
   PreCompact (d5d); delivery is read from 21.1's events; the fixed baseline is committed for 19.6.
 - **Phase the per-prompt budget (19.6, Wave 3).** Recall and scan-prompt spend by STM phase,
   the STM composite renders as an expand/collapse tree (a frozen collapsed line stands for a live
-  cluster only when they share ≥ 2 members AND Jaccard ≥ `j_return`, d9ax), returns re-warm from a
+  cluster only when they share ≥ 2 members, at least one of them not a hub, AND Jaccard ≥
+  `j_return`; d9ax amended by d9bm, hub = member of ≥ 4 of the cache's 8 newest snapshots),
+  returns re-warm from a
   topic cache, stable
   blocks are versioned — each built only in the band a pre-registered table allows; the tables
   were CONFIRMED as written by the user (d9v).
@@ -130,7 +149,7 @@ fit is reachable by a printed command that, when run, returns it; decay only dem
 | 19.3 | subject-tiered, value-ranked `MEMORY.md` | 2 | executed reachability; tier fold order; clock-free check; atomic triple |
 | 19.4 | compile on 17.2's tick; stale marked; index on write and after compile | 2 (after 17.2) | stale subject kept, hidden; stable slugs; new memory indexed without save-state |
 | 19.5 | probe (first) + delivery measurement + fixed baseline | R1: Wave 1, before 19.1 (a manual probe, no code dependency); R2–R4 after 19.1–19.3 | per-hook/per-event and PreCompact verdicts; `seen` derived from byte spans; before/after from C7 events |
-| 19.6 | phased context, expand/collapse composite, topic cache, versioned injection (recall + scan-prompt) | 3 (tables CONFIRMED, d9v) | tables A–D; phase/cache/tree fixtures |
+| 19.6 | phased context, expand/collapse composite, topic cache, versioned injection (recall + scan-prompt) | directly after its dependencies (d9bi; was 3); tables CONFIRMED, d9v | tables A–D; phase/cache/tree fixtures |
 
 Task specs: `workflow/plans/plan-19-adaptive-memory-budget-tasks/`.
 
@@ -177,6 +196,8 @@ Every test in every task runs in task 23.0's sandbox (d1a/d1b) and asserts 0 liv
 | d9v | 19.6's ranges, thresholds, `N = 8`, `K = 8`, `C = 6` CONFIRMED as written (settles d9f) | user, 2026-10-14 |
 | d9ax | 19.6 R9 snapshot identity = ≥ 2 shared members AND Jaccard ≥ `j_return` (0.20); `j_return` (d9v) now has a second use, acknowledged | user, 2026-10-15 |
 | d9ay | d9ao's retirement extends to 19.2 R6 / AC-10 (slot merge); [[#open-after-revision]] item 4 corrected | user, 2026-10-15 |
+| d9bi | plan 19 is the helix substrate: it leads Wave 1 after 23.0; 19.6 moves to directly after its dependencies; helix consumes 19.x's outputs (header) | user, 2026-10-15 |
+| d9bm | AMENDS d9ax: identity needs ≥ 2 shared members, ≥ 1 of them NOT a hub, AND J ≥ `j_return`; hub = member of ≥ ⌈8/2⌉ = 4 of the cache's 8 newest snapshots (d9bm writes "K = 8"; the cache bound is `N` = 8 in 19.6); `derive_snapshots` stays pure. PROVISIONAL until its ch-bsd loop is clean | orchestrator on the user's pattern, 2026-10-15, from ch-bsd r8 #ns-1 |
 
 ## Out of scope {#out-of-scope}
 
@@ -200,7 +221,7 @@ Round 2 status of the round-1 list ([[bsd-plan19-21-spec-rereview-32dde06#open-1
    earlier text "CLOSED: 23.1 R8 (the larger `offset_bytes` per `(queue, segment)`)" was made
    false by d9ao). 23.1 R8 / AC-13 are RETIRED (d9ao, [[task-23.1-queue-and-drain#r8]]) and 19.2
    R6 / AC-10 with them (d9ay, [[task-19.2-memory-usage-record#rev-round-7]]): writer rotation is
-   dropped (`_refresh_replica_now`, `daemon.py:2814`, a no-op), so nothing produces diverged
+   dropped (`_refresh_replica_now`, `daemon.py:2862` at `23ad703`, a no-op), so nothing produces diverged
    slots, and bug-113 breaks `replica_merge` on every real store. No slot-merge rule is owed by
    plan 19; a plan that revives slot merging writes one for its tables then.
 5. **19.6's bands, `N = 8`, `K = 8`, `C = 6` and the phase thresholds:** CONFIRMED as written
@@ -358,3 +379,25 @@ rel: implements -> [[plan-review-2026-10-14#t12-approvals]]
 | round-7 #m-2, #m-3, #m-4 (b)-(d) | [[task-19.0-stm-cluster-hygiene#rev-round-7]] |
 | round-7 #m-4 (a), (b) (21.1 side) | [[task-21.1-context-usage-telemetry#rev-round-7]] |
 | d9ay (19.2 R6 / AC-10 retired; "CLOSED: 23.1 R8" corrected) | [[task-19.2-memory-usage-record#rev-round-7]]; [[#open-after-revision]] item 4; [[#decisions]] d9ay |
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan19-21-spec-rereview-r8-23ad703]] (2 SKETCHY, 7 MEH), decision d9bm (#ns-1,
+option (a); PROVISIONAL until its ch-bsd loop is clean) and d9bi (helix substrate)
+([[plan-review-2026-10-14#t12-approvals]]). Each touched task carries its own `#rev-round-8`
+table; code facts were read at HEAD `23ad703`, by symbol, then line.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r8-23ad703]]
+rel: implements -> [[plan-review-2026-10-14#t12-approvals]]
+
+| finding / decision | answered at |
+|---|---|
+| round-8 #ns-1; d9bm (hub-only matches are most of d9ax's identity matches; "hub" undefined) | [[task-19.6-phased-context-and-topic-cache#rev-round-8]] (R9 hub rule and `topic_hubs` / `snapshot_eligible`; R1; `return` row; AC-7i H1-H5; mutations); [[#design-body]]; [[#decisions]] d9bm |
+| round-8 #ns-2 (an ended session's rows surface on no SessionStart) | [[task-21.1-context-usage-telemetry#rev-round-8]] (D6 `ended_sessions`, per-root watermark, AC-4b (ix)); 19.0 R5's Stop row holds ([[task-19.0-stm-cluster-hygiene#rev-round-8]]) |
+| round-8 #nm-1, #nm-2 | [[task-21.1-context-usage-telemetry#rev-round-8]] (D6 unowned rule; D8 one locked writer; migration claim and order) |
+| round-8 #nm-3, #nm-4 | [[task-19.0-stm-cluster-hygiene#rev-round-8]] (AC-6f; envelope rows; falsy session); 21.1 D9 (one envelope reader) |
+| round-8 #nm-5 | 21.1 R3/R4/R7, AC-2b; [[task-19.5-measure-delivery#rev-round-8]] (`skipped_budget` = attempted, 0 delivered); [[task-19.2-memory-usage-record#rev-round-8]] (AC-12 `max_hold_s` ≤ 0.5 s); 21.3 R3 |
+| round-8 #nm-6 | [[task-19.4-keep-derived-layers-current#rev-round-8]] |
+| round-8 #nm-7 (cite drift) | the `#rev-round-8` tables of 19.0, 19.1, 19.2, 19.3, 19.4 and 21.1; [[#open-after-revision]] item 4 (`daemon.py:2862`) |
+| d9bi (helix substrate; 19.6 pulled forward) | header ("Helix substrate": the four interfaces and the decision-row rule); [[#tasks]] 19.6 wave; [[#decisions]] d9bi; [[task-19.6-phased-context-and-topic-cache#rev-round-8]] header |
+| user rule: converge repeated shapes into one function | 19.6 `topic_hubs` / `snapshot_eligible`; 21.1 `owner_alive`, `_append_error_rows`, `read_hook_envelope`, `CALL_OUTCOMES`; each with an AST or import bypass check |

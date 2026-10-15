@@ -7,6 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
+  updated: 2026-10-15
 ---
 
 # Task 19.1: pack recall under the budget {#root}
@@ -36,7 +37,7 @@ The three recall hooks emit JSON with full bodies and no size bound:
 Above ~10k chars Claude Code delivers a ~2 KB preview, so the agent sees about one hit of ten.
 And what it does see is often noise: on `"whats next?"` all 5 per-prompt hits were compiled
 `subject_*` rows (`subject_collaboration`, `subject_drift`, …) whose whole content is a 5–13 char
-label. `Store.upsert_subject` (`store.py:2618`) writes a subject as a protected `kind=memory`,
+label. `Store.upsert_subject` (`store.py:2692` at `23ad703`) writes a subject as a protected `kind=memory`,
 `mtype=subject` row, so it is embedded and competes in dense recall; `verbs.memory_recall`'s
 default exclusion is only `session/*` (`verbs.py:679`). Raising `--k` without excluding them
 spends the new budget on labels. {#why-body}
@@ -252,3 +253,16 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r3-6091648]]
 | round-3 #m-3 (multibyte density for the chars-vs-bytes mutations) | AC-1 (density rule + recorded pre-check), AC-6 (≥ 6 bytes of excess before each checked span; pre-check) |
 | round-3 #b-3 (21.1's chars mutation cannot fail on the ASCII JSON renderer) | AC-6 owns the `--pack` leg of that mutation |
 | round-3 #m-8 (one preview definition) | AC-2 "Today" uses 19.5 R1's measured `cap` / `preview`, not 2 KB |
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan19-21-spec-rereview-r8-23ad703]] #nm-7 (one cite). Read at write time at HEAD
+`23ad703`: `Store.upsert_subject` is defined at `store.py:2692` (the round-8 report's `:2620`
+did not match HEAD; the symbol was read, not the report's number). 19.1 has no other round-8
+item: #nm-5's outcome field lives on 21.1's rows, which 19.1's pack does not write.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r8-23ad703]]
+
+| finding / decision | answered at |
+|---|---|
+| round-8 #nm-7 (`store.py:2618`) | [[#why]] (`Store.upsert_subject`, `store.py:2692`) |

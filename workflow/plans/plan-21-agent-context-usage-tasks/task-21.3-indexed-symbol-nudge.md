@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Task 21.3: the indexed-symbol nudge {#root}
@@ -92,9 +92,13 @@ task starts, against bands written before the run; the nudge is not dropped in a
      envelope's `session_id` (never `stm.latest_session`). The dedupe state is one append-only file
      per session under `.refmatrix/nudge/`, written only by the hook.
    - A hard deadline on the lookup, set from R0's band (the band's upper edge). Past it, the hook
-     is silent.
+     is silent. If the lookup is a daemon read, the hook passes that deadline as `daemon.call`'s
+     `timeout` with `retries=0`, so the daemon's bug-116 deadline drop (0.78.2) discards the
+     queued read too and a late answer never runs on a busy worker (round-8 #nm-5).
    - Every invocation writes one `query.log` row `kind=nudge` with `outcome` ∈ `fired`, `dedup`,
-     `gated` (no callers/tests), `not_identifier`, `not_indexed`, `timeout`, `disabled` (R4),
+     `gated` (no callers/tests), `not_identifier`, `not_indexed`, `skipped_budget` (the deadline
+     expired; the ONE budget-skip value of `telemetry.CALL_OUTCOMES`, 21.1 R4, renamed from this
+     task's round-6 `timeout` so 21.1's report and 19.5 read one vocabulary), `disabled` (R4),
      `stale_set` (R6), and the 21.1 fields.
      A fired nudge also appends one `delivered` event to `recall-events.jsonl` with
      `channel=nudge`. Timeouts are counted on the row, never printed.
@@ -135,7 +139,7 @@ counts are unchanged.
    unindexed token, and a symbol with no callers or tests yield no line, with outcomes
    `not_identifier`, `not_indexed`, `gated`.
 5. **Deadline.** With the lookup artificially delayed past the deadline (a `sitecustomize.py` the test
-   puts on the hook subprocess's `PYTHONPATH` wraps the lookup with a sleep; no `src/` flag), the hook prints nothing and writes `outcome=timeout`.
+   puts on the hook subprocess's `PYTHONPATH` wraps the lookup with a sleep; no `src/` flag), the hook prints nothing and writes `outcome=skipped_budget`.
 6. **Usage before/after.** `rmx telemetry --agent-usage --by-session` over ≥ 3 sessions before and
    ≥ 3 after the deploy reports `invocation=agent` context calls per session (21.1 R2/R7), split by
    whether a `nudge` event preceded them in the session. The table and the verdict (rise or not)
@@ -211,3 +215,19 @@ Answers [[bsd-plan19-21-spec-rereview-r3-6091648]].
 | finding / decision | answered at |
 |---|---|
 | round-3 #b-3 (the nudge emitter's removal mutation, one of 21.1's seven channels) | [[#acceptance]] AC-8 mutation list (the `channel=nudge` append removed, caught by AC-2) |
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan19-21-spec-rereview-r8-23ad703]] #nm-5's 21.3 clause (marked optional there,
+applied) and the user's rule to converge repeated shapes: a budgeted call's skip has ONE outcome
+value across 21.1's recall / context rows and this nudge row. Code fact read at HEAD `23ad703`:
+`daemon.call` sends `deadline_s` = its `timeout` (`daemon.py:644-645`) and the daemon drops a
+queued read past it (`_note_expired_read`, `:1362`).
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r8-23ad703]]
+rel: depends-on -> [[task-21.1-context-usage-telemetry]]
+
+| finding / decision | answered at |
+|---|---|
+| round-8 #nm-5 (21.3 clause: a daemon lookup should carry the hook's deadline) | R3 (deadline passed as `timeout` with `retries=0` when the lookup is a daemon read) |
+| user rule: one outcome vocabulary | R3 (`timeout` renamed `skipped_budget`, from `telemetry.CALL_OUTCOMES`, 21.1 R4); AC-5 (`outcome=skipped_budget`) |

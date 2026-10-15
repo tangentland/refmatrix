@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Task 21.1: make agent context usage measurable {#root}
@@ -44,12 +44,14 @@ The exploration measured 3 CLI `context` calls against 1,119 agent greps (2026-0
 - `mcp.serve_stdio` (`mcp.py:312`) never sets `RMX_INVOCATION_SOURCE`, although the docstring at
   `telemetry.py:154` says the MCP server does. `mcp` is already a member of `INVOCATION_SOURCES`
   (`telemetry.py:57`).
-- No `query.log` row is written by the daemon's `_op_context` (`daemon.py:4687`), by
-  `verbs.context` (`verbs.py:538`), or by the CLI's daemon route (`cli.py:5152`). Only the replica
-  (`cli.py:5100`) and direct (`cli.py:5231`) routes log.
+- No `query.log` row is written by the daemon's `_op_context` (`daemon.py:4714`), by
+  `verbs.context` (`verbs.py:585`), or by the CLI's daemon route (`cli.py:5149`, the
+  `daemon_mod.call(root, "context", …)`). Only the replica (`cli.py:5097-5098`,
+  `source="context-replica"`) and direct (`cli.py:5228`, `source="context"`) routes log. (Lines
+  re-read by symbol at `23ad703`, round-8 #nm-7.)
 - `query.log` rows carry no session, no query id and no cwd (`telemetry.log_query.__exit__`), so no
   per-session count (21.3 AC-4, 19.2 R3) can be computed and no event can be joined to its query.
-- `grep-stdin` rows (`cli.py:6202`) never set `cardinality`: it is `null` on all 3,521 rows of the
+- `grep-stdin` rows (`cli.py:6199`) never set `cardinality`: it is `null` on all 3,521 rows of the
   window. The `-E` replica-path "0 cardinality" defect the exploration named does not reproduce in
   October data (bsd #s-4).
 
@@ -88,20 +90,34 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
 3. **R3 One row per context call, on every route** (bsd #s-5). Each of the four routes writes
    exactly one `query.log` row with `kind=context`, and `source` names the route:
    - MCP `rmx_context` → `verbs.context` → daemon op: `source=context-mcp`;
-   - CLI replica route (`cli.py:5100`): `context-replica` (exists);
-   - CLI daemon route (`cli.py:5152`): `context-daemon` (missing today);
-   - CLI direct route (`cli.py:5231`): `context` (exists).
+   - CLI replica route (`cli.py:5097-5098`): `context-replica` (exists);
+   - CLI daemon route (`cli.py:5149`): `context-daemon` (missing today);
+   - CLI direct route (`cli.py:5228`): `context` (exists).
 
    The row is written on the CALLER side (the verb or the CLI), never inside a daemon op and never
    under the daemon's writer lock. `memory_recall` reached from the CLI or MCP gets the same
-   treatment with `kind=recall`. `ann_search` is NOT covered: it has no verb (`cli.py:10718` calls
-   the op directly), and R4 does not report it.
+   treatment with `kind=recall`. `ann_search` is NOT covered: it has no verb
+   (`search_dense_cmd`, `cli.py:10763`, calls the op directly), and R4 does not report it.
+   **A call that ends without an answer still writes its row** (round-8 #nm-5). The per-prompt
+   recall hook (`--timeout 5`) and the SessionStart recall (`--timeout 10`) degrade past their
+   budget to "recall skipped", `[]` and exit 0 (`cli.memory_recall`'s `_degrade_or_raise`,
+   `cli.py:12012-12025`), and since 0.78.2 the daemon drops the queued read itself
+   (`_note_expired_read`, `daemon.py:1362`; bug-116). That skip is a real outcome under load, so
+   the recall and context rows carry R4's `outcome` and `budget_s`, and a skipped call writes its
+   row with `outcome=skipped_budget` and no recall events.
 4. **R4 New row fields.** Every `query.log` row (all kinds) gains:
    - `session`: resolved by [[#req-session]] (null when nothing resolves, never guessed);
    - `query_id`: a uuid4 hex minted by the caller once per call and shared with every recall event
      of that call (R7);
    - `cwd` and `root`: the process cwd and the resolved store root, so d8d's predicate (R5) can
-     apply to new rows.
+     apply to new rows;
+   - on `kind=recall` and `kind=context` rows (round-8 #nm-5): `outcome` ∈
+     `telemetry.CALL_OUTCOMES = ("ok", "skipped_budget", "error")` (`ok`: an answer was rendered,
+     however many items; `skipped_budget`: the call's budget expired before an answer, the
+     `_degrade_or_raise` path; `error`: any other failure) and `budget_s` (the call's `--timeout`,
+     or null when it has none). `CALL_OUTCOMES` is the ONE outcome vocabulary for a budgeted
+     call: 21.3's nudge row uses the same `skipped_budget` value for its deadline (its round-6
+     `timeout` value is renamed, [[task-21.3-indexed-symbol-nudge#rev-round-8]]).
 5. **R5 One shared row classifier** (d8d, d9g; owner: this task, in `telemetry.py`, per
    [[plan-review-2026-10-14#t9-fixes]]). Signatures, exact:
    - `telemetry.row_provenance(row: dict, *, reader_root: Path | None = None,
@@ -158,11 +174,11 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
    A `recall-events.jsonl` event always carries `cwd` and `root` (R10), so an event without them
    is `malformed` by class 0 (classes 2 and 3 never apply to events); event readers print
    `malformed=<n> unparseable=<n>` beside the line above and never fold either.
-6. **R6 `grep-stdin` cardinality** (bsd #s-4, retargeted). The stdin filter path (`cli.py:6202`)
+6. **R6 `grep-stdin` cardinality** (bsd #s-4, retargeted). The stdin filter path (`cli.py:6199`)
    sets `cardinality` to the number of lines it emitted. The `-E` replica-path claim is dropped:
    it does not reproduce at HEAD (live `-E` row 2026-10-14T11:08:31 logged `cardinality: 15`).
 7. **R7 `rmx telemetry --agent-usage`** (bsd #m-2, #s-3, #s-5). `telemetry` is a `@main.command`
-   (`cli.py:7521`), so this is a FLAG on it, not a subcommand. It reuses `--since` and adds
+   (`cli.py:7518`), so this is a FLAG on it, not a subcommand. It reuses `--since` and adds
    `--until` (ISO prefixes); no `--days`. It prints, per `invocation`, the counts and p50/p95
    latency for context (per route), grep (per `source` / `answered_by`), and recall, plus a
    `--by-session` table (calls per `session`). It:
@@ -172,7 +188,14 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
    - applies R5's `row_provenance` with `reader_root` = the store root it reads, counts per R5's
      totals rule, and prints the `excluded_test_rows` / `legacy_fixture_rows` /
      `legacy_unattributed` line;
-   - excludes `invocation=internal` rows by default (`--include-internal` to keep them).
+   - excludes `invocation=internal` rows by default (`--include-internal` to keep them);
+   - prints, per recall channel (R11's `recall_channel` value, recomputed from the row) and for
+     context, the count of each `outcome` (round-8 #nm-5), so a skipped prompt is never read as
+     "recall ran and delivered 0";
+   - prints the daemon's dropped-read count beside it when the store's `stats` op returns it:
+     `_op_stats` gains one key, `expired_reads` (the counter `_note_expired_read` already keeps,
+     `daemon.py:1362-1368`), so client skips and daemon drops can be reconciled. A store whose
+     daemon is down prints `expired_reads: unavailable (daemon down)`, never 0.
 
    The report covers context, grep and recall only. Other MCP tools are not claimed.
 
@@ -346,17 +369,51 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
        current root as its last line, also when it prints "no topics yet" (round-7 #m-4 (b): the
        round-6 surface `rmx focus show` takes a required `LINE`, `cli.py:1210`, so it was not a
        status surface).
-     - **The SessionStart writer (D4) surfaces its OWNER's rows on STDOUT**, where SessionStart
-       output reaches the agent, whenever rows were added since that owner's last surfacing.
+     - **The SessionStart writer (D4) surfaces TWO sets on STDOUT**, where SessionStart output
+       reaches the agent (round-8 #ns-2). Per-owner surfacing alone reaches only the SAME Claude
+       process: a `startup` SessionStart, and `claude --resume` / `--continue`, start a NEW
+       process whose owner has written no rows yet, so only `clear` / `compact` could surface
+       anything, and a session's last rows (its pointer and STM-hook failures, and its final
+       Stop's `write` miss, the "durable channel" of 19.0 R5) reached no SessionStart after the
+       process exited; `rmx recall-state` is not a hook (the generated SessionStart entries are
+       `curator status`, `memory recall --session-start`, `ingest-gmd --detach` and, on resume,
+       `focus context`: `hooks.py:209-297`). The two sets:
+       **(1) its OWNER's rows**, whenever rows were added since that owner's last surfacing.
        **The watermark is per owner and keyed on `t`, not on a byte offset:**
        `<pointer_dir>/_errors.seen.<pid>` holds `{pid_start, t}`, the largest `t` already
        surfaced for that owner; a file whose `pid_start` differs from the owner's is ignored (pid
        reuse). The writer surfaces `read_pointer_errors(owner=(P, P_start), since=<that t>)` minus
        rows with `t` equal to it, so one session's SessionStart never surfaces, or consumes,
-       another session's rows. Rows with `owner: null` belong to no session: recall-state and
-       `focus topics` report them for their root, and the SessionStart line adds
-       `unowned_in_root=<n> (see rmx recall-state)` for its root's last 24 h without consuming
-       them. bug-109's in-place halving (`stm.py:308-310`) moves every byte offset, so an offset
+       another LIVE session's rows. **(2) its ROOT's ended-session rows:** rows with `root` = R
+       (the hook's `cli._root()`) whose owner is DEAD, `stm.owner_alive(owner, owner_start) is
+       False`, with `t` above the per-root watermark `<pointer_dir>/_errors.seen.root.<h>` (`h` =
+       `sha1(str(R)).hexdigest()[:12]`) holding `{root, t}`; a file whose `root` is not R is a
+       hash collision, counted (`watermark-collision`) and treated as absent. They print as ONE
+       line `ended_sessions: <reason>=<n> … (see rmx recall-state)` and are consumed by advancing
+       that watermark. Rows of a live other owner are neither printed nor consumed (round-7
+       #s-2's guarantee kept). A dead owner's row is therefore shown at most twice, once to each
+       audience: to its own process (set 1, at a `clear` / `compact` before it exited) and to the
+       next session that starts in its root (set 2).
+       - **Unowned rows** (round-8 #nm-1). A row whose `owner` is null, OR whose `owner_start` is
+         null whatever its `owner`, is UNOWNED: bug-109's `ps-failed` row (`stm.py:368`) is
+         written exactly when `_proc_start(pid)` is `None` (`stm.py:359-369`), so its D8 stamp
+         `owner_start` is always null and it matches no `(P, P_start)` filter, and its liveness
+         cannot be decided. Unowned rows are reported by recall-state and `focus topics` for
+         their root, and the SessionStart line adds `unowned_in_root=<n> (see rmx recall-state)`
+         for its root's last 24 h without consuming them; they are in neither set.
+       - **`stm.owner_alive(pid: int | None, pid_start: str | None) -> bool | None`**, ONE
+         predicate: `None` when `pid` or `pid_start` is null, or when the lookup is unavailable
+         (`_proc_start(os.getpid())` is itself `None`, D7's guard); else `_proc_start(pid) ==
+         pid_start`. Set (2) and D7's prune call it; none
+         calls `_proc_start` to judge liveness itself (AC-4b (xii)'s AST check). When it is
+         `None` for the lookup reason, set (2) is not computed, nothing is consumed, and the line
+         reads `ended_sessions skipped: process lookup unavailable` (otherwise every live owner
+         would read as dead and another session would consume its rows).
+       - **Claimed under the lock.** Each watermark (per owner, per root) is read, its rows
+         selected and the watermark advanced inside ONE hold of D8's `_errors.lock`, and the
+         lines are printed after the release, so two SessionStarts in one root at the same time
+         (two sessions in this shared tree) print each set-(2) row once between them.
+       bug-109's in-place halving (`stm.py:308-310`) moves every byte offset, so an offset
        watermark would skip rows or surface them twice; a `t` watermark is unaffected. Unreadable
        lines carry no `t` and are counted on every surfacing, apart.
      - **The bound is kept, and its deletions are counted per scope.** The 256 KiB halving stays
@@ -372,24 +429,39 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      - **One-shot migration of bug-109's files** (round-7 #s-3, the user's choice; the round-6
        "for one release" legacy read and `legacy_root=` are WITHDRAWN). The SessionStart writer,
        for its own root `R` (`cli._root()` of the hook's cwd), when `R/stm/by-pid/_errors.jsonl`
-       exists: appends each parseable legacy row to `<pointer_dir>/_errors.jsonl` with its
-       ORIGINAL `t`, plus `root = R` and `migrated_from = <legacy path>` (legacy rows have no
-       `owner_start`, so they surface in recall-state for `R`, never on an owner's SessionStart);
-       appends one `{reason: "legacy-unreadable", n}` row scoped to `R` when the legacy file held
-       unparseable lines; then renames the legacy file to `R/stm/by-pid/_errors.migrated.jsonl`.
+       exists:
+       1. **claims it** (round-8 #nm-2) by `os.rename` to `R/stm/by-pid/_errors.migrating.<own
+          pid>.jsonl`; a loser of a concurrent claim gets `FileNotFoundError`, counts it
+          (`migrate-claim-lost`, printed) and migrates nothing. Crash recovery: before claiming,
+          it adopts any `_errors.migrating.<pid>.jsonl` in `R/stm/by-pid/` whose mtime is older
+          than 60 s (a claim file names a pid but no start time, so liveness cannot be judged by
+          `owner_alive`; a live migration finishes in well under 60 s) by renaming it to its own
+          claim name, so a crash leaves no orphan behind;
+       2. appends each parseable legacy row through D8's ONE writer with its ORIGINAL `t`, plus
+          `root = R` and `migrated_from = <legacy path>` (legacy rows have no `owner_start`, so
+          they are UNOWNED by D6's rule: they surface in recall-state for `R`, never on an
+          owner's SessionStart and never as `ended_sessions`), and one `{reason:
+          "legacy-unreadable", n}` row scoped to `R` when the legacy file held unparseable lines;
+       3. renames the claim file to `R/stm/by-pid/_errors.migrated.jsonl` ONLY when every append
+          returned `True`; otherwise it leaves the claim file, prints `migration incomplete:
+          <n> rows not written (global store root absent or unwritable)` on stderr, and the next
+          SessionStart retries.
        It is idempotent: a legacy row whose `(t, reason)` already appears in the new log with the
-       same `migrated_from` is not appended again, so a run interrupted between the append and the
-       rename repeats nothing. It then deletes `R/stm/by-pid/<pid>.json` legacy pointers (D3) and
+       same `migrated_from` is not appended again (checked inside the writer's lock hold, D8), so a
+       run interrupted between the append and the rename repeats nothing. It then deletes `R/stm/by-pid/<pid>.json` legacy pointers (D3) and
        prints `migrated=<rows> legacy_pointers_dropped=<n>` with the surfacing line. No `src/`
        path reads `R/stm/by-pid/` at any time, so there is no legacy read path to remove later.
        Stated limit: a root where no Claude session starts after the deploy keeps its legacy file
        on disk, unmigrated and unread; its rows were reported by recall-state for 24 h only, so
        what is lost is at most one day of that root's report.
    - **D7 `by-pid/` cleanup** (bug-109 r1 #m-4; round-7 #s-2). The SessionStart writer removes
-     each pointer file, and each `_errors.seen.<pid>` watermark file, whose `_proc_start(pid)`
-     (`stm.py:197-202`, one kernel lookup per pid; there is no process-table call in `src/`, and
-     the round-5 name `stm._process_table()` is WITHDRAWN) is `None` or differs from its
-     `pid_start`, and prints `pruned=<n>` with the surfacing line. If `_proc_start(os.getpid())`
+     each pointer file, and each `_errors.seen.<pid>` watermark file, for which
+     `stm.owner_alive(pid, <its pid_start>)` is `False` (`_proc_start`, `stm.py:197-202`, one
+     kernel lookup per pid; there is no process-table call in `src/`, and the round-5 name
+     `stm._process_table()` is WITHDRAWN), and prints `pruned=<n>` with the surfacing line.
+     Per-root watermark files `_errors.seen.root.<h>` (round-8 #ns-2) are kept: one small file
+     per root that ever had a session, keyed by root, not by a process that dies; one is removed
+     only when its `root` path no longer exists (counted in `pruned`). If `_proc_start(os.getpid())`
      is itself `None`, the lookup is unavailable, nothing is pruned, and the line reads
      `prune skipped: process lookup unavailable` (otherwise every live pointer would be removed).
      A pointer is only a cache of the process relation, and a watermark only of what its process
@@ -405,15 +477,66 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      as a scope keyword (D3 removed `root` only as the pointer's location). 19.0 adds the
      reasons `sweep-failed`, `composite-failed` and `enrichment-unresolved` to the same record,
      scoped the same way, so every STM hook failure reaches D6's surfaces; no new error file is
-     added.
+     added. D9 adds `envelope-unreadable` and `envelope-no-session` (round-8 #nm-4).
+     - **ONE locked writer** (round-8 #nm-2; the user's rule: converge repeated shapes into one
+       function). D3 makes the log machine-wide: every hook and MCP server of every project
+       writes it. bug-109's halving is a read-modify-write with no lock (`read_text` then
+       `write_text`, `stm.py:305-307`), so an append from another process between the read and
+       the truncate is lost and counted nowhere. So every mutation of an `_errors.*` file goes
+       through `stm._errors_locked()`, a context manager holding `fcntl.flock(LOCK_EX)` on
+       `<pointer_dir>/_errors.lock`:
+       - `stm._append_error_rows(rows: list[dict]) -> bool` is the ONLY function that opens
+         `_errors.jsonl` for writing. Under one hold it checks the size, and when it is over
+         `_ERRORS_MAX_BYTES` it writes the kept half plus the `errors-truncated` row (D6) to
+         `_errors.jsonl.tmp` and `os.replace`s it, then appends `rows` (one `write()` each).
+         `record_pointer_error` builds its row and calls it; the migration (D6) calls it with the
+         legacy rows and does its idempotence check inside the same hold; nothing else writes
+         the file.
+       - The watermark files (`_errors.seen.<pid>`, `_errors.seen.root.<h>`) are written by tmp +
+         `os.replace` inside a hold (D6 "Claimed under the lock").
+       - A failure to take the lock or to write is returned as `False` and, at every call site
+         that has a stderr, printed once; the input hook's existing stderr line (`cli.py:1985`
+         path) covers its rows.
+       - **Bypass check:** an AST test lists every string constant in `src/refmatrix/` that
+         contains `_errors.` and every `open(` / `write_text(` / `os.replace(` call whose path
+         argument derives from one, and requires each to sit inside the allow-listed `stm.py`
+         functions (`_errors_locked`, `_append_error_rows`, `read_pointer_errors`, the watermark
+         read/advance, the migration, D7's prune), so a second writer fails the suite.
+   - **D9 ONE hook-envelope reader** (round-8 #nm-4; the user's rule). Hook stdin envelopes are
+     parsed in three places today, each with its own silent fallback: `cli.focus_hook`
+     (`cli.py:1963-1966`, `except Exception: return`, then `d.get("session_id") or
+     stm_mod.session_id()` at `:1967`), `cli._resolve_query` (`cli.py:8969-9013`, the `--stdin-json`
+     path of `memory recall` and `context`) and `scan.read_stdin_prompt` (`scan.py:1036-1054`,
+     prompt only, the session dropped). One function replaces the envelope parse in all three
+     and in the two new readers (`focus hook --event session-start`, D4; `focus summarize
+     --envelope-stdin`, 19.0 R5): `stm.read_hook_envelope(raw: str, *, root: Path, hook: str,
+     require_session: bool) -> dict | None`. It returns the envelope dict; on unparseable or
+     non-object input it prints ONE stderr line and records `envelope-unreadable` (D8-scoped:
+     `root`, `owner` from `owner_lookup()`), returning `None`; with `require_session=True` and a
+     falsy `session_id` (missing, `None` or `""`) it prints one stderr line and records
+     `envelope-no-session`, returning `None`. The STM hooks (`focus hook` every event, session-start,
+     `summarize --envelope-stdin`) pass `require_session=True`; scan-prompt and `memory recall
+     --stdin-json` pass `False` (their session falls through R9's resolver with
+     `envelope=<the dict>`, `purpose="event"`, which records its own miss) and read `prompt`
+     from the returned dict, keeping today's raw-prose fallback for non-JSON stdin OUTSIDE the
+     envelope path (`_resolve_query`'s "looked like JSON but isn't" branch is unchanged). Because
+     the generated focus entries end `2>/dev/null || true` (`hooks.py:131-147`), the row, not the
+     stderr line, is the durable channel there; the suffix itself is not changed by this task
+     (bug-118 in `workflow/bug_registry.md` is converging the generator's hook-command wrapper;
+     any change to that suffix goes through bug-118's ONE renderer, not a second one here).
+     **Bypass check:** an AST test lists every `json.load(sys.stdin)` / `json.loads(<stdin
+     read>)` in `cli.py` and `scan.py` and requires none outside `read_hook_envelope`'s callers'
+     single call. The grep-guard (`search_hooks.py:309`) and the enqueue one-liner
+     (`hooks.py:111`) parse PreToolUse / PostToolUse envelopes for a tool command, not a session,
+     and are out of this task's scope (stated in [[#rev-round-8]]).
    - `stm.latest_session` (`stm.py:392` at HEAD) is never called outside the `read` tail (bsd
      #b-1; bug-100's shape). When nothing resolves, rows and events carry `session: null`.
 
    **The pre-prompt state, race-free** (re-review #s-3; round-3 #b-2; round-4 #b-1, #m-1). The
    recall and scan hooks run IN PARALLEL with `focus hook --event input` (`hooks.py` registers
    them as separate UserPromptSubmit entries, and Claude Code runs an event's hooks in parallel,
-   as the generator's own comment at `hooks.py:263-265` records). The input hook CHANGES the
-   state they read, in two places (re-read at HEAD `3d3c798` in round 6: `cli.py:1974-2004`;
+   as the generator's own comment at `hooks.py:265-266` records). The input hook CHANGES the
+   state they read, in two places (re-read at HEAD `3d3c798` in round 6, unchanged at `23ad703`: `cli.py:1974-2004`;
    `stm.Stm.record` `stm.py:511-544`, `inflight_sweep` `:596-618`):
    - `inflight_sweep()` runs first (`cli.py:1998-2001`): every call parked longer than 90 s is
      `record`ed as an `abandoned` tool event, appended to the ring AND ingested into
@@ -508,7 +631,7 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
     tuple; a consumer that keys on a field not in it fails its own test (19.2 AC-16).
 
     **R10a The `kind` map** (round-3 #s-1). Read at HEAD: the catalog's entity `kind` column takes
-    `code`, `doc`, `concept` and `memory` (`cli.py:10272` `_DEFAULT_EMBED_KINDS`;
+    `code`, `doc`, `concept` and `memory` (`cli.py:10317` `_DEFAULT_EMBED_KINDS`;
     `partitions.py:27`); `function` / `class` are `is_a` concepts (`kind/function`), not entity
     kinds; session cards and subjects are memory rows told apart by `mtype`. One function,
     `telemetry.event_kind(entity_kind: str, mtype: str | None) -> str | None`, the only place the
@@ -568,7 +691,7 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
     memory or partition retrieval of its own; memory text reaches its payload, and `rmx context`'s,
     only through `context.py:230-243`, where an anchor that resolved to a concept/doc/code node
     gets the same-named memory's body attached via `store.find_memory_any_partition`
-    (`store.py:2504`). So:
+    (`store.py:2578`). So:
     - each code / doc / concept item is a `delivered` event with its R10a kind and the partition of
       the row it was read from (the store's project partition for code and docs);
     - an attached memory body is ONE more `delivered` event: `kind` = R10a's map of that memory
@@ -584,13 +707,13 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
     helix confound cannot recur), and only when the named item is in the session's DELIVERED SET
     (below). `ref_query_id` = that delivered event's `query_id`; `name`, `kind`, `scope`,
     `partition` are copied from it; `lag_turns` = this call's `turn` minus its `turn`.
-    - **`memory_get_by_name`**: `rmx memory get <name>` (CLI, `cli.py:11326`, on BOTH its verb path
+    - **`memory_get_by_name`**: `rmx memory get <name>` (CLI, `cli.memory_get`, `cli.py:11371`, on BOTH its verb path
       and its replica fall-through) and the MCP `rmx_memory` `get` action (`verbs.memory`,
-      `verbs.py:1102`), when the lookup was by NAME (not by id) and `<name>` equals a delivered
+      `verbs.py:1157`), when the lookup was by NAME (not by id) and `<name>` equals a delivered
       `name` with `kind=memory` and the same `scope` (`--scope global` per 19.1 R6 matches only
       `scope=global`). Recall's internal per-hit read (`_call(root, "memory_get", …)`,
-      `verbs.py:766`) and the daemon op `_op_memory_get` never emit (19 #b-6).
-    - **`context_by_name`**: `verbs.context` (`verbs.py:538`, the MCP route) and the three CLI
+      `verbs.py:813`) and the daemon op `_op_memory_get` never emit (19 #b-6).
+    - **`context_by_name`**: `verbs.context` (`verbs.py:585`, the MCP route) and the three CLI
       context routes of R3, when the call's `ref`, stripped, equals a delivered `name` exactly
       (case-sensitive) AND this context call DELIVERED an item of that same `name` and the same
       `kind` as the delivered event: either its anchor (by R10a's kind), or, for `kind=memory`,
@@ -599,7 +722,7 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
       memory's body attached, IS a use of the memory; a code symbol that shares a memory's name
       and gets no memory body attached is not. One context call emits at most one `used` per
       `(name, kind, scope)`.
-    - **`focus_note`**: `verbs.focus_note` (`verbs.py:908`; the CLI `rmx focus note`, `cli.py:1411`,
+    - **`focus_note`**: `verbs.focus_note` (`verbs.py:956`; the CLI `rmx focus note`, `cli.py:1411`,
       and the MCP `rmx_focus_note` both call it). The MATCHER, exact: the note text is scanned for
       (a) whole-token occurrences of a delivered `name`, where a token boundary is any character
       outside `[A-Za-z0-9_.-]` or the string edge, case-sensitive; and (b) wikilinks
@@ -676,6 +799,16 @@ line counts are unchanged.
 2. **CLI routes.** On a tmp store, `rmx context X` forced down each of the replica, daemon and
    direct routes writes exactly one row with the route's `source`. RED at HEAD for
    `context-daemon` (no row).
+   **2b. A skipped call is a row** (round-8 #nm-5). The sandbox daemon socket path
+   (`daemon.socket_path(<tmp root>)`, `daemon.py:527`) is held by a test-owned unix listener that
+   accepts and never replies (a plain `socket.socket(AF_UNIX)`, not a mock of `src/`). The
+   GENERATED per-prompt recall command, fed a UserPromptSubmit envelope, exits 0 with `[]`, and
+   the store's `query.log` gains exactly one `kind=recall` row with `outcome=skipped_budget`,
+   `budget_s=5` and the envelope's `session`, and `recall-events.jsonl` gains no event for it; the
+   same run against a live sandbox daemon logs `outcome=ok`. `rmx telemetry --agent-usage` over
+   both rows prints `prompt_recall: ok=1 skipped_budget=1 error=0`, and run with no daemon and
+   no listener prints `expired_reads: unavailable (daemon down)`, never `0`. RED at HEAD: no `kind=recall`
+   row is written at all (the failing assertion is the row count).
 3. **Precedence.** `invocation_source()` returns, for the env combinations
    {explicit `hook` + `CLAUDECODE`, `CLAUDECODE` alone, tty alone, none}: `hook`, `agent`,
    `interactive`, `unknown`. RED at HEAD on `CLAUDECODE` alone (returns `unknown`).
@@ -760,15 +893,52 @@ line counts are unchanged.
    `no-owner` row (owner `null`) scoped to X is surfaced by neither run (each prints
    `unowned_in_root=1` for X) and is reported by recall-state in X. A row written with no `root`
    field is counted as `unscoped-row` in both X's and Y's recall-state, never under either's
-   pointer clause.
+   pointer clause. **`ps-failed` sub-leg** (round-8 #nm-1): with `stm._proc_info` monkeypatched in
+   the test to return `None` for ONE helper pid only (registered in
+   `workflow/test_mock_registry.md`), `write_pid_pointer` for that pid writes a `ps-failed` row
+   whose `owner` is that pid and `owner_start` null; P1's SessionStart in X does not print it
+   under its own reasons, counts it in `unowned_in_root`, and does not consume it (a second run
+   counts it again); recall-state in X reports it.
    (viii) **Two clauses** (round-7 #s-2). In X, one `pointer-unresolved` row and one
    `sweep-failed` row: recall-state prints a session-pointer clause counting 1 with the
    "could not be resolved" text, and an STM-hook clause counting `sweep-failed x1` whose text
    contains none of the words `session`, `guessed`, `newest`.
+   (ix) **Ended sessions** (round-8 #ns-2). A helper process P2 (started by the test, with
+   `CLAUDE_PID` = P2 for its own child) writes one `pointer-unresolved` row scoped to X, then
+   exits and is reaped; a second helper P3 stays alive and writes one row scoped to X. P1's
+   generated SessionStart run in X prints `ended_sessions: pointer-unresolved=1` exactly once and
+   does not print P3's row; a second P1 run prints no `ended_sessions` line; recall-state in X
+   still reports all rows (consumption is the SessionStart surface's only). After P3 exits, the
+   next run prints P3's row as `ended_sessions` once. With `stm._proc_info` monkeypatched to
+   return `None` for every pid (in process, as (iv-b)), the run prints `ended_sessions skipped:
+   process lookup unavailable` and the per-root watermark file is unchanged.
+   (x) **One writer, concurrent** (round-8 #nm-2). Two processes each append 2,000 rows through
+   `record_pointer_error` while the file crosses `_ERRORS_MAX_BYTES` at least once: the file's
+   line count plus the sum of every `errors-truncated` row's `dropped` equals 4,000 plus the
+   number of `errors-truncated` rows written (no append lost to a halving), and every line
+   parses.
+   (xi) **Migration claimed once** (round-8 #nm-2). Two SessionStart runs in X started together
+   (a barrier file releases both) over a legacy log of two rows: the global log gains exactly two
+   migrated rows; one run prints `migrated=2`, the other `migrate-claim-lost=1`. With the global
+   store root absent, a run appends nothing, leaves `_errors.migrating.<pid>.jsonl` in place
+   (no `.migrated`), and prints `migration incomplete`; after the root is created, a run started
+   more than 60 s later by the file's mtime (the test sets it with `os.utime`) adopts it and
+   migrates both rows.
+   (xii) **Bypass checks** (round-8 #nm-2, #nm-4; the user's converge rule). AST scans of
+   `src/refmatrix/`: (a) every string constant containing `_errors.` and every file write
+   derived from one sits inside D8's allow-listed `stm.py` functions; (b) the set of functions
+   that call `_proc_start(` equals {`owner_alive`, `write_pid_pointer`, `read_pid_pointer`,
+   `record_pointer_error` (the D8 `owner_start` stamp)}, so a prune or a surfacing path cannot
+   judge liveness on its own; (c) no `json.load(sys.stdin)` / `json.loads(` of a stdin read in `cli.py` or `scan.py`
+   outside `read_hook_envelope`. Each list is a set equality with a list kept in the test.
    RED at post-109 `master` for (i)-(v), (vii) and (viii) (no global location, no SessionStart
    entry, no scope fields, one clause); (vi) is RED (no migration: the legacy rows are read in
    place and the file is not renamed); (ii)'s first assertion is RED (bug-109 resolves the
-   legacy pointer).
+   legacy pointer). (ix)-(xi) are RED (no dead-owner set, no lock, no claim). (xii) is RED on
+   all three: (a) the halving's `write_text` in `record_pointer_error` sits outside any
+   `_errors_locked` (which does not exist); (b) `owner_alive` does not exist, so the function
+   set differs; (c) `cli.focus_hook`, `cli._resolve_query` and `scan.read_stdin_prompt` parse
+   their own envelopes.
 5. **`grep-stdin` cardinality.** `printf 'a\nb\nc\nd\n' | rmx grep -E 'a|b|c'` logs a
    `grep-stdin` row with `cardinality=3`. RED at HEAD (`null`).
 6. **The frozen fixture** (bsd #s-3). A REDACTED copy of this project's `query.log` and `cli.log`
@@ -882,7 +1052,7 @@ line counts are unchanged.
 
    **8d. The multibyte fixture reaches a non-ASCII byte path** (round-3 #b-3, #m-3). Read at
    HEAD: `memory recall --json` prints `json.dumps(rows, indent=2)` with the default
-   `ensure_ascii=True` (`cli.py:12110`, `:12322`), so its payload is ASCII and byte offsets equal
+   `ensure_ascii=True` (`cli.py:12155`, `:12367`, both in `cli.memory_recall`), so its payload is ASCII and byte offsets equal
    character offsets there: a chars-vs-bytes mutation cannot fail on the recall leg until 19.1's
    `--pack` text replaces it (19.1 AC-1 and AC-6 own that leg). The text payload of `scan-prompt`
    (the hook's format) carries raw UTF-8. AC-8d therefore asserts, on the scan-prompt leg:
@@ -985,6 +1155,25 @@ line counts are unchanged.
     - the prune removing pointers when `_proc_start` is unavailable for every pid (AC-4b (iv-b):
       the live pointer is removed);
     - the resolver recording nothing when `owner_lookup()` fails (AC-4's lookup-failed leg);
+    - (round 8) dead-owner rows never surfaced (AC-4b (ix): no `ended_sessions` line);
+    - live other-owner rows surfaced in `ended_sessions` (AC-4b (ix): P3's row prints while P3
+      lives);
+    - the per-root watermark not advanced, or advanced outside the lock (AC-4b (ix): the second
+      run prints the line again; (xi)'s concurrent pair prints it twice);
+    - `ended_sessions` computed when the lookup is unavailable (AC-4b (ix): live rows consumed,
+      the watermark moves);
+    - a row with null `owner_start` matched by its `owner` (AC-4b (vii) `ps-failed` sub-leg: it is
+      printed as P1's or consumed);
+    - the halving outside the lock, or by `write_text` in place (AC-4b (x): the line-count
+      identity fails);
+    - the migration without the claim rename (AC-4b (xi): four rows migrated);
+    - the legacy file renamed before every append returned `True` (AC-4b (xi): the absent-root
+      run renames it and the rows are lost);
+    - a second writer of `_errors.jsonl`, a private liveness check, or a private envelope parse
+      (AC-4b (xii));
+    - a budget skip writing no row, or `outcome=ok` (AC-2b);
+    - `expired_reads` printed as 0 when the daemon is down (AC-2b's report run with the daemon
+      stopped prints `unavailable`);
     - `ts` stamped in local time or without `Z` (AC-7's event g is folded; 19.2 AC-6's two-zone
       replay differs);
     - `grep-stdin` cardinality left unset (AC-5);
@@ -1047,16 +1236,17 @@ line counts are unchanged.
 |---|---|
 | `src/refmatrix/mcp.py` | set `RMX_INVOCATION_SOURCE=mcp` in `serve_stdio` before the first request and drop `CLAUDE_CODE_SESSION_ID` from its env (R1). `verbs._LONG_LIVED = True` and the per-call resolution are bug-109's, existing |
 | `src/refmatrix/verbs.py` (resolver) | EXTEND bug-109's `resolve_session_source`: `SessionResolution`, `envelope=`, required `purpose=` and its three tails, `SessionUnresolved` (D1, D2); bug-109's `resolve_session` str wrapper is removed, its callers pass `purpose` |
-| `src/refmatrix/stm.py` | EXTEND bug-109's pointer code: `pointer_dir()` and the user-level location, no legacy read (D3); the `hook` field (D4); `pointer-stale` / `pointer-unreadable` rows (D5); `record_pointer_error(reason, *, root, owner, **fields)` writing scoped rows (`root`, `owner`, `owner_start`) and, when it halves, the `errors-truncated` row with `dropped_by_root` / `unseen_dropped` (D8, D6); `read_pointer_errors(*, root=None, owner=None, since)` over the new location only, scope-filtered, `unscoped-row` counted (D6); the per-owner `t`-keyed watermark `_errors.seen.<pid>` (D6); the one-shot migration of a root's legacy log and pointers (D6, D3); the prune by `_proc_start` of pointers and watermark files (D7). NEW: `snapshot_pre_prompt`, `pre_prompt_state` + `PrePromptState`, `PRE_PROMPT_SKEW_S`; input events gain `prompt_sha` and `t` (R9). Built here or by 19.0, whichever merges first |
-| `src/refmatrix/hooks.py`, `cli.py` (`focus hook`, `focus topics`) | the generated SessionStart entry `rmx focus hook --event session-start` (matcher `startup\|resume\|clear\|compact`, stderr kept) that writes the pointer, migrates its root's legacy files once, surfaces its owner's rows and prunes (D3, D4, D6, D7); the input branch reordered: pointer write (existing) → `snapshot_pre_prompt` → sweep (failure recorded) → input record (R9); `focus topics` (`cli.py:1234`) prints the scoped clauses as its last line, also with no topics (D6; round-7 #m-4 (b)) |
+| `src/refmatrix/stm.py` | EXTEND bug-109's pointer code: `pointer_dir()` and the user-level location, no legacy read (D3); the `hook` field (D4); `pointer-stale` / `pointer-unreadable` rows (D5); `record_pointer_error(reason, *, root, owner, **fields)` writing scoped rows (`root`, `owner`, `owner_start`) and, when it halves, the `errors-truncated` row with `dropped_by_root` / `unseen_dropped` (D8, D6); `read_pointer_errors(*, root=None, owner=None, since)` over the new location only, scope-filtered, `unscoped-row` counted (D6); the per-owner `t`-keyed watermark `_errors.seen.<pid>` (D6); the one-shot migration of a root's legacy log and pointers (D6, D3); the prune of pointers and watermark files through `owner_alive` (D7). Round 8: `owner_alive` (D6); the per-root watermark `_errors.seen.root.<h>` and the `ended_sessions` set (D6, #ns-2); unowned = null `owner` or null `owner_start` (D6, #nm-1); `_errors_locked` + `_append_error_rows`, the ONE locked writer, tmp + `os.replace` halving, the migration's claim-by-rename and append-before-rename order (D8, D6, #nm-2); `read_hook_envelope` (D9, #nm-4). NEW: `snapshot_pre_prompt`, `pre_prompt_state` + `PrePromptState`, `PRE_PROMPT_SKEW_S`; input events gain `prompt_sha` and `t` (R9). Built here or by 19.0, whichever merges first |
+| `src/refmatrix/hooks.py`, `cli.py` (`focus hook`, `focus topics`) | the generated SessionStart entry `rmx focus hook --event session-start` (matcher `startup\|resume\|clear\|compact`, stderr kept) that writes the pointer, migrates its root's legacy files once, surfaces its owner's rows AND its root's ended-session rows and prunes (D3, D4, D6, D7); every envelope parse through `stm.read_hook_envelope` (D9: `focus hook`, `_resolve_query`, `scan.read_stdin_prompt`); the input branch reordered: pointer write (existing) → `snapshot_pre_prompt` → sweep (failure recorded) → input record (R9); `focus topics` (`cli.py:1234`) prints the scoped clauses as its last line, also with no topics (D6; round-7 #m-4 (b)) |
 | `src/refmatrix/handoff.py` (`session_pointer_anomalies`, `:508-529`) | EXTENDED, not paralleled (round-6 #b-1): reads `<pointer_dir>/_errors.jsonl` through `read_pointer_errors(root=root, …)`, no legacy read (round-7 #s-3); prints the session-pointer clause, the STM-hook clause and the truncation clause apart (round-7 #s-2); its text names the new path (D6) |
 | `tests/test_mcp_session_pointer.py` | EXTENDED, not paralleled (bug-109's file): AC-1b, AC-4, AC-4b |
-| `src/refmatrix/store.py` | `find_memory_any_partition` (`:2504`) returns the chosen row's partition name (R11) |
-| `src/refmatrix/telemetry.py` | `agent` source + precedence; `session`/`query_id`/`cwd`/`root` on rows; `row_provenance` + `is_test_artifact_row` (R5); the `--agent-usage` report; `RECALL_EVENT_FIELDS_V1`; `emit_recall_events` (the ONE writer, R11); `delivered_in_session` (R12's lookup); `event_kind` (R10a); `recall_channel` (R11); `turn` from `pre_prompt_state` (R9) |
-| `src/refmatrix/verbs.py` | caller-side row + events for `context` (`:538`) and `memory_recall` (MCP route); `used` emission in `context`, `memory` `get` action (`:1102`) and `focus_note` (`:908`) |
-| `src/refmatrix/cli.py` | `context-daemon` row; `grep-stdin` cardinality; `--agent-usage`/`--until`/`--by-session`; events on the CLI context and recall routes; `used` on `memory get`'s replica fall-through (`:11326`) and the three CLI context routes |
+| `src/refmatrix/store.py` | `find_memory_any_partition` (`:2578`) returns the chosen row's partition name (R11) |
+| `src/refmatrix/telemetry.py` | `CALL_OUTCOMES`; `outcome` + `budget_s` on recall and context rows, a skipped call still writing its row (R3, R4; #nm-5); `agent` source + precedence; `session`/`query_id`/`cwd`/`root` on rows; `row_provenance` + `is_test_artifact_row` (R5); the `--agent-usage` report; `RECALL_EVENT_FIELDS_V1`; `emit_recall_events` (the ONE writer, R11); `delivered_in_session` (R12's lookup); `event_kind` (R10a); `recall_channel` (R11); `turn` from `pre_prompt_state` (R9) |
+| `src/refmatrix/verbs.py` | caller-side row + events for `context` (`:585`) and `memory_recall` (MCP route); `used` emission in `context`, `memory` `get` action (`:1157`) and `focus_note` (`:956`) |
+| `src/refmatrix/cli.py` | `context-daemon` row; `grep-stdin` cardinality; `--agent-usage`/`--until`/`--by-session`; events on the CLI context and recall routes; `used` on `memory get`'s replica fall-through (`cli.memory_get`, `:11371`) and the three CLI context routes |
 | `src/refmatrix/scan.py` | `scan_prompt` emitter with payload byte spans, `partition`, and raw phase inputs |
 | `src/refmatrix/cli.py` (`memory recall`), `hooks.py` | the single recall-channel emission site (`prompt_recall`, `session_start`, `precompact`, `recall`); the JSON renderer returns byte spans; the generated hook lines carry the envelope through |
+| `src/refmatrix/daemon.py` (`_op_stats`, `:3816`) | one key, `expired_reads` (bug-116's counter, `_note_expired_read` `:1362-1368`), read by R7 (#nm-5) |
 | `tests/fixtures/agent_usage/` | the redacted frozen `query.log`/`cli.log` cut |
 
 ## Test strategy {#test-strategy}
@@ -1068,7 +1258,7 @@ line counts are unchanged.
   log line counts above are unchanged; no test writes the log this task measures (bsd #s-7).
 - **RED first** (`feedback_red_test_must_fail_at_head`), against post-bug-109 `master` (round-4
   #s-1), not against the pre-bug-109 tree: AC-1, AC-2 (`context-daemon`), AC-3 (`CLAUDECODE`),
-  AC-1b (its four RED legs; its input-hook leg is a GREEN regression guard), AC-4, AC-4b, AC-5,
+  AC-1b (its four RED legs; its input-hook leg is a GREEN regression guard), AC-2b, AC-4, AC-4b, AC-5,
   AC-7, AC-8, AC-8b, AC-8c, AC-8d, AC-10, AC-11a-f and AC-12 are run before any `src/` change
   and the FAILING ASSERTION is recorded, by name. A test that fails only because a click choice
   (`--event session-start`) or a keyword (`purpose=`) does not exist yet is RED for the wrong
@@ -1080,8 +1270,10 @@ line counts are unchanged.
 - **No daemon from the STM hooks** (round-7 #m-1). The SessionStart writer (D4, D6, D7) is file
   work only, like the input hook's additions (R3, R8 write caller-side). Its leg of the
   "0 daemon connects" check is [[task-19.0-stm-cluster-hygiene#acceptance]] AC-6f, which runs the
-  generated `session-start`, `input`, `tool-pre` and `tool` entries against listening sockets at
-  every daemon and hub path; whichever of 19.0 / 21.1 merges first builds that test.
+  generated `focus hook --event <e>` commands (`session-start`, `input`, `tool-pre`, `tool`) with
+  their `2>/dev/null || true` suffix stripped, under a connect logger and with listeners at every
+  daemon (project and global store) and hub path (round-8 #nm-3); whichever of 19.0 / 21.1
+  merges first builds that test.
 
 ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
 
@@ -1226,3 +1418,29 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r7-331b414]]
 | round-7 #m-4 (a) (AC-4b (iii-b) asked for rows the halving deleted) | AC-4b (iii-b) (surviving rows once; `dropped` = removed lines; `unseen_dropped` = removed owned rows above the watermark; surfaced + `unseen_dropped` = N) |
 | round-7 #m-4 (b) (`focus show` takes a required `LINE`) | D6 (`rmx focus topics` prints the clauses, also with no topics); AC-4b (v); [[#files-to-modify]] |
 | round-7 #s-1, #m-2, #m-3, #m-4 (c), (d); d9ax, d9ay | not 21.1 items: [[task-19.6-phased-context-and-topic-cache#rev-round-7]], [[task-19.0-stm-cluster-hygiene#rev-round-7]], [[task-19.2-memory-usage-record#rev-round-7]] |
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan19-21-spec-rereview-r8-23ad703]] (the 21.1 side of #ns-2, #nm-1, #nm-2, #nm-4,
+#nm-5, #nm-7). No user decision was needed: #ns-2's fix restores the round-6 intent inside the
+round-7 scope rule. Code facts read at write time at HEAD `23ad703`: `stm.py:197`, `:294-315`
+(the unlocked halving `:305-307`), `:346-375` (`ps-failed` `:359-369`), `:378-389`;
+`cli.py:1963-1967`, `:1974-2004`, `:5097-5098`, `:5149`, `:5228`, `:6199`, `:7518`,
+`:8969-9013`, `:10317`, `:10763`, `:11371`, `:12004-12025`, `:12155`, `:12367`;
+`scan.py:1036-1054`; `hooks.py:111`, `:131-147`, `:209-297`, `:265-266`, `:277-278`, `:313`;
+`search_hooks.py:309`; `daemon.py:527`, `:629-670`, `:1362-1368`, `:3816`, `:4714`, `:6067`,
+`:6108`; `verbs.py:585`, `:813`, `:956`, `:1157`; `store.py:2578`; bug-118's registry row
+(open). Older revision tables keep the lines of their own HEAD.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r8-23ad703]]
+rel: related-to -> [[bug_registry]]
+
+| finding / decision | answered at |
+|---|---|
+| round-8 #ns-2 (per-owner SessionStart surfacing reaches only the same Claude process; an ended session's rows, its last Stop's `write` miss included, surface on no SessionStart) | [[#req-session]] D6 (two sets: the owner's rows, and the root's DEAD-owner rows since a per-root watermark `_errors.seen.root.<sha1(root)[:12]>`, printed as `ended_sessions:`; live other owners untouched; `owner_alive` the one predicate; lookup-unavailable guard; claimed under the lock); D7 (per-root watermark files kept, removed only when the root is gone); AC-4b (ix); mutations (dead-owner rows never surfaced; live other-owner rows surfaced; watermark not advanced or advanced outside the lock; computed with the lookup unavailable); [[#files-to-modify]] |
+| round-8 #nm-1 (`ps-failed` rows carry `owner` but a null `owner_start`, so no surface matches them) | D6 "Unowned rows" (null `owner` OR null `owner_start` = unowned, `unowned_in_root`, never consumed, not in `ended_sessions`); AC-4b (vii) `ps-failed` sub-leg; mutation |
+| round-8 #nm-2 (machine-wide log; halving, appends and migration unlocked; no append-before-rename order) | D8 "ONE locked writer" (`_errors_locked` flock on `_errors.lock`; `_append_error_rows` the only writer; halving by tmp + `os.replace` under the hold; watermarks advanced under it; AST bypass check); D6 migration (claim by rename to `_errors.migrating.<pid>.jsonl`, loser counted; crash adoption after 60 s; rename to `.migrated` only after every append returned `True`; idempotence check inside the hold); AC-4b (x), (xi), (xii)(a); mutations |
+| round-8 #nm-4 (21.1 side: envelope parsing; the user's converge rule) | D9 `stm.read_hook_envelope` (one parser for `focus hook`, `_resolve_query`, `scan.read_stdin_prompt` and the two new readers; `envelope-unreadable` / `envelope-no-session` rows; falsy session; the `2>/dev/null \|\| true` suffix left to bug-118's one renderer); AC-4b (xii)(c). The 19.0 hook leg: [[task-19.0-stm-cluster-hygiene#rev-round-8]] |
+| round-8 #nm-5 (a budget skip is invisible in telemetry; the daemon's own drop unreconciled) | R3 (a skipped call writes its row); R4 (`outcome` ∈ `CALL_OUTCOMES` = ok / skipped_budget / error, `budget_s`, on recall and context rows; one vocabulary shared with 21.3); R7 (outcomes per channel; `expired_reads` from `_op_stats`, `unavailable` when the daemon is down); AC-2b; mutations; [[#files-to-modify]] (`telemetry.py`, `daemon.py`). Consumed by [[task-19.5-measure-delivery#rev-round-8]]; 21.3's clause: [[task-21.3-indexed-symbol-nudge#rev-round-8]] |
+| round-8 #nm-7 (cites drifted; four already wrong at r7) | one cite-refresh pass, symbol + line read at `23ad703`: [[#why]] (`daemon.py:4714`, `verbs.py:585`, `cli.py:5149`, `:5097-5098`, `:5228`, `:6199`); R3 (`cli.py:10763`, `search_dense_cmd`); R6 (`:6199`); R7 (`:7518`); R9 (`hooks.py:265-266`); R10a (`cli.py:10317`); R11 (`store.py:2578`); R12 (`cli.memory_get` `:11371`, `verbs.py:1157`, `:813`, `:585`, `:956`); AC-8d (`cli.py:12155`, `:12367`); [[#files-to-modify]] |
+| user rule: converge repeated shapes; flag other duplicates | D6 `owner_alive`; D8 `_append_error_rows`; D9 `read_hook_envelope`; R4 `CALL_OUTCOMES`; each with an AST or test bypass check (AC-4b (xii), AC-2b). Flagged, NOT converged here (out of scope): the PreToolUse/PostToolUse envelope parses in `search_hooks.py:309` (grep guard, plan 16's) and the enqueue one-liner `hooks.py:111` (a `python3 -c` string, not module code); the generated focus entries' `2>/dev/null \|\| true` suffix (bug-118's renderer) |

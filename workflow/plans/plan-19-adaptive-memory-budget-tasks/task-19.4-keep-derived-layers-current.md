@@ -7,6 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
+  updated: 2026-10-15
 ---
 
 # Task 19.4: keep the derived memory layers current {#root}
@@ -45,11 +46,17 @@ rel: specified-by -> [[bsd-plan19-spec-review-3104a81]]
    - No second stamp file and no save-state fallback: 17.2's `maintain.json` holds the only
      stamps.
    - A hub-callable daemon op `memory_compile` PLANS and applies (today only
-     `memory_compile_apply` is a daemon op, `daemon.py:5180`, registered at `:6251`; planning
+     `memory_compile_apply` is a daemon op, `_op_memory_compile_apply`, `daemon.py:5265`, registered in `OPS` at `:6336`; planning
      runs CLI-side). It is a verb too (verb-parity test).
    - The hub calls it with `retries=0`, and the op is single-flight per store: a second call while
      one runs returns `already_running`, so a timed-out call is never re-sent onto a running
-     compile ([[feedback_daemon_call_retries_multiply_timeouts]]).
+     compile ([[feedback_daemon_call_retries_multiply_timeouts]]). Since 0.78.2 (bug-116)
+     `daemon.call` never re-sends after a post-send TIMEOUT (`daemon.call`, `daemon.py:658-661`:
+     the `sent` check breaks out), so on the timeout path `retries=0` changes nothing; it is kept
+     as defence because it additionally stops a connect-timeout retry and a re-send after a
+     post-send `ConnectionResetError` / `JSONDecodeError`, which that loop still retries
+     (`daemon.py:664-670`; round-8 #nm-6). The single-flight guard, not `retries`, is what keeps a
+     second compile from starting.
 2. **R2 Index on write.** The ingest-gmd memory bridge, after a batch that added or changed memory
    files, regenerates `MEMORY.md` through `memory_index.write`, the function save-state calls.
    That covers the SessionStart detached bridge (`ingest_gmd_start`).
@@ -59,7 +66,7 @@ rel: specified-by -> [[bsd-plan19-spec-review-3104a81]]
      global store) skips regeneration and reports the skip.
    - Inside the daemon the render's subjects, members and scores are read from the WRITER store
      (`d._st()` under `d._store_lock`, bound to the memory partition) at the end of the ingest
-     job, after its last memory write: `_run_ingest_gmd_body` (`daemon.py:3450`), which both the
+     job, after its last memory write: `_run_ingest_gmd_body` (`daemon.py:3535`), which both the
      synchronous `_op_ingest_gmd` and the detached `_op_ingest_gmd_start` run (19.3 R5; round-6
      #s-3), never from the replica, the in-memory mirror, `search.cached_replica` or
      `Store(read_only=True)`: each lags the write by the snapshot debounce, and the last two are
@@ -69,7 +76,7 @@ rel: specified-by -> [[bsd-plan19-spec-review-3104a81]]
    `MEMORY.md` for that store's memory root (R2's resolution) IN THE SAME OP, reading subjects,
    members and scores from `d._st()` inside the apply's own `with d._store_lock,
    d._st().with_partition(…)` block (the block `_op_memory_compile_apply` holds today,
-   `daemon.py:5191`) and rendering after it (19.3 R5; round-6 #s-3). So the index names exactly
+   `daemon.py:5276`) and rendering after it (19.3 R5; round-6 #s-3). So the index names exactly
    the subjects the apply wrote, with no wait on the snapshot tick, and subject lines are never
    stale until the next memory write. The round-5 wording ("the render reads the replica") was
    false by construction: the replica is regenerated after the op returns.
@@ -151,7 +158,10 @@ hand run's `run_id` arms it (17.2 `#r7-unarmed`). Per 17.2 R2, the op accepts `d
    - the bridge not regenerating the index (AC-1);
    - the step not registered (AC-2);
    - the step registered with `requires_arming=False` (AC-2: day 1 applies, `MEMORY.md` changes);
-   - `retries` left at the default (AC-2's single-flight check);
+   - (WITHDRAWN round 8, #nm-6: "`retries` left at the default (AC-2's single-flight check)" is
+     an equivalent mutant since 0.78.2: `daemon.call` never re-sends after a post-send timeout,
+     and AC-2 never exercises a reset after send) the single-flight guard removed (AC-2: the
+     second call starts a second compile instead of returning `already_running`);
    - compile deleting a stale subject (AC-4);
    - a stale subject visible in recall (AC-4);
    - slugs by cluster order (AC-5);
@@ -168,7 +178,7 @@ hand run's `run_id` arms it (17.2 `#r7-unarmed`). Per 17.2 R2, the op accepts `d
 | `src/refmatrix/ingest_gmd.py` | regenerate the index after a memory batch (R2) |
 | `src/refmatrix/consolidate.py` | stale marking (R5), stable unlabeled slugs (R6) |
 | `src/refmatrix/daemon.py`, `verbs.py` | the `memory_compile` (plan + apply) op and verb, single-flight; `dry_run` / `invoked_by` / `status=True` and its `runs.jsonl` line (17.2 R2); index regeneration after apply in the same op, reading the writer store inside the apply's `_store_lock` block (R3; 19.3 R5) |
-| `src/refmatrix/ingest_gmd.py` / `daemon.py` (`_run_ingest_gmd_body`, `:3450`, run by `_op_ingest_gmd` `:3566` and `_op_ingest_gmd_start` `:3585`) | the bridge's index regeneration at the end of the ingest job reads the writer store under `_store_lock`, after its last write (R2; 19.3 R5) |
+| `src/refmatrix/ingest_gmd.py` / `daemon.py` (`_run_ingest_gmd_body`, `:3535`, run by `_op_ingest_gmd` `:3651` and `_op_ingest_gmd_start` `:3670`) | the bridge's index regeneration at the end of the ingest job reads the writer store under `_store_lock`, after its last write (R2; 19.3 R5) |
 | `src/refmatrix/hub.py` / plan-17's tick | the compile step registered, `retries=0` |
 
 ## Test strategy {#test-strategy}
@@ -223,3 +233,19 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r6-0e77da3]]
 |---|---|
 | round-6 #s-3 (R2 / R3's in-daemon render reads the stale replica; "never stale" false; bug-112) | R2 (writer store under `_store_lock`, same op, after the bridge's last write); R3 (same op as the apply, inside its `_store_lock` block, render after; the round-5 wording withdrawn); AC-1, AC-2 (day 2), AC-3 (no sleep or retry, `RMX_SNAPSHOT_DEBOUNCE_MS=60000`); mutation (render through `cached_replica` / the mirror / `Store(read_only=True)`); [[#files-to-modify]]. The rule itself: [[task-19.3-subject-tiered-index#rev-round-6]] |
 | round-6 #m-1 (citations stale since the merge) | [[#why]] (`cli.py:12696-12740`); R1 (`daemon.py:5180`, `:6251`) |
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan19-21-spec-rereview-r8-23ad703]] #nm-6 and #nm-7 (the 19.4 side). Code facts
+read at write time at HEAD `23ad703`: `daemon.py:622-670` (`call`; the post-send timeout break
+`:658-661`, the reset/decode retry `:664-670`), `:3535` (`_run_ingest_gmd_body`), `:3651`
+(`_op_ingest_gmd`), `:3670` (`_op_ingest_gmd_start`), `:5265` (`_op_memory_compile_apply`, its
+`with d._store_lock` at `:5276`), `:6336` (its `OPS` entry). Older revision tables keep the lines
+of their own HEAD.
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r8-23ad703]]
+
+| finding / decision | answered at |
+|---|---|
+| round-8 #nm-6 (the "`retries` left at the default" mutation is equivalent since 0.78.2) | R1 (the 0.78.2 behaviour stated; `retries=0` kept as defence for connect-timeout and post-send reset/decode retries; single-flight named as the guard); mutation replaced by "single-flight guard removed" (AC-2) |
+| round-8 #nm-7 (`daemon.py:5180`, `:6251`, `:3450`, `:5191`, `:3566`, `:3585`) | R1 (`:5265`, `:6336`); R2 (`:3535`); R3 (`:5276`); [[#files-to-modify]] (`:3535`, `:3651`, `:3670`) |
