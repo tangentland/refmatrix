@@ -225,6 +225,48 @@ def test_floor_does_not_block_growth_or_force(tmp_path, monkeypatch):
     r = d._compact_factslog_if_needed(force=False)
     assert r["compacted"] is True
     assert r["reclaimed"] > 0
-    assert r["floor"] is None, "productive compaction must clear the floor"
+    # bug-115 follow-up: productive but still over the gate re-arms the pause at the NEW
+    # size (it used to clear it, and the next tick rewrote the log again).
+    assert r["new_size"] >= max(1, minimal // 2)
+    assert r["floor"] == int(r["new_size"] * d._FACTSLOG_REGROW)
+    # A PRODUCTIVE compaction that lands UNDER the gate is what clears the floor.
+    with s.with_partition("p"):
+        for j in range(i):
+            s.upsert_entity(kind="code", name="churn.py", path=f"/churn.py#{j}")
+    monkeypatch.setenv("RMX_FACTSLOG_MAX_BYTES", str(r["new_size"] * 10))
+    r2 = d._compact_factslog_if_needed(force=True)
+    assert r2["reclaimed"] >= r2["old_size"] * d._FACTSLOG_MIN_RECLAIM, "control: productive"
+    assert r2["compacted"] is True and r2["floor"] is None
     assert d._read_factslog_floor() == 0
+    s.close()
+
+
+@duckdb_only
+def test_productive_compaction_still_over_threshold_does_not_refire_next_tick(tmp_path, monkeypatch):
+    """bug-115 follow-up, live 2026-10-15: refmatrix compacted 294 -> 264 MB at 00:11 and
+    323 -> 277 MB at 00:43 — each PRODUCTIVE (>= 10% reclaimed), so no floor was set, but
+    each left the log above the 256 MiB gate, so every 30-minute tick rewrote the whole log
+    under `_store_lock`. The 00:43 hold made a Stop-hook promote miss its 5 s reply."""
+    d, s = _make_daemon(tmp_path)
+    with s.with_partition("p"):
+        for i in range(50):
+            s.upsert_entity(kind="code", name=f"m{i}.py", path=f"/m{i}.py")
+    s.dump_catalog_to_log()
+    minimal = s.log_path.stat().st_size
+    # Bloat the log with re-ingest duplicates so a compaction reclaims well over 10%.
+    with s.with_partition("p"):
+        for _ in range(3):
+            for i in range(50):
+                s.upsert_entity(kind="code", name=f"m{i}.py", path=f"/m{i}.py",
+                                meta={"rev": _})
+    monkeypatch.setenv("RMX_FACTSLOG_MAX_BYTES", str(max(1, minimal // 2)))
+    first = d._compact_factslog_if_needed(force=False)
+    assert first["compacted"] is True
+    assert first["reclaimed"] >= first["old_size"] * d._FACTSLOG_MIN_RECLAIM, \
+        "control: this compaction must be the PRODUCTIVE kind"
+    assert first["new_size"] > max(1, minimal // 2), "control: still over the gate"
+    second = d._compact_factslog_if_needed(force=False)
+    assert second.get("skipped") == "under-threshold", (
+        f"a productive compaction left the log over the gate and the next tick "
+        f"rewrote it again: {second}")
     s.close()
