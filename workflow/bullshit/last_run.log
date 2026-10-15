@@ -40,3 +40,6 @@
 2026-10-15T04:06:25-0700 commit=0dc2da3 verdict=DIRTY findings=7 (0B/0S/7M) report=2026-10-15-0406-plan23-17-r10-spec-diffcheck-approval-ready-holder-ident-ambiguous-and-handoff-mutation-vacuous-0dc2da3.md
 2026-10-15T04:08:30-0700 commit=451b505 verdict=DIRTY findings=7 (0B/3S/4M) report=2026-10-15-0408-plan16-22-r10-spec-diffcheck-vacuum-drop-keys-on-the-wrong-evidence-451b505.md
 2026-10-15T04:10:12-0700 commit=34ac5cd verdict=DIRTY findings=3 (0B/1S/2M) report=2026-10-15-0410-task18-1-measurement-r2-34ac5cd.md
+2026-10-15T04:18:47-0700 commit=cb7bf5b verdict=DIRTY findings=10 (3B/4S/3M) report=2026-10-15-0417-plan18-r2-spec-diffcheck-sentinel-rollback-wal-follows-the-move-and-18-2-ast-unsatisfiable-cb7bf5b.md
+2026-10-15T04:21:36-0700 commit=954f601 verdict=DIRTY findings=7 (0B/1S/6M) report=2026-10-15-0421-plan19-21-r11-spec-diffcheck-ac2b-listener-script-misses-the-partition-probe-954f601.md
+2026-10-15T04:24:00-0700 commit=d8188ee verdict=DIRTY findings=4 (0B/2S/2M) report=2026-10-15-0424-plan16-22-r11-spec-diffcheck-c-match-closes-one-of-four-reattach-shapes-and-rename-fold-unproven-d8188ee.md
