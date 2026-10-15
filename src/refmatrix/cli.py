@@ -7643,7 +7643,7 @@ def compact(keep_backup: bool):
     refreshed by the daemon on its next rotation cycle."""
     from refmatrix import daemon as daemon_mod
     import shutil
-    import duckdb as _duckdb
+    from refmatrix.backend import open_duckdb
 
     root = _root()
     # Determine the current writer slot. The daemon's `active` marker
@@ -7682,12 +7682,12 @@ def compact(keep_backup: bool):
     try:
         before = src.stat().st_size
         console.print(f"[dim]exporting (was {before / 1024 / 1024:.1f} MB)…[/]")
-        con = _duckdb.connect(str(src))
+        con = open_duckdb(src)
         con.execute(f"EXPORT DATABASE '{export_dir}' (FORMAT PARQUET)")
         con.close()
 
         console.print("[dim]importing into fresh catalog…[/]")
-        ncon = _duckdb.connect(str(new_path))
+        ncon = open_duckdb(new_path)
         ncon.execute(f"IMPORT DATABASE '{export_dir}'")
         ncon.execute("CHECKPOINT")
         ncon.close()

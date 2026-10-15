@@ -31,6 +31,23 @@ from click.testing import CliRunner
 from refmatrix import cli as cli_mod
 
 
+@pytest.fixture(autouse=True)
+def _tmp_store(tmp_path_factory, monkeypatch):
+    """bug-122: `tmp_path` sits under no store, so `cli._root()` fell back to
+    `~/.refmatrix` — with a real HOME every test here ran `rmx grep` against
+    the LIVE global store (with an isolated HOME they failed `no refmatrix
+    at …`). Each test gets its own initialised tmp store and HOME."""
+    from refmatrix.store import Store
+    base = tmp_path_factory.mktemp("store")
+    root = base / ".refmatrix"
+    Store(root).init()
+    home = base / "home"
+    home.mkdir()
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("RMX_HOME", str(home / ".refmatrix"))
+
+
 @pytest.fixture
 def no_daemon(monkeypatch):
     monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
