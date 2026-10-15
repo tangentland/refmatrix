@@ -120,14 +120,29 @@ def test_merge_slots_merges_store_built_slots(tmp_path, dry_run):
         assert vp == {"shared.md": "pb", "a-only.md": "pa", "b-only.md": "pb"}
 
 
-def test_a_failed_merge_closes_every_connection(tmp_path):
+# Two failure points: the source probe (a table B lacks) and the build on the
+# target (a column B has that the Store schema does not — BY NAME refuses it).
+_BREAK_B = {
+    "probe": "DROP TABLE saved_queries",
+    "build": "ALTER TABLE entities ADD COLUMN not_in_the_store_schema INTEGER",
+}
+
+
+def _break(path: Path, where: str) -> None:
+    con = duckdb.connect(str(path))
+    con.execute(_BREAK_B[where])
+    con.close()
+
+
+@pytest.mark.parametrize("where", sorted(_BREAK_B))
+def test_a_failed_merge_closes_every_connection(tmp_path, where):
     from refmatrix.replica_merge import merge_slots
     a, b = _slots(tmp_path)
-    con = duckdb.connect(str(b))
-    con.execute("DROP TABLE saved_queries")       # B cannot be merged
-    con.close()
+    _break(b, where)                               # B cannot be merged
+    target = tmp_path / "merged.duckdb"
     with pytest.raises(duckdb.Error) as ei:
-        merge_slots(a, b, tmp_path / "merged.duckdb")
+        merge_slots(a, b, target)
+    assert not target.exists(), "a half-built merge target was left behind"
     # `ei` keeps the traceback (and merge_slots' frame) alive, as the
     # daemon's `except ... as exc` does while it reopens the writer. Nothing
     # may still hold slot A: a leftover ATTACH makes this writer open fail
@@ -188,12 +203,11 @@ def test_op_dry_run_succeeds_builds_nothing_and_keeps_the_writer(tmp_path):
         d.store.close()
 
 
-def test_op_failed_merge_leaves_the_writer_reopened_and_locked(tmp_path):
+@pytest.mark.parametrize("where", sorted(_BREAK_B))
+def test_op_failed_merge_leaves_the_writer_reopened_and_locked(tmp_path, where):
     from refmatrix import daemon as dm
     d, root = _daemon(tmp_path)
-    con = duckdb.connect(str(root / "catalog.B.duckdb"))
-    con.execute("DROP TABLE saved_queries")
-    con.close()
+    _break(root / "catalog.B.duckdb", where)
     try:
         r = dm._op_replica_merge(d, {"dry_run": False})
         assert r.get("ok") is False, r
