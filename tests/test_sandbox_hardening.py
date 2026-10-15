@@ -267,6 +267,34 @@ def test_swallows(monkeypatch):
     assert not left, f"the session hook left records behind: {left}"
 
 
+@pytest.mark.sandbox_probe
+def test_an_inner_tests_violation_is_charged_to_the_outer_test(monkeypatch):
+    """s2: a refusal recorded under an in-process inner test's id (no report hook of its own
+    pops it) is returned to the OUTER test by `take_record`, which the conftest's report hook
+    calls -- an unmarked outer test then fails. Simulated with the two ids the conftest and
+    pytest set: the outer test (`set_outer_test`) and `PYTEST_CURRENT_TEST`."""
+    _require_sandbox()
+    me = rmx_sandbox._STATE["outer"]
+    target = _absent_live_name()
+    rmx_sandbox.set_outer_test("outer_fake.py::test_o")
+    try:
+        monkeypatch.setenv("PYTEST_CURRENT_TEST", "inner_fake.py::test_i (call)")
+        try:
+            open(target)
+        except rmx_sandbox.SandboxViolation:
+            pass
+        monkeypatch.undo()
+        own, inner = rmx_sandbox.take_record("outer_fake.py::test_o")
+    finally:
+        rmx_sandbox.set_outer_test(me)
+        left = {k: rmx_sandbox.RECORD.pop(k) for k in ("inner_fake.py::test_i",)
+                if k in rmx_sandbox.RECORD}
+        rmx_sandbox.RECORD_OUTER.pop("inner_fake.py::test_i", None)
+    assert own == [] and len(inner) == 1, (own, inner, left)
+    assert inner[0].startswith("inner_fake.py::test_i: open ") and target in inner[0], inner
+    assert not left, f"take_record left the inner record behind: {left}"
+
+
 # ---- s3: R4 propagation reaches a child whose env names only PATH -------------------------
 
 
