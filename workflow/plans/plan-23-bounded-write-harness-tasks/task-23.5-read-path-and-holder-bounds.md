@@ -18,18 +18,27 @@ metadata:
 > ([[plan-23-bounded-write-harness#scope-d9az]]). Revision round 8 (2026-10-15): first review
 > [[bsd-plan23-17-spec-rereview-r8-23ad703]] (nb23-r8-1, ns23-r8-1..3, nm23-r8-1..4) answered
 > under d9bn ([[plan-review-2026-10-14#t12-approvals]], PROVISIONAL until its ch-bsd loop is
-> clean); see [[#rev-round-8]].
+> clean); see [[#rev-round-8]]. Revision round 9 (2026-10-15): diff check
+> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d]] (nb23-r9-1/2, ns23-r9-1/2, nm23-r9-1..3); see
+> [[#rev-round-9]].
 > Depends on: 23.0 (sandbox), 23.2 (recorder), 23.1 (`_FairLock` owner, R1.6 item 1; the learn
 > drain, R9; `_compact_factslog_locked`, R3.7). **bug-115/116 (0.78.2) merged to `master`:
 > SATISFIED** (`607d759`, `1c86d9c` and bug-117's `391ffeb` are ancestors of `master` `b381b6d`;
-> HEAD `23ad703`).
+> HEAD `23ad703`). **bug-112 FIXED and reachable from `master`: OPEN, a HARD gate (nb23-r9-2;
+> the same gate as 18.3's header).** The fix is in flight on branch `bugs-112-113-118`
+> (`7c38c46`, `0fed0d5`; clone `/Volumes/littlebig/refmatrix-bugs112-118`), which is NOT an
+> ancestor of `master` at `b84fd8d`. 23.5 is not implemented before `git merge-base
+> --is-ancestor <fix sha> master` succeeds; that command's output is recorded in the
+> implementation summary.
 > Runs in parallel with 23.3 after 23.1. Blocks nothing in Wave 1; 17.3's hold bound
 > ([[task-17.3-fleet-rollout#r2-measure]]) cites the same coupling.
-> Cross-plan interface: the `_store_lock` + DuckDB maintenance + file swap shape is converged
-> into ONE helper by plan-18 (d9bf): `Daemon._catalog_hold` over `catalog_maint.CatalogHold`,
-> built by 18.2 (its R11, "the shared catalog-hold helper") and extended with the swap half by
-> 18.3 (its R8, `#r8-one-helper`). This task adds no second mechanism for that shape ([[#r4]],
-> [[#r5]]).
+> **Stands alone (ns23-r9-1).** 23.5 is Wave 1; plan-18 is Wave 4. Nothing here waits on 18.2 or
+> 18.3: compaction's tail hold is a plain `with self._store_lock:` under
+> `Daemon._inflight("compact")`, and `pin_to` lives on `_snapshot_catalog`. When plan-18 later
+> converges the `_store_lock` + DuckDB maintenance + file swap shape into `Daemon._catalog_hold`
+> (d9bf; 18.2 R11, 18.3 R8), the obligations it must carry for this task's guarantees are listed
+> in [[#cross-plan-18]] for the plan-18 reviser. This task adds no second mechanism for that
+> shape ([[#r4]], [[#r5]]).
 
 rel: part-of -> [[plan-23-bounded-write-harness]]
 rel: implements -> [[plan-review-2026-10-14#t12-approvals]]
@@ -42,8 +51,10 @@ rel: depends-on -> [[task-23.1-queue-and-drain]]
 rel: related-to -> [[task-23.3-sync-between-file-yield]]
 rel: related-to -> [[task-17.3-fleet-rollout]]
 rel: related-to -> [[plan-18-duckdb-store-maintenance]]
-rel: depends-on -> [[task-18.2-catalog-maintain-step]]
+rel: related-to -> [[task-18.2-catalog-maintain-step]]
 rel: related-to -> [[task-18.3-offline-reclaim#r8-one-helper]]
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d]]
+rel: depends-on -> [[bug_registry]] {bug: "bug-112", gate: "fixed and reachable from master"}
 rel: related-to -> [[feedback_causal_story_before_evidence]]
 rel: related-to -> [[project_store_decays_behind_green_health]]
 
@@ -151,6 +162,49 @@ HEAD line. Round 7's `77ac38f` numbers are superseded.
   returns an already-open database for a second in-process connect to the same path, so a
   private reader that opens `catalog.read.duckdb` while another in-process connection to that
   path is still open can get the replaced, unlinked snapshot.
+  - **The bound is a CHAIN, not the oldest reader (nb23-r9-2, measured by the r9 diff check on
+    DuckDB 1.5.2).** A opens; the file is replaced; B opens while A is open and reads A's
+    database; A closes; the file is replaced again; C opens while B is open and still reads
+    A's database; only a reader opened after EVERY overlapping reader closed reads the new
+    file. Under hook load (4 cli workers) such a chain can last indefinitely.
+  - **The fix in flight** (branch `bugs-112-113-118`, `7c38c46` + `0fed0d5`, not on `master`):
+    `backend.open_duckdb(path, *, read_only)` is THE file-backed DuckDB opener; a read-only open
+    is a private `:memory:` instance that `ATTACH`es the file `READ_ONLY` and `USE`s it, so each
+    open reads the file at the path NOW; `release_duckdb(con)` closes one. The backend's
+    `DuckDBConnection` opens through it, so `Store(…, read_only=True)` (what
+    `_open_read_store` builds for a private read) does too. Its bypass check is
+    `tests/test_bug112_duckdb_reopen.py::test_every_file_backed_duckdb_connect_goes_through_open_duckdb`
+    (an AST walk of `src/` that fails on any file-backed `duckdb.connect` outside
+    `open_duckdb`).
+- **Dirty bitmap fragments never reach the snapshot by themselves (nb23-r9-1).** `Store.link`
+  (`store.py:4622`) sets the bit in the in-memory fragment cache and marks the linkage in
+  `_dirty_fragments`; it flushes nothing. `_op_link` (`daemon.py:6156`) runs it under
+  `_store_lock` with no transaction, then `_request_snapshot()`. Fragments reach the catalog
+  only at a transaction's COMMIT (`store.py:4562-4566`), the periodic flush (`_periodic_flush`,
+  every `RMX_DAEMON_FLUSH_S` = 30 s; it requests no snapshot) and close. `_snapshot_catalog`
+  (`:2700-2721`) runs `CHECKPOINT` + a file copy with no `flush_fragments()`. So the snapshot
+  taken one debounce after a `link` holds the `entity_links` row but NOT the bit, and with no
+  further write no later snapshot carries it. `QueryEngine` reads only bitmaps
+  (`query.py:258-337`, `load_bitmap`): fresh today because `_op_query` reads the writer's
+  cache; after R1 moves it to the read path, stale with no bound. `Store.stats` counts
+  `entity_links` rows, which is why round 8's AC-7 could not see it. `Store.has_dirty_fragments()`
+  (`store.py:1093`) and `Store.flush_fragments()` (`:4194`) exist.
+- **Refusals are untyped on the wire (ns23-r9-2).** `Daemon._handle` answers a refusal as
+  `{"ok": false, "error": <message>}`; `verbs._call` (`verbs.py:207-221`) raises plain
+  `VerbError` for any `ok: false`. `VerbBusyError` (`verbs.py:37`) exists for "holding the
+  writer lock" and must never be read as absent, but only `require_daemon` and the transport
+  `except` raise it today.
+- **`_inflight_ops` has two readers and five test sites (nm23-r9-1).** `_final_flush`
+  (`:1520-1541`) and `_drain_pool`'s timeout log (`:1578-1579`, `for op, _t0 in
+  self._inflight_ops.values()`), plus `tests/test_inflight_registry.py:67, :91, :169-170, :196`
+  and `tests/test_daemon_shutdown_drain.py:148`, which build or unpack 2-tuples;
+  `test_inflight_registry.py:151` asserts `_inflight_ops == {}` after an op.
+- **The lock is passed as a value (nm23-r9-2).** `_periodic_flush(self.store, self._store_lock,
+  self._log)` (`:232-238`) takes it as `lock` and does `with lock:`; a spelling-based rule never
+  sees that hold.
+- **The heartbeat constants are read at import (nm23-r9-3 c).** `HEARTBEAT_INTERVAL_S` (`:63`)
+  and `HEARTBEAT_STALE_S` (`:66`) are module constants; the heartbeat thread re-reads
+  `RMX_HEARTBEAT_S` at start (`:1331`).
 - **The heartbeat** (`Daemon._start_heartbeat`, `:1323-1358`): each tick submits a no-op to the
   cli pool and touches the file when it completes; since 0.78.2 every cli-pool completion also
   touches it (`fut.add_done_callback(self._heartbeat_touch)` in `Daemon._handle`).
@@ -207,11 +261,18 @@ maintenance holds (17.1 / 17.3), plan-18's catalog maintenance and its swap (18.
       `writer busy: <holder> holding _store_lock for <s>s; not run` built from R4's holder.
       `private=None` resolves to `op not in MIRROR_OPS` for the current op ([[#r1-mirror]];
       the op name comes from R2's worker-thread context). `Daemon._handle` treats `WriterBusy`
-      like `DeadlineExceeded`: `{"ok": false, "error": <message>}`, no `op … raised` line, and
-      it never reaches `_fast_exit_if_invalidated`. The two refusals share ONE rate-limited
-      counter and log path: `_note_expired_read` becomes `_note_refused(reason, op, detail)`
-      (`reason` = `deadline` or `writer-busy`), one function, not a second one beside it.
+      like `DeadlineExceeded`: `{"ok": false, "error": <message>, "code": <code>}`, no
+      `op … raised` line, and it never reaches `_fast_exit_if_invalidated`. The two refusals
+      share ONE rate-limited counter, log path and response builder: `_note_expired_read`
+      becomes `_note_refused(reason, op, detail)` (`reason` = `deadline` or `writer-busy`), and
+      it returns the response dict, so the `code` is set in one place, not at each raise site.
       {#r1-helper}
+      - **The refusal is typed on the wire (ns23-r9-2).** `code` is `"writer_busy"` for
+        `WriterBusy` and `"deadline"` for `DeadlineExceeded`. `verbs._call` raises
+        `VerbBusyError(<error>)` when `r.get("code")` is one of them (one frozenset,
+        `verbs.BUSY_CODES`, read by `_call` only), and plain `VerbError` otherwise, so MCP
+        tools and hooks retry or report a busy writer and never string-match the message or
+        treat it as absent. {#r1-typed-refusal}
    2. **`_read_with_fallback`'s `writer_wait_s` becomes a REQUIRED keyword** (no default). The
       three bg-pool callers (`_op_top_concepts`, `_op_memory_facets`, `_op_memory_brief`) pass
       `writer_wait_s=None` explicitly; on the bg pool an unbounded wait parks no cli worker. A
@@ -256,11 +317,34 @@ maintenance holds (17.1 / 17.3), plan-18's catalog maintenance and its swap (18.
       the set is EMPTY, so no op reaches the mirror on a guess. `context`, `memory_recall` and
       `ann_search` are private regardless (they run long inside `fn` by design). {#r1-mirror}
    8. **Freshness.** Mirror and snapshot reads are at most `RMX_SNAPSHOT_DEBOUNCE_MS` behind the
-      writer plus one refresh, the contract `memory_get` serves today. **Known exception,
-      bug-112 (nm23-r8-3):** a private read that opens `catalog.read.duckdb` while another
-      in-process connection to that path is still open gets that connection's database, so
-      its freshness is bounded by the oldest overlapping private reader, not by the debounce.
-      AC-7 pins both halves. {#r1-freshness}
+      writer plus one refresh, the contract `memory_get` serves today, for relational rows AND
+      bitmaps alike. Two requirements make that true, R1.9 (the snapshot carries the dirty
+      bits) and R1.10 (each private open reads the file at the path now). There is no known
+      exception: round 8's bug-112 exception is withdrawn (nb23-r9-2), and bug-112's fix is a
+      hard dependency ([[#root]] header). AC-7 checks both. {#r1-freshness}
+   9. **The ONE snapshot path flushes dirty fragments inside its hold (nb23-r9-1).**
+      `_snapshot_catalog`, inside its `_store_lock` hold and BEFORE `CHECKPOINT`, runs
+      `if self.store.has_dirty_fragments(): self.store.flush_fragments()`. It runs under the
+      lock, so 23.1 R1.6's lock-presence check holds. A flush error is handled like a
+      `CHECKPOINT` error: one `snapshot flush failed: <exc>` line and
+      `{"error": "flush", "detail": …}`, no copy, never a snapshot that silently lacks bits.
+      This is the only snapshot path: the bg tick, `_request_snapshot()`, `_op_snapshot`
+      (R1.4) and compaction's hold 1 (R5.1, `pin_to`) all go through `_snapshot_catalog`, and
+      no second CHECKPOINT-and-copy is added. R7's AST test asserts that `_snapshot_catalog`'s
+      `with self._store_lock:` body calls `flush_fragments` before the `CHECKPOINT` execute,
+      and that no function other than `_snapshot_catalog` assigns or `os.replace`s onto
+      `_snapshot_file()` (the other `_copy_out_of_process` call, the rotation bootstrap's
+      slot copy at `:2930`, targets a writer slot, not the snapshot). When plan-18 ports the snapshot onto `CatalogHold.snapshot()`, that
+      body carries the same line ([[#cross-plan-18]] item 4). {#r1-snapshot-flush}
+   10. **Every private reader opens through ONE opener, `backend.open_duckdb` (nb23-r9-2).**
+       `_read_with_fallback(private=True)` and the snapshot-file fallback open
+       `catalog.read.duckdb` through `Store(…, read_only=True)`, whose backend opens through
+       bug-112's `backend.open_duckdb(path, read_only=True)` (a private `:memory:` instance
+       that `ATTACH`es the file `READ_ONLY`), so each open reads the file at the path NOW,
+       whatever other reader is open. This task adds no opener of its own and no second
+       bypass check: bug-112's AST test (`test_every_file_backed_duckdb_connect_goes_through_open_duckdb`)
+       is THE check, and AC-7's mutation (a bare `duckdb.connect(path, read_only=True)` in the
+       private open) must FAIL both it and AC-7's chain case. {#r1-opener}
 2. **R2 The one cli op that needs the WRITER waits a bounded time and says so (ns23-r8-3; d9bn
    ruling 4).** {#r2}
    - **The writes leave the cli pool.** `partition_add` and `partition_rename` are removed from
@@ -285,31 +369,47 @@ maintenance holds (17.1 / 17.3), plan-18's catalog maintenance and its swap (18.
    its "never fail a read" rule: an enqueue error is logged and the read still answers. {#r3}
 4. **R4 Every long hold names its holder, from the EXISTING `_inflight_ops` registry
    (nm23-r8-2).** {#r4}
-   - **One registry.** `_inflight_ops` stays the one record of who is running. Its value grows
-     from `(op, t0)` to `(op, t0, ident)`: the dispatcher still creates the entry with
+   - **One registry.** `_inflight_ops` stays the one record of who is running. Its value
+     becomes a `NamedTuple` `InflightEntry(op, t0, ident, kind)` (nm23-r9-1), read by
+     attribute everywhere, never unpacked: `kind` is `"op"` for a dispatched request and
+     `"tick"` for a tick or thread. The dispatcher still creates an op's entry with
      `ident = None`, and R2's worker-side wrapper sets `ident = threading.get_ident()` under
      `_inflight_lock` when the handler starts (the worker, not the dispatcher, is the thread
      that takes the lock). Ticks and threads that take `_store_lock` outside an op register an
-     entry through one context manager, `Daemon._inflight(name)`, which the dispatcher path
-     uses too: `learn`, `compact`, `snapshot`, `flush`, `watch`, `sync`. `_final_flush`'s
-     reader is updated to the 3-field value, and its "nothing tracked — … check the watcher or a
-     background tick" branch now names ticks as well. No second registry is added.
+     entry (`kind="tick"`) through one context manager, `Daemon._inflight(name)`, which the
+     dispatcher path uses too: `learn`, `compact`, `snapshot`, `flush`, `watch`, `sync`. BOTH
+     readers move to the named value: `_final_flush` (`:1520-1541`; its "nothing tracked — …
+     check the watcher or a background tick" branch now names ticks as well) and
+     `_drain_pool`'s timeout log (`:1578-1579`, which unpacks 2-tuples today and would raise
+     `ValueError` mid-shutdown). The tests that build or unpack the 2-tuple
+     (`tests/test_inflight_registry.py:67, :91, :169-170, :196`;
+     `tests/test_daemon_shutdown_drain.py:148`) move to `InflightEntry`, and
+     `test_inflight_registry.py:151`'s `_inflight_ops == {}` filters to `kind == "op"` (a
+     snapshot tick entering `Daemon._inflight` after the op's write would otherwise make it
+     flaky). No second registry is added.
    - **The lock side.** 23.1's `_FairLock` owner field gains `_owner_since` (monotonic, set
      with `_owner` under `_mu`), and `_FairLock.holder() -> (ident, since) | None` reads both
      under `_mu`, without taking the lock. 23.2's `HoldRecorder` gets one explicit
      pass-through, `holder()`, in `tests/lockhold.py` (the same pattern as 23.1's
      `held_by_current_thread()`; 23.2's approved spec is not reopened).
+     - **No hand-off window (nm23-r9-3 a).** 23.1's waiter sets `_owner` after `ev.wait`
+       returns, outside `_mu`, so between `_pass_or_release_locked` clearing the owner and the
+       waiter setting it, `holder()` would read `_held=True, _owner=None`. Instead `_waiters`
+       holds `(ev, ident)` pairs, and `_pass_or_release_locked` sets `_owner, _owner_since` to
+       the chosen waiter's ident under `_mu` before it sets `ev`; the woken waiter does not
+       write `_owner`. `holder()` is therefore never `(None, …)` while `_held` is true. This
+       amends 23.1 R1.6 item 1's owner write (one site, in `_FairLock`).
    - **The name.** `writer_holder` = the `_inflight_ops` entry whose `ident` equals the owner's
      ident: `{op, held_s}`; an owner with no entry reports `{op: "untracked thread <name>",
      held_s}`, never null. `stats(include_health=True)` reports it, and R1's / R2's
      `WriterBusy` message uses it.
    - **The alarm.** At release, a hold longer than `RMX_HOLD_ALARM_S` (default 10 s) logs one
      `rmxd.log` line `lock hold: <op> <s>s`.
-   - **Cross-plan interface (d9bf).** plan-18's `Daemon._catalog_hold` (18.2 R11; 18.3 R8)
-     registers its holder through `Daemon._inflight(<step name>)`, so R4 names it like any
-     tick, and R4's `lock hold:` alarm fires in `_FairLock`'s release for every holder, the
-     helper's included; the helper's own hold ring is its measurement ledger, not a second
-     alarm or holder registry. This task specifies no lock mechanism of its own for it.
+   - **Cross-plan interface (d9bf; ns23-r9-1).** R4's `lock hold:` alarm fires in
+     `_FairLock`'s release for EVERY holder, so a later holder needs only to register its name
+     through `Daemon._inflight(<label>)` to be named. plan-18's `Daemon._catalog_hold` does not
+     exist when 23.5 lands; what it must do to keep this guarantee is [[#cross-plan-18]] items
+     1 and 2. This task specifies no lock mechanism of its own for it.
 5. **R5 Compaction reuses the snapshot's hold; the dump runs off the lock (nm23-r8-1).** The
    periodic compaction and the `compact_factslog` op (`_compact_factslog_if_needed`, forced and
    size-gated) become ONE existing hold, an unlocked dump, and one short tail hold: {#r5}
@@ -340,17 +440,21 @@ maintenance holds (17.1 / 17.3), plan-18's catalog maintenance and its swap (18.
    - **The L0 invariant.** Every `facts.log` append happens under `_store_lock` (23.1 writes
      events after `COMMIT` inside the hold), so `L0` read inside the snapshot's hold is the
      log position of the snapshot's state.
-   - **Cross-plan interface (d9bf).** `_snapshot_catalog`'s hold is the `_store_lock` +
-     DuckDB maintenance (`CHECKPOINT`) + file swap shape that plan-18 converges into
-     `Daemon._catalog_hold` (18.2 R11 ports the snapshot tick onto it; 18.3 R8 adds the swap
-     half). This task adds only the `pin_to` capture to that existing hold: on the helper,
-     `pin_to` (record `L0` inside the hold, hard-link before `_snapshot_lock` releases) is part
-     of the snapshot port's contract. Hold 2 (append, rename, offset reset) is the same
-     hold-and-swap shape: it goes through `_catalog_hold` when 18.2 is merged before 23.5 is
-     implemented; otherwise it is today's plain `with self._store_lock:` under
-     `Daemon._inflight("compact")`, and 18.2/18.3's port list gains the compaction site (18.3's
-     Q-C already recommends compaction on the helper). No second hold-and-swap mechanism is
+   - **Stands alone; plan-18 carries the port (d9bf; ns23-r9-1).** `_snapshot_catalog`'s hold
+     is the `_store_lock` + DuckDB maintenance (`CHECKPOINT`) + file swap shape that plan-18
+     later converges into `Daemon._catalog_hold`. This task adds only the dirty-fragment flush
+     (R1.9) and the `pin_to` capture to that existing hold, both on `_snapshot_catalog`. Hold 2
+     (append, rename, offset reset) is a plain `with self._store_lock:` under
+     `Daemon._inflight("compact")`, unconditionally; there is no "when 18.2 is merged first"
+     branch. Moving the snapshot and hold 2 onto the helper is plan-18's port, with the
+     obligations in [[#cross-plan-18]] items 3-5. No second hold-and-swap mechanism is
      specified here.
+   - **Refusals are counted, never silent across ticks (nm23-r9-3 d).** One catalog row whose
+     `updated_at` lies past every tail event's `ts` (an import, a clock step back) would refuse
+     every compaction while the tail is non-empty, which under load is always. The daemon
+     counts CONSECUTIVE `ts-order` refusals (reset by a successful compaction) and reports
+     `factslog_compaction_refused: <n>` in `stats(include_health)`; the hub shows it as a hot
+     row when `n >= 1`. A refusal never retries in a loop: the next attempt is the next tick.
    - 23.1's BOOT check (before the socket binds, no cli pool yet) keeps
      `_compact_factslog_locked()` in one hold (23.1 R3.7); this task changes only the paths
      that run while clients are served.
@@ -361,27 +465,78 @@ maintenance holds (17.1 / 17.3), plan-18's catalog maintenance and its swap (18.
    `HEARTBEAT_STALE_S − 2 × HEARTBEAT_INTERVAL_S` (50 s at the defaults, the same margin as
    [[task-17.3-fleet-rollout#r2-measure]]): it clamps to that value and logs
    `RMX_CLI_WRITER_WAIT_S=<v> clamped to <c>s (heartbeat stale window)`. {#r6}
+   - **One reader of the inputs (nm23-r9-3 c).** The clamp and the heartbeat thread read
+     `RMX_HEARTBEAT_S`, `RMX_HUB_HEARTBEAT_STALE_S` and `RMX_CLI_WRITER_WAIT_S` through ONE
+     function, `_heartbeat_params() -> (interval_s, stale_s, cli_writer_wait_s)`, called at
+     daemon start (env read at call time, not at import); the module constants
+     `HEARTBEAT_INTERVAL_S` / `HEARTBEAT_STALE_S` stay only as its defaults. AC-8 checks the
+     clamp against the TEST env's values, so a clamp computed from import-time constants
+     fails it.
 7. **R7 The rule is static and follows helpers to a fixpoint (nb23-r8-1).** An AST test over
    `daemon.py` resolves each `CLI_OPS` name through `OPS` to its handler, then follows every
    call to a same-module function and every `d.<m>(` / `self.<m>(` call to a `Daemon` method,
    to a fixpoint (nested lambdas and `def`s included). `_writer_lock` and `_read_with_fallback`
    are checked at the CALL, not entered. Any reachable occurrence of these FAILS:
    - `with <x>._store_lock` or `<x>._store_lock.acquire(` without a `timeout`;
+   - **any reachable call that passes `<x>._store_lock` as an argument** (positional or
+     keyword; `_writer_lock` takes `d`, not the lock, so the bounded path needs no exemption;
+     nm23-r9-2: HEAD's
+     `_periodic_flush(self.store, self._store_lock, self._log)` → `with lock:` is a hold the
+     spelling rule cannot see; 23.1's `bounded.py` front-ends take the lock the same way);
    - `_writer_lock(` without a second argument, or with the literal `None`;
    - `_read_with_fallback(` anywhere except inside `_cli_read`'s body.
    At HEAD the walk flags 24 ops ([[#facts]]); after R1-R3 it flags none. The test also asserts
-   that `_store_health` and `_memory_partition` contain no `_st()` call (R1.6), and that
-   `CLI_OPS` contains none of `snapshot`, `partition_add`, `partition_rename`. {#r7}
+   that `_store_health` and `_memory_partition` contain no `_st()` call (R1.6), that
+   `CLI_OPS` contains none of `snapshot`, `partition_add`, `partition_rename`, and R1.9's
+   flush-before-`CHECKPOINT` order in `_snapshot_catalog`. {#r7}
 8. **R8 Census of every holder and every read path.** One full-suite run with 23.2's recorder
    installed (and R4's alarm at 1 s) lists every `_store_lock` acquisition site in `daemon.py`
    and `store.py` with its holder name and its maximum recorded hold. Each site is assigned to
    the task that bounds it (23.1 harness, 23.3 sync/watch, this task's R2/R5, 17.1, 18.2/18.3)
    or gets a new `bug_registry.md` row. On a copy of the live read snapshot (835 MB) it also
    records, per cli read op, its p99 on the mirror path and on the private path over 200 calls;
-   that table decides `MIRROR_OPS` (R1.7). It records the snapshot's hold (hold 1) and the
+   that table decides `MIRROR_OPS` (R1.7). The same table records, per cli read op, whether
+   it reads BITMAPS (`load_bitmap` reachable from its `fn`) or only relational rows
+   (nb23-r9-1), so each op's freshness AC is chosen by what it reads. It records the
+   snapshot's hold (hold 1, flush included) and the
    compaction's tail hold on that copy. The implementation summary carries all three tables.
    This is a list of HOLD LENGTHS and read latencies; it is unrelated to 23.1 R1.6's
    lock-presence census. {#r8}
+
+## Cross-plan obligations for plan-18 (ns23-r9-1) {#cross-plan-18}
+
+23.5 lands in Wave 1 without plan-18 (Wave 4) and depends on nothing in it. When plan-18's
+`Daemon._catalog_hold` / `catalog_maint.CatalogHold` (18.2 R11, R8; 18.3 R8) absorbs the
+snapshot and the compaction, it must carry these, written into 18.2 / 18.3's own text by the
+plan-18 reviser. This task does not edit plan-18's files; this list is the hand-off.
+
+1. **Register the holder through `Daemon._inflight(<label>)`.** `_catalog_hold` enters
+   `Daemon._inflight(label)` (an `InflightEntry` with `kind="tick"`) for its whole hold, so
+   23.5 R4's `writer_holder` and `WriterBusy` message name it. It keeps no holder registry of
+   its own. (18.2 R11 at `b84fd8d` does not mention `_inflight`.)
+2. **No second hold alarm.** 23.5 R4's `lock hold: <label> <s>s` line, fired in
+   `_FairLock`'s release, is the one alarm for every holder. 18.2 R11's own "one `rmxd.log`
+   line for any hold over D1's 2 s edge" is withdrawn; if plan-18 needs its 2 s edge, it is a
+   per-label threshold on that ONE alarm (a label → seconds map read by the same release
+   path), not a second line. The helper's hold ring stays a measurement ledger.
+3. **`CatalogHold.snapshot()` keeps `pin_to` and L0 inside the body.** With `pin_to`, the
+   live log's size `L0` is read inside the `_store_lock` body after the copy and `os.replace`,
+   and the `os.link` onto `pin_to` is made before `_snapshot_lock` releases (not in an `after`
+   callback that runs after the release); the result carries `log_size` and `pinned`. 18.2
+   R8's "The snapshot's behaviour does not change" names these as part of the behaviour.
+4. **`CatalogHold.snapshot()` flushes dirty fragments before `CHECKPOINT`.** Its body runs
+   `if store.has_dirty_fragments(): store.flush_fragments()` inside the hold, before
+   `CHECKPOINT`, and a flush error returns `{"error": "flush"}` with one log line (23.5
+   R1.9). 23.5 R7's flush-order AST assertion moves to that body with the port.
+5. **18.3 R8 owns the compaction port.** 23.5 R5's hold 2 (append `[L0, EOF)`, ts-order check,
+   `fsync`, rename, offset reset) moves onto `_catalog_hold` in 18.3, which lands later. 18.3
+   R8's "**Not ported** … 23.1 owns it" becomes "ported by 18.3: 23.5 R5's compaction (hold 2)
+   moves onto the helper", and 18.3 Q-C is closed. 23.5 AC-5 (two holds, nothing lost, the
+   ts-order refusal and its counter) stays green after the port.
+{#cross-plan-18-body}
+
+rel: related-to -> [[task-18.2-catalog-maintain-step]]
+rel: related-to -> [[task-18.3-offline-reclaim#r8-one-helper]]
 
 ## Acceptance criteria {#acceptance}
 
@@ -417,16 +572,26 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
      the holder op the test registered;
    - `replica_audit` sent with `deadline_s=0.5` answers `writer busy:` within 1.0 s (the
      remaining deadline, not the 1 s wait, bounds it).
+   - **The refusal is typed through the verb layer (R1.1; ns23-r9-2).** During the hold,
+     `rmx_memory_search` called through the MCP adapter (the `verbs` path, not
+     `daemon.call`) on a partition absent from the snapshot raises `VerbBusyError` (asserted
+     by class, not by message), and the raw response carries `code: "writer_busy"`; the same
+     call with `deadline_s` already past yields `code: "deadline"` and `VerbBusyError`. A spy
+     on `Store.__init__` in the client process records no client-side `Store(` open.
    Mutations, each must FAIL: `replica_audit` on a plain `with d._store_lock:` (no answer within
    1.5 s); `_cli_writer_wait` ignoring `_op_ctx.expires` (the 0.5 s case takes 1 s);
    `partition_add` left in `CLI_OPS` (the AST case, and with 4 concurrent calls the 8-client
-   reads miss 1 s). {#ac-2}
+   reads miss 1 s); `code` dropped from the refusal response (the MCP case gets a plain
+   `VerbError`). {#ac-2}
 3. **The rule is static and transitive (R7).** The AST test passes after R1-R3. Mutations, each
    must FAIL it: `with d._store_lock:` added to `_op_list_linkages`; a new module-level helper
    `_peek(d)` that does `with d._store_lock:` called from `_op_list_linkages` (the transitive
    case a direct-body rule missed); `_writer_lock(d, None)` in `_op_replica_audit`;
    `_read_with_fallback(…)` called directly from `_op_memory_search`; `snapshot` back in
-   `CLI_OPS`; a `d._st()` call added to `_store_health`. {#ac-3}
+   `CLI_OPS`; a `d._st()` call added to `_store_health`; `_periodic_flush(d.store,
+   d._store_lock, d._log)` added to `_op_list_linkages` (the lock passed as an argument,
+   nm23-r9-2); the `flush_fragments` call removed from, or moved after the `CHECKPOINT` in,
+   `_snapshot_catalog` (R1.9). {#ac-3}
 4. **`context` learns without the lock (R3).** With the lock held by a test thread, a `context`
    op whose answer has grep hits answers within 1 s and appends one `learn_queue` line; after
    the release, one tick's drain applies it (the `mentions` link and its evidence rows exist,
@@ -450,7 +615,12 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
    seam appends a tail `link` event whose `ts` is below `T_dump` for an edge the dump holds as
    unlinked: without the check the swap happens and the rebuild disagrees with the catalog;
    with it, the result is `refused: ts-order`, the line is logged and `facts.log` is
-   byte-identical to before). {#ac-5}
+   byte-identical to before).
+   - **Refusals are counted (nm23-r9-3 d).** A catalog row whose `updated_at` is set 1 h in the
+     future, then three compaction attempts with a non-empty tail: each is refused, and
+     `stats(include_health=True)` reports `factslog_compaction_refused: 3`; after the row is
+     corrected, the next compaction succeeds and the counter is 0. Mutation: the counter not
+     incremented FAILS (it reads 0 after three refusals). {#ac-5}
 6. **Holders are named (R4) and health reads the read path (R1.6; ns23-r8-1, nm23-r8-2).**
    With `RMX_HOLD_ALARM_S=0.5`, a test-registered BG-pool op takes a 1 s hold (a cli op that
    took the lock would fail R7): `rmxd.log` has `lock hold: <that op> 1.…s`. During a second
@@ -460,26 +630,52 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
    Mutations, each must FAIL: no op name recorded (`writer_holder.op` is null or "untracked");
    the ident set on the dispatcher thread instead of the worker (`writer_holder.op` is
    "untracked thread rmxd-bg-…"); `_store_health` called inside the outer `stats` `fn` with
-   `stats` in `MIRROR_OPS` (the op hangs on the mirror's non-re-entrant `_use_lock` and misses
-   1 s). {#ac-6}
-7. **Read freshness and `include_stale` (R1.5, R1.8; nm23-r8-3).**
+   `stats` in `MIRROR_OPS`. That last mutation must FAIL, not hang (nm23-r9-3 b;
+   `feedback_mutation_must_fail_not_hang`): the test sets a seam that makes the mirror's
+   `acquire_use()` a BOUNDED acquire (2 s, then it raises `TimeoutError("mirror use-lock")`),
+   so the nested call raises inside the op, `stats` answers an error naming the use-lock, and
+   the case asserts on that answer; no worker stays parked and teardown completes.
+   - **No hand-off window in `holder()` (R4; nm23-r9-3 a).** Two threads contend `_FairLock`
+     2,000 times with hand-offs; a sampler thread calls `holder()` in a tight loop throughout.
+     No sample returns `(None, …)` while `_held` is true. Mutation: the owner set by the woken
+     waiter after `ev.wait` (23.1's original order) FAILS (samples see a null owner).
+   - **Both `_inflight_ops` readers use the new value (nm23-r9-1).** `_drain_pool` times out
+     with one op and one tick in flight: its log line names both and raises nothing; the
+     updated `tests/test_inflight_registry.py` and `tests/test_daemon_shutdown_drain.py` pass.
+     Mutation: `_drain_pool` left unpacking 2-tuples FAILS (`ValueError` in the drain). {#ac-6}
+7. **Read freshness and `include_stale` (R1.5, R1.8-R1.10; nm23-r8-3, nb23-r9-1, nb23-r9-2).**
+   Runs on a fixed bug-112 base (the [[#root]] header gate); no part of it is pinned as an
+   exception.
    - A `link` through a daemon op, then `stats`: the new link count is visible within
      `RMX_SNAPSHOT_DEBOUNCE_MS` + 1 s.
+   - **Bitmap freshness (nb23-r9-1).** With `RMX_DAEMON_FLUSH_S=3600` (no periodic flush in
+     the window) and no other write after it, a `link` op of entity E under
+     `<linkage>:<concept>`, then `query "<linkage>:<concept>"` through the daemon returns E
+     within `RMX_SNAPSHOT_DEBOUNCE_MS` + 1 s; likewise `grep_indexed` returns a hit learned
+     by one `learn` op (its bitmap bit) within the same bound. Mutation: `_snapshot_catalog`
+     without R1.9's flush FAILS (E is absent from the `query` answer after the bound).
    - On a fixture with one tracked file touched after its sync, `stats(include_stale=True)`
      (served off the snapshot) reports the same `stale_files` list as the writer's
      `stale_files()` read by the test under the lock, after one debounce. No branch: the spec
      decided the snapshot; a difference fails the case.
-   - **Private reads across a forced snapshot.** A private reader A is held open inside its
-     `fn` by a seam; a `link` and a forced `snapshot` follow; A is released and closes; then a
-     private read B sees the new link. This half is REQUIRED; if it is RED at implementation
-     time, 23.5 does not close and bug-112 is recorded as its dependency (the design does not
-     change; only the gate moves).
-   - **bug-112, pinned as the known exception.** A private read B' opened while A is still
-     open returns A's database (the pre-link count), asserted with a message naming bug-112.
-     bug-112's fix owns inverting this assertion. {#ac-7}
+   - **Private reads across a forced snapshot, sequential.** A private reader A is held open
+     inside its `fn` by a seam; a `link` and a forced `snapshot` follow; A is released and
+     closes; then a private read B sees the new link.
+   - **Overlapping readers (nb23-r9-2, positive).** A is held open as above; a `link` and a
+     forced `snapshot` follow; a private read B', opened WHILE A is still open, sees the new
+     link.
+   - **The overlapping chain (nb23-r9-2, the measured sequence).** A opens (held); `link` 1 +
+     forced snapshot; B opens while A is open (held) and sees link 1; A closes; `link` 2 +
+     forced snapshot; C opens while B is still open and sees link 2 (the newest file), not
+     B's or A's database.
+   - Mutation: the private open made through a bare `duckdb.connect(path, read_only=True)`
+     instead of `backend.open_duckdb` FAILS twice: the chain case (C reads the pre-link-2
+     count) and bug-112's AST bypass test (R1.10). {#ac-7}
 8. **The coupling bound (R6) and the census (R8).** `RMX_CLI_WRITER_WAIT_S=500` at daemon start
-   logs the clamp line and the effective wait is `HEARTBEAT_STALE_S − 2 × HEARTBEAT_INTERVAL_S`.
-   Mutation: no clamp FAILS. The census (R8) is in the implementation summary with every site
+   logs the clamp line and the effective wait is `stale_s − 2 × interval_s` as returned by
+   `_heartbeat_params()` for the TEST env (`RMX_HUB_HEARTBEAT_STALE_S=3`, `RMX_HEARTBEAT_S=0.2`,
+   so 2.6 s), set after `refmatrix.daemon` is imported. Mutations, each must FAIL: no clamp;
+   a clamp computed from the import-time constants (it yields 50 s; nm23-r9-3 c). The census (R8) is in the implementation summary with every site
    assigned, the snapshot's measured hold and the compaction tail hold among them, and the
    per-op p99 table that justifies each `MIRROR_OPS` member. {#ac-8}
 
@@ -488,8 +684,12 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
 | file | change |
 |---|---|
 | `src/refmatrix/daemon.py` | R1 (`_cli_read`; `WriterBusy`; `_note_expired_read` → `_note_refused`; the 11 read ops, the 10 `_read_with_fallback` sites and `_store_health`'s 2 on `_cli_read`; `writer_wait_s` required; `snapshot` out of `CLI_OPS`; `_op_stats` in three steps; `_store_health` and `_memory_partition` off the writer connection; `MIRROR_OPS`), R2 (`partition_add` / `partition_rename` out of `CLI_OPS`; `CLI_WRITE_OPS = {"stop"}`; the worker-side wrapper and `_op_ctx`; `_cli_writer_wait`; `_cli_writer_lock` in `replica_audit`), R3 (`context` enqueues), R4 (`_inflight_ops` 3-field value; `Daemon._inflight(name)`; `_FairLock._owner_since` + `holder()`; alarm; `writer_holder`), R5 (`_snapshot_catalog(pin_to=)`; two-hold compaction with the ts-order refusal), R6 (clamp) |
+| `src/refmatrix/daemon.py` (round 9) | R1.1 `code` on the refusal from `_note_refused`; R1.9 the flush in `_snapshot_catalog`'s hold; R4 `InflightEntry` read by `_final_flush` AND `_drain_pool`, `_FairLock` hand-off sets the owner under `_mu`; R5 `factslog_compaction_refused` counter in `stats(include_health)`; R6 `_heartbeat_params()` |
+| `src/refmatrix/verbs.py` | `BUSY_CODES`; `_call` raises `VerbBusyError` on a busy `code` (R1.1; ns23-r9-2) |
+| `src/refmatrix/hub.py` | `factslog_compaction_refused >= 1` as a hot row (R5; nm23-r9-3 d) |
 | `src/refmatrix/store.py` | the dump-to-path form of `dump_catalog_to_log` that also returns its largest `ts` (R5.2) |
 | `tests/lockhold.py` | `HoldRecorder.holder()`, one explicit pass-through (R4; nm23-r8-2). 23.2's other surface is unchanged |
+| `tests/test_inflight_registry.py`, `tests/test_daemon_shutdown_drain.py` | 2-tuples → `InflightEntry`; the `== {}` assertion filters `kind == "op"` (R4; nm23-r9-1) |
 | `tests/test_snapshot_tier.py` | `test_op_snapshot_registered_in_ops_and_cli_ops` asserts `snapshot` is NOT in `CLI_OPS` (R1.4) |
 | `tests/` | AC-1..AC-8 and AC-1b in a new `tests/test_read_path_holder_bounds.py`; the transitive AST test (R7) |
 
@@ -539,3 +739,29 @@ rel: derives-from -> [[bsd-plan23-17-spec-rereview-r8-23ad703#nm23-r8-1]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r8-23ad703#nm23-r8-2]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r8-23ad703#nm23-r8-3]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r8-23ad703#nm23-r8-4]]
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+Source: [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d]] (diff check of round 8 at `9dd923c`; HEAD
+`b84fd8d`). The bug-112 fix branch `bugs-112-113-118` (`7c38c46`, `0fed0d5`) was read, not
+run. The round-8 table above is unchanged history; R1.9, R1.10, [[#cross-plan-18]] and the
+new AC bullets are new.
+
+| finding | answered at |
+|---|---|
+| nb23-r9-1 (the snapshot drops dirty bitmap bits; R1.8's freshness false for bitmap reads; AC-7 counted rows) | [[#facts]] (dirty fragments), [[#r1-snapshot-flush]] (flush inside the ONE snapshot path's hold, before `CHECKPOINT`; error not silent; AST order check), [[#r1-freshness]], [[#r7]], [[#r8]] (bitmap-reader column), [[#cross-plan-18]] item 4, [[#ac-7]] (`RMX_DAEMON_FLUSH_S=3600`; `query` and `grep_indexed` within debounce + 1 s; the no-flush mutation), [[#ac-3]] |
+| nb23-r9-2 (the bug-112 gate pinned the bug; the overlapping-reader bound is a chain) | [[#root]] header (bug-112 FIXED and reachable from `master`, a hard gate, as 18.3), [[#facts]] (the chain; `backend.open_duckdb`), [[#r1-freshness]] ("known exception" deleted), [[#r1-opener]] (one opener; bug-112's AST test is the bypass check), [[#ac-7]] (positive overlap, chain case, bare-`duckdb.connect` mutation; the pinned bullet deleted); plan-23 [[plan-23-bounded-write-harness#dependencies]] |
+| ns23-r9-1 (one-sided cross-plan interface; compaction ownership bounced; a Wave 4 `depends-on`) | [[#root]] header (stands alone), `rel:` 18.2 `depends-on` → `related-to`, [[#r4]], [[#r5]] (hold 2 unconditionally a plain hold under `Daemon._inflight("compact")`), [[#cross-plan-18]] (five obligations for the plan-18 reviser) |
+| ns23-r9-2 (`writer busy` untyped on the wire) | [[#facts]], [[#r1-typed-refusal]] (`code: writer_busy` / `deadline` from `_note_refused`; `verbs._call` → `VerbBusyError`), [[#ac-2]] (MCP-path case; the dropped-code mutation), [[#files]] |
+| nm23-r9-1 (`_inflight_ops` 3-field value: a second reader, tests, a flaky `== {}`) | [[#facts]], [[#r4]] (`InflightEntry(op, t0, ident, kind)`; both readers; tests; `kind == "op"` filter), [[#ac-6]], [[#files]] |
+| nm23-r9-2 (R7 recognised the lock by spelling) | [[#facts]], [[#r7]] (a call passing `<x>._store_lock` fails), [[#ac-3]] (`_periodic_flush` mutation) |
+| nm23-r9-3 (a: `holder()` hand-off window; b: AC-6 mutation hangs; c: clamp inputs read at import; d: refusal liveness) | (a) [[#r4]], [[#ac-6]]; (b) [[#ac-6]] (bounded use-lock seam: FAILS, not hangs); (c) [[#r6]] (`_heartbeat_params()`), [[#ac-8]]; (d) [[#r5]] (consecutive-refusal counter, hub hot row), [[#ac-5]] |
+| user rule: converge repeated shapes into one function, with bypass checks that can fail | one snapshot path (R1.9, AST order check), one opener `backend.open_duckdb` (bug-112's AST check), one refusal builder `_note_refused` setting `code`, one `BUSY_CODES` read by `_call`, one `InflightEntry` registry, one heartbeat-params reader, one hold alarm ([[#cross-plan-18]] item 2) |
+
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#nb23-r9-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#nb23-r9-2]]
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#ns23-r9-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#ns23-r9-2]]
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#nm23-r9-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#nm23-r9-2]]
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#nm23-r9-3]]

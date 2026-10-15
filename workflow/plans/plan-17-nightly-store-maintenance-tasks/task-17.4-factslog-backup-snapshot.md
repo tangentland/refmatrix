@@ -17,6 +17,7 @@ metadata:
 > [[bsd-plan23-17-spec-rereview-r3-6091648]]; revision round 3: ns17-r3-3, ns17-r3-4, nm17-r3-6,
 > see [[#rev-round-3]]. Revision round 5: ns17-r4-2, nm17-r4-1, see [[#rev-round-5]]. Revision
 > round 6: ns17-r6-1, see [[#rev-round-6]]. Revision round 7: nm17-r7-1, see [[#rev-round-7]].
+> Revision round 9: ns17-r9-1, ns17-r9-2, nm-x-r9-1, see [[#rev-round-9]].
 > Round 2: [[#rev-round-2]])
 > Depends on: 17.2 (the hub tick and its `maintenance_steps` registry, NOT 23.1's daemon tick
 > registry), 23.0 (sandbox)
@@ -35,6 +36,7 @@ rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#nm17-r4-1]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3#ns17-r6-1]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414#nm17-r7-1]]
 rel: related-to -> [[project_refmatrix_entities_index_crashloop_0914]]
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d]]
 
 ## Why {#why}
 
@@ -174,16 +176,25 @@ once-a-day COPY under `backups/` is what Time Machine backs up. {#why-body}
      `<source>` = `backups/facts.log.daily` (or the live log in (c)), in this order:
      1. **The classification above** (the ping refusal is its first step).
      2. **Rebuilds into a THROWAWAY root:** copies `<source>` to
-        `<mkdtemp>/.refmatrix/facts.log` and runs `rmx rebuild --from-log --yes` there with
-        `REFMATRIX_ROOT=<mkdtemp>` (the command rebuilds whatever store `_store()` resolves, so
-        the env var keeps it off the live root).
+        `<mkdtemp>/.refmatrix/facts.log` CUT AT ITS LAST NEWLINE (R3's rule, the same cut the
+        parse probe applies; ns17-r9-1) and prints `cut <n> torn byte(s)` (`cut 0 torn
+        byte(s)` when the source ends on a newline), then runs `rmx rebuild --from-log --yes
+        --json` there with `REFMATRIX_ROOT=<mkdtemp>` (the command rebuilds whatever store
+        `_store()` resolves, so the env var keeps it off the live root). The rebuild, the fold
+        (step 3) and the install (step 5) all use the CUT copy, never `<source>` itself: a
+        crash mid-append leaves exactly such a torn final line, and that crash is the likeliest
+        way a catalog and a log tail are lost together. The cut is ONE function in the script
+        (`_cut_copy(src, dst) -> torn_bytes`), shared by the parse probe's "up to its last
+        newline" reading, so the probe and the rebuild never disagree on where the log ends.
      3. **Verifies** the throwaway with three checks, ALL required (ns17-r8-1). A restore has
         no source catalog, and raw event counts never equal rebuilt row counts on a real live
         log (a dump plus re-links, unlinks and tombstones), so the check is neither AC-3's
         catalog comparison nor an event count:
-        1. `rmx rebuild --from-log --yes` exits 0 (it prints each counter of
-           `Store.rebuild_index_from_log`'s result as `<key>: <value>`, `cli.py:9797-9800`;
-           the script parses those lines).
+        1. `rmx rebuild --from-log --yes --json` exits 0 and prints
+           `Store.rebuild_index_from_log`'s result dict as ONE JSON object on stdout; the script
+           parses that, never the rich `console.print` lines (`cli.py:9797-9800`), which rich
+           may wrap or mark up (nm-x-r9-1; the r3 "renderer ate the wikilinks" precedent).
+           `--json` is added to `rmx rebuild` by this task ([[#files-to-modify]]).
         2. Its reported `links_unresolved` and `evidence_unresolved` are both 0. Those count a
            legacy event (no `c_kind`) whose concept name is missing or held by more than one
            non-`concept` kind (`edge_records.resolve_legacy_kind` returns `None`;
@@ -196,12 +207,34 @@ once-a-day COPY under `backups/` is what Time Machine backs up. {#why-body}
            non-JSON line, so it does not inherit replay's silent skip of such a line
            (bug-119, `store.py:7936-7940`). It reuses `edge_records` (the one edge-record
            format, bug-117) for the edge key and the legacy kind rule, so only the fold loop is
-           independent, not the event spelling.
+           independent, not the event spelling. It runs on the cut copy (step 2), so a torn
+           final line never reaches it; a non-JSON INTERIOR line still fails it.
+           - **The fold's op set is replay's op set (ns17-r9-2).** The fold dispatches on a
+             module-level `FOLD_OPS: frozenset[str]` (every op it handles, folded into the counts or
+             explicitly ignored for them: `entity`, `tombstone`,
+             `protect`, `noise`, `link`, `unlink`, `evidence`, `track`, `untrack`,
+             `memory_content`, `linkage_type` at HEAD, `store.py:7969-8027`). An event whose
+             `op` is not in `FOLD_OPS` stops verification with `unknown event op <op> at line
+             <N>` (a failed check: in (c) the backup fallback runs, and it fails the same way
+             if the backup carries the op), never a skip. A test reads
+             `Store.rebuild_index_from_log`'s dispatch by AST (every string compared with
+             `op ==` or listed in `op in (…)`) and asserts that set equals `FOLD_OPS`, so a
+             replay op added later (d9bl's `evidence_remove`, `evidence_repoint`,
+             `evidence_orphan_drop`, `learned_provenance`, `learned_provenance_move`, plans
+             16/22, Wave 1) fails CI at the commit that adds it, not a restore.
         `links_skipped_dead` and `evidence_skipped_dead` (an edge whose end was tombstoned or
         never had an `entity` event, `store.py:8141-8143`, `:8152-8154`) are PRINTED, never a
         failure: they are normal in every live log. The script prints all three checks' values;
         a failed check stops here with the live root unchanged (in (c), it triggers the backup
         fallback instead).
+     - **bug-119's scope, as this script relies on it (nm-x-r9-1).** `Store.apply_log_delta` is
+       RETIRED by d9bu (it has no production caller; 16.6 deletes it), so the rebuild is the ONE
+       replay path, and bug-119's fix applies to `rebuild_index_from_log` only. That fix must
+       distinguish a torn FINAL line (no trailing newline: a crash mid-append; reported as
+       `tail_torn_bytes`, exit 0) from a corrupt INTERIOR line (counted, exit non-zero), or
+       every rebuild after a crash fails. This script does not wait on that fix: its cut copy
+       has no torn tail, and its strict fold fails on an interior line. The bug-119 registry
+       row itself is not edited by this task.
      4. **Moves aside, never deletes,** anything already in the live root that step 5 would
         replace: `facts.log`, `catalog.A.duckdb`, `catalog.B.duckdb`, `catalog.duckdb`,
         `catalog.read.duckdb` and their `.wal` files, each renamed to `<name>.pre-restore-<ts>`.
@@ -306,6 +339,14 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
      equal the counts recorded at the END (post-copy appends included), which exceed AC-3's
      copy-point counts. Mutation: (c) routed to the backup copy FAILS (the post-copy appends
      are missing).
+     - **A torn final line, as a crash mid-append leaves (ns17-r9-1).** In this main (c) run
+       the live `facts.log` ends with a torn half-line (the first half of one valid JSON event,
+       no trailing newline). The script prints `cut <n> torn byte(s)` with `n` the half-line's
+       length and `source: live`, and the end counts are as above (the torn event is not
+       counted by either the rebuild or the fold). Mutation: the copy made uncut (whole
+       `<source>`) FAILS (the strict fold fails on the torn line, the script falls back and
+       prints `source: backup (live log failed verification: …)`, and the post-copy appends
+       are missing).
    - **The unparseable live log is class (b) (nm17-r7-1; replaces round 6's second (c) run).**
      The same corrupted catalog, and the live log's middle line overwritten with non-JSON
      bytes: the script classifies (b) (the parse probe fails BEFORE any rebuild), prints
@@ -342,6 +383,17 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
      the zeroed-header (c) case (it refuses as "daemon up"); the probe opened read-write FAILS (in a second case with a stopped store whose
      catalog has an un-checkpointed `.wal`, the catalog file's bytes change across a refused
      (a) run).
+   - **The fold's op set is pinned to replay's (ns17-r9-2).** The AST test of R6 step 3 passes
+     at HEAD (the dispatch set equals `FOLD_OPS`). Mutations, each must FAIL: one op removed
+     from `FOLD_OPS` (the set test); a fixture live log carrying one event with
+     `op: "evidence_remove"` (not yet in replay) makes the script print `unknown event op
+     evidence_remove at line <N>` and fail verification; with the unknown-op check replaced by
+     a skip, that case FAILS (the script prints `source: live`).
+   - **The verify parses `--json`, not console text (nm-x-r9-1).** The script calls
+     `rmx rebuild --from-log --yes --json` and reads the counters from one JSON object.
+     Mutation: a test seam that makes the console renderer wrap each `<key>: <value>` line
+     leaves the restore unchanged (it never parses those lines); a script that parses console
+     text instead FAILS under that seam.
    - Until step 5 the script writes nothing in the tmp store's own root, and any file it
      replaces is at `<name>.pre-restore-<ts>`, byte-identical to before.
 10. **AC-10 Both copy methods (nm17-r3-6).** On the sandbox volume the op reports
@@ -356,7 +408,9 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
 | `src/refmatrix/daemon.py` | `_op_factslog_backup` (R1-R5) |
 | `src/refmatrix/verbs.py` | `factslog_backup` verb (CLI + MCP parity) |
 | `src/refmatrix/hub.py` (17.2 `maintenance_steps`) | register the step, `requires_arming=False` |
-| `scripts/factslog-restore.py` | R6's restore: refuses scenario (a); for scenario (b) throwaway rebuild, verify, move aside, promote the catalog, install the log, print the follow-up |
+| `scripts/factslog-restore.py` | R6's restore: refuses scenario (a); for scenario (b) throwaway rebuild, verify, move aside, promote the catalog, install the log, print the follow-up; `_cut_copy` (one cut, shared by the parse probe and step 2; ns17-r9-1); `FOLD_OPS` and the unknown-op failure (ns17-r9-2) |
+| `src/refmatrix/cli.py` | `rmx rebuild --from-log --json`: print `rebuild_index_from_log`'s result as one JSON object (nm-x-r9-1) |
+| `tests/` | the AST test pinning `FOLD_OPS` to `rebuild_index_from_log`'s dispatch set (ns17-r9-2); the torn-tail (c) case (ns17-r9-1) |
 | `docs/` runbook (17.3) | both restore scenarios (R6: (a) `rmx compact-log --force`, (b) the script, then the daemon start and re-embed), exclusion order (R7), the backup-age alarm (R5) |
 
 ## Test strategy {#test-strategy}
@@ -430,3 +484,19 @@ Source: [[bsd-plan23-17-spec-rereview-r8-23ad703]]. Code facts re-read at HEAD `
 | ns17-r8-1 (step 3's verify is undefined for a real live log; at 0.78.3 the (c) fallback fixture is a normal `links_skipped_dead`; replay drops a non-JSON line silently) | [[#r6-restore]] step 3 (three required checks: exit 0, `*_unresolved == 0`, counts equal an independent strict fold; `*_skipped_dead` printed, never a failure), [[#ac-9]] (a normal-skips case with its mutation; the fallback fixture is a legacy kindless `link` whose name two non-`concept` kinds hold, `links_unresolved: 1`; a mutation that ignores `links_unresolved`); the silent skip is logged as bug-119 in `workflow/bug_registry.md` |
 
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r8-23ad703#ns17-r8-1]]
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+Source: [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d]] (diff check of round 8 at `9dd923c`; HEAD
+`b84fd8d`, `src/` 0.78.3). The round-8 table above is unchanged history.
+
+| finding | answered at |
+|---|---|
+| ns17-r9-1 (the strict fold fails on the torn final line the parse probe tolerates; after a crash every (c) restore falls back to the day-old backup) | [[#r6-restore]] step 2 (the copy cut at its last newline by one `_cut_copy`, shared with the probe; `cut <n> torn byte(s)` printed; rebuild, fold and install all use the cut copy), [[#ac-9]] (the main (c) run ends with a torn half-line; the uncut-copy mutation), [[#files-to-modify]] |
+| ns17-r9-2 (the independent fold diverges silently when replay gains an event op) | [[#r6-restore]] step 3 (`FOLD_OPS`; an unknown op fails verification naming it; an AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s dispatch set), [[#ac-9]] (set test, `evidence_remove` fixture, skip mutation), [[#files-to-modify]]. Plan-22's files tables listing `scripts/factslog-restore.py` beside each new op is a plan-22 edit, not made here; the AST test makes it fail loudly if missed |
+| nm-x-r9-1 (bug-119 names a dead path; its planned fix would fail every post-crash rebuild; 17.4 parsed rich output) | [[#r6-restore]] (bug-119's scope: `apply_log_delta` RETIRED by d9bu, the rebuild is the one replay path, a torn final line `tail_torn_bytes` exit 0 vs a corrupt interior line exit non-zero), step 3.1 (`rmx rebuild --from-log --json`), [[#ac-9]], [[#files-to-modify]]. The bug-119 row in `workflow/bug_registry.md` is outside this task's files; its text is for the registry owner |
+| user rule: converge repeated shapes into one function, with bypass checks that can fail | one cut (`_cut_copy`) for the probe and the rebuild; one op set (`FOLD_OPS`) pinned to replay's dispatch by an AST test that fails on drift |
+
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#ns17-r9-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#ns17-r9-2]]
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d#nm-x-r9-1]]

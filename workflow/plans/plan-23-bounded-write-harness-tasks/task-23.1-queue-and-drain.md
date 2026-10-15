@@ -21,7 +21,7 @@ metadata:
 > (ns23-r6-1, ns23-r6-2, ns23-r6-3, nm23-r6-1, nm23-r6-2) with d9ag and d9ao; see
 > [[#rev-round-6]]. Round 5, 2026-10-14: re-review [[bsd-plan23-17-spec-rereview-r4-878647c]]
 > (nb23-r4-1, ns23-r4-1, ns23-r4-2, nm23-r4-1, nm23-r4-2) and the user's writer-handle idea
-> (R1.6, ADOPTED (d9ag)); see [[#rev-round-5]]. Round 3: [[#rev-round-3]]. Round 2: [[#rev-round-2]])
+> (R1.6, ADOPTED (d9ag)); see [[#rev-round-5]]. **Owner hand-off amended by 23.5 R4 (round 9):** `_FairLock` sets `_owner` under `_mu` in `_pass_or_release_locked`; the woken waiter does not write it — build R1.6 item 1 to that order ([[task-23.5-read-path-and-holder-bounds#r4]]). Round 3: [[#rev-round-3]]. Round 2: [[#rev-round-2]])
 > Depends on: 23.0 (test sandbox), 23.2 (hold + write-count recorder), and **the bug-105 hotfix
 > MERGED TO `master`** (branch `bug-105-fragment-partition`, at whatever sha its last clean
 > ch-bsd audit closes on, with its five test files; merged in 0.78.0, [[#facts]] round 6). 23.1 does not start before that merge, and

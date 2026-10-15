@@ -13,7 +13,9 @@ metadata:
 # Plan 23: the bounded-write harness {#root}
 
 **Date:** 2026-10-07, revised 2026-10-14.
-**Status:** Drafting (revision round 8 after the 23ad703 re-review and d9bn, which settles
+**Status:** Drafting (revision round 9 after the b84fd8d diff check: 23.5's snapshot flushes
+dirty bitmap fragments, bug-112 FIXED on `master` gates 23.5, 23.5 stands alone of plan-18;
+[[#rev-round-9]]. Round 8 after the 23ad703 re-review and d9bn, which settles
 23.5's read path; [[#rev-round-8]]. Round 7 after the 331b414 re-review and d9az, which adds task
 23.5; [[#rev-round-7]]. Round 6 after the 0e77da3 re-review and d9ag/d9ao/d9ap;
 [[#rev-round-6]]. Round 5 after the 878647c re-review, d9y and the writer-handle
@@ -71,7 +73,9 @@ prove it run in a sandbox that cannot reach a live store (bug-088, bug-101). {#w
 
 Order ([[plan-review-2026-10-14#t8-wave1]]): **23.0 ∥ 23.4 → 23.2 → 23.1 (+ tick registry) →
 23.3 ∥ 23.5.** 23.5 (d9az, round 7) also waited for bug-115/116 (0.78.2) merged to `master`;
-that is satisfied (`607d759`, `1c86d9c` are ancestors of `master` `b381b6d`, round 8).
+that is satisfied (`607d759`, `1c86d9c` are ancestors of `master` `b381b6d`, round 8). It
+also waits for **bug-112 FIXED and reachable from `master`** (round 9, nb23-r9-2): OPEN; the
+fix is on branch `bugs-112-113-118` (`7c38c46`, `0fed0d5`), not yet on `master`.
 
 | task | what | acceptance (summary) |
 |---|---|---|
@@ -80,7 +84,7 @@ that is satisfied (`607d759`, `1c86d9c` are ancestors of `master` `b381b6d`, rou
 | [[task-23.2-lock-hold-fixture]] | `lock_free_during(lock)`, a `HoldRecorder` on the real `_FairLock` that counts holds, DuckDB statements and Lance versions, markers that fail on zero holds | reverting r8 #s-2 / r9 #s-1 fails; re-introducing bug-085's and bug-093's per-row writes fails; no test keeps its own probe |
 | [[task-23.1-queue-and-drain]] | starts only after the bug-105 hotfix is MERGED TO `master`; `bounded.py`: `bind(partition_name)` (lookup-only; the merged hotfix's per-binding cache, all-binding guards, rename/merge flush, merge's fragment work under the writer lock, live-concept predicate adopted as the contract; a held-writer-lock check ADOPTED (d9ag), wired through one writer-Store installer) + one `batch_transaction` per hold (pre-flush before `BEGIN`; fragments and offset inside it; `facts.log` events after `COMMIT`) under three front-ends (`drain(queue)`, `tail(log)`, `bounded_steps(items)`); stop paths, error policy, finalize, per-hold `hold_s`; the daemon tick registry with one budget; `queue_status` / `queue_redrive`; learn re-based with insert-if-absent evidence | two-partition competitor AC on rows AND fragment rows; AC-3d (the merged hotfix suite, five files, as cases (ii)-(ix), 23.1's tick and decision-search cases); the writer-lock check survives every writer reopen (AC-20); a rolled-back batch leaves no phantom fragment bit; lost post-commit events re-derived at the next boot; exactly-once under five injected faults; learn crash-replay counts evidence rows; bug-099 RED→GREEN; finalize once; tail never mutates its file; overflow printed by `rmx learn status` |
 | [[task-23.3-sync-between-file-yield]] | `_sync_paths` on `bounded_steps`: one transaction per step, the lock released between steps, the partition bound per step, each file stamped in its LAST step; one sync at a time per store (`_sync_mutex`), insert-if-absent semantic evidence; bug-093's op-start log line | competitor wins between files; two concurrent syncs equal one; never released inside a transaction; write counts flat in concept count; a crash, cancel or budget stop before the semantic steps loses nothing; same graph as HEAD |
-| [[task-23.5-read-path-and-holder-bounds]] | d9az + d9bn: the non-harness `_store_lock` holders. Every cli-reachable read (the 11 cli READ ops that take the lock today AND the 10 bare `_read_with_fallback` sites) goes through ONE helper, `_cli_read`, that always bounds the writer fallback and answers "writer busy" naming the holder; an op stays on the shared mirror only if its measured p99 is under 50 ms, else a private reader; `snapshot`, `partition_add` and `partition_rename` move to the bg pool, so `replica_audit` is the one cli op that needs the writer and waits at most `min(deadline, RMX_CLI_WRITER_WAIT_S)`; `stats(include_health)` runs its health off the writer connection; `context`'s learn write goes to the learn queue; the compaction reuses the snapshot's hold (L0 recorded inside it, the snapshot hard-linked) and dumps off the lock before one short tail hold; every hold over an alarm names its holder from the existing `_inflight_ops` registry; the wait is clamped under the heartbeat's stale window | reads answer and the heartbeat stays fresh through a 10 s writer hold (`_op_stats` back on the lock FAILS; an absent-partition `memory_search` answers); a stalled private read does not park mirror reads; an AST rule that follows helpers from every `CLI_OPS` handler to a fixpoint; compaction loses no event written during the dump; the clamp; a census of every holder's hold length |
+| [[task-23.5-read-path-and-holder-bounds]] | d9az + d9bn: the non-harness `_store_lock` holders. Every cli-reachable read (the 11 cli READ ops that take the lock today AND the 10 bare `_read_with_fallback` sites) goes through ONE helper, `_cli_read`, that always bounds the writer fallback and answers "writer busy" naming the holder; an op stays on the shared mirror only if its measured p99 is under 50 ms, else a private reader; `snapshot`, `partition_add` and `partition_rename` move to the bg pool, so `replica_audit` is the one cli op that needs the writer and waits at most `min(deadline, RMX_CLI_WRITER_WAIT_S)`; `stats(include_health)` runs its health off the writer connection; `context`'s learn write goes to the learn queue; the compaction reuses the snapshot's hold (L0 recorded inside it, the snapshot hard-linked) and dumps off the lock before one short tail hold; every hold over an alarm names its holder from the existing `_inflight_ops` registry; the wait is clamped under the heartbeat's stale window | reads answer and the heartbeat stays fresh through a 10 s writer hold (`_op_stats` back on the lock FAILS; an absent-partition `memory_search` answers); a stalled private read does not park mirror reads; an AST rule that follows helpers from every `CLI_OPS` handler to a fixpoint; compaction loses no event written during the dump; the clamp; a census of every holder's hold length; a `link` is visible to `query` (a bitmap read) within one debounce because the snapshot flushes dirty fragments; overlapping private readers see the newest snapshot (bug-112's fix; round 9) |
 
 {#tasks-body}
 
@@ -116,7 +120,11 @@ handle and no consumer changes. {#core-body}
 - 23.0 and 23.4: none; they run in parallel.
 - 23.2 → 23.0. 23.1 → 23.2, 23.0, and the bug-105 hotfix MERGED TO `master` (not a sha list;
   nb23-r4-1). 23.3 → 23.1. 23.5 → 23.1, 23.2, 23.0, and bug-115/116 (0.78.2) MERGED TO `master`
-  (round 7, d9az; satisfied at `23ad703`, round 8).
+  (round 7, d9az; satisfied at `23ad703`, round 8), and **bug-112 FIXED and reachable from
+  `master`** (round 9, nb23-r9-2; the same gate as 18.3's header; OPEN at `b84fd8d`: the fix
+  `backend.open_duckdb` is on branch `bugs-112-113-118`, `7c38c46` + `0fed0d5`). 23.5 does NOT
+  depend on plan-18 (Wave 4; ns23-r9-1): its obligations on plan-18's shared catalog-hold
+  helper are a hand-off list, [[task-23.5-read-path-and-holder-bounds#cross-plan-18]].
 - Downstream (from [[plan-review-2026-10-14#t8-wave1]]): after 23.1, 16.6's Wave 1 slice → 22.1a →
   22.2 → 22.5 → 22.3; 17.1 → 17.2; 19.0, 19.1, 19.2. 21.1 needs only 23.0.
 - 23.1 is NOT gated on 23.4 (decision-log #s-2). 23.4's verdict triggers the d2b revisit.
@@ -359,3 +367,19 @@ above is unchanged history.
 | d9bn (23.5 read path, four rulings) | [[task-23.5-read-path-and-holder-bounds#rev-round-8]] |
 
 rel: implements -> [[plan-review-2026-10-14#t12-approvals]]
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+Source: [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d]] (diff check of round 8 at `9dd923c`, HEAD
+`b84fd8d`; plan-23: 2 BULLSHIT, 2 SKETCHY, 3 MEH, all in 23.5; 23.1 and 23.3 READY). The
+round-8 table above is unchanged history.
+
+| finding | answered at |
+|---|---|
+| nb23-r9-1 (the snapshot drops dirty bitmap bits) | [[task-23.5-read-path-and-holder-bounds#rev-round-9]] (R1.9, AC-7) |
+| nb23-r9-2 (the bug-112 gate pinned the bug) | [[#tasks]], [[#dependencies]] (bug-112 FIXED and reachable from `master`), [[task-23.5-read-path-and-holder-bounds#rev-round-9]] (R1.10, AC-7) |
+| ns23-r9-1 (one-sided plan-18 interface; Wave 4 `depends-on`) | [[#dependencies]] (23.5 stands alone), [[task-23.5-read-path-and-holder-bounds#cross-plan-18]] (the obligations list for the plan-18 reviser) |
+| ns23-r9-2 (untyped `writer busy`) | [[task-23.5-read-path-and-holder-bounds#rev-round-9]] (R1.1, AC-2) |
+| nm23-r9-1, nm23-r9-2, nm23-r9-3 | [[task-23.5-read-path-and-holder-bounds#rev-round-9]] |
+
+rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d]]
