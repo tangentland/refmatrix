@@ -1,6 +1,6 @@
 ---
 gmd: "0.1"
-id: plan18-catalog-measure-20261015
+id: plan18-catalog-measure-20261015-r2
 title: "Plan-18 task 18.1 fleet catalog measurement 20261015"
 tags: [plan-18, duckdb, catalog, measurement]
 ---

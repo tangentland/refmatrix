@@ -99,7 +99,12 @@ task starts, against bands written before the run; the nudge is not dropped in a
      `gated` (no callers/tests), `not_identifier`, `not_indexed`, `skipped_budget` (the deadline
      expired; the ONE budget-skip value of `telemetry.CALL_OUTCOMES`, 21.1 R4, renamed from this
      task's round-6 `timeout` so 21.1's report and 19.5 read one vocabulary), `disabled` (R4),
-     `stale_set` (R6), and the 21.1 fields.
+     `stale_set` (R6), and the 21.1 fields. **The vocabulary has one home** (round-10 #m10-4):
+     this task adds `telemetry.OUTCOMES_BY_KIND["nudge"] = ("fired", "dedup", "gated",
+     "not_identifier", "not_indexed", "disabled", "stale_set", "skipped_budget")` to the table
+     21.1 R4 defines, and `nudge.py` writes the row through `telemetry.log_query(kind="nudge")`
+     with `t.outcome` set, the ONLY place 21.1's write-time validation runs; no other route
+     writes a `kind=nudge` row.
      A fired nudge also appends one `delivered` event to `recall-events.jsonl` with
      `channel=nudge`. Timeouts are counted on the row, never printed.
 5. **R4 Off switch.** `RMX_CONTEXT_NUDGE=0`, respected by the generated hook (outcome `disabled` on
@@ -141,13 +146,16 @@ counts are unchanged.
 5. **Deadline.** With the lookup artificially delayed past the deadline, the hook prints nothing
    and writes `outcome=skipped_budget`. The delay is a test-owned module that wraps the lookup
    with a sleep (no `src/` flag), loaded in the hook subprocess by 23.0 R4's ONE sandbox
-   `sitecustomize` through a preload variable (`$RMX_SANDBOX_PRELOAD`, naming the module), NOT
+   `sitecustomize` through a preload variable (`$RMX_SANDBOX_PRELOAD` = an ABSOLUTE path to a
+   test-owned `.py` file, run with `runpy.run_path` after the refusal is installed; round-10
+   #s10-3), NOT
    by a second `sitecustomize.py` on `PYTHONPATH` (round 9, the sibling of
    [[bsd-plan19-21-spec-diffcheck-r9-ebccb20#s9-3]]: Python imports one `sitecustomize`, so a
    second one either drops 23.0's refusal from the child or never loads). A control leg in the
    same environment: a child dialling a deny-set path still exits 86 (23.0's refusal is
-   loaded). This AC consumes the preload as a 23.0 interface and is blocked until 23.0 provides
-   it.
+   loaded). This AC consumes the preload as a 23.0 interface, specified by 23.0's amendment
+   ([[task-23.0-test-sandbox#rev-amend-r10]]: R4 (b), exit 87 when the preload raises), and is
+   blocked until that amendment lands.
 6. **Usage before/after.** `rmx telemetry --agent-usage --by-session` over ≥ 3 sessions before and
    ≥ 3 after the deploy reports `invocation=agent` context calls per session (21.1 R2/R7), split by
    whether a `nudge` event preceded them in the session. The table and the verdict (rise or not)
@@ -165,6 +173,10 @@ counts are unchanged.
      stdout is byte-identical with and without the hook);
    - `build_context` called from the hook (a test asserts it is never imported by `nudge.py`);
    - (R6 band only) the hook writing the set (AC-7);
+   - (round 10, #m10-4) `nudge.py` writing an outcome outside `OUTCOMES_BY_KIND["nudge"]` (for
+     example the round-6 `timeout`): the row is rewritten to `outcome=error`,
+     `error="outcome-invalid: timeout"` (AC-5's `outcome=skipped_budget` fails); the `"nudge"`
+     entry left out of `OUTCOMES_BY_KIND` (AC-2: `fired` is rewritten to `outcome-invalid`);
    - the `channel=nudge` `delivered` append removed from `nudge.py` (AC-2: no event), the nudge
      leg of 21.1's per-channel emitter mutations ([[task-21.1-context-usage-telemetry#acceptance]]
      AC-8c, round-3 #b-3).
@@ -174,7 +186,8 @@ counts are unchanged.
 | file | change |
 |---|---|
 | `src/refmatrix/hooks.py` | the generated PostToolUse(Bash) and PostToolUse(Grep) entries |
-| `src/refmatrix/nudge.py` (new) | the parse (16.1's parser; the Grep envelope field), the index-only lookup, the per-session dedupe file, the `query.log` row and the `nudge` event |
+| `src/refmatrix/nudge.py` (new) | the parse (16.1's parser; the Grep envelope field), the index-only lookup, the per-session dedupe file, the `query.log` row (through `telemetry.log_query(kind="nudge")`, R3) and the `nudge` event |
+| `src/refmatrix/telemetry.py` | the `OUTCOMES_BY_KIND["nudge"]` entry on 21.1 R4's table (R3; round-10 #m10-4) |
 | `src/refmatrix/cli.py` | `rmx learn status` shows the switch |
 | `src/refmatrix/daemon.py` | (R6 band only) the set writer on derive and the rebuild-request op |
 | `eval/production/nudge_latency/` (new) | R0's harness and `REPORT.md` |
@@ -253,3 +266,17 @@ rel: depends-on -> [[task-23.0-test-sandbox#r4]]
 |---|---|
 | sibling of r9 #s9-3 (AC-5's deadline delay was a second test `sitecustomize.py`, the same collision with 23.0 R4's) | AC-5: the delay module is loaded by 23.0's one sandbox hook through `$RMX_SANDBOX_PRELOAD` (a 23.0 interface, not yet in 23.0's text); deny-set control leg |
 | r9 #m9-5 (21.1 side) | R3's nudge values are validated by 21.1's `log_query` as `telemetry.NUDGE_OUTCOMES` for `kind=nudge` ([[task-21.1-context-usage-telemetry#rev-round-9]]); this task owns that tuple's members (`fired`, `dedup`, `gated`, `not_identifier`, `not_indexed`, `disabled`, `stale_set`, plus `skipped_budget` from `CALL_OUTCOMES`) |
+
+## Revision round 10 (2026-10-15) {#rev-round-10}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r10-f6400aa#m10-4]] (21.3 side) and the 21.3 line of
+[[bsd-plan19-21-spec-diffcheck-r10-f6400aa#s10-3]]. Edit-level; no decision.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r10-f6400aa]]
+rel: depends-on -> [[task-23.0-test-sandbox#rev-amend-r10]]
+
+| finding | answered at |
+|---|---|
+| r10 #m10-4 (`NUDGE_OUTCOMES` had no home in R3 or the Files table; the row's write route unstated; 21.1 named a constant before 21.3 exists) | R3: the `"nudge"` entry of 21.1's `telemetry.OUTCOMES_BY_KIND` (the round-9 name `NUDGE_OUTCOMES` is WITHDRAWN), written through `telemetry.log_query(kind="nudge")` with `t.outcome` set; [[#files-to-modify]] (`telemetry.py` row; `nudge.py`'s route); mutations (an outcome outside the entry; the entry missing) |
+| r10 #s10-3 (21.3 side: "naming the module" for a module in a tmp dir) | AC-5: `$RMX_SANDBOX_PRELOAD` is an absolute path to a test-owned `.py` file, run after the refusal; provider [[task-23.0-test-sandbox#rev-amend-r10]] |
+

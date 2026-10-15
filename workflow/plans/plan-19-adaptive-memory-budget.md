@@ -29,7 +29,11 @@ four interfaces this plan fixes, so every spec choice below is made with them in
    assignment: hubs once, defined order, highest J, one live cluster per snapshot),
    `stm.topic_hubs(cache)`, `stm.snapshot_eligible` and `stm.member_jaccard` (d9ax amended by
    d9bm; round-9 #s9-1), so helix can recompute topic identity, including which live cluster
-   each snapshot stands for, from the cache alone by importing `match_snapshots`;
+   each snapshot stands for, from the cache alone by importing `match_snapshots`; `topic_match`
+   is `dict[str, str]` keyed by `stm.cluster_cid(members)` (the one member-set hash that also
+   names `<cid>`), one reader `stm.load_topic_cache` reads a missing file or `pre.json`'s `{}`
+   as the empty cache, every record is eligible whatever its `state`, and the file holds at most
+   64 records (round-10 #m10-1);
 3. 21.1's recall events, including the versioned-injection fields (`block_id`, `block_sha`,
    `rev`, `unchanged`) that 19.6 fills;
 4. 19.2's usage record (raw per-evidence counts, read-time decay).
@@ -421,3 +425,20 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r9-ebccb20]]
 | r9 #m9-6 | [[task-19.2-memory-usage-record#rev-round-9]] |
 | r9 #m9-7 | [[#decisions]] d9bm (the "K = 8" parenthetical deleted); 19.6 R9; [[task-19.0-stm-cluster-hygiene#rev-round-9]] (AC-6 RED sentences split; AC-6f `--event say`) |
 | user rule: converge repeated shapes into one function, each with a bypass check that can fail | 19.6 `match_snapshots`, `member_jaccard`; 21.1 `liveness_available`, `errors_log_path`, `HOOK_PROMPT_KEYS`, `read_hook_envelope(prose_ok=)`, `CALL_OUTCOMES` validated in `log_query`; 23.0's one sandbox hook; each check carries a control leg that makes it fail |
+
+## Revision round 10 (2026-10-15) {#rev-round-10}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r10-f6400aa]] (3 SKETCHY, 5 MEH; edit-level, no
+decision). Each touched task carries its own `#rev-round-10` table; 23.0 carries an additive
+amendment table.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r10-f6400aa]]
+
+| finding | answered at |
+|---|---|
+| r10 #s10-1 (H5's order hides its mutant; no one-call check) | [[task-19.6-phased-context-and-topic-cache#rev-round-10]] |
+| r10 #m10-1 (helix-facing cache contract details) | [[task-19.6-phased-context-and-topic-cache#rev-round-10]]; header interface 2; 21.1 R9 `topic_match: dict[str, str]` ([[task-21.1-context-usage-telemetry#rev-round-10]]) |
+| r10 #s10-2, #m10-2, #m10-3, #m10-4 | [[task-21.1-context-usage-telemetry#rev-round-10]]; [[task-21.3-indexed-symbol-nudge#rev-round-10]] (#m10-4) |
+| r10 #s10-3 (the two sandbox env interfaces had no provider) | [[task-23.0-test-sandbox#rev-amend-r10]] (R4 (a)-(c), AC-3 legs, per d9bx); [[task-19.0-stm-cluster-hygiene#rev-round-10]] |
+| r10 #m10-5 (residue) | [[task-19.0-stm-cluster-hygiene#rev-round-10]]; [[task-19.2-memory-usage-record#rev-round-10]]; [[task-21.1-context-usage-telemetry#rev-round-10]] |
+| user rule: converge repeated shapes into one function, with a bypass check that can fail | 19.6 `cluster_cid`, `load_topic_cache`, the one-call AST check; 21.1 `proc_identity`, `OUTCOMES_BY_KIND`; 23.0's one sandbox hook now specifies both env interfaces |

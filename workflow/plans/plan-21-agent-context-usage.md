@@ -287,3 +287,17 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r9-ebccb20]]
 | r9 #s9-1 (21.1 side: `PrePromptState.topic_match`) | [[task-21.1-context-usage-telemetry#rev-round-9]]; the rule itself is [[task-19.6-phased-context-and-topic-cache#rev-round-9]] |
 | sibling of r9 #s9-3 (21.3 AC-5's second `sitecustomize`) | [[task-21.3-indexed-symbol-nudge#rev-round-9]] (needs 23.0's preload interface) |
 | r9 #s9-3, #m9-6, #m9-7 | not plan-21 items ([[plan-19-adaptive-memory-budget#rev-round-9]]) |
+
+## Revision round 10 (2026-10-15) {#rev-round-10}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r10-f6400aa]] (edit-level, no decision). Each touched task
+carries its own `#rev-round-10` table.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r10-f6400aa]]
+
+| finding | answered at |
+|---|---|
+| r10 #s10-2, #m10-2, #m10-3; the 21.1 sides of #m10-1, #m10-4, #m10-5 | [[task-21.1-context-usage-telemetry#rev-round-10]] |
+| r10 #m10-4 (21.3 side: the `"nudge"` entry of `OUTCOMES_BY_KIND`) | [[task-21.3-indexed-symbol-nudge#rev-round-10]] |
+| r10 #s10-3 (the sandbox preload and connect-log interfaces) | [[task-23.0-test-sandbox#rev-amend-r10]]; [[task-21.3-indexed-symbol-nudge#rev-round-10]] (AC-5's absolute path) |
+| r10 #s10-1, #m10-1 (19.6 side), #m10-5 (19.0, 19.2) | not plan-21 items ([[plan-19-adaptive-memory-budget#rev-round-10]]) |

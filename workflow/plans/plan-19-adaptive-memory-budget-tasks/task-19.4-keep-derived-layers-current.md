@@ -98,7 +98,7 @@ rel: specified-by -> [[bsd-plan19-spec-review-3104a81]]
      This task only makes the growth visible: every compile run reports `stale_total`,
      `stale_new` and `stale_unmarked`, and AC-4b bounds the growth per run.
 6. **R6 Stable names for unlabeled clusters** (19 #s-7). An unlabeled cluster's slug is
-   `unlabeled-<h>`, `<h>` = the first 8 hex chars of sha256 over its sorted member names, so the
+   `unlabeled-<h>`, `<h>` = `stm.cluster_cid(members)` (19.6 R9; ONE member-set hash shared with the topic cache — d9ca), the first 8 hex chars of sha256 over its sorted member names, so the
    name is independent of cluster order. A changed membership is a different subject; the old
    one is marked stale by R5.
 7. **R7 Loud.** Every path reports compiled / skipped / failed / marked-stale with counts (no

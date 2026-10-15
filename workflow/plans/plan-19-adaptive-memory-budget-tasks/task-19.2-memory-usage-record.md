@@ -256,8 +256,10 @@ appended through 21.1's `telemetry.emit_recall_events` with `cwd`/`root` inside 
 12. **Lock holds.** 1,000 events fold in EXACTLY 2 batch `bind` holds (batch size 500),
     measured with 23.2's recorder on a real `_FairLock`; every batch releases. The count is
     asserted structurally (`holds == 2`; round-9 #m9-6), so a one-hold fold fails on any machine
-    speed; a finalize hold, if the fold takes one, is recorded under its own label and asserted
-    as exactly one, outside the 2. **Hold length** (round-8 #nm-5): the run's 23.1
+    speed. There is NO finalize hold: the fold's offset (its watermark) is committed in the SAME
+    transaction as the last batch's counter updates (R5 above), so it rides that batch's hold and
+    `holds == 2` is the fold's TOTAL hold count, every label included (round-10 #m10-5); a fold
+    that commits its offset in a separate hold gives 3 and fails. **Hold length** (round-8 #nm-5): the run's 23.1
     `RunResult.max_hold_s` ([[task-23.1-queue-and-drain#r1]], R1 item 5) is ≤ 0.5 s, and is
     within 50 ms of the recorder's largest measured hold for the same run (the two are
     different clocks; the tolerance is 23.1 AC-19's). The fold's holds take the same
@@ -449,3 +451,14 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r9-ebccb20]]
 | finding | answered at |
 |---|---|
 | r9 #m9-6 (`max_hold_s` "equals" the recorder across two clocks; the one-hold mutant killed only by timing) | AC-12 (`holds == 2` asserted structurally, a finalize hold labelled apart; `max_hold_s` within 50 ms of the recorder, 23.1 AC-19's tolerance); mutations (the one-hold mutant now fails on the count) |
+
+## Revision round 10 (2026-10-15) {#rev-round-10}
+
+Answers the 19.2 part of [[bsd-plan19-21-spec-diffcheck-r10-f6400aa#m10-5]]. Edit-level; no
+decision.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r10-f6400aa]]
+
+| finding | answered at |
+|---|---|
+| r10 #m10-5 ("a finalize hold, if the fold takes one" left AC-12 conditional on the implementation) | AC-12: decided, no finalize hold; the offset commit rides the last batch's hold (the same-transaction rule already in the fold's requirements), so `holds == 2` is the total; a separate offset hold gives 3 and fails |

@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-14
-  updated: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Task 23.0: the shared test sandbox {#root}
@@ -81,7 +81,20 @@ Facts at HEAD `b1c4324` the design depends on:
    `tests/sandbox_site/sitecustomize.py`, which installs the SAME audit hook from
    `RMX_SANDBOX_ROOT` and exits the child nonzero with the violation on stderr. The refusal happens
    IN the child; the parent sees the nonzero exit. A spawn site that passes `-I`/`-E` (which drop
-   `PYTHONPATH`) is listed in the implementation summary and given the hook explicitly. {#r4}
+   `PYTHONPATH`) is listed in the implementation summary and given the hook explicitly.
+   **Amendment round 10** (d9bx; [[#rev-amend-r10]]; additive: the refusal above is unchanged).
+   Python imports ONE `sitecustomize`, so two other plans' test needs live in this hook:
+   (a) with `$RMX_SANDBOX_CONNECT_LOG` set, the child's audit hook appends one line,
+   `<target path>\t<pid>`, for EVERY `AF_UNIX` `socket.connect` event, BEFORE the deny check, so a
+   refused dial is logged too; a log path inside the deny set exits the child 86 at install (an
+   unchecked write into a live store otherwise); (b) with `$RMX_SANDBOX_PRELOAD` set to an
+   ABSOLUTE `.py` path, `sitecustomize` runs that file with `runpy.run_path` AFTER
+   `install_from_env()`, so the refusal is already installed and the preload cannot bypass it; a
+   preload that is not an absolute `.py`, or that raises, exits the child 87 (`PRELOAD_EXIT`) with
+   the cause on stderr; (c) the refusal exit is `CHILD_EXIT = 86`, by name, in
+   `tests/sandbox_site/rmx_sandbox.py`. Consumers: 19.0 AC-6f (a)
+   ([[task-19.0-stm-cluster-hygiene#acceptance]]) and 21.3 AC-5 (b)
+   ([[task-21.3-indexed-symbol-nudge#acceptance]]); a change to (a)-(c) after merge names both. {#r4}
 5. **R5 No new fixture rows in live logs (d8d).** With R1-R3 in place, the grep tests that wrote
    bug-101's rows (`tests/test_grep_dropin_contract.py`, `tests/test_grep_output_shape.py`) write
    their `query.log` / `facts.log` rows into the sandbox. The 235 rows already in the live
@@ -163,7 +176,14 @@ outer tiers remove those, each for a different gate. Tiers nest: R1-R4 still run
 3. **Child refusal.** A test spawns `.venv-eval/bin/python -c` that connects to the real hub socket
    path, and a test spawns `rmx` with `REFMATRIX_ROOT` pointed at the repo's real `.refmatrix/`.
    Both children exit nonzero with `SandboxViolation` on stderr. Mutation: drop the `PYTHONPATH`
-   entry; the children must then connect (or fail differently), and the test must fail. {#ac-3}
+   entry; the children must then connect (or fail differently), and the test must fail.
+   **Amendment round 10 legs** (R4 (a)-(c); [[#rev-amend-r10]]): (a) with
+   `RMX_SANDBOX_CONNECT_LOG` set, a child connecting to a test-owned listener in the tmp dir
+   writes exactly one line naming that path, and a child dialling the real hub socket path exits
+   86 AND its target is in the log; (b) with `RMX_SANDBOX_PRELOAD` set to an absolute `.py` that
+   writes a marker file, the marker exists and a deny-set dial from the same child still exits
+   86; a preload that raises exits 87 with its traceback's cause on stderr; (c) both refusals
+   above are asserted as `rmx_sandbox.CHILD_EXIT`, not a literal. {#ac-3}
 4. **Whole-suite proof, by content (ns23-2).** The live logs change from normal activity during a
    13-minute run (the re-review saw the repo's `query.log` and `facts.log` written at 12:42 and
    12:43 while it only read), so size and mtime cannot be the check. A wrapper script OUTSIDE
@@ -243,4 +263,22 @@ before/after stat runs outside pytest. Logs go to `workflow/review-output/` (the
 | d9w (checkout guard; `.venv-eval` editable install tested the dev tree from a clone) | [[#r9]], [[#ac-6]] |
 | d9x (user: "both, write it into 23.0": separate-user lane and Tart macOS VM lane) | [[#amend-2026-10-14-lanes]], [[#r7]], [[#r8]], [[#ac-7]], [[#ac-8]] |
 | d9aa (user: the M1 Mac mini hosts tier 2 once running) | [[#r8]] Host |
+
+## Amendment round 10 (2026-10-15) {#rev-amend-r10}
+
+23.0 is APPROVED (d9at); this amendment is minimal and additive. It writes into 23.0's own text the
+two environment interfaces decision d9bx assigned to this hook, which the plan-19 / plan-21
+round-10 diff check found cited by their consumers and absent here. Nothing in R1-R3, R5-R9 or
+AC-1, AC-2, AC-4 to AC-8 changes. The in-flight implementation (`/Volumes/littlebig/refmatrix-task-23.0`,
+`7ba1dd4`) already carries `CHILD_EXIT = 86`, `PRELOAD_EXIT = 87`, the connect log (written before
+the deny check, `path<TAB>pid`) and the preload; this text is matched to it.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r10-f6400aa#s10-3]]
+rel: amends -> [[#r4]]
+rel: amends -> [[#ac-3]]
+
+| finding / decision | answered at |
+|---|---|
+| d9bx (one sandbox hook serves 19.0 AC-6f's connect census and 21.3 AC-5's deadline preload) | [[#r4]] amendment (a) `$RMX_SANDBOX_CONNECT_LOG`, (b) `$RMX_SANDBOX_PRELOAD`, (c) `CHILD_EXIT = 86` |
+| r10 #s10-3 (both variables cited by 19.0 and 21.3, specified nowhere in 23.0; log order vs the deny check and the preload's form unstated) | [[#r4]] (a) logged BEFORE the deny check; (b) an absolute `.py` path run by `runpy.run_path` after `install_from_env()`, exit 87 if it raises; [[#ac-3]] amendment legs |
 

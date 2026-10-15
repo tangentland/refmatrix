@@ -560,7 +560,10 @@ head member as `rmx focus topics` renders it.
    run are exactly the generated command strings whose argv contains `focus hook --event <e>` for
    `e` ∈ `session-start` (once 21.1 R9 D4's entry exists), `input` (with a parked call to sweep and
    a prompt), `tool-pre`, `tool` and `say` (the Stop entry, `hooks.py:153`, fed an envelope
-   whose `transcript_path` is a tmp transcript holding one assistant message, so the
+   whose `transcript_path` is a tmp transcript holding one assistant message AND whose
+   `session_id` is a test session id (the STM hooks read the envelope with
+   `require_session=True`, D9, so a `say` envelope without one records `envelope-no-session`
+   and never reaches `s.record`; round-10 #m10-5), so the
    `s.record("say", …)` branch at `cli.py:2005-2011` runs; round-9 #m9-7), taken from
    `hooks.py`'s generated block; the other commands
    of those events (`rmx scan-prompt`, `rmx memory recall`, `rmx sync --flush-queue`,
@@ -573,13 +576,18 @@ head member as `rmx focus topics` renders it.
      so this AC adds none: 23.0 R4's `tests/sandbox_site/sitecustomize.py`
      ([[task-23.0-test-sandbox#r4]]) appends the target of every `AF_UNIX` `socket.connect` to
      the file named by `$RMX_SANDBOX_CONNECT_LOG` when that variable is set (23.0 is extended
-     to provide this; this AC consumes it as a 23.0 interface and is blocked until it lands).
+     to provide this in its R4 / AC-3 amendment, [[task-23.0-test-sandbox#rev-amend-r10]], which
+     also fixes that a refused dial is logged BEFORE the deny check; this AC consumes it as a
+     23.0 interface and is blocked until that amendment lands).
      Each command runs with `RMX_SANDBOX_CONNECT_LOG=<tmp>/connects.log`; after the runs the
      file is empty. This sees EVERY unix socket, including ones no listener anticipates.
-     **Two control legs, same environment, run first:** (1) a child `python -c` that connects
-     to a test-owned listener in the tmp dir writes exactly ONE line naming that path (the
-     detector can fail); (2) a child that dials a deny-set path (the real
-     `~/.refmatrix/hub.sock` path string) still exits 86, 23.0's child-refusal exit, so the
+     **Two control legs, same environment except the log path, run first:** each control runs
+     with `RMX_SANDBOX_CONNECT_LOG=<tmp>/control.log`, never `<tmp>/connects.log`, so the
+     controls' lines cannot make the hook assertion fail (round-10 #m10-5): (1) a child
+     `python -c` that connects to a test-owned listener in the tmp dir writes exactly ONE line
+     naming that path to `control.log` (the detector can fail); (2) a child that dials a
+     deny-set path (the real `~/.refmatrix/hub.sock` path string) still exits 86 (23.0's
+     `CHILD_EXIT`) and its target is ALSO in `control.log` (logged before the deny check), so the
      refusal is still loaded beside the logger. If either control fails, the AC fails before
      the hook commands run;
    - **listeners** (`socket.socket(AF_UNIX)`, bound and listening) at every path a daemon or hub
@@ -874,3 +882,16 @@ rel: depends-on -> [[task-23.0-test-sandbox#r4]]
 | r9 #s9-3 (a second test-only `sitecustomize` cannot coexist with 23.0 R4's: one of the two is silently absent) | AC-6f: no second `sitecustomize`; the connect log is 23.0 R4's ONE sandbox hook, enabled by `$RMX_SANDBOX_CONNECT_LOG` (cited as a 23.0 interface; 23.0 is extended to provide it); two control legs run first (a connect to a test listener logs exactly one line; a deny-set dial still exits 86) |
 | r9 #m9-7 (two RED sentences spliced in AC-6; no `--event say` in AC-6f) | AC-6: the composite RED sits under the envelope-session leg, the row-count RED under the envelope legs; AC-6f runs the Stop entry's `focus hook --event say` with a tmp transcript |
 | r9 #s9-4 (19.0 side) | AC-6's `not json` leg names 21.1 D9's `prose_ok=False` for the STM hooks |
+
+## Revision round 10 (2026-10-15) {#rev-round-10}
+
+Answers the 19.0 part of [[bsd-plan19-21-spec-diffcheck-r10-f6400aa#m10-5]] and records the
+provider for [[bsd-plan19-21-spec-diffcheck-r10-f6400aa#s10-3]]. Edit-level; no decision.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r10-f6400aa]]
+rel: depends-on -> [[task-23.0-test-sandbox#rev-amend-r10]]
+
+| finding | answered at |
+|---|---|
+| r10 #m10-5 (the connect-log controls and the hook runs shared one log file; the `say` envelope carried no `session_id`) | AC-6f: the controls write `<tmp>/control.log`, the hook runs `<tmp>/connects.log`; the deny-set control also asserts its target is logged; the `say` envelope carries a test `session_id` (D9's `require_session=True`) |
+| r10 #s10-3 (`$RMX_SANDBOX_CONNECT_LOG` has no provider) | AC-6f now cites 23.0's amendment ([[task-23.0-test-sandbox#rev-amend-r10]]): the log is written for every `AF_UNIX` connect BEFORE the deny check, and 86 is `CHILD_EXIT`; AC-6f stays blocked until that amendment lands |
