@@ -19,7 +19,8 @@ metadata:
 > round 6: ns17-r6-1, see [[#rev-round-6]]. Revision round 7: nm17-r7-1, see [[#rev-round-7]].
 > Revision round 9: ns17-r9-1, ns17-r9-2, nm-x-r9-1, see [[#rev-round-9]]. Revision round 10:
 > nm17-r10-1, see [[#rev-round-10]]. Revision round 12: plan-22's shared revivable predicate
-> (d9cf), see [[#rev-round-12]].
+> (d9cf), see [[#rev-round-12]]. Revision round 14: the shared restating function (d9ch (c)),
+> see [[#rev-round-14]].
 > Round 2: [[#rev-round-2]])
 > Depends on: 17.2 (the hub tick and its `maintenance_steps` registry, NOT 23.1's daemon tick
 > registry), 23.0 (sandbox)
@@ -212,7 +213,11 @@ once-a-day COPY under `backups/` is what Time Machine backs up. {#why-body}
            plan-22's `evidence_orphan_drop`, for the one revivable predicate
            `edge_records.revivable` (a tombstone a later restore reversed does not count; d9cf,
            [[task-22.6-removal-entry-points#r5-revivable-fn]]), so only the fold loop is
-           independent, not the event spelling or that predicate. It runs on the cut copy (step 2), so a torn
+           independent, not the event spelling or that predicate. A restore's
+           `restored_from`-tagged `evidence` append is folded through the same module's
+           `edge_records.restated_copy` (absorbed into the purged incarnation's held copy, else
+           added; [[task-22.6-removal-entry-points#r5-restated-fn]]), so `revivable` and
+           `restated_copy` are the fold's two shared functions, never re-implemented here. It runs on the cut copy (step 2), so a torn
            final line never reaches it; a non-JSON INTERIOR line still fails it.
            - **The fold's op set is replay's op set (ns17-r9-2).** The fold dispatches on a
              module-level `FOLD_OPS: frozenset[str]` (every op it handles, folded into the counts or
@@ -536,3 +541,18 @@ unchanged history.
 
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 rel: related-to -> [[task-22.6-removal-entry-points#r5-revivable-fn]]
+
+## Revision round 14 (2026-10-15) {#rev-round-14}
+
+Source: plan-22's round 14, decision d9ch (c) in [[plan-review-2026-10-14#t12-approvals]]
+(PROVISIONAL until its ch-bsd loop is clean). Not a plan-17 finding: a pointer only. The fold
+rule stays in plan-22's files tables (ns17-r9-2's split). The re-logged `link` and
+`learned_provenance` events d9ch adds need no fold change: a `link` is a set member the fold
+already decides by the last event per edge key, and the fold counts no sidecar rows.
+
+| finding | answered at |
+|---|---|
+| d9ch (c) (the fold must name the shared restating function beside the revivable predicate) | [[#r6-restore]] step 3: `edge_records.restated_copy` named beside `edge_records.revivable` as the fold's shared functions |
+
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+rel: related-to -> [[task-22.6-removal-entry-points#r5-restated-fn]]

@@ -14,7 +14,7 @@ metadata:
 # Task 22.2: the repair-then-remove engine {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 13, 2026-10-15; [[#rev-round-13]]; round 12 in [[#rev-round-12]]; round 11 in [[#rev-round-11]]; round 10 in [[#rev-round-10]]; round 9 in [[#rev-round-9]]; round 8 in [[#rev-round-8]]; round 7 in [[#rev-round-7]], round 6 in
+> Status: Pending (revision round 14, 2026-10-15; [[#rev-round-14]]; round 13 in [[#rev-round-13]]; round 12 in [[#rev-round-12]]; round 11 in [[#rev-round-11]]; round 10 in [[#rev-round-10]]; round 9 in [[#rev-round-9]]; round 8 in [[#rev-round-8]]; round 7 in [[#rev-round-7]], round 6 in
 > [[#rev-round-6]], round 5
 > in [[#rev-round-5]], round 3 in [[#rev-round-3]])
 > Wave: 1, after 22.1a (#t8-wave1).
@@ -324,9 +324,12 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
        restored old id (a purge outside the engine, 22.6 R2 `untrack`, R3, the `--as-memory`
        conversion, records only the purged entity's own rows and leaves `B`'s row in place,
        22.6 AC-9b): the id column is updated in place to the new id and, for a link, its bit is
-       set in the live end's partition. A re-attached LINK logs no event: its own `link` event
-       names both ends by name and the restored entity's `entity` event makes a rebuild
-       re-attach it. A re-attached EVIDENCE row is never re-attached silently (d9cg, superseding
+       set in the live end's partition. A re-attached LINK is never re-attached silently either
+       (d9ch, round 14, superseding round 7's no-event rule for links): it logs one `link`
+       event ([[#r4-relink]]), because the compaction that drops the evidence row's append
+       drops the link's too. The same in-place update moves the identity's 16.6 sidecar rows
+       to the new id (R2's "Owner of the sidecar's key columns"), and each of them is re-logged
+       ([[#r4-relink]]). A re-attached EVIDENCE row is never re-attached silently (d9cg, superseding
        round 7's no-event rule for evidence; r12 open item): it logs one `restored_from`-tagged
        `evidence` append that RESTATES the row ([[#r4-restate]]), because a compaction between
        the purge and the restore has dropped the row's only append. Each re-attached row is
@@ -411,6 +414,56 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
        - *The compactor.* After the restore, a compaction emits the live row as a plain dumped
          append (no `restored_from`; R6's new-field rule: the field has nothing left to absorb
          against in a log with no tombstone), which is exact.
+     - **The restore re-logs every link and every sidecar row it re-attaches in place (d9ch;
+       round 14).** {#r4-relink} d9cg's rule, carried to the two other row types the `id_map`
+       re-attaches in place, so no row type is re-attached silently:
+       - *Links.* For EVERY surviving `entity_links` row the `id_map` re-attaches in place,
+         restore logs one `link` event, after the restored entity's `entity{restored_from}`
+         event, built by `edge_records.edge_event("link", linkage, c_kind, c, e_kind, e,
+         weight=<the row's catalog weight>)` with `partition: <name>` (the live end's partition,
+         where the re-attach sets the bit; both ends by name as the catalog holds them after the
+         re-attach), the same builder and fields `dump_catalog_to_log` and `Store.link` use. It
+         carries no `restored_from`: a `link` event is a SET member, not a counted copy. Replay
+         keeps the latest `link` / `unlink` per key `(partition, linkage, c_kind, c, e_kind, e)`
+         (`rebuild_index_from_log`'s `link_state`), and 17.4's fold decides an edge by the same
+         last event per edge key, so a second `link` on a key whose latest event is already
+         `link` holds one edge on both: count-neutral on an uncompacted log, with no absorb
+         rule and no new fold rule. Logged always, for the reason the evidence append is: the
+         dump's `entity_links` query joins BOTH ends to live entities in the partition, so a
+         compaction between the purge and the restore drops the orphaned link's `link` event,
+         and the restore cannot see whether one ran. The count of `link` events equals
+         `restore_reattached`'s link count and is printed beside it; a failed append aborts the
+         restore's transaction.
+         *Reach at HEAD (read while tracing, round 14).* No purge path at HEAD leaves a link
+         that names the purged id: `Store.purge_entity` and `Store._bulk_purge_ids` delete
+         `entity_links` on BOTH `entity_id` and `concept_id` (and `purge_entity` logs `unlink`
+         per pair), and the merge path re-points both columns before its delete. A purged
+         entity's own links are therefore the manifest's per-entity `link` records, which
+         restore RE-INSERTS with its `link` events (the inverse events below), not rows it
+         re-attaches in place. The in-place link set is non-empty only for a row some other
+         route put in the catalog naming the old id after the purge (a writer holding a stale
+         id, or a future purge path that keeps links); this rule covers that row so no row
+         type is re-attached silently, and AC-4e's link leg plants one.
+       - *Sidecar rows (16.6 R1d's dump omits them).* 16.6 R1d's dump emits a
+         `learned_provenance` event only for a sidecar row whose evidence row it dumps
+         ([[task-16.6-learned-row-validation#r1d]], round 14): the event is keyed by NAME and
+         takes its evidence row's dumped `ts`, and a row with a dead end has neither a name for
+         that end nor a dumped append. 16.6 R1e keeps the sidecar rows of a purged entity in
+         place, so after `untrack` and a compaction the orphaned sidecar rows survive in the
+         catalog with no event in the log. So for every sidecar row whose identity the restore
+         re-attaches (its `entity_id` or `concept_id` moved to the new id in the same
+         transaction), restore logs one `learned_provenance` event, built by 16.6's
+         `edge_records.row_event` from the row's every non-mark column (16.6 R1d's field list,
+         `c_kind` the concept's catalog kind), with `partition`, AFTER that row's restating
+         `evidence` append ([[#r4-restate]]) and with its `ts` (R3's "within a call" order; in
+         the row pass it ties with the append and follows it by log position, so its evidence
+         row exists when it applies). No `learned_provenance_move` is logged: by name the key
+         did not change (the restored entity keeps its name), so a move would name the same
+         key twice. On an uncompacted log the original `learned_provenance` event still
+         resolves (its evidence copy is held: the tombstone is reversed), and the re-logged
+         event is a no-op on the sidecar's primary key (16.6 R1, `ON CONFLICT DO NOTHING`), so
+         no absorb rule is needed; 17.4's fold counts no sidecar rows. The count of re-logged
+         sidecar events is printed beside `restore_reattached`.
      - Only this manifest's `id_map` is used: a dead id that another manifest's restore
        re-created is not this restore's to map, and step (2) above then finds it dead (its new
        id differs) and re-inserts the row dangling, counted, for the `dangling-evidence` class.
@@ -903,7 +956,7 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
    restated by one `restored_from`-tagged append, [[#r4-restate]]) needs 22.6's entry points and
    is [[task-22.6-removal-entry-points]] AC-9c, built on this task's restore rule.
 
-   **4e. A compaction between the purge and the restore loses nothing (d9cg; round 13).** Built
+   **4e. A compaction between the purge and the restore loses nothing (d9cg; round 13; link and sidecar legs, d9ch, round 14).** Built
    on 22.6's `rmx untrack` (a purge outside the engine is the only path that leaves a surviving
    row for the `id_map` to re-attach in place), so it runs in 22.6's slice beside AC-9c
    (`tests/test_removal_entry_points.py`). On a sandbox store: doc `E` holds a `rel:` evidence
@@ -923,7 +976,36 @@ rel: related-to -> [[plan-17-nightly-store-maintenance]]
    holds two, equal to live.
    *Re-purge variant:* after step 4 of the uncompacted control, `untrack` again (`M2`), restore
    `M2`, rebuild: once, equal to live (the absorbed `a0` copy belongs to `M2`'s incarnation).
+   *Link leg (d9ch; round 14):* `untrack` deletes `E`'s own links and logs `unlink` for each
+   ([[#r4-relink]] "Reach at HEAD"), so the leg PLANTS the in-place row: after (1), the fixture
+   inserts one `entity_links` row (`mentions`, concept `C`, entity `E`'s OLD id, weight 0.5)
+   directly in the catalog, with no event (the dangling-link shape 22.1a's fixtures plant; a
+   writer that held `E`'s stale id). After (2) the dump holds no `link` on that key (`E` dead);
+   (3) re-attaches it in place and logs exactly one `link` event for it (`c_kind`, `e: E`,
+   `weight: 0.5`, `partition`; `restore_reattached` link count 1); after (4) the `entity_links`
+   SET compared by name (`linkage`, both ends, `weight`) EQUALS live's. The uncompacted control
+   (steps 1, plant, 3, 4): equal, the link held once.
+   *Sidecar leg (d9ch; round 14):* in the base fixture `E` also holds a learned evidence row from
+   concept `query/foo` (kind `concept`) with one 16.6 sidecar row. After (2) the dump holds
+   neither its append nor a `learned_provenance` event (16.6 R1d: a sidecar row with a dead end
+   is not dumped); (3) logs one restating `evidence` append for it, then one `learned_provenance`
+   event with the same `ts`; after (4) the sidecar EQUALS live's on every column but 16.6's three
+   mark columns, and `unresolved_provenance` is 0. The uncompacted control: equal, one sidecar
+   row (the re-logged event is a no-op on the primary key).
    Mutations, each FAILS it:
+   - "re-attach a link without logging" (round 7's rule for links): after (2) the log holds no
+     `link` event on `E`'s key (the dump's `entity_links` query joins both ends to live
+     entities, and `E` was dead when it ran), (3) adds none, so (4)'s rebuild re-creates `E` and
+     `C` but its `link_state` has no entry for the key: 0 `E`-to-`C` links against live's 1
+     (the planted row has no event, so the uncompacted control fails the same way);
+   - "log the re-attached link without `weight`": the rebuild's `self.link(..., weight=None)`
+     holds the link with weight NULL against live's 0.5 (the set compared with `weight`);
+   - "re-attach the sidecar without re-logging it": the compacted log holds no
+     `learned_provenance` event for the row, so (4)'s rebuild holds the evidence row (from the
+     restating append) and 0 sidecar rows against live's 1;
+   - "log the sidecar event before the restating append" (or with an earlier `ts`): the row
+     pass applies it before the append it names, the evidence row does not yet exist, so it is
+     counted `unresolved_provenance` 1 and the rebuilt sidecar holds 0 rows against live's 1;
    - "re-attach without logging" (round 7's rule: the in-place update, no append): after (2)
      the log holds no record of `E`'s row (the dump's `evidence` query joins both ends to live
      entities, and `E` was dead when it ran), and (3) adds none, so (4)'s rebuild materializes
@@ -1016,10 +1098,10 @@ r6 m-7: this task's own file list (symbols read at `3d3c798`).
 
 | File | Change |
 |------|--------|
-| `src/refmatrix/store.py` | `manifest=` on `purge_entity` / `_bulk_purge_ids` (and the `purge_path` callers that write a manifest), spliced into the `tombstone` event; `restored_from=` on `upsert_entity`, spliced into restore's `entity` events; both through `edge_records.reversal_fields` ([[#r4-reversal]]; d9cf, r12 s-1); the R2 primitives (`remove_evidence(..., ingest_ok=)`, `repoint_evidence`, `rename_entity`, whose merge logs `unlink` / `link` per re-attached link, r11 s-2) and R2's concept-side evidence rule before a purge; `remove_dangling_links` and `remove_dangling_evidence` (R9, built on `_clear_purged_bits`; reborn and per-`link`-key partition rules, r7); the R3 ops in `rebuild_index_from_log`'s one timestamp-ordered row pass (no `_apply_event_body` branch: 16.6 R1f deletes it, d9bu) (16.6 R1d builds the pass; d9av); R4's restore of `link_row` / `evidence_row` with the dead-id re-check and the `id_map` re-attach (r7 s-1, s-2); the rebuild's row pass applies a `restored_from`-tagged `evidence` append through `edge_records.restated_copy` (absorb or add; [[#r4-restate]]; d9cg); `Store._row_op_c_kinds`, the one helper naming a live primitive's op `(c_kind, keep)` pairs (r9 m-1, m-2), and every row-op event through `row_event` / every `unlink` through `edge_event` with `c_kind` (r8 b-1) |
+| `src/refmatrix/store.py` | `manifest=` on `purge_entity` / `_bulk_purge_ids` (and the `purge_path` callers that write a manifest), spliced into the `tombstone` event; `restored_from=` on `upsert_entity`, spliced into restore's `entity` events; both through `edge_records.reversal_fields` ([[#r4-reversal]]; d9cf, r12 s-1); the R2 primitives (`remove_evidence(..., ingest_ok=)`, `repoint_evidence`, `rename_entity`, whose merge logs `unlink` / `link` per re-attached link, r11 s-2) and R2's concept-side evidence rule before a purge; `remove_dangling_links` and `remove_dangling_evidence` (R9, built on `_clear_purged_bits`; reborn and per-`link`-key partition rules, r7); the R3 ops in `rebuild_index_from_log`'s one timestamp-ordered row pass (no `_apply_event_body` branch: 16.6 R1f deletes it, d9bu) (16.6 R1d builds the pass; d9av); R4's restore of `link_row` / `evidence_row` with the dead-id re-check and the `id_map` re-attach (r7 s-1, s-2), which moves the re-attached identity's sidecar rows to the new id in the same transaction (R2's owner rule; [[#r4-relink]], d9ch); the rebuild's row pass applies a `restored_from`-tagged `evidence` append through `edge_records.restated_copy` (absorb or add; [[#r4-restate]]; d9cg); `Store._row_op_c_kinds`, the one helper naming a live primitive's op `(c_kind, keep)` pairs (r9 m-1, m-2), and every row-op event through `row_event` / every `unlink` through `edge_event` with `c_kind` (r8 b-1) |
 | `src/refmatrix/edge_records.py` | `reversal_fields` / `reversal_of`, the one builder and reader of `manifest` on purge tombstones and `restored_from` on restore's `entity` events and on its restating `evidence` appends ([[#r4-reversal]], [[#r4-restate]]; d9cf, r12 s-1; d9cg; the functions that read them, `revivable` and `restated_copy`, are 22.6's); `evidence_remove` and `evidence_repoint` added to 16.6's `ROW_OPS`, built by `row_event` (r8 b-1, d9bl); `_LEGACY_PREFERRED_KIND` renamed to the public `LEGACY_PREFERRED_KIND` (read by `resolve_legacy_kind` and by `Store._row_op_c_kinds`, r9 m-1) |
 | `scripts/factslog-restore.py` (plan-17 task 17.4's) | `evidence_remove`, `evidence_repoint`, `entity_rename` added to `FOLD_OPS`, each with its stated fold rule (r10 s-3), folded in the rebuild's `(ts, log position)` order: `evidence_remove` reduces the copies of its key (`row_key` plus `detail`, in its `partition` field) appended at or before it to its `keep`; `evidence_repoint` is count-neutral (it moves a copy's `file` / `line`, the evidence count is unchanged) and is named in `FOLD_OPS` as ignored for the counts; `entity_rename` renames the entity key in the fold's name map and, when `merged` is true (the [[#r2]] collision), moves the old key's evidence copies to the surviving key (count-neutral for `evidence`); links follow their own `unlink` / `link` events and the entity count follows the old key's own `tombstone`, so the rename itself changes neither (r11 s-2, d9cc: evidence moves; links and entities follow their own events). 22.6 AC-6d proves the fold's counts equal the rebuild's on AC-3's, AC-3d's, AC-3f's and AC-7's logs ([[task-22.6-removal-entry-points#acceptance]]). In the same commit as the replay branch: 17.4's AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s op set, and an op missing from it fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
-| `src/refmatrix/removal_apply.py` (new) | the R6 batch loop over `bounded_steps` (incl. the per-partition and `none` batches), each batch's purges called with `manifest=<apply_id>`; R4's intent log and restore, restore's `entity` events with `restored_from=<apply_id>` for every `id_map` key ([[#r4-reversal]]; d9cf, r12 s-1), and one `restored_from`-tagged `evidence` append per evidence row re-attached in place, built by `edge_records.edge_event`, the count printed beside `restore_reattached` ([[#r4-restate]]; d9cg), R7's gate, R5's attribution incl. [[#r5-grep-record]] |
+| `src/refmatrix/removal_apply.py` (new) | the R6 batch loop over `bounded_steps` (incl. the per-partition and `none` batches), each batch's purges called with `manifest=<apply_id>`; R4's intent log and restore, restore's `entity` events with `restored_from=<apply_id>` for every `id_map` key ([[#r4-reversal]]; d9cf, r12 s-1), and one `restored_from`-tagged `evidence` append per evidence row re-attached in place, built by `edge_records.edge_event`, the count printed beside `restore_reattached` ([[#r4-restate]]; d9cg), one `link` event per link re-attached in place (`edge_event`, with `weight`) and one `learned_provenance` event per sidecar row of a re-attached identity (`row_event`, after its restating append, same `ts`), each count printed ([[#r4-relink]]; d9ch), R7's gate, R5's attribution incl. [[#r5-grep-record]] |
 | `src/refmatrix/verbs.py` | `removal_apply`, `removal_restore` (R8); `mcp.py` generates their tools from `verbs.VERBS` |
 | `src/refmatrix/daemon.py` | the apply and restore ops under the writer lock (R6, R8) |
 | `src/refmatrix/cli.py` | `rmx removal apply`, `rmx removal restore` (R8) |
@@ -1259,3 +1341,21 @@ clean). `src/` unchanged. Later rows win over round 7's no-event rule for eviden
 
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 rel: depends-on -> [[task-22.6-removal-entry-points#r5-restated-fn]]
+
+## Revision round 14 (2026-10-15) {#rev-round-14}
+
+Applies d9ch ([[plan-review-2026-10-14#t12-approvals]]; PROVISIONAL until its ch-bsd loop is
+clean), which extends d9cg to every row type the restore re-attaches in place and answers the
+round-13 reviser's open item ([[task-22.6-removal-entry-points#rev-round-13]] last row, now
+CLOSED). `src/` unchanged. Later rows win over round 7's no-event rule for links.
+
+| finding / decision | answered in |
+|---|---|
+| d9ch (a): a re-attached LINK logs a `link` event | [[#r4]] "Restore maps every recorded old id" (the no-event sentence for links replaced); [[#r4-relink]] *Links*: one `link` event per in-place link, built by `edge_records.edge_event` with `weight` and `partition`, no `restored_from` (a set member: replay's `link_state` and 17.4's fold keep the last event per key, so it is count-neutral uncompacted and needs no absorb rule); AC-4e link leg + mutations "re-attach a link without logging" (0 against live 1) and "log the re-attached link without `weight`" (NULL against 0.5) |
+| reach of (a) at HEAD, found while tracing | [[#r4-relink]] "Reach at HEAD": `purge_entity` and `_bulk_purge_ids` delete `entity_links` on both columns (and `purge_entity` logs `unlink`), so no purge leaves an in-place link; a purged entity's links are re-INSERTED from the manifest with events. The rule covers a row another route puts there; AC-4e plants one (22.1a's dangling-shape fixture precedent). The [[#r4]] bullet's example ("leaves `B`'s row in place") holds for evidence rows only |
+| d9ch (b): the sidecar of a re-attached learned evidence row | 16.6 R1d's dump emits a `learned_provenance` event only for a sidecar row whose evidence row it dumps (stated explicitly in [[task-16.6-learned-row-validation#rev-round-14]]), and R1e keeps a purged entity's sidecar rows in place, so the dump SKIPS them; [[#r4-relink]] *Sidecar rows*: the in-place update moves them to the new id (R2's owner rule) and the restore re-logs each through `row_event` after its restating append, same `ts`; no `learned_provenance_move` (by name the key is unchanged); uncompacted it is a no-op on 16.6's primary key; AC-4e sidecar leg + mutations "re-attach the sidecar without re-logging it" (0 rows against live 1) and "log the sidecar event before the restating append" (`unresolved_provenance` 1, 0 rows) |
+| d9ch (c) | [[task-17.4-factslog-backup-snapshot#r6-restore]] step 3 names `edge_records.restated_copy` beside `revivable` ([[task-17.4-factslog-backup-snapshot#rev-round-14]]) |
+| raised, not ruled by d9ch | the sidecar rows a restore RE-INSERTS with an `evidence_row` (the dead-side re-insert, not in place): [[#r4]] logs their `evidence` append by name but names no `learned_provenance` event for the manifest's sidecar rows; if the restore re-inserts them silently, a rebuild loses them even with no compaction. Needs a ruling (the same rule, one more call site) |
+
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+rel: depends-on -> [[task-16.6-learned-row-validation#r1d]]

@@ -17,7 +17,8 @@ metadata:
 > round 6, 2026-10-15, [[#rev-round-6]], round 7, 2026-10-15, [[#rev-round-7]], round 8,
 > 2026-10-15, [[#rev-round-8]], round 9, 2026-10-15, [[#rev-round-9]], round 10,
 > 2026-10-15, [[#rev-round-10]], round 11, 2026-10-15, [[#rev-round-11]], round 12,
-> 2026-10-15, [[#rev-round-12]], and round 13, 2026-10-15, [[#rev-round-13]])
+> 2026-10-15, [[#rev-round-12]], round 13, 2026-10-15, [[#rev-round-13]], and round 14,
+> 2026-10-15, [[#rev-round-14]])
 > Wave: 1, after 22.2 (it needs the engine, the intent-record form and restore); parallel to
 > 22.5. R4 (the sync edit fix) needs only 16.6's Wave-1 slice and may land first.
 > Depends on: 22.2 (engine, primitives, R4 intent-record form, `removal_restore`), 22.1a
@@ -957,7 +958,21 @@ unchanged. Later rows win.
 | d9cg (restore logs an `evidence` append for every row it re-attaches in place) | the append itself is [[task-22.2-repair-then-remove#r4-restate]]; its AC is 22.2 AC-4e, which lands in this task's test file ([[#files-to-modify]] tests row) |
 | double count of the restating append on an uncompacted log | [[#r5-restated-fn]]: ONE function `edge_records.restated_copy` (absorb into the purged incarnation's still-held copy, else add one), built on `revivable` and `reversal_of`, called by the same three callers; [[#r5-scan]] watches concept-end timelines and skips absorbed appends; "The fold" folds the append through it; [[#r5-reattach-guard]] `orphan_drop_reattached` counts only appends with a reversed tombstone after them |
 | ACs touched | AC-6d (over 22.2 AC-4e's logs; mutation "the fold ignores `restored_from` on an `evidence` append"); AC-6e base (its restore now logs `r'`, absorbed; outcomes unchanged, re-traced; the count-guard mutation re-traced: it fails 2 against 1 or 0 against 1 depending on whether `N` counts `r'`); AC-6f (`restated_copy`'s callers, two mutations); AC-9c (one tagged append logged; round 7's mutation "log an `evidence` event" RETIRED, replaced by "the restating append always adds a copy") |
-| not ruled by d9cg, raised by the reviser | (a) a LINK re-attached in place has the same compaction gap: the dump's `entity_links` query also joins both ends to live entities, and R4 logs no `link` for it; a `link` event is a set member keyed by edge (17.4's set fold), so logging it on restore would be count-neutral without an absorb rule; (b) the `learned_provenance` sidecar of a re-attached learned evidence row, if 16.6 R1d's dump also omits rows with a dead end; both need an orchestrator ruling |
+| CLOSED in round 14 by d9ch ([[#rev-round-14]]); was: not ruled by d9cg, raised by the reviser | (a) a LINK re-attached in place has the same compaction gap: the dump's `entity_links` query also joins both ends to live entities, and R4 logs no `link` for it; a `link` event is a set member keyed by edge (17.4's set fold), so logging it on restore would be count-neutral without an absorb rule; (b) the `learned_provenance` sidecar of a re-attached learned evidence row, if 16.6 R1d's dump also omits rows with a dead end; both need an orchestrator ruling. ANSWERED by d9ch: (a) each in-place link logs a `link` event (a set member, no absorb rule), (b) the dump does skip dead-end sidecar rows (now stated in 16.6 R1d) and the restore re-logs each; both in [[task-22.2-repair-then-remove#r4-relink]] and 22.2 AC-4e's link and sidecar legs |
 
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 rel: depends-on -> [[task-22.2-repair-then-remove#r4-restate]]
+
+## Revision round 14 (2026-10-15) {#rev-round-14}
+
+Closes this task's round-13 open item ([[#rev-round-13]] last row) under d9ch
+([[plan-review-2026-10-14#t12-approvals]]; PROVISIONAL until its ch-bsd loop is clean). `src/`
+unchanged. No requirement of this task changes: the rule is 22.2's restore.
+
+| finding / decision | answered in |
+|---|---|
+| d9ch (a), (b) (links and sidecar rows re-attached in place) | [[task-22.2-repair-then-remove#r4-relink]]; their ACs are 22.2 AC-4e's link and sidecar legs, which land in this task's test file beside AC-9c ([[#files-to-modify]] tests row, unchanged); [[#r5-restated-fn]] is untouched: neither new event is a counted copy (a `link` is a set member; a sidecar event is a no-op on 16.6's primary key when its row exists) |
+| d9ch (c) | [[task-17.4-factslog-backup-snapshot#r6-restore]] step 3 names `restated_copy` beside `revivable` |
+
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+rel: depends-on -> [[task-22.2-repair-then-remove#r4-relink]]

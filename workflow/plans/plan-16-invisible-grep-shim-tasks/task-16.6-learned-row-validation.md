@@ -14,7 +14,8 @@ metadata:
 # Task 16.6: the learned-evidence sidecar, its verifier, read-time marks and the backfill {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision round 11, 2026-10-15, answering the r11 diff check
+> Status: Pending (revision round 14, 2026-10-15, d9ch (b): the dump's dead-end sidecar skip
+> stated, [[#rev-round-14]]; revision round 11, 2026-10-15, answering the r11 diff check
 > `bsd-plan16-22-spec-diffcheck-r11-d8188ee` s-1(i) and d9cc, [[#rev-round-11]]; revision round
 > 10, 2026-10-15, answering the r10 diff check
 > `bsd-plan16-22-spec-diffcheck-r10-451b505` s-1 (AC-9d check 2), s-3, m-3 and d9bz,
@@ -63,6 +64,18 @@ rel: motivates -> [[task-22.2-repair-then-remove]]
 rel: motivates -> [[task-22.3-bug-086-global-repair]]
 rel: specifies -> [[task-22.1-audit-classes#r1-verify]]
 rel: related-to -> [[task-23.4-option-a-measurement]]
+
+## Revision round 14 (2026-10-15) {#rev-round-14}
+
+Applies d9ch (b) ([[plan-review-2026-10-14#t12-approvals]]; PROVISIONAL until its ch-bsd loop is
+clean) where it reads this task. `src/` unchanged. Minimal: one stated rule in [[#r1d]].
+
+| finding / decision | answered in |
+|---|---|
+| d9ch (b): does R1d's dump skip a sidecar row with a dead end? | YES, now stated in [[#r1d]] "The compactor keeps the sidecar": only the sidecar rows of dumped evidence rows are emitted (keyed by name, `ts` from the dumped append; a dead end has neither), counted `provenance_not_dumped`; the re-log on restore is [[task-22.2-repair-then-remove#r4-relink]] with 22.2 AC-4e's sidecar leg and its two mutations. AC-9b is unchanged (its fixture has no dead end; `provenance_not_dumped` is 0 there) |
+
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+rel: related-to -> [[task-22.2-repair-then-remove#r4-relink]]
 
 ## Revision round 11 (2026-10-15) {#rev-round-11}
 
@@ -396,7 +409,13 @@ with no event is wiped by every `rmx rebuild-index` and every `rebuild_index` da
   synthetic `GREATEST(c.updated_at, e.updated_at)`, re-read at `23ad703`), so in the timestamp-ordered
   row pass it ties with that append and follows it by log position (d9av). The snapshot holds current state,
   so no `learned_provenance_move` is needed: the dumped event already names the row's current
-  key. Without this, the first `rebuild_index_from_log` after a compaction rebuilds an EMPTY
+  key. **Only the sidecar rows of dumped evidence rows are emitted (round 14, stated; d9ch):**
+  the dump's `evidence` query joins both ends to live entities, and a sidecar event is keyed by
+  name and takes its evidence row's dumped `ts`, so a sidecar row whose evidence row has a dead
+  end (an orphan [[#r1e]] keeps in place after a purge) has neither a name for that end nor a
+  dumped append, and is not emitted; the dump's result counts it `provenance_not_dumped`, so the
+  skip is never silent. A restore that later re-attaches such a row re-logs its
+  `learned_provenance` event itself ([[task-22.2-repair-then-remove#r4-relink]]). Without this, the first `rebuild_index_from_log` after a compaction rebuilds an EMPTY
   sidecar, and every learner row loses its tool, argv, locale and hash for good.
 - R4's marks (`last_verified_at`, `stale_seen`, `last_mark`) have NO event: they are derived,
   re-earned by later reads, and a rebuild resets them to NULL/0 (stated, counted in the rebuild's
@@ -1076,7 +1095,7 @@ The audit/prune/repair acceptance moved to plan-22. {#acceptance-moved}
 | File | Change |
 |------|--------|
 | `src/refmatrix/duckdb_catalog.py` | `learned_evidence` DDL + primary key |
-| `src/refmatrix/store.py` | `dump_catalog_to_log` emits one `learned_provenance` event per sidecar row after each partition's `evidence` events, with its evidence row's `ts` (R1d, r4 b-2, d9av); `add_learned_provenance` (+ `learned_provenance` events); `move_learned_provenance` (+ `learned_provenance_move` event); DELETE `apply_log_delta`, `_apply_one_event`, `_apply_event_body`, `_replay_concept` and rewrite the `add_memory` comment that names them ([[#r1f]], d9bu); both ops in `rebuild_index_from_log`'s ONE timestamp-ordered row pass, which replaces pass 3's separate `evidence_events` loop and keeps Pass 2b (`_row_pass_events`, R1d, d9av; r8 m-1); Pass 2b calling `edge_records.resolve_c_kind`; `_row_skip` / `row_skips` ([[#r1d-one-format]], d9bl); `verify_evidence_rows` stats split (`missing_file`, `out_of_range`, `reader_rule`); `grep_evidence` enqueues R4 candidates for learned rows |
+| `src/refmatrix/store.py` | `dump_catalog_to_log` emits one `learned_provenance` event per sidecar row of a dumped evidence row after each partition's `evidence` events, with its evidence row's `ts`, and counts the dead-end rows it skips `provenance_not_dumped` (R1d, r4 b-2, d9av; round 14); `add_learned_provenance` (+ `learned_provenance` events); `move_learned_provenance` (+ `learned_provenance_move` event); DELETE `apply_log_delta`, `_apply_one_event`, `_apply_event_body`, `_replay_concept` and rewrite the `add_memory` comment that names them ([[#r1f]], d9bu); both ops in `rebuild_index_from_log`'s ONE timestamp-ordered row pass, which replaces pass 3's separate `evidence_events` loop and keeps Pass 2b (`_row_pass_events`, R1d, d9av; r8 m-1); Pass 2b calling `edge_records.resolve_c_kind`; `_row_skip` / `row_skips` ([[#r1d-one-format]], d9bl); `verify_evidence_rows` stats split (`missing_file`, `out_of_range`, `reader_rule`); `grep_evidence` enqueues R4 candidates for learned rows |
 | `src/refmatrix/edge_records.py` | `ROW_OPS` (this slice's two ops), `row_event`, `row_key`, `resolve_c_kind` (Pass 2b's rule, extracted) ([[#r1d-one-format]], d9bl); 22.2 and 22.6 add their ops to `ROW_OPS` |
 | `src/refmatrix/learned_verify.py` (new) | R2: `Rules`, `Unverifiable`, `UNVERIFIABLE_REASONS`, `verify_argv`, `matching_lines`, `permissive_matching_lines`, `hash_line`, `verify` |
 | `src/refmatrix/replica_merge.py` | none: R1c is RETIRED (d9ay) |
