@@ -7,12 +7,13 @@ metadata:
   node_type: plan
   status: drafting
   created: 2026-10-07
-  updated: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Plan 17: nightly store maintenance from the hub {#root}
 
-> Status: DRAFTING, revision round 5 after the 878647c re-review and d9z ([[#rev-round-5]]);
+> Status: DRAFTING, revision round 6 after the 0e77da3 re-review ([[#rev-round-6]]); revision
+> round 5 after the 878647c re-review and d9z ([[#rev-round-5]]);
 > revision round 3 after the 6091648 re-review ([[#rev-round-3]]); round 2 after
 > the 32dde06 re-review and #t9 ([[#rev-round-2]]); first
 > revised after the 2026-10-14 decision log ([[#rev-2026-10-14]]). The user asked
@@ -37,6 +38,7 @@ rel: derives-from -> [[plan-review-2026-10-14#t9]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c]]
 rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3]]
 
 ## Why {#why}
 
@@ -161,7 +163,7 @@ rel: depends-on -> [[task-23.2-lock-hold-fixture]]
 | 17.1 | `vectors_maintain` + `vectors_restore` daemon ops, verbs, CLI/MCP, on 23.1's `bounded_steps` with `bind(partition_name)`: whole-catalog orphans with a ratio cap that skips only the reap and a `--confirm-orphans <sha>` release, orphan list with vectors, tagged rollback point, fingerprint gate before any cleanup, every partition by name, lock-free single-flight, a `runs.jsonl` ledger, no in-process fallback, no-match delete filter, reader retry | `older_than_s=0` → versions 1; default 24 h keeps a fresh version; forced mismatch → restored, old versions on disk; cross-partition entity's vector survives; capped dataset still compacts, a confirmed per-dataset sha reaps the confirmed ids still orphaned and leaves new ones to the cap; reap → restore round-trips, by same id and by `id_map` to new ids; competitor wins between datasets, `hold_s` per dataset; a reader opened before the pass scans to the end; a no-match re-sync commits 0 versions; pre-registered mutations FAIL | 23.0, 23.2, 23.1 |
 | 17.2 | hub maintenance thread with its own `maintenance_steps`: 03:30 + catch-up, injected roots and clock, serial with per-store budget, `retries=0`, still-running vs failed with a `stuck` ceiling, (store, step) stamps, per-step `requires_arming`, the `hub_maintain_arm` verb gated by a hand-run `run_id`, summary | one run per scheduled day; catch-up exactly once; alert interval ≤ 0 still maintains; an unarmed step that requires arming dry-runs, one that does not runs; the backup runs first and a blocked step does not stop later ones; a stale backup alerts once; a blocking op is received once and becomes `stuck` on the second budget while the next store runs; arm refused without a matching hand run; zero connects outside the sandbox; pre-registered mutations FAIL | 17.1, 23.0 |
 | 17.3 | fleet rollout over the 8 registered daemons: dry run, backup, hand run, user-confirmed orphan release, arm by `run_id`, Time Machine exclusion after the first backup copy; measure on a synthetic ≥ 30k-version clone; docs | before/after table per store; latency ratio ≤ 1/5 and a 0-version no-match re-sync on the synthetic clone; holds < 60 s; one night observed; backups removed only after the user confirms | 17.1, 17.2, 17.4 deployed |
-| 17.4 | `factslog_backup` step on 17.2's `maintenance_steps` (`requires_arming=False`): once-a-day copy of `facts.log` to `backups/facts.log.daily` (+ `.prev`), lock-free from an open descriptor, skipped when unchanged; the live log is then excluded from Time Machine (added 2026-10-14, user) | one copy per injected day; the copy equals the old inode's prefix under a concurrent compaction; replays to the source catalog's state; still copies while `vectors_maintain` blocks; stale alert; restore: a damaged log under a healthy catalog is a forced compaction, a lost catalog is rebuilt from the copy, verified and promoted, and the daemon then holds the copy's learned rows; unchanged = untouched; loud non-destructive failure; runs unarmed, single-flight, ledger line; pre-registered mutations FAIL | 17.2, 23.0 |
+| 17.4 | `factslog_backup` step on 17.2's `maintenance_steps` (`requires_arming=False`): once-a-day copy of `facts.log` to `backups/facts.log.daily` (+ `.prev`), lock-free from an open descriptor, skipped when unchanged; the live log is then excluded from Time Machine (added 2026-10-14, user) | one copy per injected day; the copy equals the old inode's prefix under a concurrent compaction; replays to the source catalog's state; still copies while `vectors_maintain` blocks; stale alert; restore: a damaged log under a healthy catalog is a forced compaction, a lost catalog with an intact live log is rebuilt from the LIVE log (nothing lost), a lost catalog and log is rebuilt from the copy, verified and promoted, and the daemon then holds the copy's learned rows; the daemon refusal and a read-only catalog probe come first; unchanged = untouched; loud non-destructive failure; runs unarmed, single-flight, ledger line; pre-registered mutations FAIL | 17.2, 23.0 |
 
 rel: specifies -> [[task-17.4-factslog-backup-snapshot]]
 
@@ -245,7 +247,9 @@ rel: specifies -> [[task-17.4-factslog-backup-snapshot]]
 ## Open after revision {#open-after-revision}
 
 Round 5 status (2026-10-14): items 1-6 are settled; item 3 is re-settled by d9z and carries the
-exact fields plan-22 must write; item 7 is a note for plan-18. Original text kept as history.
+exact fields plan-22 must write; item 7 is a note for plan-18. Round 6 status (2026-10-15): item 3
+is WRITTEN on both sides (22.2 R4 / AC-4b), with the in-process `invoked_by` value; item 5 gains
+the third restore scenario. Original text kept as history.
 
 1. **SETTLED (ns17-1): two registries.** 17.2's hub `maintenance_steps` and 23.1's daemon
    `tick_registry` differ in process, signature and budget scale; 17.2 no longer depends on 23.1
@@ -260,8 +264,14 @@ exact fields plan-22 must write; item 7 is a note for plan-18. Original text kep
    audited forgets can orphan more than max(50, 5 %) of a global dataset in one night. The cap then
    refuses every night and alerts. The log does not say how such a reap is released (a hand-run
    override, a 22.x manifest hand-off, or a raised cap for that dataset).
-3. **SETTLED BY DECISION (d9z, option a; ns17-r4-1). Plan-17's side is written; plan-22's
-   side is plan-22's to write, and this item does not claim it is written.** 22.2's restore
+3. **WRITTEN, both sides (d9z, option a; ns17-r4-1; round 6 nm17-r6-1): 17.1 R10 / AC-8b, and
+   22.2 R4 / AC-4b ([[task-22.2-repair-then-remove#r4]]).** 22.2 R4 now keeps `old_id`, writes
+   `removal/<apply_id>.vectors.jsonl` in 17.1 R6's format, builds `id_map` and calls
+   `vectors_restore("removal/<apply_id>.vectors.jsonl", id_map=id_map,
+   invoked_by="removal_restore")`, where `removal_restore` is the in-process caller value 17.1 R1
+   defines ([[task-17.1-vectors-maintain-op#r1-verb]]). Round-5 text, kept as history: "Plan-17's
+   side is written; plan-22's side is plan-22's to write, and this item does not claim it is
+   written". 22.2's restore
    gives entities NEW ids, so `vectors_restore` takes `id_map: dict[int, int] | None` (old id →
    new id) and restores the vector under the new id
    ([[task-17.1-vectors-maintain-op#r10-restore]], AC-8b). The caller-facing signature is
@@ -285,12 +295,12 @@ exact fields plan-22 must write; item 7 is a note for plan-18. Original text kep
        round trip;
      - `dataset_version`: the Lance version it was read from.
    - **The OLD id in the manifest.** Each entity `intent` record keeps `old_id` beside its
-     name-keyed before-state (today it keeps "its whole `entities` row except `id`" and "whether
-     a vector existed").
+     name-keyed before-state (22.2 R4 now records "its whole `entities` row, its OLD `id`
+     included as `old_id`"; round 5's "today it keeps … except `id`" is superseded).
    - **The call.** After `removal_restore` re-inserts the entities by name and they have NEW
      ids, it builds `id_map = {old_id: new_id}` from the manifest's `old_id` and the restored
-     rows, and calls `vectors_restore("removal/<apply_id>.vectors.jsonl", id_map=id_map)` with
-     no 23.1 `bind` held (restore takes its own per-dataset `bind`, 17.1 R10; the lock is not
+     rows, and calls `vectors_restore("removal/<apply_id>.vectors.jsonl", id_map=id_map,
+     invoked_by="removal_restore")` in-process (nm17-r6-1) with no 23.1 `bind` held (restore takes its own per-dataset `bind`, 17.1 R10; the lock is not
      re-entrant). `present` means a newer vector already exists and wins; `dim` (the dataset's
      dimension changed since the removal) cannot be restored from the file and is re-embedded;
      `absent` cannot happen after a successful re-insert and is reported as an error, not
@@ -317,7 +327,10 @@ exact fields plan-22 must write; item 7 is a note for plan-18. Original text kep
    ([[task-17.2-hub-nightly-tick#r8-backup-age]]). The restore serves two named scenarios
    ([[task-17.4-factslog-backup-snapshot#r6-restore]]): a damaged log under a healthy catalog is
    `rmx compact-log --force`; a lost catalog is rebuilt from the copy in a throwaway root,
-   verified, and PROMOTED into the live root with the copy as its log. The slot offsets are
+   verified, and PROMOTED into the live root with the copy as its log; a lost catalog with an
+   intact live log (round 6, ns17-r6-1) is rebuilt the same way from the LIVE log, so nothing is
+   lost. The script refuses while the daemon answers and probes the catalog read-only, a lock
+   error counting as "daemon up". The slot offsets are
    bookkeeping only (nothing reads them at HEAD). Round-3 text (superseded): "moves the live log
    aside and resets both slot offsets".
 6. **SETTLED in plan-19 (nm17-r3-5, nm17-r4-1):** 19.4 AC-2 now asserts day-1
@@ -378,4 +391,16 @@ Source: [[bsd-plan23-17-spec-rereview-r4-878647c]] (plan-17: 0 BULLSHIT, 2 SKETC
 | ns17-r3-1 (partial) | the ns17-r4-1 row |
 | ns17-r4-2 (17.4's restore never restores the catalog; offsets unread) | [[#tasks]] 17.4 row, [[#open-after-revision]] 5, [[task-17.4-factslog-backup-snapshot#rev-round-5]], [[task-17.3-fleet-rollout#rev-round-5]] |
 | nm17-r4-1 (17.4 AC-8 daemon clock; restore signature; stale item 6; plan-18 overlap) | [[task-17.4-factslog-backup-snapshot#rev-round-5]] (clock), [[task-17.1-vectors-maintain-op#rev-round-5]] (signature, ledger), [[#open-after-revision]] 6 and 7 |
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Source: [[bsd-plan23-17-spec-rereview-r6-0e77da3]] (plan-17: 0 BULLSHIT, 1 SKETCHY, 2 MEH; round
+4: 3 of 3 closed). Code facts re-read at HEAD `3d3c798`. The round-5 table above is unchanged
+history.
+
+| finding / decision | answered at |
+|---|---|
+| ns17-r6-1 (17.4 restore classifies by "the catalog opens" alone; a lost catalog with an intact live log loses up to a day; probe position and mode unstated) | [[#tasks]] 17.4 row, [[#open-after-revision]] 5, [[task-17.4-factslog-backup-snapshot#rev-round-6]], [[task-17.3-fleet-rollout#rev-round-6]] |
+| nm17-r6-1 (item 3 trails plan-22; `invoked_by` has no value for 22.2's in-process call) | [[#open-after-revision]] 3 (WRITTEN, both sides; the call carries `invoked_by="removal_restore"`), [[task-17.1-vectors-maintain-op#rev-round-6]]; 22.2 R4 names the value (plan-22's file, not edited here) |
+| nm17-r6-2 (R9's no-match filter misses the single-id delete the memory bridge now uses) | [[task-17.1-vectors-maintain-op#rev-round-6]] |
 

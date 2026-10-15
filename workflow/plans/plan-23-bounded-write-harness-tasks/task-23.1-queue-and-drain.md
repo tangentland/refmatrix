@@ -7,21 +7,25 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Task 23.1: queue, tail, bounded steps, and the tick registry {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: Pending (revision round 5, 2026-10-14: re-review [[bsd-plan23-17-spec-rereview-r4-878647c]]
+> Status: Pending (revision round 6, 2026-10-15: re-review [[bsd-plan23-17-spec-rereview-r6-0e77da3]]
+> (ns23-r6-1, ns23-r6-2, ns23-r6-3, nm23-r6-1, nm23-r6-2) with d9ag and d9ao; see
+> [[#rev-round-6]]. Round 5, 2026-10-14: re-review [[bsd-plan23-17-spec-rereview-r4-878647c]]
 > (nb23-r4-1, ns23-r4-1, ns23-r4-2, nm23-r4-1, nm23-r4-2) and the user's writer-handle idea
-> (R1.6, PROPOSED); see [[#rev-round-5]]. Round 3: [[#rev-round-3]]. Round 2: [[#rev-round-2]])
+> (R1.6, ADOPTED (d9ag)); see [[#rev-round-5]]. Round 3: [[#rev-round-3]]. Round 2: [[#rev-round-2]])
 > Depends on: 23.0 (test sandbox), 23.2 (hold + write-count recorder), and **the bug-105 hotfix
 > MERGED TO `master`** (branch `bug-105-fragment-partition`, at whatever sha its last clean
-> ch-bsd audit closes on, with its four test files). 23.1 does not start before that merge, and
+> ch-bsd audit closes on, with its five test files; merged in 0.78.0, [[#facts]] round 6). 23.1 does not start before that merge, and
 > it never carries hotfix commits itself (nb23-r4-1).
 > Blocks: 23.3; 16.6's Wave 1 slice; 22.2 (and so 22.5, 22.3); 17.1; 19.2
 > Not gated on 23.4: the `bind` seam serves either verdict (decision-log #s-2).
+> Not gated on bug-113 (the `replica_merge` schema defect): R8 / AC-13 are RETIRED (d9ao), so
+> nothing in 23.1 runs `replica_merge`.
 
 rel: part-of -> [[plan-23-bounded-write-harness]]
 rel: depends-on -> [[task-23.0-test-sandbox]]
@@ -47,6 +51,12 @@ rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#ns23-r4-2]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#nm23-r4-1]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#nm23-r4-2]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#writer-handle]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3#ns23-r6-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3#ns23-r6-2]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3#ns23-r6-3]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3#nm23-r6-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3#nm23-r6-2]]
+rel: implements -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Facts at HEAD `b1c4324` this spec builds on {#facts}
 
@@ -176,6 +186,49 @@ the shape of the EXISTING code 23.1 builds on once it merges, not as a pin (nb23
 - **`_FairLock` records no owner** (`daemon.py:200`): its state is `_mu`, `_held` and
   `_waiters`; `locked()` says whether SOME thread holds it, never which. A held-lock assert needs
   an owner field (R1.6).
+
+Added in revision round 6, read at HEAD `3d3c798` (0.78.1; `src/` identical to `0e77da3`). The
+hotfix is merged; these bullets correct the round-5 ones where they differ (R1.1 item 7's
+correction pass, nm23-r6-1):
+- **Live merge is fenced (d9ae).** `_op_partition_merge` (`daemon.py:4051`) answers a dry run
+  and REFUSES a live merge ("live partition merge is disabled (bug-105 #b4-1/#s4-1)"); merge runs
+  only OFFLINE, with the daemon down, as `Store.merge_partition(…, lock=None)`. The
+  `merge_partition` docstring (`store.py:1682`) says "no production caller since bug-105 r4
+  fenced the live merge". The merge redesign is the helix plan's (d9ac). Round 5's "an r4 audit
+  is running" is superseded: r4 ran, and its outcome is this fence.
+- **The hotfix's suite is FIVE files.** `tests/test_fragment_partition_scope.py`,
+  `tests/test_fragment_repair_audit.py`, `_r2.py`, `_r3.py`, and `_r4.py` (the fence, the M1
+  periodic-flush guard, M11 `links_skipped`, M14 the canonical verb, the r5 remap pins). `_r4.py`'s
+  `test_periodic_flush_persists_another_bindings_dirty_bits` (`:117`) pins `_periodic_flush`
+  (`daemon.py:228`), the function R6.1 re-plumbs into the tick: it is AC-3d case (i)'s pre-image.
+- **The repair's links half has the liveness gate (bug-111, 0.78.1).** In `repair_fragments`
+  (`store.py:4326`), an `entity_links` row whose entity has no partition is skipped and counted in
+  `links_skipped` and `links_dead_entity`; a row whose concept id is in neither `entities` nor
+  `concepts` is skipped and counted in `links_dead_concept` (`store.py:4379-4395`). Those rows are
+  LEFT in `entity_links` for plan-22's `dangling-link` class (d9an). So "the bitmap rebuilt from
+  `entity_links`" is the bitmap of the ALIVE rows only.
+- **Purge rebinds directly (bug-111 r2).** `_clear_purged_bits` (`store.py:6315`), called by
+  `purge_entity` (`:6059`) and `_bulk_purge_ids` (`:6400`), visits every partition by assigning
+  `_partition_id` / `_partition_name` directly from one read of `partitions`, not through
+  `with_partition`, and restores the caller's binding in a `finally`. Its docstring: "Caller
+  holds the writer lock."
+- **The daemon assigns its writer Store at 8 sites** (ns23-r6-2): `serve_forever` (`daemon.py:1665`
+  boot open, `:1734` init slot rebind, `:1757` its legacy fallback), `_bootstrap_rotation_if_needed`
+  (`:2888` asymmetric slot repair, `:2924` legacy bootstrap), `_op_replica_merge` (`:5490` reopen
+  after a failed merge build, `:5508` dry-run reopen, `:5557` reopen after the swap). Each is
+  `self.store = Store(…)` / `d.store = Store(…)` followed by `db_path` and `init()`.
+- **`replica_merge` is broken on real stores and has no producer of diverged slots** (bug-113,
+  open; `bug_registry.md:166`): `merge_slots` builds its target with `duckdb_catalog.init_catalog`,
+  which lacks `entities.vectors_partition`, and merges an explicit table list. Writer rotation is
+  dropped (`_refresh_replica_now`, `daemon.py:2814`, a no-op). R8 / AC-13 are RETIRED (d9ao).
+- **`_compact_factslog_if_needed` (`daemon.py:2307`) takes the lock itself**: its size gate runs
+  unlocked, then `with self._store_lock:` (`:2346`) wraps `dump_catalog_to_log()` and the slot
+  offset reset; the floor bookkeeping and log lines run after the release. `_FairLock`
+  (`daemon.py:242`) is NOT re-entrant: a thread that holds it and calls `acquire` again queues
+  behind itself (nm23-r6-2).
+- Line moves since round 5: `_FairLock` `daemon.py:242` (was 200), `_read_slot_offset` `:2798`,
+  `_refresh_replica_now` `:2814`, `_load_fragment` `store.py:4152` (its decision at `:4164`),
+  `_flush_current_binding` `:4218` (decision at `:4220`).
 {#facts-body}
 
 ## Requirements {#requirements}
@@ -228,7 +281,10 @@ the shape of the EXISTING code 23.1 builds on once it merges, not as a pin (nb23
         clear, a repair or a rebind that runs while another op holds the lock is the bug-098
         shape. An op that yields the lock (merge's per-chunk `with _lk:`) takes it again around
         each of these steps; an op that takes the lock as an optional argument never runs them
-        under `nullcontext()` when a lock exists. R1.6 (PROPOSED) turns this rule into a check.
+        under `nullcontext()` when a lock exists. R1.6 (ADOPTED (d9ag)) turns this rule into a
+        check. Since the d9ae fence, merge's per-chunk yield runs only OFFLINE with `lock=None`
+        ([[#facts]] round 6); the rule binds every live writer, and the helix plan's merge
+        redesign (d9ac) when it lands.
      6. **A bit is dead only if its entity is gone, or its concept id is in neither `entities`
         nor `concepts`** (nb23-r4-1; r2 #b2-2). A concept id can be any entity id (typed edges,
         `has-part`), so "absent from `concepts`" alone is never "dead".
@@ -236,15 +292,24 @@ the shape of the EXISTING code 23.1 builds on once it merges, not as a pin (nb23
         bug-105 hotfix's code, adopted as EXISTING code once it is merged to `master` (the
         header's `Depends on:`). 23.1 does not re-implement it, does not cherry-pick it, and
         names no sha as its source: the contract is whatever the merged, audited branch holds,
-        and its four test files ([[#facts]] round 5) are the contract's regression suite, kept
-        green by every 23.1 commit (AC-3d). If a later hotfix audit changes the code, this list
-        is corrected to match the merged code, not the other way round.
+        and its FIVE test files ([[#facts]] round 6, correcting round 5's four) are the
+        contract's regression suite, kept green by every 23.1 commit (AC-3d). If a later hotfix
+        audit changes the code, this list is corrected to match the merged code, not the other
+        way round. **Round-6 correction pass (nm23-r6-1), at 0.78.1:** the live merge is fenced
+        (d9ae; item 4's merge text describes the OFFLINE merge, still under this rule); the fifth
+        file is `tests/test_fragment_repair_audit_r4.py`; bug-111 added the links-half liveness
+        gate (item 6 applies to `entity_links` rows too: a dangling row contributes no bit and is
+        counted, never removed by the repair) and `_clear_purged_bits`' direct rebind (R1.6
+        item 3 names it). The four contract points (per-binding cache, flush-not-clear, lock rule,
+        alive predicate) are unchanged.
    - **The live store's existing cross-partition bits** are repaired by the hotfix's
      `rmx repair-index --fragments` (`Store.repair_fragments`), announced and backed up first
      (d9a). It is NOT "a rebuild from `entity_links`" (nm23-r3-2, correcting this spec's round-2
      text and d9a's wording): it is the UNION of the `entity_links` bits and every existing
      fragment bit, each moved to its entity's partition, and it drops only bits whose entity or
-     concept is gone (item 6), into a manifest written first. That is derived-index cleanup with a manifest
+     concept is gone (item 6), into a manifest written first. Its `entity_links` half takes only
+     ALIVE rows (bug-111): a dangling row is counted (`links_dead_entity`, `links_dead_concept`)
+     and left for plan-22's `dangling-link` class (d9an). That is derived-index cleanup with a manifest
      under ADR-0004 `#rule-no-delete` (d9k). No later task may "simplify" it into the lossy
      rebuild; a pure `entity_links` rebuild would have lost 516 bits on the census copy. 23.1 ships
      no repair of its own.
@@ -304,14 +369,19 @@ the shape of the EXISTING code 23.1 builds on once it merges, not as a pin (nb23
      dataset and 17.3 reads them; with `batch=1` in `bounded_steps`, `hold_s[i]` is step `i`'s
      hold). The core measures it around the `bind` hold, in production code, not through 23.2's
      test-only recorder. `holds == len(hold_s)` and `max_hold_s == max(hold_s, default=0)`.
-6. **PROPOSED (needs the user's confirmation): a held-writer-lock check in the Store's
-   writers** (the user's writer-handle idea, 2026-10-14; [[bsd-plan23-17-spec-rereview-r4-878647c#writer-handle]]).
+6. **ADOPTED (d9ag): a held-writer-lock check in the Store's writers** (the user's
+   writer-handle idea, 2026-10-14; [[bsd-plan23-17-spec-rereview-r4-878647c#writer-handle]];
+   adopted as written by d9ag, with round 6's reopen wiring in item 2 and the purge rebind in
+   item 3).
    `bind` (R1.1) already is the writer handle for harness consumers: it takes the lock, binds
    inside the hold, exits both in one `with`, and holds no binding across a release, so nothing
    needs re-binding "after a yield". What it does NOT give is a check that fires when a store-wide
    fragment step or a rebind runs WITHOUT the lock, the hotfix's r2 #b2-1 / r3 #b3-1 shape, in
-   harness and non-harness writers alike (every writing `_op_*`, merge's chunked yield,
-   `_partition_keeping_yield`, `Store.transaction` callers). Proposed:
+   harness and non-harness writers alike (every writing `_op_*`, `_partition_keeping_yield`,
+   purge's `_clear_purged_bits`, `Store.transaction` callers). Merge is not on this list: since
+   the d9ae fence its chunked yield runs only offline with `lock=None` (a Store with no
+   `writer_lock`), and the live merge belongs to the helix plan (d9ac), which inherits this
+   check (nm23-r6-1). The requirement:
    1. **`_FairLock` gains an owner.** `_owner: int | None`, set to `threading.get_ident()` by the
       thread that ends up holding the lock (the fast path in `acquire`, and the woken waiter
       after `ev.wait` returns True, since `release` hands ownership to it), cleared in
@@ -319,27 +389,50 @@ the shape of the EXISTING code 23.1 builds on once it merges, not as a pin (nb23
       `held_by_current_thread() -> bool`. The timeout-race branch (handed the lock, then passes
       it on) never leaves `_owner` set to itself. 23.2's `HoldRecorder` forwards
       `held_by_current_thread` like the rest of the surface.
-   2. **The Store knows the lock.** `Store.writer_lock` (default `None`) is set by the `Daemon`
-      to its `_store_lock` when it opens its writer Store. A Store with no `writer_lock`
-      (in-process CLI, `serial_bind`, a test `Store`) skips the check: it has no lock to hold.
+   2. **The Store knows the lock, on EVERY writer Store, resolved at check time (ns23-r6-2).**
+      - `Store.writer_lock: Callable[[], Lock] | None` (default `None`) is a zero-argument
+        callable that returns the lock to check, not a lock captured at open time. The Daemon
+        installs `lambda: self._store_lock`, so a recorder that 23.2's `recorded_daemon`
+        installs as `_store_lock` after the Store opened is the lock checked.
+      - **ONE installer.** `Daemon._install_writer_store(st: Store) -> Store` sets
+        `st.writer_lock` and assigns `self.store = st`. All 8 writer-Store sites ([[#facts]]
+        round 6: `serve_forever` `:1665`, `:1734`, `:1757`; `_bootstrap_rotation_if_needed`
+        `:2888`, `:2924`; `_op_replica_merge` `:5490`, `:5508`, `:5557`) call it in place of
+        their `self.store = Store(…)` / `d.store = Store(…)` assignment, at the same position
+        (construct, install, then `db_path` and `init()` as today), so no site's failure
+        behaviour changes. Any future writer-Store site uses it too.
+      - An AST test over `daemon.py` asserts that no assignment whose target is an attribute
+        named `store` and whose value is a `Store(…)` call exists outside
+        `_install_writer_store` (AC-20).
+      - A Store with no `writer_lock` (in-process CLI, offline merge, `serial_bind`, a test
+        `Store`) skips the check: it has no lock to hold.
    3. **The check.** `Store._require_writer_lock(site: str)` raises `WriterLockNotHeld(site)`
       (a real exception, not an `assert` statement, which `python -O` strips) when
-      `writer_lock` is set and `not writer_lock.held_by_current_thread()`. It is called at the
+      `writer_lock` is set and `not writer_lock().held_by_current_thread()`. It is called at the
       top of `flush_fragments`, `repair_fragments` (when `dry_run=False`), `transaction`,
       `batch_transaction`, `with_partition` (entry and exit), `_clear_fragment_caches`, and at
-      every direct rebind of `_partition_id` / `_partition_name` outside `with_partition` (the
-      merge end block's SRC → DST move; `_partition_keeping_yield`'s restore, which runs right
-      after its `acquire`).
+      every direct rebind of `_partition_id` / `_partition_name` outside `with_partition`:
+      `_clear_purged_bits` (`store.py:6315`, reached by `purge_entity` and `_bulk_purge_ids`;
+      bug-111 r2 moved purge off `with_partition`, nm23-r6-1), `_partition_keeping_yield`'s
+      restore (which runs right after its `acquire`), and the offline merge end block's
+      SRC → DST move (`store.py:1966`; a no-op check there today, since an offline Store has no
+      `writer_lock`, but it binds the helix plan's live merge).
    4. **First run = census.** Before the check is switched on, one full-suite run with the check
       in WARN mode (log the site and the stack, do not raise) lists every call site that reaches
       these methods unlocked. Each is either moved under the lock or named in the implementation
       summary with why it is safe (for example `Store.close()` at daemon shutdown after every op
-      has stopped). Only then does the check raise.
-   5. **Not proposed here:** migrating every `_op_*` writer onto a `d.writer(partition)` handle.
+      has stopped, or `serve_forever`'s init slot rebind flush at `:1729`, which runs before the
+      socket is bound at `:1807`). Only then does the check raise.
+   5. **Scope: the THREAD lock only (ns23-r6-2, bug-110).** The check proves which thread holds
+      `_store_lock`. It is blind to DuckDB's `fcntl` lock on the slot file, which belongs to the
+      (process, file) pair and is dropped by ANY in-process `close()` of a descriptor for that
+      file (bug-110). That lock is covered by a separate rule, not by this check: the daemon
+      process never opens a descriptor of the writer slot or its `.wal` in-process
+      (`_copy_out_of_process`, `daemon.py:203`). A clean WARN-mode census is therefore never
+      cited as evidence against bug-110's class.
+   6. **Not in scope:** migrating every `_op_*` writer onto a `d.writer(partition)` handle.
       The check makes an unlocked write fail loudly wherever it happens; moving the ops onto
-      one handle is separate scope for its own plan if the user wants it.
-   If the user declines, R1.6 and AC-20 are removed and nothing else in this spec changes: the
-   hotfix's lock-recorder tests (AC-3d) remain the test-side form of the rule. {#r1-6-proposed}
+      one handle is separate scope for its own plan if the user wants it. {#r1-6-proposed}
 
 ### R2 Stop paths, error policy, and the hold alarm (23 #s-1) {#r2}
 
@@ -423,11 +516,20 @@ Every front-end takes the same keyword set, all named:
         one-statement follow-up write under the same hold. A batch with no buffered events
         never sets it.
      3. At daemon boot (before the first tick), if any `queue_offsets` or `bounded_runs` row has
-        `events_pending = true`, the daemon runs `_compact_factslog_if_needed(force=True)`
-        (under `_store_lock`, as that method already does), logs one `rmxd.log` line naming the
-        rows, and clears the flags in the same hold after the compaction returns. A failed
-        compaction leaves the flags set, logs the error, and is retried at the next boot; it is
-        reported by `queue_status` as `events_pending: [<queue/run>]`.
+        `events_pending = true`, the daemon compacts and clears in ONE hold (nm23-r6-2).
+        `_compact_factslog_if_needed` takes `_store_lock` itself and `_FairLock` is not
+        re-entrant ([[#facts]] round 6), so the boot check does NOT call it inside a hold.
+        Instead its locked body is factored out: `Daemon._compact_factslog_locked() -> dict`
+        runs `dump_catalog_to_log()` and the A/B slot-offset reset, and REQUIRES the caller to
+        hold `_store_lock` (it raises if `not self._store_lock.held_by_current_thread()`,
+        R1.6 item 1). `_compact_factslog_if_needed` keeps its size gate, its floor bookkeeping
+        and its log lines, and calls the helper inside its own `with self._store_lock:`, so its
+        behaviour is unchanged. The boot check is: `with self._store_lock:` read the flagged
+        rows, call `_compact_factslog_locked()`, clear exactly those rows' flags; then log one
+        `rmxd.log` line naming them. No batch can set a flag between the read and the clear,
+        because both are in the one hold. A failed compaction raises before the clear, so it
+        leaves the flags set, logs the error, and is retried at the next boot; it is reported by
+        `queue_status` as `events_pending: [<queue/run>]`.
      4. The flag is set and cleared in the catalog, so a crash between `COMMIT` and the clear is
         exactly the case it records; a crash after the clear has no residual to close.
 
@@ -456,8 +558,9 @@ says so.
 
 1. `Daemon.tick_registry.register(name, runner, *, kind)`, `kind ∈ {"drain", "tail",
    "bounded_steps"}`, in a fixed registration order. `_runner` calls `tick_registry.run()` where it
-   calls `_drain_learn_queue()` today; the periodic fragment flush stays after it, every tick,
-   guarded by `has_dirty_fragments()` (every binding), never by the binding-local
+   calls `_drain_learn_queue()` today; the periodic fragment flush stays after it, every tick, as
+   today's `_periodic_flush(store, lock, log)` (`daemon.py:228`, signature unchanged, so the
+   hotfix's M1 pin passes unchanged; AC-3d (x)), guarded by `has_dirty_fragments()` (every binding), never by the binding-local
    `_dirty_fragments` (nb23-r3-1, R1.1 item 3).
 2. ONE budget for all registrants together: `LEARN_DRAIN_BUDGET_S` (default 5 s) keeps its name so
    existing tests that patch it still work; each registrant gets what the ones before it left.
@@ -489,12 +592,27 @@ Outside the harness, `Store.transaction`'s post-`COMMIT` flush failure stops bei
 it increments `Store.fragment_flush_failures`, keeps the fragments dirty for the periodic flush to
 retry, logs to `rmxd.log`, and is reported by `queue_status` and `_store_health`.
 
-### R8 `replica_merge` cannot roll an offset back (#t8-amendments d2a) {#r8}
+### R8 `replica_merge` cannot roll an offset back: RETIRED (d9ao) {#r8}
 
-`replica_merge` merges `queue_offsets` by taking, per `(queue, segment)`, the larger
-`offset_bytes` (and `finalize_pending` and `events_pending` from that row), and `queue_counters` by elementwise max.
-Folded tables carry their own monotone rule (19.2 R6 `memory_usage`, 16.6 R1c sidecar); 23.1 does
-not edit them.
+**RETIRED (d9ao, round 6; ns23-r6-3 option (b)).** Nothing in 23.1 implements or tests this
+requirement, and `replica_merge.py` / `duckdb_catalog.py` are not in 23.1's file list. Reason:
+writer rotation is dropped (`Daemon._refresh_replica_now`, `daemon.py:2814`, is a no-op and the
+refresh thread is not started), so no live path produces two diverged slots; and the frozen
+inactive slots predate the queue tables (`queue_offsets`, `queue_counters`, `bounded_runs`), so
+no slot pair can hold diverged rows of them. `replica_merge` itself is broken on every real store
+(bug-113, open: an `init_catalog` target that lacks `entities.vectors_partition`, an explicit
+table list), and an AC built on `init_catalog` slots would have passed while the production
+command fails.
+- **The frozen slots are a separate item (d9ao).** `rmx replica audit` (2026-10-15) found rows
+  present only in the inactive slot on atldb, refmatrix and viascope (by id); a by-name census
+  decides recover (after bug-113's fix) or discard. That item is not 23.1's.
+- **bug-113 is not a 23.1 dependency.** If a later plan revives slot merging, it adds the queue
+  tables to both `init_catalog` and `merge_slots`' table list and writes its own AC through
+  `_op_replica_merge` on `Store.init()` slots.
+- Original text, kept as history: "`replica_merge` merges `queue_offsets` by taking, per
+  `(queue, segment)`, the larger `offset_bytes` (and `finalize_pending` and `events_pending`
+  from that row), and `queue_counters` by elementwise max. Folded tables carry their own
+  monotone rule (19.2 R6 `memory_usage`, 16.6 R1c sidecar); 23.1 does not edit them."
 
 ### R9 Re-base `learn_queue` on R3, and correct its docstrings {#r9}
 
@@ -556,6 +674,12 @@ Where an earlier spec says "`bind(batch)`", it means `bind(partition_name)` ente
 Holds and writes are counted by 23.2's `HoldRecorder` on a REAL `_FairLock` installed through
 `recorded_daemon`, never by the drain's own return value (23 #s-4).
 
+**The alive-links oracle (nm23-r6-1, bug-111).** Wherever an AC below compares a fragment row to
+"the bitmap rebuilt from `entity_links`", it means the bitmap of that partition's `entity_links`
+rows for that linkage whose entity exists AND whose concept id is in `entities` or `concepts`
+(R1.1 item 6, the same gate `repair_fragments`' links half applies at 0.78.1). A dangling row
+contributes no bit and is never deleted by 23.1's code.
+
 1. **Holds and yields.** 1,000 events with 1,000 DISTINCT keys, `batch=200`: the recorder counts
    exactly 5 holds, and a competitor queued on the lock before each release wins between EVERY
    consecutive pair (4 ordered wins recorded by the recorder's thread names). Mutation: one hold
@@ -573,7 +697,10 @@ Holds and writes are counted by 23.2's `HoldRecorder` on a REAL `_FairLock` inst
      bound, leaving a dirty `pb` fragment in the cache). After the drain, and after a fresh `Store`
      reopens the catalog: `pa`'s `bitmap_fragments` row for `mentions` holds no bit whose entity's
      `partition_id` is `pb`'s, `pb`'s row holds none of `pa`'s, and each row equals the bitmap
-     rebuilt from that partition's `entity_links`. The check is a SQL + pyroaring census over the
+     rebuilt from that partition's ALIVE `entity_links` rows (the alive-links oracle). The
+     fixture carries one dangling `(pa, mentions)` row (its concept's `entities` row deleted by
+     SQL before the drain, bypassing purge); after the drain it is still in `entity_links` and
+     its bit is in no row. The check is a SQL + pyroaring census over the
      ROWS, not the cache. Mutations, each must FAIL: the cache keyed by linkage only (HEAD's
      shape); a flush that writes every dirty entry under the id bound at flush time.
    - **AC-3c no auto-create.** `bind("no-such-partition")` raises `UnknownPartition`, and
@@ -584,9 +711,10 @@ Holds and writes are counted by 23.2's `HoldRecorder` on a REAL `_FairLock` inst
      pyroaring) BEFORE any close, never through the cache, because `close()` flushes every
      binding. Partitions `home` (the at-rest binding) and `pb`.
      - **The hotfix's suite, as merged, is part of this AC and is not rewritten.** At 23.1's
-       FIRST commit and at its last, `tests/test_fragment_partition_scope.py`,
-       `tests/test_fragment_repair_audit.py`, `tests/test_fragment_repair_audit_r2.py` and
-       `tests/test_fragment_repair_audit_r3.py` pass unchanged on `master` (the first run also
+       FIRST commit and at its last, the FIVE files `tests/test_fragment_partition_scope.py`,
+       `tests/test_fragment_repair_audit.py`, `tests/test_fragment_repair_audit_r2.py`,
+       `tests/test_fragment_repair_audit_r3.py` and `tests/test_fragment_repair_audit_r4.py`
+       (nm23-r6-1; round 5 named four) pass unchanged on `master` (the first run also
        proves the `Depends on:` merge happened: the files exist). They pin, by their merged
        names:
        - (ii) rename keeps both bits: `test_rename_with_dirty_cache_keeps_both_bits`;
@@ -602,7 +730,15 @@ Holds and writes are counted by 23.2's `HoldRecorder` on a REAL `_FairLock` inst
        - (ix) the lock rule (R1.1 item 5): a recorder asserts the writer lock is held at every
          `flush_fragments` / `repair_fragments` call in merge and at the home-binding rebind:
          `test_merge_store_wide_flush_and_repair_run_under_the_writer_lock`,
-         `test_p3_home_binding_rebind_happens_under_the_writer_lock`.
+         `test_p3_home_binding_rebind_happens_under_the_writer_lock`;
+       - (x) the d9ae fence and the r2 survivor pins, in `_r4.py`: the live merge is refused
+         (`test_daemon_refuses_a_live_merge_sync_and_async`); `_periodic_flush` flushes another
+         binding's dirty bits (`test_periodic_flush_persists_another_bindings_dirty_bits`, M1,
+         the pre-image of 23.1's case (i)); `links_skipped` counts a dangling link
+         (`test_links_skipped_counts_a_link_to_a_missing_entity`, M11); the canonical verb on
+         the links side (`test_repair_files_a_legacy_snake_verb_link_under_the_canonical_kebab_name`,
+         M14). R6.1 keeps `_periodic_flush(store, lock, log)` (`daemon.py:228`) as the tick's
+         flush body with its signature unchanged, so the M1 test needs no rewrite.
        If the merged branch names a test differently, the implementation summary maps each case
        to the merged name; a case with no merged test is written by 23.1 in this shape.
      - **23.1's own cases** (the code 23.1 changes):
@@ -645,7 +781,7 @@ Holds and writes are counted by 23.2's `HoldRecorder` on a REAL `_FairLock` inst
      `(pa, mentions)` outside the harness and one `flush_fragments()`; then: the counter equals
      600; `entity_links` holds exactly 600 + 1 `mentions` links under the concept; and the
      `(pa, mentions)` `bitmap_fragments` row, read by SQL, equals the bitmap rebuilt from
-     `pa`'s `entity_links`. The extra link-and-flush is what makes a phantom visible: a
+     `pa`'s alive `entity_links` rows (the alive-links oracle). The extra link-and-flush is what makes a phantom visible: a
      rolled-back bit left in the cache as a CLEAN entry is written back only when a later link
      dirties that entry. (c), (e): the child is dead, so a fresh `Daemon` + `Store` drains to
      completion and the same three equalities hold after the same extra link-and-flush.
@@ -662,7 +798,8 @@ Holds and writes are counted by 23.2's `HoldRecorder` on a REAL `_FairLock` inst
      committed but unflushed `link` in `(pa, mentions)` and one in `(pb, mentions)` (outside the
      harness, so they wait for the periodic flush). The batch also links into `(pa, mentions)` and
      faults at (b). After recovery (no close in between), both rows read by SQL contain their
-     pre-existing bit, and each equals the bitmap rebuilt from its partition's `entity_links`.
+     pre-existing bit, and each equals the bitmap rebuilt from its partition's alive
+     `entity_links` rows.
      Mutation: `batch_transaction` without the pre-flush FAILS (the `pa` bit is dropped with the
      batch's entry, and the `pb` entry was flushed inside the rolled-back transaction and
      un-dirtied). {#ac-4}
@@ -696,9 +833,12 @@ Holds and writes are counted by 23.2's `HoldRecorder` on a REAL `_FairLock` inst
     learn queue by 7 with learning ON: `rmx learn status` prints `overflow (dropped, total): 7`.
     With the daemon stopped it prints `queue counters unknown (daemon unreachable)`. Mutation:
     print only when learning is off FAILS. {#ac-12}
-13. **`replica_merge`.** Two slots whose `queue_offsets` rows differ: the merged row carries the
+13. **RETIRED (d9ao) with R8.** No test is written for it, and it is not in the test list.
+    Reason: [[#r8]] (rotation dropped, no producer of diverged slots; the frozen-slot census is a
+    separate d9ao item; bug-113 is not a 23.1 dependency). Original text, kept as history:
+    "**`replica_merge`.** Two slots whose `queue_offsets` rows differ: the merged row carries the
     larger offset; `queue_counters` carries the elementwise max. Mutation: keep the A-side row
-    FAILS when A is older. {#ac-13}
+    FAILS when A is older." {#ac-13}
 14. **Fragment flush failure is surfaced.** A failing post-`COMMIT` flush in `Store.transaction`
     increments `fragment_flush_failures`, keeps the fragment dirty, and the next periodic flush
     writes it; `queue_status` reports the count. {#ac-14}
@@ -709,7 +849,7 @@ Holds and writes are counted by 23.2's `HoldRecorder` on a REAL `_FairLock` inst
     drains and `os._exit(137)`s after hold 1 of 3 commits; a fresh `Daemon` + `Store` drains to
     completion. Then: `linkage_evidence` holds exactly D learn rows, the store's `facts.log` holds
     exactly D `evidence` events for them, and the `mentions` fragment row equals the bitmap rebuilt
-    from `entity_links`. A second, crash-free learn of the same three patterns adds 0 evidence
+    from the alive `entity_links` rows. A second, crash-free learn of the same three patterns adds 0 evidence
     rows and 0 `evidence` events. Mutation: `_learn_grep_hits` back on the plain `add_evidence`
     INSERT FAILS (rows > D). {#ac-16}
     - **AC-16b a kill INSIDE a hold (ns23-r3-2).** The same three patterns. The spawned child
@@ -726,7 +866,10 @@ Holds and writes are counted by 23.2's `HoldRecorder` on a REAL `_FairLock` inst
       `_log_event` appending to `facts.log` at once inside `batch_transaction` (no buffer) → the
       first case (D + hold 2's events); no boot check → the second case (evidence count < D);
       the flag cleared inside the transaction instead of after the append → the second case
-      (the flag is false after the kill and the boot does nothing).
+      (the flag is false after the kill and the boot does nothing); the boot check calling
+      `_compact_factslog_if_needed(force=True)` inside its own `with self._store_lock:` (the
+      non-re-entrant self-deadlock, nm23-r6-2) → the second case, whose restart must answer
+      `ping` within 10 s and does not.
 17. **Dead-letter re-drive.** One learn batch fails non-fatally (dead-lettered, AC-7); the fault is
     removed; `rmx learn redrive` reports 1 line; the next drain applies it; the dead-letter file is
     gone and its `*.redriven.jsonl` copy holds the line. Mutation: a redrive that unlinks the
@@ -741,22 +884,44 @@ Holds and writes are counted by 23.2's `HoldRecorder` on a REAL `_FairLock` inst
     finalize returns `len(hold_s) == 4`, `finalize_ran` true, each entry within 50 ms of the hold
     23.2's recorder measured for the same hold, and `max_hold_s == max(hold_s)`. Mutation: return
     only `max_hold_s` (an empty `hold_s`) FAILS. {#ac-19}
-20. **PROPOSED with R1.6 (removed if the user declines): the writer-lock check fires.**
+20. **ADOPTED (d9ag) with R1.6: the writer-lock check fires.**
     - `_FairLock`: after `acquire` (fast path, and as a woken waiter) `held_by_current_thread()`
       is True in the holder and False in every other thread; after `release` it is False
       everywhere; a waiter whose `acquire` timed out in the hand-off race never reports True.
-    - On a recorded daemon whose writer Store has `writer_lock` set: `flush_fragments()`,
-      `repair_fragments(dry_run=False)`, `with_partition("pb")`, `Store.transaction()` and
-      `batch_transaction()` each raise `WriterLockNotHeld` when called from a thread without
-      the lock, and write nothing (the `bitmap_fragments` and `partitions` rows are unchanged);
-      each succeeds under `with d._store_lock:`. A Store with no `writer_lock` runs all five
-      unlocked (the in-process path).
+    - On a recorded daemon whose writer Store was installed by `_install_writer_store`:
+      `flush_fragments()`, `repair_fragments(dry_run=False)`, `with_partition("pb")`,
+      `Store.transaction()`, `batch_transaction()` and `purge_entity(<id>)` each raise
+      `WriterLockNotHeld` when called from a thread without the lock, and write nothing (the
+      `bitmap_fragments`, `partitions` and `entities` rows are unchanged; for `purge_entity` the
+      raise comes from `_clear_purged_bits`' rebind, nm23-r6-1). Each succeeds under
+      `with d._store_lock:`. A Store with no `writer_lock` runs all six unlocked (the in-process
+      path).
+    - **The check survives a reopen (ns23-r6-2).** On the same recorded daemon, with no slot
+      files, `d._bootstrap_rotation_if_needed()` closes the writer and reopens it on slot A (the
+      `:2924` site); then, with `A` removed, it reopens through the asymmetric-repair site
+      (`:2888`). After each, `d.store` is a different object from before (a reopen really
+      happened) and `flush_fragments()` from an unlocked thread still raises
+      `WriterLockNotHeld`. (These sites, not `_op_replica_merge`'s, because bug-113 makes the
+      replica-merge reopen fail; its three sites are covered by the AST case.)
+    - **One installer, by AST.** A test parses `daemon.py` and finds no `Assign` whose target is
+      an `Attribute` named `store` and whose value is a `Call` to `Store`, outside
+      `Daemon._install_writer_store`.
+    - **A lock replaced after install is the lock checked.** After the writer Store is
+      installed, the test assigns a fresh 23.2 `HoldRecorder` to `d._store_lock` (the shape of a
+      recorder installed after the Store opened): an op under `with d._store_lock:` (the new
+      recorder) succeeds, and an unlocked `flush_fragments()` raises.
     - The WARN-mode census run's site list is in the implementation summary, every site
       resolved.
     - Mutations, each must FAIL: the check removed from `flush_fragments`; `_owner` not set on
-      the woken-waiter path (the holder reports False and every op under the lock raises);
-      merge's end block taken out of its `with _lk:` (the merge raises instead of writing
-      unlocked). {#ac-20}
+      the woken-waiter path (the holder reports False and every op under the lock raises); one
+      of the 8 sites assigning `self.store = Store(…)` directly instead of through the helper
+      (FAILS the AST case, and, at `:2924` or `:2888`, the reopen case); `writer_lock` captured
+      as the lock object at install time instead of a callable (FAILS the replaced-lock case:
+      the op under the new recorder raises); the check removed from `_clear_purged_bits` (FAILS the
+      `purge_entity` case: the purge writes unlocked). Round 5's "merge's end block taken out of
+      its `with _lk:`" is DROPPED: since the d9ae fence that path runs only offline with no
+      `writer_lock`, so the check cannot see it; the hotfix suite's (ix) still pins the offline
+      merge's lock rule (nm23-r6-1). {#ac-20}
 
 ## Test strategy {#test-strategy}
 
@@ -839,4 +1004,19 @@ the hotfix MERGED TO `master`, never on a sha list.
 | nm23-r4-1 (AC-3d (v) allow-list fails on the merged code) | [[#facts]] round 5 (decisions vs mentions), [[#ac-3]] AC-3d (v) (search for a decision, not a mention) |
 | nm23-r4-2 item 1 (slot offsets have no reader) | [[#facts]] round 3 note + round 5, [[#r3]] 7 |
 | writer-handle idea (held-lock assert; non-harness writers) | [[#r1-6-proposed]] (PROPOSED: `_FairLock` owner, `Store.writer_lock`, `WriterLockNotHeld` at five methods + the rebind sites, WARN-mode census first), [[#ac-20]] (PROPOSED). Needs the user. |
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Source: [[bsd-plan23-17-spec-rereview-r6-0e77da3]] and [[plan-review-2026-10-14#t12-approvals]]
+(d9ao), with d9ag (R1.6 ADOPTED as written) and d9aj (older revision tables keep PROPOSED as
+history; only live labels change) applied. Code facts re-read at HEAD `3d3c798`. The round-5
+table above is unchanged history.
+
+| finding / decision | answered at |
+|---|---|
+| ns23-r6-1 (R1.6 / AC-20 still PROPOSED, with a removal clause, after d9ag) | header status, [[#r1]] 1 item 5, [[#r1-6-proposed]] ("ADOPTED (d9ag)"; the "if the user declines" sentence deleted), [[#ac-20]] ("(removed if the user declines)" deleted); plan [[plan-23-bounded-write-harness#open-after-revision]] 7 SETTLED |
+| ns23-r6-2 (`writer_lock` set at one of 8 writer-Store sites; captured lock goes stale; bug-110 scope) | [[#facts]] round 6 (the 8 sites), [[#r1-6-proposed]] item 2 (`writer_lock` a callable; ONE installer `Daemon._install_writer_store`; AST rule) and item 5 (thread lock only; DuckDB `fcntl` lock is `_copy_out_of_process`'s rule), [[#ac-20]] (reopen case at `:2924` / `:2888`, AST case, replaced-lock case; three new mutations) |
+| ns23-r6-3 (R8 / AC-13 on a `replica_merge` bug-113 breaks), d9ao option (b) | header (`Not gated on bug-113`), [[#facts]] round 6, [[#r8]] RETIRED (reason; frozen-slot census is a separate d9ao item; bug-113 not a dependency), [[#ac-13]] RETIRED |
+| nm23-r6-1 (hotfix moved: d9ae fence, fifth test file, bug-111's links gate and direct purge rebind; item 7 correction not done) | [[#facts]] round 6, [[#r1]] 1 items 5 and 7 (correction pass) and the repair bullet, [[#r1-6-proposed]] (merge dropped from the live-writer list; `_clear_purged_bits` added to item 3), [[#r6]] 1 (`_periodic_flush` kept), [[#acceptance]] preamble (alive-links oracle), [[#ac-3]] (AC-3b dangling fixture row; AC-3d five files, case (x)), [[#ac-4]], [[#ac-16]], [[#ac-20]] (`purge_entity` case; the fenced-merge mutant dropped) |
+| nm23-r6-2 (boot compaction "in the same hold" vs the non-re-entrant lock) | [[#facts]] round 6, [[#r3]] 7 step 3 (`_compact_factslog_locked()` factored out; read, compact and clear in ONE hold), [[#ac-16]] AC-16b (self-deadlock mutation) |
 

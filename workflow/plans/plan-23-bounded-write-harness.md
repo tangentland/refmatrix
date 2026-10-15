@@ -13,8 +13,9 @@ metadata:
 # Plan 23: the bounded-write harness {#root}
 
 **Date:** 2026-10-07, revised 2026-10-14.
-**Status:** Drafting (revision round 5 after the 878647c re-review, d9y and the writer-handle
-idea; [[#rev-round-5]]. Round 3: [[#rev-round-3]]. Round 2: [[#rev-round-2]]).
+**Status:** Drafting (revision round 6 after the 0e77da3 re-review and d9ag/d9ao/d9ap;
+[[#rev-round-6]]. Round 5 after the 878647c re-review, d9y and the writer-handle
+idea: [[#rev-round-5]]. Round 3: [[#rev-round-3]]. Round 2: [[#rev-round-2]]).
 Task specs 23.0-23.4 are written.
 This is Wave 1's FIRST build: plans 16 (16.6's Wave 1 slice), 17, 19 and 22 consume it, and every
 Wave 1 test runs in 23.0's sandbox.
@@ -37,6 +38,8 @@ rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648]]
 rel: derives-from -> [[plan-review-2026-10-14#t9-approvals]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c]]
 rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Why {#why}
 
@@ -67,9 +70,9 @@ Order ([[plan-review-2026-10-14#t8-wave1]]): **23.0 ∥ 23.4 → 23.2 → 23.1 (
 | task | what | acceptance (summary) |
 |---|---|---|
 | [[task-23.0-test-sandbox]] | `$HOME`, `RMX_HOME`, registry and LaunchAgents redirected before `refmatrix` is imported; store roots injected; an audit-hook guard that REFUSES any touch of a live store, in the suite and in every spawned child | canaries prove every root resolver lands in the sandbox; live paths are refused in-process and in children (mutations fail); a full run adds no tagged, pytest-path or fixture-shaped row to any live log (content, not size) |
-| [[task-23.4-option-a-measurement]] | Option A measurement #4: one writer thread vs N per-op cursor writers on a cliquet copy, a pinned 20,000-event workload including `bitmap_fragments` upserts, drained to completion with in-place retry; go/no-go ranges CONFIRMED (d9l), procedure corrected (d9m) | the verdict is mechanical from the ranges; integrity compared by NAME; an error at N=1 is INVALID, not NO-GO; the detector proven to fire AND a correct N=2 run proven to pass; runs ordered after the confirmation; the live store untouched by the audit guard |
+| [[task-23.4-option-a-measurement]] | Option A measurement #4: one writer thread vs N per-op cursor writers on a cliquet copy, a pinned 20,000-event workload including `bitmap_fragments` upserts, drained to completion with in-place retry; go/no-go ranges CONFIRMED (d9l), procedure corrected (d9m, d9y, and d9ap: dangling `entity_links` rows counted, not hashed; new pin) | the verdict is mechanical from the ranges; integrity compared by NAME; an error at N=1 is INVALID, not NO-GO; the detector proven to fire AND a correct N=2 run proven to pass; runs ordered after the confirmation; the live store untouched by the audit guard |
 | [[task-23.2-lock-hold-fixture]] | `lock_free_during(lock)`, a `HoldRecorder` on the real `_FairLock` that counts holds, DuckDB statements and Lance versions, markers that fail on zero holds | reverting r8 #s-2 / r9 #s-1 fails; re-introducing bug-085's and bug-093's per-row writes fails; no test keeps its own probe |
-| [[task-23.1-queue-and-drain]] | starts only after the bug-105 hotfix is MERGED TO `master`; `bounded.py`: `bind(partition_name)` (lookup-only; the merged hotfix's per-binding cache, all-binding guards, rename/merge flush, merge's fragment work under the writer lock, live-concept predicate adopted as the contract; a held-writer-lock check PROPOSED) + one `batch_transaction` per hold (pre-flush before `BEGIN`; fragments and offset inside it; `facts.log` events after `COMMIT`) under three front-ends (`drain(queue)`, `tail(log)`, `bounded_steps(items)`); stop paths, error policy, finalize, per-hold `hold_s`; the daemon tick registry with one budget; `queue_status` / `queue_redrive`; learn re-based with insert-if-absent evidence | two-partition competitor AC on rows AND fragment rows; AC-3d (the merged hotfix suite as cases (ii)-(ix), 23.1's tick and decision-search cases); a rolled-back batch leaves no phantom fragment bit; lost post-commit events re-derived at the next boot; exactly-once under five injected faults; learn crash-replay counts evidence rows; bug-099 RED→GREEN; finalize once; tail never mutates its file; overflow printed by `rmx learn status` |
+| [[task-23.1-queue-and-drain]] | starts only after the bug-105 hotfix is MERGED TO `master`; `bounded.py`: `bind(partition_name)` (lookup-only; the merged hotfix's per-binding cache, all-binding guards, rename/merge flush, merge's fragment work under the writer lock, live-concept predicate adopted as the contract; a held-writer-lock check ADOPTED (d9ag), wired through one writer-Store installer) + one `batch_transaction` per hold (pre-flush before `BEGIN`; fragments and offset inside it; `facts.log` events after `COMMIT`) under three front-ends (`drain(queue)`, `tail(log)`, `bounded_steps(items)`); stop paths, error policy, finalize, per-hold `hold_s`; the daemon tick registry with one budget; `queue_status` / `queue_redrive`; learn re-based with insert-if-absent evidence | two-partition competitor AC on rows AND fragment rows; AC-3d (the merged hotfix suite, five files, as cases (ii)-(ix), 23.1's tick and decision-search cases); the writer-lock check survives every writer reopen (AC-20); a rolled-back batch leaves no phantom fragment bit; lost post-commit events re-derived at the next boot; exactly-once under five injected faults; learn crash-replay counts evidence rows; bug-099 RED→GREEN; finalize once; tail never mutates its file; overflow printed by `rmx learn status` |
 | [[task-23.3-sync-between-file-yield]] | `_sync_paths` on `bounded_steps`: one transaction per step, the lock released between steps, the partition bound per step, each file stamped in its LAST step; one sync at a time per store (`_sync_mutex`), insert-if-absent semantic evidence; bug-093's op-start log line | competitor wins between files; two concurrent syncs equal one; never released inside a transaction; write counts flat in concept count; a crash, cancel or budget stop before the semantic steps loses nothing; same graph as HEAD |
 
 {#tasks-body}
@@ -155,11 +158,18 @@ Original text kept as history.
    and bug-106 rows name plan-23 as spec owner; their owner anchors are
    [[task-23.1-queue-and-drain#r1]] and [[task-23.1-queue-and-drain#r9]]. Original text: the
    bug-099 row still says the decision is "pending with the user"; d2a decided it.
-7. **PROPOSED, needs the user: a held-writer-lock check** in `Store.flush_fragments`,
+7. **SETTLED (d9ag, round 6): ADOPTED as written**, with round 6's single writer-Store installer
+   so the check survives every reopen (ns23-r6-2). Original text: **PROPOSED, needs the user: a held-writer-lock check** in `Store.flush_fragments`,
    `repair_fragments`, `transaction`, `batch_transaction`, `with_partition` and the partition
    rebind sites, reachable from the daemon's `_FairLock` through a new owner-thread field
    ([[task-23.1-queue-and-drain#r1-6-proposed]], AC-20). It is the assert half of the user's
    writer-handle idea; `bind` already is the handle for harness writers.
+8. **RETIRED, not open (d9ao, round 6): 23.1 R8 / AC-13** (`replica_merge` merging
+   `queue_offsets`). Writer rotation is dropped (`Daemon._refresh_replica_now` is a no-op), so
+   nothing produces two diverged slots holding queue tables. The frozen inactive slots that
+   `rmx replica audit` found (2026-10-15) are a SEPARATE item under d9ao (a by-name census decides
+   recover-after-bug-113 or discard); plan-23 does not own it, and bug-113 is not a 23.1
+   dependency ([[task-23.1-queue-and-drain#r8]]).
 
 ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
 
@@ -247,3 +257,17 @@ user's writer-handle idea.
 | nm23-r4-3 (23.3 AC-9 race not forced) | [[task-23.3-sync-between-file-yield#rev-round-5]] |
 | writer-handle idea (PROPOSED) | [[#open-after-revision]] 7, [[task-23.1-queue-and-drain#r1-6-proposed]] |
 
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Source: [[bsd-plan23-17-spec-rereview-r6-0e77da3]] and [[plan-review-2026-10-14#t12-approvals]]
+(d9ao, d9ap), with d9ag (R1.6 adopted) and d9aj (old revision tables keep PROPOSED as history)
+applied. The round-5 table above is unchanged history.
+
+| finding / decision | answered at |
+|---|---|
+| ns23-r6-1 (R1.6 / AC-20 still PROPOSED after d9ag) | [[#root]] status, [[#tasks]] 23.1 row, [[#open-after-revision]] 7 (SETTLED), [[task-23.1-queue-and-drain#rev-round-6]] |
+| ns23-r6-2 (`writer_lock` set at one of 8 writer-Store sites) | [[#tasks]] 23.1 row, [[task-23.1-queue-and-drain#rev-round-6]] |
+| ns23-r6-3 (R8 / AC-13 on a `replica_merge` bug-113 breaks), d9ao option (b) | [[#open-after-revision]] 8, [[task-23.1-queue-and-drain#rev-round-6]] |
+| ns23-r6-4 (23.4's by-name hash has no rule for dangling `entity_links`), d9ap | [[#tasks]] 23.4 row, [[task-23.4-option-a-measurement#rev-round-6]] |
+| nm23-r6-1 (hotfix moved again: d9ae fence, fifth test file, bug-111) | [[#tasks]] 23.1 row, [[task-23.1-queue-and-drain#rev-round-6]] |
+| nm23-r6-2 (boot compaction "in the same hold" vs a non-re-entrant lock) | [[task-23.1-queue-and-drain#rev-round-6]] |

@@ -7,14 +7,16 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Task 17.1: the `vectors_maintain` and `vectors_restore` ops {#root}
 
 > Plan: [plan-17-nightly-store-maintenance](../plan-17-nightly-store-maintenance.md)
-> Status: Pending (revision round 5, 2026-10-14: re-review [[bsd-plan23-17-spec-rereview-r4-878647c]]
-> (ns17-r4-1 with d9z option a, nm17-r4-1); see [[#rev-round-5]]. Round 3: [[#rev-round-3]].
+> Status: Pending (revision round 6, 2026-10-15: re-review [[bsd-plan23-17-spec-rereview-r6-0e77da3]]
+> (nm17-r6-1, nm17-r6-2); see [[#rev-round-6]]. Round 5, 2026-10-14: re-review
+> [[bsd-plan23-17-spec-rereview-r4-878647c]] (ns17-r4-1 with d9z option a, nm17-r4-1); see
+> [[#rev-round-5]]. Round 3: [[#rev-round-3]].
 > Round 2: [[#rev-round-2]])
 > Depends on: 23.0 (test sandbox), 23.2 (hold + write-count recorder), 23.1 (`bounded_steps`,
 > `bind(partition_name)`, `RunResult.hold_s`; [[task-23.1-queue-and-drain#r10-contract]]). 17.2
@@ -39,6 +41,8 @@ rel: related-to -> [[task-22.2-repair-then-remove]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#ns17-r4-1]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#nm17-r4-1]]
 rel: implements -> [[plan-review-2026-10-14#t11-approvals]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3#nm17-r6-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3#nm17-r6-2]]
 
 ## Why {#why}
 
@@ -76,9 +80,10 @@ vector of an entity that lives in another partition or kind. This task does not 
      `vectors_restore(orphan_file: str, ids: list[int] | None = None,
      id_map: dict[int, int] | None = None, dry_run: bool = False, *, invoked_by: str) -> dict`.
      `invoked_by` is keyword-only and REQUIRED at the verb layer and is supplied by the adapter
-     (below), never by the caller: the CLI options and the MCP tool schema do not expose it.
-     What a CALLER passes is everything before the `*`; plan-22's 22.2 calls `vectors_restore`
-     with `orphan_file` and `id_map` (R10, d9z).
+     (below), never by a surface caller: the CLI options and the MCP tool schema do not expose
+     it. What a surface caller passes is everything before the `*`. The ONE in-process caller
+     with no adapter, plan-22's `removal_restore`, passes `orphan_file`, `id_map` AND
+     `invoked_by="removal_restore"` itself (R10, d9z; nm17-r6-1; 22.2 R4 names the value).
    - `older_than_s` is the d-2 window, env-overridable by `RMX_MAINTAIN_OLDER_THAN_S`; the
      production default is 86400.
    - `partition=None` means EVERY partition directory under `<root>/vectors/` (today
@@ -91,10 +96,17 @@ vector of an entity that lives in another partition or kind. This task does not 
    - `confirm_orphans: list[str] | None = None` releases capped reaps, one sha PER DATASET (R6,
      d9c, ns17-r3-2). Same parameter on the verb, the op, the CLI (`--confirm-orphans <sha>`,
      repeatable) and MCP; the hub never passes it.
-   - `invoked_by: "cli" | "mcp" | "hub"` names the SURFACE and is set by the adapter, not by the
-     caller: the CLI adapter passes `"cli"`, the MCP adapter `"mcp"`, 17.2 `"hub"` (nm17-r3-2;
-     it replaces round 2's `"hand"` default, which every surface inherited). It is recorded in the
-     run ledger (R12); a "hand run" below means `invoked_by` in `{"cli", "mcp"}`.
+   - `invoked_by: "cli" | "mcp" | "hub" | "removal_restore"` names the SURFACE and is set by the
+     adapter, not by the caller: the CLI adapter passes `"cli"`, the MCP adapter `"mcp"`, 17.2
+     `"hub"` (nm17-r3-2; it replaces round 2's `"hand"` default, which every surface inherited).
+     **`"removal_restore"` is the in-process caller value (nm17-r6-1):** 22.2's `removal_restore`
+     runs inside the daemon and calls the `vectors_restore` verb in-process (no adapter), so it
+     passes this value itself; it is valid for `vectors_restore` only. The verb layer checks the
+     value against this closed set (`vectors_maintain`: `cli` / `mcp` / `hub`;
+     `vectors_restore`: those plus `removal_restore`) and raises `ValueError` naming the value
+     otherwise, so no caller can invent one. It is recorded in the run ledger (R12); a "hand run"
+     below means `invoked_by` in `{"cli", "mcp"}`, so a `removal_restore` line is never a hand
+     run.
    - The CLI calls the daemon only. When `daemon_mod.ping(root)` fails it exits non-zero with
      `daemon not answering; vectors maintain never runs in-process` and changes nothing. It never
      builds a `Daemon(root)` in-process (the `embed --gc` fallback at `cli.py:10544-10549` is the
@@ -214,10 +226,19 @@ vector of an entity that lives in another partition or kind. This task does not 
    never connects to `models.sock` (spec review #b-5). {#r8-dim}
 9. **R9 No Lance commit for a delete that matches nothing** (spec review #b-6; r7 #m-1).
    {#r9-no-match-filter}
-   `Store._drop_lance_for_purge_batch` (`store.py:3634`, the only vector delete on file re-sync via
-   `purge_path` `store.py:5905` and `_bulk_purge_ids` `store.py:6032`) first filters each kind's ids
-   to the catalog rows with `vectors_updated_at IS NOT NULL`. A kind left with no ids issues no
-   `ds.delete`, so it commits no version. A vector whose row had a NULL stamp is left behind and
+   `Store._drop_lance_for_purge_batch` (`store.py:3706`, the batched vector delete on file
+   re-sync via `purge_path` `store.py:6188` (call at `:6207`) and `_bulk_purge_ids` `store.py:6363`
+   (call at `:6385`)) first filters each kind's ids to the catalog rows with
+   `vectors_updated_at IS NOT NULL`. A kind left with no ids issues no `ds.delete`, so it commits
+   no version.
+   - **The single-id delete too (nm17-r6-2).** `Store._drop_lance_for_purge(entity_id, kind)`
+     (`store.py:3679`) issues one unfiltered `ds.delete("id = N")` per call, one Lance version
+     each (the bug-085 shape). It is called by `purge_entity` (`store.py:6015`), BEFORE the row
+     delete (`:6063`); since bug-111 that includes `ingest_gmd_paths(as_memory=True)`'s
+     prior-doc drop (`ingest_gmd.py:910`) on the SessionStart / save-state bridge, so the batch
+     delete is no longer the only vector delete on a re-sync path. It applies the same filter:
+     it reads the entity's `vectors_updated_at` first and, when it is NULL (or the row is
+     absent), returns False without opening the dataset or calling `ds.delete`. A vector whose row had a NULL stamp is left behind and
    becomes a whole-catalog orphan once the row is purged; the next `vectors_maintain` reaps it into
    the orphan list.
 10. **R10 Restore op** (decision d3a close-out amendment; decision review #b-5; ns17-r3-1).
@@ -238,11 +259,13 @@ vector of an entity that lives in another partition or kind. This task does not 
       each removed entity's OLD id, and before its finalize deletes their vectors it writes them
       to `<root>/removal/<apply_id>.vectors.jsonl` in the R6 format; its restore builds
       `{old_id: new_id}` from the manifest after the name-checked re-insert and calls
-      `vectors_restore(<that file>, id_map=…)`. Lance rows carry only `id`, `vector` and
+      `vectors_restore(<that file>, id_map=…, invoked_by="removal_restore")` in-process (R1;
+      nm17-r6-1). Lance rows carry only `id`, `vector` and
       `updated_at` (`vectors.py:32-41`) and the file carries no name, so without the map no
       restored entity's vector could ever be found again (ns17-r3-1). The exact fields 22.2 must
       write are listed in the plan's cross-plan note ([[plan-17-nightly-store-maintenance#open-after-revision]]
-      item 3); plan-22 owns that text (ns17-r4-1: this spec does not claim it).
+      item 3); plan-22 owns that text, which is now written in 22.2 R4 and AC-4b (d9z;
+      nm17-r6-1).
     - For each listed row: the target id is `id_map[old]` when the map has it, else `old`. The
       target dataset is `vectors/<the target entity's partition NAME>/<its kind>.lance`, read
       from the catalog NOW (any partition), so a vector follows its entity if 22.5 moved it.
@@ -349,6 +372,13 @@ All fixtures are real Lance datasets in tmp stores inside the 23.0 sandbox.
 10. **AC-9 (no-match filter).** A re-sync of a file none of whose ids carry `vectors_updated_at`
     commits zero Lance versions (dataset version unchanged); a file with one embedded id commits
     exactly one per kind.
+    - **The single-id path (nm17-r6-2).** An as-memory `ingest_gmd_paths` of a memory file whose
+      prior `kind=doc` row was never embedded (NULL `vectors_updated_at`, its kind's dataset
+      present) drops that row and commits 0 Lance versions (23.2's
+      `max_writes_per_run(lance_versions=…)` and the dataset version both unchanged); the same
+      ingest over a prior doc row that WAS embedded commits exactly 1. Mutation: the filter
+      removed from `_drop_lance_for_purge` → this case FAILS (1 version for the never-embedded
+      doc).
 11. **AC-10 (single flight and no fallback).** A second call during a run gets `already_running`
     and the 23.2 write-count recorder shows no second run's writes. While a dataset step holds
     `_store_lock` (a `compact` seam that blocks on an event), `vectors_maintain(status=True)` and
@@ -360,6 +390,13 @@ All fixtures are real Lance datasets in tmp stores inside the 23.0 sandbox.
     `vectors_restore` and an MCP one each append one `step: "vectors_restore"` line with their
     `invoked_by` and counts (nm17-r4-1), and 17.2's arm gate given only those lines refuses to
     arm `vectors_maintain`. A caller cannot set `invoked_by` through either surface.
+    - **The in-process value (nm17-r6-1).** An in-process `vectors_restore(<file>, id_map=…,
+      invoked_by="removal_restore")` on a tmp `Daemon` appends one `step: "vectors_restore"`
+      line with `invoked_by: "removal_restore"`; the arm gate given only that line refuses to
+      arm. `vectors_restore(…, invoked_by="hand")` and `vectors_maintain(…,
+      invoked_by="removal_restore")` each raise `ValueError` and append nothing. Mutation: a
+      verb that accepts any `invoked_by` string → this case FAILS (the invented value is
+      recorded).
 13. **AC-11 (no model).** The 23.0 sandbox records zero connects to `models.sock` and zero
     embedder constructions during a run (maintain and restore).
 14. **AC-12 (pre-registered mutations, each must FAIL a named AC):**
@@ -381,6 +418,8 @@ All fixtures are real Lance datasets in tmp stores inside the 23.0 sandbox.
     - the `step: "vectors_restore"` ledger line dropped → AC-13;
     - the `runs.jsonl` line dropped → AC-13;
     - `invoked_by` taken from the caller instead of the adapter → AC-13;
+    - `invoked_by` not checked against the closed set → AC-13 (in-process case);
+    - the no-match filter removed from `_drop_lance_for_purge` → AC-9 (single-id case);
     - `bind` by partition id, or a `bind` that auto-creates → AC-7 (unknown partition);
     - the status / single-flight check taking `_store_lock` → AC-10;
     - hold seconds taken from anything but `RunResult.hold_s` → AC-4;
@@ -398,7 +437,8 @@ All fixtures are real Lance datasets in tmp stores inside the 23.0 sandbox.
 | file | change |
 |---|---|
 | `src/refmatrix/vectors.py` | dimension from schema; fingerprint; tag/compact/cleanup/restore helpers; the retry-once reader helper |
-| `src/refmatrix/store.py` | the maintain and restore routines (whole-catalog orphan query, cap, orphan list); the no-match filter in `_drop_lance_for_purge_batch` |
+| `src/refmatrix/store.py` | the maintain and restore routines (whole-catalog orphan query, cap, orphan list); the no-match filter in `_drop_lance_for_purge_batch` and `_drop_lance_for_purge` (R9) |
+| `src/refmatrix/verbs.py` | the closed `invoked_by` set per verb, `removal_restore` for `vectors_restore` only (R1) |
 | `src/refmatrix/daemon.py`, `verbs.py`, `cli.py`, `mcp.py` | the ops with single-flight, verbs, CLI (no fallback), MCP |
 | `src/refmatrix/cli.py`, `consolidate.py`, `telemetry.py` | readers use the retry helper; `lance_retries` on the `cli.log` row |
 | `src/refmatrix/daemon.py` | the `runs.jsonl` ledger (R12); `confirm_orphans`, `invoked_by` |
@@ -476,4 +516,15 @@ Source: [[bsd-plan23-17-spec-rereview-r4-878647c]] and [[plan-review-2026-10-14#
 | ns17-r4-1 (`id_map` has no caller: 22.2 drops the old id and deletes the vectors itself), d9z option a | [[#r10-restore]] ("Which files it reads": `maintain/` and `removal/`, the R6 fields; `id_map`'s caller is 22.2's `removal/<apply_id>.vectors.jsonl`), AC-8b (a 22.2-shaped file; new mutation); the fields 22.2 must write: [[plan-17-nightly-store-maintenance#open-after-revision]] item 3 |
 | ns17-r3-1 (partial in r4) | the ns17-r4-1 row |
 | nm17-r4-1 (restore signature stated two ways; does restore record its surface) | [[#r1-verb]] (both signatures, `invoked_by` keyword-only, adapter-set), [[#r12-ledger]] (`step: "vectors_restore"` lines, unread by the arm gate), AC-13 |
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Source: [[bsd-plan23-17-spec-rereview-r6-0e77da3]] (plan-17: 0 BULLSHIT, 1 SKETCHY, 2 MEH) and
+the orchestrator's brief for [[plan-review-2026-10-14#t12-approvals]]. Code facts re-read at HEAD
+`3d3c798`. The round-5 table above is unchanged history.
+
+| finding / decision | answered at |
+|---|---|
+| nm17-r6-1 (`invoked_by` has no value for 22.2's in-process `vectors_restore` call; plan item 3 stale) | [[#r1-verb]], [[#r10-restore]] (the call names the value; 22.2's side now written) (`removal_restore`, the in-process caller value, valid for `vectors_restore` only; the closed set is checked, `ValueError` otherwise), AC-13 (in-process case; mutation), AC-12 list; 22.2 R4 names the value ([[task-22.2-repair-then-remove#r4]], plan-22's file); plan item 3: [[plan-17-nightly-store-maintenance#open-after-revision]] |
+| nm17-r6-2 (R9's filter covers the batch delete only; since bug-111 the memory bridge drops docs through the single-id delete) | [[#r9-no-match-filter]] (`_drop_lance_for_purge` filtered too; line numbers re-read), AC-9 (single-id case; mutation), AC-12 list, [[#files-to-modify]] |
 

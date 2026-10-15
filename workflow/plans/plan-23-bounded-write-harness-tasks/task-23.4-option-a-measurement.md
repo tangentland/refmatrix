@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-14
-  updated: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Task 23.4: measure Option A's concurrency before plan-23's code lands {#root}
@@ -17,7 +17,10 @@ metadata:
 > confirmed numbers 2026-10-14 (d9m: integrity by name, no 60 s cap, retry in place, pinned
 > workload, ordered runs, positive control) and corrected AGAIN (d9y: dependency-ordered dealing
 > across threads, a differential dead-bit check, the LIVE log's `st_birthtime`; ranges
-> unchanged). See [[#rev-round-5]]; round 3: [[#rev-round-3]]; round 2: [[#rev-round-2]].
+> unchanged), and corrected a third time (d9ap, 2026-10-15: dangling `entity_links` rows counted
+> in the differential census and excluded from the by-name hash; ranges unchanged; new pin).
+> See [[#rev-round-6]]; round 5: [[#rev-round-5]]; round 3: [[#rev-round-3]]; round 2:
+> [[#rev-round-2]].
 > Depends on: — (runs in parallel with 23.0; gates nothing in plan-23)
 > Feeds: the d2b revisit (plan-17's per-dataset Lance lock; whether Option A becomes a plan)
 
@@ -35,6 +38,8 @@ rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#ns23-r3-4]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#nm23-r3-1]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#ns23-r4-3]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#nm23-r4-2]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3#ns23-r6-4]]
+rel: implements -> [[plan-review-2026-10-14#t12-approvals]]
 
 ## Why {#why}
 
@@ -157,7 +162,15 @@ plus `with_partition`, under A a per-op cursor handle). {#why-body}
      that run's OWN `entities` / `partitions` / `linkage_types` tables:
      - `entities`: `(partition name, kind, name)`;
      - `entity_links`: `(entity's partition name, entity kind, entity name, linkage name,
-       concept's partition name, concept name)` plus `weight`;
+       concept's partition name, concept name)` plus `weight`, over the ALIVE rows only. A
+       **dangling** row (d9an's `dangling-link` class: its `entity_id` is absent from
+       `entities`, or its `concept_id` is in neither `entities` nor `concepts`) is EXCLUDED from
+       this hash explicitly (d9ap; ns23-r6-4). The resolver CLASSIFIES each row before it
+       resolves it: a dangling row goes to the census below, never into the hash. It neither
+       raises on a dangling row (which would make every copy of a live snapshot INVALID at N = 1,
+       forever: bug-111 established that live catalogs hold such rows, for example 5,298
+       dead-entity + 8 dead-concept rows on cliquedb on 2026-10-14) nor drops it silently by an
+       inner join (which would make a run that creates or loses dangling rows invisible);
      - `bitmap_fragments`: every bit of every blob decoded to `(concept_id, entity_id)` and
        resolved to `(row's partition name, linkage, concept name, entity kind, entity name)`.
      - **Dead bits and unknown-partition rows are DIFFERENTIAL, not absolute (d9y; ns23-r4-3
@@ -168,10 +181,16 @@ plus `with_partition`, under A a per-op cursor handle). {#why-body}
        bits whose entity is absent from `entities` or whose concept is in neither `entities` nor
        `concepts` (the bug-105 hotfix's alive predicate), and the rows under an unknown
        `partition_id`, and records the dead bits whose ids the workload never touches as an id
-       set. It runs on the fresh copy before the reference run (the pre-run census, recorded),
+       set. **The census also counts dangling `entity_links` rows (d9ap; ns23-r6-4)**: per
+       linkage name, the entity-dead rows and the concept-dead rows separately (the split
+       `repair_fragments` reports as `links_dead_entity` / `links_dead_concept` at 0.78.1), and
+       records the dangling rows whose ids the workload never touches as a set of `(entity_id,
+       linkage_id, concept_id)` triples. The workload's replayed row deletes are why this half
+       exists: a delete shape that does not also delete the entity's links creates dangling rows,
+       and a correct concurrent run creates exactly the reference run's. It runs on the fresh copy before the reference run (the pre-run census, recorded),
        after the reference run, and after every measured run. A measured run is a mismatch iff
-       its post-run census differs from the REFERENCE run's post-run census (the counts, and the
-       untouched-id set). Dead bits the pre-run census already held are therefore never a
+       its post-run census differs from the REFERENCE run's post-run census (the bit counts, the
+       dangling-link counts, and both untouched-id sets). Dead bits the pre-run census already held are therefore never a
        mismatch by themselves; a dead bit that a measured run creates and the reference does not
        is. The copy is not repaired before the run: its pre-run state is the measurement's input.
      Any difference is `integrity_mismatch`, a lost or duplicated write. {#r6}
@@ -190,8 +209,11 @@ in revision round 2 per ns23-1 and d9d, then confirmed as d9l. The procedure the
 positive control, AC-1's run order) was corrected under those same numbers and acknowledged by the
 user as d9m ("a - yes"). The procedure was corrected again under the same numbers as d9y ("1 -
 agree": dependency-ordered dealing, a differential dead-bit check, the live log's birth time;
-[[#rev-round-5]]). Neither the numbers nor the procedure change after this point without a new
-user decision and a new spec pin ([[#ac-1]]) (nm23-r3-1: one status).
+[[#rev-round-5]]). It was corrected a third time under the same numbers as d9ap (2026-10-15,
+"all four - i agree": dangling `entity_links` rows counted in the differential census and
+excluded from the by-name hash; [[#rev-round-6]]), which moves the spec pin ([[#ac-1]]). Neither
+the numbers nor the procedure change after this point without a new user decision and a new spec
+pin ([[#ac-1]]) (nm23-r3-1: one status).
 
 **Definitions** (ns23-1 item 4):
 - `T(N, k)`: committed transactions per second of run `k ∈ {1, 2, 3}` at N threads.
@@ -232,6 +254,11 @@ Rows are checked top to bottom; the first that matches is the verdict.
      revision ALSO adds one row to the decision log ([[plan-review-2026-10-14]]) naming the
      literal sha: "23.4 procedure pin = `<sha>` (d9y text)". That row is the pin; a later
      procedure change needs a new user decision AND a new pin row.
+   - **Pin superseded (d9ap, round 6).** d9ad pinned `d454bf9` (the d9y text). d9ap changes the
+     procedure (R6's dangling-link rule, AC-3's fixture), so `d454bf9` is no longer the pin and
+     a jsonl recorded against it is refused. **pin: the round-6 revision commit, recorded in
+     plan-review as d9as.** `--spec-pin` takes the sha in the d9as row; everything else in this
+     AC is unchanged.
    - The check orders RUNS, not commits: the `ts` of the FIRST row of every
      `option-a-measure-*.jsonl` is later than the pinned commit's committer time, and every row
      records `git log -1 --format=%H -- <this file>` at run start. `--verdict` takes the pinned
@@ -252,12 +279,19 @@ Rows are checked top to bottom; the first that matches is the verdict.
      thread 1; the test asserts the dealing put them on different threads, so the case is real).
      It retries in place, honours the barrier, and passes R6 with NO `integrity_mismatch`,
      although its entity ids differ from the serial reference's (the test asserts they differ).
-     The smoke fixture's catalog also carries 3 pre-existing dead bits and one row under an
-     unknown `partition_id`; the run is still not a mismatch (the differential check).
+     The smoke fixture's catalog also carries 3 pre-existing dead bits, one row under an
+     unknown `partition_id`, and 2 pre-existing dangling `entity_links` rows (d9ap: one whose
+     entity id is in no `entities` row, one whose concept id is in neither `entities` nor
+     `concepts`); the run is still not a mismatch (the differential check), and its census
+     reports both dangling rows in the untouched set.
      A detector that only proves it can fire is half a detector.
    - **Negative control for the differential check (d9y):** a measured run that, by a test seam,
      sets one extra bit for an entity id that does not exist reports `integrity_mismatch`
      although the copy's 3 pre-existing dead bits are the same in both runs.
+   - **Negative control for dangling links (d9ap):** a measured run that, by a test seam, inserts
+     one extra `entity_links` row naming an entity id that does not exist reports
+     `integrity_mismatch` (its dangling-link count differs from the reference's), although the
+     fixture's 2 pre-existing dangling rows are the same in both runs.
    - Mutations, each must FAIL: R6 hashing `entity_links` / fragments by id → the positive
      control reports `integrity_mismatch`; a conflicted transaction re-applied after the run
      instead of in place, on a stream with an unlink after the conflicted link → the positive
@@ -266,7 +300,10 @@ Rows are checked top to bottom; the first that matches is the verdict.
      seam that delays thread 1's create until thread 2's link has been attempted); the dead-bit
      check made absolute → the positive control reports `integrity_mismatch` on its 3
      pre-existing dead bits; the dead-bit check removed → the differential negative control
-     returns no mismatch; the duplicate query removed → the negative control returns GO. {#ac-3}
+     returns no mismatch; the duplicate query removed → the negative control returns GO; a
+     by-name resolver that RAISES on a dangling `entity_links` row → the positive control (and
+     the N = 1 reference) is INVALID, so the control FAILS; dangling rows dropped by an inner join
+     with no census count → the dangling-link negative control returns no mismatch. {#ac-3}
 4. The verdict is mechanical: `measure_cursor_writers.py --verdict` reads the jsonl and prints the
    matching row of [[#ranges]]; the appended exploration text quotes that output. {#ac-4}
 5. **Live untouched, by the guard, not by stat (ns23-1 item 5).** A live daemon changes the active
@@ -352,4 +389,14 @@ Source: [[bsd-plan23-17-spec-rereview-r4-878647c]] and [[plan-review-2026-10-14#
 | ns23-r4-3 item 3 (the copy's `st_birthtime` → 0 events), d9y "the LIVE log's `st_birthtime`" | [[#r3]] ("Whose birth time": `os.stat` of the live file in the copy phase, recorded as `live_birthtime`), [[#ac-7]] third case |
 | nm23-r4-2 item 3 (AC-1's spec sha has nothing to compare against) | [[#ac-1]] (a decision-log pin row names the literal sha; `--spec-pin` compares against it) |
 | d9l (ranges) | [[#ranges]]: unchanged |
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Source: [[bsd-plan23-17-spec-rereview-r6-0e77da3]] and [[plan-review-2026-10-14#t12-approvals]]
+(d9ap). The ranges are unchanged; the procedure changes, so the pin moves (d9ad's `d454bf9` is
+superseded by the round-6 revision commit, to be recorded as d9as).
+
+| finding / decision | answered at |
+|---|---|
+| ns23-r6-4 (by-name hash of `entity_links` has no rule for dangling rows; the census covers bits only), d9ap | [[#root]] header, [[#r6]] (`entity_links` hash over ALIVE rows; dangling rows classified first and excluded explicitly; census counts them per linkage, entity-dead and concept-dead, plus the untouched-triple set; mismatch rule extended), [[#ranges]] status paragraph (d9ap, pin moves), [[#ac-1]] (pin superseded: the round-6 revision commit, d9as), [[#ac-3]] (2 dangling rows in the smoke fixture; a dangling-link negative control; two new mutations: the resolver that raises, and the silent inner join) |
 

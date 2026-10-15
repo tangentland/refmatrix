@@ -7,13 +7,14 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Task 17.3: fleet rollout {#root}
 
 > Plan: [plan-17-nightly-store-maintenance](../plan-17-nightly-store-maintenance.md)
-> Status: Pending (revision round 5, 2026-10-14: ns17-r4-2's runbook text, see [[#rev-round-5]];
+> Status: Pending (revision round 6, 2026-10-15: ns17-r6-1's third restore scenario, see
+> [[#rev-round-6]]; revision round 5, 2026-10-14: ns17-r4-2's runbook text, see [[#rev-round-5]];
 > revision round 3: ns17-r3-2, nm17-r3-2, nm17-r3-4; see [[#rev-round-3]]. Round 2: ns17-3, ns17-5, ns17-6, d9c; see [[#rev-round-2]])
 > Depends on: 17.1, 17.2, 17.4; deployed
 
@@ -114,13 +115,17 @@ been compacted. {#why-body}
    - `docs/PERFORMANCE.md` gets the maintenance section (schedule, arming, the tag rollback
      point, the orphan list and `rmx vectors restore`, including `id_map` for restores with new
      ids).
-   - The `facts.log` restore runbook documents 17.4 R6's two scenarios
-     ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r4-2): (a) a damaged live log under
-     a healthy catalog is fixed by `rmx compact-log --force`, never by the backup; (b) a lost
-     catalog is restored by `scripts/factslog-restore.py` (daemon stopped; throwaway rebuild and
-     verify first; existing files moved aside, never overwritten; the verified catalog promoted
-     into the live root's writer slot and the copy installed as its log), then the daemon start
-     and the re-embed. It also documents the backup-age alarm (17.2 R8).
+   - The `facts.log` restore runbook documents 17.4 R6's three scenarios
+     ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r4-2, ns17-r6-1) and its
+     classification (daemon refusal first; read-only catalog probe, a lock error = daemon up;
+     live-log parse probe): (a) a damaged live log under a healthy catalog is fixed by
+     `rmx compact-log --force`, never by the backup; (c) a lost or unopenable catalog with an
+     intact live log is rebuilt from the LIVE log (the backup only if the live log fails
+     verification; the script prints the source); (b) a lost catalog AND live log is restored
+     from the backup copy by `scripts/factslog-restore.py` (daemon stopped; throwaway rebuild
+     and verify first; existing files moved aside, never overwritten; the verified catalog
+     promoted into the live root's writer slot and the source installed as its log), then the
+     daemon start and the re-embed. It also documents the backup-age alarm (17.2 R8).
    - `docs/INDEX.md` and the ARCHITECTURE index.
    - The plan-17 decisions (d-1..d-4, d2b, d3a..d3e) are recorded in the implementation summary.
 4. **R4 Watch one night.** After the first scheduled 03:30 run with the fleet armed, `hub.log` and
@@ -193,4 +198,12 @@ Source: [[bsd-plan23-17-spec-rereview-r4-878647c]].
 | finding / decision | answered at |
 |---|---|
 | ns17-r4-2 (the runbook restored the wrong thing; offsets unread) | [[#r3-docs]] (both scenarios; no offset step) |
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Source: [[bsd-plan23-17-spec-rereview-r6-0e77da3]].
+
+| finding / decision | answered at |
+|---|---|
+| ns17-r6-1 (a lost catalog with an intact live log was routed to the day-old backup) | [[#r3-docs]] (three scenarios and the classification) |
 

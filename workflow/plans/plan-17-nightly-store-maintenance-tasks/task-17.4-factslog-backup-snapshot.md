@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-14
-  updated: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Task 17.4: daily facts.log backup copy {#root}
@@ -15,8 +15,8 @@ metadata:
 > Plan: [plan-17-nightly-store-maintenance](../plan-17-nightly-store-maintenance.md)
 > Status: Pending (added 2026-10-14 after commit 32dde06; first reviewed in
 > [[bsd-plan23-17-spec-rereview-r3-6091648]]; revision round 3: ns17-r3-3, ns17-r3-4, nm17-r3-6,
-> see [[#rev-round-3]]. Revision round 5: ns17-r4-2, nm17-r4-1, see [[#rev-round-5]]. Round 2:
-> [[#rev-round-2]])
+> see [[#rev-round-3]]. Revision round 5: ns17-r4-2, nm17-r4-1, see [[#rev-round-5]]. Revision
+> round 6: ns17-r6-1, see [[#rev-round-6]]. Round 2: [[#rev-round-2]])
 > Depends on: 17.2 (the hub tick and its `maintenance_steps` registry, NOT 23.1's daemon tick
 > registry), 23.0 (sandbox)
 
@@ -31,6 +31,7 @@ rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#ns17-r3-4]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#nm17-r3-6]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#ns17-r4-2]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#nm17-r4-1]]
+rel: derives-from -> [[bsd-plan23-17-spec-rereview-r6-0e77da3#ns17-r6-1]]
 
 ## Why {#why}
 
@@ -114,39 +115,65 @@ once-a-day COPY under `backups/` is what Time Machine backs up. {#why-body}
      from the meta file, and the hub alerts once per stale store on every wake, due or not
      (17.2 `#r8-backup-age`). The exclusion of the live log (R7) is permanent, so this alarm is
      what keeps it safe.
-6. **R6 Restore: two scenarios, each with its own path (ns17-r3-4, ns17-r4-2).** {#r6-restore}
+6. **R6 Restore: three scenarios, classified after one refusal (ns17-r3-4, ns17-r4-2, ns17-r6-1).** {#r6-restore}
    The catalog is the authority and the log is re-derivable from it, so which file is restored
-   from which depends on what was lost. The runbook (17.3 R3) names both; the script refuses the
-   case it does not serve.
+   from which depends on what was lost. The runbook (17.3 R3) names all three; the script
+   classifies the root, refuses the case it does not serve, and prints which source it used.
+   - **Classification, in this order, for EVERY scenario (ns17-r6-1).**
+     1. **Refuse while the store's daemon answers** `daemon_mod.ping(root)` (checked first, and
+        again before the promote step; the daemon is stopped by hand).
+     2. **Probe the catalog READ-ONLY.** The active-slot file (`catalog.X.duckdb` when the
+        `active` marker names X, else `catalog.duckdb`) is opened with `duckdb.connect(path,
+        read_only=True)` and one `SELECT count(*) FROM entities` runs; the connection is closed
+        at once. Read-only, so the probe never replays a WAL into the file or writes anything.
+        A DuckDB lock-conflict error (another process holds the file, for example a daemon
+        whose socket no longer answers) is classified **"daemon up"** and refused, never read
+        as "does not open".
+     3. **Probe the live log.** `facts.log` is present and PARSES: every line up to its last
+        newline is a JSON object with an event `op` (a torn final line is ignored, as R3 cuts
+        a copy).
+     The classes: the catalog opens → **(a)**; the catalog is absent or fails to open, and the
+     live log is present and parses → **(c)**; the catalog is absent or fails to open, and the
+     live log is missing or fails to parse → **(b)**.
    - **(a) The live log is damaged or missing, and the catalog is healthy.** The backup is NOT
      used: a day-old copy installed beneath a newer catalog would lose that day from the log.
      The fix is a forced compaction, `rmx compact-log --force` (daemon up: the
-     `compact_factslog` op, `daemon.py:4020`; it rewrites the full log from the catalog by
-     `dump_catalog_to_log`, atomic tmp + rename). Nothing is lost. `scripts/factslog-restore.py`
-     detects this case (an active-slot catalog file exists in the live root and opens) and
-     refuses with the message "catalog present: run `rmx compact-log --force`, not a restore".
-   - **(b) The disaster 17.4 exists for: the catalog is gone.** The catalogs and Lance data
-     are excluded from Time Machine (#why) and so is the live log (R7), so after a machine
-     restore only `backups/` comes back for this store. `scripts/factslog-restore.py <root>`
-     (run with the DEPLOY interpreter) then, in this order:
-     1. **Refuses while the store's daemon answers** `daemon_mod.ping(root)` (checked first and
-        again before step 5; the daemon is stopped by hand).
-     2. **Rebuilds into a THROWAWAY root:** copies `backups/facts.log.daily` to
+     `compact_factslog` op; it rewrites the full log from the catalog by
+     `dump_catalog_to_log`, atomic tmp + rename). Nothing is lost. The script refuses this
+     class with the message "catalog present: run `rmx compact-log --force`, not a restore".
+   - **(c) The catalog is lost or unopenable, and the live log is intact (ns17-r6-1).** The
+     precedents are the 2026-09-14 ART-index crash loop and a catalog deleted with its log
+     kept. The live log is the NEWEST copy of every event, so the rebuild source is the LIVE
+     log, not the backup: the script runs the (b) sequence below with `<source>` = a copy of
+     the live `facts.log` (copied into the throwaway, never moved first). If that throwaway
+     fails verification (step 3), the script falls back to the backup copy, says so, and runs
+     the (b) sequence from `backups/facts.log.daily`. Nothing is lost when the live log
+     verifies; the script prints `source: live` (or `source: backup (live log failed
+     verification: <reason>)`).
+   - **(b) The disaster 17.4 exists for: the catalog is gone and so is the live log.** The
+     catalogs and Lance data are excluded from Time Machine (#why) and so is the live log (R7),
+     so after a machine restore only `backups/` comes back for this store.
+     `scripts/factslog-restore.py <root>` (run with the DEPLOY interpreter) then, with
+     `<source>` = `backups/facts.log.daily` (or the live log in (c)), in this order:
+     1. **The classification above** (the ping refusal is its first step).
+     2. **Rebuilds into a THROWAWAY root:** copies `<source>` to
         `<mkdtemp>/.refmatrix/facts.log` and runs `rmx rebuild --from-log --yes` there with
         `REFMATRIX_ROOT=<mkdtemp>` (the command rebuilds whatever store `_store()` resolves, so
         the env var keeps it off the live root).
-     3. **Verifies** the throwaway's entity, link and learned-evidence counts against the copy's
-        own event counts (AC-3's check) and prints them; a mismatch stops here with the live root
-        unchanged.
+     3. **Verifies** the throwaway's entity, link and learned-evidence counts against the
+        source's own event counts (AC-3's check) and prints them; a mismatch stops here with the
+        live root unchanged (in (c), it triggers the backup fallback instead).
      4. **Moves aside, never deletes,** anything already in the live root that step 5 would
         replace: `facts.log`, `catalog.A.duckdb`, `catalog.B.duckdb`, `catalog.duckdb`,
         `catalog.read.duckdb` and their `.wal` files, each renamed to `<name>.pre-restore-<ts>`.
+        In (c) the moved-aside `facts.log` is byte-identical to the installed one.
      5. **Promotes the verified throwaway into the live root:** the throwaway's catalog file is
         copied (+ `fsync`) to the file the live `Store` will open as its writer slot: if the
         live root's `active` marker names slot X, `catalog.X.duckdb`; with no marker,
         `catalog.duckdb` (the daemon's rotation bootstrap then migrates it, as for any
-        pre-rotation store). The copy is installed as the live `facts.log` by copy + `fsync` +
-        rename, so the installed log is the log the promoted catalog was rebuilt from.
+        pre-rotation store). The throwaway's `facts.log` (the source it was rebuilt from) is
+        installed as the live `facts.log` by copy + `fsync` + rename, so the installed log is
+        the log the promoted catalog was rebuilt from.
      6. **Writes the slot offsets only as consistent bookkeeping:** both `catalog.A.offset` and
         `catalog.B.offset` (where present) are set to the installed log's size, as compaction
         does. Nothing reads them at HEAD (#why), so this is consistency with the promoted slot,
@@ -154,8 +181,9 @@ once-a-day COPY under `backups/` is what Time Machine backs up. {#why-body}
      7. **Prints the follow-up** the operator runs: start the daemon (`rmx daemon start`); Lance
         vectors are not in the log and are not restored by this script, so the runbook names
         the store's embed path to regenerate them.
-   Up to one day of events is lost in scenario (b) by design (the copy is daily). Scenario (a)
-   loses nothing. Running the script against a live root is store surgery: the runbook says to
+   Up to one day of events is lost in scenario (b) by design (the copy is daily). Scenarios (a)
+   and (c) lose nothing (in (c), unless the live log fails verification and the script says it
+   fell back). Running the script against a live root is store surgery: the runbook says to
    announce it and to keep the moved-aside files until the restored store is verified.
 7. **R7 Time Machine exclusion of the live log comes AFTER the copy exists.** 17.3's rollout adds
    `sudo tmutil addexclusion -p <store>/facts.log` for a store only after that store has a
@@ -195,7 +223,11 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
    copying over the live log before the throwaway rebuild (AC-9);
    the streamed fallback removed (AC-10); the restore script promoting nothing into the live
    root (AC-9 scenario (b): the daemon starts with an empty catalog); the restore script
-   installing the copy when a healthy catalog is present (AC-9 scenario (a)).
+   installing the copy when a healthy catalog is present (AC-9 scenario (a)); scenario (c)
+   routed to the backup copy (AC-9 scenario (c): the post-copy appends are missing); a DuckDB
+   lock error classified as "does not open" (AC-9 lock case: the script moves files aside under
+   a held catalog); the catalog probe opened read-write (AC-9 lock case: the probe's own open
+   fails differently, or the WAL case's file changes).
 7. **AC-7 Step obligations (17.2 R2, ns17-5).** Registered with `requires_arming=False`, the step
    runs for real (a copy appears) on the first due day of an UNARMED store; a dry run writes
    nothing; a second call during a blocked copy returns `already_running`, and `status=True`
@@ -211,7 +243,7 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
    file instead (17.2 AC-14's shape): `copied_at` in `backups/facts.log.daily.meta.json` is
    rewritten to 3 days before the daemon's now; then `_store_health` reports
    `factslog_backup_stale: true` and `factslog_backup_age_h` >= 72 with the hub stopped.
-9. **AC-9 The restore runbook, both scenarios (ns17-r3-4, ns17-r4-2).** {#ac-9}
+9. **AC-9 The restore runbook, all three scenarios (ns17-r3-4, ns17-r4-2, ns17-r6-1).** {#ac-9}
    - **Scenario (b), the disaster.** A tmp store whose daemon has run: learned grep rows
      (`linkage_evidence` rows written by learn) and ordinary rows exist, the daily copy is
      taken, then more appends. The test then deletes every catalog file (`catalog.*.duckdb`,
@@ -226,6 +258,22 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
      truncated to half: the script refuses with the "run `rmx compact-log --force`" message and
      changes nothing; `rmx compact-log --force` then restores a log whose replay (AC-3's check)
      equals the live catalog, with the post-copy appends included.
+   - **Scenario (c), catalog lost, live log intact (ns17-r6-1).** The same store as (b), the
+     daily copy taken and then more appends (learned rows among them). The daemon is stopped,
+     the active-slot catalog file is corrupted (its first 4 KiB overwritten with zeros) and the
+     live `facts.log` is kept. The script classifies (c), prints `source: live`, rebuilds,
+     verifies and promotes; after a daemon start the entity, link and learned-evidence counts
+     equal the counts recorded at the END (post-copy appends included), which exceed AC-3's
+     copy-point counts. A second run of the case with the live log's middle line also
+     corrupted prints `source: backup (live log failed …)` and ends at the copy-point counts.
+     Mutation: (c) routed to the backup copy FAILS (the post-copy appends are missing).
+   - **The lock case (ns17-r6-1).** No daemon socket (ping fails), but a child process holds
+     the healthy catalog open read-write: the script refuses with "daemon up (catalog locked)"
+     and changes nothing (every file byte-identical, no `.pre-restore-*` file). Mutations: a
+     lock error classified as "does not open" FAILS (the script goes on to (c) and moves files
+     aside); the probe opened read-write FAILS (in a second case with a stopped store whose
+     catalog has an un-checkpointed `.wal`, the catalog file's bytes change across a refused
+     (a) run).
    - Until step 5 the script writes nothing in the tmp store's own root, and any file it
      replaces is at `<name>.pre-restore-<ts>`, byte-identical to before.
 10. **AC-10 Both copy methods (nm17-r3-6).** On the sandbox volume the op reports
@@ -286,4 +334,12 @@ Source: [[bsd-plan23-17-spec-rereview-r4-878647c]].
 |---|---|
 | ns17-r4-2 (restore never restores the catalog; resets offsets nothing reads; serves no stated failure) | [[#why]] (offsets unread, corrected), [[#r6-restore]] (scenario (a) = forced compaction, refused by the script; scenario (b) = throwaway rebuild, verify, move aside, PROMOTE the catalog, install the log; offsets as bookkeeping only), [[#ac-9]] (both scenarios; learned rows counted after a daemon start), AC-6 mutations, [[#files-to-modify]] |
 | nm17-r4-1 item 1 (AC-8's daemon clause cannot pass under an injected hub clock) | AC-8 (the meta file is back-dated for the daemon clause) |
+
+## Revision round 6 (2026-10-15) {#rev-round-6}
+
+Source: [[bsd-plan23-17-spec-rereview-r6-0e77da3]]. The round-5 table above is unchanged history.
+
+| finding / decision | answered at |
+|---|---|
+| ns17-r6-1 (restore classifies by "the catalog opens" alone; a lost catalog with an intact live log loses up to a day; the probe has no position or mode) | [[#r6-restore]] (classification for every scenario: ping refusal first, READ-ONLY catalog probe with a lock error = "daemon up", live-log parse probe; new scenario (c): rebuild from the LIVE log, backup only as a stated fallback, `source:` printed), [[#ac-9]] (scenario (c) and the lock case; three mutations), AC-6 mutation list |
 
