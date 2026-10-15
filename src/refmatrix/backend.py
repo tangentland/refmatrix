@@ -104,8 +104,23 @@ def attach_file(con, path: "os.PathLike | str", alias: str, *,
     con.execute(f"ATTACH '{quoted}' AS {alias}{tail}")
 
 
+_DRAIN_S = 1.0
+# Cursor calls counted as "a statement in flight" (ch-bsd r2 s-r2-1).
+_TRACKED = frozenset({
+    "execute", "executemany", "sql", "query", "fetchone", "fetchall", "fetchmany",
+    "fetchdf", "fetch_df", "fetchnumpy", "fetch_arrow_table", "arrow", "df", "pl",
+    "register", "unregister",
+})
+
+
 class _ROInstance:
-    """One private DuckDB instance with one file ATTACHed read-only."""
+    """One private DuckDB instance with one file ATTACHed read-only.
+
+    `closed` stops new cursors and statements; `inflight` counts statements
+    running on its cursors. Closing the instance under a running statement
+    segfaulted duckdb 1.5.2 (3/3, ch-bsd r2 s-r2-1) and raised INTERNAL
+    errors in r1, so `shut` interrupts, waits for `inflight` to drain, and
+    only then closes — or leaves the close to the last statement to finish."""
 
     def __init__(self, key: str, path: str, fid: "tuple[int, int] | None"):
         self.key, self.fid = key, fid
@@ -118,10 +133,13 @@ class _ROInstance:
             raise
         self.handles: "weakref.WeakSet[_ROHandle]" = weakref.WeakSet()
         self.refs = 0
-        self.closed = False
+        self.closed = False          # no new cursors / statements
+        self.base_closed = False
+        self.inflight = 0
+        self.cv = threading.Condition()
 
     def handle(self) -> "_ROHandle":
-        # called with _HOLDERS_LOCK held
+        # called with _HOLDERS_LOCK held, on an instance that is not closed
         cur = self.base.cursor()
         try:
             cur.execute(f"USE {_RO_ALIAS}")       # a cursor does not inherit USE (measured)
@@ -133,47 +151,95 @@ class _ROInstance:
         self.handles.add(h)
         return h
 
+    def enter(self) -> None:
+        with self.cv:
+            if self.closed:
+                raise duckdb.ConnectionException(
+                    f"{self.key}: this read-only connection was closed because the file "
+                    "at its path was replaced; reopen it (bug-112)")
+            self.inflight += 1
+
+    def leave(self) -> None:
+        with self.cv:
+            self.inflight -= 1
+            if self.inflight == 0:
+                self.cv.notify_all()
+                if self.closed and not self.base_closed:
+                    self._close_base_locked()     # the deferred close of a drained shut
+
+    def _close_base_locked(self) -> None:
+        self.base_closed = True
+        self.base.close()
+
     def shut(self, *, interrupt: bool) -> None:
+        with self.cv:
+            self.closed = True
+            live = list(self.handles)
         if interrupt:
-            for h in list(self.handles):
+            for h in live:
                 try:
                     h._cur.interrupt()
-                except Exception as exc:  # noqa: BLE001 — reported, then closed anyway
+                except Exception as exc:  # noqa: BLE001 — reported, the close still waits
                     _log.warning("open_duckdb: interrupt of a reader on %s failed: %r",
                                  self.key, exc)
-        self.closed = True
-        self.base.close()                         # closes every cursor of the instance
+        with self.cv:
+            if self.cv.wait_for(lambda: self.inflight == 0, timeout=_DRAIN_S):
+                if not self.base_closed:
+                    self._close_base_locked()
+            else:
+                _log.warning("open_duckdb: %d statement(s) still running on a reader of "
+                             "replaced file %s after %.1fs; it closes when they finish",
+                             self.inflight, self.key, _DRAIN_S)
 
 
-def _drop_handle(inst: _ROInstance, cur) -> None:
-    """Finalizer of a read-only handle: close its cursor, and the instance
-    with its last cursor (a closed instance no longer holds the file)."""
-    try:
-        cur.close()
-    finally:
-        with _HOLDERS_LOCK:
-            inst.refs -= 1
-            last = inst.refs <= 0 and not inst.closed
-            if last:
-                inst.closed = True
-                if _RO_INSTANCES.get((inst.key, inst.fid)) is inst:
-                    del _RO_INSTANCES[(inst.key, inst.fid)]
+def _drop_handle(inst: _ROInstance, cur, ref) -> None:
+    """Finalizer of a read-only handle: close its cursor, forget the handle,
+    and close the instance with its last cursor (a closed instance no longer
+    holds the file)."""
+    h = ref()
+    if h is not None:
+        inst.handles.discard(h)                   # shut must not touch it (ch-bsd r2 m-r2-2)
+    with inst.cv:
+        if not inst.base_closed:
+            cur.close()
+    with _HOLDERS_LOCK:
+        inst.refs -= 1
+        last = inst.refs <= 0 and not inst.closed
         if last:
-            inst.base.close()
+            inst.closed = True
+            if _RO_INSTANCES.get((inst.key, inst.fid)) is inst:
+                del _RO_INSTANCES[(inst.key, inst.fid)]
+    if last:
+        with inst.cv:
+            if inst.inflight == 0 and not inst.base_closed:
+                inst._close_base_locked()
 
 
 class _ROHandle:
     """A read-only connection from `open_duckdb`: a cursor of the shared
-    instance. Attribute access forwards to the cursor; `close()` releases it."""
+    instance. Attribute access forwards to the cursor; statement calls are
+    counted in flight; `close()` releases it."""
 
     __slots__ = ("_inst", "_cur", "_fin", "__weakref__")
 
     def __init__(self, inst: _ROInstance, cur):
         self._inst, self._cur = inst, cur
-        self._fin = weakref.finalize(self, _drop_handle, inst, cur)
+        self._fin = weakref.finalize(self, _drop_handle, inst, cur, weakref.ref(self))
 
     def __getattr__(self, name: str):
-        return getattr(self._cur, name)
+        attr = getattr(self._cur, name)
+        if name not in _TRACKED or not callable(attr):
+            return attr
+        inst, cur, handle = self._inst, self._cur, self
+
+        def tracked(*a, **k):
+            inst.enter()
+            try:
+                out = attr(*a, **k)
+            finally:
+                inst.leave()
+            return handle if out is cur else out  # keep chained fetches counted
+        return tracked
 
     def close(self) -> None:
         self._fin()

@@ -102,3 +102,43 @@ def test_helper_rendering_is_if_then_fi():
     c = hooks_mod._optional_project_hook("x.sh")
     assert c == ('if [ -x "$CLAUDE_PROJECT_DIR/.claude/hooks/x.sh" ]; '
                  'then "$CLAUDE_PROJECT_DIR/.claude/hooks/x.sh"; fi')
+
+
+# ---- ch-bsd r2 d-1: enforce-rmx-grep with the learn.off stand-down ----------
+
+def _grep_hook_exit(proj: Path, home: Path, command: str) -> int:
+    """Run the GENERATED PreToolUse command for enforce-rmx-grep against this
+    repo's real script, as Claude Code would: CLAUDE_PROJECT_DIR = the repo,
+    the tool input on stdin. `rmx` must be resolvable for the script to act
+    at all, so a stub that is never executed sits on PATH."""
+    import json
+    block = _claude_hook_block(proj / ".refmatrix", project_root=proj, enforce=True)
+    cmd = _script_cmds(block)["enforce-rmx-grep.sh"]
+    stub = home / "bin"
+    stub.mkdir(exist_ok=True)
+    (stub / "rmx").write_text("#!/bin/sh\nexit 97\n")
+    (stub / "rmx").chmod(0o755)
+    env = {"PATH": f"{stub}:/usr/bin:/bin", "HOME": str(home), "CLAUDE_PROJECT_DIR": str(proj)}
+    r = subprocess.run(["/bin/bash", "-c", cmd], env=env, cwd=str(proj), timeout=30,
+                       input=json.dumps({"tool_input": {"command": command}}),
+                       capture_output=True, text=True)
+    return r.returncode
+
+
+REPO = Path(__file__).resolve().parents[1]
+
+
+def test_bare_corpus_grep_is_blocked_without_a_learn_off_marker(tmp_path):
+    home = tmp_path / "home"
+    (home / ".refmatrix").mkdir(parents=True)
+    assert _grep_hook_exit(REPO, home, "grep -rn foo src") == 2
+
+
+def test_bare_corpus_grep_passes_while_learn_off_is_set(tmp_path):
+    """0611d2f (cherry-picked): the script stands down while the grep->graph
+    loop is off — the generated command (bug-118, now able to block) and the
+    script together exit 0 with a decoy `~/.refmatrix/learn.off` in a tmp HOME."""
+    home = tmp_path / "home"
+    (home / ".refmatrix").mkdir(parents=True)
+    (home / ".refmatrix" / "learn.off").write_text("decoy marker (test)\n")
+    assert _grep_hook_exit(REPO, home, "grep -rn foo src") == 0

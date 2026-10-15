@@ -94,6 +94,12 @@ def merge_slots(
     try:
         b_ro = open_duckdb(b_path, read_only=True)
         try:
+            clashes = _partition_collisions(a_ro, b_ro)
+            if clashes:
+                raise MergeRefused(
+                    "slots disagree on partition identity — " + "; ".join(clashes)
+                    + ". Partition ids reach every table; the merge refuses rather "
+                      "than guess (bug-123)")
             a_counts, b_counts, max_entity, max_partition, max_lt = _probe(
                 a_ro, b_ro, tables)
         finally:
@@ -176,24 +182,26 @@ def _set_all(con, table: str, src_db: str, src: str, key: str) -> str:
         for c in _columns(con, table) if c != key)
 
 
-def _refuse_partition_collisions(a_ro, b_ro) -> None:
+def _partition_collisions(a_ro, b_ro) -> "list[str]":
     """partitions.name is UNIQUE and partition ids reach every table, so a
     name held under different ids (or an id under different names) cannot be
-    merged by `id NOT IN` — the B rows were dropped or the insert failed.
-    Refuse before anything is written, naming the partitions (bug-123)."""
-    pa = dict(a_ro.execute("SELECT name, id FROM partitions").fetchall())
-    pb = dict(b_ro.execute("SELECT name, id FROM partitions").fetchall())
+    merged by `id NOT IN` — the B rows were dropped or the insert failed
+    (bug-123). Returns one description per clash; `merge_slots` refuses on a
+    non-empty list, `audit_slots` reports it as drift (ch-bsd r2 m-r2-1)."""
+    return _partition_clashes(
+        dict(a_ro.execute("SELECT name, id FROM partitions").fetchall()),
+        dict(b_ro.execute("SELECT name, id FROM partitions").fetchall()))
+
+
+def _partition_clashes(pa: "dict[str, int]", pb: "dict[str, int]") -> "list[str]":
+    """THE partition identity comparison: {name: id} of slot A vs slot B."""
     by_name = sorted(f"{n!r}: A id {pa[n]}, B id {pb[n]}"
                      for n in pa.keys() & pb.keys() if pa[n] != pb[n])
     ia = {v: k for k, v in pa.items()}
     ib = {v: k for k, v in pb.items()}
     by_id = sorted(f"id {i}: A {ia[i]!r}, B {ib[i]!r}"
                    for i in ia.keys() & ib.keys() if ia[i] != ib[i])
-    if by_name or by_id:
-        raise MergeRefused(
-            "slots disagree on partition identity — " + "; ".join(by_name + by_id)
-            + ". Partition ids reach every table; the merge refuses rather than "
-              "guess (bug-123)")
+    return by_name + by_id
 
 
 def _merge_linkage_types(con) -> None:
@@ -235,7 +243,6 @@ def _merge_linkage_types(con) -> None:
 
 
 def _probe(a_ro, b_ro, tables) -> tuple:
-    _refuse_partition_collisions(a_ro, b_ro)
     a_counts = {t: _table_count(a_ro, t) for t in tables}
     b_counts = {t: _table_count(b_ro, t) for t in tables}
 
@@ -553,6 +560,9 @@ def audit_via_writer(
             f"SELECT COUNT(*) FROM {alias}.memory_content WHERE entity_id NOT IN "
             f"(SELECT entity_id FROM memory_content)"
         ))
+        parts_writer = dict(writer_conn.execute("SELECT name, id FROM partitions").fetchall())
+        parts_reader = dict(writer_conn.execute(
+            f"SELECT name, id FROM {alias}.partitions").fetchall())
     finally:
         try:
             writer_conn.execute(f"DETACH {alias}")
@@ -564,10 +574,12 @@ def audit_via_writer(
         a_counts, b_counts = writer_counts, reader_counts
         a_only, b_only = writer_only, reader_only
         mc_a_only, mc_b_only = mc_writer_only, mc_reader_only
+        partition_collisions = _partition_clashes(parts_writer, parts_reader)
     else:
         a_counts, b_counts = reader_counts, writer_counts
         a_only, b_only = reader_only, writer_only
         mc_a_only, mc_b_only = mc_reader_only, mc_writer_only
+        partition_collisions = _partition_clashes(parts_reader, parts_writer)
 
     diffs = [t for t in tables if a_counts[t] != b_counts[t]]
     return {
@@ -586,8 +598,10 @@ def audit_via_writer(
         },
         "writer_slot": writer_slot,
         "reader_slot": reader_slot,
+        "partition_collisions": partition_collisions,
         "drift_detected": bool(
             diffs or a_only or b_only or same_id_diff_payload or pkn_collisions
+            or partition_collisions
         ),
     }
 
@@ -605,6 +619,7 @@ def audit_slots(a_path: Path, b_path: Path) -> dict[str, Any]:
     with closing(open_duckdb(a_path, read_only=True)) as a_ro, \
             closing(open_duckdb(b_path, read_only=True)) as b_ro:
         a_counts, b_counts, *_ = _probe(a_ro, b_ro, tables)
+        partition_collisions = _partition_collisions(a_ro, b_ro)
 
     with closing(duckdb.connect(":memory:")) as mem:
         a_only, b_only, same_id_diff_payload, pkn_collisions, mc_a_only, mc_b_only = \
@@ -626,8 +641,10 @@ def audit_slots(a_path: Path, b_path: Path) -> dict[str, Any]:
             "a_only_entity_ids": mc_a_only,
             "b_only_entity_ids": mc_b_only,
         },
+        "partition_collisions": partition_collisions,
         "drift_detected": bool(
             diffs or a_only or b_only or same_id_diff_payload or pkn_collisions
+            or partition_collisions
         ),
     }
 

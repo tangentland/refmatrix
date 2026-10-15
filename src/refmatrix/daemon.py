@@ -1462,6 +1462,53 @@ class Daemon:
         finally:
             os._exit(self.WRITER_LOST_EXIT_CODE)
 
+    def _repair_missing_slot_locked(self, survivor: str, missing: str) -> None:
+        """Clone the surviving rotation slot into the missing one and reopen
+        the writer. Caller holds `_store_lock`. One body for the startup
+        asymmetric repair and the merge op's copy2-failure exit (ch-bsd r2
+        m-r2-5: B stayed missing until a restart). The writer is reopened
+        through THE reopen whether or not the clone worked; a clone failure
+        is raised after that."""
+        survivor_path = self._replica_file(survivor)
+        missing_path = self._replica_file(missing)
+        if self.store is not None:
+            # close() in its own finally (bug-110 r1 #m-3): a CHECKPOINT that raised
+            # used to skip it, and the in-process copy then ran with the store open.
+            try:
+                self.store._connect().execute("CHECKPOINT")
+                self.store.flush_fragments()
+            except Exception as exc:
+                self._log(f"rotation slot repair: pre-copy checkpoint failed: {exc!r}")
+            finally:
+                self.store.close()
+        clone_exc: "BaseException | None" = None
+        try:
+            _copy_out_of_process(survivor_path, missing_path)
+        except Exception as exc:
+            clone_exc = exc
+            try:
+                missing_path.unlink()             # never leave a partial clone
+            except FileNotFoundError:
+                pass
+            except OSError as uexc:
+                self._log(f"rotation slot repair: unlink partial {missing_path.name}: {uexc!r}")
+        marker = self._active_marker()
+        current = marker.read_text().strip() if marker.exists() else ""
+        if current not in ("A", "B") or not self._replica_file(current).exists():
+            marker.write_text(survivor)
+        self._reopen_writer(marker.read_text().strip())
+        if clone_exc is not None:
+            raise clone_exc
+        log_size = self.store.log_path.stat().st_size \
+            if self.store.log_path.exists() else 0
+        self._write_slot_offset("A", log_size)
+        self._write_slot_offset("B", log_size)
+        self._log(
+            f"rotation slot repair: cloned {survivor} -> "
+            f"{missing}, active={self._active_slot}, "
+            f"log_offset={log_size}"
+        )
+
     def _install_writer_store(self, st: "Store", slot: str) -> None:
         """THE install of an opened writer Store (plan-23.1 R1.6 builds on this
         name): the daemon's store, its active slot, and the read replica link."""
@@ -2140,6 +2187,10 @@ class Daemon:
                 elif close_err:
                     self._log(f"store close failed: {close_err[0]!r}")
             self._log("daemon stopped")
+            # ch-bsd r2 m-r2-3: the handler serve_forever attached comes off
+            # before the log fh closes (an in-process daemon left it on the
+            # logger, writing through every earlier daemon's _log).
+            self._detach_backend_log()
             if self.log_fh is not None:
                 try:
                     self.log_fh.close()
@@ -2982,41 +3033,9 @@ class Daemon:
         if a.exists() ^ b.exists():
             survivor = "A" if a.exists() else "B"
             missing = "B" if survivor == "A" else "A"
-            survivor_path = self._replica_file(survivor)
-            missing_path = self._replica_file(missing)
             try:
                 with self._store_lock:
-                    if self.store is not None:
-                        # close() in its own finally (bug-110 r1 #m-3): a CHECKPOINT that raised
-                        # used to skip it, and the in-process copy then ran with the store open.
-                        try:
-                            self.store._connect().execute("CHECKPOINT")
-                            self.store.flush_fragments()
-                        except Exception as exc:
-                            self._log(f"rotation slot repair: pre-copy checkpoint failed: {exc!r}")
-                        finally:
-                            self.store.close()
-                    _copy_out_of_process(survivor_path, missing_path)
-                    marker = self._active_marker()
-                    current = (marker.read_text().strip()
-                               if marker.exists() else "")
-                    if current not in ("A", "B"):
-                        marker.write_text(survivor)
-                    self.store = Store(self.root, partition=self.partition)
-                    self.store.db_path = self._replica_file(
-                        marker.read_text().strip()
-                    )
-                    self.store.init()
-                    self._active_slot = marker.read_text().strip()
-                    log_size = self.store.log_path.stat().st_size \
-                        if self.store.log_path.exists() else 0
-                    self._write_slot_offset("A", log_size)
-                    self._write_slot_offset("B", log_size)
-                    self._log(
-                        f"rotation slot repair: cloned {survivor} -> "
-                        f"{missing}, active={self._active_slot}, "
-                        f"log_offset={log_size}"
-                    )
+                    self._repair_missing_slot_locked(survivor, missing)
             except Exception as exc:
                 self._log(f"rotation slot repair failed: {exc!r}")
             return
@@ -5739,6 +5758,19 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
             rerr = _reopen_writer_after_merge(d, reopen_slot, "swap failed")
             if rerr:
                 err += f"; {rerr}"
+            elif installed_a:
+                # Re-clone B now, under the same lock (ch-bsd r2 m-r2-5), so
+                # merge/audit and the reader link do not wait for a restart.
+                try:
+                    d._repair_missing_slot_locked("A", "B")
+                except Exception as rexc:
+                    d._log(f"merge: swap failed: re-clone of catalog.B.duckdb failed: {rexc!r}")
+                    err += (f"; catalog.B.duckdb is missing and its re-clone failed ({rexc!r}): "
+                            "restart the daemon to re-clone it from A")
+                    if d.store is None or getattr(d.store, "_conn", None) is None:
+                        rerr = _reopen_writer_after_merge(d, "A", "re-clone failed")
+                        if rerr:
+                            err += f"; {rerr}"
             return {"enabled": True, "ok": False, "error": err}
 
         # 4. Reopen writer on slot A; 5. point the read replica at B.

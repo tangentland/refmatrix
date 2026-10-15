@@ -341,7 +341,7 @@ def test_op_swap_failure_leaves_the_writer_reopened_and_locked(tmp_path, monkeyp
         ok, err = _child_can_open(root / f"catalog.{expect}.duckdb")
         assert not ok and "lock" in err.lower(), err
         if fail_at == "copy2":
-            assert not (root / "catalog.B.duckdb").exists()
+            assert (root / "catalog.B.duckdb").exists(), "partial B not re-cloned (m-r2-5)"
         else:
             assert not (root / "catalog.merge.tmp.duckdb").exists()
     finally:
@@ -482,3 +482,109 @@ def test_merge_refuses_partitions_that_collide_by_name_with_a_named_diagnosis(tm
     assert type(ei.value).__name__ == "MergeRefused", repr(ei.value)
     assert "collide" in str(ei.value)
     assert not out.exists()
+
+
+# ---- ch-bsd r2 m-r2-1: audit reports a partition clash as drift ------------
+
+def test_audit_reports_partition_collisions_as_drift(tmp_path):
+    """`audit_slots` is the read-only drift detector; r1 made it raise
+    MergeRefused on the worst drift it can meet. It reports the clash."""
+    from refmatrix.replica_merge import audit_slots
+    a, b = _slots(tmp_path)
+    for path, pid in ((a, 78), (b, 77)):
+        con = duckdb.connect(str(path))
+        con.execute("INSERT INTO partitions(id, name, kind, created_at) VALUES (?, 'collide', 'repo', 1.0)", [pid])
+        con.close()
+    rep = audit_slots(a, b)
+    assert rep["drift_detected"] is True
+    assert rep.get("partition_collisions") and "collide" in " ".join(rep["partition_collisions"]), rep
+
+
+# ---- ch-bsd r2 m-r2-4 R2: inverse_of keeps its NAME through the remap ------
+
+def test_b_only_linkage_inverse_points_at_the_same_name_after_the_merge(tmp_path):
+    """The inv.py shape: B's `has-part` (B-only) has inverse_of = B's
+    `part-of` = 900, but in A id 900 is `alpha-lk` and `part-of` is 950. The
+    merged `has-part` must point at `part-of`, not at whatever holds 900."""
+    from refmatrix.replica_merge import merge_slots
+    a, b = _slots(tmp_path)
+    _relink(a, {"alpha-lk": 900, "part-of": 950}, [(100, "alpha-lk", 101)])
+    _relink(b, {"part-of": 900, "has-part": 901}, [(102, "has-part", 100)])
+    con = duckdb.connect(str(b))
+    con.execute("UPDATE linkage_types SET inverse_of = 900 WHERE name = 'has-part'")
+    con.close()
+    out = tmp_path / "merged.duckdb"
+    merge_slots(a, b, out)
+    con = duckdb.connect(str(out), read_only=True)
+    try:
+        got = con.execute("SELECT y.name FROM linkage_types x JOIN linkage_types y "
+                          "ON y.id = x.inverse_of WHERE x.name = 'has-part'").fetchall()
+    finally:
+        con.close()
+    assert got == [("part-of",)], got
+
+
+# ---- ch-bsd r2 m-r2-5: the partial B is re-cloned right after the reopen ---
+
+def test_copy2_swap_failure_reclones_b_and_keeps_the_writer(tmp_path, monkeypatch):
+    import shutil as _sh
+    from refmatrix import daemon as dm
+    d, root = _daemon(tmp_path, "B")
+
+    def bad_copy2(src, dst, *a, **k):
+        raise OSError(28, "No space left on device (injected)")
+    monkeypatch.setattr(_sh, "copy2", bad_copy2)
+    try:
+        r = dm._op_replica_merge(d, {"dry_run": False})
+        assert r.get("ok") is False and "swap" in r["error"], r
+        monkeypatch.undo()
+        assert (root / "catalog.B.duckdb").exists(), "B left missing until a restart"
+        con = duckdb.connect(str(root / "catalog.B.duckdb"), read_only=True)
+        try:
+            n = con.execute("SELECT count(*) FROM entities").fetchone()[0]
+        finally:
+            con.close()
+        assert n >= 3, n                     # the merged catalog, cloned from A
+        assert d.store is not None and d.store._conn is not None
+        assert d.store.db_path.name == "catalog.A.duckdb"
+        ok, err = _child_can_open(root / "catalog.A.duckdb")
+        assert not ok and "lock" in err.lower(), err
+    finally:
+        d.store.close()
+
+
+def test_copy2_swap_failure_whose_reclone_fails_names_the_restart(tmp_path, monkeypatch):
+    import shutil as _sh
+    from refmatrix import daemon as dm
+    d, root = _daemon(tmp_path, "A")
+
+    def bad_copy(*a, **k):
+        raise OSError(28, "No space left on device (injected)")
+    monkeypatch.setattr(_sh, "copy2", bad_copy)
+    monkeypatch.setattr(dm, "_copy_out_of_process", bad_copy)
+    try:
+        r = dm._op_replica_merge(d, {"dry_run": False})
+        assert r.get("ok") is False, r
+        assert "restart" in r["error"] and "catalog.B" in r["error"], r
+        monkeypatch.undo()
+        _assert_writer_open_and_locked(d, root)
+    finally:
+        d.store.close()
+
+
+def test_audit_via_writer_reports_partition_collisions_as_drift(tmp_path):
+    """The daemon's `replica audit` runs on the live writer connection — the
+    sibling of `audit_slots`, same report."""
+    from refmatrix.replica_merge import audit_via_writer
+    a, b = _slots(tmp_path)
+    for path, pid in ((a, 78), (b, 77)):
+        con = duckdb.connect(str(path))
+        con.execute("INSERT INTO partitions(id, name, kind, created_at) VALUES (?, 'collide', 'repo', 1.0)", [pid])
+        con.close()
+    w = duckdb.connect(str(a))
+    try:
+        rep = audit_via_writer(w, writer_slot="A", reader_path=b, reader_slot="B")
+    finally:
+        w.close()
+    assert rep["drift_detected"] is True
+    assert rep.get("partition_collisions") and "collide" in " ".join(rep["partition_collisions"]), rep

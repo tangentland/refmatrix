@@ -245,7 +245,11 @@ def test_every_file_attach_goes_through_attach_file():
     merge, the audit, the sqlite migration/view) are file opens too. One
     helper, `backend.attach_file`, renders them; a literal elsewhere fails."""
     import re
-    pat = re.compile(r"ATTACH\s+['\"{]", re.I)
+    # ch-bsd r2 A1: `f"ATTACH {p!r} AS x"` has the Constant part "ATTACH " —
+    # no quote or brace after the keyword — so also flag any string that
+    # STARTS with ATTACH.
+    quoted = re.compile(r"ATTACH\s+['\"{]", re.I)
+    leading = re.compile(r"^\s*ATTACH\s")             # SQL keyword case: not prose "Attach …"
     stray = []
     for py in sorted(SRC.rglob("*.py")):
         tree = ast.parse(py.read_text())
@@ -256,7 +260,8 @@ def test_every_file_attach_goes_through_attach_file():
                 allowed |= {id(n) for n in ast.walk(fn)}
         for n in ast.walk(tree):
             if isinstance(n, ast.Constant) and isinstance(n.value, str) \
-                    and pat.search(n.value) and id(n) not in allowed:
+                    and (quoted.search(n.value) or leading.search(n.value)) \
+                    and id(n) not in allowed:
                 stray.append(f"{py.relative_to(SRC)}:{n.lineno}")
     assert not stray, f"file ATTACH outside backend.attach_file: {stray}"
 
@@ -435,3 +440,181 @@ def test_a_stale_holder_that_cannot_be_closed_raises_stale(tmp_path):
     finally:
         with backend_mod._HOLDERS_LOCK:
             backend_mod._WRITERS.pop(key, None)
+
+
+# ---- ch-bsd r2 s-r2-1: close of a stale instance under running statements --
+
+_STRESS_CHILD = r'''
+import os, sys, threading, time, tempfile, duckdb, faulthandler
+faulthandler.enable()
+from refmatrix import backend as B
+d = sys.argv[1]; secs = float(sys.argv[2])
+X = os.path.join(d, "x.duckdb")
+def mk(path, v):
+    c = duckdb.connect(path); c.execute("create table t(v int)"); c.execute(f"insert into t values ({v})")
+    c.execute("create table big as select range i from range(200000)"); c.execute("checkpoint"); c.close()
+mk(X, 0)
+gen = [0]; stop = time.time() + secs; wrong = [0]; reads = [0]; internal = []
+def reader():
+    while time.time() < stop:
+        try:
+            g0 = gen[0]
+            h = B.open_duckdb(X, read_only=True)
+            try:
+                v = h.execute("select v from t").fetchone()[0]
+                h.execute("select sum(i) from big").fetchall()
+                if v < g0: wrong[0] += 1
+                reads[0] += 1
+            finally:
+                h.close()
+        except Exception as e:
+            if "INTERNAL" in str(e): internal.append(str(e)[:120])
+def replacer():
+    i = 0
+    while time.time() < stop:
+        i += 1; Y = X + f".n{i}"; mk(Y, i)
+        os.replace(Y, X); gen[0] = i
+        try:
+            w = B.open_duckdb(X); B.release_duckdb(w)
+        except Exception as e:
+            if "INTERNAL" in str(e): internal.append(str(e)[:120])
+        time.sleep(0.05)
+ths = [threading.Thread(target=reader) for _ in range(8)] + [threading.Thread(target=replacer)]
+[t.start() for t in ths]; [t.join() for t in ths]
+print("duckdb", duckdb.__version__, "reads", reads[0], "wrong", wrong[0], "internal", len(internal), internal[:3], flush=True)
+sys.exit(0 if (wrong[0] == 0 and not internal and reads[0] > 0) else 3)
+'''
+
+
+def test_readers_and_a_replacer_never_crash_the_process(tmp_path):
+    """ch-bsd r2 s-r2-1: `shut` interrupted a stale instance's cursors and
+    closed it at once while reader threads were still inside execute/fetch;
+    duckdb 1.5.2 segfaulted 3/3 (rc 139). Eight readers open/query/close while
+    a replacer swaps the file and write-opens it every ~50 ms; the child must
+    exit 0 — no signal, no INTERNAL error, no read of an older file."""
+    import subprocess
+    import sys
+    secs = os.environ.get("RMX_STRESS_SECS", "12")
+    r = subprocess.run([sys.executable, "-c", _STRESS_CHILD, str(tmp_path), secs],
+                       capture_output=True, text=True, timeout=float(secs) + 120,
+                       env=dict(os.environ, PYTHONPATH=str(SRC.parent)))
+    assert r.returncode == 0, (r.returncode, r.stdout[-1500:], r.stderr[-3000:])
+
+
+# ---- ch-bsd r2 m-r2-2: shut must not touch handles that already closed -----
+
+def test_shut_skips_handles_that_already_closed(tmp_path, caplog):
+    import logging
+    p = tmp_path / "catalog.A.duckdb"
+    _make(p, 1)
+    closed_but_referenced = DuckDBBackend().connect(p, read_only=True)
+    live = DuckDBBackend().connect(p, read_only=True)
+    closed_but_referenced.close()
+    _replace(p, 2)
+    with caplog.at_level(logging.WARNING, logger="refmatrix.backend"):
+        w = DuckDBBackend().connect(p)
+        w.close()
+    bogus = [r for r in caplog.records if "interrupt of a reader" in r.getMessage()]
+    assert not bogus, [r.getMessage() for r in bogus]
+    assert closed_but_referenced is not None and live is not None
+
+
+# ---- ch-bsd r2 m-r2-4 B1: the read side rechecks the inode after attaching --
+
+def test_a_replace_during_a_read_only_attach_is_detected_and_retried(tmp_path, monkeypatch):
+    """`backend.attach_file` (a collaborator) is wrapped to `os.replace` a new
+    file onto the path right after the ATTACH once. The instance is bound to
+    the old inode; the opener must notice and reopen on the new file."""
+    p = tmp_path / "catalog.read.duckdb"
+    _make(p, 1)
+    real = backend_mod.attach_file
+    fired = []
+
+    def racing_attach(con, path, alias, **k):
+        real(con, path, alias, **k)
+        if not fired and str(path) == str(p):
+            fired.append(1)
+            _replace(p, 2)
+
+    monkeypatch.setattr(backend_mod, "attach_file", racing_attach)
+    r = DuckDBBackend().connect(p, read_only=True)
+    try:
+        assert fired
+        assert r.execute("SELECT v FROM t").fetchone()[0] == 2
+    finally:
+        r.close()
+
+
+# ---- ch-bsd r2 m-r2-4 B6: a stale WRITER mid-statement is interrupted ------
+
+def test_stale_writer_mid_statement_is_interrupted_and_the_reopen_proceeds(tmp_path):
+    import threading
+    import time
+    p = tmp_path / "catalog.A.duckdb"
+    _make(p, 1)
+    old = DuckDBBackend().connect(p)
+    out: dict = {}
+
+    def long_write_side_read():
+        try:
+            out["r"] = old.execute("SELECT count(*) FROM range(50000000000) a, t").fetchone()
+        except Exception as e:  # noqa: BLE001 — asserted below
+            out["e"] = e
+
+    th = threading.Thread(target=long_write_side_read)
+    th.start()
+    time.sleep(1.0)
+    _replace(p, 2)
+    t0 = time.monotonic()
+    w = DuckDBBackend().connect(p)
+    took = time.monotonic() - t0
+    try:
+        assert w.execute("SELECT v FROM t").fetchone()[0] == 2
+    finally:
+        w.close()
+    th.join(30)
+    assert not th.is_alive(), "the stale writer's statement was never interrupted"
+    assert took < 10.0, f"reopen waited {took:.1f}s on a stale writer's statement"
+    assert "e" in out, out
+
+
+# ---- ch-bsd r2 m-r2-3: serve_forever attaches AND detaches the backend log --
+
+_SERVE_CHILD = r'''
+import logging, os, signal, sys, threading, time
+from pathlib import Path
+from refmatrix import daemon as dm
+from refmatrix.store import Store
+root = Path(sys.argv[1]); Store(root).init()
+lg = logging.getLogger("refmatrix.backend")
+def ours(): return sum(1 for h in lg.handlers if type(h).__name__ == "_ToDaemonLog")
+real_exit = os._exit
+def recording_exit(code):
+    print(f"at-exit handlers={ours()} code={code}", flush=True)
+    real_exit(code)
+os._exit = recording_exit
+d = dm.Daemon(root)
+def trig():
+    for _ in range(600):
+        if dm.ping(root): break
+        time.sleep(0.05)
+    print(f"serving handlers={ours()}", flush=True)
+    os.kill(os.getpid(), signal.SIGTERM)
+threading.Thread(target=trig, daemon=True).start()
+d.serve_forever()
+'''
+
+
+def test_serve_forever_attaches_the_backend_log_and_detaches_it_on_shutdown(tmp_path):
+    import subprocess
+    import sys
+    import tempfile
+    root = Path(tempfile.mkdtemp(prefix="rmx", dir="/tmp")) / ".refmatrix"
+    root.mkdir()
+    home = Path(tempfile.mkdtemp(prefix="rmxh", dir="/tmp"))
+    env = dict(os.environ, HOME=str(home), RMX_HOME=str(home / ".refmatrix"),
+               HF_HUB_OFFLINE="1", PYTHONPATH=str(SRC.parent))
+    r = subprocess.run([sys.executable, "-c", _SERVE_CHILD, str(root)], env=env,
+                       capture_output=True, text=True, timeout=120)
+    assert "serving handlers=1" in r.stdout, (r.stdout, r.stderr[-2000:])
+    assert "at-exit handlers=0 code=0" in r.stdout, (r.stdout, r.stderr[-2000:])
