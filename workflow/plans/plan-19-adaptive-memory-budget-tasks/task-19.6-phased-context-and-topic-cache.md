@@ -579,6 +579,10 @@ the warm threshold):** {#ranges-d}
    represented by a third live cluster on this prompt) plus 2 new clusters leaves 64 records.
    The 3rd- and 4th-oldest records are gone; the `expanded` record and the matched record are
    kept; `topic-cache-evicted` = 2; every `<cid>` in `topic_match` is in the written cache.
+   **Over-cap leg** (round-12 #m12-3): a cache of 66 records whose 8 newest are `collapsed` and
+   whose other 58 are all `expanded`, with a prompt whose live graph adds no snapshot, leaves all
+   66 records after the second write; the event carries `topic-cache-evicted` = 0 and
+   `topic-cache-over-cap=2`; `topic_hubs` on the written cache equals `topic_hubs` on the input.
 8. **Isolation.** 23.0's guard records 0 live connects for this task's test files.
 9. **Mutations that must FAIL a test:**
    - phase driven by turn count (AC-7);
@@ -639,6 +643,8 @@ the warm threshold):** {#ranges-d}
      the cluster maps to S2, not S3; round-11 #m11-6);
    - (round 11, #m11-3) the cap evicting a record `topic_match` maps to (AC-7i2: the matched
      record is gone);
+   - (round 12, #m12-3) the cap evicting outside the candidate set when none remains, or the
+     overflow not counted (AC-7i2 over-cap leg);
    - the replay script or the render carrying its own identity predicate, assignment or
      Jaccard (AC-7i's import check);
    - the marker written only by the PreCompact recall command (AC-7f with the recall entry
@@ -830,3 +836,15 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r11-954f601]]
 | r11 #m11-3 (record cap: the hub-window claim was conditional; tie order not the reverse of "newest"; no-candidate case unstated; "unmatched" untested; "between prompts" wording) | R3 "Record cap": candidates exclude the 8 newest by `topic_hubs`' order; "oldest" = the exact reverse (smallest `turn`, ties to the LARGER `<cid>`); no candidate → stop and count `topic-cache-over-cap=<n>`; the after-second-write bound restated; AC-7i2 record-cap leg with a matched old record; mutation (the cap evicting a matched record); plan header item 2 |
 | r11 #m11-4 (19.6 side: `cluster_cid`'s byte serialization) | R9: `hashlib.sha256("\n".join(sorted(members)).encode("utf-8")).hexdigest()[:8]`, identical to [[task-19.4-keep-derived-layers-current#rev-round-11]]; plan header item 2 |
 | r11 #m11-6 (19.6 mutation parenthetical) | mutation list: with S3 skipped, the cluster maps to S2, not S3 |
+
+## Revision round 12 (2026-10-15) {#rev-round-12}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r12-34f72b3]] for 19.6: #m12-3, applied verbatim from the
+report's replacement text. Edit-level; no decision. Helix-facing (d9ca): the no-candidate rule
+is now pinned by a leg before merge.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r12-34f72b3]]
+
+| finding | answered at |
+|---|---|
+| r12 #m12-3 (the cap's no-candidate rule had no leg: a mutant evicting outside the candidate set, or dropping the over-cap count, survived) | AC-7i2 over-cap leg (66 records, the 58 outside the 8 newest all `expanded` → 66 kept, `topic-cache-evicted` = 0, `topic-cache-over-cap=2`, `topic_hubs` unchanged); mutation (round 12, #m12-3) |

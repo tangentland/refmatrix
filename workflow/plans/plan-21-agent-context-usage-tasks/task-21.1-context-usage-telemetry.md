@@ -129,10 +129,13 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
      classify_outcome(type(e), e, budgeted=True)` on its `log_query` handle, and `__exit__` uses
      a set `t.outcome` in place of its own classification. **Every `VerbBusyError` reaches the
      degrade path** (round-11 #s11-1, replacing round 10's "two routes"): `_left`'s deadline
-     (`cli.py:12007`), the partition probe's catch (`:12195`), the replica leg (`:12214`) and
+     (`cli.py:12007`), the replica leg (`:12214`) and
      `require_daemon`'s busy classification (`:12226`; `discovery.daemon_status` finds the ping
      failed AND the pid file names a live process whose argv contains "rmx" or "refmatrix",
-     `discovery.py:189-226`). Each is classified `skipped_budget`. (A failed ping with no such pid
+     `discovery.py:189-226`). Each is classified `skipped_budget`.
+     (The legacy-partition probe runs first, in `_memory_intent` (`cli.py:11950` → `:11258`),
+     catches every exception itself (`:11214`) and raises nothing; the body's second probe at
+     `:12192-12196` is skipped because `_partition_override` is already set; round-12 #m12-4.) (A failed ping with no such pid
      file is `VerbAbsentError`, which raises `ClickException` even in hook mode,
      `cli.py:12230-12234`; it is not a degrade and is unchanged here.) The recall op's transport
      `OSError` and `json.JSONDecodeError` (`_memory_daemon_call`, `:12241`) are classified
@@ -953,8 +956,10 @@ line counts are unchanged.
    no listener prints `expired_reads: unavailable (daemon down)`, never `0`. **Non-budget leg**
    (round-9 #m9-5; round-10 #s10-2: the round-9 accept-and-close listener failed the ping, so
    the run stopped at `require_daemon` as absent and never reached the recall op): the dispatcher
-   listener, after answering the SECOND `ping` (round-11 #s11-1), closes its listening socket
-   and leaves the socket file in place, so the `memory_recall` connect raises
+   listener, on the SECOND `ping`, reads that request line, closes its LISTENING
+   socket (leaving the socket file in place), and only then writes `{"ok": true}` on the
+   already-accepted connection (round-12 #m12-1: closing before replying means no later connect can
+   be queued in the backlog), so the `memory_recall` connect raises
    `ConnectionRefusedError` (an `OSError`, classified `error` by R4). Assert: the recorded ops
    are exactly [`ping`, `partition_list`, `ping`]; exit 0 and `[]`; exactly one `kind=recall`
    row with `outcome=error` (not `skipped_budget`) and `error` starting `ConnectionRefusedError`;
@@ -969,6 +974,11 @@ line counts are unchanged.
    `outcome=error`, `error="outcome-invalid: timeout"`, and `--agent-usage` prints
    `outcome-invalid=1`. RED at HEAD: no `kind=recall` row is written at all (the failing
    assertion is the row count).
+   `telemetry.classify_outcome(BrokenPipeError, BrokenPipeError(32, "Broken pipe"),
+   budgeted=True)` returns `("error", "BrokenPipeError: [Errno 32] Broken pipe")` and with
+   `budgeted=False` returns `("consumer-closed", None)`; `classify_outcome(TimeoutError,
+   TimeoutError(), budgeted=True)[0]` and `classify_outcome(socket.timeout, socket.timeout(),
+   budgeted=True)[0]` are `"skipped_budget"` (round-12 #m12-2).
 3. **Precedence.** `invocation_source()` returns, for the env combinations
    {explicit `hook` + `CLAUDECODE`, `CLAUDECODE` alone, tty alone, none}: `hook`, `agent`,
    `interactive`, `unknown`. RED at HEAD on `CLAUDECODE` alone (returns `unknown`).
@@ -1390,7 +1400,9 @@ line counts are unchanged.
     - (round 11, #s11-1) the listener's op sequence drifts (a new daemon contact before
       `require_daemon`): AC-2b's sequence assertion fails, so the leg cannot silently stop short
       again; a daemon-socket `BrokenPipeError` mapped to `consumer-closed` under `budgeted=True`
-      (R4: the `OSError` test runs first);
+      (AC-2b validation leg's `classify_outcome` assertions);
+    - (round 12, #m12-2) the generic `OSError` test placed before the timeout test under
+      `budgeted=True` (AC-2b validation leg);
     - (round 11, #m11-2) the migration claiming with `proc_identity(os.getpid())` `None`
       (AC-4b (ix): a `TypeError` traceback, no `migration skipped` line);
     - (round 10, #m10-2) a new function calling `_proc_start(` for a start value instead of
@@ -1731,8 +1743,11 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r10-f6400aa]]
 
 Answers [[bsd-plan19-21-spec-diffcheck-r11-954f601]] for 21.1: #s11-1, #m11-2 and the 21.1 part
 of #m11-6. Edit-level; no decision. Code facts as cited by the report: `cli.py:11202`, `:11208`
-(the legacy-partition probe's `ping` and `partition_list`), `:12007`, `:12195`, `:12214`,
-`:12226`, `:12241` (the `VerbBusyError` sources and the recall op), `telemetry.py:110-113` (the
+(the legacy-partition probe's `ping` and `partition_list`), `:12007`, `:12214`,
+`:12226`, `:12241` (the `VerbBusyError` sources and the recall op; round-12 #m12-4 correction:
+`:12195`, the body's partition-probe catch, was listed here as a source, but the probe runs from
+`_memory_intent` (`cli.py:11950` → `:11258`), catches every exception itself (`:11214`) and
+raises nothing, and the body's `:12192-12196` branch is skipped), `telemetry.py:110-113` (the
 `BrokenPipeError` → `consumer-closed` mapping).
 
 rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r11-954f601]]
@@ -1742,3 +1757,16 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r11-954f601]]
 | r11 #s11-1 (AC-2b's listeners modelled [ping, recall]; the hook sends [ping, `partition_list`, ping, `memory_recall`], so both legs ended in `VerbAbsentError`) | AC-2b: the listener is an op dispatcher (`ping` → `{"ok": true}`, `partition_list` → empty rows) that records the op sequence; non-budget leg closes after the SECOND ping and asserts ops [`ping`, `partition_list`, `ping`] and `error` starting `ConnectionRefusedError`; mid-answer leg reads the request then closes, asserts all four ops and `error` starting `JSONDecodeError`; R4: every `VerbBusyError` source named (`_left`, the partition probe, the replica leg, `require_daemon`), and under `budgeted=True` the `OSError` test runs before the `BrokenPipeError` → `consumer-closed` mapping; mutations (op-sequence drift; broken pipe as `consumer-closed`) |
 | r11 #m11-2 (the migration claim's `proc_identity(...)[1]` raises on `None`; set (1)'s line unasserted) | D6 migration step 1: `None` → no claim, `migration skipped: process lookup unavailable`, legacy file kept; AC-4b (ix) asserts `own rows skipped` and `migration skipped` lines with the legacy file and watermark unchanged; mutation |
 | r11 #m11-6 (21.1 R4's verb-route hedge) | R4: the verb route is classified `budgeted=False` by design (an MCP call carries no hook budget; a busy daemon there is an `error` the agent saw) |
+
+## Revision round 12 (2026-10-15) {#rev-round-12}
+
+Answers [[bsd-plan19-21-spec-diffcheck-r12-34f72b3]] for 21.1: #m12-1, #m12-2 and #m12-4, each
+applied verbatim from the report's replacement text. Edit-level; no decision.
+
+rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r12-34f72b3]]
+
+| finding | answered at |
+|---|---|
+| r12 #m12-1 (non-budget leg replied before closing, so the recall connect could queue in the backlog and fail with `ConnectionResetError` / `JSONDecodeError`) | AC-2b non-budget leg: on the SECOND `ping` the listener reads the request, closes its listening socket, then replies on the accepted connection |
+| r12 #m12-2 (the broken-pipe mutation had no killing leg; nor did `OSError` before the timeout test) | AC-2b validation leg: `classify_outcome` assertions for `BrokenPipeError` (budgeted and not), `TimeoutError`, `socket.timeout`; the round-11 broken-pipe mutation now points at them; new mutation (generic `OSError` test before the timeout test) |
+| r12 #m12-4 (R4 cited the unreachable `:12195` partition-probe catch as a `VerbBusyError` source) | R4: the citation dropped; parenthetical that the probe runs in `_memory_intent` (`cli.py:11950` → `:11258`), catches every exception itself (`:11214`) and raises nothing; the round-11 code-facts note corrected the same way |
