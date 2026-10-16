@@ -18,8 +18,11 @@ whose `.refmatrix/catalog.db` already exists.
 """
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
+import threading
+import weakref
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Iterable, Protocol
@@ -27,6 +30,359 @@ from typing import Any, Iterable, Protocol
 import duckdb
 
 from refmatrix.duckdb_catalog import init_catalog as init_duckdb_catalog
+
+
+# ---- THE file-backed DuckDB opener (bug-112) --------------------------------
+#
+# DuckDB's Python `connect(path)` goes through a process-wide instance cache:
+# while ANY connection to `path` is open in the process, a new connect returns
+# THAT database instance — even after `os.replace` put a different file (new
+# inode) at the path. Measured on 1.5.2 (bug-112, 2026-10-15,
+# workflow/review-output/bug112-measure.log):
+#   * a second read-only connect after a replace read the old value; ATTACH
+#     READ_ONLY from `:memory:` read the new one;
+#   * two write connects, close one, replace, reopen, INSERT + CHECKPOINT: the
+#     reopen served the OLD database and the checkpointed row never reached the
+#     new file — a silent WRITE loss (ch-bsd 18.1 r1 B-1);
+#   * a writer can NOT get the new file while any in-process instance still
+#     holds the path ("Unique file handle conflict"); only closing every holder
+#     of the old inode frees it.
+#
+# Every file-backed open in src/ goes through `open_duckdb`, and every file
+# ATTACH through `attach_file` (tests/test_bug112_duckdb_reopen.py AST-checks
+# both for a second site):
+#   * read-only: ONE private `:memory:` instance per (realpath, inode) ATTACHes
+#     the file READ_ONLY; each open gets a cursor of it (`USE`d onto the file).
+#     A replace changes the inode, so the next open gets a NEW instance on the
+#     new file — no staleness — while readers of one file share one buffer pool
+#     and thread pool (ch-bsd r1 s-1: one instance per open cost +699 MB RSS and
+#     +120 threads for 8 concurrent readers of the 828 MB snapshot). The
+#     instance closes with its last cursor.
+#   * write: every registered holder (writer or read-only instance) still bound
+#     to a REPLACED inode at that path is interrupted, then closed, with a
+#     warning on the `refmatrix.backend` logger (the daemon routes it to
+#     rmxd.log). Its writes were already going into an unlinked file. The inode
+#     is checked before AND after connecting; a replace in between reconnects.
+#     A path DuckDB still refuses (an unregistered holder, a 1.5.2 deferred
+#     close) raises `StaleDuckDBInstanceError` naming it.
+
+_RO_ALIAS = "rmx_ro"
+_HOLDERS_LOCK = threading.Lock()
+# realpath -> [(weakref to a raw write connection, (st_dev, st_ino))]
+_WRITERS: "dict[str, list]" = {}
+# (realpath, (st_dev, st_ino)) -> _ROInstance
+_RO_INSTANCES: "dict[tuple, _ROInstance]" = {}
+_OPEN_RETRIES = 3
+_CONFLICT_WAIT_S = 2.0
+_log = logging.getLogger("refmatrix.backend")
+
+
+class StaleDuckDBInstanceError(duckdb.ConnectionException):
+    """A write open of a path DuckDB still binds to a connection this opener
+    could not close (a replaced file's holder): connecting would return the
+    old database or be refused."""
+
+
+def _file_id(path: str) -> "tuple[int, int] | None":
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        return None
+    return (st.st_dev, st.st_ino)
+
+
+def attach_file(con, path: "os.PathLike | str", alias: str, *,
+                read_only: bool = True, db_type: "str | None" = None) -> None:
+    """THE rendering of `ATTACH '<file>' AS <alias> (...)` — the snapshot
+    mirror, the slot merge/audit, the sqlite migration and view all ATTACH
+    files; one place quotes the path and names the options."""
+    opts = [f"TYPE {db_type}"] if db_type else []
+    if read_only:
+        opts.append("READ_ONLY")
+    quoted = str(path).replace("'", "''")
+    tail = f" ({', '.join(opts)})" if opts else ""
+    con.execute(f"ATTACH '{quoted}' AS {alias}{tail}")
+
+
+_DRAIN_S = 1.0
+# Cursor calls counted as "a statement in flight" (ch-bsd r2 s-r2-1).
+_TRACKED = frozenset({
+    "execute", "executemany", "sql", "query", "fetchone", "fetchall", "fetchmany",
+    "fetchdf", "fetch_df", "fetchnumpy", "fetch_arrow_table", "arrow", "df", "pl",
+    "register", "unregister",
+})
+
+
+class _ROInstance:
+    """One private DuckDB instance with one file ATTACHed read-only.
+
+    `closed` stops new cursors and statements; `inflight` counts statements
+    running on its cursors. Closing the instance under a running statement
+    segfaulted duckdb 1.5.2 (3/3, ch-bsd r2 s-r2-1) and raised INTERNAL
+    errors in r1, so `shut` interrupts, waits for `inflight` to drain, and
+    only then closes — or leaves the close to the last statement to finish."""
+
+    def __init__(self, key: str, path: str, fid: "tuple[int, int] | None"):
+        self.key, self.fid = key, fid
+        self.base = duckdb.connect(":memory:")
+        try:
+            attach_file(self.base, path, _RO_ALIAS, read_only=True)
+            self.base.execute(f"USE {_RO_ALIAS}")
+        except BaseException:
+            self.base.close()
+            raise
+        self.handles: "weakref.WeakSet[_ROHandle]" = weakref.WeakSet()
+        self.refs = 0
+        self.closed = False          # no new cursors / statements
+        self.base_closed = False
+        self.inflight = 0
+        self.cv = threading.Condition()
+
+    def handle(self) -> "_ROHandle":
+        # called with _HOLDERS_LOCK held, on an instance that is not closed
+        cur = self.base.cursor()
+        try:
+            cur.execute(f"USE {_RO_ALIAS}")       # a cursor does not inherit USE (measured)
+        except BaseException:
+            cur.close()
+            raise
+        self.refs += 1
+        h = _ROHandle(self, cur)
+        self.handles.add(h)
+        return h
+
+    def enter(self) -> None:
+        with self.cv:
+            if self.closed:
+                raise duckdb.ConnectionException(
+                    f"{self.key}: this read-only connection was closed because the file "
+                    "at its path was replaced; reopen it (bug-112)")
+            self.inflight += 1
+
+    def leave(self) -> None:
+        with self.cv:
+            self.inflight -= 1
+            if self.inflight == 0:
+                self.cv.notify_all()
+                if self.closed and not self.base_closed:
+                    self._close_base_locked()     # the deferred close of a drained shut
+
+    def _close_base_locked(self) -> None:
+        self.base_closed = True
+        self.base.close()
+
+    def shut(self, *, interrupt: bool) -> bool:
+        """Stop, interrupt, drain, close. Returns True when the instance is
+        closed now, False when the close is deferred to the last running
+        statement (ch-bsd r3 m-r3-3: the caller logged "closed" either way)."""
+        with self.cv:
+            self.closed = True
+            live = list(self.handles)
+        if interrupt:
+            for h in live:
+                try:
+                    h._cur.interrupt()
+                except Exception as exc:  # noqa: BLE001 — reported, the close still waits
+                    _log.warning("open_duckdb: interrupt of a reader on %s failed: %r",
+                                 self.key, exc)
+        with self.cv:
+            if self.cv.wait_for(lambda: self.inflight == 0, timeout=_DRAIN_S):
+                if not self.base_closed:
+                    self._close_base_locked()
+                return True
+            return False
+
+
+def _drop_handle(inst: _ROInstance, cur, ref) -> None:
+    """Finalizer of a read-only handle: close its cursor, forget the handle,
+    and close the instance with its last cursor (a closed instance no longer
+    holds the file)."""
+    h = ref()
+    if h is not None:
+        inst.handles.discard(h)                   # shut must not touch it (ch-bsd r2 m-r2-2)
+    with inst.cv:
+        if not inst.base_closed:
+            cur.close()
+    with _HOLDERS_LOCK:
+        inst.refs -= 1
+        last = inst.refs <= 0 and not inst.closed
+        if last:
+            inst.closed = True
+            if _RO_INSTANCES.get((inst.key, inst.fid)) is inst:
+                del _RO_INSTANCES[(inst.key, inst.fid)]
+    if last:
+        with inst.cv:
+            if inst.inflight == 0 and not inst.base_closed:
+                inst._close_base_locked()
+
+
+class _ROHandle:
+    """A read-only connection from `open_duckdb`: a cursor of the shared
+    instance. Attribute access forwards to the cursor; statement calls are
+    counted in flight; `close()` releases it."""
+
+    __slots__ = ("_inst", "_cur", "_fin", "__weakref__")
+
+    def __init__(self, inst: _ROInstance, cur):
+        self._inst, self._cur = inst, cur
+        self._fin = weakref.finalize(self, _drop_handle, inst, cur, weakref.ref(self))
+
+    def __getattr__(self, name: str):
+        attr = getattr(self._cur, name)
+        if name not in _TRACKED or not callable(attr):
+            return attr
+        inst, cur, handle = self._inst, self._cur, self
+
+        def tracked(*a, **k):
+            inst.enter()
+            try:
+                out = attr(*a, **k)
+            finally:
+                inst.leave()
+            return handle if out is cur else out  # keep chained fetches counted
+        return tracked
+
+    def close(self) -> None:
+        self._fin()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+
+def _open_read_only(p: str, key: str) -> _ROHandle:
+    for _ in range(_OPEN_RETRIES):
+        fid = _file_id(key)
+        with _HOLDERS_LOCK:
+            inst = _RO_INSTANCES.get((key, fid))
+            if inst is not None and not inst.closed:
+                return inst.handle()
+        new = _ROInstance(key, p, fid)
+        if _file_id(key) != fid:                  # replaced while attaching (m-3)
+            new.shut(interrupt=False)
+            continue
+        with _HOLDERS_LOCK:
+            inst = _RO_INSTANCES.get((key, fid))
+            if inst is None or inst.closed:
+                _RO_INSTANCES[(key, fid)] = new
+                return new.handle()
+            h = inst.handle()
+        new.shut(interrupt=False)                 # lost a race to an equal instance
+        return h
+    raise StaleDuckDBInstanceError(f"{p}: the file kept being replaced during the open")
+
+
+def _close_stale_holders(key: str, p: str) -> int:
+    """Interrupt and close every registered holder bound to a replaced inode at
+    `key`. Returns how many were closed."""
+    with _HOLDERS_LOCK:
+        now = _file_id(key)
+        if now is None:
+            return 0
+        live = [(r, fid) for r, fid in _WRITERS.get(key, []) if r() is not None]
+        stale_w = [(r, fid) for r, fid in live if fid != now]
+        _WRITERS[key] = [(r, fid) for r, fid in live if fid == now]
+        stale_r = [inst for (k, fid), inst in _RO_INSTANCES.items()
+                   if k == key and fid != now and not inst.closed]
+        for inst in stale_r:
+            del _RO_INSTANCES[(inst.key, inst.fid)]
+    closed = 0
+    for r, fid in stale_w:
+        con = r()
+        if con is None:
+            continue
+        try:
+            con.interrupt()
+            con.close()
+        except Exception as exc:
+            raise StaleDuckDBInstanceError(
+                f"{p}: a connection to the replaced file (inode {fid[1]}; the path now "
+                f"holds inode {now[1]}) could not be closed ({exc!r}) (bug-112)") from exc
+        closed += 1
+        _log.warning("open_duckdb: closed a writer of replaced file %s (inode %d -> %d) "
+                     "before reopening it for write (bug-112)", p, fid[1], now[1])
+    for inst in stale_r:
+        old_ino = inst.fid[1] if inst.fid else -1
+        if inst.shut(interrupt=True):
+            _log.warning("open_duckdb: interrupted and closed a reader of replaced file %s "
+                         "(inode %d -> %d) before reopening it for write (bug-112)",
+                         p, old_ino, now[1])
+        else:
+            _log.warning("open_duckdb: interrupted a reader of replaced file %s (inode %d -> "
+                         "%d); %d statement(s) still running after %.1fs, so its close is "
+                         "DEFERRED to the last of them (bug-112)",
+                         p, old_ino, now[1], inst.inflight, _DRAIN_S)
+        closed += 1
+    return closed
+
+
+def _is_path_conflict(exc: BaseException) -> bool:
+    msg = str(exc)
+    return ("Unique file handle conflict" in msg
+            or "different configuration than existing connections" in msg)
+
+
+def _open_write(p: str, key: str):
+    import time as _time
+    for _ in range(_OPEN_RETRIES):
+        closed = _close_stale_holders(key, p)
+        before = _file_id(key)
+        deadline = _time.monotonic() + (_CONFLICT_WAIT_S if closed else 0.0)
+        while True:
+            try:
+                con = duckdb.connect(p)
+                break
+            except duckdb.Error as exc:
+                if not _is_path_conflict(exc):
+                    raise
+                if _time.monotonic() >= deadline:
+                    raise StaleDuckDBInstanceError(
+                        f"{p}: another connection in this process still holds this path "
+                        f"({closed} stale holder(s) closed first); DuckDB refused the open "
+                        f"({exc}) — close every holder before reopening (bug-112)") from exc
+                _time.sleep(0.05)
+        after = _file_id(key)
+        if before is not None and after != before:  # replaced during the connect (m-3)
+            con.close()
+            continue
+        with _HOLDERS_LOCK:
+            live = [(r, fid) for r, fid in _WRITERS.get(key, []) if r() is not None]
+            if after is not None:
+                live.append((weakref.ref(con), after))
+            _WRITERS[key] = live
+        return con
+    raise StaleDuckDBInstanceError(f"{p}: the file kept being replaced during the open")
+
+
+def open_duckdb(path: "os.PathLike | str", *, read_only: bool = False):
+    """Open a DuckDB database file. `:memory:` passes straight through; a
+    write open returns the raw `DuckDBPyConnection`, a read-only open a cursor
+    handle of the shared private instance. See the block comment above."""
+    p = str(path)
+    if p == ":memory:":
+        return duckdb.connect(":memory:")
+    key = os.path.realpath(p)
+    if read_only:
+        return _open_read_only(p, key)
+    return _open_write(p, key)
+
+
+def release_duckdb(con) -> None:
+    """Close a connection from `open_duckdb` and drop it from the registry."""
+    if isinstance(con, _ROHandle):
+        con.close()
+        return
+    with _HOLDERS_LOCK:
+        for key in list(_WRITERS):
+            kept = [(r, fid) for r, fid in _WRITERS[key]
+                    if r() is not None and r() is not con]
+            if kept:
+                _WRITERS[key] = kept
+            else:
+                del _WRITERS[key]
+    con.close()
 
 
 def select_backend(
@@ -230,7 +586,7 @@ class DuckDBConnection:
         pass
 
     def close(self) -> None:
-        self._duck.close()
+        release_duckdb(self._duck)
 
     def __enter__(self):
         return self
@@ -247,7 +603,7 @@ class DuckDBBackend(Backend):
     db_filename = "catalog.duckdb"
 
     def connect(self, db_path: Path, read_only: bool = False) -> DuckDBConnection:
-        return DuckDBConnection(duckdb.connect(str(db_path), read_only=read_only))
+        return DuckDBConnection(open_duckdb(db_path, read_only=read_only))
 
     def init_catalog(self, con: Any) -> None:
         init_duckdb_catalog(con._duck)

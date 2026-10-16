@@ -1,59 +1,178 @@
 ---
 gmd: "0.1"
 id: task-19.5-measure-delivery
-title: "Task 19.5: measure what reaches the agent per channel, and probe the harness's whole-delivery limit"
+title: "Task 19.5: probe the harness's delivery limit per hook and per event, decide PreCompact, and measure what reaches the agent per channel"
 tags: [task, memory, measurement, hooks, budget]
 metadata:
   node_type: task
   status: pending
   created: 2026-10-07
+  updated: 2026-10-15
 ---
 
 # Task 19.5: measure delivery, not production {#root}
 
 > Plan: [plan-19-adaptive-memory-budget](../plan-19-adaptive-memory-budget.md)
-> Status: Pending
-> Depends on: — (the threshold probe runs FIRST and sets 19.1's default); the before/after part
-> runs after 19.1–19.3
+> Status: Pending (revision after the 2026-10-14 decision log)
+> Depends on: R1 (the probe) depends on nothing and runs FIRST: it sets 19.1's default and decides
+> PreCompact (d5d). R2/R3 run after 19.1–19.3 and 21.1 (the recall-event schema), in 23.0's
+> sandbox.
 
 rel: part-of -> [[plan-19-adaptive-memory-budget]]
 rel: depends-on -> [[reference_hook_output_10k_cap]]
+rel: depends-on -> [[task-21.1-context-usage-telemetry]]
+rel: specified-by -> [[bsd-plan19-spec-review-3104a81]]
 
 ## Why {#why}
 
 Today's sizes measure what the hooks PRODUCE. What matters is what the agent SEES. The ~10k
-whole-delivery limit is a user-stated figure that matches the behaviour seen in this session (16 KB
-and 26 KB outputs arrived as 2 KB previews), but it has not been probed directly. Hard-coding an
-unmeasured limit is the bug-042 shape (built to the wrong unit). {#why-body}
+whole-delivery limit is a user-stated figure that matches the behaviour seen (16 KB and 26 KB
+outputs arrived as 2 KB previews), but it has not been probed directly, nor whether it applies per
+hook or to an event's combined output. UserPromptSubmit runs scan-prompt (up to 2,000 tokens), the
+focus hook and the recall IN PARALLEL (`hooks.py:263-265`), so a per-event cap would make a 9,500
+recall budget overflow on every prompt. And the documented hook contract adds stdout to the
+context only for SessionStart and UserPromptSubmit; whether PreCompact's reaches the agent is
+unknown. Hard-coding an unmeasured limit is the bug-042 shape. {#why-body}
 
 ## Requirements {#requirements}
 
-1. **R1 Threshold probe.**
-   - A throwaway UserPromptSubmit hook, installed in a SCRATCH project (never this repo's settings),
-     emits 9,000 / 9,900 / 10,000 / 10,100 / 11,000 chars of numbered lines.
-   - A Claude Code session in that project records which outputs arrive whole and which arrive as
-     a preview, and in which unit the limit is counted (chars vs bytes, via a multibyte payload).
-   - The result goes into [[reference_hook_output_10k_cap]] and sets `RMX_HOOK_BUDGET_CHARS`'s
-     default (limit minus a 5% margin).
-2. **R2 Delivery metric.** For each channel (SessionStart, per-prompt, PreCompact,
-   scan-prompt) on 20 recorded prompts: the distinct memories named inside the delivered payload
-   (the whole output when under the limit, else its first 2 KB), before (today's hooks) and after
-   (19.1–19.3).
-3. **R3 Index reach.** The number of memories named in `MEMORY.md`, before and after 19.3, and the
-   R4 reachability result.
-4. **R4 The production path.** Every number comes from the CLI commands the hooks run (the
-   benchmark path IS the production path), on catalog and memory-dir COPIES.
+1. **R1 Threshold probe** (in a SCRATCH project, never this repo's settings).
+   - (a) **Per hook.** A throwaway UserPromptSubmit hook emits 9,000 / 9,900 / 10,000 / 10,100 /
+     11,000 chars of numbered lines; a Claude Code session records which arrive whole and which
+     as a preview, the unit (chars vs bytes, via a multibyte payload), and the PREVIEW size (how
+     many leading bytes of an over-cap payload the agent sees). Both the cap and the preview are
+     recorded in BYTES as well as in the measured unit, since every event offset is in bytes
+     (21.1 R10). **Which number is "in bytes"** (round-3 #m-8): if the harness measures in
+     CHARACTERS, `cap` and `preview` in bytes are the measured character NUMBERS taken as byte
+     counts (a payload of N bytes never has more than N characters, so it is the conservative
+     reading); they are never the byte length of the probe's own multibyte payload. If the
+     harness measures bytes, they are the measured byte numbers.
+   - (b) **Per event** (19 #s-2). Two hooks on ONE UserPromptSubmit event, 5,000 + 6,000 chars:
+     both whole → the cap is per hook; either previewed → per event. The verdict is recorded.
+   - (c) **PreCompact** (19 #s-1, d5d). A PreCompact hook emits a unique marker line; after a
+     `/compact`, the session is asked to quote any marker it holds. Marker present → PreCompact
+     stdout reaches the agent; absent → it does not, and 19.1 R4 drops the PreCompact recall
+     (keeping only save-state / promote), and 19.2 never counts PreCompact as `delivered`.
+   - The result table goes into [[reference_hook_output_10k_cap]] (a memory overwrite or amend per
+     MEMORY-RULES) and sets `DEFAULT_HOOK_BUDGET_BYTES` (the cap in bytes minus a 5% margin; if
+     per event, 19.1 R1's per-event formula), and records R1(c)'s verdict as the committed
+     constant `PRECOMPACT_STDOUT_DELIVERED` in `src/refmatrix/hooks.py` (`True` / `False`; `None`
+     until this probe runs), which 19.1 R4's generator and 19.2 R3's fold read.
+2. **R2 Delivery metric, read from the C7 events** (19 #m-6). For each channel (SessionStart,
+   per-prompt, PreCompact if R1(c) keeps it, scan-prompt) on the 20-prompt set of 19.1 AC-2:
+   - **before** (today's hooks): distinct memories named inside the delivered payload, which is
+     the whole output when its size is ≤ R1's `cap`, else its first `preview` bytes, with `cap`
+     and `preview` the SAME R1 measurements (in bytes, as defined in R1) that `seen` uses below
+     (round-3 #m-8: no constant 2 KB);
+   - **after** (19.1–19.3): distinct memories per 21.1's `delivered` events, compared with the
+     `retrieved` events of the same `query_id`, and cross-checked against the names counted in
+     the payload (the two counts must agree, or the run fails).
+   - "Memory" excludes `mtype=subject` and `session/*` rows (d8a).
+   - **`seen`, derived here and only here** (re-review #s-2; plan-21 `#consolidations`). For each
+     `delivered` event, with `cap` and `preview` from R1 in bytes: if the call's `payload_bytes ≤
+     cap`, the item is seen; else it is seen only if `offset_bytes + bytes ≤ preview` (the naming
+     line fell inside the preview), and its body is seen only if `body_offset_bytes +
+     body_bytes ≤ preview`. If R1 found the cap PER EVENT, `payload_bytes` above is the sum of
+     both UserPromptSubmit payloads of that prompt (scan-prompt + recall, joined by `session` and
+     `turn`), and the other hook's payload is assumed to come FIRST, so `seen` is a lower bound and
+     is labelled so. If R1 found the harness counts characters, byte offsets over-state position,
+     so `seen` is again a lower bound, labelled so. The table reports, per channel: emitted,
+     seen, and seen/emitted; scan-prompt's tail under a per-event cap is visible as emitted but
+     not seen.
+   - **A skipped recall is attempted, with 0 delivered** (round-8 #nm-5). A per-prompt or
+     SessionStart recall whose 21.1 `query.log` row carries `outcome=skipped_budget` (its budget
+     expired; 21.1 R3, R4) counts as an ATTEMPTED prompt with 0 delivered and 0 seen, reported on
+     its own line per channel (`skipped_budget=<n>`), apart from a prompt with no recall row at
+     all ("no recall", for example an empty prompt) and from `outcome=error`. The prompt
+     denominator of every per-prompt figure is attempted prompts, so a loaded daemon lowers the
+     figure instead of vanishing from it.
+3. **R3 Index reach.** The number of memories named in `MEMORY.md` before and after 19.3, and
+   19.3 R4's executed reachability result.
+4. **R4 The fixed baseline for 19.6** (d5b). R2's "after" numbers, per channel (emitted, seen,
+   distinct memories), plus scan-prompt's delivered size, are written to
+   `eval/production/memory_delivery/baseline-fixed.json` (counts and sizes only, no prompt text)
+   and committed. It holds NO read-back data, by design (re-review #s-4): 19.6 scores read-back
+   on a live concurrent `fixed` arm (19.6 Table C) and uses this file only as its validity check
+   (19.6 [[task-19.6-phased-context-and-topic-cache#ranges-c]]).
+5. **R5 The production path.** Every number comes from the CLI commands the hooks run, in task
+   23.0's sandbox, on catalog and memory-dir COPIES (and a tmp global store copy for the
+   `--scope both` leg). No measurement connects to a live socket.
 
 ## Acceptance criteria {#acceptance}
 
-1. The probe's result table (size → whole/preview, unit) is in the reference memory and the
-   implementation summary. The 19.1 default derives from it.
-2. The before/after table per channel shows the median distinct-memories-delivered. 19.1's AC-2
-   (≥ 5x) is judged from it.
+1. The probe's table (size → whole / preview; unit; per hook vs per event; PreCompact verdict) is
+   in the reference memory and the implementation summary, and 19.1's default and PreCompact
+   branch derive from it.
+2. The before/after table per channel shows the median distinct memories delivered and the
+   emitted / seen counts; 19.1 AC-2 (≥ 5x) is judged from it. The `delivered` event counts equal
+   the payload name counts on every prompt.
+2b. **`seen` derivation** (unit-tested in the script's tests, sandboxed): a 12,000-byte payload
+   with `cap` 10,000 and `preview` 2,048 marks only the items whose naming line ends at or before
+   byte 2,048 as seen; a 9,000-byte payload marks all as seen; under a per-event cap, a
+   6,000-byte scan-prompt payload plus a 5,000-byte recall payload marks the recall items seen
+   only within `preview − 6,000` (none). Mutation: deriving `seen` as `offset_bytes + bytes ≤ cap`
+   on an over-cap payload fails the first case.
 3. The scan-prompt budget (2,000 tokens) is recorded with its delivered size, and any follow-up is
-   named in the summary.
+   named in the summary (19.6 owns the split, d5b).
+4. `baseline-fixed.json` exists, is committed, and holds no prompt text.
+5. 23.0's guard records 0 live connects for the measurement run.
 
 ## Files {#files}
 
-`eval/production/memory_delivery/` (a script + REPORT.md); the probe hook script lives in the
+`eval/production/memory_delivery/` (the script, REPORT.md, `baseline-fixed.json`,
+`PROMPTS.sha256`; the prompt file itself is local per d8f). The probe hook scripts live in the
 scratch project only.
+
+## Test strategy {#test-strategy}
+
+R1 is a manual probe in a scratch Claude Code project, recorded, not a pytest. R2–R4 run as a
+script in task 23.0's sandbox (tmp `HOME`, global root, registry; spawned `rmx` children refuse
+sockets outside the tmp root) on copies; the script fails loudly if the event counts and payload
+counts disagree.
+
+## Revision (2026-10-14 decision log) {#rev-2026-10-14}
+
+| finding / decision | answered at |
+|---|---|
+| 19 #s-1; d5d | R1(c), AC-1 |
+| 19 #s-2 | R1(b), AC-1 |
+| 19 #m-6 | R2, AC-2 |
+| 19 #b-7; d1a/d1b | R5, [[#test-strategy]], AC-5 |
+| 19 #s-3 (baseline unit, named prompt set) | R2 |
+| d5b (fixed baseline for 19.6) | R4, AC-4 |
+| d8a (subjects not counted as memories) | R2 |
+| d8f (prompt text stays local) | R4, [[#files]] |
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+Answers [[bsd-plan19-21-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9-fixes]].
+
+| finding / decision | answered at |
+|---|---|
+| re-review #s-2 (19.5 never derives `seen`; units) / #t9-fixes "one unit (bytes)" | R1(a) (cap and preview in bytes), R2 (`seen` derived only here, lower-bound rules), AC-2, AC-2b |
+| re-review #s-4 (19.6's baseline holds no read-back) | R4 (no read-back by design; 19.6 Table C scores a live `fixed` arm and uses this file as a validity check) |
+| re-review #m-2 (PreCompact constant unnamed) | R1 (`hooks.PRECOMPACT_STDOUT_DELIVERED`) |
+
+## Revision round 3 (2026-10-14) {#rev-round-3}
+
+Answers [[bsd-plan19-21-spec-rereview-r3-6091648]].
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r3-6091648]]
+
+| finding / decision | answered at |
+|---|---|
+| round-3 #m-8 (a constant 2 KB "before" preview beside the measured `seen` preview; "the cap in bytes" ambiguous under a character harness) | R1(a) (bytes = the measured character numbers taken as bytes when the harness counts characters); R2 "before" (the same measured `cap` and `preview` as `seen`) |
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan19-21-spec-rereview-r8-23ad703]] #nm-5 (19.5 side: a budget skip must not be
+read as "recall ran, delivered 0" or dropped from the denominator). The field is 21.1's
+([[task-21.1-context-usage-telemetry#rev-round-8]]: `outcome` ∈ `ok`, `skipped_budget`, `error`
+and `budget_s` on recall and context rows).
+
+rel: derives-from -> [[bsd-plan19-21-spec-rereview-r8-23ad703]]
+rel: depends-on -> [[task-21.1-context-usage-telemetry]]
+
+| finding / decision | answered at |
+|---|---|
+| round-8 #nm-5 (19.5 consumes 21.1's `outcome`) | R2 ("A skipped recall is attempted, with 0 delivered": `skipped_budget` counted apart per channel, in the attempted denominator, distinct from "no recall" and `error`) |

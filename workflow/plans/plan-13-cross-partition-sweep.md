@@ -15,8 +15,9 @@ metadata:
 
 **Date:** 2026-09-20 (revised same day after `@ch-bsd` returned DIRTY, 12 findings)
 **Status:** Drafting, **DORMANT** (plan review C9, user 2026-10-07). Its session-inclusion
-question is re-scoped onto plan-21's frozen NL ranking harness (task 21.4). It resumes, re-specced
-on that harness, after 21.4 lands.
+question is re-scoped onto plan-21's frozen NL ranking harness (task 21.4). Correction
+(2026-10-14, decision d4b): 21.4's gold set covers code and docs only, so it cannot judge the
+sessions question; plan-13 stays DORMANT on its own question until a sessions gold set exists.
 **Location:** `workflow/plans/plan-13-cross-partition-sweep.md` — permanent home; stage is
 `metadata.status`.
 

@@ -48,6 +48,8 @@ Earlier design research lives in the `docs/PERFORMANCE.md` negatives and in memo
 | [[exploration-concept-similarity-cull-merge]] | which similarity signal may cull or merge concepts (helix) | research complete, awaiting decisions |
 | [[exploration-agent-context-usage]] | how the agent uses `rmx context` once grep is passive (plan-16) | research complete, awaiting decisions |
 | [[exploration-adaptive-memory-budget]] | adaptive memory selection under the context load limits | research complete, awaiting decisions |
+| [[exploration-storage-concurrency-redesign]] | storage options A-E: DuckDB concurrency, Vortex, BSI (2026-10-08) | measured in part, awaiting decisions |
+| [[exploration-session-phased-context]] | phase scan-prompt/recall breadth vs depth by STM state (2026-10-14) | idea recorded, folded into plan-19/21 reviews |
 
 ## Tech Stack (`tech-stack/`) {#tech-stack}
 

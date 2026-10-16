@@ -264,3 +264,38 @@ def init_catalog(con, *, sequence_starts: dict[str, int] | None = None) -> None:
         start = starts.get(seq, 1)
         con.execute(f"CREATE SEQUENCE IF NOT EXISTS {seq} START {start}")
     con.execute(CATALOG_DDL)
+    upgrade_catalog(con)
+
+
+# Columns `entities` gained after catalogs already existed, in the order they
+# were added. THE list: a fresh catalog and an upgraded one both end with these
+# columns appended by ALTER, so every DuckDB catalog (Store, merge target,
+# sqlite->duckdb migration) has one column set in one order. bug-113: the
+# Store ALTERed `vectors_partition` in on open while `init_catalog` — the
+# replica-merge target's builder — never did, and `INSERT INTO entities SELECT
+# ae.*` from a Store-built slot failed "13 columns but 14 values".
+ENTITY_COLUMN_UPGRADES = (
+    ("canonical_name", "TEXT"),
+    ("vectors_updated_at", "DOUBLE"),
+    ("vectors_partition", "TEXT"),
+)
+
+
+def upgrade_catalog(con) -> "list[str]":
+    """Add any `ENTITY_COLUMN_UPGRADES` column `entities` lacks. Idempotent;
+    returns the columns it added. `idx_entities_canonical` is created only
+    when `canonical_name` is added here, exactly as Store._connect did."""
+    have = {r[0] for r in con.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'entities' AND table_catalog = current_database() "
+        "AND table_schema = 'main'").fetchall()}
+    added = []
+    for col, typ in ENTITY_COLUMN_UPGRADES:
+        if col in have:
+            continue
+        con.execute(f"ALTER TABLE entities ADD COLUMN {col} {typ}")
+        added.append(col)
+        if col == "canonical_name":
+            con.execute("CREATE INDEX IF NOT EXISTS idx_entities_canonical "
+                        "ON entities(partition_id, kind, canonical_name)")
+    return added

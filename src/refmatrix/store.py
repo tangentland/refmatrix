@@ -1323,31 +1323,10 @@ class Store:
                 # are not needed.
                 self._backend.init_catalog(con)
                 self._conn = con
-                # ALTER ADD COLUMN for catalogs created before canonical_name
-                # was part of the schema (pre-0.3.3). DuckDB supports both
-                # ALTER TABLE ADD COLUMN IF NOT EXISTS and the conditional
-                # information_schema check below for portability across
-                # DuckDB versions.
-                cols = {
-                    r[0] for r in con.execute(
-                        "SELECT column_name FROM information_schema.columns "
-                        "WHERE table_name='entities'"
-                    ).fetchall()
-                }
-                if "canonical_name" not in cols:
-                    con.execute("ALTER TABLE entities ADD COLUMN canonical_name TEXT")
-                    con.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_entities_canonical "
-                        "ON entities(partition_id, kind, canonical_name)"
-                    )
-                if "vectors_updated_at" not in cols:
-                    con.execute(
-                        "ALTER TABLE entities ADD COLUMN vectors_updated_at DOUBLE"
-                    )
-                if "vectors_partition" not in cols:
-                    con.execute(
-                        "ALTER TABLE entities ADD COLUMN vectors_partition TEXT"
-                    )
+                # Post-DDL `entities` columns (canonical_name, vectors_updated_at,
+                # vectors_partition) are added by init_catalog itself through
+                # `duckdb_catalog.upgrade_catalog` — one schema for every DuckDB
+                # catalog builder, the Store included (bug-113).
                 # ADR-0001 / Phase B: relax the kind CHECK constraint on
                 # pre-Phase-B catalogs so 'memory' rows can land. DuckDB
                 # auto-names CHECK constraints; query duckdb_constraints

@@ -30,7 +30,7 @@ rel: related-to -> [[feedback_grep_is_observed_not_answered]]
 | agent greps (grep-replica rows) | 1,107 | 9 / 26 | 825 drop-in, 21 index-answered |
 | `rmx context` from the CLI | **3** | 825 / 859 | 418–596 tokens per answer |
 | MCP `rmx_context` | **0** in transcripts | — | not logged at all (below) |
-| `rmx memory recall` (agent) | 68 | 41 / 872 | |
+| `rmx memory recall` (agent) | 34 (corrected 2026-10-14; 68 counted the intent rows twice) | 41 / 872 | |
 | scan-prompt hook | 200 | 2,448 / 9,774 | ~1.6k tokens per prompt |
 
 In transcripts, Bash commands contained `grep` 983 times and `rmx context` at most 29 times
@@ -59,6 +59,9 @@ tooling.** {#usage}
 - **Caveat:** deployed 0.76.2 still has the defect the r7 remedy found and fixed on the branch
   (`2cd73b9`). A phrase with no graph anchor skipped the reranker, so these NL results are
   UNRERANKED. The replay must be re-run on the branch before the NL verdict stands.
+  Correction (plan-21 spec review s-8, 2026-10-14): the replay ran on the REPLICA route, which has
+  never had a reranker; `2cd73b9` fixed only the daemon route. Re-running on the branch stays
+  unreranked until the replica route gets one (21.4 R3).
 
 {#replay}
 
@@ -87,7 +90,9 @@ tooling.** {#usage}
 - `invocation` is `unknown` on every agent grep and context row.
 - The MCP server never sets `RMX_INVOCATION_SOURCE`.
 - MCP `_op_context` writes no `query.log` row.
-- `cardinality` reads 0 on `-E` alternation greps that matched.
+- ~~`cardinality` reads 0 on `-E` alternation greps that matched.~~ Did not reproduce (plan-21 spec
+  review s-4, 2026-10-14): none of the zero-cardinality `-E` rows ended `ok`. The real gap is
+  `grep-stdin`, whose cardinality is null on every row (`cli.py:6202`).
 
 {#telemetry}
 
