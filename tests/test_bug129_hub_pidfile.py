@@ -358,3 +358,40 @@ def test_stop_hub_reports_a_hub_that_outlives_the_timeout(short_home, monkeypatc
         assert hub.stop_hub(timeout=0.5) is False
     finally:
         old.kill()
+
+
+def test_the_launcher_gets_the_whole_readiness_window(short_home, monkeypatch, tmp_path):
+    """`rmx daemon start` gives up after RMX_DAEMON_SPAWN_WAIT (15 s default)
+    and exits 1 while its daemon is still booting. With the fail-fast that
+    read as a failure for any 15-45 s boot (ch-bsd bug-129 r6 s1-r6), so the
+    launcher is handed the caller's whole window: a non-zero exit then means
+    it really did not start."""
+    import subprocess
+    from refmatrix import daemon as daemon_mod
+    seen = {}
+
+    def fake_run(argv, env=None, **kw):
+        seen["wait"] = env.get("RMX_DAEMON_SPAWN_WAIT")
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    pings = iter([False, True])
+    monkeypatch.setattr(daemon_mod, "ping", lambda root, timeout=0.5: next(pings, True))
+    monkeypatch.setattr(daemon_mod, "read_pid", lambda root: 4242)
+    assert daemon_mod.spawn_daemon_subprocess(tmp_path / ".refmatrix",
+                                              wait_for_ready=42.0) == 4242
+    assert seen["wait"] is not None and float(seen["wait"]) >= 42.0, seen
+
+
+def test_the_ui_handlers_that_start_daemons_run_off_the_event_loop(short_home, monkeypatch):
+    """An `async def` handler blocks the event loop for a whole daemon start;
+    a plain `def` runs in FastAPI's threadpool (bug-129 r5 m1-r5, r6 m1-r6)."""
+    import inspect
+    from refmatrix import discovery
+    from refmatrix.ui import server as srv
+    monkeypatch.setattr(discovery, "discover_roots", lambda: [])
+    app = srv.create_app(hub.Hub(port=0))
+    routes = {(r.path, m): r.endpoint for r in app.routes
+              for m in getattr(r, "methods", ()) or ()}
+    for key in (("/api/daemon", "POST"), ("/api/refine/accept", "POST")):
+        assert key in routes, key
+        assert not inspect.iscoroutinefunction(routes[key]), key

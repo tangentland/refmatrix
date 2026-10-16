@@ -6775,7 +6775,12 @@ def spawn_daemon_subprocess(
     if watch_semantic:
         argv += ["--semantic"]
 
-    env = dict(os.environ, REFMATRIX_ROOT=str(root))
+    # The launcher's own spawn window (RMX_DAEMON_SPAWN_WAIT, 15 s default)
+    # is set to this caller's whole window: otherwise it exits 1 while a slow
+    # daemon is still booting, and the fail-fast below would report a start
+    # that was about to succeed (ch-bsd bug-129 r6 s1-r6).
+    env = dict(os.environ, REFMATRIX_ROOT=str(root),
+               RMX_DAEMON_SPAWN_WAIT=str(wait_for_ready))
     # `rmx daemon start` blocks until the daemon is accepting connections, then
     # returns — so run it and let it daemonize. Its own fork is single-threaded
     # and safe. stderr goes to a file, not a pipe: the daemonized grandchild
@@ -6799,9 +6804,9 @@ def spawn_daemon_subprocess(
                 f"`rmx daemon start` for {root} exited {proc.returncode}: "
                 f"{tail or '(no stderr)'}")
 
-    # Poll for the full readiness window after the launcher returns: under load
-    # the inner `daemon start` can exit before its child has bound the socket,
-    # so a short poll would spuriously fail.
+    # Poll after a launcher that exited 0 (or timed out): under load the inner
+    # `daemon start` can return before its child has bound the socket. A
+    # non-zero exit already waited the whole window and raised above.
     deadline = time.time() + wait_for_ready
     while time.time() < deadline:
         if ping(root):
