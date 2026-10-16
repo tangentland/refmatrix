@@ -929,7 +929,7 @@ class Hub:
     # -- run ----
     def run(self, *, host: str = "127.0.0.1", serve_http: bool = True) -> None:
         hub_home().mkdir(parents=True, exist_ok=True)
-        hub_pid_path().write_text(str(os.getpid()))
+        _claim_pid_file(os.getpid())
         _log(f"hub starting pid={os.getpid()} port={self.port}")
         # First: every daemon we are about to start or supervise should find
         # the shared socket already listening, or it spawns a private worker
@@ -1007,13 +1007,37 @@ class Hub:
         # blocking on a socket nobody is accepting on.
         self._stop_models()
         self.watchdog.stop()
-        try:
-            hub_pid_path().unlink()
-        except OSError:
-            pass
+        _release_pid_file(os.getpid())
 
 
 # ---- lifecycle (module-level, for the CLI) --------------------------------
+
+
+def _claim_pid_file(pid: int) -> None:
+    """Write hub.pid whole (tmp + rename), so a reader never sees it half
+    written."""
+    p = hub_pid_path()
+    tmp = p.with_name(f"{p.name}.{pid}.tmp")
+    tmp.write_text(str(pid))
+    os.replace(tmp, p)
+
+
+def _release_pid_file(pid: int | None) -> bool:
+    """Remove hub.pid only while it still names `pid`. Returns True if removed.
+
+    bug-129 (2026-10-15): `rmx hub stop` saw no answering socket in the gap
+    between launchd's successor writing hub.pid and binding hub.sock, and
+    unlinked the successor's file; the live hub then ran with `hub_pid()`
+    None. Every stopper — `Hub.shutdown` and `stop_hub` — goes through this
+    one check. The read-then-unlink window is microseconds against the
+    seconds-long restart gap that hit."""
+    if pid is None or hub_pid() != pid:
+        return False
+    try:
+        hub_pid_path().unlink()
+    except FileNotFoundError:
+        return False
+    return True
 
 
 def hub_pid() -> int | None:
@@ -1136,10 +1160,7 @@ def stop_hub(*, timeout: float = 5.0, port: int = DEFAULT_PORT) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         if not is_running():
-            try:
-                hub_pid_path().unlink()
-            except OSError:
-                pass
+            _release_pid_file(pid)
             break
         if pid:
             try:
