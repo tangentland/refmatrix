@@ -260,7 +260,9 @@ def create_app(hub) -> FastAPI:
             if action == "stop":
                 daemon_mod.stop_daemon(root)
             else:
-                daemon_mod.spawn_daemon(root)
+                # Exec, never fork: this runs inside the hub, and a forked
+                # daemon keeps the hub's listening socket (bug-129 r4).
+                daemon_mod.spawn_daemon_subprocess(root)
             return {"ok": True, "result": {"up": daemon_mod.ping(root)}}
         except Exception as e:
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}

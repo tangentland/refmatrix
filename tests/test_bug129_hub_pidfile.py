@@ -277,3 +277,39 @@ def test_stop_hub_waits_for_the_old_hub_to_exit(short_home, monkeypatch):
         assert old.poll() is not None, "stop_hub returned while the old hub was alive"
     finally:
         old.kill()
+
+
+def test_the_hub_process_never_forks_a_daemon():
+    """A daemon forked (no exec) from the hub copies every descriptor the hub
+    holds — the uvicorn listening socket as well as hub.lock — so after the hub
+    dies its successor finds the port held, stands down with exit 0, and
+    `rmx hub stop` SIGKILLs the daemon as a port orphan (ch-bsd bug-129 r4
+    s1-r4). Code that runs inside the hub starts daemons through
+    `daemon.spawn_daemon_subprocess`, which execs."""
+    import ast
+    pkg = Path(hub.__file__).parent
+    hub_side = [pkg / "hub.py", pkg / "bus.py", *sorted((pkg / "ui").rglob("*.py"))]
+    bad = []
+    for f in hub_side:
+        for node in ast.walk(ast.parse(f.read_text())):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", None)
+            if name == "spawn_daemon":
+                bad.append(f"{f.relative_to(pkg)}:{node.lineno}")
+    assert bad == [], f"the hub process forks a daemon: {bad}"
+
+
+def test_stop_hub_reports_a_hub_that_outlives_the_timeout(short_home, monkeypatch):
+    import subprocess
+    import threading
+    old = subprocess.Popen(["sleep", "5"])
+    threading.Thread(target=old.wait, daemon=True).start()
+    hub.hub_pid_path().write_text(str(old.pid))
+    monkeypatch.setattr(hub, "is_running", lambda: False)
+    monkeypatch.setattr(hub, "_pid_on_port", lambda port: None)
+    try:
+        assert hub.stop_hub(timeout=0.5) is False
+    finally:
+        old.kill()
