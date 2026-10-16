@@ -7,6 +7,7 @@ tool output that the transcript only kept a preview of.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -125,14 +126,24 @@ def client():
 
 @pytest.fixture
 def a_session():
-    projects = cctree.all_projects()
-    if not projects:
-        pytest.skip("no Claude Code transcripts on this host")
-    for d in projects:
-        s = cctree.sessions_in(d)
-        if s:
-            return s[0]
-    pytest.skip("no sessions")
+    """A synthetic transcript under the SANDBOX's `~/.claude/projects/<slug>/`.
+
+    It used to pick the first real transcript on the host, which the task 23.0 sandbox (HOME
+    redirected) turned into "no Claude Code transcripts on this host" -- 5 tests silently
+    skipped (ch-bsd r1 b2, 2026-10-15). A fixture the suite owns runs on every host."""
+    import uuid
+    cwd = "/tmp/rmx-cctree-proj"
+    d = cctree.PROJECTS / cctree.slug_for(Path(cwd))
+    d.mkdir(parents=True, exist_ok=True)
+    s = d / f"{uuid.uuid4()}.jsonl"
+    s.write_text(_rec(cwd=cwd) + "\n" + json.dumps({
+        "type": "assistant", "cwd": cwd, "timestamp": "2026-07-31T00:00:01Z", "uuid": "a1",
+        "parentUuid": "u1", "message": {"role": "assistant",
+                                        "content": [{"type": "text", "text": "hello"}]}}) + "\n")
+    try:
+        yield s
+    finally:
+        s.unlink()
 
 
 def test_index_lists_sessions(client, a_session):

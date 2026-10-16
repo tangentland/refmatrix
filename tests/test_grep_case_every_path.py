@@ -117,6 +117,7 @@ def proj(tmp_path, monkeypatch):
     (p / "e.txt").write_text("ERROR here\n")
     monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
     monkeypatch.chdir(p)
+    monkeypatch.delenv("REFMATRIX_ROOT", raising=False)  # 23.0 R2: cwd walk
     return p
 
 
@@ -211,6 +212,7 @@ def test_word_reaches_the_in_process_read_paths(tmp_path, monkeypatch, layout):
         (proj / ".refmatrix" / "active").write_text("A\n")
     monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
     monkeypatch.chdir(proj)
+    monkeypatch.delenv("REFMATRIX_ROOT", raising=False)  # 23.0 R2: cwd walk
 
     plain = CliRunner().invoke(cli_mod.main, ["grep", "--no-fallback", "--", "err"])
     word = CliRunner().invoke(cli_mod.main, ["grep", "--no-fallback", "-w", "--", "err"])
@@ -267,6 +269,7 @@ def test_the_in_process_path_prints_the_unreadable_note(tmp_path, monkeypatch):
     s.close()
     monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
     monkeypatch.chdir(proj)
+    monkeypatch.delenv("REFMATRIX_ROOT", raising=False)  # 23.0 R2: cwd walk
 
     res = CliRunner().invoke(cli_mod.main, ["grep", "--no-fallback", "--", "error"])
 
