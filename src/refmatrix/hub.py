@@ -34,6 +34,7 @@ from refmatrix.taxonomy import user_home
 HUB_SOCK = "hub.sock"
 HUB_PID = "hub.pid"
 HUB_LOG = "hub.log"
+HUB_LOCK = "hub.lock"
 GLOBAL_PARTITION = "global"
 DEFAULT_PORT = 7777
 WATCHDOG_INTERVAL_S = float(os.environ.get("RMX_HUB_WATCH_INTERVAL", "15"))
@@ -929,16 +930,26 @@ class Hub:
     # -- run ----
     def run(self, *, host: str = "127.0.0.1", serve_http: bool = True) -> None:
         hub_home().mkdir(parents=True, exist_ok=True)
-        # The port check comes before anything this hub claims. A second hub
-        # (launchd while an unsupervised one holds the port, or `rmx ui`)
-        # used to claim hub.pid, rebind hub.sock and models.sock, then lose
-        # the port and release the pid file the live hub depends on (bug-129,
-        # ch-bsd r1 s1).
-        if serve_http:
+        # One hub per home, decided before this hub claims hub.pid or binds a
+        # socket. The live hub holds hub.lock for its whole life; the port
+        # alone cannot say so, because a hub binds it last and a second hub
+        # started inside that window (rmx ui, a detached hub start) used to
+        # overwrite hub.pid, rebind hub.sock and models.sock, lose the
+        # uvicorn bind and release the pid file the live hub depends on
+        # (bug-129, ch-bsd r1 s1 / r2 s1-r2).
+        self._lock = _take_hub_lock()
+        if self._lock is None:
+            _log("another hub holds hub.lock — not starting")
+            return
+        # A port held WITHOUT the lock is an orphan uvicorn (a zombie hub, or
+        # a hub from before the lock); it would make the HTTP server fail to
+        # bind. A headless install never binds the port, so it is not asked.
+        if serve_http and _http_available():
             other = _pid_on_port(self.port)
             if other and other != os.getpid():
                 _log(f"hub port {self.port} already in use by pid {other} — run "
                      f"`rmx hub stop` (reaps the orphan) or kill it; not starting")
+                _drop_hub_lock(self._lock)
                 return
         _claim_pid_file(os.getpid())
         _log(f"hub starting pid={os.getpid()} port={self.port}")
@@ -1014,9 +1025,36 @@ class Hub:
         self._stop_models()
         self.watchdog.stop()
         _release_pid_file(os.getpid())
+        _drop_hub_lock(getattr(self, "_lock", None))
 
 
 # ---- lifecycle (module-level, for the CLI) --------------------------------
+
+
+def _http_available() -> bool:
+    """Whether the `[ui]` extra (fastapi + uvicorn) is installed — the hub
+    serves HTTP only then, and supervises headless otherwise."""
+    import importlib.util
+    return all(importlib.util.find_spec(m) is not None for m in ("fastapi", "uvicorn"))
+
+
+def _take_hub_lock():
+    """Take hub.lock for the life of this process, or None if another hub
+    holds it. flock is released by the kernel when the process dies, so a
+    crashed hub never leaves a stale lock behind."""
+    import fcntl
+    f = open(hub_home() / HUB_LOCK, "a")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        f.close()
+        return None
+    return f
+
+
+def _drop_hub_lock(lock) -> None:
+    if lock is not None:
+        lock.close()  # closing the descriptor releases the flock
 
 
 def _claim_pid_file(pid: int) -> None:
@@ -1037,10 +1075,8 @@ def _release_pid_file(pid: int | None) -> bool:
     `stop_hub` — still goes through this one check, so neither a stray caller
     nor a successor that wrote its pid inside a stop can lose another hub's
     file. A declined release is logged, so the next one is visible."""
-    if pid is None:
-        return False
     held = hub_pid()
-    if held != pid:
+    if pid is None or held != pid:
         if hub_pid_path().exists():
             _log(f"hub.pid names {held if held is not None else 'no readable pid'}, "
                  f"not {pid}: left in place")

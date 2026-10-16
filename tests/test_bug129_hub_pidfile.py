@@ -92,6 +92,8 @@ def test_only_the_helpers_reach_the_pid_file():
     `src/refmatrix/` — an alias, `os.unlink(...)`, `hub_home() / HUB_PID` —
     is a path around the owner check (ch-bsd r1 s2)."""
     import ast
+    # Owners are the four functions IN hub.py; a same-named function in any
+    # other module is not exempt (ch-bsd r2 m1-r2).
     owners = {"_claim_pid_file", "_release_pid_file", "hub_pid", "hub_pid_path"}
     pkg = Path(hub.__file__).parent
     bad = []
@@ -111,6 +113,8 @@ def test_only_the_helpers_reach_the_pid_file():
 
         for node in ast.walk(tree):
             hit = ((isinstance(node, ast.Name) and node.id in {"hub_pid_path", "HUB_PID"})
+                   or (isinstance(node, ast.alias)
+                       and node.name in {"hub_pid_path", "HUB_PID"})
                    or (isinstance(node, ast.Attribute)
                        and node.attr in {"hub_pid_path", "HUB_PID"})
                    or (isinstance(node, ast.Constant) and node.value == "hub.pid"))
@@ -119,7 +123,7 @@ def test_only_the_helpers_reach_the_pid_file():
             where = owner(node)
             is_decl = (f.name == "hub.py" and where is None
                        and isinstance(parents.get(node), ast.Assign))
-            if where in owners or is_decl:
+            if (f.name == "hub.py" and where in owners) or is_decl:
                 continue
             bad.append(f"{f.relative_to(pkg)}:{node.lineno} ({where})")
     assert bad == [], f"hub.pid reached outside its owners: {bad}"
@@ -154,3 +158,53 @@ def test_a_declined_release_is_logged(short_home, monkeypatch):
     hub.hub_pid_path().write_text("222")
     assert hub._release_pid_file(111) is False
     assert any("hub.pid" in ln and "222" in ln for ln in lines), lines
+
+
+def _hub_that_must_not_start():
+    h = object.__new__(hub.Hub)
+    h.port = 7777
+
+    def reached():
+        raise _Reached("this hub started its model workers")
+    h._start_models = reached
+    h._stop_models = lambda: None
+    h.watchdog = SimpleNamespace(stop=lambda: None)
+    return h
+
+
+def test_a_hub_started_inside_the_live_hubs_startup_stands_down(short_home, monkeypatch):
+    """The live hub binds the port last, so while it starts the port is free
+    and ping fails; a second hub launched then (rmx ui, detached hub start)
+    passed the preflight, overwrote hub.pid, and removed it on losing the
+    uvicorn bind (ch-bsd r2 s1-r2). The live hub's lifetime lock on
+    hub.lock is what stops it."""
+    import fcntl
+    hub.hub_pid_path().write_text("4191")
+    monkeypatch.setattr(hub, "_pid_on_port", lambda port: None)  # port not bound yet
+    live = open(hub.hub_home() / "hub.lock", "a")
+    try:
+        fcntl.flock(live, fcntl.LOCK_EX | fcntl.LOCK_NB)  # the live hub holds it
+        hub.Hub.run(_hub_that_must_not_start(), serve_http=True)
+    finally:
+        live.close()
+    assert hub.hub_pid() == 4191
+
+
+def test_a_headless_install_still_starts_when_the_port_is_held(short_home, monkeypatch):
+    """Without the [ui] extra the hub never serves HTTP, so a held port is not
+    its business: it supervises headless, as it did before the preflight moved
+    (ch-bsd r2 m2-r2 a)."""
+    monkeypatch.setattr(hub, "_pid_on_port", lambda port: 4191)
+    monkeypatch.setattr(hub, "_http_available", lambda: False)
+    with pytest.raises(_Reached):
+        hub.Hub.run(_hub_that_must_not_start(), serve_http=True)
+
+
+def test_stop_hub_reports_an_unreadable_pid_file(short_home, monkeypatch):
+    lines = []
+    monkeypatch.setattr(hub, "_log", lines.append)
+    monkeypatch.setattr(hub, "is_running", lambda: False)
+    monkeypatch.setattr(hub, "_pid_on_port", lambda port: None)
+    hub.hub_pid_path().write_text("garbage")
+    hub.stop_hub(timeout=0.5)
+    assert any("hub.pid" in ln for ln in lines), lines
