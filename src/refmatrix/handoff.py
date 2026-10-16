@@ -506,30 +506,56 @@ def _latest_savestate(memdir: Path, *, head_chars: int = 1800) -> dict | None:
 
 
 def session_pointer_anomalies(root: Path, *, window_s: float = 86400.0) -> list[str]:
-    """bug-109 r2 #s-2: the reader for `stm/by-pid/_errors.jsonl`. A session-pointer failure in
-    the last day means some STM call may have resolved a guessed session; recall-state says so,
-    with the count per reason and where to look. r3 #m-1: rows do not say whether the call was a
-    read or a write, so the text says "calls". r3 #m-2: unreadable lines are counted, apart."""
+    """The reader of the user-level pointer-error log, SCOPED to `root` (bug-109 r2 #s-2;
+    task 21.1 D6, round-7 #s-2: D3 made the log one file for every project, and an unscoped
+    reader in project X counted project Y's rows). Up to three clauses, kept apart:
+    (1) session-pointer failures — count per reason, and what each purpose did with the miss;
+    (2) STM hook failures (`sweep-failed`, `composite-failed`, `enrichment-unresolved`) — no
+        session wording, they are not session misses;
+    (3) rows of this store dropped by the log's halving.
+    Unreadable lines (r3 #m-2) and rows with no `root` (a writer defect) are counted apart,
+    never attributed to this store silently. The path comes from `stm.errors_log_path()`."""
     import time as _t
     from collections import Counter
     from refmatrix import stm as stm_mod
-    rows = stm_mod.read_pointer_errors(root, since=_t.time() - window_s)
+    path = stm_mod.errors_log_path()
+    rows = stm_mod.read_pointer_errors(root=root, since=_t.time() - window_s)
     bad = sum(1 for r in rows if r.get("reason") == "unreadable-line")
-    rows = [r for r in rows if r.get("reason") != "unreadable-line"]
-    if not rows and not bad:
-        return []
-    if not rows:
-        return [f"session-pointer log has {bad} unreadable line(s); see stm/by-pid/_errors.jsonl"]
-    by = Counter(str(r.get("reason")) for r in rows)
-    parts = ", ".join(f"{k} x{v}" for k, v in by.most_common())
-    msg = (f"{len(rows)} session-pointer failure(s) in 24h ({parts}): STM calls may have used "
-           f"a guessed session")
-    if bad:
-        msg += f"; {bad} unreadable line(s) in the log"
-    return [msg + "; see stm/by-pid/_errors.jsonl"]
+    unscoped = sum(1 for r in rows if r.get("reason") == "unscoped-row")
+    trunc = sum(int((r.get("dropped_by_root") or {}).get(str(root), 0))
+                for r in rows if r.get("reason") == "errors-truncated")
+    special = ("unreadable-line", "unscoped-row", "errors-truncated")
+    hook_rows = [r for r in rows if r.get("reason") in stm_mod.STM_HOOK_REASONS]
+    ptr_rows = [r for r in rows if r.get("reason") not in special
+                and r.get("reason") not in stm_mod.STM_HOOK_REASONS]
+    out: list[str] = []
+    if ptr_rows or bad:
+        by = Counter(str(r.get("reason")) for r in ptr_rows)
+        parts = ", ".join(f"{k} x{v}" for k, v in by.most_common())
+        if ptr_rows:
+            msg = (f"{len(ptr_rows)} session-pointer failure(s) in 24h ({parts}): the session "
+                   f"could not be resolved: reads used the labelled newest ring, writes were "
+                   f"refused, events carry `session: null`")
+            if bad:
+                msg += f"; {bad} unreadable line(s) in the log"
+        else:
+            msg = f"session-pointer log has {bad} unreadable line(s)"
+        out.append(f"{msg}; see {path}")
+    if hook_rows:
+        by = Counter(str(r.get("reason")) for r in hook_rows)
+        parts = ", ".join(f"{k} x{v}" for k, v in by.most_common())
+        out.append(f"STM hook failures in 24h: {parts} (by-pid/_errors.jsonl)")
+    if unscoped:
+        out.append(f"pointer-error log rows with no store root (a writer defect, not "
+                   f"attributed here): unscoped-row x{unscoped}; see {path}")
+    if trunc:
+        out.append(f"{trunc} pointer-error row(s) of this store were dropped when the log "
+                   f"halved; see {path}")
+    return out
 
 
-def compose_recall_state(s, root: Path, *, repo: Path, memdir: Path) -> dict:
+def compose_recall_state(s, root: Path, *, repo: Path, memdir: Path,
+                         pointer_anomalies: "list[str] | None" = None) -> dict:
     """Pull everything needed to resume: the latest save-state handoff, the
     live STM focus digest, recent memories, git state, and daemon health.
 
@@ -566,7 +592,11 @@ def compose_recall_state(s, root: Path, *, repo: Path, memdir: Path) -> dict:
         if n:
             anomalies.append(f"{n} commit(s) ahead of {git['ahead_base']} "
                              f"(unmerged/undeployed?)")
-    anomalies.extend(session_pointer_anomalies(root))
+    # A caller that resolved its own session AFTER reading the pointer-error log passes the
+    # clauses it read first (task 21.1 D6): the report is about the rows that were there,
+    # not about the miss this very call recorded while choosing which ring to show.
+    anomalies.extend(pointer_anomalies if pointer_anomalies is not None
+                     else session_pointer_anomalies(root))
     if pid and not daemon_info["running"]:
         if daemon_info["busy"]:
             anomalies.append(f"daemon pid {pid} alive but not answering (busy: "

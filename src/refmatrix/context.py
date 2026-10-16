@@ -119,6 +119,11 @@ class ContextBundle:
     # drops some bundles after building them; those must not count).
     helix_pending: list = field(default_factory=list)
     store_root: "str | None" = None
+    # The memory row whose body `anchor_body` carries (its own row for a memory anchor;
+    # the same-named memory `find_memory_any_partition` chose for a concept/doc/code
+    # anchor). Task 21.1 R11: the attached body is a SEPARATE delivered item, with the
+    # memory row's own partition — never the anchor's or the store's bound one.
+    anchor_memory: "dict | None" = None
     # Degrades the caller must SEE (ch-bsd r7 #s-1): a rerank that failed at
     # score time used to reach only the process's stderr — the DAEMON's log
     # on the daemon path — while the answer looked fully ranked.
@@ -226,6 +231,7 @@ def build_context(
             mem = None
         if mem is not None:
             bundle.anchor_body = mem.get("content")
+            bundle.anchor_memory = mem
     else:
         # The anchor resolved to a concept/doc/code node, but the same slug
         # very often ALSO exists as a memory entity — a curated `.md` is
@@ -241,6 +247,7 @@ def build_context(
             mem = None
         if mem is not None and mem.get("content"):
             bundle.anchor_body = mem.get("content")
+            bundle.anchor_memory = mem
 
     # Auto-scale the budget when the caller did NOT explicitly set the
     # flag and degree > 0 — a deeper request without an override should
@@ -1547,26 +1554,55 @@ def _helix_flush(b: ContextBundle) -> None:
 
 
 def render_text(b: ContextBundle) -> str:
+    return render_text_spans(b)[0]
+
+
+def _item(name: str, entity_id, catalog_kind: str, *, mtype=None, partition=None) -> dict:
+    return {"name": name, "entity_id": entity_id, "catalog_kind": catalog_kind,
+            "mtype": mtype, "partition": partition}
+
+
+def render_text_spans(b: ContextBundle) -> "tuple[str, list[dict]]":
+    """The text renderer, returning the payload AND each item it NAMES with its byte span
+    (task 21.1 R10/R11: the renderer RETURNS spans, it never emits). An item is the anchor,
+    each group entry, and — for a concept/doc/code anchor that got a same-named memory's
+    body attached — that memory as its own item: `offset_bytes`/`bytes` = the naming line,
+    `body_offset_bytes`/`body_bytes` = the body. Offsets are UTF-8 BYTES of the returned
+    text (R10's one unit)."""
     _helix_flush(b)
     lines = [_render_header(b)]
     lines += [f"# warning: {w}" for w in b.warnings]
+    marks: list[tuple[dict, int, "int | None", "str | None"]] = []
     a = b.anchor
     if a is not None:
         lines.append(f"anchor: {a.name}  [{a.kind}]")
+        anchor_line = len(lines) - 1
         if a.tldr:
             lines.append(f"  {a.tldr}")
         if b.helix_note:
             lines.append(b.helix_note)
         for _n in b.helix_neighbor_notes:
             lines.append(_n)
+        body_line = None
         if b.anchor_body:
             lines.append("")
             lines.append("--- body ---")
             lines.append(b.anchor_body)
+            body_line = len(lines) - 1
+        mem = b.anchor_memory or {}
+        if a.kind == "memory":
+            marks.append((_item(a.name, a.id, a.kind, mtype=mem.get("mtype"),
+                                partition=mem.get("partition")), anchor_line, body_line, None))
+        else:
+            marks.append((_item(a.name, a.id, a.kind), anchor_line, None, None))
+            if b.anchor_memory and body_line is not None:
+                marks.append((_item(mem.get("name") or a.name, mem.get("id"), "memory",
+                                    mtype=mem.get("mtype"), partition=mem.get("partition")),
+                              anchor_line, body_line, None))
     elif not b.groups:
         # No graph anchor AND no content hits — truly nothing to show.
         lines.append("(unknown symbol)")
-        return "\n".join(lines)
+        return "\n".join(lines), []
     else:
         # Anchor-less content bundle: stale-neighbor notes still render
         # (the NL path is part of the readership instrument too).
@@ -1575,12 +1611,17 @@ def render_text(b: ContextBundle) -> str:
     if not b.groups:
         lines.append("")
         lines.append("(no linkages found — try `rmx link` or `rmx ingest --semantic`)")
-        return "\n".join(lines)
+        return _spans("\n".join(lines), lines, marks)
     for ln, entries in b.groups.items():
         lines.append("")
         lines.append(f"{LINKAGE_LABELS.get(ln, ln.upper())} ({ln}):")
         for e in entries:
             lines.append(_render_entry(e))
+            block = ("\n".join(f"    {x}" for x in e.body.splitlines())
+                     if e.body else None)
+            marks.append(({**_item(e.entity.name, e.entity.id, e.entity.kind),
+                           "grep_floor": e.linkage == "grep"},
+                          len(lines) - 1, None, block))
         note = _completeness_note(b, ln)
         if note:
             lines.append(f"  {note}")
@@ -1592,7 +1633,121 @@ def render_text(b: ContextBundle) -> str:
         f"[~{b.estimated_tokens} tokens, "
         f"{b.total_entities()} neighbors, degree={b.degree}]"
     )
-    return "\n".join(lines)
+    return _spans("\n".join(lines), lines, marks)
+
+
+def _spans(text: str, lines: "list[str]", marks) -> "tuple[str, list[dict]]":
+    offs: list[int] = []
+    pos = 0
+    for ln in lines:
+        offs.append(pos)
+        pos += len(ln.encode("utf-8")) + 1
+    items: list[dict] = []
+    for rank, (it, li, body_li, block) in enumerate(marks, 1):
+        it = dict(it)
+        it["rank"] = rank
+        it["offset_bytes"] = offs[li]
+        it["bytes"] = len(lines[li].split("\n", 1)[0].encode("utf-8"))
+        it["body_offset_bytes"] = it["body_bytes"] = None
+        if body_li is not None:
+            it["body_offset_bytes"] = offs[body_li]
+            it["body_bytes"] = len(lines[body_li].encode("utf-8"))
+        elif block and lines[li].endswith(block):
+            n = len(block.encode("utf-8"))
+            it["body_offset_bytes"] = offs[li] + len(lines[li].encode("utf-8")) - n
+            it["body_bytes"] = n
+        items.append(it)
+    return text, items
+
+
+def json_name_spans(text: str, items: "list[dict]") -> "list[dict]":
+    """Spans of items in a JSON payload: the `"name": "<name>"` member that names each
+    item, found in order from a moving cursor (the anchor object precedes the groups). The
+    object carries the body itself, so `body_*` stay null (R10). An attached memory body is
+    named by its anchor's member. An item whose name is not found keeps null offsets."""
+    raw = text.encode("utf-8")
+    cur = 0
+    out: list[dict] = []
+    for it in items:
+        it = dict(it)
+        it["body_offset_bytes"] = it["body_bytes"] = None
+        if it.get("attached") and out:
+            it["offset_bytes"], it["bytes"] = out[0].get("offset_bytes"), out[0].get("bytes")
+            out.append(it)
+            continue
+        found = None
+        for sep in (": ", ":"):
+            needle = ('"name"' + sep + json.dumps(it["name"])).encode("utf-8")
+            i = raw.find(needle, cur)
+            if i >= 0:
+                found = (i, len(needle))
+                break
+        if found:
+            it["offset_bytes"], it["bytes"] = found
+            cur = found[0] + found[1]
+        else:
+            it["offset_bytes"] = it["bytes"] = None
+        out.append(it)
+    return out
+
+
+def render_json_spans(b: ContextBundle) -> "tuple[str, list[dict]]":
+    """The JSON renderer plus the items it names (the items of `bundle_items`, spans over
+    the JSON text)."""
+    text = render_json(b)
+    return text, json_name_spans(text, bundle_items(b))
+
+
+def bundle_items(b: ContextBundle) -> "list[dict]":
+    """The items a bundle names, in payload order, without rendering."""
+    out: list[dict] = []
+    a = b.anchor
+    mem = b.anchor_memory or {}
+    if a is not None:
+        if a.kind == "memory":
+            out.append(_item(a.name, a.id, a.kind, mtype=mem.get("mtype"),
+                             partition=mem.get("partition")))
+        else:
+            out.append(_item(a.name, a.id, a.kind))
+            if b.anchor_memory and b.anchor_body:
+                out.append({**_item(mem.get("name") or a.name, mem.get("id"), "memory",
+                                    mtype=mem.get("mtype"), partition=mem.get("partition")),
+                            "attached": True})
+    for entries in b.groups.values():
+        for e in entries:
+            out.append({**_item(e.entity.name, e.entity.id, e.entity.kind),
+                        "grep_floor": e.linkage == "grep"})
+    for rank, it in enumerate(out, 1):
+        it["rank"] = rank
+    return out
+
+
+def annotate_items(s: Store, items: "list[dict]") -> "list[dict]":
+    """Fill each item's `partition` (the NAME of the partition its row was read from, R10 —
+    never the store's bound partition, bug-098's shape) and, for memory rows, `mtype` (R10a
+    needs it), with ONE catalog query. The grep floor's file hits are not catalog rows: they
+    carry the project tree's partition and no id. Any other item whose id is not a catalog
+    row keeps `partition=None`; the emitter counts and skips it."""
+    ids = sorted({int(it["entity_id"]) for it in items
+                  if isinstance(it.get("entity_id"), int) and it.get("partition") is None
+                  and not it.get("grep_floor")})
+    meta = s.item_meta(ids) if ids else {}
+    from refmatrix.store import default_partition_name
+    for it in items:
+        if it.get("grep_floor") and it.get("partition") is None:
+            # The grep floor's hits are files of the project tree the store indexes, not
+            # catalog rows: their partition is that tree's (the project) partition.
+            it["partition"] = default_partition_name(Path(s.root))
+            it["entity_id"] = None
+            continue
+        m = meta.get(it.get("entity_id"))
+        if m is None:
+            continue
+        if it.get("partition") is None:
+            it["partition"] = m["partition"]
+        if it.get("mtype") is None:
+            it["mtype"] = m["mtype"]
+    return items
 
 
 def render_json(b: ContextBundle) -> str:

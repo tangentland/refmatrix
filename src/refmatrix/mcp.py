@@ -313,15 +313,32 @@ def serve_stdio() -> None:
     """Read newline-delimited JSON-RPC from stdin, write responses to stdout."""
     from refmatrix import verbs as _verbs
     _verbs._LONG_LIVED = True   # bug-109: resolve the session per call, never from our spawn env
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        resp = handle_message(msg)
-        if resp is not None:
-            _emit(resp)
+    # Task 21.1 R1, before the first request: every verb this server serves, and every child
+    # it spawns, logs `invocation=mcp` (the docstring at telemetry.invocation_source said the
+    # server set it; it never did, so no MCP call was countable). And the spawn-time
+    # `CLAUDE_CODE_SESSION_ID` is dropped from our environment: no resolver reads it, and a
+    # child must not inherit an id that names a dead session after /resume or /clear.
+    saved = {k: os.environ.get(k) for k in ("RMX_INVOCATION_SOURCE", "CLAUDE_CODE_SESSION_ID")}
+    os.environ["RMX_INVOCATION_SOURCE"] = "mcp"
+    os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+    try:
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            resp = handle_message(msg)
+            if resp is not None:
+                _emit(resp)
+    finally:
+        # The server's environment is set for its serving lifetime; an in-process caller
+        # (the test suite) gets its own back when the loop ends.
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
     _CHANNEL_STOP.set()

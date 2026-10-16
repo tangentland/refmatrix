@@ -24,6 +24,8 @@ import json
 import os
 import re
 import time
+import typing
+from contextlib import contextmanager
 from pathlib import Path
 
 from .scan import _PROMPT_STOPWORDS
@@ -229,10 +231,6 @@ def _ps_comm_chain() -> "list[tuple[int, str]] | None":
     return chain
 
 
-def pid_pointer_path(root: Path, pid: int) -> Path:
-    return stm_dir(root) / "by-pid" / f"{int(pid)}.json"
-
-
 def owner_lookup() -> "tuple[int | None, str]":
     """`(owner_pid, status)`, status one of `found`, `none` (not under Claude Code: a plain
     terminal, a daemon) or `failed` (the process table could not be read, so the owner is
@@ -288,105 +286,708 @@ def owner_claude_pid(*, long_lived: bool = False) -> int | None:
     return owner_lookup()[0]
 
 
+# ---- session pointers + the pointer-error log (bug-109, task 21.1 R9 D3-D9) ----------------
+#
+# bug-109 (2026-10-14) kept one pointer per Claude pid under EACH store's `stm/by-pid/`. A
+# pointer belongs to a Claude PROCESS, not a store: when the session's cwd moved into another
+# tree the input hook wrote it into a store the MCP server never read (r1 #m-4). Task 21.1 D3
+# moves pointers and their error log to ONE user-level directory, `<global store root>/by-pid/`,
+# and D8 makes every mutation of that machine-wide log go through one locked writer.
+
 _ERRORS_MAX_BYTES = 256 * 1024
+_ERRORS_WINDOW_S = 86400.0
+
+# The STM hook reasons (19.0) are reported apart from the session-pointer reasons (D6 (2)).
+STM_HOOK_REASONS = frozenset({"sweep-failed", "composite-failed", "enrichment-unresolved"})
 
 
-def record_pointer_error(root: Path, reason: str, **fields) -> bool:
-    """Append one line to `stm/by-pid/_errors.jsonl` (bug-109 r1 #b-1). Every hook ends in
-    `2>/dev/null || true`, so stderr is not a channel: a pointer that was not written, or a
-    resolve that fell back to guessing, is recorded HERE, and `rmx recall-state` reports it.
+def pointer_dir() -> Path:
+    """`<hub.global_store_root()>/by-pid/` (D3): ONE location for every store root. Creates
+    only `by-pid/` itself, and only when the global store root already exists — no read ever
+    creates a store (bug-109 r2 #s-1)."""
+    from refmatrix import hub
+    d = Path(hub.global_store_root()) / "by-pid"
+    if d.parent.is_dir() and not d.is_dir():
+        try:
+            d.mkdir(exist_ok=True)
+        except OSError as e:
+            import sys
+            print(f"rmx: session-pointer dir not created ({d}): {e}", file=sys.stderr)
+    return d
 
-    Only into a store whose STM dir already exists, and never raising (r2 #s-1): a READ must not
-    create `<cwd>/.refmatrix` (it would hijack `cli._root()`) or fail on an unwritable root.
-    Bounded: past 256 KiB the oldest half is dropped. Returns whether the line was written."""
-    d = stm_dir(root)
+
+def errors_log_path() -> Path:
+    """The ONE name of the pointer-error log (round-9 #m9-2): every reader, writer and
+    report text takes the path from here."""
+    return pointer_dir() / "_errors.jsonl"
+
+
+def pid_pointer_path(pid: int) -> Path:
+    return pointer_dir() / f"{int(pid)}.json"
+
+
+def proc_identity(pid: "int | None") -> "tuple[int, str] | None":
+    """`(pid, start)` for a live process, or None when its start time cannot be read — the
+    ONE accessor for a start value (round-10 #m10-2). It judges no liveness."""
+    if pid is None:
+        return None
+    start = _proc_start(int(pid))
+    return (int(pid), start) if start is not None else None
+
+
+def liveness_available() -> bool:
+    """Whether a process lookup works at all here (round-9 #m9-1): this process's own start
+    time is readable. Called ONCE per SessionStart run before any liveness decision, so an
+    unavailable lookup never reads every live owner as dead."""
+    return _proc_start(os.getpid()) is not None
+
+
+def start_token(start: "str | None") -> "str | None":
+    """An 8-hex token of a process start time (the migration claim names carry it)."""
+    import hashlib
+    return hashlib.sha1(start.encode()).hexdigest()[:8] if start is not None else None
+
+
+def owner_alive(pid: "int | None", pid_start: "str | None" = None, *,
+                start_token: "str | None" = None) -> "bool | None":
+    """THE liveness predicate (D6). None when the row is UNOWNED (no pid, or no start value
+    to compare) — nothing else; True when `pid` is still the process that held `pid_start`
+    (or whose start hashes to `start_token`); False otherwise. Callers check
+    `liveness_available()` first: with no process lookup every pid reads as dead here."""
+    if pid is None or (pid_start is None and start_token is None):
+        return None
+    cur = _proc_start(int(pid))
+    if cur is None:
+        return False
+    if start_token is not None:
+        return _start_token_of(cur) == start_token
+    return cur == pid_start
+
+
+_start_token_of = start_token
+
+
+def _errors_lock_path() -> Path:
+    return pointer_dir() / "_errors.lock"
+
+
+@contextmanager
+def _errors_locked():
+    """`fcntl.flock(LOCK_EX)` on `<pointer_dir>/_errors.lock` (D8, round-8 #nm-2): the log is
+    machine-wide, so bug-109's unlocked read-modify-write halving lost appends of other
+    processes. Raises OSError when the global store root is absent."""
+    import fcntl
+    d = pointer_dir()
     if not d.is_dir():
-        return False
-    p = d / "by-pid" / "_errors.jsonl"
+        raise OSError(f"pointer dir absent (no global store root): {d}")
+    fh = open(_errors_lock_path(), "a")
     try:
-        p.parent.mkdir(exist_ok=True)
-        if p.exists() and p.stat().st_size > _ERRORS_MAX_BYTES:
-            lines = p.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
-            p.write_text("".join(lines[len(lines) // 2:]), encoding="utf-8")
-        with p.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"t": time.time(), "reason": reason, **fields}) + "\n")
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        finally:
+            fh.close()
+
+
+def _parse_error_line(line: str) -> "dict | None":
+    try:
+        row = json.loads(line)
+    except ValueError:
+        return None
+    if not isinstance(row, dict):
+        return None
+    try:
+        t = float(row["t"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if t != t:                            # NaN
+        return None
+    return row
+
+
+def _watermark_path(pid: int) -> Path:
+    return pointer_dir() / f"_errors.seen.{int(pid)}"
+
+
+def _root_watermark_path(root: Path) -> Path:
+    import hashlib
+    h = hashlib.sha1(str(root).encode()).hexdigest()[:12]
+    return pointer_dir() / f"_errors.seen.root.{h}"
+
+
+def _owner_watermark_t(key: str) -> "float | None":
+    """The `t` watermark of owner `<pid>:<start>`, or None when it has no watermark file (or
+    the file belongs to an earlier process that held the pid)."""
+    pid, _, start = key.partition(":")
+    try:
+        d = json.loads(_watermark_path(int(pid)).read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(d, dict) or d.get("pid_start") != start:
+        return None
+    try:
+        return float(d.get("t"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _owner_key(row: dict) -> "str | None":
+    if row.get("owner") is None or row.get("owner_start") is None:
+        return None
+    return f"{row['owner']}:{row['owner_start']}"
+
+
+def _truncation_row(removed: "list[str]", oldest_kept_t: "float | None") -> dict:
+    """The `errors-truncated` row for a halving (D6). `dropped` and `dropped_by_root` roll up
+    the removed truncation rows' counts (round-9 #m9-3), so non-truncation rows + Σ`dropped`
+    = every row ever appended. `unseen_dropped` is a NEWS counter (round-10 #m10-3): per owner,
+    removed rows above that owner's watermark at halving time (no file: all), and a removed
+    truncation row's count only when that row's own `t` is above the watermark."""
+    dropped = 0
+    by_root: dict[str, int] = {}
+    unseen: dict[str, int] = {}
+    wm_cache: dict[str, "float | None"] = {}
+
+    def _above(key: str, t: float) -> bool:
+        if key not in wm_cache:
+            wm_cache[key] = _owner_watermark_t(key)
+        w = wm_cache[key]
+        return w is None or t > w
+
+    for line in removed:
+        if not line.strip():
+            continue
+        row = _parse_error_line(line)
+        if row is None:
+            dropped += 1                      # an unreadable line was a row too
+            continue
+        if row.get("reason") == "errors-truncated":
+            dropped += int(row.get("dropped") or 0)
+            for k, v in (row.get("dropped_by_root") or {}).items():
+                by_root[k] = by_root.get(k, 0) + int(v)
+            for k, v in (row.get("unseen_dropped") or {}).items():
+                if _above(k, float(row["t"])):
+                    unseen[k] = unseen.get(k, 0) + int(v)
+            continue
+        dropped += 1
+        if row.get("root"):
+            by_root[str(row["root"])] = by_root.get(str(row["root"]), 0) + 1
+        key = _owner_key(row)
+        if key is not None and _above(key, float(row["t"])):
+            unseen[key] = unseen.get(key, 0) + 1
+    return {"t": time.time(), "reason": "errors-truncated", "dropped": dropped,
+            "oldest_kept_t": oldest_kept_t, "dropped_by_root": by_root,
+            "unseen_dropped": unseen, "owner": None, "owner_start": None}
+
+
+def _append_error_rows(rows: "list[dict]", *, skip_existing_migrated: bool = False) -> bool:
+    """The ONLY function that opens `_errors.jsonl` for writing (D8). Under ONE hold of
+    `_errors_locked()`: when the file is over `_ERRORS_MAX_BYTES` it writes the newer half
+    plus the `errors-truncated` row to a tmp file and `os.replace`s it, then appends `rows`,
+    one `write()` each. `skip_existing_migrated` is the migration's idempotence check, made
+    inside the same hold: a row whose `(t, reason, migrated_from)` is already in the log is
+    not appended again. Returns False (never raises) when the lock or the write failed."""
+    p = errors_log_path()
+    try:
+        with _errors_locked():
+            try:
+                size = p.stat().st_size
+            except FileNotFoundError:
+                size = 0
+            if size > _ERRORS_MAX_BYTES:
+                lines = p.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+                half = len(lines) // 2
+                kept = lines[half:]
+                oldest = None
+                for ln in kept:
+                    r = _parse_error_line(ln)
+                    if r is not None:
+                        oldest = float(r["t"])
+                        break
+                trow = _truncation_row(lines[:half], oldest)
+                tmp = p.with_name(p.name + ".tmp")
+                with open(tmp, "w", encoding="utf-8") as f:
+                    f.write("".join(kept))
+                    f.write(json.dumps(trow) + "\n")
+                os.replace(tmp, p)
+            if skip_existing_migrated and p.exists():
+                have = set()
+                for ln in p.read_text(encoding="utf-8", errors="replace").splitlines():
+                    r = _parse_error_line(ln)
+                    if r is not None and r.get("migrated_from"):
+                        have.add((float(r["t"]), r.get("reason"), r.get("migrated_from")))
+                rows = [r for r in rows
+                        if (float(r["t"]), r.get("reason"), r.get("migrated_from")) not in have]
+            if rows:
+                fd = os.open(str(p), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+                try:
+                    for r in rows:
+                        os.write(fd, (json.dumps(r) + "\n").encode("utf-8"))
+                finally:
+                    os.close(fd)
         return True
-    except OSError:
+    except (OSError, ValueError, TypeError):
         return False
 
 
-def read_pointer_errors(root: Path, *, since: float = 0.0) -> list[dict]:
-    """The recorded pointer failures at or after `since` (epoch seconds), oldest first.
+def record_pointer_error(reason: str, *, root: Path, owner: "int | None", **fields) -> bool:
+    """Append one SCOPED row to the user-level pointer-error log (D8). Every hook ends in
+    `2>/dev/null || true`, so stderr is not a channel there: a pointer that was not written,
+    a session that did not resolve, an STM hook step that failed, is recorded HERE, and
+    `rmx recall-state`, `rmx focus topics` and the SessionStart writer report it.
 
-    r3 #m-2: a line that is not a JSON object with a numeric `t` used to raise out of here and
-    take down `rmx recall-state`. It is returned as a `{"reason": "unreadable-line"}` row (its
-    time is unknown, so the window does not apply), counted, never skipped silently."""
-    p = stm_dir(root) / "by-pid" / "_errors.jsonl"
+    `root` is the row's SCOPE (the writer's store root), not the file's location; `owner` is
+    the Claude pid the caller resolved (None when it found none), and `owner_start` is taken
+    from `proc_identity(owner)`. Never raises; returns whether the row was written."""
+    ident = proc_identity(owner) if owner is not None else None
+    row = {"t": time.time(), "reason": reason, "root": os.path.abspath(str(root)),
+           "owner": int(owner) if owner is not None else None,
+           "owner_start": ident[1] if ident else None, **fields}
+    return _append_error_rows([row])
+
+
+def _row_in_scope(row: dict, root: "Path | None", owner: "tuple[int, str] | None") -> bool:
+    if row.get("reason") == "errors-truncated":
+        # The one global row: surfaced to a reader whose scope has a non-zero count in it.
+        if root is not None and int((row.get("dropped_by_root") or {}).get(str(root), 0)) <= 0:
+            return False
+        if owner is not None and int(
+                (row.get("unseen_dropped") or {}).get(f"{owner[0]}:{owner[1]}", 0)) <= 0:
+            return False
+        return True
+    if root is not None and row.get("root") != str(root):
+        return False
+    if owner is not None and (row.get("owner") != owner[0]
+                              or row.get("owner_start") != owner[1]):
+        return False
+    return True
+
+
+def read_pointer_errors(*, root: "Path | None" = None,
+                        owner: "tuple[int, str] | None" = None,
+                        since: float = 0.0) -> "list[dict]":
+    """Rows of the user-level log with `t >= since`, oldest first, filtered by scope (D6):
+    `root=` keeps rows of that store root, `owner=(pid, pid_start)` rows of that owner; both
+    keep rows matching both. A line that does not parse (bug-109 r3 #m-2) is returned as
+    `{"reason": "unreadable-line", "line": n}` and a row with no `root` (a writer defect) as
+    `{"reason": "unscoped-row", ...}` to every scoped reader — counted apart, never attributed
+    to the reader's scope silently. No legacy `<root>/stm/by-pid/` file is read (round-7
+    #s-3)."""
     out: list[dict] = []
     try:
-        # r4 #m-1: a non-UTF-8 byte becomes U+FFFD, so its line fails to parse and is COUNTED below
-        lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines = errors_log_path().read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
-        return []
+        return out
+    scoped = root is not None or owner is not None
     for n, line in enumerate(lines, 1):
         if not line.strip():
             continue
-        try:
-            row = json.loads(line)
-            t = float(row["t"]) if isinstance(row, dict) else None
-        except (ValueError, TypeError, KeyError):
-            t = None
-        if t is None or t != t:          # NaN is unreadable too, not silently out of window
+        row = _parse_error_line(line)
+        if row is None:
             out.append({"reason": "unreadable-line", "line": n})
-        elif t >= since:
+            continue
+        if float(row["t"]) < since:
+            continue
+        if scoped and "root" not in row and row.get("reason") != "errors-truncated":
+            out.append({**row, "reason": "unscoped-row", "unscoped_reason": row.get("reason")})
+            continue
+        if not scoped or _row_in_scope(row, root, owner):
             out.append(row)
     return out
 
 
-def write_pid_pointer(root: Path, pid: int, session: str) -> bool:
-    """Record that Claude process `pid` is now running `session` (bug-109). The input hook calls
-    this at the top of every turn, so the first prompt after a `/clear` re-points it. Returns True
-    when the file was (re)written, False when it already named `session` AND this process
-    incarnation (the common case: one small read plus a ~1 us kernel lookup) or when it was
-    REFUSED: a pid whose start time cannot be read would be stored with `pid_start: null` and
-    then ignored forever by `read_pid_pointer`, so it is recorded as `ps-failed` instead (r1
-    #b-1). Never creates a store (r2 #s-1). r3 #s-1: the shortcut compares `pid_start` too, or a
-    pointer for the current session in an older format (r1 stored `ps lstart`) reads as stale
-    for the whole session and is never repaired."""
-    if not Path(root).is_dir():
-        return False
-    p = pid_pointer_path(root, pid)
-    start = _proc_start(pid)
+def write_pid_pointer(pid: int, session: str, *, root: Path, hook: str = "input") -> bool:
+    """Record that Claude process `pid` is now running `session` (bug-109; D3: under the
+    user-level `pointer_dir()`, D4: `hook` names the writer — `input` or
+    `session-start:<source>`). The input hook calls this first on every envelope with a
+    session id, and the SessionStart writer on start/resume/clear/compact, so after `/clear`
+    the pointer names the new session before the first prompt. Returns True when the file was
+    (re)written, False when it already named `session` AND this process incarnation, or when
+    it was REFUSED: a pid whose start time cannot be read is recorded as `ps-failed` (r1 #b-1;
+    its owner_start is null, so the row is UNOWNED, #nm-1). `root` only scopes the error row.
+    Raises OSError when the pointer dir cannot be written (the hook records `write-failed`)."""
+    p = pid_pointer_path(pid)
+    ident = proc_identity(pid)
     try:
         d = json.loads(p.read_text(encoding="utf-8"))
-        if start is not None and d.get("session") == session and d.get("pid_start") == start:
+        if ident is not None and isinstance(d, dict) and d.get("session") == session \
+                and d.get("pid_start") == ident[1]:
             return False
-    except (OSError, ValueError, AttributeError):
+    except (OSError, ValueError):
         pass
-    if start is None:
-        stm_dir(root).mkdir(exist_ok=True)
-        record_pointer_error(root, "ps-failed", pid=int(pid), session=session)
+    if ident is None:
+        record_pointer_error("ps-failed", root=root, owner=int(pid), session=session)
         return False
-    p.parent.mkdir(parents=True, exist_ok=True)
+    if not p.parent.is_dir():
+        raise OSError(f"pointer dir absent (no global store root): {p.parent}")
     tmp = p.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps({"session": session, "pid": int(pid), "pid_start": start,
-                               "t": time.time()}), encoding="utf-8")
+    tmp.write_text(json.dumps({"session": session, "pid": int(pid), "pid_start": ident[1],
+                               "t": time.time(), "hook": hook}), encoding="utf-8")
     tmp.replace(p)
     return True
 
 
-def read_pid_pointer(root: Path, pid: int) -> str | None:
-    """The session Claude process `pid` is running, per its pointer; None when there is no
-    pointer, it is unreadable, or the pid now belongs to a different process."""
+def read_pid_pointer(pid: int, *, root: Path) -> "str | None":
+    """The session Claude process `pid` is running, per its pointer, or None. A missing file
+    is not an error by itself (the resolver's row covers it); a pointer that is present but
+    not a JSON object is recorded as `pointer-unreadable`, and one whose `pid_start` no
+    longer matches (pid reuse) as `pointer-stale` (D5) — never None silently. Liveness is
+    judged by `owner_alive` only (round-9 #m9-1)."""
+    p = pid_pointer_path(pid)
     try:
-        d = json.loads(pid_pointer_path(root, pid).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        raw = p.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return None
-    if not isinstance(d, dict):   # r4 #m-1: unreadable; the next input hook rewrites it
+    except OSError as e:
+        record_pointer_error("pointer-unreadable", root=root, owner=int(pid), error=str(e))
         return None
-    if not d.get("session") or d.get("pid_start") != _proc_start(pid):
+    try:
+        d = json.loads(raw)
+    except ValueError:
+        d = None
+    if not isinstance(d, dict) or not d.get("session"):
+        record_pointer_error("pointer-unreadable", root=root, owner=int(pid))
+        return None
+    if owner_alive(int(pid), d.get("pid_start")) is not True:
+        record_pointer_error("pointer-stale", root=root, owner=int(pid),
+                             pointer_session=str(d.get("session")))
         return None
     return str(d["session"])
+
+
+# ---- the SessionStart writer's surfacing, migration and prune (D4, D6, D7) ----------------
+
+def _reason_counts(rows: "list[dict]") -> str:
+    """`reason=n …` in first-seen order; `errors-truncated` rows print their counts."""
+    counts: dict[str, int] = {}
+    trunc: list[str] = []
+    for r in rows:
+        reason = str(r.get("reason"))
+        if reason == "errors-truncated":
+            trunc.append(f"errors-truncated(dropped={int(r.get('dropped') or 0)})")
+            continue
+        counts[reason] = counts.get(reason, 0) + 1
+    return " ".join([f"{k}={v}" for k, v in counts.items()] + trunc)
+
+
+def advance_owner_watermark(owner: "tuple[int, str]") -> "list[dict]":
+    """Set (1) of the SessionStart writer (D6): its OWNER's rows added since that owner's
+    last surfacing, selected and the per-owner watermark `_errors.seen.<pid>` = `{pid_start,
+    t}` advanced inside ONE hold of the lock. Keyed on `t`, never a byte offset: the halving
+    moves every offset. A watermark file whose `pid_start` differs is an earlier process that
+    held the pid, and is ignored. Unreadable lines carry no `t` and come back every time."""
+    with _errors_locked():
+        wp = _watermark_path(owner[0])
+        w = None
+        try:
+            d = json.loads(wp.read_text())
+            if isinstance(d, dict) and d.get("pid_start") == owner[1]:
+                w = float(d["t"])
+        except (OSError, ValueError, TypeError, KeyError):
+            w = None
+        rows = read_pointer_errors(owner=owner, since=w if w is not None else 0.0)
+        rows = [r for r in rows if r.get("reason") == "unreadable-line"
+                or w is None or float(r["t"]) > w]
+        ts = [float(r["t"]) for r in rows if r.get("t") is not None]
+        if ts:
+            tmp = wp.with_name(wp.name + ".tmp")
+            tmp.write_text(json.dumps({"pid_start": owner[1], "t": max(ts)}))
+            os.replace(tmp, wp)
+    return rows
+
+
+def consumed_ended_sessions(root: Path) -> "tuple[list[dict], int, int]":
+    """Set (2) of the SessionStart writer (D6, round-9 #s9-2): this root's rows of DEAD
+    owners not yet shown, consumed BY OWNER — the per-root file `_errors.seen.root.<h>` =
+    `{root, consumed: [[pid, pid_start, t_max], …]}` — inside one hold of the lock. A per-root
+    `t` watermark lost an older live owner's rows once a younger dead owner's were printed.
+    Rows of a live owner are neither printed nor consumed; unowned rows (null owner or null
+    owner_start, #nm-1) are only counted. Entries older than the 24 h window are pruned in the
+    same hold. Callers check `liveness_available()` first. Returns (rows, unowned, collision)."""
+    now = time.time()
+    since = now - _ERRORS_WINDOW_S
+    collision = 0
+    with _errors_locked():
+        rf = _root_watermark_path(root)
+        consumed: dict[tuple, float] = {}
+        before = None
+        try:
+            d = json.loads(rf.read_text())
+            before = d
+            if isinstance(d, dict) and d.get("root") == str(root):
+                for e in d.get("consumed") or []:
+                    consumed[(int(e[0]), str(e[1]))] = float(e[2])
+            else:
+                collision = 1
+        except FileNotFoundError:
+            pass
+        except (OSError, ValueError, TypeError, IndexError):
+            collision = 1
+        picked: list[dict] = []
+        unowned = 0
+        for r in read_pointer_errors(root=root, since=since):
+            if r.get("reason") in ("unreadable-line", "unscoped-row", "errors-truncated"):
+                continue
+            if r.get("owner") is None or r.get("owner_start") is None:
+                unowned += 1
+                continue
+            key = (int(r["owner"]), str(r["owner_start"]))
+            if owner_alive(key[0], key[1]) is not False:
+                continue
+            t_max = consumed.get(key)
+            if t_max is not None and float(r["t"]) <= t_max:
+                continue
+            picked.append(r)
+        for r in picked:
+            key = (int(r["owner"]), str(r["owner_start"]))
+            consumed[key] = max(consumed.get(key, float("-inf")), float(r["t"]))
+        consumed = {k: v for k, v in consumed.items() if v >= since}
+        after = {"root": str(root),
+                 "consumed": [[k[0], k[1], v] for k, v in
+                              sorted(consumed.items(), key=lambda kv: kv[1])]}
+        if after != before:
+            tmp = rf.with_name(rf.name + ".tmp")
+            tmp.write_text(json.dumps(after))
+            os.replace(tmp, rf)
+    return picked, unowned, collision
+
+
+def unowned_in_root(root: Path) -> int:
+    """Unowned rows (null owner or null owner_start) of `root` in the last 24 h."""
+    n = 0
+    for r in read_pointer_errors(root=root, since=time.time() - _ERRORS_WINDOW_S):
+        if r.get("reason") in ("unreadable-line", "unscoped-row", "errors-truncated"):
+            continue
+        if r.get("owner") is None or r.get("owner_start") is None:
+            n += 1
+    return n
+
+
+def prune_dead_pointer_files() -> int:
+    """D7: remove each pointer file and each `_errors.seen.<pid>` watermark whose process is
+    dead (`owner_alive(...) is False`), and each per-root watermark whose root path no longer
+    exists. A pointer is only a cache of the process relation and a watermark only of what
+    its process was shown, so nothing is lost. Callers check `liveness_available()` first:
+    with no process lookup every live pointer would read as dead."""
+    d = pointer_dir()
+    if not d.is_dir():
+        return 0
+    n = 0
+    with _errors_locked():
+        for f in sorted(d.iterdir()):
+            name = f.name
+            try:
+                if name.endswith(".json") and name[:-5].isdigit():
+                    data = json.loads(f.read_text())
+                    if isinstance(data, dict) and owner_alive(
+                            int(name[:-5]), data.get("pid_start")) is False:
+                        f.unlink()
+                        n += 1
+                elif name.startswith("_errors.seen.root."):
+                    data = json.loads(f.read_text())
+                    if isinstance(data, dict) and data.get("root") \
+                            and not Path(data["root"]).exists():
+                        f.unlink()
+                        n += 1
+                elif name.startswith("_errors.seen.") and name[13:].isdigit():
+                    data = json.loads(f.read_text())
+                    if isinstance(data, dict) and owner_alive(
+                            int(name[13:]), data.get("pid_start")) is False:
+                        f.unlink()
+                        n += 1
+            except (OSError, ValueError):
+                continue                  # an unreadable file is not judged dead
+    return n
+
+
+def _legacy_dir(root: Path) -> Path:
+    return stm_dir(root) / "by-pid"
+
+
+def drop_legacy_pointers_migration(root: Path) -> int:
+    """D3: bug-109's per-store pointer files `<root>/stm/by-pid/<pid>.json` are never read;
+    the SessionStart writer deletes them, counted."""
+    n = 0
+    ld = _legacy_dir(root)
+    if not ld.is_dir():
+        return 0
+    for f in ld.glob("*.json"):
+        if f.stem.isdigit():
+            try:
+                f.unlink()
+                n += 1
+            except OSError:
+                continue
+    return n
+
+
+def migrate_legacy_errors(root: Path, *, liveness: bool) -> "tuple[list[str], list[str]]":
+    """D6's one-shot migration of bug-109's `<root>/stm/by-pid/_errors.jsonl` into the
+    user-level log (round-7 #s-3; rounds 8-11). Returns (stdout lines, stderr lines).
+
+    1. CLAIM by `os.rename` to `_errors.migrating.<pid>.<start_token>.jsonl` (own identity
+       from `proc_identity`; none → skipped, the legacy file left for the next run). A run
+       that loses the race gets FileNotFoundError and counts `migrate-claim-lost`. Before
+       claiming, a claim whose claimant is DEAD (`owner_alive(pid, start_token=…) is False`)
+       is adopted, so a crash leaves no orphan; a live or unknown claimant's claim is left.
+    2. APPEND each parseable row with its ORIGINAL `t`, `root` and `migrated_from`, plus one
+       `legacy-unreadable` row stamped with the legacy file's mtime, through the ONE writer
+       with its `(t, reason, migrated_from)` idempotence check inside the lock.
+    3. RENAME the claim to `_errors.migrated.jsonl` only when every append returned True;
+       otherwise say `migration incomplete` and leave the claim for the next run."""
+    out: list[str] = []
+    err: list[str] = []
+    ld = _legacy_dir(root)
+    legacy = ld / "_errors.jsonl"
+    claims = sorted(ld.glob("_errors.migrating.*.jsonl")) if ld.is_dir() else []
+    if not legacy.exists() and not claims:
+        out.append("migrated=0")
+        return out, err
+    ident = proc_identity(os.getpid())
+    if ident is None:
+        out.append("migration skipped: process lookup unavailable")
+        return out, err
+    own_claim = ld / f"_errors.migrating.{ident[0]}.{start_token(ident[1])}.jsonl"
+    migrated_total = 0
+    lost = 0
+    todo: "list[tuple[Path, float | None]]" = []
+    if liveness:
+        for c in claims:
+            parts = c.name.split(".")
+            # _errors.migrating.<pid>.<token>.jsonl
+            if len(parts) != 5 or not parts[2].isdigit() or c == own_claim:
+                continue
+            if owner_alive(int(parts[2]), start_token=parts[3]) is not False:
+                continue
+            try:
+                mtime = c.stat().st_mtime
+                os.rename(c, own_claim)
+            except FileNotFoundError:
+                lost += 1
+                continue
+            todo.append((own_claim, mtime))
+            break                         # one claim at a time under our own name
+    if not todo and legacy.exists():
+        try:
+            mtime = legacy.stat().st_mtime
+            os.rename(legacy, own_claim)
+            todo.append((own_claim, mtime))
+        except FileNotFoundError:
+            lost += 1
+    for claim, mtime in todo:
+        rows: list[dict] = []
+        bad = 0
+        try:
+            text = claim.read_text(encoding="utf-8", errors="replace")
+        except FileNotFoundError:
+            lost += 1
+            continue
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            r = _parse_error_line(line)
+            if r is None:
+                bad += 1
+                continue
+            r = dict(r)
+            r["root"] = os.path.abspath(str(root))
+            r["migrated_from"] = str(legacy)
+            r.setdefault("owner", None)
+            r.setdefault("owner_start", None)
+            rows.append(r)
+        if bad:
+            rows.append({"t": mtime, "reason": "legacy-unreadable", "n": bad,
+                         "root": os.path.abspath(str(root)), "migrated_from": str(legacy),
+                         "owner": None, "owner_start": None})
+        before = _count_migrated(str(legacy), root)
+        ok = _append_error_rows(rows, skip_existing_migrated=True)
+        if not ok:
+            err.append(f"migration incomplete: {len(rows)} rows not written (global store "
+                       f"root absent or unwritable)")
+            continue
+        after = _count_migrated(str(legacy), root)
+        migrated_total += max(0, after[0] - before[0])
+        try:
+            os.rename(claim, ld / "_errors.migrated.jsonl")
+        except FileNotFoundError:
+            lost += 1
+            continue
+    if lost:
+        out.append(f"migrate-claim-lost={lost}")
+    if not err and (todo or not lost):
+        out.append(f"migrated={migrated_total}")
+    return out, err
+
+
+def _count_migrated(migrated_from: str, root: Path) -> "tuple[int, int]":
+    """(parseable legacy rows, legacy-unreadable rows) already migrated from one file."""
+    rows = [r for r in read_pointer_errors(root=root)
+            if r.get("migrated_from") == migrated_from]
+    return (sum(1 for r in rows if r.get("reason") != "legacy-unreadable"),
+            sum(1 for r in rows if r.get("reason") == "legacy-unreadable"))
+
+
+def session_start_surfacing(root: Path, owner: "int | None"
+                            ) -> "tuple[list[str], list[str]]":
+    """Everything the SessionStart writer (D4) does after its pointer write, as (stdout
+    lines, stderr lines): the one-shot migration of this root's legacy files (D6, D3), set
+    (1) — its owner's rows — and set (2) — this root's ended-session rows, consumed by owner
+    — on STDOUT where SessionStart output reaches the agent (round-8 #ns-2), the unowned
+    count, and the prune (D7). `liveness_available()` is read ONCE; with it False nothing is
+    consumed, adopted or pruned and each step says so."""
+    out: list[str] = []
+    err: list[str] = []
+    live = liveness_available()
+    mig_out, mig_err = migrate_legacy_errors(root, liveness=live)
+    err += mig_err
+    dropped_ptrs = drop_legacy_pointers_migration(root)
+    # (1) the owner's rows
+    if owner is not None:
+        ident = proc_identity(owner)
+        if ident is None:
+            out.append("own rows skipped: process lookup unavailable")
+        else:
+            try:
+                own = advance_owner_watermark(ident)
+            except OSError as e:
+                err.append(f"rmx: session-pointer surfacing failed: {e}")
+                own = []
+            if own:
+                out.append(f"rmx: pointer errors of this Claude process: "
+                           f"{_reason_counts(own)} (see rmx recall-state)")
+    # (2) this root's ended sessions
+    if not live:
+        out.append("ended_sessions skipped: process lookup unavailable")
+        unowned = unowned_in_root(root)
+    else:
+        try:
+            ended, unowned, collision = consumed_ended_sessions(root)
+        except OSError as e:
+            err.append(f"rmx: ended-session surfacing failed: {e}")
+            ended, unowned, collision = [], unowned_in_root(root), 0
+        if ended:
+            out.append(f"ended_sessions: {_reason_counts(ended)} (see rmx recall-state)")
+        if collision:
+            out.append(f"watermark-collision={collision}")
+    if unowned:
+        out.append(f"unowned_in_root={unowned} (see rmx recall-state)")
+    # D7 prune
+    if not live:
+        out.append("prune skipped: process lookup unavailable")
+        pruned = None
+    else:
+        try:
+            pruned = prune_dead_pointer_files()
+        except OSError as e:
+            err.append(f"rmx: by-pid prune failed: {e}")
+            pruned = None
+    status = list(mig_out) + [f"legacy_pointers_dropped={dropped_ptrs}"]
+    if pruned is not None:
+        status.append(f"pruned={pruned}")
+    out.append("rmx session-pointer: " + " ".join(status))
+    return out, err
 
 
 def latest_session(root: Path) -> str | None:
@@ -531,6 +1132,11 @@ class Stm:
         }
         if detail:
             ev["detail"] = detail[:DETAIL_MAX]
+        if kind == "input":
+            # R9: an input event carries its prompt's sha256 and a sub-second epoch, so a
+            # pre-prompt snapshot can be matched to it (the ring's `ts` is cut to the second).
+            ev["t"] = time.time()
+            ev["prompt_sha"] = prompt_sha(terse)
         if extra:
             ev.update(extra)
         self._dir.mkdir(parents=True, exist_ok=True)
@@ -616,6 +1222,62 @@ class Stm:
             d.pop(k, None)
         self._write_inflight(d)
         return out
+
+    # ---- the pre-prompt state (task 21.1 R9) --------------------------------
+    #
+    # The recall and scan hooks run IN PARALLEL with `focus hook --event input`
+    # (Claude Code runs an event's hooks in parallel), and the input hook changes
+    # the ring and the graph they read: its sweep folds parked calls in, then the
+    # input record ingests the prompt. Live 2026-10-14: 17 of session db80475a's
+    # 78 recorded prompts directly followed a sweep. No wall-clock margin on a
+    # second-truncated `ts` separates this prompt from the last, so the input
+    # hook writes ONE snapshot as its FIRST state change, and every prompt-time
+    # reader resolves its phase inputs through `pre_prompt_state`.
+
+    def _pre_path(self) -> Path:
+        return self._dir / f"{self._key}.pre.json"
+
+    def events_n(self) -> int:
+        """R9's event count: complete ring lines whose `origin` is `parent` or
+        absent (19.0 R2's field), so a background subagent's events landing in
+        the parent ring do not move it. Until 19.0 R2 ships no event carries
+        `origin` and every line counts (stated in the R7 usage report's footer)."""
+        if not self._path.exists():
+            return 0
+        n = 0
+        try:
+            with self._path.open("rb") as f:
+                for ln in f:
+                    if not ln.endswith(b"\n"):
+                        continue                  # a torn last line is not complete
+                    if b'"origin"' not in ln:
+                        n += 1
+                        continue
+                    try:
+                        if json.loads(ln).get("origin") in (None, "parent"):
+                            n += 1
+                    except ValueError:
+                        continue
+        except OSError:
+            return 0
+        return n
+
+    def snapshot_pre_prompt(self, prompt: str) -> None:
+        """Write `<session>.pre.json` = `{prompt_sha, wall, turn, events_n, graph,
+        topic_cache, topic_match}` by tmp + `os.replace`. The input hook calls it
+        for EVERY non-empty prompt, ambient included (the sweep changes state on
+        an ambient prompt too), BEFORE its sweep and its input record — so a
+        reader that finds no matching snapshot after reading the live state read
+        a state the input hook had not yet touched."""
+        g = self._load_graph()
+        rec = {"prompt_sha": prompt_sha(prompt), "wall": time.time(),
+               "turn": int(g.get("turn", 0)), "events_n": self.events_n(),
+               "graph": g, "topic_cache": {}, "topic_match": {}}
+        self._dir.mkdir(parents=True, exist_ok=True)
+        p = self._pre_path()
+        tmp = p.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(rec))
+        os.replace(tmp, p)
 
     def tail(self, n: int = 50) -> list[dict]:
         """Last n events. Reads the full log but keeps only the last n in
@@ -769,18 +1431,10 @@ class Stm:
         return out
 
     def _degree(self, g: dict) -> dict[str, int]:
-        deg: dict[str, int] = {}
-        for k in g["edges"]:
-            a, b = k.split("\x00")
-            deg[a] = deg.get(a, 0) + 1
-            deg[b] = deg.get(b, 0) + 1
-        return deg
+        return _graph_degree(g)
 
     def _score(self, nd: dict, maxfreq: int, deg: dict, maxdeg: int) -> float:
-        freq = (nd.get("freq", 0) / maxfreq) if maxfreq else 0.0
-        cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0
-        return (W_RECENCY * nd.get("recency", 0.0) + W_FREQ * freq
-                + W_CENTRALITY * cen + W_PIN * nd.get("pin", 0))
+        return _node_score(nd, maxfreq, deg, maxdeg)
 
     def _evict(self, g: dict) -> None:
         nodes = g["nodes"]
@@ -822,37 +1476,10 @@ class Stm:
 
     def focus_graph(self, *, top: int = 30, include_frontier: bool = False) -> dict:
         """Ranked snapshot of the maintained focus graph (best-scoring first)."""
-        g = self._load_graph()
-        nodes = g["nodes"]
-        deg = self._degree(g)
-        maxdeg = max(deg.values()) if deg else 1
-        real = [nd for nd in nodes.values() if not nd.get("frontier")]
-        maxfreq = max((nd.get("freq", 0) for nd in real), default=1) or 1
-        scored = sorted(
-            real, key=lambda nd: self._score(nd, maxfreq, deg, maxdeg), reverse=True)
-        keep = set(n["name"] for n in scored[:top])
-        out_nodes = [{
-            "name": nd["name"], "kind": nd["kind"],
-            "weight": round(self._score(nd, maxfreq, deg, maxdeg), 3),
-            "recency": round(nd.get("recency", 0), 3),
-            "count": nd.get("freq", 0), "degree": deg.get(nd["name"], 0),
-            "pin": nd.get("pin", 0), "last": nd.get("updated"),
-        } for nd in scored[:top]]
-        if include_frontier:
-            for nd in nodes.values():
-                if nd.get("frontier") and nd["name"] in {
-                        x for e in g["edges"] for x in e.split("\x00") if x in keep}:
-                    out_nodes.append({"name": nd["name"], "kind": nd["kind"],
-                                      "weight": 0, "frontier": True})
-                    keep.add(nd["name"])
-        edges = []
-        for k, w in g["edges"].items():
-            a, b = k.split("\x00")
-            if a in keep and b in keep:
-                edges.append({"source": a, "target": b, "weight": round(w, 2)})
-        return {"session": self.session, "turn": g.get("turn", 0),
-                "events": self.event_count(), "nodes": out_nodes,
-                "edges": edges, "focus": [n["name"] for n in out_nodes if not n.get("frontier")]}
+        view = focus_view(self._load_graph(), top=top, include_frontier=include_frontier)
+        return {"session": self.session, "turn": view["turn"],
+                "events": self.event_count(), "nodes": view["nodes"],
+                "edges": view["edges"], "focus": view["focus"]}
 
     def pin(self, name: str, value: bool = True) -> bool:
         g = self._load_graph()
@@ -1012,6 +1639,218 @@ class Stm:
         self.record("mark", f"⤶ return: {mark['label']}", refs=list(snap)[:6])
         return {"returned": mark["label"], "line": mark.get("line"),
                 "focus": snap, "remaining": len(marks)}
+
+
+def _graph_degree(g: dict) -> dict[str, int]:
+    deg: dict[str, int] = {}
+    for k in g["edges"]:
+        a, b = k.split("\x00")
+        deg[a] = deg.get(a, 0) + 1
+        deg[b] = deg.get(b, 0) + 1
+    return deg
+
+
+def _node_score(nd: dict, maxfreq: int, deg: dict, maxdeg: int) -> float:
+    freq = (nd.get("freq", 0) / maxfreq) if maxfreq else 0.0
+    cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0
+    return (W_RECENCY * nd.get("recency", 0.0) + W_FREQ * freq
+            + W_CENTRALITY * cen + W_PIN * nd.get("pin", 0))
+
+
+def focus_view(g: dict, *, top: int = 30, include_frontier: bool = False) -> dict:
+    """The ranked view of a RAW focus graph (`{turn, nodes, edges}`) that
+    `Stm.focus_graph` returns — factored out (task 21.1 R9) so a snapshot graph
+    from `<session>.pre.json` is clustered by exactly the code that clusters the
+    live one."""
+    nodes = g.get("nodes", {})
+    deg = _graph_degree(g)
+    maxdeg = max(deg.values()) if deg else 1
+    real = [nd for nd in nodes.values() if not nd.get("frontier")]
+    maxfreq = max((nd.get("freq", 0) for nd in real), default=1) or 1
+    scored = sorted(
+        real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+    keep = set(n["name"] for n in scored[:top])
+    out_nodes = [{
+        "name": nd["name"], "kind": nd["kind"],
+        "weight": round(_node_score(nd, maxfreq, deg, maxdeg), 3),
+        "recency": round(nd.get("recency", 0), 3),
+        "count": nd.get("freq", 0), "degree": deg.get(nd["name"], 0),
+        "pin": nd.get("pin", 0), "last": nd.get("updated"),
+    } for nd in scored[:top]]
+    if include_frontier:
+        for nd in nodes.values():
+            if nd.get("frontier") and nd["name"] in {
+                    x for e in g.get("edges", {}) for x in e.split("\x00") if x in keep}:
+                out_nodes.append({"name": nd["name"], "kind": nd["kind"],
+                                  "weight": 0, "frontier": True})
+                keep.add(nd["name"])
+    edges = []
+    for k, w in g.get("edges", {}).items():
+        a, b = k.split("\x00")
+        if a in keep and b in keep:
+            edges.append({"source": a, "target": b, "weight": round(w, 2)})
+    return {"turn": g.get("turn", 0), "nodes": out_nodes, "edges": edges,
+            "focus": [n["name"] for n in out_nodes if not n.get("frontier")]}
+
+
+# ---- R9: the pre-prompt state, race-free --------------------------------------------------
+
+# The match window between the input hook's snapshot `wall` and a parallel
+# reader's entry `t0`. Interim value: 19.0 R0 measures the real |wall - t0| over
+# >= 50 prompts and commits S = max(2 s, 3 x the largest measured skew) here.
+# Until then 10 s bounds what was observed while building 21.1 (a sandbox hook
+# child's full import + envelope + pointer write landed 1-3 s after a sibling
+# reader started, 2026-10-16). Residual, stated: a prompt textually identical to
+# the previous one and submitted within S of it reads that prompt's snapshot.
+PRE_PROMPT_SKEW_S = 10.0
+
+
+def prompt_sha(prompt: str) -> str:
+    import hashlib
+    return hashlib.sha256((prompt or "").encode("utf-8")).hexdigest()
+
+
+class PrePromptState(typing.NamedTuple):
+    graph: dict
+    topic_cache: dict
+    turn: int
+    events_n: int
+    source: str                         # snapshot | live
+    topic_match: "dict[str, str]"
+
+
+def pre_prompt_state(root: Path, session: str, prompt: str, *, t0: float) -> PrePromptState:
+    """THE prompt-time reader of STM state (R9). Reads the LIVE state first (focus graph,
+    ring count), THEN `<session>.pre.json`: when the snapshot names this prompt (sha256) and
+    its `wall` is within `PRE_PROMPT_SKEW_S` of the reader's process-entry `t0`, the
+    snapshot's values (`source=snapshot`), else the live ones (`source=live`). Exact because
+    the snapshot is written before the input hook's first change to the ring or the graph."""
+    s = Stm(root, session)
+    live_graph = s._load_graph()
+    live_n = s.events_n()
+    try:
+        pre = json.loads(s._pre_path().read_text())
+    except (OSError, ValueError):
+        pre = None
+    if isinstance(pre, dict) and pre.get("prompt_sha") == prompt_sha(prompt):
+        try:
+            close = abs(float(pre.get("wall")) - float(t0)) <= PRE_PROMPT_SKEW_S
+        except (TypeError, ValueError):
+            close = False
+        if close and isinstance(pre.get("graph"), dict):
+            return PrePromptState(graph=pre["graph"], topic_cache=pre.get("topic_cache") or {},
+                                  turn=int(pre.get("turn") or 0),
+                                  events_n=int(pre.get("events_n") or 0), source="snapshot",
+                                  topic_match=pre.get("topic_match") or {})
+    return PrePromptState(graph=live_graph, topic_cache={}, turn=int(live_graph.get("turn", 0)),
+                          events_n=live_n, source="live", topic_match={})
+
+
+def phase_inputs(pre: PrePromptState, prompt: "str | None") -> dict:
+    """R10's raw phase inputs from ONE pre-prompt state: the topic count of the pre-prompt
+    graph (`topic_composites` over its focus view) and the prompt-term ∩ composite-member
+    overlap (null for a channel with no prompt)."""
+    topics = topic_composites(focus_view(pre.graph))
+    members: set[str] = set()
+    for t in topics:
+        members.update(t.get("members") or [])
+    overlap = (len(set(_extract_refs(prompt)) & members) if prompt is not None else None)
+    return {"stm_events_n": pre.events_n, "focus_topics_n": len(topics),
+            "overlap": overlap, "stm_source": pre.source}
+
+
+def phase_fields(root: Path, session: "str | None", prompt: "str | None", *, t0: float,
+                 prompt_time: bool) -> dict:
+    """R10's phase fields of one event set, from ONE state read. Prompt-time channels
+    (`prompt_recall`, `scan_prompt`): `pre_prompt_state` — `turn` is the 0-based ordinal of
+    this prompt among the session's recorded prompts. `session_start` / `precompact` have
+    no prompt: the live state (`stm_source=live`, `overlap: null`) and `turn` = the live
+    graph's `turn - 1`. No session: every field null (never another session's ring)."""
+    empty = {"turn": None, "stm_session": None, "stm_source": None, "stm_events_n": None,
+             "focus_topics_n": None, "overlap": None}
+    if not session:
+        return empty
+    if prompt_time:
+        pre = pre_prompt_state(root, session, prompt or "", t0=t0)
+        return {"turn": pre.turn, "stm_session": session, **phase_inputs(pre, prompt or "")}
+    s = Stm(root, session)
+    g = s._load_graph()
+    live = PrePromptState(graph=g, topic_cache={}, turn=int(g.get("turn", 0)),
+                          events_n=s.events_n(), source="live", topic_match={})
+    return {"turn": live_turn(root, session), "stm_session": session,
+            **phase_inputs(live, None)}
+
+
+def live_turn(root: Path, session: "str | None") -> "int | None":
+    """The `turn` of a non-prompt-time event (R9): the live graph's `turn - 1`, the ordinal
+    of the prompt being answered; null with no session or no ring."""
+    if not session:
+        return None
+    s = Stm(root, session)
+    if not s._path.exists() and not s._graph_path.exists():
+        return None
+    return int(s._load_graph().get("turn", 0)) - 1
+
+
+# ---- D9: ONE hook-envelope reader -----------------------------------------------------------
+
+# scan-prompt's four prompt keys, the ONE tuple (round-9 #s9-4).
+HOOK_PROMPT_KEYS = ("prompt", "user_prompt", "text", "message")
+
+
+class HookEnvelope(typing.NamedTuple):
+    envelope: "dict | None"
+    prose: "str | None"
+
+    @property
+    def prompt(self) -> str:
+        """`prose` when set, else the first `HOOK_PROMPT_KEYS` value that is a string, else
+        ''. (Behaviour change, recorded: `_resolve_query` read `prompt` only, and
+        `scan.read_stdin_prompt` returned the raw JSON for an object with none of the keys.)"""
+        if self.prose is not None:
+            return self.prose
+        for k in HOOK_PROMPT_KEYS:
+            v = (self.envelope or {}).get(k)
+            if isinstance(v, str):
+                return v.strip()
+        return ""
+
+
+def read_hook_envelope(raw: str, *, root: Path, hook: str, require_session: bool,
+                       prose_ok: bool) -> HookEnvelope:
+    """Parse a Claude Code hook's stdin envelope — the ONE parser (D9, round-8 #nm-4; the
+    user's converge rule: `focus hook`, `_resolve_query` and `scan.read_stdin_prompt` each
+    had their own, each with its own silent fallback).
+
+    `prose_ok=True` (scan-prompt; `_resolve_query` without `--stdin-json`): input that is
+    not a JSON object is PROSE — `HookEnvelope(None, raw.strip())`, nothing recorded (`fix
+    the {braces` is a prompt, not an error). `prose_ok=False` (the STM hooks,
+    `--stdin-json`): it prints one stderr line, records `envelope-unreadable` and returns
+    `HookEnvelope(None, None)`. `require_session=True` with a falsy `session_id` prints one
+    line, records `envelope-no-session` and returns `HookEnvelope(None, None)`. Rows are
+    scoped to `root` and the owner `owner_lookup()` finds (D8): the generated focus entries
+    end `2>/dev/null || true`, so the row, not the stderr line, is the durable channel."""
+    import sys
+    text = raw or ""
+    try:
+        d = json.loads(text) if text.strip() else None
+    except ValueError:
+        d = None
+    if not isinstance(d, dict):
+        if prose_ok:
+            return HookEnvelope(None, text.strip())
+        print(f"rmx {hook}: hook envelope unreadable (not a JSON object, "
+              f"{len(text)} bytes)", file=sys.stderr)
+        owner, _ = owner_lookup()
+        record_pointer_error("envelope-unreadable", root=root, owner=owner, hook=hook,
+                             bytes=len(text))
+        return HookEnvelope(None, None)
+    if require_session and not d.get("session_id"):
+        print(f"rmx {hook}: hook envelope carries no session_id", file=sys.stderr)
+        owner, _ = owner_lookup()
+        record_pointer_error("envelope-no-session", root=root, owner=owner, hook=hook)
+        return HookEnvelope(None, None)
+    return HookEnvelope(d, None)
 
 
 def cluster_focus(graph: dict, *, min_size: int = 2) -> list[list[str]]:

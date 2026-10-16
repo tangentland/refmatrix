@@ -521,58 +521,86 @@ def annotate_hit(m: dict, h: dict) -> dict:
 _LONG_LIVED = False
 
 
-def resolve_session_source(root: Path, session: "str | None") -> "tuple[str, str]":
-    """`(session, source)`, source one of explicit / pointer / env / latest / default.
+class SessionResolution(typing.NamedTuple):
+    """`(session, source)`; unpacks like bug-109's 2-tuple, so its callers keep working."""
+    session: "str | None"
+    source: str
 
-    Order: explicit, else the owning Claude process's pid pointer, else $RMX_SESSION, else the
-    most-recently-written STM ring, else the default id. The long-lived server checks the pointer
-    BEFORE `$RMX_SESSION` (its env is frozen at spawn) and never reads its own
-    `CLAUDE_CODE_SESSION_ID`; a per-call CLI lets an explicit `$RMX_SESSION` win.
 
-    bug-109 (2026-10-14): the MCP server is spawned once per Claude process, so after `/clear`
-    its `CLAUDE_CODE_SESSION_ID` names the OLD session, and the newest ring is another session's
-    whenever two run at once. The input hook writes `stm/by-pid/<claude_pid>.json` at the top of
-    every turn. r1 #b-1: when this process runs under Claude (or is the long-lived server) and
-    no pointer resolves, the fallback to the newest ring is a GUESS, so it is recorded in
-    `stm/by-pid/_errors.jsonl` and the source says `latest`; write verbs return it."""
+class SessionUnresolved(VerbError):
+    """A WRITE whose session did not resolve (task 21.1 D2): it is refused, never routed to
+    the newest ring or the default id. The message names the sources tried."""
+
+
+def resolve_session_source(root: Path, session: "str | None" = None, *,
+                           envelope: "dict | None" = None,
+                           purpose: typing.Literal["write", "read", "event"],
+                           record_miss: bool = True) -> SessionResolution:
+    """THE session resolver (bug-109, extended by task 21.1 D1/D2). `source` is one of
+    explicit / envelope / pointer / env / latest / default / none.
+
+    Order: `session` (explicit) → `envelope["session_id"]` (a hook's stdin envelope) →
+    long-lived (`rmx mcp`): the pid pointer for `os.getppid()`, then `$RMX_SESSION`;
+    per-call: `$RMX_SESSION`, then the pointer for the pid `owner_lookup()` returns → the
+    TAIL of `purpose`, which is REQUIRED so every caller states what it does with the answer:
+      read  → the newest ring, labelled `latest` (the ONE allowed `latest_session` call in
+              src/), else `default`;
+      write → raises `SessionUnresolved` naming the sources tried (D2: bug-109 wrote a note
+              into the newest ring, another session's whenever two ran at once);
+      event → `(None, "none")`: telemetry rows and events carry `session: null`, never a
+              guess (the round-4 #m-2 rule).
+    `CLAUDE_CODE_SESSION_ID` is read by no path: the MCP server's copy is a snapshot of its
+    spawn and names a dead session after `/resume` or `/clear` (live 2026-10-14). A miss is
+    recorded for every purpose (round-7 #s-4): `owner-lookup-failed` when the process lookup
+    failed, `pointer-unresolved` when an owner was found, `$CLAUDE_PID` is set or the
+    process is long-lived; nothing in a plain terminal, which has no pointer to miss.
+    `record_miss=False` is the telemetry rows' call outside Claude Code's machinery (see
+    `telemetry.resolve_event_session`): the answer is the same, nothing is recorded."""
     import os
     from refmatrix import stm as stm_mod
+    if purpose not in ("write", "read", "event"):
+        raise ValueError(f"resolve_session_source: unknown purpose {purpose!r}")
     if session:
-        return session, "explicit"
+        return SessionResolution(session, "explicit")
+    if envelope and envelope.get("session_id"):
+        return SessionResolution(str(envelope["session_id"]), "envelope")
     if _LONG_LIVED:
         owner, status = os.getppid(), "found"
     else:
         owner, status = stm_mod.owner_lookup()
-    ptr = stm_mod.read_pid_pointer(root, owner) if owner else None
     env = os.environ.get("RMX_SESSION")
     if _LONG_LIVED:
+        ptr = stm_mod.read_pid_pointer(owner, root=root) if owner else None
         if ptr:
-            return ptr, "pointer"
+            return SessionResolution(ptr, "pointer")
         if env:
-            return env, "env"
+            return SessionResolution(env, "env")
     else:
         if env:
-            return env, "env"
+            return SessionResolution(env, "env")
+        ptr = stm_mod.read_pid_pointer(owner, root=root) if owner else None
         if ptr:
-            return ptr, "pointer"
-    # r2 #b-1: UNKNOWN is not absent. A failed process lookup, or a set $CLAUDE_PID, means this
-    # process may well run under Claude, so the guess is recorded; only a plain terminal (no
-    # owner found, lookup worked, no $CLAUDE_PID) guesses silently, having no pointer to miss.
-    if status == "failed":
-        stm_mod.record_pointer_error(root, "owner-lookup-failed", long_lived=_LONG_LIVED)
-    elif _LONG_LIVED or owner or os.environ.get("CLAUDE_PID"):
-        stm_mod.record_pointer_error(root, "pointer-unresolved", owner=owner,
-                                     long_lived=_LONG_LIVED)
+            return SessionResolution(ptr, "pointer")
+    if record_miss:
+        if status == "failed":
+            stm_mod.record_pointer_error("owner-lookup-failed", root=root, owner=None,
+                                         long_lived=_LONG_LIVED, purpose=purpose)
+        elif _LONG_LIVED or owner or os.environ.get("CLAUDE_PID"):
+            stm_mod.record_pointer_error("pointer-unresolved", root=root, owner=owner,
+                                         long_lived=_LONG_LIVED, purpose=purpose)
+    if purpose == "write":
+        tried = "explicit session, hook envelope, " + (
+            f"pid pointer for the server's parent pid {owner}, $RMX_SESSION" if _LONG_LIVED
+            else f"$RMX_SESSION, pid pointer for owner {owner if owner else '(none found)'}")
+        raise SessionUnresolved(
+            f"SessionUnresolved: no session for this write (tried {tried}); "
+            f"pass --session / set RMX_SESSION, or let the input hook write the pointer")
+    if purpose == "event":
+        return SessionResolution(None, "none")
     latest = stm_mod.latest_session(root)
     if latest:
-        return latest, "latest"
-    return stm_mod.session_id(), "default"
-
-
-def resolve_session(root: Path, session: "str | None") -> str:
-    """The session only; see `resolve_session_source`. Reads and writes MUST resolve
-    identically — the CLI's `_resolve_stm_session(prefer_latest=True)` is this function."""
-    return resolve_session_source(root, session)[0]
+        return SessionResolution(latest, "latest")
+    return SessionResolution(stm_mod.session_id(), "default")
 
 
 # ---- the verbs -------------------------------------------------------------
@@ -588,32 +616,47 @@ def context(root: Path, ref: str, *, degree: int = 1, expand: int = 0,
             linkage: str | None = None, fuse: bool = False,
             strict: bool = False, include_sessions: bool = False,
             grep_backstop: bool = True) -> dict:
+    """The MCP `rmx_context` route (task 21.1 R3: `source=context-mcp`). The query.log row is
+    written HERE, on the caller side — never inside the daemon op, never under its writer
+    lock — and so are the call's recall events (R11) and its `context_by_name` uses (R12),
+    over the payload the MCP server writes (`json.dumps(result, default=str)`)."""
     import json as _json
-    from refmatrix import discovery
+    from refmatrix import context as context_mod, discovery, telemetry as tel
+    inv = tel.invocation_source()
     payload = payload_context(
         ref, degree=degree, expand=expand, hit_lines=hit_lines,
         max_entities=max_entities, max_tokens=max_tokens, linkage=linkage,
         fuse=fuse, strict=strict, include_sessions=include_sessions,
         grep_backstop=grep_backstop)
     payload["partition"] = discovery.store_name(root)
-    result = _call(root, "context", payload, timeout=60.0)
-    body = result.get("body")
-    if isinstance(body, str):
-        try:
-            parsed = _json.loads(body)
-        except ValueError:
-            parsed = None
-        if isinstance(parsed, dict):
-            # The op's warnings ride beside the body (an unreranked answer,
-            # ch-bsd r6 #s-2); parsing the body must not drop them.
-            if result.get("warnings"):
-                # MERGED with the body's own (score-time) warnings, never
-                # overwriting them (ch-bsd r8 #m-2).
-                parsed["warnings"] = list(parsed.get("warnings") or []) + [
-                    w for w in result["warnings"]
-                    if w not in (parsed.get("warnings") or [])]
-            return parsed
-    return result
+    with tel.log_query(None, kind="context", body=ref, source="context-mcp", root=root) as t:
+        session = tel.resolve_event_session(root)
+        t.session = session
+        result = _call(root, "context", payload, timeout=60.0)
+        items = result.pop("items", None) or []
+        out = result
+        body = result.get("body")
+        if isinstance(body, str):
+            try:
+                parsed = _json.loads(body)
+            except ValueError:
+                parsed = None
+            if isinstance(parsed, dict):
+                # The op's warnings ride beside the body (an unreranked answer,
+                # ch-bsd r6 #s-2); parsing the body must not drop them.
+                if result.get("warnings"):
+                    # MERGED with the body's own (score-time) warnings, never
+                    # overwriting them (ch-bsd r8 #m-2).
+                    parsed["warnings"] = list(parsed.get("warnings") or []) + [
+                        w for w in result["warnings"]
+                        if w not in (parsed.get("warnings") or [])]
+                out = parsed
+        t.cardinality = int(out.get("total_neighbors") or 0) if isinstance(out, dict) else None
+    text = _json.dumps(out, default=str)
+    tel.emit_context_call(root, ref=ref, items=context_mod.json_name_spans(text, items),
+                          payload=text.encode("utf-8"), query_id=t.query_id,
+                          session=session, invocation=inv, turn=_live_turn(root, session))
+    return out
 
 
 @verb("rmx_query",
@@ -708,7 +751,58 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
                   include_session: bool = False,
                   subject: str | None = None, degree: int = 0,
                   partition: str | None = None,
-                  timeout: float | None = 30.0) -> dict:
+                  timeout: float | None = 30.0, **internal) -> dict:
+    """The recall verb. Called with `trace=<list>` (the CLI, which owns its call's row and
+    events), it only answers and appends what it retrieved to the list. Called bare — the
+    MCP `rmx_memory_recall` / `rmx_memory recall` route — it is its call's emission site
+    (task 21.1 R3/R11): ONE `kind=recall` query.log row (classified unbudgeted by design:
+    `_call` wraps every transport failure as VerbBusyError, and an MCP call carries no hook
+    budget, round-11 #m11-6) and ONE emission of `recall`-channel events over the payload
+    the MCP server writes (`json.dumps(result, default=str)`)."""
+    params = {k: v for k, v in locals().items() if k not in ("root", "internal")}
+    trace = internal.get("trace")
+    if trace is not None:
+        return _memory_recall_rows(root, trace=trace, **params)
+    import json as _json
+    from refmatrix import telemetry as tel
+    inv = tel.invocation_source()
+    trace = []
+    with tel.log_query(None, kind="recall", body=(query or "")[:200],
+                       source="memory-recall-mcp", root=root, budget_s=timeout) as t:
+        t.extra.update(session_start=bool(session_start), stdin_json=False,
+                       recent=bool(recent or session_start))
+        session = tel.resolve_event_session(root)
+        t.session = session
+        res = _memory_recall_rows(root, trace=trace, **params)
+    payload = _json.dumps(res, default=str).encode("utf-8")
+    channel = tel.recall_channel(session_start=bool(session_start), stdin_json=False,
+                                 recent=bool(recent or session_start), invocation=inv)
+    rows = res.get("memories") or []
+    tel.emit_call(root, channel=channel, invocation=inv, session=session,
+                  query_id=t.query_id,
+                  retrieved=[tel.recall_item(r, rank=i) for i, r in enumerate(trace, 1)],
+                  delivered=tel.spans_by_name(
+                      payload, [tel.recall_item(r, rank=i) for i, r in enumerate(rows, 1)],
+                      json_mode=True),
+                  payload=payload, block_id=tel.RECALL_BLOCK_IDS[channel],
+                  turn=_live_turn(root, session))
+    return res
+
+
+def _live_turn(root: Path, session: "str | None") -> "int | None":
+    from refmatrix import stm as stm_mod
+    return stm_mod.live_turn(root, session)
+
+
+def _memory_recall_rows(root: Path, *, query: str | None = None, k: int = 10,
+                        scope: str = "project", kinds: list[str] | None = None,
+                        fuse: bool = False, rerank: bool | None = None,
+                        since_seconds: float | None = None, since: str | None = None,
+                        recent: bool = False, session_start: bool = False,
+                        exclude_mtype: list[str] | None = None,
+                        include_session: bool = False, subject: str | None = None,
+                        degree: int = 0, partition: str | None = None,
+                        timeout: float | None = 30.0, trace: "list | None" = None) -> dict:
     """ONE implementation of "which memories come back" for the CLI hook
     modes and the MCP tool (2026-09-14: the session-start default window,
     the widen-when-empty rule and the session/* exclusion lived only in
@@ -776,6 +870,8 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
                       timeout=_left(60.0), retries=_retries)
             project_rows = [row for row in r.get("rows", [])
                             if not mt_excluded(row.get("mtype"), patterns)][:k]
+            if trace is not None:
+                trace.extend(project_rows)
       elif recent:
         mode = "session-start" if session_start else "recent"
         if want_project:
@@ -787,6 +883,8 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
             project_rows, widened = recent_rows(
                 _fetch, k=k, patterns=patterns, since_seconds=since_seconds,
                 widen_if_empty=since_defaulted)
+            if trace is not None:
+                trace.extend(project_rows)
             if widened:
                 since_seconds = None
       else:
@@ -801,6 +899,8 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
             hits = sorted(r.get("hits", []), key=lambda h: (
                 h["distance"] if h.get("distance") is not None
                 else -(h.get("score") or 0.0)))
+            if trace is not None:
+                trace.extend(hits)       # every hit is retrieved, filtered or not (R11)
             for h in hits:
                 if len(project_rows) >= k:
                     break
@@ -825,6 +925,8 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
                 query or None, k=gk, recent=bool(recent) and not subject,
                 since_s=since_seconds, timeout=_left(30.0), retries=_retries)
                 if not mt_excluded(row.get("mtype"), patterns)]
+            if trace is not None:
+                trace.extend(grows)
         except VerbBusyError:
             raise
         except VerbError as e:
@@ -889,7 +991,7 @@ def save_state(root: Path, *, message: str | None = None,
     import time as _time
     from refmatrix import handoff, stm as stm_mod
     repo = Path(root).parent
-    sess, session_source = resolve_session_source(root, session)
+    sess, session_source = resolve_session_source(root, session, purpose="write")
     s = stm_mod.Stm(root, sess)
     memdir = (Path(memory_dir).resolve() if memory_dir
               else handoff.default_memory_dir(repo))
@@ -931,7 +1033,7 @@ def focus(root: Path, *, top: int = 20, session: str | None = None) -> dict:
     line that mentioned it) and `events_total` — so an MCP caller gets what
     the CLI shows (ch-bsd plan-3 r2 #s-3)."""
     from refmatrix import stm as stm_mod
-    s = stm_mod.Stm(root, resolve_session(root, session))
+    s = stm_mod.Stm(root, resolve_session_source(root, session, purpose="read").session)
     events = s.all_events()
     last_line: dict[str, int] = {}
     dialogue: list[dict] = []
@@ -954,10 +1056,21 @@ def focus(root: Path, *, top: int = 20, session: str | None = None) -> dict:
       "memory — the WHY behind a decision/tradeoff. `note` is an accepted "
       "alias for `text`.", aliases={"note": "text"})
 def focus_note(root: Path, text: str, *, session: str | None = None) -> dict:
-    from refmatrix import stm as stm_mod
-    sess, source = resolve_session_source(root, session)
+    """A `write`: an unresolved session raises `SessionUnresolved` (task 21.1 D2), never the
+    newest ring. The note is also R12's `focus_note` evidence: every delivered name it names
+    as a whole token (or as a `[[doc]]` wikilink) emits one `used` event per delivered key —
+    resolved from the note's own session, so a long-lived server uses its parent's pointer,
+    never its spawn-time `CLAUDE_CODE_SESSION_ID`."""
+    from refmatrix import stm as stm_mod, telemetry as tel
+    sess, source = resolve_session_source(root, session, purpose="write")
     s = stm_mod.Stm(root, sess)
     ev = s.record("reason", str(text)[:800])
+    inv = tel.invocation_source()
+    evs = tel.used_events(root, session=sess, invocation=inv, evidence="focus_note",
+                          match=lambda d: tel.note_used_keys(str(text), d),
+                          body=str(text), turn=_live_turn(root, sess))
+    if evs:
+        tel.emit_recall_events(evs, root=root)
     return {"noted": True, "session": s.session, "session_source": source,
             "refs": ev.get("refs", [])[:6]}
 
@@ -969,7 +1082,7 @@ def focus_note(root: Path, text: str, *, session: str | None = None) -> dict:
 def change_subject(root: Path, label: str, *,
                    session: str | None = None) -> dict:
     from refmatrix import daemon as daemon_mod, stm as stm_mod
-    sess, source = resolve_session_source(root, session)
+    sess, source = resolve_session_source(root, session, purpose="write")
     s = stm_mod.Stm(root, sess)
     rec = s.set_subject(label)
     part = memory_partition(root)
@@ -1026,7 +1139,8 @@ def task(root: Path, *, action: typing.Literal["push", "pop", "list", "current",
          desc: str | None = None, selector: str | None = None,
          session: str | None = None) -> dict:
     from refmatrix import stm as stm_mod
-    sess, source = resolve_session_source(root, session)
+    sess, source = resolve_session_source(
+        root, session, purpose="read" if action in ("list", "current") else "write")
     s = stm_mod.Stm(root, sess)
 
     def _src(r):
@@ -1065,10 +1179,18 @@ def recall_state(root: Path, *, session: str | None = None,
                  memory_dir: str | None = None) -> dict:
     from refmatrix import handoff, stm as stm_mod
     repo = Path(root).parent
-    s = stm_mod.Stm(root, resolve_session(root, session))
+    # The pointer-error clauses are read BEFORE this call resolves its session: a read that
+    # misses records a row, and the report is about the rows that were there (task 21.1 D6).
+    pointer_clauses = handoff.session_pointer_anomalies(root)
+    sess, source = resolve_session_source(root, session, purpose="read")
+    s = stm_mod.Stm(root, sess)
     memdir = (Path(memory_dir).resolve() if memory_dir
               else handoff.default_memory_dir(repo))
-    return handoff.compose_recall_state(s, root, repo=repo, memdir=memdir)
+    rep = handoff.compose_recall_state(s, root, repo=repo, memdir=memdir,
+                                       pointer_anomalies=pointer_clauses)
+    rep.setdefault("session", sess)
+    rep.setdefault("session_source", source)
+    return rep
 
 
 # Read actions of the `memory` verb run under this budget with ONE attempt
@@ -1255,8 +1377,30 @@ def memory(root: Path, action: typing.Literal[
     except KeyError as exc:
         raise VerbError(f"missing required arg for {action}: {exc}") from exc
     if is_read:
-        return _call(root, op, payload, timeout=_left(MEMORY_READ_BUDGET_S), retries=0)
+        res = _call(root, op, payload, timeout=_left(MEMORY_READ_BUDGET_S), retries=0)
+        if action == "get" and id is None and name and (res or {}).get("memory"):
+            emit_memory_get_used(root, name, scope="project")
+        return res
     return _call(root, op, payload, timeout=120.0)
+
+
+def emit_memory_get_used(root: Path, name: str, *, scope: str = "project") -> int:
+    """R12 `memory_get_by_name`: an explicit, BY-NAME memory read (the CLI `rmx memory get`
+    on its verb path AND its replica fall-through, and the MCP `rmx_memory get` action) of a
+    memory this session was delivered emits ONE `used` event. A `hook` call, a read by id,
+    recall's internal per-hit `memory_get` (`_call(root, "memory_get", …)`) and the daemon op
+    never emit (19 #b-6)."""
+    from refmatrix import telemetry as tel
+    inv = tel.invocation_source()
+    if inv == "hook":
+        return 0
+    session = tel.resolve_event_session(root)
+    key = (name, "memory", scope)
+    evs = tel.used_events(root, session=session, invocation=inv,
+                          evidence="memory_get_by_name",
+                          match=lambda d: [key] if key in d else [], body=name,
+                          turn=_live_turn(root, session))
+    return tel.emit_recall_events(evs, root=root) if evs else 0
 
 
 def _bus_sender(root: Path, explicit: "str | None") -> str:
