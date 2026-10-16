@@ -1038,23 +1038,58 @@ def _http_available() -> bool:
     return all(importlib.util.find_spec(m) is not None for m in ("fastapi", "uvicorn"))
 
 
+_HUB_LOCK_HELD = None  # this process's hub.lock file, while it holds it
+
+
+def _forget_hub_lock_in_child() -> None:
+    """At fork, the child closes its copy of hub.lock WITHOUT unlocking.
+
+    flock belongs to the open file description, which a fork shares: the
+    hub forks without exec (`daemon.spawn_daemon` from the UI's daemon start
+    and the bus's refinement accept), O_CLOEXEC never fires, and a daemon
+    kept a dead hub's lock alive for its whole life, so every later hub
+    stood down (ch-bsd bug-129 r3 b1-r3). Closing the copy drops only the
+    child's reference; LOCK_UN here would release the PARENT's lock."""
+    global _HUB_LOCK_HELD
+    if _HUB_LOCK_HELD is not None:
+        _HUB_LOCK_HELD.close()
+        _HUB_LOCK_HELD = None
+
+
+os.register_at_fork(after_in_child=_forget_hub_lock_in_child)
+
+
 def _take_hub_lock():
     """Take hub.lock for the life of this process, or None if another hub
-    holds it. flock is released by the kernel when the process dies, so a
-    crashed hub never leaves a stale lock behind."""
+    holds it. The kernel releases it when the process dies, and forked
+    children drop their copy (`_forget_hub_lock_in_child`), so a dead hub
+    never leaves it held."""
     import fcntl
+    global _HUB_LOCK_HELD
     f = open(hub_home() / HUB_LOCK, "a")
     try:
         fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         f.close()
         return None
+    _HUB_LOCK_HELD = f
     return f
 
 
 def _drop_hub_lock(lock) -> None:
-    if lock is not None:
-        lock.close()  # closing the descriptor releases the flock
+    """Unlock, then close. Unlocking releases the lock for every descriptor
+    that shares it, so a child that somehow still holds a copy cannot keep
+    a stopped hub's lock."""
+    import fcntl
+    global _HUB_LOCK_HELD
+    if lock is None:
+        return
+    try:
+        fcntl.flock(lock, fcntl.LOCK_UN)
+    finally:
+        lock.close()
+        if _HUB_LOCK_HELD is lock:
+            _HUB_LOCK_HELD = None
 
 
 def _claim_pid_file(pid: int) -> None:
@@ -1196,7 +1231,17 @@ def _pid_on_port(port: int) -> int | None:
     return None
 
 
-def stop_hub(*, timeout: float = 5.0, port: int = DEFAULT_PORT) -> bool:
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def stop_hub(*, timeout: float = 15.0, port: int = DEFAULT_PORT) -> bool:
     """Ask the hub to stop; fall back to SIGTERM, then reap any orphan still
     holding the HTTP port. Returns True if nothing is left running."""
     if is_running():
@@ -1218,6 +1263,13 @@ def stop_hub(*, timeout: float = 5.0, port: int = DEFAULT_PORT) -> bool:
             except OSError:
                 pass
         time.sleep(0.2)
+    # The control socket and the port go dark before the hub has stopped its
+    # model workers (4-5 s in every live stop since 2026-10-07) and released
+    # hub.lock; reporting "stopped" then let a successor that is not the
+    # same launchd job (`hub stop && hub start`, `hub stop && rmx ui`) find
+    # the lock held and stand down (bug-129 r3 s1-r3). Wait for the process.
+    while pid and _pid_alive(pid) and time.time() < deadline:
+        time.sleep(0.1)
     # Reap a port-orphan: a zombie hub whose control socket is dead (so
     # is_running()/rpc can't reach it) but whose uvicorn still squats the
     # port, blocking every future `hub start`. The socket-based stop above
@@ -1234,7 +1286,8 @@ def stop_hub(*, timeout: float = 5.0, port: int = DEFAULT_PORT) -> bool:
                 os.kill(orphan, signal.SIGKILL)
         except OSError:
             pass
-    return not is_running() and _pid_on_port(port) is None
+    return (not is_running() and _pid_on_port(port) is None
+            and not (pid and _pid_alive(pid)))
 
 
 def graceful_stop(root: Path, *, grace: float) -> bool:

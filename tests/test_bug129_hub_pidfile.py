@@ -48,21 +48,27 @@ def _stop_with_successor(monkeypatch, *, successor_pid: int) -> None:
     monkeypatch.setattr(hub, "is_running", is_running)
     monkeypatch.setattr(hub, "rpc", lambda op, args=None, timeout=30.0: {"ok": True})
     monkeypatch.setattr(hub, "_pid_on_port", lambda port: None)
-    monkeypatch.setattr(hub.os, "kill", lambda pid, sig: None)
     hub.stop_hub(timeout=1.0)
 
 
 def test_stop_hub_keeps_a_successors_pid_file(short_home, monkeypatch):
-    hub.hub_pid_path().write_text("111")
+    hub.hub_pid_path().write_text(str(_dead_pid()))
     _stop_with_successor(monkeypatch, successor_pid=222)
     assert hub.hub_pid() == 222, "stop_hub deleted the pid file the successor wrote"
 
 
+def _dead_pid() -> int:
+    import subprocess
+    p = subprocess.Popen(["true"])
+    p.wait()
+    return p.pid
+
+
 def test_stop_hub_removes_the_stopped_hubs_pid_file(short_home, monkeypatch):
-    hub.hub_pid_path().write_text("111")
+    dead = _dead_pid()  # the stopped hub has exited; stop_hub waits for that
+    hub.hub_pid_path().write_text(str(dead))
     monkeypatch.setattr(hub, "is_running", lambda: False)
     monkeypatch.setattr(hub, "_pid_on_port", lambda port: None)
-    monkeypatch.setattr(hub.os, "kill", lambda pid, sig: None)
     assert hub.stop_hub(timeout=1.0) is True
     assert not hub.hub_pid_path().exists()
 
@@ -208,3 +214,66 @@ def test_stop_hub_reports_an_unreadable_pid_file(short_home, monkeypatch):
     hub.hub_pid_path().write_text("garbage")
     hub.stop_hub(timeout=0.5)
     assert any("hub.pid" in ln for ln in lines), lines
+
+
+def test_a_forked_child_does_not_keep_the_hub_lock(short_home):
+    """The hub forks without exec (`daemon.spawn_daemon` from the UI and the
+    bus); O_CLOEXEC does not apply, so the child held a copy of hub.lock and a
+    dead hub's lock outlived it, refusing every later hub (ch-bsd r3 b1-r3).
+    The child must drop its copy at fork."""
+    lock = hub._take_hub_lock()
+    assert lock is not None
+    r, w = os.pipe()
+    pid = os.fork()
+    if pid == 0:
+        import time as _t
+        os.write(w, b"x")  # the at-fork hooks have run by now
+        _t.sleep(3)
+        os._exit(0)
+    os.close(w)
+    try:
+        assert os.read(r, 1) == b"x"
+        assert hub._take_hub_lock() is None, "the child's fork hook released the hub's lock"
+        lock.close()  # the hub dies without unlocking: the kernel closes its fd
+        again = hub._take_hub_lock()
+        assert again is not None, "a forked child still holds the dead hub's lock"
+        hub._drop_hub_lock(again)
+    finally:
+        os.kill(pid, 9)
+        os.waitpid(pid, 0)
+
+
+def test_shutdown_releases_the_hub_lock(short_home):
+    h = _bare_hub()
+    h._lock = hub._take_hub_lock()
+    hub.Hub.shutdown(h)
+    again = hub._take_hub_lock()
+    assert again is not None
+    hub._drop_hub_lock(again)
+
+
+def test_a_port_refusal_releases_the_hub_lock(short_home, monkeypatch):
+    monkeypatch.setattr(hub, "_pid_on_port", lambda port: 4191)
+    monkeypatch.setattr(hub, "_http_available", lambda: True)
+    hub.Hub.run(_hub_that_must_not_start(), serve_http=True)
+    again = hub._take_hub_lock()
+    assert again is not None
+    hub._drop_hub_lock(again)
+
+
+def test_stop_hub_waits_for_the_old_hub_to_exit(short_home, monkeypatch):
+    """The socket and port go dark before the hub's 4-5 s model shutdown and
+    its lock release; `stop_hub` reported stopped first, and a successor that
+    is not the same launchd job then stood down (ch-bsd r3 s1-r3)."""
+    import subprocess
+    import threading
+    old = subprocess.Popen(["sleep", "1.5"])
+    threading.Thread(target=old.wait, daemon=True).start()  # reap, no zombie
+    hub.hub_pid_path().write_text(str(old.pid))
+    monkeypatch.setattr(hub, "is_running", lambda: False)
+    monkeypatch.setattr(hub, "_pid_on_port", lambda port: None)
+    try:
+        assert hub.stop_hub(timeout=10.0) is True
+        assert old.poll() is not None, "stop_hub returned while the old hub was alive"
+    finally:
+        old.kill()
