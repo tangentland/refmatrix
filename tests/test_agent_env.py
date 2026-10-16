@@ -1,5 +1,6 @@
 """Tests for the install-hooks agent-env surface: ~/.claude/agent-bashrc.sh
 plus BASH_ENV wiring into the Claude settings env block."""
+import os
 import json
 import subprocess
 
@@ -131,6 +132,14 @@ def test_bashrc_section_parses_and_grep_function_calls_the_wrapper(tmp_path):
     import subprocess
     rc = tmp_path / "rc.sh"
     rc.write_text(AGENT_BASHRC_SECTION)
-    r = subprocess.run(["bash", "-c", f"source {rc} && type grep"], capture_output=True, text=True)
+    # 23.0 R6: the section defines grep() only when `$HOME/refmatrix/bin/rmxgrep` is executable;
+    # this test used to read the DEPLOY tree's copy in the live home. A stand-in home holds one.
+    home = tmp_path / "home"
+    wrapper = home / "refmatrix" / "bin" / "rmxgrep"
+    wrapper.parent.mkdir(parents=True)
+    wrapper.write_text("#!/bin/sh\nexit 0\n")
+    wrapper.chmod(0o755)
+    r = subprocess.run(["bash", "-c", f"source {rc} && type grep"], capture_output=True,
+                       text=True, env={**os.environ, "HOME": str(home)})
     assert r.returncode == 0, r.stderr
     assert "function" in r.stdout and "rmxgrep" in r.stdout

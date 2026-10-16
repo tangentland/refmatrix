@@ -111,12 +111,30 @@ def test_the_rendered_bytes_still_name_no_checkout(tmp_path, monkeypatch):
     assert str(Path.home() / "refmatrix") not in src
 
 
-@pytest.mark.skipif(not (Path.home() / "refmatrix" / "bin" / "rmxgrep").exists(),
-                    reason="no deploy tree on this machine")
 def test_on_this_machine_it_resolves_the_deployed_copy(tmp_path, monkeypatch):
-    """The live assertion, because the two tests above prove the ORDER and this
-    one proves the order picks the right file HERE — where the two copies
-    actually differ by 954 bytes."""
+    """The deploy-layout assertion: `~/bin/rmx` -> `~/refmatrix/.venv/bin/rmx`, the fresh
+    wrapper in `~/refmatrix/bin/`; the resolver must pick the deployed wrapper (bug-066: the
+    two copies once differed by 954 bytes).
+
+    Task 23.0 (ch-bsd r1 b2, 2026-10-15): this read the LIVE deploy tree under the real
+    `$HOME` and, with HOME redirected, silently skipped ("no deploy tree"). The home is now a
+    stand-in built HERE, and the deployed wrapper in it is THIS checkout's `bin/rmxgrep` (what a
+    deploy ships), so the `plain)` check below still reads the real artifact. The old
+    stale-sibling leg (`~/refmatrix/.venv/bin/rmxgrep` still has the arm) was a statement about
+    the LIVE deploy state, which a sandboxed test may not read; it is dropped, not faked."""
+    home = tmp_path / "home"
+    tree = home / "refmatrix"
+    (tree / "bin").mkdir(parents=True)
+    (tree / ".venv" / "bin").mkdir(parents=True)
+    (home / "bin").mkdir()
+    shipped = Path(__file__).resolve().parents[1] / "bin" / "rmxgrep"
+    (tree / "bin" / "rmxgrep").write_bytes(shipped.read_bytes())
+    (tree / ".venv" / "bin" / "rmx").write_text("#!/bin/sh\nexit 0\n")
+    for p in (tree / "bin" / "rmxgrep", tree / ".venv" / "bin" / "rmx"):
+        p.chmod(p.stat().st_mode | stat.S_IEXEC)
+    (home / "bin" / "rmx").symlink_to(tree / ".venv" / "bin" / "rmx")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("PATH", str(home / "bin") + os.pathsep + "/usr/bin:/bin")
     wrapper = _load_wrapper_resolver(monkeypatch, tmp_path)
 
     got = Path(wrapper("rmxgrep"))
@@ -133,11 +151,3 @@ def test_on_this_machine_it_resolves_the_deployed_copy(tmp_path, monkeypatch):
         "the resolved wrapper still has a `plain)` arm, i.e. the bypass the "
         "user ordered removed on 2026-09-15 is live on the path every "
         "rewritten grep takes")
-    # The stale sibling is the one that still honours it — if this ever fails,
-    # the two copies have converged and bug-066 is closed at the deploy layer
-    # too, not just in the resolver.
-    stale = Path.home() / "refmatrix" / ".venv" / "bin" / "rmxgrep"
-    if stale.exists():
-        assert re.search(r"^\s*plain\)", stale.read_text(), re.M), (
-            "the stale venv copy no longer carries the bypass — deploy now "
-            "syncs both locations, so this assertion can be dropped")
