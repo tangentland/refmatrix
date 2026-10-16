@@ -175,9 +175,11 @@ def test_pid_on_port_none_when_free(monkeypatch):
     assert hub._pid_on_port(7777) is None
 
 
-def test_stop_hub_reaps_port_orphan(monkeypatch):
+def test_stop_hub_reaps_port_orphan(short_home, monkeypatch):
     """A zombie hub whose control socket is dead (is_running False) but whose
-    uvicorn still holds the port must be killed by port."""
+    uvicorn still holds the port must be killed by port. On `short_home`:
+    `stop_hub` releases hub.pid, and without it this test removed the LIVE
+    hub's pid file (bug-129)."""
     monkeypatch.setattr(hub, "is_running", lambda: False)
     monkeypatch.setattr(hub, "hub_pid", lambda: None)
     # Orphan present on first probe, gone after the SIGTERM.
@@ -192,7 +194,7 @@ def test_stop_hub_reaps_port_orphan(monkeypatch):
     assert killed and killed[0][0] == 99999  # SIGTERM'd the orphan
 
 
-def test_stop_hub_clean_when_nothing_running(monkeypatch):
+def test_stop_hub_clean_when_nothing_running(short_home, monkeypatch):
     monkeypatch.setattr(hub, "is_running", lambda: False)
     monkeypatch.setattr(hub, "hub_pid", lambda: None)
     monkeypatch.setattr(hub, "_pid_on_port", lambda port: None)

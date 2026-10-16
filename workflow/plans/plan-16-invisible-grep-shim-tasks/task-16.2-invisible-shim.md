@@ -7,20 +7,74 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-06
-  revised: 2026-10-07
+  revised: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Task 16.2: the invisible shim {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision 4, after spec review r3 `bsd-plan16-spec-review-r3-c8278b1`)
-> Depends on: [[task-16.1-argv-faithful-learner]]
+> Status: Pending (revision after the 2026-10-14 decision log; revision 6, answering spec review
+> r5 `bsd-plan16-spec-review-r5-cd7c923`; revision round 8, 2026-10-15, the operator state,
+> [[#rev-round-8]])
+> **Wave:** 2 ([[plan-16-invisible-grep-shim#waves]]).
+> Depends on: [[task-16.1-argv-faithful-learner]]. Tests run in plan-23 task 23.0's sandbox.
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
 rel: depends-on -> [[task-16.1-argv-faithful-learner]]
 rel: amends -> [[bsd-plan16-spec-review-b587621]]
 rel: amends -> [[bsd-plan16-spec-rereview-42a5521]]
 rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
+rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
+rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
+rel: derives-from -> [[plan-review-2026-10-14#t7]]
+rel: derives-from -> [[plan-review-2026-10-14#t8-revisited]]
+rel: derives-from -> [[plan-review-2026-10-14#t9]]
+rel: amends -> [[bsd-plan16-22-spec-rereview-32dde06]]
+rel: depends-on -> [[feedback_no_raw_prompts_in_public_repo]]
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan16-22-spec-rereview-r8-23ad703]] s-2 where it touches 16.2, and d9bj
+([[plan-review-2026-10-14#t12-approvals]]). Marker state read 2026-10-15: `~/.refmatrix/learn.off`
+present, this repo's `.refmatrix/learn.off` absent.
+
+| finding / decision | answered in |
+|---|---|
+| r8 s-2 / d9bj (stale "today" text; `learn.off` set; no flip owner) | [[#rich]] (the operator state, this task does not remove the marker); [[#deploy]] (deploy with 16.3, then the user's `rmx learn on --global`); the flip is [[plan-16-invisible-grep-shim#learn-flip]] |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r8-23ad703]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+
+## Revision round 2 (2026-10-14) {#rev-round-2}
+
+Answers [[bsd-plan16-22-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]].
+
+| finding / decision | answered in |
+|---|---|
+| re-review s-4 (real transcript greps committed unscrubbed) / d8f / #t9-fixes "16.2 fixture scrubber" | AC-1 [[#ac-1-fixture]] (raw extraction gitignored, sha256 committed, scrubber, privacy test + mutation); [[#files-to-modify]]; [[#tests]] |
+
+## Revision 6 changelog {#revision-6}
+
+Answers spec review r5 ([[bsd-plan16-spec-review-r5-cd7c923]]) and the 2026-10-14 decision log
+([[plan-review-2026-10-14]]).
+
+| finding / decision | answered in |
+|---|---|
+| r5 s-r5-2 / r4 s-r4-7 (AC-4b cannot pass under 16.1 R1b's `--include` pruning) / #t7-fixes "keep 16.2 AC-4b" | AC-4b kept as written; it passes because 16.1 R1b now prunes only recursive re-runs ([[task-16.1-argv-faithful-learner#r1b]]); new mutation |
+| r5 s-r5-6 / #t7-fixes (`spawned_by` on learner records) | R2 [[#r2]] passes `--spawned-by shim`; AC-4 asserts it |
+| r5 m-r5-4 / #t7-fixes MEH (`grep_learn.spawn()`'s interpreter unnamed) | R2b [[#r2b]] (`sys.executable -m refmatrix.cli grep-learn`); the parity test asserts it |
+| d1a/d1b (tests sandboxed by task 23.0) | sandbox rule [[#r6]]; [[#test-strategy]] |
+
+## Revision 5 changelog {#revision-5}
+
+Answers spec review r4 ([[bsd-plan16-spec-review-r4-33809ab]]).
+
+| finding | answered in |
+|---|---|
+| s-r4-4 one keyed-line format (R2/AC-6 said "one byte") | R2 [[#r2]], R3 [[#r3]] (line format with the cwd; `learn status` prints LINE counts), AC-6 |
+| s-r4-7 AC-4 `rmxgrep -i PAT dir` cannot pass | AC-4 (`-ri`), AC-4b (`-i` on a dir = `reason=tool-error`), mutation |
+| m-r4-5 `$PWD` vs `getcwd` in the parity test | R2b [[#r2b]] (cwd rule + symlinked-cwd row) |
 
 ## Why {#why}
 
@@ -41,10 +95,16 @@ rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
    This plan does not try to capture route 3, which would reopen d-3. Task 16.4 measures its share.
    {#routes}
 
-Today routes 1 and 2 run with `RMXGREP_MODE=rich` from the generators. The interim since
-2026-10-06 is `plain`, set by the user in `~/.claude/settings.json` and `.claude/settings.local.json`.
-That value is already auto, so today's wrapper takes its real-tool path plus the flag-stripped ping.
-This task deletes the rich branch and replaces the ping with 16.1's learner. {#rich}
+The generators render routes 1 and 2 with `RMXGREP_MODE=rich`. The interim since 2026-10-06 is
+`plain`, set by the user in `~/.claude/settings.json` and `.claude/settings.local.json`; that value
+is already auto, so the wrapper takes its real-tool path plus the flag-stripped ping. **Since
+2026-10-15 none of that runs** (r8 s-2): the global `learn.off` marker is set, so route 1's
+rewrite stands down, and route 2's shims take R1's learning-off exit straight to the real tool,
+with no ping and no learner ([[plan-16-invisible-grep-shim#today-learn-off]]). This task deletes
+the rich branch and replaces the ping with 16.1's learner; it does NOT remove the marker. The
+switch comes back on only after this task and 16.3 deploy together, by the user's `rmx learn on
+--global` (d9bj, [[plan-16-invisible-grep-shim#learn-flip]]); this task's deploy note names that
+step. {#rich}
 
 ## Requirements {#requirements}
 
@@ -63,32 +123,53 @@ This task deletes the rich branch and replaces the ping with 16.1's learner. {#r
 - **Slot check before spawning (#s-n9).** The shim counts the slot dirs under
   `<store_root>/.grep-learn-slots/` (16.1 R0b) that are fresher than 60 s, using a shell glob and
   `find -mmin`. If the count is at least `RMX_GREP_LEARN_MAX_INFLIGHT` (default 2), the shim does
-  not spawn: it appends one byte to `<store_root>/.rmxgrep-teach/busy` and goes straight to the
-  exec. This is what bounds process STARTS: a 1,000-file loop costs globs, not 1,000 Python starts
+  not spawn: it appends one keyed LINE (R3's format) to `<store_root>/.rmxgrep-teach/busy` and goes
+  straight to the exec. This is what bounds process STARTS: a 1,000-file loop costs globs, not 1,000 Python starts
   at 0.14 s each.
 - When the slots and the throttle (R3) both say go:
-- Start `"$RMX" grep-learn --tool grep --bin "$REAL_ABS" --cwd "$PWD" [--retired-env
-  RMXGREP_TEACH] -- "$@"` with stdin, stdout and stderr on `/dev/null`, backgrounded.
+- Start `"$RMX" grep-learn --tool grep --bin "$REAL_ABS" --cwd "$PWD" --spawned-by shim
+  [--retired-env RMXGREP_TEACH] -- "$@"` with stdin, stdout and stderr on `/dev/null`,
+  backgrounded (`rmxrg` passes `--tool rg`). `--spawned-by shim` is what lets 16.4 count route 2
+  from shim records only (s-r5-6).
 - Detaching, the slot cap and logging all belong to the learner (16.1 R0/R0b/R6); the shell does no
   more than start it. `/bin/sh`'s `&` alone does not give the child its own process group, so the
   learner's `os.setsid()` is what does (#s-1). {#r2}
 
-**R2b. Two implementations of the spawn rules, one parity test (#s-r3-3).** The shims are shell
-and `rmx grep` (16.5) is Python, so "one shared function" cannot be literal. The throttle key, the
-slot count and the learn-switch read are implemented twice: in `bin/rmxgrep`/`bin/rmxrg` and in
+**R2b. Two implementations of the spawn rules, one parity test (#s-r3-3).** {#r2b} The shims are
+shell and `rmx grep` (16.5) is Python, so "one shared function" cannot be literal. The throttle key,
+the slot count and the learn-switch read are implemented twice: in `bin/rmxgrep`/`bin/rmxrg` and in
 `grep_learn.spawn()`. `tests/test_spawn_parity.py` feeds a table of (cwd, argv, slot state, marker
-state) to both and asserts the same decision and the same stamp path for every row.
+state) to both and asserts the same decision, the same stamp path and the same keyed line for every
+row.
+- **The cwd rule (m-r4-5).** The shim keys on the LOGICAL `$PWD`; Python's `os.getcwd()` is
+  PHYSICAL (probed: cwd `/tmp` gives `$PWD=/tmp`, `os.getcwd()=/private/tmp`). So
+  `grep_learn.spawn()` uses `os.environ["PWD"]` when it is set and
+  `os.path.realpath($PWD) == os.path.realpath(os.getcwd())`, else `os.getcwd()`. The learner itself
+  still resolves `realpath(cwd)` for paths (16.1 R2); only the throttle key and the `--cwd` text
+  follow this rule.
+- **The Python spawn's interpreter (m-r5-4).** `grep_learn.spawn()` starts
+  `[sys.executable, "-m", "refmatrix.cli", "grep-learn", …, "--spawned-by", "rmx-grep", …]`
+  (`cli.py` has a `__main__` block), never `shutil.which("rmx")`: a PATH `rmx` is the DEPLOY build,
+  and under `.venv-eval` tests it would run deploy code against the sandbox. The parity test asserts
+  `argv[0] == sys.executable`, and 16.5's spawn guard checks the binary as well as `store_root`.
+- The parity table has a symlinked-cwd row (process started in a symlinked directory with `PWD`
+  set to the symlink spelling) and a stale-`PWD` row (`PWD` names another directory); both sides
+  must produce the same key.
 
 **R3. Throttle keyed on what the search IS, and counted (#s-3).**
 - The stamp key is `cksum` of `printf '%s\0' "$PWD" "$@"`: the cwd plus NUL-joined argv. `"a b"`
   and `a b` no longer collide, and the same relative argv in two directories counts as two
   searches.
 - `RMXGREP_TEACH_TTL_MIN` stays as the throttle window.
-- Every throttled call appends one LINE `<epoch> <cksum>` to `<store_root>/.rmxgrep-teach/throttled`
-  (busy: `.../busy`). Keyed lines, not bytes (#s-r3-7): 16.4's route oracle can then tell a
-  throttled or busy grep from an unobserved one. `rmx learn
-  status` prints that file's size, and the `busy` file's (R2), since their last rotation. A
+- Every throttled call appends one LINE to `<store_root>/.rmxgrep-teach/throttled`, and every busy
+  skip (R2) one line to `.../busy`, in ONE format (s-r4-4):
+  `<epoch> <cksum> <PWD>\n` — the epoch in whole seconds, the R3 key, then the logical cwd as the
+  REST of the line (a cwd may contain spaces; a newline in a cwd is replaced by `?`). Keyed lines,
+  not bytes (#s-r3-7): 16.4 joins them by epoch window plus cwd (16.4 R1), never by argv.
+- `rmx learn status` prints each file's LINE count since its last rotation (not its size). A
   throttled or busy grep is a counted skip, not an invisible one.
+- No other writer uses these two files (16.3's missing-rg case goes through the learner's own log,
+  16.3 R1).
 - Both counters rotate at 1 MB. Stamps older than 24 h are pruned by the learner (16.1 R9). {#r3}
 
 **R4. `RMXGREP_TEACH` is retired (d-2) (#m-2).**
@@ -129,7 +210,10 @@ state) to both and asserts the same decision and the same stamp path for every r
 | `test_learn_toggle_hook.py` (wrapper cases) | both wrappers; `RMXGREP_MODE` dropped from envs |
 | docstrings in `test_rewriter_wrapper_resolution.py`, `test_grep_argv_order_e2e.py` | rich-mode wording updated |
 
-**Sandbox rule (#s-11).** Every test that runs a wrapper sets `RMXGREP_RMX` to a sandbox path or
+**Sandbox rule (#s-11; d1a/d1b).** Every test runs inside plan-23 task 23.0's shared sandbox
+(`$HOME`, global root, registry and LaunchAgents dir in a tmp dir before `refmatrix` is imported;
+spawned `rmx` children refuse sockets outside it; the conftest guard fails any touch of
+`~/.refmatrix` or a registered live store). On top of it, every test that runs a wrapper sets `RMXGREP_RMX` to a sandbox path or
 sets `RMX_LEARN=0`. Once d-2 lands, `RMXGREP_TEACH=0` no longer prevents a spawn. An unset
 `RMXGREP_RMX` runs the DEPLOY `rmx` on PATH, which the hard rules forbid. A conftest guard fails any
 test that spawns `rmx` from PATH. {#r6}
@@ -137,7 +221,8 @@ test that spawns `rmx` from PATH. {#r6}
 ## Acceptance criteria {#acceptance}
 
 1. **The differential (100%, no allowlist).** The corpus is `tests/fixtures/grep_differential.txt`:
-   at least 40 invocations replayed from real transcript greps, plus the edge cases below.
+   at least 40 invocations derived from real transcript greps THROUGH THE SCRUBBER ([[#ac-1-fixture]]),
+   plus the edge cases below.
    - For each case, `rmxgrep ARGS` vs `/usr/bin/grep ARGS` and `rmxrg ARGS` vs `rg ARGS` must match
      byte-for-byte on stdout, stderr and the exit code.
    - Run inside a project with learning ON and `RMXGREP_MODE=rich` exported.
@@ -147,22 +232,52 @@ test that spawns `rmx` from PATH. {#r6}
      - `-l -L -o -h -C 2 -m 1 -q`;
      - a `:` filename; `./f` beside `f`; a no-match (exit 1); `--color=always`.
    - The test fails at the first differing byte and prints both sides.
+   **1-fixture. The fixture is scrubbed; only it and a hash are committed (s-4, d8f).**
+   {#ac-1-fixture}
+   - The raw extraction (argv lists from this machine's transcripts) is written to
+     `workflow/review-output/grep-differential-raw.jsonl`, which is gitignored
+     (`workflow/review-output/` in `.gitignore`). It is never committed.
+   - `tests/fixtures/grep_differential.source.sha256` (committed) holds the sha256 of that raw file,
+     so the fixture's provenance is checkable on this machine without publishing it.
+   - `scripts/scrub_grep_differential.py` (committed) turns the raw file into the committed fixture:
+     - every path operand and path-valued flag value (`--include`, `--exclude`, `--exclude-dir`,
+       `-g`) is rewritten onto the sandbox fixture tree `tests/fixtures/grep_tree/` (a missing-file
+       case keeps its "missing" role under a `missing-*` name);
+     - every pattern keeps its metacharacter skeleton verbatim (backslash escapes, `[[:class:]]`,
+       anchors, brackets, quantifiers, alternation) and has each alphanumeric run that is not a
+       word of this repo's own `src/` replaced by a placeholder drawn from a fixed vocabulary that
+       `grep_tree/` contains, consistently within one invocation;
+     - flags are kept verbatim (they are grep's, not the user's).
+   - **Privacy test** (`tests/test_grep_shim_differential.py::test_fixture_is_scrubbed`): the
+     committed fixture contains none of `/Users/`, `/home/`, `~/`, `atollogy`, `bdep`, `enduris`,
+     `tholley`, and every path token resolves under `tests/fixtures/grep_tree/` or is a `missing-*`
+     name. Mutation "commit the raw extraction, unscrubbed" FAILS it (the raw file holds
+     `/Users/` paths).
+   - The summary records how many of the replayed cases produce at least one hit on `grep_tree/`;
+     at least half must, or the vocabulary is planted into `grep_tree/` until they do.
 2. **Power of the differential.** Run against the CURRENT rich-mode shim first. The summary records
    which cases differ there. At minimum `\b`, `^`, the missing file and `-rc` must differ, or the
    corpus cannot see the class this plan removes.
 3. **The caller is never delayed.** The `RMXGREP_RMX` stand-in's `grep-learn` sleeps 5 s (an
    external process, registered in the mock registry). `rmxgrep pat file | cat` returns in under
    1 s with the real tool's bytes and `$?`.
-4. **The learner runs and gets the binary.** With the real learner, one `rmxgrep -i PAT dir` call
+4. **The learner runs and gets the binary.** With the real learner, one `rmxgrep -ri PAT dir` call
    gives, within 5 s, a `grep-learn.log` record with `outcome=taught`, `bin` equal to the shim's
-   resolved `$REAL`, and a queue record equal to the corpus-filtered `/usr/bin/grep -rniH --null PAT
+   resolved `$REAL`, `spawned_by=shim`, and a queue record equal to the corpus-filtered `/usr/bin/grep -rniH --null PAT
    dir`.
+   - **4b (s-r4-7).** `rmxgrep -i PAT dir` WITHOUT `-r` prints grep's own `Is a directory`, exit 2
+     (probed on BSD 2.6.0), and the learner records `outcome=skipped reason=tool-error` with nothing
+     queued. The learner never adds `-r`, and its non-recursive re-run carries no pruning flags
+     (16.1 R1b, s-r5-2), so grep's exit 2 survives into the re-run.
 5. **Early exits, BOTH wrappers.** Outside a project, rmx missing, piped stdin, `RMX_LEARN=0`, and a
    store marker: each gives byte-exact output, no log record and no stamp. Covers `rmxrg` explicitly.
 6. **Throttle and slots.**
    - With 2 fresh slot dirs present (held by two sleeping stand-in learners), a third call does not
-     spawn, `busy` grows by one byte, and the output is byte-identical.
-   - The same cwd and argv twice within the TTL gives one spawn and one byte in `throttled`.
+     spawn, `busy` gains exactly one line `<epoch> <cksum> <PWD>` whose `cksum` equals
+     `printf '%s\0' "$PWD" "$@" | cksum`'s, and the output is byte-identical.
+   - The same cwd and argv twice within the TTL gives one spawn and one such line in `throttled`.
+   - A cwd containing a space round-trips through the line (16.4's join reads it back).
+   - `rmx learn status` prints the two line counts.
    - The same argv from two cwds gives two spawns.
    - `"a b"` vs `a b` gives two spawns.
 7. **`RMXGREP_TEACH` retired.** `RMXGREP_TEACH=0` exported: stderr is byte-identical, the learner
@@ -188,7 +303,8 @@ test that spawns `rmx` from PATH. {#r6}
 | `src/refmatrix/hooks.py` | bashrc + env block without `RMXGREP_MODE`; removal on merge; `check()` extended (new code) |
 | `src/refmatrix/search_hooks.py` | guard/docstring text |
 | `src/refmatrix/cli.py` | `learn status`: throttled count, retired-env line; install-hooks `--help` text |
-| tests in R6; `tests/test_grep_shim_differential.py`, `tests/fixtures/grep_differential.txt` (new); a conftest guard against PATH `rmx` | |
+| tests in R6; `tests/test_grep_shim_differential.py`, `tests/fixtures/grep_differential.txt`, `tests/fixtures/grep_differential.source.sha256`, `tests/fixtures/grep_tree/` (new); a conftest guard against PATH `rmx` | |
+| `scripts/scrub_grep_differential.py` (new) | the scrubber of [[#ac-1-fixture]]; the raw extraction stays in gitignored `workflow/review-output/` |
 | `workflow/test_mock_registry.md` | the sleeping stand-in (AC-3) |
 
 ## Deploy note {#deploy}
@@ -196,15 +312,27 @@ test that spawns `rmx` from PATH. {#r6}
 `~/.claude/settings.json` (user scope) is never edited by rmx. After the deploy, the user deletes the
 `RMXGREP_MODE` key from its `env` block; its current value is `"plain"`. Until then R1 makes it
 inert. The bashrc section is refreshed only by `rmx install-hooks --apply --force`, which also
-refreshes the rewriter (bug-080 changed it). The handoff names both steps.
+refreshes the rewriter (bug-080 changed it). The handoff names both steps, and a third (d9bj;
+r8 s-2): this task deploys TOGETHER with 16.3, and only then does the user run `rmx learn on
+--global`; until that flip the shims keep exiting to the real tool with no learner, so a deploy
+alone teaches nothing and 16.4 has no window.
 
 ## Test strategy {#test-strategy}
 
+- Inside plan-23 task 23.0's sandbox (d1a/d1b), plus the sandbox rule in [[#r6]].
 - Real binaries, `shell=False`, list argv. A shell control gets rewritten by the PreToolUse hook.
 - Pre-registered mutations:
   - restore the rich branch: AC-1 fails;
+  - commit the unscrubbed raw extraction as the fixture: AC-1's privacy test fails;
   - run the learner in the foreground: AC-3 fails;
   - key the stamp on argv only: AC-6 fails;
   - drop `RMXGREP_MODE` removal from the merge: AC-8 fails;
   - remove the slot check: AC-6 (busy case) fails;
+  - write a byte instead of a keyed line: AC-6 fails;
+  - the learner adds `-r` for a directory operand: AC-4b fails;
+  - the learner adds 16.1 R1b's `--include`s to a non-recursive re-run: AC-4b fails (`no-hits`,
+    exit 1, probed in r5);
+  - the shim omits `--spawned-by shim`: AC-4 fails (and 16.1 AC-16's refusal fires);
+  - `grep_learn.spawn()` resolves `rmx` from PATH: the parity test's `argv[0]` row fails;
+  - key the Python spawn on `os.getcwd()`: the parity test's symlinked-cwd row fails;
   - remove `rmxrg`'s learning-off block: AC-5 fails. {#tests}

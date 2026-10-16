@@ -533,7 +533,9 @@ class Bus:
                          if discovery.store_name(r) == cand.get("project")), None)
             if root is None:
                 raise RuntimeError(f"no store for project {cand.get('project')!r}")
-            daemon_mod.spawn_daemon(root)
+            # Exec, never fork: accept_refinement runs inside the hub, and a
+            # forked daemon keeps the hub's listening socket (bug-129 r4).
+            daemon_mod.spawn_daemon_subprocess(root)
             resp = daemon_mod.call(root, "memory_add",
                                    {**args, "partition": discovery.store_name(root)})
         if not resp.get("ok"):

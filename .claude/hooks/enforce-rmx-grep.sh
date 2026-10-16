@@ -9,6 +9,14 @@ DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; . "$DIR/_common.sh"
 # No-op if rmx isn't available — nothing to redirect to.
 command -v rmx >/dev/null 2>&1 || exit 0
 
+# No-op while the grep->graph loop is switched off (`rmx learn off`, either scope). The
+# user, 2026-10-15: "block the grep rewrite until the passive version exists" (plan 16).
+# The global rewrite hook already honours the marker; a redirect here would send every
+# corpus grep back to the daemon through `rmx grep`, which is the load being removed
+# (cli pool saturation, bug-115). Same two marker paths `learn_switch` reads.
+[ -e "$HOME/.refmatrix/learn.off" ] && exit 0
+[ -n "${CLAUDE_PROJECT_DIR:-}" ] && [ -e "$CLAUDE_PROJECT_DIR/.refmatrix/learn.off" ] && exit 0
+
 CMD="$(cat | hook_json_field tool_input.command)"
 [ -z "$CMD" ] && exit 0
 

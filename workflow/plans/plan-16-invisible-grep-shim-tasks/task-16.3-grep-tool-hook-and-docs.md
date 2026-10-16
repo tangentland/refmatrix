@@ -7,20 +7,87 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-06
-  revised: 2026-10-07
+  revised: 2026-10-14
+  updated: 2026-10-15
 ---
 
 # Task 16.3: Grep-tool hook on the learner, and the docs {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision 4, after spec review r3 `bsd-plan16-spec-review-r3-c8278b1`)
-> Depends on: [[task-16.1-argv-faithful-learner]]
+> Status: Pending (revision after the 2026-10-14 decision log; revision 6, answering spec review
+> r5 `bsd-plan16-spec-review-r5-cd7c923`; revision round 8, 2026-10-15: R5 retires
+> `enforce-rmx-grep.sh`'s redirect, d9bj, [[#rev-round-8]]; revision round 9, 2026-10-15: R5
+> lands over bug-118's one renderer, [[#rev-round-9]]; revision round 10, 2026-10-15: the
+> merge-order clause carries the test half, [[#rev-round-10]])
+> **Wave:** 2 ([[plan-16-invisible-grep-shim#waves]]).
+> Depends on: [[task-16.1-argv-faithful-learner]]. Tests run in plan-23 task 23.0's sandbox.
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
 rel: depends-on -> [[task-16.1-argv-faithful-learner]]
 rel: amends -> [[bsd-plan16-spec-review-b587621]]
 rel: amends -> [[bsd-plan16-spec-rereview-42a5521]]
 rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
+rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
+rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
+rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision round 10 (2026-10-15) {#rev-round-10}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r10-451b505]] m-4. bug-118 is unmerged (master
+`b381b6d`, per the report).
+
+| finding | answered in |
+|---|---|
+| r10 m-4 (merge order covered `hooks.py` only; if 16.3 lands first, bug-118's test file is not on master yet) | [[#r5]]: if 16.3 lands before bug-118 merges, bug-118's merge carries the `SCRIPTS` edit and the not-rendered assertion; whichever lands second resolves to the tuple and the test without the name |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r10-451b505]]
+
+## Revision round 9 (2026-10-15) {#rev-round-9}
+
+Answers [[bsd-plan16-22-spec-diffcheck-r9-29e335a]] m-3. Read on the bug-118 branch
+(`bugs-112-113-118`, `/Volumes/littlebig/refmatrix-bugs112-118`, `462bd0b`):
+`hooks._optional_project_hook`, `hooks._add_enforce_entries` and
+`tests/test_bug118_optional_hook_exit.py`; and at `428267f`: `.claude/hooks/hooks.env:10`,
+`.claude/hooks/hooks.env.example:11`, `src/refmatrix/telemetry.py:192`.
+
+| finding | answered in |
+|---|---|
+| r9 m-3 (R5 collides with bug-118's test; AC-10's `\|\| true` note goes stale; three prose sites missed; deploy ordering) | [[#r5]]: removal is one name out of `_add_enforce_entries`' tuple, which renders through bug-118's one helper `_optional_project_hook`; `tests/test_bug118_optional_hook_exit.py` updated (name out of `SCRIPTS`, a new assertion that it is NOT rendered even with `enforce=True`); prose sweep adds `hooks.env`, `hooks.env.example`, `telemetry.py`; AC-10's exit-code assertion is primary and its parenthetical rewritten for post-bug-118; [[#files-to-modify]]; the deploy ordering is stated in [[plan-16-invisible-grep-shim#learn-flip]] |
+
+rel: amends -> [[bsd-plan16-22-spec-diffcheck-r9-29e335a]]
+
+## Revision round 8 (2026-10-15) {#rev-round-8}
+
+Answers [[bsd-plan16-22-spec-rereview-r8-23ad703]] s-2 where it touches 16.3, and d9bj
+([[plan-review-2026-10-14#t12-approvals]]). Read at `23ad703`: `.claude/hooks/enforce-rmx-grep.sh`
+(`0611d2f`), `hooks._add_enforce_entries`, `hooks._RMX_HOOK_SIGNATURES`.
+
+| finding / decision | answered in |
+|---|---|
+| r8 s-2 / d9bj (16.3 owns `enforce-rmx-grep.sh`: retire or re-point; the user chose retire) | [[#r5]] (script deleted, entry no longer rendered, signature kept so `--force` reaps it, two tests rewritten); AC-10 + mutation; [[#files-to-modify]] |
+
+rel: amends -> [[bsd-plan16-22-spec-rereview-r8-23ad703]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+
+## Revision 6 changelog {#revision-6}
+
+Answers spec review r5 ([[bsd-plan16-spec-review-r5-cd7c923]]), which found 16.3 needing no change
+of its own (AC-9's mutation was probed able to fire), and the 2026-10-14 decision log.
+
+| finding / decision | answered in |
+|---|---|
+| r5 s-r5-6 / #t7-fixes (`spawned_by` on learner records, so 16.4 can join Grep-tool records to Grep `tool_use`s) | R1 [[#r1]] (`--spawned-by grep-tool-hook`); AC-1 asserts it; mutation |
+| d1a/d1b (tests sandboxed by task 23.0) | [[#test-strategy]] |
+
+## Revision 5 changelog {#revision-5}
+
+Answers spec review r4 ([[bsd-plan16-spec-review-r4-33809ab]]).
+
+| finding | answered in |
+|---|---|
+| s-r4-4 `<epoch> no-rg` in the `busy` log, from a hook with no `store_root` | R1 binary resolution [[#r1]]: the hook always calls the learner; a missing rg is the learner's `skipped reason=no-binary` record. AC-5c |
+| m-r4-2 glob cell "contains `{`" vs "BOTH `{` and `}`" | R1 glob row: one rule (BOTH) |
+| m-r4-4 the single-file branch has no AC | AC-9 + mutation |
 
 ## Why {#why}
 
@@ -37,13 +104,19 @@ inputs was killed (#b-3). {#why-lead}
 ## Requirements {#requirements}
 
 **R1. Rebuild the tool's own rg argv, from the tool's own code, pinned by a captured payload.**
-The hook calls `rmx grep-learn --tool rg --bin "$RG_ABS" --cwd "$CWD" -- <argv>`.
+The hook calls `rmx grep-learn --tool rg --bin "$RG_ABS" --cwd "$CWD" --spawned-by grep-tool-hook
+-- <argv>`. `--spawned-by grep-tool-hook` lets 16.4 join this record to the Grep `tool_use`, not
+read it as route 2 (s-r5-6).
 
 **Binary resolution (#s-n5).** `TEACH_TEMPLATE` is a bash script, and hooks inherit `BASH_ENV`.
 Measured: `bash -c 'command -v rg'` prints `rg`, the agent-bashrc FUNCTION. So:
 - `RG_ABS` is `type -P rg`, which resolves PATH only and never a function (probed: prints
-  `/opt/local/bin/rg` under `BASH_ENV`). If it is EMPTY (rg not on PATH), the hook does not spawn
-  and appends `<epoch> no-rg` to the `busy` log, so the skip is counted (#m-r3-3).
+  `/opt/local/bin/rg` under `BASH_ENV`).
+- **A missing rg is the learner's record, not a second log format (s-r4-4).** The hook ALWAYS
+  calls the learner. If `RG_ABS` is empty (rg not on PATH) it passes `--bin ""`; the learner, which
+  resolves `store_root` from `--cwd` (R2), writes its one JSONL record `outcome=skipped
+  reason=no-binary` (16.1 R1) and runs nothing. The hook writes nothing itself and needs no
+  `store_root`; the shim's `busy`/`throttled` files keep their single meaning (16.2 R3).
 - The `rmx` call runs under `env -u BASH_ENV`.
 - The test runs with `BASH_ENV` set to a file that defines `rg()`, so a function-resolving build
   fails it.
@@ -70,7 +143,7 @@ The argv is:
 | always (tool constant) | `--no-config`, `--hidden`, `--glob=!<d>` for each VCS dir the tool excludes (`.git .svn .hg .bzr .jj .sl` in 2.1.292), `--max-columns=500` |
 | `pattern` | `-e PATTERN` |
 | `path` (default: the cwd) | trailing operand |
-| `glob` | the tool's own SPLIT (#s-n4): split on whitespace, then split each piece on commas UNLESS the piece contains `{`; one `--glob=<piece>` per piece. A piece is kept whole only if it contains BOTH `{` and `}` (#m-r3-3, read from the binary). `*.ts,*.tsx` and `*.py *.md` become two globs; `*.{ts,tsx}` stays one. |
+| `glob` | the tool's own SPLIT (#s-n4): split on whitespace; then a piece that contains BOTH `{` and `}` is kept whole, and every other piece is split on commas (#m-r3-3, read from the binary; m-r4-2: this is the only rule). One `--glob=<piece>` per piece. `*.ts,*.tsx` and `*.py *.md` become two globs; `*.{ts,tsx}` stays one; `a{,b` (no `}`) splits on its comma. |
 | `type` | `-t TYPE` |
 | `-i: true` | `-i` |
 | `multiline: true` | `-U --multiline-dotall` |
@@ -121,6 +194,44 @@ observed. {#r3}
 `feedback_grep_is_observed_not_answered` are both in the store, with a recall for a phrase unique to
 each (`feedback_verify_memory_by_recall_not_get`). {#r4}
 
+**R5. Retire `enforce-rmx-grep.sh`'s redirect (d9bj; r8 s-2).** The project hook
+`.claude/hooks/enforce-rmx-grep.sh` (a cat-herder enforcement script, wired by the generator in
+`hooks._add_enforce_entries` as a PreToolUse(Bash) entry whenever the script exists, and listed in
+`hooks._RMX_HOOK_SIGNATURES`) answers a corpus grep with exit 2 and "Corpus grep redirected — use
+rmx …", sending the agent back to `rmx grep`. That is the opposite of d-1 (grep is observed, not
+answered) and the cli-pool load bug-115 removed; today it stands down only because `learn.off` is
+set (`0611d2f`), so the user's flip would re-arm it ([[plan-16-invisible-grep-shim#today-learn-off]]).
+This task retires it, in the same deploy as 16.2 (d9bj, [[plan-16-invisible-grep-shim#learn-flip]]):
+- the script is deleted from `.claude/hooks/`, and `_add_enforce_entries` no longer emits its
+  entry (its `enforce`/auto branch and the `install-hooks --help` text that names it go with it).
+  Once bug-118's fix is merged (branch `bugs-112-113-118`), the PreToolUse(Bash) entries are
+  rendered from ONE name tuple through ONE helper, `hooks._optional_project_hook` (`if [ -x P ];
+  then P; fi`), so the retirement is removing `enforce-rmx-grep.sh` from that tuple, never a
+  second rendering path or a special case (r9 m-3). If 16.3 lands first, bug-118's merge carries
+  the same removal AND the test edit below (the `SCRIPTS` edit and the not-rendered assertion:
+  `tests/test_bug118_optional_hook_exit.py` does not exist on master until bug-118 merges;
+  master is `b381b6d` and bug-118 is unmerged, r10 m-4); whichever lands second resolves to the
+  tuple without the name and to the test without it;
+- `tests/test_bug118_optional_hook_exit.py` (bug-118's) drops `enforce-rmx-grep.sh` from its
+  `SCRIPTS` tuple (its other two scripts keep the exit-2 / absent / pass cases and the AST check
+  for a second rendering) and gains one assertion: with `enforce=True` and a stub
+  `enforce-rmx-grep.sh` on disk, no rendered command names it (r9 m-3);
+- its name STAYS in `_RMX_HOOK_SIGNATURES`, so `rmx install-hooks --apply --force` recognises an
+  already-installed entry as rmx's and reaps it (`.claude/settings.json` carries one today);
+- `tests/test_hooks_reproducible.py` and `tests/test_plan2_remedy.py`, which assert the entry is
+  rendered, are rewritten to assert it is NOT rendered and that a stale installed one is reaped;
+- the `learn.off` stand-down it carries goes with it: with nothing to redirect, the marker has
+  no meaning for this hook. Asking the index by name stays in the R3 prose (`rmx context`,
+  `rmx grep`, `rmx_search`), never as a block;
+- the prose that describes the redirect is rewritten (r9 m-3): `.claude/hooks/hooks.env:10` and
+  `.claude/hooks/hooks.env.example:11` ("Bare grep into these is redirected to rmx by
+  enforce-rmx-grep") say the corpus roots scope what grep TEACHES; `telemetry.py:192`'s
+  docstring drops `enforce-rmx-grep.sh` from its list of hooks that never reach `cli.log`.
+  AC-7's stale-claim scan adds the string `enforce-rmx-grep` over `src/refmatrix/` and
+  `.claude/hooks/` (the `_RMX_HOOK_SIGNATURES` entry is the one allowed hit, by name).
+The cat-herder baseline template ships the same script upstream; that copy is the template
+owner's, and the summary records the divergence. {#r5}
+
 ## Acceptance criteria {#acceptance}
 
 1. **Fidelity against the TOOL's output, not the mapping's (#b-3).**
@@ -129,6 +240,7 @@ each (`feedback_verify_memory_by_recall_not_get`). {#r4}
    - The taught `(file, line)` set equals what the tool RETURNED (content mode, line-addressed),
      corpus-filtered. In files mode, the taught file set equals the returned file set.
    - The control is the tool's response. It is never `rg` run on the mapped argv.
+   - The learner's record carries `spawned_by=grep-tool-hook` (s-r5-6).
 2. **Dot-directory hit.** A fixture hit under `.github/x.yml` is taught. It is in the corpus only if
    `corpus.is_relevant` allows it; otherwise it is counted `out_of_corpus`, and the test asserts
    whichever the predicate says, explicitly.
@@ -143,12 +255,30 @@ each (`feedback_verify_memory_by_recall_not_get`). {#r4}
    the test.
 5b. **Binary resolution.** With `BASH_ENV` defining `rg()`, the learner's log record carries an
    ABSOLUTE `bin`.
+5c. **No rg (s-r4-4).** With `PATH` holding no `rg`, a payload yields exactly one learner record
+   `outcome=skipped reason=no-binary` in `<store_root>/grep-learn.log`, and the shim's
+   `.rmxgrep-teach/busy` file is unchanged.
 6. **The hook never touches the tool result.** It exits 0 within 100 ms while the learner sleeps
    (16.2 AC-3's stand-in).
 7. **No stale claims.** A test scans the rendered templates, the briefing, the PRIMER header,
    `README.md` and the `--help` strings for `rich`, `RMXGREP_MODE` and "answers from the index" in a
    grep/rg context, and fails on any.
 8. **GMD lint 0 errors; `install-hooks --check` clean.**
+9. **Single-file filter (m-r4-4).** Two captured-shape payloads: `{path: <file>, glob: "*.nomatch"}`
+   and `{path: <file>, type: "rust"}` on a `.py` file that contains the pattern. The tool returns
+   nothing for both; each yields `outcome=skipped reason=single-file-filter`, nothing queued. A third
+   payload, `{path: <file>}` alone, teaches (the branch is narrow).
+10. **No redirect (R5; d9bj).** In the sandbox with NO `learn.off` marker in either scope
+    (`learn_switch.decision()` reads `default`), the PreToolUse(Bash) hooks the generator renders
+    are run on the payload `{"tool_input": {"command": "grep -rn X src"}}`: none exits 2 and none
+    prints "Corpus grep redirected"; the rendered config holds no `enforce-rmx-grep.sh` entry;
+    `install-hooks --apply --force` on a settings file that holds the old entry removes it, and
+    `install-hooks --check` is then clean. The PRIMARY assertion is the exit code: no rendered
+    hook exits 2. Mutation "keep the redirect" (restore the script and its entry) FAILS it on the
+    exit code, the stderr message and the rendered entry. (Before bug-118 the generator's
+    `|| true` wrapper turned the script's exit 2 into 0, so the exit code could not see it; after
+    bug-118's one renderer, `_optional_project_hook`, it can. If this AC runs on a tree without
+    bug-118, the stderr and rendered-entry clauses still fail the mutation.)
 
 ## Files to modify {#files-to-modify}
 
@@ -158,9 +288,15 @@ each (`feedback_verify_memory_by_recall_not_get`). {#r4}
 | `src/refmatrix/hooks.py`, `src/refmatrix/cli.py` | briefing, bashrc, `--help`, docstrings |
 | PRIMER generator, `README.md`, `docs/{INTEGRATION,SYSTEM,ARCHITECTURE}.md`, `workflow/development_resources.md` | prose |
 | `tests/test_grep_tool_teach.py`, `tests/fixtures/grep_tool_*.json`, `tests/fixtures/grep_tool_constants.txt` (new) | AC-1..7 |
+| `.claude/hooks/enforce-rmx-grep.sh` (deleted); `src/refmatrix/hooks.py` (`_add_enforce_entries`' name tuple, `_optional_project_hook`'s docstring, docstring; `_RMX_HOOK_SIGNATURES` kept); `src/refmatrix/cli.py` (`install-hooks --help`); `tests/test_hooks_reproducible.py`, `tests/test_plan2_remedy.py` (rewritten); `tests/test_bug118_optional_hook_exit.py` (name out of `SCRIPTS`, not-rendered assertion; r9 m-3); `tests/test_grep_tool_teach.py` | R5, AC-10 |
+| `.claude/hooks/hooks.env`, `.claude/hooks/hooks.env.example`, `src/refmatrix/telemetry.py` (docstring at `:192`) | R5 prose sweep (r9 m-3) |
 
 ## Test strategy {#test-strategy}
 
+- **Sandbox (d1a/d1b).** Every test runs inside plan-23 task 23.0's shared sandbox (`$HOME`,
+  global root, registry and LaunchAgents dir in a tmp dir before `refmatrix` is imported; spawned
+  `rmx` children refuse sockets outside it; the conftest guard fails any touch of `~/.refmatrix` or
+  a registered live store), with `store_root` in a tmp project under a SHORT `mkdtemp()` root.
 - The rendered `TEACH_TEMPLATE` script is run with each captured payload on stdin, using the real
   rg and a real `store_root`. Assertions are on the learner's log and queue, compared against the
   captured `tool_response`.
@@ -169,5 +305,8 @@ each (`feedback_verify_memory_by_recall_not_get`). {#r4}
   - drop the `glob` mapping: AC-1 fails on a glob payload;
   - add `offset` to unknown: AC-3b fails;
   - drop the glob split: AC-3 fails;
+  - remove the single-file-filter branch: AC-9 fails (the `.py` hits are taught);
+  - write `no-rg` from the hook instead of calling the learner: AC-5c fails;
   - use `command -v` for `RG_ABS`: AC-5b fails;
-  - hardcode a stale VCS list: AC-5 fails against the live extraction. {#tests}
+  - hardcode a stale VCS list: AC-5 fails against the live extraction;
+  - omit `--spawned-by grep-tool-hook`: AC-1's `spawned_by` assertion fails. {#tests}

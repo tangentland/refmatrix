@@ -95,9 +95,8 @@ class DuckCatalogView:
         self.con = duckdb.connect(database=":memory:")
         self.con.execute("INSTALL sqlite_scanner")
         self.con.execute("LOAD sqlite_scanner")
-        self.con.execute(
-            f"ATTACH '{self.db_path}' AS {self.alias} (TYPE SQLITE, READ_ONLY)"
-        )
+        from refmatrix.backend import attach_file
+        attach_file(self.con, self.db_path, self.alias, read_only=True, db_type="SQLITE")
         self.con.execute(f"USE {self.alias}")
 
     def close(self) -> None:
