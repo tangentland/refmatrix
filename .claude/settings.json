@@ -24,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -x \"$CLAUDE_PROJECT_DIR/.claude/hooks/adr-gate.sh\" ] && \"$CLAUDE_PROJECT_DIR/.claude/hooks/adr-gate.sh\" 2>/dev/null || true"
+            "command": "if [ -x \"$CLAUDE_PROJECT_DIR/.claude/hooks/adr-gate.sh\" ]; then \"$CLAUDE_PROJECT_DIR/.claude/hooks/adr-gate.sh\"; fi"
           }
         ]
       },
@@ -146,11 +146,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -x \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-test-to-file.sh\" ] && \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-test-to-file.sh\" || true"
+            "command": "if [ -x \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-test-to-file.sh\" ]; then \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-test-to-file.sh\"; fi"
           },
           {
             "type": "command",
-            "command": "[ -x \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-rmx-grep.sh\" ] && \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-rmx-grep.sh\" || true"
+            "command": "if [ -x \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-rmx-grep.sh\" ]; then \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-rmx-grep.sh\"; fi"
           }
         ]
       },

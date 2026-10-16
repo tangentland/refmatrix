@@ -3,8 +3,8 @@
 
 Responsibilities:
   * **Watchdog** — poll every discovered store's daemon, keep a health history,
-    and restart the dead ones (launchctl kickstart when supervised, else a
-    direct `spawn_daemon`).
+    and restart the dead ones (launchctl kickstart when supervised, else
+    `spawn_daemon_subprocess`, which execs — the hub never forks a daemon).
   * **Control socket** (`~/.refmatrix/hub.sock`) — newline-delimited JSON RPC so
     `rmx hub …` / terminal agents can query and drive the hub.
   * **Global store** — owns `~/.refmatrix/global/.refmatrix/` (partition
@@ -34,6 +34,7 @@ from refmatrix.taxonomy import user_home
 HUB_SOCK = "hub.sock"
 HUB_PID = "hub.pid"
 HUB_LOG = "hub.log"
+HUB_LOCK = "hub.lock"
 GLOBAL_PARTITION = "global"
 DEFAULT_PORT = 7777
 WATCHDOG_INTERVAL_S = float(os.environ.get("RMX_HUB_WATCH_INTERVAL", "15"))
@@ -929,7 +930,28 @@ class Hub:
     # -- run ----
     def run(self, *, host: str = "127.0.0.1", serve_http: bool = True) -> None:
         hub_home().mkdir(parents=True, exist_ok=True)
-        hub_pid_path().write_text(str(os.getpid()))
+        # One hub per home, decided before this hub claims hub.pid or binds a
+        # socket. The live hub holds hub.lock for its whole life; the port
+        # alone cannot say so, because a hub binds it last and a second hub
+        # started inside that window (rmx ui, a detached hub start) used to
+        # overwrite hub.pid, rebind hub.sock and models.sock, lose the
+        # uvicorn bind and release the pid file the live hub depends on
+        # (bug-129, ch-bsd r1 s1 / r2 s1-r2).
+        self._lock = _take_hub_lock()
+        if self._lock is None:
+            _log("another hub holds hub.lock — not starting")
+            return
+        # A port held WITHOUT the lock is an orphan uvicorn (a zombie hub, or
+        # a hub from before the lock); it would make the HTTP server fail to
+        # bind. A headless install never binds the port, so it is not asked.
+        if serve_http and _http_available():
+            other = _pid_on_port(self.port)
+            if other and other != os.getpid():
+                _log(f"hub port {self.port} already in use by pid {other} — run "
+                     f"`rmx hub stop` (reaps the orphan) or kill it; not starting")
+                _drop_hub_lock(self._lock)
+                return
+        _claim_pid_file(os.getpid())
         _log(f"hub starting pid={os.getpid()} port={self.port}")
         # First: every daemon we are about to start or supervise should find
         # the shared socket already listening, or it spawns a private worker
@@ -971,20 +993,15 @@ class Hub:
     def _serve_http(self, host: str) -> None:
         import uvicorn  # noqa: F401  (ImportError bubbles to run())
         from refmatrix.ui.server import create_app
-        # Preflight the port. Without this, an orphan still holding it (a
-        # zombie hub whose control socket died but whose uvicorn survived)
-        # makes uvicorn fail to bind inside its thread; the thread dies, the
-        # serve loop falls through to shutdown(), and the user sees "hub
-        # started pid=X" immediately followed by "not running". Check for an
-        # active LISTENer via lsof rather than a probe bind() — a probe
+        # The port preflight runs at the top of run(), before this hub claims
+        # hub.pid or binds a socket. Without it, an orphan still holding the
+        # port (a zombie hub whose control socket died but whose uvicorn
+        # survived) makes uvicorn fail to bind inside its thread; the thread
+        # dies, the serve loop falls through to shutdown(), and the user sees
+        # "hub started pid=X" immediately followed by "not running". It checks
+        # for an active LISTENer via lsof rather than a probe bind() — a probe
         # without SO_REUSEADDR false-positives on a port in TIME_WAIT from a
         # just-stopped hub, which uvicorn (SO_REUSEADDR) would bind fine.
-        other = _pid_on_port(self.port)
-        if other and other != os.getpid():
-            _log(f"hub port {self.port} already in use by pid {other} — run "
-                 f"`rmx hub stop` (reaps the orphan) or kill it; not starting")
-            self.shutdown()
-            return
         app = create_app(self)
         config = uvicorn.Config(app, host=host, port=self.port,
                                 log_level="warning")
@@ -1007,13 +1024,104 @@ class Hub:
         # blocking on a socket nobody is accepting on.
         self._stop_models()
         self.watchdog.stop()
-        try:
-            hub_pid_path().unlink()
-        except OSError:
-            pass
+        _release_pid_file(os.getpid())
+        _drop_hub_lock(getattr(self, "_lock", None))
 
 
 # ---- lifecycle (module-level, for the CLI) --------------------------------
+
+
+def _http_available() -> bool:
+    """Whether the `[ui]` extra (fastapi + uvicorn) is installed — the hub
+    serves HTTP only then, and supervises headless otherwise."""
+    import importlib.util
+    return all(importlib.util.find_spec(m) is not None for m in ("fastapi", "uvicorn"))
+
+
+_HUB_LOCK_HELD = None  # this process's hub.lock file, while it holds it
+
+
+def _forget_hub_lock_in_child() -> None:
+    """At fork, the child closes its copy of hub.lock WITHOUT unlocking.
+
+    flock belongs to the open file description, which a fork shares, and
+    O_CLOEXEC fires only on exec. Until bug-129 r4 the hub forked daemons
+    without exec (`daemon.spawn_daemon` from the UI's daemon start and the
+    bus's refinement accept), and a daemon kept a dead hub's lock alive for
+    its whole life, so every later hub stood down (ch-bsd r3 b1-r3). Those
+    sites now exec; this hook covers any fork that remains. Closing the copy drops only the
+    child's reference; LOCK_UN here would release the PARENT's lock."""
+    global _HUB_LOCK_HELD
+    if _HUB_LOCK_HELD is not None:
+        _HUB_LOCK_HELD.close()
+        _HUB_LOCK_HELD = None
+
+
+os.register_at_fork(after_in_child=_forget_hub_lock_in_child)
+
+
+def _take_hub_lock():
+    """Take hub.lock for the life of this process, or None if another hub
+    holds it. The kernel releases it when the process dies, and forked
+    children drop their copy (`_forget_hub_lock_in_child`), so a dead hub
+    never leaves it held."""
+    import fcntl
+    global _HUB_LOCK_HELD
+    f = open(hub_home() / HUB_LOCK, "a")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        f.close()
+        return None
+    _HUB_LOCK_HELD = f
+    return f
+
+
+def _drop_hub_lock(lock) -> None:
+    """Unlock, then close. Unlocking releases the lock for every descriptor
+    that shares it, so a child that somehow still holds a copy cannot keep
+    a stopped hub's lock."""
+    import fcntl
+    global _HUB_LOCK_HELD
+    if lock is None:
+        return
+    try:
+        fcntl.flock(lock, fcntl.LOCK_UN)
+    finally:
+        lock.close()
+        if _HUB_LOCK_HELD is lock:
+            _HUB_LOCK_HELD = None
+
+
+def _claim_pid_file(pid: int) -> None:
+    """Write hub.pid whole (tmp + rename), so a reader never sees it half
+    written."""
+    p = hub_pid_path()
+    tmp = p.with_name(f"{p.name}.{pid}.tmp")
+    tmp.write_text(str(pid))
+    os.replace(tmp, p)
+
+
+def _release_pid_file(pid: int | None) -> bool:
+    """Remove hub.pid only while it still names `pid`. Returns True if removed.
+
+    bug-129 (2026-10-15): the live hub ran with `hub_pid()` None. The measured
+    cause was the test suite: two `stop_hub` tests ran without an `RMX_HOME`
+    and released the live file. Every stopper — `Hub.shutdown` and
+    `stop_hub` — still goes through this one check, so neither a stray caller
+    nor a successor that wrote its pid inside a stop can lose another hub's
+    file. A declined release is logged, so the next one is visible."""
+    held = hub_pid()
+    if pid is None or held != pid:
+        if hub_pid_path().exists():
+            _log(f"hub.pid names {held if held is not None else 'no readable pid'}, "
+                 f"not {pid}: left in place")
+        return False
+    try:
+        hub_pid_path().unlink()
+    except FileNotFoundError:
+        return False
+    return True
 
 
 def hub_pid() -> int | None:
@@ -1124,7 +1232,17 @@ def _pid_on_port(port: int) -> int | None:
     return None
 
 
-def stop_hub(*, timeout: float = 5.0, port: int = DEFAULT_PORT) -> bool:
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def stop_hub(*, timeout: float = 15.0, port: int = DEFAULT_PORT) -> bool:
     """Ask the hub to stop; fall back to SIGTERM, then reap any orphan still
     holding the HTTP port. Returns True if nothing is left running."""
     if is_running():
@@ -1136,10 +1254,7 @@ def stop_hub(*, timeout: float = 5.0, port: int = DEFAULT_PORT) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         if not is_running():
-            try:
-                hub_pid_path().unlink()
-            except OSError:
-                pass
+            _release_pid_file(pid)
             break
         if pid:
             try:
@@ -1149,6 +1264,13 @@ def stop_hub(*, timeout: float = 5.0, port: int = DEFAULT_PORT) -> bool:
             except OSError:
                 pass
         time.sleep(0.2)
+    # The control socket and the port go dark before the hub has stopped its
+    # model workers (4-5 s in every live stop since 2026-10-07) and released
+    # hub.lock; reporting "stopped" then let a successor that is not the
+    # same launchd job (`hub stop && hub start`, `hub stop && rmx ui`) find
+    # the lock held and stand down (bug-129 r3 s1-r3). Wait for the process.
+    while pid and _pid_alive(pid) and time.time() < deadline:
+        time.sleep(0.1)
     # Reap a port-orphan: a zombie hub whose control socket is dead (so
     # is_running()/rpc can't reach it) but whose uvicorn still squats the
     # port, blocking every future `hub start`. The socket-based stop above
@@ -1165,7 +1287,8 @@ def stop_hub(*, timeout: float = 5.0, port: int = DEFAULT_PORT) -> bool:
                 os.kill(orphan, signal.SIGKILL)
         except OSError:
             pass
-    return not is_running() and _pid_on_port(port) is None
+    return (not is_running() and _pid_on_port(port) is None
+            and not (pid and _pid_alive(pid)))
 
 
 def graceful_stop(root: Path, *, grace: float) -> bool:
