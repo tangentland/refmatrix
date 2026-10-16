@@ -929,6 +929,17 @@ class Hub:
     # -- run ----
     def run(self, *, host: str = "127.0.0.1", serve_http: bool = True) -> None:
         hub_home().mkdir(parents=True, exist_ok=True)
+        # The port check comes before anything this hub claims. A second hub
+        # (launchd while an unsupervised one holds the port, or `rmx ui`)
+        # used to claim hub.pid, rebind hub.sock and models.sock, then lose
+        # the port and release the pid file the live hub depends on (bug-129,
+        # ch-bsd r1 s1).
+        if serve_http:
+            other = _pid_on_port(self.port)
+            if other and other != os.getpid():
+                _log(f"hub port {self.port} already in use by pid {other} — run "
+                     f"`rmx hub stop` (reaps the orphan) or kill it; not starting")
+                return
         _claim_pid_file(os.getpid())
         _log(f"hub starting pid={os.getpid()} port={self.port}")
         # First: every daemon we are about to start or supervise should find
@@ -971,20 +982,15 @@ class Hub:
     def _serve_http(self, host: str) -> None:
         import uvicorn  # noqa: F401  (ImportError bubbles to run())
         from refmatrix.ui.server import create_app
-        # Preflight the port. Without this, an orphan still holding it (a
-        # zombie hub whose control socket died but whose uvicorn survived)
-        # makes uvicorn fail to bind inside its thread; the thread dies, the
-        # serve loop falls through to shutdown(), and the user sees "hub
-        # started pid=X" immediately followed by "not running". Check for an
-        # active LISTENer via lsof rather than a probe bind() — a probe
+        # The port preflight runs at the top of run(), before this hub claims
+        # hub.pid or binds a socket. Without it, an orphan still holding the
+        # port (a zombie hub whose control socket died but whose uvicorn
+        # survived) makes uvicorn fail to bind inside its thread; the thread
+        # dies, the serve loop falls through to shutdown(), and the user sees
+        # "hub started pid=X" immediately followed by "not running". It checks
+        # for an active LISTENer via lsof rather than a probe bind() — a probe
         # without SO_REUSEADDR false-positives on a port in TIME_WAIT from a
         # just-stopped hub, which uvicorn (SO_REUSEADDR) would bind fine.
-        other = _pid_on_port(self.port)
-        if other and other != os.getpid():
-            _log(f"hub port {self.port} already in use by pid {other} — run "
-                 f"`rmx hub stop` (reaps the orphan) or kill it; not starting")
-            self.shutdown()
-            return
         app = create_app(self)
         config = uvicorn.Config(app, host=host, port=self.port,
                                 log_level="warning")
@@ -1025,13 +1031,19 @@ def _claim_pid_file(pid: int) -> None:
 def _release_pid_file(pid: int | None) -> bool:
     """Remove hub.pid only while it still names `pid`. Returns True if removed.
 
-    bug-129 (2026-10-15): `rmx hub stop` saw no answering socket in the gap
-    between launchd's successor writing hub.pid and binding hub.sock, and
-    unlinked the successor's file; the live hub then ran with `hub_pid()`
-    None. Every stopper — `Hub.shutdown` and `stop_hub` — goes through this
-    one check. The read-then-unlink window is microseconds against the
-    seconds-long restart gap that hit."""
-    if pid is None or hub_pid() != pid:
+    bug-129 (2026-10-15): the live hub ran with `hub_pid()` None. The measured
+    cause was the test suite: two `stop_hub` tests ran without an `RMX_HOME`
+    and released the live file. Every stopper — `Hub.shutdown` and
+    `stop_hub` — still goes through this one check, so neither a stray caller
+    nor a successor that wrote its pid inside a stop can lose another hub's
+    file. A declined release is logged, so the next one is visible."""
+    if pid is None:
+        return False
+    held = hub_pid()
+    if held != pid:
+        if hub_pid_path().exists():
+            _log(f"hub.pid names {held if held is not None else 'no readable pid'}, "
+                 f"not {pid}: left in place")
         return False
     try:
         hub_pid_path().unlink()

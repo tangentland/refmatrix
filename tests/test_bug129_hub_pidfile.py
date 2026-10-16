@@ -1,11 +1,13 @@
 """bug-129: the live hub ran with no `~/.refmatrix/hub.pid`.
 
-2026-10-15 01:58: an `rmx hub stop` asked the hub to stop, launchd respawned it
-(pid 4191 wrote hub.pid at 01:58:42), and the stopper's poll loop then saw no
-answering control socket — the successor had not bound it yet — and unlinked
-the pid file unconditionally. The hub ran from then on with `hub_pid()` None.
-`Hub.shutdown()` carried the same unconditional unlink. The rule both now keep:
-a stopper removes the pid file only while it still names the pid it stopped.
+Measured cause (ch-bsd r1, 2026-10-16): `tests/test_hub.py`'s two `stop_hub`
+tests ran without an `RMX_HOME`, so the real `stop_hub()` released the LIVE
+pid file; a pytest session ran after hub 4191 started on 2026-10-15. Those
+tests now run on `short_home`. The restart race first blamed (`rmx hub stop`
+unlinking a successor's file) did not happen — cli.log shows the stop ended
+4 s before 4191 existed — and is kept below as defence in depth, with the
+second-hub path (a hub that fails its port check must leave the live hub's
+file alone) and one owner for every hub.pid write or removal.
 """
 from __future__ import annotations
 
@@ -84,19 +86,71 @@ def test_shutdown_removes_its_own_pid_file(short_home):
     assert not hub.hub_pid_path().exists()
 
 
-def test_only_the_helpers_write_or_remove_the_pid_file():
-    """One claim and one release own hub.pid; a new stopper that unlinks it
-    directly reopens bug-129."""
+def test_only_the_helpers_reach_the_pid_file():
+    """One claim, one release and one reader own hub.pid. Any other reference
+    to `hub_pid_path`, `HUB_PID` or the literal "hub.pid" anywhere in
+    `src/refmatrix/` — an alias, `os.unlink(...)`, `hub_home() / HUB_PID` —
+    is a path around the owner check (ch-bsd r1 s2)."""
     import ast
-    src = Path(hub.__file__).read_text()
-    owners = {"_claim_pid_file", "_release_pid_file"}
+    owners = {"_claim_pid_file", "_release_pid_file", "hub_pid", "hub_pid_path"}
+    pkg = Path(hub.__file__).parent
     bad = []
-    for fn in ast.walk(ast.parse(src)):
-        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or fn.name in owners:
-            continue
-        for node in ast.walk(fn):
-            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                    and node.func.attr in {"unlink", "write_text", "replace", "rename"}
-                    and "hub_pid_path" in ast.unparse(node.func.value)):
-                bad.append(f"{fn.name}:{node.lineno}")
-    assert bad == [], f"hub.pid touched outside its helpers: {bad}"
+    for f in sorted(pkg.rglob("*.py")):
+        tree = ast.parse(f.read_text())
+        parents = {}
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                parents[child] = node
+
+        def owner(node):
+            while node in parents:
+                node = parents[node]
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    return node.name
+            return None
+
+        for node in ast.walk(tree):
+            hit = ((isinstance(node, ast.Name) and node.id in {"hub_pid_path", "HUB_PID"})
+                   or (isinstance(node, ast.Attribute)
+                       and node.attr in {"hub_pid_path", "HUB_PID"})
+                   or (isinstance(node, ast.Constant) and node.value == "hub.pid"))
+            if not hit:
+                continue
+            where = owner(node)
+            is_decl = (f.name == "hub.py" and where is None
+                       and isinstance(parents.get(node), ast.Assign))
+            if where in owners or is_decl:
+                continue
+            bad.append(f"{f.relative_to(pkg)}:{node.lineno} ({where})")
+    assert bad == [], f"hub.pid reached outside its owners: {bad}"
+
+
+class _Reached(Exception):
+    pass
+
+
+def test_a_hub_that_loses_the_port_leaves_the_live_hubs_pid_file(short_home, monkeypatch):
+    """A second hub (launchd while an unsupervised hub holds :7777, or
+    `rmx ui` -> spawn_hub) must check the port before it claims hub.pid or
+    starts anything; claiming first overwrote the live hub's pid and its
+    shutdown then removed the file (ch-bsd r1 s1)."""
+    hub.hub_pid_path().write_text("4191")
+    monkeypatch.setattr(hub, "_pid_on_port", lambda port: 4191)
+    h = object.__new__(hub.Hub)
+    h.port = 7777
+
+    def reached():
+        raise _Reached("the losing hub started its model workers")
+    h._start_models = reached
+    h._stop_models = lambda: None
+    h.watchdog = SimpleNamespace(stop=lambda: None)
+    hub.Hub.run(h, serve_http=True)
+    assert hub.hub_pid() == 4191
+
+
+def test_a_declined_release_is_logged(short_home, monkeypatch):
+    lines = []
+    monkeypatch.setattr(hub, "_log", lines.append)
+    hub.hub_pid_path().write_text("222")
+    assert hub._release_pid_file(111) is False
+    assert any("hub.pid" in ln and "222" in ln for ln in lines), lines
