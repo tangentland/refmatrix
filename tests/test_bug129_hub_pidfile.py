@@ -279,26 +279,71 @@ def test_stop_hub_waits_for_the_old_hub_to_exit(short_home, monkeypatch):
         old.kill()
 
 
-def test_the_hub_process_never_forks_a_daemon():
-    """A daemon forked (no exec) from the hub copies every descriptor the hub
-    holds — the uvicorn listening socket as well as hub.lock — so after the hub
-    dies its successor finds the port held, stands down with exit 0, and
-    `rmx hub stop` SIGKILLs the daemon as a port orphan (ch-bsd bug-129 r4
-    s1-r4). Code that runs inside the hub starts daemons through
-    `daemon.spawn_daemon_subprocess`, which execs."""
-    import ast
-    pkg = Path(hub.__file__).parent
-    hub_side = [pkg / "hub.py", pkg / "bus.py", *sorted((pkg / "ui").rglob("*.py"))]
-    bad = []
-    for f in hub_side:
-        for node in ast.walk(ast.parse(f.read_text())):
-            if not isinstance(node, ast.Call):
-                continue
-            fn = node.func
-            name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", None)
-            if name == "spawn_daemon":
-                bad.append(f"{f.relative_to(pkg)}:{node.lineno}")
-    assert bad == [], f"the hub process forks a daemon: {bad}"
+def _no_fork(monkeypatch):
+    """The hub process must never fork a daemon: a forked (no exec) daemon
+    copies every descriptor the hub holds — uvicorn's listening socket as
+    well as hub.lock — so after the hub dies its successor finds the port
+    held, stands down with exit 0, and `rmx hub stop` SIGKILLs the daemon as
+    a port orphan (ch-bsd bug-129 r4 s1-r4). Asserted by behaviour, not by
+    spelling: an alias or getattr route to `spawn_daemon` still reaches
+    os.fork (r5 s1-r5)."""
+    from refmatrix import daemon as daemon_mod
+
+    def refuse(*a, **k):
+        raise AssertionError("the hub process forked")
+    monkeypatch.setattr(os, "fork", refuse)
+    monkeypatch.setattr(daemon_mod, "ping", lambda root, timeout=0.5: False)
+    started = []
+    monkeypatch.setattr(daemon_mod, "spawn_daemon_subprocess",
+                        lambda root, **kw: started.append(Path(root)) or 4242)
+    return started
+
+
+def test_the_ui_starts_a_daemon_by_exec(short_home, monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from refmatrix import discovery
+    from refmatrix.ui import server as srv
+    monkeypatch.setattr(discovery, "discover_roots", lambda: [])
+    monkeypatch.setattr(discovery, "all_projects", lambda with_footprint=True: [])
+    started = _no_fork(monkeypatch)
+    root = tmp_path / "p" / ".refmatrix"
+    root.mkdir(parents=True)
+    r = TestClient(srv.create_app(hub.Hub(port=0))).post(
+        "/api/daemon", json={"root": str(root), "action": "start"})
+    assert r.json()["ok"], r.json()
+    assert started == [root]
+
+
+def test_a_refinement_accept_starts_a_daemon_by_exec(short_home, monkeypatch, tmp_path):
+    from refmatrix import bus as busmod
+    from refmatrix import daemon as daemon_mod
+    from refmatrix import discovery
+    started = _no_fork(monkeypatch)
+    root = tmp_path / "p" / ".refmatrix"
+    root.mkdir(parents=True)
+    monkeypatch.setattr(discovery, "discover_roots", lambda: [root])
+    monkeypatch.setattr(discovery, "store_name", lambda r: "p")
+    monkeypatch.setattr(daemon_mod, "call",
+                        lambda r, op, args=None, **kw: {"ok": True, "result": {"id": 7}})
+    eid = busmod.Bus()._write_memory(
+        {"scope": "project", "project": "p"},
+        {"name": "n", "content": "c", "mtype": "feedback", "tags": []})
+    assert eid == 7
+    assert started == [root]
+
+
+def test_a_daemon_that_cannot_start_fails_fast_with_its_reason(short_home, tmp_path):
+    """A launcher that exits non-zero used to be polled for the full 30 s
+    with its stderr discarded; inside the hub's UI handler that froze the web
+    UI and lost the cause (ch-bsd bug-129 r5 m1-r5)."""
+    import time as _t
+    from refmatrix import daemon as daemon_mod
+    root = tmp_path / "nostore" / ".refmatrix"  # no store was ever created here
+    t0 = _t.monotonic()
+    with pytest.raises(RuntimeError) as e:
+        daemon_mod.spawn_daemon_subprocess(root, wait_for_ready=30.0)
+    assert _t.monotonic() - t0 < 15.0, "polled the readiness window for a dead launcher"
+    assert "exited" in str(e.value), str(e.value)
 
 
 def test_stop_hub_reports_a_hub_that_outlives_the_timeout(short_home, monkeypatch):

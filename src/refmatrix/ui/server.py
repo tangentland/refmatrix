@@ -252,8 +252,10 @@ def create_app(hub) -> FastAPI:
         return {"ok": True, "result": {"restarted": ok}}
 
     @app.post("/api/daemon")
-    async def daemon_ctl(payload: dict):
-        """Start/stop a per-project daemon."""
+    def daemon_ctl(payload: dict):
+        """Start/stop a per-project daemon. A plain `def`, so FastAPI runs it
+        in its threadpool: a start can block for the readiness window, and an
+        `async def` froze every other request meanwhile (bug-129 r5 m1-r5)."""
         root = Path(payload["root"])
         action = payload.get("action")
         try:
@@ -500,7 +502,7 @@ def create_app(hub) -> FastAPI:
         return {"ok": True, "result": {"candidates": hub.bus.refinement_queue(status)}}
 
     @app.post("/api/refine/accept")
-    async def refine_accept(payload: dict):
+    def refine_accept(payload: dict):  # may start a daemon: threadpool
         return hub.bus.accept_refinement(payload["id"])
 
     @app.post("/api/refine/reject")

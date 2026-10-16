@@ -3,8 +3,8 @@
 
 Responsibilities:
   * **Watchdog** — poll every discovered store's daemon, keep a health history,
-    and restart the dead ones (launchctl kickstart when supervised, else a
-    direct `spawn_daemon`).
+    and restart the dead ones (launchctl kickstart when supervised, else
+    `spawn_daemon_subprocess`, which execs — the hub never forks a daemon).
   * **Control socket** (`~/.refmatrix/hub.sock`) — newline-delimited JSON RPC so
     `rmx hub …` / terminal agents can query and drive the hub.
   * **Global store** — owns `~/.refmatrix/global/.refmatrix/` (partition
@@ -1044,11 +1044,12 @@ _HUB_LOCK_HELD = None  # this process's hub.lock file, while it holds it
 def _forget_hub_lock_in_child() -> None:
     """At fork, the child closes its copy of hub.lock WITHOUT unlocking.
 
-    flock belongs to the open file description, which a fork shares: the
-    hub forks without exec (`daemon.spawn_daemon` from the UI's daemon start
-    and the bus's refinement accept), O_CLOEXEC never fires, and a daemon
-    kept a dead hub's lock alive for its whole life, so every later hub
-    stood down (ch-bsd bug-129 r3 b1-r3). Closing the copy drops only the
+    flock belongs to the open file description, which a fork shares, and
+    O_CLOEXEC fires only on exec. Until bug-129 r4 the hub forked daemons
+    without exec (`daemon.spawn_daemon` from the UI's daemon start and the
+    bus's refinement accept), and a daemon kept a dead hub's lock alive for
+    its whole life, so every later hub stood down (ch-bsd r3 b1-r3). Those
+    sites now exec; this hook covers any fork that remains. Closing the copy drops only the
     child's reference; LOCK_UN here would release the PARENT's lock."""
     global _HUB_LOCK_HELD
     if _HUB_LOCK_HELD is not None:

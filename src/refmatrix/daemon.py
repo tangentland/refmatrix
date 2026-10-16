@@ -6778,13 +6778,26 @@ def spawn_daemon_subprocess(
     env = dict(os.environ, REFMATRIX_ROOT=str(root))
     # `rmx daemon start` blocks until the daemon is accepting connections, then
     # returns — so run it and let it daemonize. Its own fork is single-threaded
-    # and safe. Output is discarded; failure surfaces via the ping check below.
-    try:
-        subprocess.run(
-            argv, env=env, timeout=wait_for_ready + 5.0,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-    except subprocess.TimeoutExpired:
-        pass
+    # and safe. stderr goes to a file, not a pipe: the daemonized grandchild
+    # may keep the descriptor, and a pipe would hold run() open until it
+    # exits. A launcher that exits non-zero with no daemon answering fails
+    # here with its reason, instead of being polled for the whole readiness
+    # window with the cause discarded (bug-129 r5 m1-r5: the hub's UI froze
+    # 30 s on a bad root and reported nothing).
+    import tempfile
+    with tempfile.TemporaryFile() as err:
+        try:
+            proc = subprocess.run(
+                argv, env=env, timeout=wait_for_ready + 5.0,
+                stdout=subprocess.DEVNULL, stderr=err, check=False)
+        except subprocess.TimeoutExpired:
+            proc = None
+        if proc is not None and proc.returncode != 0 and not ping(root):
+            err.seek(0)
+            tail = err.read()[-2000:].decode("utf-8", "replace").strip()
+            raise RuntimeError(
+                f"`rmx daemon start` for {root} exited {proc.returncode}: "
+                f"{tail or '(no stderr)'}")
 
     # Poll for the full readiness window after the launcher returns: under load
     # the inner `daemon start` can exit before its child has bound the socket,
