@@ -36,19 +36,22 @@ rel: depends-on -> [[plan-review-2026-10-14]]
 
 ## Next {#next}
 
-1. Finish the two remedies above, re-review each to CLEAN (ch-bsd), then ONE release: merge
-   bugs-112-113-118 + task-23.0 + task-18.1 into master (`--no-ff`), reconcile registry numbering
-   (main tree has bug-119..128; the bug branch numbered 122/123 directly after 118), bump version,
-   full suite in the main tree (now sandboxed — should lose the 32 baseline failures), run
-   `scripts/sandbox-proof.sh` once (d9cp/S5), deploy (user approved: ff ~/refmatrix,
-   `rmx daemon restart --relaunch`, hub `rmx hub stop` + one `launchctl kickstart`), push.
-2. **User question open:** bump `.venv-eval` duckdb 1.5.2 -> 1.5.3 (pyproject pins >=1.5.3;
-   1.5.2 crashed on a stale-reader close before the drain fix).
-3. Wave 1 implementation per d9bi: 21.1 -> 19.0/19.1 -> 19.2, 19.6 (helix substrate); 23.1/23.3;
-   23.5 after bug-112 merges.
-4. Frozen inactive slot recovery (atldb/refmatrix/viascope) — needs bug-125 (merge leaves
-   derived tables empty) fixed first; then dry-run on littlebig copies.
-5. 23.0 tiers 1/2 (rmxtest user, Tart VM) need operator setup.
+1. **Release 0.79.0 is BUILT, not landed.** Clone `/Volumes/littlebig/refmatrix-rel079`, branch
+   `release-0.79.0`, head `0518113` (merges `74f8f98` bugs-112-113-118, `530660e` task-18.1,
+   `bb0ed1f` wave0-spec-reviews; registry reconciled: the linkage merge-by-name bug is bug-128).
+   Full suite: 0 regressions by error text (new failures = clone-only dev-tree checks, HF cache
+   hidden by the temp HOME, or identical on master). Commit subject still says "bug-113/123" —
+   should read bug-113/128. Landing needs the user: the classifier refused pushing the clone to the
+   dev repo's `master`. Then deploy: `git -C ~/refmatrix pull --ff-only origin master`,
+   `rmx daemon restart --relaunch` fleet-wide, hub `rmx hub stop` + one `launchctl kickstart`,
+   verify `rmx version -v`, push to GitHub from dev.
+2. 23.0 is CLEAN (ch-bsd r3, `d9ec741`; branch `task-23.0-test-sandbox` in the dev repo). Ship as
+   0.79.1 after 0.79.0 lands (merge `--no-ff`, bump, full suite now sandboxed); then
+   `scripts/sandbox-proof.sh` once on the main tree (d9cp). Tiers 1/2 need operator setup.
+3. **User question open:** bump `.venv-eval` duckdb 1.5.2 -> 1.5.3.
+4. Wave 1 implementation per d9bi: 21.1 -> 19.0/19.1 -> 19.2, 19.6; 23.1/23.3; 23.5 after 0.79.0
+   lands (bug-112 merge gate).
+5. Frozen inactive slot recovery needs bug-124 (merge leaves derived tables empty) first.
 
 {#next-body}
 
