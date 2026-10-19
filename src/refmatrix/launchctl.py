@@ -134,13 +134,41 @@ def binary_identity(rmx: str) -> dict:
     return ident
 
 
-def _refuse_dev_tree(rmx: str) -> None:
+def _identity_objection(rmx: str) -> "str | None":
+    """Why a plist must NOT be rendered against `rmx`, or None when the
+    binary itself said `dev_tree: false`. The ONE reading of
+    `binary_identity` for every guard (`_refuse_dev_tree`, `check`,
+    `check_hub`).
+
+    Fail closed: anything but an explicit `False` objects. The three guards
+    used to read `if ident.get("dev_tree"):` each, and `None` — the answer
+    for a binary that is not readable (a pre-0.69 binary printing a version
+    line, a venv mid-rebuild exiting non-zero, a mistyped path) — is falsy,
+    so "unknown" passed as "not a dev tree" at all three sites at once
+    (ch-bsd plan-4 r4 #s-2; task 4.5 R1, 2026-10-19). The identity `error`,
+    which nobody read, is named here."""
     ident = binary_identity(rmx)
-    if ident.get("dev_tree"):
+    dev = ident.get("dev_tree")
+    if dev is False:
+        return None
+    if dev is True:
+        return (f"{rmx} is a dev tree: it imports {ident.get('import_path')} "
+                f"(a venv that belongs to another tree)")
+    return (f"{rmx} identity unknown: `{rmx} version -v --json` did not answer "
+            f"the identity JSON ({ident.get('error') or f'dev_tree={dev!r}'}); "
+            f"an unreadable binary is never assumed to be the deployed one")
+
+
+def _refuse_dev_tree(rmx: str) -> None:
+    """Raise unless `rmx` says it is not a dev tree. The message names the
+    CLI flag `--allow-dev` (`rmx daemon|hub launchctl install --allow-dev`),
+    not the Python parameter no operator can type (r4 #m-5, task 4.5 R3)."""
+    why = _identity_objection(rmx)
+    if why is not None:
         raise RuntimeError(
-            f"refusing to render a plist against a dev tree: {rmx} imports "
-            f"{ident.get('import_path')} (a venv that belongs to another tree). "
-            f"Run this with the deployed rmx, or pass allow_dev to install")
+            f"refusing to render a plist: {why}. Run this with the deployed rmx, "
+            f"or pass --allow-dev to `rmx daemon launchctl install` / "
+            f"`rmx hub launchctl install` to install against it anyway")
 
 
 def _rmx_path() -> str:
@@ -571,10 +599,12 @@ def check_hub(*, rmx: "str | None" = None, port: int = 7777,
     otherwise point the hub at the dev venv."""
     import plistlib
     rmx = rmx or _rmx_path()
-    ident = binary_identity(rmx)
-    if ident.get("dev_tree"):
-        return False, (f"{rmx} is a dev tree ({ident.get('import_path')}); the hub "
-                       f"plist is not rendered against it — run with the deployed rmx")
+    why = _identity_objection(rmx)
+    if why is not None:
+        # Not drift: `relaunch-fleet` "fixes" drift by reinstalling, and an
+        # unknown or dev binary must never be the one it reinstalls (r4 #s-2).
+        return False, (f"{why}; the hub plist is not rendered against it — "
+                       f"run with the deployed rmx")
     p = hub_plist_path()
     if not p.exists():
         return False, f"{p} does not exist — `rmx hub launchctl install`"
@@ -645,8 +675,11 @@ def install(root: Path, *, partition: str | None = None,
         # with the grace: a clean stop exits 0, which KeepAlive
         # (SuccessfulExit: false) does not respawn, so the bootout then
         # unloads an idle job. Lazy import: daemon imports this module.
+        # The grace is `stop_grace_s()`, not the constant: reading
+        # EXIT_TIMEOUT_S here bypassed the operator's RMX_STOP_GRACE_S, the
+        # one override every other stop path honours (r4 #s-3, task 4.5 R2).
         from refmatrix import daemon as _daemon
-        _daemon.graceful_stop(root, grace=EXIT_TIMEOUT_S)
+        _daemon.graceful_stop(root, grace=_daemon.stop_grace_s())
         subprocess.run(_bootout_cmd(label), capture_output=True)
         if not _wait_loaded(root, expected=False, timeout=BOOTOUT_WAIT_S):
             raise RuntimeError(
@@ -737,10 +770,12 @@ def check(root: Path, *, rmx: "str | None" = None) -> "tuple[bool, str]":
     dev venv."""
     import plistlib
     rmx = rmx or _rmx_path()
-    ident = binary_identity(rmx)
-    if ident.get("dev_tree"):
-        return False, (f"{rmx} is a dev tree ({ident.get('import_path')}); the plists "
-                       f"are not rendered against it — run with the deployed rmx")
+    why = _identity_objection(rmx)
+    if why is not None:
+        # Not drift: `relaunch-fleet` -> `reinstall` would "fix" it by
+        # rewriting the plist to this binary (r4 #s-2).
+        return False, (f"{why}; the plists are not rendered against it — "
+                       f"run with the deployed rmx")
     p = plist_path(root)
     try:
         flags = installed_flags(root)

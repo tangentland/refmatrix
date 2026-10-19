@@ -3324,7 +3324,19 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
     console.print(f"[green]daemon restarted[/] pid={pid} root={root}{extra}")
     if relaunch:
         def _respawn():
-            daemon_mod.stop_daemon(root)
+            # The kick stops with the same grace and the same refusal as the
+            # standalone stop above: it used `stop_daemon(root)` (the old 5 s),
+            # discarded the False and spawned a second daemon beside a live
+            # predecessor (ch-bsd plan-4 r4 #s-3; task 4.5 R2, 2026-10-19).
+            _kgrace = daemon_mod.stop_grace_s()
+            _krep: dict = {}
+            if not daemon_mod.stop_daemon(root, timeout=_kgrace, report=_krep):
+                raise click.ClickException(
+                    f"predecessor pid={_krep.get('pid') or daemon_mod.read_pid(root)} "
+                    f"still alive after the {_kgrace:g}s grace "
+                    f"({_krep.get('kill') or _krep.get('signal') or 'no signal delivered'}); "
+                    f"the relaunch kick is not spawning a second daemon beside it — "
+                    f"`rmx daemon status`")
             daemon_mod.spawn_daemon(
                 root, partition=_resolve_partition(),
                 watch_root=resolved_watch_roots or None,
@@ -3573,10 +3585,18 @@ def daemon_launchctl():
 @click.option("--check", "check_only", is_flag=True,
               help="Compare the installed plist with its render (exit 1 on "
                    "drift); write nothing. Run with the deployed rmx.")
+@click.option("--allow-dev", is_flag=True,
+              help="Install against a dev-tree binary anyway (deliberate, "
+                   "and said out loud).")
 def daemon_launchctl_install(watch: bool, watch_roots: tuple[Path, ...],
                              debounce_ms: int, semantic: bool, force: bool,
-                             check_only: bool):
-    """Install + bootstrap the LaunchAgent plist for the active store."""
+                             check_only: bool, allow_dev: bool):
+    """Install + bootstrap the LaunchAgent plist for the active store.
+
+    `--allow-dev` is the daemon twin of `rmx hub launchctl install
+    --allow-dev` (bug-028): the dev-tree refusal has told operators to use
+    the override since plan-4 r3, and until task 4.5 (r4 #m-5, 2026-10-19)
+    no command exposed it."""
     from refmatrix import launchctl as lc
     root = _root()
     if not root.is_dir():
@@ -3600,7 +3620,7 @@ def daemon_launchctl_install(watch: bool, watch_roots: tuple[Path, ...],
             root, partition=_resolve_partition(),
             watch=watch, debounce_ms=debounce_ms,
             semantic=semantic, force=force,
-            watch_roots=roots_list,
+            watch_roots=roots_list, allow_dev=allow_dev,
         )
     except (RuntimeError, FileNotFoundError) as e:
         raise click.ClickException(str(e))

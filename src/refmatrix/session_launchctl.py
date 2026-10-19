@@ -17,6 +17,7 @@ import subprocess
 from pathlib import Path
 
 from refmatrix.launchctl import (
+    EXIT_TIMEOUT_S,
     LAUNCH_AGENTS_DIR,
     _bootout_cmd,
     _bootstrap_cmd,
@@ -78,6 +79,13 @@ def render_plist(root: Path, *, partition: str | None = None,
         "StandardOutPath": str(root / "session-indexer.stdout.log"),
         "StandardErrorPath": str(root / "session-indexer.stderr.log"),
         "ProcessType": "Background",
+        # launchd's SIGKILL deadline after SIGTERM. Without the key it is
+        # launchd's 5 s default, the number every other refmatrix plist left
+        # behind at plan-4 r3; an ingest tick mid-write deserves the same
+        # grace as the daemon. ONE source — `launchctl.EXIT_TIMEOUT_S` — so the
+        # two plists cannot drift (ch-bsd plan-4 r4 #m-6; task 4.5 R4,
+        # 2026-10-19).
+        "ExitTimeOut": int(EXIT_TIMEOUT_S),
     }
     return plistlib.dumps(plist)
 

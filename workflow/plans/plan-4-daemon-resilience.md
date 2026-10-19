@@ -114,6 +114,12 @@ rel: depends-on -> [[bug_registry#registry]]
 | #s-4 tests append to the LIVE `~/.refmatrix/hub.log` | **OPEN, and worse** | the live log now carries **104** lines naming a `/tmp/rmxp4-…` root and **50** naming `/nowhere`, against 43 total at the r4 audit. bug-023's family |
 | #m-5 `install`'s `allow_dev` unreachable from any command | **OPEN for the daemon plists** | `allow_dev` is reachable now only via `hub_launchctl_install` (cli.py:2605). The daemon-side `install(..., allow_dev=)` still has no caller that passes it, and the refusal message still tells the operator to use it |
 | #m-6 the session-indexer label carries launchd's 5 s | **OPEN** | `session_launchctl.py` contains **0** occurrences of `ExitTimeOut` |
+| #s-2 (task 4.5, 2026-10-19) | **CLOSED** | `launchctl._identity_objection` is the one reading of `binary_identity`: anything but `dev_tree is False` objects. `_refuse_dev_tree` raises `identity unknown` naming the binary, the identity `error` and `--allow-dev`; `check` / `check_hub` return `(False, "… identity unknown …")`, never `drifted`. `tests/test_task4_5_r4_remedy.py` AC-1..AC-4 |
+| #s-3 (task 4.5, 2026-10-19) | **CLOSED** | `stop_daemon(timeout=None)` resolves `stop_grace_s()`, so stop paths 1/5/6/8 (`daemon stop`, `compact`, `upgrade._default_restart`, hub UI stop) take it; `launchctl.install(force)` asks `daemon.stop_grace_s()`; `_respawn` raises naming the still-alive predecessor instead of spawning beside it. Watchdog `RMX_HUB_KILL_GRACE_S` and adoption `ADOPT_GRACE_S` deliberately unchanged. AC-5..AC-7 |
+| #s-4 (task 4.5, 2026-10-19) | **CLOSED** | isolation by task 23.0's sandbox (AC-10 guard); the `_await_shutdown` marker-wait line now names its root (AC-11) |
+| #m-5 (task 4.5, 2026-10-19) | **CLOSED** | `rmx daemon launchctl install --allow-dev` forwards to `install(allow_dev=)`; the refusal names the CLI flag. AC-8 |
+| #m-6 (task 4.5, 2026-10-19) | **CLOSED** | `session_launchctl.render_plist` sets `ExitTimeOut` from `launchctl.EXIT_TIMEOUT_S`. AC-9 |
+| todo G9 (task 4.5 R6, 2026-10-19) | **CLOSED** | bookkeeping: fixed by task 4.4 (`Daemon._adopt_unsupervised`, `tests/test_daemon_adopt.py`); the todo row now reads Done |
 
 Three of these are one-liners (#s-2, #s-3, #m-6). #s-4 is the one worth doing
 first: it is actively growing, and `hub.log` is the surface r3 used to prove the
