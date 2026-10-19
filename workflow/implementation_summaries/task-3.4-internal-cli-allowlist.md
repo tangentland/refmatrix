@@ -100,7 +100,12 @@ are `verb-it` because the shipped gmd-curator agent template calls them.
 - GREEN, the three target files: `workflow/review-output/task3.4-3.5-green-targets.log`,
   86 passed.
 - Plan-3 + memory files: `workflow/review-output/task3.4-3.5-green-plan3.log`.
-- Full suite: `workflow/review-output/task3.4-3.5-green-full.log`.
+- Full suite: `workflow/review-output/task3.4-3.5-green-full.log`: 2990 passed, 21 failed, 19
+  skipped. 19 of the failures are the clone-only DEV TREE refusals (`upgrade`, `launchctl`/plist,
+  `daemon restart --relaunch`: "this interpreter runs a DEV TREE", "refusing to render a plist
+  against a dev tree", "… is a dev tree"). 1 is the gmd repo-scope gate (`docs/INDEX.md`
+  dangling ADR ids), and 1 is the forget test flagged in [[#flag]].
+- Plan-3 + memory files: 417 passed, 1 failed (the same flagged test).
 - Mutation check (drop a `CLI_ACTIONS` key, route a write back to `_memory_daemon_call`, add a
   LEGACY key): see [[#mutation]].
 
