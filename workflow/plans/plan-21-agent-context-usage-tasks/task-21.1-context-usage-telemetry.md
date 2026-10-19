@@ -1135,7 +1135,9 @@ line counts are unchanged.
    scan-prompt` (and the same text piped to `rmx memory recall` without `--stdin-json`) adds no
    row to `_errors.jsonl`, and the prompt the command uses equals `fix the {braces`. The same
    text to `rmx memory recall --stdin-json` exits nonzero with the existing `--stdin-json:
-   invalid JSON on stdin` message AND adds one `envelope-unreadable` row. An envelope
+   invalid JSON on stdin` message AND adds one `envelope-unreadable` row. ("No row" means no
+   `envelope-*` row; a resolver-miss row that R9 records for an unresolved Claude-owned call is
+   not an envelope error and is allowed — round 13, #b2.) An envelope
    `{"text": "abc"}` yields the prompt `abc` on both the scan-prompt and the recall path (one
    `HOOK_PROMPT_KEYS`).
    RED at post-109 `master` for (i)-(v), (vii) and (viii) (no global location, no SessionStart
@@ -1770,3 +1772,20 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r12-34f72b3]]
 | r12 #m12-1 (non-budget leg replied before closing, so the recall connect could queue in the backlog and fail with `ConnectionResetError` / `JSONDecodeError`) | AC-2b non-budget leg: on the SECOND `ping` the listener reads the request, closes its listening socket, then replies on the accepted connection |
 | r12 #m12-2 (the broken-pipe mutation had no killing leg; nor did `OSError` before the timeout test) | AC-2b validation leg: `classify_outcome` assertions for `BrokenPipeError` (budgeted and not), `TimeoutError`, `socket.timeout`; the round-11 broken-pipe mutation now points at them; new mutation (generic `OSError` test before the timeout test) |
 | r12 #m12-4 (R4 cited the unreachable `:12195` partition-probe catch as a `VerbBusyError` source) | R4: the citation dropped; parenthetical that the probe runs in `_memory_intent` (`cli.py:11950` → `:11258`), catches every exception itself (`:11214`) and raises nothing; the round-11 code-facts note corrected the same way |
+
+## Revision round 13 (2026-10-19) {#rev-round-13}
+
+Answers the GREEN audit [[bsd-task21.1-context-usage-r1-d3ec62d]] where it found the spec
+contradicting itself or silent. Decisions made by the orchestrator under the Wave 0-1 standing
+directive; recorded here before the code changes.
+
+rel: derives-from -> [[bsd-task21.1-context-usage-r1-d3ec62d]]
+
+| finding | decision |
+|---|---|
+| r1 #b2 (AC-4b (xiii) "no row" vs R9's miss row for every purpose; GREEN added a `record_miss` switch keyed on invocation) | R9 stands: a miss is recorded the same way for every purpose and invocation; no `record_miss` switch. (xiii)'s "adds no row" is narrowed to "adds no `envelope-*` row" (amended in place above). |
+| r1 #b1 (recall channel guessed for flagless rows) | No guess. A recall row always carries `session_start` / `stdin_json` / `recent`; a row without them is a writer defect and is counted, not classified. Test fixtures carry the flags. |
+| r1 #b3 (default table output of `rmx memory recall` emits delivered events with null spans) | In scope, not deferred: the table renderer returns byte spans like the JSON renderer, so every delivered event on the agent recall channel carries `span`, `payload_bytes` and `block_sha`. |
+| r1 #s1 (context_by_name ignores every earlier context delivery; events written twice per call) | Exclude only the current call's own `query_id` from the delivered-set lookup; `emit_context_call` writes each event exactly once (R11). |
+| r1 #m3 (`PRE_PROMPT_SKEW_S = 10.0` interim) | Kept as interim; a deferral-registry row names 19.0 R0 as the measurement that replaces it. |
+
