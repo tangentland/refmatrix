@@ -513,3 +513,83 @@ def test_r12_no_resolved_session_emits_no_used(root):
     assert (unresolved, resolved) == (0, 1), (
         f"R12 whose session: used with no resolved session={unresolved}, with S={resolved}; "
         "expected (0, 1)")
+
+
+# ---- round 13 #s1: context_by_name sees an EARLIER context call; one write per call ----------
+
+def test_r12_context_by_name_matches_a_key_an_earlier_context_call_delivered(root):
+    """Round 13 #s1 (R12 `context_by_name`): only the CURRENT call's own `query_id` is left out
+    of the delivered-set lookup. `rmx context feedback_alpha_rule` twice in S (agent): the
+    first call has nothing earlier -> 0 `used`; the second matches the key the FIRST context
+    call delivered -> exactly 1 `used`, `query_id` = the second call's, `ref_query_id` = the
+    first call's. Every event of the second call is written once and in ONE writer call (R11:
+    one `ts` per `emit_recall_events` call). RED at HEAD: `context_used_keys` drops every
+    `context`-channel delivery, so the deltas are (0, 0)."""
+    _seed(root)
+    S = _sid("S")
+    with h.SandboxDaemon(root):
+        r1 = _agent(root, ["context", ALPHA], S)
+        n1 = len(_used(root, S))
+        r2 = _agent(root, ["context", ALPHA], S)
+        n2 = len(_used(root, S))
+    for r in (r1, r2):
+        assert f"anchor: {ALPHA}  [memory]" in r.stdout, (
+            f"fixture: anchor is not the memory: {r.stdout[:400]} {r.stderr[-400:]}")
+    qids = [q.get("query_id") for q in h.query_rows(root)
+            if q.get("kind") == "context" and q.get("session") == S]
+    assert len(qids) == 2 and None not in qids, qids
+    q1, q2 = qids
+    assert (n1, n2) == (0, 1), (
+        f"R12 context_by_name (round 13 #s1): used after the 1st / 2nd context call in S = "
+        f"{(n1, n2)}; expected (0, 1) -- an earlier context delivery is evidence")
+    (u,) = _used(root, S)
+    assert u["evidence"] == "context_by_name", u
+    assert (u["name"], u["kind"], u["scope"]) == (ALPHA, "memory", "project"), u
+    assert (u["query_id"], u["ref_query_id"]) == (q2, q1), (u, q1, q2)
+    evs2 = [e for e in h.events(root) if e.get("query_id") == q2]
+    keys = [(e.get("stage"), e.get("name"), e.get("kind"), e.get("entity_id"),
+             e.get("offset_bytes")) for e in evs2]
+    assert len(keys) == len(set(keys)), f"R11: an event of one call written twice: {keys}"
+    assert len({e.get("ts") for e in evs2}) == 1, (
+        f"R11: one context call's events came from more than one writer call: "
+        f"{sorted({e.get('ts') for e in evs2})}")
+
+
+@pytest.mark.parametrize("earlier", ["prompt_recall", "context"])
+def test_r11_one_context_call_hands_all_its_events_to_the_writer_once(root, monkeypatch,
+                                                                      earlier):
+    """Round 13 #s1 (R11 "EXACTLY ONCE per call"): `telemetry.emit_context_call` -- the context
+    channel's one emission, shared by all four routes -- hands its `retrieved`, `delivered` AND
+    `context_by_name` `used` events to `emit_recall_events` in ONE call. The key was delivered
+    earlier in S by a `prompt_recall` or by an earlier `context` call (another query_id); both
+    are evidence. `emit_recall_events` is wrapped by a pass-through spy (registered), so the
+    real writer still writes. RED at HEAD: prompt_recall -> two writer calls (delivered, then
+    used); context -> no `used` at all."""
+    from refmatrix import telemetry
+    S = _sid("S")
+    item = {"name": ALPHA, "entity_id": 7, "catalog_kind": "memory", "mtype": "feedback",
+            "scope": "project", "partition": "intuition", "rank": 1}
+    prior = f"[{ALPHA}]\n".encode()
+    telemetry.emit_call(root, channel=earlier, invocation="hook" if earlier != "context"
+                        else "agent", session=S, query_id="a" * 32, retrieved=[item],
+                        delivered=[{**item, "offset_bytes": 1, "bytes": len(ALPHA)}],
+                        payload=prior, block_id=telemetry.RECALL_BLOCK_IDS.get(earlier))
+    calls: list[list[dict]] = []
+    real = telemetry.emit_recall_events
+
+    def spy(events, **kw):
+        calls.append(list(events))
+        return real(events, **kw)
+    monkeypatch.setattr(telemetry, "emit_recall_events", spy)
+    payload = f"anchor: {ALPHA}  [memory]\n".encode()
+    off = payload.index(ALPHA.encode())
+    telemetry.emit_context_call(root, ref=ALPHA,
+                                items=[{**item, "offset_bytes": off, "bytes": len(ALPHA)}],
+                                payload=payload, query_id="b" * 32, session=S,
+                                invocation="agent")
+    stages = [sorted(e.get("stage") for e in c) for c in calls]
+    assert stages == [["delivered", "retrieved", "used"]], (
+        f"R11 (round 13 #s1): one context call = ONE writer call carrying retrieved, delivered "
+        f"and used; writer calls were {stages}")
+    (u,) = [e for e in calls[0] if e.get("stage") == "used"]
+    assert (u["query_id"], u["ref_query_id"]) == ("b" * 32, "a" * 32), u

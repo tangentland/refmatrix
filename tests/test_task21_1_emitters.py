@@ -158,7 +158,11 @@ def _require_events(evs: list[dict], channel: str, what: str) -> list[dict]:
 
 def _one_call(evs: list[dict]) -> list[dict]:
     qids = {e.get("query_id") for e in evs}
-    assert len(qids) == 1 and None not in qids, f"events of one call share ONE query_id: {qids}"
+    seen = [tuple(e.get(k) for k in ("query_id", "stage", "channel", "invocation", "session",
+                                     "name")) for e in evs]
+    assert len(qids) == 1 and None not in qids, (
+        f"events of one call share ONE query_id: {qids}; events (query_id, stage, channel, "
+        f"invocation, session, name): {seen}")
     return evs
 
 
@@ -544,7 +548,14 @@ def test_ac8c_agent_recall_is_channel_recall_not_precompact(store, argv):
 def test_ac8c_context_channel_through_mcp_and_cli(store):
     """AC-8c context: an MCP `rmx_context` call through the real stdio server and a CLI
     `rmx context` call each append `context` events (kind by R10a, project partition); the MCP
-    call's query_id equals its `context-mcp` query.log row's."""
+    call's query_id equals its `context-mcp` query.log row's.
+
+    Neither leg is given a session, so both resolve NONE (R9: null, never a guess) -- asserted,
+    because the CLI child's owner lookup walks the RUNNER's process chain: under Claude Code it
+    finds the real Claude pid, and a pointer for that pid in the sandbox `by-pid/` (written by
+    an AC-8b input hook in this module before `_fresh_pointer_dir` reset it per test, bug-133)
+    gave this leg `sess-emit` -- the one-off two-query_id failure of the 2026-10-16 GREEN run
+    was this leak, now named instead of surfacing as a query_id mismatch."""
     root = store
     part = _store_partition(root)
     before = h.line_count(_ev_path(root))
@@ -559,11 +570,54 @@ def test_ac8c_context_channel_through_mcp_and_cli(store):
             if x.get("source") == "context-mcp"]
     assert len(rows) == 1 and rows[0].get("query_id") == evs[0]["query_id"], rows
     assert {e["invocation"] for e in evs} == {"mcp"}
+    assert {e["session"] for e in evs} == {None}, {e["session"] for e in evs}
     before = h.line_count(_ev_path(root))
     h.run_rmx(["context", "zorbulate"], root=root)
-    _check_channel(_new_events(_ev_path(root), before), "context",
+    cli = _new_events(_ev_path(root), before)
+    assert {e.get("session") for e in cli} <= {None}, (
+        "isolation: the CLI leg resolved a session from a pointer it did not write "
+        f"(the runner's Claude pid): {sorted({str(e.get('session')) for e in cli})}")
+    _check_channel(cli, "context",
                    kind_ok=lambda k: k in ("code", "doc", "concept", "memory"),
                    partition_ok=lambda p: p == part or p == "intuition")
+
+
+def test_b3_agent_recall_default_table_output_delivers_with_byte_spans(store):
+    """Round 13 #b3 (R10/R11, the agent `recall` channel): `rmx memory recall <q>` in its
+    DEFAULT table output (no --json) emits `delivered` events whose `offset_bytes` / `bytes`
+    index the stdout BYTES actually printed (the table's box-drawing characters are multibyte,
+    so a character offset misses), with `payload_bytes` = len(stdout) and `block_sha` = the
+    sha256 of those bytes; every retrieved name the table printed is a delivered event. RED at
+    HEAD: the table route emits `delivered` with every span field null."""
+    import subprocess
+    root = store
+    before = h.line_count(_ev_path(root))
+    env = h.rmx_env(root, CLAUDECODE="1", RMX_PARTITION="intuition")
+    r = subprocess.run([h.rmx_bin(), "memory", "recall", "quasar ledger"], env=env,
+                       cwd=str(root.parent), capture_output=True, timeout=180)
+    out = r.stdout
+    assert r.returncode == 0, r.stderr[-800:]
+    assert not out.lstrip().startswith(b"["), "fixture: this leg is the TABLE output, not JSON"
+    assert any(b >= 0x80 for b in out), "fixture: the table carries no multibyte byte"
+    evs = _require_events(_new_events(_ev_path(root), before), "recall", "#b3 table recall")
+    _one_call(evs)
+    retrieved = [e for e in evs if e["stage"] == "retrieved"]
+    delivered = [e for e in evs if e["stage"] == "delivered"]
+    assert delivered, "#b3: the table printed rows but no `delivered` event was emitted"
+    for e in delivered:
+        assert e["invocation"] == "agent" and e["block_id"] == "recall", e
+        assert e["payload_bytes"] == len(out), (
+            f"#b3: delivered `payload_bytes` {e['payload_bytes']!r} != {len(out)} stdout bytes")
+        assert e["block_sha"] in (_sha(out), _sha(out.rstrip(b"\n"))), (
+            f"#b3: delivered `block_sha` {e['block_sha']!r} is not the stdout's sha256")
+        off, n = e["offset_bytes"], e["bytes"]
+        assert isinstance(off, int) and isinstance(n, int) and off >= 0 and n > 0, (off, n)
+        assert off + n <= len(out)
+        assert e["name"].encode() in out[off:off + n], (
+            f"#b3: span [{off},{off + n}) does not hold {e['name']!r}: {out[off:off + n]!r}")
+    printed = {e["name"] for e in retrieved if e["name"].encode() in out}
+    assert printed and printed <= {e["name"] for e in delivered}, (
+        printed - {e["name"] for e in delivered})
 
 
 # ---- AC-10 -----------------------------------------------------------------------------------

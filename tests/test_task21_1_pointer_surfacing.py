@@ -523,14 +523,20 @@ def test_ac4b_viii_session_pointer_and_stm_hook_failures_are_two_clauses(X):
 # ---- (xiii) prose is not an error; one prompt-key tuple -------------------------------------
 
 def _no_error_rows_for(root: Path, before: int) -> list:
-    new = err_rows()[before:]
+    """The `envelope-*` rows added since `before` (round 13, #b2: AC-4b (xiii)'s "adds no row"
+    means no ENVELOPE error. The `rmx(..)` children carry `CLAUDE_PID`, so R9 records its
+    resolver miss (`pointer-unresolved`) for them like for every other call -- that row is not
+    a prose error and is allowed). The legacy per-root file is read too: no row of any reason
+    may land there (D3)."""
+    new = [x for x in err_rows()[before:] if str(x.get("reason") or "").startswith("envelope-")]
     legacy = root / "stm" / "by-pid" / "_errors.jsonl"
     return new + (h.jsonl(legacy) if legacy.exists() else [])
 
 
 def test_ac4b_xiii_brace_prose_to_scan_prompt_is_not_an_error(X):
     """AC-4b (xiii) prose leg on scan-prompt: `printf 'fix the {braces' | rmx scan-prompt` adds
-    no `_errors.jsonl` row, and the prompt it uses (its query.log `scan` row body) is the text.
+    no `envelope-*` row to `_errors.jsonl` (round 13 #b2), and the prompt it uses (its
+    query.log `scan` row body) is the text.
     GREEN regression guard, not counted as RED (no envelope reader records anything today)."""
     before = len(err_rows())
     r = rmx(["scan-prompt"], X, input="fix the {braces")
@@ -540,10 +546,11 @@ def test_ac4b_xiii_brace_prose_to_scan_prompt_is_not_an_error(X):
 
 
 def test_ac4b_xiii_brace_prose_to_memory_recall_is_not_an_error(X):
-    """AC-4b (xiii) prose leg on `rmx memory recall` without --stdin-json: no `_errors.jsonl`
-    row and no invalid-JSON message. (That command does not read stdin without --stdin-json,
-    `read_stdin=False` at cli.py `memory_recall`, so "the prompt it uses" is unobservable here;
-    see the report.) GREEN regression guard, not counted as RED."""
+    """AC-4b (xiii) prose leg on `rmx memory recall` without --stdin-json: no `envelope-*`
+    row in `_errors.jsonl` (round 13 #b2) and no invalid-JSON message. (That command does
+    not read stdin without --stdin-json, `read_stdin=False` at cli.py `memory_recall`, so
+    "the prompt it uses" is unobservable here; see the report.) GREEN regression guard, not
+    counted as RED."""
     before = len(err_rows())
     r = rmx(["memory", "recall"], X, input="fix the {braces")
     assert _no_error_rows_for(X, before) == [], r.stderr
@@ -579,3 +586,223 @@ def test_ac4b_xiii_text_key_envelope_on_the_recall_path(X):
                 input=json.dumps({"text": "abc"}))
     bodies = [q.get("body") for q in h.query_rows(X) if q.get("kind") == "recall"]
     assert bodies == ["abc"], (bodies, r.stdout[-500:], r.stderr[-1000:])
+
+
+# ---- round 13 #b2: R9 records a miss for EVERY invocation (no `record_miss` switch) --------
+
+def _miss_rows(before: int, root: Path) -> list[dict]:
+    """Resolver-miss rows (R9: `pointer-unresolved`, or `owner-lookup-failed` when the process
+    lookup failed) added since `before`, scoped to `root` (compared canonically, #s3)."""
+    want = os.path.realpath(str(root))
+    return [x for x in err_rows()[before:]
+            if x.get("reason") in ("pointer-unresolved", "owner-lookup-failed")
+            and os.path.realpath(str(x.get("root") or "")) == want]
+
+
+class _TtyStdin:
+    """`sys.stdin` answering `isatty()` True (registered: pytest cannot own a real tty), so
+    `invocation_source()` -- unpatched -- classifies the call `interactive`."""
+
+    def isatty(self) -> bool:
+        return True
+
+    def read(self, *a) -> str:
+        return ""
+
+
+INVOCATIONS = {
+    "hook": {"RMX_INVOCATION_SOURCE": "hook"},
+    "mcp": {"RMX_INVOCATION_SOURCE": "mcp"},
+    "agent": {"CLAUDECODE": "1"},
+    "internal": {"RMX_INVOCATION_SOURCE": "internal"},
+    "unknown": {},
+    "interactive": {},
+}
+
+
+def test_r9_resolver_signature_has_no_miss_switch():
+    """Round 13 #b2 / D1: the resolver's signature is EXACTLY `(root, session=None, *,
+    envelope=None, purpose)`. A `record_miss`-style parameter is the per-invocation switch
+    round 13 removed (a miss is recorded the same way for every purpose and invocation). RED
+    at HEAD: `record_miss` exists."""
+    from refmatrix import verbs
+    params = list(inspect.signature(verbs.resolve_session_source).parameters)
+    assert params == ["root", "session", "envelope", "purpose"], (
+        f"R9/D1: resolve_session_source takes exactly root, session, envelope, purpose; got "
+        f"{params}")
+
+
+@pytest.mark.parametrize("inv", list(INVOCATIONS), ids=list(INVOCATIONS))
+def test_r9_event_purpose_miss_is_recorded_for_every_invocation(X, monkeypatch, inv):
+    """Round 13 #b2: a telemetry row's / event's session (`telemetry.resolve_event_session`,
+    R9's resolver with purpose=event) that misses -- `$CLAUDE_PID` set, no pointer for it, no
+    `RMX_SESSION`, not long-lived -- records ONE resolver-miss row scoped to the store, whatever
+    `invocation_source()` says (hook, mcp, agent, internal, unknown, interactive). The answer
+    stays null. RED at HEAD for internal / unknown / interactive: `record_miss` is keyed on
+    invocation in (hook, mcp, agent), so those three record nothing."""
+    from refmatrix import telemetry, verbs
+    monkeypatch.setattr(verbs, "_LONG_LIVED", False)
+    for k, v in INVOCATIONS[inv].items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("CLAUDE_PID", str(os.getppid()))
+    if inv == "interactive":
+        monkeypatch.setattr(sys, "stdin", _TtyStdin())
+    assert telemetry.invocation_source() == inv, telemetry.invocation_source()
+    assert not (pdir() / f"{os.getppid()}.json").exists()
+    before = len(err_rows())
+    got = telemetry.resolve_event_session(X)
+    assert got is None, got
+    rows = _miss_rows(before, X)
+    assert len(rows) == 1, (
+        f"R9 (round 13 #b2): an unresolved purpose=event call under invocation={inv} records "
+        f"exactly one resolver-miss row; got {err_rows()[before:]}")
+    assert rows[0].get("purpose") == "event", rows[0]
+
+
+def test_r9_cli_call_with_claude_pid_and_no_pointer_records_a_miss(X):
+    """Round 13 #b2, the end-to-end CLI shape the r1 audit named: a plain `rmx scan-prompt`
+    child with `$CLAUDE_PID` set (this test's pid, a real ancestor), no invocation hint, no
+    pointer and no `RMX_SESSION` (so `invocation=unknown`) records a resolver-miss row for its
+    query.log row's session. RED at HEAD: the `record_miss` switch drops it."""
+    assert not (pdir() / f"{ME}.json").exists()
+    before = len(err_rows())
+    r = rmx(["scan-prompt"], X, input="hello zorbulate widget")
+    rows = [q for q in h.query_rows(X) if q.get("kind") == "scan"]
+    assert rows and rows[-1].get("invocation") == "unknown", (rows[-1:], r.stderr[-800:])
+    assert _miss_rows(before, X), (
+        f"R9 (round 13 #b2): no resolver-miss row for a CLAUDE_PID-owned unknown-invocation "
+        f"call; rows added: {err_rows()[before:]}; stderr={r.stderr[-800:]}")
+
+
+# ---- round 13 / r1 #s2 (D8): a failed pointer-error write is never silent -----------------
+
+def _make_errors_log_unwritable() -> None:
+    """The log path is a DIRECTORY: `_append_error_rows`'s open fails (an OSError), so every
+    `record_pointer_error` returns False -- the real failure, no patch."""
+    pdir().mkdir(parents=True, exist_ok=True)
+    errlog().mkdir()
+    assert errlog().is_dir()
+
+
+def _lines_naming(text: str, reason: str) -> list[str]:
+    return [ln for ln in text.splitlines() if reason in ln]
+
+
+def test_d8_unrecorded_pointer_unresolved_is_printed(X):
+    """D8 ("printed once at every call site that has a stderr"), r1 #s2 site `verbs.py:589`:
+    an agent `rmx scan-prompt` whose session misses (CLAUDE_PID set, no pointer) while the
+    error log cannot be written prints a stderr line naming `pointer-unresolved`. RED at HEAD:
+    the resolver drops the False return and prints nothing."""
+    _make_errors_log_unwritable()
+    r = h.run_rmx(["scan-prompt"], root=X, input="hello zorbulate widget", CLAUDECODE="1",
+                  CLAUDE_PID=ME, RMX_HOME=os.environ["RMX_HOME"])
+    assert _lines_naming(r.stderr, "pointer-unresolved"), (
+        f"D8: a pointer-unresolved row that could not be written was dropped silently; "
+        f"rc={r.returncode} stderr={r.stderr[-1200:]!r}")
+
+
+def test_d8_unrecorded_envelope_unreadable_is_printed(X):
+    """D8, r1 #s2 site `stm.py:1845` (`read_hook_envelope`): prose to `rmx memory recall
+    --stdin-json` with an unwritable error log still exits nonzero with the invalid-JSON
+    message AND prints a line naming `envelope-unreadable` (the row it could not keep). RED at
+    HEAD: the False return is dropped."""
+    _make_errors_log_unwritable()
+    r = rmx(["memory", "recall", "--stdin-json"], X, input="fix the {braces")
+    assert r.returncode != 0 and "--stdin-json: invalid JSON on stdin" in r.stderr, r.stderr
+    assert _lines_naming(r.stderr, "envelope-unreadable"), (
+        f"D8: an envelope-unreadable row that could not be written was dropped silently; "
+        f"stderr={r.stderr[-1200:]!r}")
+
+
+def test_d8_unrecorded_pointer_unreadable_is_printed(X):
+    """D8, r1 #s2 site `stm.py:651` (`read_pid_pointer`): a pointer for this test's pid that is
+    not a JSON object, read by an agent `rmx scan-prompt` (CLAUDE_PID = this pid, a real
+    ancestor) while the error log cannot be written, prints a line naming
+    `pointer-unreadable`. RED at HEAD: the False return is dropped."""
+    _make_errors_log_unwritable()
+    (pdir() / f"{ME}.json").write_text("not json at all")
+    r = h.run_rmx(["scan-prompt"], root=X, input="hello zorbulate widget", CLAUDECODE="1",
+                  CLAUDE_PID=ME, RMX_HOME=os.environ["RMX_HOME"])
+    assert _lines_naming(r.stderr, "pointer-unreadable"), (
+        f"D8: a pointer-unreadable row that could not be written was dropped silently; "
+        f"stderr={r.stderr[-1200:]!r}")
+
+
+def _unconsumed_record_calls(source: str, filename: str) -> list[str]:
+    """Every `record_pointer_error(...)` call (bare name or attribute) whose result is
+    discarded: the call IS an expression statement."""
+    import ast
+    out = []
+    for node in ast.walk(ast.parse(source, filename)):
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+            f = node.value.func
+            name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
+            if name == "record_pointer_error":
+                out.append(f"{filename}:{node.lineno}")
+    return out
+
+
+def _all_record_calls(source: str, filename: str) -> int:
+    import ast
+    n = 0
+    for node in ast.walk(ast.parse(source, filename)):
+        if isinstance(node, ast.Call):
+            f = node.func
+            name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
+            n += name == "record_pointer_error"
+    return n
+
+
+def test_d8_every_record_pointer_error_result_is_consumed():
+    """D8 / r1 #s2 guard: no `record_pointer_error(` call in `src/refmatrix/` discards its bool
+    (a bare expression statement), so a failed write cannot be dropped silently at a NEW site
+    either. The checker is first run on a planted module that it must report, so it cannot
+    pass vacuously. RED at HEAD: 10 of 11 sites are bare statements."""
+    planted = ("from refmatrix import stm\n"
+               "def f(root):\n"
+               "    stm.record_pointer_error('x', root=root, owner=None)\n"
+               "    if not stm.record_pointer_error('y', root=root, owner=None):\n"
+               "        print('rmx: not recorded')\n")
+    assert _unconsumed_record_calls(planted, "planted.py") == ["planted.py:3"]
+    total, bad = 0, []
+    for p in sorted((h.SRC / "refmatrix").rglob("*.py")):
+        text = p.read_text(encoding="utf-8")
+        total += _all_record_calls(text, str(p))
+        bad += _unconsumed_record_calls(text, str(p.relative_to(h.REPO)))
+    assert total >= 5, f"guard: only {total} record_pointer_error calls found under src/"
+    assert bad == [], (
+        "D8: these record_pointer_error calls discard the False a failed write returns "
+        f"(print it, or route through one wrapper that does): {bad}")
+
+
+# ---- round 13 / r1 #s3: the error-log scope key is canonical ------------------------------
+
+def _other_spelling(root: Path) -> Path:
+    s = str(root)
+    if s.startswith("/private/tmp/"):
+        return Path("/tmp/" + s[len("/private/tmp/"):])
+    if s.startswith("/tmp/"):
+        return Path("/private/tmp/" + s[len("/tmp/"):])
+    raise AssertionError(f"fixture: store root {s} is not under /tmp (macOS symlink)")
+
+
+def test_s3_a_row_scoped_by_tmp_is_seen_by_a_private_tmp_reader(X):
+    """r1 #s3 (D6/D8 scope): one store spelled `/tmp/...` by its writer and `/private/tmp/...`
+    by its reader (macOS: /tmp -> /private/tmp) is ONE scope. A row written under either
+    spelling is returned by `stm.read_pointer_errors(root=<the other>)` and named by
+    `handoff.session_pointer_anomalies(<the other>)`. RED at HEAD: the writer keeps
+    `abspath` and the readers compare `str(root)`, so the row is invisible."""
+    from refmatrix import handoff, stm
+    other = _other_spelling(X)
+    assert os.path.realpath(other) == os.path.realpath(X), (other, X)
+    assert stm.record_pointer_error("pointer-unresolved", root=other, owner=None,
+                                    purpose="event")
+    assert stm.record_pointer_error("sweep-failed", root=X, owner=None)
+    seen_x = [r.get("reason") for r in stm.read_pointer_errors(root=X)]
+    seen_other = [r.get("reason") for r in stm.read_pointer_errors(root=other)]
+    assert "pointer-unresolved" in seen_x and "sweep-failed" in seen_x, (
+        f"#s3: a reader spelling the root {X} misses the row written as {other}: {seen_x}")
+    assert "pointer-unresolved" in seen_other and "sweep-failed" in seen_other, (
+        f"#s3: a reader spelling the root {other} misses the row written as {X}: {seen_other}")
+    an = handoff.session_pointer_anomalies(X)
+    assert any("pointer-unresolved" in a for a in an), an

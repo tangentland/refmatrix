@@ -286,12 +286,20 @@ def test_ac2b_mid_answer_close_is_error_not_traceback(root):
 # ---- report legs ------------------------------------------------------------------------------
 
 def _row(**kw) -> dict:
+    """A `kind=recall` row as the GREEN writer writes it for the per-prompt hook recall. It
+    carries R11's channel flags (`session_start` / `stdin_json` / `recent`): round 13 #b1 --
+    every recall row carries them, and a row without them is a writer defect the report
+    counts, never classifies. A key set to None is removed (the flagless defect row)."""
     base = {"ts": "2026-10-16T10:00:00", "kind": "recall", "body": PROMPT,
             "source": "memory-recall", "invocation": "hook", "cardinality": None,
             "latency_ms": 10, "outcome": "ok", "error": None, "session": SESSION,
-            "query_id": "0" * 32, "cwd": None, "root": None, "budget_s": 5}
+            "query_id": "0" * 32, "cwd": None, "root": None, "budget_s": 5,
+            "session_start": False, "stdin_json": True, "recent": False}
     base.update(kw)
-    return base
+    return {k: v for k, v in base.items() if v is not None or k not in _FLAGS}
+
+
+_FLAGS = ("session_start", "stdin_json", "recent")
 
 
 def _write_query_log(root: Path, rows: list[dict]) -> None:
@@ -315,8 +323,7 @@ def test_ac2b_report_counts_prompt_recall_outcomes(root):
     are the shape AC-2b's two hook legs write at GREEN (a `--stdin-json` recall under
     `invocation=hook`, `budget_s=5`); they are written directly so this leg isolates the
     report from the writer. The row's `body`/`source` do not decide the channel -- the spec
-    recomputes it from the row; if GREEN needs a field to recompute it (e.g. the argv flags),
-    this fixture row must carry it."""
+    recomputes it from the row's flags, which the fixture carries (round 13 #b1)."""
     _write_query_log(root, [
         _row(outcome="ok", query_id="a" * 32),
         _row(outcome="skipped_budget", query_id="b" * 32),
@@ -363,3 +370,29 @@ def test_ac2b_report_counts_outcome_invalid_rows(root):
         f"R4: an outcome outside CALL_OUTCOMES is counted by the report.\nrc={r.returncode}\n"
         f"stdout={r.stdout[-1500:]}\nstderr={r.stderr[-1500:]}")
     assert r.returncode == 0, r.stderr
+
+
+def test_ac2b_report_counts_a_flagless_recall_row_as_a_writer_defect(root):
+    """Round 13 #b1 (R7/R11): a `kind=recall` row WITHOUT `session_start` / `stdin_json` /
+    `recent` is a writer defect -- COUNTED on the report (an `unflagged=<n>` count) and put
+    in NO recall channel, never guessed from `invocation` / `body`. One flagged per-prompt
+    row (ok) and one flagless query-less hook row (skipped_budget, the shape the r1 heuristic
+    misread as `precompact`): the channel lines show exactly the flagged row, and the defect
+    count is 1. RED at HEAD: `_recall_flags_of` guesses (the flagless row prints a
+    `precompact:` outcome line) and nothing counts it."""
+    flagless = _row(outcome="skipped_budget", query_id="d" * 32, body="",
+                    session_start=None, stdin_json=None, recent=None)
+    assert not any(k in flagless for k in _FLAGS), flagless
+    _write_query_log(root, [_row(outcome="ok", query_id="e" * 32), flagless])
+    r = _agent_usage(root)
+    out = r.stdout
+    assert r.returncode == 0, r.stderr
+    counts = re.findall(r"unflagged=(\d+)", out)
+    assert counts == ["1"], (
+        f"#b1: the flagless recall row is not counted as a writer defect (unflagged=<n>): "
+        f"{counts}\nstdout={out[-1500:]}")
+    assert "prompt_recall: ok=1 skipped_budget=0 error=0" in out, out[-1500:]
+    chan_lines = [ln.strip() for ln in out.splitlines()
+                  if re.match(r"^\s*(session_start|precompact|recall|prompt_recall)\s*:", ln)]
+    assert chan_lines == ["prompt_recall: ok=1 skipped_budget=0 error=0"], (
+        f"#b1: a flagless row was classified into a channel: {chan_lines}")
