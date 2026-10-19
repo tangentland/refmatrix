@@ -30,6 +30,7 @@ from tests import task21_1_support as h
 
 SESSION = "sess-ac2b-0001"
 PROMPT = "which parser handles the widget tokens"
+h.mark_token(SESSION, PROMPT)                                  # live-log guard (bug-134)
 
 
 @pytest.fixture

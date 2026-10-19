@@ -52,9 +52,43 @@ def live_log_paths() -> list[Path]:
     return out
 
 
-def live_snapshot() -> dict:
+# Strings a test MINTED (session ids, prompt bodies) that may appear in a row it leaked into a
+# live log. Tests register them through `mark_token`; the sandbox paths are always markers.
+TEST_TOKENS: set[str] = set()
+
+
+def mark_token(*tokens: str) -> None:
+    """Register strings this test minted (a session id, a unique prompt) so the live-log
+    guard attributes a live row carrying one to the test (21.1 r2 #s2, bug-134)."""
+    TEST_TOKENS.update(t for t in tokens if t)
+
+
+def _path_spellings(p: str) -> set[str]:
+    out = {p}
+    for a, b in (("/private/tmp/", "/tmp/"), ("/private/var/", "/var/")):
+        if p.startswith(a):
+            out.add(b + p[len(a):])
+        elif p.startswith(b):
+            out.add(a + p[len(b):])
+    return out
+
+
+def _test_markers() -> set[str]:
+    """What makes a live row the TEST's: a path under the sandbox root (every sandbox store,
+    `$RMX_HOME`, `REFMATRIX_ROOT`, pytest's tmp base), in either macOS spelling, or a token
+    the test minted."""
+    marks: set[str] = set()
+    for k in ("RMX_SANDBOX_ROOT", "REFMATRIX_ROOT", "RMX_HOME"):
+        v = os.environ.get(k)
+        if v and len(v) > 8:
+            marks |= _path_spellings(v.rstrip("/"))
+    marks.add("/pytest-of-")              # pytest's own tmp base (tmp_path roots)
+    return marks | set(TEST_TOKENS)
+
+
+def live_snapshot(paths: "list[Path] | None" = None) -> dict:
     snap = {}
-    for p in live_log_paths():
+    for p in (paths if paths is not None else live_log_paths()):
         try:
             st = os.stat(p)
             snap[str(p)] = (st.st_ino, st.st_size)
@@ -64,9 +98,42 @@ def live_snapshot() -> dict:
 
 
 def assert_live_logs_unchanged(before: dict) -> None:
-    after = live_snapshot()
-    moved = {k: (before[k], after[k]) for k in before if before[k] != after[k]}
-    assert not moved, f"a LIVE log moved during the test (inode, size): {moved}"
+    """The AC preamble's guard, ATTRIBUTING what moved (21.1 ch-bsd r2 #s2, bug-134). The
+    main dev tree's `query.log` is appended by every hook of whichever Claude session works
+    there, so a size check alone was red for the user's typing (task21.1-r1-tests-final-full
+    ERROR: +379 B, a live `scan-prompt` hook row). Now:
+    - an inode change, a file that appeared from nothing with test rows, or a SHRINK fails
+      (truncation and rotation are never the user's);
+    - on growth only the appended bytes are read, and the guard fails on a complete row
+      that carries a test marker (`_test_markers`: a sandbox path or a minted token). A row
+      with none is concurrent live use and is ignored; an incomplete trailing line (a
+      concurrent writer mid-append) is not judged."""
+    marks = _test_markers()
+    bad: dict = {}
+    for k, (ino0, size0) in before.items():
+        try:
+            st = os.stat(k)
+            ino1, size1 = st.st_ino, st.st_size
+        except FileNotFoundError:
+            ino1, size1 = 0, 0
+        if (ino1, size1) == (ino0, size0):
+            continue
+        if ino0 and ino1 != ino0:
+            bad[k] = f"inode changed {ino0} -> {ino1} (rotated or replaced)"
+            continue
+        if size1 < size0:
+            bad[k] = f"shrank {size0} -> {size1} (truncated)"
+            continue
+        with open(k, "rb") as f:
+            f.seek(size0 if ino0 else 0)
+            data = f.read(size1 - (size0 if ino0 else 0))
+        lines = data.split(b"\n")
+        complete = lines[:-1] if not data.endswith(b"\n") else lines
+        hits = [ln.decode("utf-8", "replace")[:300] for ln in complete
+                if ln.strip() and any(m in ln.decode("utf-8", "replace") for m in marks)]
+        if hits:
+            bad[k] = f"{len(hits)} appended row(s) attributable to this test: {hits[:3]}"
+    assert not bad, f"a LIVE log was written by the test: {bad}"
 
 
 # ---- env + subprocess -----------------------------------------------------------------------

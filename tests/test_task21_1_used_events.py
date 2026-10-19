@@ -69,7 +69,9 @@ def root() -> Path:
 
 
 def _sid(tag: str) -> str:
-    return f"{tag}-{uuid.uuid4().hex[:10]}"
+    sid = f"{tag}-{uuid.uuid4().hex[:10]}"
+    h.mark_token(sid)                      # the live-log guard attributes a leak of it (bug-134)
+    return sid
 
 
 def _seed(root: Path, *, alpha_memory=True, code=(), memories_in_intuition=(),
@@ -193,14 +195,25 @@ def _prompt_recall_delivering(root: Path, session: str, name: str, attempts: int
     way: no memory delivered, so the note had no memory key to use). Each attempt is a real
     hook call in `session`; an empty degrade adds no delivered event, so a retry cannot
     change what the AC counts. Fails with a SETUP message if every attempt degraded."""
+    import warnings
     seen = []
-    for _ in range(attempts):
+    for i in range(attempts):
+        n0 = h.line_count(root / "query.log")
         rows = _prompt_recall(root, session, **extra)
-        seen.append([r.get("name") for r in rows])
-        if name in seen[-1]:
+        rec = [q for q in h.jsonl(root / "query.log")[n0:] if q.get("kind") == "recall"]
+        outcome = [(q.get("outcome"), q.get("error"), q.get("latency_ms"), q.get("cardinality"))
+                   for q in rec]
+        seen.append({"names": [r.get("name") for r in rows], "query_log": outcome})
+        if name in seen[-1]["names"]:
+            if i:
+                # r2 #m4: a retry happened -- RECORD why (the failed attempts' query.log
+                # outcome: skipped_budget, error, or ok-but-empty), never assume the cause.
+                warnings.warn(f"AC-11 setup: prompt recall needed {i + 1} attempts; "
+                              f"earlier attempts: {seen[:-1]}")
             return rows
     raise AssertionError(f"setup: the prompt recall never delivered {name!r} in "
-                         f"{attempts} attempts (degraded under load?): {seen}")
+                         f"{attempts} attempts; per attempt (names, query.log (outcome, "
+                         f"error, latency_ms, cardinality)): {seen}")
 
 
 def _wait_context_without(root: Path, ref: str, text: str, session: str | None,
@@ -502,7 +515,9 @@ def test_ac11e_concept_anchor_with_attached_memory_body(root):
     added = used_after_c2[len(used_after_c1):]
     assert used_after_c2[:len(used_after_c1)] == used_after_c1 and "memory" not in added, (
         f"AC-11e: the concept-only call emitted a kind=memory `used`: {used_after_c2}")
-    assert added in ([], ["concept"]), added
+    assert added == ["concept"], (
+        f"AC-11e / round 13 #s1 (r2 #m2): the concept-only call must use the concept key c1 "
+        f"delivered (an earlier context call is evidence); added={added}")
     (u,) = [x for x in _used(root, S) if x["kind"] == "memory"]
     assert u["evidence"] == "context_by_name" and u["partition"] == "intuition", u
     for x in _used(root, S):

@@ -56,6 +56,7 @@ PARKED_REFS = ["gamma_topic_a", "omega_parked_ref"]
 # it scan-prompt matched nothing and emitted no event, so the scan_prompt legs asserted on
 # nothing (bug-131).
 B8_PROMPT = "please extend alpha_topic_a with omicron_prompt_ref zorbulate"
+h.mark_token(SESSION, SCAN_PROMPT, RECALL_PROMPT, B8_PROMPT)   # live-log guard (bug-134)
 
 
 # ---- the fixture store ------------------------------------------------------------------------
@@ -582,42 +583,230 @@ def test_ac8c_context_channel_through_mcp_and_cli(store):
                    partition_ok=lambda p: p == part or p == "intuition")
 
 
-def test_b3_agent_recall_default_table_output_delivers_with_byte_spans(store):
-    """Round 13 #b3 (R10/R11, the agent `recall` channel): `rmx memory recall <q>` in its
-    DEFAULT table output (no --json) emits `delivered` events whose `offset_bytes` / `bytes`
-    index the stdout BYTES actually printed (the table's box-drawing characters are multibyte,
-    so a character offset misses), with `payload_bytes` = len(stdout) and `block_sha` = the
-    sha256 of those bytes; every retrieved name the table printed is a delivered event. RED at
-    HEAD: the table route emits `delivered` with every span field null."""
+# ---- the agent `recall` channel's TABLE output (round 13 #b3; ch-bsd r2 b1/s1/m1) ---------
+
+LONG_NAME = "feedback_" + "very_long_memory_name_segment_" * 3 + "end"      # > 80 columns
+TABLE_NAMES = ("name", "id", "rank", "score", "1", LONG_NAME)            # r2 #m1 + #s1 (M3c)
+SUBJECT = "subject_zebra_rules"
+
+
+@pytest.fixture(scope="module")
+def table_store():
+    """A second store for the table legs: memories in `intuition` whose names collide with
+    the table's header and rank cells (`name`, `id`, `rank`, `score`, `1`, r2 #m1) and one
+    longer than 80 columns (r2 #s1 M3c: a terminal-width fit cuts it to `…`), all filed under
+    one subject (the `--subject` table route, r2 #b1), embedded, served by a real daemon."""
+    import rmx_sandbox
+    from refmatrix import daemon as dm
+    from refmatrix.store import Store
+    root = rmx_sandbox.new_store_root(Path(os.environ["RMX_SANDBOX_ROOT"]))
+    s = Store(root)
+    s.init()
+    try:
+        with s.with_partition("intuition"):
+            subj = s.add_memory(name=SUBJECT, content="zebra rules subject", mtype="subject")
+            for i, nm in enumerate(TABLE_NAMES):
+                leaf = s.add_memory(name=nm, content=f"zebrafish ledger rule {i}: tally",
+                                    mtype="feedback")
+                s.link_part_of(leaf, subj)
+    finally:
+        s.close()
+    d = h.SandboxDaemon(root)
+    try:
+        res = dm.call(root, "embed", {"kinds": ["memory"], "partition": "intuition"},
+                      timeout=600)
+        assert res.get("ok"), res
+        yield root
+    finally:
+        d.stop()
+        rmx_sandbox.remove_tree(root.parent)
+
+
+def _agent_table(root: Path, argv: list[str], **extra):
     import subprocess
-    root = store
-    before = h.line_count(_ev_path(root))
-    env = h.rmx_env(root, CLAUDECODE="1", RMX_PARTITION="intuition")
-    r = subprocess.run([h.rmx_bin(), "memory", "recall", "quasar ledger"], env=env,
-                       cwd=str(root.parent), capture_output=True, timeout=180)
+    env = h.rmx_env(root, CLAUDECODE="1", RMX_PARTITION="intuition", **extra)
+    return subprocess.run([h.rmx_bin(), *argv], env=env, cwd=str(root.parent),
+                          capture_output=True, timeout=180)
+
+
+def _row_line(out: bytes, off: int) -> bytes:
+    start = out.rfind(b"\n", 0, off) + 1
+    end = out.find(b"\n", off)
+    return out[start:end if end >= 0 else len(out)]
+
+
+def _check_table_delivery(root: Path, r, before: int, what: str) -> list[dict]:
+    """Round 13 #b3 for one TABLE call: delivered events whose byte spans sit on the item's OWN
+    row's name cell (after the header rule, `│ ` before, padding after, the row's id cell on
+    the same line -- r2 #m1), with `payload_bytes` = len(stdout) and `block_sha` = its sha256;
+    every row the table printed is delivered (no `delivered_unspanned`)."""
     out = r.stdout
-    assert r.returncode == 0, r.stderr[-800:]
-    assert not out.lstrip().startswith(b"["), "fixture: this leg is the TABLE output, not JSON"
-    assert any(b >= 0x80 for b in out), "fixture: the table carries no multibyte byte"
-    evs = _require_events(_new_events(_ev_path(root), before), "recall", "#b3 table recall")
+    err = r.stderr.decode("utf-8", "replace")
+    assert r.returncode == 0, err[-800:]
+    assert not out.lstrip().startswith(b"["), f"fixture: {what} must be the TABLE output"
+    assert "delivered_unspanned" not in err, f"{what}: items printed but not delivered: {err}"
+    evs = _require_events(_new_events(_ev_path(root), before), "recall", what)
     _one_call(evs)
-    retrieved = [e for e in evs if e["stage"] == "retrieved"]
     delivered = [e for e in evs if e["stage"] == "delivered"]
-    assert delivered, "#b3: the table printed rows but no `delivered` event was emitted"
+    assert delivered, f"{what}: the table printed rows but no `delivered` event was emitted"
+    body = out.find("┡".encode())
+    assert body >= 0, f"fixture: no header rule in {out[:300]!r}"
     for e in delivered:
         assert e["invocation"] == "agent" and e["block_id"] == "recall", e
         assert e["payload_bytes"] == len(out), (
-            f"#b3: delivered `payload_bytes` {e['payload_bytes']!r} != {len(out)} stdout bytes")
+            f"{what}: delivered payload_bytes {e['payload_bytes']!r} != {len(out)} stdout bytes")
         assert e["block_sha"] in (_sha(out), _sha(out.rstrip(b"\n"))), (
-            f"#b3: delivered `block_sha` {e['block_sha']!r} is not the stdout's sha256")
+            f"{what}: delivered block_sha {e['block_sha']!r} is not the stdout's sha256")
         off, n = e["offset_bytes"], e["bytes"]
         assert isinstance(off, int) and isinstance(n, int) and off >= 0 and n > 0, (off, n)
-        assert off + n <= len(out)
-        assert e["name"].encode() in out[off:off + n], (
-            f"#b3: span [{off},{off + n}) does not hold {e['name']!r}: {out[off:off + n]!r}")
-    printed = {e["name"] for e in retrieved if e["name"].encode() in out}
-    assert printed and printed <= {e["name"] for e in delivered}, (
-        printed - {e["name"] for e in delivered})
+        name = e["name"].encode()
+        assert out[off:off + n] == name, (
+            f"{what}: span [{off},{off + n}) is {out[off:off + n]!r}, not {name!r}")
+        line = _row_line(out, off)
+        assert off > body, f"{what}: {e['name']!r} spanned in the HEADER: {line!r}"
+        assert out[off - len("│ ".encode()):off] == "│ ".encode() and out[off + n:off + n + 1] \
+            == b" ", f"{what}: {e['name']!r} spanned outside a name cell: {line!r}"
+        assert f"│ {e['entity_id']} ".encode() in line, (
+            f"{what}: {e['name']!r} spanned on another row (id {e['entity_id']}): {line!r}")
+    return evs
+
+
+@pytest.mark.parametrize("argv", [["memory", "recall", "quasar ledger"],
+                                  ["memory", "recall", "--recent", "--k", "5"]],
+                         ids=["query", "recent"])
+def test_b3_agent_recall_default_table_output_delivers_with_byte_spans(store, argv):
+    """Round 13 #b3 (R10/R11, the agent `recall` channel): `rmx memory recall <q>` AND
+    `rmx memory recall --recent --k 5` (ch-bsd r2 b1: the sibling table route) in the DEFAULT
+    table output deliver every printed memory with byte spans over the stdout BYTES (the box
+    characters are multibyte), payload_bytes and block_sha; stderr never says
+    `delivered_unspanned`. RED at HEAD: query leg -- null spans (r1); recent leg -- 0
+    delivered and `delivered_unspanned=5` (r2 b1-r2)."""
+    root = store
+    before = h.line_count(_ev_path(root))
+    r = _agent_table(root, argv)
+    assert any(b >= 0x80 for b in r.stdout), "fixture: the table carries no multibyte byte"
+    evs = _check_table_delivery(root, r, before, " ".join(argv[2:]))
+    retrieved = [e for e in evs if e["stage"] == "retrieved"]
+    printed = {e["name"] for e in retrieved if e["name"].encode() in r.stdout}
+    assert printed and printed <= {e["name"] for e in evs if e["stage"] == "delivered"}, printed
+
+
+@pytest.mark.parametrize("argv", [["memory", "recall", "zebrafish ledger", "--k", "10"],
+                                  ["memory", "recall", "--recent", "--k", "10"],
+                                  ["memory", "recall", "--subject", SUBJECT, "--k", "10"]],
+                         ids=["query", "recent", "subject"])
+def test_r2_table_spans_land_on_each_items_own_name_cell(table_store, argv):
+    """ch-bsd r2 #m1 + #b1 + #s1 (M3c): memories named `name`, `id`, `rank`, `score` and `1`
+    each get their span on their OWN row's name cell -- never the header (`┃ rank ┃ score ┃ id
+    ┃ name ┃`) or a rank/id cell -- and a name longer than 80 columns is printed whole (no
+    `…`) and spanned, on the query, recent and subject table routes. RED at HEAD: query --
+    `name`/`score`/`id`/`rank` span the header; recent/subject -- no delivered events."""
+    root = table_store
+    before = h.line_count(_ev_path(root))
+    r = _agent_table(root, argv)
+    evs = _check_table_delivery(root, r, before, " ".join(argv[2:]))
+    got = {e["name"] for e in evs if e["stage"] == "delivered"}
+    assert set(TABLE_NAMES) <= got, f"not delivered: {set(TABLE_NAMES) - got}"
+    assert LONG_NAME.encode() in r.stdout, "M3c: the long name was cut (natural width lost)"
+
+
+def test_r2_global_table_row_is_labelled_global(store, global_daemon):
+    """ch-bsd r2 #s1 (M3b): a GLOBAL memory in the agent's table recall prints with its
+    `[global]` label (rich read a bare `[global]` as markup and dropped it, so the row printed
+    as a project one -- 21.1 r1 #b3), and its delivered event is scope=global in the global
+    file with its span on that row. Kills the unescaped-`[global]` mutation."""
+    root, groot = store, global_daemon
+    before_g = h.line_count(_ev_path(groot))
+    r = _agent_table(root, ["memory", "recall", "quasar ledger reconcile", "--k", "20",
+                                  "--scope", "both"])
+    out = r.stdout.decode("utf-8")
+    lines = [ln for ln in out.splitlines() if "reference_quasar_global" in ln]
+    assert lines, f"fixture: no global row in the table: {out[:800]} {r.stderr[-400:]!r}"
+    assert all("[global]" in ln for ln in lines), (
+        f"M3b: the global row lost its [global] label: {lines}")
+    gev = [e for e in _new_events(_ev_path(groot), before_g)
+           if e.get("stage") == "delivered" and e.get("name") == "reference_quasar_global"]
+    assert len(gev) == 1 and gev[0]["scope"] == "global", gev
+    span = r.stdout[gev[0]["offset_bytes"]:gev[0]["offset_bytes"] + gev[0]["bytes"]]
+    assert span == b"reference_quasar_global", span
+
+
+def test_r2_unspanned_delivered_items_are_counted_never_written(store, capsys):
+    """ch-bsd r2 #s1 (M8), the `call_events` backstop (R10: a delivered event IS a span): an
+    item handed as delivered without a span is NOT written as `delivered` (no null-offset
+    events) and is counted on stderr (`delivered_unspanned=<n>`); a spanned sibling is
+    written. Kills the mutation that writes unspanned items again."""
+    from refmatrix import telemetry
+    root = store
+    payload = b"| mem_spanned_x |"
+    spanned = {"name": "mem_spanned_x", "entity_id": 901, "catalog_kind": "memory",
+               "mtype": "feedback", "scope": "project", "partition": "intuition", "rank": 1,
+               "offset_bytes": 2, "bytes": len("mem_spanned_x")}
+    unspanned = {**spanned, "name": "mem_unspanned_y", "entity_id": 902, "rank": 2,
+                 "offset_bytes": None, "bytes": None}
+    before = h.line_count(_ev_path(root))
+    telemetry.emit_call(root, channel="recall", invocation="agent", session=None,
+                        query_id="e" * 32, retrieved=[spanned, unspanned],
+                        delivered=[spanned, unspanned], payload=payload, block_id="recall")
+    evs = _new_events(_ev_path(root), before)
+    dl = [e for e in evs if e["stage"] == "delivered"]
+    assert [e["name"] for e in dl] == ["mem_spanned_x"], dl
+    assert all(e["offset_bytes"] is not None for e in evs if e["stage"] == "delivered")
+    assert "delivered_unspanned=1" in capsys.readouterr().err
+
+
+def test_r2_counting_stream_close_never_flushes_or_closes_the_wrapped_stream():
+    """ch-bsd r2 #s1 (M7, plan-9 r5 #m-11): `CountingStream.close()` -- called by `io.IOBase`'s
+    finalizer when `cli_entry` drops the proxy -- closes the PROXY only. Flushing the wrapped
+    `sys.__stdout__` there printed a SECOND "Exception ignored ... BrokenPipeError" naming
+    `telemetry.py` on a closed consumer. Deterministic leg: a wrapped stream whose flush
+    raises BrokenPipeError is neither flushed nor closed by close() or by finalization."""
+    import gc
+    from refmatrix import telemetry
+
+    class Inner:
+        flushed = closed = 0
+
+        def write(self, s):
+            return len(s)
+
+        def flush(self):
+            Inner.flushed += 1
+            raise BrokenPipeError(32, "Broken pipe")
+
+        def close(self):
+            Inner.closed += 1
+
+    p = telemetry.CountingStream(Inner())
+    p.write("x" * 10)
+    try:
+        p.close()
+    except BrokenPipeError as e:
+        raise AssertionError(f"M7: close() flushed the wrapped stream and raised {e!r}")
+    assert p.closed
+    q = telemetry.CountingStream(Inner())
+    del q
+    gc.collect()                    # IOBase's finalizer calls close(); an error there is ignored
+    assert (Inner.flushed, Inner.closed) == (0, 0), (
+        f"M7: closing/finalizing the proxy flushed the wrapped stream {Inner.flushed}x and "
+        f"closed it {Inner.closed}x")
+
+
+def test_r2_closed_pipe_reports_the_broken_pipe_once_never_from_telemetry(store):
+    """ch-bsd r2 #s1 (M7) end to end: `rmx telemetry --agent-usage` into a pipe whose reader
+    closed before the first write reports the broken pipe exactly ONCE (the interpreter's own
+    stdout line) and never in a traceback naming `telemetry.py`. (Regression guard: on
+    Python 3.14 this leg alone does not kill the close()-flushes mutation -- the wrapped
+    buffer is already drained when the proxy is finalized; the unit leg above does.)"""
+    import subprocess
+    env = h.rmx_env(store, CLAUDECODE="1", RMX_PARTITION="intuition")
+    r = subprocess.run(["/bin/bash", "-c", "rmx telemetry --agent-usage | (exec 0<&-; sleep 0.5)"],
+                       env=env, cwd=str(store.parent), capture_output=True, text=True,
+                       timeout=180)
+    err = r.stderr
+    assert "telemetry.py" not in err, f"a traceback names telemetry.py:\n{err[-2000:]}"
+    n = err.count("Traceback (most recent call last)") + err.count("Exception ignored")
+    assert n == 1, f"the broken pipe was reported {n} times (expected once):\n{err[-2000:]}"
 
 
 # ---- AC-10 -----------------------------------------------------------------------------------

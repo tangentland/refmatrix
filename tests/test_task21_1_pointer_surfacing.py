@@ -806,3 +806,69 @@ def test_s3_a_row_scoped_by_tmp_is_seen_by_a_private_tmp_reader(X):
         f"#s3: a reader spelling the root {other} misses the row written as {X}: {seen_other}")
     an = handoff.session_pointer_anomalies(X)
     assert any("pointer-unresolved" in a for a in an), an
+
+
+# ---- ch-bsd r2 #s1: guards for the r1 remedies (M5b prune count, handoff clause path) -------
+
+def test_r2_session_start_line_counts_an_unreadable_pointer_file(X):
+    """ch-bsd r2 #s1 (M5b; r1 #s2): a `by-pid/` pointer file that cannot be parsed is not
+    judged dead and is COUNTED on the SessionStart writer's status line
+    (`prune_unreadable=1`), never skipped silently. Kills the mutation that drops the count."""
+    pdir().mkdir(parents=True, exist_ok=True)
+    (pdir() / "99999.json").write_text("{not json")
+    r = run_ss(X)
+    line = [ln for ln in r.stdout.splitlines() if ln.startswith("rmx session-pointer:")]
+    assert line and "prune_unreadable=1" in line[-1], (line, r.stderr[-800:])
+    assert (pdir() / "99999.json").exists(), "an unreadable pointer was judged dead"
+
+
+def test_r2_session_start_line_counts_an_undroppable_legacy_pointer(X):
+    """ch-bsd r2 #s1 (r1 #s2, `drop_legacy_pointers_migration`): a legacy per-store pointer
+    whose unlink fails is counted (`legacy_pointers_undropped=1`), never skipped silently."""
+    ld = X / "stm" / "by-pid"
+    ld.mkdir(parents=True, exist_ok=True)
+    (ld / "424242.json").write_text(json.dumps({"session": "old", "pid": 424242}))
+    ld.chmod(stat.S_IRUSR | stat.S_IXUSR)
+    try:
+        r = run_ss(X)
+    finally:
+        ld.chmod(stat.S_IRWXU)
+    line = [ln for ln in r.stdout.splitlines() if ln.startswith("rmx session-pointer:")]
+    assert line and "legacy_pointers_undropped=1" in line[-1], (line, r.stderr[-800:])
+
+
+def test_r2_hook_failure_clause_names_the_errors_log_path():
+    """ch-bsd r2 #s1 (r1 #m4, D8 / round-9 #m9-2): recall-state's STM-hook-failure clause
+    takes the log path from `stm.errors_log_path()`, never a hand-typed name."""
+    from refmatrix import handoff, stm
+    X = Path(os.environ["REFMATRIX_ROOT"])
+    assert stm.record_pointer_error("sweep-failed", root=X, owner=None)
+    clause = [ln for ln in handoff.session_pointer_anomalies(X)
+              if ln.startswith("STM hook failures")]
+    assert clause == [f"STM hook failures in 24h: sweep-failed x1; see {stm.errors_log_path()}"], \
+        clause
+
+
+# ---- ch-bsd r2 #m3: an empty / null root is attributed to NO store ---------------------------
+
+def test_r2_empty_or_null_root_is_unscoped_not_the_cwd(X, monkeypatch):
+    """ch-bsd r2 #m3 (D6: a row with no root is counted apart, never attributed): a log row
+    whose `root` is "" or null is returned to a scoped reader as `unscoped-row`, even when the
+    reader's cwd IS the store root; `stm.scope_key("")` does not resolve to the cwd. RED at
+    HEAD: `scope_key("")` = realpath(cwd), so a reader at cwd = X attributes both rows to X."""
+    from refmatrix import stm
+    monkeypatch.chdir(X)
+    try:
+        k = stm.scope_key("")
+    except (ValueError, TypeError):
+        k = None
+    assert k != os.path.realpath(os.getcwd()), f"scope_key('') resolved to the cwd: {k}"
+    pdir().mkdir(parents=True, exist_ok=True)
+    t = time.time()
+    with open(errlog(), "a") as f:
+        for root in ("", None):
+            f.write(json.dumps({"t": t, "reason": "pointer-unresolved", "root": root,
+                                "owner": None, "owner_start": None}) + "\n")
+    got = [r.get("reason") for r in stm.read_pointer_errors(root=X)]
+    assert got == ["unscoped-row", "unscoped-row"], (
+        f"#m3: an empty/null-root row was attributed to the store at the cwd: {got}")
