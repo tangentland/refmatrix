@@ -191,6 +191,7 @@ def test_hub_status_shows_each_daemons_version_and_flags_stale(monkeypatch):
     assert "v0.69.1" in b and "STALE" not in b
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_relaunch_fleet_relaunches_every_supervised_store(monkeypatch, tmp_path):
     roots = [tmp_path / "a" / ".refmatrix", tmp_path / "b" / ".refmatrix"]
     for r in roots:

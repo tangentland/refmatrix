@@ -85,17 +85,40 @@ def pytest_sessionstart(session):
 
 @pytest.fixture
 def deployed_rmx(tmp_path, monkeypatch):
-    """`RMX_BIN` -> a fake binary that ANSWERS `dev_tree: false`, so plist renders pass the
-    fail-closed identity guard (r4 #s-2) for the right reason. The identity is asked for and
-    cached HERE, before a test fakes `subprocess.run` (the `_hub_install_fakes` state machine
-    replaces the process-wide function `binary_identity` execs through)."""
+    """The deployed environment, pinned (task 4.5; widened by task 4.6 M2).
+
+    Three inputs a plist / upgrade / relaunch test would otherwise take from whichever tree runs
+    it — the ambient `rmx` on PATH, `sys.argv[0]`, and the test interpreter's own identity, which
+    is "deployed" in the dev tree and "dev tree" in every clone (ch-bsd plan-4 r5 #m-2, #s-2):
+
+    - `RMX_BIN` -> a real script answering the identity JSON with `dev_tree: false` and an
+      `import_path` inside a tmp deploy-shaped tree. Its identity is asked for and cached HERE,
+      before a test fakes `subprocess.run` (the `_hub_install_fakes` state machine replaces the
+      process-wide function `binary_identity` execs through).
+    - `RMX_DEPLOY_ROOT` -> that tree (S2's deploy root).
+    - `upgrade.runtime_identity` -> the REAL classifier with its DEFAULT `prefix`/`import_file`
+      pointed at that tree's `.venv` and `src/refmatrix/__init__.py`. Explicit arguments pass
+      through untouched, so identity-under-test calls are unaffected."""
+    import functools
     from refmatrix import launchctl
-    from tests.fake_rmx import identity_binary
-    b = identity_binary(tmp_path / "deployed-rmx", dev_tree=False)
+    from refmatrix import upgrade as _up
+    from tests.fake_rmx import deploy_tree, identity_binary
+    tree = deploy_tree(tmp_path / "deployed-rmx")
+    init = tree / "src" / "refmatrix" / "__init__.py"
+    b = identity_binary(tmp_path / "deployed-rmx", dev_tree=False, import_path=str(init))
     monkeypatch.setattr(launchctl, "_IDENTITY_CACHE", {})
     ident = launchctl.binary_identity(str(b))
     assert ident.get("dev_tree") is False, ident
     monkeypatch.setenv("RMX_BIN", str(b))
+    monkeypatch.setenv("RMX_DEPLOY_ROOT", str(tree))
+    real = _up.runtime_identity
+
+    @functools.wraps(real)
+    def _deployed_identity(*, prefix=None, import_file=None):
+        return real(prefix=prefix if prefix is not None else tree / ".venv",
+                    import_file=import_file if import_file is not None else init)
+    monkeypatch.setattr(_up, "runtime_identity", _deployed_identity)
+    assert _up.runtime_identity()["dev_tree"] is False
     return b
 
 

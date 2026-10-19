@@ -20,8 +20,27 @@ def script_binary(base: Path, name: str, body: str) -> Path:
     return b
 
 
-def identity_binary(base: Path, *, dev_tree: bool, name: "str | None" = None) -> Path:
+def identity_binary(base: Path, *, dev_tree: bool, name: "str | None" = None,
+                    import_path: str = "/x/src/refmatrix/__init__.py") -> Path:
     """A binary answering the identity JSON `rmx version -v --json` prints."""
-    ident = ('{"dev_tree": %s, "import_path": "/x/src/refmatrix/__init__.py"}'
-             % ("true" if dev_tree else "false"))
+    ident = ('{"dev_tree": %s, "import_path": "%s"}'
+             % ("true" if dev_tree else "false", import_path))
     return script_binary(base, name or ("dev" if dev_tree else "deployed"), f"echo '{ident}'")
+
+
+def deploy_tree(base: Path, name: str = "deploy", *, prefix: str = ".venv",
+                editable_target: "Path | None" = None) -> Path:
+    """A tmp tree shaped like a refmatrix checkout with its own venv (task 4.6, S2/M2):
+    `<base>/<name>/{pyproject.toml, src/refmatrix/__init__.py}` plus `<prefix>/lib/python3.14/
+    site-packages/__editable__.refmatrix-0.0.0.pth` naming `editable_target` (default: the
+    tree's own `src/`). Never a real venv: `runtime_identity(prefix=, import_file=)` reads these
+    paths and nothing else."""
+    root = base / name
+    (root / "src" / "refmatrix").mkdir(parents=True, exist_ok=True)
+    (root / "pyproject.toml").write_text('[project]\nname = "refmatrix"\nversion = "0.0.0"\n')
+    (root / "src" / "refmatrix" / "__init__.py").write_text('__version__ = "0.0.0"\n')
+    sp = root / prefix / "lib" / "python3.14" / "site-packages"
+    sp.mkdir(parents=True, exist_ok=True)
+    target = editable_target if editable_target is not None else root / "src"
+    (sp / "__editable__.refmatrix-0.0.0.pth").write_text(str(target) + "\n")
+    return root

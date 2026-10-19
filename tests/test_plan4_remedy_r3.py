@@ -144,6 +144,7 @@ def test_verify_relaunch_never_kills_a_predecessor_with_a_fresh_heartbeat(root, 
     assert kills == [], "a predecessor with a fresh heartbeat is WORKING; never SIGKILL it"
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_verify_relaunch_kills_a_predecessor_only_when_its_heartbeat_is_stale(root, monkeypatch):
     from refmatrix import __version__, upgrade
     _launchd_fakes(monkeypatch, stopped=False)
@@ -298,6 +299,7 @@ def test_watchdog_dead_branch_needs_two_consecutive_no_process_ticks(root, monke
     assert restarts == [False]
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_daemon_restart_relaunch_pauses_the_watchdog_for_the_root_and_resumes(root, monkeypatch):
     from refmatrix import __version__, upgrade
     calls = _launchd_fakes(monkeypatch, stopped=True)

@@ -23,6 +23,8 @@ rel: specifies -> [[task-4.1-plan-4-daemon-resilience]]
 rel: specifies -> [[task-4.2-plan-4-daemon-resilience]]
 rel: specifies -> [[task-4.3-plan-4-daemon-resilience]]
 rel: specifies -> [[task-4.4-plan-4-daemon-resilience]]
+rel: specifies -> [[task-4.5-r4-remedy]]
+rel: specifies -> [[task-4.6-r5-remedy]]
 
 ## Context {#context}
 
@@ -90,6 +92,8 @@ orderly launchd service spawned 11,251 times behind a manual unsupervised daemon
 | 4.2 | repair-index --entities, in-band and at boot | 4.1 |
 | 4.3 | Heartbeat + watchdog grace + graceful restart | — |
 | 4.4 | Supervised start adopts an unsupervised daemon; fix orderly | — |
+| 4.5 | r4 remedy: unknown binary fails closed, one stop grace, reachable `--allow-dev`, session ExitTimeOut ([[task-4.5-r4-remedy]]) | 4.4 |
+| 4.6 | r5 remedy: upgrade honours a failed stop via the shared launchd helper, one binary resolver, the dev venv is a dev tree, session plist lifecycle, identity is not drift, no tree-dependent tests ([[task-4.6-r5-remedy]]) | 4.5 |
 
 ## Execution contract {#execution}
 

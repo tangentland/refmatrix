@@ -94,6 +94,7 @@ def _installed_plist(tmp_path, monkeypatch, root, **flags) -> Path:
     return p
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_plist_check_sees_a_missing_supervised_variable(tmp_path, monkeypatch):
     root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
     p = _installed_plist(tmp_path, monkeypatch, root)
@@ -106,6 +107,7 @@ def test_plist_check_sees_a_missing_supervised_variable(tmp_path, monkeypatch):
     assert ok is False and "RMX_SUPERVISED" in why, why
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_plist_check_keeps_the_installed_flags(tmp_path, monkeypatch):
     """The render depends on install-time flags; the check re-renders from
     the installed ProgramArguments, so a `--no-watch --semantic --watch-root`
@@ -118,6 +120,7 @@ def test_plist_check_keeps_the_installed_flags(tmp_path, monkeypatch):
     assert ok is True, why
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_plist_check_reports_a_missing_plist(tmp_path, monkeypatch):
     root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
     monkeypatch.setattr(launchctl, "LAUNCH_AGENTS_DIR", tmp_path / "LaunchAgents")
@@ -125,6 +128,7 @@ def test_plist_check_reports_a_missing_plist(tmp_path, monkeypatch):
     assert ok is False and "not installed" in why
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_launchctl_install_check_cli_exits_1_on_drift(tmp_path, monkeypatch):
     root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
     p = _installed_plist(tmp_path, monkeypatch, root)
@@ -138,6 +142,7 @@ def test_launchctl_install_check_cli_exits_1_on_drift(tmp_path, monkeypatch):
     assert r.exit_code == 1 and "RMX_SUPERVISED" in r.output, r.output
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_relaunch_fleet_reinstalls_a_drifted_plist_before_restarting(monkeypatch, tmp_path):
     from refmatrix import discovery
     from refmatrix import launchctl as lc
@@ -415,6 +420,7 @@ def _fake_launchctl(monkeypatch, tmp_path, root, *, loaded_seq, env_after=None):
     return calls
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_install_force_raises_when_the_bootout_does_not_complete(tmp_path, monkeypatch):
     root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
     (tmp_path / "LaunchAgents").mkdir()
@@ -425,6 +431,7 @@ def test_install_force_raises_when_the_bootout_does_not_complete(tmp_path, monke
     assert "bootout" in calls and "bootstrap" not in calls, calls   # never bootstrap against a loaded label
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_install_force_reloads_and_verifies_the_loaded_env(tmp_path, monkeypatch):
     root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
     (tmp_path / "LaunchAgents").mkdir()
@@ -435,6 +442,7 @@ def test_install_force_reloads_and_verifies_the_loaded_env(tmp_path, monkeypatch
     assert p.read_bytes() == launchctl.render_plist(root)
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_install_raises_when_the_loaded_job_lacks_the_rendered_env(tmp_path, monkeypatch):
     root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
     (tmp_path / "LaunchAgents").mkdir()
@@ -444,6 +452,7 @@ def test_install_raises_when_the_loaded_job_lacks_the_rendered_env(tmp_path, mon
         launchctl.install(root)
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_check_reports_a_loaded_job_that_lacks_the_rendered_env(tmp_path, monkeypatch):
     root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
     _installed_plist(tmp_path, monkeypatch, root)
@@ -453,6 +462,7 @@ def test_check_reports_a_loaded_job_that_lacks_the_rendered_env(tmp_path, monkey
     assert ok is False and "loaded job" in why and "RMX_SUPERVISED" in why, why
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_check_reports_an_installed_but_unloaded_label(tmp_path, monkeypatch):
     """The bug-013 state: plist current on disk, nothing loaded, a standalone
     daemon on the root."""
@@ -463,7 +473,11 @@ def test_check_reports_an_installed_but_unloaded_label(tmp_path, monkeypatch):
     assert ok is False and "not loaded" in why, why
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_relaunch_bootstraps_an_installed_but_unloaded_plist_instead_of_spawning(tmp_path, monkeypatch):
+    """bug-013 state: plist installed, label not loaded. The bootstrap goes through `reinstall`
+    with the resolved binary, so the installed flags survive (task 4.6 S1; it was a bare
+    `install(root)` -- default flags, `which rmx`)."""
     from refmatrix import __version__
     from refmatrix import upgrade as up
     root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
@@ -472,10 +486,14 @@ def test_relaunch_bootstraps_an_installed_but_unloaded_plist_instead_of_spawning
     calls = []
     monkeypatch.setattr(launchctl, "is_installed", lambda r: True)
     monkeypatch.setattr(launchctl, "is_loaded", lambda r: False)
-    monkeypatch.setattr(launchctl, "install", lambda r, **kw: calls.append("install") or launchctl.plist_path(r))
-    monkeypatch.setattr(launchctl, "kickstart", lambda r, restart=False: calls.append("kickstart") or "l")
-    monkeypatch.setattr(dm, "spawn_daemon", lambda r, **kw: calls.append("spawn") or 1)
-    monkeypatch.setattr(dm, "stop_daemon", lambda r, **kw: calls.append("stop") or True)
+    monkeypatch.setattr(launchctl, "install",
+                        lambda r, **kw: calls.append(("install", kw.get("rmx"))) or launchctl.plist_path(r))
+    monkeypatch.setattr(launchctl, "reinstall",
+                        lambda r, **kw: calls.append(("reinstall", kw.get("rmx"))) or launchctl.plist_path(r))
+    monkeypatch.setattr(launchctl, "kickstart",
+                        lambda r, restart=False: calls.append(("kickstart", restart)) or "l")
+    monkeypatch.setattr(dm, "spawn_daemon", lambda r, **kw: calls.append(("spawn",)) or 1)
+    monkeypatch.setattr(dm, "stop_daemon", lambda r, **kw: calls.append(("stop",)) or True)
     ident = up.runtime_identity()
     seen = {"n": 0}
 
@@ -487,5 +505,5 @@ def test_relaunch_bootstraps_an_installed_but_unloaded_plist_instead_of_spawning
         "code_path": str(ident["import_path"]), "dev_tree": False}})
     r = CliRunner().invoke(cli_mod.main, ["daemon", "restart", "--relaunch"])
     assert r.exit_code == 0, r.output
-    assert calls == ["install"], calls
+    assert calls == [("reinstall", os.environ["RMX_BIN"])], calls
     assert "bootstrapped" in r.output
