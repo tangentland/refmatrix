@@ -1,1 +1,1 @@
-2026-10-16T02:03:28-0700 commit=a4ea601 verdict=CLEAN findings=0 (0B/0S/0M) report=2026-10-16-0203-bug129-hub-pidfile-r7-a4ea601.md
+2026-10-19T14:54:10-0700 commit=d4bf001 verdict=DIRTY findings=5 (0B/4S/1M) report=2026-10-19-1454-plan-3-verbs-parity-r8-d4bf001.md
