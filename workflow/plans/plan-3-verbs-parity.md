@@ -22,6 +22,8 @@ rel: implements -> [[tdd-governance]]
 rel: specifies -> [[task-3.1-plan-3-verbs-parity]]
 rel: specifies -> [[task-3.2-plan-3-verbs-parity]]
 rel: specifies -> [[task-3.3-plan-3-verbs-parity]]
+rel: specifies -> [[task-3.4-internal-cli-allowlist]]
+rel: specifies -> [[task-3.5-r8-remedy]]
 
 ## Context {#context}
 
@@ -97,6 +99,11 @@ generated.
 | 3.1 | memory_recall verb owns recall semantics | — |
 | 3.2 | Migrate the 20 direct-call tools to verbs | 3.1 |
 | 3.3 | Generated TOOLS + parity test | 3.2 |
+| 3.4 | Every invocable CLI path classified exactly once (INTERNAL_CLI, CLI_ACTIONS, HIDDEN_ALIASES, shrink-only LEGACY_UNPAIRED); the seven memory writes call `verbs.memory` | 3.3 |
+| 3.5 | r8 remedy: pin M4/M8/M10/M12, absent global store is started or "not running" (one global-write helper), real-daemon `--degree` test | 3.3 |
+
+rel: specifies -> [[task-3.4-internal-cli-allowlist]]
+rel: specifies -> [[task-3.5-r8-remedy]]
 
 ## Execution contract {#execution}
 
