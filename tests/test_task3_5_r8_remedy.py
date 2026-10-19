@@ -265,3 +265,150 @@ def test_memory_get_degree_renders_the_bundle_from_a_real_daemon(live_project):
     tail = r.output.split("--- context ---", 1)[1]
     assert "held_row" in tail, f"no bundle under the context header: {tail!r}"
     assert "# rmx:" not in r.output, f"the bundle degraded: {r.output!r}"
+
+
+# ---- 3.5 amendment: the PROJECT-store sibling of #s-2 (verbs._call) ---------
+#
+# `verbs._call` wrapped EVERY transport exception from `daemon.call` as
+# `VerbBusyError("… did not answer within Ns (…); the daemon is busy")`. Found
+# 2026-10-19 after task 3.4 GREEN: `rmx memory forget` under a pytest tmp root
+# printed "did not answer within 120s (AF_UNIX path too long); the daemon is
+# busy" — an op that never reached a socket, worded as a timeout on a busy
+# daemon. Same lineage as r8 #s-2's global leg (Q11: absent is not busy), one
+# store over. ONE classifier, `verbs.classify_transport_error`, words both.
+#
+# `discovery.daemon_status` is patched to UP in the first three: that is the
+# state in which `_call` reaches `daemon.call` at all (`require_daemon` raises
+# absent first otherwise), i.e. the race where the status probe said up and the
+# socket was gone, refused, or unreachable by the time the op dialled it. The
+# socket conditions themselves are real files on disk; the timeout case is a
+# real held daemon.
+
+def _status_up(monkeypatch):
+    monkeypatch.setattr(discovery, "daemon_status",
+                        lambda r, **kw: {"up": True, "busy": False, "pid": 4242})
+
+
+def _call_error(root: Path, **kw) -> BaseException:
+    with pytest.raises(verbs.VerbError) as ei:
+        verbs._call(root, "memory_get", {"name": "x", "partition": "p"}, **kw)
+    return ei.value
+
+
+def test_call_names_a_missing_project_socket_not_running(monkeypatch):
+    base = _short_dir("rmxm-")
+    root = base / ".refmatrix"
+    root.mkdir()
+    _status_up(monkeypatch)
+    try:
+        e = _call_error(root, timeout=5.0, retries=0)
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+    assert "not running" in str(e), str(e)
+    assert "did not answer" not in str(e) and "busy" not in str(e), str(e)
+    assert isinstance(e, verbs.VerbAbsentError), type(e)
+
+
+def test_call_names_a_refused_project_socket_not_running(monkeypatch):
+    base = _short_dir("rmxr-")
+    root = base / ".refmatrix"
+    root.mkdir()
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.bind(str(dm.socket_path(root)))
+    s.close()                      # a socket FILE with no listener: a dead daemon
+    _status_up(monkeypatch)
+    try:
+        e = _call_error(root, timeout=5.0, retries=0)
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+    assert "not running" in str(e), str(e)
+    assert "did not answer" not in str(e) and "busy" not in str(e), str(e)
+    assert isinstance(e, verbs.VerbAbsentError), type(e)
+
+
+def test_call_says_a_socket_path_is_too_long_plainly(monkeypatch):
+    """macOS `sun_path` is ~104 bytes. A store under a deep root cannot be
+    dialled at all; that is neither busy nor absent, and it must not be typed
+    absent (absent licenses the in-process store fallback, Q11)."""
+    base = _short_dir("rmxl-")
+    root = base / ("d" * 120) / ".refmatrix"
+    root.mkdir(parents=True)
+    assert len(str(dm.socket_path(root))) > 104
+    _status_up(monkeypatch)
+    try:
+        e = _call_error(root, timeout=5.0, retries=0)
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+    assert "too long" in str(e), str(e)
+    assert "did not answer" not in str(e) and "busy" not in str(e), str(e)
+    assert not isinstance(e, (verbs.VerbBusyError, verbs.VerbAbsentError)), type(e)
+
+
+@pytest.mark.timeout(60)
+def test_call_still_calls_a_real_timeout_busy():
+    """Busy stays busy: a daemon that answers ping and stalls the op."""
+    d = _PingOnlyDaemon(seeded=True)
+    try:
+        e = _call_error(d.root, timeout=1.0, retries=0)
+    finally:
+        d.close()
+    assert isinstance(e, verbs.VerbBusyError), (type(e), str(e))
+    assert "did not answer within" in str(e), str(e)
+
+
+def test_the_global_leg_and_call_share_one_classifier(cold_global, no_projects, monkeypatch):
+    """Converged: `search`'s global-leg wording and `verbs._call` go through the
+    same `verbs.classify_transport_error` (spy passes through to the real one)."""
+    real = verbs.classify_transport_error
+    seen: list = []
+
+    def spy(e, *a, **kw):
+        seen.append(type(e).__name__)
+        return real(e, *a, **kw)
+    monkeypatch.setattr(verbs, "classify_transport_error", spy)
+    reasons = _global_reasons(search.federated_where("held"))
+    assert reasons and "not running" in reasons[0], reasons
+    assert seen, "search's global leg words its reason without the shared classifier"
+    n = len(seen)
+    root = cold_global / "proj" / ".refmatrix"
+    root.mkdir(parents=True)
+    _status_up(monkeypatch)
+    _call_error(root, timeout=5.0, retries=0)
+    assert len(seen) > n, "verbs._call words its transport error without the shared classifier"
+
+
+# ---- 3.5 amendment: bulk-forget's 600 s write and its warning label ---------
+
+def test_memory_write_actions_honour_an_explicit_timeout(monkeypatch, tmp_path):
+    """Task 3.4 R3 at the VERB level: `bulk-forget`'s real delete carried 600 s
+    before it was routed through `verbs.memory`; the CLI wiring test proves the
+    600 reaches the verb, this proves the verb hands it to the daemon call. The
+    default for a write with no timeout stays 120 s."""
+    _status_up(monkeypatch)
+    sent: list = []
+
+    def call(root, op, args=None, timeout=60.0, retries=2, **kw):
+        sent.append((op, timeout))
+        return {"ok": True, "result": {"forgotten": 0, "ids": []}}
+    monkeypatch.setattr(dm, "call", call)
+    root = tmp_path / ".refmatrix"
+    verbs.memory(root, action="bulk_forget", mtypes=["session-x"], dry_run=False,
+                 partition="p", timeout=600.0)
+    verbs.memory(root, action="bulk_forget", mtypes=["session-x"], dry_run=False,
+                 partition="p")
+    assert sent == [("memory_bulk_forget", 600.0), ("memory_bulk_forget", 120.0)], sent
+
+
+def test_bulk_forget_names_itself_on_a_failed_vector_delete(monkeypatch, tmp_path):
+    """The warning names the command the user ran, not its sibling."""
+    monkeypatch.setattr(cli_mod, "_root", lambda: tmp_path / ".refmatrix")
+    monkeypatch.setenv("RMX_PARTITION", "p")
+
+    def recorder(root, action=None, **kw):
+        if kw.get("dry_run"):
+            return {"ids": [1, 2], "by_mtype": {"session-x": 2}}
+        return {"forgotten": 2, "vector_delete_failed": 2}
+    monkeypatch.setattr(verbs, "memory", recorder)
+    r = CliRunner().invoke(cli_mod.main, ["memory", "bulk-forget", "--mtype", "session-x", "-y"])
+    assert r.exit_code == 0, (r.output, r.stderr)
+    assert "rmx memory bulk-forget: 2 vector delete(s) FAILED" in r.stderr, (r.output, r.stderr)

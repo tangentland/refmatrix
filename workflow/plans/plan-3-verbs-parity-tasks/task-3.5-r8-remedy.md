@@ -8,6 +8,7 @@ metadata:
   status: approved
   plan: plan-3-verbs-parity
   created: 2026-10-19
+  amended: 2026-10-19 (project-store transport classifier; bulk-forget pins)
 ---
 
 # Task 3.5: plan-3 r8 remedy {#root}
@@ -82,6 +83,29 @@ body, the `--- context ---` header, the bundle, and no `# rmx:` degradation warn
 - The `canon_find` comment (`cli.py`, "was the last consumer discarding its fan-out's `skipped`
   list") becomes "one of three consumers".
 
+### Amendment (2026-10-19, orchestrator) — the project-store sibling of #s-2 {#req-amend}
+
+Found after the 3.4/3.5 GREEN (5fcc3db): `verbs._call` wraps EVERY transport exception from
+`daemon.call` as `VerbBusyError("… did not answer within Ns (…); the daemon is busy")`.
+`rmx memory forget` under a pytest tmp root printed "did not answer within 120s (AF_UNIX path
+too long); the daemon is busy" — an op that never reached a socket, worded as a timeout on a busy
+daemon. Same lineage as #s-2's global leg (Q11: absent is not busy), one store over. {#amend-why}
+
+- **One classifier.** `verbs.classify_transport_error(e, *, op, root, timeout) -> VerbError` is
+  the ONLY place a transport exception becomes words. `verbs._call` raises what it returns;
+  `search._global_leg_reason` words the global leg through it (no second `isinstance` ladder).
+- **Missing / refused socket** (`FileNotFoundError`, `ConnectionRefusedError`) →
+  `VerbAbsentError`, saying "not running"; never "busy" or "did not answer".
+- **Socket path too long** (`OSError` "AF_UNIX path too long", macOS `sun_path` ~104 bytes) →
+  a plain `VerbError` that says the path is too long. NOT `VerbAbsentError`: absent licenses
+  the in-process store fallback (Q11), and an unreachable path proves nothing about the daemon.
+- **A real timeout** (`TimeoutError` / `socket.timeout`) stays `VerbBusyError` "did not answer
+  within Ns".
+- **Write timeout pinned at the verb.** `verbs.memory(action="bulk_forget", …, timeout=600.0)`
+  hands 600 to the daemon call; with no timeout a write stays at 120 s.
+- **Warning labels.** `bulk-forget`'s vector-delete warning names `memory bulk-forget`;
+  `memory forget`'s count from the verb result reaches `_say_vector_delete_failures`. {#amend-reqs}
+
 ## Acceptance criteria {#acceptance}
 
 1. **AC-1 (M4).** The r7 promote test fails against `timeout=30.0, retries=0` on the global
@@ -109,16 +133,31 @@ body, the `--- context ---` header, the bundle, and no `# rmx:` degradation warn
     `test_mcp_parity`, `test_verbs_migrated`, `test_locate`, `test_surface_parity`,
     `test_ui_server`, the new file) are green. {#ac-11}
 
+12. **AC-12 (classifier, RED at HEAD).** `verbs._call` on a missing and on a refused project
+    socket raises `VerbAbsentError` saying "not running", with neither "busy" nor "did not
+    answer" in it. {#ac-12}
+13. **AC-13 (path too long, RED at HEAD).** On a root whose socket path exceeds 104 bytes,
+    `verbs._call` raises a plain `VerbError` saying "too long" — neither busy nor absent. {#ac-13}
+14. **AC-14 (busy stays busy).** A held daemon's op timeout is still `VerbBusyError` "did not
+    answer within". {#ac-14}
+15. **AC-15 (one classifier, RED at HEAD).** `search`'s global leg and `verbs._call` both go
+    through `verbs.classify_transport_error` (pass-through spy). {#ac-15}
+16. **AC-16 (pins).** `verbs.memory` passes an explicit write `timeout` (600) to the daemon call
+    and defaults a write to 120 s; `bulk-forget` labels its warning `memory bulk-forget`;
+    `memory forget` surfaces the verb result's `vector_delete_failed` count. Each kills its
+    mutant (ignore-explicit-timeout; label swapped; warning call dropped). {#ac-16}
+
 ## Files to modify {#files-to-modify}
 
 | File | Change |
 |------|--------|
 | `src/refmatrix/verbs.py` | `global_write`; `memory_add(to_global)` and promote call it |
 | `src/refmatrix/hub.py` | `ensure_global_daemon` accepts a readiness budget (if the helper needs it) |
-| `src/refmatrix/search.py` | global leg reason worded from the exception type |
+| `src/refmatrix/search.py` | global leg reason worded from the exception type, through `verbs.classify_transport_error` (amendment) |
 | `src/refmatrix/cli.py` | `canon_find` comment (#m-1) |
 | `tests/test_plan3_remedy_r7.py` | M4 bound, M8 unconditional (test engineer) |
-| `tests/test_task3_5_r8_remedy.py` | new (test engineer) |
+| `tests/test_task3_5_r8_remedy.py` | new (test engineer); amendment section AC-12..16 |
+| `tests/test_lance_drop_failures_loud.py` | forget-count test re-seamed onto `verbs.memory` (the retired `_memory_daemon_call` seam) |
 | `workflow/test_mock_registry.md` | new doubles; r6 row graduation → the real-daemon test |
 | `workflow/implementation_summaries/remedy-plan-3-r8.md` | #m-1 amendment |
 
