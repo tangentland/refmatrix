@@ -411,9 +411,22 @@ def _watermark_path(pid: int) -> Path:
     return pointer_dir() / f"_errors.seen.{int(pid)}"
 
 
+def scope_key(root: "Path | str") -> str:
+    """THE scope spelling of a store root in the pointer-error log: the writer stamps it and
+    every reader (`_row_in_scope`, the per-root watermark, `dropped_by_root`,
+    `handoff.session_pointer_anomalies`) compares with it. `os.path.abspath` alone kept
+    `/private/tmp/x` and `/tmp/x` as two scopes of one store, so a row written under one
+    spelling was invisible to a reader holding the other (21.1 ch-bsd r1 #s3, 2026-10-19:
+    `cli._root()` resolves the cwd walk but `REFMATRIX_ROOT` and `mcp`'s `args["root"]` arrive
+    as given). It IS `telemetry.norm_path` (realpath), the one the query.log/event
+    classifier uses, so the two logs agree on what one place is."""
+    from refmatrix.telemetry import norm_path
+    return norm_path(root)
+
+
 def _root_watermark_path(root: Path) -> Path:
     import hashlib
-    h = hashlib.sha1(str(root).encode()).hexdigest()[:12]
+    h = hashlib.sha1(scope_key(root).encode()).hexdigest()[:12]
     return pointer_dir() / f"_errors.seen.root.{h}"
 
 
@@ -466,6 +479,7 @@ def _truncation_row(removed: "list[str]", oldest_kept_t: "float | None") -> dict
         if row.get("reason") == "errors-truncated":
             dropped += int(row.get("dropped") or 0)
             for k, v in (row.get("dropped_by_root") or {}).items():
+                k = scope_key(k)              # one spelling per store (21.1 r1 #s3)
                 by_root[k] = by_root.get(k, 0) + int(v)
             for k, v in (row.get("unseen_dropped") or {}).items():
                 if _above(k, float(row["t"])):
@@ -473,7 +487,8 @@ def _truncation_row(removed: "list[str]", oldest_kept_t: "float | None") -> dict
             continue
         dropped += 1
         if row.get("root"):
-            by_root[str(row["root"])] = by_root.get(str(row["root"]), 0) + 1
+            rk = scope_key(row["root"])
+            by_root[rk] = by_root.get(rk, 0) + 1
         key = _owner_key(row)
         if key is not None and _above(key, float(row["t"])):
             unseen[key] = unseen.get(key, 0) + 1
@@ -540,24 +555,39 @@ def record_pointer_error(reason: str, *, root: Path, owner: "int | None", **fiel
 
     `root` is the row's SCOPE (the writer's store root), not the file's location; `owner` is
     the Claude pid the caller resolved (None when it found none), and `owner_start` is taken
-    from `proc_identity(owner)`. Never raises; returns whether the row was written."""
+    from `proc_identity(owner)`. Never raises; returns whether the row was written.
+
+    EVERY caller consumes the return: `if not record_pointer_error(...): say_unrecorded(...)`
+    (D8: "printed once at every call site that has a stderr"). GREEN left it unchecked at 10
+    of 11 sites, so an envelope with no session_id and no global store root vanished without
+    a trace (21.1 ch-bsd r1 #s2, probe3, 2026-10-19); `tests/test_task21_1_pointer_surfacing`
+    holds every site to it."""
     ident = proc_identity(owner) if owner is not None else None
-    row = {"t": time.time(), "reason": reason, "root": os.path.abspath(str(root)),
+    row = {"t": time.time(), "reason": reason, "root": scope_key(root),
            "owner": int(owner) if owner is not None else None,
            "owner_start": ident[1] if ident else None, **fields}
     return _append_error_rows([row])
 
 
+def say_unrecorded(reason: str, *, who: str = "rmx") -> None:
+    """THE one stderr line for a pointer-error row that `record_pointer_error` could not
+    write (D8; 21.1 r1 #s2). One wording at every site, naming the log it could not reach."""
+    import sys
+    print(f"{who}: pointer-error row not recorded ({reason}): {errors_log_path()} is "
+          f"unwritable or the global store root is absent", file=sys.stderr)
+
+
 def _row_in_scope(row: dict, root: "Path | None", owner: "tuple[int, str] | None") -> bool:
     if row.get("reason") == "errors-truncated":
         # The one global row: surfaced to a reader whose scope has a non-zero count in it.
-        if root is not None and int((row.get("dropped_by_root") or {}).get(str(root), 0)) <= 0:
+        if root is not None and int(
+                (row.get("dropped_by_root") or {}).get(scope_key(root), 0)) <= 0:
             return False
         if owner is not None and int(
                 (row.get("unseen_dropped") or {}).get(f"{owner[0]}:{owner[1]}", 0)) <= 0:
             return False
         return True
-    if root is not None and row.get("root") != str(root):
+    if root is not None and scope_key(row.get("root") or "") != scope_key(root):
         return False
     if owner is not None and (row.get("owner") != owner[0]
                               or row.get("owner_start") != owner[1]):
@@ -618,7 +648,8 @@ def write_pid_pointer(pid: int, session: str, *, root: Path, hook: str = "input"
     except (OSError, ValueError):
         pass
     if ident is None:
-        record_pointer_error("ps-failed", root=root, owner=int(pid), session=session)
+        if not record_pointer_error("ps-failed", root=root, owner=int(pid), session=session):
+            say_unrecorded("ps-failed")
         return False
     if not p.parent.is_dir():
         raise OSError(f"pointer dir absent (no global store root): {p.parent}")
@@ -641,18 +672,22 @@ def read_pid_pointer(pid: int, *, root: Path) -> "str | None":
     except FileNotFoundError:
         return None
     except OSError as e:
-        record_pointer_error("pointer-unreadable", root=root, owner=int(pid), error=str(e))
+        if not record_pointer_error("pointer-unreadable", root=root, owner=int(pid),
+                                    error=str(e)):
+            say_unrecorded("pointer-unreadable")
         return None
     try:
         d = json.loads(raw)
     except ValueError:
         d = None
     if not isinstance(d, dict) or not d.get("session"):
-        record_pointer_error("pointer-unreadable", root=root, owner=int(pid))
+        if not record_pointer_error("pointer-unreadable", root=root, owner=int(pid)):
+            say_unrecorded("pointer-unreadable")
         return None
     if owner_alive(int(pid), d.get("pid_start")) is not True:
-        record_pointer_error("pointer-stale", root=root, owner=int(pid),
-                             pointer_session=str(d.get("session")))
+        if not record_pointer_error("pointer-stale", root=root, owner=int(pid),
+                                    pointer_session=str(d.get("session"))):
+            say_unrecorded("pointer-stale")
         return None
     return str(d["session"])
 
@@ -716,7 +751,7 @@ def consumed_ended_sessions(root: Path) -> "tuple[list[dict], int, int]":
         try:
             d = json.loads(rf.read_text())
             before = d
-            if isinstance(d, dict) and d.get("root") == str(root):
+            if isinstance(d, dict) and d.get("root") == scope_key(root):
                 for e in d.get("consumed") or []:
                     consumed[(int(e[0]), str(e[1]))] = float(e[2])
             else:
@@ -744,7 +779,7 @@ def consumed_ended_sessions(root: Path) -> "tuple[list[dict], int, int]":
             key = (int(r["owner"]), str(r["owner_start"]))
             consumed[key] = max(consumed.get(key, float("-inf")), float(r["t"]))
         consumed = {k: v for k, v in consumed.items() if v >= since}
-        after = {"root": str(root),
+        after = {"root": scope_key(root),
                  "consumed": [[k[0], k[1], v] for k, v in
                               sorted(consumed.items(), key=lambda kv: kv[1])]}
         if after != before:
@@ -765,16 +800,21 @@ def unowned_in_root(root: Path) -> int:
     return n
 
 
-def prune_dead_pointer_files() -> int:
+def prune_dead_pointer_files() -> "tuple[int, int]":
     """D7: remove each pointer file and each `_errors.seen.<pid>` watermark whose process is
     dead (`owner_alive(...) is False`), and each per-root watermark whose root path no longer
     exists. A pointer is only a cache of the process relation and a watermark only of what
     its process was shown, so nothing is lost. Callers check `liveness_available()` first:
-    with no process lookup every live pointer would read as dead."""
+    with no process lookup every live pointer would read as dead.
+
+    Returns `(pruned, unreadable)`: a file that cannot be read or parsed is not judged dead,
+    and is COUNTED, so the SessionStart line says it (`prune_unreadable=<n>`); GREEN's
+    `continue` dropped it uncounted (21.1 ch-bsd r1 #s2, 2026-10-19)."""
     d = pointer_dir()
     if not d.is_dir():
-        return 0
+        return 0, 0
     n = 0
+    unreadable = 0
     with _errors_locked():
         for f in sorted(d.iterdir()):
             name = f.name
@@ -798,29 +838,34 @@ def prune_dead_pointer_files() -> int:
                         f.unlink()
                         n += 1
             except (OSError, ValueError):
-                continue                  # an unreadable file is not judged dead
-    return n
+                unreadable += 1           # an unreadable file is not judged dead; counted
+                continue
+    return n, unreadable
 
 
 def _legacy_dir(root: Path) -> Path:
     return stm_dir(root) / "by-pid"
 
 
-def drop_legacy_pointers_migration(root: Path) -> int:
+def drop_legacy_pointers_migration(root: Path) -> "tuple[int, int]":
     """D3: bug-109's per-store pointer files `<root>/stm/by-pid/<pid>.json` are never read;
-    the SessionStart writer deletes them, counted."""
+    the SessionStart writer deletes them, counted. Returns `(dropped, failed)`: a file whose
+    unlink failed is counted and said (`legacy_pointers_undropped=<n>`), never skipped
+    silently (21.1 ch-bsd r1 #s2, 2026-10-19)."""
     n = 0
+    failed = 0
     ld = _legacy_dir(root)
     if not ld.is_dir():
-        return 0
+        return 0, 0
     for f in ld.glob("*.json"):
         if f.stem.isdigit():
             try:
                 f.unlink()
                 n += 1
             except OSError:
+                failed += 1
                 continue
-    return n
+    return n, failed
 
 
 def migrate_legacy_errors(root: Path, *, liveness: bool) -> "tuple[list[str], list[str]]":
@@ -892,14 +937,14 @@ def migrate_legacy_errors(root: Path, *, liveness: bool) -> "tuple[list[str], li
                 bad += 1
                 continue
             r = dict(r)
-            r["root"] = os.path.abspath(str(root))
+            r["root"] = scope_key(root)
             r["migrated_from"] = str(legacy)
             r.setdefault("owner", None)
             r.setdefault("owner_start", None)
             rows.append(r)
         if bad:
             rows.append({"t": mtime, "reason": "legacy-unreadable", "n": bad,
-                         "root": os.path.abspath(str(root)), "migrated_from": str(legacy),
+                         "root": scope_key(root), "migrated_from": str(legacy),
                          "owner": None, "owner_start": None})
         before = _count_migrated(str(legacy), root)
         ok = _append_error_rows(rows, skip_existing_migrated=True)
@@ -942,7 +987,7 @@ def session_start_surfacing(root: Path, owner: "int | None"
     live = liveness_available()
     mig_out, mig_err = migrate_legacy_errors(root, liveness=live)
     err += mig_err
-    dropped_ptrs = drop_legacy_pointers_migration(root)
+    dropped_ptrs, undropped_ptrs = drop_legacy_pointers_migration(root)
     # (1) the owner's rows
     if owner is not None:
         ident = proc_identity(owner)
@@ -979,13 +1024,17 @@ def session_start_surfacing(root: Path, owner: "int | None"
         pruned = None
     else:
         try:
-            pruned = prune_dead_pointer_files()
+            pruned, prune_unreadable = prune_dead_pointer_files()
         except OSError as e:
             err.append(f"rmx: by-pid prune failed: {e}")
             pruned = None
     status = list(mig_out) + [f"legacy_pointers_dropped={dropped_ptrs}"]
+    if undropped_ptrs:
+        status.append(f"legacy_pointers_undropped={undropped_ptrs}")
     if pruned is not None:
         status.append(f"pruned={pruned}")
+        if prune_unreadable:
+            status.append(f"prune_unreadable={prune_unreadable}")
     out.append("rmx session-pointer: " + " ".join(status))
     return out, err
 
@@ -1696,12 +1745,14 @@ def focus_view(g: dict, *, top: int = 30, include_frontier: bool = False) -> dic
 # ---- R9: the pre-prompt state, race-free --------------------------------------------------
 
 # The match window between the input hook's snapshot `wall` and a parallel
-# reader's entry `t0`. Interim value: 19.0 R0 measures the real |wall - t0| over
-# >= 50 prompts and commits S = max(2 s, 3 x the largest measured skew) here.
-# Until then 10 s bounds what was observed while building 21.1 (a sandbox hook
-# child's full import + envelope + pointer write landed 1-3 s after a sibling
-# reader started, 2026-10-16). Residual, stated: a prompt textually identical to
-# the previous one and submitted within S of it reads that prompt's snapshot.
+# reader's entry `t0`. INTERIM and UNMEASURED: 19.0 R0 measures the real
+# |wall - t0| over >= 50 prompts and commits S = max(2 s, 3 x the largest
+# measured skew) here (workflow/deferral_registry.md row "PRE_PROMPT_SKEW_S").
+# 10 s is a generous bound chosen before that measurement; GREEN's comment cited
+# a "1-3 s observed" skew with no log behind it, so the number is dropped
+# (21.1 ch-bsd r1 #m3, 2026-10-19). Residual, stated: a prompt textually
+# identical to the previous one and submitted within S of it reads that
+# prompt's snapshot.
 PRE_PROMPT_SKEW_S = 10.0
 
 
@@ -1820,7 +1871,9 @@ def read_hook_envelope(raw: str, *, root: Path, hook: str, require_session: bool
                        prose_ok: bool) -> HookEnvelope:
     """Parse a Claude Code hook's stdin envelope — the ONE parser (D9, round-8 #nm-4; the
     user's converge rule: `focus hook`, `_resolve_query` and `scan.read_stdin_prompt` each
-    had their own, each with its own silent fallback).
+    had their own, each with its own silent fallback). Callers now: `cli.focus_hook` and
+    `cli._resolve_query` (scan-prompt and memory recall); `scan.read_stdin_prompt` had no
+    caller and was deleted (21.1 ch-bsd r1 #m1, 2026-10-19).
 
     `prose_ok=True` (scan-prompt; `_resolve_query` without `--stdin-json`): input that is
     not a JSON object is PROSE — `HookEnvelope(None, raw.strip())`, nothing recorded (`fix
@@ -1842,13 +1895,15 @@ def read_hook_envelope(raw: str, *, root: Path, hook: str, require_session: bool
         print(f"rmx {hook}: hook envelope unreadable (not a JSON object, "
               f"{len(text)} bytes)", file=sys.stderr)
         owner, _ = owner_lookup()
-        record_pointer_error("envelope-unreadable", root=root, owner=owner, hook=hook,
-                             bytes=len(text))
+        if not record_pointer_error("envelope-unreadable", root=root, owner=owner, hook=hook,
+                                    bytes=len(text)):
+            say_unrecorded("envelope-unreadable", who=f"rmx {hook}")
         return HookEnvelope(None, None)
     if require_session and not d.get("session_id"):
         print(f"rmx {hook}: hook envelope carries no session_id", file=sys.stderr)
         owner, _ = owner_lookup()
-        record_pointer_error("envelope-no-session", root=root, owner=owner, hook=hook)
+        if not record_pointer_error("envelope-no-session", root=root, owner=owner, hook=hook):
+            say_unrecorded("envelope-no-session", who=f"rmx {hook}")
         return HookEnvelope(None, None)
     return HookEnvelope(d, None)
 

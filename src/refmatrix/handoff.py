@@ -514,7 +514,8 @@ def session_pointer_anomalies(root: Path, *, window_s: float = 86400.0) -> list[
         session wording, they are not session misses;
     (3) rows of this store dropped by the log's halving.
     Unreadable lines (r3 #m-2) and rows with no `root` (a writer defect) are counted apart,
-    never attributed to this store silently. The path comes from `stm.errors_log_path()`."""
+    never attributed to this store silently. The path comes from `stm.errors_log_path()`, and
+    the scope (`dropped_by_root`) is spelled by `stm.scope_key` (21.1 r1 #s3)."""
     import time as _t
     from collections import Counter
     from refmatrix import stm as stm_mod
@@ -522,7 +523,7 @@ def session_pointer_anomalies(root: Path, *, window_s: float = 86400.0) -> list[
     rows = stm_mod.read_pointer_errors(root=root, since=_t.time() - window_s)
     bad = sum(1 for r in rows if r.get("reason") == "unreadable-line")
     unscoped = sum(1 for r in rows if r.get("reason") == "unscoped-row")
-    trunc = sum(int((r.get("dropped_by_root") or {}).get(str(root), 0))
+    trunc = sum(int((r.get("dropped_by_root") or {}).get(stm_mod.scope_key(root), 0))
                 for r in rows if r.get("reason") == "errors-truncated")
     special = ("unreadable-line", "unscoped-row", "errors-truncated")
     hook_rows = [r for r in rows if r.get("reason") in stm_mod.STM_HOOK_REASONS]
@@ -544,7 +545,9 @@ def session_pointer_anomalies(root: Path, *, window_s: float = 86400.0) -> list[
     if hook_rows:
         by = Counter(str(r.get("reason")) for r in hook_rows)
         parts = ", ".join(f"{k} x{v}" for k, v in by.most_common())
-        out.append(f"STM hook failures in 24h: {parts} (by-pid/_errors.jsonl)")
+        # 21.1 r1 #m4 (2026-10-19): the path comes from `errors_log_path()` like every other
+        # clause (round-9 #m9-2), never a hand-typed name.
+        out.append(f"STM hook failures in 24h: {parts}; see {path}")
     if unscoped:
         out.append(f"pointer-error log rows with no store root (a writer defect, not "
                    f"attributed here): unscoped-row x{unscoped}; see {path}")

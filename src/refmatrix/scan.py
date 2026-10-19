@@ -12,13 +12,12 @@ import json
 import math
 import os
 import re
-import sys
 
 from refmatrix.terms import STOPWORDS as _STOPWORDS
 from pathlib import Path
 
 from refmatrix.context import (
-    build_context, bundle_items, content_only_bundle, json_name_spans, render_json,
+    build_context, bundle_items, content_only_bundle, name_spans, render_json,
     render_text, render_text_spans,
 )
 from refmatrix.store import Store
@@ -980,10 +979,8 @@ def scan_prompt(
     def _retrieve(b) -> None:
         retrieved.extend(bundle_items(b))
 
-    def _finish(text: str) -> str:
-        """Resolve each rendered section's spans to offsets in the joined text."""
-        if trace is None:
-            return text
+    def _set_retrieved() -> "list[dict]":
+        """trace["retrieved"]: every item retrieved, once, ranked in retrieval order."""
         seen: set = set()
         uniq = []
         for it in retrieved:
@@ -994,6 +991,18 @@ def scan_prompt(
         for rank, it in enumerate(uniq, 1):
             it["rank"] = rank
         trace["retrieved"] = uniq
+        return uniq
+
+    def _set_delivered(delivered: "list[dict]") -> None:
+        for rank, it in enumerate(delivered, 1):
+            it["rank"] = rank
+        trace["delivered"] = delivered
+
+    def _finish(text: str) -> str:
+        """Resolve each rendered section's spans to offsets in the joined text."""
+        if trace is None:
+            return text
+        _set_retrieved()
         offs, pos = [], 0
         for p in parts:
             offs.append(pos)
@@ -1006,9 +1015,7 @@ def scan_prompt(
                 if it.get("body_offset_bytes") is not None:
                     it["body_offset_bytes"] += offs[idx]
                 delivered.append(it)
-        for rank, it in enumerate(delivered, 1):
-            it["rank"] = rank
-        trace["delivered"] = delivered
+        _set_delivered(delivered)
         return text
 
     if fmt == "json":
@@ -1016,14 +1023,16 @@ def scan_prompt(
         blist = ([cbundle] if cbundle is not None else []) + [
             build_context(s, name, max_tokens=per_concept_tokens, max_entities=10,
                           degree=degree) for name in matches]
-        items: list[dict] = []
         for b in blist:
             _retrieve(b)
             out.append(json.loads(render_json(b)))
         text = json.dumps(out, indent=2)
         if trace is not None:
-            _finish(text)
-            trace["delivered"] = json_name_spans(text, trace["retrieved"])
+            # 21.1 ch-bsd r1 #m2 (2026-10-19): `delivered` is only an item the payload names
+            # (a found span); GREEN kept unfound items with null offsets, computed the text
+            # spans and then overwrote them, and left an unused `items`.
+            _set_delivered([it for it in name_spans(text, _set_retrieved(), json_mode=True)
+                            if it.get("offset_bytes") is not None])
         return text
 
     parts: list[str] = []
@@ -1082,22 +1091,3 @@ def scan_prompt(
             for e in entries:
                 shown.add(_render_key(e.entity.name))
     return _compose(_finish("\n".join(parts)))
-
-
-def read_stdin_prompt(root: "Path | None" = None) -> str:
-    """Read the user prompt from stdin.
-
-    Claude Code's UserPromptSubmit hook receives a JSON envelope on stdin; raw
-    prose is accepted too. Parsed by THE hook-envelope reader
-    (`stm.read_hook_envelope`, task 21.1 D9) with `prose_ok=True`: an object
-    yields the first of `stm.HOOK_PROMPT_KEYS` it carries (none → ''), anything
-    else is the prose itself. `root` scopes a recorded row (none for prose)."""
-    from refmatrix import stm as stm_mod
-    raw = sys.stdin.read()
-    if not raw.strip():
-        return ""
-    if root is None:
-        from refmatrix.cli import _root
-        root = _root()
-    return stm_mod.read_hook_envelope(raw, root=root, hook="scan-prompt",
-                                      require_session=False, prose_ok=True).prompt

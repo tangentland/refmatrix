@@ -1996,15 +1996,16 @@ def _hook_write_pointer(stm_mod, root: Path, session: str, *, hook: str) -> "int
         if owner:
             stm_mod.write_pid_pointer(owner, session, root=root, hook=hook)
         else:
-            stm_mod.record_pointer_error(
-                "owner-lookup-failed" if status == "failed" else "no-owner",
-                root=root, owner=None, session=session, hook=hook)
+            reason = "owner-lookup-failed" if status == "failed" else "no-owner"
+            if not stm_mod.record_pointer_error(reason, root=root, owner=None,
+                                                session=session, hook=hook):
+                stm_mod.say_unrecorded(reason, who="rmx focus hook")
     except OSError as e:
         click.echo(f"rmx focus hook: session pointer not written: {e}", err=True)
+        # D8, 21.1 r1 #s2: every site consumes the False and says it, in one wording.
         if not stm_mod.record_pointer_error("write-failed", root=root, owner=owner,
                                             error=str(e), session=session, hook=hook):
-            click.echo("rmx focus hook: the failure could not be recorded either "
-                       "(pointer-error log unwritable)", err=True)
+            stm_mod.say_unrecorded("write-failed", who="rmx focus hook")
     return owner
 
 
@@ -2074,8 +2075,10 @@ def focus_hook(event):
             click.echo(f"rmx focus hook: in-flight sweep failed: {type(e).__name__}: {e}",
                        err=True)
             owner, _ = stm_mod.owner_lookup()
-            stm_mod.record_pointer_error("sweep-failed", root=root, owner=owner,
-                                         error=f"{type(e).__name__}: {e}", session=session)
+            if not stm_mod.record_pointer_error("sweep-failed", root=root, owner=owner,
+                                                error=f"{type(e).__name__}: {e}",
+                                                session=session):
+                stm_mod.say_unrecorded("sweep-failed", who="rmx focus hook")
         if prompt and not _is_ambient_prompt(prompt):
             s.record("input", prompt[:300], extra={"prompt_sha": stm_mod.prompt_sha(prompt)})
     elif event == "say":
@@ -12618,7 +12621,7 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
         t.add_row(
             str(shown),
             f"{score:.4f}" if isinstance(score, float) else str(score),
-            str(eid), name,
+            str(eid), rich_escape(name),
         )
         if m is not None:
             table_rows.append(m)
@@ -12630,21 +12633,38 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
             if gr.get("name") in seen_names:
                 continue
             shown += 1
+            # `\[global]` is escaped: rich read the bare `[global]` as a markup tag and
+            # dropped it, so a global row printed as a project one (found 21.1 r1 #b3).
             t.add_row(str(shown), "—", str(gr.get("id")),
-                      f"{gr['name']} [global]")
+                      f"{rich_escape(str(gr['name']))} \\[global]")
             table_rows.append(gr)
-    console.print(t)
-    rec.delivered = table_rows           # table output: delivered, spans not captured
+    # 21.1 ch-bsd r1 #b3 (spec rev round 13, 2026-10-19): the table is the agent's default
+    # `recall` channel, so it is RENDERED to text and written through `rec.echo` like the
+    # JSON/GMD payloads -- its delivered events get byte spans, payload_bytes and block_sha
+    # (R10) by name over the exact bytes written. Rendered at the table's natural width:
+    # rich's terminal-width fit cut long names to `…`, and a cut name has no span.
+    payload_parts = [_render_table_text(t)]
     if degree > 0 and table_rows:
         # Mirror the recent-mode behavior: render per-hit context blocks
-        # under the ranked table for table mode.
+        # under the ranked table for table mode (part of the same payload).
         ctx_rows = _attach_context(table_rows)
         for i, m in enumerate(ctx_rows, 1):
             ctx = m.get("context")
             if ctx:
-                console.print()
-                console.print(f"[bold]#{i} {m['name']} — context[/]")
-                click.echo(ctx)
+                payload_parts += ["", f"#{i} {m['name']} — context", ctx]
+    rec.delivered = table_rows
+    rec.echo("\n".join(payload_parts))
+
+
+def _render_table_text(t: "Table") -> str:
+    """A rich Table as the plain text a terminal would show, at its NATURAL width (never cut
+    to the terminal's), without a trailing newline -- the bytes `rmx memory recall`'s table
+    mode writes and spans (21.1 r1 #b3)."""
+    import io as _io
+    rec_console = Console(record=True, file=_io.StringIO(), width=10_000,
+                          color_system=None, soft_wrap=False)
+    rec_console.print(t)
+    return rec_console.export_text(styles=False).rstrip("\n")
 
 
 class _RecallCall:
@@ -12715,7 +12735,8 @@ class _RecallCall:
         retrieved = [_tel.recall_item(r, rank=i) for i, r in enumerate(self.retrieved, 1)]
         delivered = [_tel.recall_item(r, rank=i) for i, r in enumerate(self.delivered, 1)]
         if self.payload is not None:
-            delivered = _tel.spans_by_name(self.payload, delivered, json_mode=self.json_mode)
+            from refmatrix.context import name_spans
+            delivered = name_spans(self.payload, delivered, json_mode=self.json_mode)
         _tel.emit_call(root, channel=channel, invocation=self.invocation,
                        session=self.session, query_id=self.tlog.query_id,
                        retrieved=retrieved, delivered=delivered, payload=self.payload,
@@ -12725,23 +12746,26 @@ class _RecallCall:
 def _hits_with_meta(hits: list) -> list:
     """Recall hits carry their row's name / kind / partition / mtype when the daemon served
     them (`_op_memory_recall`); replica-served hits get them here from the same lock-free
-    reader that answered, in one query (task 21.1 R10)."""
-    missing = [int(h.get("id") or h.get("entity_id")) for h in hits
+    reader that answered, in one query (task 21.1 R10), merged by THE item-meta merge
+    `context.apply_item_meta` (21.1 r1 #s5: one merge, not three)."""
+    from refmatrix.context import apply_item_meta
+    out = [dict(h) for h in hits]
+    missing = [int(h.get("id") or h.get("entity_id")) for h in out
                if h.get("name") is None and (h.get("id") or h.get("entity_id")) is not None]
     if not missing:
-        return list(hits)
+        return out
     try:
         rs = _reader_store()
-        meta = rs.item_meta(missing) if rs is not None else {}
+        if rs is None:
+            click.echo("# rmx: warning: recall hit metadata unavailable (no replica reader); "
+                       f"{len(missing)} retrieved event(s) not logged", err=True)
+            return out
+        meta = rs.item_meta(missing)
     except Exception as e:  # noqa: BLE001 — said; the events for these hits are skipped
         click.echo(f"# rmx: warning: recall hit metadata unavailable ({e}); their "
                    f"retrieved events are not logged", err=True)
-        meta = {}
-    out = []
-    for h in hits:
-        m = meta.get(int(h.get("id") or h.get("entity_id") or -1))
-        out.append({**h, **m} if m else dict(h))
-    return out
+        return out
+    return apply_item_meta(out, meta)
 
 
 @memory_grp.command("link")

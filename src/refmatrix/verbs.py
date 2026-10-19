@@ -534,8 +534,8 @@ class SessionUnresolved(VerbError):
 
 def resolve_session_source(root: Path, session: "str | None" = None, *,
                            envelope: "dict | None" = None,
-                           purpose: typing.Literal["write", "read", "event"],
-                           record_miss: bool = True) -> SessionResolution:
+                           purpose: typing.Literal["write", "read", "event"]
+                           ) -> SessionResolution:
     """THE session resolver (bug-109, extended by task 21.1 D1/D2). `source` is one of
     explicit / envelope / pointer / env / latest / default / none.
 
@@ -553,9 +553,12 @@ def resolve_session_source(root: Path, session: "str | None" = None, *,
     spawn and names a dead session after `/resume` or `/clear` (live 2026-10-14). A miss is
     recorded for every purpose (round-7 #s-4): `owner-lookup-failed` when the process lookup
     failed, `pointer-unresolved` when an owner was found, `$CLAUDE_PID` is set or the
-    process is long-lived; nothing in a plain terminal, which has no pointer to miss.
-    `record_miss=False` is the telemetry rows' call outside Claude Code's machinery (see
-    `telemetry.resolve_event_session`): the answer is the same, nothing is recorded."""
+    process is long-lived; nothing in a plain terminal, which has no pointer to miss. There
+    is no switch to turn that off for some invocations: GREEN's `record_miss` gate dropped the
+    misses of `unknown` / `interactive` / `internal` calls to suit one test's fixture, against
+    R9's "a miss is recorded exactly as bug-109 records it" (21.1 ch-bsd r1 #b2, spec rev
+    round 13, 2026-10-19). A row that cannot be written is said on stderr
+    (`stm.say_unrecorded`, #s2)."""
     import os
     from refmatrix import stm as stm_mod
     if purpose not in ("write", "read", "event"):
@@ -581,13 +584,14 @@ def resolve_session_source(root: Path, session: "str | None" = None, *,
         ptr = stm_mod.read_pid_pointer(owner, root=root) if owner else None
         if ptr:
             return SessionResolution(ptr, "pointer")
-    if record_miss:
-        if status == "failed":
-            stm_mod.record_pointer_error("owner-lookup-failed", root=root, owner=None,
-                                         long_lived=_LONG_LIVED, purpose=purpose)
-        elif _LONG_LIVED or owner or os.environ.get("CLAUDE_PID"):
-            stm_mod.record_pointer_error("pointer-unresolved", root=root, owner=owner,
-                                         long_lived=_LONG_LIVED, purpose=purpose)
+    if status == "failed":
+        if not stm_mod.record_pointer_error("owner-lookup-failed", root=root, owner=None,
+                                            long_lived=_LONG_LIVED, purpose=purpose):
+            stm_mod.say_unrecorded("owner-lookup-failed")
+    elif _LONG_LIVED or owner or os.environ.get("CLAUDE_PID"):
+        if not stm_mod.record_pointer_error("pointer-unresolved", root=root, owner=owner,
+                                            long_lived=_LONG_LIVED, purpose=purpose):
+            stm_mod.say_unrecorded("pointer-unresolved")
     if purpose == "write":
         tried = "explicit session, hook envelope, " + (
             f"pid pointer for the server's parent pid {owner}, $RMX_SESSION" if _LONG_LIVED
@@ -653,7 +657,8 @@ def context(root: Path, ref: str, *, degree: int = 1, expand: int = 0,
                 out = parsed
         t.cardinality = int(out.get("total_neighbors") or 0) if isinstance(out, dict) else None
     text = _json.dumps(out, default=str)
-    tel.emit_context_call(root, ref=ref, items=context_mod.json_name_spans(text, items),
+    tel.emit_context_call(root, ref=ref,
+                          items=context_mod.name_spans(text, items, json_mode=True),
                           payload=text.encode("utf-8"), query_id=t.query_id,
                           session=session, invocation=inv, turn=_live_turn(root, session))
     return out
@@ -764,7 +769,7 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
     if trace is not None:
         return _memory_recall_rows(root, trace=trace, **params)
     import json as _json
-    from refmatrix import telemetry as tel
+    from refmatrix import context as context_mod, telemetry as tel
     inv = tel.invocation_source()
     trace = []
     with tel.log_query(None, kind="recall", body=(query or "")[:200],
@@ -781,7 +786,7 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
     tel.emit_call(root, channel=channel, invocation=inv, session=session,
                   query_id=t.query_id,
                   retrieved=[tel.recall_item(r, rank=i) for i, r in enumerate(trace, 1)],
-                  delivered=tel.spans_by_name(
+                  delivered=context_mod.name_spans(
                       payload, [tel.recall_item(r, rank=i) for i, r in enumerate(rows, 1)],
                       json_mode=True),
                   payload=payload, block_id=tel.RECALL_BLOCK_IDS[channel],

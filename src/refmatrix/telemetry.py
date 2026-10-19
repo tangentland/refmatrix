@@ -23,7 +23,9 @@ One record per query, fields:
                   exit and a closed consumer are conventions, not failures,
                   and live in `outcome` (bug-052)
 
-Disable by setting `REFMATRIX_NO_TELEMETRY=1` in the env.
+Disable by setting `REFMATRIX_NO_TELEMETRY=1` in the env. That gates the log
+WRITES only: `cli_entry` installs the `CountingStream` stdout proxy regardless
+(plan-9 r5 #m-11, recorded 2026-10-19 in task 21.1's close-out).
 
 Use the `log_query` context manager:
 
@@ -33,6 +35,7 @@ Use the `log_query` context manager:
 """
 from __future__ import annotations
 
+import functools
 import io
 import json
 import os
@@ -288,6 +291,23 @@ class CountingStream(io.TextIOBase):
     def flush(self):
         return self._inner.flush()
 
+    def close(self):
+        """Close the PROXY only; never flush or close the stream it wraps.
+
+        The proxy does not own `sys.__stdout__`. `cli_entry` restores `sys.stdout` in its
+        `finally`, the last reference drops, and `io.IOBase`'s finalizer called `close()`,
+        whose default `flush()`es the inner stream: on a consumer that had closed the pipe
+        (`rmx ... | head`) that printed a SECOND "Exception ignored ... BrokenPipeError"
+        traceback naming `telemetry.py`, on top of the interpreter's own one for stdout
+        (plan-9 ch-bsd r5 #m-11, reproduced 2026-10-01; fixed in 21.1's close-out,
+        2026-10-19). Nothing is swallowed: the closed consumer is already the row's
+        `consumer-closed` outcome, and the interpreter still reports its own stdout once."""
+        self._proxy_closed = True
+
+    @property
+    def closed(self):
+        return getattr(self, "_proxy_closed", False)
+
     def isatty(self):
         try:
             return self._inner.isatty()
@@ -423,20 +443,18 @@ def resolve_event_session(root: "Path | None", envelope: "dict | None" = None
     ring). Telemetry never fails the command it describes, so a resolver that
     raises is said on stderr and the row carries null.
 
-    A miss is recorded in the pointer-error log only for a call Claude Code's
-    machinery made (`invocation` hook / mcp / agent). A call that classifies
-    `unknown` or `interactive` — a human's pipe, a harness — is a plain-terminal
-    call for R9's purposes: its row still carries the resolved session (or
-    null), and recording a "miss" for it would put a row in the log for every
-    piped `rmx` a human runs (task 21.1 AC-4b (xiii): prose piped to
-    scan-prompt adds no row)."""
+    A miss is recorded exactly as for every other purpose and invocation (R9):
+    the resolver itself decides, and a plain terminal (no owner, no
+    `$CLAUDE_PID`) records nothing anyway. GREEN gated the record on the
+    invocation class, which only ever changed the `$CLAUDE_PID`-set,
+    no-hint shape one test ran in (21.1 ch-bsd r1 #b2, rev round 13,
+    2026-10-19)."""
     if root is None:
         return None
     try:
         from refmatrix import verbs
         return verbs.resolve_session_source(
-            Path(root), None, envelope=envelope, purpose="event",
-            record_miss=invocation_source() in ("hook", "mcp", "agent")).session
+            Path(root), None, envelope=envelope, purpose="event").session
     except Exception as e:  # noqa: BLE001 — telemetry must not fail the command
         print(f"rmx: telemetry session not resolved: {type(e).__name__}: {e}",
               file=sys.stderr)
@@ -1227,27 +1245,32 @@ def recall_channel(*, session_start: bool, stdin_json: bool, recent: bool,
     return "recall"
 
 
-def _recall_flags_of(row: dict) -> "tuple[bool, bool, bool]":
-    """The `recall_channel` inputs of a `kind=recall` query.log row. Rows
-    written by this task carry them (`session_start`, `stdin_json`, `recent`).
-    A row without them predates the fields: only one generated hook recall
-    carries a query body — the per-prompt `--stdin-json` one (session-start
-    and PreCompact recalls are recent-mode and query-less) — so a `hook` row
-    with a body reads as `stdin_json`, a `hook` row without one as `recent`."""
+def _recall_flags_of(row: dict) -> "tuple[bool, bool, bool] | None":
+    """The `recall_channel` inputs of a `kind=recall` query.log row, or None
+    when the row carries none of `session_start` / `stdin_json` / `recent`.
+
+    Both writers (`cli._RecallCall.close_row`, `verbs.memory_recall`) set the
+    three flags on every row, and no `kind=recall` row predates this task, so a
+    flagless row is a WRITER DEFECT. It is counted by the report
+    (`recall_unflagged=<n>`), never classified: GREEN guessed the channel from
+    `invocation` + body, and the guess filed a query-less SessionStart-shaped
+    row as `precompact` (21.1 ch-bsd r1 #b1, spec rev round 13, 2026-10-19)."""
     if any(k in row for k in ("session_start", "stdin_json", "recent")):
         return (bool(row.get("session_start")), bool(row.get("stdin_json")),
                 bool(row.get("recent")))
-    hook = (row.get("invocation") or "unknown") == "hook"
-    body = bool((row.get("body") or "").strip())
-    return (False, hook and body, hook and not body)
+    return None
 
 
-def channel_of_row(row: dict) -> str:
+def channel_of_row(row: dict) -> "str | None":
     """The R11 channel of a query.log `recall` / `context` row, recomputed from
-    the row by `recall_channel` (R7)."""
+    the row by `recall_channel` (R7). None for a recall row without its flags
+    (a writer defect the caller counts; see `_recall_flags_of`)."""
     if row.get("kind") == "context":
         return "context"
-    ss, sj, rc = _recall_flags_of(row)
+    flags = _recall_flags_of(row)
+    if flags is None:
+        return None
+    ss, sj, rc = flags
     return recall_channel(session_start=ss, stdin_json=sj, recent=rc,
                           invocation=row.get("invocation") or "unknown")
 
@@ -1347,35 +1370,6 @@ def recall_item(row: dict, *, rank: int) -> dict:
             "rank": rank}
 
 
-def spans_by_name(payload: bytes, items: "list[dict]", *, json_mode: bool) -> "list[dict]":
-    """Byte spans of the items a payload names, found in payload order from a moving
-    cursor: in JSON the `"name": "<name>"` member of each row object (the object carries
-    the body, so `body_*` stay null); in text the name itself. An item not found keeps null
-    spans (R10: offsets are UTF-8 bytes of what the command wrote)."""
-    cur = 0
-    out = []
-    for it in items:
-        it = dict(it)
-        it.setdefault("body_offset_bytes", None)
-        it.setdefault("body_bytes", None)
-        name = it.get("name")
-        needles = ([('"name": ' + json.dumps(name)).encode(), ('"name":' + json.dumps(name)).encode()]
-                   if json_mode else [str(name).encode("utf-8")]) if name else []
-        found = None
-        for nd in needles:
-            i = payload.find(nd, cur)
-            if i >= 0:
-                found = (i, len(nd))
-                break
-        if found:
-            it["offset_bytes"], it["bytes"] = found
-            cur = found[0] + found[1]
-        else:
-            it["offset_bytes"] = it["bytes"] = None
-        out.append(it)
-    return out
-
-
 def _item_fields(it: dict) -> dict:
     return {"name": it.get("name"), "entity_id": it.get("entity_id"),
             "kind": event_kind(it.get("catalog_kind"), it.get("mtype")),
@@ -1383,13 +1377,13 @@ def _item_fields(it: dict) -> dict:
             "rank": it.get("rank")}
 
 
-def emit_call(root: Path, *, channel: str, invocation: str, session: "str | None",
-              query_id: str, retrieved: "list[dict]", delivered: "list[dict]",
-              payload: "bytes | None", block_id: "str | None",
-              phase: "dict | None" = None, turn: "int | None" = None,
-              global_root: "Path | None" = None) -> int:
-    """Build one call's `retrieved` and `delivered` events and hand them to the ONE writer
-    in ONE `emit_recall_events` call (R11). `phase` is `stm.phase_fields(...)` on the
+def call_events(*, channel: str, invocation: str, session: "str | None",
+                query_id: str, retrieved: "list[dict]", delivered: "list[dict]",
+                payload: "bytes | None", block_id: "str | None",
+                phase: "dict | None" = None, turn: "int | None" = None) -> "list[dict]":
+    """One call's `retrieved` and `delivered` events, NOT yet written: `emit_call` writes
+    them alone, `emit_context_call` together with its `used` events, so either way the call
+    reaches the ONE writer once (R11; 21.1 r1 #s1). `phase` is `stm.phase_fields(...)` on the
     prompt-time channels (it carries `turn`); other channels pass `turn`. `block_sha` is the
     sha256 of the exact payload bytes the command wrote."""
     import hashlib
@@ -1402,13 +1396,32 @@ def emit_call(root: Path, *, channel: str, invocation: str, session: "str | None
     events: list[dict] = []
     for it in retrieved:
         events.append({**common, **_item_fields(it), "stage": "retrieved"})
-    for it in delivered:
+    # R10: a `delivered` event IS a span in the payload. An item whose span was not found is
+    # not delivered; it is counted on stderr, never written with null offsets (21.1 r1 #b3/
+    # #m2, 2026-10-19: the table recall and scan-prompt's JSON wrote such events).
+    unspanned = sum(1 for it in delivered if it.get("offset_bytes") is None)
+    if unspanned:
+        print(f"rmx: {channel}: delivered_unspanned={unspanned} (not logged as delivered)",
+              file=sys.stderr)
+    for it in (it for it in delivered if it.get("offset_bytes") is not None):
         ev = {**common, **_item_fields(it), "stage": "delivered",
               "offset_bytes": it.get("offset_bytes"), "bytes": it.get("bytes"),
               "payload_bytes": len(payload) if payload is not None else None,
               "body_offset_bytes": it.get("body_offset_bytes"),
               "body_bytes": it.get("body_bytes")}
         events.append(ev)
+    return events
+
+
+def emit_call(root: Path, *, channel: str, invocation: str, session: "str | None",
+              query_id: str, retrieved: "list[dict]", delivered: "list[dict]",
+              payload: "bytes | None", block_id: "str | None",
+              phase: "dict | None" = None, turn: "int | None" = None,
+              global_root: "Path | None" = None) -> int:
+    """`call_events` handed to the ONE writer in ONE `emit_recall_events` call (R11)."""
+    events = call_events(channel=channel, invocation=invocation, session=session,
+                         query_id=query_id, retrieved=retrieved, delivered=delivered,
+                         payload=payload, block_id=block_id, phase=phase, turn=turn)
     return emit_recall_events(events, root=root, global_root=global_root)
 
 
@@ -1416,19 +1429,27 @@ def emit_context_call(root: Path, *, ref: str, items: "list[dict]",
                       payload: "bytes | None", query_id: str, session: "str | None",
                       invocation: str, turn: "int | None" = None) -> int:
     """The `context` channel's ONE emission (R11) for any of R3's four routes: `retrieved`
-    for every item the bundle names and `delivered` for those with a span in the payload.
-    Then R12's `context_by_name` `used` events, looked up after them: a key this call
-    delivered is used when ANOTHER surface delivered it earlier in the session (see
-    `context_used_keys`), and the event points to that key's newest delivery."""
+    for every item the bundle names, `delivered` for those with a span in the payload, and
+    R12's `context_by_name` `used` events, all in ONE `emit_recall_events` call. The `used`
+    lookup runs FIRST and excludes this call's own `query_id`, so a key is used when any
+    OTHER call of the session delivered it -- an earlier context call included -- and the
+    event points to that key's newest such delivery.
+
+    GREEN emitted the delivered events, then looked up and wrote the `used` ones in a second
+    writer call; to keep the call from finding its own delivery it dropped every `context`
+    channel delivery, so `rmx context A` attaching memory M followed by `rmx context M` was
+    no use, and the call reached the writer twice (21.1 ch-bsd r1 #s1, spec rev round 13,
+    2026-10-19)."""
     delivered = [it for it in items if it.get("offset_bytes") is not None]
-    n = emit_call(root, channel="context", invocation=invocation, session=session,
-                  query_id=query_id, retrieved=items, delivered=delivered,
-                  payload=payload, block_id=RECALL_BLOCK_IDS["context"], turn=turn)
     used = used_events(root, session=session, invocation=invocation,
                        evidence="context_by_name",
                        match=lambda d: context_used_keys(ref, delivered, d),
-                       body=ref, turn=turn, query_id=query_id, channel="context")
-    return n + (emit_recall_events(used, root=root) if used else 0)
+                       body=ref, turn=turn, query_id=query_id, channel="context",
+                       exclude_query_id=query_id)
+    events = call_events(channel="context", invocation=invocation, session=session,
+                         query_id=query_id, retrieved=items, delivered=delivered,
+                         payload=payload, block_id=RECALL_BLOCK_IDS["context"], turn=turn)
+    return emit_recall_events(events + used, root=root)
 
 
 # ---- R12: `used` events -------------------------------------------------------------------
@@ -1468,7 +1489,8 @@ def _log_used_lookup(root: Path, *, evidence: str, body: str, session: "str | No
 def used_events(root: Path, *, session: "str | None", invocation: str, evidence: str,
                 match, body: str = "", turn: "int | None" = None,
                 query_id: "str | None" = None, channel: "str | None" = None,
-                global_root: "Path | None" = None) -> "list[dict]":
+                global_root: "Path | None" = None,
+                exclude_query_id: "str | None" = None) -> "list[dict]":
     """R12's `used` events for one EXPLICIT call (the caller hands them to the ONE writer
     with its own events, in its one `emit_recall_events` call). A `hook` call never emits (the helix
     confound cannot recur); with no resolved session nothing is emitted and the miss is
@@ -1478,7 +1500,8 @@ def used_events(root: Path, *, session: "str | None", invocation: str, evidence:
     file of that event's scope (a global memory's use goes to the global file, d8e). A call
     that has its own query.log row and events (a context call) passes its `query_id` and
     `channel`, so every event of the call shares them (R4); a call with neither (`memory
-    get`, `focus note`) mints an id, and the event carries the delivered event's channel."""
+    get`, `focus note`) mints an id, and the event carries the delivered event's channel.
+    `exclude_query_id` leaves that call's own deliveries out of the lookup (#s1)."""
     if invocation == "hook":
         return []
     if not session:
@@ -1486,7 +1509,8 @@ def used_events(root: Path, *, session: "str | None", invocation: str, evidence:
             _log_used_lookup(root, evidence=evidence, body=body, session=None,
                              used_no_session=True)
         return []
-    delivered = delivered_in_session(session, root=root, global_root=global_root)
+    delivered = delivered_in_session(session, root=root, global_root=global_root,
+                                     exclude_query_id=exclude_query_id)
     if delivered.cap_hits:
         _log_used_lookup(root, evidence=evidence, body=body, session=session,
                          cap_hits=delivered.cap_hits)
@@ -1515,17 +1539,13 @@ def context_used_keys(ref: str, delivered_here: "list[dict]", delivered: "dict"
     """R12 `context_by_name`: the call's `ref`, stripped, equals a delivered name exactly
     (case-sensitive) AND this context call delivered an item of that name and kind — its
     anchor, or (for `kind=memory`) the memory body it attached to a concept/doc/code anchor.
-    The key must ALSO have been delivered by a surface other than `context` in this
-    session: a context call's own delivery (or an earlier context call's) is the lookup
-    itself, not evidence that something delivered to the agent was used — so `rmx context X`
-    twice on a bare concept is no use, while the memory a prompt recall injected is."""
+    `delivered` is the session's set WITHOUT this call's own `query_id` (spec rev round 13,
+    21.1 r1 #s1): any other call's delivery counts, an earlier context call's included."""
     ref = (ref or "").strip()
     here = {(it.get("name"), event_kind(it.get("catalog_kind"), it.get("mtype")))
             for it in delivered_here}
-    channels = getattr(delivered, "channels", {})
     return [key for key in delivered
-            if key[0] == ref and (key[0], key[1]) in here and key[2] == "project"
-            and (channels.get(key, set()) - {"context"})]
+            if key[0] == ref and (key[0], key[1]) in here and key[2] == "project"]
 
 
 class DeliveredSet(dict):
@@ -1534,11 +1554,6 @@ class DeliveredSet(dict):
     cap (`cap_hits`), so the caller can count the under-count."""
     bytes_read: int = 0
     cap_hits: int = 0
-
-    def __init__(self, *a, **kw):
-        super().__init__(*a, **kw)
-        # every channel that delivered each key within the read range
-        self.channels: "dict[tuple, set]" = {}
 
 
 def _lines_backwards(path: Path, cap: int) -> "tuple[list[bytes], int, bool]":
@@ -1569,7 +1584,8 @@ def _lines_backwards(path: Path, cap: int) -> "tuple[list[bytes], int, bool]":
 
 
 def delivered_in_session(session: "str | None", *, root: Path,
-                         global_root: "Path | None" = None) -> DeliveredSet:
+                         global_root: "Path | None" = None,
+                         exclude_query_id: "str | None" = None) -> DeliveredSet:
     """R12's lookup: the `delivered` events of `session`, newest per
     `(name, kind, scope)`, from `root`'s and the global root's
     `recall-events.jsonl`, read BACKWARDS from the end and capped at 4 MB per
@@ -1608,8 +1624,9 @@ def delivered_in_session(session: "str | None", *, root: Path,
                 continue
             if ev.get("session") != session or ev.get("channel") == "precompact":
                 continue
+            if exclude_query_id is not None and ev.get("query_id") == exclude_query_id:
+                continue                     # the asking call's own delivery (r1 #s1)
             key = (ev.get("name"), ev.get("kind"), ev.get("scope") or "project")
-            found.channels.setdefault(key, set()).add(ev.get("channel"))
             if key not in found:             # newest first: keep the first seen
                 found[key] = ev
     return found
@@ -1617,31 +1634,41 @@ def delivered_in_session(session: "str | None", *, root: Path,
 
 # ---- R5: the ONE row classifier ----------------------------------------------
 
-def _norm_tmp(p: str) -> str:
-    """`/private/tmp` and `/tmp` (and `/private/var` / `/var`) are one place on
-    macOS; a row written by a child that saw the symlinked spelling must land
-    in the same test base as its reader."""
-    for pre in ("/private/tmp", "/private/var"):
-        if p == pre or p.startswith(pre + "/"):
-            return p[len("/private"):]
-    return p
+@functools.lru_cache(maxsize=4096)
+def norm_path(p: "str | Path") -> str:
+    """THE spelling of a filesystem place for every log that keys on a path: `realpath`, so
+    macOS's `/tmp` -> `/private/tmp` (and `/var` -> `/private/var`) symlinks, and any other,
+    collapse to one string whichever spelling the writer or the reader was handed. The
+    query.log / event classifier (`_test_base`) and the pointer-error log's scope
+    (`stm.scope_key`) both call it.
+
+    Converged 21.1 ch-bsd r1 #s3 (2026-10-19): the classifier had its own `_norm_tmp` fold
+    and the pointer-error log stamped `os.path.abspath`, so one store had two scopes there
+    (`/tmp/x` vs `/private/tmp/x`, probe1). Cached: a report classifies every row of a log
+    whose paths repeat, and `realpath` costs an lstat per component."""
+    return os.path.realpath(os.path.abspath(str(p)))
+
+
+def _tmp_root() -> str:
+    return norm_path("/tmp")
 
 
 def _test_base(p: "str | Path | None") -> "str | None":
     """R5's test base of a path: up to and including the `pytest-<N>` component
-    that follows a `pytest-of-<user>` component; else, under `/tmp` (or
-    `/private/tmp`), the first component below it when it starts with `rmx-`
-    (23.0's sandbox root); else None (a live tree)."""
+    that follows a `pytest-of-<user>` component; else, under `/tmp` (either
+    spelling: the path is `norm_path`-ed), the first component below it when it
+    starts with `rmx-` (23.0's sandbox root); else None (a live tree)."""
     if not p:
         return None
-    s = _norm_tmp(str(p))
+    s = norm_path(p)
     parts = Path(s).parts
     for i, comp in enumerate(parts[:-1]):
         if comp.startswith("pytest-of-") and parts[i + 1].startswith("pytest-"):
             return str(Path(*parts[: i + 2]))
-    if len(parts) >= 3 and parts[0] == "/" and parts[1] == "tmp" \
-            and parts[2].startswith("rmx-"):
-        return str(Path(*parts[:3]))
+    tmp = Path(_tmp_root()).parts
+    n = len(tmp)
+    if len(parts) > n and parts[:n] == tmp and parts[n].startswith("rmx-"):
+        return str(Path(*parts[: n + 1]))
     return None
 
 
@@ -1787,14 +1814,19 @@ def agent_usage_report(root: Path, *, since: "str | None" = None,
 
     ctx = [r for r in kept if r.get("kind") == "context"]
     grp = [r for r in kept if r.get("kind") == "grep"]
-    rec = [r for r in kept if r.get("kind") == "recall"]
+    rec_all = [r for r in kept if r.get("kind") == "recall"]
+    # 21.1 r1 #b1: a recall row without its channel flags is a writer defect --
+    # counted on its own line and left out of every channel group, never guessed.
+    rec = [r for r in rec_all if channel_of_row(r) is not None]
+    unflagged = len(rec_all) - len(rec)
 
     out.append("totals:")
     for name, rows in sorted(Counter(_route(r) for r in ctx).items()):
         out.append(f"  context {name}: {rows}")
     for name, rows in sorted(Counter(_route(r) for r in grp).items()):
         out.append(f"  grep {name}: {rows}")
-    out.append(f"  memory_recall rows: {len(rec)}")
+    out.append(f"  memory_recall rows: {len(rec_all)}")
+    out.append(f"  recall_unflagged={unflagged}")
 
     out.append("by invocation:")
     invs = sorted({r.get("invocation") or "unknown" for r in ctx + grp + rec})

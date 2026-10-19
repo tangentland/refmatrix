@@ -6312,27 +6312,25 @@ def _op_memory_recall(d: Daemon, args: dict) -> dict:
         # per-hit round trip. One read query, the partition read from the row itself.
         meta = d._st().item_meta([int(eid) for eid, _ in hits])
 
-    def _m(eid, hit: dict) -> dict:
-        m = meta.get(int(eid))
-        if m:
-            hit.update(name=m["name"], kind=m["kind"], partition=m["partition"],
-                       mtype=m["mtype"])
-        return hit
+    from refmatrix.context import apply_item_meta
+
+    def _m(hits_out: list) -> list:
+        # THE item-meta merge, shared with the CLI's replica path and `annotate_items`
+        # (21.1 ch-bsd r1 #s5, 2026-10-19: three hand-rolled copies became one).
+        return apply_item_meta(hits_out, meta)
 
     rr_warnings: list[str] = []
     if want_rerank and docs is not None:
         reranked = _apply_rerank_safe(d, query, docs, k, warnings=rr_warnings)
         if reranked is not None:
-            return {"hits": [_m(eid, {"id": eid, "score": sc, "fused": bool(fuse),
-                                      "reranked": True})
-                             for eid, sc in reranked]}
+            return {"hits": _m([{"id": eid, "score": sc, "fused": bool(fuse),
+                                 "reranked": True} for eid, sc in reranked])}
 
     hits = hits[:k]
     if fuse:
-        out = {"hits": [_m(eid, {"id": eid, "score": sc, "fused": True})
-                        for eid, sc in hits]}
+        out = {"hits": _m([{"id": eid, "score": sc, "fused": True} for eid, sc in hits])}
     else:
-        out = {"hits": [_m(eid, {"id": eid, "distance": dist}) for eid, dist in hits]}
+        out = {"hits": _m([{"id": eid, "distance": dist} for eid, dist in hits])}
     if rr_warnings:
         out["warnings"] = rr_warnings
     return out

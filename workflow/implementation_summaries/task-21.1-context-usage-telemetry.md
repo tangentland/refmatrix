@@ -1,0 +1,78 @@
+---
+gmd: "0.1"
+id: impl-task-21.1-context-usage-telemetry
+title: "Task 21.1: agent context-usage telemetry and the ONE recall-event schema (GREEN + ch-bsd r1 remedy)"
+tags: [implementation-summary, telemetry, recall-events, session-pointer, plan-21, task-21.1]
+metadata:
+  node_type: implementation-summary
+  status: complete
+  created: 2026-10-19
+---
+
+# Task 21.1: telemetry that can count how the agent uses rmx context {#root}
+
+rel: implements -> [[task-21.1-context-usage-telemetry]]
+rel: part-of -> [[plan-21-agent-context-usage]]
+rel: derives-from -> [[bsd-task21.1-context-usage-r1-d3ec62d]]
+rel: amends -> [[plan-9-context-cost-telemetry#q2]]
+
+Branch `task-21.1-context-usage-telemetry`, clone `/Volumes/littlebig/refmatrix-task-21.1`.
+RED `b335856`, GREEN `d3ec62d` (2026-10-16), test-side fixes `43f1d0c` / `5e58139` / `db725be`,
+spec round 13 `b885637`, round-13 RED `d926d85`, then this remedy commit. This summary also
+answers ch-bsd r1 #m5 (GREEN shipped with no summary).
+
+## Why {#why}
+
+The 2026-10-07 exploration counted 3 CLI `context` calls against 1,119 agent greps and could not
+count MCP calls at all. No `query.log` row carried a session, a query id or a cwd. Nothing recorded
+which recalled item reached a payload, or whether the agent later used it. Plan-21's 21.2-21.4 and
+plan-19's 19.2/19.5/19.6 had no instrument to read. {#why-lead}
+
+## GREEN (d3ec62d) {#green}
+
+| area | what shipped |
+|---|---|
+| session layer (R9, D1-D9) | `verbs.resolve_session_source(..., purpose=)` is THE resolver: `read` gives the labelled newest ring, `write` raises `SessionUnresolved`, `event` gives null. Pointers and the pointer-error log live under `<global root>/by-pid/` with one locked writer (`stm._append_error_rows`). The SessionStart writer `rmx focus hook --event session-start` migrates, surfaces, consumes and prunes. There is one envelope parser, `stm.read_hook_envelope`, and the pre-prompt snapshot. |
+| telemetry rows (R1-R8) | Rows carry `invocation` (`mcp` / `agent` / `hook` / ...), `session`, `query_id`, `cwd`, `root` and `budget_s`. `classify_outcome(budgeted=)` decides by exception type. `row_provenance` is the one classifier. `rmx telemetry --agent-usage` is new. |
+| recall events (R10-R12) | `recall-events.jsonl` has `RECALL_EVENT_FIELDS_V1`, `event_kind`, `recall_channel` and the ONE writer `emit_recall_events`. Renderers return byte spans. `used` events come from `memory_get_by_name`, `context_by_name` and `focus_note` through a bounded, backwards delivered-set lookup. |
+
+Interpretations GREEN made silently were the ones r1 charged: #b1, #b2 and #s1. They are now
+decided in the spec's [[task-21.1-context-usage-telemetry#rev-round-13]] and implemented as below.
+
+## ch-bsd r1 remedy (2026-10-19) {#remedy}
+
+| finding | fix |
+|---|---|
+| #b1 flagless recall row guessed | `telemetry._recall_flags_of` returns None when no flag is present, and `channel_of_row` returns None. `agent_usage_report` prints `recall_unflagged=<n>` and puts such a row in no channel. |
+| #b2 `record_miss` switch | Removed from `verbs.resolve_session_source` and `telemetry.resolve_event_session`. R9 now records a miss for every purpose and invocation. |
+| #b3 table recall had no spans | `cli.memory_recall`'s table mode renders the table, plus any degree context blocks, to text with `_render_table_text` (natural width, so a long name is never cut to `…`). It writes that text through `_RecallCall.echo`, so delivered events get `offset_bytes`/`bytes`, `payload_bytes` and `block_sha`. The `[global]` marker is escaped: rich used to swallow it as markup. |
+| #s1 context_by_name | The `used` lookup runs first and passes `exclude_query_id=<this call>` down to `delivered_in_session`. Any other call's delivery now counts, including an earlier context call's. `emit_context_call` hands retrieved, delivered and used events to `emit_recall_events` in one call (`call_events` builds them). The now-dead `DeliveredSet.channels` is removed. |
+| #s2 silent pointer-error writes | All 12 `record_pointer_error` call sites check the result: `if not ...: stm.say_unrecorded(reason)`, one wording. `prune_dead_pointer_files` and `drop_legacy_pointers_migration` return `(done, skipped)`. The SessionStart line adds `prune_unreadable=<n>` / `legacy_pointers_undropped=<n>` when non-zero. |
+| #s3 two scopes for one store | `telemetry.norm_path` (cached `realpath`) is the one spelling. `stm.scope_key` is that function, used by the writer, `_row_in_scope`, the per-root watermark hash and file, `dropped_by_root` (writer and handoff reader) and the migration rows. The classifier's private `_norm_tmp` is deleted, and `_test_base` matches `rmx-` under `norm_path("/tmp")`. |
+| #s5 duplicated shapes | One span finder, `context.name_spans` (replaces `telemetry.spans_by_name` + `context.json_name_spans`). One item enumerator, `bundle_items`: `render_text_spans` records only line positions and raises if the two counts differ. One meta merge, `context.apply_item_meta`, used by the daemon recall op, `cli._hits_with_meta` and `annotate_items`. |
+| #m1 dead `scan.read_stdin_prompt` | Deleted, together with its scan to cli import. The D9 caller list in `stm.read_hook_envelope` is updated. |
+| #m2 scan-prompt JSON delivered | Only items with a found span are delivered. The overwritten `_finish` and the unused `items` are gone. `telemetry.call_events` also refuses an unspanned delivered item for every surface and counts it on stderr (`delivered_unspanned=<n>`). |
+| #m3 skew constant | `workflow/deferral_registry.md` row: 19.0 R0 measures S. The comment's unbacked "1-3 s observed" is dropped. |
+| #m4 hand-typed log path | The `handoff.session_pointer_anomalies` hook clause takes its path from `stm.errors_log_path()`. |
+| #s4 AC-6 blocked (not assigned, recorded) | A deferral-registry row records the user's cutting command. |
+| plan-9 r5 #m-11 | `telemetry.CountingStream.close()` closes the proxy only and never flushes the inner stream. A closed consumer now prints the interpreter's one BrokenPipe line, not a second traceback naming `telemetry.py`. This was checked A/B with a `| head -1` script. The module docstring now says `REFMATRIX_NO_TELEMETRY` gates only the log writes. |
+| plan-9 r5 #s-5 | The Q2 proxy-overhead table is recorded in [[plan-9-context-cost-telemetry#q2-measured]]. |
+
+## Verification {#verification}
+
+- Targeted: `workflow/review-output/task21.1-r1-remedy-targeted.log`.
+- Full suite: `workflow/review-output/task21.1-r1-remedy-full.log`.
+
+The expected failures are the 19 DEV TREE refusals (clone-only), the gmd repo-scope gate and
+AC-6 BLOCKED. Three older `used_events` tests still encode GREEN's #s1 behaviour and contradict
+round 13 (see [[#open]]).
+
+## Open {#open}
+
+- `tests/test_task21_1_used_events.py`: the two AC-11b tests assert `ref_query_id ==
+  _delivered(...)[-1]`. That is the context call's own delivery, and GREEN pointed the `used`
+  event at itself. AC-11e asserts that the concept-only call adds no `concept` use, although the
+  first context call in S delivered that concept. Both need amending to round 13.
+- Spec D9 / the file table still lists `scan.read_stdin_prompt` as an envelope caller. That is the
+  spec owner's edit.
+- The AC-6 fixture waits on the user (deferral registry).
