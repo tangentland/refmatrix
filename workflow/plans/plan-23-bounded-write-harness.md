@@ -5,7 +5,7 @@ title: "Plan 23: a test sandbox, then one bind/recorder core (durable drain, non
 tags: [plan, daemon, queue, lock, harness, sandbox, partition, bug-085, bug-093, bug-098, bug-099]
 metadata:
   node_type: plan
-  status: approved
+  status: in-progress
   created: 2026-10-07
   updated: 2026-10-15
 ---

@@ -5,14 +5,16 @@ title: "Task 3.3: Generated TOOLS + parity test"
 tags: [task, plan-3]
 metadata:
   node_type: task
-  status: pending
+  status: completed
   plan: plan-3-verbs-parity
 ---
 
 # Task 3.3: Generated TOOLS + parity test {#root}
 
 > Plan: [[plan-3-verbs-parity]]
-> Status: Pending
+> Status: Completed — shipped in 82bbc2b (0.68.0), merged to master at 8ba4799 "merge
+> plan-3-verbs-parity (tasks 3.1–3.3)". Later ch-bsd remedy rounds and task 3.4 are owned
+> by W1-b ([[plan-review-2026-10-14#t11-folded-waves]]). Status corrected 2026-10-19 (W1-d).
 > Depends on: 3.2
 
 rel: part-of -> [[plan-3-verbs-parity]]
