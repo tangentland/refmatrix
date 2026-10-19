@@ -176,6 +176,33 @@ def _delivered(path_root: Path, session: str, name: str, kind: str) -> list:
             and e.get("name") == name and e.get("kind") == kind]
 
 
+def _ref_delivery(path_root: Path, u: dict) -> dict:
+    """The delivery a `used` event must point to (R12, round 13 #s1): the NEWEST delivered
+    event of the same (name, kind) in the session from a DIFFERENT call -- a context call's own
+    delivery of the key is excluded from its lookup by `query_id`, so it is never the target."""
+    ds = [d for d in _delivered(path_root, u["session"], u["name"], u["kind"])
+          if d.get("query_id") != u["query_id"]]
+    assert ds, f"no earlier delivery of {(u['name'], u['kind'])} by another call: {u}"
+    return ds[-1]
+
+
+def _prompt_recall_delivering(root: Path, session: str, name: str, attempts: int = 3,
+                              **extra) -> list:
+    """The generated per-prompt recall, required to DELIVER `name` (setup, not the AC). The
+    hook's `--timeout 5` budget degrades to `[]` under full-suite load (AC-11f flaked that
+    way: no memory delivered, so the note had no memory key to use). Each attempt is a real
+    hook call in `session`; an empty degrade adds no delivered event, so a retry cannot
+    change what the AC counts. Fails with a SETUP message if every attempt degraded."""
+    seen = []
+    for _ in range(attempts):
+        rows = _prompt_recall(root, session, **extra)
+        seen.append([r.get("name") for r in rows])
+        if name in seen[-1]:
+            return rows
+    raise AssertionError(f"setup: the prompt recall never delivered {name!r} in "
+                         f"{attempts} attempts (degraded under load?): {seen}")
+
+
 def _wait_context_without(root: Path, ref: str, text: str, session: str | None,
                           timeout: float = 30.0) -> None:
     """After a forget, the lock-free replica the CLI context route reads lags the writer. Wait
@@ -284,7 +311,11 @@ def test_ac11b_context_by_name_on_the_memory_anchor_emits_one_used(root):
         (u,) = _used(root, sess)
         assert u["evidence"] == "context_by_name", u
         assert (u["name"], u["kind"], u["scope"]) == (ALPHA, "memory", "project"), u
-        assert u["ref_query_id"] == _delivered(root, sess, ALPHA, "memory")[-1]["query_id"]
+        # Round 13 #s1: the context call's OWN delivery of the key is excluded by query_id, so
+        # the target is the prompt_recall's delivery, the newest from another call.
+        d = _ref_delivery(root, u)
+        assert d["channel"] == "prompt_recall", d
+        assert u["ref_query_id"] == d["query_id"], (u, d)
 
 
 def test_ac11b_code_symbol_sharing_a_memory_name_is_a_code_use_not_a_memory_use(root):
@@ -312,7 +343,9 @@ def test_ac11b_code_symbol_sharing_a_memory_name_is_a_code_use_not_a_memory_use(
         f"context call={kinds}; expected (0, ['code'])")
     (u,) = _used(root, S)
     assert u["evidence"] == "context_by_name"
-    assert u["ref_query_id"] == _delivered(root, S, ALPHA, "code")[-1]["query_id"]
+    d = _ref_delivery(root, u)                 # round 13 #s1: never the call's own delivery
+    assert d["channel"] == "scan_prompt", d
+    assert u["ref_query_id"] == d["query_id"], (u, d)
 
 
 # ---- AC-11c ---------------------------------------------------------------------------------
@@ -459,12 +492,22 @@ def test_ac11e_concept_anchor_with_attached_memory_body(root):
     (mem,) = [e for e in ctx_delivered if e["kind"] == "memory"]
     assert mem["body_offset_bytes"] is not None and mem["body_bytes"], mem
     assert GAMMA_BODY not in c2.stdout, "fixture: the body is still attached after the forget"
-    assert (used_after_c1, used_after_c2) == (["memory"], ["memory"]), (
+    # AC-11e: c1 emits exactly one `used`, kind=memory (the concept was not delivered in S
+    # before c1, and c1's own delivery is excluded). The concept-only c2 emits NO kind=memory
+    # `used`; round 13 #s1 lets it use the CONCEPT key c1 delivered (an earlier context call is
+    # evidence), which AC-11e does not forbid -- so c2 adds at most that one concept use.
+    assert used_after_c1 == ["memory"], (
         f"R12 context_by_name on an attached body: used kinds after the context call="
-        f"{used_after_c1}, after the concept-only call={used_after_c2}; expected "
-        "(['memory'], ['memory'])")
-    (u,) = _used(root, S)
+        f"{used_after_c1}; expected ['memory']")
+    added = used_after_c2[len(used_after_c1):]
+    assert used_after_c2[:len(used_after_c1)] == used_after_c1 and "memory" not in added, (
+        f"AC-11e: the concept-only call emitted a kind=memory `used`: {used_after_c2}")
+    assert added in ([], ["concept"]), added
+    (u,) = [x for x in _used(root, S) if x["kind"] == "memory"]
     assert u["evidence"] == "context_by_name" and u["partition"] == "intuition", u
+    for x in _used(root, S):
+        d = _ref_delivery(root, x)
+        assert x["ref_query_id"] == d["query_id"], (x, d)
 
 
 # ---- AC-11f ---------------------------------------------------------------------------------
@@ -478,7 +521,9 @@ def test_ac11f_focus_note_sentence_final_name_and_one_used_per_key(root):
     g = _seed_global()
     S = _sid("S")
     with h.SandboxDaemon(g, RMX_PARTITION="global"), h.SandboxDaemon(root):
-        _prompt_recall(root, S)
+        _prompt_recall_delivering(root, S, ALPHA)
+        assert _delivered(root, S, ALPHA, "memory"), (
+            "setup: the recall returned the memory but logged no delivered kind=memory event")
         _agent(root, ["focus", "note", f"applied {ALPHA}."], S)
         after_final = len(_all_used(root, g, S))
         out = _scan(root, S, f"fix alpha_rules in {ALPHA} now")
