@@ -59,20 +59,39 @@ def test_memory_action_op_map_covers_enum():
 
 def test_mcp_task_push_visible_to_cli_list(tmp_path, monkeypatch):
     # MCP write (rmx_task push) must be visible to the CLI read (task list) —
-    # both resolve the active session via the symmetric _session/_resolve.
+    # both resolve through the ONE resolver (verbs.resolve_session_source).
+    # Task 21.1 D2: an UNRESOLVED write is refused (SessionUnresolved), never routed to the
+    # newest ring, so the push names its session explicitly and the CLI read names the same one.
     root = tmp_path
     (root / ".refmatrix").mkdir(parents=True)
     monkeypatch.setenv("REFMATRIX_ROOT", str(root / ".refmatrix"))
-    monkeypatch.delenv("RMX_SESSION", raising=False)
+    for k in ("RMX_SESSION", "CLAUDE_PID", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID"):
+        monkeypatch.delenv(k, raising=False)
     # Seed an active session ring (what the hook does live).
     stm_mod.Stm(root / ".refmatrix", "claude-sess").record("input", "hi")
 
-    r = mcp._t_task({"action": "push", "desc": "ship feature"})
-    assert r["depth"] == 1 and r["current"] == "ship feature"
+    r = mcp._t_task({"action": "push", "desc": "ship feature", "session": "claude-sess"})
+    assert r["depth"] == 1 and r["current"] == "ship feature", r
+    assert r.get("session_source") == "explicit", r
 
-    out = CliRunner().invoke(main, ["task", "list"])
+    out = CliRunner().invoke(main, ["task", "list", "--session", "claude-sess"])
     assert out.exit_code == 0, out.output
     assert "ship feature" in out.output
+
+
+def test_mcp_task_push_unresolved_is_refused(tmp_path, monkeypatch):
+    # Task 21.1 D2: no session signal at all -> the MCP write is refused, naming
+    # SessionUnresolved, and no ring (newest or `default`) gains a task stack.
+    root = tmp_path
+    (root / ".refmatrix").mkdir(parents=True)
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root / ".refmatrix"))
+    for k in ("RMX_SESSION", "CLAUDE_PID", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID"):
+        monkeypatch.delenv(k, raising=False)
+    stm_mod.Stm(root / ".refmatrix", "claude-sess").record("input", "hi")
+
+    r = mcp._t_task({"action": "push", "desc": "ship feature"})
+    assert "SessionUnresolved" in str(r.get("error", "")), r
+    assert list((root / ".refmatrix" / "stm").glob("*.tasks.json")) == []
 
 
 def test_mcp_task_unknown_action_errors(tmp_path, monkeypatch):

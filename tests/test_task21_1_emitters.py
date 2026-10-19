@@ -52,7 +52,10 @@ N_MEMORIES = 10
 N_DELIVERABLE = 3
 # The 8b parked call: its refs join topic A (gamma_topic_a) and add a node.
 PARKED_REFS = ["gamma_topic_a", "omega_parked_ref"]
-B8_PROMPT = "please extend alpha_topic_a with omicron_prompt_ref"
+# `zorbulate` is a real AC-8 corpus term (_corpus writes it into every doc and module): without
+# it scan-prompt matched nothing and emitted no event, so the scan_prompt legs asserted on
+# nothing (bug-131).
+B8_PROMPT = "please extend alpha_topic_a with omicron_prompt_ref zorbulate"
 
 
 # ---- the fixture store ------------------------------------------------------------------------
@@ -436,7 +439,8 @@ def test_ac8b_ambient_prompt_snapshots_too(store, pristine_stm, channel):
     the ring gains the swept event but no input event."""
     from refmatrix import stm
     root = store
-    prompt = "<task-notification>agent alpha_topic_a finished</task-notification>"
+    # `zorbulate` = a real corpus term, so the scan_prompt leg has an event to assert on.
+    prompt = "<task-notification>agent alpha_topic_a zorbulate finished</task-notification>"
     got = {}
     for how in ("ii", "i"):
         _restore_stm(root, pristine_stm)

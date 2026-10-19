@@ -56,6 +56,9 @@ def test_a_hook_sourced_query_is_recorded_as_a_hook(store, monkeypatch):
 
 def test_an_unhinted_non_tty_query_is_recorded_as_unknown(store, monkeypatch):
     monkeypatch.delenv("RMX_INVOCATION_SOURCE", raising=False)
+    # Task 21.1 R2: `CLAUDECODE` is the agent signal (`agent` outranks the tty / `unknown`
+    # legs), and the suite inherits it from its own runner. "Unhinted" means no signal at all.
+    monkeypatch.delenv("CLAUDECODE", raising=False)
     _emit(store)
     assert _rows(store)[-1]["invocation"] == "unknown"
 

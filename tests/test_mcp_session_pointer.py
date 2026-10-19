@@ -51,23 +51,15 @@ def _global_by_pid():
 
 @pytest.fixture(autouse=True)
 def _no_pointer_for_this_process(monkeypatch):
-    """D3 makes pointers user-level: one file per Claude pid for EVERY store. The suite runs
-    every test in one process, so a pointer an earlier test wrote for `os.getpid()` (or its
-    parent) would resolve in the next one. Removed before and after each test; and the
-    Claude-session env the suite inherits from its own runner is stripped."""
+    """D3 makes pointers user-level: one file per Claude pid for EVERY store. The pointer dir
+    itself (pointers AND `_errors.jsonl`) is reset per test suite-wide by conftest's
+    `_fresh_pointer_dir` (bug-132; it replaced this fixture's own pid-only unlink, which let
+    `_errors.jsonl` leak from test to test). What stays here: the Claude-session env the suite
+    inherits from its own runner is stripped."""
     for k in ("CLAUDECODE", "CLAUDE_PID", "CLAUDE_CODE_SESSION_ID", "RMX_SESSION",
               "RMX_INVOCATION_SOURCE"):
         monkeypatch.delenv(k, raising=False)
-
-    def _clear():
-        for pid in (os.getpid(), os.getppid()):
-            try:
-                (_global_by_pid() / f"{pid}.json").unlink()
-            except FileNotFoundError:
-                pass
-    _clear()
     yield
-    _clear()
 
 
 def _ring(root, session, age_s=0.0):
