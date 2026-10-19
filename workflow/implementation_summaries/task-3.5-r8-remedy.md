@@ -126,4 +126,6 @@ Runs:
   must not leak. The message now carries the exception's own words, as `_call` always did.
   The re-run of r4, r5, r7, the 3.5 file and the lance file is 67 passed
   (`task3.5-amend-green-recheck.log`);
-- the full suite: `workflow/review-output/task3.5-amend-green-full.log`.
+- the full suite: `workflow/review-output/task3.5-amend-green-full.log`, 2998 passed, 20 failed
+  and 19 skipped. The 20 failures are the 19 clone-only DEV TREE refusals (`upgrade`, launchctl/plist,
+  relaunch) plus the gmd repo-scope gate. Nothing else fails.
