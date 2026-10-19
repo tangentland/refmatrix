@@ -24,8 +24,8 @@ current.
 | 4 | plan-4-daemon-resilience | in-progress (ch-bsd r4 DIRTY; #b-1 closed by bug-028; #s-2 + #s-3 + #s-4 + #m-5 + #m-6 OPEN, re-verified 2026-10-01) | yes (4) | `workflow/plans/plan-4-daemon-resilience.md` | — |
 | 5 | plan-5-memory-bridge-complete | completed | yes (3) | `workflow/plans/plan-5-memory-bridge-complete.md` | — |
 | 6 | plan-6-deferrals-docs-benchmark | in-progress | yes (5) | `workflow/plans/plan-6-deferrals-docs-benchmark.md` | — |
-| 7 | plan-7-longmemeval | in-progress (symbolic reported; dense blocked bug-030) | yes (4) | `workflow/plans/plan-7-longmemeval.md` | — |
-| 8 | plan-8-derived-coverage-notes | in-progress (built; awaiting @ch-bsd) | yes (4) | `workflow/plans/plan-8-derived-coverage-notes.md` | plan 7 (measures it) |
+| 7 | plan-7-longmemeval | in-progress (symbolic reported; bug-030 fixed 2026-09-16, dense/fused re-run is W2-c) | yes (4) | `workflow/plans/plan-7-longmemeval.md` | — |
+| 8 | plan-8-derived-coverage-notes | in-progress (ch-bsd r5 may NOT flip; remedy W2-b, deferrals W3-b) | yes (4) | `workflow/plans/plan-8-derived-coverage-notes.md` | plan 7 (measures it) |
 | 9 | plan-9-context-cost-telemetry | in-progress | yes (3) | `workflow/plans/plan-9-context-cost-telemetry.md` | — |
 | 10 | plan-10-injection-dedup | in-progress (negative result; awaiting BSD clean) | yes (3) | `workflow/plans/plan-10-injection-dedup.md` | plan 9 (its instrument) |
 | 11 | plan-11-helix-phase2-versioned-graph | superseded (user 2026-10-07: "helix's design supersedes plan 11's" — ADR-0004's helix half replaces the prolly store; never built) |
@@ -44,7 +44,7 @@ current.
 
 ## Sequence rationale {#sequence}
 
-**Current order (2026-10-14, user-approved): [[plan-review-2026-10-14#t10-waves]] for EVERY wave** (bug-105 hotfix first; Wave 1 starts with 23.0 ∥ 23.4). Superseded: (2026-10-07) [[plan-review-2026-10-07#order]]. The numbered rationale below is historical.
+**Current order (2026-10-19, user-requested fold of plans 1-15): [[plan-review-2026-10-14#t11-folded-waves]], amending [[plan-review-2026-10-14#t10-waves]] for EVERY wave** (bug-105 hotfix first; Wave 1 starts with 23.0 ∥ 23.4). Superseded: (2026-10-07) [[plan-review-2026-10-07#order]]. The numbered rationale below is historical.
 
 
 1. **deploy-runtime** first — until `rmx` runs the deploy tree, every later "deploy + verify" step is fiction.

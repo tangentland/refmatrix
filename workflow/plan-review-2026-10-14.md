@@ -463,6 +463,72 @@ rel: supersedes -> [[plan-review-2026-10-07#order]]
   (by 16.4).
 {#t10-waves-body}
 
+## The wave list with plans 1-15 folded in (2026-10-19) {#t11-folded-waves}
+
+The user, 2026-10-19: "fold the remaining 1-15 items into the waves". Every open item of plans 2,
+3, 4, 6, 7, 8, 9, 10 and 15 (inventory read on `c9acb3f`, latest ledger per plan from
+`workflow/bullshit/INDEX.md`) is placed below; the plans 16-23 order of [[#t10-waves]] is
+unchanged. Placement rule: a finding that a 16-23 task already reaches rides with that task; a
+safety or correctness finding with no host goes in Wave 1; hygiene goes in Wave 2; measurement
+re-runs wait for the instrument they need. Done so far: bug-105/109 (0.78.x), bug-129 (0.79.0),
+23.0 (0.79.1).
+
+rel: amends -> [[#t10-waves]]
+
+- **Wave 1**
+  - 23.0 (done) ∥ 23.4. 23.2 → 23.1 → 23.3. 21.1 (in flight) → 19.1; 19.5 R1 → 19.1 → 19.2; 19.0.
+    After 23.1: 17.1 → 17.2 → 17.4; 16.6 slice → 22.1a → 22.2 → (22.5 ∥ 22.6) → 22.3. 23.5.
+  - **W1-a plan-4 remedy (new, standalone, small):** r4 #s-2 an unknown `dev_tree` passes the
+    dev-tree refusal (`launchctl.py:139/575/741`); r4 #s-3 stop grace on 3 of 7 stop paths; r4
+    #m-5 `install(allow_dev=)` has no CLI caller; r4 #m-6 session-indexer plist lacks
+    `ExitTimeOut`; todo G9 launchd spawn-loop; confirm r4 #s-4 (hub.log pollution) closed by 23.0
+    with a ledger line. Closes plan-4.
+  - **W1-b plan-3 close:** ch-bsd r8 over the round-8 remedy (`0e3002f`/`273cc16`); task 3.4
+    (internal-CLI allowlist + reverse check in the parity gate) — before 19.x/21.x add more verbs.
+    Closes plan-3.
+  - **W1-c riders on 16-23 tasks (spec amendments, no new task):** plan-2 r9 #s-3 (writes resolve
+    their partition from a lagging replica, `verbs.py:246`) rides 23.5 next to nm23-r10-3; plan-2
+    r9 #s-2 (rerank eats the global leg, warn-after) and #m-4 (degrade line names the 1.5 s slice
+    as the budget) ride 19.1; plan-2's scan-prompt rerank-never-fires observation is measured by
+    19.5. plan-9 r5 #m-11 (stdout proxy's second traceback) and #s-5 (Q2 proxy-overhead number)
+    ride 21.1's close-out. Closes plan-2 and plan-9 when their hosts land.
+  - **W1-d bookkeeping sweep (doc-only, one commit):** plan-of-plans rows for plans 7 and 8;
+    plan-3 3.1-3.3 frontmatter; todo G2/G3/G5/G6 naming their real open findings; missing
+    summaries 6.4, 7.3, 8.3, 9.2, 9.3; bug-008 row's "NOT verified live"; plan-7 REPORT.md's
+    refuted bug-030 diagnosis; plan-6 r1 #m-4 `_log_event` docstring.
+  - **W1-e plan-15 close:** a clean full suite on the committed master tree (the 22 remaining
+    failures are clone-only; run on the main tree) returns plan-15 to `completed`; its r13 #s-1
+    (L1/L6 mutations survive: behaviour pinned on the helper, not the route) and #m-1/#m-2 are
+    fixed in the same pass.
+- **Wave 2**
+  - Unchanged: 16.1 → (16.2 ∥ 16.3) → 16.5; 22.1; 19.3 → 19.4; 19.0 if not done; 17.3.
+  - **W2-a plan-6 remedy:** r1 #b-1 (Q1 `duckdb_view.py` decided on true facts), #b-2 (a lint that
+    every monkeypatching test file is registered), #s-1 (`wrapper_paths()` dead value), #s-3
+    (three stale deferrals in `src/` + a real guard; todo G7), #m-1..#m-5; todo G8 doc gaps.
+    Closes plan-6.
+  - **W2-b plan-8 remedy, with 19.3/19.4 (derived layers):** r5 #b-2 (`corroborated` call site
+    unpinned), #b-3 (`brief.parse_gmd` no production caller), #s-4 (`brief --compile` only in the
+    CLI, not the verb), #s-9/#m-10 (unregistered doubles). Closes plan-8's build; its two
+    deferrals move to Wave 3.
+  - **W2-c plan-7 dense/fused re-run:** task 7.4's dense and fused rows (bug-030 fixed 2026-09-16,
+    never re-run); REPORT.md completed. Closes plan-7's build.
+- **Wave 3**
+  - Unchanged: 16.4; 21.2 → 21.3 ∥ 21.4; 19.6.
+  - **W3-a plan-10 re-measure after 19.6:** r5 #b-1 (the negative result was taken on `--format
+    json`, which omits the repeating composite) re-measured on the text the hook delivers, using
+    21.1's `block_sha` and 19.6's versioned injection; harness fixes r5 #s-8/#m-12; the two OPEN
+    plan questions and the stranded deferral (#s-7) answered there. Plan-10 closes into 19.6.
+  - **W3-b plan-8 deferrals:** `brief/stale` detector and the answer-usefulness miss signal, built
+    on 19.2/21.1 usage records.
+- **Wave 4**
+  - Unchanged: 20.2 → 20.3; plan-18 (18.2, 18.3) as a 17.2 step; draft the ADR-0004 helix plan.
+  - **W4-a plan-7 deferrals:** Layer B, `longmemeval_m`, CLI candidate prefilter, settled-store
+    latency re-measure — scheduled with the plan-20 evals.
+- **Wave 5** — build the helix.
+- **Dormant / closed into others** — plan-13 (sessions gold set); plan-14 (by 16.4); 22.4 (feeds
+  the helix plan); plan-20 needs approval before Wave 4.
+{#t11-folded-waves-body}
+
 ## Deliverable when the review converges {#final-doc}
 
 The user, 2026-10-14: "at the end of all this review, I would like a separate consolidated
