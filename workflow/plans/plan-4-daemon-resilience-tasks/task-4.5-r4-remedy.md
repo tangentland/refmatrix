@@ -127,6 +127,9 @@ rel: depends-on -> [[task-4.4-plan-4-daemon-resilience]]
   identity error, and `--allow-dev`. A binary answering `dev_tree: false` is not refused (control).
 - **AC-2 (R1)** {#ac-2} `launchctl.install(root, rmx=<unknown>)` raises (`identity unknown`) before any plist is
   written and before any `launchctl` subprocess call; with `allow_dev=True` it installs (control).
+  The same holds for `reinstall(root, rmx=<unknown>)` (the `relaunch-fleet` path: the installed
+  daemon plist survives byte-identical) and `install_hub(rmx=<unknown>)`. Older tests that rendered
+  against an unreadable binary take the shared `deployed_rmx` fixture (`tests/conftest.py`).
 - **AC-3 (R1)** {#ac-3} `launchctl.check(root, rmx=<unknown>)` on an installed plist rendered
   for another binary returns `(False, why)` with `identity unknown` in `why` and no `drifted` reason.
 - **AC-4 (R1)** {#ac-4} `launchctl.check_hub(rmx=<unknown>)` — the same.

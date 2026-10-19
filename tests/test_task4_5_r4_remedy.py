@@ -38,6 +38,7 @@ from refmatrix import hub as hub_mod
 from refmatrix import launchctl as lc
 from refmatrix import session_launchctl as slc
 from refmatrix.store import Store
+from tests.fake_rmx import identity_binary, script_binary
 from tests.test_plan4_remedy_r3 import _draining_process, _age
 
 _DEPLOYED = "/deployed/bin/rmx"   # a path rendered INTO a fixture plist; never executed
@@ -61,17 +62,11 @@ def _fresh_identity_cache(monkeypatch):
 
 
 def _script(tmp_path: Path, name: str, body: str) -> Path:
-    b = tmp_path / "bins" / name / "rmx"
-    b.parent.mkdir(parents=True)
-    b.write_text("#!/bin/sh\n" + body + "\n")
-    b.chmod(0o755)
-    return b
+    return script_binary(tmp_path, name, body)
 
 
 def _identity_binary(tmp_path: Path, *, dev_tree: bool) -> Path:
-    ident = ('{"dev_tree": %s, "import_path": "/x/src/refmatrix/__init__.py"}'
-             % ("true" if dev_tree else "false"))
-    return _script(tmp_path, "dev" if dev_tree else "deployed", f"echo '{ident}'")
+    return identity_binary(tmp_path, dev_tree=dev_tree)
 
 
 # The three shapes of "unknown" the r4 probe found: a pre-0.69 binary that prints a version
@@ -138,6 +133,41 @@ def test_install_refuses_an_unknown_binary_before_writing_or_calling_launchd(
         lc.install(root, rmx=str(unknown))
     assert not (tmp_path / "agents" / "x.plist").exists(), "plist written before the refusal"
     assert runs == [], f"launchctl called before the refusal: {runs}"
+
+
+def test_reinstall_refuses_an_unknown_binary_and_leaves_the_daemon_plist_alone(
+        root, tmp_path, monkeypatch):
+    """AC-2, the r4 scenario end to end on the DAEMON plist: `relaunch-fleet` ->
+    `reinstall(rmx=<unreadable>)` -> `install(force=True)`. The installed plist (rendered for
+    the deployed binary) must survive byte-identical, and launchd is never called."""
+    unknown = _UNKNOWN["version-line"](tmp_path)
+    lc.binary_identity(str(unknown))
+    runs = _fake_launchd(monkeypatch, tmp_path, loaded=True)
+    installed = tmp_path / "agents" / "x.plist"
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    installed.write_bytes(lc.render_plist(root, rmx=_DEPLOYED))
+    before = installed.read_bytes()
+    stops: list = []
+    monkeypatch.setattr(dm, "graceful_stop",
+                        lambda r, *, grace, report=None: stops.append(grace) or True)
+    with pytest.raises(RuntimeError, match="identity unknown"):
+        lc.reinstall(root, rmx=str(unknown))
+    assert installed.read_bytes() == before, "the daemon plist was rewritten to an unknown binary"
+    assert runs == [] and stops == [], f"launchd / the daemon was touched: {runs} {stops}"
+
+
+def test_install_hub_refuses_an_unknown_binary_before_writing_or_calling_launchd(
+        tmp_path, monkeypatch):
+    """AC-2's hub twin: `install_hub` shares `_refuse_dev_tree`."""
+    unknown = _UNKNOWN["exits-nonzero"](tmp_path)
+    lc.binary_identity(str(unknown))
+    runs = _fake_launchd(monkeypatch, tmp_path)
+    monkeypatch.setattr(lc, "hub_plist_path", lambda: tmp_path / "agents" / "hub.plist")
+    monkeypatch.setattr(lc, "hub_is_loaded", lambda: False)
+    with pytest.raises(RuntimeError, match="identity unknown"):
+        lc.install_hub(rmx=str(unknown))
+    assert not (tmp_path / "agents" / "hub.plist").exists()
+    assert runs == [], runs
 
 
 def test_install_with_allow_dev_installs_against_an_unknown_binary(root, tmp_path, monkeypatch):

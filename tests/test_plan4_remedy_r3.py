@@ -339,11 +339,8 @@ def test_render_check_and_reinstall_take_the_callers_binary(root, monkeypatch):
 
 
 def _fake_binary(tmp_path: Path, *, dev_tree: bool) -> Path:
-    b = tmp_path / "bin" / "rmx"; b.parent.mkdir(parents=True)
-    ident = '{"dev_tree": %s, "import_path": "/x/src/refmatrix/__init__.py"}' % ("true" if dev_tree else "false")
-    b.write_text(f"#!/bin/sh\necho '{ident}'\n")
-    b.chmod(0o755)
-    return b
+    from tests.fake_rmx import identity_binary
+    return identity_binary(tmp_path, dev_tree=dev_tree)
 
 
 def test_install_refuses_a_dev_tree_binary(root, tmp_path, monkeypatch):
@@ -446,13 +443,12 @@ def test_forced_install_stops_the_daemon_gracefully_before_the_bootout(root, mon
     assert (tmp_path / "x.plist").exists()
 
 
-def test_hub_plist_carries_the_exit_timeout_too(monkeypatch):
-    monkeypatch.setenv("RMX_BIN", "/usr/local/bin/rmx")
+def test_hub_plist_carries_the_exit_timeout_too(deployed_rmx):
     d = plistlib.loads(lc.render_hub_plist())
     assert d["ExitTimeOut"] == int(lc.EXIT_TIMEOUT_S)
 
 
-def test_forced_hub_install_stops_the_hub_before_the_bootout(monkeypatch, tmp_path):
+def test_forced_hub_install_stops_the_hub_before_the_bootout(monkeypatch, tmp_path, deployed_rmx):
     """launchd SIGKILLed the hub at 04:26:17 (2026-09-15) on a `kickstart -k`
     — a forced reinstall boots it out the same way."""
     calls, st = _hub_install_fakes(monkeypatch, tmp_path)
@@ -502,7 +498,10 @@ def _hub_install_fakes(monkeypatch, tmp_path, *, unload_polls=2, vanish_after_bo
         if stopped["v"]:
             raise ConnectionRefusedError()
         return {"ok": True}
-    monkeypatch.setenv("RMX_BIN", "/usr/local/bin/rmx")
+    # RMX_BIN comes from the `deployed_rmx` fixture every caller takes: a binary that
+    # answers `dev_tree: false`, its identity cached before `subprocess.run` is faked below.
+    assert lc.binary_identity(os.environ["RMX_BIN"]).get("dev_tree") is False, \
+        "_hub_install_fakes needs the deployed_rmx fixture"
     monkeypatch.setattr(lc, "hub_is_loaded", hub_is_loaded)
     monkeypatch.setattr(lc, "hub_plist_path", lambda: tmp_path / "hub.plist")
     monkeypatch.setattr(lc, "LAUNCH_AGENTS_DIR", tmp_path)
@@ -513,7 +512,7 @@ def _hub_install_fakes(monkeypatch, tmp_path, *, unload_polls=2, vanish_after_bo
     return calls, st
 
 
-def test_forced_hub_install_bootstraps_only_after_the_domain_released_the_label(monkeypatch, tmp_path):
+def test_forced_hub_install_bootstraps_only_after_the_domain_released_the_label(monkeypatch, tmp_path, deployed_rmx):
     calls, st = _hub_install_fakes(monkeypatch, tmp_path, unload_polls=3)
     lc.install_hub(force=True)
     boots = [c for c in calls if "bootstrap" in c[0]]
@@ -521,7 +520,7 @@ def test_forced_hub_install_bootstraps_only_after_the_domain_released_the_label(
     assert (tmp_path / "hub.plist").exists()
 
 
-def test_forced_hub_install_refuses_to_rewrite_while_the_old_job_is_still_loaded(monkeypatch, tmp_path):
+def test_forced_hub_install_refuses_to_rewrite_while_the_old_job_is_still_loaded(monkeypatch, tmp_path, deployed_rmx):
     calls, st = _hub_install_fakes(monkeypatch, tmp_path, unload_polls=10 ** 9)
     monkeypatch.setattr(lc, "BOOTOUT_WAIT_S", 0.5)
     with pytest.raises(RuntimeError, match="did not unload"):
@@ -530,7 +529,7 @@ def test_forced_hub_install_refuses_to_rewrite_while_the_old_job_is_still_loaded
     assert not any("bootstrap" in c[0] for c in calls), calls
 
 
-def test_forced_hub_install_bootstraps_again_when_the_label_vanishes_after_the_bootstrap(monkeypatch, tmp_path):
+def test_forced_hub_install_bootstraps_again_when_the_label_vanishes_after_the_bootstrap(monkeypatch, tmp_path, deployed_rmx):
     """The live race: `launchctl print` said loaded right after the
     bootstrap, and a second later the label was gone (the late bootout
     completing). The settle re-check catches it and bootstraps once more."""
