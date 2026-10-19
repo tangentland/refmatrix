@@ -194,6 +194,24 @@ def _live_roots() -> "tuple[list, list[dict]]":
     return roots, skipped
 
 
+def _global_leg_reason(e: BaseException) -> str:
+    """Word the global leg's skip from the exception TYPE, not one template.
+
+    Absent is not busy (task 3.5, ch-bsd plan-3 r8 #s-2 / probe P4b,
+    2026-10-19): every failure used to read "did not answer within 3s", so a
+    socket that does not exist (`FileNotFoundError`) or has no listener
+    (`ConnectionRefusedError`, a daemon that died without unlinking it) was
+    reported as a timeout for an op that failed instantly. Only a timeout is
+    "did not answer"; anything else names its type and message."""
+    import socket as _socket
+    if isinstance(e, (FileNotFoundError, ConnectionRefusedError)):
+        return f"global store daemon not running ({type(e).__name__})"
+    if isinstance(e, (TimeoutError, _socket.timeout)):
+        return (f"global memory_search did not answer within {WHERE_MEMORY_OP_S:g}s "
+                f"({type(e).__name__})")
+    return f"global memory_search failed ({type(e).__name__}: {e})"
+
+
 def federated_where(q: str, *, limit: int = 40) -> dict:
     """Fan a query across all live stores: code/doc/concept hits from the cached
     replica + memory hits, grouped by source, deduped, capped. Per-project work
@@ -243,8 +261,7 @@ def federated_where(q: str, *, limit: int = 40) -> dict:
     except Exception as e:  # noqa: BLE001 — the global leg, said
         from refmatrix import hub as hub_mod
         skipped.append({"project": "global", "root": str(hub_mod.global_store_root()),
-                        "reason": f"global memory_search did not answer within "
-                                  f"{WHERE_MEMORY_OP_S:g}s ({type(e).__name__})"})
+                        "reason": _global_leg_reason(e)})
 
     seen, deduped = set(), []
     for r in results:

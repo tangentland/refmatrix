@@ -4361,8 +4361,8 @@ def canon_find(concept: str):
     res = federated_concept(concept)
     projs = res["projects"]
     skipped = res.get("skipped") or []
-    # A store that could not be searched is said so — this command was the
-    # last consumer discarding its fan-out's `skipped` list, so a busy daemon
+    # A store that could not be searched is said so — this command was one
+    # of three consumers discarding its fan-out's `skipped` list, so a busy daemon
     # turned into "no live project hosts X" and the operator was told a
     # concept exists nowhere (ch-bsd plan-3 r6 #s-3; the r3 #b-2 defect that
     # `rmx locate` already fixed, one command over).
@@ -11237,6 +11237,35 @@ def _memory_daemon_call(op: str, args: dict, *, timeout: float = 60.0,
     return daemon_mod.call(_root(), op, args, timeout=timeout, retries=retries)
 
 
+def _memory_write(action: str, local: "Callable[[], dict]", **kw) -> dict:
+    """One `rmx memory` WRITE through the `rmx_memory` verb, with the store's
+    own method as the no-daemon bootstrap.
+
+    Why (task 3.4 R3, ch-bsd plan-3 r8 #t34-build, 2026-10-19): `forget`,
+    `reclassify`, `retag`, `link`, `score`, `bulk-forget` and `dedup` each built
+    their own daemon payload behind a bare `ping` gate, so the CLI implemented
+    what the verb already did ("CLI and MCP expose it, never implement it"),
+    and a held writer — which answers ping — took the daemon branch with no
+    typed busy. Now the verb classifies the daemon:
+
+    - up     → the verb's op; its result is what the command renders.
+    - absent (`VerbAbsentError`) → `local()`, the in-process store, exactly as
+      these commands did with no daemon. ONLY absent: opening the writer slot
+      under a live daemon is the 2026-09-14 lock crash (Q11, r2 #b-2).
+    - busy or an answered error (`VerbBusyError` / `VerbError`) → a
+      ClickException with the verb's words; never a fallback.
+
+    `local` returns the daemon op's result shape, so one render path serves
+    both branches."""
+    from refmatrix import verbs as _verbs
+    try:
+        return _verbs.memory(_root(), action=action, partition=_resolve_partition(), **kw)
+    except _verbs.VerbAbsentError:
+        return local()
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e))
+
+
 def _apply_memory_partition_default(timeout: "float | None" = None) -> None:
     """If the user did not explicitly pick a partition (no -p on the rmx
     group, no RMX_PARTITION env var), pin this invocation to a project-
@@ -11509,22 +11538,19 @@ def memory_reclassify(to_mtype, like, from_mtype, names, dry_run, yes):
     _memory_intent("memory_reclassify")
     if not (like or names):
         raise click.ClickException("need --like or --name to select memories")
-    from refmatrix import daemon as daemon_mod
-    args = {"to_mtype": to_mtype, "like": like, "from_mtype": from_mtype,
-            "names": list(names) or None, "dry_run": True}
-    root = _root()
-    daemon_up = daemon_mod.ping(root)
-    s = None if daemon_up else _store()
-    # preview first
-    if s is None:
-        resp = _memory_daemon_call("memory_reclassify", args)
-        prev = resp.get("result", {}) if resp.get("ok") else None
-        if prev is None:
-            raise click.ClickException(resp.get("error", "daemon error"))
-    else:
-        prev = s.reclassify_memories(to_mtype=to_mtype, like=like,
-                                     from_mtype=from_mtype,
-                                     names=list(names) or None, dry_run=True)
+    # Preview then write, BOTH through the `rmx_memory` verb (task 3.4 R3);
+    # the in-process store only when no daemon exists (`_memory_write`).
+    sel = {"to_mtype": to_mtype, "like": like, "from_mtype": from_mtype,
+           "names": list(names) or None}
+    _local: list = []
+
+    def _reclassify(dry: bool) -> dict:
+        def local() -> dict:
+            if not _local:
+                _local.append(_store())
+            return _local[0].reclassify_memories(**sel, dry_run=dry)
+        return _memory_write("reclassify", local, **sel, dry_run=dry)
+    prev = _reclassify(True)
     n = prev["matched"]
     if n == 0:
         console.print("[yellow]no memories matched[/]")
@@ -11538,16 +11564,7 @@ def memory_reclassify(to_mtype, like, from_mtype, names, dry_run, yes):
         return
     if not yes and not click.confirm(f"reclassify {n} memories?"):
         return
-    args["dry_run"] = False
-    if s is None:
-        resp = _memory_daemon_call("memory_reclassify", args)
-        res = resp.get("result", {}) if resp.get("ok") else None
-        if res is None:
-            raise click.ClickException(resp.get("error", "daemon error"))
-    else:
-        res = s.reclassify_memories(to_mtype=to_mtype, like=like,
-                                    from_mtype=from_mtype,
-                                    names=list(names) or None, dry_run=False)
+    res = _reclassify(False)
     console.print(f"[green]reclassified[/] {res['changed']} → {to_mtype}")
 
 
@@ -11571,19 +11588,13 @@ def memory_retag(name_or_id, add_tags, rm_tags, set_tags):
             console.print(
                 f"[yellow]note:[/] off-vocabulary tag(s): {', '.join(unknown)}"
             )
-    from refmatrix import daemon as daemon_mod
-    root = _root()
     target = int(name_or_id) if name_or_id.isdigit() else name_or_id
-    args: dict = {"add": add_l, "remove": rm_l, "replace": set_l}
-    args["id" if isinstance(target, int) else "name"] = target
-    if daemon_mod.ping(root):
-        resp = _memory_daemon_call("memory_retag", args)
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        new = resp["result"]["tags"]
-    else:
-        s = _store()
-        new = s.retag_memory(target, add=add_l, remove=rm_l, replace=set_l)
+    key = {"id": target} if isinstance(target, int) else {"name": target}
+    new = _memory_write(
+        "retag",
+        lambda: {"tags": _store().retag_memory(target, add=add_l, remove=rm_l,
+                                               replace=set_l)},
+        **key, add=add_l, remove=rm_l, replace=set_l)["tags"]
     if new is None:
         raise click.ClickException(f"no memory matching {name_or_id!r}")
     console.print(f"[green]retagged[/] {name_or_id}: {', '.join(new) if new else '(none)'}")
@@ -12425,26 +12436,18 @@ def memory_link(src, linkage, concept, weight):
     Valid linkages: reinforces, contradicts, recalls, informs, plus
     any DEFAULT_LINKAGES (mentions, defines, ...)."""
     _memory_intent("memory_link")
-    from refmatrix import daemon as daemon_mod
-    root = _root()
-    src_arg = (
-        {"src_id": int(src)} if src.isdigit() else {"src_name": src}
-    )
-    args = {**src_arg, "linkage": linkage, "concept": concept,
-            "weight": weight}
-    if daemon_mod.ping(root):
-        resp = _memory_daemon_call("memory_link", args)
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        result = resp["result"]
-    else:
+    key = {"id": int(src)} if src.isdigit() else {"name": src}
+
+    def local() -> dict:
         s = _store()
         m = s.get_memory(int(src) if src.isdigit() else src)
         if m is None:
             raise click.ClickException(f"no memory matching {src!r}")
         cid = s.add_concept(concept)
         s.link(linkage, cid, m["id"], weight=weight)
-        result = {"src_id": m["id"], "concept_id": cid}
+        return {"src_id": m["id"], "concept_id": cid}
+    result = _memory_write("link", local, **key, linkage=linkage, concept=concept,
+                           weight=weight)
     console.print(
         f"[green]linked[/] memory:{src} --{linkage}--> concept:{concept} "
         f"(memory_id={result['src_id']}, concept_id={result['concept_id']})"
@@ -12471,39 +12474,31 @@ def memory_score(concept, explain, halflife_days, cap):
     With --explain, also prints the per-memory breakdown so you can
     see which observations are driving the number."""
     _memory_intent("memory_score")
-    from refmatrix import daemon as daemon_mod
     from refmatrix import reinforcement as rein
-    root = _root()
-    if daemon_mod.ping(root):
-        resp = _memory_daemon_call("memory_score", {
-            "concept": concept, "halflife_days": halflife_days,
-            "cap": cap, "explain": explain,
-        })
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        result = resp["result"]
-        cids = result["concept_ids"]
-        if not cids:
-            raise click.ClickException(f"no concept matching {concept!r}")
-        total = result["signal"]
-        components_by_cid: dict[int, list[dict]] = {}
-        for row in result.get("components") or []:
-            components_by_cid.setdefault(row["concept_id"], []).append(row)
-    else:
+
+    def local() -> dict:
+        # The `memory_score` op's result shape, computed in-process.
         s = _store()
         cids = s.resolve_concept_ids(concept, strict=False)
         if not cids:
-            raise click.ClickException(f"no concept matching {concept!r}")
-        scores = s.reinforcement_scores(
-            cids, halflife_days=halflife_days, cap=cap,
-        )
-        total = sum(scores.values())
-        components_by_cid = {}
+            return {"concept": concept, "concept_ids": [], "signal": 0.0, "components": []}
+        scores = s.reinforcement_scores(cids, halflife_days=halflife_days, cap=cap)
+        components: list[dict] = []
         if explain:
             for cid in cids:
-                components_by_cid[cid] = s.reinforcement_components(
-                    cid, halflife_days=halflife_days,
-                )
+                components.extend({"concept_id": cid, **row} for row in
+                                  s.reinforcement_components(cid, halflife_days=halflife_days))
+        return {"concept": concept, "concept_ids": cids, "scores": scores,
+                "signal": sum(scores.values()), "components": components}
+    result = _memory_write("score", local, concept=concept, halflife_days=halflife_days,
+                           cap=cap, explain=explain)
+    cids = result["concept_ids"]
+    if not cids:
+        raise click.ClickException(f"no concept matching {concept!r}")
+    total = result["signal"]
+    components_by_cid: dict[int, list[dict]] = {}
+    for row in result.get("components") or []:
+        components_by_cid.setdefault(row["concept_id"], []).append(row)
     halflife = halflife_days if halflife_days is not None else rein.get_halflife_days()
     cap_used = cap if cap is not None else rein.get_cap()
     console.print(
@@ -12645,25 +12640,17 @@ def memory_sync_disk(paths: tuple[Path, ...]):
 def memory_forget(name_or_id):
     """Drop a memory: its entity row, sidecar, and every entity_link."""
     _memory_intent("memory_forget")
-    from refmatrix import daemon as daemon_mod
-    root = _root()
-    args: dict = (
-        {"id": int(name_or_id)} if name_or_id.isdigit()
-        else {"name": name_or_id}
-    )
-    if daemon_mod.ping(root):
-        resp = _memory_daemon_call("memory_forget", args)
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        ok = resp["result"]["forgotten"]
-        _say_vector_delete_failures(resp["result"], "memory forget")
-    else:
+    key = {"id": int(name_or_id)} if name_or_id.isdigit() else {"name": name_or_id}
+
+    def local() -> dict:
         s = _store()
         failed0 = getattr(s, "vector_delete_failures", 0)
         ok = s.forget_memory(int(name_or_id) if name_or_id.isdigit() else name_or_id)
-        _say_vector_delete_failures(
-            {"vector_delete_failed": getattr(s, "vector_delete_failures", 0) - failed0},
-            "memory forget")
+        return {"forgotten": ok,
+                "vector_delete_failed": getattr(s, "vector_delete_failures", 0) - failed0}
+    res = _memory_write("forget", local, **key)
+    ok = res.get("forgotten")
+    _say_vector_delete_failures(res, "memory forget")
     if ok:
         console.print(f"[green]forgot[/] {name_or_id}")
     else:
@@ -12683,8 +12670,8 @@ def memory_dedup(dry_run):
     Operates on the active partition. Routes through the daemon when one is up.
     """
     _memory_intent("memory_dedup")
-    s = _store(write=True)
-    res = s.fold_concept_dups(dry_run=dry_run)
+    res = _memory_write("dedup", lambda: _store(write=True).fold_concept_dups(dry_run=dry_run),
+                        dry_run=dry_run)
     _say_vector_delete_failures(res, "memory dedup")
     verb = "would fold" if res.get("dry_run") else "folded"
     console.print(
@@ -13002,33 +12989,21 @@ def memory_bulk_forget(ids, names, mtypes, dry_run, yes):
         raise click.ClickException(
             "at least one of --id, --name, --mtype is required"
         )
-    from refmatrix import daemon as daemon_mod
-    root = _root()
-    args: dict = {"dry_run": dry_run}
-    if ids:
-        args["ids"] = list(ids)
-    if names:
-        args["names"] = list(names)
-    if mtypes:
-        args["mtypes"] = list(mtypes)
+    sel = {"ids": list(ids) or None, "names": list(names) or None,
+           "mtypes": list(mtypes) or None}
+    _local: list = []
 
-    if daemon_mod.ping(root):
-        # Always run a dry-run first to drive the confirmation prompt;
-        # this both gives the user a real count and short-circuits the
-        # confirm when the filter matches nothing.
-        preview = _memory_daemon_call(
-            "memory_bulk_forget", {**args, "dry_run": True}, timeout=120.0,
-        )
-        if not preview.get("ok"):
-            raise click.ClickException(preview.get("error", "daemon error"))
-        result = preview["result"]
-    else:
-        s = _store()
-        result = s.bulk_forget_memories(
-            ids=args.get("ids"), names=args.get("names"),
-            mtypes=args.get("mtypes"), dry_run=True,
-        )
+    def _bulk(dry: bool, **kw) -> dict:
+        def local() -> dict:
+            if not _local:
+                _local.append(_store())
+            return _local[0].bulk_forget_memories(**sel, dry_run=dry)
+        return _memory_write("bulk_forget", local, **sel, dry_run=dry, **kw)
 
+    # Always run a dry-run first to drive the confirmation prompt; this both
+    # gives the user a real count and short-circuits the confirm when the
+    # filter matches nothing. Both calls go through the verb (task 3.4 R3).
+    result = _bulk(True)
     count = len(result.get("ids", []))
     by_mtype = result.get("by_mtype", {})
     console.print(
@@ -13046,23 +13021,13 @@ def memory_bulk_forget(ids, names, mtypes, dry_run, yes):
         console.print("[yellow]aborted[/]")
         return
 
-    if daemon_mod.ping(root):
-        resp = _memory_daemon_call(
-            "memory_bulk_forget", args, timeout=600.0,
-        )
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        result = resp["result"]
-    else:
-        s = _store()
-        result = s.bulk_forget_memories(
-            ids=args.get("ids"), names=args.get("names"),
-            mtypes=args.get("mtypes"), dry_run=False,
-        )
+    # The real delete keeps its 600 s: the 271-card viascope cleanup is the
+    # size this command exists for, and the verb's write default is 120 s.
+    result = _bulk(False, timeout=600.0)
     console.print(
         f"[green]forgot[/] {result.get('forgotten', 0)} memories"
     )
-    _say_vector_delete_failures(result, "memory forget")
+    _say_vector_delete_failures(result, "memory bulk-forget")
 
 
 # --- session-index group (Phase B) ----------------------------------------
