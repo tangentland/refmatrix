@@ -205,6 +205,48 @@ def require_daemon(root: Path, *, retries: int = 2) -> dict:
     raise VerbAbsentError(f"daemon not running for {root}")
 
 
+def classify_transport_error(e: BaseException, *, op: str, root: "Path | str",
+                             timeout: float) -> VerbError:
+    """THE one place a `daemon.call` transport exception becomes words and a type.
+
+    Why (task 3.5 amendment #req-amend, 2026-10-19, the project-store sibling of
+    ch-bsd plan-3 r8 #s-2): `_call` wrapped EVERY transport exception as "did
+    not answer within Ns; the daemon is busy", so `rmx memory forget` under a
+    pytest tmp root said a busy daemon timed out on an op that never reached a
+    socket ("AF_UNIX path too long"); r8 found the same lie on the global leg.
+    Q11: absent is not busy, and neither is unreachable.
+
+    - missing / refused socket → `VerbAbsentError` "not running" (a daemon
+      that died without unlinking its socket is absent);
+    - socket path too long (macOS `sun_path` ~104 bytes) → a PLAIN `VerbError`
+      saying so — NOT absent: absent licenses the in-process store fallback,
+      and an undiallable path proves nothing about whether a daemon holds it;
+    - a real timeout → `VerbBusyError` "did not answer within Ns";
+    - anything else (reset / broken pipe / an empty reply — a daemon dying or
+      restarting mid-request) → `VerbBusyError` naming the type and message,
+      the classification `_call` always gave it.
+
+    Returns the error; the caller raises it (`raise … from e`)."""
+    import socket as _socket
+    kind = type(e).__name__
+    if isinstance(e, (FileNotFoundError, ConnectionRefusedError)):
+        return VerbAbsentError(f"daemon not running for {root}: {op} found no listening "
+                               f"socket ({kind})")
+    if isinstance(e, OSError) and "path too long" in str(e).lower():
+        return VerbError(f"cannot dial the daemon for {root}: its socket path is too long "
+                         f"for AF_UNIX (macOS limit ~104 bytes); {op} was not sent — use a "
+                         f"shorter store root")
+    if isinstance(e, (TimeoutError, _socket.timeout)):
+        # The exception's words ("timed out"), not its class name: callers
+        # render this to users, and r4 pinned that no raw `TimeoutError`
+        # leaks into a busy message (`_promote_digest`).
+        why = f" ({e})" if str(e) else ""
+        return VerbBusyError(f"daemon op {op} on {root} did not answer within {timeout:g}s"
+                             f"{why}; the daemon is busy")
+    return VerbBusyError(f"daemon op {op} on {root} failed in transport ({kind}: {e}); "
+                         f"treating the daemon as busy")
+
+
 def _call(root: Path, op: str, payload: dict, *, timeout: float = 60.0,
           retries: int = 2) -> dict:
     """`retries=0` for budgeted paths: `daemon.call` retries on timeout, so a
@@ -214,8 +256,7 @@ def _call(root: Path, op: str, payload: dict, *, timeout: float = 60.0,
     try:
         r = daemon_mod.call(root, op, payload, timeout=timeout, retries=retries)
     except Exception as e:  # noqa: BLE001 — transport-level only (call does socket+json)
-        raise VerbBusyError(f"daemon op {op} on {root} did not answer within "
-                            f"{timeout:g}s ({e}); the daemon is busy") from e
+        raise classify_transport_error(e, op=op, root=root, timeout=timeout) from e
     if not r.get("ok"):
         raise VerbError(str(r.get("error")))
     return r.get("result", {})
@@ -244,7 +285,6 @@ def global_write(op: str, args: dict, *, timeout: "float | None" = None) -> dict
     status probe, spawn readiness, the write — fits that budget: the spawn
     waits only what is left, and the write is one attempt (`retries=0`) bounded
     by what is left after that. Returns the op's `result`."""
-    import socket as _socket
     import time as _time
     from refmatrix import discovery, hub as hub_mod
     groot = hub_mod.global_store_root()
@@ -280,17 +320,12 @@ def global_write(op: str, args: dict, *, timeout: "float | None" = None) -> dict
     try:
         g = (hub_mod.global_call(op, args) if rem is None
              else hub_mod.global_call(op, args, timeout=rem, retries=0))
-    except (FileNotFoundError, ConnectionRefusedError) as e:
-        # The daemon went away between the probe and the write: absent, said as
-        # absent (the errno is the transport's word for it, not the state).
-        raise VerbAbsentError(f"global store daemon not running at {groot} "
-                              f"({type(e).__name__})") from e
-    except (TimeoutError, _socket.timeout) as e:
-        bound = f"{rem:.1f}s" if rem is not None else "its timeout"
-        raise VerbBusyError(f"global store {op} did not answer within {bound} — the "
-                            f"global daemon at {groot} is busy") from e
-    except Exception as e:  # noqa: BLE001 — typed for the caller (r3 #s-4)
-        raise VerbError(f"global store {op} failed ({type(e).__name__}: {e})") from e
+    except Exception as e:  # noqa: BLE001 — transport-level; typed by THE classifier
+        # A daemon that went away between the probe and the write is absent,
+        # a stall is busy, an undiallable path is neither (#req-amend).
+        c = classify_transport_error(e, op=op, root=groot,
+                                     timeout=rem if rem is not None else 60.0)
+        raise type(c)(f"global store: {c}") from e
     if not g.get("ok"):
         raise VerbError(str(g.get("error")))
     return g.get("result", {})

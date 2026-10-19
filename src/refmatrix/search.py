@@ -195,21 +195,19 @@ def _live_roots() -> "tuple[list, list[dict]]":
 
 
 def _global_leg_reason(e: BaseException) -> str:
-    """Word the global leg's skip from the exception TYPE, not one template.
+    """Word the global leg's skip through THE transport classifier.
 
     Absent is not busy (task 3.5, ch-bsd plan-3 r8 #s-2 / probe P4b,
     2026-10-19): every failure used to read "did not answer within 3s", so a
-    socket that does not exist (`FileNotFoundError`) or has no listener
-    (`ConnectionRefusedError`, a daemon that died without unlinking it) was
-    reported as a timeout for an op that failed instantly. Only a timeout is
-    "did not answer"; anything else names its type and message."""
-    import socket as _socket
-    if isinstance(e, (FileNotFoundError, ConnectionRefusedError)):
-        return f"global store daemon not running ({type(e).__name__})"
-    if isinstance(e, (TimeoutError, _socket.timeout)):
-        return (f"global memory_search did not answer within {WHERE_MEMORY_OP_S:g}s "
-                f"({type(e).__name__})")
-    return f"global memory_search failed ({type(e).__name__}: {e})"
+    socket that does not exist or has no listener was reported as a timeout
+    for an op that failed instantly. Since the #req-amend amendment the
+    wording is `verbs.classify_transport_error`'s — one classifier shared with
+    `verbs._call`, not a second isinstance ladder here."""
+    from refmatrix import hub as hub_mod, verbs
+    c = verbs.classify_transport_error(e, op="memory_search",
+                                       root=hub_mod.global_store_root(),
+                                       timeout=WHERE_MEMORY_OP_S)
+    return f"global store: {c}"
 
 
 def federated_where(q: str, *, limit: int = 40) -> dict:

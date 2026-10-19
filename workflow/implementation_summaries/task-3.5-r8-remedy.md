@@ -83,7 +83,47 @@ GREEN tree, run, and then reverted with `git checkout -- src` and a `__pycache__
 - `spawn_daemon_subprocess` bounds its launcher with `wait_for_ready + 5 s`. A launcher that
   hangs (rather than fails) can overrun promote's budget by up to 5 s. No test covers that
   state. It is not widened here.
-- `verbs._call` still reports any transport error as "did not answer … the daemon is busy",
-  including `OSError: AF_UNIX path too long` (seen in the flagged test's output). That
-  is the project-store sibling of #s-2. It is out of 3.5's scope, so it is named here and
-  not patched.
+- ~~`verbs._call` still reports any transport error as "did not answer … busy"~~. This was
+  closed by the amendment below.
+
+## Amendment: one transport classifier (#req-amend, AC-12..16) {#amend}
+
+rel: implements -> [[task-3.5-r8-remedy#req-amend]]
+
+This is the follow-up GREEN for the RED group the test engineer committed at `917ddc5`.
+`verbs.classify_transport_error(e, *, op, root, timeout) -> VerbError` is now the ONLY place
+that turns a `daemon.call` transport exception into a message and an error type:
+
+- **missing or refused socket** (`FileNotFoundError` / `ConnectionRefusedError`):
+  `VerbAbsentError`, "daemon not running for <root> …".
+- **`OSError` "AF_UNIX path too long"**: a plain `VerbError` saying the socket path is too long
+  and the op was not sent. It is deliberately NOT absent, because absent permits the in-process
+  store fallback (Q11).
+- **a real timeout** (`TimeoutError` / `socket.timeout`): `VerbBusyError`, "did not answer
+  within Ns".
+- **anything else** (reset, broken pipe, empty reply): `VerbBusyError` naming the type and
+  message. That is the classification `_call` always gave these errors.
+
+Three callers use it. Each raises or renders what the classifier returns:
+
+- `verbs._call` raises its result.
+- `verbs.global_write` re-raises the same type with a "global store:" prefix. Its own
+  isinstance ladder from the first 3.5 GREEN is removed.
+- `search._global_leg_reason` renders the result (it calls `verbs.classify_transport_error`
+  at call time, so the shared-classifier spy sees it).
+
+The write-timeout pin and the bulk-forget warning label were already implemented in `5fcc3db`.
+The amendment tests pass against that code. This closes the mutant that the
+[[#mutation]] table recorded as surviving. `tests/test_lance_drop_failures_loud.py`'s forget
+test was moved to the `verbs.memory` seam by the test engineer.
+
+Runs:
+
+- the two files: `workflow/review-output/task3.5-amend-green-targets.log`, 32 passed;
+- the plan-3 files: `workflow/review-output/task3.5-amend-green-plan3.log`, 502 passed and 1
+  failed. The failure was `test_plan3_remedy_r4::test_promote_digest_is_typed_busy_on_a_held_writer`:
+  the first draft of the timeout message carried the class name `TimeoutError`, which r4 pins
+  must not leak. The message now carries the exception's own words, as `_call` always did.
+  The re-run of r4, r5, r7, the 3.5 file and the lance file is 67 passed
+  (`task3.5-amend-green-recheck.log`);
+- the full suite: `workflow/review-output/task3.5-amend-green-full.log`.
