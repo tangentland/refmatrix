@@ -731,20 +731,10 @@ def test_the_backlog_families_partition_and_are_anchored_in_the_spec():
 
 
 def test_every_verb_it_path_names_its_task_3_7_family():
-    """r9 #b-1: "owes a verb" with no task behind it is a parking lot. Every
-    `verb-it` entry's reason carries `task-3.7#fam-…`, the family that path is
-    in. A family re-decided under 3.7 leaves `verb-it`, so it drops out here."""
-    where = {p: fam for fam, paths in VERB_IT_FAMILIES.items() for p in paths}
-    bad = []
-    for path, (cat, reason) in verbs.LEGACY_UNPAIRED.items():
-        if cat != "verb-it":
-            continue
-        fam = where.get(path)
-        if fam is None:
-            bad.append(f"{' '.join(path)}: verb-it but in no task-3.7 family")
-        elif f"task-3.7#{fam}" not in reason:
-            bad.append(f"{' '.join(path)}: reason does not name task-3.7#{fam}")
-    assert not bad, "\n" + "\n".join(bad)
+    """r9 #b-1, updated by AC-G1: the `verb-it` set is EMPTY once batch C lands (the
+    per-path decision is test_every_one_of_the_49_paths_is_a_twin_…)."""
+    left = sorted(p for p, (cat, _r) in verbs.LEGACY_UNPAIRED.items() if cat == "verb-it")
+    assert left == [], f"still verb-it: {left}"
 
 
 # Task 3.7 batch A (#schedule): these families left `verb-it` by gaining verbs.
@@ -809,13 +799,74 @@ def test_pairs_show_is_re_decided_as_harness_with_a_true_reason():
     assert "pairs show" not in taught
 
 
-def test_the_batch_c_families_keep_their_verb_it_reasons():
-    """AC-G1 at the batch-B boundary: matrix-edit, session and refine (less the
-    curator drain batch A verbed) are still `verb-it` naming their family."""
-    for fam in ("fam-matrix-edit", "fam-session", "fam-refine"):
-        for path in VERB_IT_FAMILIES[fam] - {("curator", "drain")}:
-            cat, reason = verbs.LEGACY_UNPAIRED[path]
-            assert cat == "verb-it" and f"task-3.7#{fam}" in reason, (path, cat, reason)
+# AC-G2: VERB_IT_FAMILIES mirrors task-3.7 #decisions — per path, the verb it became a
+# twin of, or the LEGACY category it was re-decided into.
+_DECIDED = {
+    "fam-graph-read": {**{p: ("verb", "rmx_graph")
+                          for p in VERB_IT_FAMILIES["fam-graph-read"] - {("pairs", "show")}},
+                       ("pairs", "show"): ("legacy", "harness")},
+    "fam-canon": {p: ("verb", "rmx_canon") for p in VERB_IT_FAMILIES["fam-canon"]},
+    "fam-matrix-edit": {p: ("verb", "rmx_matrix") for p in VERB_IT_FAMILIES["fam-matrix-edit"]},
+    "fam-curation": {p: ("verb", "rmx_curate") for p in VERB_IT_FAMILIES["fam-curation"]},
+    "fam-focus": {p: ("verb", "rmx_focus") for p in VERB_IT_FAMILIES["fam-focus"]},
+    "fam-session": {("session", "list"): ("verb", "rmx_session"),
+                    ("session", "recall"): ("verb", "rmx_session"),
+                    ("session", "show"): ("verb", "rmx_session"),
+                    ("session", "stats"): ("legacy", "harness")},
+    "fam-refine": {("refine", "list"): ("verb", "rmx_refine"),
+                   ("refine", "show"): ("verb", "rmx_refine"),
+                   ("refine", "accept"): ("legacy", "operator"),
+                   ("refine", "reject"): ("legacy", "operator"),
+                   ("curator", "drain"): ("verb", "rmx_curator")},
+    "fam-taxonomy": {p: ("verb", "rmx_taxonomy") for p in VERB_IT_FAMILIES["fam-taxonomy"]},
+}
+
+
+def test_the_decisions_mirror_the_families_and_the_spec_table():
+    """AC-G2: the decision map covers exactly the 49 paths, family by family, and
+    45 are verbed + 4 re-decided (#decisions-count)."""
+    for fam, paths in VERB_IT_FAMILIES.items():
+        assert set(_DECIDED[fam]) == paths, fam
+    kinds = [k for d in _DECIDED.values() for k, _ in d.values()]
+    assert kinds.count("verb") == 45 and kinds.count("legacy") == 4, kinds
+    spec = _SPEC_37.read_text()
+    for d in _DECIDED.values():
+        for _k, target in d.values():
+            if target.startswith("rmx_"):
+                assert f"`{target}`" in spec, target
+
+
+def test_every_one_of_the_49_paths_is_a_twin_of_its_verb_or_in_its_category():
+    """AC-G1: no path is left in `verb-it`; each of the 49 is a twin of the verb
+    #decisions names or sits in the re-decided category with a reason that no longer
+    says verb-it."""
+    bad = []
+    for fam, decided in _DECIDED.items():
+        for path, (kind, target) in sorted(decided.items()):
+            name = " ".join(path)
+            if kind == "verb":
+                twin = target if verbs.CLI_MAP.get(target) == path else (
+                    verbs.CLI_ACTIONS.get(path, (None, None))[0])
+                if twin != target:
+                    bad.append(f"{name}: twin of {twin!r}, expected {target} ({fam})")
+                if path in verbs.LEGACY_UNPAIRED:
+                    bad.append(f"{name}: still in LEGACY_UNPAIRED")
+            else:
+                cat, reason = verbs.LEGACY_UNPAIRED.get(path, (None, ""))
+                if cat != target:
+                    bad.append(f"{name}: category {cat!r}, expected {target!r} ({fam})")
+                if "verb-it" in reason or "owes" in reason:
+                    bad.append(f"{name}: reason still says verb-it: {reason!r}")
+    assert not bad, "\n" + "\n".join(bad)
+
+
+def test_the_verb_it_category_is_gone():
+    """AC-G1: the category is removed once empty, so the shrink-only pin forbids its
+    return (`_legacy` refuses an unknown category at import)."""
+    assert "verb-it" not in verbs.LEGACY_CATEGORIES
+    assert not [p for p, (c, _r) in verbs.LEGACY_UNPAIRED.items() if c == "verb-it"]
+    with pytest.raises(ValueError):
+        verbs._legacy("verb-it", "probe", ("zz-probe",))
 
 
 def test_the_deferral_registry_points_the_backlog_at_task_3_7():

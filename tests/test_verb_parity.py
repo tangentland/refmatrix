@@ -39,7 +39,8 @@ _MANUAL_EFFECTIVE_DEFAULTS = {
 # The action a required-`action` dispatcher's CLI_MAP twin runs (a dispatcher with a
 # default action uses that default).
 _TWIN_ACTION = {"rmx_memory": "get", "rmx_curate": "protect", "rmx_graph": "neighbors",
-                "rmx_canon": "find"}
+                "rmx_canon": "find", "rmx_matrix": "add_concept", "rmx_session": "list",
+                "rmx_refine": "list"}
 
 
 def _effective_defaults() -> dict:
@@ -109,6 +110,16 @@ PAIRING = {
                                        "partition", "timeout"}),
     "rmx_canon": (("canon", "find"), {}, {"action", "canon_name", "canon_partition",
                                           "partition", "timeout"}),
+    # task 3.7 batch C. `project_filter` is the CLI `--project` FILTER (C9, r1 S2).
+    "rmx_matrix": (("add", "concept"), {}, {"action", "kind", "path", "tldr", "meta",
+                                            "directed", "concept", "entity", "linkage",
+                                            "want_protected", "want_noise", "limit", "is_pql",
+                                            "ids_only", "body", "partition", "timeout"}),
+    "rmx_session": (("session", "list"), {"project_filter": "project"},
+                    {"action", "query", "commit", "touched", "until", "k", "session_id",
+                     "mode", "partition", "timeout"}),
+    "rmx_refine": (("refine", "list"), {"project_filter": "project"},
+                   {"action", "cand_id", "timeout"}),
 }
 # A no_twin param that DOES have a same-named click option must be one of
 # these declared shape differences (a click `multiple=True` option defaults
@@ -330,6 +341,25 @@ CLI_INVOKE = {
                                                      "kind": "concept", "neighbors": 3}],
                    "skipped": []},
                   {"action": "find", "concept": "alpha"}, "CANARY-proj"),
+    # task 3.7 batch C
+    "rmx_matrix": (["add", "concept", "foo", "-d", "desc", "--no-protect"], {"id": 4242},
+                   {"action": "add_concept", "name": "foo", "description": "desc",
+                    "no_protect": True}, "4242"),
+    "rmx_session": (["session", "list", "--project", "other", "--branch", "main", "--limit", "3",
+                     "--offset", "1", "--json"],
+                    {"sessions": [{"session_id": "CANARY-sess", "project": "/w/other",
+                                   "branch": "main", "ended": "2026-10-01", "turn_count": 2,
+                                   "title": "t"}], "total": 1},
+                    {"action": "list", "project_filter": "other", "branch": "main", "limit": 3,
+                     "offset": 1}, "CANARY-sess"),
+    "rmx_refine": (["refine", "list", "--status", "all", "--scope", "project", "--project", "p",
+                    "-n", "4", "--json"],
+                   {"candidates": [{"id": "CANARY-cand", "ts": "t", "scope": "project",
+                                    "project": "p", "suggested": {"name": "n", "mtype": "m",
+                                                                  "content": "c"}}],
+                    "total": 1, "shown": 1},
+                   {"action": "list", "status": "all", "scope": "project", "project_filter": "p",
+                    "limit": 4}, "CANARY-cand"),
 }
 # payload-class twins: argv + the daemon op the click command must issue with
 # a payload built by the verb's helper (recorded by wrapping the helper).
@@ -526,6 +556,19 @@ _ACTIONS_SEED = {
     ("concept", "timeline"): ("rmx_graph", "timeline"),
     ("canon", "siblings"): ("rmx_canon", "siblings"),
     ("canon", "link"): ("rmx_canon", "link"),
+    # task 3.7 batch C (#fam-matrix-edit, #fam-session, #fam-refine)
+    ("add", "entity"): ("rmx_matrix", "add_entity"),
+    ("add", "linkage-type"): ("rmx_matrix", "add_linkage_type"),
+    ("link",): ("rmx_matrix", "link"),
+    ("unlink",): ("rmx_matrix", "unlink"),
+    ("list", "entities"): ("rmx_matrix", "list_entities"),
+    ("list", "linkages"): ("rmx_matrix", "list_linkages"),
+    ("list", "queries"): ("rmx_matrix", "list_queries"),
+    ("run",): ("rmx_matrix", "run"),
+    ("save-query",): ("rmx_matrix", "save_query"),
+    ("session", "recall"): ("rmx_session", "recall"),
+    ("session", "show"): ("rmx_session", "show"),
+    ("refine", "show"): ("rmx_refine", "show"),
 }
 _HIDDEN_SEED = {
     ("add-concept",): ("add", "concept"),
@@ -604,8 +647,17 @@ _TASK_3_7_BATCH_B = frozenset({
     ('concept', 'timeline'), ('stats',),
     ('canon', 'find'), ('canon', 'siblings'), ('canon', 'link'),
 })
-LEGACY_BASELINE = _BASELINE_3_4 - _TASK_3_7_BATCH_A - _TASK_3_7_BATCH_B
-LEGACY_BASELINE_SIZE = 107
+# Task 3.7 batch C: matrix-edit (10) + session list/recall/show (3) + refine list/show (2)
+# = 15. `session stats` (harness) and `refine accept` / `reject` (operator) STAY,
+# re-decided. AC-G5: 140 → 92.
+_TASK_3_7_BATCH_C = frozenset({
+    ('add', 'concept'), ('add', 'entity'), ('add', 'linkage-type'), ('link',), ('unlink',),
+    ('list', 'entities'), ('list', 'linkages'), ('list', 'queries'), ('run',), ('save-query',),
+    ('session', 'list'), ('session', 'recall'), ('session', 'show'),
+    ('refine', 'list'), ('refine', 'show'),
+})
+LEGACY_BASELINE = _BASELINE_3_4 - _TASK_3_7_BATCH_A - _TASK_3_7_BATCH_B - _TASK_3_7_BATCH_C
+LEGACY_BASELINE_SIZE = 92
 _USER_QUOTE = "internal harness/testing cli only commands"
 
 
@@ -735,8 +787,9 @@ def test_a_stale_key_in_any_map_fails_hygiene(which, monkeypatch):
 def test_cli_actions_are_the_seeded_dispatcher_twins():
     """AC-5: r8 #s-4 item 1 — these 15 would otherwise land in LEGACY. Task 3.7
     batch A adds 19 (focus 12, curation 4, taxonomy 2, curator drain); batch B adds 9
-    (graph 7 beside the `neighbors` twin, canon 2 beside the `canon find` twin)."""
-    assert len(_ACTIONS_SEED) == 43
+    (graph 7 beside the `neighbors` twin, canon 2 beside the `canon find` twin); batch C
+    adds 12 (matrix 9 beside `add concept`, session 2 beside `session list`, refine show)."""
+    assert len(_ACTIONS_SEED) == 55
     import typing
     assert dict(verbs.CLI_ACTIONS) == _ACTIONS_SEED, sorted(
         set(verbs.CLI_ACTIONS.items()) ^ set(_ACTIONS_SEED.items()))
@@ -765,13 +818,17 @@ def test_legacy_unpaired_carries_a_category_and_can_only_shrink():
     assert _TASK_3_7_BATCH_A <= _BASELINE_3_4 and len(_TASK_3_7_BATCH_A) == 22
     assert _TASK_3_7_BATCH_B <= _BASELINE_3_4 and len(_TASK_3_7_BATCH_B) == 11
     assert not (_TASK_3_7_BATCH_A & _TASK_3_7_BATCH_B)
+    assert _TASK_3_7_BATCH_C <= _BASELINE_3_4 and len(_TASK_3_7_BATCH_C) == 15
+    assert not (_TASK_3_7_BATCH_C & (_TASK_3_7_BATCH_A | _TASK_3_7_BATCH_B))
     assert len(LEGACY_BASELINE) == LEGACY_BASELINE_SIZE
     legacy = set(verbs.LEGACY_UNPAIRED)
     grown = sorted(legacy - LEGACY_BASELINE)
     assert not grown, f"LEGACY_UNPAIRED grew (verb it or INTERNAL_CLI instead): {grown}"
     assert len(legacy) <= LEGACY_BASELINE_SIZE
     cats = set(verbs.LEGACY_CATEGORIES)
-    assert cats == {"verb-it", "operator", "maintenance", "hook", "harness"}, cats
+    # AC-G1: `verb-it` is empty after batch C and the category itself is removed, so the
+    # shrink-only pin forbids its return.
+    assert cats == {"operator", "maintenance", "hook", "harness"}, cats
     for path, val in verbs.LEGACY_UNPAIRED.items():
         assert isinstance(val, tuple) and len(val) == 2, f"{path}: (category, reason)"
         cat, reason = val
@@ -959,6 +1016,64 @@ CLI_ACTION_INVOKE = {
                         {"canon_id": 4242, "source": "daemon"},
                         {"action": "link", "concept": "alpha", "canon_name": "Alpha",
                          "canon_partition": "canon"}, "4242"),
+    # ---- task 3.7 batch C: matrix-edit (the CLI_MAP twin is `add concept`) ----
+    ("add", "entity"): (["add", "entity", "--kind", "doc", "x.md", "--path", "/p/x.md",
+                         "--tldr", "t", "--meta", '{"a": 1}'], {"id": 4242},
+                        {"action": "add_entity", "kind": "doc", "name": "x.md",
+                         "path": "/p/x.md", "tldr": "t", "meta": '{"a": 1}'}, "4242"),
+    ("add", "linkage-type"): (["add", "linkage-type", "frob", "--undirected", "-d", "dd"],
+                              {"id": 4242},
+                              {"action": "add_linkage_type", "name": "frob", "directed": False,
+                               "description": "dd"}, "4242"),
+    ("link",): (["link", "alpha", "d0.md", "--type", "defines", "--no-protect"],
+                {"created": True, "concept": "CANARY-lc", "entity": "d0.md"},
+                {"action": "link", "concept": "alpha", "entity": "d0.md", "linkage": "defines",
+                 "no_protect": True}, "CANARY-lc"),
+    ("unlink",): (["unlink", "alpha", "d0.md"],
+                  {"unlinked": True, "concept": "CANARY-ul", "entity": "d0.md"},
+                  {"action": "unlink", "concept": "alpha", "entity": "d0.md",
+                   "linkage": "mentions"}, "CANARY-ul"),
+    ("list", "entities"): (["list", "entities", "--kind", "code", "--protected", "--json"],
+                           {"rows": [{"id": 1, "kind": "code", "name": "CANARY-ent",
+                                      "path": None, "tldr": None, "protected": True,
+                                      "noise": False}]},
+                           {"action": "list_entities", "kind": "code", "want_protected": True},
+                           "CANARY-ent"),
+    ("list", "linkages"): (["list", "linkages"],
+                           {"rows": [{"id": 1, "name": "CANARY-lk", "directed": True,
+                                      "description": None}]},
+                           {"action": "list_linkages"}, "CANARY-lk"),
+    ("list", "queries"): (["list", "queries"], {"rows": [{"name": "CANARY-q", "body": "b"}]},
+                          {"action": "list_queries"}, "CANARY-q"),
+    ("run",): (["run", "q1", "--pql", "--limit", "7"],
+               {"rows": [{"id": 6, "kind": "doc", "name": "CANARY-run", "path": None}],
+                "shape": "bitmap"},
+               {"action": "run", "name": "q1", "is_pql": True, "limit": 7}, "CANARY-run"),
+    ("save-query",): (["save-query", "q1", "mentions:alpha"], {"saved": True, "name": "CANARY-sq"},
+                      {"action": "save_query", "name": "q1", "body": "mentions:alpha"},
+                      "CANARY-sq"),
+    # ---- session (the CLI_MAP twin is `session list`) ----
+    ("session", "recall"): (["session", "recall", "parser", "--project", "p", "--k", "5",
+                             "--json"],
+                            {"sessions": [{"id": 1, "name": "n", "session_id": "CANARY-sr",
+                                           "project": "p", "branch": "b", "started": "s",
+                                           "ended": "e", "turn_count": 1, "title": "t",
+                                           "snippet": "x"}]},
+                            {"action": "recall", "query": "parser", "project_filter": "p",
+                             "k": 5}, "CANARY-sr"),
+    ("session", "show"): (["session", "show", "00000004"],
+                          {"session": {"name": "session-00000004", "mtype": "session",
+                                       "content": "# CANARY-card", "metadata": {}},
+                           "mode": "card"},
+                          {"action": "show", "session_id": "00000004", "mode": "card"},
+                          "CANARY-card"),
+    # ---- refine (the CLI_MAP twin is `refine list`) ----
+    ("refine", "show"): (["refine", "show", "b9b9"],
+                         {"candidate": {"id": "b9b9b9b9b9b9", "ts": "t", "status": "pending",
+                                        "scope": "project", "project": "p",
+                                        "suggested": {"name": "n", "mtype": "m",
+                                                      "content": "CANARY-cbody"}}},
+                         {"action": "show", "cand_id": "b9b9"}, "CANARY-cbody"),
 }
 
 
@@ -1044,6 +1159,19 @@ ACTION_PAIRING = {
     ("concept", "timeline"): ({"git": "no_git"}, {"as_json"}),
     ("canon", "siblings"): ({}, set()),
     ("canon", "link"): ({}, set()),
+    # task 3.7 batch C
+    ("add", "entity"): ({}, set()),
+    ("add", "linkage-type"): ({}, set()),
+    ("link",): ({}, set()),
+    ("unlink",): ({}, set()),
+    ("list", "entities"): ({}, {"as_json"}),
+    ("list", "linkages"): ({}, set()),
+    ("list", "queries"): ({}, set()),
+    ("run",): ({}, set()),
+    ("save-query",): ({}, set()),
+    ("session", "recall"): ({"project_filter": "project"}, {"as_json"}),
+    ("session", "show"): ({}, set()),
+    ("refine", "show"): ({}, set()),
 }
 # (path, verb param) -> why the click default may differ from the resolved one.
 ACTION_SHAPE_DIFFERENCES = {
@@ -1055,6 +1183,8 @@ ACTION_SHAPE_DIFFERENCES = {
     (("recall",), "symbolic"): "click multiple=True () vs verb None",
     (("search-dense",), "kinds"): "click multiple=True () vs verb None",
     (("concept", "timeline"), "git"): "inverted flag: click --no-git False == verb git True",
+    (("session", "show"), "mode"): "three flag_value options share dest `mode`; the click "
+                                   "default is the `--card` flag (default=True) vs verb 'card'",
 }
 # Pre-3.7 dispatcher whose per-action parity is its dedicated verbs' job (PAIRING
 # "ALL"). Closed: no other verb may be escaped.
@@ -1109,6 +1239,6 @@ def test_action_shape_differences_name_real_click_options():
 
 
 def test_legacy_shrinks_by_exactly_the_batched_paths():
-    """C6 / AC-G5 at the batch-B boundary: 140 - 22 - 11 = 107, nothing else moved."""
+    """C6 / AC-G5: 140 - 22 - 11 - 15 = 92, nothing else moved."""
     assert set(verbs.LEGACY_UNPAIRED) == set(LEGACY_BASELINE), sorted(
         set(verbs.LEGACY_UNPAIRED) ^ set(LEGACY_BASELINE))

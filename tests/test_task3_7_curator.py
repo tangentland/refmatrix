@@ -452,7 +452,7 @@ def test_the_gmd_curator_flow_snapshots_with_json_and_drains_by_token(rel):
 # ---- the watcher writes the spool; startup sweeps stale tmp (real daemon) ---------
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(240)
 def test_a_real_daemon_watcher_writes_one_spool_file_per_flush_and_sweeps_tmp(monkeypatch):
     monkeypatch.delenv("RMX_PARTITION", raising=False)
     base, root = short_root("r37w-")
@@ -469,16 +469,25 @@ def test_a_real_daemon_watcher_writes_one_spool_file_per_flush_and_sweeps_tmp(mo
         while stale.exists() and time.monotonic() < deadline:
             time.sleep(0.2)
         assert not stale.exists(), "the daemon did not sweep its stale *.tmp at startup"
-        (proj / "docs" / "adr" / "ADR-0001-notes.md").write_text(
-            '---\ngmd: "0.1"\nid: notes\n---\n# N {#root}\n')
-        deadline = time.monotonic() + 30
+        # Bounded poll that re-touches the doc (each write is a fresh fs event): under a
+        # loaded full suite the first event can land before the observer is scheduled
+        # (`spawn` returns on ping, not on watcher readiness), and one write was lost in two
+        # full runs. The poll ends the moment a spool file exists; the bound is generous.
+        doc = proj / "docs" / "adr" / "ADR-0001-notes.md"
+        deadline = time.monotonic() + 120
+        next_touch = 0.0
         files: list = []
+        n = 0
         while time.monotonic() < deadline:
             files = sorted(spool(root).glob("*.jsonl"))
             if files:
                 break
-            time.sleep(0.3)
-        assert files, "the watcher wrote no spool file"
+            if time.monotonic() >= next_touch:
+                n += 1
+                doc.write_text(f'---\ngmd: "0.1"\nid: notes\n---\n# N {{#root}}\nrev {n}\n')
+                next_touch = time.monotonic() + 3.0
+            time.sleep(0.2)
+        assert files, f"the watcher wrote no spool file in 120 s ({n} writes of the doc)"
         assert all(_NAME.match(f.name) for f in files), [f.name for f in files]
         rows = [json.loads(ln) for f in files for ln in f.read_text().splitlines() if ln]
         assert any(r.get("path", "").endswith("ADR-0001-notes.md") for r in rows), rows
@@ -488,3 +497,61 @@ def test_a_real_daemon_watcher_writes_one_spool_file_per_flush_and_sweeps_tmp(mo
         if dm.ping(root):
             dm.stop_daemon(root)
         rm(base)
+
+
+# ---- the watcher's write path, driven directly (deterministic) --------------------------
+
+
+def test_enqueue_curator_writes_through_the_atomic_spool_writer():
+    """`_enqueue_curator` (the watcher's flush hook, a closure in `_start_watcher`) writes
+    through `gmd_curator.write_spool` — the one atomic writer pinned below."""
+    tree = ast.parse((_SRC / "daemon.py").read_text())
+    enq = [f for f in ast.walk(tree) if isinstance(f, ast.FunctionDef)
+           and f.name == "_enqueue_curator"]
+    assert len(enq) == 1, "no single _enqueue_curator"
+    calls = {c.func.attr for c in ast.walk(enq[0]) if isinstance(c, ast.Call)
+             and isinstance(c.func, ast.Attribute)}
+    assert "write_spool" in calls, calls
+
+
+def test_write_spool_is_tmp_fsync_rename_and_never_visible_half_written(root, monkeypatch):
+    events: list = []
+    real_fsync, real_rename = os.fsync, os.rename
+
+    def fsync(fd):
+        events.append(("fsync",))
+        return real_fsync(fd)
+
+    def rename(src, dst, *a, **k):
+        s, d = Path(src), Path(dst)
+        events.append(("rename", s.name, d.name))
+        assert s.parent == d.parent == spool(root), (s, d)
+        assert s.name.endswith(".jsonl.tmp") and _NAME.match(d.name), (s.name, d.name)
+        assert not list(spool(root).glob("*.jsonl")), "a reader could see a half-written file"
+        return real_rename(src, dst, *a, **k)
+    monkeypatch.setattr(os, "fsync", fsync)
+    monkeypatch.setattr(os, "rename", rename)
+    name = gmd_curator.write_spool(root, ["/p/a.md", "/p/b.md"])
+    assert [e[0] for e in events] == ["fsync", "rename"], events
+    assert events[1][2] == name
+    rows = [json.loads(ln) for ln in (spool(root) / name).read_text().splitlines()]
+    assert [r["path"] for r in rows] == ["/p/a.md", "/p/b.md"]
+    assert all(r["reason"] == "fs-change" and isinstance(r["ts"], float) for r in rows)
+    assert not list(spool(root).glob("*.tmp"))
+
+
+# ---- the generated curator hook keeps its stderr (extra 2) ------------------------------
+
+
+def test_the_generated_curator_hook_no_longer_discards_stderr(tmp_path):
+    """`rmx curator status --drain 2>/dev/null || true` hid every curator failure from the
+    agent (CLAUDE.md #no-silent-failures). `|| true` stays: a hook never fails the prompt."""
+    from refmatrix import hooks as hooks_mod
+    block = hooks_mod._claude_hook_block(tmp_path / ".refmatrix")
+    cmds = [h["command"] for evs in block["hooks"].values() for e in evs
+            for h in e.get("hooks", []) if "command" in h]
+    segs = [seg.strip() for c in cmds for seg in c.split(";") if "curator status" in seg]
+    assert segs, "no generated hook runs `rmx curator status`"
+    for seg in segs:
+        assert "2>/dev/null" not in seg and "2>&1" not in seg, seg
+        assert seg.endswith("|| true"), seg
