@@ -58,21 +58,29 @@ decided in the spec's [[task-21.1-context-usage-telemetry#rev-round-13]] and imp
 | plan-9 r5 #m-11 | `telemetry.CountingStream.close()` closes the proxy only and never flushes the inner stream. A closed consumer now prints the interpreter's one BrokenPipe line, not a second traceback naming `telemetry.py`. This was checked A/B with a `| head -1` script. The module docstring now says `REFMATRIX_NO_TELEMETRY` gates only the log writes. |
 | plan-9 r5 #s-5 | The Q2 proxy-overhead table is recorded in [[plan-9-context-cost-telemetry#q2-measured]]. |
 
+## ch-bsd r2 remedy (2026-10-19) {#remedy-r2}
+
+rel: derives-from -> [[bsd-task21.1-context-usage-r2-b9660ba]]
+
+| finding | fix |
+|---|---|
+| r2 #b1 `--recent` / `--subject` table logged 0 delivered | Both text tables of `rmx memory recall` now go through ONE path, `cli._echo_recall_table`. It renders at natural width, escapes every cell, puts each cell on one line, writes through `rec.echo` and sets `rec.delivered`. The recent table's `console.print` is gone, so no third table can print around the capture. |
+| r2 #m1 text spans found by search | `context.name_spans` is JSON-only now. A text payload brings its renderer's spans: the table records each delivered row's name at the start of its own name cell (row i = body line i), and `_render_memory_gmd_spans` records each name in its own `## <name>` heading. `_RecallCall.emit` spans nothing it was not told, and `call_events` counts any unspanned row. A memory named `name`, `rank` or `1` now spans its own name cell. |
+| r2 #m3 empty root resolved to cwd | `telemetry.norm_path` returns None for a null or empty path, and only absolute spellings are cached. `stm.scope_key(None)` is None. A null or empty `root` row is an `unscoped-row` to every scoped reader and in scope for none. `migrated_from` is spelled by `scope_key` too. |
+| r2 #m5 stale Open section | Refreshed below. |
+
 ## Verification {#verification}
 
-- Targeted: `workflow/review-output/task21.1-r1-remedy-targeted.log`.
-- Full suite: `workflow/review-output/task21.1-r1-remedy-full.log`.
+- r1 round: `workflow/review-output/task21.1-r1-remedy-full.log`.
+- Final full suite of the r2 round: `workflow/review-output/task21.1-r2-remedy-full.log`.
 
-The expected failures are the 19 DEV TREE refusals (clone-only), the gmd repo-scope gate and
-AC-6 BLOCKED. Three older `used_events` tests still encode GREEN's #s1 behaviour and contradict
-round 13 (see [[#open]]).
+The expected failures are the clone-only dev-tree refusals and AC-6 BLOCKED. The full counts by
+error text are in the r2 remedy commit's report.
 
 ## Open {#open}
 
-- `tests/test_task21_1_used_events.py`: the two AC-11b tests assert `ref_query_id ==
-  _delivered(...)[-1]`. That is the context call's own delivery, and GREEN pointed the `used`
-  event at itself. AC-11e asserts that the concept-only call adds no `concept` use, although the
-  first context call in S delivered that concept. Both need amending to round 13.
-- Spec D9 / the file table still lists `scan.read_stdin_prompt` as an envelope caller. That is the
-  spec owner's edit.
-- The AC-6 fixture waits on the user (deferral registry).
+- The AC-6 frozen fixture waits on the user (deferral registry row, cutting command named).
+- The r2 #s1 guards (the five remedies with no failing test), the r2 #s2 live-log guard and the
+  r2 #m2/#m4 test tightenings belong to the test-engineer, in the r2 test commit.
+- Closed since r1: AC-11b/11e were amended to round 13 (`b9660ba`); the D9 caller list was
+  amended (`f738f3e`).

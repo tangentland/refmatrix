@@ -411,7 +411,7 @@ def _watermark_path(pid: int) -> Path:
     return pointer_dir() / f"_errors.seen.{int(pid)}"
 
 
-def scope_key(root: "Path | str") -> str:
+def scope_key(root: "Path | str | None") -> "str | None":
     """THE scope spelling of a store root in the pointer-error log: the writer stamps it and
     every reader (`_row_in_scope`, the per-root watermark, `dropped_by_root`,
     `handoff.session_pointer_anomalies`) compares with it. `os.path.abspath` alone kept
@@ -419,14 +419,16 @@ def scope_key(root: "Path | str") -> str:
     spelling was invisible to a reader holding the other (21.1 ch-bsd r1 #s3, 2026-10-19:
     `cli._root()` resolves the cwd walk but `REFMATRIX_ROOT` and `mcp`'s `args["root"]` arrive
     as given). It IS `telemetry.norm_path` (realpath), the one the query.log/event
-    classifier uses, so the two logs agree on what one place is."""
+    classifier uses, so the two logs agree on what one place is. A null or empty root is
+    None: a row stamped with it belongs to NO store, and every scoped reader counts it as
+    `unscoped-row` (D6; r2 #m3)."""
     from refmatrix.telemetry import norm_path
     return norm_path(root)
 
 
 def _root_watermark_path(root: Path) -> Path:
     import hashlib
-    h = hashlib.sha1(scope_key(root).encode()).hexdigest()[:12]
+    h = hashlib.sha1(str(scope_key(root)).encode()).hexdigest()[:12]
     return pointer_dir() / f"_errors.seen.root.{h}"
 
 
@@ -480,6 +482,8 @@ def _truncation_row(removed: "list[str]", oldest_kept_t: "float | None") -> dict
             dropped += int(row.get("dropped") or 0)
             for k, v in (row.get("dropped_by_root") or {}).items():
                 k = scope_key(k)              # one spelling per store (21.1 r1 #s3)
+                if k is None:
+                    continue                  # a rootless count was counted as unscoped
                 by_root[k] = by_root.get(k, 0) + int(v)
             for k, v in (row.get("unseen_dropped") or {}).items():
                 if _above(k, float(row["t"])):
@@ -587,7 +591,8 @@ def _row_in_scope(row: dict, root: "Path | None", owner: "tuple[int, str] | None
                 (row.get("unseen_dropped") or {}).get(f"{owner[0]}:{owner[1]}", 0)) <= 0:
             return False
         return True
-    if root is not None and scope_key(row.get("root") or "") != scope_key(root):
+    if root is not None and (not row.get("root")
+                             or scope_key(row["root"]) != scope_key(root)):
         return False
     if owner is not None and (row.get("owner") != owner[0]
                               or row.get("owner_start") != owner[1]):
@@ -601,7 +606,8 @@ def read_pointer_errors(*, root: "Path | None" = None,
     """Rows of the user-level log with `t >= since`, oldest first, filtered by scope (D6):
     `root=` keeps rows of that store root, `owner=(pid, pid_start)` rows of that owner; both
     keep rows matching both. A line that does not parse (bug-109 r3 #m-2) is returned as
-    `{"reason": "unreadable-line", "line": n}` and a row with no `root` (a writer defect) as
+    `{"reason": "unreadable-line", "line": n}` and a row with no (or a null/empty) `root` (a writer
+    defect) as
     `{"reason": "unscoped-row", ...}` to every scoped reader — counted apart, never attributed
     to the reader's scope silently. No legacy `<root>/stm/by-pid/` file is read (round-7
     #s-3)."""
@@ -620,7 +626,8 @@ def read_pointer_errors(*, root: "Path | None" = None,
             continue
         if float(row["t"]) < since:
             continue
-        if scoped and "root" not in row and row.get("reason") != "errors-truncated":
+        # A null or empty `root` is as rootless as a missing one (21.1 r2 #m3).
+        if scoped and not row.get("root") and row.get("reason") != "errors-truncated":
             out.append({**row, "reason": "unscoped-row", "unscoped_reason": row.get("reason")})
             continue
         if not scoped or _row_in_scope(row, root, owner):
@@ -938,21 +945,21 @@ def migrate_legacy_errors(root: Path, *, liveness: bool) -> "tuple[list[str], li
                 continue
             r = dict(r)
             r["root"] = scope_key(root)
-            r["migrated_from"] = str(legacy)
+            r["migrated_from"] = scope_key(legacy)
             r.setdefault("owner", None)
             r.setdefault("owner_start", None)
             rows.append(r)
         if bad:
             rows.append({"t": mtime, "reason": "legacy-unreadable", "n": bad,
-                         "root": scope_key(root), "migrated_from": str(legacy),
+                         "root": scope_key(root), "migrated_from": scope_key(legacy),
                          "owner": None, "owner_start": None})
-        before = _count_migrated(str(legacy), root)
+        before = _count_migrated(scope_key(legacy), root)
         ok = _append_error_rows(rows, skip_existing_migrated=True)
         if not ok:
             err.append(f"migration incomplete: {len(rows)} rows not written (global store "
                        f"root absent or unwritable)")
             continue
-        after = _count_migrated(str(legacy), root)
+        after = _count_migrated(scope_key(legacy), root)
         migrated_total += max(0, after[0] - before[0])
         try:
             os.rename(claim, ld / "_errors.migrated.jsonl")

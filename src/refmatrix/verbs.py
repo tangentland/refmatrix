@@ -658,7 +658,7 @@ def context(root: Path, ref: str, *, degree: int = 1, expand: int = 0,
         t.cardinality = int(out.get("total_neighbors") or 0) if isinstance(out, dict) else None
     text = _json.dumps(out, default=str)
     tel.emit_context_call(root, ref=ref,
-                          items=context_mod.name_spans(text, items, json_mode=True),
+                          items=context_mod.name_spans(text, items),
                           payload=text.encode("utf-8"), query_id=t.query_id,
                           session=session, invocation=inv, turn=_live_turn(root, session))
     return out
@@ -787,8 +787,7 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
                   query_id=t.query_id,
                   retrieved=[tel.recall_item(r, rank=i) for i, r in enumerate(trace, 1)],
                   delivered=context_mod.name_spans(
-                      payload, [tel.recall_item(r, rank=i) for i, r in enumerate(rows, 1)],
-                      json_mode=True),
+                      payload, [tel.recall_item(r, rank=i) for i, r in enumerate(rows, 1)]),
                   payload=payload, block_id=tel.RECALL_BLOCK_IDS[channel],
                   turn=_live_turn(root, session))
     return res

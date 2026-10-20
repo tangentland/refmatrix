@@ -1635,7 +1635,11 @@ def delivered_in_session(session: "str | None", *, root: Path,
 # ---- R5: the ONE row classifier ----------------------------------------------
 
 @functools.lru_cache(maxsize=4096)
-def norm_path(p: "str | Path") -> str:
+def _realpath_of_absolute(p: str) -> str:
+    return os.path.realpath(p)
+
+
+def norm_path(p: "str | Path | None") -> "str | None":
     """THE spelling of a filesystem place for every log that keys on a path: `realpath`, so
     macOS's `/tmp` -> `/private/tmp` (and `/var` -> `/private/var`) symlinks, and any other,
     collapse to one string whichever spelling the writer or the reader was handed. The
@@ -1645,8 +1649,16 @@ def norm_path(p: "str | Path") -> str:
     Converged 21.1 ch-bsd r1 #s3 (2026-10-19): the classifier had its own `_norm_tmp` fold
     and the pointer-error log stamped `os.path.abspath`, so one store had two scopes there
     (`/tmp/x` vs `/private/tmp/x`, probe1). Cached: a report classifies every row of a log
-    whose paths repeat, and `realpath` costs an lstat per component."""
-    return os.path.realpath(os.path.abspath(str(p)))
+    whose paths repeat, and `realpath` costs an lstat per component.
+
+    An empty or null path is NO place: None, never the cwd (`abspath("")` is the cwd, and the
+    cache then pinned the first caller's cwd for the life of the process -- a `root: null`
+    pointer-error row was attributed to whichever store read it, 21.1 ch-bsd r2 #m3,
+    2026-10-19). Only ABSOLUTE spellings are cached; a relative one is made absolute against
+    the caller's cwd first, every call."""
+    if p is None or not str(p).strip():
+        return None
+    return _realpath_of_absolute(os.path.abspath(str(p)))
 
 
 def _tmp_root() -> str:
@@ -1661,6 +1673,8 @@ def _test_base(p: "str | Path | None") -> "str | None":
     if not p:
         return None
     s = norm_path(p)
+    if s is None:
+        return None
     parts = Path(s).parts
     for i, comp in enumerate(parts[:-1]):
         if comp.startswith("pytest-of-") and parts[i + 1].startswith("pytest-"):

@@ -11913,6 +11913,12 @@ def _merge_scope(project_rows, global_rows, k, scope):
 def _render_memory_gmd(rows, *, query: str | None = None,
                        mode: str | None = None,
                        partition: str | None = None) -> str:
+    return _render_memory_gmd_spans(rows, query=query, mode=mode, partition=partition)[0]
+
+
+def _render_memory_gmd_spans(rows, *, query: str | None = None,
+                             mode: str | None = None, partition: str | None = None
+                             ) -> "tuple[str, list[tuple[int, int] | None]]":
     """Render memory recall hits as a single GMD document.
 
     Each row becomes an H2 node with `{#id}` anchor; the whole doc gets
@@ -11920,6 +11926,10 @@ def _render_memory_gmd(rows, *, query: str | None = None,
     `rel:` edges are derived from row tags (session-id) and the
     partition. Content is rendered as a markdown blockquote so newlines
     inside the body don't break the GMD shape.
+
+    Also returns, per row, the byte span of its name in its own `## <name>` heading (None
+    for a nameless row): the recall channel's delivered spans come from where the renderer
+    put each name, never from searching the text (21.1 ch-bsd r2 #m1, 2026-10-19).
     """
     import hashlib as _h
     import time as _t
@@ -11954,6 +11964,7 @@ def _render_memory_gmd(rows, *, query: str | None = None,
     lines.append("# recall {#root}")
     lines.append("")
 
+    marks: "list[int | None]" = []
     for m in rows:
         anchor = m.get("name") or f"memory-{m.get('id')}"
         score = m.get("score")
@@ -11972,6 +11983,7 @@ def _render_memory_gmd(rows, *, query: str | None = None,
         else:
             score_str = ""
 
+        marks.append(len(lines) if m.get("name") else None)
         lines.append(f"## {anchor} {{#{anchor}}}")
         lines.append(f"mtype: {mtype}{score_str}{when}")
 
@@ -12009,7 +12021,14 @@ def _render_memory_gmd(rows, *, query: str | None = None,
         lines.append("rel: part-of -> [[#root]]")
         lines.append("")
 
-    return "\n".join(lines).rstrip() + "\n"
+    text = "\n".join(lines).rstrip() + "\n"
+    starts, pos = [], 0
+    for ln in lines:
+        starts.append(pos)
+        pos += len(ln.encode("utf-8")) + 1
+    spans = [(starts[li] + len("## "), len(str(rows[i]["name"]).encode("utf-8")))
+             if li is not None else None for i, li in enumerate(marks)]
+    return text, spans
 
 
 def _parse_duration(text: str) -> float:
@@ -12388,27 +12407,22 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
         if as_gmd:
             mode_tag = ("subject" if subject else
                         "session-start" if session_start else "recent")
-            rec.echo(_render_memory_gmd(
-                rows, query=None, mode=mode_tag,
-                partition=_resolve_partition(),
-            ))
+            text, spans = _render_memory_gmd_spans(rows, query=None, mode=mode_tag,
+                                                   partition=_resolve_partition())
+            rec.echo(text, spans=spans)
             return
         if not rows:
             console.print(f"[yellow]no memories filed under subject[/] {subject!r}"
                           if subject else "[yellow]no memories in window[/]")
             return
-        t = Table("rank", "id", "name", "mtype", "content")
-        for i, m in enumerate(rows, 1):
-            t.add_row(str(i), str(m["id"]), m["name"], m.get("mtype") or "",
-                      (m.get("content") or "")[:80])
-        console.print(t)
-        if degree > 0:
-            for i, m in enumerate(rows, 1):
-                ctx = m.get("context")
-                if ctx:
-                    console.print()
-                    console.print(f"[bold]#{i} {m['name']} — context[/]")
-                    click.echo(ctx)
+        # 21.1 ch-bsd r2 #b1 (2026-10-19): this table printed through `console.print`, so
+        # its payload was never captured and every delivered event was dropped as
+        # unspanned. It goes through THE recall table path, like the query table.
+        _echo_recall_table(
+            rec, ("rank", "id", "name", "mtype", "content"),
+            [([str(i), str(m["id"]), m["name"], m.get("mtype") or "",
+               (m.get("content") or "")[:80]], m) for i, m in enumerate(rows, 1)],
+            name_col=2, ctx_rows=rows if degree > 0 else [])
         return
 
     # Hybrid path. _memory_daemon_call injects the active partition so
@@ -12595,15 +12609,14 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
         rows = _attach_context(rows)
         rec.delivered = rows
         if as_gmd:
-            rec.echo(_render_memory_gmd(
-                rows, query=q, mode="hybrid",
-                partition=_resolve_partition(),
-            ))
+            text, spans = _render_memory_gmd_spans(rows, query=q, mode="hybrid",
+                                                   partition=_resolve_partition())
+            rec.echo(text, spans=spans)
         else:
             import json as _json
             rec.echo(_json.dumps(rows, indent=2), json_mode=True)
         return
-    t = Table("rank", "score", "id", "name")
+    cells: "list[tuple[list[str], dict | None]]" = []
     table_rows: list[dict] = []
     shown = 0
     for h in hits:
@@ -12618,11 +12631,8 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
             continue
         name = m["name"] if m else "?"
         shown += 1
-        t.add_row(
-            str(shown),
-            f"{score:.4f}" if isinstance(score, float) else str(score),
-            str(eid), rich_escape(name),
-        )
+        cells.append(([str(shown), f"{score:.4f}" if isinstance(score, float) else str(score),
+                       str(eid), name], m))
         if m is not None:
             table_rows.append(m)
     if scope != "project":
@@ -12633,27 +12643,72 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
             if gr.get("name") in seen_names:
                 continue
             shown += 1
-            # `\[global]` is escaped: rich read the bare `[global]` as a markup tag and
-            # dropped it, so a global row printed as a project one (found 21.1 r1 #b3).
-            t.add_row(str(shown), "—", str(gr.get("id")),
-                      f"{rich_escape(str(gr['name']))} \\[global]")
+            cells.append(([str(shown), "—", str(gr.get("id")), f"{gr['name']} [global]"], gr))
             table_rows.append(gr)
     # 21.1 ch-bsd r1 #b3 (spec rev round 13, 2026-10-19): the table is the agent's default
-    # `recall` channel, so it is RENDERED to text and written through `rec.echo` like the
-    # JSON/GMD payloads -- its delivered events get byte spans, payload_bytes and block_sha
-    # (R10) by name over the exact bytes written. Rendered at the table's natural width:
-    # rich's terminal-width fit cut long names to `…`, and a cut name has no span.
-    payload_parts = [_render_table_text(t)]
-    if degree > 0 and table_rows:
-        # Mirror the recent-mode behavior: render per-hit context blocks
-        # under the ranked table for table mode (part of the same payload).
-        ctx_rows = _attach_context(table_rows)
-        for i, m in enumerate(ctx_rows, 1):
-            ctx = m.get("context")
-            if ctx:
-                payload_parts += ["", f"#{i} {m['name']} — context", ctx]
-    rec.delivered = table_rows
-    rec.echo("\n".join(payload_parts))
+    # `recall` channel, so it goes through THE recall table path (`_echo_recall_table`).
+    _echo_recall_table(rec, ("rank", "score", "id", "name"), cells, name_col=3,
+                       ctx_rows=(_attach_context(table_rows)
+                                 if degree > 0 and table_rows else []))
+
+
+def _one_line(text: str) -> str:
+    """A table cell on ONE line: a newline in a memory's content made rich print a row over
+    several lines, so a row's line could no longer be found by its index."""
+    return " ".join(str(text).splitlines())
+
+
+def _echo_recall_table(rec: "_RecallCall", columns: "tuple[str, ...]",
+                       cells: "list[tuple[list[str], dict | None]]", *, name_col: int,
+                       ctx_rows: "list[dict]") -> None:
+    """THE text-table output of `rmx memory recall` (the query table and the `--recent` /
+    `--subject` table both): render, record where each delivered row's NAME lands, write the
+    payload through `rec.echo` with those spans, and set `rec.delivered`.
+
+    One path so no table can print around the capture: r1 #b3 fixed the query table and the
+    recent table kept `console.print`, logging 0 delivered for every agent `--recent` call
+    (21.1 ch-bsd r2 #b1, 2026-10-19). Spans come from the RENDERER's layout (row i is body
+    line i, the name is the start of cell `name_col`), never from searching the text: a
+    search found a memory named `name` / `rank` / `1` in the header or the rank cell
+    (r2 #m1). Every cell is escaped, so rich never reads `[global]` or a `[`-bearing name as
+    markup (r1 #b3). `cells` pairs each displayed row with the row it delivers (None for a
+    hit whose memory could not be fetched, shown as `?`, delivered nowhere). `ctx_rows`
+    (degree > 0) adds each row's context block below the table, in the same payload."""
+    t = Table(*columns)
+    for row_cells, _row in cells:
+        t.add_row(*[rich_escape(_one_line(c)) for c in row_cells])
+    table_text = _render_table_text(t)
+    lines = table_text.split("\n")
+    rule = next((i for i, ln in enumerate(lines) if ln.startswith("┡")), None)
+    body = lines[rule + 1: rule + 1 + len(cells)] if rule is not None else []
+    starts, pos = [], 0
+    for ln in lines:
+        starts.append(pos)
+        pos += len(ln.encode("utf-8")) + 1
+    delivered: list[dict] = []
+    spans: "list[tuple[int, int] | None]" = []
+    for i, (row_cells, row) in enumerate(cells):
+        if row is None:
+            continue
+        delivered.append(row)
+        span = None
+        name = str(row.get("name") or "")
+        if name and len(body) == len(cells):
+            line = body[i]
+            parts = line.split("│")
+            if len(parts) > name_col + 1:
+                prefix = "│".join(parts[: name_col + 1]) + "│ "      # border, cells, pad
+                if line[len(prefix):].startswith(name):
+                    span = (starts[rule + 1 + i] + len(prefix.encode("utf-8")),
+                            len(name.encode("utf-8")))
+        spans.append(span)
+    payload_parts = [table_text]
+    for i, m in enumerate(ctx_rows, 1):
+        ctx = m.get("context")
+        if ctx:
+            payload_parts += ["", f"#{i} {m['name']} — context", ctx]
+    rec.delivered = delivered
+    rec.echo("\n".join(payload_parts), spans=spans)
 
 
 def _render_table_text(t: "Table") -> str:
@@ -12684,6 +12739,7 @@ class _RecallCall:
         self.delivered: list = []
         self.payload: "bytes | None" = None
         self.json_mode = False
+        self.spans: "list[tuple[int, int] | None] | None" = None
         self.skipped = False
         self.nothing_asked = False
         self.session: "str | None" = None
@@ -12700,11 +12756,16 @@ class _RecallCall:
             self.tlog.outcome, self.tlog.error = _tel.classify_outcome(type(e), e,
                                                                        budgeted=True)
 
-    def echo(self, text: str, *, json_mode: bool = False) -> None:
-        """Write the payload and keep its exact bytes (R10's one unit)."""
+    def echo(self, text: str, *, json_mode: bool = False,
+             spans: "list[tuple[int, int] | None] | None" = None) -> None:
+        """Write the payload and keep its exact bytes (R10's one unit). A JSON payload is
+        spanned by its `"name"` members (`context.name_spans`); a text payload (the table,
+        GMD) brings `spans`, one per delivered row, recorded by its renderer (21.1 r2 #m1:
+        text is never searched)."""
         click.echo(text)
         self.payload = (text + "\n").encode("utf-8")
         self.json_mode = json_mode
+        self.spans = spans
 
     def close_row(self) -> None:
         from refmatrix import telemetry as _tel
@@ -12734,9 +12795,18 @@ class _RecallCall:
                                          prompt_time=False)
         retrieved = [_tel.recall_item(r, rank=i) for i, r in enumerate(self.retrieved, 1)]
         delivered = [_tel.recall_item(r, rank=i) for i, r in enumerate(self.delivered, 1)]
-        if self.payload is not None:
+        if self.payload is not None and self.json_mode:
             from refmatrix.context import name_spans
-            delivered = name_spans(self.payload, delivered, json_mode=self.json_mode)
+            delivered = name_spans(self.payload, delivered)
+        else:
+            # A text payload's spans are its renderer's; a text payload without them (or a
+            # count that disagrees) spans nothing, and `call_events` counts every row as
+            # `delivered_unspanned` -- never a guess.
+            spans = self.spans if self.spans is not None and \
+                len(self.spans) == len(delivered) else [None] * len(delivered)
+            for it, sp in zip(delivered, spans):
+                it["offset_bytes"], it["bytes"] = sp if sp else (None, None)
+                it["body_offset_bytes"] = it["body_bytes"] = None
         _tel.emit_call(root, channel=channel, invocation=self.invocation,
                        session=self.session, query_id=self.tlog.query_id,
                        retrieved=retrieved, delivered=delivered, payload=self.payload,

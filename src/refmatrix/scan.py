@@ -1031,7 +1031,7 @@ def scan_prompt(
             # 21.1 ch-bsd r1 #m2 (2026-10-19): `delivered` is only an item the payload names
             # (a found span); GREEN kept unfound items with null offsets, computed the text
             # spans and then overwrote them, and left an unused `items`.
-            _set_delivered([it for it in name_spans(text, _set_retrieved(), json_mode=True)
+            _set_delivered([it for it in name_spans(text, _set_retrieved())
                             if it.get("offset_bytes") is not None])
         return text
 

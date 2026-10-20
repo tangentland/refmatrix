@@ -1667,18 +1667,19 @@ def _spans(b: ContextBundle, lines: "list[str]", locs) -> "tuple[str, list[dict]
     return text, items
 
 
-def name_spans(payload: "bytes | str", items: "list[dict]", *, json_mode: bool
-               ) -> "list[dict]":
-    """THE span finder for a payload whose items are found by NAME (task 21.1 R10): each
-    item, in payload order from a moving cursor, gets `offset_bytes`/`bytes` of the
-    `"name": <json>` member that names it (JSON) or of the name itself (text: `rmx memory
-    recall`'s table). Offsets are UTF-8 bytes of the payload. An item not found keeps null
-    offsets; a caller that emits `delivered` keeps only found ones. `body_*` stay null: a
-    JSON object carries its body, and a table row has none. An `attached` memory (a
-    concept/doc/code anchor's attached body, `bundle_items`) is named by its anchor's member.
+def name_spans(payload: "bytes | str", items: "list[dict]") -> "list[dict]":
+    """THE span finder for a JSON payload (task 21.1 R10): each item, in payload order from
+    a moving cursor, gets `offset_bytes`/`bytes` of the `"name": <json>` member that names
+    it. Offsets are UTF-8 bytes of the payload. An item not found keeps null offsets (the
+    emitter refuses and counts it). `body_*` stay null: the JSON object carries its body. An
+    `attached` memory (a concept/doc/code anchor's attached body, `bundle_items`) is named
+    by its anchor's member.
 
-    One function for every surface: GREEN had `telemetry.spans_by_name` and
-    `context.json_name_spans` doing the same cursor search (21.1 ch-bsd r1 #s5, 2026-10-19)."""
+    JSON ONLY. A text payload is never searched: its renderer records where each item's
+    name lands (`render_text_spans`, the recall table, the recall GMD), because a bare-name
+    search found a memory named `name` / `rank` / `1` in a table header or a rank cell (21.1
+    ch-bsd r2 #m1, 2026-10-19). One finder replaced `telemetry.spans_by_name` and
+    `context.json_name_spans` (r1 #s5)."""
     raw = payload.encode("utf-8") if isinstance(payload, str) else payload
     cur = 0
     out: list[dict] = []
@@ -1690,13 +1691,8 @@ def name_spans(payload: "bytes | str", items: "list[dict]", *, json_mode: bool
             out.append(it)
             continue
         name = it.get("name")
-        if not name:
-            needles = []
-        elif json_mode:
-            needles = [('"name"' + sep + json.dumps(name)).encode("utf-8")
-                       for sep in (": ", ":")]
-        else:
-            needles = [str(name).encode("utf-8")]
+        needles = ([('"name"' + sep + json.dumps(name)).encode("utf-8") for sep in (": ", ":")]
+                   if name else [])
         found = None
         for nd in needles:
             i = raw.find(nd, cur)
@@ -1716,7 +1712,7 @@ def render_json_spans(b: ContextBundle) -> "tuple[str, list[dict]]":
     """The JSON renderer plus the items it names (the items of `bundle_items`, spans over
     the JSON text)."""
     text = render_json(b)
-    return text, name_spans(text, bundle_items(b), json_mode=True)
+    return text, name_spans(text, bundle_items(b))
 
 
 def bundle_items(b: ContextBundle) -> "list[dict]":
