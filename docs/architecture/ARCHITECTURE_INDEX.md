@@ -50,6 +50,7 @@ Earlier design research lives in the `docs/PERFORMANCE.md` negatives and in memo
 | [[exploration-adaptive-memory-budget]] | adaptive memory selection under the context load limits | research complete, awaiting decisions |
 | [[exploration-storage-concurrency-redesign]] | storage options A-E: DuckDB concurrency, Vortex, BSI (2026-10-08) | measured in part, awaiting decisions |
 | [[exploration-session-phased-context]] | phase scan-prompt/recall breadth vs depth by STM state (2026-10-14) | idea recorded, folded into plan-19/21 reviews |
+| [[exploration-claude-code-mod-transport]] | refmatrix's Claude Code integration as a mod instead of shell hooks + `rmx mcp` (2026-10-20) | Option A chosen; plan-24 gated on a spawn-cost measurement |
 
 ## Tech Stack (`tech-stack/`) {#tech-stack}
 

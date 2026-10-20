@@ -533,6 +533,18 @@ rel: amends -> [[#t10-waves]]
   the helix plan); plan-20 needs approval before Wave 4.
 {#t11-folded-waves-body}
 
+## Mod-transport gate, Option A (2026-10-20) {#t13-mod-gate}
+
+The user, 2026-10-20: "write up the mod exploration doc with option A". Plan-24 "mod transport" is
+added with its measurement task 24.0 first ([[exploration-claude-code-mod-transport#gate]]). Until
+24.0 reads, the hook-shaped work a mod would redesign is HELD (specs kept, no build): plan-16's
+build (16.1 → 16.2/16.3 → 16.5, 16.4), 19.5 R1, 19.6's injection design, 21.2-21.4's surfaces.
+Wave 1 is unchanged. 24.0 runs in Wave 1, in parallel with the engine work; its band decides
+whether the held items retarget to the mod or proceed on hooks.
+
+rel: amends -> [[#t11-folded-waves]]
+rel: depends-on -> [[exploration-claude-code-mod-transport#option-a]]
+
 ## Deliverable when the review converges {#final-doc}
 
 The user, 2026-10-14: "at the end of all this review, I would like a separate consolidated
