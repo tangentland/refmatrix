@@ -470,8 +470,10 @@ def test_graph_action_defaults_resolve_the_shared_param_conflicts():
 #
 # C4a: on VerbAbsentError ONLY, recall / dense run the SAME library function the
 # `graph_recall` / `ann_search` op runs, in-process over a read-only store, with the
-# embedder from the accessor the daemon uses (`Daemon._embedder`, patched here to the ONE
-# HashEmbedder for both paths); `source: "in-process"`. Busy never runs in-process.
+# embedder from the ONE module-level accessor `recall.shared_embedder(root)` — which
+# `Daemon._embedder` delegates to, so no in-process `Daemon(...)` is ever needed (C3) —
+# patched here to the ONE HashEmbedder for both paths; `source: "in-process"`. Busy
+# never runs in-process.
 # RMX_RERANK=0 keeps the cross-encoder (on by default) out of both paths.
 
 
@@ -491,7 +493,7 @@ def _op_result(root, op, args):
 def test_recall_with_no_daemon_ranks_exactly_as_the_daemon_op(gstore, monkeypatch, case):
     root, _ids = gstore
     monkeypatch.setenv("RMX_RERANK", "0")
-    monkeypatch.setattr(dm.Daemon, "_embedder", lambda self: HashEmbedder())
+    monkeypatch.setattr("refmatrix.recall.shared_embedder", lambda root, *a, **k: HashEmbedder())
     assert not dm.ping(root)
     args, expected = _BASE_ORDER[case]
     out = verbs.graph(root, action="recall", k=10, **args)
@@ -507,7 +509,7 @@ def test_recall_with_no_daemon_ranks_exactly_as_the_daemon_op(gstore, monkeypatc
 def test_dense_with_no_daemon_ranks_exactly_as_the_ann_search_op(gstore, monkeypatch):
     root, _ids = gstore
     monkeypatch.setenv("RMX_RERANK", "0")
-    monkeypatch.setattr(dm.Daemon, "_embedder", lambda self: HashEmbedder())
+    monkeypatch.setattr("refmatrix.recall.shared_embedder", lambda root, *a, **k: HashEmbedder())
     assert not dm.ping(root)
     out = verbs.graph(root, action="dense", query="document number 3", k=10)
     assert out["source"] == "in-process", out
@@ -524,8 +526,8 @@ def test_dense_with_no_daemon_ranks_exactly_as_the_ann_search_op(gstore, monkeyp
 def test_recall_and_dense_on_a_busy_daemon_never_run_in_process(silent_with_snapshot,
                                                                 monkeypatch, action, kw):
     loaded: list = []
-    monkeypatch.setattr(dm.Daemon, "_embedder",
-                        lambda self: loaded.append("Daemon._embedder") or HashEmbedder())
+    monkeypatch.setattr("refmatrix.recall.shared_embedder",
+                        lambda root, *a, **k: loaded.append("shared_embedder") or HashEmbedder())
 
     class _NoModel:
         def __init__(self, *a, **k):
@@ -543,3 +545,35 @@ def test_recall_and_dense_on_a_busy_daemon_never_run_in_process(silent_with_snap
         verbs.graph(silent_with_snapshot.root, action=action, **kw)
     assert opened == [], f"an in-process store was opened under a busy daemon: {opened}"
     assert loaded == [], f"an embedder was loaded under a busy daemon: {loaded}"
+
+
+def test_the_daemon_embedder_accessor_delegates_to_the_one_shared_seam(gstore, monkeypatch):
+    """The daemon path and the in-process path provably share ONE embedder seam."""
+    root, _ids = gstore
+    sentinel = HashEmbedder()
+    seen: list = []
+    monkeypatch.setattr("refmatrix.recall.shared_embedder",
+                        lambda r, *a, **k: seen.append(r) or sentinel)
+    d = dm.Daemon(root)
+    d._log = lambda msg: None
+    assert d._embedder() is sentinel, "Daemon._embedder does not delegate to recall.shared_embedder"
+    assert seen, "recall.shared_embedder was never asked"
+
+
+@pytest.mark.parametrize("action,kw", [("recall", {"query": "document number 3"}),
+                                       ("dense", {"query": "document number 3"})])
+def test_the_no_daemon_path_never_constructs_a_daemon(gstore, monkeypatch, action, kw):
+    """C3: never an in-process `Daemon(...)` — the old search-dense fallback built one."""
+    root, _ids = gstore
+    monkeypatch.setenv("RMX_RERANK", "0")
+    monkeypatch.setattr("refmatrix.recall.shared_embedder", lambda r, *a, **k: HashEmbedder())
+    built: list = []
+    real = dm.Daemon.__init__
+
+    def rec(self, *a, **k):
+        built.append(a[:1])
+        return real(self, *a, **k)
+    monkeypatch.setattr(dm.Daemon, "__init__", rec)
+    out = verbs.graph(root, action=action, k=10, **kw)
+    assert out["source"] == "in-process", out
+    assert built == [], f"Daemon(...) constructed on the in-process {action} path: {built}"
