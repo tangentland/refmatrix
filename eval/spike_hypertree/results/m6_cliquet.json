@@ -1,0 +1,272 @@
+{
+  "store": "cliquet",
+  "seed": 20261020,
+  "method": "in-process sync_files on a no-daemon copy",
+  "n_sampled": 61,
+  "arms": {
+    "fused/quiet": {
+      "arm": "quiet",
+      "mode": "fused",
+      "n_files": 61,
+      "t_ingest_ms": {
+        "p50": 839.6500833332539,
+        "p95": 14597.006000112742
+      },
+      "t_place_ms": {
+        "p50": 5.251792259514332,
+        "p95": 38.02912496030331,
+        "max": 197.19004118815064
+      },
+      "ratio_per_file": {
+        "p50": 0.00638803722662959,
+        "p95": 0.08260518108341237
+      },
+      "ratio_p95_over_p95": 0.0026052688448582936,
+      "t_derive_ms": {
+        "p50": 0.6776670925319195,
+        "p95": 1.042999792844057
+      },
+      "t_write_ms": {
+        "p50": 4.573333077132702,
+        "p95": 36.99437482282519
+      },
+      "write_only_ratio_per_file": {
+        "p50": 0.005587863145023927,
+        "p95": 0.0651000111891332
+      },
+      "ratio_sum": 0.0036539332271848597,
+      "rows_per_file": {
+        "mean": 29.016393442622952,
+        "p95": 111.0,
+        "max": 597
+      },
+      "files_not_touched": 0,
+      "vector_delete_failed": 0,
+      "by_ext": {
+        ".md": {
+          "n": 46,
+          "t_ingest_p50_ms": 1708.2351667340845,
+          "t_place_p50_ms": 6.745249265804887,
+          "rows_mean": 38.15217391304348
+        },
+        ".py": {
+          "n": 7,
+          "t_ingest_p50_ms": 117.88254231214523,
+          "t_place_p50_ms": 3.3022500574588776,
+          "rows_mean": 1.0
+        },
+        ".sh": {
+          "n": 8,
+          "t_ingest_p50_ms": 39.588062558323145,
+          "t_place_p50_ms": 3.1195415649563074,
+          "rows_mean": 1.0
+        }
+      },
+      "placement_rows_total": 1783
+    },
+    "fused/loaded": {
+      "arm": "loaded",
+      "mode": "fused",
+      "n_files": 61,
+      "t_ingest_ms": {
+        "p50": 1108.0778343603015,
+        "p95": 19637.787791900337
+      },
+      "t_place_ms": {
+        "p50": 10.914790909737349,
+        "p95": 76.63233298808336,
+        "max": 289.8370842449367
+      },
+      "ratio_per_file": {
+        "p50": 0.00937908614001927,
+        "p95": 0.11225126046556129
+      },
+      "ratio_p95_over_p95": 0.0039022894941196274,
+      "t_derive_ms": {
+        "p50": 1.4372500590980053,
+        "p95": 2.68520787358284
+      },
+      "t_write_ms": {
+        "p50": 9.132541716098785,
+        "p95": 74.78341599926353
+      },
+      "write_only_ratio_per_file": {
+        "p50": 0.0082408899819803,
+        "p95": 0.08644146194769074
+      },
+      "ratio_sum": 0.004757617912511689,
+      "rows_per_file": {
+        "mean": 29.016393442622952,
+        "p95": 111.0,
+        "max": 597
+      },
+      "files_not_touched": 0,
+      "vector_delete_failed": 0,
+      "by_ext": {
+        ".md": {
+          "n": 46,
+          "t_ingest_p50_ms": 2008.8631873950362,
+          "t_place_p50_ms": 12.587041361257434,
+          "rows_mean": 38.15217391304348
+        },
+        ".py": {
+          "n": 7,
+          "t_ingest_p50_ms": 153.2557918690145,
+          "t_place_p50_ms": 6.770000327378511,
+          "rows_mean": 1.0
+        },
+        ".sh": {
+          "n": 8,
+          "t_ingest_p50_ms": 62.69295862875879,
+          "t_place_p50_ms": 6.220479030162096,
+          "rows_mean": 1.0
+        }
+      },
+      "placement_rows_total": 1783
+    },
+    "separate/quiet": {
+      "arm": "quiet",
+      "mode": "separate",
+      "n_files": 61,
+      "t_ingest_ms": {
+        "p50": 870.3599576838315,
+        "p95": 16103.56575017795
+      },
+      "t_place_ms": {
+        "p50": 7.045624777674675,
+        "p95": 39.74641673266888,
+        "max": 202.09166686981916
+      },
+      "ratio_per_file": {
+        "p50": 0.00826322701016396,
+        "p95": 0.12659391054686597
+      },
+      "ratio_p95_over_p95": 0.00246817489674482,
+      "t_derive_ms": {
+        "p50": 0.8495827205479145,
+        "p95": 1.3622501865029335
+      },
+      "t_write_ms": {
+        "p50": 6.086666136980057,
+        "p95": 38.652374874800444
+      },
+      "write_only_ratio_per_file": {
+        "p50": 0.007366163029109468,
+        "p95": 0.1065117610571926
+      },
+      "ratio_sum": 0.003967524677584494,
+      "rows_per_file": {
+        "mean": 29.016393442622952,
+        "p95": 111.0,
+        "max": 597
+      },
+      "files_not_touched": 0,
+      "vector_delete_failed": 0,
+      "by_ext": {
+        ".md": {
+          "n": 46,
+          "t_ingest_p50_ms": 1823.4797918703407,
+          "t_place_p50_ms": 8.31285398453474,
+          "rows_mean": 38.15217391304348
+        },
+        ".py": {
+          "n": 7,
+          "t_ingest_p50_ms": 114.70341589301825,
+          "t_place_p50_ms": 4.848791752010584,
+          "rows_mean": 1.0
+        },
+        ".sh": {
+          "n": 8,
+          "t_ingest_p50_ms": 40.402145590633154,
+          "t_place_p50_ms": 4.649833310395479,
+          "rows_mean": 1.0
+        }
+      },
+      "placement_rows_total": 1783
+    },
+    "separate/loaded": {
+      "arm": "loaded",
+      "mode": "separate",
+      "n_files": 61,
+      "t_ingest_ms": {
+        "p50": 1098.055041860789,
+        "p95": 20833.206249866635
+      },
+      "t_place_ms": {
+        "p50": 11.770791839808226,
+        "p95": 69.12691704928875,
+        "max": 289.4088327884674
+      },
+      "ratio_per_file": {
+        "p50": 0.012431702598638955,
+        "p95": 0.14266370586909904
+      },
+      "ratio_p95_over_p95": 0.0033181122588718803,
+      "t_derive_ms": {
+        "p50": 1.1806250549852848,
+        "p95": 2.0339996553957462
+      },
+      "t_write_ms": {
+        "p50": 10.621624998748302,
+        "p95": 67.30066705495119
+      },
+      "write_only_ratio_per_file": {
+        "p50": 0.010540552138608392,
+        "p95": 0.1236536880342083
+      },
+      "ratio_sum": 0.0051223726590766735,
+      "rows_per_file": {
+        "mean": 29.016393442622952,
+        "p95": 111.0,
+        "max": 597
+      },
+      "files_not_touched": 0,
+      "vector_delete_failed": 0,
+      "by_ext": {
+        ".md": {
+          "n": 46,
+          "t_ingest_p50_ms": 2099.4476459454745,
+          "t_place_p50_ms": 15.148145845159888,
+          "rows_mean": 38.15217391304348
+        },
+        ".py": {
+          "n": 7,
+          "t_ingest_p50_ms": 158.6482496932149,
+          "t_place_p50_ms": 8.971791714429855,
+          "rows_mean": 1.0
+        },
+        ".sh": {
+          "n": 8,
+          "t_ingest_p50_ms": 58.60858364030719,
+          "t_place_p50_ms": 8.162978803738952,
+          "rows_mean": 1.0
+        }
+      },
+      "placement_rows_total": 1783
+    }
+  },
+  "reported": {
+    "fused": {
+      "p95_of_per_file_ratio": 0.11225126046556129,
+      "arm": "loaded",
+      "band_per_file_ratio": "batch at snapshot tick (5-20%)",
+      "p95_place_over_p95_ingest": 0.0039022894941196274,
+      "arm_p95p95": "loaded",
+      "band_p95p95": "inline (<5%)",
+      "t_place_p95_ms_worst": 76.63233298808336,
+      "write_only_p95_ratio_worst": 0.08644146194769074,
+      "band_write_only": "batch at snapshot tick (5-20%)"
+    },
+    "separate": {
+      "p95_of_per_file_ratio": 0.14266370586909904,
+      "arm": "loaded",
+      "band_per_file_ratio": "batch at snapshot tick (5-20%)",
+      "p95_place_over_p95_ingest": 0.0033181122588718803,
+      "arm_p95p95": "loaded",
+      "band_p95p95": "inline (<5%)",
+      "t_place_p95_ms_worst": 69.12691704928875,
+      "write_only_p95_ratio_worst": 0.1236536880342083,
+      "band_write_only": "batch at snapshot tick (5-20%)"
+    }
+  }
+}

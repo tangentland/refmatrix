@@ -1,0 +1,81 @@
+{
+  "store": "cliquet",
+  "partition_id": 1,
+  "seed": 20261020,
+  "files_listed": 80,
+  "files_used": 77,
+  "skipped": {
+    "missing": 2,
+    "non_text_ext": 1
+  },
+  "sections": 1616,
+  "paragraphs": 5438,
+  "sentences": 26148,
+  "vocab_size": 6673,
+  "terms_indexed": 5279,
+  "postings": 143696,
+  "chunks_65536": 1,
+  "numberings": {
+    "dewey": {
+      "bytes": 371071,
+      "containers": 5279,
+      "run_containers": 17,
+      "run_container_share": 0.0032203068763023298,
+      "bytes_by_df_band": {
+        ">100": 159373,
+        "11-100": 133613,
+        "2-10": 66241,
+        "hapax": 11844
+      }
+    },
+    "random": {
+      "bytes": 371856,
+      "containers": 5279,
+      "run_containers": 0,
+      "run_container_share": 0.0,
+      "bytes_by_df_band": {
+        ">100": 159976,
+        "11-100": 133742,
+        "2-10": 66294,
+        "hapax": 11844
+      }
+    },
+    "file_rand_in": {
+      "bytes": 371821,
+      "containers": 5279,
+      "run_containers": 1,
+      "run_container_share": 0.00018942981625307822,
+      "bytes_by_df_band": {
+        ">100": 159941,
+        "11-100": 133742,
+        "2-10": 66294,
+        "hapax": 11844
+      }
+    },
+    "rand_file_doc": {
+      "bytes": 371071,
+      "containers": 5279,
+      "run_containers": 17,
+      "run_container_share": 0.0032203068763023298,
+      "bytes_by_df_band": {
+        ">100": 159373,
+        "11-100": 133613,
+        "2-10": 66241,
+        "hapax": 11844
+      }
+    }
+  },
+  "saving_vs_random": {
+    "dewey": 0.002111032227528953,
+    "random": 0.0,
+    "file_rand_in": 9.412245600448621e-05,
+    "rand_file_doc": 0.002111032227528953
+  },
+  "dewey_saving_by_df_band": {
+    ">100": 0.003769315397309625,
+    "11-100": 0.0009645436736402946,
+    "2-10": 0.0007994690318882114,
+    "hapax": 0.0
+  },
+  "elapsed_s": 0.2
+}

@@ -1,0 +1,119 @@
+{
+  "refmatrix": {
+    "modularity": 0.1456515028875087,
+    "n_communities": 488,
+    "largest_communities": [
+      2444,
+      2419,
+      1994,
+      1420
+    ],
+    "entities": 10985,
+    "concepts": 29686,
+    "edges": 514137,
+    "subjects": 71,
+    "label_classes": {
+      "generic": 43,
+      "descriptive": 7,
+      "junk": 5,
+      "unlabeled": 16
+    },
+    "subject_members_total": 225,
+    "band": "no-subject-tree"
+  },
+  "cliquedb": {
+    "modularity": 0.11512166735504063,
+    "n_communities": 194,
+    "largest_communities": [
+      2309,
+      1684,
+      1644,
+      1603
+    ],
+    "entities": 10248,
+    "concepts": 24004,
+    "edges": 524411,
+    "subjects": 6,
+    "label_classes": {
+      "descriptive": 6
+    },
+    "subject_members_total": 5,
+    "band": "no-subject-tree"
+  },
+  "viascope": {
+    "modularity": 0.45357174256688887,
+    "n_communities": 337,
+    "largest_communities": [
+      8749,
+      1829,
+      1183,
+      842
+    ],
+    "entities": 13559,
+    "concepts": 18922,
+    "edges": 177120,
+    "subjects": 4,
+    "label_classes": {
+      "generic": 4
+    },
+    "subject_members_total": 35,
+    "band": "admit"
+  },
+  "cliquet": {
+    "modularity": 0.13982687609047817,
+    "n_communities": 22,
+    "largest_communities": [
+      919,
+      673,
+      460,
+      167
+    ],
+    "entities": 2357,
+    "concepts": 7981,
+    "edges": 106039,
+    "subjects": 1,
+    "label_classes": {
+      "generic": 1
+    },
+    "subject_members_total": 1,
+    "band": "no-subject-tree"
+  },
+  "orderly": {
+    "modularity": 0.25907587521443,
+    "n_communities": 9,
+    "largest_communities": [
+      181,
+      118,
+      111,
+      48
+    ],
+    "entities": 486,
+    "concepts": 4031,
+    "edges": 16480,
+    "subjects": 0,
+    "label_classes": {},
+    "subject_members_total": 0,
+    "band": "no-subject-tree"
+  },
+  "atldb": {
+    "modularity": 0.3268067927272118,
+    "n_communities": 229,
+    "largest_communities": [
+      188,
+      176,
+      105,
+      65
+    ],
+    "entities": 1241,
+    "concepts": 5183,
+    "edges": 20999,
+    "subjects": 4,
+    "label_classes": {
+      "generic": 2,
+      "junk": 1,
+      "descriptive": 1
+    },
+    "subject_members_total": 19,
+    "band": "label-quality-first"
+  }
+}

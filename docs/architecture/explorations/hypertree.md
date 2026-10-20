@@ -493,6 +493,31 @@ band names an action. No band was tuned on data, because no data exists yet.
 
 {#measurements-table}
 
+## Spike results (2026-10-20) {#spike-results}
+
+The M1-M7 run is reported in [[spike-2026-10-20-hypertree]], with per-store tables, method,
+snapshot times and scripts under `eval/spike_hypertree/`. The bands above are unchanged.
+
+rel: evidence-for -> [[spike-2026-10-20-hypertree]]
+
+| M | result (six stores unless noted) | band → action |
+|---|---|---|
+| M1 | edge-weighted local@2 1.5–12.7%; 50–69% of top-10 associates outside the depth-2 subtree | < 25% → no LCA band |
+| M2 | refmatrix 61%, atldb 98% containment-shaped, but subtree-shaped only 8.2% / 4.1%; 4 stores insufficient data | > 30% → B; the demand is within-file (`gmd`/`code`), not `fs` |
+| M3 | tree-scoped MRR −0.026 to −0.342 (cliquedb), −0.0075 MemAware test-720 held-out | loss > 0.005 → C stays eliminated |
+| M4 | 3.4% on 200 real prompts (relative paths alone 3.9%); concept-anchor variant 17–31% | < 10% → keep flat |
+| M5 | modularity 0.12–0.26 in 4 stores, atldb 0.33 (was 0.43), viascope 0.45 with generic labels | no subject tree, except viascope in principle |
+| M6 | p95 placement ÷ p95 re-sync 0.3–1.3% (4 stores; viascope and refmatrix unfinished) | < 5% → inline, fused into the entity transaction |
+| M7 | Dewey vs random sid bytes 0.1–6.9% | 2–10% (3 stores) compaction only; < 2% (3 stores) irrelevant |
+
+{#spike-results-table}
+
+**Implied option: B, scoped.** The graph stays authoritative. `gmd` section and `code` def
+placements are written inline for within-file address queries. There is no LCA band, no tree
+render default, no `fs` table, no subject tree and no Dewey-ordered ids. C stays eliminated. For
+associative power: the cross-cutting graph surfaces the associations, and the tree carries signal
+only inside a file. {#spike-results-implication}
+
 ## Transition Summary {#transition-summary}
 
 **Status:** NOT STARTED

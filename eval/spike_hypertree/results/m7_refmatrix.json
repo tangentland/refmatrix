@@ -1,0 +1,81 @@
+{
+  "store": "refmatrix",
+  "partition_id": 4,
+  "seed": 20261020,
+  "files_listed": 1141,
+  "files_used": 1023,
+  "skipped": {
+    "non_text_ext": 91,
+    "missing": 25
+  },
+  "sections": 12640,
+  "paragraphs": 35375,
+  "sentences": 277618,
+  "vocab_size": 23161,
+  "terms_indexed": 19747,
+  "postings": 1287213,
+  "chunks_65536": 5,
+  "numberings": {
+    "dewey": {
+      "bytes": 3159544,
+      "containers": 54284,
+      "run_containers": 65,
+      "run_container_share": 0.00119740623388107,
+      "bytes_by_df_band": {
+        ">100": 2195910,
+        "2-10": 272115,
+        "11-100": 616333,
+        "hapax": 75186
+      }
+    },
+    "random": {
+      "bytes": 3237802,
+      "containers": 63175,
+      "run_containers": 0,
+      "run_container_share": 0.0,
+      "bytes_by_df_band": {
+        ">100": 2203882,
+        "2-10": 307478,
+        "11-100": 651256,
+        "hapax": 75186
+      }
+    },
+    "file_rand_in": {
+      "bytes": 3165575,
+      "containers": 54283,
+      "run_containers": 5,
+      "run_container_share": 9.210986865132731e-05,
+      "bytes_by_df_band": {
+        ">100": 2201430,
+        "2-10": 272222,
+        "11-100": 616737,
+        "hapax": 75186
+      }
+    },
+    "rand_file_doc": {
+      "bytes": 3191634,
+      "containers": 57960,
+      "run_containers": 68,
+      "run_container_share": 0.0011732229123533472,
+      "bytes_by_df_band": {
+        ">100": 2199616,
+        "2-10": 284157,
+        "11-100": 632675,
+        "hapax": 75186
+      }
+    }
+  },
+  "saving_vs_random": {
+    "dewey": 0.024170100580579,
+    "random": 0.0,
+    "file_rand_in": 0.022307417192280465,
+    "rand_file_doc": 0.014259055989217395
+  },
+  "dewey_saving_by_df_band": {
+    ">100": 0.00361725355531739,
+    "2-10": 0.11500985436356426,
+    "11-100": 0.05362407409682213,
+    "hapax": 0.0
+  },
+  "elapsed_s": 2.0
+}

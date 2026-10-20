@@ -1,0 +1,107 @@
+{
+  "store": "cliquet",
+  "partition_id": 1,
+  "entities_in_tree": 2362,
+  "excluded_entities": {
+    "no_path": 0,
+    "external": 2,
+    "memory_dir_mapped": 398
+  },
+  "files": 133,
+  "max_tree_depth": 4,
+  "df_p99": 205.76000000000022,
+  "all_df_ge_2": {
+    "concepts": 5709,
+    "edges": 103074,
+    "edge_weighted_local": {
+      "depth>=1": 0.08133962007877836,
+      "depth>=2": 0.022566311581970235,
+      "depth>=3": 0.011661524729805771
+    },
+    "unweighted_local": {
+      "depth>=1": 0.40182168505867927,
+      "depth>=2": 0.1024697845507094,
+      "depth>=3": 0.05132247328779121
+    },
+    "edge_weighted_single_file": 0.012398859072122941,
+    "components_depth2_mean": 4.975126992468033,
+    "components_depth2_p50": 3.0,
+    "components_depth2_edge_weighted_mean": 16.47578438791548
+  },
+  "non_keyword": {
+    "concepts": 5638,
+    "edges": 102876,
+    "edge_weighted_local": {
+      "depth>=1": 0.07957152299856138,
+      "depth>=2": 0.02084062366343948,
+      "depth>=3": 0.011285431004315876
+    },
+    "unweighted_local": {
+      "depth>=1": 0.39428875487761617,
+      "depth>=2": 0.09258602341255764,
+      "depth>=3": 0.04842142603760199
+    },
+    "edge_weighted_single_file": 0.012024184455072126,
+    "components_depth2_mean": 5.023767293366442,
+    "components_depth2_p50": 3.0,
+    "components_depth2_edge_weighted_mean": 16.50541428515883
+  },
+  "minus_top1pct_hubs": {
+    "concepts": 5652,
+    "edges": 84822,
+    "edge_weighted_local": {
+      "depth>=1": 0.09884228148357738,
+      "depth>=2": 0.027422131050906604,
+      "depth>=3": 0.014170851901629294
+    },
+    "unweighted_local": {
+      "depth>=1": 0.4058740268931352,
+      "depth>=2": 0.1035031847133758,
+      "depth>=3": 0.05184005661712668
+    },
+    "edge_weighted_single_file": 0.015066845865459432,
+    "components_depth2_mean": 4.677990092002831,
+    "components_depth2_p50": 3.0,
+    "components_depth2_edge_weighted_mean": 12.034790502463983
+  },
+  "null_permuted": {
+    "edge_weighted_local_depth>=2": 0.00665864653873269,
+    "unweighted_local_depth>=2": 0.05546797454311905,
+    "components_depth2_mean": 6.702341332399136
+  },
+  "top10_associates": {
+    "sources": 300,
+    "share_outside_depth2_subtree": 0.6901666666666667,
+    "share_outside_expected_random": 0.8100536495835099,
+    "share_same_file": 0.18933333333333335,
+    "mean_lca_depth": 1.1776666666666666
+  },
+  "association_by_tree_distance": {
+    "same_file": {
+      "pairs": 20000,
+      "mean_wjaccard": 0.012713724718106698,
+      "lift_vs_random": 1.84495562463289
+    },
+    "same_dir_diff_file": {
+      "pairs": 20000,
+      "mean_wjaccard": 0.012308796247124295,
+      "lift_vs_random": 1.7861943192973255
+    },
+    "same_depth2_diff_dir": {
+      "pairs": 20000,
+      "mean_wjaccard": 0.00734560920600285,
+      "lift_vs_random": 1.0659600802642106
+    },
+    "diff_depth2": {
+      "pairs": 16125,
+      "mean_wjaccard": 0.00571480127242099,
+      "lift_vs_random": 0.8293049428855673
+    },
+    "random": {
+      "pairs": 20000,
+      "mean_wjaccard": 0.006891073448249727,
+      "lift_vs_random": 1.0
+    }
+  },
+  "elapsed_s": 1.1
+}

@@ -1,0 +1,87 @@
+{
+  "test720": {
+    "n": 720,
+    "base": {
+      "mrr": 0.1850754308423297,
+      "hit1": 0.11944444444444445,
+      "hit10": 0.3347222222222222,
+      "hit20": 0.4027777777777778
+    },
+    "d2_top1": {
+      "mrr": 0.17759443439687247,
+      "hit1": 0.11944444444444445,
+      "hit10": 0.33611111111111114,
+      "hit20": 0.40555555555555556,
+      "delta_mrr": -0.007480996445457216,
+      "won": 13,
+      "lost": 99,
+      "sign_p": 1.5014734022564093e-17,
+      "noop_queries": 0,
+      "queries_all_gold_outside_S": 598,
+      "mean_share_gold_outside_S": 0.8655787037037037,
+      "relevant_in_pool_outside_S": 401
+    },
+    "d2_plur10": {
+      "mrr": 0.16690051468640865,
+      "hit1": 0.10555555555555556,
+      "hit10": 0.3347222222222222,
+      "hit20": 0.40694444444444444,
+      "delta_mrr": -0.01817491615592104,
+      "won": 54,
+      "lost": 137,
+      "sign_p": 1.656178474190763e-09,
+      "noop_queries": 0,
+      "queries_all_gold_outside_S": 579,
+      "mean_share_gold_outside_S": 0.8533564814814815,
+      "relevant_in_pool_outside_S": 390
+    }
+  },
+  "tune180": {
+    "n": 180,
+    "base": {
+      "mrr": 0.2213478231434888,
+      "hit1": 0.1388888888888889,
+      "hit10": 0.4,
+      "hit20": 0.48333333333333334
+    },
+    "d2_top1": {
+      "mrr": 0.213224547544723,
+      "hit1": 0.1388888888888889,
+      "hit10": 0.3888888888888889,
+      "hit20": 0.48333333333333334,
+      "delta_mrr": -0.0081232755987658,
+      "won": 4,
+      "lost": 32,
+      "sign_p": 1.941574737429619e-06,
+      "noop_queries": 0,
+      "queries_all_gold_outside_S": 145,
+      "mean_share_gold_outside_S": 0.8419444444444445,
+      "relevant_in_pool_outside_S": 119
+    },
+    "d2_plur10": {
+      "mrr": 0.16594811255995467,
+      "hit1": 0.08333333333333333,
+      "hit10": 0.40555555555555556,
+      "hit20": 0.49444444444444446,
+      "delta_mrr": -0.05539971058353413,
+      "won": 12,
+      "lost": 51,
+      "sign_p": 7.459722282164658e-07,
+      "noop_queries": 0,
+      "queries_all_gold_outside_S": 148,
+      "mean_share_gold_outside_S": 0.8711111111111112,
+      "relevant_in_pool_outside_S": 122
+    }
+  },
+  "relevant_sessions_distinct_days_hist": {
+    "1": 528,
+    "2": 297,
+    "3": 54,
+    "4": 16,
+    "5": 5
+  },
+  "corpus_sessions": 1307,
+  "corpus_days": 91,
+  "store_copy": "/Volumes/littlebig/refmatrix-spike-hypertree/m3/memaware/.refmatrix",
+  "elapsed_s": 22.4
+}

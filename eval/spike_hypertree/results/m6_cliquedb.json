@@ -1,0 +1,344 @@
+{
+  "store": "cliquedb",
+  "seed": 20261020,
+  "method": "in-process sync_files on a no-daemon copy",
+  "n_sampled": 100,
+  "arms": {
+    "fused/quiet": {
+      "arm": "quiet",
+      "mode": "fused",
+      "n_files": 100,
+      "t_ingest_ms": {
+        "p50": 292.5574167165905,
+        "p95": 10793.80407906137
+      },
+      "t_place_ms": {
+        "p50": 3.722020424902439,
+        "p95": 26.559314900077865,
+        "max": 67.19320779666305
+      },
+      "ratio_per_file": {
+        "p50": 0.011406540178995414,
+        "p95": 0.18416678250478152
+      },
+      "ratio_p95_over_p95": 0.002460607465684838,
+      "t_derive_ms": {
+        "p50": 0.8348750416189432,
+        "p95": 1.2485349783673882
+      },
+      "t_write_ms": {
+        "p50": 2.840603468939662,
+        "p95": 25.53057482000439
+      },
+      "write_only_ratio_per_file": {
+        "p50": 0.008377739042734879,
+        "p95": 0.13586162052991982
+      },
+      "ratio_sum": 0.003082004484786522,
+      "rows_per_file": {
+        "mean": 15.23,
+        "p95": 72.74999999999996,
+        "max": 194
+      },
+      "files_not_touched": 0,
+      "vector_delete_failed": 0,
+      "by_ext": {
+        ".md": {
+          "n": 43,
+          "t_ingest_p50_ms": 4171.628416981548,
+          "t_place_p50_ms": 8.955916855484247,
+          "rows_mean": 34.093023255813954
+        },
+        ".py": {
+          "n": 29,
+          "t_ingest_p50_ms": 28.045082930475473,
+          "t_place_p50_ms": 3.4790411591529846,
+          "rows_mean": 1.0
+        },
+        ".sh": {
+          "n": 3,
+          "t_ingest_p50_ms": 17.766041681170464,
+          "t_place_p50_ms": 3.2656253315508366,
+          "rows_mean": 1.0
+        },
+        ".sql": {
+          "n": 19,
+          "t_ingest_p50_ms": 187.53170827403665,
+          "t_place_p50_ms": 3.409166820347309,
+          "rows_mean": 1.0
+        },
+        ".ts": {
+          "n": 1,
+          "t_ingest_p50_ms": 18.394750077277422,
+          "t_place_p50_ms": 3.7741251289844513,
+          "rows_mean": 1.0
+        },
+        ".txt": {
+          "n": 5,
+          "t_ingest_p50_ms": 17.357667442411184,
+          "t_place_p50_ms": 3.4231659956276417,
+          "rows_mean": 1.0
+        }
+      },
+      "placement_rows_total": 1552
+    },
+    "fused/loaded": {
+      "arm": "loaded",
+      "mode": "fused",
+      "n_files": 100,
+      "t_ingest_ms": {
+        "p50": 395.71481198072433,
+        "p95": 15408.233516849576
+      },
+      "t_place_ms": {
+        "p50": 9.394249878823757,
+        "p95": 55.925581371411674,
+        "max": 108.93429210409522
+      },
+      "ratio_per_file": {
+        "p50": 0.016212938714089183,
+        "p95": 0.22050488969411197
+      },
+      "ratio_p95_over_p95": 0.003629590719160286,
+      "t_derive_ms": {
+        "p50": 2.3487084545195103,
+        "p95": 4.7463294584304085
+      },
+      "t_write_ms": {
+        "p50": 6.63447892293334,
+        "p95": 53.26883906964212
+      },
+      "write_only_ratio_per_file": {
+        "p50": 0.01101734887811355,
+        "p95": 0.15026535086374626
+      },
+      "ratio_sum": 0.004795015973812144,
+      "rows_per_file": {
+        "mean": 15.23,
+        "p95": 72.74999999999996,
+        "max": 194
+      },
+      "files_not_touched": 0,
+      "vector_delete_failed": 0,
+      "by_ext": {
+        ".md": {
+          "n": 43,
+          "t_ingest_p50_ms": 5320.531708188355,
+          "t_place_p50_ms": 16.354791820049286,
+          "rows_mean": 34.093023255813954
+        },
+        ".py": {
+          "n": 29,
+          "t_ingest_p50_ms": 55.2928326651454,
+          "t_place_p50_ms": 7.343540899455547,
+          "rows_mean": 1.0
+        },
+        ".sh": {
+          "n": 3,
+          "t_ingest_p50_ms": 40.30695790424943,
+          "t_place_p50_ms": 6.439957767724991,
+          "rows_mean": 1.0
+        },
+        ".sql": {
+          "n": 19,
+          "t_ingest_p50_ms": 343.3652496896684,
+          "t_place_p50_ms": 7.600958924740553,
+          "rows_mean": 1.0
+        },
+        ".ts": {
+          "n": 1,
+          "t_ingest_p50_ms": 37.2561258263886,
+          "t_place_p50_ms": 8.327457588165998,
+          "rows_mean": 1.0
+        },
+        ".txt": {
+          "n": 5,
+          "t_ingest_p50_ms": 41.61137528717518,
+          "t_place_p50_ms": 7.681665942072868,
+          "rows_mean": 1.0
+        }
+      },
+      "placement_rows_total": 1552
+    },
+    "separate/quiet": {
+      "arm": "quiet",
+      "mode": "separate",
+      "n_files": 100,
+      "t_ingest_ms": {
+        "p50": 310.7374585233629,
+        "p95": 12027.583172544833
+      },
+      "t_place_ms": {
+        "p50": 5.851750029250979,
+        "p95": 28.660662169568223,
+        "max": 71.44941575825214
+      },
+      "ratio_per_file": {
+        "p50": 0.017026498502538498,
+        "p95": 0.23424854185747054
+      },
+      "ratio_p95_over_p95": 0.002382911159990267,
+      "t_derive_ms": {
+        "p50": 0.981353921815753,
+        "p95": 1.8176934914663434
+      },
+      "t_write_ms": {
+        "p50": 4.560396308079362,
+        "p95": 27.54839779809116
+      },
+      "write_only_ratio_per_file": {
+        "p50": 0.01247330632475577,
+        "p95": 0.19641452852504054
+      },
+      "ratio_sum": 0.003745653766337491,
+      "rows_per_file": {
+        "mean": 15.23,
+        "p95": 72.74999999999996,
+        "max": 194
+      },
+      "files_not_touched": 0,
+      "vector_delete_failed": 0,
+      "by_ext": {
+        ".md": {
+          "n": 43,
+          "t_ingest_p50_ms": 3995.7817499525845,
+          "t_place_p50_ms": 11.032667011022568,
+          "rows_mean": 34.093023255813954
+        },
+        ".py": {
+          "n": 29,
+          "t_ingest_p50_ms": 33.216292038559914,
+          "t_place_p50_ms": 5.1967911422252655,
+          "rows_mean": 1.0
+        },
+        ".sh": {
+          "n": 3,
+          "t_ingest_p50_ms": 19.709124695509672,
+          "t_place_p50_ms": 4.141209181398153,
+          "rows_mean": 1.0
+        },
+        ".sql": {
+          "n": 19,
+          "t_ingest_p50_ms": 205.7410841807723,
+          "t_place_p50_ms": 4.823375027626753,
+          "rows_mean": 1.0
+        },
+        ".ts": {
+          "n": 1,
+          "t_ingest_p50_ms": 1638.5089168325067,
+          "t_place_p50_ms": 10.35712519660592,
+          "rows_mean": 1.0
+        },
+        ".txt": {
+          "n": 5,
+          "t_ingest_p50_ms": 19.225874915719032,
+          "t_place_p50_ms": 4.747167229652405,
+          "rows_mean": 1.0
+        }
+      },
+      "placement_rows_total": 1552
+    },
+    "separate/loaded": {
+      "arm": "loaded",
+      "mode": "separate",
+      "n_files": 100,
+      "t_ingest_ms": {
+        "p50": 445.0406045652926,
+        "p95": 13793.619737727566
+      },
+      "t_place_ms": {
+        "p50": 10.64020860940218,
+        "p95": 39.08886709250507,
+        "max": 105.73408287018538
+      },
+      "ratio_per_file": {
+        "p50": 0.018986747305921182,
+        "p95": 0.2263873042461694
+      },
+      "ratio_p95_over_p95": 0.0028338367909035004,
+      "t_derive_ms": {
+        "p50": 2.4047703482210636,
+        "p95": 3.731414442881942
+      },
+      "t_write_ms": {
+        "p50": 7.978250039741397,
+        "p95": 36.69733202550557
+      },
+      "write_only_ratio_per_file": {
+        "p50": 0.01524854817908192,
+        "p95": 0.1643632981934776
+      },
+      "ratio_sum": 0.005133590281157508,
+      "rows_per_file": {
+        "mean": 15.23,
+        "p95": 72.74999999999996,
+        "max": 194
+      },
+      "files_not_touched": 0,
+      "vector_delete_failed": 0,
+      "by_ext": {
+        ".md": {
+          "n": 43,
+          "t_ingest_p50_ms": 4784.746165852994,
+          "t_place_p50_ms": 18.238124903291464,
+          "rows_mean": 34.093023255813954
+        },
+        ".py": {
+          "n": 29,
+          "t_ingest_p50_ms": 61.966999899595976,
+          "t_place_p50_ms": 8.735249750316143,
+          "rows_mean": 1.0
+        },
+        ".sh": {
+          "n": 3,
+          "t_ingest_p50_ms": 46.321749687194824,
+          "t_place_p50_ms": 6.541041657328606,
+          "rows_mean": 1.0
+        },
+        ".sql": {
+          "n": 19,
+          "t_ingest_p50_ms": 269.54158302396536,
+          "t_place_p50_ms": 8.824583142995834,
+          "rows_mean": 1.0
+        },
+        ".ts": {
+          "n": 1,
+          "t_ingest_p50_ms": 5066.661791875958,
+          "t_place_p50_ms": 13.43004172667861,
+          "rows_mean": 1.0
+        },
+        ".txt": {
+          "n": 5,
+          "t_ingest_p50_ms": 44.941042084246874,
+          "t_place_p50_ms": 8.62462492659688,
+          "rows_mean": 1.0
+        }
+      },
+      "placement_rows_total": 1552
+    }
+  },
+  "reported": {
+    "fused": {
+      "p95_of_per_file_ratio": 0.22050488969411197,
+      "arm": "loaded",
+      "band_per_file_ratio": "derive offline only (>20%)",
+      "p95_place_over_p95_ingest": 0.003629590719160286,
+      "arm_p95p95": "loaded",
+      "band_p95p95": "inline (<5%)",
+      "t_place_p95_ms_worst": 55.925581371411674,
+      "write_only_p95_ratio_worst": 0.15026535086374626,
+      "band_write_only": "batch at snapshot tick (5-20%)"
+    },
+    "separate": {
+      "p95_of_per_file_ratio": 0.23424854185747054,
+      "arm": "quiet",
+      "band_per_file_ratio": "derive offline only (>20%)",
+      "p95_place_over_p95_ingest": 0.0028338367909035004,
+      "arm_p95p95": "loaded",
+      "band_p95p95": "inline (<5%)",
+      "t_place_p95_ms_worst": 39.08886709250507,
+      "write_only_p95_ratio_worst": 0.19641452852504054,
+      "band_write_only": "batch at snapshot tick (5-20%)"
+    }
+  }
+}

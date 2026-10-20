@@ -1,0 +1,136 @@
+{
+  "partition_id": 104,
+  "concepts": 18922,
+  "entities": 13559,
+  "edges": 177120,
+  "concept_df": {
+    "p25": 1.0,
+    "p50": 2.0,
+    "p75": 6.0,
+    "p90": 19.0,
+    "p95": 38.0,
+    "p99": 125.79000000000087,
+    "max": 845,
+    "mean": 9.360532713243844,
+    "share_df_le_1": 0.39911214459359473
+  },
+  "entity_degree": {
+    "p25": 4.0,
+    "p50": 6.0,
+    "p75": 13.0,
+    "p90": 29.0,
+    "p95": 45.0,
+    "p99": 102.42000000000007,
+    "max": 797,
+    "mean": 13.062910244118298
+  },
+  "powerlaw_concept_df": {
+    "xmin": 6,
+    "alpha": 1.8786340333573688,
+    "ks": 0.032281005816589416,
+    "n_tail": 5011
+  },
+  "top_hubs": [
+    {
+      "name": "keyword/channel",
+      "df": 845
+    },
+    {
+      "name": "keyword/all",
+      "df": 765
+    },
+    {
+      "name": "keyword/when",
+      "df": 696
+    },
+    {
+      "name": "keyword/per",
+      "df": 677
+    },
+    {
+      "name": "keyword/test",
+      "df": 578
+    },
+    {
+      "name": "keyword/path",
+      "df": 532
+    },
+    {
+      "name": "keyword/adr",
+      "df": 515
+    },
+    {
+      "name": "keyword/list",
+      "df": 485
+    },
+    {
+      "name": "keyword/via",
+      "df": 481
+    },
+    {
+      "name": "keyword/state",
+      "df": 481
+    },
+    {
+      "name": "keyword/result",
+      "df": 470
+    },
+    {
+      "name": "keyword/only",
+      "df": 458
+    }
+  ],
+  "edge_share": {
+    "top_0.1pct": 0.05343834688346884,
+    "top_1pct": 0.24775293586269195,
+    "df_le_1": 0.042637759710930444
+  },
+  "roaring_bytes": {
+    "total": 908811,
+    "share_top_1pct": 0.12351743101701014,
+    "share_df_le_1": 0.14957565434397252
+  },
+  "reach": {
+    "all_concepts": {
+      "reach1_mean": 0.0724928092042186,
+      "reach2_mean": 0.7101021461759717,
+      "reach2_p50": 0.8545246699609116
+    },
+    "minus_top_0.1pct": {
+      "reach1_mean": 0.05114315214986356,
+      "reach2_mean": 0.7029379010251493,
+      "reach2_p50": 0.8470019912972933
+    },
+    "minus_top_1pct": {
+      "reach1_mean": 0.020158197507190792,
+      "reach2_mean": 0.5691887307323549,
+      "reach2_p50": 0.7003466332325392
+    }
+  },
+  "communities": {
+    "concepts_used": 11180,
+    "df_cap": 125,
+    "projection_edges": 1656150,
+    "louvain_modularity": 0.45357174256688887,
+    "n_communities": 337,
+    "largest": [
+      8749,
+      1829,
+      1183,
+      842,
+      504,
+      23,
+      11,
+      4
+    ],
+    "singletons": 270
+  },
+  "compression_bytes": {
+    "today_ids": 908811,
+    "dense_rank_today_order": 656555,
+    "path_locality_order": 656334,
+    "community_order": 656282,
+    "random_order_control": 656992
+  },
+  "elapsed_s": 35.4
+}
