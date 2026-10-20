@@ -2155,11 +2155,11 @@ def session_memories(root: Path, *, partition: str, timeout: float = 60.0,
         rows = res.get("rows", [])
     except VerbAbsentError:
         def _read(s) -> dict:
-            mems = list(s.iter_memories(mtype="session", limit=limit))
+            # The SAME store calls the daemon ops make (`memory_search` / `memory_iter`),
+            # so an in-process answer matches a daemon one.
             if query:
-                q = query.lower()
-                mems = [m for m in mems if q in (m.get("content") or "").lower()]
-            return {"rows": mems}
+                return {"rows": list(s.search_memories(query, limit=limit))}
+            return {"rows": list(s.iter_memories(mtype="session", limit=limit))}
         rows = snapshot_read(root, _read, partition=partition)["rows"]
     return [r for r in rows if r.get("mtype") == "session"]
 
@@ -2475,6 +2475,334 @@ def canon(root: Path, action: typing.Literal["find", "siblings", "link"], *,
                                  "canon_concept_name": name}, timeout=t, partition=part,
             local=lambda s: {"canon_id": s.link_canon(_local_id(s), canon_partition, name)})
     raise VerbArgsError(f"unknown canon action {action!r}")
+
+
+# ---- task 3.7 batch C: matrix-edit, session, refine ---------------------------------
+
+ACTION_DEFAULTS.update({
+    ("rmx_matrix", "list_entities"): {"limit": 200},
+    ("rmx_matrix", "run"): {"limit": 50},
+})
+_MATRIX_WRITE_BUDGET_S = 60.0
+
+
+def _resolve_concept_id(s, ref: str) -> int:
+    e = s.resolve_entity(ref)
+    if e is None or e.kind != "concept":
+        raise VerbError(f"no concept named {ref!r} — `rmx add concept {ref}` first")
+    return int(e.id)
+
+
+def _resolve_entity_id(s, ref: str) -> int:
+    e = s.resolve_entity(ref)
+    if e is None:
+        raise VerbError(f"no entity named {ref!r}")
+    return int(e.id)
+
+
+def _matrix_write(root: Path, op: str, payload: dict, *, partition: str, timeout: float,
+                  local: "Callable[[Any], dict]", resolve: "Callable[[Any], dict] | None" = None
+                  ) -> dict:
+    """One matrix WRITE (C4/C5): an ABSENT daemon runs `local` (which resolves its own
+    ends) in ONE `local_write` handle (C4a); otherwise `resolve` (the ends' ids) reads the
+    snapshot first — an unknown end sends nothing — and the op is one classified attempt."""
+    try:
+        require_daemon(root, retries=0)
+    except VerbAbsentError:
+        return local_write(root, local, partition=partition)
+    if resolve is not None:
+        payload = {**payload, **snapshot_read(root, resolve, partition=partition)}
+        payload.pop("source", None)
+    return _write_or_local(root, op, payload, timeout=timeout, partition=partition,
+                           local=local)
+
+
+@verb("rmx_matrix",
+      "Low-level matrix edits and saved queries: add_concept / add_entity / "
+      "add_linkage_type, link / unlink a (linkage, concept, entity) bit, list_entities / "
+      "list_linkages / list_queries, save_query and run a saved query.")
+def matrix(root: Path, action: typing.Literal[
+               "add_concept", "add_entity", "add_linkage_type", "link", "unlink",
+               "list_entities", "list_linkages", "list_queries", "run", "save_query"], *,
+           name: str | None = None, description: str | None = None, no_protect: bool = False,
+           kind: str | None = None, path: str | None = None, tldr: str | None = None,
+           meta: str | None = None, directed: bool = True, concept: str | None = None,
+           entity: str | None = None, linkage: str = "mentions",
+           want_protected: bool | None = None, want_noise: bool | None = None,
+           limit: int | None = None, is_pql: bool = False, ids_only: bool = False,
+           body: str | None = None, partition: str | None = None,
+           timeout: float | None = None) -> dict:
+    """Task 3.7 #fam-matrix-edit. Writes go through the daemon ops (`add_concept`,
+    `upsert_entity`, `add_linkage_type`, `link`, `unlink`, `save_query`) — one attempt,
+    60 s, `write=True` — with the CLI's `-p` partition (the `add_concept` /
+    `upsert_entity` ops ignored it until this task); no daemon ⇒ `local_write`. Reads
+    (`list_*`, `run`) come from `snapshot_read`."""
+    import json as _json
+    part = partition or project_partition(root)
+    t = float(timeout) if timeout is not None else _MATRIX_WRITE_BUDGET_S
+    lim = action_default("rmx_matrix", action, "limit", limit)
+
+    def need(**kw):
+        missing = [k for k, v in kw.items() if not v]
+        if missing:
+            raise VerbArgsError(f"matrix {action} requires " + ", ".join(repr(m) for m in missing))
+    if action == "add_concept":
+        need(name=name)
+        return _matrix_write(root, "add_concept", {"name": name, "description": description,
+                                                    "protected": not no_protect},
+                             partition=part, timeout=t, local=lambda s: {"id": s.add_concept(
+                                 name, description=description, protected=not no_protect)})
+    if action == "add_entity":
+        need(kind=kind, name=name)
+        try:
+            meta_d = _json.loads(meta) if meta else None
+        except ValueError as e:
+            raise VerbArgsError(f"matrix add_entity: meta is not JSON ({e})") from e
+        return _matrix_write(root, "upsert_entity", {
+            "kind": kind, "name": name, "path": path, "tldr": tldr, "meta": meta,
+            "protected": not no_protect}, partition=part, timeout=t,
+            local=lambda s: {"id": s.upsert_entity(kind=kind, name=name, path=path,
+                                                   tldr=tldr, meta=meta_d,
+                                                   protected=not no_protect)})
+    if action == "add_linkage_type":
+        need(name=name)
+        return _matrix_write(root, "add_linkage_type", {
+            "name": name, "directed": directed, "description": description},
+            partition=part, timeout=t, local=lambda s: {"id": s.add_linkage_type(
+                name=name, directed=directed, description=description)})
+    if action in ("link", "unlink"):
+        need(concept=concept, entity=entity)
+
+        def _ends(s) -> dict:
+            return {"concept_id": _resolve_concept_id(s, concept),
+                    "entity_id": _resolve_entity_id(s, entity)}
+        if action == "link":
+            def _local(s) -> dict:
+                ends = _ends(s)
+                return {"created": bool(s.link(linkage, ends["concept_id"], ends["entity_id"],
+                                               protect=not no_protect))}
+            res = _matrix_write(root, "link", {"linkage": linkage, "protect": not no_protect},
+                                partition=part, timeout=t, local=_local, resolve=_ends)
+        else:
+            def _local(s) -> dict:
+                ends = _ends(s)
+                return {"unlinked": bool(s.unlink(linkage, ends["concept_id"],
+                                                  ends["entity_id"]))}
+            res = _matrix_write(root, "unlink", {"linkage": linkage}, partition=part,
+                                timeout=t, local=_local, resolve=_ends)
+        return {**res, "concept": concept, "entity": entity, "linkage": linkage}
+    if action == "save_query":
+        need(name=name, body=body)
+        return _matrix_write(root, "save_query", {"name": name, "body": body},
+                             partition=part, timeout=t,
+                             local=lambda s: (s.save_query(name, body),
+                                              {"saved": True, "name": name})[1])
+    if action == "list_entities":
+        def _ents(s) -> dict:
+            rows: list[dict] = []
+            if want_protected is None and want_noise is None:
+                for e in s.iter_entities(kind):
+                    if len(rows) >= int(lim):
+                        break
+                    rows.append({"id": e.id, "kind": e.kind, "name": e.name, "path": e.path,
+                                 "tldr": e.tldr})
+            else:
+                for eid, nm, ekind, prot, noise in s.find_entity_ids(
+                        kind=kind, protected=want_protected, noise=want_noise)[:int(lim)]:
+                    rows.append({"id": eid, "kind": ekind, "name": nm,
+                                 "protected": bool(prot), "noise": bool(noise)})
+            return {"rows": rows}
+        return snapshot_read(root, _ents, partition=part)
+    if action == "list_linkages":
+        return snapshot_read(root, lambda s: {"rows": [dict(lk) for lk in s.list_linkages()]},
+                             partition=part)
+    if action == "list_queries":
+        return snapshot_read(root, lambda s: {"rows": [{"name": n, "body": b}
+                                                       for n, b in s.list_saved_queries()]},
+                             partition=part)
+    if action == "run":
+        need(name=name)
+
+        def _run(s) -> dict:
+            from refmatrix.query import QueryEngine
+            q = s.get_saved_query(name)
+            if q is None:
+                raise VerbError(f"no saved query: {name}")
+            qe = QueryEngine(s)
+            result = qe.run_pql(q) if is_pql else qe.run(q)
+            if isinstance(result, list):
+                rows = []
+                for eid, w in result[:int(lim)]:
+                    e = s.get_entity_by_id(eid)
+                    rows.append({"id": int(eid), "name": e.name if e else None,
+                                 "weight": float(w)})
+                return {"rows": rows, "shape": "weighted", "cardinality": len(result)}
+            ids = list(result)
+            if ids_only:
+                return {"rows": [{"id": int(i)} for i in ids], "shape": "ids",
+                        "cardinality": len(ids)}
+            rows = []
+            for eid in ids[:int(lim)]:
+                e = s.get_entity_by_id(eid)
+                if e:
+                    rows.append({"id": e.id, "kind": e.kind, "name": e.name, "path": e.path})
+            return {"rows": rows, "shape": "bitmap", "cardinality": len(ids)}
+        return snapshot_read(root, _run, partition=part)
+    raise VerbArgsError(f"unknown matrix action {action!r}")
+
+
+def _session_row(m: dict) -> dict:
+    from refmatrix import graphread
+    title = (m.get("content") or "").split("\n", 2)[0].lstrip("# ").strip().split(" {#")[0]
+    meta = m.get("metadata")
+    if isinstance(meta, str):
+        try:
+            import json as _json
+            meta = _json.loads(meta)
+        except ValueError:
+            meta = {}
+    return {"id": m.get("id"), "name": m.get("name"),
+            "session_id": graphread.session_meta_get(m, "session_id"),
+            "project": graphread.session_meta_get(m, "project"),
+            "branch": graphread.session_meta_get(m, "branch"),
+            "started": graphread.session_meta_get(m, "started"),
+            "ended": graphread.session_meta_get(m, "ended"),
+            "turn_count": graphread.session_meta_get(m, "turn_count"),
+            "title": title, "metadata": meta if isinstance(meta, dict) else {}}
+
+
+def session_passes_filters(mem: dict, *, project_filter=None, branch=None, commit=None,
+                           touched=None, since_iso=None, until_iso=None) -> bool:
+    """The session list / recall metadata filters (moved from the CLI, task 3.7)."""
+    from refmatrix import graphread as g
+    if project_filter and project_filter not in (g.session_meta_get(mem, "project") or ""):
+        return False
+    if branch and g.session_meta_get(mem, "branch") != branch:
+        return False
+    if commit and not any(commit in c for c in g.session_meta_list(mem, "commits")):
+        return False
+    if touched and not any(touched in f for f in g.session_meta_list(mem, "files_touched")):
+        return False
+    ended = g.session_meta_get(mem, "ended") or ""
+    if since_iso and ended and ended < since_iso:
+        return False
+    if until_iso and ended and ended > until_iso:
+        return False
+    return True
+
+
+@verb("rmx_session",
+      "Session-history lookup over the sessions-<project> index: action=list (paginated, "
+      "newest first), recall (search cards by query + metadata filters), show (one card by "
+      "session id, 8-char prefix or memory name). project_filter filters by project.")
+def session(root: Path, action: typing.Literal["list", "recall", "show"], *,
+            query: str | None = None, project_filter: str | None = None,
+            branch: str | None = None, commit: str | None = None,
+            touched: str | None = None, since: str | None = None, until: str | None = None,
+            k: int = 20, limit: int = 50, offset: int = 0, session_id: str | None = None,
+            mode: typing.Literal["card", "raw", "turns"] = "card",
+            partition: str | None = None, timeout: float | None = None) -> dict:
+    """Task 3.7 #fam-session. Every read goes through `session_memories` /
+    `session_memory_get` (the daemon's memory_iter / memory_search / memory_get ops, one
+    attempt, 60 s; busy ⇒ `VerbBusyError`, refused ⇒ `VerbError`; absent ⇒ read-only
+    in-process, C4a) — `session recall`, `_iter_session_memories` and `_resolve_session`
+    opened the writer slot read-WRITE whenever ping failed. `project_filter` is the CLI
+    `--project` FILTER: `project` is the MCP store selector (C9, r1 S2)."""
+    from refmatrix import graphread
+    part = partition or graphread.sessions_partition(root)
+    t = float(timeout) if timeout is not None else 60.0
+    since_iso, until_iso = graphread.since_to_iso(since), graphread.since_to_iso(until)
+    filt = {"project_filter": project_filter, "branch": branch, "commit": commit,
+            "touched": touched, "since_iso": since_iso, "until_iso": until_iso}
+
+    def _ended(m) -> str:
+        return graphread.session_meta_get(m, "ended") or ""
+    if action == "list":
+        mems = [m for m in session_memories(root, partition=part, timeout=t)
+                if session_passes_filters(m, **filt)]
+        mems.sort(key=_ended, reverse=True)
+        page = mems[offset:] if limit <= 0 else mems[offset:offset + limit]
+        return {"sessions": [_session_row(m) for m in page], "total": len(mems),
+                "partition": part}
+    if action == "recall":
+        from refmatrix.kwic import kwic_one
+        if query:
+            mems = session_memories(root, partition=part, timeout=t, query=query,
+                                    limit=max(k * 4, 100))
+        else:
+            mems = session_memories(root, partition=part, timeout=t)
+        mems = [m for m in mems if session_passes_filters(m, **filt)]
+        if not query:
+            mems.sort(key=_ended, reverse=True)
+        rows = []
+        for m in mems[:k]:
+            r = _session_row(m)
+            r["snippet"] = (kwic_one(m.get("content") or "", query, width=160) or None
+                            if query else None)
+            rows.append(r)
+        return {"sessions": rows, "partition": part}
+    if action == "show":
+        if not session_id:
+            raise VerbArgsError("session show requires 'session_id'")
+        names = [session_id] + ([] if session_id.startswith("session-")
+                                else [f"session-{session_id[:8]}"])
+        for nm in names:
+            row = session_memory_get(root, nm, partition=part, timeout=t)
+            if row:
+                return {"session": row, "mode": mode}
+        for m in session_memories(root, partition=part, timeout=t):
+            sid = graphread.session_meta_get(m, "session_id") or ""
+            if sid.startswith(session_id) or m.get("name", "").endswith(session_id):
+                return {"session": m, "mode": mode}
+        raise VerbError(f"no session matching {session_id!r} in partition {part!r}")
+    raise VerbArgsError(f"unknown session action {action!r}")
+
+
+def refine_pick(cand_id: str, rows: list) -> dict:
+    """An id or an UNAMBIGUOUS id prefix → one candidate. A prefix matching two raises
+    `VerbArgsError`: accept writes a memory, so a prefix never silently picks one."""
+    exact = [c for c in rows if c.get("id") == cand_id]
+    if exact:
+        return exact[0]
+    hits = [c for c in rows if str(c.get("id", "")).startswith(cand_id)]
+    if not hits:
+        raise VerbError(f"no candidate matching {cand_id!r}")
+    if len(hits) > 1:
+        raise VerbArgsError(f"{cand_id!r} matches {len(hits)} candidates: "
+                            + ", ".join(c["id"] for c in hits[:5]))
+    return hits[0]
+
+
+def refine_rows(status: str) -> list:
+    """The hub's refinement queue at `status`, through THE hub boundary `_hub_rpc`: a hub
+    refusal or a timeout is a `VerbError` with the hub's words — `_refine_rows` turned an
+    `ok:false` into `[]`, which `refine list` printed as "no pending candidates"."""
+    return list(_hub_rpc("refine_list", {"status": status}).get("candidates", []))
+
+
+@verb("rmx_refine",
+      "Read-only views of the hub's refinement queue (promotion candidates from the bus "
+      "and the gmd-curator): action=list (filter by status / scope / project_filter; "
+      "limit caps the rows shown, total counts all), show (one candidate by id or unique "
+      "prefix). Accepting / rejecting is the human approval gate (CLI / hub UI only).")
+def refine(root: Path, action: typing.Literal["list", "show"], *,
+           status: typing.Literal["pending", "accepted", "rejected", "all"] = "pending",
+           scope: str | None = None, project_filter: str | None = None, limit: int = 20,
+           cand_id: str | None = None) -> dict:
+    """Task 3.7 #fam-refine. `root` is unused — the queue is the hub's, machine-wide."""
+    if action == "list":
+        rows = refine_rows(status)
+        if scope:
+            rows = [c for c in rows if c.get("scope") == scope]
+        if project_filter:
+            rows = [c for c in rows if c.get("project") == project_filter]
+        shown = rows[:limit] if limit and limit > 0 else rows
+        return {"candidates": shown, "total": len(rows), "shown": len(shown)}
+    if action == "show":
+        if not cand_id:
+            raise VerbArgsError("refine show requires 'cand_id'")
+        return {"candidate": refine_pick(cand_id, refine_rows("all"))}
+    raise VerbArgsError(f"unknown refine action {action!r}")
 
 
 # ---- CLI twins (asserted by tests/test_verb_parity.py) --------------------

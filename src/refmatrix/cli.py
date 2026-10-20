@@ -2281,27 +2281,31 @@ def refine_grp():
 
 
 def _refine_rows(status: str) -> list[dict]:
-    hub_mod = _require_hub()
-    resp = hub_mod.rpc("refine_list", {"status": status})
-    return resp.get("result", {}).get("candidates", [])
+    """The hub's refinement queue through `verbs.refine_rows` (THE hub boundary): a hub
+    refusal is a ClickException, never an empty list (task 3.7 #fam-refine)."""
+    from refmatrix import verbs as _verbs
+    try:
+        return _verbs.refine_rows(status)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e)) from e
 
 
 def _refine_pick(cand_id: str, rows: list[dict]) -> dict:
-    """Resolve an id or unambiguous id-prefix to one candidate. Ids are 12-char
-    hex, so typing the whole thing to reject a line noise entry is a chore —
-    but a prefix that matches two candidates must NOT silently pick one, since
-    accept writes a memory."""
-    exact = [c for c in rows if c["id"] == cand_id]
-    if exact:
-        return exact[0]
-    hits = [c for c in rows if c["id"].startswith(cand_id)]
-    if not hits:
-        raise click.ClickException(f"no candidate matching {cand_id!r}")
-    if len(hits) > 1:
-        ids = ", ".join(c["id"] for c in hits[:5])
-        raise click.ClickException(
-            f"{cand_id!r} matches {len(hits)} candidates: {ids}")
-    return hits[0]
+    """An id or unambiguous id prefix → one candidate (`verbs.refine_pick`)."""
+    from refmatrix import verbs as _verbs
+    try:
+        return _verbs.refine_pick(cand_id, rows)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e)) from e
+
+
+def _refine_verb(**kw) -> dict:
+    """One `rmx_refine` call (task 3.7 #fam-refine, C2)."""
+    from refmatrix import verbs as _verbs
+    try:
+        return _verbs.refine(_root(), **kw)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e)) from e
 
 
 @refine_grp.command("list")
@@ -2315,18 +2319,13 @@ def _refine_pick(cand_id: str, rows: list[dict]) -> dict:
 @click.option("--json", "as_json", is_flag=True)
 def refine_list(status, scope, project, limit, full, as_json):
     """List promotion candidates, oldest first."""
-    rows = _refine_rows(status)
-    if scope:
-        rows = [c for c in rows if c.get("scope") == scope]
-    if project:
-        rows = [c for c in rows if c.get("project") == project]
-    total = len(rows)
-    shown = rows[:limit] if limit and limit > 0 else rows
+    res = _refine_verb(action="list", status=status, scope=scope, project_filter=project,
+                       limit=limit)
+    shown, total = res.get("candidates") or [], res.get("total", 0)
     if as_json:
-        console.print_json(json.dumps(
-            {"candidates": shown, "total": total, "shown": len(shown)}))
+        console.print_json(json.dumps(res))
         return
-    if not rows:
+    if not total:
         console.print(f"[dim]no {status} candidates[/]")
         return
     from rich.table import Column
@@ -2335,8 +2334,6 @@ def refine_list(status, scope, project, limit, full, as_json):
     t = Table(
         Column("id", no_wrap=True), Column("when", no_wrap=True),
         Column("scope", no_wrap=True), Column("mtype", no_wrap=True),
-        # `suggested` stays wrappable: marking it no_wrap makes rich hand it
-        # the whole width and squeeze the id down to an ellipsis.
         Column("suggested"),
     )
     for c in shown:
@@ -2360,7 +2357,7 @@ def refine_list(status, scope, project, limit, full, as_json):
 @click.argument("cand_id")
 def refine_show(cand_id):
     """Show one candidate in full, including the body that would be written."""
-    c = _refine_pick(cand_id, _refine_rows("all"))
+    c = _refine_verb(action="show", cand_id=cand_id)["candidate"]
     sug = c.get("suggested") or {}
     console.print(f"[bold]{c['id']}[/]  [dim]{c.get('ts', '')}[/]  "
                   f"status=[magenta]{c.get('status')}[/]")
@@ -2371,7 +2368,7 @@ def refine_show(cand_id):
     if c.get("memory_id"):
         console.print(f"  written as entity {c['memory_id']}")
     console.print()
-    console.print(sug.get("content") or "[dim](no body)[/]")
+    click.echo(sug.get("content") or "(no body)")
 
 
 @refine_grp.command("accept")
@@ -4631,6 +4628,16 @@ def list_grp():
     """List entities, linkages, saved queries."""
 
 
+def _matrix_verb(**kw) -> dict:
+    """One `rmx_matrix` call for a matrix-edit command (task 3.7 #fam-matrix-edit, C2),
+    with the CLI's `-p` partition."""
+    from refmatrix import verbs as _verbs
+    try:
+        return _verbs.matrix(_root(), partition=_resolve_partition(), **kw)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e)) from e
+
+
 @add.command("entity")
 @click.option("--kind", required=True, type=click.Choice(["doc", "code", "concept"]))
 @click.argument("name")
@@ -4642,12 +4649,10 @@ def list_grp():
                    "from vacuum and prune-noise.")
 def add_entity(kind, name, path, tldr, meta, no_protect):
     """Insert or update an entity. Manual adds are protected by default."""
-    s = _store(write=True)
-    meta_d = json.loads(meta) if meta else None
-    eid = s.upsert_entity(kind=kind, name=name, path=path, tldr=tldr,
-                          meta=meta_d, protected=not no_protect)
+    res = _matrix_verb(action="add_entity", kind=kind, name=name, path=path, tldr=tldr,
+                       meta=meta, no_protect=no_protect)
     pinned = "" if no_protect else " (pinned)"
-    console.print(f"[green]upserted[/] {kind}:{name} (id={eid}){pinned}")
+    console.print(f"[green]upserted[/] {kind}:{name} (id={res.get('id')}){pinned}")
 
 
 main.add_command(_alias(add_entity, "add-entity"))
@@ -4660,10 +4665,10 @@ main.add_command(_alias(add_entity, "add-entity"))
               help="Don't pin this concept. By default manual adds are protected.")
 def add_concept(name, description, no_protect):
     """Add a concept (= entity of kind 'concept'). Pinned by default."""
-    s = _store(write=True)
-    cid = s.add_concept(name, description=description, protected=not no_protect)
+    res = _matrix_verb(action="add_concept", name=name, description=description,
+                       no_protect=no_protect)
     pinned = "" if no_protect else " (pinned)"
-    console.print(f"[green]added concept[/] {name} (id={cid}){pinned}")
+    console.print(f"[green]added concept[/] {name} (id={res.get('id')}){pinned}")
 
 
 main.add_command(_alias(add_concept, "add-concept"))
@@ -4845,20 +4850,27 @@ def _print_paths(paths, limit):
               help="Filter to protected (or explicitly unprotected) entities.")
 @click.option("--noise/--no-noise", "want_noise", default=None,
               help="Filter to noise (or non-noise) entities.")
-def list_entities(kind, want_protected, want_noise):
+@click.option("--limit", default=200, type=int, show_default=True,
+              help="Max rows returned.")
+@click.option("--json", "as_json", is_flag=True, help="Emit {rows: [...]} as JSON.")
+def list_entities(kind, want_protected, want_noise, limit, as_json):
     """List entities. --protected / --noise filter by flag and show them."""
-    s = _store(write=False)
+    res = _matrix_verb(action="list_entities", kind=kind, want_protected=want_protected,
+                       want_noise=want_noise, limit=limit)
+    rows = res.get("rows") or []
+    if as_json:
+        click.echo(json.dumps(res, default=str))
+        return
     if want_protected is None and want_noise is None:
         t = Table("id", "kind", "name", "path", "tldr")
-        for e in s.iter_entities(kind):
-            t.add_row(str(e.id), e.kind, e.name, e.path or "",
-                      (e.tldr or "")[:80])
-        console.print(t)
-        return
-    t = Table("id", "kind", "name", "prot", "noise")
-    for eid, name, ekind, prot, noise in s.find_entity_ids(
-            kind=kind, protected=want_protected, noise=want_noise):
-        t.add_row(str(eid), ekind, name, "✓" if prot else "", "✓" if noise else "")
+        for e in rows:
+            t.add_row(str(e["id"]), e["kind"], e["name"], e.get("path") or "",
+                      (e.get("tldr") or "")[:80])
+    else:
+        t = Table("id", "kind", "name", "prot", "noise")
+        for e in rows:
+            t.add_row(str(e["id"]), e["kind"], e["name"], "✓" if e.get("protected") else "",
+                      "✓" if e.get("noise") else "")
     console.print(t)
 
 
@@ -4874,10 +4886,9 @@ main.add_command(_alias(list_entities, "list-entities"))
 @click.option("--description", "-d", default=None)
 def add_linkage_type(name, directed, description):
     """Define a custom linkage type."""
-    s = _store(write=True)
-    lid = s.add_linkage_type(name=name, directed=directed,
-                             description=description)
-    console.print(f"[green]linkage type[/] {name} (id={lid})")
+    res = _matrix_verb(action="add_linkage_type", name=name, directed=directed,
+                       description=description)
+    console.print(f"[green]linkage type[/] {name} (id={res.get('id')})")
 
 
 main.add_command(_alias(add_linkage_type, "add-linkage-type"))
@@ -4887,11 +4898,9 @@ main.add_command(_alias(add_linkage_type, "add-linkage-type"))
 def list_linkages():
     """List linkage types."""
     t = Table("id", "name", "directed", "description")
-    rows = _store(write=False).list_linkages()
-    for lk in rows:
-        t.add_row(str(lk["id"]), lk["name"],
-                  "yes" if lk["directed"] else "no",
-                  lk["description"] or "")
+    for lk in _matrix_verb(action="list_linkages").get("rows") or []:
+        t.add_row(str(lk["id"]), lk["name"], "yes" if lk.get("directed") else "no",
+                  lk.get("description") or "")
     console.print(t)
 
 
@@ -4899,20 +4908,6 @@ main.add_command(_alias(list_linkages, "list-linkages"))
 
 
 # ---- linking --------------------------------------------------------------
-
-
-def _resolve_concept(s: Store, ref: str) -> int:
-    e = s.resolve_entity(ref)
-    if e is None or e.kind != "concept":
-        raise click.ClickException(f"no concept named {ref!r}. `rmx add-concept {ref}` first?")
-    return e.id
-
-
-def _resolve_entity_id(s: Store, ref: str) -> int:
-    e = s.resolve_entity(ref)
-    if e is None:
-        raise click.ClickException(f"no entity named {ref!r}.")
-    return e.id
 
 
 @main.command()
@@ -4925,13 +4920,12 @@ def _resolve_entity_id(s: Store, ref: str) -> int:
                    "both the concept and entity from vacuum/prune-noise.")
 def link(concept, entity, linkage, no_protect):
     """Set bit (linkage, concept, entity). Pins both endpoints by default."""
-    s = _store()
-    cid = _resolve_concept(s, concept)
-    eid = _resolve_entity_id(s, entity)
-    added = s.link(linkage, cid, eid, protect=not no_protect)
-    msg = "linked" if added else "already linked"
+    res = _matrix_verb(action="link", concept=concept, entity=entity, linkage=linkage,
+                       no_protect=no_protect)
+    msg = "linked" if res.get("created") else "already linked"
     pinned = "" if no_protect else " (pinned)"
-    console.print(f"[green]{msg}[/] {linkage}: {concept} -> {entity}{pinned}")
+    console.print(f"[green]{msg}[/] {linkage}: {res.get('concept')} -> "
+                  f"{res.get('entity')}{pinned}")
 
 
 @main.command()
@@ -4940,11 +4934,9 @@ def link(concept, entity, linkage, no_protect):
 @click.option("--type", "linkage", default="mentions")
 def unlink(concept, entity, linkage):
     """Clear bit (linkage, concept, entity)."""
-    s = _store()
-    cid = _resolve_concept(s, concept)
-    eid = _resolve_entity_id(s, entity)
-    removed = s.unlink(linkage, cid, eid)
-    console.print(f"[yellow]{'unlinked' if removed else 'not linked'}[/] {linkage}: {concept} -> {entity}")
+    res = _matrix_verb(action="unlink", concept=concept, entity=entity, linkage=linkage)
+    console.print(f"[yellow]{'unlinked' if res.get('unlinked') else 'not linked'}[/] "
+                  f"{linkage}: {res.get('concept')} -> {res.get('entity')}")
 
 
 # ---- query ----------------------------------------------------------------
@@ -7580,9 +7572,8 @@ def learn_on(is_global):
 @click.argument("body")
 def save_query(name, body):
     """Persist a named query."""
-    s = _store()
-    s.save_query(name, body)
-    console.print(f"[green]saved[/] {name}")
+    res = _matrix_verb(action="save_query", name=name, body=body)
+    console.print(f"[green]saved[/] {res.get('name')}")
 
 
 @main.command()
@@ -7592,36 +7583,34 @@ def save_query(name, body):
 @click.option("--limit", default=50, type=int)
 def run(name, is_pql, ids_only, limit):
     """Run a saved query by name."""
-    def _run(s) -> tuple:  # tagged: (kind, payload[, extra])
-        body = s.get_saved_query(name)
-        if body is None:
-            raise click.ClickException(f"no saved query: {name}")
-        qe = QueryEngine(s)
-        result = qe.run_pql(body) if is_pql else qe.run(body)
-        if isinstance(result, list):
-            return ("weighted", [(s.get_entity_by_id(eid), w) for eid, w in result])
-        if ids_only:
-            return ("ids", list(result))
-        return ("bitmap", s, result)
-    out = _replica_read(_run)
-    kind = out[0]
-    if kind == "weighted":
-        for ent, w in out[1]:
-            print(f"{ent.name if ent else '?'}\t{w}")
-    elif kind == "ids":
-        for eid in out[1]:
-            print(eid)
+    res = _matrix_verb(action="run", name=name, is_pql=is_pql, ids_only=ids_only, limit=limit)
+    rows = res.get("rows") or []
+    shape = res.get("shape")
+    if shape == "weighted":
+        for r in rows:
+            print(f"{r.get('name') or '?'}\t{r['weight']}")
+    elif shape == "ids":
+        for r in rows:
+            print(r["id"])
     else:
-        _print_bitmap(out[1], out[2], limit=limit)
+        t = Table("id", "kind", "name", "path")
+        for r in rows:
+            t.add_row(str(r["id"]), r.get("kind") or "", r.get("name") or "",
+                      r.get("path") or "")
+        console.print(t)
+        card = res.get("cardinality", len(rows))
+        if card > len(rows):
+            console.print(f"[dim]... {card - len(rows)} more (cardinality={card})[/]")
+        else:
+            console.print(f"[dim]cardinality={card}[/]")
 
 
 @list_grp.command("queries")
 def list_queries():
     """List saved queries."""
     t = Table("name", "body")
-    rows = list(_store(write=False).list_saved_queries())
-    for n, b in rows:
-        t.add_row(n, b)
+    for r in _matrix_verb(action="list_queries").get("rows") or []:
+        t.add_row(r["name"], r["body"])
     console.print(t)
 
 
@@ -13872,64 +13861,23 @@ def _session_partition() -> str:
     )
 
 
-def _session_call(op: str, args: dict, *, timeout: float = 60.0):
-    """Daemon call helper for session ops. Auto-pins the sessions partition."""
-    from refmatrix import daemon as daemon_mod
-    if "partition" not in args:
-        args = {**args, "partition": _session_partition()}
-    return daemon_mod.call(_root(), op, args, timeout=timeout)
-
-
-def _iter_session_memories() -> list[dict]:
-    """All session cards in the active sessions partition, through the verb layer's
-    read routing (`verbs.session_memories`, task 3.7 #fam-session-store): the daemon's
-    `memory_iter` op, one bounded attempt; no daemon ⇒ an in-process READ-ONLY read.
-    It used to open `Store(root, partition=…)` read-WRITE on the writer slot whenever
-    ping failed — a busy daemon included. Busy / refused are ClickExceptions."""
-    from refmatrix import verbs as _verbs
-    try:
-        return _verbs.session_memories(_root(), partition=_session_partition())
-    except _verbs.VerbError as e:
-        raise click.ClickException(f"session index unreadable: {e}") from e
-
-
 # Shared with the `rmx_graph` timeline action (task 3.7): the session-card metadata
 # readers live in graphread.
 _session_meta_get = _graphread.session_meta_get
 _session_meta_list = _graphread.session_meta_list
 
 
-def _session_passes_filters(
-    mem: dict,
-    *,
-    project: str | None = None,
-    branch: str | None = None,
-    commit: str | None = None,
-    touched: str | None = None,
-    since_iso: str | None = None,
-    until_iso: str | None = None,
-) -> bool:
-    if project and project not in (_session_meta_get(mem, "project") or ""):
-        return False
-    if branch and _session_meta_get(mem, "branch") != branch:
-        return False
-    if commit:
-        commits = _session_meta_list(mem, "commits")
-        if not any(commit in c for c in commits):
-            return False
-    if touched:
-        files = _session_meta_list(mem, "files_touched")
-        if not any(touched in f for f in files):
-            return False
-    ended = _session_meta_get(mem, "ended") or ""
-    if since_iso and ended and ended < since_iso:
-        return False
-    if until_iso and ended and ended > until_iso:
-        return False
-    return True
-
-
 _since_to_iso = _graphread.since_to_iso
+
+
+def _session_verb(**kw) -> dict:
+    """One `rmx_session` call (task 3.7 #fam-session, C2) on the CLI's sessions
+    partition (`-p` / RMX_PARTITION, else `sessions-<project>`)."""
+    from refmatrix import verbs as _verbs
+    try:
+        return _verbs.session(_root(), partition=_session_partition(), **kw)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e)) from e
 
 
 @session_grp.command("recall")
@@ -13961,74 +13909,17 @@ def session_recall_cmd(query, project, branch, commit, touched,
     Symbolic-only: no dense vectors. Score = body match (when QUERY given) +
     recency tiebreak on metadata.ended. Without QUERY, lists most-recent
     sessions matching the filters."""
-    from refmatrix import daemon as daemon_mod
-    from refmatrix.kwic import kwic_one
-    root = _root()
-
-    since_iso = _since_to_iso(since)
-    until_iso = _since_to_iso(until)
-
-    # Phase 1: get candidate rows. If query given, use search_memories;
-    # else iter the partition.
-    if query:
-        if daemon_mod.ping(root):
-            resp = _session_call(
-                "memory_search", {"query": query, "limit": max(k * 4, 100)},
-            )
-            if not resp.get("ok"):
-                raise click.ClickException(resp.get("error", "daemon error"))
-            mems = resp["result"]["rows"]
-        else:
-            s = Store(root, partition=_session_partition())
-            mems = list(s.search_memories(query, limit=max(k * 4, 100)))
-        # Only sessions
-        mems = [m for m in mems if m.get("mtype") == "session"]
-    else:
-        mems = _iter_session_memories()
-
-    # Phase 2: post-filter on metadata.
-    filtered = [
-        m for m in mems
-        if _session_passes_filters(
-            m, project=project, branch=branch, commit=commit,
-            touched=touched, since_iso=since_iso, until_iso=until_iso,
-        )
-    ]
-
-    # Phase 3: sort. With query, preserve search order (already relevance);
-    # without, sort by ended DESC.
-    if not query:
-        filtered.sort(
-            key=lambda m: _session_meta_get(m, "ended") or "",
-            reverse=True,
-        )
-    filtered = filtered[:k]
-
+    res = _session_verb(action="recall", query=query, project_filter=project, branch=branch,
+                        commit=commit, touched=touched, since=since, until=until, k=k)
+    rows = res.get("sessions") or []
     if as_json:
-        click.echo(json.dumps([
-            {
-                "id": m.get("id"),
-                "name": m.get("name"),
-                "session_id": _session_meta_get(m, "session_id"),
-                "project": _session_meta_get(m, "project"),
-                "branch": _session_meta_get(m, "branch"),
-                "started": _session_meta_get(m, "started"),
-                "ended": _session_meta_get(m, "ended"),
-                "turn_count": _session_meta_get(m, "turn_count"),
-                "title": (m.get("content") or "").split("\n", 2)[0].lstrip("# ").strip(),
-                "snippet": (
-                    kwic_one(m.get("content") or "", query, width=160) or None
-                    if query else None
-                ),
-            }
-            for m in filtered
-        ], indent=2, default=str))
+        click.echo(json.dumps([{key: r.get(key) for key in (
+            "id", "name", "session_id", "project", "branch", "started", "ended",
+            "turn_count", "title", "snippet")} for r in rows], indent=2, default=str))
         return
-
-    if not filtered:
+    if not rows:
         console.print("[yellow]no matching sessions[/]")
         return
-
     from rich.table import Table
     from rich.text import Text
     # When the user gave a query, show the line where it actually matched —
@@ -14043,47 +13934,16 @@ def session_recall_cmd(query, project, branch, commit, touched,
     t.add_column("title")
     if show_match:
         t.add_column("match")
-    for m in filtered:
-        sid = _session_meta_get(m, "session_id") or m.get("name", "")
-        sid_short = sid[:8] if sid else "?"
-        title = (m.get("content") or "").split("\n", 2)[0].lstrip("# ").strip()
-        # strip {#root} suffix from title
-        title = title.split(" {#")[0]
-        ended = (_session_meta_get(m, "ended") or "")[:19]
-        branch_s = _session_meta_get(m, "branch") or ""
-        project_s = (_session_meta_get(m, "project") or "").split("/")[-1]
-        row = [sid_short, ended, branch_s, project_s, title[:60]]
+    for r in rows:
+        sid = r.get("session_id") or r.get("name") or ""
+        row = [sid[:8] if sid else "?", (r.get("ended") or "")[:19], r.get("branch") or "",
+               (r.get("project") or "").split("/")[-1], (r.get("title") or "")[:60]]
         if show_match:
-            snip = kwic_one(m.get("content") or "", query, width=90)
-            # Wrap as literal Text so body markup like `[link]` is not parsed
-            # by rich; the «…» sentinels mark the matched term.
+            snip = r.get("snippet")
+            # Wrap as literal Text so body markup like `[link]` is not parsed by rich.
             row.append(Text(snip) if snip else Text("—", style="dim"))
         t.add_row(*row)
     console.print(t)
-
-
-def _resolve_session(prefix: str) -> dict | None:
-    """Resolve a session by id, short prefix, or full memory name."""
-    # Direct hit by memory name
-    # Through the verb layer's read routing (task 3.7): the direct read-WRITE
-    # `Store(...)` open here ran whenever ping failed, a busy daemon included.
-    from refmatrix import verbs as _verbs
-    candidate_names = [prefix]
-    if not prefix.startswith("session-"):
-        candidate_names.append(f"session-{prefix[:8]}")
-    for nm in candidate_names:
-        try:
-            row = _verbs.session_memory_get(_root(), nm, partition=_session_partition())
-        except _verbs.VerbError as e:
-            raise click.ClickException(f"session index unreadable: {e}") from e
-        if row:
-            return row
-    # Prefix scan over session_id
-    for m in _iter_session_memories():
-        sid = _session_meta_get(m, "session_id") or ""
-        if sid.startswith(prefix) or m.get("name", "").endswith(prefix):
-            return m
-    return None
 
 
 @session_grp.command("show")
@@ -14097,10 +13957,15 @@ def _resolve_session(prefix: str) -> dict | None:
                    "user prompts + assistant decisions.")
 def session_show_cmd(session_id, mode):
     """Load a session by id (full uuid or 8-char prefix)."""
-    mem = _resolve_session(session_id)
-    if not mem:
-        raise click.ClickException(f"no session matching {session_id!r}")
-
+    from refmatrix import verbs as _verbs
+    try:
+        res = _verbs.session(_root(), action="show", session_id=session_id,
+                             mode=mode if mode in ("card", "raw", "turns") else "card",
+                             partition=_session_partition())
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e)) from e
+    mem = res["session"]
+    mode = res.get("mode") or "card"
     if mode == "card":
         click.echo(mem.get("content") or "")
         return
@@ -14145,36 +14010,17 @@ def session_show_cmd(session_id, mode):
 @click.option("--json", "as_json", is_flag=True)
 def session_list_cmd(project, branch, since, limit, offset, as_json):
     """Paginated index of sessions, sorted by ended DESC."""
-    since_iso = _since_to_iso(since)
-    mems = _iter_session_memories()
-    filtered = [
-        m for m in mems
-        if _session_passes_filters(
-            m, project=project, branch=branch, since_iso=since_iso,
-        )
-    ]
-    filtered.sort(
-        key=lambda m: _session_meta_get(m, "ended") or "", reverse=True,
-    )
-    page = filtered[offset : offset + limit]
-
+    res = _session_verb(action="list", project_filter=project, branch=branch, since=since,
+                        limit=limit, offset=offset)
+    page, total = res.get("sessions") or [], res.get("total", 0)
     if as_json:
-        click.echo(json.dumps([
-            {
-                "session_id": _session_meta_get(m, "session_id"),
-                "project": _session_meta_get(m, "project"),
-                "branch": _session_meta_get(m, "branch"),
-                "ended": _session_meta_get(m, "ended"),
-                "turn_count": _session_meta_get(m, "turn_count"),
-            }
-            for m in page
-        ], indent=2, default=str))
+        click.echo(json.dumps([{key: r.get(key) for key in (
+            "session_id", "project", "branch", "ended", "turn_count")} for r in page],
+            indent=2, default=str))
         return
-
     if not page:
         console.print("[yellow]no sessions matching[/]")
         return
-
     from rich.table import Table
     t = Table()
     t.add_column("session", style="cyan")
@@ -14182,18 +14028,14 @@ def session_list_cmd(project, branch, since, limit, offset, as_json):
     t.add_column("branch")
     t.add_column("turns", justify="right")
     t.add_column("title")
-    for m in page:
-        sid = _session_meta_get(m, "session_id") or m.get("name", "")
-        title = (m.get("content") or "").split("\n", 2)[0].lstrip("# ").strip()
-        title = title.split(" {#")[0]
-        ended = (_session_meta_get(m, "ended") or "")[:19]
-        branch_s = _session_meta_get(m, "branch") or ""
-        turns = str(_session_meta_get(m, "turn_count") or "")
-        t.add_row(sid[:8], ended, branch_s, turns, title[:60])
+    for r in page:
+        sid = r.get("session_id") or r.get("name") or ""
+        t.add_row(sid[:8], (r.get("ended") or "")[:19], r.get("branch") or "",
+                  str(r.get("turn_count") or ""), (r.get("title") or "")[:60])
     console.print(t)
     console.print(
         f"[dim]showing {offset + 1}-{offset + len(page)} of "
-        f"{len(filtered)} (limit={limit})[/]"
+        f"{total} (limit={limit})[/]"
     )
 
 
@@ -14202,14 +14044,13 @@ def session_list_cmd(project, branch, since, limit, offset, as_json):
               help="Restrict aggregation to matching sessions.")
 @click.option("--since", default=None)
 def session_stats_cmd(project, since):
-    """Aggregate stats: session count, turns, tool usage, top files."""
+    """Aggregate stats: session count, turns, tool usage, top files.
+
+    Reads through the `rmx_session` list action (every card, `limit=0`), so it
+    never opens the writer slot (task 3.7 #fam-session-stats)."""
     from collections import Counter
-    since_iso = _since_to_iso(since)
-    mems = _iter_session_memories()
-    filtered = [
-        m for m in mems
-        if _session_passes_filters(m, project=project, since_iso=since_iso)
-    ]
+    filtered = _session_verb(action="list", project_filter=project, since=since,
+                             limit=0).get("sessions") or []
     if not filtered:
         console.print("[yellow]no sessions matching[/]")
         return
@@ -14219,7 +14060,8 @@ def session_stats_cmd(project, since):
     branch_counter: Counter = Counter()
     project_counter: Counter = Counter()
     model_counter: Counter = Counter()
-    for m in filtered:
+    for r in filtered:
+        m = {"metadata": r.get("metadata") or {}}
         total_turns += int(_session_meta_get(m, "turn_count") or 0)
         total_prompts += int(_session_meta_get(m, "user_prompt_count") or 0)
         for f in _session_meta_list(m, "files_touched"):
