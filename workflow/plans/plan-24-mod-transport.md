@@ -91,6 +91,32 @@ Spawn cost is a secondary benefit, measured as a before/after baseline (24.0), n
 - **The held items** (D1) are re-specified once 24.5 and 24.6 define the mod's events and
   surfaces they build on; their current hook-based specs are kept as records, not built. {#phase-held}
 
+## Probe results (2026-10-20) {#probes}
+
+The user, 2026-10-20: "we need to know quickly if subagents can call/use mod facilities". Run with
+a throwaway mod (`probe`: registers `probe_ping` with `isDeferred: false`, logs `session.start`,
+`prompt.compose` and every `tool.call` with `e.agentId`), loaded by
+`claude -p --model haiku --plugin-dir <probe>` in an empty working directory. Claude Code
+2.1.304; types from 2.1.293. Two runs; the second after fixing the probe's own result shape (a
+tool result must be a string or content blocks, not an object). {#probes-method}
+
+| probe | result | evidence |
+|---|---|---|
+| a subagent is offered a mod-registered tool | **yes**, directly callable (not deferred) | the subagent listed `mcp__probe__probe_ping` among its directly callable tools |
+| a subagent can call it and the mod serves it | **yes** | subagent received `pong agentId=a11f3ed3e25cbe62d`; log `probe_ping SERVED agentId=a11f3ed3e25cbe62d` |
+| mod `tool.call` hooks observe a subagent's own tool calls | **yes**, tagged with its `agentId` | log `tool.call tool=Bash agentId=a445ab33af8988980`, `tool=SubagentHandback agentId=…` |
+| `session.start`, `prompt.compose`, `tool.call` fire under `claude -p` | **yes** | `session.start interactive=false`; compose and tool.call rows |
+| `prompt.compose` fires for a SUBAGENT's model requests | **no** — it fired only for the main loop's three requests | no compose row between the Agent call and the handback in either run |
+
+**Consequences.** (1) 24.8's P-sub-tools passes for tools and observation: subagents keep refmatrix
+tools without `rmx mcp`. (2) 24.6 cannot rely on `prompt.compose` (or, until probed,
+`prompt.section` / `prompt.context`) to inject context into a subagent; subagent context must come
+from the tool path (the agent calls `rmx_context`), the agent definition, or an `agent.spawn` hook
+— probe `agent.spawn` / `skill.prompt` before 24.6 is built. (3) STM attribution can use
+`e.agentId` directly — the subagent-differentiation ladder in 19.0 gets a ground-truth key.
+(4) Not yet probed: `$.state` sharing between parent and subagent, background agents and
+teammates, interactive (non-`-p`) parity. {#probes-consequences}
+
 ## Out of scope {#out-of-scope}
 
 - Making `scan-prompt` or `memory recall` faster: their cost is daemon work
