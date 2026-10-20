@@ -44,6 +44,7 @@ plan's remaining work is scheduled in the folded wave list [[plan-review-2026-10
 | 21 | plan-21-agent-context-usage | in-progress (APPROVED 2026-10-15, d9ce; 21.1 built through ch-bsd r3 at cf7e4bb and released in 0.80.0, its AC-6 frozen fixture BLOCKED on the user's cut (deferral registry); 21.2-21.4 approval-ready; 21.3 AC-5 execution waits on 23.0 merge) | yes (4) | `workflow/plans/plan-21-agent-context-usage.md` | 16 (21.3), 23 |
 | 22 | plan-22-audited-removal-and-repair | APPROVED 2026-10-15 (d9cm; ch-bsd r15 CLEAN `8fbfb0c`) | yes (7) | `workflow/plans/plan-22-audited-removal-and-repair.md` | 16.6, 23 |
 | 23 | plan-23-bounded-write-harness | in-progress (APPROVED 2026-10-15, d9cn; 23.0 completed in 0.79.1, master d4bf001; 23.5 gated on bug-112 merge) | yes (6) | `workflow/plans/plan-23-bounded-write-harness.md` | — |
+| 24 | plan-24-mod-transport | drafting 2026-10-20 (Option A of [[exploration-claude-code-mod-transport]]; only 24.0, the spawn-cost gate, specified; 24.1-24.8 scoped by its band) | partial (1) | `workflow/plans/plan-24-mod-transport.md` | — (24.0 independent; 24.4 depends on task 3.7) |
 
 ## Sequence rationale {#sequence}
 

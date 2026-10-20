@@ -216,8 +216,8 @@ The user, 2026-10-20: "distribution should allow for both". {#distribution-lead}
 **Status:** IN PROGRESS
 
 **Date:** 2026-10-20
-**Proposed Plan:** plan-24 "mod transport" (`workflow/plans/plan-24-mod-transport.md`, not yet
-written; `status: drafting` when it is)
+**Proposed Plan:** [[plan-24-mod-transport]] (`status: drafting`, 2026-10-20); its gate task is
+[[task-24.0-spawn-cost-gate]].
 
 ### What Survived Analysis {#what-survived-analysis}
 
