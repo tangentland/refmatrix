@@ -204,6 +204,37 @@ def _rmx_path() -> str:
     )
 
 
+def export_service_binary(*, log=None) -> "str | None":
+    """Export the binary THIS service runs as `RMX_BIN`, so every child it
+    spawns resolves the same one. Returns it, or None when it cannot be told.
+
+    `_rmx_path()` resolves `$RMX_BIN`, else `sys.argv[0]`. The hub UI's
+    "supervise (launchd)" step runs `python -m refmatrix.cli daemon launchctl
+    install`, whose argv[0] is `cli.py`, so the resolver refused it and the
+    project was never supervised (ch-bsd plan-4 r6 #b-1; task 4.6 R6-1,
+    2026-10-19). `rmx hub start` / `rmx daemon start` — the launchd
+    ProgramArguments and the parents of every spawned child — call this first.
+
+    An `RMX_BIN` already set (the operator's override, or inherited from the
+    parent service) is kept. A failure never raises — the service must start
+    anyway — and is SAID: through `log` when given, else on stderr. A child's
+    plist command then fails loudly at the resolver, as it should."""
+    cur = os.environ.get("RMX_BIN")
+    if cur:
+        return cur
+    try:
+        rmx = _rmx_path()
+    except FileNotFoundError as e:
+        msg = f"RMX_BIN not exported for this service's children: {e}"
+        if log is not None:
+            log(msg)
+        else:
+            sys.stderr.write(msg + "\n")
+        return None
+    os.environ["RMX_BIN"] = rmx
+    return rmx
+
+
 class CheckReason(str):
     """Why a plist check failed, with what KIND of failure it is (ch-bsd
     plan-4 r5 #m-1; task 4.6 M1, 2026-10-19).
@@ -956,7 +987,8 @@ def _watchdog_resume(root: Path, log) -> None:
             f"the pause expires on its own")
 
 
-def supervised_restart(root: Path, *, log=print) -> "tuple[str, bool]":
+def supervised_restart(root: Path, *, log=print,
+                       after_kick=None) -> "tuple[str, bool]":
     """Restart a launchd-supervised daemon the ONE way: pause the hub
     watchdog for `root` (grace * 2 + 60 s), `daemon.graceful_stop` with
     `stop_grace_s()`, `kickstart` WITHOUT -k when it stopped (a clean stop
@@ -969,7 +1001,14 @@ def supervised_restart(root: Path, *, log=print) -> "tuple[str, bool]":
     stops hand-rolling a bare `kickstart -k` that SIGKILLed draining daemons
     (ch-bsd plan-4 r5 #b-1; task 4.6, 2026-10-19). A `kickstart` failure
     PROPAGATES: both callers report it, and neither falls through to a
-    standalone stop of a supervised daemon (bug-013's state)."""
+    standalone stop of a supervised daemon (bug-013's state).
+
+    `after_kick()`, when given, runs INSIDE the paused section, after the
+    kick and before the resume: `rmx daemon restart --relaunch` passes its
+    verify (and the verify's own clinging-predecessor `kickstart -k`), the
+    window r3 #s-3 paused the watchdog for. Run after the resume, the relaunch
+    was unpaused again (ch-bsd plan-4 r6 #s-1; task 4.6 R6-2). Its exception
+    propagates after the resume."""
     from refmatrix import daemon as _daemon
     grace = _daemon.stop_grace_s()
     _watchdog_pause(root, grace * 2 + 60.0, log)
@@ -980,6 +1019,8 @@ def supervised_restart(root: Path, *, log=print) -> "tuple[str, bool]":
                 f"kickstart -k will SIGTERM it and SIGKILL it at ExitTimeOut "
                 f"({EXIT_TIMEOUT_S:g}s)")
         label = kickstart(root, restart=not stopped)
+        if after_kick is not None:
+            after_kick()
     finally:
         _watchdog_resume(root, log)
     return label, bool(stopped)

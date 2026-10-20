@@ -3410,6 +3410,9 @@ def _op_ping(d: Daemon, args: dict) -> dict:
         "version": _v,
         "code_path": ident["code_path"],
         "dev_tree": ident["dev_tree"],
+        # WHY it is a dev tree, so `_verify_relaunch` / `daemon status` name
+        # the daemon's own reason (ch-bsd plan-4 r6 #m-2; task 4.6 R6-4).
+        "dev_reason": ident.get("dev_reason"),
     }
     # The fallback identity is a GUESS; say so on the wire so every consumer
     # (hub rows, relaunch guard, daemon status) renders it as unverified
@@ -3429,7 +3432,8 @@ def _process_identity() -> dict:
             from refmatrix import upgrade as _up
             ident = _up.runtime_identity()
             _PROCESS_IDENTITY = {"code_path": str(ident["import_path"]),
-                                 "dev_tree": bool(ident["dev_tree"])}
+                                 "dev_tree": bool(ident["dev_tree"]),
+                                 "dev_reason": ident.get("dev_reason")}
         except Exception as e:  # noqa: BLE001 — never take the ping down
             import refmatrix
             _PROCESS_IDENTITY = {"code_path": str(getattr(refmatrix, "__file__", "?")),

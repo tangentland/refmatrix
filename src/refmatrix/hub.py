@@ -1439,7 +1439,8 @@ def _hub_identity() -> dict:
         ident = _up.runtime_identity()
         _HUB_IDENTITY = {"version": ident.get("version"),
                          "code_path": str(ident["import_path"]),
-                         "dev_tree": bool(ident["dev_tree"])}
+                         "dev_tree": bool(ident["dev_tree"]),
+                         "dev_reason": ident.get("dev_reason")}
     except Exception as e:  # noqa: BLE001 — identity must never take the hub down
         import refmatrix
         _HUB_IDENTITY = {"version": getattr(refmatrix, "__version__", None),

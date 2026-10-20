@@ -2551,6 +2551,11 @@ def hub():
 def hub_start(port, host, no_detach, no_http):
     """Start the hub (idempotent)."""
     from refmatrix import hub as hub_mod
+    from refmatrix import launchctl as _lc
+    # FIRST: every child this hub spawns (the UI's `-m refmatrix.cli daemon
+    # launchctl install`, the scheduler, the detached fork) inherits the
+    # binary the hub runs (ch-bsd plan-4 r6 #b-1; task 4.6 R6-1).
+    _lc.export_service_binary(log=lambda m: click.echo(m, err=True))
     port = port or hub_mod.DEFAULT_PORT
     if no_detach:
         hub_mod.Hub(port=port).run(host=host, serve_http=not no_http)
@@ -2737,7 +2742,7 @@ def hub_status():
             f"code: {st.get('code_path')}  [yellow][UNVERIFIED][/] — hub could "
             f"not compute its identity: {st['identity_error']}")
     elif st.get("code_path"):
-        _print_code_identity(st["code_path"], bool(st.get("dev_tree")))
+        _print_code_identity(st["code_path"], bool(st.get("dev_tree")), st)
     resp = hub_mod.rpc("health")
     if resp.get("ok"):
         health = resp["result"]["health"]
@@ -2914,7 +2919,7 @@ def version_cmd(verbose: bool, as_json: bool):
     console.print(f"refmatrix {ident['version']}")
     if not verbose:
         return
-    _print_code_identity(ident["import_path"], ident["dev_tree"])
+    _print_code_identity(ident["import_path"], ident["dev_tree"], ident)
     if ident.get("dev_tree"):
         console.print(f"dev reason: {ident.get('dev_reason')}")
     console.print(f"venv tree: {ident['venv_tree'] or '(none — system interpreter)'}")
@@ -2933,10 +2938,23 @@ def _plist_rmx() -> str:
         raise click.ClickException(str(e))
 
 
-def _print_code_identity(code_path, dev_tree: bool) -> None:
-    """One line every status surface shares: what tree the code came from."""
-    flag = "  [bold red][DEV TREE][/] — this venv belongs to another tree" if dev_tree else ""
-    console.print(f"code: {code_path}{flag}")
+def _print_code_identity(code_path, dev_tree: bool, ident: "dict | None" = None) -> None:
+    """One line every status surface shares: what tree the code came from.
+
+    The `[DEV TREE]` explanation is `upgrade.dev_tree_message` — the ONE
+    wording of the dev-tree rule — given whatever identity the surface has
+    (`rmx version -v`: the full one; `daemon status` / `hub status`: the
+    ping's code path + `dev_reason`). It said "this venv belongs to another
+    tree" for every case, rule (a)'s words for a venv whose editable install
+    is correct (ch-bsd plan-4 r6 #m-2; task 4.6 R6-4)."""
+    if not dev_tree:
+        console.print(f"code: {code_path}")
+        return
+    from refmatrix import upgrade as _up
+    ident = {"import_path": code_path, **(ident or {})}
+    ident["import_path"] = ident.get("import_path") or code_path
+    console.print(f"code: {code_path}  [bold red][DEV TREE][/]", highlight=False)
+    console.print(f"  {_up.dev_tree_message(ident)}", markup=False, highlight=False)
 
 
 @main.group()
@@ -2992,6 +3010,9 @@ def daemon_start(watch: bool, watch_roots: tuple[Path, ...], debounce_ms: int,
     entrypoint launchd itself invokes."""
     import sys as _sys
     from refmatrix import daemon as daemon_mod
+    from refmatrix import launchctl as _lc
+    # FIRST: the daemon's children inherit the binary it runs (r6 #b-1).
+    _lc.export_service_binary(log=lambda m: click.echo(m, err=True))
     root = _root()
     if not root.is_dir():
         raise click.ClickException(
@@ -3200,12 +3221,20 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
                             f"fallback guess, not verified — `rmx version -v` inside "
                             f"the daemon's venv")
                     if mine_ident.get("dev_tree") or res.get("dev_tree"):
+                        # The ONE wording of the dev-tree rule, per side
+                        # (ch-bsd plan-4 r6 #m-2; task 4.6 R6-4).
+                        why = []
+                        if res.get("dev_tree"):
+                            why.append("the daemon: " + _up.dev_tree_message(
+                                {"import_path": theirs,
+                                 "dev_reason": res.get("dev_reason")}))
+                        if mine_ident.get("dev_tree"):
+                            why.append("this CLI: " + _up.dev_tree_message(mine_ident))
                         raise click.ClickException(
                             f"[DEV TREE] relaunched daemon pid={pid} imports {theirs} "
                             f"(dev_tree={bool(res.get('dev_tree'))}); this CLI imports "
-                            f"{mine} (dev_tree={bool(mine_ident.get('dev_tree'))}) — a "
-                            f"venv that belongs to {mine_ident.get('venv_tree')} is "
-                            f"running another tree; fix the editable install first")
+                            f"{mine} (dev_tree={bool(mine_ident.get('dev_tree'))}) — "
+                            + "; ".join(why))
                     if str(theirs) != mine:
                         raise click.ClickException(
                             f"relaunched daemon pid={pid} imports {theirs} but "
@@ -3298,8 +3327,16 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
             # to the standalone stop+spawn: that stops the already stopped
             # supervised daemon and forks an unsupervised one beside the
             # loaded label — bug-013 (task 4.6 B1.3, 2026-10-19).
+            # --relaunch verifies INSIDE the watchdog pause (r6 #s-1): the
+            # verify and its clinging-predecessor kick are the relaunch window.
+            kw: dict = {}
+            if relaunch:
+                kw["after_kick"] = lambda: _verify_relaunch(
+                    lambda: lc.kickstart(root, restart=True))
             try:
-                label, stopped = lc.supervised_restart(root, log=console.print)
+                label, stopped = lc.supervised_restart(root, log=console.print, **kw)
+            except click.ClickException:
+                raise                      # the verify's own, already worded
             except Exception as e:  # noqa: BLE001 — reported, exit != 0
                 raise click.ClickException(
                     f"launchd restart of {root} failed ({type(e).__name__}: {e}); "
@@ -3311,8 +3348,6 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
             console.print(
                 f"[green]daemon restarted[/] (launchd kickstart"
                 f"{'' if stopped else ' -k'} label={label}){pid_part} root={root}")
-            if relaunch:
-                _verify_relaunch(lambda: lc.kickstart(root, restart=True))
             return
 
     # Standalone path: stop the current daemon with the grace every
@@ -3510,7 +3545,7 @@ def daemon_status():
                     f"code: {r.get('code_path')}  [yellow][UNVERIFIED][/] — "
                     f"daemon could not compute its identity: {r['identity_error']}")
             elif r.get("code_path"):
-                _print_code_identity(r["code_path"], bool(r.get("dev_tree")))
+                _print_code_identity(r["code_path"], bool(r.get("dev_tree")), r)
             else:
                 console.print("code: [yellow]unknown[/] (ping carries no code path; "
                               "pre-0.66.3 daemon?)  [yellow][UNVERIFIED][/]")

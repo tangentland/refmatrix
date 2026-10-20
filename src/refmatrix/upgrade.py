@@ -183,7 +183,14 @@ def dev_tree_message(ident: dict) -> str:
     """Why `ident` is a dev tree, in words an operator can act on. Reads the
     task-4.6 keys with `.get`: an older identity dict (an older daemon's
     ping, a test double) lacks them and is the venv-mismatch case."""
-    reason = ident.get("dev_reason") or "venv-mismatch"
+    reason = ident.get("dev_reason")
+    if reason is None and ident.get("venv_tree") is None:
+        # A remote identity (an older daemon's or hub's ping) that says
+        # dev_tree and not why: never invent a reason for it.
+        return (f"code {ident.get('import_path')} is a dev tree (the process did not "
+                f"report why — an older build); `rmx version -v` with its interpreter "
+                f"names the reason")
+    reason = reason or "venv-mismatch"
     if reason == "venv-mismatch":
         vt = ident.get("venv_tree")
         fix = (f"({Path(vt) / '.venv' / 'bin' / 'python'} -m pip install -e {vt})"

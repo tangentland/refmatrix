@@ -127,22 +127,54 @@ families are in `workflow/review-output/task4.6-green-families.log`, and the ful
 
 ## Suite {#suite}
 
-The full suite in the clone gave 4 failed, 3032 passed and 19 skipped. There were zero
-`DEV TREE` / `is a dev tree` failures. The 4 failures, by error text:
+**Current (r6 GREEN):** the full suite in the clone
+(`workflow/review-output/task4.6-r6-green-full.log`) gave **1 failed, 3049 passed and 19
+skipped**. The one failure is the known repo-scope gate,
+`test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate`
+(dangling-doc errors in `docs/INDEX.md`). There were zero dev-tree failures.
 
-- `test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate`
-  fails with dangling-doc errors in `docs/INDEX.md`. This is the known repo-scope gate.
-- `test_plan4_remedy.py::test_plist_marks_the_daemon_supervised_and_adoption_is_gated` and
-  `test_plan4_remedy_r2.py::test_reinstall_verifies_the_label_is_loaded_afterwards` both fail
-  with `FileNotFoundError: cannot tell which rmx …`. They render a plist without `RMX_BIN` or
-  `deployed_rmx`, and passed only through the removed `which rmx` fallback. They need the
-  `deployed_rmx` fixture (the [[task-4.6-r5-remedy#m2]] rule), but they are not in the migrated
-  list.
-- `test_upgrade.py::test_from_dev_promote_fast_forwards_and_installs` expects `restarted=True`
-  from an `upgrade(...)` call that passes no `store_root`. That contradicts AC-7
-  (`test_upgrade_without_a_store_root_restarts_nothing`), so the call needs `store_root=`.
+Two other logs cover narrower runs:
 
-No test was edited by the implementer.
+- `task4.6-r6-green-file.log`: the 4.6 file and `test_plan4_remedy_r3.py`, 77 passed.
+- `task4.6-r6-green-families.log`: the plan-4, launchctl, upgrade, session, hub, ui, docs and
+  verb-parity families, 327 passed.
+
+**History (r5 GREEN at `9851562`):** the suite gave 4 failed and 3032 passed. Three of those
+failures were test defects against the spec:
+
+- two plist tests that relied on the removed `which rmx` fallback;
+- an `upgrade` test that passed no `store_root`.
+
+The test engineer fixed all three in `a710e48`. No test was edited by the implementer.
+
+## r6 amendment (GREEN) {#r6-amend}
+
+rel: implements -> [[task-4.6-r5-remedy#r6-amend]]
+rel: derives-from -> [[bsd-plan4-daemon-resilience-r6-a710e48]]
+
+The ch-bsd r6 audit of `a710e48` came back DIRTY with 5 findings. The test engineer wrote the RED
+tests in `e12b5a7` (AC-28..35). The changes below make them GREEN.
+
+- **R6-1 (r6 #b-1):** `launchctl.export_service_binary(*, log=None) -> str | None` keeps an
+  `RMX_BIN` that is already set. Otherwise it exports `_rmx_path()`. It never raises: on failure
+  it says so through `log`, or on stderr when no `log` is given, and returns None. `rmx hub
+  start` and `rmx daemon start` call it first. As a result, the hub UI's `-m refmatrix.cli daemon
+  launchctl install` child, and every other spawned child, inherits the service's binary.
+- **R6-2 (r6 #s-1):** `supervised_restart(root, *, log=print, after_kick=None)` now runs in this
+  order: pause → graceful stop → kick → `after_kick()` → resume, with the resume in the
+  `finally`. `rmx daemon restart --relaunch` passes `_verify_relaunch` as `after_kick`. It passes
+  the keyword only when relaunching. The verify's own `ClickException` is re-raised as it is,
+  not re-worded as a launchd failure.
+- **R6-3 (r6 #m-1):** no `src/` change. AC-32 and AC-33 pin behaviour that is already in place.
+- **R6-4 (r6 #m-2):**
+  - `_print_code_identity(code_path, dev_tree, ident=None)` and `_verify_relaunch`'s `[DEV TREE]`
+    refusal both word the rule through `upgrade.dev_tree_message`.
+  - The daemon ping (`_process_identity` / `_op_ping`) and the hub identity carry `dev_reason`.
+  - `dev_tree_message` no longer invents a reason for a remote identity that reports
+    `dev_tree` with no reason and no venv tree.
+- **r6 #m-3 bookkeeping:** this summary's suite section is refreshed. The
+  `launchctl.supervised_restart` row in `workflow/test_mock_registry.md` is re-classified
+  `internal-active`.
 
 ## Not done here {#not-done}
 
