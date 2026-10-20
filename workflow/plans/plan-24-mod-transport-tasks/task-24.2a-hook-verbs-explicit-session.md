@@ -213,7 +213,9 @@ the existing `_pingonlydaemon` / `_silentdaemon` fixture. {#test-strategy-body}
 | `src/refmatrix/stm.py` | the observe body's helpers (moved from `cli.py`), no behaviour change |
 | `src/refmatrix/cli.py` | `focus hook`, `scan-prompt`, `primer`, `sync`, `focus summarize`, `memory recall` become adapters |
 | `src/refmatrix/mcp.py` | `_build_tools` keeps model-surface verbs |
-| `tests/test_task24_2a_hook_verbs.py`, `tests/test_verb_parity.py` | AC-1..AC-7 |
+| `tests/test_task24_2a_hook_verbs.py`, `tests/test_verb_parity.py` | AC-1..AC-8 |
+| `src/refmatrix/cli.py` (~12235, the `attach_context` call) | passes the declared timeout now that the helper's `timeout` is required (R13) |
+| `tests/test_plan3_remedy_r3.py` (~84), `tests/test_task3_7_folded.py` (~56) | callers broken by the required `timeout` (R13); these edits belong to the test engineer's RED step, not to GREEN |
 
 ## Revision r2 (2026-10-20, ch-bsd r2 03c2d1f) {#rev-r2}
 
@@ -235,4 +237,10 @@ the existing `_pingonlydaemon` / `_silentdaemon` fixture. {#test-strategy-body}
 |---|---|
 | m3 the timeout gate missed helper defaults | R13: helpers reached from verbs take a REQUIRED keyword `timeout`, verbs pass the declared value explicitly, and the AST gate flags any helper default reachable from a verb; AC-8 |
 | s1 (for 24.2 d15) | R14: `@verb(idempotent_by=…)` per write action; AC-8 |
+
+## Revision r6 (2026-10-20, ch-bsd r5 0109574) {#rev-r6}
+
+| finding | change |
+|---|---|
+| m1 callers broken by R13's required `timeout` were unlisted | files table: `cli.py` ~12235 (`attach_context`), `tests/test_plan3_remedy_r3.py` ~84, `tests/test_task3_7_folded.py` ~56; the test edits are the RED step's |
 
