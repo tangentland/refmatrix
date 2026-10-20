@@ -384,3 +384,358 @@ def test_alias_args_reach_the_verb_param():
     v = verbs.VERBS["rmx_bus_pub"]
     assert v.aliases.get("from") == "sender"
     assert "from" in v.schema["properties"]
+
+
+# ---- task 3.4: the REVERSE walk — every invocable CLI path is classified ----
+#
+# ch-bsd plan-3 r8 #s-4 / #t34-build. The forward gate above proves every verb
+# has a twin; nothing proved every click command is a twin or a DECIDED
+# exception, so a new agent-facing command with no verb was invisible. Five
+# classes, exactly one each:
+#   CLI_MAP twin      — the verb's own command
+#   CLI_ACTIONS       — a dispatcher verb's action (rmx_memory / rmx_task)
+#   INTERNAL_CLI      — CLI-only by the user's 2026-10-06 decision
+#   HIDDEN_ALIASES    — an `_alias` copy; the target's class applies
+#   LEGACY_UNPAIRED   — today's unpaired surface, pinned and shrink-only
+
+import copy
+
+import click
+
+_INTERNAL_SEED = {
+    ("derive", "log"), ("derive", "diff"), ("derive", "status"), ("derive", "unstamp"),
+    ("learn",), ("learn", "on"), ("learn", "off"), ("learn", "status"),
+}
+_ACTIONS_SEED = {
+    ("memory", "list"): ("rmx_memory", "list"),
+    ("memory", "search"): ("rmx_memory", "search"),
+    ("memory", "promote"): ("rmx_memory", "promote"),
+    ("memory", "brief"): ("rmx_memory", "brief"),
+    ("memory", "forget"): ("rmx_memory", "forget"),
+    ("memory", "reclassify"): ("rmx_memory", "reclassify"),
+    ("memory", "retag"): ("rmx_memory", "retag"),
+    ("memory", "link"): ("rmx_memory", "link"),
+    ("memory", "score"): ("rmx_memory", "score"),
+    ("memory", "bulk-forget"): ("rmx_memory", "bulk_forget"),
+    ("memory", "dedup"): ("rmx_memory", "dedup"),
+    ("task", "push"): ("rmx_task", "push"),
+    ("task", "pop"): ("rmx_task", "pop"),
+    ("task", "current"): ("rmx_task", "current"),
+    ("task", "swap"): ("rmx_task", "swap"),
+}
+_HIDDEN_SEED = {
+    ("add-concept",): ("add", "concept"),
+    ("add-entity",): ("add", "entity"),
+    ("add-linkage-type",): ("add", "linkage-type"),
+    ("list-entities",): ("list", "entities"),
+    ("list-linkages",): ("list", "linkages"),
+    ("list-queries",): ("list", "queries"),
+}
+# FROZEN at d4bf001 + task 3.4 (ch-bsd r8 clitree walk: 195 paths - 26 twins -
+# 15 actions - 8 internal - 6 hidden). verbs.LEGACY_UNPAIRED may only SHRINK
+# against this: a path leaves by gaining a verb or an INTERNAL_CLI reason. Do
+# NOT add to this set to make a new command pass — that is the growth the gate
+# exists to stop.
+LEGACY_BASELINE_SIZE = 140
+LEGACY_BASELINE = frozenset({
+    ('audit-same-as',), ('cctree',), ('checkpoint',), ('cli-log',), ('co-occur',), ('compact',),
+    ('compact-log',), ('describe',), ('dump-log',), ('embed',), ('export',), ('fingerprint',),
+    ('forget',), ('graphify-warm',), ('grep',), ('import',), ('info',), ('ingest-gmd',),
+    ('init',), ('install-hooks',), ('link',), ('log',), ('mcp',), ('merge-verb-aliases',),
+    ('migrate-to-duckdb',), ('neighbors',), ('noise',), ('pagerank',), ('primer',), ('protect',),
+    ('prune-noise',), ('queue',), ('rebuild',), ('recall',), ('reingest',), ('repair-index',),
+    ('run',), ('save-query',), ('scan-prompt',), ('search-dense',), ('stats',), ('sync',),
+    ('telemetry',), ('tldr-warm',), ('tools-primer',), ('top',), ('ui',), ('unlink',),
+    ('unnoise',), ('unprotect',), ('untrack',), ('upgrade',), ('vacuum',), ('version',),
+    ('watch',),
+    ('add', 'concept'), ('add', 'entity'), ('add', 'linkage-type'),
+    ('bus', 'sub'),
+    ('canon', 'find'), ('canon', 'link'), ('canon', 'siblings'),
+    ('concept', 'timeline'),
+    ('coref', 'link'),
+    ('curator', 'drain'), ('curator', 'scan'), ('curator', 'status'),
+    ('daemon', 'launchctl', 'install'), ('daemon', 'launchctl', 'kickstart'),
+    ('daemon', 'launchctl', 'print'), ('daemon', 'launchctl', 'status'),
+    ('daemon', 'launchctl', 'uninstall'), ('daemon', 'restart'), ('daemon', 'start'),
+    ('daemon', 'status'), ('daemon', 'stop'),
+    ('focus', 'clear'), ('focus', 'clear-subject'), ('focus', 'composite'), ('focus', 'detour'),
+    ('focus', 'detours'), ('focus', 'export'), ('focus', 'hook'), ('focus', 'promote-edges'),
+    ('focus', 'rebuild'), ('focus', 'record'), ('focus', 'return'), ('focus', 'show'),
+    ('focus', 'size'), ('focus', 'subject'), ('focus', 'subjects'), ('focus', 'summarize'),
+    ('focus', 'tail'), ('focus', 'topics'),
+    ('hub', 'launchctl', 'install'), ('hub', 'launchctl', 'status'),
+    ('hub', 'launchctl', 'uninstall'), ('hub', 'pause'), ('hub', 'relaunch-fleet'),
+    ('hub', 'resume'), ('hub', 'start'), ('hub', 'status'), ('hub', 'stop'),
+    ('list', 'entities'), ('list', 'linkages'), ('list', 'queries'),
+    ('memory', 'compile'), ('memory', 'sync-disk'),
+    ('pairs', 'compile'), ('pairs', 'show'),
+    ('partition', 'add'), ('partition', 'audit'), ('partition', 'drop'), ('partition', 'list'),
+    ('partition', 'merge'), ('partition', 'rename'),
+    ('queue', 'clear'),
+    ('refine', 'accept'), ('refine', 'list'), ('refine', 'reject'), ('refine', 'show'),
+    ('replica', 'audit'), ('replica', 'merge'), ('replica', 'path'), ('replica', 'refresh'),
+    ('replica', 'status'),
+    ('schedule', 'add'), ('schedule', 'list'), ('schedule', 'remove'),
+    ('session', 'ingest'), ('session', 'launchctl', 'install'),
+    ('session', 'launchctl', 'status'), ('session', 'launchctl', 'uninstall'),
+    ('session', 'list'), ('session', 'recall'), ('session', 'show'), ('session', 'stats'),
+    ('taxonomy', 'add'), ('taxonomy', 'list'), ('taxonomy', 'remove'),
+})
+_USER_QUOTE = "internal harness/testing cli only commands"
+
+
+def _invocable_paths(group, prefix=()):
+    """Every path a user can invoke under `group`: each leaf, and each group
+    that runs on its own (`invoke_without_command` — bare `rmx learn`, bare
+    `rmx queue`). Hidden commands INCLUDED: plan-16's `grep-learn` will be
+    hidden, so "skip hidden" is not a safe rule (r8 #s-4 item 4)."""
+    for name, cmd in sorted(group.commands.items()):
+        path = prefix + (name,)
+        if isinstance(cmd, click.Group):
+            if cmd.invoke_without_command:
+                yield path
+            yield from _invocable_paths(cmd, path)
+        else:
+            yield path
+
+
+def _classes() -> dict:
+    return {
+        "CLI_MAP": {p for p in verbs.CLI_MAP.values() if p is not None},
+        "CLI_ACTIONS": set(verbs.CLI_ACTIONS),
+        "INTERNAL_CLI": set(verbs.INTERNAL_CLI),
+        "HIDDEN_ALIASES": set(verbs.HIDDEN_ALIASES),
+        "LEGACY_UNPAIRED": set(verbs.LEGACY_UNPAIRED),
+    }
+
+
+def _classification_failures(group) -> list[str]:
+    """One message per path that is in no class or in more than one. The
+    message names the command and BOTH remedies, so the author of a new
+    command is told where it can go."""
+    classes = _classes()
+    out = []
+    for path in _invocable_paths(group):
+        hits = [c for c, members in classes.items() if path in members]
+        cmd = "rmx " + " ".join(path)
+        if not hits:
+            out.append(f"{cmd}: unclassified — give it a verb and name it as the verb's "
+                       f"twin in verbs.CLI_MAP, or add it to verbs.INTERNAL_CLI with a reason")
+        elif len(hits) > 1:
+            out.append(f"{cmd}: listed in {len(hits)} classes ({', '.join(hits)}) — exactly one")
+    return out
+
+
+def _stale_keys(group) -> list[str]:
+    paths = set(_invocable_paths(group))
+    out = []
+    for cls, members in _classes().items():
+        out += [f"{cls}: {' '.join(p)!r} is not an invocable command" for p in members
+                if p not in paths]
+    out += [f"HIDDEN_ALIASES target {' '.join(t)!r} is not an invocable command"
+            for t in verbs.HIDDEN_ALIASES.values() if t not in paths]
+    return out
+
+
+def test_every_invocable_cli_path_is_classified_exactly_once():
+    bad = _classification_failures(cli_main)
+    assert not bad, "\n" + "\n".join(bad)
+
+
+def test_a_new_command_in_no_class_fails_naming_it_and_both_remedies():
+    """AC-1 on a REAL copy: `copy.copy(cli.main)` shares its `.commands` dict,
+    so `add_command` on a bare copy would register the probe on the real tree
+    (r8 #s-4 item 5) and every later test would see it."""
+    g = copy.copy(cli_main)
+    g.commands = dict(cli_main.commands)
+    g.add_command(click.Command("zz-probe"))
+    try:
+        bad = _classification_failures(g)
+    finally:
+        assert "zz-probe" not in cli_main.commands, "the probe mutated the real click tree"
+    hit = [m for m in bad if m.startswith("rmx zz-probe:")]
+    assert hit, bad
+    assert "verbs.CLI_MAP" in hit[0] and "verbs.INTERNAL_CLI" in hit[0], hit[0]
+    assert not [m for m in bad if not m.startswith("rmx zz-probe:")], bad
+
+
+def test_removing_an_internal_entry_fails_the_walk(monkeypatch):
+    """AC-2."""
+    monkeypatch.delitem(verbs.INTERNAL_CLI, ("derive", "log"))
+    bad = _classification_failures(cli_main)
+    assert any(m.startswith("rmx derive log:") for m in bad), bad
+
+
+def test_internal_cli_is_exactly_the_seeded_set_and_quotes_the_decision():
+    assert set(verbs.INTERNAL_CLI) == _INTERNAL_SEED, sorted(set(verbs.INTERNAL_CLI) ^ _INTERNAL_SEED)
+    for path, reason in verbs.INTERNAL_CLI.items():
+        assert _USER_QUOTE in reason, f"{path}: the reason must quote the user's decision"
+    assert ("grep-learn",) not in verbs.INTERNAL_CLI, "task 16.1 adds it when the command exists"
+
+
+def test_a_path_listed_twice_fails_naming_both_classes(monkeypatch):
+    """AC-4: exactly one, not at least one."""
+    monkeypatch.setitem(verbs.LEGACY_UNPAIRED, ("derive", "log"), ("harness", "dup probe"))
+    bad = _classification_failures(cli_main)
+    hit = [m for m in bad if m.startswith("rmx derive log:")]
+    assert hit and "INTERNAL_CLI" in hit[0] and "LEGACY_UNPAIRED" in hit[0], bad
+
+
+def test_the_five_maps_have_no_stale_keys():
+    bad = _stale_keys(cli_main)
+    assert not bad, "\n" + "\n".join(bad)
+
+
+@pytest.mark.parametrize("which", ["CLI_MAP", "CLI_ACTIONS", "INTERNAL_CLI", "HIDDEN_ALIASES",
+                                   "LEGACY_UNPAIRED", "HIDDEN_ALIASES-target"])
+def test_a_stale_key_in_any_map_fails_hygiene(which, monkeypatch):
+    """AC-3: a key whose command no longer exists is an allowlist nobody reads."""
+    stale = ("zz-stale",)
+    if which == "CLI_MAP":
+        monkeypatch.setitem(verbs.CLI_MAP, "rmx_zz_stale", stale)
+    elif which == "CLI_ACTIONS":
+        monkeypatch.setitem(verbs.CLI_ACTIONS, stale, ("rmx_memory", "list"))
+    elif which == "INTERNAL_CLI":
+        monkeypatch.setitem(verbs.INTERNAL_CLI, stale, _USER_QUOTE)
+    elif which == "HIDDEN_ALIASES":
+        monkeypatch.setitem(verbs.HIDDEN_ALIASES, stale, ("add", "concept"))
+    elif which == "LEGACY_UNPAIRED":
+        monkeypatch.setitem(verbs.LEGACY_UNPAIRED, stale, ("harness", "stale probe"))
+    else:
+        monkeypatch.setitem(verbs.HIDDEN_ALIASES, ("add-concept",), stale)
+    bad = _stale_keys(cli_main)
+    assert any("'zz-stale'" in m for m in bad), bad
+
+
+def test_cli_actions_are_the_fifteen_dispatcher_twins():
+    """AC-5: r8 #s-4 item 1 — these 15 would otherwise land in LEGACY."""
+    import typing
+    assert dict(verbs.CLI_ACTIONS) == _ACTIONS_SEED, sorted(
+        set(verbs.CLI_ACTIONS.items()) ^ set(_ACTIONS_SEED.items()))
+    for path, (vname, action) in verbs.CLI_ACTIONS.items():
+        hint = typing.get_type_hints(verbs.VERBS[vname].fn)["action"]
+        assert action in typing.get_args(hint), f"{path}: {action!r} is not a {vname} action"
+        assert verbs.CLI_MAP[vname] != path, f"{path}: already the verb's CLI_MAP twin"
+
+
+def test_hidden_aliases_are_the_six_alias_copies():
+    """AC-7: the key is hidden, the target is visible and runs the SAME
+    callback, so the target's classification is the alias's."""
+    assert dict(verbs.HIDDEN_ALIASES) == _HIDDEN_SEED
+    for alias, target in verbs.HIDDEN_ALIASES.items():
+        a, t = _click_cmd(alias), _click_cmd(target)
+        assert a.hidden, f"{alias} is not hidden"
+        assert not t.hidden, f"{target} is hidden"
+        assert a.callback is t.callback, f"{alias} does not run {target}"
+        assert target not in verbs.HIDDEN_ALIASES
+
+
+def test_legacy_unpaired_carries_a_category_and_can_only_shrink():
+    """AC-8: r8 #s-4 item 6 — 140 paths with no rule against growth. Pinned:
+    the set is a subset of the frozen baseline and never larger than it."""
+    assert len(LEGACY_BASELINE) == LEGACY_BASELINE_SIZE
+    legacy = set(verbs.LEGACY_UNPAIRED)
+    grown = sorted(legacy - LEGACY_BASELINE)
+    assert not grown, f"LEGACY_UNPAIRED grew (verb it or INTERNAL_CLI instead): {grown}"
+    assert len(legacy) <= LEGACY_BASELINE_SIZE
+    cats = set(verbs.LEGACY_CATEGORIES)
+    assert cats == {"verb-it", "operator", "maintenance", "hook", "harness"}, cats
+    for path, val in verbs.LEGACY_UNPAIRED.items():
+        assert isinstance(val, tuple) and len(val) == 2, f"{path}: (category, reason)"
+        cat, reason = val
+        assert cat in cats, f"{path}: unknown category {cat!r}"
+        assert reason and reason.strip(), f"{path}: empty reason"
+
+
+# ---- task 3.4 AC-6: the action twins CALL their dispatcher verb ------------
+#
+# path -> (argv, canned verb result, kwargs the LAST verb call must carry,
+# canary from the result the CLI must render). The last call is the one that
+# acts: `reclassify` and `bulk-forget` preview first (dry_run=True) and then
+# write. The seven memory WRITES are RED at d4bf001: they build their own
+# daemon payloads (`_memory_daemon_call`, `_store(write=True)`), so they reach
+# `daemon.call` — which `_cli_env` fails closed — and never the verb.
+CLI_ACTION_INVOKE = {
+    ("memory", "list"): (["memory", "list", "--type", "note", "-n", "3"],
+                         {"rows": [{"id": 1, "name": "CANARY-row", "mtype": "m", "content": "c",
+                                    "tags": []}]},
+                         {"action": "list", "mtype": "note", "limit": 3}, "CANARY-row"),
+    ("memory", "search"): (["memory", "search", "foo", "-n", "3"],
+                           {"rows": [{"id": 1, "name": "CANARY-hit", "mtype": "m", "content": "c"}]},
+                           {"action": "search", "query": "foo", "limit": 3}, "CANARY-hit"),
+    ("memory", "promote"): (["memory", "promote", "x"], {"id": 4242},
+                            {"action": "promote", "name": "x"}, "4242"),
+    ("memory", "brief"): (["memory", "brief", "--json"],
+                          {"briefs": [{"class": "singleton", "label": "CANARY-brief",
+                                       "finding": "f", "evidence": [1]}], "stats": {}},
+                          {"action": "brief"}, "CANARY-brief"),
+    ("memory", "forget"): (["memory", "forget", "x", "--yes"], {"forgotten": True},
+                           {"action": "forget", "name": "x"}, "forgot"),
+    ("memory", "reclassify"): (["memory", "reclassify", "--to", "new", "--like", "a*",
+                                "--from", "old", "--name", "n1", "-y"],
+                               {"matched": 1, "names": ["n1"], "changed": 4242},
+                               {"action": "reclassify", "to_mtype": "new", "like": "a*",
+                                "from_mtype": "old", "names": ["n1"], "dry_run": False}, "4242"),
+    ("memory", "retag"): (["memory", "retag", "x", "--add", "t1"], {"tags": ["CANARY-tag"]},
+                          {"action": "retag", "name": "x", "add": ["t1"]}, "CANARY-tag"),
+    ("memory", "link"): (["memory", "link", "x", "reinforces", "conc", "-w", "0.5"],
+                         {"src_id": 4242, "concept_id": 7},
+                         {"action": "link", "name": "x", "linkage": "reinforces",
+                          "concept": "conc", "weight": 0.5}, "4242"),
+    ("memory", "score"): (["memory", "score", "conc"],
+                          {"concept_ids": [1], "signal": 0.4242, "components": []},
+                          {"action": "score", "concept": "conc"}, "+0.4242"),
+    ("memory", "bulk-forget"): (["memory", "bulk-forget", "--mtype", "session-x", "-y"],
+                                {"ids": [1], "by_mtype": {"session-x": 1}, "forgotten": 4242},
+                                {"action": "bulk_forget", "mtypes": ["session-x"],
+                                 "dry_run": False, "timeout": 600.0}, "4242"),
+    ("memory", "dedup"): (["memory", "dedup", "--dry-run"],
+                          {"dry_run": True, "folded": 4242, "edges_migrated": 0},
+                          {"action": "dedup", "dry_run": True}, "4242"),
+    ("task", "push"): (["task", "push", "hello"], {"current": "CANARY-cur", "depth": 1},
+                       {"action": "push", "desc": "hello"}, "CANARY-cur"),
+    ("task", "pop"): (["task", "pop", "2"], {"popped": "CANARY-pop", "depth": 0},
+                      {"action": "pop", "selector": "2"}, "CANARY-pop"),
+    ("task", "current"): (["task", "current"], {"current": {"desc": "CANARY-curr"}},
+                          {"action": "current"}, "CANARY-curr"),
+    ("task", "swap"): (["task", "swap"], {"swapped": True, "current": "CANARY-swap"},
+                       {"action": "swap"}, "CANARY-swap"),
+}
+
+
+def test_every_cli_action_has_a_wiring_row():
+    assert set(CLI_ACTION_INVOKE) == set(verbs.CLI_ACTIONS), sorted(
+        set(CLI_ACTION_INVOKE) ^ set(verbs.CLI_ACTIONS))
+
+
+@pytest.mark.parametrize("path", sorted(CLI_ACTION_INVOKE), ids=lambda p: "-".join(p))
+def test_cli_action_twin_calls_its_dispatcher_verb(path, _cli_env, monkeypatch):
+    """AC-6, the recorder shape of `test_cli_twin_calls_its_verb`: the verb is
+    CALLED with the root, `action=<x>` and the argv's options ARRIVE as the
+    verb's own parameters (bound against the real signature), and the CLI
+    RENDERS the verb's result (canary). The verb is resolved from the local
+    seed, not `verbs.CLI_ACTIONS`, so each twin's wiring is judged on its own."""
+    import inspect
+    argv, canned, expect, canary = CLI_ACTION_INVOKE[path]
+    vname, _action = _ACTIONS_SEED[path]
+    v = verbs.VERBS[vname]
+    sig = inspect.signature(v.fn)
+    seen = []
+
+    def recorder(root, *a, **kw):
+        bound = sig.bind(root, *a, **kw)      # a wrong kwarg name fails here
+        bound.apply_defaults()
+        seen.append(bound.arguments)
+        return json.loads(json.dumps(canned))
+    monkeypatch.setattr(verbs, v.fn.__name__, recorder)
+    r = CliRunner().invoke(cli_main, argv, catch_exceptions=False)
+    assert r.exit_code == 0, r.output + (r.stderr or "")
+    assert seen, f"`rmx {' '.join(argv)}` never called verbs.{v.fn.__name__}"
+    assert all(Path(s["root"]) == _cli_env for s in seen)
+    last = seen[-1]
+    for k, val in expect.items():
+        got = last.get(k)
+        if isinstance(got, tuple):
+            got = list(got)
+        assert got == val, f"{' '.join(path)}.{k}: argv gave {got!r}, expected {val!r}"
+    assert canary in r.output, f"{' '.join(path)}: CLI did not render the verb's result ({canary!r})"
