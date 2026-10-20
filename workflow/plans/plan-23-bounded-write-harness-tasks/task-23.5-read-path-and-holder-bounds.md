@@ -848,3 +848,21 @@ rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#nm23-r10-2]]
 rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#nm23-r10-3]]
 rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#nm23-r10-4]]
 rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#approval]]
+
+## Folded rider: plan-2 r9 #s-3 (2026-10-19) {#w1c-rider}
+
+Folded in by [[plan-review-2026-10-14#t11-folded-waves]] (W1-c). Plan-2's r9 audit found that a
+memory WRITE resolves its partition through `_search.cached_replica(root)` unconditionally
+(`verbs.py:246`, `memory_partition`), so a lagging replica can route a write to the wrong
+partition (split-brain). This task already bounds `memory_partition`'s busy branch
+(nm23-r10-3); the rider extends it to the write path.
+
+rel: derives-from -> [[bsd-plan2-hooks-reproducible-r9-ffed3df#s-3]]
+
+- **R-rider.** A write-intent partition resolution reads the writer (daemon op), never the
+  replica; the replica stays the read-path source. A write that cannot reach the writer within
+  its bound fails loudly (the existing busy/unreachable error), never falls back to the replica.
+  {#w1c-rider-req}
+- **AC-rider.** With a replica whose partition binding lags the writer's (planted in a tmp
+  store), `memory add` lands in the writer's partition; a mutation that restores the
+  unconditional `cached_replica` read for writes fails the test. {#w1c-rider-ac}

@@ -176,3 +176,13 @@ rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 | finding / decision | answered at |
 |---|---|
 | round-8 #nm-5 (19.5 consumes 21.1's `outcome`) | R2 ("A skipped recall is attempted, with 0 delivered": `skipped_budget` counted apart per channel, in the attempted denominator, distinct from "no recall" and `error`) |
+
+## Folded rider: scan-prompt rerank (2026-10-19) {#w1c-rider}
+
+Folded in by [[plan-review-2026-10-14#t11-folded-waves]] (W1-c). Plan-2's r5 notes measured
+rerank never firing on `scan-prompt` at the 5 s budget (28/28 skipped); it was never
+re-measured. This task's delivery baseline records, per scan-prompt call, whether rerank ran,
+was skipped for budget, or was not attempted, and reports the rate. No fix is assumed: the
+number decides whether a follow-up task is opened.
+
+rel: derives-from -> [[bsd-plan2-hooks-reproducible-r9-ffed3df]]

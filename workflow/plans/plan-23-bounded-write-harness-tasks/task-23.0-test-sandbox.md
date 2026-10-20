@@ -5,15 +5,16 @@ title: "Task 23.0: a test sandbox that no test, and no child a test spawns, can 
 tags: [task, tests, sandbox, isolation, bug-088, bug-101, wave-1]
 metadata:
   node_type: task
-  status: pending
+  status: completed
   created: 2026-10-14
-  updated: 2026-10-15
+  updated: 2026-10-19
 ---
 
 # Task 23.0: the shared test sandbox {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: Pending (revision round 2, 2026-10-14: AC-4 checks content, ns23-2; see
+> Status: Completed — shipped in 0.79.1 (b090922), merged to master at d4bf001; status
+> corrected 2026-10-19 (W1-d). History: Pending (revision round 2, 2026-10-14: AC-4 checks content, ns23-2; see
 > [[#rev-round-2]]. Amended after 878647c by d9w/d9x: three isolation tiers, R7-R9, see
 > [[#amend-2026-10-14-lanes]])
 > Depends on: — (the FIRST build of Wave 1, in parallel with 23.4)

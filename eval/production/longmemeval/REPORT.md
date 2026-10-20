@@ -7,12 +7,14 @@ metadata:
   node_type: report
   created: 2026-09-15
   rmx_version: "0.69.1"
+  updated: 2026-10-19
 ---
 
 # LongMemEval, production path {#root}
 
 rel: realizes -> [[task-7.4-plan-7-longmemeval]]
 rel: part-of -> [[plan-7-longmemeval]]
+rel: depends-on -> [[plan-review-2026-10-14#t11-folded-waves]]
 rel: evidence-for -> [[longmemeval-latency]]
 rel: reinforces -> [[feedback_measure_the_path_users_run]]
 
@@ -124,11 +126,21 @@ chunking, and haystack scoping:
 ## The dense half is missing {#embed}
 
 `rmx embed --kinds memory` failed after 30.8 s on a model-worker socket `TimeoutError`, aborting
-the build before `memory compile`. Cause: `WorkerClient.call(timeout=X)` mutates the PERSISTENT
-socket timeout and never restores it, so a bounded probe leaks its budget onto the next call —
-**bug-030**, second sighting of `impression_bsd_probe_timeout_leak`.
+the build before `memory compile`.
 
-So `recall`, `recall-fuse`, `recall-rr`, `recall-fuse-rr` have no numbers here. The ingest is
+> [!WARNING]
+> **Corrected 2026-10-19 (W1-d).** This section first blamed `WorkerClient.call(timeout=X)` leaking
+> a probe timeout onto the persistent socket. That diagnosis was **refuted** and is withdrawn: the
+> leak was already fixed in `d576a81`, and the leaked probe budget (45 s) was LONGER than the op
+> budget that expired (30 s). The real cause was the fleet's work budget
+> (`SHARED_OP_TIMEOUT_S` = 30 s) sitting below its own qualifying budget (`PROBE_TIMEOUT_S` = 45 s)
+> and below a cold worker's model load. **bug-030 was fixed 2026-09-16 in `464485d`** (the op
+> budget is floored at the probe budget), which is an ancestor of `master`. See the bug-030 row in
+> `workflow/bug_registry.md`.
+
+So `recall`, `recall-fuse`, `recall-rr`, `recall-fuse-rr` have no numbers here. The embed was never re-run
+after the fix; the dense and fused rows are wave item **W2-c**
+([[plan-review-2026-10-14#t11-folded-waves]]). The ingest is
 persisted, so embed resumes via `ingest.py --skip init --skip ingest-gmd` without repeating the
 4h23m.
 
@@ -165,4 +177,5 @@ Committed results: `eval/production/longmemeval/results/summary-symbolic-120.jso
 3. **Attribute the ~8.5 s CLI gap.** `build_context` warm is 0.45 s; the full daemonless CLI is
    9.0 s, of which only 2.8 s is CPU. That ~6 s of waiting is the real open performance question —
    NOT the retracted 62.9 s. See `workflow/measurements/longmemeval-latency.md`.
-4. **Fix bug-030, re-run embed**, and add the dense and fused rows.
+4. **Re-run embed and add the dense and fused rows** — bug-030 is fixed (`464485d`, 2026-09-16);
+   the re-run is W2-c.
