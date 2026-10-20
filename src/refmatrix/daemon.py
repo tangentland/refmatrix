@@ -872,77 +872,37 @@ class Daemon:
         self.log_fh.flush()
 
     def _embedder(self):
-        """Lazy-cached Embedder. Loads sentence-transformers model on
-        first call (~134 MB for the default bge-small-en-v1.5).
-        Raises ImportError if the [dense] extra isn't installed —
-        the op handler catches that and surfaces a clean error to
-        the client instead of crashing the daemon."""
+        """Lazy-cached embedder through THE seam, `recall.shared_embedder` (task 3.7
+        #fam-graph-read-recall): the daemon and the verb's no-daemon recall branch get
+        their model the same way — the hub's shared worker when it is up, a private
+        worker otherwise, the in-process model as the loud last resort. This accessor
+        only adds the daemon's cache, its worker client and its log. Raises ImportError
+        if the [dense] extra isn't installed — op handlers surface that cleanly."""
         existing = getattr(self, "_embedder_inst", None)
         if existing is not None:
             return existing
-        if subproc_embed_enabled():
-            try:
-                e = self._remote_embedder()
-                self._embedder_inst = e
-                self._log(
-                    f"embedder loaded (subprocess) "
-                    f"model={e.model_name} dim={e.dim}"
-                )
-                return e
-            except ImportError:
-                # No [dense] extra. In-process would fail identically, so
-                # let the op handlers surface it the way they always have.
-                raise
-            except Exception as exc:
-                # Anything else -- an interpreter the child can't reach, a
-                # sandbox that forbids spawn, a pipe the OS won't give us --
-                # is a transport problem, not a dense problem. Since this is
-                # the DEFAULT path now, failing here would take dense
-                # retrieval down on hosts where it used to work fine. Fall
-                # back to the in-process model and say so loudly.
-                self._log(
-                    f"subprocess embedder unavailable ({exc!r}); "
-                    "falling back to in-process model -- the daemon now "
-                    "carries the model's RSS. Set RMX_EMBED_SUBPROC=0 to "
-                    "silence this, or investigate the spawn failure."
-                )
-                # Only the embed worker: a live rerank worker is unrelated
-                # and killing it would cost a needless model reload.
-                w, self._embed_worker = self._embed_worker, None
-                if w is not None:
-                    try:
-                        w.close(timeout=2.0)
-                    except Exception:
-                        pass
-        from refmatrix.embedder import Embedder
+        from refmatrix import recall as recall_mod
 
-        e = Embedder()
-        # Trigger the model load so the first real call doesn't
-        # eat the latency. Subsequent calls are model.encode-only.
-        _ = e.dim
+        def _drop_private_worker() -> None:
+            # Only the embed worker: a live rerank worker is unrelated and killing it
+            # would cost a needless model reload.
+            w, self._embed_worker = self._embed_worker, None
+            if w is not None:
+                try:
+                    w.close(timeout=2.0)
+                except Exception as exc:  # noqa: BLE001 — named; the fallback proceeds
+                    self._log(f"embed worker close failed after a spawn failure: {exc!r}")
+        e = recall_mod.shared_embedder(self.root, remote=lambda: self._remote_embedder(),
+                                       log=self._log, on_fallback=_drop_private_worker)
         self._embedder_inst = e
-        self._log(f"embedder loaded model={e.model_name} dim={e.dim}")
         return e
 
     def _remote_embedder(self):
-        """Build the subprocess-backed embedder, spawning its worker.
-
-        Raises ImportError when the [dense] extra is missing, matching the
-        in-process path's contract: every `_op_*` already catches ImportError
-        and returns a clean client error instead of crashing the daemon.
-        The worker reports the failure as an error frame; we translate.
-        """
-        from refmatrix.embedder import RemoteEmbedder
-        from refmatrix.subproc import WorkerError
-
-        e = RemoteEmbedder(self._model_client("embed"))
-        try:
-            _ = e.dim          # forces the spawn + model load now
-        except WorkerError as exc:
-            if "ModuleNotFoundError" in str(exc) or "ImportError" in str(exc):
-                raise ImportError(str(exc)) from exc
-            raise
-        return e
+        """The subprocess-backed embedder over this daemon's cached worker client
+        (`recall.remote_embedder`). Raises ImportError when the [dense] extra is missing;
+        every `_op_*` turns that into a clean client error."""
+        from refmatrix.recall import remote_embedder
+        return remote_embedder(self._model_client("embed"))
 
     def _model_client(self, role: str):
         """Return a client for `role` — the hub's shared worker when one is
@@ -960,34 +920,8 @@ class Daemon:
             existing = getattr(self, attr, None)
             if existing is not None:
                 return existing
-            client = None
-            from refmatrix import modelsrv
-            if modelsrv.shared_enabled() and modelsrv.shared_available():
-                try:
-                    # Bounded: the worker's 300 s default let a broken shared
-                    # worker (bug-014/015) stall an op — and the store lock it
-                    # held — for five minutes.
-                    client = modelsrv.SharedWorkerClient(role, log=self._log,
-                                                         timeout=SHARED_OP_TIMEOUT_S)
-                    # prove it answers before adopting — bounded, so a mute
-                    # socket costs seconds, not the 300 s op timeout
-                    client.info(timeout=modelsrv.PROBE_TIMEOUT_S)
-                    self._log(f"{role}: using hub-shared worker")
-                except Exception as exc:
-                    self._log(
-                        f"{role}: hub-shared worker unusable ({exc!r}); "
-                        "falling back to a private worker"
-                    )
-                    try:
-                        if client is not None:
-                            client.close()
-                    except Exception:
-                        pass
-                    client = None
-            if client is None:
-                from refmatrix.subproc import WorkerClient
-                client = WorkerClient(role, log=self._log)
-                client.set_stderr(self.log_fh)
+            from refmatrix.recall import new_model_client
+            client = new_model_client(role, log=self._log, stderr=self.log_fh)
             setattr(self, attr, client)
             return client
 
@@ -3938,7 +3872,9 @@ def _op_sync_since(d: Daemon, args: dict) -> dict:
 
 
 def _op_stats(d: Daemon, args: dict) -> dict:
-    with d._store_lock:
+    """Catalog counts (+ `stale_files` with `include_stale`). Honours `partition` (task
+    3.7 C7: the `rmx_graph` stats action forwards the CLI's `-p`)."""
+    with d._store_lock, _op_part_ctx(d, args):
         out = d._st().stats()
         # Task 21.1 R7: reads this daemon dropped at their caller's deadline (bug-116's
         # counter), so the R7 usage report (R7) can reconcile them with the client-side
@@ -4989,14 +4925,10 @@ def _op_describe(d: Daemon, args: dict) -> dict:
         "include_vectors": bool(args.get("include_vectors", True)),
     }
 
+    from refmatrix.graphread import describe_payload
+
     def _run(s):
-        targets = s.find_describe_targets(str(ref))
-        if not targets:
-            return {"found": None, "candidates": []}
-        if len(targets) > 1 and not args.get("first"):
-            return {"found": None, "candidates": targets}
-        return {"found": s.describe_entity(targets[0]["id"], **kwargs),
-                "candidates": targets}
+        return describe_payload(s, str(ref), first=bool(args.get("first")), **kwargs)
 
     return _read_with_fallback(d, partition, _run)
 
@@ -6189,83 +6121,53 @@ def _op_ann_search(d: Daemon, args: dict) -> dict:
         emb = d._embedder()
     except ImportError as exc:
         return {"ok": False, "error": f"dense extra not installed: {exc}"}
-
-    k = int(args.get("k") or 20)
-    kinds = args.get("kinds")
+    from refmatrix.recall import ann_search
     query = args.get("query")
-    vector = args.get("vector")
-    partition = args.get("partition")
-
-    if vector is None and not query:
-        return {"ok": False, "error": "need 'query' text or 'vector' list"}
-
-    if vector is None:
-        assert query is not None  # the vector-or-query check above returned
-        v = emb.embed_texts([query])[0]
-    else:
-        import numpy as np
-        v = np.asarray(vector, dtype="float32")
-        if v.shape[0] != emb.dim:
-            return {
-                "ok": False,
-                "error": f"vector dim {v.shape[0]} != model dim {emb.dim}",
-            }
-
-    want_rerank = d._maybe_rerank(args) and bool(query)
-    # Over-fetch before reranking: the stage can only reorder what retrieval
-    # already returned, so a true hit sitting at rank 30 of a k=10 request is
-    # unreachable unless the pool is widened here.
-    from refmatrix.reranker import DEFAULT_POOL_MULT, MAX_POOL
-    ann_k = min(max(k, k * DEFAULT_POOL_MULT), MAX_POOL) if want_rerank else k
-    docs = None
-
-    with d._store_lock:
-        hits = d._st().ann_search(
-            v, k=ann_k, dim=emb.dim, kinds=kinds, partition=partition,
-        )
-        if want_rerank:
-            from refmatrix.reranker import collect_rerank_docs
-            try:
-                docs = collect_rerank_docs(d.store, hits, k=k)
-            except Exception as exc:
-                d._log(f"rerank doc collect failed: {exc!r}")
-                docs = None
-
-    rr_warnings: list[str] = []
-    if want_rerank and docs is not None:
-        assert query is not None  # want_rerank requires bool(query)
-        # Model call OUTSIDE _store_lock -- see collect_rerank_docs.
-        reranked = _apply_rerank_safe(d, query, docs, k, warnings=rr_warnings)
-        if reranked is not None:
-            return {"hits": [{"id": eid, "score": sc, "reranked": True}
-                             for eid, sc in reranked]}
-
-    out = {"hits": [{"id": eid, "distance": dist} for eid, dist in hits[:k]]}
-    if rr_warnings:
-        out["warnings"] = rr_warnings
-    return out
+    rerank = None
+    if d._maybe_rerank(args) and query:
+        def rerank(q, docs, k, warnings):
+            return _apply_rerank_safe(d, q, docs, k, warnings=warnings)
+    # ONE algorithm (task 3.7 #fam-graph-read-recall): `recall.ann_search` is also
+    # what the `rmx_graph` dense action runs in-process when no daemon exists.
+    return ann_search(d._st(), emb, query=query, vector=args.get("vector"),
+                      k=int(args.get("k") or 20), kinds=args.get("kinds"),
+                      partition=args.get("partition"), rerank=rerank,
+                      lock=d._store_lock, log=d._log)
 
 
-class _PrecomputedQuery:
-    """An embedder stand-in holding ONE precomputed query vector.
+# The precomputed-query stand-in lives in recall.py now (task 3.7): the `graph_recall`
+# op and the verb's no-daemon recall embed before any store is opened through it too.
+from refmatrix.recall import PrecomputedQuery as _PrecomputedQuery  # noqa: E402
 
-    The query is embedded BEFORE `_store_lock` is taken (ch-bsd r9 #s-1: the
-    model call ran inside the lock, so a busy worker held every writer). The
-    recall code under the lock asks this object for the query's vector; any
-    other text is refused loudly, so a later change cannot quietly move a
-    model call back under the lock."""
 
-    def __init__(self, emb, query: str, vec) -> None:
-        self.dim = emb.dim
-        self.model_name = getattr(emb, "model_name", None)
-        self._query = query
-        self._vec = vec
+def _op_graph_recall(d: Daemon, args: dict) -> dict:
+    """`rmx recall`'s algorithm, server-side (task 3.7 #fam-graph-read-recall, r1 B2):
+    `recall.graph_recall` — the bitmap pre-filter, pure dense by default, `hybrid_recall`
+    when `symbolic` ids are given, the symbolic-only fallback — with NO rerank and NO BM25
+    fusion (that is `memory_recall`, a different contract). The CLI used to run this in
+    its own process with its own `Embedder()`.
 
-    def embed_texts(self, texts):
-        if list(texts) == [self._query]:
-            return self._vec
-        raise RuntimeError("model call under _store_lock: only the precomputed "
-                           "query vector is available here")
+    The model call happens FIRST, outside any lock (ch-bsd r9 #s-1); the ranking reads a
+    READ store bound to the requested partition (`_read_with_fallback`, the bug-098
+    pattern: mirror → snapshot file → the writer only under `_store_lock`). An unknown
+    partition raises rather than answering from another one."""
+    from refmatrix import recall as recall_mod
+    query = args.get("query")
+    no_dense = bool(args.get("no_dense"))
+    try:
+        emb = recall_mod.prepare_graph_recall_embedder(d._embedder, query,
+                                                       no_dense=no_dense)
+    except ImportError as exc:
+        return {"ok": False, "error": f"dense extra not installed: {exc}"}
+    symbolic = args.get("symbolic")
+    partition = args.get("partition") or d._st()._partition_name
+    return _read_with_fallback(
+        d, partition,
+        lambda s: recall_mod.graph_recall(
+            s, emb, query=query, k=int(args.get("k") or 10), kinds=args.get("kinds"),
+            concept=args.get("concept"), symbolic=[int(x) for x in symbolic] if symbolic
+            else None, no_dense=no_dense),
+        private=True, missing="raise")
 
 
 def _op_memory_recall(d: Daemon, args: dict) -> dict:
@@ -6529,6 +6431,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "embed": _op_embed,
     "embed_gc": _op_embed_gc,
     "ann_search": _op_ann_search,
+    "graph_recall": _op_graph_recall,
     "memory_recall": _op_memory_recall,
     "promote_edges": _op_promote_edges,
     "memory_add": _op_memory_add,
@@ -6591,6 +6494,7 @@ CLI_OPS: set[str] = {
     "replica_audit",
     "snapshot",
     "ann_search",
+    "graph_recall",
     "memory_recall",
     "memory_get",
     "memory_iter",

@@ -21,7 +21,7 @@ Phase A7 surface; Phase B's `rmx memory recall` is the CLI consumer.
 from __future__ import annotations
 
 import re
-from typing import Sequence
+from typing import Callable, Sequence
 
 from refmatrix.query import fuse_rrf
 from refmatrix.store import Store
@@ -271,3 +271,260 @@ def bitmap_prefilter(
             continue
         union |= bm
     return list(union)
+
+
+# ---- task 3.7 #fam-graph-read: ONE embedder seam + the graph recall algorithm ----------
+#
+# Why here (task 3.7 #fam-graph-read-recall, spec decision 2026-10-20): `rmx recall` built
+# `Embedder()` in the CLI process and ran its own ranking, so the daemon and the CLI could
+# not share an answer. The ranking moved into `graph_recall` (run by the daemon op
+# `graph_recall` AND, with no daemon at all, in-process by the verb — C4a), and the
+# embedder into `shared_embedder`, which `Daemon._embedder` delegates to: one seam, two
+# callers, provably the same model route.
+
+
+def new_model_client(role: str, *, log: "Callable[[str], None] | None" = None,
+                     stderr=None):
+    """A model-worker client for `role` ("embed" | "rerank"): the hub's shared worker when
+    one answers, else a private worker of our own. The hub hosts one model per role for
+    the whole fleet; falling back to a private worker rather than failing keeps the hub
+    from becoming a single point of failure for dense retrieval. `Daemon._model_client`
+    caches what this returns; a daemonless caller owns (and closes) it."""
+    import logging
+
+    from refmatrix import modelsrv
+    say = log or logging.getLogger(__name__).info
+    if modelsrv.shared_enabled() and modelsrv.shared_available():
+        client = None
+        try:
+            # Bounded: the worker's 300 s default let a broken shared worker
+            # (bug-014/015) stall an op for five minutes.
+            from refmatrix.daemon import SHARED_OP_TIMEOUT_S
+            client = modelsrv.SharedWorkerClient(role, log=say, timeout=SHARED_OP_TIMEOUT_S)
+            client.info(timeout=modelsrv.PROBE_TIMEOUT_S)
+            say(f"{role}: using hub-shared worker")
+            return client
+        except Exception as exc:  # noqa: BLE001 — logged; the private worker serves
+            say(f"{role}: hub-shared worker unusable ({exc!r}); falling back to a private "
+                f"worker")
+            if client is not None:
+                try:
+                    client.close()
+                except Exception as cexc:  # noqa: BLE001 — named; the fallback proceeds
+                    say(f"{role}: closing the unusable shared client failed: {cexc!r}")
+    from refmatrix.subproc import WorkerClient
+    client = WorkerClient(role, log=say)
+    if stderr is not None:
+        client.set_stderr(stderr)
+    return client
+
+
+def remote_embedder(model_client):
+    """A loaded `RemoteEmbedder` over `model_client` (forces the worker spawn + model load
+    now). A worker that reports a missing [dense] extra raises ImportError, matching the
+    in-process model's contract."""
+    from refmatrix.embedder import RemoteEmbedder
+    from refmatrix.subproc import WorkerError
+    e = RemoteEmbedder(model_client)
+    try:
+        _ = e.dim
+    except WorkerError as exc:
+        if "ModuleNotFoundError" in str(exc) or "ImportError" in str(exc):
+            raise ImportError(str(exc)) from exc
+        raise
+    return e
+
+
+def shared_embedder(root, *, remote: "Callable[[], object] | None" = None,
+                    log: "Callable[[str], None] | None" = None,
+                    on_fallback: "Callable[[], None] | None" = None):
+    """THE embedder accessor (task 3.7 #fam-graph-read-recall). Returns a loaded embedder
+    for the store at `root`: by default the out-of-process worker (the hub's shared worker
+    when it is up, else a private one), else the in-process model.
+
+    `Daemon._embedder` passes its own `remote` builder (over its cached worker client),
+    `log` and `on_fallback` (which drops its private worker); a daemonless caller — the
+    verb's C4a branch — passes none and gets a worker client of its own, closed at exit.
+    Raises ImportError when the [dense] extra is missing; callers surface that cleanly."""
+    import atexit
+    import logging
+
+    from refmatrix.subproc import subproc_embed_enabled
+    say = log or logging.getLogger(__name__).info
+    if subproc_embed_enabled():
+        try:
+            if remote is not None:
+                e = remote()
+            else:
+                client = new_model_client("embed", log=say)
+                atexit.register(client.close)
+                e = remote_embedder(client)
+            say(f"embedder loaded (subprocess) model={e.model_name} dim={e.dim}")
+            return e
+        except ImportError:
+            # No [dense] extra: the in-process model would fail identically.
+            raise
+        except Exception as exc:  # noqa: BLE001 — a transport problem, said, then degraded
+            # An interpreter the child cannot reach, a sandbox that forbids spawn, a pipe
+            # the OS will not give: not a dense problem. Degrade to the in-process model
+            # and say so loudly (it carries the model's RSS).
+            say(f"subprocess embedder unavailable ({exc!r}); falling back to in-process "
+                "model -- this process now carries the model's RSS. Set "
+                "RMX_EMBED_SUBPROC=0 to silence this, or investigate the spawn failure.")
+            if on_fallback is not None:
+                on_fallback()
+    from refmatrix.embedder import Embedder
+    e = Embedder()
+    _ = e.dim
+    say(f"embedder loaded model={e.model_name} dim={e.dim}")
+    return e
+
+
+class PrecomputedQuery:
+    """An embedder stand-in holding ONE precomputed query vector.
+
+    The query is embedded BEFORE any store lock is taken (ch-bsd r9 #s-1: the model call ran
+    inside the daemon's `_store_lock`, so a busy worker held every writer). The recall code
+    asks this object for the query's vector; any other text is refused loudly, so a later
+    change cannot quietly move a model call back under the lock."""
+
+    def __init__(self, emb, query: str, vec) -> None:
+        self.dim = emb.dim
+        self.model_name = getattr(emb, "model_name", None)
+        self._query = query
+        self._vec = vec
+
+    def embed_texts(self, texts):
+        if list(texts) == [self._query]:
+            return self._vec
+        raise RuntimeError("model call under _store_lock: only the precomputed "
+                           "query vector is available here")
+
+
+def graph_recall_wants_dense(query: "str | None", *, no_dense: bool) -> bool:
+    """Whether `graph_recall` needs the embedder (so the caller embeds BEFORE the read)."""
+    return bool(query) and not no_dense and dense_available()
+
+
+def prepare_graph_recall_embedder(get_embedder: "Callable[[], object]", query: "str | None",
+                                  *, no_dense: bool):
+    """The embedder `graph_recall` runs with: a `PrecomputedQuery` (the model called HERE,
+    before any store is opened or locked), or None when the dense side does not run."""
+    if not graph_recall_wants_dense(query, no_dense=no_dense):
+        return None
+    emb = get_embedder()
+    return PrecomputedQuery(emb, query or "", emb.embed_texts([query]))
+
+
+def graph_recall(store: Store, embedder, *, query: "str | None", k: int = 10,
+                 kinds: "Sequence[str] | None" = None,
+                 concept: "Sequence[str] | None" = None,
+                 symbolic: "Sequence[int] | None" = None,
+                 no_dense: bool = False) -> dict:
+    """`rmx recall`'s algorithm (591a2fb `recall_cmd`), shared by the daemon op
+    `graph_recall` and the verb's no-daemon branch (task 3.7 #fam-graph-read-recall, r1 B2):
+
+    - `concept` names → `bitmap_prefilter` over `mentions` → `candidate_ids` (an unknown
+      name is a warning and contributes nothing; an empty candidate set answers no hits);
+    - dense by default (`dense_recall`); `hybrid_recall(symbolic_hits=…)` when `symbolic`;
+    - the symbolic-only short-circuit when `no_dense` or the dense extra is missing;
+    - NO rerank and NO BM25 fusion — that is `memory_recall`, a different contract.
+
+    `embedder` is what `prepare_graph_recall_embedder` returned (None when the dense side
+    does not run). Returns `{hits: [{rank, id, score, kind, name, path}], warnings}`,
+    names resolved from `store` — the same partition the ranking read."""
+    warnings: list[str] = []
+    candidate_ids = None
+    if concept:
+        cids: list[int] = []
+        for name in concept:
+            e = store.get_entity("concept", name)
+            if e is None:
+                warnings.append(f"unknown concept: {name}")
+                continue
+            cids.append(e.id)
+        if cids:
+            candidate_ids = bitmap_prefilter(store, cids, linkage="mentions")
+            if not candidate_ids:
+                warnings.append("concept pre-filter produced an empty candidate set — "
+                                "nothing matches the given concepts under 'mentions'")
+                return {"hits": [], "warnings": warnings}
+    symbolic_hits = [int(x) for x in symbolic] if symbolic else None
+    kinds_l = list(kinds) if kinds else None
+    if no_dense or not dense_available():
+        if symbolic_hits is None:
+            warnings.append("dense not available and no symbolic ranking given — "
+                            "nothing to rank")
+            return {"hits": [], "warnings": warnings}
+        ids = list(symbolic_hits)
+        if candidate_ids is not None:
+            allowed = set(candidate_ids)
+            ids = [i for i in ids if i in allowed]
+        ranked = [(eid, 1.0 - i / max(1, len(ids))) for i, eid in enumerate(ids[:k])]
+    else:
+        if symbolic_hits is None and not query:
+            warnings.append("no query and no symbolic ranking given")
+            return {"hits": [], "warnings": warnings}
+        if symbolic_hits is None:
+            ranked = dense_recall(store, embedder, query or "", k=k, kinds=kinds_l,
+                                  candidate_ids=candidate_ids)
+        else:
+            ranked = hybrid_recall(store, embedder, query or "", k=k, kinds=kinds_l,
+                                   symbolic_hits=symbolic_hits, candidate_ids=candidate_ids)
+    con = store._connect()
+    hits = []
+    for rank, (eid, score) in enumerate(ranked, 1):
+        row = con.execute("SELECT kind, name, path FROM entities WHERE id = ?",
+                          [eid]).fetchone()
+        hits.append({"rank": rank, "id": int(eid), "score": float(score),
+                     "kind": row[0] if row else None, "name": row[1] if row else None,
+                     "path": row[2] if row else None})
+    return {"hits": hits, "warnings": warnings}
+
+
+def ann_search(store: Store, emb, *, query: "str | None" = None, vector=None, k: int = 20,
+               kinds: "Sequence[str] | None" = None, partition: "str | None" = None,
+               rerank: "Callable[[str, object, int, list], object] | None" = None,
+               lock=None, log: "Callable[[str], None] | None" = None) -> dict:
+    """The `ann_search` op's algorithm (task 3.7 #fam-graph-read-recall: the daemon op AND
+    the verb's no-daemon branch run this ONE function). Dense ANN via Lance by `query`
+    (embedded HERE, before `lock`) or a precomputed `vector`. `rerank(query, docs, k,
+    warnings)` — the daemon's cross-encoder stage — runs OUTSIDE `lock` when given; it
+    returns `[(id, score)]` or None to keep retrieval order. Returns `{hits: [{id,
+    distance}] | [{id, score, reranked}], warnings?}` or `{ok: False, error}`."""
+    import contextlib
+    if vector is None and not query:
+        return {"ok": False, "error": "need 'query' text or 'vector' list"}
+    if vector is None:
+        v = emb.embed_texts([query])[0]
+    else:
+        import numpy as np
+        v = np.asarray(vector, dtype="float32")
+        if v.shape[0] != emb.dim:
+            return {"ok": False, "error": f"vector dim {v.shape[0]} != model dim {emb.dim}"}
+    want_rerank = rerank is not None and bool(query)
+    # Over-fetch before reranking: the stage can only reorder what retrieval returned.
+    from refmatrix.reranker import DEFAULT_POOL_MULT, MAX_POOL
+    ann_k = min(max(k, k * DEFAULT_POOL_MULT), MAX_POOL) if want_rerank else k
+    docs = None
+    with (lock if lock is not None else contextlib.nullcontext()):
+        hits = store.ann_search(v, k=ann_k, dim=emb.dim, kinds=kinds, partition=partition)
+        if want_rerank:
+            from refmatrix.reranker import collect_rerank_docs
+            try:
+                docs = collect_rerank_docs(store, hits, k=k)
+            except Exception as exc:  # noqa: BLE001 — logged; retrieval order stands
+                if log is not None:
+                    log(f"rerank doc collect failed: {exc!r}")
+                docs = None
+    rr_warnings: list[str] = []
+    if want_rerank and docs is not None:
+        assert rerank is not None and query is not None
+        reranked = rerank(query, docs, k, rr_warnings)
+        if reranked is not None:
+            return {"hits": [{"id": eid, "score": sc, "reranked": True}
+                             for eid, sc in reranked]}
+    out: dict = {"hits": [{"id": eid, "distance": dist} for eid, dist in hits[:k]]}
+    if rr_warnings:
+        out["warnings"] = rr_warnings
+    return out
