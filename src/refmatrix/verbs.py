@@ -968,9 +968,21 @@ def memory_add(root: Path, name: str, content: str, *,
                metadata: dict | None = None,
                protect: bool = False, to_global: bool = False) -> dict:
     """`to_global` writes to the shared cross-project behavior store through
-    the hub (CLI `--global`); otherwise this project's memory partition."""
+    the hub (CLI `--global`); otherwise this project's memory partition.
+
+    Tags outside the shared vocabulary come back as `tag_warnings` (task 3.7
+    #fam-taxonomy, spec review r1 M6: the CLI printed that note, MCP adds never
+    got it). Soft: the write always happens, and a corrupt vocabulary is itself
+    the warning, never a block."""
+    from refmatrix import taxonomy as tax
+    warns = tax.tag_warnings(tags or [])
     payload = {"name": name, "content": content, "mtype": mtype, "tags": tags,
                "metadata": metadata, "protected": protect}
+    res = _memory_add_write(root, payload, to_global=to_global)
+    return {**res, "tag_warnings": warns} if warns else res
+
+
+def _memory_add_write(root: Path, payload: dict, *, to_global: bool) -> dict:
     if to_global:
         # DELIBERATELY unbounded (`timeout=None`), unlike the `promote` action's
         # global write, which passes its remaining budget. The difference is the
@@ -1824,7 +1836,14 @@ def memory(root: Path, action: typing.Literal[
     # of an mtype — the 271-card viascope cleanup — and its own daemon call had
     # carried 600 s before it was routed through this verb. Ignoring the
     # caller's timeout here would have cut that to 120 s the day it moved.
-    return _call(root, op, payload, timeout=float(timeout) if timeout is not None else 120.0)
+    res = _call(root, op, payload, timeout=float(timeout) if timeout is not None else 120.0)
+    if action == "retag":
+        # Task 3.7 #fam-taxonomy (r1 M6): MCP retags got no off-vocabulary note.
+        from refmatrix import taxonomy as tax
+        warns = tax.tag_warnings(replace if replace is not None else (add or []))
+        if warns:
+            res = {**res, "tag_warnings": warns}
+    return res
 
 
 def emit_memory_get_used(root: Path, name: str, *, scope: str = "project") -> int:
@@ -1954,6 +1973,125 @@ def bus_purge(root: Path, *, status: str = "deleted", channel: str | None = None
 @verb("rmx_bus_stats", 'Bus overview: per-status totals + per-channel breakdown (active/archived/deleted) + your unread counts.', aliases={"from": "agent"})
 def bus_stats(root: Path, *, agent: str | None = None) -> dict:
     return _hub_rpc("bus_stats", {"agent": _bus_sender(root, agent)})
+
+
+# ---- task 3.7 batch A: curation, taxonomy, curator ---------------------------
+
+_CURATE_FLAGS = {"protect": ("protected", True), "unprotect": ("protected", False),
+                 "noise": ("noise", True), "unnoise": ("noise", False)}
+
+
+@verb("rmx_curate",
+      "Entity curation — the PRIMER's `rmx protect|unprotect|noise|unnoise|forget <sel>`. "
+      "Select by names, like (SQL LIKE glob), namespace, and/or kind. forget previews by "
+      "default (dry_run=true); a destructive forget selected only by kind/namespace also "
+      "needs broad=true.")
+def curate(root: Path, action: typing.Literal["protect", "unprotect", "noise", "unnoise",
+                                              "forget"], *,
+           names: list[str] | None = None, like: str | None = None,
+           namespace: str | None = None, kind: str | None = None,
+           dry_run: bool = True, broad: bool = False, partition: str | None = None,
+           timeout: float | None = None) -> dict:
+    """Task 3.7 #fam-curation over the existing `set_flag` / `forget` daemon ops (writes via
+    `_call`, one attempt: 60 s; a destructive forget 600 s, #budgets). No daemon at all →
+    the same selector on the in-process store (C4a). `forget` previews unless
+    `dry_run=False` (#fam-curation-forget): an agent's first call shows what WOULD go, and a
+    sweep selected only by `kind` / `namespace` must also say `broad=True` — the refusal
+    names the count it would remove. The CLI keeps its confirm / `-y` gate and passes
+    `dry_run=False, broad=True` after it."""
+    sel = {"names": list(names) if names else None, "like": like,
+           "namespace": namespace, "kind": kind}
+    if not any(sel.values()):
+        raise VerbArgsError(f"curate {action} needs a selector: names, like, namespace, "
+                            f"or kind — a bare call would touch every entity")
+    part = partition or project_partition(root)
+    if action in _CURATE_FLAGS:
+        flag, value = _CURATE_FLAGS[action]
+        return _write_or_local(
+            root, "set_flag", {"flag": flag, "value": value, **sel},
+            timeout=float(timeout) if timeout is not None else 60.0, partition=part,
+            local=lambda s: s.set_flag_by_selector(flag, value, **sel))
+    if action != "forget":
+        raise VerbArgsError(f"unknown curate action {action!r}")
+    preview_budget = float(timeout) if timeout is not None else 60.0
+
+    def _preview() -> dict:
+        return _write_or_local(root, "forget", {"dry_run": True, **sel},
+                               timeout=preview_budget, partition=part,
+                               local=lambda s: s.forget_by_selector(dry_run=True, **sel))
+    if dry_run:
+        return _preview()
+    if not sel["names"] and not sel["like"] and not broad:
+        n = len(_preview().get("names") or [])
+        raise VerbArgsError(
+            f"forget selected only by kind/namespace would remove {n} entit"
+            f"{'y' if n == 1 else 'ies'}; pass broad=true to confirm a sweep that wide "
+            f"(or narrow it with names / like)")
+    return _write_or_local(root, "forget", {"dry_run": False, **sel},
+                           timeout=float(timeout) if timeout is not None else 600.0,
+                           partition=part,
+                           local=lambda s: s.forget_by_selector(dry_run=False, **sel))
+
+
+@verb("rmx_taxonomy",
+      "The shared memory-tag vocabulary (~/.refmatrix/taxonomy.json): list it, add a tag "
+      "under a category, or remove a tag. Memory tags outside it come back as tag_warnings "
+      "from rmx_memory_add / rmx_memory retag.")
+def taxonomy(root: Path, action: typing.Literal["list", "add", "remove"], *,
+             category: str | None = None, tag: str | None = None,
+             desc: str = "", color: str = "#64748b") -> dict:
+    """Task 3.7 #fam-taxonomy. `root` is unused — the vocabulary is user-level, shared by
+    every store. `add` / `remove` refuse to write over a corrupt file (the data-loss
+    defect: it silently loaded the defaults and the next add overwrote the user's
+    vocabulary); `list` degrades to an empty vocabulary with a warning; a read never
+    writes (#fam-taxonomy-corrupt)."""
+    from refmatrix import taxonomy as tax
+    if action == "list":
+        data, warnings = tax.read()
+        return {"categories": data.get("categories", {}), "path": str(tax.taxonomy_path()),
+                "warnings": warnings}
+    try:
+        if action == "add":
+            if not category or not tag:
+                raise VerbArgsError("taxonomy add requires 'category' and 'tag'")
+            tax.add_tag(category, tag, description=desc, color=color)
+            return {"added": True, "tag": tag, "category": category}
+        if action == "remove":
+            if not tag:
+                raise VerbArgsError("taxonomy remove requires 'tag'")
+            return {"removed": tax.remove_tag(tag), "tag": tag}
+    except tax.TaxonomyCorrupt as e:
+        raise VerbError(str(e)) from e
+    raise VerbArgsError(f"unknown taxonomy action {action!r}")
+
+
+@verb("rmx_curator",
+      "The gmd-curator change queue (a spool of watcher flushes). action=status returns the "
+      "queued {ts, path, reason} entries of the oldest spool files plus a `token` naming "
+      "exactly those files; action=drain with that token deletes exactly them — a flush "
+      "written after the status is never in the token, so nothing is drained unread.")
+def curator(root: Path, action: typing.Literal["status", "drain"] = "status", *,
+            max_entries: int = 500, token: list[str] | None = None) -> dict:
+    """Task 3.7 #fam-refine-drain (r1 B3, redesigned r4). The shared `curator.queue` file was
+    the defect: drain read nothing, so entries appended between an agent's status and its
+    drain were destroyed unread, and the hooks drained it on every prompt. Now each watcher
+    flush is its own spool file (`gmd_curator`), status names the files it read, and drain
+    deletes exactly those. A file a concurrent drain already took is `missing`, never an
+    error and never a reason to delete anything else."""
+    from refmatrix import gmd_curator
+    try:
+        if action == "status":
+            return gmd_curator.read_spool(root, max_entries=max_entries)
+        if action == "drain":
+            if not token:
+                raise VerbArgsError("curator drain requires the `token` from curator status "
+                                    "(the spool file names it read)")
+            return gmd_curator.drain_spool(root, list(token))
+    except gmd_curator.SpoolTokenError as e:
+        raise VerbArgsError(str(e)) from e
+    except OSError as e:
+        raise VerbError(f"curator spool under {root}: {e}") from e
+    raise VerbArgsError(f"unknown curator action {action!r}")
 
 
 # ---- CLI twins (asserted by tests/test_verb_parity.py) --------------------

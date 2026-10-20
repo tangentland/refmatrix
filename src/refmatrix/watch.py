@@ -60,7 +60,7 @@ def is_relevant(p: Path, root: Path | None = None) -> bool:
 # relevant" — i.e. it touches the documentation graph in a way the
 # gmd-curator subagent should review (cross-link, surface drift,
 # crystallize, contradict). Watcher routes matching paths to
-# .refmatrix/curator.queue; a SessionStart hook surfaces the queue to
+# .refmatrix/curator.spool/ (one file per flush, task 3.7); a SessionStart hook surfaces the queue to
 # Claude so the curator gets dispatched.
 _CURATOR_FILENAME_PREFIXES = ("PLAN-", "SPEC-", "ISSUE-", "ROADMAP-",
                               "ADR-")

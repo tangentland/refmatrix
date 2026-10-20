@@ -1770,6 +1770,19 @@ class Daemon:
                 pass
         return True
 
+    def _sweep_stale_curator_tmp(self) -> None:
+        """Startup sweep of `curator.spool/*.tmp` (task 3.7 #fam-refine-drain). A
+        failure is logged, never fatal to the boot: the leftovers are invisible to
+        readers and the next start retries."""
+        from refmatrix import gmd_curator
+        try:
+            n = gmd_curator.sweep_stale_tmp(self.root)
+        except OSError as exc:
+            self._log(f"curator spool tmp sweep FAILED: {exc!r}")
+            return
+        if n:
+            self._log(f"curator spool: swept {n} stale tmp file(s)")
+
     def serve_forever(self) -> int:
         sock_path = socket_path(self.root)
         # Smart startup: reap any predecessor daemon for this root before we
@@ -1799,6 +1812,10 @@ class Daemon:
             pass
         except OSError as _e:
             self._log(f"could not remove a stale shutdown.started: {_e!r}")
+        # The curator spool's stale `*.tmp` files are a previous instance's crash
+        # leftovers (task 3.7 r5 M1); readers never glob them. Swept here, before
+        # this instance's watcher can start writing a new one.
+        self._sweep_stale_curator_tmp()
         # Heartbeat first: the store open + repairs below can take a while
         # and the supervisor must already see "alive", not "dead".
         self._start_heartbeat()
@@ -3110,27 +3127,25 @@ class Daemon:
         from refmatrix.sync import sync_files
 
         self._watch_stop = threading.Event()
-        curator_queue_path = self.root / "curator.queue"
-
         def _enqueue_curator(paths: list[str]) -> int:
-            """Append curator-relevant paths to .refmatrix/curator.queue.
-
-            Format: one JSON object per line — {ts, path, reason}. A
-            SessionStart hook reads + drains this so Claude knows to
-            dispatch the gmd-curator subagent."""
-            import json as _json
+            """Spool curator-relevant paths: ONE new file per flush under
+            `.refmatrix/curator.spool/` (task 3.7 #fam-refine-drain), `{ts, path,
+            reason}` per line, written tmp → fsync → rename by
+            `gmd_curator.write_spool`. It replaced appends to the shared
+            `curator.queue`, whose drain destroyed entries it never read. Nothing
+            is held in memory across a fast-exit. A failed write is logged with
+            the count of paths it lost (C8); its `.tmp` is reaped by the next
+            startup sweep."""
+            from refmatrix import gmd_curator
             keep = [p for p in paths if is_curator_relevant(Path(p))]
             if not keep:
                 return 0
-            now = time.time()
             try:
-                with curator_queue_path.open("a", encoding="utf-8") as fh:
-                    for p in keep:
-                        fh.write(_json.dumps({
-                            "ts": now, "path": p, "reason": "fs-change",
-                        }, ensure_ascii=False) + "\n")
+                gmd_curator.write_spool(self.root, keep)
             except OSError as exc:
-                self._log(f"curator queue write failed: {exc!r}")
+                self._log(f"curator spool write FAILED: {len(keep)} path(s) not queued "
+                          f"for the gmd-curator: {exc!r}")
+                return 0
             return len(keep)
 
         # Option A: pre-repair the entity_links secondary index when the

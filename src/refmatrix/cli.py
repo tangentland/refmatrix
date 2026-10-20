@@ -376,16 +376,6 @@ class _DaemonWriter:
             "max_df_ratio": max_df_ratio, "drop": drop,
         })
 
-    def set_flag_by_selector(self, flag, value, **selectors):
-        return self._call("set_flag", {"flag": flag, "value": value,
-                                       **selectors})
-
-    def forget_by_selector(self, *, dry_run=False, **selectors):
-        # Batched bulk-purge can still touch thousands of rows + fragments on a
-        # big partition — give it the same long timeout as bulk-forget/rebuild.
-        return self._call("forget", {"dry_run": dry_run, **selectors},
-                          timeout=600.0)
-
     def untrack_by_path(self, *, like=None, paths=None, dry_run=False):
         # Same long timeout as forget: a mis-ingested subtree can carry
         # thousands of entities across hundreds of files.
@@ -4683,17 +4673,6 @@ main.add_command(_alias(add_concept, "add-concept"))
 # ---- protected / noise flag CRUD + forget ---------------------------------
 
 
-def _entity_selectors(names, like, namespace, kind):
-    """Build the selector dict shared by protect / unprotect / noise / forget,
-    requiring at least one selector so a bare command can't touch everything."""
-    sel = {"names": list(names) or None, "like": like,
-           "namespace": namespace, "kind": kind}
-    if not any(sel.values()):
-        raise click.ClickException(
-            "select targets: NAMES..., --like GLOB, --namespace NS, or --kind K")
-    return sel
-
-
 def _selector_opts(f):
     f = click.option("--kind", type=click.Choice(["doc", "code", "concept"]),
                      default=None, help="Restrict to this entity kind.")(f)
@@ -4714,6 +4693,19 @@ def _report_flag(action, r):
         console.print(f"  … +{extra} more")
 
 
+def _curate(action: str, names, like, namespace, kind, **kw) -> dict:
+    """One `rmx_curate` call for a curation command (task 3.7 #fam-curation, C2): the
+    command parses the selector, CALLS the verb with the CLI's `-p` partition, renders
+    the dict. No daemon → the verb's in-process write; busy / refused → the verb's words."""
+    from refmatrix import verbs as _verbs
+    try:
+        return _verbs.curate(_root(), action=action, names=list(names) or None, like=like,
+                             namespace=namespace, kind=kind, partition=_resolve_partition(),
+                             **kw)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e)) from e
+
+
 @main.command("protect")
 @click.argument("names", nargs=-1)
 @_selector_opts
@@ -4724,9 +4716,7 @@ def protect_cmd(names, like, namespace, kind):
         rmx protect --namespace query         # every learned query/* concept
         rmx protect --like 'src/%' --kind code
     """
-    s = _store(write=True)
-    _report_flag("protected", s.set_flag_by_selector(
-        "protected", True, **_entity_selectors(names, like, namespace, kind)))
+    _report_flag("protected", _curate("protect", names, like, namespace, kind))
 
 
 @main.command("unprotect")
@@ -4734,9 +4724,7 @@ def protect_cmd(names, like, namespace, kind):
 @_selector_opts
 def unprotect_cmd(names, like, namespace, kind):
     """Clear protected so an entity can be pruned or forgotten."""
-    s = _store(write=True)
-    _report_flag("unprotected", s.set_flag_by_selector(
-        "protected", False, **_entity_selectors(names, like, namespace, kind)))
+    _report_flag("unprotected", _curate("unprotect", names, like, namespace, kind))
 
 
 @main.command("noise")
@@ -4745,9 +4733,7 @@ def unprotect_cmd(names, like, namespace, kind):
 def noise_cmd(names, like, namespace, kind):
     """Flag entities as noise (hidden from default queries; reaped by
     prune-noise --drop unless also protected)."""
-    s = _store(write=True)
-    _report_flag("flagged noise", s.set_flag_by_selector(
-        "noise", True, **_entity_selectors(names, like, namespace, kind)))
+    _report_flag("flagged noise", _curate("noise", names, like, namespace, kind))
 
 
 @main.command("unnoise")
@@ -4755,9 +4741,7 @@ def noise_cmd(names, like, namespace, kind):
 @_selector_opts
 def unnoise_cmd(names, like, namespace, kind):
     """Clear the noise flag."""
-    s = _store(write=True)
-    _report_flag("cleared noise", s.set_flag_by_selector(
-        "noise", False, **_entity_selectors(names, like, namespace, kind)))
+    _report_flag("cleared noise", _curate("unnoise", names, like, namespace, kind))
 
 
 @main.command("forget")
@@ -4772,10 +4756,11 @@ def forget_cmd(names, like, namespace, kind, dry_run, yes):
 
         rmx forget --namespace query --dry-run     # preview learned concepts
         rmx forget 'query/oldsearch' -y
-    """
-    s = _store(write=True)
-    sel = _entity_selectors(names, like, namespace, kind)
-    preview = s.forget_by_selector(dry_run=True, **sel)
+
+    The preview and the purge are both `rmx_curate` forget calls; the confirm
+    prompt (or `-y`) is this command's gate, so the purge passes `broad` itself
+    (task 3.7 #fam-curation-forget)."""
+    preview = _curate("forget", names, like, namespace, kind, dry_run=True)
     matched = preview.get("names", [])
     if not matched:
         console.print("[dim]no matching entities[/]")
@@ -4795,7 +4780,7 @@ def forget_cmd(names, like, namespace, kind, dry_run, yes):
         if len(matched) > 20:
             console.print(f"  … +{len(matched) - 20} more")
         click.confirm("proceed", abort=True)
-    r = s.forget_by_selector(dry_run=False, **sel)
+    r = _curate("forget", names, like, namespace, kind, dry_run=False, broad=True)
     _say_vector_delete_failures(r, "forget")
     console.print(f"[red]forgot[/] {r.get('forgotten', 0)} entities")
 
@@ -9088,86 +9073,111 @@ def curator():
     """
 
 
+def _curator_verb(**kw) -> dict:
+    """One `rmx_curator` call (task 3.7 #fam-refine-drain, C2)."""
+    from refmatrix import verbs as _verbs
+    try:
+        return _verbs.curator(_root(), **kw)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e)) from e
+
+
 @curator.command("status")
 @click.option("--drain", is_flag=True,
-              help="Empty the queue after reading it. Use from hooks "
-                   "that only need to fire once per pending change.")
+              help="Drain exactly the spool files this status read (status, then "
+                   "drain(token)). Use from hooks that only need to fire once per "
+                   "pending change.")
 @click.option("--quiet-when-empty", is_flag=True, default=True,
               help="Print nothing if the queue is empty (default on). "
                    "Useful from SessionStart so the hook is silent on "
                    "fresh repos.")
 @click.option("--limit", default=10, type=int,
-              help="Cap the path list shown in the summary.")
-def curator_status(drain: bool, quiet_when_empty: bool, limit: int):
+              help="Cap the path list shown in the summary (render only).")
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit the status as JSON, including the `token` that "
+                   "`rmx curator drain --token @<file>` takes back.")
+@click.option("--max-entries", default=500, type=int, show_default=True,
+              help="Read whole spool files, oldest first, up to this many entries.")
+def curator_status(drain: bool, quiet_when_empty: bool, limit: int, as_json: bool,
+                   max_entries: int):
     """Summarize the curator queue for hook injection.
 
     Prints a single short paragraph suitable for SessionStart /
     UserPromptSubmit hook stdout so Claude sees pending curator work
-    without paging through full file lists.
+    without paging through full file lists. `--drain` deletes only the spool
+    files this status read: a flush that lands after it waits for the next one
+    (task 3.7 #fam-refine-drain — the old drain deleted entries nobody read).
     """
-    import json as _json
-    root = _root()
-    qpath = root / "curator.queue"
-    if not qpath.exists() or qpath.stat().st_size == 0:
-        if not quiet_when_empty:
-            console.print("curator queue: empty")
-        return
-    entries: list[dict] = []
-    try:
-        for line in qpath.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entries.append(_json.loads(line))
-            except _json.JSONDecodeError:
-                continue
-    except OSError:
-        return
-    if not entries:
-        if drain:
-            try:
-                qpath.unlink()
-            except OSError:
-                pass
-        return
-    paths = sorted({e.get("path", "") for e in entries if e.get("path")})
-    project_root = root.parent
-    rels: list[str] = []
-    for p in paths:
+    out = _curator_verb(action="status", max_entries=max_entries)
+    for w in out.get("warnings") or []:
+        click.echo(f"rmx curator: {w}", err=True)
+    if as_json:
+        click.echo(json.dumps(out))
+    else:
+        root = _root()
+        paths = sorted({e.get("path", "") for e in out.get("entries") or [] if e.get("path")})
+        if not paths:
+            if not quiet_when_empty:
+                console.print("curator queue: empty")
+        else:
+            project_root = root.parent
+            rels: list[str] = []
+            for p in paths:
+                try:
+                    rels.append(str(Path(p).resolve().relative_to(project_root)))
+                except ValueError:
+                    rels.append(p)
+            sample = rels[:limit]
+            overflow = max(0, len(rels) - limit)
+            left = (out.get("spool") or {}).get("remaining_files") or 0
+            # Plain stdout — hook surfaces this as additional Claude context.
+            click.echo(
+                f"curator-queue: {len(rels)} curator-relevant file change(s) since "
+                f"last drain. Spawn `gmd-curator` (ingest mode) to cross-link, "
+                f"surface drift, and crystallize. Paths: "
+                + ", ".join(sample)
+                + (f", +{overflow} more" if overflow else "")
+                + (f" ({left} more spool file(s) not read yet)" if left else "")
+            )
+    if drain and out.get("token"):
+        _curator_verb(action="drain", token=out["token"])
+
+
+def _expand_drain_token(values) -> "list[str]":
+    """`--token NAME` (repeatable) and/or `--token @FILE`, FILE holding the output of
+    `rmx curator status --json` (its `token`) or a JSON list of names."""
+    names: list[str] = []
+    for v in values:
+        if not v.startswith("@"):
+            names.append(v)
+            continue
+        path = Path(v[1:])
         try:
-            rels.append(str(Path(p).resolve().relative_to(project_root)))
-        except ValueError:
-            rels.append(p)
-    sample = rels[:limit]
-    overflow = max(0, len(rels) - limit)
-    # Plain stdout — hook surfaces this as additional Claude context.
-    click.echo(
-        f"curator-queue: {len(rels)} curator-relevant file change(s) since "
-        f"last drain. Spawn `gmd-curator` (ingest mode) to cross-link, "
-        f"surface drift, and crystallize. Paths: "
-        + ", ".join(sample)
-        + (f", +{overflow} more" if overflow else "")
-    )
-    if drain:
-        try:
-            qpath.unlink()
-        except OSError:
-            pass
+            doc = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            raise click.ClickException(f"--token {v}: cannot read a status JSON ({e})") from e
+        tok = doc.get("token") if isinstance(doc, dict) else doc
+        if not isinstance(tok, list) or not all(isinstance(t, str) for t in tok):
+            raise click.ClickException(f"--token {v}: no `token` list of spool file names")
+        names.extend(tok)
+    return names
 
 
 @curator.command("drain")
-def curator_drain():
-    """Empty the curator queue without printing anything."""
-    qpath = _root() / "curator.queue"
-    if qpath.exists():
-        try:
-            qpath.unlink()
-            console.print("[green]curator queue drained[/]")
-        except OSError as exc:
-            raise click.ClickException(f"drain failed: {exc}")
-    else:
-        console.print("[dim]curator queue already empty[/]")
+@click.option("--token", multiple=True,
+              help="A spool file name from `curator status --json` (repeatable), or "
+                   "@FILE holding that JSON. Only those files are drained.")
+def curator_drain(token):
+    """Drain exactly the spool files a curator status token names.
+
+    No token is an error — drain never deletes what nobody read (task 3.7
+    #fam-refine-drain)."""
+    names = _expand_drain_token(token)
+    res = _curator_verb(action="drain", token=names or None)
+    drained, missing = res.get("drained") or [], res.get("missing") or []
+    console.print(f"[green]drained[/] {len(drained)} spool file(s)")
+    if missing:
+        click.echo(f"already gone (a concurrent drain took them): {', '.join(missing)}")
 
 
 @curator.command("scan")
@@ -9193,9 +9203,12 @@ def curator_scan(no_drain, dry_run):
                       f"to enqueue[/]")
         return
     res = gmd_curator.scan_and_enqueue(root, drain=not no_drain)
+    for w in res.get("warnings") or []:
+        click.echo(f"rmx curator scan: {w}", err=True)
     console.print(f"[green]curator scan:[/] {res['candidates']} candidate(s) "
                   f"queued for review"
-                  + (" · queue drained" if res["drained"] else ""))
+                  + (f" · drained the {res.get('files', 0)} spool file(s) it read"
+                     if res["drained"] else ""))
     if res["candidates"]:
         console.print("[dim]review/accept in the UI Bus tab or `rmx bus` "
                       "refinement queue; dispatch the gmd-curator subagent to fix[/]")
@@ -11555,12 +11568,23 @@ def taxonomy_grp():
     soft — off-vocabulary tags warn, never block."""
 
 
+def _taxonomy_verb(**kw) -> dict:
+    """One `rmx_taxonomy` call (task 3.7 #fam-taxonomy, C2); a corrupt vocabulary file
+    or a missing argument is a ClickException with the verb's words."""
+    from refmatrix import verbs as _verbs
+    try:
+        return _verbs.taxonomy(_root(), **kw)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e)) from e
+
+
 @taxonomy_grp.command("list")
 def taxonomy_list():
     """Show the tag vocabulary grouped by category."""
-    from refmatrix import taxonomy as _tax
-    data = _tax.load()
-    cats = data.get("categories", {})
+    res = _taxonomy_verb(action="list")
+    for w in res.get("warnings") or []:
+        click.echo(f"rmx taxonomy: {w}", err=True)
+    cats = res.get("categories") or {}
     if not cats:
         console.print("[yellow]empty taxonomy[/]")
         return
@@ -11568,7 +11592,7 @@ def taxonomy_list():
         console.print(f"[bold]{cat_name}[/]  [dim]{cat.get('description','')}[/]")
         for tag, meta in (cat.get("tags") or {}).items():
             console.print(f"  • {tag}  [dim]{meta.get('description','')}[/]")
-    console.print(f"\n[dim]{_tax.taxonomy_path()}[/]")
+    console.print(f"\n[dim]{res.get('path')}[/]")
 
 
 @taxonomy_grp.command("add")
@@ -11578,20 +11602,19 @@ def taxonomy_list():
 @click.option("--color", default="#64748b", help="Hex color for the UI.")
 def taxonomy_add(category, tag, desc, color):
     """Add (or update) a tag under a category."""
-    from refmatrix import taxonomy as _tax
-    _tax.add_tag(category, tag, description=desc, color=color)
-    console.print(f"[green]added[/] {tag} → {category}")
+    res = _taxonomy_verb(action="add", category=category, tag=tag, desc=desc, color=color)
+    console.print(f"[green]added[/] {res.get('tag')} → {res.get('category')}")
 
 
 @taxonomy_grp.command("remove")
 @click.argument("tag")
 def taxonomy_remove(tag):
     """Remove a tag from the vocabulary."""
-    from refmatrix import taxonomy as _tax
-    if _tax.remove_tag(tag):
-        console.print(f"[green]removed[/] {tag}")
+    res = _taxonomy_verb(action="remove", tag=tag)
+    if res.get("removed"):
+        console.print(f"[green]removed[/] {res.get('tag')}")
     else:
-        console.print(f"[yellow]not in taxonomy:[/] {tag}")
+        console.print(f"[yellow]not in taxonomy:[/] {res.get('tag')}")
 
 
 @main.group("memory")
@@ -11622,13 +11645,11 @@ def memory_add(name, content, mtype, tags, meta, protect, is_global):
     meta_d = json.loads(meta) if meta else None
     tags_l = list(tags) if tags else None
     if tags_l:
+        # The same note the `memory_add` verb returns as `tag_warnings` (task 3.7 r1 M6),
+        # printed before the write so the no-daemon bootstrap path shows it too.
         from refmatrix import taxonomy as _tax
-        _, unknown = _tax.validate(tags_l)
-        if unknown:
-            console.print(
-                f"[yellow]note:[/] off-vocabulary tag(s): {', '.join(unknown)} "
-                f"(add via `rmx taxonomy add <category> <tag>`)"
-            )
+        for w in _tax.tag_warnings(tags_l):
+            console.print(f"[yellow]note:[/] {w}", markup=False)
     from refmatrix import verbs as _verbs
     root = _root()
     try:
@@ -11848,11 +11869,8 @@ def memory_retag(name_or_id, add_tags, rm_tags, set_tags):
     check = set_l if set_l is not None else (add_l or [])
     if check:
         from refmatrix import taxonomy as _tax
-        _, unknown = _tax.validate(check)
-        if unknown:
-            console.print(
-                f"[yellow]note:[/] off-vocabulary tag(s): {', '.join(unknown)}"
-            )
+        for w in _tax.tag_warnings(check):
+            console.print(f"[yellow]note:[/] {w}", markup=False)
     target = int(name_or_id) if name_or_id.isdigit() else name_or_id
     key = {"id": target} if isinstance(target, int) else {"name": target}
     new = _memory_write(
