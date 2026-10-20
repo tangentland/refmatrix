@@ -4099,11 +4099,6 @@ def _op_add_linkage_type(d: Daemon, args: dict) -> dict:
     return {"id": lid}
 
 
-def _op_list_linkages(d: Daemon, args: dict) -> dict:
-    with d._store_lock:
-        return {"rows": d._st().list_linkages()}
-
-
 def _op_top_concepts(d: Daemon, args: dict) -> dict:
     """Density-ranked concept entry points (reuses primer.concept_density) —
     the Graph-tab landing view. Symbol-shaped, noise-excluded by default."""
@@ -6385,7 +6380,6 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "save_query": _op_save_query,
     "rebuild_index": _op_rebuild_index,
     "top_concepts": _op_top_concepts,
-    "list_linkages": _op_list_linkages,
     "partition_add": _op_partition_add,
     "partition_audit": _op_partition_audit,
     "partition_drop": _op_partition_drop,
@@ -6466,7 +6460,6 @@ CLI_OPS: set[str] = {
     "describe",
     "query",
     "grep_indexed",
-    "list_linkages",
     "partition_add",
     # Read-only and asked by an operator waiting at a prompt, so it belongs
     # on the interactive pool rather than behind a bulk ingest (ADR-0003).
