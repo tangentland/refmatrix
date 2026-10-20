@@ -8,6 +8,7 @@ metadata:
   status: approved
   plan: plan-3-verbs-parity
   created: 2026-10-19
+  amended: 2026-10-19 (#r10-amend — ch-bsd plan-3 r10)
 ---
 
 # Task 3.6: plan-3 r9 remedy {#root}
@@ -24,6 +25,7 @@ rel: implements -> [[bsd-plan3-verbs-parity-r9-1acadd2#s-3]]
 rel: implements -> [[bsd-plan3-verbs-parity-r9-1acadd2#s-4]]
 rel: implements -> [[bsd-plan3-verbs-parity-r9-1acadd2#m-1]]
 rel: amends -> [[task-3.5-r8-remedy#amend-reqs]]
+rel: derives-from -> [[bsd-plan3-verbs-parity-r10-1081a05]]
 
 ## Why {#why}
 
@@ -121,6 +123,105 @@ it. Logged as bug-135.
 13. **AC-13.** All plan-3 test files stay green; `task-3.5-r8-remedy#amend-reqs`'s "ONLY place"
     claim is true after #2. {#ac-13}
 
+## Amendment after r10 {#r10-amend}
+
+ch-bsd plan-3 r10 at `1081a05` was DIRTY (0B/2S/2M). Every r9 finding is closed in behaviour and
+13 of 14 remedy mutants are killed. Two SKETCHY findings and one MEH are folded in here; the other
+MEH (#m-2) is task 3.7 itself.
+
+rel: implements -> [[bsd-plan3-verbs-parity-r10-1081a05#s-1]]
+rel: implements -> [[bsd-plan3-verbs-parity-r10-1081a05#s-2]]
+rel: implements -> [[bsd-plan3-verbs-parity-r10-1081a05#m-1]]
+
+### S1 — one legacy-partition detector (r10 #s-1) {#r10-s1}
+
+The bug-135 fix made `search.cached_replica` refuse the writer's primary catalog. That cache was
+the only way `verbs.memory_partition` saw a legacy `memory-<project>` partition on a
+never-snapshotted store. With no daemon it now falls to absent and returns the project
+partition, while `cli._legacy_memory_partition_exists` still finds the legacy one. On the same
+store, MCP `rmx_memory_add` lands in `p` and CLI `memory add` lands in `memory-p`: the
+split-brain family `memory_partition` exists to prevent.
+
+- **Decision (orchestrator):** ONE detector, `verbs.legacy_memory_partition_exists(root,
+  legacy) -> bool`. It does a read-only open, CLOSES it afterwards, and is never cached
+  (the CLI's process cache goes). `verbs.memory_partition` uses it on the no-replica / absent
+  branch. The CLI's memory-partition default (`_memory_partition_default` /
+  `_legacy_memory_partition_exists`) uses it too.
+- MCP `rmx_memory_add`, CLI `memory add` and `verbs.memory_partition` agree on `memory-<project>`
+  for that store state.
+- bug-135 stays fixed. After the detector runs, an in-process writer open in the same process
+  succeeds (no lingering `rmx_ro` attach).
+
+### S2 — the guard covers every spelling (r10 #s-2) {#r10-s2}
+
+The r9 guard matched one spelling (`daemon_mod.call` plus literal words) and passed eight planted
+evasions. It also misses one live site.
+
+- **Guard** (`tests/transport_guard.py`). The dial set covers:
+  - every module alias bound to `daemon` / `hub` by any import spelling, and any `*daemon*` name;
+  - from-imported `call` / `global_call`;
+  - dial WRAPPERS: any function that dials directly (`_memory_daemon_call`, …) and is not a
+    clean delegate.
+
+  Wording covers:
+  - the handler's literals and f-strings;
+  - module string constants it names;
+  - text of helpers it calls (two levels);
+  - synonyms: busy / down / wedged / hung / stuck / did not answer / not answering / not
+    running / not confirmed / timed out / unreachable.
+
+  It flags:
+  - a handler or delegate that classifies on one branch and words its own error on another;
+  - a handler that calls the classifier and discards the result.
+
+  It passes:
+  - a handler that raises or interpolates the classifier result;
+  - a handler that calls a clean delegate;
+  - a silent handler;
+  - a handler that catches only typed errors (`Verb*Error`, `ClickException`).
+
+  One planted fixture per shape.
+- **Live sites to route through `classify_transport_error`** (both flagged at `1081a05`):
+  - `cli.py:1341`: `focus summarize --promote`, around `_memory_daemon_call`. It words any
+    OSError "daemon busy: promote not confirmed". Keep the "may still complete it" note for the
+    timeout case.
+  - `cli.py:12270`: `memory recall`'s dense leg, `_degrade_or_raise`. It words a raw OSError
+    "daemon busy (recall not confirmed …)". The new guard found this one; r10 did not list it.
+- **N8 pinned behaviourally:** `ingest-gmd --detach` against a refused socket says "not running",
+  never "daemon busy".
+
+### M1 — bug-135's registry row closed (r10 #m-1) {#r10-m1}
+
+The bug-135 row's status becomes `fixed (1919764)`, with one line saying that the fix moved the
+no-daemon legacy check and that S1 restores it as a closed-after read.
+
+### Rider: bug-136 (owner plan-23 task 23.5) {#r10-bug136}
+
+`Store(read_only=True)` with no snapshot resolves to the WRITER's own catalog. Any long-lived
+read-only holder therefore reproduces bug-135; this is the enabler bug-135's fix left in place.
+**Rider on task 23.5 (read path):** a read-only open with no snapshot either fails with the
+read-worded error or opens a closed-after handle, never a cached attach of the writer's file.
+Plan-3 does not fix it beyond S1's closed-after, never-cached detector.
+
+rel: related-to -> [[task-23.5-read-path-and-holder-bounds]]
+
+### Acceptance criteria (r10) {#r10-acceptance}
+
+1. **AC-R10-1 (S1, RED).** `verbs.memory_partition` returns `memory-p` on a no-daemon,
+   no-snapshot store that holds a legacy `memory-p`. {#ac-r10-1}
+2. **AC-R10-2 (S1, RED).** MCP `rmx_memory_add` and CLI `memory add` both land in `memory-p`;
+   an in-process write afterwards succeeds. {#ac-r10-2}
+3. **AC-R10-3 (S1, RED).** `verbs.legacy_memory_partition_exists` sees a legacy partition created
+   after its first call (never cached), and both `verbs.memory_partition` and the CLI default
+   reach it (pass-through spy). {#ac-r10-3}
+4. **AC-R10-4 (S2, RED).** The widened guard finds no src handler; at `1081a05` it names
+   `cli.py:1341` and `cli.py:12270`. {#ac-r10-4}
+5. **AC-R10-5 (S2).** Every planted evasion shape is flagged (12 plants), and every delegating,
+   silent or typed-only plant passes (5 plants). {#ac-r10-5}
+6. **AC-R10-6 (N8).** `ingest-gmd --detach` against a refused socket says "not running". This pin
+   passes at HEAD and kills N8. {#ac-r10-6}
+7. **AC-R10-7 (M1, RED).** bug-135's registry status is not `open`. {#ac-r10-7}
+
 ## Files to modify {#files-to-modify}
 
 | File | Change |
@@ -129,7 +230,9 @@ it. Logged as bug-135.
 | `src/refmatrix/verbs.py` | memory_partition through the classifier; LEGACY reasons (#6) |
 | `src/refmatrix/cli.py` | derive log/status notes; ingest-gmd start op; memory add bootstrap (#5) |
 | `src/refmatrix/daemon.py` | `spawn_daemon_subprocess` one deadline |
-| `tests/test_task3_6_r9_remedy.py` | new (test engineer) |
+| `tests/test_task3_6_r9_remedy.py` | new (test engineer); #r10-amend tests |
+| `tests/transport_guard.py` | the widened guard (#r10-amend S2) |
+| `src/refmatrix/mcp.py` | bootstrap partition through the shared detector (#r10-amend S1) |
 | `workflow/bug_registry.md` | bug-135 |
 
 ## Test strategy {#test-strategy}

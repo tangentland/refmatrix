@@ -26,10 +26,8 @@ r9 at 1acadd2 was DIRTY (1B/4S/1M). This file is the RED half of the remedy:
 """
 from __future__ import annotations
 
-import ast
 import contextlib
 import os
-import re
 import shutil
 import signal
 import socket
@@ -153,85 +151,209 @@ def test_derive_reads_name_a_refused_socket_not_running(argv, monkeypatch):
     _says_not_running(note[0])
 
 
-# The guard. A handler around a store-daemon dial (`daemon_mod.call` /
-# `hub.global_call`) that writes transport words ("did not answer", "busy",
-# "not running", "timed out", …) itself, instead of calling the classifier or a
-# function that does, is a second classifier.
-_DIAL_ATTRS = {"call", "global_call"}
-_DIAL_MODS = {"daemon_mod", "dm", "daemon", "_dm", "_daemon", "hub_mod", "hub"}
-_WORDS = re.compile(r"did not answer|not running|busy|timed? ?out|not answering|unreachable",
-                    re.I)
+# The guard lives in tests/transport_guard.py (widened by #r10-amend after r10
+# #s-2 planted eight evasions of the r9 version and it passed all of them).
+from tests import transport_guard as _tg  # noqa: E402
 
-
-def _dials(node) -> bool:
-    for n in ast.walk(node):
-        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
-                and n.func.attr in _DIAL_ATTRS and isinstance(n.func.value, ast.Name)
-                and n.func.value.id in _DIAL_MODS):
-            return True
-    return False
-
-
-def _callee(c: ast.Call) -> "str | None":
-    f = c.func
-    return f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
-
-
-def _second_classifiers(files: "dict[str, str]") -> list[str]:
-    """`file:line` of every handler that words a dial's transport error itself."""
-    trees = {name: ast.parse(text) for name, text in files.items()}
-    delegates = {"classify_transport_error"}
-    for t in trees.values():
-        for fn in ast.walk(t):
-            if isinstance(fn, ast.FunctionDef) and any(
-                    isinstance(c, ast.Call) and _callee(c) == "classify_transport_error"
-                    for c in ast.walk(fn)):
-                delegates.add(fn.name)
-    out = []
-    for name, t in trees.items():
-        for n in ast.walk(t):
-            if not (isinstance(n, ast.Try) and any(_dials(b) for b in n.body)):
-                continue
-            for h in n.handlers:
-                if any(isinstance(c, ast.Call) and _callee(c) in delegates for c in ast.walk(h)):
-                    continue
-                text = " ".join(ast.unparse(c) for c in ast.walk(h)
-                                if isinstance(c, ast.JoinedStr)
-                                or (isinstance(c, ast.Constant) and isinstance(c.value, str)))
-                if _WORDS.search(text):
-                    out.append(f"{name}:{h.lineno}")
-    return out
+_second_classifiers = _tg.second_classifiers
 
 
 def test_no_site_words_a_daemon_transport_error_itself():
+    """AC-5 / AC-R10-4. At 1081a05 the widened guard names `cli.py:1341`
+    (focus summarize --promote, through `_memory_daemon_call`) and
+    `cli.py:12270` (memory recall's dense leg, `_degrade_or_raise`): both word a
+    raw OSError — a refused or missing socket — as "daemon busy"."""
     files = {str(p.relative_to(_SRC)): p.read_text() for p in sorted(_SRC.rglob("*.py"))}
     bad = _second_classifiers(files)
     assert not bad, ("these handlers word a store-daemon transport error themselves; route "
                      "them through verbs.classify_transport_error:\n" + "\n".join(bad))
 
 
-def test_the_guard_flags_a_planted_second_classifier():
-    """The guard must be able to FAIL (a clean corpus cannot prove that)."""
-    planted = '''
-def bad(root):
+_HDR = "from refmatrix import daemon as daemon_mod\nfrom refmatrix import verbs\n"
+# One plant per evasion shape r10 #s-2 listed, plus the r9 baseline. Each MUST
+# be flagged — a clean corpus cannot show the guard can fail.
+_PLANTS_FLAGGED = {
+    "baseline": _HDR + """
+def f(root):
     try:
         daemon_mod.call(root, "x", {})
     except Exception as e:
         raise RuntimeError(f"daemon busy: x did not answer ({e})")
+""",
+    "fstring_helper": _HDR + """
+def _busy_msg(root, e):
+    return f"daemon for {root} did not answer ({e})"
 
-def good(root):
+def f(root):
     try:
         daemon_mod.call(root, "x", {})
     except Exception as e:
-        raise verbs.classify_transport_error(e, op="x", root=root, timeout=1.0)
+        raise RuntimeError(_busy_msg(root, e))
+""",
+    "module_constant": _HDR + """
+BUSY_MSG = "daemon busy: %s"
 
-def quiet(root):
+def f(root):
+    try:
+        daemon_mod.call(root, "x", {})
+    except OSError as e:
+        raise RuntimeError(BUSY_MSG % e)
+""",
+    "unlisted_alias": """
+import refmatrix.daemon as rd2
+
+def f(root):
+    try:
+        rd2.call(root, "x", {})
+    except Exception as e:
+        raise RuntimeError(f"store is busy ({e})")
+""",
+    "from_imported_call": """
+from refmatrix.daemon import call as dcall
+
+def f(root):
+    try:
+        dcall(root, "x", {})
+    except Exception as e:
+        raise RuntimeError(f"daemon did not answer ({e})")
+""",
+    "dial_wrapper": _HDR + """
+def _memory_daemon_call(op, args):
+    return daemon_mod.call("/r", op, args)
+
+def f():
+    try:
+        _memory_daemon_call("memory_add", {})
+    except (TimeoutError, OSError) as e:
+        raise RuntimeError(f"daemon busy: promote not confirmed ({e})")
+""",
+    "synonym_down": _HDR + """
+def f(root):
+    try:
+        daemon_mod.call(root, "x", {})
+    except Exception as e:
+        raise RuntimeError(f"the daemon is down ({e})")
+""",
+    "synonym_wedged": _HDR + """
+def f(root):
+    try:
+        daemon_mod.call(root, "x", {})
+    except Exception as e:
+        raise RuntimeError(f"the daemon looks wedged ({e})")
+""",
+    "mixed_delegate": _HDR + """
+def _reason(root, e):
+    if isinstance(e, TimeoutError):
+        return "daemon wedged"
+    return str(verbs.classify_transport_error(e, op="x", root=root, timeout=1.0))
+
+def f(root):
+    try:
+        daemon_mod.call(root, "x", {})
+    except Exception as e:
+        raise RuntimeError(_reason(root, e))
+""",
+    "mixed_handler": _HDR + """
+def f(root):
+    try:
+        daemon_mod.call(root, "x", {})
+    except Exception as e:
+        if isinstance(e, TimeoutError):
+            raise RuntimeError("daemon busy")
+        raise verbs.classify_transport_error(e, op="x", root=root, timeout=1.0)
+""",
+    "discarded_result_N8": _HDR + """
+def f(root, pid):
+    try:
+        daemon_mod.call(root, "ingest_gmd_start", {})
+    except OSError as e:
+        c = verbs.classify_transport_error(e, op="ingest_gmd_start", root=root, timeout=1.0)
+        raise RuntimeError(f"daemon busy (pid={pid}; the ingest job was not accepted)")
+""",
+    "discarded_bare_call": _HDR + """
+def f(root):
+    try:
+        daemon_mod.call(root, "x", {})
+    except OSError as e:
+        verbs.classify_transport_error(e, op="x", root=root, timeout=1.0)
+        raise RuntimeError(f"x failed: busy ({e})")
+""",
+}
+_PLANTS_CLEAN = {
+    "raises_the_classifier": _HDR + """
+def f(root):
+    try:
+        daemon_mod.call(root, "x", {})
+    except Exception as e:
+        raise verbs.classify_transport_error(e, op="x", root=root, timeout=1.0) from e
+""",
+    "uses_the_result_in_its_words": _HDR + """
+def f(root, pid):
+    try:
+        daemon_mod.call(root, "x", {})
+    except OSError as e:
+        c = verbs.classify_transport_error(e, op="x", root=root, timeout=1.0)
+        raise RuntimeError(f"{c} (pid={pid}; the daemon may still complete it)") from e
+""",
+    "clean_delegate": _HDR + """
+def _reason(root, e):
+    c = verbs.classify_transport_error(e, op="x", root=root, timeout=1.0)
+    return f"global store: {c}"
+
+def f(root):
+    try:
+        daemon_mod.call(root, "x", {})
+    except Exception as e:
+        return _reason(root, e)
+""",
+    "silent": _HDR + """
+def f(root):
     try:
         daemon_mod.call(root, "x", {})
     except Exception:
         return None
-'''
-    assert _second_classifiers({"planted.py": planted}) == ["planted.py:5"]
+""",
+    "typed_only": _HDR + """
+def f(root):
+    try:
+        daemon_mod.call(root, "x", {})
+    except verbs.VerbBusyError as e:
+        raise RuntimeError(f"recall not confirmed — daemon busy ({e})")
+""",
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_PLANTS_FLAGGED))
+def test_the_guard_flags_every_evasion_shape(shape):
+    """r10 #s-2: each shape passed the r9 guard. Each must be flagged now."""
+    assert _second_classifiers({f"{shape}.py": _PLANTS_FLAGGED[shape]}), (
+        f"the guard does not see the {shape!r} evasion")
+
+
+@pytest.mark.parametrize("shape", sorted(_PLANTS_CLEAN))
+def test_the_guard_passes_a_handler_that_delegates(shape):
+    assert _second_classifiers({f"{shape}.py": _PLANTS_CLEAN[shape]}) == [], shape
+
+
+def test_ingest_gmd_detach_names_a_refused_socket_not_running(tmp_path, monkeypatch):
+    """The behavioural pin r10's N8 survived (cli.py ingest-gmd start op: the
+    classifier's result computed and discarded, "daemon busy (pid=…" back)."""
+    base, root = _refused_root("rmxi-")
+    d = tmp_path / "mem"
+    d.mkdir()
+    (d / "a.md").write_text("# a\n\nbody\n")
+    _status_up(monkeypatch)
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    monkeypatch.setenv("RMX_PARTITION", "p")
+    monkeypatch.setenv("RMX_DETACH_WAIT_S", "2")
+    try:
+        r = CliRunner().invoke(cli_mod.main, ["ingest-gmd", str(d), "--detach"])
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+    out = r.output + (r.stderr or "")
+    assert r.exit_code != 0, out
+    assert "not running" in out, out
+    assert "daemon busy" not in out, out
 
 
 # ---- #3: one deadline for the launcher AND the readiness poll ---------------
@@ -534,3 +656,125 @@ def test_every_verb_it_path_names_its_task_3_7_family():
 def test_the_deferral_registry_points_the_backlog_at_task_3_7():
     text = (_REPO / "workflow" / "deferral_registry.md").read_text()
     assert "[[task-3.7-verb-it-backlog]]" in text
+
+
+# ---- #r10-amend S1: ONE legacy-partition detector for CLI, MCP and verbs ----
+#
+# ch-bsd plan-3 r10 #s-1: bug-135's fix made `cached_replica` refuse the writer's
+# primary catalog, which was the only thing `verbs.memory_partition` used to see a
+# legacy `memory-<project>` partition on a never-snapshotted store. With no daemon
+# it now falls to absent → the project partition, while the CLI's own detector
+# (`cli._legacy_memory_partition_exists`) still finds the legacy one: MCP
+# `rmx_memory_add` lands in `p`, CLI `memory add` in `memory-p`. Split brain.
+# Decision: ONE detector, `verbs.legacy_memory_partition_exists(root, legacy)` —
+# a read-only open, CLOSED afterwards, never cached — used by both.
+
+def _legacy_store(prefix: str) -> "tuple[Path, Path]":
+    """No daemon, no snapshot, a pre-merge `memory-p` partition holding a row."""
+    base = _short_dir(prefix)
+    root = base / "p" / ".refmatrix"
+    root.parent.mkdir()
+    s = Store(root)
+    s.init()
+    with s.with_partition("memory-p"):
+        s.add_memory(name="legacy_row", content="pre-merge")
+    s.close()
+    assert not dm.ping(root)
+    assert not (root / "catalog.read.duckdb").exists()
+    return base, root
+
+
+def _get_in(s: Store, part: str, name: str) -> bool:
+    with s.with_partition(part):
+        return s.get_memory(name) is not None
+
+
+def test_memory_partition_sees_a_legacy_partition_on_a_never_snapshotted_store():
+    base, root = _legacy_store("rmxl1-")
+    try:
+        assert verbs.memory_partition(root) == "memory-p"
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+@pytest.mark.timeout(60)
+def test_mcp_and_cli_bootstrap_writes_land_in_the_same_partition(monkeypatch):
+    """r10 probe_r10_mcp: MCP `rmx_memory_add` → `p`, CLI `memory add` →
+    `memory-p`, on the same store state. Both must land in `memory-p`. And the
+    detector must leave no attach behind: an in-process WRITE in this same
+    process afterwards succeeds (bug-135 stays fixed)."""
+    from refmatrix import mcp
+    base, root = _legacy_store("rmxl2-")
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    monkeypatch.delenv("RMX_PARTITION", raising=False)
+    try:
+        out = mcp._t_memory_add({"root": str(root), "name": "mcp_row", "content": "via mcp"})
+        assert "error" not in out, out
+        r = CliRunner().invoke(cli_mod.main, ["memory", "add", "cli_row", "-c", "via cli"])
+        assert r.exit_code == 0, (r.output, r.stderr)
+        s = Store(root)
+        try:
+            where = {n: [p for p in ("p", "memory-p") if _get_in(s, p, n)]
+                     for n in ("mcp_row", "cli_row")}
+            assert where == {"mcp_row": ["memory-p"], "cli_row": ["memory-p"]}, where
+            with s.with_partition("memory-p"):
+                s.add_memory(name="after_row", content="no stale attach")
+        finally:
+            s.close()
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_the_legacy_detector_is_shared_closed_and_never_cached(monkeypatch):
+    """One helper; it reports the CURRENT state (a legacy partition created after
+    the first call is seen by the second — no process cache), and between the
+    calls a writer opens the same catalog in-process (no lingering attach)."""
+    base = _short_dir("rmxl3-")
+    root = base / "p" / ".refmatrix"
+    root.parent.mkdir()
+    s = Store(root)
+    s.init()
+    s.close()
+    try:
+        assert verbs.legacy_memory_partition_exists(root, "memory-p") is False
+        s = Store(root)
+        with s.with_partition("memory-p"):
+            s.add_memory(name="late_legacy", content="x")
+        s.close()
+        assert verbs.legacy_memory_partition_exists(root, "memory-p") is True
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_cli_and_verbs_both_use_the_shared_detector(monkeypatch):
+    """Converged: the CLI's memory-partition default and `verbs.memory_partition`
+    both reach `verbs.legacy_memory_partition_exists` (pass-through spy)."""
+    base, root = _legacy_store("rmxl4-")
+    real = verbs.legacy_memory_partition_exists
+    seen: list = []
+
+    def spy(*a, **kw):
+        seen.append(a)
+        return real(*a, **kw)
+    monkeypatch.setattr(verbs, "legacy_memory_partition_exists", spy)
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    monkeypatch.delenv("RMX_PARTITION", raising=False)
+    try:
+        verbs.memory_partition(root)
+        assert seen, "verbs.memory_partition does not use the shared detector"
+        n = len(seen)
+        r = CliRunner().invoke(cli_mod.main, ["memory", "add", "cli_row2", "-c", "b"])
+        assert r.exit_code == 0, (r.output, r.stderr)
+        assert len(seen) > n, "the CLI memory-partition default does not use the shared detector"
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+# ---- #r10-amend M1: bug-135's registry row is closed ------------------------
+
+def test_bug_135_is_not_left_open_in_the_registry():
+    rows = [ln for ln in (_REPO / "workflow" / "bug_registry.md").read_text().splitlines()
+            if ln.startswith("| bug-135 |")]
+    assert len(rows) == 1, rows
+    status = rows[0].split(" | ")[6].strip()
+    assert not status.startswith("open"), f"bug-135 status is {status!r}"
