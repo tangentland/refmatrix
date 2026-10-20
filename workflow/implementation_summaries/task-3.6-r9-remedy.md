@@ -123,4 +123,4 @@ purge. All seven were killed:
 - RED: `workflow/review-output/task3.6-3.7-red.log` (test engineer, `95b81ac`).
 - 3.6 file: 20 passed (`task3.6-green-target.log`).
 - Plan-3 files (incl. 3.5, 3.6, plan-2 remedy, hub, lance): 551 passed (`task3.6-green-plan3.log`).
-- Full suite: `task3.6-green-full.log`.
+- Full suite: 3018 passed, 20 failed, 19 skipped (`task3.6-green-full.log`). The failures are the 19 clone-only DEV TREE refusals plus the gmd repo-scope gate, and nothing else.
