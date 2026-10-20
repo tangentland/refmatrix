@@ -4063,7 +4063,9 @@ def _op_upsert_entity(d: Daemon, args: dict) -> dict:
     meta = args.get("meta")
     if isinstance(meta, str):
         meta = _json.loads(meta)
-    with d._store_lock:
+    # Honours `partition` (task 3.7 #fam-matrix-edit-partition): it wrote to the daemon's
+    # bound partition, so `rmx -p X add entity` landed where `-p X link` could not see it.
+    with d._store_lock, _op_part_ctx(d, args):
         eid = d._st().upsert_entity(
             kind=args["kind"], name=args["name"],
             path=args.get("path"), tldr=args.get("tldr"),
@@ -4074,7 +4076,9 @@ def _op_upsert_entity(d: Daemon, args: dict) -> dict:
 
 
 def _op_add_concept(d: Daemon, args: dict) -> dict:
-    with d._store_lock:
+    """Honours `partition` (task 3.7 #fam-matrix-edit-partition): the concept used to land
+    in the daemon's bound partition while `link` / `unlink` / `save_query` honoured `-p`."""
+    with d._store_lock, _op_part_ctx(d, args):
         cid = d._st().add_concept(
             args["name"],
             description=args.get("description"),
@@ -4093,17 +4097,6 @@ def _op_add_linkage_type(d: Daemon, args: dict) -> dict:
         )
     d._request_snapshot()
     return {"id": lid}
-
-
-def _op_iter_entities(d: Daemon, args: dict) -> dict:
-    kind = args.get("kind")
-    with d._store_lock:
-        rows = [
-            {"id": e.id, "kind": e.kind, "name": e.name,
-             "path": e.path, "tldr": e.tldr}
-            for e in d._st().iter_entities(kind)
-        ]
-    return {"rows": rows}
 
 
 def _op_list_linkages(d: Daemon, args: dict) -> dict:
@@ -4346,11 +4339,6 @@ def _op_partition_list(d: Daemon, args: dict) -> dict:
         ],
         "daemon_partition": d._st().partition_name,
     }
-
-
-def _op_list_saved_queries(d: Daemon, args: dict) -> dict:
-    with d._store_lock:
-        return {"rows": list(d._st().list_saved_queries())}
 
 
 def _op_grep_indexed(d: Daemon, args: dict) -> dict:
@@ -6396,10 +6384,8 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "link_canon": _op_link_canon,
     "save_query": _op_save_query,
     "rebuild_index": _op_rebuild_index,
-    "iter_entities": _op_iter_entities,
     "top_concepts": _op_top_concepts,
     "list_linkages": _op_list_linkages,
-    "list_saved_queries": _op_list_saved_queries,
     "partition_add": _op_partition_add,
     "partition_audit": _op_partition_audit,
     "partition_drop": _op_partition_drop,
@@ -6481,7 +6467,6 @@ CLI_OPS: set[str] = {
     "query",
     "grep_indexed",
     "list_linkages",
-    "list_saved_queries",
     "partition_add",
     # Read-only and asked by an operator waiting at a prompt, so it belongs
     # on the interactive pool rather than behind a bulk ingest (ADR-0003).
