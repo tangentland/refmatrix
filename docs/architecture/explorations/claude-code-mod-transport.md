@@ -92,6 +92,44 @@ below. {#measured-work}
 | Invisible store trouble | DuckDB crash loop that `daemon status` cannot see; stale daemons; hub version skew | status line, toast on fast-exit / version mismatch, pane over focus / recall-state / bus |
 | Bus push | experimental `claude/channel` MCP capability | `$.prompt.submit` wakes an idle session; `$.ui.toast` |
 
+## Facilities beyond the transport (2026-10-20) {#facilities}
+
+The user, 2026-10-20: "what are the other facilities mod's bring to the table?". The 2.1.293 types
+list 58 hookable events; the transport uses about ten. Each row below was checked against the
+event's doc comment in `types/claude-code.d.ts`. {#facilities-lead}
+
+| facility | what it does | refmatrix use | lands in |
+|---|---|---|---|
+| `prompt.section` | rewrite / drop one named system-prompt section, cached | primer + memory as cache-stable sections | 24.6, 19.6 retarget |
+| `prompt.context` | first message's context blocks, re-read on compaction / `/clear` | session-start recall + recall-state as blocks | 24.6 |
+| `prompt.mention` | intercept `@path` reads, add context or deny | `@file` brings its graph neighbourhood | follow-up |
+| `prompt.autocomplete` | typeahead rows for the token being typed | symbol / concept / memory / subject names | follow-up |
+| `prompt.suggest` | the dim Tab suggestion | next step from STM focus / task stack | follow-up |
+| `skill.prompt` | rewrite a skill's expanded prompt | ch-* skills and `/recall-state` with live store facts | follow-up |
+| `session.append` | every kept row before storage; may rewrite | reasoning capture from the assistant's own prose ([[feedback_bind_capture_to_mandatory]]); secret scrubbing of tool results. OBSERVE only, rewrite only to scrub | 24.6 |
+| `turn.complete` | the answer and why the turn ended | the STM `say` event from the engine | 24.6 |
+| `session.measure` | context and rate-limit usage pushed per turn | plan-19's adaptive budget gets real headroom | 19.x retarget |
+| `session.compact` | before compaction: rewrite instructions / messages or skip | promote STM + save-state at the right moment; tell compaction what must survive; replaces the PreCompact shell hooks | 24.6 |
+| `turn.step` / `turn.start` | each model request of a turn, streamed | per-step usage for 21.x | 21.x retarget |
+| `tool.describe` | rewrite built-in tool descriptions; ToolSearch placement | the 21.3 nudge at the source (Grep's description points at `rmx_context` for indexed symbols) | 21.3 retarget |
+| `tool.check` | permission verdict, nothing runs | enforce-test-to-file / rmx-grep guards without shell scripts | 24.6 |
+| `$.agent.register` / `$.agent.spawn` / `agent.offer` | declare and spawn agent types | ship gmd-curator + ch-* with the mod; spawn the curator when its queue fills instead of printing a reminder every prompt | follow-up |
+| `mcp.call` / `mcp.connect` | observe other MCP servers' calls | other servers' calls in `used` and STM | 21.x retarget |
+| `$.command.register` / `command.run` | native slash commands | `/recall-state`, `/save-state`, `/detour`, `/stash` as code; `/remember` quoting `$.ui.selection()` | follow-up |
+| `config.*` + `userConfig` | `/config` rows | budgets, surfaces, composite cadence | 24.5 |
+| `ui.open` / `render` / `press` / `select` / `input` | interactive panes | focus graph, recall-state, bus; curator and refine review panes — a home for the `refine accept/reject` approval gate | 24.5 / follow-up |
+| `$.model.fork` | one question over the session's own transcript, cache-served | save-state digests and "what did we decide?" from the transcript | follow-up |
+| `$.model.complete` | history-less completion | subject / cluster labels, tag suggestions | follow-up |
+| `$.clock.every` / `after` | timers in the mod | health and bus polling without hooks | 24.5 |
+| `session.receive` / `session.send` | inter-session deliveries | the rmx bus as real deliveries; filter / consume peer messages | 24.5 / follow-up |
+| `telemetry.log` / `telemetry.mark` | Claude Code's own OTel streams | join 21.x usage with engine events | follow-up |
+
+**Priority** (each fixes a problem refmatrix already has): `session.append` / `turn.complete`
+reasoning capture; `session.measure` for plan-19; `session.compact` for promote-at-compaction;
+`$.agent.spawn` for the curator queue; `$.model.fork` for save-state digests; `tool.describe` for
+the 21.3 nudge. "follow-up" rows become tasks after 24.6, through the 24.8 retarget pass.
+{#facilities-priority}
+
 ## Option A: decide now — measurement gate, plan-24, hook-shaped Wave 2 work held {#option-a}
 
 **Chosen.** Add **plan-24 "mod transport"** whose first task is the measurement in [[#gate]]. Until
