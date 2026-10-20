@@ -5,10 +5,10 @@ title: "Task 3.7: the verb-it backlog — 49 agent-facing CLI paths in eight fam
 tags: [task, plan-3, verbs, parity, backlog, deferral]
 metadata:
   node_type: task
-  status: in-progress
+  status: completed
   plan: plan-3-verbs-parity
   created: 2026-10-19
-  updated: 2026-10-19
+  updated: 2026-10-20
   wave: "W2-d"
 ---
 
