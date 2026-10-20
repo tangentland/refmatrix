@@ -9,57 +9,44 @@ metadata:
 
 # Session Handoff for refmatrix {#root}
 
-Date: 2026-10-15 (session d6dcee49). Prior handoff archived at
-`workflow/past_handoffs/015-0781-0783-release-wave0-r6-r7_2026-10-15.md`.
+Date: 2026-10-19 (session d6dcee49). Prior handoff archived at
+`workflow/past_handoffs/016-wave0-close-plan-review_2026-10-15.md`.
 
-rel: supersedes -> [[handoff-015-0781-0783-release-wave0-r6-r7]]
-rel: depends-on -> [[plan-review-2026-10-14]]
+rel: supersedes -> [[handoff-016-wave0-close-plan-review]]
 
 ## State {#state}
 
-- **Wave 0 is CLOSED.** Every Wave 0-1 plan is APPROVED after its ch-bsd loop (rounds 8-15):
-  plans 16 (d9ck), 17 + 23 (d9cn), 19 + 21 (d9ce), 22 (d9cm), plan-18 specs (d9co; 18.1
-  COMPLETED). Decisions d9be-d9cp in `workflow/plan-review-2026-10-14.md`; settled ones CONFIRMED.
-- **Branch:** `wave0-spec-reviews` (NOT pushed; merges `--no-ff` to master with the release).
-  `master` = `origin/main` = deploy = `b381b6d` (0.78.3). Nothing deployed this session.
-- **Code ready or in flight (littlebig clones; branches pushed to the dev repo when clean):**
-  - `task-18.1-catalog-measurement` (`8281a7f`) — ch-bsd r3 CLEAN; in dev repo; merges with release.
-  - `bugs-112-113-118` (`/Volumes/littlebig/refmatrix-bugs112-118`, `a2911a3` + MEH remedy in
-    flight) — ch-bsd r3 mergeable/deployable; 3 MEH being fixed (m-r3-1 facts.log compaction
-    after copy2 swap failure — do not ship without it). Includes cherry-pick of 0611d2f.
-  - `task-23.0-test-sandbox` (`/Volumes/littlebig/refmatrix-task-23.0`, `ccdefef` + r1 remedy in
-    flight) — ch-bsd r1 DIRTY 2B (shutil relative-path bypass; 18 silent skips); merges on tier 0
-    + decoy evidence once clean (d9cp).
-- `learn.off` global marker still SET (d9bj: off until 16.2+16.3 deploy; no `rmx learn on`).
+- **Deployed + pushed: 0.80.0** — `master` = `origin/main` = deploy tree = `246efb8`. Hub + 8 stores
+  on v0.80.0. Contents: 0.79.0 bug-129 (hub.pid/hub.lock), 0.79.1 task 23.0 (test sandbox), 0.80.0
+  task 21.1 (agent context-usage telemetry) + plan-4 closed (tasks 4.5/4.6). Release suite: 2
+  expected failures (gmd repo-scope gate; 21.1 AC-6 needs the user's fixture), 0 dev-tree failures.
+- Dev tree branch `wave0-spec-reviews` = master.
+- Wave order of record: [[plan-review-2026-10-14#t11-folded-waves]] (plans 1-15 folded in, W2-d
+  added for plan-3 task 3.7).
 
-{#state-body}
+## In flight {#in-flight}
 
-## Next {#next}
+- **Plan-3 (W1-b)** in `/Volumes/littlebig/refmatrix-plan3-close`, branch `plan3-close-w1` (base
+  d4bf001, NOT yet on 0.80.0): tasks 3.4, 3.5, 3.6 built; ch-bsd r10 (`fc80c7b`) found S1 (CLI/MCP
+  bootstrap partition split, from the bug-135 fix) and S2 (transport-wording guard foolable; live
+  sites cli.py:1341, :12270). RED for the fix at `a420c90`; implementer GREEN running. Then ch-bsd
+  r11, then merge as 0.80.1. Plan-3 closes only with task 3.7 (verb-it backlog, W2-d) done or the
+  user carrying it past closure.
 
-1. **Release 0.79.0 is BUILT, not landed.** Clone `/Volumes/littlebig/refmatrix-rel079`, branch
-   `release-0.79.0`, head `0518113` (merges `74f8f98` bugs-112-113-118, `530660e` task-18.1,
-   `bb0ed1f` wave0-spec-reviews; registry reconciled: the linkage merge-by-name bug is bug-128).
-   Full suite: 0 regressions by error text (new failures = clone-only dev-tree checks, HF cache
-   hidden by the temp HOME, or identical on master). Commit subject still says "bug-113/123" —
-   should read bug-113/128. Landing needs the user: the classifier refused pushing the clone to the
-   dev repo's `master`. Then deploy: `git -C ~/refmatrix pull --ff-only origin master`,
-   `rmx daemon restart --relaunch` fleet-wide, hub `rmx hub stop` + one `launchctl kickstart`,
-   verify `rmx version -v`, push to GitHub from dev.
-2. 23.0 is CLEAN (ch-bsd r3, `d9ec741`; branch `task-23.0-test-sandbox` in the dev repo). Ship as
-   0.79.1 after 0.79.0 lands (merge `--no-ff`, bump, full suite now sandboxed); then
-   `scripts/sandbox-proof.sh` once on the main tree (d9cp). Tiers 1/2 need operator setup.
-3. **User question open:** bump `.venv-eval` duckdb 1.5.2 -> 1.5.3.
-4. Wave 1 implementation per d9bi: 21.1 -> 19.0/19.1 -> 19.2, 19.6; 23.1/23.3; 23.5 after 0.79.0
-   lands (bug-112 merge gate).
-5. Frozen inactive slot recovery needs bug-124 (merge leaves derived tables empty) first.
+## Waiting on the user {#user}
 
-{#next-body}
+- AC-6 fixture: `! cd /Users/tholley/claude_tools/refmatrix && python3 tools/cut_agent_usage_fixture.py`
+- 19.5 R1 hook-limit probe; 20.1 gold labels; 21.4 question set; 19.6 tables.
 
-## Lessons recorded {#lessons}
+## Next (Wave 1) {#next}
 
-- `feedback_follow_approval_pattern_wave01`, `feedback_bsd_iterate_before_surfacing`,
-  `feedback_converge_repeated_shapes`.
-- PATTERN `workflow/bullshit/2026-10-15-PATTERN-prereg-check-unrun-census.md`: a bypass rule or
-  mutation registered without running it against the code fails three rounds running.
+23.4 ∥ (23.2 → 23.1 → 23.3); 19.5 R1 → 19.1 → 19.2; 19.0; 23.5 (+ bug-136 rider); after 23.1 the
+17.x and 16.6-slice → 22.x chains; W1-e plan-15 close (clean full suite on master).
 
-{#lessons-body}
+## Open bugs / notes {#open}
+
+- bug-136 (read-only fallback onto the writer's catalog) — rider on 23.5.
+- Test-isolation gap: owner lookup can walk to the runner's real Claude pid (21.1 fixed per test
+  with a per-test pointer dir; root fix belongs to the 23.0 sandbox).
+- bug-129 MEH m1-r4; bug-130 flake; bug-124; IMPRESSIONS.md over its line cap; GMD repo-scope gate
+  (34 dangling-doc errors, ADR ids in docs/INDEX.md).
