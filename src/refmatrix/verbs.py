@@ -1221,15 +1221,19 @@ def _memory_recall_rows(root: Path, *, query: str | None = None, k: int = 10,
       rows = project_rows
       if scope != "project":
         gk = k * 10 if patterns else k
+        # The caller's budget is checked OUTSIDE the global leg's handler: a spent
+        # budget is this call's busy and propagates. Inside, every VerbError is the
+        # GLOBAL store's — since task 3.7 R53 typed it, a held global daemon is a
+        # VerbBusyError too, and on scope=both it is a warning beside the project
+        # rows, never a reason to throw them away (as the CLI twin's leg does).
+        g_timeout = _left(30.0)
         try:
             grows = [row for row in global_recall_rows(
                 query or None, k=gk, recent=bool(recent) and not subject,
-                since_s=since_seconds, timeout=_left(30.0), retries=_retries)
+                since_s=since_seconds, timeout=g_timeout, retries=_retries)
                 if not mt_excluded(row.get("mtype"), patterns)]
             if trace is not None:
                 trace.extend(grows)
-        except VerbBusyError:
-            raise
         except VerbError as e:
             if scope == "global":
                 raise
