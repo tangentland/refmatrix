@@ -16,8 +16,8 @@ rel: supersedes -> [[handoff-016-wave0-close-plan-review]]
 
 ## State {#state}
 
-- **Deployed + pushed: 0.80.0** — `master` = `origin/main` = deploy tree = `246efb8`. Hub + 8 stores
-  on v0.80.0. Contents: 0.79.0 bug-129 (hub.pid/hub.lock), 0.79.1 task 23.0 (test sandbox), 0.80.0
+- **Deployed + pushed: 0.80.1** — `master` = `origin/main` = deploy tree = `8824ae2`. Hub + 8 stores
+  on v0.80.1 (0.80.1 = plan-3 tasks 3.4-3.6 + bug-137). Contents: 0.79.0 bug-129 (hub.pid/hub.lock), 0.79.1 task 23.0 (test sandbox), 0.80.0
   task 21.1 (agent context-usage telemetry) + plan-4 closed (tasks 4.5/4.6). Release suite: 2
   expected failures (gmd repo-scope gate; 21.1 AC-6 needs the user's fixture), 0 dev-tree failures.
 - Dev tree branch `wave0-spec-reviews` = master.
@@ -26,19 +26,16 @@ rel: supersedes -> [[handoff-016-wave0-close-plan-review]]
 
 ## In flight {#in-flight}
 
-- **Release 0.80.1** in `/Volumes/littlebig/refmatrix-rel080`, branch `release-0.80.1` (HEAD
-  `591a2fb`, not yet on master): plan-3 tasks 3.4-3.6 (ch-bsd r12 MEH-only, `9f12239`) merged on
-  0.80.0 + bug-137 integration fix (`ae7713d`; 21.1's `_expired_reads` routed through the
-  classifier). Full-suite rerun was running (`workflow/review-output/rel0801-full-2.log` in that
-  clone). When clean: `git checkout -B master origin/master && git merge --no-ff release-0.80.1`
-  there, `git fetch <clone> master:master` in the dev tree, deploy, push `master:main`.
-- **AC-6 reconciliation** in `/Volumes/littlebig/refmatrix-ac6` (branch `ac6-fixture` off 0.80.0):
-  the user cut the fixture 2026-10-19 (untracked copy also in the dev tree at
-  `tests/fixtures/agent_usage/` — do not commit it from there). Report prints context 3 (match),
-  grep-replica 1121 (test pins 1,119), memory recall commands=244 (pins 34). A test-engineer is
-  measuring which side is wrong and checking redaction/size (22 MB cli.log).
+- **0.80.1 deployed + pushed** (master = origin/main = deploy = `8824ae2`; hub + 8 stores v0.80.1).
+- **AC-6** in `/Volumes/littlebig/refmatrix-ac6`, branch `ac6-fixture` (`3deabee`, off 0.80.0):
+  redacted + trimmed fixture committed (1.6 MB; d8f leaks in the user's raw cut fixed in the tool);
+  grep pin corrected 1,119 → 1,121 (different cut, measured); 34 agent recalls is right — the
+  report lumps cli.log recalls (244) instead of splitting per channel: product defect, RED test
+  `test_ac6_cli_log_recalls_are_split_per_channel`. **Its registry row says bug-137 — that number is
+  taken on master (integration fix); renumber to bug-138 when merging.** Next: implementer GREEN,
+  ch-bsd, merge with master, release.
 - **Task 3.7 (verb-it backlog) — user decided: do NOW, after this save-state.** Clone ready:
-  `/Volumes/littlebig/refmatrix-task-3.7`, branch `task-3.7-verb-it-backlog` off release-0.80.1.
+  `/Volumes/littlebig/refmatrix-task-3.7`, branch `task-3.7-verb-it-backlog` off release-0.80.1 (= master content).
   First step: rewrite 3.7 into a buildable per-family spec (actions, params, read source, budget,
   busy/absent, output shape, MCP tool) + RED tests; fold in the two r12 deferral rows (guard
   fixed-point plants; `global_recall_rows` errno + `cli.py` catch-all). Plan-3 closes with 3.7.
