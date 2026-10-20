@@ -177,11 +177,35 @@ def test_cli_list_entities_json(root):
 # ---- #fam-matrix-edit-dead -------------------------------------------------------------------
 
 
+_DIALS = {"_call", "call", "global_call", "_write_or_local", "_memory_daemon_call",
+          "_session_call"}
+
+
+def _src_dials_of(op: str) -> list:
+    """Every src call that DIALS the daemon op `op`: a call of `_call` / `daemon.call` /
+    `global_call` (or a wrapper that takes the op name the same way) whose op argument is
+    the literal `op`. A string that merely equals an op name — `list_linkages` is also an
+    rmx_matrix ACTION — is not a dial."""
+    import ast
+    hits = []
+    for p in sorted((_REPO / "src" / "refmatrix").rglob("*.py")):
+        for c in ast.walk(ast.parse(p.read_text())):
+            if not isinstance(c, ast.Call):
+                continue
+            f = c.func
+            name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
+            if name not in _DIALS:
+                continue
+            args = list(c.args) + [k.value for k in c.keywords if k.arg == "op"]
+            if any(isinstance(a, ast.Constant) and a.value == op for a in args):
+                hits.append(f"{p.name}:{c.lineno}")
+    return hits
+
+
 @pytest.mark.parametrize("op", ["iter_entities", "list_linkages", "list_saved_queries"])
 def test_a_dead_writer_locking_read_op_is_gone_unless_a_verb_calls_it(op):
-    vsrc = (_REPO / "src" / "refmatrix" / "verbs.py").read_text()
-    if f'"{op}"' in vsrc:          # a verb in this task calls it: then it must exist
-        assert op in dm.OPS, f"verbs.py names {op} but the daemon does not serve it"
+    if _src_dials_of(op):          # something in src dials it: then it must exist
+        assert op in dm.OPS, f"{op} is dialled ({_src_dials_of(op)}) but not served"
         return
     assert op not in dm.OPS, f"{op} is still registered"
     assert op not in dm.CLI_OPS, f"{op} is still on the interactive pool list"

@@ -175,7 +175,9 @@ def test_cli_session_recall_query_on_a_busy_daemon_never_opens_the_writer(monkey
 
 
 def test_no_daemon_list_recall_show_read_in_process(root):
-    _seed(root, [_card(1), _card(2, body="the parser bug")])
+    # card 1's body must NOT contain "parser": the in-process recall is the same substring
+    # search the daemon's `memory_search` op runs, so the default body would match too.
+    _seed(root, [_card(1, body="worked on the lexer"), _card(2, body="the parser bug")])
     lst = verbs.session(root, action="list")
     assert [s["turn_count"] for s in lst["sessions"]] == [2, 1], lst
     rec = verbs.session(root, action="recall", query="parser")
