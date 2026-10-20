@@ -178,7 +178,10 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
     sess_cmd = (
         HOOK_ENV
         + "( " + " ; ".join(bg_parts) + " ) & disown ; "
-        "rmx curator status --drain 2>/dev/null || true"
+        # stderr is NOT discarded (task 3.7, CLAUDE.md#no-silent-failures): a curator
+        # spool warning or failure reaches the agent; `|| true` keeps the hook from
+        # failing the session.
+        "rmx curator status --drain || true"
     )
 
     block = {
@@ -238,7 +241,8 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
         scan_cmd = (
             HOOK_ENV
             + f"rmx scan-prompt{composite} --max-tokens 2000 --timeout 5 2>/dev/null || true ; "
-            "rmx curator status --drain 2>/dev/null || true"
+            # stderr kept (task 3.7): curator failures reach the agent; `|| true` stays.
+            "rmx curator status --drain || true"
         )
         block["hooks"]["UserPromptSubmit"] = [
             {
